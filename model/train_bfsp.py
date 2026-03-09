@@ -17,6 +17,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sqlite3
 from datetime import timedelta
 
@@ -30,6 +31,8 @@ from sklearn.metrics import (
     r2_score,
     roc_auc_score,
 )
+
+from model.custom_metrics import CustomMetricsEngine
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
@@ -126,39 +129,74 @@ def _grouped_lagged_stat(df: pd.DataFrame, group_cols, value_col: str,
     return results
 
 
-def build_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Build feature matrix from betfair race data.
+def _parse_race_class(event_name: str) -> int:
+    """Extract race class from event_name. Returns 1-7 (1=Class A/Group 1, 7=unknown)."""
+    if not isinstance(event_name, str):
+        return 7
+    name = event_name.lower()
+    if "(class a)" in name or "group 1" in name:
+        return 1
+    if "(class b)" in name or "group 2" in name:
+        return 2
+    if "(class c)" in name or "group 3" in name or "listed" in name:
+        return 3
+    if "(class d)" in name:
+        return 4
+    if "(class e)" in name:
+        return 5
+    if "(class f)" in name:
+        return 6
+    if "(class g)" in name or "(class h)" in name:
+        return 7
+    return 7
 
-    All features use shift(1) or expanding windows on prior rows to prevent
-    data leakage. Features are grouped into:
-      - Horse historical performance (win rate, avg BSP, form)
-      - Track-specific horse performance
-      - Market signal features (morning WAP, pre-play prices)
-      - Race context (field size, track encoding)
-      - Within-race rankings
+
+def _parse_race_type(event_name: str) -> int:
+    """Extract race type from event_name. Returns category code."""
+    if not isinstance(event_name, str):
+        return 0
+    name = event_name.lower()
+    if "chase" in name:
+        return 1
+    if "hurdle" in name:
+        return 2
+    if "national hunt flat" in name or "nhf" in name or "bumper" in name:
+        return 3
+    if "handicap" in name:
+        return 4
+    # Default: flat race
+    return 0
+
+
+def build_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Build feature matrix using CustomMetricsEngine + additional features.
+
+    Integrates all metrics from custom_metrics.py plus place market signals
+    and race context parsed from event_name.
     """
     df = df.copy()
     df = df.sort_values(["race_date", "raceid"]).reset_index(drop=True)
 
-    log.info("Building horse features...")
+    # --- Phase 1: CustomMetricsEngine (horse-level metrics) ---
+    log.info("Running CustomMetricsEngine (NFP, RB, WIV, WAX, WOA, CWO, ORR2, "
+             "FSS, PFD, OFS, DSLR, recency, rankings)...")
+    engine = CustomMetricsEngine(windows=[3, 5, 10])
+    df = engine.calculate_all(df)
+
+    # --- Phase 2: Original features that complement custom metrics ---
+    log.info("Building horse BSP history features...")
     df = _horse_features(df)
 
     log.info("Building track-horse features...")
     df = _horse_track_features(df)
 
-    log.info("Building market signal features...")
-    df = _market_features(df)
-
     log.info("Building race context features...")
     df = _race_context_features(df)
 
-    log.info("Building NFP and RB metrics...")
-    df = _nfp_rb_features(df)
+    log.info("Building place market features...")
+    df = _place_market_features(df)
 
-    log.info("Building within-race rankings...")
-    df = _within_race_ranks(df)
-
-    log.info("Building recency-weighted features...")
+    log.info("Building recency-weighted BSP features...")
     df = _recency_weighted_features(df)
 
     log.info(f"Feature matrix: {df.shape}")
@@ -166,17 +204,9 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _horse_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Historical horse performance features."""
+    """Historical horse BSP performance features."""
     df = df.sort_values(["horse_name", "race_date"]).reset_index(drop=True)
     grp = df.groupby("horse_name")
-
-    # Career counts (0-indexed, so this is runs before this one)
-    df["h_runs"] = grp.cumcount()
-
-    # Win/place rates (lagged)
-    df["h_win_rate"] = _grouped_lagged_stat(df, "horse_name", "won", "expanding_mean")
-    df["_placed"] = (df["placing_numerical"] <= 3).astype(float)
-    df["h_place_rate"] = _grouped_lagged_stat(df, "horse_name", "_placed", "expanding_mean")
 
     # BSP history
     df["h_avg_log_bfsp"] = _grouped_lagged_stat(df, "horse_name", "log_bfsp", "expanding_mean")
@@ -185,39 +215,12 @@ def _horse_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Recent form: last 3 and last 5 races
     for w in [3, 5]:
-        df[f"h_recent{w}_win_rate"] = _grouped_lagged_stat(
-            df, "horse_name", "won", "rolling_mean", window=w
-        )
         df[f"h_recent{w}_avg_log_bfsp"] = _grouped_lagged_stat(
             df, "horse_name", "log_bfsp", "rolling_mean", window=w
         )
 
-    # Days since last run
-    df["_date_num"] = df["race_date"].astype(np.int64) // 10**9 // 86400
-    df["h_days_since_lr"] = df["_date_num"] - grp["_date_num"].shift(1)
-
     # BSP trend (last vs avg)
     df["h_bfsp_trend"] = df["h_last_log_bfsp"] - df["h_avg_log_bfsp"]
-
-    # Cumulative win index value (WIV)
-    df["_xwinrand"] = 1.0 / df["number_of_runners"].replace(0, np.nan)
-    cum_wins = _grouped_lagged_stat(df, "horse_name", "won", "cumsum")
-    cum_xwin = _grouped_lagged_stat(df, "horse_name", "_xwinrand", "cumsum")
-    df["h_wiv"] = cum_wins / cum_xwin.replace(0, np.nan)
-
-    # Wins above expected (WAX)
-    df["_wax_raw"] = df["won"] - df["_xwinrand"]
-    df["h_wax"] = _grouped_lagged_stat(df, "horse_name", "_wax_raw", "expanding_mean")
-
-    # Last finishing position
-    df["h_last_placing"] = grp["placing_numerical"].shift(1)
-
-    # Avg placing
-    df["h_avg_placing"] = _grouped_lagged_stat(
-        df, "horse_name", "placing_numerical", "expanding_mean"
-    )
-
-    df.drop(columns=["_date_num"], inplace=True)
 
     return df
 
@@ -238,26 +241,8 @@ def _horse_track_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _market_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Features derived from pre-play and in-play market prices."""
-    # Morning WAP as a feature (log-transformed)
-    df["log_morningwap"] = np.log(df["morningwap"].clip(lower=1.01))
-    df["log_ppwap"] = np.log(df["ppwap"].clip(lower=1.01))
-
-    # Price movement: morning WAP vs pre-play WAP
-    df["price_movement"] = df["log_ppwap"] - df["log_morningwap"]
-
-    # Market spread (max - min in pre-play)
-    df["pp_spread"] = np.log(df["ppmax"].clip(lower=1.01)) - np.log(df["ppmin"].clip(lower=1.01))
-
-    # Market implied probability from morning WAP
-    df["morning_impl_prob"] = 1.0 / df["morningwap"].replace(0, np.nan)
-
-    return df
-
-
 def _race_context_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Race-level context features."""
+    """Race-level context features including parsed class and type."""
     df["n_runners"] = df["number_of_runners"]
     df["log_n_runners"] = np.log(df["n_runners"].clip(lower=1))
 
@@ -271,91 +256,90 @@ def _race_context_features(df: pd.DataFrame) -> pd.DataFrame:
     # Country encoding
     df["is_uk"] = (df["country"] == "uk").astype(int)
 
-    return df
-
-
-def _nfp_rb_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalised Finishing Position and Race Beaten metrics."""
-    nr = df["number_of_runners"].replace(0, np.nan)
-    denom = (nr - 1).replace(0, np.nan)
-
-    # NFP: 1.0 for winner, 0.0 for last
-    df["NFP"] = (nr - df["placing_numerical"]) / denom
-
-    # RB: 1.0 for winner, 0.0 for last
-    df["RB"] = 1 - (df["placing_numerical"] - 1) / denom
-
-    # Field-size adjusted RB
-    median_fs = nr.median()
-    if pd.isna(median_fs) or median_fs == 0:
-        median_fs = 10.0
-    df["FSARB"] = df["RB"] * (nr / median_fs)
-
-    # Career metrics (lagged)
-    df = df.sort_values(["horse_name", "race_date"]).reset_index(drop=True)
-
-    df["h_career_nfp"] = _grouped_lagged_stat(df, "horse_name", "NFP", "expanding_mean")
-    df["h_career_rb"] = _grouped_lagged_stat(df, "horse_name", "RB", "expanding_mean")
-    df["h_career_fsarb"] = _grouped_lagged_stat(df, "horse_name", "FSARB", "expanding_mean")
-
-    # Recent NFP averages
-    for w in [3, 5]:
-        df[f"h_nfp_lr{w}"] = _grouped_lagged_stat(
-            df, "horse_name", "NFP", "rolling_mean", window=w
+    # Parse race class and type from event_name
+    event_col = "event_name" if "event_name" in df.columns else "race_name"
+    if event_col in df.columns:
+        df["race_class_num"] = df[event_col].apply(_parse_race_class)
+        df["race_type_num"] = df[event_col].apply(_parse_race_type)
+        df["is_handicap"] = df[event_col].apply(
+            lambda x: 1 if isinstance(x, str) and "handicap" in x.lower() else 0
+        )
+        df["is_group_listed"] = df[event_col].apply(
+            lambda x: 1 if isinstance(x, str) and (
+                "group" in x.lower() or "listed" in x.lower()
+            ) else 0
         )
 
-    # ORR2: market probability / random probability
-    bf_prob = 1.0 / df["bfsp"].replace(0, np.nan)
-    fs_prob = 1.0 / nr
-    df["ORR2"] = bf_prob / fs_prob.replace(0, np.nan)
-
-    df["h_career_orr2"] = _grouped_lagged_stat(df, "horse_name", "ORR2", "expanding_mean")
-    grp = df.groupby("horse_name")
-    df["h_last_orr2"] = grp["ORR2"].shift(1)
+    # Horse performance in this class (lagged)
+    if "race_class_num" in df.columns:
+        df = df.sort_values(["horse_name", "race_class_num", "race_date"]).reset_index(drop=True)
+        hc_grp = df.groupby(["horse_name", "race_class_num"])
+        df["hc_runs"] = hc_grp.cumcount()
+        df["hc_win_rate"] = _grouped_lagged_stat(
+            df, ["horse_name", "race_class_num"], "won", "expanding_mean"
+        )
 
     return df
 
 
-def _within_race_ranks(df: pd.DataFrame) -> pd.DataFrame:
-    """Rank runners within each race on key metrics."""
-    df = df.sort_values(["race_date", "raceid"]).reset_index(drop=True)
+def _place_market_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Features from the place (each-way) market."""
+    if "bfsp_place" not in df.columns or df["bfsp_place"].notna().sum() == 0:
+        return df
 
-    rank_cols = {
-        "rank_career_nfp": "h_career_nfp",
-        "rank_career_rb": "h_career_rb",
-        "rank_career_wiv": "h_wiv",
-        "rank_h_runs": "h_runs",
-        "rank_win_rate": "h_win_rate",
-        "rank_last_bfsp": "h_last_log_bfsp",
-        "rank_morningwap": "log_morningwap",
-    }
+    place = df["bfsp_place"].clip(lower=1.01)
+    df["log_bfsp_place"] = np.log(place)
 
-    for rank_name, source_col in rank_cols.items():
-        if source_col in df.columns:
-            df[rank_name] = df.groupby("raceid")[source_col].rank(
-                ascending=False, method="min", na_option="bottom"
-            )
+    # Place implied probability
+    df["place_impl_prob"] = 1.0 / place.replace(0, np.nan)
+
+    # Win-place spread: difference between win and place log prices
+    df["win_place_spread"] = df["log_bfsp"] - df["log_bfsp_place"]
+
+    # Win-place probability ratio
+    win_prob = 1.0 / df["bfsp"].replace(0, np.nan)
+    df["win_place_ratio"] = win_prob / df["place_impl_prob"].replace(0, np.nan)
+
+    # Lagged place BSP per horse
+    df = df.sort_values(["horse_name", "race_date"]).reset_index(drop=True)
+    grp = df.groupby("horse_name")
+    df["h_last_log_bfsp_place"] = grp["log_bfsp_place"].shift(1)
+    df["h_avg_log_bfsp_place"] = _grouped_lagged_stat(
+        df, "horse_name", "log_bfsp_place", "expanding_mean"
+    )
+
+    # Recency-weighted place BSP
+    for w in [3, 5]:
+        weights = [RECENCY_WEIGHTS[i] for i in range(1, w + 1)]
+        lagged = pd.DataFrame(
+            {f"lag{i}": grp["log_bfsp_place"].shift(i) for i in range(1, w + 1)}
+        )
+        weight_arr = np.array(weights)
+        weighted_sum = (lagged * weight_arr).sum(axis=1)
+        wsum = (lagged.notna().astype(float) * weight_arr).sum(
+            axis=1
+        ).replace(0, np.nan)
+        df[f"rwplace_lr{w}"] = weighted_sum / wsum
 
     return df
 
 
 def _recency_weighted_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Recency-weighted ORR2 and BSP features."""
+    """Recency-weighted BSP features (ORR2 already done by CustomMetricsEngine)."""
     df = df.sort_values(["horse_name", "race_date"]).reset_index(drop=True)
     grp = df.groupby("horse_name")
 
-    for metric, prefix in [("ORR2", "rwo"), ("log_bfsp", "rwbfsp")]:
-        for w in [3, 5]:
-            weights = [RECENCY_WEIGHTS[i] for i in range(1, w + 1)]
-            lagged = pd.DataFrame(
-                {f"lag{i}": grp[metric].shift(i) for i in range(1, w + 1)}
-            )
-            weight_arr = np.array(weights)
-            weighted_sum = (lagged * weight_arr).sum(axis=1)
-            wsum = (lagged.notna().astype(float) * weight_arr).sum(
-                axis=1
-            ).replace(0, np.nan)
-            df[f"{prefix}_lr{w}"] = weighted_sum / wsum
+    for w in [3, 5]:
+        weights = [RECENCY_WEIGHTS[i] for i in range(1, w + 1)]
+        lagged = pd.DataFrame(
+            {f"lag{i}": grp["log_bfsp"].shift(i) for i in range(1, w + 1)}
+        )
+        weight_arr = np.array(weights)
+        weighted_sum = (lagged * weight_arr).sum(axis=1)
+        wsum = (lagged.notna().astype(float) * weight_arr).sum(
+            axis=1
+        ).replace(0, np.nan)
+        df[f"rwbfsp_lr{w}"] = weighted_sum / wsum
 
     return df
 
@@ -365,30 +349,68 @@ def _recency_weighted_features(df: pd.DataFrame) -> pd.DataFrame:
 # ──────────────────────────────────────────────────────────────────────
 
 FEATURE_COLS = [
-    # Horse history
-    "h_runs", "h_win_rate", "h_place_rate",
+    # ── Horse BSP history ──
     "h_avg_log_bfsp", "h_std_log_bfsp", "h_last_log_bfsp",
-    "h_recent3_win_rate", "h_recent5_win_rate",
     "h_recent3_avg_log_bfsp", "h_recent5_avg_log_bfsp",
-    "h_days_since_lr", "h_bfsp_trend",
-    "h_wiv", "h_wax",
-    "h_last_placing", "h_avg_placing",
-    # NFP/RB
-    "h_career_nfp", "h_career_rb", "h_career_fsarb",
-    "h_nfp_lr3", "h_nfp_lr5",
-    "h_career_orr2", "h_last_orr2",
-    # Track-specific
+    "h_bfsp_trend",
+    # ── Track-specific ──
     "ht_runs", "ht_win_rate", "ht_avg_log_bfsp",
-    # Market signals
-    "log_morningwap", "log_ppwap", "price_movement",
-    "pp_spread", "morning_impl_prob",
-    # Race context
+    # ── Race context ──
     "n_runners", "log_n_runners", "track_freq", "track_cat", "is_uk",
-    # Within-race ranks
-    "rank_career_nfp", "rank_career_rb", "rank_career_wiv",
-    "rank_h_runs", "rank_win_rate", "rank_last_bfsp", "rank_morningwap",
-    # Recency-weighted
-    "rwo_lr3", "rwo_lr5", "rwbfsp_lr3", "rwbfsp_lr5",
+    "race_class_num", "race_type_num", "is_handicap", "is_group_listed",
+    # ── Horse class performance ──
+    "hc_runs", "hc_win_rate",
+    # ── Place market signals ──
+    "log_bfsp_place", "place_impl_prob", "win_place_spread",
+    "win_place_ratio", "h_last_log_bfsp_place", "h_avg_log_bfsp_place",
+    "rwplace_lr3", "rwplace_lr5",
+    # ── Recency-weighted BSP ──
+    "rwbfsp_lr3", "rwbfsp_lr5",
+    # ── CustomMetricsEngine: Horse career ──
+    "preracehorsecareerNFP", "preracehorsecareerRB",
+    "preracehorsecareerFSARB", "preracehorsecareerFSARB2",
+    "preracehorsecareerWIV", "preracehorsecareerWAX",
+    "preracehorsecareerWOA", "preracehorsecareerCWO",
+    "preracehorsecareerWins", "preracehorsecareerRuns",
+    "preracehorsecareerPlaces", "preracehorsecareerORR2",
+    # ── CustomMetricsEngine: NFP windows ──
+    "LRNFP", "LR3NFPtotal", "LR5NFPtotal", "LR10NFPtotal",
+    # ── CustomMetricsEngine: ORR2 and RWO ──
+    "LR_ORR2", "LR3_RWO", "LR5_RWO", "LR10_RWO",
+    # ── CustomMetricsEngine: PFD ──
+    "PFD3", "PFD5", "PFD10",
+    # ── CustomMetricsEngine: OFS ──
+    "OFS1", "OFS3", "OFS5", "OFS10",
+    # ── CustomMetricsEngine: DSLR ──
+    "DSLR1", "DSLR2", "WgtDSLR", "FinalDSLR",
+    # ── CustomMetricsEngine: FSS and FCS ──
+    "FSS", "FCS", "Race_avgOR",
+    # ── CustomMetricsEngine: Prize money ──
+    "WPMRF3", "WPMRF5", "WPMRF10",
+    "PMW3", "PMW5", "PMW10",
+    "RACE_WPMRF",
+    # ── CustomMetricsEngine: Recency/confidence ──
+    "LR3COUNT", "LR5COUNT", "LR10COUNT",
+    "LR3wsum", "LR5wsum", "LR10wsum",
+    "CIL3", "CIL5", "CIL10",
+    # ── CustomMetricsEngine: LRP jockey momentum ──
+    "LRPTotalScore", "totalLRPjockeyindex",
+    # ── CustomMetricsEngine: Race strength ──
+    "RACE_RB", "RACE_WIV", "RACE_NFP", "RACE_Wins", "RACE_WOA",
+    "LR_RACE_RB", "LR_RACE_WIV", "LR_RACE_NFP", "LR_RACE_Wins", "LR_RACE_WOA",
+    # ── CustomMetricsEngine: Within-race rankings ──
+    "rNFP", "rNFPLR3", "rNFPLR5", "rNFPLR10",
+    "horseRBrank", "horseFSARBrank", "horseFSARB2rank",
+    "horseNFPrank", "horseWIVrank", "horseWAXrank",
+    "horseWOArank", "horseCWOrank",
+    "horseRunsrank", "horseWinsrank", "horsePlacesrank",
+    "rORR2LR", "rRWOLR3", "rRWOLR5", "rRWOLR10",
+    "rDSLR", "rFSS", "rFCS",
+    "rPFD3", "rPFD5", "rPFD10",
+    "rWPMRF3", "rWPMRF5", "rWPMRF10",
+    "rPMW3", "rPMW5", "rPMW10",
+    "rOFS3", "rOFS5", "rOFS10",
+    "rTJWIV", "rTJNFP",
 ]
 
 # Columns for win probability model (classification)

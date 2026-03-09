@@ -86,6 +86,19 @@ def _calculate_epf(comment: str) -> float:
     return 3.0
 
 
+def _safe_group_apply(grp, func):
+    """Apply a function per group, returning a flat Series aligned with the original index.
+
+    Works around pandas MultiIndex issues with groupby().apply() by
+    using transform where possible and falling back to manual iteration.
+    """
+    results = pd.Series(np.nan, index=grp.obj.index, dtype=float)
+    for _, sub in grp:
+        vals = func(sub)
+        results.loc[sub.index] = vals.values
+    return results
+
+
 class CustomMetricsEngine:
     """Calculate all custom racing performance metrics.
 
@@ -192,8 +205,7 @@ class CustomMetricsEngine:
         grp = df.groupby("horse_name")
 
         # Career expanding mean (lagged)
-        df["preracehorsecareerNFP"] = grp["NFP"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["preracehorsecareerNFP"] = _safe_group_apply(grp["NFP"], lambda x: x.shift(1).expanding().mean()
         )
 
         # Last run NFP
@@ -201,8 +213,7 @@ class CustomMetricsEngine:
 
         # Rolling window means
         for w in self.windows:
-            df[f"LR{w}NFPtotal"] = grp["NFP"].apply(
-                lambda x: x.shift(1).rolling(w, min_periods=1).mean()
+            df[f"LR{w}NFPtotal"] = _safe_group_apply(grp["NFP"], lambda x: x.shift(1).rolling(w, min_periods=1).mean()
             )
 
         return df
@@ -226,14 +237,11 @@ class CustomMetricsEngine:
         ).reset_index(drop=True)
         grp = df.groupby("horse_name")
 
-        df["preracehorsecareerRB"] = grp["RB"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["preracehorsecareerRB"] = _safe_group_apply(grp["RB"], lambda x: x.shift(1).expanding().mean()
         )
-        df["preracehorsecareerFSARB"] = grp["FSARB"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["preracehorsecareerFSARB"] = _safe_group_apply(grp["FSARB"], lambda x: x.shift(1).expanding().mean()
         )
-        df["preracehorsecareerFSARB2"] = grp["FSARB"].apply(
-            lambda x: (x ** 2).shift(1).expanding().mean()
+        df["preracehorsecareerFSARB2"] = _safe_group_apply(grp["FSARB"], lambda x: (x ** 2).shift(1).expanding().mean()
         )
 
         return df
@@ -255,13 +263,12 @@ class CustomMetricsEngine:
             ).reset_index(drop=True)
             grp = df.groupby(col)
 
-            cum_wins = grp["won"].apply(lambda x: x.shift(1).cumsum())
-            cum_xwin = grp["xWINRAND"].apply(lambda x: x.shift(1).cumsum())
+            cum_wins = _safe_group_apply(grp["won"], lambda x: x.shift(1).cumsum())
+            cum_xwin = _safe_group_apply(grp["xWINRAND"], lambda x: x.shift(1).cumsum())
 
             df[f"{prefix}Wins"] = cum_wins
             df[f"{prefix}Runs"] = grp.cumcount()  # 0-indexed = runs before this
-            df[f"{prefix}Places"] = grp["placed"].apply(
-                lambda x: x.shift(1).cumsum()
+            df[f"{prefix}Places"] = _safe_group_apply(grp["placed"], lambda x: x.shift(1).cumsum()
             )
             df[f"{prefix}WIV"] = cum_wins / cum_xwin.replace(0, np.nan)
 
@@ -289,14 +296,11 @@ class CustomMetricsEngine:
             ).reset_index(drop=True)
             grp = df.groupby(col)
 
-            df[f"{prefix}WAX"] = grp["WAX_raw"].apply(
-                lambda x: x.shift(1).expanding().mean()
+            df[f"{prefix}WAX"] = _safe_group_apply(grp["WAX_raw"], lambda x: x.shift(1).expanding().mean()
             )
-            df[f"{prefix}WOA"] = grp["WOA_raw"].apply(
-                lambda x: x.shift(1).expanding().mean()
+            df[f"{prefix}WOA"] = _safe_group_apply(grp["WOA_raw"], lambda x: x.shift(1).expanding().mean()
             )
-            df[f"{prefix}CWO"] = grp["WAX_raw"].apply(
-                lambda x: x.shift(1).cumsum()
+            df[f"{prefix}CWO"] = _safe_group_apply(grp["WAX_raw"], lambda x: x.shift(1).cumsum()
             )
 
         return df
@@ -316,8 +320,7 @@ class CustomMetricsEngine:
         grp = df.groupby("horse_name")
 
         # Career expanding mean
-        df["preracehorsecareerORR2"] = grp["ORR2"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["preracehorsecareerORR2"] = _safe_group_apply(grp["ORR2"], lambda x: x.shift(1).expanding().mean()
         )
 
         # Last run ORR2
@@ -393,8 +396,7 @@ class CustomMetricsEngine:
                 [entity_col, "race_date", "race_time"]
             ).reset_index(drop=True)
             egrp = df.groupby(entity_col)
-            df[prefix] = egrp["EPF2"].apply(
-                lambda x: x.shift(1).expanding().mean()
+            df[prefix] = _safe_group_apply(egrp["EPF2"], lambda x: x.shift(1).expanding().mean()
             )
 
         return df
@@ -626,8 +628,7 @@ class CustomMetricsEngine:
         ).reset_index(drop=True)
         j_grp = df.groupby("jockey_name")
 
-        df["totaljockeyLRPscore"] = j_grp["LRPTotalScore"].apply(
-            lambda x: x.shift(1).cumsum()
+        df["totaljockeyLRPscore"] = _safe_group_apply(j_grp["LRPTotalScore"], lambda x: x.shift(1).cumsum()
         )
         df["totaljockeyrides"] = j_grp.cumcount()  # 0-indexed
         rides = df["totaljockeyrides"].replace(0, np.nan)
@@ -657,7 +658,7 @@ class CustomMetricsEngine:
                 [entity_col, "race_date", "race_time"]
             ).reset_index(drop=True)
             grp = df.groupby(entity_col)
-            cum_pace = grp["EPF"].apply(lambda x: x.shift(1).cumsum())
+            cum_pace = _safe_group_apply(grp["EPF"], lambda x: x.shift(1).cumsum())
             cum_runs = grp.cumcount().replace(0, np.nan)
             df[prefix] = cum_pace / cum_runs
 
@@ -673,23 +674,19 @@ class CustomMetricsEngine:
         ).reset_index(drop=True)
         tj_grp = df.groupby(["trainer", "jockey_name"])
 
-        cum_wins = tj_grp["won"].apply(lambda x: x.shift(1).cumsum())
-        cum_xwin = tj_grp["xWINRAND"].apply(lambda x: x.shift(1).cumsum())
+        cum_wins = _safe_group_apply(tj_grp["won"], lambda x: x.shift(1).cumsum())
+        cum_xwin = _safe_group_apply(tj_grp["xWINRAND"], lambda x: x.shift(1).cumsum())
 
         df["trainerjockeycareerWIV"] = cum_wins / cum_xwin.replace(0, np.nan)
-        df["trainerjockeycareerNFP"] = tj_grp["NFP"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["trainerjockeycareerNFP"] = _safe_group_apply(tj_grp["NFP"], lambda x: x.shift(1).expanding().mean()
         )
 
         # WAX, WOA, CWO for combination
-        df["trainerjockeyWAX"] = tj_grp["WAX_raw"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["trainerjockeyWAX"] = _safe_group_apply(tj_grp["WAX_raw"], lambda x: x.shift(1).expanding().mean()
         )
-        df["trainerjockeyWOA"] = tj_grp["WOA_raw"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["trainerjockeyWOA"] = _safe_group_apply(tj_grp["WOA_raw"], lambda x: x.shift(1).expanding().mean()
         )
-        df["trainerjockeyCWO"] = tj_grp["WAX_raw"].apply(
-            lambda x: x.shift(1).cumsum()
+        df["trainerjockeyCWO"] = _safe_group_apply(tj_grp["WAX_raw"], lambda x: x.shift(1).cumsum()
         )
 
         return df
