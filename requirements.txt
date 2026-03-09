@@ -2,3 +2,9 @@ requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
 python-dotenv>=1.0.0
+
+# BFSP prediction model
+pandas>=2.1.0
+numpy>=1.24.0
+lightgbm>=4.0.0
+scikit-learn>=1.3.0
