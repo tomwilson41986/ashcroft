@@ -110,7 +110,14 @@ class FundamentalModel:
             val_copy["p_norm"] = val_copy.groupby(raceid_col)[
                 "p_raw"
             ].transform(lambda x: x / x.sum())
-            norm_ll = log_loss(val_copy[target_col], val_copy["p_norm"])
+            valid = val_copy["p_norm"].notna()
+            if valid.sum() > 0:
+                norm_ll = log_loss(
+                    val_copy.loc[valid, target_col],
+                    val_copy.loc[valid, "p_norm"].clip(1e-7, 1 - 1e-7),
+                )
+            else:
+                norm_ll = val_ll
         else:
             norm_ll = val_ll
 
@@ -149,7 +156,14 @@ class FundamentalModel:
         raw_probs = self.model.predict(X)
 
         result = df.copy()
-        result["p_model"] = raw_probs
+        result["p_model"] = np.clip(raw_probs, 1e-7, 1 - 1e-7)
+
+        # Fill any remaining NaN with uniform probability
+        if "number_of_runners" in result.columns:
+            uniform = 1.0 / result["number_of_runners"].replace(0, np.nan)
+            result["p_model"] = result["p_model"].fillna(uniform).fillna(0.1)
+        else:
+            result["p_model"] = result["p_model"].fillna(0.1)
 
         if normalise and raceid_col in result.columns:
             result["p_model"] = result.groupby(raceid_col)[

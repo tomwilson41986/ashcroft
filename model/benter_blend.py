@@ -62,8 +62,8 @@ class BenterBlender:
         result["blend_available"] = has_market & has_model
 
         # Log-linear blending: P_combined ∝ P_model^(1-λ) * P_public^λ
-        p_model = result[p_model_col].clip(lower=1e-10)
-        p_public = result["p_public"].clip(lower=1e-10)
+        p_model = result[p_model_col].fillna(0.1).clip(lower=1e-10)
+        p_public = result["p_public"].fillna(0.1).clip(lower=1e-10)
 
         raw_combined = np.where(
             result["blend_available"],

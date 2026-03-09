@@ -46,7 +46,7 @@ class ModelEvaluator:
             return {"error": "No probability column found"}
 
         y_true = df["won"].astype(float)
-        y_pred = df[p_col].clip(1e-7, 1 - 1e-7)
+        y_pred = df[p_col].fillna(0.1).clip(1e-7, 1 - 1e-7)
 
         results = {}
 
@@ -311,6 +311,7 @@ class ModelEvaluator:
 
         # Market baseline: BFSP implied probability
         market_prob = (1.0 / df["bfsp"].replace(0, np.nan)).clip(1e-7, 1 - 1e-7)
+        y_pred = df[p_col].fillna(0.1).clip(1e-7, 1 - 1e-7)
         valid_market = market_prob.notna()
 
         if valid_market.sum() > 0:
@@ -324,7 +325,7 @@ class ModelEvaluator:
                 results["market_logloss"]
                 - log_loss(
                     y_true[valid_market],
-                    df[p_col][valid_market].clip(1e-7, 1 - 1e-7),
+                    y_pred[valid_market],
                 ),
                 6,
             )

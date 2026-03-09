@@ -86,6 +86,33 @@ def _calculate_epf(comment: str) -> float:
     return 3.0
 
 
+def _lagged_expanding_mean(df, group_col, value_col):
+    """Compute lagged expanding mean, safe for pandas 3.x."""
+    df = df.sort_values([group_col, "race_date", "race_time"]).reset_index(drop=True)
+    shifted = df.groupby(group_col, group_keys=False)[value_col].shift(1)
+    result = shifted.groupby(df[group_col], group_keys=False).expanding().mean()
+    return result.reset_index(level=0, drop=True).reindex(df.index)
+
+
+def _lagged_cumsum(df, group_col, value_col):
+    """Compute lagged cumulative sum, safe for pandas 3.x."""
+    shifted = df.groupby(group_col, group_keys=False)[value_col].shift(1)
+    result = shifted.groupby(df[group_col], group_keys=False).cumsum()
+    return result
+
+
+def _lagged_rolling_mean(df, group_col, value_col, window):
+    """Compute lagged rolling mean, safe for pandas 3.x."""
+    shifted = df.groupby(group_col, group_keys=False)[value_col].shift(1)
+    result = shifted.groupby(df[group_col], group_keys=False).apply(
+        lambda x: x.rolling(window, min_periods=1).mean()
+    )
+    # Handle both old and new pandas return formats
+    if isinstance(result.index, pd.MultiIndex):
+        result = result.droplevel(0)
+    return result.reindex(df.index)
+
+
 class CustomMetricsEngine:
     """Calculate all custom racing performance metrics.
 
@@ -139,7 +166,9 @@ class CustomMetricsEngine:
         df["number_of_runners"] = pd.to_numeric(
             df["number_of_runners"], errors="coerce"
         )
-        df["bfsp"] = pd.to_numeric(df.get("bfsp", pd.Series(dtype=float)), errors="coerce")
+        df["bfsp"] = pd.to_numeric(
+            df.get("bfsp", pd.Series(dtype=float)), errors="coerce"
+        )
         df["official_rating"] = pd.to_numeric(
             df.get("official_rating", pd.Series(dtype=float)), errors="coerce"
         )
@@ -183,26 +212,28 @@ class CustomMetricsEngine:
         """NFP: 1.0 for winner, 0.0 for last, normalised by field size."""
         if "NFP" not in df.columns:
             denom = (df["number_of_runners"] - 1).replace(0, np.nan)
-            df["NFP"] = (df["number_of_runners"] - df["placing_numerical"]) / denom
+            df["NFP"] = (
+                df["number_of_runners"] - df["placing_numerical"]
+            ) / denom
 
-        # Sort for horse grouping
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
 
         # Career expanding mean (lagged)
-        df["preracehorsecareerNFP"] = grp["NFP"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["preracehorsecareerNFP"] = _lagged_expanding_mean(
+            df, "horse_name", "NFP"
         )
 
         # Last run NFP
-        df["LRNFP"] = grp["NFP"].shift(1)
+        df["LRNFP"] = df.groupby("horse_name", group_keys=False)[
+            "NFP"
+        ].shift(1)
 
         # Rolling window means
         for w in self.windows:
-            df[f"LR{w}NFPtotal"] = grp["NFP"].apply(
-                lambda x: x.shift(1).rolling(w, min_periods=1).mean()
+            df[f"LR{w}NFPtotal"] = _lagged_rolling_mean(
+                df, "horse_name", "NFP", w
             )
 
         return df
@@ -224,17 +255,20 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
 
-        df["preracehorsecareerRB"] = grp["RB"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["preracehorsecareerRB"] = _lagged_expanding_mean(
+            df, "horse_name", "RB"
         )
-        df["preracehorsecareerFSARB"] = grp["FSARB"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["preracehorsecareerFSARB"] = _lagged_expanding_mean(
+            df, "horse_name", "FSARB"
         )
-        df["preracehorsecareerFSARB2"] = grp["FSARB"].apply(
-            lambda x: (x ** 2).shift(1).expanding().mean()
+
+        # FSARB^2 for consistency measure
+        df["_FSARB2"] = df["FSARB"] ** 2
+        df["preracehorsecareerFSARB2"] = _lagged_expanding_mean(
+            df, "horse_name", "_FSARB2"
         )
+        df.drop(columns=["_FSARB2"], inplace=True)
 
         return df
 
@@ -245,24 +279,21 @@ class CustomMetricsEngine:
         """WIV: cumulative wins / cumulative expected wins under random chance."""
         df["xWINRAND"] = 1.0 / df["number_of_runners"].replace(0, np.nan)
 
-        for entity, col, prefix in [
-            ("horse_name", "horse_name", "preracehorsecareer"),
-            ("trainer", "trainer", "preracetrainercareer"),
-            ("jockey_name", "jockey_name", "preracejockeycareer"),
+        for col, prefix in [
+            ("horse_name", "preracehorsecareer"),
+            ("trainer", "preracetrainercareer"),
+            ("jockey_name", "preracejockeycareer"),
         ]:
             df = df.sort_values(
                 [col, "race_date", "race_time"]
             ).reset_index(drop=True)
-            grp = df.groupby(col)
 
-            cum_wins = grp["won"].apply(lambda x: x.shift(1).cumsum())
-            cum_xwin = grp["xWINRAND"].apply(lambda x: x.shift(1).cumsum())
+            cum_wins = _lagged_cumsum(df, col, "won")
+            cum_xwin = _lagged_cumsum(df, col, "xWINRAND")
 
             df[f"{prefix}Wins"] = cum_wins
-            df[f"{prefix}Runs"] = grp.cumcount()  # 0-indexed = runs before this
-            df[f"{prefix}Places"] = grp["placed"].apply(
-                lambda x: x.shift(1).cumsum()
-            )
+            df[f"{prefix}Runs"] = df.groupby(col, group_keys=False).cumcount()
+            df[f"{prefix}Places"] = _lagged_cumsum(df, col, "placed")
             df[f"{prefix}WIV"] = cum_wins / cum_xwin.replace(0, np.nan)
 
         return df
@@ -273,31 +304,20 @@ class CustomMetricsEngine:
     def _calc_wax_woa_cwo(self, df: pd.DataFrame) -> pd.DataFrame:
         """WAX: wins above expected. WOA: wins over average. CWO: cumulative WAX."""
         df["WAX_raw"] = df["won"] - df["xWINRAND"]
+        df["WOA_raw"] = df["WAX_raw"]
 
-        # Field average win rate (each runner has 1/N chance, so avg = 1/N)
-        # WOA = win_flag - (1/number_of_runners) which equals WAX
-        # But conceptually WOA compares to actual field average
-        df["WOA_raw"] = df["WAX_raw"]  # same for individual runners
-
-        for entity, col, prefix in [
-            ("horse_name", "horse_name", "preracehorsecareer"),
-            ("trainer", "trainer", "preracetrainercareer"),
-            ("jockey_name", "jockey_name", "preracejockeycareer"),
+        for col, prefix in [
+            ("horse_name", "preracehorsecareer"),
+            ("trainer", "preracetrainercareer"),
+            ("jockey_name", "preracejockeycareer"),
         ]:
             df = df.sort_values(
                 [col, "race_date", "race_time"]
             ).reset_index(drop=True)
-            grp = df.groupby(col)
 
-            df[f"{prefix}WAX"] = grp["WAX_raw"].apply(
-                lambda x: x.shift(1).expanding().mean()
-            )
-            df[f"{prefix}WOA"] = grp["WOA_raw"].apply(
-                lambda x: x.shift(1).expanding().mean()
-            )
-            df[f"{prefix}CWO"] = grp["WAX_raw"].apply(
-                lambda x: x.shift(1).cumsum()
-            )
+            df[f"{prefix}WAX"] = _lagged_expanding_mean(df, col, "WAX_raw")
+            df[f"{prefix}WOA"] = _lagged_expanding_mean(df, col, "WOA_raw")
+            df[f"{prefix}CWO"] = _lagged_cumsum(df, col, "WAX_raw")
 
         return df
 
@@ -313,14 +333,11 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
-        # Career expanding mean
-        df["preracehorsecareerORR2"] = grp["ORR2"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["preracehorsecareerORR2"] = _lagged_expanding_mean(
+            df, "horse_name", "ORR2"
         )
-
-        # Last run ORR2
         df["LR_ORR2"] = grp["ORR2"].shift(1)
 
         # Recency-weighted ORR2 for each window
@@ -329,15 +346,12 @@ class CustomMetricsEngine:
             rwo_col = f"LR{w}_RWO"
             weights = [RECENCY_WEIGHTS[i] for i in range(1, w + 1)]
 
-            # Get lagged ORR2 values and apply weights
             lagged_vals = pd.DataFrame(
                 {f"lag{i}": grp["ORR2"].shift(i) for i in range(1, w + 1)}
             )
             weight_arr = np.array(weights)
 
-            # Weighted sum
             weighted_sum = (lagged_vals * weight_arr).sum(axis=1)
-            # Weight sum (only where data exists)
             weight_mask = lagged_vals.notna().astype(float) * weight_arr
             wsum = weight_mask.sum(axis=1).replace(0, np.nan)
 
@@ -376,7 +390,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         for i in range(1, 6):
             df[f"LR{'' if i == 1 else i}_EPF"] = grp["EPF"].shift(i)
@@ -384,17 +398,17 @@ class CustomMetricsEngine:
             df[f"LR{'' if i == 1 else i}_EPF3"] = grp["EPF3"].shift(i)
 
         # Career EPF averages (lagged) for horse, jockey, trainer
-        for entity_col, prefix in [
-            ("horse_name", "Horse_Career_EPF"),
-            ("jockey_name", "Jockey_Career_EPF"),
-            ("trainer", "trainer_Career_EPF"),
-        ]:
+        for entity_col in ["horse_name", "jockey_name", "trainer"]:
+            prefix_map = {
+                "horse_name": "Horse_Career_EPF",
+                "jockey_name": "Jockey_Career_EPF",
+                "trainer": "trainer_Career_EPF",
+            }
             df = df.sort_values(
                 [entity_col, "race_date", "race_time"]
             ).reset_index(drop=True)
-            egrp = df.groupby(entity_col)
-            df[prefix] = egrp["EPF2"].apply(
-                lambda x: x.shift(1).expanding().mean()
+            df[prefix_map[entity_col]] = _lagged_expanding_mean(
+                df, entity_col, "EPF2"
             )
 
         return df
@@ -407,11 +421,9 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         today_runners = df["number_of_runners"]
-
-        # Compute field size deltas squared for last 10 runs
         delta_sq_sum = pd.Series(0.0, index=df.index)
         count = pd.Series(0.0, index=df.index)
 
@@ -440,7 +452,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         today_avg_or = df["Race_avgOR"]
         delta_sq_sum = pd.Series(0.0, index=df.index)
@@ -471,7 +483,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         for w in self.windows:
             weights = [RECENCY_WEIGHTS[i] for i in range(1, w + 1)]
@@ -500,13 +512,12 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         for w in self.windows:
             weights = [RECENCY_WEIGHTS[i] for i in range(1, w + 1)]
             weight_arr = np.array(weights)
 
-            # WPMRF
             lagged_prize = pd.DataFrame(
                 {f"lag{i}": grp["prize_money"].shift(i) for i in range(1, w + 1)}
             )
@@ -516,7 +527,6 @@ class CustomMetricsEngine:
             ).replace(0, np.nan)
             df[f"WPMRF{w}"] = ws / wt
 
-            # PMW
             lagged_pmw = pd.DataFrame(
                 {f"lag{i}": grp["PMW_raw"].shift(i) for i in range(1, w + 1)}
             )
@@ -533,12 +543,14 @@ class CustomMetricsEngine:
     # ------------------------------------------------------------------
     def _calc_ofs(self, df: pd.DataFrame) -> pd.DataFrame:
         """OFS: (1/BFSP) * number_of_runners."""
-        df["OFS"] = (1.0 / df["bfsp"].replace(0, np.nan)) * df["number_of_runners"]
+        df["OFS"] = (
+            1.0 / df["bfsp"].replace(0, np.nan)
+        ) * df["number_of_runners"]
 
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         df["OFS1"] = grp["OFS"].shift(1)
 
@@ -564,18 +576,16 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
-        # Days between consecutive runs
         df["_date_num"] = df["race_date"].astype(np.int64) // 10**9 // 86400
         for i in range(1, 5):
             lag_date = grp["_date_num"].shift(i)
             df[f"DSLR{i}"] = df["_date_num"] - lag_date
 
-        # Rate of change with harmonic weights
-        df["DSLR12diff"] = (df.get("DSLR2", np.nan) - df.get("DSLR1", np.nan)) * 1.0
-        df["DSLR23diff"] = (df.get("DSLR3", np.nan) - df.get("DSLR2", np.nan)) * 0.5
-        df["DSLR34diff"] = (df.get("DSLR4", np.nan) - df.get("DSLR3", np.nan)) * 0.33
+        df["DSLR12diff"] = (df["DSLR2"] - df["DSLR1"]) * 1.0
+        df["DSLR23diff"] = (df["DSLR3"] - df["DSLR2"]) * 0.5
+        df["DSLR34diff"] = (df["DSLR4"] - df["DSLR3"]) * 0.33
 
         df["WgtDSLR"] = (
             df["DSLR12diff"].fillna(0)
@@ -583,10 +593,8 @@ class CustomMetricsEngine:
             + df["DSLR34diff"].fillna(0)
         )
 
-        # LR3COUNT for this specific calculation
         lr3_count = sum(
-            grp["_date_num"].shift(i).notna().astype(float)
-            for i in range(1, 4)
+            grp["_date_num"].shift(i).notna().astype(float) for i in range(1, 4)
         ).replace(0, np.nan)
         df["FinalDSLR"] = df["WgtDSLR"] / lr3_count
 
@@ -602,7 +610,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        h_grp = df.groupby("horse_name")
+        h_grp = df.groupby("horse_name", group_keys=False)
 
         lr_placed = h_grp["placed"].shift(1)
         lr_pos = h_grp["placing_numerical"].shift(1)
@@ -624,12 +632,13 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["jockey_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        j_grp = df.groupby("jockey_name")
 
-        df["totaljockeyLRPscore"] = j_grp["LRPTotalScore"].apply(
-            lambda x: x.shift(1).cumsum()
+        df["totaljockeyLRPscore"] = _lagged_cumsum(
+            df, "jockey_name", "LRPTotalScore"
         )
-        df["totaljockeyrides"] = j_grp.cumcount()  # 0-indexed
+        df["totaljockeyrides"] = df.groupby(
+            "jockey_name", group_keys=False
+        ).cumcount()
         rides = df["totaljockeyrides"].replace(0, np.nan)
         df["totalLRPjockeyindex"] = (df["totaljockeyLRPscore"] / rides) * 10
 
@@ -640,10 +649,7 @@ class CustomMetricsEngine:
     # ------------------------------------------------------------------
     def _calc_pace(self, df: pd.DataFrame) -> pd.DataFrame:
         """Pace indices for horse, trainer, jockey using EPF as proxy for RunStyle."""
-        # Use EPF as RunStyle proxy
-        run_style = df["EPF"]
-
-        df["racepacescore"] = df.groupby("raceid")[run_style.name].transform("sum")
+        df["racepacescore"] = df.groupby("raceid")["EPF"].transform("sum")
         df["racepaceindex"] = df["racepacescore"] / df[
             "number_of_runners"
         ].replace(0, np.nan)
@@ -656,9 +662,10 @@ class CustomMetricsEngine:
             df = df.sort_values(
                 [entity_col, "race_date", "race_time"]
             ).reset_index(drop=True)
-            grp = df.groupby(entity_col)
-            cum_pace = grp["EPF"].apply(lambda x: x.shift(1).cumsum())
-            cum_runs = grp.cumcount().replace(0, np.nan)
+            cum_pace = _lagged_cumsum(df, entity_col, "EPF")
+            cum_runs = df.groupby(
+                entity_col, group_keys=False
+            ).cumcount().replace(0, np.nan)
             df[prefix] = cum_pace / cum_runs
 
         return df
@@ -668,29 +675,29 @@ class CustomMetricsEngine:
     # ------------------------------------------------------------------
     def _calc_trainer_jockey(self, df: pd.DataFrame) -> pd.DataFrame:
         """Joint trainer-jockey performance metrics."""
-        df = df.sort_values(
-            ["trainer", "jockey_name", "race_date", "race_time"]
-        ).reset_index(drop=True)
-        tj_grp = df.groupby(["trainer", "jockey_name"])
+        # Create composite key for trainer-jockey
+        df["_tj_key"] = df["trainer"].astype(str) + "||" + df["jockey_name"].astype(str)
 
-        cum_wins = tj_grp["won"].apply(lambda x: x.shift(1).cumsum())
-        cum_xwin = tj_grp["xWINRAND"].apply(lambda x: x.shift(1).cumsum())
+        df = df.sort_values(
+            ["_tj_key", "race_date", "race_time"]
+        ).reset_index(drop=True)
+
+        cum_wins = _lagged_cumsum(df, "_tj_key", "won")
+        cum_xwin = _lagged_cumsum(df, "_tj_key", "xWINRAND")
 
         df["trainerjockeycareerWIV"] = cum_wins / cum_xwin.replace(0, np.nan)
-        df["trainerjockeycareerNFP"] = tj_grp["NFP"].apply(
-            lambda x: x.shift(1).expanding().mean()
+        df["trainerjockeycareerNFP"] = _lagged_expanding_mean(
+            df, "_tj_key", "NFP"
         )
+        df["trainerjockeyWAX"] = _lagged_expanding_mean(
+            df, "_tj_key", "WAX_raw"
+        )
+        df["trainerjockeyWOA"] = _lagged_expanding_mean(
+            df, "_tj_key", "WOA_raw"
+        )
+        df["trainerjockeyCWO"] = _lagged_cumsum(df, "_tj_key", "WAX_raw")
 
-        # WAX, WOA, CWO for combination
-        df["trainerjockeyWAX"] = tj_grp["WAX_raw"].apply(
-            lambda x: x.shift(1).expanding().mean()
-        )
-        df["trainerjockeyWOA"] = tj_grp["WOA_raw"].apply(
-            lambda x: x.shift(1).expanding().mean()
-        )
-        df["trainerjockeyCWO"] = tj_grp["WAX_raw"].apply(
-            lambda x: x.shift(1).cumsum()
-        )
+        df.drop(columns=["_tj_key"], inplace=True)
 
         return df
 
@@ -710,13 +717,13 @@ class CustomMetricsEngine:
             if metric in df.columns:
                 df[race_col] = df.groupby("raceid")[metric].transform("mean")
 
-        # Lag race strength per horse (quality of last race's opposition)
+        # Lag race strength per horse
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
-        for col in df.columns:
+        for col in list(df.columns):
             if col.startswith("RACE_") and col != "RACE_WPMRF":
                 df[f"LR_{col}"] = grp[col].shift(1)
 
@@ -730,21 +737,20 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
-        # Count how many of last N runs exist
         for w in self.windows:
             exists = pd.DataFrame(
-                {f"e{i}": grp["race_date"].shift(i).notna().astype(float)
-                 for i in range(1, w + 1)}
+                {
+                    f"e{i}": grp["race_date"].shift(i).notna().astype(float)
+                    for i in range(1, w + 1)
+                }
             )
             df[f"LR{w}COUNT"] = exists.sum(axis=1)
 
-            # Weight sums
             weights = [RECENCY_WEIGHTS[i] for i in range(1, w + 1)]
             df[f"LR{w}wsum"] = (exists * np.array(weights)).sum(axis=1)
 
-        # Confidence intervals
         nr = df["number_of_runners"].replace(0, np.nan)
         for w in self.windows:
             df[f"CIL{w}"] = (df[f"LR{w}COUNT"] / (nr * w)) * 100
@@ -756,13 +762,11 @@ class CustomMetricsEngine:
     # ------------------------------------------------------------------
     def _calc_within_race_ranks(self, df: pd.DataFrame) -> pd.DataFrame:
         """Rank every horse within its race on continuous metrics."""
-        # Restore date sort for race grouping
         df = df.sort_values(
             ["race_date", "race_time", "track"]
         ).reset_index(drop=True)
 
         rank_configs = {
-            # Horse-level
             "rNFP": "preracehorsecareerNFP",
             "rNFPLR3": "LR3NFPtotal",
             "rNFPLR5": "LR5NFPtotal",
@@ -778,19 +782,16 @@ class CustomMetricsEngine:
             "horseRunsrank": "preracehorsecareerRuns",
             "horseWinsrank": "preracehorsecareerWins",
             "horsePlacesrank": "preracehorsecareerPlaces",
-            # ORR2/RWO
             "rORR2LR": "LR_ORR2",
             "rRWOLR3": "LR3_RWO",
             "rRWOLR5": "LR5_RWO",
             "rRWOLR10": "LR10_RWO",
-            # EPF
             "rEPF_LR": "LR_EPF",
             "rEPF2_LR": "LR_EPF2",
             "rEPF3_LR": "LR_EPF3",
             "rJockeyEPF": "Jockey_Career_EPF",
             "rTrainerEPF": "trainer_Career_EPF",
             "rHorseCareerEPF": "Horse_Career_EPF",
-            # Other
             "rDSLR": "FinalDSLR",
             "rFSS": "FSS",
             "rFCS": "FCS",
@@ -808,21 +809,10 @@ class CustomMetricsEngine:
             "rOFS10": "OFS10",
             "rTJWIV": "trainerjockeycareerWIV",
             "rTJNFP": "trainerjockeycareerNFP",
-            # Trainer
-            "trainerRBrank": "preracetrainercareerRB"
-            if "preracetrainercareerRB" in df.columns
-            else None,
-            "trainerNFPrank": "preracetrainercareerNFP"
-            if "preracetrainercareerNFP" in df.columns
-            else None,
             "trainerWIVrank": "preracetrainercareerWIV",
             "trainerWAXrank": "preracetrainercareerWAX",
             "trainerWOArank": "preracetrainercareerWOA",
             "trainerCWOrank": "preracetrainercareerCWO",
-            # Jockey
-            "jockeyNFPrank": "preracejockeycareerNFP"
-            if "preracejockeycareerNFP" in df.columns
-            else None,
             "jockeyWIVrank": "preracejockeycareerWIV",
             "jockeyWAXrank": "preracejockeycareerWAX",
             "jockeyWOArank": "preracejockeycareerWOA",
@@ -831,7 +821,7 @@ class CustomMetricsEngine:
         }
 
         for rank_name, source_col in rank_configs.items():
-            if source_col is None or source_col not in df.columns:
+            if source_col not in df.columns:
                 continue
             df[rank_name] = df.groupby("raceid")[source_col].rank(
                 ascending=False, method="min", na_option="bottom"
