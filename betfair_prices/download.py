@@ -22,11 +22,14 @@ Usage:
     python -m betfair_prices.download --source promo            # Promo site only
     python -m betfair_prices.download --from 2020-01-01         # Custom start date
     python -m betfair_prices.download --workers 10              # Parallel promo downloads
+    python -m betfair_prices.download --proxy http://host:port  # Use proxy for promo
+    python -m betfair_prices.download --proxy-file proxies.txt  # Rotate through proxy list
 """
 
 import argparse
 import logging
 import os
+import random
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
@@ -74,6 +77,36 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+
+# ── Proxy support ─────────────────────────────────────────────────────────
+
+def load_proxies(proxy: str | None = None, proxy_file: str | None = None) -> list[str]:
+    """Load proxy list from a single URL or a file with one proxy per line."""
+    proxies = []
+    if proxy:
+        proxies.append(proxy)
+    if proxy_file and os.path.exists(proxy_file):
+        with open(proxy_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    # Normalise: add http:// if no scheme
+                    if not line.startswith(("http://", "https://", "socks")):
+                        line = "http://" + line
+                    proxies.append(line)
+    return proxies
+
+
+def make_session(proxy: str | None = None) -> requests.Session:
+    """Create a requests session, optionally with a proxy."""
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    })
+    if proxy:
+        session.proxies = {"http": proxy, "https": proxy}
+    return session
 
 
 # ── Automation Hub downloads ──────────────────────────────────────────────
@@ -182,12 +215,13 @@ def download_promo_file(session: requests.Session, filename: str, output_dir: st
 
 
 def download_promo_all(start_date: date, end_date: date, output_dir: str = RAW_DIR,
-                       max_workers: int = 5, markets: list | None = None) -> dict:
+                       max_workers: int = 5, markets: list | None = None,
+                       proxies: list[str] | None = None) -> dict:
     """Download daily Betfair promo price files for the given date range.
 
     NOTE: promo.betfair.com is Cloudflare-protected. This only works from
-    residential IPs, not cloud servers. If you get 403 errors, run this
-    script from your local machine instead.
+    residential IPs or via a proxy. If you get 403 errors, use --proxy or
+    run this script from your local machine.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -205,19 +239,49 @@ def download_promo_all(start_date: date, end_date: date, output_dir: str = RAW_D
     total = len(filenames)
     log.info(f"Promo download: {total} files ({start_date} to {end_date})")
 
-    # Quick test - try first file to detect Cloudflare block
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    })
+    if proxies:
+        log.info(f"Using {len(proxies)} proxy/proxies for downloads")
 
-    test_fn, test_ok, test_msg = download_promo_file(session, filenames[0], output_dir)
-    if "forbidden" in test_msg or "Cloudflare" in test_msg:
-        log.error("Cloudflare block detected. promo.betfair.com requires a residential IP.")
-        log.error("Run this script from your local machine, not a cloud server.")
-        log.error("Skipping promo downloads. Use --source hub for Automation Hub data.")
-        return {"downloaded": 0, "skipped": 0, "not_found": 0, "failed": total,
-                "blocked": True}
+    # Quick test - try first file to detect Cloudflare block
+    # If we have proxies, try each until one works
+    test_proxy = None
+    working_proxies = []
+
+    if proxies:
+        for p in proxies:
+            session = make_session(p)
+            test_fn, test_ok, test_msg = download_promo_file(session, filenames[0], output_dir)
+            if "forbidden" not in test_msg and "Cloudflare" not in test_msg:
+                log.info(f"Proxy working: {p}")
+                test_proxy = p
+                working_proxies.append(p)
+                break
+            else:
+                log.warning(f"Proxy blocked: {p}")
+        if not working_proxies:
+            log.error("All proxies were blocked by Cloudflare.")
+            return {"downloaded": 0, "skipped": 0, "not_found": 0, "failed": total,
+                    "blocked": True}
+        # Test remaining proxies in background
+        for p in proxies:
+            if p != test_proxy:
+                try:
+                    s = make_session(p)
+                    # Use a different test file
+                    _, ok, msg = download_promo_file(s, filenames[min(1, len(filenames)-1)], output_dir)
+                    if "forbidden" not in msg and "Cloudflare" not in msg:
+                        working_proxies.append(p)
+                        log.info(f"Proxy working: {p}")
+                except Exception:
+                    pass
+    else:
+        session = make_session()
+        test_fn, test_ok, test_msg = download_promo_file(session, filenames[0], output_dir)
+        if "forbidden" in test_msg or "Cloudflare" in test_msg:
+            log.error("Cloudflare block detected. promo.betfair.com requires a residential IP.")
+            log.error("Use --proxy or --proxy-file, or run from your local machine.")
+            return {"downloaded": 0, "skipped": 0, "not_found": 0, "failed": total,
+                    "blocked": True}
 
     downloaded = 0
     skipped = 0
@@ -225,15 +289,25 @@ def download_promo_all(start_date: date, end_date: date, output_dir: str = RAW_D
     not_found = 0
 
     # Count the test result
-    if test_ok:
-        if "skipped" in test_msg:
-            skipped += 1
+    if not proxies or test_proxy:
+        if test_ok:
+            if "skipped" in test_msg:
+                skipped += 1
+            else:
+                downloaded += 1
+
+    def _download_with_proxy(fn):
+        """Pick a random working proxy (or none) and download."""
+        if working_proxies:
+            proxy = random.choice(working_proxies)
+            s = make_session(proxy)
         else:
-            downloaded += 1
+            s = make_session()
+        return download_promo_file(s, fn, output_dir)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(download_promo_file, session, fn, output_dir): fn
+            executor.submit(_download_with_proxy, fn): fn
             for fn in filenames[1:]  # Skip first (already tested)
         }
 
@@ -285,10 +359,18 @@ def main():
                         default="all", help="Country for promo (default: all)")
     parser.add_argument("--output", type=str, default=RAW_DIR,
                         help=f"Output directory (default: {RAW_DIR})")
+    parser.add_argument("--proxy", type=str, default=None,
+                        help="Proxy URL for promo downloads (e.g. http://host:port "
+                             "or socks5://host:port)")
+    parser.add_argument("--proxy-file", type=str, default=None,
+                        help="File with proxy URLs, one per line. Proxies are "
+                             "tested and rotated automatically.")
     args = parser.parse_args()
 
     start = date.fromisoformat(args.from_date)
     end = date.fromisoformat(args.to_date) if args.to_date else date.today() - timedelta(days=1)
+
+    proxy_list = load_proxies(args.proxy, args.proxy_file)
 
     if args.source in ("all", "hub"):
         log.info("=== Downloading from Betfair Automation Hub ===")
@@ -302,7 +384,8 @@ def main():
         if args.country != "all":
             markets = [m for m in markets if m[0] == args.country]
 
-        download_promo_all(start, end, args.output, args.workers, markets)
+        download_promo_all(start, end, args.output, args.workers, markets,
+                           proxies=proxy_list if proxy_list else None)
 
 
 if __name__ == "__main__":
