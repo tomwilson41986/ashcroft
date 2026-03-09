@@ -14,3 +14,8 @@ data/betfair_raw/
 
 # Merged output (generated from DB + betfair prices)
 data/merged/
+
+# Trained model artifacts
+data/models/
+bfsp_model.lgb
+model_metrics.json
