@@ -20,6 +20,7 @@ import glob
 import io
 import logging
 import os
+import re
 import sqlite3
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -109,7 +110,11 @@ def backfill(db_path: str, csv_dir: str):
                     total_rows += 1
                     race_date = row.get("racedate", "").strip()
                     track = row.get("track", "").strip()
-                    horse_name = row.get("horse_name", "").strip()
+                    # Strip country suffix: "Horse Name (IRE)" -> "Horse Name"
+                    horse_name = re.sub(
+                        r"\s*\([A-Z]{2,3}\)\s*$", "",
+                        row.get("horse_name", "").strip()
+                    )
 
                     if not race_date or not track or not horse_name:
                         continue
