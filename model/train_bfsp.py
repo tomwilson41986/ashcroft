@@ -67,7 +67,9 @@ def load_data(db_path: str) -> pd.DataFrame:
     # Clean numeric columns
     for col in ["bfsp", "bfsp_place", "ppwap", "morningwap", "ppmax", "ppmin",
                 "ipmax", "ipmin", "number_of_runners", "placing_numerical",
-                "win_result"]:
+                "win_result", "official_rating", "median_or", "max_or_in_race",
+                "horse_age", "stall", "pounds", "odds", "dist_furlongs",
+                "days_since_lr", "career_runs"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # Filter to rows with valid BFSP and cap extreme values
@@ -168,11 +170,233 @@ def _parse_race_type(event_name: str) -> int:
     return 0
 
 
+def _has_data(df: pd.DataFrame, col: str, min_frac: float = 0.01) -> bool:
+    """Check if a column has enough non-null data to be useful."""
+    if col not in df.columns:
+        return False
+    return df[col].notna().mean() >= min_frac
+
+
+def _going_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Going description features: encode going and horse performance by going."""
+    if not _has_data(df, "going_description"):
+        return df
+
+    # Standardise going descriptions
+    going_map = {
+        "firm": 1, "good to firm": 2, "good": 3, "good to soft": 4,
+        "soft": 5, "heavy": 6, "yielding": 4, "yielding to soft": 5,
+        "standard": 3, "standard to slow": 4, "slow": 5, "fast": 2,
+    }
+    df["going_num"] = df["going_description"].str.strip().str.lower().map(going_map)
+
+    # Binary: soft/heavy ground
+    df["is_soft_ground"] = (df["going_num"] >= 5).astype(float)
+    df["is_firm_ground"] = (df["going_num"] <= 2).astype(float)
+
+    # Horse performance on this going type (lagged)
+    if df["going_num"].notna().sum() > 100:
+        df = df.sort_values(["horse_name", "going_num", "race_date"]).reset_index(drop=True)
+        df["hg_runs"] = _grouped_lagged_stat(
+            df, ["horse_name", "going_num"], "won", "cumsum"
+        )
+        hg_grp = df.groupby(["horse_name", "going_num"])
+        df["hg_count"] = hg_grp.cumcount()
+        df["hg_win_rate"] = _grouped_lagged_stat(
+            df, ["horse_name", "going_num"], "won", "expanding_mean"
+        )
+        df["hg_avg_bfsp"] = _grouped_lagged_stat(
+            df, ["horse_name", "going_num"], "log_bfsp", "expanding_mean"
+        )
+
+    return df
+
+
+def _distance_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Distance features: raw distance and horse performance by distance."""
+    if not _has_data(df, "dist_furlongs"):
+        return df
+
+    df["dist_f"] = df["dist_furlongs"].clip(lower=4, upper=36)
+    df["log_dist"] = np.log(df["dist_f"].clip(lower=1))
+
+    # Sprint vs staying: sprint < 7f, middle 7-10f, staying > 10f
+    df["is_sprint"] = (df["dist_f"] < 7).astype(float)
+    df["is_staying"] = (df["dist_f"] > 12).astype(float)
+
+    # Horse performance at similar distances (within 1 furlong, lagged)
+    df["dist_bucket"] = (df["dist_f"] * 2).round() / 2  # Round to nearest 0.5f
+    if df["dist_bucket"].notna().sum() > 100:
+        df = df.sort_values(["horse_name", "dist_bucket", "race_date"]).reset_index(drop=True)
+        df["hd_count"] = df.groupby(["horse_name", "dist_bucket"]).cumcount()
+        df["hd_win_rate"] = _grouped_lagged_stat(
+            df, ["horse_name", "dist_bucket"], "won", "expanding_mean"
+        )
+        df["hd_avg_bfsp"] = _grouped_lagged_stat(
+            df, ["horse_name", "dist_bucket"], "log_bfsp", "expanding_mean"
+        )
+
+    return df
+
+
+def _official_rating_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Official rating features: raw OR, race-relative OR, OR trends."""
+    if not _has_data(df, "official_rating"):
+        return df
+
+    df["or_raw"] = df["official_rating"]
+
+    # OR relative to race average and max
+    race_or_mean = df.groupby("raceid")["official_rating"].transform("mean")
+    race_or_max = df.groupby("raceid")["official_rating"].transform("max")
+    df["or_vs_race_avg"] = df["official_rating"] - race_or_mean
+    df["or_vs_race_max"] = df["official_rating"] - race_or_max
+
+    # OR rank within race (1 = highest OR)
+    df["or_rank"] = df.groupby("raceid")["official_rating"].rank(
+        ascending=False, method="min"
+    )
+
+    # OR trend: current vs horse's previous OR (lagged)
+    df = df.sort_values(["horse_name", "race_date"]).reset_index(drop=True)
+    grp = df.groupby("horse_name")
+    df["or_prev"] = grp["official_rating"].shift(1)
+    df["or_change"] = df["official_rating"] - df["or_prev"]
+    df["or_avg"] = _grouped_lagged_stat(df, "horse_name", "official_rating", "expanding_mean")
+    df["or_vs_own_avg"] = df["official_rating"] - df["or_avg"]
+
+    # Median OR and max OR in race (from DB)
+    if _has_data(df, "median_or"):
+        df["or_vs_median"] = df["official_rating"] - df["median_or"]
+    if _has_data(df, "max_or_in_race"):
+        df["or_vs_max_in_race"] = df["official_rating"] - df["max_or_in_race"]
+
+    return df
+
+
+def _trainer_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Trainer features: career stats, track performance, recent form."""
+    if not _has_data(df, "trainer"):
+        return df
+
+    df = df.sort_values(["trainer", "race_date"]).reset_index(drop=True)
+
+    # Trainer career win rate and runs (lagged)
+    df["tr_runs"] = df.groupby("trainer").cumcount()
+    df["tr_win_rate"] = _grouped_lagged_stat(df, "trainer", "won", "expanding_mean")
+    df["tr_wins"] = _grouped_lagged_stat(df, "trainer", "won", "cumsum")
+
+    # Trainer recent form (last 10 runners)
+    df["tr_recent_wr"] = _grouped_lagged_stat(
+        df, "trainer", "won", "rolling_mean", window=10
+    )
+
+    # Trainer-track combo
+    if df["track"].notna().all():
+        df = df.sort_values(["trainer", "track", "race_date"]).reset_index(drop=True)
+        df["trt_runs"] = df.groupby(["trainer", "track"]).cumcount()
+        df["trt_win_rate"] = _grouped_lagged_stat(
+            df, ["trainer", "track"], "won", "expanding_mean"
+        )
+
+    # Trainer strike rate at this class
+    if "race_class_num" in df.columns:
+        df = df.sort_values(["trainer", "race_class_num", "race_date"]).reset_index(drop=True)
+        df["trc_win_rate"] = _grouped_lagged_stat(
+            df, ["trainer", "race_class_num"], "won", "expanding_mean"
+        )
+
+    return df
+
+
+def _jockey_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Jockey features: career stats, track performance, recent form."""
+    if not _has_data(df, "jockey_name"):
+        return df
+
+    df = df.sort_values(["jockey_name", "race_date"]).reset_index(drop=True)
+
+    # Jockey career win rate and runs (lagged)
+    df["jk_runs"] = df.groupby("jockey_name").cumcount()
+    df["jk_win_rate"] = _grouped_lagged_stat(df, "jockey_name", "won", "expanding_mean")
+    df["jk_wins"] = _grouped_lagged_stat(df, "jockey_name", "won", "cumsum")
+
+    # Jockey recent form (last 10 rides)
+    df["jk_recent_wr"] = _grouped_lagged_stat(
+        df, "jockey_name", "won", "rolling_mean", window=10
+    )
+
+    # Jockey-track combo
+    if df["track"].notna().all():
+        df = df.sort_values(["jockey_name", "track", "race_date"]).reset_index(drop=True)
+        df["jkt_runs"] = df.groupby(["jockey_name", "track"]).cumcount()
+        df["jkt_win_rate"] = _grouped_lagged_stat(
+            df, ["jockey_name", "track"], "won", "expanding_mean"
+        )
+
+    # Jockey-trainer combo
+    if _has_data(df, "trainer"):
+        df = df.sort_values(["jockey_name", "trainer", "race_date"]).reset_index(drop=True)
+        df["jktr_runs"] = df.groupby(["jockey_name", "trainer"]).cumcount()
+        df["jktr_win_rate"] = _grouped_lagged_stat(
+            df, ["jockey_name", "trainer"], "won", "expanding_mean"
+        )
+
+    return df
+
+
+def _horse_profile_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Horse profile features: age, weight, stall, sex, headgear."""
+    # Age
+    if _has_data(df, "horse_age"):
+        df["age"] = df["horse_age"].clip(lower=2, upper=15)
+        df["age_sq"] = df["age"] ** 2  # Quadratic for peak-age effect
+
+    # Weight carried (pounds)
+    if _has_data(df, "pounds"):
+        df["weight_lbs"] = df["pounds"]
+        # Weight relative to race average
+        race_avg_wt = df.groupby("raceid")["pounds"].transform("mean")
+        df["weight_vs_avg"] = df["pounds"] - race_avg_wt
+
+    # Stall/draw position
+    if _has_data(df, "stall"):
+        df["draw"] = df["stall"]
+        n_runners = df.groupby("raceid")["stall"].transform("count")
+        df["draw_pct"] = df["stall"] / n_runners.clip(lower=1)  # 0=inside, 1=outside
+
+    # Horse sex encoding
+    if _has_data(df, "horse_sex"):
+        sex_map = {"c": 0, "f": 1, "g": 2, "m": 3, "h": 4, "r": 5}
+        df["sex_code"] = df["horse_sex"].str.strip().str.lower().map(sex_map)
+
+    # Headgear: binary flags
+    if _has_data(df, "headgear"):
+        df["has_headgear"] = df["headgear"].notna().astype(float)
+        df["first_headgear"] = 0.0
+        # First time headgear = potentially significant
+        df = df.sort_values(["horse_name", "race_date"]).reset_index(drop=True)
+        grp = df.groupby("horse_name")
+        prev_hg = grp["has_headgear"].shift(1)
+        df["first_headgear"] = ((df["has_headgear"] == 1) & (prev_hg == 0)).astype(float)
+
+    # Days since last run
+    if _has_data(df, "days_since_lr"):
+        df["dslr_raw"] = df["days_since_lr"].clip(lower=0, upper=365)
+        df["log_dslr"] = np.log1p(df["dslr_raw"])
+
+    # Career runs
+    if _has_data(df, "career_runs"):
+        df["career_runs_feat"] = df["career_runs"]
+
+    return df
+
+
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
     """Build feature matrix using CustomMetricsEngine + additional features.
 
-    Integrates all metrics from custom_metrics.py plus place market signals
-    and race context parsed from event_name.
+    Integrates all metrics from custom_metrics.py plus place market signals,
+    race context, and rich metadata (trainer, jockey, OR, going, distance).
     """
     df = df.copy()
     df = df.sort_values(["race_date", "raceid"]).reset_index(drop=True)
@@ -198,6 +422,25 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     log.info("Building recency-weighted BSP features...")
     df = _recency_weighted_features(df)
+
+    # --- Phase 3: Rich metadata features (conditional on data availability) ---
+    log.info("Building going features...")
+    df = _going_features(df)
+
+    log.info("Building distance features...")
+    df = _distance_features(df)
+
+    log.info("Building official rating features...")
+    df = _official_rating_features(df)
+
+    log.info("Building trainer features...")
+    df = _trainer_features(df)
+
+    log.info("Building jockey features...")
+    df = _jockey_features(df)
+
+    log.info("Building horse profile features...")
+    df = _horse_profile_features(df)
 
     log.info(f"Feature matrix: {df.shape}")
     return df
@@ -411,6 +654,26 @@ FEATURE_COLS = [
     "rPMW3", "rPMW5", "rPMW10",
     "rOFS3", "rOFS5", "rOFS10",
     "rTJWIV", "rTJNFP",
+    # ── Going ──
+    "going_num", "is_soft_ground", "is_firm_ground",
+    "hg_runs", "hg_count", "hg_win_rate", "hg_avg_bfsp",
+    # ── Distance ──
+    "dist_f", "log_dist", "is_sprint", "is_staying",
+    "hd_count", "hd_win_rate", "hd_avg_bfsp",
+    # ── Official Rating ──
+    "or_raw", "or_vs_race_avg", "or_vs_race_max", "or_rank",
+    "or_change", "or_vs_own_avg", "or_vs_median", "or_vs_max_in_race",
+    # ── Trainer ──
+    "tr_runs", "tr_win_rate", "tr_wins", "tr_recent_wr",
+    "trt_runs", "trt_win_rate", "trc_win_rate",
+    # ── Jockey ──
+    "jk_runs", "jk_win_rate", "jk_wins", "jk_recent_wr",
+    "jkt_runs", "jkt_win_rate", "jktr_runs", "jktr_win_rate",
+    # ── Horse profile ──
+    "age", "age_sq", "weight_lbs", "weight_vs_avg",
+    "draw", "draw_pct", "sex_code",
+    "has_headgear", "first_headgear",
+    "dslr_raw", "log_dslr", "career_runs_feat",
 ]
 
 # Columns for win probability model (classification)
