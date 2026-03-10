@@ -1,0 +1,199 @@
+{
+  "model_type": "bfsp_regression",
+  "target": "log_bfsp",
+  "n_features": 187,
+  "walk_forward_avg": {
+    "wf_log_mae": 0.1942,
+    "wf_log_rmse": 0.2978,
+    "wf_log_r2": 0.7769,
+    "wf_bfsp_mae": 1.6,
+    "wf_median_ape_pct": 13.75,
+    "n_folds": 12
+  },
+  "overall_walk_forward": {
+    "overall_wf_log_mae": 0.1943,
+    "overall_wf_log_rmse": 0.2984,
+    "overall_wf_log_r2": 0.7772,
+    "overall_wf_bfsp_mae": 1.6,
+    "overall_wf_median_ape_pct": 13.72,
+    "overall_wf_mean_ape_pct": 19.33,
+    "overall_wf_correlation": 0.8822
+  },
+  "final_model": {
+    "log_mae": 0.1947,
+    "log_rmse": 0.2956,
+    "log_r2": 0.7713,
+    "bfsp_mae": 1.53,
+    "median_ape_pct": 14.08,
+    "mean_ape_pct": 19.37,
+    "correlation": 0.8788,
+    "best_iteration": 98,
+    "train_size": 70175,
+    "val_size": 7971
+  },
+  "fold_details": [
+    {
+      "log_mae": 0.211,
+      "log_rmse": 0.3341,
+      "log_r2": 0.7505,
+      "bfsp_mae": 1.96,
+      "median_ape_pct": 15.04,
+      "mean_ape_pct": 20.48,
+      "correlation": 0.869,
+      "best_iteration": 92,
+      "train_size": 39587,
+      "val_size": 3162
+    },
+    {
+      "log_mae": 0.1935,
+      "log_rmse": 0.2796,
+      "log_r2": 0.7944,
+      "bfsp_mae": 1.45,
+      "median_ape_pct": 14.12,
+      "mean_ape_pct": 19.47,
+      "correlation": 0.8918,
+      "best_iteration": 90,
+      "train_size": 42749,
+      "val_size": 3282
+    },
+    {
+      "log_mae": 0.195,
+      "log_rmse": 0.3021,
+      "log_r2": 0.7758,
+      "bfsp_mae": 1.7,
+      "median_ape_pct": 13.78,
+      "mean_ape_pct": 19.24,
+      "correlation": 0.8818,
+      "best_iteration": 97,
+      "train_size": 46031,
+      "val_size": 2911
+    },
+    {
+      "log_mae": 0.1907,
+      "log_rmse": 0.291,
+      "log_r2": 0.7792,
+      "bfsp_mae": 1.49,
+      "median_ape_pct": 13.43,
+      "mean_ape_pct": 19.29,
+      "correlation": 0.8828,
+      "best_iteration": 108,
+      "train_size": 48942,
+      "val_size": 3278
+    },
+    {
+      "log_mae": 0.1845,
+      "log_rmse": 0.2819,
+      "log_r2": 0.7775,
+      "bfsp_mae": 1.39,
+      "median_ape_pct": 13.21,
+      "mean_ape_pct": 18.19,
+      "correlation": 0.8826,
+      "best_iteration": 104,
+      "train_size": 52220,
+      "val_size": 2796
+    },
+    {
+      "log_mae": 0.1781,
+      "log_rmse": 0.2646,
+      "log_r2": 0.7842,
+      "bfsp_mae": 1.2,
+      "median_ape_pct": 13.07,
+      "mean_ape_pct": 17.81,
+      "correlation": 0.886,
+      "best_iteration": 108,
+      "train_size": 55016,
+      "val_size": 3327
+    },
+    {
+      "log_mae": 0.2006,
+      "log_rmse": 0.3179,
+      "log_r2": 0.7797,
+      "bfsp_mae": 1.86,
+      "median_ape_pct": 13.25,
+      "mean_ape_pct": 19.77,
+      "correlation": 0.8837,
+      "best_iteration": 136,
+      "train_size": 58343,
+      "val_size": 3573
+    },
+    {
+      "log_mae": 0.1957,
+      "log_rmse": 0.3034,
+      "log_r2": 0.7706,
+      "bfsp_mae": 1.63,
+      "median_ape_pct": 13.84,
+      "mean_ape_pct": 19.47,
+      "correlation": 0.8785,
+      "best_iteration": 88,
+      "train_size": 61916,
+      "val_size": 2958
+    },
+    {
+      "log_mae": 0.1986,
+      "log_rmse": 0.3118,
+      "log_r2": 0.7858,
+      "bfsp_mae": 1.88,
+      "median_ape_pct": 13.5,
+      "mean_ape_pct": 19.78,
+      "correlation": 0.8871,
+      "best_iteration": 115,
+      "train_size": 64874,
+      "val_size": 3035
+    },
+    {
+      "log_mae": 0.1905,
+      "log_rmse": 0.2825,
+      "log_r2": 0.7809,
+      "bfsp_mae": 1.32,
+      "median_ape_pct": 14.1,
+      "mean_ape_pct": 19.45,
+      "correlation": 0.8843,
+      "best_iteration": 95,
+      "train_size": 67909,
+      "val_size": 3161
+    },
+    {
+      "log_mae": 0.1945,
+      "log_rmse": 0.3047,
+      "log_r2": 0.7708,
+      "bfsp_mae": 1.69,
+      "median_ape_pct": 13.67,
+      "mean_ape_pct": 19.05,
+      "correlation": 0.879,
+      "best_iteration": 153,
+      "train_size": 71070,
+      "val_size": 3058
+    },
+    {
+      "log_mae": 0.1977,
+      "log_rmse": 0.2996,
+      "log_r2": 0.7738,
+      "bfsp_mae": 1.59,
+      "median_ape_pct": 13.94,
+      "mean_ape_pct": 19.77,
+      "correlation": 0.8799,
+      "best_iteration": 104,
+      "train_size": 74128,
+      "val_size": 3428
+    }
+  ],
+  "params": {
+    "objective": "regression",
+    "metric": "mae",
+    "boosting_type": "gbdt",
+    "num_leaves": 127,
+    "learning_rate": 0.03,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 5,
+    "min_child_samples": 50,
+    "lambda_l1": 0.1,
+    "lambda_l2": 0.1,
+    "verbose": -1
+  },
+  "data_range": {
+    "min_date": "2024-01-01",
+    "max_date": "2025-12-30",
+    "total_rows": 78146
+  }
+}
