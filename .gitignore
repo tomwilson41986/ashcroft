@@ -21,5 +21,6 @@ data/merged/
 
 # Trained model artifacts
 data/models/
+data/models_backup*/
 bfsp_model.lgb
 model_metrics.json
