@@ -33,18 +33,22 @@ class PreRaceBuilder:
 
     # Horse features to extract from most recent historical appearance
     HORSE_FEATURES = [
+        # Career stats
         "preracehorsecareerRuns",
         "preracehorsecareerWins",
         "preracehorsecareerPlaces",
         "preracehorsecareerNFP",
         "preracehorsecareerRB",
         "preracehorsecareerFSARB",
+        "preracehorsecareerFSARB2",
         "preracehorsecareerWIV",
         "preracehorsecareerWAX",
         "preracehorsecareerWOA",
         "preracehorsecareerCWO",
+        "preracehorsecareerORR2",
         "Horse_Career_EPF",
         "horsepaceindex",
+        # Recent form
         "LRNFP",
         "LR3NFPtotal",
         "LR5NFPtotal",
@@ -52,26 +56,49 @@ class PreRaceBuilder:
         "LR3_RWO",
         "LR5_RWO",
         "LR10_RWO",
+        "LR_ORR2",
+        # EPF lags
+        "LR_EPF",
+        "LR2_EPF",
+        "LR3_EPF",
+        "LR_EPF2",
+        "LR_EPF3",
+        # Volatility
         "FSS",
         "FCS",
+        # Market / probability
         "PFD3",
         "PFD5",
         "PFD10",
+        "OFS1",
+        "OFS3",
+        "OFS5",
+        "OFS10",
+        # Prize money
         "WPMRF3",
         "WPMRF5",
         "WPMRF10",
         "PMW3",
         "PMW5",
         "PMW10",
-        "OFS3",
-        "OFS5",
-        "OFS10",
+        # Timing / freshness
         "FinalDSLR",
+        "DSLR1",
+        # Confidence / data completeness
         "CIL3",
         "CIL5",
         "CIL10",
-        "LR_ORR2",
-        "preracehorsecareerORR2",
+        "LR3COUNT",
+        "LR5COUNT",
+        "LR10COUNT",
+        # LRP momentum
+        "LRPTotalScore",
+        # Last race opposition strength
+        "LR_RACE_RB",
+        "LR_RACE_WIV",
+        "LR_RACE_NFP",
+        "LR_RACE_Wins",
+        "LR_RACE_WOA",
     ]
 
     # Jockey features
@@ -82,6 +109,7 @@ class PreRaceBuilder:
         "preracejockeycareerNFP",
         "preracejockeycareerWAX",
         "preracejockeycareerWOA",
+        "preracejockeycareerCWO",
         "Jockey_Career_EPF",
         "jockeypaceindex",
         "totalLRPjockeyindex",
@@ -95,6 +123,7 @@ class PreRaceBuilder:
         "preracetrainercareerNFP",
         "preracetrainercareerWAX",
         "preracetrainercareerWOA",
+        "preracetrainercareerCWO",
         "trainer_Career_EPF",
         "trainerpaceindex",
     ]
@@ -103,6 +132,9 @@ class PreRaceBuilder:
     TJ_FEATURES = [
         "trainerjockeycareerWIV",
         "trainerjockeycareerNFP",
+        "trainerjockeyWAX",
+        "trainerjockeyWOA",
+        "trainerjockeyCWO",
     ]
 
     # Today's race features (known from declarations)
@@ -115,6 +147,12 @@ class PreRaceBuilder:
         "draw_position",
         "age",
         "is_debut",
+        "official_rating",
+        "jockeys_claim",
+        "headgear_flag",
+        "sex_numeric",
+        "surface_numeric",
+        "race_type_numeric",
     ]
 
     # Derived features computed at prediction time
@@ -126,6 +164,10 @@ class PreRaceBuilder:
         "course_win_pct",
         "course_runs",
         "days_since_last_run",
+        "or_vs_race_max",
+        "or_vs_race_median",
+        "stallion_win_rate",
+        "stallion_runs",
     ]
 
     def __init__(self, history_df: pd.DataFrame):
@@ -143,7 +185,7 @@ class PreRaceBuilder:
             if col in self.history_df.columns:
                 self._medians[col] = self.history_df[col].median()
 
-        # Build horse/jockey/trainer lookup tables (most recent row per entity)
+        # Build horse/jockey/trainer/stallion lookup tables
         self._build_lookups()
 
     def _build_lookups(self):
@@ -181,6 +223,16 @@ class PreRaceBuilder:
                 self._horse_track[(h, t)] = {
                     "runs": len(group),
                     "win_pct": wins / len(group) if len(group) > 0 else 0,
+                }
+
+        # Stallion aggregate stats
+        self._stallion_lookup = {}
+        if "stallion" in hdf.columns:
+            for name, group in hdf.groupby("stallion"):
+                wins = group["won"].sum() if "won" in group.columns else 0
+                self._stallion_lookup[name] = {
+                    "runs": len(group),
+                    "win_rate": wins / len(group) if len(group) > 0 else 0,
                 }
 
     def build_features(
@@ -276,6 +328,42 @@ class PreRaceBuilder:
 
         features["is_debut"] = 1 if is_debut else 0
 
+        # --- Official rating features ---
+        or_val = pd.to_numeric(
+            runner.get("official_rating", np.nan), errors="coerce"
+        )
+        features["official_rating"] = or_val
+
+        # OR relative to race (computed later in _add_field_features if needed)
+        features["or_vs_race_max"] = np.nan  # placeholder, set in field features
+        features["or_vs_race_median"] = np.nan
+
+        # --- Equipment / metadata features ---
+        headgear = str(runner.get("headgear", "")).strip()
+        features["headgear_flag"] = 1 if headgear and headgear != "" else 0
+
+        sex = str(runner.get("horse_sex", "")).lower().strip()
+        features["sex_numeric"] = self._encode_sex(sex)
+
+        features["jockeys_claim"] = pd.to_numeric(
+            runner.get("jockeys_claim", 0), errors="coerce"
+        ) or 0
+
+        surface = str(runner.get("surface_type", "")).lower().strip()
+        features["surface_numeric"] = 1 if "aw" in surface else 0
+
+        race_type = str(runner.get("race_type", "")).lower().strip()
+        features["race_type_numeric"] = self._encode_race_type(race_type)
+
+        # --- Stallion features ---
+        stallion = runner.get("stallion", "")
+        if stallion and stallion in self._stallion_lookup:
+            features["stallion_win_rate"] = self._stallion_lookup[stallion]["win_rate"]
+            features["stallion_runs"] = self._stallion_lookup[stallion]["runs"]
+        else:
+            features["stallion_win_rate"] = 0
+            features["stallion_runs"] = 0
+
         # --- Jockey features ---
         if jockey_name in self._jockey_lookup:
             jockey_row = self._jockey_lookup[jockey_name]
@@ -354,20 +442,69 @@ class PreRaceBuilder:
         ]:
             if col in df.columns:
                 df[name] = df[col].mean()
+
+        # Official rating relative to field
+        if "official_rating" in df.columns:
+            or_col = df["official_rating"]
+            race_max = or_col.max()
+            race_median = or_col.median()
+            df["or_vs_race_max"] = or_col - race_max
+            df["or_vs_race_median"] = or_col - race_median
+
         return df
 
     def _add_within_race_ranks(self, df: pd.DataFrame) -> pd.DataFrame:
         """Rank runners within the race on continuous metrics."""
         rank_cols = {
+            # Horse career ranks
             "rNFP": "preracehorsecareerNFP",
-            "rNFPLR5": "LR5NFPtotal",
-            "horseWIVrank": "preracehorsecareerWIV",
             "horseRBrank": "preracehorsecareerRB",
+            "horseFSARBrank": "preracehorsecareerFSARB",
+            "horseWIVrank": "preracehorsecareerWIV",
+            "horseWAXrank": "preracehorsecareerWAX",
+            "horseWOArank": "preracehorsecareerWOA",
+            "horseCWOrank": "preracehorsecareerCWO",
+            "horseRunsrank": "preracehorsecareerRuns",
+            "horseWinsrank": "preracehorsecareerWins",
+            # Recent form ranks
+            "rNFPLR3": "LR3NFPtotal",
+            "rNFPLR5": "LR5NFPtotal",
+            "rNFPLR10": "LR10NFPtotal",
+            "rRWOLR3": "LR3_RWO",
             "rRWOLR5": "LR5_RWO",
             "rRWOLR10": "LR10_RWO",
+            "rORR2LR": "LR_ORR2",
+            # Market / probability ranks
+            "rPFD3": "PFD3",
             "rPFD5": "PFD5",
+            "rPFD10": "PFD10",
+            "rOFS3": "OFS3",
+            "rOFS5": "OFS5",
+            "rOFS10": "OFS10",
+            # Prize money ranks
+            "rWPMRF5": "WPMRF5",
+            "rPMW5": "PMW5",
+            # EPF / pace ranks
+            "rEPF_LR": "LR_EPF",
+            "rHorseCareerEPF": "Horse_Career_EPF",
+            "rJockeyEPF": "Jockey_Career_EPF",
+            "rTrainerEPF": "trainer_Career_EPF",
+            # Volatility
             "rFSS": "FSS",
             "rFCS": "FCS",
+            "rDSLR": "FinalDSLR",
+            # Jockey/trainer ranks
+            "jockeyWIVrank": "preracejockeycareerWIV",
+            "jockeyWAXrank": "preracejockeycareerWAX",
+            "trainerWIVrank": "preracetrainercareerWIV",
+            "trainerWAXrank": "preracetrainercareerWAX",
+            # Trainer-jockey
+            "rTJWIV": "trainerjockeycareerWIV",
+            "rTJNFP": "trainerjockeycareerNFP",
+            # Jockey momentum
+            "jockeyLRIrank": "totalLRPjockeyindex",
+            # OR rank
+            "orRank": "official_rating",
         }
         for rank_name, source_col in rank_cols.items():
             if source_col in df.columns:
@@ -375,6 +512,27 @@ class PreRaceBuilder:
                     ascending=False, method="min", na_option="bottom"
                 )
         return df
+
+    @staticmethod
+    def _encode_sex(sex: str) -> float:
+        """Encode horse sex to numeric."""
+        sex_map = {
+            "gelding": 1.0, "colt": 2.0, "filly": 3.0,
+            "mare": 4.0, "horse": 5.0, "rig": 6.0,
+        }
+        return sex_map.get(sex, 0.0)
+
+    @staticmethod
+    def _encode_race_type(race_type: str) -> float:
+        """Encode race type to numeric."""
+        rt_map = {
+            "flat": 1.0, "hurdle": 2.0, "chase": 3.0,
+            "nh flat": 4.0, "bumper": 4.0,
+        }
+        for key, val in rt_map.items():
+            if key in race_type:
+                return val
+        return 0.0
 
     @staticmethod
     def _encode_going(going: str) -> float:
@@ -456,6 +614,33 @@ class PreRaceBuilder:
 
     def get_feature_columns(self) -> list[str]:
         """Return the full list of feature column names for the model."""
+        # Within-race rank features
+        rank_features = [
+            # Horse career ranks
+            "rNFP", "horseRBrank", "horseFSARBrank",
+            "horseWIVrank", "horseWAXrank", "horseWOArank",
+            "horseCWOrank", "horseRunsrank", "horseWinsrank",
+            # Recent form ranks
+            "rNFPLR3", "rNFPLR5", "rNFPLR10",
+            "rRWOLR3", "rRWOLR5", "rRWOLR10", "rORR2LR",
+            # Market / probability ranks
+            "rPFD3", "rPFD5", "rPFD10",
+            "rOFS3", "rOFS5", "rOFS10",
+            # Prize money ranks
+            "rWPMRF5", "rPMW5",
+            # EPF / pace ranks
+            "rEPF_LR", "rHorseCareerEPF", "rJockeyEPF", "rTrainerEPF",
+            # Volatility
+            "rFSS", "rFCS", "rDSLR",
+            # Jockey/trainer ranks
+            "jockeyWIVrank", "jockeyWAXrank",
+            "trainerWIVrank", "trainerWAXrank",
+            # Trainer-jockey
+            "rTJWIV", "rTJNFP",
+            # Other
+            "jockeyLRIrank", "orRank",
+        ]
+
         cols = (
             self.HORSE_FEATURES
             + self.JOCKEY_FEATURES
@@ -470,15 +655,7 @@ class PreRaceBuilder:
                 "field_avg_career_nfp",
                 "field_avg_career_wiv",
                 "field_avg_career_rb",
-                "rNFP",
-                "rNFPLR5",
-                "horseWIVrank",
-                "horseRBrank",
-                "rRWOLR5",
-                "rRWOLR10",
-                "rPFD5",
-                "rFSS",
-                "rFCS",
             ]
+            + rank_features
         )
         return cols
