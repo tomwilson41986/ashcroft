@@ -25,6 +25,7 @@ Usage:
 """
 
 from model.benter_blend import BenterBlender
+from model.conditional_logit import BenterConditionalLogit
 from model.custom_metrics import CustomMetricsEngine
 from model.evaluator import ModelEvaluator
 from model.overlay_detector import OverlayDetector
@@ -37,6 +38,7 @@ __all__ = [
     "PreRaceBuilder",
     "FundamentalModel",
     "BenterBlender",
+    "BenterConditionalLogit",
     "OverlayDetector",
     "ModelTrainer",
     "ModelEvaluator",
