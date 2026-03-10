@@ -1,0 +1,273 @@
+{
+  "n_folds": 12,
+  "feature_cols": [
+    "preracehorsecareerRuns",
+    "preracehorsecareerWins",
+    "preracehorsecareerPlaces",
+    "preracehorsecareerNFP",
+    "preracehorsecareerRB",
+    "preracehorsecareerFSARB",
+    "preracehorsecareerWIV",
+    "preracehorsecareerWAX",
+    "preracehorsecareerWOA",
+    "preracehorsecareerCWO",
+    "Horse_Career_EPF",
+    "horsepaceindex",
+    "LRNFP",
+    "LR3NFPtotal",
+    "LR5NFPtotal",
+    "LR10NFPtotal",
+    "LR3_RWO",
+    "LR5_RWO",
+    "LR10_RWO",
+    "FSS",
+    "FCS",
+    "PFD3",
+    "PFD5",
+    "PFD10",
+    "WPMRF3",
+    "WPMRF5",
+    "WPMRF10",
+    "PMW3",
+    "PMW5",
+    "PMW10",
+    "OFS3",
+    "OFS5",
+    "OFS10",
+    "FinalDSLR",
+    "CIL3",
+    "CIL5",
+    "CIL10",
+    "LR_ORR2",
+    "preracehorsecareerORR2",
+    "preracejockeycareerWins",
+    "preracejockeycareerRuns",
+    "preracejockeycareerWIV",
+    "preracejockeycareerWAX",
+    "preracejockeycareerWOA",
+    "Jockey_Career_EPF",
+    "jockeypaceindex",
+    "totalLRPjockeyindex",
+    "preracetrainercareerWins",
+    "preracetrainercareerRuns",
+    "preracetrainercareerWIV",
+    "preracetrainercareerWAX",
+    "preracetrainercareerWOA",
+    "trainer_Career_EPF",
+    "trainerpaceindex",
+    "trainerjockeycareerWIV",
+    "trainerjockeycareerNFP",
+    "number_of_runners",
+    "dist_furlongs",
+    "rNFP",
+    "rNFPLR5",
+    "horseWIVrank",
+    "horseRBrank",
+    "rRWOLR5",
+    "rRWOLR10",
+    "rPFD5",
+    "rFSS",
+    "rFCS"
+  ],
+  "final_model_metrics": {
+    "val_logloss_raw": 0.308377,
+    "val_logloss_normalised": 0.308017,
+    "best_iteration": 102,
+    "n_features": 67,
+    "train_size": 68523,
+    "val_size": 8264
+  },
+  "walk_forward_metrics": [
+    {
+      "val_logloss_raw": 0.307866,
+      "val_logloss_normalised": 0.305613,
+      "best_iteration": 26,
+      "n_features": 67,
+      "train_size": 19133,
+      "val_size": 2834
+    },
+    {
+      "val_logloss_raw": 0.308732,
+      "val_logloss_normalised": 0.307517,
+      "best_iteration": 46,
+      "n_features": 67,
+      "train_size": 23429,
+      "val_size": 3129
+    },
+    {
+      "val_logloss_raw": 0.312152,
+      "val_logloss_normalised": 0.310086,
+      "best_iteration": 46,
+      "n_features": 67,
+      "train_size": 28403,
+      "val_size": 2961
+    },
+    {
+      "val_logloss_raw": 0.309704,
+      "val_logloss_normalised": 0.308981,
+      "best_iteration": 81,
+      "n_features": 67,
+      "train_size": 32813,
+      "val_size": 3511
+    },
+    {
+      "val_logloss_raw": 0.30802,
+      "val_logloss_normalised": 0.307571,
+      "best_iteration": 65,
+      "n_features": 67,
+      "train_size": 38772,
+      "val_size": 2816
+    },
+    {
+      "val_logloss_raw": 0.303762,
+      "val_logloss_normalised": 0.302511,
+      "best_iteration": 45,
+      "n_features": 67,
+      "train_size": 43906,
+      "val_size": 2576
+    },
+    {
+      "val_logloss_raw": 0.308214,
+      "val_logloss_normalised": 0.30771,
+      "best_iteration": 73,
+      "n_features": 67,
+      "train_size": 48482,
+      "val_size": 2854
+    },
+    {
+      "val_logloss_raw": 0.307573,
+      "val_logloss_normalised": 0.306681,
+      "best_iteration": 56,
+      "n_features": 67,
+      "train_size": 52724,
+      "val_size": 2598
+    },
+    {
+      "val_logloss_raw": 0.307651,
+      "val_logloss_normalised": 0.307192,
+      "best_iteration": 77,
+      "n_features": 67,
+      "train_size": 56530,
+      "val_size": 2729
+    },
+    {
+      "val_logloss_raw": 0.302508,
+      "val_logloss_normalised": 0.302039,
+      "best_iteration": 78,
+      "n_features": 67,
+      "train_size": 60844,
+      "val_size": 2782
+    },
+    {
+      "val_logloss_raw": 0.30757,
+      "val_logloss_normalised": 0.307261,
+      "best_iteration": 113,
+      "n_features": 67,
+      "train_size": 65294,
+      "val_size": 3508
+    },
+    {
+      "val_logloss_raw": 0.304508,
+      "val_logloss_normalised": 0.304072,
+      "best_iteration": 78,
+      "n_features": 67,
+      "train_size": 70667,
+      "val_size": 3377
+    }
+  ],
+  "optimal_lambda": 1.0,
+  "evaluation": {
+    "log_loss": 0.296931,
+    "brier_score": 0.082624,
+    "f2_statistic": 0.038608,
+    "auc_roc": 0.676469,
+    "top_1_accuracy": 0.1942,
+    "top_2_accuracy": 0.3638,
+    "top_3_accuracy": 0.5061,
+    "favourite_accuracy": 0.1942,
+    "calibration_table": [
+      {
+        "bin": "(0.00527, 0.0556]",
+        "count": 3568,
+        "avg_predicted": 0.0442,
+        "actual_win_rate": 0.0174
+      },
+      {
+        "bin": "(0.0556, 0.0636]",
+        "count": 3567,
+        "avg_predicted": 0.0599,
+        "actual_win_rate": 0.0384
+      },
+      {
+        "bin": "(0.0636, 0.0699]",
+        "count": 3568,
+        "avg_predicted": 0.0668,
+        "actual_win_rate": 0.0547
+      },
+      {
+        "bin": "(0.0699, 0.0762]",
+        "count": 3567,
+        "avg_predicted": 0.073,
+        "actual_win_rate": 0.072
+      },
+      {
+        "bin": "(0.0762, 0.0834]",
+        "count": 3568,
+        "avg_predicted": 0.0796,
+        "actual_win_rate": 0.0849
+      },
+      {
+        "bin": "(0.0834, 0.0922]",
+        "count": 3567,
+        "avg_predicted": 0.0876,
+        "actual_win_rate": 0.0903
+      },
+      {
+        "bin": "(0.0922, 0.104]",
+        "count": 3567,
+        "avg_predicted": 0.0978,
+        "actual_win_rate": 0.0992
+      },
+      {
+        "bin": "(0.104, 0.121]",
+        "count": 3568,
+        "avg_predicted": 0.1118,
+        "actual_win_rate": 0.1281
+      },
+      {
+        "bin": "(0.121, 0.152]",
+        "count": 3567,
+        "avg_predicted": 0.135,
+        "actual_win_rate": 0.1461
+      },
+      {
+        "bin": "(0.152, 0.393]",
+        "count": 3568,
+        "avg_predicted": 0.188,
+        "actual_win_rate": 0.2127
+      }
+    ],
+    "avg_prob_sum": 1.0,
+    "median_prob_sum": 1.0,
+    "betting_n_bets": 993,
+    "betting_n_winners": 115,
+    "betting_strike_rate": 0.1158,
+    "betting_total_staked": 8247.68,
+    "betting_total_pl": 3096.71,
+    "betting_roi_pct": 37.55,
+    "max_drawdown": -98.2,
+    "sharpe_ratio": 0.3832,
+    "longest_losing_streak": 6,
+    "market_logloss": 0.491299,
+    "model_vs_market_improvement": 0.194368,
+    "random_logloss": 0.306253,
+    "n_predictions": 35675,
+    "n_winners": 3367,
+    "base_rate": 0.09438
+  },
+  "data_range": {
+    "min_date": "2024-01-01",
+    "max_date": "2025-12-30",
+    "total_rows": 76787
+  }
+}
