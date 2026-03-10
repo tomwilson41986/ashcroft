@@ -448,6 +448,8 @@ def main():
                         help="Full scrape from 2010-01-01 to today")
     parser.add_argument("--db", type=str, default=DB_PATH,
                         help=f"Database path (default: {DB_PATH})")
+    parser.add_argument("--no-backup", action="store_true",
+                        help="Skip S3 backup after scraping")
     args = parser.parse_args()
 
     yesterday = date.today() - timedelta(days=1)
@@ -474,6 +476,14 @@ def main():
         return
 
     scrape_date_range(start, end, args.db)
+
+    if not args.no_backup:
+        log.info("Backing up database to S3...")
+        try:
+            from backup_to_s3 import upload_db
+            upload_db(versioned=False)
+        except Exception as e:
+            log.warning(f"S3 backup failed (non-fatal): {e}")
 
 
 if __name__ == "__main__":
