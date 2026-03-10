@@ -1,0 +1,145 @@
+name: Daily Racing Predictions
+
+on:
+  schedule:
+    # Run at 07:00 UTC every day (racecards typically available by then)
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Target date (YYYY-MM-DD). Leave empty for today.'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run (print predictions, skip email)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  PYTHON_VERSION: '3.11'
+  S3_BUCKET: ashcroft-racing-data
+  S3_DB_KEY: horse_racing.db
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download historic data from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'eu-west-1' }}
+        run: |
+          python scripts/fetch_data.py \
+            --db-only \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-key "$S3_DB_KEY"
+
+      - name: Download model from GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/fetch_data.py \
+            --model-only \
+            --github-repo "${{ github.repository }}"
+
+      - name: Determine target date
+        id: date
+        run: |
+          if [ -n "${{ inputs.date }}" ]; then
+            echo "target=${{ inputs.date }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run daily predictions
+        env:
+          HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
+          HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          FLAGS="--date ${{ steps.date.outputs.target }}"
+
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+          fi
+
+          python daily_predictions.py $FLAGS
+
+      - name: Upload predictions artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predictions-${{ steps.date.outputs.target }}
+          path: |
+            csv/racecards/
+            daily_predictions.log
+          retention-days: 30
+
+  # Scrape latest results and update S3 database (runs after predictions)
+  update-database:
+    runs-on: ubuntu-latest
+    needs: predict
+    if: always()
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download current database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'eu-west-1' }}
+        run: |
+          python scripts/fetch_data.py \
+            --db-only \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-key "$S3_DB_KEY"
+
+      - name: Scrape yesterday's results
+        env:
+          HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
+          HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
+        run: |
+          YESTERDAY=$(date -d "yesterday" +%Y-%m-%d 2>/dev/null || date -v-1d +%Y-%m-%d)
+          python scraper.py --from "$YESTERDAY" --to "$YESTERDAY"
+
+      - name: Upload updated database to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'eu-west-1' }}
+        run: |
+          python scripts/fetch_data.py \
+            --upload-db \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-key "$S3_DB_KEY"
