@@ -168,193 +168,188 @@ def download_racecard_csv(
 def scrape_racecard_html(
     session: requests.Session, target_date: date
 ) -> pd.DataFrame | None:
-    """Scrape today's racecards from the HTML page as fallback.
+    """Scrape today's racecards from the onedayracecards.php page.
 
-    Navigates the horse-racing-today.php page, extracts race links,
-    and scrapes each race page for runner details.
+    This page contains all races for the day in structured tables,
+    each preceded by span elements with race metadata (time, track,
+    class, distance, going, prize money).
     """
-    log.info("Attempting HTML racecard scrape...")
-    resp = session.get(TODAY_URL)
+    log.info("Attempting HTML racecard scrape from onedayracecards.php...")
+    racecard_url = f"{BASE_URL}/onedayracecards.php"
+    resp = session.get(racecard_url)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "lxml")
 
-    # Find race links - HRB uses links like horse-racing-card.php?raceid=...
-    race_links = []
-    for a_tag in soup.find_all("a", href=True):
-        href = a_tag["href"]
-        if "horse-racing-card" in href or "racecards" in href:
-            if href.startswith("/"):
-                href = BASE_URL + href
-            elif not href.startswith("http"):
-                href = BASE_URL + "/" + href
-            race_links.append(href)
-
-    # Deduplicate
-    race_links = list(dict.fromkeys(race_links))
-    log.info(f"Found {len(race_links)} race links")
-
-    if not race_links:
-        # Try finding links in a different format
-        for a_tag in soup.find_all("a", href=True):
-            href = a_tag["href"]
-            if "race" in href.lower() and "card" in href.lower():
-                if href.startswith("/"):
-                    href = BASE_URL + href
-                elif not href.startswith("http"):
-                    href = BASE_URL + "/" + href
-                race_links.append(href)
-        race_links = list(dict.fromkeys(race_links))
-
     all_runners = []
+    race_count = 0
 
-    for link in race_links:
-        try:
-            import time
-            time.sleep(1.5)  # Rate limiting
-            race_resp = session.get(link)
-            race_resp.raise_for_status()
-            runners = _parse_race_page(race_resp.text, target_date)
-            all_runners.extend(runners)
-        except Exception as e:
-            log.warning(f"Error scraping {link}: {e}")
+    # Find race tables: those whose first row starts with 'No.'
+    for table in soup.find_all("table"):
+        rows = table.find_all("tr")
+        if not rows:
             continue
+        header_cells = rows[0].find_all(["td", "th"])
+        header_texts = [c.get_text(strip=True) for c in header_cells]
+        if not header_texts or header_texts[0] != "No." or len(header_texts) < 8:
+            continue
+
+        # Build column index from header
+        col_idx = {}
+        for i, h in enumerate(header_texts):
+            col_idx[h] = i
+
+        # Extract race metadata from preceding span elements
+        track = ""
+        race_time = ""
+        going = ""
+        race_class = ""
+        race_distance = ""
+        prize_money = ""
+        num_runners_declared = 0
+        race_name = ""
+
+        prev_spans = []
+        prev = table.find_previous_sibling()
+        while prev and len(prev_spans) < 5:
+            if prev.name == "span":
+                prev_spans.insert(0, prev.get_text(strip=True))
+            elif prev.name == "table":
+                break
+            prev = prev.find_previous_sibling()
+
+        for span_text in prev_spans:
+            # Pattern: "1.20 Cheltenham(11 runners)"
+            time_track = re.match(
+                r"(\d{1,2}\.\d{2})\s+(.+?)(?:\((\d+)\s*runners?\))?$",
+                span_text,
+            )
+            if time_track:
+                race_time = time_track.group(1).replace(".", ":")
+                track = time_track.group(2).strip()
+                if time_track.group(3):
+                    num_runners_declared = int(time_track.group(3))
+                continue
+
+            # Pattern: "Class 1, 2m½f , Good To Soft, 4yo+, Win: £84405"
+            info_match = re.match(
+                r"(?:(?:Grade\s*\d|Class\s*\d)[^,]*)?,?\s*(.*)", span_text
+            )
+            class_match = re.search(r"(Grade\s*\d|Class\s*\d)", span_text, re.I)
+            if class_match:
+                race_class = class_match.group(1)
+
+            going_match = re.search(
+                r"(Heavy|Soft|Good To Soft|Good To Firm|Good|Firm|Hard|"
+                r"Standard To Slow|Standard|Slow|Yielding)",
+                span_text, re.I,
+            )
+            if going_match:
+                going = going_match.group(1)
+
+            dist_match = re.search(
+                r"(\d+m\S*f?\s*\S*|\d+f\S*)", span_text
+            )
+            if dist_match:
+                race_distance = dist_match.group(1).strip().rstrip(",")
+
+            prize_match = re.search(r"Win:\s*£([\d,]+)", span_text)
+            if prize_match:
+                prize_money = prize_match.group(1)
+
+            # If no time/track matched, it might be the race name
+            if not time_track and not class_match and not going_match:
+                race_name = span_text
+
+        # Determine if this race has a 'Stall' column (flat races)
+        has_stall = "Stall" in col_idx
+
+        # Parse runner rows
+        race_runners = []
+        for row in rows[1:]:  # Skip header
+            cells = row.find_all(["td", "th"])
+            cell_texts = [c.get_text(strip=True) for c in cells]
+
+            if len(cell_texts) < 8:
+                continue
+
+            # Skip rows where first cell is not a number (e.g. stallion notes)
+            if not cell_texts[0].isdigit():
+                continue
+
+            runner = {
+                "race_date": target_date.isoformat(),
+                "race_time": race_time,
+                "track": track,
+                "going_description": going,
+                "race_class": race_class,
+                "race_distance": race_distance,
+                "prize_money": prize_money,
+                "race_name": race_name,
+            }
+
+            # Parse by known column positions
+            if "No." in col_idx:
+                runner["stall"] = _safe_int(cell_texts[col_idx["No."]])
+            if "Horse" in col_idx:
+                runner["horse_name"] = cell_texts[col_idx["Horse"]]
+            if "Age" in col_idx:
+                runner["horse_age"] = _safe_int(cell_texts[col_idx["Age"]])
+            if "Weight" in col_idx:
+                weight_match = re.match(
+                    r"^(\d{1,2})-(\d{1,2})$",
+                    cell_texts[col_idx["Weight"]],
+                )
+                if weight_match:
+                    stones = int(weight_match.group(1))
+                    lbs = int(weight_match.group(2))
+                    runner["pounds"] = stones * 14 + lbs
+            if "Jockey" in col_idx:
+                runner["jockey_name"] = cell_texts[col_idx["Jockey"]]
+            if "Trainer" in col_idx:
+                runner["trainer"] = cell_texts[col_idx["Trainer"]]
+            if "OR" in col_idx:
+                runner["official_rating"] = _safe_int(cell_texts[col_idx["OR"]])
+            if "Headgear" in col_idx:
+                runner["headgear"] = cell_texts[col_idx["Headgear"]]
+            if "Days" in col_idx:
+                days_text = cell_texts[col_idx["Days"]]
+                if days_text.isdigit():
+                    runner["days_since_lr"] = int(days_text)
+            if has_stall and "Stall" in col_idx:
+                runner["stall"] = _safe_int(cell_texts[col_idx["Stall"]])
+            if "Odds" in col_idx:
+                odds_text = cell_texts[col_idx["Odds"]]
+                odds_match = re.match(r"^(\d+)/(\d+)$", odds_text)
+                if odds_match:
+                    num = int(odds_match.group(1))
+                    den = int(odds_match.group(2))
+                    runner["odds"] = num / den + 1  # Convert to decimal
+
+            if runner.get("horse_name"):
+                race_runners.append(runner)
+
+        # Set number of runners for this race
+        num_runners = len(race_runners)
+        for r in race_runners:
+            r["number_of_runners"] = num_runners
+
+        all_runners.extend(race_runners)
+        race_count += 1
 
     if not all_runners:
         return None
 
     df = pd.DataFrame(all_runners)
-    log.info(f"Scraped {len(df)} runners from {len(race_links)} races")
+    log.info(f"Scraped {len(df)} runners from {race_count} races")
     return df
 
 
-def _parse_race_page(html: str, target_date: date) -> list[dict]:
-    """Parse a single race page to extract runner information."""
-    soup = BeautifulSoup(html, "lxml")
-    runners = []
-
-    # Extract race metadata from page
-    track = ""
-    race_time = ""
-    distance = ""
-    going = ""
-    race_class = ""
-    prize_money = ""
-    num_runners = 0
-
-    # Try to find race header info
-    title = soup.find("title")
-    if title:
-        title_text = title.get_text()
-        # Parse track from title e.g. "Cheltenham 14:30 Race Card"
-        parts = title_text.split()
-        if parts:
-            track = parts[0]
-
-    # Look for race info elements
-    for el in soup.find_all(["h1", "h2", "h3", "div", "span"]):
-        text = el.get_text(strip=True)
-        # Time pattern
-        time_match = re.search(r"(\d{1,2}:\d{2})", text)
-        if time_match and not race_time:
-            race_time = time_match.group(1)
-        # Distance
-        dist_match = re.search(
-            r"(\d+[mf]\s*\d*[yf]?|\d+\s*furlongs?|\d+\s*miles?)", text, re.I
-        )
-        if dist_match and not distance:
-            distance = dist_match.group(1)
-        # Going
-        going_match = re.search(
-            r"(Heavy|Soft|Good to Soft|Good to Firm|Good|Firm|Hard|"
-            r"Standard to Slow|Standard|Slow|Yielding)",
-            text, re.I,
-        )
-        if going_match and not going:
-            going = going_match.group(1)
-        # Class
-        class_match = re.search(r"Class\s*(\d)", text, re.I)
-        if class_match and not race_class:
-            race_class = class_match.group(1)
-
-    # Find runner table rows
-    tables = soup.find_all("table")
-    for table in tables:
-        rows = table.find_all("tr")
-        for row in rows[1:]:  # Skip header
-            cells = row.find_all(["td", "th"])
-            if len(cells) < 4:
-                continue
-
-            cell_texts = [c.get_text(strip=True) for c in cells]
-
-            # Try to identify horse name, jockey, trainer from cell content
-            runner = _extract_runner_from_cells(cell_texts, cells)
-            if runner and runner.get("horse_name"):
-                runner["race_date"] = target_date.isoformat()
-                runner["race_time"] = race_time
-                runner["track"] = track
-                runner["going_description"] = going
-                runner["race_class"] = race_class
-                runner["race_distance"] = distance
-                runner["prize_money"] = prize_money
-                num_runners += 1
-                runners.append(runner)
-
-    # Set number of runners
-    for r in runners:
-        r["number_of_runners"] = len(runners)
-
-    return runners
-
-
-def _extract_runner_from_cells(
-    cell_texts: list[str], cells: list
-) -> dict | None:
-    """Extract runner details from table cells using heuristics."""
-    runner = {}
-
-    for i, text in enumerate(cell_texts):
-        text_lower = text.lower()
-
-        # Stall/draw number (usually first column, small integer)
-        if i == 0 and text.isdigit() and int(text) <= 30:
-            runner["stall"] = int(text)
-
-        # Horse name (usually has a link, text is capitalised)
-        link = cells[i].find("a") if i < len(cells) else None
-        if link and not runner.get("horse_name"):
-            link_text = link.get_text(strip=True)
-            link_href = link.get("href", "")
-            if (
-                "horse" in link_href.lower()
-                or len(link_text) > 2
-                and not link_text.isdigit()
-            ):
-                runner["horse_name"] = link_text
-
-        # Weight (e.g., "11-4", "9-0")
-        weight_match = re.match(r"^(\d{1,2})-(\d{1,2})$", text)
-        if weight_match:
-            stones = int(weight_match.group(1))
-            lbs = int(weight_match.group(2))
-            runner["pounds"] = stones * 14 + lbs
-
-        # Age (small integer, usually 2-12)
-        if text.isdigit() and 2 <= int(text) <= 15 and "horse_age" not in runner:
-            runner["horse_age"] = int(text)
-
-        # Official rating
-        if text.isdigit() and 30 <= int(text) <= 200:
-            runner["official_rating"] = int(text)
-
-        # Odds (e.g., "5/1", "11/2")
-        odds_match = re.match(r"^(\d+)/(\d+)$", text)
-        if odds_match:
-            num = int(odds_match.group(1))
-            den = int(odds_match.group(2))
-            runner["odds"] = num / den + 1  # Convert to decimal
-
-    return runner if runner.get("horse_name") else None
+def _safe_int(text: str) -> int | None:
+    """Convert text to int, returning None if not a valid integer."""
+    try:
+        return int(text)
+    except (ValueError, TypeError):
+        return None
 
 
 def save_racecard_csv(csv_text: str, target_date: date) -> str:
@@ -502,6 +497,12 @@ def build_features_for_runners(
 
     # Ensure required columns exist with correct names
     if "race_class" in runners.columns:
+        # Extract numeric class from strings like "Class 5" or "Grade 1"
+        runners["race_class"] = (
+            runners["race_class"]
+            .astype(str)
+            .str.extract(r"(\d+)", expand=False)
+        )
         runners["race_class"] = pd.to_numeric(
             runners["race_class"], errors="coerce"
         )
@@ -538,11 +539,16 @@ def build_features_for_runners(
 
 
 def _parse_distance_to_furlongs(distance_series: pd.Series) -> pd.Series:
-    """Convert distance strings like '2m 4f' or '7f' to furlongs."""
+    """Convert distance strings like '2m½f', '2m 4f', or '7f' to furlongs."""
     def convert(val):
         if pd.isna(val):
             return np.nan
-        s = str(val).lower().strip()
+        s = str(val).strip()
+
+        # Replace Unicode fractions
+        s = s.replace("½", ".5").replace("¼", ".25").replace("¾", ".75")
+
+        s = s.lower()
 
         # Try direct numeric
         try:
@@ -551,15 +557,15 @@ def _parse_distance_to_furlongs(distance_series: pd.Series) -> pd.Series:
             pass
 
         miles = 0
-        furlongs = 0
+        furlongs = 0.0
         yards = 0
 
-        m_match = re.search(r"(\d+)\s*m", s)
+        m_match = re.search(r"(\d+(?:\.\d+)?)\s*m", s)
         if m_match:
-            miles = int(m_match.group(1))
-        f_match = re.search(r"(\d+)\s*f", s)
+            miles = float(m_match.group(1))
+        f_match = re.search(r"(\d+(?:\.\d+)?)\s*f", s)
         if f_match:
-            furlongs = int(f_match.group(1))
+            furlongs = float(f_match.group(1))
         y_match = re.search(r"(\d+)\s*y", s)
         if y_match:
             yards = int(y_match.group(1))
