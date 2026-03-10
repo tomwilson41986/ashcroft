@@ -124,8 +124,8 @@ class ModelTrainer:
             builder = PreRaceBuilder(df)
             feature_cols = builder.get_feature_columns()
 
-        # Filter to available columns
-        available_features = [c for c in feature_cols if c in df.columns]
+        # Filter to available columns and deduplicate
+        available_features = list(dict.fromkeys(c for c in feature_cols if c in df.columns))
         log.info(f"  Using {len(available_features)} features")
 
         # Create folds

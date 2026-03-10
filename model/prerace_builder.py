@@ -80,9 +80,6 @@ class PreRaceBuilder:
         "preracejockeycareerRuns",
         "preracejockeycareerWIV",
         "preracejockeycareerNFP",
-        "preracejockeycareerRB"
-        if False
-        else "preracejockeycareerWAX",  # RB not computed for jockey
         "preracejockeycareerWAX",
         "preracejockeycareerWOA",
         "Jockey_Career_EPF",
