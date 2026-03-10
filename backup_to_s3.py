@@ -1,13 +1,20 @@
 """
-Backup horse_racing.db to S3 bucket 'horseracingresults'.
+Backup horse_racing.db to S3.
 
 Usage:
     python backup_to_s3.py              # Upload current DB
     python backup_to_s3.py --versioned  # Upload with date-stamped copy
 
 Requires AWS credentials configured via:
-    - ~/.aws/credentials
-    - or environment variables AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+    - Environment variables AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+    - or ~/.aws/credentials
+
+Environment variables:
+    AWS_ACCESS_KEY_ID       - AWS access key
+    AWS_SECRET_ACCESS_KEY   - AWS secret key
+    AWS_DEFAULT_REGION      - AWS region (default: eu-west-1)
+    S3_BUCKET               - S3 bucket name (default: ashcroft-racing-data)
+    S3_DB_KEY               - S3 object key (default: horse_racing.db)
 """
 
 import logging
@@ -17,12 +24,15 @@ from datetime import date
 
 import boto3
 from botocore.exceptions import ClientError
+from dotenv import load_dotenv
+
+load_dotenv()
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(SCRIPT_DIR, "horse_racing.db")
-BUCKET = "horseracingresults"
-S3_KEY = "horse_racing.db"
-REGION = "us-east-1"
+BUCKET = os.getenv("S3_BUCKET", "ashcroft-racing-data")
+S3_KEY = os.getenv("S3_DB_KEY", "horse_racing.db")
+REGION = os.getenv("AWS_DEFAULT_REGION", "eu-west-1")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,25 +41,31 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def upload_db(versioned: bool = False):
+def upload_db(
+    db_path: str = DB_PATH,
+    bucket: str = BUCKET,
+    key: str = S3_KEY,
+    region: str = REGION,
+    versioned: bool = False,
+):
     """Upload horse_racing.db to S3."""
-    if not os.path.exists(DB_PATH):
-        log.error(f"Database not found: {DB_PATH}")
+    if not os.path.exists(db_path):
+        log.error(f"Database not found: {db_path}")
         sys.exit(1)
 
-    size_mb = os.path.getsize(DB_PATH) / (1024 * 1024)
-    log.info(f"Uploading {DB_PATH} ({size_mb:.1f} MB) to s3://{BUCKET}/{S3_KEY}")
+    size_mb = os.path.getsize(db_path) / (1024 * 1024)
+    log.info(f"Uploading {db_path} ({size_mb:.1f} MB) to s3://{bucket}/{key}")
 
-    s3 = boto3.client("s3", region_name=REGION)
+    s3 = boto3.client("s3", region_name=region)
 
     try:
-        s3.upload_file(DB_PATH, BUCKET, S3_KEY)
-        log.info(f"Uploaded to s3://{BUCKET}/{S3_KEY}")
+        s3.upload_file(db_path, bucket, key)
+        log.info(f"Uploaded to s3://{bucket}/{key}")
 
         if versioned:
             dated_key = f"backups/horse_racing_{date.today().isoformat()}.db"
-            s3.upload_file(DB_PATH, BUCKET, dated_key)
-            log.info(f"Versioned copy: s3://{BUCKET}/{dated_key}")
+            s3.upload_file(db_path, bucket, dated_key)
+            log.info(f"Versioned copy: s3://{bucket}/{dated_key}")
 
     except ClientError as e:
         log.error(f"S3 upload failed: {e}")
