@@ -5,6 +5,9 @@ explore_site.py
 horse_racing.db
 horse_racing.db-wal
 horse_racing.db-shm
+hrb_scraper.db
+hrb_scraper.db-wal
+hrb_scraper.db-shm
 csv/
 scraper.log
 betfair_download.log
