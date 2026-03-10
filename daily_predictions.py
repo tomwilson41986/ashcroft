@@ -56,6 +56,7 @@ BASE_URL = "https://www.horseracebase.com"
 LOGIN_URL = f"{BASE_URL}/horsebase1.php"
 RESULTS_URL = f"{BASE_URL}/horse-racing-results.php"
 TODAY_URL = f"{BASE_URL}/horse-racing-today.php"
+ONEDAY_URL = f"{BASE_URL}/onedayracecards.php"
 CSV_URL = f"{BASE_URL}/excelresults.php"
 
 RECIPIENT_EMAIL = "racingsquared@gmail.com"
@@ -168,193 +169,251 @@ def download_racecard_csv(
 def scrape_racecard_html(
     session: requests.Session, target_date: date
 ) -> pd.DataFrame | None:
-    """Scrape today's racecards from the HTML page as fallback.
+    """Scrape today's racecards from the HRB onedayracecards page.
 
-    Navigates the horse-racing-today.php page, extracts race links,
-    and scrapes each race page for runner details.
+    Fetches the all-in-one racecard page, extracts race metadata from
+    the dropdown selector, then parses the main table splitting races
+    by their repeating 'No.' header rows.
     """
-    log.info("Attempting HTML racecard scrape...")
-    resp = session.get(TODAY_URL)
+    log.info("Attempting HTML racecard scrape from onedayracecards...")
+    resp = session.get(ONEDAY_URL)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "lxml")
 
-    # Find race links - HRB uses links like horse-racing-card.php?raceid=...
-    race_links = []
-    for a_tag in soup.find_all("a", href=True):
-        href = a_tag["href"]
-        if "horse-racing-card" in href or "racecards" in href:
-            if href.startswith("/"):
-                href = BASE_URL + href
-            elif not href.startswith("http"):
-                href = BASE_URL + "/" + href
-            race_links.append(href)
+    # Step 1: Extract race list from dropdown (time + track for each race)
+    race_list = _extract_race_list_from_dropdown(soup)
+    if not race_list:
+        log.warning("No races found in dropdown selector")
+        return None
+    log.info(f"Found {len(race_list)} races in dropdown")
 
-    # Deduplicate
-    race_links = list(dict.fromkeys(race_links))
-    log.info(f"Found {len(race_links)} race links")
+    # Step 2: Find the main racecard table (the one with most rows)
+    tables = soup.find_all("table")
+    main_table = None
+    max_rows = 0
+    for t in tables:
+        rows = t.find_all("tr")
+        if len(rows) > max_rows:
+            max_rows = len(rows)
+            main_table = t
 
-    if not race_links:
-        # Try finding links in a different format
-        for a_tag in soup.find_all("a", href=True):
-            href = a_tag["href"]
-            if "race" in href.lower() and "card" in href.lower():
-                if href.startswith("/"):
-                    href = BASE_URL + href
-                elif not href.startswith("http"):
-                    href = BASE_URL + "/" + href
-                race_links.append(href)
-        race_links = list(dict.fromkeys(race_links))
+    if main_table is None:
+        log.warning("Could not find main racecard table")
+        return None
 
-    all_runners = []
-
-    for link in race_links:
-        try:
-            import time
-            time.sleep(1.5)  # Rate limiting
-            race_resp = session.get(link)
-            race_resp.raise_for_status()
-            runners = _parse_race_page(race_resp.text, target_date)
-            all_runners.extend(runners)
-        except Exception as e:
-            log.warning(f"Error scraping {link}: {e}")
-            continue
+    # Step 3: Parse the main table, splitting by "No." header rows
+    rows = main_table.find_all("tr")
+    all_runners = _parse_onedayracecards_table(
+        rows, race_list, target_date
+    )
 
     if not all_runners:
         return None
 
     df = pd.DataFrame(all_runners)
-    log.info(f"Scraped {len(df)} runners from {len(race_links)} races")
+    n_races = df.groupby(["track", "race_time"]).ngroups if "track" in df.columns else 0
+    log.info(f"Scraped {len(df)} runners from {n_races} races")
     return df
 
 
-def _parse_race_page(html: str, target_date: date) -> list[dict]:
-    """Parse a single race page to extract runner information."""
-    soup = BeautifulSoup(html, "lxml")
-    runners = []
+def _extract_race_list_from_dropdown(soup: BeautifulSoup) -> list[dict]:
+    """Extract race time/track from the HRB race selector dropdown.
 
-    # Extract race metadata from page
-    track = ""
-    race_time = ""
-    distance = ""
-    going = ""
-    race_class = ""
-    prize_money = ""
-    num_runners = 0
-
-    # Try to find race header info
-    title = soup.find("title")
-    if title:
-        title_text = title.get_text()
-        # Parse track from title e.g. "Cheltenham 14:30 Race Card"
-        parts = title_text.split()
-        if parts:
-            track = parts[0]
-
-    # Look for race info elements
-    for el in soup.find_all(["h1", "h2", "h3", "div", "span"]):
-        text = el.get_text(strip=True)
-        # Time pattern
-        time_match = re.search(r"(\d{1,2}:\d{2})", text)
-        if time_match and not race_time:
-            race_time = time_match.group(1)
-        # Distance
-        dist_match = re.search(
-            r"(\d+[mf]\s*\d*[yf]?|\d+\s*furlongs?|\d+\s*miles?)", text, re.I
-        )
-        if dist_match and not distance:
-            distance = dist_match.group(1)
-        # Going
-        going_match = re.search(
-            r"(Heavy|Soft|Good to Soft|Good to Firm|Good|Firm|Hard|"
-            r"Standard to Slow|Standard|Slow|Yielding)",
-            text, re.I,
-        )
-        if going_match and not going:
-            going = going_match.group(1)
-        # Class
-        class_match = re.search(r"Class\s*(\d)", text, re.I)
-        if class_match and not race_class:
-            race_class = class_match.group(1)
-
-    # Find runner table rows
-    tables = soup.find_all("table")
-    for table in tables:
-        rows = table.find_all("tr")
-        for row in rows[1:]:  # Skip header
-            cells = row.find_all(["td", "th"])
-            if len(cells) < 4:
+    The dropdown has options like:
+        <option value='horse-racing-today.php?raceid=7609686'>1.20 Cheltenham</option>
+    """
+    races = []
+    for select in soup.find_all("select"):
+        for opt in select.find_all("option"):
+            val = opt.get("value", "")
+            text = opt.get_text(strip=True)
+            if "raceid=" not in val:
                 continue
+            match = re.match(r"(\d{1,2}\.\d{2})\s+(.*)", text)
+            if match:
+                race_time = match.group(1).replace(".", ":")
+                track = match.group(2).strip()
+                race_id = re.search(r"raceid=(\d+)", val)
+                races.append({
+                    "race_time": race_time,
+                    "track": track,
+                    "race_id": race_id.group(1) if race_id else "",
+                })
+    return races
 
-            cell_texts = [c.get_text(strip=True) for c in cells]
 
-            # Try to identify horse name, jockey, trainer from cell content
-            runner = _extract_runner_from_cells(cell_texts, cells)
-            if runner and runner.get("horse_name"):
-                runner["race_date"] = target_date.isoformat()
-                runner["race_time"] = race_time
-                runner["track"] = track
-                runner["going_description"] = going
-                runner["race_class"] = race_class
-                runner["race_distance"] = distance
-                runner["prize_money"] = prize_money
-                num_runners += 1
-                runners.append(runner)
+def _parse_onedayracecards_table(
+    rows: list, race_list: list[dict], target_date: date
+) -> list[dict]:
+    """Parse the main racecard table from onedayracecards.php.
 
-    # Set number of runners
+    The table contains all races in sequence, separated by header rows
+    that repeat 'No. Form Days Horse Age Weight...'. Each race section
+    has 15-cell runner rows, 1-cell note rows, and trend data rows.
+
+    We match races to metadata from the dropdown by sequence order.
+    """
+    all_runners = []
+    current_race_idx = -1
+    current_race_runners = []
+    trend_going = ""
+    trend_distance = ""
+
+    for row in rows:
+        cells = row.find_all(["td", "th"])
+        n_cells = len(cells)
+
+        if n_cells < 2:
+            # 1-cell rows: notes, trends header, etc.
+            text = row.get_text(strip=True)
+            # Skip notes and navigation
+            continue
+
+        cell_texts = [c.get_text(strip=True) for c in cells]
+
+        # Detect runner header row: "No. Form Days Horse Age Weight..."
+        if n_cells >= 14 and cell_texts[0] == "No." and "Horse" in cell_texts:
+            # Save previous race's runners
+            if current_race_runners and current_race_idx >= 0:
+                _finalize_race(
+                    current_race_runners, current_race_idx, race_list,
+                    target_date, trend_going, trend_distance, all_runners,
+                )
+            current_race_idx += 1
+            current_race_runners = []
+            trend_going = ""
+            trend_distance = ""
+            continue
+
+        # Detect trend/history rows (class='databreakdown2252')
+        row_class = " ".join(row.get("class", []))
+        if "databreakdown2252" in row_class and n_cells >= 10:
+            # History rows: Date Track Winner Odds Trainer Age Weight OR Jockey Going Distance
+            if cell_texts[0] != "Date":  # Skip header, parse data
+                if len(cell_texts) >= 11:
+                    trend_going = trend_going or cell_texts[-2]
+                    trend_distance = trend_distance or cell_texts[-1]
+            continue
+
+        # Skip "Card No" rows (non-runners) and small-cell rows
+        if n_cells < 14:
+            continue
+
+        # Parse runner row (15 cells):
+        # No, Form, Days, Horse, Age, Weight, Headgear, Jockey, Trainer,
+        # Miles, OR, Odds, HRB Total, CD, S
+        runner = _parse_runner_row(cell_texts)
+        if runner:
+            current_race_runners.append(runner)
+
+    # Finalize last race
+    if current_race_runners and current_race_idx >= 0:
+        _finalize_race(
+            current_race_runners, current_race_idx, race_list,
+            target_date, trend_going, trend_distance, all_runners,
+        )
+
+    return all_runners
+
+
+def _parse_runner_row(cell_texts: list[str]) -> dict | None:
+    """Parse a 15-cell runner row into a dict.
+
+    Expected columns: No, Form, Days, Horse, Age, Weight, Headgear,
+    Jockey, Trainer, Miles, OR, Odds, HRBTotal, CD, S
+    """
+    if len(cell_texts) < 14:
+        return None
+
+    stall_text = cell_texts[0].strip()
+    horse_name = cell_texts[3].strip()
+    age_text = cell_texts[4].strip()
+    weight_text = cell_texts[5].strip()
+    headgear = cell_texts[6].strip()
+    jockey = cell_texts[7].strip()
+    trainer = cell_texts[8].strip()
+    days_text = cell_texts[2].strip()
+    or_text = cell_texts[10].strip()
+    odds_text = cell_texts[11].strip()
+
+    # Validate: stall must be a number, horse_name must be non-empty
+    if not stall_text.isdigit() or not horse_name:
+        return None
+
+    runner = {
+        "horse_name": horse_name,
+        "stall": int(stall_text),
+        "jockey_name": jockey,
+        "trainer": trainer,
+        "headgear": headgear,
+    }
+
+    # Parse age (e.g., "6" or "5yo G")
+    age_match = re.match(r"(\d+)", age_text)
+    if age_match:
+        runner["horse_age"] = int(age_match.group(1))
+
+    # Parse sex from age field (e.g., "5yo G")
+    sex_match = re.search(r"(G|M|F|C|H)\b", age_text)
+    if sex_match:
+        sex_map = {"G": "Gelding", "M": "Mare", "F": "Filly",
+                    "C": "Colt", "H": "Horse"}
+        runner["horse_sex"] = sex_map.get(sex_match.group(1), "")
+
+    # Parse weight (e.g., "11-7" -> pounds)
+    weight_clean = re.sub(r"[A-Za-z]", "", weight_text)  # Remove headgear chars
+    weight_match = re.match(r"(\d{1,2})-(\d{1,2})", weight_clean)
+    if weight_match:
+        stones = int(weight_match.group(1))
+        lbs = int(weight_match.group(2))
+        runner["pounds"] = stones * 14 + lbs
+
+    # Days since last run
+    if days_text.isdigit():
+        runner["days_since_lr"] = int(days_text)
+
+    # Official rating
+    if or_text.isdigit():
+        runner["official_rating"] = int(or_text)
+
+    # Odds (fractional like "15/8", "33/1", "250/1")
+    odds_match = re.match(r"(\d+)/(\d+)", odds_text)
+    if odds_match:
+        num = int(odds_match.group(1))
+        den = int(odds_match.group(2))
+        decimal_odds = num / den + 1
+        runner["odds"] = round(decimal_odds, 4)
+        runner["bfsp"] = round(decimal_odds, 4)  # Use as proxy
+
+    return runner
+
+
+def _finalize_race(
+    runners: list[dict],
+    race_idx: int,
+    race_list: list[dict],
+    target_date: date,
+    trend_going: str,
+    trend_distance: str,
+    all_runners: list[dict],
+):
+    """Add race metadata to runners and append to all_runners."""
+    if race_idx >= len(race_list):
+        # More races in table than dropdown — use unknown metadata
+        race_meta = {"track": "Unknown", "race_time": ""}
+    else:
+        race_meta = race_list[race_idx]
+
+    n_runners = len(runners)
     for r in runners:
-        r["number_of_runners"] = len(runners)
+        r["race_date"] = target_date.isoformat()
+        r["race_time"] = race_meta.get("race_time", "")
+        r["track"] = race_meta.get("track", "")
+        r["going_description"] = trend_going or "Good"
+        r["race_distance"] = trend_distance or ""
+        r["number_of_runners"] = n_runners
 
-    return runners
-
-
-def _extract_runner_from_cells(
-    cell_texts: list[str], cells: list
-) -> dict | None:
-    """Extract runner details from table cells using heuristics."""
-    runner = {}
-
-    for i, text in enumerate(cell_texts):
-        text_lower = text.lower()
-
-        # Stall/draw number (usually first column, small integer)
-        if i == 0 and text.isdigit() and int(text) <= 30:
-            runner["stall"] = int(text)
-
-        # Horse name (usually has a link, text is capitalised)
-        link = cells[i].find("a") if i < len(cells) else None
-        if link and not runner.get("horse_name"):
-            link_text = link.get_text(strip=True)
-            link_href = link.get("href", "")
-            if (
-                "horse" in link_href.lower()
-                or len(link_text) > 2
-                and not link_text.isdigit()
-            ):
-                runner["horse_name"] = link_text
-
-        # Weight (e.g., "11-4", "9-0")
-        weight_match = re.match(r"^(\d{1,2})-(\d{1,2})$", text)
-        if weight_match:
-            stones = int(weight_match.group(1))
-            lbs = int(weight_match.group(2))
-            runner["pounds"] = stones * 14 + lbs
-
-        # Age (small integer, usually 2-12)
-        if text.isdigit() and 2 <= int(text) <= 15 and "horse_age" not in runner:
-            runner["horse_age"] = int(text)
-
-        # Official rating
-        if text.isdigit() and 30 <= int(text) <= 200:
-            runner["official_rating"] = int(text)
-
-        # Odds (e.g., "5/1", "11/2")
-        odds_match = re.match(r"^(\d+)/(\d+)$", text)
-        if odds_match:
-            num = int(odds_match.group(1))
-            den = int(odds_match.group(2))
-            runner["odds"] = num / den + 1  # Convert to decimal
-
-    return runner if runner.get("horse_name") else None
+    all_runners.extend(runners)
 
 
 def save_racecard_csv(csv_text: str, target_date: date) -> str:
