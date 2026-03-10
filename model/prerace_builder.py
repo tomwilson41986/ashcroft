@@ -80,9 +80,6 @@ class PreRaceBuilder:
         "preracejockeycareerRuns",
         "preracejockeycareerWIV",
         "preracejockeycareerNFP",
-        "preracejockeycareerRB"
-        if False
-        else "preracejockeycareerWAX",  # RB not computed for jockey
         "preracejockeycareerWAX",
         "preracejockeycareerWOA",
         "Jockey_Career_EPF",
@@ -484,4 +481,11 @@ class PreRaceBuilder:
                 "rFCS",
             ]
         )
-        return cols
+        # Deduplicate while preserving order
+        seen = set()
+        unique_cols = []
+        for c in cols:
+            if c not in seen:
+                seen.add(c)
+                unique_cols.append(c)
+        return unique_cols

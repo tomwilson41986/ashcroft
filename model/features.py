@@ -65,7 +65,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         drop=True
     )
 
-    horse_grp = df.groupby("horse_name")
+    horse_grp = df.groupby("horse_name", group_keys=False)
 
     # Shift all historical stats by 1 to prevent leakage (use only pre-race data)
     df["h_runs"] = horse_grp.cumcount()  # 0-indexed, so this is runs before this one
@@ -107,7 +107,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["jockey_name", "race_date", "race_time"]).reset_index(
         drop=True
     )
-    jockey_grp = df.groupby("jockey_name")
+    jockey_grp = df.groupby("jockey_name", group_keys=False)
 
     df["j_runs"] = jockey_grp.cumcount()
     df["j_win_rate"] = jockey_grp["won"].apply(
@@ -124,7 +124,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["trainer", "race_date", "race_time"]).reset_index(
         drop=True
     )
-    trainer_grp = df.groupby("trainer")
+    trainer_grp = df.groupby("trainer", group_keys=False)
 
     df["t_runs"] = trainer_grp.cumcount()
     df["t_win_rate"] = trainer_grp["won"].apply(
@@ -151,7 +151,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["horse_name", "track", "race_date"]).reset_index(
         drop=True
     )
-    ht_grp = df.groupby(["horse_name", "track"])
+    ht_grp = df.groupby(["horse_name", "track"], group_keys=False)
     df["h_track_runs"] = ht_grp.cumcount()
     df["h_track_win_rate"] = ht_grp["won"].apply(
         lambda x: x.shift(1).expanding().mean()
@@ -161,7 +161,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(
         ["horse_name", "going_description", "race_date"]
     ).reset_index(drop=True)
-    hg_grp = df.groupby(["horse_name", "going_description"])
+    hg_grp = df.groupby(["horse_name", "going_description"], group_keys=False)
     df["h_going_runs"] = hg_grp.cumcount()
     df["h_going_win_rate"] = hg_grp["won"].apply(
         lambda x: x.shift(1).expanding().mean()
@@ -173,7 +173,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(
         ["horse_name", "dist_bucket", "race_date"]
     ).reset_index(drop=True)
-    hd_grp = df.groupby(["horse_name", "dist_bucket"])
+    hd_grp = df.groupby(["horse_name", "dist_bucket"], group_keys=False)
     df["h_dist_runs"] = hd_grp.cumcount()
     df["h_dist_win_rate"] = hd_grp["won"].apply(
         lambda x: x.shift(1).expanding().mean()
