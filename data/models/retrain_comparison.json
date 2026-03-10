@@ -1,5 +1,5 @@
 {
-  "retrain_date": "2026-03-10T14:29:01.300389",
+  "retrain_date": "2026-03-10T19:55:06.931659",
   "old_summary": {
     "n_folds": 12,
     "feature_cols": [
@@ -274,7 +274,7 @@
     }
   },
   "new_summary": {
-    "n_folds": 12,
+    "n_folds": 14,
     "feature_cols": [
       "preracehorsecareerRuns",
       "preracehorsecareerWins",
@@ -345,205 +345,221 @@
       "rFCS"
     ],
     "final_model_metrics": {
-      "val_logloss_raw": 0.308377,
-      "val_logloss_normalised": 0.308017,
-      "best_iteration": 102,
+      "val_logloss_raw": 0.354401,
+      "val_logloss_normalised": 0.351764,
+      "best_iteration": 85,
       "n_features": 67,
-      "train_size": 68523,
-      "val_size": 8264
+      "train_size": 76708,
+      "val_size": 16962
     },
     "walk_forward_metrics": [
       {
-        "val_logloss_raw": 0.307866,
-        "val_logloss_normalised": 0.305613,
-        "best_iteration": 26,
+        "val_logloss_raw": 0.311373,
+        "val_logloss_normalised": 0.310285,
+        "best_iteration": 42,
         "n_features": 67,
-        "train_size": 19133,
-        "val_size": 2834
+        "train_size": 39293,
+        "val_size": 3102
       },
       {
-        "val_logloss_raw": 0.308732,
-        "val_logloss_normalised": 0.307517,
+        "val_logloss_raw": 0.308038,
+        "val_logloss_normalised": 0.307551,
+        "best_iteration": 86,
+        "n_features": 67,
+        "train_size": 42395,
+        "val_size": 3148
+      },
+      {
+        "val_logloss_raw": 0.306264,
+        "val_logloss_normalised": 0.305656,
+        "best_iteration": 76,
+        "n_features": 67,
+        "train_size": 45543,
+        "val_size": 3323
+      },
+      {
+        "val_logloss_raw": 0.309367,
+        "val_logloss_normalised": 0.308615,
+        "best_iteration": 66,
+        "n_features": 67,
+        "train_size": 48866,
+        "val_size": 2849
+      },
+      {
+        "val_logloss_raw": 0.31092,
+        "val_logloss_normalised": 0.309984,
+        "best_iteration": 55,
+        "n_features": 67,
+        "train_size": 51715,
+        "val_size": 2686
+      },
+      {
+        "val_logloss_raw": 0.312263,
+        "val_logloss_normalised": 0.311341,
         "best_iteration": 46,
         "n_features": 67,
-        "train_size": 23429,
-        "val_size": 3129
+        "train_size": 54401,
+        "val_size": 2366
       },
       {
-        "val_logloss_raw": 0.312152,
-        "val_logloss_normalised": 0.310086,
-        "best_iteration": 46,
+        "val_logloss_raw": 0.305484,
+        "val_logloss_normalised": 0.305179,
+        "best_iteration": 98,
         "n_features": 67,
-        "train_size": 28403,
-        "val_size": 2961
+        "train_size": 56767,
+        "val_size": 2898
       },
       {
-        "val_logloss_raw": 0.309704,
-        "val_logloss_normalised": 0.308981,
-        "best_iteration": 81,
+        "val_logloss_raw": 0.305384,
+        "val_logloss_normalised": 0.305046,
+        "best_iteration": 97,
         "n_features": 67,
-        "train_size": 32813,
-        "val_size": 3511
+        "train_size": 59665,
+        "val_size": 3122
       },
       {
-        "val_logloss_raw": 0.30802,
-        "val_logloss_normalised": 0.307571,
-        "best_iteration": 65,
-        "n_features": 67,
-        "train_size": 38772,
-        "val_size": 2816
-      },
-      {
-        "val_logloss_raw": 0.303762,
-        "val_logloss_normalised": 0.302511,
-        "best_iteration": 45,
-        "n_features": 67,
-        "train_size": 43906,
-        "val_size": 2576
-      },
-      {
-        "val_logloss_raw": 0.308214,
-        "val_logloss_normalised": 0.30771,
-        "best_iteration": 73,
-        "n_features": 67,
-        "train_size": 48482,
-        "val_size": 2854
-      },
-      {
-        "val_logloss_raw": 0.307573,
-        "val_logloss_normalised": 0.306681,
-        "best_iteration": 56,
-        "n_features": 67,
-        "train_size": 52724,
-        "val_size": 2598
-      },
-      {
-        "val_logloss_raw": 0.307651,
-        "val_logloss_normalised": 0.307192,
-        "best_iteration": 77,
-        "n_features": 67,
-        "train_size": 56530,
-        "val_size": 2729
-      },
-      {
-        "val_logloss_raw": 0.302508,
-        "val_logloss_normalised": 0.302039,
+        "val_logloss_raw": 0.307772,
+        "val_logloss_normalised": 0.307307,
         "best_iteration": 78,
         "n_features": 67,
-        "train_size": 60844,
-        "val_size": 2782
+        "train_size": 62787,
+        "val_size": 2868
       },
       {
-        "val_logloss_raw": 0.30757,
-        "val_logloss_normalised": 0.307261,
-        "best_iteration": 113,
+        "val_logloss_raw": 0.312127,
+        "val_logloss_normalised": 0.311455,
+        "best_iteration": 80,
         "n_features": 67,
-        "train_size": 65294,
-        "val_size": 3508
+        "train_size": 65655,
+        "val_size": 3704
       },
       {
-        "val_logloss_raw": 0.304508,
-        "val_logloss_normalised": 0.304072,
-        "best_iteration": 78,
+        "val_logloss_raw": 0.304421,
+        "val_logloss_normalised": 0.304169,
+        "best_iteration": 161,
         "n_features": 67,
-        "train_size": 70667,
-        "val_size": 3377
+        "train_size": 69359,
+        "val_size": 3446
+      },
+      {
+        "val_logloss_raw": 0.311061,
+        "val_logloss_normalised": 0.310721,
+        "best_iteration": 87,
+        "n_features": 67,
+        "train_size": 72805,
+        "val_size": 3390
+      },
+      {
+        "val_logloss_raw": 0.333873,
+        "val_logloss_normalised": 0.333005,
+        "best_iteration": 89,
+        "n_features": 67,
+        "train_size": 76195,
+        "val_size": 6972
+      },
+      {
+        "val_logloss_raw": 0.340502,
+        "val_logloss_normalised": 0.337176,
+        "best_iteration": 316,
+        "n_features": 67,
+        "train_size": 83167,
+        "val_size": 6956
       }
     ],
     "optimal_lambda": 1.0,
     "evaluation": {
-      "log_loss": 0.296931,
-      "brier_score": 0.082624,
-      "f2_statistic": 0.038608,
-      "auc_roc": 0.676469,
-      "top_1_accuracy": 0.1942,
-      "top_2_accuracy": 0.3638,
-      "top_3_accuracy": 0.5061,
-      "favourite_accuracy": 0.1942,
+      "log_loss": 0.295631,
+      "brier_score": 0.083784,
+      "f2_statistic": 0.086262,
+      "auc_roc": 0.71829,
+      "top_1_accuracy": 0.2519,
+      "top_2_accuracy": 0.4384,
+      "top_3_accuracy": 0.5773,
+      "favourite_accuracy": 0.2519,
       "calibration_table": [
         {
-          "bin": "(0.00527, 0.0556]",
-          "count": 3568,
-          "avg_predicted": 0.0442,
-          "actual_win_rate": 0.0174
+          "bin": "(0.00093, 0.0431]",
+          "count": 5083,
+          "avg_predicted": 0.0218,
+          "actual_win_rate": 0.012
         },
         {
-          "bin": "(0.0556, 0.0636]",
-          "count": 3567,
-          "avg_predicted": 0.0599,
-          "actual_win_rate": 0.0384
+          "bin": "(0.0431, 0.0593]",
+          "count": 5083,
+          "avg_predicted": 0.0526,
+          "actual_win_rate": 0.0291
         },
         {
-          "bin": "(0.0636, 0.0699]",
-          "count": 3568,
-          "avg_predicted": 0.0668,
-          "actual_win_rate": 0.0547
+          "bin": "(0.0593, 0.0678]",
+          "count": 5083,
+          "avg_predicted": 0.0637,
+          "actual_win_rate": 0.048
         },
         {
-          "bin": "(0.0699, 0.0762]",
-          "count": 3567,
-          "avg_predicted": 0.073,
-          "actual_win_rate": 0.072
+          "bin": "(0.0678, 0.0756]",
+          "count": 5083,
+          "avg_predicted": 0.0716,
+          "actual_win_rate": 0.0693
         },
         {
-          "bin": "(0.0762, 0.0834]",
-          "count": 3568,
-          "avg_predicted": 0.0796,
-          "actual_win_rate": 0.0849
+          "bin": "(0.0756, 0.0841]",
+          "count": 5083,
+          "avg_predicted": 0.0797,
+          "actual_win_rate": 0.0842
         },
         {
-          "bin": "(0.0834, 0.0922]",
-          "count": 3567,
-          "avg_predicted": 0.0876,
-          "actual_win_rate": 0.0903
+          "bin": "(0.0841, 0.0948]",
+          "count": 5083,
+          "avg_predicted": 0.0892,
+          "actual_win_rate": 0.0848
         },
         {
-          "bin": "(0.0922, 0.104]",
-          "count": 3567,
-          "avg_predicted": 0.0978,
-          "actual_win_rate": 0.0992
+          "bin": "(0.0948, 0.11]",
+          "count": 5083,
+          "avg_predicted": 0.1018,
+          "actual_win_rate": 0.1047
         },
         {
-          "bin": "(0.104, 0.121]",
-          "count": 3568,
-          "avg_predicted": 0.1118,
-          "actual_win_rate": 0.1281
+          "bin": "(0.11, 0.132]",
+          "count": 5083,
+          "avg_predicted": 0.1202,
+          "actual_win_rate": 0.1245
         },
         {
-          "bin": "(0.121, 0.152]",
-          "count": 3567,
-          "avg_predicted": 0.135,
-          "actual_win_rate": 0.1461
+          "bin": "(0.132, 0.174]",
+          "count": 5083,
+          "avg_predicted": 0.1506,
+          "actual_win_rate": 0.1601
         },
         {
-          "bin": "(0.152, 0.393]",
-          "count": 3568,
-          "avg_predicted": 0.188,
-          "actual_win_rate": 0.2127
+          "bin": "(0.174, 0.875]",
+          "count": 5083,
+          "avg_predicted": 0.2486,
+          "actual_win_rate": 0.2837
         }
       ],
       "avg_prob_sum": 1.0,
       "median_prob_sum": 1.0,
-      "betting_n_bets": 993,
-      "betting_n_winners": 115,
-      "betting_strike_rate": 0.1158,
-      "betting_total_staked": 8247.68,
-      "betting_total_pl": 3096.71,
-      "betting_roi_pct": 37.55,
-      "max_drawdown": -98.2,
-      "sharpe_ratio": 0.3832,
-      "longest_losing_streak": 6,
-      "market_logloss": 0.491299,
-      "model_vs_market_improvement": 0.194368,
-      "random_logloss": 0.306253,
-      "n_predictions": 35675,
-      "n_winners": 3367,
-      "base_rate": 0.09438
+      "betting_n_bets": 9341,
+      "betting_n_winners": 551,
+      "betting_strike_rate": 0.059,
+      "betting_total_staked": 33119.97,
+      "betting_total_pl": 307.77,
+      "betting_roi_pct": 0.93,
+      "max_drawdown": -2778.87,
+      "sharpe_ratio": 0.0143,
+      "longest_losing_streak": 9,
+      "market_logloss": 0.436354,
+      "model_vs_market_improvement": 0.140722,
+      "random_logloss": 0.317985,
+      "n_predictions": 50830,
+      "n_winners": 5085,
+      "base_rate": 0.100039
     },
     "data_range": {
       "min_date": "2024-01-01",
-      "max_date": "2025-12-30",
-      "total_rows": 76787
+      "max_date": "2026-03-09",
+      "total_rows": 93670
     }
   }
 }

@@ -83,11 +83,11 @@
     "verbose": -1
   },
   "metrics": {
-    "val_logloss_raw": 0.308377,
-    "val_logloss_normalised": 0.308017,
-    "best_iteration": 102,
+    "val_logloss_raw": 0.354401,
+    "val_logloss_normalised": 0.351764,
+    "best_iteration": 85,
     "n_features": 67,
-    "train_size": 68523,
-    "val_size": 8264
+    "train_size": 76708,
+    "val_size": 16962
   }
 }

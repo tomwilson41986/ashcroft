@@ -132,7 +132,6 @@ def init_db(db_path: str = DB_PATH) -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_trainer ON race_results(trainer);
         CREATE INDEX IF NOT EXISTS idx_jockey ON race_results(jockey_name);
         CREATE INDEX IF NOT EXISTS idx_stallion ON race_results(stallion);
-        CREATE INDEX IF NOT EXISTS idx_place ON race_results(place);
         CREATE INDEX IF NOT EXISTS idx_race_type ON race_results(race_type);
 
         CREATE TABLE IF NOT EXISTS scrape_log (
@@ -143,6 +142,27 @@ def init_db(db_path: str = DB_PATH) -> sqlite3.Connection:
             scraped_at TEXT DEFAULT (datetime('now'))
         );
     """)
+    # Add missing columns to existing tables gracefully
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(race_results)").fetchall()}
+    optional_cols = [
+        ("place", "TEXT"), ("race_restrictions_age", "TEXT"), ("race_distance", "TEXT"),
+        ("race_code", "TEXT"), ("bfsp_place", "REAL"), ("plcs_paid", "INTEGER"),
+        ("bf_plcs_paid", "INTEGER"), ("yards", "INTEGER"), ("card_no", "INTEGER"),
+        ("stall_positioning", "TEXT"), ("track_direction", "TEXT"),
+        ("horse_prizewin", "TEXT"), ("comptime", "TEXT"),
+    ]
+    for col_name, col_type in optional_cols:
+        if col_name not in existing_cols:
+            try:
+                conn.execute(f"ALTER TABLE race_results ADD COLUMN {col_name} {col_type}")
+            except sqlite3.OperationalError:
+                pass
+    # Create place index only if column exists
+    if "place" in existing_cols or "place" in {c for c, _ in optional_cols}:
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_place ON race_results(place)")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     return conn
 
