@@ -189,7 +189,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         # Career expanding mean (lagged)
         df["preracehorsecareerNFP"] = grp["NFP"].apply(
@@ -224,7 +224,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         df["preracehorsecareerRB"] = grp["RB"].apply(
             lambda x: x.shift(1).expanding().mean()
@@ -253,7 +253,7 @@ class CustomMetricsEngine:
             df = df.sort_values(
                 [col, "race_date", "race_time"]
             ).reset_index(drop=True)
-            grp = df.groupby(col)
+            grp = df.groupby(col, group_keys=False)
 
             cum_wins = grp["won"].apply(lambda x: x.shift(1).cumsum())
             cum_xwin = grp["xWINRAND"].apply(lambda x: x.shift(1).cumsum())
@@ -287,7 +287,7 @@ class CustomMetricsEngine:
             df = df.sort_values(
                 [col, "race_date", "race_time"]
             ).reset_index(drop=True)
-            grp = df.groupby(col)
+            grp = df.groupby(col, group_keys=False)
 
             df[f"{prefix}WAX"] = grp["WAX_raw"].apply(
                 lambda x: x.shift(1).expanding().mean()
@@ -313,7 +313,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         # Career expanding mean
         df["preracehorsecareerORR2"] = grp["ORR2"].apply(
@@ -376,7 +376,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         for i in range(1, 6):
             df[f"LR{'' if i == 1 else i}_EPF"] = grp["EPF"].shift(i)
@@ -392,7 +392,7 @@ class CustomMetricsEngine:
             df = df.sort_values(
                 [entity_col, "race_date", "race_time"]
             ).reset_index(drop=True)
-            egrp = df.groupby(entity_col)
+            egrp = df.groupby(entity_col, group_keys=False)
             df[prefix] = egrp["EPF2"].apply(
                 lambda x: x.shift(1).expanding().mean()
             )
@@ -407,7 +407,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         today_runners = df["number_of_runners"]
 
@@ -440,7 +440,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         today_avg_or = df["Race_avgOR"]
         delta_sq_sum = pd.Series(0.0, index=df.index)
@@ -471,7 +471,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         for w in self.windows:
             weights = [RECENCY_WEIGHTS[i] for i in range(1, w + 1)]
@@ -500,7 +500,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         for w in self.windows:
             weights = [RECENCY_WEIGHTS[i] for i in range(1, w + 1)]
@@ -538,7 +538,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         df["OFS1"] = grp["OFS"].shift(1)
 
@@ -564,7 +564,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         # Days between consecutive runs
         df["_date_num"] = df["race_date"].astype(np.int64) // 10**9 // 86400
@@ -602,7 +602,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        h_grp = df.groupby("horse_name")
+        h_grp = df.groupby("horse_name", group_keys=False)
 
         lr_placed = h_grp["placed"].shift(1)
         lr_pos = h_grp["placing_numerical"].shift(1)
@@ -624,7 +624,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["jockey_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        j_grp = df.groupby("jockey_name")
+        j_grp = df.groupby("jockey_name", group_keys=False)
 
         df["totaljockeyLRPscore"] = j_grp["LRPTotalScore"].apply(
             lambda x: x.shift(1).cumsum()
@@ -656,7 +656,7 @@ class CustomMetricsEngine:
             df = df.sort_values(
                 [entity_col, "race_date", "race_time"]
             ).reset_index(drop=True)
-            grp = df.groupby(entity_col)
+            grp = df.groupby(entity_col, group_keys=False)
             cum_pace = grp["EPF"].apply(lambda x: x.shift(1).cumsum())
             cum_runs = grp.cumcount().replace(0, np.nan)
             df[prefix] = cum_pace / cum_runs
@@ -671,7 +671,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["trainer", "jockey_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        tj_grp = df.groupby(["trainer", "jockey_name"])
+        tj_grp = df.groupby(["trainer", "jockey_name"], group_keys=False)
 
         cum_wins = tj_grp["won"].apply(lambda x: x.shift(1).cumsum())
         cum_xwin = tj_grp["xWINRAND"].apply(lambda x: x.shift(1).cumsum())
@@ -714,7 +714,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         for col in df.columns:
             if col.startswith("RACE_") and col != "RACE_WPMRF":
@@ -730,7 +730,7 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
         ).reset_index(drop=True)
-        grp = df.groupby("horse_name")
+        grp = df.groupby("horse_name", group_keys=False)
 
         # Count how many of last N runs exist
         for w in self.windows:

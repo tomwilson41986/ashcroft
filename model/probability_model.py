@@ -34,7 +34,7 @@ class FundamentalModel:
         "metric": "binary_logloss",
         "boosting_type": "gbdt",
         "num_leaves": 63,
-        "learning_rate": 0.05,
+        "learning_rate": 0.02,
         "feature_fraction": 0.8,
         "bagging_fraction": 0.8,
         "bagging_freq": 5,
@@ -42,7 +42,6 @@ class FundamentalModel:
         "lambda_l1": 0.1,
         "lambda_l2": 0.1,
         "verbose": -1,
-        "is_unbalance": True,
     }
 
     def __init__(self, params: dict | None = None):
