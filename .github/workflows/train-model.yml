@@ -1,0 +1,150 @@
+name: Train Predictive Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_train_days:
+        description: 'Minimum training window in days'
+        required: false
+        type: number
+        default: 365
+      val_window:
+        description: 'Validation window in days per fold'
+        required: false
+        type: number
+        default: 30
+      step_days:
+        description: 'Step between walk-forward folds in days'
+        required: false
+        type: number
+        default: 30
+
+env:
+  PYTHON_VERSION: '3.11'
+  S3_BUCKET: ashcroft-racing-data
+  S3_DB_KEY: horse_racing.db
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download historic data from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'eu-west-1' }}
+        run: |
+          python scripts/fetch_data.py \
+            --db-only \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-key "$S3_DB_KEY"
+
+      - name: Verify database
+        run: |
+          python -c "
+          import sqlite3, os
+          db = 'horse_racing.db'
+          size_mb = os.path.getsize(db) / (1024*1024)
+          conn = sqlite3.connect(db)
+          rows = conn.execute('SELECT COUNT(*) FROM race_results').fetchone()[0]
+          min_date = conn.execute('SELECT MIN(race_date) FROM race_results').fetchone()[0]
+          max_date = conn.execute('SELECT MAX(race_date) FROM race_results').fetchone()[0]
+          conn.close()
+          print(f'Database: {size_mb:.1f} MB')
+          print(f'Rows: {rows:,}')
+          print(f'Date range: {min_date} to {max_date}')
+          "
+
+      - name: Train model
+        run: |
+          python retrain.py \
+            --db horse_racing.db \
+            --min-train-days ${{ inputs.min_train_days }} \
+            --val-window ${{ inputs.val_window }} \
+            --step-days ${{ inputs.step_days }} \
+            --no-backup
+
+      - name: Display training summary
+        run: |
+          python -c "
+          import json
+          with open('data/models/training_summary.json') as f:
+              s = json.load(f)
+          dr = s.get('data_range', {})
+          fm = s.get('final_model_metrics', {})
+          ev = s.get('evaluation', {})
+          print('=== TRAINING SUMMARY ===')
+          print(f'Data: {dr.get(\"min_date\", \"?\")} to {dr.get(\"max_date\", \"?\")} ({dr.get(\"total_rows\", \"?\"):,} rows)')
+          print(f'Folds: {s.get(\"n_folds\", 0)}')
+          print(f'Final log-loss: {fm.get(\"val_logloss_normalised\", \"N/A\")}')
+          print(f'Optimal lambda: {s.get(\"optimal_lambda\", \"N/A\")}')
+          if ev:
+              print(f'WF AUC-ROC: {ev.get(\"auc_roc\", \"N/A\")}')
+              print(f'WF Top-1 accuracy: {ev.get(\"top_1_accuracy\", \"N/A\")}')
+              print(f'Betting ROI: {ev.get(\"betting_roi_pct\", \"N/A\")}%')
+          "
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model-${{ github.run_id }}
+          path: |
+            data/models/probability_model.lgb
+            data/models/probability_model_meta.json
+            data/models/blend_config.json
+            data/models/training_summary.json
+          retention-days: 90
+
+      - name: Create GitHub release with trained model
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="model-$(date +%Y-%m-%d)-run${{ github.run_number }}"
+
+          # Build release notes from training summary
+          NOTES=$(python -c "
+          import json
+          with open('data/models/training_summary.json') as f:
+              s = json.load(f)
+          dr = s.get('data_range', {})
+          fm = s.get('final_model_metrics', {})
+          ev = s.get('evaluation', {})
+          lines = [
+              f'Model trained from S3 historic database',
+              f'',
+              f'**Data range:** {dr.get(\"min_date\", \"?\")} to {dr.get(\"max_date\", \"?\")}',
+              f'**Total rows:** {dr.get(\"total_rows\", \"?\")}',
+              f'**Walk-forward folds:** {s.get(\"n_folds\", 0)}',
+              f'**Final log-loss:** {fm.get(\"val_logloss_normalised\", \"N/A\")}',
+              f'**Optimal lambda:** {s.get(\"optimal_lambda\", \"N/A\")}',
+          ]
+          if ev:
+              lines.append(f'**AUC-ROC:** {ev.get(\"auc_roc\", \"N/A\")}')
+              lines.append(f'**Top-1 accuracy:** {ev.get(\"top_1_accuracy\", \"N/A\")}')
+              lines.append(f'**Betting ROI:** {ev.get(\"betting_roi_pct\", \"N/A\")}%')
+          print('\n'.join(lines))
+          ")
+
+          gh release create "$TAG" \
+            --title "Model $TAG" \
+            --notes "$NOTES" \
+            data/models/probability_model.lgb \
+            data/models/probability_model_meta.json \
+            data/models/blend_config.json \
+            data/models/training_summary.json
+
+          echo "Release created: $TAG"
