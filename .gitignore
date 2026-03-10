@@ -11,6 +11,7 @@ scraper_stdout.log
 monitor_output.log
 qa_check.log
 daily_predictions.log
+generate_ratings.log
 betfair_download.log
 
 # Raw Betfair daily CSVs (too many small files for git)
