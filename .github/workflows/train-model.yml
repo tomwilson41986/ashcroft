@@ -1,6 +1,13 @@
 name: Train Predictive Model
 
 on:
+  push:
+    branches:
+      - claude/add-repository-secrets-70GVm
+    paths:
+      - 'model/**'
+      - 'retrain.py'
+      - '.github/workflows/train-model.yml'
   workflow_dispatch:
     inputs:
       min_train_days:
@@ -71,11 +78,15 @@ jobs:
 
       - name: Train model
         run: |
+          MIN_TRAIN="${{ inputs.min_train_days || '365' }}"
+          VAL_WINDOW="${{ inputs.val_window || '30' }}"
+          STEP_DAYS="${{ inputs.step_days || '30' }}"
+
           python retrain.py \
             --db horse_racing.db \
-            --min-train-days ${{ inputs.min_train_days }} \
-            --val-window ${{ inputs.val_window }} \
-            --step-days ${{ inputs.step_days }} \
+            --min-train-days "$MIN_TRAIN" \
+            --val-window "$VAL_WINDOW" \
+            --step-days "$STEP_DAYS" \
             --no-backup
 
       - name: Display training summary
