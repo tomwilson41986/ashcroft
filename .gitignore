@@ -7,6 +7,9 @@ horse_racing.db-wal
 horse_racing.db-shm
 csv/
 scraper.log
+scraper_stdout.log
+monitor_output.log
+qa_check.log
 betfair_download.log
 
 # Raw Betfair daily CSVs (too many small files for git)
