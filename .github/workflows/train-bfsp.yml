@@ -19,6 +19,9 @@ on:
         type: number
         default: 30
 
+permissions:
+  contents: write
+
 env:
   PYTHON_VERSION: '3.11'
   S3_BUCKET: ashcroft-racing-data
@@ -46,25 +49,19 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'eu-west-1' }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-1' }}
         run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::AWS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as repository secrets."
+            exit 1
+          fi
           python scripts/fetch_data.py \
             --db-only \
             --s3-bucket "$S3_BUCKET" \
             --s3-key "$S3_DB_KEY"
 
           echo "Database size: $(du -h horse_racing.db | cut -f1)"
-          python -c "
-          import sqlite3
-          conn = sqlite3.connect('horse_racing.db')
-          cur = conn.cursor()
-          cur.execute('SELECT COUNT(*) FROM race_results')
-          rows = cur.fetchone()[0]
-          cur.execute('SELECT MIN(race_date), MAX(race_date) FROM race_results')
-          d = cur.fetchone()
-          print(f'Rows: {rows}, Date range: {d[0]} to {d[1]}')
-          conn.close()
-          "
+          python3 scripts/db_info.py
 
       - name: Train BFSP model
         run: |
@@ -86,36 +83,10 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="bfsp-model-v$(date +%Y%m%d)-${{ github.run_number }}"
-
-          # Build release notes from training summary
-          python -c "
-          import json
-          with open('data/models/bfsp_training_summary.json') as f:
-              s = json.load(f)
-          wf = s.get('walk_forward', {})
-          fm = s.get('final_model', {})
-          print(f'## BFSP Model Training Summary')
-          print(f'')
-          print(f'- **Data range**: {s.get(\"data_range\", \"unknown\")}')
-          print(f'- **Total rows**: {s.get(\"total_rows\", \"unknown\")}')
-          print(f'- **Features**: {s.get(\"n_features\", 187)}')
-          print(f'- **Walk-forward folds**: {wf.get(\"n_folds\", 12)}')
-          print(f'')
-          print(f'### Walk-Forward Validation')
-          print(f'- MAE (log): {wf.get(\"avg_mae_log\", \"n/a\")}')
-          print(f'- R² (log): {wf.get(\"avg_r2_log\", \"n/a\")}')
-          print(f'- MdAPE: {wf.get(\"avg_mdape_pct\", \"n/a\")}%')
-          print(f'- Correlation: {wf.get(\"overall_correlation\", \"n/a\")}')
-          print(f'')
-          print(f'### Final Model')
-          print(f'- MAE (log): {fm.get(\"mae_log\", \"n/a\")}')
-          print(f'- R² (log): {fm.get(\"r2_log\", \"n/a\")}')
-          print(f'- MdAPE: {fm.get(\"mdape_pct\", \"n/a\")}%')
-          " > /tmp/release_notes.md
-
+          python scripts/release_notes.py > /tmp/release_notes.md
           gh release create "$TAG" \
             --title "BFSP Model $(date +%Y-%m-%d)" \
             --notes-file /tmp/release_notes.md \
