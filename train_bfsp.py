@@ -662,6 +662,17 @@ class BFSPTrainer:
             overall_wf_metrics = {
                 f"overall_wf_{k}": v for k, v in overall_wf_metrics.items()
             }
+
+            # Save OOS predictions to CSV for backtesting
+            oos_path = os.path.join(output_dir, "bfsp_oos_predictions.csv")
+            oos_cols = [
+                "race_date", "race_time", "track", "horse_name",
+                "bfsp", "log_bfsp", "predicted_log_bfsp", "predicted_bfsp",
+                "placing_numerical", "raceid",
+            ]
+            save_cols = [c for c in oos_cols if c in combined.columns]
+            combined[save_cols].to_csv(oos_path, index=False)
+            log.info(f"  Saved {len(combined):,} OOS predictions to {oos_path}")
             log.info(
                 f"\nOverall walk-forward: "
                 f"MAE(log)={overall_wf_metrics['overall_wf_log_mae']:.4f}, "
