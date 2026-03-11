@@ -11,3 +11,8 @@ scikit-learn>=1.3.0
 
 # S3 data access for CI/CD pipeline
 boto3>=1.28.0
+
+# Betfair Exchange API integration
+betfairlightweight>=2.20.0
+thefuzz>=0.22.0
+python-Levenshtein>=0.25.0

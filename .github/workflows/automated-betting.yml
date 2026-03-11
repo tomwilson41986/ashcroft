@@ -1,0 +1,128 @@
+name: Automated Betting
+
+on:
+  schedule:
+    # 08:00 UTC daily (= 08:00 GMT / 09:00 BST)
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Target date (YYYY-MM-DD). Leave empty for today.'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run (log bets, do not place real orders)'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  PYTHON_VERSION: '3.11'
+  S3_BUCKET: horseracingresults
+  S3_DB_KEY: horse_racing.db
+
+jobs:
+  bet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download historic data from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: |
+          python scripts/fetch_data.py \
+            --db-only \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-key "$S3_DB_KEY"
+
+      - name: Download model from GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/fetch_data.py \
+            --model-only \
+            --github-repo "${{ github.repository }}"
+
+      - name: Write Betfair SSL certificates
+        run: |
+          mkdir -p certs
+          echo "${{ secrets.BETFAIR_CERT_CRT }}" | base64 -d > certs/client-2048.crt
+          echo "${{ secrets.BETFAIR_CERT_KEY }}" | base64 -d > certs/client-2048.key
+
+      - name: Determine target date
+        id: date
+        run: |
+          if [ -n "${{ inputs.date }}" ]; then
+            echo "target=${{ inputs.date }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Determine dry-run mode
+        id: mode
+        run: |
+          # Default to dry_run=true for scheduled runs (safety first)
+          # Manual triggers use the input value
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run automated betting pipeline
+        env:
+          # HRB credentials
+          HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
+          HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
+          # Betfair credentials
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          BETFAIR_CERTS_DIR: certs
+          # Betting config
+          BETTING_ENABLED: 'true'
+          BETTING_DRY_RUN: ${{ steps.mode.outputs.dry_run }}
+          # Email
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          FLAGS="--date ${{ steps.date.outputs.target }}"
+
+          if [ "${{ steps.mode.outputs.dry_run }}" = "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+          fi
+
+          python automated_betting.py $FLAGS
+
+      - name: Upload betting logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: betting-logs-${{ steps.date.outputs.target }}
+          path: |
+            betting_logs/
+            automated_betting.log
+          retention-days: 90
+
+      - name: Clean up certificates
+        if: always()
+        run: rm -rf certs/

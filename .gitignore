@@ -12,7 +12,14 @@ scraper_stdout.log
 monitor_output.log
 qa_check.log
 daily_predictions.log
+automated_betting.log
 betfair_download.log
+
+# Betting audit logs (uploaded as GH Actions artifacts)
+betting_logs/
+
+# Betfair SSL certificates (secrets)
+certs/
 
 # Raw Betfair daily CSVs (too many small files for git)
 data/betfair_raw/
