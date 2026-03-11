@@ -13,6 +13,7 @@ monitor_output.log
 qa_check.log
 daily_predictions.log
 betfair_download.log
+betfair_sync.log
 
 # Raw Betfair daily CSVs (too many small files for git)
 data/betfair_raw/
