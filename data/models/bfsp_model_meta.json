@@ -205,15 +205,15 @@
     "verbose": -1
   },
   "final_metrics": {
-    "log_mae": 0.5008,
-    "log_rmse": 0.6553,
-    "log_r2": 0.7868,
-    "bfsp_mae": 34.2,
-    "median_ape_pct": 38.47,
-    "mean_ape_pct": 56.38,
-    "correlation": 0.8875,
-    "best_iteration": 2000,
-    "train_size": 664153,
-    "val_size": 68582
+    "log_mae": 0.5121,
+    "log_rmse": 0.672,
+    "log_r2": 0.7895,
+    "bfsp_mae": 37.08,
+    "median_ape_pct": 38.89,
+    "mean_ape_pct": 56.86,
+    "correlation": 0.8895,
+    "best_iteration": 1990,
+    "train_size": 455597,
+    "val_size": 45050
   }
 }
