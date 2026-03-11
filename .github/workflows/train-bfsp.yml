@@ -70,6 +70,15 @@ jobs:
             --val-window ${{ inputs.val_window || 30 }} \
             --step-days ${{ inputs.step_days || 30 }}
 
+      - name: Commit model to repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/models/bfsp_model.lgb data/models/bfsp_model_meta.json \
+                  data/models/bfsp_training_summary.json data/models/bfsp_feature_importance.csv
+          git diff --cached --quiet || git commit -m "Update trained BFSP model artifacts"
+          git push
+
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4
         with:
