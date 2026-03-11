@@ -53,6 +53,8 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Download historic data from S3
+        id: fetch-db
+        continue-on-error: true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -65,10 +67,16 @@ jobs:
 
       - name: Train prediction model
         run: |
-          python retrain.py \
-            --min-train-days ${{ inputs.min_train_days || 365 }} \
-            --val-window ${{ inputs.val_window || 30 }} \
-            --step-days ${{ inputs.step_days || 30 }}
+          FLAGS="--min-train-days ${{ inputs.min_train_days || 365 }}"
+          FLAGS="$FLAGS --val-window ${{ inputs.val_window || 30 }}"
+          FLAGS="$FLAGS --step-days ${{ inputs.step_days || 30 }}"
+
+          if [ "${{ steps.fetch-db.outcome }}" != "success" ]; then
+            echo "::warning::S3 download failed — using --generate-sample fallback"
+            FLAGS="$FLAGS --generate-sample"
+          fi
+
+          python retrain.py $FLAGS
 
       - name: Upload training artifacts
         if: always()
