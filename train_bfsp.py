@@ -338,12 +338,19 @@ ALL_FEATURE_COLS = (
 # Data loading
 # ---------------------------------------------------------------------------
 
-def load_data(db_path: str) -> pd.DataFrame:
-    """Load race results from SQLite."""
+def load_data(db_path: str, start_date: str | None = None) -> pd.DataFrame:
+    """Load race results from SQLite, optionally filtering by start date."""
     conn = sqlite3.connect(db_path)
-    df = pd.read_sql_query(
-        "SELECT * FROM race_results ORDER BY race_date, race_time", conn
-    )
+    if start_date:
+        df = pd.read_sql_query(
+            "SELECT * FROM race_results WHERE race_date >= ? ORDER BY race_date, race_time",
+            conn,
+            params=(start_date,),
+        )
+    else:
+        df = pd.read_sql_query(
+            "SELECT * FROM race_results ORDER BY race_date, race_time", conn
+        )
     conn.close()
     df["race_date"] = pd.to_datetime(df["race_date"])
     return df
@@ -376,7 +383,6 @@ def generate_data(db_path: str) -> bool:
 
 def build_context_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add race context features that are known pre-race."""
-    df = df.copy()
 
     # Numeric conversions
     df["race_class_num"] = pd.to_numeric(df["race_class"], errors="coerce")
@@ -964,6 +970,11 @@ def main():
         "--num-leaves", type=int, default=127,
         help="Number of leaves (default: 127)",
     )
+    parser.add_argument(
+        "--start-date", type=str, default=None,
+        help="Only load data from this date onward (YYYY-MM-DD). "
+             "Reduces memory usage for large databases.",
+    )
     args = parser.parse_args()
 
     # Fetch data if needed
@@ -988,7 +999,7 @@ def main():
 
     # Load data
     log.info("Loading data...")
-    df = load_data(args.db)
+    df = load_data(args.db, start_date=args.start_date)
     log.info(f"  {len(df):,} rows loaded")
 
     # Override params if specified
