@@ -154,19 +154,24 @@ def _download_via_gh(
     for asset in assets:
         name = asset.get("name", "")
         if name in model_files:
-            dest = os.path.join(dest_dir, name)
             log.info(f"  Downloading {name}...")
-            subprocess.run(
-                [
-                    "gh", "release", "download", tag,
-                    "--repo", repo,
-                    "--pattern", name,
-                    "--dir", dest_dir,
-                    "--clobber",
-                ],
-                check=True,
-            )
-            downloaded += 1
+            try:
+                subprocess.run(
+                    [
+                        "gh", "release", "download", tag,
+                        "--repo", repo,
+                        "--pattern", name,
+                        "--dir", dest_dir,
+                        "--clobber",
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                downloaded += 1
+            except subprocess.CalledProcessError as e:
+                log.error(f"  Failed to download {name}: {e.stderr}")
+                return False
 
     if downloaded == 0:
         log.warning("No model files found in release assets")
@@ -219,10 +224,14 @@ def _download_via_api(
                 dl_headers["Authorization"] = f"Bearer {token}"
 
             dl_req = urllib.request.Request(download_url, headers=dl_headers)
-            with urllib.request.urlopen(dl_req) as resp:
-                with open(dest, "wb") as f:
-                    f.write(resp.read())
-            downloaded += 1
+            try:
+                with urllib.request.urlopen(dl_req) as resp:
+                    with open(dest, "wb") as f:
+                        f.write(resp.read())
+                downloaded += 1
+            except Exception as e:
+                log.error(f"  Failed to download {name}: {e}")
+                return False
 
     if downloaded == 0:
         log.warning("No model files found in release assets")
