@@ -39,6 +39,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
+from betfair_client import BetfairClient, BetfairAPIError, match_runner_name
 from model.benter_blend import BenterBlender
 from model.custom_metrics import CustomMetricsEngine
 from model.overlay_detector import OverlayDetector
@@ -577,6 +578,117 @@ def _parse_distance_to_furlongs(distance_series: pd.Series) -> pd.Series:
 
 
 # ------------------------------------------------------------------
+# Step 3b: Enrich runners with live Betfair exchange odds
+# ------------------------------------------------------------------
+
+def enrich_with_betfair_odds(
+    runners: pd.DataFrame,
+    target_date: date,
+) -> pd.DataFrame:
+    """Fetch live Betfair exchange odds and merge into runner data.
+
+    Matches runners by venue + horse name. Adds columns:
+    - betfair_back: best available back price
+    - betfair_lay: best available lay price
+    - betfair_sp_near: projected SP (near side)
+    - betfair_last_traded: last matched price
+    - betfair_market_id: Betfair market ID for reference
+
+    If BFSP column is missing or empty, fills it with the best back
+    price as a live market proxy.
+
+    Args:
+        runners: DataFrame of today's runners.
+        target_date: Date to query Betfair markets.
+
+    Returns:
+        runners DataFrame enriched with Betfair columns.
+    """
+    # Check credentials
+    if not os.getenv("BETFAIR_APP_KEY"):
+        log.info("BETFAIR_APP_KEY not set - skipping Betfair odds enrichment")
+        return runners
+
+    try:
+        client = BetfairClient()
+        client.login()
+    except BetfairAPIError as e:
+        log.warning(f"Betfair login failed, skipping odds enrichment: {e}")
+        return runners
+
+    try:
+        live_data = client.get_live_odds_for_date(target_date)
+    except Exception as e:
+        log.warning(f"Failed to fetch Betfair odds: {e}")
+        client.logout()
+        return runners
+    finally:
+        client.logout()
+
+    if not live_data:
+        log.info("No Betfair market data returned")
+        return runners
+
+    log.info(f"  Fetched {len(live_data)} Betfair runner prices")
+
+    # Build Betfair lookup: (venue_lower, horse_name_lower) -> odds data
+    bf_lookup = {}
+    for row in live_data:
+        venue = (row.get("venue") or "").strip().lower()
+        name = (row.get("runner_name") or "").strip()
+        # Strip country suffix for matching
+        name_clean = re.sub(r"\s*\([A-Z]{2,3}\)\s*$", "", name).strip().lower()
+        key = (venue, name_clean)
+        bf_lookup[key] = row
+
+    # Match and merge
+    runners = runners.copy()
+    runners["betfair_back"] = np.nan
+    runners["betfair_lay"] = np.nan
+    runners["betfair_sp_near"] = np.nan
+    runners["betfair_last_traded"] = np.nan
+    runners["betfair_market_id"] = ""
+
+    matched = 0
+    for idx, runner in runners.iterrows():
+        track = str(runner.get("track", "")).strip().lower()
+        horse = str(runner.get("horse_name", "")).strip().lower()
+        horse_clean = re.sub(r"\s*\([a-z]{2,3}\)\s*$", "", horse).strip()
+
+        # Try direct match
+        bf = bf_lookup.get((track, horse_clean))
+
+        # Try partial venue match if direct fails
+        if bf is None:
+            for (venue, name), data in bf_lookup.items():
+                if name == horse_clean and (venue in track or track in venue):
+                    bf = data
+                    break
+
+        if bf is not None:
+            runners.at[idx, "betfair_back"] = bf.get("best_back_price")
+            runners.at[idx, "betfair_lay"] = bf.get("best_lay_price")
+            runners.at[idx, "betfair_sp_near"] = bf.get("sp_near_price")
+            runners.at[idx, "betfair_last_traded"] = bf.get("last_traded_price")
+            runners.at[idx, "betfair_market_id"] = bf.get("market_id", "")
+            matched += 1
+
+    log.info(f"  Matched {matched}/{len(runners)} runners to Betfair odds")
+
+    # If BFSP column is missing/empty, use best back price as proxy
+    if "bfsp" not in runners.columns:
+        runners["bfsp"] = np.nan
+    mask = runners["bfsp"].isna() & runners["betfair_back"].notna()
+    if mask.any():
+        runners.loc[mask, "bfsp"] = runners.loc[mask, "betfair_back"]
+        log.info(
+            f"  Filled {mask.sum()} missing BFSP values with Betfair back prices"
+        )
+
+    return runners
+
+
+# ------------------------------------------------------------------
 # Step 4: Run predictions
 # ------------------------------------------------------------------
 
@@ -690,10 +802,17 @@ def format_predictions_text(predictions: pd.DataFrame, target_date: date) -> str
 
             lines.append(f"  {track} - {rtime} ({n_run} runners)")
             lines.append("  " + "-" * 66)
-            lines.append(
-                f"  {'Rank':<5} {'Horse':<25} {'P(Win)':<8} "
-                f"{'Pred BFSP':<10} {'Fair BFSP':<10}"
-            )
+            has_bf = "betfair_back" in race_df.columns and race_df["betfair_back"].notna().any()
+            if has_bf:
+                lines.append(
+                    f"  {'Rank':<5} {'Horse':<25} {'P(Win)':<8} "
+                    f"{'Pred BFSP':<10} {'Fair BFSP':<10} {'BF Back':<9}"
+                )
+            else:
+                lines.append(
+                    f"  {'Rank':<5} {'Horse':<25} {'P(Win)':<8} "
+                    f"{'Pred BFSP':<10} {'Fair BFSP':<10}"
+                )
             lines.append("  " + "-" * 66)
 
             for rank, (_, row) in enumerate(race_df.iterrows(), 1):
@@ -702,10 +821,15 @@ def format_predictions_text(predictions: pd.DataFrame, target_date: date) -> str
                 pred_bfsp = row.get("predicted_bfsp", 0)
                 fair_bfsp = row.get("model_fair_bfsp", pred_bfsp)
 
-                lines.append(
+                line = (
                     f"  {rank:<5} {horse:<25} {p_win:<8.1%} "
                     f"{pred_bfsp:<10.1f} {fair_bfsp:<10.1f}"
                 )
+                if has_bf:
+                    bf_back = row.get("betfair_back")
+                    bf_s = f"{bf_back:.2f}" if pd.notna(bf_back) else "-"
+                    line += f" {bf_s:<9}"
+                lines.append(line)
             lines.append("")
     else:
         predictions = predictions.sort_values("p_model", ascending=False)
@@ -841,10 +965,12 @@ def format_predictions_html(predictions: pd.DataFrame, target_date: date) -> str
                 "<table border='1' cellpadding='4' cellspacing='0' "
                 "style='border-collapse:collapse; font-size:13px;'>"
             )
+            has_bf = "betfair_back" in race_df.columns and race_df["betfair_back"].notna().any()
+            bf_header = "<th>BF Back</th><th>BF Lay</th>" if has_bf else ""
             html.append(
                 "<tr style='background:#eee;'>"
                 "<th>#</th><th>Horse</th><th>P(Win)</th>"
-                "<th>Predicted BFSP</th><th>Fair BFSP</th></tr>"
+                f"<th>Predicted BFSP</th><th>Fair BFSP</th>{bf_header}</tr>"
             )
 
             for rank, (_, row) in enumerate(race_df.iterrows(), 1):
@@ -854,12 +980,19 @@ def format_predictions_html(predictions: pd.DataFrame, target_date: date) -> str
                 fair_bfsp = row.get("model_fair_bfsp", pred_bfsp)
                 bg = "#ffffcc" if rank == 1 else ""
                 style = f" style='background:{bg}'" if bg else ""
+                bf_cells = ""
+                if has_bf:
+                    bf_back = row.get("betfair_back")
+                    bf_lay = row.get("betfair_lay")
+                    bf_back_s = f"{bf_back:.2f}" if pd.notna(bf_back) else "-"
+                    bf_lay_s = f"{bf_lay:.2f}" if pd.notna(bf_lay) else "-"
+                    bf_cells = f"<td>{bf_back_s}</td><td>{bf_lay_s}</td>"
                 html.append(
                     f"<tr{style}><td>{rank}</td>"
                     f"<td>{horse}</td>"
                     f"<td>{p_win:.1%}</td>"
                     f"<td>{pred_bfsp:.1f}</td>"
-                    f"<td>{fair_bfsp:.1f}</td></tr>"
+                    f"<td>{fair_bfsp:.1f}</td>{bf_cells}</tr>"
                 )
             html.append("</table>")
 
@@ -1000,6 +1133,11 @@ def run_pipeline(
     # Step 3: Generate historic features
     log.info("Step 3: Loading historical data and building features...")
     historical = load_historical_data(db_path)
+
+    # Step 3b: Enrich with live Betfair exchange odds
+    log.info("Step 3b: Fetching live Betfair exchange odds...")
+    today_runners = enrich_with_betfair_odds(today_runners, target_date)
+
     features_df, feature_cols = build_features_for_runners(
         today_runners, historical, target_date
     )
