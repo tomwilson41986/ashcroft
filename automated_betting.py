@@ -2,12 +2,17 @@
 
 End-to-end workflow that:
 1. Fetches today's racecards from HRB
-2. Generates predictions using the trained model
+2. Generates BFSP predictions using the trained regression model
 3. Fetches live Betfair exchange prices
 4. Matches HRB runners to Betfair selections
-5. Identifies overlays via Benter blending + overlay detection
-6. Places LIMIT BACK orders on qualifying bets
-7. Logs everything to an audit trail
+5. Identifies overlays by comparing predicted BFSP vs live price
+6. Stakes using fractional Kelly criterion
+7. Places orders on qualifying bets
+8. Logs everything to an audit trail
+
+The overlay detection uses the BFSP regression model directly (as validated
+in profitability_analysis.py with 37.55% ROI), NOT the Benter-blended
+probability path (which degenerates at lambda=1.0).
 
 Usage:
     python automated_betting.py                      # Run for today
@@ -33,6 +38,7 @@ import os
 import sys
 from datetime import date, datetime, timezone
 
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
@@ -43,19 +49,18 @@ from betfair.client import BetfairClient
 from betfair.config import BettingConfig
 from betfair.matcher import HorseNameMatcher
 from daily_predictions import (
-    DB_PATH,
-    MODEL_DIR,
     RECIPIENT_EMAIL,
-    build_features_for_runners,
     create_session,
     get_todays_runners,
-    load_historical_data,
     login,
-    run_predictions,
     send_email,
 )
-from model.benter_blend import BenterBlender
-from model.overlay_detector import OverlayDetector
+from predict_bfsp_today import (
+    DB_PATH,
+    MODEL_DIR,
+    load_historical,
+    prepare_and_predict,
+)
 
 load_dotenv()
 
@@ -74,6 +79,79 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def _compute_overlays(
+    predictions: pd.DataFrame,
+    config: BettingConfig,
+) -> pd.DataFrame:
+    """Compute overlays and Kelly stakes using direct BFSP comparison.
+
+    This replicates the validated logic from profitability_analysis.py:
+    - overlay_pct = (live_back_price - predicted_bfsp) / predicted_bfsp * 100
+    - Kelly: p = 1/predicted_bfsp, b = live_back_price - 1
+
+    Args:
+        predictions: DataFrame with ``predicted_bfsp`` and ``live_back_price``.
+        config: Betting configuration with staking parameters.
+
+    Returns:
+        DataFrame of qualifying bets with stakes.
+    """
+    df = predictions.copy()
+
+    # Overlay: live price exceeds model's fair price
+    df["overlay_pct"] = (
+        (df["live_back_price"] - df["predicted_bfsp"])
+        / df["predicted_bfsp"]
+        * 100
+    )
+
+    # Filter to overlays meeting minimum edge
+    min_edge_pct = config.min_edge * 100  # config stores as fraction
+    qualifying = df[df["overlay_pct"] >= min_edge_pct].copy()
+
+    if len(qualifying) == 0:
+        return pd.DataFrame()
+
+    # Kelly criterion: p = model implied prob, b = net decimal odds on offer
+    p = 1.0 / qualifying["predicted_bfsp"].values
+    b = qualifying["live_back_price"].values - 1.0
+    kelly_f = np.where(b > 0, (p * b - (1 - p)) / b, 0)
+    kelly_f = np.clip(kelly_f, 0, 0.25)  # Cap at 25% of bankroll
+
+    qualifying["kelly_f"] = kelly_f
+    qualifying["adjusted_kelly_f"] = kelly_f * config.kelly_fraction
+
+    # Compute stakes with constraints
+    stakes = qualifying["adjusted_kelly_f"] * config.bankroll
+    stakes = np.minimum(stakes, config.bankroll * config.max_stake_pct)
+    stakes = np.minimum(stakes, config.max_stake)
+    stakes = np.where(stakes >= config.min_stake, stakes, 0)
+
+    qualifying["stake_gbp"] = np.round(stakes, 2)
+
+    # Drop zero stakes
+    qualifying = qualifying[qualifying["stake_gbp"] > 0].copy()
+
+    if len(qualifying) == 0:
+        return pd.DataFrame()
+
+    # Expected value (accounting for commission)
+    qualifying["expected_value"] = qualifying["stake_gbp"] * (
+        (1.0 / qualifying["predicted_bfsp"])
+        * (qualifying["live_back_price"] - 1)
+        * (1 - config.commission_rate)
+        - (1 - 1.0 / qualifying["predicted_bfsp"])
+    )
+
+    # Rename for compatibility with BettingEngine
+    qualifying["edge_pct"] = qualifying["overlay_pct"]
+    qualifying["p_model"] = 1.0 / qualifying["predicted_bfsp"]
+
+    return qualifying.sort_values("expected_value", ascending=False).reset_index(
+        drop=True
+    )
+
+
 def run_pipeline(
     target_date: date,
     db_path: str = DB_PATH,
@@ -82,6 +160,10 @@ def run_pipeline(
     recipient: str = RECIPIENT_EMAIL,
 ) -> pd.DataFrame:
     """Execute the full automated betting pipeline.
+
+    Uses the BFSP regression model to predict fair prices, then detects
+    overlays by comparing predicted BFSP against live Betfair exchange
+    prices. This matches the approach validated in profitability_analysis.py.
 
     Args:
         target_date: The racing date to predict and bet on.
@@ -122,14 +204,33 @@ def run_pipeline(
         return pd.DataFrame()
     log.info(f"  Found {len(today_runners)} runners")
 
-    # --- Step 2: Generate predictions ---
-    log.info("Step 2: Loading historical data and generating predictions...")
-    historical = load_historical_data(db_path)
-    features_df, feature_cols = build_features_for_runners(
-        today_runners, historical, target_date
+    # --- Step 2: Generate BFSP predictions (regression model) ---
+    log.info("Step 2: Loading BFSP regression model and generating predictions...")
+
+    # Load the BFSP regression model
+    model_path = os.path.join(model_dir, "bfsp_model.lgb")
+    meta_path = os.path.join(model_dir, "bfsp_model_meta.json")
+
+    if not os.path.exists(model_path):
+        log.error(f"BFSP model not found at {model_path}")
+        log.error("Run 'python train_bfsp.py' first to train the model.")
+        sys.exit(1)
+
+    model = lgb.Booster(model_file=model_path)
+    with open(meta_path) as f:
+        meta = json.load(f)
+    feature_cols = meta["feature_cols"]
+
+    historical = load_historical(db_path)
+    predictions = prepare_and_predict(
+        historical, today_runners, model, feature_cols, target_date
     )
-    predictions = run_predictions(features_df, feature_cols, model_dir)
-    log.info(f"  Generated predictions for {len(predictions)} runners")
+
+    if len(predictions) == 0:
+        log.warning("No predictions generated. Exiting.")
+        return pd.DataFrame()
+
+    log.info(f"  Generated BFSP predictions for {len(predictions)} runners")
 
     # --- Step 3: Betfair login & market fetch ---
     log.info("Step 3: Connecting to Betfair Exchange...")
@@ -184,43 +285,16 @@ def run_pipeline(
         priced = matched["live_back_price"].notna().sum()
         log.info(f"  Got live prices for {priced}/{matched_count} matched runners")
 
-        # --- Step 6: Blend with live prices & detect overlays ---
-        log.info("Step 6: Blending model with live prices...")
+        # --- Step 6: Detect overlays (BFSP model vs live price) ---
+        log.info("Step 6: Detecting overlays (predicted BFSP vs live price)...")
 
-        # Use live price as the market signal for blending
-        blend_df = matched[matched["live_back_price"].notna()].copy()
-        if len(blend_df) == 0:
+        priced_df = matched[matched["live_back_price"].notna()].copy()
+        if len(priced_df) == 0:
             log.warning("No runners with live prices. Exiting.")
             bf_client.logout()
             return pd.DataFrame()
 
-        # Set the live price as bfsp for blending
-        blend_df["bfsp"] = blend_df["live_back_price"]
-
-        blend_config_path = os.path.join(model_dir, "blend_config.json")
-        if os.path.exists(blend_config_path):
-            with open(blend_config_path) as f:
-                optimal_lambda = json.load(f).get("optimal_lambda", 0.80)
-        else:
-            optimal_lambda = 0.80
-
-        blender = BenterBlender()
-        blended = blender.blend(blend_df, lambda_=optimal_lambda)
-
-        log.info(f"  Blended {len(blended)} runners (lambda={optimal_lambda})")
-
-        # --- Step 7: Identify overlays & calculate stakes ---
-        log.info("Step 7: Identifying overlays...")
-        detector = OverlayDetector(
-            min_edge=config.min_edge,
-            kelly_fraction=config.kelly_fraction,
-            bankroll=config.bankroll,
-            max_stake_pct=config.max_stake_pct,
-            min_stake=config.min_stake,
-            max_stake=config.max_stake,
-            commission_rate=config.commission_rate,
-        )
-        bet_card = detector.generate_bet_card(blended)
+        bet_card = _compute_overlays(priced_df, config)
 
         if len(bet_card) == 0:
             log.info("No overlays found meeting minimum edge threshold. Done.")
@@ -228,25 +302,26 @@ def run_pipeline(
             return pd.DataFrame()
 
         log.info(f"  Found {len(bet_card)} qualifying bets")
+        for _, row in bet_card.iterrows():
+            log.info(
+                f"    {row.get('horse_name', '?')} @ {row.get('track', '?')} "
+                f"{row.get('race_time', '?')}: "
+                f"pred={row['predicted_bfsp']:.1f} live={row['live_back_price']:.1f} "
+                f"overlay={row['overlay_pct']:.1f}% "
+                f"stake=GBP {row['stake_gbp']:.2f}"
+            )
 
-        # Carry forward Betfair fields for placement
-        for col in ["market_id", "selection_id", "live_back_price"]:
-            if col in blended.columns and col not in bet_card.columns:
-                bet_card[col] = blended.loc[
-                    bet_card.index, col
-                ].values
-
-        # --- Step 8: Place bets ---
-        log.info(f"Step 8: Placing bets [{mode}]...")
+        # --- Step 7: Place bets ---
+        log.info(f"Step 7: Placing bets [{mode}]...")
         audit = BetAuditLog(target_date=target_date)
         engine = BettingEngine(bf_client, config, audit)
         placed_card = engine.place_bet_card(bet_card)
 
-        # --- Step 9: Audit summary ---
+        # --- Step 8: Audit summary ---
         summary = audit.log_daily_summary()
         log.info(f"  Summary: {summary}")
 
-        # --- Step 10: Email confirmation ---
+        # --- Step 9: Email confirmation ---
         if recipient:
             _send_bet_confirmation(placed_card, target_date, config, recipient)
 
