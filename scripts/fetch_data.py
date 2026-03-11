@@ -13,8 +13,8 @@ Usage:
 Environment variables:
     AWS_ACCESS_KEY_ID       - AWS credentials (or use IAM role)
     AWS_SECRET_ACCESS_KEY   - AWS credentials
-    AWS_DEFAULT_REGION      - AWS region (default: eu-west-1)
-    S3_BUCKET               - S3 bucket name (default: ashcroft-racing-data)
+    AWS_DEFAULT_REGION      - AWS region (default: us-east-1)
+    S3_BUCKET               - S3 bucket name (default: horseracingresults)
     S3_DB_KEY               - S3 object key for the database (default: horse_racing.db)
     GITHUB_TOKEN            - GitHub token for downloading release assets
     GITHUB_REPO             - GitHub repo (default: tomwilson41986/ashcroft)
@@ -39,9 +39,9 @@ PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 DB_PATH = os.path.join(PROJECT_DIR, "horse_racing.db")
 MODEL_DIR = os.path.join(PROJECT_DIR, "data", "models")
 
-DEFAULT_BUCKET = "ashcroft-racing-data"
+DEFAULT_BUCKET = "horseracingresults"
 DEFAULT_DB_KEY = "horse_racing.db"
-DEFAULT_REGION = "eu-west-1"
+DEFAULT_REGION = "us-east-1"
 DEFAULT_REPO = "tomwilson41986/ashcroft"
 
 
