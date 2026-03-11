@@ -1,0 +1,88 @@
+name: Train Prediction Model
+
+on:
+  # Manual trigger with configurable parameters
+  workflow_dispatch:
+    inputs:
+      min_train_days:
+        description: 'Minimum training window in days'
+        required: false
+        type: number
+        default: 365
+      val_window:
+        description: 'Validation window in days'
+        required: false
+        type: number
+        default: 30
+      step_days:
+        description: 'Step between folds in days'
+        required: false
+        type: number
+        default: 30
+      publish_release:
+        description: 'Publish model as GitHub release after training'
+        required: false
+        type: boolean
+        default: true
+
+  # Retrain monthly on the 1st at 03:00 UTC
+  schedule:
+    - cron: '0 3 1 * *'
+
+env:
+  PYTHON_VERSION: '3.11'
+  S3_BUCKET: ashcroft-racing-data
+  S3_DB_KEY: horse_racing.db
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download historic data from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'eu-west-1' }}
+        run: |
+          python scripts/fetch_data.py \
+            --db-only \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-key "$S3_DB_KEY"
+
+      - name: Train prediction model
+        run: |
+          python retrain.py \
+            --min-train-days ${{ inputs.min_train_days || 365 }} \
+            --val-window ${{ inputs.val_window || 30 }} \
+            --step-days ${{ inputs.step_days || 30 }}
+
+      - name: Upload training artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-results-${{ github.run_id }}
+          path: |
+            data/models/training_summary.json
+            data/models/retrain_comparison.json
+            data/models/blend_config.json
+          retention-days: 90
+
+      - name: Publish model as GitHub release
+        if: success() && (inputs.publish_release == true || inputs.publish_release == '' || github.event_name == 'schedule')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/upload_model.py
