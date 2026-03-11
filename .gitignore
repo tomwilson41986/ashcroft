@@ -22,5 +22,5 @@ data/merged/
 
 # Trained model backups (keep latest model in repo)
 data/models_backup*/
-bfsp_model.lgb
+/bfsp_model.lgb
 model_metrics.json
