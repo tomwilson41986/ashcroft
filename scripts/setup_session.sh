@@ -117,9 +117,9 @@ if [ "$FETCH_SECRETS" = true ]; then
     fi
 
     # Ensure defaults for S3 config
-    grep -q "S3_BUCKET" "$ENV_FILE" || echo "S3_BUCKET=ashcroft-racing-data" >> "$ENV_FILE"
+    grep -q "S3_BUCKET" "$ENV_FILE" || echo "S3_BUCKET=horseracingresults" >> "$ENV_FILE"
     grep -q "S3_DB_KEY" "$ENV_FILE" || echo "S3_DB_KEY=horse_racing.db" >> "$ENV_FILE"
-    grep -q "AWS_DEFAULT_REGION" "$ENV_FILE" || echo "AWS_DEFAULT_REGION=eu-west-1" >> "$ENV_FILE"
+    grep -q "AWS_DEFAULT_REGION" "$ENV_FILE" || echo "AWS_DEFAULT_REGION=us-east-1" >> "$ENV_FILE"
 
     echo "[OK] .env written to $ENV_FILE"
 fi
@@ -143,7 +143,7 @@ if [ "$FETCH_DB" = true ]; then
     echo "Downloading database from S3..."
     python "$PROJECT_DIR/scripts/fetch_data.py" \
         --db-only \
-        --s3-bucket "${S3_BUCKET:-ashcroft-racing-data}" \
+        --s3-bucket "${S3_BUCKET:-horseracingresults}" \
         --s3-key "${S3_DB_KEY:-horse_racing.db}" \
         --db-path "$DB_PATH"
 

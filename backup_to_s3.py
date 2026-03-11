@@ -12,8 +12,8 @@ Requires AWS credentials configured via:
 Environment variables:
     AWS_ACCESS_KEY_ID       - AWS access key
     AWS_SECRET_ACCESS_KEY   - AWS secret key
-    AWS_DEFAULT_REGION      - AWS region (default: eu-west-1)
-    S3_BUCKET               - S3 bucket name (default: ashcroft-racing-data)
+    AWS_DEFAULT_REGION      - AWS region (default: us-east-1)
+    S3_BUCKET               - S3 bucket name (default: horseracingresults)
     S3_DB_KEY               - S3 object key (default: horse_racing.db)
 """
 
@@ -30,9 +30,9 @@ load_dotenv()
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(SCRIPT_DIR, "horse_racing.db")
-BUCKET = os.getenv("S3_BUCKET", "ashcroft-racing-data")
+BUCKET = os.getenv("S3_BUCKET", "horseracingresults")
 S3_KEY = os.getenv("S3_DB_KEY", "horse_racing.db")
-REGION = os.getenv("AWS_DEFAULT_REGION", "eu-west-1")
+REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
 
 logging.basicConfig(
     level=logging.INFO,

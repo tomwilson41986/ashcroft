@@ -31,7 +31,7 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 |--------|---------|
 | `AWS_ACCESS_KEY_ID` | S3 access for `horse_racing.db` |
 | `AWS_SECRET_ACCESS_KEY` | S3 access |
-| `AWS_DEFAULT_REGION` | Default: `eu-west-1` |
+| `AWS_DEFAULT_REGION` | Default: `us-east-1` |
 | `HRB_USERNAME` | horseracebase.com login |
 | `HRB_PASSWORD` | horseracebase.com password |
 | `SMTP_USERNAME` | Email sender for predictions |
@@ -64,7 +64,7 @@ python daily_predictions.py --dry-run
 - `train_bfsp.py` — Walk-forward training with all custom metrics
 - `predict_bfsp_today.py` — Daily BFSP predictions
 - `model/trainer.py` — Win probability model (classification)
-- S3 bucket: `ashcroft-racing-data`, key: `horse_racing.db`
+- S3 bucket: `horseracingresults`, key: `horse_racing.db`
 
 ## Data
 
