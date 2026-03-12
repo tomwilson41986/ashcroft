@@ -54,12 +54,19 @@ log = logging.getLogger(__name__)
 # Data Loading
 # ---------------------------------------------------------------------------
 
-def load_historical(db_path: str) -> pd.DataFrame:
-    """Load all historical race results."""
+def load_historical(db_path: str, start_date: str | None = None) -> pd.DataFrame:
+    """Load historical race results, optionally filtered by start date."""
     conn = sqlite3.connect(db_path)
-    df = pd.read_sql_query(
-        "SELECT * FROM race_results ORDER BY race_date, race_time", conn
-    )
+    if start_date:
+        df = pd.read_sql_query(
+            "SELECT * FROM race_results WHERE race_date >= ? ORDER BY race_date, race_time",
+            conn,
+            params=[start_date],
+        )
+    else:
+        df = pd.read_sql_query(
+            "SELECT * FROM race_results ORDER BY race_date, race_time", conn
+        )
     conn.close()
     df["race_date"] = pd.to_datetime(df["race_date"])
     return df
@@ -472,6 +479,10 @@ def main():
         "--output-csv", type=str, default=None,
         help="Save predictions to CSV file",
     )
+    parser.add_argument(
+        "--start-date", type=str, default="2020-01-01",
+        help="Earliest historical date to load (default: 2020-01-01). Reduces memory.",
+    )
     args = parser.parse_args()
 
     target_date = (
@@ -487,8 +498,8 @@ def main():
     model, feature_cols = load_bfsp_model(args.model_dir)
 
     # Load historical data
-    log.info("Loading historical data...")
-    historical = load_historical(args.db)
+    log.info(f"Loading historical data (from {args.start_date})...")
+    historical = load_historical(args.db, start_date=args.start_date)
     log.info(f"  {len(historical):,} historical rows loaded")
 
     if args.last_n_days:
