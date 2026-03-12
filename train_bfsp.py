@@ -326,6 +326,102 @@ WEIGHT_FEATURES = [
     "weight_change_lr",
 ]
 
+# Pedigree features (sire / damsire)
+PEDIGREE_FEATURES = [
+    # Sire career stats (Bayesian-shrunk)
+    "sire_win_rate",
+    "sire_place_rate",
+    "sire_avg_nfp",
+    "sire_wiv",
+    "sire_runners",
+    # Sire going aptitude
+    "sire_going_nfp",
+    "sire_going_win_rate",
+    # Sire distance aptitude
+    "sire_dist_nfp",
+    "sire_dist_win_rate",
+    # Damsire stats (Bayesian-shrunk)
+    "damsire_avg_nfp",
+    "damsire_win_rate",
+    "damsire_going_nfp",
+    "damsire_dist_nfp",
+    "damsire_runners",
+    # Debut interactions
+    "debut_x_sire_nfp",
+    "debut_x_sire_wiv",
+    "debut_x_trainer_wiv",
+]
+
+# Speed figures (Benter/Mordin — from comptime_numeric)
+SPEED_FEATURES = [
+    "preracehorsecareerRSR",
+    "LR_RSR",
+    "LR3_RSR",
+    "LR5_RSR",
+    "best_RSR",
+    "RSR_gap",
+    "SFI",
+    "SFI_3",
+]
+
+# Actual lengths beaten (from total_dst_bt)
+LENGTHS_BEATEN_FEATURES = [
+    "preracehorsecareerLB",
+    "LR_LB",
+    "LR3_LB",
+    "LR5_LB",
+    "FSALB",
+]
+
+# Equipment changes (first-time headgear signals)
+EQUIPMENT_FEATURES = [
+    "headgear_change",
+    "first_time_headgear",
+    "headgear_removed",
+    "has_headgear",
+]
+
+# Surface preference (turf vs all-weather)
+SURFACE_FEATURES = [
+    "surface_nfp",
+    "surface_win_rate",
+    "surface_runs",
+    "first_on_surface",
+]
+
+# Track preference (course specialist detection)
+TRACK_PREF_FEATURES = [
+    "horse_track_runs",
+    "horse_track_nfp",
+    "horse_track_win_rate",
+    "trainer_track_runs",
+    "trainer_track_win_rate",
+    "jockey_track_runs",
+    "jockey_track_win_rate",
+]
+
+# OR trajectory (Ziemba — handicap mark changes)
+OR_TRAJECTORY_FEATURES = [
+    "or_change",
+    "or_change_3",
+    "career_best_or",
+    "or_vs_best",
+    "or_off_peak",
+    "or_vs_last_win",
+]
+
+# Trainer/jockey hot form (14/30 day rolling)
+HOT_FORM_FEATURES = [
+    "trainer_sr_14d",
+    "trainer_sr_30d",
+    "trainer_runs_14d",
+    "trainer_form_delta",
+    "jockey_sr_14d",
+    "jockey_sr_30d",
+    "jockey_runs_14d",
+    "jockey_form_delta",
+]
+
 # Within-race rankings
 RANK_FEATURES = [
     "rNFP",
@@ -389,6 +485,20 @@ RANK_FEATURES = [
     "rGoingPref",
     "rWeightVsAvg",
     "rUnexposure",
+    # Pedigree rankings
+    "rSireNFP",
+    "rSireWIV",
+    "rSireGoingNFP",
+    "rSireDistNFP",
+    "rDamsireNFP",
+    # Speed / lengths / new feature rankings
+    "rRSR",
+    "rLB",
+    "rSurfaceNFP",
+    "rHorseTrackNFP",
+    "rORChange",
+    "rTrainerSR14d",
+    "rJockeySR14d",
 ]
 
 # Race context features (known pre-race)
@@ -444,6 +554,14 @@ ALL_FEATURE_COLS = (
     + FORM_TRAJECTORY_FEATURES
     + CONSISTENCY_FEATURES
     + WEIGHT_FEATURES
+    + PEDIGREE_FEATURES
+    + SPEED_FEATURES
+    + LENGTHS_BEATEN_FEATURES
+    + EQUIPMENT_FEATURES
+    + SURFACE_FEATURES
+    + TRACK_PREF_FEATURES
+    + OR_TRAJECTORY_FEATURES
+    + HOT_FORM_FEATURES
 )
 
 
