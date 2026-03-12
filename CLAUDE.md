@@ -36,6 +36,9 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 | `HRB_PASSWORD` | horseracebase.com password |
 | `SMTP_USERNAME` | Email sender for predictions |
 | `SMTP_PASSWORD` | Email app password |
+| `BETFAIR_USERNAME` | Betfair Exchange login |
+| `BETFAIR_PASSWORD` | Betfair Exchange password |
+| `BETFAIR_APP_KEY` | Betfair API application key |
 
 ## Key Commands
 
@@ -52,8 +55,23 @@ python predict_bfsp_today.py --from-db --date 2025-12-30
 # Backtest last 7 days
 python predict_bfsp_today.py --last-n-days 7
 
-# Daily predictions pipeline (email)
+# Daily predictions pipeline (email, auto-fetches Betfair odds if configured)
 python daily_predictions.py --dry-run
+
+# Pull actual BSPs from Betfair for yesterday's completed races
+python betfair_sync.py --bsp
+
+# Pull BSPs for a date range
+python betfair_sync.py --bsp --from 2026-03-01 --to 2026-03-10
+
+# Show live Betfair exchange odds for today
+python betfair_sync.py --live
+
+# Show only upcoming/non-completed races with live odds
+python betfair_sync.py --upcoming
+
+# Export live odds to CSV
+python betfair_sync.py --live --csv live_odds.csv
 ```
 
 ## Architecture
@@ -68,9 +86,10 @@ python daily_predictions.py --dry-run
 
 ## Data
 
-- **Source**: horseracebase.com (CSV export + HTML scraping)
+- **Source**: horseracebase.com (CSV export + HTML scraping) + Betfair Exchange API
 - **Storage**: SQLite `horse_racing.db` backed up to S3
 - **Schema**: `race_results` table with 50+ columns
+- **Betfair**: `betfair_client.py` (API client), `betfair_sync.py` (BSP sync + live markets)
 
 ## Git Conventions
 
