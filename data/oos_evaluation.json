@@ -1,0 +1,53 @@
+{
+  "period": {
+    "start": "2024-01-01",
+    "end": "2026-02-18"
+  },
+  "n_predictions": 253532,
+  "n_folds": 26,
+  "n_races": 27223,
+  "accuracy": {
+    "log_mae": 0.5061,
+    "log_rmse": 0.6637,
+    "log_r2": 0.7731,
+    "correlation": 0.8793,
+    "bfsp_mae": 33.24,
+    "median_ape_pct": 38.9
+  },
+  "ranking": {
+    "top1_win_rate": 30.0,
+    "top2_win_rate": 49.8,
+    "top3_win_rate": 64.0,
+    "random_baseline": 10.7
+  },
+  "profitability_level_stakes": {
+    ">=5%_overlay": {
+      "n_bets": 91265,
+      "winners": 6706,
+      "win_rate_pct": 7.3,
+      "profit": -3545.37,
+      "roi_pct": -3.88
+    },
+    ">=10%_overlay": {
+      "n_bets": 84188,
+      "winners": 5905,
+      "win_rate_pct": 7.0,
+      "profit": -3830.73,
+      "roi_pct": -4.55
+    },
+    ">=15%_overlay": {
+      "n_bets": 77435,
+      "winners": 5208,
+      "win_rate_pct": 6.7,
+      "profit": -3565.67,
+      "roi_pct": -4.6
+    },
+    ">=20%_overlay": {
+      "n_bets": 71248,
+      "winners": 4589,
+      "win_rate_pct": 6.4,
+      "profit": -2968.87,
+      "roi_pct": -4.17
+    }
+  }
+}
