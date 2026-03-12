@@ -91,6 +91,10 @@ python betfair_sync.py --live --csv live_odds.csv
 - **Schema**: `race_results` table with 50+ columns
 - **Betfair**: `betfair_client.py` (API client), `betfair_sync.py` (BSP sync + live markets)
 
+## Rules
+
+- **NEVER use sample/generated data** for training or evaluation. Always use the real `horse_racing.db` from S3.
+
 ## Git Conventions
 
 - Feature branches: `claude/<description>-<id>`

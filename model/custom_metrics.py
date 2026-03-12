@@ -172,6 +172,19 @@ class CustomMetricsEngine:
         df = self._calc_trainer_jockey(df)
         df = self._calc_race_strength(df)
         df = self._calc_recency_and_confidence(df)
+
+        # --- New research-backed metrics (Benter/Woods/Ziemba/syndicate) ---
+        df = self._calc_exponential_decay_form(df)
+        df = self._calc_expectation_residuals(df)
+        df = self._calc_unexposure(df)
+        df = self._calc_class_movement(df)
+        df = self._calc_distance_aptitude(df)
+        df = self._calc_going_preference(df)
+        df = self._calc_draw_bias(df)
+        df = self._calc_form_trajectory(df)
+        df = self._calc_consistency(df)
+        df = self._calc_weight_differential(df)
+
         df = self._calc_within_race_ranks(df)
 
         return df
@@ -751,6 +764,476 @@ class CustomMetricsEngine:
 
         return df
 
+    # ==================================================================
+    # NEW RESEARCH-BACKED METRICS (Benter/Woods/Ziemba/Syndicate)
+    # ==================================================================
+
+    # ------------------------------------------------------------------
+    # Exponential Decay Form (Benter/Woods preferred over harmonic)
+    # ------------------------------------------------------------------
+    def _calc_exponential_decay_form(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Exponential decay weighting for recent form (alpha=0.85).
+
+        Research basis: Benter (1994) and modern syndicates use exponential
+        decay rather than harmonic weights. More recent runs get
+        exponentially more weight, with alpha controlling the decay rate.
+        """
+        alpha = 0.85
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        for metric, prefix in [
+            ("NFP", "EXP_NFP"),
+            ("RB", "EXP_RB"),
+            ("ORR2", "EXP_ORR2"),
+        ]:
+            if metric not in df.columns:
+                continue
+            for w in [3, 5, 10]:
+                exp_weights = np.array([alpha ** i for i in range(w)])
+                lagged = pd.DataFrame(
+                    {f"lag{i}": grp[metric].shift(i + 1) for i in range(w)}
+                )
+                valid = lagged.notna().astype(float)
+                weighted_sum = (lagged.fillna(0) * exp_weights).sum(axis=1)
+                weight_sum = (valid * exp_weights).sum(axis=1).replace(0, np.nan)
+                df[f"{prefix}{w}"] = weighted_sum / weight_sum
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Expectation Residuals (Woods/Ziemba — beating/underperforming market)
+    # ------------------------------------------------------------------
+    def _calc_expectation_residuals(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Market-expected performance vs actual performance residuals.
+
+        Research basis: Woods and Ziemba emphasized that the key signal is
+        not raw performance but performance RELATIVE TO EXPECTATION.
+        A horse finishing 3rd at 50/1 outperformed; a favourite finishing
+        2nd underperformed. These residuals are predictive of future form.
+        """
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+
+        # Expected NFP from market position (rank by BFSP within race)
+        df["_market_rank"] = df.groupby("raceid")["bfsp"].rank(
+            method="min", na_option="bottom"
+        )
+        nr = df["number_of_runners"].replace(0, np.nan)
+        df["expected_NFP"] = (nr - df["_market_rank"]) / (nr - 1).replace(0, np.nan)
+
+        # Residual: actual - expected (positive = outperformed market)
+        df["NFP_residual"] = df["NFP"] - df["expected_NFP"]
+
+        grp = df.groupby("horse_name", group_keys=False)
+
+        # Career average residual (lagged)
+        df["career_residual"] = grp["NFP_residual"].apply(
+            lambda x: x.shift(1).expanding().mean()
+        )
+
+        # Recent residuals (exponential decay)
+        alpha = 0.85
+        for w in [3, 5]:
+            exp_weights = np.array([alpha ** i for i in range(w)])
+            lagged = pd.DataFrame(
+                {f"lag{i}": grp["NFP_residual"].shift(i + 1) for i in range(w)}
+            )
+            valid = lagged.notna().astype(float)
+            ws = (lagged.fillna(0) * exp_weights).sum(axis=1)
+            wt = (valid * exp_weights).sum(axis=1).replace(0, np.nan)
+            df[f"residual_exp{w}"] = ws / wt
+
+        # Win surprise: won when market didn't expect (high BFSP winner)
+        df["win_surprise"] = df["won"] * np.log1p(
+            df["bfsp"].clip(lower=1) - 1
+        )
+        df["career_win_surprise"] = grp["win_surprise"].apply(
+            lambda x: x.shift(1).expanding().mean()
+        )
+
+        df.drop(columns=["_market_rank", "expected_NFP"], inplace=True)
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Unexposure Features (Novel conditions detection)
+    # ------------------------------------------------------------------
+    def _calc_unexposure(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Features for horses facing novel conditions.
+
+        Research basis: Modern syndicates weight unexposure heavily.
+        A horse's first time at a distance, going, course, or class
+        introduces uncertainty. Debut runners have maximum unexposure.
+        """
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        # Career run count (already exists but we need it for debut flag)
+        df["_career_count"] = grp.cumcount()  # 0-indexed
+        df["is_debut"] = (df["_career_count"] == 0).astype(int)
+
+        # Distance experience: count of prior runs at same distance band
+        df["_dist_band"] = df["dist_furlongs"].round(0)
+        df["dist_experience"] = df.groupby(
+            ["horse_name", "_dist_band"]
+        ).cumcount()
+        df["first_at_distance"] = (df["dist_experience"] == 0).astype(int)
+
+        # Going experience: count of prior runs on same going
+        df["_going_cat"] = df["going_description"].fillna("unknown").str.lower().str.strip()
+        df["going_experience"] = df.groupby(
+            ["horse_name", "_going_cat"]
+        ).cumcount()
+        df["first_at_going"] = (df["going_experience"] == 0).astype(int)
+
+        # Course experience
+        df["_track_lower"] = df["track"].fillna("unknown").str.lower().str.strip()
+        df["course_experience"] = df.groupby(
+            ["horse_name", "_track_lower"]
+        ).cumcount()
+        df["first_at_course"] = (df["course_experience"] == 0).astype(int)
+
+        # Course-distance combo
+        df["_cd_combo"] = df["_track_lower"] + "_" + df["_dist_band"].astype(str)
+        df["cd_experience"] = df.groupby(
+            ["horse_name", "_cd_combo"]
+        ).cumcount()
+        df["first_at_cd"] = (df["cd_experience"] == 0).astype(int)
+
+        # Composite unexposure score (0=fully exposed, 4=maximum novelty)
+        df["unexposure_score"] = (
+            df["first_at_distance"]
+            + df["first_at_going"]
+            + df["first_at_course"]
+            + df["first_at_cd"]
+        )
+
+        # Performance at this distance (lagged)
+        df["_dist_nfp"] = df["NFP"]
+        dist_grp = df.groupby(["horse_name", "_dist_band"], group_keys=False)
+        df["dist_avg_nfp"] = dist_grp["_dist_nfp"].apply(
+            lambda x: x.shift(1).expanding().mean()
+        )
+
+        # Performance at this going (lagged)
+        going_grp = df.groupby(["horse_name", "_going_cat"], group_keys=False)
+        df["going_avg_nfp"] = going_grp["NFP"].apply(
+            lambda x: x.shift(1).expanding().mean()
+        )
+
+        # Performance at this course (lagged)
+        course_grp = df.groupby(["horse_name", "_track_lower"], group_keys=False)
+        df["course_avg_nfp"] = course_grp["NFP"].apply(
+            lambda x: x.shift(1).expanding().mean()
+        )
+
+        # Clean up temp columns
+        df.drop(columns=[
+            "_career_count", "_dist_band", "_going_cat", "_track_lower",
+            "_cd_combo", "_dist_nfp"
+        ], inplace=True)
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Class Movement (Ziemba — class drop/rise signal)
+    # ------------------------------------------------------------------
+    def _calc_class_movement(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Class rise/drop indicators relative to recent races.
+
+        Research basis: Ziemba showed class drops are one of the strongest
+        positive signals. A horse dropping in class is competing against
+        weaker opposition. Conversely, class rises indicate tougher tests.
+        """
+        # Extract numeric class from strings like "Class 4"
+        df["race_class_num_raw"] = (
+            df["race_class"]
+            .astype(str)
+            .str.extract(r"(\d+)", expand=False)
+            .pipe(pd.to_numeric, errors="coerce")
+        )
+
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        # Last race class
+        df["lr_class"] = grp["race_class_num_raw"].shift(1)
+
+        # Class change (positive = dropping in class = easier, since higher class number = lower quality)
+        df["class_change"] = df["race_class_num_raw"] - df["lr_class"]
+
+        # Average class over last 3 races
+        df["avg_class_3"] = grp["race_class_num_raw"].apply(
+            lambda x: x.shift(1).rolling(3, min_periods=1).mean()
+        )
+        df["class_vs_avg"] = df["race_class_num_raw"] - df["avg_class_3"]
+
+        # Is dropping in class? (higher class number = lower quality)
+        df["is_class_drop"] = (df["class_change"] > 0).astype(int)
+        df["is_class_rise"] = (df["class_change"] < 0).astype(int)
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Distance Aptitude (Benter fundamental variable)
+    # ------------------------------------------------------------------
+    def _calc_distance_aptitude(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Distance preference derived from performance at various distances.
+
+        Research basis: Benter identified distance as a key fundamental
+        variable. Horses have optimal distance ranges. Performance degrades
+        at non-optimal distances. The delta from optimal is predictive.
+        """
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        # Weighted average distance of best performances
+        df["_weighted_dist"] = df["dist_furlongs"] * df["NFP"].fillna(0)
+
+        cum_weighted_dist = grp["_weighted_dist"].apply(
+            lambda x: x.shift(1).cumsum()
+        )
+        cum_nfp = grp["NFP"].apply(
+            lambda x: x.shift(1).cumsum()
+        ).replace(0, np.nan)
+
+        df["preferred_distance"] = cum_weighted_dist / cum_nfp
+
+        # Distance from preferred (absolute)
+        df["dist_from_preferred"] = (
+            df["dist_furlongs"] - df["preferred_distance"]
+        ).abs()
+
+        # Signed distance change: positive = going longer
+        df["dist_change_signed"] = (
+            df["dist_furlongs"] - df["preferred_distance"]
+        )
+
+        # Last run distance change
+        lr_dist = grp["dist_furlongs"].shift(1)
+        df["dist_change_lr"] = df["dist_furlongs"] - lr_dist
+
+        df.drop(columns=["_weighted_dist"], inplace=True)
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Going Preference (Benter fundamental variable)
+    # ------------------------------------------------------------------
+    def _calc_going_preference(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Going ground preference based on historical performance.
+
+        Research basis: Benter's ~20 fundamental variables included going
+        preference. Some horses are "mud lovers" or need fast ground.
+        """
+        going_map = {
+            "heavy": 1.0, "soft": 2.0, "yielding": 2.5,
+            "good to soft": 3.0, "good": 4.0, "good to firm": 5.0,
+            "firm": 6.0, "hard": 7.0, "standard": 4.0,
+            "standard to slow": 3.0, "slow": 2.0,
+        }
+
+        def encode_going(g):
+            if not g or not isinstance(g, str):
+                return 4.0
+            gl = g.lower().strip()
+            for key, val in going_map.items():
+                if key in gl:
+                    return val
+            return 4.0
+
+        df["_going_num"] = df["going_description"].apply(encode_going)
+
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        # Performance-weighted preferred going
+        df["_weighted_going"] = df["_going_num"] * df["NFP"].fillna(0)
+
+        cum_wg = grp["_weighted_going"].apply(lambda x: x.shift(1).cumsum())
+        cum_nfp = grp["NFP"].apply(
+            lambda x: x.shift(1).cumsum()
+        ).replace(0, np.nan)
+
+        df["preferred_going"] = cum_wg / cum_nfp
+
+        # Delta from preferred going
+        df["going_from_preferred"] = (
+            df["_going_num"] - df["preferred_going"]
+        ).abs()
+
+        # Going change from last run
+        lr_going = grp["_going_num"].shift(1)
+        df["going_change_lr"] = df["_going_num"] - lr_going
+
+        df.drop(columns=["_going_num", "_weighted_going"], inplace=True)
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Draw Bias (Benter/Woods — post-position effect)
+    # ------------------------------------------------------------------
+    def _calc_draw_bias(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Draw/stall position relative to field and track bias.
+
+        Research basis: Benter identified post-position as a key variable.
+        Draw bias varies by track and distance. The relative position
+        (stall / runners) matters more than absolute stall number.
+        """
+        df["stall_num_raw"] = pd.to_numeric(df["stall"], errors="coerce")
+        nr = df["number_of_runners"].replace(0, np.nan)
+
+        # Relative draw position (0=inside, 1=outside)
+        df["draw_relative"] = (df["stall_num_raw"] - 1) / (nr - 1).replace(0, np.nan)
+
+        # Draw quartile (1=inner, 4=outer)
+        df["draw_quartile"] = pd.cut(
+            df["draw_relative"],
+            bins=[0, 0.25, 0.5, 0.75, 1.0],
+            labels=[1, 2, 3, 4],
+            include_lowest=True,
+        )
+        df["draw_quartile"] = pd.to_numeric(df["draw_quartile"], errors="coerce")
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Form Trajectory (Syndicate — improvement/decline detection)
+    # ------------------------------------------------------------------
+    def _calc_form_trajectory(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Detect improving/declining form trajectories.
+
+        Research basis: Modern syndicates use form trajectory analysis.
+        A horse that's improved across its last 3 runs is on an upward
+        trajectory. Linear regression slope of recent NFP is predictive.
+        """
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        # Get last 3 and 5 NFP values
+        for w in [3, 5]:
+            lagged = pd.DataFrame(
+                {f"lag{i}": grp["NFP"].shift(i + 1) for i in range(w)}
+            )
+            # Simple linear regression slope: trend direction
+            # x = [0, 1, 2, ...], y = [most_recent, ..., oldest]
+            x = np.arange(w, dtype=float)
+            x_mean = x.mean()
+            x_var = ((x - x_mean) ** 2).sum()
+
+            y_vals = lagged.values  # shape: (n_rows, w)
+            y_mean = np.nanmean(y_vals, axis=1, keepdims=True)
+
+            # Slope = Σ((x - x_mean)(y - y_mean)) / Σ((x - x_mean)²)
+            numerator = np.nansum(
+                (x - x_mean) * (y_vals - y_mean), axis=1
+            )
+            slope = numerator / x_var
+
+            # Positive slope = improving (most recent is better)
+            df[f"form_slope_{w}"] = slope
+
+            # Also: variance of recent form (consistency signal)
+            df[f"form_var_{w}"] = np.nanvar(y_vals, axis=1)
+
+        # Is improving? (slope > threshold)
+        df["is_improving"] = (df["form_slope_3"] > 0.05).astype(int)
+        df["is_declining"] = (df["form_slope_3"] < -0.05).astype(int)
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Consistency (Ziemba — reliability measure)
+    # ------------------------------------------------------------------
+    def _calc_consistency(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Consistency metrics: how reliable is this horse's form?
+
+        Research basis: Ziemba emphasized that consistent performers are
+        more predictable and thus better model inputs. High-variance
+        horses need different treatment.
+        """
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        # Career standard deviation of NFP (lagged)
+        df["career_nfp_std"] = grp["NFP"].apply(
+            lambda x: x.shift(1).expanding().std()
+        )
+
+        # Recent consistency (std of last 5 NFP)
+        df["recent_nfp_std"] = grp["NFP"].apply(
+            lambda x: x.shift(1).rolling(5, min_periods=2).std()
+        )
+
+        # Place rate (top 3 finish rate)
+        df["career_place_rate"] = grp["placed"].apply(
+            lambda x: x.shift(1).expanding().mean()
+        )
+
+        # Win rate
+        df["career_win_rate"] = grp["won"].apply(
+            lambda x: x.shift(1).expanding().mean()
+        )
+
+        # Recent win rate (last 10)
+        df["recent_win_rate"] = grp["won"].apply(
+            lambda x: x.shift(1).rolling(10, min_periods=1).mean()
+        )
+
+        # Recent place rate (last 10)
+        df["recent_place_rate"] = grp["placed"].apply(
+            lambda x: x.shift(1).rolling(10, min_periods=1).mean()
+        )
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Weight Differential (Benter fundamental variable)
+    # ------------------------------------------------------------------
+    def _calc_weight_differential(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Weight carried relative to field and own history.
+
+        Research basis: Benter identified weight carried as a key variable.
+        What matters is relative weight (vs field) not absolute weight.
+        Weight changes between runs also carry information.
+        """
+        df["pounds_raw"] = pd.to_numeric(df["pounds"], errors="coerce")
+
+        # Weight relative to field
+        race_avg_wt = df.groupby("raceid")["pounds_raw"].transform("mean")
+        race_min_wt = df.groupby("raceid")["pounds_raw"].transform("min")
+        race_max_wt = df.groupby("raceid")["pounds_raw"].transform("max")
+
+        df["weight_vs_avg"] = df["pounds_raw"] - race_avg_wt
+        df["weight_vs_min"] = df["pounds_raw"] - race_min_wt
+        df["weight_range"] = race_max_wt - race_min_wt
+
+        # Weight change from last run
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+        lr_weight = grp["pounds_raw"].shift(1)
+        df["weight_change_lr"] = df["pounds_raw"] - lr_weight
+
+        return df
+
     # ------------------------------------------------------------------
     # Within-Race Rankings
     # ------------------------------------------------------------------
@@ -828,6 +1311,16 @@ class CustomMetricsEngine:
             "jockeyWOArank": "preracejockeycareerWOA",
             "jockeyCWOrank": "preracejockeycareerCWO",
             "jockeyLRIrank": "totalLRPjockeyindex",
+            # New research-backed rankings
+            "rEXP_NFP5": "EXP_NFP5",
+            "rEXP_RB5": "EXP_RB5",
+            "rResidual": "career_residual",
+            "rFormSlope3": "form_slope_3",
+            "rConsistency": "career_nfp_std",
+            "rDistApt": "dist_from_preferred",
+            "rGoingPref": "going_from_preferred",
+            "rWeightVsAvg": "weight_vs_avg",
+            "rUnexposure": "unexposure_score",
         }
 
         for rank_name, source_col in rank_configs.items():
