@@ -184,6 +184,7 @@ class CustomMetricsEngine:
         df = self._calc_form_trajectory(df)
         df = self._calc_consistency(df)
         df = self._calc_weight_differential(df)
+        df = self._calc_pedigree(df)
 
         df = self._calc_within_race_ranks(df)
 
@@ -1235,6 +1236,235 @@ class CustomMetricsEngine:
         return df
 
     # ------------------------------------------------------------------
+    # Pedigree Features (Sire / Dam / Damsire)
+    # ------------------------------------------------------------------
+    def _calc_pedigree(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Sire, dam, and damsire performance metrics with Bayesian shrinkage.
+
+        Research basis: Pedigree is a major factor for (1) debut/lightly-raced
+        horses with limited form, (2) first-time going/distance changes,
+        (3) inherited aptitude patterns. Sire influence on going preference
+        and distance aptitude is well-documented.
+
+        Uses Bayesian shrinkage: adjusted = (n * sire_stat + k * pop_stat) / (n + k)
+        to handle sires with few runners.
+        """
+        SHRINKAGE_K = 20  # prior strength
+
+        # Population-level stats (lagged, expanding) for shrinkage
+        df = df.sort_values(
+            ["race_date", "race_time"]
+        ).reset_index(drop=True)
+        pop_win_rate = df["won"].expanding().mean().shift(1).fillna(0.1)
+        pop_place_rate = df["placed"].expanding().mean().shift(1).fillna(0.3)
+        pop_nfp = df["NFP"].expanding().mean().shift(1).fillna(0.5)
+
+        # --- Sire career stats ---
+        if "stallion" in df.columns:
+            df["_stallion_clean"] = (
+                df["stallion"].fillna("unknown").str.strip().str.lower()
+            )
+
+            df = df.sort_values(
+                ["_stallion_clean", "race_date", "race_time"]
+            ).reset_index(drop=True)
+            s_grp = df.groupby("_stallion_clean", group_keys=False)
+
+            # Raw expanding stats (lagged)
+            raw_sire_runs = s_grp.cumcount()  # 0-indexed = runs before this
+            raw_sire_wins = s_grp["won"].apply(lambda x: x.shift(1).cumsum())
+            raw_sire_places = s_grp["placed"].apply(lambda x: x.shift(1).cumsum())
+            raw_sire_nfp = s_grp["NFP"].apply(
+                lambda x: x.shift(1).expanding().mean()
+            )
+
+            sire_n = raw_sire_runs.replace(0, np.nan)
+
+            # Bayesian-shrunk sire win rate
+            raw_win_rate = raw_sire_wins / sire_n
+            df["sire_win_rate"] = (
+                (sire_n * raw_win_rate + SHRINKAGE_K * pop_win_rate)
+                / (sire_n + SHRINKAGE_K)
+            )
+
+            # Bayesian-shrunk sire place rate
+            raw_place_rate = raw_sire_places / sire_n
+            df["sire_place_rate"] = (
+                (sire_n * raw_place_rate + SHRINKAGE_K * pop_place_rate)
+                / (sire_n + SHRINKAGE_K)
+            )
+
+            # Bayesian-shrunk sire NFP
+            df["sire_avg_nfp"] = (
+                (sire_n * raw_sire_nfp + SHRINKAGE_K * pop_nfp)
+                / (sire_n + SHRINKAGE_K)
+            )
+
+            # Sire WIV: cumulative progeny wins / expected wins
+            raw_sire_xwin = s_grp["xWINRAND"].apply(
+                lambda x: x.shift(1).cumsum()
+            )
+            df["sire_wiv"] = raw_sire_wins / raw_sire_xwin.replace(0, np.nan)
+
+            # --- Sire going aptitude ---
+            df["_going_cat_ped"] = (
+                df["going_description"].fillna("unknown").str.lower().str.strip()
+            )
+            df = df.sort_values(
+                ["_stallion_clean", "_going_cat_ped", "race_date", "race_time"]
+            ).reset_index(drop=True)
+            sg_grp = df.groupby(
+                ["_stallion_clean", "_going_cat_ped"], group_keys=False
+            )
+
+            sg_runs = sg_grp.cumcount()
+            sg_n = sg_runs.replace(0, np.nan)
+            raw_sg_nfp = sg_grp["NFP"].apply(
+                lambda x: x.shift(1).expanding().mean()
+            )
+            raw_sg_win = sg_grp["won"].apply(
+                lambda x: x.shift(1).cumsum()
+            )
+            raw_sg_win_rate = raw_sg_win / sg_n
+
+            df["sire_going_nfp"] = (
+                (sg_n * raw_sg_nfp + SHRINKAGE_K * pop_nfp)
+                / (sg_n + SHRINKAGE_K)
+            )
+            df["sire_going_win_rate"] = (
+                (sg_n * raw_sg_win_rate + SHRINKAGE_K * pop_win_rate)
+                / (sg_n + SHRINKAGE_K)
+            )
+
+            # --- Sire distance aptitude ---
+            df["_dist_band_ped"] = df["dist_furlongs"].round(0)
+            df = df.sort_values(
+                ["_stallion_clean", "_dist_band_ped", "race_date", "race_time"]
+            ).reset_index(drop=True)
+            sd_grp = df.groupby(
+                ["_stallion_clean", "_dist_band_ped"], group_keys=False
+            )
+
+            sd_runs = sd_grp.cumcount()
+            sd_n = sd_runs.replace(0, np.nan)
+            raw_sd_nfp = sd_grp["NFP"].apply(
+                lambda x: x.shift(1).expanding().mean()
+            )
+            raw_sd_win = sd_grp["won"].apply(
+                lambda x: x.shift(1).cumsum()
+            )
+            raw_sd_win_rate = raw_sd_win / sd_n
+
+            df["sire_dist_nfp"] = (
+                (sd_n * raw_sd_nfp + SHRINKAGE_K * pop_nfp)
+                / (sd_n + SHRINKAGE_K)
+            )
+            df["sire_dist_win_rate"] = (
+                (sd_n * raw_sd_win_rate + SHRINKAGE_K * pop_win_rate)
+                / (sd_n + SHRINKAGE_K)
+            )
+
+            # Sire progeny count (useful signal on its own)
+            df["sire_runners"] = raw_sire_runs
+        else:
+            for col in [
+                "sire_win_rate", "sire_place_rate", "sire_avg_nfp",
+                "sire_wiv", "sire_going_nfp", "sire_going_win_rate",
+                "sire_dist_nfp", "sire_dist_win_rate", "sire_runners",
+            ]:
+                df[col] = np.nan
+
+        # --- Damsire career stats ---
+        if "dam_stallion" in df.columns:
+            df["_damsire_clean"] = (
+                df["dam_stallion"].fillna("unknown").str.strip().str.lower()
+            )
+
+            df = df.sort_values(
+                ["_damsire_clean", "race_date", "race_time"]
+            ).reset_index(drop=True)
+            ds_grp = df.groupby("_damsire_clean", group_keys=False)
+
+            raw_ds_runs = ds_grp.cumcount()
+            ds_n = raw_ds_runs.replace(0, np.nan)
+            raw_ds_nfp = ds_grp["NFP"].apply(
+                lambda x: x.shift(1).expanding().mean()
+            )
+            raw_ds_wins = ds_grp["won"].apply(lambda x: x.shift(1).cumsum())
+            raw_ds_win_rate = raw_ds_wins / ds_n
+
+            df["damsire_avg_nfp"] = (
+                (ds_n * raw_ds_nfp + SHRINKAGE_K * pop_nfp)
+                / (ds_n + SHRINKAGE_K)
+            )
+            df["damsire_win_rate"] = (
+                (ds_n * raw_ds_win_rate + SHRINKAGE_K * pop_win_rate)
+                / (ds_n + SHRINKAGE_K)
+            )
+
+            # Damsire going aptitude
+            df = df.sort_values(
+                ["_damsire_clean", "_going_cat_ped", "race_date", "race_time"]
+            ).reset_index(drop=True)
+            dsg_grp = df.groupby(
+                ["_damsire_clean", "_going_cat_ped"], group_keys=False
+            )
+            dsg_runs = dsg_grp.cumcount()
+            dsg_n = dsg_runs.replace(0, np.nan)
+            raw_dsg_nfp = dsg_grp["NFP"].apply(
+                lambda x: x.shift(1).expanding().mean()
+            )
+            df["damsire_going_nfp"] = (
+                (dsg_n * raw_dsg_nfp + SHRINKAGE_K * pop_nfp)
+                / (dsg_n + SHRINKAGE_K)
+            )
+
+            # Damsire distance aptitude
+            df = df.sort_values(
+                ["_damsire_clean", "_dist_band_ped", "race_date", "race_time"]
+            ).reset_index(drop=True)
+            dsd_grp = df.groupby(
+                ["_damsire_clean", "_dist_band_ped"], group_keys=False
+            )
+            dsd_runs = dsd_grp.cumcount()
+            dsd_n = dsd_runs.replace(0, np.nan)
+            raw_dsd_nfp = dsd_grp["NFP"].apply(
+                lambda x: x.shift(1).expanding().mean()
+            )
+            df["damsire_dist_nfp"] = (
+                (dsd_n * raw_dsd_nfp + SHRINKAGE_K * pop_nfp)
+                / (dsd_n + SHRINKAGE_K)
+            )
+
+            df["damsire_runners"] = raw_ds_runs
+        else:
+            for col in [
+                "damsire_avg_nfp", "damsire_win_rate",
+                "damsire_going_nfp", "damsire_dist_nfp", "damsire_runners",
+            ]:
+                df[col] = np.nan
+
+        # --- Debut interaction features ---
+        # For debut runners, sire/trainer quality are primary predictors
+        is_debut = (
+            df.groupby("horse_name").cumcount() == 0
+        ).astype(float)
+        df["debut_x_sire_nfp"] = is_debut * df["sire_avg_nfp"]
+        df["debut_x_sire_wiv"] = is_debut * df.get("sire_wiv", 0)
+        df["debut_x_trainer_wiv"] = is_debut * df.get(
+            "preracetrainercareerWIV", 0
+        )
+
+        # Clean up temp columns
+        temp_cols = [
+            c for c in df.columns
+            if c.startswith("_") and c.endswith(("_clean", "_ped"))
+        ]
+        df.drop(columns=temp_cols, errors="ignore", inplace=True)
+
+        return df
+
+    # ------------------------------------------------------------------
     # Within-Race Rankings
     # ------------------------------------------------------------------
     def _calc_within_race_ranks(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1321,6 +1551,12 @@ class CustomMetricsEngine:
             "rGoingPref": "going_from_preferred",
             "rWeightVsAvg": "weight_vs_avg",
             "rUnexposure": "unexposure_score",
+            # Pedigree rankings
+            "rSireNFP": "sire_avg_nfp",
+            "rSireWIV": "sire_wiv",
+            "rSireGoingNFP": "sire_going_nfp",
+            "rSireDistNFP": "sire_dist_nfp",
+            "rDamsireNFP": "damsire_avg_nfp",
         }
 
         for rank_name, source_col in rank_configs.items():

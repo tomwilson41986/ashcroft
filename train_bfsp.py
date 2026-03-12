@@ -326,6 +326,32 @@ WEIGHT_FEATURES = [
     "weight_change_lr",
 ]
 
+# Pedigree features (sire / damsire)
+PEDIGREE_FEATURES = [
+    # Sire career stats (Bayesian-shrunk)
+    "sire_win_rate",
+    "sire_place_rate",
+    "sire_avg_nfp",
+    "sire_wiv",
+    "sire_runners",
+    # Sire going aptitude
+    "sire_going_nfp",
+    "sire_going_win_rate",
+    # Sire distance aptitude
+    "sire_dist_nfp",
+    "sire_dist_win_rate",
+    # Damsire stats (Bayesian-shrunk)
+    "damsire_avg_nfp",
+    "damsire_win_rate",
+    "damsire_going_nfp",
+    "damsire_dist_nfp",
+    "damsire_runners",
+    # Debut interactions
+    "debut_x_sire_nfp",
+    "debut_x_sire_wiv",
+    "debut_x_trainer_wiv",
+]
+
 # Within-race rankings
 RANK_FEATURES = [
     "rNFP",
@@ -389,6 +415,12 @@ RANK_FEATURES = [
     "rGoingPref",
     "rWeightVsAvg",
     "rUnexposure",
+    # Pedigree rankings
+    "rSireNFP",
+    "rSireWIV",
+    "rSireGoingNFP",
+    "rSireDistNFP",
+    "rDamsireNFP",
 ]
 
 # Race context features (known pre-race)
@@ -444,6 +476,7 @@ ALL_FEATURE_COLS = (
     + FORM_TRAJECTORY_FEATURES
     + CONSISTENCY_FEATURES
     + WEIGHT_FEATURES
+    + PEDIGREE_FEATURES
 )
 
 
