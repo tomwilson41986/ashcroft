@@ -821,7 +821,15 @@ class BFSPTrainer:
         4. Save model artifacts and evaluation report
         """
         # Step 1: Prepare data
+        # Save raw data for per-fold feature computation.
+        # Computing features on the full dataset BEFORE splitting into
+        # walk-forward folds leaks future data through global statistics
+        # (e.g. speed figure standard times, field-size medians).
+        # We compute per fold below; this full-dataset pass determines
+        # the canonical feature column list and is reused for the final model.
+        raw_df = df
         df = self.prepare_data(df)
+        feature_cols = self.feature_cols[:]
         log.info(f"Prepared {len(df):,} rows with valid BFSP")
 
         if len(df) < 200:
@@ -852,9 +860,21 @@ class BFSPTrainer:
                 f"val {val_start.date()} to {val_end.date()}"
             )
 
-            train_df = df[df["race_date"] < train_end].copy()
-            val_df = df[
-                (df["race_date"] >= val_start) & (df["race_date"] < val_end)
+            # LEAK FIX: recompute features using only data available up
+            # to val_end.  This ensures global statistics (speed-figure
+            # standard times, field-size medians, etc.) never include
+            # future race data.
+            fold_raw = raw_df[raw_df["race_date"] < val_end].copy()
+            fold_df = self.prepare_data(fold_raw)
+            self.feature_cols = feature_cols  # keep canonical column list
+            for col in feature_cols:
+                if col not in fold_df.columns:
+                    fold_df[col] = np.nan
+
+            train_df = fold_df[fold_df["race_date"] < train_end].copy()
+            val_df = fold_df[
+                (fold_df["race_date"] >= val_start)
+                & (fold_df["race_date"] < val_end)
             ].copy()
 
             if len(train_df) < 100 or len(val_df) < 10:
@@ -931,6 +951,7 @@ class BFSPTrainer:
             )
 
         # Step 3: Train final model on all data (90/10 split for early stopping)
+        self.feature_cols = feature_cols  # restore after per-fold overrides
         log.info("\nTraining final model on all data...")
         dates = df["race_date"].sort_values().unique()
         cutoff_idx = int(len(dates) * 0.9)

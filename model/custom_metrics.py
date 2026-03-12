@@ -1497,7 +1497,9 @@ class CustomMetricsEngine:
             df["comptime_numeric"], errors="coerce"
         )
 
-        # Standard time per (track, distance, going) — median of all times
+        # Standard time per (track, distance, going).
+        # Use expanding median so future completion times don't leak into
+        # historical RSR values.  The data must be sorted by date first.
         df["_going_lower"] = (
             df["going_description"].fillna("unknown").str.lower().str.strip()
         )
@@ -1506,9 +1508,16 @@ class CustomMetricsEngine:
             df["track"].fillna("unknown").str.lower().str.strip()
         )
 
-        std_times = df.groupby(
-            ["_track_lower_sf", "_dist_round", "_going_lower"]
-        )["_comptime"].transform("median")
+        df = df.sort_values(
+            ["race_date", "race_time"]
+        ).reset_index(drop=True)
+        std_group = df.groupby(
+            ["_track_lower_sf", "_dist_round", "_going_lower"],
+            group_keys=False,
+        )
+        std_times = std_group["_comptime"].transform(
+            lambda x: x.expanding().median()
+        )
 
         # RSR: positive = faster than standard
         df["RSR"] = (
