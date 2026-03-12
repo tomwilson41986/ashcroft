@@ -185,6 +185,13 @@ class CustomMetricsEngine:
         df = self._calc_consistency(df)
         df = self._calc_weight_differential(df)
         df = self._calc_pedigree(df)
+        df = self._calc_speed_figures(df)
+        df = self._calc_actual_lengths_beaten(df)
+        df = self._calc_equipment_changes(df)
+        df = self._calc_surface_preference(df)
+        df = self._calc_track_preference(df)
+        df = self._calc_or_trajectory(df)
+        df = self._calc_hot_form(df)
 
         df = self._calc_within_race_ranks(df)
 
@@ -1465,6 +1472,463 @@ class CustomMetricsEngine:
         return df
 
     # ------------------------------------------------------------------
+    # Speed Figures (Benter/Mordin — normalized race times)
+    # ------------------------------------------------------------------
+    def _calc_speed_figures(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Speed ratings from completion times, adjusted for track/distance/going.
+
+        Research basis: Benter (1994) used normalized times as a key variable.
+        Mordin pioneered speed figures for European racing. Speed figures
+        consistently rank among the top predictors in academic literature.
+
+        RSR = (standard_time - actual_time) / standard_time * 100
+        Positive RSR = faster than standard.
+        """
+        if "comptime_numeric" not in df.columns:
+            for col in [
+                "RSR", "preracehorsecareerRSR", "LR_RSR",
+                "LR3_RSR", "LR5_RSR", "best_RSR", "RSR_gap",
+                "SFI", "SFI_3",
+            ]:
+                df[col] = np.nan
+            return df
+
+        df["_comptime"] = pd.to_numeric(
+            df["comptime_numeric"], errors="coerce"
+        )
+
+        # Standard time per (track, distance, going) — median of all times
+        df["_going_lower"] = (
+            df["going_description"].fillna("unknown").str.lower().str.strip()
+        )
+        df["_dist_round"] = df["dist_furlongs"].round(0)
+        df["_track_lower_sf"] = (
+            df["track"].fillna("unknown").str.lower().str.strip()
+        )
+
+        std_times = df.groupby(
+            ["_track_lower_sf", "_dist_round", "_going_lower"]
+        )["_comptime"].transform("median")
+
+        # RSR: positive = faster than standard
+        df["RSR"] = (
+            (std_times - df["_comptime"]) / std_times.replace(0, np.nan) * 100
+        )
+        # Null out RSR where comptime is missing
+        df.loc[df["_comptime"].isna(), "RSR"] = np.nan
+
+        # Horse career and rolling RSR (lagged)
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        df["preracehorsecareerRSR"] = grp["RSR"].apply(
+            lambda x: x.shift(1).expanding().mean()
+        )
+        df["LR_RSR"] = grp["RSR"].shift(1)
+
+        for w in [3, 5]:
+            df[f"LR{w}_RSR"] = grp["RSR"].apply(
+                lambda x: x.shift(1).rolling(w, min_periods=1).mean()
+            )
+
+        # Best career RSR (lagged)
+        df["best_RSR"] = grp["RSR"].apply(
+            lambda x: x.shift(1).expanding().max()
+        )
+        df["RSR_gap"] = df["best_RSR"] - df.get("LR3_RSR", np.nan)
+
+        # Speed Figure Improvement
+        lr1 = grp["RSR"].shift(1)
+        lr2 = grp["RSR"].shift(2)
+        df["SFI"] = lr1 - lr2
+
+        # Average improvement over last 3
+        lr3 = grp["RSR"].shift(3)
+        df["SFI_3"] = (
+            (lr1 - lr2).fillna(0) + (lr2 - lr3).fillna(0)
+        ) / 2
+
+        df.drop(
+            columns=["_comptime", "_going_lower", "_dist_round",
+                     "_track_lower_sf"],
+            errors="ignore", inplace=True,
+        )
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Actual Lengths Beaten (Benter — real margins vs approximation)
+    # ------------------------------------------------------------------
+    def _calc_actual_lengths_beaten(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Parse total_dst_bt to get actual lengths beaten from winner.
+
+        Research basis: Our RB metric approximates beaten distances from
+        finishing position. actual beaten-lengths data is far more
+        informative — a horse beaten a neck in 2nd is vastly different
+        from one beaten 20 lengths in 2nd.
+        """
+        if "total_dst_bt" not in df.columns:
+            for col in [
+                "LB", "preracehorsecareerLB", "LR_LB",
+                "LR3_LB", "LR5_LB", "FSALB",
+            ]:
+                df[col] = np.nan
+            return df
+
+        def parse_lengths(val):
+            """Parse beaten-length strings to numeric."""
+            if pd.isna(val) or val == "" or val == "0":
+                return 0.0
+            s = str(val).strip().lower()
+            if s in ("dht", "dh"):
+                return 0.0
+            if s == "nse":
+                return 0.05
+            if s == "shd":
+                return 0.1
+            if s in ("hd", "sht-hd"):
+                return 0.15
+            if s in ("nk", "snk"):
+                return 0.2
+            if s == "dist":
+                return 30.0
+            # Handle combined forms like "2nk", "1shd", "3hd"
+            m = re.match(r"(\d+\.?\d*)\s*(nk|shd|hd|nse)?", s)
+            if m:
+                base = float(m.group(1))
+                frac = m.group(2)
+                if frac == "nk":
+                    base += 0.2
+                elif frac == "shd":
+                    base += 0.1
+                elif frac == "hd":
+                    base += 0.15
+                elif frac == "nse":
+                    base += 0.05
+                return base
+            try:
+                return float(s)
+            except (ValueError, TypeError):
+                return np.nan
+
+        df["LB"] = df["total_dst_bt"].apply(parse_lengths)
+
+        # Career and rolling LB averages (lagged)
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        df["preracehorsecareerLB"] = grp["LB"].apply(
+            lambda x: x.shift(1).expanding().mean()
+        )
+        df["LR_LB"] = grp["LB"].shift(1)
+
+        for w in [3, 5]:
+            df[f"LR{w}_LB"] = grp["LB"].apply(
+                lambda x: x.shift(1).rolling(w, min_periods=1).mean()
+            )
+
+        # Field-Size Adjusted Lengths Beaten
+        median_fs = df["number_of_runners"].median()
+        if pd.isna(median_fs) or median_fs == 0:
+            median_fs = 10.0
+        df["FSALB"] = df["LB"] * (df["number_of_runners"] / median_fs)
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Equipment Changes (German model / Mordin — first-time blinkers)
+    # ------------------------------------------------------------------
+    def _calc_equipment_changes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Detect equipment changes, especially first-time headgear.
+
+        Research basis: First-time blinkers is one of the most well-known
+        and exploitable signals in UK racing. Equipment changes indicate
+        trainer intent to improve performance.
+        """
+        if "headgear" not in df.columns:
+            for col in [
+                "headgear_change", "first_time_headgear",
+                "headgear_removed", "has_headgear",
+            ]:
+                df[col] = 0
+            return df
+
+        df["_hg_clean"] = df["headgear"].fillna("").str.strip().str.lower()
+        df["has_headgear"] = (df["_hg_clean"] != "").astype(int)
+
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        lr_hg = grp["_hg_clean"].shift(1)
+
+        # Headgear changed from last run
+        df["headgear_change"] = (
+            (df["_hg_clean"] != lr_hg) & lr_hg.notna()
+        ).astype(int)
+
+        # First time EVER wearing headgear
+        cum_hg = grp["has_headgear"].apply(
+            lambda x: x.shift(1).cumsum()
+        ).fillna(0)
+        df["first_time_headgear"] = (
+            (df["has_headgear"] == 1) & (cum_hg == 0)
+        ).astype(int)
+
+        # Headgear removed (wore last time, not today)
+        df["headgear_removed"] = (
+            (df["has_headgear"] == 0)
+            & (lr_hg.fillna("") != "")
+            & lr_hg.notna()
+        ).astype(int)
+
+        df.drop(columns=["_hg_clean"], errors="ignore", inplace=True)
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Surface Preference (Benter — turf vs all-weather)
+    # ------------------------------------------------------------------
+    def _calc_surface_preference(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Horse performance on different surfaces (turf vs all-weather).
+
+        Research basis: Benter's fundamental variables included surface
+        preference. Some horses clearly prefer one surface. AW vs turf
+        is a major factor in UK racing.
+        """
+        if "surface_type" not in df.columns:
+            for col in [
+                "surface_nfp", "surface_win_rate", "surface_runs",
+                "first_on_surface",
+            ]:
+                df[col] = np.nan
+            return df
+
+        df["_surface_clean"] = (
+            df["surface_type"].fillna("unknown").str.lower().str.strip()
+        )
+
+        df = df.sort_values(
+            ["horse_name", "_surface_clean", "race_date", "race_time"]
+        ).reset_index(drop=True)
+
+        surf_grp = df.groupby(
+            ["horse_name", "_surface_clean"], group_keys=False
+        )
+
+        df["surface_runs"] = surf_grp.cumcount()  # 0-indexed
+        df["first_on_surface"] = (df["surface_runs"] == 0).astype(int)
+
+        surf_n = df["surface_runs"].replace(0, np.nan)
+
+        df["surface_nfp"] = surf_grp["NFP"].apply(
+            lambda x: x.shift(1).expanding().mean()
+        )
+
+        cum_wins = surf_grp["won"].apply(lambda x: x.shift(1).cumsum())
+        df["surface_win_rate"] = cum_wins / surf_n
+
+        df.drop(columns=["_surface_clean"], errors="ignore", inplace=True)
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Track Preference (Benter — course specialist detection)
+    # ------------------------------------------------------------------
+    def _calc_track_preference(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Horse, trainer, and jockey performance at specific tracks.
+
+        Research basis: Benter included specific track preference in his
+        fundamental variables. Course specialists are well-documented
+        in UK racing — some trainers have phenomenal records at specific tracks.
+        """
+        df["_track_clean"] = (
+            df["track"].fillna("unknown").str.lower().str.strip()
+        )
+
+        # Horse at track
+        df = df.sort_values(
+            ["horse_name", "_track_clean", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        ht_grp = df.groupby(
+            ["horse_name", "_track_clean"], group_keys=False
+        )
+        df["horse_track_runs"] = ht_grp.cumcount()
+        ht_n = df["horse_track_runs"].replace(0, np.nan)
+        df["horse_track_nfp"] = ht_grp["NFP"].apply(
+            lambda x: x.shift(1).expanding().mean()
+        )
+        ht_wins = ht_grp["won"].apply(lambda x: x.shift(1).cumsum())
+        df["horse_track_win_rate"] = ht_wins / ht_n
+
+        # Trainer at track
+        df = df.sort_values(
+            ["trainer", "_track_clean", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        tt_grp = df.groupby(
+            ["trainer", "_track_clean"], group_keys=False
+        )
+        df["trainer_track_runs"] = tt_grp.cumcount()
+        tt_n = df["trainer_track_runs"].replace(0, np.nan)
+        tt_wins = tt_grp["won"].apply(lambda x: x.shift(1).cumsum())
+        df["trainer_track_win_rate"] = tt_wins / tt_n
+
+        # Jockey at track
+        df = df.sort_values(
+            ["jockey_name", "_track_clean", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        jt_grp = df.groupby(
+            ["jockey_name", "_track_clean"], group_keys=False
+        )
+        df["jockey_track_runs"] = jt_grp.cumcount()
+        jt_n = df["jockey_track_runs"].replace(0, np.nan)
+        jt_wins = jt_grp["won"].apply(lambda x: x.shift(1).cumsum())
+        df["jockey_track_win_rate"] = jt_wins / jt_n
+
+        df.drop(columns=["_track_clean"], errors="ignore", inplace=True)
+
+        return df
+
+    # ------------------------------------------------------------------
+    # OR Trajectory (Ziemba — handicap mark changes)
+    # ------------------------------------------------------------------
+    def _calc_or_trajectory(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Official Rating changes between runs and vs career best.
+
+        Research basis: Ziemba showed that OR changes are among the most
+        predictive features in handicaps. A dropping OR means the horse
+        is 'well-handicapped'. OR vs career best identifies value.
+        """
+        df["_or_num"] = pd.to_numeric(
+            df["official_rating"], errors="coerce"
+        )
+
+        df = df.sort_values(
+            ["horse_name", "race_date", "race_time"]
+        ).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        # OR change from last run
+        lr_or = grp["_or_num"].shift(1)
+        df["or_change"] = df["_or_num"] - lr_or
+
+        # OR change from 3 runs ago
+        lr3_or = grp["_or_num"].shift(3)
+        df["or_change_3"] = df["_or_num"] - lr3_or
+
+        # Career best OR (lagged)
+        df["career_best_or"] = grp["_or_num"].apply(
+            lambda x: x.shift(1).expanding().max()
+        )
+
+        # OR vs career best (negative = below peak = potentially well-handicapped)
+        df["or_vs_best"] = df["_or_num"] - df["career_best_or"]
+
+        # Is racing off peak OR? (dropped 5+ lbs)
+        df["or_off_peak"] = (
+            (df["career_best_or"] - df["_or_num"]) > 5
+        ).astype(int)
+
+        # OR vs last winning OR
+        df["_winning_or"] = df["_or_num"].where(df["won"] == 1)
+        df["last_winning_or"] = grp["_winning_or"].apply(
+            lambda x: x.shift(1).ffill()
+        )
+        df["or_vs_last_win"] = df["_or_num"] - df["last_winning_or"]
+
+        df.drop(
+            columns=["_or_num", "_winning_or"],
+            errors="ignore", inplace=True,
+        )
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Hot Form — Trainer/Jockey Recent Form (14/30 day rolling)
+    # ------------------------------------------------------------------
+    def _calc_hot_form(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Trainer and jockey recent form using time-windowed rolling stats.
+
+        Research basis: Trainers go through hot and cold streaks due to
+        yard illness, horse fitness, travel patterns. Jockey confidence
+        and booking patterns also matter. 14-day strike rate >25% is
+        considered 'red hot form'.
+        """
+        df = df.sort_values(
+            ["race_date", "race_time"]
+        ).reset_index(drop=True)
+
+        df["_date_ordinal"] = df["race_date"].astype(np.int64) // 10**9 // 86400
+
+        for entity_col, prefix in [
+            ("trainer", "trainer"),
+            ("jockey_name", "jockey"),
+        ]:
+            df = df.sort_values(
+                [entity_col, "race_date", "race_time"]
+            ).reset_index(drop=True)
+            egrp = df.groupby(entity_col, group_keys=False)
+
+            # 14-day rolling win rate (approximate via last N runs within window)
+            # Use time-aware approach: count wins in last 14/30 days
+            for window_days, suffix in [(14, "14d"), (30, "30d")]:
+                # For each entity, compute rolling count of runs and wins
+                # within the time window using date differences
+                wins_list = []
+                runs_list = []
+                for _, group in df.groupby(entity_col):
+                    g_dates = group["_date_ordinal"].values
+                    g_won = group["won"].values
+                    g_wins = np.full(len(group), np.nan)
+                    g_runs = np.full(len(group), np.nan)
+                    for i in range(len(group)):
+                        cutoff = g_dates[i] - window_days
+                        # Look at runs BEFORE this one (j < i) within window
+                        mask = (g_dates[:i] > cutoff) & (g_dates[:i] <= g_dates[i])
+                        n_runs = mask.sum()
+                        if n_runs > 0:
+                            g_wins[i] = g_won[:i][mask].sum()
+                            g_runs[i] = float(n_runs)
+                    wins_list.append(pd.Series(g_wins, index=group.index))
+                    runs_list.append(pd.Series(g_runs, index=group.index))
+
+                all_wins = pd.concat(wins_list)
+                all_runs = pd.concat(runs_list)
+                df[f"{prefix}_wins_{suffix}"] = all_wins
+                df[f"{prefix}_runs_{suffix}"] = all_runs
+                df[f"{prefix}_sr_{suffix}"] = (
+                    all_wins / all_runs.replace(0, np.nan)
+                )
+
+            # Form delta: recent form vs career
+            career_wiv = df.get(
+                f"prerace{prefix}careerWIV"
+                if prefix == "trainer"
+                else f"prerace{prefix.replace('jockey', 'jockey')}careerWIV",
+                0,
+            )
+            if prefix == "trainer":
+                career_col = "preracetrainercareerWIV"
+            else:
+                career_col = "preracejockeycareerWIV"
+
+            if career_col in df.columns:
+                df[f"{prefix}_form_delta"] = (
+                    df[f"{prefix}_sr_14d"] - df[career_col]
+                )
+            else:
+                df[f"{prefix}_form_delta"] = np.nan
+
+        df.drop(columns=["_date_ordinal"], errors="ignore", inplace=True)
+
+        return df
+
+    # ------------------------------------------------------------------
     # Within-Race Rankings
     # ------------------------------------------------------------------
     def _calc_within_race_ranks(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1557,6 +2021,14 @@ class CustomMetricsEngine:
             "rSireGoingNFP": "sire_going_nfp",
             "rSireDistNFP": "sire_dist_nfp",
             "rDamsireNFP": "damsire_avg_nfp",
+            # Speed / lengths / new feature rankings
+            "rRSR": "preracehorsecareerRSR",
+            "rLB": "preracehorsecareerLB",
+            "rSurfaceNFP": "surface_nfp",
+            "rHorseTrackNFP": "horse_track_nfp",
+            "rORChange": "or_change",
+            "rTrainerSR14d": "trainer_sr_14d",
+            "rJockeySR14d": "jockey_sr_14d",
         }
 
         for rank_name, source_col in rank_configs.items():
