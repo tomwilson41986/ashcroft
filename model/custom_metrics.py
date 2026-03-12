@@ -237,10 +237,14 @@ class CustomMetricsEngine:
             denom = (df["number_of_runners"] - 1).replace(0, np.nan)
             df["RB"] = 1 - (df["placing_numerical"] - 1) / denom
 
-        median_fs = df["number_of_runners"].median()
-        if pd.isna(median_fs) or median_fs == 0:
-            median_fs = 10.0
-        df["FSARB"] = df["RB"] * (df["number_of_runners"] / median_fs)
+        # Use expanding median of field size so future races can't
+        # influence the normalisation constant.
+        df = df.sort_values(
+            ["race_date", "race_time"]
+        ).reset_index(drop=True)
+        exp_median_fs = df["number_of_runners"].expanding().median()
+        exp_median_fs = exp_median_fs.replace(0, np.nan).fillna(10.0)
+        df["FSARB"] = df["RB"] * (df["number_of_runners"] / exp_median_fs)
 
         df = df.sort_values(
             ["horse_name", "race_date", "race_time"]
@@ -1640,11 +1644,11 @@ class CustomMetricsEngine:
                 lambda x: x.shift(1).rolling(w, min_periods=1).mean()
             )
 
-        # Field-Size Adjusted Lengths Beaten
-        median_fs = df["number_of_runners"].median()
-        if pd.isna(median_fs) or median_fs == 0:
-            median_fs = 10.0
-        df["FSALB"] = df["LB"] * (df["number_of_runners"] / median_fs)
+        # Field-Size Adjusted Lengths Beaten (expanding median to avoid leak)
+        df = df.sort_values(["race_date", "race_time"]).reset_index(drop=True)
+        exp_median_fs = df["number_of_runners"].expanding().median()
+        exp_median_fs = exp_median_fs.replace(0, np.nan).fillna(10.0)
+        df["FSALB"] = df["LB"] * (df["number_of_runners"] / exp_median_fs)
 
         return df
 

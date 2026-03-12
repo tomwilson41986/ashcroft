@@ -342,49 +342,16 @@
     "lambda_l2": 0.1,
     "verbose": -1
   },
-  "best_iteration": 2832,
-  "val_metrics_raw": {
-    "log_mae": 0.369,
-    "log_rmse": 0.5069,
-    "log_r2": 0.8851,
-    "bfsp_mae": 34.49,
-    "median_ape_pct": 26.53,
-    "mean_ape_pct": 37.92,
-    "correlation": 0.9415
-  },
-  "val_metrics_normalized": {
-    "log_mae": 0.3542,
-    "log_rmse": 0.4903,
-    "log_r2": 0.8925,
+  "final_metrics": {
+    "log_mae": 0.373,
+    "log_rmse": 0.513,
+    "log_r2": 0.8819,
     "bfsp_mae": 34.52,
-    "median_ape_pct": 25.02,
-    "mean_ape_pct": 33.0,
-    "correlation": 0.9487
-  },
-  "test_metrics_raw": {
-    "log_mae": 0.3649,
-    "log_rmse": 0.5033,
-    "log_r2": 0.8855,
-    "bfsp_mae": 33.66,
-    "median_ape_pct": 25.92,
-    "mean_ape_pct": 38.12,
-    "correlation": 0.9417
-  },
-  "test_metrics_normalized": {
-    "log_mae": 0.3457,
-    "log_rmse": 0.482,
-    "log_r2": 0.895,
-    "bfsp_mae": 33.16,
-    "median_ape_pct": 24.12,
-    "mean_ape_pct": 32.33,
-    "correlation": 0.9501
-  },
-  "splits": {
-    "train_rows": 469237,
-    "train_date_range": "2022-01-01 to 2025-11-10",
-    "val_rows": 16703,
-    "val_date_range": "2025-11-11 to 2026-01-09",
-    "test_rows": 15005,
-    "test_date_range": "2026-01-10 to 2026-03-11"
+    "median_ape_pct": 26.57,
+    "mean_ape_pct": 38.68,
+    "correlation": 0.9398,
+    "best_iteration": 2000,
+    "train_size": 348060,
+    "val_size": 31708
   }
 }
