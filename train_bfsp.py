@@ -168,7 +168,6 @@ LRP_FEATURES = [
 PACE_FEATURES = [
     "racepacescore",
     "racepaceindex",
-    "horsepaceindex",
     "trainerpaceindex",
     "jockeypaceindex",
 ]
@@ -233,6 +232,100 @@ RECENCY_FEATURES = [
     "CIL10",
 ]
 
+# --- NEW RESEARCH-BACKED FEATURES (Benter/Woods/Ziemba/Syndicate) ---
+
+# Exponential decay form (Benter/Woods: superior to harmonic weights)
+EXPONENTIAL_DECAY_FEATURES = [
+    "EXP_NFP3", "EXP_NFP5", "EXP_NFP10",
+    "EXP_RB3", "EXP_RB5", "EXP_RB10",
+    "EXP_ORR23", "EXP_ORR25", "EXP_ORR210",
+]
+
+# Expectation residuals (Woods/Ziemba: market-expected vs actual)
+RESIDUAL_FEATURES = [
+    "NFP_residual",
+    "career_residual",
+    "residual_exp3",
+    "residual_exp5",
+    "win_surprise",
+    "career_win_surprise",
+]
+
+# Unexposure (Syndicate: novel conditions detection)
+UNEXPOSURE_FEATURES = [
+    "is_debut",
+    "dist_experience",
+    "first_at_distance",
+    "going_experience",
+    "first_at_going",
+    "course_experience",
+    "first_at_course",
+    "cd_experience",
+    "first_at_cd",
+    "unexposure_score",
+    "dist_avg_nfp",
+    "going_avg_nfp",
+    "course_avg_nfp",
+]
+
+# Class movement (Ziemba: class drops are strong signals)
+CLASS_MOVEMENT_FEATURES = [
+    "class_change",
+    "avg_class_3",
+    "class_vs_avg",
+    "is_class_drop",
+    "is_class_rise",
+]
+
+# Distance aptitude (Benter fundamental variable)
+DISTANCE_APTITUDE_FEATURES = [
+    "preferred_distance",
+    "dist_from_preferred",
+    "dist_change_signed",
+    "dist_change_lr",
+]
+
+# Going preference (Benter fundamental variable)
+GOING_PREFERENCE_FEATURES = [
+    "preferred_going",
+    "going_from_preferred",
+    "going_change_lr",
+]
+
+# Draw bias (Benter/Woods: post-position effect)
+DRAW_BIAS_FEATURES = [
+    "draw_relative",
+    "draw_quartile",
+]
+
+# Form trajectory (Syndicate: improvement/decline detection)
+FORM_TRAJECTORY_FEATURES = [
+    "form_slope_3",
+    "form_slope_5",
+    "form_var_3",
+    "form_var_5",
+    "is_improving",
+    "is_declining",
+]
+
+# Consistency (Ziemba: reliability measure)
+CONSISTENCY_FEATURES = [
+    "career_nfp_std",
+    "recent_nfp_std",
+    "career_place_rate",
+    "career_win_rate",
+    "recent_win_rate",
+    "recent_place_rate",
+]
+
+# Weight differential (Benter fundamental variable)
+WEIGHT_FEATURES = [
+    "weight_vs_avg",
+    "weight_vs_min",
+    "weight_range",
+    "weight_change_lr",
+]
+
 # Within-race rankings
 RANK_FEATURES = [
     "rNFP",
@@ -286,6 +379,16 @@ RANK_FEATURES = [
     "jockeyWOArank",
     "jockeyCWOrank",
     "jockeyLRIrank",
+    # New research-backed rankings
+    "rEXP_NFP5",
+    "rEXP_RB5",
+    "rResidual",
+    "rFormSlope3",
+    "rConsistency",
+    "rDistApt",
+    "rGoingPref",
+    "rWeightVsAvg",
+    "rUnexposure",
 ]
 
 # Race context features (known pre-race)
@@ -331,6 +434,16 @@ ALL_FEATURE_COLS = (
     + RECENCY_FEATURES
     + RANK_FEATURES
     + CONTEXT_FEATURES
+    + EXPONENTIAL_DECAY_FEATURES
+    + RESIDUAL_FEATURES
+    + UNEXPOSURE_FEATURES
+    + CLASS_MOVEMENT_FEATURES
+    + DISTANCE_APTITUDE_FEATURES
+    + GOING_PREFERENCE_FEATURES
+    + DRAW_BIAS_FEATURES
+    + FORM_TRAJECTORY_FEATURES
+    + CONSISTENCY_FEATURES
+    + WEIGHT_FEATURES
 )
 
 
@@ -385,7 +498,12 @@ def build_context_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add race context features that are known pre-race."""
 
     # Numeric conversions
-    df["race_class_num"] = pd.to_numeric(df["race_class"], errors="coerce")
+    df["race_class_num"] = (
+        df["race_class"]
+        .astype(str)
+        .str.extract(r"(\d+)", expand=False)
+        .pipe(pd.to_numeric, errors="coerce")
+    )
     df["horse_age_num"] = pd.to_numeric(df["horse_age"], errors="coerce")
     df["pounds_num"] = pd.to_numeric(df["pounds"], errors="coerce")
     df["stall_num"] = pd.to_numeric(df["stall"], errors="coerce")
@@ -603,6 +721,12 @@ class BFSPTrainer:
         fold_metrics = []
         all_val_preds = []
 
+        # Walk-forward early stopping: stop if no MAE improvement over
+        # the last `patience` folds (comparing running average)
+        wf_patience = 10
+        best_running_mae = float("inf")
+        stale_count = 0
+
         for i, (train_end, val_start, val_end) in enumerate(folds):
             log.info(
                 f"  Fold {i + 1}/{len(folds)}: "
@@ -635,6 +759,25 @@ class BFSPTrainer:
                 f"MAE(BFSP): {metrics['bfsp_mae']:.2f}, "
                 f"MdAPE: {metrics['median_ape_pct']:.1f}%"
             )
+
+            # Walk-forward early stopping check
+            if len(fold_metrics) >= 5:
+                recent_mae = np.mean(
+                    [m["log_mae"] for m in fold_metrics[-5:]]
+                )
+                if recent_mae < best_running_mae - 0.001:
+                    best_running_mae = recent_mae
+                    stale_count = 0
+                else:
+                    stale_count += 1
+
+                if stale_count >= wf_patience:
+                    log.info(
+                        f"  Walk-forward early stopping at fold {i + 1}: "
+                        f"no MAE improvement for {wf_patience} folds "
+                        f"(best running avg: {best_running_mae:.4f})"
+                    )
+                    break
 
         # Aggregate walk-forward metrics
         if fold_metrics:

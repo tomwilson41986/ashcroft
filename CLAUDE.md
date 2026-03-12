@@ -72,6 +72,10 @@ python daily_predictions.py --dry-run
 - **Storage**: SQLite `horse_racing.db` backed up to S3
 - **Schema**: `race_results` table with 50+ columns
 
+## Rules
+
+- **NEVER use sample/generated data** for training or evaluation. Always use the real `horse_racing.db` from S3.
+
 ## Git Conventions
 
 - Feature branches: `claude/<description>-<id>`
