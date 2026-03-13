@@ -3,14 +3,16 @@
 Filtered Rank 1 Profitability Analysis.
 
 Investigates whether applying big-theme filters to the Rank 1 level-stakes
-strategy can produce a profitable edge. Uses the 253k walk-forward OOS
-predictions.
+strategy can produce a profitable edge. Uses 253k walk-forward OOS
+predictions enriched with race metadata from the database.
 
 Filters tested (big themes only):
   - Overlay only (model says horse is value)
   - Predicted BFSP price bands
   - Field size bands
-  - Track type (NH vs Flat vs AW)
+  - Race code (Flat, NH, AW)
+  - Race type (Handicap, Maiden, etc.)
+  - Going description (ground conditions)
   - Combinations of the above
 
 All returns net of 5% Betfair commission.
@@ -23,63 +25,8 @@ import numpy as np
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-OOS_CSV = os.path.join(SCRIPT_DIR, "data", "oos_predictions.csv")
+OOS_CSV = os.path.join(SCRIPT_DIR, "data", "oos_predictions_enriched.csv")
 COMMISSION = 0.05
-
-# ──────────────────────────────────────────────────────────────────────────
-# Track classification (domain knowledge — reliable for UK/IRE racing)
-# ──────────────────────────────────────────────────────────────────────────
-NH_ONLY_TRACKS = {
-    "Aintree", "Bangor", "Cartmel", "Cheltenham", "Exeter", "Fakenham",
-    "Fontwell", "Hereford", "Hexham", "Huntingdon", "Kelso", "Ludlow",
-    "Market Rasen", "Newton Abbot", "Perth", "Plumpton", "Sedgefield",
-    "Stratford", "Taunton", "Uttoxeter", "Warwick", "Wetherby",
-    "Wincanton", "Worcester",
-    # Irish NH
-    "Ballinrobe", "Clonmel", "Downpatrick", "Fairyhouse", "Galway",
-    "Gowran Park", "Kilbeggan", "Killarney", "Leopardstown", "Limerick",
-    "Listowel", "Naas", "Navan", "Punchestown", "Roscommon", "Sligo",
-    "Thurles", "Tipperary", "Tramore", "Wexford",
-    # Technically dual-purpose but mostly NH in winter
-    "Down Royal", "Cork",
-}
-
-FLAT_ONLY_TRACKS = {
-    "Ascot", "Bath", "Beverley", "Brighton", "Carlisle", "Catterick",
-    "Chester", "Doncaster", "Epsom", "Goodwood", "Hamilton", "Haydock",
-    "Leicester", "Newbury", "Newmarket (July)", "Newmarket (Rowley)",
-    "Nottingham", "Pontefract", "Redcar", "Ripon", "Salisbury",
-    "Sandown", "Thirsk", "Windsor", "Yarmouth", "York",
-    # Irish Flat
-    "Curragh", "Laytown",
-}
-
-AW_TRACKS = {
-    "Chelmsford City", "Kempton", "Lingfield", "Newcastle",
-    "Southwell", "Wolverhampton",
-    # Irish AW
-    "Dundalk",
-}
-
-# Note: Some dual-purpose tracks (Ayr, Chepstow, Ffos Las, Musselburgh)
-# host both codes. We'll classify them separately.
-DUAL_PURPOSE = {
-    "Ayr", "Chepstow", "Ffos Las", "Musselburgh",
-    "Bellewstown",
-}
-
-
-def classify_track(track):
-    """Classify track into broad racing code."""
-    if track in AW_TRACKS:
-        return "All-Weather"
-    if track in NH_ONLY_TRACKS:
-        return "National Hunt"
-    if track in FLAT_ONLY_TRACKS:
-        return "Flat"
-    if track in DUAL_PURPOSE:
-        return "Dual Purpose"
-    return "Unknown"
 
 
 def load_data(path: str) -> pd.DataFrame:
@@ -97,11 +44,58 @@ def load_data(path: str) -> pd.DataFrame:
     # Overlay
     df["overlay_pct"] = (df["bfsp"] / df["predicted_bfsp"] - 1) * 100
 
-    # Field size
-    df["field_size"] = df.groupby("race_key")["race_key"].transform("count")
+    # Field size (from DB or computed)
+    if "number_of_runners" in df.columns:
+        df["field_size"] = pd.to_numeric(df["number_of_runners"], errors="coerce")
+    else:
+        df["field_size"] = df.groupby("race_key")["race_key"].transform("count")
 
-    # Track type
-    df["track_type"] = df["track"].apply(classify_track)
+    # Simplify going descriptions into broad categories
+    if "going_description" in df.columns:
+        going_map = {
+            "Heavy": "Soft/Heavy",
+            "Soft To Heavy": "Soft/Heavy",
+            "Soft": "Soft/Heavy",
+            "Yielding To Soft": "Soft/Heavy",
+            "Yielding": "Good/Yielding",
+            "Good To Yielding": "Good/Yielding",
+            "Good To Soft": "Good/Yielding",
+            "Good": "Good",
+            "Good To Firm": "Good/Fast",
+            "Firm": "Good/Fast",
+            "Standard": "Standard (AW)",
+            "Standard To Slow": "Standard (AW)",
+            "Standard To Fast": "Standard (AW)",
+            "Slow": "Standard (AW)",
+        }
+        df["going_group"] = df["going_description"].map(going_map).fillna("Other")
+
+    # Simplify race types into broad categories
+    if "race_type" in df.columns:
+        def broad_race_type(rt):
+            if pd.isna(rt):
+                return "Unknown"
+            rt = rt.lower()
+            if "handicap" in rt and "chase" in rt:
+                return "Handicap Chase"
+            if "handicap" in rt and "hurdle" in rt:
+                return "Handicap Hurdle"
+            if "handicap" in rt and ("nursery" in rt or "flat" not in rt):
+                return "Handicap Flat"
+            if "chase" in rt:
+                return "Non-Hcp Chase"
+            if "hurdle" in rt:
+                return "Non-Hcp Hurdle"
+            if "nh flat" in rt or "bumper" in rt:
+                return "NH Flat"
+            if "maiden" in rt:
+                return "Maiden"
+            if "novice" in rt:
+                return "Novices"
+            if "handicap" in rt:
+                return "Handicap Flat"
+            return "Other Flat"
+        df["race_group"] = df["race_type"].apply(broad_race_type)
 
     return df
 
@@ -112,7 +106,6 @@ def roi_stats(bets: pd.DataFrame) -> dict:
     if n == 0:
         return {"bets": 0, "winners": 0, "win_pct": 0, "pl": 0, "roi": 0}
     w = bets["won"].sum()
-    # Net returns: win pays bfsp - 1 profit, minus 5% commission on profit
     returned = bets.loc[bets["won"]].apply(
         lambda r: 1.0 + (r["bfsp"] - 1) * (1 - COMMISSION), axis=1
     ).sum()
@@ -134,7 +127,6 @@ def print_table(rows: list[dict], title: str):
     print(f"  {title}")
     print(f"{'=' * 78}")
     print(df.to_string(index=False))
-    # Highlight best
     if len(rows) > 1 and "roi" in df.columns:
         best = df.loc[df["roi"].idxmax()]
         print(f"\n  >> Best: {best.iloc[0]} — ROI {best['roi']:+.2f}%")
@@ -157,9 +149,9 @@ def main():
     print(f"    Bets: {total['bets']:,}  Winners: {total['winners']:,}  "
           f"Win%: {total['win_pct']:.1f}%  P&L: £{total['pl']:+,.2f}  ROI: {total['roi']:+.2f}%")
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
     # A. OVERLAY FILTER
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
     rows = []
     for label, mask in [
         ("All Rank 1", rank1.index == rank1.index),
@@ -173,9 +165,9 @@ def main():
         rows.append({"Filter": label, **s})
     print_table(rows, "A. RANK 1 BY OVERLAY THRESHOLD")
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
     # B. PREDICTED BFSP BAND
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
     rows = []
     for lo, hi, label in [
         (1.0, 2.5, "1.0–2.5 (Strong Fav)"),
@@ -189,9 +181,32 @@ def main():
         rows.append({"Price Band": label, **s})
     print_table(rows, "B. RANK 1 BY PREDICTED PRICE BAND")
 
-    # ──────────────────────────────────────────────────────────────────────
-    # C. FIELD SIZE
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
+    # C. RACE CODE
+    # ──────────────────────────────────────────────────────────────────
+    rows = []
+    for code in ["Flat", "National Hunt", "All Weather"]:
+        mask = rank1["race_code"] == code
+        s = roi_stats(rank1[mask])
+        if s["bets"] > 0:
+            rows.append({"Race Code": code, **s})
+    print_table(rows, "C. RANK 1 BY RACE CODE")
+
+    # ──────────────────────────────────────────────────────────────────
+    # D. RACE TYPE (broad groups)
+    # ──────────────────────────────────────────────────────────────────
+    rows = []
+    for rt in sorted(rank1["race_group"].unique()):
+        mask = rank1["race_group"] == rt
+        s = roi_stats(rank1[mask])
+        if s["bets"] >= 200:
+            rows.append({"Race Type": rt, **s})
+    rows.sort(key=lambda x: x["roi"], reverse=True)
+    print_table(rows, "D. RANK 1 BY RACE TYPE (≥200 bets)")
+
+    # ──────────────────────────────────────────────────────────────────
+    # E. FIELD SIZE
+    # ──────────────────────────────────────────────────────────────────
     rows = []
     for lo, hi, label in [
         (2, 6, "Small (2-5)"),
@@ -202,77 +217,44 @@ def main():
         mask = (rank1["field_size"] >= lo) & (rank1["field_size"] < hi)
         s = roi_stats(rank1[mask])
         rows.append({"Field Size": label, **s})
-    print_table(rows, "C. RANK 1 BY FIELD SIZE")
+    print_table(rows, "E. RANK 1 BY FIELD SIZE")
 
-    # ──────────────────────────────────────────────────────────────────────
-    # D. TRACK TYPE (proxy for race code)
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
+    # F. GOING
+    # ──────────────────────────────────────────────────────────────────
     rows = []
-    for tt in ["Flat", "National Hunt", "All-Weather", "Dual Purpose"]:
-        mask = rank1["track_type"] == tt
-        s = roi_stats(rank1[mask])
-        if s["bets"] > 0:
-            rows.append({"Track Type": tt, **s})
-    print_table(rows, "D. RANK 1 BY TRACK TYPE (proxy for race code)")
-
-    # ──────────────────────────────────────────────────────────────────────
-    # E. TOP INDIVIDUAL TRACKS (min 200 bets)
-    # ──────────────────────────────────────────────────────────────────────
-    rows = []
-    for track in sorted(rank1["track"].unique()):
-        mask = rank1["track"] == track
+    for going in sorted(rank1["going_group"].unique()):
+        mask = rank1["going_group"] == going
         s = roi_stats(rank1[mask])
         if s["bets"] >= 200:
-            rows.append({"Track": track, **s})
+            rows.append({"Going": going, **s})
     rows.sort(key=lambda x: x["roi"], reverse=True)
-    print_table(rows, "E. RANK 1 BY TRACK (≥200 bets)")
+    print_table(rows, "F. RANK 1 BY GOING (≥200 bets)")
 
-    # ──────────────────────────────────────────────────────────────────────
-    # F. COMBINED FILTERS — Overlay + Price Band
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
+    # G. RACE CODE × PRICE BAND
+    # ──────────────────────────────────────────────────────────────────
     rows = []
-    for ov_label, ov_mask in [
-        ("All", rank1.index == rank1.index),
-        ("Overlays >0%", rank1["overlay_pct"] > 0),
-        ("Overlays ≥10%", rank1["overlay_pct"] >= 10),
-    ]:
+    for code in ["Flat", "National Hunt", "All Weather"]:
+        code_mask = rank1["race_code"] == code
         for lo, hi, pb_label in [
             (1.0, 4.0, "Short (1-4)"),
             (4.0, 8.0, "Medium (4-8)"),
             (8.0, 999, "Long (8+)"),
         ]:
             pb_mask = (rank1["predicted_bfsp"] >= lo) & (rank1["predicted_bfsp"] < hi)
-            combined = rank1[ov_mask & pb_mask]
-            s = roi_stats(combined)
+            s = roi_stats(rank1[code_mask & pb_mask])
             if s["bets"] >= 50:
-                rows.append({"Overlay": ov_label, "Price": pb_label, **s})
-    print_table(rows, "F. RANK 1 — OVERLAY × PRICE BAND")
+                rows.append({"Code": code, "Price": pb_label, **s})
+    print_table(rows, "G. RANK 1 — RACE CODE × PRICE BAND")
 
-    # ──────────────────────────────────────────────────────────────────────
-    # G. COMBINED FILTERS — Track Type + Price Band
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
+    # H. RACE CODE × OVERLAY × PRICE (the key interaction)
+    # ──────────────────────────────────────────────────────────────────
     rows = []
-    for tt in ["Flat", "National Hunt", "All-Weather"]:
-        tt_mask = rank1["track_type"] == tt
-        for lo, hi, pb_label in [
-            (1.0, 4.0, "Short (1-4)"),
-            (4.0, 8.0, "Medium (4-8)"),
-            (8.0, 999, "Long (8+)"),
-        ]:
-            pb_mask = (rank1["predicted_bfsp"] >= lo) & (rank1["predicted_bfsp"] < hi)
-            combined = rank1[tt_mask & pb_mask]
-            s = roi_stats(combined)
-            if s["bets"] >= 50:
-                rows.append({"Code": tt, "Price": pb_label, **s})
-    print_table(rows, "G. RANK 1 — TRACK TYPE × PRICE BAND")
-
-    # ──────────────────────────────────────────────────────────────────────
-    # H. COMBINED — Track Type + Overlay + Price
-    # ──────────────────────────────────────────────────────────────────────
-    rows = []
-    for tt in ["Flat", "National Hunt", "All-Weather"]:
-        tt_mask = rank1["track_type"] == tt
-        for ov_min, ov_label in [(0, ">0%"), (10, "≥10%")]:
+    for code in ["Flat", "National Hunt", "All Weather"]:
+        code_mask = rank1["race_code"] == code
+        for ov_min, ov_label in [(0, "Overlay>0%"), (10, "Overlay≥10%")]:
             ov_mask = rank1["overlay_pct"] >= ov_min
             for lo, hi, pb_label in [
                 (1.0, 4.0, "Short"),
@@ -280,55 +262,44 @@ def main():
                 (8.0, 999, "Long"),
             ]:
                 pb_mask = (rank1["predicted_bfsp"] >= lo) & (rank1["predicted_bfsp"] < hi)
-                combined = rank1[tt_mask & ov_mask & pb_mask]
-                s = roi_stats(combined)
+                s = roi_stats(rank1[code_mask & ov_mask & pb_mask])
                 if s["bets"] >= 50:
-                    rows.append({"Code": tt, "Overlay": ov_label, "Price": pb_label, **s})
+                    rows.append({"Code": code, "Overlay": ov_label, "Price": pb_label, **s})
     rows.sort(key=lambda x: x["roi"], reverse=True)
-    print_table(rows, "H. RANK 1 — TRACK TYPE × OVERLAY × PRICE (≥50 bets, sorted by ROI)")
+    print_table(rows, "H. RANK 1 — RACE CODE × OVERLAY × PRICE (≥50 bets, by ROI)")
 
-    # ──────────────────────────────────────────────────────────────────────
-    # I. COMBINED — Field Size + Price
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
+    # I. RACE TYPE × OVERLAY (big types only)
+    # ──────────────────────────────────────────────────────────────────
     rows = []
-    for fs_lo, fs_hi, fs_label in [
-        (2, 8, "Small (2-7)"),
-        (8, 12, "Medium (8-11)"),
-        (12, 99, "Large (12+)"),
-    ]:
-        fs_mask = (rank1["field_size"] >= fs_lo) & (rank1["field_size"] < fs_hi)
-        for lo, hi, pb_label in [
-            (1.0, 4.0, "Short (1-4)"),
-            (4.0, 8.0, "Medium (4-8)"),
-            (8.0, 999, "Long (8+)"),
-        ]:
-            pb_mask = (rank1["predicted_bfsp"] >= lo) & (rank1["predicted_bfsp"] < hi)
-            combined = rank1[fs_mask & pb_mask]
-            s = roi_stats(combined)
-            if s["bets"] >= 50:
-                rows.append({"Field": fs_label, "Price": pb_label, **s})
+    for rt in rank1["race_group"].unique():
+        rt_mask = rank1["race_group"] == rt
+        for ov_min, ov_label in [(-999, "All"), (0, "Overlay>0%")]:
+            ov_mask = rank1["overlay_pct"] >= ov_min
+            s = roi_stats(rank1[rt_mask & ov_mask])
+            if s["bets"] >= 200:
+                rows.append({"Race Type": rt, "Filter": ov_label, **s})
     rows.sort(key=lambda x: x["roi"], reverse=True)
-    print_table(rows, "I. RANK 1 — FIELD SIZE × PRICE (≥50 bets, sorted by ROI)")
+    print_table(rows, "I. RANK 1 — RACE TYPE × OVERLAY (≥200 bets, by ROI)")
 
-    # ──────────────────────────────────────────────────────────────────────
-    # J. BEST CANDIDATE RULES — sorted by profit
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
+    # J. BEST CANDIDATE RULES (≥200 bets)
+    # ──────────────────────────────────────────────────────────────────
     print(f"\n{'=' * 78}")
     print(f"  J. BEST CANDIDATE RULES (≥200 bets, sorted by profit)")
     print(f"{'=' * 78}")
 
     candidates = []
 
-    # Single filters
+    # Overlay × Price combinations
     for ov_min in [0, 5, 10, 20]:
         for lo, hi, pb_label in [
-            (1.0, 4.0, "Short"),
-            (4.0, 6.0, "Med-Short"),
-            (4.0, 8.0, "Medium"),
-            (6.0, 10.0, "Med-Long"),
-            (8.0, 999, "Long"),
+            (4.0, 8.0, "4-8"),
             (4.0, 13.0, "4-13"),
             (5.0, 13.0, "5-13"),
+            (6.0, 13.0, "6-13"),
+            (6.0, 10.0, "6-10"),
+            (8.0, 999, "8+"),
         ]:
             mask = (
                 (rank1["overlay_pct"] >= ov_min) &
@@ -337,80 +308,97 @@ def main():
             )
             s = roi_stats(rank1[mask])
             if s["bets"] >= 200:
-                candidates.append({
-                    "Rule": f"Overlay≥{ov_min}%, Price {pb_label}",
-                    **s,
-                })
+                candidates.append({"Rule": f"Overlay≥{ov_min}%, Price {pb_label}", **s})
 
-    # Track type combos
-    for tt in ["Flat", "National Hunt", "All-Weather"]:
-        tt_mask = rank1["track_type"] == tt
+    # Race code × overlay × price
+    for code in ["Flat", "National Hunt", "All Weather"]:
+        code_mask = rank1["race_code"] == code
         for ov_min in [0, 10]:
             for lo, hi, pb_label in [
                 (1.0, 999, "All"),
                 (4.0, 13.0, "4-13"),
-                (4.0, 8.0, "Med"),
+                (5.0, 13.0, "5-13"),
+                (4.0, 8.0, "4-8"),
             ]:
                 mask = (
-                    tt_mask &
+                    code_mask &
                     (rank1["overlay_pct"] >= ov_min) &
                     (rank1["predicted_bfsp"] >= lo) &
                     (rank1["predicted_bfsp"] < hi)
                 )
                 s = roi_stats(rank1[mask])
                 if s["bets"] >= 200:
-                    candidates.append({
-                        "Rule": f"{tt}, Ov≥{ov_min}%, {pb_label}",
-                        **s,
-                    })
+                    candidates.append({"Rule": f"{code}, Ov≥{ov_min}%, {pb_label}", **s})
 
-    # Field size combos
+    # Race type × overlay
+    for rt in rank1["race_group"].unique():
+        rt_mask = rank1["race_group"] == rt
+        for ov_min in [0, 10]:
+            for lo, hi, pb_label in [(1.0, 999, "All"), (4.0, 13.0, "4-13")]:
+                mask = (
+                    rt_mask &
+                    (rank1["overlay_pct"] >= ov_min) &
+                    (rank1["predicted_bfsp"] >= lo) &
+                    (rank1["predicted_bfsp"] < hi)
+                )
+                s = roi_stats(rank1[mask])
+                if s["bets"] >= 200:
+                    candidates.append({"Rule": f"{rt}, Ov≥{ov_min}%, {pb_label}", **s})
+
+    # Field size × overlay × price
     for fs_lo, fs_hi, fs_label in [(2, 8, "Small"), (8, 12, "Med"), (12, 99, "Large")]:
         fs_mask = (rank1["field_size"] >= fs_lo) & (rank1["field_size"] < fs_hi)
-        for lo, hi, pb_label in [(4.0, 13.0, "4-13"), (4.0, 8.0, "Med")]:
+        for lo, hi, pb_label in [(4.0, 13.0, "4-13"), (4.0, 8.0, "4-8")]:
             mask = (
                 fs_mask &
+                (rank1["overlay_pct"] >= 0) &
                 (rank1["predicted_bfsp"] >= lo) &
                 (rank1["predicted_bfsp"] < hi)
             )
             s = roi_stats(rank1[mask])
             if s["bets"] >= 200:
-                candidates.append({
-                    "Rule": f"Field {fs_label}, Price {pb_label}",
-                    **s,
-                })
+                candidates.append({"Rule": f"Field {fs_label}, Ov>0%, {pb_label}", **s})
+
+    # Going × overlay
+    for going in rank1["going_group"].unique():
+        g_mask = rank1["going_group"] == going
+        ov_mask = rank1["overlay_pct"] >= 0
+        for lo, hi, pb_label in [(1.0, 999, "All"), (4.0, 13.0, "4-13")]:
+            pb_mask = (rank1["predicted_bfsp"] >= lo) & (rank1["predicted_bfsp"] < hi)
+            s = roi_stats(rank1[g_mask & ov_mask & pb_mask])
+            if s["bets"] >= 200:
+                candidates.append({"Rule": f"{going}, Ov>0%, {pb_label}", **s})
 
     candidates.sort(key=lambda x: x["pl"], reverse=True)
-    cdf = pd.DataFrame(candidates[:30])
+    cdf = pd.DataFrame(candidates[:40])
     if not cdf.empty:
         print(cdf.to_string(index=False))
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
     # SUMMARY
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
     print(f"\n{'=' * 78}")
     print(f"  SUMMARY & INTERPRETATION")
     print(f"{'=' * 78}")
 
     profitable = [c for c in candidates if c["pl"] > 0]
     if profitable:
-        print(f"\n  {len(profitable)} candidate rule(s) show positive P&L (≥200 bets):")
-        for c in profitable[:10]:
-            print(f"    {c['Rule']:<45} {c['bets']:>5} bets  "
-                  f"£{c['pl']:>+8.2f}  ROI {c['roi']:>+6.2f}%")
+        print(f"\n  {len(profitable)} candidate rule(s) show positive P&L (≥200 bets):\n")
+        for c in profitable[:15]:
+            print(f"    {c['Rule']:<50} {c['bets']:>5} bets  "
+                  f"£{c['pl']:>+9.2f}  ROI {c['roi']:>+6.2f}%")
     else:
         print("\n  No candidate rules with ≥200 bets achieved positive P&L.")
 
     print(f"""
   IMPORTANT CAVEATS:
   - These are in-sample filter optimisations on OOS predictions.
-    Profitable filters found here may not persist out-of-sample.
-  - Filters with <500 bets have high variance and may be noise.
-  - Track type is inferred from track name (no race_type column
-    in current OOS data). Re-run evaluate_oos.py with the DB to
-    get exact race_type/race_code for more precise analysis.
-  - Only big-theme filters tested (no cherry-picking individual
-    tracks, months, or narrow overlays).
+    Profitable filters found here may not persist going forward.
+  - Filters with <500 bets have high variance and may reflect noise.
+  - Only big-theme filters tested — no cherry-picking of individual
+    tracks, months, or narrow thresholds.
+  - The OOS predictions themselves are strictly walk-forward with
+    zero lookahead bias; only the filter selection is in-sample.
 """)
 
     print("=" * 78)
