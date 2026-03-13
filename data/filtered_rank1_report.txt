@@ -1,0 +1,226 @@
+==============================================================================
+  RANK 1 FILTERED PROFITABILITY ANALYSIS
+  Period: 2024-01-01 to 2026-02-18
+  OOS Predictions: 253,532 runners, 27,223 races
+  Commission: 5% Betfair
+==============================================================================
+
+  BASELINE — All Rank 1 (no filters):
+    Bets: 27,223  Winners: 8,171  Win%: 30.0%  P&L: £-121.09  ROI: -0.44%
+
+==============================================================================
+  A. RANK 1 BY OVERLAY THRESHOLD
+==============================================================================
+              Filter  bets  winners  win_pct      pl   roi
+          All Rank 1 27223     8171     30.0 -121.09 -0.44
+ Overlays only (>0%) 11498     2371     20.6  184.40  1.60
+        Overlays ≥5% 10246     2008     19.6  123.77  1.21
+       Overlays ≥10%  9180     1745     19.0  183.15  2.00
+       Overlays ≥20%  7273     1271     17.5  186.39  2.56
+Underlays only (<0%) 15725     5800     36.9 -305.49 -1.94
+
+  >> Best: Overlays ≥20% — ROI +2.56%
+
+==============================================================================
+  B. RANK 1 BY PREDICTED PRICE BAND
+==============================================================================
+          Price Band  bets  winners  win_pct      pl   roi
+1.0–2.5 (Strong Fav)  3296     1737     52.7  -67.31 -2.04
+ 2.5–4.0 (Favourite)  8756     3024     34.5 -296.90 -3.39
+ 4.0–6.0 (Contender)  9983     2487     24.9   56.68  0.57
+ 6.0–10.0 (Each Way)  4914      881     17.9  138.35  2.82
+    10.0+ (Outsider)   265       34     12.8   48.13 18.16
+
+  >> Best: 10.0+ (Outsider) — ROI +18.16%
+
+==============================================================================
+  C. RANK 1 BY RACE CODE
+==============================================================================
+    Race Code  bets  winners  win_pct      pl   roi
+         Flat  9479     2726     28.8  164.96  1.74
+National Hunt 10877     3440     31.6 -153.63 -1.41
+  All Weather  6867     2005     29.2 -132.42 -1.93
+
+  >> Best: Flat — ROI +1.74%
+
+==============================================================================
+  D. RANK 1 BY RACE TYPE (≥200 bets)
+==============================================================================
+      Race Type  bets  winners  win_pct      pl   roi
+Handicap Hurdle  3525      894     25.4   49.28  1.40
+  Handicap Flat 12598     3297     26.2   88.20  0.70
+         Maiden  2082      785     37.7  -16.80 -0.81
+  Non-Hcp Chase   807      313     38.8  -12.32 -1.53
+ Handicap Chase  2880      764     26.5  -62.91 -2.18
+        Novices  1551      616     39.7  -33.75 -2.18
+        NH Flat   862      281     32.6  -27.81 -3.23
+ Non-Hcp Hurdle  2802     1187     42.4 -102.07 -3.64
+
+  >> Best: Handicap Hurdle — ROI +1.40%
+
+==============================================================================
+  E. RANK 1 BY FIELD SIZE
+==============================================================================
+      Field Size  bets  winners  win_pct      pl   roi
+     Small (2-5)  3281     1403     42.8  -99.19 -3.02
+    Medium (6-9) 12376     3871     31.3 -362.20 -2.93
+   Large (10-13)  8338     2196     26.3  142.10  1.70
+Very Large (14+)  3228      701     21.7  198.20  6.14
+
+  >> Best: Very Large (14+) — ROI +6.14%
+
+==============================================================================
+  F. RANK 1 BY GOING (≥200 bets)
+==============================================================================
+        Going  bets  winners  win_pct      pl   roi
+    Good/Fast  2661      818     30.7   98.62  3.71
+         Good  7462     2282     30.6   48.44  0.65
+   Soft/Heavy  5676     1755     30.9  -62.40 -1.10
+Good/Yielding  4548     1309     28.8  -69.00 -1.52
+Standard (AW)  6876     2007     29.2 -136.75 -1.99
+
+  >> Best: Good/Fast — ROI +3.71%
+
+==============================================================================
+  G. RANK 1 — RACE CODE × PRICE BAND
+==============================================================================
+         Code        Price  bets  winners  win_pct      pl    roi
+         Flat  Short (1-4)  4038     1541     38.2  -72.92  -1.81
+         Flat Medium (4-8)  4981     1115     22.4  186.53   3.74
+         Flat    Long (8+)   458       68     14.8   51.16  11.17
+National Hunt  Short (1-4)  5388     2200     40.8 -220.75  -4.10
+National Hunt Medium (4-8)  4984     1150     23.1  -82.40  -1.65
+National Hunt    Long (8+)   498       84     16.9  149.75  30.07
+  All Weather  Short (1-4)  2626     1020     38.8  -70.54  -2.69
+  All Weather Medium (4-8)  3943      940     23.8  -29.47  -0.75
+  All Weather    Long (8+)   298       45     15.1  -32.42 -10.88
+
+  >> Best: National Hunt — ROI +30.07%
+
+==============================================================================
+  H. RANK 1 — RACE CODE × OVERLAY × PRICE (≥50 bets, by ROI)
+==============================================================================
+         Code     Overlay  Price  bets  winners  win_pct      pl    roi
+National Hunt  Overlay>0%   Long   192       23     12.0  132.81  69.17
+National Hunt Overlay≥10%   Long   162       17     10.5  112.05  69.16
+         Flat  Overlay>0%   Long   185       20     10.8   61.26  33.11
+         Flat Overlay≥10%   Long   153       15      9.8   47.90  31.31
+         Flat Overlay≥10% Medium  1750      260     14.9  203.02  11.60
+         Flat  Overlay>0% Medium  2194      350     16.0  239.79  10.93
+         Flat Overlay≥10%  Short  1506      399     26.5   30.43   2.02
+         Flat  Overlay>0%  Short  1888      535     28.3   17.49   0.93
+  All Weather Overlay≥10% Medium  1223      164     13.4    1.98   0.16
+National Hunt  Overlay>0% Medium  2032      297     14.6  -21.85  -1.08
+National Hunt Overlay≥10% Medium  1626      217     13.3  -26.20  -1.61
+  All Weather  Overlay>0% Medium  1541      216     14.0  -44.36  -2.88
+  All Weather  Overlay>0%  Short  1084      282     26.0  -47.64  -4.39
+National Hunt  Overlay>0%  Short  2275      634     27.9 -128.68  -5.66
+National Hunt Overlay≥10%  Short  1819      462     25.4 -112.93  -6.21
+  All Weather Overlay≥10%  Short   852      198     23.2  -58.06  -6.81
+  All Weather Overlay≥10%   Long    80        5      6.2  -15.00 -18.75
+  All Weather  Overlay>0%   Long    98        6      6.1  -24.40 -24.90
+
+  >> Best: National Hunt — ROI +69.17%
+
+==============================================================================
+  I. RANK 1 — RACE TYPE × OVERLAY (≥200 bets, by ROI)
+==============================================================================
+      Race Type     Filter  bets  winners  win_pct      pl   roi
+  Handicap Flat Overlay>0%  5489     1025     18.7  184.84  3.37
+Handicap Hurdle Overlay>0%  1496      255     17.0   46.00  3.07
+ Handicap Chase Overlay>0%  1279      251     19.6   30.77  2.41
+        Novices Overlay>0%   596      157     26.3   13.92  2.34
+Handicap Hurdle        All  3525      894     25.4   49.28  1.40
+  Handicap Flat        All 12598     3297     26.2   88.20  0.70
+         Maiden Overlay>0%   856      219     25.6    2.25  0.26
+         Maiden        All  2082      785     37.7  -16.80 -0.81
+  Non-Hcp Chase        All   807      313     38.8  -12.32 -1.53
+ Handicap Chase        All  2880      764     26.5  -62.91 -2.18
+        Novices        All  1551      616     39.7  -33.75 -2.18
+  Non-Hcp Chase Overlay>0%   297       77     25.9   -8.38 -2.82
+        NH Flat        All   862      281     32.6  -27.81 -3.23
+ Non-Hcp Hurdle        All  2802     1187     42.4 -102.07 -3.64
+ Non-Hcp Hurdle Overlay>0%  1037      296     28.5  -56.25 -5.42
+        NH Flat Overlay>0%   397       81     20.4  -30.07 -7.57
+
+  >> Best: Handicap Flat — ROI +3.37%
+
+==============================================================================
+  J. BEST CANDIDATE RULES (≥200 bets, sorted by profit)
+==============================================================================
+                       Rule  bets  winners  win_pct     pl   roi
+   Field Large, Ov>0%, 4-13  2233      318     14.2 419.45 18.78
+     Overlay≥0%, Price 5-13  3702      493     13.3 416.94 11.26
+     Overlay≥5%, Price 5-13  3292      426     12.9 405.24 12.31
+    Overlay≥10%, Price 5-13  2950      365     12.4 375.34 12.72
+     Overlay≥0%, Price 4-13  6230      912     14.6 355.26  5.70
+     Overlay≥5%, Price 4-13  5552      782     14.1 336.18  6.06
+    Overlay≥10%, Price 4-13  4985      678     13.6 332.75  6.67
+     Overlay≥0%, Price 6-13  1978      234     11.8 329.43 16.65
+           Flat, Ov≥0%, All  4267      905     21.2 318.54  7.47
+    Overlay≥10%, Price 6-13  1593      177     11.1 312.25 19.60
+          Flat, Ov≥0%, 4-13  2372      370     15.6 308.05 12.99
+     Overlay≥5%, Price 6-13  1758      197     11.2 290.21 16.51
+    Overlay≥20%, Price 5-13  2361      266     11.3 288.59 12.22
+          Flat, Ov≥0%, 5-13  1407      206     14.6 282.06 20.05
+          Flat, Ov≥10%, All  3409      674     19.8 281.35  8.25
+    Overlay≥20%, Price 6-13  1303      136     10.4 275.93 21.18
+    Overlay≥20%, Price 4-13  3992      499     12.5 262.87  6.59
+     Overlay≥0%, Price 6-10  1892      226     11.9 262.52 13.88
+         Flat, Ov≥10%, 4-13  1898      275     14.5 255.92 13.48
+    Overlay≥10%, Price 6-10  1521      170     11.2 242.03 15.91
+ Handicap Flat, Ov≥0%, 4-13  3588      534     14.9 241.91  6.74
+Handicap Flat, Ov≥10%, 4-13  2840      397     14.0 240.19  8.46
+           Flat, Ov≥0%, 4-8  2194      350     16.0 239.79 10.93
+     Overlay≥5%, Price 6-10  1677      190     11.3 228.99 13.65
+National Hunt, Ov≥10%, 5-13  1059      136     12.8 221.24 20.89
+ National Hunt, Ov≥0%, 5-13  1329      179     13.5 220.93 16.62
+    Overlay≥20%, Price 6-10  1241      131     10.6 220.75 17.79
+    Field Large, Ov>0%, 4-8  1831      273     14.9 216.57 11.83
+         Flat, Ov≥10%, 5-13  1119      147     13.1 205.76 18.39
+          Flat, Ov≥10%, 4-8  1750      260     14.9 203.02 11.60
+ Handicap Flat, Ov≥10%, All  4323      751     17.4 191.97  4.44
+  Handicap Flat, Ov≥0%, All  5489     1025     18.7 184.84  3.37
+      Overlay≥5%, Price 4-8  5131      741     14.4 182.14  3.55
+     Overlay≥10%, Price 4-8  4599      641     13.9 178.80  3.89
+          Good, Ov>0%, 4-13  1714      274     16.0 175.17 10.22
+      Overlay≥0%, Price 4-8  5767      863     15.0 173.59  3.01
+       Overlay≥0%, Price 8+   475       49     10.3 169.67 35.72
+ Good/Yielding, Ov>0%, 4-13  1058      157     14.8 162.48 15.36
+           Good, Ov>0%, All  3217      707     22.0 154.99  4.82
+      Overlay≥10%, Price 8+   395       37      9.4 144.95 36.70
+
+==============================================================================
+  SUMMARY & INTERPRETATION
+==============================================================================
+
+  63 candidate rule(s) show positive P&L (≥200 bets):
+
+    Field Large, Ov>0%, 4-13                            2233 bets  £  +419.45  ROI +18.78%
+    Overlay≥0%, Price 5-13                              3702 bets  £  +416.94  ROI +11.26%
+    Overlay≥5%, Price 5-13                              3292 bets  £  +405.24  ROI +12.31%
+    Overlay≥10%, Price 5-13                             2950 bets  £  +375.34  ROI +12.72%
+    Overlay≥0%, Price 4-13                              6230 bets  £  +355.26  ROI  +5.70%
+    Overlay≥5%, Price 4-13                              5552 bets  £  +336.18  ROI  +6.06%
+    Overlay≥10%, Price 4-13                             4985 bets  £  +332.75  ROI  +6.67%
+    Overlay≥0%, Price 6-13                              1978 bets  £  +329.43  ROI +16.65%
+    Flat, Ov≥0%, All                                    4267 bets  £  +318.54  ROI  +7.47%
+    Overlay≥10%, Price 6-13                             1593 bets  £  +312.25  ROI +19.60%
+    Flat, Ov≥0%, 4-13                                   2372 bets  £  +308.05  ROI +12.99%
+    Overlay≥5%, Price 6-13                              1758 bets  £  +290.21  ROI +16.51%
+    Overlay≥20%, Price 5-13                             2361 bets  £  +288.59  ROI +12.22%
+    Flat, Ov≥0%, 5-13                                   1407 bets  £  +282.06  ROI +20.05%
+    Flat, Ov≥10%, All                                   3409 bets  £  +281.35  ROI  +8.25%
+
+  IMPORTANT CAVEATS:
+  - These are in-sample filter optimisations on OOS predictions.
+    Profitable filters found here may not persist going forward.
+  - Filters with <500 bets have high variance and may reflect noise.
+  - Only big-theme filters tested — no cherry-picking of individual
+    tracks, months, or narrow thresholds.
+  - The OOS predictions themselves are strictly walk-forward with
+    zero lookahead bias; only the filter selection is in-sample.
+
+==============================================================================
+  END OF FILTERED ANALYSIS
+==============================================================================
