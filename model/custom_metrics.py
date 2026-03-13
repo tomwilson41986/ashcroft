@@ -15,6 +15,8 @@ import re
 import numpy as np
 import pandas as pd
 
+from model.pace_metrics import PaceMetricsEngine
+
 
 # Harmonic recency weights for last 10 runs
 RECENCY_WEIGHTS = {
@@ -192,6 +194,9 @@ class CustomMetricsEngine:
         df = self._calc_track_preference(df)
         df = self._calc_or_trajectory(df)
         df = self._calc_hot_form(df)
+
+        # --- Pace prediction & running position features ---
+        df = PaceMetricsEngine().calculate(df)
 
         df = self._calc_within_race_ranks(df)
 

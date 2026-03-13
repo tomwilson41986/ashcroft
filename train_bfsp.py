@@ -41,6 +41,17 @@ from sklearn.metrics import (
 )
 
 from model.custom_metrics import CustomMetricsEngine
+from model.pace_metrics import (
+    ALL_PACE_FEATURES,
+    ENTITY_STYLE_FEATURES,
+    HORSE_STYLE_FEATURES,
+    PACE_FIT_FEATURES,
+    PACE_RANK_FEATURES,
+    PACE_SCENARIO_FEATURES,
+    SUSTAINABILITY_FEATURES,
+    TACTICAL_FEATURES,
+    TRACK_PACE_BIAS_FEATURES,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -562,6 +573,7 @@ ALL_FEATURE_COLS = (
     + TRACK_PREF_FEATURES
     + OR_TRAJECTORY_FEATURES
     + HOT_FORM_FEATURES
+    + ALL_PACE_FEATURES
 )
 
 
