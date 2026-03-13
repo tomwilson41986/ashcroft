@@ -296,7 +296,19 @@ def main():
     log.info("Generating predictions...")
     X = df[feature_cols].astype(float)
     df["predicted_log_bfsp"] = model.predict(X)
-    df["predicted_bfsp"] = np.exp(df["predicted_log_bfsp"])
+    df["predicted_bfsp_raw"] = np.exp(df["predicted_log_bfsp"])
+
+    # Normalise implied probabilities per race so they sum to 1
+    df["raceid"] = (
+        df["race_date"].dt.strftime("%Y-%m-%d")
+        + "_" + df["track"].astype(str)
+        + "_" + df["race_time"].astype(str)
+    )
+    df["_ip"] = 1.0 / df["predicted_bfsp_raw"]
+    _rsum = df.groupby("raceid")["_ip"].transform("sum")
+    df["predicted_win_prob_norm"] = df["_ip"] / _rsum
+    df["predicted_bfsp"] = 1.0 / df["predicted_win_prob_norm"]
+    df.drop(columns=["_ip"], inplace=True)
 
     # Filter to analysis period only
     analysis_start = pd.Timestamp(args.start_date)

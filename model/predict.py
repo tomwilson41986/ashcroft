@@ -26,12 +26,32 @@ MODEL_PATH = os.path.join(PROJECT_DIR, "bfsp_model.lgb")
 def predict_bfsp(
     model: lgb.Booster, df: pd.DataFrame
 ) -> pd.DataFrame:
-    """Add predicted BFSP to a features DataFrame."""
+    """Add predicted BFSP to a features DataFrame.
+
+    Normalises implied probabilities (1/BFSP) per race so they sum to 1,
+    then derives fair-book BFSP from the normalised probabilities.
+    """
     X = df[FEATURE_COLS]
     log_pred = model.predict(X)
     df = df.copy()
     df["predicted_log_bfsp"] = log_pred
-    df["predicted_bfsp"] = np.exp(log_pred)
+    df["predicted_bfsp_raw"] = np.exp(log_pred)
+
+    # Build raceid if missing
+    if "raceid" not in df.columns:
+        df["raceid"] = (
+            df["race_date"].dt.strftime("%Y-%m-%d")
+            + "_" + df["track"].astype(str)
+            + "_" + df["race_time"].astype(str)
+        )
+
+    # Normalise implied probabilities per race
+    df["implied_prob"] = 1.0 / df["predicted_bfsp_raw"]
+    race_prob_sum = df.groupby("raceid")["implied_prob"].transform("sum")
+    df["predicted_win_prob_norm"] = df["implied_prob"] / race_prob_sum
+    df["predicted_bfsp"] = 1.0 / df["predicted_win_prob_norm"]
+    df.drop(columns=["implied_prob"], inplace=True)
+
     return df
 
 

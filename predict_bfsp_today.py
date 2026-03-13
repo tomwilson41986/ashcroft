@@ -224,21 +224,20 @@ def prepare_and_predict(
     # Calculate implied win probability from predicted BFSP
     target_df["predicted_win_prob"] = 1.0 / target_df["predicted_bfsp"]
 
-    # Normalise probabilities per race
-    if "raceid" in target_df.columns:
-        target_df["predicted_win_prob_norm"] = target_df.groupby("raceid")[
-            "predicted_win_prob"
-        ].transform(lambda x: x / x.sum())
-    else:
-        # Create raceid from track + time
+    # Normalise probabilities per race so they sum to 1.0
+    if "raceid" not in target_df.columns:
         target_df["raceid"] = (
             target_df["race_date"].dt.strftime("%Y-%m-%d")
             + "_" + target_df["track"].astype(str)
             + "_" + target_df["race_time"].astype(str)
         )
-        target_df["predicted_win_prob_norm"] = target_df.groupby("raceid")[
-            "predicted_win_prob"
-        ].transform(lambda x: x / x.sum())
+
+    race_prob_sum = target_df.groupby("raceid")["predicted_win_prob"].transform("sum")
+    target_df["predicted_win_prob_norm"] = target_df["predicted_win_prob"] / race_prob_sum
+
+    # Recalculate BFSP from normalised probabilities so odds reflect a fair book
+    target_df["predicted_bfsp_raw"] = target_df["predicted_bfsp"]
+    target_df["predicted_bfsp"] = 1.0 / target_df["predicted_win_prob_norm"]
 
     # If actual BFSP is available, compute edge
     if "bfsp" in target_df.columns:
