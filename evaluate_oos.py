@@ -785,6 +785,9 @@ def main():
             "predicted_bfsp", "bfsp", "overlay_pct",
             "predicted_win_prob_norm", "placing_numerical", "won",
             "fold_idx",
+            # Race metadata for downstream profitability analysis
+            "race_type", "race_code", "surface_type", "going_description",
+            "dist_furlongs", "number_of_runners", "race_class",
         ]
         avail = [c for c in out_cols if c in oos.columns]
         oos[avail].to_csv(args.output_csv, index=False)
