@@ -311,7 +311,7 @@ def format_predictions(predictions: pd.DataFrame, target_date: date) -> str:
             for rank, (_, row) in enumerate(race_df.iterrows(), 1):
                 horse = str(row.get("horse_name", "?"))[:21]
                 pred_bfsp = row.get("predicted_bfsp", 0)
-                p_win = row.get("predicted_win_prob_norm", 0)
+                p_win = row.get("predicted_win_prob", 0)
 
                 if has_actual:
                     actual = row.get("actual_bfsp", np.nan)
@@ -356,7 +356,7 @@ def format_predictions(predictions: pd.DataFrame, target_date: date) -> str:
             rtime = top.get("race_time", "?")
             horse = top.get("horse_name", "?")
             pred_bfsp = top.get("predicted_bfsp", 0)
-            p_win = top.get("predicted_win_prob_norm", 0)
+            p_win = top.get("predicted_win_prob", 0)
 
             extra = ""
             if has_actual:
