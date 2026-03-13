@@ -15,6 +15,7 @@ import re
 import numpy as np
 import pandas as pd
 
+from model.draw_metrics import DrawMetricsEngine
 from model.pace_metrics import PaceMetricsEngine
 
 
@@ -197,6 +198,9 @@ class CustomMetricsEngine:
 
         # --- Pace prediction & running position features ---
         df = PaceMetricsEngine().calculate(df)
+
+        # --- Draw bias & stall position features ---
+        df = DrawMetricsEngine().calculate(df)
 
         df = self._calc_within_race_ranks(df)
 

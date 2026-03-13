@@ -41,6 +41,7 @@ from sklearn.metrics import (
 )
 
 from model.custom_metrics import CustomMetricsEngine
+from model.draw_metrics import ALL_DRAW_FEATURES
 from model.pace_metrics import (
     ALL_PACE_FEATURES,
     ENTITY_STYLE_FEATURES,
@@ -574,6 +575,7 @@ ALL_FEATURE_COLS = (
     + OR_TRAJECTORY_FEATURES
     + HOT_FORM_FEATURES
     + ALL_PACE_FEATURES
+    + ALL_DRAW_FEATURES
 )
 
 

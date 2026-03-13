@@ -1,0 +1,195 @@
+{
+  "model_type": "tfig_regression",
+  "target": "TFig",
+  "n_features": 419,
+  "walk_forward_avg": {
+    "wf_mae": 1.4859,
+    "wf_rmse": 2.0651,
+    "wf_r2": 0.3281,
+    "wf_correlation": 0.5941,
+    "n_folds": 13
+  },
+  "overall_walk_forward": {
+    "overall_wf_mae": 1.4863,
+    "overall_wf_rmse": 2.0631,
+    "overall_wf_r2": 0.3601,
+    "overall_wf_correlation": 0.6008,
+    "overall_wf_within_0.5": 25.2,
+    "overall_wf_within_1.0": 47.1
+  },
+  "final_model": {
+    "mae": 1.4433,
+    "rmse": 2.0054,
+    "r2": 0.3015,
+    "correlation": 0.5514,
+    "within_0.5": 26.2,
+    "within_1.0": 48.3,
+    "best_iteration": 311,
+    "train_size": 296179,
+    "val_size": 26065
+  },
+  "fold_details": [
+    {
+      "mae": 1.5779,
+      "rmse": 2.2167,
+      "r2": 0.0954,
+      "correlation": 0.5007,
+      "within_0.5": 25.5,
+      "within_1.0": 47.1,
+      "best_iteration": 536,
+      "train_size": 101533,
+      "val_size": 6168
+    },
+    {
+      "mae": 1.6227,
+      "rmse": 2.4181,
+      "r2": 0.1884,
+      "correlation": 0.4942,
+      "within_0.5": 22.9,
+      "within_1.0": 45.2,
+      "best_iteration": 419,
+      "train_size": 113561,
+      "val_size": 6297
+    },
+    {
+      "mae": 1.6386,
+      "rmse": 2.244,
+      "r2": 0.3372,
+      "correlation": 0.5812,
+      "within_0.5": 22.1,
+      "within_1.0": 43.0,
+      "best_iteration": 464,
+      "train_size": 128284,
+      "val_size": 10582
+    },
+    {
+      "mae": 1.5001,
+      "rmse": 2.0497,
+      "r2": 0.3123,
+      "correlation": 0.6101,
+      "within_0.5": 24.0,
+      "within_1.0": 45.2,
+      "best_iteration": 451,
+      "train_size": 149613,
+      "val_size": 10135
+    },
+    {
+      "mae": 1.4897,
+      "rmse": 2.0437,
+      "r2": 0.4143,
+      "correlation": 0.6624,
+      "within_0.5": 25.9,
+      "within_1.0": 46.5,
+      "best_iteration": 344,
+      "train_size": 169125,
+      "val_size": 9540
+    },
+    {
+      "mae": 1.4054,
+      "rmse": 2.0246,
+      "r2": 0.3127,
+      "correlation": 0.5692,
+      "within_0.5": 28.3,
+      "within_1.0": 51.3,
+      "best_iteration": 704,
+      "train_size": 188766,
+      "val_size": 8115
+    },
+    {
+      "mae": 1.3701,
+      "rmse": 1.8695,
+      "r2": 0.3568,
+      "correlation": 0.6107,
+      "within_0.5": 26.9,
+      "within_1.0": 50.4,
+      "best_iteration": 886,
+      "train_size": 203479,
+      "val_size": 6654
+    },
+    {
+      "mae": 1.4926,
+      "rmse": 2.1312,
+      "r2": 0.2473,
+      "correlation": 0.5022,
+      "within_0.5": 26.4,
+      "within_1.0": 50.1,
+      "best_iteration": 258,
+      "train_size": 216565,
+      "val_size": 6374
+    },
+    {
+      "mae": 1.4277,
+      "rmse": 1.9308,
+      "r2": 0.4376,
+      "correlation": 0.6642,
+      "within_0.5": 23.6,
+      "within_1.0": 47.2,
+      "best_iteration": 540,
+      "train_size": 231689,
+      "val_size": 10028
+    },
+    {
+      "mae": 1.5031,
+      "rmse": 2.0243,
+      "r2": 0.4146,
+      "correlation": 0.6476,
+      "within_0.5": 24.0,
+      "within_1.0": 44.3,
+      "best_iteration": 652,
+      "train_size": 251896,
+      "val_size": 9107
+    },
+    {
+      "mae": 1.3992,
+      "rmse": 1.8675,
+      "r2": 0.5212,
+      "correlation": 0.7254,
+      "within_0.5": 24.7,
+      "within_1.0": 48.3,
+      "best_iteration": 567,
+      "train_size": 270554,
+      "val_size": 9440
+    },
+    {
+      "mae": 1.457,
+      "rmse": 2.0551,
+      "r2": 0.3338,
+      "correlation": 0.5875,
+      "within_0.5": 27.5,
+      "within_1.0": 48.8,
+      "best_iteration": 262,
+      "train_size": 290032,
+      "val_size": 8095
+    },
+    {
+      "mae": 1.4328,
+      "rmse": 1.9713,
+      "r2": 0.2936,
+      "correlation": 0.5673,
+      "within_0.5": 28.3,
+      "within_1.0": 48.7,
+      "best_iteration": 291,
+      "train_size": 306078,
+      "val_size": 5952
+    }
+  ],
+  "params": {
+    "objective": "regression",
+    "metric": "mae",
+    "boosting_type": "gbdt",
+    "num_leaves": 127,
+    "learning_rate": 0.03,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 5,
+    "min_child_samples": 50,
+    "lambda_l1": 0.1,
+    "lambda_l2": 0.1,
+    "verbose": -1
+  },
+  "data_range": {
+    "min_date": "2023-01-01",
+    "max_date": "2026-03-12",
+    "total_rows": 322244
+  }
+}
