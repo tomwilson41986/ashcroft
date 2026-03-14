@@ -1,0 +1,305 @@
+race_date,race_time,track,horse_name,predicted_bfsp,predicted_win_prob_norm,rank
+2026-03-14,1:25,Fontwell,Cayman Dancer,6.94,0.242,1
+2026-03-14,1:25,Fontwell,Jambon (IRE),7.43,0.226,2
+2026-03-14,1:25,Fontwell,Catch On Me (FR),8.3,0.20199999999999999,3
+2026-03-14,1:25,Fontwell,Karate Kid (IRE),9.24,0.18100000000000002,4
+2026-03-14,1:25,Fontwell,Knight Templar (FR),32.82,0.051,5
+2026-03-14,1:25,Fontwell,Minella Mission (IRE),55.29,0.03,6
+2026-03-14,1:25,Fontwell,Handmedownastar (IRE),70.42,0.024,7
+2026-03-14,1:25,Fontwell,Yourcardismarked (IRE,122.88,0.013999999999999999,8
+2026-03-14,1:25,Fontwell,Padel Bandit,127.42,0.013000000000000001,9
+2026-03-14,1:25,Fontwell,Maximum Benefit (IRE),155.03,0.011000000000000001,10
+2026-03-14,1:25,Fontwell,Jet Steel (IRE),254.75,0.006999999999999999,11
+2026-03-14,2:00,Fontwell,Aggagio (FR),5.61,0.341,1
+2026-03-14,2:00,Fontwell,Calshot Spit (IRE),11.97,0.16,2
+2026-03-14,2:00,Fontwell,A Mere Bagatelle (IRE,12.18,0.157,3
+2026-03-14,2:00,Fontwell,Our Papa Smurf,17.58,0.109,4
+2026-03-14,2:00,Fontwell,Dragons And Demons,19.92,0.096,5
+2026-03-14,2:00,Fontwell,Galactic Jack (IRE),23.31,0.08199999999999999,6
+2026-03-14,2:00,Fontwell,Godot (IRE),34.06,0.055999999999999994,7
+2026-03-14,2:35,Fontwell,Good Friday Fairy (IR,4.06,0.358,1
+2026-03-14,2:35,Fontwell,Rip Wheeler (IRE),5.38,0.27,2
+2026-03-14,2:35,Fontwell,Mon Champion (FR),7.6,0.191,3
+2026-03-14,2:35,Fontwell,Hold Up La Colmine (F,8.05,0.18100000000000002,4
+2026-03-14,3:10,Fontwell,Junior Des Mottes (FR,5.94,0.31,1
+2026-03-14,3:10,Fontwell,Betgoodwin (FR),7.07,0.261,2
+2026-03-14,3:10,Fontwell,Dawns Desire (IRE),8.21,0.225,3
+2026-03-14,3:10,Fontwell,Amalfi Skyline,12.56,0.147,4
+2026-03-14,3:10,Fontwell,Eric Gorcombe,32.04,0.057999999999999996,5
+2026-03-14,3:45,Fontwell,Innisfree Lass (IRE),4.98,0.307,1
+2026-03-14,3:45,Fontwell,Gold Clermont (FR),6.76,0.226,2
+2026-03-14,3:45,Fontwell,Flintara,8.8,0.174,3
+2026-03-14,3:45,Fontwell,Jolie Baie (FR),11.12,0.138,4
+2026-03-14,3:45,Fontwell,Sweet Magic (IRE),11.63,0.132,5
+2026-03-14,3:45,Fontwell,After Midnight,64.73,0.024,6
+2026-03-14,4:20,Fontwell,Falco Des Pins (FR),3.85,0.331,1
+2026-03-14,4:20,Fontwell,Sanitiser,4.95,0.258,2
+2026-03-14,4:20,Fontwell,Raffles Hermes (FR),5.32,0.24,3
+2026-03-14,4:20,Fontwell,Valirann Gold (IRE),7.43,0.172,4
+2026-03-14,4:55,Fontwell,Ms Des Fois (IRE),4.89,0.33899999999999997,1
+2026-03-14,4:55,Fontwell,Nimba (FR),7.29,0.22699999999999998,2
+2026-03-14,4:55,Fontwell,Roys Jules (IRE),7.85,0.21100000000000002,3
+2026-03-14,4:55,Fontwell,The Perfect Poet,13.37,0.124,4
+2026-03-14,4:55,Fontwell,Rine Yeats (IRE),16.73,0.099,5
+2026-03-14,1:33,Kempton,Gold Cast (FR),7.6,0.262,1
+2026-03-14,1:33,Kempton,Molten Sea,9.4,0.212,2
+2026-03-14,1:33,Kempton,Burning Embers (IRE),12.65,0.157,3
+2026-03-14,1:33,Kempton,Shutfrontdoor,13.61,0.146,4
+2026-03-14,1:33,Kempton,Jollie Dame,14.88,0.134,5
+2026-03-14,1:33,Kempton,Lady Iris (FR),25.67,0.078,6
+2026-03-14,1:33,Kempton,Indigo Sky,171.39,0.012,7
+2026-03-14,2:08,Kempton,Secret Des Dieux (FR),5.27,0.26,1
+2026-03-14,2:08,Kempton,Pure Carbon,5.53,0.248,2
+2026-03-14,2:08,Kempton,Chuggy,8.82,0.156,3
+2026-03-14,2:08,Kempton,Rightsotom (GER),10.31,0.133,4
+2026-03-14,2:08,Kempton,Jorebel (FR),12.9,0.106,5
+2026-03-14,2:08,Kempton,Tapley,14.18,0.09699999999999999,6
+2026-03-14,2:40,Kempton,Turndlightsdownlow (I,9.72,0.16,1
+2026-03-14,2:40,Kempton,La Pinsonniere (FR),11.02,0.141,2
+2026-03-14,2:40,Kempton,Double Powerful (IRE),13.46,0.11599999999999999,3
+2026-03-14,2:40,Kempton,The Gray Ghost (IRE),18.63,0.084,4
+2026-03-14,2:40,Kempton,Fasol,18.66,0.083,5
+2026-03-14,2:40,Kempton,Marsiac (FR),18.67,0.083,6
+2026-03-14,2:40,Kempton,Royal Infantry (IRE),20.43,0.076,7
+2026-03-14,2:40,Kempton,Nardaran (FR),22.23,0.07,8
+2026-03-14,2:40,Kempton,North Lodge (IRE),34.9,0.045,9
+2026-03-14,2:40,Kempton,Le Tieps Sacre (FR),37.1,0.042,10
+2026-03-14,2:40,Kempton,Intosomethinggood,45.04,0.035,11
+2026-03-14,2:40,Kempton,The Four Sixes (IRE),53.05,0.028999999999999998,12
+2026-03-14,2:40,Kempton,Moon Mission,80.77,0.019,13
+2026-03-14,2:40,Kempton,Tranquil Sea (IRE),93.01,0.017,14
+2026-03-14,3:18,Kempton,Califet En Vol (IRE),4.19,0.305,1
+2026-03-14,3:18,Kempton,Teddy Blue (GER),7.96,0.161,2
+2026-03-14,3:18,Kempton,Blueking Doroux (FR),8.05,0.159,3
+2026-03-14,3:18,Kempton,Ryans Rocket (IRE),9.84,0.13,4
+2026-03-14,3:18,Kempton,Barlovento (IRE),10.25,0.125,5
+2026-03-14,3:18,Kempton,Etalon (IRE),21.4,0.06,6
+2026-03-14,3:18,Kempton,Somespring Special (I,33.42,0.038,7
+2026-03-14,3:18,Kempton,Shakeyatailfeather (I,59.1,0.022000000000000002,8
+2026-03-14,3:53,Kempton,Soomaroy (FR),3.42,0.363,1
+2026-03-14,3:53,Kempton,Etna Bianco (IRE),5.12,0.243,2
+2026-03-14,3:53,Kempton,Tiddesley Wood,6.01,0.207,3
+2026-03-14,3:53,Kempton,Home Made Hero (IRE),6.86,0.18100000000000002,4
+2026-03-14,3:53,Kempton,Fury Lad (IRE),238.32,0.005,5
+2026-03-14,4:28,Kempton,Doctor Ken (FR),7.23,0.247,1
+2026-03-14,4:28,Kempton,Pedley Wood (IRE),9.25,0.193,2
+2026-03-14,4:28,Kempton,Charles Ritz,14.23,0.125,3
+2026-03-14,4:28,Kempton,Emailandy (IRE),15.52,0.115,4
+2026-03-14,4:28,Kempton,Diplomatic Ash (IRE),17.32,0.10300000000000001,5
+2026-03-14,4:28,Kempton,Surrey Quest (IRE),20.77,0.086,6
+2026-03-14,4:28,Kempton,Hurricane Bay,20.89,0.085,7
+2026-03-14,4:28,Kempton,Fever Dream (IRE),38.44,0.046,8
+2026-03-14,5:03,Kempton,Max Dairy (FR),5.68,0.21,1
+2026-03-14,5:03,Kempton,Prince Rupert,6.23,0.191,2
+2026-03-14,5:03,Kempton,Galante De Vassy (FR),7.5,0.159,3
+2026-03-14,5:03,Kempton,Brother Jack,10.13,0.11699999999999999,4
+2026-03-14,5:03,Kempton,Stars Aligning,11.01,0.10800000000000001,5
+2026-03-14,5:03,Kempton,Tide Is Turning,16.73,0.071,6
+2026-03-14,5:03,Kempton,Seven Airs (IRE),17.84,0.067,7
+2026-03-14,5:03,Kempton,Tuscaloosa,27.57,0.043,8
+2026-03-14,5:03,Kempton,Esther Spring (FR),40.8,0.028999999999999998,9
+2026-03-14,5:03,Kempton,Amhranai (IRE),224.22,0.005,10
+2026-03-14,1:40,Newcastle,Dartmouth Castle,4.9,0.494,1
+2026-03-14,1:40,Newcastle,Irandando Has (FR),9.81,0.247,2
+2026-03-14,1:40,Newcastle,Lipstick Traces (IRE),25.81,0.094,3
+2026-03-14,1:40,Newcastle,Valtteri Its James (I,35.44,0.068,4
+2026-03-14,1:40,Newcastle,The Shanachie (IRE),65.52,0.037000000000000005,5
+2026-03-14,1:40,Newcastle,Return To Florida (IR,128.78,0.019,6
+2026-03-14,1:40,Newcastle,Flaming Norman (IRE),149.92,0.016,7
+2026-03-14,1:40,Newcastle,Delayed Charm,165.1,0.015,8
+2026-03-14,1:40,Newcastle,Bogha Baiste (IRE),246.29,0.01,9
+2026-03-14,2:15,Newcastle,Diamond Mix (IRE),4.44,0.36,1
+2026-03-14,2:15,Newcastle,Count Adhemar (IRE),4.82,0.332,2
+2026-03-14,2:15,Newcastle,Forcetoreckonwith (IR,9.35,0.171,3
+2026-03-14,2:15,Newcastle,Calgary Tiger,24.69,0.065,4
+2026-03-14,2:15,Newcastle,Zumbi (GER),39.86,0.04,5
+2026-03-14,2:15,Newcastle,Sao Carlos,49.89,0.032,6
+2026-03-14,2:45,Newcastle,Passengerontheship (I,9.24,0.17,1
+2026-03-14,2:45,Newcastle,Glory Hights,10.64,0.147,2
+2026-03-14,2:45,Newcastle,Snow Dragon (IRE),11.93,0.131,3
+2026-03-14,2:45,Newcastle,Fairly Fulling (IRE),15.44,0.10099999999999999,4
+2026-03-14,2:45,Newcastle,Roxby Belle (IRE),16.57,0.094,5
+2026-03-14,2:45,Newcastle,Ratemenow (IRE),24.43,0.064,6
+2026-03-14,2:45,Newcastle,Dillys Gunner,25.12,0.062,7
+2026-03-14,2:45,Newcastle,Helsgetaway (IRE),26.57,0.059000000000000004,8
+2026-03-14,2:45,Newcastle,U S Marshall (IRE),29.55,0.053,9
+2026-03-14,2:45,Newcastle,Suspected (IRE),32.1,0.049,10
+2026-03-14,2:45,Newcastle,Elusive Warrior (IRE),70.8,0.022000000000000002,11
+2026-03-14,2:45,Newcastle,Knacker Trapper (IRE),92.73,0.017,12
+2026-03-14,2:45,Newcastle,Spartan Warrior (IRE),96.24,0.016,13
+2026-03-14,2:45,Newcastle,Raindance Queen (IRE),169.49,0.009000000000000001,14
+2026-03-14,2:45,Newcastle,Callistos King (IRE),365.08,0.004,15
+2026-03-14,3:25,Newcastle,Young Jack (IRE),3.72,0.41100000000000003,1
+2026-03-14,3:25,Newcastle,Caughtinyourtrance (I,6.66,0.23,2
+2026-03-14,3:25,Newcastle,Finn Lough (IRE),7.78,0.19699999999999998,3
+2026-03-14,3:25,Newcastle,Johnsons Blue (IRE),9.39,0.163,4
+2026-03-14,4:00,Newcastle,The Hatchet (IRE),3.74,0.444,1
+2026-03-14,4:00,Newcastle,Fingals Hill (IRE),7.17,0.23199999999999998,2
+2026-03-14,4:00,Newcastle,Inedit Damour (FR),8.58,0.19399999999999998,3
+2026-03-14,4:00,Newcastle,Bucephalus (GER),12.76,0.13,4
+2026-03-14,4:35,Newcastle,Hawkseye View,4.85,0.281,1
+2026-03-14,4:35,Newcastle,Athair Mor (IRE),7.87,0.17300000000000001,2
+2026-03-14,4:35,Newcastle,The Jad Factor (IRE),9.15,0.149,3
+2026-03-14,4:35,Newcastle,Swallows Song,14.32,0.095,4
+2026-03-14,4:35,Newcastle,Mobile Mamma (IRE),14.45,0.094,5
+2026-03-14,4:35,Newcastle,Halfway House Lad,25.58,0.053,6
+2026-03-14,4:35,Newcastle,Goodoldbill,26.31,0.052000000000000005,7
+2026-03-14,4:35,Newcastle,Alltalknoaction (IRE),32.79,0.042,8
+2026-03-14,4:35,Newcastle,Eveque (FR),53.27,0.026000000000000002,9
+2026-03-14,4:35,Newcastle,Lord De Vinci (FR),61.67,0.022000000000000002,10
+2026-03-14,4:35,Newcastle,Aill Dubh (IRE),100.55,0.013999999999999999,11
+2026-03-14,5:10,Newcastle,Rubinio (GER),9.37,0.23,1
+2026-03-14,5:10,Newcastle,Orestina,15.32,0.141,2
+2026-03-14,5:10,Newcastle,Eagle Warrior (IRE),16.47,0.131,3
+2026-03-14,5:10,Newcastle,Hawthorn Road (IRE),20.81,0.10400000000000001,4
+2026-03-14,5:10,Newcastle,Dilrisk (FR),23.02,0.094,5
+2026-03-14,5:10,Newcastle,Lappel Du Large (FR),33.58,0.064,6
+2026-03-14,5:10,Newcastle,Midday Rendezvous (IR,37.79,0.057,7
+2026-03-14,5:10,Newcastle,Mr Man (IRE),38.11,0.057,8
+2026-03-14,5:10,Newcastle,Circle Of Steel (FR),55.24,0.039,9
+2026-03-14,5:10,Newcastle,Bay Runner (IRE),76.23,0.027999999999999997,10
+2026-03-14,5:10,Newcastle,Jet Noir (IRE),78.0,0.027999999999999997,11
+2026-03-14,5:10,Newcastle,Mhordart,96.58,0.022000000000000002,12
+2026-03-14,5:10,Newcastle,Countryman Joe (IRE),458.11,0.005,13
+2026-03-14,5:30,Southwell,Regal Glory (IRE),11.2,0.17,1
+2026-03-14,5:30,Southwell,Rosco Rogers (IRE),11.32,0.168,2
+2026-03-14,5:30,Southwell,Moon Over The Sea,12.77,0.149,3
+2026-03-14,5:30,Southwell,Storm Asset,14.9,0.128,4
+2026-03-14,5:30,Southwell,Newfire (IRE),25.05,0.076,5
+2026-03-14,5:30,Southwell,Pyrrhic Dancer (IRE),25.21,0.076,6
+2026-03-14,5:30,Southwell,Beaune (IRE),26.12,0.073,7
+2026-03-14,5:30,Southwell,Yurinov,26.79,0.071,8
+2026-03-14,5:30,Southwell,Mrs Meader,28.42,0.067,9
+2026-03-14,5:30,Southwell,Yakhabar,91.43,0.021,10
+2026-03-14,6:00,Southwell,Tattie Bogle,8.21,0.16899999999999998,1
+2026-03-14,6:00,Southwell,Qazaq (FR),10.29,0.135,2
+2026-03-14,6:00,Southwell,Albert Cee (FR),10.59,0.131,3
+2026-03-14,6:00,Southwell,Anthropologist,12.57,0.11,4
+2026-03-14,6:00,Southwell,Iconic Times,12.7,0.109,5
+2026-03-14,6:00,Southwell,Camera Shy (IRE),15.32,0.091,6
+2026-03-14,6:00,Southwell,Neyvas Angel,21.19,0.065,7
+2026-03-14,6:00,Southwell,No Knee Never (IRE),24.0,0.057999999999999996,8
+2026-03-14,6:00,Southwell,Bobby Joe Leg,24.68,0.055999999999999994,9
+2026-03-14,6:00,Southwell,Electric Avenue,35.12,0.04,10
+2026-03-14,6:00,Southwell,Mereside Madness (IRE,38.45,0.036000000000000004,11
+2026-03-14,6:30,Southwell,Pinjarra (IRE),9.54,0.162,1
+2026-03-14,6:30,Southwell,Amerjeet,11.77,0.131,2
+2026-03-14,6:30,Southwell,Mount Ruapehu (IRE),12.35,0.125,3
+2026-03-14,6:30,Southwell,Aspire To Glory (IRE),15.96,0.09699999999999999,4
+2026-03-14,6:30,Southwell,Beelzebub (IRE),16.45,0.094,5
+2026-03-14,6:30,Southwell,Hes An Angel,16.56,0.09300000000000001,6
+2026-03-14,6:30,Southwell,Man On A Mission,16.97,0.091,7
+2026-03-14,6:30,Southwell,Bullington Bry,19.36,0.08,8
+2026-03-14,6:30,Southwell,Alfa Sea Breeze (IRE),22.04,0.07,9
+2026-03-14,6:30,Southwell,Starsong (IRE),37.13,0.042,10
+2026-03-14,6:30,Southwell,Opal Storm,101.57,0.015,11
+2026-03-14,7:00,Southwell,Woodrafff,4.36,0.298,1
+2026-03-14,7:00,Southwell,Fifty Sent,5.68,0.22899999999999998,2
+2026-03-14,7:00,Southwell,Dash Power,8.09,0.161,3
+2026-03-14,7:00,Southwell,Sir Maxi,8.65,0.15,4
+2026-03-14,7:00,Southwell,Hopjes (SAF),18.18,0.071,5
+2026-03-14,7:00,Southwell,Pop Favorite,25.99,0.05,6
+2026-03-14,7:00,Southwell,Vecchio (IRE),41.42,0.031,7
+2026-03-14,7:00,Southwell,Iflookscouldkill,133.14,0.01,8
+2026-03-14,7:30,Southwell,See Blue (IRE),6.26,0.28,1
+2026-03-14,7:30,Southwell,Kokushoku (IRE),8.91,0.19699999999999998,2
+2026-03-14,7:30,Southwell,Menzies (IRE),11.83,0.14800000000000002,3
+2026-03-14,7:30,Southwell,Seattle Chief,15.07,0.11599999999999999,4
+2026-03-14,7:30,Southwell,Adba (FR),18.65,0.094,5
+2026-03-14,7:30,Southwell,Salgados,27.89,0.063,6
+2026-03-14,7:30,Southwell,Penny Time (IRE),39.88,0.044000000000000004,7
+2026-03-14,7:30,Southwell,Battle Standard,60.04,0.028999999999999998,8
+2026-03-14,7:30,Southwell,La Peregrina,83.28,0.021,9
+2026-03-14,7:30,Southwell,Forever Twenty,233.66,0.008,10
+2026-03-14,8:00,Southwell,Don Simon (IRE),5.4,0.294,1
+2026-03-14,8:00,Southwell,Tarbat Ness,5.82,0.272,2
+2026-03-14,8:00,Southwell,Artisan Dancer (FR),6.65,0.23800000000000002,3
+2026-03-14,8:00,Southwell,Matched,15.12,0.105,4
+2026-03-14,8:00,Southwell,Wahraan (FR),24.9,0.064,5
+2026-03-14,8:00,Southwell,Fleurman (IRE),57.49,0.027999999999999997,6
+2026-03-14,8:30,Southwell,Master Of My Fate (IR,3.89,0.33799999999999997,1
+2026-03-14,8:30,Southwell,Ay Gee Ell (IRE),6.9,0.191,2
+2026-03-14,8:30,Southwell,Sams Hope,8.22,0.16,3
+2026-03-14,8:30,Southwell,Sports Coach (IRE),8.29,0.159,4
+2026-03-14,8:30,Southwell,The Bell Conductor (I,16.88,0.078,5
+2026-03-14,8:30,Southwell,Reigning Profit (IRE),17.65,0.075,6
+2026-03-14,1:50,Uttoxeter,Wellington Arch,7.58,0.18600000000000003,1
+2026-03-14,1:50,Uttoxeter,A Perfect Day (IRE),13.05,0.10800000000000001,2
+2026-03-14,1:50,Uttoxeter,Its Top (FR),13.44,0.105,3
+2026-03-14,1:50,Uttoxeter,Le Yacht (FR),14.27,0.099,4
+2026-03-14,1:50,Uttoxeter,Warriors Destiny (IRE,20.73,0.068,5
+2026-03-14,1:50,Uttoxeter,West To The Bridge (I,21.73,0.065,6
+2026-03-14,1:50,Uttoxeter,Minella Missile (IRE),22.22,0.064,7
+2026-03-14,1:50,Uttoxeter,Thanksforthehelp (FR),23.87,0.059000000000000004,8
+2026-03-14,1:50,Uttoxeter,Im A Lumberjack,25.12,0.055999999999999994,9
+2026-03-14,1:50,Uttoxeter,Below The Radar (IRE),26.16,0.054000000000000006,10
+2026-03-14,1:50,Uttoxeter,Kasino Des Mottes (FR,29.26,0.048,11
+2026-03-14,1:50,Uttoxeter,Firestream,35.1,0.04,12
+2026-03-14,1:50,Uttoxeter,Nells Son,41.95,0.034,13
+2026-03-14,1:50,Uttoxeter,Sixty Plus (IRE),110.84,0.013000000000000001,14
+2026-03-14,2:25,Uttoxeter,A Pai De Nom,6.45,0.19899999999999998,1
+2026-03-14,2:25,Uttoxeter,Hartington (IRE),11.82,0.109,2
+2026-03-14,2:25,Uttoxeter,John Barbour,12.12,0.106,3
+2026-03-14,2:25,Uttoxeter,Roaring Conquest (IRE,20.47,0.063,4
+2026-03-14,2:25,Uttoxeter,Just Golden (IRE),20.55,0.062,5
+2026-03-14,2:25,Uttoxeter,Santos Blue,20.79,0.062,6
+2026-03-14,2:25,Uttoxeter,Twig,22.66,0.057,7
+2026-03-14,2:25,Uttoxeter,French Ship,24.31,0.053,8
+2026-03-14,2:25,Uttoxeter,Hidden History,31.08,0.040999999999999995,9
+2026-03-14,2:25,Uttoxeter,Keable (IRE),32.44,0.04,10
+2026-03-14,2:25,Uttoxeter,Doughmore Bay (IRE),32.59,0.039,11
+2026-03-14,2:25,Uttoxeter,Red Risk (FR),34.08,0.038,12
+2026-03-14,2:25,Uttoxeter,Nab Wood (IRE),38.65,0.033,13
+2026-03-14,2:25,Uttoxeter,Jurancon (FR),41.79,0.031,14
+2026-03-14,2:25,Uttoxeter,Ontheropes (IRE),41.81,0.031,15
+2026-03-14,2:25,Uttoxeter,King Of The Lake,49.34,0.026000000000000002,16
+2026-03-14,2:25,Uttoxeter,Thank You Maam,116.92,0.011000000000000001,17
+2026-03-14,3:00,Uttoxeter,Jarrive De Lest (FR),10.63,0.136,1
+2026-03-14,3:00,Uttoxeter,Deafening Silence (IR,12.45,0.11599999999999999,2
+2026-03-14,3:00,Uttoxeter,Rock My Way (IRE),15.83,0.091,3
+2026-03-14,3:00,Uttoxeter,Aworkinprogress (IRE),16.95,0.085,4
+2026-03-14,3:00,Uttoxeter,Neo King (FR),17.45,0.083,5
+2026-03-14,3:00,Uttoxeter,My Immortal (IRE),19.97,0.07200000000000001,6
+2026-03-14,3:00,Uttoxeter,Git Maker (FR),22.27,0.065,7
+2026-03-14,3:00,Uttoxeter,Jupiter Allen (FR),23.42,0.062,8
+2026-03-14,3:00,Uttoxeter,Isaac Des Obeaux (FR),27.68,0.052000000000000005,9
+2026-03-14,3:00,Uttoxeter,Collectors Item (IRE),29.09,0.05,10
+2026-03-14,3:00,Uttoxeter,Catch Catchfire,33.09,0.044000000000000004,11
+2026-03-14,3:00,Uttoxeter,Alcedo (IRE),36.22,0.04,12
+2026-03-14,3:00,Uttoxeter,Grand Albert (IRE),36.68,0.039,13
+2026-03-14,3:00,Uttoxeter,De Legislator (IRE),40.23,0.036000000000000004,14
+2026-03-14,3:00,Uttoxeter,Minella Blueway (IRE),90.87,0.016,15
+2026-03-14,3:00,Uttoxeter,Bodhisattva (IRE),100.91,0.013999999999999999,16
+2026-03-14,3:35,Uttoxeter,As The Fella Says (IR,3.8,0.32899999999999996,1
+2026-03-14,3:35,Uttoxeter,Milcree (IRE),6.24,0.201,2
+2026-03-14,3:35,Uttoxeter,Kykorock (FR),8.92,0.14,3
+2026-03-14,3:35,Uttoxeter,Saint Davy (FR),9.07,0.138,4
+2026-03-14,3:35,Uttoxeter,Golden Point (FR),10.8,0.11599999999999999,5
+2026-03-14,3:35,Uttoxeter,Mombasa (FR),16.29,0.077,6
+2026-03-14,4:10,Uttoxeter,Seaniecon (IRE),5.77,0.28800000000000003,1
+2026-03-14,4:10,Uttoxeter,Kadastral (FR),6.12,0.272,2
+2026-03-14,4:10,Uttoxeter,Dig Deep (IRE),7.55,0.22,3
+2026-03-14,4:10,Uttoxeter,Dylans Moon,21.67,0.077,4
+2026-03-14,4:10,Uttoxeter,Barry Fife (IRE),27.02,0.062,5
+2026-03-14,4:10,Uttoxeter,Sims Law (IRE),49.42,0.034,6
+2026-03-14,4:10,Uttoxeter,Lawtan (FR),64.58,0.026000000000000002,7
+2026-03-14,4:10,Uttoxeter,Holeheartedly (IRE),121.99,0.013999999999999999,8
+2026-03-14,4:10,Uttoxeter,Are You Joking (IRE),213.45,0.008,9
+2026-03-14,4:45,Uttoxeter,Kalista Love (FR),5.68,0.276,1
+2026-03-14,4:45,Uttoxeter,Kelijoe (FR),5.84,0.26899999999999996,2
+2026-03-14,4:45,Uttoxeter,Moor End (IRE),7.62,0.20600000000000002,3
+2026-03-14,4:45,Uttoxeter,Hawaii Du Mestivel (F,11.16,0.141,4
+2026-03-14,4:45,Uttoxeter,Jasmin De Cotte (FR),28.89,0.054000000000000006,5
+2026-03-14,4:45,Uttoxeter,Nine Nine Nine,28.9,0.054000000000000006,6
+2026-03-14,5:20,Uttoxeter,Vrheligonne (FR),3.31,0.391,1
+2026-03-14,5:20,Uttoxeter,Sassipants,8.09,0.16,2
+2026-03-14,5:20,Uttoxeter,Queen Marcia,14.4,0.09,3
+2026-03-14,5:20,Uttoxeter,Jenny France (IRE),14.91,0.087,4
+2026-03-14,5:20,Uttoxeter,Marvetta (FR),17.47,0.07400000000000001,5
+2026-03-14,5:20,Uttoxeter,Knight Crossing (IRE),21.56,0.06,6
+2026-03-14,5:20,Uttoxeter,Blue Skies Ahead,29.3,0.044000000000000004,7
+2026-03-14,5:20,Uttoxeter,Boum Town Rosy,43.2,0.03,8
+2026-03-14,5:20,Uttoxeter,Daleela (IRE),53.11,0.024,9
+2026-03-14,5:20,Uttoxeter,Emerald Ocean (IRE),75.74,0.017,10
+2026-03-14,5:20,Uttoxeter,Marthas Cottage (IRE),112.43,0.012,11
+2026-03-14,5:20,Uttoxeter,Twiddle Dee,133.46,0.01,12
