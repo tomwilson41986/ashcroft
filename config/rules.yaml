@@ -1,0 +1,57 @@
+# config/rules.yaml
+# ---
+# This file defines ALL betting logic.
+# The pipeline reads it. No betting logic is hardcoded anywhere else.
+#
+# Fill this in with your model's rules.
+
+# What does the model output?
+model_output:
+  type: "predicted_bfsp"       # Model predicts BFSP (Betfair Starting Price)
+  probability_field: "predicted_win_prob_norm"
+  bfsp_field: "predicted_bfsp"
+
+# When do we bet?
+entry_conditions:
+  # Minimum edge (%) between predicted and live price
+  min_edge_percent: 10.0
+  # Only bet on runners with predicted win probability above this
+  min_win_probability: 0.05
+  # Maximum predicted BFSP (avoid extreme longshots)
+  max_predicted_bfsp: 30.0
+  # Minimum predicted BFSP (avoid odds-on favourites)
+  min_predicted_bfsp: 2.0
+  # Minimum number of runners in the race
+  min_runners: 4
+
+# Which side?
+side_logic:
+  # "back" = back when predicted BFSP < live price (model thinks horse is shorter)
+  # "lay"  = lay when predicted BFSP > live price (model thinks horse is longer)
+  # "both" = take either side depending on edge direction
+  mode: "back"
+
+# How much?
+staking:
+  method: "fractional_kelly"   # Options: "fixed", "fractional_kelly", "percentage_bank"
+  # For fixed staking:
+  fixed_stake: 10.00
+  # For fractional Kelly:
+  kelly_fraction: 0.25         # Quarter Kelly
+  # For percentage bank:
+  bank_percentage: 2.0         # 2% of bank per bet
+  # Starting bank for Kelly/percentage calculations
+  starting_bank: 1000.00
+
+# When to execute?
+timing:
+  # Minutes before race time to start looking for bets
+  earliest_minutes_before: 60
+  # Minutes before race time to stop betting
+  latest_minutes_before: 5
+  # Use live exchange price (not SP)
+  use_exchange_price: true
+
+# What persistence type?
+persistence:
+  type: "LAPSE"                # Options: "LAPSE", "PERSIST", "MARKET_ON_CLOSE"
