@@ -41,5 +41,5 @@ jobs:
           BETFAIR_CERT_FILE: ~/.betfair/certs/betfair.crt
           BETFAIR_KEY_FILE: ~/.betfair/certs/betfair.key
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
-          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroftequities' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
         run: python -m pipeline.execute

@@ -15,7 +15,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 MODEL_DIR = DATA_DIR / "models"
 
 # S3 bucket for ultra-betting pipeline data
-S3_BUCKET = os.getenv("ULTRA_BETTING_S3_BUCKET", "ashcroftequities")
+S3_BUCKET = os.getenv("ULTRA_BETTING_S3_BUCKET", "ashcroft")
 S3_DB_BUCKET = os.getenv("S3_BUCKET", "horseracingresults")
 S3_DB_KEY = os.getenv("S3_DB_KEY", "horse_racing.db")
 
