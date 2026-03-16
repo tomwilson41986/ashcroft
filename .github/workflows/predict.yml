@@ -1,0 +1,38 @@
+name: Daily Predictions
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 06:00 UTC daily
+  workflow_dispatch:         # Manual trigger
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -e ".[pipeline]" && pip install -r requirements.txt
+
+      - name: Download model from latest release
+        run: |
+          python scripts/fetch_data.py --model-only || true
+          # Fallback: check if model exists in repo
+          test -f data/models/bfsp_model.lgb || echo "WARNING: No model found"
+
+      - name: Run predictions
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
+          HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ultra-betting' }}
+        run: python -m pipeline.predict

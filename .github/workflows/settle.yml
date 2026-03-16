@@ -1,0 +1,42 @@
+name: Daily Settlement
+on:
+  schedule:
+    - cron: '0 21 * * *'   # 21:00 UTC daily
+  workflow_dispatch:
+
+jobs:
+  settle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -e ".[pipeline]" && pip install -r requirements.txt
+
+      - name: Write Betfair certs
+        run: |
+          mkdir -p ~/.betfair/certs
+          echo "${{ secrets.BETFAIR_CERT }}" > ~/.betfair/certs/betfair.crt
+          echo "${{ secrets.BETFAIR_KEY }}" > ~/.betfair/certs/betfair.key
+
+      - name: Settle and report
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          BETFAIR_CERT_FILE: ~/.betfair/certs/betfair.crt
+          BETFAIR_KEY_FILE: ~/.betfair/certs/betfair.key
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          REPORT_EMAIL: ${{ secrets.REPORT_EMAIL }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ultra-betting' }}
+        run: python -m pipeline.settle

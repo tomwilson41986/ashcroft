@@ -1,0 +1,14 @@
+# Hard limits — enforced server-side, cannot be overridden
+max_stake: 50.00               # Per bet, in GBP
+max_liability: 100.00          # Per lay bet
+max_daily_bets: 30             # Circuit breaker
+max_daily_loss: -200.00        # Stop-loss: halt execution if daily P&L hits this
+allowed_event_types: ["7"]     # Horse racing only
+allowed_countries: ["GB", "IE", "AU", "NZ", "FR", "US", "AE"]
+
+# Execution constraints
+min_minutes_to_race: 5         # Don't bet within 5 mins of off
+min_market_total_matched: 5000 # Skip illiquid markets
+
+# Dry run
+dry_run: false                 # Set true to simulate everything

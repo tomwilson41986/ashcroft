@@ -1,0 +1,165 @@
+"""HTML email report builder."""
+
+import logging
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+from ultra_betting.config import REPORT_EMAIL, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
+from ultra_betting.data.schemas import DailyPnL, Settlement, SkippedBet
+from ultra_betting.reporting.charts import generate_cumulative_pnl_chart
+
+log = logging.getLogger(__name__)
+
+
+def build_html_report(
+    daily_pnl: DailyPnL,
+    settlements: list[Settlement],
+    skipped: list[SkippedBet] | None = None,
+    cumulative_data: list[dict] | None = None,
+) -> str:
+    """Build an HTML email report for the day's betting activity."""
+    chart_b64 = ""
+    if cumulative_data:
+        chart_b64 = generate_cumulative_pnl_chart(cumulative_data)
+
+    pnl_color = "#22c55e" if daily_pnl.net_pnl >= 0 else "#ef4444"
+    pnl_sign = "+" if daily_pnl.net_pnl >= 0 else ""
+
+    # Header
+    html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f8fafc; }}
+.container {{ max-width: 700px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+.header {{ background: #1e293b; color: white; padding: 24px; }}
+.header h1 {{ margin: 0; font-size: 20px; }}
+.header .date {{ color: #94a3b8; margin-top: 4px; }}
+.stats {{ display: flex; gap: 16px; padding: 20px 24px; border-bottom: 1px solid #e2e8f0; flex-wrap: wrap; }}
+.stat {{ flex: 1; min-width: 100px; }}
+.stat .label {{ font-size: 12px; color: #64748b; text-transform: uppercase; }}
+.stat .value {{ font-size: 24px; font-weight: bold; margin-top: 4px; }}
+.stat .value.positive {{ color: #22c55e; }}
+.stat .value.negative {{ color: #ef4444; }}
+table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
+th {{ background: #f1f5f9; text-align: left; padding: 10px 12px; font-weight: 600; color: #475569; }}
+td {{ padding: 10px 12px; border-bottom: 1px solid #f1f5f9; }}
+tr.won td {{ background: #f0fdf4; }}
+tr.lost td {{ background: #fef2f2; }}
+.section {{ padding: 20px 24px; }}
+.section h2 {{ font-size: 16px; color: #1e293b; margin: 0 0 12px 0; }}
+.chart {{ text-align: center; padding: 20px; }}
+.skipped {{ font-size: 13px; color: #64748b; }}
+.footer {{ padding: 16px 24px; background: #f8fafc; font-size: 12px; color: #94a3b8; text-align: center; }}
+</style></head>
+<body>
+<div class="container">
+<div class="header">
+    <h1>Ultra Betting — Daily Report</h1>
+    <div class="date">{daily_pnl.date}</div>
+</div>
+
+<div class="stats">
+    <div class="stat">
+        <div class="label">Bets Placed</div>
+        <div class="value">{daily_pnl.bets_placed}</div>
+    </div>
+    <div class="stat">
+        <div class="label">Won / Lost</div>
+        <div class="value">{daily_pnl.bets_won} / {daily_pnl.bets_lost}</div>
+    </div>
+    <div class="stat">
+        <div class="label">Net P&L</div>
+        <div class="value {'positive' if daily_pnl.net_pnl >= 0 else 'negative'}">{pnl_sign}£{abs(daily_pnl.net_pnl):.2f}</div>
+    </div>
+    <div class="stat">
+        <div class="label">ROI</div>
+        <div class="value {'positive' if daily_pnl.roi_percent >= 0 else 'negative'}">{daily_pnl.roi_percent:+.1f}%</div>
+    </div>
+    <div class="stat">
+        <div class="label">Bank</div>
+        <div class="value">£{daily_pnl.bank_end:.2f}</div>
+    </div>
+</div>
+"""
+
+    # Bet details table
+    if settlements:
+        html += """
+<div class="section">
+<h2>Bet Details</h2>
+<table>
+<tr><th>Race</th><th>Runner</th><th>Side</th><th>Stake</th><th>Price</th><th>Result</th><th>P&L</th></tr>
+"""
+        for s in settlements:
+            row_class = "won" if s.result == "WON" else "lost" if s.result == "LOST" else ""
+            pnl_str = f"{'+'if s.net_pnl >= 0 else ''}£{s.net_pnl:.2f}"
+            html += f"""<tr class="{row_class}">
+    <td>{s.race_time} {s.venue}</td>
+    <td>{s.runner_name}</td>
+    <td>{s.side}</td>
+    <td>£{s.stake:.2f}</td>
+    <td>{s.price_matched:.2f}</td>
+    <td>{s.result}</td>
+    <td style="color: {('#22c55e' if s.net_pnl >= 0 else '#ef4444')}">{pnl_str}</td>
+</tr>
+"""
+        html += "</table></div>"
+
+    # Chart
+    if chart_b64:
+        html += f"""
+<div class="chart">
+    <img src="data:image/png;base64,{chart_b64}" alt="Cumulative P&L Chart" style="max-width:100%;">
+</div>
+"""
+
+    # Skipped bets
+    if skipped:
+        html += """
+<div class="section">
+<h2>Skipped Bets</h2>
+<div class="skipped">
+"""
+        for skip in skipped[:20]:
+            html += f"<p><strong>{skip.runner_name}</strong> ({skip.venue} {skip.race_time}) — {skip.reason}: {skip.detail}</p>\n"
+        if len(skipped) > 20:
+            html += f"<p>...and {len(skipped) - 20} more</p>"
+        html += "</div></div>"
+
+    html += f"""
+<div class="footer">
+    Generated by Ultra Betting v0.1.0 — Ashcroft BFSP Model
+</div>
+</div>
+</body>
+</html>"""
+
+    return html
+
+
+def send_email_report(html: str, subject: str | None = None) -> bool:
+    """Send the HTML report via SMTP."""
+    if not SMTP_USER or not SMTP_PASS:
+        log.warning("SMTP credentials not configured, skipping email")
+        return False
+
+    if subject is None:
+        subject = "Ultra Betting — Daily Report"
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = SMTP_USER
+    msg["To"] = REPORT_EMAIL
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+        log.info(f"Email report sent to {REPORT_EMAIL}")
+        return True
+    except Exception as e:
+        log.error(f"Failed to send email: {e}")
+        return False
