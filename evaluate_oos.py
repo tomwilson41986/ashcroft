@@ -145,9 +145,12 @@ def walk_forward_predict(
             )
             race_col = "raceid"
 
-        val_df["predicted_win_prob_norm"] = val_df.groupby(race_col)[
-            "predicted_win_prob"
-        ].transform(lambda x: x / x.sum())
+        race_prob_sum = val_df.groupby(race_col)["predicted_win_prob"].transform("sum")
+        val_df["predicted_win_prob_norm"] = val_df["predicted_win_prob"] / race_prob_sum
+
+        # Recalculate BFSP from normalised probabilities so odds reflect a fair book
+        val_df["predicted_bfsp_raw"] = val_df["predicted_bfsp"]
+        val_df["predicted_bfsp"] = 1.0 / val_df["predicted_win_prob_norm"]
 
         all_oos.append(val_df)
         fold_idx += 1

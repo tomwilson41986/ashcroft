@@ -882,7 +882,20 @@ class BFSPTrainer:
             X_val = val_df[self.feature_cols].astype(float)
             val_df = val_df.copy()
             val_df["predicted_log_bfsp"] = _.predict(X_val)
-            val_df["predicted_bfsp"] = np.exp(val_df["predicted_log_bfsp"])
+            val_df["predicted_bfsp_raw"] = np.exp(val_df["predicted_log_bfsp"])
+
+            # Normalise implied probabilities per race
+            if "raceid" not in val_df.columns:
+                val_df["raceid"] = (
+                    val_df["race_date"].dt.strftime("%Y-%m-%d")
+                    + "_" + val_df["track"].astype(str)
+                    + "_" + val_df["race_time"].astype(str)
+                )
+            val_df["_ip"] = 1.0 / val_df["predicted_bfsp_raw"]
+            _rsum = val_df.groupby("raceid")["_ip"].transform("sum")
+            val_df["predicted_win_prob_norm"] = val_df["_ip"] / _rsum
+            val_df["predicted_bfsp"] = 1.0 / val_df["predicted_win_prob_norm"]
+            val_df.drop(columns=["_ip"], inplace=True)
             all_val_preds.append(val_df)
 
             log.info(
@@ -1040,7 +1053,20 @@ class BFSPTrainer:
 
         result = df.copy()
         result["predicted_log_bfsp"] = log_pred
-        result["predicted_bfsp"] = np.exp(log_pred)
+        result["predicted_bfsp_raw"] = np.exp(log_pred)
+
+        # Normalise implied probabilities per race so they sum to 1
+        if "raceid" not in result.columns:
+            result["raceid"] = (
+                result["race_date"].dt.strftime("%Y-%m-%d")
+                + "_" + result["track"].astype(str)
+                + "_" + result["race_time"].astype(str)
+            )
+        result["implied_prob"] = 1.0 / result["predicted_bfsp_raw"]
+        race_prob_sum = result.groupby("raceid")["implied_prob"].transform("sum")
+        result["predicted_win_prob_norm"] = result["implied_prob"] / race_prob_sum
+        result["predicted_bfsp"] = 1.0 / result["predicted_win_prob_norm"]
+        result.drop(columns=["implied_prob"], inplace=True)
 
         if "bfsp" in result.columns:
             result["bfsp_diff"] = result["predicted_bfsp"] - result["bfsp"]
