@@ -42,6 +42,7 @@ from sklearn.metrics import (
 
 from model.custom_metrics import CustomMetricsEngine
 from model.draw_metrics import ALL_DRAW_FEATURES
+from model.financial_features import FINANCIAL_FEATURES, FINANCIAL_RANK_FEATURES
 from model.pace_metrics import (
     ALL_PACE_FEATURES,
     ENTITY_STYLE_FEATURES,
@@ -576,6 +577,8 @@ ALL_FEATURE_COLS = (
     + HOT_FORM_FEATURES
     + ALL_PACE_FEATURES
     + ALL_DRAW_FEATURES
+    + FINANCIAL_FEATURES
+    + FINANCIAL_RANK_FEATURES
 )
 
 
@@ -690,6 +693,46 @@ def build_context_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Custom Loss Functions (Profit-Optimized)
+# ---------------------------------------------------------------------------
+
+
+def profit_weighted_objective(preds, train_data):
+    """Custom LightGBM objective: asymmetric, price-weighted loss.
+
+    Penalizes prediction errors more for short-priced horses (where
+    Rank 1/2 bets are placed) and penalizes under-prediction (predicting
+    shorter than reality) 1.5x more because it creates false overlays.
+    """
+    labels = train_data.get_label()
+
+    residuals = preds - labels  # in log space
+
+    # Price weighting: errors on short-priced horses matter more
+    # labels are log(bfsp), so lower labels = shorter prices
+    implied_prob = np.exp(-labels)  # ~1/bfsp
+    price_weight = np.sqrt(implied_prob)
+
+    # Asymmetric: under-prediction (preds < labels) creates false overlays
+    # that lose money, so penalize 1.5x more
+    asymmetry = np.where(residuals < 0, 1.5, 1.0)
+
+    grad = residuals * price_weight * asymmetry
+    hess = np.ones_like(grad) * price_weight * asymmetry
+
+    return grad, hess
+
+
+def profit_weighted_metric(preds, train_data):
+    """Custom evaluation metric: price-weighted MAE."""
+    labels = train_data.get_label()
+    implied_prob = np.exp(-labels)
+    price_weight = np.sqrt(implied_prob)
+    weighted_mae = np.mean(np.abs(preds - labels) * price_weight)
+    return "profit_wmae", weighted_mae, False  # False = lower is better
+
+
+# ---------------------------------------------------------------------------
 # BFSP Training Pipeline
 # ---------------------------------------------------------------------------
 
@@ -722,11 +765,15 @@ class BFSPTrainer:
         val_window_days: int = 30,
         step_days: int = 30,
         params: dict | None = None,
+        decay_rate: float = 1.0,
+        use_custom_objective: bool = True,
     ):
         self.min_train_days = min_train_days
         self.val_window_days = val_window_days
         self.step_days = step_days
         self.params = params or self.DEFAULT_PARAMS.copy()
+        self.decay_rate = decay_rate
+        self.use_custom_objective = use_custom_objective
         self.metrics_engine = CustomMetricsEngine()
         self.model: lgb.Booster | None = None
         self.feature_cols: list[str] = []
@@ -782,6 +829,13 @@ class BFSPTrainer:
 
         return folds
 
+    def _compute_sample_weights(self, df: pd.DataFrame) -> np.ndarray:
+        """Exponential decay weights: recent races weighted higher."""
+        max_date = df["race_date"].max()
+        days_ago = (max_date - df["race_date"]).dt.days.values.astype(float)
+        weights = np.exp(-self.decay_rate * days_ago / 365.0)
+        return weights
+
     def train_fold(
         self,
         train_df: pd.DataFrame,
@@ -795,7 +849,10 @@ class BFSPTrainer:
         X_val = val_df[self.feature_cols].astype(float)
         y_val = val_df["log_bfsp"].astype(float)
 
-        train_set = lgb.Dataset(X_train, label=y_train)
+        # Exponential decay sample weighting (recent data matters more)
+        sample_weights = self._compute_sample_weights(train_df)
+
+        train_set = lgb.Dataset(X_train, label=y_train, weight=sample_weights)
         val_set = lgb.Dataset(X_val, label=y_val, reference=train_set)
 
         callbacks = [
@@ -803,14 +860,25 @@ class BFSPTrainer:
             lgb.early_stopping(stopping_rounds=early_stopping),
         ]
 
-        model = lgb.train(
-            self.params,
-            train_set,
-            num_boost_round=num_boost_round,
-            valid_sets=[train_set, val_set],
-            valid_names=["train", "valid"],
-            callbacks=callbacks,
-        )
+        # Use custom profit-weighted objective if enabled
+        train_kwargs = {
+            "params": self.params,
+            "train_set": train_set,
+            "num_boost_round": num_boost_round,
+            "valid_sets": [train_set, val_set],
+            "valid_names": ["train", "valid"],
+            "callbacks": callbacks,
+        }
+        if self.use_custom_objective:
+            params_copy = self.params.copy()
+            # Remove conflicting objective/metric when using custom fobj
+            params_copy.pop("objective", None)
+            params_copy.pop("metric", None)
+            train_kwargs["params"] = params_copy
+            train_kwargs["fobj"] = profit_weighted_objective
+            train_kwargs["feval"] = profit_weighted_metric
+
+        model = lgb.train(**train_kwargs)
 
         # Evaluate
         y_pred = model.predict(X_val)
@@ -944,6 +1012,17 @@ class BFSPTrainer:
                 f"MdAPE={overall_wf_metrics['overall_wf_median_ape_pct']:.1f}%"
             )
 
+        # Step 2b: Fit probability calibrator on walk-forward OOS predictions
+        self.calibrator = None
+        if all_val_preds:
+            from model.calibration import IsotonicCalibrator
+            combined_for_cal = pd.concat(all_val_preds, ignore_index=True)
+            raw_probs = 1.0 / combined_for_cal["predicted_bfsp"].clip(lower=1.01)
+            actual_wins = (combined_for_cal["placing_numerical"] == 1).astype(float).values
+            self.calibrator = IsotonicCalibrator()
+            self.calibrator.fit(raw_probs.values, actual_wins)
+            log.info("  Fitted isotonic calibrator on walk-forward OOS predictions")
+
         # Step 3: Train final model on all data (90/10 split for early stopping)
         log.info("\nTraining final model on all data...")
         dates = df["race_date"].sort_values().unique()
@@ -979,6 +1058,51 @@ class BFSPTrainer:
         self._save(output_dir, avg_metrics, overall_wf_metrics,
                    final_metrics, fold_metrics, importance_df, df)
 
+        # Save calibrator if fitted
+        if self.calibrator is not None:
+            cal_path = os.path.join(output_dir, "bfsp_calibrator.json")
+            self.calibrator.save(cal_path)
+            log.info(f"  Saved calibrator to {cal_path}")
+
+        # Step 6: Train win probability model (Benter Stage 2)
+        self.prob_model = None
+        self.blender = None
+        if "won" in df.columns:
+            from model.benter_blend import BenterBlender
+            from model.probability_model import FundamentalModel
+
+            log.info("\nTraining win probability model (Benter Stage 2)...")
+            self.prob_model = FundamentalModel()
+            prob_metrics = self.prob_model.train(
+                final_train, final_val, self.feature_cols,
+                target_col="won", raceid_col="raceid",
+            )
+            log.info(
+                f"  Prob model: logloss={prob_metrics['val_logloss_normalised']:.6f}, "
+                f"iters={prob_metrics['best_iteration']}"
+            )
+            self.prob_model.save(output_dir)
+
+            # Optimize blending lambda on validation set
+            log.info("Optimizing Benter blending lambda...")
+            val_with_probs = self.prob_model.predict(
+                final_val, raceid_col="raceid", normalise=True
+            )
+            self.blender = BenterBlender()
+            optimal_lambda = self.blender.optimise_lambda(
+                val_with_probs,
+                p_model_col="p_model",
+                bfsp_col="bfsp",
+                target_col="won",
+            )
+            log.info(f"  Optimal lambda: {optimal_lambda:.2f}")
+
+            # Save blender config
+            blender_path = os.path.join(output_dir, "benter_lambda.json")
+            with open(blender_path, "w") as f:
+                json.dump({"optimal_lambda": optimal_lambda}, f)
+            log.info(f"  Saved blender config to {blender_path}")
+
         # Build full summary
         summary = {
             "model_type": "bfsp_regression",
@@ -989,6 +1113,14 @@ class BFSPTrainer:
             "overall_walk_forward": overall_wf_metrics,
             "final_model": final_metrics,
             "fold_details": fold_metrics,
+            "decay_rate": self.decay_rate,
+            "benter_lambda": (
+                self.blender.optimal_lambda
+                if self.blender is not None
+                else None
+            ),
+            "has_calibrator": self.calibrator is not None,
+            "has_prob_model": self.prob_model is not None,
             "data_range": {
                 "min_date": str(df["race_date"].min().date()),
                 "max_date": str(df["race_date"].max().date()),
@@ -1030,8 +1162,14 @@ class BFSPTrainer:
         self._print_summary(summary)
         return summary
 
-    def predict(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Predict BFSP for prepared data."""
+    def predict(self, df: pd.DataFrame, apply_calibration: bool = True) -> pd.DataFrame:
+        """Predict BFSP for prepared data.
+
+        Args:
+            df: Prepared DataFrame with feature columns.
+            apply_calibration: If True and calibrator is fitted, apply
+                isotonic calibration to predictions.
+        """
         if self.model is None:
             raise ValueError("Model not trained.")
 
@@ -1041,6 +1179,34 @@ class BFSPTrainer:
         result = df.copy()
         result["predicted_log_bfsp"] = log_pred
         result["predicted_bfsp"] = np.exp(log_pred)
+
+        # Apply isotonic calibration if available
+        result["predicted_bfsp_raw"] = result["predicted_bfsp"].copy()
+        if apply_calibration and self.calibrator is not None:
+            result["predicted_bfsp"] = self.calibrator.calibrate_bfsp(
+                result["predicted_bfsp_raw"].values
+            )
+            result["predicted_log_bfsp"] = np.log(
+                result["predicted_bfsp"].clip(lower=1.01)
+            )
+
+        # Benter blending: combine model probs with market odds
+        if (
+            self.prob_model is not None
+            and self.blender is not None
+            and "bfsp" in result.columns
+            and "raceid" in result.columns
+        ):
+            prob_result = self.prob_model.predict(
+                result, raceid_col="raceid", normalise=True
+            )
+            result["p_model"] = prob_result["p_model"]
+            blended = self.blender.blend_with_optimal(
+                result, p_model_col="p_model", bfsp_col="bfsp"
+            )
+            result["p_combined"] = blended["p_combined"]
+            result["model_fair_bfsp"] = blended["model_fair_bfsp"]
+            result["edge_pct"] = blended["edge_pct"]
 
         if "bfsp" in result.columns:
             result["bfsp_diff"] = result["predicted_bfsp"] - result["bfsp"]
@@ -1250,6 +1416,18 @@ def main():
         help="Only load data from this date onward (YYYY-MM-DD). "
              "Reduces memory usage for large databases.",
     )
+    parser.add_argument(
+        "--decay-rate", type=float, default=1.0,
+        help="Exponential decay rate for sample weighting (default: 1.0)",
+    )
+    parser.add_argument(
+        "--no-custom-objective", action="store_true",
+        help="Disable custom profit-weighted loss function",
+    )
+    parser.add_argument(
+        "--optuna-params", type=str, default=None,
+        help="Path to Optuna best params JSON to use instead of defaults",
+    )
     args = parser.parse_args()
 
     # Fetch data if needed
@@ -1277,10 +1455,35 @@ def main():
     df = load_data(args.db, start_date=args.start_date)
     log.info(f"  {len(df):,} rows loaded")
 
-    # Override params if specified
+    # Load Optuna-tuned params if specified
+    decay_rate = args.decay_rate
+    use_custom_obj = not args.no_custom_objective
     params = BFSPTrainer.DEFAULT_PARAMS.copy()
-    params["learning_rate"] = args.learning_rate
-    params["num_leaves"] = args.num_leaves
+
+    if args.optuna_params:
+        log.info(f"Loading Optuna-tuned params from {args.optuna_params}...")
+        with open(args.optuna_params) as f:
+            optuna_data = json.load(f)
+        best = optuna_data["best_params"]
+        params["num_leaves"] = best.get("num_leaves", params["num_leaves"])
+        params["learning_rate"] = best.get("learning_rate", params["learning_rate"])
+        params["min_child_samples"] = best.get("min_child_samples", params["min_child_samples"])
+        params["feature_fraction"] = best.get("feature_fraction", params["feature_fraction"])
+        params["bagging_fraction"] = best.get("bagging_fraction", params["bagging_fraction"])
+        params["bagging_freq"] = best.get("bagging_freq", params["bagging_freq"])
+        params["lambda_l1"] = best.get("lambda_l1", params["lambda_l1"])
+        params["lambda_l2"] = best.get("lambda_l2", params["lambda_l2"])
+        if "max_depth" in best:
+            params["max_depth"] = best["max_depth"]
+        decay_rate = best.get("decay_rate", decay_rate)
+        if "use_custom_obj" in best:
+            use_custom_obj = best["use_custom_obj"]
+        log.info(f"  Loaded params: {params}")
+        log.info(f"  Decay rate: {decay_rate}, Custom objective: {use_custom_obj}")
+    else:
+        # Override params from CLI
+        params["learning_rate"] = args.learning_rate
+        params["num_leaves"] = args.num_leaves
 
     # Train
     trainer = BFSPTrainer(
@@ -1288,6 +1491,8 @@ def main():
         val_window_days=args.val_window,
         step_days=args.step_days,
         params=params,
+        decay_rate=decay_rate,
+        use_custom_objective=use_custom_obj,
     )
 
     summary = trainer.train(df, output_dir=args.output_dir)

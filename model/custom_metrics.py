@@ -196,6 +196,10 @@ class CustomMetricsEngine:
         df = self._calc_or_trajectory(df)
         df = self._calc_hot_form(df)
 
+        # --- Financial-style features (RSI, MACD, z-score, Sharpe, etc.) ---
+        from model.financial_features import calculate_financial_features
+        df = calculate_financial_features(df)
+
         # --- Pace prediction & running position features ---
         df = PaceMetricsEngine().calculate(df)
 
