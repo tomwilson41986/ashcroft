@@ -38,5 +38,5 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           REPORT_EMAIL: ${{ secrets.REPORT_EMAIL }}
-          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ultra-betting' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroftequities' }}
         run: python -m pipeline.settle
