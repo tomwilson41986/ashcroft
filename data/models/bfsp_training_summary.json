@@ -326,7 +326,101 @@
     "jockey_sr_14d",
     "jockey_sr_30d",
     "jockey_runs_14d",
-    "jockey_form_delta"
+    "jockey_form_delta",
+    "horse_career_early_pos",
+    "horse_career_late_move",
+    "horse_career_total_move",
+    "horse_keen_rate",
+    "horse_trouble_rate",
+    "horse_style_consistency",
+    "LR_early_pos",
+    "LR_late_move",
+    "LR_total_move",
+    "LR_was_keen",
+    "LR2_early_pos",
+    "LR2_late_move",
+    "LR2_total_move",
+    "LR3_early_pos",
+    "LR3_late_move",
+    "LR3_total_move",
+    "horse_early_pos_3r",
+    "horse_late_move_3r",
+    "horse_early_pos_5r",
+    "horse_late_move_5r",
+    "style_shift",
+    "jockey_career_early_pos",
+    "jockey_career_late_move",
+    "jockey_front_rate",
+    "jockey_holdup_rate",
+    "jockey_keen_rate",
+    "trainer_career_early_pos",
+    "trainer_career_late_move",
+    "trainer_front_rate",
+    "trainer_holdup_rate",
+    "trainer_keen_rate",
+    "td_front_win_share",
+    "td_holdup_win_share",
+    "td_avg_winner_pos",
+    "track_front_win_share",
+    "pred_early_pos",
+    "pred_race_pace",
+    "pred_n_front",
+    "pred_front_pct",
+    "pred_n_back",
+    "pred_back_pct",
+    "pred_pace_scenario",
+    "pred_pace_spread",
+    "pred_max_front",
+    "pace_position_delta",
+    "pace_advantage",
+    "track_style_fit",
+    "pace_mismatch",
+    "lead_competition",
+    "lone_front_runner",
+    "keen_rate_3r",
+    "keen_front_risk",
+    "LR_had_trouble",
+    "jockey_horse_style_gap",
+    "trainer_jockey_style_gap",
+    "front_sustainability",
+    "holdup_finish_ability",
+    "horse_pos_drop",
+    "rPredEarlyPos",
+    "rHorseCareerEarlyPos",
+    "rHorseLateMoveCareer",
+    "rPaceAdvantage",
+    "rTrackStyleFit",
+    "rFrontSustain",
+    "rHoldupFinish",
+    "rStyleConsistency",
+    "td_draw_bias",
+    "draw_bias_alignment",
+    "track_draw_bias",
+    "td_low_stall_nfp",
+    "td_high_stall_nfp",
+    "tdg_draw_bias",
+    "going_draw_alignment",
+    "going_draw_shift",
+    "draw_field_weight",
+    "draw_advantage_field_adj",
+    "is_stall_1",
+    "is_widest_stall",
+    "draw_front_advantage",
+    "draw_prominent_effect",
+    "draw_holdup_effect",
+    "draw_front_enable",
+    "horse_low_stall_nfp",
+    "horse_high_stall_nfp",
+    "horse_draw_pref",
+    "draw_pref_match",
+    "LR_draw_relative",
+    "draw_change",
+    "draw_advantage_composite",
+    "rDrawBiasAlign",
+    "rGoingDrawAlign",
+    "rDrawAdvComposite",
+    "rDrawFieldAdj",
+    "rHorseDrawPref"
   ],
   "params": {
     "objective": "regression",
@@ -342,49 +436,108 @@
     "lambda_l2": 0.1,
     "verbose": -1
   },
-  "best_iteration": 2832,
-  "val_metrics_raw": {
-    "log_mae": 0.369,
-    "log_rmse": 0.5069,
-    "log_r2": 0.8851,
-    "bfsp_mae": 34.49,
-    "median_ape_pct": 26.53,
-    "mean_ape_pct": 37.92,
-    "correlation": 0.9415
+  "best_iteration": 2996,
+  "val_metrics": {
+    "val_log_mae": 0.3492,
+    "val_log_rmse": 0.4781,
+    "val_log_r2": 0.881,
+    "val_bfsp_mae": 27.96,
+    "val_median_ape_pct": 25.34,
+    "val_mean_ape_pct": 37.27,
+    "val_correlation": 0.9387
   },
-  "val_metrics_normalized": {
-    "log_mae": 0.3542,
-    "log_rmse": 0.4903,
-    "log_r2": 0.8925,
-    "bfsp_mae": 34.52,
-    "median_ape_pct": 25.02,
-    "mean_ape_pct": 33.0,
-    "correlation": 0.9487
+  "test_metrics": {
+    "test_log_mae": 0.3645,
+    "test_log_rmse": 0.5029,
+    "test_log_r2": 0.8853,
+    "test_bfsp_mae": 33.22,
+    "test_median_ape_pct": 25.99,
+    "test_mean_ape_pct": 38.34,
+    "test_correlation": 0.9416
   },
-  "test_metrics_raw": {
-    "log_mae": 0.3649,
-    "log_rmse": 0.5033,
-    "log_r2": 0.8855,
-    "bfsp_mae": 33.66,
-    "median_ape_pct": 25.92,
-    "mean_ape_pct": 38.12,
-    "correlation": 0.9417
-  },
-  "test_metrics_normalized": {
-    "log_mae": 0.3457,
-    "log_rmse": 0.482,
-    "log_r2": 0.895,
-    "bfsp_mae": 33.16,
-    "median_ape_pct": 24.12,
-    "mean_ape_pct": 32.33,
-    "correlation": 0.9501
-  },
-  "splits": {
-    "train_rows": 469237,
-    "train_date_range": "2022-01-01 to 2025-11-10",
-    "val_rows": 16703,
-    "val_date_range": "2025-11-11 to 2026-01-09",
-    "test_rows": 15005,
-    "test_date_range": "2026-01-10 to 2026-03-11"
-  }
+  "train_rows": 420860,
+  "val_rows": 63180,
+  "test_rows": 17232,
+  "top_20_features": [
+    {
+      "feature": "NFP_residual",
+      "importance": 1437121.6515811086
+    },
+    {
+      "feature": "FSALB",
+      "importance": 1343807.0565729737
+    },
+    {
+      "feature": "rPMW3",
+      "importance": 1000560.3592092991
+    },
+    {
+      "feature": "LR_ORR2",
+      "importance": 873695.4490510821
+    },
+    {
+      "feature": "rPMW5",
+      "importance": 692321.5395268798
+    },
+    {
+      "feature": "or_num",
+      "importance": 573591.7581067085
+    },
+    {
+      "feature": "LR3_RWO",
+      "importance": 382378.098382771
+    },
+    {
+      "feature": "rPMW10",
+      "importance": 303264.92730760574
+    },
+    {
+      "feature": "win_surprise",
+      "importance": 246957.28779923916
+    },
+    {
+      "feature": "OFS1",
+      "importance": 221434.33116042614
+    },
+    {
+      "feature": "race_type_cat",
+      "importance": 183944.73539596796
+    },
+    {
+      "feature": "rTrainerSR14d",
+      "importance": 147795.15454304218
+    },
+    {
+      "feature": "PMW10",
+      "importance": 137842.50751930475
+    },
+    {
+      "feature": "rTJNFP",
+      "importance": 131744.5801576376
+    },
+    {
+      "feature": "LRNFP",
+      "importance": 120492.02332496643
+    },
+    {
+      "feature": "LR3_ORR2",
+      "importance": 96036.41078948975
+    },
+    {
+      "feature": "or_vs_max",
+      "importance": 93943.86572575569
+    },
+    {
+      "feature": "draw_relative",
+      "importance": 84607.63831347227
+    },
+    {
+      "feature": "median_or_num",
+      "importance": 81308.65543150902
+    },
+    {
+      "feature": "dist_furlongs",
+      "importance": 71541.19308489561
+    }
+  ]
 }
