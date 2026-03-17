@@ -155,10 +155,9 @@ def objective(trial, prepared_df, feature_cols, folds):
 
         if use_custom_obj:
             p = params.copy()
-            p.pop("objective", None)
+            p["objective"] = profit_weighted_objective
             p.pop("metric", None)
             train_kwargs["params"] = p
-            train_kwargs["fobj"] = profit_weighted_objective
             train_kwargs["feval"] = profit_weighted_metric
         else:
             params["objective"] = "regression"
