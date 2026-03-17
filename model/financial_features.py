@@ -313,7 +313,7 @@ def _calc_class_momentum(df: pd.DataFrame, groups) -> pd.DataFrame:
     vals = np.full(len(df), np.nan)
 
     class_col = None
-    for c in ["race_class", "race_class_num"]:
+    for c in ["race_class_num", "race_class"]:
         if c in df.columns:
             class_col = c
             break
@@ -322,10 +322,16 @@ def _calc_class_momentum(df: pd.DataFrame, groups) -> pd.DataFrame:
         df["class_momentum"] = np.nan
         return df
 
+    # Convert to numeric (handles "Class 4" -> 4 etc.)
+    class_numeric = pd.to_numeric(
+        df[class_col].astype(str).str.extract(r"(\d+)", expand=False),
+        errors="coerce",
+    )
+
     for name, idx in groups.groups.items():
         if len(idx) < 5:
             continue
-        cls = df.loc[idx, class_col].values.astype(float)
+        cls = class_numeric.loc[idx].values.astype(float)
         for i in range(4, len(idx)):
             recent_3 = cls[max(0, i - 3):i]
             recent_5 = cls[max(0, i - 5):i]

@@ -861,24 +861,28 @@ class BFSPTrainer:
         ]
 
         # Use custom profit-weighted objective if enabled
-        train_kwargs = {
-            "params": self.params,
-            "train_set": train_set,
-            "num_boost_round": num_boost_round,
-            "valid_sets": [train_set, val_set],
-            "valid_names": ["train", "valid"],
-            "callbacks": callbacks,
-        }
         if self.use_custom_objective:
             params_copy = self.params.copy()
-            # Remove conflicting objective/metric when using custom fobj
-            params_copy.pop("objective", None)
+            params_copy["objective"] = profit_weighted_objective
             params_copy.pop("metric", None)
-            train_kwargs["params"] = params_copy
-            train_kwargs["fobj"] = profit_weighted_objective
-            train_kwargs["feval"] = profit_weighted_metric
-
-        model = lgb.train(**train_kwargs)
+            model = lgb.train(
+                params_copy,
+                train_set,
+                num_boost_round=num_boost_round,
+                valid_sets=[train_set, val_set],
+                valid_names=["train", "valid"],
+                feval=profit_weighted_metric,
+                callbacks=callbacks,
+            )
+        else:
+            model = lgb.train(
+                self.params,
+                train_set,
+                num_boost_round=num_boost_round,
+                valid_sets=[train_set, val_set],
+                valid_names=["train", "valid"],
+                callbacks=callbacks,
+            )
 
         # Evaluate
         y_pred = model.predict(X_val)
@@ -923,7 +927,7 @@ class BFSPTrainer:
 
         # Walk-forward early stopping: stop if no MAE improvement over
         # the last `patience` folds (comparing running average)
-        wf_patience = 10
+        wf_patience = 5
         best_running_mae = float("inf")
         stale_count = 0
 
