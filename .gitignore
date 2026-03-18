@@ -2,6 +2,7 @@
 .env.local
 __pycache__/
 *.pyc
+*.egg-info/
 explore_site.py
 horse_racing.db
 horse_racing.db-wal
