@@ -1,1 +1,2 @@
 # Netlify redirects — serve static files directly
+/api/*  /.netlify/functions/api/:splat  200
