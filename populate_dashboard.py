@@ -1,124 +1,125 @@
 #!/usr/bin/env python3
 """
-Populate S3 dashboard with historical bet data from the database.
+Populate dashboard with real prediction data.
 
-Uses a lightweight approach: runs the trained model on each date using
-pre-computed features from the DB, identifies value bets, and writes
-results to S3 for the web dashboard.
+- Runs the trained BFSP model on recent dates from the database
+- Settles predictions against actual results (BFSP + placing)
+- Reads live pipeline predictions from S3 for unsettled dates
+- Writes everything to the dashboard S3 keys
 
 Usage:
-    python populate_dashboard.py --days 30
-    python populate_dashboard.py --days 60 --min-edge 10 --stake 10
+    python populate_dashboard.py                     # Last 3 settled days + pending
+    python populate_dashboard.py --days 7            # Last 7 settled days + pending
+    python populate_dashboard.py --min-edge 10       # Minimum edge for value bets
 """
 
 import argparse
+import io
 import json
 import logging
 import os
+import sqlite3
 import sys
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
 load_dotenv()
+load_dotenv(".env.local")
 
-from db_schema import DB_PATH
 from edge_scanner import BETFAIR_COMMISSION
 from web.s3_store import save_bets, save_daily_pnl
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(SCRIPT_DIR, "horse_racing.db")
+MODEL_DIR = os.path.join(SCRIPT_DIR, "data", "models")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_DIR = os.path.join(SCRIPT_DIR, "data", "models")
 
-
-def load_model():
-    """Load the trained BFSP model and feature columns."""
-    import lightgbm as lgb
-
-    model_path = os.path.join(MODEL_DIR, "bfsp_model.lgb")
-    meta_path = os.path.join(MODEL_DIR, "bfsp_model_meta.json")
-
-    model = lgb.Booster(model_file=model_path)
-    with open(meta_path) as f:
-        meta = json.load(f)
-
-    feature_cols = meta.get("feature_columns") or meta.get("feature_cols", [])
-    log.info(f"Loaded model with {len(feature_cols)} features")
-    return model, feature_cols
-
-
-def run(
-    n_days: int = 30,
-    min_edge: float = 10.0,
-    stake: float = 10.0,
-    min_price: float = 1.5,
-    max_price: float = 30.0,
-    db_path: str = DB_PATH,
-):
-    """Generate dashboard data from historical races using actual BFSP as settlement price."""
-    import sqlite3
-
+def get_settled_dates(db_path: str, n_days: int) -> list[str]:
+    """Get the last N dates that have both BFSP and placing data in the DB."""
     conn = sqlite3.connect(db_path)
-
-    # Get recent dates with BFSP data
     dates_df = pd.read_sql_query(
         """
         SELECT DISTINCT race_date FROM race_results
         WHERE bfsp IS NOT NULL AND bfsp > 0
+          AND placing_numerical IS NOT NULL
         ORDER BY race_date DESC
         LIMIT ?
         """,
         conn,
         params=(n_days,),
     )
-    test_dates = sorted(dates_df["race_date"].tolist())
-
-    if not test_dates:
-        log.error("No dates with BFSP data found")
-        return
-
-    log.info(f"Processing {len(test_dates)} days: {test_dates[0]} to {test_dates[-1]}")
-
-    # Load all runners for these dates
-    placeholders = ",".join("?" * len(test_dates))
-    df = pd.read_sql_query(
-        f"""
-        SELECT race_date, race_time, track, horse_name, bfsp, placing_numerical,
-               number_of_runners
-        FROM race_results
-        WHERE race_date IN ({placeholders})
-          AND bfsp IS NOT NULL AND bfsp > 0
-        ORDER BY race_date, race_time, track
-        """,
-        conn,
-        params=test_dates,
-    )
     conn.close()
+    return sorted(dates_df["race_date"].tolist())
 
-    log.info(f"Loaded {len(df):,} runners across {len(test_dates)} days")
 
-    # For each race, compute implied probabilities and find value
-    # Use the inverse BFSP as the "model prediction" with noise to simulate edges
-    np.random.seed(42)
+def run_model_predictions(target_date_str: str, db_path: str) -> pd.DataFrame:
+    """Run the real BFSP model on a date from the database.
 
+    Returns DataFrame with predicted_bfsp, predicted_win_prob_norm,
+    value_edge, actual_bfsp, placing_numerical etc.
+    """
+    from predict_bfsp_today import load_historical, load_bfsp_model, prepare_and_predict
+
+    target_date = date.fromisoformat(target_date_str)
+    model, feature_cols = load_bfsp_model(MODEL_DIR)
+    historical = load_historical(db_path, start_date="2020-01-01")
+
+    history_before = historical[historical["race_date"].dt.date < target_date].copy()
+    runners = historical[historical["race_date"].dt.date == target_date].copy()
+
+    if len(runners) == 0 or len(history_before) < 100:
+        return pd.DataFrame()
+
+    preds = prepare_and_predict(history_before, runners, model, feature_cols, target_date)
+    return preds
+
+
+def read_s3_predictions(dt_str: str) -> pd.DataFrame:
+    """Read pipeline predictions from S3 for a given date."""
+    import boto3
+
+    bucket = os.getenv("ULTRA_BETTING_S3_BUCKET", "ashcroft")
+    key = f"predictions/{dt_str}.csv"
+
+    try:
+        s3 = boto3.client("s3")
+        obj = s3.get_object(Bucket=bucket, Key=key)
+        return pd.read_csv(io.StringIO(obj["Body"].read().decode()))
+    except Exception as e:
+        log.debug(f"No S3 predictions for {dt_str}: {e}")
+        return pd.DataFrame()
+
+
+def run(
+    n_days: int = 3,
+    min_edge: float = 10.0,
+    stake: float = 10.0,
+    min_price: float = 1.5,
+    max_price: float = 30.0,
+    db_path: str = DB_PATH,
+):
+    """Generate dashboard data from real model predictions."""
     all_bets = []
     all_daily_pnl = []
     cumulative_pnl = 0.0
     bank = 1000.0
 
-    # Try to load and use the actual model
-    model, feature_cols = None, None
-    try:
-        model, feature_cols = load_model()
-    except Exception as e:
-        log.warning(f"Could not load model: {e}. Using BFSP-based simulation.")
+    # --- Part 1: Settled dates (real model predictions vs actual results) ---
+    settled_dates = get_settled_dates(db_path, n_days)
+    log.info(f"Found {len(settled_dates)} settled dates: {settled_dates}")
 
-    for race_date in test_dates:
-        day_df = df[df["race_date"] == race_date].copy()
-        if day_df.empty:
+    for race_date in settled_dates:
+        log.info(f"Running real model predictions for {race_date}...")
+        preds = run_model_predictions(race_date, db_path)
+
+        if preds.empty:
+            log.warning(f"  No predictions for {race_date}")
             continue
 
         day_bets = 0
@@ -126,91 +127,71 @@ def run(
         day_pnl = 0.0
         day_staked = 0.0
 
-        # Group by race
-        for (rt, trk), race in day_df.groupby(["race_time", "track"]):
-            if len(race) < 2:
+        for _, row in preds.iterrows():
+            edge = row.get("value_edge", 0)
+            if pd.isna(edge):
+                continue
+            actual_bfsp = row.get("actual_bfsp", 0)
+            if pd.isna(actual_bfsp) or actual_bfsp <= 0:
+                continue
+            pred_bfsp = row.get("predicted_bfsp", 0)
+            if pd.isna(pred_bfsp) or pred_bfsp <= 0:
+                continue
+            win_prob = row.get("predicted_win_prob_norm", 0)
+            if pd.isna(win_prob):
+                win_prob = 0
+
+            # Filter: only value bets within price range
+            if edge < min_edge:
+                continue
+            if actual_bfsp < min_price or actual_bfsp > max_price:
                 continue
 
-            actual_bfsp = race["bfsp"].values
-            nr = len(race)
+            placing = row.get("placing_numerical")
+            won = pd.notna(placing) and placing == 1
 
-            # Compute implied win probs from BFSP
-            implied_probs = 1.0 / actual_bfsp
-            overround = implied_probs.sum()
-            norm_probs = implied_probs / overround
+            if won:
+                gross = stake * (actual_bfsp - 1)
+                commission = gross * BETFAIR_COMMISSION
+                net = gross - commission
+                status = "WON"
+                day_winners += 1
+            else:
+                gross = -stake
+                commission = 0.0
+                net = -stake
+                status = "LOST"
 
-            # Simulate model predictions: add controlled noise to log(BFSP)
-            log_bfsp = np.log(actual_bfsp)
-            noise = np.random.normal(0, 0.15, size=len(log_bfsp))
-            predicted_log_bfsp = log_bfsp + noise
-            predicted_bfsp = np.exp(predicted_log_bfsp)
+            all_bets.append({
+                "race_date": race_date,
+                "race_time": str(row.get("race_time", "")),
+                "track": str(row.get("track", "")),
+                "horse_name": str(row.get("horse_name", "")),
+                "predicted_bfsp": round(float(pred_bfsp), 2),
+                "predicted_win_prob": round(float(win_prob), 4),
+                "betfair_back": round(float(actual_bfsp), 2),
+                "edge_pct": round(float(edge), 1),
+                "bet_type": "BACK",
+                "stake": stake,
+                "price": round(float(actual_bfsp), 2),
+                "status": status,
+                "actual_bsp": round(float(actual_bfsp), 2),
+                "placing": int(placing) if pd.notna(placing) else None,
+                "gross_pnl": round(gross, 2),
+                "commission": round(commission, 2),
+                "net_pnl": round(net, 2),
+            })
 
-            # Compute predicted win probs
-            pred_probs = 1.0 / predicted_bfsp
-            pred_overround = pred_probs.sum()
-            pred_norm_probs = pred_probs / pred_overround
-
-            # Edge = how much cheaper the actual BFSP is vs our prediction
-            edges = ((actual_bfsp / predicted_bfsp) - 1) * 100
-
-            for i, (_, row) in enumerate(race.iterrows()):
-                edge = edges[i]
-                price = actual_bfsp[i]
-                pred_price = predicted_bfsp[i]
-                win_prob = pred_norm_probs[i]
-
-                if edge < min_edge:
-                    continue
-                if price < min_price or price > max_price:
-                    continue
-                if win_prob < 0.03:
-                    continue
-
-                placing = row["placing_numerical"]
-                won = pd.notna(placing) and placing == 1
-
-                if won:
-                    gross = stake * (price - 1)
-                    commission = gross * BETFAIR_COMMISSION
-                    net = gross - commission
-                    status = "WON"
-                    day_winners += 1
-                else:
-                    gross = -stake
-                    commission = 0.0
-                    net = -stake
-                    status = "LOST"
-
-                all_bets.append({
-                    "race_date": race_date,
-                    "race_time": str(row.get("race_time", "")),
-                    "track": str(row.get("track", "")),
-                    "horse_name": str(row.get("horse_name", "")),
-                    "predicted_bfsp": round(float(pred_price), 2),
-                    "predicted_win_prob": round(float(win_prob), 4),
-                    "betfair_back": round(float(price), 2),
-                    "edge_pct": round(float(edge), 1),
-                    "bet_type": "BACK",
-                    "stake": stake,
-                    "price": round(float(price), 2),
-                    "status": status,
-                    "actual_bsp": round(float(price), 2),
-                    "placing": int(placing) if pd.notna(placing) else None,
-                    "gross_pnl": round(gross, 2),
-                    "commission": round(commission, 2),
-                    "net_pnl": round(net, 2),
-                })
-
-                day_bets += 1
-                day_pnl += net
-                day_staked += stake
-
-        cumulative_pnl += day_pnl
-        bank_start = bank
-        bank += day_pnl
-        roi = (day_pnl / day_staked * 100) if day_staked > 0 else 0
+            day_bets += 1
+            day_pnl += net
+            day_staked += stake
 
         if day_bets > 0:
+            cumulative_pnl += day_pnl
+            bank_start = bank
+            bank += day_pnl
+            roi = (day_pnl / day_staked * 100) if day_staked > 0 else 0
+
             all_daily_pnl.append({
                 "date": race_date,
                 "num_bets": day_bets,
@@ -226,37 +207,80 @@ def run(
                 "bank_start": round(bank_start, 2),
                 "bank_end": round(bank, 2),
             })
+            log.info(f"  {race_date}: {day_bets} bets, {day_winners}W, P&L {day_pnl:+.2f}")
 
-        if day_bets > 0:
-            log.info(f"  {race_date}: {day_bets} bets, {day_winners}W, P&L {day_pnl:+.2f}, Bank {bank:.2f}")
+    # --- Part 2: Pending predictions from S3 (not yet settled) ---
+    today = date.today()
+    for day_offset in range(2, -1, -1):
+        dt = today - timedelta(days=day_offset)
+        dt_str = str(dt)
 
-    # Write to S3
+        # Skip dates we already have settled data for
+        if dt_str in [d for d in [b.get("race_date") for b in all_bets]]:
+            continue
+
+        s3_preds = read_s3_predictions(dt_str)
+        if s3_preds.empty:
+            continue
+
+        log.info(f"Adding {len(s3_preds)} pending predictions from S3 for {dt_str}")
+        for _, row in s3_preds.iterrows():
+            pred_bfsp = row.get("predicted_bfsp")
+            win_prob = row.get("predicted_win_prob")
+
+            all_bets.append({
+                "race_date": dt_str,
+                "race_time": str(row.get("race_time", "")),
+                "track": str(row.get("venue", row.get("track", ""))),
+                "horse_name": str(row.get("runner_name", row.get("horse_name", ""))),
+                "predicted_bfsp": round(float(pred_bfsp), 2) if pd.notna(pred_bfsp) else None,
+                "predicted_win_prob": round(float(win_prob), 4) if pd.notna(win_prob) else None,
+                "betfair_back": None,
+                "edge_pct": None,
+                "bet_type": "BACK",
+                "stake": stake,
+                "price": None,
+                "status": "PENDING",
+                "actual_bsp": None,
+                "placing": None,
+                "gross_pnl": 0,
+                "commission": 0,
+                "net_pnl": 0,
+            })
+
+    # Sort and write
+    all_bets.sort(key=lambda b: (b.get("race_date", ""), b.get("race_time", "")))
+    all_daily_pnl.sort(key=lambda p: p.get("date", ""))
+
     log.info(f"Writing {len(all_bets)} bets to S3...")
     save_bets(all_bets)
 
     log.info(f"Writing {len(all_daily_pnl)} daily P&L records to S3...")
     save_daily_pnl(all_daily_pnl)
 
-    total_bets = len(all_bets)
-    total_winners = sum(1 for b in all_bets if b["status"] == "WON")
+    settled = [b for b in all_bets if b["status"] in ("WON", "LOST")]
+    pending = [b for b in all_bets if b["status"] == "PENDING"]
+    total_winners = sum(1 for b in settled if b["status"] == "WON")
 
     print(f"\n{'='*60}")
-    print(f"  DASHBOARD DATA POPULATED")
+    print(f"  DASHBOARD DATA — REAL PREDICTIONS")
     print(f"{'='*60}")
-    print(f"  Period:      {test_dates[0]} to {test_dates[-1]} ({len(test_dates)} days)")
-    print(f"  Total bets:  {total_bets}")
-    if total_bets:
-        print(f"  Winners:     {total_winners} ({total_winners/total_bets*100:.1f}%)")
+    if settled_dates:
+        print(f"  Settled:     {settled_dates[0]} to {settled_dates[-1]} ({len(settled_dates)} days)")
+    print(f"  Settled bets: {len(settled)}")
+    if settled:
+        print(f"  Winners:     {total_winners} ({total_winners/len(settled)*100:.1f}%)")
         print(f"  Net P&L:     £{cumulative_pnl:+.2f}")
-        print(f"  ROI:         {cumulative_pnl/(total_bets*stake)*100:+.1f}%")
+        total_staked = sum(b.get("stake", 0) for b in settled)
+        print(f"  ROI:         {cumulative_pnl/total_staked*100:+.1f}%")
+    print(f"  Pending:     {len(pending)} predictions")
     print(f"  Bank:        £{bank:.2f}")
-    print(f"  Written to S3: dashboard/bets.json, dashboard/daily_pnl.json")
     print(f"{'='*60}\n")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Populate dashboard with historical data")
-    parser.add_argument("--days", type=int, default=30, help="Number of days")
+    parser = argparse.ArgumentParser(description="Populate dashboard with real prediction data")
+    parser.add_argument("--days", type=int, default=3, help="Number of settled days to include")
     parser.add_argument("--min-edge", type=float, default=10.0, help="Minimum edge %%")
     parser.add_argument("--stake", type=float, default=10.0, help="Stake per bet")
     args = parser.parse_args()
