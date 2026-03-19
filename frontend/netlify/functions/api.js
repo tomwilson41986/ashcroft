@@ -9,8 +9,14 @@
 
 const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
 
-const BUCKET = process.env.ULTRA_BETTING_S3_BUCKET || "ashcroft";
-const s3 = new S3Client({ region: process.env.AWS_DEFAULT_REGION || "us-east-1" });
+const BUCKET = process.env.S3_BUCKET || process.env.ULTRA_BETTING_S3_BUCKET || "ashcroft";
+const s3 = new S3Client({
+  region: process.env.S3_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1",
+  credentials: process.env.S3_ACCESS_KEY_ID ? {
+    accessKeyId: process.env.S3_ACCESS_KEY_ID,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+  } : undefined,
+});
 
 async function readS3Json(key) {
   try {
