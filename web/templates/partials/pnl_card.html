@@ -1,0 +1,5 @@
+<div class="stat-label">Bank</div>
+<div class="stat-value {% if pnl.bank >= 1000 %}text-green{% else %}text-red{% endif %}">
+    &pound;{{ "%.2f"|format(pnl.bank) }}
+</div>
+<div class="text-xs text-muted mt-1">P&amp;L: &pound;{{ "%+.2f"|format(pnl.net_pnl) }}</div>

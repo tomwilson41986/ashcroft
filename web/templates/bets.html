@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Ashcroft — Bets{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold">Bets</h1>
+    <form class="flex items-center space-x-2">
+        <select name="date" class="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+            <option value="">All dates</option>
+            {% for d in dates %}
+            <option value="{{ d }}" {% if d == selected_date %}selected{% endif %}>{{ d }}</option>
+            {% endfor %}
+        </select>
+        <select name="status" class="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+            <option value="">All statuses</option>
+            <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending</option>
+            <option value="WON" {% if selected_status == 'WON' %}selected{% endif %}>Won</option>
+            <option value="LOST" {% if selected_status == 'LOST' %}selected{% endif %}>Lost</option>
+        </select>
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded text-sm font-medium">Filter</button>
+    </form>
+</div>
+
+{% if bets %}
+<!-- Summary bar -->
+<div class="grid grid-cols-5 gap-4 mb-6">
+    {% set total = bets|length %}
+    {% set won = bets|selectattr('status', 'equalto', 'WON')|list|length %}
+    {% set lost = bets|selectattr('status', 'equalto', 'LOST')|list|length %}
+    {% set pending = bets|selectattr('status', 'equalto', 'PENDING')|list|length %}
+    {% set total_pnl = bets|sum(attribute='net_pnl', default=0) %}
+    <div class="card p-3 text-center">
+        <div class="text-xs text-muted">Total</div>
+        <div class="text-xl font-bold">{{ total }}</div>
+    </div>
+    <div class="card p-3 text-center">
+        <div class="text-xs text-muted">Won</div>
+        <div class="text-xl font-bold text-green">{{ won }}</div>
+    </div>
+    <div class="card p-3 text-center">
+        <div class="text-xs text-muted">Lost</div>
+        <div class="text-xl font-bold text-red">{{ lost }}</div>
+    </div>
+    <div class="card p-3 text-center">
+        <div class="text-xs text-muted">Pending</div>
+        <div class="text-xl font-bold text-yellow">{{ pending }}</div>
+    </div>
+    <div class="card p-3 text-center">
+        <div class="text-xs text-muted">Net P&amp;L</div>
+        <div class="text-xl font-bold {% if total_pnl >= 0 %}text-green{% else %}text-red{% endif %}">
+            &pound;{{ "%.2f"|format(total_pnl) }}
+        </div>
+    </div>
+</div>
+
+<div class="card overflow-x-auto">
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Track</th>
+                <th>Horse</th>
+                <th>Type</th>
+                <th class="text-right">Pred BFSP</th>
+                <th class="text-right">BF Back</th>
+                <th class="text-right">Price</th>
+                <th class="text-right">Edge</th>
+                <th class="text-right">Stake</th>
+                <th>Status</th>
+                <th class="text-right">Result</th>
+                <th class="text-right">P&amp;L</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for bet in bets %}
+            <tr class="{% if bet.status == 'WON' %}bg-green-900 bg-opacity-10{% elif bet.status == 'LOST' %}bg-red-900 bg-opacity-10{% endif %}">
+                <td class="text-muted">{{ bet.race_date }}</td>
+                <td>{{ bet.race_time }}</td>
+                <td>{{ bet.track }}</td>
+                <td class="font-medium">{{ bet.horse_name }}</td>
+                <td>
+                    <span class="text-xs px-1.5 py-0.5 rounded
+                        {% if bet.bet_type == 'BACK' %}bg-blue-900 text-blue-300{% else %}bg-purple-900 text-purple-300{% endif %}">
+                        {{ bet.bet_type }}
+                    </span>
+                </td>
+                <td class="text-right">{{ "%.2f"|format(bet.predicted_bfsp) if bet.predicted_bfsp else "-" }}</td>
+                <td class="text-right">{{ "%.2f"|format(bet.betfair_back) if bet.betfair_back else "-" }}</td>
+                <td class="text-right">{{ "%.2f"|format(bet.price) if bet.price else "-" }}</td>
+                <td class="text-right {% if bet.edge_pct and bet.edge_pct >= 15 %}text-green font-bold{% endif %}">
+                    {{ "+%.1f%%"|format(bet.edge_pct) if bet.edge_pct else "-" }}
+                </td>
+                <td class="text-right">&pound;{{ "%.2f"|format(bet.stake) if bet.stake else "-" }}</td>
+                <td>
+                    <span class="px-2 py-0.5 rounded text-xs font-medium
+                        {% if bet.status == 'WON' %}badge-won
+                        {% elif bet.status == 'LOST' %}badge-lost
+                        {% else %}badge-pending{% endif %}">
+                        {{ bet.status }}
+                    </span>
+                </td>
+                <td class="text-right text-muted">
+                    {% if bet.placing %}{{ bet.placing }}{% if bet.placing == 1 %}st{% elif bet.placing == 2 %}nd{% elif bet.placing == 3 %}rd{% else %}th{% endif %}{% else %}-{% endif %}
+                </td>
+                <td class="text-right font-medium {% if bet.net_pnl and bet.net_pnl > 0 %}text-green{% elif bet.net_pnl and bet.net_pnl < 0 %}text-red{% endif %}">
+                    {% if bet.net_pnl is not none %}&pound;{{ "%+.2f"|format(bet.net_pnl) }}{% else %}-{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card p-8 text-center">
+    <p class="text-muted text-lg">No bets found</p>
+    <p class="text-muted text-sm mt-2">Run the edge scanner to generate bets.</p>
+</div>
+{% endif %}
+{% endblock %}

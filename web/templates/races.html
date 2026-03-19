@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Ashcroft — Races{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold">Races — {{ target_date }}</h1>
+    <form class="flex items-center space-x-2">
+        <input type="date" name="date" value="{{ target_date }}"
+               class="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded text-sm font-medium">Go</button>
+    </form>
+</div>
+
+{% if not races and not bets %}
+<div class="card p-8 text-center">
+    <p class="text-muted text-lg">No odds data for {{ target_date }}</p>
+    <p class="text-muted text-sm mt-2">Run <code class="bg-gray-800 px-2 py-0.5 rounded">python edge_scanner.py --date {{ target_date }}</code> to fetch odds and generate predictions.</p>
+</div>
+{% endif %}
+
+{% for key, race in races.items() %}
+<div class="card mb-6" hx-get="/api/odds/latest/{{ target_date }}" hx-trigger="every 30s" hx-swap="none">
+    <div class="card-header">
+        <h2 class="text-lg font-semibold">{{ race.venue }} — {{ race.race_time }}</h2>
+    </div>
+    <div class="overflow-x-auto">
+        <table>
+            <thead>
+                <tr>
+                    <th>Horse</th>
+                    <th class="text-right">Best Back</th>
+                    <th class="text-right">Best Lay</th>
+                    <th class="text-right">SP Near</th>
+                    <th class="text-right">Last Traded</th>
+                    <th class="text-right">Pred BFSP</th>
+                    <th class="text-right">Edge</th>
+                    <th>Signal</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for runner in race.runners %}
+                {% set horse_key = (runner.runner_name.strip().lower(), race.venue.strip().lower()) %}
+                {% set bet = bet_lookup.get(horse_key) %}
+                <tr class="{% if bet %}bet-row{% endif %}">
+                    <td class="font-medium">
+                        {{ runner.runner_name }}
+                        {% if runner.runner_status == 'REMOVED' %}
+                        <span class="text-xs text-red ml-1">NR</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-right">{{ "%.2f"|format(runner.best_back) if runner.best_back else "-" }}</td>
+                    <td class="text-right">{{ "%.2f"|format(runner.best_lay) if runner.best_lay else "-" }}</td>
+                    <td class="text-right text-muted">{{ "%.2f"|format(runner.sp_near) if runner.sp_near else "-" }}</td>
+                    <td class="text-right text-muted">{{ "%.2f"|format(runner.last_traded) if runner.last_traded else "-" }}</td>
+                    <td class="text-right">
+                        {% if bet %}{{ "%.2f"|format(bet.predicted_bfsp) }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-right {% if bet and bet.edge_pct and bet.edge_pct >= 10 %}text-green font-bold{% endif %}">
+                        {% if bet and bet.edge_pct %}{{ "+%.1f%%"|format(bet.edge_pct) }}{% else %}-{% endif %}
+                    </td>
+                    <td>
+                        {% if bet and bet.edge_pct and bet.edge_pct >= 10 %}
+                        <span class="px-2 py-0.5 rounded text-xs font-bold bg-green-900 text-green-300">BET</span>
+                        {% elif bet and bet.edge_pct and bet.edge_pct >= 5 %}
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-yellow-900 text-yellow-300">WATCH</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endfor %}
+
+<!-- Bets without odds data (predictions only) -->
+{% if bets and not races %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="text-lg font-semibold">Predictions (no live odds)</h2>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Track</th>
+                <th>Horse</th>
+                <th class="text-right">Pred BFSP</th>
+                <th class="text-right">P(Win)</th>
+                <th class="text-right">Edge</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for bet in bets %}
+            <tr>
+                <td>{{ bet.race_time }}</td>
+                <td>{{ bet.track }}</td>
+                <td class="font-medium">{{ bet.horse_name }}</td>
+                <td class="text-right">{{ "%.2f"|format(bet.predicted_bfsp) if bet.predicted_bfsp else "-" }}</td>
+                <td class="text-right">{{ "%.1f%%"|format(bet.predicted_win_prob * 100) if bet.predicted_win_prob else "-" }}</td>
+                <td class="text-right text-green">{{ "+%.1f%%"|format(bet.edge_pct) if bet.edge_pct else "-" }}</td>
+                <td>
+                    <span class="px-2 py-0.5 rounded text-xs font-medium
+                        {% if bet.status == 'WON' %}badge-won
+                        {% elif bet.status == 'LOST' %}badge-lost
+                        {% else %}badge-pending{% endif %}">
+                        {{ bet.status }}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}
