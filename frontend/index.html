@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ashcroft — Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="sidebar"></div>
+    <div class="main-content">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Dashboard</h1>
+                <p class="page-subtitle" id="subtitle">Overview of today's activity and overall performance</p>
+            </div>
+            <div class="text-muted" id="today-date" style="font-size:0.8125rem"></div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stat-grid stat-grid-4 mb-6">
+            <div class="stat-card">
+                <div class="stat-label">Bank Balance</div>
+                <div class="stat-value" id="stat-bank">£1,000.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Net P&amp;L</div>
+                <div class="stat-value" id="stat-pnl">£0.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">ROI</div>
+                <div class="stat-value" id="stat-roi">0.0%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Bets</div>
+                <div class="stat-value" id="stat-total-bets">0</div>
+                <div class="stat-detail" id="stat-winners">0 winners</div>
+            </div>
+        </div>
+
+        <!-- P&L Chart -->
+        <div class="card mb-6">
+            <div class="card-header">Cumulative P&amp;L</div>
+            <div class="card-body">
+                <canvas id="pnlChart" height="80"></canvas>
+                <div id="pnl-empty" class="empty-state hidden"><p>No P&amp;L data yet. Run the edge scanner on historical dates to populate.</p></div>
+            </div>
+        </div>
+
+        <!-- Today's Bets -->
+        <div class="card">
+            <div class="card-header">
+                <span>Today's Bets</span>
+                <span class="text-muted" style="font-size:0.75rem">Auto-refreshes every 30s</span>
+            </div>
+            <div id="bets-today-container">
+                <div class="empty-state"><p>Loading...</p></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+    <script>
+        document.getElementById('sidebar').innerHTML = renderSidebar('dashboard');
+        document.getElementById('today-date').textContent = new Date().toISOString().slice(0, 10);
+
+        (async () => {
+            await Promise.all([loadSummary(), loadDailyPnl(), loadTodayBets()]);
+            setInterval(loadTodayBets, 30000);
+        })();
+
+        async function loadSummary() {
+            const d = await apiFetch('/api/pnl/summary');
+            if (!d) return;
+            const el = (id, txt, cls) => { const e = document.getElementById(id); e.textContent = txt; e.className = 'stat-value ' + (cls||''); };
+            el('stat-bank', '£' + (d.bank||1000).toFixed(2), colorClass((d.bank||1000) - 1000));
+            el('stat-pnl', fmtPnl(d.net_pnl||0), colorClass(d.net_pnl||0));
+            el('stat-roi', (d.roi||0).toFixed(1) + '%', colorClass(d.roi||0));
+            document.getElementById('stat-total-bets').textContent = d.total_bets || 0;
+            document.getElementById('stat-winners').textContent = (d.wins||0) + ' winners';
+        }
+
+        async function loadDailyPnl() {
+            const data = await apiFetch('/api/pnl/daily');
+            if (!data || !data.length) { document.getElementById('pnl-empty').classList.remove('hidden'); return; }
+            new Chart(document.getElementById('pnlChart'), {
+                type: 'line',
+                data: {
+                    labels: data.map(d => d.date),
+                    datasets: [{
+                        label: 'Cumulative P&L', data: data.map(d => d.cumulative_pnl),
+                        borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.08)',
+                        fill: true, tension: 0.3, pointRadius: 2,
+                    }, {
+                        label: 'Bank', data: data.map(d => d.bank_end),
+                        borderColor: '#2563eb', borderDash: [5,5],
+                        fill: false, tension: 0.3, pointRadius: 0,
+                    }]
+                },
+                options: chartOptions('£'),
+            });
+        }
+
+        async function loadTodayBets() {
+            const today = new Date().toISOString().slice(0, 10);
+            const data = await apiFetch('/api/bets/' + today);
+            const c = document.getElementById('bets-today-container');
+            if (!data || !data.length) {
+                c.innerHTML = '<div class="empty-state"><p>No bets today.</p><p>Run <code>python edge_scanner.py</code> to scan for value.</p></div>';
+                return;
+            }
+            c.innerHTML = renderBetsTable(data);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ashcroft — Live Races</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="sidebar"></div>
+    <div class="main-content">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Live Races</h1>
+                <p class="page-subtitle">Betfair exchange odds with model predictions overlay</p>
+            </div>
+            <div class="flex items-center space-x-2">
+                <input type="date" id="race-date" class="input">
+                <button onclick="loadRaces()" class="btn">Go</button>
+            </div>
+        </div>
+        <div id="races-container">
+            <div class="empty-state"><p>Loading...</p></div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+    <script>
+        document.getElementById('sidebar').innerHTML = renderSidebar('races');
+        document.getElementById('race-date').value = new URLSearchParams(window.location.search).get('date') || new Date().toISOString().slice(0, 10);
+        loadRaces();
+        setInterval(loadRaces, 30000);
+
+        async function loadRaces() {
+            const targetDate = document.getElementById('race-date').value;
+            const container = document.getElementById('races-container');
+            const [odds, bets] = await Promise.all([
+                apiFetch('/api/odds/latest/' + targetDate),
+                apiFetch('/api/bets/' + targetDate),
+            ]);
+
+            const betLookup = {};
+            if (bets) bets.forEach(b => { betLookup[normaliseName(b.horse_name) + '|' + normaliseName(b.track)] = b; });
+
+            if ((!odds || !odds.length) && (!bets || !bets.length)) {
+                container.innerHTML = `<div class="empty-state"><p>No data for ${targetDate}</p><p>Run <code>python edge_scanner.py --date ${targetDate}</code> to fetch odds and predictions.</p></div>`;
+                return;
+            }
+
+            const races = {};
+            if (odds) odds.forEach(o => {
+                const key = o.venue + '|' + o.race_time;
+                if (!races[key]) races[key] = { venue: o.venue, race_time: o.race_time, runners: [] };
+                races[key].runners.push(o);
+            });
+
+            let html = '';
+            for (const [, race] of Object.entries(races)) {
+                race.runners.sort((a, b) => (a.best_back || 999) - (b.best_back || 999));
+                html += `<div class="card mb-4"><div class="card-header">${race.venue} — ${race.race_time}</div>
+                    <table><thead><tr>
+                        <th>Horse</th><th class="text-right">Best Back</th><th class="text-right">Best Lay</th>
+                        <th class="text-right">SP Near</th><th class="text-right">Last Traded</th>
+                        <th class="text-right">Pred BFSP</th><th class="text-right">Edge</th><th>Signal</th>
+                    </tr></thead><tbody>`;
+
+                for (const r of race.runners) {
+                    const bet = betLookup[normaliseName(r.runner_name) + '|' + normaliseName(race.venue)];
+                    const isBet = bet && bet.edge_pct >= 10;
+                    const isWatch = bet && bet.edge_pct >= 5 && bet.edge_pct < 10;
+                    const nr = r.runner_status === 'REMOVED';
+                    const signal = isBet ? '<span class="signal-bet">BET</span>' : isWatch ? '<span class="signal-watch">WATCH</span>' : '';
+
+                    html += `<tr class="${isBet ? 'bet-row' : ''}">
+                        <td class="font-medium">${r.runner_name}${nr ? ' <span class="text-red" style="font-size:0.7rem">NR</span>' : ''}</td>
+                        <td class="text-right">${fmtOdds(r.best_back)}</td>
+                        <td class="text-right">${fmtOdds(r.best_lay)}</td>
+                        <td class="text-right text-muted">${fmtOdds(r.sp_near)}</td>
+                        <td class="text-right text-muted">${fmtOdds(r.last_traded)}</td>
+                        <td class="text-right">${bet ? bet.predicted_bfsp.toFixed(2) : '-'}</td>
+                        <td class="text-right ${isBet ? 'text-green font-bold' : ''}">${bet && bet.edge_pct ? '+' + bet.edge_pct.toFixed(1) + '%' : '-'}</td>
+                        <td>${signal}</td>
+                    </tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+
+            if (bets && bets.length > 0 && !Object.keys(races).length) {
+                html += '<div class="card"><div class="card-header">Predictions (no live odds)</div>' + renderBetsTable(bets) + '</div>';
+            }
+            container.innerHTML = html;
+        }
+    </script>
+</body>
+</html>

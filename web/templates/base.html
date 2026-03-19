@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Ashcroft{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        body { background: #0f172a; color: #e2e8f0; }
+        .card { background: #1e293b; border-radius: 0.75rem; border: 1px solid #334155; }
+        .card-header { border-bottom: 1px solid #334155; padding: 1rem 1.5rem; }
+        .nav-link { color: #94a3b8; transition: color 0.2s; }
+        .nav-link:hover, .nav-link.active { color: #f1f5f9; }
+        .badge-won { background: #065f46; color: #6ee7b7; }
+        .badge-lost { background: #7f1d1d; color: #fca5a5; }
+        .badge-pending { background: #78350f; color: #fde68a; }
+        .bet-row { background: rgba(16, 185, 129, 0.08); border-left: 3px solid #10b981; }
+        table { border-collapse: collapse; width: 100%; }
+        th { text-align: left; padding: 0.5rem 0.75rem; color: #94a3b8; font-weight: 500;
+             font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+             border-bottom: 1px solid #334155; }
+        td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e293b; font-size: 0.875rem; }
+        .text-green { color: #10b981; }
+        .text-red { color: #ef4444; }
+        .text-yellow { color: #f59e0b; }
+        .text-muted { color: #64748b; }
+        .stat-value { font-size: 1.5rem; font-weight: 700; }
+        .stat-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; }
+    </style>
+</head>
+<body class="min-h-screen">
+    <!-- Navigation -->
+    <nav class="border-b border-gray-800 px-6 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-8">
+                <a href="/" class="text-xl font-bold text-white">Ashcroft</a>
+                <div class="flex space-x-6">
+                    <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
+                    <a href="/races" class="nav-link {% if '/races' in request.url.path %}active{% endif %}">Races</a>
+                    <a href="/bets" class="nav-link {% if '/bets' in request.url.path %}active{% endif %}">Bets</a>
+                    <a href="/performance" class="nav-link {% if '/performance' in request.url.path %}active{% endif %}">Performance</a>
+                </div>
+            </div>
+            <div class="text-sm text-gray-500">
+                {{ today if today else "" }}
+            </div>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <main class="max-w-7xl mx-auto px-6 py-6">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

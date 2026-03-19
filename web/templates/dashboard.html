@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Ashcroft — Dashboard{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Dashboard</h1>
+
+<!-- Summary Cards -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+    <div class="card p-5">
+        <div class="stat-label">Bank</div>
+        <div class="stat-value {% if pnl_summary.bank >= 1000 %}text-green{% else %}text-red{% endif %}">
+            &pound;{{ "%.2f"|format(pnl_summary.bank) }}
+        </div>
+    </div>
+    <div class="card p-5">
+        <div class="stat-label">Net P&amp;L</div>
+        <div class="stat-value {% if pnl_summary.net_pnl >= 0 %}text-green{% else %}text-red{% endif %}">
+            {% if pnl_summary.net_pnl >= 0 %}+{% endif %}&pound;{{ "%.2f"|format(pnl_summary.net_pnl) }}
+        </div>
+    </div>
+    <div class="card p-5">
+        <div class="stat-label">ROI</div>
+        <div class="stat-value {% if pnl_summary.roi_pct >= 0 %}text-green{% else %}text-red{% endif %}">
+            {{ "%.1f"|format(pnl_summary.roi_pct) }}%
+        </div>
+    </div>
+    <div class="card p-5">
+        <div class="stat-label">Total Bets</div>
+        <div class="stat-value">{{ pnl_summary.total_bets }}</div>
+        <div class="text-sm text-muted">{{ pnl_summary.winners }} winners</div>
+    </div>
+</div>
+
+<!-- Cumulative P&L Chart -->
+{% if daily_pnl %}
+<div class="card mb-8">
+    <div class="card-header">
+        <h2 class="text-lg font-semibold">Cumulative P&amp;L</h2>
+    </div>
+    <div class="p-4">
+        <canvas id="pnlChart" height="80"></canvas>
+    </div>
+</div>
+{% endif %}
+
+<!-- Today's Bets -->
+<div class="card" hx-get="/partials/bets-today" hx-trigger="every 30s" hx-swap="innerHTML">
+    <div class="card-header flex justify-between items-center">
+        <h2 class="text-lg font-semibold">Today's Bets</h2>
+        <span class="text-sm text-muted">Auto-refreshes every 30s</span>
+    </div>
+    <div class="p-4">
+        {% if bets_today %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Track</th>
+                    <th>Horse</th>
+                    <th class="text-right">Pred BFSP</th>
+                    <th class="text-right">Back</th>
+                    <th class="text-right">Edge</th>
+                    <th class="text-right">Stake</th>
+                    <th>Status</th>
+                    <th class="text-right">P&amp;L</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bet in bets_today %}
+                <tr>
+                    <td>{{ bet.race_time }}</td>
+                    <td>{{ bet.track }}</td>
+                    <td class="font-medium">{{ bet.horse_name }}</td>
+                    <td class="text-right">{{ "%.2f"|format(bet.predicted_bfsp) if bet.predicted_bfsp else "-" }}</td>
+                    <td class="text-right">{{ "%.2f"|format(bet.betfair_back) if bet.betfair_back else "-" }}</td>
+                    <td class="text-right {% if bet.edge_pct and bet.edge_pct >= 15 %}text-green{% elif bet.edge_pct and bet.edge_pct >= 10 %}text-yellow{% endif %}">
+                        {{ "+%.1f%%"|format(bet.edge_pct) if bet.edge_pct else "-" }}
+                    </td>
+                    <td class="text-right">&pound;{{ "%.2f"|format(bet.stake) if bet.stake else "-" }}</td>
+                    <td>
+                        <span class="px-2 py-0.5 rounded text-xs font-medium
+                            {% if bet.status == 'WON' %}badge-won
+                            {% elif bet.status == 'LOST' %}badge-lost
+                            {% else %}badge-pending{% endif %}">
+                            {{ bet.status }}
+                        </span>
+                    </td>
+                    <td class="text-right {% if bet.net_pnl and bet.net_pnl > 0 %}text-green{% elif bet.net_pnl and bet.net_pnl < 0 %}text-red{% endif %}">
+                        {% if bet.net_pnl is not none %}{{ "%+.2f"|format(bet.net_pnl) }}{% else %}-{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted text-center py-8">No bets today. Run the edge scanner to find value.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if daily_pnl %}
+<script>
+const ctx = document.getElementById('pnlChart').getContext('2d');
+new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: {{ daily_pnl | map(attribute='date') | list | tojson }},
+        datasets: [{
+            label: 'Cumulative P&L',
+            data: {{ daily_pnl | map(attribute='cumulative_pnl') | list | tojson }},
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 2,
+        }, {
+            label: 'Bank',
+            data: {{ daily_pnl | map(attribute='bank_end') | list | tojson }},
+            borderColor: '#3b82f6',
+            borderDash: [5, 5],
+            fill: false,
+            tension: 0.3,
+            pointRadius: 0,
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { labels: { color: '#94a3b8' } }
+        },
+        scales: {
+            x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b', callback: v => '£' + v }, grid: { color: '#1e293b' } }
+        }
+    }
+});
+</script>
+{% endif %}
+{% endblock %}

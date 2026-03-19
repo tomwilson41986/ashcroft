@@ -1,0 +1,51 @@
+<div class="card-header flex justify-between items-center">
+    <h2 class="text-lg font-semibold">Today's Bets</h2>
+    <span class="text-sm text-muted">Auto-refreshes every 30s</span>
+</div>
+<div class="p-4">
+    {% if bets %}
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Track</th>
+                <th>Horse</th>
+                <th class="text-right">Pred BFSP</th>
+                <th class="text-right">Back</th>
+                <th class="text-right">Edge</th>
+                <th class="text-right">Stake</th>
+                <th>Status</th>
+                <th class="text-right">P&amp;L</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for bet in bets %}
+            <tr>
+                <td>{{ bet.race_time }}</td>
+                <td>{{ bet.track }}</td>
+                <td class="font-medium">{{ bet.horse_name }}</td>
+                <td class="text-right">{{ "%.2f"|format(bet.predicted_bfsp) if bet.predicted_bfsp else "-" }}</td>
+                <td class="text-right">{{ "%.2f"|format(bet.betfair_back) if bet.betfair_back else "-" }}</td>
+                <td class="text-right {% if bet.edge_pct and bet.edge_pct >= 15 %}text-green{% elif bet.edge_pct and bet.edge_pct >= 10 %}text-yellow{% endif %}">
+                    {{ "+%.1f%%"|format(bet.edge_pct) if bet.edge_pct else "-" }}
+                </td>
+                <td class="text-right">&pound;{{ "%.2f"|format(bet.stake) if bet.stake else "-" }}</td>
+                <td>
+                    <span class="px-2 py-0.5 rounded text-xs font-medium
+                        {% if bet.status == 'WON' %}badge-won
+                        {% elif bet.status == 'LOST' %}badge-lost
+                        {% else %}badge-pending{% endif %}">
+                        {{ bet.status }}
+                    </span>
+                </td>
+                <td class="text-right {% if bet.net_pnl and bet.net_pnl > 0 %}text-green{% elif bet.net_pnl and bet.net_pnl < 0 %}text-red{% endif %}">
+                    {% if bet.net_pnl is not none %}{{ "%+.2f"|format(bet.net_pnl) }}{% else %}-{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted text-center py-8">No bets today. Run the edge scanner to find value.</p>
+    {% endif %}
+</div>

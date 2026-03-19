@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Ashcroft — Performance{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Performance</h1>
+
+{% if summary %}
+<!-- Summary Stats -->
+<div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
+    <div class="card p-4">
+        <div class="stat-label">Total Bets</div>
+        <div class="stat-value">{{ summary.total_bets }}</div>
+    </div>
+    <div class="card p-4">
+        <div class="stat-label">Strike Rate</div>
+        <div class="stat-value">{{ summary.strike_rate }}%</div>
+        <div class="text-xs text-muted">{{ summary.wins }}W / {{ summary.losses }}L</div>
+    </div>
+    <div class="card p-4">
+        <div class="stat-label">Net P&amp;L</div>
+        <div class="stat-value {% if summary.net_pnl >= 0 %}text-green{% else %}text-red{% endif %}">
+            &pound;{{ "%.2f"|format(summary.net_pnl) }}
+        </div>
+    </div>
+    <div class="card p-4">
+        <div class="stat-label">ROI</div>
+        <div class="stat-value {% if summary.roi >= 0 %}text-green{% else %}text-red{% endif %}">
+            {{ summary.roi }}%
+        </div>
+    </div>
+    <div class="card p-4">
+        <div class="stat-label">Avg Edge</div>
+        <div class="stat-value">{{ summary.avg_edge }}%</div>
+    </div>
+    <div class="card p-4">
+        {% if best_day %}
+        <div class="stat-label">Best Day</div>
+        <div class="text-sm font-bold text-green">+&pound;{{ "%.2f"|format(best_day.net_pnl) }}</div>
+        <div class="text-xs text-muted">{{ best_day.date }}</div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Charts Row -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <!-- Cumulative P&L -->
+    <div class="card">
+        <div class="card-header"><h2 class="font-semibold">Cumulative P&amp;L</h2></div>
+        <div class="p-4">
+            {% if daily_pnl %}
+            <canvas id="cumPnlChart" height="200"></canvas>
+            {% else %}
+            <p class="text-muted text-center py-8">No P&amp;L data yet</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Daily P&L Bars -->
+    <div class="card">
+        <div class="card-header"><h2 class="font-semibold">Daily P&amp;L</h2></div>
+        <div class="p-4">
+            {% if daily_pnl %}
+            <canvas id="dailyPnlChart" height="200"></canvas>
+            {% else %}
+            <p class="text-muted text-center py-8">No P&amp;L data yet</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Edge Bucket Analysis -->
+{% if edge_stats %}
+<div class="card mb-8">
+    <div class="card-header"><h2 class="font-semibold">Strike Rate by Edge Bucket</h2></div>
+    <div class="p-4">
+        <table>
+            <thead>
+                <tr>
+                    <th>Edge Bucket</th>
+                    <th class="text-right">Bets</th>
+                    <th class="text-right">Won</th>
+                    <th class="text-right">Strike Rate</th>
+                    <th class="text-right">P&amp;L</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in edge_stats %}
+                <tr>
+                    <td class="font-medium">{{ row.bucket }}</td>
+                    <td class="text-right">{{ row.total }}</td>
+                    <td class="text-right">{{ row.won }}</td>
+                    <td class="text-right">{{ "%.1f"|format(row.won / row.total * 100 if row.total else 0) }}%</td>
+                    <td class="text-right {% if row.pnl and row.pnl >= 0 %}text-green{% else %}text-red{% endif %}">
+                        &pound;{{ "%.2f"|format(row.pnl or 0) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Daily P&L Table -->
+{% if daily_pnl %}
+<div class="card">
+    <div class="card-header"><h2 class="font-semibold">Daily Breakdown</h2></div>
+    <div class="overflow-x-auto">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th class="text-right">Bets</th>
+                    <th class="text-right">W/L</th>
+                    <th class="text-right">Staked</th>
+                    <th class="text-right">Net P&amp;L</th>
+                    <th class="text-right">ROI</th>
+                    <th class="text-right">Cumulative</th>
+                    <th class="text-right">Bank</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for day in daily_pnl|reverse %}
+                <tr>
+                    <td>{{ day.date }}</td>
+                    <td class="text-right">{{ day.num_bets }}</td>
+                    <td class="text-right">{{ day.winners }}W/{{ day.losers }}L</td>
+                    <td class="text-right">&pound;{{ "%.2f"|format(day.total_staked) }}</td>
+                    <td class="text-right font-medium {% if day.net_pnl >= 0 %}text-green{% else %}text-red{% endif %}">
+                        &pound;{{ "%+.2f"|format(day.net_pnl) }}
+                    </td>
+                    <td class="text-right {% if day.roi_pct >= 0 %}text-green{% else %}text-red{% endif %}">
+                        {{ "%.1f"|format(day.roi_pct) }}%
+                    </td>
+                    <td class="text-right {% if day.cumulative_pnl >= 0 %}text-green{% else %}text-red{% endif %}">
+                        &pound;{{ "%+.2f"|format(day.cumulative_pnl) }}
+                    </td>
+                    <td class="text-right">&pound;{{ "%.2f"|format(day.bank_end) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if daily_pnl %}
+<script>
+const dates = {{ daily_pnl | map(attribute='date') | list | tojson }};
+const cumPnl = {{ daily_pnl | map(attribute='cumulative_pnl') | list | tojson }};
+const dailyNet = {{ daily_pnl | map(attribute='net_pnl') | list | tojson }};
+const bankEnd = {{ daily_pnl | map(attribute='bank_end') | list | tojson }};
+
+// Cumulative P&L chart
+new Chart(document.getElementById('cumPnlChart'), {
+    type: 'line',
+    data: {
+        labels: dates,
+        datasets: [{
+            label: 'Cumulative P&L',
+            data: cumPnl,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 3,
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: '#94a3b8' } } },
+        scales: {
+            x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b', callback: v => '£' + v }, grid: { color: '#1e293b' } }
+        }
+    }
+});
+
+// Daily P&L bar chart
+new Chart(document.getElementById('dailyPnlChart'), {
+    type: 'bar',
+    data: {
+        labels: dates,
+        datasets: [{
+            label: 'Daily P&L',
+            data: dailyNet,
+            backgroundColor: dailyNet.map(v => v >= 0 ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)'),
+            borderColor: dailyNet.map(v => v >= 0 ? '#10b981' : '#ef4444'),
+            borderWidth: 1,
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: '#94a3b8' } } },
+        scales: {
+            x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b', callback: v => '£' + v }, grid: { color: '#1e293b' } }
+        }
+    }
+});
+</script>
+{% endif %}
+{% endblock %}
