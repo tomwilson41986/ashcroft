@@ -79,6 +79,109 @@ function renderBetsTable(bets) {
     return html + '</tbody></table>';
 }
 
+/* Betting strategies */
+const STRATEGIES = [
+    { id: 'all',           label: 'All Predictions' },
+    { id: 'all_edge',      label: 'All Predictions (Edge Only)' },
+    { id: 'top1',          label: 'Top Ranked' },
+    { id: 'top1_edge',     label: 'Top Ranked (Edge Only)' },
+    { id: 'top3',          label: 'Top 3 Ranked' },
+    { id: 'top3_edge',     label: 'Top 3 Ranked (Edge Only)' },
+];
+
+function applyStrategy(bets, strategyId) {
+    if (!bets) return [];
+    switch (strategyId) {
+        case 'all':        return bets;
+        case 'all_edge':   return bets.filter(b => b.edge_pct > 0);
+        case 'top1':       return bets.filter(b => b.rank === 1);
+        case 'top1_edge':  return bets.filter(b => b.rank === 1 && b.edge_pct > 0);
+        case 'top3':       return bets.filter(b => b.rank >= 1 && b.rank <= 3);
+        case 'top3_edge':  return bets.filter(b => b.rank >= 1 && b.rank <= 3 && b.edge_pct > 0);
+        default:           return bets;
+    }
+}
+
+function computeSummaryFromBets(bets) {
+    const settled = bets.filter(b => b.status === 'WON' || b.status === 'LOST');
+    if (!settled.length) return { total_bets: 0, wins: 0, strike_rate: 0, net_pnl: 0, roi: 0, avg_edge: 0, bank: 1000 };
+    const wins = settled.filter(b => b.status === 'WON').length;
+    const netPnl = settled.reduce((s, b) => s + (b.net_pnl || 0), 0);
+    const staked = settled.reduce((s, b) => s + (b.stake || 0), 0);
+    const edges = settled.map(b => b.edge_pct || 0);
+    return {
+        total_bets: settled.length,
+        wins,
+        strike_rate: Math.round(wins / settled.length * 1000) / 10,
+        net_pnl: Math.round(netPnl * 100) / 100,
+        roi: staked ? Math.round(netPnl / staked * 10000) / 100 : 0,
+        avg_edge: Math.round(edges.reduce((a, b) => a + b, 0) / edges.length * 10) / 10,
+        bank: Math.round((1000 + netPnl) * 100) / 100,
+    };
+}
+
+function computeDailyPnlFromBets(bets, stake) {
+    stake = stake || 10;
+    const settled = bets.filter(b => b.status === 'WON' || b.status === 'LOST');
+    const byDate = {};
+    for (const b of settled) {
+        const d = b.race_date;
+        if (!byDate[d]) byDate[d] = [];
+        byDate[d].push(b);
+    }
+    const dates = Object.keys(byDate).sort();
+    let cumPnl = 0, bank = 1000;
+    return dates.map(d => {
+        const dayBets = byDate[d];
+        const winners = dayBets.filter(b => b.status === 'WON').length;
+        const losers = dayBets.length - winners;
+        const netPnl = dayBets.reduce((s, b) => s + (b.net_pnl || 0), 0);
+        const staked = dayBets.reduce((s, b) => s + (b.stake || 0), 0);
+        cumPnl += netPnl;
+        const bankStart = bank;
+        bank += netPnl;
+        return {
+            date: d, num_bets: dayBets.length, winners, losers, voids: 0,
+            total_staked: Math.round(staked * 100) / 100,
+            net_pnl: Math.round(netPnl * 100) / 100,
+            roi_pct: staked ? Math.round(netPnl / staked * 10000) / 100 : 0,
+            cumulative_pnl: Math.round(cumPnl * 100) / 100,
+            bank_start: Math.round(bankStart * 100) / 100,
+            bank_end: Math.round(bank * 100) / 100,
+        };
+    });
+}
+
+function computeEdgeStatsFromBets(bets) {
+    const settled = bets.filter(b => b.status === 'WON' || b.status === 'LOST');
+    const buckets = { '20%+': [], '15-20%': [], '10-15%': [], '5-10%': [], '<5%': [] };
+    for (const b of settled) {
+        const e = b.edge_pct || 0;
+        if (e >= 20) buckets['20%+'].push(b);
+        else if (e >= 15) buckets['15-20%'].push(b);
+        else if (e >= 10) buckets['10-15%'].push(b);
+        else if (e >= 5) buckets['5-10%'].push(b);
+        else buckets['<5%'].push(b);
+    }
+    return Object.entries(buckets)
+        .filter(([, items]) => items.length > 0)
+        .map(([bucket, items]) => ({
+            bucket,
+            total: items.length,
+            won: items.filter(b => b.status === 'WON').length,
+            pnl: Math.round(items.reduce((s, b) => s + (b.net_pnl || 0), 0) * 100) / 100,
+        }));
+}
+
+function renderStrategySelect(id, onChange) {
+    let html = `<select id="${id}" class="input">`;
+    for (const s of STRATEGIES) {
+        html += `<option value="${s.id}">${s.label}</option>`;
+    }
+    html += '</select>';
+    return html;
+}
+
 /* Sidebar renderer */
 function renderSidebar(activePage) {
     return `
