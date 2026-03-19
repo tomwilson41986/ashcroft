@@ -17,6 +17,20 @@ const s3 = new S3Client({
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
   },
 });
+const BUCKET = process.env.ULTRA_BETTING_S3_BUCKET || process.env.S3_BUCKET || "ashcroft";
+const REGION = process.env.AWS_DEFAULT_REGION || process.env.S3_REGION || "us-east-1";
+
+const s3Options = { region: REGION };
+
+// Support S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY when standard AWS_* vars are not set
+if (!process.env.AWS_ACCESS_KEY_ID && process.env.S3_ACCESS_KEY_ID) {
+  s3Options.credentials = {
+    accessKeyId: process.env.S3_ACCESS_KEY_ID,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+  };
+}
+
+const s3 = new S3Client(s3Options);
 
 async function readS3Json(key) {
   try {
