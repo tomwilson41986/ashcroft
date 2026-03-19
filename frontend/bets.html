@@ -3,167 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ashcroft — Bets</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <title>Ashcroft — Bet Tracker</title>
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="min-h-screen">
-    <nav class="border-b border-gray-800 px-6 py-3">
-        <div class="max-w-7xl mx-auto flex items-center justify-between">
-            <div class="flex items-center space-x-8">
-                <a href="/" class="text-xl font-bold text-white">Ashcroft</a>
-                <div class="flex space-x-6">
-                    <a href="/" class="nav-link">Dashboard</a>
-                    <a href="/races.html" class="nav-link">Races</a>
-                    <a href="/bets.html" class="nav-link active">Bets</a>
-                    <a href="/performance.html" class="nav-link">Performance</a>
-                </div>
+<body>
+    <div id="sidebar"></div>
+    <div class="main-content">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Bet Tracker</h1>
+                <p class="page-subtitle">All bets with status, results, and P&amp;L</p>
             </div>
-        </div>
-    </nav>
-
-    <main class="max-w-7xl mx-auto px-6 py-6">
-        <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold">Bets</h1>
             <div class="flex items-center space-x-2">
-                <select id="filter-date" class="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
-                    <option value="">All dates</option>
-                </select>
-                <select id="filter-status" class="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+                <select id="filter-date" class="input"><option value="">All dates</option></select>
+                <select id="filter-status" class="input">
                     <option value="">All statuses</option>
                     <option value="PENDING">Pending</option>
                     <option value="WON">Won</option>
                     <option value="LOST">Lost</option>
                 </select>
-                <button onclick="loadBets()" class="bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded text-sm font-medium">Filter</button>
+                <button onclick="applyFilters()" class="btn">Filter</button>
             </div>
         </div>
 
-        <!-- Summary bar -->
-        <div class="grid grid-cols-5 gap-4 mb-6" id="bets-summary"></div>
-
-        <div class="card overflow-x-auto" id="bets-container">
-            <p class="text-muted text-center py-8">Loading...</p>
+        <div class="stat-grid stat-grid-5 mb-6" id="bets-summary"></div>
+        <div class="card" id="bets-container">
+            <div class="empty-state"><p>Loading...</p></div>
         </div>
-    </main>
+    </div>
 
     <script src="config.js"></script>
     <script src="app.js"></script>
     <script>
+        document.getElementById('sidebar').innerHTML = renderSidebar('bets');
         let allBets = [];
 
-        document.addEventListener('DOMContentLoaded', () => {
-            loadAllBets();
-        });
-
-        async function loadAllBets() {
-            // Fetch all bets (we'll filter client-side)
+        (async () => {
             const data = await apiFetch('/api/bets/all');
-            if (!data) {
-                document.getElementById('bets-container').innerHTML =
-                    '<p class="text-muted text-center py-8">No bets found. Run the edge scanner to generate bets.</p>';
+            if (!data || !data.length) {
+                document.getElementById('bets-summary').innerHTML = '';
+                document.getElementById('bets-container').innerHTML = '<div class="empty-state"><p>No bets found.</p><p>Run <code>python edge_scanner.py</code> to generate bets.</p></div>';
                 return;
             }
             allBets = data;
-
-            // Populate date filter
             const dates = [...new Set(data.map(b => b.race_date))].sort().reverse();
-            const dateSelect = document.getElementById('filter-date');
-            dates.forEach(d => {
-                const opt = document.createElement('option');
-                opt.value = d; opt.textContent = d;
-                dateSelect.appendChild(opt);
-            });
+            const sel = document.getElementById('filter-date');
+            dates.forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o); });
+            applyFilters();
+        })();
 
-            loadBets();
-        }
-
-        function loadBets() {
-            const dateFilter = document.getElementById('filter-date').value;
-            const statusFilter = document.getElementById('filter-status').value;
-
+        function applyFilters() {
             let filtered = allBets;
-            if (dateFilter) filtered = filtered.filter(b => b.race_date === dateFilter);
-            if (statusFilter) filtered = filtered.filter(b => b.status === statusFilter);
-
+            const d = document.getElementById('filter-date').value;
+            const s = document.getElementById('filter-status').value;
+            if (d) filtered = filtered.filter(b => b.race_date === d);
+            if (s) filtered = filtered.filter(b => b.status === s);
             renderSummary(filtered);
-            renderBetsList(filtered);
+            renderList(filtered);
         }
 
         function renderSummary(bets) {
-            const total = bets.length;
             const won = bets.filter(b => b.status === 'WON').length;
             const lost = bets.filter(b => b.status === 'LOST').length;
             const pending = bets.filter(b => b.status === 'PENDING').length;
-            const totalPnl = bets.reduce((s, b) => s + (b.net_pnl || 0), 0);
-
+            const pnl = bets.reduce((s, b) => s + (b.net_pnl || 0), 0);
             document.getElementById('bets-summary').innerHTML = `
-                <div class="card p-3 text-center">
-                    <div class="text-xs text-muted">Total</div>
-                    <div class="text-xl font-bold">${total}</div>
-                </div>
-                <div class="card p-3 text-center">
-                    <div class="text-xs text-muted">Won</div>
-                    <div class="text-xl font-bold text-green">${won}</div>
-                </div>
-                <div class="card p-3 text-center">
-                    <div class="text-xs text-muted">Lost</div>
-                    <div class="text-xl font-bold text-red">${lost}</div>
-                </div>
-                <div class="card p-3 text-center">
-                    <div class="text-xs text-muted">Pending</div>
-                    <div class="text-xl font-bold text-yellow">${pending}</div>
-                </div>
-                <div class="card p-3 text-center">
-                    <div class="text-xs text-muted">Net P&amp;L</div>
-                    <div class="text-xl font-bold ${totalPnl >= 0 ? 'text-green' : 'text-red'}">
-                        £${totalPnl.toFixed(2)}
-                    </div>
-                </div>`;
+                <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">${bets.length}</div></div>
+                <div class="stat-card"><div class="stat-label">Won</div><div class="stat-value text-green">${won}</div></div>
+                <div class="stat-card"><div class="stat-label">Lost</div><div class="stat-value text-red">${lost}</div></div>
+                <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value text-yellow">${pending}</div></div>
+                <div class="stat-card"><div class="stat-label">Net P&amp;L</div><div class="stat-value ${colorClass(pnl)}">${fmtPnl(pnl)}</div></div>`;
         }
 
-        function renderBetsList(bets) {
-            if (bets.length === 0) {
-                document.getElementById('bets-container').innerHTML =
-                    '<p class="text-muted text-center py-8">No bets match filters.</p>';
-                return;
-            }
+        function renderList(bets) {
+            if (!bets.length) { document.getElementById('bets-container').innerHTML = '<div class="empty-state"><p>No bets match filters.</p></div>'; return; }
 
-            let html = `<table>
-                <thead><tr>
-                    <th>Date</th><th>Time</th><th>Track</th><th>Horse</th><th>Type</th>
-                    <th class="text-right">Pred BFSP</th><th class="text-right">BF Back</th>
-                    <th class="text-right">Price</th><th class="text-right">Edge</th>
-                    <th class="text-right">Stake</th><th>Status</th>
-                    <th class="text-right">Result</th><th class="text-right">P&amp;L</th>
-                </tr></thead><tbody>`;
+            let html = `<table><thead><tr>
+                <th>Date</th><th>Time</th><th>Track</th><th>Horse</th><th>Type</th>
+                <th class="text-right">Pred</th><th class="text-right">Back</th><th class="text-right">Edge</th>
+                <th class="text-right">Stake</th><th>Status</th><th class="text-right">Pos</th><th class="text-right">P&amp;L</th>
+            </tr></thead><tbody>`;
 
             for (const b of bets) {
-                const rowClass = b.status === 'WON' ? 'bg-green-900 bg-opacity-10' :
-                                 b.status === 'LOST' ? 'bg-red-900 bg-opacity-10' : '';
-                const typeClass = b.bet_type === 'BACK' ? 'bg-blue-900 text-blue-300' : 'bg-purple-900 text-purple-300';
-
-                html += `<tr class="${rowClass}">
-                    <td class="text-muted">${b.race_date}</td>
-                    <td>${b.race_time}</td>
-                    <td>${b.track}</td>
-                    <td class="font-medium">${b.horse_name}</td>
-                    <td><span class="text-xs px-1.5 py-0.5 rounded ${typeClass}">${b.bet_type}</span></td>
+                html += `<tr>
+                    <td class="text-muted">${b.race_date}</td><td>${b.race_time||'-'}</td><td>${b.track}</td>
+                    <td class="font-medium">${b.horse_name}</td><td>${typeBadge(b.bet_type)}</td>
                     <td class="text-right">${b.predicted_bfsp ? b.predicted_bfsp.toFixed(2) : '-'}</td>
                     <td class="text-right">${b.betfair_back ? b.betfair_back.toFixed(2) : '-'}</td>
-                    <td class="text-right">${b.price ? b.price.toFixed(2) : '-'}</td>
-                    <td class="text-right ${b.edge_pct >= 15 ? 'text-green font-bold' : ''}">${b.edge_pct ? '+' + b.edge_pct.toFixed(1) + '%' : '-'}</td>
+                    <td class="text-right ${b.edge_pct>=15?'text-green font-bold':''}">${b.edge_pct ? '+'+b.edge_pct.toFixed(1)+'%' : '-'}</td>
                     <td class="text-right">£${b.stake ? b.stake.toFixed(2) : '-'}</td>
                     <td>${statusBadge(b.status)}</td>
                     <td class="text-right text-muted">${b.placing ? ordinal(b.placing) : '-'}</td>
-                    <td class="text-right font-medium ${b.net_pnl > 0 ? 'text-green' : b.net_pnl < 0 ? 'text-red' : ''}">
-                        ${b.net_pnl != null ? '£' + (b.net_pnl >= 0 ? '+' : '') + b.net_pnl.toFixed(2) : '-'}
-                    </td>
+                    <td class="text-right font-medium ${colorClass(b.net_pnl)}">${b.net_pnl != null ? fmtPnl(b.net_pnl) : '-'}</td>
                 </tr>`;
             }
-
-            html += '</tbody></table>';
-            document.getElementById('bets-container').innerHTML = html;
+            document.getElementById('bets-container').innerHTML = html + '</tbody></table>';
         }
     </script>
 </body>

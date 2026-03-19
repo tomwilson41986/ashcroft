@@ -4,194 +4,131 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ashcroft — Performance</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="min-h-screen">
-    <nav class="border-b border-gray-800 px-6 py-3">
-        <div class="max-w-7xl mx-auto flex items-center justify-between">
-            <div class="flex items-center space-x-8">
-                <a href="/" class="text-xl font-bold text-white">Ashcroft</a>
-                <div class="flex space-x-6">
-                    <a href="/" class="nav-link">Dashboard</a>
-                    <a href="/races.html" class="nav-link">Races</a>
-                    <a href="/bets.html" class="nav-link">Bets</a>
-                    <a href="/performance.html" class="nav-link active">Performance</a>
-                </div>
+<body>
+    <div id="sidebar"></div>
+    <div class="main-content">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Performance</h1>
+                <p class="page-subtitle">P&amp;L tracking, strike rates, and edge analysis</p>
             </div>
         </div>
-    </nav>
 
-    <main class="max-w-7xl mx-auto px-6 py-6">
-        <h1 class="text-2xl font-bold mb-6">Performance</h1>
+        <!-- Summary -->
+        <div class="stat-grid stat-grid-6 mb-6" id="summary-stats">
+            <div class="stat-card"><div class="stat-label">Total Bets</div><div class="stat-value">-</div></div>
+        </div>
 
-        <!-- Summary Stats -->
-        <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8" id="summary-stats"></div>
-
-        <!-- Charts Row -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <!-- Charts -->
+        <div class="grid-2 mb-6">
             <div class="card">
-                <div class="card-header"><h2 class="font-semibold">Cumulative P&amp;L</h2></div>
-                <div class="p-4">
+                <div class="card-header">Cumulative P&amp;L</div>
+                <div class="card-body">
                     <canvas id="cumPnlChart" height="200"></canvas>
-                    <p id="cum-empty" class="text-muted text-center py-8 hidden">No P&amp;L data yet</p>
+                    <div id="cum-empty" class="empty-state hidden"><p>No data yet</p></div>
                 </div>
             </div>
             <div class="card">
-                <div class="card-header"><h2 class="font-semibold">Daily P&amp;L</h2></div>
-                <div class="p-4">
+                <div class="card-header">Daily P&amp;L</div>
+                <div class="card-body">
                     <canvas id="dailyPnlChart" height="200"></canvas>
-                    <p id="daily-empty" class="text-muted text-center py-8 hidden">No P&amp;L data yet</p>
+                    <div id="daily-empty" class="empty-state hidden"><p>No data yet</p></div>
                 </div>
             </div>
         </div>
 
-        <!-- Edge Bucket Analysis -->
-        <div class="card mb-8" id="edge-stats-card" style="display:none">
-            <div class="card-header"><h2 class="font-semibold">Strike Rate by Edge Bucket</h2></div>
-            <div class="p-4" id="edge-stats-container"></div>
+        <!-- Edge Stats -->
+        <div class="card mb-6 hidden" id="edge-card">
+            <div class="card-header">Strike Rate by Edge Bucket</div>
+            <div id="edge-container"></div>
         </div>
 
         <!-- Daily Breakdown -->
-        <div class="card" id="daily-breakdown-card" style="display:none">
-            <div class="card-header"><h2 class="font-semibold">Daily Breakdown</h2></div>
-            <div class="overflow-x-auto" id="daily-breakdown"></div>
+        <div class="card hidden" id="daily-card">
+            <div class="card-header">Daily Breakdown</div>
+            <div id="daily-container"></div>
         </div>
-    </main>
+    </div>
 
     <script src="config.js"></script>
     <script src="app.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', loadPerformance);
+        document.getElementById('sidebar').innerHTML = renderSidebar('performance');
 
-        async function loadPerformance() {
-            const [summary, dailyPnl, edgeStats] = await Promise.all([
+        (async () => {
+            const [summary, daily, edge] = await Promise.all([
                 apiFetch('/api/pnl/summary'),
                 apiFetch('/api/pnl/daily'),
                 apiFetch('/api/bets/edge-stats'),
             ]);
+            renderStats(summary);
+            renderCharts(daily);
+            renderEdge(edge);
+            renderDaily(daily);
+        })();
 
-            renderSummaryStats(summary);
-            renderCharts(dailyPnl);
-            renderEdgeStats(edgeStats);
-            renderDailyBreakdown(dailyPnl);
-        }
-
-        function renderSummaryStats(data) {
-            if (!data || !data.total_bets) {
-                document.getElementById('summary-stats').innerHTML =
-                    '<div class="card p-4 col-span-6 text-center text-muted">No settled bets yet</div>';
+        function renderStats(d) {
+            if (!d || !d.total_bets) {
+                document.getElementById('summary-stats').innerHTML = '<div class="stat-card" style="grid-column:span 6"><div class="empty-state"><p>No settled bets yet</p></div></div>';
                 return;
             }
-
-            const sr = data.strike_rate || 0;
-            const wins = data.wins || 0;
-            const losses = (data.total_bets || 0) - wins;
-
+            const losses = (d.total_bets||0) - (d.wins||0);
             document.getElementById('summary-stats').innerHTML = `
-                <div class="card p-4"><div class="stat-label">Total Bets</div><div class="stat-value">${data.total_bets}</div></div>
-                <div class="card p-4"><div class="stat-label">Strike Rate</div><div class="stat-value">${sr.toFixed(1)}%</div>
-                    <div class="text-xs text-muted">${wins}W / ${losses}L</div></div>
-                <div class="card p-4"><div class="stat-label">Net P&amp;L</div>
-                    <div class="stat-value ${data.net_pnl >= 0 ? 'text-green' : 'text-red'}">£${(data.net_pnl || 0).toFixed(2)}</div></div>
-                <div class="card p-4"><div class="stat-label">ROI</div>
-                    <div class="stat-value ${(data.roi || 0) >= 0 ? 'text-green' : 'text-red'}">${(data.roi || 0).toFixed(1)}%</div></div>
-                <div class="card p-4"><div class="stat-label">Avg Edge</div><div class="stat-value">${(data.avg_edge || 0).toFixed(1)}%</div></div>
-                <div class="card p-4"><div class="stat-label">Bank</div>
-                    <div class="stat-value ${(data.bank || 1000) >= 1000 ? 'text-green' : 'text-red'}">£${(data.bank || 1000).toFixed(2)}</div></div>`;
+                <div class="stat-card"><div class="stat-label">Total Bets</div><div class="stat-value">${d.total_bets}</div></div>
+                <div class="stat-card"><div class="stat-label">Strike Rate</div><div class="stat-value">${(d.strike_rate||0).toFixed(1)}%</div><div class="stat-detail">${d.wins||0}W / ${losses}L</div></div>
+                <div class="stat-card"><div class="stat-label">Net P&amp;L</div><div class="stat-value ${colorClass(d.net_pnl)}">${fmtPnl(d.net_pnl||0)}</div></div>
+                <div class="stat-card"><div class="stat-label">ROI</div><div class="stat-value ${colorClass(d.roi)}">${(d.roi||0).toFixed(1)}%</div></div>
+                <div class="stat-card"><div class="stat-label">Avg Edge</div><div class="stat-value">${(d.avg_edge||0).toFixed(1)}%</div></div>
+                <div class="stat-card"><div class="stat-label">Bank</div><div class="stat-value ${colorClass((d.bank||1000)-1000)}">£${(d.bank||1000).toFixed(2)}</div></div>`;
         }
 
         function renderCharts(data) {
-            if (!data || data.length === 0) {
+            if (!data || !data.length) {
                 document.getElementById('cum-empty').classList.remove('hidden');
                 document.getElementById('daily-empty').classList.remove('hidden');
                 return;
             }
-
-            const dates = data.map(d => d.date);
-            const cumPnl = data.map(d => d.cumulative_pnl);
-            const dailyNet = data.map(d => d.net_pnl);
+            const dates = data.map(d => d.date), cum = data.map(d => d.cumulative_pnl), net = data.map(d => d.net_pnl);
 
             new Chart(document.getElementById('cumPnlChart'), {
                 type: 'line',
-                data: {
-                    labels: dates,
-                    datasets: [{
-                        label: 'Cumulative P&L', data: cumPnl,
-                        borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                        fill: true, tension: 0.3, pointRadius: 3,
-                    }]
-                },
+                data: { labels: dates, datasets: [{ label: 'Cumulative P&L', data: cum, borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.08)', fill: true, tension: 0.3, pointRadius: 3 }] },
                 options: chartOptions('£'),
             });
-
             new Chart(document.getElementById('dailyPnlChart'), {
                 type: 'bar',
-                data: {
-                    labels: dates,
-                    datasets: [{
-                        label: 'Daily P&L', data: dailyNet,
-                        backgroundColor: dailyNet.map(v => v >= 0 ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)'),
-                        borderColor: dailyNet.map(v => v >= 0 ? '#10b981' : '#ef4444'),
-                        borderWidth: 1,
-                    }]
-                },
+                data: { labels: dates, datasets: [{ label: 'Daily P&L', data: net, backgroundColor: net.map(v => v >= 0 ? 'rgba(22,163,74,0.6)' : 'rgba(220,38,38,0.6)'), borderColor: net.map(v => v >= 0 ? '#16a34a' : '#dc2626'), borderWidth: 1 }] },
                 options: chartOptions('£'),
             });
         }
 
-        function renderEdgeStats(data) {
-            if (!data || data.length === 0) return;
-            document.getElementById('edge-stats-card').style.display = '';
-
-            let html = `<table><thead><tr>
-                <th>Edge Bucket</th><th class="text-right">Bets</th>
-                <th class="text-right">Won</th><th class="text-right">Strike Rate</th>
-                <th class="text-right">P&amp;L</th>
-            </tr></thead><tbody>`;
-
-            for (const row of data) {
-                const sr = row.total > 0 ? (row.won / row.total * 100).toFixed(1) : '0.0';
-                html += `<tr>
-                    <td class="font-medium">${row.bucket}</td>
-                    <td class="text-right">${row.total}</td>
-                    <td class="text-right">${row.won}</td>
-                    <td class="text-right">${sr}%</td>
-                    <td class="text-right ${(row.pnl || 0) >= 0 ? 'text-green' : 'text-red'}">£${(row.pnl || 0).toFixed(2)}</td>
-                </tr>`;
+        function renderEdge(data) {
+            if (!data || !data.length) return;
+            document.getElementById('edge-card').classList.remove('hidden');
+            let html = '<table><thead><tr><th>Edge Bucket</th><th class="text-right">Bets</th><th class="text-right">Won</th><th class="text-right">Strike Rate</th><th class="text-right">P&amp;L</th></tr></thead><tbody>';
+            for (const r of data) {
+                const sr = r.total > 0 ? (r.won / r.total * 100).toFixed(1) : '0.0';
+                html += `<tr><td class="font-medium">${r.bucket}</td><td class="text-right">${r.total}</td><td class="text-right">${r.won}</td><td class="text-right">${sr}%</td><td class="text-right ${colorClass(r.pnl)}">${fmtPnl(r.pnl||0)}</td></tr>`;
             }
-
-            html += '</tbody></table>';
-            document.getElementById('edge-stats-container').innerHTML = html;
+            document.getElementById('edge-container').innerHTML = html + '</tbody></table>';
         }
 
-        function renderDailyBreakdown(data) {
-            if (!data || data.length === 0) return;
-            document.getElementById('daily-breakdown-card').style.display = '';
-
-            let html = `<table><thead><tr>
-                <th>Date</th><th class="text-right">Bets</th><th class="text-right">W/L</th>
-                <th class="text-right">Staked</th><th class="text-right">Net P&amp;L</th>
-                <th class="text-right">ROI</th><th class="text-right">Cumulative</th>
-                <th class="text-right">Bank</th>
-            </tr></thead><tbody>`;
-
-            for (const day of [...data].reverse()) {
-                html += `<tr>
-                    <td>${day.date}</td>
-                    <td class="text-right">${day.num_bets}</td>
-                    <td class="text-right">${day.winners}W/${day.losers}L</td>
-                    <td class="text-right">£${(day.total_staked || 0).toFixed(2)}</td>
-                    <td class="text-right font-medium ${day.net_pnl >= 0 ? 'text-green' : 'text-red'}">£${day.net_pnl >= 0 ? '+' : ''}${day.net_pnl.toFixed(2)}</td>
-                    <td class="text-right ${day.roi_pct >= 0 ? 'text-green' : 'text-red'}">${day.roi_pct.toFixed(1)}%</td>
-                    <td class="text-right ${day.cumulative_pnl >= 0 ? 'text-green' : 'text-red'}">£${day.cumulative_pnl >= 0 ? '+' : ''}${day.cumulative_pnl.toFixed(2)}</td>
-                    <td class="text-right">£${day.bank_end.toFixed(2)}</td>
-                </tr>`;
+        function renderDaily(data) {
+            if (!data || !data.length) return;
+            document.getElementById('daily-card').classList.remove('hidden');
+            let html = '<table><thead><tr><th>Date</th><th class="text-right">Bets</th><th class="text-right">W/L</th><th class="text-right">Staked</th><th class="text-right">Net P&amp;L</th><th class="text-right">ROI</th><th class="text-right">Cumulative</th><th class="text-right">Bank</th></tr></thead><tbody>';
+            for (const d of [...data].reverse()) {
+                html += `<tr><td>${d.date}</td><td class="text-right">${d.num_bets}</td><td class="text-right">${d.winners}W/${d.losers}L</td>
+                    <td class="text-right">£${(d.total_staked||0).toFixed(2)}</td>
+                    <td class="text-right font-medium ${colorClass(d.net_pnl)}">${fmtPnl(d.net_pnl)}</td>
+                    <td class="text-right ${colorClass(d.roi_pct)}">${d.roi_pct.toFixed(1)}%</td>
+                    <td class="text-right ${colorClass(d.cumulative_pnl)}">${fmtPnl(d.cumulative_pnl)}</td>
+                    <td class="text-right">£${d.bank_end.toFixed(2)}</td></tr>`;
             }
-
-            html += '</tbody></table>';
-            document.getElementById('daily-breakdown').innerHTML = html;
+            document.getElementById('daily-container').innerHTML = html + '</tbody></table>';
         }
     </script>
 </body>
