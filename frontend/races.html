@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ashcroft — Races</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="min-h-screen">
+    <nav class="border-b border-gray-800 px-6 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-8">
+                <a href="/" class="text-xl font-bold text-white">Ashcroft</a>
+                <div class="flex space-x-6">
+                    <a href="/" class="nav-link">Dashboard</a>
+                    <a href="/races.html" class="nav-link active">Races</a>
+                    <a href="/bets.html" class="nav-link">Bets</a>
+                    <a href="/performance.html" class="nav-link">Performance</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-6 py-6">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold">Races</h1>
+            <div class="flex items-center space-x-2">
+                <input type="date" id="race-date" class="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+                <button onclick="loadRaces()" class="bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded text-sm font-medium">Go</button>
+            </div>
+        </div>
+        <div id="races-container">
+            <p class="text-muted text-center py-8">Loading...</p>
+        </div>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const dateInput = document.getElementById('race-date');
+            dateInput.value = params.get('date') || new Date().toISOString().slice(0, 10);
+            loadRaces();
+            setInterval(loadRaces, 30000);
+        });
+
+        async function loadRaces() {
+            const targetDate = document.getElementById('race-date').value;
+            const container = document.getElementById('races-container');
+
+            // Fetch odds and bets in parallel
+            const [odds, bets] = await Promise.all([
+                apiFetch(`/api/odds/latest/${targetDate}`),
+                apiFetch(`/api/bets/${targetDate}`),
+            ]);
+
+            // Build bet lookup by normalised horse name + venue
+            const betLookup = {};
+            if (bets) {
+                bets.forEach(b => {
+                    const key = normaliseName(b.horse_name) + '|' + normaliseName(b.track);
+                    betLookup[key] = b;
+                });
+            }
+
+            if ((!odds || odds.length === 0) && (!bets || bets.length === 0)) {
+                container.innerHTML = `
+                    <div class="card p-8 text-center">
+                        <p class="text-muted text-lg">No data for ${targetDate}</p>
+                        <p class="text-muted text-sm mt-2">Run <code class="bg-gray-800 px-2 py-0.5 rounded">python edge_scanner.py --date ${targetDate}</code> to fetch odds.</p>
+                    </div>`;
+                return;
+            }
+
+            // Group odds by venue + race_time
+            const races = {};
+            if (odds) {
+                odds.forEach(o => {
+                    const key = `${o.venue}|${o.race_time}`;
+                    if (!races[key]) races[key] = { venue: o.venue, race_time: o.race_time, runners: [] };
+                    races[key].runners.push(o);
+                });
+            }
+
+            let html = '';
+            for (const [key, race] of Object.entries(races)) {
+                // Sort runners by best_back
+                race.runners.sort((a, b) => (a.best_back || 999) - (b.best_back || 999));
+
+                html += `
+                <div class="card mb-6">
+                    <div class="card-header">
+                        <h2 class="text-lg font-semibold">${race.venue} — ${race.race_time}</h2>
+                    </div>
+                    <div class="overflow-x-auto"><table>
+                        <thead><tr>
+                            <th>Horse</th>
+                            <th class="text-right">Best Back</th>
+                            <th class="text-right">Best Lay</th>
+                            <th class="text-right">SP Near</th>
+                            <th class="text-right">Last Traded</th>
+                            <th class="text-right">Pred BFSP</th>
+                            <th class="text-right">Edge</th>
+                            <th>Signal</th>
+                        </tr></thead>
+                        <tbody>`;
+
+                for (const r of race.runners) {
+                    const betKey = normaliseName(r.runner_name) + '|' + normaliseName(race.venue);
+                    const bet = betLookup[betKey];
+                    const isBet = bet && bet.edge_pct >= 10;
+                    const isWatch = bet && bet.edge_pct >= 5 && bet.edge_pct < 10;
+                    const nr = r.runner_status === 'REMOVED';
+
+                    let signal = '';
+                    if (isBet) signal = '<span class="px-2 py-0.5 rounded text-xs font-bold bg-green-900 text-green-300">BET</span>';
+                    else if (isWatch) signal = '<span class="px-2 py-0.5 rounded text-xs font-medium bg-yellow-900 text-yellow-300">WATCH</span>';
+
+                    html += `
+                        <tr class="${isBet ? 'bet-row' : ''}">
+                            <td class="font-medium">${r.runner_name}${nr ? ' <span class="text-xs text-red ml-1">NR</span>' : ''}</td>
+                            <td class="text-right">${fmtOdds(r.best_back)}</td>
+                            <td class="text-right">${fmtOdds(r.best_lay)}</td>
+                            <td class="text-right text-muted">${fmtOdds(r.sp_near)}</td>
+                            <td class="text-right text-muted">${fmtOdds(r.last_traded)}</td>
+                            <td class="text-right">${bet ? bet.predicted_bfsp.toFixed(2) : '-'}</td>
+                            <td class="text-right ${isBet ? 'text-green font-bold' : ''}">${bet && bet.edge_pct ? '+' + bet.edge_pct.toFixed(1) + '%' : '-'}</td>
+                            <td>${signal}</td>
+                        </tr>`;
+                }
+
+                html += '</tbody></table></div></div>';
+            }
+
+            // Show bets without odds data
+            if (bets && bets.length > 0 && Object.keys(races).length === 0) {
+                html += '<div class="card"><div class="card-header"><h2 class="text-lg font-semibold">Predictions (no live odds)</h2></div>';
+                html += renderBetsTable(bets);
+                html += '</div>';
+            }
+
+            container.innerHTML = html;
+        }
+    </script>
+</body>
+</html>

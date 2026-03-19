@@ -1,0 +1,20 @@
+body { background: #0f172a; color: #e2e8f0; }
+.card { background: #1e293b; border-radius: 0.75rem; border: 1px solid #334155; }
+.card-header { border-bottom: 1px solid #334155; padding: 1rem 1.5rem; }
+.nav-link { color: #94a3b8; transition: color 0.2s; text-decoration: none; }
+.nav-link:hover, .nav-link.active { color: #f1f5f9; }
+.badge-won { background: #065f46; color: #6ee7b7; }
+.badge-lost { background: #7f1d1d; color: #fca5a5; }
+.badge-pending { background: #78350f; color: #fde68a; }
+.bet-row { background: rgba(16, 185, 129, 0.08); border-left: 3px solid #10b981; }
+table { border-collapse: collapse; width: 100%; }
+th { text-align: left; padding: 0.5rem 0.75rem; color: #94a3b8; font-weight: 500;
+     font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+     border-bottom: 1px solid #334155; }
+td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e293b; font-size: 0.875rem; }
+.text-green { color: #10b981; }
+.text-red { color: #ef4444; }
+.text-yellow { color: #f59e0b; }
+.text-muted { color: #64748b; }
+.stat-value { font-size: 1.5rem; font-weight: 700; }
+.stat-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; }

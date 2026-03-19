@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ashcroft</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="min-h-screen">
+    <!-- Navigation -->
+    <nav class="border-b border-gray-800 px-6 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-8">
+                <a href="/" class="text-xl font-bold text-white">Ashcroft</a>
+                <div class="flex space-x-6">
+                    <a href="/" class="nav-link active" data-page="dashboard">Dashboard</a>
+                    <a href="/races.html" class="nav-link" data-page="races">Races</a>
+                    <a href="/bets.html" class="nav-link" data-page="bets">Bets</a>
+                    <a href="/performance.html" class="nav-link" data-page="performance">Performance</a>
+                </div>
+            </div>
+            <div id="today-date" class="text-sm text-gray-500"></div>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <main class="max-w-7xl mx-auto px-6 py-6">
+        <!-- Summary Cards -->
+        <h1 class="text-2xl font-bold mb-6">Dashboard</h1>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="card p-5">
+                <div class="stat-label">Bank</div>
+                <div class="stat-value" id="stat-bank">&pound;1000.00</div>
+            </div>
+            <div class="card p-5">
+                <div class="stat-label">Net P&amp;L</div>
+                <div class="stat-value" id="stat-pnl">&pound;0.00</div>
+            </div>
+            <div class="card p-5">
+                <div class="stat-label">ROI</div>
+                <div class="stat-value" id="stat-roi">0.0%</div>
+            </div>
+            <div class="card p-5">
+                <div class="stat-label">Total Bets</div>
+                <div class="stat-value" id="stat-total-bets">0</div>
+                <div class="text-sm text-muted" id="stat-winners">0 winners</div>
+            </div>
+        </div>
+
+        <!-- Cumulative P&L Chart -->
+        <div class="card mb-8">
+            <div class="card-header">
+                <h2 class="text-lg font-semibold">Cumulative P&amp;L</h2>
+            </div>
+            <div class="p-4">
+                <canvas id="pnlChart" height="80"></canvas>
+                <p id="pnl-empty" class="text-muted text-center py-8 hidden">No P&amp;L data yet</p>
+            </div>
+        </div>
+
+        <!-- Today's Bets -->
+        <div class="card">
+            <div class="card-header flex justify-between items-center">
+                <h2 class="text-lg font-semibold">Today's Bets</h2>
+                <span class="text-sm text-muted">Auto-refreshes every 30s</span>
+            </div>
+            <div class="p-4" id="bets-today-container">
+                <p class="text-muted text-center py-8">Loading...</p>
+            </div>
+        </div>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('today-date').textContent = new Date().toISOString().slice(0, 10);
+            loadDashboard();
+            setInterval(loadTodayBets, 30000);
+        });
+
+        async function loadDashboard() {
+            await Promise.all([loadSummary(), loadDailyPnl(), loadTodayBets()]);
+        }
+
+        async function loadSummary() {
+            const data = await apiFetch('/api/pnl/summary');
+            if (!data) return;
+
+            setStatWithColor('stat-bank', `£${(data.bank || 1000).toFixed(2)}`, (data.bank || 1000) >= 1000);
+            setStatWithColor('stat-pnl', `${data.net_pnl >= 0 ? '+' : ''}£${(data.net_pnl || 0).toFixed(2)}`, (data.net_pnl || 0) >= 0);
+            setStatWithColor('stat-roi', `${(data.roi || 0).toFixed(1)}%`, (data.roi || 0) >= 0);
+            document.getElementById('stat-total-bets').textContent = data.total_bets || 0;
+            document.getElementById('stat-winners').textContent = `${data.wins || 0} winners`;
+        }
+
+        async function loadDailyPnl() {
+            const data = await apiFetch('/api/pnl/daily');
+            if (!data || data.length === 0) {
+                document.getElementById('pnl-empty').classList.remove('hidden');
+                return;
+            }
+
+            const ctx = document.getElementById('pnlChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => d.date),
+                    datasets: [{
+                        label: 'Cumulative P&L',
+                        data: data.map(d => d.cumulative_pnl),
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        fill: true, tension: 0.3, pointRadius: 2,
+                    }, {
+                        label: 'Bank',
+                        data: data.map(d => d.bank_end),
+                        borderColor: '#3b82f6',
+                        borderDash: [5, 5],
+                        fill: false, tension: 0.3, pointRadius: 0,
+                    }]
+                },
+                options: chartOptions('£'),
+            });
+        }
+
+        async function loadTodayBets() {
+            const today = new Date().toISOString().slice(0, 10);
+            const data = await apiFetch(`/api/bets/${today}`);
+            const container = document.getElementById('bets-today-container');
+
+            if (!data || data.length === 0) {
+                container.innerHTML = '<p class="text-muted text-center py-8">No bets today. Run the edge scanner to find value.</p>';
+                return;
+            }
+
+            container.innerHTML = renderBetsTable(data);
+        }
+    </script>
+</body>
+</html>

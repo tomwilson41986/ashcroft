@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 
 from fastapi import FastAPI, Request, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -24,6 +25,21 @@ PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 DB_PATH = os.path.join(PROJECT_DIR, "horse_racing.db")
 
 app = FastAPI(title="Ashcroft", docs_url="/docs")
+
+# CORS — allow Netlify frontend (and local dev) to call the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
+        "https://*.netlify.app",
+    ],
+    allow_origin_regex=r"https://.*\.netlify\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.mount("/static", StaticFiles(directory=os.path.join(SCRIPT_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(SCRIPT_DIR, "templates"))
@@ -283,14 +299,38 @@ async def api_predictions(target_date: str):
     return rows_to_dicts(rows)
 
 
-@app.get("/api/bets/{target_date}")
-async def api_bets(target_date: str):
+@app.get("/api/bets/all")
+async def api_all_bets():
+    """Get all bets across all dates."""
     with get_db() as conn:
         if not table_exists(conn, "bets"):
             return []
         rows = conn.execute(
-            "SELECT * FROM bets WHERE race_date = ? ORDER BY race_time",
-            (target_date,),
+            "SELECT * FROM bets ORDER BY race_date DESC, race_time"
+        ).fetchall()
+    return rows_to_dicts(rows)
+
+
+@app.get("/api/bets/edge-stats")
+async def api_edge_stats():
+    """Get strike rate broken down by edge bucket."""
+    with get_db() as conn:
+        if not table_exists(conn, "bets"):
+            return []
+        rows = conn.execute(
+            """SELECT
+                CASE
+                    WHEN edge_pct >= 20 THEN '20%+'
+                    WHEN edge_pct >= 15 THEN '15-20%'
+                    WHEN edge_pct >= 10 THEN '10-15%'
+                    WHEN edge_pct >= 5 THEN '5-10%'
+                    ELSE '<5%'
+                END as bucket,
+                COUNT(*) as total,
+                SUM(CASE WHEN status='WON' THEN 1 ELSE 0 END) as won,
+                SUM(net_pnl) as pnl
+               FROM bets WHERE status IN ('WON','LOST')
+               GROUP BY bucket ORDER BY MIN(edge_pct) DESC"""
         ).fetchall()
     return rows_to_dicts(rows)
 
@@ -304,6 +344,18 @@ async def api_live_bets():
         rows = conn.execute(
             "SELECT * FROM bets WHERE race_date = ? AND status = 'PENDING' ORDER BY race_time",
             (today,),
+        ).fetchall()
+    return rows_to_dicts(rows)
+
+
+@app.get("/api/bets/{target_date}")
+async def api_bets(target_date: str):
+    with get_db() as conn:
+        if not table_exists(conn, "bets"):
+            return []
+        rows = conn.execute(
+            "SELECT * FROM bets WHERE race_date = ? ORDER BY race_time",
+            (target_date,),
         ).fetchall()
     return rows_to_dicts(rows)
 
@@ -323,17 +375,26 @@ async def api_daily_pnl():
 async def api_pnl_summary():
     with get_db() as conn:
         if not table_exists(conn, "bets"):
-            return {"total_bets": 0, "net_pnl": 0, "roi": 0}
+            return {"total_bets": 0, "net_pnl": 0, "roi": 0, "bank": 1000}
 
         row = conn.execute(
             """SELECT COUNT(*) as total,
                SUM(CASE WHEN status='WON' THEN 1 ELSE 0 END) as wins,
-               SUM(net_pnl) as net_pnl, SUM(stake) as staked
+               SUM(net_pnl) as net_pnl, SUM(stake) as staked,
+               AVG(edge_pct) as avg_edge
                FROM bets WHERE status IN ('WON','LOST')"""
         ).fetchone()
 
         if not row or row["total"] == 0:
-            return {"total_bets": 0, "net_pnl": 0, "roi": 0}
+            return {"total_bets": 0, "net_pnl": 0, "roi": 0, "bank": 1000}
+
+        bank = 1000
+        if table_exists(conn, "daily_pnl"):
+            last = conn.execute(
+                "SELECT bank_end FROM daily_pnl ORDER BY date DESC LIMIT 1"
+            ).fetchone()
+            if last:
+                bank = round(last["bank_end"], 2)
 
         return {
             "total_bets": row["total"],
@@ -341,6 +402,8 @@ async def api_pnl_summary():
             "strike_rate": round(row["wins"] / row["total"] * 100, 1),
             "net_pnl": round(row["net_pnl"] or 0, 2),
             "roi": round((row["net_pnl"] or 0) / (row["staked"] or 1) * 100, 2),
+            "avg_edge": round(row["avg_edge"] or 0, 1),
+            "bank": bank,
         }
 
 
