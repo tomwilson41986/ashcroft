@@ -21,6 +21,7 @@ from web.s3_store import (
     get_daily_pnl,
     get_edge_stats,
     get_odds_for_date,
+    get_paper_trades,
     get_pnl_summary,
     invalidate_cache,
 )
@@ -81,6 +82,16 @@ async def api_pnl_summary():
 @app.get("/api/odds/latest/{target_date}")
 async def api_latest_odds(target_date: str):
     return get_odds_for_date(target_date)
+
+
+@app.get("/api/paper-trades/all")
+async def api_paper_trades():
+    return get_paper_trades()
+
+
+@app.get("/api/paper-trades/{target_date}")
+async def api_paper_trades_date(target_date: str):
+    return [t for t in get_paper_trades() if t.get("race_date") == target_date]
 
 
 @app.post("/api/cache/invalidate")

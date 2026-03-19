@@ -208,3 +208,34 @@ def get_edge_stats() -> list[dict]:
         })
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Paper trades
+# ---------------------------------------------------------------------------
+
+PAPER_TRADES_KEY = "dashboard/paper_trades.json"
+
+
+def get_paper_trades() -> list[dict]:
+    return _read_json(PAPER_TRADES_KEY) or []
+
+
+def save_paper_trades(trades: list[dict]) -> None:
+    _write_json(PAPER_TRADES_KEY, trades)
+
+
+def upsert_paper_trade(trade: dict) -> None:
+    """Add or update a paper trade (matched by date+time+track+horse)."""
+    trades = get_paper_trades()
+    key = (trade["race_date"], trade.get("race_time"), trade.get("track"), trade.get("horse_name"))
+
+    for i, existing in enumerate(trades):
+        ekey = (existing["race_date"], existing.get("race_time"), existing.get("track"), existing.get("horse_name"))
+        if ekey == key:
+            trades[i] = trade
+            save_paper_trades(trades)
+            return
+
+    trades.append(trade)
+    save_paper_trades(trades)

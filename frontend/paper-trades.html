@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ashcroft — Paper Trading</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="sidebar"></div>
+    <div class="main-content">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Paper Trading</h1>
+                <p class="page-subtitle">Simulated bets tracked against live Betfair exchange prices</p>
+            </div>
+            <div class="flex items-center space-x-2">
+                <label class="text-muted" style="font-size:0.8125rem; white-space:nowrap">Strategy:</label>
+                <select id="strategy-select" class="input" onchange="onFilterChange()"></select>
+                <select id="filter-date" class="input" onchange="onFilterChange()"><option value="">All dates</option></select>
+                <select id="filter-status" class="input" onchange="onFilterChange()">
+                    <option value="">All statuses</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="WON">Won</option>
+                    <option value="LOST">Lost</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Summary stats -->
+        <div class="stat-grid stat-grid-6 mb-6" id="summary-stats">
+            <div class="stat-card"><div class="stat-label">Paper Trades</div><div class="stat-value">-</div></div>
+        </div>
+
+        <!-- P&L Chart -->
+        <div class="grid-2 mb-6">
+            <div class="card">
+                <div class="card-header">Cumulative Paper P&amp;L</div>
+                <div class="card-body">
+                    <canvas id="cumPnlChart" height="200"></canvas>
+                    <div id="cum-empty" class="empty-state hidden"><p>No settled paper trades yet</p></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">Daily Paper P&amp;L</div>
+                <div class="card-body">
+                    <canvas id="dailyPnlChart" height="200"></canvas>
+                    <div id="daily-empty" class="empty-state hidden"><p>No data yet</p></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Price Accuracy -->
+        <div class="card mb-6 hidden" id="accuracy-card">
+            <div class="card-header">Prediction vs Actual Price</div>
+            <div id="accuracy-container"></div>
+        </div>
+
+        <!-- Trades Table -->
+        <div class="card" id="trades-container">
+            <div class="card-header">
+                <span>Paper Trades</span>
+                <span class="text-muted" style="font-size:0.75rem" id="trade-count"></span>
+            </div>
+            <div id="trades-body">
+                <div class="empty-state"><p>Loading...</p></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+    <script>
+        document.getElementById('sidebar').innerHTML = renderSidebar('paper-trades');
+
+        // Populate strategy dropdown
+        const stratSel = document.getElementById('strategy-select');
+        STRATEGIES.forEach(s => {
+            const o = document.createElement('option');
+            o.value = s.id; o.textContent = s.label;
+            stratSel.appendChild(o);
+        });
+
+        let allTrades = [];
+        let cumChart = null, dailyChart = null;
+
+        (async () => {
+            allTrades = await apiFetch('/api/paper-trades/all') || [];
+            // Populate date filter
+            const dates = [...new Set(allTrades.map(t => t.race_date))].sort().reverse();
+            const dateSel = document.getElementById('filter-date');
+            dates.forEach(d => {
+                const o = document.createElement('option');
+                o.value = d; o.textContent = d;
+                dateSel.appendChild(o);
+            });
+            onFilterChange();
+        })();
+
+        function getFiltered() {
+            const strategy = document.getElementById('strategy-select').value;
+            let filtered = applyStrategy(allTrades, strategy);
+            const d = document.getElementById('filter-date').value;
+            const s = document.getElementById('filter-status').value;
+            if (d) filtered = filtered.filter(t => t.race_date === d);
+            if (s) filtered = filtered.filter(t => t.status === s);
+            return filtered;
+        }
+
+        function onFilterChange() {
+            const filtered = getFiltered();
+            renderStats(filtered);
+            renderCharts(filtered);
+            renderAccuracy(filtered);
+            renderTrades(filtered);
+        }
+
+        function renderStats(trades) {
+            const settled = trades.filter(t => t.status === 'WON' || t.status === 'LOST');
+            const pending = trades.filter(t => t.status === 'PENDING').length;
+            const won = settled.filter(t => t.status === 'WON').length;
+            const lost = settled.length - won;
+            const netPnl = settled.reduce((s, t) => s + (t.net_pnl || 0), 0);
+            const staked = settled.reduce((s, t) => s + (t.stake || 0), 0);
+            const roi = staked ? (netPnl / staked * 100) : 0;
+            const sr = settled.length ? (won / settled.length * 100) : 0;
+
+            document.getElementById('summary-stats').innerHTML = `
+                <div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value">${trades.length}</div><div class="stat-detail">${pending} pending</div></div>
+                <div class="stat-card"><div class="stat-label">Settled</div><div class="stat-value">${settled.length}</div><div class="stat-detail">${won}W / ${lost}L</div></div>
+                <div class="stat-card"><div class="stat-label">Strike Rate</div><div class="stat-value">${sr.toFixed(1)}%</div></div>
+                <div class="stat-card"><div class="stat-label">Paper P&amp;L</div><div class="stat-value ${colorClass(netPnl)}">${fmtPnl(netPnl)}</div></div>
+                <div class="stat-card"><div class="stat-label">ROI</div><div class="stat-value ${colorClass(roi)}">${roi.toFixed(1)}%</div></div>
+                <div class="stat-card"><div class="stat-label">Avg Edge</div><div class="stat-value">${settled.length ? (settled.reduce((s,t)=>s+(t.edge_pct||0),0)/settled.length).toFixed(1) : '0.0'}%</div></div>`;
+        }
+
+        function renderCharts(trades) {
+            if (cumChart) { cumChart.destroy(); cumChart = null; }
+            if (dailyChart) { dailyChart.destroy(); dailyChart = null; }
+
+            const daily = computeDailyPnlFromBets(trades);
+
+            if (!daily.length) {
+                document.getElementById('cum-empty').classList.remove('hidden');
+                document.getElementById('daily-empty').classList.remove('hidden');
+                document.getElementById('cumPnlChart').style.display = 'none';
+                document.getElementById('dailyPnlChart').style.display = 'none';
+                return;
+            }
+            document.getElementById('cum-empty').classList.add('hidden');
+            document.getElementById('daily-empty').classList.add('hidden');
+            document.getElementById('cumPnlChart').style.display = '';
+            document.getElementById('dailyPnlChart').style.display = '';
+
+            const dates = daily.map(d => d.date);
+            const cum = daily.map(d => d.cumulative_pnl);
+            const net = daily.map(d => d.net_pnl);
+
+            cumChart = new Chart(document.getElementById('cumPnlChart'), {
+                type: 'line',
+                data: { labels: dates, datasets: [{ label: 'Cumulative Paper P&L', data: cum, borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,0.08)', fill: true, tension: 0.3, pointRadius: 3 }] },
+                options: chartOptions('£'),
+            });
+            dailyChart = new Chart(document.getElementById('dailyPnlChart'), {
+                type: 'bar',
+                data: { labels: dates, datasets: [{ label: 'Daily Paper P&L', data: net, backgroundColor: net.map(v => v >= 0 ? 'rgba(22,163,74,0.6)' : 'rgba(220,38,38,0.6)'), borderColor: net.map(v => v >= 0 ? '#16a34a' : '#dc2626'), borderWidth: 1 }] },
+                options: chartOptions('£'),
+            });
+        }
+
+        function renderAccuracy(trades) {
+            const settled = trades.filter(t => t.status === 'WON' || t.status === 'LOST');
+            const withBsp = settled.filter(t => t.actual_bsp && t.predicted_bfsp);
+
+            if (!withBsp.length) {
+                document.getElementById('accuracy-card').classList.add('hidden');
+                return;
+            }
+            document.getElementById('accuracy-card').classList.remove('hidden');
+
+            // Group by price band
+            const bands = { '1-3': [], '3-6': [], '6-10': [], '10-20': [], '20+': [] };
+            for (const t of withBsp) {
+                const p = t.predicted_bfsp;
+                if (p < 3) bands['1-3'].push(t);
+                else if (p < 6) bands['3-6'].push(t);
+                else if (p < 10) bands['6-10'].push(t);
+                else if (p < 20) bands['10-20'].push(t);
+                else bands['20+'].push(t);
+            }
+
+            let html = '<table><thead><tr><th>Price Band</th><th class="text-right">Trades</th><th class="text-right">Avg Predicted</th><th class="text-right">Avg Actual BSP</th><th class="text-right">Avg Entry</th><th class="text-right">Avg Error %</th></tr></thead><tbody>';
+            for (const [band, items] of Object.entries(bands)) {
+                if (!items.length) continue;
+                const avgPred = items.reduce((s,t)=>s+t.predicted_bfsp,0) / items.length;
+                const avgBsp = items.reduce((s,t)=>s+t.actual_bsp,0) / items.length;
+                const avgEntry = items.reduce((s,t)=>s+(t.entry_price||t.betfair_back||0),0) / items.length;
+                const avgErr = items.reduce((s,t)=>s+Math.abs((t.predicted_bfsp-t.actual_bsp)/t.actual_bsp*100),0) / items.length;
+                html += `<tr><td class="font-medium">${band}</td><td class="text-right">${items.length}</td><td class="text-right">${avgPred.toFixed(2)}</td><td class="text-right">${avgBsp.toFixed(2)}</td><td class="text-right">${avgEntry.toFixed(2)}</td><td class="text-right">${avgErr.toFixed(1)}%</td></tr>`;
+            }
+            document.getElementById('accuracy-container').innerHTML = html + '</tbody></table>';
+        }
+
+        function renderTrades(trades) {
+            document.getElementById('trade-count').textContent = `${trades.length} trades`;
+
+            if (!trades.length) {
+                document.getElementById('trades-body').innerHTML = '<div class="empty-state"><p>No paper trades found.</p><p>Run <code>python paper_trader.py</code> to start paper trading.</p></div>';
+                return;
+            }
+
+            let html = `<table><thead><tr>
+                <th>Date</th><th>Time</th><th>Track</th><th>Horse</th>
+                <th class="text-right">Rank</th>
+                <th class="text-right">Pred</th><th class="text-right">Entry</th>
+                <th class="text-right">BSP</th><th class="text-right">Edge</th>
+                <th class="text-right">Stake</th><th>Status</th>
+                <th class="text-right">Pos</th><th class="text-right">P&amp;L</th>
+            </tr></thead><tbody>`;
+
+            for (const t of trades) {
+                const entryPrice = t.entry_price || t.betfair_back;
+                const bspDiff = (t.actual_bsp && entryPrice) ? ((t.actual_bsp / entryPrice - 1) * 100) : null;
+
+                html += `<tr>
+                    <td class="text-muted">${t.race_date}</td>
+                    <td>${t.race_time || '-'}</td>
+                    <td>${t.track}</td>
+                    <td class="font-medium">${t.horse_name}</td>
+                    <td class="text-right">${t.rank || '-'}</td>
+                    <td class="text-right">${t.predicted_bfsp ? t.predicted_bfsp.toFixed(2) : '-'}</td>
+                    <td class="text-right">${entryPrice ? entryPrice.toFixed(2) : '-'}</td>
+                    <td class="text-right">${t.actual_bsp ? t.actual_bsp.toFixed(2) : '-'}${bspDiff != null ? ' <span class="text-muted" style="font-size:0.7rem">(' + (bspDiff >= 0 ? '+' : '') + bspDiff.toFixed(0) + '%)</span>' : ''}</td>
+                    <td class="text-right ${t.edge_pct >= 15 ? 'text-green font-bold' : ''}">${t.edge_pct ? '+' + t.edge_pct.toFixed(1) + '%' : '-'}</td>
+                    <td class="text-right">${t.stake ? '£' + t.stake.toFixed(2) : '-'}</td>
+                    <td>${statusBadge(t.status)}</td>
+                    <td class="text-right text-muted">${t.placing ? ordinal(t.placing) : '-'}</td>
+                    <td class="text-right font-medium ${colorClass(t.net_pnl)}">${t.net_pnl != null ? fmtPnl(t.net_pnl) : '-'}</td>
+                </tr>`;
+            }
+            document.getElementById('trades-body').innerHTML = html + '</tbody></table>';
+        }
+    </script>
+</body>
+</html>

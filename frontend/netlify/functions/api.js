@@ -1,11 +1,13 @@
 // Netlify Function — proxies S3 reads for the Ashcroft dashboard.
 // Routes:
-//   /api/bets/all         → dashboard/bets.json
-//   /api/bets/{date}      → filters bets.json by date
-//   /api/bets/edge-stats  → computed from bets.json
-//   /api/pnl/daily        → dashboard/daily_pnl.json
-//   /api/pnl/summary      → computed from bets.json + daily_pnl.json
-//   /api/odds/latest/{d}  → dashboard/odds/{date}.json
+//   /api/bets/all              → dashboard/bets.json
+//   /api/bets/{date}           → filters bets.json by date
+//   /api/bets/edge-stats       → computed from bets.json
+//   /api/pnl/daily             → dashboard/daily_pnl.json
+//   /api/pnl/summary           → computed from bets.json + daily_pnl.json
+//   /api/odds/latest/{d}       → dashboard/odds/{date}.json
+//   /api/paper-trades/all      → dashboard/paper_trades.json
+//   /api/paper-trades/{date}   → filters paper_trades.json by date
 
 const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
 
@@ -151,6 +153,19 @@ exports.handler = async (event) => {
   if (oddsMatch) {
     const data = await readS3Json(`dashboard/odds/${oddsMatch[1]}.json`);
     return json(data || []);
+  }
+
+  // /paper-trades/all
+  if (path === "/paper-trades/all") {
+    const data = await readS3Json("dashboard/paper_trades.json");
+    return json(data || []);
+  }
+
+  // /paper-trades/{date}
+  const ptMatch = path.match(/^\/paper-trades\/(\d{4}-\d{2}-\d{2})$/);
+  if (ptMatch) {
+    const data = await readS3Json("dashboard/paper_trades.json");
+    return json((data || []).filter(t => t.race_date === ptMatch[1]));
   }
 
   return json({ error: "Not found" }, 404);
