@@ -127,25 +127,29 @@ def run(
         day_pnl = 0.0
         day_staked = 0.0
 
+        # Compute rank per race (by predicted_bfsp ascending — rank 1 = shortest odds)
+        if "race_time" in preds.columns and "track" in preds.columns:
+            preds["race_key"] = preds["race_date"].astype(str) + "|" + preds["race_time"].astype(str) + "|" + preds["track"].astype(str)
+        else:
+            preds["race_key"] = preds.index.astype(str)
+        preds["rank"] = preds.groupby("race_key")["predicted_bfsp"].rank(method="first").astype(int)
+
         for _, row in preds.iterrows():
-            edge = row.get("value_edge", 0)
-            if pd.isna(edge):
+            pred_bfsp = row.get("predicted_bfsp", 0)
+            if pd.isna(pred_bfsp) or pred_bfsp <= 0:
                 continue
             actual_bfsp = row.get("actual_bfsp", 0)
             if pd.isna(actual_bfsp) or actual_bfsp <= 0:
                 continue
-            pred_bfsp = row.get("predicted_bfsp", 0)
-            if pd.isna(pred_bfsp) or pred_bfsp <= 0:
+            if actual_bfsp < min_price or actual_bfsp > max_price:
                 continue
+
+            edge = row.get("value_edge", 0)
+            if pd.isna(edge):
+                edge = 0
             win_prob = row.get("predicted_win_prob_norm", 0)
             if pd.isna(win_prob):
                 win_prob = 0
-
-            # Filter: only value bets within price range
-            if edge < min_edge:
-                continue
-            if actual_bfsp < min_price or actual_bfsp > max_price:
-                continue
 
             placing = row.get("placing_numerical")
             won = pd.notna(placing) and placing == 1
@@ -180,6 +184,7 @@ def run(
                 "gross_pnl": round(gross, 2),
                 "commission": round(commission, 2),
                 "net_pnl": round(net, 2),
+                "rank": int(row.get("rank", 0)),
             })
 
             day_bets += 1
@@ -224,6 +229,18 @@ def run(
             continue
 
         log.info(f"Adding {len(s3_preds)} pending predictions from S3 for {dt_str}")
+
+        # Compute rank for S3 predictions
+        if not s3_preds.empty:
+            bfsp_col = "predicted_bfsp" if "predicted_bfsp" in s3_preds.columns else None
+            time_col = "race_time" if "race_time" in s3_preds.columns else None
+            track_col = next((c for c in ["venue", "track"] if c in s3_preds.columns), None)
+            if bfsp_col and time_col and track_col:
+                s3_preds["_race_key"] = dt_str + "|" + s3_preds[time_col].astype(str) + "|" + s3_preds[track_col].astype(str)
+                s3_preds["_rank"] = s3_preds.groupby("_race_key")[bfsp_col].rank(method="first").astype(int)
+            else:
+                s3_preds["_rank"] = 0
+
         for _, row in s3_preds.iterrows():
             pred_bfsp = row.get("predicted_bfsp")
             win_prob = row.get("predicted_win_prob")
@@ -246,6 +263,7 @@ def run(
                 "gross_pnl": 0,
                 "commission": 0,
                 "net_pnl": 0,
+                "rank": int(row.get("_rank", 0)),
             })
 
     # Sort and write

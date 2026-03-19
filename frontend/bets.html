@@ -15,6 +15,7 @@
                 <p class="page-subtitle">All bets with status, results, and P&amp;L</p>
             </div>
             <div class="flex items-center space-x-2">
+                <select id="filter-strategy" class="input"></select>
                 <select id="filter-date" class="input"><option value="">All dates</option></select>
                 <select id="filter-status" class="input">
                     <option value="">All statuses</option>
@@ -36,6 +37,15 @@
     <script src="app.js"></script>
     <script>
         document.getElementById('sidebar').innerHTML = renderSidebar('bets');
+
+        // Populate strategy dropdown
+        const stratSel = document.getElementById('filter-strategy');
+        STRATEGIES.forEach(s => {
+            const o = document.createElement('option');
+            o.value = s.id; o.textContent = s.label;
+            stratSel.appendChild(o);
+        });
+
         let allBets = [];
 
         (async () => {
@@ -53,7 +63,8 @@
         })();
 
         function applyFilters() {
-            let filtered = allBets;
+            const strategy = document.getElementById('filter-strategy').value;
+            let filtered = applyStrategy(allBets, strategy);
             const d = document.getElementById('filter-date').value;
             const s = document.getElementById('filter-status').value;
             if (d) filtered = filtered.filter(b => b.race_date === d);
@@ -79,7 +90,7 @@
             if (!bets.length) { document.getElementById('bets-container').innerHTML = '<div class="empty-state"><p>No bets match filters.</p></div>'; return; }
 
             let html = `<table><thead><tr>
-                <th>Date</th><th>Time</th><th>Track</th><th>Horse</th><th>Type</th>
+                <th>Date</th><th>Time</th><th>Track</th><th>Horse</th><th class="text-right">Rank</th><th>Type</th>
                 <th class="text-right">Pred</th><th class="text-right">Back</th><th class="text-right">Edge</th>
                 <th class="text-right">Stake</th><th>Status</th><th class="text-right">Pos</th><th class="text-right">P&amp;L</th>
             </tr></thead><tbody>`;
@@ -87,7 +98,9 @@
             for (const b of bets) {
                 html += `<tr>
                     <td class="text-muted">${b.race_date}</td><td>${b.race_time||'-'}</td><td>${b.track}</td>
-                    <td class="font-medium">${b.horse_name}</td><td>${typeBadge(b.bet_type)}</td>
+                    <td class="font-medium">${b.horse_name}</td>
+                    <td class="text-right">${b.rank || '-'}</td>
+                    <td>${typeBadge(b.bet_type)}</td>
                     <td class="text-right">${b.predicted_bfsp ? b.predicted_bfsp.toFixed(2) : '-'}</td>
                     <td class="text-right">${b.betfair_back ? b.betfair_back.toFixed(2) : '-'}</td>
                     <td class="text-right ${b.edge_pct>=15?'text-green font-bold':''}">${b.edge_pct ? '+'+b.edge_pct.toFixed(1)+'%' : '-'}</td>
