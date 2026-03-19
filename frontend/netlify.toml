@@ -1,9 +1,2 @@
 [build]
   publish = "."
-
-# SPA-style redirects for clean URLs
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-  conditions = {Role = ["admin"]}
