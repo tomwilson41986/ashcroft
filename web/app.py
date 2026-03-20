@@ -24,6 +24,7 @@ from web.s3_store import (
     get_pnl_summary,
     invalidate_cache,
 )
+from web.performance import compute_performance_metrics, compute_performance_summary
 
 app = FastAPI(title="Ashcroft", docs_url="/docs")
 
@@ -81,6 +82,18 @@ async def api_pnl_summary():
 @app.get("/api/odds/latest/{target_date}")
 async def api_latest_odds(target_date: str):
     return get_odds_for_date(target_date)
+
+
+@app.get("/api/model/performance")
+async def api_model_performance():
+    """Full model performance breakdown from all settled bets."""
+    return compute_performance_metrics(get_all_bets())
+
+
+@app.get("/api/model/performance/summary")
+async def api_model_performance_summary():
+    """Condensed key performance metrics only."""
+    return compute_performance_summary(get_all_bets())
 
 
 @app.post("/api/cache/invalidate")
