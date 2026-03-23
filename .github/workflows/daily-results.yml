@@ -1,0 +1,119 @@
+name: Daily Results & P&L
+
+on:
+  schedule:
+    # Run at 21:30 UTC — after UK racing finishes for the day
+    - cron: '30 21 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Target date (YYYY-MM-DD). Leave empty for today.'
+        required: false
+        type: string
+      skip_email:
+        description: 'Skip sending email report'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  PYTHON_VERSION: '3.11'
+  S3_BUCKET: horseracingresults
+  S3_DB_KEY: horse_racing.db
+
+jobs:
+  # Step 1: Scrape results from HRB and sync BSPs from Betfair
+  collect-results:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: |
+          python scripts/fetch_data.py \
+            --db-only \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-key "$S3_DB_KEY"
+
+      - name: Determine target date
+        id: date
+        run: |
+          if [ -n "${{ inputs.date }}" ]; then
+            echo "target=${{ inputs.date }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Scrape today's results from HRB
+        env:
+          HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
+          HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
+        run: |
+          python scraper.py \
+            --from "${{ steps.date.outputs.target }}" \
+            --to "${{ steps.date.outputs.target }}" \
+            --no-backup
+
+      - name: Sync BSPs from Betfair
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+        run: |
+          python betfair_sync.py \
+            --bsp \
+            --date "${{ steps.date.outputs.target }}" || echo "BSP sync failed (non-fatal)"
+
+      - name: Settle predictions and calculate P&L
+        run: |
+          python edge_scanner.py \
+            --settle \
+            --date "${{ steps.date.outputs.target }}"
+
+      - name: Send results email
+        if: ${{ inputs.skip_email != true }}
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          python results_report.py \
+            --date "${{ steps.date.outputs.target }}"
+
+      - name: Upload updated database to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: |
+          python scripts/fetch_data.py \
+            --upload-db \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-key "$S3_DB_KEY"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ steps.date.outputs.target }}
+          path: |
+            scraper.log
+            results_report.log
+          retention-days: 30
