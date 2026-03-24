@@ -36,12 +36,12 @@ def get_race_results(db_path: str, target_date: str) -> pd.DataFrame:
     """Load actual race results for a date from the database."""
     conn = sqlite3.connect(db_path)
     df = pd.read_sql_query(
-        """SELECT horse_name, track, racetime, race_date, placing_numerical,
-                  BFSP, odds, race_name, race_class, number_of_runners,
-                  going_description, distance
+        """SELECT horse_name, track, race_time, race_date, placing_numerical,
+                  bfsp, odds, race_name, race_class, number_of_runners,
+                  going_description, race_distance
            FROM race_results
            WHERE race_date = ?
-           ORDER BY racetime, track, BFSP""",
+           ORDER BY race_time, track, bfsp""",
         conn,
         params=[target_date],
     )
@@ -98,10 +98,10 @@ def print_date_summary(target_date: str, results: pd.DataFrame, predictions: pd.
         return
 
     # Race summary
-    races = results.groupby(["racetime", "track"]).agg(
+    races = results.groupby(["race_time", "track"]).agg(
         runners=("horse_name", "count"),
         winner=("placing_numerical", lambda x: results.loc[x.index[results.loc[x.index, "placing_numerical"] == 1], "horse_name"].values[0] if 1 in x.values else "N/A"),
-        winner_bfsp=("BFSP", lambda x: results.loc[x.index[results.loc[x.index, "placing_numerical"] == 1], "BFSP"].values[0] if 1 in results.loc[x.index, "placing_numerical"].values else None),
+        winner_bfsp=("bfsp", lambda x: results.loc[x.index[results.loc[x.index, "placing_numerical"] == 1], "bfsp"].values[0] if 1 in results.loc[x.index, "placing_numerical"].values else None),
     ).reset_index()
 
     num_races = len(races)
@@ -114,7 +114,7 @@ def print_date_summary(target_date: str, results: pd.DataFrame, predictions: pd.
 
     for _, race in races.iterrows():
         bfsp_str = f"{race['winner_bfsp']:.2f}" if pd.notna(race['winner_bfsp']) else "N/A"
-        print(f"  {race['racetime']:<8} {race['track']:<18} {race['runners']:>7}  {race['winner']:<25} {bfsp_str:>8}")
+        print(f"  {race['race_time']:<8} {race['track']:<18} {race['runners']:>7}  {race['winner']:<25} {bfsp_str:>8}")
 
     # Prediction accuracy (if predictions available)
     if len(predictions) > 0:
@@ -165,7 +165,7 @@ def print_date_summary(target_date: str, results: pd.DataFrame, predictions: pd.
                     print(f"  {'-'*74}")
                     for _, row in overlay.sort_values(edge_col, ascending=False).head(20).iterrows():
                         pred = f"{row['predicted_bfsp']:.1f}" if pd.notna(row.get('predicted_bfsp')) else "?"
-                        actual = f"{row.get('actual_bfsp', row.get('BFSP', 0)):.1f}" if pd.notna(row.get('actual_bfsp', row.get('BFSP'))) else "?"
+                        actual = f"{row.get('actual_bfsp', row.get('bfsp', 0)):.1f}" if pd.notna(row.get('actual_bfsp', row.get('bfsp'))) else "?"
                         edge = f"{row[edge_col]:.1f}%"
                         pos = str(int(row['placing_numerical'])) if pd.notna(row.get('placing_numerical')) else "?"
                         time_str = str(row.get('race_time', ''))[:7]
@@ -193,7 +193,7 @@ def print_date_summary(target_date: str, results: pd.DataFrame, predictions: pd.
                 print(f"  {'-'*74}")
                 for _, row in top_picks.sort_values("race_time").iterrows():
                     pred = f"{row['predicted_bfsp']:.1f}" if pd.notna(row.get('predicted_bfsp')) else "?"
-                    actual = f"{row.get('actual_bfsp', row.get('BFSP', 0)):.1f}" if pd.notna(row.get('actual_bfsp', row.get('BFSP'))) else "?"
+                    actual = f"{row.get('actual_bfsp', row.get('bfsp', 0)):.1f}" if pd.notna(row.get('actual_bfsp', row.get('bfsp'))) else "?"
                     pos = int(row['placing_numerical']) if pd.notna(row.get('placing_numerical')) else "?"
                     result = "WIN" if pos == 1 else f"#{pos}" if isinstance(pos, int) else "?"
                     time_str = str(row.get('race_time', ''))[:7]
