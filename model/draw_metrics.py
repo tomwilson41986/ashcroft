@@ -120,9 +120,16 @@ class DrawMetricsEngine:
         # Track-level (all distances) draw bias
         df = df.sort_values(["track", "race_date", "race_time"]).reset_index(drop=True)
         t_grp = df.groupby("track", group_keys=False)
+        # Vectorized expanding mean (avoid slow apply per-group)
+        low_shifted = t_grp["_low_stall_nfp"].shift(1)
+        high_shifted = t_grp["_high_stall_nfp"].shift(1)
+        low_cs = low_shifted.groupby(df["track"], sort=False).cumsum()
+        low_cc = low_shifted.notna().astype(float).groupby(df["track"], sort=False).cumsum()
+        high_cs = high_shifted.groupby(df["track"], sort=False).cumsum()
+        high_cc = high_shifted.notna().astype(float).groupby(df["track"], sort=False).cumsum()
         df["track_draw_bias"] = (
-            t_grp["_low_stall_nfp"].apply(lambda x: x.shift(1).expanding().mean())
-            - t_grp["_high_stall_nfp"].apply(lambda x: x.shift(1).expanding().mean())
+            low_cs / low_cc.replace(0, np.nan)
+            - high_cs / high_cc.replace(0, np.nan)
         )
 
         # Cleanup intermediates
