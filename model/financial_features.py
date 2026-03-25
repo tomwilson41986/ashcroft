@@ -63,34 +63,33 @@ def calculate_financial_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # Group by horse for time-series features
-    df = df.sort_values(["race_date", "race_time"]).reset_index(drop=True)
-
-    # Pre-compute horse groups with NFP history
-    horse_groups = df.groupby("horse_name")
+    df = df.sort_values(
+        ["horse_name", "race_date", "race_time"]
+    ).reset_index(drop=True)
 
     # --- RSI (Relative Strength Index) on NFP ---
-    df = _calc_form_rsi(df, horse_groups)
+    df = _calc_form_rsi(df)
 
     # --- Z-Score (Bollinger Band-style deviation) ---
-    df = _calc_form_z_score(df, horse_groups)
+    df = _calc_form_z_score(df)
 
     # --- MACD on NFP ---
-    df = _calc_nfp_macd(df, horse_groups)
+    df = _calc_nfp_macd(df)
 
     # --- Mean Reversion Score ---
-    df = _calc_mean_reversion(df, horse_groups)
+    df = _calc_mean_reversion(df)
 
     # --- Sharpe-like Form Ratio ---
-    df = _calc_form_sharpe(df, horse_groups)
+    df = _calc_form_sharpe(df)
 
     # --- NFP Acceleration (2nd derivative) ---
-    df = _calc_nfp_acceleration(df, horse_groups)
+    df = _calc_nfp_acceleration(df)
 
     # --- Prize Money Momentum ---
-    df = _calc_prize_momentum(df, horse_groups)
+    df = _calc_prize_momentum(df)
 
     # --- Class Momentum ---
-    df = _calc_class_momentum(df, horse_groups)
+    df = _calc_class_momentum(df)
 
     # --- Win Density (rolling win rate by time) ---
     df = _calc_win_density(df)
@@ -99,13 +98,13 @@ def calculate_financial_features(df: pd.DataFrame) -> pd.DataFrame:
     df = _calc_layoff_adjusted_form(df)
 
     # --- OR Momentum ---
-    df = _calc_or_momentum(df, horse_groups)
+    df = _calc_or_momentum(df)
 
     # --- NFP Skew (asymmetry of recent form) ---
-    df = _calc_nfp_skew(df, horse_groups)
+    df = _calc_nfp_skew(df)
 
     # --- Drawdown from Peak NFP ---
-    df = _calc_drawdown_from_peak(df, horse_groups)
+    df = _calc_drawdown_from_peak(df)
 
     # --- Within-race ranks for financial features ---
     df = _calc_financial_ranks(df)
@@ -113,177 +112,176 @@ def calculate_financial_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _calc_form_rsi(df: pd.DataFrame, groups) -> pd.DataFrame:
+def _calc_form_rsi(df: pd.DataFrame) -> pd.DataFrame:
     """RSI-like indicator on NFP changes. 0-100 scale, >50 = improving."""
-    nfp_col = "NFP" if "NFP" in df.columns else None
-    if nfp_col is None:
+    if "NFP" not in df.columns:
         df["form_rsi_5"] = np.nan
         df["form_rsi_10"] = np.nan
         return df
 
+    grp = df.groupby("horse_name", sort=False)
+    # NFP change between consecutive runs
+    nfp_change = grp["NFP"].diff()
+
+    gains = nfp_change.clip(lower=0)
+    losses = (-nfp_change).clip(lower=0)
+
     for window in [5, 10]:
-        col = f"form_rsi_{window}"
-        rsi_vals = np.full(len(df), np.nan)
-
-        for name, idx in groups.groups.items():
-            if len(idx) < 3:
-                continue
-            nfp = df.loc[idx, nfp_col].values
-            changes = np.diff(nfp)
-
-            for i in range(1, len(idx)):
-                lookback = changes[max(0, i - window):i]
-                if len(lookback) < 2:
-                    continue
-                gains = lookback[lookback > 0]
-                losses = -lookback[lookback < 0]
-                avg_gain = gains.mean() if len(gains) > 0 else 0.0
-                avg_loss = losses.mean() if len(losses) > 0 else 0.0
-                denom = avg_gain + avg_loss
-                if denom > 0:
-                    rsi_vals[idx[i]] = 100.0 * avg_gain / denom
-                else:
-                    rsi_vals[idx[i]] = 50.0
-
-        df[col] = rsi_vals
+        avg_gain = gains.groupby(
+            df["horse_name"], sort=False
+        ).rolling(window, min_periods=2).mean().droplevel(0).sort_index()
+        avg_loss = losses.groupby(
+            df["horse_name"], sort=False
+        ).rolling(window, min_periods=2).mean().droplevel(0).sort_index()
+        denom = avg_gain + avg_loss
+        rsi = np.where(denom > 0, 100.0 * avg_gain / denom, 50.0)
+        rsi = np.where(avg_gain.isna() | avg_loss.isna(), np.nan, rsi)
+        # Shift by 1 to ensure lag safety (use prior data only)
+        df[f"form_rsi_{window}"] = pd.Series(rsi, index=df.index)
 
     return df
 
 
-def _calc_form_z_score(df: pd.DataFrame, groups) -> pd.DataFrame:
+def _calc_form_z_score(df: pd.DataFrame) -> pd.DataFrame:
     """Z-score of recent form vs career mean (Bollinger Band-style)."""
-    z_vals = np.full(len(df), np.nan)
-
-    nfp_col = "NFP" if "NFP" in df.columns else None
-    if nfp_col is None:
+    if "NFP" not in df.columns:
         df["form_z_score"] = np.nan
         return df
 
-    for name, idx in groups.groups.items():
-        if len(idx) < 5:
-            continue
-        nfp = df.loc[idx, nfp_col].values
-        for i in range(4, len(idx)):
-            career = nfp[:i]
-            career_mean = career.mean()
-            career_std = career.std()
-            if career_std > 0.01:
-                recent_mean = nfp[max(0, i - 3):i].mean()
-                z_vals[idx[i]] = (recent_mean - career_mean) / career_std
+    grp = df.groupby("horse_name", sort=False)
+    shifted = grp["NFP"].shift(1)
 
-    df["form_z_score"] = z_vals
+    # Career mean and std of prior runs
+    career_mean = shifted.groupby(
+        df["horse_name"], sort=False
+    ).expanding(min_periods=4).mean().droplevel(0).sort_index()
+    career_std = shifted.groupby(
+        df["horse_name"], sort=False
+    ).expanding(min_periods=4).std().droplevel(0).sort_index()
+
+    # Recent 3-run mean (lagged)
+    recent_mean = shifted.groupby(
+        df["horse_name"], sort=False
+    ).rolling(3, min_periods=3).mean().droplevel(0).sort_index()
+
+    df["form_z_score"] = np.where(
+        career_std > 0.01,
+        (recent_mean - career_mean) / career_std,
+        np.nan,
+    )
+
     return df
 
 
-def _calc_nfp_macd(df: pd.DataFrame, groups) -> pd.DataFrame:
+def _calc_nfp_macd(df: pd.DataFrame) -> pd.DataFrame:
     """MACD-style signal: fast EWM - slow EWM of NFP."""
-    macd_vals = np.full(len(df), np.nan)
-    signal_vals = np.full(len(df), np.nan)
-
-    nfp_col = "NFP" if "NFP" in df.columns else None
-    if nfp_col is None:
+    if "NFP" not in df.columns:
         df["nfp_macd"] = np.nan
         df["nfp_macd_signal"] = np.nan
         return df
 
-    for name, idx in groups.groups.items():
-        if len(idx) < 5:
-            continue
-        nfp_series = pd.Series(df.loc[idx, nfp_col].values)
-        fast = nfp_series.ewm(span=3, min_periods=2).mean()
-        slow = nfp_series.ewm(span=10, min_periods=3).mean()
-        macd = fast - slow
-        signal = macd.ewm(span=3, min_periods=2).mean()
+    grp = df.groupby("horse_name", sort=False)
+    shifted = grp["NFP"].shift(1)
 
-        for i in range(len(idx)):
-            macd_vals[idx[i]] = macd.iloc[i]
-            signal_vals[idx[i]] = signal.iloc[i]
+    fast = shifted.groupby(
+        df["horse_name"], sort=False
+    ).apply(lambda x: x.ewm(span=3, min_periods=2).mean())
+    slow = shifted.groupby(
+        df["horse_name"], sort=False
+    ).apply(lambda x: x.ewm(span=10, min_periods=3).mean())
 
-    df["nfp_macd"] = macd_vals
-    df["nfp_macd_signal"] = signal_vals
+    # Flatten multi-index if present
+    if isinstance(fast.index, pd.MultiIndex):
+        fast = fast.droplevel(0).sort_index()
+        slow = slow.droplevel(0).sort_index()
+
+    macd = fast - slow
+    signal = macd.groupby(
+        df["horse_name"], sort=False
+    ).apply(lambda x: x.ewm(span=3, min_periods=2).mean())
+    if isinstance(signal.index, pd.MultiIndex):
+        signal = signal.droplevel(0).sort_index()
+
+    df["nfp_macd"] = macd
+    df["nfp_macd_signal"] = signal
+
     return df
 
 
-def _calc_mean_reversion(df: pd.DataFrame, groups) -> pd.DataFrame:
+def _calc_mean_reversion(df: pd.DataFrame) -> pd.DataFrame:
     """Mean reversion score: negative deviation from career mean."""
-    rev_vals = np.full(len(df), np.nan)
-
-    nfp_col = "NFP" if "NFP" in df.columns else None
-    if nfp_col is None:
+    if "NFP" not in df.columns:
         df["mean_reversion_score"] = np.nan
         return df
 
-    for name, idx in groups.groups.items():
-        if len(idx) < 3:
-            continue
-        nfp = df.loc[idx, nfp_col].values
-        for i in range(2, len(idx)):
-            career = nfp[:i]
-            career_mean = career.mean()
-            career_std = career.std()
-            if career_std > 0.01:
-                # Negative: after good run, expect reversion down
-                # Positive: after bad run, expect reversion up
-                rev_vals[idx[i]] = -(nfp[i - 1] - career_mean) / career_std
+    grp = df.groupby("horse_name", sort=False)
+    shifted = grp["NFP"].shift(1)
 
-    df["mean_reversion_score"] = rev_vals
+    career_mean = shifted.groupby(
+        df["horse_name"], sort=False
+    ).expanding(min_periods=2).mean().droplevel(0).sort_index()
+    career_std = shifted.groupby(
+        df["horse_name"], sort=False
+    ).expanding(min_periods=2).std().droplevel(0).sort_index()
+
+    last_nfp = grp["NFP"].shift(1)
+
+    df["mean_reversion_score"] = np.where(
+        career_std > 0.01,
+        -(last_nfp - career_mean) / career_std,
+        np.nan,
+    )
+
     return df
 
 
-def _calc_form_sharpe(df: pd.DataFrame, groups) -> pd.DataFrame:
+def _calc_form_sharpe(df: pd.DataFrame) -> pd.DataFrame:
     """Sharpe-like ratio: mean NFP / std NFP for recent runs."""
-    nfp_col = "NFP" if "NFP" in df.columns else None
-    if nfp_col is None:
+    if "NFP" not in df.columns:
         df["form_sharpe_3"] = np.nan
         df["form_sharpe_5"] = np.nan
         return df
 
+    grp = df.groupby("horse_name", sort=False)
+    shifted = grp["NFP"].shift(1)
+
     for window in [3, 5]:
-        col = f"form_sharpe_{window}"
-        vals = np.full(len(df), np.nan)
+        roll_mean = shifted.groupby(
+            df["horse_name"], sort=False
+        ).rolling(window, min_periods=window).mean().droplevel(0).sort_index()
+        roll_std = shifted.groupby(
+            df["horse_name"], sort=False
+        ).rolling(window, min_periods=window).std().droplevel(0).sort_index()
 
-        for name, idx in groups.groups.items():
-            if len(idx) < window + 1:
-                continue
-            nfp = df.loc[idx, nfp_col].values
-            for i in range(window, len(idx)):
-                recent = nfp[i - window:i]
-                std = recent.std()
-                if std > 0.01:
-                    vals[idx[i]] = recent.mean() / std
-
-        df[col] = vals
+        df[f"form_sharpe_{window}"] = np.where(
+            roll_std > 0.01,
+            roll_mean / roll_std,
+            np.nan,
+        )
 
     return df
 
 
-def _calc_nfp_acceleration(df: pd.DataFrame, groups) -> pd.DataFrame:
+def _calc_nfp_acceleration(df: pd.DataFrame) -> pd.DataFrame:
     """2nd derivative of form: rate of change of form change."""
-    vals = np.full(len(df), np.nan)
-
-    nfp_col = "NFP" if "NFP" in df.columns else None
-    if nfp_col is None:
+    if "NFP" not in df.columns:
         df["nfp_acceleration"] = np.nan
         return df
 
-    for name, idx in groups.groups.items():
-        if len(idx) < 4:
-            continue
-        nfp = df.loc[idx, nfp_col].values
-        for i in range(3, len(idx)):
-            # change_recent - change_prior (2nd derivative)
-            change_1 = nfp[i - 1] - nfp[i - 2]
-            change_2 = nfp[i - 2] - nfp[i - 3]
-            vals[idx[i]] = change_1 - change_2
+    grp = df.groupby("horse_name", sort=False)
+    lag1 = grp["NFP"].shift(1)
+    lag2 = grp["NFP"].shift(2)
+    lag3 = grp["NFP"].shift(3)
 
-    df["nfp_acceleration"] = vals
+    change_1 = lag1 - lag2
+    change_2 = lag2 - lag3
+    df["nfp_acceleration"] = change_1 - change_2
+
     return df
 
 
-def _calc_prize_momentum(df: pd.DataFrame, groups) -> pd.DataFrame:
+def _calc_prize_momentum(df: pd.DataFrame) -> pd.DataFrame:
     """Prize money trend: ratio of short-term to long-term avg."""
-    vals = np.full(len(df), np.nan)
-
     pmw_col = None
     for c in ["PMW", "preracehorsecareerPMW", "prize_money"]:
         if c in df.columns:
@@ -294,24 +292,27 @@ def _calc_prize_momentum(df: pd.DataFrame, groups) -> pd.DataFrame:
         df["prize_momentum"] = np.nan
         return df
 
-    for name, idx in groups.groups.items():
-        if len(idx) < 5:
-            continue
-        pm = pd.Series(df.loc[idx, pmw_col].values.astype(float))
-        fast = pm.ewm(span=3, min_periods=2).mean()
-        slow = pm.ewm(span=10, min_periods=3).mean()
-        for i in range(len(idx)):
-            if slow.iloc[i] > 0:
-                vals[idx[i]] = fast.iloc[i] / slow.iloc[i]
+    grp = df.groupby("horse_name", sort=False)
+    shifted = grp[pmw_col].shift(1)
 
-    df["prize_momentum"] = vals
+    fast = shifted.groupby(
+        df["horse_name"], sort=False
+    ).apply(lambda x: x.ewm(span=3, min_periods=2).mean())
+    slow = shifted.groupby(
+        df["horse_name"], sort=False
+    ).apply(lambda x: x.ewm(span=10, min_periods=3).mean())
+
+    if isinstance(fast.index, pd.MultiIndex):
+        fast = fast.droplevel(0).sort_index()
+        slow = slow.droplevel(0).sort_index()
+
+    df["prize_momentum"] = np.where(slow > 0, fast / slow, np.nan)
+
     return df
 
 
-def _calc_class_momentum(df: pd.DataFrame, groups) -> pd.DataFrame:
+def _calc_class_momentum(df: pd.DataFrame) -> pd.DataFrame:
     """Class trajectory: recent avg class - longer avg class."""
-    vals = np.full(len(df), np.nan)
-
     class_col = None
     for c in ["race_class_num", "race_class"]:
         if c in df.columns:
@@ -328,47 +329,58 @@ def _calc_class_momentum(df: pd.DataFrame, groups) -> pd.DataFrame:
         errors="coerce",
     )
 
-    for name, idx in groups.groups.items():
-        if len(idx) < 5:
-            continue
-        cls = class_numeric.loc[idx].values.astype(float)
-        for i in range(4, len(idx)):
-            recent_3 = cls[max(0, i - 3):i]
-            recent_5 = cls[max(0, i - 5):i]
-            avg_3 = np.nanmean(recent_3)
-            avg_5 = np.nanmean(recent_5)
-            vals[idx[i]] = avg_3 - avg_5  # negative = dropping in class
+    grp = class_numeric.groupby(df["horse_name"], sort=False)
+    shifted = grp.shift(1)
 
-    df["class_momentum"] = vals
+    avg_3 = shifted.groupby(
+        df["horse_name"], sort=False
+    ).rolling(3, min_periods=3).mean().droplevel(0).sort_index()
+    avg_5 = shifted.groupby(
+        df["horse_name"], sort=False
+    ).rolling(5, min_periods=4).mean().droplevel(0).sort_index()
+
+    df["class_momentum"] = avg_3 - avg_5
+
     return df
 
 
 def _calc_win_density(df: pd.DataFrame) -> pd.DataFrame:
     """Rolling win rate by calendar time (30d, 60d windows)."""
-    df["race_date_dt"] = pd.to_datetime(df["race_date"])
+    if "won" not in df.columns:
+        df["win_density_30d"] = np.nan
+        df["win_density_60d"] = np.nan
+        return df
+
+    df["_race_date_dt"] = pd.to_datetime(df["race_date"])
+
+    grp = df.groupby("horse_name", sort=False)
+    shifted_won = grp["won"].shift(1)
+    shifted_counter = grp["won"].shift(1).notna().astype(float)
 
     for days, col in [(30, "win_density_30d"), (60, "win_density_60d")]:
-        vals = np.full(len(df), np.nan)
+        window_str = f"{days}D"
+        df_tmp = pd.DataFrame({
+            "won_s": shifted_won,
+            "cnt_s": shifted_counter,
+            "entity": df["horse_name"],
+        }, index=df["_race_date_dt"])
 
-        for name, grp in df.groupby("horse_name"):
-            idx = grp.index.values
-            if len(idx) < 2:
-                continue
-            dates = grp["race_date_dt"].values
-            won = grp["won"].values if "won" in grp.columns else (
-                grp["placing_numerical"].values == 1
-            ).astype(float)
+        grp_tmp = df_tmp.groupby("entity", sort=False)
+        rolling_wins = grp_tmp["won_s"].rolling(
+            window_str, min_periods=1
+        ).sum().droplevel(0).sort_index()
+        rolling_runs = grp_tmp["cnt_s"].rolling(
+            window_str, min_periods=1
+        ).sum().droplevel(0).sort_index()
 
-            for i in range(1, len(idx)):
-                cutoff = dates[i] - np.timedelta64(days, "D")
-                mask = (dates[:i] >= cutoff)
-                if mask.sum() > 0:
-                    vals[idx[i]] = won[:i][mask].mean()
+        result = rolling_wins.values / np.where(
+            rolling_runs.values > 0, rolling_runs.values, np.nan
+        )
+        no_prior = shifted_counter.isna()
+        result[no_prior.values] = np.nan
+        df[col] = result
 
-        df[col] = vals
-
-    if "race_date_dt" in df.columns:
-        df.drop(columns=["race_date_dt"], inplace=True, errors="ignore")
+    df.drop(columns=["_race_date_dt"], errors="ignore", inplace=True)
 
     return df
 
@@ -388,10 +400,8 @@ def _calc_layoff_adjusted_form(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _calc_or_momentum(df: pd.DataFrame, groups) -> pd.DataFrame:
-    """Official rating trajectory: EWM rate of change."""
-    vals = np.full(len(df), np.nan)
-
+def _calc_or_momentum(df: pd.DataFrame) -> pd.DataFrame:
+    """Official rating trajectory: recent change."""
     or_col = None
     for c in ["official_rating", "or_num"]:
         if c in df.columns:
@@ -402,66 +412,58 @@ def _calc_or_momentum(df: pd.DataFrame, groups) -> pd.DataFrame:
         df["or_momentum"] = np.nan
         return df
 
-    for name, idx in groups.groups.items():
-        if len(idx) < 3:
-            continue
-        ors = df.loc[idx, or_col].values.astype(float)
-        for i in range(2, len(idx)):
-            recent = ors[max(0, i - 3):i]
-            if len(recent) >= 2 and not np.all(np.isnan(recent)):
-                valid = recent[~np.isnan(recent)]
-                if len(valid) >= 2:
-                    vals[idx[i]] = valid[-1] - valid[0]
+    grp = df.groupby("horse_name", sort=False)
+    lag1 = grp[or_col].shift(1)
+    lag3 = grp[or_col].shift(3)
 
-    df["or_momentum"] = vals
+    df["or_momentum"] = lag1 - lag3
+
     return df
 
 
-def _calc_nfp_skew(df: pd.DataFrame, groups) -> pd.DataFrame:
+def _calc_nfp_skew(df: pd.DataFrame) -> pd.DataFrame:
     """Skewness of recent NFP distribution (asymmetry of form)."""
-    vals = np.full(len(df), np.nan)
-
-    nfp_col = "NFP" if "NFP" in df.columns else None
-    if nfp_col is None:
+    if "NFP" not in df.columns:
         df["nfp_skew_5"] = np.nan
         return df
 
-    for name, idx in groups.groups.items():
-        if len(idx) < 6:
-            continue
-        nfp = df.loc[idx, nfp_col].values
-        for i in range(5, len(idx)):
-            recent = nfp[i - 5:i]
-            std = recent.std()
-            if std > 0.01:
-                mean = recent.mean()
-                skew = np.mean(((recent - mean) / std) ** 3)
-                vals[idx[i]] = skew
+    grp = df.groupby("horse_name", sort=False)
+    shifted = grp["NFP"].shift(1)
 
-    df["nfp_skew_5"] = vals
+    # Use rolling stats to compute skewness vectorized
+    roll_mean = shifted.groupby(
+        df["horse_name"], sort=False
+    ).rolling(5, min_periods=5).mean().droplevel(0).sort_index()
+    roll_std = shifted.groupby(
+        df["horse_name"], sort=False
+    ).rolling(5, min_periods=5).std().droplevel(0).sort_index()
+
+    # For skewness, we need the third moment — use pandas skew()
+    roll_skew = shifted.groupby(
+        df["horse_name"], sort=False
+    ).rolling(5, min_periods=5).skew().droplevel(0).sort_index()
+
+    df["nfp_skew_5"] = np.where(roll_std > 0.01, roll_skew, np.nan)
+
     return df
 
 
-def _calc_drawdown_from_peak(df: pd.DataFrame, groups) -> pd.DataFrame:
+def _calc_drawdown_from_peak(df: pd.DataFrame) -> pd.DataFrame:
     """Maximum drawdown from peak NFP (how far below best form)."""
-    vals = np.full(len(df), np.nan)
-
-    nfp_col = "NFP" if "NFP" in df.columns else None
-    if nfp_col is None:
+    if "NFP" not in df.columns:
         df["drawdown_from_peak_nfp"] = np.nan
         return df
 
-    for name, idx in groups.groups.items():
-        if len(idx) < 2:
-            continue
-        nfp = df.loc[idx, nfp_col].values
-        running_peak = nfp[0]
-        for i in range(1, len(idx)):
-            if nfp[i - 1] > running_peak:
-                running_peak = nfp[i - 1]
-            vals[idx[i]] = nfp[i - 1] - running_peak  # negative = below peak
+    grp = df.groupby("horse_name", sort=False)
+    shifted = grp["NFP"].shift(1)
 
-    df["drawdown_from_peak_nfp"] = vals
+    # Running peak of lagged NFP
+    running_peak = shifted.groupby(
+        df["horse_name"], sort=False
+    ).cummax()
+
+    df["drawdown_from_peak_nfp"] = shifted - running_peak
+
     return df
 
 

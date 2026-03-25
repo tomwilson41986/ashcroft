@@ -487,9 +487,18 @@ def build_features_for_runners(
         2. Build PreRaceBuilder lookups from the enriched history
         3. Build feature vectors for today's declared runners
     """
+    # Limit history to last 4 years — sufficient for expanding metrics
+    # and dramatically faster than processing the full 15+ year database
+    cutoff = pd.Timestamp(str(target_date)) - pd.DateOffset(years=4)
+    recent_df = historical_df[historical_df["race_date"] >= cutoff].copy()
+    log.info(
+        f"  Trimmed history to {len(recent_df):,} rows "
+        f"(from {cutoff.date()} onwards, was {len(historical_df):,})"
+    )
+
     log.info("Calculating custom metrics on historical data...")
     engine = CustomMetricsEngine()
-    enriched = engine.calculate_all(historical_df)
+    enriched = engine.calculate_all(recent_df)
     log.info(f"  Calculated metrics for {len(enriched):,} rows")
 
     log.info("Building pre-race feature lookups...")
