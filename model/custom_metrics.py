@@ -176,6 +176,9 @@ class CustomMetricsEngine:
         df = self._calc_race_strength(df)
         df = self._calc_recency_and_confidence(df)
 
+        # Defragment — the column insertions above cause internal fragmentation
+        df = df.copy()
+
         # --- New research-backed metrics (Benter/Woods/Ziemba/syndicate) ---
         df = self._calc_exponential_decay_form(df)
         df = self._calc_expectation_residuals(df)
@@ -195,6 +198,9 @@ class CustomMetricsEngine:
         df = self._calc_track_preference(df)
         df = self._calc_or_trajectory(df)
         df = self._calc_hot_form(df)
+
+        # Defragment again before financial features
+        df = df.copy()
 
         # --- Financial-style features (RSI, MACD, z-score, Sharpe, etc.) ---
         from model.financial_features import calculate_financial_features
