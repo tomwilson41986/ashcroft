@@ -1872,44 +1872,50 @@ class CustomMetricsEngine:
 
             # 14-day and 30-day rolling win rate using time-aware rolling
             for window_days, suffix in [(14, "14d"), (30, "30d")]:
-                # Use pandas time-aware rolling on date-indexed data
-                # Create a temporary datetime index for rolling window
                 egrp_sorted = df.groupby(entity_col, sort=False)
 
                 # Shift won and a counter by 1 to exclude current race (lag)
                 shifted_won = egrp_sorted["won"].shift(1)
-                shifted_counter = egrp_sorted["won"].shift(1).notna().astype(float)
+                shifted_counter = shifted_won.notna().astype(float)
 
-                # Set a temporary DatetimeIndex for time-based rolling
-                _orig_idx = df.index.copy()
+                # Build temp frame with DatetimeIndex for time-based rolling
                 df_tmp = pd.DataFrame({
                     "won_s": shifted_won,
                     "cnt_s": shifted_counter,
-                    "entity": df[entity_col],
-                }, index=df["race_date"])
+                    "entity": df[entity_col].values,
+                    "_orig_pos": np.arange(len(df)),
+                }, index=pd.to_datetime(df["race_date"]))
 
-                # Time-aware rolling within each entity group
-                window_str = f"{window_days}D"
-                grp_tmp = df_tmp.groupby("entity", sort=False)
-                rolling_wins = grp_tmp["won_s"].rolling(window_str, min_periods=1).sum()
-                rolling_runs = grp_tmp["cnt_s"].rolling(window_str, min_periods=1).sum()
+                # Drop rows with no prior data to avoid empty groups
+                valid_mask = shifted_counter > 0
+                df_valid = df_tmp[valid_mask.values]
 
-                # Flatten multi-index back to original index
-                rolling_wins = rolling_wins.droplevel(0).sort_index()
-                rolling_runs = rolling_runs.droplevel(0).sort_index()
+                if len(df_valid) > 0:
+                    window_str = f"{window_days}D"
+                    grp_valid = df_valid.groupby("entity", sort=False)
+                    rw = grp_valid["won_s"].rolling(
+                        window_str, min_periods=1
+                    ).sum().droplevel(0).sort_index()
+                    rr = grp_valid["cnt_s"].rolling(
+                        window_str, min_periods=1
+                    ).sum().droplevel(0).sort_index()
 
-                # Re-align to original integer index
-                df[f"{prefix}_wins_{suffix}"] = rolling_wins.values
-                df[f"{prefix}_runs_{suffix}"] = rolling_runs.values
+                    # Map back to original positions
+                    wins_arr = np.full(len(df), np.nan)
+                    runs_arr = np.full(len(df), np.nan)
+                    orig_pos = df_valid["_orig_pos"].values
+                    wins_arr[orig_pos] = rw.values
+                    runs_arr[orig_pos] = rr.values
+                else:
+                    wins_arr = np.full(len(df), np.nan)
+                    runs_arr = np.full(len(df), np.nan)
+
+                df[f"{prefix}_wins_{suffix}"] = wins_arr
+                df[f"{prefix}_runs_{suffix}"] = runs_arr
                 df[f"{prefix}_sr_{suffix}"] = (
                     df[f"{prefix}_wins_{suffix}"]
                     / df[f"{prefix}_runs_{suffix}"].replace(0, np.nan)
                 )
-                # Null out where no prior data
-                no_prior = shifted_counter.isna()
-                df.loc[no_prior, f"{prefix}_wins_{suffix}"] = np.nan
-                df.loc[no_prior, f"{prefix}_runs_{suffix}"] = np.nan
-                df.loc[no_prior, f"{prefix}_sr_{suffix}"] = np.nan
 
             # Form delta: recent form vs career
             career_wiv = df.get(
