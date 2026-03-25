@@ -129,11 +129,29 @@ def fetch_model_from_github(
             return _download_via_gh(repo, tag, dest_dir, result.stdout)
 
         # Fallback to API
-        return _download_via_api(repo, tag, dest_dir, token)
+        ok = _download_via_api(repo, tag, dest_dir, token)
 
     except FileNotFoundError:
         # gh CLI not installed, use API
-        return _download_via_api(repo, tag, dest_dir, token)
+        ok = _download_via_api(repo, tag, dest_dir, token)
+
+    if not ok:
+        # Check if model files already exist locally (e.g. checked into repo)
+        local_models = [
+            os.path.join(dest_dir, f)
+            for f in ("probability_model.lgb", "blend_config.json")
+        ]
+        if all(os.path.exists(f) for f in local_models):
+            log.info(
+                "No GitHub release found, but local model files exist in "
+                f"{dest_dir} — using those instead"
+            )
+            return True
+        log.error(
+            "No GitHub release found and no local model files in "
+            f"{dest_dir}. Create a release or train a model first."
+        )
+    return ok
 
 
 def _download_via_gh(
