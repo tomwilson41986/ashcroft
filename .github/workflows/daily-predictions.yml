@@ -51,6 +51,7 @@ jobs:
             --s3-key "$S3_DB_KEY"
 
       - name: Download model from GitHub release
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
