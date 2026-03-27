@@ -365,7 +365,14 @@ def _calc_win_density(df: pd.DataFrame) -> pd.DataFrame:
             "entity": df["horse_name"],
         }, index=df["_race_date_dt"])
 
-        grp_tmp = df_tmp.groupby("entity", sort=False)
+        # Filter out rows with missing entity to avoid empty groups
+        valid_mask = df_tmp["entity"].notna()
+        if not valid_mask.any():
+            df[col] = np.nan
+            continue
+
+        df_valid = df_tmp[valid_mask]
+        grp_tmp = df_valid.groupby("entity", sort=False)
         rolling_wins = grp_tmp["won_s"].rolling(
             window_str, min_periods=1
         ).sum().droplevel(0).sort_index()
@@ -373,9 +380,12 @@ def _calc_win_density(df: pd.DataFrame) -> pd.DataFrame:
             window_str, min_periods=1
         ).sum().droplevel(0).sort_index()
 
-        result = rolling_wins.values / np.where(
+        # Map results back to original index
+        result = np.full(len(df), np.nan)
+        valid_result = rolling_wins.values / np.where(
             rolling_runs.values > 0, rolling_runs.values, np.nan
         )
+        result[valid_mask.values] = valid_result
         no_prior = shifted_counter.isna()
         result[no_prior.values] = np.nan
         df[col] = result
