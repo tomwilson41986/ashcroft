@@ -27,3 +27,7 @@ data/models_backup*/
 /bfsp_model.lgb
 model_metrics.json
 data/datasets/*.parquet
+
+# Node.js (jsdom for scraper challenge bypass)
+node_modules/
+package-lock.json
