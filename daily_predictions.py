@@ -105,11 +105,15 @@ def login(session: requests.Session) -> str | None:
         )
         return None
 
-    # Get CSRF token
+    # Get CSRF token (site may serve a JS challenge page first)
     resp = session.get(RESULTS_URL)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "lxml")
     csrf_input = soup.find("input", {"name": "CSRFtoken"})
+    if not csrf_input:
+        # Import challenge solver from scraper
+        from scraper import _solve_challenge
+        csrf_input = _solve_challenge(session, resp.text)
     if not csrf_input:
         log.error("Could not find CSRF token on page")
         return None
