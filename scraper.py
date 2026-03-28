@@ -147,6 +147,78 @@ def init_db(db_path: str = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
+def _solve_challenge(session: requests.Session, html: str):
+    """Solve HRB's JS bot-protection challenge using Node.js + jsdom.
+
+    The challenge page contains obfuscated JS that performs browser
+    fingerprint checks and submits a hidden form. We execute it in
+    jsdom, intercept the form submission, and replay it via requests.
+    Returns the CSRFtoken input element on success, None on failure.
+    """
+    import json
+    import subprocess
+    import tempfile
+
+    log.info("Solving JS bot-protection challenge via jsdom...")
+
+    node_script = (
+        'const{JSDOM}=require("jsdom");'
+        "const html=" + json.dumps(html) + ";"
+        'const dom=new JSDOM(html,{'
+        'url:"https://www.horseracebase.com/horse-racing-results.php",'
+        'runScripts:"dangerously",pretendToBeVisual:true,'
+        'beforeParse(w){'
+        'const oc=w.document.createElement.bind(w.document);'
+        'w.document.createElement=function(t){'
+        'const e=oc(t);if(t==="form"){'
+        'e.submit=function(){'
+        'const d={};e.querySelectorAll("input").forEach(i=>{if(i.name)d[i.name]=i.value;});'
+        'd._action=e.action;d._method=e.method;console.log("FD:"+JSON.stringify(d));};'
+        '}return e;};'
+        'class X{open(m,u){this._u=u;}send(){console.log("XD:"+JSON.stringify({u:this._u}));}}'
+        'w.XMLHttpRequest=X;'
+        'Object.defineProperty(w,"outerHeight",{value:900,configurable:true});'
+        'Object.defineProperty(w,"outerWidth",{value:1440,configurable:true});'
+        '}});setTimeout(()=>process.exit(0),3000);'
+    )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as f:
+        f.write(node_script)
+        tmp = f.name
+
+    env = os.environ.copy()
+    env["NODE_PATH"] = os.path.join(SCRIPT_DIR, "node_modules")
+
+    try:
+        result = subprocess.run(
+            ["node", tmp], capture_output=True, text=True, timeout=10, env=env
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        log.error(f"Node.js execution failed: {exc}")
+        return None
+    finally:
+        os.unlink(tmp)
+
+    for line in result.stdout.splitlines():
+        if line.startswith("FD:"):
+            data = json.loads(line[3:])
+            action = data.pop("_action", "")
+            data.pop("_method", None)
+            params = {k: v for k, v in data.items() if not k.startswith("_")}
+            log.info(f"Submitting challenge to {action}")
+            resp = session.get(action, params=params, allow_redirects=True)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "lxml")
+                csrf = soup.find("input", {"name": "CSRFtoken"})
+                if csrf:
+                    log.info("Challenge solved successfully")
+                    return csrf
+            log.warning(f"Challenge submission returned status {resp.status_code}")
+
+    log.error("Failed to solve JS challenge")
+    return None
+
+
 def login(session: requests.Session) -> str | None:
     """Log in to horseracebase.com. Returns user ID on success, None on failure."""
     username = os.getenv("HRB_USERNAME")
@@ -156,13 +228,19 @@ def login(session: requests.Session) -> str | None:
         log.error("HRB_USERNAME and HRB_PASSWORD environment variables must be set")
         return None
 
-    # Get CSRF token
+    # Get CSRF token (site may serve a JS challenge page first)
+    csrf_input = None
     resp = session.get(RESULTS_URL)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "lxml")
     csrf_input = soup.find("input", {"name": "CSRFtoken"})
+
     if not csrf_input:
-        log.error("Could not find CSRF token on page")
+        # Solve the JS bot-protection challenge using Node.js + jsdom
+        csrf_input = _solve_challenge(session, resp.text)
+
+    if not csrf_input:
+        log.error("Could not find CSRF token on page after challenge bypass")
         return None
 
     # Post login
