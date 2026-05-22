@@ -1,9 +1,6 @@
 name: Daily Racing Predictions
 
 on:
-  schedule:
-    # Run at 07:00 UTC every day (racecards typically available by then)
-    - cron: '0 7 * * *'
   workflow_dispatch:
     inputs:
       date:
