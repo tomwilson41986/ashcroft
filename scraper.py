@@ -33,7 +33,7 @@ DB_PATH = os.path.join(SCRIPT_DIR, "horse_racing.db")
 CSV_DIR = os.path.join(SCRIPT_DIR, "csv")
 BASE_URL = "https://www.horseracebase.com"
 RESULTS_URL = f"{BASE_URL}/horse-racing-results.php"
-LOGIN_URL = f"{BASE_URL}/horsebase1.php"
+LOGIN_URL = f"{BASE_URL}/horseracebase_login.php"
 CSV_URL = f"{BASE_URL}/excelresults.php"
 
 # Rate limiting: seconds between requests
@@ -156,20 +156,24 @@ def login(session: requests.Session) -> str | None:
         log.error("HRB_USERNAME and HRB_PASSWORD environment variables must be set")
         return None
 
-    # Get CSRF token
-    resp = session.get(RESULTS_URL)
+    # Get CSRF token from the login page. The login form posts back to the
+    # same URL and carries a hidden "csrf_token" field.
+    resp = session.get(LOGIN_URL)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "lxml")
-    csrf_input = soup.find("input", {"name": "CSRFtoken"})
+    csrf_input = (
+        soup.find("input", {"name": "csrf_token"})
+        or soup.find("input", {"name": "CSRFtoken"})
+    )
     if not csrf_input:
-        log.error("Could not find CSRF token on page")
+        log.error("Could not find CSRF token on login page")
         return None
 
-    # Post login
+    # Post login to the login page (form has no action, so it self-submits).
     resp2 = session.post(LOGIN_URL, data={
         "login": username,
         "password": password,
-        "CSRFtoken": csrf_input.get("value"),
+        "csrf_token": csrf_input.get("value"),
     })
     resp2.raise_for_status()
 

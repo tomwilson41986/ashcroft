@@ -27,15 +27,19 @@ def main():
     })
 
     # Login
-    resp = session.get(f"{BASE_URL}/horse-racing-results.php")
+    login_url = f"{BASE_URL}/horseracebase_login.php"
+    resp = session.get(login_url)
     soup = BeautifulSoup(resp.text, "lxml")
-    csrf = soup.find("input", {"name": "CSRFtoken"})
+    csrf = (
+        soup.find("input", {"name": "csrf_token"})
+        or soup.find("input", {"name": "CSRFtoken"})
+    )
     session.post(
-        f"{BASE_URL}/horsebase1.php",
+        login_url,
         data={
             "login": os.getenv("HRB_USERNAME"),
             "password": os.getenv("HRB_PASSWORD"),
-            "CSRFtoken": csrf.get("value"),
+            "csrf_token": csrf.get("value"),
         },
     )
 
