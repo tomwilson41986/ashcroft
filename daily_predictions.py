@@ -54,7 +54,7 @@ MODEL_DIR = os.path.join(SCRIPT_DIR, "data", "models")
 RACECARD_DIR = os.path.join(SCRIPT_DIR, "csv", "racecards")
 
 BASE_URL = "https://www.horseracebase.com"
-LOGIN_URL = f"{BASE_URL}/horsebase1.php"
+LOGIN_URL = f"{BASE_URL}/horseracebase_login.php"
 RESULTS_URL = f"{BASE_URL}/horse-racing-results.php"
 TODAY_URL = f"{BASE_URL}/horse-racing-today.php"
 CSV_URL = f"{BASE_URL}/excelresults.php"
@@ -105,20 +105,21 @@ def login(session: requests.Session) -> str | None:
         )
         return None
 
-    # Get CSRF token
-    resp = session.get(RESULTS_URL)
+    # Get CSRF token from the login page
+    resp = session.get(LOGIN_URL)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "lxml")
-    csrf_input = soup.find("input", {"name": "CSRFtoken"})
+    csrf_input = (soup.find("input", {"name": "csrf_token"})
+                  or soup.find("input", {"name": "CSRFtoken"}))
     if not csrf_input:
         log.error("Could not find CSRF token on page")
         return None
 
-    # Post login
+    # Post login back to the login page
     resp2 = session.post(LOGIN_URL, data={
         "login": username,
         "password": password,
-        "CSRFtoken": csrf_input.get("value"),
+        csrf_input.get("name"): csrf_input.get("value"),
     })
     resp2.raise_for_status()
 

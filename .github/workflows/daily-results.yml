@@ -117,3 +117,41 @@ jobs:
             scraper.log
             results_report.log
           retention-days: 30
+
+      - name: Send failure alert email
+        if: failure()
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TARGET_DATE: ${{ steps.date.outputs.target }}
+        run: |
+          python - <<'EOF'
+          import os, smtplib
+          from email.mime.text import MIMEText
+
+          user = os.getenv("SMTP_USERNAME")
+          password = os.getenv("SMTP_PASSWORD")
+          if not user or not password:
+              print("SMTP credentials not set; cannot send failure alert")
+              raise SystemExit(0)
+
+          target = os.getenv("TARGET_DATE", "unknown")
+          msg = MIMEText(
+              f"The Daily Results & P&L workflow failed for {target}.\n\n"
+              f"No results were added to horse_racing.db for this date.\n\n"
+              f"Logs: {os.getenv('RUN_URL')}\n"
+          )
+          msg["Subject"] = f"ALERT: daily results ingestion FAILED for {target}"
+          msg["From"] = user
+          msg["To"] = "racingsquared@gmail.com"
+
+          with smtplib.SMTP(os.getenv("SMTP_HOST", "smtp.gmail.com"),
+                            int(os.getenv("SMTP_PORT", "587"))) as server:
+              server.starttls()
+              server.login(user, password)
+              server.send_message(msg)
+          print("Failure alert sent")
+          EOF
