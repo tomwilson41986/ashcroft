@@ -477,7 +477,7 @@ def main():
             log.info(f"Resuming from {start} (last scraped: {last})")
         else:
             start = date(2010, 1, 1)
-        end = yesterday
+        end = date.fromisoformat(args.to_date) if args.to_date else yesterday
 
     if start > end:
         log.info("Nothing to scrape - already up to date.")

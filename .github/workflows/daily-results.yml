@@ -60,13 +60,12 @@ jobs:
             echo "target=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Scrape today's results from HRB
+      - name: Scrape results from HRB (resumes from last scraped date)
         env:
           HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
           HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
         run: |
           python scraper.py \
-            --from "${{ steps.date.outputs.target }}" \
             --to "${{ steps.date.outputs.target }}" \
             --no-backup
 
