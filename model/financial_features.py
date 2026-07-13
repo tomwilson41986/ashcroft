@@ -351,36 +351,13 @@ def _calc_win_density(df: pd.DataFrame) -> pd.DataFrame:
         df["win_density_60d"] = np.nan
         return df
 
-    df["_race_date_dt"] = pd.to_datetime(df["race_date"])
-
-    grp = df.groupby("horse_name", sort=False)
-    shifted_won = grp["won"].shift(1)
-    shifted_counter = grp["won"].shift(1).notna().astype(float)
+    from model.custom_metrics import _time_window_prior_stats
 
     for days, col in [(30, "win_density_30d"), (60, "win_density_60d")]:
-        window_str = f"{days}D"
-        df_tmp = pd.DataFrame({
-            "won_s": shifted_won,
-            "cnt_s": shifted_counter,
-            "entity": df["horse_name"],
-        }, index=df["_race_date_dt"])
-
-        grp_tmp = df_tmp.groupby("entity", sort=False)
-        rolling_wins = grp_tmp["won_s"].rolling(
-            window_str, min_periods=1
-        ).sum().droplevel(0).sort_index()
-        rolling_runs = grp_tmp["cnt_s"].rolling(
-            window_str, min_periods=1
-        ).sum().droplevel(0).sort_index()
-
-        result = rolling_wins.values / np.where(
-            rolling_runs.values > 0, rolling_runs.values, np.nan
+        wins, runs = _time_window_prior_stats(
+            df, "horse_name", days, closed="both"
         )
-        no_prior = shifted_counter.isna()
-        result[no_prior.values] = np.nan
-        df[col] = result
-
-    df.drop(columns=["_race_date_dt"], errors="ignore", inplace=True)
+        df[col] = wins / runs
 
     return df
 

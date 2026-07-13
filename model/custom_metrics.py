@@ -83,6 +83,54 @@ def _lag_rolling_std(df: pd.DataFrame, group_col, val_col: str,
     ).sort_index()
 
 
+def _time_window_prior_stats(
+    df: pd.DataFrame, entity_col: str, window_days: int, closed: str
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-entity wins/runs over prior rows within a trailing calendar window.
+
+    For each row i, considers rows j < i of the same entity whose own
+    race_date falls within `window_days` of row i's race_date (`closed`
+    controls the left boundary: "right" excludes runs exactly window_days
+    ago, "both" includes them). Rows with no in-window prior run get NaN
+    for both outputs. Within-entity "prior" follows the caller's row
+    order, so df must already be date/time-sorted within each entity.
+
+    Returns (wins, runs) arrays aligned to df's positional order.
+    """
+    n = len(df)
+    wins = np.full(n, np.nan)
+    runs = np.full(n, np.nan)
+    valid = df[entity_col].notna().values
+    if valid.any():
+        tmp = pd.DataFrame({
+            "_won": df["won"].values.astype(float),
+            "_one": 1.0,
+            "_dt": pd.to_datetime(df["race_date"]).values,
+            "_entity": df[entity_col].values,
+            "_pos": np.arange(n),
+        })[valid]
+        # Make entity blocks contiguous (stable, so within-entity order is
+        # kept): the group-concatenated rolling output then lines up 1:1
+        # with tmp's rows. Rolling by index label is not an option here —
+        # with `on=` the result is indexed by (_entity, _dt), and race
+        # dates are not unique.
+        tmp = tmp.sort_values("_entity", kind="stable")
+        roll = (
+            tmp.groupby("_entity", sort=False)
+            .rolling(f"{window_days}D", on="_dt", closed=closed, min_periods=1)
+            [["_won", "_one"]]
+            .sum()
+        )
+        pos = tmp["_pos"].values
+        # The window includes the current row — subtract it for lag safety.
+        wins[pos] = roll["_won"].values - tmp["_won"].values
+        runs[pos] = roll["_one"].values - 1.0
+    no_prior = runs <= 0
+    wins[no_prior] = np.nan
+    runs[no_prior] = np.nan
+    return wins, runs
+
+
 # Harmonic recency weights for last 10 runs
 RECENCY_WEIGHTS = {
     1: 1.0,
@@ -1868,48 +1916,12 @@ class CustomMetricsEngine:
             df = df.sort_values(
                 [entity_col, "race_date", "race_time"]
             ).reset_index(drop=True)
-            egrp = df.groupby(entity_col, group_keys=False)
 
             # 14-day and 30-day rolling win rate using time-aware rolling
             for window_days, suffix in [(14, "14d"), (30, "30d")]:
-                egrp_sorted = df.groupby(entity_col, sort=False)
-
-                # Shift won and a counter by 1 to exclude current race (lag)
-                shifted_won = egrp_sorted["won"].shift(1)
-                shifted_counter = shifted_won.notna().astype(float)
-
-                # Build temp frame with DatetimeIndex for time-based rolling
-                df_tmp = pd.DataFrame({
-                    "won_s": shifted_won,
-                    "cnt_s": shifted_counter,
-                    "entity": df[entity_col].values,
-                    "_orig_pos": np.arange(len(df)),
-                }, index=pd.to_datetime(df["race_date"]))
-
-                # Drop rows with no prior data to avoid empty groups
-                valid_mask = shifted_counter > 0
-                df_valid = df_tmp[valid_mask.values]
-
-                if len(df_valid) > 0:
-                    window_str = f"{window_days}D"
-                    grp_valid = df_valid.groupby("entity", sort=False)
-                    rw = grp_valid["won_s"].rolling(
-                        window_str, min_periods=1
-                    ).sum().droplevel(0).sort_index()
-                    rr = grp_valid["cnt_s"].rolling(
-                        window_str, min_periods=1
-                    ).sum().droplevel(0).sort_index()
-
-                    # Map back to original positions
-                    wins_arr = np.full(len(df), np.nan)
-                    runs_arr = np.full(len(df), np.nan)
-                    orig_pos = df_valid["_orig_pos"].values
-                    wins_arr[orig_pos] = rw.values
-                    runs_arr[orig_pos] = rr.values
-                else:
-                    wins_arr = np.full(len(df), np.nan)
-                    runs_arr = np.full(len(df), np.nan)
-
+                wins_arr, runs_arr = _time_window_prior_stats(
+                    df, entity_col, window_days, closed="right"
+                )
                 df[f"{prefix}_wins_{suffix}"] = wins_arr
                 df[f"{prefix}_runs_{suffix}"] = runs_arr
                 df[f"{prefix}_sr_{suffix}"] = (
