@@ -8,6 +8,9 @@ on:
         required: false
         type: string
         default: '397142,399032'
+  push:
+    paths:
+      - 'data/h2h/request.txt'
 
 permissions:
   contents: write
@@ -29,13 +32,25 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4 lxml python-dotenv
 
+      - name: Determine horse IDs
+        id: ids
+        run: |
+          if [ -n "${{ inputs.horse_ids }}" ]; then
+            IDS="${{ inputs.horse_ids }}"
+          elif [ -f data/h2h/request.txt ]; then
+            IDS=$(tr -d '[:space:]' < data/h2h/request.txt)
+          else
+            IDS="397142,399032"
+          fi
+          echo "ids=$IDS" >> "$GITHUB_OUTPUT"
+
       - name: Fetch horse form pages
         env:
           HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
           HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
         run: |
           python scripts/fetch_horse_form.py \
-            --ids "${{ inputs.horse_ids || '397142,399032' }}" \
+            --ids "${{ steps.ids.outputs.ids }}" \
             --out-dir data/h2h
 
       - name: Commit fetched pages to branch
