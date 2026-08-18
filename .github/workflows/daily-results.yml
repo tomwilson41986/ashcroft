@@ -1,9 +1,10 @@
 name: Daily Results & P&L
 
 on:
-  schedule:
-    # Run at 21:30 UTC — after UK racing finishes for the day
-    - cron: '30 21 * * *'
+  # Scheduled runs disabled - trigger manually via workflow_dispatch.
+  # schedule:
+  #   # Run at 21:30 UTC — after UK racing finishes for the day
+  #   - cron: '30 21 * * *'
   workflow_dispatch:
     inputs:
       date:

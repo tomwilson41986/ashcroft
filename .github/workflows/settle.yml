@@ -1,7 +1,8 @@
 name: Daily Settlement
 on:
-  schedule:
-    - cron: '0 21 * * *'   # 21:00 UTC daily
+  # Scheduled runs disabled - trigger manually via workflow_dispatch.
+  # schedule:
+  #   - cron: '0 21 * * *'   # 21:00 UTC daily
   workflow_dispatch:
 
 jobs:
