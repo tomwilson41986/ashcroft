@@ -200,13 +200,25 @@ def build_features(horse: dict) -> dict:
     }
 
 
-def simulate(fa: dict, fb: dict, n_runs: int, seed: int) -> dict:
+def parse_weight(txt: str) -> float:
+    """Carried weight in lbs. Accepts '9-12', '9st12', '9st 12lb' or plain lbs."""
+    txt = txt.strip().lower().replace("st", "-").replace("lb", "")
+    m = re.match(r"(\d+)\s*-\s*(\d+)", txt)
+    if m:
+        return int(m.group(1)) * 14 + int(m.group(2))
+    return float(txt)
+
+
+def simulate(fa: dict, fb: dict, n_runs: int, seed: int,
+             weight_a: float = 0.0, weight_b: float = 0.0) -> dict:
+    """weight_a/weight_b: carried weight in lbs (0 = level weights).
+    In a handicap, each extra lb carried costs 1 lb of performance."""
     rng = np.random.default_rng(seed)
     draw_a = rng.choice(fa["figures"], size=n_runs, p=fa["weights"]) \
         + rng.normal(0, DAY_NOISE_LBS, n_runs)
     draw_b = rng.choice(fb["figures"], size=n_runs, p=fb["weights"]) \
         + rng.normal(0, DAY_NOISE_LBS, n_runs)
-    diff = draw_a - draw_b
+    diff = (draw_a - weight_a) - (draw_b - weight_b)
     a_wins = int((diff > 0).sum())
     ties = int((diff == 0).sum())    # measure-zero with continuous noise
     b_wins = n_runs - a_wins - ties
@@ -218,6 +230,8 @@ def simulate(fa: dict, fb: dict, n_runs: int, seed: int) -> dict:
         "a_win_pct": 100 * a_wins / n_runs,
         "b_win_pct": 100 * b_wins / n_runs,
         "mean_margin_lbs": float(diff.mean()),
+        "weight_a_lbs": weight_a,
+        "weight_b_lbs": weight_b,
     }
 
 
@@ -227,6 +241,10 @@ def main():
     ap.add_argument("--horse-b", required=True)
     ap.add_argument("--runs", type=int, default=10000)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--weight-a", default="0",
+                    help="Weight carried by horse A, e.g. '9-7' (default: level)")
+    ap.add_argument("--weight-b", default="0",
+                    help="Weight carried by horse B, e.g. '9-12' (default: level)")
     ap.add_argument("--out", default="data/h2h/simulation_result.json")
     args = ap.parse_args()
 
@@ -244,9 +262,13 @@ def main():
                   f"{r['race_type'][:9]:<9} OR {r['or_rating']:>3}  perf {perf} "
                   f" w={r['weight']:.3f}{flag}")
 
-    res = simulate(a, b, args.runs, args.seed)
+    wa, wb = parse_weight(args.weight_a), parse_weight(args.weight_b)
+    res = simulate(a, b, args.runs, args.seed, wa, wb)
     print("\n" + "=" * 64)
     print(f"MATCH RESULT over {res['runs']:,} simulated races (seed {args.seed})")
+    if wa or wb:
+        print(f"  Weights: A carries {int(wa)//14}-{int(wa)%14} ({wa:.0f} lbs), "
+              f"B carries {int(wb)//14}-{int(wb)%14} ({wb:.0f} lbs)")
     print(f"  {a['name']:<30} {res['a_wins']:>6,}  ({res['a_win_pct']:.1f}%)")
     print(f"  {b['name']:<30} {res['b_wins']:>6,}  ({res['b_win_pct']:.1f}%)")
     print(f"  Mean ability gap: {res['mean_margin_lbs']:+.1f} lbs "

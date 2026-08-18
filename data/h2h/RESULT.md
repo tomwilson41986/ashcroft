@@ -46,3 +46,34 @@ A wins. On latest form alone (perf 108 v 103), Opportunity is clearly
 the more likely winner, and the simulation agrees.
 
 Full per-run figures and config: `data/h2h/simulation_result.json`.
+
+---
+
+## Update: at Ebor weights (York, 15:35 Sat 22 Aug 2026)
+
+Both horses are declared in the **Sky Bet Ebor Handicap** (1m6f, Class 2
+Heritage, £500k). Allotted weights:
+
+| Horse | Weight | Note |
+|-------|--------|------|
+| Opportunity | 9st 12lb | Top weight off OR 110 — his mark sets the race |
+| Hopewell Rock (IRE) | 9st 7lb | 9-3 off OR 101 + 4lb penalty for the Goodwood win (new mark 105) |
+
+Re-running the same 10,000-race simulation with each horse's performance
+debited by carried weight (1 lb = 1 lb):
+
+| Horse | Wins | Win % |
+|-------|------|-------|
+| **Hopewell Rock (IRE)** | **5,736** | **57.4%** |
+| Opportunity | 4,264 | 42.6% |
+
+Seed-stability: Hopewell Rock 56.4–57.4% across seeds {1, 7, 42, 123, 2026}.
+
+The 5 lb Hopewell Rock receives almost exactly mirrors the level-weights
+result (Opportunity 57.4% → Hopewell Rock 57.4%): the form model rated
+Opportunity ~2 lbs the better horse at levels, so 5 lb swings the match.
+Worth noting the trip leans the same way — Hopewell Rock won over this
+1m6f distance at Goodwood last time, while Opportunity has never raced
+beyond 1m4f.
+
+Full output: `data/h2h/simulation_result_ebor.json`.
