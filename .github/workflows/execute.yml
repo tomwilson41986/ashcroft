@@ -1,8 +1,9 @@
 name: Execute Bets
 on:
-  schedule:
-    # Run every 30 mins during UK racing hours (10:00-20:00 UTC)
-    - cron: '*/30 10-20 * * *'
+  # Scheduled runs disabled - trigger manually via workflow_dispatch.
+  # schedule:
+  #   # Run every 30 mins during UK racing hours (10:00-20:00 UTC)
+  #   - cron: '*/30 10-20 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
