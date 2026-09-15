@@ -311,3 +311,39 @@ Built: `model/clv.py` (`prepare_clv_frame`, `price_move_model`, `early_bet_rule`
 
 ### 11.4 What still matters from the earlier sections
 Sharper BSP forecasts (lower log-error) raise CLV directly, so the feature blocks in §3–§6 and §10 still earn their place — but their promotion criterion becomes *incremental BSP-forecast accuracy given the morning price*, measured by the CLV report, not ΔR² over BSP. The Kalman rating, Timeform feed and connection blocks are the first candidates; the ABM's pace features and the causal intervention effects remain the candidates for information the *morning* market prices late.
+
+---
+
+## 12. Market-blind staking: Kelly and ranks on real out-of-sample output
+
+Full report and tables: **[STAKING_REPORT.md](STAKING_REPORT.md)**. Command:
+`python research_lab.py stake --predictions data/oos_predictions.csv`. Module:
+`model/staking.py` (Kelly at the settlement price, log-space bankroll paths, rank
+staking plans, shrinkage scan, forecast-price diagnostics), tested in
+`tests/test_staking.py`.
+
+The question asked was how the model performs on Kelly and on per-race ranks *without
+considering the market*. The market can be removed from the selection, the probability
+and every filter, but not from the settlement price — with no market price there is no
+edge and Kelly stakes nothing. Results on 253,532 runners / 27,223 races
+(Jan 2024 – Feb 2026), commission 5%:
+
+| finding | number |
+|---|---|
+| Full Kelly on model probabilities | bank halves by race 9, under 1% by race 29, ends 10⁻⁷³² |
+| 1/20 Kelly | halves by race 417, ends 10⁻⁴·⁴ |
+| Share of the loss attributable to variance rather than negative edge (1/20 Kelly) | ≈ 3/4 |
+| Kelly-weighted ROI over the same bets vs flat | −1.04% vs −5.69% |
+| Model rank 1, flat at BSP | −0.44% (90% CI −2.1 to +1.4); random runner −5.73%, favourite −3.05% |
+| Model rank 1, field ≥ 12 | +4.40% (CI −0.7 to +9.4), quarters −3.0 / +3.2 / +7.7 / +9.8 |
+| Model rank 1, field ≥ 16 | +14.77% (CI +2.1 to +29.0) |
+| Model rank 1, forecast price ≥ 8 | +13.44% (CI −1.8 to +29.0) |
+| Flattening probabilities (p ∝ p^λ) | monotonically worse as λ → 0: the ordering is the asset, not the confidence |
+| Stage F (market-free), rank 1 | −1.95% (clogit) / −5.11% (LightGBM) on 5,017 races |
+| Forecast BFSP bias on the model's top pick | +8.3% (closes shorter than forecast 58% of the time), decaying to 0 by rank 5 |
+
+Consequences for the roadmap: (a) no Kelly sizing on these probabilities at any fraction;
+(b) the big-field and long-forecast-price cells join the disagreement cells from §7 as the
+only market-blind selections worth live testing; (c) the +8% retransformation bias in the
+top-pick price forecast is a correctable defect that directly costs CLV, and should be
+fixed before any early-price trigger uses the forecast.

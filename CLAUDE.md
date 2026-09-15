@@ -77,6 +77,9 @@ python betfair_sync.py --live --csv live_odds.csv
 # Model-vs-market scoring (Murphy decomposition, skill vs BSP, concordance, drift)
 python research_lab.py score --predictions data/oos_predictions.csv
 
+# Market-blind staking: Kelly ladder, per-race ranks, bankroll paths (see STAKING_REPORT.md)
+python research_lab.py stake --predictions data/oos_predictions.csv --bank-chart banks.png
+
 # Betfair historic price files: fetch (not from Cloudflare-blocked hosts), load, match, coverage
 python betfair_prices.py --fetch --days 3 --load --match --report
 
