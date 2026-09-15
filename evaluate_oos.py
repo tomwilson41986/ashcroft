@@ -150,7 +150,26 @@ def walk_forward_predict(
 
         # Recalculate BFSP from normalised probabilities so odds reflect a fair book
         val_df["predicted_bfsp_raw"] = val_df["predicted_bfsp"]
-        val_df["predicted_bfsp"] = 1.0 / val_df["predicted_win_prob_norm"]
+        val_df["predicted_bfsp_norm"] = 1.0 / val_df["predicted_win_prob_norm"]
+        val_df["predicted_bfsp"] = val_df["predicted_bfsp_norm"]
+
+        # Calibrate the price against realised BFSP, using only the folds already
+        # scored. Fitting it on this fold's own rows, or on in-sample training
+        # predictions, would flatter it; earlier folds are the honest training set.
+        if all_oos:
+            from model.price_calibration import BSPPriceCalibrator
+            prior = pd.concat(all_oos, ignore_index=True)
+            prior = prior[pd.to_numeric(prior.get("bfsp"), errors="coerce") > 1.0] \
+                if "bfsp" in prior.columns else prior.iloc[0:0]
+            if len(prior) >= 1000:
+                cal = BSPPriceCalibrator().fit(
+                    prior, price_col="predicted_bfsp_raw", target_col="bfsp", race_col=race_col
+                )
+                out = cal.transform(val_df, price_col="predicted_bfsp_raw", race_col=race_col)
+                for col in out.columns:
+                    if col.startswith("bsp_forecast"):
+                        val_df[col] = out[col].values
+                val_df["predicted_bfsp"] = val_df["bsp_forecast"]
 
         all_oos.append(val_df)
         fold_idx += 1

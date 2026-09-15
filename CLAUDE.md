@@ -80,6 +80,9 @@ python research_lab.py score --predictions data/oos_predictions.csv
 # Market-blind staking: Kelly ladder, per-race ranks, bankroll paths (see STAKING_REPORT.md)
 python research_lab.py stake --predictions data/oos_predictions.csv --bank-chart banks.png
 
+# Calibrate the BFSP forecast against realised BFSP (removes the compression and rank bias)
+python research_lab.py price-cal --predictions data/oos_predictions.csv --save models/bsp_price_calibrator.json
+
 # Betfair historic price files: fetch (not from Cloudflare-blocked hosts), load, match, coverage
 python betfair_prices.py --fetch --days 3 --load --match --report
 

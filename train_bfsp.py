@@ -1033,16 +1033,40 @@ class BFSPTrainer:
                 f"MdAPE={overall_wf_metrics['overall_wf_median_ape_pct']:.1f}%"
             )
 
-        # Step 2b: Fit probability calibrator on walk-forward OOS predictions
+        # Step 2b: Fit calibrators on walk-forward OOS predictions.
+        #
+        # Two different jobs, two different targets, and conflating them is how
+        # the price forecast went wrong before: the isotonic map is fitted on
+        # win/lose outcomes and answers "how often does this horse win". BFSP
+        # is not a win probability -- it is a price, carrying the market's book
+        # and its favourite-longshot slope -- so the price forecast is
+        # calibrated against realised BFSP instead. See model/price_calibration.py.
         self.calibrator = None
+        self.price_calibrator = None
         if all_val_preds:
             from model.calibration import IsotonicCalibrator
+            from model.price_calibration import BSPPriceCalibrator
             combined_for_cal = pd.concat(all_val_preds, ignore_index=True)
             raw_probs = 1.0 / combined_for_cal["predicted_bfsp"].clip(lower=1.01)
             actual_wins = (combined_for_cal["placing_numerical"] == 1).astype(float).values
             self.calibrator = IsotonicCalibrator()
             self.calibrator.fit(raw_probs.values, actual_wins)
-            log.info("  Fitted isotonic calibrator on walk-forward OOS predictions")
+            log.info("  Fitted isotonic probability calibrator on walk-forward OOS predictions")
+
+            price_rows = combined_for_cal[pd.to_numeric(combined_for_cal.get("bfsp"), errors="coerce") > 1.0] \
+                if "bfsp" in combined_for_cal.columns else combined_for_cal.iloc[0:0]
+            if len(price_rows) >= 1000:
+                # Fit on the same quantity predict() will feed it: the model's raw
+                # exp(log prediction), before the per-race probability normalisation.
+                self.price_calibrator = BSPPriceCalibrator().fit(
+                    price_rows, price_col="predicted_bfsp_raw", target_col="bfsp"
+                )
+                log.info(
+                    f"  Fitted BFSP price calibrator on {self.price_calibrator.meta_['rows']:,} "
+                    f"walk-forward rows / {self.price_calibrator.meta_['races']:,} races"
+                )
+            else:
+                log.warning("  Not enough rows with a realised BFSP to fit the price calibrator")
 
         # Step 3: Train final model on all data (90/10 split for early stopping)
         log.info("\nTraining final model on all data...")
@@ -1079,11 +1103,15 @@ class BFSPTrainer:
         self._save(output_dir, avg_metrics, overall_wf_metrics,
                    final_metrics, fold_metrics, importance_df, df)
 
-        # Save calibrator if fitted
+        # Save calibrators if fitted
         if self.calibrator is not None:
             cal_path = os.path.join(output_dir, "bfsp_calibrator.json")
             self.calibrator.save(cal_path)
-            log.info(f"  Saved calibrator to {cal_path}")
+            log.info(f"  Saved probability calibrator to {cal_path}")
+        if getattr(self, "price_calibrator", None) is not None:
+            price_path = os.path.join(output_dir, "bsp_price_calibrator.json")
+            self.price_calibrator.save(price_path)
+            log.info(f"  Saved BFSP price calibrator to {price_path}")
 
         # Step 6: Train win probability model (Benter Stage 2)
         self.prob_model = None
@@ -1141,6 +1169,7 @@ class BFSPTrainer:
                 else None
             ),
             "has_calibrator": self.calibrator is not None,
+            "has_price_calibrator": getattr(self, "price_calibrator", None) is not None,
             "has_prob_model": self.prob_model is not None,
             "data_range": {
                 "min_date": str(df["race_date"].min().date()),
@@ -1214,12 +1243,23 @@ class BFSPTrainer:
         result["predicted_bfsp"] = 1.0 / result["predicted_win_prob_norm"]
         result.drop(columns=["implied_prob"], inplace=True)
 
-        # Apply isotonic calibration if available
-        result["predicted_bfsp_raw"] = result["predicted_bfsp"].copy()
+        # Apply calibration if available.
+        #   predicted_win_prob_cal : isotonic map, fitted on win/lose -> a probability
+        #   predicted_bfsp         : quantile map, fitted on realised BFSP -> a price
+        # The isotonic map used to overwrite predicted_bfsp. It should not: it
+        # quoted the model's top pick about 8% longer than it settled and left
+        # the implied book at 0.87 instead of the Betfair book of 1.0016.
+        result["predicted_bfsp_norm"] = result["predicted_bfsp"].copy()
         if apply_calibration and self.calibrator is not None:
-            result["predicted_bfsp"] = self.calibrator.calibrate_bfsp(
-                result["predicted_bfsp_raw"].values
+            result["predicted_win_prob_cal"] = self.calibrator.calibrate(
+                result["predicted_win_prob_norm"].values
             )
+        if apply_calibration and getattr(self, "price_calibrator", None) is not None:
+            cal = self.price_calibrator.transform(result, price_col="predicted_bfsp_raw")
+            for col in cal.columns:
+                if col.startswith("bsp_forecast"):
+                    result[col] = cal[col].values
+            result["predicted_bfsp"] = result["bsp_forecast"]
             result["predicted_log_bfsp"] = np.log(
                 result["predicted_bfsp"].clip(lower=1.01)
             )

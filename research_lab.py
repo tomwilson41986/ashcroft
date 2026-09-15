@@ -31,6 +31,10 @@ Research lab CLI — entry point for the RESEARCH_FRAMEWORK.md toolkit.
         Closing-line value: does the BSP forecast beat the morning price? Walk-forward blend
         ln BSP ~ ln p_morning + ln p_pred, early-bet rule, realised CLV (= greened-up profit) by tier.
 
+    python research_lab.py price-cal --predictions data/oos_predictions.csv [--save models/bsp_price_calibrator.json]
+        Calibrate the BFSP forecast against realised BFSP: walk-forward quantile
+        regression that removes the compression and rank bias in the raw price.
+
     python research_lab.py stake --predictions data/oos_predictions.csv [--bank-chart out.png]
         Market-blind staking: Kelly on the model's own probabilities (full to 1/20),
         bankroll path with drawdowns, per-rank flat / proportional / level-profit /
@@ -125,6 +129,35 @@ def cmd_bets(args):
     for key, title in titles.items():
         if key in rep:
             print(title); print(rep[key].round(4).to_string(index=False)); print()
+
+
+def cmd_price_cal(args):
+    from model.perf_figures import ensure_raceid
+    from model.price_calibration import BSPPriceCalibrator, calibration_report, walk_forward_calibrate
+    df = ensure_raceid(pd.read_csv(args.predictions))
+    df = df[(df["bfsp"] > 1.0) & (df["predicted_bfsp"] > 1.0)]
+    if args.date_from:
+        df = df[pd.to_datetime(df["race_date"]) >= args.date_from]
+    d = walk_forward_calibrate(df, n_folds=args.folds)
+    rep = calibration_report(d)
+    pd.set_option("display.width", 200)
+    print(f"\n{rep['n']:,} runners, {rep['races']:,} races scored out of sample "
+          f"({args.folds} walk-forward folds; the first block is training only)\n")
+    print("=== Forecast quality: raw model price vs calibrated ===")
+    print(rep["summary"].round(4).to_string(index=False))
+    print("\n=== Median forecast / actual BFSP, by the model's rank in the race ===")
+    print(rep["by_rank"].round(4).to_string(index=False))
+    if "coverage" in rep:
+        print("\n=== Quantile coverage: share of runners whose BFSP came in at or below the forecast ===")
+        print(rep["coverage"].round(2).to_string(index=False))
+    if args.save:
+        cal = BSPPriceCalibrator().fit(df)
+        cal.save(args.save)
+        print(f"\ncalibrator fitted on all {cal.meta_['rows']:,} rows and saved to {args.save}")
+    if args.out:
+        keep = [c for c in d.columns if c.startswith("bsp_forecast")]
+        d[["raceid", "race_date", "horse_name", "predicted_bfsp", "bfsp"] + keep].to_csv(args.out, index=False)
+        print(f"calibrated predictions written to {args.out}")
 
 
 def cmd_stake(args):
@@ -481,6 +514,11 @@ def main(argv=None):
     s.add_argument("--source", choices=["files", "snapshots"], default="files", help="files: betfair_prices (historic CSVs); snapshots: earliest live betfair_odds snapshot per runner")
     s.add_argument("--early-col", default="morningwap"); s.add_argument("--min-clv", type=float, default=0.10); s.add_argument("--max-odds", type=float, default=50.0)
     s.add_argument("--commission", type=float, default=0.05); s.add_argument("--folds", type=int, default=6); s.set_defaults(fn=cmd_clv)
+
+    s = sub.add_parser("price-cal"); s.add_argument("--predictions", default="data/oos_predictions.csv")
+    s.add_argument("--folds", type=int, default=6); s.add_argument("--save", default=None)
+    s.add_argument("--out", default=None); s.add_argument("--from", dest="date_from", default=None)
+    s.set_defaults(fn=cmd_price_cal)
 
     s = sub.add_parser("stake"); s.add_argument("--predictions", default="data/oos_predictions.csv")
     s.add_argument("--p-col", default="predicted_win_prob_norm"); s.add_argument("--price-col", default="bfsp")

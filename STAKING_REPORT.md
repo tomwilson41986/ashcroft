@@ -154,7 +154,12 @@ Measured on that:
 
 There is a systematic **+8% upward bias in the forecast price for the model's own top
 pick**, decaying to zero by rank 5. The top pick closes shorter than the model says it
-will, 58% of the time. For an early-money strategy that is a conservative bias — it
+will, 58% of the time. **This has since been fixed** — see `model/price_calibration.py`
+and `python research_lab.py price-cal`. Calibrating the price against realised BFSP,
+walk-forward, takes the top pick's median forecast/actual ratio from 1.081 to 0.992 and
+holds every rank inside ±1.4%, with a slightly lower mean absolute log error. The tables
+in this report are from the uncalibrated forecast and are left as the record of the
+defect. For an early-money strategy that is a conservative bias — it
 demands a longer price than the close requires, so it under-fires rather than over-fires
 — but it is 8% of edge left on the table at the front of the book, and it is a
 retransformation bias in a log-target regression, which is correctable.
