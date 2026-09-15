@@ -15,6 +15,9 @@ import re
 import numpy as np
 import pandas as pd
 
+from model.lagsafe import race_lagged_expanding_mean
+from model.perf_figures import MARGIN_WORDS
+
 from model.draw_metrics import DrawMetricsEngine
 from model.pace_metrics import PaceMetricsEngine
 
@@ -1591,9 +1594,17 @@ class CustomMetricsEngine:
             df["track"].fillna("unknown").str.lower().str.strip()
         )
 
-        std_times = df.groupby(
-            ["_track_lower_sf", "_dist_round", "_going_lower"]
-        )["_comptime"].transform("median")
+        # Standard time from EARLIER races only. A groupby-median over the whole
+        # frame would set the 2024 standard using 2026 race times, and every
+        # lagged RSR feature would inherit that look-ahead. Fall back to the
+        # track+distance cell when the going cell is still thin.
+        std_g = race_lagged_expanding_mean(
+            df, ["_track_lower_sf", "_dist_round", "_going_lower"], "_comptime", min_races=5
+        )
+        std_td = race_lagged_expanding_mean(
+            df, ["_track_lower_sf", "_dist_round"], "_comptime", min_races=5
+        )
+        std_times = std_g.fillna(std_td)
 
         # RSR: positive = faster than standard
         df["RSR"] = (
@@ -1661,32 +1672,14 @@ class CustomMetricsEngine:
             if pd.isna(val) or val == "" or val == "0":
                 return 0.0
             s = str(val).strip().lower()
+            if s in MARGIN_WORDS:
+                return MARGIN_WORDS[s]
             if s in ("dht", "dh"):
                 return 0.0
-            if s == "nse":
-                return 0.05
-            if s == "shd":
-                return 0.1
-            if s in ("hd", "sht-hd"):
-                return 0.15
-            if s in ("nk", "snk"):
-                return 0.2
-            if s == "dist":
-                return 30.0
-            # Handle combined forms like "2nk", "1shd", "3hd"
-            m = re.match(r"(\d+\.?\d*)\s*(nk|shd|hd|nse)?", s)
+            # Combined forms like "2nk", "1shd", "3hd"
+            m = re.match(r"(\d+\.?\d*)\s*(snk|nk|shd|hd|nse)?", s)
             if m:
-                base = float(m.group(1))
-                frac = m.group(2)
-                if frac == "nk":
-                    base += 0.2
-                elif frac == "shd":
-                    base += 0.1
-                elif frac == "hd":
-                    base += 0.15
-                elif frac == "nse":
-                    base += 0.05
-                return base
+                return float(m.group(1)) + MARGIN_WORDS.get(m.group(2) or "", 0.0)
             try:
                 return float(s)
             except (ValueError, TypeError):

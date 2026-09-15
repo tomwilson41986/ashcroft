@@ -27,10 +27,14 @@ LBS_PER_LENGTH_POINTS = [(5.0, 3.0), (8.0, 2.0), (12.0, 1.5), (16.0, 1.0), (20.0
 LENGTH_METRES = 2.4
 FURLONG_METRES = 201.168
 
-_MARGIN_WORDS = {
-    "nse": 0.05, "nose": 0.05, "sh": 0.1, "shd": 0.1, "hd": 0.2, "snk": 0.25,
-    "nk": 0.3, "dh": 0.0, "dist": 30.0, "dht": 0.0,
+#: Beaten-margin words in lengths. One table for the whole repo: two modules
+#: disagreeing on what "nk" means silently puts two different performance
+#: figures on the same race.
+MARGIN_WORDS = {
+    "nse": 0.05, "nose": 0.05, "sh": 0.1, "shd": 0.1, "sht-hd": 0.1,
+    "hd": 0.2, "snk": 0.25, "nk": 0.3, "dh": 0.0, "dht": 0.0, "dist": 30.0,
 }
+_MARGIN_WORDS = MARGIN_WORDS        # retained for existing callers
 _FRACTIONS = {"¼": 0.25, "½": 0.5, "¾": 0.75, "1/4": 0.25, "1/2": 0.5, "3/4": 0.75}
 
 

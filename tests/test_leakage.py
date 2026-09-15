@@ -113,3 +113,43 @@ def test_training_feature_list_contains_no_post_race_column():
     with pytest.raises(ValueError, match="describe the race being predicted"):
         assert_no_post_race_features(list(ALL_FEATURE_COLS) + ["placing_numerical"])
     assert {"EPF", "placing_numerical", "comment"} <= POST_RACE_ONLY
+
+
+def test_one_beaten_length_table_for_the_whole_repo():
+    """Two modules disagreeing on what "nk" means puts two different figures on
+    the same race. The spec forbids it; so does this test."""
+    import re
+
+    from model.perf_figures import MARGIN_WORDS
+    from model.custom_metrics import CustomMetricsEngine
+
+    d = _card(n_days=2, races_per_day=1, runners=4)
+    d["total_dst_bt"] = ["0", "nk", "2hd", "shd"] + ["0", "hd", "1nk", "dist"]
+    out = CustomMetricsEngine()._calc_actual_lengths_beaten(d)   # may reorder rows
+    got = dict(zip(out["total_dst_bt"], out["LB"]))
+    assert got["nk"] == MARGIN_WORDS["nk"] == 0.3
+    assert got["hd"] == MARGIN_WORDS["hd"] == 0.2
+    assert got["shd"] == MARGIN_WORDS["shd"] == 0.1
+    assert got["2hd"] == 2 + MARGIN_WORDS["hd"]
+    assert got["1nk"] == 1 + MARGIN_WORDS["nk"]
+    assert got["dist"] == MARGIN_WORDS["dist"] == 30.0
+
+
+def test_speed_figure_standard_time_uses_only_earlier_races():
+    """RSR is a time against a standard. The standard cannot be a median of
+    every race in the file, half of which have not been run yet."""
+    d = _card(n_days=12, races_per_day=1, runners=4, seed=5)
+    d["comptime_numeric"] = 72.0
+    late = d["race_date"] == d["race_date"].max()
+    d.loc[late, "comptime_numeric"] = 60.0            # a much faster final race
+
+    slow = CustomMetricsEngine()._calc_speed_figures(d.copy())
+    d2 = d.copy()
+    d2.loc[late, "comptime_numeric"] = 90.0           # ... or a much slower one
+    fast = CustomMetricsEngine()._calc_speed_figures(d2)
+
+    key = ["raceid", "horse_name"]
+    a = slow[~slow["race_date"].eq(slow["race_date"].max())].sort_values(key)["RSR"].values
+    b = fast[~fast["race_date"].eq(fast["race_date"].max())].sort_values(key)["RSR"].values
+    assert np.allclose(np.nan_to_num(a, nan=-999), np.nan_to_num(b, nan=-999)), \
+        "an earlier race's RSR moved when a later race's time changed"

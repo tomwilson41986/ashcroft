@@ -387,7 +387,25 @@ track x distance x going cell now also requires five earlier races before it
 reports a bias at all, instead of handing the model an unshrunk difference of
 two means computed from one prior race.
 
-### 13.2 Race pace aggregates built from the race being predicted
+### 13.2 Speed-figure standard times taken from the whole file
+
+`RSR` is a race time expressed against a standard time, and the standard was a
+`groupby(track, distance, going).transform("median")` over every row in the
+frame. A 2024 race was therefore scored against a standard that included 2026
+races. Every lagged RSR feature in the production model inherits it:
+`preracehorsecareerRSR`, `LR_RSR`, `LR3_RSR`, `LR5_RSR`, `best_RSR`, `RSR_gap`,
+`rRSR`, `SFI`, `SFI_3`. The standard is now an expanding mean over earlier
+races in the cell, with the going cell falling back to track-and-distance while
+it is thin.
+
+### 13.3 Two beaten-length tables
+
+`model/perf_figures.py` had a head at 0.2 lengths and a neck at 0.3;
+`model/custom_metrics.py` had 0.15 and 0.2. The same race therefore produced
+two different performance figures depending on which module computed it. There
+is now one table, `perf_figures.MARGIN_WORDS`, and a test that says so.
+
+### 13.4 Race pace aggregates built from the race being predicted
 
 `EPF` is parsed from the horse's own in-running comment, so it says how the
 horse actually ran *today*. Five race-level aggregates of it were model
