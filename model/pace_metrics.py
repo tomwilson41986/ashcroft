@@ -310,6 +310,32 @@ def position_change_statistic(df: pd.DataFrame, from_col: str = "early_pos_est",
 # PaceMetricsEngine — integrates into CustomMetricsEngine pipeline
 # ---------------------------------------------------------------------------
 
+def prior_mean_sd(df: pd.DataFrame, key: str, col: str) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """(count, mean, sd) of `col` over each key's *earlier rows*.
+
+    The same numbers as ``grp[col].apply(lambda x: x.shift(1).expanding().mean())``
+    and its ``.std()`` twin, from three grouped cumulative sums instead of one
+    Python call per group. The key here is always the horse — a horse runs once
+    in a race, so stepping back a row is stepping back a race — and the database
+    has hundreds of thousands of horses, which is a great many Python calls.
+    """
+    v = pd.to_numeric(df[col], errors="coerce")
+    g = df[key]
+    ok = v.notna().astype(float)
+    # centre each group on its first value before squaring: the sum-of-squares
+    # form loses precision otherwise, and a horse that has run the same race
+    # three times should have a versatility of zero, not of 1e-8.
+    centre = v.groupby(g, sort=False).transform("first").fillna(0.0)
+    dv = (v - centre).fillna(0.0)
+    n = ok.groupby(g, sort=False).cumsum() - ok
+    s = dv.groupby(g, sort=False).cumsum() - dv
+    q = (dv ** 2).groupby(g, sort=False).cumsum() - dv ** 2
+    n_pos = n.where(n > 0)
+    mean_d = s / n_pos
+    var = (q - n * mean_d ** 2) / (n - 1).where(n > 1)
+    return n, mean_d + centre.where(n_pos.notna()), np.sqrt(var.clip(lower=0))
+
+
 class PaceMetricsEngine:
     """Advanced pace feature engineering.
 
@@ -475,28 +501,29 @@ class PaceMetricsEngine:
         """
         df = df.sort_values(["horse_name", "race_date", "race_time"]).reset_index(drop=True)
         grp = df.groupby("horse_name", group_keys=False)
+        horse = df["horse_name"]
 
-        df["horse_epf_norm_mean"] = grp["epf_norm"].apply(lambda x: x.shift(1).expanding().mean())
-        df["horse_epf_norm_sd"] = grp["epf_norm"].apply(lambda x: x.shift(1).expanding().std())
-        df["horse_epf_norm_recent"] = grp["epf_norm"].apply(
-            lambda x: x.shift(1).ewm(halflife=STYLE_RECENCY_HALFLIFE_RUNS).mean()
+        _, df["horse_epf_norm_mean"], df["horse_epf_norm_sd"] = prior_mean_sd(
+            df, "horse_name", "epf_norm")
+        _, df["horse_pos_gain_mean"], _ = prior_mean_sd(df, "horse_name", "pos_gain")
+        df["horse_epf_norm_recent"] = (
+            grp["epf_norm"].shift(1).groupby(horse, sort=False)
+            .ewm(halflife=STYLE_RECENCY_HALFLIFE_RUNS).mean()
+            .droplevel(0).sort_index()
         )
-        df["horse_pos_gain_mean"] = grp["pos_gain"].apply(lambda x: x.shift(1).expanding().mean())
         df["LR_epf_norm"] = grp["epf_norm"].shift(1)
 
         # Modal style: the career rate of each of the five §6.1 labels, then the
-        # argmax. Five expanding means beat an expanding mode and give the share
-        # of the career spent in that style for free.
-        rate_cols = []
+        # argmax. Five prior means beat an expanding mode and give the share of
+        # the career spent in that style for free.
+        labelled = df["run_style"].notna().astype(float)
+        n_prior = labelled.groupby(horse, sort=False).cumsum() - labelled
+        rates = {}
         for code in range(len(RUN_STYLE_LABELS)):
-            flag = f"_style_{code}"
-            df[flag] = (df["run_style"] == code).astype(float).where(df["run_style"].notna())
-            rate = f"_style_rate_{code}"
-            df[rate] = df.groupby("horse_name", group_keys=False)[flag].apply(
-                lambda x: x.shift(1).expanding().mean()
-            )
-            rate_cols.append(rate)
-        rates = df[rate_cols]
+            flag = (df["run_style"] == code).astype(float) * labelled
+            prior = flag.groupby(horse, sort=False).cumsum() - flag
+            rates[f"_style_rate_{code}"] = prior / n_prior.where(n_prior > 0)
+        rates = pd.DataFrame(rates, index=df.index)
         any_rate = rates.notna().any(axis=1)
         # fill before argmax: np.argmax picks a NaN over a real rate, and a horse
         # with no prior runs has no modal style at all.
@@ -507,8 +534,6 @@ class PaceMetricsEngine:
         df["horse_style_inflexible"] = df["horse_style_mode_share"] * (
             1.0 - df["horse_epf_norm_sd"].clip(0, 0.5) / 0.5
         )
-        df.drop(columns=[f"_style_{c}" for c in range(len(RUN_STYLE_LABELS))] + rate_cols,
-                inplace=True)
 
         return df
 

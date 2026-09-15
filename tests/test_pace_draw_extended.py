@@ -45,6 +45,7 @@ from model.pace_metrics import (
     PaceMetricsEngine,
     epf_norm_from_style,
     position_change_statistic,
+    prior_mean_sd,
     run_style_from_epf_norm,
 )
 
@@ -169,6 +170,23 @@ def test_pos_gain_is_ground_made_up():
     # pos_gain is exactly epf_norm minus the normalised finishing position
     expect = d["epf_norm"] - (d["placing_numerical"] - 1) / (d["number_of_runners"] - 1)
     assert np.allclose(d["pos_gain"], expect, equal_nan=True)
+
+
+def test_prior_mean_sd_is_exactly_the_expanding_idiom_it_replaces():
+    """The career figures are built from cumulative sums, not a Python call per
+    horse. They must still be the same numbers."""
+    d = (_pace_card(n_days=12, runners=6)
+         .sort_values(["horse_name", "race_date", "race_time"]).reset_index(drop=True))
+    d.loc[d.index[::7], "placing_numerical"] = np.nan        # gaps are skipped, not zeroed
+    n, mean, sd = prior_mean_sd(d, "horse_name", "placing_numerical")
+    g = d.groupby("horse_name", group_keys=False)["placing_numerical"]
+    assert np.allclose(mean.fillna(-9), g.apply(lambda x: x.shift(1).expanding().mean()).fillna(-9))
+    assert np.allclose(sd.fillna(-9), g.apply(lambda x: x.shift(1).expanding().std()).fillna(-9))
+    assert (n == g.apply(lambda x: x.shift(1).expanding().count()).fillna(0)).all()
+    # a horse that has always done the same thing has a versatility of zero
+    same = pd.DataFrame({"horse_name": ["a"] * 4, "v": [0.4] * 4})
+    _, _, sd2 = prior_mean_sd(same, "horse_name", "v")
+    assert sd2.iloc[2] == 0.0 and sd2.iloc[3] == 0.0
 
 
 def test_run_style_profile_never_contains_todays_run():

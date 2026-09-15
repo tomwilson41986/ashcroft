@@ -96,6 +96,15 @@ def card_key(df: pd.DataFrame, date_col: str = "race_date") -> pd.Series:
     return pd.to_datetime(df[date_col], errors="coerce").dt.strftime("%Y-%m-%d").fillna("__nodate__")
 
 
+def _narrow(d: pd.DataFrame, cols: dict) -> pd.DataFrame:
+    """A small frame built from Series, so a wide caller frame is never copied.
+
+    ``d.loc[:, cols].copy()`` consolidates the whole block manager; on the
+    hundred-odd column frames these features are built on that dominates the
+    cost of every aggregate."""
+    return pd.DataFrame(cols, index=d.index, copy=False)
+
+
 def prior_stats(d: pd.DataFrame, keys, value_col: str, key_col: str = CARD_KEY,
                 date_col: str = "race_date") -> tuple[pd.Series, pd.Series]:
     """(sum, count) of ``value_col`` over the group's runs on *earlier days*.
@@ -104,9 +113,11 @@ def prior_stats(d: pd.DataFrame, keys, value_col: str, key_col: str = CARD_KEY,
     the same way. NaN values are ignored, so a column masked to a subset (NaN
     elsewhere) gives that subset's sum and count."""
     keys = [keys] if isinstance(keys, str) else list(keys)
-    sub = d.loc[:, list(dict.fromkeys(keys + [value_col]))].copy()
-    sub["race_date"] = d[date_col]
-    sub[key_col] = d[key_col] if key_col in d.columns else card_key(d, date_col)
+    cols = {k: d[k] for k in dict.fromkeys(keys)}
+    cols[value_col] = d[value_col]
+    cols["race_date"] = d[date_col]
+    cols[key_col] = d[key_col] if key_col in d.columns else card_key(d, date_col)
+    sub = _narrow(d, cols)
     n = race_lagged_expanding_count(sub, keys, value_col, race_col=key_col).fillna(0.0)
     m = race_lagged_expanding_mean(sub, keys, value_col, race_col=key_col)
     return (m * n).fillna(0.0), n
@@ -126,7 +137,11 @@ def aptitude_residual(cell_total, cell_n, overall, k: float):
 
     Zero for an empty cell, which is what "no evidence of aptitude" should look
     like, and free of the entity's general quality — the part the market
-    already prices (§5.3)."""
+    already prices (§5.3).
+
+    ``overall`` must be the entity's *raw* mean, not its shrunk level: against a
+    shrunk level the residual would carry the shrinkage gap, and every cell of
+    a strong sire or a strong yard would read as an aptitude."""
     return shrink(cell_total, cell_n, overall, k) - overall
 
 
@@ -136,10 +151,8 @@ def running_population_mean(d: pd.DataFrame, value_col: str, key_col: str = CARD
 
     The first day has nothing earlier and falls back to the frame mean (a level
     constant, not a per-row look-ahead)."""
-    sub = d.loc[:, [value_col]].copy()
-    sub["_pop"] = "all"
-    sub["race_date"] = d[date_col]
-    sub[key_col] = d[key_col] if key_col in d.columns else card_key(d, date_col)
+    sub = _narrow(d, {value_col: d[value_col], "_pop": "all", "race_date": d[date_col],
+                      key_col: d[key_col] if key_col in d.columns else card_key(d, date_col)})
     m = race_lagged_expanding_mean(sub, "_pop", value_col, race_col=key_col)
     if fallback is None:
         fallback = float(pd.to_numeric(d[value_col], errors="coerce").mean())
@@ -153,10 +166,8 @@ def running_z(d: pd.DataFrame, values: pd.Series, key_col: str = CARD_KEY,
     Standardising against the whole frame would let the composite below see the
     future; the running mean and SD (from E[x] and E[x²]) do not."""
     x = pd.to_numeric(values, errors="coerce")
-    sub = pd.DataFrame({"_x": x, "_x2": x * x, "race_date": d[date_col].values},
-                       index=d.index)
-    if key_col in d.columns:
-        sub[key_col] = d[key_col]
+    sub = _narrow(d, {"_x": x, "_x2": x * x, "race_date": d[date_col],
+                      key_col: d[key_col] if key_col in d.columns else card_key(d, date_col)})
     m = running_population_mean(sub, "_x", key_col)
     m2 = running_population_mean(sub, "_x2", key_col)
     sd = np.sqrt(np.clip(m2 - m ** 2, 1e-12, None))
@@ -358,154 +369,181 @@ def context_split_keys(d: pd.DataFrame) -> dict[str, pd.Series]:
     return out
 
 
+
+
+def _working_frame(src: pd.DataFrame, nmfp_col: str, won_col: str, date_col: str,
+                   context_splits: bool, strength: bool, price_col: str | None,
+                   sp_col: str | None) -> pd.DataFrame:
+    """Everything the aggregates need and nothing else.
+
+    A dozen columns instead of the caller's two hundred: every aggregate below
+    groups, sorts and merges this frame, and doing that against a wide frame is
+    what makes a feature build take hours instead of minutes."""
+    pos_c, n_c = _first_col(src, POS_CANDIDATES), _first_col(src, N_CANDIDATES)
+    cols: dict = {"race_date": src[date_col], CARD_KEY: card_key(src, date_col),
+                  "_one": pd.Series(1.0, index=src.index)}
+    if won_col in src.columns:
+        cols["_won"] = pd.to_numeric(src[won_col], errors="coerce").fillna(0.0)
+    elif pos_c:
+        cols["_won"] = (pd.to_numeric(src[pos_c], errors="coerce") == 1).astype(float)
+    else:
+        raise KeyError(f"add_connection_features needs a '{won_col}' column or a finishing position")
+    P = pd.to_numeric(src[pos_c], errors="coerce").values if pos_c else np.full(len(src), np.nan)
+    N = pd.to_numeric(src[n_c], errors="coerce").values if n_c else np.full(len(src), np.nan)
+    if nmfp_col in src.columns:
+        cols["_nmfp"] = pd.to_numeric(src[nmfp_col], errors="coerce")
+    elif pos_c and n_c:
+        cols["_nmfp"] = pd.Series(_nmfp_primitive(N, P), index=src.index)
+    else:
+        cols["_nmfp"] = np.nan
+    if pos_c and n_c:
+        cols["_prb2_fsa"] = pd.Series(prb(N, P) ** 2 - prb2_par(N), index=src.index)
+        placed = pd.Series(np.where(np.isnan(P), np.nan, (P <= 3).astype(float)), index=src.index)
+        cols["_placed"] = placed
+        # place rate net of what the field size gives away (§5.1 trainer_lto_plc_fsa)
+        cols["_plc_fsa"] = placed - 3.0 / N
+    else:
+        cols["_prb2_fsa"] = np.nan
+        cols["_placed"] = pd.to_numeric(src["placed"], errors="coerce") if "placed" in src.columns else np.nan
+        cols["_plc_fsa"] = np.nan
+    cols["_lr_score"] = lr_place_score(src, pos_col=pos_c)
+    cols["_non_fts"] = 1.0 - first_time_out(src).fillna(0.0)
+    cols["_season"] = pd.to_datetime(src[date_col], errors="coerce").dt.year
+    if strength:
+        cols["_field_strength"] = _field_strength(src)
+        cols["_ln_prize"] = (np.log(pd.to_numeric(src["prize_money"], errors="coerce").where(lambda s: s > 0))
+                             if "prize_money" in src.columns else np.nan)
+        cls = (src["race_class"].astype(str).str.extract(r"(\d+)", expand=False).fillna("?")
+               if "race_class" in src.columns else pd.Series("?", index=src.index))
+        band = (pd.cut(pd.to_numeric(src[n_c], errors="coerce"), [0, 7, 11, 15, 40], labels=False).astype(str)
+                if n_c else pd.Series("?", index=src.index))
+        cols["_sched_cell"] = cls.astype(str) + "|" + band.astype(str)
+    for col, tag in ((price_col, "_price"), (sp_col, "_sp")):
+        if col and col in src.columns:
+            cols[tag] = pd.to_numeric(src[col], errors="coerce").where(lambda s: s > 1.0)
+    if context_splits:
+        for name, key in context_split_keys(src).items():
+            cols[f"_split_{name}"] = key.astype(str).where(key.notna())
+    return pd.DataFrame(cols, index=src.index)
+
+
 def add_connection_features(df: pd.DataFrame, entities=("trainer", "jockey_name"), nmfp_col: str = "nmfp",
                             won_col: str = "won", date_col: str = "race_date", time_col: str = "race_time",
                             k_sr: float = 30.0, k_nmfp: float = 15.0, k_split: float = 20.0,
                             form_windows=(14, 30, 90), context_splits: bool = True, seasons: bool = True,
                             strength: bool = True, price_col: str | None = None,
                             sp_col: str | None = None) -> tuple[pd.DataFrame, list[str]]:
+    """Attach the Part 5.1 - 5.2 connection suites; returns (frame, feature names).
+
+    ``price_col`` / ``sp_col`` switch on the A/E and ROI block, which is
+    market-derived and therefore Stage C only — leave them unset for Stage F."""
     orig_index = df.index
-    d = df.reset_index(drop=True).copy()
-    d[CARD_KEY] = card_key(d, date_col)
-    d["_one"] = 1.0
-    pos_c, n_c = _first_col(d, POS_CANDIDATES), _first_col(d, N_CANDIDATES)
-    if won_col in d.columns:
-        d["_won"] = pd.to_numeric(d[won_col], errors="coerce").fillna(0.0)
-    elif pos_c:
-        d["_won"] = (pd.to_numeric(d[pos_c], errors="coerce") == 1).astype(float)
-    else:
-        raise KeyError(f"add_connection_features needs a '{won_col}' column or a finishing position")
-    if nmfp_col in d.columns:
-        d["_nmfp"] = pd.to_numeric(d[nmfp_col], errors="coerce")
-    elif pos_c and n_c:
-        d["_nmfp"] = _nmfp_primitive(pd.to_numeric(d[n_c], errors="coerce").values,
-                                     pd.to_numeric(d[pos_c], errors="coerce").values)
-    else:
-        d["_nmfp"] = np.nan
-    if pos_c and n_c:
-        P = pd.to_numeric(d[pos_c], errors="coerce").values; N = pd.to_numeric(d[n_c], errors="coerce").values
-        d["_prb2_fsa"] = prb(N, P) ** 2 - prb2_par(N)
-        d["_placed"] = np.where(np.isnan(P), np.nan, (P <= 3).astype(float))
-        d["_plc_fsa"] = d["_placed"] - 3.0 / N          # place rate net of what the field size gives away
-    else:
-        d["_prb2_fsa"] = np.nan
-        d["_placed"] = pd.to_numeric(d["placed"], errors="coerce") if "placed" in d.columns else np.nan
-        d["_plc_fsa"] = np.nan
-    d["_lr_score"] = lr_place_score(d, pos_col=pos_c)
-    fto = first_time_out(d)
-    d["_non_fts"] = (1.0 - fto.fillna(0.0)).where(d["_won"].notna())
-
-    pop_sr = running_population_mean(d, "_won", date_col=date_col)
-    pop_plc = running_population_mean(d, "_placed", date_col=date_col)
-    pop_nmfp = running_population_mean(d, "_nmfp", date_col=date_col, fallback=0.0)
-    pop_prb2 = running_population_mean(d, "_prb2_fsa", date_col=date_col, fallback=0.0)
-    splits = context_split_keys(d) if context_splits else {}
+    src = df.reset_index(drop=True)
+    w = _working_frame(src, nmfp_col, won_col, date_col, context_splits, strength, price_col, sp_col)
     if strength:
-        d["_sr_expected"] = _schedule_expected_sr(d, pop_sr, date_col)
-        d["_field_strength"] = _field_strength(d)
-        d["_ln_prize"] = np.log(pd.to_numeric(d["prize_money"], errors="coerce").where(lambda s: s > 0)) \
-            if "prize_money" in d.columns else np.nan
+        w["_sr_expected"] = _schedule_expected_sr(w, running_population_mean(w, "_won"))
+    splits = [c[len("_split_"):] for c in w.columns if c.startswith("_split_")]
 
+    pop_sr = running_population_mean(w, "_won")
+    pop_plc = running_population_mean(w, "_placed")
+    pop_nmfp = running_population_mean(w, "_nmfp", fallback=0.0)
+    pop_prb2 = running_population_mean(w, "_prb2_fsa", fallback=0.0)
+
+    new: dict[str, pd.Series] = {}
     feats: list[str] = []
     for e in entities:
-        if e not in d.columns:
+        if e not in src.columns:
             continue
-        d[e] = d[e].fillna("__missing__").astype(str)
+        w[e] = src[e].fillna("__missing__").astype(str)
         p = e.split("_")[0]
-        wins, runs = prior_stats(d, e, "_won", date_col=date_col)
-        plc, plc_n = prior_stats(d, e, "_placed", date_col=date_col)
-        nm, nm_n = prior_stats(d, e, "_nmfp", date_col=date_col)
-        pr2, pr2_n = prior_stats(d, e, "_prb2_fsa", date_col=date_col)
-        d[f"{p}_runs"] = runs
-        d[f"{p}_wins"] = wins
-        d[f"{p}_sr_shrunk"] = shrink(wins, runs, pop_sr, k_sr)
-        d[f"{p}_place_rate_shrunk"] = shrink(plc, plc_n, pop_plc, k_sr)
-        d[f"{p}_nmfp_shrunk"] = shrink(nm, nm_n, pop_nmfp, k_nmfp)
-        # residual base: the entity's own *raw* mean. Against the shrunk level
-        # every split of a strong yard would show the shrinkage gap as aptitude.
-        base_nmfp = (nm / nm_n.replace(0, np.nan)).fillna(pop_nmfp)
-        d[f"{p}_prb2_fsa_shrunk"] = shrink(pr2, pr2_n, pop_prb2, k_nmfp)
-        feats += [f"{p}_runs", f"{p}_wins", f"{p}_sr_shrunk", f"{p}_nmfp_shrunk", f"{p}_place_rate_shrunk",
+        wins, runs = prior_stats(w, e, "_won")
+        plc, plc_n = prior_stats(w, e, "_placed")
+        nm, nm_n = prior_stats(w, e, "_nmfp")
+        pr2, pr2_n = prior_stats(w, e, "_prb2_fsa")
+        sr = shrink(wins, runs, pop_sr, k_sr)
+        nmfp_shrunk = shrink(nm, nm_n, pop_nmfp, k_nmfp)
+        base_nmfp = (nm / runs.replace(0, np.nan)).fillna(pop_nmfp)      # the residual base
+        new[f"{p}_runs"] = runs
+        new[f"{p}_wins"] = wins
+        new[f"{p}_sr_shrunk"] = sr
+        new[f"{p}_place_rate_shrunk"] = shrink(plc, plc_n, pop_plc, k_sr)
+        new[f"{p}_nmfp_shrunk"] = nmfp_shrunk
+        new[f"{p}_prb2_fsa_shrunk"] = shrink(pr2, pr2_n, pop_prb2, k_nmfp)
+        feats += [f"{p}_runs", f"{p}_wins", f"{p}_sr_shrunk", f"{p}_place_rate_shrunk", f"{p}_nmfp_shrunk",
                   f"{p}_prb2_fsa_shrunk"]
 
-        for w in form_windows:
-            m, n = _time_window_prior_mean(d, e, "_nmfp", date_col, w)
-            d[f"{p}_form_{w}d"] = (m.fillna(0.0) * n) / (n + 6.0)   # shrink toward 0 by runner count
-            d[f"{p}_runner_count_{w}d"] = n
-            feats += [f"{p}_form_{w}d", f"{p}_runner_count_{w}d"]
-        # §5.1: form_vs_career is the *short* window against the career mean
-        d[f"{p}_form_vs_career"] = d[f"{p}_form_{min(form_windows)}d"] - d[f"{p}_nmfp_shrunk"]
-        feats.append(f"{p}_form_vs_career")
+        for win in form_windows:
+            m, n = _time_window_prior_mean(w, e, "_nmfp", "race_date", win)
+            new[f"{p}_form_{win}d"] = (m.fillna(0.0) * n) / (n + 6.0)    # shrink toward 0 by runner count
+            new[f"{p}_runner_count_{win}d"] = n
+            feats += [f"{p}_form_{win}d", f"{p}_runner_count_{win}d"]
         short = min(form_windows)
-        m, n = _time_window_prior_mean(d, e, "_plc_fsa", date_col, short)
-        d[f"{p}_lto_plc_fsa_{short}d"] = (m.fillna(0.0) * n) / (n + 6.0)
-        feats.append(f"{p}_lto_plc_fsa_{short}d")
-
-        d[f"{p}_lr_place_rating"] = lr_place_rating(d, e)
-        feats.append(f"{p}_lr_place_rating")
+        # §5.1: form_vs_career is the *short* window against the career mean
+        new[f"{p}_form_vs_career"] = new[f"{p}_form_{short}d"] - nmfp_shrunk
+        m, n = _time_window_prior_mean(w, e, "_plc_fsa", "race_date", short)
+        new[f"{p}_lto_plc_fsa_{short}d"] = (m.fillna(0.0) * n) / (n + 6.0)
+        new[f"{p}_lr_place_rating"] = lr_place_rating(w, e)
+        feats += [f"{p}_form_vs_career", f"{p}_lto_plc_fsa_{short}d", f"{p}_lr_place_rating"]
 
         if seasons:
-            d["_season"] = pd.to_datetime(d[date_col], errors="coerce").dt.year
-            s_w, s_n = prior_stats(d, [e, "_season"], "_won", date_col=date_col)
-            d[f"{p}_runs_season"] = s_n
-            d[f"{p}_sr_season_shrunk"] = shrink(s_w, s_n, d[f"{p}_sr_shrunk"], k_sr)
-            lw, ln_ = _last_season_totals(d, e, "_season", "_won", "_one")
-            d[f"{p}_sr_last_season_shrunk"] = shrink(lw, ln_, d[f"{p}_sr_shrunk"], k_sr)
+            s_w, s_n = prior_stats(w, [e, "_season"], "_won")
+            new[f"{p}_runs_season"] = s_n
+            new[f"{p}_sr_season_shrunk"] = shrink(s_w, s_n, sr, k_sr)
+            lw, ln_ = _last_season_totals(w, e, "_season", "_won", "_one")
+            new[f"{p}_sr_last_season_shrunk"] = shrink(lw, ln_, sr, k_sr)
             feats += [f"{p}_runs_season", f"{p}_sr_season_shrunk", f"{p}_sr_last_season_shrunk"]
 
-        for name, key in splits.items():
+        for name in splits:
             col = f"_split_{name}"
-            d[col] = key.astype(str).where(key.notna())
-            c_nm, c_n = prior_stats(d, [e, col], "_nmfp", date_col=date_col)
-            d[f"{p}_{name}_apt"] = aptitude_residual(c_nm, c_n, base_nmfp, k_split).where(key.notna())
-            d[f"{p}_{name}_n"] = c_n.where(key.notna())
+            here = w[col].notna()
+            c_nm, c_n = prior_stats(w, [e, col], "_nmfp")
+            new[f"{p}_{name}_apt"] = aptitude_residual(c_nm, c_n, base_nmfp, k_split).where(here)
+            new[f"{p}_{name}_n"] = c_n.where(here)
             feats += [f"{p}_{name}_apt", f"{p}_{name}_n"]
-            if name == "course":
-                c_w, c_wn = prior_stats(d, [e, col], "_won", date_col=date_col)
-                d[f"{p}_course_sr_shrunk"] = shrink(c_w, c_wn, d[f"{p}_sr_shrunk"], k_sr).where(key.notna())
+            if name == "course":     # §5.2 jockey_course_record, shrunk to the overall rate
+                c_w, c_wn = prior_stats(w, [e, col], "_won")
+                new[f"{p}_course_sr_shrunk"] = shrink(c_w, c_wn, sr, k_sr).where(here)
                 feats.append(f"{p}_course_sr_shrunk")
-            d = d.drop(columns=[col])
 
         if strength:
-            feats += _add_strength(d, e, p, runs, wins, k_sr, date_col)
+            feats += _add_strength(w, new, e, p, runs, wins, nmfp_shrunk, k_sr)
+        if "_price" in w.columns or "_sp" in w.columns:
+            feats += _add_market_features(w, new, e, p)
 
-        if price_col and price_col in d.columns:
-            feats += _add_market_features(d, e, p, price_col, sp_col, date_col)
-
-    if {"trainer", "jockey_name", "trainer_sr_shrunk", "jockey_sr_shrunk"} <= set(d.columns):
-        d["_tj"] = d["trainer"].astype(str) + "|" + d["jockey_name"].astype(str)
-        tj_w, tj_n = prior_stats(d, "_tj", "_won", date_col=date_col)
-        d["tj_runs"] = tj_n
-        d["tj_sr_shrunk"] = shrink(tj_w, tj_n, d["trainer_sr_shrunk"], 20.0)  # toward the trainer's own rate
+    if {"trainer", "jockey_name"} <= set(w.columns):
+        w["_tj"] = w["trainer"] + "|" + w["jockey_name"]
+        tj_w, tj_n = prior_stats(w, "_tj", "_won")
+        new["tj_runs"] = tj_n
+        new["tj_sr_shrunk"] = shrink(tj_w, tj_n, new["trainer_sr_shrunk"], 20.0)  # toward the trainer's rate
         feats += ["tj_runs", "tj_sr_shrunk"]
-        if "horse_name" in d.columns:
-            # booking upgrade: today's jockey vs the horse's usual jockey quality.
-            # Grouping on the horse is the one safe row-shift: a horse runs once in a race.
-            order = d.sort_values([date_col] + ([time_col] if time_col in d.columns else []), kind="stable")
-            usual = (d["jockey_sr_shrunk"].reindex(order.index).groupby(order["horse_name"])
-                     .transform(lambda s: s.shift(1).expanding().mean()).reindex(d.index))
-            d["jockey_booking_upgrade"] = d["jockey_sr_shrunk"] - usual
+        if "horse_name" in src.columns:
+            # booking upgrade: today's jockey against the horse's usual booking.
+            # Grouping on the horse is the one safe row-shift: it runs once in a race.
+            key = src["horse_name"].astype(str)
+            order = w.sort_values(["race_date"] + ([time_col] if time_col in w.columns else []), kind="stable").index
+            usual = (new["jockey_sr_shrunk"].reindex(order).groupby(key.reindex(order))
+                     .transform(lambda s: s.shift(1).expanding().mean()).reindex(w.index))
+            new["jockey_booking_upgrade"] = new["jockey_sr_shrunk"] - usual
             feats.append("jockey_booking_upgrade")
-        d = d.drop(columns=["_tj"])
 
-    track_c = _first_col(d, ("track", "course", "course_bf"))
-    if "jockey_name" in d.columns and track_c:
-        # declared rides, not results — known when the card comes out
-        d["jockey_rides_today_at_meeting"] = (d.groupby(["jockey_name", track_c, CARD_KEY], observed=True)["_one"]
-                                              .transform("size").astype(float))
+    track_c = _first_col(src, ("track", "course", "course_bf"))
+    if "jockey_name" in w.columns and track_c:
+        # declared rides, not results — known as soon as the card comes out
+        rides = _narrow(w, {"_j": w["jockey_name"], "_t": src[track_c].astype(str), "_d": w[CARD_KEY],
+                            "_one": w["_one"]})
+        new["jockey_rides_today_at_meeting"] = rides.groupby(["_j", "_t", "_d"], observed=True)["_one"].transform("size").astype(float)
         feats.append("jockey_rides_today_at_meeting")
-    if "jockeys_claim" in d.columns:
-        claim = pd.to_numeric(d["jockeys_claim"].astype(str).str.extract(r"(\d+)", expand=False), errors="coerce").fillna(0.0)
-        d["jockey_claim_lb"] = claim
-        d["is_claimer"] = (claim > 0).astype(float)
+    if "jockeys_claim" in src.columns:
+        claim = pd.to_numeric(src["jockeys_claim"].astype(str).str.extract(r"(\d+)", expand=False),
+                              errors="coerce").fillna(0.0)
+        new["jockey_claim_lb"] = claim
+        new["is_claimer"] = (claim > 0).astype(float)
         feats += ["jockey_claim_lb", "is_claimer"]
 
-    d = d.drop(columns=[c for c in ("_won", "_nmfp", "_one", "_placed", "_plc_fsa", "_prb2_fsa", "_lr_score", "_non_fts",
-                                    "_season", "_sr_expected", "_field_strength", "_ln_prize", CARD_KEY)
-                        if c in d.columns])
-    d = d.sort_index()
-    d.index = orig_index
-    return d, feats
+    out = pd.concat([src.drop(columns=[c for c in new if c in src.columns]),
+                     pd.DataFrame({k: np.asarray(v) for k, v in new.items()}, index=src.index)], axis=1)
+    out.index = orig_index
+    return out, feats
 
 
 def _field_strength(d: pd.DataFrame) -> pd.Series:
@@ -523,94 +561,83 @@ def _field_strength(d: pd.DataFrame) -> pd.Series:
     return pd.Series(np.nan, index=d.index, dtype=float)
 
 
-def _schedule_expected_sr(d: pd.DataFrame, pop_sr: pd.Series, date_col: str = "race_date") -> pd.Series:
+def _schedule_expected_sr(w: pd.DataFrame, pop_sr: pd.Series) -> pd.Series:
     """Population strike rate in the (class × field-size) cell this race sits in.
 
     §5.1: "a trainer with a 22% strike rate in Class 6 sellers is not stronger
     than one with 12% in Class 2 handicaps". This is what an average yard would
     have won from the same schedule, and it is what the strike rate is scored
     against."""
-    cls = (d["race_class"].astype(str).str.extract(r"(\d+)", expand=False).fillna("?")
-           if "race_class" in d.columns else pd.Series("?", index=d.index))
-    n_c = _first_col(d, N_CANDIDATES)
-    band = (pd.cut(pd.to_numeric(d[n_c], errors="coerce"), [0, 7, 11, 15, 40], labels=False).astype(str)
-            if n_c else pd.Series("?", index=d.index))
-    sub = pd.DataFrame({"_won": d["_won"], "race_date": d[date_col].values,
-                        "_cell": cls.astype(str) + "|" + band.astype(str)}, index=d.index)
-    sub[CARD_KEY] = d[CARD_KEY]
-    tot, n = prior_stats(sub, "_cell", "_won")
+    tot, n = prior_stats(w, "_sched_cell", "_won")
     return shrink(tot, n, pop_sr, 200.0)
 
 
-def _last_season_totals(d: pd.DataFrame, key: str, season_col: str, won_col: str,
+def _last_season_totals(w: pd.DataFrame, key: str, season_col: str, won_col: str,
                         one_col: str) -> tuple[pd.Series, pd.Series]:
     """(wins, runs) of the *completed* previous season — finished before this one
     began, so no lagging is needed beyond requiring the seasons to be adjacent."""
-    agg = (d.groupby([key, season_col], observed=True)
+    agg = (w.groupby([key, season_col], observed=True)
              .agg(_w=(won_col, "sum"), _n=(one_col, "sum")).reset_index()
              .sort_values([key, season_col], kind="stable"))
     g = agg.groupby(key, observed=True)
     agg["_pw"] = g["_w"].shift(1); agg["_pn"] = g["_n"].shift(1); agg["_py"] = g[season_col].shift(1)
-    stale = agg["_py"] != agg[season_col] - 1
-    agg.loc[stale, ["_pw", "_pn"]] = np.nan
+    agg.loc[agg["_py"] != agg[season_col] - 1, ["_pw", "_pn"]] = np.nan
     src = pd.MultiIndex.from_arrays([agg[key], agg[season_col]])
-    tgt = pd.MultiIndex.from_arrays([d[key], d[season_col]])
-    w = pd.Series(pd.Series(agg["_pw"].values, index=src).reindex(tgt).values, index=d.index)
-    n = pd.Series(pd.Series(agg["_pn"].values, index=src).reindex(tgt).values, index=d.index)
-    return w.fillna(0.0), n.fillna(0.0)
+    tgt = pd.MultiIndex.from_arrays([w[key], w[season_col]])
+    wins = pd.Series(pd.Series(agg["_pw"].values, index=src).reindex(tgt).values, index=w.index)
+    runs = pd.Series(pd.Series(agg["_pn"].values, index=src).reindex(tgt).values, index=w.index)
+    return wins.fillna(0.0), runs.fillna(0.0)
 
 
-def _add_strength(d: pd.DataFrame, e: str, p: str, runs: pd.Series, wins: pd.Series,
-                  k_sr: float, date_col: str) -> list[str]:
+def _add_strength(w: pd.DataFrame, new: dict, e: str, p: str, runs: pd.Series, wins: pd.Series,
+                  nmfp_shrunk: pd.Series, k_sr: float) -> list[str]:
     """§5.1 TrainerStrength, schedule-adjusted, and its components.
 
     The composite is an equal-ish weighting of *running* z-scores (standardised
     against the population as it stood on earlier days, so it cannot see the
     future). Components the frame cannot supply are dropped from the average
     rather than imputed."""
-    exp_tot, _ = prior_stats(d, e, "_sr_expected", date_col=date_col)
+    exp_tot, _ = prior_stats(w, e, "_sr_expected")
     runs_nz = runs.replace(0, np.nan)
-    d[f"{p}_sr_expected"] = exp_tot / runs_nz
-    # excess wins per run over what the schedule was worth, credibility-shrunk
-    d[f"{p}_sr_resid"] = (wins - exp_tot) / (runs + k_sr)
-    lp, lp_n = prior_stats(d, e, "_ln_prize", date_col=date_col)
-    d[f"{p}_class_geo"] = np.exp(lp / lp_n.replace(0, np.nan))     # geomean win prize money (WPMCV)
-    fs, fs_n = prior_stats(d, e, "_field_strength", date_col=date_col)
-    d[f"{p}_sched_strength"] = fs / fs_n.replace(0, np.nan)
-    _, size_n = _time_window_prior_mean(d, e, "_one", date_col, 365)
-    d[f"{p}_stable_size"] = size_n
+    new[f"{p}_sr_expected"] = exp_tot / runs_nz
+    # excess wins per run over what the schedule entered was worth, shrunk
+    new[f"{p}_sr_resid"] = (wins - exp_tot) / (runs + k_sr)
+    lp, lp_n = prior_stats(w, e, "_ln_prize")
+    new[f"{p}_class_geo"] = np.exp(lp / lp_n.replace(0, np.nan))       # geomean win prize money (WPMCV)
+    fs, fs_n = prior_stats(w, e, "_field_strength")
+    new[f"{p}_sched_strength"] = fs / fs_n.replace(0, np.nan)
+    _, size_n = _time_window_prior_mean(w, e, "_one", "race_date", 365)
+    new[f"{p}_stable_size"] = size_n
 
     parts, wsum = [], 0.0
-    for series, w in ((d[f"{p}_nmfp_shrunk"], 1.0), (d[f"{p}_prb2_fsa_shrunk"], 1.0),
-                      (d[f"{p}_sr_resid"], 1.0), (np.log(d[f"{p}_class_geo"]), 0.5),
-                      (d[f"{p}_sched_strength"], 0.5)):
-        s = pd.Series(series, index=d.index)
+    for series, weight in ((nmfp_shrunk, 1.0), (new[f"{p}_prb2_fsa_shrunk"], 1.0), (new[f"{p}_sr_resid"], 1.0),
+                           (np.log(new[f"{p}_class_geo"]), 0.5), (new[f"{p}_sched_strength"], 0.5)):
+        s = pd.Series(series, index=w.index)
         if not s.notna().any():
             continue
-        parts.append(w * running_z(d, s).fillna(0.0)); wsum += w
-    d[f"{p}_strength"] = (sum(parts) / wsum) if parts else np.nan
+        parts.append(weight * running_z(w, s).fillna(0.0)); wsum += weight
+    new[f"{p}_strength"] = (sum(parts) / wsum) if parts else pd.Series(np.nan, index=w.index)
     return [f"{p}_sr_expected", f"{p}_sr_resid", f"{p}_class_geo", f"{p}_sched_strength",
             f"{p}_stable_size", f"{p}_strength"]
 
 
-def _add_market_features(d: pd.DataFrame, e: str, p: str, price_col: str, sp_col: str | None,
-                         date_col: str, k_ae: float = 20.0, k_roi: float = 50.0) -> list[str]:
+def _add_market_features(w: pd.DataFrame, new: dict, e: str, p: str, k_ae: float = 20.0,
+                         k_roi: float = 50.0) -> list[str]:
     """§5.1 A/E and ROI. Market-derived: Stage C only, never Stage F."""
     feats: list[str] = []
-    for col, tag in ((price_col, "bsp"), (sp_col, "sp")):
-        if not col or col not in d.columns:
+    for col, tag in (("_price", "bsp"), ("_sp", "sp")):
+        if col not in w.columns:
             continue
-        price = pd.to_numeric(d[col], errors="coerce").where(lambda s: s > 1.0)
-        d["_profit"] = pd.Series(np.where(d["_won"] > 0, price - 1.0, -1.0), index=d.index).where(price.notna())
-        ptot, pn = prior_stats(d, e, "_profit", date_col=date_col)
-        d[f"{p}_roi_{tag}"] = ptot / (pn + k_roi)          # profit per £1 level stake, shrunk to 0
+        price = w[col]
+        w["_profit"] = pd.Series(np.where(w["_won"] > 0, price - 1.0, -1.0), index=w.index).where(price.notna())
+        ptot, pn = prior_stats(w, e, "_profit")
+        new[f"{p}_roi_{tag}"] = ptot / (pn + k_roi)          # profit per £1 level stake, shrunk to 0
         feats.append(f"{p}_roi_{tag}")
         if tag == "bsp":
-            d["_pimp"] = 1.0 / price
-            d["_won_priced"] = d["_won"].where(price.notna())
-            exp_tot, _ = prior_stats(d, e, "_pimp", date_col=date_col)
-            w_tot, _ = prior_stats(d, e, "_won_priced", date_col=date_col)
-            d[f"{p}_ae_ratio"] = (w_tot + k_ae) / (exp_tot + k_ae)   # shrunk toward 1
+            w["_pimp"] = 1.0 / price
+            w["_won_priced"] = w["_won"].where(price.notna())
+            exp_tot, _ = prior_stats(w, e, "_pimp")
+            w_tot, _ = prior_stats(w, e, "_won_priced")
+            new[f"{p}_ae_ratio"] = (w_tot + k_ae) / (exp_tot + k_ae)     # shrunk toward 1
             feats.append(f"{p}_ae_ratio")
-    d.drop(columns=[c for c in ("_profit", "_pimp", "_won_priced") if c in d.columns], inplace=True)
     return feats
