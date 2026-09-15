@@ -97,6 +97,28 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str]]:
     return model, feature_cols
 
 
+def load_price_calibrator(model_dir: str):
+    """Load the BFSP price calibrator saved by train_bfsp.py, if there is one.
+
+    Without it the daily forecast is the model's raw log-price prediction, which
+    quotes the top pick roughly 8% longer than it settles and implies a book of
+    0.87. See model/price_calibration.py."""
+    path = os.path.join(model_dir, "bsp_price_calibrator.json")
+    if not os.path.exists(path):
+        log.warning(
+            "No BFSP price calibrator at %s -- prices are the raw model output and "
+            "carry a known upward bias on short-priced runners. Retrain with "
+            "train_bfsp.py, or fit one with: python research_lab.py price-cal --save %s",
+            path, path,
+        )
+        return None
+    from model.price_calibration import BSPPriceCalibrator
+    cal = BSPPriceCalibrator.load(path)
+    log.info("Loaded BFSP price calibrator (fitted on %s rows through %s)",
+             f"{cal.meta_.get('rows', 0):,}", cal.meta_.get("trained_through", "?"))
+    return cal
+
+
 # ---------------------------------------------------------------------------
 # Race Card Fetching
 # ---------------------------------------------------------------------------
@@ -151,6 +173,7 @@ def prepare_and_predict(
     model: lgb.Booster,
     feature_cols: list[str],
     target_date: date,
+    price_calibrator=None,
 ) -> pd.DataFrame:
     """Calculate metrics on history, build features for runners, predict BFSP.
 
@@ -237,7 +260,19 @@ def prepare_and_predict(
 
     # Recalculate BFSP from normalised probabilities so odds reflect a fair book
     target_df["predicted_bfsp_raw"] = target_df["predicted_bfsp"]
-    target_df["predicted_bfsp"] = 1.0 / target_df["predicted_win_prob_norm"]
+    target_df["predicted_bfsp_norm"] = 1.0 / target_df["predicted_win_prob_norm"]
+    target_df["predicted_bfsp"] = target_df["predicted_bfsp_norm"]
+
+    # Calibrated forecast: median and quartiles of where BFSP actually lands.
+    # bsp_forecast_q25 / _q75 bound the early-price rule -- take a price now if it
+    # beats the quantile you are willing to be wrong about.
+    if price_calibrator is not None:
+        cal = price_calibrator.transform(target_df, price_col="predicted_bfsp_raw")
+        for col in cal.columns:
+            if col.startswith("bsp_forecast"):
+                target_df[col] = cal[col].values
+        target_df["predicted_bfsp"] = target_df["bsp_forecast"]
+        target_df["predicted_win_prob"] = 1.0 / target_df["predicted_bfsp"]
 
     # If actual BFSP is available, compute edge
     if "bfsp" in target_df.columns:
@@ -495,6 +530,7 @@ def main():
 
     # Load model
     model, feature_cols = load_bfsp_model(args.model_dir)
+    price_calibrator = load_price_calibrator(args.model_dir)
 
     # Load historical data
     log.info(f"Loading historical data (from {args.start_date})...")
@@ -521,7 +557,7 @@ def main():
                 continue
 
             preds = prepare_and_predict(
-                history_before, runners_on_date, model, feature_cols, td
+                history_before, runners_on_date, model, feature_cols, td, price_calibrator
             )
             if len(preds) > 0:
                 all_predictions.append(preds)
@@ -589,7 +625,7 @@ def main():
 
     # Generate predictions
     predictions = prepare_and_predict(
-        history_before, target_runners, model, feature_cols, target_date
+        history_before, target_runners, model, feature_cols, target_date, price_calibrator
     )
 
     if len(predictions) == 0:

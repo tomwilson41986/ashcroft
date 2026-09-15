@@ -19,6 +19,12 @@ on:
         description: 'End date (YYYY-MM-DD). Defaults to yesterday.'
         required: false
         type: string
+      runner:
+        description: 'Runner to use. GitHub-hosted runners are Azure US and Betfair refuses them; pick self-hosted if you have a UK runner registered.'
+        required: false
+        default: 'ubuntu-latest'
+        type: choice
+        options: ['ubuntu-latest', 'self-hosted']
 
 env:
   PYTHON_VERSION: '3.11'
@@ -26,8 +32,47 @@ env:
   S3_DB_KEY: horse_racing.db
 
 jobs:
+  probe:
+    # promo.betfair.com is geo-fenced. Establish, cheaply and visibly, whether this
+    # runner's egress IP is allowed before spending minutes pulling the DB from S3.
+    # GitHub-hosted runners are Azure US and are refused (verified: HTTP 403 from
+    # 172.203.195.5, Virginia). Register a self-hosted runner on a UK machine and set
+    # the BETFAIR_RUNNER repository variable to its label to make the schedule use it.
+    runs-on: ${{ inputs.runner || vars.BETFAIR_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    outputs:
+      reachable: ${{ steps.geo.outputs.reachable }}
+      country: ${{ steps.geo.outputs.country }}
+    steps:
+      - name: Probe Betfair from this runner
+        id: geo
+        env:
+          BETFAIR_PROXY: ${{ secrets.BETFAIR_PROXY }}
+        run: |
+          set +e
+          ip_json=$(curl -sS --max-time 15 https://ipinfo.io/json)
+          country=$(printf '%s' "$ip_json" | sed -n 's/.*"country"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+          echo "Runner egress: $(printf '%s' "$ip_json" | tr -d '\n' | cut -c1-200)"
+          proxy_args=""
+          if [ -n "$BETFAIR_PROXY" ]; then proxy_args="--proxy $BETFAIR_PROXY"; echo "Using BETFAIR_PROXY"; fi
+          code=$(curl -sS -o /tmp/listing.html -w '%{http_code}' --max-time 30 $proxy_args \
+                 -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' \
+                 https://promo.betfair.com/betfairsp/prices)
+          csvs=$(grep -o -i 'dwbf[a-z]*[0-9]\{8\}\.csv' /tmp/listing.html 2>/dev/null | sort -u | wc -l)
+          echo "HTTP $code from promo.betfair.com; $csvs distinct CSV names in the response"
+          head -c 400 /tmp/listing.html; echo
+          if [ "$code" = "200" ] && [ "$csvs" -gt 0 ]; then
+            echo "reachable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "reachable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Betfair refused this runner (HTTP $code, country ${country:-unknown}). Set the BETFAIR_PROXY secret to a UK/IE proxy, or fetch the files from a UK machine and load them with: python betfair_prices.py --dir <folder> --load --match"
+          fi
+          echo "country=${country:-unknown}" >> "$GITHUB_OUTPUT"
+
   prices:
-    runs-on: ubuntu-latest
+    needs: probe
+    if: needs.probe.outputs.reachable == 'true'
+    runs-on: ${{ inputs.runner || vars.BETFAIR_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +93,8 @@ jobs:
         run: python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
 
       - name: Fetch, load and match price files
+        env:
+          BETFAIR_PROXY: ${{ secrets.BETFAIR_PROXY }}   # promo.betfair.com geo-blocks GitHub's US runners; set a UK/IE proxy
         run: |
           if [ -n "${{ inputs.date_from }}" ]; then
             python betfair_prices.py --fetch --load --match --from "${{ inputs.date_from }}" ${{ inputs.date_to && format('--to {0}', inputs.date_to) || '' }}

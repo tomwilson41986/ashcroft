@@ -90,3 +90,19 @@ def test_perf_figures_and_parsing():
     out = add_perf_figure_features(hist).sort_values(["horse_name", "race_date"])
     a = out[out["horse_name"] == "a"]
     assert np.isnan(a["horse_perf_lbs_ewm"].iloc[0]) and a["horse_perf_lbs_ewm"].iloc[1] == pytest.approx(83.0)
+
+
+def test_combined_file_loader_and_geo_block_detection(tmp_path):
+    import pandas as pd
+    day_a = SAMPLE_CSV
+    day_b = SAMPLE_CSV.replace("12-03-2026", "13-03-2026").replace("1001,", "2001,").replace("1002,", "2002,")
+    fa = pd.read_csv(__import__("io").StringIO(day_a)); fa["SOURCE_FILE"] = "dwbfpricesukwin12032026.csv"
+    fb = pd.read_csv(__import__("io").StringIO(day_b)); fb["SOURCE_FILE"] = "dwbfpricesukwin13032026.csv"
+    comb = tmp_path / "_combined_ukwin.csv"; pd.concat([fa, fb]).to_csv(comb, index=False)
+    df = bp.parse_combined(comb)
+    assert len(df) == 8 and set(df["race_date"]) == {"2026-03-12", "2026-03-13"} and (df["market_type"] == "win").all()
+    db = tmp_path / "t.db"
+    assert bp.load_combined([comb], str(db))["rows"] == 8
+    assert bp.coverage_report(str(db))["rows_loaded"].sum() == 8
+    assert "region US" in bp._geo_block_reason("<html>Betfair Restricted ... Region: US</html>")
+    assert bp._geo_block_reason("EVENT_ID,MENU_HINT\n1,x\n") is None

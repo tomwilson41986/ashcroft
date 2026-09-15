@@ -31,6 +31,15 @@ Research lab CLI — entry point for the RESEARCH_FRAMEWORK.md toolkit.
         Closing-line value: does the BSP forecast beat the morning price? Walk-forward blend
         ln BSP ~ ln p_morning + ln p_pred, early-bet rule, realised CLV (= greened-up profit) by tier.
 
+    python research_lab.py price-cal --predictions data/oos_predictions.csv [--save models/bsp_price_calibrator.json]
+        Calibrate the BFSP forecast against realised BFSP: walk-forward quantile
+        regression that removes the compression and rank bias in the raw price.
+
+    python research_lab.py stake --predictions data/oos_predictions.csv [--bank-chart out.png]
+        Market-blind staking: Kelly on the model's own probabilities (full to 1/20),
+        bankroll path with drawdowns, per-rank flat / proportional / level-profit /
+        Kelly staking, probability-shrinkage scan, predicted-vs-actual BFSP by rank.
+
     python research_lab.py bets --predictions data/oos_predictions.csv [--blend 0.5]
         Overlay tiers, cumulative overlay strategies with bootstrap CIs, overlays by
         price band, per-race rank performance (model vs market), disagreement analysis.
@@ -120,6 +129,119 @@ def cmd_bets(args):
     for key, title in titles.items():
         if key in rep:
             print(title); print(rep[key].round(4).to_string(index=False)); print()
+
+
+def cmd_price_cal(args):
+    from model.perf_figures import ensure_raceid
+    from model.price_calibration import BSPPriceCalibrator, calibration_report, walk_forward_calibrate
+    df = ensure_raceid(pd.read_csv(args.predictions))
+    df = df[(df["bfsp"] > 1.0) & (df["predicted_bfsp"] > 1.0)]
+    if args.date_from:
+        df = df[pd.to_datetime(df["race_date"]) >= args.date_from]
+    d = walk_forward_calibrate(df, n_folds=args.folds)
+    rep = calibration_report(d)
+    pd.set_option("display.width", 200)
+    print(f"\n{rep['n']:,} runners, {rep['races']:,} races scored out of sample "
+          f"({args.folds} walk-forward folds; the first block is training only)\n")
+    print("=== Forecast quality: raw model price vs calibrated ===")
+    print(rep["summary"].round(4).to_string(index=False))
+    print("\n=== Median forecast / actual BFSP, by the model's rank in the race ===")
+    print(rep["by_rank"].round(4).to_string(index=False))
+    if "coverage" in rep:
+        print("\n=== Quantile coverage: share of runners whose BFSP came in at or below the forecast ===")
+        print(rep["coverage"].round(2).to_string(index=False))
+    if args.save:
+        cal = BSPPriceCalibrator().fit(df)
+        cal.save(args.save)
+        print(f"\ncalibrator fitted on all {cal.meta_['rows']:,} rows and saved to {args.save}")
+    if args.out:
+        keep = [c for c in d.columns if c.startswith("bsp_forecast")]
+        d[["raceid", "race_date", "horse_name", "predicted_bfsp", "bfsp"] + keep].to_csv(args.out, index=False)
+        print(f"calibrated predictions written to {args.out}")
+
+
+def cmd_stake(args):
+    from model.staking import staking_report, bankroll_path
+    df = pd.read_csv(args.predictions)
+    if args.date_from:
+        df = df[pd.to_datetime(df["race_date"]) >= args.date_from]
+    rep = staking_report(df, commission=args.commission, max_rank=args.max_rank,
+                         p_col=args.p_col, price_col=args.price_col)
+    pd.set_option("display.width", 220)
+    print(f"\n{rep['n_runners']:,} runners, {rep['n_races']:,} races; commission {args.commission:.0%}. "
+          "Selection and stake sizing use model probabilities only; the market supplies the settlement price.\n")
+    pr = rep["promise_vs_reality"]
+    print("=== Full-Kelly promise vs reality ===")
+    print(f"  runners backed (positive model edge) : {pr['bets']:,} of {pr['runners']:,} ({pr['pct_of_field_backed']:.1f}% of the field)")
+    print(f"  mean full-Kelly stake                : {pr['mean_kelly_stake_pct']:.2f}% of bank")
+    print(f"  model edge, median / mean / weighted : {pr['median_model_edge_pct']:+.1f}% / {pr['mean_model_edge_pct']:+.1f}% / {pr['stake_weighted_model_edge_pct']:+.1f}%")
+    print(f"  realised edge, flat / stake-weighted : {pr['realised_edge_pct']:+.2f}% / {pr['stake_weighted_realised_edge_pct']:+.2f}%")
+    print(f"  log growth promised / realised       : {pr['promised_log_growth']:+,.0f} / {pr['realised_log_growth']:+,.0f}\n")
+    titles = {
+        "kelly_ladder": "=== Kelly ladder: bank compounded race by race, start = 1.0 (log10_terminal_bank = 0 means break-even) ===",
+        "kelly_by_rank": "=== Quarter-Kelly restricted to the model's n-th choice ===",
+        "kelly_top_k": "=== Quarter-Kelly restricted to the model's top n ===",
+        "rank_staking": "=== Model rank within race, flat stakes at BSP, and three staking plans ===",
+        "topk": "=== Back the model's top k in every race ===",
+        "shrinkage": "=== Flatten the probabilities (p ∝ p^λ, λ=0 is 1/N) and re-run quarter-Kelly ===",
+        "price_forecast": "=== Predicted BFSP vs realised BFSP by model rank ===",
+        "by_field": "=== Model #1 by field size ===",
+        "by_price": "=== Model #1 by the model's own forecast price ===",
+    }
+    for key, title in titles.items():
+        if key in rep and len(rep[key]):
+            print(title); print(rep[key].round(4).to_string(index=False)); print()
+    for f in rep.get("focus", []):
+        if not f:
+            continue
+        print(f"=== Focus: {f['label']} ===")
+        print(f"  {f['n']:,} bets, {f['win_rate_pct']:.1f}% winners at an average BSP of {f['avg_bsp']:.2f}")
+        print(f"  flat ROI {f['roi_flat_pct']:+.2f}%  (90% race-bootstrap CI {f['roi_ci_lo_pct']:+.2f}% to {f['roi_ci_hi_pct']:+.2f}%, t = {f['t_stat']:+.2f})")
+        print(f"  quarter-Kelly bank: 10^{f['kelly_log10_terminal_bank']:.2f}, worst drawdown {f['kelly_max_drawdown_pct']:.1f}%")
+        if len(f["stability"]):
+            print(f["stability"].round(3).to_string(index=False))
+        print()
+    if args.bank_chart:
+        _bank_chart(rep, args.bank_chart, args.commission)
+    if args.out_dir:
+        import os
+        os.makedirs(args.out_dir, exist_ok=True)
+        for key, val in rep.items():
+            if isinstance(val, pd.DataFrame) and not key.startswith("_") and len(val):
+                val.to_csv(os.path.join(args.out_dir, f"stake_{key}.csv"), index=False)
+        print(f"tables written to {args.out_dir}")
+
+
+def _bank_chart(rep, path, commission):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from model.staking import bankroll_path
+    d = rep["_frame"]
+    fig, ax = plt.subplots(1, 2, figsize=(13.5, 5))
+    for f in (1.0, 0.5, 0.25, 0.125, 0.05):
+        p = bankroll_path(d, fraction=f)
+        ax[0].plot(np.arange(len(p)), p["log_bank"].values / np.log(10), lw=1.2, label=f"{f:g} Kelly")
+    ax[0].axhline(0, color="k", lw=.8)
+    ax[0].set_xlabel("races bet (chronological)")
+    ax[0].set_ylabel("log10 bank   (0 = break-even, -2 = 1% of bank left)")
+    ax[0].set_title("Kelly on model probabilities, settled at BSP")
+    ax[0].legend(); ax[0].grid(alpha=.3)
+
+    def curve(sub, label):
+        s = sub.sort_values(["race_date", "race_time"]) if "race_time" in sub.columns else sub.sort_values("race_date")
+        ax[1].plot(np.arange(len(s)), s["ret_back"].cumsum().values, lw=1.2, label=label)
+    top = d[d["model_rank"] == 1]
+    curve(top, f"model #1, all races (n={len(top):,})")
+    big = top[top["field"] >= 12]
+    curve(big, f"model #1, field >= 12 (n={len(big):,})")
+    longp = top[top["model_price"] >= 8]
+    curve(longp, f"model #1, forecast price >= 8 (n={len(longp):,})")
+    ax[1].axhline(0, color="k", lw=.8); ax[1].set_xlabel("bets (chronological)")
+    ax[1].set_ylabel("cumulative profit (units, 1 unit per bet)")
+    ax[1].set_title("Flat stakes on the model's top pick"); ax[1].legend(); ax[1].grid(alpha=.3)
+    fig.tight_layout(); fig.savefig(path, dpi=130)
+    print(f"chart written to {path}")
 
 
 def cmd_ratings_eval(args):
@@ -392,6 +514,17 @@ def main(argv=None):
     s.add_argument("--source", choices=["files", "snapshots"], default="files", help="files: betfair_prices (historic CSVs); snapshots: earliest live betfair_odds snapshot per runner")
     s.add_argument("--early-col", default="morningwap"); s.add_argument("--min-clv", type=float, default=0.10); s.add_argument("--max-odds", type=float, default=50.0)
     s.add_argument("--commission", type=float, default=0.05); s.add_argument("--folds", type=int, default=6); s.set_defaults(fn=cmd_clv)
+
+    s = sub.add_parser("price-cal"); s.add_argument("--predictions", default="data/oos_predictions.csv")
+    s.add_argument("--folds", type=int, default=6); s.add_argument("--save", default=None)
+    s.add_argument("--out", default=None); s.add_argument("--from", dest="date_from", default=None)
+    s.set_defaults(fn=cmd_price_cal)
+
+    s = sub.add_parser("stake"); s.add_argument("--predictions", default="data/oos_predictions.csv")
+    s.add_argument("--p-col", default="predicted_win_prob_norm"); s.add_argument("--price-col", default="bfsp")
+    s.add_argument("--commission", type=float, default=0.05); s.add_argument("--max-rank", type=int, default=6)
+    s.add_argument("--bank-chart", default=None); s.add_argument("--out-dir", default=None)
+    s.add_argument("--from", dest="date_from", default=None); s.set_defaults(fn=cmd_stake)
 
     s = sub.add_parser("bets"); s.add_argument("--predictions", default="data/oos_predictions.csv")
     s.add_argument("--p-col", default="predicted_win_prob_norm"); s.add_argument("--price-col", default="bfsp")

@@ -15,6 +15,9 @@ import re
 import numpy as np
 import pandas as pd
 
+from model.lagsafe import race_lagged_expanding_mean
+from model.perf_figures import MARGIN_WORDS
+
 from model.draw_metrics import DrawMetricsEngine
 from model.pace_metrics import PaceMetricsEngine
 
@@ -144,6 +147,16 @@ RECENCY_WEIGHTS = {
     9: 1 / 9,
     10: 0.1,
 }
+
+
+#: Columns derived from THIS race's result or in-running comment. They are
+#: legitimate inputs to a lagged feature and must never be features themselves.
+#: train_bfsp.py asserts that no feature list intersects this set.
+POST_RACE_ONLY = frozenset({
+    "EPF", "EPF2", "EPF3", "placing_numerical", "comment", "NFP",
+    "early_pos", "mid_move", "late_move", "finishing_effort",
+    "was_keen", "had_trouble", "led_at_furlong", "total_move", "early_pos_pct",
+})
 
 
 def _calculate_epf(comment: str) -> float:
@@ -497,14 +510,28 @@ class CustomMetricsEngine:
         df["EPF2"] = -0.74 + (df["EPF"] * 0.8637) + (nr * 0.09375)
         df["EPF3"] = df["EPF"] * (nr - df["placing_numerical"]) / denom
 
-        # Race-level pace metrics
-        df["RPS"] = df.groupby("raceid")["EPF"].transform("sum")
+        # Race-level pace metrics.
+        #
+        # These are built from EPF_expected, not EPF. EPF is parsed from this
+        # row's in-running comment, so it describes how the horse ACTUALLY ran
+        # today; a race aggregate of it tells the model who went forward in the
+        # race it is being asked to predict, and it is identically 3.0 (the
+        # default) when a real card is priced, because there is no comment yet.
+        # EPF_expected is the horse's own lag-safe career EPF, which is what is
+        # knowable before the off.
+        df = df.sort_values(["horse_name", "race_date", "race_time"]).reset_index(drop=True)
+        df["EPF_expected"] = (
+            df.groupby("horse_name", group_keys=False)["EPF"]
+            .apply(lambda x: x.shift(1).expanding().mean())
+            .fillna(3.0)
+        )
+        df["RPS"] = df.groupby("raceid")["EPF_expected"].transform("sum")
         df["pace_pressure"] = (
-            df.groupby("raceid")["EPF"].transform(lambda x: (x > 4).sum())
+            df.groupby("raceid")["EPF_expected"].transform(lambda x: (x > 4).sum())
             / nr
             * 100
         )
-        df["prom_runner"] = (df["EPF"] > 4).astype(int)
+        df["prom_runner"] = (df["EPF_expected"] > 4).astype(int)
 
         # Lagged EPF per horse
         df = df.sort_values(
@@ -770,10 +797,12 @@ class CustomMetricsEngine:
     # ------------------------------------------------------------------
     def _calc_pace(self, df: pd.DataFrame) -> pd.DataFrame:
         """Pace indices for horse, trainer, jockey using EPF as proxy for RunStyle."""
-        # Use EPF as RunStyle proxy
-        run_style = df["EPF"]
+        # Expected run style, not the style the horse turned out to show today --
+        # see the note on EPF_expected in _calc_epf.
+        run_style = df["EPF_expected"] if "EPF_expected" in df.columns else df["EPF"]
+        df["_run_style"] = run_style
 
-        df["racepacescore"] = df.groupby("raceid")[run_style.name].transform("sum")
+        df["racepacescore"] = df.groupby("raceid")["_run_style"].transform("sum")
         df["racepaceindex"] = df["racepacescore"] / df[
             "number_of_runners"
         ].replace(0, np.nan)
@@ -791,6 +820,7 @@ class CustomMetricsEngine:
             cum_runs = grp.cumcount().replace(0, np.nan)
             df[prefix] = cum_pace / cum_runs
 
+        df = df.drop(columns=["_run_style"], errors="ignore")
         return df
 
     # ------------------------------------------------------------------
@@ -1564,9 +1594,17 @@ class CustomMetricsEngine:
             df["track"].fillna("unknown").str.lower().str.strip()
         )
 
-        std_times = df.groupby(
-            ["_track_lower_sf", "_dist_round", "_going_lower"]
-        )["_comptime"].transform("median")
+        # Standard time from EARLIER races only. A groupby-median over the whole
+        # frame would set the 2024 standard using 2026 race times, and every
+        # lagged RSR feature would inherit that look-ahead. Fall back to the
+        # track+distance cell when the going cell is still thin.
+        std_g = race_lagged_expanding_mean(
+            df, ["_track_lower_sf", "_dist_round", "_going_lower"], "_comptime", min_races=5
+        )
+        std_td = race_lagged_expanding_mean(
+            df, ["_track_lower_sf", "_dist_round"], "_comptime", min_races=5
+        )
+        std_times = std_g.fillna(std_td)
 
         # RSR: positive = faster than standard
         df["RSR"] = (
@@ -1634,32 +1672,14 @@ class CustomMetricsEngine:
             if pd.isna(val) or val == "" or val == "0":
                 return 0.0
             s = str(val).strip().lower()
+            if s in MARGIN_WORDS:
+                return MARGIN_WORDS[s]
             if s in ("dht", "dh"):
                 return 0.0
-            if s == "nse":
-                return 0.05
-            if s == "shd":
-                return 0.1
-            if s in ("hd", "sht-hd"):
-                return 0.15
-            if s in ("nk", "snk"):
-                return 0.2
-            if s == "dist":
-                return 30.0
-            # Handle combined forms like "2nk", "1shd", "3hd"
-            m = re.match(r"(\d+\.?\d*)\s*(nk|shd|hd|nse)?", s)
+            # Combined forms like "2nk", "1shd", "3hd"
+            m = re.match(r"(\d+\.?\d*)\s*(snk|nk|shd|hd|nse)?", s)
             if m:
-                base = float(m.group(1))
-                frac = m.group(2)
-                if frac == "nk":
-                    base += 0.2
-                elif frac == "shd":
-                    base += 0.1
-                elif frac == "hd":
-                    base += 0.15
-                elif frac == "nse":
-                    base += 0.05
-                return base
+                return float(m.group(1)) + MARGIN_WORDS.get(m.group(2) or "", 0.0)
             try:
                 return float(s)
             except (ValueError, TypeError):

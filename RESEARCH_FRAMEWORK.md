@@ -311,3 +311,215 @@ Built: `model/clv.py` (`prepare_clv_frame`, `price_move_model`, `early_bet_rule`
 
 ### 11.4 What still matters from the earlier sections
 Sharper BSP forecasts (lower log-error) raise CLV directly, so the feature blocks in §3–§6 and §10 still earn their place — but their promotion criterion becomes *incremental BSP-forecast accuracy given the morning price*, measured by the CLV report, not ΔR² over BSP. The Kalman rating, Timeform feed and connection blocks are the first candidates; the ABM's pace features and the causal intervention effects remain the candidates for information the *morning* market prices late.
+
+---
+
+## 12. Market-blind staking: Kelly and ranks on real out-of-sample output
+
+Full report and tables: **[STAKING_REPORT.md](STAKING_REPORT.md)**. Command:
+`python research_lab.py stake --predictions data/oos_predictions.csv`. Module:
+`model/staking.py` (Kelly at the settlement price, log-space bankroll paths, rank
+staking plans, shrinkage scan, forecast-price diagnostics), tested in
+`tests/test_staking.py`.
+
+The question asked was how the model performs on Kelly and on per-race ranks *without
+considering the market*. The market can be removed from the selection, the probability
+and every filter, but not from the settlement price — with no market price there is no
+edge and Kelly stakes nothing. Results on 253,532 runners / 27,223 races
+(Jan 2024 – Feb 2026), commission 5%:
+
+| finding | number |
+|---|---|
+| Full Kelly on model probabilities | bank halves by race 9, under 1% by race 29, ends 10⁻⁷³² |
+| 1/20 Kelly | halves by race 417, ends 10⁻⁴·⁴ |
+| Share of the loss attributable to variance rather than negative edge (1/20 Kelly) | ≈ 3/4 |
+| Kelly-weighted ROI over the same bets vs flat | −1.04% vs −5.69% |
+| Model rank 1, flat at BSP | −0.44% (90% CI −2.1 to +1.4); random runner −5.73%, favourite −3.05% |
+| Model rank 1, field ≥ 12 | +4.40% (CI −0.7 to +9.4), quarters −3.0 / +3.2 / +7.7 / +9.8 |
+| Model rank 1, field ≥ 16 | +14.77% (CI +2.1 to +29.0) |
+| Model rank 1, forecast price ≥ 8 | +13.44% (CI −1.8 to +29.0) |
+| Flattening probabilities (p ∝ p^λ) | monotonically worse as λ → 0: the ordering is the asset, not the confidence |
+| Stage F (market-free), rank 1 | −1.95% (clogit) / −5.11% (LightGBM) on 5,017 races |
+| Forecast BFSP bias on the model's top pick | +8.3% (closes shorter than forecast 58% of the time), decaying to 0 by rank 5 |
+
+Consequences for the roadmap: (a) no Kelly sizing on these probabilities at any fraction;
+(b) the big-field and long-forecast-price cells join the disagreement cells from §7 as the
+only market-blind selections worth live testing; (c) the +8% retransformation bias in the
+top-pick price forecast is a correctable defect that directly costs CLV, and should be
+fixed before any early-price trigger uses the forecast.
+
+---
+
+## 13. Two leaks found in the pace and draw blocks
+
+Found while auditing what the pace, race-shape and draw work actually does.
+Both are confirmed by direct reproduction and both are now fixed and tested
+(`tests/test_leakage.py`, 11 tests). **The BFSP model must be retrained before
+its numbers mean anything**: the deployed 419-feature model was trained with
+both leaks present, so its reported accuracy is inflated and five of its
+features are dead at prediction time.
+
+### 13.1 Race-level bias features lagged by row instead of by race
+
+`grp[col].apply(lambda x: x.shift(1).expanding().mean())` is the repo's idiom
+for a lag-safe career mean. On a key the horse owns it is correct. On a key
+every runner in a race shares -- track+distance, track+distance+going, track,
+or a trainer with two in the race -- the previous row is a rival in the *same*
+race, so the expanding mean picks up that rival's result.
+
+The structure of the damage matters more than its size: these columns are
+otherwise constant across a race, so the leaked same-race outcome was the only
+thing that varied within the race, which is exactly the variation a
+race-grouped or race-demeaned model keys on. `going_draw_shift`, built on the
+smallest cells of all, was the highest-importance pace or draw feature in the
+deployed model at rank 40 of 419.
+
+Affected: `td_front_win_share`, `td_holdup_win_share`, `td_avg_winner_pos`,
+`track_front_win_share`, `td_low_stall_nfp`, `td_high_stall_nfp`,
+`td_draw_bias`, `tdg_low_stall_nfp`, `tdg_high_stall_nfp`, `tdg_draw_bias`,
+`going_draw_alignment`, `going_draw_shift`, and everything derived from them
+(`draw_bias_alignment`, `track_draw_bias`, `track_style_fit`, `pace_mismatch`,
+`draw_advantage_composite`), plus the five `trainer_*` style columns.
+
+Fixed by `model/lagsafe.py`: aggregate to races first, then lag, so a runner
+sees every earlier race in its group and no part of its own. The
+track x distance x going cell now also requires five earlier races before it
+reports a bias at all, instead of handing the model an unshrunk difference of
+two means computed from one prior race.
+
+### 13.2 Speed-figure standard times taken from the whole file
+
+`RSR` is a race time expressed against a standard time, and the standard was a
+`groupby(track, distance, going).transform("median")` over every row in the
+frame. A 2024 race was therefore scored against a standard that included 2026
+races. Every lagged RSR feature in the production model inherits it:
+`preracehorsecareerRSR`, `LR_RSR`, `LR3_RSR`, `LR5_RSR`, `best_RSR`, `RSR_gap`,
+`rRSR`, `SFI`, `SFI_3`. The standard is now an expanding mean over earlier
+races in the cell, with the going cell falling back to track-and-distance while
+it is thin.
+
+### 13.3 Two beaten-length tables
+
+`model/perf_figures.py` had a head at 0.2 lengths and a neck at 0.3;
+`model/custom_metrics.py` had 0.15 and 0.2. The same race therefore produced
+two different performance figures depending on which module computed it. There
+is now one table, `perf_figures.MARGIN_WORDS`, and a test that says so.
+
+### 13.4 Race pace aggregates built from the race being predicted
+
+`EPF` is parsed from the horse's own in-running comment, so it says how the
+horse actually ran *today*. Five race-level aggregates of it were model
+features: `RPS`, `pace_pressure`, `prom_runner`, `racepacescore` and
+`racepaceindex`. `prom_runner` -- literally "did this horse race prominently
+today" -- ranked 35th of 419 by gain.
+
+At prediction time a card has no comments, so the parser returns its default
+and all five collapse to constants. The model was trained on information it
+never has when it matters. It is worse in backtest: the `--from-db` and
+`--last-n-days` paths read completed rows with their comments, so backtests
+reproduced the leak while live runs did not, and the two diverged silently.
+
+Fixed by rebuilding all five on `EPF_expected`, the horse's own lag-safe career
+EPF. `train_bfsp.py` now refuses to start if any feature column is in
+`POST_RACE_ONLY` (`assert_no_post_race_features`), which covers `EPF`,
+`placing_numerical`, `NFP`, the raw comment and the parsed run-style columns.
+
+---
+
+## 14. Coverage against the master framework, item by item
+
+Every named metric, estimator, governance rule and acceptance test in
+`racing2_master_framework_v3_1.md` was enumerated and searched for in the repo.
+"Implemented" means the thing exists **and** a training pipeline consumes it;
+something that exists only as a library function nothing calls is partial.
+
+| Section | implemented | partial | missing |
+|---|---|---|---|
+| II Formal model specification | 4 | 2 | 5 |
+| IIA Quantitative finance methods | 6 | 2 | 15 |
+| Part 0 Design principles | 0 | 5 | 1 |
+| Part 1 Performance primitives | 5 | 16 | 12 |
+| Part 2 Field size, context, strength | 1 | 5 | 6 |
+| Part 3 Aggregation | 6 | 7 | 5 |
+| Part 4 Odds-derived metrics (Stage C) | 4 | 3 | 8 |
+| Part 5 Connections and pedigree | 8 | 5 | 16 |
+| Part 6 Pace, position, draw, bias | 9 | 3 | 8 |
+| Part 7 Ratings, changes, momentum | 12 | 6 | 8 |
+| Part 8 Transformation layer | 5 | 1 | 7 |
+| Part 9 Feature dictionary and governance | 0 | 3 | 0 |
+| IV Stage C, calibration, exotics | 7 | 7 | 5 |
+| V Staking | 1 | 4 | 6 |
+| VI Validation and monitoring | 6 | 7 | 8 |
+| VII/VIII/X Operations and build plan | 1 | 4 | 12 |
+| **Total (277 items)** | **75** | **80** | **122** |
+
+### 14.1 Why so much lands in "partial"
+
+There are two models in this repo and they share almost nothing.
+`train_bfsp.py` is production: 419 features, LightGBM regression on
+log(BFSP). It imports none of the master-framework modules — not
+`primitives.py`, `state_space.py`, `connections.py`, `ordering.py`,
+`stage_f.py` or `feature_registry.py`. `train_stage_f.py` is the
+framework-conformant pipeline and it runs on a ~35-feature Timeform-style
+feed. So the framework work is built and tested but mostly not consumed by
+the model that prices races.
+
+It also breaks P5 twice: the production target *is* the market
+(`log_bfsp`), and its feature set carries market-derived Stage-C columns
+(the ORR2, OFS, PFD and expectation-residual families).
+`feature_registry.stage_f_columns` exists to stop exactly that and is applied
+only in `train_stage_f.py`.
+
+Two smaller specifics: `TemperatureScaler` is imported by `train_stage_f.py`
+and never called, and `primitives.handicapper_gap_features` (`well_in`,
+`mark_vs_form`, `tf_vs_or`, `rating_dispersion`) has no call site anywhere.
+
+### 14.2 The gaps that block honest measurement
+
+1. **Purge and embargo** in the walk-forward. Every trailing-window feature
+   in `primitives.py` and `connections.py` leaks across a fold boundary
+   without a gap equal to the window length.
+2. **Unratable-runner rule.** Substitute the market probability and
+   renormalise when a runner has too little history; skip races where no
+   runner is ratable. Until then ΔR² is measured partly on noise.
+3. **Deflated Sharpe ratio and probability of backtest overfitting**, with a
+   count of configurations tried.
+4. **Performance-versus-strength**: the residual of normalised finishing
+   position on strength of schedule. The framework calls it the single most
+   important correction to naive form aggregates and it is not built.
+5. **Feature dictionary fields beyond `stage`**: as-of rule, shrinkage,
+   missing policy, version.
+
+### 14.3 The gaps that matter most for pace, shape and draw
+
+Covered in detail in §6 of the framework document; the short version is that
+the pace layer is built entirely from one regex parse of the in-running
+comment, and the draw layer has no per-stall resolution.
+
+* No sectional or early-speed figure per horse. `early_pos` is a six-point
+  ordinal from keyword matching, and the only sectional-derived column in the
+  repo (`LR_race_fsp_pct`) is the *winner's* closing speed in the horse's last
+  race, is opt-in, and is not in the deployed model.
+* Expected pace is never expressed in time. `pred_race_pace` is the mean of an
+  ordinal, so "how fast will they go" cannot be compared across races, and
+  there are no par times to compare it against.
+* Expected position ignores today's draw, jockey, field and trip: it is the
+  horse's career mean. No lead probability, no distribution, no contested-lead
+  measure beyond a count of front-runners.
+* Trouble risk is a career keyword rate, not a forecast conditioned on field
+  size, draw or expected position.
+* **Draw bias is a low-half / high-half split everywhere.** Stall 1 and stall 7
+  in a fourteen-runner field are the same "low". The Gaussian-process surface
+  that would give per-stall resolution exists in `spatial.py`, is report-only,
+  and is not lag-safe as written.
+* Draw bias is estimated from raw mean finishing position by stall band rather
+  than from the residual against expected finishing position. The framework
+  names this specific construction as the standard trap.
+* `track_direction` (handedness) and `rail_move` are scraped, stored, and read
+  by nothing. Handedness is a first-order determinant of draw bias, and rail
+  movements are what make a course's draw bias non-stationary.
+* The ABM models pace, blocking, drafting and wide-draw ground loss properly,
+  and has never been run at scale: there is no `data/abm_features.parquet` and
+  no `data/abm_calibration.json`, so its parameters are still placeholders.
+* Neither `pace_metrics.py` nor `draw_metrics.py` had a single unit test before
+  §13; the ABM, which nothing uses, had a full suite.
