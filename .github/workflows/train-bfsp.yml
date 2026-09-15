@@ -3,6 +3,17 @@ name: Train BFSP Model
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'What to run'
+        required: false
+        default: 'train_and_evaluate'
+        type: choice
+        options: ['train_and_evaluate', 'train_only', 'evaluate_only']
+      publish:
+        description: 'Commit the model back to the repo and cut a release'
+        required: false
+        default: false
+        type: boolean
       min_train_days:
         description: 'Minimum training window (days)'
         required: false
@@ -29,8 +40,9 @@ env:
 
 jobs:
   train:
+    if: inputs.mode != 'evaluate_only'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 330
 
     steps:
       - name: Checkout repository
@@ -71,6 +83,7 @@ jobs:
             --step-days ${{ inputs.step_days || 30 }}
 
       - name: Commit model to repository
+        if: inputs.publish
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -91,6 +104,7 @@ jobs:
           retention-days: 90
 
       - name: Create GitHub Release
+        if: inputs.publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -103,3 +117,84 @@ jobs:
             data/models/bfsp_model_meta.json \
             data/models/bfsp_training_summary.json \
             data/models/bfsp_feature_importance.csv
+
+  evaluate:
+    # Walk-forward out-of-sample evaluation. Trains a fresh model per fold and
+    # predicts the fold it never saw, so the numbers are what the model would
+    # have done, not what it can fit. Independent of the train job so it can be
+    # run on its own after a code change that alters features or calibration.
+    if: inputs.mode != 'train_only'
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install matplotlib
+
+      - name: Download historic database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::AWS credentials not configured."
+            exit 1
+          fi
+          python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
+          python3 scripts/db_info.py
+
+      - name: Walk-forward out-of-sample predictions
+        run: |
+          mkdir -p data reports
+          python evaluate_oos.py \
+            --min-train-days ${{ inputs.min_train_days || 365 }} \
+            --val-window ${{ inputs.val_window || 30 }} \
+            --step-days ${{ inputs.step_days || 30 }} \
+            --output-csv data/oos_predictions.csv \
+            --output-json data/oos_evaluation.json 2>&1 | tee reports/evaluate_oos.log
+          wc -l data/oos_predictions.csv
+
+      - name: Scoring, ranks, staking and price calibration
+        run: |
+          set -o pipefail
+          python research_lab.py score     --predictions data/oos_predictions.csv 2>&1 | tee reports/score.txt
+          python research_lab.py bets      --predictions data/oos_predictions.csv 2>&1 | tee reports/bets.txt
+          python research_lab.py stake     --predictions data/oos_predictions.csv \
+            --bank-chart reports/bank_curves.png --out-dir reports/stake 2>&1 | tee reports/stake.txt
+          python research_lab.py price-cal --predictions data/oos_predictions.csv \
+            --save reports/bsp_price_calibrator.json 2>&1 | tee reports/price_cal.txt
+
+      - name: Summarise into the run page
+        if: always()
+        run: |
+          {
+            echo "## Out-of-sample evaluation"
+            echo '```'
+            tail -40 reports/score.txt 2>/dev/null
+            echo '```'
+            echo "### Price-forecast calibration"
+            echo '```'
+            cat reports/price_cal.txt 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evaluation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oos-evaluation-${{ github.run_number }}
+          path: |
+            data/oos_predictions.csv
+            data/oos_evaluation.json
+            reports/
+          retention-days: 90
