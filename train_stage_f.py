@@ -44,8 +44,9 @@ from model.connections import add_connection_features
 from model.feature_registry import classify, stage_f_columns
 from model.phase1 import build_stage_f_features, prepare_blandford_frame
 from model.primitives import within_race_transforms
-from model.stage_f import (ConditionalLogit, StageC, TemperatureScaler, conditional_calibration, delta_r2, lgb_race_softmax,
-                           mcfadden_r2, race_log_loss)
+from model.stage_f import (EMBARGO_DAYS, PURGE_DAYS, ConditionalLogit, StageC, TemperatureScaler, apply_unratable_rule,
+                           conditional_calibration, delta_r2, lgb_race_softmax, mcfadden_r2, purge_embargo_masks,
+                           race_log_loss)
 
 log = logging.getLogger("train_stage_f")
 OUT_DIR = Path(__file__).resolve().parent / "data" / "models" / "stage_f"
@@ -160,25 +161,44 @@ def fit_predict_lgbm(Xtr, ytr, gtr, Xte, gte, rounds: int = 1500, params: dict |
 # ---------------------------------------------------------------------------
 
 def walk_forward(d: pd.DataFrame, feats, model: str, test_start: str, n_folds: int, l2: float, rounds: int, min_train_races: int = 300,
-                 stage_c_extra=None):
-    """stage_c_extra: columns (positive, e.g. previous-run in-running low ratio) added to Stage C as log terms; NaN -> 1."""
+                 stage_c_extra=None, gap_days: int = PURGE_DAYS, embargo_days: int = EMBARGO_DAYS, gate: dict | None = None):
+    """Walk-forward Stage F + Stage C, purged and embargoed (Section VI.2.3).
+
+    stage_c_extra: columns (positive, e.g. previous-run in-running low ratio) added to Stage C as log terms; NaN -> 1.
+    gap_days:      training rows within this many days *before* a fold's first
+                   test date are purged — they are the rows whose labels sit
+                   inside the test period's trailing feature windows.
+    embargo_days:  the fold's first days are dropped from the test side for the
+                   mirror-image reason. See model.stage_f.purge_embargo_masks.
+    gate:          kwargs for model.stage_f.apply_unratable_rule (min_runs,
+                   min_kf_n, min_ratable); None disables the confidence gate.
+    """
     d = d.copy(); d["race_date"] = pd.to_datetime(d["race_date"])
     X = d[feats].astype(float).values; y = d["won"].values.astype(float); g = d["raceid"].values
     dates = np.sort(d["race_date"].unique())
     test_dates = dates[dates >= np.datetime64(test_start)]
     edges = np.linspace(0, len(test_dates), n_folds + 1).astype(int)
-    d["f_oof"] = np.nan; d["c_oof"] = np.nan; d["fold"] = -1
+    d["f_oof"] = np.nan; d["c_oof"] = np.nan; d["fold"] = -1; d["ratable"] = np.nan
     fit_fn = fit_predict_lgbm if model == "lgbm" else fit_predict_clogit
     last_model = None
+    n_purged = n_embargoed = n_unratable = n_skipped = 0
     for k in range(n_folds):
         te_dates = test_dates[edges[k]: edges[k + 1]]
         if len(te_dates) == 0:
             continue
-        tr = (d["race_date"] < te_dates[0]).values; te = d["race_date"].isin(te_dates).values
-        if d.loc[tr, "raceid"].nunique() < min_train_races:
+        tr, te = purge_embargo_masks(d["race_date"], te_dates, gap_days=gap_days, embargo_days=embargo_days)
+        n_purged += int(((d["race_date"] < te_dates[0]).values & ~tr).sum())
+        n_embargoed += int((d["race_date"].isin(te_dates).values & ~te).sum())
+        if d.loc[tr, "raceid"].nunique() < min_train_races or te.sum() == 0:
             continue
         t0 = time.time()
         p, last_model = fit_fn(X[tr], y[tr], g[tr], X[te], g[te], l2=l2, rounds=rounds)
+        if gate is not None:
+            p, ratable, race_ok = apply_unratable_rule(p, d.loc[te, "pi_market"].values, g[te],
+                                                       runs_count=_gate_col(d, te, "runs_count"),
+                                                       kf_n=_gate_col(d, te, "kf_n"), **gate)
+            d.loc[te, "ratable"] = ratable.astype(float)
+            n_unratable += int((~ratable).sum()); n_skipped += int(len(np.unique(g[te][~race_ok])))
         d.loc[te, "f_oof"] = p; d.loc[te, "fold"] = k
         prev = d["f_oof"].notna().values & (d["fold"].values < k) & (d["fold"].values >= 0)
         if d.loc[prev, "raceid"].nunique() >= min_train_races:
@@ -193,6 +213,11 @@ def walk_forward(d: pd.DataFrame, feats, model: str, test_start: str, n_folds: i
             alpha = gamma = np.nan
         log.info("fold %d: train %d races, test %d races, %.0fs; Stage C alpha=%.3f gamma=%.3f", k, d.loc[tr, "raceid"].nunique(),
                  len(np.unique(g[te])), time.time() - t0, alpha, gamma)
+    d.attrs["validation"] = {"gap_days": int(gap_days), "embargo_days": int(embargo_days), "train_rows_purged": n_purged,
+                             "test_rows_embargoed": n_embargoed, "gate": gate, "runners_unratable": n_unratable,
+                             "races_skipped_unratable": n_skipped}
+    log.info("purge/embargo %dd/%dd: %d train rows purged, %d test rows embargoed; gate: %d runners unratable, %d races skipped",
+             gap_days, embargo_days, n_purged, n_embargoed, n_unratable, n_skipped)
     return d, last_model
 
 

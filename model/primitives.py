@@ -8,24 +8,44 @@ Per run (Part 1):
     fss_cred                          field-size credibility weight √((N−1)/(N+1))
     plc_fsa                           placed flag minus places/N (UK each-way terms)
     bl_trunc, dabl                    15·tanh(BL/15), distance-adjusted (÷ (dist_m/1000)^0.25)
-    bl_pct_wintime                    lengths → seconds (LPS) ÷ winning time
-    bl_vs_par                         DABL vs an empirical (position × field-size) par surface
-    bl_censored                       eased / tailed-off / hampered flag from comments
+    bl_seconds, bl_pct_wintime        lengths → seconds (LPS by surface/going) ÷ winning time
+    bl_prop_figure                    proportion-method beaten figure, (1−(t_win/t_horse)^(d/1000))·1000
+    bl_signed, bl_next, bl_behind     cluster geometry: the *shape* of the finish (§1.5.a)
+    bl_gap_ahead, bl_isolation
+    bl_vs_par, bl_par_ratio           DABL vs an empirical (position × field-size × context) par surface
+    bl_per_position, won_by_vs_par
+    bl_censored + the five separate    eased / pulled up / tailed off / hampered / slipped
+      flags of §1.5.f
 
-Aggregation (Part 3): windows × {mean, iqm, max, min, slope}, FSS-credibility
-weighting, run-count features; the "consistency floor" MIN over L10.
+Aggregation (Part 3): windows × {mean, iqm, max, min, slope, first, %above par},
+FSS-credibility weighting, λ-decay in days and γ^k decay in runs, DSLR and
+season counters; the "consistency floor" MIN over L10.
 
 Ratings (Part 7): handicapper-gap features (well_in, mark_vs_form, tf_vs_or,
 rating_dispersion); LTO-contradiction features (lto_vs_career,
 lto_tfig_above_ability).
 
-Context (Part 2): rating-based effective field size (Stage-F-legal),
-strength of schedule and SoS_vs_today.
+Context (Part 2): rating-based and market effective field size, field quality
+strength (mean / IQM / max of the opponents' ratings) and its dispersion,
+strength of schedule with SoS_delta and SoS_vs_today, combined race strength,
+field-size-adjusted placed flags for the horse, jockey and trainer, and PvS —
+performance relative to schedule, §2.4's "single most important correction to
+naive form aggregates".
 
-Transforms (Part 8.1): within-race z, rankpct and vs_max for any feature.
+Transforms (Part 8.1): within-race z, rankpct, vs_max, vs_median, share,
+norm_spread and vs_2nd for any feature.
 
-All aggregates are lag-safe (shift-1 per horse ordered by date/time). The
-par surface is fitted on a training window and applied forward.
+Lag safety. Aggregates grouped on ``horse_name`` use shift-1 over the horse's
+runs ordered by date/time, which is safe because a horse runs once in a race.
+Anything grouped on a key that repeats inside a race (trainer, jockey) goes
+through ``model.lagsafe.race_lagged_expanding_mean`` instead. Fitted surfaces
+(the par surfaces, the PvS regression) are fitted on a training window and
+applied forward.
+
+Within-race geometry — ``bl_next``, ``bl_isolation``, ``bl_z`` and the rest —
+describes the race it is computed from, so it is *post-race*: legitimate as the
+input to a lagged feature about the horse's previous runs, never a feature of
+the race being predicted. The names are collected in ``POST_RACE_PRIMITIVES``.
 """
 
 from __future__ import annotations
@@ -36,9 +56,24 @@ import numpy as np
 import pandas as pd
 
 from model.abm.features import place_terms
-from model.perf_figures import parse_beaten_lengths
+from model.lagsafe import ensure_race_key, race_lagged_expanding_mean
+from model.perf_figures import parse_beaten_lengths, winning_margin
 
 LPS_STANDARD = 6.0  # lengths per second on standard going (BHA scale; re-fit locally)
+
+#: BHA published lengths-per-second scale (§1.5.b). A length is a made-up unit
+#: and its time value moves with the ground: one second covers six lengths on
+#: good ground and five on heavy. Flat and jumps run a length apart throughout.
+#: These are the published figures, not fitted ones — §X.5/P11 asks for our own
+#: LPS by surface and going once there is enough timing data to fit it.
+LPS_SCALE = {
+    "flat": {"firm": 6.0, "good to firm": 6.0, "good": 6.0, "good to soft": 5.5,
+             "soft": 5.5, "heavy": 5.0, "aw": 6.0},
+    "jumps": {"firm": 5.0, "good to firm": 5.0, "good": 5.0, "good to soft": 4.5,
+              "soft": 4.5, "heavy": 4.0, "aw": 5.0},
+}
+
+_JUMPS_RX = re.compile(r"hurdle|chase|steeple|\bnh\b|jump|bumper|nhf", re.I)
 
 
 # ---------------------------------------------------------------------------
@@ -73,8 +108,84 @@ def dist_adjust_bl(bl_trunc, dist_metres, exponent: float = 0.25):
     return np.asarray(bl_trunc, float) / (np.asarray(dist_metres, float) / 1000.0) ** exponent
 
 
+def going_group(going) -> pd.Series:
+    """Going strings collapsed to the seven buckets the BHA LPS scale uses."""
+    g = pd.Series(going).fillna("").astype(str).str.lower().str.strip()
+    out = pd.Series("good", index=g.index, dtype=object)
+    out[g.str.contains("standard|polytrack|tapeta|fibresand|slow|fast", regex=True)] = "aw"
+    out[g.str.contains("good to firm|gd-fm|gf")] = "good to firm"
+    out[g.str.contains("good to soft|gd-sft|gs|yielding")] = "good to soft"
+    out[g.str.contains("soft") & ~g.str.contains("good")] = "soft"
+    out[g.str.contains("firm") & ~g.str.contains("good")] = "firm"
+    out[g.str.contains("heavy")] = "heavy"
+    out[g.eq("")] = "good"
+    return out
+
+
+def lps_scale(going=None, code=None, default: float = LPS_STANDARD) -> np.ndarray | float:
+    """Lengths per second for the going and the code (§1.5.b, D16).
+
+    ``code`` is the race code/type string; anything reading as hurdle, chase or
+    bumper takes the jumps column, everything else the flat column. Unknown
+    going falls back to ``default`` rather than silently pricing heavy ground
+    as good.
+    """
+    scalar = np.ndim(going) == 0 and (code is None or np.ndim(code) == 0)
+    g = going_group(pd.Series([going]) if scalar else pd.Series(going))
+    if code is None:
+        jumps = pd.Series(False, index=g.index)
+    else:
+        c = pd.Series([code] if scalar else code).fillna("").astype(str)
+        c.index = g.index
+        jumps = c.str.contains(_JUMPS_RX)
+    flat = g.map(LPS_SCALE["flat"]); jmp = g.map(LPS_SCALE["jumps"])
+    out = pd.Series(np.where(jumps, jmp, flat), index=g.index).astype(float).fillna(default).values
+    return float(out[0]) if scalar else out
+
+
+def proportion_beaten_figure(win_time, horse_time, dist_metres) -> np.ndarray:
+    """§1.5.b / D13: (1 − (t_win / t_horse) ^ (dist_m / 1000)) · 1000.
+
+    The properly normalised margin measure: scale-free, distance-aware and
+    directly comparable across the database. ``horse_time`` is the individual
+    horse's time where it exists; the schema carries only the race's winning
+    time, so ``add_run_primitives`` reconstructs it from the margin and the LPS
+    scale and the figure inherits that reconstruction's error.
+    """
+    w = np.asarray(win_time, float); h = np.asarray(horse_time, float)
+    d = np.asarray(dist_metres, float) / 1000.0
+    with np.errstate(invalid="ignore", divide="ignore"):
+        out = (1.0 - (w / h) ** d) * 1000.0
+    return np.where((w > 0) & (h > 0) & (d > 0), out, np.nan)
+
+
 CENSOR_RX = re.compile(r"eased|tailed off|pulled up|hampered|badly hampered|brought down|unseated|fell|slipped|"
                        r"not persevered|virtually pulled up|lost action|refused|ran out|saddle slipped", re.I)
+
+#: §1.5.f asks for the censoring reasons separately, not one combined flag: a
+#: horse eased when held is a different observation from one hampered at a
+#: crucial point, and the model should be able to discount them differently.
+COMMENT_FLAG_RX = {
+    "eased_flag": re.compile(r"eased|not persevered|nothing more asked|no extra pressure", re.I),
+    "pulled_up_flag": re.compile(r"pulled up|virtually pulled up|refused|ran out", re.I),
+    "tailed_off_flag": re.compile(r"tailed off|well behind|detached|lost touch|soon behind", re.I),
+    "hampered_flag": re.compile(r"hamper|badly hamper|short of room|no room|squeezed|impeded|checked|barged|carried", re.I),
+    "slipped_flag": re.compile(r"slipped|lost action|lost (its |his |her )?action|stumbl|fell|brought down|unseated", re.I),
+    # §3.3's lto_* suite wants these two as well; same source, same caveat
+    "wide_flag": re.compile(r"\bwide\b|raced wide|wide of|outer", re.I),
+    "slow_start_flag": re.compile(r"slowly away|slow to start|missed the break|dwelt|reluctant to race|never a factor from", re.I),
+}
+
+
+def comment_flags(df: pd.DataFrame, comment_col: str = "comment") -> pd.DataFrame:
+    """The §1.5.f censoring flags plus lto_wide / lto_slow_start, from the
+    in-running comment. POST-RACE: today's card has no comments."""
+    out = df.copy()
+    c = out[comment_col].fillna("").astype(str) if comment_col in out.columns else pd.Series("", index=out.index)
+    for name, rx in COMMENT_FLAG_RX.items():
+        out[name] = c.str.contains(rx).astype(int)
+    out["bl_censored"] = c.str.contains(CENSOR_RX).astype(int)
+    return out
 
 
 def add_run_primitives(df: pd.DataFrame, pos_col: str = "placing_numerical", n_col: str = "number_of_runners",
