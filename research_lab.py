@@ -26,6 +26,10 @@ Research lab CLI — entry point for the RESEARCH_FRAMEWORK.md toolkit.
 
     python research_lab.py market --db horse_racing.db --from 2024-01-01
         Betfair price-movement diagnostics (steam deciles) + feature coverage.
+
+    python research_lab.py bets --predictions data/oos_predictions.csv [--blend 0.5]
+        Overlay tiers, cumulative overlay strategies with bootstrap CIs, overlays by
+        price band, per-race rank performance (model vs market), disagreement analysis.
 """
 
 from __future__ import annotations
@@ -88,6 +92,30 @@ def cmd_score(args):
     if args.json:
         json.dump({k: (v if not isinstance(v, tuple) else list(v)) for k, v in rep.items()}, open(args.json, "w"), indent=2, default=float)
         print(f"\nwritten {args.json}")
+
+
+def cmd_bets(args):
+    from model.bet_analysis import bet_report
+    df = pd.read_csv(args.predictions)
+    if args.date_from:
+        df = df[pd.to_datetime(df["race_date"]) >= args.date_from]
+    rep = bet_report(df, commission=args.commission, blend_lambda=args.blend, p_col=args.p_col, price_col=args.price_col)
+    pd.set_option("display.width", 220)
+    print(f"\n{rep['n_runners']} runners, {rep['n_races']} races; commission {args.commission:.0%}; returns per unit stake at BSP\n")
+    titles = {
+        "overlay_tiers": "=== Overlay tiers: edge = p_model / p_market - 1 (win_rate vs model_p vs market_p) ===",
+        "cumulative_overlays": "=== Back everything with edge >= threshold (90% cluster-bootstrap CI by race); lay the mirror-image underlays ===",
+        "blend_cumulative_overlays": f"=== Same, using the log-linear blend p = softmax({args.blend} ln p_model + {1 - args.blend:.2f} ln p_market) ===",
+        "overlay_by_price_10": "=== Overlays (edge >= 10%) by BSP band, with the all-runners ROI in the band as reference ===",
+        "model_ranks": "=== Model rank within race (1 = model's top pick) ===",
+        "market_ranks": "=== Market rank within race (1 = favourite) ===",
+        "disagreement": "=== Disagreement: the model's #1 by market rank, and the favourite by model rank ===",
+        "rank_by_field": "=== Top pick by field size: model #1 vs favourite ===",
+        "concordance_by_field": "=== Within-race concordance by field size ===",
+    }
+    for key, title in titles.items():
+        if key in rep:
+            print(title); print(rep[key].round(4).to_string(index=False)); print()
 
 
 def cmd_abm(args):
@@ -247,6 +275,11 @@ def main(argv=None):
 
     s = sub.add_parser("market"); s.add_argument("--db", default="horse_racing.db")
     s.add_argument("--from", dest="date_from", default=None); s.add_argument("--to", dest="date_to", default=None); s.set_defaults(fn=cmd_market)
+
+    s = sub.add_parser("bets"); s.add_argument("--predictions", default="data/oos_predictions.csv")
+    s.add_argument("--p-col", default="predicted_win_prob_norm"); s.add_argument("--price-col", default="bfsp")
+    s.add_argument("--commission", type=float, default=0.05); s.add_argument("--blend", type=float, default=0.5)
+    s.add_argument("--from", dest="date_from", default=None); s.set_defaults(fn=cmd_bets)
 
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
