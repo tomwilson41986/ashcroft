@@ -140,6 +140,18 @@ jobs:
           pip install -r requirements.txt
           pip install matplotlib
 
+      - name: Add swap
+        # The feature build holds the whole history plus ~450 columns in memory
+        # and the runner has 16 GB. A previous run was SIGTERMed at exit 143
+        # partway through the custom metrics; swap turns an OOM kill into a slow
+        # step, which is the trade we want for a batch job.
+        run: |
+          sudo fallocate -l 12G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Download historic database from S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -156,12 +168,16 @@ jobs:
       - name: Walk-forward out-of-sample predictions
         run: |
           mkdir -p data reports
+          ( while true; do echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print $3"/"$2" MB used"}') $(free -m | awk '/^Swap:/{print $3"/"$2" MB swap"}')"; sleep 60; done ) &
+          MEMWATCH=$!
           python evaluate_oos.py \
+            --start-date "${{ inputs.start_date || '2021-01-01' }}" \
             --min-train-days ${{ inputs.min_train_days || 365 }} \
             --val-window ${{ inputs.val_window || 30 }} \
             --step-days ${{ inputs.step_days || 30 }} \
             --output-csv data/oos_predictions.csv \
-            --output-json data/oos_evaluation.json 2>&1 | tee reports/evaluate_oos.log
+            --output-json data/oos_evaluation.json 2>&1 | grep -v PerformanceWarning | tee reports/evaluate_oos.log
+          kill $MEMWATCH || true
           wc -l data/oos_predictions.csv
 
       - name: Scoring, ranks, staking and price calibration
