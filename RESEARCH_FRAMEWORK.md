@@ -25,15 +25,23 @@ Everything in it is grounded in what `horse_racing.db` actually holds, and every
 
 ## 1. Ground truth: data we have vs data the reports assume
 
+**Update (15 Sep 2026).** Two sources changed this table after the first draft: the Blandford Bloodstock backend (`blandford_sync.py`) turned out to be an open Timeform-style results feed, and the HRB Ratings Machine (`hrb_ratings.py`) exposes the user's own pre-race rating sets. Rows marked **open (Blandford)** were previously "closed".
+
 | Needed by | Report assumes | Ashcroft has | Gate |
 |---|---|---|---|
-| Aftalion ODE calibration | 10 Hz GPS velocity curves (McLloyd) | `comptime_numeric` (winner time), `distbt`/`total_dst_bt` (beaten lengths) | **Closed.** Reopen if TPD/CourseTrack sectionals are licensed (≥ 80 % runner coverage). Then promote fPCA/elastic-FDA and the full ODE fit. |
-| VO2 / W' priors | Equimetre biometrics | none | Closed. W' is a latent parameter inferred from finishing tendencies (comment `late_move`, hold-up finishing ability). |
-| Run style, trouble, keenness | in-running position data | `comment` parsed by `model/pace_metrics.parse_run_style` → `early_pos`, `mid_move`, `late_move`, `had_trouble`, `was_keen`, `led_at_furlong` | **Open.** This is the ABM's behavioural data and its calibration target. |
-| Ability | Timeform/RPR | `official_rating`, `median_or`, `max_or_in_race`, weight, claims, `RSR` speed figures | Open. `model/perf_figures.py` builds Timeform-style performance figures in lbs from OR + beaten lengths (the H2H script's scale). |
-| Draw / geometry | course geometry files, wind | `stall`, `stall_positioning`, `track_direction`, `rail_move` | Partly open. `model/abm/track.py` carries a coarse per-course table (straight-course trip, home straight, bend radius). Upgrade path: a proper geometry file. |
-| Market | Betfair SP only | `bfsp`, `bfsp_place`, live `betfair_odds` snapshots | **Extend** with the historic price files (§6). |
-| Interventions | Racing Post gear/wind-op flags | `headgear` (first-time derivable), sex (gelding derivable), trainer/jockey changes, class moves | Open for headgear, trainer/jockey/class; wind surgery not in the DB. |
+| Ability ratings | Timeform/RPR | `official_rating`; **Blandford feed: `preRaceMasterRating`, `preRaceAdjustedRating` (pre-race), `performanceRating` per run** (77–90 % / 96–98 % coverage, 2022→) | **open (Blandford)** — `--blandford-features` |
+| Speed figures | Timeform timefigures | `RSR` from `comptime_numeric`; **Blandford `timefigure` per run** (55–90 %) | open (Blandford) |
+| Sectionals | 10 Hz GPS | **Blandford: race `finishingTime`, `leaderSectional`, `winnerSectional` over the last `distanceSectional` furlongs** (55–72 % of runners; race-level, not per horse) → `LR_race_fsp_pct` race-shape feature and an ABM calibration target | partly open; per-horse sectionals still closed |
+| Stride / biometrics | Equimetre | Blandford `/api/stride/percentiles/{course}` (course-level stride length/frequency percentiles); per-meeting stride data sparse | mostly closed |
+| In-play prices | — | **Blandford `ipMin`/`ipMax`, `bSPAdvantage` per run** (77–98 %) and the Betfair price files (§6) | open |
+| Run style, trouble, keenness | in-running positions | `comment` parsed by `model/pace_metrics.parse_run_style` | open (ABM behavioural data and calibration target) |
+| User ratings | — | **HRB Ratings Machine sets** (HRB Standard, Speed HRB, jockey2, Recency 2, Ability, Conex New, SpeedRatingsLR, …), downloadable per day as CSV; HRB rate-limits downloads per account (shared with the nightly results scrape) | open, throttled — `hrb_ratings.py`, `research_lab.py ratings-eval` |
+| Draw / geometry | course geometry, wind | `stall`, `stall_positioning`, `track_direction`, `rail_move`; coarse table in `model/abm/track.py` | partly open |
+| Market | Betfair SP | `bfsp`, `bfsp_place`, live snapshots; Betfair historic files (§6); Blandford `betfairWinSP/PlaceSP`, `ispDecimal` | open |
+| Interventions | gear / wind-op flags | `headgear` (first-time derivable), sex, trainer/jockey changes, class moves; Blandford `headGear` | open for headgear etc.; wind surgery closed |
+| Pedigree | Blandford bloodstock DB | `stallion`, `dam`, `dam_stallion`; Blandford `sireName/damName/damsireName`, `foalingDate`, stable `horseCode` | open |
+
+Matching: the Blandford feed linked **1,484 / 1,484** runners of a real February-2026 week to `race_results` on the full (date, course, time, horse) key.
 
 **Rule kept:** nothing is trained or evaluated on generated data (CLAUDE.md). The unit tests use small synthetic frames only to exercise code paths.
 
@@ -184,6 +192,13 @@ With morning prices in hand, the actionable target is `ln(BSP / MORNINGWAP)` giv
 
 ---
 
+## 6b. Layer B′ — Timeform feed and user ratings
+
+* **Blandford / Timeform feed** (`blandford_sync.py`, table `blandford_results`, `model/blandford_features.py`, `train_bfsp.py --blandford-features`): same-day `tf_master_pre` (+ within-race rank, gap to top, vs OR) is the first genuinely new *ability* input since the model was built — the market prices Timeform heavily, so the expected effect is a large gain in resolution *toward* the market rather than beyond it; the lag features (performance rating EWM/best-3/sd, timefigure, `LR_tf_perf_vs_master` improver flag, `LR_race_fsp_pct` race shape, in-play low) are where incremental information may sit. Nightly: `.github/workflows/blandford-sync.yml`. Backfill: `python blandford_sync.py --fetch --from 2022-06-01 --load --match` (≈5 MB per week).
+* **HRB Ratings Machine sets** (`hrb_ratings.py`, `model/hrb_features.py`): each set is a same-day rating. Evaluate before adopting: `research_lab.py ratings-eval` reports per set the standalone concordance, race-demeaned correlation, softmax log-loss next to model and market, and the walk-forward *stacked* gain over [ln p_model, ln p_market]; `knockoff_screen` decides which sets survive jointly. Throttle downloads (`--spacing`, `--max-requests`) — the account's download allowance is shared with the nightly scrape.
+
+---
+
 ## 7. Evaluation protocol (applies to every new feature block)
 
 1. **Walk-forward** exactly as `train_bfsp.py` does (temporal folds, no peeking); compute `research_lab.py score` on the fold predictions.
@@ -203,6 +218,8 @@ With morning prices in hand, the actionable target is `ln(BSP / MORNINGWAP)` giv
 | 0 | Baseline scoring (done) | `python research_lab.py score` | — (documented in §2) |
 | 1 | Perf-figure features | `python train_bfsp.py --perf-features` | log-loss ↓ and Brier skill vs BSP ↑ (block-bootstrap) |
 | 1 | Betfair files: backfill + match | `betfair_prices.py --fetch --from 2023-01-01 …` (runner/local), `--load --match --report` | match rate ≥ 90 % (fix `BF_COURSE_MAP` from `--report`) |
+| 1 | **Timeform feed backfill + features** | `blandford_sync.py --fetch --from 2022-06-01 --load --match`; `train_bfsp.py --blandford-features` | log-loss ↓, Brier skill vs BSP ↑ (block-bootstrap); expect the biggest single gain of the plan |
+| 1 | **HRB rating sets: evaluate** | `hrb_ratings.py --fetch --sets … --from … --spacing 5 --max-requests 60` (throttled), `research_lab.py ratings-eval` | a set is adopted only if its stacked gain in Brier skill vs market is > 0 with a bootstrap CI excluding 0 and it survives knockoffs |
 | 2 | Market features | `python research_lab.py market`; `python train_bfsp.py --market-features` | as above; `LR_mkt_ip_low_ratio` survives knockoffs |
 | 2 | Causal: first-time headgear, gelding, trainer change | `python research_lab.py causal --treatment …` | E-value > 1.5 with CI excluding null → set coefficient prior / interaction |
 | 2–3 | Effects (RAPM) | `python research_lab.py effects --from 2023-01-01`; `walk_forward_effects` columns as features | lag-safe `rapm_*` improve log-loss |

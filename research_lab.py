@@ -118,6 +118,36 @@ def cmd_bets(args):
             print(title); print(rep[key].round(4).to_string(index=False)); print()
 
 
+def cmd_ratings_eval(args):
+    """Evaluate external rating sets (HRB Ratings Machine) against the OOS predictions."""
+    from model.bet_analysis import prepare_bets
+    from model.hrb_features import pivot_ratings
+    from model.rating_eval import evaluate_rating_sets, knockoff_screen
+    pred = prepare_bets(pd.read_csv(args.predictions), commission=0.05)
+    conn = sqlite3.connect(args.db)
+    hr = pd.read_sql_query("SELECT race_date, track, race_time_24, horse_norm, set_name, rating FROM hrb_ratings", conn); conn.close()
+    if hr.empty:
+        print("no rows in hrb_ratings (run hrb_ratings.py --fetch/--load first)"); return 1
+    from betfair_prices import db_time_to_24h, normalise_horse, normalise_track
+    pred["_k"] = pred["race_date"].astype(str) + "|" + pred["track"].map(normalise_track) + "|" + pred["race_time"].map(db_time_to_24h) + "|" + pred["horse_name"].map(normalise_horse)
+    hr["_k"] = hr["race_date"].astype(str) + "|" + hr["track"].map(normalise_track) + "|" + hr["race_time_24"].astype(str) + "|" + hr["horse_norm"]
+    hr["race_results_id"] = hr["_k"]
+    wide = pivot_ratings(hr.rename(columns={"_k": "race_results_id"}).drop(columns=["race_results_id"], errors="ignore").assign(race_results_id=hr["_k"]))
+    d = pred.merge(wide, left_on="_k", right_on="race_results_id", how="left")
+    cols = [c for c in wide.columns if c.startswith("hrb_")]
+    d = d[d["race_date"].isin(hr["race_date"].unique())]
+    print(f"{len(d)} OOS runners on {d['raceid'].nunique()} races in the rating window; rating columns: {cols}")
+    pd.set_option("display.width", 250)
+    ev = evaluate_rating_sets(d, cols)
+    print("\n=== Standalone and incremental value per rating set ===")
+    print(ev.round(4).to_string(index=False))
+    if len(cols) > 1:
+        print("\n=== Model-X knockoffs across all sets (race z-scores) + model/market ===")
+        print(knockoff_screen(d, cols).round(4).to_string(index=False))
+    if args.out:
+        ev.to_csv(args.out, index=False); print(f"written {args.out}")
+
+
 def cmd_abm(args):
     from model.abm import simulate_race
     df = _load_db(args.db, args.date, args.date)
@@ -275,6 +305,9 @@ def main(argv=None):
 
     s = sub.add_parser("market"); s.add_argument("--db", default="horse_racing.db")
     s.add_argument("--from", dest="date_from", default=None); s.add_argument("--to", dest="date_to", default=None); s.set_defaults(fn=cmd_market)
+
+    s = sub.add_parser("ratings-eval"); s.add_argument("--predictions", default="data/oos_predictions.csv")
+    s.add_argument("--db", default="horse_racing.db"); s.add_argument("--out", default=None); s.set_defaults(fn=cmd_ratings_eval)
 
     s = sub.add_parser("bets"); s.add_argument("--predictions", default="data/oos_predictions.csv")
     s.add_argument("--p-col", default="predicted_win_prob_norm"); s.add_argument("--price-col", default="bfsp")
