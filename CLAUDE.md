@@ -72,6 +72,27 @@ python betfair_sync.py --upcoming
 
 # Export live odds to CSV
 python betfair_sync.py --live --csv live_odds.csv
+
+# --- Research toolkit (see RESEARCH_FRAMEWORK.md) ---
+# Model-vs-market scoring (Murphy decomposition, skill vs BSP, concordance, drift)
+python research_lab.py score --predictions data/oos_predictions.csv
+
+# Betfair historic price files: fetch (not from Cloudflare-blocked hosts), load, match, coverage
+python betfair_prices.py --fetch --days 3 --load --match --report
+
+# Race ABM: simulate a card, batch features for training, pattern-oriented calibration
+python research_lab.py abm --db horse_racing.db --date 2026-03-12
+python research_lab.py abm-features --db horse_racing.db --from 2024-01-01 --jobs 8 --out data/abm_features.parquet
+python research_lab.py abm-calibrate --db horse_racing.db --from 2025-01-01 --races 200
+
+# Cross-classified effects, causal intervention effects, GP draw bias, market diagnostics
+python research_lab.py effects --db horse_racing.db --from 2023-01-01
+python research_lab.py causal --db horse_racing.db --treatment first_time_headgear
+python research_lab.py draw --db horse_racing.db --track Chester --dist 5
+python research_lab.py market --db horse_racing.db --from 2024-01-01
+
+# Train with the opt-in feature blocks
+python train_bfsp.py --perf-features --market-features --abm-features data/abm_features.parquet
 ```
 
 ## Architecture
@@ -82,6 +103,9 @@ python betfair_sync.py --live --csv live_odds.csv
 - `train_bfsp.py` — Walk-forward training with all custom metrics
 - `predict_bfsp_today.py` — Daily BFSP predictions
 - `model/trainer.py` — Win probability model (classification)
+- `model/abm/` — Monte-Carlo race simulator (pace / traffic / draw) → `abm_*` features
+- `model/diagnostics.py`, `effects.py`, `causal.py`, `selection.py`, `uncertainty.py`, `spatial.py`, `interpret.py`, `perf_figures.py`, `market_features.py` — research toolkit (RESEARCH_FRAMEWORK.md)
+- `betfair_prices.py` — Betfair historic SP/price-movement files → `betfair_prices` table
 - S3 bucket: `horseracingresults`, key: `horse_racing.db`
 
 ## Data

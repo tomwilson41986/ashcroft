@@ -538,6 +538,10 @@ CONTEXT_FEATURES = [
     "or_vs_median",
 ]
 
+# Opt-in feature blocks appended by CLI flags (see main): ABM simulation
+# features, Betfair market-movement features, performance-figure features.
+EXTRA_FEATURE_COLS: list[str] = []
+
 # All feature columns combined
 ALL_FEATURE_COLS = (
     HORSE_CAREER_FEATURES
@@ -792,8 +796,8 @@ class BFSPTrainer:
         df = df[df["bfsp"].notna() & (df["bfsp"] > 1.0)].copy()
         df["log_bfsp"] = np.log(df["bfsp"])
 
-        # Determine available feature columns
-        available = [c for c in ALL_FEATURE_COLS if c in df.columns]
+        # Determine available feature columns (+ any opt-in extra blocks)
+        available = [c for c in list(ALL_FEATURE_COLS) + EXTRA_FEATURE_COLS if c in df.columns]
 
         # Deduplicate while preserving order
         seen = set()
@@ -1458,6 +1462,20 @@ def main():
         "--optuna-params", type=str, default=None,
         help="Path to Optuna best params JSON to use instead of defaults",
     )
+    parser.add_argument(
+        "--abm-features", type=str, default=None,
+        help="Path to precomputed ABM feature file (parquet/csv from "
+             "`research_lab.py abm-features`); merged and added as features",
+    )
+    parser.add_argument(
+        "--market-features", action="store_true",
+        help="Add lag-safe Betfair market-movement features from the "
+             "betfair_prices table (load it with betfair_prices.py first)",
+    )
+    parser.add_argument(
+        "--perf-features", action="store_true",
+        help="Add lag-safe performance-figure (lbs) features",
+    )
     args = parser.parse_args()
 
     # Fetch data if needed
@@ -1483,6 +1501,23 @@ def main():
     # Load data
     log.info("Loading data...")
     df = load_data(args.db, start_date=args.start_date)
+
+    # Opt-in research feature blocks (RESEARCH_FRAMEWORK.md)
+    if args.perf_features:
+        from model.perf_figures import PERF_FIGURE_FEATURES, add_perf_figure_features
+        log.info("Adding performance-figure features...")
+        df = add_perf_figure_features(df)
+        EXTRA_FEATURE_COLS.extend(PERF_FIGURE_FEATURES)
+    if args.market_features:
+        from model.market_features import MARKET_FEATURES, add_market_features
+        log.info("Adding Betfair market-movement features...")
+        df = add_market_features(df, db_path=args.db)
+        EXTRA_FEATURE_COLS.extend(MARKET_FEATURES)
+    if args.abm_features:
+        from model.abm.features import ABM_FEATURES, load_abm_features, merge_abm_features
+        log.info(f"Merging ABM features from {args.abm_features}...")
+        df = merge_abm_features(df, load_abm_features(args.abm_features))
+        EXTRA_FEATURE_COLS.extend(ABM_FEATURES)
     log.info(f"  {len(df):,} rows loaded")
 
     # Load Optuna-tuned params if specified
