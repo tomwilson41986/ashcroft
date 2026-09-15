@@ -14,6 +14,11 @@ on:
         required: false
         default: false
         type: boolean
+      start_date:
+        description: 'Load history from this date (memory control; metrics warm up automatically)'
+        required: false
+        default: '2021-01-01'
+        type: string
       min_train_days:
         description: 'Minimum training window (days)'
         required: false
