@@ -227,9 +227,14 @@ class CustomMetricsEngine:
         windows: Lookback windows for rolling metrics (default: [3, 5, 10]).
     """
 
-    def __init__(self, windows: list[int] | None = None):
+    def __init__(self, windows: list[int] | None = None, gp_draw_surface: bool = False):
         self.windows = windows or [3, 5, 10]
         self.max_window = max(self.windows)
+        #: Per-stall Gaussian-process draw surface. Off by default: it costs one
+        #: GP fit per course per year, and the closed-form shrunk cells already
+        #: resolve single stalls. Enable it to let the surface borrow strength
+        #: between neighbouring stalls as well as across time.
+        self.gp_draw_surface = gp_draw_surface
 
     def calculate_all(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate all custom metrics and append as new columns.
@@ -335,7 +340,7 @@ class CustomMetricsEngine:
         df = PaceMetricsEngine().calculate(df)
 
         # --- Draw bias & stall position features ---
-        df = DrawMetricsEngine().calculate(df)
+        df = DrawMetricsEngine(gp_draw_surface=self.gp_draw_surface).calculate(df)
 
         df = self._calc_within_race_ranks(df)
 

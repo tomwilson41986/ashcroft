@@ -41,7 +41,7 @@ from sklearn.metrics import (
 )
 
 from model.custom_metrics import CustomMetricsEngine
-from model.draw_metrics import ALL_DRAW_FEATURES
+from model.draw_metrics import ALL_DRAW_FEATURES, GP_DRAW_FEATURES
 from model.financial_features import FINANCIAL_FEATURES, FINANCIAL_RANK_FEATURES
 from model.pace_metrics import (
     ALL_PACE_FEATURES,
@@ -601,12 +601,15 @@ def assert_no_post_race_features(feature_cols) -> None:
     to a lagged feature about a horse's previous runs, and never inputs
     themselves."""
     from model.custom_metrics import POST_RACE_ONLY
+    from model.draw_metrics import DRAW_POST_RACE_ONLY
+    from model.pace_metrics import PACE_POST_RACE_ONLY
     from model.primitives import POST_RACE_PRIMITIVES
 
-    # Two modules describe the race being predicted, so the guard covers both.
-    # The union lives here rather than in either module so neither has to import
-    # the other just to be checked.
-    banned = set(POST_RACE_ONLY) | set(POST_RACE_PRIMITIVES)
+    # Four modules describe the race being predicted, so the guard covers all
+    # four. The union lives here rather than in any one of them so none has to
+    # import the others just to be checked.
+    banned = (set(POST_RACE_ONLY) | set(POST_RACE_PRIMITIVES)
+              | set(PACE_POST_RACE_ONLY) | set(DRAW_POST_RACE_ONLY))
     bad = sorted(set(feature_cols) & banned)
     if bad:
         raise ValueError(
@@ -803,6 +806,7 @@ class BFSPTrainer:
         params: dict | None = None,
         decay_rate: float = 1.0,
         use_custom_objective: bool = True,
+        gp_draw_surface: bool = False,
     ):
         self.min_train_days = min_train_days
         self.val_window_days = val_window_days
@@ -810,7 +814,7 @@ class BFSPTrainer:
         self.params = params or self.DEFAULT_PARAMS.copy()
         self.decay_rate = decay_rate
         self.use_custom_objective = use_custom_objective
-        self.metrics_engine = CustomMetricsEngine()
+        self.metrics_engine = CustomMetricsEngine(gp_draw_surface=gp_draw_surface)
         self.model: lgb.Booster | None = None
         self.feature_cols: list[str] = []
 
@@ -1549,6 +1553,12 @@ def main():
         help="Add lag-safe performance-figure (lbs) features",
     )
     parser.add_argument(
+        "--gp-draw", action="store_true",
+        help="Add the Gaussian-process per-stall draw surface. Off by default: "
+             "it costs one fit per course per year, and the shrunk cells already "
+             "resolve single stalls",
+    )
+    parser.add_argument(
         "--blandford-features", action="store_true",
         help="Add Timeform-feed features from the blandford_results table "
              "(load it with blandford_sync.py first)",
@@ -1580,6 +1590,9 @@ def main():
     df = load_data(args.db, start_date=args.start_date)
 
     # Opt-in research feature blocks (RESEARCH_FRAMEWORK.md)
+    if getattr(args, "gp_draw", False):
+        log.info("Adding the Gaussian-process per-stall draw surface...")
+        EXTRA_FEATURE_COLS.extend(GP_DRAW_FEATURES)
     if args.perf_features:
         from model.perf_figures import PERF_FIGURE_FEATURES, add_perf_figure_features
         log.info("Adding performance-figure features...")
@@ -1640,6 +1653,7 @@ def main():
         params=params,
         decay_rate=decay_rate,
         use_custom_objective=use_custom_obj,
+        gp_draw_surface=getattr(args, "gp_draw", False),
     )
 
     summary = trainer.train(df, output_dir=args.output_dir)
