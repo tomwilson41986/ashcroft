@@ -428,6 +428,48 @@ def test_cell_means_are_time_decayed_and_carry_an_effective_sample_size():
     assert np.isnan(slow.iloc[0]) and n_slow.iloc[0] == 0.0
 
 
+def test_the_decayed_mean_matches_a_brute_force_weighted_mean():
+    """The fast path is flat numpy; this is the definition, written out slowly."""
+    rng = np.random.default_rng(3)
+    rows = []
+    for i in range(50):
+        day = pd.Timestamp("2020-01-01") + pd.Timedelta(days=int(rng.integers(0, 900)))
+        key = rng.choice(["a", "b"])
+        for _ in range(int(rng.integers(2, 5))):
+            rows.append({"raceid": f"r{i}", "race_date": day, "race_time": "14:00",
+                         "k": key, "v": float(rng.normal())})
+    d = pd.DataFrame(rows).sort_values(["race_date", "raceid"]).reset_index(drop=True)
+    halflife = 200.0
+    mean, n_eff = race_lagged_decayed_mean(d, "k", "v", halflife_days=halflife)
+
+    per_race = d.groupby(["k", "raceid"]).agg(s=("v", "sum"), c=("v", "size"),
+                                              day=("race_date", "min")).reset_index()
+    for i in range(len(d)):
+        row = d.iloc[i]
+        me = per_race[(per_race["k"] == row["k"]) & (per_race["raceid"] == row["raceid"])].iloc[0]
+        prior = per_race[(per_race["k"] == row["k"]) & (per_race["day"] < me["day"])]
+        if prior.empty:
+            assert np.isnan(mean.iloc[i]) and n_eff.iloc[i] == 0
+            continue
+        w = 2.0 ** (-(me["day"] - prior["day"]).dt.days / halflife)
+        assert mean.iloc[i] == pytest.approx((w * prior["s"]).sum() / (w * prior["c"]).sum())
+        assert n_eff.iloc[i] == pytest.approx((w * prior["c"]).sum())
+
+
+def test_the_decayed_mean_is_the_canonical_lag_safe_mean_when_nothing_decays():
+    """The fast path must not quietly disagree with model/lagsafe.py."""
+    from model.lagsafe import race_lagged_expanding_mean
+
+    d = _pace_card(n_days=9, races_per_day=2, runners=6)
+    d["v"] = np.arange(len(d), dtype=float)
+    for key, min_races in (("track", 0), ("track", 3), ("jockey_name", 0)):
+        fast, _ = race_lagged_decayed_mean(d, key, "v", halflife_days=np.inf, min_races=min_races)
+        canon = race_lagged_expanding_mean(d, key, "v", min_races=max(min_races, 1))
+        if min_races == 0:                       # the canonical helper has no zero setting
+            canon = race_lagged_expanding_mean(d, key, "v")
+        assert np.allclose(fast.fillna(-9), canon.fillna(-9)), key
+
+
 def test_a_reversed_draw_bias_is_followed_rather_than_averaged_away():
     old = _draw_card(n_days=200, runners=10, seed=11, rating_follows_stall=False, draw_effect=14.0)
     new = _draw_card(n_days=200, runners=10, seed=12, rating_follows_stall=False, draw_effect=-14.0)

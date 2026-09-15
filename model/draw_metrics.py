@@ -58,8 +58,6 @@ The per-run columns that need the result of the race being predicted —
 
 from __future__ import annotations
 
-import re
-
 import numpy as np
 import pandas as pd
 
@@ -254,8 +252,16 @@ def race_lagged_decayed_mean(df: pd.DataFrame, group_col: str | list[str], value
     cnts = np.bincount(pidx[ok], minlength=m).astype(float)
 
     when = _race_when(df)
+    # earliest time seen for each (group, race); every row of a race carries the
+    # same one, and taking the minimum keeps the result independent of row order
+    # if a file ever disagrees with itself.
+    o = np.lexsort((when, pidx))
+    p_sorted = pidx[o]
+    firsts = np.empty(len(p_sorted), dtype=bool)
+    firsts[0] = True
+    firsts[1:] = p_sorted[1:] != p_sorted[:-1]
     pwhen = np.zeros(m)
-    pwhen[pidx] = when                      # every row of a race shares its time
+    pwhen[p_sorted[firsts]] = when[o][firsts]
     pgroup = upair // np.int64(n_r)
 
     order = np.lexsort((upair, pwhen, pgroup))
@@ -828,9 +834,12 @@ class DrawMetricsEngine:
         df["_dsh_level_norm"] = df["dsh_level"] / np.sqrt(n.where(n > 0))
 
         df["_td_key"] = df["track"].astype(str) + "_" + df["dist_furlongs"].round(0).astype(str)
-        df["td_draw_screen"] = race_lagged_expanding_mean(df, "_td_key", "_dsh_abs")
-        df["track_draw_screen"] = race_lagged_expanding_mean(df, "track", "_dsh_abs")
-        df["td_dsh_level"] = race_lagged_expanding_mean(df, "_td_key", "_dsh_level_norm")
+        # plain expanding means over earlier races (the same rule as
+        # race_lagged_expanding_mean, on the faster path used above)
+        flat = dict(halflife_days=np.inf)
+        df["td_draw_screen"] = race_lagged_decayed_mean(df, "_td_key", "_dsh_abs", **flat)[0]
+        df["track_draw_screen"] = race_lagged_decayed_mean(df, "track", "_dsh_abs", **flat)[0]
+        df["td_dsh_level"] = race_lagged_decayed_mean(df, "_td_key", "_dsh_level_norm", **flat)[0]
         df["dsh_abnormal"] = (df["_dsh_abs"] > SPLIT_HALF_FLAG_MULT * df["td_draw_screen"]).astype(float)
         df.drop(columns=["_td_key", "_dsh_abs", "_dsh_level_norm"], inplace=True)
         return df

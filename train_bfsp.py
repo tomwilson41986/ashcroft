@@ -593,9 +593,21 @@ def assert_no_post_race_features(feature_cols) -> None:
     racepacescore and racepaceindex were aggregates of an EPF parsed from the
     horse's own in-running comment for that day's race. They carried real gain
     in training and collapsed to a constant when a live card was priced,
-    because a card has no comments yet."""
+    because a card has no comments yet.
+
+    The performance primitives add a second family of the same kind: a beaten
+    margin, a cluster gap, a normalised finishing position and everything built
+    from them are facts about how the race finished. They are legitimate inputs
+    to a lagged feature about a horse's previous runs, and never inputs
+    themselves."""
     from model.custom_metrics import POST_RACE_ONLY
-    bad = sorted(set(feature_cols) & POST_RACE_ONLY)
+    from model.primitives import POST_RACE_PRIMITIVES
+
+    # Two modules describe the race being predicted, so the guard covers both.
+    # The union lives here rather than in either module so neither has to import
+    # the other just to be checked.
+    banned = set(POST_RACE_ONLY) | set(POST_RACE_PRIMITIVES)
+    bad = sorted(set(feature_cols) & banned)
     if bad:
         raise ValueError(
             "These feature columns describe the race being predicted and cannot be "
