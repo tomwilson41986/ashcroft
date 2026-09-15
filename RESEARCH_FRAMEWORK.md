@@ -239,3 +239,53 @@ With morning prices in hand, the actionable target is `ln(BSP / MORNINGWAP)` giv
 * **Betfair files**: course-abbreviation map is best effort until `--report` has been run on real files; matching falls back to `(date, horse)` which is safe only because a horse runs once a day.
 * **Multiple testing**: the toolkit adds many candidate features; BH → knockoffs is not optional.
 * **Market as reference**: BSP is the *closing* price; a strategy must beat the price it can actually get (morning/pre-off), which is why §6.4 matters more than any further gain on BSP.
+
+---
+
+## 10. Alignment with the racing² Master Framework (v3)
+
+The master framework (`racing2_master_framework_v3_1.md`) was reviewed against this repo on 15 Sep 2026. Its governing design — **Stage F fundamental (race-grouped softmax, market-free) → Stage C combination with the market → Stage S fractional Kelly**, judged only by **ΔR² over the market out of sample** — is the right spine for Ashcroft, and it exposes the deepest problem in the current pipeline.
+
+### 10.1 The structural finding
+`train_bfsp.py` regresses on **log(BFSP)**: the market is the model's *target*, not a Stage-C input. A model trained that way can only reproduce the market (lossily); its "overlays" are its own reconstruction error, so betting them must lose — which is exactly what §2 and the `bets` analysis measured (calibrated, lower resolution than BSP, −4 to −7 % on every overlay tier, actual win rates sitting on the market's number). The stored blend weight (`blend_config.json`: λ = 1.0 = pure market) is the same fact seen from Stage C. The framework's P5 is also violated inside the feature set: `feature_registry.classify` finds **20 market-derived features** in the 419-feature BFSP model (`ORR2`/`LR_ORR2`/`preracehorsecareerORR2`, `PFD3/5/10`, `OFS1/3/5/10`, their ranks, and the expectation-residual family built from market rank).
+
+**Consequence.** ΔR² is not measurable for the current model at all. The fix is architectural, not another feature: build a true Stage F on the winner label with `stage_f_columns()` features, fit Stage C on out-of-fold Stage F output, and report ΔR² with a race-bootstrap CI. `model/stage_f.py` provides the estimator (conditional logit; LightGBM race-softmax objective for the non-linear version — "the change from the existing XGBoost work is the objective and the grouping, not the algorithm"), Stage C, temperature scaling, the conditional calibration tables and the walk-forward harness.
+
+### 10.2 First honest ΔR² on real data (Phase 1 exit test)
+Run on the open Blandford/Timeform feed, UK/IRE Flat, 2025-01 → 2026-02 (8,289 races; 5,018 test races from 2025-07 with walk-forward folds; Stage C fitted on out-of-fold fundamentals only): `python research_lab.py phase1`. See the table in §10.5 for the numbers. The market's own R² on modern Betfair (≈ 0.17) is far above Benter's 1980s tote public (0.12): the bar is high, exactly as §I.4 of the framework warns. A first market-free Stage F with 19 features does not clear it; the framework's prescription is to earn ΔR² block by block (Tier 1 metrics, Kalman ratings, pace/draw interactions, LTO-contradiction features), each promoted only with a CI clear of zero.
+
+### 10.3 Adopted (built here)
+| Framework item | Module | Notes |
+|---|---|---|
+| Stage F conditional logit, LightGBM race-softmax objective, Stage C, ΔR² + CI, temperature scaling, conditional calibration | `model/stage_f.py` | II.1–II.2, IV.1–IV.2, VI.1 |
+| State-space (Kalman) ratings with ML-fitted q/r, career-stage drift, condition-dependent noise, per-horse uncertainty | `model/state_space.py` | IIA.1 — beat fixed-λ EWM on next-run performance in the real-data test |
+| NMFP, FSA-%RB² (par (2N−1)/(6(N−1))), FSS credibility, `plc_fsa`, truncated distance-adjusted beaten lengths, lengths→time, empirical `bl_vs_par` surface, censoring flags, IQM/MIN/slope aggregation, LTO-contradiction and handicapper-gap features, rating-based N_eff, SoS_vs_today, within-race z/rankpct/vs_max | `model/primitives.py` | III Parts 1–3, 7, 8 (Ashcroft's `NFP` and `RB` are both plain %RB; `FSARB` is not the field-size par) |
+| Benter / Lo–Bacon-Shone ordering (γ, δ by ML), place probabilities | `model/ordering.py` | IV.3 — fitted γ ≈ 0.75, δ ≈ 0.67 on real data; Harville rejected |
+| Feature-stage registry (F/C/S) + market-tautology audit | `model/feature_registry.py` | P5 / Part 9 |
+| Murphy decomposition, skill scores, conditional calibration, race bootstrap, conformal Kelly, knockoffs | already in §5 | VI.2 items 4–6; DSR/PBO still to add |
+
+### 10.4 Recorded, not built (equivalent or gated)
+* Kalman ≈ Glicko/TrueSkill (specialisations) — one implementation. Heteroskedastic logit / GARCH-on-residuals: test against `kf_sd` first (IIA.3). GARCH on pre-off prices: needs price *paths* (the Betfair files carry only summary stats; the live `betfair_odds` snapshots would); run ARCH-LM before fitting anything (IIA.4). Almgren–Chriss, CVaR, Ledoit–Wolf block covariance for portfolio Kelly: after a Stage F with ΔR² > 0 exists. Copulas, Hawkes, RL staking, Sharpe as headline: skip (IIA.9). Probit for IIA: only if measured substitution effects justify it (II.3).
+
+### 10.5 Results table (real data, UK/IRE Flat, 8,289 races 2025-01 → 2026-02; 5,018 test races from 2025-07)
+
+| Quantity | Value | Reading |
+|---|---|---|
+| R²_market (Betfair SP, overround removed) | **0.1717** | the bar; Benter's 1980s tote public was 0.1218 |
+| R²_fundamental (19 market-free features, conditional logit, walk-forward OOF) | 0.0740 | 43 % of the market's information |
+| R²_combined (Stage C on OOF fundamentals) | 0.1717 | γ swamps α |
+| ΔR² combined − market, race-bootstrap 90 % CI | **+0.00001 (−0.00014, +0.00017)** | no edge from this feature set — the honest answer |
+| Conditional calibration, model > market, band 0.05–0.10 | model 7.3 %, market 3.6 %, actual 3.7 % | Benter Table 3/4 pattern: the market is right |
+| Kalman rating vs fixed-λ EWM vs Timeform master, next-run performance MSE | **220** / 233 / 294 | state-space beats both; use `kf_rating` + `kf_sd` |
+| Fitted Kalman q, r (performance-rating units) | 170, 124 | run-to-run noise sd ≈ 11 lb; steady-state gain 0.67 |
+| Ordering γ, δ (Benter / Lo–Bacon-Shone) | 0.746, 0.665 | vs HK 0.81 / 0.65; Harville nll 10,632 → 10,475 |
+| Largest Stage F coefficients (standardised) | tf_master_z +0.38, kf_sd −0.37, nmfp_mean3_z +0.28, first_run +0.21, runs_count −0.17 | uncertainty itself is predictive |
+| Data quirks to remember | ratings/timefigures coded 0 when missing; pre-race ratings coded **999** when unrated | handled in `phase1.prepare_blandford_frame` |
+
+### 10.6 What to do next, in the framework's order
+1. **Stage F pipeline** (`train_stage_f.py`): winner label, `stage_f_columns(ALL_FEATURE_COLS)` + `primitives`/`state_space` blocks + Blandford ratings, LightGBM with `lgb_race_softmax`, walk-forward; Stage C on OOF; report ΔR² with CI. This replaces the BFSP regression as the model that decides bets; the BFSP regression stays useful only as a price *forecaster* for the pre-off price-movement model (§6.4).
+2. Tier-1 metric blocks from `primitives.py` (NMFP/FSA-%RB² aggregates, `bl_vs_par`, `sos_vs_today`, handicapper gaps, LTO contradictions) and the Kalman rating on `perf_lbs` / Timeform performance ratings.
+3. Pace × draw interactions (`draw_x_style`, `pace_suit`) — the ABM's `abm_pace_delta` is the simulation route to the same feature.
+4. Calibration: temperature scaling on Stage F logits; **the conditional tables must pass before any staking**.
+5. Ordering with fitted γ, δ for place/exotic markets; compare with ABM finishing orders.
+6. Validation additions: purge/embargo in the walk-forward, deflated Sharpe and PBO; closing-line value as the live edge signal.
