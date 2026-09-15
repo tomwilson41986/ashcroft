@@ -14,8 +14,7 @@ Per run (Part 1):
     bl_gap_ahead, bl_isolation
     bl_vs_par, bl_par_ratio           DABL vs an empirical (position × field-size × context) par surface
     bl_per_position, won_by_vs_par
-    bl_censored + the five separate    eased / pulled up / tailed off / hampered / slipped
-      flags of §1.5.f
+    bl_censored + five flags          eased / pulled up / tailed off / hampered / slipped (§1.5.f)
 
 Aggregation (Part 3): windows × {mean, iqm, max, min, slope, first, %above par},
 FSS-credibility weighting, λ-decay in days and γ^k decay in runs, DSLR and
@@ -57,7 +56,7 @@ import pandas as pd
 
 from model.abm.features import place_terms
 from model.lagsafe import ensure_race_key, race_lagged_expanding_mean
-from model.perf_figures import parse_beaten_lengths, winning_margin
+from model.perf_figures import parse_beaten_lengths
 
 LPS_STANDARD = 6.0  # lengths per second on standard going (BHA scale; re-fit locally)
 
@@ -540,6 +539,9 @@ def aggregate_history(df: pd.DataFrame, cols, windows=(3, 5, 10), horse_col: str
     g = d.groupby(horse_col, group_keys=False)
     flat = lambda r: r.reset_index(level=0, drop=True)
     prior_runs = g.cumcount()
+    # rows are contiguous and in order per horse after the sort, so a global
+    # counter increments by one per run within every horse
+    run_index = pd.Series(np.arange(len(d), dtype=float), index=d.index)
     new: dict[str, pd.Series] = {}                 # one concat at the end; column-at-a-time fragments the frame
     for c in cols:
         s = g[c].shift(1)
@@ -551,9 +553,11 @@ def aggregate_history(df: pd.DataFrame, cols, windows=(3, 5, 10), horse_col: str
             if "max" in aggs: new[f"{c}_max_L{w}"] = flat(r.max())
             if "min" in aggs: new[f"{c}_min_L{w}"] = flat(r.min())
             if "iqm" in aggs and w >= iqm_min_window: new[f"{c}_iqm_L{w}"] = flat(r.apply(_iqm, raw=True))
-            if "slope" in aggs and w >= iqm_min_window: new[f"{c}_slope_L{w}"] = flat(r.apply(_slope, raw=True))
+            if "slope" in aggs and w >= iqm_min_window:
+                new[f"{c}_slope_L{w}"] = _rolling_slope(s, run_index, d[horse_col], w)
             if "slope_date" in aggs and w >= iqm_min_window:
-                new[f"{c}_slopedate_L{w}"] = _rolling_slope_on_date(s, g[date_col].shift(1), d[horse_col], w)
+                days = (pd.to_datetime(g[date_col].shift(1), errors="coerce") - pd.Timestamp("2000-01-01")).dt.days.astype(float)
+                new[f"{c}_slopedate_L{w}"] = _rolling_slope(s, days, d[horse_col], w)
             if "above_par" in aggs:
                 ab = (s > par).where(s.notna()).astype(float).groupby(d[horse_col]).rolling(w, min_periods=1)
                 new[f"{c}_n_above_par_L{w}"] = flat(ab.sum())
@@ -574,22 +578,23 @@ def aggregate_history(df: pd.DataFrame, cols, windows=(3, 5, 10), horse_col: str
     return d.sort_index()
 
 
-def _rolling_slope_on_date(values: pd.Series, dates: pd.Series, horse: pd.Series, window: int) -> pd.Series:
-    """OLS slope of ``values`` on calendar days over a rolling window (§3.2).
+def _rolling_slope(values: pd.Series, t: pd.Series, horse: pd.Series, window: int, min_points: int = 3) -> pd.Series:
+    """OLS slope of ``values`` on ``t`` over a rolling window (§3.2).
 
-    cov(t, x) / var(t) from rolling sums, so a horse whose runs are bunched and
-    one whose runs are spread over two years do not get the same trajectory
-    from the same sequence of figures.
+    cov(t, x) / var(t) from rolling sums rather than a Python fit per window:
+    the same number, two orders of magnitude faster over a database-sized
+    frame. With ``t`` the run index this is the slope on run number; with ``t``
+    in days it is the slope on date, so a horse whose runs are bunched and one
+    whose runs are spread over two years do not get the same trajectory from
+    the same sequence of figures.
     """
-    t = (pd.to_datetime(dates, errors="coerce") - pd.Timestamp("2000-01-01")).dt.days.astype(float)
     ok = values.notna() & t.notna()
-    t = t.where(ok); x = values.where(ok)
-    def roll(z):
-        return z.groupby(horse).rolling(window, min_periods=3).sum().reset_index(level=0, drop=True)
-    n = ok.astype(float).groupby(horse).rolling(window, min_periods=3).sum().reset_index(level=0, drop=True)
-    st, sx, stx, stt = roll(t), roll(x), roll(t * x), roll(t * t)
-    den = n * stt - st ** 2
-    return ((n * stx - st * sx) / den.replace(0, np.nan)).where(n >= 3)
+    tm = t.where(ok); x = values.where(ok)
+    roll = lambda z: z.groupby(horse).rolling(window, min_periods=1).sum().reset_index(level=0, drop=True)
+    n = roll(ok.astype(float))
+    st, sx, stx, stt = roll(tm), roll(x), roll(tm * x), roll(tm * tm)
+    den = (n * stt - st ** 2).replace(0, np.nan)
+    return ((n * stx - st * sx) / den).where(n >= min_points)
 
 
 def recency_weighted_mean(df: pd.DataFrame, col: str, lam: float = 1.0, horse_col: str = "horse_name",
@@ -905,8 +910,21 @@ def add_margin_normalisations(df: pd.DataFrame, col: str = "dabl", race_col: str
     return out
 
 
+#: Which aggregators each margin primitive earns, as (windows, aggs,
+#: iqm_min_window). §1.5.g names seven features, and computing the full
+#: aggregator cross-product for every margin column instead would spend most of
+#: its time on IQMs nobody reads.
+MARGIN_AGGREGATION_PLAN = {
+    "bl_vs_par": ((5, 10), ("mean", "iqm", "max", "min", "slope"), 5),
+    "bl_pct_wintime": ((3,), ("mean", "iqm"), 3),
+    "bl_isolation": ((3,), ("mean",), 3),
+    "bl_signed": ((3,), ("mean", "max"), 5),
+    "won_by_vs_par_win": ((), ("max",), 5),
+}
+
+
 def add_margin_aggregates(df: pd.DataFrame, horse_col: str = "horse_name", date_col: str = "race_date",
-                          time_col: str = "race_time") -> pd.DataFrame:
+                          time_col: str = "race_time", plan: dict | None = None) -> pd.DataFrame:
     """§1.5.g: run the margin primitives through the Part 3 machinery.
 
     ``bl_vs_par_slope_L5`` is a trajectory feature and pairs with the Part 7
@@ -915,11 +933,16 @@ def add_margin_aggregates(df: pd.DataFrame, horse_col: str = "horse_name", date_
     caught up with. ``won_by_vs_par_max`` is taken over the horse's *wins*
     only — carried race-wide the winning margin would credit beaten horses
     with the win.
+
+    Every feature here is a summary of the horse's PREVIOUS runs, which is what
+    makes the post-race geometry underneath it legitimate.
     """
-    cols = [c for c in ("bl_vs_par", "bl_pct_wintime", "bl_isolation", "bl_signed", "dabl", "won_by_vs_par_win")
-            if c in df.columns]
-    out = aggregate_history(df, cols, windows=(3, 5, 10), horse_col=horse_col, date_col=date_col, time_col=time_col,
-                            weight_col=None, aggs=("mean", "iqm", "max", "min", "slope"), iqm_min_window=3)
+    out = df
+    for col, (windows, aggs, iqm_min) in (plan or MARGIN_AGGREGATION_PLAN).items():
+        if col not in out.columns:
+            continue
+        out = aggregate_history(out, [col], windows=windows, horse_col=horse_col, date_col=date_col,
+                                time_col=time_col, weight_col=None, aggs=aggs, iqm_min_window=iqm_min)
     if "won_by_vs_par_win_max_career" in out.columns:
         out["won_by_vs_par_max"] = out["won_by_vs_par_win_max_career"]
     return out

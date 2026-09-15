@@ -290,9 +290,9 @@ def position_change_statistic(df: pd.DataFrame, from_col: str = "early_pos_est",
     """
     d = pd.DataFrame({
         "_race": ensure_race_key(df, race_col),
-        "_a": pd.to_numeric(df.get(from_col), errors="coerce"),
-        "_b": pd.to_numeric(df.get(to_col), errors="coerce"),
-        "_n": pd.to_numeric(df.get("number_of_runners"), errors="coerce"),
+        "_a": pd.to_numeric(df[from_col], errors="coerce") if from_col in df.columns else np.nan,
+        "_b": pd.to_numeric(df[to_col], errors="coerce") if to_col in df.columns else np.nan,
+        "_n": pd.to_numeric(df["number_of_runners"], errors="coerce"),
     }).dropna(subset=["_a", "_b"])
     if d.empty:
         return pd.DataFrame(columns=["raceid", "n", "pcs", "pcs_norm"])
@@ -363,14 +363,18 @@ class PaceMetricsEngine:
         """Parse comments into early_pos, mid_move, late_move, etc."""
         comment_col = "comment" if "comment" in df.columns else None
         if comment_col is None:
+            # A live card has no in-running comments. The parsed columns still
+            # have to exist, because every career aggregate below reads them —
+            # they are simply empty for today and filled for the history.
             for col in ["early_pos", "mid_move", "late_move", "finishing_effort",
-                        "was_keen", "had_trouble", "led_at_furlong"]:
-                df[col] = np.nan if col != "was_keen" and col != "had_trouble" else 0
-            return df
-
-        parsed = df[comment_col].apply(parse_run_style).apply(pd.Series)
-        for col in parsed.columns:
-            df[col] = parsed[col]
+                        "led_at_furlong"]:
+                df[col] = np.nan
+            for col in ["was_keen", "had_trouble"]:
+                df[col] = 0
+        else:
+            parsed = df[comment_col].apply(parse_run_style).apply(pd.Series)
+            for col in parsed.columns:
+                df[col] = parsed[col]
 
         # Composite: total position movement
         df["total_move"] = df["mid_move"] + df["late_move"]
@@ -388,7 +392,8 @@ class PaceMetricsEngine:
 
         # pos_gain = ground made up between the early position and the finish,
         # both on the 0–1 scale. Positive = passed horses.
-        place = pd.to_numeric(df.get("placing_numerical"), errors="coerce")
+        place = pd.to_numeric(df["placing_numerical"], errors="coerce") \
+            if "placing_numerical" in df.columns else pd.Series(np.nan, index=df.index)
         df["finish_pos_norm"] = (place - 1) / (nr - 1)
         df["pos_gain"] = df["epf_norm"] - df["finish_pos_norm"]
 

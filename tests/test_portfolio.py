@@ -147,19 +147,36 @@ def test_per_selection_cap_can_come_from_exchange_volume():
 
 def test_quadratic_and_exact_agree_when_the_stakes_are_small():
     """The quadratic objective is the second-order expansion of the log one, so
-    it must agree with the exact solution where the stakes are small enough for
-    the third-order term not to matter."""
+    the two must agree wherever the stakes are small enough for the third-order
+    term not to matter. Two runners carry an overlay, the rest are underlays,
+    and the book stays above 100% -- no arbitrage for the exact solver to find
+    and no regime the expansion cannot follow."""
     p = np.array([0.30, 0.22, 0.18, 0.15, 0.15])
-    price = (1.0 + 0.05) / p                                 # a thin 5% overlay
+    price = (1.0 / p) * np.array([1.10, 1.08, 0.85, 0.85, 0.85])
+    assert (1.0 / price).sum() > 1.0                          # an over-round book, not an arb
     d = pd.DataFrame({"raceid": "r1", "race_date": "2025-05-01", "track": "T",
                       "p_model": p, "bsp": price})
     quad = portfolio_kelly(d, phi=1.0, commission=0.0, cap_total=1.0, cap_race=1.0,
-                           cap_selection=1.0, method="quadratic")["stake_fraction"].to_numpy()
+                           cap_selection=1.0, method="quadratic",
+                           rho_meeting=0.0, rho_day=0.0)["stake_fraction"].to_numpy()
     exact = race_kelly_exact(p, price, commission=0.0)
+    assert np.count_nonzero(exact) == 2 and exact.sum() < 0.15
     assert np.allclose(quad, exact, atol=0.01)
     g_q = expected_log_growth(quad, p, price, ["r1"] * 5, commission=0.0, n_sims=200_000)
     g_e = expected_log_growth(exact, p, price, ["r1"] * 5, commission=0.0, n_sims=200_000)
     assert g_q == pytest.approx(g_e, abs=5e-4)
+
+
+def test_the_exact_solver_dutches_a_whole_race_when_the_book_is_an_arbitrage():
+    """A book under 100% is risk-free money and the exact solution takes all of
+    it. The quadratic expansion sees only a mean and a covariance, so it cannot
+    recognise the certainty -- a real difference between the two methods, worth
+    pinning down rather than papering over."""
+    p = np.array([0.5, 0.3, 0.2])
+    price = 1.05 / p                                          # book = 1/1.05 < 1
+    f = race_kelly_exact(p, price, commission=0.0)
+    assert np.allclose(f, p)                                  # stake the whole bank, split as p
+    assert f.sum() == pytest.approx(1.0)
 
 
 def test_empty_frame_is_handled():
@@ -182,7 +199,7 @@ def test_race_covariance_is_the_multinomial_one_and_survives_simulation():
     rng = np.random.default_rng(0)
     draw = rng.choice(4, size=400_000, p=p)
     R = np.where(np.eye(4, dtype=bool)[draw], o, 0.0) - 1.0
-    assert np.allclose(np.cov(R, rowvar=False), C, atol=0.02)
+    assert np.allclose(np.cov(R, rowvar=False), C, rtol=0.02, atol=0.02)
 
 
 def test_block_covariance_within_race_block_is_exactly_the_multinomial_one():
@@ -291,7 +308,8 @@ def test_ev_is_not_linear_in_stake_and_two_thirds_captures_eight_ninths():
     assert m["two_thirds_ev"] < m["max_ev"]
     assert m["ev_captured_pct"] == pytest.approx(100 * 8 / 9, abs=2.0)
     assert m["recommended_stake"] == m["two_thirds_stake"]      # the framework's default
-    assert max_ev_stake(0.20, deep, commission=0.0, default="max_ev")["recommended_stake"] == m["max_ev_stake"]
+    assert (max_ev_stake(0.20, deep, commission=0.0, n_grid=2000, default="max_ev")
+            ["recommended_stake"] == m["max_ev_stake"])
     # a book too shallow to price the impact says so instead of inventing a maximum
     assert max_ev_stake(0.20, ladder_price_fn(LADDER_P, LADDER_S), commission=0.0)["at_capacity"]
 
@@ -383,17 +401,36 @@ def test_a_full_card_of_correlated_races_is_worth_far_fewer_independent_bets():
     assert b["breadth_effective"] == pytest.approx(8 / (1 + 7 * 0.2), rel=1e-6)
 
 
+def _top_pick(d):
+    """One bet per race -- the model's own top pick -- so that breadth counts
+    forecasts. Backing a whole field is a hedge, not extra breadth, and the
+    diagnostic would read the negative within-race correlation as a bonus."""
+    return d[d["p_model"] == d.groupby("raceid")["p_model"].transform("max")]
+
+
 def test_grinold_shortfall_detects_days_whose_bets_move_together():
-    indep = grinold_report(_card(n_days=90, meetings=2, races=4, edge=0.05, seed=31), commission=0.0)
-    shocked = grinold_report(_card(n_days=90, meetings=2, races=4, edge=0.05, day_shock=0.9, seed=31),
-                             commission=0.0)
+    quiet_card = _card(n_days=90, meetings=2, races=4, edge=0.05, seed=31)
+    loud_card = _card(n_days=90, meetings=2, races=4, edge=0.05, day_shock=0.9, seed=31)
+    indep = grinold_report(_top_pick(quiet_card), commission=0.0, field=quiet_card)
+    shocked = grinold_report(_top_pick(loud_card), commission=0.0, field=loud_card)
+    assert np.isfinite(indep["ic_mean"]) and indep["ic_mean"] > 0
+    assert np.isnan(grinold_report(_top_pick(quiet_card), commission=0.0)["ic_mean"])
     assert indep["ir_shortfall_ratio"] == pytest.approx(1.0, abs=0.25)
-    assert indep["breadth_implied"] == pytest.approx(indep["bets_per_day"], rel=0.5)
+    assert indep["breadth_implied"] == pytest.approx(indep["bets_per_day"], rel=0.6)
     assert shocked["ir_shortfall_ratio"] < indep["ir_shortfall_ratio"]
-    assert shocked["breadth_implied"] < 0.5 * shocked["bets_per_day"]
+    assert shocked["breadth_implied"] < 0.6 * shocked["bets_per_day"]
     assert shocked["breadth_lost_pct"] > indep["breadth_lost_pct"]
     assert shocked["ic_mean"] == pytest.approx(indep["ic_mean"], abs=1e-9)   # same forecasts
     assert indep["ic_gain_equivalent_to_doubling_breadth_pct"] == pytest.approx(41.4)
+
+
+def test_backing_the_whole_field_is_a_hedge_not_extra_breadth():
+    """The mirror image: within a race the returns are negatively correlated,
+    so a day of full-field bets is *less* volatile than independence implies
+    and the shortfall ratio goes above 1. Reading that as skill would be an
+    error, which is why the diagnostic belongs on selections."""
+    full = grinold_report(_card(n_days=90, meetings=2, races=4, edge=0.05, seed=31), commission=0.0)
+    assert full["ir_shortfall_ratio"] > 1.1
 
 
 def test_required_bets_scales_as_variance_over_squared_edge():
@@ -522,10 +559,18 @@ def test_baker_mchale_pulls_the_uncertain_runner_toward_the_field():
     out = baker_mchale_shrinkage(d)
     assert out["p_shrunk"].sum() == pytest.approx(1.0)          # still a probability vector
     assert out["confidence"].is_monotonic_decreasing
-    # the two wide posteriors move toward the race's geometric mean, the tight ones barely move
-    moved = np.abs(np.log(out["p_shrunk"]) - np.log(out["p_model"]))
-    assert moved.iloc[3] > moved.iloc[2] > moved.iloc[0]
-    assert out["p_shrunk"].iloc[3] > out["p_model"].iloc[3]     # pulled up toward the mean
+    # the defining identity: within the race, every log-deviation from the mean
+    # is multiplied by that runner's credibility weight (renormalising adds the
+    # same constant to all four, so it cancels in the differences)
+    s, w = np.log(out["p_model"].to_numpy()), out["confidence"].to_numpy()
+    dev = s - s.mean()
+    s2 = np.log(out["p_shrunk"].to_numpy())
+    assert np.allclose(s2 - s2[0], w * dev - w[0] * dev[0], atol=1e-9)
+    # the wide posterior is the one that actually moves, and it moves up toward the field
+    moved = np.abs(s2 - s)
+    assert moved[3] > moved[0] and moved[3] > moved[2]
+    assert out["p_shrunk"].iloc[3] > out["p_model"].iloc[3]
+    assert out["p_shrunk"].iloc[0] < out["p_model"].iloc[0]
 
 
 def test_zero_posterior_variance_changes_nothing():

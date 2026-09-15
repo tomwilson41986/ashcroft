@@ -118,16 +118,20 @@ def race_return_covariance(p, price, commission: float = 0.05) -> np.ndarray:
     return C
 
 
-def nearest_psd(S: np.ndarray, ridge: float = 1e-10) -> tuple[np.ndarray, float]:
+def nearest_psd(S: np.ndarray, ridge: float = 1e-10, tol: float = 1e-10) -> tuple[np.ndarray, float]:
     """Clip negative eigenvalues. Returns the repaired matrix and the size of
-    the repair as a fraction of the largest eigenvalue (0.0 = nothing to do)."""
+    the repair as a fraction of the largest eigenvalue (0.0 = nothing to do).
+
+    Eigenvalues within ``tol`` of zero are float noise on a singular matrix --
+    a within-race block whose probabilities sum to one is exactly singular --
+    and are not counted as a repair."""
     S = (np.asarray(S, float) + np.asarray(S, float).T) / 2.0
     w, V = np.linalg.eigh(S)
     top = float(max(w.max(), _EPS))
-    repair = float(max(-w.min(), 0.0) / top)
-    if w.min() >= 0:
+    if w.min() >= -tol * top:
         return S + ridge * np.eye(len(S)), 0.0
-    return V @ np.diag(np.clip(w, 0.0, None)) @ V.T + ridge * np.eye(len(S)), repair
+    return (V @ np.diag(np.clip(w, 0.0, None)) @ V.T + ridge * np.eye(len(S)),
+            float(-w.min() / top))
 
 
 def _group_codes(d: pd.DataFrame, col: str | None, fallback: np.ndarray) -> np.ndarray:
@@ -180,8 +184,10 @@ def block_covariance(bets: pd.DataFrame, p_col: str = "p_model", price_col: str 
     if not (1.0 >= rho_meeting >= rho_day >= 0.0):
         raise ValueError("need 1 >= rho_meeting >= rho_day >= 0")
     d = bets
-    p = np.clip(pd.to_numeric(d[p_col], errors="coerce").to_numpy(float), _EPS, 1 - _EPS)
-    o = net_odds(pd.to_numeric(d[price_col], errors="coerce").to_numpy(float), commission)
+    p = np.clip(np.nan_to_num(pd.to_numeric(d[p_col], errors="coerce").to_numpy(float), nan=_EPS),
+                _EPS, 1 - _EPS)
+    o = net_odds(np.nan_to_num(pd.to_numeric(d[price_col], errors="coerce").to_numpy(float), nan=1.0),
+                 commission)
     n = len(p)
     rid = pd.factorize(d[race_col].astype(str), use_na_sentinel=False)[0]
     did = _group_codes(d, day_col, np.zeros(n, dtype=int))
@@ -439,7 +445,7 @@ def _quadratic_kelly(mu: np.ndarray, M: np.ndarray, hi: np.ndarray, groups: np.n
             f *= cap_total / f.sum()
         return f
 
-    start = enforce(np.clip(phi * mu / np.maximum(np.diag(M), _EPS), 0.0, None))
+    start = enforce(np.nan_to_num(np.clip(phi * mu / np.maximum(np.diag(M), _EPS), 0.0, None)))
     res = minimize(neg, start, jac=grad, method="SLSQP", bounds=list(zip(np.zeros(n), hi)),
                    constraints=cons, options={"maxiter": 500, "ftol": 1e-12})
     f = enforce(res.x)
@@ -490,8 +496,11 @@ def portfolio_kelly(bets: pd.DataFrame, p_col: str = "p_model", price_col: str =
             d[c] = np.array([], dtype=float)
         d.attrs["portfolio"] = {"bets": 0, "exposure": 0.0}
         return d
-    p = np.clip(pd.to_numeric(d[p_col], errors="coerce").to_numpy(float), _EPS, 1 - _EPS)
-    price = pd.to_numeric(d[price_col], errors="coerce").to_numpy(float)
+    p_raw = pd.to_numeric(d[p_col], errors="coerce").to_numpy(float)
+    price_raw = pd.to_numeric(d[price_col], errors="coerce").to_numpy(float)
+    usable = np.isfinite(p_raw) & np.isfinite(price_raw) & (price_raw > 1.0)
+    p = np.clip(np.where(usable, p_raw, _EPS), _EPS, 1 - _EPS)
+    price = np.where(usable, price_raw, 1.0 + 1e-9)
     mu, sd = back_return_moments(p, price, commission)
     o = net_odds(price, commission)
     d["mu"], d["sd"] = mu, sd
@@ -501,7 +510,7 @@ def portfolio_kelly(bets: pd.DataFrame, p_col: str = "p_model", price_col: str =
     if volume_col is not None and volume_col in d.columns and bank > 0:
         vol = pd.to_numeric(d[volume_col], errors="coerce").fillna(0.0).to_numpy(float)
         hi = np.minimum(hi, volume_fraction * vol / float(bank))
-    hi = np.clip(hi, 0.0, 1.0 - 1e-6)
+    hi = np.where(usable, np.clip(hi, 0.0, 1.0 - 1e-6), 0.0)   # a missing price is never backed
 
     rid = pd.factorize(d[race_col].astype(str), use_na_sentinel=False)[0]
     if method == "exact":
@@ -902,7 +911,8 @@ def grinold_report(bets: pd.DataFrame, p_col: str = "p_model", ret_col: str = "r
                    race_col: str = "raceid", day_col: str = "race_date",
                    meeting_col: str | None = None, y_col: str = "won",
                    rho_meeting: float | None = None, rho_day: float | None = None,
-                   price_col: str = "bsp", commission: float = 0.05) -> dict:
+                   price_col: str = "bsp", commission: float = 0.05,
+                   field: pd.DataFrame | None = None) -> dict:
     """Realised information ratio against what independence would give (§IIA.2, O21).
 
     ``IR = IC * sqrt(breadth)`` is the framework's strategy frame: skill per
@@ -932,6 +942,11 @@ def grinold_report(bets: pd.DataFrame, p_col: str = "p_model", ret_col: str = "r
     P&L scale, so read it against itself over time rather than against
     ``ir_realised``.
 
+    The IC is a *cross-sectional* correlation, so it needs the whole race, not
+    the one runner that was backed: pass every runner as ``field`` when
+    ``bets`` holds selections. Without it a one-bet-per-race stream has no IC
+    at all and the function says so with a NaN rather than inventing one.
+
     The law also prices the alternative: doubling breadth is worth the same as
     a 41% improvement in IC, which is the arithmetic behind "many bets, small
     margins" and against waiting for the big-edge race."""
@@ -948,8 +963,9 @@ def grinold_report(bets: pd.DataFrame, p_col: str = "p_model", ret_col: str = "r
         if rho_day is None:
             rho_day = float(np.nan_to_num(est["rho_day"], nan=0.0))
         rho_day = min(rho_day, rho_meeting)
-    ic = realised_ic(d, p_col=p_col, race_col=race_col, y_col=y_col)
-    ic_rank = realised_ic(d, p_col=p_col, race_col=race_col, y_col=y_col, method="spearman")
+    f = d if field is None else field
+    ic = realised_ic(f, p_col=p_col, race_col=race_col, y_col=y_col)
+    ic_rank = realised_ic(f, p_col=p_col, race_col=race_col, y_col=y_col, method="spearman")
     day = d[day_col].astype(str) if day_col in d.columns else pd.Series("all", index=d.index)
     r = pd.to_numeric(d[ret_col], errors="coerce")
     daily = r.groupby(day).mean()

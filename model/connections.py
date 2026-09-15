@@ -418,6 +418,9 @@ def add_connection_features(df: pd.DataFrame, entities=("trainer", "jockey_name"
         d[f"{p}_sr_shrunk"] = shrink(wins, runs, pop_sr, k_sr)
         d[f"{p}_place_rate_shrunk"] = shrink(plc, plc_n, pop_plc, k_sr)
         d[f"{p}_nmfp_shrunk"] = shrink(nm, nm_n, pop_nmfp, k_nmfp)
+        # residual base: the entity's own *raw* mean. Against the shrunk level
+        # every split of a strong yard would show the shrinkage gap as aptitude.
+        base_nmfp = (nm / nm_n.replace(0, np.nan)).fillna(pop_nmfp)
         d[f"{p}_prb2_fsa_shrunk"] = shrink(pr2, pr2_n, pop_prb2, k_nmfp)
         feats += [f"{p}_runs", f"{p}_sr_shrunk", f"{p}_nmfp_shrunk", f"{p}_place_rate_shrunk", f"{p}_prb2_fsa_shrunk"]
 
@@ -446,7 +449,7 @@ def add_connection_features(df: pd.DataFrame, entities=("trainer", "jockey_name"
             col = f"_split_{name}"
             d[col] = key.astype(str).where(key.notna())
             c_nm, c_n = prior_stats(d, [e, col], "_nmfp", date_col=date_col)
-            d[f"{p}_{name}_apt"] = aptitude_residual(c_nm, c_n, d[f"{p}_nmfp_shrunk"], k_split).where(key.notna())
+            d[f"{p}_{name}_apt"] = aptitude_residual(c_nm, c_n, base_nmfp, k_split).where(key.notna())
             d[f"{p}_{name}_n"] = c_n.where(key.notna())
             feats += [f"{p}_{name}_apt", f"{p}_{name}_n"]
             if name == "course":

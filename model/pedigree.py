@@ -213,7 +213,14 @@ def _add_sire_like(d: pd.DataFrame, key: str, prefix: str, pop: dict, k_sr: floa
     wins, runs = prior_stats(d, key, "_won")
     nm, nm_n = prior_stats(d, key, "_nmfp")
     pr2, pr2_n = prior_stats(d, key, "_prb2_fsa")
+    # The *level* is shrunk toward the population; the residual base is the
+    # entity's own raw mean. Comparing a raw cell mean against a shrunk overall
+    # would leave the shrinkage gap in the residual and every cell of a strong
+    # sire would look like an aptitude.
     overall = shrink(nm, nm_n, pop["nmfp"], k_nmfp)
+    base = (nm / nm_n.replace(0, np.nan)).fillna(pd.Series(pop["nmfp"], index=d.index))
+    d[f"_{prefix}_nmfp_raw"] = base
+    d[f"_{prefix}_sr_raw"] = (wins / runs.replace(0, np.nan)).fillna(pd.Series(pop["sr"], index=d.index))
     d[f"{prefix}_prog_runs"] = runs.where(known)
     d[f"{prefix}_prog_wins"] = wins.where(known)
     d[f"{prefix}_sr_shrunk"] = shrink(wins, runs, pop["sr"], k_sr).where(known)
@@ -227,7 +234,7 @@ def _add_sire_like(d: pd.DataFrame, key: str, prefix: str, pop: dict, k_sr: floa
         if col not in d.columns or not d[col].notna().any():
             continue
         c_tot, c_n = prior_stats(d, [key, col], "_nmfp")
-        d[f"{prefix}_{name}_apt"] = aptitude_residual(c_tot, c_n, overall, k_apt).where(known & d[col].notna())
+        d[f"{prefix}_{name}_apt"] = aptitude_residual(c_tot, c_n, base, k_apt).where(known & d[col].notna())
         d[f"{prefix}_{name}_n"] = c_n.where(known & d[col].notna())
         feats += [f"{prefix}_{name}_apt", f"{prefix}_{name}_n"]
 
@@ -235,7 +242,7 @@ def _add_sire_like(d: pd.DataFrame, key: str, prefix: str, pop: dict, k_sr: floa
         if col not in d.columns:
             continue
         m_tot, m_n = prior_stats(d, key, col)
-        d[f"{prefix}_{name}_apt"] = aptitude_residual(m_tot, m_n, overall, k_apt).where(known)
+        d[f"{prefix}_{name}_apt"] = aptitude_residual(m_tot, m_n, base, k_apt).where(known)
         d[f"{prefix}_{name}_n"] = m_n.where(known)
         feats += [f"{prefix}_{name}_apt", f"{prefix}_{name}_n"]
     return feats
@@ -455,8 +462,8 @@ def _add_nick_block(d: pd.DataFrame, k_nick: float) -> list[str]:
     t, n = prior_stats(d, "_nick", "_nmfp")
     w, wn = prior_stats(d, "_nick", "_won")
     d["nick_runs"] = n.where(known)
-    d["nick_apt"] = aptitude_residual(t, n, d["sire_nmfp_shrunk"], k_nick).where(known)
-    d["nick_sr_apt"] = (shrink(w, wn, d["sire_sr_shrunk"], k_nick) - d["sire_sr_shrunk"]).where(known)
+    d["nick_apt"] = aptitude_residual(t, n, d["_sire_nmfp_raw"], k_nick).where(known)
+    d["nick_sr_apt"] = aptitude_residual(w, wn, d["_sire_sr_raw"], k_nick).where(known)
     return ["nick_runs", "nick_apt", "nick_sr_apt"]
 
 

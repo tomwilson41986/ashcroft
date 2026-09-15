@@ -219,9 +219,10 @@ def test_aptitude_is_a_residual_not_a_level():
     s_soft_level = s["sire_going_apt"] + s["sire_nmfp_shrunk"]
     assert u_soft_level > s_soft_level          # a *levels* feature ranks UNIFORM first
 
-    # the residual: UNIFORM has no going preference, SPECIALIST has a large one
-    assert abs(u["sire_going_apt"]) < 0.02
-    assert s["sire_going_apt"] > 0.25
+    # the residual: UNIFORM has no going preference, SPECIALIST has a large one.
+    # UNIFORM's soft mean *is* its overall mean, so the residual is exactly zero.
+    assert u["sire_going_apt"] == pytest.approx(0.0, abs=1e-9)
+    assert s["sire_going_apt"] > 0.15
     assert s["sire_going_apt"] > u["sire_going_apt"]     # the residual reverses the ranking
 
 
@@ -314,12 +315,14 @@ def test_nick_is_shrunk_hardest_and_toward_the_sires_own_mean():
     out, feats = add_pedigree_features(pd.DataFrame(rows), k_nick=60.0)
     row = out[out["dam_stallion"] == "DS_HOT"].sort_values("race_date").iloc[-1]
     n = row["nick_runs"]
-    win_nmfp = (6 + 1 - 2) / np.sqrt(3 * 35)
-    expected = n / (n + 60.0) * (win_nmfp - row["sire_nmfp_shrunk"])
+    win_nmfp = (6 + 1 - 2) / np.sqrt(3 * 35)          # the cross always wins
+    fifth_nmfp = (6 + 1 - 10) / np.sqrt(3 * 35)       # the sire's other runners are 5th
+    sire_raw = (win_nmfp + fifth_nmfp) / 2            # so the sire's own mean is the midpoint
+    expected = n / (n + 60.0) * (win_nmfp - sire_raw)
     assert n == 29.0
     assert row["nick_apt"] == pytest.approx(expected, abs=1e-6)
-    # hard shrinkage: 29 runs against k = 60 keeps less than a third of the signal
-    assert 0 < row["nick_apt"] < 0.35 * (win_nmfp - row["sire_nmfp_shrunk"]) + 1e-9
+    # hard shrinkage: 29 runs against k = 60 keeps under a third of the raw gap
+    assert 0 < row["nick_apt"] < 0.35 * (win_nmfp - sire_raw)
 
 
 def test_median_handicap_debut_or_needs_enough_debutants():
@@ -337,3 +340,98 @@ def test_median_handicap_debut_or_needs_enough_debutants():
     row = loose[loose["horse_name"] == "later"].iloc[0]
     assert row["sire_median_hcap_debut_or"] == pytest.approx(75.0)
     assert np.isnan(strict[strict["horse_name"] == "later"]["sire_median_hcap_debut_or"].iloc[0])
+
+
+# ---------------------------------------------------------------------------
+# §5.1 - 5.2: trainer and jockey
+# ---------------------------------------------------------------------------
+
+def test_ae_ratio_and_roi_are_the_stage_c_formulas():
+    rows = []
+    for day, (pos, price) in enumerate(((1, 5.0), (3, 3.0), (2, 4.0)), start=1):
+        r = _race(day, "13:00", [(f"h{day}", "S1", f"d{day}", "DS1", pos)]
+                  + _fill(f"f{day}", [p for p in (1, 2, 3, 4) if p != pos]))
+        for row in r:
+            row["trainer"] = "T" if row["horse_name"].startswith("h") else row["horse_name"]
+            row["bfsp"] = price if row["horse_name"].startswith("h") else 9.0
+        rows += r
+    out, feats = add_connection_features(pd.DataFrame(rows), price_col="bfsp",
+                                         context_splits=False, strength=False, seasons=False)
+    t = out[(out["trainer"] == "T") & (out["race_date"] == out["race_date"].max())].iloc[0]
+    # two priced prior runs: a 5.0 winner and a 3.0 loser
+    expected_wins, expected_exp = 1.0, 1 / 5 + 1 / 3
+    assert t["trainer_ae_ratio"] == pytest.approx((expected_wins + 20.0) / (expected_exp + 20.0))
+    assert t["trainer_roi_bsp"] == pytest.approx(((5.0 - 1.0) - 1.0) / (2.0 + 50.0))
+    assert {"trainer_ae_ratio", "trainer_roi_bsp"} <= set(feats)
+    # and they stay out of the default (Stage F) feature set
+    _, plain = add_connection_features(pd.DataFrame(rows), context_splits=False, strength=False, seasons=False)
+    assert not [c for c in plain if c.endswith(("_ae_ratio", "_roi_bsp", "_roi_sp"))]
+
+
+def test_strike_rate_is_scored_against_the_schedule_entered():
+    """§5.1: "a trainer with a 22% strike rate in Class 6 sellers is not
+    stronger than one with 12% in Class 2 handicaps"."""
+    rows = []
+    for day in range(1, 51):
+        small = day % 2 == 0
+        n = 6 if small else 16
+        who = "T_SMALL" if small else "T_BIG"
+        wins = (day // 2) % 5 == 0                     # both yards win exactly 1 in 5
+        pos = 1 if wins else n
+        others = [p for p in range(1, n + 1) if p != pos]
+        r = _race(day, "13:00", [(f"h{day}", "S1", f"d{day}", "DS1", pos)] + _fill(f"f{day}", others))
+        for i, row in enumerate(r):
+            row["trainer"] = who if i == 0 else f"F{day}_{i}"
+        rows += r
+    out, _ = add_connection_features(pd.DataFrame(rows), context_splits=False, seasons=False)
+    small = out[out["trainer"] == "T_SMALL"].sort_values("race_date").iloc[-1]
+    big = out[out["trainer"] == "T_BIG"].sort_values("race_date").iloc[-1]
+    assert small["trainer_sr_shrunk"] == pytest.approx(big["trainer_sr_shrunk"], abs=0.02)   # same raw rate
+    assert small["trainer_sr_expected"] > big["trainer_sr_expected"]   # small fields are easier
+    assert big["trainer_sr_resid"] > small["trainer_sr_resid"]         # so the big-field yard is better
+    assert np.isfinite(big["trainer_strength"])
+
+
+def test_context_splits_are_residuals_against_the_yards_own_level():
+    rows = []
+    for day in range(1, 31):
+        ascot = day % 2 == 0
+        pos = 1 if ascot else 6
+        others = [p for p in range(1, 7) if p != pos]
+        r = _race(day, "13:00", [(f"h{day}", "S1", f"d{day}", "DS1", pos)] + _fill(f"f{day}", others),
+                  track="Ascot" if ascot else "York")
+        for i, row in enumerate(r):
+            row["trainer"] = "TC" if i == 0 else f"F{day}_{i}"
+        rows += r
+    out, feats = add_connection_features(pd.DataFrame(rows), strength=False, seasons=False)
+    tc = out[out["trainer"] == "TC"].sort_values("race_date")
+    ascot = tc[tc["track"] == "Ascot"].iloc[-1]
+    york = tc[tc["track"] == "York"].iloc[-1]
+    assert ascot["trainer_course_apt"] > 0.1 and york["trainer_course_apt"] < -0.1
+    assert ascot["trainer_course_n"] == 14.0
+    assert ascot["trainer_course_sr_shrunk"] > york["trainer_course_sr_shrunk"]
+    assert {"trainer_course_apt", "trainer_course_sr_shrunk", "trainer_going_apt",
+            "trainer_dist_apt", "trainer_class_apt", "trainer_fieldsize_apt"} <= set(feats)
+
+
+def test_jockey_rides_today_at_meeting_counts_declarations_not_results():
+    rows = _race(1, "13:00", [(f"a{i}", "S1", f"d{i}", "DS1", i + 1) for i in range(6)])
+    rows += _race(1, "15:00", [(f"b{i}", "S1", f"e{i}", "DS1", i + 1) for i in range(6)])
+    d = pd.DataFrame(rows)
+    d["jockey_name"] = "JK"                                   # one jockey, both races
+    d.loc[d["race_time"] == "15:00", "track"] = "Ascot"
+    out, feats = add_connection_features(d, context_splits=False, strength=False, seasons=False)
+    assert "jockey_rides_today_at_meeting" in feats
+    assert set(out["jockey_rides_today_at_meeting"]) == {12.0}
+
+
+def test_form_vs_career_uses_the_short_window_and_the_index_survives():
+    d = _two_runners_per_sire_card()
+    d.index = pd.RangeIndex(100, 100 + len(d))                # a non-default index
+    out, feats = add_connection_features(d, context_splits=False, strength=False)
+    assert list(out.index) == list(d.index)
+    assert list(out["horse_name"]) == list(d["horse_name"])   # row order preserved
+    assert {"trainer_form_14d", "trainer_form_30d", "trainer_form_90d",
+            "trainer_runner_count_14d", "trainer_runs_season", "trainer_sr_last_season_shrunk"} <= set(feats)
+    expected = out["trainer_form_14d"] - out["trainer_nmfp_shrunk"]
+    assert np.allclose(out["trainer_form_vs_career"], expected)

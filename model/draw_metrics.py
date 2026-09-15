@@ -346,8 +346,8 @@ def draw_bias_split_half(df: pd.DataFrame, stall_col: str = "draw_adj",
     """
     d = pd.DataFrame({
         "_race": ensure_race_key(df, race_col),
-        "_stall": pd.to_numeric(df.get(stall_col), errors="coerce"),
-        "_fin": pd.to_numeric(df.get(finish_col), errors="coerce"),
+        "_stall": pd.to_numeric(df[stall_col], errors="coerce") if stall_col in df.columns else np.nan,
+        "_fin": pd.to_numeric(df[finish_col], errors="coerce") if finish_col in df.columns else np.nan,
     }).dropna()
     if d.empty:
         return pd.DataFrame(columns=["raceid", "n", "dsh_front", "dsh_back", "dsh_diff",
@@ -687,7 +687,9 @@ class DrawMetricsEngine:
         rk = ensure_race_key(df)
         is_flat = df["_is_flat"]
         n = pd.to_numeric(df["number_of_runners"], errors="coerce")
-        place = pd.to_numeric(df.get("placing_numerical"), errors="coerce")
+        place = (pd.to_numeric(df["placing_numerical"], errors="coerce")
+                 if "placing_numerical" in df.columns
+                 else pd.Series(np.nan, index=df.index))
 
         df["nmfp_actual"] = nmfp(n.values, place.values)
         exp_raw, rating_src = expected_nmfp_from_ratings(df)
