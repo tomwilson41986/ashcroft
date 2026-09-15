@@ -23,6 +23,12 @@ Requires NFP and draw_relative/draw_quartile to be computed first.
 import numpy as np
 import pandas as pd
 
+from model.lagsafe import race_lagged_expanding_mean
+
+#: A track x distance x going cell needs this many earlier races before its draw
+#: bias is reported at all; below it the estimate is left NaN.
+MIN_CELL_RACES = 5
+
 
 class DrawMetricsEngine:
     """Advanced draw/stall feature engineering.
@@ -96,16 +102,12 @@ class DrawMetricsEngine:
         df["_low_stall_nfp"] = np.where(is_low, nfp, np.nan)
         df["_high_stall_nfp"] = np.where(is_high, nfp, np.nan)
 
-        df = df.sort_values(["_td_key", "race_date", "race_time"]).reset_index(drop=True)
-        td_grp = df.groupby("_td_key", group_keys=False)
-
-        # Lag-safe expanding mean NFP for each stall group at this track+distance
-        df["td_low_stall_nfp"] = td_grp["_low_stall_nfp"].apply(
-            lambda x: x.shift(1).expanding().mean()
-        )
-        df["td_high_stall_nfp"] = td_grp["_high_stall_nfp"].apply(
-            lambda x: x.shift(1).expanding().mean()
-        )
+        # Expanding mean NFP for each stall group at this track+distance, lagged by
+        # RACE. A row-wise shift(1) here would step back to a rival in the same
+        # race, and since these columns are otherwise constant across a race that
+        # leak would be their only within-race variation. See model/lagsafe.py.
+        df["td_low_stall_nfp"] = race_lagged_expanding_mean(df, "_td_key", "_low_stall_nfp")
+        df["td_high_stall_nfp"] = race_lagged_expanding_mean(df, "_td_key", "_high_stall_nfp")
 
         # Draw bias at this track+distance (positive = low stalls favoured)
         df["td_draw_bias"] = df["td_low_stall_nfp"] - df["td_high_stall_nfp"]
@@ -184,15 +186,11 @@ class DrawMetricsEngine:
         df["_low_nfp_g"] = np.where(is_low, nfp, np.nan)
         df["_high_nfp_g"] = np.where(is_high, nfp, np.nan)
 
-        df = df.sort_values(["_tdg_key", "race_date", "race_time"]).reset_index(drop=True)
-        tdg_grp = df.groupby("_tdg_key", group_keys=False)
-
-        df["tdg_low_stall_nfp"] = tdg_grp["_low_nfp_g"].apply(
-            lambda x: x.shift(1).expanding().mean()
-        )
-        df["tdg_high_stall_nfp"] = tdg_grp["_high_nfp_g"].apply(
-            lambda x: x.shift(1).expanding().mean()
-        )
+        # Lagged by race, and only once the cell has a few races behind it: a
+        # track x distance x going bucket is small, and an unshrunk difference of
+        # two means over one prior race is noise with a large number attached.
+        df["tdg_low_stall_nfp"] = race_lagged_expanding_mean(df, "_tdg_key", "_low_nfp_g", min_races=MIN_CELL_RACES)
+        df["tdg_high_stall_nfp"] = race_lagged_expanding_mean(df, "_tdg_key", "_high_nfp_g", min_races=MIN_CELL_RACES)
         df["tdg_draw_bias"] = df["tdg_low_stall_nfp"] - df["tdg_high_stall_nfp"]
 
         # Going-adjusted alignment: use tdg if enough data, fallback to td

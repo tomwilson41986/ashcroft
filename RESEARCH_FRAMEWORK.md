@@ -347,3 +347,61 @@ Consequences for the roadmap: (a) no Kelly sizing on these probabilities at any 
 only market-blind selections worth live testing; (c) the +8% retransformation bias in the
 top-pick price forecast is a correctable defect that directly costs CLV, and should be
 fixed before any early-price trigger uses the forecast.
+
+---
+
+## 13. Two leaks found in the pace and draw blocks
+
+Found while auditing what the pace, race-shape and draw work actually does.
+Both are confirmed by direct reproduction and both are now fixed and tested
+(`tests/test_leakage.py`, 11 tests). **The BFSP model must be retrained before
+its numbers mean anything**: the deployed 419-feature model was trained with
+both leaks present, so its reported accuracy is inflated and five of its
+features are dead at prediction time.
+
+### 13.1 Race-level bias features lagged by row instead of by race
+
+`grp[col].apply(lambda x: x.shift(1).expanding().mean())` is the repo's idiom
+for a lag-safe career mean. On a key the horse owns it is correct. On a key
+every runner in a race shares -- track+distance, track+distance+going, track,
+or a trainer with two in the race -- the previous row is a rival in the *same*
+race, so the expanding mean picks up that rival's result.
+
+The structure of the damage matters more than its size: these columns are
+otherwise constant across a race, so the leaked same-race outcome was the only
+thing that varied within the race, which is exactly the variation a
+race-grouped or race-demeaned model keys on. `going_draw_shift`, built on the
+smallest cells of all, was the highest-importance pace or draw feature in the
+deployed model at rank 40 of 419.
+
+Affected: `td_front_win_share`, `td_holdup_win_share`, `td_avg_winner_pos`,
+`track_front_win_share`, `td_low_stall_nfp`, `td_high_stall_nfp`,
+`td_draw_bias`, `tdg_low_stall_nfp`, `tdg_high_stall_nfp`, `tdg_draw_bias`,
+`going_draw_alignment`, `going_draw_shift`, and everything derived from them
+(`draw_bias_alignment`, `track_draw_bias`, `track_style_fit`, `pace_mismatch`,
+`draw_advantage_composite`), plus the five `trainer_*` style columns.
+
+Fixed by `model/lagsafe.py`: aggregate to races first, then lag, so a runner
+sees every earlier race in its group and no part of its own. The
+track x distance x going cell now also requires five earlier races before it
+reports a bias at all, instead of handing the model an unshrunk difference of
+two means computed from one prior race.
+
+### 13.2 Race pace aggregates built from the race being predicted
+
+`EPF` is parsed from the horse's own in-running comment, so it says how the
+horse actually ran *today*. Five race-level aggregates of it were model
+features: `RPS`, `pace_pressure`, `prom_runner`, `racepacescore` and
+`racepaceindex`. `prom_runner` -- literally "did this horse race prominently
+today" -- ranked 35th of 419 by gain.
+
+At prediction time a card has no comments, so the parser returns its default
+and all five collapse to constants. The model was trained on information it
+never has when it matters. It is worse in backtest: the `--from-db` and
+`--last-n-days` paths read completed rows with their comments, so backtests
+reproduced the leak while live runs did not, and the two diverged silently.
+
+Fixed by rebuilding all five on `EPF_expected`, the horse's own lag-safe career
+EPF. `train_bfsp.py` now refuses to start if any feature column is in
+`POST_RACE_ONLY` (`assert_no_post_race_features`), which covers `EPF`,
+`placing_numerical`, `NFP`, the raw comment and the parsed run-style columns.

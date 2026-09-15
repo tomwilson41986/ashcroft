@@ -586,6 +586,26 @@ ALL_FEATURE_COLS = (
 )
 
 
+def assert_no_post_race_features(feature_cols) -> None:
+    """Refuse to train on anything that describes the race being predicted.
+
+    The pace block once shipped five of these: RPS, pace_pressure, prom_runner,
+    racepacescore and racepaceindex were aggregates of an EPF parsed from the
+    horse's own in-running comment for that day's race. They carried real gain
+    in training and collapsed to a constant when a live card was priced,
+    because a card has no comments yet."""
+    from model.custom_metrics import POST_RACE_ONLY
+    bad = sorted(set(feature_cols) & POST_RACE_ONLY)
+    if bad:
+        raise ValueError(
+            "These feature columns describe the race being predicted and cannot be "
+            f"model inputs: {bad}. Use their lagged form instead."
+        )
+
+
+assert_no_post_race_features(ALL_FEATURE_COLS)
+
+
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------

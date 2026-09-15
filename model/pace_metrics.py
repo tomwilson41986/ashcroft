@@ -23,6 +23,8 @@ import re
 import numpy as np
 import pandas as pd
 
+from model.lagsafe import race_lagged_expanding_mean
+
 
 # ---------------------------------------------------------------------------
 # Comment parsing — multi-phase position extraction
@@ -296,25 +298,16 @@ class PaceMetricsEngine:
             egrp = df.groupby(entity_col, group_keys=False)
 
             # Career average early position
-            df[f"{prefix}_career_early_pos"] = egrp["early_pos"].apply(
-                lambda x: x.shift(1).expanding().mean()
-            )
-            # Career average late movement
-            df[f"{prefix}_career_late_move"] = egrp["late_move"].apply(
-                lambda x: x.shift(1).expanding().mean()
-            )
-            # Front-runner rate (% of rides EPF > 4)
-            df[f"{prefix}_front_rate"] = egrp["early_pos"].apply(
-                lambda x: (x.shift(1) > 4).expanding().mean()
-            )
-            # Hold-up rate (% of rides EPF < 2)
-            df[f"{prefix}_holdup_rate"] = egrp["early_pos"].apply(
-                lambda x: (x.shift(1) < 2).expanding().mean()
-            )
-            # Keenness rate
-            df[f"{prefix}_keen_rate"] = egrp["was_keen"].apply(
-                lambda x: x.shift(1).expanding().mean()
-            )
+            # Lagged by race: a trainer often saddles two runners in one race, so
+            # a row-wise shift would show one of them the other's running style.
+            df["_front"] = (df["early_pos"] > 4).astype(float)
+            df["_holdup"] = (df["early_pos"] < 2).astype(float)
+            df[f"{prefix}_career_early_pos"] = race_lagged_expanding_mean(df, entity_col, "early_pos")
+            df[f"{prefix}_career_late_move"] = race_lagged_expanding_mean(df, entity_col, "late_move")
+            df[f"{prefix}_front_rate"] = race_lagged_expanding_mean(df, entity_col, "_front")
+            df[f"{prefix}_holdup_rate"] = race_lagged_expanding_mean(df, entity_col, "_holdup")
+            df[f"{prefix}_keen_rate"] = race_lagged_expanding_mean(df, entity_col, "was_keen")
+            df = df.drop(columns=["_front", "_holdup"])
 
         return df
 
@@ -341,31 +334,18 @@ class PaceMetricsEngine:
             df["placing_numerical"] == 1, df["early_pos"], np.nan
         )
 
-        # Lag-safe expanding mean per track-distance
-        df = df.sort_values(["_td_key", "race_date", "race_time"]).reset_index(drop=True)
-        td_grp = df.groupby("_td_key", group_keys=False)
-
-        # Front-runner win share at this track+distance
-        df["td_front_win_share"] = td_grp["_front_won"].apply(
-            lambda x: x.shift(1).expanding().mean()
-        )
-        # Hold-up win share at this track+distance
-        df["td_holdup_win_share"] = td_grp["_back_won"].apply(
-            lambda x: x.shift(1).expanding().mean()
-        )
+        # Expanding mean per track-distance, lagged by RACE not by row: the
+        # runners of one race share the key, so a row-wise shift(1) would let a
+        # runner see its own race's result. See model/lagsafe.py.
+        df["td_front_win_share"] = race_lagged_expanding_mean(df, "_td_key", "_front_won")
+        df["td_holdup_win_share"] = race_lagged_expanding_mean(df, "_td_key", "_back_won")
 
         # Average winning early position at this track+distance
         # Only compute over winners
-        df["td_avg_winner_pos"] = td_grp["_winner_early_pos"].apply(
-            lambda x: x.shift(1).expanding().mean()
-        )
+        df["td_avg_winner_pos"] = race_lagged_expanding_mean(df, "_td_key", "_winner_early_pos")
 
         # Track-level (all distances) front bias
-        df = df.sort_values(["track", "race_date", "race_time"]).reset_index(drop=True)
-        t_grp = df.groupby("track", group_keys=False)
-        df["track_front_win_share"] = t_grp["_front_won"].apply(
-            lambda x: x.shift(1).expanding().mean()
-        )
+        df["track_front_win_share"] = race_lagged_expanding_mean(df, "track", "_front_won")
 
         # Cleanup
         df.drop(columns=["_td_key", "_front_won", "_back_won", "_winner_early_pos"],
