@@ -57,6 +57,8 @@ def prepare_blandford_frame(bf: pd.DataFrame, flat_only: bool = True) -> pd.Data
     d = d[ok_race].copy()
     bsp = pd.to_numeric(d["betfair_win_sp"], errors="coerce").where(lambda s: s > 1.0)
     d["pi_market"] = (1 / bsp) / (1 / bsp).groupby(d["raceid"]).transform("sum")
+    # a race is usable only if every runner has a BSP (else the market vector is not a distribution)
+    d = d[d.groupby("raceid")["pi_market"].transform(lambda s: s.notna().all())].copy()
     d["nmfp"] = nmfp(d["n_runners"].values, d["position"].values)
     d["horse_name"] = d["horse_name"].astype(str)
     return d.sort_values(["race_date", "race_time", "raceid"]).reset_index(drop=True)

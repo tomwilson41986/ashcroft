@@ -289,3 +289,25 @@ Run on the open Blandford/Timeform feed, UK/IRE Flat, 2025-01 → 2026-02 (8,289
 4. Calibration: temperature scaling on Stage F logits; **the conditional tables must pass before any staking**.
 5. Ordering with fitted γ, δ for place/exotic markets; compare with ABM finishing orders.
 6. Validation additions: purge/embargo in the walk-forward, deflated Sharpe and PBO; closing-line value as the live edge signal.
+
+---
+
+## 11. The objective, restated: closing-line value, not beating BSP
+
+**Decision (15 Sep 2026).** The goal is not to out-predict the Betfair Starting Price. BSP is treated as the efficient closing price — the evidence in §2, §10 and below all says so — and the edge is **getting on earlier at prices longer than the BSP the horse will close at**. That makes the BFSP regression the right *kind* of model (a price forecaster) and changes what we measure.
+
+### 11.1 Why CLV is the score
+Back at morning odds *o*, close at BSP *b*. Green up by laying at *b* and the locked-in profit per unit is **o/b − 1 whether the horse wins or loses**; hold to settlement and the *expected* profit is the same quantity once 1/b is accepted as the best estimate of the true probability. So the strategy's edge is the realised CLV of the runners it selects, and the model's job is to forecast *b* from what is known in the morning. Everything else — win-probability calibration against BSP, ΔR² over the closing market — is secondary.
+
+### 11.2 The model (Benter's blend, applied to prices)
+`ln b ≈ β0 + β1 ln π_morning + β2 ln f̂ + β3 ln n (+ morning volume share)`, with f̂ the fundamentals-only BSP forecast from `train_bfsp.py` (walk-forward, out-of-sample) and π_morning the race-normalised morning price. |β2| clearly above zero (walk-forward, per fold) means fundamentals predict the move beyond the morning market. The early-bet rule backs runners whose forecast BSP is shorter than the price on offer by ≥ `min_clv` (net of commission), optionally sized by predicted CLV and capped by morning depth.
+
+Built: `model/clv.py` (`prepare_clv_frame`, `price_move_model`, `early_bet_rule`, `clv_report`, `steam_predictability`) and `research_lab.py clv`, which joins the walk-forward predictions to morning prices from either the Betfair historic files (`betfair_prices`, MORNINGWAP + volume) or the daily pipeline's own `betfair_odds` snapshots (`--source snapshots`, earliest snapshot per runner per day — data we already collect). Report: per-fold coefficients, direction hit rate of the move, mean/median net CLV with a race-bootstrap CI, hit rate (price shortened), hold-to-settlement ROI and BSP-implied EV, CLV by predicted-CLV tier, and the all-runners baseline (is the morning market itself biased?).
+
+### 11.3 What the closing-market tests now mean
+* §2 (BFSP model calibrated, lower resolution than BSP, overlays lose): expected for a BSP forecaster scored against BSP; irrelevant to CLV.
+* §10 (a market-free Stage F reaches ~57 % of the market's R²; ΔR² ≈ 0; adding previous-run in-play lows or the lagged market to Stage C also gives ΔR² ≤ 0 on 5,017 real races): **BSP is efficient with respect to every history we hold** — the premise that makes BSP the right truth for CLV.
+* The remaining question is empirical and needs morning prices joined to the walk-forward forecasts: does f̂ move BSP forecasts beyond the morning price? `research_lab.py clv` answers it the day `betfair_prices.py --load --match` (or the live snapshots) is available; the acceptance test is **mean net CLV of the rule's bets > 0 with the race-bootstrap CI clear of zero, on ≥ 1,000 bets**, and a fill assumption bounded by morning depth.
+
+### 11.4 What still matters from the earlier sections
+Sharper BSP forecasts (lower log-error) raise CLV directly, so the feature blocks in §3–§6 and §10 still earn their place — but their promotion criterion becomes *incremental BSP-forecast accuracy given the morning price*, measured by the CLV report, not ΔR² over BSP. The Kalman rating, Timeform feed and connection blocks are the first candidates; the ABM's pace features and the causal intervention effects remain the candidates for information the *morning* market prices late.

@@ -36,6 +36,18 @@ def _encode_groups(groups):
     return codes, len(uniq)
 
 
+def _softmax_sorted(sc: np.ndarray, starts: np.ndarray, seg: np.ndarray) -> np.ndarray:
+    """Softmax over contiguous groups (rows sorted by group; starts = first index of each group)."""
+    m = np.maximum.reduceat(sc, starts)
+    e = np.exp(sc - m[seg])
+    return e / np.add.reduceat(e, starts)[seg]
+
+
+def _logsumexp_sorted(sc: np.ndarray, starts: np.ndarray, seg: np.ndarray) -> np.ndarray:
+    m = np.maximum.reduceat(sc, starts)
+    return m + np.log(np.add.reduceat(np.exp(sc - m[seg]), starts))
+
+
 def race_softmax(scores: np.ndarray, groups) -> np.ndarray:
     """Softmax of scores within each race (any row order)."""
     codes, G = _encode_groups(groups)
@@ -43,10 +55,8 @@ def race_softmax(scores: np.ndarray, groups) -> np.ndarray:
     order = np.argsort(codes, kind="stable")
     sc, cs = s[order], codes[order]
     starts = np.r_[0, np.flatnonzero(np.diff(cs)) + 1]
-    lse = np.empty(len(sc))
-    for a, b in zip(starts, np.r_[starts[1:], len(sc)]):
-        lse[a:b] = logsumexp(sc[a:b])
-    p = np.empty(len(s)); p[order] = np.exp(sc - lse)
+    seg = np.repeat(np.arange(len(starts)), np.diff(np.r_[starts, len(sc)]))
+    p = np.empty(len(s)); p[order] = _softmax_sorted(sc, starts, seg)
     return p
 
 
@@ -114,7 +124,7 @@ class ConditionalLogit:
 
         def f_and_g(beta):
             s = Zs @ beta
-            lse = np.array([logsumexp(s[a:b]) for a, b in zip(starts, ends)])
+            lse = _logsumexp_sorted(s, starts, seg)
             p = np.exp(s - lse[seg])
             ll = np.sum(w[seg] * ys * (s - lse[seg]))
             nll = -ll / G + 0.5 * self.l2 * beta @ beta / G
@@ -148,15 +158,14 @@ def lgb_race_softmax(group_sizes: np.ndarray):
     objective (Section II.2 of the framework).
 
         fobj, feval = lgb_race_softmax(sizes)
-        booster = lgb.train(params, dtrain, fobj=fobj, feval=feval, ...)
+        booster = lgb.train({**params, "objective": fobj}, dtrain, feval=feval, ...)   # LightGBM >= 4
     """
     sizes = np.asarray(group_sizes, int)
     starts = np.r_[0, np.cumsum(sizes)[:-1]]; ends = np.cumsum(sizes)
     seg = np.repeat(np.arange(len(sizes)), sizes)
 
     def _p(scores):
-        lse = np.array([logsumexp(scores[a:b]) for a, b in zip(starts, ends)])
-        return np.exp(scores - lse[seg])
+        return _softmax_sorted(np.asarray(scores, float), starts, seg)
 
     def fobj(preds, dataset):
         y = dataset.get_label(); p = _p(np.asarray(preds, float))
