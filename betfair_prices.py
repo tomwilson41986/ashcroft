@@ -17,9 +17,13 @@ These give the market's *movement* (morning -> pre-off -> BSP), its
 *confidence* (volumes) and — via IPMIN — how close a beaten horse came to
 winning, which is hidden form that finishing position does not show.
 
-The site sits behind Cloudflare and refuses some hosts (HTTP 403). The
-downloader reports that clearly; ``--dir`` ingests files you fetched by
-other means (browser, another machine, scripts/find_proxies.py).
+The site geo-blocks non-UK/IE IPs ("Betfair Restricted ... Region: US",
+HTTP 403), which covers GitHub-hosted runners, Colab VMs and this agent's
+containers. Fetch from a UK/IE machine, or set BETFAIR_PROXY (or --proxy)
+to a UK/IE HTTP(S) proxy. ``--dir`` ingests per-day files fetched by other
+means; ``--combined FILE`` ingests the single-file-per-market output of the
+Colab notebook (betfair_sp_prices_to_drive.ipynb, cell 9), which carries the
+day file name in a SOURCE_FILE column.
 
 Usage:
     python betfair_prices.py --fetch --from 2024-01-01 --to 2024-01-31   # download to data/betfair_raw/
@@ -158,13 +162,29 @@ def bf_event_time(event_dt) -> tuple[str | None, str | None]:
 # Download
 # ---------------------------------------------------------------------------
 
+def make_session(proxy: str | None = None) -> requests.Session:
+    """Session with a browser UA and an optional UK/IE proxy (arg or BETFAIR_PROXY env)."""
+    s = requests.Session()
+    s.headers.setdefault("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+    proxy = proxy or os.getenv("BETFAIR_PROXY")
+    if proxy:
+        s.proxies.update({"http": proxy, "https": proxy})
+    return s
+
+
+def _geo_block_reason(text: str) -> str | None:
+    if "Restricted" in text and "Betfair" in text:
+        m = re.search(r"Region:\s*([A-Z]{2})", text)
+        return f"geo-blocked (Betfair Restricted, region {m.group(1) if m else '?'})"
+    return None
+
+
 def download_day(d: date, dest: Path = RAW_DIR, countries=COUNTRIES, markets=MARKETS,
                  session: requests.Session | None = None, retries: int = 3, sleep: float = 1.0,
                  skip_existing: bool = True) -> dict:
     """Fetch the four files for one day. Returns {file: status}."""
     dest.mkdir(parents=True, exist_ok=True)
-    s = session or requests.Session()
-    s.headers.setdefault("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+    s = session or make_session()
     status = {}
     for c in countries:
         for m in markets:
@@ -187,8 +207,8 @@ def download_day(d: date, dest: Path = RAW_DIR, countries=COUNTRIES, markets=MAR
                     break
                 if r.status_code == 403:
                     status[fn] = "blocked_403"
-                    log.error("%s: HTTP 403 — promo.betfair.com (Cloudflare) refuses this host. "
-                              "Download from a browser / another machine and use --dir.", fn)
+                    log.error("%s: HTTP 403 — %s. Fetch from a UK/IE machine or set BETFAIR_PROXY; then --dir / --combined.",
+                              fn, _geo_block_reason(r.text) or "promo.betfair.com refuses this host")
                     break
                 if r.status_code == 404:
                     status[fn] = "missing_404"
@@ -239,6 +259,53 @@ def parse_file(path: str | Path) -> pd.DataFrame:
     return out
 
 
+def parse_combined(path: str | Path) -> pd.DataFrame:
+    """Parse the notebook's _combined_<market>.csv (per-day rows stacked, SOURCE_FILE column)."""
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    df.columns = [c.strip().upper() for c in df.columns]
+    if "SOURCE_FILE" not in df.columns:
+        raise ValueError("combined file needs a SOURCE_FILE column (notebook cell 9 adds it)")
+    frames = []
+    for src, part in df.groupby("SOURCE_FILE"):
+        meta = parse_file_name(str(src))
+        if not meta:
+            log.warning("skip rows from unrecognised source %s", src); continue
+        tmp = part.drop(columns=["SOURCE_FILE"]).to_csv(index=False)
+        frames.append(parse_file_text(tmp, str(src)))
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def parse_file_text(text: str, name: str) -> pd.DataFrame:
+    """parse_file for in-memory CSV text with a day-file name."""
+    import io as _io
+    tmp = Path(RAW_DIR) / "_tmp_parse.csv"
+    df = pd.read_csv(_io.StringIO(text), dtype=str, keep_default_na=False)
+    df.columns = [c.strip().upper() for c in df.columns]
+    missing = [c for c in RAW_COLUMNS if c not in df.columns]
+    if missing:
+        raise ValueError(f"{name}: missing columns {missing}")
+    out = pd.DataFrame({
+        "event_id": pd.to_numeric(df["EVENT_ID"], errors="coerce").astype("Int64"),
+        "menu_hint": df["MENU_HINT"].str.strip(), "event_name": df["EVENT_NAME"].str.strip(), "event_dt": df["EVENT_DT"].str.strip(),
+        "selection_id": pd.to_numeric(df["SELECTION_ID"], errors="coerce").astype("Int64"),
+        "selection_name": df["SELECTION_NAME"].str.strip(), "win_lose": pd.to_numeric(df["WIN_LOSE"], errors="coerce"),
+    })
+    for src, dst in [("BSP", "bsp"), ("PPWAP", "ppwap"), ("MORNINGWAP", "morningwap"), ("PPMAX", "ppmax"), ("PPMIN", "ppmin"),
+                     ("IPMAX", "ipmax"), ("IPMIN", "ipmin"), ("MORNINGTRADEDVOL", "morning_vol"), ("PPTRADEDVOL", "pp_vol"), ("IPTRADEDVOL", "ip_vol")]:
+        out[dst] = pd.to_numeric(df[src], errors="coerce")
+    dates_times = out["event_dt"].map(bf_event_time)
+    out["race_date"] = [d for d, _ in dates_times]; out["race_time"] = [t for _, t in dates_times]
+    out["horse_norm"] = out["selection_name"].map(normalise_horse)
+    meta = parse_file_name(name)
+    if meta:
+        out["country"], out["market_type"], file_date = meta
+        out["race_date"] = out["race_date"].fillna(file_date.isoformat())
+    else:
+        out["country"], out["market_type"] = "unknown", "win"
+    out["source_file"] = name
+    return out
+
+
 def ensure_table(conn: sqlite3.Connection) -> None:
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS betfair_prices (
@@ -259,14 +326,37 @@ def ensure_table(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+LOAD_COLS = ["country", "market_type", "race_date", "race_time", "event_id", "menu_hint", "event_name", "event_dt",
+             "track_bf", "selection_id", "selection_name", "horse_norm", "win_lose", "bsp", "ppwap", "morningwap",
+             "ppmax", "ppmin", "ipmax", "ipmin", "morning_vol", "pp_vol", "ip_vol", "source_file"]
+
+
+def _upsert(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+    df = df.copy(); df["track_bf"] = df["menu_hint"].map(lambda h: course_from_hint(h) or "")
+    rows = df[LOAD_COLS].astype(object).where(df[LOAD_COLS].notna(), None).values.tolist()
+    conn.executemany(f"INSERT OR REPLACE INTO betfair_prices ({', '.join(LOAD_COLS)}) VALUES ({', '.join('?' * len(LOAD_COLS))})", rows)
+    return len(rows)
+
+
+def load_combined(paths, db_path: str = DEFAULT_DB) -> dict:
+    """Load one or more notebook _combined_<market>.csv files."""
+    conn = sqlite3.connect(db_path); ensure_table(conn)
+    n = 0
+    for p in paths:
+        n += _upsert(conn, parse_combined(p))
+    conn.commit(); conn.close()
+    log.info("loaded %d rows from %d combined files", n, len(list(paths)))
+    return {"files": len(list(paths)), "rows": n}
+
+
 def load_files(paths, db_path: str = DEFAULT_DB) -> dict:
     """Parse and upsert files into betfair_prices. Returns counts."""
     conn = sqlite3.connect(db_path)
     ensure_table(conn)
     n_rows = n_files = 0
-    cols = ["country", "market_type", "race_date", "race_time", "event_id", "menu_hint", "event_name", "event_dt",
-            "track_bf", "selection_id", "selection_name", "horse_norm", "win_lose", "bsp", "ppwap", "morningwap",
-            "ppmax", "ppmin", "ipmax", "ipmin", "morning_vol", "pp_vol", "ip_vol", "source_file"]
+    cols = LOAD_COLS
     for p in paths:
         try:
             df = parse_file(p)
@@ -381,6 +471,8 @@ def main(argv=None):
     ap.add_argument("--days", type=int, default=None, help="last N days (alternative to --from/--to)")
     ap.add_argument("--countries", default="uk,ire")
     ap.add_argument("--markets", default="win,place")
+    ap.add_argument("--proxy", default=None, help="UK/IE HTTP(S) proxy URL (or set BETFAIR_PROXY)")
+    ap.add_argument("--combined", nargs="*", default=None, help="notebook _combined_<market>.csv file(s) to load")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -395,7 +487,7 @@ def main(argv=None):
     if args.fetch:
         if d_from is None:
             ap.error("--fetch needs --from or --days")
-        sess = requests.Session()
+        sess = make_session(args.proxy)
         summary: dict[str, int] = {}
         for d in _daterange(d_from, d_to):
             st = download_day(d, raw, tuple(args.countries.split(",")), tuple(args.markets.split(",")), session=sess)
@@ -405,6 +497,9 @@ def main(argv=None):
                 log.error("Stopping fetch: host is blocked (403). Use --dir with files fetched elsewhere.")
                 break
         log.info("fetch summary: %s", summary)
+
+    if args.combined:
+        print("combined load:", load_combined(args.combined, args.db))
 
     if args.load:
         paths = sorted(p for p in raw.glob("dwbfprices*.csv"))
@@ -421,7 +516,7 @@ def main(argv=None):
     if args.report:
         print(coverage_report(args.db).to_string(index=False))
 
-    if not any([args.fetch, args.load, args.match, args.report]):
+    if not any([args.fetch, args.load, args.match, args.report, args.combined]):
         ap.print_help()
         return 1
     return 0

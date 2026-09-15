@@ -48,6 +48,8 @@ jobs:
         run: python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
 
       - name: Fetch, load and match price files
+        env:
+          BETFAIR_PROXY: ${{ secrets.BETFAIR_PROXY }}   # promo.betfair.com geo-blocks GitHub's US runners; set a UK/IE proxy
         run: |
           if [ -n "${{ inputs.date_from }}" ]; then
             python betfair_prices.py --fetch --load --match --from "${{ inputs.date_from }}" ${{ inputs.date_to && format('--to {0}', inputs.date_to) || '' }}
