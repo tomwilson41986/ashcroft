@@ -30,3 +30,10 @@ data/datasets/*.parquet
 
 # Raw Blandford / Timeform feed chunks (large JSON, regenerable)
 data/blandford_raw/
+
+# Raw HorseRaceBase Ratings Machine downloads (vendor CSVs, one per set per day).
+# Same treatment as the other raw feeds, with one caveat worth writing down:
+# these are not cheaply regenerable. The site rate-limits the account and has
+# previously withheld downloads for months, so the durable copy belongs in the
+# database that goes to S3, not in a working directory that gets cleaned.
+data/hrb_ratings_raw/
