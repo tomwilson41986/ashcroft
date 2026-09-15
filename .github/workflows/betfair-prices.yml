@@ -19,6 +19,12 @@ on:
         description: 'End date (YYYY-MM-DD). Defaults to yesterday.'
         required: false
         type: string
+      runner:
+        description: 'Runner to use. GitHub-hosted runners are Azure US and Betfair refuses them; pick self-hosted if you have a UK runner registered.'
+        required: false
+        default: 'ubuntu-latest'
+        type: choice
+        options: ['ubuntu-latest', 'self-hosted']
 
 env:
   PYTHON_VERSION: '3.11'
@@ -29,7 +35,10 @@ jobs:
   probe:
     # promo.betfair.com is geo-fenced. Establish, cheaply and visibly, whether this
     # runner's egress IP is allowed before spending minutes pulling the DB from S3.
-    runs-on: ubuntu-latest
+    # GitHub-hosted runners are Azure US and are refused (verified: HTTP 403 from
+    # 172.203.195.5, Virginia). Register a self-hosted runner on a UK machine and set
+    # the BETFAIR_RUNNER repository variable to its label to make the schedule use it.
+    runs-on: ${{ inputs.runner || vars.BETFAIR_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     outputs:
       reachable: ${{ steps.geo.outputs.reachable }}
@@ -63,7 +72,7 @@ jobs:
   prices:
     needs: probe
     if: needs.probe.outputs.reachable == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || vars.BETFAIR_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
