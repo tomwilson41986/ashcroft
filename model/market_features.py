@@ -67,7 +67,7 @@ import sqlite3
 import numpy as np
 import pandas as pd
 
-from model.lagsafe import race_lagged_expanding_mean
+from model.lagsafe import race_lagged_expanding_mean, race_minutes
 from model.perf_figures import ensure_raceid
 
 #: Reference clock for "the morning price", in hours after midnight. The
@@ -121,18 +121,9 @@ def load_market_frame(db_path: str, date_from: str | None = None) -> pd.DataFram
 
 
 def off_hours(race_time) -> pd.Series:
-    """Race time as hours after midnight.
-
-    The database writes afternoon cards as '2.30' (and sometimes '2.30.'), so
-    anything before 11 is read as pm — the same convention betfair_prices uses
-    to match price files to results.
-    """
-    s = pd.Series(race_time).astype(str).str.strip().str.rstrip(".").str.replace(".", ":", regex=False)
-    parts = s.str.extract(r"^(\d{1,2})(?::(\d{1,2}))?")
-    h = pd.to_numeric(parts[0], errors="coerce")
-    m = pd.to_numeric(parts[1], errors="coerce").fillna(0.0)
-    h = h.where((h >= 11) | h.isna(), h + 12)
-    return (h + m / 60.0).set_axis(pd.Series(race_time).index)
+    """Race time as hours after midnight. One parser for the repo: see
+    `model.lagsafe.race_minutes` for the convention and why it is not a string."""
+    return race_minutes(race_time) / 60.0
 
 
 def _time_24h(race_time) -> pd.Series:

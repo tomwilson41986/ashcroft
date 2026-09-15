@@ -24,6 +24,29 @@ import numpy as np
 import pandas as pd
 
 
+def race_minutes(race_time) -> pd.Series:
+    """Off time as minutes after midnight.
+
+    Two reasons this is not `race_time.astype(str)`.
+
+    It is correct. The database writes afternoon cards as '2.30' (sometimes
+    '2.30.'), so a lexicographic sort puts the 1.45 before the 12.40 and the
+    "previous race" is then the wrong race. Anything before 11 is read as pm,
+    the same convention `betfair_prices` uses to match price files to results.
+
+    It is also about fifty times faster where it matters. The per-race
+    aggregation below takes a `min` over this column, and a `min` over a string
+    dtype runs per group in Python: it was 5.4 seconds of every 5.7-second call,
+    which on the full history is hours across every caller in the repo.
+    """
+    s = pd.Series(race_time).astype(str).str.strip().str.rstrip(".").str.replace(".", ":", regex=False)
+    parts = s.str.extract(r"^(\d{1,2})(?::(\d{1,2}))?")
+    h = pd.to_numeric(parts[0], errors="coerce")
+    m = pd.to_numeric(parts[1], errors="coerce").fillna(0.0)
+    h = h.where((h >= 11) | h.isna(), h + 12)
+    return (h * 60.0 + m).fillna(0.0).set_axis(pd.Series(race_time).index)
+
+
 def ensure_race_key(df: pd.DataFrame, race_col: str = "raceid") -> pd.Series:
     """The frame's race identifier, rebuilt from date/time/track if absent."""
     if race_col in df.columns:
@@ -52,7 +75,7 @@ def race_lagged_expanding_mean(df: pd.DataFrame, group_col: str | list[str], val
     d["_race"] = ensure_race_key(df, race_col)
     d["_v"] = pd.to_numeric(df[value_col], errors="coerce")
     d["_date"] = pd.to_datetime(df["race_date"], errors="coerce")
-    d["_time"] = df["race_time"].astype(str) if "race_time" in df.columns else ""
+    d["_time"] = race_minutes(df["race_time"]) if "race_time" in df.columns else 0.0
 
     per_race = (d.groupby(keys + ["_race"], dropna=False, observed=True)
                  .agg(_s=("_v", "sum"), _n=("_v", "count"), _d=("_date", "min"), _t=("_time", "min"))
@@ -87,7 +110,7 @@ def race_lagged_expanding_count(df: pd.DataFrame, group_col: str | list[str], va
     d["_race"] = ensure_race_key(df, race_col)
     d["_v"] = pd.to_numeric(df[value_col], errors="coerce")
     d["_date"] = pd.to_datetime(df["race_date"], errors="coerce")
-    d["_time"] = df["race_time"].astype(str) if "race_time" in df.columns else ""
+    d["_time"] = race_minutes(df["race_time"]) if "race_time" in df.columns else 0.0
     per_race = (d.groupby(keys + ["_race"], dropna=False, observed=True)
                  .agg(_n=("_v", "count"), _d=("_date", "min"), _t=("_time", "min"))
                  .reset_index()

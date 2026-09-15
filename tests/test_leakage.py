@@ -153,3 +153,28 @@ def test_speed_figure_standard_time_uses_only_earlier_races():
     b = fast[~fast["race_date"].eq(fast["race_date"].max())].sort_values(key)["RSR"].values
     assert np.allclose(np.nan_to_num(a, nan=-999), np.nan_to_num(b, nan=-999)), \
         "an earlier race's RSR moved when a later race's time changed"
+
+
+def test_off_times_order_by_the_clock_not_alphabetically():
+    """UK cards are written '1.45' for 13:45, so a string sort runs the day
+    backwards: '1.45' sorts before '12.40', and the "previous race" is then the
+    wrong race."""
+    from model.lagsafe import race_minutes
+
+    times = ["11.30", "12.40", "1.45.", "2.20", "3.55", "13:00"]
+    mins = race_minutes(pd.Series(times))
+    assert list(mins) == [690, 760, 825, 860, 955, 780]
+    assert list(mins.iloc[:5]) == sorted(mins.iloc[:5])       # the card runs forwards
+    assert sorted(times)[0] == "1.45." and mins.iloc[2] > mins.iloc[0]   # ... but the strings do not
+
+
+def test_a_later_race_on_the_card_does_not_feed_an_earlier_one():
+    """The ordering fix has to hold end to end, not just in the parser."""
+    d = _card(n_days=1, races_per_day=1, runners=3, seed=9)
+    d = pd.concat([
+        d.assign(raceid="early", race_time="11.30", v=[1.0, 1.0, 1.0]),
+        d.assign(raceid="late", race_time="1.45.", v=[0.0, 0.0, 0.0]),
+    ], ignore_index=True)
+    out = race_lagged_expanding_mean(d, "track", "v")
+    assert out[d["raceid"] == "early"].isna().all()       # nothing ran before it
+    assert np.allclose(out[d["raceid"] == "late"], 1.0)   # sees only the 11.30
