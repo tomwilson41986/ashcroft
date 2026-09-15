@@ -27,6 +27,10 @@ Research lab CLI — entry point for the RESEARCH_FRAMEWORK.md toolkit.
     python research_lab.py market --db horse_racing.db --from 2024-01-01
         Betfair price-movement diagnostics (steam deciles) + feature coverage.
 
+    python research_lab.py clv --predictions data/oos_predictions.csv --db horse_racing.db [--source snapshots]
+        Closing-line value: does the BSP forecast beat the morning price? Walk-forward blend
+        ln BSP ~ ln p_morning + ln p_pred, early-bet rule, realised CLV (= greened-up profit) by tier.
+
     python research_lab.py bets --predictions data/oos_predictions.csv [--blend 0.5]
         Overlay tiers, cumulative overlay strategies with bootstrap CIs, overlays by
         price band, per-race rank performance (model vs market), disagreement analysis.
@@ -146,6 +150,48 @@ def cmd_ratings_eval(args):
         print(knockoff_screen(d, cols).round(4).to_string(index=False))
     if args.out:
         ev.to_csv(args.out, index=False); print(f"written {args.out}")
+
+
+def cmd_clv(args):
+    """Closing-line value of early betting: does the BSP forecast beat the morning price?"""
+    from betfair_prices import db_time_to_24h, normalise_horse, normalise_track
+    from model.clv import clv_report, early_bet_rule, prepare_clv_frame, price_move_model, steam_predictability
+    from model.perf_figures import ensure_raceid
+    pred = ensure_raceid(pd.read_csv(args.predictions))
+    if args.morning_csv:
+        mk = pd.read_csv(args.morning_csv)
+    elif args.source == "snapshots":
+        # earliest live snapshot per runner per day from the daily pipeline's betfair_odds table
+        conn = sqlite3.connect(args.db)
+        snap = pd.read_sql_query("SELECT race_date, venue, race_time, runner_name, best_back, total_matched, snapshot_at FROM betfair_odds "
+                                 "WHERE best_back > 1", conn); conn.close()
+        snap = snap.sort_values("snapshot_at").groupby(["race_date", "venue", "race_time", "runner_name"], as_index=False).first()
+        mk = pd.DataFrame({"race_date": snap["race_date"].astype(str), "track": snap["venue"], "race_time_24": snap["race_time"].map(db_time_to_24h),
+                           "horse_norm": snap["runner_name"].map(normalise_horse), "morningwap": snap["best_back"], "morning_vol": snap["total_matched"],
+                           "snapshot_at": snap["snapshot_at"]})
+    else:
+        conn = sqlite3.connect(args.db)
+        mk = pd.read_sql_query("SELECT race_date, track_bf AS track, race_time AS race_time_24, horse_norm, morningwap, ppwap, bsp AS bsp_file, morning_vol, pp_vol "
+                               "FROM betfair_prices WHERE market_type = 'win'", conn); conn.close()
+    mk["_k"] = mk["race_date"].astype(str) + "|" + mk["track"].map(normalise_track) + "|" + mk["race_time_24"].astype(str) + "|" + mk["horse_norm"]
+    pred["_k"] = pred["race_date"].astype(str) + "|" + pred["track"].map(normalise_track) + "|" + pred["race_time"].map(db_time_to_24h) + "|" + pred["horse_name"].map(normalise_horse)
+    d = pred.merge(mk.drop(columns=["race_date", "track", "race_time_24", "horse_norm"]), on="_k", how="inner")
+    print(f"joined {len(d)} runners / {d['raceid'].nunique()} races with morning prices (of {len(pred)} predictions)")
+    if d.empty:
+        return 1
+    d = prepare_clv_frame(d, bsp_col="bfsp", early_col=args.early_col, pred_col="predicted_bfsp")
+    d, coefs = price_move_model(d, n_folds=args.folds, extra_cols=[c for c in ["vol_share"] if c in d.columns])
+    pd.set_option("display.width", 220)
+    print("\n=== ln BSP ~ ln p_early + ln p_pred + ln n (walk-forward folds) — β2 > 0 means fundamentals predict the move ===")
+    print(coefs.round(4).to_string(index=False))
+    print("\nsteam predictability:", {k: round(v, 4) for k, v in steam_predictability(d).items()})
+    bets = early_bet_rule(d, min_pred_clv=args.min_clv, commission=args.commission, max_early_odds=args.max_odds)
+    rep = clv_report(d, bets, commission=args.commission)
+    tab = rep.pop("by_pred_clv_tier")
+    print("\n=== CLV report (back at the morning price, green up at BSP) ===")
+    for k, v in rep.items():
+        print(f"{k:28s} {v}")
+    print("\nby predicted-CLV tier (all runners):"); print(tab.round(4).to_string(index=False))
 
 
 def cmd_phase1(args):
@@ -340,6 +386,12 @@ def main(argv=None):
     s.add_argument("--from", dest="date_from", default=None); s.add_argument("--test-start", default="2025-07-01")
     s.add_argument("--folds", type=int, default=8); s.add_argument("--l2", type=float, default=2.0); s.add_argument("--all-codes", action="store_true")
     s.add_argument("--out", default=None); s.set_defaults(fn=cmd_phase1)
+
+    s = sub.add_parser("clv"); s.add_argument("--predictions", default="data/oos_predictions.csv"); s.add_argument("--db", default="horse_racing.db")
+    s.add_argument("--morning-csv", default=None, help="alternative to the DB: csv with race_date, track, race_time_24, horse_norm, morningwap, morning_vol")
+    s.add_argument("--source", choices=["files", "snapshots"], default="files", help="files: betfair_prices (historic CSVs); snapshots: earliest live betfair_odds snapshot per runner")
+    s.add_argument("--early-col", default="morningwap"); s.add_argument("--min-clv", type=float, default=0.10); s.add_argument("--max-odds", type=float, default=50.0)
+    s.add_argument("--commission", type=float, default=0.05); s.add_argument("--folds", type=int, default=6); s.set_defaults(fn=cmd_clv)
 
     s = sub.add_parser("bets"); s.add_argument("--predictions", default="data/oos_predictions.csv")
     s.add_argument("--p-col", default="predicted_win_prob_norm"); s.add_argument("--price-col", default="bfsp")
