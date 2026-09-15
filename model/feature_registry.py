@@ -56,6 +56,10 @@ STAGE_C_PATTERNS = [
     re.compile(r"(^|_)(ln_)?OTRR"), re.compile(r"(^|_)OFSR"), re.compile(r"(^|_)pi_(raw|market|shin)$"),
     re.compile(r"(^|_)(is_fav|is_jt_fav|fav_rank)$"), re.compile(r"(^|_)(overround|n_priced)$"),
     re.compile(r"(^|_)shin(_|$)", re.I),
+    # Part 4.4 price-path descriptors whose names carry no "mkt": traded-volume
+    # share, the drift *rate* (spatial.py's going drift_smooth / drift_sd are a
+    # different, market-free thing) and the pre-off volatility estimators.
+    re.compile(r"(^|_)vol_share(_|$)"), re.compile(r"(^|_)drift_rate(_|$)"), re.compile(r"(^|_)pp_vol"),
 ]
 # race-level constants: cancel in the softmax; use for segmentation / selection only
 STAGE_S_PATTERNS = [
@@ -182,6 +186,14 @@ FEATURE_DICTIONARY: dict[str, FeatureSpec] = {f.name: f for f in [
           shrinkage="recency decay, lambda from half_life_days", transform="z", missing_policy=MISSING["FLAG"]),
     _spec("nmfp", "normalised finishing position, 1 for the winner to 0 for last (Part 1.4)", AS_OF["POST_RACE"],
           missing_policy=MISSING["EXCLUDE"]),
+    _spec("perf_max3", "best performance_rating of the last 3 runs (Part 3.2 max aggregator)", AS_OF["PRIOR_RUNS"],
+          missing_policy=MISSING["ROUTE"]),
+    _spec("perf_min5", "worst performance_rating of the last 5 runs — the consistency floor", AS_OF["PRIOR_RUNS"],
+          missing_policy=MISSING["ROUTE"]),
+    _spec("perf_iqm5", "interquartile mean performance_rating over the last 5 runs — the typical run, outliers trimmed",
+          AS_OF["PRIOR_RUNS"], missing_policy=MISSING["ROUTE"]),
+    _spec("nmfp_mean3", "mean NMFP of the last 3 runs", AS_OF["PRIOR_RUNS"], missing_policy=MISSING["ROUTE"]),
+    _spec("nmfp_max_career", "best career NMFP", AS_OF["PRIOR_RUNS"], missing_policy=MISSING["ROUTE"]),
     _spec("sos_vs_today", "today's class minus the mean pre-race master rating of the last 3 opponents' races (Part 2.3)",
           AS_OF["PRIOR_RUNS"], missing_policy=MISSING["ZERO"]),
     _spec("dslr_ln", "log1p(days since last run)", AS_OF["PRIOR_RUNS"], missing_policy=MISSING["FLAG"], transform="raw"),
@@ -253,12 +265,24 @@ FAMILY_RULES: list[tuple[re.Pattern, dict]] = [
 ]
 
 
+# Part 8's transformation layer is a suffix on an existing feature, so resolve
+# it against the base rather than as a rule of its own: trainer_sr_shrunk_z is
+# a within-race z *of a shrunk strike rate*, and should keep the shrinkage.
+TRANSFORM_SUFFIXES = (("_rankpct", "rankpct"), ("_rank", "rankpct"), ("_vs_max", "vs_max"), ("_share", "share"), ("_z", "z"))
+
+
 def describe(name: str) -> FeatureSpec:
     """The dictionary entry for one feature: the explicit entry if there is
-    one, else the fields implied by its name grammar, else a bare spec whose
-    empty ``version`` marks it as undocumented."""
+    one, else the base feature's entry re-transformed, else the fields implied
+    by its name grammar, else a bare spec whose empty ``version`` marks it as
+    undocumented."""
     if name in FEATURE_DICTIONARY:
         return FEATURE_DICTIONARY[name]
+    for suffix, transform in TRANSFORM_SUFFIXES:
+        if name.endswith(suffix) and len(name) > len(suffix):
+            under = describe(name[: -len(suffix)])
+            if under.origin != "unregistered":
+                return replace(under, name=name, stage=stage_of(name), transform=transform)
     base = FeatureSpec(name=name, stage=stage_of(name), version=REGISTRY_VERSION, origin="family",
                        source_tables=("race_results", "blandford_results"))
     for pat, fields in FAMILY_RULES:

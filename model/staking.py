@@ -20,8 +20,15 @@ market-derived filter, no blending.
     topk_staking       backing the model's top k in every race
     shrinkage_scan     how far probabilities must be flattened to stop losing
     price_forecast_by_rank   predicted BFSP vs actual BFSP, by model rank
+    baker_mchale_shrinkage   shrink p by its own posterior variance
+    phi_from_confidence      the phi ladder, driven by that shrinkage
+    confidence_stakes        per-bet phi and the stake it implies
 
 Returns are per unit staked, commission taken on net winnings.
+
+``model.portfolio`` carries the joint version of all of this: stakes that
+interact, because the runners in a race are mutually exclusive and the cards
+share a going read.
 """
 
 from __future__ import annotations
@@ -396,6 +403,138 @@ def price_forecast_by_rank(d: pd.DataFrame, pred_col: str = "predicted_bfsp",
                      "clv_at_forecast_pct": 100 * (ratio - 1).median(),
                      "mean_abs_log_error": float(np.abs(np.log(ratio.clip(1e-6))).mean())})
     return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Estimation error: the phi ladder and Baker-McHale shrinkage (§V.1, §V.2)
+# ---------------------------------------------------------------------------
+
+PHI_LADDER = (0.5, 0.25, 0.125, 0.05)
+PHI_DEFAULT = 0.25
+
+
+def check_phi(phi: float, ladder=PHI_LADDER) -> float:
+    """Reject a Kelly fraction the framework rules out.
+
+    §V.1 is unambiguous: start at 0.25, move toward 0.5 only once live closing
+    -line value confirms the edge, never full Kelly. Four documented reasons --
+    overestimating the edge by a factor of two turns Kelly into negative
+    growth; withdrawals put effective wealth below actual wealth; full-Kelly
+    drawdowns past 50% are routine; and a syndicate that deleverages mid
+    -drawdown destroys the growth property it deleveraged to protect.
+
+    ``kelly_ladder`` and ``bankroll_path`` deliberately do *not* call this --
+    showing what full Kelly would have done is the point of a research ladder.
+    Anything that sizes a real bet should."""
+    phi = float(phi)
+    if not 0.0 < phi <= max(ladder):
+        raise ValueError(f"phi must be in (0, {max(ladder)}]; never full Kelly (framework V.1)")
+    return phi
+
+
+def baker_mchale_shrinkage(d: pd.DataFrame, p_col: str = "p_model", sd_col: str = "kf_sd",
+                           race_col: str = "raceid", sd_scale: float = 1.0,
+                           sd_is_probability: bool = False, min_confidence: float = 0.0
+                           ) -> pd.DataFrame:
+    """Shrink each probability by its own posterior variance (Baker & McHale 2013).
+
+    §V.2 asks for ``k*`` to be shrunk by a factor reflecting the posterior
+    variance of ``p``, and §IIA.1 names the principled source of that variance:
+    the per-horse posterior ``P_t`` the Kalman filter returns alongside the
+    rating (``kf_sd`` in ``model.state_space``), not a heuristic.
+
+    The shrinkage is a credibility weight applied on the log-probability scale
+    within the race. With ``tau**2`` the cross-sectional variance of the scores
+    in that race -- how much the model is separating these runners at all --
+    and ``sigma_i**2`` the runner's posterior variance,
+
+        w_i = tau**2 / (tau**2 + sigma_i**2),
+        s_i' = mean(s) + w_i * (s_i - mean(s)),   p' = softmax within race
+
+    A debutant with a wide posterior is pulled toward the race mean and its
+    Kelly stake falls out of that automatically; a horse with three consistent
+    recent runs keeps its edge. Shrinking the probability rather than the
+    stake keeps the race summing to one, which a multiplicative haircut on
+    ``k*`` would not.
+
+    ``sd_col`` is on the same scale as ``log p`` unless ``sd_scale`` converts
+    it: a Kalman sd in rating pounds has to be multiplied by the Stage F
+    coefficient on the rating to become a log-odds sd, and that coefficient is
+    model-specific, so the caller supplies it rather than the function guessing.
+    Set ``sd_is_probability`` when ``sd_col`` is the posterior sd of ``p``
+    itself; the delta method then converts it, ``sigma_s = sigma_p / p``.
+
+    Adds ``score_sd``, ``confidence`` (the weight ``w``) and ``p_shrunk``. With
+    no ``sd_col`` in the frame the confidence is 1 and nothing is shrunk, which
+    is the honest no-information case rather than a silent invented one."""
+    out = d.copy()
+    p = out[p_col].astype(float).clip(1e-9, 1 - 1e-9)
+    s = np.log(p)
+    if sd_col in out.columns:
+        sd = pd.to_numeric(out[sd_col], errors="coerce").astype(float)
+        sd = (sd / p) if sd_is_probability else (sd * float(sd_scale))
+    else:
+        sd = pd.Series(0.0, index=out.index)
+    sd = sd.fillna(sd.median() if sd.notna().any() else 0.0).clip(lower=0.0)
+    mean_s = s.groupby(out[race_col]).transform("mean")
+    tau2 = (s.groupby(out[race_col]).transform("std", ddof=0) ** 2).fillna(0.0)
+    w = np.where(tau2 + sd ** 2 > 0, tau2 / (tau2 + sd ** 2), 1.0)
+    w = np.clip(np.nan_to_num(w, nan=1.0), float(min_confidence), 1.0)
+    shrunk = np.exp(mean_s + w * (s - mean_s))
+    out["score_sd"] = sd.to_numpy(float)
+    out["confidence"] = w
+    out["p_shrunk"] = shrunk / pd.Series(shrunk, index=out.index).groupby(out[race_col]).transform("sum")
+    return out
+
+
+def phi_from_confidence(confidence, phi_max: float = PHI_DEFAULT, ladder=None) -> np.ndarray:
+    """Per-bet Kelly fraction driven by the confidence score (§V.2, N4).
+
+    ``phi = phi_max * confidence``: continuous, monotone, and zero only where
+    the model has told you it knows nothing. ``phi_max`` is the operating point
+    of §V.1 -- 0.25 to start, 0.5 only once live CLV has confirmed the edge,
+    never 1 -- and it is a governance decision, not a tuning knob, which is why
+    ``check_phi`` guards it.
+
+    Pass ``ladder=PHI_LADDER`` to quantise onto the rungs at or below
+    ``phi_max`` instead, in equal confidence bands: with ``phi_max = 0.25`` the
+    top third of the confidence range stakes at 0.25, the middle at 0.125 and
+    the bottom at 0.05. A syndicate that has to explain its stake sizes may
+    prefer three named rungs to a continuum; the arithmetic is otherwise the
+    same."""
+    c = np.clip(np.asarray(confidence, float), 0.0, 1.0)
+    if ladder is None:
+        return float(phi_max) * c
+    rungs = np.sort(np.asarray([r for r in ladder if r <= phi_max + 1e-12], float))
+    if rungs.size == 0:
+        raise ValueError(f"no ladder rung at or below phi_max={phi_max}")
+    idx = np.clip((c * rungs.size).astype(int), 0, rungs.size - 1)
+    return np.where(c <= 0, 0.0, rungs[idx])
+
+
+def confidence_stakes(d: pd.DataFrame, p_col: str = "p_model", price_col: str = "bsp",
+                      sd_col: str = "kf_sd", race_col: str = "raceid", commission: float = 0.05,
+                      phi_max: float = PHI_DEFAULT, ladder=None, **shrink_kw) -> pd.DataFrame:
+    """Shrink, then size: the §V.1 + §V.2 stake, end to end.
+
+    Kelly on the shrunk probability, at a fraction chosen by the same
+    confidence score that did the shrinking, so estimation error is paid for
+    twice -- once in the probability and once in the fraction. That is
+    deliberate: §V.2's whole argument is that the places the model is least
+    sure of are the places a point estimate is most likely to be a winner's
+    curse.
+
+    Adds ``confidence``, ``p_shrunk``, ``phi``, ``kelly_shrunk`` and
+    ``stake_fraction`` (the fraction of bank to stake). ``kelly_full`` from
+    ``add_kelly`` is left untouched for comparison."""
+    check_phi(phi_max)
+    out = baker_mchale_shrinkage(d, p_col=p_col, sd_col=sd_col, race_col=race_col, **shrink_kw)
+    b = (out[price_col].astype(float) - 1.0) * (1.0 - commission)
+    p = out["p_shrunk"].astype(float).clip(1e-9, 1 - 1e-9)
+    out["kelly_shrunk"] = np.clip(np.where(b > 0, (p * b - (1.0 - p)) / np.where(b > 0, b, 1.0), 0.0), 0.0, 1.0)
+    out["phi"] = phi_from_confidence(out["confidence"], phi_max=phi_max, ladder=ladder)
+    out["stake_fraction"] = out["phi"] * out["kelly_shrunk"]
+    return out
 
 
 # ---------------------------------------------------------------------------

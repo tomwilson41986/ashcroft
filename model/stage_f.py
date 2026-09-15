@@ -180,7 +180,7 @@ def apply_unratable_rule(p_model, p_market, groups, runs_count=None, kf_n=None, 
 
     Returns (p, ratable, race_ok): probabilities with NaN on skipped races, the
     per-runner gate, and the per-runner race-level keep flag."""
-    p = np.asarray(p_model, float).copy(); pi = np.asarray(p_market, float)
+    p = np.asarray(p_model, float); pi = np.asarray(p_market, float)
     codes, G = _encode_groups(groups)
     ratable = np.isfinite(p)
     if runs_count is not None:

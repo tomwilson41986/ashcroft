@@ -8,6 +8,12 @@ Two-stage model in the Benter / racing² framework form:
              OUT-OF-FOLD fundamentals from earlier folds
     Metric   ΔR² = R²_combined − R²_market with a race-bootstrap CI,
              conditional calibration tables, per-segment ΔR²
+    Guards   the walk-forward is purged and embargoed around every fold
+             boundary (--gap-days / --embargo-days, Section VI.2.3) and
+             runners the model cannot rate take the market's probability
+             instead of an invented one (--min-runs / --min-kf-n /
+             --min-ratable, Section IV.1). Both are on by default: without
+             them the ΔR² that comes out is not a measurement.
 
 Sources
     --source blandford   the Blandford / Timeform feed (parquet from
@@ -47,6 +53,7 @@ from model.primitives import within_race_transforms
 from model.stage_f import (EMBARGO_DAYS, PURGE_DAYS, ConditionalLogit, StageC, TemperatureScaler, apply_unratable_rule,
                            conditional_calibration, delta_r2, lgb_race_softmax, mcfadden_r2, purge_embargo_masks,
                            race_log_loss)
+from model.uncertainty import ConfigurationLedger
 
 log = logging.getLogger("train_stage_f")
 OUT_DIR = Path(__file__).resolve().parent / "data" / "models" / "stage_f"
@@ -160,8 +167,21 @@ def fit_predict_lgbm(Xtr, ytr, gtr, Xte, gte, rounds: int = 1500, params: dict |
 # Walk-forward two-stage
 # ---------------------------------------------------------------------------
 
+# Confidence gate (Section IV.1). A horse with fewer than three prior runs has
+# no career aggregate worth the name — the framework routes 0-2 runs to a
+# debutant sub-model that does not exist yet, so until it does those runners
+# take the market's price rather than an invented one.
+DEFAULT_GATE = {"min_runs": 3, "min_kf_n": 1, "min_ratable": 2}
+
+
+def _gate_col(d: pd.DataFrame, mask, col: str):
+    """The gate input if the frame carries it, else None (gate ignores it)."""
+    return d.loc[mask, col].values if col in d.columns else None
+
+
 def walk_forward(d: pd.DataFrame, feats, model: str, test_start: str, n_folds: int, l2: float, rounds: int, min_train_races: int = 300,
-                 stage_c_extra=None, gap_days: int = PURGE_DAYS, embargo_days: int = EMBARGO_DAYS, gate: dict | None = None):
+                 stage_c_extra=None, gap_days: int = PURGE_DAYS, embargo_days: int = EMBARGO_DAYS,
+                 gate: dict | None = DEFAULT_GATE):
     """Walk-forward Stage F + Stage C, purged and embargoed (Section VI.2.3).
 
     stage_c_extra: columns (positive, e.g. previous-run in-running low ratio) added to Stage C as log terms; NaN -> 1.
@@ -172,6 +192,8 @@ def walk_forward(d: pd.DataFrame, feats, model: str, test_start: str, n_folds: i
                    mirror-image reason. See model.stage_f.purge_embargo_masks.
     gate:          kwargs for model.stage_f.apply_unratable_rule (min_runs,
                    min_kf_n, min_ratable); None disables the confidence gate.
+                   A frame carrying neither runs_count nor kf_n cannot be
+                   gated, and the rule reduces to the identity.
     """
     d = d.copy(); d["race_date"] = pd.to_datetime(d["race_date"])
     X = d[feats].astype(float).values; y = d["won"].values.astype(float); g = d["raceid"].values
@@ -205,7 +227,10 @@ def walk_forward(d: pd.DataFrame, feats, model: str, test_start: str, n_folds: i
             ex_prev = {c_: d.loc[prev, c_].fillna(1.0).clip(1e-3, None).values for c_ in (stage_c_extra or [])}
             ex_te = {c_: d.loc[te, c_].fillna(1.0).clip(1e-3, None).values for c_ in (stage_c_extra or [])}
             c = StageC().fit(d.loc[prev, "f_oof"].values, d.loc[prev, "pi_market"].values, y[prev], g[prev], extra=ex_prev or None)
-            d.loc[te, "c_oof"] = c.predict_proba(p, d.loc[te, "pi_market"].values, g[te], extra=ex_te or None)
+            # a race the gate skipped has NaN f; ConditionalLogit imputes NaN to the
+            # column mean, so Stage C would silently invent a blend for it
+            d.loc[te, "c_oof"] = np.where(np.isfinite(p), c.predict_proba(p, d.loc[te, "pi_market"].values, g[te],
+                                                                          extra=ex_te or None), np.nan)
             alpha, gamma = c.alpha_, c.gamma_
             if stage_c_extra:
                 log.info("   Stage C extra coefs: %s", dict(zip(c.names_[2:], np.round(c.coef_raw_[2:], 3))))
@@ -259,6 +284,12 @@ def main(argv=None):
     ap.add_argument("--l2", type=float, default=2.0); ap.add_argument("--rounds", type=int, default=1500)
     ap.add_argument("--max-races", type=int, default=None); ap.add_argument("--tag", default=None); ap.add_argument("--out-dir", default=str(OUT_DIR))
     ap.add_argument("--stage-c-extra", default=None, help="comma-separated extra Stage C log-inputs (e.g. lr_ipmin_ratio)")
+    ap.add_argument("--gap-days", type=int, default=PURGE_DAYS, help="purge: training rows this many days before each fold are dropped")
+    ap.add_argument("--embargo-days", type=int, default=EMBARGO_DAYS, help="embargo: test rows in the first days of each fold are dropped")
+    ap.add_argument("--min-runs", type=int, default=DEFAULT_GATE["min_runs"], help="ratability gate: minimum prior career runs")
+    ap.add_argument("--min-kf-n", type=int, default=DEFAULT_GATE["min_kf_n"], help="ratability gate: minimum Kalman observations")
+    ap.add_argument("--min-ratable", type=int, default=DEFAULT_GATE["min_ratable"], help="skip races with fewer ratable runners")
+    ap.add_argument("--no-gate", action="store_true", help="disable the unratable-runner rule (measurement becomes optimistic)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     t0 = time.time()
@@ -278,12 +309,23 @@ def main(argv=None):
     log.info("features (%d): %s", len(feats), feats)
     log.info("frame: %d runners, %d races; build %.0fs", len(d), d["raceid"].nunique(), time.time() - t0)
     extra = [c for c in (args.stage_c_extra.split(",") if args.stage_c_extra else []) if c in d.columns]
-    d, model = walk_forward(d, feats, args.model, args.test_start, args.folds, args.l2, args.rounds, stage_c_extra=extra or None)
+    gate = None if args.no_gate else {"min_runs": args.min_runs, "min_kf_n": args.min_kf_n, "min_ratable": args.min_ratable}
+    d, model = walk_forward(d, feats, args.model, args.test_start, args.folds, args.l2, args.rounds, stage_c_extra=extra or None,
+                            gap_days=args.gap_days, embargo_days=args.embargo_days, gate=gate)
     res = evaluate(d)
     res.update({"model": args.model, "source": args.source, "features": feats, "test_start": args.test_start, "folds": args.folds,
-                "kalman": d.attrs.get("kalman"), "runtime_s": round(time.time() - t0)})
+                "kalman": d.attrs.get("kalman"), "validation": d.attrs.get("validation"), "runtime_s": round(time.time() - t0)})
     tag = args.tag or f"{args.source}_{args.model}"
     out = Path(args.out_dir); out.mkdir(parents=True, exist_ok=True)
+    # Section VI.2.6 wants an honest count of configurations tried, and a count
+    # reconstructed at write-up time is always short. Every run logs itself.
+    ledger = ConfigurationLedger(out / "configurations.json")
+    ledger.record({"tag": tag, "model": args.model, "source": args.source, "n_features": len(feats), "l2": args.l2,
+                   "rounds": args.rounds, "folds": args.folds, "test_start": args.test_start, "gap_days": args.gap_days,
+                   "embargo_days": args.embargo_days, "gate": gate, "stage_c_extra": extra},
+                  delta_r2=(res.get("delta_combined_vs_market") or {}).get("delta_r2"),
+                  r2_combined=res.get("r2_combined"), n_races=res.get("n_races_test"))
+    res["configurations_tried"] = ledger.n_trials
     json.dump(res, open(out / f"{tag}_metrics.json", "w"), indent=2, default=float)
     d.loc[d["f_oof"].notna(), ["raceid", "race_date", "horse_name", "won", "pi_market", "f_oof", "c_oof", "fold"]].to_csv(out / f"{tag}_oof.csv", index=False)
     classify(feats).to_csv(out / f"{tag}_features.csv", index=False)
@@ -292,7 +334,11 @@ def main(argv=None):
     elif model is not None:
         model.save_model(str(out / f"{tag}_booster.txt"))
         pd.DataFrame({"feature": feats, "gain": model.feature_importance("gain")}).sort_values("gain", ascending=False).to_csv(out / f"{tag}_importance.csv", index=False)
+    v = res.get("validation") or {}
     print(f"\n=== {tag}: {res['n_races_test']} test races ===")
+    print(f"purge {v.get('gap_days')}d / embargo {v.get('embargo_days')}d: {v.get('train_rows_purged')} train rows purged, "
+          f"{v.get('test_rows_embargoed')} test rows embargoed | unratable {v.get('runners_unratable')} runners, "
+          f"{v.get('races_skipped_unratable')} races skipped")
     print(f"R2_market {res['r2_market']:.4f} | R2_fundamental {res['r2_fundamental']:.4f}  (all test folds)")
     print(f"same rows as Stage C: R2_market {res.get('r2_market_combined_rows', float('nan')):.4f} | R2_fundamental {res.get('r2_fundamental_combined_rows', float('nan')):.4f} | R2_combined {res.get('r2_combined', float('nan')):.4f}")
     print(f"logloss market {res['logloss_market']:.4f} | fundamental {res['logloss_fundamental']:.4f} | combined {res.get('logloss_combined', float('nan')):.4f}")
@@ -300,6 +346,7 @@ def main(argv=None):
     print(f"ΔR² combined vs market: {dc.get('delta_r2', float('nan')):+.5f}  90% CI ({dc.get('ci', (np.nan, np.nan))[0]:+.5f}, {dc.get('ci', (np.nan, np.nan))[1]:+.5f})  P(Δ<=0)={dc.get('p_delta_le_0', float('nan')):.2f}")
     for k, v in res.get("segments", {}).items():
         print(f"   {k:14s} ΔR² {v['delta_r2']:+.5f} CI ({v['ci'][0]:+.5f}, {v['ci'][1]:+.5f}) races {v['n_races']}")
+    print(f"configurations tried in this out-dir: {ledger.n_trials} (deflate any Sharpe by it — model.uncertainty.deflated_sharpe_ratio)")
     print(f"artifacts in {out}")
     return 0
 

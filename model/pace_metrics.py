@@ -14,16 +14,43 @@ designed to capture:
 4. **Pace Fit** — How well a horse's preferred running style matches the
    predicted pace scenario and track bias.
 5. **Tactical Metrics** — Keenness, trouble-in-running, position sustainability.
+6. **Field-size-normalised early position** (`epf_norm`, framework §6.1) and the
+   run-style profile built on it — mean, SD (versatility) and modal style.
+7. **Lead probability** (`predicted_lead_prob`, §6.2) — a softmax over each
+   runner's *predicted* early position, so "wants to lead" is a probability that
+   sums to one over the field rather than a count of front-runners.
+8. **Position Change Statistic** (§6.4) — how much positional churn a race had,
+   with a lag-safe course/distance baseline to flag abnormal races.
 
-All features are strictly lag-safe (shift-1 pattern, no lookahead).
+Why `epf_norm` and not the 1–6 style score: the style score is an absolute
+description ("chased leaders"), and the same words mean a very different place
+in the field in a 6-runner race and a 20-runner one. §6.1 asks for
+``(early_position - 1) / (N - 1)``, which is 0 for the leader and 1 for the
+last horse whatever the field size, and that is the scale every race-shape
+aggregate below is built on.
+
+There are no sectionals and no in-running positions in this database, so the
+early position is *estimated* from the horse's in-running comment: each style
+phrase carries an absolute rank anchor (a horse that "led" was first, in any
+field) and a relative depth (a horse "in midfield" was halfway back, wherever
+that is), and the two are combined against today's field size.
+
+All features that feed a model are strictly lag-safe (shift-1 per horse, or
+`race_lagged_expanding_mean` for keys that repeat inside a race). The per-run
+columns parsed from *today's* comment — `epf_norm`, `pos_gain`, `run_style`,
+`pcs_race` — describe the race being predicted and are listed in
+`PACE_POST_RACE_ONLY`; they exist only so the career aggregates above them can
+be built, and none of them appears in the exported feature lists.
 """
+
+from __future__ import annotations
 
 import re
 
 import numpy as np
 import pandas as pd
 
-from model.lagsafe import race_lagged_expanding_mean
+from model.lagsafe import ensure_race_key, race_lagged_expanding_mean
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +181,132 @@ def parse_run_style(comment: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Field-size-normalised early position (framework §6.1)
+# ---------------------------------------------------------------------------
+
+#: Style scores emitted by :func:`parse_run_style`, ascending (1 = held up in
+#: rear, 6 = made all).
+_STYLE_KNOTS = np.array([1.0, 1.5, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 5.8, 6.0])
+
+#: Absolute rank anchor per style: "led" is first and "chased the leader" is
+#: second in a 6-runner race and in a 20-runner race alike.
+_STYLE_ANCHOR = np.array([0.00, 0.00, 0.00, 0.00, 0.00, 1.00, 1.50, 1.00, 0.50, 0.00, 0.00])
+
+#: Relative depth per style, as a fraction of the field behind the leader:
+#: "midfield" is halfway back wherever halfway is.
+_STYLE_DEPTH = np.array([0.92, 0.80, 0.62, 0.50, 0.40, 0.12, 0.02, 0.00, 0.00, 0.00, 0.00])
+
+#: An absolute anchor may never push a horse past this fraction of the field —
+#: in a five-runner race "tracked the leaders" is second or third, not a fixed
+#: rank that would land it in mid-division. Also what keeps the style -> position
+#: map monotone at small field sizes.
+ANCHOR_MAX_DEPTH = 0.25
+
+#: epf_norm cut points for the §6.1 run-style labels, most forward first.
+RUN_STYLE_LABELS = ("detached", "held-up", "mid-division", "prominent", "led")
+RUN_STYLE_EDGES = (0.05, 0.25, 0.55, 0.85)   # led | prominent | mid | held-up | detached
+
+#: Softmax temperature for :func:`predicted lead probability`. 0.12 means a
+#: runner a tenth of the field more forward than a rival is ~2.3x as likely to
+#: lead; smaller = winner-takes-all, larger = flatter.
+LEAD_SOFTMAX_TEMPERATURE = 0.12
+
+#: §6.2: a runner whose predicted epf_norm is below this is "going forward".
+PACE_PRESSURE_THRESHOLD = 0.25
+
+#: Share of the field going forward that separates a strong / even / slow pace.
+PACE_CLASS_EDGES = (0.12, 0.30)
+
+#: Half-life, in runs, of the recency weighting on the run-style profile (§6.1).
+STYLE_RECENCY_HALFLIFE_RUNS = 4.0
+
+#: How much of the predicted early position comes from the jockey's own
+#: tendency rather than the horse's history.
+JOCKEY_STYLE_WEIGHT = 0.15
+
+#: Per-run columns parsed from the race being predicted. They may only ever
+#: feed a lagged feature — see the module docstring and POST_RACE_ONLY in
+#: model/custom_metrics.py.
+PACE_POST_RACE_ONLY = frozenset({
+    "epf_norm", "finish_pos_norm", "pos_gain", "run_style", "early_pos_est",
+    "pcs_race", "pcs_race_norm", "pcs_vs_baseline",
+})
+
+
+def epf_norm_from_style(style, n_runners) -> np.ndarray:
+    """``(early_position - 1) / (N - 1)`` implied by a comment style score.
+
+    0 = led, 1 = last of the field. Each style carries an absolute rank anchor
+    and a relative depth; the anchor is capped at ``ANCHOR_MAX_DEPTH`` of the
+    field so the mapping stays monotone in small fields.
+    """
+    s = np.asarray(style, dtype=float)
+    n = np.broadcast_to(np.asarray(n_runners, dtype=float), s.shape)
+    denom = np.where(n > 1, n - 1, np.nan)
+
+    # Evaluate the knots once per distinct field size, then force the result to
+    # be non-increasing in the style score: the raw anchors are not monotone
+    # ("prominent" carries one, "front of midfield" does not), and in a tiny
+    # field an uncapped anchor would rank a prominent horse behind a midfield
+    # one. Interpolating the *monotone* knot values keeps that true in between.
+    key = np.where(np.isnan(denom), -1.0, denom)
+    uniq, inv = np.unique(key, return_inverse=True)
+    dd = np.where(uniq > 0, uniq, np.nan)[:, None]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        tab = np.minimum(_STYLE_ANCHOR[None, :], ANCHOR_MAX_DEPTH * dd) / dd + _STYLE_DEPTH[None, :]
+    tab = np.minimum.accumulate(np.clip(tab, 0.0, 1.0), axis=1)
+
+    sc = np.clip(s, _STYLE_KNOTS[0], _STYLE_KNOTS[-1])
+    j = np.clip(np.searchsorted(_STYLE_KNOTS, sc, side="right") - 1, 0, len(_STYLE_KNOTS) - 2)
+    x0, x1 = _STYLE_KNOTS[j], _STYLE_KNOTS[j + 1]
+    y0, y1 = tab[inv, j], tab[inv, j + 1]
+    out = y0 + (sc - x0) / (x1 - x0) * (y1 - y0)
+    return np.where(np.isnan(s) | np.isnan(denom), np.nan, out)
+
+
+def run_style_from_epf_norm(epf_norm) -> np.ndarray:
+    """§6.1 run style as an ordinal code: 4 led ... 0 detached (NaN preserved)."""
+    e = np.asarray(epf_norm, dtype=float)
+    code = np.full(e.shape, np.nan)
+    ok = ~np.isnan(e)
+    # searchsorted over the edges gives 0 for the most forward band
+    code[ok] = 4 - np.searchsorted(np.asarray(RUN_STYLE_EDGES, float), e[ok], side="right")
+    return np.clip(code, 0, 4)
+
+
+def position_change_statistic(df: pd.DataFrame, from_col: str = "early_pos_est",
+                              to_col: str = "placing_numerical",
+                              race_col: str = "raceid") -> pd.DataFrame:
+    """§6.4 Position Change Statistic, one row per race.
+
+    ``PCS(A->B) = sqrt(sum_i (pos_A,i - pos_B,i)^2) / N``. Low = little changed
+    between the two junctures, so the race was run to a shape that suited early
+    position. The only two junctures this database supports are the comment's
+    early position and the finish.
+
+    ``pcs`` is in positions and grows with field size, so ``pcs_norm`` repeats
+    the calculation on positions normalised to [0, 1] and is what the
+    course/distance baseline is built from.
+    """
+    d = pd.DataFrame({
+        "_race": ensure_race_key(df, race_col),
+        "_a": pd.to_numeric(df.get(from_col), errors="coerce"),
+        "_b": pd.to_numeric(df.get(to_col), errors="coerce"),
+        "_n": pd.to_numeric(df.get("number_of_runners"), errors="coerce"),
+    }).dropna(subset=["_a", "_b"])
+    if d.empty:
+        return pd.DataFrame(columns=["raceid", "n", "pcs", "pcs_norm"])
+    denom = (d["_n"] - 1).where(d["_n"] > 1)
+    d["_sq"] = (d["_a"] - d["_b"]) ** 2
+    d["_sq_norm"] = ((d["_a"] - d["_b"]) / denom) ** 2
+    g = d.groupby("_race", sort=False)
+    out = g.agg(n=("_sq", "size"), _s=("_sq", "sum"), _sn=("_sq_norm", "sum")).reset_index()
+    out["pcs"] = np.sqrt(out["_s"]) / out["n"]
+    out["pcs_norm"] = np.sqrt(out["_sn"]) / out["n"]
+    return out.rename(columns={"_race": "raceid"})[["raceid", "n", "pcs", "pcs_norm"]]
+
+
+# ---------------------------------------------------------------------------
 # PaceMetricsEngine — integrates into CustomMetricsEngine pipeline
 # ---------------------------------------------------------------------------
 
@@ -174,6 +327,9 @@ class PaceMetricsEngine:
         # Step 2: Horse running style profiles (historical)
         df = self._calc_horse_style_profiles(df)
 
+        # Step 2b: §6.1 run-style profile on the field-size-normalised scale
+        df = self._calc_run_style_profile(df)
+
         # Step 3: Jockey & trainer style profiles
         df = self._calc_entity_style_profiles(df)
 
@@ -191,6 +347,9 @@ class PaceMetricsEngine:
 
         # Step 8: Position sustainability
         df = self._calc_position_sustainability(df)
+
+        # Step 8b: §6.4 position churn (PCS) and its course/distance baseline
+        df = self._calc_position_churn(df)
 
         # Step 9: Within-race pace ranks
         df = self._calc_pace_ranks(df)
@@ -217,8 +376,21 @@ class PaceMetricsEngine:
         df["total_move"] = df["mid_move"] + df["late_move"]
 
         # Normalised early position (0–1 scale, field-adjusted)
-        nr = df["number_of_runners"].replace(0, np.nan)
+        nr = pd.to_numeric(df["number_of_runners"], errors="coerce").replace(0, np.nan)
         df["early_pos_pct"] = (df["early_pos"] - 1) / 5.0  # 0=back, 1=front
+
+        # §6.1 epf_norm: (early_position − 1) / (N − 1), 0 = led, 1 = last.
+        # early_pos_pct above is the style score rescaled and ignores the field;
+        # this is the field-size-normalised quantity the framework asks for.
+        df["epf_norm"] = epf_norm_from_style(df["early_pos"], nr)
+        df["early_pos_est"] = 1 + df["epf_norm"] * (nr - 1)
+        df["run_style"] = run_style_from_epf_norm(df["epf_norm"])
+
+        # pos_gain = ground made up between the early position and the finish,
+        # both on the 0–1 scale. Positive = passed horses.
+        place = pd.to_numeric(df.get("placing_numerical"), errors="coerce")
+        df["finish_pos_norm"] = (place - 1) / (nr - 1)
+        df["pos_gain"] = df["epf_norm"] - df["finish_pos_norm"]
 
         return df
 
@@ -280,6 +452,58 @@ class PaceMetricsEngine:
 
         # Style trend: is horse being ridden differently recently vs career?
         df["style_shift"] = df["horse_early_pos_3r"] - df["horse_career_early_pos"]
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Step 2b: §6.1 run-style profile — mean epf_norm, SD, modal style
+    # ------------------------------------------------------------------
+    def _calc_run_style_profile(self, df: pd.DataFrame) -> pd.DataFrame:
+        """The horse's run-style profile on the field-size-normalised scale.
+
+        §6.1: "Aggregate across the career with recency weighting to get the
+        horse's run style profile: mean `epf_norm`, its SD (versatility), and
+        the modal run style. A horse with low SD is tactically inflexible."
+
+        Grouping on ``horse_name`` is the one key a row-wise ``shift(1)`` is
+        safe on, because a horse runs once in a race.
+        """
+        df = df.sort_values(["horse_name", "race_date", "race_time"]).reset_index(drop=True)
+        grp = df.groupby("horse_name", group_keys=False)
+
+        df["horse_epf_norm_mean"] = grp["epf_norm"].apply(lambda x: x.shift(1).expanding().mean())
+        df["horse_epf_norm_sd"] = grp["epf_norm"].apply(lambda x: x.shift(1).expanding().std())
+        df["horse_epf_norm_recent"] = grp["epf_norm"].apply(
+            lambda x: x.shift(1).ewm(halflife=STYLE_RECENCY_HALFLIFE_RUNS).mean()
+        )
+        df["horse_pos_gain_mean"] = grp["pos_gain"].apply(lambda x: x.shift(1).expanding().mean())
+        df["LR_epf_norm"] = grp["epf_norm"].shift(1)
+
+        # Modal style: the career rate of each of the five §6.1 labels, then the
+        # argmax. Five expanding means beat an expanding mode and give the share
+        # of the career spent in that style for free.
+        rate_cols = []
+        for code in range(len(RUN_STYLE_LABELS)):
+            flag = f"_style_{code}"
+            df[flag] = (df["run_style"] == code).astype(float).where(df["run_style"].notna())
+            rate = f"_style_rate_{code}"
+            df[rate] = df.groupby("horse_name", group_keys=False)[flag].apply(
+                lambda x: x.shift(1).expanding().mean()
+            )
+            rate_cols.append(rate)
+        rates = df[rate_cols]
+        any_rate = rates.notna().any(axis=1)
+        # fill before argmax: np.argmax picks a NaN over a real rate, and a horse
+        # with no prior runs has no modal style at all.
+        filled = rates.fillna(-1.0).values
+        df["horse_modal_style"] = np.where(any_rate, filled.argmax(axis=1), np.nan)
+        df["horse_style_mode_share"] = rates.max(axis=1).where(any_rate)
+        # Tactical inflexibility: one style, always, and a low SD around it.
+        df["horse_style_inflexible"] = df["horse_style_mode_share"] * (
+            1.0 - df["horse_epf_norm_sd"].clip(0, 0.5) / 0.5
+        )
+        df.drop(columns=[f"_style_{c}" for c in range(len(RUN_STYLE_LABELS))] + rate_cols,
+                inplace=True)
 
         return df
 
@@ -400,6 +624,52 @@ class PaceMetricsEngine:
         # Max predicted front-runner in race (the 'pace setter')
         df["pred_max_front"] = df.groupby("raceid")["pred_early_pos"].transform("max")
 
+        # --- §6.2 step 1, on the field-size-normalised scale -----------------
+        # Predicted epf_norm: the horse's recency-weighted career figure, nudged
+        # toward the jockey's own tendency. Both are lag-safe; a horse with no
+        # history falls back on the jockey, then on the middle of the field.
+        rk = ensure_race_key(df)
+        nr = pd.to_numeric(df["number_of_runners"], errors="coerce").replace(0, np.nan)
+        horse = df["horse_epf_norm_recent"].fillna(df["horse_epf_norm_mean"])
+        jockey = pd.Series(
+            epf_norm_from_style(df.get("jockey_career_early_pos", pd.Series(np.nan, index=df.index)), nr),
+            index=df.index,
+        )
+        blend = (1 - JOCKEY_STYLE_WEIGHT) * horse + JOCKEY_STYLE_WEIGHT * jockey.fillna(horse)
+        pred = blend.where(horse.notna(), jockey)
+        pred = pred.fillna(pred.groupby(rk).transform("mean")).fillna(0.5)
+        df["pred_epf_norm"] = pred.clip(0, 1)
+
+        # predicted_lead_prob: softmax over predicted early position within the
+        # race, so it sums to 1 over the field — a probability of leading, not a
+        # count of horses that might.
+        z = -df["pred_epf_norm"] / LEAD_SOFTMAX_TEMPERATURE
+        z = z - z.groupby(rk).transform("max")          # overflow guard only
+        e = np.exp(z)
+        df["predicted_lead_prob"] = e / e.groupby(rk).transform("sum")
+        df["lead_prob_rank"] = df["predicted_lead_prob"].groupby(rk).rank(
+            ascending=False, method="min"
+        )
+        df["lead_prob_top"] = df["predicted_lead_prob"].groupby(rk).transform("max")
+        # Entropy of the lead-probability vector, 0 = one certain leader,
+        # 1 = nobody has a claim: the cleanest read on a contested lead.
+        p = df["predicted_lead_prob"].clip(lower=1e-12)
+        ent = (-p * np.log(p)).groupby(rk).transform("sum")
+        df["lead_prob_entropy"] = ent / np.log(nr.where(nr > 1))
+
+        # pace_pressure / pace_contested / race_pace_class (§6.2), all from the
+        # *predicted* epf_norm and therefore legal before the off.
+        forward = (df["pred_epf_norm"] < PACE_PRESSURE_THRESHOLD).astype(float)
+        df["pred_pace_pressure"] = forward.groupby(rk).transform("sum")
+        df["pred_pace_share"] = df["pred_pace_pressure"] / nr
+        df["pred_pace_contested"] = df["pred_epf_norm"].groupby(rk).transform("std")
+        share = df["pred_pace_share"]
+        df["pred_race_pace_class"] = np.select(
+            [share.isna(), share >= PACE_CLASS_EDGES[1], share <= PACE_CLASS_EDGES[0]],
+            [np.nan, 2.0, 0.0],
+            default=1.0,
+        )
+
         return df
 
     # ------------------------------------------------------------------
@@ -465,6 +735,25 @@ class PaceMetricsEngine:
         df["lone_front_runner"] = (
             (pred_ep >= 4.5) & (df["pred_n_front"] <= 1)
         ).astype(float)
+
+        # --- §6.2 step 2: pace_suit = f(style, predicted shape, course bias) --
+        # "This interaction is where pace data earns its keep": being a
+        # front-runner is priced by the market, being the only front-runner in a
+        # race at a course where the front-runner wins is not.
+        nr = pd.to_numeric(df["number_of_runners"], errors="coerce").replace(0, np.nan)
+        forwardness = 1 - 2 * df["pred_epf_norm"]            # +1 lone leader .. −1 backmarker
+        lead_scarcity = 1 - 2 * df["pred_pace_share"]        # +1 nobody else goes forward
+        # Course bias on the same scale: where do winners here race early?
+        course_winner_pos = pd.Series(
+            epf_norm_from_style(df.get("td_avg_winner_pos", pd.Series(np.nan, index=df.index)), nr),
+            index=df.index,
+        )
+        df["course_front_edge"] = 0.5 - course_winner_pos     # >0: winners race forward here
+        df["pace_suit"] = forwardness * (
+            0.5 * lead_scarcity.fillna(0) + df["course_front_edge"].fillna(0)
+        )
+        # The same idea against the predicted *leader* rather than the count.
+        df["lead_prob_edge"] = df["predicted_lead_prob"] - (1.0 / nr)
 
         return df
 
@@ -549,6 +838,40 @@ class PaceMetricsEngine:
         return df
 
     # ------------------------------------------------------------------
+    # Step 8b: §6.4 Position Change Statistic
+    # ------------------------------------------------------------------
+    def _calc_position_churn(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Positional churn per race, plus the course/distance baseline.
+
+        ``pcs_race`` describes the race being predicted (it needs that race's
+        finishing positions) and is a screen, not a feature. The feature is
+        ``td_pcs_mean``: how much a course and distance churns, measured over
+        *earlier* races only. A low value says early position tends to hold,
+        which is exactly when a front-runner's draw and style matter most.
+        """
+        df = df.sort_values(["race_date", "race_time"]).reset_index(drop=True)
+        rk = ensure_race_key(df)
+
+        pcs = position_change_statistic(df)
+        if pcs.empty:
+            df["pcs_race"] = np.nan
+            df["pcs_race_norm"] = np.nan
+        else:
+            m = pcs.set_index("raceid")
+            df["pcs_race"] = rk.map(m["pcs"])
+            df["pcs_race_norm"] = rk.map(m["pcs_norm"])
+
+        df["_td_key"] = df["track"].astype(str) + "_" + df["dist_furlongs"].round(0).astype(str)
+        # Race-lagged: every runner shares the track+distance key, so a row-wise
+        # shift would hand a runner its own race's churn. See model/lagsafe.py.
+        df["td_pcs_mean"] = race_lagged_expanding_mean(df, "_td_key", "pcs_race_norm")
+        df["track_pcs_mean"] = race_lagged_expanding_mean(df, "track", "pcs_race_norm")
+        df["pcs_vs_baseline"] = df["pcs_race_norm"] - df["td_pcs_mean"]
+        df.drop(columns=["_td_key"], inplace=True)
+
+        return df
+
+    # ------------------------------------------------------------------
     # Step 9: Within-race pace ranks
     # ------------------------------------------------------------------
     def _calc_pace_ranks(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -564,6 +887,9 @@ class PaceMetricsEngine:
             "rFrontSustain": "front_sustainability",
             "rHoldupFinish": "holdup_finish_ability",
             "rStyleConsistency": "horse_style_consistency",
+            "rLeadProb": "predicted_lead_prob",
+            "rPaceSuit": "pace_suit",
+            "rPosGain": "horse_pos_gain_mean",
         }
 
         for rank_name, source_col in rank_cols.items():
@@ -604,6 +930,18 @@ HORSE_STYLE_FEATURES = [
     "style_shift",
 ]
 
+# §6.1 run-style profile on the field-size-normalised scale
+RUN_STYLE_PROFILE_FEATURES = [
+    "horse_epf_norm_mean",
+    "horse_epf_norm_recent",
+    "horse_epf_norm_sd",
+    "horse_pos_gain_mean",
+    "horse_modal_style",
+    "horse_style_mode_share",
+    "horse_style_inflexible",
+    "LR_epf_norm",
+]
+
 # Entity style features
 ENTITY_STYLE_FEATURES = [
     "jockey_career_early_pos",
@@ -637,6 +975,16 @@ PACE_SCENARIO_FEATURES = [
     "pred_pace_scenario",
     "pred_pace_spread",
     "pred_max_front",
+    # §6.2 on the normalised scale
+    "pred_epf_norm",
+    "predicted_lead_prob",
+    "lead_prob_rank",
+    "lead_prob_top",
+    "lead_prob_entropy",
+    "pred_pace_pressure",
+    "pred_pace_share",
+    "pred_pace_contested",
+    "pred_race_pace_class",
 ]
 
 # Pace fit / interaction features
@@ -647,6 +995,9 @@ PACE_FIT_FEATURES = [
     "pace_mismatch",
     "lead_competition",
     "lone_front_runner",
+    "pace_suit",
+    "course_front_edge",
+    "lead_prob_edge",
 ]
 
 # Tactical features
@@ -665,6 +1016,13 @@ SUSTAINABILITY_FEATURES = [
     "horse_pos_drop",
 ]
 
+# §6.4 position churn — course/distance baselines (the per-race PCS itself is a
+# screen over completed races, not a feature)
+POSITION_CHURN_FEATURES = [
+    "td_pcs_mean",
+    "track_pcs_mean",
+]
+
 # Within-race pace rankings
 PACE_RANK_FEATURES = [
     "rPredEarlyPos",
@@ -675,16 +1033,24 @@ PACE_RANK_FEATURES = [
     "rFrontSustain",
     "rHoldupFinish",
     "rStyleConsistency",
+    "rLeadProb",
+    "rPaceSuit",
+    "rPosGain",
 ]
 
 # Combined list for easy import
 ALL_PACE_FEATURES = (
     HORSE_STYLE_FEATURES
+    + RUN_STYLE_PROFILE_FEATURES
     + ENTITY_STYLE_FEATURES
     + TRACK_PACE_BIAS_FEATURES
     + PACE_SCENARIO_FEATURES
     + PACE_FIT_FEATURES
     + TACTICAL_FEATURES
     + SUSTAINABILITY_FEATURES
+    + POSITION_CHURN_FEATURES
     + PACE_RANK_FEATURES
 )
+
+assert not (set(ALL_PACE_FEATURES) & PACE_POST_RACE_ONLY), \
+    "a column parsed from the race being predicted reached the model feature list"

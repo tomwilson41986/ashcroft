@@ -276,11 +276,14 @@ def _gap_to_next_shorter(pi: pd.Series, race: pd.Series) -> pd.Series:
     second favourite a whisker behind reads very differently from one at half
     the favourite's implied chance.
     """
-    order = pi.groupby(race).rank(method="first", ascending=False)
-    tmp = pd.DataFrame({"_race": race, "_pi": pi, "_o": order})
+    tmp = pd.DataFrame({"_race": race.to_numpy(), "_pi": pi.to_numpy(dtype=float)})   # positional: the caller's index may repeat
+    tmp["_o"] = tmp.groupby("_race")["_pi"].rank(method="first", ascending=False)
     srt = tmp.sort_values(["_race", "_o"], kind="stable")
-    prev = srt.groupby("_race")["_pi"].shift(1).reindex(tmp.index)
-    return np.log(pi.where(pi > 0)) - np.log(prev.where(prev > 0))
+    prev = srt.groupby("_race")["_pi"].shift(1).reindex(tmp.index).to_numpy(dtype=float)
+    cur = tmp["_pi"].to_numpy(dtype=float)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        out = np.log(np.where(cur > 0, cur, np.nan)) - np.log(np.where(prev > 0, prev, np.nan))
+    return pd.Series(out, index=pi.index)
 
 
 def race_odds_summary(df: pd.DataFrame, price_col: str = "bfsp", race_col: str = "raceid",
