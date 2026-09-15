@@ -423,3 +423,103 @@ Fixed by rebuilding all five on `EPF_expected`, the horse's own lag-safe career
 EPF. `train_bfsp.py` now refuses to start if any feature column is in
 `POST_RACE_ONLY` (`assert_no_post_race_features`), which covers `EPF`,
 `placing_numerical`, `NFP`, the raw comment and the parsed run-style columns.
+
+---
+
+## 14. Coverage against the master framework, item by item
+
+Every named metric, estimator, governance rule and acceptance test in
+`racing2_master_framework_v3_1.md` was enumerated and searched for in the repo.
+"Implemented" means the thing exists **and** a training pipeline consumes it;
+something that exists only as a library function nothing calls is partial.
+
+| Section | implemented | partial | missing |
+|---|---|---|---|
+| II Formal model specification | 4 | 2 | 5 |
+| IIA Quantitative finance methods | 6 | 2 | 15 |
+| Part 0 Design principles | 0 | 5 | 1 |
+| Part 1 Performance primitives | 5 | 16 | 12 |
+| Part 2 Field size, context, strength | 1 | 5 | 6 |
+| Part 3 Aggregation | 6 | 7 | 5 |
+| Part 4 Odds-derived metrics (Stage C) | 4 | 3 | 8 |
+| Part 5 Connections and pedigree | 8 | 5 | 16 |
+| Part 6 Pace, position, draw, bias | 9 | 3 | 8 |
+| Part 7 Ratings, changes, momentum | 12 | 6 | 8 |
+| Part 8 Transformation layer | 5 | 1 | 7 |
+| Part 9 Feature dictionary and governance | 0 | 3 | 0 |
+| IV Stage C, calibration, exotics | 7 | 7 | 5 |
+| V Staking | 1 | 4 | 6 |
+| VI Validation and monitoring | 6 | 7 | 8 |
+| VII/VIII/X Operations and build plan | 1 | 4 | 12 |
+| **Total (277 items)** | **75** | **80** | **122** |
+
+### 14.1 Why so much lands in "partial"
+
+There are two models in this repo and they share almost nothing.
+`train_bfsp.py` is production: 419 features, LightGBM regression on
+log(BFSP). It imports none of the master-framework modules — not
+`primitives.py`, `state_space.py`, `connections.py`, `ordering.py`,
+`stage_f.py` or `feature_registry.py`. `train_stage_f.py` is the
+framework-conformant pipeline and it runs on a ~35-feature Timeform-style
+feed. So the framework work is built and tested but mostly not consumed by
+the model that prices races.
+
+It also breaks P5 twice: the production target *is* the market
+(`log_bfsp`), and its feature set carries market-derived Stage-C columns
+(the ORR2, OFS, PFD and expectation-residual families).
+`feature_registry.stage_f_columns` exists to stop exactly that and is applied
+only in `train_stage_f.py`.
+
+Two smaller specifics: `TemperatureScaler` is imported by `train_stage_f.py`
+and never called, and `primitives.handicapper_gap_features` (`well_in`,
+`mark_vs_form`, `tf_vs_or`, `rating_dispersion`) has no call site anywhere.
+
+### 14.2 The gaps that block honest measurement
+
+1. **Purge and embargo** in the walk-forward. Every trailing-window feature
+   in `primitives.py` and `connections.py` leaks across a fold boundary
+   without a gap equal to the window length.
+2. **Unratable-runner rule.** Substitute the market probability and
+   renormalise when a runner has too little history; skip races where no
+   runner is ratable. Until then ΔR² is measured partly on noise.
+3. **Deflated Sharpe ratio and probability of backtest overfitting**, with a
+   count of configurations tried.
+4. **Performance-versus-strength**: the residual of normalised finishing
+   position on strength of schedule. The framework calls it the single most
+   important correction to naive form aggregates and it is not built.
+5. **Feature dictionary fields beyond `stage`**: as-of rule, shrinkage,
+   missing policy, version.
+
+### 14.3 The gaps that matter most for pace, shape and draw
+
+Covered in detail in §6 of the framework document; the short version is that
+the pace layer is built entirely from one regex parse of the in-running
+comment, and the draw layer has no per-stall resolution.
+
+* No sectional or early-speed figure per horse. `early_pos` is a six-point
+  ordinal from keyword matching, and the only sectional-derived column in the
+  repo (`LR_race_fsp_pct`) is the *winner's* closing speed in the horse's last
+  race, is opt-in, and is not in the deployed model.
+* Expected pace is never expressed in time. `pred_race_pace` is the mean of an
+  ordinal, so "how fast will they go" cannot be compared across races, and
+  there are no par times to compare it against.
+* Expected position ignores today's draw, jockey, field and trip: it is the
+  horse's career mean. No lead probability, no distribution, no contested-lead
+  measure beyond a count of front-runners.
+* Trouble risk is a career keyword rate, not a forecast conditioned on field
+  size, draw or expected position.
+* **Draw bias is a low-half / high-half split everywhere.** Stall 1 and stall 7
+  in a fourteen-runner field are the same "low". The Gaussian-process surface
+  that would give per-stall resolution exists in `spatial.py`, is report-only,
+  and is not lag-safe as written.
+* Draw bias is estimated from raw mean finishing position by stall band rather
+  than from the residual against expected finishing position. The framework
+  names this specific construction as the standard trap.
+* `track_direction` (handedness) and `rail_move` are scraped, stored, and read
+  by nothing. Handedness is a first-order determinant of draw bias, and rail
+  movements are what make a course's draw bias non-stationary.
+* The ABM models pace, blocking, drafting and wide-draw ground loss properly,
+  and has never been run at scale: there is no `data/abm_features.parquet` and
+  no `data/abm_calibration.json`, so its parameters are still placeholders.
+* Neither `pace_metrics.py` nor `draw_metrics.py` had a single unit test before
+  §13; the ABM, which nothing uses, had a full suite.
