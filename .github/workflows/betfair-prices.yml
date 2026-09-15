@@ -1,0 +1,64 @@
+name: Betfair Historic Prices
+
+# Fetches the previous days' Betfair SP price files (win + place, UK + IRE),
+# loads them into horse_racing.db, links them to race_results and backs the
+# DB up to S3. promo.betfair.com sits behind Cloudflare: if the runner is
+# refused (HTTP 403) the job fails loudly — download the files elsewhere and
+# run `python betfair_prices.py --dir <folder> --load --match` instead.
+
+on:
+  schedule:
+    - cron: '15 06 * * *'   # 06:15 UTC, after the previous day's files are published
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: 'Start date (YYYY-MM-DD). Leave empty for the last 3 days.'
+        required: false
+        type: string
+      date_to:
+        description: 'End date (YYYY-MM-DD). Defaults to yesterday.'
+        required: false
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+  S3_BUCKET: horseracingresults
+  S3_DB_KEY: horse_racing.db
+
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
+
+      - name: Fetch, load and match price files
+        run: |
+          if [ -n "${{ inputs.date_from }}" ]; then
+            python betfair_prices.py --fetch --load --match --from "${{ inputs.date_from }}" ${{ inputs.date_to && format('--to {0}', inputs.date_to) || '' }}
+          else
+            python betfair_prices.py --fetch --load --match --days 3
+          fi
+          python betfair_prices.py --report | tail -12
+
+      - name: Back up database to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python backup_to_s3.py
