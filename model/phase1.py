@@ -48,10 +48,11 @@ def prepare_blandford_frame(bf: pd.DataFrame, flat_only: bool = True) -> pd.Data
     d["race_date"] = pd.to_datetime(d["meeting_date"]); d["race_time"] = d["race_time"].fillna("00:00")
     d["raceid"] = d["meeting_date"].astype(str) + "_" + d["course_bf"].astype(str) + "_" + d["race_number"].astype(str)
     d["won"] = (d["position"] == 1).astype(float)
-    # the feed codes missing ratings / figures as 0
+    # the feed codes missing ratings / figures as 0, and unrated pre-race ratings as 999
     for c in ("performance_rating", "pre_race_master_rating", "pre_race_adjusted_rating", "timefigure"):
         if c in d.columns:
-            d[c] = pd.to_numeric(d[c], errors="coerce").replace(0, np.nan)
+            v = pd.to_numeric(d[c], errors="coerce").replace(0, np.nan)
+            d[c] = v.where(v < 900)
     ok_race = d.groupby("raceid")["won"].transform("sum") == 1
     d = d[ok_race].copy()
     bsp = pd.to_numeric(d["betfair_win_sp"], errors="coerce").where(lambda s: s > 1.0)

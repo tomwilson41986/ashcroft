@@ -148,6 +148,33 @@ def cmd_ratings_eval(args):
         ev.to_csv(args.out, index=False); print(f"written {args.out}")
 
 
+def cmd_phase1(args):
+    """Honest ΔR² test (racing² master framework Phase 1) on the Blandford/Timeform feed."""
+    from model.phase1 import run_phase1
+    from model.stage_f import ConditionalLogit
+    if args.parquet:
+        bf = pd.read_parquet(args.parquet)
+    else:
+        conn = sqlite3.connect(args.db)
+        bf = pd.read_sql_query("SELECT * FROM blandford_results" + (f" WHERE meeting_date >= '{args.date_from}'" if args.date_from else ""), conn); conn.close()
+    res = run_phase1(bf, test_start=args.test_start, n_folds=args.folds, l2=args.l2, flat_only=not args.all_codes)
+    pd.set_option("display.width", 220)
+    print(f"races total {res['n_races_total']} | test {res['n_races_test']} | kalman {dict((k, round(v, 2)) for k, v in res['kalman'].items())}")
+    print(f"R2_market {res['r2_market']:.4f} | R2_fundamental {res['r2_fundamental']:.4f} | R2_combined {res.get('r2_combined', float('nan')):.4f}")
+    for key in ("delta_fundamental_vs_market", "delta_combined_vs_market"):
+        if key in res:
+            print(key, {k: (round(v, 5) if isinstance(v, float) else v) for k, v in res[key].items()})
+    print(f"next-run MSE: kalman {res['next_run_mse_kalman']:.1f} | ewm270 {res['next_run_mse_ewm270']:.1f}")
+    if "ordering" in res:
+        print("ordering:", {k: round(v, 3) for k, v in res["ordering"].items()})
+    print("\nConditional calibration (Benter Tables 3/4 format):"); print(res["conditional_calibration"].round(3).to_string(index=False))
+    wf = res["frame"]; te = wf["race_date"] >= pd.Timestamp(args.test_start)
+    m = ConditionalLogit(l2=args.l2).fit(wf.loc[~te, res["features"]].values, wf.loc[~te, "won"].values, wf.loc[~te, "raceid"].values)
+    print("\nStage F coefficients (standardised):"); print(m.coef_table(res["features"]).round(3).to_string(index=False))
+    if args.out:
+        wf.drop(columns=["frame"], errors="ignore").to_parquet(args.out, index=False); print(f"written {args.out}")
+
+
 def cmd_abm(args):
     from model.abm import simulate_race
     df = _load_db(args.db, args.date, args.date)
@@ -308,6 +335,11 @@ def main(argv=None):
 
     s = sub.add_parser("ratings-eval"); s.add_argument("--predictions", default="data/oos_predictions.csv")
     s.add_argument("--db", default="horse_racing.db"); s.add_argument("--out", default=None); s.set_defaults(fn=cmd_ratings_eval)
+
+    s = sub.add_parser("phase1"); s.add_argument("--db", default="horse_racing.db"); s.add_argument("--parquet", default=None)
+    s.add_argument("--from", dest="date_from", default=None); s.add_argument("--test-start", default="2025-07-01")
+    s.add_argument("--folds", type=int, default=8); s.add_argument("--l2", type=float, default=2.0); s.add_argument("--all-codes", action="store_true")
+    s.add_argument("--out", default=None); s.set_defaults(fn=cmd_phase1)
 
     s = sub.add_parser("bets"); s.add_argument("--predictions", default="data/oos_predictions.csv")
     s.add_argument("--p-col", default="predicted_win_prob_norm"); s.add_argument("--price-col", default="bfsp")

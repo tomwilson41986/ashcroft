@@ -169,3 +169,18 @@ def test_feature_registry_enforces_p5():
     d["taut"] = -np.log(d["bfsp"]) + rng.normal(0, 0.01, 800); d["clean"] = rng.normal(0, 1, 800)
     au = leakage_audit(d, ["taut", "clean"]).set_index("feature")
     assert bool(au.loc["taut", "flag"]) and not bool(au.loc["clean", "flag"])
+
+
+def test_phase1_prepare_handles_feed_sentinels():
+    from model.phase1 import prepare_blandford_frame
+    rows = []
+    for r in range(2):
+        for i in range(5):
+            rows.append({"meeting_date": "2025-03-01", "course_bf": "KEMPTON PARK", "race_number": r + 1, "race_time": "14:30",
+                         "race_type": "Flat", "n_runners": 5, "position": i + 1, "horse_name": f"H{r}{i}", "betfair_win_sp": 2.0 + i,
+                         "performance_rating": 0 if i == 4 else 60 + i, "pre_race_master_rating": 999 if i == 0 else 70 + i,
+                         "pre_race_adjusted_rating": 75, "timefigure": 50, "draw": i + 1, "age": 4})
+    d = prepare_blandford_frame(pd.DataFrame(rows))
+    assert len(d) == 10 and d["won"].sum() == 2
+    assert d["pre_race_master_rating"].max() < 900 and d["performance_rating"].isna().sum() == 2
+    assert np.allclose(d.groupby("raceid")["pi_market"].sum(), 1.0)
