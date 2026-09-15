@@ -1,0 +1,60 @@
+name: Blandford / Timeform Feed Sync
+
+# Pulls the last few days of the Blandford results feed (Timeform-style
+# ratings, timefigures, sectionals, in-play highs/lows), loads them into
+# horse_racing.db, links them to race_results and backs the DB up to S3.
+
+on:
+  schedule:
+    - cron: '45 06 * * *'   # 06:45 UTC, after results are settled
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: 'Start date (YYYY-MM-DD). Leave empty for the last 4 days.'
+        required: false
+        type: string
+      date_to:
+        description: 'End date (YYYY-MM-DD). Defaults to today.'
+        required: false
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+  S3_BUCKET: horseracingresults
+  S3_DB_KEY: horse_racing.db
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
+      - name: Fetch, load and match
+        env:
+          BLANDFORD_USERNAME: ${{ secrets.BLANDFORD_USERNAME }}
+          BLANDFORD_PASSWORD: ${{ secrets.BLANDFORD_PASSWORD }}
+        run: |
+          if [ -n "${{ inputs.date_from }}" ]; then
+            python blandford_sync.py --fetch --load --match --from "${{ inputs.date_from }}" ${{ inputs.date_to && format('--to {0}', inputs.date_to) || '' }}
+          else
+            python blandford_sync.py --fetch --load --match --days 4
+          fi
+          python blandford_sync.py --report | tail -8
+      - name: Back up database to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python backup_to_s3.py

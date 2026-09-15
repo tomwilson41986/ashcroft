@@ -1476,6 +1476,11 @@ def main():
         "--perf-features", action="store_true",
         help="Add lag-safe performance-figure (lbs) features",
     )
+    parser.add_argument(
+        "--blandford-features", action="store_true",
+        help="Add Timeform-feed features from the blandford_results table "
+             "(load it with blandford_sync.py first)",
+    )
     args = parser.parse_args()
 
     # Fetch data if needed
@@ -1513,6 +1518,11 @@ def main():
         log.info("Adding Betfair market-movement features...")
         df = add_market_features(df, db_path=args.db)
         EXTRA_FEATURE_COLS.extend(MARKET_FEATURES)
+    if args.blandford_features:
+        from model.blandford_features import BLANDFORD_FEATURES, add_blandford_features
+        log.info("Adding Blandford/Timeform feed features...")
+        df = add_blandford_features(df, db_path=args.db)
+        EXTRA_FEATURE_COLS.extend(BLANDFORD_FEATURES)
     if args.abm_features:
         from model.abm.features import ABM_FEATURES, load_abm_features, merge_abm_features
         log.info(f"Merging ABM features from {args.abm_features}...")

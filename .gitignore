@@ -27,3 +27,6 @@ data/models_backup*/
 /bfsp_model.lgb
 model_metrics.json
 data/datasets/*.parquet
+
+# Raw Blandford / Timeform feed chunks (large JSON, regenerable)
+data/blandford_raw/
