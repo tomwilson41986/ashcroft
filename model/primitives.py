@@ -511,14 +511,6 @@ def _iqm(x: np.ndarray) -> float:
     return float(np.mean(m)) if len(m) else float(np.mean(x))
 
 
-def _slope(x: np.ndarray) -> float:
-    ok = ~np.isnan(x)
-    if ok.sum() < 3:
-        return np.nan
-    t = np.arange(len(x))[ok]
-    return float(np.polyfit(t, x[ok], 1)[0])
-
-
 def aggregate_history(df: pd.DataFrame, cols, windows=(3, 5, 10), horse_col: str = "horse_name",
                       date_col: str = "race_date", time_col: str = "race_time", weight_col: str | None = "fss_cred",
                       aggs=("mean", "iqm", "max", "min", "slope"), iqm_min_window: int = 5,
@@ -948,7 +940,7 @@ def add_margin_aggregates(df: pd.DataFrame, horse_col: str = "horse_name", date_
     return out
 
 
-def skew_aware_transform(x, name: str = "x", skew_threshold: float = 1.0) -> tuple[np.ndarray, str]:
+def skew_aware_transform(x, skew_threshold: float = 1.0) -> tuple[np.ndarray, str]:
     """§1.5.c / 8.2: test the shape before transforming, then z-score.
 
     Margins are right-skewed even after truncation and distance adjustment, and

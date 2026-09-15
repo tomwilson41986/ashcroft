@@ -12,6 +12,7 @@ that entity from *earlier days*:
     {e}_prb2_fsa_shrunk           mean field-size-adjusted %RB², shrunk
     {e}_form_{w}d                 recency form: mean NMFP over the last w days
     {e}_runner_count_{w}d         runners in that window — what the form is worth
+    {e}_lto_plc_fsa_{w}d          recent field-size-adjusted place rate
     {e}_form_vs_career            form over the shortest window − career mean
     {e}_runs_season,              this season (calendar year) so far, and the
     {e}_sr_season_shrunk,         completed previous season
@@ -385,9 +386,11 @@ def add_connection_features(df: pd.DataFrame, entities=("trainer", "jockey_name"
         P = pd.to_numeric(d[pos_c], errors="coerce").values; N = pd.to_numeric(d[n_c], errors="coerce").values
         d["_prb2_fsa"] = prb(N, P) ** 2 - prb2_par(N)
         d["_placed"] = np.where(np.isnan(P), np.nan, (P <= 3).astype(float))
+        d["_plc_fsa"] = d["_placed"] - 3.0 / N          # place rate net of what the field size gives away
     else:
         d["_prb2_fsa"] = np.nan
         d["_placed"] = pd.to_numeric(d["placed"], errors="coerce") if "placed" in d.columns else np.nan
+        d["_plc_fsa"] = np.nan
     d["_lr_score"] = lr_place_score(d, pos_col=pos_c)
     fto = first_time_out(d)
     d["_non_fts"] = (1.0 - fto.fillna(0.0)).where(d["_won"].notna())
@@ -422,7 +425,8 @@ def add_connection_features(df: pd.DataFrame, entities=("trainer", "jockey_name"
         # every split of a strong yard would show the shrinkage gap as aptitude.
         base_nmfp = (nm / nm_n.replace(0, np.nan)).fillna(pop_nmfp)
         d[f"{p}_prb2_fsa_shrunk"] = shrink(pr2, pr2_n, pop_prb2, k_nmfp)
-        feats += [f"{p}_runs", f"{p}_sr_shrunk", f"{p}_nmfp_shrunk", f"{p}_place_rate_shrunk", f"{p}_prb2_fsa_shrunk"]
+        feats += [f"{p}_runs", f"{p}_wins", f"{p}_sr_shrunk", f"{p}_nmfp_shrunk", f"{p}_place_rate_shrunk",
+                  f"{p}_prb2_fsa_shrunk"]
 
         for w in form_windows:
             m, n = _time_window_prior_mean(d, e, "_nmfp", date_col, w)
@@ -432,6 +436,10 @@ def add_connection_features(df: pd.DataFrame, entities=("trainer", "jockey_name"
         # §5.1: form_vs_career is the *short* window against the career mean
         d[f"{p}_form_vs_career"] = d[f"{p}_form_{min(form_windows)}d"] - d[f"{p}_nmfp_shrunk"]
         feats.append(f"{p}_form_vs_career")
+        short = min(form_windows)
+        m, n = _time_window_prior_mean(d, e, "_plc_fsa", date_col, short)
+        d[f"{p}_lto_plc_fsa_{short}d"] = (m.fillna(0.0) * n) / (n + 6.0)
+        feats.append(f"{p}_lto_plc_fsa_{short}d")
 
         d[f"{p}_lr_place_rating"] = lr_place_rating(d, e)
         feats.append(f"{p}_lr_place_rating")
@@ -464,7 +472,7 @@ def add_connection_features(df: pd.DataFrame, entities=("trainer", "jockey_name"
         if price_col and price_col in d.columns:
             feats += _add_market_features(d, e, p, price_col, sp_col, date_col)
 
-    if "trainer" in d.columns and "jockey_name" in d.columns:
+    if {"trainer", "jockey_name", "trainer_sr_shrunk", "jockey_sr_shrunk"} <= set(d.columns):
         d["_tj"] = d["trainer"].astype(str) + "|" + d["jockey_name"].astype(str)
         tj_w, tj_n = prior_stats(d, "_tj", "_won", date_col=date_col)
         d["tj_runs"] = tj_n
@@ -492,7 +500,7 @@ def add_connection_features(df: pd.DataFrame, entities=("trainer", "jockey_name"
         d["is_claimer"] = (claim > 0).astype(float)
         feats += ["jockey_claim_lb", "is_claimer"]
 
-    d = d.drop(columns=[c for c in ("_won", "_nmfp", "_one", "_placed", "_prb2_fsa", "_lr_score", "_non_fts",
+    d = d.drop(columns=[c for c in ("_won", "_nmfp", "_one", "_placed", "_plc_fsa", "_prb2_fsa", "_lr_score", "_non_fts",
                                     "_season", "_sr_expected", "_field_strength", "_ln_prize", CARD_KEY)
                         if c in d.columns])
     d = d.sort_index()

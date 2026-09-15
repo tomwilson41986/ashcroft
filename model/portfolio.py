@@ -17,6 +17,8 @@ the framework (§V.3, §IIA.5) is explicit about both:
 
 What is here:
 
+    net_odds                 decimal odds with commission on net winnings
+    back_return_moments      mean and sd of a back bet's return per unit staked
     race_return_covariance   exact multinomial covariance of back-bet returns
     block_covariance         three-level target: exact within race, shared
                              latent error across meeting and across day
@@ -28,6 +30,8 @@ What is here:
     portfolio_kelly          whole betting cycle, caps, fractional phi
     expected_log_growth      Monte-Carlo check of any stake vector
     ladder_fill              depth-walked fill and the slippage it costs
+    ladder_price_fn          exchange depth as an impact curve
+    pool_price_fn            pari-mutuel dilution as an impact curve
     ev_stake_curve           EV against stake size; it is not linear
     max_ev_stake             the max-EV point and the two-thirds default
     split_order              slices across the pre-off window and into BSP

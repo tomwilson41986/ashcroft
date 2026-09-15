@@ -188,58 +188,101 @@ def parse_rail_move(values) -> tuple[pd.Series, pd.Series]:
 # Time-decayed, race-lagged cell means
 # ---------------------------------------------------------------------------
 
+def _race_when(df: pd.DataFrame) -> np.ndarray:
+    """Race time as a float number of days, so same-day cards keep their order."""
+    d = pd.to_datetime(df["race_date"], errors="coerce")
+    day = d.values.astype("datetime64[D]").astype(float)
+    if "race_time" in df.columns:
+        hm = df["race_time"].astype(str).str.extract(r"(\d{1,2}):(\d{2})")
+        mins = pd.to_numeric(hm[0], errors="coerce") * 60 + pd.to_numeric(hm[1], errors="coerce")
+        day = day + np.nan_to_num(mins.to_numpy(dtype=float), nan=0.0) / 1440.0
+    return np.nan_to_num(day, nan=0.0)
+
+
+def _codes(values) -> np.ndarray:
+    """Integer codes for a key column, missing values getting their own code."""
+    codes = pd.factorize(values)[0].astype(np.int64)
+    if (codes < 0).any():
+        codes = np.where(codes < 0, codes.max() + 1, codes)
+    return codes
+
+
 def race_lagged_decayed_mean(df: pd.DataFrame, group_col: str | list[str], value_col: str,
                              halflife_days: float = DRAW_BIAS_HALFLIFE_DAYS,
-                             race_col: str = "raceid") -> tuple[pd.Series, pd.Series]:
+                             race_col: str = "raceid",
+                             min_races: int = 0) -> tuple[pd.Series, pd.Series]:
     """Time-decayed mean of `value_col` over *earlier races* in the group.
 
     Returns ``(mean, n_eff)``: a past race counts ``2 ** (−age_days /
     halflife_days)`` of an observation, and ``n_eff`` is the sum of those
     weights — the effective sample size the shrinkage and the confidence flag
-    are built on.
+    are built on. ``halflife_days=inf`` gives a plain expanding mean, and
+    ``min_races`` withholds an estimate until the group has that many earlier
+    races behind it.
 
     Same lagging rule as `model.lagsafe.race_lagged_expanding_mean`, and the
     same reason for it: the keys used here (course, course+distance,
-    course+distance+going) repeat inside a race, so aggregate to races first
-    and then step back a whole race, never a row.
+    course+distance+going, and per stall) repeat inside a race, so the frame is
+    aggregated to races first and each race then steps back a whole race, never
+    a row.
+
+    Written on integer codes and flat numpy rather than a groupby-and-merge:
+    the finest cell here has tens of thousands of groups and this runs on every
+    row of the history, four times over.
     """
     keys = [group_col] if isinstance(group_col, str) else list(group_col)
-    d = pd.DataFrame(index=df.index)
-    for k in keys:
-        d[k] = df[k]
-    d["_race"] = ensure_race_key(df, race_col)
-    d["_v"] = pd.to_numeric(df[value_col], errors="coerce")
-    d["_date"] = pd.to_datetime(df["race_date"], errors="coerce")
-    d["_time"] = df["race_time"].astype(str) if "race_time" in df.columns else ""
+    idx = df.index
+    if len(df) == 0:
+        empty = pd.Series(dtype=float, index=idx)
+        return empty, empty.copy()
 
-    per_race = (d.groupby(keys + ["_race"], dropna=False, observed=True)
-                 .agg(_s=("_v", "sum"), _n=("_v", "count"), _d=("_date", "min"), _t=("_time", "min"))
-                 .reset_index()
-                 .sort_values(keys + ["_d", "_t", "_race"], kind="stable"))
+    if len(keys) == 1:
+        gcode = _codes(df[keys[0]])
+    else:
+        gcode = _codes(pd.MultiIndex.from_arrays([df[k] for k in keys]))
+    rcode = _codes(ensure_race_key(df, race_col))
 
-    g = per_race.groupby(keys, dropna=False, observed=True)
-    day = per_race["_d"].values.astype("datetime64[D]").astype(float)
-    base = g["_d"].transform("min").values.astype("datetime64[D]").astype(float)
-    # age in half-lives since the group's first race; clipped only to keep the
-    # exponential inside float range on absurd date spans.
-    t = np.clip(np.nan_to_num((day - base) / float(halflife_days), nan=0.0), 0.0, 300.0)
-    w = np.exp2(t)
-    per_race["_ws"] = w * per_race["_s"].values
-    per_race["_wn"] = w * per_race["_n"].values
-    g2 = per_race.groupby(keys, dropna=False, observed=True)
-    prior_ws = g2["_ws"].cumsum() - per_race["_ws"]
-    prior_wn = g2["_wn"].cumsum() - per_race["_wn"]
-    decay = np.exp2(-t)
+    # one cell per (group, race): a race contributes to a group once
+    n_r = int(rcode.max()) + 1
+    pair = gcode * np.int64(n_r) + rcode
+    upair, pidx = np.unique(pair, return_inverse=True)
+    m = len(upair)
+
+    v = pd.to_numeric(df[value_col], errors="coerce").to_numpy(dtype=float)
+    ok = ~np.isnan(v)
+    sums = np.bincount(pidx[ok], weights=v[ok], minlength=m)
+    cnts = np.bincount(pidx[ok], minlength=m).astype(float)
+
+    when = _race_when(df)
+    pwhen = np.zeros(m)
+    pwhen[pidx] = when                      # every row of a race shares its time
+    pgroup = upair // np.int64(n_r)
+
+    order = np.lexsort((upair, pwhen, pgroup))
+    g_s, w_s, s_s, c_s = pgroup[order], pwhen[order], sums[order], cnts[order]
+
+    is_new = np.empty(m, dtype=bool)
+    is_new[0] = True
+    is_new[1:] = g_s[1:] != g_s[:-1]
+    starts = np.maximum.accumulate(np.where(is_new, np.arange(m), 0))
+
     with np.errstate(invalid="ignore", divide="ignore"):
-        per_race["_mean"] = np.where(prior_wn > 0, prior_ws / prior_wn, np.nan)
-    per_race["_neff"] = decay * prior_wn
+        t = np.clip((w_s - w_s[starts]) / float(halflife_days), 0.0, 300.0)
+    t = np.nan_to_num(t, nan=0.0)
+    grow = np.exp2(t)
+    ws, wn = grow * s_s, grow * c_s
+    cs, cn = np.cumsum(ws), np.cumsum(wn)
+    prior_ws = cs - ws - (cs[starts] - ws[starts])       # exclusive, within group
+    prior_wn = cn - wn - (cn[starts] - wn[starts])
+    prior_races = np.arange(m) - starts
 
-    merged = d.reset_index().merge(per_race[keys + ["_race", "_mean", "_neff"]],
-                                   on=keys + ["_race"], how="left")
-    idx = merged["index"].values
-    mean = pd.Series(merged["_mean"].values, index=idx).reindex(df.index)
-    neff = pd.Series(merged["_neff"].values, index=idx).reindex(df.index).fillna(0.0)
-    return mean, neff
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean_s = np.where((prior_wn > 0) & (prior_races >= min_races), prior_ws / prior_wn, np.nan)
+    neff_s = np.exp2(-t) * prior_wn
+
+    mean_p, neff_p = np.empty(m), np.empty(m)
+    mean_p[order], neff_p[order] = mean_s, neff_s
+    return (pd.Series(mean_p[pidx], index=idx), pd.Series(neff_p[pidx], index=idx))
 
 
 def _shrink(raw: pd.Series, n_eff: pd.Series, prior, k: float) -> pd.Series:
@@ -312,8 +355,8 @@ def rating_calibration_slope(df: pd.DataFrame, expected_col: str, actual_col: st
     y = pd.to_numeric(d[actual_col], errors="coerce")
     d["_xy"] = x * y
     d["_xx"] = x * x
-    xy = race_lagged_expanding_mean(d, "_all", "_xy", min_races=min_races)
-    xx = race_lagged_expanding_mean(d, "_all", "_xx", min_races=min_races)
+    xy, _ = race_lagged_decayed_mean(d, "_all", "_xy", halflife_days=np.inf, min_races=min_races)
+    xx, _ = race_lagged_decayed_mean(d, "_all", "_xx", halflife_days=np.inf, min_races=min_races)
     with np.errstate(invalid="ignore", divide="ignore"):
         slope = xy / xx.where(xx > 0)
     return slope.clip(*clip)
