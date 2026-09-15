@@ -372,7 +372,7 @@ def context_split_keys(d: pd.DataFrame) -> dict[str, pd.Series]:
 
 
 def _working_frame(src: pd.DataFrame, nmfp_col: str, won_col: str, date_col: str,
-                   context_splits: bool, strength: bool, price_col: str | None,
+                   context_splits, strength: bool, price_col: str | None,
                    sp_col: str | None) -> pd.DataFrame:
     """Everything the aggregates need and nothing else.
 
@@ -421,22 +421,29 @@ def _working_frame(src: pd.DataFrame, nmfp_col: str, won_col: str, date_col: str
     for col, tag in ((price_col, "_price"), (sp_col, "_sp")):
         if col and col in src.columns:
             cols[tag] = pd.to_numeric(src[col], errors="coerce").where(lambda s: s > 1.0)
-    if context_splits:
+    if context_splits is not False:
+        wanted = None if context_splits is True else set(context_splits)
         for name, key in context_split_keys(src).items():
-            cols[f"_split_{name}"] = key.astype(str).where(key.notna())
+            if wanted is None or name in wanted:
+                cols[f"_split_{name}"] = key.astype(str).where(key.notna())
     return pd.DataFrame(cols, index=src.index)
 
 
 def add_connection_features(df: pd.DataFrame, entities=("trainer", "jockey_name"), nmfp_col: str = "nmfp",
                             won_col: str = "won", date_col: str = "race_date", time_col: str = "race_time",
                             k_sr: float = 30.0, k_nmfp: float = 15.0, k_split: float = 20.0,
-                            form_windows=(14, 30, 90), context_splits: bool = True, seasons: bool = True,
+                            form_windows=(14, 30, 90), context_splits=True, seasons: bool = True,
                             strength: bool = True, price_col: str | None = None,
                             sp_col: str | None = None) -> tuple[pd.DataFrame, list[str]]:
     """Attach the Part 5.1 - 5.2 connection suites; returns (frame, feature names).
 
     ``price_col`` / ``sp_col`` switch on the A/E and ROI block, which is
-    market-derived and therefore Stage C only — leave them unset for Stage F."""
+    market-derived and therefore Stage C only — leave them unset for Stage F.
+
+    ``context_splits`` takes True (every split the frame supports), False, or an
+    explicit list of split names — see ``context_split_keys``. Each split costs
+    one lag-safe pass per entity, which is the bulk of the build time on a large
+    frame, so a caller that only wants some of them can say so."""
     orig_index = df.index
     src = df.reset_index(drop=True)
     w = _working_frame(src, nmfp_col, won_col, date_col, context_splits, strength, price_col, sp_col)

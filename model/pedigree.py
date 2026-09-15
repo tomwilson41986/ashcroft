@@ -323,13 +323,34 @@ def _median_hcap_debut_or(w: pd.DataFrame, key: str, years: float = 3.0, min_n: 
 # Dam, siblings, nick, female family
 # ---------------------------------------------------------------------------
 
+def _horse_prior_day_stats(w: pd.DataFrame, value_col: str) -> tuple[pd.Series, pd.Series]:
+    """(sum, count) over the *horse's own* runs on earlier days.
+
+    Identical in meaning to ``prior_stats(w, "_horse", value_col)``, and tested
+    against it. It is written out because the horse is the one key a row-shift
+    is safe on — a horse runs once in a race — and because aggregating day
+    totals over numeric columns only keeps it off the object-`min` path that
+    dominates the cost of the general race-lagged aggregator."""
+    v = pd.to_numeric(w[value_col], errors="coerce")
+    per = (pd.DataFrame({"h": w["_horse"].values, "d": w[CARD_KEY].values, "s": v.values, "c": v.notna().values})
+           .groupby(["h", "d"], observed=True, sort=False).agg(s=("s", "sum"), c=("c", "sum"))
+           .reset_index().sort_values(["h", "d"], kind="stable"))
+    g = per.groupby("h", observed=True, sort=False)
+    per["ps"] = g["s"].cumsum() - per["s"]
+    per["pc"] = g["c"].cumsum() - per["c"]
+    key = pd.DataFrame({"h": w["_horse"].values, "d": w[CARD_KEY].values})
+    m = key.merge(per[["h", "d", "ps", "pc"]], on=["h", "d"], how="left")
+    return (pd.Series(m["ps"].values, index=w.index).fillna(0.0),
+            pd.Series(m["pc"].values, index=w.index).fillna(0.0))
+
+
 def _sibling_stats(w: pd.DataFrame, value_col: str) -> tuple[pd.Series, pd.Series]:
     """(sum, count) over the dam's *other* progeny, on earlier days.
 
     The horse's own contribution is subtracted on the same day-lagged basis, so
     the subtraction is exact: its runs are a subset of its dam's."""
     dam_tot, dam_n = prior_stats(w, "_dam", value_col)
-    own_tot, own_n = prior_stats(w, "_horse", value_col)
+    own_tot, own_n = _horse_prior_day_stats(w, value_col)
     return (dam_tot - own_tot), (dam_n - own_n).clip(lower=0.0)
 
 
@@ -473,7 +494,7 @@ def _add_family_block(w: pd.DataFrame, new: dict, pop: dict, k_family: float) ->
     one exists."""
     known = w["_damsire_known"]
     fam_t, fam_n = prior_stats(w, "_damsire", "_bt_placing")
-    own_t, own_n = prior_stats(w, "_horse", "_bt_placing")
+    own_t, own_n = _horse_prior_day_stats(w, "_bt_placing")
     t, n = fam_t - own_t, (fam_n - own_n).clip(lower=0.0)
     new["family_bt_density"] = shrink(t, n, pop["bt"], k_family).where(known)
     lp, lp_n = prior_stats(w, "_damsire", "_ln_prize")

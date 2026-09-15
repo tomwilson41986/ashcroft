@@ -435,3 +435,18 @@ def test_form_vs_career_uses_the_short_window_and_the_index_survives():
             "trainer_runner_count_14d", "trainer_runs_season", "trainer_sr_last_season_shrunk"} <= set(feats)
     expected = out["trainer_form_14d"] - out["trainer_nmfp_shrunk"]
     assert np.allclose(out["trainer_form_vs_career"], expected)
+
+
+def test_horse_prior_day_stats_matches_the_general_lag_safe_aggregator():
+    """The sibling join subtracts the horse's own runs from its dam's, so the
+    two halves must be taken on exactly the same basis."""
+    from model.connections import prior_stats
+    from model.pedigree import _horse_prior_day_stats, _working_frame
+
+    src = _sibling_card().reset_index(drop=True)
+    w = _working_frame(src, "stallion", "dam", "dam_stallion", "horse_name", "race_date", "nmfp")
+    for col in ("_one", "_won", "_nmfp", "_or"):
+        a_tot, a_n = _horse_prior_day_stats(w, col)
+        b_tot, b_n = prior_stats(w, "_horse", col)
+        assert np.allclose(a_tot, b_tot, equal_nan=True), col
+        assert np.allclose(a_n, b_n, equal_nan=True), col
