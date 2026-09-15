@@ -1553,6 +1553,21 @@ def main():
         help="Add lag-safe performance-figure (lbs) features",
     )
     parser.add_argument(
+        "--pedigree-features", action="store_true",
+        help="Add the Part 5.3-5.4 sire / damsire / dam / sibling / nick block "
+             "(aptitudes as residuals against the entity's own level)",
+    )
+    parser.add_argument(
+        "--connection-features", action="store_true",
+        help="Add the Part 5.1-5.2 trainer and jockey block (context splits, "
+             "schedule-adjusted strike rates, season form)",
+    )
+    parser.add_argument(
+        "--odds-features", action="store_true",
+        help="Add the Part 4 odds-derived block (effective field size, rating "
+             "ranks, Shin). STAGE C: market-derived, so never for a market-free model",
+    )
+    parser.add_argument(
         "--gp-draw", action="store_true",
         help="Add the Gaussian-process per-stall draw surface. Off by default: "
              "it costs one fit per course per year, and the shrunk cells already "
@@ -1593,6 +1608,32 @@ def main():
     if getattr(args, "gp_draw", False):
         log.info("Adding the Gaussian-process per-stall draw surface...")
         EXTRA_FEATURE_COLS.extend(GP_DRAW_FEATURES)
+    if getattr(args, "pedigree_features", False) or getattr(args, "connection_features", False):
+        # Both blocks aggregate a horse's normalised finishing position over its
+        # sire's, dam's or yard's *earlier* runners, so the primitive has to
+        # exist before they can lag it.
+        from model.primitives import add_run_primitives
+        log.info("Adding run primitives (needed by the pedigree and connection blocks)...")
+        df = add_run_primitives(df)
+    if getattr(args, "pedigree_features", False):
+        from model.pedigree import add_pedigree_features
+        log.info("Adding pedigree features...")
+        df, feats = add_pedigree_features(df)
+        EXTRA_FEATURE_COLS.extend(feats)
+        log.info(f"  {len(feats)} pedigree features")
+    if getattr(args, "connection_features", False):
+        from model.connections import add_connection_features
+        log.info("Adding connection features...")
+        # price_col/sp_col left unset: the A/E and ROI block is market-derived
+        # and belongs to Stage C, not to a model whose target is already the market.
+        df, feats = add_connection_features(df)
+        EXTRA_FEATURE_COLS.extend(feats)
+        log.info(f"  {len(feats)} connection features")
+    if getattr(args, "odds_features", False):
+        from model.odds_metrics import ODDS_FEATURES, add_odds_metrics
+        log.info("Adding odds-derived (Stage C) features...")
+        df = add_odds_metrics(df)
+        EXTRA_FEATURE_COLS.extend([c for c in ODDS_FEATURES if c in df.columns])
     if args.perf_features:
         from model.perf_figures import PERF_FIGURE_FEATURES, add_perf_figure_features
         log.info("Adding performance-figure features...")
