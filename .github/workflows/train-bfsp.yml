@@ -14,6 +14,11 @@ on:
         required: false
         default: false
         type: boolean
+      drop_features:
+        description: 'Comma-separated feature-name prefixes to withhold from the model (leak bisect; reuses the cached matrix)'
+        required: false
+        default: ''
+        type: string
       refresh_cache:
         description: 'Rebuild the feature matrix even if a cached one matches'
         required: false
@@ -211,6 +216,7 @@ jobs:
           python evaluate_oos.py \
             --start-date "${{ inputs.start_date || '2021-01-01' }}" \
             --feature-cache .feature_cache \
+            ${{ inputs.drop_features && format('--drop-features {0}', inputs.drop_features) || '' }} \
             ${{ inputs.refresh_cache && '--refresh-cache' || '' }} \
             --min-train-days ${{ inputs.min_train_days || 365 }} \
             --val-window ${{ inputs.val_window || 30 }} \
