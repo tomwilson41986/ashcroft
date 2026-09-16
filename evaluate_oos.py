@@ -33,6 +33,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
+from model import feature_cache
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -694,6 +695,22 @@ def main():
         help="Maximum BFSP to consider for betting (default: 100)",
     )
     parser.add_argument(
+        "--feature-cache", default=None, metavar="DIR",
+        help="Reuse a cached feature matrix in DIR, building and storing it on a "
+             "miss. The key covers the feature source files and the database, so "
+             "a model-only change reuses it and a feature change rebuilds it",
+    )
+    parser.add_argument(
+        "--drop-features", default=None, metavar="PREFIXES",
+        help="Comma-separated name prefixes to withhold from the model. Applies to "
+             "the feature list, not the cached matrix, so a variant costs a model "
+             "fit and no rebuild — which is how you bisect a suspected leak",
+    )
+    parser.add_argument(
+        "--refresh-cache", action="store_true",
+        help="Rebuild the feature matrix even if a cached one matches",
+    )
+    parser.add_argument(
         "--output-csv", default=None,
         help="Save all OOS predictions to CSV",
     )
@@ -707,23 +724,31 @@ def main():
         log.error(f"Database not found: {args.db}")
         sys.exit(1)
 
-    # Load data
-    log.info("Loading data...")
-    df = load_data(args.db, start_date=args.start_date)
-    log.info(f"  {len(df):,} rows loaded")
+    # Build the feature matrix, or reload it from cache.
+    #
+    # This is the hours-long half of the job and it is identical every time the
+    # feature code is unchanged, so an experiment that only alters the model
+    # should not pay for it. See model/feature_cache.py for how staleness is
+    # prevented.
+    def _build_features():
+        log.info("Loading data...")
+        d = load_data(args.db, start_date=args.start_date)
+        log.info(f"  {len(d):,} rows loaded")
+        log.info("Computing custom metrics (this may take a few minutes)...")
+        d = CustomMetricsEngine().calculate_all(d)
+        log.info(f"  {len(d.columns)} columns after metrics")
+        d = build_context_features(d)
+        d["bfsp"] = pd.to_numeric(d["bfsp"], errors="coerce")
+        d = d[d["bfsp"].notna() & (d["bfsp"] > 1.0)].copy()
+        d["log_bfsp"] = np.log(d["bfsp"])
+        return d.sort_values(["race_date", "race_time"]).reset_index(drop=True)
 
-    # Prepare features (custom metrics + context + target)
-    log.info("Computing custom metrics (this may take a few minutes)...")
-    engine = CustomMetricsEngine()
-    df = engine.calculate_all(df)
-    log.info(f"  {len(df.columns)} columns after metrics")
-
-    df = build_context_features(df)
-
-    df["bfsp"] = pd.to_numeric(df["bfsp"], errors="coerce")
-    df = df[df["bfsp"].notna() & (df["bfsp"] > 1.0)].copy()
-    df["log_bfsp"] = np.log(df["bfsp"])
-    df = df.sort_values(["race_date", "race_time"]).reset_index(drop=True)
+    df, cache_info = feature_cache.build_or_load(
+        _build_features, args.db, start_date=args.start_date,
+        cache_dir=args.feature_cache, refresh=args.refresh_cache,
+    )
+    if cache_info.get("cached"):
+        log.info("  reused a cached feature matrix built at %s", cache_info.get("built_at", "?"))
 
     # Determine available features
     feature_cols = [c for c in ALL_FEATURE_COLS if c in df.columns]
@@ -735,6 +760,16 @@ def main():
             df[c] = np.nan
 
     feature_cols_full = list(dict.fromkeys(ALL_FEATURE_COLS))
+
+    if args.drop_features:
+        prefixes = tuple(p.strip() for p in args.drop_features.split(",") if p.strip())
+        dropped = [c for c in feature_cols_full if c.startswith(prefixes)]
+        feature_cols_full = [c for c in feature_cols_full if c not in set(dropped)]
+        log.info("Withholding %d features matching %s", len(dropped), list(prefixes))
+        for c in sorted(dropped)[:20]:
+            log.info("    - %s", c)
+        if len(dropped) > 20:
+            log.info("    ... and %d more", len(dropped) - 20)
 
     log.info(f"  {len(feature_cols_full)} features, {len(df):,} valid rows")
 
