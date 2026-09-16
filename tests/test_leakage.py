@@ -316,3 +316,48 @@ def test_no_deployed_feature_reads_the_race_it_is_predicting():
     assert not moved, (
         f"{len(moved)} of {len(checked)} deployed features read the race they predict: {moved}"
     )
+
+
+# ---------------------------------------------------------------------------
+# The same guard over the opt-in blocks.
+#
+# `ALL_FEATURE_COLS` is what the model trains on today, so the test above
+# covers what is deployed and nothing else. The pedigree, connection, primitive
+# and performance-figure blocks sit behind flags waiting on the promotion
+# protocol, and a leak in one of those is worse than a leak in a deployed
+# feature: the protocol would read the leak as the gain that justifies turning
+# the block on. They get the same treatment before anyone measures them.
+# ---------------------------------------------------------------------------
+
+def _optin_features_for(flip_last_race):
+    from model.custom_metrics import CustomMetricsEngine
+    from model.primitives import add_run_primitives
+    from model.pedigree import add_pedigree_features
+    from model.connections import add_connection_features
+    from model.perf_figures import add_perf_figure_features, PERF_FIGURE_FEATURES
+
+    d = CustomMetricsEngine().calculate_all(_full_card(flip_last_race=flip_last_race))
+    d = add_run_primitives(d)
+    d, ped = add_pedigree_features(d)
+    d, con = add_connection_features(d)
+    d = add_perf_figure_features(d)
+    return d, list(ped) + list(con) + list(PERF_FIGURE_FEATURES)
+
+
+def test_no_optin_feature_reads_the_race_it_is_predicting():
+    base, names = _optin_features_for(False)
+    flipped, _ = _optin_features_for(True)
+
+    last = sorted(base["raceid"].unique())[-1]
+    key = ["raceid", "horse_name"]
+    b = base[base["raceid"] == last].sort_values(key).reset_index(drop=True)
+    f = flipped[flipped["raceid"] == last].sort_values(key).reset_index(drop=True)
+
+    checked = [c for c in dict.fromkeys(names)
+               if c in b.columns and pd.api.types.is_numeric_dtype(b[c])]
+    assert len(checked) > 50, f"the opt-in blocks did not build ({len(checked)} columns)"
+    moved = sorted(c for c in checked
+                   if not np.allclose(b[c].fillna(-999.0), f[c].fillna(-999.0), equal_nan=True))
+    assert not moved, (
+        f"{len(moved)} of {len(checked)} opt-in features read the race they predict: {moved}"
+    )
