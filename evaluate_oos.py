@@ -711,6 +711,13 @@ def main():
         help="Rebuild the feature matrix even if a cached one matches",
     )
     parser.add_argument(
+        "--build-cache-only", action="store_true",
+        help="Build (or reuse) the feature matrix and stop, without fitting a "
+             "single fold. Lets a caller persist the cache the moment the "
+             "expensive half is done, instead of at the end of a run that may "
+             "never reach its end",
+    )
+    parser.add_argument(
         "--output-csv", default=None,
         help="Save all OOS predictions to CSV",
     )
@@ -749,6 +756,19 @@ def main():
     )
     if cache_info.get("cached"):
         log.info("  reused a cached feature matrix built at %s", cache_info.get("built_at", "?"))
+
+    if args.build_cache_only:
+        # The feature build is hours and the fold loop is not. Splitting them
+        # means a job that dies in the fold loop — a timeout, a runner loss —
+        # does not also throw away the build, because the caller has already
+        # stored it. Without this the cache is only written when the whole run
+        # succeeds, which is exactly the run that did not need it.
+        log.info(
+            "Feature matrix ready: %d rows x %d columns (%s). Stopping before the folds.",
+            len(df), len(df.columns),
+            "from cache" if cache_info.get("cached") else "freshly built",
+        )
+        return
 
     # Determine available features
     feature_cols = [c for c in ALL_FEATURE_COLS if c in df.columns]

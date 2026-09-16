@@ -1,53 +1,87 @@
 {
   "period": {
-    "start": "2024-01-01",
-    "end": "2026-02-18"
+    "start": "2024-05-31",
+    "end": "2026-03-21"
   },
-  "n_predictions": 253532,
-  "n_folds": 26,
-  "n_races": 27223,
+  "n_predictions": 215760,
+  "n_folds": 22,
   "accuracy": {
-    "log_mae": 0.5061,
-    "log_rmse": 0.6637,
-    "log_r2": 0.7731,
-    "correlation": 0.8793,
-    "bfsp_mae": 33.24,
-    "median_ape_pct": 38.9
+    "log_mae": 0.4702,
+    "log_rmse": 0.6185,
+    "log_r2": 0.8028,
+    "correlation": 0.8962,
+    "bfsp_mae": 30.23,
+    "median_ape_pct": 35.2,
+    "mean_ape_pct": 51.6
   },
   "ranking": {
+    "total_races": 23189,
     "top1_win_rate": 30.0,
-    "top2_win_rate": 49.8,
-    "top3_win_rate": 64.0,
-    "random_baseline": 10.7
+    "top2_win_rate": 49.9,
+    "top3_win_rate": 64.1,
+    "fav_overlay_wins": 2584
   },
-  "profitability_level_stakes": {
-    ">=5%_overlay": {
-      "n_bets": 91265,
-      "winners": 6706,
-      "win_rate_pct": 7.3,
-      "profit": -3545.37,
-      "roi_pct": -3.88
+  "min_overlay_pct": 5.0,
+  "n_overlay_bets": 81734,
+  "staking": {
+    "Level Stakes": {
+      "n_bets": 81734,
+      "total_staked": 81734.0,
+      "total_returned": 77141.75,
+      "profit": -4592.25,
+      "roi_pct": -5.62,
+      "win_rate_pct": 8.0,
+      "avg_winner_bfsp": 12.38,
+      "max_drawdown": -4961.92
     },
-    ">=10%_overlay": {
-      "n_bets": 84188,
-      "winners": 5905,
-      "win_rate_pct": 7.0,
-      "profit": -3830.73,
-      "roi_pct": -4.55
+    "Variant Staking": {
+      "n_bets": 81734,
+      "total_staked": 294871.08,
+      "total_returned": 276781.36,
+      "profit": -18089.72,
+      "roi_pct": -6.13,
+      "win_rate_pct": 8.0,
+      "avg_winner_bfsp": 12.38,
+      "max_drawdown": -20336.91
     },
-    ">=15%_overlay": {
-      "n_bets": 77435,
-      "winners": 5208,
-      "win_rate_pct": 6.7,
-      "profit": -3565.67,
-      "roi_pct": -4.6
+    "Kelly": {
+      "n_bets": 81734,
+      "total_staked": 12365.74,
+      "total_returned": 11366.74,
+      "profit": -999.0,
+      "roi_pct": -8.08,
+      "win_rate_pct": 8.0,
+      "final_bankroll": 1.0,
+      "growth_pct": -99.9,
+      "peak_bankroll": 2840.08,
+      "min_bankroll": 1.0,
+      "max_drawdown_pct": -100.0
     },
-    ">=20%_overlay": {
-      "n_bets": 71248,
-      "winners": 4589,
-      "win_rate_pct": 6.4,
-      "profit": -2968.87,
-      "roi_pct": -4.17
+    "Half Kelly": {
+      "n_bets": 81734,
+      "total_staked": 19139.73,
+      "total_returned": 18140.73,
+      "profit": -999.0,
+      "roi_pct": -5.22,
+      "win_rate_pct": 8.0,
+      "final_bankroll": 1.0,
+      "growth_pct": -99.9,
+      "peak_bankroll": 5482.19,
+      "min_bankroll": 1.0,
+      "max_drawdown_pct": -100.0
+    },
+    "Quarter Kelly": {
+      "n_bets": 81734,
+      "total_staked": 18050.18,
+      "total_returned": 17051.16,
+      "profit": -999.02,
+      "roi_pct": -5.53,
+      "win_rate_pct": 8.0,
+      "final_bankroll": 0.98,
+      "growth_pct": -99.9,
+      "peak_bankroll": 3417.88,
+      "min_bankroll": 0.98,
+      "max_drawdown_pct": -100.0
     }
   }
 }

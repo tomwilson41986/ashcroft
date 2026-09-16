@@ -140,7 +140,9 @@ jobs:
     # run on its own after a code change that alters features or calibration.
     if: inputs.mode != 'train_only'
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    # GitHub caps a hosted job at six hours; this leaves ten minutes at the end
+    # for the artifact upload.
+    timeout-minutes: 350
 
     steps:
       - uses: actions/checkout@v4
@@ -203,7 +205,38 @@ jobs:
         # The feature build is the hours-long half of this job and it is identical
         # whenever the feature code and the data are. Restoring it turns a
         # model-only experiment from five hours into minutes.
-        uses: actions/cache@v4
+        #
+        # Restore and save are separate actions rather than the combined
+        # `actions/cache`, because the combined one only writes the cache in the
+        # job's post step. A run that dies in the fold loop — a timeout, a lost
+        # runner — therefore threw away the build as well, which is precisely the
+        # run that most needed it kept. The build now gets stored the moment it
+        # finishes.
+        id: fcache
+        if: ${{ !inputs.refresh_cache }}
+        uses: actions/cache/restore@v4
+        with:
+          path: .feature_cache
+          key: features-${{ steps.fkey.outputs.key }}
+
+      - name: Build the feature matrix
+        # Skipped on a cache hit. `refresh_cache` skips the restore above, so
+        # there is nothing to hit and this rebuilds.
+        if: steps.fcache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p reports
+          ( while true; do echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print $3"/"$2" MB used"}') $(free -m | awk '/^Swap:/{print $3"/"$2" MB swap"}')"; sleep 60; done ) &
+          MEMWATCH=$!
+          python evaluate_oos.py \
+            --start-date "${{ inputs.start_date || '2021-01-01' }}" \
+            --feature-cache .feature_cache \
+            --build-cache-only 2>&1 | grep -v PerformanceWarning | tee reports/build_features.log
+          kill $MEMWATCH || true
+          du -sh .feature_cache
+
+      - name: Save the feature matrix
+        if: steps.fcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
           path: .feature_cache
           key: features-${{ steps.fkey.outputs.key }}
@@ -217,7 +250,6 @@ jobs:
             --start-date "${{ inputs.start_date || '2021-01-01' }}" \
             --feature-cache .feature_cache \
             ${{ inputs.drop_features && format('--drop-features {0}', inputs.drop_features) || '' }} \
-            ${{ inputs.refresh_cache && '--refresh-cache' || '' }} \
             --min-train-days ${{ inputs.min_train_days || 365 }} \
             --val-window ${{ inputs.val_window || 30 }} \
             --step-days ${{ inputs.step_days || 30 }} \
