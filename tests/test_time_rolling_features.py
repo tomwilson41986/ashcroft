@@ -16,8 +16,14 @@ from model.custom_metrics import CustomMetricsEngine, _time_window_prior_stats
 from model.financial_features import _calc_win_density
 
 
-def _brute_force_prior_stats(df, entity_col, window_days, inclusive_left):
-    """Reference implementation: literal loops over prior rows."""
+def _brute_force_prior_stats(df, entity_col, window_days):
+    """Reference implementation: literal loops over the entity's EARLIER DAYS.
+
+    The reference used to scan `for j in range(i)` and admit `dts[j] <= dts[i]`,
+    which counts the rows sitting above this one in the sorted frame on today's
+    own date. A yard runs several across a card and two in one race, so that
+    reference asserted a feature that reads results from races yet to be run —
+    the row-lag leak, written into the test. Today is out in full."""
     n = len(df)
     wins = np.full(n, np.nan)
     runs = np.full(n, np.nan)
@@ -29,11 +35,10 @@ def _brute_force_prior_stats(df, entity_col, window_days, inclusive_left):
             continue
         cutoff = dts[i] - np.timedelta64(window_days, "D")
         cnt, tot = 0, 0.0
-        for j in range(i):
+        for j in range(n):
             if pd.isna(ents[j]) or ents[j] != ents[i]:
                 continue
-            in_win = dts[j] >= cutoff if inclusive_left else dts[j] > cutoff
-            if in_win and dts[j] <= dts[i]:
+            if cutoff <= dts[j] < dts[i]:
                 cnt += 1
                 tot += won[j]
         if cnt > 0:
@@ -69,16 +74,38 @@ def form_df():
 
 
 @pytest.mark.parametrize("window_days", [14, 30, 60])
-@pytest.mark.parametrize("closed,inclusive_left", [("right", False), ("both", True)])
-def test_time_window_prior_stats_matches_brute_force(
-    form_df, window_days, closed, inclusive_left
-):
+@pytest.mark.parametrize("closed", ["right", "both"])
+def test_time_window_prior_stats_matches_brute_force(form_df, window_days, closed):
     wins, runs = _time_window_prior_stats(form_df, "trainer", window_days, closed)
-    exp_wins, exp_runs = _brute_force_prior_stats(
-        form_df, "trainer", window_days, inclusive_left
-    )
+    exp_wins, exp_runs = _brute_force_prior_stats(form_df, "trainer", window_days)
     _assert_same(wins, exp_wins)
     _assert_same(runs, exp_runs)
+
+
+def test_time_window_right_edge_is_always_open(form_df):
+    """`closed` no longer moves the right edge, whatever a caller passes.
+
+    The callers pass 'right' and 'both' and used to mean by it whether today's
+    own runs counted. They never may, so the argument is inert and the test
+    says so rather than leaving the next reader to assume it still works."""
+    a = _time_window_prior_stats(form_df, "trainer", 30, "right")
+    b = _time_window_prior_stats(form_df, "trainer", 30, "both")
+    for x, y in zip(a, b):
+        _assert_same(x, y)
+
+
+def test_a_yards_other_runners_today_are_not_in_its_form(form_df):
+    """The leak this feature had: same-day runs inside the trailing window."""
+    df = pd.DataFrame({
+        "trainer": ["A", "A", "A"],
+        "race_date": pd.to_datetime(["2026-02-01", "2026-02-20", "2026-02-20"]),
+        "race_time": ["14:00", "14:00", "14:30"],
+        "won": [0.0, 1.0, 0.0],
+    })
+    wins, runs = _time_window_prior_stats(df, "trainer", 30, "right")
+    # The 14:30 runner must not see the 14:00 winner from the same afternoon.
+    assert runs[2] == 1.0 and wins[2] == 0.0
+    assert runs[1] == 1.0 and wins[1] == 0.0
 
 
 def test_time_window_prior_stats_empty_frame(form_df):
@@ -149,7 +176,7 @@ def test_hot_form_produces_real_values(form_df):
     check = out.sort_values(
         ["trainer", "race_date", "race_time"]
     ).reset_index(drop=True)
-    exp_wins, exp_runs = _brute_force_prior_stats(check, "trainer", 14, False)
+    exp_wins, exp_runs = _brute_force_prior_stats(check, "trainer", 14)
     _assert_same(check["trainer_wins_14d"].values, exp_wins)
     _assert_same(check["trainer_runs_14d"].values, exp_runs)
     expected_sr = exp_wins / exp_runs

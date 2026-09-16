@@ -123,8 +123,12 @@ def _calc_form_rsi(df: pd.DataFrame) -> pd.DataFrame:
     # NFP change between consecutive runs
     nfp_change = grp["NFP"].diff()
 
-    gains = nfp_change.clip(lower=0)
-    losses = (-nfp_change).clip(lower=0)
+    # The most recent change is today's NFP minus the last one, so a window
+    # ending on this row is a window containing today's result. The comment
+    # below used to claim a shift that the code did not make: the window has to
+    # end on the PREVIOUS run, which for a horse is the previous race.
+    gains = nfp_change.clip(lower=0).groupby(df["horse_name"], sort=False).shift(1)
+    losses = (-nfp_change).clip(lower=0).groupby(df["horse_name"], sort=False).shift(1)
 
     for window in [5, 10]:
         avg_gain = gains.groupby(
@@ -136,7 +140,6 @@ def _calc_form_rsi(df: pd.DataFrame) -> pd.DataFrame:
         denom = avg_gain + avg_loss
         rsi = np.where(denom > 0, 100.0 * avg_gain / denom, 50.0)
         rsi = np.where(avg_gain.isna() | avg_loss.isna(), np.nan, rsi)
-        # Shift by 1 to ensure lag safety (use prior data only)
         df[f"form_rsi_{window}"] = pd.Series(rsi, index=df.index)
 
     return df

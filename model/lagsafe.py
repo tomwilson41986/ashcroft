@@ -61,14 +61,22 @@ def ensure_race_key(df: pd.DataFrame, race_col: str = "raceid") -> pd.Series:
     return out
 
 
-def race_lagged_expanding_mean(df: pd.DataFrame, group_col: str | list[str], value_col: str,
-                               race_col: str = "raceid", min_races: int = 1) -> pd.Series:
-    """Mean of `value_col` over all *earlier races* in the group.
+def _per_race_priors(df: pd.DataFrame, keys: list[str], value_col: str,
+                     race_col: str) -> pd.DataFrame:
+    """Per-row totals over the group's EARLIER races: sum, count, races.
 
-    Returns a Series aligned to `df.index`. Rows whose group has fewer than
-    `min_races` earlier races get NaN rather than a number resting on one
-    observation."""
-    keys = [group_col] if isinstance(group_col, str) else list(group_col)
+    The subtraction form, `group_cumsum - own`, is the obvious way to write
+    this and it is not quite right. It reaches the correct answer through the
+    current race's own value, so the last bits of the result depend on a number
+    the row is not allowed to see. Where the prior is then ranked within a race
+    the dust is the whole signal: `dist_from_preferred` is exactly zero for a
+    field that has all run this trip before, so `rDistApt` was ranking rounding
+    error that moved when the race's own result moved.
+
+    Taking the cumulative total as of the PREVIOUS race never adds the current
+    value in the first place, so the prior is bit-identical however today
+    finishes. It also drops a pass, since the sum no longer has to be
+    reconstructed from the mean."""
     d = pd.DataFrame(index=df.index)
     for k in keys:
         d[k] = df[k]
@@ -82,39 +90,49 @@ def race_lagged_expanding_mean(df: pd.DataFrame, group_col: str | list[str], val
                  .reset_index()
                  .sort_values(keys + ["_d", "_t", "_race"], kind="stable"))
     g = per_race.groupby(keys, dropna=False, observed=True)
-    prior_sum = g["_s"].cumsum() - per_race["_s"]
-    prior_n = g["_n"].cumsum() - per_race["_n"]
-    prior_races = g.cumcount()
-    with np.errstate(invalid="ignore", divide="ignore"):
-        mean = np.where(prior_n > 0, prior_sum / prior_n, np.nan)
-    per_race["_mean"] = np.where(prior_races >= min_races, mean, np.nan)
+    per_race["_cs"] = g["_s"].cumsum()
+    per_race["_cn"] = g["_n"].cumsum()
+    gg = per_race.groupby(keys, dropna=False, observed=True)
+    per_race["_prior_sum"] = gg["_cs"].shift(1).fillna(0.0)
+    per_race["_prior_n"] = gg["_cn"].shift(1).fillna(0.0)
+    per_race["_prior_races"] = gg.cumcount()
 
-    merged = d.reset_index().merge(per_race[keys + ["_race", "_mean"]], on=keys + ["_race"], how="left")
-    return pd.Series(merged["_mean"].values, index=merged["index"].values).reindex(df.index)
+    cols = ["_prior_sum", "_prior_n", "_prior_races"]
+    merged = d.reset_index().merge(per_race[keys + ["_race"] + cols], on=keys + ["_race"], how="left")
+    out = merged[cols].set_index(merged["index"].values)
+    return out.reindex(df.index)
+
+
+def race_lagged_expanding_mean(df: pd.DataFrame, group_col: str | list[str], value_col: str,
+                               race_col: str = "raceid", min_races: int = 1) -> pd.Series:
+    """Mean of `value_col` over all *earlier races* in the group.
+
+    Returns a Series aligned to `df.index`. Rows whose group has fewer than
+    `min_races` earlier races get NaN rather than a number resting on one
+    observation."""
+    keys = [group_col] if isinstance(group_col, str) else list(group_col)
+    p = _per_race_priors(df, keys, value_col, race_col)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = np.where(p["_prior_n"] > 0, p["_prior_sum"] / p["_prior_n"], np.nan)
+    return pd.Series(np.where(p["_prior_races"] >= min_races, mean, np.nan), index=df.index)
 
 
 def race_lagged_expanding_sum(df: pd.DataFrame, group_col: str | list[str], value_col: str,
                               race_col: str = "raceid") -> pd.Series:
-    """Count-weighted sum over earlier races in the group (same lagging rule)."""
-    m = race_lagged_expanding_mean(df, group_col, value_col, race_col)
-    n = race_lagged_expanding_count(df, group_col, value_col, race_col)
-    return m * n
+    """Total of `value_col` over earlier races in the group (same lagging rule).
+
+    A group with no earlier race gets NaN, not zero. LightGBM reads a NaN as
+    "no history" and learns its own default direction for it, which is not the
+    same thing as a horse that has run five times and won nothing."""
+    keys = [group_col] if isinstance(group_col, str) else list(group_col)
+    p = _per_race_priors(df, keys, value_col, race_col)
+    out = np.where(p["_prior_races"] > 0, p["_prior_sum"], np.nan)
+    return pd.Series(out, index=df.index)
 
 
 def race_lagged_expanding_count(df: pd.DataFrame, group_col: str | list[str], value_col: str,
                                 race_col: str = "raceid") -> pd.Series:
+    """How many non-null `value_col` observations the group had in earlier races."""
     keys = [group_col] if isinstance(group_col, str) else list(group_col)
-    d = pd.DataFrame(index=df.index)
-    for k in keys:
-        d[k] = df[k]
-    d["_race"] = ensure_race_key(df, race_col)
-    d["_v"] = pd.to_numeric(df[value_col], errors="coerce")
-    d["_date"] = pd.to_datetime(df["race_date"], errors="coerce")
-    d["_time"] = race_minutes(df["race_time"]) if "race_time" in df.columns else 0.0
-    per_race = (d.groupby(keys + ["_race"], dropna=False, observed=True)
-                 .agg(_n=("_v", "count"), _d=("_date", "min"), _t=("_time", "min"))
-                 .reset_index()
-                 .sort_values(keys + ["_d", "_t", "_race"], kind="stable"))
-    per_race["_cnt"] = per_race.groupby(keys, dropna=False, observed=True)["_n"].cumsum() - per_race["_n"]
-    merged = d.reset_index().merge(per_race[keys + ["_race", "_cnt"]], on=keys + ["_race"], how="left")
-    return pd.Series(merged["_cnt"].values, index=merged["index"].values).reindex(df.index)
+    p = _per_race_priors(df, keys, value_col, race_col)
+    return pd.Series(p["_prior_n"].values, index=df.index)

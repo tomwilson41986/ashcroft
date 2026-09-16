@@ -256,11 +256,11 @@ EXPONENTIAL_DECAY_FEATURES = [
 
 # Expectation residuals (Woods/Ziemba: market-expected vs actual)
 RESIDUAL_FEATURES = [
-    "NFP_residual",
+    # "NFP_residual" removed: this race's finishing position minus what the market implied. Its lagged forms remain.
     "career_residual",
     "residual_exp3",
     "residual_exp5",
-    "win_surprise",
+    # "win_surprise" removed: won, multiplied by the price: it IS the result. Its lagged forms remain.
     "career_win_surprise",
 ]
 
@@ -383,7 +383,7 @@ LENGTHS_BEATEN_FEATURES = [
     "LR_LB",
     "LR3_LB",
     "LR5_LB",
-    "FSALB",
+    # "FSALB" removed: this race's beaten lengths, scaled by field size. Its lagged forms remain.
 ]
 
 # Equipment changes (first-time headgear signals)
