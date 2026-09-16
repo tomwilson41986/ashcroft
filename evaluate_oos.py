@@ -34,7 +34,16 @@ import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from model import feature_cache
-from model.bfsp_model import all_nan_columns, predict_prices, resolve_feature_columns
+from model.bfsp_model import (
+    OBJECTIVES,
+    TARGETS,
+    TrainConfig,
+    all_nan_columns,
+    fit_bfsp,
+    fold_masks,
+    predict_prices,
+    resolve_feature_columns,
+)
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -65,7 +74,8 @@ def walk_forward_predict(
     min_train_days: int = 365,
     val_window_days: int = 30,
     step_days: int = 30,
-    params: dict | None = None,
+    cfg: TrainConfig | None = None,
+    eval_from: str | None = None,
 ) -> pd.DataFrame:
     """Train and predict in walk-forward fashion.
 
@@ -79,8 +89,9 @@ def walk_forward_predict(
         - predicted_win_prob, predicted_win_prob_norm
         - fold_idx (which fold produced this prediction)
     """
-    if params is None:
-        params = BFSPTrainer.DEFAULT_PARAMS.copy()
+    # The recipe, recorded and shared with train_bfsp.py. These used to be two
+    # different models: plain L2 here, profit-weighted plus recency decay there.
+    cfg = cfg or TrainConfig()
 
     min_date = df["race_date"].min()
     max_date = df["race_date"].max()
@@ -93,10 +104,18 @@ def walk_forward_predict(
         val_start = train_end
         val_end = val_start + timedelta(days=val_window_days)
 
-        train_df = df[df["race_date"] < val_start].copy()
-        val_df = df[
-            (df["race_date"] >= val_start) & (df["race_date"] < val_end)
-        ].copy()
+        # Purged and embargoed by the shared helper. A strict date split left
+        # trailing-window features (30-day trainer form, rolling strike rates)
+        # straddling the boundary.
+        tr_mask, va_mask = fold_masks(df["race_date"], val_start, val_end, cfg)
+        train_df = df[tr_mask].copy()
+        val_df = df[va_mask].copy()
+
+        if eval_from is not None and val_start < pd.Timestamp(eval_from):
+            # Fold skipped, not re-keyed: --eval-from shortens a run without
+            # changing the feature matrix, so variants still share one cache.
+            train_end += timedelta(days=step_days)
+            continue
 
         if len(train_df) < 200 or len(val_df) < 5:
             train_end += timedelta(days=step_days)
@@ -108,26 +127,17 @@ def walk_forward_predict(
             f"({val_start.date()} to {val_end.date()})"
         )
 
-        X_train = train_df[feature_cols].astype(float)
-        y_train = train_df["log_bfsp"].astype(float)
-        X_val = val_df[feature_cols].astype(float)
-
-        train_set = lgb.Dataset(X_train, label=y_train)
-        val_set = lgb.Dataset(
-            X_val, label=val_df["log_bfsp"].astype(float), reference=train_set
-        )
-
-        model = lgb.train(
-            params,
-            train_set,
-            num_boost_round=2000,
-            valid_sets=[train_set, val_set],
-            valid_names=["train", "valid"],
-            callbacks=[
-                lgb.log_evaluation(period=0),
-                lgb.early_stopping(stopping_rounds=50),
-            ],
-        )
+        fit = fit_bfsp(train_df, feature_cols, cfg)
+        model = fit.booster
+        if fold_idx == 0:
+            log.info(
+                "    early stopping on the %d days before the fold (%d rows, from %s), "
+                "not on the fold being scored",
+                cfg.holdout_days, fit.n_holdout,
+                pd.Timestamp(fit.holdout_start).date(),
+            )
+        log.info("    best_iteration %d, holdout mae %.4f",
+                 fit.best_iteration, fit.holdout_metrics["mae"])
 
         # One price, one probability, book = 1 by construction. The quantile
         # calibrator used to overwrite the price here, fitted on the
@@ -135,7 +145,8 @@ def walk_forward_predict(
         # and made `1 / predicted_bfsp` disagree with `predicted_win_prob_norm`
         # by a median 13%. It is a research diagnostic now: `research_lab.py
         # price-cal` fits it against `predicted_bfsp_raw`, which this exports.
-        val_df = predict_prices(model, val_df.copy(), feature_cols, race_col="raceid")
+        val_df = predict_prices(model, val_df.copy(), feature_cols, race_col="raceid",
+                                target=cfg.target, num_iteration=fit.best_iteration)
         val_df["fold_idx"] = fold_idx
 
         all_oos.append(val_df)
@@ -676,6 +687,50 @@ def main():
         "--refresh-cache", action="store_true",
         help="Rebuild the feature matrix even if a cached one matches",
     )
+    # --- the training recipe (shared with train_bfsp.py) -------------------
+    parser.add_argument(
+        "--objective", default="l2", choices=list(OBJECTIVES),
+        help="l2 = squared error on the target, every runner weighted equally "
+             "(default). profit_weighted weights by 1/sqrt(BFSP) and penalises "
+             "under-prediction 1.5x, which tells the model most of the field "
+             "does not matter",
+    )
+    parser.add_argument(
+        "--decay-rate", type=float, default=0.0,
+        help="Exponential recency weight exp(-rate*days/365); 0 disables it "
+             "(default). 1.0 gives a three-year-old race 5%% of today's weight",
+    )
+    parser.add_argument(
+        "--target", default="log_bfsp", choices=list(TARGETS),
+        help="log_bfsp (default), demeaned_log (within-race differences only) "
+             "or logit_norm_prob (logit of the race-normalised probability)",
+    )
+    parser.add_argument(
+        "--holdout-days", type=int, default=60,
+        help="Days at the end of the training window used for early stopping. "
+             "Stopping on the scored fold picks the iteration count with "
+             "knowledge of the test set",
+    )
+    parser.add_argument("--purge-days", type=int, default=30,
+                        help="Drop training rows within N days of the fold")
+    parser.add_argument("--embargo-days", type=int, default=0,
+                        help="Drop the fold's first N days")
+    parser.add_argument("--refit", action="store_true",
+                        help="Refit on the full training window at the chosen "
+                             "iteration count (what the published model does)")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--native-categoricals", action="store_true",
+                        help="Declare the _cat columns to LightGBM as categorical "
+                             "rather than letting it split them as ordered integers")
+    parser.add_argument(
+        "--eval-from", default=None, metavar="DATE",
+        help="Skip folds whose validation window starts before DATE. Shortens a "
+             "run without changing the feature matrix, so variants share a cache",
+    )
+    parser.add_argument(
+        "--tag", default=None,
+        help="Name this variant; outputs become *_<tag>.csv / *_<tag>.json",
+    )
     parser.add_argument(
         "--drop-feature-list", default=None, metavar="FILE",
         help="Withhold the exact feature names listed in FILE (one per line). "
@@ -792,12 +847,30 @@ def main():
 
     # Walk-forward predictions
     log.info("\nRunning walk-forward out-of-sample evaluation...")
+    cfg = TrainConfig(
+        objective=args.objective,
+        decay_rate=args.decay_rate,
+        target=args.target,
+        holdout_days=args.holdout_days,
+        purge_days=args.purge_days,
+        embargo_days=args.embargo_days,
+        refit_on_full=args.refit,
+        seed=args.seed,
+        native_categoricals=args.native_categoricals,
+    )
+    log.info("Training recipe: objective=%s target=%s decay=%.2f holdout=%dd "
+             "purge=%dd embargo=%dd refit=%s seed=%d",
+             cfg.objective, cfg.target, cfg.decay_rate, cfg.holdout_days,
+             cfg.purge_days, cfg.embargo_days, cfg.refit_on_full, cfg.seed)
+
     oos = walk_forward_predict(
         df,
         feature_cols_full,
         min_train_days=args.min_train_days,
         val_window_days=args.val_window,
         step_days=args.step_days,
+        cfg=cfg,
+        eval_from=args.eval_from,
     )
 
     if oos.empty:
@@ -845,6 +918,12 @@ def main():
     )
 
     # Save outputs
+    def _tagged(path):
+        if not path or not args.tag:
+            return path
+        stem, dot, ext = path.rpartition(".")
+        return f"{stem}_{args.tag}{dot}{ext}" if dot else f"{path}_{args.tag}"
+
     if args.output_csv:
         out_cols = [
             "race_date", "race_time", "track", "horse_name",
@@ -861,8 +940,9 @@ def main():
             "dist_furlongs", "number_of_runners", "race_class",
         ]
         avail = [c for c in out_cols if c in oos.columns]
-        oos[avail].to_csv(args.output_csv, index=False)
-        log.info(f"Saved OOS predictions to {args.output_csv}")
+        out_csv = _tagged(args.output_csv)
+        oos[avail].to_csv(out_csv, index=False)
+        log.info(f"Saved OOS predictions to {out_csv}")
 
     if args.output_json:
         summary = {
@@ -873,6 +953,8 @@ def main():
             "n_predictions": len(oos),
             "n_folds": int(oos["fold_idx"].nunique()),
             "n_features_used": len(feature_cols_full),
+            "train_config": cfg.describe(),
+            "tag": args.tag,
             "missing_features": missing_features,
             "accuracy": accuracy,
             "ranking": ranking,
@@ -880,9 +962,10 @@ def main():
             "n_overlay_bets": len(overlays),
             "staking": staking,
         }
-        with open(args.output_json, "w") as f:
+        out_json = _tagged(args.output_json)
+        with open(out_json, "w") as f:
             json.dump(summary, f, indent=2, default=str)
-        log.info(f"Saved summary to {args.output_json}")
+        log.info(f"Saved summary to {out_json}")
 
 
 if __name__ == "__main__":

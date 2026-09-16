@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
-from model.bfsp_model import predict_prices
+from model.bfsp_model import assert_meta_is_servable, predict_prices
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -85,17 +85,32 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str]]:
 
     model = lgb.Booster(model_file=model_path)
 
-    feature_cols = []
+    feature_cols, vocab, meta = [], {}, {}
     if os.path.exists(meta_path):
         with open(meta_path) as f:
             meta = json.load(f)
         feature_cols = meta.get("feature_cols", [])
+        vocab = meta.get("categorical_vocab", {}) or {}
 
     if not feature_cols:
         feature_cols = [c for c in ALL_FEATURE_COLS]
 
-    log.info(f"Loaded BFSP model ({len(feature_cols)} features)")
-    return model, feature_cols
+    # Refuse an artefact that should not be served. The model this guard was
+    # written for had NFP_residual, FSALB and win_surprise -- the race's own
+    # result -- as its three most important features by gain, and this loader
+    # served it every morning without a word.
+    assert_meta_is_servable({**meta, "feature_cols": feature_cols})
+
+    log.info("Loaded BFSP model (%d features, objective=%s, target=%s, trained through %s)",
+             len(feature_cols), meta.get("objective", "?"),
+             meta.get("target", "?"), meta.get("trained_through", "?"))
+    if not vocab:
+        log.warning(
+            "No categorical vocabulary in the model metadata: track_cat and "
+            "race_type_cat will be numbered from today's card, which is not how "
+            "they were numbered in training. Retrain to store one."
+        )
+    return model, feature_cols, vocab
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +167,7 @@ def prepare_and_predict(
     model: lgb.Booster,
     feature_cols: list[str],
     target_date: date,
+    vocab: dict | None = None,
 ) -> pd.DataFrame:
     """Calculate metrics on history, build features for runners, predict BFSP.
 
@@ -197,7 +213,7 @@ def prepare_and_predict(
 
     # Build context features
     log.info("Building context features...")
-    full_df = build_context_features(full_df)
+    full_df = build_context_features(full_df, vocab=vocab)
 
     # Extract rows for the target date
     full_df["race_date"] = pd.to_datetime(full_df["race_date"])
@@ -480,7 +496,7 @@ def main():
         sys.exit(1)
 
     # Load model
-    model, feature_cols = load_bfsp_model(args.model_dir)
+    model, feature_cols, vocab = load_bfsp_model(args.model_dir)
 
     # Load historical data
     log.info(f"Loading historical data (from {args.start_date})...")
@@ -507,7 +523,7 @@ def main():
                 continue
 
             preds = prepare_and_predict(
-                history_before, runners_on_date, model, feature_cols, td
+                history_before, runners_on_date, model, feature_cols, td, vocab
             )
             if len(preds) > 0:
                 all_predictions.append(preds)
@@ -575,7 +591,7 @@ def main():
 
     # Generate predictions
     predictions = prepare_and_predict(
-        history_before, target_runners, model, feature_cols, target_date
+        history_before, target_runners, model, feature_cols, target_date, vocab
     )
 
     if len(predictions) == 0:

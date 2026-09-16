@@ -21,7 +21,7 @@ class _Booster:
     def __init__(self, log_prices):
         self._v = np.asarray(log_prices, dtype=float)
 
-    def predict(self, X):
+    def predict(self, X, num_iteration=None):
         return self._v[: len(X)]
 
 
@@ -159,3 +159,172 @@ def test_drop_prefixes_and_names_both_apply():
 def test_a_column_that_built_empty_is_reported():
     df = pd.DataFrame({"ok": [1.0, 2.0], "empty": [np.nan, np.nan]})
     assert all_nan_columns(df, ["ok", "empty", "absent"]) == ["empty"]
+
+
+# ---------------------------------------------------------------------------
+# The evaluation must measure the model production ships.
+#
+# It did not. `evaluate_oos.py` trained plain L2 over every runner with no
+# sample weights; `train_bfsp.py` defaulted to a profit-weighted objective that
+# weights a runner by 1/sqrt(BFSP) and penalises predicting too short by 1.5x,
+# plus recency decay giving a three-year-old race 5% of today's weight.
+# ---------------------------------------------------------------------------
+
+from dataclasses import replace  # noqa: E402
+
+from model.bfsp_model import (  # noqa: E402
+    DEFAULT_PARAMS,
+    TrainConfig,
+    build_target,
+    fit_bfsp,
+    fold_masks,
+    invert_target,
+    model_meta,
+    assert_meta_is_servable,
+    profit_weighted_objective,
+    sample_weights,
+)
+
+
+def _history(n_days=400, races_per_day=3, runners=8, seed=7):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for d in range(n_days):
+        day = pd.Timestamp("2024-01-01") + pd.Timedelta(days=d)
+        for r in range(races_per_day):
+            for i in range(runners):
+                skill = rng.normal()
+                rows.append({
+                    "race_date": day, "race_time": f"{1 + r}.30", "track": "Ascot",
+                    "horse_name": f"h{d}_{r}_{i}",
+                    "raceid": f"{day.date()}_{r}",
+                    "f1": skill + rng.normal(0, 0.3), "f2": rng.normal(),
+                    "bfsp": float(np.exp(1.5 - 0.8 * skill + rng.normal(0, 0.25))),
+                })
+    return pd.DataFrame(rows)
+
+
+def test_defaults_are_the_recipe_the_evaluation_measures():
+    cfg = TrainConfig()
+    assert cfg.objective == "l2"
+    assert cfg.decay_rate == 0.0
+    assert cfg.target == "log_bfsp"
+    d = cfg.describe()
+    assert d["sample_weighting"] == {"type": "none", "decay_rate": 0.0}
+    assert d["lightgbm_objective"] == "regression"
+
+
+def test_the_objective_and_weighting_are_recorded():
+    cfg = TrainConfig(objective="profit_weighted", decay_rate=1.0)
+    d = cfg.describe()
+    assert d["lightgbm_objective"] == "custom:profit_weighted"
+    assert d["sample_weighting"]["type"] == "exponential_decay"
+    # 1.0/year is a half-life a bit over eight months; worth seeing in the meta.
+    assert 250 < d["sample_weighting"]["half_life_days"] < 260
+
+
+def test_early_stopping_never_sees_the_rows_it_will_score():
+    """The iteration count must not be chosen on the test fold."""
+    df = _history(n_days=200)
+    cfg = TrainConfig(holdout_days=30, num_boost_round=40, early_stopping_rounds=5)
+    fit = fit_bfsp(df, ["f1", "f2"], cfg)
+
+    assert fit.n_holdout > 0 and fit.n_train > 0
+    # The holdout is the tail of the TRAINING window, so a fold starting after
+    # the training window ends cannot overlap it.
+    assert pd.Timestamp(fit.holdout_start) <= df["race_date"].max()
+    assert fit.n_train + fit.n_holdout == len(df)
+
+
+def test_purge_keeps_the_fold_clear_of_the_training_window():
+    df = _history(n_days=150)
+    cfg = TrainConfig(purge_days=30, embargo_days=7)
+    val_start, val_end = pd.Timestamp("2024-04-01"), pd.Timestamp("2024-05-01")
+    tr, va = fold_masks(df["race_date"], val_start, val_end, cfg)
+
+    assert df.loc[tr, "race_date"].max() < val_start - pd.Timedelta(days=30)
+    assert df.loc[va, "race_date"].min() >= val_start + pd.Timedelta(days=7)
+    assert df.loc[va, "race_date"].max() < val_end
+
+
+def test_recency_weights_are_off_unless_asked_for():
+    dates = pd.date_range("2024-01-01", periods=100, freq="D")
+    assert sample_weights(dates, 0.0) is None
+    w = sample_weights(dates, 1.0)
+    assert w[-1] == pytest.approx(1.0)      # today
+    assert w[0] < w[-1]                      # older rows count for less
+
+
+@pytest.mark.parametrize("target", ["log_bfsp", "demeaned_log", "logit_norm_prob"])
+def test_every_target_describes_the_same_normalised_price(target):
+    """The three targets are reparameterisations, not different models.
+
+    Because the served price is race-normalised, a race-level term cancels --
+    which is why `demeaned_log` needs no separate race-level model."""
+    df = _history(n_days=20)
+    y = build_target(df, target)
+    back = invert_target(y, df, target)
+
+    ip = 1.0 / back
+    q = ip / pd.Series(ip).groupby(df["raceid"].to_numpy()).transform("sum").to_numpy()
+    truth = 1.0 / df["bfsp"].to_numpy()
+    truth = truth / pd.Series(truth).groupby(df["raceid"].to_numpy()).transform("sum").to_numpy()
+    assert np.allclose(q, truth, atol=1e-9)
+
+
+def test_profit_weighted_gradient_favours_favourites_and_punishes_short_quotes():
+    class _D:
+        def __init__(self, y): self._y = np.asarray(y, float)
+        def get_label(self): return self._y
+
+    labels = np.log(np.array([2.0, 2.0, 50.0, 50.0]))
+    preds = labels + np.array([0.1, -0.1, 0.1, -0.1])     # over, under, over, under
+    grad, hess = profit_weighted_objective(preds, _D(labels))
+
+    # A 2.0 shot carries far more gradient than a 50.0 shot for the same error.
+    assert abs(grad[0]) > 4 * abs(grad[2])
+    # Under-predicting (quoting shorter than it settles) is penalised harder.
+    assert abs(grad[1]) > abs(grad[0])
+
+
+def test_a_model_trained_on_the_race_result_cannot_be_served():
+    cfg = TrainConfig()
+    meta = model_meta(cfg, ["or_num", "win_surprise", "NFP_residual"])
+    with pytest.raises(ValueError, match="describe the race being predicted"):
+        assert_meta_is_servable(meta)
+
+
+def test_an_artefact_with_no_recipe_cannot_be_served():
+    """The deployed model recorded no objective, so nobody could tell which
+    of the two models it was."""
+    with pytest.raises(ValueError, match="records no objective"):
+        assert_meta_is_servable({"feature_cols": ["or_num", "dist_furlongs"]})
+
+
+def test_meta_records_what_was_trained():
+    df = _history(n_days=120)
+    cfg = TrainConfig(num_boost_round=30, early_stopping_rounds=5, holdout_days=20)
+    fit = fit_bfsp(df, ["f1", "f2"], cfg)
+    meta = model_meta(cfg, ["f1", "f2"], fit=fit, vocab={"track": ["Ascot"]})
+
+    assert meta["objective"] == "l2"
+    assert meta["target"] == "log_bfsp"
+    assert meta["sample_weighting"]["type"] == "none"
+    assert meta["n_features"] == 2
+    assert meta["categorical_vocab"] == {"track": ["Ascot"]}
+    assert meta["best_iteration"] >= 1
+    assert meta["feature_code_hash"]
+    assert_meta_is_servable(meta)       # a clean one is servable
+
+
+def test_refit_on_full_uses_every_row():
+    df = _history(n_days=120)
+    cfg = TrainConfig(num_boost_round=25, early_stopping_rounds=5, holdout_days=20)
+    plain = fit_bfsp(df, ["f1", "f2"], cfg)
+    refit = fit_bfsp(df, ["f1", "f2"], replace(cfg, refit_on_full=True))
+
+    assert plain.refit is False and refit.refit is True
+    # Same stopping point, different fitted booster: the refit saw the tail.
+    assert refit.best_iteration == plain.best_iteration
+    x = df[["f1", "f2"]].astype(float).head(50)
+    assert not np.allclose(plain.booster.predict(x), refit.booster.predict(x))

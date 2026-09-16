@@ -457,7 +457,7 @@ def scan_edges(
     log.info(f"=== Edge Scanner: {target_date} ===")
 
     # 1. Load model
-    model, feature_cols = load_bfsp_model(MODEL_DIR)
+    model, feature_cols, vocab = load_bfsp_model(MODEL_DIR)
 
     # 2. Load history
     log.info(f"Loading historical data (from {start_date})...")

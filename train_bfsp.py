@@ -40,7 +40,21 @@ from sklearn.metrics import (
     r2_score,
 )
 
-from model.bfsp_model import predict_prices
+from dataclasses import replace
+
+from model.bfsp_model import (
+    DEFAULT_PARAMS,
+    OBJECTIVES,
+    TARGETS,
+    assert_meta_is_servable,
+    model_meta,
+    TrainConfig,
+    build_target,
+    fit_bfsp,
+    predict_prices,
+    profit_weighted_metric,
+    profit_weighted_objective,
+)
 from model.custom_metrics import CustomMetricsEngine
 from model.draw_metrics import ALL_DRAW_FEATURES, GP_DRAW_FEATURES
 from model.financial_features import FINANCIAL_FEATURES, FINANCIAL_RANK_FEATURES
@@ -182,20 +196,8 @@ class BFSPTrainer:
     used as features alongside race context features.
     """
 
-    DEFAULT_PARAMS = {
-        "objective": "regression",
-        "metric": "mae",
-        "boosting_type": "gbdt",
-        "num_leaves": 127,
-        "learning_rate": 0.03,
-        "feature_fraction": 0.8,
-        "bagging_fraction": 0.8,
-        "bagging_freq": 5,
-        "min_child_samples": 50,
-        "lambda_l1": 0.1,
-        "lambda_l2": 0.1,
-        "verbose": -1,
-    }
+    #: Re-exported from model/bfsp_model.py, where the recipe now lives.
+    DEFAULT_PARAMS = DEFAULT_PARAMS
 
     def __init__(
         self,
@@ -203,16 +205,30 @@ class BFSPTrainer:
         val_window_days: int = 30,
         step_days: int = 30,
         params: dict | None = None,
-        decay_rate: float = 1.0,
-        use_custom_objective: bool = True,
+        decay_rate: float | None = None,
+        use_custom_objective: bool | None = None,
         gp_draw_surface: bool = False,
+        cfg: TrainConfig | None = None,
     ):
         self.min_train_days = min_train_days
         self.val_window_days = val_window_days
         self.step_days = step_days
-        self.params = params or self.DEFAULT_PARAMS.copy()
-        self.decay_rate = decay_rate
-        self.use_custom_objective = use_custom_objective
+
+        # The recipe. `decay_rate` and `use_custom_objective` stay as arguments
+        # because callers pass them, but they now feed one config that is also
+        # written into the model metadata -- the previous defaults (decay 1.0,
+        # profit-weighted on) were a different model from the one the
+        # evaluation measured, and nothing recorded which had been trained.
+        if cfg is None:
+            cfg = TrainConfig(
+                objective="profit_weighted" if use_custom_objective else "l2",
+                decay_rate=0.0 if decay_rate is None else float(decay_rate),
+                params=params or dict(DEFAULT_PARAMS),
+            )
+        self.cfg = cfg
+        self.params = cfg.params
+        self.decay_rate = cfg.decay_rate
+        self.use_custom_objective = cfg.objective == "profit_weighted"
         self.metrics_engine = CustomMetricsEngine(gp_draw_surface=gp_draw_surface)
         self.model: lgb.Booster | None = None
         self.feature_cols: list[str] = []
@@ -283,52 +299,22 @@ class BFSPTrainer:
         early_stopping: int = 50,
     ) -> tuple[lgb.Booster, dict]:
         """Train a single fold and return model + metrics."""
-        X_train = train_df[self.feature_cols].astype(float)
-        y_train = train_df["log_bfsp"].astype(float)
-        X_val = val_df[self.feature_cols].astype(float)
-        y_val = val_df["log_bfsp"].astype(float)
+        # One recipe, shared with evaluate_oos.py. This used to early-stop on
+        # `val_df` -- the very rows it then scored -- and to default to the
+        # profit-weighted objective plus recency decay while the evaluation ran
+        # plain L2 with neither. Two models, one set of published numbers.
+        fit = fit_bfsp(train_df, self.feature_cols, self.cfg)
+        model = fit.booster
 
-        # Exponential decay sample weighting (recent data matters more)
-        sample_weights = self._compute_sample_weights(train_df)
-
-        train_set = lgb.Dataset(X_train, label=y_train, weight=sample_weights)
-        val_set = lgb.Dataset(X_val, label=y_val, reference=train_set)
-
-        callbacks = [
-            lgb.log_evaluation(period=0),
-            lgb.early_stopping(stopping_rounds=early_stopping),
-        ]
-
-        # Use custom profit-weighted objective if enabled
-        if self.use_custom_objective:
-            params_copy = self.params.copy()
-            params_copy["objective"] = profit_weighted_objective
-            params_copy.pop("metric", None)
-            model = lgb.train(
-                params_copy,
-                train_set,
-                num_boost_round=num_boost_round,
-                valid_sets=[train_set, val_set],
-                valid_names=["train", "valid"],
-                feval=profit_weighted_metric,
-                callbacks=callbacks,
-            )
-        else:
-            model = lgb.train(
-                self.params,
-                train_set,
-                num_boost_round=num_boost_round,
-                valid_sets=[train_set, val_set],
-                valid_names=["train", "valid"],
-                callbacks=callbacks,
-            )
-
-        # Evaluate
-        y_pred = model.predict(X_val)
-        metrics = self._compute_metrics(y_val.values, y_pred)
-        metrics["best_iteration"] = model.best_iteration
+        y_val = build_target(val_df, self.cfg.target)
+        y_pred = model.predict(
+            val_df[self.feature_cols].astype(float), num_iteration=fit.best_iteration
+        )
+        metrics = self._compute_metrics(np.asarray(y_val, dtype=float), y_pred)
+        metrics["best_iteration"] = fit.best_iteration
         metrics["train_size"] = len(train_df)
         metrics["val_size"] = len(val_df)
+        metrics["holdout_mae"] = fit.holdout_metrics["mae"]
 
         return model, metrics
 
@@ -503,19 +489,38 @@ class BFSPTrainer:
             else:
                 log.warning("  Not enough rows with a realised BFSP to fit the price calibrator")
 
-        # Step 3: Train final model on all data (90/10 split for early stopping)
+        # Step 3: Train the final model on ALL the data.
+        #
+        # This used to fit the first 90% of dates and early-stop on the last
+        # 10%, so the published model never trained on its most recent months --
+        # the ones most like tomorrow. `fit_bfsp` carves the holdout itself,
+        # picks the iteration count on it, then refits on everything at that
+        # count (cfg.refit_on_full), which is the same protocol without the
+        # permanently withheld tail.
         log.info("\nTraining final model on all data...")
         dates = df["race_date"].sort_values().unique()
-        cutoff_idx = int(len(dates) * 0.9)
-        cutoff = dates[cutoff_idx]
-
+        cutoff = dates[int(len(dates) * 0.9)]
         final_train = df[df["race_date"] < cutoff].copy()
         final_val = df[df["race_date"] >= cutoff].copy()
 
-        log.info(f"  Train: {len(final_train):,} rows (< {cutoff})")
-        log.info(f"  Val: {len(final_val):,} rows (>= {cutoff})")
+        final_cfg = replace(self.cfg, refit_on_full=True)
+        fit = fit_bfsp(df, self.feature_cols, final_cfg)
+        self.model = fit.booster
+        self.final_fit = fit
+        self.categorical_vocab = categorical_vocab(df)
+        log.info("  Fitted on %d rows, early stopping on the %d days from %s "
+                 "(%d rows), best_iteration %d, then refitted on all %d rows",
+                 fit.n_train, final_cfg.holdout_days,
+                 pd.Timestamp(fit.holdout_start).date(), fit.n_holdout,
+                 fit.best_iteration, len(df))
 
-        self.model, final_metrics = self.train_fold(final_train, final_val)
+        y_final = build_target(final_val, final_cfg.target)
+        final_metrics = self._compute_metrics(
+            np.asarray(y_final, dtype=float),
+            self.model.predict(final_val[self.feature_cols].astype(float)),
+        )
+        final_metrics["best_iteration"] = fit.best_iteration
+        final_metrics["holdout_mae"] = fit.holdout_metrics["mae"]
 
         log.info(
             f"  Final model: MAE(log)={final_metrics['log_mae']:.4f}, "
@@ -590,7 +595,8 @@ class BFSPTrainer:
         # Build full summary
         summary = {
             "model_type": "bfsp_regression",
-            "target": "log_bfsp",
+            "target": self.cfg.target,
+            "train_config": self.cfg.describe(),
             "n_features": len(self.feature_cols),
             "feature_cols": self.feature_cols,
             "walk_forward": avg_metrics,
@@ -759,14 +765,24 @@ class BFSPTrainer:
         self.model.save_model(model_path)
         log.info(f"  Model saved to {model_path}")
 
-        # Save model metadata
-        meta = {
-            "model_type": "bfsp_regression",
-            "target": "log_bfsp",
-            "feature_cols": self.feature_cols,
-            "params": self.params,
-            "final_metrics": final_metrics,
-        }
+        # Save model metadata. Records the recipe, not just the params: the
+        # artefact this replaces said nothing about objective, weighting or
+        # provenance, so nobody could tell it was a different model from the
+        # one the published numbers described.
+        meta = model_meta(
+            self.cfg,
+            self.feature_cols,
+            fit=getattr(self, "final_fit", None),
+            vocab=getattr(self, "categorical_vocab", None),
+            final_metrics=final_metrics,
+            trained_through=str(df["race_date"].max().date()),
+            train_rows_total=len(df),
+            top_gain=[
+                [r.feature, float(r.importance)]
+                for r in importance_df.head(20).itertuples()
+            ] if len(importance_df) else [],
+        )
+        assert_meta_is_servable(meta)
         meta_path = os.path.join(output_dir, "bfsp_model_meta.json")
         with open(meta_path, "w") as f:
             json.dump(meta, f, indent=2, default=str)
@@ -899,13 +915,39 @@ def main():
              "Reduces memory usage for large databases.",
     )
     parser.add_argument(
-        "--decay-rate", type=float, default=1.0,
-        help="Exponential decay rate for sample weighting (default: 1.0)",
+        "--decay-rate", type=float, default=0.0,
+        help="Exponential recency weight exp(-rate*days/365). Default 0 (off). "
+             "This defaulted to 1.0, which hands a three-year-old race 5%% of "
+             "today's weight -- a silent decision to discard most of the history "
+             "that the evaluation never made",
+    )
+    parser.add_argument(
+        "--objective", default="l2", choices=list(OBJECTIVES),
+        help="l2 (default): squared error on log(BFSP), every runner weighted "
+             "equally -- the model forecasts the price of the whole field, and "
+             "this is what the walk-forward evaluation measures. "
+             "profit_weighted weights by 1/sqrt(BFSP) and penalises "
+             "under-prediction 1.5x",
+    )
+    parser.add_argument(
+        "--custom-objective", action="store_true",
+        help="Shorthand for --objective profit_weighted",
     )
     parser.add_argument(
         "--no-custom-objective", action="store_true",
-        help="Disable custom profit-weighted loss function",
+        help="Kept for callers that pass it; the profit-weighted loss is now off "
+             "by default, so this is a no-op",
     )
+    parser.add_argument(
+        "--target", default="log_bfsp", choices=list(TARGETS),
+        help="What to regress on (default log_bfsp)",
+    )
+    parser.add_argument("--holdout-days", type=int, default=60,
+                        help="Days at the end of the training window used for "
+                             "early stopping, never the rows being scored")
+    parser.add_argument("--purge-days", type=int, default=30)
+    parser.add_argument("--embargo-days", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--optuna-params", type=str, default=None,
         help="Path to Optuna best params JSON to use instead of defaults",
@@ -1030,8 +1072,9 @@ def main():
 
     # Load Optuna-tuned params if specified
     decay_rate = args.decay_rate
-    use_custom_obj = not args.no_custom_objective
-    params = BFSPTrainer.DEFAULT_PARAMS.copy()
+    objective = "profit_weighted" if args.custom_objective else args.objective
+    use_custom_obj = objective == "profit_weighted"
+    params = dict(DEFAULT_PARAMS)
 
     if args.optuna_params:
         log.info(f"Loading Optuna-tuned params from {args.optuna_params}...")
@@ -1051,6 +1094,7 @@ def main():
         decay_rate = best.get("decay_rate", decay_rate)
         if "use_custom_obj" in best:
             use_custom_obj = best["use_custom_obj"]
+            objective = "profit_weighted" if use_custom_obj else "l2"
         log.info(f"  Loaded params: {params}")
         log.info(f"  Decay rate: {decay_rate}, Custom objective: {use_custom_obj}")
     else:
@@ -1059,14 +1103,27 @@ def main():
         params["num_leaves"] = args.num_leaves
 
     # Train
+    cfg = TrainConfig(
+        objective=objective,
+        decay_rate=decay_rate,
+        target=args.target,
+        holdout_days=args.holdout_days,
+        purge_days=args.purge_days,
+        embargo_days=args.embargo_days,
+        refit_on_full=True,   # the published model sees the most recent weeks
+        seed=args.seed,
+        params=params,
+    )
+    log.info("Training recipe: objective=%s target=%s decay=%.2f holdout=%dd "
+             "purge=%dd seed=%d", cfg.objective, cfg.target, cfg.decay_rate,
+             cfg.holdout_days, cfg.purge_days, cfg.seed)
+
     trainer = BFSPTrainer(
         min_train_days=args.min_train_days,
         val_window_days=args.val_window,
         step_days=args.step_days,
-        params=params,
-        decay_rate=decay_rate,
-        use_custom_objective=use_custom_obj,
         gp_draw_surface=getattr(args, "gp_draw", False),
+        cfg=cfg,
     )
 
     summary = trainer.train(df, output_dir=args.output_dir)

@@ -24,6 +24,21 @@ on:
         required: false
         default: false
         type: boolean
+      eval_from:
+        description: 'Skip folds starting before this date (shortens a run without changing the cached matrix)'
+        required: false
+        default: ''
+        type: string
+      variant_tag:
+        description: 'Name this variant; outputs and the artifact carry the tag'
+        required: false
+        default: ''
+        type: string
+      extra_args:
+        description: 'Extra flags for evaluate_oos.py, e.g. --objective profit_weighted --decay-rate 1.0'
+        required: false
+        default: ''
+        type: string
       start_date:
         description: 'Load history from this date (memory control; metrics warm up automatically)'
         required: false
@@ -250,9 +265,12 @@ jobs:
             --start-date "${{ inputs.start_date || '2021-01-01' }}" \
             --feature-cache .feature_cache \
             ${{ inputs.drop_features && format('--drop-features {0}', inputs.drop_features) || '' }} \
+            ${{ inputs.eval_from && format('--eval-from {0}', inputs.eval_from) || '' }} \
+            ${{ inputs.variant_tag && format('--tag {0}', inputs.variant_tag) || '' }} \
             --min-train-days ${{ inputs.min_train_days || 365 }} \
             --val-window ${{ inputs.val_window || 30 }} \
             --step-days ${{ inputs.step_days || 30 }} \
+            ${{ inputs.extra_args }} \
             --output-csv data/oos_predictions.csv \
             --output-json data/oos_evaluation.json 2>&1 | grep -v PerformanceWarning | tee reports/evaluate_oos.log
           kill $MEMWATCH || true
@@ -286,7 +304,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: oos-evaluation-${{ github.run_number }}
+          name: oos-evaluation-${{ github.run_number }}${{ inputs.variant_tag && format('-{0}', inputs.variant_tag) || '' }}
           path: |
             data/oos_predictions.csv
             data/oos_evaluation.json

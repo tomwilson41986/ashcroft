@@ -49,7 +49,7 @@ def run_predictions(
     model_dir = str(MODEL_DIR)
 
     # Load model
-    model, feature_cols = load_bfsp_model(model_dir)
+    model, feature_cols, vocab = load_bfsp_model(model_dir)
 
     # Load historical data
     log.info(f"Loading historical data from {start_date}...")
@@ -81,7 +81,7 @@ def run_predictions(
 
     # Run predictions
     preds_df = prepare_and_predict(
-        history_before, target_runners, model, feature_cols, target_date
+        history_before, target_runners, model, feature_cols, target_date, vocab
     )
 
     if len(preds_df) == 0:
