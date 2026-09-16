@@ -9,7 +9,10 @@ fits Stage C on out-of-fold fundamentals, and reports:
     R²_market, R²_fundamental, R²_combined, ΔR² with a race-bootstrap CI
     Benter-style conditional calibration (model > market / model <= market)
     Kalman vs fixed-λ ratings on next-run performance
-    ordering parameters γ, δ (Benter / Lo–Bacon-Shone) fitted on 1-2-3 finishes
+    ordering parameters γ, δ (Benter / Lo–Bacon-Shone) fitted on 1-2-3 finishes,
+        globally and per field-size band (§IV.3 says they are not constants)
+    ΔR² by OFSR_eff band — §4.3's claim that edge is easier to find in some
+        market shapes than others, measured rather than assumed
 
 Stage F features (all lag-safe or pre-race):
     kf_z            Kalman rating on the performance-rating history (within-race z)
@@ -21,6 +24,12 @@ Stage F features (all lag-safe or pre-race):
     lto_tfig_above_ability, lto_vs_career
     sos_vs_today    class move vs recent strength of schedule
     dslr_ln, runs_count_ln, age, draw_pct, first_run
+
+The Part 4 odds block (`model.odds_metrics`) is attached to the same frame —
+pi_market, OTRR and its variants, N_eff, OFSR_eff, OFSR_conc — but it is
+**Stage C**: it is listed in STAGE_C_ODDS_FEATURES, never in
+STAGE_F_FEATURES, and `model.feature_registry.stage_of` classifies every one
+of those names as "C" so the two lists cannot quietly merge.
 """
 
 from __future__ import annotations
@@ -28,7 +37,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from model.ordering import fit_ordering_params
+from model.odds_metrics import ODDS_FEATURES, add_odds_metrics
+from model.ordering import fit_ordering_params_by_band
 from model.primitives import (aggregate_history, lto_contradiction_features, nmfp, strength_of_schedule,
                               within_race_transforms)
 from model.stage_f import conditional_calibration, delta_r2, mcfadden_r2, walk_forward_stage_f
@@ -37,6 +47,11 @@ from model.state_space import add_kalman_features, ewm_baseline, fit_kalman_para
 STAGE_F_FEATURES = ["kf_z", "kf_sd", "kf_vs_max", "tf_master_z", "tf_master_vs_max", "tfig_ewm_z", "perf_max3_z", "perf_min5_z",
                     "perf_iqm5_z", "nmfp_mean3_z", "nmfp_max_career_z", "lto_tfig_above_ability", "lto_vs_career",
                     "sos_vs_today", "dslr_ln", "runs_count_ln", "age_z", "draw_pct", "first_run"]
+#: Market-derived, Stage C only (Part 4). Never add any of these to STAGE_F_FEATURES.
+STAGE_C_ODDS_FEATURES = list(ODDS_FEATURES)
+#: The §4.3 selection variables: race-level, so they segment and filter rather
+#: than entering the softmax, where they would cancel anyway.
+SELECTION_VARIABLES = ["n_eff_market", "OFSR_eff", "OFSR_conc", "n_priced", "overround"]
 
 
 def prepare_blandford_frame(bf: pd.DataFrame, flat_only: bool = True) -> pd.DataFrame:
@@ -59,6 +74,9 @@ def prepare_blandford_frame(bf: pd.DataFrame, flat_only: bool = True) -> pd.Data
     d["pi_market"] = (1 / bsp) / (1 / bsp).groupby(d["raceid"]).transform("sum")
     # a race is usable only if every runner has a BSP (else the market vector is not a distribution)
     d = d[d.groupby("raceid")["pi_market"].transform(lambda s: s.notna().all())].copy()
+    # the whole Part 4 odds block: OTRR and its variants, N_eff, OFSR_eff /
+    # OFSR_conc. Stage C — see STAGE_C_ODDS_FEATURES.
+    d = add_odds_metrics(d, price_col="betfair_win_sp", race_col="raceid")
     d["nmfp"] = nmfp(d["n_runners"].values, d["position"].values)
     d["horse_name"] = d["horse_name"].astype(str)
     return d.sort_values(["race_date", "race_time", "raceid"]).reset_index(drop=True)
@@ -121,6 +139,39 @@ def run_phase1(bf: pd.DataFrame, test_start: str = "2025-07-01", n_folds: int = 
         if len(p) >= 4 and np.isfinite(p).all() and {1, 2, 3} <= set(pos):
             races.append((p, (int(np.where(pos == 1)[0][0]), int(np.where(pos == 2)[0][0]), int(np.where(pos == 3)[0][0]))))
     if len(races) > 200:
-        out["ordering"] = fit_ordering_params(races[:3000])
+        fit = fit_ordering_params_by_band(races[:6000], min_races=200)
+        out["ordering"] = fit["global"]
+        out["ordering_by_field_band"] = fit["bands"]
+    if "OFSR_eff" in wf.columns and tc.sum() > 0:
+        out["delta_r2_by_ofsr_eff"] = delta_r2_by_band(wf[tc], n_bands=3)
     out["frame"] = wf
     return out
+
+
+def delta_r2_by_band(wf: pd.DataFrame, band_col: str = "OFSR_eff", n_bands: int = 3, race_col: str = "raceid") -> pd.DataFrame:
+    """ΔR² of the combined model over the market, split by a race-level market
+    descriptor (§4.3).
+
+    The spec's claim is that some market shapes are unplayable and others are
+    tremendously +EV; OFSR_eff — the share of the field that is genuinely live
+    — is the variable it names. This measures the claim instead of asserting
+    it, so bet selection can be set from the answer.
+    """
+    d = wf[[race_col, "won", "pi_market", "c_oof", band_col]].dropna()
+    if d.empty:
+        return pd.DataFrame()
+    per_race = d.groupby(race_col)[band_col].first()
+    try:
+        bands = pd.qcut(per_race, n_bands, duplicates="drop")
+    except ValueError:
+        return pd.DataFrame()
+    d = d.join(bands.rename("_band"), on=race_col)
+    rows = []
+    for band, grp in d.groupby("_band", observed=True):
+        y = grp["won"].values; g = grp[race_col].values
+        rows.append({"band": str(band), "n_races": int(len(np.unique(g))), "n_runners": int(len(grp)),
+                     f"mean_{band_col}": float(grp[band_col].mean()),
+                     "r2_market": mcfadden_r2(grp["pi_market"].values, y, g),
+                     "r2_combined": mcfadden_r2(grp["c_oof"].values, y, g),
+                     "delta_r2": mcfadden_r2(grp["c_oof"].values, y, g) - mcfadden_r2(grp["pi_market"].values, y, g)})
+    return pd.DataFrame(rows)

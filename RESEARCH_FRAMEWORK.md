@@ -523,3 +523,137 @@ comment, and the draw layer has no per-stall resolution.
   no `data/abm_calibration.json`, so its parameters are still placeholders.
 * Neither `pace_metrics.py` nor `draw_metrics.py` had a single unit test before
   §13; the ABM, which nothing uses, had a full suite.
+
+---
+
+## 15. Implementing the missing framework items
+
+Six workers, partitioned by module, working the missing and partial items from
+§14. What follows is what was built and, as importantly, what could not be.
+
+### 15.1 Measurement integrity
+
+* **Purge and embargo** in the walk-forward (`model/stage_f.py`,
+  `train_stage_f.py`). A test race's trailing-window features are a function of
+  the labels of training rows in the preceding window, so the model can
+  memorise those labels and read them back off the test feature. Training stops
+  30 days before each fold, the longest bounded window in the block, and the
+  test fold starts 7 days in. Unbounded statistics — expanding career means,
+  the Kalman filter, the 270-day window — cannot be purged without deleting the
+  training set. That channel stays open, attenuated by sample size, and is
+  stated in the code rather than left as an accident.
+* **The unratable-runner rule**: a runner with too little history takes the
+  market probability, the rest renormalise, and a race with too few ratable
+  runners is skipped. Wiring it exposed a bug: the conditional logit imputes
+  missing values to the column mean, so a skipped race was silently getting an
+  invented blend.
+* **Deflated Sharpe ratio and probability of backtest overfitting**
+  (`model/uncertainty.py`), with a ledger that persists the count of
+  configurations tried, since a deflated Sharpe against an undercounted trial
+  count is just a Sharpe ratio with extra steps.
+* **The feature dictionary** beyond `stage`: as-of rule, shrinkage, missing
+  policy and version over a closed vocabulary, with a validator that flags
+  unregistered features, post-race features and stage mismatches.
+
+### 15.2 Performance primitives
+
+Beaten-length cluster geometry taken between finishing-position clusters rather
+than adjacent rows, so dead heats fall out for free and a horse with no
+finishing position takes no part in the ordering. A second par surface for the
+winning margin by field size. The six within-race margin normalisations. And
+**performance versus strength**, the residual of finishing position on strength
+of schedule: on a planted confound the naive career mean ranks horses backwards
+at −0.80 correlation while the residual recovers them at +0.97.
+
+### 15.3 Connections and pedigree
+
+**Sire aptitude is a residual, not a level.** A sire that wins on every going
+has no going aptitude. The residual is taken against the sire's raw overall
+mean, not its shrunk level: against the shrunk level it carries the shrinkage
+gap and every cell of a strong sire reads as an aptitude.
+
+Dam and sibling features are in, which §14 thought impossible — the feed does
+carry `dam` and `dam_stallion`. Every dam figure excludes the horse's own runs
+by exact subtraction, except the best-progeny rating, which is a maximum and
+cannot subtract, so it keeps a running top two keyed on distinct progeny. Also
+the sire-by-damsire nick, actual over expected, strike rate scored against the
+population rate in the race's own class and field-size cell, and twelve trainer
+and jockey context splits as residuals.
+
+### 15.4 Pace, expected position, race shape and draw
+
+**Draw bias is now the residual against what the ratings expected**, scaled by a
+lag-safe calibration slope, instead of a raw mean finishing position by stall
+band. §6.3 names the old construction as the standard trap and it is one. A
+test builds races decided purely by ratings, with the best horse always drawn
+lowest and no draw effect at all: the old feature reads over 0.3, half a field
+of advantage that does not exist, and the new one reads zero.
+
+Draw bias also resolves single stalls rather than halves of the field, over a
+four-level hierarchy shrunk by effective sample size, with a two-year half-life
+and a confidence flag requiring both enough effective runners and no rail move.
+`track_direction` and `rail_move` were scraped, stored and read by nothing;
+both now feed features. Early position is a field-size-normalised figure with a
+monotone knot curve, leading is a probability that sums to one over the field,
+and the position change statistic and split-half screen are in.
+
+### 15.5 Odds-derived Stage C metrics and exotics
+
+Shin probabilities, effective field size from the market's own probabilities,
+the rating-rank family including the gaps to the favourite and the next shorter
+runner, Benter's reliability bands, ordering parameters fitted per field-size
+band, Plackett-Luce simulation of finishing orders, and exact exacta, forecast,
+quinella and trifecta pricing.
+
+### 15.6 Staking, execution and attribution
+
+Kelly over the whole stake vector rather than one bet at a time, with caps on
+the total, the race, the selection and the share of available volume. §V.3's
+point is now arithmetic: on a two-runner example, backing only the top-advantage
+runner throws away more than half the growth, and the joint solution stakes
+*more* on the top pick, not less.
+
+Block covariance as a variance-components model, positive semi-definite by
+construction. Worth recording why: laying equicorrelation straight on the exact
+within-race blocks is never positive semi-definite for any positive
+correlation, because each block is singular along one direction and the cross
+terms make that direction negative. Plus ladder fills with slippage, the
+max-expected-value stake curve, Grinold information coefficient and effective
+breadth, factor attribution with race-clustered standard errors, and alpha
+decay against days since refit.
+
+### 15.7 Four more leaks, and an ordering bug
+
+On top of the four in §13: trainer and jockey **market** aggregates lagged by
+row, so a yard's second runner read its stablemate; the same fault in the
+**connection** statistics, which used a cumulative sum minus the horse's own
+value; a market-derived feature classifying as market-free, which the stage
+registry exists to prevent; and the Gaussian-process draw smoother fitting on
+the whole frame, so any feature use told 2019 what stall 3 did in 2024.
+
+The ordering bug is the one to remember. `model/lagsafe` sorted races within a
+day by the off time **as a string**, and UK cards are written `1.45` for 13:45,
+so a string sort puts the 1.45 before the 12.40 and the previous race is the
+wrong race. Off times are now parsed to minutes after midnight, with one parser
+for the repo instead of two. It is also about five times faster: a `min` over a
+string column runs per group in Python, and it was 5.4 seconds of every
+5.7-second call, which over the full history is hours across every caller.
+
+### 15.8 What could not be built, and why
+
+Not deferred — impossible with the data the repository holds.
+
+| Item | Blocker |
+|---|---|
+| Early-speed and finishing-speed figures, true sectionals, going allowance in pounds | No sectional or in-running data anywhere in `race_results`. The whole pace layer is one regex over the free-text comment. |
+| Pre-off price paths, volatility ramps, ARCH tests, Almgren-Chriss | `betfair_prices` stores the morning, pre-off and starting price per runner. Summary statistics, no time series. |
+| Volume at your price, depth at the top three prices | The traded-volume-by-price ladder is live-only and never persisted. |
+| Sales and physicals, `price_residual` | No sale price, breeze, vendor or consignor column. Described in the framework as the asymmetric advantage, and entirely blocked. |
+| Female family beyond one generation | The feed carries the dam and the damsire and nothing further up the distaff line. |
+| First run after a wind operation or gelding; travel distance from yard to course | No such columns. |
+
+Three more were left alone deliberately because the framework itself gates
+them: conditional value at risk (gated on the mandate decision), regime
+switching (gated on evidence of regime structure), and the GARCH recursion on
+horse residuals (the framework says build the state-space version first, which
+exists).

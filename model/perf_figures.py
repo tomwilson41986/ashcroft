@@ -85,7 +85,43 @@ def parse_beaten_lengths(value) -> float:
     m = re.match(r"^(\d+)\s+(\d)/(\d)$", s)
     if m:
         return float(m.group(1)) + float(m.group(2)) / float(m.group(3))
+    # "2hd", "1 nk", "3nse": whole lengths plus a margin word. The feed writes
+    # these as often as it writes decimals, and dropping them to NaN silently
+    # deletes the closest finishes in the database.
+    m = re.match(r"^(\d+(?:\.\d+)?)?\s*([a-z-]+)$", s)
+    if m and m.group(2) in _MARGIN_WORDS:
+        return float(m.group(1) or 0.0) + _MARGIN_WORDS[m.group(2)]
     return np.nan
+
+
+def winning_margin(df: pd.DataFrame, beaten_col: str = "total_dst_bt", place_col: str = "placing_numerical",
+                   race_col: str = "raceid") -> pd.Series:
+    """Winning margin in lengths, broadcast to every runner in the race.
+
+    ``total_dst_bt`` is *cumulative* distance behind the winner, so the winning
+    margin is the runner-up's published margin. Two cases the naive
+    ``place == 2`` lookup gets wrong are handled explicitly: a dead-heated win
+    (positions run 1, 1, 3) has a true margin of zero, and a race whose
+    second-placed row is missing falls back to the next finisher by position.
+
+    Post-race by construction: a legitimate input to a lagged feature, never a
+    feature of the race being predicted.
+    """
+    d = ensure_raceid(df)
+    key = d[race_col].astype(str)
+    place = pd.to_numeric(d[place_col], errors="coerce")
+    bl = d[beaten_col].map(parse_beaten_lengths) if beaten_col in d.columns else pd.Series(np.nan, index=d.index)
+    bl = bl.where(place != 1, 0.0)
+
+    ok = place.notna() & (place > 0) & bl.notna()
+    u = (pd.DataFrame({"_r": key[ok], "_p": place[ok], "_b": bl[ok].astype(float)})
+         .groupby(["_r", "_p"], sort=True)["_b"].max().reset_index())      # one row per finishing position
+    u["_i"] = u.groupby("_r", sort=False).cumcount()
+    second = u[u["_i"] == 1].set_index("_r")["_b"]                          # the runner-up's cumulative margin
+    margin = key.map(second)
+
+    dead_heat = (place.where(ok) == 1).groupby(key).transform("sum") > 1
+    return margin.where(~dead_heat.fillna(False), 0.0).astype(float)
 
 
 def ensure_raceid(df: pd.DataFrame) -> pd.DataFrame:
@@ -129,9 +165,7 @@ def performance_figure_lbs(
     beaten = df[beaten_col].map(parse_beaten_lengths) if beaten_col in df.columns else pd.Series(np.nan, index=df.index)
     place = pd.to_numeric(df[place_col], errors="coerce")
 
-    # Winning margin = beaten distance of the runner-up in the same race
-    second = beaten.where(place == 2)
-    win_margin = df.assign(_second=second).groupby("raceid")["_second"].transform("max")
+    win_margin = winning_margin(df, beaten_col=beaten_col, place_col=place_col)
 
     is_winner = place == 1
     credit = np.minimum(win_margin * lpl, winner_credit_cap).fillna(unknown_margin_credit)

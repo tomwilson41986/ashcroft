@@ -15,7 +15,8 @@ import re
 import numpy as np
 import pandas as pd
 
-from model.lagsafe import race_lagged_expanding_mean
+from model.lagsafe import (race_lagged_expanding_count, race_lagged_expanding_mean,
+                           race_lagged_expanding_sum)
 from model.perf_figures import MARGIN_WORDS
 
 from model.draw_metrics import DrawMetricsEngine
@@ -27,17 +28,48 @@ from model.pace_metrics import PaceMetricsEngine
 # ---------------------------------------------------------------------------
 
 def _lag_expand_mean(df: pd.DataFrame, group_col, val_col: str) -> pd.Series:
-    """Vectorized expanding mean of lagged values within groups.
+    """Expanding mean of the group's EARLIER RACES, not its earlier rows.
 
-    Equivalent to: grp[val_col].apply(lambda x: x.shift(1).expanding().mean())
-    but ~10-50x faster by avoiding Python-level group iteration.
-    """
-    grp_key = group_col if isinstance(group_col, (list, tuple)) else [group_col]
-    shifted = df.groupby(grp_key, sort=False)[val_col].shift(1)
-    # cumsum of shifted / cumcount of non-null shifted
-    cs = shifted.groupby([df[c] for c in grp_key], sort=False).cumsum()
-    cc = shifted.notna().astype(float).groupby([df[c] for c in grp_key], sort=False).cumsum()
-    return cs / cc.replace(0, np.nan)
+    The obvious implementation lags by one row. That is correct only when the
+    group runs once per race, which is true of a horse and of nothing else. A
+    trainer, a jockey, a sire or a damsire regularly has two runners in the same
+    race, and then the previous row is a rival in that race and its result is
+    read straight into the feature.
+
+    Thirty-six deployed features were doing exactly that. Routing every caller
+    through the race-safe helper fixes them at once and stops the next one being
+    written, which editing twenty call sites would not."""
+    return race_lagged_expanding_mean(df, group_col, val_col)
+
+
+def _lag_race_runs(df: pd.DataFrame, group_col) -> pd.Series:
+    """How many runners the group had in EARLIER races.
+
+    `grp.cumcount()` counts earlier rows, which for a sire or a trainer means
+    counting its own other runners in today's race. It was the denominator of
+    every shrunk sire rate, so the shrinkage weight itself carried the leak."""
+    keys = [group_col] if isinstance(group_col, str) else list(group_col)
+    cols = keys + ["race_date"] + [c for c in ("race_time", "raceid") if c in df.columns]
+    # A slice of the columns the count needs, not `df.copy()`: the frame this
+    # runs on is five hundred columns wide and this helper is called for every
+    # sire, damsire and connection cell.
+    d = df.loc[:, cols].copy()
+    d["_one"] = 1.0
+    return race_lagged_expanding_count(d, group_col, "_one")
+
+
+def _lag_population_mean(df: pd.DataFrame, val_col: str, default: float) -> pd.Series:
+    """Mean of `val_col` over every race that finished before this one.
+
+    This is the prior the pedigree shrinkage pulls a thin sire towards, and it
+    was `df[val_col].expanding().mean().shift(1)`: one whole-frame expanding
+    mean lagged by a single ROW. Every runner's prior therefore contained the
+    results of the rivals listed above it in its own race, and because the
+    frame is re-sorted after the prior is built the values were also carried
+    onto the wrong rows. Aggregating to races first removes both."""
+    d = df.copy()
+    d["_pop_key"] = 0
+    return race_lagged_expanding_mean(d, "_pop_key", val_col).fillna(default)
 
 
 def _lag_expand_std(df: pd.DataFrame, group_col, val_col: str) -> pd.Series:
@@ -56,10 +88,8 @@ def _lag_expand_max(df: pd.DataFrame, group_col, val_col: str) -> pd.Series:
 
 
 def _lag_cumsum(df: pd.DataFrame, group_col, val_col: str) -> pd.Series:
-    """Vectorized: grp[col].apply(lambda x: x.shift(1).cumsum())."""
-    grp_key = group_col if isinstance(group_col, (list, tuple)) else [group_col]
-    shifted = df.groupby(grp_key, sort=False)[val_col].shift(1)
-    return shifted.groupby([df[c] for c in grp_key], sort=False).cumsum()
+    """Running total over the group's earlier races. See `_lag_expand_mean`."""
+    return race_lagged_expanding_sum(df, group_col, val_col)
 
 
 def _lag_rolling_mean(df: pd.DataFrame, group_col, val_col: str,
@@ -89,14 +119,16 @@ def _lag_rolling_std(df: pd.DataFrame, group_col, val_col: str,
 def _time_window_prior_stats(
     df: pd.DataFrame, entity_col: str, window_days: int, closed: str
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Per-entity wins/runs over prior rows within a trailing calendar window.
+    """Per-entity wins/runs over EARLIER DAYS within a trailing calendar window.
 
-    For each row i, considers rows j < i of the same entity whose own
-    race_date falls within `window_days` of row i's race_date (`closed`
-    controls the left boundary: "right" excludes runs exactly window_days
-    ago, "both" includes them). Rows with no in-window prior run get NaN
-    for both outputs. Within-entity "prior" follows the caller's row
-    order, so df must already be date/time-sorted within each entity.
+    For each row, considers the entity's runs on days strictly before this
+    row's race date and within `window_days` of it. Today is excluded in full,
+    not merely the current row: a trainer saddles several runners across a card
+    and two in a single race, and a row-wise lag left those in the window, so
+    the feature carried results from races that had not been run when the bet
+    was struck. Rows with no in-window prior run get NaN for both outputs.
+    `closed` is accepted for compatibility and no longer varies the right edge,
+    which is always open.
 
     Returns (wins, runs) arrays aligned to df's positional order.
     """
@@ -118,16 +150,25 @@ def _time_window_prior_stats(
         # with `on=` the result is indexed by (_entity, _dt), and race
         # dates are not unique.
         tmp = tmp.sort_values("_entity", kind="stable")
-        roll = (
-            tmp.groupby("_entity", sort=False)
-            .rolling(f"{window_days}D", on="_dt", closed=closed, min_periods=1)
-            [["_won", "_one"]]
-            .sum()
-        )
-        pos = tmp["_pos"].values
-        # The window includes the current row — subtract it for lag safety.
-        wins[pos] = roll["_won"].values - tmp["_won"].values
-        runs[pos] = roll["_one"].values - 1.0
+        # Aggregate to days, then roll with the right edge open, so the window is
+        # [d - window, d) and today is excluded entirely.
+        #
+        # Subtracting only the current ROW was not enough. A yard runs two in the
+        # same race and several across a card, so a row-wise lag left the other
+        # runners of today in the window: the feature then carried results from
+        # races that had not been run when the bet was struck, including the one
+        # being predicted.
+        day = (tmp.groupby(["_entity", "_dt"], sort=False)[["_won", "_one"]]
+                  .sum().reset_index().sort_values(["_entity", "_dt"], kind="stable"))
+        rolled = (day.groupby("_entity", sort=False)
+                     .rolling(f"{window_days}D", on="_dt", closed="left", min_periods=1)
+                     [["_won", "_one"]].sum().reset_index(drop=True))
+        day["_pw"] = rolled["_won"].values
+        day["_pr"] = rolled["_one"].values
+        merged = tmp.merge(day[["_entity", "_dt", "_pw", "_pr"]], on=["_entity", "_dt"], how="left")
+        pos = merged["_pos"].values
+        wins[pos] = merged["_pw"].values
+        runs[pos] = merged["_pr"].values
     no_prior = runs <= 0
     wins[no_prior] = np.nan
     runs[no_prior] = np.nan
@@ -154,6 +195,10 @@ RECENCY_WEIGHTS = {
 #: train_bfsp.py asserts that no feature list intersects this set.
 POST_RACE_ONLY = frozenset({
     "EPF", "EPF2", "EPF3", "placing_numerical", "comment", "NFP",
+    # Per-run descriptors of the race being predicted. Each exists to feed a
+    # lagged career figure and each was, at one point, also handed to the model.
+    # win_surprise is the clearest: it is `won` multiplied by the price.
+    "NFP_residual", "win_surprise", "FSALB", "LB", "expected_NFP",
     "early_pos", "mid_move", "late_move", "finishing_effort",
     "was_keen", "had_trouble", "led_at_furlong", "total_move", "early_pos_pct",
 })
@@ -227,9 +272,14 @@ class CustomMetricsEngine:
         windows: Lookback windows for rolling metrics (default: [3, 5, 10]).
     """
 
-    def __init__(self, windows: list[int] | None = None):
+    def __init__(self, windows: list[int] | None = None, gp_draw_surface: bool = False):
         self.windows = windows or [3, 5, 10]
         self.max_window = max(self.windows)
+        #: Per-stall Gaussian-process draw surface. Off by default: it costs one
+        #: GP fit per course per year, and the closed-form shrunk cells already
+        #: resolve single stalls. Enable it to let the surface borrow strength
+        #: between neighbouring stalls as well as across time.
+        self.gp_draw_surface = gp_draw_surface
 
     def calculate_all(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate all custom metrics and append as new columns.
@@ -335,7 +385,7 @@ class CustomMetricsEngine:
         df = PaceMetricsEngine().calculate(df)
 
         # --- Draw bias & stall position features ---
-        df = DrawMetricsEngine().calculate(df)
+        df = DrawMetricsEngine(gp_draw_surface=self.gp_draw_surface).calculate(df)
 
         df = self._calc_within_race_ranks(df)
 
@@ -1368,9 +1418,9 @@ class CustomMetricsEngine:
         df = df.sort_values(
             ["race_date", "race_time"]
         ).reset_index(drop=True)
-        pop_win_rate = df["won"].expanding().mean().shift(1).fillna(0.1)
-        pop_place_rate = df["placed"].expanding().mean().shift(1).fillna(0.3)
-        pop_nfp = df["NFP"].expanding().mean().shift(1).fillna(0.5)
+        df["_pop_win_rate"] = _lag_population_mean(df, "won", 0.1)
+        df["_pop_place_rate"] = _lag_population_mean(df, "placed", 0.3)
+        df["_pop_nfp"] = _lag_population_mean(df, "NFP", 0.5)
 
         # --- Sire career stats ---
         if "stallion" in df.columns:
@@ -1384,7 +1434,7 @@ class CustomMetricsEngine:
             s_grp = df.groupby("_stallion_clean", group_keys=False)
 
             # Raw expanding stats (lagged)
-            raw_sire_runs = s_grp.cumcount()  # 0-indexed = runs before this
+            raw_sire_runs = _lag_race_runs(df, "_stallion_clean")
             raw_sire_wins = _lag_cumsum(df, "_stallion_clean", "won")
             raw_sire_places = _lag_cumsum(df, "_stallion_clean", "placed")
             raw_sire_nfp = _lag_expand_mean(df, "_stallion_clean", "NFP")
@@ -1394,20 +1444,20 @@ class CustomMetricsEngine:
             # Bayesian-shrunk sire win rate
             raw_win_rate = raw_sire_wins / sire_n
             df["sire_win_rate"] = (
-                (sire_n * raw_win_rate + SHRINKAGE_K * pop_win_rate)
+                (sire_n * raw_win_rate + SHRINKAGE_K * df["_pop_win_rate"])
                 / (sire_n + SHRINKAGE_K)
             )
 
             # Bayesian-shrunk sire place rate
             raw_place_rate = raw_sire_places / sire_n
             df["sire_place_rate"] = (
-                (sire_n * raw_place_rate + SHRINKAGE_K * pop_place_rate)
+                (sire_n * raw_place_rate + SHRINKAGE_K * df["_pop_place_rate"])
                 / (sire_n + SHRINKAGE_K)
             )
 
             # Bayesian-shrunk sire NFP
             df["sire_avg_nfp"] = (
-                (sire_n * raw_sire_nfp + SHRINKAGE_K * pop_nfp)
+                (sire_n * raw_sire_nfp + SHRINKAGE_K * df["_pop_nfp"])
                 / (sire_n + SHRINKAGE_K)
             )
 
@@ -1426,18 +1476,18 @@ class CustomMetricsEngine:
                 ["_stallion_clean", "_going_cat_ped"], group_keys=False
             )
 
-            sg_runs = sg_grp.cumcount()
+            sg_runs = _lag_race_runs(df, ["_stallion_clean", "_going_cat_ped"])
             sg_n = sg_runs.replace(0, np.nan)
             raw_sg_nfp = _lag_expand_mean(df, ["_stallion_clean", "_going_cat_ped"], "NFP")
             raw_sg_win = _lag_cumsum(df, ["_stallion_clean", "_going_cat_ped"], "won")
             raw_sg_win_rate = raw_sg_win / sg_n
 
             df["sire_going_nfp"] = (
-                (sg_n * raw_sg_nfp + SHRINKAGE_K * pop_nfp)
+                (sg_n * raw_sg_nfp + SHRINKAGE_K * df["_pop_nfp"])
                 / (sg_n + SHRINKAGE_K)
             )
             df["sire_going_win_rate"] = (
-                (sg_n * raw_sg_win_rate + SHRINKAGE_K * pop_win_rate)
+                (sg_n * raw_sg_win_rate + SHRINKAGE_K * df["_pop_win_rate"])
                 / (sg_n + SHRINKAGE_K)
             )
 
@@ -1450,18 +1500,18 @@ class CustomMetricsEngine:
                 ["_stallion_clean", "_dist_band_ped"], group_keys=False
             )
 
-            sd_runs = sd_grp.cumcount()
+            sd_runs = _lag_race_runs(df, ["_stallion_clean", "_dist_band_ped"])
             sd_n = sd_runs.replace(0, np.nan)
             raw_sd_nfp = _lag_expand_mean(df, ["_stallion_clean", "_dist_band_ped"], "NFP")
             raw_sd_win = _lag_cumsum(df, ["_stallion_clean", "_dist_band_ped"], "won")
             raw_sd_win_rate = raw_sd_win / sd_n
 
             df["sire_dist_nfp"] = (
-                (sd_n * raw_sd_nfp + SHRINKAGE_K * pop_nfp)
+                (sd_n * raw_sd_nfp + SHRINKAGE_K * df["_pop_nfp"])
                 / (sd_n + SHRINKAGE_K)
             )
             df["sire_dist_win_rate"] = (
-                (sd_n * raw_sd_win_rate + SHRINKAGE_K * pop_win_rate)
+                (sd_n * raw_sd_win_rate + SHRINKAGE_K * df["_pop_win_rate"])
                 / (sd_n + SHRINKAGE_K)
             )
 
@@ -1486,18 +1536,18 @@ class CustomMetricsEngine:
             ).reset_index(drop=True)
             ds_grp = df.groupby("_damsire_clean", group_keys=False)
 
-            raw_ds_runs = ds_grp.cumcount()
+            raw_ds_runs = _lag_race_runs(df, "_damsire_clean")
             ds_n = raw_ds_runs.replace(0, np.nan)
             raw_ds_nfp = _lag_expand_mean(df, "_damsire_clean", "NFP")
             raw_ds_wins = _lag_cumsum(df, "_damsire_clean", "won")
             raw_ds_win_rate = raw_ds_wins / ds_n
 
             df["damsire_avg_nfp"] = (
-                (ds_n * raw_ds_nfp + SHRINKAGE_K * pop_nfp)
+                (ds_n * raw_ds_nfp + SHRINKAGE_K * df["_pop_nfp"])
                 / (ds_n + SHRINKAGE_K)
             )
             df["damsire_win_rate"] = (
-                (ds_n * raw_ds_win_rate + SHRINKAGE_K * pop_win_rate)
+                (ds_n * raw_ds_win_rate + SHRINKAGE_K * df["_pop_win_rate"])
                 / (ds_n + SHRINKAGE_K)
             )
 
@@ -1508,11 +1558,11 @@ class CustomMetricsEngine:
             dsg_grp = df.groupby(
                 ["_damsire_clean", "_going_cat_ped"], group_keys=False
             )
-            dsg_runs = dsg_grp.cumcount()
+            dsg_runs = _lag_race_runs(df, ["_damsire_clean", "_going_cat_ped"])
             dsg_n = dsg_runs.replace(0, np.nan)
             raw_dsg_nfp = _lag_expand_mean(df, ["_damsire_clean", "_going_cat_ped"], "NFP")
             df["damsire_going_nfp"] = (
-                (dsg_n * raw_dsg_nfp + SHRINKAGE_K * pop_nfp)
+                (dsg_n * raw_dsg_nfp + SHRINKAGE_K * df["_pop_nfp"])
                 / (dsg_n + SHRINKAGE_K)
             )
 
@@ -1523,11 +1573,11 @@ class CustomMetricsEngine:
             dsd_grp = df.groupby(
                 ["_damsire_clean", "_dist_band_ped"], group_keys=False
             )
-            dsd_runs = dsd_grp.cumcount()
+            dsd_runs = _lag_race_runs(df, ["_damsire_clean", "_dist_band_ped"])
             dsd_n = dsd_runs.replace(0, np.nan)
             raw_dsd_nfp = _lag_expand_mean(df, ["_damsire_clean", "_dist_band_ped"], "NFP")
             df["damsire_dist_nfp"] = (
-                (dsd_n * raw_dsd_nfp + SHRINKAGE_K * pop_nfp)
+                (dsd_n * raw_dsd_nfp + SHRINKAGE_K * df["_pop_nfp"])
                 / (dsd_n + SHRINKAGE_K)
             )
 
@@ -1554,7 +1604,7 @@ class CustomMetricsEngine:
         temp_cols = [
             c for c in df.columns
             if c.startswith("_") and c.endswith(("_clean", "_ped"))
-        ]
+        ] + ["_pop_win_rate", "_pop_place_rate", "_pop_nfp"]
         df.drop(columns=temp_cols, errors="ignore", inplace=True)
 
         return df

@@ -14,7 +14,10 @@ BSP, outcome) joined to one or more rating columns and reports, per rating:
     stack_gain_*         walk-forward stacked logistic regression on
                          [ln p_model, ln p_market] with and without the rating's
                          within-race z-score: the change in log-loss and in
-                         Brier skill vs the market is the incremental value
+                         Brier skill vs the market is the incremental value.
+                         ``stack_gain_lo90``/``hi90`` bracket the log-loss gain with a
+                         race-clustered paired bootstrap -- on a short window the
+                         interval will usually straddle zero.
 
 ``knockoff_screen`` runs model-X knockoffs over all rating z-scores at once
 (plus ln p_model and ln p_market as always-in covariates) so correlated
@@ -42,6 +45,33 @@ def _race_softmax(x: pd.Series, race: pd.Series, T: float) -> np.ndarray:
 def fit_temperature(x: pd.Series, race: pd.Series, y: np.ndarray) -> float:
     res = minimize_scalar(lambda T: log_loss(y, _race_softmax(x, race, T)), bounds=(0.05, 200), method="bounded")
     return float(res.x)
+
+
+def _row_logloss(y, p) -> np.ndarray:
+    p = np.clip(np.asarray(p, float), 1e-9, 1 - 1e-9)
+    y = np.asarray(y, float)
+    return -(y * np.log(p) + (1 - y) * np.log(1 - p))
+
+
+def paired_race_bootstrap(y, p_base, p_with, race, n_boot: int = 2000, level: float = 0.9,
+                          seed: int = 0) -> tuple[float, float]:
+    """CI for the mean per-runner log-loss gain (base - with), resampling whole races.
+
+    A race is the independent unit (one winner per race), so a runner-level
+    bootstrap would badly understate the uncertainty. On a short window this CI is
+    usually far wider than the point estimate, which is exactly what a reader needs
+    to see before treating a positive ``stack_gain_logloss`` as evidence.
+    """
+    diff = _row_logloss(y, p_base) - _row_logloss(y, p_with)
+    g = pd.DataFrame({"d": diff, "r": np.asarray(race)}).groupby("r")["d"].agg(["sum", "size"])
+    n_races = len(g)
+    if n_races < 2:
+        return (np.nan, np.nan)
+    rng = np.random.default_rng(seed)
+    w = rng.multinomial(n_races, np.full(n_races, 1.0 / n_races), size=n_boot).astype(float)
+    gains = (w @ g["sum"].values) / (w @ g["size"].values)
+    a = (1 - level) / 2
+    return float(np.quantile(gains, a)), float(np.quantile(gains, 1 - a))
 
 
 def _stack_walk_forward(d: pd.DataFrame, cols: list[str], n_folds: int = 5) -> tuple[np.ndarray, np.ndarray]:
@@ -97,10 +127,11 @@ def evaluate_rating_sets(pred: pd.DataFrame, rating_cols: list[str], p_col: str 
         ll_base, ll_with = log_loss(yy, bp[both]), log_loss(yy, with_pred[both])
         mk = sub.loc[both, market_col].values
         bss_base = 1 - brier(yy, bp[both]) / brier(yy, mk); bss_with = 1 - brier(yy, with_pred[both]) / brier(yy, mk)
+        gain_lo, gain_hi = paired_race_bootstrap(yy, bp[both], with_pred[both], sub.loc[both, race_col].values)
         rows.append({"rating": c, "coverage": float(ok.mean()), "n": int(len(sub)), "races": int(sub[race_col].nunique()),
                      "concordance": conc, "corr_demeaned": float(pv["corr"].iloc[0]), "p_value": float(pv["p_value"].iloc[0]),
                      "softmax_T": T, "softmax_logloss": ll_soft, "model_logloss_same_rows": ll_model, "market_logloss_same_rows": ll_mkt,
-                     "stack_logloss_base": ll_base, "stack_logloss_with": ll_with, "stack_gain_logloss": ll_base - ll_with,
+                     "stack_logloss_base": ll_base, "stack_logloss_with": ll_with, "stack_gain_logloss": ll_base - ll_with, "stack_gain_lo90": gain_lo, "stack_gain_hi90": gain_hi,
                      "stack_bss_vs_market_base": bss_base, "stack_bss_vs_market_with": bss_with, "stack_gain_bss": bss_with - bss_base,
                      "n_stack_rows": int(both.sum())})
     return pd.DataFrame(rows)

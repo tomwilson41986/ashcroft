@@ -17,6 +17,18 @@ measurable. This module provides that estimator and the measurement.
 
 Everything here works on plain numpy arrays: X (n, p), y (n,) in {0,1} with
 exactly one winner per race, groups (n,) race identifiers.
+
+Two measurement-integrity pieces live here because they belong to the same
+boundary as the estimator:
+
+    apply_unratable_rule    Benter's confidence gate (Section IV.1): a runner
+                            the fundamental model cannot rate gets the
+                            market's probability, the rest are renormalised,
+                            and a race with nothing ratable is skipped
+    purge/embargo           in ``walk_forward_stage_f``, the gap either side
+                            of a fold boundary that stops trailing-window
+                            features carrying training labels into the test
+                            period (Section VI.2.3)
 """
 
 from __future__ import annotations
@@ -91,6 +103,103 @@ def delta_r2(p_model: np.ndarray, p_market: np.ndarray, y: np.ndarray, groups, n
     return {"r2_model": float(r2m), "r2_market": float(r2k), "delta_r2": float(r2m - r2k),
             "ci": (float(np.quantile(d, a)), float(np.quantile(d, 1 - a))), "n_races": int(G),
             "p_delta_le_0": float(np.mean(d <= 0))}
+
+
+# ---------------------------------------------------------------------------
+# Purge and embargo (Section VI.2.3)
+# ---------------------------------------------------------------------------
+#
+# A walk-forward split on the date alone is not clean, because the features are
+# trailing statistics. A test race on 1 July carries trainer_form_30d, which is
+# a function of the *labels* of every runner that trainer sent out in June — and
+# those June rows are in the training set. The model can memorise them and read
+# them back off the test feature. Purging drops the training rows inside that
+# window; the embargo drops the test rows on the other side of the boundary,
+# the ones whose trailing windows are most heavily made of training labels.
+#
+# (Lopez de Prado embargoes *training* rows after the test block. In a strict
+# walk-forward, training is always earlier than test, so that direction has
+# nothing to drop and the same defence has to be spent on the test side.)
+#
+# The defaults: PURGE_DAYS matches the longest bounded trailing window in the
+# Stage F block (``{entity}_form_30d`` in model/connections.py), so no training
+# row inside any rolling window survives. Unbounded statistics — expanding
+# career means, the Kalman filter, the 270-day EWM — cannot be purged away
+# without deleting the training set, so their (1/n-attenuated) channel stays
+# open and is a known, documented limit rather than an accident. EMBARGO_DAYS
+# is a week, which covers a horse's realistic turnaround and the fact that a
+# meeting's runners reappear within days.
+
+PURGE_DAYS = 30
+EMBARGO_DAYS = 7
+
+
+def purge_embargo_masks(dates, test_dates, gap_days: int = PURGE_DAYS, embargo_days: int = EMBARGO_DAYS):
+    """Train / test row masks for one fold with a purge and an embargo.
+
+    ``dates`` is the frame's date column, ``test_dates`` the fold's dates.
+    Training keeps rows strictly before (fold start − gap_days); the test fold
+    keeps rows from (fold start + embargo_days) on. Returns (train, test)
+    boolean numpy arrays."""
+    dt = pd.to_datetime(pd.Series(dates).reset_index(drop=True))
+    start = pd.Timestamp(np.min(np.asarray(test_dates, dtype="datetime64[ns]")))
+    tr = (dt < start - pd.Timedelta(days=int(gap_days))).values
+    te = (dt.isin(pd.to_datetime(test_dates)) & (dt >= start + pd.Timedelta(days=int(embargo_days)))).values
+    return tr, te
+
+
+# ---------------------------------------------------------------------------
+# Unratable runners (Section IV.1)
+# ---------------------------------------------------------------------------
+
+def apply_unratable_rule(p_model, p_market, groups, runs_count=None, kf_n=None, min_runs: int = 3,
+                         min_kf_n: int = 1, min_ratable: int = 2):
+    """Benter's rule: a runner the fundamental model cannot rate is given the
+    market's probability, and the ratable runners are renormalised into what is
+    left. Do not guess.
+
+    A softmax has no way to say "no opinion": a first-time starter with no form
+    still gets a score, the race normalises to one, and that invented
+    probability is then compared with the market as if it meant something. The
+    gate makes the abstention explicit.
+
+        ratable_i   runs_count_i >= min_runs  and  kf_n_i >= min_kf_n
+        p_i         = pi_i                             for unratable i
+        p_i         = p_i (1 − Σ_unratable pi) / Σ_ratable p    otherwise
+
+    ``runs_count`` and ``kf_n`` are both optional; whichever is supplied is
+    applied (kf_n, the Kalman observation count, is the better gate because it
+    counts runs the filter could actually read).
+
+    Race skip: a race with fewer than ``min_ratable`` ratable runners is
+    dropped entirely (NaN). The default of 2 is one stricter than Benter's
+    "only unratable runners" — with a single ratable runner the
+    renormalisation pins its probability to 1 − Σ pi, so the race is a copy of
+    the market and contributes nothing but noise to ΔR². A race is also
+    dropped if an unratable runner has no market price to stand in for it.
+
+    Returns (p, ratable, race_ok): probabilities with NaN on skipped races, the
+    per-runner gate, and the per-runner race-level keep flag."""
+    p = np.asarray(p_model, float); pi = np.asarray(p_market, float)
+    codes, G = _encode_groups(groups)
+    ratable = np.isfinite(p)
+    if runs_count is not None:
+        ratable &= np.nan_to_num(np.asarray(runs_count, float), nan=-1.0) >= min_runs
+    if kf_n is not None:
+        ratable &= np.nan_to_num(np.asarray(kf_n, float), nan=-1.0) >= min_kf_n
+
+    def per_race(v):
+        return np.bincount(codes, weights=np.asarray(v, float), minlength=G)
+
+    n_ratable = per_race(ratable)
+    pi_unratable = per_race(np.where(~ratable, np.nan_to_num(pi), 0.0))
+    p_ratable = per_race(np.where(ratable, np.nan_to_num(p), 0.0))
+    no_price = per_race(~ratable & ~np.isfinite(pi)) > 0
+    keep = (n_ratable >= min_ratable) & ~no_price & (pi_unratable < 1.0) & (p_ratable > 0)
+
+    scale = np.where(keep, (1.0 - pi_unratable) / np.where(p_ratable > 0, p_ratable, 1.0), np.nan)
+    out = np.where(ratable, np.nan_to_num(p) * scale[codes], pi)
+    return np.where(keep[codes], out, np.nan), ratable, keep[codes]
 
 
 # ---------------------------------------------------------------------------
@@ -233,17 +342,24 @@ class TemperatureScaler:
 # ---------------------------------------------------------------------------
 
 def walk_forward_stage_f(df: pd.DataFrame, feature_cols, y_col: str, race_col: str, date_col: str,
-                         market_col: str | None = None, l2: float = 1.0, n_folds: int = 6, min_train_races: int = 500) -> pd.DataFrame:
+                         market_col: str | None = None, l2: float = 1.0, n_folds: int = 6, min_train_races: int = 500,
+                         gap_days: int = PURGE_DAYS, embargo_days: int = EMBARGO_DAYS) -> pd.DataFrame:
     """Chronological folds: fit Stage F on earlier dates, emit OOF probabilities
     (``f_oof``); if ``market_col`` is given, also fit Stage C on the OOF f of the
-    *previous* folds and emit ``c_oof``. Returns the frame with those columns."""
+    *previous* folds and emit ``c_oof``. Returns the frame with those columns.
+
+    ``gap_days`` purges and ``embargo_days`` embargoes either side of each fold
+    boundary — see ``purge_embargo_masks`` for what that buys."""
     d = df.copy()
     d[date_col] = pd.to_datetime(d[date_col])
     dates = np.sort(d[date_col].unique()); edges = np.linspace(0, len(dates), n_folds + 1).astype(int)
     d["f_oof"] = np.nan; d["c_oof"] = np.nan; d["fold"] = -1
     X = d[feature_cols].astype(float).values; y = d[y_col].astype(float).values; g = d[race_col].values
     for k in range(1, n_folds):
-        tr = d[date_col].isin(dates[: edges[k]]).values; te = d[date_col].isin(dates[edges[k]: edges[k + 1]]).values
+        te_dates = dates[edges[k]: edges[k + 1]]
+        if len(te_dates) == 0:
+            continue
+        tr, te = purge_embargo_masks(d[date_col], te_dates, gap_days=gap_days, embargo_days=embargo_days)
         if d.loc[tr, race_col].nunique() < min_train_races or te.sum() == 0:
             continue
         m = ConditionalLogit(l2=l2).fit(X[tr], y[tr], g[tr])

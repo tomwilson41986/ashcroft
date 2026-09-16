@@ -41,7 +41,7 @@ from sklearn.metrics import (
 )
 
 from model.custom_metrics import CustomMetricsEngine
-from model.draw_metrics import ALL_DRAW_FEATURES
+from model.draw_metrics import ALL_DRAW_FEATURES, GP_DRAW_FEATURES
 from model.financial_features import FINANCIAL_FEATURES, FINANCIAL_RANK_FEATURES
 from model.pace_metrics import (
     ALL_PACE_FEATURES,
@@ -256,11 +256,11 @@ EXPONENTIAL_DECAY_FEATURES = [
 
 # Expectation residuals (Woods/Ziemba: market-expected vs actual)
 RESIDUAL_FEATURES = [
-    "NFP_residual",
+    # "NFP_residual" removed: this race's finishing position minus what the market implied. Its lagged forms remain.
     "career_residual",
     "residual_exp3",
     "residual_exp5",
-    "win_surprise",
+    # "win_surprise" removed: won, multiplied by the price: it IS the result. Its lagged forms remain.
     "career_win_surprise",
 ]
 
@@ -383,7 +383,7 @@ LENGTHS_BEATEN_FEATURES = [
     "LR_LB",
     "LR3_LB",
     "LR5_LB",
-    "FSALB",
+    # "FSALB" removed: this race's beaten lengths, scaled by field size. Its lagged forms remain.
 ]
 
 # Equipment changes (first-time headgear signals)
@@ -593,9 +593,24 @@ def assert_no_post_race_features(feature_cols) -> None:
     racepacescore and racepaceindex were aggregates of an EPF parsed from the
     horse's own in-running comment for that day's race. They carried real gain
     in training and collapsed to a constant when a live card was priced,
-    because a card has no comments yet."""
+    because a card has no comments yet.
+
+    The performance primitives add a second family of the same kind: a beaten
+    margin, a cluster gap, a normalised finishing position and everything built
+    from them are facts about how the race finished. They are legitimate inputs
+    to a lagged feature about a horse's previous runs, and never inputs
+    themselves."""
     from model.custom_metrics import POST_RACE_ONLY
-    bad = sorted(set(feature_cols) & POST_RACE_ONLY)
+    from model.draw_metrics import DRAW_POST_RACE_ONLY
+    from model.pace_metrics import PACE_POST_RACE_ONLY
+    from model.primitives import POST_RACE_PRIMITIVES
+
+    # Four modules describe the race being predicted, so the guard covers all
+    # four. The union lives here rather than in any one of them so none has to
+    # import the others just to be checked.
+    banned = (set(POST_RACE_ONLY) | set(POST_RACE_PRIMITIVES)
+              | set(PACE_POST_RACE_ONLY) | set(DRAW_POST_RACE_ONLY))
+    bad = sorted(set(feature_cols) & banned)
     if bad:
         raise ValueError(
             "These feature columns describe the race being predicted and cannot be "
@@ -791,6 +806,7 @@ class BFSPTrainer:
         params: dict | None = None,
         decay_rate: float = 1.0,
         use_custom_objective: bool = True,
+        gp_draw_surface: bool = False,
     ):
         self.min_train_days = min_train_days
         self.val_window_days = val_window_days
@@ -798,7 +814,7 @@ class BFSPTrainer:
         self.params = params or self.DEFAULT_PARAMS.copy()
         self.decay_rate = decay_rate
         self.use_custom_objective = use_custom_objective
-        self.metrics_engine = CustomMetricsEngine()
+        self.metrics_engine = CustomMetricsEngine(gp_draw_surface=gp_draw_surface)
         self.model: lgb.Booster | None = None
         self.feature_cols: list[str] = []
 
@@ -1537,6 +1553,27 @@ def main():
         help="Add lag-safe performance-figure (lbs) features",
     )
     parser.add_argument(
+        "--pedigree-features", action="store_true",
+        help="Add the Part 5.3-5.4 sire / damsire / dam / sibling / nick block "
+             "(aptitudes as residuals against the entity's own level)",
+    )
+    parser.add_argument(
+        "--connection-features", action="store_true",
+        help="Add the Part 5.1-5.2 trainer and jockey block (context splits, "
+             "schedule-adjusted strike rates, season form)",
+    )
+    parser.add_argument(
+        "--odds-features", action="store_true",
+        help="Add the Part 4 odds-derived block (effective field size, rating "
+             "ranks, Shin). STAGE C: market-derived, so never for a market-free model",
+    )
+    parser.add_argument(
+        "--gp-draw", action="store_true",
+        help="Add the Gaussian-process per-stall draw surface. Off by default: "
+             "it costs one fit per course per year, and the shrunk cells already "
+             "resolve single stalls",
+    )
+    parser.add_argument(
         "--blandford-features", action="store_true",
         help="Add Timeform-feed features from the blandford_results table "
              "(load it with blandford_sync.py first)",
@@ -1568,6 +1605,35 @@ def main():
     df = load_data(args.db, start_date=args.start_date)
 
     # Opt-in research feature blocks (RESEARCH_FRAMEWORK.md)
+    if getattr(args, "gp_draw", False):
+        log.info("Adding the Gaussian-process per-stall draw surface...")
+        EXTRA_FEATURE_COLS.extend(GP_DRAW_FEATURES)
+    if getattr(args, "pedigree_features", False) or getattr(args, "connection_features", False):
+        # Both blocks aggregate a horse's normalised finishing position over its
+        # sire's, dam's or yard's *earlier* runners, so the primitive has to
+        # exist before they can lag it.
+        from model.primitives import add_run_primitives
+        log.info("Adding run primitives (needed by the pedigree and connection blocks)...")
+        df = add_run_primitives(df)
+    if getattr(args, "pedigree_features", False):
+        from model.pedigree import add_pedigree_features
+        log.info("Adding pedigree features...")
+        df, feats = add_pedigree_features(df)
+        EXTRA_FEATURE_COLS.extend(feats)
+        log.info(f"  {len(feats)} pedigree features")
+    if getattr(args, "connection_features", False):
+        from model.connections import add_connection_features
+        log.info("Adding connection features...")
+        # price_col/sp_col left unset: the A/E and ROI block is market-derived
+        # and belongs to Stage C, not to a model whose target is already the market.
+        df, feats = add_connection_features(df)
+        EXTRA_FEATURE_COLS.extend(feats)
+        log.info(f"  {len(feats)} connection features")
+    if getattr(args, "odds_features", False):
+        from model.odds_metrics import ODDS_FEATURES, add_odds_metrics
+        log.info("Adding odds-derived (Stage C) features...")
+        df = add_odds_metrics(df)
+        EXTRA_FEATURE_COLS.extend([c for c in ODDS_FEATURES if c in df.columns])
     if args.perf_features:
         from model.perf_figures import PERF_FIGURE_FEATURES, add_perf_figure_features
         log.info("Adding performance-figure features...")
@@ -1628,6 +1694,7 @@ def main():
         params=params,
         decay_rate=decay_rate,
         use_custom_objective=use_custom_obj,
+        gp_draw_surface=getattr(args, "gp_draw", False),
     )
 
     summary = trainer.train(df, output_dir=args.output_dir)

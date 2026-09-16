@@ -1,2 +1,12 @@
 [build]
   publish = "."
+
+# Same rule as the repository-root netlify.toml, repeated because Netlify reads
+# the config in the base directory as well and which of the two wins is not
+# worth guessing at: no Deploy Preview, no branch deploy. `ignore` exiting 0
+# means "nothing to build here".
+[context.deploy-preview]
+  ignore = "exit 0"
+
+[context.branch-deploy]
+  ignore = "exit 0"

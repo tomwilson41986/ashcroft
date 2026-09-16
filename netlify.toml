@@ -3,6 +3,32 @@
   publish = "."
   command = "npm install"
 
+# No Netlify deploy for pull requests or for any branch that is not the
+# production one. `ignore` is Netlify's "should I build this?" hook and an exit
+# status of 0 means no: every Deploy Preview and branch deploy is skipped
+# before a build starts.
+#
+# Until now the skip was accidental. Netlify's default rule for a site with a
+# base directory is to build only when something under that directory changed,
+# and this repository's work is model code, so nothing did. The moment anyone
+# edited frontend/ the previews would have come back. These two lines say it
+# outright instead of relying on which files a commit happens to touch.
+#
+# Production deploys of ashcroftequities still run, since that is the live
+# site. Add the same `ignore` to [build] above to stop those too.
+#
+# One thing this cannot do: the three neutral GitHub checks and the
+# "Deploy Preview ... canceled" bot comment are posted by the Netlify GitHub
+# App, not by the build, so a skipped build still leaves them on the pull
+# request. Those come off in the Netlify dashboard, under
+# Site configuration -> Build & deploy -> Deploy Previews, and
+# Site configuration -> Notifications -> Deploy notifications.
+[context.deploy-preview]
+  ignore = "exit 0"
+
+[context.branch-deploy]
+  ignore = "exit 0"
+
 [functions]
   directory = "netlify/functions"
 

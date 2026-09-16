@@ -123,14 +123,40 @@ def fetch_range(sets, d_from: date, d_to: date, dest: Path = RAW_DIR, spacing: f
 # Parse
 # ---------------------------------------------------------------------------
 
+# The real Ratings Machine download (verified 2026-09-15, identical for every set) is:
+#   race_date,time,track,placing,horse_name,last,last2..last10,leveller,speed,jockey,
+#   trainer,stallion,today,total,odds_numerical,racetype,jockey_name,trainer_name,
+#   runners,placing_num,HorseAge,Distance,AgeRestrictions,WinPrizeMoney,UKClass,MajorType,
+# `total` is the set's rating and is exactly the sum of the component columns
+# (last..last10, leveller, speed, jockey, trainer, stallion, today); the components are
+# kept in `extras`. Header names use underscores, so the separators below must accept
+# "_" as well as a space.
 _COLS = {
-    "horse": re.compile(r"^(horse|horse ?name|name|runner)$", re.I),
+    "horse": re.compile(r"^(horse|horse[ _]?name|name|runner)$", re.I),
     "track": re.compile(r"^(track|course|venue|meeting)$", re.I),
-    "time": re.compile(r"^(time|race ?time|off|off ?time)$", re.I),
-    "date": re.compile(r"^(date|race ?date|racedate)$", re.I),
-    "rating": re.compile(r"^(rating|rtg|total|score|total ?rating|hrb ?rating|final ?rating)$", re.I),
-    "rank": re.compile(r"^(rank|rating ?rank|pos|position)$", re.I),
+    "time": re.compile(r"^(time|race[ _]?time|off|off[ _]?time)$", re.I),
+    "date": re.compile(r"^(date|race[ _]?date)$", re.I),
+    "rating": re.compile(r"^(total|total[ _]?rating|rating|rtg|score|hrb[ _]?rating|final[ _]?rating)$", re.I),
+    # Deliberately strict. `placing` / `placing_num` in the download are the FINISHING
+    # position, not a rating rank -- matching them here would leak the result, so the
+    # loose "pos|position" alternatives are gone. With no rank column the rank is
+    # derived from the rating within each race instead.
+    "rank": re.compile(r"^(rank|rating[ _]?rank)$", re.I),
 }
+
+# Post-race / market columns present in the download. Retained in `extras` for
+# provenance and join QA only -- never use these as model features.
+POST_RACE_COLS = {"placing", "placing_num", "odds_numerical"}
+# Race context, not a rating: never auto-selected as the rating column.
+_NON_RATING_COLS = {"runners", "horseage", "distance", "agerestrictions", "winprizemoney", "ukclass", "majortype"}
+
+
+def _parse_dates(s: pd.Series) -> pd.Series:
+    """ISO (what the download actually returns) or UK d/m/Y, without a dayfirst warning."""
+    iso = pd.to_datetime(s, format="%Y-%m-%d", errors="coerce")
+    if iso.notna().mean() > 0.8:
+        return iso.dt.strftime("%Y-%m-%d")
+    return pd.to_datetime(s, errors="coerce", dayfirst=True).dt.strftime("%Y-%m-%d")
 
 
 def parse_csv(text: str, set_id: int, d: date | None = None) -> pd.DataFrame:
@@ -145,13 +171,16 @@ def parse_csv(text: str, set_id: int, d: date | None = None) -> pd.DataFrame:
     if "horse" not in found:
         raise ValueError(f"no horse column in {list(df.columns)[:12]}")
     if "rating" not in found:
-        numeric = [c for c in df.columns if c not in found.values() and pd.to_numeric(df[c], errors="coerce").notna().mean() > 0.8]
+        blocked = POST_RACE_COLS | _NON_RATING_COLS
+        numeric = [c for c in df.columns
+                   if c not in found.values() and c.strip().lower() not in blocked
+                   and pd.to_numeric(df[c], errors="coerce").notna().mean() > 0.8]
         if not numeric:
             raise ValueError(f"no rating column in {list(df.columns)[:12]}")
         found["rating"] = numeric[-1]
     out = pd.DataFrame({
         "set_id": set_id, "set_name": RATING_SETS.get(set_id, str(set_id)),
-        "race_date": pd.to_datetime(df[found["date"]], errors="coerce", dayfirst=True).dt.strftime("%Y-%m-%d") if "date" in found else (d.isoformat() if d else None),
+        "race_date": _parse_dates(df[found["date"]]) if "date" in found else (d.isoformat() if d else None),
         "track": df[found["track"]].str.strip() if "track" in found else "",
         "race_time": df[found["time"]].str.strip() if "time" in found else "",
         "horse_name": df[found["horse"]].str.strip(),
@@ -162,7 +191,10 @@ def parse_csv(text: str, set_id: int, d: date | None = None) -> pd.DataFrame:
     out["extras"] = [json.dumps({c: r[c] for c in extras}) for _, r in df.iterrows()] if extras else "{}"
     out["horse_norm"] = out["horse_name"].map(normalise_horse)
     out["race_time_24"] = out["race_time"].map(lambda t: db_time_to_24h(t) if re.match(r"^\d{1,2}[.:]\d{2}", str(t)) else str(t))
-    return out.dropna(subset=["rating"])
+    out = out.dropna(subset=["rating"])
+    if "rank" not in found and len(out):
+        out["rating_rank"] = out.groupby(["race_date", "track", "race_time_24"])["rating"].rank(ascending=False, method="min")
+    return out
 
 
 # ---------------------------------------------------------------------------

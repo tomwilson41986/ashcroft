@@ -30,3 +30,10 @@ data/datasets/*.parquet
 
 # Raw Blandford / Timeform feed chunks (large JSON, regenerable)
 data/blandford_raw/
+
+# Raw HorseRaceBase Ratings Machine downloads are deliberately NOT ignored,
+# unlike the Betfair and Blandford feeds above. Those are regenerable on
+# demand; these are not. The site rate-limits the account and withheld
+# downloads for six months, so the 5 MB this costs is worth far less than
+# re-earning the wait. They belong in S3 with the database, and should move
+# there; until then this repository is the only durable copy.

@@ -1,5 +1,6 @@
 """Tests for HRB Ratings Machine parsing/matching, features and the rating evaluation."""
 
+import json
 import sqlite3
 
 import numpy as np
@@ -17,6 +18,40 @@ def test_parse_csv_standardises_columns():
     assert list(df["horse_norm"]) == ["justagambler", "tewkesbury", "shafi"]
     assert df["race_date"].iloc[0] == "2026-02-10" and df["race_time_24"].iloc[0] == "14:30"
     assert df["rating"].iloc[0] == 84.5 and df["set_name"].iloc[0] == "HRB Standard"
+
+
+# The real Ratings Machine download, verified against horseracebase.com on 2026-09-15.
+# Underscored headers, ISO dates, `total` as the rating, and `placing`/`placing_num`
+# (the FINISHING position) present -- which must never be read as a rating or a rank.
+REAL_CSV = (
+    "race_date,time,track,placing,horse_name,last,last2,leveller,speed,jockey,trainer,stallion,today,total,"
+    "odds_numerical,racetype,jockey_name,trainer_name,runners,placing_num,HorseAge,Distance,AgeRestrictions,"
+    "WinPrizeMoney,UKClass,MajorType,\n"
+    '"2026-02-05","12.40.","Doncaster","PU","You Did (IRE)","45.8150","37.8828","3.3903","0.0000","0.0000",'
+    '"0.8530","0.0000","3.3000","91.2411","3.50","Handicap Novices Hurdle","Maggs, Charlie","Ellison, B","3",'
+    '"0","6","3m.5f ","4yo+","3248","5",,\n'
+    '"2026-02-05","12.40.","Doncaster","2nd","Call Your Bluff","62.7714","19.8683","3.9408","0.0000","0.0000",'
+    '"1.3739","0.0000","1.2858","89.2402","3.00","Handicap Novices Hurdle","Johnstone-baker, Cameron",'
+    '"Lavelle, Miss E C","3","2","6","3m.5f ","4yo+","3248","5",,\n'
+    '"2026-02-05","12.40.","Doncaster","1st","Shafi","41.3500","23.5130","4.0894","0.0000","0.0000","0.1515",'
+    '"0.0000","0.7000","69.8039","7.00","Handicap Novices Hurdle","Sansom, Daniel","Mullins, J W","3","1","6",'
+    '"3m.5f ","4yo+","3248","5",,\n'
+)
+
+
+def test_parse_csv_real_download_layout():
+    df = hr.parse_csv(REAL_CSV, 269)
+    assert list(df["horse_norm"]) == ["youdid", "callyourbluff", "shafi"]
+    assert df["race_date"].iloc[0] == "2026-02-05" and df["race_time_24"].iloc[0] == "12:40"
+    # `total` is the rating, not any of the component or context columns
+    assert df["rating"].tolist() == [91.2411, 89.2402, 69.8039]
+    # rank is derived from the rating within the race, NOT from the finishing position:
+    # Shafi won (placing 1st) but is bottom-rated, so it must rank 3.
+    assert df["rating_rank"].tolist() == [1.0, 2.0, 3.0]
+    # post-race fields stay in extras and are never promoted to rating/rank
+    extras = json.loads(df["extras"].iloc[0])
+    assert extras["placing"] == "PU" and extras["odds_numerical"] == "3.50"
+    assert hr.POST_RACE_COLS <= set(extras)
 
 
 def test_rate_limit_notice_detected():
