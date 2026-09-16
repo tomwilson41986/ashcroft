@@ -14,6 +14,11 @@ on:
         required: false
         default: false
         type: boolean
+      refresh_cache:
+        description: 'Rebuild the feature matrix even if a cached one matches'
+        required: false
+        default: false
+        type: boolean
       start_date:
         description: 'Load history from this date (memory control; metrics warm up automatically)'
         required: false
@@ -180,6 +185,24 @@ jobs:
           python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
           python3 scripts/db_info.py
 
+      - name: Feature cache key
+        # Computed after the database is on disk, because the key covers the data
+        # as well as the feature source files.
+        id: fkey
+        run: |
+          KEY=$(python -c "import model.feature_cache as f; print(f.cache_key('horse_racing.db', '${{ inputs.start_date || '2021-01-01' }}'))")
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+          echo "Feature cache key: $KEY"
+
+      - name: Restore the feature matrix
+        # The feature build is the hours-long half of this job and it is identical
+        # whenever the feature code and the data are. Restoring it turns a
+        # model-only experiment from five hours into minutes.
+        uses: actions/cache@v4
+        with:
+          path: .feature_cache
+          key: features-${{ steps.fkey.outputs.key }}
+
       - name: Walk-forward out-of-sample predictions
         run: |
           mkdir -p data reports
@@ -187,6 +210,8 @@ jobs:
           MEMWATCH=$!
           python evaluate_oos.py \
             --start-date "${{ inputs.start_date || '2021-01-01' }}" \
+            --feature-cache .feature_cache \
+            ${{ inputs.refresh_cache && '--refresh-cache' || '' }} \
             --min-train-days ${{ inputs.min_train_days || 365 }} \
             --val-window ${{ inputs.val_window || 30 }} \
             --step-days ${{ inputs.step_days || 30 }} \

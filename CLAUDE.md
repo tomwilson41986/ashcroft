@@ -83,6 +83,18 @@ python research_lab.py stake --predictions data/oos_predictions.csv --bank-chart
 # Calibrate the BFSP forecast against realised BFSP (removes the compression and rank bias)
 python research_lab.py price-cal --predictions data/oos_predictions.csv --save models/bsp_price_calibrator.json
 
+# --- Fast experiment loop ---
+# The feature build is the hours-long half of an evaluation and is identical
+# whenever the feature code and the data are. Cache it once, then iterate.
+python evaluate_oos.py --feature-cache .feature_cache --output-csv data/oos_predictions.csv
+
+# Same cached matrix, model withheld from a group of features (this is how to
+# bisect a suspected leak — costs a model fit, not a rebuild)
+python evaluate_oos.py --feature-cache .feature_cache --drop-features td_,tdg_,going_draw_
+
+# Force a rebuild (the cache does this by itself when feature code changes)
+python evaluate_oos.py --feature-cache .feature_cache --refresh-cache
+
 # Betfair historic price files: fetch (not from Cloudflare-blocked hosts), load, match, coverage
 python betfair_prices.py --fetch --days 3 --load --match --report
 
