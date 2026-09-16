@@ -34,6 +34,7 @@ import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from model import feature_cache
+from model.bfsp_model import all_nan_columns, predict_prices, resolve_feature_columns
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -128,49 +129,14 @@ def walk_forward_predict(
             ],
         )
 
-        val_df = val_df.copy()
-        val_df["predicted_log_bfsp"] = model.predict(X_val)
-        val_df["predicted_bfsp"] = np.exp(val_df["predicted_log_bfsp"])
+        # One price, one probability, book = 1 by construction. The quantile
+        # calibrator used to overwrite the price here, fitted on the
+        # un-normalised column, which left per-race books between 0.16 and 1.85
+        # and made `1 / predicted_bfsp` disagree with `predicted_win_prob_norm`
+        # by a median 13%. It is a research diagnostic now: `research_lab.py
+        # price-cal` fits it against `predicted_bfsp_raw`, which this exports.
+        val_df = predict_prices(model, val_df.copy(), feature_cols, race_col="raceid")
         val_df["fold_idx"] = fold_idx
-
-        # Win probability from predicted BFSP
-        val_df["predicted_win_prob"] = 1.0 / val_df["predicted_bfsp"]
-
-        # Normalise per race
-        race_col = "raceid" if "raceid" in val_df.columns else None
-        if race_col is None:
-            val_df["raceid"] = (
-                val_df["race_date"].dt.strftime("%Y-%m-%d")
-                + "_" + val_df["track"].astype(str)
-                + "_" + val_df["race_time"].astype(str)
-            )
-            race_col = "raceid"
-
-        race_prob_sum = val_df.groupby(race_col)["predicted_win_prob"].transform("sum")
-        val_df["predicted_win_prob_norm"] = val_df["predicted_win_prob"] / race_prob_sum
-
-        # Recalculate BFSP from normalised probabilities so odds reflect a fair book
-        val_df["predicted_bfsp_raw"] = val_df["predicted_bfsp"]
-        val_df["predicted_bfsp_norm"] = 1.0 / val_df["predicted_win_prob_norm"]
-        val_df["predicted_bfsp"] = val_df["predicted_bfsp_norm"]
-
-        # Calibrate the price against realised BFSP, using only the folds already
-        # scored. Fitting it on this fold's own rows, or on in-sample training
-        # predictions, would flatter it; earlier folds are the honest training set.
-        if all_oos:
-            from model.price_calibration import BSPPriceCalibrator
-            prior = pd.concat(all_oos, ignore_index=True)
-            prior = prior[pd.to_numeric(prior.get("bfsp"), errors="coerce") > 1.0] \
-                if "bfsp" in prior.columns else prior.iloc[0:0]
-            if len(prior) >= 1000:
-                cal = BSPPriceCalibrator().fit(
-                    prior, price_col="predicted_bfsp_raw", target_col="bfsp", race_col=race_col
-                )
-                out = cal.transform(val_df, price_col="predicted_bfsp_raw", race_col=race_col)
-                for col in out.columns:
-                    if col.startswith("bsp_forecast"):
-                        val_df[col] = out[col].values
-                val_df["predicted_bfsp"] = val_df["bsp_forecast"]
 
         all_oos.append(val_df)
         fold_idx += 1
@@ -711,6 +677,17 @@ def main():
         help="Rebuild the feature matrix even if a cached one matches",
     )
     parser.add_argument(
+        "--drop-feature-list", default=None, metavar="FILE",
+        help="Withhold the exact feature names listed in FILE (one per line). "
+             "--drop-features matches prefixes; this matches names",
+    )
+    parser.add_argument(
+        "--allow-missing-features", action="store_true",
+        help="Proceed when the feature build did not produce every expected "
+             "column, dropping them. Without this the run stops: training on a "
+             "missing feature as NaN reports a feature count the model never saw",
+    )
+    parser.add_argument(
         "--build-cache-only", action="store_true",
         help="Build (or reuse) the feature matrix and stop, without fitting a "
              "single fold. Lets a caller persist the cache the moment the "
@@ -771,27 +748,39 @@ def main():
         return
 
     # Determine available features
-    feature_cols = [c for c in ALL_FEATURE_COLS if c in df.columns]
-    seen = set()
-    feature_cols = [c for c in feature_cols if not (c in seen or seen.add(c))]
+    prefixes = tuple(p.strip() for p in (args.drop_features or "").split(",") if p.strip())
+    names = ()
+    if args.drop_feature_list:
+        names = tuple(
+            n.strip() for n in open(args.drop_feature_list).read().split() if n.strip()
+        )
 
-    for c in ALL_FEATURE_COLS:
-        if c not in df.columns:
-            df[c] = np.nan
+    wanted = list(dict.fromkeys(ALL_FEATURE_COLS))
+    feature_cols_full = resolve_feature_columns(
+        df, wanted, drop_prefixes=prefixes, drop_names=names,
+        strict=not args.allow_missing_features, log=log,
+    )
+    missing_features = [c for c in wanted if c not in df.columns]
 
-    feature_cols_full = list(dict.fromkeys(ALL_FEATURE_COLS))
-
-    if args.drop_features:
-        prefixes = tuple(p.strip() for p in args.drop_features.split(",") if p.strip())
-        dropped = [c for c in feature_cols_full if c.startswith(prefixes)]
-        feature_cols_full = [c for c in feature_cols_full if c not in set(dropped)]
-        log.info("Withholding %d features matching %s", len(dropped), list(prefixes))
+    if prefixes or names:
+        dropped = [c for c in wanted if c in df.columns and c not in set(feature_cols_full)]
+        log.info("Withholding %d features (%s%s)", len(dropped),
+                 f"prefixes {list(prefixes)}" if prefixes else "",
+                 f" names from {args.drop_feature_list}" if names else "")
         for c in sorted(dropped)[:20]:
             log.info("    - %s", c)
         if len(dropped) > 20:
             log.info("    ... and %d more", len(dropped) - 20)
 
-    log.info(f"  {len(feature_cols_full)} features, {len(df):,} valid rows")
+    # Built, but built empty: a block that ran and produced nothing is as
+    # useless as one that did not run, and just as silent.
+    empty = all_nan_columns(df, feature_cols_full)
+    if empty:
+        log.warning("%d feature columns are entirely NaN across the whole frame: %s",
+                    len(empty), ", ".join(empty[:20]))
+
+    log.info(f"  {len(feature_cols_full)} features, {len(missing_features)} missing, "
+             f"{len(df):,} valid rows")
 
     # Ensure raceid exists
     if "raceid" not in df.columns:
@@ -862,6 +851,11 @@ def main():
             "predicted_bfsp", "bfsp", "overlay_pct",
             "predicted_win_prob_norm", "placing_numerical", "won",
             "fold_idx",
+            # The booster's own output, before the race book is normalised.
+            # Exported so `research_lab.py price-cal` can fit the calibrator
+            # against the raw price instead of against already-normalised
+            # output -- the previous report compared calibrated with calibrated.
+            "predicted_bfsp_raw",
             # Race metadata for downstream profitability analysis
             "race_type", "race_code", "surface_type", "going_description",
             "dist_furlongs", "number_of_runners", "race_class",
@@ -878,6 +872,8 @@ def main():
             },
             "n_predictions": len(oos),
             "n_folds": int(oos["fold_idx"].nunique()),
+            "n_features_used": len(feature_cols_full),
+            "missing_features": missing_features,
             "accuracy": accuracy,
             "ranking": ranking,
             "min_overlay_pct": args.min_overlay,

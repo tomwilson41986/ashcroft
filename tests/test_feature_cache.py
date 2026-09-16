@@ -68,9 +68,13 @@ def test_a_new_feature_module_cannot_escape_the_hash(tmp_path, monkeypatch):
 
 def test_the_real_closure_covers_the_feature_modules():
     rel = {p.relative_to(fc.REPO_ROOT).as_posix() for p in fc.feature_source_files()}
-    for must in ("model/custom_metrics.py", "model/pace_metrics.py", "model/draw_metrics.py",
-                 "model/lagsafe.py", "train_bfsp.py"):
+    for must in ("model/bfsp_features.py", "model/custom_metrics.py", "model/pace_metrics.py",
+                 "model/draw_metrics.py", "model/lagsafe.py"):
         assert must in rel, f"{must} is not in the hashed set"
+    # The trainer must NOT be hashed: changing the objective or adding a CLI
+    # flag cannot change a feature value, and rebuilding the matrix for it
+    # costs the hours this cache exists to save.
+    assert "train_bfsp.py" not in rel, "the trainer is back in the hashed set"
     assert fc.feature_code_hash() == fc.feature_code_hash()      # deterministic
 
 

@@ -45,9 +45,17 @@ log = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: Where a feature build starts. Everything these reach by import is hashed.
-ENTRY_POINTS = ("train_bfsp.py", "model/custom_metrics.py")
+#:
+#: `train_bfsp.py` used to be the entry point, which meant every edit to the
+#: trainer -- the objective, a CLI flag, a log line -- threw away a feature
+#: matrix those edits could not change. The feature list and the pre-race
+#: context columns moved to `model/bfsp_features.py` so the hash tracks the
+#: features. The trainer is deliberately NOT here.
+ENTRY_POINTS = ("model/bfsp_features.py", "model/custom_metrics.py")
 
-CACHE_VERSION = 1
+#: Bumped when the meaning of a cached matrix changes for a reason the import
+#: hash cannot see. v2: the categorical encoding takes a fixed vocabulary.
+CACHE_VERSION = 2
 
 
 def _module_to_path(name: str) -> Path | None:

@@ -174,6 +174,30 @@ def _book(d: pd.DataFrame, col: str, race_col: str) -> float:
     return float(d.groupby(race_col)[col].apply(lambda s: (1.0 / s).sum()).mean())
 
 
+def within_race_slope(d: pd.DataFrame, col: str, target_col: str = "bfsp",
+                      race_col: str = "raceid") -> float:
+    """Regression of log realised price on log forecast, both race-demeaned.
+
+    This is the number that says whether a calibrator has any work to do. A
+    slope above 1 means the forecast is compressed -- it does not spread the
+    field as widely as the market does -- and a shrinkage correction would
+    help. A slope of 1 means the within-race spread is already right, and
+    since the race level is fixed by normalising the book, there is nothing
+    left for a price calibrator to correct.
+
+    Race-demeaning matters: without it the race level dominates and the slope
+    measures how well the model knows a handicap from a Group 1, which is not
+    the question."""
+    e = d[(d[col] > 1.0) & (d[target_col] > 1.0)].copy()
+    if len(e) < 2:
+        return float("nan")
+    lp = np.log(e[col]); lt = np.log(e[target_col])
+    x = (lp - lp.groupby(e[race_col]).transform("mean")).to_numpy()
+    y = (lt - lt.groupby(e[race_col]).transform("mean")).to_numpy()
+    denom = float((x ** 2).sum())
+    return float((x * y).sum() / denom) if denom > 0 else float("nan")
+
+
 def bias_by_rank(d: pd.DataFrame, cols: dict[str, str], target_col: str = "bfsp",
                  race_col: str = "raceid", max_rank: int = 8) -> pd.DataFrame:
     """Median forecast/actual ratio and mean absolute log error, by model rank."""
@@ -205,9 +229,11 @@ def calibration_report(d: pd.DataFrame, raw_col: str = "predicted_bfsp",
         summary.append({"forecast": label, "median_ratio": float((e[col] / e[target_col]).median()),
                         "mean_abs_log_err": float(np.abs(lr).mean()),
                         "rmse_log": float(np.sqrt((lr ** 2).mean())),
-                        "implied_book": _book(e, col, race_col)})
+                        "implied_book": _book(e, col, race_col),
+                        "within_race_slope": within_race_slope(e, col, target_col, race_col)})
     summary.append({"forecast": "actual BSP", "median_ratio": 1.0, "mean_abs_log_err": 0.0,
-                    "rmse_log": 0.0, "implied_book": _book(e, target_col, race_col)})
+                    "rmse_log": 0.0, "implied_book": _book(e, target_col, race_col),
+                    "within_race_slope": 1.0})
     out["summary"] = pd.DataFrame(summary)
     qcols = sorted(c for c in e.columns if c.startswith(cal_col + "_q"))
     if qcols:

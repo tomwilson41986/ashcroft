@@ -135,11 +135,22 @@ def cmd_price_cal(args):
     from model.perf_figures import ensure_raceid
     from model.price_calibration import BSPPriceCalibrator, calibration_report, walk_forward_calibrate
     df = ensure_raceid(pd.read_csv(args.predictions))
-    df = df[(df["bfsp"] > 1.0) & (df["predicted_bfsp"] > 1.0)]
+    # Fit against the booster's own output, not the served price.
+    #
+    # The served price is already race-normalised, and the previous report
+    # compared calibrated output with calibrated output because the raw column
+    # was never exported -- which is how the calibrator came to look as though
+    # it "added nothing". `predicted_bfsp_raw` is exported now; fall back to the
+    # served column only for older prediction files that predate it.
+    price_col = args.price_col
+    if price_col is None:
+        price_col = "predicted_bfsp_raw" if "predicted_bfsp_raw" in df.columns else "predicted_bfsp"
+    print(f"calibrating {price_col} against realised bfsp")
+    df = df[(df["bfsp"] > 1.0) & (df[price_col] > 1.0)]
     if args.date_from:
         df = df[pd.to_datetime(df["race_date"]) >= args.date_from]
-    d = walk_forward_calibrate(df, n_folds=args.folds)
-    rep = calibration_report(d)
+    d = walk_forward_calibrate(df, price_col=price_col, n_folds=args.folds)
+    rep = calibration_report(d, raw_col=price_col)
     pd.set_option("display.width", 200)
     print(f"\n{rep['n']:,} runners, {rep['races']:,} races scored out of sample "
           f"({args.folds} walk-forward folds; the first block is training only)\n")
@@ -151,12 +162,14 @@ def cmd_price_cal(args):
         print("\n=== Quantile coverage: share of runners whose BFSP came in at or below the forecast ===")
         print(rep["coverage"].round(2).to_string(index=False))
     if args.save:
-        cal = BSPPriceCalibrator().fit(df)
+        cal = BSPPriceCalibrator().fit(df, price_col=price_col)
         cal.save(args.save)
         print(f"\ncalibrator fitted on all {cal.meta_['rows']:,} rows and saved to {args.save}")
     if args.out:
         keep = [c for c in d.columns if c.startswith("bsp_forecast")]
-        d[["raceid", "race_date", "horse_name", "predicted_bfsp", "bfsp"] + keep].to_csv(args.out, index=False)
+        base = [c for c in ("raceid", "race_date", "horse_name", price_col,
+                            "predicted_bfsp", "bfsp") if c in d.columns]
+        d[list(dict.fromkeys(base)) + keep].to_csv(args.out, index=False)
         print(f"calibrated predictions written to {args.out}")
 
 
@@ -518,6 +531,9 @@ def main(argv=None):
     s = sub.add_parser("price-cal"); s.add_argument("--predictions", default="data/oos_predictions.csv")
     s.add_argument("--folds", type=int, default=6); s.add_argument("--save", default=None)
     s.add_argument("--out", default=None); s.add_argument("--from", dest="date_from", default=None)
+    s.add_argument("--price-col", default=None,
+                   help="Price to calibrate (default: predicted_bfsp_raw when the file has it, "
+                        "which is the booster's output before the race book is normalised)")
     s.set_defaults(fn=cmd_price_cal)
 
     s = sub.add_parser("stake"); s.add_argument("--predictions", default="data/oos_predictions.csv")
