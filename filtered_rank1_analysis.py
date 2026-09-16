@@ -3,8 +3,10 @@
 Filtered Rank 1 Profitability Analysis.
 
 Investigates whether applying big-theme filters to the Rank 1 level-stakes
-strategy can produce a profitable edge. Uses 253k walk-forward OOS
-predictions enriched with race metadata from the database.
+strategy can produce a profitable edge. Reads the walk-forward OOS predictions
+directly: `evaluate_oos.py` now writes the race metadata these filters need
+(code, type, going, field size) into its own output, so the separate enriched
+file it used to read was a stale copy of a superseded run.
 
 Filters tested (big themes only):
   - Overlay only (model says horse is value)
@@ -25,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-OOS_CSV = os.path.join(SCRIPT_DIR, "data", "oos_predictions_enriched.csv")
+OOS_CSV = os.path.join(SCRIPT_DIR, "data", "oos_predictions.csv")
 COMMISSION = 0.05
 
 
