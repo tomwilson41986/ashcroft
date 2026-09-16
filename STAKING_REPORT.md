@@ -1,5 +1,15 @@
 # Market-blind staking: Kelly and per-race ranks
 
+> **Superseded pending a re-run.** Every number below was computed on a
+> prediction file whose feature matrix contained features that read the race
+> they were predicting — thirty-six of 504, found by reversing the finishing
+> order of a race and seeing which features moved. One of them, `win_surprise`,
+> is `won` multiplied by the log of the price. The leaks are fixed and the
+> guard is now part of the suite, but these tables rest on the old matrix and
+> will be replaced by the re-run, not patched. Read the *structure* of the
+> argument — the variance drag, the rank ladder, what Kelly does to a thin edge
+> — and treat every figure as provisional.
+
 *Reproduce with `python research_lab.py stake --predictions data/oos_predictions.csv --bank-chart banks.png`.*
 
 ## 0. What "without the market" can mean, and what it cannot

@@ -48,7 +48,12 @@ def _lag_race_runs(df: pd.DataFrame, group_col) -> pd.Series:
     `grp.cumcount()` counts earlier rows, which for a sire or a trainer means
     counting its own other runners in today's race. It was the denominator of
     every shrunk sire rate, so the shrinkage weight itself carried the leak."""
-    d = df.copy()
+    keys = [group_col] if isinstance(group_col, str) else list(group_col)
+    cols = keys + ["race_date"] + [c for c in ("race_time", "raceid") if c in df.columns]
+    # A slice of the columns the count needs, not `df.copy()`: the frame this
+    # runs on is five hundred columns wide and this helper is called for every
+    # sire, damsire and connection cell.
+    d = df.loc[:, cols].copy()
     d["_one"] = 1.0
     return race_lagged_expanding_count(d, group_col, "_one")
 
