@@ -7,6 +7,11 @@ on:
 jobs:
   predict:
     runs-on: ubuntu-latest
+    # The job makes live Betfair calls and the client sets no socket timeout,
+    # so bound the whole thing rather than let a hung connection sit until
+    # GitHub's six-hour default. The predictions CSV is written before the
+    # price snapshot, so a kill here costs the prices and not the card.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 

@@ -35,6 +35,8 @@ class Prediction(BaseModel):
     bf_sp_near: float | None = None
     bf_sp_far: float | None = None
     bf_last_traded: float | None = None
+    #: This runner's matched volume, not the market's (see `runner_matched`
+    #: in betfair_client.get_live_odds_for_date).
     bf_total_matched: float | None = None
     price_snapshot_at: datetime | None = None
 

@@ -84,11 +84,13 @@ def test_attach_exchange_prices_keys_on_market_and_selection(monkeypatch):
              _pred(runner_name="Horse Two", market_id="1.1", selection_id=22)]
     _stub_betfair(monkeypatch, [
         {"market_id": "1.1", "selection_id": 11, "best_back_price": 4.2, "best_lay_price": 4.4,
-         "sp_near_price": 4.1, "sp_far_price": 4.3, "last_traded_price": 4.2, "total_matched": 900.0},
+         "sp_near_price": 4.1, "sp_far_price": 4.3, "last_traded_price": 4.2,
+         "runner_matched": 900.0, "total_matched": 50000.0},
         {"market_id": "1.1", "selection_id": 99, "best_back_price": 9.9},   # not ours
     ])
     out = attach_exchange_prices(preds, "2026-07-04")
     assert out[0].bf_best_back == 4.2 and out[0].bf_sp_near == 4.1
+    # the RUNNER's volume, not the market's 50,000
     assert out[0].bf_total_matched == 900.0 and out[0].price_snapshot_at is not None
     assert out[1].bf_best_back is None      # no row for selection 22, left empty
 
@@ -99,7 +101,7 @@ def test_attach_exchange_prices_treats_zero_as_no_price(monkeypatch):
     from pipeline.predict import attach_exchange_prices
     _stub_betfair(monkeypatch, [{"market_id": "1.1", "selection_id": 11,
                                  "best_back_price": 0.0, "sp_near_price": None,
-                                 "total_matched": 0.0}])
+                                 "runner_matched": 0.0, "total_matched": 0.0}])
     out = attach_exchange_prices([_pred(market_id="1.1", selection_id=11)], "2026-07-04")
     assert out[0].bf_best_back is None and out[0].bf_sp_near is None
     assert out[0].bf_total_matched == 0.0    # volume of zero is a fact, not a missing price
@@ -161,3 +163,40 @@ def test_live_loader_joins_on_normalised_keys(tmp_path):
 def test_live_loader_is_empty_without_files(tmp_path):
     from research_lab import _live_clv_frame
     assert _live_clv_frame(str(tmp_path), "nonexistent.db").empty
+
+
+def test_market_volume_is_not_stored_as_the_runner_s(monkeypatch):
+    """`total_matched` is the market's and identical across the field.
+
+    Storing it per runner makes everyone's share of the race's money exactly
+    1/n, which is what `prepare_clv_frame`'s `vol_share` would then compute --
+    a column that looks like liquidity data and carries none."""
+    from pipeline.predict import attach_exchange_prices
+    _stub_betfair(monkeypatch, [
+        {"market_id": "1.1", "selection_id": 11, "total_matched": 50000.0, "runner_matched": 900.0},
+        {"market_id": "1.1", "selection_id": 22, "total_matched": 50000.0, "runner_matched": 120.0},
+    ])
+    out = attach_exchange_prices(
+        [_pred(market_id="1.1", selection_id=11),
+         _pred(runner_name="Horse Two", market_id="1.1", selection_id=22)], "2026-07-04")
+    vols = [p.bf_total_matched for p in out]
+    assert vols == [900.0, 120.0], "the market total was stored instead of the runner's"
+    assert len(set(vols)) == 2, "every runner carrying the same volume is the bug"
+
+
+def test_the_predictions_are_written_before_the_price_snapshot():
+    """Order matters: the price call is live and the client has no timeout.
+
+    A hang while reaching for prices must cost the prices, not the day's
+    predictions, so the CSV is written first and rewritten afterwards."""
+    import inspect
+
+    from pipeline import predict as mod
+
+    src = inspect.getsource(mod.main)
+    first_write = src.index('write_csv("predictions"')
+    snapshot = src.index("attach_exchange_prices(")
+    assert first_write < snapshot, (
+        "attach_exchange_prices runs before the predictions are written; a hung "
+        "Betfair socket would cost the whole card"
+    )

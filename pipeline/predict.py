@@ -90,8 +90,11 @@ def attach_exchange_prices(predictions, target_date):
     market closed at, and a forecast of the close cannot be scored against the
     close for value.
 
-    One catalogue call covers the whole day's card. Failure is never fatal: a
-    prediction without a price is worth more than no prediction.
+    This is not cheap: `get_live_odds_for_date` re-lists the day's markets and
+    then issues one `listMarketBook` per market, so a UK/IE card costs thirty
+    to forty serial calls on top of the catalogue call step 3 already made.
+    That is why it runs after the predictions have been written rather than
+    before -- failure or delay here costs the prices, never the card.
     """
     from ultra_betting.betfair.auth import ensure_session
     from ultra_betting.betfair.client import get_client
@@ -121,7 +124,10 @@ def attach_exchange_prices(predictions, target_date):
         pred.bf_sp_near = _pos(r.get("sp_near_price"))
         pred.bf_sp_far = _pos(r.get("sp_far_price"))
         pred.bf_last_traded = _pos(r.get("last_traded_price"))
-        pred.bf_total_matched = _num(r.get("total_matched"))
+        # The runner's own matched volume, not the market's. `total_matched`
+        # is market-level and identical across the field, so storing it here
+        # would make every runner's share of the race's money exactly 1/n.
+        pred.bf_total_matched = _num(r.get("runner_matched"))
         pred.price_snapshot_at = now
         filled += 1
 
@@ -163,13 +169,21 @@ def main():
     # Step 3: Match to Betfair markets
     predictions = match_predictions_to_markets(predictions, target_date)
 
-    # Step 4: Snapshot the prices that exist right now, for forward CLV
-    predictions = attach_exchange_prices(predictions, target_date)
-
-    # Step 5: Write to S3
+    # Step 4: Write to S3 BEFORE reaching for prices.
+    #
+    # The price snapshot is a live Betfair call and the client sets no socket
+    # timeout, so a hung connection would otherwise stall here and the day's
+    # predictions would never be written at all. The snapshot is worth having
+    # and the predictions are worth more, so they go out first and the file is
+    # rewritten once the prices are in. A failure past this point costs eight
+    # columns, not the card.
     from ultra_betting.data.s3 import write_csv
-    df = predictions_to_dataframe(predictions)
-    write_csv("predictions", target_date, df)
+    write_csv("predictions", target_date, predictions_to_dataframe(predictions))
+
+    # Step 5: Snapshot the prices that exist right now, for forward CLV
+    predictions = attach_exchange_prices(predictions, target_date)
+    if any(p.price_snapshot_at for p in predictions):
+        write_csv("predictions", target_date, predictions_to_dataframe(predictions))
 
     log.info(f"=== PREDICT JOB COMPLETE — {len(predictions)} predictions written ===")
 
