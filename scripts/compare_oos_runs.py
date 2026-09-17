@@ -132,6 +132,85 @@ def top_pick_roi(d: pd.DataFrame, price_col: str, commission: float = 0.05,
     return float(ret.mean() * 100), lo * 100, hi * 100, len(top)
 
 
+def _race_terms(d: pd.DataFrame, price_col: str, race_col: str = "raceid"):
+    """Per-race sums that Brier skill and concordance are built from.
+
+    Both statistics are ratios of sums over races, so bootstrapping them means
+    resampling races and re-summing -- not recomputing from scratch. Doing the
+    per-race work once turns 500 bootstrap draws from minutes into milliseconds,
+    which is what makes it affordable to put an interval on the two numbers the
+    decision rule actually turns on."""
+    y = pd.to_numeric(d["won"], errors="coerce").fillna(0).to_numpy(dtype=float)
+    q = np.clip(normalised_prob(d, price_col, race_col), 1e-9, 1 - 1e-9)
+    mk = np.clip(normalised_prob(d, "bfsp", race_col), 1e-9, 1 - 1e-9)
+    races = d[race_col].to_numpy()
+
+    se_model = pd.Series((q - y) ** 2).groupby(races).sum()
+    se_market = pd.Series((mk - y) ** 2).groupby(races).sum()
+    n = pd.Series(np.ones(len(d))).groupby(races).sum()
+
+    ok, tot = {}, {}
+    for rid, g in d.groupby(race_col):
+        w = g[pd.to_numeric(g["won"], errors="coerce") > 0][price_col].to_numpy()
+        l = g[~(pd.to_numeric(g["won"], errors="coerce") > 0)][price_col].to_numpy()
+        if w.size == 0 or l.size == 0:
+            ok[rid], tot[rid] = 0.0, 0.0
+            continue
+        cmp_ = w[:, None] < l[None, :]
+        tie = w[:, None] == l[None, :]
+        ok[rid] = float(cmp_.sum()) + 0.5 * float(tie.sum())
+        tot[rid] = float(w.size * l.size)
+    idx = se_model.index
+    return {
+        "idx": idx,
+        "se_model": se_model.to_numpy(), "se_market": se_market.to_numpy(),
+        "n": n.reindex(idx).to_numpy(),
+        "ok": np.array([ok[i] for i in idx]), "tot": np.array([tot[i] for i in idx]),
+    }
+
+
+def paired_skill_deltas(base: pd.DataFrame, variant: pd.DataFrame, races: np.ndarray,
+                        n_boot: int = 500, level: float = 0.9, seed: int = 0) -> dict:
+    """Paired CIs for the two quantities the decision rule gates on.
+
+    A variant only replaces the default if it does not lose Brier skill or
+    concordance by more than its own interval, so those two need intervals.
+    Reporting the point estimates alone would leave the rule unusable -- and
+    "0.001 worse" is meaningless without knowing whether 0.001 is noise."""
+    keep = pd.Index(np.unique(races))
+    b = _race_terms(base[base["raceid"].isin(keep)], "predicted_bfsp")
+    v = _race_terms(variant[variant["raceid"].isin(keep)], "predicted_bfsp")
+    common = b["idx"].intersection(v["idx"])
+    sel_b = b["idx"].get_indexer(common)
+    sel_v = v["idx"].get_indexer(common)
+
+    def brier_skill(t, sel, w):
+        num = float((t["se_model"][sel] * w).sum() / (t["n"][sel] * w).sum())
+        den = float((t["se_market"][sel] * w).sum() / (t["n"][sel] * w).sum())
+        return 1.0 - num / den
+
+    def conc(t, sel, w):
+        tot = float((t["tot"][sel] * w).sum())
+        return float((t["ok"][sel] * w).sum()) / tot if tot else np.nan
+
+    ones = np.ones(len(common))
+    point = {"brier_skill": brier_skill(v, sel_v, ones) - brier_skill(b, sel_b, ones),
+             "concordance": conc(v, sel_v, ones) - conc(b, sel_b, ones)}
+
+    rng = np.random.default_rng(seed)
+    R = len(common)
+    draws = rng.multinomial(R, np.full(R, 1.0 / R), size=n_boot).astype(float)
+    ds, dc = [], []
+    for w in draws:
+        ds.append(brier_skill(v, sel_v, w) - brier_skill(b, sel_b, w))
+        dc.append(conc(v, sel_v, w) - conc(b, sel_b, w))
+    a = (1 - level) / 2
+    out = dict(point)
+    out["brier_skill_ci"] = (float(np.quantile(ds, a)), float(np.quantile(ds, 1 - a)))
+    out["concordance_ci"] = (float(np.quantile(dc, a)), float(np.quantile(dc, 1 - a)))
+    return out
+
+
 def by_rank(m: pd.DataFrame, ranks=(1, 2, 3, 8)) -> pd.DataFrame:
     """Paired error change at the ranks people actually look at."""
     m = m.copy()
@@ -208,12 +287,17 @@ def main():
     L.append("```")
     L.append(by_rank(m).round(4).to_string(index=False))
     L.append("```")
+    sk = paired_skill_deltas(b, v, m["raceid"].to_numpy(), a.n_boot)
     L.append("\n## Against the market\n")
-    L.append(f"| | base | variant |\n|---|---|---|")
-    L.append(f"| Brier skill vs market | {sb['brier_skill_vs_market']:+.4f} | {sv['brier_skill_vs_market']:+.4f} |")
-    L.append(f"| log loss | {sb['log_loss']:.5f} | {sv['log_loss']:.5f} |")
-    L.append(f"| winner-vs-loser concordance | {cb:.5f} | {cv:.5f} |")
-    L.append(f"| ...the market's | {cm:.5f} | {cm:.5f} |")
+    L.append(f"| | base | variant | variant − base (90% CI) |\n|---|---|---|---|")
+    L.append(f"| Brier skill vs market | {sb['brier_skill_vs_market']:+.4f} | "
+             f"{sv['brier_skill_vs_market']:+.4f} | {sk['brier_skill']:+.5f} "
+             f"({sk['brier_skill_ci'][0]:+.5f} to {sk['brier_skill_ci'][1]:+.5f}) |")
+    L.append(f"| log loss | {sb['log_loss']:.5f} | {sv['log_loss']:.5f} | |")
+    L.append(f"| winner-vs-loser concordance | {cb:.5f} | {cv:.5f} | "
+             f"{sk['concordance']:+.5f} "
+             f"({sk['concordance_ci'][0]:+.5f} to {sk['concordance_ci'][1]:+.5f}) |")
+    L.append(f"| ...the market's | {cm:.5f} | {cm:.5f} | |")
     L.append(f"| implied book (1.0 by construction since Step A) | "
              f"{book(b, 'predicted_bfsp'):.4f} | {book(v, 'predicted_bfsp'):.4f} |")
     L.append("\n## Top pick, flat stakes\n")
@@ -221,6 +305,20 @@ def main():
     L.append(f"- variant {rv:+.2f}% ({rvlo:+.2f} to {rvhi:+.2f}) on {nv:,} bets")
     L.append("\nReported, not decisive: at this sample the interval is wider than "
              "any difference worth acting on.\n")
+
+    # The rule, applied here rather than left to the reader.
+    primary = hi < 0
+    brier_ok = sk["brier_skill"] >= 0 or sk["brier_skill"] >= sk["brier_skill_ci"][0]
+    conc_ok = sk["concordance"] >= 0 or sk["concordance"] >= sk["concordance_ci"][0]
+    replaces = primary and brier_ok and conc_ok
+    L.append("\n## Decision\n")
+    L.append(f"- paired error interval excludes zero in the variant's favour: "
+             f"**{'yes' if primary else 'no'}**")
+    L.append(f"- Brier skill not worse by more than its own interval: "
+             f"**{'yes' if brier_ok else 'no'}**")
+    L.append(f"- concordance not worse by more than its own interval: "
+             f"**{'yes' if conc_ok else 'no'}**")
+    L.append(f"\n**{'The variant replaces the default.' if replaces else 'The default stands.'}**\n")
 
     text = "\n".join(L)
     print(text)
