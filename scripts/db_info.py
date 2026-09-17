@@ -84,17 +84,56 @@ def odds_check(conn) -> None:
               f"{fav:>10.3f}")
 
     both = df[(df["odds"] > 1) & (df["bfsp"] > 1)]
-    if len(both) >= 50:
-        lr = np.log(both["odds"] / both["bfsp"])
-        corr = float(np.corrcoef(np.log(both["odds"]), np.log(both["bfsp"]))[0, 1])
-        med = float(lr.abs().median())
+    if len(both) < 50:
+        return
+    lr = np.log(both["odds"] / both["bfsp"])
+    corr = float(np.corrcoef(np.log(both["odds"]), np.log(both["bfsp"]))[0, 1])
+    med = float(lr.abs().median())
+    print(f"\npooled: corr {corr:.3f}, median |log ratio| {med:.3f}, "
+          f"mean {float(lr.mean()):+.3f} (odds longer than BSP if positive)")
+
+    # A wide spread alone does not say WHAT the column is, and the difference
+    # matters: a timing gap means historic closing-line value is measurable, a
+    # units or scale difference means the column is the same price in another
+    # form and there is still no early price in the database.
+    #
+    # The two separate cleanly by price band. A constant overround gap (industry
+    # SP against Betfair SP) is roughly constant in log space across bands. A
+    # column holding decimal-minus-one -- fractional odds as a number, so 4/1
+    # stored as 4.0 rather than 5.0 -- has a gap that shrinks as the price
+    # lengthens, because (p-1)/p tends to 1.
+    print("\n=== by BSP band: is the gap constant (overround) or shrinking (units)? ===")
+    print(f"{'BSP band':>14} {'n':>9} {'med log(odds/bsp)':>18} "
+          f"{'med log((bsp-1)/bsp)':>21} {'gap explained':>14}")
+    bands = [(1.0, 2.0), (2.0, 3.0), (3.0, 5.0), (5.0, 8.0),
+             (8.0, 15.0), (15.0, 40.0), (40.0, 1e9)]
+    for lo, hi in bands:
+        g = both[(both["bfsp"] >= lo) & (both["bfsp"] < hi)]
+        if len(g) < 50:
+            continue
+        obs = float(np.log(g["odds"] / g["bfsp"]).median())
+        # what decimal-minus-one would predict for this band
+        pred = float(np.log((g["bfsp"] - 1.0) / g["bfsp"]).median())
+        share = f"{100 * obs / pred:6.0f}%" if abs(pred) > 1e-9 else "     -"
+        label = f"{lo:g}-{hi:g}" if hi < 1e9 else f"{lo:g}+"
+        print(f"{label:>14} {len(g):>9,} {obs:>18.3f} {pred:>21.3f} {share:>14}")
+
+    # Direct test of the same hypothesis, runner by runner.
+    implied = both["bfsp"] - 1.0
+    close = (both["odds"] - implied).abs() / implied.clip(lower=1e-9)
+    print(f"\nshare of runners with odds within 5% of (BSP - 1): "
+          f"{float((close < 0.05).mean()):.3f}")
+    print(f"share of runners with odds within 5% of BSP:       "
+          f"{float((np.abs(both['odds'] - both['bfsp']) / both['bfsp'] < 0.05).mean()):.3f}")
+
+    if corr > 0.97 and med < 0.08:
         verdict = ("a closing price (industry SP): historic CLV is not measurable "
-                   "from this column" if corr > 0.97 and med < 0.08 else
-                   "NOT a closing price -- wide enough to be an early price; "
-                   "check before concluding")
-        print(f"\npooled: corr {corr:.3f}, median |log ratio| {med:.3f}, "
-              f"mean {float(lr.mean()):+.3f} (odds longer than BSP if positive)")
-        print(f"verdict: odds looks like {verdict}")
+                   "from this column")
+    else:
+        verdict = ("NOT the same quantity as BSP. Read the band table before "
+                   "concluding it is an early price: a gap that tracks "
+                   "log((BSP-1)/BSP) is a units difference, not a timing one")
+    print(f"\nverdict: odds looks like {verdict}")
 
 
 def main() -> int:
