@@ -150,7 +150,8 @@ def walk_forward_predict(
         # by a median 13%. It is a research diagnostic now: `research_lab.py
         # price-cal` fits it against `predicted_bfsp_raw`, which this exports.
         val_df = predict_prices(model, val_df.copy(), feature_cols, race_col="raceid",
-                                target=cfg.target, num_iteration=fit.best_iteration)
+                                target=cfg.target, num_iteration=fit.best_iteration,
+                                offset=fit.init_offset)
         val_df["fold_idx"] = fold_idx
 
         all_oos.append(val_df)

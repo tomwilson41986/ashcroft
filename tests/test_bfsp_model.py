@@ -403,3 +403,57 @@ def test_decay_changes_the_fit_under_both_objectives():
         a = flat.booster.predict(d[cols].astype(float))
         b = decayed.booster.predict(d[cols].astype(float))
         assert not np.allclose(a, b), f"{objective}: decay_rate did nothing"
+
+
+def test_the_custom_objective_starts_from_the_intercept():
+    """Without an init_score a custom objective begins every prediction at 0.
+
+    LightGBM applies boost_from_average inside the built-in objectives only.
+    On log(BFSP), whose mean is about 1.5, at the production learning rate that
+    costs roughly 300 of 3000 rounds just to reach the intercept -- a tenth of
+    the budget, charged to one side of a head-to-head for an implementation
+    detail rather than for anything about the objective."""
+    d = _history(n_days=200)
+    cols = ["f1", "f2"]
+    cfg = TrainConfig(objective="profit_weighted", num_boost_round=30,
+                      early_stopping_rounds=15, holdout_days=30)
+    fit = fit_bfsp(d, cols, cfg)
+    assert fit.init_offset > 0.5, "no init_score was set for the custom objective"
+
+    # 30 rounds is nowhere near enough to climb from zero, so a fit that starts
+    # at the intercept must land far closer to it than one that does not.
+    raw = fit.booster.predict(d[cols].astype(float))
+    assert abs(float(np.mean(raw))) < abs(fit.init_offset), (
+        "the booster's own output should be a correction to the offset, not the level"
+    )
+    with_offset = np.mean(raw + fit.init_offset)
+    assert abs(with_offset - np.log(d["bfsp"]).mean()) < 0.5
+
+    # l2 is built-in, so it needs no offset and must not get one
+    assert fit_bfsp(d, cols, replace(cfg, objective="l2")).init_offset == 0.0
+
+
+def test_the_normalised_price_is_invariant_to_the_offset():
+    """Why the offset cannot corrupt what gets served.
+
+    Every served price is normalised to a book of 1, and scaling each runner's
+    price by the same constant cancels exactly. Only the raw columns move."""
+    df = _card()
+    booster = _Booster(np.linspace(0.5, 2.0, len(df)))
+    a = predict_prices(booster, df, ["f1", "f2"], offset=0.0)
+    b = predict_prices(booster, df, ["f1", "f2"], offset=1.7)
+    assert np.allclose(a["predicted_bfsp"], b["predicted_bfsp"])
+    assert np.allclose(a["predicted_win_prob_norm"], b["predicted_win_prob_norm"])
+    assert np.allclose(b["predicted_bfsp_raw"], a["predicted_bfsp_raw"] * np.exp(1.7))
+
+
+def test_a_model_the_serving_path_would_misread_is_refused():
+    """The serving path passes neither a target nor an offset, so a model that
+    needs either must be refused at load time rather than served wrongly."""
+    base = dict(feature_cols=["f1", "f2"], objective="l2", target="log_bfsp")
+    assert_meta_is_servable(base)                      # the default is fine
+
+    with pytest.raises(ValueError, match="wrong rule"):
+        assert_meta_is_servable({**base, "target": "demeaned_log"})
+    with pytest.raises(ValueError, match="init_offset"):
+        assert_meta_is_servable({**base, "init_offset": 1.42})

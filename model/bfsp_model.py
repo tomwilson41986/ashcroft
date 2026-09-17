@@ -77,6 +77,7 @@ def predict_prices(
     target_book: float = 1.0,
     target: str = "log_bfsp",
     num_iteration: int | None = None,
+    offset: float = 0.0,
 ) -> pd.DataFrame:
     """Booster output → one coherent price and probability per runner.
 
@@ -90,6 +91,11 @@ def predict_prices(
       column named `predicted_win_prob` that disagreed with `predicted_bfsp` is
       exactly the bug this module exists to remove.
     - `predicted_log_bfsp` — `log(predicted_bfsp)`.
+
+    `offset` is the fit's `init_offset` (`FitResult.init_offset`, recorded in the
+    metadata). It shifts only the raw columns; the normalised price is invariant
+    to it, so omitting it cannot corrupt what gets served -- but it would put
+    `predicted_bfsp_raw`, which the calibration report reads, on the wrong scale.
     """
     out = df.copy()
     if race_col not in out.columns:
@@ -97,6 +103,10 @@ def predict_prices(
 
     X = out[feature_cols].astype(float)
     raw_out = np.asarray(booster.predict(X, num_iteration=num_iteration), dtype=float)
+    # `booster.predict` excludes any init_score the fit started from, so the
+    # caller passes it back in. Only the raw columns move: `predicted_bfsp` is
+    # normalised to a book of 1, which cancels a constant offset exactly.
+    raw_out = raw_out + offset
     # The booster's scale depends on the target it was fitted on; the price is
     # what every caller wants. `demeaned_log` and `logit_norm_prob` both drop a
     # race-level term that the normalisation below would cancel anyway.
@@ -353,6 +363,11 @@ class FitResult:
     #: smoke run stopped at exactly 3000 of 3000, which reads like a converged
     #: model unless the distinction is recorded.
     early_stopped: bool = True
+    #: The constant the booster was started from, in target units. LightGBM
+    #: turns boost_from_average off for a custom objective, so without this the
+    #: fit begins at 0 and spends its first rounds travelling to the intercept.
+    #: `predict_prices` must add it back to recover the booster's raw scale.
+    init_offset: float = 0.0
 
 
 def sample_weights(dates, decay_rate: float, reference=None):
@@ -439,6 +454,22 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
 
     cat = [c for c in feature_cols if c.endswith("_cat")] if cfg.native_categoricals else None
 
+    # LightGBM applies boost_from_average inside the built-in objectives only,
+    # so a custom objective starts every prediction at 0. On log(BFSP), whose
+    # mean is about 1.5, at the production learning rate of 0.03 that costs
+    # roughly 300 of 3000 rounds just to reach the intercept -- measured: still
+    # 5% short at round 150, within 1% by round 300. Since the cap is what these
+    # fits actually reach, charging the profit-weighted objective a tenth of its
+    # budget for an implementation detail would make a head-to-head against l2
+    # a comparison of initialisations rather than of objectives.
+    #
+    # The served price is untouched either way: it is race-normalised to a book
+    # of 1, and scaling every runner's price by a constant cancels exactly. This
+    # is about the fit, not the output.
+    init_offset = 0.0
+    if cfg.objective == "profit_weighted":
+        init_offset = float(np.mean(y[~is_holdout]))
+
     def _ds(mask, ref=None):
         """A Dataset over the masked rows, materialising one slice at a time.
 
@@ -449,10 +480,12 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         binning it too. The published retrain died 22 seconds into the final
         fit with a runner shutdown. Slice straight out of the frame and let
         LightGBM free the raw data once it has binned it."""
+        n = int(np.count_nonzero(mask))
         return lgb.Dataset(
             d.loc[mask, feature_cols].astype(float),
             label=y[mask],
             weight=None if w is None else w[mask],
+            init_score=None if init_offset == 0.0 else np.full(n, init_offset),
             reference=ref, categorical_feature=cat or "auto",
         )
 
@@ -479,7 +512,11 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
     )
     best = int(booster.best_iteration or cfg.num_boost_round)
 
-    hp = booster.predict(d.loc[is_holdout, feature_cols].astype(float), num_iteration=best)
+    # booster.predict() excludes init_score, so add it back before comparing
+    # with the label -- otherwise the holdout MAE measures the wrong thing and
+    # early stopping is judged on it.
+    hp = booster.predict(d.loc[is_holdout, feature_cols].astype(float),
+                         num_iteration=best) + init_offset
     hy = y[is_holdout]
     holdout_metrics = {
         "n": int(is_holdout.sum()),
@@ -513,7 +550,7 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         booster=booster, best_iteration=best, holdout_start=holdout_start,
         holdout_metrics=holdout_metrics, n_train=int((~is_holdout).sum()),
         n_holdout=int(is_holdout.sum()), refit=bool(cfg.refit_on_full),
-        early_stopped=early_stopped,
+        early_stopped=early_stopped, init_offset=init_offset,
     )
 
 
@@ -547,6 +584,9 @@ def model_meta(cfg: TrainConfig, feature_cols: list[str], fit: FitResult | None 
             "holdout_rows": fit.n_holdout,
             "refit_on_full": fit.refit,
             "early_stopped": fit.early_stopped,
+            # Must be added back to the booster's output to recover its raw
+            # scale; the normalised price is invariant to it, the raw one is not.
+            "init_offset": fit.init_offset,
             "num_boost_round": cfg.num_boost_round,
         })
     try:
@@ -555,6 +595,15 @@ def model_meta(cfg: TrainConfig, feature_cols: list[str], fit: FitResult | None 
         meta["feature_code_hash"] = None
     meta.update(extra)
     return meta
+
+
+#: What `predict_bfsp_today` is wired to serve. It calls `predict_prices` with
+#: the default target and no offset, so a model fitted any other way would be
+#: inverted with the wrong rule or exported with its raw price on the wrong
+#: scale. The head-to-head may well pick a different target -- when it does,
+#: the serving path gets taught to pass them and this list grows. Until then a
+#: mismatch is a refusal at load time rather than a wrong price at 06:00.
+SERVABLE_TARGETS = ("log_bfsp",)
 
 
 def assert_meta_is_servable(meta: dict) -> None:
@@ -580,4 +629,23 @@ def assert_meta_is_servable(meta: dict) -> None:
             "shared training recipe and may be the profit-weighted model while "
             "the published numbers describe the plain one. Retrain with "
             "train_bfsp.py."
+        )
+
+    target = meta.get("target", "log_bfsp")
+    if target not in SERVABLE_TARGETS:
+        raise ValueError(
+            f"model was fitted on target {target!r}, and the serving path calls "
+            f"predict_prices with the default {SERVABLE_TARGETS[0]!r}: it would "
+            f"invert the booster's output with the wrong rule. Teach "
+            f"predict_bfsp_today to pass the target from this metadata, then add "
+            f"{target!r} to SERVABLE_TARGETS."
+        )
+
+    offset = float(meta.get("init_offset") or 0.0)
+    if offset != 0.0:
+        raise ValueError(
+            f"model was fitted from an init_score of {offset:.4f} and the serving "
+            f"path passes no offset. The served price is race-normalised so it "
+            f"would survive this, but predicted_bfsp_raw would not. Teach "
+            f"predict_bfsp_today to pass init_offset from this metadata."
         )
