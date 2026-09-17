@@ -92,6 +92,7 @@ def walk_forward_predict(
     # The recipe, recorded and shared with train_bfsp.py. These used to be two
     # different models: plain L2 here, profit-weighted plus recency decay there.
     cfg = cfg or TrainConfig()
+    fold_fits: list = []
 
     min_date = df["race_date"].min()
     max_date = df["race_date"].max()
@@ -136,8 +137,11 @@ def walk_forward_predict(
                 cfg.holdout_days, fit.n_holdout,
                 pd.Timestamp(fit.holdout_start).date(),
             )
-        log.info("    best_iteration %d, holdout mae %.4f",
-                 fit.best_iteration, fit.holdout_metrics["mae"])
+        log.info("    best_iteration %d%s, holdout mae %.4f",
+                 fit.best_iteration,
+                 "" if fit.early_stopped else " (CAP, not a stop)",
+                 fit.holdout_metrics["mae"])
+        fold_fits.append(fit)
 
         # One price, one probability, book = 1 by construction. The quantile
         # calibrator used to overwrite the price here, fitted on the
@@ -158,6 +162,12 @@ def walk_forward_predict(
         return pd.DataFrame()
 
     combined = pd.concat(all_oos, ignore_index=True)
+    # Per-fold fit facts travel with the frame rather than in a module global.
+    combined.attrs["fold_fits"] = [
+        {"best_iteration": f.best_iteration, "early_stopped": f.early_stopped,
+         "holdout_mae": f.holdout_metrics["mae"], "n_holdout": f.n_holdout}
+        for f in fold_fits
+    ]
 
     # Deduplicate: if a runner appears in multiple folds (overlapping windows),
     # keep the prediction from the latest fold (most training data).
@@ -954,6 +964,10 @@ def main():
             "n_folds": int(oos["fold_idx"].nunique()),
             "n_features_used": len(feature_cols_full),
             "train_config": cfg.describe(),
+            "fold_fits": oos.attrs.get("fold_fits", []),
+            "folds_early_stopped": sum(
+                1 for f in oos.attrs.get("fold_fits", []) if f["early_stopped"]
+            ),
             "tag": args.tag,
             "missing_features": missing_features,
             "accuracy": accuracy,

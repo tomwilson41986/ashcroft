@@ -35,9 +35,14 @@ on:
         default: ''
         type: string
       extra_args:
-        description: 'Extra flags for evaluate_oos.py, e.g. --objective profit_weighted --decay-rate 1.0'
+        description: 'Extra flags for evaluate_oos.py / train_bfsp.py, e.g. --objective profit_weighted --decay-rate 1.0'
         required: false
         default: ''
+        type: string
+      wf_folds:
+        description: 'Walk-forward folds inside the trainer (0 = skip; evaluate_oos.py is the evaluation)'
+        required: false
+        default: '0'
         type: string
       start_date:
         description: 'Load history from this date (memory control; metrics warm up automatically)'
@@ -107,7 +112,14 @@ jobs:
 
       - name: Train BFSP model
         run: |
+          # --start-date was never passed, so this loaded the whole database
+          # while the evaluation job was given a window. --wf-folds keeps the
+          # in-trainer walk-forward off by default: evaluate_oos.py is the
+          # evaluation, and a fold now costs about thirteen minutes.
           python train_bfsp.py \
+            --start-date "${{ inputs.start_date || '2021-01-01' }}" \
+            --wf-folds ${{ inputs.wf_folds || 0 }} \
+            ${{ inputs.extra_args }} \
             --min-train-days ${{ inputs.min_train_days || 365 }} \
             --val-window ${{ inputs.val_window || 30 }} \
             --step-days ${{ inputs.step_days || 30 }}
@@ -279,11 +291,30 @@ jobs:
       - name: Scoring, ranks, staking and price calibration
         run: |
           set -o pipefail
-          python research_lab.py score     --predictions data/oos_predictions.csv 2>&1 | tee reports/score.txt
-          python research_lab.py bets      --predictions data/oos_predictions.csv 2>&1 | tee reports/bets.txt
-          python research_lab.py stake     --predictions data/oos_predictions.csv \
+          # Score THIS run's predictions, not whatever is committed at that path.
+          #
+          # --tag writes data/oos_predictions_<tag>.csv, and these four commands
+          # read the untagged name, which in a fresh checkout is the file
+          # committed in the repo. The smoke run proved it: its score.txt
+          # described 215,760 runners over 22 folds -- the previous run's
+          # committed output -- rather than the 7,258 rows it had just
+          # predicted, and the artifact's CSV was md5-identical to the repo
+          # copy. Every variant of a head-to-head would have reported the same
+          # stale numbers, and nothing in the output would have said so.
+          TAG="${{ inputs.variant_tag }}"
+          SUFFIX="${TAG:+_$TAG}"
+          PRED="data/oos_predictions${SUFFIX}.csv"
+          if [ ! -s "$PRED" ]; then
+            echo "::error::$PRED was not written by the evaluation step; refusing to score a stale file."
+            exit 1
+          fi
+          echo "Scoring $PRED ($(wc -l < "$PRED") lines)"
+
+          python research_lab.py score     --predictions "$PRED" 2>&1 | tee reports/score.txt
+          python research_lab.py bets      --predictions "$PRED" 2>&1 | tee reports/bets.txt
+          python research_lab.py stake     --predictions "$PRED" \
             --bank-chart reports/bank_curves.png --out-dir reports/stake 2>&1 | tee reports/stake.txt
-          python research_lab.py price-cal --predictions data/oos_predictions.csv \
+          python research_lab.py price-cal --predictions "$PRED" \
             --save reports/bsp_price_calibrator.json 2>&1 | tee reports/price_cal.txt
 
       - name: Summarise into the run page
@@ -306,7 +337,7 @@ jobs:
         with:
           name: oos-evaluation-${{ github.run_number }}${{ inputs.variant_tag && format('-{0}', inputs.variant_tag) || '' }}
           path: |
-            data/oos_predictions.csv
-            data/oos_evaluation.json
+            data/oos_predictions*.csv
+            data/oos_evaluation*.json
             reports/
           retention-days: 90

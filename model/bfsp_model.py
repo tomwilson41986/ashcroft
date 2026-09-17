@@ -317,6 +317,11 @@ class FitResult:
     n_train: int
     n_holdout: int
     refit: bool
+    #: False when best_iteration hit num_boost_round -- the holdout was still
+    #: improving at the cap, so the fit is fixed-length, not early-stopped. The
+    #: smoke run stopped at exactly 3000 of 3000, which reads like a converged
+    #: model unless the distinction is recorded.
+    early_stopped: bool = True
 
 
 def sample_weights(dates, decay_rate: float, reference=None):
@@ -449,10 +454,19 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         booster = lgb.train(params, full, num_boost_round=best, feval=feval,
                             callbacks=[lgb.log_evaluation(period=0)])
 
+    early_stopped = best < cfg.num_boost_round
+    if not early_stopped:
+        log.warning(
+            "Early stopping did not fire: best_iteration %d == num_boost_round. "
+            "The holdout was still improving at the cap, so this is a "
+            "fixed-length fit, not a converged one.", best,
+        )
+
     return FitResult(
         booster=booster, best_iteration=best, holdout_start=holdout_start,
         holdout_metrics=holdout_metrics, n_train=int((~is_holdout).sum()),
         n_holdout=int(is_holdout.sum()), refit=bool(cfg.refit_on_full),
+        early_stopped=early_stopped,
     )
 
 
@@ -485,6 +499,8 @@ def model_meta(cfg: TrainConfig, feature_cols: list[str], fit: FitResult | None 
             "train_rows": fit.n_train,
             "holdout_rows": fit.n_holdout,
             "refit_on_full": fit.refit,
+            "early_stopped": fit.early_stopped,
+            "num_boost_round": cfg.num_boost_round,
         })
     try:
         meta["feature_code_hash"] = feature_cache.feature_code_hash()

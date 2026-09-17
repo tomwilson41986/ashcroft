@@ -209,7 +209,9 @@ class BFSPTrainer:
         use_custom_objective: bool | None = None,
         gp_draw_surface: bool = False,
         cfg: TrainConfig | None = None,
+        wf_folds: int = 0,
     ):
+        self.wf_folds = int(wf_folds)
         self.min_train_days = min_train_days
         self.val_window_days = val_window_days
         self.step_days = step_days
@@ -339,16 +341,24 @@ class BFSPTrainer:
             log.error("Insufficient data for training (need >= 200 rows)")
             return {"error": "insufficient_data"}
 
-        # Step 2: Walk-forward validation
-        folds = self.create_folds(df)
-        log.info(f"Created {len(folds)} walk-forward folds")
+        # Step 2: Walk-forward validation.
+        #
+        # Off by default. `evaluate_oos.py` is the evaluation -- it runs the
+        # same recipe over the same folds and writes the reports -- so doing it
+        # again here bought a second set of numbers nobody read, and the cost
+        # changed when early stopping moved off the scored fold: a fold is now
+        # about thirteen minutes, and the full history is roughly fifty of
+        # them, against a 330-minute job ceiling. `--wf-folds N` keeps the
+        # first N folds for anyone who wants a quick in-trainer sanity check.
+        folds = self.create_folds(df)[: self.wf_folds] if self.wf_folds else []
+        if self.wf_folds:
+            log.info(f"Walk-forward: {len(folds)} folds (--wf-folds {self.wf_folds})")
+        else:
+            log.info("Skipping the in-trainer walk-forward; evaluate_oos.py is the "
+                     "evaluation. Use --wf-folds N for a quick check.")
 
-        if not folds:
-            log.warning("Not enough data for walk-forward. Using 80/20 split.")
-            return self._train_simple_split(df, output_dir)
-
-        fold_metrics = []
-        all_val_preds = []
+        fold_metrics: list = []
+        all_val_preds: list = []
 
         # Walk-forward early stopping: stop if no MAE improvement over
         # the last `patience` folds (comparing running average)
@@ -949,6 +959,13 @@ def main():
     parser.add_argument("--embargo-days", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
+        "--wf-folds", type=int, default=0,
+        help="Run N walk-forward folds inside the trainer as a sanity check "
+             "(default 0 = skip). evaluate_oos.py is the evaluation; a fold "
+             "costs about thirteen minutes, so the full history does not fit "
+             "in the job ceiling",
+    )
+    parser.add_argument(
         "--optuna-params", type=str, default=None,
         help="Path to Optuna best params JSON to use instead of defaults",
     )
@@ -1124,6 +1141,7 @@ def main():
         step_days=args.step_days,
         gp_draw_surface=getattr(args, "gp_draw", False),
         cfg=cfg,
+        wf_folds=args.wf_folds,
     )
 
     summary = trainer.train(df, output_dir=args.output_dir)

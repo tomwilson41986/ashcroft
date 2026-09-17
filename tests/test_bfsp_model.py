@@ -328,3 +328,19 @@ def test_refit_on_full_uses_every_row():
     assert refit.best_iteration == plain.best_iteration
     x = df[["f1", "f2"]].astype(float).head(50)
     assert not np.allclose(plain.booster.predict(x), refit.booster.predict(x))
+
+
+def test_a_cap_is_not_reported_as_a_stop():
+    """`best_iteration == num_boost_round` means the holdout was still
+    improving at the limit, so the fit is fixed-length rather than converged.
+    The smoke run hit exactly 3000 of 3000, which reads like convergence."""
+    df = _history(n_days=120)
+    capped = fit_bfsp(df, ["f1", "f2"],
+                      TrainConfig(num_boost_round=5, early_stopping_rounds=1000,
+                                  holdout_days=20))
+    assert capped.best_iteration == 5
+    assert capped.early_stopped is False
+
+    meta = model_meta(TrainConfig(num_boost_round=5), ["f1", "f2"], fit=capped)
+    assert meta["early_stopped"] is False
+    assert meta["num_boost_round"] == 5
