@@ -140,6 +140,7 @@ def odds_check(conn) -> None:
     # absorbed the day's money and orders the result about as well as the BSP;
     # a morning price has not, and orders it measurably worse. So ask the
     # prices to predict, rather than asking how far apart they are.
+    order_gap = None
     print("\n=== does `odds` order results as well as the BSP? ===")
     d = both.dropna(subset=["raceid"]).copy()
     if "placing_numerical" in d.columns:
@@ -159,6 +160,7 @@ def odds_check(conn) -> None:
             tot += w.shape[0] * l.shape[0]
         if tot:
             c_o, c_b = ok_o / tot, ok_b / tot
+            order_gap = c_o - c_b
             print(f"  winner-vs-loser concordance, odds : {c_o:.4f}")
             print(f"  winner-vs-loser concordance, BSP  : {c_b:.4f}")
             print(f"  difference                        : {c_o - c_b:+.4f}")
@@ -170,13 +172,34 @@ def odds_check(conn) -> None:
     else:
         print("  (no placing_numerical column; cannot score the prices)")
 
-    if corr > 0.97 and med < 0.08:
-        verdict = ("a closing price (industry SP): historic CLV is not measurable "
-                   "from this column")
+    # The ordering test decides, because it is the only one of the three that
+    # tracks what actually distinguishes an early price from a late one.
+    #
+    # An earlier version of this script keyed the verdict off the log-ratio
+    # alone, with "under 0.08 means a closing price". That is right for two
+    # exchanges and wrong for a bookmaker's returned SP against Betfair, where
+    # the overround differs and the tail is compressed hard -- on this database
+    # the gap runs to -0.82 in the 40+ band. It duly called an industry SP "NOT
+    # a closing price", which is the same class of error as everything else
+    # this audit exists to catch: a threshold invented rather than derived,
+    # reported as though it settled something.
+    if order_gap is not None and abs(order_gap) < 0.01:
+        verdict = ("a CLOSING price. It orders results as well as the BSP does "
+                   f"({order_gap:+.4f} concordance), which a morning price cannot: "
+                   "the level differs because a bookmaker's overround and tail "
+                   "compression differ from the exchange's, not because the two "
+                   "were struck at different times. Historic closing-line value "
+                   "is NOT measurable from this column; it has to accrue forward "
+                   "from a price captured at prediction time.")
+    elif order_gap is not None:
+        verdict = (f"an EARLIER price: it orders results {abs(order_gap):.4f} worse "
+                   "than the BSP, which is information the BSP has and it does not. "
+                   "Historic closing-line value may be measurable after all -- "
+                   "check the coverage by year before relying on it.")
     else:
-        verdict = ("NOT the same quantity as BSP. Read the band table before "
-                   "concluding it is an early price: a gap that tracks "
-                   "log((BSP-1)/BSP) is a units difference, not a timing one")
+        verdict = ("undetermined: no result column to score the prices against. "
+                   "The level tests alone cannot separate an early price from a "
+                   "bookmaker's close.")
     print(f"\nverdict: odds looks like {verdict}")
 
 

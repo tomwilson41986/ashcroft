@@ -278,6 +278,12 @@ def profit_weighted_metric(preds, train_data):
     return "profit_wmae", (float(np.sum(err) / denom) if denom > 0 else float("nan")), False
 
 
+#: How far below the cap `best_iteration` must land before a fit counts as
+#: early-stopped rather than as having run out of budget. LightGBM's callback
+#: fires the moment the holdout stops improving for `early_stopping_rounds`,
+#: which on this data happens at 2989 of 3000 -- a stop in name only.
+EARLY_STOP_MARGIN = 0.05
+
 OBJECTIVES = ("l2", "profit_weighted")
 TARGETS = ("log_bfsp", "logit_norm_prob", "demeaned_log")
 
@@ -538,7 +544,12 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         del full
         gc.collect()
 
-    early_stopped = best < cfg.num_boost_round
+    # "Did the callback fire" is not "did the model converge". On the real
+    # history the stops land at 2989, 2990, 2998, 2999 of 3000 -- technically
+    # early, substantively the cap, and a summary saying "7 of 11 folds early
+    # stopped" reads as convergence to anyone who does not go and look at the
+    # iteration counts. Require a real margin before claiming it.
+    early_stopped = best < int(cfg.num_boost_round * (1.0 - EARLY_STOP_MARGIN))
     if not early_stopped:
         log.warning(
             "Early stopping did not fire: best_iteration %d == num_boost_round. "

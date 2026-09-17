@@ -457,3 +457,29 @@ def test_a_model_the_serving_path_would_misread_is_refused():
         assert_meta_is_servable({**base, "target": "demeaned_log"})
     with pytest.raises(ValueError, match="init_offset"):
         assert_meta_is_servable({**base, "init_offset": 1.42})
+
+
+def test_a_stop_at_the_cap_is_not_called_early_stopping():
+    """LightGBM's callback firing is not the same as the model converging.
+
+    On the real history the stops land at 2989, 2990, 2998 and 2999 of 3000, so
+    the raw `best_iteration < num_boost_round` test called seven of eleven folds
+    "early stopped" -- which reads as convergence to anyone who does not go and
+    look at the counts. The flag exists to make cap-versus-convergence visible,
+    so it has to require a real margin."""
+    from model.bfsp_model import EARLY_STOP_MARGIN
+
+    d = _history(n_days=260)
+    cols = ["f1", "f2"]
+
+    # A cap low enough that the holdout is certainly still improving at it.
+    capped = fit_bfsp(d, cols, TrainConfig(num_boost_round=40,
+                                           early_stopping_rounds=200, holdout_days=30))
+    assert capped.best_iteration == 40
+    assert not capped.early_stopped
+
+    # And the margin is what decides it, not the bare inequality.
+    assert EARLY_STOP_MARGIN > 0
+    for best, cap, expected in [(2989, 3000, False), (2999, 3000, False),
+                                (2000, 3000, True), (100, 3000, True)]:
+        assert (best < int(cap * (1 - EARLY_STOP_MARGIN))) is expected, (best, cap)
