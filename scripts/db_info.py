@@ -52,9 +52,15 @@ def odds_check(conn) -> None:
     import numpy as np
     import pandas as pd
 
+    # placing_numerical is only needed for the ordering test, and a database
+    # that predates it should still get the rest of the audit rather than an
+    # OperationalError.
+    have = {r[1] for r in conn.execute("PRAGMA table_info(race_results)")}
+    cols = ["race_date", "race_time", "track", "horse_name", "odds", "bfsp"]
+    if "placing_numerical" in have:
+        cols.append("placing_numerical")
     df = pd.read_sql_query(
-        "SELECT race_date, race_time, track, horse_name, odds, bfsp "
-        "FROM race_results WHERE race_date IS NOT NULL", conn)
+        f"SELECT {', '.join(cols)} FROM race_results WHERE race_date IS NOT NULL", conn)
     if df.empty:
         print("odds-check: no rows")
         return
@@ -125,6 +131,44 @@ def odds_check(conn) -> None:
           f"{float((close < 0.05).mean()):.3f}")
     print(f"share of runners with odds within 5% of BSP:       "
           f"{float((np.abs(both['odds'] - both['bfsp']) / both['bfsp'] < 0.05).mean()):.3f}")
+
+    # The band table rules out a units artefact but cannot separate an early
+    # price from a late one, and the log-ratio threshold cannot either: a
+    # bookmaker's returned SP sits far from the exchange's even though both are
+    # closing prices, because the overround differs and bookmakers compress the
+    # tail hardest. What does separate them is information. A closing price has
+    # absorbed the day's money and orders the result about as well as the BSP;
+    # a morning price has not, and orders it measurably worse. So ask the
+    # prices to predict, rather than asking how far apart they are.
+    print("\n=== does `odds` order results as well as the BSP? ===")
+    d = both.dropna(subset=["raceid"]).copy()
+    if "placing_numerical" in d.columns:
+        d["won"] = pd.to_numeric(d["placing_numerical"], errors="coerce") == 1
+        ok_o = tot = ok_b = 0
+        for _, g in d.groupby("raceid"):
+            w, l = g[g["won"]], g[~g["won"]]
+            if w.empty or l.empty:
+                continue
+            for col, acc in (("odds", "o"), ("bfsp", "b")):
+                wp, lp = w[col].to_numpy()[:, None], l[col].to_numpy()[None, :]
+                n_ok = int((wp < lp).sum()) + 0.5 * int((wp == lp).sum())
+                if acc == "o":
+                    ok_o += n_ok
+                else:
+                    ok_b += n_ok
+            tot += w.shape[0] * l.shape[0]
+        if tot:
+            c_o, c_b = ok_o / tot, ok_b / tot
+            print(f"  winner-vs-loser concordance, odds : {c_o:.4f}")
+            print(f"  winner-vs-loser concordance, BSP  : {c_b:.4f}")
+            print(f"  difference                        : {c_o - c_b:+.4f}")
+            print("  (a closing price orders about as well as the BSP; a morning "
+                  "price is clearly worse)")
+            print("  note: a purely monotone rescaling of the BSP would score "
+                  "identically here, so this measures information, not level -- "
+                  "read it alongside the band table above")
+    else:
+        print("  (no placing_numerical column; cannot score the prices)")
 
     if corr > 0.97 and med < 0.08:
         verdict = ("a closing price (industry SP): historic CLV is not measurable "
