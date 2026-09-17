@@ -1,8 +1,32 @@
 # Market-blind staking: Kelly and per-race ranks
 
-*Run 10, walk-forward out of sample, 2024-05-31 to 2026-03-21: 215,760 runners, 23,191
-races, 22 folds. Every figure below is net of 5% Betfair commission. Reproduce with
-`python research_lab.py stake --predictions data/oos_predictions.csv`.*
+*This report now carries figures from two runs, and every table says which.*
+
+- **Run 10** — 2024-05-31 to 2026-03-21, 215,760 runners, 23,191 races, 22 folds. The
+  staking work in sections 1-5.
+- **R1** (run 13, `prod_faithful`) — 2025-04-26 to 2026-03-21, 108,711 runners, 11,839
+  races, 11 folds, trained from 2021-01-01, on the current recipe: plain L2 on log(BFSP)
+  over every runner, no recency weighting, early stopping on a holdout that is never the
+  scored fold, folds purged 30 days, and the price race-normalised to a book of exactly 1
+  with no calibrator in the path. Sections 6 onward.
+
+They are different windows as well as different recipes, so figures do not transfer
+across that boundary — which is exactly the mistake this rewrite exists to stop. Every
+figure is net of 5% Betfair commission. Reproduce with
+`python research_lab.py stake --predictions <the run's csv>`.
+
+**R1 against the market**, for orientation before the detail: model log loss 0.2964
+against the market's 0.2833, Brier 0.0867 against 0.0833, Brier skill **−0.0403**,
+within-race concordance **0.6589** against the market's **0.6799**, expected calibration
+error 0.0024 against 0.0022. The same story run 10 told: calibrated about as well as the
+market, and separating races less well. The model's top pick returns **−2.84%**
+(90% CI −5.42 to −0.31) on 11,839 bets at an average BSP of 4.35.
+
+I predicted these would come in *worse* than run 10's −4.03%, on the grounds that early
+stopping no longer happens on the scored fold and the folds are purged. They came in
+better. That prediction was wrong, and the comparison it rested on was not sound anyway:
+different period, different training window, half the sample. The two numbers should not
+be set against each other at all.
 
 ## 0. The previous version of this report was measuring a leak
 
@@ -136,32 +160,95 @@ table is *nothing here is significant*.
 
 ## 6. The price forecast, which is the actual objective
 
-This is the part that works, and it is what the model is for: forecasting BFSP well
-enough to get money on earlier at a better price.
+*This section is rewritten on **R1** (run 13, `prod_faithful`): the production-faithful
+walk-forward on the current recipe — 108,711 runners, 11,839 races, 11 folds,
+2025-04-26 to 2026-03-21, trained from 2021-01-01. Sections 1–5 above still describe
+**run 10** (215,760 runners, 23,191 races, 22 folds, from 2024-05-31). The two are
+different windows as well as different recipes, so figures are not comparable across the
+boundary and each table below says which run it is.*
 
-| model rank | median forecast / actual BSP | mean abs log error | CLV at forecast |
+Forecasting BFSP well enough to get money on earlier at a better price is what the model
+is for, so this is the section that matters.
+
+| model rank (R1) | median forecast / actual BSP | forecast bias | mean abs log error |
 |---|---|---|---|
-| 1 | 1.0002 | 0.305 | +0.02% |
-| 2 | 0.9952 | 0.365 | −0.48% |
-| 3 | 1.0109 | 0.417 | +1.09% |
-| 4 | 1.0031 | 0.455 | +0.31% |
-| 5 | 0.9922 | 0.486 | −0.78% |
-| 6 | 0.9940 | 0.510 | −0.60% |
+| 1 | 0.9612 | −3.88% | 0.286 |
+| 2 | 0.9371 | −6.29% | 0.342 |
+| 3 | 0.9189 | −8.11% | 0.395 |
+| 4 | 0.9004 | −9.96% | 0.433 |
+| 5 | 0.8884 | −11.16% | 0.464 |
+| 6 | 0.8808 | −11.92% | 0.494 |
 
-**The 8% price bias on top picks is gone — it now reads 0.02%.** Worth being precise
-about why: the bias was substantially the leak, not a modelling flaw the calibrator
-fixed. On this run the calibrator adds nothing at all (mean absolute log error 0.4711
-calibrated against 0.4710 raw), and the rank bias it was built to remove is already
-within a percent at every rank. Keep `bsp_price_calibrator.json` fitted and monitored,
-but it currently has no work to do.
+**The column is called `forecast_bias_pct`, and the previous name was wrong.** It was
+`clv_at_forecast_pct`, and this report read it as closing-line value. It is
+`median(forecast / BSP − 1)` — a forecast against the close. A forecast is not a price
+anyone offered, so reading it as CLV upgrades "the model is unbiased" into "we are
+beating the close", which is a different and much stronger claim. No early price enters
+this table.
 
-Quantile coverage is close to exact: the q25 forecast comes in at or below the realised
-BSP 26.5% of the time, the q75 74.3%, the median 50.7%.
+**A correction to the previous version of this section.** It reported this quantity as
++0.02% at rank 1 and within a percent at every rank, and concluded the calibrator "has no
+work to do". Both statements were about the wrong column. In run 10 `predicted_bfsp` was
+the *calibrator's* output — the calibrator overwrote the race-normalised price — so a
+near-zero rank bias was the calibrator doing precisely the job it was built for, not
+evidence that the job was unnecessary. R1 serves the race-normalised price with the
+calibrator out of the path, and the bias it was correcting is visible again: −3.9% at the
+top pick widening to −11.9% by rank 6.
 
-So: the model forecasts the closing price accurately and without systematic bias, and it
-has **no edge over that price**. Those are separate findings and only the second one is
-disappointing. Closing-line value near zero means the forecast is honest; it also means
-that, today, there is nothing to harvest by betting earlier on this signal alone.
+Two things are worth separating there, because they pull in different directions.
+
+*The within-race shape is close to right.* Measured on the raw booster output — the clean
+comparison the old calibrated-against-calibrated reading could not give — the within-race
+slope is **1.0275** against a nominal 1.0. There is essentially no compression inside a
+race for a calibrator to remove, which is what justified taking it out of the serving
+path.
+
+*The rank-conditioned level is not.* Some of the −3.9% to −11.9% gap is a selection
+effect and would appear even for an unbiased model: conditioning on the model's own
+ordering picks the runners it happened to price shortest, which is the winner's curse.
+But the monotone widening down the ranks is larger than the within-race slope alone
+predicts, and it is the part the calibrator used to absorb.
+
+So the earlier conclusion — "keep the calibrator fitted and monitored, but it currently
+has no work to do" — was too strong, and so was my restatement of it this morning. The
+honest position is narrower: **the calibrator is not needed to fix within-race shape, and
+removing it has a visible cost in rank-conditioned level.** Whether that cost matters
+depends on the use. For ordering runners it does not; for deciding what price to take it
+might. That is a decision to take with the numbers in view, not one this report should
+make by assertion. `research_lab.py price-cal` now fits against `predicted_bfsp_raw`, so
+it can be re-measured honestly whenever the question is asked.
+
+Quantile coverage on R1: the q25 forecast comes in at or below the realised BSP 23.6% of
+the time and the q75 72.3%, against nominal 25% and 75%.
+
+## Segments, which a pooled number hides (R1)
+
+Field size and price band were the only cuts this report used to make, and they are the
+two the model is least likely to be interestingly wrong about. Top pick by race type,
+R1, commission 5%, segments under 200 bets pooled into `(other)` so the rows add back to
+the whole:
+
+| race type | bets | win rate | ROI | 90% CI | market fav ROI |
+|---|---|---|---|---|---|
+| Handicap Flat | 5,635 | 26.8% | −3.92% | −8.57 to +0.17 | −4.37% |
+| Handicap Hurdle | 1,469 | 26.3% | +5.88% | −3.00 to +15.31 | −1.20% |
+| **Handicap Chase** | **1,161** | **26.6%** | **−10.57%** | **−17.54 to −2.37** | **−5.95%** |
+| Non-Hcp Hurdle | 1,157 | 43.7% | −0.90% | −7.94 to +5.61 | +1.09% |
+| Maiden | 948 | 39.4% | −0.52% | −8.85 to +7.69 | −2.87% |
+| Novices | 713 | 42.9% | +1.15% | −8.25 to +10.95 | −9.02% |
+| NH Flat | 351 | 30.2% | −9.68% | −26.29 to +5.18 | −11.47% |
+| Non-Hcp Chase | 345 | 39.7% | −7.38% | −19.71 to +5.87 | −10.83% |
+
+**Handicap chases are the one segment that replicates.** R1 has the model's top pick at
+−10.6% there with an interval clear of zero, against −5.9% for the market's favourite in
+the same races. Run 10, a different period and a different recipe, put the same segment
+at −10.2% against the favourite's −2.2%. A finding that survives a change of both is
+worth more than any of the single-slice results in section 5, and it points at something
+specific: whatever the model is getting wrong, it is worst where handicapping and jumping
+interact.
+
+Everything else in the table has an interval spanning zero and should be read as noise
+until it replicates too.
 
 ## 7. What this says about what to do next
 
