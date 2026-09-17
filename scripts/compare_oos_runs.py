@@ -100,7 +100,15 @@ def skill(d: pd.DataFrame, price_col: str) -> dict:
 
 
 def concordance(d: pd.DataFrame, price_col: str, race_col: str = "raceid") -> float:
-    """Share of within-race winner/loser pairs the price orders correctly."""
+    """Share of within-race winner/loser pairs the price orders correctly.
+
+    NOT the same statistic as ``model.diagnostics.concordance_index``, which
+    orders every runner by finishing position. This one asks only whether the
+    winner was priced shorter than each beaten horse, which is an easier
+    question, so it reads higher: on run 10 this is 0.721 against the market's
+    0.760, while the placing-based index is 0.657 against 0.682. Both say the
+    market orders races better; quoting one where the other is expected makes
+    two honest numbers look like a contradiction."""
     ok = tot = 0
     for _, g in d.groupby(race_col):
         w = g[pd.to_numeric(g["won"], errors="coerce") > 0]
@@ -144,6 +152,18 @@ def book(d: pd.DataFrame, price_col: str, race_col: str = "raceid") -> float:
     return float(d.groupby(race_col)[price_col].apply(lambda s: (1.0 / s).sum()).mean())
 
 
+def _label(path: str, other: str) -> str:
+    """Name a run by its file, falling back to the directory when both files
+    are called the same thing -- two artifacts unzipped side by side both hold
+    `data/oos_predictions.csv`, and a report titled "x against x" names
+    neither."""
+    name, on = os.path.basename(path), os.path.basename(other)
+    if name != on:
+        return name
+    parent = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(path))))
+    return f"{parent}/{name}" if parent else name
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -152,6 +172,8 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--n-boot", type=int, default=500)
     ap.add_argument("--commission", type=float, default=0.05)
+    ap.add_argument("--note", default=None,
+                    help="a line of context to put under the title, e.g. what the two runs are")
     a = ap.parse_args()
 
     b, v = load(a.base), load(a.variant)
@@ -170,7 +192,9 @@ def main():
     rv, rvlo, rvhi, nv = top_pick_roi(v, "predicted_bfsp", a.commission)
 
     L = []
-    L.append(f"# {os.path.basename(a.variant)} against {os.path.basename(a.base)}\n")
+    L.append(f"# {_label(a.variant, a.base)} against {_label(a.base, a.variant)}\n")
+    if a.note:
+        L.append(f"*{a.note}*\n")
     L.append(f"{len(m):,} paired runners over {m['raceid'].nunique():,} races.\n")
     L.append("## Mean absolute log error, paired\n")
     L.append(f"- base **{m['err_b'].mean():.4f}**, variant **{m['err_v'].mean():.4f}**")
@@ -188,9 +212,10 @@ def main():
     L.append(f"| | base | variant |\n|---|---|---|")
     L.append(f"| Brier skill vs market | {sb['brier_skill_vs_market']:+.4f} | {sv['brier_skill_vs_market']:+.4f} |")
     L.append(f"| log loss | {sb['log_loss']:.5f} | {sv['log_loss']:.5f} |")
-    L.append(f"| concordance | {cb:.5f} | {cv:.5f} |")
-    L.append(f"| market concordance | {cm:.5f} | {cm:.5f} |")
-    L.append(f"| implied book | {book(b, 'predicted_bfsp'):.4f} | {book(v, 'predicted_bfsp'):.4f} |")
+    L.append(f"| winner-vs-loser concordance | {cb:.5f} | {cv:.5f} |")
+    L.append(f"| ...the market's | {cm:.5f} | {cm:.5f} |")
+    L.append(f"| implied book (1.0 by construction since Step A) | "
+             f"{book(b, 'predicted_bfsp'):.4f} | {book(v, 'predicted_bfsp'):.4f} |")
     L.append("\n## Top pick, flat stakes\n")
     L.append(f"- base    {rb:+.2f}% ({rblo:+.2f} to {rbhi:+.2f}) on {nb:,} bets")
     L.append(f"- variant {rv:+.2f}% ({rvlo:+.2f} to {rvhi:+.2f}) on {nv:,} bets")
