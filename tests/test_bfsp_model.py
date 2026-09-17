@@ -548,3 +548,37 @@ def test_a_stop_at_the_cap_is_not_called_early_stopping():
     for best, cap, expected in [(2989, 3000, False), (2999, 3000, False),
                                 (2000, 3000, True), (100, 3000, True)]:
         assert (best < int(cap * (1 - EARLY_STOP_MARGIN))) is expected, (best, cap)
+
+
+def test_price_scale_metrics_are_prices_whichever_label_was_fitted():
+    """`bfsp_mae` used to be `exp(y)`, which is the inverse of one target only.
+
+    On `logit_norm_prob`, `exp(logit)` is the odds ratio p/(1-p), so the
+    price-scale block of the training summary reported `bfsp_mae` around 0.06 --
+    a well-formed number about a quantity nobody asked for. Same family as the
+    rest of this review: not a crash, a plausible wrong number.
+    """
+    from train_bfsp import BFSPTrainer
+
+    # A perfect prediction must read zero error on every scale, and a fixed
+    # offset must read a price-scale error that is actually on the price scale.
+    logits = np.array([-3.0, -2.0, -1.5, -1.0])
+    prices = 1.0 / (1.0 / (1.0 + np.exp(-logits)))      # what the logit inverts to
+
+    exact = BFSPTrainer._compute_metrics(logits, logits, "logit_norm_prob")
+    assert exact["target"] == "logit_norm_prob"
+    assert exact["bfsp_mae"] == 0.0 and exact["median_ape_pct"] == 0.0
+
+    off = BFSPTrainer._compute_metrics(logits, logits + 0.1, "logit_norm_prob")
+    moved = 1.0 / (1.0 / (1.0 + np.exp(-(logits + 0.1))))
+    assert off["bfsp_mae"] == pytest.approx(np.mean(np.abs(prices - moved)), abs=5e-3)
+    # The prices here run from about 2.7 to 21, so a price-scale MAE has to be
+    # on that order -- exp() of the logit would have put it near 0.06.
+    assert off["bfsp_mae"] > 0.05
+
+    # log_bfsp still behaves exactly as it always did.
+    lp = np.log(np.array([2.0, 5.0, 12.0, 30.0]))
+    old = BFSPTrainer._compute_metrics(lp, lp + 0.1, "log_bfsp")
+    assert old["target"] == "log_bfsp"
+    assert old["bfsp_mae"] == pytest.approx(
+        np.mean(np.abs(np.exp(lp) - np.exp(lp + 0.1))), abs=1e-2)

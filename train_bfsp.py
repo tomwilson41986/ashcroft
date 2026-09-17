@@ -51,6 +51,7 @@ from model.bfsp_model import (
     TrainConfig,
     build_target,
     fit_bfsp,
+    invert_target,
     predict_prices,
     profit_weighted_metric,
     profit_weighted_objective,
@@ -312,11 +313,15 @@ class BFSPTrainer:
         y_pred = model.predict(
             val_df[self.feature_cols].astype(float), num_iteration=fit.best_iteration
         )
-        metrics = self._compute_metrics(np.asarray(y_val, dtype=float), y_pred)
+        metrics = self._compute_metrics(np.asarray(y_val, dtype=float), y_pred,
+                                        self.cfg.target)
         metrics["best_iteration"] = fit.best_iteration
         metrics["train_size"] = len(train_df)
         metrics["val_size"] = len(val_df)
         metrics["holdout_mae"] = fit.holdout_metrics["mae"]
+        # Carried so the caller can hand it back to predict_prices: the booster's
+        # own output excludes any init_score it was fitted from.
+        metrics["init_offset"] = fit.init_offset
 
         return model, metrics
 
@@ -385,24 +390,19 @@ class BFSPTrainer:
             _, metrics = self.train_fold(train_df, val_df)
             fold_metrics.append(metrics)
 
-            # Collect validation predictions for aggregate evaluation
-            X_val = val_df[self.feature_cols].astype(float)
-            val_df = val_df.copy()
-            val_df["predicted_log_bfsp"] = _.predict(X_val)
-            val_df["predicted_bfsp_raw"] = np.exp(val_df["predicted_log_bfsp"])
-
-            # Normalise implied probabilities per race
-            if "raceid" not in val_df.columns:
-                val_df["raceid"] = (
-                    val_df["race_date"].dt.strftime("%Y-%m-%d")
-                    + "_" + val_df["track"].astype(str)
-                    + "_" + val_df["race_time"].astype(str)
-                )
-            val_df["_ip"] = 1.0 / val_df["predicted_bfsp_raw"]
-            _rsum = val_df.groupby("raceid")["_ip"].transform("sum")
-            val_df["predicted_win_prob_norm"] = val_df["_ip"] / _rsum
-            val_df["predicted_bfsp"] = 1.0 / val_df["predicted_win_prob_norm"]
-            val_df.drop(columns=["_ip"], inplace=True)
+            # Collect validation predictions for aggregate evaluation.
+            #
+            # This was a hand-rolled copy of predict_prices: exp() the booster's
+            # output, invert to implied probability, normalise per race. Every
+            # step of that is right for `log_bfsp` and wrong for the target this
+            # now trains on by default, where exp() of a logit is an odds ratio.
+            # predict_prices inverts with the target's own rule and is the
+            # function the serving path uses, so there is one implementation of
+            # this arithmetic rather than two that can disagree.
+            val_df = predict_prices(
+                _, val_df.copy(), self.feature_cols, race_col="raceid",
+                target=self.cfg.target, offset=metrics.get("init_offset", 0.0),
+            )
             all_val_preds.append(val_df)
 
             log.info(
@@ -450,9 +450,15 @@ class BFSPTrainer:
         overall_wf_metrics = {}
         if all_val_preds:
             combined = pd.concat(all_val_preds, ignore_index=True)
+            # `predicted_log_bfsp` is predict_prices' log of the *normalised*
+            # price, so this is a like-for-like comparison of log prices no
+            # matter which label was fitted. It used to read the booster's raw
+            # output under that name, which on a logit label put one side of the
+            # comparison on a different scale from the other.
             overall_wf_metrics = self._compute_metrics(
                 combined["log_bfsp"].values,
                 combined["predicted_log_bfsp"].values,
+                "log_bfsp",
             )
             overall_wf_metrics = {
                 f"overall_wf_{k}": v for k, v in overall_wf_metrics.items()
@@ -528,6 +534,7 @@ class BFSPTrainer:
         final_metrics = self._compute_metrics(
             np.asarray(y_final, dtype=float),
             self.model.predict(final_val[self.feature_cols].astype(float)),
+            final_cfg.target,
         )
         final_metrics["best_iteration"] = fit.best_iteration
         final_metrics["holdout_mae"] = fit.holdout_metrics["mae"]
@@ -721,16 +728,30 @@ class BFSPTrainer:
         return result
 
     @staticmethod
-    def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
-        """Compute evaluation metrics on log and BFSP scales."""
-        # Log scale
+    def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray,
+                         target: str = "log_bfsp") -> dict:
+        """Evaluation metrics on the fitted label's scale and on the price scale.
+
+        The price-scale block used to reach for `np.exp()` directly, which is the
+        inverse of `log_bfsp` and of nothing else. On `logit_norm_prob`,
+        `exp(logit)` is the odds ratio p/(1-p), so `bfsp_mae` came out at 0.06 --
+        a well-formed number about a quantity nobody asked for. It now inverts
+        with the target's own rule, so the price-scale metrics are prices
+        whichever label was fitted.
+
+        The `log_*` keys are on whatever scale the label is, which is the log
+        price for `log_bfsp` and the logit for `logit_norm_prob`. They are not
+        comparable across targets, which is what `target` in the returned dict is
+        there to make obvious.
+        """
+        # Label scale
         log_mae = mean_absolute_error(y_true, y_pred)
         log_rmse = np.sqrt(mean_squared_error(y_true, y_pred))
         log_r2 = r2_score(y_true, y_pred)
 
-        # BFSP scale
-        bfsp_true = np.exp(y_true)
-        bfsp_pred = np.exp(y_pred)
+        # Price scale, via the inversion that belongs to this target.
+        bfsp_true = invert_target(np.asarray(y_true, dtype=float), None, target)
+        bfsp_pred = invert_target(np.asarray(y_pred, dtype=float), None, target)
         bfsp_mae = mean_absolute_error(bfsp_true, bfsp_pred)
 
         pct_errors = np.abs(bfsp_true - bfsp_pred) / np.clip(bfsp_true, 1e-7, None)
@@ -743,6 +764,7 @@ class BFSPTrainer:
         correlation = np.corrcoef(y_true, y_pred)[0, 1]
 
         return {
+            "target": target,
             "log_mae": round(log_mae, 4),
             "log_rmse": round(log_rmse, 4),
             "log_r2": round(log_r2, 4),
@@ -804,7 +826,10 @@ class BFSPTrainer:
         # Save training summary
         summary = {
             "model_type": "bfsp_regression",
-            "target": "log_bfsp",
+            # Was the literal "log_bfsp". The metadata beside it recorded the
+            # real target, so the two files disagreed the moment the default
+            # changed -- and the summary is the one a person reads.
+            "target": self.cfg.target,
             "n_features": len(self.feature_cols),
             "walk_forward_avg": avg_metrics,
             "overall_walk_forward": overall_wf_metrics,
