@@ -1,21 +1,22 @@
 {
   "model_type": "bfsp_regression",
-  "target": "log_bfsp",
+  "target": "logit_norm_prob",
   "n_features": 501,
   "walk_forward_avg": {
     "n_folds": 0
   },
   "overall_walk_forward": {},
   "final_model": {
-    "log_mae": 0.3541,
-    "log_rmse": 0.4535,
-    "log_r2": 0.9008,
-    "bfsp_mae": 24.25,
-    "median_ape_pct": 28.45,
-    "mean_ape_pct": 37.41,
-    "correlation": 0.9499,
-    "best_iteration": 3000,
-    "holdout_mae": 0.44850811788042944
+    "target": "logit_norm_prob",
+    "log_mae": 0.3936,
+    "log_rmse": 0.5017,
+    "log_r2": 0.8968,
+    "bfsp_mae": 25.19,
+    "median_ape_pct": 28.11,
+    "mean_ape_pct": 36.67,
+    "correlation": 0.9477,
+    "best_iteration": 2980,
+    "holdout_mae": 0.5004349340190204
   },
   "fold_details": [],
   "params": {
