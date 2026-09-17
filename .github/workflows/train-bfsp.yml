@@ -92,6 +92,28 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Add swap
+        # The feature build holds the whole history plus ~450 columns in memory
+        # and the runner has 16 GB; a previous run was SIGTERMed at exit 143
+        # partway through the custom metrics. Swap turns an out-of-memory kill
+        # into a slow step, which is the right trade for a batch job.
+        #
+        # The runner ships with its own swapfile already on, so it has to come
+        # off before a bigger one goes on, and the new one lives on /mnt, which
+        # has far more free space than the root volume. Swap is an optimisation,
+        # not a requirement, so this step never fails the job.
+        continue-on-error: true
+        run: |
+          set -x
+          sudo swapoff -a || true
+          sudo rm -f /swapfile /mnt/swapfile || true
+          df -h / /mnt || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
+
       - name: Download historic database from S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

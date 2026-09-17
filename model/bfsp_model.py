@@ -183,6 +183,7 @@ def all_nan_columns(df: pd.DataFrame, cols) -> list[str]:
 # the argparse defaults of whichever script produced it.
 # ---------------------------------------------------------------------------
 
+import gc
 import logging
 from dataclasses import dataclass, field, asdict
 
@@ -404,16 +405,25 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         holdout_start = dates.iloc[cut] if cut < len(d) else dates.max()
 
     y = build_target(d, cfg.target, race_col)
-    X = d[feature_cols].astype(float)
     w = sample_weights(d["race_date"], cfg.decay_rate)
 
     cat = [c for c in feature_cols if c.endswith("_cat")] if cfg.native_categoricals else None
+
     def _ds(mask, ref=None):
+        """A Dataset over the masked rows, materialising one slice at a time.
+
+        The whole history is 632k rows by 501 float64 features -- 2.5 GB for
+        one copy -- and the train job has no swap. Building a single X and
+        slicing it held the full matrix plus each slice at once, and
+        `free_raw_data=False` then told LightGBM to keep the raw copy after
+        binning it too. The published retrain died 22 seconds into the final
+        fit with a runner shutdown. Slice straight out of the frame and let
+        LightGBM free the raw data once it has binned it."""
         return lgb.Dataset(
-            X[mask], label=y[mask],
+            d.loc[mask, feature_cols].astype(float),
+            label=y[mask],
             weight=None if w is None else w[mask],
             reference=ref, categorical_feature=cat or "auto",
-            free_raw_data=False,
         )
 
     fit_set = _ds(~is_holdout)
@@ -439,7 +449,7 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
     )
     best = int(booster.best_iteration or cfg.num_boost_round)
 
-    hp = booster.predict(X[is_holdout], num_iteration=best)
+    hp = booster.predict(d.loc[is_holdout, feature_cols].astype(float), num_iteration=best)
     hy = y[is_holdout]
     holdout_metrics = {
         "n": int(is_holdout.sum()),
@@ -450,9 +460,16 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
     if cfg.refit_on_full:
         # Early stopping picked the iteration count; the published model should
         # then see the most recent weeks too, which the holdout withheld.
+        #
+        # Release the split datasets first: on the full history each is a
+        # gigabyte of binned features, and the refit needs its own.
+        del fit_set, hold_set
+        gc.collect()
         full = _ds(np.ones(len(d), dtype=bool))
         booster = lgb.train(params, full, num_boost_round=best, feval=feval,
                             callbacks=[lgb.log_evaluation(period=0)])
+        del full
+        gc.collect()
 
     early_stopped = best < cfg.num_boost_round
     if not early_stopped:
