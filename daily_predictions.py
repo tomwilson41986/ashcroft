@@ -323,12 +323,9 @@ def scrape_racecard_html(
             if has_stall and "Stall" in col_idx:
                 runner["stall"] = _safe_int(cell_texts[col_idx["Stall"]])
             if "Odds" in col_idx:
-                odds_text = cell_texts[col_idx["Odds"]]
-                odds_match = re.match(r"^(\d+)/(\d+)$", odds_text)
-                if odds_match:
-                    num = int(odds_match.group(1))
-                    den = int(odds_match.group(2))
-                    runner["odds"] = num / den + 1  # Convert to decimal
+                price = parse_odds_text(cell_texts[col_idx["Odds"]])
+                if price is not None:
+                    runner["odds"] = price
 
             if runner.get("horse_name"):
                 race_runners.append(runner)
@@ -347,6 +344,43 @@ def scrape_racecard_html(
     df = pd.DataFrame(all_runners)
     log.info(f"Scraped {len(df)} runners from {race_count} races")
     return df
+
+
+def parse_odds_text(text: str | None) -> float | None:
+    """A racecard price as a decimal, or None when there isn't one.
+
+    This is the only early price the system captures. `race_results.odds` is
+    the returned SP -- a closing price -- so closing-line value cannot be
+    measured from the database at all; it has to accrue forward from what the
+    card showed when the prediction was made. That makes the coverage of this
+    parse the coverage of the whole CLV measurement, and the previous version
+    read only a bare ``4/1``: it dropped evens, the favourite markers the card
+    puts on the shortest runner, and anything already decimal. Every one of
+    those is a price, and each silently became a missing row.
+
+        4/1 -> 5.0     11/8 -> 2.375   Evs / EVS / Evens -> 2.0
+        4/1F -> 5.0    9/2JF -> 5.5    5.5 -> 5.5        SP / - / "" -> None
+    """
+    if text is None:
+        return None
+    t = str(text).strip()
+    if not t:
+        return None
+    t = re.sub(r"\s*(?:C|J|CJ|JC)?F$", "", t, flags=re.I)   # favourite markers
+    t = t.strip()
+    if not t or t.upper() in {"SP", "NR", "-", "N/A"}:
+        return None
+    if re.fullmatch(r"ev(?:s|ens)?", t, flags=re.I):
+        return 2.0
+    m = re.fullmatch(r"(\d+)\s*/\s*(\d+)", t)
+    if m:
+        den = int(m.group(2))
+        return int(m.group(1)) / den + 1 if den else None
+    try:
+        v = float(t)
+    except ValueError:
+        return None
+    return v if v > 1.0 else None
 
 
 def _safe_int(text: str) -> int | None:

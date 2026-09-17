@@ -3,12 +3,13 @@
 1. Ensure database is available
 2. Run Ashcroft BFSP model for today
 3. Match predictions to Betfair markets (market_id + selection_id)
-4. Write predictions CSV to S3
+4. Snapshot the exchange price alongside each prediction
+5. Write predictions CSV to S3
 
 Entry point: python -m pipeline.predict
 """
 
-from datetime import date
+from datetime import date, datetime
 
 from pipeline.shared import setup_logging, ensure_database
 
@@ -79,6 +80,69 @@ def match_predictions_to_markets(predictions, target_date):
     return predictions
 
 
+def attach_exchange_prices(predictions, target_date):
+    """Write the exchange price beside each prediction, as it stands now.
+
+    This is the other half of forward closing-line value. The racecard gives a
+    bookmaker's early price; this gives the exchange's -- best back, best lay,
+    the projected SP, and what has been matched so far -- at the moment the
+    forecast was made. Without it the only price on record is the one the
+    market closed at, and a forecast of the close cannot be scored against the
+    close for value.
+
+    One catalogue call covers the whole day's card. Failure is never fatal: a
+    prediction without a price is worth more than no prediction.
+    """
+    from ultra_betting.betfair.auth import ensure_session
+    from ultra_betting.betfair.client import get_client
+
+    matched = [p for p in predictions if p.market_id and p.selection_id]
+    if not matched:
+        log.warning("No predictions carry a market id; skipping the price snapshot")
+        return predictions
+
+    try:
+        ensure_session()
+        runners = get_client().get_live_odds_for_date(target_date)
+    except Exception as e:      # BetfairAPIError, a dead session, a timeout --
+        log.warning(f"Could not snapshot exchange prices: {e}")   # none of them
+        return predictions                                        # worth losing
+                                                                  # the card over
+
+    book = {(r.get("market_id"), r.get("selection_id")): r for r in runners}
+    now = datetime.utcnow()
+    filled = 0
+    for pred in matched:
+        r = book.get((pred.market_id, pred.selection_id))
+        if not r:
+            continue
+        pred.bf_best_back = _pos(r.get("best_back_price"))
+        pred.bf_best_lay = _pos(r.get("best_lay_price"))
+        pred.bf_sp_near = _pos(r.get("sp_near_price"))
+        pred.bf_sp_far = _pos(r.get("sp_far_price"))
+        pred.bf_last_traded = _pos(r.get("last_traded_price"))
+        pred.bf_total_matched = _num(r.get("total_matched"))
+        pred.price_snapshot_at = now
+        filled += 1
+
+    log.info(f"Exchange price on {filled}/{len(predictions)} predictions "
+             f"({sum(p.bf_sp_near is not None for p in predictions)} with a projected SP)")
+    return predictions
+
+
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _pos(v):
+    """A price, or None. Betfair returns 0 for "nothing on offer"."""
+    f = _num(v)
+    return f if f is not None and f > 1.0 else None
+
+
 def main():
     target_date = date.today()
     log.info(f"=== PREDICT JOB — {target_date} ===")
@@ -99,7 +163,10 @@ def main():
     # Step 3: Match to Betfair markets
     predictions = match_predictions_to_markets(predictions, target_date)
 
-    # Step 4: Write to S3
+    # Step 4: Snapshot the prices that exist right now, for forward CLV
+    predictions = attach_exchange_prices(predictions, target_date)
+
+    # Step 5: Write to S3
     from ultra_betting.data.s3 import write_csv
     df = predictions_to_dataframe(predictions)
     write_csv("predictions", target_date, df)

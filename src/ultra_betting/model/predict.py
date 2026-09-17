@@ -88,6 +88,15 @@ def run_predictions(
         return []
 
     # Convert to Prediction objects
+    def _price(v):
+        """A usable decimal price, or None. Anything at or below evens-on-the
+        whole-field is not a price; 0 and NaN are how "no price" arrives."""
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return f if f > 1.0 else None
+
     predictions = []
     for _, row in preds_df.iterrows():
         predictions.append(Prediction(
@@ -97,7 +106,14 @@ def run_predictions(
             runner_name=str(row.get("horse_name", "")),
             predicted_bfsp=float(row.get("predicted_bfsp", 0)),
             predicted_win_prob=float(row.get("predicted_win_prob_norm", 0)),
+            # The card's price at prediction time: the only early price there
+            # is, and the one closing-line value will be measured against.
+            racecard_odds=_price(row.get("odds")),
         ))
+
+    with_price = sum(p.racecard_odds is not None for p in predictions)
+    log.info(f"Racecard price on {with_price}/{len(predictions)} runners "
+             f"({100 * with_price / max(len(predictions), 1):.0f}%)")
 
     log.info(f"Generated {len(predictions)} predictions for {target_date}")
     return predictions
