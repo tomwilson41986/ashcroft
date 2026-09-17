@@ -199,6 +199,131 @@ def concordance_by_field(d: pd.DataFrame, bands=FIELD_BANDS) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# ---------------------------------------------------------------------------
+# Segments
+#
+# Field size and price band were the only two cuts this module made, and they
+# are the two the model is least likely to be wrong about in an interesting
+# way. A model can be honest overall and badly wrong on a corner of the sport
+# -- all-weather sprints, a class of race, a month when the ground changed --
+# and a pooled number cannot show it. These are the cuts the framework asks
+# for: race code, race type, class, month.
+#
+# Every table pools segments below ``min_n`` into "(other)" rather than
+# dropping them, so the rows always add back to the whole. A table that
+# quietly loses a tenth of the sample is how a segment finding becomes a
+# selection effect.
+# ---------------------------------------------------------------------------
+
+GOING_GROUPS = {
+    "Heavy": "Soft/Heavy", "Soft To Heavy": "Soft/Heavy", "Soft": "Soft/Heavy",
+    "Yielding To Soft": "Soft/Heavy", "Yielding": "Good/Yielding",
+    "Good To Yielding": "Good/Yielding", "Good To Soft": "Good/Yielding",
+    "Good": "Good", "Good To Firm": "Good/Fast", "Firm": "Good/Fast",
+    "Standard": "Standard (AW)", "Standard To Slow": "Standard (AW)",
+    "Standard To Fast": "Standard (AW)", "Slow": "Standard (AW)",
+}
+
+
+def broad_race_type(rt) -> str:
+    """Collapse the free-text race type into the categories people bet in."""
+    if pd.isna(rt):
+        return "Unknown"
+    rt = str(rt).lower()
+    if "handicap" in rt and "chase" in rt:
+        return "Handicap Chase"
+    if "handicap" in rt and "hurdle" in rt:
+        return "Handicap Hurdle"
+    if "chase" in rt:
+        return "Non-Hcp Chase"
+    if "hurdle" in rt:
+        return "Non-Hcp Hurdle"
+    if "nh flat" in rt or "bumper" in rt:
+        return "NH Flat"
+    if "handicap" in rt or "nursery" in rt:
+        return "Handicap Flat"
+    if "maiden" in rt:
+        return "Maiden"
+    if "novice" in rt:
+        return "Novices"
+    return "Other Flat"
+
+
+def segment_labels(d: pd.DataFrame) -> pd.DataFrame:
+    """Add the label columns the segment tables group by.
+
+    Each one is skipped rather than invented when its source column is
+    absent, so an older predictions file still reports the cuts it can."""
+    t = d.copy()
+    if "race_type" in t.columns:
+        t["race_group"] = t["race_type"].map(broad_race_type)
+    if "going_description" in t.columns:
+        t["going_group"] = t["going_description"].map(GOING_GROUPS).fillna("Other")
+    if "race_date" in t.columns:
+        t["month"] = pd.to_datetime(t["race_date"], errors="coerce").dt.strftime("%Y-%m")
+    if "race_class" in t.columns:
+        cls = t["race_class"].astype(str).str.strip()
+        t["class_band"] = cls.where(cls.str.len() > 0, "Unknown").fillna("Unknown")
+    if "race_code" in t.columns:
+        t["code"] = t["race_code"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
+    return t
+
+
+def _pooled(t: pd.DataFrame, col: str, min_n: int, count_on: pd.Series | None = None) -> pd.Series:
+    """Segment labels with small levels folded into "(other)"."""
+    lab = t[col].astype(str).fillna("Unknown")
+    counts = (lab[count_on] if count_on is not None else lab).value_counts()
+    keep = set(counts[counts >= min_n].index)
+    return lab.where(lab.isin(keep), "(other)")
+
+
+def rank_by_segment(d: pd.DataFrame, col: str, min_n: int = 200) -> pd.DataFrame:
+    """Model #1 against market #1 within each level of ``col``.
+
+    ``min_n`` counts the model's top picks, i.e. the bets, not the runners:
+    a segment with 200 runners and 20 races cannot say anything about ROI."""
+    if col not in d.columns:
+        return pd.DataFrame()
+    t = d.copy()
+    t["_seg"] = _pooled(t, col, min_n, count_on=(t["model_rank"] == 1))
+    rows = []
+    for seg, g in t.groupby("_seg", observed=True):
+        m1 = g[g["model_rank"] == 1]
+        k1 = g[g["market_rank"] == 1]
+        if m1.empty:
+            continue
+        lo, hi = cluster_bootstrap_roi(m1)
+        rows.append({"segment": seg, "races": int(g["raceid"].nunique()), "runners": len(g),
+                     "bets": len(m1), "win_rate": m1["won"].mean(), "avg_bsp": m1["bsp"].mean(),
+                     "roi_back": m1["ret_back"].mean(), "ci_lo": lo, "ci_hi": hi,
+                     "market1_roi": k1["ret_back"].mean() if len(k1) else np.nan,
+                     "agree_pct": 100 * (m1["market_rank"] == 1).mean()})
+    out = pd.DataFrame(rows)
+    return out.sort_values("bets", ascending=False).reset_index(drop=True) if len(out) else out
+
+
+def concordance_by_segment(d: pd.DataFrame, col: str, min_n: int = 200) -> pd.DataFrame:
+    """Model and market c-index within each level of ``col``.
+
+    Ordering is the thing the model is measurably behind on, so the segment
+    question worth asking is where the gap is widest, not only where the ROI
+    happens to look best on this sample."""
+    from model.diagnostics import concordance_index
+    if col not in d.columns:
+        return pd.DataFrame()
+    t = d.copy()
+    t["_seg"] = _pooled(t, col, min_n)
+    rows = []
+    for seg, g in t.groupby("_seg", observed=True):
+        pos = pd.to_numeric(g.get("placing_numerical"), errors="coerce")
+        mc = concordance_index(g["p_model"].values, pos.values, g["raceid"].values)
+        kc = concordance_index(g["p_market"].values, pos.values, g["raceid"].values)
+        rows.append({"segment": seg, "races": int(g["raceid"].nunique()), "runners": len(g),
+                     "model_concordance": mc, "market_concordance": kc, "gap": mc - kc})
+    out = pd.DataFrame(rows)
+    return out.sort_values("runners", ascending=False).reset_index(drop=True) if len(out) else out
+
+
 def bet_report(df: pd.DataFrame, commission: float = 0.05, blend_lambda: float | None = 0.5, **kw) -> dict:
     d = prepare_bets(df, commission=commission, blend_lambda=blend_lambda, **kw)
     out = {
@@ -212,6 +337,16 @@ def bet_report(df: pd.DataFrame, commission: float = 0.05, blend_lambda: float |
         "rank_by_field": rank_by_field(d),
         "concordance_by_field": concordance_by_field(d),
     }
+    seg = segment_labels(d)
+    for name, col in (("by_race_code", "code"), ("by_race_type", "race_group"),
+                      ("by_race_class", "class_band"), ("by_month", "month"),
+                      ("by_going", "going_group")):
+        tbl = rank_by_segment(seg, col)
+        if len(tbl):
+            out[name] = tbl
+    ctbl = concordance_by_segment(seg, "race_group")
+    if len(ctbl):
+        out["concordance_by_race_type"] = ctbl
     if blend_lambda is not None:
         out["blend_lambda"] = blend_lambda
         out["blend_cumulative_overlays"] = cumulative_overlays(d, edge_col="edge_blend_pct")

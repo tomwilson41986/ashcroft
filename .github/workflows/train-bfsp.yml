@@ -154,7 +154,15 @@ jobs:
           git add data/models/bfsp_model.lgb data/models/bfsp_model_meta.json \
                   data/models/bfsp_training_summary.json data/models/bfsp_feature_importance.csv
           git diff --cached --quiet || git commit -m "Update trained BFSP model artifacts"
-          git push
+          # Training takes half an hour, and a commit pushed to the branch in
+          # the meantime made this push a non-fast-forward -- which failed the
+          # job after the model was trained and before it was uploaded, losing
+          # the run. Rebase onto whatever arrived; the artifacts are ours alone,
+          # so there is nothing for the rebase to fight over.
+          BRANCH="${GITHUB_REF_NAME}"
+          git fetch origin "$BRANCH"
+          git rebase "origin/$BRANCH" || { git rebase --abort; echo "::error::rebase onto origin/$BRANCH failed"; exit 1; }
+          git push origin "HEAD:$BRANCH"
 
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4
@@ -239,7 +247,11 @@ jobs:
             exit 1
           fi
           python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
-          python3 scripts/db_info.py
+          # --odds-check settles whether race_results.odds is an early price or
+          # a returned SP, which decides whether closing-line value can be
+          # measured historically at all. It costs seconds against a database
+          # that is already on disk.
+          python3 scripts/db_info.py --odds-check
 
       - name: Feature cache key
         # Computed after the database is on disk, because the key covers the data
@@ -308,7 +320,11 @@ jobs:
             --output-csv data/oos_predictions.csv \
             --output-json data/oos_evaluation.json 2>&1 | grep -v PerformanceWarning | tee reports/evaluate_oos.log
           kill $MEMWATCH || true
-          wc -l data/oos_predictions.csv
+          # The tagged path, for the same reason the scoring step derives it:
+          # data/oos_predictions.csv in a fresh checkout is the committed file
+          # from a previous run, so counting it reports someone else's rows.
+          TAG="${{ inputs.variant_tag }}"
+          wc -l "data/oos_predictions${TAG:+_$TAG}.csv"
 
       - name: Scoring, ranks, staking and price calibration
         run: |

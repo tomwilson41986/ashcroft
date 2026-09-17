@@ -125,6 +125,12 @@ def cmd_bets(args):
         "disagreement": "=== Disagreement: the model's #1 by market rank, and the favourite by model rank ===",
         "rank_by_field": "=== Top pick by field size: model #1 vs favourite ===",
         "concordance_by_field": "=== Within-race concordance by field size ===",
+        "by_race_code": "=== Top pick by race code (segments under 200 bets pooled as (other)) ===",
+        "by_race_type": "=== Top pick by race type ===",
+        "by_race_class": "=== Top pick by race class ===",
+        "by_going": "=== Top pick by going ===",
+        "by_month": "=== Top pick by month ===",
+        "concordance_by_race_type": "=== Within-race concordance by race type (gap = model - market) ===",
     }
     for key, title in titles.items():
         if key in rep:
