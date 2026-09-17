@@ -181,6 +181,7 @@ from model.bfsp_model import (  # noqa: E402
     invert_target,
     model_meta,
     assert_meta_is_servable,
+    attach_serving_rule,
     profit_weighted_objective,
     sample_weights,
 )
@@ -208,7 +209,9 @@ def test_defaults_are_the_recipe_the_evaluation_measures():
     cfg = TrainConfig()
     assert cfg.objective == "l2"
     assert cfg.decay_rate == 0.0
-    assert cfg.target == "log_bfsp"
+    # logit_norm_prob, not log_bfsp, since the split-half check confirmed the
+    # head-to-head's one passing variant held in both halves of the window.
+    assert cfg.target == "logit_norm_prob"
     d = cfg.describe()
     assert d["sample_weighting"] == {"type": "none", "decay_rate": 0.0}
     assert d["lightgbm_objective"] == "regression"
@@ -309,7 +312,7 @@ def test_meta_records_what_was_trained():
     meta = model_meta(cfg, ["f1", "f2"], fit=fit, vocab={"track": ["Ascot"]})
 
     assert meta["objective"] == "l2"
-    assert meta["target"] == "log_bfsp"
+    assert meta["target"] == "logit_norm_prob"
     assert meta["sample_weighting"]["type"] == "none"
     assert meta["n_features"] == 2
     assert meta["categorical_vocab"] == {"track": ["Ascot"]}
@@ -412,25 +415,35 @@ def test_the_custom_objective_starts_from_the_intercept():
     On log(BFSP), whose mean is about 1.5, at the production learning rate that
     costs roughly 300 of 3000 rounds just to reach the intercept -- a tenth of
     the budget, charged to one side of a head-to-head for an implementation
-    detail rather than for anything about the objective."""
+    detail rather than for anything about the objective.
+
+    Checked on both servable targets, because the intercept it has to reach is a
+    property of the label and not of the price: log_bfsp's mean is about +1.5
+    and logit_norm_prob's about -2.2, so a test keyed on "> 0.5" would have been
+    testing the sign of one target's mean rather than the mechanism."""
     d = _history(n_days=200)
     cols = ["f1", "f2"]
-    cfg = TrainConfig(objective="profit_weighted", num_boost_round=30,
-                      early_stopping_rounds=15, holdout_days=30)
-    fit = fit_bfsp(d, cols, cfg)
-    assert fit.init_offset > 0.5, "no init_score was set for the custom objective"
+    for target in ("log_bfsp", "logit_norm_prob"):
+        cfg = TrainConfig(objective="profit_weighted", num_boost_round=30,
+                          early_stopping_rounds=15, holdout_days=30, target=target)
+        fit = fit_bfsp(d, cols, cfg)
+        mean_label = float(np.mean(build_target(d, target)))
+        assert abs(fit.init_offset) > 0.1, (
+            f"no init_score was set for the custom objective on {target}")
+        assert abs(fit.init_offset - mean_label) < 0.5, (
+            f"the offset should be the label's intercept, not an arbitrary shift; "
+            f"{target} reads {fit.init_offset:.3f} against a mean of {mean_label:.3f}")
 
-    # 30 rounds is nowhere near enough to climb from zero, so a fit that starts
-    # at the intercept must land far closer to it than one that does not.
-    raw = fit.booster.predict(d[cols].astype(float))
-    assert abs(float(np.mean(raw))) < abs(fit.init_offset), (
-        "the booster's own output should be a correction to the offset, not the level"
-    )
-    with_offset = np.mean(raw + fit.init_offset)
-    assert abs(with_offset - np.log(d["bfsp"]).mean()) < 0.5
+        # 30 rounds is nowhere near enough to climb from zero, so a fit that
+        # starts at the intercept must land far closer to it than one that does not.
+        raw = fit.booster.predict(d[cols].astype(float))
+        assert abs(float(np.mean(raw))) < abs(fit.init_offset), (
+            "the booster's own output should be a correction to the offset, not the level"
+        )
+        assert abs(np.mean(raw + fit.init_offset) - mean_label) < 0.5
 
-    # l2 is built-in, so it needs no offset and must not get one
-    assert fit_bfsp(d, cols, replace(cfg, objective="l2")).init_offset == 0.0
+        # l2 is built-in, so it needs no offset and must not get one
+        assert fit_bfsp(d, cols, replace(cfg, objective="l2")).init_offset == 0.0
 
 
 def test_the_normalised_price_is_invariant_to_the_offset():
@@ -448,15 +461,67 @@ def test_the_normalised_price_is_invariant_to_the_offset():
 
 
 def test_a_model_the_serving_path_would_misread_is_refused():
-    """The serving path passes neither a target nor an offset, so a model that
-    needs either must be refused at load time rather than served wrongly."""
-    base = dict(feature_cols=["f1", "f2"], objective="l2", target="log_bfsp")
-    assert_meta_is_servable(base)                      # the default is fine
+    """A target the serving path has no inversion rule for is refused at load.
 
-    with pytest.raises(ValueError, match="wrong rule"):
+    The offset used to be refused here too, because the path passed none.
+    `attach_serving_rule` carries it now, so there is nothing left to refuse --
+    and the test below proves the rule actually reaches `predict_prices`, which
+    is the property that guard was standing in for."""
+    base = dict(feature_cols=["f1", "f2"], objective="l2", target="log_bfsp")
+    assert_meta_is_servable(base)                      # the historical target
+    assert_meta_is_servable({**base, "target": "logit_norm_prob"})   # the adopted one
+    assert_meta_is_servable({**base, "init_offset": 1.42})           # now carried, not refused
+
+    with pytest.raises(ValueError, match="not in SERVABLE_TARGETS"):
         assert_meta_is_servable({**base, "target": "demeaned_log"})
-    with pytest.raises(ValueError, match="init_offset"):
-        assert_meta_is_servable({**base, "init_offset": 1.42})
+
+
+def test_the_model_carries_its_own_inversion_rule():
+    """`prepare_and_predict` has seven call sites and `load_bfsp_model` five.
+
+    A rule every caller must remember to pass is one a caller will eventually
+    not pass, and the failure mode is a well-formed wrong price rather than an
+    error. So the rule rides on the model, and `predict_prices` reads it."""
+    df = _card()
+    raw = np.linspace(-2.0, 1.0, len(df))
+    booster = _Booster(raw)
+
+    # No rule attached: the historical default, as every existing caller gets.
+    plain = predict_prices(booster, df, ["f1", "f2"])
+
+    attach_serving_rule(booster, {"target": "logit_norm_prob", "init_offset": 0.0})
+    assert booster.serving_target == "logit_norm_prob"
+    carried = predict_prices(booster, df, ["f1", "f2"])
+
+    # Same booster output, different inversion, so the served price must differ.
+    assert not np.allclose(plain["predicted_bfsp"], carried["predicted_bfsp"])
+    # ...and match what an explicit target produces.
+    explicit = predict_prices(booster, df, ["f1", "f2"], target="logit_norm_prob")
+    assert np.allclose(carried["predicted_bfsp"], explicit["predicted_bfsp"])
+
+    # An explicit argument still wins over the attached rule.
+    override = predict_prices(booster, df, ["f1", "f2"], target="log_bfsp")
+    assert np.allclose(override["predicted_bfsp"], plain["predicted_bfsp"])
+
+    # Both ways round, the book is still 1.
+    for out in (plain, carried, explicit, override):
+        book = out.groupby("raceid")["predicted_bfsp"].apply(lambda s: (1.0 / s).sum())
+        assert np.allclose(book, 1.0)
+
+
+def test_the_offset_is_carried_onto_the_raw_column():
+    """The dropped guard's real job: keeping predicted_bfsp_raw on scale."""
+    df = _card()
+    booster = _Booster(np.linspace(0.5, 2.0, len(df)))
+    attach_serving_rule(booster, {"target": "log_bfsp", "init_offset": 1.7})
+    out = predict_prices(booster, df, ["f1", "f2"])
+    bare = predict_prices(booster, df, ["f1", "f2"], offset=0.0)
+
+    assert np.allclose(out["predicted_bfsp_raw"], bare["predicted_bfsp_raw"] * np.exp(1.7))
+    # The served price is invariant to it, which is why this was never a
+    # wrong-price bug -- only a wrong-scale one in the column the calibration
+    # report reads.
+    assert np.allclose(out["predicted_bfsp"], bare["predicted_bfsp"])
 
 
 def test_a_stop_at_the_cap_is_not_called_early_stopping():

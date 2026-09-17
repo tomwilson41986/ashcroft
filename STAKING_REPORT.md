@@ -10,6 +10,14 @@
   scored fold, folds purged 30 days, and the price race-normalised to a book of exactly 1
   with no calibrator in the path. Sections 6 onward.
 
+**Both predate the current recipe.** The six-variant head-to-head has since moved the
+training target from `log_bfsp` to `logit_norm_prob` (`reports/h2h_summary.md`: paired
+−0.0016 over 107,047 runners, confirmed in both halves of the window). The difference is
+small — 0.35% of the error, concentrated in the tail — but it is a different model from
+the one measured below, and nothing here has been re-run on it. Read every figure in this
+report as describing the `log_bfsp` recipe, and expect the tail of the field to price
+slightly better than these numbers say once the model is retrained.
+
 They are different windows as well as different recipes, so figures do not transfer
 across that boundary — which is exactly the mistake this rewrite exists to stop. Every
 figure is net of 5% Betfair commission. Reproduce with

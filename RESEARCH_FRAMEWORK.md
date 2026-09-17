@@ -12,9 +12,16 @@ Everything in it is grounded in what `horse_racing.db` actually holds, and every
 
 ## 0. TL;DR
 
+**Recipe note.** Every measured figure below comes from R1 or earlier, which trained on
+`log_bfsp`. The training target is now `logit_norm_prob`, adopted from the six-variant
+head-to-head (`reports/h2h_summary.md`: paired −0.0016 mean absolute log error over
+107,047 runners, holding in both halves of the window, with the gain in the tail of the
+field). The change is small and nothing here has been re-run on it, so read the numbers
+as describing the `log_bfsp` recipe.
+
 | Finding | Consequence |
 |---|---|
-| On R1 (run 13, 108,711 runners, 11,839 races, 2025-04 → 2026-03, current recipe) the BFSP model is **almost perfectly calibrated** (reliability 0.00001, ECE 0.0024) but has **less resolution than the Betfair market** (0.0094 vs 0.0121). Brier skill vs BSP **−4.0 %**, log-loss skill **−4.6 %**, within-race concordance 0.659 vs 0.680. | The overlay tiers lose ~4 % at level stakes because "overlay" is mostly *our* error, not the market's. Re-estimating what the market already prices cannot produce an edge; the edge must come from signals the market does not have, and from blending with the market rather than betting against it. |
+| On R1 (run 13, 108,711 runners, 11,839 races, 2025-04 → 2026-03, `log_bfsp` recipe) the BFSP model is **almost perfectly calibrated** (reliability 0.00001, ECE 0.0024) but has **less resolution than the Betfair market** (0.0094 vs 0.0121). Brier skill vs BSP **−4.0 %**, log-loss skill **−4.6 %**, within-race concordance 0.659 vs 0.680. | The overlay tiers lose ~4 % at level stakes because "overlay" is mostly *our* error, not the market's. Re-estimating what the market already prices cannot produce an edge; the edge must come from signals the market does not have, and from blending with the market rather than betting against it. |
 | Neither research report's data assumptions hold here: there are **no GPS sectionals, no biometrics**. We have finishing times, beaten lengths, in-running comments, draw, weight, ratings, BSPs. | The full Mercier–Aftalion calibration is **gated** (§1). What is buildable is a reduced pace-energy ABM whose per-horse parameters come from performance figures and comment-derived run styles, calibrated by pattern-matching against comment/result patterns. Built: `model/abm/`. |
 | A cluster of "new" methods are the same estimator as the race-grouped logit we already use. | Recorded in the equivalence ledger (§5.2); nothing built for them. |
 | The Betfair price files carry three things the results database does not: price *movement* (steam/drift), *confidence* (volume) and **in-play lows** — how close a beaten horse came. | Built: `betfair_prices.py` + `model/market_features.py` (lag-safe), nightly workflow, `--market-features` in training. Blocked from this container by Cloudflare (403); runs from GitHub Actions or a local machine. |
@@ -260,7 +267,7 @@ With morning prices in hand, the actionable target is `ln(BSP / MORNINGWAP)` giv
 The master framework (`racing2_master_framework_v3_1.md`) was reviewed against this repo on 15 Sep 2026. Its governing design — **Stage F fundamental (race-grouped softmax, market-free) → Stage C combination with the market → Stage S fractional Kelly**, judged only by **ΔR² over the market out of sample** — is the right spine for Ashcroft, and it exposes the deepest problem in the current pipeline.
 
 ### 10.1 The structural finding
-`train_bfsp.py` regresses on **log(BFSP)**: the market is the model's *target*, not a Stage-C input. A model trained that way can only reproduce the market (lossily); its "overlays" are its own reconstruction error, so betting them must lose — which is exactly what §2 and the `bets` analysis measured (calibrated, lower resolution than BSP, −4 to −7 % on every overlay tier, actual win rates sitting on the market's number). The stored blend weight (`blend_config.json`: λ = 1.0 = pure market) is the same fact seen from Stage C. The framework's P5 is also violated inside the feature set: `feature_registry.classify` finds **20 market-derived features** in the 419-feature BFSP model (`ORR2`/`LR_ORR2`/`preracehorsecareerORR2`, `PFD3/5/10`, `OFS1/3/5/10`, their ranks, and the expectation-residual family built from market rank).
+`train_bfsp.py` regresses on the **logit of the race-normalised BFSP probability** (`logit_norm_prob`, adopted from the six-variant head-to-head — `reports/h2h_summary.md`; it was `log_bfsp` through run R1 and every number in §2 and §11.3 below): either way the market is the model's *target*, not a Stage-C input, and the P5 violation this section is about is untouched by the reparameterisation. A model trained that way can only reproduce the market (lossily); its "overlays" are its own reconstruction error, so betting them must lose — which is exactly what §2 and the `bets` analysis measured (calibrated, lower resolution than BSP, −4 to −7 % on every overlay tier, actual win rates sitting on the market's number). The stored blend weight (`blend_config.json`: λ = 1.0 = pure market) is the same fact seen from Stage C. The framework's P5 is also violated inside the feature set: `feature_registry.classify` finds **20 market-derived features** in the 419-feature BFSP model (`ORR2`/`LR_ORR2`/`preracehorsecareerORR2`, `PFD3/5/10`, `OFS1/3/5/10`, their ranks, and the expectation-residual family built from market rank).
 
 **Consequence.** ΔR² is not measurable for the current model at all. The fix is architectural, not another feature: build a true Stage F on the winner label with `stage_f_columns()` features, fit Stage C on out-of-fold Stage F output, and report ΔR² with a race-bootstrap CI. `model/stage_f.py` provides the estimator (conditional logit; LightGBM race-softmax objective for the non-linear version — "the change from the existing XGBoost work is the objective and the grouping, not the algorithm"), Stage C, temperature scaling, the conditional calibration tables and the walk-forward harness.
 
@@ -488,7 +495,8 @@ feed. So the framework work is built and tested but mostly not consumed by
 the model that prices races.
 
 It also breaks P5 twice: the production target *is* the market
-(`log_bfsp`), and its feature set carries market-derived Stage-C columns
+(`logit_norm_prob`, and `log_bfsp` before it — a different parameterisation of
+the same settled price), and its feature set carries market-derived Stage-C columns
 (the ORR2, OFS, PFD and expectation-residual families).
 `feature_registry.stage_f_columns` exists to stop exactly that and is applied
 only in `train_stage_f.py`.

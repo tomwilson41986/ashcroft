@@ -21,6 +21,13 @@ its paired interval excludes zero in its favour AND neither Brier skill against
 the market nor concordance is worse by more than its own interval. Rank-1 ROI
 is reported and never decisive -- at twelve thousand races its interval is
 about two points wide, which is larger than any difference worth having.
+
+`--folds` cuts both runs to the same subset of walk-forward folds. The folds are
+chronological, so `--folds 0-4` against `--folds 5-10` asks whether a difference
+measured over the whole window is there in each half of it, or only in one. That
+is a different question from the rule above -- half a sample has a wider interval
+by construction, so what a split answers is whether the sign is stable, not
+whether it is significant a second time.
 """
 
 from __future__ import annotations
@@ -37,15 +44,94 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 KEY = ["race_date", "race_time", "track", "horse_name"]
 
 
-def load(path: str) -> pd.DataFrame:
+def parse_folds(spec: str | None) -> set[int] | None:
+    """`0-4`, `5-10`, `3`, `0,2,5-7` -> the fold indices named. None for all."""
+    if spec is None:
+        return None
+    out: set[int] = set()
+    for part in str(spec).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            if "-" in part:
+                lo, hi = part.split("-", 1)
+                out.update(range(int(lo), int(hi) + 1))
+            else:
+                out.add(int(part))
+        except ValueError:
+            raise SystemExit(f"--folds {spec!r}: cannot read {part!r} as a fold "
+                             f"or a range of folds")
+    if not out:
+        raise SystemExit(f"--folds {spec!r} names no folds")
+    return out
+
+
+def load(path: str, folds: set[int] | None = None) -> pd.DataFrame:
+    """One run's predictions, optionally cut to a subset of its folds.
+
+    The filter belongs here because every statistic downstream -- `skill`,
+    `concordance`, `top_pick_roi`, `book` and, through the merged frame,
+    `paired_skill_deltas` -- is computed from the frames this returns. Filtering
+    once at the source is what keeps a half-sample report from mixing a
+    half-sample error with a whole-sample concordance."""
     d = pd.read_csv(path)
     d["race_date"] = pd.to_datetime(d["race_date"], errors="coerce")
+    if folds is not None:
+        if "fold_idx" not in d.columns:
+            raise SystemExit(
+                f"--folds was given but {path} carries no fold_idx column, so "
+                f"there is nothing to select on. Runs from evaluate_oos.py "
+                f"record it; an older CSV may not.")
+        d = d[pd.to_numeric(d["fold_idx"], errors="coerce").isin(folds)]
     if "raceid" not in d.columns:
         d["raceid"] = (d["race_date"].dt.strftime("%Y-%m-%d") + "_"
                        + d["track"].astype(str) + "_" + d["race_time"].astype(str))
     d = d[(pd.to_numeric(d["bfsp"], errors="coerce") > 1.0)
           & (pd.to_numeric(d["predicted_bfsp"], errors="coerce") > 1.0)]
+    if d.empty:
+        where = f" in folds {sorted(folds)}" if folds is not None else ""
+        raise SystemExit(f"{path} has no usable rows{where}")
     return d
+
+
+def fold_spans(d: pd.DataFrame) -> dict[int, tuple[str, str]]:
+    """Each fold's first and last race date, as plain strings."""
+    if "fold_idx" not in d.columns:
+        return {}
+    t = d[["fold_idx", "race_date"]].copy()
+    t["fold_idx"] = pd.to_numeric(t["fold_idx"], errors="coerce")
+    t = t.dropna(subset=["fold_idx", "race_date"])
+    if t.empty:
+        return {}
+    g = t.groupby("fold_idx")["race_date"].agg(["min", "max"])
+    return {int(k): (r["min"].strftime("%Y-%m-%d"), r["max"].strftime("%Y-%m-%d"))
+            for k, r in g.iterrows()}
+
+
+def assert_comparable_folds(base: pd.DataFrame, variant: pd.DataFrame) -> None:
+    """Refuse a fold-subset comparison when fold k is not the same period in both.
+
+    Selecting by fold index only means something if the index means the same
+    thing in both runs. It does when they share a cached matrix and an
+    `--eval-from`, and that is an assumption to check rather than trust:
+    comparing fold 3 of an 11-fold run against fold 3 of a 22-fold one would
+    produce a confident, well-formed number about two different periods.
+
+    Only called when `--folds` is given. Without it the comparison is paired on
+    the runner key and never reads the fold index, so differing geometry costs
+    nothing there."""
+    gb, gv = fold_spans(base), fold_spans(variant)
+    if not gb or not gv:
+        return
+    bad = sorted(k for k in set(gb) | set(gv) if gb.get(k) != gv.get(k))
+    if bad:
+        detail = "; ".join(f"fold {k}: base {gb.get(k, '(absent)')} vs "
+                           f"variant {gv.get(k, '(absent)')}" for k in bad[:5])
+        raise SystemExit(
+            f"the two runs' folds cover different dates, so selecting by fold "
+            f"index would compare different periods -- {detail}"
+            + (f" (and {len(bad) - 5} more)" if len(bad) > 5 else ""))
 
 
 def paired(base: pd.DataFrame, variant: pd.DataFrame) -> pd.DataFrame:
@@ -253,9 +339,16 @@ def main():
     ap.add_argument("--commission", type=float, default=0.05)
     ap.add_argument("--note", default=None,
                     help="a line of context to put under the title, e.g. what the two runs are")
+    ap.add_argument("--folds", default=None,
+                    help="restrict both runs to these walk-forward folds, e.g. 0-4, "
+                         "5-10, 3, or 0,2,5-7. Use it to ask whether a difference "
+                         "measured over the whole window holds in each half of it")
     a = ap.parse_args()
 
-    b, v = load(a.base), load(a.variant)
+    folds = parse_folds(a.folds)
+    b, v = load(a.base, folds), load(a.variant, folds)
+    if folds is not None:
+        assert_comparable_folds(b, v)
     m = paired(b, v)
 
     lo, hi = race_bootstrap(m["delta"].to_numpy(), m["raceid"].to_numpy(), a.n_boot)
@@ -274,7 +367,11 @@ def main():
     L.append(f"# {_label(a.variant, a.base)} against {_label(a.base, a.variant)}\n")
     if a.note:
         L.append(f"*{a.note}*\n")
-    L.append(f"{len(m):,} paired runners over {m['raceid'].nunique():,} races.\n")
+    # The scope belongs in the header, not in whoever-reads-this's memory: a
+    # report over half the window must not be readable as one over all of it.
+    scope = f"**Folds {a.folds}.** " if a.folds else ""
+    L.append(f"{scope}{len(m):,} paired runners over {m['raceid'].nunique():,} races, "
+             f"{m['race_date'].min():%Y-%m-%d} to {m['race_date'].max():%Y-%m-%d}.\n")
     L.append("## Mean absolute log error, paired\n")
     L.append(f"- base **{m['err_b'].mean():.4f}**, variant **{m['err_v'].mean():.4f}**")
     L.append(f"- paired difference **{delta:+.4f}** (90% CI {lo:+.4f} to {hi:+.4f}) "

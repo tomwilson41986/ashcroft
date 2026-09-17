@@ -30,7 +30,11 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
-from model.bfsp_model import assert_meta_is_servable, predict_prices
+from model.bfsp_model import (
+    assert_meta_is_servable,
+    attach_serving_rule,
+    predict_prices,
+)
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -106,6 +110,11 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
     # result -- as its three most important features by gain, and this loader
     # served it every morning without a word.
     assert_meta_is_servable({**meta, "feature_cols": feature_cols})
+
+    # The booster does not remember what it was fitted on -- a save/load round
+    # trip drops it -- so the rule for turning its output back into a price is
+    # pinned here, at the one point every caller of this loader goes through.
+    attach_serving_rule(model, meta)
 
     log.info("Loaded BFSP model (%d features, objective=%s, target=%s, trained through %s)",
              len(feature_cols), meta.get("objective", "?"),

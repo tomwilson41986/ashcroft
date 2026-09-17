@@ -678,7 +678,11 @@ class BFSPTrainer:
         # the quantile calibrator used to overwrite the price here, fitted on
         # the un-normalised column, which broke the book it had just been
         # normalised to. It is a research diagnostic now, not a serving step.
-        result = predict_prices(self.model, df, self.feature_cols, race_col="raceid")
+        result = predict_prices(
+            self.model, df, self.feature_cols, race_col="raceid",
+            target=self.cfg.target,
+            offset=getattr(getattr(self, "final_fit", None), "init_offset", 0.0) or 0.0,
+        )
         result["predicted_bfsp_norm"] = result["predicted_bfsp"]
 
         # The isotonic map is a probability, not a price, so it gets its own
@@ -949,8 +953,9 @@ def main():
              "by default, so this is a no-op",
     )
     parser.add_argument(
-        "--target", default="log_bfsp", choices=list(TARGETS),
-        help="What to regress on (default log_bfsp)",
+        "--target", default=TrainConfig.target, choices=list(TARGETS),
+        help=f"What to regress on (default {TrainConfig.target}, adopted after the "
+             f"six-variant head-to-head -- see reports/h2h_summary.md)",
     )
     parser.add_argument("--holdout-days", type=int, default=60,
                         help="Days at the end of the training window used for "

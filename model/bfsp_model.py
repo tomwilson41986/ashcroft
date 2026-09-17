@@ -75,9 +75,9 @@ def predict_prices(
     feature_cols: list[str],
     race_col: str = "raceid",
     target_book: float = 1.0,
-    target: str = "log_bfsp",
+    target: str | None = None,
     num_iteration: int | None = None,
-    offset: float = 0.0,
+    offset: float | None = None,
 ) -> pd.DataFrame:
     """Booster output → one coherent price and probability per runner.
 
@@ -92,11 +92,23 @@ def predict_prices(
       exactly the bug this module exists to remove.
     - `predicted_log_bfsp` — `log(predicted_bfsp)`.
 
-    `offset` is the fit's `init_offset` (`FitResult.init_offset`, recorded in the
-    metadata). It shifts only the raw columns; the normalised price is invariant
-    to it, so omitting it cannot corrupt what gets served -- but it would put
-    `predicted_bfsp_raw`, which the calibration report reads, on the wrong scale.
+    `target` is the label the booster was fitted on, which decides how its
+    output is turned back into a price. `offset` is the fit's `init_offset`
+    (`FitResult.init_offset`, recorded in the metadata); it shifts only the raw
+    columns, since the normalised price is invariant to a constant, but it would
+    put `predicted_bfsp_raw`, which the calibration report reads, on the wrong
+    scale.
+
+    Leave both unset and they are read off the booster, where
+    `attach_serving_rule` put them at load time. That default exists because
+    `prepare_and_predict` has seven call sites and `load_bfsp_model` five: a
+    rule every caller must remember to pass is a rule one of them will not, and
+    the failure is a plausible-looking price rather than an error. The
+    inversion rule belongs to the model, so the model carries it.
     """
+    target = target or getattr(booster, "serving_target", None) or "log_bfsp"
+    if offset is None:
+        offset = float(getattr(booster, "serving_offset", 0.0) or 0.0)
     out = df.copy()
     if race_col not in out.columns:
         out[race_col] = ensure_race_id(out, race_col)
@@ -303,7 +315,16 @@ class TrainConfig:
     #: history. Off by default, measured as a variant.
     decay_rate: float = 0.0
 
-    target: str = "log_bfsp"
+    #: Fit the logit of the race-normalised implied probability, not log(BFSP).
+    #: The same model either way; what changes is that the label lives on the
+    #: scale the served price is finally judged on, since the price is
+    #: normalised to a book of 1 regardless. Adopted after the six-variant
+    #: head-to-head: paired mean absolute log error -0.0016 (90% CI -0.0023 to
+    #: -0.0009) over 107,047 runners, with the gain in the tail of the field
+    #: (rank 8+ -0.0035) where a price for every runner is the point. It was the
+    #: only variant of five to pass, and the only one not to buy the top of the
+    #: market by selling the tail. See reports/h2h_summary.md.
+    target: str = "logit_norm_prob"
 
     #: Days at the end of the training window held out for early stopping.
     #: Both scripts used to early-stop on the very fold they then scored, which
@@ -608,13 +629,27 @@ def model_meta(cfg: TrainConfig, feature_cols: list[str], fit: FitResult | None 
     return meta
 
 
-#: What `predict_bfsp_today` is wired to serve. It calls `predict_prices` with
-#: the default target and no offset, so a model fitted any other way would be
-#: inverted with the wrong rule or exported with its raw price on the wrong
-#: scale. The head-to-head may well pick a different target -- when it does,
-#: the serving path gets taught to pass them and this list grows. Until then a
-#: mismatch is a refusal at load time rather than a wrong price at 06:00.
-SERVABLE_TARGETS = ("log_bfsp",)
+#: What the serving path can invert correctly. It reads the rule off the model
+#: (`attach_serving_rule`, called by `load_bfsp_model` at the one point every
+#: caller goes through), so this list is no longer "what the default happens to
+#: be" but "what `invert_target` has a rule for and the head-to-head has
+#: measured". `logit_norm_prob` joined it when the split-half check confirmed
+#: v4_logit's win held in both halves of the window; `demeaned_log` has not been
+#: adopted, so a mismatch is still a refusal at load time rather than a wrong
+#: price at 06:00.
+SERVABLE_TARGETS = ("log_bfsp", "logit_norm_prob")
+
+
+def attach_serving_rule(booster, meta: dict):
+    """Put the model's own inversion rule on the model, for `predict_prices`.
+
+    Called once, at load time, where the metadata and the booster are both in
+    hand. Everything downstream then gets the right rule without being asked to
+    pass it -- which matters because "pass the target at every call site" is a
+    rule that holds right up until the day somebody adds a call site."""
+    booster.serving_target = meta.get("target") or "log_bfsp"
+    booster.serving_offset = float(meta.get("init_offset") or 0.0)
+    return booster
 
 
 def assert_meta_is_servable(meta: dict) -> None:
@@ -645,18 +680,15 @@ def assert_meta_is_servable(meta: dict) -> None:
     target = meta.get("target", "log_bfsp")
     if target not in SERVABLE_TARGETS:
         raise ValueError(
-            f"model was fitted on target {target!r}, and the serving path calls "
-            f"predict_prices with the default {SERVABLE_TARGETS[0]!r}: it would "
-            f"invert the booster's output with the wrong rule. Teach "
-            f"predict_bfsp_today to pass the target from this metadata, then add "
-            f"{target!r} to SERVABLE_TARGETS."
+            f"model was fitted on target {target!r}, which is not in "
+            f"SERVABLE_TARGETS {SERVABLE_TARGETS!r}: the serving path would "
+            f"invert the booster's output with the wrong rule. Add a rule for it "
+            f"to invert_target, measure it against the default with "
+            f"scripts/compare_oos_runs.py, then add {target!r} to SERVABLE_TARGETS."
         )
 
-    offset = float(meta.get("init_offset") or 0.0)
-    if offset != 0.0:
-        raise ValueError(
-            f"model was fitted from an init_score of {offset:.4f} and the serving "
-            f"path passes no offset. The served price is race-normalised so it "
-            f"would survive this, but predicted_bfsp_raw would not. Teach "
-            f"predict_bfsp_today to pass init_offset from this metadata."
-        )
+    # The init_offset used to be refused here, because the serving path passed
+    # no offset and `predicted_bfsp_raw` would have come out on the wrong scale.
+    # `attach_serving_rule` now carries it on the model, so there is nothing
+    # left to refuse -- and refusing a model the path can serve correctly would
+    # be its own kind of wrong.
