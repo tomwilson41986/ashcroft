@@ -73,8 +73,14 @@ def load_historical(db_path: str, start_date: str | None = None) -> pd.DataFrame
     return df
 
 
-def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str]]:
-    """Load the trained BFSP regression model and its feature columns."""
+def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
+    """Load the trained BFSP model, its feature columns and its categorical vocabulary.
+
+    The vocabulary has to travel with the model: `cat.codes` numbers whatever
+    categories are present in the frame it is given, so a track that is one
+    integer across the training history is a different integer on a six-race
+    card unless the levels are pinned. It is the third return value, and
+    `build_context_features` takes it."""
     model_path = os.path.join(model_dir, "bfsp_model.lgb")
     meta_path = os.path.join(model_dir, "bfsp_model_meta.json")
 
