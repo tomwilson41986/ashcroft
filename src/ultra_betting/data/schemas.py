@@ -6,7 +6,17 @@ from pydantic import BaseModel, Field
 
 
 class Prediction(BaseModel):
-    """A single runner prediction from the Ashcroft model."""
+    """A single runner prediction from the Ashcroft model.
+
+    The price fields are what makes closing-line value measurable. The
+    database's `odds` column is the returned SP, which is itself a closing
+    price, so nothing in the history can say whether taking a price early
+    would have beaten the close. These are the prices available at the moment
+    the prediction was made -- the racecard's and the exchange's -- written
+    alongside the forecast so that CLV accrues from here forward. They are all
+    optional: a card without a price, or a morning when Betfair is
+    unreachable, should cost the price and not the prediction.
+    """
     date: str
     venue: str
     race_time: str
@@ -17,6 +27,18 @@ class Prediction(BaseModel):
     predicted_win_prob: float
     predicted_at: datetime = Field(default_factory=datetime.utcnow)
     prediction_id: str = ""  # {date}_{market_id}_{selection_id}
+
+    # Prices as they stood when this prediction was made (see docstring).
+    racecard_odds: float | None = None
+    bf_best_back: float | None = None
+    bf_best_lay: float | None = None
+    bf_sp_near: float | None = None
+    bf_sp_far: float | None = None
+    bf_last_traded: float | None = None
+    #: This runner's matched volume, not the market's (see `runner_matched`
+    #: in betfair_client.get_live_odds_for_date).
+    bf_total_matched: float | None = None
+    price_snapshot_at: datetime | None = None
 
     def model_post_init(self, __context):
         if not self.prediction_id:

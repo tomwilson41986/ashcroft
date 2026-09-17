@@ -386,8 +386,16 @@ def price_forecast_by_rank(d: pd.DataFrame, pred_col: str = "predicted_bfsp",
 
     This is the quantity the strategy actually depends on: if the model says
     a horse will close at 4.0 and it closes at 5.0, money taken at the
-    forecast price is money lost. ``clv_at_forecast_pct`` is the greened-up
-    return from taking the forecast price and closing at BSP."""
+    forecast price is money lost.
+
+    ``forecast_bias_pct`` is ``median(forecast / BSP - 1)``: how far the
+    forecast sits from the close, in percent, signed. It used to be called
+    ``clv_at_forecast_pct``, and that name was wrong in a way that mattered.
+    Closing-line value is the price you actually got against the price the
+    market closed at; this compares a *forecast* against the close, and a
+    forecast is not a price anyone offered. Reading it as CLV turns "the
+    model is unbiased" into "we are beating the close", which is a different
+    and much stronger claim. No early price enters this function."""
     if pred_col not in d.columns:
         return pd.DataFrame()
     rows = []
@@ -400,7 +408,7 @@ def price_forecast_by_rank(d: pd.DataFrame, pred_col: str = "predicted_bfsp",
                      "median_pred_bsp": g[pred_col].median(), "median_bsp": g["bsp"].median(),
                      "median_pred_over_actual": ratio.median(),
                      "pct_forecast_above_bsp": 100 * (ratio > 1).mean(),
-                     "clv_at_forecast_pct": 100 * (ratio - 1).median(),
+                     "forecast_bias_pct": 100 * (ratio - 1).median(),
                      "mean_abs_log_error": float(np.abs(np.log(ratio.clip(1e-6))).mean())})
     return pd.DataFrame(rows)
 

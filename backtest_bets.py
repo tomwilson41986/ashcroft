@@ -47,7 +47,7 @@ def run_backtest(
     db_path: str = DB_PATH,
 ):
     """Run backtest and write bets + daily_pnl to S3."""
-    model, feature_cols = load_bfsp_model(MODEL_DIR)
+    model, feature_cols, vocab = load_bfsp_model(MODEL_DIR)
 
     log.info(f"Loading historical data (from {start_date})...")
     historical = load_historical(db_path, start_date=start_date)

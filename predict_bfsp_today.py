@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
+from model.bfsp_model import assert_meta_is_servable, predict_prices
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -84,39 +85,32 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str]]:
 
     model = lgb.Booster(model_file=model_path)
 
-    feature_cols = []
+    feature_cols, vocab, meta = [], {}, {}
     if os.path.exists(meta_path):
         with open(meta_path) as f:
             meta = json.load(f)
         feature_cols = meta.get("feature_cols", [])
+        vocab = meta.get("categorical_vocab", {}) or {}
 
     if not feature_cols:
         feature_cols = [c for c in ALL_FEATURE_COLS]
 
-    log.info(f"Loaded BFSP model ({len(feature_cols)} features)")
-    return model, feature_cols
+    # Refuse an artefact that should not be served. The model this guard was
+    # written for had NFP_residual, FSALB and win_surprise -- the race's own
+    # result -- as its three most important features by gain, and this loader
+    # served it every morning without a word.
+    assert_meta_is_servable({**meta, "feature_cols": feature_cols})
 
-
-def load_price_calibrator(model_dir: str):
-    """Load the BFSP price calibrator saved by train_bfsp.py, if there is one.
-
-    Without it the daily forecast is the model's raw log-price prediction, which
-    quotes the top pick roughly 8% longer than it settles and implies a book of
-    0.87. See model/price_calibration.py."""
-    path = os.path.join(model_dir, "bsp_price_calibrator.json")
-    if not os.path.exists(path):
+    log.info("Loaded BFSP model (%d features, objective=%s, target=%s, trained through %s)",
+             len(feature_cols), meta.get("objective", "?"),
+             meta.get("target", "?"), meta.get("trained_through", "?"))
+    if not vocab:
         log.warning(
-            "No BFSP price calibrator at %s -- prices are the raw model output and "
-            "carry a known upward bias on short-priced runners. Retrain with "
-            "train_bfsp.py, or fit one with: python research_lab.py price-cal --save %s",
-            path, path,
+            "No categorical vocabulary in the model metadata: track_cat and "
+            "race_type_cat will be numbered from today's card, which is not how "
+            "they were numbered in training. Retrain to store one."
         )
-        return None
-    from model.price_calibration import BSPPriceCalibrator
-    cal = BSPPriceCalibrator.load(path)
-    log.info("Loaded BFSP price calibrator (fitted on %s rows through %s)",
-             f"{cal.meta_.get('rows', 0):,}", cal.meta_.get("trained_through", "?"))
-    return cal
+    return model, feature_cols, vocab
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +167,7 @@ def prepare_and_predict(
     model: lgb.Booster,
     feature_cols: list[str],
     target_date: date,
-    price_calibrator=None,
+    vocab: dict | None = None,
 ) -> pd.DataFrame:
     """Calculate metrics on history, build features for runners, predict BFSP.
 
@@ -219,7 +213,7 @@ def prepare_and_predict(
 
     # Build context features
     log.info("Building context features...")
-    full_df = build_context_features(full_df)
+    full_df = build_context_features(full_df, vocab=vocab)
 
     # Extract rows for the target date
     full_df["race_date"] = pd.to_datetime(full_df["race_date"])
@@ -237,42 +231,15 @@ def prepare_and_predict(
         if col not in target_df.columns:
             target_df[col] = np.nan
 
-    # Predict
-    X = target_df[feature_cols].astype(float)
-    log_bfsp_pred = model.predict(X)
-
-    target_df["predicted_log_bfsp"] = log_bfsp_pred
-    target_df["predicted_bfsp"] = np.exp(log_bfsp_pred)
-
-    # Calculate implied win probability from predicted BFSP
-    target_df["predicted_win_prob"] = 1.0 / target_df["predicted_bfsp"]
-
-    # Normalise probabilities per race so they sum to 1.0
-    if "raceid" not in target_df.columns:
-        target_df["raceid"] = (
-            target_df["race_date"].dt.strftime("%Y-%m-%d")
-            + "_" + target_df["track"].astype(str)
-            + "_" + target_df["race_time"].astype(str)
-        )
-
-    race_prob_sum = target_df.groupby("raceid")["predicted_win_prob"].transform("sum")
-    target_df["predicted_win_prob_norm"] = target_df["predicted_win_prob"] / race_prob_sum
-
-    # Recalculate BFSP from normalised probabilities so odds reflect a fair book
-    target_df["predicted_bfsp_raw"] = target_df["predicted_bfsp"]
-    target_df["predicted_bfsp_norm"] = 1.0 / target_df["predicted_win_prob_norm"]
-    target_df["predicted_bfsp"] = target_df["predicted_bfsp_norm"]
-
-    # Calibrated forecast: median and quartiles of where BFSP actually lands.
-    # bsp_forecast_q25 / _q75 bound the early-price rule -- take a price now if it
-    # beats the quantile you are willing to be wrong about.
-    if price_calibrator is not None:
-        cal = price_calibrator.transform(target_df, price_col="predicted_bfsp_raw")
-        for col in cal.columns:
-            if col.startswith("bsp_forecast"):
-                target_df[col] = cal[col].values
-        target_df["predicted_bfsp"] = target_df["bsp_forecast"]
-        target_df["predicted_win_prob"] = 1.0 / target_df["predicted_bfsp"]
+    # One price, one probability, race book = 1. See model/bfsp_model.py.
+    #
+    # This path used to look for a price calibrator in --model-dir while the
+    # file lived in models/, so it served the normalised price and warned about
+    # a bias the normalisation had already removed. The calibrator is out of
+    # the serving path entirely now, in every script, so live, training and
+    # evaluation quote the same number.
+    target_df = predict_prices(model, target_df, feature_cols, race_col="raceid")
+    target_df["predicted_bfsp_norm"] = target_df["predicted_bfsp"]
 
     # If actual BFSP is available, compute edge
     if "bfsp" in target_df.columns:
@@ -529,8 +496,7 @@ def main():
         sys.exit(1)
 
     # Load model
-    model, feature_cols = load_bfsp_model(args.model_dir)
-    price_calibrator = load_price_calibrator(args.model_dir)
+    model, feature_cols, vocab = load_bfsp_model(args.model_dir)
 
     # Load historical data
     log.info(f"Loading historical data (from {args.start_date})...")
@@ -557,7 +523,7 @@ def main():
                 continue
 
             preds = prepare_and_predict(
-                history_before, runners_on_date, model, feature_cols, td, price_calibrator
+                history_before, runners_on_date, model, feature_cols, td, vocab
             )
             if len(preds) > 0:
                 all_predictions.append(preds)
@@ -625,7 +591,7 @@ def main():
 
     # Generate predictions
     predictions = prepare_and_predict(
-        history_before, target_runners, model, feature_cols, target_date, price_calibrator
+        history_before, target_runners, model, feature_cols, target_date, vocab
     )
 
     if len(predictions) == 0:

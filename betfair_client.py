@@ -362,7 +362,13 @@ class BetfairClient:
                     "sp_far_price": sp_data.get("farPrice"),
                     "sp_actual_price": sp_data.get("actualSP"),
                     "last_traded_price": runner.get("lastPriceTraded"),
+                    # Market-level: the same figure on every runner in the race.
                     "total_matched": total_matched,
+                    # This runner's own matched volume. Kept separate because
+                    # the two were being conflated: anything dividing by the
+                    # race total to get a runner's share of the money got 1/n
+                    # for every runner, which looks like data and is not.
+                    "runner_matched": runner.get("totalMatched"),
                 }
                 all_runners.append(row)
 

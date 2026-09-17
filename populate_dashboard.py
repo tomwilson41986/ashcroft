@@ -67,7 +67,7 @@ def run_model_predictions(target_date_str: str, db_path: str) -> pd.DataFrame:
     from predict_bfsp_today import load_historical, load_bfsp_model, prepare_and_predict
 
     target_date = date.fromisoformat(target_date_str)
-    model, feature_cols = load_bfsp_model(MODEL_DIR)
+    model, feature_cols, vocab = load_bfsp_model(MODEL_DIR)
     historical = load_historical(db_path, start_date="2020-01-01")
 
     history_before = historical[historical["race_date"].dt.date < target_date].copy()

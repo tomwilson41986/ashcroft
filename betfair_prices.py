@@ -150,6 +150,39 @@ def db_time_to_24h(t) -> str | None:
     return f"{h:02d}:{mi:02d}"
 
 
+def utc_iso_to_uk_hhmm(ts) -> str | None:
+    """Betfair's ISO marketStartTime -> UK wall-clock 'HH:MM'.
+
+    The exchange reports UTC ('2026-07-04T13:30:00.000Z'); a racecard says
+    2.30. From late March to late October those are the same race an hour
+    apart, so comparing them directly drops every summer meeting -- which is
+    what the snapshot join did: it fed the ISO string to `db_time_to_24h`,
+    whose pattern does not match it, and joined on None.
+    """
+    from datetime import datetime, timezone
+    t = str(ts or "").strip()
+    if not t:
+        return None
+    try:
+        dt = datetime.fromisoformat(t.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        dt = dt.astimezone(ZoneInfo("Europe/London"))
+    except Exception:                                  # pragma: no cover - no tzdata
+        log.warning("no Europe/London zone available; reading market times as UTC")
+    return dt.strftime("%H:%M")
+
+
+def race_time_to_24h(t) -> str | None:
+    """Whichever of the two forms a race time arrives in."""
+    s = str(t or "").strip()
+    return utc_iso_to_uk_hhmm(s) if ("T" in s and "-" in s) else db_time_to_24h(s)
+
+
 def bf_event_time(event_dt) -> tuple[str | None, str | None]:
     """'12-03-2026 14:30' -> ('2026-03-12', '14:30')."""
     m = re.match(r"^\s*(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2})", str(event_dt or ""))

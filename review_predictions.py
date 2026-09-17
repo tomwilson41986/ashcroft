@@ -64,7 +64,7 @@ def generate_predictions_for_date(db_path: str, target_date: date) -> pd.DataFra
         log.error(f"Missing dependency: {e}")
         return pd.DataFrame()
 
-    model, feature_cols = load_bfsp_model(MODEL_DIR)
+    model, feature_cols, vocab = load_bfsp_model(MODEL_DIR)
     historical = load_historical(db_path, start_date="2020-01-01")
 
     target_runners = get_runners_from_db(db_path, str(target_date))

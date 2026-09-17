@@ -34,6 +34,16 @@ import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from model import feature_cache
+from model.bfsp_model import (
+    OBJECTIVES,
+    TARGETS,
+    TrainConfig,
+    all_nan_columns,
+    fit_bfsp,
+    fold_masks,
+    predict_prices,
+    resolve_feature_columns,
+)
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -64,7 +74,8 @@ def walk_forward_predict(
     min_train_days: int = 365,
     val_window_days: int = 30,
     step_days: int = 30,
-    params: dict | None = None,
+    cfg: TrainConfig | None = None,
+    eval_from: str | None = None,
 ) -> pd.DataFrame:
     """Train and predict in walk-forward fashion.
 
@@ -78,8 +89,10 @@ def walk_forward_predict(
         - predicted_win_prob, predicted_win_prob_norm
         - fold_idx (which fold produced this prediction)
     """
-    if params is None:
-        params = BFSPTrainer.DEFAULT_PARAMS.copy()
+    # The recipe, recorded and shared with train_bfsp.py. These used to be two
+    # different models: plain L2 here, profit-weighted plus recency decay there.
+    cfg = cfg or TrainConfig()
+    fold_fits: list = []
 
     min_date = df["race_date"].min()
     max_date = df["race_date"].max()
@@ -92,10 +105,18 @@ def walk_forward_predict(
         val_start = train_end
         val_end = val_start + timedelta(days=val_window_days)
 
-        train_df = df[df["race_date"] < val_start].copy()
-        val_df = df[
-            (df["race_date"] >= val_start) & (df["race_date"] < val_end)
-        ].copy()
+        # Purged and embargoed by the shared helper. A strict date split left
+        # trailing-window features (30-day trainer form, rolling strike rates)
+        # straddling the boundary.
+        tr_mask, va_mask = fold_masks(df["race_date"], val_start, val_end, cfg)
+        train_df = df[tr_mask].copy()
+        val_df = df[va_mask].copy()
+
+        if eval_from is not None and val_start < pd.Timestamp(eval_from):
+            # Fold skipped, not re-keyed: --eval-from shortens a run without
+            # changing the feature matrix, so variants still share one cache.
+            train_end += timedelta(days=step_days)
+            continue
 
         if len(train_df) < 200 or len(val_df) < 5:
             train_end += timedelta(days=step_days)
@@ -107,70 +128,31 @@ def walk_forward_predict(
             f"({val_start.date()} to {val_end.date()})"
         )
 
-        X_train = train_df[feature_cols].astype(float)
-        y_train = train_df["log_bfsp"].astype(float)
-        X_val = val_df[feature_cols].astype(float)
-
-        train_set = lgb.Dataset(X_train, label=y_train)
-        val_set = lgb.Dataset(
-            X_val, label=val_df["log_bfsp"].astype(float), reference=train_set
-        )
-
-        model = lgb.train(
-            params,
-            train_set,
-            num_boost_round=2000,
-            valid_sets=[train_set, val_set],
-            valid_names=["train", "valid"],
-            callbacks=[
-                lgb.log_evaluation(period=0),
-                lgb.early_stopping(stopping_rounds=50),
-            ],
-        )
-
-        val_df = val_df.copy()
-        val_df["predicted_log_bfsp"] = model.predict(X_val)
-        val_df["predicted_bfsp"] = np.exp(val_df["predicted_log_bfsp"])
-        val_df["fold_idx"] = fold_idx
-
-        # Win probability from predicted BFSP
-        val_df["predicted_win_prob"] = 1.0 / val_df["predicted_bfsp"]
-
-        # Normalise per race
-        race_col = "raceid" if "raceid" in val_df.columns else None
-        if race_col is None:
-            val_df["raceid"] = (
-                val_df["race_date"].dt.strftime("%Y-%m-%d")
-                + "_" + val_df["track"].astype(str)
-                + "_" + val_df["race_time"].astype(str)
+        fit = fit_bfsp(train_df, feature_cols, cfg)
+        model = fit.booster
+        if fold_idx == 0:
+            log.info(
+                "    early stopping on the %d days before the fold (%d rows, from %s), "
+                "not on the fold being scored",
+                cfg.holdout_days, fit.n_holdout,
+                pd.Timestamp(fit.holdout_start).date(),
             )
-            race_col = "raceid"
+        log.info("    best_iteration %d%s, holdout mae %.4f",
+                 fit.best_iteration,
+                 "" if fit.early_stopped else " (CAP, not a stop)",
+                 fit.holdout_metrics["mae"])
+        fold_fits.append(fit)
 
-        race_prob_sum = val_df.groupby(race_col)["predicted_win_prob"].transform("sum")
-        val_df["predicted_win_prob_norm"] = val_df["predicted_win_prob"] / race_prob_sum
-
-        # Recalculate BFSP from normalised probabilities so odds reflect a fair book
-        val_df["predicted_bfsp_raw"] = val_df["predicted_bfsp"]
-        val_df["predicted_bfsp_norm"] = 1.0 / val_df["predicted_win_prob_norm"]
-        val_df["predicted_bfsp"] = val_df["predicted_bfsp_norm"]
-
-        # Calibrate the price against realised BFSP, using only the folds already
-        # scored. Fitting it on this fold's own rows, or on in-sample training
-        # predictions, would flatter it; earlier folds are the honest training set.
-        if all_oos:
-            from model.price_calibration import BSPPriceCalibrator
-            prior = pd.concat(all_oos, ignore_index=True)
-            prior = prior[pd.to_numeric(prior.get("bfsp"), errors="coerce") > 1.0] \
-                if "bfsp" in prior.columns else prior.iloc[0:0]
-            if len(prior) >= 1000:
-                cal = BSPPriceCalibrator().fit(
-                    prior, price_col="predicted_bfsp_raw", target_col="bfsp", race_col=race_col
-                )
-                out = cal.transform(val_df, price_col="predicted_bfsp_raw", race_col=race_col)
-                for col in out.columns:
-                    if col.startswith("bsp_forecast"):
-                        val_df[col] = out[col].values
-                val_df["predicted_bfsp"] = val_df["bsp_forecast"]
+        # One price, one probability, book = 1 by construction. The quantile
+        # calibrator used to overwrite the price here, fitted on the
+        # un-normalised column, which left per-race books between 0.16 and 1.85
+        # and made `1 / predicted_bfsp` disagree with `predicted_win_prob_norm`
+        # by a median 13%. It is a research diagnostic now: `research_lab.py
+        # price-cal` fits it against `predicted_bfsp_raw`, which this exports.
+        val_df = predict_prices(model, val_df.copy(), feature_cols, race_col="raceid",
+                                target=cfg.target, num_iteration=fit.best_iteration,
+                                offset=fit.init_offset)
+        val_df["fold_idx"] = fold_idx
 
         all_oos.append(val_df)
         fold_idx += 1
@@ -181,6 +163,12 @@ def walk_forward_predict(
         return pd.DataFrame()
 
     combined = pd.concat(all_oos, ignore_index=True)
+    # Per-fold fit facts travel with the frame rather than in a module global.
+    combined.attrs["fold_fits"] = [
+        {"best_iteration": f.best_iteration, "early_stopped": f.early_stopped,
+         "holdout_mae": f.holdout_metrics["mae"], "n_holdout": f.n_holdout}
+        for f in fold_fits
+    ]
 
     # Deduplicate: if a runner appears in multiple folds (overlapping windows),
     # keep the prediction from the latest fold (most training data).
@@ -710,6 +698,61 @@ def main():
         "--refresh-cache", action="store_true",
         help="Rebuild the feature matrix even if a cached one matches",
     )
+    # --- the training recipe (shared with train_bfsp.py) -------------------
+    parser.add_argument(
+        "--objective", default="l2", choices=list(OBJECTIVES),
+        help="l2 = squared error on the target, every runner weighted equally "
+             "(default). profit_weighted weights by 1/sqrt(BFSP) and penalises "
+             "under-prediction 1.5x, which tells the model most of the field "
+             "does not matter",
+    )
+    parser.add_argument(
+        "--decay-rate", type=float, default=0.0,
+        help="Exponential recency weight exp(-rate*days/365); 0 disables it "
+             "(default). 1.0 gives a three-year-old race 5%% of today's weight",
+    )
+    parser.add_argument(
+        "--target", default="log_bfsp", choices=list(TARGETS),
+        help="log_bfsp (default), demeaned_log (within-race differences only) "
+             "or logit_norm_prob (logit of the race-normalised probability)",
+    )
+    parser.add_argument(
+        "--holdout-days", type=int, default=60,
+        help="Days at the end of the training window used for early stopping. "
+             "Stopping on the scored fold picks the iteration count with "
+             "knowledge of the test set",
+    )
+    parser.add_argument("--purge-days", type=int, default=30,
+                        help="Drop training rows within N days of the fold")
+    parser.add_argument("--embargo-days", type=int, default=0,
+                        help="Drop the fold's first N days")
+    parser.add_argument("--refit", action="store_true",
+                        help="Refit on the full training window at the chosen "
+                             "iteration count (what the published model does)")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--native-categoricals", action="store_true",
+                        help="Declare the _cat columns to LightGBM as categorical "
+                             "rather than letting it split them as ordered integers")
+    parser.add_argument(
+        "--eval-from", default=None, metavar="DATE",
+        help="Skip folds whose validation window starts before DATE. Shortens a "
+             "run without changing the feature matrix, so variants share a cache",
+    )
+    parser.add_argument(
+        "--tag", default=None,
+        help="Name this variant; outputs become *_<tag>.csv / *_<tag>.json",
+    )
+    parser.add_argument(
+        "--drop-feature-list", default=None, metavar="FILE",
+        help="Withhold the exact feature names listed in FILE (one per line). "
+             "--drop-features matches prefixes; this matches names",
+    )
+    parser.add_argument(
+        "--allow-missing-features", action="store_true",
+        help="Proceed when the feature build did not produce every expected "
+             "column, dropping them. Without this the run stops: training on a "
+             "missing feature as NaN reports a feature count the model never saw",
+    )
     parser.add_argument(
         "--build-cache-only", action="store_true",
         help="Build (or reuse) the feature matrix and stop, without fitting a "
@@ -771,27 +814,39 @@ def main():
         return
 
     # Determine available features
-    feature_cols = [c for c in ALL_FEATURE_COLS if c in df.columns]
-    seen = set()
-    feature_cols = [c for c in feature_cols if not (c in seen or seen.add(c))]
+    prefixes = tuple(p.strip() for p in (args.drop_features or "").split(",") if p.strip())
+    names = ()
+    if args.drop_feature_list:
+        names = tuple(
+            n.strip() for n in open(args.drop_feature_list).read().split() if n.strip()
+        )
 
-    for c in ALL_FEATURE_COLS:
-        if c not in df.columns:
-            df[c] = np.nan
+    wanted = list(dict.fromkeys(ALL_FEATURE_COLS))
+    feature_cols_full = resolve_feature_columns(
+        df, wanted, drop_prefixes=prefixes, drop_names=names,
+        strict=not args.allow_missing_features, log=log,
+    )
+    missing_features = [c for c in wanted if c not in df.columns]
 
-    feature_cols_full = list(dict.fromkeys(ALL_FEATURE_COLS))
-
-    if args.drop_features:
-        prefixes = tuple(p.strip() for p in args.drop_features.split(",") if p.strip())
-        dropped = [c for c in feature_cols_full if c.startswith(prefixes)]
-        feature_cols_full = [c for c in feature_cols_full if c not in set(dropped)]
-        log.info("Withholding %d features matching %s", len(dropped), list(prefixes))
+    if prefixes or names:
+        dropped = [c for c in wanted if c in df.columns and c not in set(feature_cols_full)]
+        log.info("Withholding %d features (%s%s)", len(dropped),
+                 f"prefixes {list(prefixes)}" if prefixes else "",
+                 f" names from {args.drop_feature_list}" if names else "")
         for c in sorted(dropped)[:20]:
             log.info("    - %s", c)
         if len(dropped) > 20:
             log.info("    ... and %d more", len(dropped) - 20)
 
-    log.info(f"  {len(feature_cols_full)} features, {len(df):,} valid rows")
+    # Built, but built empty: a block that ran and produced nothing is as
+    # useless as one that did not run, and just as silent.
+    empty = all_nan_columns(df, feature_cols_full)
+    if empty:
+        log.warning("%d feature columns are entirely NaN across the whole frame: %s",
+                    len(empty), ", ".join(empty[:20]))
+
+    log.info(f"  {len(feature_cols_full)} features, {len(missing_features)} missing, "
+             f"{len(df):,} valid rows")
 
     # Ensure raceid exists
     if "raceid" not in df.columns:
@@ -803,12 +858,30 @@ def main():
 
     # Walk-forward predictions
     log.info("\nRunning walk-forward out-of-sample evaluation...")
+    cfg = TrainConfig(
+        objective=args.objective,
+        decay_rate=args.decay_rate,
+        target=args.target,
+        holdout_days=args.holdout_days,
+        purge_days=args.purge_days,
+        embargo_days=args.embargo_days,
+        refit_on_full=args.refit,
+        seed=args.seed,
+        native_categoricals=args.native_categoricals,
+    )
+    log.info("Training recipe: objective=%s target=%s decay=%.2f holdout=%dd "
+             "purge=%dd embargo=%dd refit=%s seed=%d",
+             cfg.objective, cfg.target, cfg.decay_rate, cfg.holdout_days,
+             cfg.purge_days, cfg.embargo_days, cfg.refit_on_full, cfg.seed)
+
     oos = walk_forward_predict(
         df,
         feature_cols_full,
         min_train_days=args.min_train_days,
         val_window_days=args.val_window,
         step_days=args.step_days,
+        cfg=cfg,
+        eval_from=args.eval_from,
     )
 
     if oos.empty:
@@ -856,19 +929,31 @@ def main():
     )
 
     # Save outputs
+    def _tagged(path):
+        if not path or not args.tag:
+            return path
+        stem, dot, ext = path.rpartition(".")
+        return f"{stem}_{args.tag}{dot}{ext}" if dot else f"{path}_{args.tag}"
+
     if args.output_csv:
         out_cols = [
             "race_date", "race_time", "track", "horse_name",
             "predicted_bfsp", "bfsp", "overlay_pct",
             "predicted_win_prob_norm", "placing_numerical", "won",
             "fold_idx",
+            # The booster's own output, before the race book is normalised.
+            # Exported so `research_lab.py price-cal` can fit the calibrator
+            # against the raw price instead of against already-normalised
+            # output -- the previous report compared calibrated with calibrated.
+            "predicted_bfsp_raw",
             # Race metadata for downstream profitability analysis
             "race_type", "race_code", "surface_type", "going_description",
             "dist_furlongs", "number_of_runners", "race_class",
         ]
         avail = [c for c in out_cols if c in oos.columns]
-        oos[avail].to_csv(args.output_csv, index=False)
-        log.info(f"Saved OOS predictions to {args.output_csv}")
+        out_csv = _tagged(args.output_csv)
+        oos[avail].to_csv(out_csv, index=False)
+        log.info(f"Saved OOS predictions to {out_csv}")
 
     if args.output_json:
         summary = {
@@ -878,15 +963,24 @@ def main():
             },
             "n_predictions": len(oos),
             "n_folds": int(oos["fold_idx"].nunique()),
+            "n_features_used": len(feature_cols_full),
+            "train_config": cfg.describe(),
+            "fold_fits": oos.attrs.get("fold_fits", []),
+            "folds_early_stopped": sum(
+                1 for f in oos.attrs.get("fold_fits", []) if f["early_stopped"]
+            ),
+            "tag": args.tag,
+            "missing_features": missing_features,
             "accuracy": accuracy,
             "ranking": ranking,
             "min_overlay_pct": args.min_overlay,
             "n_overlay_bets": len(overlays),
             "staking": staking,
         }
-        with open(args.output_json, "w") as f:
+        out_json = _tagged(args.output_json)
+        with open(out_json, "w") as f:
             json.dump(summary, f, indent=2, default=str)
-        log.info(f"Saved summary to {args.output_json}")
+        log.info(f"Saved summary to {out_json}")
 
 
 if __name__ == "__main__":

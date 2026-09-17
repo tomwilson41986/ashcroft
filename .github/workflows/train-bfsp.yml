@@ -24,6 +24,26 @@ on:
         required: false
         default: false
         type: boolean
+      eval_from:
+        description: 'Skip folds starting before this date (shortens a run without changing the cached matrix)'
+        required: false
+        default: ''
+        type: string
+      variant_tag:
+        description: 'Name this variant; outputs and the artifact carry the tag'
+        required: false
+        default: ''
+        type: string
+      extra_args:
+        description: 'Extra flags for evaluate_oos.py / train_bfsp.py, e.g. --objective profit_weighted --decay-rate 1.0'
+        required: false
+        default: ''
+        type: string
+      wf_folds:
+        description: 'Walk-forward folds inside the trainer (0 = skip; evaluate_oos.py is the evaluation)'
+        required: false
+        default: '0'
+        type: string
       start_date:
         description: 'Load history from this date (memory control; metrics warm up automatically)'
         required: false
@@ -72,6 +92,28 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Add swap
+        # The feature build holds the whole history plus ~450 columns in memory
+        # and the runner has 16 GB; a previous run was SIGTERMed at exit 143
+        # partway through the custom metrics. Swap turns an out-of-memory kill
+        # into a slow step, which is the right trade for a batch job.
+        #
+        # The runner ships with its own swapfile already on, so it has to come
+        # off before a bigger one goes on, and the new one lives on /mnt, which
+        # has far more free space than the root volume. Swap is an optimisation,
+        # not a requirement, so this step never fails the job.
+        continue-on-error: true
+        run: |
+          set -x
+          sudo swapoff -a || true
+          sudo rm -f /swapfile /mnt/swapfile || true
+          df -h / /mnt || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
+
       - name: Download historic database from S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -92,7 +134,14 @@ jobs:
 
       - name: Train BFSP model
         run: |
+          # --start-date was never passed, so this loaded the whole database
+          # while the evaluation job was given a window. --wf-folds keeps the
+          # in-trainer walk-forward off by default: evaluate_oos.py is the
+          # evaluation, and a fold now costs about thirteen minutes.
           python train_bfsp.py \
+            --start-date "${{ inputs.start_date || '2021-01-01' }}" \
+            --wf-folds ${{ inputs.wf_folds || 0 }} \
+            ${{ inputs.extra_args }} \
             --min-train-days ${{ inputs.min_train_days || 365 }} \
             --val-window ${{ inputs.val_window || 30 }} \
             --step-days ${{ inputs.step_days || 30 }}
@@ -105,7 +154,15 @@ jobs:
           git add data/models/bfsp_model.lgb data/models/bfsp_model_meta.json \
                   data/models/bfsp_training_summary.json data/models/bfsp_feature_importance.csv
           git diff --cached --quiet || git commit -m "Update trained BFSP model artifacts"
-          git push
+          # Training takes half an hour, and a commit pushed to the branch in
+          # the meantime made this push a non-fast-forward -- which failed the
+          # job after the model was trained and before it was uploaded, losing
+          # the run. Rebase onto whatever arrived; the artifacts are ours alone,
+          # so there is nothing for the rebase to fight over.
+          BRANCH="${GITHUB_REF_NAME}"
+          git fetch origin "$BRANCH"
+          git rebase "origin/$BRANCH" || { git rebase --abort; echo "::error::rebase onto origin/$BRANCH failed"; exit 1; }
+          git push origin "HEAD:$BRANCH"
 
       - name: Upload model artifacts
         uses: actions/upload-artifact@v4
@@ -190,7 +247,11 @@ jobs:
             exit 1
           fi
           python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
-          python3 scripts/db_info.py
+          # --odds-check settles whether race_results.odds is an early price or
+          # a returned SP, which decides whether closing-line value can be
+          # measured historically at all. It costs seconds against a database
+          # that is already on disk.
+          python3 scripts/db_info.py --odds-check
 
       - name: Feature cache key
         # Computed after the database is on disk, because the key covers the data
@@ -250,22 +311,48 @@ jobs:
             --start-date "${{ inputs.start_date || '2021-01-01' }}" \
             --feature-cache .feature_cache \
             ${{ inputs.drop_features && format('--drop-features {0}', inputs.drop_features) || '' }} \
+            ${{ inputs.eval_from && format('--eval-from {0}', inputs.eval_from) || '' }} \
+            ${{ inputs.variant_tag && format('--tag {0}', inputs.variant_tag) || '' }} \
             --min-train-days ${{ inputs.min_train_days || 365 }} \
             --val-window ${{ inputs.val_window || 30 }} \
             --step-days ${{ inputs.step_days || 30 }} \
+            ${{ inputs.extra_args }} \
             --output-csv data/oos_predictions.csv \
             --output-json data/oos_evaluation.json 2>&1 | grep -v PerformanceWarning | tee reports/evaluate_oos.log
           kill $MEMWATCH || true
-          wc -l data/oos_predictions.csv
+          # The tagged path, for the same reason the scoring step derives it:
+          # data/oos_predictions.csv in a fresh checkout is the committed file
+          # from a previous run, so counting it reports someone else's rows.
+          TAG="${{ inputs.variant_tag }}"
+          wc -l "data/oos_predictions${TAG:+_$TAG}.csv"
 
       - name: Scoring, ranks, staking and price calibration
         run: |
           set -o pipefail
-          python research_lab.py score     --predictions data/oos_predictions.csv 2>&1 | tee reports/score.txt
-          python research_lab.py bets      --predictions data/oos_predictions.csv 2>&1 | tee reports/bets.txt
-          python research_lab.py stake     --predictions data/oos_predictions.csv \
+          # Score THIS run's predictions, not whatever is committed at that path.
+          #
+          # --tag writes data/oos_predictions_<tag>.csv, and these four commands
+          # read the untagged name, which in a fresh checkout is the file
+          # committed in the repo. The smoke run proved it: its score.txt
+          # described 215,760 runners over 22 folds -- the previous run's
+          # committed output -- rather than the 7,258 rows it had just
+          # predicted, and the artifact's CSV was md5-identical to the repo
+          # copy. Every variant of a head-to-head would have reported the same
+          # stale numbers, and nothing in the output would have said so.
+          TAG="${{ inputs.variant_tag }}"
+          SUFFIX="${TAG:+_$TAG}"
+          PRED="data/oos_predictions${SUFFIX}.csv"
+          if [ ! -s "$PRED" ]; then
+            echo "::error::$PRED was not written by the evaluation step; refusing to score a stale file."
+            exit 1
+          fi
+          echo "Scoring $PRED ($(wc -l < "$PRED") lines)"
+
+          python research_lab.py score     --predictions "$PRED" 2>&1 | tee reports/score.txt
+          python research_lab.py bets      --predictions "$PRED" 2>&1 | tee reports/bets.txt
+          python research_lab.py stake     --predictions "$PRED" \
             --bank-chart reports/bank_curves.png --out-dir reports/stake 2>&1 | tee reports/stake.txt
-          python research_lab.py price-cal --predictions data/oos_predictions.csv \
+          python research_lab.py price-cal --predictions "$PRED" \
             --save reports/bsp_price_calibrator.json 2>&1 | tee reports/price_cal.txt
 
       - name: Summarise into the run page
@@ -286,9 +373,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: oos-evaluation-${{ github.run_number }}
+          name: oos-evaluation-${{ github.run_number }}${{ inputs.variant_tag && format('-{0}', inputs.variant_tag) || '' }}
           path: |
-            data/oos_predictions.csv
-            data/oos_evaluation.json
+            data/oos_predictions*.csv
+            data/oos_evaluation*.json
             reports/
           retention-days: 90

@@ -50,6 +50,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sqlite3
 import sys
 
@@ -125,6 +126,12 @@ def cmd_bets(args):
         "disagreement": "=== Disagreement: the model's #1 by market rank, and the favourite by model rank ===",
         "rank_by_field": "=== Top pick by field size: model #1 vs favourite ===",
         "concordance_by_field": "=== Within-race concordance by field size ===",
+        "by_race_code": "=== Top pick by race code (segments under 200 bets pooled as (other)) ===",
+        "by_race_type": "=== Top pick by race type ===",
+        "by_race_class": "=== Top pick by race class ===",
+        "by_going": "=== Top pick by going ===",
+        "by_month": "=== Top pick by month ===",
+        "concordance_by_race_type": "=== Within-race concordance by race type (gap = model - market) ===",
     }
     for key, title in titles.items():
         if key in rep:
@@ -135,11 +142,22 @@ def cmd_price_cal(args):
     from model.perf_figures import ensure_raceid
     from model.price_calibration import BSPPriceCalibrator, calibration_report, walk_forward_calibrate
     df = ensure_raceid(pd.read_csv(args.predictions))
-    df = df[(df["bfsp"] > 1.0) & (df["predicted_bfsp"] > 1.0)]
+    # Fit against the booster's own output, not the served price.
+    #
+    # The served price is already race-normalised, and the previous report
+    # compared calibrated output with calibrated output because the raw column
+    # was never exported -- which is how the calibrator came to look as though
+    # it "added nothing". `predicted_bfsp_raw` is exported now; fall back to the
+    # served column only for older prediction files that predate it.
+    price_col = args.price_col
+    if price_col is None:
+        price_col = "predicted_bfsp_raw" if "predicted_bfsp_raw" in df.columns else "predicted_bfsp"
+    print(f"calibrating {price_col} against realised bfsp")
+    df = df[(df["bfsp"] > 1.0) & (df[price_col] > 1.0)]
     if args.date_from:
         df = df[pd.to_datetime(df["race_date"]) >= args.date_from]
-    d = walk_forward_calibrate(df, n_folds=args.folds)
-    rep = calibration_report(d)
+    d = walk_forward_calibrate(df, price_col=price_col, n_folds=args.folds)
+    rep = calibration_report(d, raw_col=price_col)
     pd.set_option("display.width", 200)
     print(f"\n{rep['n']:,} runners, {rep['races']:,} races scored out of sample "
           f"({args.folds} walk-forward folds; the first block is training only)\n")
@@ -151,12 +169,14 @@ def cmd_price_cal(args):
         print("\n=== Quantile coverage: share of runners whose BFSP came in at or below the forecast ===")
         print(rep["coverage"].round(2).to_string(index=False))
     if args.save:
-        cal = BSPPriceCalibrator().fit(df)
+        cal = BSPPriceCalibrator().fit(df, price_col=price_col)
         cal.save(args.save)
         print(f"\ncalibrator fitted on all {cal.meta_['rows']:,} rows and saved to {args.save}")
     if args.out:
         keep = [c for c in d.columns if c.startswith("bsp_forecast")]
-        d[["raceid", "race_date", "horse_name", "predicted_bfsp", "bfsp"] + keep].to_csv(args.out, index=False)
+        base = [c for c in ("raceid", "race_date", "horse_name", price_col,
+                            "predicted_bfsp", "bfsp") if c in d.columns]
+        d[list(dict.fromkeys(base)) + keep].to_csv(args.out, index=False)
         print(f"calibrated predictions written to {args.out}")
 
 
@@ -274,11 +294,95 @@ def cmd_ratings_eval(args):
         ev.to_csv(args.out, index=False); print(f"written {args.out}")
 
 
+def _live_clv_frame(live_dir: str, db_path: str) -> pd.DataFrame:
+    """Morning predictions with the prices they were made at, joined to the result.
+
+    This is the only route to an honest closing-line number. `race_results.odds`
+    is the returned SP, so the database holds two closing prices and no early
+    one; `scripts/db_info.py --odds-check` is what establishes that. The
+    morning job writes the racecard price and an exchange snapshot beside each
+    forecast, and those files -- once the races have run and the BSP is in the
+    database -- are the first data that can answer whether betting earlier on
+    this signal is worth anything.
+
+    ``live_dir`` is a directory of the morning job's predictions CSVs
+    (``aws s3 cp --recursive s3://<bucket>/predictions <dir>``); files are read
+    recursively, so the S3 layout can be mirrored as-is.
+    """
+    import glob
+    from betfair_prices import normalise_horse, normalise_track, race_time_to_24h
+
+    paths = sorted(glob.glob(os.path.join(live_dir, "**", "*.csv"), recursive=True))
+    if not paths:
+        return pd.DataFrame()
+    # race_time must stay text. "2.30" read as a number becomes 2.3, which
+    # db_time_to_24h cannot parse -- it needs two digits after the point --
+    # so every row would join on None and the report would be empty with
+    # nothing to say why.
+    text = {c: str for c in ("date", "race_date", "venue", "track", "race_time",
+                             "runner_name", "horse_name", "market_id")}
+    frames = []
+    for path in paths:
+        try:
+            frames.append(pd.read_csv(path, dtype=text))
+        except Exception as e:                            # noqa: BLE001
+            log.warning(f"skipping {path}: {e}")
+    if not frames:
+        return pd.DataFrame()
+    pred = pd.concat(frames, ignore_index=True)
+    if "date" in pred.columns and "race_date" not in pred.columns:
+        pred["race_date"] = pred["date"]
+    if "venue" in pred.columns and "track" not in pred.columns:
+        pred["track"] = pred["venue"]
+    if "runner_name" in pred.columns and "horse_name" not in pred.columns:
+        pred["horse_name"] = pred["runner_name"]
+    pred = pred.drop_duplicates(subset=["race_date", "track", "race_time", "horse_name"], keep="last")
+
+    conn = sqlite3.connect(db_path)
+    res = pd.read_sql_query(
+        "SELECT race_date, track, race_time, horse_name, bfsp, placing_numerical "
+        "FROM race_results WHERE bfsp > 1", conn)
+    conn.close()
+
+    def key(d, track_col, time_col, horse_col):
+        return (d["race_date"].astype(str).str.slice(0, 10) + "|"
+                + d[track_col].map(normalise_track) + "|"
+                + d[time_col].map(race_time_to_24h).astype(str) + "|"
+                + d[horse_col].map(normalise_horse))
+
+    pred["_k"] = key(pred, "track", "race_time", "horse_name")
+    res["_k"] = key(res, "track", "race_time", "horse_name")
+    d = pred.merge(res[["_k", "bfsp", "placing_numerical"]].drop_duplicates("_k"),
+                   on="_k", how="inner")
+    if d.empty:
+        return d
+    d["won"] = pd.to_numeric(d["placing_numerical"], errors="coerce") == 1
+    d["raceid"] = d["race_date"].astype(str).str.slice(0, 10) + "_" + d["track"].astype(str) + "_" + d["race_time"].astype(str)
+    if "bf_total_matched" in d.columns:
+        d["morning_vol"] = pd.to_numeric(d["bf_total_matched"], errors="coerce")
+    return d
+
+
 def cmd_clv(args):
     """Closing-line value of early betting: does the BSP forecast beat the morning price?"""
-    from betfair_prices import db_time_to_24h, normalise_horse, normalise_track
+    from betfair_prices import db_time_to_24h, normalise_horse, normalise_track, race_time_to_24h
     from model.clv import clv_report, early_bet_rule, prepare_clv_frame, price_move_model, steam_predictability
     from model.perf_figures import ensure_raceid
+    if args.source == "live":
+        d = _live_clv_frame(args.live_dir, args.db)
+        early = args.early_col if args.early_col != "morningwap" else "racecard_odds"
+        have = int(pd.to_numeric(d.get(early, pd.Series(dtype=float)), errors="coerce").gt(1).sum()) if len(d) else 0
+        print(f"{len(d):,} settled runners from {args.live_dir}; {have:,} carry {early}")
+        if have < args.min_rows:
+            print(f"\nNot enough yet: closing-line value needs {args.min_rows:,} runners with "
+                  f"both an early price and a settled BSP, and nothing historic can supply "
+                  f"them -- race_results.odds is the returned SP, a closing price (see "
+                  f"`python scripts/db_info.py --odds-check`). This accrues forward from the "
+                  f"first morning run that wrote prices.")
+            return 0
+        d = prepare_clv_frame(d, bsp_col="bfsp", early_col=early, pred_col="predicted_bfsp")
+        return _clv_tables(d, args)
+
     pred = ensure_raceid(pd.read_csv(args.predictions))
     if args.morning_csv:
         mk = pd.read_csv(args.morning_csv)
@@ -288,7 +392,10 @@ def cmd_clv(args):
         snap = pd.read_sql_query("SELECT race_date, venue, race_time, runner_name, best_back, total_matched, snapshot_at FROM betfair_odds "
                                  "WHERE best_back > 1", conn); conn.close()
         snap = snap.sort_values("snapshot_at").groupby(["race_date", "venue", "race_time", "runner_name"], as_index=False).first()
-        mk = pd.DataFrame({"race_date": snap["race_date"].astype(str), "track": snap["venue"], "race_time_24": snap["race_time"].map(db_time_to_24h),
+        # race_time here is Betfair's ISO marketStartTime, not a racecard time:
+        # db_time_to_24h does not match it and returned None for every row, so
+        # this join produced nothing. race_time_to_24h takes either form.
+        mk = pd.DataFrame({"race_date": snap["race_date"].astype(str), "track": snap["venue"], "race_time_24": snap["race_time"].map(race_time_to_24h),
                            "horse_norm": snap["runner_name"].map(normalise_horse), "morningwap": snap["best_back"], "morning_vol": snap["total_matched"],
                            "snapshot_at": snap["snapshot_at"]})
     else:
@@ -302,6 +409,12 @@ def cmd_clv(args):
     if d.empty:
         return 1
     d = prepare_clv_frame(d, bsp_col="bfsp", early_col=args.early_col, pred_col="predicted_bfsp")
+    return _clv_tables(d, args)
+
+
+def _clv_tables(d, args):
+    """The report itself, shared by every source of an early price."""
+    from model.clv import clv_report, early_bet_rule, price_move_model, steam_predictability
     d, coefs = price_move_model(d, n_folds=args.folds, extra_cols=[c for c in ["vol_share"] if c in d.columns])
     pd.set_option("display.width", 220)
     print("\n=== ln BSP ~ ln p_early + ln p_pred + ln n (walk-forward folds) — β2 > 0 means fundamentals predict the move ===")
@@ -511,13 +624,20 @@ def main(argv=None):
 
     s = sub.add_parser("clv"); s.add_argument("--predictions", default="data/oos_predictions.csv"); s.add_argument("--db", default="horse_racing.db")
     s.add_argument("--morning-csv", default=None, help="alternative to the DB: csv with race_date, track, race_time_24, horse_norm, morningwap, morning_vol")
-    s.add_argument("--source", choices=["files", "snapshots"], default="files", help="files: betfair_prices (historic CSVs); snapshots: earliest live betfair_odds snapshot per runner")
+    s.add_argument("--source", choices=["files", "snapshots", "live"], default="files",
+                   help="files: betfair_prices (historic CSVs); snapshots: earliest live betfair_odds snapshot per runner; "
+                        "live: the morning job's own predictions CSVs, which carry the price at prediction time")
+    s.add_argument("--live-dir", default="data/live_predictions", help="--source live: directory of the morning job's predictions CSVs")
+    s.add_argument("--min-rows", type=int, default=1000, help="--source live: refuse to report on fewer settled runners than this")
     s.add_argument("--early-col", default="morningwap"); s.add_argument("--min-clv", type=float, default=0.10); s.add_argument("--max-odds", type=float, default=50.0)
     s.add_argument("--commission", type=float, default=0.05); s.add_argument("--folds", type=int, default=6); s.set_defaults(fn=cmd_clv)
 
     s = sub.add_parser("price-cal"); s.add_argument("--predictions", default="data/oos_predictions.csv")
     s.add_argument("--folds", type=int, default=6); s.add_argument("--save", default=None)
     s.add_argument("--out", default=None); s.add_argument("--from", dest="date_from", default=None)
+    s.add_argument("--price-col", default=None,
+                   help="Price to calibrate (default: predicted_bfsp_raw when the file has it, "
+                        "which is the booster's output before the race book is normalised)")
     s.set_defaults(fn=cmd_price_cal)
 
     s = sub.add_parser("stake"); s.add_argument("--predictions", default="data/oos_predictions.csv")
