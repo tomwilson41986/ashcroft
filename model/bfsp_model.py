@@ -221,21 +221,51 @@ def profit_weighted_objective(preds, train_data):
 
     It is not the default. The model is asked to forecast the price of every
     runner, and this objective explicitly tells it that most of the field does
-    not matter. It stays here as a measured variant."""
+    not matter. It stays here as a measured variant.
+
+    The row weight has to be applied here by hand. LightGBM applies a Dataset's
+    weight inside each built-in objective's own gradient computation; a custom
+    objective's gradients are passed straight through to the booster and the
+    weight is never touched. So the recency decay the old trainer set alongside
+    this objective -- computed, passed as `weight=`, and logged on every run --
+    changed nothing at all, and `--decay-rate` was inert in production for as
+    long as the custom objective was the default. Measured directly: with a
+    100x weight skew, a built-in objective's predictions move and a custom
+    one's are identical to five decimal places."""
     labels = train_data.get_label()
     residuals = preds - labels
     price_weight = np.sqrt(np.exp(-labels))
     asymmetry = np.where(residuals < 0, 1.5, 1.0)
     grad = residuals * price_weight * asymmetry
     hess = np.ones_like(grad) * price_weight * asymmetry
+    row_weight = train_data.get_weight()
+    if row_weight is not None:
+        grad = grad * row_weight
+        hess = hess * row_weight
     return grad, hess
 
 
 def profit_weighted_metric(preds, train_data):
-    """Price-weighted MAE, the eval metric that matches the objective above."""
+    """Price-weighted MAE, the eval metric that matches the objective above.
+
+    Applies the row weight for the same reason the objective does: a built-in
+    metric weights by the Dataset's weight, so early stopping would otherwise
+    be judged on a differently-weighted quantity from the one being fitted.
+
+    Dividing by the total weight is part of that, not a separate change. An
+    unnormalised weighted sum scales with the weights, so the same model would
+    score differently under `--decay-rate 0` and `--decay-rate 1` for no reason
+    but the weighting, and the two variants' numbers could not be read side by
+    side. It does not affect early stopping either way, which only compares the
+    metric with itself."""
     labels = train_data.get_label()
     price_weight = np.sqrt(np.exp(-labels))
-    return "profit_wmae", float(np.mean(np.abs(preds - labels) * price_weight)), False
+    row_weight = train_data.get_weight()
+    if row_weight is not None:
+        price_weight = price_weight * row_weight
+    err = np.abs(preds - labels) * price_weight
+    denom = float(np.sum(price_weight))
+    return "profit_wmae", (float(np.sum(err) / denom) if denom > 0 else float("nan")), False
 
 
 OBJECTIVES = ("l2", "profit_weighted")

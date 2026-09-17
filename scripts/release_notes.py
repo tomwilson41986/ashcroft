@@ -73,8 +73,14 @@ def main():
         print(f"- **Feature code hash**: `{m.get('feature_code_hash') or 'unknown'}`")
         hm = m.get("holdout_metrics") or {}
         if hm:
-            print(f"- **Holdout**: {hm.get('n', '?'):,} rows from {m.get('holdout_start', '?')}, "
-                  f"log MAE {hm.get('log_mae', float('nan')):.4f}")
+            # `mae` is in the units of whatever was predicted, which is only
+            # log(BFSP) for the default target -- so name the target with it
+            # rather than calling every one of them a log MAE.
+            n, mae = hm.get("n"), hm.get("mae")
+            n_txt = f"{n:,}" if isinstance(n, int) else str(n or "?")
+            mae_txt = f"{mae:.4f}" if isinstance(mae, (int, float)) else str(mae or "?")
+            print(f"- **Holdout**: {n_txt} rows from {m.get('holdout_start', '?')}, "
+                  f"MAE {mae_txt} on {m.get('target', '?')}")
         top = [n for n, _ in (m.get("top_gain") or [])][:8]
         if top:
             print(f"- **Top features by gain**: {', '.join(top)}")

@@ -276,6 +276,7 @@ def test_profit_weighted_gradient_favours_favourites_and_punishes_short_quotes()
     class _D:
         def __init__(self, y): self._y = np.asarray(y, float)
         def get_label(self): return self._y
+        def get_weight(self): return None        # an unweighted Dataset
 
     labels = np.log(np.array([2.0, 2.0, 50.0, 50.0]))
     preds = labels + np.array([0.1, -0.1, 0.1, -0.1])     # over, under, over, under
@@ -344,3 +345,61 @@ def test_a_cap_is_not_reported_as_a_stop():
     meta = model_meta(TrainConfig(num_boost_round=5), ["f1", "f2"], fit=capped)
     assert meta["early_stopped"] is False
     assert meta["num_boost_round"] == 5
+
+
+def test_row_weights_reach_the_custom_objective():
+    """A weight must mean the same thing under both objectives.
+
+    LightGBM applies a Dataset's weight inside each *built-in* objective's own
+    gradient computation. A custom objective's gradients go straight to the
+    booster untouched, so a weight it does not apply itself is silently
+    discarded. The old trainer set `weight=exp(-days/365)` and a custom
+    objective together, and logged the decay rate on every run: none of it
+    reached a gradient. `--decay-rate` was inert in production for as long as
+    the custom objective was the default, and nothing said so."""
+    import lightgbm as lgb
+
+    from model.bfsp_model import profit_weighted_metric, profit_weighted_objective
+
+    n = 400
+    labels = np.log(np.linspace(2.0, 30.0, n))
+    # The residual has to vary across the halves: a weighted mean of a constant
+    # error is that constant whatever the weights, so a flat residual could not
+    # tell a weighted metric from an unweighted one.
+    preds = labels + np.where(np.arange(n) < n // 2, 0.5, 0.1)
+    uniform = lgb.Dataset(np.zeros((n, 1)), label=labels, weight=np.ones(n))
+    skewed = lgb.Dataset(np.zeros((n, 1)), label=labels,
+                         weight=np.where(np.arange(n) < n // 2, 100.0, 1.0))
+    for ds in (uniform, skewed):
+        ds.construct()
+
+    gu, hu = profit_weighted_objective(preds, uniform)
+    gs, hs = profit_weighted_objective(preds, skewed)
+    assert not np.allclose(gu, gs), "the row weight never reached the gradients"
+    assert not np.allclose(hu, hs), "the row weight never reached the hessians"
+    assert np.allclose(gs[: n // 2], gu[: n // 2] * 100.0)
+    assert np.allclose(gs[n // 2:], gu[n // 2:])
+
+    # and the metric that early stopping reads is weighted the same way
+    assert profit_weighted_metric(preds, uniform)[1] != pytest.approx(
+        profit_weighted_metric(preds, skewed)[1])
+
+
+def test_decay_changes_the_fit_under_both_objectives():
+    """The end-to-end version of the test above, through fit_bfsp.
+
+    This is what makes `v3_profit_decay1` a real variant rather than a second
+    copy of `v2_profit`: before the fix the two produced identical holdout
+    metrics and identical prices, and a head-to-head would have reported "the
+    decay makes no difference" about a decay that was never applied."""
+    from dataclasses import replace
+
+    d = _history(n_days=300)
+    cols = ["f1", "f2"]
+    base = TrainConfig(num_boost_round=40, early_stopping_rounds=15, holdout_days=30)
+    for objective in ("l2", "profit_weighted"):
+        flat = fit_bfsp(d, cols, replace(base, objective=objective))
+        decayed = fit_bfsp(d, cols, replace(base, objective=objective, decay_rate=1.0))
+        a = flat.booster.predict(d[cols].astype(float))
+        b = decayed.booster.predict(d[cols].astype(float))
+        assert not np.allclose(a, b), f"{objective}: decay_rate did nothing"
