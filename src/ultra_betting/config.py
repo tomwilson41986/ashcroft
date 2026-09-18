@@ -22,12 +22,26 @@ S3_DB_KEY = os.getenv("S3_DB_KEY", "horse_racing.db")
 # Database
 DB_PATH = PROJECT_ROOT / "horse_racing.db"
 
+def _env(name: str, default: str = "") -> str:
+    """An environment variable, treating empty as absent.
+
+    A workflow that writes `VAR: ${{ secrets.MISSING }}` sets the variable to an
+    empty string rather than leaving it unset, so `os.getenv(name, default)`
+    returns "" and the default never applies. That is not a hypothetical: it
+    turned an unset SMTP_PORT into `int("")` here, at module scope, where it
+    would take down every importer of this module -- and it silently defeated
+    the SMTP_USERNAME fallback below for six months.
+    """
+    value = os.getenv(name)
+    return value if value not in (None, "") else default
+
+
 # Email
-REPORT_EMAIL = os.getenv("REPORT_EMAIL", "racingsquared@gmail.com")
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", os.getenv("SMTP_USERNAME", ""))
-SMTP_PASS = os.getenv("SMTP_PASS", os.getenv("SMTP_PASSWORD", ""))
+REPORT_EMAIL = _env("REPORT_EMAIL", "racingsquared@gmail.com")
+SMTP_HOST = _env("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(_env("SMTP_PORT", "587"))
+SMTP_USER = _env("SMTP_USER") or _env("SMTP_USERNAME")
+SMTP_PASS = _env("SMTP_PASS") or _env("SMTP_PASSWORD")
 
 
 def load_yaml(path: str | Path) -> dict:
