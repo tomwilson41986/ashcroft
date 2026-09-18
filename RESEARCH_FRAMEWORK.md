@@ -12,9 +12,16 @@ Everything in it is grounded in what `horse_racing.db` actually holds, and every
 
 ## 0. TL;DR
 
+**Recipe note.** Every measured figure below comes from R1 or earlier, which trained on
+`log_bfsp`. The training target is now `logit_norm_prob`, adopted from the six-variant
+head-to-head (`reports/h2h_summary.md`: paired −0.0016 mean absolute log error over
+107,047 runners, holding in both halves of the window, with the gain in the tail of the
+field). The change is small and nothing here has been re-run on it, so read the numbers
+as describing the `log_bfsp` recipe.
+
 | Finding | Consequence |
 |---|---|
-| On the real 2024-01 → 2026-02 walk-forward output (253,532 runners, 27,223 races) the BFSP model is **almost perfectly calibrated** (reliability 0.0000, ECE 0.0013) but has **less resolution than the Betfair market** (0.0087 vs 0.0119). Brier skill vs BSP **−4.5 %**, log-loss skill **−5.3 %**, within-race concordance 0.654 vs 0.681. | The overlay tiers lose ~4 % at level stakes because "overlay" is mostly *our* error, not the market's. Re-estimating what the market already prices cannot produce an edge; the edge must come from signals the market does not have, and from blending with the market rather than betting against it. |
+| On R1 (run 13, 108,711 runners, 11,839 races, 2025-04 → 2026-03, `log_bfsp` recipe) the BFSP model is **almost perfectly calibrated** (reliability 0.00001, ECE 0.0024) but has **less resolution than the Betfair market** (0.0094 vs 0.0121). Brier skill vs BSP **−4.0 %**, log-loss skill **−4.6 %**, within-race concordance 0.659 vs 0.680. | The overlay tiers lose ~4 % at level stakes because "overlay" is mostly *our* error, not the market's. Re-estimating what the market already prices cannot produce an edge; the edge must come from signals the market does not have, and from blending with the market rather than betting against it. |
 | Neither research report's data assumptions hold here: there are **no GPS sectionals, no biometrics**. We have finishing times, beaten lengths, in-running comments, draw, weight, ratings, BSPs. | The full Mercier–Aftalion calibration is **gated** (§1). What is buildable is a reduced pace-energy ABM whose per-horse parameters come from performance figures and comment-derived run styles, calibrated by pattern-matching against comment/result patterns. Built: `model/abm/`. |
 | A cluster of "new" methods are the same estimator as the race-grouped logit we already use. | Recorded in the equivalence ledger (§5.2); nothing built for them. |
 | The Betfair price files carry three things the results database does not: price *movement* (steam/drift), *confidence* (volume) and **in-play lows** — how close a beaten horse came. | Built: `betfair_prices.py` + `model/market_features.py` (lag-safe), nightly workflow, `--market-features` in training. Blocked from this container by Cloudflare (403); runs from GitHub Actions or a local machine. |
@@ -49,24 +56,37 @@ Matching: the Blandford feed linked **1,484 / 1,484** runners of a real February
 
 ## 2. Where the model stands (real data, `python research_lab.py score`)
 
+*R1 (run 13, `prod_faithful`): 108,711 runners, 11,839 races, 11 walk-forward folds,
+2025-04-26 to 2026-03-21, trained from 2021-01-01 on the current recipe. Supersedes the
+253,532-runner block that stood here, which described a different window and the
+pre-unification recipe.*
+
 ```
-n_runners 253532   n_races 27223   base_rate 0.1075
-model_log_loss 0.29588   market_log_loss 0.28107   log_loss_skill_vs_market -0.0527
-model_brier    0.08615   market_brier    0.08247   brier_skill_vs_market    -0.0446
-reliability   model 0.0000  market 0.0000        (both calibrated)
-resolution    model 0.0087  market 0.0119        (market discriminates better)
-concordance   model 0.654   market 0.681
-mean per-race JS(model, market) 0.030
+n_runners 108711   n_races 11839   base_rate 0.10907
+model_log_loss 0.29640   market_log_loss 0.28333   log_loss_skill_vs_market -0.04615
+model_brier    0.08667   market_brier    0.08331   brier_skill_vs_market    -0.04029
+reliability   model 0.00001  market 0.00001       (both calibrated)
+resolution    model 0.00943  market 0.01208       (market discriminates better)
+ECE           model 0.00244  market 0.00222
+concordance   model 0.65888  market 0.67989
+mean per-race JS(model, market) 0.02465
 ```
 
-Reading: Murphy's decomposition says the gap to the market is **entirely resolution**, not calibration. Isotonic recalibration cannot help; only new information can. The reliability table is flat in every decile (max |gap| 0.003), so the top-decile "value" bets are priced correctly *on average* — the loss comes from the model ranking runners within a race slightly worse than the market does.
+Reading: unchanged in substance from the block it replaces, and now measured on the
+recipe that is actually served. Murphy's decomposition puts the entire gap to the market
+in **resolution**, not calibration — reliability is 0.00001 for both. Isotonic
+recalibration cannot help; only new information can.
 
-Two immediate consequences, both already supported by the code base:
+Two consequences, both already supported by the code base:
 
-* **Blend, don't oppose.** `model/benter_blend.py` (log-linear blend with the market) is the correct default; the Betfair *morning* price (§6) lets the blend happen at decision time rather than against BSP after the fact.
-* **Look for segments, not averages.** Concordance and Brier skill should be re-computed by race type / field size / class / market maturity (`scoring_report` on subsets, block-bootstrapped by race). Any segment with positive skill vs BSP is a candidate strategy; the whole-population number says the unsegmented overlay strategy should not be bet.
-
----
+* **Blend, don't oppose.** `model/benter_blend.py` (log-linear blend with the market) is
+  the correct default.
+* **Look for segments, not averages.** Now done: `research_lab.py bets` cuts by race code,
+  type, class, going and month with cluster-bootstrap intervals. On R1 exactly one segment
+  separates from noise — handicap chases, where the model's top pick returns −10.6%
+  (90% CI −17.5 to −2.4) against the market favourite's −5.9% in the same races. Run 10,
+  a different period and recipe, put the same segment at −10.2% against −2.2%. It is the
+  only finding in the table that replicates, and the only one worth acting on.
 
 ## 3. Layer A — the race ABM (`model/abm/`)
 
@@ -247,7 +267,7 @@ With morning prices in hand, the actionable target is `ln(BSP / MORNINGWAP)` giv
 The master framework (`racing2_master_framework_v3_1.md`) was reviewed against this repo on 15 Sep 2026. Its governing design — **Stage F fundamental (race-grouped softmax, market-free) → Stage C combination with the market → Stage S fractional Kelly**, judged only by **ΔR² over the market out of sample** — is the right spine for Ashcroft, and it exposes the deepest problem in the current pipeline.
 
 ### 10.1 The structural finding
-`train_bfsp.py` regresses on **log(BFSP)**: the market is the model's *target*, not a Stage-C input. A model trained that way can only reproduce the market (lossily); its "overlays" are its own reconstruction error, so betting them must lose — which is exactly what §2 and the `bets` analysis measured (calibrated, lower resolution than BSP, −4 to −7 % on every overlay tier, actual win rates sitting on the market's number). The stored blend weight (`blend_config.json`: λ = 1.0 = pure market) is the same fact seen from Stage C. The framework's P5 is also violated inside the feature set: `feature_registry.classify` finds **20 market-derived features** in the 419-feature BFSP model (`ORR2`/`LR_ORR2`/`preracehorsecareerORR2`, `PFD3/5/10`, `OFS1/3/5/10`, their ranks, and the expectation-residual family built from market rank).
+`train_bfsp.py` regresses on the **logit of the race-normalised BFSP probability** (`logit_norm_prob`, adopted from the six-variant head-to-head — `reports/h2h_summary.md`; it was `log_bfsp` through run R1 and every number in §2 and §11.3 below): either way the market is the model's *target*, not a Stage-C input, and the P5 violation this section is about is untouched by the reparameterisation. A model trained that way can only reproduce the market (lossily); its "overlays" are its own reconstruction error, so betting them must lose — which is exactly what §2 and the `bets` analysis measured (calibrated, lower resolution than BSP, −4 to −7 % on every overlay tier, actual win rates sitting on the market's number). The stored blend weight (`blend_config.json`: λ = 1.0 = pure market) is the same fact seen from Stage C. The framework's P5 is also violated inside the feature set: `feature_registry.classify` finds **20 market-derived features** in the 419-feature BFSP model (`ORR2`/`LR_ORR2`/`preracehorsecareerORR2`, `PFD3/5/10`, `OFS1/3/5/10`, their ranks, and the expectation-residual family built from market rank).
 
 **Consequence.** ΔR² is not measurable for the current model at all. The fix is architectural, not another feature: build a true Stage F on the winner label with `stage_f_columns()` features, fit Stage C on out-of-fold Stage F output, and report ΔR² with a race-bootstrap CI. `model/stage_f.py` provides the estimator (conditional logit; LightGBM race-softmax objective for the non-linear version — "the change from the existing XGBoost work is the objective and the grouping, not the algorithm"), Stage C, temperature scaling, the conditional calibration tables and the walk-forward harness.
 
@@ -307,7 +327,9 @@ Built: `model/clv.py` (`prepare_clv_frame`, `price_move_model`, `early_bet_rule`
 ### 11.3 What the closing-market tests now mean
 * §2 (BFSP model calibrated, lower resolution than BSP, overlays lose): expected for a BSP forecaster scored against BSP; irrelevant to CLV.
 * §10 (a market-free Stage F reaches ~57 % of the market's R²; ΔR² ≈ 0; adding previous-run in-play lows or the lagged market to Stage C also gives ΔR² ≤ 0 on 5,017 real races): **BSP is efficient with respect to every history we hold** — the premise that makes BSP the right truth for CLV.
-* The remaining question is empirical and needs morning prices joined to the walk-forward forecasts: does f̂ move BSP forecasts beyond the morning price? `research_lab.py clv` answers it the day `betfair_prices.py --load --match` (or the live snapshots) is available; the acceptance test is **mean net CLV of the rule's bets > 0 with the race-bootstrap CI clear of zero, on ≥ 1,000 bets**, and a fill assumption bounded by morning depth.
+* The remaining question is empirical and needs an early price joined to the walk-forward forecasts. **The database does not hold one, and that is now measured rather than assumed** (`python scripts/db_info.py --odds-check`, 1,938,313 rows, 2010-2026). `race_results.odds` is the returned industry SP: it sits far from the Betfair SP in level — median |log ratio| 0.397, widening to −0.82 in the 40+ band as bookmakers compress the tail — but it orders winners against losers **as well as the BSP does**, 0.7414 against 0.7426. A morning price cannot do that, because the BSP has absorbed hours of money it has not seen. Two closing prices in different units, so historic CLV is not recoverable from this column.
+  *(An earlier version of that check keyed its verdict off the level alone, with "median |log ratio| under 0.08 means a closing price". That is right for two exchanges and wrong for a bookmaker's SP against Betfair, and it duly called an industry SP "NOT a closing price". The verdict now keys off the ordering test.)*
+* So CLV accrues forward. The morning job records the racecard price and a Betfair snapshot beside each forecast; `research_lab.py clv --source live` reports once 1,000 settled runners have accumulated and says what it is waiting for until then. The acceptance test is unchanged: **mean net CLV of the rule's bets > 0 with the race-bootstrap CI clear of zero, on ≥ 1,000 bets**, and a fill assumption bounded by morning depth.
 
 ### 11.4 What still matters from the earlier sections
 Sharper BSP forecasts (lower log-error) raise CLV directly, so the feature blocks in §3–§6 and §10 still earn their place — but their promotion criterion becomes *incremental BSP-forecast accuracy given the morning price*, measured by the CLV report, not ΔR² over BSP. The Kalman rating, Timeform feed and connection blocks are the first candidates; the ABM's pace features and the causal intervention effects remain the candidates for information the *morning* market prices late.
@@ -325,8 +347,16 @@ staking plans, shrinkage scan, forecast-price diagnostics), tested in
 The question asked was how the model performs on Kelly and on per-race ranks *without
 considering the market*. The market can be removed from the selection, the probability
 and every filter, but not from the settlement price — with no market price there is no
-edge and Kelly stakes nothing. Results on 253,532 runners / 27,223 races
-(Jan 2024 – Feb 2026), commission 5%:
+edge and Kelly stakes nothing.
+
+The Kelly figures below are **run 10** (215,760 runners / 23,191 races, 2024-05 → 2026-03),
+commission 5%. The current recipe's numbers are **R1** (108,711 runners / 11,839 races,
+2025-04 → 2026-03): top pick −2.84% flat (90% CI −5.42 to −0.31) at an average BSP of
+4.35, Brier skill −0.0403, concordance 0.659 against the market's 0.680. Different
+windows as well as different recipes, so the two do not transfer — see STAKING_REPORT.md,
+which now labels every table with its run.
+
+Run 10, commission 5%:
 
 | finding | number |
 |---|---|
@@ -465,7 +495,8 @@ feed. So the framework work is built and tested but mostly not consumed by
 the model that prices races.
 
 It also breaks P5 twice: the production target *is* the market
-(`log_bfsp`), and its feature set carries market-derived Stage-C columns
+(`logit_norm_prob`, and `log_bfsp` before it — a different parameterisation of
+the same settled price), and its feature set carries market-derived Stage-C columns
 (the ORR2, OFS, PFD and expectation-residual families).
 `feature_registry.stage_f_columns` exists to stop exactly that and is applied
 only in `train_stage_f.py`.

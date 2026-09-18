@@ -687,7 +687,7 @@
   "post_race_guard": "passed",
   "objective": "l2",
   "decay_rate": 0.0,
-  "target": "log_bfsp",
+  "target": "logit_norm_prob",
   "holdout_days": 60,
   "purge_days": 30,
   "embargo_days": 0,
@@ -701,110 +701,112 @@
     "type": "none",
     "decay_rate": 0.0
   },
-  "best_iteration": 3000,
+  "best_iteration": 2980,
   "holdout_metrics": {
     "n": 14614,
-    "mae": 0.44850811788042944,
-    "rmse": 0.5913073093341464
+    "mae": 0.5004349340190204,
+    "rmse": 0.6518099768479578
   },
   "holdout_start": "2026-01-21",
   "train_rows": 617479,
   "holdout_rows": 14614,
   "early_stopped": false,
+  "init_offset": 0.0,
   "feature_code_hash": "4375ed3a32a66ad7",
   "final_metrics": {
-    "log_mae": 0.3541,
-    "log_rmse": 0.4535,
-    "log_r2": 0.9008,
-    "bfsp_mae": 24.25,
-    "median_ape_pct": 28.45,
-    "mean_ape_pct": 37.41,
-    "correlation": 0.9499,
-    "best_iteration": 3000,
-    "holdout_mae": 0.44850811788042944
+    "target": "logit_norm_prob",
+    "log_mae": 0.3936,
+    "log_rmse": 0.5017,
+    "log_r2": 0.8968,
+    "bfsp_mae": 25.19,
+    "median_ape_pct": 28.11,
+    "mean_ape_pct": 36.67,
+    "correlation": 0.9477,
+    "best_iteration": 2980,
+    "holdout_mae": 0.5004349340190204
   },
   "trained_through": "2026-03-22",
   "train_rows_total": 632093,
   "top_gain": [
     [
       "rPMW3",
-      1833006.1953111887
+      2405928.879392028
     ],
     [
       "LR_ORR2",
-      1753552.2807385921
-    ],
-    [
-      "or_num",
-      949067.7628312111
+      1724273.8633112907
     ],
     [
       "rPMW5",
-      868794.7952955961
+      1158856.3837680817
     ],
     [
       "rPMW10",
-      781748.3939697742
+      1085648.4740365744
+    ],
+    [
+      "or_num",
+      1061306.0459893942
     ],
     [
       "LR3_RWO",
-      595248.4665033817
-    ],
-    [
-      "rTJNFP",
-      393517.39067423344
+      540894.9862793684
     ],
     [
       "trainerWAXrank",
-      380294.0834118128
+      436928.12825107574
     ],
     [
-      "PMW10",
-      315255.8902504444
+      "rTJNFP",
+      427637.8444919586
     ],
     [
       "LR_LB",
-      281137.985235095
-    ],
-    [
-      "or_vs_max",
-      240431.31303989887
-    ],
-    [
-      "median_or_num",
-      231418.7324707508
-    ],
-    [
-      "LRNFP",
-      208322.2152365446
-    ],
-    [
-      "race_type_cat",
-      203559.14053559303
-    ],
-    [
-      "LR3_ORR2",
-      200848.22492277622
+      323766.5091729164
     ],
     [
       "jockeyWAXrank",
-      186718.3891301155
+      278041.79070854187
+    ],
+    [
+      "or_vs_max",
+      275655.7681903839
+    ],
+    [
+      "median_or_num",
+      262876.88057410717
+    ],
+    [
+      "PMW10",
+      258689.88811659813
+    ],
+    [
+      "race_type_cat",
+      238340.82085347176
+    ],
+    [
+      "LRNFP",
+      221221.93432450294
     ],
     [
       "jockeyCWOrank",
-      160502.47750151157
-    ],
-    [
-      "days_since_lr_num",
-      156696.3417813778
-    ],
-    [
-      "rRWOLR3",
-      148400.30892920494
+      211577.39610087872
     ],
     [
       "LR5_RWO",
-      142790.2406926155
+      196959.9909515381
+    ],
+    [
+      "days_since_lr_num",
+      187360.84923374653
+    ],
+    [
+      "OFS3",
+      182188.96807909012
+    ],
+    [
+      "rRWOLR3",
+      181336.07001304626
     ]
   ]
 }

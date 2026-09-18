@@ -45,16 +45,107 @@ def test_basic_line_still_prints(tmp_path):
     assert "Rows: 640" in _run(p)
 
 
-def test_odds_check_separates_a_closing_price_from_an_early_one(tmp_path):
+def _db_with_results(path, noise: float, scale: float = 0.7, n_races: int = 250) -> None:
+    """A database where `odds` carries `noise` log-units of information LESS
+    than the BSP, on top of a constant `scale` level difference.
+
+    noise=0 is a pure monotone rescale: it orders every race exactly as the BSP
+    does, which is what a bookmaker's returned SP looks like next to the
+    exchange's. Larger noise is a price struck before the money arrived."""
+    import sqlite3
+
+    import numpy as np
+
+    rng = np.random.default_rng(1)
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE race_results (race_date TEXT, race_time TEXT, "
+                 "track TEXT, horse_name TEXT, odds REAL, bfsp REAL, "
+                 "placing_numerical INTEGER)")
+    rows = []
+    for r in range(n_races):
+        n = 8
+        s_ = rng.normal(0, 1, n)
+        p = np.exp(s_) / np.exp(s_).sum()
+        bsp = 1.02 / p
+        odds = bsp * scale * np.exp(rng.normal(0, noise, n))
+        winner = int(rng.choice(n, p=p))
+        for i in range(n):
+            rows.append((f"2025-0{r % 9 + 1}-01", f"{r % 12 + 1}.00", "T", f"h{i}",
+                         float(odds[i]), float(bsp[i]), 1 if i == winner else 2))
+    conn.executemany("INSERT INTO race_results VALUES (?,?,?,?,?,?,?)", rows)
+    conn.commit()
+    conn.close()
+
+
+def test_the_ordering_test_decides_not_the_level(tmp_path):
+    """A bookmaker's close sits far from the exchange's and is still a close.
+
+    An earlier version keyed the verdict off the log-ratio alone -- "under 0.08
+    means a closing price" -- which is right for two exchanges and wrong for an
+    industry SP against Betfair, where the overround and the tail compression
+    differ. It called a real closing price "NOT a closing price". What separates
+    early from late is information, not distance."""
     close, early = tmp_path / "c.db", tmp_path / "e.db"
-    _db(close, 0.04)          # two closing prices: tight
-    _db(early, 0.35)          # a morning price: wide
+    _db_with_results(close, noise=0.0)     # same ordering, very different level
+    _db_with_results(early, noise=0.9)     # orders the race clearly worse
+
     c, e = _run(close, "--odds-check"), _run(early, "--odds-check")
-    assert "looks like a closing price" in c
-    assert "NOT a closing price" in e
+    assert "a CLOSING price" in c, c[-700:]
+    assert "an EARLIER price" in e, e[-700:]
+    # and the level difference is large in BOTH, so it cannot be what decided it
     for text in (c, e):
-        assert "fav agree" in text and "2025" in text
         assert "median |log ratio|" in text
+        assert "winner-vs-loser concordance" in text
+
+
+def test_without_results_the_verdict_says_so(tmp_path):
+    """The level tests alone cannot settle it, and the script must not pretend."""
+    p = tmp_path / "t.db"
+    _db(p, 0.35)                            # no placing_numerical column
+    out = _run(p, "--odds-check")
+    assert "undetermined" in out
+    assert "cannot separate an early price from a bookmaker's close" in out
+
+
+def test_odds_check_recognises_a_units_difference(tmp_path):
+    """A column holding decimal-minus-one is not an early price.
+
+    Fractional odds stored as a number -- 4/1 as 4.0 rather than 5.0 -- is the
+    same price in another form, and mistaking it for an early one would invent
+    a closing-line measurement the database cannot support. The band table
+    separates the two: a units gap tracks log((BSP-1)/BSP) and so shrinks as
+    the price lengthens, where an overround gap stays flat."""
+    import sqlite3
+
+    import numpy as np
+
+    path = tmp_path / "u.db"
+    rng = np.random.default_rng(0)
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE race_results (race_date TEXT, race_time TEXT, "
+                 "track TEXT, horse_name TEXT, odds REAL, bfsp REAL)")
+    rows = []
+    for r in range(200):
+        for i in range(8):
+            bsp = float(np.exp(rng.normal(1.6, 0.9)))
+            if bsp <= 1.05:
+                bsp = 1.06
+            rows.append((f"2025-0{r % 9 + 1}-01", f"{r % 12 + 1}.00", "T", f"h{i}",
+                         bsp - 1.0, bsp))          # decimal minus one
+    conn.executemany("INSERT INTO race_results VALUES (?,?,?,?,?,?)", rows)
+    conn.commit()
+    conn.close()
+
+    out = _run(path, "--odds-check")
+    assert "within 5% of (BSP - 1): 1.000" in out
+    # Every runner is exactly BSP-1, so the direct test must see it.
+    assert "within 5% of (BSP - 1): 1.000" in out
+    # and the band table's "gap explained" should sit at ~100% in every band
+    band = [l for l in out.splitlines() if l.strip().startswith(("1-2", "2-3", "8-15"))]
+    assert band, out
+    for line in band:
+        pct = int(line.split()[-1].rstrip("%"))
+        assert 90 <= pct <= 110, line
 
 
 def test_odds_check_is_opt_in(tmp_path):

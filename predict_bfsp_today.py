@@ -30,7 +30,11 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
-from model.bfsp_model import assert_meta_is_servable, predict_prices
+from model.bfsp_model import (
+    assert_meta_is_servable,
+    attach_serving_rule,
+    predict_prices,
+)
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -73,8 +77,14 @@ def load_historical(db_path: str, start_date: str | None = None) -> pd.DataFrame
     return df
 
 
-def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str]]:
-    """Load the trained BFSP regression model and its feature columns."""
+def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
+    """Load the trained BFSP model, its feature columns and its categorical vocabulary.
+
+    The vocabulary has to travel with the model: `cat.codes` numbers whatever
+    categories are present in the frame it is given, so a track that is one
+    integer across the training history is a different integer on a six-race
+    card unless the levels are pinned. It is the third return value, and
+    `build_context_features` takes it."""
     model_path = os.path.join(model_dir, "bfsp_model.lgb")
     meta_path = os.path.join(model_dir, "bfsp_model_meta.json")
 
@@ -100,6 +110,11 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str]]:
     # result -- as its three most important features by gain, and this loader
     # served it every morning without a word.
     assert_meta_is_servable({**meta, "feature_cols": feature_cols})
+
+    # The booster does not remember what it was fitted on -- a save/load round
+    # trip drops it -- so the rule for turning its output back into a price is
+    # pinned here, at the one point every caller of this loader goes through.
+    attach_serving_rule(model, meta)
 
     log.info("Loaded BFSP model (%d features, objective=%s, target=%s, trained through %s)",
              len(feature_cols), meta.get("objective", "?"),

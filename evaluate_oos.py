@@ -712,9 +712,10 @@ def main():
              "(default). 1.0 gives a three-year-old race 5%% of today's weight",
     )
     parser.add_argument(
-        "--target", default="log_bfsp", choices=list(TARGETS),
-        help="log_bfsp (default), demeaned_log (within-race differences only) "
-             "or logit_norm_prob (logit of the race-normalised probability)",
+        "--target", default=TrainConfig.target, choices=list(TARGETS),
+        help=f"logit_norm_prob (default: logit of the race-normalised "
+             f"probability), log_bfsp (the log price) or demeaned_log "
+             f"(within-race differences only)",
     )
     parser.add_argument(
         "--holdout-days", type=int, default=60,
