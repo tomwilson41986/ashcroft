@@ -37,3 +37,7 @@ data/blandford_raw/
 # downloads for six months, so the 5 MB this costs is worth far less than
 # re-earning the wait. They belong in S3 with the database, and should move
 # there; until then this repository is the only durable copy.
+
+# results_report.py attaches a FileHandler at import, so merely importing it --
+# which tests/test_workflow_guards.py does -- drops this in the working tree.
+results_report.log

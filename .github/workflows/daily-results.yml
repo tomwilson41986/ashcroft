@@ -61,6 +61,7 @@ jobs:
           fi
 
       - name: Scrape results from HRB (resumes from last scraped date)
+        id: scrape
         env:
           HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
           HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
@@ -85,8 +86,15 @@ jobs:
             --settle \
             --date "${{ steps.date.outputs.target }}"
 
+      # A notification is not worth a day of racing. Without this the job failed
+      # here every night from the day it was written -- SMTP credentials were
+      # unset -- and because the upload below had no condition, GitHub's default
+      # skipped it and the scraped night died with the runner. `horse_racing.db`
+      # sat at 2026-03-22 until 18 Sep while the 06:00 predictions kept running
+      # on six-month-old form.
       - name: Send results email
         if: ${{ inputs.skip_email != true }}
+        continue-on-error: true
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -96,7 +104,12 @@ jobs:
           python results_report.py \
             --date "${{ steps.date.outputs.target }}"
 
+      # Keyed on the scrape rather than on `always()`. If the reporting broke,
+      # the data is still good and must be saved; if the *scrape* broke, the
+      # local file may be half-written and overwriting a good remote copy with
+      # it would be worse than losing the night.
       - name: Upload updated database to S3
+        if: always() && steps.scrape.conclusion == 'success'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -147,8 +160,10 @@ jobs:
           msg["From"] = user
           msg["To"] = "racingsquared@gmail.com"
 
-          with smtplib.SMTP(os.getenv("SMTP_HOST", "smtp.gmail.com"),
-                            int(os.getenv("SMTP_PORT", "587"))) as server:
+          # `or default`, not getenv's default: an unset secret arrives as an
+          # empty string, and int("") would crash the alert about the crash.
+          with smtplib.SMTP(os.getenv("SMTP_HOST") or "smtp.gmail.com",
+                            int(os.getenv("SMTP_PORT") or "587")) as server:
               server.starttls()
               server.login(user, password)
               server.send_message(msg)

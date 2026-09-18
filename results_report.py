@@ -256,10 +256,14 @@ def build_text_report(target_date, bets, daily_pnl, cumulative, num_races, num_r
 
 def send_email(recipient, subject, text_body, html_body):
     """Send results email via SMTP."""
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USERNAME")
-    smtp_pass = os.getenv("SMTP_PASSWORD")
+    # `or default` rather than getenv's default: a workflow passing an unset
+    # secret sets the variable to an empty string, which getenv treats as a
+    # value. That made `int("")` raise here -- two lines before the credentials
+    # check that would have reported the real problem.
+    smtp_host = os.getenv("SMTP_HOST") or "smtp.gmail.com"
+    smtp_port = int(os.getenv("SMTP_PORT") or "587")
+    smtp_user = os.getenv("SMTP_USERNAME") or os.getenv("SMTP_USER")
+    smtp_pass = os.getenv("SMTP_PASSWORD") or os.getenv("SMTP_PASS")
 
     if not smtp_user or not smtp_pass:
         log.error("SMTP_USERNAME and SMTP_PASSWORD must be set to send email.")

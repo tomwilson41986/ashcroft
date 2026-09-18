@@ -34,9 +34,15 @@ jobs:
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
           BETFAIR_CERT_FILE: ~/.betfair/certs/betfair.crt
           BETFAIR_KEY_FILE: ~/.betfair/certs/betfair.key
+          # config.py reads SMTP_USER with a fallback to SMTP_USERNAME, but
+          # passing an unset secret sets the variable to an empty string, and an
+          # empty string is not a missing value -- so the fallback never fired
+          # and settlement email was as broken as the results email. The secrets
+          # are named SMTP_USERNAME / SMTP_PASSWORD; pass those.
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           REPORT_EMAIL: ${{ secrets.REPORT_EMAIL }}
           ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
         run: python -m pipeline.settle
