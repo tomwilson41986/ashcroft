@@ -1,8 +1,8 @@
 {
-  "tag": "iter4-allblocks",
+  "tag": "iter5-markets",
   "outcome": true,
-  "screen": false,
-  "blocks": "comments,blandford,perf,kalman,pedigree,connections",
+  "screen": true,
+  "blocks": "markets",
   "drop": "",
   "params": "",
   "fold_months": 3,

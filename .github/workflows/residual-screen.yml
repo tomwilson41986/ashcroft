@@ -23,7 +23,9 @@ on:
   push:
     branches: ['claude/happy-ritchie-*']
     paths:
-      - 'scripts/residual_screen.py'
+      # Only its own definition: the research loop runs the screen on demand
+      # ("screen": true in research/loop.json), so edits to the script do not
+      # need a second, duplicate run here.
       - '.github/workflows/residual-screen.yml'
 
 permissions:
