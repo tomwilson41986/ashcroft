@@ -394,11 +394,14 @@ def run(args) -> dict:
              sample["race"].nunique(), sample["date"].min().date(), sample["date"].max().date())
 
     end = sample["date"].max() + pd.Timedelta(days=1)
+    if getattr(args, "until", ""):
+        end = min(end, pd.Timestamp(args.until))            # score folds before this date only
     first = args.lockbox_from if args.final else args.first_fold
     cfg = {"tag": args.tag, "mode": args.mode, "features": len(feats), "feature_hash": config_hash({"f": feats}),
            "drop": args.drop, "keep": getattr(args, "keep", ""),
            "blocks": args.blocks, "fold_months": args.fold_months, "val_months": args.val_months,
-           "params": args.params, "first_fold": first, "final": bool(args.final)}
+           "params": args.params, "first_fold": first, "until": getattr(args, "until", ""),
+           "final": bool(args.final)}
     params = json.loads(args.params) if args.params else None
     oos, folds, importance = walk_forward(sample, X, first, end, args.fold_months, args.val_months, params, feats,
                                           mode=args.mode)
@@ -485,6 +488,7 @@ def main(argv=None):
     ap.add_argument("--blocks", default="", help="opt-in blocks, as residual_screen.py")
     ap.add_argument("--params", default="", help="LightGBM params as JSON, merged over the defaults")
     ap.add_argument("--keep", default="", help="comma list of feature-name prefixes: use only these")
+    ap.add_argument("--until", default="", help="score only folds before this date (exclusive)")
     ap.add_argument("--mode", default="offset", choices=["offset", "free", "linear"],
                     help="offset: trees boosted from the market; free: market-free Stage F, then Stage C; "
                          "linear: ridge conditional logit on market + features (use with --keep)")

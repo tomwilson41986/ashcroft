@@ -63,7 +63,7 @@ jobs:
           python - <<'EOF' >> "$GITHUB_OUTPUT"
           import json
           c = json.load(open("research/loop.json"))
-          for k in ("tag", "blocks", "drop", "keep", "params", "first_fold"):
+          for k in ("tag", "blocks", "drop", "keep", "params", "first_fold", "until"):
               print(f"{k}={c.get(k, '')}")
           print(f"fold_months={c.get('fold_months', 3)}")
           print(f"mode={c.get('mode', 'offset')}")
@@ -123,7 +123,7 @@ jobs:
             --start-date "$START_DATE" --tag "${{ steps.cfg.outputs.tag }}" \
             --first-fold "${{ steps.cfg.outputs.first_fold }}" --fold-months "${{ steps.cfg.outputs.fold_months }}" \
             --blocks "${{ steps.cfg.outputs.blocks }}" --drop "${{ steps.cfg.outputs.drop }}" \
-            --keep "${{ steps.cfg.outputs.keep }}" --params '${{ steps.cfg.outputs.params }}' --mode "${{ steps.cfg.outputs.mode }}" ${{ steps.cfg.outputs.final }} \
+            --keep "${{ steps.cfg.outputs.keep }}" --until "${{ steps.cfg.outputs.until }}" --params '${{ steps.cfg.outputs.params }}' --mode "${{ steps.cfg.outputs.mode }}" ${{ steps.cfg.outputs.final }} \
             --out-dir reports/outcome_model 2>&1 | grep -v PerformanceWarning | tee "reports/outcome_model/log_${{ steps.cfg.outputs.tag }}.txt"
 
       - name: Residual screen
