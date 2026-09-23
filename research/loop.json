@@ -1,8 +1,8 @@
 {
-  "tag": "iter10-all-fundamental",
+  "tag": "iter11-ae",
   "outcome": true,
-  "screen": false,
-  "blocks": "comments,perf,kalman,pedigree,connections,handicap,blandford",
+  "screen": true,
+  "blocks": "ae",
   "drop": "",
   "params": "",
   "fold_months": 3,

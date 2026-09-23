@@ -291,11 +291,20 @@ def race_lagged_decayed_mean(df: pd.DataFrame, group_col: str | list[str], value
     t = np.nan_to_num(t, nan=0.0)
     grow = np.exp2(t)
     ws, wn = grow * s_s, grow * c_s
-    cs, cn = np.cumsum(ws), np.cumsum(wn)
-    prior_ws = cs - ws - (cs[starts] - ws[starts])       # exclusive, within group
-    prior_wn = cn - wn - (cn[starts] - wn[starts])
-    cr = np.cumsum(r_s)
-    prior_races = cr - r_s - (cr[starts] - r_s[starts])
+    # Exclusive prefix sums: element i is the total of cells BEFORE i, computed
+    # without ever adding cell i. The subtraction form (cumsum - own) reaches the
+    # same number through the current cell's value, so its last bits moved with
+    # the result of the race being priced (see model.lagsafe._per_race_priors).
+    # The sums restart at each group: a running total across groups, less its
+    # value at the group's start, carries every earlier group's cells -- today's
+    # included -- through a cancellation that is exact only on paper.
+    gkey = pd.Series(g_s)
+
+    def ex(a):
+        return (pd.Series(a).groupby(gkey, sort=False).cumsum()
+                .groupby(gkey, sort=False).shift(1).fillna(0.0).to_numpy())
+
+    prior_ws, prior_wn, prior_races = ex(ws), ex(wn), ex(r_s)
 
     with np.errstate(invalid="ignore", divide="ignore"):
         mean_s = np.where((prior_wn > 0) & (prior_races >= min_races), prior_ws / prior_wn, np.nan)
