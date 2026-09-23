@@ -257,6 +257,76 @@ def save_csv_file(csv_text: str, target_date: date):
         f.write(csv_text)
 
 
+#: The columns parse_and_save writes, in the order it writes them.
+RESULT_COLS = (
+    "race_date",
+    "race_time",
+    "track",
+    "race_name",
+    "race_restrictions_age",
+    "race_class",
+    "major",
+    "race_distance",
+    "prize_money",
+    "going_description",
+    "number_of_runners",
+    "place",
+    "distbt",
+    "horse_name",
+    "stall",
+    "trainer",
+    "horse_age",
+    "jockey_name",
+    "jockeys_claim",
+    "pounds",
+    "odds",
+    "fav",
+    "official_rating",
+    "comptime",
+    "comptime_numeric",
+    "total_dst_bt",
+    "median_or",
+    "dist_furlongs",
+    "placing_numerical",
+    "race_code",
+    "bfsp",
+    "bfsp_place",
+    "plcs_paid",
+    "bf_plcs_paid",
+    "yards",
+    "rail_move",
+    "race_type",
+    "comment",
+    "card_no",
+    "stall_positioning",
+    "track_direction",
+    "headgear",
+    "days_since_lr",
+    "career_runs",
+    "stallion",
+    "surface_type",
+    "horse_prizewin",
+    "horse_sex",
+    "dam",
+    "dam_stallion",
+    "max_or_in_race",
+)
+_RESULT_KEY = ("race_date", "race_time", "track", "horse_name")
+
+#: Asking for a day again fills in what the first download lacked -- a BSP not
+#: out yet, a result amended after an enquiry -- and never blanks what is
+#: stored: an empty field in the new download keeps the old value. (It was
+#: INSERT OR IGNORE, which made a second download of a day a no-op, so a day
+#: saved before its BSPs were published stayed without them.)
+RESULT_UPSERT = (
+    f"INSERT INTO race_results ({', '.join(RESULT_COLS)}) "
+    f"VALUES ({', '.join('?' for _ in RESULT_COLS)}) "
+    f"ON CONFLICT({', '.join(_RESULT_KEY)}) DO UPDATE SET "
+    + ", ".join(f"{c} = COALESCE(NULLIF(excluded.{c}, ''), race_results.{c})"
+                for c in RESULT_COLS if c not in _RESULT_KEY)
+)
+
+
 def parse_and_save(conn: sqlite3.Connection, csv_text: str,
                    target_date: date) -> int:
     """Parse CSV text and insert rows into database. Returns row count."""
@@ -265,26 +335,7 @@ def parse_and_save(conn: sqlite3.Connection, csv_text: str,
 
     for row in reader:
         try:
-            conn.execute("""
-                INSERT OR IGNORE INTO race_results (
-                    race_date, race_time, track, race_name, race_restrictions_age,
-                    race_class, major, race_distance, prize_money, going_description,
-                    number_of_runners, place, distbt, horse_name, stall, trainer,
-                    horse_age, jockey_name, jockeys_claim, pounds, odds, fav,
-                    official_rating, comptime, comptime_numeric, total_dst_bt,
-                    median_or, dist_furlongs, placing_numerical, race_code,
-                    bfsp, bfsp_place, plcs_paid, bf_plcs_paid, yards, rail_move,
-                    race_type, comment, card_no, stall_positioning, track_direction,
-                    headgear, days_since_lr, career_runs, stallion, surface_type,
-                    horse_prizewin, horse_sex, dam, dam_stallion, max_or_in_race
-                ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-                )
-            """, (
+            conn.execute(RESULT_UPSERT, (
                 row.get("racedate", "").strip(),
                 row.get("racetime", "").strip(),
                 row.get("track", "").strip(),
@@ -376,8 +427,14 @@ def create_session() -> requests.Session:
     return session
 
 
-def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
-    """Scrape all dates in the given range (inclusive), going backwards from end_date."""
+def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH,
+                      recheck: bool = False):
+    """Scrape all dates in the given range (inclusive), going backwards from end_date.
+
+    ``recheck`` asks again for every day in the range, including days already
+    logged done: the way to repair an old day logged empty, or a day saved
+    before its BSPs were out (the upsert fills them in).
+    """
     conn = init_db(db_path)
     session = create_session()
 
@@ -403,7 +460,7 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
 
         # A recent day logged as done with nothing in it was, in all
         # likelihood, asked for before it was published -- so ask again.
-        if existing and not (existing[0] == 0 and is_recent(current)):
+        if existing and not recheck and not (existing[0] == 0 and is_recent(current)):
             log.debug(f"Skipping {current} (already scraped, {existing[0]} rows)")
             current -= timedelta(days=1)
             continue
@@ -416,6 +473,15 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
                 rows = parse_and_save(conn, csv_text, current)
                 total_rows += rows
                 log.info(f"{current}: {rows} rows saved")
+            elif (held := conn.execute(
+                    # A range, not substr(), so the race_date index is used.
+                    "SELECT COUNT(*) FROM race_results WHERE race_date >= ? AND race_date < ?",
+                    (current.isoformat(), (current + timedelta(days=1)).isoformat())
+                    ).fetchone()[0]):
+                # Only reachable by asking again for a day already in: an
+                # empty answer now says nothing about the rows we hold.
+                log.warning(f"{current}: empty download, but {held} rows are "
+                            f"already held -- keeping them and the log as they are")
             elif is_recent(current):
                 # Not published yet. 'pending' is not 'ok', so it neither
                 # advances the resume point nor satisfies the skip above, and
@@ -485,6 +551,9 @@ def main():
                         help="Full scrape from 2010-01-01 to today")
     parser.add_argument("--db", type=str, default=DB_PATH,
                         help=f"Database path (default: {DB_PATH})")
+    parser.add_argument("--recheck", action="store_true",
+                        help="Ask again for every day in the range, even days logged "
+                             "done; fills in missing values without blanking any")
     parser.add_argument("--no-backup", action="store_true",
                         help="Skip S3 backup after scraping")
     args = parser.parse_args()
@@ -520,7 +589,7 @@ def main():
         log.info("Nothing to scrape - already up to date.")
         return
 
-    scrape_date_range(start, end, args.db)
+    scrape_date_range(start, end, args.db, recheck=args.recheck)
 
     if not args.no_backup:
         log.info("Backing up database to S3...")
