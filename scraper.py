@@ -39,6 +39,28 @@ CSV_URL = f"{BASE_URL}/excelresults.php"
 # Rate limiting: seconds between requests
 REQUEST_DELAY = 1.5
 
+#: An empty download for a date this recent means horseracebase has not
+#: published it yet, not that there was no racing. The nightly job asks for the
+#: day itself at 21:30 UTC, before its results are up; recording that empty
+#: answer as done moved the resume point past the day for good, and the per-day
+#: skip then refused to ask again even when told to. Every day from 18 to 22
+#: September 2026 was lost that way while the job reported success. Past this
+#: age the nightly look-back stops asking: a results file with no runners in it
+#: records no racing (Christmas Day, say); no file at all is logged 'error', for
+#: a backfill to ask again.
+RETRY_EMPTY_DAYS = 7
+
+#: After this many days in a row without a results file, stop asking. The site
+#: refuses in bulk when an account has downloaded too much -- on 17 Sep 2026 a
+#: 179-day run got nothing for every day of a range that had returned 62,973
+#: rows the night before -- and asking on only spends more of the allowance.
+MAX_UNAVAILABLE_IN_A_ROW = 5
+
+
+def is_recent(d: date, today: date | None = None) -> bool:
+    """Too recent for an empty download to be believed."""
+    return ((today or date.today()) - d).days < RETRY_EMPTY_DAYS
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -230,6 +252,12 @@ def download_csv(session: requests.Session, user_id: str,
         return None
 
     if not resp.text.strip() or "racedate" not in resp.text[:100]:
+        # Not a results file: unpublished, refused (horseracebase limits
+        # downloads per account), or logged out. None of those is "no racing",
+        # so the caller must not record it as done. What came back is logged
+        # because it is the only evidence of which it was.
+        snippet = " ".join(resp.text[:160].split())
+        log.info(f"{target_date}: no results file ({content_type or 'no content type'}): {snippet!r}")
         return None
 
     return resp.text
@@ -243,6 +271,76 @@ def save_csv_file(csv_text: str, target_date: date):
         f.write(csv_text)
 
 
+#: The columns parse_and_save writes, in the order it writes them.
+RESULT_COLS = (
+    "race_date",
+    "race_time",
+    "track",
+    "race_name",
+    "race_restrictions_age",
+    "race_class",
+    "major",
+    "race_distance",
+    "prize_money",
+    "going_description",
+    "number_of_runners",
+    "place",
+    "distbt",
+    "horse_name",
+    "stall",
+    "trainer",
+    "horse_age",
+    "jockey_name",
+    "jockeys_claim",
+    "pounds",
+    "odds",
+    "fav",
+    "official_rating",
+    "comptime",
+    "comptime_numeric",
+    "total_dst_bt",
+    "median_or",
+    "dist_furlongs",
+    "placing_numerical",
+    "race_code",
+    "bfsp",
+    "bfsp_place",
+    "plcs_paid",
+    "bf_plcs_paid",
+    "yards",
+    "rail_move",
+    "race_type",
+    "comment",
+    "card_no",
+    "stall_positioning",
+    "track_direction",
+    "headgear",
+    "days_since_lr",
+    "career_runs",
+    "stallion",
+    "surface_type",
+    "horse_prizewin",
+    "horse_sex",
+    "dam",
+    "dam_stallion",
+    "max_or_in_race",
+)
+_RESULT_KEY = ("race_date", "race_time", "track", "horse_name")
+
+#: Asking for a day again fills in what the first download lacked -- a BSP not
+#: out yet, a result amended after an enquiry -- and never blanks what is
+#: stored: an empty field in the new download keeps the old value. (It was
+#: INSERT OR IGNORE, which made a second download of a day a no-op, so a day
+#: saved before its BSPs were published stayed without them.)
+RESULT_UPSERT = (
+    f"INSERT INTO race_results ({', '.join(RESULT_COLS)}) "
+    f"VALUES ({', '.join('?' for _ in RESULT_COLS)}) "
+    f"ON CONFLICT({', '.join(_RESULT_KEY)}) DO UPDATE SET "
+    + ", ".join(f"{c} = COALESCE(NULLIF(excluded.{c}, ''), race_results.{c})"
+                for c in RESULT_COLS if c not in _RESULT_KEY)
+)
+
+
 def parse_and_save(conn: sqlite3.Connection, csv_text: str,
                    target_date: date) -> int:
     """Parse CSV text and insert rows into database. Returns row count."""
@@ -251,26 +349,7 @@ def parse_and_save(conn: sqlite3.Connection, csv_text: str,
 
     for row in reader:
         try:
-            conn.execute("""
-                INSERT OR IGNORE INTO race_results (
-                    race_date, race_time, track, race_name, race_restrictions_age,
-                    race_class, major, race_distance, prize_money, going_description,
-                    number_of_runners, place, distbt, horse_name, stall, trainer,
-                    horse_age, jockey_name, jockeys_claim, pounds, odds, fav,
-                    official_rating, comptime, comptime_numeric, total_dst_bt,
-                    median_or, dist_furlongs, placing_numerical, race_code,
-                    bfsp, bfsp_place, plcs_paid, bf_plcs_paid, yards, rail_move,
-                    race_type, comment, card_no, stall_positioning, track_direction,
-                    headgear, days_since_lr, career_runs, stallion, surface_type,
-                    horse_prizewin, horse_sex, dam, dam_stallion, max_or_in_race
-                ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-                )
-            """, (
+            conn.execute(RESULT_UPSERT, (
                 row.get("racedate", "").strip(),
                 row.get("racetime", "").strip(),
                 row.get("track", "").strip(),
@@ -362,8 +441,14 @@ def create_session() -> requests.Session:
     return session
 
 
-def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
-    """Scrape all dates in the given range (inclusive), going backwards from end_date."""
+def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH,
+                      recheck: bool = False):
+    """Scrape all dates in the given range (inclusive), going backwards from end_date.
+
+    ``recheck`` asks again for every day in the range, including days already
+    logged done: the way to repair an old day logged empty, or a day saved
+    before its BSPs were out (the upsert fills them in).
+    """
     conn = init_db(db_path)
     session = create_session()
 
@@ -375,6 +460,8 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
     total_days = (end_date - start_date).days + 1
     current = end_date
     scraped_count = 0
+    pending_count = 0
+    unavailable_in_a_row = 0
     total_rows = 0
 
     log.info(f"Scraping {total_days} days: {start_date} to {end_date}")
@@ -386,7 +473,9 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
             (current.isoformat(),)
         ).fetchone()
 
-        if existing:
+        # A recent day logged as done with nothing in it was, in all
+        # likelihood, asked for before it was published -- so ask again.
+        if existing and not recheck and not (existing[0] == 0 and is_recent(current)):
             log.debug(f"Skipping {current} (already scraped, {existing[0]} rows)")
             current -= timedelta(days=1)
             continue
@@ -394,19 +483,45 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
         try:
             csv_text = download_csv(session, user_id, current)
 
+            unavailable_in_a_row = 0 if csv_text else unavailable_in_a_row + 1
             if csv_text:
+                # A real results file. With no runners in it, that is the
+                # site saying there was no racing -- the only way a day is
+                # recorded as done and empty.
                 save_csv_file(csv_text, current)
                 rows = parse_and_save(conn, csv_text, current)
                 total_rows += rows
-                log.info(f"{current}: {rows} rows saved")
-            else:
-                # No results for this date (no racing)
+                log.info(f"{current}: {rows} rows saved" if rows else f"{current}: no racing")
+            elif (held := conn.execute(
+                    # A range, not substr(), so the race_date index is used.
+                    "SELECT COUNT(*) FROM race_results WHERE race_date >= ? AND race_date < ?",
+                    (current.isoformat(), (current + timedelta(days=1)).isoformat())
+                    ).fetchone()[0]):
+                # Only reachable by asking again for a day already in: an
+                # empty answer now says nothing about the rows we hold.
+                log.warning(f"{current}: empty download, but {held} rows are "
+                            f"already held -- keeping them and the log as they are")
+            elif is_recent(current):
+                # Not published yet. 'pending' is not 'ok', so it neither
+                # advances the resume point nor satisfies the skip above, and
+                # the next run asks for it again.
                 conn.execute("""
                     INSERT OR REPLACE INTO scrape_log (scrape_date, rows_found, status)
-                    VALUES (?, 0, 'ok')
+                    VALUES (?, 0, 'pending')
                 """, (current.isoformat(),))
                 conn.commit()
-                log.info(f"{current}: no racing")
+                pending_count += 1
+                log.info(f"{current}: no results yet -- will retry on the next run")
+            else:
+                # No file for an old day is not "no racing" either: it was
+                # refused. 'error' keeps it out of the resume point and makes
+                # the next backfill over it ask again.
+                conn.execute("""
+                    INSERT OR REPLACE INTO scrape_log (scrape_date, rows_found, status)
+                    VALUES (?, 0, 'error')
+                """, (current.isoformat(),))
+                conn.commit()
+                log.warning(f"{current}: no results file -- logged 'error' to retry, not 'no racing'")
 
             scraped_count += 1
 
@@ -438,10 +553,19 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
             conn.commit()
 
         current -= timedelta(days=1)
+        if unavailable_in_a_row >= MAX_UNAVAILABLE_IN_A_ROW:
+            left = (current - start_date).days + 1
+            log.error(f"No results file for {unavailable_in_a_row} days in a row -- "
+                      f"horseracebase is refusing (download limit?) or down. Stopping with "
+                      f"{left} days not asked; nothing was recorded as done for them.")
+            print(f"::warning::horseracebase refused {unavailable_in_a_row} days in a row; "
+                  f"stopped with {left} days not asked")
+            break
         time.sleep(REQUEST_DELAY)
 
     conn.close()
-    log.info(f"Done. Scraped {scraped_count} new days, {total_rows} total rows.")
+    log.info(f"Done. Scraped {scraped_count} new days, {total_rows} total rows"
+             + (f"; {pending_count} not published yet, to retry." if pending_count else "."))
 
 
 def main():
@@ -456,6 +580,9 @@ def main():
                         help="Full scrape from 2010-01-01 to today")
     parser.add_argument("--db", type=str, default=DB_PATH,
                         help=f"Database path (default: {DB_PATH})")
+    parser.add_argument("--recheck", action="store_true",
+                        help="Ask again for every day in the range, even days logged "
+                             "done; fills in missing values without blanking any")
     parser.add_argument("--no-backup", action="store_true",
                         help="Skip S3 backup after scraping")
     args = parser.parse_args()
@@ -473,8 +600,16 @@ def main():
         last = get_last_scraped_date(conn)
         conn.close()
         if last:
-            start = last + timedelta(days=1)
-            log.info(f"Resuming from {start} (last scraped: {last})")
+            # Never resume later than the retry window. A day asked for before
+            # it was published is 'pending', and a later day coming in does
+            # not mean it has; the loop skips days already in without a
+            # request, so this costs one request per day still missing. The
+            # window's oldest day is no longer recent, so a pending day gets
+            # its final answer there -- an empty one is then no racing.
+            start = min(last + timedelta(days=1),
+                        date.today() - timedelta(days=RETRY_EMPTY_DAYS))
+            log.info(f"Resuming from {start} (last scraped: {last}; the last "
+                     f"{RETRY_EMPTY_DAYS} days are rechecked for late results)")
         else:
             start = date(2010, 1, 1)
         end = date.fromisoformat(args.to_date) if args.to_date else yesterday
@@ -483,7 +618,7 @@ def main():
         log.info("Nothing to scrape - already up to date.")
         return
 
-    scrape_date_range(start, end, args.db)
+    scrape_date_range(start, end, args.db, recheck=args.recheck)
 
     if not args.no_backup:
         log.info("Backing up database to S3...")
