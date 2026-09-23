@@ -169,3 +169,13 @@ def test_the_three_day_window_counts_the_last_72_hours_only():
         a = out.loc[out["race_date"] == "2025-01-11", c].to_numpy()
         b = out2.loc[out2["race_date"] == "2025-01-11", c].to_numpy()
         assert np.array_equal(a, b, equal_nan=True), c
+
+
+def test_a_wider_gap_drops_the_races_just_before():
+    """The gap is measured between scheduled offs: at 40 minutes the 2.05 (35 before) drops out
+    of the 2.40's features and the 1.30 (70 before) stays in."""
+    out10, _ = add_inday_features(_card(), gap=10.0)
+    out40, _ = add_inday_features(_card(), gap=40.0)
+    row = lambda o: o[(o["race_time"] == "2.40") & (o["trainer"] == "T")].iloc[0]
+    assert row(out10)["id_trainer_runs_today"] == 2           # the 1.30 and the 2.05
+    assert row(out40)["id_trainer_runs_today"] == 1           # the 2.05 is 35 minutes before: out at 40
