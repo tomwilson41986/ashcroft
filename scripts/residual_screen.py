@@ -466,9 +466,21 @@ def post_race_names() -> set[str]:
             | set(DRAW_POST_RACE_ONLY) | {"perf_lbs", "kf_post", "kf_innov"})
 
 
-def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str) -> tuple[pd.DataFrame, dict]:
-    """Opt-in research blocks production does not train on. A block that fails
-    is logged and skipped rather than sinking the run."""
+def raw_and_block_columns(df: pd.DataFrame, feature_cols) -> list[str]:
+    """The columns to keep once the production features are in hand: everything
+    that is not an engineered production feature, plus every raw race_results
+    column even when a production feature shares its name (number_of_runners and
+    dist_furlongs are both). Dropping those starved every block that needed them."""
+    from scraper import RESULT_COLS
+    raw = set(RESULT_COLS) | {"id", "raceid", "won", "placed"}
+    engineered = set(feature_cols) - raw
+    return [c for c in df.columns if c not in engineered]
+
+
+def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = False) -> tuple[pd.DataFrame, dict]:
+    """Opt-in research blocks production does not train on. With `strict`, a
+    block that fails stops the run: a silently skipped block made one
+    iteration a copy of another and nothing said so."""
     added: dict[str, list[str]] = {}
     if "raceid" not in df.columns:
         df["raceid"] = race_key(df)
@@ -510,6 +522,8 @@ def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str) -> tuple[pd.Data
             else:
                 log.warning("unknown block %s", b); continue
         except Exception as exc:                    # noqa: BLE001 - a research block may not fit this frame
+            if strict:
+                raise RuntimeError(f"block {b} failed: {type(exc).__name__}: {exc}") from exc
             log.warning("block %s failed (%s: %s); skipped", b, type(exc).__name__, exc)
             continue
         if len(df) != n0:
@@ -648,7 +662,7 @@ def run(args) -> dict:
     frame_vals = {c: df[c].to_numpy()[rows_in_sample] for c in prod}
     # The blocks need only the raw columns; dropping the production features
     # now halves the peak memory of everything that follows.
-    df = df[[c for c in df.columns if c not in set(ALL_FEATURE_COLS)]]
+    df = df[raw_and_block_columns(df, ALL_FEATURE_COLS)]
     parts = build_parts(sample, args.split, args.val_months)
     tr_bsp, te_bsp = parts["bsp"]
     train_mask = np.zeros(len(sample), bool); train_mask[tr_bsp.idx] = True
@@ -741,7 +755,7 @@ def run(args) -> dict:
     blocks = [b for b in (args.blocks or "").split(",") if b]
     if blocks:
         df = df.copy()
-        df, added = attach_blocks(df, blocks, args.db)
+        df, added = attach_blocks(df, blocks, args.db, strict=True)
         key_df = pd.DataFrame({"race": race_key(df), "horse_name": df["horse_name"].values})
         lookup = pd.DataFrame({"race": sample["race"].values, "horse_name": sample["horse_name"].values,
                                "pos": np.arange(len(sample))})

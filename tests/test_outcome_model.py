@@ -146,3 +146,17 @@ def test_free_mode_runs_and_finds_the_signal(tmp_path, monkeypatch):
     oos = pd.read_csv(tmp_path / "oos_free.csv.gz")
     assert oos["p_fund"].notna().all()
     assert np.allclose(oos.groupby("race")["p_fund"].sum(), 1.0)       # a probability per race
+
+
+def test_blocks_keep_the_raw_columns_they_need(monkeypatch, tmp_path):
+    """number_of_runners and dist_furlongs are production features AND raw
+    columns; the block frame must keep them, and a failing block must stop the run."""
+    from model.bfsp_features import ALL_FEATURE_COLS
+    assert "number_of_runners" in ALL_FEATURE_COLS and "dist_furlongs" in ALL_FEATURE_COLS
+    df = pd.DataFrame({"number_of_runners": [8], "dist_furlongs": [6.0], "comment": ["led"], "or_num": [70.0],
+                       "horse_name": ["h"], "race_date": [pd.Timestamp("2025-01-01")], "race_time": ["2.00"], "track": ["X"]})
+    keep = rs.raw_and_block_columns(df, ALL_FEATURE_COLS)
+    assert {"number_of_runners", "dist_furlongs", "comment"} <= set(keep)
+    assert "or_num" not in keep                                   # engineered, not raw
+    with pytest.raises(RuntimeError, match="block perf failed"):
+        rs.attach_blocks(df[["horse_name"]].assign(raceid="r"), ["perf"], db="x", strict=True)

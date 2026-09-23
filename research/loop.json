@@ -1,8 +1,8 @@
 {
-  "tag": "iter7-handicap",
+  "tag": "iter8-fundamental-no-blandford",
   "outcome": true,
   "screen": false,
-  "blocks": "handicap",
+  "blocks": "comments,perf,kalman,pedigree,connections,handicap",
   "drop": "",
   "params": "",
   "fold_months": 3,

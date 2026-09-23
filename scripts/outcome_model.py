@@ -326,15 +326,15 @@ def run(args) -> dict:
     cols = [np.array(pd.to_numeric(df[c], errors="coerce"), dtype=np.float32)[rows_in_sample] for c in feats]
     blocks = [b for b in (args.blocks or "").split(",") if b]
     if blocks:
-        keep = df[[c for c in df.columns if c not in set(ALL_FEATURE_COLS)]].copy()
+        keep = df[rs.raw_and_block_columns(df, ALL_FEATURE_COLS)].copy()
         del df
-        keep, added = rs.attach_blocks(keep, blocks, args.db)
+        keep, added = rs.attach_blocks(keep, blocks, args.db, strict=True)
         key = pd.DataFrame({"race": rs.race_key(keep), "horse_name": keep["horse_name"].values})
         lookup = pd.DataFrame({"race": sample["race"].values, "horse_name": sample["horse_name"].values,
                                "pos": np.arange(len(sample))})
         m = key.reset_index().merge(lookup, on=["race", "horse_name"], how="inner").drop_duplicates("pos")
         for b, bcols in added.items():
-            for c in bcols:
+            for c in [c for c in bcols if not (drops and c.startswith(drops))]:
                 arr = np.full(len(sample), np.nan, dtype=np.float32)
                 arr[m["pos"].to_numpy()] = np.array(pd.to_numeric(keep[c], errors="coerce"),
                                                     dtype=np.float32)[m["index"].to_numpy()]
