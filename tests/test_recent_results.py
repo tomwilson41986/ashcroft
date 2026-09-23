@@ -133,7 +133,10 @@ def test_the_report_runs_end_to_end_and_names_what_it_matched(tmp_path, capsys):
     assert rr.main(["--live-dir", str(live), "--db", str(db), "--out", str(out)]) == 0
     text = (out / "summary.md").read_text()
     assert "2026-09-18: 14 predicted, 12 settled (86%)" in text
-    assert "2026-09-20: 1 predicted, 0 settled" in text and "no results yet" in text
+    assert "2026-09-20: 1 predicted, 0 settled" in text
+    # A day that joined nothing is diagnosed, not excused as "no racing".
+    assert "## Days that joined nothing" in text
+    assert "database rows dated 2026-09-20: 0" in text
     assert (out / "top_picks.csv").exists() and (out / "runners.csv").exists()
     assert len(pd.read_csv(out / "top_picks.csv")) == 4
 
@@ -150,3 +153,32 @@ def test_nothing_settled_is_a_failure_not_an_empty_table(tmp_path):
                        horse_name="Y", bfsp=3.0, placing_numerical=1)]).to_sql("race_results", con, index=False)
     con.close()
     assert rr.main(["--live-dir", str(live), "--db", str(db), "--out", str(tmp_path / "o")]) == 1
+
+
+def test_the_diagnosis_tells_no_results_from_keys_that_disagree(tmp_path):
+    """The two ways a day joins nothing need different fixes, so say which.
+
+    Here the database has the day's results, but under a different track name
+    than the morning file used: the rows exist and the keys still miss.
+    """
+    live = tmp_path / "live"
+    live.mkdir()
+    pd.DataFrame([dict(date="2026-09-19", venue="Newmarket (July)", race_time="2.30",
+                       runner_name="Some Horse", predicted_bfsp=3.0,
+                       predicted_win_prob=0.33)]).to_csv(live / "2026-09-19.csv", index=False)
+    db = tmp_path / "db.sqlite"
+    con = sqlite3.connect(db)
+    pd.DataFrame([dict(race_date="2026-09-19", track="Kempton", race_time="2.30",
+                       horse_name="Some Horse", bfsp=3.0, placing_numerical=1)]).to_sql(
+        "race_results", con, index=False)
+    con.close()
+
+    lines = rr.unmatched_diagnosis(str(live), str(db), "2026-09-19")
+    text = "\n".join(lines)
+    assert "database rows dated 2026-09-19: 1" in text      # results are there...
+    assert "morning keys" in text and "database keys" in text  # ...so show both sides
+    assert "Kempton" in text and "Newmarket" in text
+
+    # And a day the database has never heard of says exactly that.
+    assert "database rows dated 2026-09-25: 0" in "\n".join(
+        rr.unmatched_diagnosis(str(live), str(db), "2026-09-25"))

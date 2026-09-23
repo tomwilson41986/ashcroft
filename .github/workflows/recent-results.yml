@@ -81,9 +81,13 @@ jobs:
         run: python scripts/recent_results.py --live-dir live --db horse_racing.db --out recent
 
       - name: Upload the report
+        # The morning files ride along: a few hundred rows a day, and without
+        # them a join that finds nothing cannot be diagnosed from outside.
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: recent-results-${{ github.run_number }}
-          path: recent/
+          path: |
+            recent/
+            live/
           retention-days: 30

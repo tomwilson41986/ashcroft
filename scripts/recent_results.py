@@ -155,6 +155,55 @@ def _md(df: pd.DataFrame) -> str:
     return "\n".join([head, sep, *body])
 
 
+def unmatched_diagnosis(live_dir: str, db_path: str, day: str, n: int = 4) -> list[str]:
+    """Why a morning file joined to nothing, in terms that settle it.
+
+    "No results yet" and "the keys do not agree" print the same empty table,
+    and the first time this report ran it said the former about five days that
+    had results. So for any day that matched nothing: how many results the
+    database holds for that date, and a few join keys from each side, built
+    exactly as `_live_clv_frame` builds them.
+    """
+    import sqlite3
+
+    from betfair_prices import normalise_horse, normalise_track, race_time_to_24h
+
+    text = {c: str for c in ("date", "race_date", "venue", "track", "race_time",
+                             "runner_name", "horse_name")}
+    out = []
+    conn = sqlite3.connect(db_path)
+    # read_sql_query, unlike read_csv, refuses a dtype for a column it did not
+    # select, so the mapping names exactly the four it does.
+    res = pd.read_sql_query(
+        "SELECT race_date, track, race_time, horse_name FROM race_results "
+        "WHERE substr(race_date, 1, 10) = ?", conn, params=(day,),
+        dtype={c: str for c in ("race_date", "track", "race_time", "horse_name")})
+    conn.close()
+    out.append(f"  database rows dated {day}: {len(res)}")
+    paths = glob.glob(os.path.join(live_dir, "**", f"{day}.csv"), recursive=True)
+    if not paths:
+        return out
+    pred = pd.read_csv(paths[0], dtype=text)
+    for col, alt in (("race_date", "date"), ("track", "venue"), ("horse_name", "runner_name")):
+        if col not in pred.columns and alt in pred.columns:
+            pred[col] = pred[alt]
+
+    def keys(d):
+        return (d["race_date"].astype(str).str.slice(0, 10) + "|"
+                + d["track"].map(normalise_track) + "|"
+                + d["race_time"].map(race_time_to_24h).astype(str) + "|"
+                + d["horse_name"].map(normalise_horse))
+
+    out.append("  morning raw  : " + "; ".join(
+        f"{r.race_date}|{r.track}|{r.race_time}|{r.horse_name}" for r in pred.head(n).itertuples()))
+    out.append("  morning keys : " + "; ".join(keys(pred.head(n))))
+    if len(res):
+        out.append("  database raw : " + "; ".join(
+            f"{r.race_date}|{r.track}|{r.race_time}|{r.horse_name}" for r in res.head(n).itertuples()))
+        out.append("  database keys: " + "; ".join(keys(res.head(n))))
+    return out
+
+
 def prediction_counts(live_dir: str) -> dict[str, int]:
     """Rows per morning file, so the match rate can be stated rather than assumed."""
     out = {}
@@ -184,6 +233,11 @@ def main(argv=None) -> int:
     if joined.empty:
         L.append(f"No settled runners: {len(counts)} morning files "
                  f"({', '.join(counts) or 'none'}), none joined to a result.")
+        L += ["", "```"]
+        for day in counts:
+            L.append(day)
+            L += unmatched_diagnosis(a.live_dir, a.db, day)
+        L.append("```")
         text = "\n".join(L)
         print(text)
         open(os.path.join(a.out, "summary.md"), "w").write(text + "\n")
@@ -194,11 +248,22 @@ def main(argv=None) -> int:
     L.append("Per 1-unit stake at BSP, after 5% commission. Morning files and how "
              "many of their runners joined to a settled result:")
     L.append("")
+    unmatched = []
     for day, n in counts.items():
         got = matched.get(day, 0)
         pct = f"{100 * got / n:.0f}%" if n else "-"
         L.append(f"- {day}: {n} predicted, {got} settled ({pct})"
-                 + ("" if got else " — no results yet, or no racing"))
+                 + ("" if got else " — nothing joined; see the diagnosis below"))
+        if not got:
+            unmatched.append(day)
+    if unmatched:
+        L += ["", "## Days that joined nothing", "",
+              "Either the database holds no results for the date, or it does and the "
+              "keys disagree. These say which:", "", "```"]
+        for day in unmatched:
+            L.append(day)
+            L += unmatched_diagnosis(a.live_dir, a.db, day)
+        L.append("```")
     L += ["", "## By day", "", _md(day_summary(d)), ""]
 
     fm = forecast_vs_morning(d)
