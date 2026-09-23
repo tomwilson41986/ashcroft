@@ -139,7 +139,8 @@ def window_sums(cell_group, cell_t, cell_vals: dict, q_group, q_t, gap: float, w
     return {k: hi[k] - lo[k] for k in hi}
 
 
-def add_inday_features(df: pd.DataFrame, gap: float = GAP_MINUTES) -> tuple[pd.DataFrame, list[str]]:
+def add_inday_features(df: pd.DataFrame, gap: float = GAP_MINUTES,
+                       exclude_self: bool = True) -> tuple[pd.DataFrame, list[str]]:
     race = _race_key(df)
     d = pd.DataFrame(index=df.index)
     d["_race"] = race.to_numpy()
@@ -245,34 +246,48 @@ def add_inday_features(df: pd.DataFrame, gap: float = GAP_MINUTES) -> tuple[pd.D
     # connections: earlier runners today at any meeting (and, below, over the last three days)
     day = (pd.to_datetime(pd.Series(d["_date"], index=df.index), errors="coerce") - pd.Timestamp("2000-01-01")).dt.days
     abs_t = day * 1440.0 + d["_t"]
+    horse = df["horse_name"].astype(str).str.strip()
     for ent, col in (("trainer", "trainer"), ("jockey", "jockey_name")):
         if col not in df.columns:
             continue
         who = df[col].astype(str).str.strip()
         known = who.ne("") & who.str.lower().ne("nan") & df[col].notna()
-        key = pd.Series(d["_date"], index=df.index) + "|" + who
         src = valid & known & (d["_ae"].notna() | d["_bmr"].notna())
-        cell = pd.DataFrame({"race": d["_race"], "g": key, "t": d["_t"],
+        cell = pd.DataFrame({"race": d["_race"], "t": d["_t"], "abs_t": abs_t,
                              "ae": d["_ae"].where(src), "na": (src & d["_ae"].notna()).astype(float),
                              "bmr": d["_bmr"].where(src), "nb": (src & d["_bmr"].notna()).astype(float)}).loc[src]
-        agg = cell.groupby(["race", "g"], sort=False).agg(t=("t", "first"), ae=("ae", "sum"), na=("na", "sum"),
-                                                          bmr=("bmr", "sum"), nb=("nb", "sum")).reset_index()
-        s, _ = earlier_sums(agg["g"].to_numpy(), agg["t"].to_numpy(),
-                            {c: agg[c].to_numpy() for c in ("ae", "na", "bmr", "nb")},
-                            key.to_numpy(), d["_t"].to_numpy(), gap)
+        vals = ("ae", "na", "bmr", "nb")
         ok = valid & known
+
+        def summed(group_rows: pd.Series, group_query: pd.Series, t_col: str, q_t: np.ndarray, window=None):
+            """Earlier-cell sums for each target, grouped by `group_*`: one cell per race and group."""
+            c = cell.assign(g=group_rows.loc[cell.index].to_numpy(), t=cell[t_col].to_numpy())
+            a = c.groupby(["race", "g"], sort=False).agg(t=("t", "first"), **{v: (v, "sum") for v in vals}).reset_index()
+            args = (a["g"].to_numpy(), a["t"].to_numpy(), {v: a[v].to_numpy() for v in vals},
+                    group_query.to_numpy(), q_t)
+            if window is None:
+                return earlier_sums(*args, gap)[0]
+            return window_sums(*args, gap, window)
+
+        def net(total: dict, own: dict) -> dict:
+            # take out the target horse's own rows: a horse cannot run twice in a day, so an own row
+            # "earlier today" is the same race duplicated -- its own result -- and over three days an
+            # own row is at best its last run, which the other blocks already describe
+            # (rounded: the subtraction leaves ~1e-17 of dust, and nothing about the removed row may
+            # survive in the figure, not even in its last bits)
+            return {v: np.round(total[v] - own[v], 9) if exclude_self else np.round(total[v], 9) for v in vals}
+
+        date = pd.Series(d["_date"], index=df.index)
+        day_key = date + "|" + who
+        s = net(summed(day_key, day_key, "t", d["_t"].to_numpy()),
+                summed(day_key + "|" + horse, day_key + "|" + horse, "t", d["_t"].to_numpy()))
         res[f"id_{ent}_runs_today"] = pd.Series(s["na"], index=df.index).where(ok)
         res[f"id_{ent}_ae_today"] = pd.Series(s["ae"] / (s["na"] + K_AE), index=df.index).where(ok)
         res[f"id_{ent}_bmr_today"] = pd.Series(s["bmr"] / (s["nb"] + K_BMR), index=df.index).where(ok)
 
         # the same over the last three days: a streak the market may be slow to credit
-        g3 = who.to_numpy()
-        cell3 = cell.assign(g=who.loc[cell.index].to_numpy(), t=abs_t.loc[cell.index].to_numpy())
-        agg3 = cell3.groupby(["race", "g"], sort=False).agg(t=("t", "first"), ae=("ae", "sum"), na=("na", "sum"),
-                                                            bmr=("bmr", "sum"), nb=("nb", "sum")).reset_index()
-        s3 = window_sums(agg3["g"].to_numpy(), agg3["t"].to_numpy(),
-                         {c: agg3[c].to_numpy() for c in ("ae", "na", "bmr", "nb")},
-                         g3, abs_t.to_numpy(), gap, RECENT_MINUTES)
+        s3 = net(summed(who, who, "abs_t", abs_t.to_numpy(), RECENT_MINUTES),
+                 summed(who + "|" + horse, who + "|" + horse, "abs_t", abs_t.to_numpy(), RECENT_MINUTES))
         res[f"id_{ent}_runs_3d"] = pd.Series(s3["na"], index=df.index).where(ok)
         res[f"id_{ent}_ae_3d"] = pd.Series(s3["ae"] / (s3["na"] + K_AE), index=df.index).where(ok)
         res[f"id_{ent}_bmr_3d"] = pd.Series(s3["bmr"] / (s3["nb"] + K_BMR), index=df.index).where(ok)

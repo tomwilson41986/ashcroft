@@ -179,3 +179,25 @@ def test_a_wider_gap_drops_the_races_just_before():
     row = lambda o: o[(o["race_time"] == "2.40") & (o["trainer"] == "T")].iloc[0]
     assert row(out10)["id_trainer_runs_today"] == 2           # the 1.30 and the 2.05
     assert row(out40)["id_trainer_runs_today"] == 1           # the 2.05 is 35 minutes before: out at 40
+
+
+def test_a_race_stored_twice_cannot_feed_its_own_result_to_the_later_copy():
+    """A data error, not racing: the 2.05 is also stored under 3.15 at another track. The copy's
+    connection features must not contain the original's result (the same horses, the same race)."""
+    d = _card()
+    orig = d[d["race_time"] == "2.05"]
+    copy = orig.assign(race_time="3.15", track="Copyville")
+    with_copy = pd.concat([d, copy], ignore_index=True)
+    out, names = add_inday_features(with_copy)
+    conn = [c for c in names if c.startswith(("id_trainer", "id_jockey"))]
+    # the copy's figures are what the same horses would have seen at 3.15 had the 2.05 never happened
+    base = d[d["race_time"] != "2.05"]
+    alone, _ = add_inday_features(pd.concat([base, copy], ignore_index=True))
+    got = out[out["track"] == "Copyville"].sort_values("horse_name")[conn].to_numpy()
+    want = alone[alone["track"] == "Copyville"].sort_values("horse_name")[conn].to_numpy()
+    assert np.array_equal(got, want, equal_nan=True)
+    # and without the guard the leak is real: the copy would see its own winner
+    leaky, _ = add_inday_features(with_copy, exclude_self=False)
+    w = leaky[(leaky["track"] == "Copyville") & (leaky["stall"] == 1)].iloc[0]
+    g = out[(out["track"] == "Copyville") & (out["stall"] == 1)].iloc[0]
+    assert w["id_jockey_ae_today"] > g["id_jockey_ae_today"]
