@@ -84,7 +84,7 @@ def test_walk_forward_end_to_end(tmp_path, monkeypatch):
     args = om.argparse.Namespace(db="x", feature_cache=None, start_date="2021-01-01", first_fold="2023-06-01",
                                  fold_months=6, val_months=4, lockbox_from="2025-01-01", final=False, drop="",
                                  blocks="", params=json.dumps({"min_data_in_leaf": 50, "learning_rate": 0.1}),
-                                 tag="t", out_dir=str(tmp_path))
+                                 tag="t", out_dir=str(tmp_path), mode="offset")
     res = om.run(args)
     assert res["folds"] and all(f["races"] > 0 for f in res["folds"])
     oos = pd.read_csv(tmp_path / "oos_t.csv.gz")
@@ -115,3 +115,31 @@ def test_segments_report_each_level():
     s = om.score_strategies(oos, commission=0.0)
     assert set(s["segments"]["race_type"]) == {"Handicap", "Maiden"}
     assert s["segments"]["field"]["6-8"]["races"] == 900
+
+
+def test_free_mode_runs_and_finds_the_signal(tmp_path, monkeypatch):
+    """Benter's two stages: a market-free fundamental model, then Stage C."""
+    rng = np.random.default_rng(2)
+    n_races, size = 900, 7
+    codes = np.repeat(np.arange(n_races), size)
+    dates = pd.to_datetime("2022-06-01") + pd.to_timedelta((np.arange(n_races) * 1.2).astype(int)[codes], unit="D")
+    x = rng.normal(size=len(codes))
+    strength = rng.normal(size=len(codes))
+    starts, seg = rs.race_blocks(codes)
+    p_true = rs.softmax_blocks(strength + 0.8 * x, starts, seg)
+    p_mkt = rs.softmax_blocks(strength, starts, seg)
+    won = np.zeros(len(codes))
+    for s in starts:
+        won[s + rng.choice(size, p=p_true[s:s + size] / p_true[s:s + size].sum())] = 1
+    from model.bfsp_features import ALL_FEATURE_COLS
+    f0 = [c for c in dict.fromkeys(ALL_FEATURE_COLS) if not c.endswith("_cat")][0]
+    df = pd.DataFrame({"race_date": dates, "track": "York", "race_time": (codes % 3 + 1).astype(str) + ".30",
+                       "horse_name": [f"h{i}" for i in range(len(codes))], "won": won, "bfsp": 1.0 / p_mkt, f0: x})
+    monkeypatch.setattr(rs, "load_frame", lambda *a, **k: df.copy())
+    args = om.argparse.Namespace(db="x", feature_cache=None, start_date="2021-01-01", first_fold="2023-06-01",
+                                 fold_months=6, val_months=4, lockbox_from="2025-01-01", final=False, drop="",
+                                 blocks="", params=json.dumps({"min_data_in_leaf": 50, "learning_rate": 0.1}),
+                                 tag="free", out_dir=str(tmp_path), mode="free")
+    res = om.run(args)
+    assert res["config"]["mode"] == "free"
+    assert res["loglik"]["dll_mnats"] > 0

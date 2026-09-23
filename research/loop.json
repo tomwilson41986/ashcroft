@@ -1,11 +1,12 @@
 {
-  "tag": "iter5-markets",
+  "tag": "iter6-free-comments",
   "outcome": true,
-  "screen": true,
-  "blocks": "markets",
+  "screen": false,
+  "blocks": "comments",
   "drop": "",
   "params": "",
   "fold_months": 3,
   "first_fold": "2023-01-01",
-  "final": false
+  "final": false,
+  "mode": "free"
 }

@@ -221,7 +221,12 @@ def fit_boosted(X, tr: rs.Part, va: rs.Part, market_beta, params=None, rounds=20
 
 
 def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.Timestamp, fold_months: int,
-                 val_months: int, params=None, feature_names=None) -> tuple[pd.DataFrame, list[dict], pd.DataFrame]:
+                 val_months: int, params=None, feature_names=None,
+                 mode: str = "offset") -> tuple[pd.DataFrame, list[dict], pd.DataFrame]:
+    """mode "offset": trees boosted from the market-only logit (one pass).
+    mode "free": Benter's two stages -- a market-free fundamental model f on the
+    winner, then Stage C, softmax(a ln pi + b (ln pi)^2 + c ln f), fitted on the
+    validation months, whose f the fundamental model never trained on."""
     y = sample["y"].to_numpy(float)
     codes = pd.factorize(sample["race"])[0]
     pos = np.arange(len(sample))
@@ -243,10 +248,21 @@ def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.T
         t_start = time.time()
         p_all = part(tr_all)
         bm = rs.fit_clogit(p_all.M, p_all.y, *p_all.blk)
-        booster, best = fit_boosted(X, part(fit_m), part(va_m), bm, params=params)
         p_te = part(te)
         off = p_te.M @ bm
-        eta = off + booster.predict(X[p_te.idx], raw_score=True, num_iteration=best)
+        if mode == "free":
+            p_va = part(va_m)
+            booster, best = fit_boosted(X, part(fit_m), p_va, np.zeros(rs.MARKET_TERMS), params=params)
+            f_va = booster.predict(X[p_va.idx], raw_score=True, num_iteration=best)
+            f_te = booster.predict(X[p_te.idx], raw_score=True, num_iteration=best)
+            # the fundamental model's log-probability is its raw score less the race's log-sum-exp
+            lf_va = np.log(rs.softmax_blocks(f_va, *p_va.blk))
+            lf_te = np.log(rs.softmax_blocks(f_te, *p_te.blk))
+            c = rs.fit_clogit(np.column_stack([p_va.M, lf_va]), p_va.y, *p_va.blk)
+            eta = np.column_stack([p_te.M, lf_te]) @ c
+        else:
+            booster, best = fit_boosted(X, part(fit_m), part(va_m), bm, params=params)
+            eta = off + booster.predict(X[p_te.idx], raw_score=True, num_iteration=best)
         p_model = rs.softmax_blocks(eta, *p_te.blk)
         p_mkt = rs.softmax_blocks(off, *p_te.blk)
         d = rs.race_loglik(eta, p_te.y, *p_te.blk) - rs.race_loglik(off, p_te.y, *p_te.blk)
@@ -329,11 +345,13 @@ def run(args) -> dict:
 
     end = sample["date"].max() + pd.Timedelta(days=1)
     first = args.lockbox_from if args.final else args.first_fold
-    cfg = {"tag": args.tag, "features": len(feats), "feature_hash": config_hash({"f": feats}), "drop": args.drop,
+    cfg = {"tag": args.tag, "mode": args.mode, "features": len(feats), "feature_hash": config_hash({"f": feats}),
+           "drop": args.drop,
            "blocks": args.blocks, "fold_months": args.fold_months, "val_months": args.val_months,
            "params": args.params, "first_fold": first, "final": bool(args.final)}
     params = json.loads(args.params) if args.params else None
-    oos, folds, importance = walk_forward(sample, X, first, end, args.fold_months, args.val_months, params, feats)
+    oos, folds, importance = walk_forward(sample, X, first, end, args.fold_months, args.val_months, params, feats,
+                                          mode=args.mode)
     if args.final:
         oos = oos[pd.to_datetime(oos["date"]) >= lock]
     oos.to_csv(out / f"oos_{args.tag}.csv.gz", index=False)
@@ -416,6 +434,8 @@ def main(argv=None):
     ap.add_argument("--drop", default="", help="comma list of feature-name prefixes to withhold")
     ap.add_argument("--blocks", default="", help="opt-in blocks, as residual_screen.py")
     ap.add_argument("--params", default="", help="LightGBM params as JSON, merged over the defaults")
+    ap.add_argument("--mode", default="offset", choices=["offset", "free"],
+                    help="offset: trees boosted from the market; free: market-free Stage F, then Stage C")
     ap.add_argument("--tag", default="dev")
     ap.add_argument("--out-dir", default=str(ROOT / "reports" / "outcome_model"))
     args = ap.parse_args(argv)

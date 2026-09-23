@@ -66,6 +66,7 @@ jobs:
           for k in ("tag", "blocks", "drop", "params", "first_fold"):
               print(f"{k}={c.get(k, '')}")
           print(f"fold_months={c.get('fold_months', 3)}")
+          print(f"mode={c.get('mode', 'offset')}")
           print(f"outcome={'true' if c.get('outcome', True) else 'false'}")
           print(f"screen={'true' if c.get('screen', False) else 'false'}")
           print(f"final={'--final' if c.get('final', False) else ''}")
@@ -122,7 +123,7 @@ jobs:
             --start-date "$START_DATE" --tag "${{ steps.cfg.outputs.tag }}" \
             --first-fold "${{ steps.cfg.outputs.first_fold }}" --fold-months "${{ steps.cfg.outputs.fold_months }}" \
             --blocks "${{ steps.cfg.outputs.blocks }}" --drop "${{ steps.cfg.outputs.drop }}" \
-            --params '${{ steps.cfg.outputs.params }}' ${{ steps.cfg.outputs.final }} \
+            --params '${{ steps.cfg.outputs.params }}' --mode "${{ steps.cfg.outputs.mode }}" ${{ steps.cfg.outputs.final }} \
             --out-dir reports/outcome_model 2>&1 | grep -v PerformanceWarning | tee "reports/outcome_model/log_${{ steps.cfg.outputs.tag }}.txt"
 
       - name: Residual screen
