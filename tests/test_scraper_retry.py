@@ -155,14 +155,59 @@ def test_a_day_with_rows_is_never_asked_for_twice(hrb):
     assert hrb.asked == [d]
 
 
-def test_an_old_empty_day_is_still_no_racing(hrb):
-    """Christmas Day, say. Old enough that empty is the answer, not a delay."""
+def _header_only() -> str:
+    """What the site sends for a day with no racing: the columns, no runners."""
+    return "racedate,racetime,track,horse_name\n"
+
+
+def test_an_old_day_whose_file_has_no_runners_is_no_racing(hrb):
+    """Christmas Day, say: the site's own file, with nobody in it."""
     d = ago(scraper.RETRY_EMPTY_DAYS + 30)
+    hrb.published[d] = _header_only()
     scraper.scrape_date_range(d, d, hrb.db)
     scraper.scrape_date_range(d, d, hrb.db)
 
     assert _log(hrb.db)[d] == (0, "ok")
-    assert hrb.asked == [d], "a settled empty day must not be asked again"
+    assert hrb.asked == [d], "a day the site says had no racing is not asked again"
+
+
+def test_an_old_day_with_no_file_is_an_error_not_no_racing(hrb):
+    """No file is a refusal, not an answer. Recording it as done is how 17 Sep
+    2026 turned 179 racing days into 'no racing' in one run."""
+    d = ago(scraper.RETRY_EMPTY_DAYS + 30)
+    scraper.scrape_date_range(d, d, hrb.db)
+    assert _log(hrb.db)[d] == (0, "error")
+
+    hrb.published[d] = _csv(d, runners=3)
+    scraper.scrape_date_range(d, d, hrb.db)
+    assert _log(hrb.db)[d] == (3, "ok"), "an 'error' day is asked again by the next backfill"
+
+
+def test_a_run_of_refusals_stops_the_scrape(hrb):
+    """Seven old days, none available: stop after five rather than spend the
+    allowance, and record none of them as done."""
+    days = [ago(scraper.RETRY_EMPTY_DAYS + 40 + k) for k in range(7)]
+    scraper.scrape_date_range(min(days), max(days), hrb.db)
+
+    assert len(hrb.asked) == scraper.MAX_UNAVAILABLE_IN_A_ROW
+    log = _log(hrb.db)
+    assert not any(s == "ok" for _, s in log.values())
+    assert set(log) == set(hrb.asked), "days not asked are not logged at all"
+
+
+def test_a_refused_repair_never_marks_a_missing_day_done(hrb):
+    """The 23 Sep repair, replayed: the site stopped sending files partway.
+    Days we hold keep their rows; the day we lack stays open."""
+    held, missing = ago(200), ago(201)
+    hrb.published[held] = _csv(held, runners=6)
+    scraper.scrape_date_range(held, held, hrb.db)
+    hrb.published.clear()
+
+    scraper.scrape_date_range(missing, held, hrb.db, recheck=True)
+
+    log = _log(hrb.db)
+    assert log[held] == (6, "ok") and _results(hrb.db, held) == 6
+    assert log[missing] == (0, "error")
 
 
 # ---------------------------------------------------------------------------
@@ -201,77 +246,43 @@ def test_a_later_day_coming_in_does_not_bury_a_pending_one(hrb, monkeypatch):
 
 
 def test_a_pending_day_gets_its_final_answer_as_it_ages_out(hrb, monkeypatch):
-    """A day with no racing is pending while recent, and settles as no racing
-    on the last night it is in the window -- not pending forever."""
-    quiet = ago(scraper.RETRY_EMPTY_DAYS)
+    """On the last night a day is in the window it gets a final answer: the
+    site's empty file makes it no racing; still no file leaves it open."""
+    quiet, refused = ago(scraper.RETRY_EMPTY_DAYS), ago(scraper.RETRY_EMPTY_DAYS)
     _seed(hrb.db, {quiet: (0, "pending"),
                    **{ago(k): (30, "ok") for k in range(1, scraper.RETRY_EMPTY_DAYS)}})
+    hrb.published[quiet] = _header_only()
 
     _nightly(monkeypatch, hrb.db)
-
     assert _log(hrb.db)[quiet] == (0, "ok")
 
+    _seed(hrb.db, {refused: (0, "pending")})
+    del hrb.published[refused]
+    _nightly(monkeypatch, hrb.db)
+    assert _log(hrb.db)[refused] == (0, "error")
+
 
 # ---------------------------------------------------------------------------
-# Repairing old days: --recheck, and a second download that fills gaps
+# The results report reads the table's own column names
 # ---------------------------------------------------------------------------
 
-def _csv_with(d: date, rows: list[dict]) -> str:
-    cols = ["racedate", "racetime", "track", "horse_name", "BFSP", "trainer"]
-    body = "".join(",".join(str(r.get(c, "")) for c in cols) + "\n"
-                   for r in ({"racedate": d.isoformat(), "racetime": "2.30",
-                              "track": "Ascot", **r} for r in rows))
-    return ",".join(cols) + "\n" + body
+def test_results_report_reads_the_results_it_reports_on(tmp_path):
+    """It selected racetime/racedate -- the site's CSV headers -- from a table
+    whose columns are race_time/race_date, and raised every night, hidden by
+    the email step's continue-on-error."""
+    import results_report
 
+    db = str(tmp_path / "r.db")
+    conn = scraper.init_db(db)
+    conn.executemany("INSERT INTO race_results (race_date, race_time, track, horse_name, bfsp) "
+                     "VALUES (?, ?, ?, ?, ?)",
+                     [("2026-09-18", "1.20", "Ayr", "Diplomata", 4.2),
+                      ("2026-09-18", "1.20", "Ayr", "Bai Tong", 9.0),
+                      ("2026-09-17", "2.00", "Ayr", "Other Day", 3.0)])
+    conn.commit()
+    conn.row_factory = sqlite3.Row
+    rows = results_report.get_results_for_date(conn, "2026-09-18")
+    conn.close()
 
-def _row(db: str, d: date, horse: str):
-    conn = sqlite3.connect(db)
-    try:
-        return conn.execute("SELECT bfsp, trainer FROM race_results WHERE race_date = ? "
-                            "AND horse_name = ?", (d.isoformat(), horse)).fetchone()
-    finally:
-        conn.close()
-
-
-def test_recheck_asks_again_for_an_old_day_logged_empty(hrb):
-    """An old day logged done-and-empty is settled -- unless a recheck says otherwise."""
-    d = ago(scraper.RETRY_EMPTY_DAYS + 200)
-    _seed(hrb.db, {d: (0, "ok")})
-    hrb.published[d] = _csv(d, runners=4)
-
-    scraper.scrape_date_range(d, d, hrb.db)
-    assert hrb.asked == [], "without --recheck an old empty day is not asked again"
-
-    scraper.scrape_date_range(d, d, hrb.db, recheck=True)
-    assert hrb.asked == [d]
-    assert _log(hrb.db)[d] == (4, "ok")
-    assert _results(hrb.db, d) == 4
-
-
-def test_a_second_download_fills_gaps_and_never_blanks(hrb):
-    """A day saved before its BSPs were out gets them; a field the new download
-    lacks keeps its stored value. INSERT OR IGNORE did neither."""
-    d = ago(60)
-    hrb.published[d] = _csv_with(d, [{"horse_name": "Early", "BFSP": "", "trainer": "A Trainer"}])
-    scraper.scrape_date_range(d, d, hrb.db)
-    assert _row(hrb.db, d, "Early") == (None, "A Trainer")
-
-    hrb.published[d] = _csv_with(d, [{"horse_name": "Early", "BFSP": "7.4", "trainer": ""},
-                                     {"horse_name": "Late Addition", "BFSP": "3.1", "trainer": "B"}])
-    scraper.scrape_date_range(d, d, hrb.db, recheck=True)
-
-    assert _row(hrb.db, d, "Early") == (7.4, "A Trainer")
-    assert _row(hrb.db, d, "Late Addition") == (3.1, "B")
-    assert _results(hrb.db, d) == 2, "the key is (date, time, track, horse): no duplicates"
-
-
-def test_an_empty_recheck_never_relabels_a_day_that_has_results(hrb):
-    d = ago(90)
-    hrb.published[d] = _csv(d, runners=5)
-    scraper.scrape_date_range(d, d, hrb.db)
-    del hrb.published[d]                      # the site has a bad moment
-
-    scraper.scrape_date_range(d, d, hrb.db, recheck=True)
-
-    assert _log(hrb.db)[d] == (5, "ok"), "an empty answer must not turn 5 rows into 'no racing'"
-    assert _results(hrb.db, d) == 5
+    assert {r["horse_name"] for r in rows} == {"Diplomata", "Bai Tong"}
+    assert all(r["racetime"] == "1.20" for r in rows), "downstream reads the key 'racetime'"

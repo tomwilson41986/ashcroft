@@ -59,10 +59,13 @@ def get_predictions_for_date(conn, target_date):
 def get_results_for_date(conn, target_date):
     """Load actual race results for the date."""
     rows = conn.execute(
-        """SELECT horse_name, track, racetime, placing_numerical, BFSP,
+        # The table's columns are race_time/race_date; racetime/racedate are
+        # the site's CSV headers. The wrong pair made this raise every night,
+        # hidden by the email step's continue-on-error.
+        """SELECT horse_name, track, race_time AS racetime, placing_numerical, BFSP,
                   odds, race_name, race_class, number_of_runners
-           FROM race_results WHERE racedate = ?
-           ORDER BY racetime, track""",
+           FROM race_results WHERE race_date = ?
+           ORDER BY race_time, track""",
         (str(target_date),),
     ).fetchall()
     return [dict(r) for r in rows]

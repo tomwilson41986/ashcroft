@@ -48,6 +48,12 @@ REQUEST_DELAY = 1.5
 #: this, an empty day really is no racing -- Christmas Day, say.
 RETRY_EMPTY_DAYS = 7
 
+#: After this many days in a row without a results file, stop asking. The site
+#: refuses in bulk when an account has downloaded too much -- on 17 Sep 2026 a
+#: 179-day run got nothing for every day of a range that had returned 62,973
+#: rows the night before -- and asking on only spends more of the allowance.
+MAX_UNAVAILABLE_IN_A_ROW = 5
+
 
 def is_recent(d: date, today: date | None = None) -> bool:
     """Too recent for an empty download to be believed."""
@@ -244,6 +250,12 @@ def download_csv(session: requests.Session, user_id: str,
         return None
 
     if not resp.text.strip() or "racedate" not in resp.text[:100]:
+        # Not a results file: unpublished, refused (horseracebase limits
+        # downloads per account), or logged out. None of those is "no racing",
+        # so the caller must not record it as done. What came back is logged
+        # because it is the only evidence of which it was.
+        snippet = " ".join(resp.text[:160].split())
+        log.info(f"{target_date}: no results file ({content_type or 'no content type'}): {snippet!r}")
         return None
 
     return resp.text
@@ -447,6 +459,7 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH,
     current = end_date
     scraped_count = 0
     pending_count = 0
+    unavailable_in_a_row = 0
     total_rows = 0
 
     log.info(f"Scraping {total_days} days: {start_date} to {end_date}")
@@ -468,11 +481,15 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH,
         try:
             csv_text = download_csv(session, user_id, current)
 
+            unavailable_in_a_row = 0 if csv_text else unavailable_in_a_row + 1
             if csv_text:
+                # A real results file. With no runners in it, that is the
+                # site saying there was no racing -- the only way a day is
+                # recorded as done and empty.
                 save_csv_file(csv_text, current)
                 rows = parse_and_save(conn, csv_text, current)
                 total_rows += rows
-                log.info(f"{current}: {rows} rows saved")
+                log.info(f"{current}: {rows} rows saved" if rows else f"{current}: no racing")
             elif (held := conn.execute(
                     # A range, not substr(), so the race_date index is used.
                     "SELECT COUNT(*) FROM race_results WHERE race_date >= ? AND race_date < ?",
@@ -494,13 +511,15 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH,
                 pending_count += 1
                 log.info(f"{current}: no results yet -- will retry on the next run")
             else:
-                # Old enough that empty means no racing.
+                # No file for an old day is not "no racing" either: it was
+                # refused. 'error' keeps it out of the resume point and makes
+                # the next backfill over it ask again.
                 conn.execute("""
                     INSERT OR REPLACE INTO scrape_log (scrape_date, rows_found, status)
-                    VALUES (?, 0, 'ok')
+                    VALUES (?, 0, 'error')
                 """, (current.isoformat(),))
                 conn.commit()
-                log.info(f"{current}: no racing")
+                log.warning(f"{current}: no results file -- logged 'error' to retry, not 'no racing'")
 
             scraped_count += 1
 
@@ -532,6 +551,14 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH,
             conn.commit()
 
         current -= timedelta(days=1)
+        if unavailable_in_a_row >= MAX_UNAVAILABLE_IN_A_ROW:
+            left = (current - start_date).days + 1
+            log.error(f"No results file for {unavailable_in_a_row} days in a row -- "
+                      f"horseracebase is refusing (download limit?) or down. Stopping with "
+                      f"{left} days not asked; nothing was recorded as done for them.")
+            print(f"::warning::horseracebase refused {unavailable_in_a_row} days in a row; "
+                  f"stopped with {left} days not asked")
+            break
         time.sleep(REQUEST_DELAY)
 
     conn.close()
