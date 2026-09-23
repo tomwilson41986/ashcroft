@@ -1,0 +1,160 @@
+name: Residual information screen
+
+# Benter's test, feature by feature: does each input predict winners beyond the
+# market price (at BSP and at the morning price), and does it predict the move
+# between them? Read-only against the database; see scripts/residual_screen.py.
+#
+# Push-triggered on the research branch because a workflow that exists only on
+# a feature branch cannot be dispatched; once merged, dispatch it by hand.
+
+on:
+  workflow_dispatch:
+    inputs:
+      blocks:
+        description: 'Opt-in feature blocks to screen as well'
+        required: false
+        default: 'perf,kalman,blandford,pedigree,connections'
+        type: string
+      split:
+        description: 'BSP screens: fit before this date, score from it'
+        required: false
+        default: '2024-07-01'
+        type: string
+  push:
+    branches: ['claude/happy-ritchie-*']
+    paths:
+      - 'scripts/residual_screen.py'
+      - '.github/workflows/residual-screen.yml'
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.11'
+  S3_BUCKET: horseracingresults
+  S3_DB_KEY: horse_racing.db
+  START_DATE: '2021-01-01'
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile /mnt/swapfile || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          free -h
+
+      - name: Download historic database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::AWS credentials not configured."
+            exit 1
+          fi
+          python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
+
+      - name: Raw-field diagnostics
+        # How often the two parsers the review found broken meet the input that
+        # breaks them: fractional or blank beaten lengths, and in-running
+        # comments whose words contain "led to" / "led," without meaning led.
+        continue-on-error: true
+        run: |
+          mkdir -p reports/residual_screen
+          python - <<'EOF' 2>&1 | tee reports/residual_screen/raw_field_diagnostics.txt
+          import re, sqlite3
+          import pandas as pd
+          from model.custom_metrics import _calculate_epf
+          conn = sqlite3.connect("horse_racing.db")
+          q = """SELECT total_dst_bt, placing_numerical, comment FROM race_results
+                 WHERE race_date >= '2024-01-01'"""
+          d = pd.read_sql_query(q, conn)
+          print(f"rows since 2024: {len(d):,}")
+          lb = d["total_dst_bt"].astype("string")
+          print("\n40 commonest total_dst_bt values:")
+          print(lb.fillna("<NULL>").value_counts().head(40).to_string())
+          plc = pd.to_numeric(d["placing_numerical"], errors="coerce")
+          blank = lb.isna() | (lb.str.strip() == "") | (lb == "0")
+          print(f"\nblank/NULL/'0' beaten lengths among non-winners: {(blank & (plc != 1)).sum():,} "
+                f"of {(plc != 1).sum():,} ({(blank & (plc != 1)).mean() / max((plc != 1).mean(), 1e-9):.1%})")
+          frac = lb.str.contains(r"/|½|¼|¾", regex=True, na=False)
+          print(f"fractional forms (/, ½, ¼, ¾): {frac.sum():,} ({frac.mean():.1%})")
+          c = d["comment"].astype("string").fillna("").str.lower()
+          epf = c.map(_calculate_epf)
+          led6 = epf == 6.0
+          false_hit = led6 & c.str.contains(r"(failed|struggled|pulled|travelled|stumbled|settled|hampered|bumped) ?(to\b|,)", regex=True) & ~c.str.contains(r"\bled\b", regex=True)
+          no_led = int((led6 & ~c.str.contains(r"\bled\b", regex=True)).sum())
+          print(f"\ncomments scored EPF 6 (leader): {led6.sum():,} ({led6.mean():.1%})")
+          print(f"  of which contain no standalone word 'led' at all: {no_led:,}")
+          print(f"  of which look like 'failed to' / 'pulled,' style false hits: {false_hit.sum():,}")
+          print("  examples:")
+          for s in c[false_hit].head(12):
+              print("   ", s[:110])
+          EOF
+
+      - name: Feature cache key
+        id: fkey
+        run: |
+          KEY=$(python -c "import model.feature_cache as f; print(f.cache_key('horse_racing.db', '${{ env.START_DATE }}'))")
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+          echo "Feature cache key: $KEY"
+
+      - name: Restore the feature matrix
+        id: fcache
+        uses: actions/cache/restore@v4
+        with:
+          path: .feature_cache
+          key: features-${{ steps.fkey.outputs.key }}
+
+      - name: Build the feature matrix
+        if: steps.fcache.outputs.cache-hit != 'true'
+        run: |
+          python evaluate_oos.py --start-date "$START_DATE" --feature-cache .feature_cache \
+            --build-cache-only 2>&1 | grep -v PerformanceWarning | tail -20
+
+      - name: Save the feature matrix
+        if: steps.fcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .feature_cache
+          key: features-${{ steps.fkey.outputs.key }}
+
+      - name: Screen
+        run: |
+          set -o pipefail
+          ( while true; do echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print $3"/"$2" MB"}') swap $(free -m | awk '/^Swap:/{print $3}') MB"; sleep 120; done ) &
+          python scripts/residual_screen.py --db horse_racing.db --feature-cache .feature_cache \
+            --start-date "$START_DATE" --split "${{ inputs.split || '2024-07-01' }}" --lockbox-from 2026-04-01 \
+            --blocks "${{ inputs.blocks || 'perf,kalman,blandford,pedigree,connections' }}" \
+            --out-dir reports/residual_screen 2>&1 | grep -v PerformanceWarning | tee reports/residual_screen/screen.log
+
+      - name: Summarise into the run page
+        if: always()
+        run: |
+          cat reports/residual_screen/summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "(no summary)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: residual-screen-${{ github.run_number }}
+          path: reports/residual_screen/
+          retention-days: 90

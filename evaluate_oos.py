@@ -64,6 +64,23 @@ DB_PATH = os.path.join(SCRIPT_DIR, "horse_racing.db")
 BETFAIR_COMMISSION = 0.05
 
 
+def build_feature_frame(db_path: str, start_date: str | None = None) -> pd.DataFrame:
+    """The feature matrix every evaluation starts from, and the one the feature
+    cache stores. Module-level so other readers of the cache
+    (scripts/residual_screen.py) build exactly the same frame on a miss."""
+    log.info("Loading data...")
+    d = load_data(db_path, start_date=start_date)
+    log.info(f"  {len(d):,} rows loaded")
+    log.info("Computing custom metrics (this may take a few minutes)...")
+    d = CustomMetricsEngine().calculate_all(d)
+    log.info(f"  {len(d.columns)} columns after metrics")
+    d = build_context_features(d)
+    d["bfsp"] = pd.to_numeric(d["bfsp"], errors="coerce")
+    d = d[d["bfsp"].notna() & (d["bfsp"] > 1.0)].copy()
+    d["log_bfsp"] = np.log(d["bfsp"])
+    return d.sort_values(["race_date", "race_time"]).reset_index(drop=True)
+
+
 # ---------------------------------------------------------------------------
 # Walk-Forward Out-of-Sample Predictions
 # ---------------------------------------------------------------------------
@@ -781,21 +798,8 @@ def main():
     # feature code is unchanged, so an experiment that only alters the model
     # should not pay for it. See model/feature_cache.py for how staleness is
     # prevented.
-    def _build_features():
-        log.info("Loading data...")
-        d = load_data(args.db, start_date=args.start_date)
-        log.info(f"  {len(d):,} rows loaded")
-        log.info("Computing custom metrics (this may take a few minutes)...")
-        d = CustomMetricsEngine().calculate_all(d)
-        log.info(f"  {len(d.columns)} columns after metrics")
-        d = build_context_features(d)
-        d["bfsp"] = pd.to_numeric(d["bfsp"], errors="coerce")
-        d = d[d["bfsp"].notna() & (d["bfsp"] > 1.0)].copy()
-        d["log_bfsp"] = np.log(d["bfsp"])
-        return d.sort_values(["race_date", "race_time"]).reset_index(drop=True)
-
     df, cache_info = feature_cache.build_or_load(
-        _build_features, args.db, start_date=args.start_date,
+        lambda: build_feature_frame(args.db, args.start_date), args.db, start_date=args.start_date,
         cache_dir=args.feature_cache, refresh=args.refresh_cache,
     )
     if cache_info.get("cached"):
