@@ -135,3 +135,23 @@ The going and jockey changes are not yet separated.
 **The deciding test** is the live 06:00 record (`s3://…/predictions/<date>.csv`), written from the morning card before the morning window.
 - A positive CLV there settles reading 1.
 - A null is ambiguous: those forecasts came from a model on history frozen at 22 March and are missing part of the live card (QA C1). The retrained model has to run live first.
+
+### The live 06:00 record: null, and it cannot decide
+
+The query is `research/queries/done/live_record_clv.py` on #74. It applies the same rule to the forecasts the 06:00 job actually wrote.
+- The bucket holds files only from 14 July: 48 days, 16,378 runners to 6 September.
+- **The rule makes −3.20% (−4.26 to −2.13)** on 4,772 trades, against −2.99% for every runner.
+- The live forecast does not separate the market's later movers at all:
+  - forecast ≥ 11%, 22% or 35% shorter: −3.15%, −3.20%, −3.11%;
+  - forecast ≥ 22% longer: −2.98%.
+
+This measures a broken pipeline, not the trade:
+- **History:** the live model ran on history frozen at 22 March, so its form was four to six months out of date.
+- **Card features (QA C1):** the live card reaches it without about a fifth of its features: distance, race type, surface, sex, sire, dam's sire, career runs, claims, the race's OR spread and track direction. Each missing category is scored as the first entry in the vocabulary.
+
+So the backtest pass stands, **unconfirmed at bet time**. The deciding test is forward:
+1. fix the live feature path (C1);
+2. run the retrained model on current history;
+3. measure this rule on the 06:00 forecasts as the weeks come in.
+
+At about 80 trades a day, three weeks would separate +3.5% from zero.
