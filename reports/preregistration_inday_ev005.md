@@ -39,3 +39,22 @@ Either way both are reported, together with:
 ## Not changed after this point
 
 Model, features, gap, ridge grid, rule, threshold, commission and samples. A failure is reported as a failure.
+
+## Results (appended after scoring; nothing above was changed)
+
+| sample | races | bets | ROI | 90% interval | halves | ΔLL over BSP |
+|---|---|---|---|---|---|---|
+| development 2023-01 → 2026-03 (iteration 16) | 40,932 | 541 | +20.2% | +7.3% to +33.0% | +10.8% / +32.1% | +0.14 mnats (t +0.78) |
+| **gate: 2022** | 12,977 | 243 | +5.1% | −11.9% to +22.7% | −2.2% / +11.5% | +0.08 (t +0.25) |
+| **holdout: 2026-04-01 → 2026-09-22** | 6,780 | 67 | **−18.7%** | −49.3% to +14.1% | −23.9% / −11.9% | +0.05 (t +0.12) |
+| pooled 2022 + holdout | | 310 | −0.1% | −15.5% to +16.1% | | |
+
+- The gate passed as written (ROI above zero), so the holdout was scored.
+- **The primary criterion fails**: the interval spans zero and both halves are negative. **The secondary fails**: the pooled figure is −0.1%.
+- **The candidate is rejected.** The holdout has now been looked at once; any later candidate scored on it counts as a second look.
+
+What the numbers say:
+- The edge shrank from +20% to +5% to −19% as the data got further from where the rule was chosen.
+- In the holdout, the horses it picked won 22.4% of the time, against the model's 28.3% and the market's own 25.7%.
+- That is what the best of about 75 rules looks like when its development edge was selection rather than information.
+- In the holdout, the model adds nothing to BSP's log-likelihood.
