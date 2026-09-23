@@ -1,0 +1,11 @@
+{
+  "tag": "iter1-baseline",
+  "outcome": true,
+  "screen": false,
+  "blocks": "",
+  "drop": "",
+  "params": "",
+  "fold_months": 3,
+  "first_fold": "2023-01-01",
+  "final": false
+}

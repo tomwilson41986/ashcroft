@@ -1,0 +1,151 @@
+name: Research loop
+
+# One iteration of the develop-and-test loop toward a profitable rank-1 model.
+# What to run is read from research/loop.json, so an iteration is a commit:
+# change the features or the config, push, and this scores it walk-forward on
+# the development window (the locked holdout from 1 Apr 2026 is never read
+# unless the config says "final": true, and every run writes a ledger entry).
+#
+# Push-triggered on the research branch because a workflow that exists only on
+# a feature branch cannot be dispatched.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/happy-ritchie-*']
+    paths:
+      - 'research/loop.json'
+      - 'scripts/outcome_model.py'
+      - 'model/**'
+      - '.github/workflows/research-loop.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-loop-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: '3.11'
+  S3_BUCKET: horseracingresults
+  S3_DB_KEY: horse_racing.db
+  START_DATE: '2021-01-01'
+
+jobs:
+  iterate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile /mnt/swapfile || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          free -h
+
+      - name: Read the iteration config
+        id: cfg
+        run: |
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json
+          c = json.load(open("research/loop.json"))
+          for k in ("tag", "blocks", "drop", "params", "first_fold"):
+              print(f"{k}={c.get(k, '')}")
+          print(f"fold_months={c.get('fold_months', 3)}")
+          print(f"outcome={'true' if c.get('outcome', True) else 'false'}")
+          print(f"screen={'true' if c.get('screen', False) else 'false'}")
+          print(f"final={'--final' if c.get('final', False) else ''}")
+          EOF
+          cat research/loop.json
+
+      - name: Download historic database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::AWS credentials not configured."
+            exit 1
+          fi
+          python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
+
+      - name: Feature cache key
+        id: fkey
+        run: |
+          KEY=$(python -c "import model.feature_cache as f; print(f.cache_key('horse_racing.db', '${{ env.START_DATE }}'))")
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+          echo "Feature cache key: $KEY"
+
+      - name: Restore the feature matrix
+        id: fcache
+        uses: actions/cache/restore@v4
+        with:
+          path: .feature_cache
+          key: features-${{ steps.fkey.outputs.key }}
+
+      - name: Build the feature matrix
+        if: steps.fcache.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          python evaluate_oos.py --start-date "$START_DATE" --feature-cache .feature_cache \
+            --build-cache-only 2>&1 | grep -v PerformanceWarning | tail -30
+
+      - name: Save the feature matrix
+        if: steps.fcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .feature_cache
+          key: features-${{ steps.fkey.outputs.key }}
+
+      - name: Outcome model and rank-1 scoring
+        if: steps.cfg.outputs.outcome == 'true'
+        run: |
+          set -o pipefail
+          mkdir -p reports/outcome_model
+          ( while true; do echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print $3"/"$2" MB"}') swap $(free -m | awk '/^Swap:/{print $3}') MB"; sleep 180; done ) &
+          python scripts/outcome_model.py --db horse_racing.db --feature-cache .feature_cache \
+            --start-date "$START_DATE" --tag "${{ steps.cfg.outputs.tag }}" \
+            --first-fold "${{ steps.cfg.outputs.first_fold }}" --fold-months "${{ steps.cfg.outputs.fold_months }}" \
+            --blocks "${{ steps.cfg.outputs.blocks }}" --drop "${{ steps.cfg.outputs.drop }}" \
+            --params '${{ steps.cfg.outputs.params }}' ${{ steps.cfg.outputs.final }} \
+            --out-dir reports/outcome_model 2>&1 | grep -v PerformanceWarning | tee "reports/outcome_model/log_${{ steps.cfg.outputs.tag }}.txt"
+
+      - name: Residual screen
+        if: steps.cfg.outputs.screen == 'true'
+        run: |
+          set -o pipefail
+          mkdir -p reports/residual_screen
+          python scripts/residual_screen.py --db horse_racing.db --feature-cache .feature_cache \
+            --start-date "$START_DATE" --lockbox-from 2026-04-01 --blocks "${{ steps.cfg.outputs.blocks }}" \
+            --out-dir reports/residual_screen 2>&1 | grep -v PerformanceWarning | tee reports/residual_screen/screen.log
+
+      - name: Summarise into the run page
+        if: always()
+        run: |
+          cat reports/outcome_model/summary_*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          cat reports/residual_screen/summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-${{ steps.cfg.outputs.tag }}-${{ github.run_number }}
+          path: |
+            reports/outcome_model/
+            reports/residual_screen/
+          retention-days: 90
