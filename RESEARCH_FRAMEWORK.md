@@ -356,27 +356,26 @@ commission 5%. The current recipe's numbers are **R1** (108,711 runners / 11,839
 windows as well as different recipes, so the two do not transfer — see STAKING_REPORT.md,
 which now labels every table with its run.
 
-Run 10, commission 5%:
+Run 10, commission 5% — **corrected 23 Sep 2026.** The table that stood here was
+computed before the leak fix of 16 Sep (commit 352ea94 flagged it superseded; commit
+a513ab2 later relabelled it "run 10" without re-computing it). Its headline cells were
+the leak: model rank 1 at −0.44% and field ≥ 16 at **+14.77% (CI +2.1 to +29.0)**. The
+same run after the fix, from STAKING_REPORT.md §3–§5:
 
 | finding | number |
 |---|---|
-| Full Kelly on model probabilities | bank halves by race 9, under 1% by race 29, ends 10⁻⁷³² |
-| 1/20 Kelly | halves by race 417, ends 10⁻⁴·⁴ |
-| Share of the loss attributable to variance rather than negative edge (1/20 Kelly) | ≈ 3/4 |
-| Kelly-weighted ROI over the same bets vs flat | −1.04% vs −5.69% |
-| Model rank 1, flat at BSP | −0.44% (90% CI −2.1 to +1.4); random runner −5.73%, favourite −3.05% |
-| Model rank 1, field ≥ 12 | +4.40% (CI −0.7 to +9.4), quarters −3.0 / +3.2 / +7.7 / +9.8 |
-| Model rank 1, field ≥ 16 | +14.77% (CI +2.1 to +29.0) |
-| Model rank 1, forecast price ≥ 8 | +13.44% (CI −1.8 to +29.0) |
-| Flattening probabilities (p ∝ p^λ) | monotonically worse as λ → 0: the ordering is the asset, not the confidence |
+| Kelly on model probabilities, every fraction from 1 to 1/20 | 100% drawdown; ROI on turnover −6.97%; 1/20 Kelly ends at log₁₀ bank −8.1 |
+| Model rank 1, flat at BSP | **−4.03%** (90% CI −5.97 to −2.13) |
+| Model rank 1, field ≥ 12 | −1.12% (CI −5.68 to +3.97) |
+| Model rank 1, field ≥ 16 | +6.53% (CI −5.06 to +18.74) — does not clear zero |
+| Model rank 1, forecast price ≥ 8 | +0.78% (CI −20.12 to +24.17) |
 | Stage F (market-free), rank 1 | −1.95% (clogit) / −5.11% (LightGBM) on 5,017 races |
-| Forecast BFSP bias on the model's top pick | +8.3% (closes shorter than forecast 58% of the time), decaying to 0 by rank 5 |
 
 Consequences for the roadmap: (a) no Kelly sizing on these probabilities at any fraction;
-(b) the big-field and long-forecast-price cells join the disagreement cells from §7 as the
-only market-blind selections worth live testing; (c) the +8% retransformation bias in the
-top-pick price forecast is a correctable defect that directly costs CLV, and should be
-fixed before any early-price trigger uses the forecast.
+(b) *withdrawn* — the big-field and long-price cells were live-testing candidates only on
+the leaky figures, and no slice clears zero on the fixed ones; (c) the "+8.3% forecast
+bias on the top pick" was also a pre-fix figure — R1 puts it at −3.9% (STAKING_REPORT.md
+§6) — so re-measure it on the current recipe before any early-price trigger relies on it.
 
 ---
 

@@ -1,0 +1,50 @@
+name: Database Coverage Audit
+
+# Month-by-month coverage of horse_racing.db and every empty stretch in it,
+# against what the scrape log believes about each day. The database lives in
+# S3 and only this repository's secrets can read it, so the audit runs here.
+# Output is an artifact.
+
+on:
+  workflow_dispatch:
+  push:
+    # A workflow that exists only on a feature branch cannot be dispatched, so
+    # a push to a branch of this name runs it instead. Scoped to its two files.
+    branches: ['claude/db-audit-*']
+    paths:
+      - '.github/workflows/db-audit.yml'
+      - 'scripts/db_coverage.py'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download the database
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
+
+      - name: Audit coverage
+        run: python scripts/db_coverage.py horse_racing.db --out coverage
+
+      - name: Upload the audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-coverage
+          path: coverage/
+          retention-days: 30
