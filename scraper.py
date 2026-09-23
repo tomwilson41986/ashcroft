@@ -44,8 +44,10 @@ REQUEST_DELAY = 1.5
 #: day itself at 21:30 UTC, before its results are up; recording that empty
 #: answer as done moved the resume point past the day for good, and the per-day
 #: skip then refused to ask again even when told to. Every day from 18 to 22
-#: September 2026 was lost that way while the job reported success. Older than
-#: this, an empty day really is no racing -- Christmas Day, say.
+#: September 2026 was lost that way while the job reported success. Past this
+#: age the nightly look-back stops asking: a results file with no runners in it
+#: records no racing (Christmas Day, say); no file at all is logged 'error', for
+#: a backfill to ask again.
 RETRY_EMPTY_DAYS = 7
 
 #: After this many days in a row without a results file, stop asking. The site
