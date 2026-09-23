@@ -1,1 +1,1 @@
-{"tag": "iter12-inday", "blocks": "inday", "drop": "", "screen": true, "mode": "offset", "fold_months": 3, "first_fold": "2023-01-01", "final": false, "outcome": true, "params": ""}
+{"tag": "iter13-inday-linear", "blocks": "inday", "keep": "id_", "drop": "", "screen": false, "mode": "linear", "fold_months": 3, "first_fold": "2023-01-01", "final": false, "outcome": true, "params": ""}

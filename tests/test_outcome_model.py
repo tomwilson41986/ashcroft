@@ -160,3 +160,39 @@ def test_blocks_keep_the_raw_columns_they_need(monkeypatch, tmp_path):
     assert "or_num" not in keep                                   # engineered, not raw
     with pytest.raises(RuntimeError, match="block perf failed"):
         rs.attach_blocks(df[["horse_name"]].assign(raceid="r"), ["perf"], db="x", strict=True)
+
+
+def test_linear_mode_keeps_only_the_named_features_and_finds_the_signal(tmp_path, monkeypatch):
+    """A ridge conditional logit on the market plus --keep features: it finds an edge the market
+    lacks, and a --keep that matches nothing stops the run instead of fitting the market alone."""
+    rng = np.random.default_rng(5)
+    n_races, size = 900, 7
+    codes = np.repeat(np.arange(n_races), size)
+    dates = pd.to_datetime("2022-06-01") + pd.to_timedelta((np.arange(n_races) * 1.2).astype(int)[codes], unit="D")
+    x = rng.normal(size=len(codes))
+    strength = rng.normal(size=len(codes))
+    starts, seg = rs.race_blocks(codes)
+    p_true = rs.softmax_blocks(strength + 0.5 * x, starts, seg)
+    p_mkt = rs.softmax_blocks(strength, starts, seg)
+    won = np.zeros(len(codes))
+    for s in starts:
+        won[s + rng.choice(size, p=p_true[s:s + size] / p_true[s:s + size].sum())] = 1
+    from model.bfsp_features import ALL_FEATURE_COLS
+    prod = [c for c in dict.fromkeys(ALL_FEATURE_COLS) if not c.endswith("_cat")]
+    informative, noise = prod[0], prod[1]
+    df = pd.DataFrame({"race_date": dates, "track": "York", "race_time": (codes % 3 + 1).astype(str) + ".30",
+                       "horse_name": [f"h{i}" for i in range(len(codes))], "won": won, "bfsp": 1.0 / p_mkt,
+                       informative: x, noise: rng.normal(size=len(codes))})
+    monkeypatch.setattr(rs, "load_frame", lambda *a, **k: df.copy())
+    base = dict(db="x", feature_cache=None, start_date="2021-01-01", first_fold="2023-06-01", fold_months=6,
+                val_months=4, lockbox_from="2025-01-01", final=False, drop="", blocks="", params="",
+                out_dir=str(tmp_path), mode="linear")
+    res = om.run(om.argparse.Namespace(**base, keep=informative, tag="lin"))
+    assert res["config"]["mode"] == "linear" and res["config"]["features"] == 1
+    assert res["config"]["keep"] == informative
+    assert res["loglik"]["dll_mnats"] > 0
+    assert all(f["best_iteration"] in om.LINEAR_RIDGES for f in res["folds"])     # the chosen ridge
+    oos = pd.read_csv(tmp_path / "oos_lin.csv.gz")
+    assert np.allclose(oos.groupby("race")["p_model"].sum(), 1.0)
+    with pytest.raises(SystemExit):
+        om.run(om.argparse.Namespace(**base, keep="no_such_prefix_", tag="none"))

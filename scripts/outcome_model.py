@@ -58,6 +58,8 @@ EV_GRID = (0.0, 0.02, 0.05, 0.10, 0.20)
 #: Race attributes carried into the out-of-sample file, for segment tables.
 SEGMENT_COLS = ("race_type", "race_code", "surface_type", "number_of_runners", "race_class", "track")
 KELLY_FRACTION = 0.25
+#: ridge penalties tried for --mode linear, on the summed log-likelihood; chosen on the validation months
+LINEAR_RIDGES = (1.0, 10.0, 100.0, 1000.0, 10000.0)
 
 
 # ---------------------------------------------------------------------------
@@ -220,13 +222,26 @@ def fit_boosted(X, tr: rs.Part, va: rs.Part, market_beta, params=None, rounds=20
     return booster, int(booster.best_iteration or rounds)
 
 
+def linear_design(X: np.ndarray, train_mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Each feature as the screen designs it (z, z^2 and a missing flag, standardised and winsorised on
+    `train_mask` rows); returns the columns and, for each, the index of the feature it came from."""
+    cols, owner = [], []
+    for j in range(X.shape[1]):
+        F, _ = rs.feature_design(X[:, j], train_mask)
+        cols.append(F); owner += [j] * F.shape[1]
+    return (np.column_stack(cols) if cols else np.zeros((len(X), 0))), np.asarray(owner, int)
+
+
 def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.Timestamp, fold_months: int,
                  val_months: int, params=None, feature_names=None,
                  mode: str = "offset") -> tuple[pd.DataFrame, list[dict], pd.DataFrame]:
     """mode "offset": trees boosted from the market-only logit (one pass).
     mode "free": Benter's two stages -- a market-free fundamental model f on the
     winner, then Stage C, softmax(a ln pi + b (ln pi)^2 + c ln f), fitted on the
-    validation months, whose f the fundamental model never trained on."""
+    validation months, whose f the fundamental model never trained on.
+    mode "linear": a ridge-penalised conditional logit on the market and the features
+    (Benter's published form); ridge chosen on the validation months. Meant for a few
+    features (--keep): the Newton step is quadratic in the number of columns."""
     y = sample["y"].to_numpy(float)
     codes = pd.factorize(sample["race"])[0]
     pos = np.arange(len(sample))
@@ -261,6 +276,29 @@ def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.T
             c = rs.fit_clogit(np.column_stack([p_va.M, lf_va]), p_va.y, *p_va.blk)
             eta = np.column_stack([p_te.M, lf_te]) @ c
             p_fund = np.exp(lf_te)               # market-free: usable against a morning price
+        elif mode == "linear":
+            # Benter's own form, and the right one for a weak signal: a conditional logit on the
+            # market (unpenalised) and each feature's z, z^2 and missing flag, ridge-penalised; the
+            # ridge is chosen on the validation months, then the model is refitted on everything
+            # before the fold. No trees, so nothing to early-stop on noise.
+            F, owner = linear_design(X, tr_all)
+            p_fit, p_va = part(fit_m), part(va_m)
+            design = lambda pt: np.column_stack([pt.M, F[pt.idx]])
+            best_ll, ridge = -np.inf, LINEAR_RIDGES[0]
+            for r in LINEAR_RIDGES:
+                pen = np.r_[np.zeros(rs.MARKET_TERMS), np.full(F.shape[1], r)]
+                b = rs.fit_clogit(design(p_fit), p_fit.y, *p_fit.blk, ridge=pen)
+                ll = float(rs.race_loglik(design(p_va) @ b, p_va.y, *p_va.blk).sum())
+                if ll > best_ll:
+                    best_ll, ridge = ll, r
+            pen = np.r_[np.zeros(rs.MARKET_TERMS), np.full(F.shape[1], ridge)]
+            b = rs.fit_clogit(design(p_all), p_all.y, *p_all.blk, ridge=pen)
+            eta = design(p_te) @ b
+            p_fund = np.full(len(p_te.idx), np.nan)
+            best = int(ridge)
+            coef = np.zeros(X.shape[1])
+            np.add.at(coef, owner, np.abs(b[rs.MARKET_TERMS:]))
+            booster = None
         else:
             booster, best = fit_boosted(X, part(fit_m), part(va_m), bm, params=params)
             eta = off + booster.predict(X[p_te.idx], raw_score=True, num_iteration=best)
@@ -275,7 +313,8 @@ def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.T
                       "best_iteration": best, "dll_mnats": g["dll_mnats"], "t": g["t"],
                       "seconds": round(time.time() - t_start)})
         if feature_names is not None:
-            imp = booster.feature_importance("gain", iteration=best)
+            # boosted: split gain; linear: the summed |coefficient| of the feature's standardised columns
+            imp = coef if booster is None else booster.feature_importance("gain", iteration=best)
             gains.append(pd.Series(imp, index=feature_names, name=str(f0.date())))
         log.info("fold %s: %d races, %d rounds, ΔLL %+.2f mnats/race (t %+.2f), %ds", f0.date(), p_te.n_races,
                  best, g["dll_mnats"], g["t"], folds[-1]["seconds"])
@@ -321,7 +360,12 @@ def run(args) -> dict:
     sample = rs.screening_sample(df, None)
     prod = [c for c in dict.fromkeys(ALL_FEATURE_COLS) if c in df.columns]
     drops = tuple(p for p in (args.drop or "").split(",") if p)
-    feats = [c for c in prod if not c.startswith(drops)] if drops else prod
+    keeps = tuple(p for p in (getattr(args, "keep", "") or "").split(",") if p)
+
+    def wanted(c: str) -> bool:
+        return not (drops and c.startswith(drops)) and (not keeps or c.startswith(keeps))
+
+    feats = [c for c in prod if wanted(c)]
     rows_in_sample = df.index.get_indexer(sample.index)
     cols = [np.array(pd.to_numeric(df[c], errors="coerce"), dtype=np.float32)[rows_in_sample] for c in feats]
     blocks = [b for b in (args.blocks or "").split(",") if b]
@@ -334,7 +378,7 @@ def run(args) -> dict:
                                "pos": np.arange(len(sample))})
         m = key.reset_index().merge(lookup, on=["race", "horse_name"], how="inner").drop_duplicates("pos")
         for b, bcols in added.items():
-            for c in [c for c in bcols if not (drops and c.startswith(drops))]:
+            for c in [c for c in bcols if wanted(c)]:
                 arr = np.full(len(sample), np.nan, dtype=np.float32)
                 arr[m["pos"].to_numpy()] = np.array(pd.to_numeric(keep[c], errors="coerce"),
                                                     dtype=np.float32)[m["index"].to_numpy()]
@@ -342,6 +386,8 @@ def run(args) -> dict:
         del keep
     else:
         del df
+    if not cols:
+        raise SystemExit("no features left after --drop/--keep")
     X = np.column_stack(cols)
     del cols
     log.info("design: %d runners x %d features; %d races %s -> %s", X.shape[0], X.shape[1],
@@ -350,7 +396,7 @@ def run(args) -> dict:
     end = sample["date"].max() + pd.Timedelta(days=1)
     first = args.lockbox_from if args.final else args.first_fold
     cfg = {"tag": args.tag, "mode": args.mode, "features": len(feats), "feature_hash": config_hash({"f": feats}),
-           "drop": args.drop,
+           "drop": args.drop, "keep": getattr(args, "keep", ""),
            "blocks": args.blocks, "fold_months": args.fold_months, "val_months": args.val_months,
            "params": args.params, "first_fold": first, "final": bool(args.final)}
     params = json.loads(args.params) if args.params else None
@@ -438,8 +484,10 @@ def main(argv=None):
     ap.add_argument("--drop", default="", help="comma list of feature-name prefixes to withhold")
     ap.add_argument("--blocks", default="", help="opt-in blocks, as residual_screen.py")
     ap.add_argument("--params", default="", help="LightGBM params as JSON, merged over the defaults")
-    ap.add_argument("--mode", default="offset", choices=["offset", "free"],
-                    help="offset: trees boosted from the market; free: market-free Stage F, then Stage C")
+    ap.add_argument("--keep", default="", help="comma list of feature-name prefixes: use only these")
+    ap.add_argument("--mode", default="offset", choices=["offset", "free", "linear"],
+                    help="offset: trees boosted from the market; free: market-free Stage F, then Stage C; "
+                         "linear: ridge conditional logit on market + features (use with --keep)")
     ap.add_argument("--tag", default="dev")
     ap.add_argument("--out-dir", default=str(ROOT / "reports" / "outcome_model"))
     args = ap.parse_args(argv)
