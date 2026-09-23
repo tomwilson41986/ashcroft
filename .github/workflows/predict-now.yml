@@ -1,0 +1,64 @@
+name: Predict Now (artifact only)
+
+# Prices a day's card with the model on this branch and uploads the result as an
+# artifact. Unlike predict.yml it writes nothing to S3, so a run in the middle of
+# the day never overwrites the 06:00 record that closing-line value is measured
+# against. History starts where training did (2021-01-01), not at the live
+# pipeline's 2020-01-01.
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date to price (YYYY-MM-DD). Empty for today.'
+        required: false
+        type: string
+  push:
+    # A workflow only on a feature branch cannot be dispatched, so a push to a
+    # branch of this name runs it. Scoped to this file.
+    branches: ['claude/predict-now-*']
+    paths: ['.github/workflows/predict-now.yml']
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -e ".[pipeline]" && pip install -r requirements.txt
+
+      - name: Download the database
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
+
+      - name: Price the card
+        shell: bash   # explicit, so the pipe into tee keeps python's exit code
+        env:
+          HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
+          HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
+        run: |
+          mkdir -p out
+          python predict_bfsp_today.py \
+            ${{ inputs.date && format('--date {0}', inputs.date) || '' }} \
+            --start-date 2021-01-01 \
+            --output-csv out/predictions.csv 2>&1 | tee out/predict.log
+          cp csv/racecards/racecard_*.csv out/ 2>/dev/null || true
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predictions-now
+          path: out/
+          retention-days: 14
