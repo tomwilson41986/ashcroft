@@ -65,6 +65,9 @@ sys.path.insert(0, str(ROOT))
 log = logging.getLogger("residual_screen")
 
 MARKET_TERMS = 2               # ln π and (ln π)²: the favourite-longshot bias, curvature included
+#: The Blandford feed's same-day fields -- see attach_blocks for why they are withheld.
+BLANDFORD_SAMEDAY = ("tf_master_pre", "tf_adjusted_pre", "tf_master_rank", "tf_master_gap_top", "tf_master_vs_or",
+                     "LR_tf_perf_vs_master")
 MIN_RACES_TO_SCORE = 200
 CHUNK_ROWS = 60_000            # Hessian accumulation block for wide designs
 
@@ -497,9 +500,15 @@ def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = F
                     df = add_perf_figure_features(df)
                 df = add_kalman_features(df, "perf_lbs", prefix="kf")
                 cols = ["kf_rating", "kf_sd", "kf_n", "kf_z", "kf_rank", "kf_vs_max"]
-            elif b == "blandford":
+            elif b in ("blandford", "blandford_sameday"):
                 from model.blandford_features import BLANDFORD_FEATURES, add_blandford_features
                 df = add_blandford_features(df, db_path=db); cols = list(BLANDFORD_FEATURES)
+                if b == "blandford":
+                    # The feed's same-day "pre-race" fields are banned by default: in races
+                    # where every runner is rated their value adds nothing beyond BSP in any
+                    # year (2021-2026), and in 2026 their ABSENCE leaks the result (unrated
+                    # runners won 0.72 of their BSP expectation). reports/research_ledger.jsonl
+                    cols = [c for c in cols if c not in BLANDFORD_SAMEDAY]
             elif b == "ae":
                 from model.ae_features import add_ae_features
                 df, cols = add_ae_features(df)
