@@ -143,3 +143,6 @@ def test_free_mode_runs_and_finds_the_signal(tmp_path, monkeypatch):
     res = om.run(args)
     assert res["config"]["mode"] == "free"
     assert res["loglik"]["dll_mnats"] > 0
+    oos = pd.read_csv(tmp_path / "oos_free.csv.gz")
+    assert oos["p_fund"].notna().all()
+    assert np.allclose(oos.groupby("race")["p_fund"].sum(), 1.0)       # a probability per race

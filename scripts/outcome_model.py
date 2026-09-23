@@ -260,13 +260,16 @@ def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.T
             lf_te = np.log(rs.softmax_blocks(f_te, *p_te.blk))
             c = rs.fit_clogit(np.column_stack([p_va.M, lf_va]), p_va.y, *p_va.blk)
             eta = np.column_stack([p_te.M, lf_te]) @ c
+            p_fund = np.exp(lf_te)               # market-free: usable against a morning price
         else:
             booster, best = fit_boosted(X, part(fit_m), part(va_m), bm, params=params)
             eta = off + booster.predict(X[p_te.idx], raw_score=True, num_iteration=best)
+            p_fund = np.full(len(p_te.idx), np.nan)
         p_model = rs.softmax_blocks(eta, *p_te.blk)
         p_mkt = rs.softmax_blocks(off, *p_te.blk)
         d = rs.race_loglik(eta, p_te.y, *p_te.blk) - rs.race_loglik(off, p_te.y, *p_te.blk)
-        preds.append(pd.DataFrame({"row": p_te.idx, "p_model": p_model, "p_mkt": p_mkt, "fold": str(f0.date())}))
+        preds.append(pd.DataFrame({"row": p_te.idx, "p_model": p_model, "p_mkt": p_mkt, "p_fund": p_fund,
+                                   "fold": str(f0.date())}))
         g = rs.gain_summary(d, p_te.null)
         folds.append({"fold": str(f0.date()), "to": str(f1.date()), "races": int(p_te.n_races),
                       "best_iteration": best, "dll_mnats": g["dll_mnats"], "t": g["t"],
@@ -280,8 +283,9 @@ def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.T
     keep = ["race", "date", "horse_name", "bfsp", "y"] + [c for c in SEGMENT_COLS if c in sample.columns]
     oos = sample.iloc[p["row"].to_numpy()][keep].reset_index(drop=True)
     oos = oos.rename(columns={"bfsp": "bsp", "y": "won"})
-    oos[["p_model", "p_mkt", "fold"]] = p[["p_model", "p_mkt", "fold"]].to_numpy()
-    oos["p_model"] = oos["p_model"].astype(float); oos["p_mkt"] = oos["p_mkt"].astype(float)
+    oos[["p_model", "p_mkt", "p_fund", "fold"]] = p[["p_model", "p_mkt", "p_fund", "fold"]].to_numpy()
+    for c in ("p_model", "p_mkt", "p_fund"):
+        oos[c] = oos[c].astype(float)
     importance = pd.concat(gains, axis=1) if gains else pd.DataFrame()
     return oos, folds, importance
 
