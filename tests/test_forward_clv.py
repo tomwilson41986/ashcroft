@@ -253,3 +253,22 @@ def test_the_morning_card_is_written_under_its_fetch_time():
     src = inspect.getsource(mod.main)
     assert 'write_csv("racecards", f"{target_date}_{fetched_at}"' in src
     assert src.index("card_sink=") < src.index('write_csv("predictions"')
+
+
+# --- the early-price diagnostics -------------------------------------------------
+
+def test_clv_diagnostics_clock_and_commission():
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "clv_diagnostics", Path(__file__).resolve().parent.parent / "scripts" / "clv_diagnostics.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.minutes("1.50") == 13 * 60 + 50          # card times 1-9 are afternoon
+    assert mod.minutes("11:05") == 11 * 60 + 5
+    assert mod.minutes("1.50.") == 13 * 60 + 50         # the table's trailing dot
+    assert pd.isna(mod.minutes("tba"))
+    net = mod.net_clv(pd.Series([4.4, 3.0]), pd.Series([4.0, 4.0]))
+    assert net[0] == pytest.approx(0.1 * 0.95)          # commission only on a gain
+    assert net[1] == pytest.approx(-0.25)

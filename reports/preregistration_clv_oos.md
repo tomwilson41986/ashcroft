@@ -47,3 +47,37 @@ The forecasts end on 6 September, the last full fold of run 28, so the window sc
   1. The morning price is staler before later races. That edge would be tradeable.
   2. The backtest forecast knows race-day facts, such as the going on the day and jockey changes, from the result rows. That edge would not.
 - **The deciding test** is the live 06:00 record. See `reports/clv_betfair_2026q1.md` on #73.
+
+## Post-hoc diagnostics (23 Sep, after the result; descriptive, not a test)
+
+These come from `scripts/clv_diagnostics.py`, run on the same forecasts and prices. They ask whether the later-race edge follows the clock (a staler morning price) or the race's order at its meeting (race-day facts that build up through a card). They also measure two race-day channels directly:
+- going changes during the meeting, read from the result rows;
+- late withdrawals, whose reduction factors are estimated from the runners' morning book.
+
+| | Jan–Mar (set the rule) | Apr–Sep (out of sample) |
+|---|---|---|
+| the rule | +6.10% (4,348) | +3.54% (12,389) |
+| with estimated reduction factors | +5.39% | +2.87% |
+| no sign of a withdrawal and no going change during the meeting | **+4.66%** (+3.04 to +6.43; 3,516) | **+2.45%** (+1.73 to +3.13; 10,310) |
+| races after a going change | +14.05% (255) | +10.43% (778) |
+| per hour after 11:00 | **−1.99%** (−2.78 to −1.25) | **+0.84%** (+0.46 to +1.24) |
+| per race of meeting order | +1.61% (+0.67 to +2.62) | +0.29% (−0.12 to +0.71) |
+| first race, afternoon meeting | +9.30% (555) | −0.58% (1,397) |
+| first race, evening meeting | −6.13% (53) | +4.87% (367) |
+
+What this says:
+- **The two channels that can be measured account for only part of the edge.**
+  - Going changes during a meeting inflate it where they happen, but they cover about 6% of bets.
+  - Withdrawals take about 0.7 points off.
+  - Without either channel, the edge is positive in both windows.
+- **The timing is not stable, so it supports neither reading.**
+  - In winter the edge was largest in early-afternoon races and fell with the clock.
+  - In summer it rises into the evening.
+  - A staler morning price would show the same clock gradient in both seasons.
+  - The seasonal flip lines up with the code of racing: winter afternoons are jump racing, summer evenings are flat.
+- **Still unmeasured:**
+  - going changes between 06:00 and a meeting's first race;
+  - jockey replacements.
+
+  The morning card the 06:00 job now keeps will measure both.
+- **The forward test** (`reports/preregistration_clv_forward.md`) remains the decider.
