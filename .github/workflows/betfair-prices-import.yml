@@ -1,0 +1,86 @@
+name: Import Betfair Price Files
+
+# Betfair's historic price files (BSP, morning and pre-play weighted prices,
+# pre-play and in-play highs and lows) cannot be fetched from GitHub's runners:
+# promo.betfair.com refuses US addresses. This loads a set someone downloaded
+# from a UK connection and shared as a Google Drive file (link sharing on),
+# links it to race_results, uploads the database, and leaves an extract for
+# the closing-line-value test as an artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      drive_file_id:
+        description: 'Google Drive file id of the price CSV (link sharing must be on)'
+        required: true
+        type: string
+  push:
+    # A workflow only on a feature branch cannot be dispatched, so a push to a
+    # branch of this name runs it. Scoped to its two files.
+    branches: ['claude/bf-import-*']
+    paths:
+      - '.github/workflows/betfair-prices-import.yml'
+      - 'scripts/import_bf_prices.py'
+
+# One writer of horse_racing.db at a time, among the jobs that take part.
+concurrency:
+  group: horse-racing-db
+  cancel-in-progress: false
+
+env:
+  # bfsp_uk_ire_win_20260101_20260922.csv, shared 23 Sep 2026
+  DRIVE_FILE_ID: ${{ inputs.drive_file_id || '1mFV0LWWTjILJA31CKvPAFOsABphoCDJK' }}
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch the price file from Google Drive
+        run: |
+          mkdir -p data/bf_import
+          curl -sSL --fail -o data/bf_import/prices.csv \
+            "https://drive.usercontent.google.com/download?id=${DRIVE_FILE_ID}&export=download&confirm=t"
+          ls -la data/bf_import
+          head -c 300 data/bf_import/prices.csv; echo
+          # A private file comes back as an HTML sign-in page, not a CSV.
+          if ! head -1 data/bf_import/prices.csv | grep -qi 'event_id'; then
+            echo "::error::Not a Betfair price CSV -- is link sharing on for file ${DRIVE_FILE_ID}?"
+            exit 1
+          fi
+
+      - name: Download the database
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
+
+      - name: Load, match and extract
+        run: python scripts/import_bf_prices.py data/bf_import/prices.csv --db horse_racing.db --out bf_out
+
+      - name: Upload the database
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --upload-db --s3-bucket horseracingresults --s3-key horse_racing.db
+
+      - name: Upload the extract
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bf-import
+          path: bf_out/
+          retention-days: 30
