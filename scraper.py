@@ -39,6 +39,20 @@ CSV_URL = f"{BASE_URL}/excelresults.php"
 # Rate limiting: seconds between requests
 REQUEST_DELAY = 1.5
 
+#: An empty download for a date this recent means horseracebase has not
+#: published it yet, not that there was no racing. The nightly job asks for the
+#: day itself at 21:30 UTC, before its results are up; recording that empty
+#: answer as done moved the resume point past the day for good, and the per-day
+#: skip then refused to ask again even when told to. Every day from 18 to 22
+#: September 2026 was lost that way while the job reported success. Older than
+#: this, an empty day really is no racing -- Christmas Day, say.
+RETRY_EMPTY_DAYS = 7
+
+
+def is_recent(d: date, today: date | None = None) -> bool:
+    """Too recent for an empty download to be believed."""
+    return ((today or date.today()) - d).days < RETRY_EMPTY_DAYS
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -375,6 +389,7 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
     total_days = (end_date - start_date).days + 1
     current = end_date
     scraped_count = 0
+    pending_count = 0
     total_rows = 0
 
     log.info(f"Scraping {total_days} days: {start_date} to {end_date}")
@@ -386,7 +401,9 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
             (current.isoformat(),)
         ).fetchone()
 
-        if existing:
+        # A recent day logged as done with nothing in it was, in all
+        # likelihood, asked for before it was published -- so ask again.
+        if existing and not (existing[0] == 0 and is_recent(current)):
             log.debug(f"Skipping {current} (already scraped, {existing[0]} rows)")
             current -= timedelta(days=1)
             continue
@@ -399,8 +416,19 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
                 rows = parse_and_save(conn, csv_text, current)
                 total_rows += rows
                 log.info(f"{current}: {rows} rows saved")
+            elif is_recent(current):
+                # Not published yet. 'pending' is not 'ok', so it neither
+                # advances the resume point nor satisfies the skip above, and
+                # the next run asks for it again.
+                conn.execute("""
+                    INSERT OR REPLACE INTO scrape_log (scrape_date, rows_found, status)
+                    VALUES (?, 0, 'pending')
+                """, (current.isoformat(),))
+                conn.commit()
+                pending_count += 1
+                log.info(f"{current}: no results yet -- will retry on the next run")
             else:
-                # No results for this date (no racing)
+                # Old enough that empty means no racing.
                 conn.execute("""
                     INSERT OR REPLACE INTO scrape_log (scrape_date, rows_found, status)
                     VALUES (?, 0, 'ok')
@@ -441,7 +469,8 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH):
         time.sleep(REQUEST_DELAY)
 
     conn.close()
-    log.info(f"Done. Scraped {scraped_count} new days, {total_rows} total rows.")
+    log.info(f"Done. Scraped {scraped_count} new days, {total_rows} total rows"
+             + (f"; {pending_count} not published yet, to retry." if pending_count else "."))
 
 
 def main():
@@ -473,8 +502,16 @@ def main():
         last = get_last_scraped_date(conn)
         conn.close()
         if last:
-            start = last + timedelta(days=1)
-            log.info(f"Resuming from {start} (last scraped: {last})")
+            # Never resume later than the retry window. A day asked for before
+            # it was published is 'pending', and a later day coming in does
+            # not mean it has; the loop skips days already in without a
+            # request, so this costs one request per day still missing. The
+            # window's oldest day is no longer recent, so a pending day gets
+            # its final answer there -- an empty one is then no racing.
+            start = min(last + timedelta(days=1),
+                        date.today() - timedelta(days=RETRY_EMPTY_DAYS))
+            log.info(f"Resuming from {start} (last scraped: {last}; the last "
+                     f"{RETRY_EMPTY_DAYS} days are rechecked for late results)")
         else:
             start = date(2010, 1, 1)
         end = date.fromisoformat(args.to_date) if args.to_date else yesterday
