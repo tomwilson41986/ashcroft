@@ -1,1 +1,1 @@
-{"tag": "confirm-gate-2022", "blocks": "inday30", "keep": "id_", "drop": "", "screen": false, "mode": "linear", "fold_months": 3, "first_fold": "2022-01-01", "until": "2023-01-01", "final": false, "outcome": true, "params": ""}
+{"tag": "confirm-holdout", "blocks": "inday30", "keep": "id_", "drop": "", "screen": false, "mode": "linear", "fold_months": 3, "first_fold": "2023-01-01", "until": "", "final": true, "outcome": true, "params": ""}
