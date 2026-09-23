@@ -55,6 +55,9 @@ log = logging.getLogger("outcome_model")
 
 COMMISSION = 0.05
 EV_GRID = (0.0, 0.02, 0.05, 0.10, 0.20)
+#: Race attributes carried into the out-of-sample file, for segment tables.
+SEGMENT_COLS = ("race_type", "race_code", "surface_type", "number_of_runners", "race_class", "track")
+KELLY_FRACTION = 0.25
 
 
 # ---------------------------------------------------------------------------
@@ -119,10 +122,67 @@ def score_strategies(oos: pd.DataFrame, commission: float = COMMISSION, ev_grid=
         name = "rank1" if t is None else f"rank1_ev>{t:g}"
         out[f"{name}_halves"] = [roi_summary(ret[m & ~half], won[m & ~half], n_boot=500)["roi"] if (m & ~half).any() else None,
                                  roi_summary(ret[m & half], won[m & half], n_boot=500)["roi"] if (m & half).any() else None]
+    out["segments"] = segment_tables(oos, r1, ev, ret, won)
+    out["kelly"] = {f"rank1_ev>{t:g}": kelly_path(oos["p_model"].to_numpy(float), price, won, r1 & (ev > t + 1e-9),
+                                                 commission)
+                    for t in ev_grid}
     bands = [(1, 2), (2, 3), (3, 5), (5, 8), (8, 15), (15, 1000)]
     out["rank1_by_price"] = {f"{a}-{b}": roi_summary(ret[r1 & (price >= a) & (price < b)],
                                                      won[r1 & (price >= a) & (price < b)], n_boot=500)
                              for a, b in bands}
+    return out
+
+
+def kelly_path(p: np.ndarray, price: np.ndarray, won: np.ndarray, mask: np.ndarray,
+               commission: float = COMMISSION, fraction: float = KELLY_FRACTION) -> dict:
+    """Fractional-Kelly bankroll over the masked bets in date order (bank starts at 1).
+
+    Kelly on a back bet at net odds b = (price-1)(1-c): stake f* = (p·b − (1−p)) / b
+    of the bank, scaled by `fraction`, never negative, capped at 5% a bet."""
+    idx = np.flatnonzero(mask)
+    if len(idx) == 0:
+        return {"bets": 0}
+    b = (price[idx] - 1.0) * (1.0 - commission)
+    f = np.clip(fraction * (p[idx] * b - (1 - p[idx])) / np.maximum(b, 1e-9), 0.0, 0.05)
+    growth = np.where(won[idx] > 0, 1.0 + f * b, 1.0 - f)
+    bank = np.cumprod(growth)
+    peak = np.maximum.accumulate(np.r_[1.0, bank])[1:]
+    return {"bets": int(len(idx)), "final_bank": float(bank[-1]), "max_drawdown": float(np.max(1 - bank / peak)),
+            "log_growth_per_bet": float(np.mean(np.log(growth))), "turnover": float(f.sum())}
+
+
+def segment_tables(oos: pd.DataFrame, r1: np.ndarray, ev: np.ndarray, ret: np.ndarray, won: np.ndarray) -> dict:
+    """Rank-1 ROI (all, and EV > 0) and the model's gain over the market, by segment.
+
+    For reading, not selecting: a segment chosen because it looks good here is a
+    hypothesis for the holdout, not a result."""
+    out = {}
+    starts, seg = rs.race_blocks(pd.factorize(oos["race"])[0])
+    y = oos["won"].to_numpy(float)
+    d = (rs.race_loglik(np.log(np.clip(oos["p_model"].to_numpy(float), 1e-12, 1)), y, starts, seg)
+         - rs.race_loglik(np.log(np.clip(oos["p_mkt"].to_numpy(float), 1e-12, 1)), y, starts, seg))
+    race_first = starts
+    cols = {c: oos[c] for c in SEGMENT_COLS if c in oos.columns and c != "track"}
+    if "number_of_runners" in cols:
+        cols["field"] = pd.cut(pd.to_numeric(oos["number_of_runners"], errors="coerce"), [0, 5, 8, 12, 16, 60],
+                               labels=["2-5", "6-8", "9-12", "13-16", "17+"]).astype(str)
+        del cols["number_of_runners"]
+    for name, col in cols.items():
+        col = col.astype(str).fillna("?")
+        table = {}
+        for level in col.value_counts().index[:12]:
+            m_rows = (col == level).to_numpy()
+            m_race = m_rows[race_first]
+            if m_race.sum() < 200:
+                continue
+            a = roi_summary(ret[r1 & m_rows], won[r1 & m_rows], n_boot=300)
+            e = roi_summary(ret[r1 & m_rows & (ev > 1e-9)], won[r1 & m_rows & (ev > 1e-9)], n_boot=300)
+            dd = d[m_race]
+            table[str(level)] = {"races": int(m_race.sum()), "rank1_roi": a.get("roi"), "rank1_lo90": a.get("lo90"),
+                                 "ev0_bets": e.get("bets", 0), "ev0_roi": e.get("roi"),
+                                 "dll_mnats": float(1000 * dd.mean()),
+                                 "dll_t": float(dd.mean() / (dd.std(ddof=1) / np.sqrt(len(dd)))) if len(dd) > 1 else None}
+        out[name] = table
     return out
 
 
@@ -201,7 +261,8 @@ def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.T
         log.info("fold %s: %d races, %d rounds, ΔLL %+.2f mnats/race (t %+.2f), %ds", f0.date(), p_te.n_races,
                  best, g["dll_mnats"], g["t"], folds[-1]["seconds"])
     p = pd.concat(preds, ignore_index=True)
-    oos = sample.iloc[p["row"].to_numpy()][["race", "date", "horse_name", "bfsp", "y"]].reset_index(drop=True)
+    keep = ["race", "date", "horse_name", "bfsp", "y"] + [c for c in SEGMENT_COLS if c in sample.columns]
+    oos = sample.iloc[p["row"].to_numpy()][keep].reset_index(drop=True)
     oos = oos.rename(columns={"bfsp": "bsp", "y": "won"})
     oos[["p_model", "p_mkt", "fold"]] = p[["p_model", "p_mkt", "fold"]].to_numpy()
     oos["p_model"] = oos["p_model"].astype(float); oos["p_mkt"] = oos["p_mkt"].astype(float)
@@ -321,6 +382,20 @@ def render(res: dict) -> str:
     L.append("")
     L.append("Rank 1 by BSP band: " + ", ".join(f"{b} {v['roi']:+.2%} ({v['bets']:,})" for b, v in s["rank1_by_price"].items() if v.get("bets")))
     L.append("")
+    k = s.get("kelly", {})
+    if k:
+        L.append("Quarter-Kelly bankroll (bank 1.0, 5% cap a bet): " + "; ".join(
+            f"{name} {v['bets']:,} bets -> {v['final_bank']:.3f} (max DD {v['max_drawdown']:.1%})"
+            for name, v in k.items() if v.get("bets")))
+        L.append("")
+    for segname, table in s.get("segments", {}).items():
+        L.append(f"| {segname} | races | rank-1 ROI | lo90 | EV>0 bets | EV>0 ROI | ΔLL mnats | t |")
+        L.append("|---|---|---|---|---|---|---|---|")
+        for level, v in table.items():
+            fmt = lambda x, p=True: "" if x is None else (f"{x:+.2%}" if p else f"{x:+.2f}")
+            L.append(f"| {level} | {v['races']:,} | {fmt(v['rank1_roi'])} | {fmt(v['rank1_lo90'])} | {v['ev0_bets']:,} | "
+                     f"{fmt(v['ev0_roi'])} | {fmt(v['dll_mnats'], False)} | {fmt(v['dll_t'], False)} |")
+        L.append("")
     L.append("| fold | races | rounds | ΔLL mnats | t |")
     L.append("|---|---|---|---|---|")
     for f in res["folds"]:

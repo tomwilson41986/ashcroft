@@ -423,6 +423,9 @@ def screening_sample(df: pd.DataFrame, mp: pd.DataFrame | None = None) -> pd.Dat
     won = df["won"] if "won" in df.columns else (pd.to_numeric(df["placing_numerical"], errors="coerce") == 1)
     d["y"] = pd.to_numeric(won, errors="coerce").fillna(0).astype(float)
     d["bfsp"] = pd.to_numeric(df["bfsp"], errors="coerce")
+    for c in ("race_type", "race_code", "surface_type", "number_of_runners", "race_class", "track"):
+        if c in df.columns:
+            d[c] = df[c].values
     d = d[d["bfsp"] > 1.0]
     g = d.groupby("race")
     ok = (g["y"].transform("sum") == 1) & g["y"].transform("size").between(3, 40)

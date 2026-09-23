@@ -1,8 +1,8 @@
 {
-  "tag": "iter3-comments",
+  "tag": "iter4-allblocks",
   "outcome": true,
-  "screen": true,
-  "blocks": "comments",
+  "screen": false,
+  "blocks": "comments,blandford,perf,kalman,pedigree,connections",
   "drop": "",
   "params": "",
   "fold_months": 3,

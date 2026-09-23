@@ -94,3 +94,24 @@ def test_walk_forward_end_to_end(tmp_path, monkeypatch):
     entry = json.loads((tmp_path / "ledger_entry_t.json").read_text())
     assert entry["kind"] == "dev" and entry["config"]["features"] == 2
     assert (tmp_path / "summary_t.md").read_text().startswith("# Outcome model `t`")
+
+
+def test_kelly_path_grows_on_a_real_edge_and_never_bets_without_one():
+    rng = np.random.default_rng(4)
+    n = 4000
+    p_true = rng.uniform(0.2, 0.5, n)
+    price = 1.0 / (p_true * 0.9)                                  # the price is 10% too long
+    won = (rng.random(n) < p_true).astype(float)
+    k = om.kelly_path(p_true, price, won, np.ones(n, bool), commission=0.0)
+    assert k["final_bank"] > 1.5 and 0 < k["max_drawdown"] < 1
+    none = om.kelly_path(p_true, 1.0 / p_true * 0.95, won, np.ones(n, bool), commission=0.0)
+    assert none["turnover"] == 0.0 and none["final_bank"] == 1.0   # negative edge: no stake
+
+
+def test_segments_report_each_level():
+    oos = _oos(n_races=900)
+    oos["race_type"] = np.where(oos["race"].str.endswith(("0", "2", "4", "6", "8")), "Handicap", "Maiden")
+    oos["number_of_runners"] = 6
+    s = om.score_strategies(oos, commission=0.0)
+    assert set(s["segments"]["race_type"]) == {"Handicap", "Maiden"}
+    assert s["segments"]["field"]["6-8"]["races"] == 900
