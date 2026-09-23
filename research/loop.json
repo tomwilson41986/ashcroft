@@ -1,8 +1,8 @@
 {
-  "tag": "iter2-repairs",
+  "tag": "iter3-comments",
   "outcome": true,
-  "screen": false,
-  "blocks": "",
+  "screen": true,
+  "blocks": "comments",
   "drop": "",
   "params": "",
   "fold_months": 3,

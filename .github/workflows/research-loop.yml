@@ -22,9 +22,9 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: research-loop-${{ github.ref }}
-  cancel-in-progress: false
+# No concurrency group: iterations are read-only and independent, so they run
+# side by side. (A group would also cancel any queued iteration the moment a
+# newer one was pushed.)
 
 env:
   PYTHON_VERSION: '3.11'
