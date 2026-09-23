@@ -48,4 +48,5 @@ jobs:
         with:
           name: research-query-${{ github.run_number }}
           path: out/
+          # snapshots kept long enough for the forward revision test
           retention-days: 90

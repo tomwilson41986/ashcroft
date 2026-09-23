@@ -53,9 +53,12 @@ for d in pick:
         print(f"   {d}: API returned nothing (HTTP {r.status_code})")
         continue
     now = now.rename(columns={"performance_rating": "p_now", "timefigure": "tfig_now", "pre_race_master_rating": "m_now"})
-    then = early[early.meeting_date == d]
-    j = then.merge(now[["meeting_date", "course_bf", "race_number", "horse_code", "p_now", "tfig_now", "m_now"]],
-                   on=["meeting_date", "course_bf", "race_number", "horse_code"], how="inner")
+    then = early[early.meeting_date == d].copy()
+    keys = ["meeting_date", "course_bf", "race_number", "horse_code"]
+    for frame in (then, now):                      # the API and the table disagree on types
+        frame["race_number"] = pd.to_numeric(frame["race_number"], errors="coerce").astype("Int64").astype(str)
+        frame["horse_code"] = pd.to_numeric(frame["horse_code"], errors="coerce").astype("Int64").astype(str)
+    j = then.merge(now[keys + ["p_now", "tfig_now", "m_now"]], on=keys, how="inner")
     for col, c_now in (("p", "p_now"), ("tfig", "tfig_now"), ("m", "m_now")):
         a, bb = pd.to_numeric(j[col], errors="coerce"), pd.to_numeric(j[c_now], errors="coerce")
         both = a.notna() & bb.notna()
@@ -65,4 +68,15 @@ for d in pick:
                      "mean_abs_change": float(diff.abs().mean()) if both.any() else np.nan,
                      "filled_since": int((a.isna() & bb.notna()).sum()), "blanked_since": int((a.notna() & bb.isna()).sum())})
 res = pd.DataFrame(rows)
-print(res.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+print(res.to_string(index=False, float_format=lambda x: f"{x:.3f}") if len(res) else "   (no comparable rows)")
+
+# 3. A point-in-time snapshot for the FORWARD revision test. Every row in the table
+# was loaded on one day (the bulk backfill), so there is no earlier copy to diff
+# against; this saves the last 21 days as they stand now. Re-fetching the same
+# dates in a few weeks and diffing runner by runner measures revisions directly.
+import os
+recent = b[pd.to_datetime(b.meeting_date) >= pd.Timestamp.now().normalize() - pd.Timedelta(days=21)]
+os.makedirs("out", exist_ok=True)
+snap = f"out/blandford_snapshot_{pd.Timestamp.now(tz='UTC').strftime('%Y%m%dT%H%M')}.csv.gz"
+recent.drop(columns=["lag_days", "month"]).to_csv(snap, index=False)
+print(f"\n3. snapshot of {len(recent):,} rows ({recent.meeting_date.min()} .. {recent.meeting_date.max()}) -> {snap}")
