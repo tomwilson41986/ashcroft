@@ -159,6 +159,21 @@ def low_days(conn) -> pd.DataFrame:
     return d[d["share"] < LOW_DAY].drop(columns=["month"])
 
 
+def early_days(conn) -> pd.DataFrame:
+    """Days saved too early: many runners without a BSP, or without a result.
+
+    A normal day has every BSP and 5-10% of runners without a placing (fell,
+    pulled up). A day downloaded before the site had finished it has neither.
+    """
+    d = _q(conn, """
+        SELECT substr(race_date, 1, 10) AS day, COUNT(*) AS runners,
+               SUM(CASE WHEN bfsp > 1 THEN 0 ELSE 1 END) AS no_bsp,
+               SUM(CASE WHEN placing_numerical IS NULL THEN 1 ELSE 0 END) AS no_result
+        FROM race_results GROUP BY day
+    """)
+    return d[(d["no_bsp"] > 0.05 * d["runners"]) | (d["no_result"] > 0.3 * d["runners"])]
+
+
 def log_vs_results(conn) -> pd.DataFrame:
     """Days where the scrape log's count and the table disagree by more than 10%."""
     try:
@@ -231,6 +246,8 @@ def main(argv=None) -> int:
         g = gaps(conn, today)
         lo = low_days(conn)
         mism = log_vs_results(conn)
+        early = early_days(conn)
+        early.to_csv(os.path.join(a.out, "early_days.csv"), index=False)
         m.to_csv(os.path.join(a.out, "months.csv"), index=False)
         g.to_csv(os.path.join(a.out, "gaps.csv"), index=False)
         lo.to_csv(os.path.join(a.out, "low_days.csv"), index=False)
@@ -261,6 +278,10 @@ def main(argv=None) -> int:
             f"### Partial days (under {int(100 * LOW_DAY)}% of their month's median day): {len(lo)}",
             "",
             _md(lo.head(60)),
+            "",
+            f"### Days saved too early (over 5% without a BSP, or over 30% without a result): {len(early)}",
+            "",
+            _md(early.head(80)),
             "",
             f"### Days the scrape log counts differently from the table: {len(mism)}",
             "",
