@@ -74,6 +74,7 @@ jobs:
           cat research/loop.json
 
       - name: Download historic database from S3
+        if: steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -86,6 +87,7 @@ jobs:
           python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
 
       - name: Feature cache key
+        if: steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true'
         id: fkey
         run: |
           KEY=$(python -c "import model.feature_cache as f; print(f.cache_key('horse_racing.db', '${{ env.START_DATE }}'))")
@@ -93,6 +95,7 @@ jobs:
           echo "Feature cache key: $KEY"
 
       - name: Restore the feature matrix
+        if: steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true'
         id: fcache
         uses: actions/cache/restore@v4
         with:
@@ -100,14 +103,14 @@ jobs:
           key: features-${{ steps.fkey.outputs.key }}
 
       - name: Build the feature matrix
-        if: steps.fcache.outputs.cache-hit != 'true'
+        if: (steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true') && steps.fcache.outputs.cache-hit != 'true'
         run: |
           set -o pipefail
           python evaluate_oos.py --start-date "$START_DATE" --feature-cache .feature_cache \
             --build-cache-only 2>&1 | grep -v PerformanceWarning | tail -30
 
       - name: Save the feature matrix
-        if: steps.fcache.outputs.cache-hit != 'true'
+        if: (steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true') && steps.fcache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .feature_cache

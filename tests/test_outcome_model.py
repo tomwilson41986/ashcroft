@@ -196,3 +196,19 @@ def test_linear_mode_keeps_only_the_named_features_and_finds_the_signal(tmp_path
     assert np.allclose(oos.groupby("race")["p_model"].sum(), 1.0)
     with pytest.raises(SystemExit):
         om.run(om.argparse.Namespace(**base, keep="no_such_prefix_", tag="none"))
+
+
+def test_a_second_holdout_look_is_refused_before_any_data_is_read(tmp_path):
+    """The research loop re-runs research/loop.json on every push under model/; a final
+    config must not re-score the holdout that way (it did once, 23 Sep)."""
+    ledger = tmp_path / "ledger.jsonl"
+    ledger.write_text(json.dumps({"kind": "dev", "tag": "confirm-holdout"}) + "\n"
+                      + json.dumps({"kind": "HOLDOUT LOOK", "tag": "confirm-holdout"}) + "\n")
+    assert om.holdout_looks("confirm-holdout", ledger) == 1
+    assert om.holdout_looks("another-candidate", ledger) == 0
+    missing_db = str(tmp_path / "no.db")                    # reading any data would fail differently
+    with pytest.raises(SystemExit, match="already been scored"):
+        om.main(["--final", "--tag", "confirm-holdout", "--ledger", str(ledger), "--db", missing_db,
+                 "--out-dir", str(tmp_path / "out")])
+    # a development run of the same tag is unaffected, and so is a first look under a new tag
+    assert om.holdout_looks("confirm-holdout", tmp_path / "absent.jsonl") == 0

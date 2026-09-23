@@ -1,1 +1,1 @@
-{"tag": "confirm-holdout", "blocks": "inday30", "keep": "id_", "drop": "", "screen": false, "mode": "linear", "fold_months": 3, "first_fold": "2023-01-01", "until": "", "final": true, "outcome": true, "params": ""}
+{"tag": "idle", "outcome": false, "screen": false, "final": false, "blocks": "", "keep": "", "drop": "", "mode": "linear", "fold_months": 3, "first_fold": "2023-01-01", "until": "", "params": "", "note": "No iteration pending. confirm-holdout (final) has been scored and is refused by outcome_model.py if re-run; a push under model/ runs this file as it stands."}

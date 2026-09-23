@@ -346,8 +346,31 @@ def config_hash(cfg: dict) -> str:
     return hashlib.sha256(json.dumps(cfg, sort_keys=True, default=str).encode()).hexdigest()[:12]
 
 
+def holdout_looks(tag: str, ledger: Path) -> int:
+    """How many times the ledger records this tag scoring the locked holdout."""
+    if not ledger.exists():
+        return 0
+    n = 0
+    for line in ledger.read_text().splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("kind") == "HOLDOUT LOOK" and (e.get("tag") or (e.get("config") or {}).get("tag")) == tag:
+            n += 1
+    return n
+
+
 def run(args) -> dict:
     t_start = time.time()
+    # A look at the holdout is a deliberate act, never a side effect: the research loop
+    # re-runs whatever research/loop.json holds on every push under model/, and once
+    # re-scored a final config that way (ledger, 23 Sep 22:05). Refuse before any data is read.
+    if args.final and not getattr(args, "relook", False):
+        seen = holdout_looks(args.tag, Path(getattr(args, "ledger", ROOT / "reports" / "research_ledger.jsonl")))
+        if seen:
+            raise SystemExit(f"the locked holdout has already been scored for '{args.tag}' ({seen} look(s) in "
+                             f"the ledger); another look needs --relook and a ledger entry saying why")
     out = Path(args.out_dir); out.mkdir(parents=True, exist_ok=True)
     from model.bfsp_features import ALL_FEATURE_COLS
 
@@ -484,6 +507,9 @@ def main(argv=None):
     ap.add_argument("--val-months", type=int, default=3)
     ap.add_argument("--lockbox-from", default="2026-04-01")
     ap.add_argument("--final", action="store_true", help="score the locked holdout (logged to the ledger)")
+    ap.add_argument("--relook", action="store_true",
+                    help="score the holdout again for a tag the ledger says has already scored it")
+    ap.add_argument("--ledger", default=str(ROOT / "reports" / "research_ledger.jsonl"))
     ap.add_argument("--drop", default="", help="comma list of feature-name prefixes to withhold")
     ap.add_argument("--blocks", default="", help="opt-in blocks, as residual_screen.py")
     ap.add_argument("--params", default="", help="LightGBM params as JSON, merged over the defaults")
