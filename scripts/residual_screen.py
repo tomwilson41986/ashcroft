@@ -488,6 +488,9 @@ def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str) -> tuple[pd.Data
             elif b == "blandford":
                 from model.blandford_features import BLANDFORD_FEATURES, add_blandford_features
                 df = add_blandford_features(df, db_path=db); cols = list(BLANDFORD_FEATURES)
+            elif b == "handicap":
+                from model.handicap_features import add_handicap_features
+                df, cols = add_handicap_features(df)
             elif b == "markets":
                 from model.market_block import add_same_race_market_features
                 df, cols = add_same_race_market_features(df)
@@ -850,7 +853,7 @@ def main(argv=None):
                     help="withhold every race on or after this date (the locked holdout); '' to disable")
     ap.add_argument("--val-months", type=int, default=6, help="inner validation tail of the training window")
     ap.add_argument("--ridge-grid", type=float, nargs="+", default=[1.0, 10.0, 100.0, 1000.0])
-    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets")
+    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap")
     ap.add_argument("--limit", type=int, default=0, help="screen only the first N production features (smoke runs)")
     ap.add_argument("--no-alone", action="store_true")
     ap.add_argument("--no-boost", action="store_true")

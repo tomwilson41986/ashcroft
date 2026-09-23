@@ -1,12 +1,12 @@
 {
-  "tag": "iter6-free-comments",
+  "tag": "iter7-handicap",
   "outcome": true,
   "screen": false,
-  "blocks": "comments",
+  "blocks": "handicap",
   "drop": "",
   "params": "",
   "fold_months": 3,
   "first_fold": "2023-01-01",
   "final": false,
-  "mode": "free"
+  "mode": "offset"
 }
