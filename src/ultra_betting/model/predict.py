@@ -22,6 +22,7 @@ def run_predictions(
     target_date: date | None = None,
     from_db: bool = False,
     start_date: str = "2020-01-01",
+    card_sink=None,
 ) -> list[Prediction]:
     """Run the Ashcroft BFSP prediction model for a given date.
 
@@ -29,6 +30,11 @@ def run_predictions(
         target_date: Date to predict for. Defaults to today.
         from_db: If True, use runners from the database (no HRB login).
         start_date: Earliest historical date to load (for memory efficiency).
+        card_sink: Called with the live card as fetched, before anything fills
+            it. The result rows later overwrite the going, the jockeys and the
+            field, so this is the only record of what was known when the
+            prediction was made. A failing sink costs the record, never the
+            predictions; database runners are not a card and are not passed.
 
     Returns:
         List of Prediction objects.
@@ -57,12 +63,14 @@ def run_predictions(
     log.info(f"Loaded {len(historical):,} historical rows")
 
     # Get target runners
+    live_card = False
     if from_db:
         target_runners = get_runners_from_db(db_path, str(target_date))
     else:
         import os
         if os.getenv("HRB_USERNAME"):
             target_runners = fetch_racecard_from_hrb(target_date)
+            live_card = True
         else:
             log.warning("No HRB credentials, using database")
             target_runners = get_runners_from_db(db_path, str(target_date))
@@ -70,6 +78,12 @@ def run_predictions(
     if len(target_runners) == 0:
         log.warning(f"No runners found for {target_date}")
         return []
+
+    if live_card and card_sink is not None:
+        try:
+            card_sink(target_runners.copy())
+        except Exception as e:  # a record, never a reason to stop the card
+            log.warning(f"Could not keep the morning card: {e}")
 
     # Separate history
     history_before = historical[
