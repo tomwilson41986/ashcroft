@@ -29,7 +29,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'   # the ultra-betting package needs >=3.12, as in predict.yml
           cache: 'pip'
 
       - name: Install dependencies
