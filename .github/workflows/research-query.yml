@@ -34,6 +34,12 @@ jobs:
           AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
         run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
       - name: Run the queries
+        env:
+          # read-only S3 for queries that need files beside the database (the 06:00 record)
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          PRED_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          PRED_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
         run: |
           mkdir -p out
           for q in research/queries/*.py; do
