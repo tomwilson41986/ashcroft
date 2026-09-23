@@ -8,15 +8,15 @@
   "overall_walk_forward": {},
   "final_model": {
     "target": "logit_norm_prob",
-    "log_mae": 0.3936,
-    "log_rmse": 0.5017,
-    "log_r2": 0.8968,
-    "bfsp_mae": 25.19,
-    "median_ape_pct": 28.11,
-    "mean_ape_pct": 36.67,
-    "correlation": 0.9477,
-    "best_iteration": 2980,
-    "holdout_mae": 0.5004349340190204
+    "log_mae": 0.3932,
+    "log_rmse": 0.5007,
+    "log_r2": 0.8872,
+    "bfsp_mae": 21.47,
+    "median_ape_pct": 28.4,
+    "mean_ape_pct": 37.18,
+    "correlation": 0.9426,
+    "best_iteration": 3000,
+    "holdout_mae": 0.4912522868541966
   },
   "fold_details": [],
   "params": {
@@ -36,7 +36,7 @@
   },
   "data_range": {
     "min_date": "2021-01-01",
-    "max_date": "2026-03-22",
-    "total_rows": 632093
+    "max_date": "2026-09-17",
+    "total_rows": 695760
   }
 }
