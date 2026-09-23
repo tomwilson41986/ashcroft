@@ -24,3 +24,26 @@ Written 23 Sep 2026 at about 17:35 UTC. At that point run 28, which makes the fo
 - The same-day-leak check (first race at each meeting).
 - Price bands.
 - The trade held to settlement, at the morning price and at BSP.
+
+## Results (appended after scoring; nothing above was changed)
+
+The forecasts end on 6 September, the last full fold of run 28, so the window scored is 1 April – 6 September.
+
+- **The rule: +3.54% net CLV (90% +2.86% to +4.19%) on 12,389 trades.** It passes. Every runner was −2.05%.
+- **By month:**
+
+  | Apr | May | Jun | Jul | Aug | Sep (to 6th) |
+  |---|---|---|---|---|---|
+  | +0.96% (interval crosses zero) | +3.60% | +4.00% | +5.68% | +3.71% | +2.71% |
+
+- **Held to settlement:** −6.8% at BSP. It is a trading edge, not a value bet.
+- **The same-day check, reported as promised: the edge now sits in later races.**
+  - First three races of the day: −0.05%.
+  - Race ten onwards: +4.96%.
+  - By off time: about 0 at 13:00, rising to +4% to +8% in the evening.
+  - In January–March the first races carried the largest share.
+- **Post hoc, late non-runners explain only part of it.** Races where the morning book of the runners who ran is short return +9.5% to +27% (462 trades); without them the rule makes +3.25% (+2.60 to +3.93).
+- **Two readings remain:**
+  1. The morning price is staler before later races. That edge would be tradeable.
+  2. The backtest forecast knows race-day facts, such as the going on the day and jockey changes, from the result rows. That edge would not.
+- **The deciding test** is the live 06:00 record. See `reports/clv_betfair_2026q1.md` on #73.
