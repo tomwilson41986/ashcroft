@@ -63,3 +63,30 @@ def test_course_key_normalisation():
     assert bs.course_key("KEMPTON PARK") == bs.course_key("Kempton")
     assert bs.course_key("CHELMSFORD CITY") == bs.course_key("Chelmsford")
     assert bs.course_key("Newmarket (July)") == bs.course_key("NEWMARKET")
+
+
+def test_first_seen_is_kept_and_every_later_change_is_logged(tmp_path):
+    """A re-fetch replaces the rating in blandford_results (the latest word), keeps the first value
+    in blandford_first_seen (what a live run saw), and logs the change in blandford_revisions."""
+    db = str(tmp_path / "t.db")
+    first = tmp_path / "apidata_a.json"; first.write_text(json.dumps(ROWS[:2]))
+    bs.load_files([first], db)
+    revised = [dict(ROWS[0], performanceRating=75), dict(ROWS[1])]         # one figure revised up
+    second = tmp_path / "apidata_b.json"; second.write_text(json.dumps(revised))
+    out = bs.load_files([second], db)
+    conn = sqlite3.connect(db)
+    latest = dict(conn.execute("SELECT horse_code, performance_rating FROM blandford_results").fetchall())
+    kept = dict(conn.execute("SELECT horse_code, performance_rating FROM blandford_first_seen").fetchall())
+    revs = conn.execute("SELECT horse_code, field, old_value, new_value FROM blandford_revisions").fetchall()
+    assert latest[633837] == 75 and kept[633837] == 71                   # replaced, but the first is kept
+    assert revs == [(633837, "performance_rating", 71.0, 75.0)] and out["revised_fields"] == 1
+    assert out["first_seen"] == 0                                         # nobody new
+    # the same file again changes nothing and logs nothing
+    assert bs.load_files([second], db)["revised_fields"] == 0
+    assert conn.execute("SELECT COUNT(*) FROM blandford_revisions").fetchone()[0] == 1
+    # a blank filled in later is a change too; a new runner is first seen once
+    late = [dict(ROWS[1], timefigure=None)]
+    p3 = tmp_path / "apidata_c.json"; p3.write_text(json.dumps(late))
+    bs.load_files([p3], db)
+    assert conn.execute("SELECT old_value, new_value FROM blandford_revisions WHERE field = 'timefigure'").fetchall() == [(62.0, None)]
+    assert conn.execute("SELECT COUNT(*) FROM blandford_first_seen").fetchone()[0] == 2

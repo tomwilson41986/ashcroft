@@ -172,13 +172,73 @@ def ensure_table(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_blf_rr ON blandford_results(race_results_id);
         CREATE INDEX IF NOT EXISTS idx_blf_horse ON blandford_results(horse_norm);
     """)
+    ensure_point_in_time_tables(conn)
     conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Point in time: what the feed said when we first saw it, and every change after
+# ---------------------------------------------------------------------------
+
+#: The rating fields a model reads. blandford_results keeps only their latest value (each
+#: re-fetch replaces the row), so a backtest sees every rating as it stands today, after any
+#: revision -- a look-ahead no live run would have. These two tables keep what live runs see.
+TRACKED_FIELDS = ("performance_rating", "timefigure", "pre_race_master_rating", "pre_race_adjusted_rating",
+                  "position", "distance_beaten")
+_KEY = ("meeting_date", "course_bf", "race_number", "horse_code")
+
+
+def ensure_point_in_time_tables(conn: sqlite3.Connection) -> None:
+    fields = ", ".join(f"{f} REAL" for f in TRACKED_FIELDS)
+    conn.executescript(f"""
+        CREATE TABLE IF NOT EXISTS blandford_first_seen (
+            meeting_date TEXT, course_bf TEXT, race_number TEXT, horse_code INTEGER,
+            {fields},
+            first_seen_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(meeting_date, course_bf, race_number, horse_code)
+        );
+        CREATE TABLE IF NOT EXISTS blandford_revisions (
+            meeting_date TEXT, course_bf TEXT, race_number TEXT, horse_code INTEGER,
+            field TEXT, old_value REAL, new_value REAL,
+            seen_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_blf_first_date ON blandford_first_seen(meeting_date);
+        CREATE INDEX IF NOT EXISTS idx_blf_rev_date ON blandford_revisions(meeting_date);
+    """)
+
+
+def record_point_in_time(conn: sqlite3.Connection, df: pd.DataFrame) -> dict:
+    """Before `df` replaces rows in blandford_results: log every tracked field whose value it
+    changes (a blank filled in, a figure revised, or one withdrawn), and keep the first value
+    ever seen of each runner. Never overwrites blandford_first_seen."""
+    cols = list(_KEY) + list(TRACKED_FIELDS)
+    inc = df[cols].astype(object).where(df[cols].notna(), None)
+    conn.execute("DROP TABLE IF EXISTS _blf_incoming")
+    # typed like blandford_results, so a race number arriving as 8 still joins the stored '8'
+    types = {"meeting_date": "TEXT", "course_bf": "TEXT", "race_number": "TEXT", "horse_code": "INTEGER"}
+    decl = ", ".join(c + " " + types.get(c, "REAL") for c in cols)
+    conn.execute(f"CREATE TEMP TABLE _blf_incoming ({decl})")
+    conn.executemany(f"INSERT INTO _blf_incoming VALUES ({', '.join('?' * len(cols))})", inc.values.tolist())
+    on = " AND ".join(f"r.{k} = i.{k}" for k in _KEY)
+    n_rev = 0
+    for f in TRACKED_FIELDS:
+        cur = conn.execute(f"""
+            INSERT INTO blandford_revisions (meeting_date, course_bf, race_number, horse_code, field, old_value, new_value)
+            SELECT i.meeting_date, i.course_bf, i.race_number, i.horse_code, '{f}', r.{f}, i.{f}
+            FROM _blf_incoming i JOIN blandford_results r ON {on}
+            WHERE r.{f} IS NOT i.{f}""")
+        n_rev += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    cur = conn.execute(f"""INSERT OR IGNORE INTO blandford_first_seen ({', '.join(cols)})
+                           SELECT {', '.join(cols)} FROM _blf_incoming""")
+    n_new = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    conn.execute("DROP TABLE IF EXISTS _blf_incoming")
+    return {"revised_fields": n_rev, "first_seen": n_new}
 
 
 def load_files(paths, db_path: str = DEFAULT_DB, uk_ire_only: bool = True) -> dict:
     conn = sqlite3.connect(db_path)
     ensure_table(conn)
-    n_rows = n_files = 0
+    n_rows = n_files = n_first = n_rev = 0
     cols = ["horse_code"] + [c for c in COLUMNS if c != "horse_code"]
     for p in paths:
         try:
@@ -189,12 +249,15 @@ def load_files(paths, db_path: str = DEFAULT_DB, uk_ire_only: bool = True) -> di
         if uk_ire_only:
             df = df[df["country"].isin(UK_IRE) | df["country"].isna()]
         df = df.dropna(subset=["meeting_date", "horse_code"])
+        df = df.drop_duplicates(list(_KEY), keep="last")
+        pit = record_point_in_time(conn, df)
+        n_rev += pit["revised_fields"]; n_first += pit["first_seen"]
         vals = df[cols].astype(object).where(df[cols].notna(), None).values.tolist()
         conn.executemany(f"INSERT OR REPLACE INTO blandford_results ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", vals)
         n_rows += len(vals); n_files += 1
     conn.commit(); conn.close()
-    log.info("loaded %d rows from %d files", n_rows, n_files)
-    return {"files": n_files, "rows": n_rows}
+    log.info("loaded %d rows from %d files (%d first seen, %d rating changes logged)", n_rows, n_files, n_first, n_rev)
+    return {"files": n_files, "rows": n_rows, "first_seen": n_first, "revised_fields": n_rev}
 
 
 # ---------------------------------------------------------------------------
