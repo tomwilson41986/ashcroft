@@ -87,8 +87,8 @@ def test_claims_ratings_and_the_race_or_spread():
     assert out.loc[2, "jockeys_claim"] == 0
     assert out.loc[0, "official_rating"] == 0                        # unrated is 0 in the table
     assert out.loc[0, "max_or_in_race"] == 80 and out.loc[0, "median_or"] == 40
-    lone = enrich_card(_card().iloc[[0]], _history())                # an all-unrated race: no median
-    assert pd.isna(lone.loc[0, "median_or"])
+    lone = enrich_card(_card().iloc[[0]], _history())                # an all-unrated race: 0, as the table has it
+    assert lone.loc[0, "median_or"] == 0
 
 
 def test_a_learned_signature_beats_the_rule_and_the_rule_covers_the_rest():
@@ -111,3 +111,28 @@ def test_distance_text_forms():
     assert parse_distance_furlongs("2m3.5f") == 19.5
     assert parse_distance_furlongs("1m2f110y") == 10.5
     assert np.isnan(parse_distance_furlongs("")) and np.isnan(parse_distance_furlongs(None))
+
+
+def test_namesakes_bred_in_different_countries_stay_apart():
+    namesake = pd.DataFrame([{"race_date": "2025-09-01", "race_time": "4.00", "track": "Ascot",
+                              "going_description": "Good", "horse_name": "Lady Luck (GB)", "horse_sex": "Gelding",
+                              "stallion": "Frankel", "dam_stallion": "Dansili", "jockey_name": "Other Jockey",
+                              "jockeys_claim": "0"}])
+    h = pd.concat([_history(), namesake], ignore_index=True)
+    card = _card().iloc[[0, 0]].reset_index(drop=True)
+    card.loc[1, "horse_name"] = "Lady Luck (GB)"
+    out = enrich_card(card, h)
+    assert out.loc[0, "stallion"] == "Kodiac" and out.loc[0, "career_runs"] == 3
+    assert out.loc[1, "stallion"] == "Frankel" and out.loc[1, "career_runs"] == 1
+    # a card that prints the name without its suffix still finds the horse
+    bare = enrich_card(_card().iloc[[0]].assign(horse_name="Lady Luck"), _history())
+    assert bare.loc[0, "stallion"] == "Kodiac" and bare.loc[0, "career_runs"] == 3
+
+
+def test_career_runs_continue_the_table_s_count_past_the_history_window():
+    h = _history()
+    lady = h.horse_name == "Lady Luck (IRE)"
+    h.loc[lady, "career_runs"] = [9, 10, 11]                       # runs before 2025 are outside this history
+    out = enrich_card(_card(), h)
+    assert out.loc[0, "career_runs"] == 12                           # 11 before her last run, plus that run
+    assert out.loc[1, "career_runs"] == 0                            # a debutant
