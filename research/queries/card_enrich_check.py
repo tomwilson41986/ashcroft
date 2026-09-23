@@ -20,7 +20,8 @@ CARD_COLS = ["race_date", "race_time", "track", "going_description", "race_class
              "race_name", "stall", "horse_name", "horse_age", "pounds", "jockey_name", "trainer", "official_rating",
              "headgear", "days_since_lr", "number_of_runners"]
 conn = sqlite3.connect("file:horse_racing.db?mode=ro", uri=True)
-d = pd.read_sql_query("SELECT * FROM race_results WHERE race_date < '2026-04-01'", conn)
+# the history the 06:00 job loads (from 2020), development data only
+d = pd.read_sql_query("SELECT * FROM race_results WHERE race_date >= '2020-01-01' AND race_date < '2026-04-01'", conn)
 d = d.sort_values(["race_date", "race_time"], kind="stable").reset_index(drop=True)
 days = sorted(d.loc[d.race_date >= "2025-10-01", "race_date"].unique())
 rng = np.random.default_rng(0)
@@ -33,7 +34,7 @@ for day in days:
     truth = d[d.race_date == day]
     card = truth[CARD_COLS].copy()
     card["official_rating"] = pd.to_numeric(card.official_rating, errors="coerce").replace(0, np.nan)   # blank on the card
-    out = enrich_card(card, d[d.race_date < day])
+    out = enrich_card(card, d.iloc[:truth.index[0]])                  # d is in date order: the rows before the day
     out.index = truth.index
     rows.append((truth, out))
 print(f"filled in {time.time() - t0:.0f}s")
@@ -56,7 +57,7 @@ for col in CARD_FILLED:
         note = f"mean |diff| {np.nanmean(np.abs(tn[both] - fn[both])):.3f}" if both.any() else ""
         if col == "median_or":
             note += f"; truth null {(~known).mean():.3f}, fill null {fn.isna().mean():.3f}, " \
-                    f"null together {((~known) == fn.isna()).mean():.3f}"
+                    f"null together {((~known) == fn.isna()).mean():.3f}, both null {((~known) & fn.isna()).mean():.3f}"
     else:
         ts, fs = t.astype("string"), f.astype("string")
         known = t.notna() & ts.str.strip().ne("")
