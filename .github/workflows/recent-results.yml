@@ -1,0 +1,93 @@
+name: Recent Predictions vs Results
+
+# The morning's forecasts against the evening's results, for the last few days.
+# The predictions and the database both live in S3, and the only credentials
+# that can read them are this repository's secrets, so this is where the join
+# has to run. Output is an artifact: a summary, the top pick in every race, and
+# every runner.
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'How many days back to fetch morning predictions for'
+        required: false
+        default: '6'
+        type: string
+  push:
+    # A workflow that exists only on a feature branch cannot be dispatched --
+    # the API cannot see it until it reaches the default branch -- so a push to
+    # a branch of this name runs it instead. Scoped to these two files so an
+    # unrelated push does not.
+    branches: ['claude/recent-results-*']
+    paths:
+      - '.github/workflows/recent-results.yml'
+      - 'scripts/recent_results.py'
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download the database
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
+
+      - name: Download the morning predictions
+        # Raw bytes, not a pandas round trip: read as a number, a race time of
+        # "2.30" comes back as 2.3 and then joins to nothing -- the bug
+        # research_lab._live_clv_frame reads everything as text to avoid.
+        # Bucket and region as predict.yml writes them.
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          DAYS: ${{ inputs.days || '6' }}
+        run: |
+          python - <<'EOF'
+          import os
+          from datetime import date, timedelta
+
+          import boto3
+          import botocore
+
+          s3, bucket = boto3.client("s3"), os.environ["BUCKET"]
+          os.makedirs("live", exist_ok=True)
+          for i in range(int(os.environ["DAYS"]) + 1):
+              d = (date.today() - timedelta(days=i)).isoformat()
+              try:
+                  s3.download_file(bucket, f"predictions/{d}.csv", f"live/{d}.csv")
+                  print(f"{d}: downloaded")
+              except botocore.exceptions.ClientError as e:
+                  print(f"{d}: none ({e.response['Error'].get('Code')})")
+          EOF
+
+      - name: Join and report
+        run: python scripts/recent_results.py --live-dir live --db horse_racing.db --out recent
+
+      - name: Upload the report
+        # The morning files ride along: a few hundred rows a day, and without
+        # them a join that finds nothing cannot be diagnosed from outside.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recent-results-${{ github.run_number }}
+          path: |
+            recent/
+            live/
+          retention-days: 30
