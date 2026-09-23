@@ -1,9 +1,9 @@
 {
-  "tag": "iter9-blandford-lagged-only",
+  "tag": "iter10-all-fundamental",
   "outcome": true,
   "screen": false,
-  "blocks": "blandford",
-  "drop": "tf_master,tf_adjusted",
+  "blocks": "comments,perf,kalman,pedigree,connections,handicap,blandford",
+  "drop": "",
   "params": "",
   "fold_months": 3,
   "first_fold": "2023-01-01",
