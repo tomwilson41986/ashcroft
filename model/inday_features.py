@@ -34,6 +34,8 @@ it bets close to the off, at BSP):
   id_front_ae          A/E of earlier front-runners (made the running or disputed)
   id_{trainer,jockey}_runs_today, _ae_today, _bmr_today
                        the connection's earlier runners today at any meeting
+  id_{trainer,jockey}_runs_3d, _ae_3d, _bmr_3d
+                       the same over the last 72 hours (earlier days and earlier today)
 """
 
 from __future__ import annotations
@@ -50,12 +52,15 @@ K_SLOPE = 2.5          # pseudo sum of squares at a zero slope (about thirty run
 K_AE = 30.0            # pseudo-runners at a zero A/E residual
 K_BMR = 10.0           # pseudo-runners at a zero rank residual
 FRONT_EPF = 5.5        # made the running or disputed the lead
+RECENT_MINUTES = 3 * 1440.0   # the connections' last three days, earlier today included
 
 INDAY_FEATURES = ["id_race_index",
                   "id_draw_n", "id_draw_slope", "id_draw_edge_mine", "id_draw_ae_mine",
                   "id_pace_n", "id_pace_slope", "id_pace_edge_mine", "id_front_ae",
                   "id_trainer_runs_today", "id_trainer_ae_today", "id_trainer_bmr_today",
-                  "id_jockey_runs_today", "id_jockey_ae_today", "id_jockey_bmr_today"]
+                  "id_jockey_runs_today", "id_jockey_ae_today", "id_jockey_bmr_today",
+                  "id_trainer_runs_3d", "id_trainer_ae_3d", "id_trainer_bmr_3d",
+                  "id_jockey_runs_3d", "id_jockey_ae_3d", "id_jockey_bmr_3d"]
 
 
 def _race_key(df: pd.DataFrame) -> pd.Series:
@@ -94,22 +99,29 @@ def earlier_sums(cell_group, cell_t, cell_vals: dict, q_group, q_t, gap: float =
 
     Prefix sums restart at every group and run in time order, so a query's sums are built
     only from the cells it may see -- nothing from another group, or from a later cell,
-    enters the arithmetic, and the result is bit-for-bit independent of them."""
+    enters the arithmetic, and the result is bit-for-bit independent of them. Times are
+    minutes on any axis (within a day, or across days)."""
     cell_t = np.asarray(cell_t, dtype=float)
     q_t = np.asarray(q_t, dtype=float)
     codes, _ = pd.factorize(pd.concat([pd.Series(np.asarray(cell_group, dtype=object)),
                                        pd.Series(np.asarray(q_group, dtype=object))], ignore_index=True))
     nc = len(cell_t)
     cg, qg = codes[:nc].astype(np.float64), codes[nc:].astype(np.float64)
+    # rebase so every cell time is >= 0 and space the groups wider than the time range, so a
+    # group's keys never meet its neighbours' whatever the query offset
+    known = np.r_[cell_t[~np.isnan(cell_t)], q_t[~np.isnan(q_t)]]
+    t0 = float(known.min()) if len(known) else 0.0
+    t_rng = float(known.max()) - t0 if len(known) else 0.0
+    span = t_rng + abs(gap) + 1e4
+    cell_t, q_t = cell_t - t0, q_t - t0
     order = np.lexsort((cell_t, cg))
     cg_s, ct_s = cg[order], cell_t[order]
-    span = 1e5                                        # > minutes in a day, so groups never overlap
     key_c = cg_s * span + ct_s
     q_ok = ~np.isnan(q_t) & (qg >= 0)
     key_q = np.where(q_ok, qg * span + (q_t - gap), -np.inf)
     hi = np.searchsorted(key_c, key_q, side="right")
-    lo = np.searchsorted(key_c, np.where(q_ok, qg * span - span / 10, -np.inf), side="left")
-    n_before = np.where(q_ok, hi - lo, 0)
+    lo = np.searchsorted(key_c, np.where(q_ok, qg * span - 0.5, -np.inf), side="left")
+    n_before = np.where(q_ok, np.maximum(hi - lo, 0), 0)
     take = np.clip(hi - 1, 0, max(nc - 1, 0))
     out = {}
     for name, v in cell_vals.items():
@@ -117,6 +129,14 @@ def earlier_sums(cell_group, cell_t, cell_vals: dict, q_group, q_t, gap: float =
         cum = vs.groupby(cg_s, sort=False).cumsum().to_numpy() if nc else np.zeros(0)
         out[name] = np.where(n_before > 0, cum[take] if nc else 0.0, 0.0)
     return out, n_before
+
+
+def window_sums(cell_group, cell_t, cell_vals: dict, q_group, q_t, gap: float, window: float) -> dict:
+    """Sums over the same group's cells between `window` and `gap` minutes before each query.
+    Both prefix sums stop before the query, so the difference is as blind to later cells."""
+    hi, _ = earlier_sums(cell_group, cell_t, cell_vals, q_group, q_t, gap)
+    lo, _ = earlier_sums(cell_group, cell_t, cell_vals, q_group, q_t, window)
+    return {k: hi[k] - lo[k] for k in hi}
 
 
 def add_inday_features(df: pd.DataFrame, gap: float = GAP_MINUTES) -> tuple[pd.DataFrame, list[str]]:
@@ -222,7 +242,9 @@ def add_inday_features(df: pd.DataFrame, gap: float = GAP_MINUTES) -> tuple[pd.D
         valid & d["_x_usual"].notna())
     res["id_front_ae"] = pd.Series(s["fae"] / (s["fn"] + K_AE), index=df.index).where(valid)
 
-    # connections: earlier runners today at any meeting
+    # connections: earlier runners today at any meeting (and, below, over the last three days)
+    day = (pd.to_datetime(pd.Series(d["_date"], index=df.index), errors="coerce") - pd.Timestamp("2000-01-01")).dt.days
+    abs_t = day * 1440.0 + d["_t"]
     for ent, col in (("trainer", "trainer"), ("jockey", "jockey_name")):
         if col not in df.columns:
             continue
@@ -242,6 +264,18 @@ def add_inday_features(df: pd.DataFrame, gap: float = GAP_MINUTES) -> tuple[pd.D
         res[f"id_{ent}_runs_today"] = pd.Series(s["na"], index=df.index).where(ok)
         res[f"id_{ent}_ae_today"] = pd.Series(s["ae"] / (s["na"] + K_AE), index=df.index).where(ok)
         res[f"id_{ent}_bmr_today"] = pd.Series(s["bmr"] / (s["nb"] + K_BMR), index=df.index).where(ok)
+
+        # the same over the last three days: a streak the market may be slow to credit
+        g3 = who.to_numpy()
+        cell3 = cell.assign(g=who.loc[cell.index].to_numpy(), t=abs_t.loc[cell.index].to_numpy())
+        agg3 = cell3.groupby(["race", "g"], sort=False).agg(t=("t", "first"), ae=("ae", "sum"), na=("na", "sum"),
+                                                            bmr=("bmr", "sum"), nb=("nb", "sum")).reset_index()
+        s3 = window_sums(agg3["g"].to_numpy(), agg3["t"].to_numpy(),
+                         {c: agg3[c].to_numpy() for c in ("ae", "na", "bmr", "nb")},
+                         g3, abs_t.to_numpy(), gap, RECENT_MINUTES)
+        res[f"id_{ent}_runs_3d"] = pd.Series(s3["na"], index=df.index).where(ok)
+        res[f"id_{ent}_ae_3d"] = pd.Series(s3["ae"] / (s3["na"] + K_AE), index=df.index).where(ok)
+        res[f"id_{ent}_bmr_3d"] = pd.Series(s3["bmr"] / (s3["nb"] + K_BMR), index=df.index).where(ok)
 
     out = df.copy()
     names = [c for c in INDAY_FEATURES if c in res.columns]

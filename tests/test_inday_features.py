@@ -138,3 +138,34 @@ def test_early_position_reads_the_first_phrase_and_admits_no_phrase():
     assert early_position("held up in rear, led final 100yds") == 1.0
     assert np.isnan(early_position("ran on well"))
     assert np.isnan(early_position(None))
+
+
+def test_the_three_day_window_counts_the_last_72_hours_only():
+    """A jockey's rides 1 and 2 days back count toward a race today; one 4 days back does not;
+    and today's own race never does."""
+    def ride(date, time, horse, jockey, bsp, pos):
+        return {"race_date": date, "race_time": time, "track": "Wolverhampton", "horse_name": horse,
+                "trainer": "t" + horse, "jockey_name": jockey, "bfsp": bsp, "placing_numerical": pos,
+                "stall": pos, "number_of_runners": 2, "dist_furlongs": 8.5, "comment": ""}
+    rows = []
+    for date, won in (("2025-01-06", True), ("2025-01-09", True), ("2025-01-10", False), ("2025-01-11", None)):
+        # J rides a 6.0 shot against a 1.2 favourite ridden by K
+        pj = 1 if won else 2
+        rows += [ride(date, "6.00", f"a{date}", "J", 6.0, pj if won is not None else 1),
+                 ride(date, "6.00", f"b{date}", "K", 1.2, (3 - pj) if won is not None else 2)]
+    out, names = add_inday_features(pd.DataFrame(rows))
+    assert {"id_jockey_ae_3d", "id_jockey_runs_3d", "id_trainer_bmr_3d"} <= set(names)
+    j = out[out["jockey_name"] == "J"].set_index("race_date")
+    # on the 11th: the 9th (won) and the 10th (lost) are inside 72 hours, the 6th is not
+    assert j.loc["2025-01-11", "id_jockey_runs_3d"] == 2
+    assert j.loc["2025-01-10", "id_jockey_runs_3d"] == 1          # the 9th only
+    assert j.loc["2025-01-09", "id_jockey_runs_3d"] == 0          # the 6th is 3 days back to the minute: out
+    assert j.loc["2025-01-10", "id_jockey_ae_3d"] > 0             # a 6.0 winner the day before
+    # changing the 11th's own result moves nothing on the 11th
+    d2 = pd.DataFrame(rows)
+    d2.loc[d2["race_date"] == "2025-01-11", "placing_numerical"] = [2, 1]
+    out2, _ = add_inday_features(d2)
+    for c in names:
+        a = out.loc[out["race_date"] == "2025-01-11", c].to_numpy()
+        b = out2.loc[out2["race_date"] == "2025-01-11", c].to_numpy()
+        assert np.array_equal(a, b, equal_nan=True), c
