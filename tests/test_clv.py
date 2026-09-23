@@ -41,3 +41,14 @@ def test_early_bet_rule_and_report():
     assert "hold_roi_net" in rep and "bsp_implied_ev_net" in rep and len(rep["by_pred_clv_tier"]) >= 3
     # greening up: realised CLV equals the locked-in profit rate o/b - 1
     assert np.allclose(bets["realised_clv"], np.exp(bets["ln_early"]) / np.exp(bets["ln_bsp"]) - 1)
+
+
+def test_commission_is_charged_on_winning_trades_only():
+    """A drifted price greened up at BSP is a loss, and Betfair takes nothing
+    from a loss -- so net CLV must not shrink it."""
+    import pandas as pd
+    import pytest
+    d = pd.DataFrame({"pred_clv": [0.3, 0.3], "ln_early": [np.log(10.0), np.log(10.0)],
+                      "realised_clv": [0.20, -0.20]})
+    bets = early_bet_rule(d, min_pred_clv=0.10, commission=0.05, max_early_odds=50)
+    assert bets["net_clv"].tolist() == pytest.approx([0.19, -0.20])
