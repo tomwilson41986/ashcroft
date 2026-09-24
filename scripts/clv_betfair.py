@@ -34,15 +34,23 @@ EXTRACT_SQL = """
 """
 
 
-def load(predictions: str, db: str | None, extract: str | None) -> pd.DataFrame:
-    o = pd.read_csv(predictions)
+def load(predictions: str, db: str | None, extract: str | None, until: str | None = None) -> pd.DataFrame:
+    """Predictions joined to Betfair's win prices. `until` drops every price on or after
+    that date before anything else is done with it (the locked holdout)."""
+    o = pd.read_csv(predictions, dtype={"race_time": str})    # "2.30" must not become 2.3
     if extract:
-        ex = pd.read_csv(extract)
+        ex = pd.read_csv(extract, dtype={"race_time": str})
         ex = ex[ex["race_results_id"].notna()]
     else:
         conn = sqlite3.connect(db)
-        ex = pd.read_sql_query(EXTRACT_SQL, conn)
+        sql, params = EXTRACT_SQL, ()
+        if until:
+            sql, params = sql + " AND r.race_date < ?", (until,)
+        ex = pd.read_sql_query(sql, conn, params=params)
         conn.close()
+    if until:
+        o = o[o["race_date"].astype(str) < until]
+        ex = ex[ex["race_date"].astype(str) < until]
     d = o.merge(ex[KEY + ["morningwap", "morning_vol", "bsp"]], on=KEY)
     d["race"] = d["race_date"] + "|" + d["track"] + "|" + d["race_time"]
     d = d[(d["morningwap"] > 1) & (d["bsp"] > 1) & (d["predicted_bfsp"] > 1)].copy()
@@ -122,9 +130,10 @@ def main(argv=None) -> int:
     src.add_argument("--extract")
     ap.add_argument("--threshold", type=float, default=0.2, help="ln(morning/forecast) to back at")
     ap.add_argument("--min-vol", type=float, default=100.0)
+    ap.add_argument("--until", default=None, help="ignore every price on or after this date (YYYY-MM-DD)")
     a = ap.parse_args(argv)
 
-    d = load(a.predictions, a.db, a.extract)
+    d = load(a.predictions, a.db, a.extract, a.until)
     print(f"{len(d):,} runners in {d['race'].nunique():,} races, {d['race_date'].min()} to {d['race_date'].max()}")
     base = d[d["morning_vol"] >= a.min_vol]
     rule = base[base["pred_move"] >= a.threshold]

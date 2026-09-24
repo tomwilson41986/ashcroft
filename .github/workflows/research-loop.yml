@@ -157,6 +157,15 @@ jobs:
           python scripts/compare_oos_runs.py --base reports/bfsp_compare/oos_base.csv \
             --variant reports/bfsp_compare/oos_blocks.csv --out reports/bfsp_compare/compare.md \
             --note "${{ steps.cfg.outputs.tag }}: production features vs + ${{ steps.cfg.outputs.blocks }}"
+          # The trade itself: each forecast against Betfair's morning prices, where the
+          # price files cover the development window (Jan-Mar 2026; never past 1 Apr).
+          for v in base blocks; do
+            { echo; echo "### Early-price trade on Betfair's morning prices: $v"; echo '```'; } >> reports/bfsp_compare/compare.md
+            python scripts/clv_betfair.py --predictions reports/bfsp_compare/oos_$v.csv --db horse_racing.db \
+              --until 2026-04-01 > reports/bfsp_compare/clv_$v.txt 2>&1 || echo "clv scoring failed" >> reports/bfsp_compare/clv_$v.txt
+            cat reports/bfsp_compare/clv_$v.txt >> reports/bfsp_compare/compare.md
+            echo '```' >> reports/bfsp_compare/compare.md
+          done
           cat reports/bfsp_compare/compare.md
 
       - name: Summarise into the run page
