@@ -46,8 +46,13 @@ DRAW_BINS = 5
 #: Half-life in days of a past race in a draw cell.
 DRAW_HALFLIFE_DAYS = 730.0
 
-#: Shrinkage strengths, effective runners, coarsest level first.
-DRAW_K = (300.0, 150.0, 80.0, 40.0)
+#: Shrinkage strengths, effective runners, coarsest level first. Tuned on
+#: 2023-24, scored on 2025-26Q1 (research/queries/done/draw_pace_tuning.py, run
+#: 19): eight times the first guess (300, 150, 80, 40) lifts the out-of-sample
+#: within-race R2 of the pounds edge from 1.94 to 2.51 (x1000) and its
+#: calibration slope from 0.48 to 0.97. A pound of draw advantage is worth what
+#: it says. A going split added nothing once the pooling was right.
+DRAW_K = (2400.0, 1200.0, 640.0, 320.0)
 
 DRAW_OUTCOMES = {"nfp": "rs_nfp_c", "lbs": "rs_lbs_c"}
 

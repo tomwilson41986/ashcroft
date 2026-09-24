@@ -550,12 +550,15 @@ def add_race_shape(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 #: Half-life in days of a past race in the position-value cells.
-PV_HALFLIFE_DAYS = 1095.0
+PV_HALFLIFE_DAYS = 730.0
 
 #: Shrinkage strengths (effective runners) for the four levels, coarsest first:
 #: code x shape -> + distance band x field band -> course x code x trip x shape
 #: -> + field band. The coarsest shrinks toward zero (the outcomes are centred).
-PV_K = (400.0, 200.0, 100.0, 50.0)
+#: Three times the first guess (400, 200, 100, 50) with a two-year half-life:
+#: out-of-sample within-race R2 of pv_exp_lbs 4.36 -> ~4.9 (x1000), calibration
+#: slope 0.87 -> ~1.05 (research/queries/done/draw_pace_tuning.py, run 19).
+PV_K = (1200.0, 600.0, 300.0, 150.0)
 
 POSITION_OUTCOMES = {"nfp": "rs_nfp_c", "lbs": "rs_lbs_c"}
 
