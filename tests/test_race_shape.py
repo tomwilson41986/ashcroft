@@ -234,3 +234,36 @@ def test_draw_by_style_finds_a_draw_that_only_helps_forward_runners():
     gap_back = (late.loc[high & ~fwd, "dc_edge_style_lbs"] - late.loc[high & ~fwd, "dc_edge_lbs"]).mean()
     assert gap_fwd < -1.0 and gap_back > 1.0
     assert late.loc[high & fwd, "dc_edge_style_lbs"].mean() < late.loc[high & ~fwd, "dc_edge_style_lbs"].mean() - 2.0
+
+
+def test_rating_residual_keeps_the_draw_effect_and_cuts_the_noise():
+    from model.race_shape import add_run_outcomes
+    rng = np.random.default_rng(4)
+    rows, n = [], 10
+    for d in pd.date_range("2023-01-01", periods=250, freq="D"):
+        for ci, c in enumerate(("chester", "kempton")):
+            ability = rng.normal(size=n) * 1.5
+            rating = (70 + 10 * ability + rng.normal(size=n) * 3).round()
+            stall = rng.permutation(n) + 1
+            score = ability + rng.normal(size=n) - ((stall - 1) / (n - 1) if ci == 0 else 0)
+            place = np.empty(n, int)
+            place[np.argsort(-score)] = np.arange(1, n + 1)
+            for i in range(n):
+                rows.append(dict(race_date=str(d.date()), race_time=f"{2 + ci}.30", track=c,
+                                 horse_name=f"{c}{d.date()}{i}", number_of_runners=n,
+                                 placing_numerical=int(place[i]), stall=int(stall[i]), official_rating=float(rating[i]),
+                                 total_dst_bt="" if place[i] == 1 else f"{(place[i] - 1) * 0.8:.2f}",
+                                 dist_furlongs=6.0, race_type="Maiden", surface_type="Turf"))
+    df = add_run_outcomes(pd.DataFrame(rows))
+    out = {}
+    for res in (False, True):
+        f, _ = add_draw_curve(df.copy(), residualise=res)
+        late = f[f.race_date >= "2023-06-01"]
+        bins = pd.cut(late.dc_draw_pct, [-0.01, 0.2, 0.4, 0.6, 0.8, 1.0])
+        ch = late.track == "chester"
+        low = late.loc[ch & (late.dc_draw_pct <= 0.2), "dc_edge_lbs"].mean()
+        high = late.loc[ch & (late.dc_draw_pct >= 0.8), "dc_edge_lbs"].mean()
+        noise = late[~ch].groupby(bins[~ch], observed=True)["dc_edge_lbs"].std().mean()
+        out[res] = (low - high, noise)
+    assert out[True][0] > 1.0 and out[False][0] > 1.0          # the planted low-draw edge, both ways
+    assert out[True][1] < 0.8 * out[False][1]                   # less noise where nothing was planted

@@ -36,7 +36,8 @@ import numpy as np
 import pandas as pd
 
 from model.race_shape import (
-    FIELD_BANDS, _codes, add_run_outcomes, bands, day_index, field_size, pooled_cell_value, race_code, race_key,
+    FIELD_BANDS, _codes, add_run_outcomes, asof_decayed_mean, bands, day_index, field_size, pooled_cell_value,
+    race_code, race_key, shrink,
 )
 
 #: Draw positions are fifths of the field.
@@ -75,10 +76,37 @@ def draw_position(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     return pct, dbin
 
 
+def rating_residual(df: pd.DataFrame, y: np.ndarray) -> np.ndarray:
+    """`y` less the part of it the official ratings already predict.
+
+    x is the race-centred finishing position the field's official ratings imply
+    (`model.draw_metrics.expected_nmfp_from_ratings`; missing where too few of
+    the field are rated), and the slope of y on x is fitted over EARLIER DAYS,
+    separately for handicaps (where the weights are meant to cancel the ratings)
+    and other races. The draw is random, so this changes no draw cell's
+    expectation; it takes the horses' quality out of each outcome, which is most
+    of its noise, so a thin cell needs fewer races to say something."""
+    from model.draw_metrics import expected_nmfp_from_ratings
+    rk = race_key(df)
+    x, _ = expected_nmfp_from_ratings(df)
+    x = (x - x.groupby(rk).transform("mean")).to_numpy(dtype=float)
+    hcap = df.get("race_type", pd.Series("", index=df.index)).fillna("").astype(str).str.lower()
+    key = hcap.str.contains("handicap|nursery").to_numpy().astype(np.int64)
+    day = day_index(df)
+    ok = np.isfinite(x) & np.isfinite(y)
+    mxy, _ = asof_decayed_mean(key, day, np.where(ok, x * y, np.nan), key, day, np.inf)
+    mxx, _ = asof_decayed_mean(key, day, np.where(ok, x * x, np.nan), key, day, np.inf)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        b = mxy / mxx
+    return np.where(np.isfinite(x) & np.isfinite(b), y - b * x, y)
+
+
 def add_draw_curve(df: pd.DataFrame, halflife_days: float = DRAW_HALFLIFE_DAYS, ks=DRAW_K,
-                   extra_key: str | None = None) -> tuple[pd.DataFrame, list[str]]:
+                   extra_key: str | None = None, residualise: bool = False) -> tuple[pd.DataFrame, list[str]]:
     """The draw-curve block. `extra_key` (e.g. "stall_positioning" or a going
-    class) splits the finest level further, for testing whether it matters.
+    class) splits the finest level further, for testing whether it matters;
+    `residualise` measures the cells on outcomes less their rating-implied part
+    (`rating_residual`).
 
     dc_draw_pct         where the horse is drawn, 0 lowest stall .. 1 highest
     dc_edge_nfp         the draw's worth in centred finishing position here
@@ -102,9 +130,11 @@ def add_draw_curve(df: pd.DataFrame, halflife_days: float = DRAW_HALFLIFE_DAYS, 
     levels = [np.where(ok, k * DRAW_BINS + b, -1) for k in base]
     day = day_index(df)
     rk = race_key(df)
+    ys = {}
     for name, col in DRAW_OUTCOMES.items():
         y = np.where(ok, df[col].to_numpy(dtype=float), np.nan)
-        val, n = pooled_cell_value(levels, day, y, halflife_days, ks)
+        ys[name] = rating_residual(df, y) if residualise else y
+        val, n = pooled_cell_value(levels, day, ys[name], halflife_days, ks)
         val = np.where(ok, val, np.nan)
         df[f"dc_edge_{name}"] = val
         if name == "nfp":
@@ -121,9 +151,7 @@ def add_draw_curve(df: pd.DataFrame, halflife_days: float = DRAW_HALFLIFE_DAYS, 
         # (forward: p_lead + p_prom >= 0.5), shrunk toward the draw cell itself.
         fwd = ((df["p_lead"] + df["p_prom"]).to_numpy() >= 0.5).astype(np.int64)
         style_lvl = np.where(ok, (base[-1] * DRAW_BINS + b) * 2 + fwd, -1)
-        y = np.where(ok, df["rs_lbs_c"].to_numpy(dtype=float), np.nan)
-        from model.race_shape import asof_decayed_mean, shrink
-        m, n_s = asof_decayed_mean(style_lvl, day, y, style_lvl, day, halflife_days)
+        m, n_s = asof_decayed_mean(style_lvl, day, ys["lbs"], style_lvl, day, halflife_days)
         df["dc_edge_style_lbs"] = np.where(ok, shrink(m, n_s, df["dc_edge_lbs"].fillna(0.0).to_numpy(),
                                                       DRAW_STYLE_K), np.nan)
         es = df["dc_edge_style_lbs"]
