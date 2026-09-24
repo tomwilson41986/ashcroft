@@ -371,7 +371,10 @@ def bands(values, edges) -> np.ndarray:
 STYLE_HALFLIFE_RUNS = 4.0
 
 #: Strength, in runs, of the population prior a horse's style is shrunk toward.
-STYLE_PRIOR_RUNS = 2.0
+#: Tuned on 2023-26Q1 comments (research/queries/style_projection_tuning.py, run
+#: 18): half-life 4 runs, prior 4 runs, no per-code level -- four-class Brier
+#: skill 0.042 over the base rates, p_lead calibrated decile by decile.
+STYLE_PRIOR_RUNS = 4.0
 
 #: Half-life in days of the population prior (styles drift with the riding).
 STYLE_POP_HALFLIFE_DAYS = 1095.0
@@ -436,8 +439,10 @@ def horse_decayed_prior(horse, day, values: dict, halflife_runs: float) -> tuple
 
 #: Strength, in runs, of the horse's all-code style that its style in today's
 #: code (flat / all-weather / hurdle / chase / bumper) is shrunk toward. None
-#: pools every code: a horse's hurdle runs then speak for its chases.
-STYLE_CODE_PRIOR_RUNS: float | None = 2.0
+#: pools every code, which the tuning preferred: a separate level cost skill at
+#: every setting tried (the code-specific history is too short to be worth its
+#: noise).
+STYLE_CODE_PRIOR_RUNS: float | None = None
 
 
 def add_style_projection(df: pd.DataFrame, halflife_runs: float = STYLE_HALFLIFE_RUNS,
