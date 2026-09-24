@@ -1,7 +1,7 @@
 """Morning prediction job.
 
 1. Ensure database is available
-2. Run Ashcroft BFSP model for today
+2. Run Ashcroft BFSP model for today, keeping the card as fetched (S3 racecards/)
 3. Match predictions to Betfair markets (market_id + selection_id)
 4. Snapshot the exchange price alongside each prediction
 5. Write predictions CSV to S3
@@ -9,7 +9,7 @@
 Entry point: python -m pipeline.predict
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from pipeline.shared import setup_logging, ensure_database
 
@@ -156,9 +156,17 @@ def main():
     # Step 1: Ensure database
     ensure_database()
 
-    # Step 2: Run predictions
+    # Step 2: Run predictions, keeping the card as fetched. The result rows later
+    # overwrite the going, the jockeys and the field, so this is the only record
+    # of what was known at 06:00. Keyed by the fetch time: a re-run adds a file
+    # and never replaces the morning's.
+    from ultra_betting.data.s3 import write_csv
     from ultra_betting.model.predict import run_predictions, predictions_to_dataframe
-    predictions = run_predictions(target_date=target_date)
+    fetched_at = datetime.now(timezone.utc).strftime("%H%M")
+    predictions = run_predictions(
+        target_date=target_date,
+        card_sink=lambda card: write_csv("racecards", f"{target_date}_{fetched_at}", card),
+    )
 
     if not predictions:
         log.warning("No predictions generated, exiting")
@@ -177,7 +185,6 @@ def main():
     # and the predictions are worth more, so they go out first and the file is
     # rewritten once the prices are in. A failure past this point costs eight
     # columns, not the card.
-    from ultra_betting.data.s3 import write_csv
     write_csv("predictions", target_date, predictions_to_dataframe(predictions))
 
     # Step 5: Snapshot the prices that exist right now, for forward CLV

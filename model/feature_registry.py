@@ -60,6 +60,9 @@ STAGE_C_PATTERNS = [
     # share, the drift *rate* (spatial.py's going drift_smooth / drift_sd are a
     # different, market-free thing) and the pre-off volatility estimators.
     re.compile(r"(^|_)vol_share(_|$)"), re.compile(r"(^|_)drift_rate(_|$)"), re.compile(r"(^|_)pp_vol"),
+    # residuals against earlier races' prices: model/ae_features.py (won - pi by entity) and the
+    # in-day block's rank and A/E residuals (model/inday_features.py); its counts stay F
+    re.compile(r"^ae_"), re.compile(r"^id_.*(slope|edge|_ae|bmr)"),
 ]
 # race-level constants: cancel in the softmax; use for segmentation / selection only
 STAGE_S_PATTERNS = [

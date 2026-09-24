@@ -1,0 +1,58 @@
+name: Research query
+
+# Read-only diagnostics against horse_racing.db for the research loop: every
+# script in research/queries/ runs and its output is uploaded. Push-triggered on
+# the research branch (a workflow only on a branch cannot be dispatched).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/happy-ritchie-*']
+    paths:
+      - 'research/queries/**'
+      - '.github/workflows/research-query.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download historic database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
+      - name: Run the queries
+        env:
+          # read-only S3 for queries that need files beside the database (the 06:00 record)
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          PRED_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          PRED_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: |
+          mkdir -p out
+          for q in research/queries/*.py; do
+            name=$(basename "$q" .py)
+            echo "::group::$name"
+            python "$q" 2>&1 | tee "out/$name.txt" || true
+            echo "::endgroup::"
+          done
+          for f in out/*.txt; do { echo "## $(basename "$f")"; echo '```'; cat "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"; done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: research-query-${{ github.run_number }}
+          path: out/
+          # snapshots kept long enough for the forward revision test
+          retention-days: 90

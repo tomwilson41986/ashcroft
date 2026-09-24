@@ -204,59 +204,50 @@ POST_RACE_ONLY = frozenset({
 })
 
 
-def _calculate_epf(comment: str) -> float:
-    """Parse race comment to determine Early Position Figure (1-6 scale).
+# Early-position vocabulary: (figure, pattern). Every pattern is anchored on
+# word boundaries. The spec's patterns were not, so "led to" matched inside
+# "failed to" and "struggled to", and "led," inside "pulled," and "travelled,":
+# a horse "held up in rear, failed to pick up" was scored a front-runner.
+_EPF_VOCAB = [
+    (6.0, r"\bmade (?:virtually |almost |nearly )?all\b|\bmade most\b|\bmade the running\b"
+          r"|\bsoon led\b|\bled\b|\bset (?:a |the )?(?:\w+ )?pace\b|\bwent clear early\b"),
+    (5.5, r"\bdisputed (?:the )?lead\b|\bdisputed\b|\bwith leaders?\b|\bjoint[- ]lead\b"
+          r"|\bupsides (?:the )?leaders?\b"),
+    (5.0, r"\b(?:chased|tracked|pressed|chasing|tracking|pressing) (?:the )?(?:clear |runaway )?(?:leader|winner)\b"),
+    (4.0, r"\b(?:chased|tracked|pressed|chasing|tracking|pressing) (?:the )?"
+          r"(?:leaders|leading (?:pair|trio|group|quartet|bunch))\b"
+          r"|\bprominent\b|\bclose up\b|\bhandy\b|\bclose to (?:the )?pace\b|\bnear (?:the )?(?:lead|pace)\b"
+          r"|\bin touch\b|\bin-touch\b|\btracked\b|\bchased\b"),
+    (3.0, r"\bmid[- ]?(?:division|field)\b|\bmidfield\b|\bheld up in touch\b"),
+    (1.0, r"\bheld up\b|\bin rear\b|\btowards (?:the )?rear\b|\bat (?:the )?rear\b|\bin last\b"
+          r"|\blast pair\b|\bdropped out\b|\balways rear\b|\bslowly away\b|\bdwelt\b"
+          r"|\bmissed the break\b|\bstarted slowly\b|\bbadly away\b|\bwell behind\b|\brear\b"),
+]
+_EPF_COMPILED = [(v, re.compile(p)) for v, p in _EPF_VOCAB]
 
-    Uses NLP regex patterns to classify early race position from
-    in-running commentary text.
+
+def _calculate_epf(comment: str) -> float:
+    """Early Position Figure (1-6) from an in-running comment.
+
+    Comments narrate the race in order, so the FIRST positional phrase is the
+    early position: "tracked leaders, led over 1f out" is a tracker (4), "held up
+    in rear, led final 100yds" a hold-up horse (1). The spec took the first
+    CLASS that matched anywhere, which scored every horse that ever led at any
+    stage a front-runner. On a tie at the same position the longer phrase wins
+    ("held up in touch" is 3, not "held up" 1). No positional phrase: 3.0.
     """
     if not comment or not isinstance(comment, str):
         return 3.0
     c = comment.lower()
-
-    # Leaders (score 6)
-    if re.search(
-        r"made virtually all|made all|made most|led to\b|led,|led early"
-        r"|led after|led before|led until|led over|soon led",
-        c,
-    ):
-        return 6.0
-    # Disputed lead (5.5)
-    if re.search(r"disputed|disputed lead|with leader", c):
-        return 5.5
-    # Chased leader (5)
-    if re.search(r"chased leader|tracked leader|chased winner", c):
-        return 5.0
-    # Prominent (4)
-    if re.search(
-        r"pressed leader|tracked leaders|chased leaders|prominent|close up"
-        r"|in touch|in-touch|pressing leaders|chasing leaders"
-        r"|tracked front pair|tracked leading pair|chased leading"
-        r"|tracked\s|tracking leaders",
-        c,
-    ):
-        return 4.0
-    # Front of midfield (3)
-    if re.search(
-        r"front of mid-division|front of mid division|front of midfield", c
-    ):
-        return 3.0
-    # Held up midfield (3)
-    if re.search(
-        r"held up in midfield|held up in mid-division"
-        r"|towards rear of midfield|held up in touch",
-        c,
-    ):
-        return 3.0
-    # Behind/rear (1)
-    if re.search(
-        r"towards rear|held up behind|behind|held up|held up,|last pair", c
-    ):
-        return 1.0
-    if re.search(r"in rear|always rear", c):
-        return 1.0
-
-    return 3.0
+    best = None
+    for value, rx in _EPF_COMPILED:
+        m = rx.search(c)
+        if m is None:
+            continue
+        key = (m.start(), -(m.end() - m.start()))
+        if best is None or key < best[0]:
+            best = (key, value)
+    return 3.0 if best is None else best[1]
 
 
 class CustomMetricsEngine:
@@ -466,7 +457,9 @@ class CustomMetricsEngine:
             cum_xwin = _lag_cumsum(df, col, "xWINRAND")
 
             df[f"{prefix}Wins"] = cum_wins
-            df[f"{prefix}Runs"] = grp.cumcount()  # 0-indexed = runs before this
+            # Earlier runners on earlier days (model.lagsafe), not earlier rows:
+            # a row count gives a trainer credit for his other runners today.
+            df[f"{prefix}Runs"] = _lag_race_runs(df, col)
             df[f"{prefix}Places"] = _lag_cumsum(df, col, "placed")
             df[f"{prefix}WIV"] = cum_wins / cum_xwin.replace(0, np.nan)
 
@@ -1591,9 +1584,10 @@ class CustomMetricsEngine:
 
         # --- Debut interaction features ---
         # For debut runners, sire/trainer quality are primary predictors
-        is_debut = (
-            df.groupby("horse_name").cumcount() == 0
-        ).astype(float)
+        # The frame is sorted by damsire and distance band here, so a cumcount
+        # over it flagged the first run in the lowest distance band, not the
+        # debut. Count the horse's earlier runs instead.
+        is_debut = (_lag_race_runs(df, "horse_name") == 0).astype(float)
         df["debut_x_sire_nfp"] = is_debut * df["sire_avg_nfp"]
         df["debut_x_sire_wiv"] = is_debut * df.get("sire_wiv", 0)
         df["debut_x_trainer_wiv"] = is_debut * df.get(
@@ -1717,25 +1711,12 @@ class CustomMetricsEngine:
                 df[col] = np.nan
             return df
 
-        def parse_lengths(val):
-            """Parse beaten-length strings to numeric."""
-            if pd.isna(val) or val == "" or val == "0":
-                return 0.0
-            s = str(val).strip().lower()
-            if s in MARGIN_WORDS:
-                return MARGIN_WORDS[s]
-            if s in ("dht", "dh"):
-                return 0.0
-            # Combined forms like "2nk", "1shd", "3hd"
-            m = re.match(r"(\d+\.?\d*)\s*(snk|nk|shd|hd|nse)?", s)
-            if m:
-                return float(m.group(1)) + MARGIN_WORDS.get(m.group(2) or "", 0.0)
-            try:
-                return float(s)
-            except (ValueError, TypeError):
-                return np.nan
-
-        df["LB"] = df["total_dst_bt"].apply(parse_lengths)
+        # perf_figures' parser, not a local one: the local copy read a blank as
+        # 0 lengths (a win), "3/4" as 3 lengths and "1½" as 1.
+        from model.perf_figures import parse_beaten_lengths
+        lb = df["total_dst_bt"].map(parse_beaten_lengths).astype(float)
+        placing = pd.to_numeric(df.get("placing_numerical"), errors="coerce")
+        df["LB"] = lb.where(placing != 1, 0.0)          # a winner is beaten by nothing
 
         # Career and rolling LB averages (lagged)
         df = df.sort_values(

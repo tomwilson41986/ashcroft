@@ -16,12 +16,26 @@ variation a race-grouped or race-demeaned model keys on.
 
 `race_lagged_expanding_mean` aggregates to races first and then lags, so a
 runner sees every earlier race in its group and no part of its own.
+
+"Earlier" means earlier DAYS (`LAG_UNIT = "day"`). Lagging by race let the 4.10
+see the 2.00's result on the same card, which a 06:00 forecast never can: the
+trainer's and jockey's strike rates, the course-and-draw cells and the pace
+indices all trained on information the forecast does not have. Worse, when a
+live card is priced its runners have no result yet, so a race-lagged prior
+counted the day's earlier runners as losers -- a skew between training and
+serving on top of the leak. A day lag removes both: nothing from the day being
+predicted enters any prior, in training or in serving. A horse runs at most once
+a day, so horse-level features are unchanged. `LAG_UNIT = "race"` restores the
+old rule for comparison.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+#: The unit a prior steps back by: "day" (earlier days only) or "race".
+LAG_UNIT = "day"
 
 
 def race_minutes(race_time) -> pd.Series:
@@ -63,7 +77,8 @@ def ensure_race_key(df: pd.DataFrame, race_col: str = "raceid") -> pd.Series:
 
 def _per_race_priors(df: pd.DataFrame, keys: list[str], value_col: str,
                      race_col: str) -> pd.DataFrame:
-    """Per-row totals over the group's EARLIER races: sum, count, races.
+    """Per-row totals over the group's earlier races -- on earlier days, under
+    the default `LAG_UNIT` -- as sum, count and number of races.
 
     The subtraction form, `group_cumsum - own`, is the obvious way to write
     this and it is not quite right. It reaches the correct answer through the
@@ -82,23 +97,30 @@ def _per_race_priors(df: pd.DataFrame, keys: list[str], value_col: str,
         d[k] = df[k]
     d["_race"] = ensure_race_key(df, race_col)
     d["_v"] = pd.to_numeric(df[value_col], errors="coerce")
-    d["_date"] = pd.to_datetime(df["race_date"], errors="coerce")
+    d["_date"] = pd.to_datetime(df["race_date"], errors="coerce").dt.normalize()
     d["_time"] = race_minutes(df["race_time"]) if "race_time" in df.columns else 0.0
 
-    per_race = (d.groupby(keys + ["_race"], dropna=False, observed=True)
-                 .agg(_s=("_v", "sum"), _n=("_v", "count"), _d=("_date", "min"), _t=("_time", "min"))
-                 .reset_index()
-                 .sort_values(keys + ["_d", "_t", "_race"], kind="stable"))
-    g = per_race.groupby(keys, dropna=False, observed=True)
-    per_race["_cs"] = g["_s"].cumsum()
-    per_race["_cn"] = g["_n"].cumsum()
-    gg = per_race.groupby(keys, dropna=False, observed=True)
-    per_race["_prior_sum"] = gg["_cs"].shift(1).fillna(0.0)
-    per_race["_prior_n"] = gg["_cn"].shift(1).fillna(0.0)
-    per_race["_prior_races"] = gg.cumcount()
+    # One cell per group per unit (a day, or a race), then each cell steps back
+    # a whole cell. `_prior_races` still counts earlier RACES either way, so a
+    # `min_races` threshold means the same thing under both rules.
+    unit = "_date" if LAG_UNIT == "day" else "_race"
+    order = keys + ["_d", "_t"] + (["_race"] if unit == "_race" else [])
+    per = (d.groupby(keys + [unit], dropna=False, observed=True)
+             .agg(_s=("_v", "sum"), _n=("_v", "count"), _r=("_race", "nunique"),
+                  _d=("_date", "min"), _t=("_time", "min"))
+             .reset_index()
+             .sort_values(order, kind="stable"))
+    g = per.groupby(keys, dropna=False, observed=True)
+    per["_cs"] = g["_s"].cumsum()
+    per["_cn"] = g["_n"].cumsum()
+    per["_cr"] = g["_r"].cumsum()
+    gg = per.groupby(keys, dropna=False, observed=True)
+    per["_prior_sum"] = gg["_cs"].shift(1).fillna(0.0)
+    per["_prior_n"] = gg["_cn"].shift(1).fillna(0.0)
+    per["_prior_races"] = gg["_cr"].shift(1).fillna(0).astype(int)
 
     cols = ["_prior_sum", "_prior_n", "_prior_races"]
-    merged = d.reset_index().merge(per_race[keys + ["_race"] + cols], on=keys + ["_race"], how="left")
+    merged = d.reset_index().merge(per[keys + [unit] + cols], on=keys + [unit], how="left")
     out = merged[cols].set_index(merged["index"].values)
     return out.reindex(df.index)
 

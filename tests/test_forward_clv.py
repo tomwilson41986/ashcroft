@@ -200,3 +200,91 @@ def test_the_predictions_are_written_before_the_price_snapshot():
         "attach_exchange_prices runs before the predictions are written; a hung "
         "Betfair socket would cost the whole card"
     )
+
+
+# --- the morning card, kept as fetched ----------------------------------------
+
+def test_the_morning_card_is_kept_as_fetched_and_a_failed_write_costs_nothing(monkeypatch):
+    """The result rows later overwrite the going, the jockeys and the field, so
+    the card as fetched is the only record of what was known at 06:00."""
+    from datetime import date
+
+    import predict_bfsp_today as pbt
+    from ultra_betting.model import predict as mod
+
+    card = pd.DataFrame({"race_date": ["2026-09-24"], "track": ["Kempton"], "race_time": ["6:30"],
+                         "horse_name": ["Lady Luck"], "going_description": ["Standard"],
+                         "jockey_name": ["A Rider(3)"]})
+    history = pd.DataFrame({"race_date": pd.to_datetime(["2026-09-01"] * 200)})
+
+    def predict_in_place(hist, runners, *a, **k):
+        runners["jockey_name"] = "A Rider"            # the fill strips the claim from the frame it is given
+        runners["predicted_bfsp"] = 3.0
+        runners["predicted_win_prob_norm"] = 1 / 3
+        return runners
+
+    monkeypatch.setenv("HRB_USERNAME", "someone")
+    monkeypatch.setattr(pbt, "load_bfsp_model", lambda model_dir: (None, [], {}))
+    monkeypatch.setattr(pbt, "load_historical", lambda *a, **k: history)
+    monkeypatch.setattr(pbt, "fetch_racecard_from_hrb", lambda d: card.copy())
+    monkeypatch.setattr(pbt, "get_runners_from_db", lambda *a: card.copy())
+    monkeypatch.setattr(pbt, "prepare_and_predict", predict_in_place)
+    day = date(2026, 9, 24)
+
+    kept = []
+    assert len(mod.run_predictions(target_date=day, card_sink=kept.append)) == 1
+    assert len(kept) == 1 and kept[0]["jockey_name"].iloc[0] == "A Rider(3)"      # as fetched
+
+    def s3_down(frame):
+        raise OSError("S3 unreachable")
+    assert len(mod.run_predictions(target_date=day, card_sink=s3_down)) == 1      # costs the record only
+
+    kept.clear()
+    mod.run_predictions(target_date=day, from_db=True, card_sink=kept.append)
+    assert kept == []                                                              # database rows are no card
+
+
+def test_the_morning_card_is_written_under_its_fetch_time():
+    """A re-run later in the day adds a file; it never replaces the morning's."""
+    import inspect
+
+    from pipeline import predict as mod
+
+    src = inspect.getsource(mod.main)
+    assert 'write_csv("racecards", f"{target_date}_{fetched_at}"' in src
+    assert src.index("card_sink=") < src.index('write_csv("predictions"')
+
+
+# --- the early-price diagnostics -------------------------------------------------
+
+def test_clv_diagnostics_clock_and_commission():
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "clv_diagnostics", Path(__file__).resolve().parent.parent / "scripts" / "clv_diagnostics.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.minutes("1.50") == 13 * 60 + 50          # card times 1-9 are afternoon
+    assert mod.minutes("11:05") == 11 * 60 + 5
+    assert mod.minutes("1.50.") == 13 * 60 + 50         # the table's trailing dot
+    assert pd.isna(mod.minutes("tba"))
+    net = mod.net_clv(pd.Series([4.4, 3.0]), pd.Series([4.0, 4.0]))
+    assert net[0] == pytest.approx(0.1 * 0.95)          # commission only on a gain
+    assert net[1] == pytest.approx(-0.25)
+
+
+def test_serving_builds_history_from_where_training_did(tmp_path):
+    """QA review M6: serving from 2020 while training from 2021 gave live rows a
+    year of history no training row had."""
+    import json
+
+    from ultra_betting.model.predict import TRAINING_START_FALLBACK, training_start
+
+    (tmp_path / "bfsp_training_summary.json").write_text(json.dumps({"data_range": {"min_date": "2022-03-01"}}))
+    assert training_start(tmp_path) == "2022-03-01"
+    assert training_start(tmp_path / "absent") == TRAINING_START_FALLBACK
+    # the committed model says where its own history began
+    import os
+    committed = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "models")
+    assert training_start(committed) == "2021-01-01"

@@ -431,6 +431,11 @@ def parse_racecard_csv(csv_text: str) -> pd.DataFrame:
         "dayssincelr": "days_since_lr",
         "careerruns": "career_runs",
         "stallion": "stallion",
+        # the results export's name for the dam's sire; without it a debutant's damsire
+        # features are blank on the CSV path (model/card_enrich.py can only fill them
+        # from the horse's own earlier runs). MedianOR is left for card_enrich to derive,
+        # because the table stores a median ending in .5 as missing.
+        "damstallion": "dam_stallion",
         "surfacetype": "surface_type",
         "HorseSex": "horse_sex",
         "RaceType": "race_type",

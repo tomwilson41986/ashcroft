@@ -61,6 +61,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from model import lagsafe
 from model.lagsafe import ensure_race_key, race_lagged_expanding_mean
 from model.primitives import nmfp
 
@@ -238,9 +239,18 @@ def race_lagged_decayed_mean(df: pd.DataFrame, group_col: str | list[str], value
         gcode = _codes(df[keys[0]])
     else:
         gcode = _codes(pd.MultiIndex.from_arrays([df[k] for k in keys]))
-    rcode = _codes(ensure_race_key(df, race_col))
+    race = _codes(ensure_race_key(df, race_col))
+    when = _race_when(df)
+    # The cell a prior steps back by: a whole day under the default lag rule
+    # (see model.lagsafe), so nothing from the card being priced enters it.
+    by_day = lagsafe.LAG_UNIT == "day"
+    if by_day:
+        when = np.floor(when)
+        rcode = _codes(when)
+    else:
+        rcode = race
 
-    # one cell per (group, race): a race contributes to a group once
+    # one cell per (group, unit): a race (or a day) contributes to a group once
     n_r = int(rcode.max()) + 1
     pair = gcode * np.int64(n_r) + rcode
     upair, pidx = np.unique(pair, return_inverse=True)
@@ -250,8 +260,11 @@ def race_lagged_decayed_mean(df: pd.DataFrame, group_col: str | list[str], value
     ok = ~np.isnan(v)
     sums = np.bincount(pidx[ok], weights=v[ok], minlength=m)
     cnts = np.bincount(pidx[ok], minlength=m).astype(float)
-
-    when = _race_when(df)
+    if by_day:                                  # races per cell, so min_races still counts races
+        rp = np.unique(pidx.astype(np.int64) * np.int64(int(race.max()) + 1) + race)
+        races_in_cell = np.bincount(rp // np.int64(int(race.max()) + 1), minlength=m).astype(float)
+    else:
+        races_in_cell = np.ones(m)
     # earliest time seen for each (group, race); every row of a race carries the
     # same one, and taking the minimum keeps the result independent of row order
     # if a file ever disagrees with itself.
@@ -266,6 +279,7 @@ def race_lagged_decayed_mean(df: pd.DataFrame, group_col: str | list[str], value
 
     order = np.lexsort((upair, pwhen, pgroup))
     g_s, w_s, s_s, c_s = pgroup[order], pwhen[order], sums[order], cnts[order]
+    r_s = races_in_cell[order]
 
     is_new = np.empty(m, dtype=bool)
     is_new[0] = True
@@ -277,10 +291,20 @@ def race_lagged_decayed_mean(df: pd.DataFrame, group_col: str | list[str], value
     t = np.nan_to_num(t, nan=0.0)
     grow = np.exp2(t)
     ws, wn = grow * s_s, grow * c_s
-    cs, cn = np.cumsum(ws), np.cumsum(wn)
-    prior_ws = cs - ws - (cs[starts] - ws[starts])       # exclusive, within group
-    prior_wn = cn - wn - (cn[starts] - wn[starts])
-    prior_races = np.arange(m) - starts
+    # Exclusive prefix sums: element i is the total of cells BEFORE i, computed
+    # without ever adding cell i. The subtraction form (cumsum - own) reaches the
+    # same number through the current cell's value, so its last bits moved with
+    # the result of the race being priced (see model.lagsafe._per_race_priors).
+    # The sums restart at each group: a running total across groups, less its
+    # value at the group's start, carries every earlier group's cells -- today's
+    # included -- through a cancellation that is exact only on paper.
+    gkey = pd.Series(g_s)
+
+    def ex(a):
+        return (pd.Series(a).groupby(gkey, sort=False).cumsum()
+                .groupby(gkey, sort=False).shift(1).fillna(0.0).to_numpy())
+
+    prior_ws, prior_wn, prior_races = ex(ws), ex(wn), ex(r_s)
 
     with np.errstate(invalid="ignore", divide="ignore"):
         mean_s = np.where((prior_wn > 0) & (prior_races >= min_races), prior_ws / prior_wn, np.nan)

@@ -210,6 +210,13 @@ def prepare_and_predict(
         target_runners = target_runners.copy()
         target_runners["race_date"] = pd.to_datetime(target_date)
 
+        # The morning card lacks fields the model is trained with -- distance, race type,
+        # surface, sex, sire, career runs, claims, the race's OR spread -- and a missing
+        # category is scored as the first in its vocabulary (QA review C1). Fill them from
+        # the card's own text and the horses', jockeys' and tracks' earlier rows.
+        from model.card_enrich import enrich_card
+        target_runners = enrich_card(target_runners, historical_df)
+
         # Ensure compatible schemas
         for col in historical_df.columns:
             if col not in target_runners.columns:

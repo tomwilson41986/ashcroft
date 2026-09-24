@@ -125,6 +125,7 @@ def test_one_beaten_length_table_for_the_whole_repo():
 
     d = _card(n_days=2, races_per_day=1, runners=4)
     d["total_dst_bt"] = ["0", "nk", "2hd", "shd"] + ["0", "hd", "1nk", "dist"]
+    d["placing_numerical"] = [1, 3, 4, 2] + [1, 2, 3, 4]         # the "0" rows won
     out = CustomMetricsEngine()._calc_actual_lengths_beaten(d)   # may reorder rows
     got = dict(zip(out["total_dst_bt"], out["LB"]))
     assert got["nk"] == MARGIN_WORDS["nk"] == 0.3
@@ -168,16 +169,47 @@ def test_off_times_order_by_the_clock_not_alphabetically():
     assert sorted(times)[0] == "1.45." and mins.iloc[2] > mins.iloc[0]   # ... but the strings do not
 
 
-def test_a_later_race_on_the_card_does_not_feed_an_earlier_one():
-    """The ordering fix has to hold end to end, not just in the parser."""
+def _same_card_and_next_day():
     d = _card(n_days=1, races_per_day=1, runners=3, seed=9)
-    d = pd.concat([
+    return pd.concat([
         d.assign(raceid="early", race_time="11.30", v=[1.0, 1.0, 1.0]),
         d.assign(raceid="late", race_time="1.45.", v=[0.0, 0.0, 0.0]),
+        d.assign(raceid="tomorrow", race_time="2.00", v=[0.5, 0.5, 0.5],
+                 race_date=d["race_date"] + pd.Timedelta(days=1)),
     ], ignore_index=True)
+
+
+def test_nothing_from_the_card_being_priced_enters_a_prior():
+    """A 06:00 forecast cannot know the 11.30's result when it prices the 1.45,
+    and a live card has no results at all, so priors step back whole days."""
+    d = _same_card_and_next_day()
     out = race_lagged_expanding_mean(d, "track", "v")
-    assert out[d["raceid"] == "early"].isna().all()       # nothing ran before it
-    assert np.allclose(out[d["raceid"] == "late"], 1.0)   # sees only the 11.30
+    assert out[d["raceid"] == "early"].isna().all()           # nothing ran before it
+    assert out[d["raceid"] == "late"].isna().all()            # the 11.30 is the same day
+    assert np.allclose(out[d["raceid"] == "tomorrow"], 0.5)   # both of yesterday's races
+
+
+def test_a_live_card_does_not_count_its_own_runners_as_losers():
+    """Priced live, today's runners have no placing, so `won` is 0 for all of
+    them. Under a race lag the 4.10's trainer strike rate counted his 2.00
+    runner as a loser; under the day lag the card never enters its own priors."""
+    hist = pd.DataFrame({"raceid": ["h1"], "race_date": pd.to_datetime(["2025-01-01"]),
+                         "race_time": ["2.00"], "trainer": ["T"], "won": [1.0]})
+    card = pd.DataFrame({"raceid": ["c1", "c2"], "race_date": pd.to_datetime(["2025-01-02"] * 2),
+                         "race_time": ["2.00", "4.10"], "trainer": ["T", "T"], "won": [0.0, 0.0]})
+    out = race_lagged_expanding_mean(pd.concat([hist, card], ignore_index=True), "trainer", "won")
+    assert out.iloc[1:].tolist() == [1.0, 1.0]               # both see yesterday's win and only that
+
+
+def test_under_the_race_rule_a_later_race_sees_an_earlier_one_by_the_clock(monkeypatch):
+    """The old rule, kept for comparison: the clock order has to hold end to
+    end, not just in the parser."""
+    from model import lagsafe
+    monkeypatch.setattr(lagsafe, "LAG_UNIT", "race")
+    d = _same_card_and_next_day()
+    out = race_lagged_expanding_mean(d, "track", "v")
+    assert out[d["raceid"] == "early"].isna().all()
+    assert np.allclose(out[d["raceid"] == "late"], 1.0)       # sees only the 11.30
 
 
 def _result_card(n_days=8, races_per_day=2, runners=8, seed=3, flip_last_race=False):
