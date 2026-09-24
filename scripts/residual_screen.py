@@ -533,6 +533,11 @@ def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = F
                 # the metrics engine on every row; rebuilt here they would come from the priced
                 # rows alone and sit beside the production copies
                 raise ValueError(f"{b} is a production block now; it is already in every run")
+            elif b == "freshness":
+                # days since the last run in context: the horse's usual spacing, the yard's,
+                # the field's; runs since a break; workload; since the last win
+                from model.freshness_features import add_freshness_features
+                df, cols = add_freshness_features(df)
             elif b == "intent":
                 # the connections' choices today (new yard, handicap debut, gelded, headgear...)
                 # and each trainer's record with them against the price on earlier days
@@ -896,7 +901,7 @@ def main(argv=None):
                     help="withhold every race on or after this date (the locked holdout); '' to disable")
     ap.add_argument("--val-months", type=int, default=6, help="inner validation tail of the training window")
     ap.add_argument("--ridge-grid", type=float, nargs="+", default=[1.0, 10.0, 100.0, 1000.0])
-    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>],intent (shape and drawcurve are production features now)")
+    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>],intent,freshness (shape and drawcurve are production features now)")
     ap.add_argument("--limit", type=int, default=0, help="screen only the first N production features (smoke runs)")
     ap.add_argument("--no-alone", action="store_true")
     ap.add_argument("--no-boost", action="store_true")
