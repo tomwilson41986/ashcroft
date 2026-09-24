@@ -17,7 +17,13 @@ each with the same history before the day:
 
 filled against blind is what the fix leaves open; raw against blind is what it
 closed. Reported: the served price's gap, the race's top pick, and every feature
-that differs, weighted by the model's gain. The model was trained through 17 Sep,
+that differs, weighted by the model's gain.
+
+Run 35928189383 (23-24 Sep) passed table and blind through the fill as well. Only
+median_or was affected: it is the one field the table leaves blank (a median ending
+in .5), the fill had written the half value in, and so the comparison could not see
+the gap. The fill now leaves it blank as the table does. table and blind are served
+without the fill from here on. The model was trained through 17 Sep,
 so its error against BSP on these days is in-sample for every variant alike.
 """
 import gc
@@ -83,8 +89,8 @@ for day in days:
     raw = card.copy()
     raw["prize_money"] = pd.to_numeric(raw.prize_money, errors="coerce").map(
         lambda v: f"{v:,.0f}" if pd.notna(v) else "")
-    out = {"table": serve(day, truth), "blind": serve(day, blind), "filled": serve(day, card),
-           "raw": serve(day, raw, fill=False)}
+    out = {"table": serve(day, truth, fill=False), "blind": serve(day, blind, fill=False),
+           "filled": serve(day, card), "raw": serve(day, raw, fill=False)}
     bsp = truth[KEY + ["bfsp"]].copy()
     results[day] = (out, bsp)
     os.makedirs("out/live_parity", exist_ok=True)                   # kept in the artifact for re-analysis

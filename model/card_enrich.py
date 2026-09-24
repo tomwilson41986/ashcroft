@@ -27,7 +27,8 @@ uses (checked against it: research/queries/done/card_field_semantics.py):
   career_runs       the table's count at the horse's last run, plus that run (the table
                     counts the runs before each one; history may start after the first)
   jockeys_claim     the jockey's latest claim (0 for a jockey never seen)
-  max_or_in_race, median_or   over the card's ORs, zeros for unrated as the table has them
+  max_or_in_race, median_or   over the card's ORs, zeros for unrated as the table has them;
+                    a median ending in .5 is missing, as the table's INTEGER column stores it
   official_rating   0 where blank: the table records unrated as 0, not missing
   prize_money       '84,405' -> 84405
 
@@ -284,6 +285,10 @@ def enrich_card(card: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
         card["official_rating"] = orr.fillna(0.0)
         race = card["race_date"].astype(str) + "|" + card["track"].astype(str) + "|" + card["race_time"].astype(str)
         _fill(card, "max_or_in_race", card["official_rating"].groupby(race).transform("max"))
-        # the median over every runner, unrated as 0: an all-unrated race has 0, not a gap
-        _fill(card, "median_or", card["official_rating"].groupby(race).transform("median"))
+        # the median over every runner, unrated as 0 (an all-unrated race has 0, not a gap);
+        # the column is an INTEGER and a median ending in .5 is stored as missing, in 99.96%
+        # of 385,657 rows (research/queries/done/card_gaps_check.py), so the model was trained
+        # on a gap there and the card gives it one
+        med = card["official_rating"].groupby(race).transform("median")
+        _fill(card, "median_or", med.where(med % 1 == 0))
     return card

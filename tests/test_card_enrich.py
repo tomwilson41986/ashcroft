@@ -136,3 +136,11 @@ def test_career_runs_continue_the_table_s_count_past_the_history_window():
     out = enrich_card(_card(), h)
     assert out.loc[0, "career_runs"] == 12                           # 11 before her last run, plus that run
     assert out.loc[1, "career_runs"] == 0                            # a debutant
+
+
+def test_a_median_ending_in_half_is_missing_as_the_table_stores_it():
+    card = _card().iloc[[0, 1]].reset_index(drop=True)          # one race: unrated (0) and 80 -> median 40
+    four = pd.concat([card, card.assign(horse_name=["Third", "Fourth"], official_rating=[71, 60])], ignore_index=True)
+    out = enrich_card(four, _history())                          # 0, 60, 71, 80 -> median 65.5
+    assert out["median_or"].isna().all()
+    assert enrich_card(card, _history())["median_or"].tolist() == [40.0, 40.0]
