@@ -35,6 +35,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from model import feature_cache
 from model.bfsp_model import (
+    DEFAULT_PARAMS,
     OBJECTIVES,
     TARGETS,
     TrainConfig,
@@ -759,6 +760,15 @@ def main():
                         help="Refit on the full training window at the chosen "
                              "iteration count (what the published model does)")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--num-boost-round", type=int, default=TrainConfig.num_boost_round,
+        help="Boosting rounds cap per fit (early stopping on the holdout still applies). "
+             "The served recipe's fits stop at or near 3000, the cap, not converged",
+    )
+    parser.add_argument(
+        "--learning-rate", type=float, default=None,
+        help="LightGBM learning rate (default: model/bfsp_model.py DEFAULT_PARAMS, 0.03)",
+    )
     parser.add_argument("--native-categoricals", action="store_true",
                         help="Declare the _cat columns to LightGBM as categorical "
                              "rather than letting it split them as ordered integers")
@@ -934,11 +944,14 @@ def main():
         refit_on_full=args.refit,
         seed=args.seed,
         native_categoricals=args.native_categoricals,
+        num_boost_round=args.num_boost_round,
+        params={**DEFAULT_PARAMS, **({"learning_rate": args.learning_rate} if args.learning_rate else {})},
     )
     log.info("Training recipe: objective=%s target=%s decay=%.2f holdout=%dd "
-             "purge=%dd embargo=%dd refit=%s seed=%d",
+             "purge=%dd embargo=%dd refit=%s seed=%d rounds<=%d lr=%.3f",
              cfg.objective, cfg.target, cfg.decay_rate, cfg.holdout_days,
-             cfg.purge_days, cfg.embargo_days, cfg.refit_on_full, cfg.seed)
+             cfg.purge_days, cfg.embargo_days, cfg.refit_on_full, cfg.seed,
+             cfg.num_boost_round, cfg.params["learning_rate"])
 
     oos = walk_forward_predict(
         df,

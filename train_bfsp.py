@@ -949,6 +949,11 @@ def main():
         help="Number of leaves (default: 127)",
     )
     parser.add_argument(
+        "--num-boost-round", type=int, default=3000,
+        help="Boosting rounds cap; early stopping on the holdout picks the count "
+             "the published refit uses (default: 3000)",
+    )
+    parser.add_argument(
         "--start-date", type=str, default=None,
         help="Only load data from this date onward (YYYY-MM-DD). "
              "Reduces memory usage for large databases.",
@@ -1160,6 +1165,7 @@ def main():
         refit_on_full=True,   # the published model sees the most recent weeks
         seed=args.seed,
         params=params,
+        num_boost_round=args.num_boost_round,
     )
     log.info("Training recipe: objective=%s target=%s decay=%.2f holdout=%dd "
              "purge=%dd seed=%d", cfg.objective, cfg.target, cfg.decay_rate,
