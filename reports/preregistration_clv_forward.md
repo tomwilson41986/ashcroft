@@ -81,3 +81,12 @@ So its null (−3.20%) decides nothing.
 - **Fail, with the backtest's forecast passing on the same days:** reading 2. The
   backtest's edge came from race-day facts, and the trade is abandoned.
 - **Both fail:** the edge has gone, or was never there.
+
+## Amendment, 24 Sep 2026, before any forward card has been served
+
+**Secondary endpoint: the rank-1 subset.** These are the rule's trades on each race's rank-1 runner, the model's highest win probability (lowest forecast price). It is scored with the same statistics and bootstrap as the primary, but it is not the criterion. It is the direct test of the original goal, a profitable rank-1 selection, taken as a trade rather than held.
+
+For reference only, from windows already scored:
+- **January–March** (the window that set the rule): +1.01% (90% −0.95% to +3.01%) on 579 trades.
+- **April–September** (post hoc): +3.16% (+2.05% to +4.29%) on 1,661 trades.
+- **Every rank-1 held to settlement at the morning price** loses in both windows: −7.7% and −2.8%.
