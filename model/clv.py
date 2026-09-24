@@ -92,7 +92,11 @@ def early_bet_rule(d: pd.DataFrame, min_pred_clv: float = 0.10, commission: floa
     b = d[d["pred_clv"].notna() & (d["pred_clv"] >= min_pred_clv) & (np.exp(d["ln_early"]) <= max_early_odds)].copy()
     if min_vol is not None and vol_col in b.columns:
         b = b[pd.to_numeric(b[vol_col], errors="coerce").fillna(0) >= min_vol]
-    b["net_clv"] = b["realised_clv"] * (1 - commission)
+    # Commission falls on net winnings only: a price that drifted locks in a
+    # loss when greened up and pays none. Taking it off both sides shrank
+    # every loss by 5% and biased the acceptance test towards passing.
+    clv = b["realised_clv"]
+    b["net_clv"] = np.where(clv > 0, clv * (1 - commission), clv)
     b["ret_back"] = b["net_clv"]  # greened-up return per unit (for the race bootstrap helper)
     return b
 
