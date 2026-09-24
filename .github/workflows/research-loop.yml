@@ -70,11 +70,13 @@ jobs:
           print(f"outcome={'true' if c.get('outcome', True) else 'false'}")
           print(f"screen={'true' if c.get('screen', False) else 'false'}")
           print(f"final={'--final' if c.get('final', False) else ''}")
+          print(f"bfsp={'true' if c.get('bfsp', False) else 'false'}")
+          print(f"bfsp_from={c.get('bfsp_from', '2025-07-01')}")
           EOF
           cat research/loop.json
 
       - name: Download historic database from S3
-        if: steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true'
+        if: steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true' || steps.cfg.outputs.bfsp == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -87,7 +89,7 @@ jobs:
           python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
 
       - name: Feature cache key
-        if: steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true'
+        if: steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true' || steps.cfg.outputs.bfsp == 'true'
         id: fkey
         run: |
           KEY=$(python -c "import model.feature_cache as f; print(f.cache_key('horse_racing.db', '${{ env.START_DATE }}'))")
@@ -95,7 +97,7 @@ jobs:
           echo "Feature cache key: $KEY"
 
       - name: Restore the feature matrix
-        if: steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true'
+        if: steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true' || steps.cfg.outputs.bfsp == 'true'
         id: fcache
         uses: actions/cache/restore@v4
         with:
@@ -103,14 +105,14 @@ jobs:
           key: features-${{ steps.fkey.outputs.key }}
 
       - name: Build the feature matrix
-        if: (steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true') && steps.fcache.outputs.cache-hit != 'true'
+        if: (steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true' || steps.cfg.outputs.bfsp == 'true') && steps.fcache.outputs.cache-hit != 'true'
         run: |
           set -o pipefail
           python evaluate_oos.py --start-date "$START_DATE" --feature-cache .feature_cache \
             --build-cache-only 2>&1 | grep -v PerformanceWarning | tail -30
 
       - name: Save the feature matrix
-        if: (steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true') && steps.fcache.outputs.cache-hit != 'true'
+        if: (steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true' || steps.cfg.outputs.bfsp == 'true') && steps.fcache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .feature_cache
@@ -138,11 +140,31 @@ jobs:
             --start-date "$START_DATE" --lockbox-from 2026-04-01 --blocks "${{ steps.cfg.outputs.blocks }}" \
             --out-dir reports/residual_screen 2>&1 | grep -v PerformanceWarning | tee reports/residual_screen/screen.log
 
+      - name: BFSP forecast with and without the blocks
+        # The price model the 06:00 job serves, fitted walk-forward on the cached
+        # matrix twice -- production features, then production features plus the
+        # research blocks -- over quarterly folds from bfsp_from to the end of the
+        # development window (--eval-until 2026-04-01: the holdout is never scored),
+        # and paired runner by runner. This is the test that decides whether a block
+        # belongs in the served model: the early-price trade lives on this forecast.
+        if: steps.cfg.outputs.bfsp == 'true'
+        run: |
+          set -o pipefail
+          mkdir -p reports/bfsp_compare
+          common="--start-date $START_DATE --feature-cache .feature_cache --eval-from ${{ steps.cfg.outputs.bfsp_from }} --eval-until 2026-04-01 --step-days 91 --val-window 91 --output-csv reports/bfsp_compare/oos.csv --output-json reports/bfsp_compare/summary.json"
+          python evaluate_oos.py $common --tag base 2>&1 | grep -v PerformanceWarning | tail -60
+          python evaluate_oos.py $common --tag blocks --blocks "${{ steps.cfg.outputs.blocks }}" 2>&1 | grep -v PerformanceWarning | tail -60
+          python scripts/compare_oos_runs.py --base reports/bfsp_compare/oos_base.csv \
+            --variant reports/bfsp_compare/oos_blocks.csv --out reports/bfsp_compare/compare.md \
+            --note "${{ steps.cfg.outputs.tag }}: production features vs + ${{ steps.cfg.outputs.blocks }}"
+          cat reports/bfsp_compare/compare.md
+
       - name: Summarise into the run page
         if: always()
         run: |
           cat reports/outcome_model/summary_*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           cat reports/residual_screen/summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          cat reports/bfsp_compare/compare.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
       - name: Upload results
         if: always()
@@ -152,4 +174,5 @@ jobs:
           path: |
             reports/outcome_model/
             reports/residual_screen/
+            reports/bfsp_compare/
           retention-days: 90

@@ -57,8 +57,10 @@ DRAW_K = (2400.0, 1200.0, 640.0, 320.0)
 DRAW_OUTCOMES = {"nfp": "rs_nfp_c", "lbs": "rs_lbs_c"}
 
 #: Shrinkage (effective runners) of the draw-by-running-style cell toward the
-#: draw cell it refines.
-DRAW_STYLE_K = 40.0
+#: draw cell it refines. 160 was best on 2025-26Q1 (research/queries/done/
+#: draw_residual_tuning.py, run 20): out-of-sample within-race R2 2.81 (x1000),
+#: the best single draw measure tried, against 2.51 for the whole served draw set.
+DRAW_STYLE_K = 160.0
 
 DRAW_CURVE_FEATURES = [
     "dc_draw_pct", "dc_edge_nfp", "dc_edge_lbs", "dc_edge_rel_lbs", "dc_race_spread_lbs", "dc_n_eff",

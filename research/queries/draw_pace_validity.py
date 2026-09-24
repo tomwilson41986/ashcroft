@@ -1,5 +1,9 @@
 """Do the rebuilt draw and position metrics predict the result better than the ones the model serves?
 
+Second run (run 21): the blocks as tuned in runs 18-20 -- projection prior 4 runs with no
+per-code level, draw and position cells pooled 8x and 3x harder, the draw-by-style cell
+pooled at 160.
+
 Development data only: 2021-01-01 to 2026-03-31 (the holdout is not read). Every metric is
 built over the whole span with earlier-days-only statistics, and scored on 2023-01 onwards
 (two years of burn-in for the cells).
@@ -82,7 +86,8 @@ for c in OLD_DRAW + OLD_PACE:
     d[f"old_{c}"] = old[c].to_numpy() if c in old.columns else np.nan
 print(f"served engines in {time.time() - t2:.0f}s")
 
-NEW_DRAW = ["dc_edge_nfp", "dc_edge_lbs", "dc_edge_rel_lbs", "dc_draw_pct"]
+NEW_DRAW = ["dc_edge_nfp", "dc_edge_lbs", "dc_edge_rel_lbs", "dc_draw_pct", "dc_edge_style_lbs",
+            "dc_edge_style_rel_lbs"]
 NEW_PACE = ["p_lead", "p_prom", "p_mid", "pred_epf", "lead_share", "lead_rank", "rel_epf",
             "pv_exp_nfp", "pv_exp_lbs", "pv_act_nfp", "pv_act_lbs"]
 OLD_DRAW = [f"old_{c}" for c in OLD_DRAW]

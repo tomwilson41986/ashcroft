@@ -93,8 +93,13 @@ def walk_forward_predict(
     step_days: int = 30,
     cfg: TrainConfig | None = None,
     eval_from: str | None = None,
+    eval_until: str | None = None,
 ) -> pd.DataFrame:
     """Train and predict in walk-forward fashion.
+
+    `eval_until` stops the walk at that date: no fold starts on or after it and
+    no row on or after it is scored, so a development run never touches a
+    locked holdout (training rows are before each fold in any case).
 
     For each validation window, train a fresh model on all data before it,
     then predict on the validation window. This guarantees every prediction
@@ -128,6 +133,11 @@ def walk_forward_predict(
         tr_mask, va_mask = fold_masks(df["race_date"], val_start, val_end, cfg)
         train_df = df[tr_mask].copy()
         val_df = df[va_mask].copy()
+
+        if eval_until is not None and val_start >= pd.Timestamp(eval_until):
+            break
+        if eval_until is not None:
+            val_df = val_df[val_df["race_date"] < pd.Timestamp(eval_until)]
 
         if eval_from is not None and val_start < pd.Timestamp(eval_from):
             # Fold skipped, not re-keyed: --eval-from shortens a run without
@@ -779,6 +789,16 @@ def main():
              "never reach its end",
     )
     parser.add_argument(
+        "--eval-until", default=None, metavar="DATE",
+        help="Score only validation windows before DATE (exclusive). With "
+             "--eval-from, a development window that never reads the holdout",
+    )
+    parser.add_argument(
+        "--blocks", default="",
+        help="Research blocks to add to the production features: shape "
+             "(model/race_shape.py), drawcurve (model/draw_curve.py)",
+    )
+    parser.add_argument(
         "--output-csv", default=None,
         help="Save all OOS predictions to CSV",
     )
@@ -826,7 +846,20 @@ def main():
             n.strip() for n in open(args.drop_feature_list).read().split() if n.strip()
         )
 
-    wanted = list(dict.fromkeys(ALL_FEATURE_COLS))
+    extra: list[str] = []
+    for block in [b.strip() for b in (args.blocks or "").split(",") if b.strip()]:
+        if block == "shape":
+            from model.race_shape import add_race_shape_features
+            df, cols = add_race_shape_features(df)
+        elif block == "drawcurve":
+            from model.draw_curve import add_draw_curve
+            df, cols = add_draw_curve(df)
+        else:
+            raise SystemExit(f"unknown block {block!r} (shape, drawcurve)")
+        log.info("block %s: %d features", block, len(cols))
+        extra += cols
+
+    wanted = list(dict.fromkeys(list(ALL_FEATURE_COLS) + extra))
     feature_cols_full = resolve_feature_columns(
         df, wanted, drop_prefixes=prefixes, drop_names=names,
         strict=not args.allow_missing_features, log=log,
@@ -887,6 +920,7 @@ def main():
         step_days=args.step_days,
         cfg=cfg,
         eval_from=args.eval_from,
+        eval_until=args.eval_until,
     )
 
     if oos.empty:
