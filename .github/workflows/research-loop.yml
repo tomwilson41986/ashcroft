@@ -74,6 +74,7 @@ jobs:
           print(f"bfsp_from={c.get('bfsp_from', '2025-07-01')}")
           print(f"bfsp_variant_drop={c.get('bfsp_variant_drop', '')}")
           print(f"bfsp_base_withhold={c.get('bfsp_base_withhold', '')}")
+          print(f"bfsp_variant_withhold={c.get('bfsp_variant_withhold', '')}")
           EOF
           cat research/loop.json
 
@@ -162,12 +163,14 @@ jobs:
           # bfsp_variant_drop: feature prefixes the VARIANT is fitted without (the base is untouched),
           # e.g. the parts of a block the 06:00 card cannot know
           vdrop="${{ steps.cfg.outputs.bfsp_variant_drop }}"
+          # bfsp_variant_withhold: production blocks the VARIANT is fitted without, by name
+          vwh="${{ steps.cfg.outputs.bfsp_variant_withhold }}"
           blocks="${{ steps.cfg.outputs.blocks }}"
           python evaluate_oos.py $common --tag blocks --blocks "$blocks" \
-            ${vdrop:+--drop-features "$vdrop"} 2>&1 | grep -v PerformanceWarning | tail -60
+            ${vdrop:+--drop-features "$vdrop"} ${vwh:+--withhold "$vwh"} 2>&1 | grep -v PerformanceWarning | tail -60
           python scripts/compare_oos_runs.py --base reports/bfsp_compare/oos_base.csv \
             --variant reports/bfsp_compare/oos_blocks.csv --out reports/bfsp_compare/compare.md \
-            --note "${{ steps.cfg.outputs.tag }}: production features${bwh:+ without $bwh} vs production features${blocks:+ + $blocks}${vdrop:+ without $vdrop}"
+            --note "${{ steps.cfg.outputs.tag }}: production features${bwh:+ without $bwh} vs production features${vwh:+ without $vwh}${blocks:+ + $blocks}${vdrop:+ without $vdrop}"
           # The trade itself: each forecast against Betfair's morning prices, where the
           # price files cover the development window (Jan-Mar 2026; never past 1 Apr).
           for v in base blocks; do
