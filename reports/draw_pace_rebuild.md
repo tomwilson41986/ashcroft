@@ -282,3 +282,27 @@ At the owner's request, both blocks became standard inputs to the price model an
 - the early-price trade scored on both.
 
 **Deployment.** Serving a model trained with the block is a separate decision. It would replace the model the forward CLV test opens on (25 September, 06:00), so it waits for the owner.
+
+**Result (iteration 25, research-loop run 40).** Same 53,910 runners, 5,923 races and folds as iterations 18 to 24, and the early-price trade scored on both.
+
+| | without the block (served today) | with the block | difference (90% CI) |
+|---|---|---|---|
+| Mean absolute log error of BSP | 0.4566 | 0.4566 | −0.0000 (−0.0008 to +0.0007) |
+| Brier skill against the market | −0.0431 | −0.0438 | −0.0007 (−0.0014 to +0.0001) |
+| Winner-vs-loser concordance | 0.7322 | 0.7305 | **−0.0017 (−0.0031 to −0.0003)** |
+| Early-price rule, net CLV | +5.74% | +5.69% | |
+
+- **No gain at any rank.** Rank 1 +0.0002, rank 2 −0.0012, rank 3 −0.0011, rank 8 and below +0.0001, none resolved.
+- **Worse ordering.** The model ranks winners against losers slightly worse with the block, and that loss is resolved.
+- **Decision rule:** the default stands.
+
+**Training run** (train-bfsp run 30, not published):
+- 533 features, and it passes the serving guard;
+- the 32 new features carry 1.07% of the model's gain;
+- the best is `pv_front_bias_lbs` at rank 130, and the median rank is 273.
+
+The model uses them a little and gains nothing from them.
+
+**Verdict:** built as served, on every row, the blocks still add nothing to the price forecast. §5's reading stands: the closing market already prices the draw and the race shape.
+
+The production code can build them for any model that reads them. Whether the served feature list keeps them is the owner's decision; the evidence says a model without them is at least as good.
