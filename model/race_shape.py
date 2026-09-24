@@ -58,35 +58,65 @@ from model.pace_metrics import epf_norm_from_style
 #: inside "pulled," and "travelled," and "led to" inside "failed to".
 _STYLE_VOCAB: list[tuple[float, str]] = [
     (6.0, r"made (?:virtually |almost |nearly )?all|made most|made (?:the )?running"
-          r"|set (?:a |the )?(?:\w+ )?pace|soon led|led|went clear early|bolted clear early"),
+          r"|set (?:a |the )?(?:\w+ )?pace|soon led|led|went clear early|bolted clear early|overall leader"),
     (5.5, r"disputed (?:the )?lead|disputed|with (?:the )?leaders?|joint[- ]lead|upsides (?:the )?leaders?"
-          r"|dueled|duelled|vied for (?:the )?lead"),
-    (5.0, r"(?:chased|tracked|pressed|chasing|tracking|pressing) (?:the )?(?:clear |runaway |long[- ]time )?"
+          r"|dueled|duelled|vied for (?:the )?lead|shared (?:the )?lead|in (?:the )?leading (?:pair|duo)"
+          r"|alongside (?:the )?leader|good early speed"),
+    (5.0, r"(?:chased|tracked|pressed|chasing|tracking|pressing|chase|track) (?:the )?(?:clear |runaway |long[- ]time )?"
           r"(?:leader|winner)|(?:raced |went )?(?:in )?(?:2nd|second)"),
-    (4.5, r"(?:chased|tracked|chasing|tracking|pressed|pressing) (?:the )?"
+    (4.5, r"(?:chased|tracked|chasing|tracking|pressed|pressing|chase|track) (?:the )?"
           r"(?:leaders|leading (?:pair|trio|group|quartet|bunch|two|three)|front (?:pair|two|three|rank|group))"
-          r"|(?:just )?behind (?:the )?leaders?"),
-    (4.0, r"prominent|close up|handy|front rank|close to (?:the )?pace|near (?:the )?(?:lead|pace|front)"
+          r"|(?:just )?behind (?:the )?leaders?|in (?:the )?leading (?:trio|group|three|quartet|bunch)"),
+    (4.0, r"prominent(?:ly)?|close[- ]up|handy|front rank|close to (?:the )?pace|near (?:the )?(?:lead|pace|front)"
           r"|in touch|in-touch|tracked|chased|on (?:the )?pace"),
-    (3.5, r"front of mid[- ]?(?:division|field)|held up in touch|towards (?:the )?front"),
-    (3.0, r"(?:in )?mid[- ]?(?:division|field)|midfield|mid field"),
-    (2.5, r"held up in mid[- ]?(?:division|field)|rear of mid[- ]?(?:division|field)"),
-    (1.5, r"towards (?:the )?rear|behind"),
+    (3.5, r"front of mid[- ]?(?:division|divison|field)|held up in touch|towards (?:the )?front"),
+    (3.0, r"(?:in )?[mn]id[- ]?(?:division|divison|field)|midfield|mid field"),
+    (2.5, r"held up in mid[- ]?(?:division|divison|field)|rear of mid[- ]?(?:division|divison|field)|off the pace"),
+    (1.5, r"towards (?:the )?rear|behind|^outpaced"),
     (1.0, r"held up|in rear|at (?:the )?rear|rear|in last|last pair|last trio|detached|dropped out"
-          r"|always (?:behind|rear|in rear)|tailed off"),
+          r"|always (?:behind|rear|in rear|last)|tailed off|waited with"),
 ]
+
+#: A place in the field given as a place ("raced in 4th", "off the pace in 6th",
+#: "close 3rd"). Only in these frames: a bare "4th" in a jumps comment is the
+#: fourth obstacle ("mistake 4th"), not a position.
+_ORD_WORDS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7,
+              "eighth": 8, "ninth": 9, "tenth": 10}
+_ORD = r"(?P<o>\d{1,2})(?:st|nd|rd|th)|(?P<w>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+_ORDINAL_RX = re.compile(
+    rf"\b(?:(?:raced|ran|settled|travelled|sat|was|soon|keenly|freely) (?:\w+ )?in (?:a )?(?:close |distant )?"
+    rf"|off the pace in |^(?:a )?close |^in (?:a )?(?:close )?)(?:{_ORD})\b")
 
 #: Phrases about the start. A slow start is an early position only when the
 #: comment gives no other: "dwelt, soon tracked leaders" raced prominently.
-_START_VOCAB = (r"slowly away|slow away|dwelt|missed (?:the )?break|started slowly|badly away"
+_START_VOCAB = (r"slowly away|slow away|dwelt|missed (?:the )?break|started (?:very )?slowly|badly away"
                 r"|reared (?:as|when) (?:the )?stalls opened|awkward (?:start|leaving stalls)"
-                r"|very slowly away|lost (?:several|many|a few)? ?lengths (?:at|leaving) (?:the )?start")
+                r"|very slowly away|lost (?:several|many|a few)? ?lengths (?:at|leaving) (?:the )?start"
+                r"|(?:very )?slow(?:ly)? into stride|a little slow(?:ly away)?"
+                r"|went (?:right|left|badly right|badly left) (?:at |leaving |from )?(?:the )?start"
+                r"|jumped (?:right|left|awkwardly) (?:out of|from|leaving) (?:the )?stalls")
 _START_SCORE = 1.0
+#: "broke well": a good start, and prominent unless the comment says otherwise.
+_BROKE_WELL_RX = re.compile(r"\bbroke (?:well|smartly|fast|quickly)\b")
+_BROKE_WELL_SCORE = 4.0
+
+#: A lead taken in the first furlong or two is a front-runner's race, whatever
+#: the comment's first word: "prominent early, led after 1f" set the pace.
+_EARLY_LEAD_RX = re.compile(
+    r"\b(?:led after (?:1|2|one|two|a|half a)\s?(?:f|furlongs?)\b|led after (?:the )?(?:1st|2nd|first|second)\b"
+    r"|led early|soon led|led from (?:the )?start|quickly away and led"
+    r"|broke (?:well|smartly|fast|quickly) (?:and |to )(?:lead|led)"
+    r"|(?:went|pushed along|pushed|headway|sent|driven|ridden|broke well|niggled) to lead"
+    r" (?:after (?:1|2|one|two|a|half a)\s?(?:f|furlongs?)|early|soon)\b)")
+_EARLY_LEAD_SCORE = 5.8
 
 _STYLE_RX = [(v, re.compile(rf"\b(?:{p})\b")) for v, p in _STYLE_VOCAB]
 _START_RX = re.compile(rf"\b(?:{_START_VOCAB})\b")
 #: How far after a slow start the comment may still place the horse, in characters.
 _START_LOOKAHEAD = 45
+
+#: Parsed values at or above this are a place in the field: value - ORDINAL_BASE.
+ORDINAL_BASE = 100.0
 
 STYLE_CLASSES = ("lead", "prominent", "mid", "rear")
 
@@ -99,8 +129,9 @@ def style_class(score) -> np.ndarray:
 
 
 def _first_style(c: str, start: int = 0) -> tuple[int, float] | None:
-    """(position, score) of the earliest positional phrase at or after `start`;
-    on a tie the longer phrase wins ("held up in touch", not "held up")."""
+    """(position, value) of the earliest positional phrase at or after `start`;
+    on a tie the longer phrase wins ("held up in touch", not "held up"). A place
+    given as an ordinal comes back as ORDINAL_BASE + place."""
     best = None
     for value, rx in _STYLE_RX:
         m = rx.search(c, start)
@@ -109,24 +140,37 @@ def _first_style(c: str, start: int = 0) -> tuple[int, float] | None:
         key = (m.start(), -(m.end() - m.start()))
         if best is None or key < best[0]:
             best = (key, value)
+    m = _ORDINAL_RX.search(c, start)
+    if m is not None:
+        place = int(m.group("o")) if m.group("o") else _ORD_WORDS[m.group("w")]
+        key = (m.start(), -(m.end() - m.start()))
+        if place >= 1 and (best is None or key < best[0]):
+            best = (key, ORDINAL_BASE + place)
     return None if best is None else (best[0][0], best[1])
 
 
 def early_style_from_comment(comment) -> float:
-    """Style score of the comment's first positional phrase, NaN when it has none."""
+    """The early position a comment gives: a style score (6 made all .. 1 held up
+    in rear), or ORDINAL_BASE + place when it names the place ("raced in 4th").
+    NaN when it gives none."""
     if not isinstance(comment, str) or not comment.strip():
         return np.nan
-    c = comment.lower()
+    c = comment.lower().strip()
     first = _first_style(c)
+    out = np.nan if first is None else first[1]
     sm = _START_RX.search(c)
-    if sm is not None and (first is None or sm.start() < first[0]):
-        # a slow start comes first: take the next positional phrase if the
-        # comment places the horse soon after it, otherwise the start stands
-        nxt = _first_style(c, sm.end())
-        if nxt is not None and nxt[0] - sm.end() <= _START_LOOKAHEAD:
-            return nxt[1]
-        return _START_SCORE
-    return np.nan if first is None else first[1]
+    bw = _BROKE_WELL_RX.search(c)
+    for m, default in ((sm, _START_SCORE), (bw, _BROKE_WELL_SCORE)):
+        if m is not None and (first is None or m.start() < first[0]):
+            # the start comes first: take the next position if the comment
+            # places the horse soon after it, otherwise the start stands
+            nxt = _first_style(c, m.end())
+            out = nxt[1] if nxt is not None and nxt[0] - m.end() <= _START_LOOKAHEAD else default
+            break
+    early = ",".join(re.split(r"[,;]", c)[:2])
+    if (np.isnan(out) or (out < 5.5)) and _EARLY_LEAD_RX.search(early):
+        return _EARLY_LEAD_SCORE
+    return out
 
 
 def parse_styles(comments: pd.Series) -> pd.Series:
@@ -335,13 +379,22 @@ STYLE_POP_HALFLIFE_DAYS = 1095.0
 
 def add_run_styles(df: pd.DataFrame) -> pd.DataFrame:
     """rs_style (1-6), rs_class (0 lead .. 3 rear) and rs_epf (0 led .. 1 last)
-    of each run, from its comment. Post-race: the inputs to the projection."""
-    if "comment" in df.columns:
-        df["rs_style"] = parse_styles(df["comment"]).to_numpy()
-    else:
-        df["rs_style"] = np.nan
-    df["rs_class"] = style_class(df["rs_style"])
-    df["rs_epf"] = epf_norm_from_style(df["rs_style"].to_numpy(), field_size(df).to_numpy())
+    of each run, from its comment. Post-race: the inputs to the projection.
+
+    A comment that names the place ("raced in 4th") gives rs_epf exactly,
+    (place - 1) / (N - 1), and a style score standing for its class."""
+    raw = parse_styles(df["comment"]).to_numpy() if "comment" in df.columns else np.full(len(df), np.nan)
+    n = field_size(df).to_numpy(dtype=float)
+    is_ord = raw >= ORDINAL_BASE
+    place = np.where(is_ord, raw - ORDINAL_BASE, np.nan)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ord_epf = np.clip((place - 1) / np.where(n > 1, n - 1, np.nan), 0, 1)
+    ord_score = np.select([place == 1, place == 2, ord_epf <= 0.35, ord_epf <= 0.65], [6.0, 5.0, 4.5, 3.0],
+                          default=1.5)
+    style = np.where(is_ord, np.where(np.isnan(ord_epf) & (place > 1), np.nan, ord_score), raw)
+    df["rs_style"] = style
+    df["rs_class"] = style_class(style)
+    df["rs_epf"] = np.where(is_ord, ord_epf, epf_norm_from_style(style, n))
     return df
 
 
@@ -381,17 +434,25 @@ def horse_decayed_prior(horse, day, values: dict, halflife_runs: float) -> tuple
     return out, cnt, runs
 
 
+#: Strength, in runs, of the horse's all-code style that its style in today's
+#: code (flat / all-weather / hurdle / chase / bumper) is shrunk toward. None
+#: pools every code: a horse's hurdle runs then speak for its chases.
+STYLE_CODE_PRIOR_RUNS: float | None = 2.0
+
+
 def add_style_projection(df: pd.DataFrame, halflife_runs: float = STYLE_HALFLIFE_RUNS,
-                         prior_runs: float = STYLE_PRIOR_RUNS) -> pd.DataFrame:
+                         prior_runs: float = STYLE_PRIOR_RUNS,
+                         code_prior_runs: float | None = STYLE_CODE_PRIOR_RUNS) -> pd.DataFrame:
     """Today's projected run style from the horse's earlier runs.
 
     p_lead, p_prom, p_mid, p_rear   chance of each early position class
     pred_epf                        projected epf_norm (0 = leads, 1 = last)
     style_n_eff                     recency-weighted count of parsed earlier runs
 
-    A horse's class counts are shrunk toward the population's (same code,
-    distance band, debutant or not, from earlier days) with the weight of
-    `prior_runs` runs, so a horse seen once is not a certain front-runner and a
+    Three levels, each shrunk toward the one above: the population (same code,
+    distance band, debutant or not, from earlier days), the horse over all its
+    runs (weight `prior_runs`), and the horse in today's code (weight
+    `code_prior_runs`). A horse seen once is not a certain front-runner, and a
     debutant takes the population's figures.
     """
     if "rs_class" not in df.columns:
@@ -400,24 +461,27 @@ def add_style_projection(df: pd.DataFrame, halflife_runs: float = STYLE_HALFLIFE
     cls = df["rs_class"].to_numpy(dtype=float)
     ind = {f"c{c}": np.where(np.isnan(cls), np.nan, (cls == c).astype(float)) for c in range(4)}
     ind["epf"] = df["rs_epf"].to_numpy(dtype=float)
-    sums, w, runs = horse_decayed_prior(df["horse_name"], day, ind, halflife_runs)
-
+    horse = df["horse_name"].astype(str)
+    sums, w, runs = horse_decayed_prior(horse, day, ind, halflife_runs)
     code = race_code(df)
+    if code_prior_runs is not None:
+        sums_c, w_c, _ = horse_decayed_prior(horse + "|" + code, day, ind, halflife_runs)
+
     dist = pd.to_numeric(df.get("dist_furlongs"), errors="coerce")
     pkey = _codes(code, bands(dist, DIST_BANDS), (runs == 0).astype(int))
-    names = ["p_lead", "p_prom", "p_mid", "p_rear"]
-    probs = []
-    for c in range(4):
-        pop, _ = asof_decayed_mean(pkey, day, ind[f"c{c}"], pkey, day, STYLE_POP_HALFLIFE_DAYS)
-        pop = np.where(np.isnan(pop), 0.25, pop)
-        probs.append((sums[f"c{c}"] + prior_runs * pop) / (w[f"c{c}"] + prior_runs))
-    P = np.vstack(probs).T
+
+    def level(name, pop_default):
+        pop, _ = asof_decayed_mean(pkey, day, ind[name], pkey, day, STYLE_POP_HALFLIFE_DAYS)
+        est = (sums[name] + prior_runs * np.where(np.isnan(pop), pop_default, pop)) / (w[name] + prior_runs)
+        if code_prior_runs is not None:
+            est = (sums_c[name] + code_prior_runs * est) / (w_c[name] + code_prior_runs)
+        return est
+
+    P = np.vstack([level(f"c{c}", 0.25) for c in range(4)]).T
     P = P / P.sum(axis=1, keepdims=True)
-    for c, nm in enumerate(names):
+    for c, nm in enumerate(["p_lead", "p_prom", "p_mid", "p_rear"]):
         df[nm] = P[:, c]
-    pop_epf, _ = asof_decayed_mean(pkey, day, ind["epf"], pkey, day, STYLE_POP_HALFLIFE_DAYS)
-    pop_epf = np.where(np.isnan(pop_epf), 0.5, pop_epf)
-    df["pred_epf"] = (sums["epf"] + prior_runs * pop_epf) / (w["epf"] + prior_runs)
+    df["pred_epf"] = level("epf", 0.5)
     df["style_n_eff"] = w["c0"]
     return df
 
