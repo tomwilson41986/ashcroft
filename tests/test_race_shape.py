@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from model.draw_curve import DRAW_CURVE_FEATURES, add_draw_curve
+from model.draw_curve import DRAW_CURVE_FEATURES, DRAW_STYLE_FEATURES, add_draw_curve
 from model.race_shape import (
     RACE_SHAPE_FEATURES, add_race_shape_features, asof_decayed_mean, early_style_from_comment,
     horse_decayed_prior, style_class,
@@ -119,10 +119,12 @@ STYLES = ["made all", "led, headed 1f out", "tracked leaders", "prominent", "mid
           "held up in touch", "held up in rear", "towards rear", "never dangerous"]
 
 
-def _history(days=150, seed=1, courses=("chester", "kempton", "ascot"), n=9, pace_effect=0.0, draw_effect=0.0):
+def _history(days=150, seed=1, courses=("chester", "kempton", "ascot"), n=9, pace_effect=0.0, draw_effect=0.0,
+             forward_draw_effect=0.0):
     """Races on consecutive days with a stable pool of horses, each with a habitual
     style. `pace_effect` makes lone habitual leaders win more; `draw_effect` makes
-    low stalls at the first course finish better."""
+    low stalls at the first course finish better; `forward_draw_effect` does the
+    same for habitual front-runners and prominent racers only."""
     rng = np.random.default_rng(seed)
     pool = {c: [(f"{c}_h{i}", i % len(STYLES[:8])) for i in range(40)] for c in courses}
     rows = []
@@ -138,6 +140,8 @@ def _history(days=150, seed=1, courses=("chester", "kempton", "ascot"), n=9, pac
                     score[i] += pace_effect
                 if ci == 0:
                     score[i] -= draw_effect * (stall[i] - 1) / (n - 1)
+                    if s <= 3:
+                        score[i] -= forward_draw_effect * (stall[i] - 1) / (n - 1)
             place = np.empty(n, int)
             place[np.argsort(-score)] = np.arange(1, n + 1)
             for i, (h, s) in enumerate(horses):
@@ -183,7 +187,7 @@ def test_a_days_own_results_move_none_of_its_features(change):
 
 def test_features_on_every_row_and_no_post_race_column():
     df, cols = _features(_history(days=40))
-    assert len(cols) == len(set(cols)) == len(RACE_SHAPE_FEATURES) + len(DRAW_CURVE_FEATURES)
+    assert len(cols) == len(set(cols)) == len(RACE_SHAPE_FEATURES) + len(DRAW_CURVE_FEATURES) + len(DRAW_STYLE_FEATURES)
     for c in cols:
         assert c in df.columns
     late = df[df.race_date >= "2023-01-20"]
@@ -217,3 +221,16 @@ def test_position_value_recovers_a_lone_leader_edge():
     assert late.loc[lone & lead, "pv_exp_lbs"].mean() > 1.0
     assert late.loc[lone & lead, "pv_exp_lbs"].mean() > late.loc[lone & ~lead, "pv_exp_lbs"].mean() + 1.0
     assert late.loc[lone & lead, "pv_act_nfp"].mean() > 0
+
+
+def test_draw_by_style_finds_a_draw_that_only_helps_forward_runners():
+    df, _ = _features(_history(days=250, forward_draw_effect=2.5, seed=11))
+    late = df[(df.race_date >= "2023-06-01") & (df.track == "chester")]
+    high = late["dc_draw_pct"] >= 0.75
+    fwd = (late["p_lead"] + late["p_prom"]) >= 0.5
+    # a high draw costs the forward runners far more than the draw-only curve says,
+    # and the hold-up horses, which the planted effect spares, nothing
+    gap_fwd = (late.loc[high & fwd, "dc_edge_style_lbs"] - late.loc[high & fwd, "dc_edge_lbs"]).mean()
+    gap_back = (late.loc[high & ~fwd, "dc_edge_style_lbs"] - late.loc[high & ~fwd, "dc_edge_lbs"]).mean()
+    assert gap_fwd < -1.0 and gap_back > 1.0
+    assert late.loc[high & fwd, "dc_edge_style_lbs"].mean() < late.loc[high & ~fwd, "dc_edge_style_lbs"].mean() - 2.0

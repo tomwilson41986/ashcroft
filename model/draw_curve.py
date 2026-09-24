@@ -50,9 +50,15 @@ DRAW_K = (300.0, 150.0, 80.0, 40.0)
 
 DRAW_OUTCOMES = {"nfp": "rs_nfp_c", "lbs": "rs_lbs_c"}
 
+#: Shrinkage (effective runners) of the draw-by-running-style cell toward the
+#: draw cell it refines.
+DRAW_STYLE_K = 40.0
+
 DRAW_CURVE_FEATURES = [
     "dc_draw_pct", "dc_edge_nfp", "dc_edge_lbs", "dc_edge_rel_lbs", "dc_race_spread_lbs", "dc_n_eff",
 ]
+#: Added when the frame carries the projected running style (model/race_shape.py first).
+DRAW_STYLE_FEATURES = ["dc_edge_style_lbs", "dc_edge_style_rel_lbs"]
 
 
 def draw_position(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
@@ -107,4 +113,20 @@ def add_draw_curve(df: pd.DataFrame, halflife_days: float = DRAW_HALFLIFE_DAYS, 
     g = e.groupby(rk)
     df["dc_edge_rel_lbs"] = e - g.transform("mean")
     df["dc_race_spread_lbs"] = g.transform("max") - g.transform("min")
-    return df, list(DRAW_CURVE_FEATURES)
+    cols = list(DRAW_CURVE_FEATURES)
+    if {"p_lead", "p_prom"} <= set(df.columns):
+        # The same draw is not worth the same to every runner: an inside stall at
+        # a turning sprint course is worth most to a horse that races handily and
+        # can hold the rail. Split the finest cell by the runner's PROJECTED style
+        # (forward: p_lead + p_prom >= 0.5), shrunk toward the draw cell itself.
+        fwd = ((df["p_lead"] + df["p_prom"]).to_numpy() >= 0.5).astype(np.int64)
+        style_lvl = np.where(ok, (base[-1] * DRAW_BINS + b) * 2 + fwd, -1)
+        y = np.where(ok, df["rs_lbs_c"].to_numpy(dtype=float), np.nan)
+        from model.race_shape import asof_decayed_mean, shrink
+        m, n_s = asof_decayed_mean(style_lvl, day, y, style_lvl, day, halflife_days)
+        df["dc_edge_style_lbs"] = np.where(ok, shrink(m, n_s, df["dc_edge_lbs"].fillna(0.0).to_numpy(),
+                                                      DRAW_STYLE_K), np.nan)
+        es = df["dc_edge_style_lbs"]
+        df["dc_edge_style_rel_lbs"] = es - es.groupby(rk).transform("mean")
+        cols += DRAW_STYLE_FEATURES
+    return df, cols
