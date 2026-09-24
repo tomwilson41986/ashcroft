@@ -796,7 +796,8 @@ def main():
     parser.add_argument(
         "--blocks", default="",
         help="Research blocks to add to the production features: shape "
-             "(model/race_shape.py), drawcurve (model/draw_curve.py)",
+             "(model/race_shape.py), drawcurve (model/draw_curve.py), intent "
+             "(model/intent_features.py)",
     )
     parser.add_argument(
         "--output-csv", default=None,
@@ -854,8 +855,11 @@ def main():
         elif block == "drawcurve":
             from model.draw_curve import add_draw_curve
             df, cols = add_draw_curve(df)
+        elif block == "intent":
+            from model.intent_features import add_intent_features
+            df, cols = add_intent_features(df)
         else:
-            raise SystemExit(f"unknown block {block!r} (shape, drawcurve)")
+            raise SystemExit(f"unknown block {block!r} (shape, drawcurve, intent)")
         log.info("block %s: %d features", block, len(cols))
         extra += cols
 
