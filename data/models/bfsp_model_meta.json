@@ -501,9 +501,43 @@
     "rWinDensity30d",
     "rLayoffAdjForm",
     "rORMomentum",
-    "rDrawdownPeakNFP"
+    "rDrawdownPeakNFP",
+    "it_new_yard",
+    "it_hcap_debut",
+    "it_ft_headgear",
+    "it_layoff",
+    "it_class_drop",
+    "it_code_switch",
+    "it_debut",
+    "it_runs_for_yard",
+    "it_seen_runs",
+    "it_class_change",
+    "it_ae_new_yard",
+    "it_ae_hcap_debut",
+    "it_ae_ft_headgear",
+    "it_ae_layoff",
+    "it_ae_class_drop",
+    "it_ae_code_switch",
+    "it_ae_debut",
+    "it_ae_sum",
+    "it_ae_best",
+    "it_n_angles",
+    "fr_usual_gap",
+    "fr_gap_vs_usual",
+    "fr_gap_vs_trainer",
+    "fr_gap_rel_race",
+    "fr_runs_since_break",
+    "fr_break_len",
+    "fr_runs_30d",
+    "fr_runs_60d",
+    "fr_runs_90d",
+    "fr_quick_after_win",
+    "fr_days_since_win",
+    "fr_runs_since_win",
+    "fr_days_since_placed",
+    "fr_days_since_code"
   ],
-  "n_features": 501,
+  "n_features": 535,
   "categorical_vocab": {
     "surface_type": [
       "Beach",
@@ -704,109 +738,109 @@
   "best_iteration": 3000,
   "holdout_metrics": {
     "n": 21491,
-    "mae": 0.4936341824458851,
-    "rmse": 0.6373809419205088
+    "mae": 0.4866380917141554,
+    "rmse": 0.6282497091039373
   },
   "holdout_start": "2026-07-24",
   "train_rows": 676412,
   "holdout_rows": 21491,
   "early_stopped": false,
   "init_offset": 0.0,
-  "feature_code_hash": "b31590ee7c5ae461",
+  "feature_code_hash": "9bc95363f3181433",
   "final_metrics": {
     "target": "logit_norm_prob",
-    "log_mae": 0.3932,
-    "log_rmse": 0.5008,
-    "log_r2": 0.8871,
-    "bfsp_mae": 21.66,
-    "median_ape_pct": 28.28,
-    "mean_ape_pct": 37.17,
-    "correlation": 0.9425,
+    "log_mae": 0.3841,
+    "log_rmse": 0.4891,
+    "log_r2": 0.8923,
+    "bfsp_mae": 21.25,
+    "median_ape_pct": 27.64,
+    "mean_ape_pct": 36.19,
+    "correlation": 0.9452,
     "best_iteration": 3000,
-    "holdout_mae": 0.4936341824458851
+    "holdout_mae": 0.4866380917141554
   },
   "trained_through": "2026-09-22",
   "train_rows_total": 697903,
   "top_gain": [
     [
       "rPMW3",
-      2739212.0814824104
+      2705640.907748461
     ],
     [
       "LR_ORR2",
-      1768984.7743868828
-    ],
-    [
-      "rPMW10",
-      1283275.0419340134
-    ],
-    [
-      "or_num",
-      1150543.9988855124
+      1703933.7769771814
     ],
     [
       "rPMW5",
-      1141665.5309683084
+      1305201.1795754433
+    ],
+    [
+      "rPMW10",
+      1135964.7356170416
+    ],
+    [
+      "or_num",
+      1015769.682448864
     ],
     [
       "LR3_RWO",
-      715480.5467916727
-    ],
-    [
-      "LR_LB",
-      494413.7943239212
+      735213.6260070801
     ],
     [
       "trainerWAXrank",
-      469846.76458597183
+      503031.7984099388
+    ],
+    [
+      "LR_LB",
+      495559.03357720375
     ],
     [
       "rTJNFP",
-      468608.2168723345
-    ],
-    [
-      "jockeyWAXrank",
-      328686.3142488003
-    ],
-    [
-      "or_vs_max",
-      299060.1441514492
-    ],
-    [
-      "PMW10",
-      289877.2908632755
-    ],
-    [
-      "race_type_cat",
-      282153.0922777653
+      459213.9156341553
     ],
     [
       "median_or_num",
-      263878.6030418873
+      326439.95066332817
+    ],
+    [
+      "or_vs_max",
+      325203.11927998066
+    ],
+    [
+      "jockeyWAXrank",
+      298843.45951902866
+    ],
+    [
+      "race_type_cat",
+      265609.05752778053
     ],
     [
       "jockeyCWOrank",
-      236888.3175828457
+      236846.44161772728
     ],
     [
-      "days_since_lr_num",
-      202407.11936473846
+      "PMW10",
+      236616.89969348907
+    ],
+    [
+      "fr_days_since_placed",
+      200810.79377162457
     ],
     [
       "rORR2LR",
-      189361.50303339958
-    ],
-    [
-      "rRWOLR3",
-      186301.95058870316
+      185338.8296482563
     ],
     [
       "LRNFP",
-      175186.5063483715
+      178800.35163795948
     ],
     [
       "trainerWIVrank",
-      171077.16926264763
+      154193.8857600689
+    ],
+    [
+      "rRWOLR3",
+      142687.79654204845
     ]
   ]
 }
