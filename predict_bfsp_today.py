@@ -193,9 +193,9 @@ def prepare_and_predict(
     3. Extracts feature vectors for target date runners
     4. Predicts log(BFSP) and converts to BFSP
     """
-    # The shape, intent and freshness blocks are minutes of work over the whole
-    # history. Each is built only for a model that reads it -- the same features
-    # either way for the one that does.
+    # The shape, intent, freshness and window blocks are minutes of work over the
+    # whole history. Each is built only for a model that reads it -- the same
+    # features either way for the one that does.
     engine = CustomMetricsEngine(**blocks_needed(feature_cols))
 
     # Check if target runners are already in the historical data

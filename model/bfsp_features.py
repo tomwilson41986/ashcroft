@@ -37,9 +37,11 @@ from model.pace_metrics import (
     TACTICAL_FEATURES,
     TRACK_PACE_BIAS_FEATURES,
 )
+from model.form_windows import FORM_WINDOW_FEATURES
 from model.freshness_features import FRESHNESS_FEATURES
 from model.intent_features import INTENT_FEATURES
 from model.race_shape import RACE_SHAPE_FEATURES
+from model.shape_form import SHAPE_FORM_FEATURES
 
 # ---------------------------------------------------------------------------
 # Feature columns: all custom metrics + engineered features
@@ -544,15 +546,28 @@ PRODUCTION_BLOCKS = {
     "freshness": SERVED_FRESHNESS_FEATURES,
 }
 
+#: Built by the engine and measurable (evaluate_oos.py --blocks), not served:
+#: every per-run measure over career, last run, last 3, last 5 and the last
+#: 3/5/10 weighted by recency (model/form_windows.py); past form read against the
+#: pace and draw each run met, and the speed drawn near each runner today
+#: (model/shape_form.py).
+RESEARCH_BLOCKS = {
+    "shape_draw": SHAPE_DRAW_FEATURES,
+    "form_windows": FORM_WINDOW_FEATURES,
+    "shape_form": SHAPE_FORM_FEATURES,
+}
+
 
 def blocks_needed(feature_cols) -> dict[str, bool]:
     """Which engine blocks a model reads, as CustomMetricsEngine flags. A model
     trained before a block does not read it, and serving it need not build it."""
     cols = set(feature_cols)
     return {
-        "race_shape": bool(cols & set(SHAPE_DRAW_FEATURES)),
+        "race_shape": bool(cols & (set(SHAPE_DRAW_FEATURES) | set(SHAPE_FORM_FEATURES))),
         "intent": bool(cols & set(INTENT_FEATURES)),
         "freshness": bool(cols & set(FRESHNESS_FEATURES)),
+        "form_windows": bool(cols & set(FORM_WINDOW_FEATURES)),
+        "shape_form": bool(cols & set(SHAPE_FORM_FEATURES)),
     }
 
 
@@ -630,13 +645,14 @@ def assert_no_post_race_features(feature_cols) -> None:
     from model.pace_metrics import PACE_POST_RACE_ONLY
     from model.primitives import POST_RACE_PRIMITIVES
     from model.race_shape import RACE_SHAPE_POST_RACE
+    from model.shape_form import SHAPE_FORM_POST_RACE
 
-    # Five modules describe the race being predicted, so the guard covers all
-    # five. The union lives here rather than in any one of them so none has to
+    # Six modules describe the race being predicted, so the guard covers all
+    # six. The union lives here rather than in any one of them so none has to
     # import the others just to be checked.
     banned = (set(POST_RACE_ONLY) | set(POST_RACE_PRIMITIVES)
               | set(PACE_POST_RACE_ONLY) | set(DRAW_POST_RACE_ONLY)
-              | set(RACE_SHAPE_POST_RACE))
+              | set(RACE_SHAPE_POST_RACE) | set(SHAPE_FORM_POST_RACE))
     bad = sorted(set(feature_cols) & banned)
     if bad:
         raise ValueError(

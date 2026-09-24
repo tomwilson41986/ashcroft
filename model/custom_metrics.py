@@ -21,10 +21,12 @@ from model.perf_figures import MARGIN_WORDS
 
 from model.draw_curve import add_draw_curve
 from model.draw_metrics import DrawMetricsEngine
+from model.form_windows import add_form_windows
 from model.freshness_features import add_freshness_features
 from model.intent_features import add_intent_features
 from model.pace_metrics import PaceMetricsEngine
 from model.race_shape import add_race_shape_features
+from model.shape_form import add_shape_form
 
 
 # ---------------------------------------------------------------------------
@@ -271,17 +273,26 @@ class CustomMetricsEngine:
             them against the price (model/intent_features.py).
         freshness: Build days since the last run in context
             (model/freshness_features.py).
+        form_windows: Build every per-run measure over the same seven windows:
+            career, last run, last 3, last 5, last 3/5/10 weighted by recency
+            (model/form_windows.py).
+        shape_form: Build past form read against the pace and draw each run
+            met, and the speed drawn near each runner today
+            (model/shape_form.py). Needs race_shape: built only with it.
         Each is on by default; the live path turns off what the model it
         serves does not read (see `model.bfsp_features.blocks_needed`).
     """
 
     def __init__(self, windows: list[int] | None = None, gp_draw_surface: bool = False,
-                 race_shape: bool = True, intent: bool = True, freshness: bool = True):
+                 race_shape: bool = True, intent: bool = True, freshness: bool = True,
+                 form_windows: bool = True, shape_form: bool = True):
         self.windows = windows or [3, 5, 10]
         self.max_window = max(self.windows)
         self.race_shape = race_shape
         self.intent = intent
         self.freshness = freshness
+        self.form_windows = form_windows
+        self.shape_form = shape_form
         #: Per-stall Gaussian-process draw surface. Off by default: it costs one
         #: GP fit per course per year, and the closed-form shrunk cells already
         #: resolve single stalls. Enable it to let the surface borrow strength
@@ -406,6 +417,11 @@ class CustomMetricsEngine:
             df = df.copy()                     # defragment before ~40 more columns
             df, _ = add_race_shape_features(df)
             df, _ = add_draw_curve(df)
+            # Each past run read against the pace and draw it met, and today's
+            # speed drawn near each runner (the remodel: what the price may miss
+            # is the past race as it was run, not today's race).
+            if self.shape_form:
+                df, _ = add_shape_form(df)
 
         # --- Intent and freshness ---
         # The connections' choices today and each trainer's record with them
@@ -418,6 +434,14 @@ class CustomMetricsEngine:
         if self.freshness:
             df = df.copy()
             df, _ = add_freshness_features(df)
+
+        # --- Form windows ---
+        # Every per-run measure (win, place, position, pounds beaten, rating
+        # figure, speed, the market's view and the result against it) over the
+        # same windows: career, last run, last 3, last 5, last 3/5/10 weighted by
+        # recency. Earlier days only; reads the engine's LB and RSR above.
+        if self.form_windows:
+            df, _ = add_form_windows(df)
 
         df = self._calc_within_race_ranks(df)
 

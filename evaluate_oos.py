@@ -44,7 +44,7 @@ from model.bfsp_model import (
     predict_prices,
     resolve_feature_columns,
 )
-from model.bfsp_features import INTENT_CARD_UNSAFE, PRODUCTION_BLOCKS
+from model.bfsp_features import INTENT_CARD_UNSAFE, PRODUCTION_BLOCKS, RESEARCH_BLOCKS
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -796,8 +796,9 @@ def main():
     )
     parser.add_argument(
         "--blocks", default="",
-        help="Blocks to add to the served features: shape_draw (built by the engine, "
-             "not served), intent_unsafe (the four intent features the 06:00 card "
+        help="Blocks to add to the served features: shape_draw, form_windows and "
+             "shape_form (built by the engine, not served: model/bfsp_features.py "
+             "RESEARCH_BLOCKS), intent_unsafe (the four intent features the 06:00 card "
              "cannot know), ae (model/ae_features.py, pre-off entities). Intent and "
              "freshness are served now; see --withhold",
     )
@@ -870,8 +871,8 @@ def main():
             raise SystemExit(f"{block!r} is built by the metrics engine now: shape_draw adds "
                              "the built shape and draw columns, and --withhold measures a "
                              "served block")
-        elif block in ("shape_draw", "intent_unsafe"):
-            cols = list(PRODUCTION_BLOCKS["shape_draw"]) if block == "shape_draw" else list(INTENT_CARD_UNSAFE)
+        elif block in RESEARCH_BLOCKS or block == "intent_unsafe":
+            cols = list(RESEARCH_BLOCKS[block]) if block in RESEARCH_BLOCKS else list(INTENT_CARD_UNSAFE)
             absent = [c for c in cols if c not in df.columns]
             if absent:
                 raise SystemExit(f"{block}: {len(absent)} columns not in the matrix ({absent[:3]}...); "
@@ -882,7 +883,7 @@ def main():
             from model.ae_features import PRE_OFF_ENTITIES, add_ae_features
             df, cols = add_ae_features(df, entities=PRE_OFF_ENTITIES)
         else:
-            raise SystemExit(f"unknown block {block!r} (shape_draw, intent_unsafe, ae)")
+            raise SystemExit(f"unknown block {block!r} ({', '.join(RESEARCH_BLOCKS)}, intent_unsafe, ae)")
         log.info("block %s: %d features", block, len(cols))
         extra += cols
 

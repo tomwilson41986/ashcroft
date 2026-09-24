@@ -120,6 +120,8 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
 - `model/custom_metrics.py` — NFP, RB, WIV, WAX, WOA, CWO, ORR2, EPF, FSS, FCS, PFD, WPMRF, PMW, OFS, DSLR, LRP, pace, trainer-jockey, race strength (187 features total)
 - `model/race_shape.py`, `model/draw_curve.py` — run style from past comments, race shape, position value, draw curves (`SHAPE_DRAW_FEATURES`, built by `CustomMetricsEngine`, not served: iteration 25)
 - `model/intent_features.py`, `model/freshness_features.py` — the connections' choices and each trainer's record with them against the price; days since the last run in context (served: `INTENT_SERVED_FEATURES` (card-safe), `SERVED_FRESHNESS_FEATURES`; `model/bfsp_features.py PRODUCTION_BLOCKS`)
+- `model/form_windows.py` — every per-run measure (win, place, WAX, NFP, pounds beaten, race-centred pounds, rating-scale performance figure, RSR, the market's view, A−E vs BSP, position vs the market's order) over career, last run, last 3, last 5 and last 3/5/10 weighted linearly by recency (`FORM_WINDOW_FEATURES`, built by the engine, not served)
+- `model/shape_form.py` — the shape/draw remodel: each past run read against the pace (its actual position in the race's actual shape) and draw it met, windowed; speed drawn inside/outside/near today; the market's miss (A−E) by draw cell and projected position (`SHAPE_FORM_FEATURES`, built with the shape block, not served). Both are `RESEARCH_BLOCKS`: `evaluate_oos.py --blocks form_windows,shape_form`
 - `train_bfsp.py` — Walk-forward training with all custom metrics
 - `predict_bfsp_today.py` — Daily BFSP predictions
 - `model/trainer.py` — Win probability model (classification)

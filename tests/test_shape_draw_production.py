@@ -1,11 +1,13 @@
-"""The blocks the metrics engine builds: shape and draw, intent, freshness.
+"""The blocks the metrics engine builds: shape and draw, intent, freshness, form windows, shape form.
 
 The blocks themselves are tested in tests/test_race_shape.py,
-tests/test_intent_features.py and tests/test_freshness_features.py. These tests
-pin their place in production:
-- the engine builds all three on every frame, and each can be left out;
+tests/test_intent_features.py, tests/test_freshness_features.py,
+tests/test_form_windows.py and tests/test_shape_form.py. These tests pin their
+place in production:
+- the engine builds all five on every frame, and each can be left out;
 - the served feature list carries card-safe intent and freshness, not shape and
-  draw (built and measured, but not served: iteration 25);
+  draw (built and measured, but not served: iteration 25) nor the form windows
+  and shape form (built, to be measured);
 - a run's own style and margins, and the four intent features a 06:00 card
   cannot know, are refused as inputs;
 - the live path builds only what the model it serves reads;
@@ -19,19 +21,23 @@ import pandas as pd
 import pytest
 
 from model.bfsp_features import (
-    ALL_FEATURE_COLS, INTENT_CARD_UNSAFE, INTENT_SERVED_FEATURES, PRODUCTION_BLOCKS,
+    ALL_FEATURE_COLS, INTENT_CARD_UNSAFE, INTENT_SERVED_FEATURES, PRODUCTION_BLOCKS, RESEARCH_BLOCKS,
     SERVED_FRESHNESS_FEATURES, SHAPE_DRAW_FEATURES, assert_no_post_race_features, blocks_needed,
     needs_race_shape,
 )
 from model.custom_metrics import CustomMetricsEngine
 from model.draw_curve import DRAW_CURVE_FEATURES, DRAW_STYLE_FEATURES
+from model.form_windows import FORM_WINDOW_FEATURES
 from model.freshness_features import FRESHNESS_FEATURES
 from model.intent_features import INTENT_FEATURES
 from model.race_shape import RACE_SHAPE_FEATURES, RACE_SHAPE_POST_RACE
+from model.shape_form import SHAPE_FORM_FEATURES
 from tests.test_leakage import _full_card
 
 KEY = ["raceid", "horse_name"]
-ENGINE_BLOCKS = SHAPE_DRAW_FEATURES + INTENT_FEATURES + FRESHNESS_FEATURES
+ENGINE_BLOCKS = (SHAPE_DRAW_FEATURES + INTENT_FEATURES + FRESHNESS_FEATURES + FORM_WINDOW_FEATURES
+                 + SHAPE_FORM_FEATURES)
+NO_BLOCKS = dict(race_shape=False, intent=False, freshness=False, form_windows=False, shape_form=False)
 
 
 def test_the_served_feature_list():
@@ -40,6 +46,9 @@ def test_the_served_feature_list():
     assert set(INTENT_SERVED_FEATURES) <= set(ALL_FEATURE_COLS)
     assert set(SERVED_FRESHNESS_FEATURES) == set(FRESHNESS_FEATURES) <= set(ALL_FEATURE_COLS)
     assert not set(SHAPE_DRAW_FEATURES) & set(ALL_FEATURE_COLS)      # built, not served
+    assert not (set(FORM_WINDOW_FEATURES) | set(SHAPE_FORM_FEATURES)) & set(ALL_FEATURE_COLS)
+    assert RESEARCH_BLOCKS == {"shape_draw": SHAPE_DRAW_FEATURES, "form_windows": FORM_WINDOW_FEATURES,
+                               "shape_form": SHAPE_FORM_FEATURES}
     assert not set(INTENT_CARD_UNSAFE) & set(ALL_FEATURE_COLS)
     assert len(ALL_FEATURE_COLS) == len(set(ALL_FEATURE_COLS)) == 501 + 20 + 14
     assert not set(ALL_FEATURE_COLS) & RACE_SHAPE_POST_RACE
@@ -66,11 +75,15 @@ def test_the_win_probability_model_reads_the_served_blocks_too():
 
 
 def test_the_live_path_builds_only_what_the_model_reads():
-    assert blocks_needed(ALL_FEATURE_COLS) == {"race_shape": False, "intent": True, "freshness": True}
+    assert blocks_needed(ALL_FEATURE_COLS) == {**NO_BLOCKS, "intent": True, "freshness": True}
     served_before = [c for c in ALL_FEATURE_COLS if c not in set(INTENT_FEATURES) | set(FRESHNESS_FEATURES)]
-    assert blocks_needed(served_before) == {"race_shape": False, "intent": False, "freshness": False}
+    assert blocks_needed(served_before) == NO_BLOCKS
     assert needs_race_shape(["rNFP", "dc_edge_lbs"])
-    assert blocks_needed(["fr_runs_30d"]) == {"race_shape": False, "intent": False, "freshness": True}
+    assert blocks_needed(["fr_runs_30d"]) == {**NO_BLOCKS, "freshness": True}
+    assert blocks_needed(["fw_perf_w5"]) == {**NO_BLOCKS, "form_windows": True}
+    # shape form reads the shape block, so a model that reads it builds both
+    assert blocks_needed(["sf_adj_w5"]) == {**NO_BLOCKS, "race_shape": True, "shape_form": True}
+    assert set(blocks_needed([])) == set(NO_BLOCKS)               # every engine flag, no more
 
 
 def test_the_engine_builds_the_blocks_and_can_leave_them_out():
@@ -81,8 +94,10 @@ def test_the_engine_builds_the_blocks_and_can_leave_them_out():
     assert last[SHAPE_DRAW_FEATURES].notna().all().all()
     np.testing.assert_allclose(last[["p_lead", "p_prom", "p_mid", "p_rear"]].sum(axis=1), 1.0)
     assert last[["it_seen_runs", "it_runs_for_yard", "fr_runs_30d", "fr_usual_gap"]].notna().all().all()
+    assert last[["fw_nfp_car", "fw_lbs_l1", "fw_mkt_w5", "fw_rsr_m3"]].notna().all().all()
+    assert last[["sf_adj_car", "sf_bias_l1", "sf_speed_inside", "sf_speed_near"]].notna().all().all()
 
-    plain = CustomMetricsEngine(race_shape=False, intent=False, freshness=False).calculate_all(_full_card())
+    plain = CustomMetricsEngine(**NO_BLOCKS).calculate_all(_full_card())
     assert not set(ENGINE_BLOCKS) & set(plain.columns)
     assert not RACE_SHAPE_POST_RACE & set(plain.columns)
     # and nothing else the engine builds depends on them
@@ -115,7 +130,9 @@ def test_the_0600_card_gets_the_values_its_day_gets_with_results_in():
     moved = [f for f in ENGINE_BLOCKS if not np.array_equal(a[f].to_numpy(float), c[f].to_numpy(float),
                                                             equal_nan=True)]
     assert len(moved) > 10, moved
-    # freshness reads yesterday's places; intent's results-driven features are its trainer x
-    # angle records, which this fixture never triggers (tests/test_intent_features.py has the
-    # control for those)
+    # freshness and the form windows read yesterday's places; intent's results-driven features
+    # are its trainer x angle records, which this fixture never triggers
+    # (tests/test_intent_features.py has the control for those)
     assert any(f.startswith("fr_") for f in moved), moved
+    assert sum(f.startswith("fw_") for f in moved) > 40, moved
+    assert sum(f.startswith("sf_adj") for f in moved) > 3, moved
