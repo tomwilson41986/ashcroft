@@ -96,3 +96,7 @@ For reference only, from windows already scored:
 Neither item changes the rule or the criteria. Without them the test cannot be scored.
 - **Betfair's historic price files for the forward days.** These supply the morning WAP and BSP. GitHub's runners are refused (HTTP 403, QA M9), so the files must be downloaded over a UK connection and imported with `betfair-prices-import.yml`, as they were for 1 Jan – 22 Sep.
 - **`BETFAIR_APP_KEY` set for the 06:00 job.** Without it the job cannot match markets, and records no exchange price at prediction time. On 23 Sep it logged "Could not fetch Betfair markets: BETFAIR_APP_KEY must be set". This is needed for the executable-price secondary, not for the primary.
+
+## Start date (24 Sep 2026)
+
+The fixed path merged on 24 September. That day's 06:00 run had already served on the old path, so **the forward window opens with the 06:00 run of 25 September 2026.**
