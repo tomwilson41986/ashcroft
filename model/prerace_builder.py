@@ -12,7 +12,7 @@ and the prediction model.
 import numpy as np
 import pandas as pd
 
-from model.bfsp_features import SHAPE_DRAW_FEATURES
+from model.bfsp_features import INTENT_SERVED_FEATURES, SERVED_FRESHNESS_FEATURES
 
 
 class PreRaceBuilder:
@@ -482,8 +482,9 @@ class PreRaceBuilder:
                 "rFSS",
                 "rFCS",
             ]
-            # run style, race shape, position value and draw curves: built by
-            # CustomMetricsEngine, shared with the BFSP model
-            + SHAPE_DRAW_FEATURES
+            # intent (card-safe) and freshness: built by CustomMetricsEngine,
+            # served by the BFSP model too
+            + INTENT_SERVED_FEATURES
+            + SERVED_FRESHNESS_FEATURES
         )
         return cols

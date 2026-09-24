@@ -21,6 +21,8 @@ from model.perf_figures import MARGIN_WORDS
 
 from model.draw_curve import add_draw_curve
 from model.draw_metrics import DrawMetricsEngine
+from model.freshness_features import add_freshness_features
+from model.intent_features import add_intent_features
 from model.pace_metrics import PaceMetricsEngine
 from model.race_shape import add_race_shape_features
 
@@ -265,15 +267,21 @@ class CustomMetricsEngine:
         windows: Lookback windows for rolling metrics (default: [3, 5, 10]).
         race_shape: Build the run-style, race-shape, position-value and
             draw-curve features (model/race_shape.py, model/draw_curve.py).
-            Standard features; off only for a model trained before them,
-            which does not read them (see `needs_race_shape`).
+        intent: Build the connections' choices and each trainer's record with
+            them against the price (model/intent_features.py).
+        freshness: Build days since the last run in context
+            (model/freshness_features.py).
+        Each is on by default; the live path turns off what the model it
+        serves does not read (see `model.bfsp_features.blocks_needed`).
     """
 
     def __init__(self, windows: list[int] | None = None, gp_draw_surface: bool = False,
-                 race_shape: bool = True):
+                 race_shape: bool = True, intent: bool = True, freshness: bool = True):
         self.windows = windows or [3, 5, 10]
         self.max_window = max(self.windows)
         self.race_shape = race_shape
+        self.intent = intent
+        self.freshness = freshness
         #: Per-stall Gaussian-process draw surface. Off by default: it costs one
         #: GP fit per course per year, and the closed-form shrunk cells already
         #: resolve single stalls. Enable it to let the surface borrow strength
@@ -398,6 +406,18 @@ class CustomMetricsEngine:
             df = df.copy()                     # defragment before ~40 more columns
             df, _ = add_race_shape_features(df)
             df, _ = add_draw_curve(df)
+
+        # --- Intent and freshness ---
+        # The connections' choices today and each trainer's record with them
+        # against the price, and days since the last run against what is usual
+        # for the horse, its yard and its rivals. Earlier days only, like the
+        # blocks above; a card row reads the history and adds nothing to it.
+        if self.intent:
+            df = df.copy()
+            df, _ = add_intent_features(df)
+        if self.freshness:
+            df = df.copy()
+            df, _ = add_freshness_features(df)
 
         df = self._calc_within_race_ranks(df)
 

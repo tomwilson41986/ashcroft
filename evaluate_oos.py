@@ -44,7 +44,7 @@ from model.bfsp_model import (
     predict_prices,
     resolve_feature_columns,
 )
-from model.bfsp_features import SHAPE_DRAW_FEATURES
+from model.bfsp_features import INTENT_CARD_UNSAFE, PRODUCTION_BLOCKS
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -796,17 +796,16 @@ def main():
     )
     parser.add_argument(
         "--blocks", default="",
-        help="Research blocks to add to the production features: intent "
-             "(model/intent_features.py), ae (model/ae_features.py, pre-off entities), "
-             "freshness (model/freshness_features.py). Shape and draw curves are "
-             "production features now; see --withhold",
+        help="Blocks to add to the served features: shape_draw (built by the engine, "
+             "not served), intent_unsafe (the four intent features the 06:00 card "
+             "cannot know), ae (model/ae_features.py, pre-off entities). Intent and "
+             "freshness are served now; see --withhold",
     )
     parser.add_argument(
         "--withhold", default="", metavar="BLOCKS",
         help="Production blocks to fit the model without, by exact feature name: "
-             "shape_draw (run style, race shape, position value and draw curves, "
-             "model/bfsp_features.py SHAPE_DRAW_FEATURES). Measures what a block "
-             "adds to the served model on the same matrix and folds",
+             "shape_draw, intent, freshness (model/bfsp_features.py PRODUCTION_BLOCKS). "
+             "Measures what a block adds to the served model on the same matrix and folds",
     )
     parser.add_argument(
         "--output-csv", default=None,
@@ -856,7 +855,7 @@ def main():
             n.strip() for n in open(args.drop_feature_list).read().split() if n.strip()
         )
     # By name, not by prefix: pred_epf is a prefix of the older pred_epf_norm.
-    standard_blocks = {"shape_draw": SHAPE_DRAW_FEATURES}
+    standard_blocks = PRODUCTION_BLOCKS
     for block in [b.strip() for b in (args.withhold or "").split(",") if b.strip()]:
         if block not in standard_blocks:
             raise SystemExit(f"unknown production block {block!r} ({', '.join(standard_blocks)})")
@@ -865,26 +864,25 @@ def main():
 
     extra: list[str] = []
     for block in [b.strip() for b in (args.blocks or "").split(",") if b.strip()]:
-        if block in ("shape", "drawcurve"):
+        if block in ("shape", "drawcurve", "intent", "freshness"):
             # Built by the metrics engine on every row; rebuilt here they would be
-            # computed on the priced rows alone and replace the served values.
-            raise SystemExit(f"{block!r} is a production block now (SHAPE_DRAW_FEATURES); "
-                             "it is in every run, and --withhold shape_draw measures it")
-        elif block == "intent":
-            from model.intent_features import add_intent_features
-            df, cols = add_intent_features(df)
-        elif block == "freshness":
-            # days since the last run in context: against the horse's usual spacing, the
-            # yard's and the field's; runs since a break; workload; since the last win
-            from model.freshness_features import add_freshness_features
-            df, cols = add_freshness_features(df)
+            # computed on the priced rows alone and replace the engine's values.
+            raise SystemExit(f"{block!r} is built by the metrics engine now: shape_draw adds "
+                             "the built shape and draw columns, and --withhold measures a "
+                             "served block")
+        elif block in ("shape_draw", "intent_unsafe"):
+            cols = list(PRODUCTION_BLOCKS["shape_draw"]) if block == "shape_draw" else list(INTENT_CARD_UNSAFE)
+            absent = [c for c in cols if c not in df.columns]
+            if absent:
+                raise SystemExit(f"{block}: {len(absent)} columns not in the matrix ({absent[:3]}...); "
+                                 "the engine builds them -- refresh the feature cache")
         elif block == "ae":
             # how the market has priced each trainer, jockey, sire and horse on earlier
             # days; the pre-off entities only, since the forecast's target is today's price
             from model.ae_features import PRE_OFF_ENTITIES, add_ae_features
             df, cols = add_ae_features(df, entities=PRE_OFF_ENTITIES)
         else:
-            raise SystemExit(f"unknown block {block!r} (intent, ae, freshness)")
+            raise SystemExit(f"unknown block {block!r} (shape_draw, intent_unsafe, ae)")
         log.info("block %s: %d features", block, len(cols))
         extra += cols
 

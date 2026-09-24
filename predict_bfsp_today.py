@@ -35,7 +35,7 @@ from model.bfsp_model import (
     attach_serving_rule,
     predict_prices,
 )
-from model.bfsp_features import needs_race_shape
+from model.bfsp_features import blocks_needed
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -193,10 +193,10 @@ def prepare_and_predict(
     3. Extracts feature vectors for target date runners
     4. Predicts log(BFSP) and converts to BFSP
     """
-    # The shape and draw-curve block is minutes of work over the whole history.
-    # A model trained before it does not read it, so it is built only for a
-    # model that does -- the same features either way for the one that does.
-    engine = CustomMetricsEngine(race_shape=needs_race_shape(feature_cols))
+    # The shape, intent and freshness blocks are minutes of work over the whole
+    # history. Each is built only for a model that reads it -- the same features
+    # either way for the one that does.
+    engine = CustomMetricsEngine(**blocks_needed(feature_cols))
 
     # Check if target runners are already in the historical data
     target_date_str = str(target_date)
