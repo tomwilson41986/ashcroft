@@ -59,7 +59,9 @@ d["r"] = d.won - d.p
 age = pd.to_numeric(d.horse_age, errors="coerce")
 ra = d.race_restrictions_age.fillna("").astype(str).str.lower()
 lo = pd.to_numeric(ra.str.extract(r"(\d+)")[0], errors="coerce")
-d["age_band"] = np.select([ra.str.contains(r"\+|up|and over|o$"), ra.str.contains(r"\d")], ["open", "exact"], "none")
+# (run 28 matched "o$" here, which every "..yo" value ends in, so its age_band table was all "open";
+# age_vs_min, which answers G4, was unaffected. Fixed below, not re-run.)
+d["age_band"] = np.select([ra.str.contains(r"\+|up|and over"), ra.str.contains(r"\d")], ["open", "exact"], "none")
 d["age_vs_min"] = (age - lo).clip(-1, 4)
 dsl = pd.to_numeric(d.days_since_lr, errors="coerce")
 d["season_opener"] = dsl.ge(90) & d.month.isin([3, 4, 5]) & ~d.jumps
