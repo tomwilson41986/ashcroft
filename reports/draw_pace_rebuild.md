@@ -235,9 +235,22 @@ The blocks describe the race better than the served features. Whether they make 
 - **One strategy looks positive, but it is not a finding.** Rank-1 bets with EV > 0.02 returned +4.1% on 1,538 bets (90% CI −3.1% to +11.4%; halves +5.3% and +1.3%). It is one of seven thresholds tried, and its interval includes zero. The in-day rule's EV > 0.05 subset looked like this too, and failed the locked holdout.
 - **Verdict:** the draw is priced, and so is most of the race shape.
 
-**Iteration 18** (research-loop run 33, running): does the served price model forecast BSP better with the blocks? That bears on the early-price trade, which buys the morning price where the model says BSP will be longer or shorter.
+**Iteration 18** (research-loop run 33): does the served price model forecast BSP better with the blocks? That bears on the early-price trade, which buys the morning price where the model says BSP will be longer or shorter.
+- **Set-up:** the served recipe was fitted walk-forward with and without the blocks, and paired runner by runner (53,910 runners, 5,923 races, Sep 2025 to Mar 2026).
+- **Error:** the mean absolute log error goes from 0.4566 to 0.4564. The paired difference is −0.0002 (90% CI −0.0010 to +0.0005), which the data cannot resolve.
+- **Concordance:** winner-versus-loser concordance gets slightly worse (−0.0023, CI −0.0037 to −0.0010).
+- **Verdict:** the default stands. **The blocks do not sharpen the forecast of BSP**, so they bring nothing to the early-price trade either.
 
-## 5. What serving them would take
+## 5. Verdict, and what serving them would take
+
+**Not worth serving.**
+- The blocks measure the draw and the race shape better than the served features do (§3).
+- But the closing market already prices what they measure: no information beyond BSP (iterations 17 and 19).
+- The price model cannot use them to forecast BSP either (iteration 18).
+- They stay as research blocks. They are the right tools for questions about the race itself, such as which courses and trips have a draw bias and how much a contested lead costs a front-runner. They are not model features.
+
+The notes below stand in case a later test says otherwise.
+
 
 Neither block is served, and the served model should not change during the forward CLV test. That test opens with 25 September's 06:00 run on the current model (`reports/preregistration_clv_forward.md`). Swapping the model mid-window would break it.
 
