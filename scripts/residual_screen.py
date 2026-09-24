@@ -465,8 +465,9 @@ def post_race_names() -> set[str]:
     from model.draw_metrics import DRAW_POST_RACE_ONLY
     from model.pace_metrics import PACE_POST_RACE_ONLY
     from model.primitives import POST_RACE_PRIMITIVES
+    from model.race_shape import RACE_SHAPE_POST_RACE
     return (set(POST_RACE_ONLY) | set(POST_RACE_PRIMITIVES) | set(PACE_POST_RACE_ONLY)
-            | set(DRAW_POST_RACE_ONLY) | {"perf_lbs", "kf_post", "kf_innov"})
+            | set(DRAW_POST_RACE_ONLY) | set(RACE_SHAPE_POST_RACE) | {"perf_lbs", "kf_post", "kf_innov"})
 
 
 def raw_and_block_columns(df: pd.DataFrame, feature_cols) -> list[str]:
@@ -527,6 +528,15 @@ def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = F
             elif b == "comments":
                 from model.comment_features import add_comment_features
                 df, cols = add_comment_features(df)
+            elif b == "shape":
+                # run style from past comments, the race's projected shape, and what the
+                # projected position has been worth in that shape at this course and trip
+                from model.race_shape import add_race_shape_features
+                df, cols = add_race_shape_features(df)
+            elif b == "drawcurve":
+                # finishing position and pounds beaten by draw at course x trip x field size
+                from model.draw_curve import add_draw_curve
+                df, cols = add_draw_curve(df)
             elif b in ("pedigree", "connections"):
                 if "nmfp" not in df.columns:
                     from model.primitives import add_run_primitives
@@ -885,7 +895,7 @@ def main(argv=None):
                     help="withhold every race on or after this date (the locked holdout); '' to disable")
     ap.add_argument("--val-months", type=int, default=6, help="inner validation tail of the training window")
     ap.add_argument("--ridge-grid", type=float, nargs="+", default=[1.0, 10.0, 100.0, 1000.0])
-    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>]")
+    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>],shape,drawcurve")
     ap.add_argument("--limit", type=int, default=0, help="screen only the first N production features (smoke runs)")
     ap.add_argument("--no-alone", action="store_true")
     ap.add_argument("--no-boost", action="store_true")
