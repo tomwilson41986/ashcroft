@@ -18,10 +18,29 @@ if _root not in sys.path:
     sys.path.insert(0, _root)
 
 
+TRAINING_START_FALLBACK = "2021-01-01"      # train-bfsp.yml's default --start-date
+
+
+def training_start(model_dir) -> str:
+    """The first date of history the served model's features were built from.
+
+    Serving has to build features from the same span: every cumulative count and
+    rate (a sire's runners, a yard's strike rate) depends on where history starts,
+    and serving from 2020 while training from 2021 gave the live rows a year of
+    history no training row had (QA review M6). Read from the model's own training
+    summary so a retrain on another window carries its start with it."""
+    import json
+    try:
+        with open(Path(model_dir) / "bfsp_training_summary.json") as f:
+            return str(json.load(f)["data_range"]["min_date"])[:10]
+    except (OSError, KeyError, TypeError, ValueError):
+        return TRAINING_START_FALLBACK
+
+
 def run_predictions(
     target_date: date | None = None,
     from_db: bool = False,
-    start_date: str = "2020-01-01",
+    start_date: str | None = None,
     card_sink=None,
 ) -> list[Prediction]:
     """Run the Ashcroft BFSP prediction model for a given date.
@@ -29,7 +48,9 @@ def run_predictions(
     Args:
         target_date: Date to predict for. Defaults to today.
         from_db: If True, use runners from the database (no HRB login).
-        start_date: Earliest historical date to load (for memory efficiency).
+        start_date: Earliest historical date to load. Defaults to the start of
+            the served model's training history, so live features are built
+            from the span training features were.
         card_sink: Called with the live card as fetched, before anything fills
             it. The result rows later overwrite the going, the jockeys and the
             field, so this is the only record of what was known when the
@@ -57,7 +78,9 @@ def run_predictions(
     # Load model
     model, feature_cols, vocab = load_bfsp_model(model_dir)
 
-    # Load historical data
+    # Load historical data, from where the model's training history began
+    if start_date is None:
+        start_date = training_start(model_dir)
     log.info(f"Loading historical data from {start_date}...")
     historical = load_historical(db_path, start_date=start_date)
     log.info(f"Loaded {len(historical):,} historical rows")

@@ -272,3 +272,19 @@ def test_clv_diagnostics_clock_and_commission():
     net = mod.net_clv(pd.Series([4.4, 3.0]), pd.Series([4.0, 4.0]))
     assert net[0] == pytest.approx(0.1 * 0.95)          # commission only on a gain
     assert net[1] == pytest.approx(-0.25)
+
+
+def test_serving_builds_history_from_where_training_did(tmp_path):
+    """QA review M6: serving from 2020 while training from 2021 gave live rows a
+    year of history no training row had."""
+    import json
+
+    from ultra_betting.model.predict import TRAINING_START_FALLBACK, training_start
+
+    (tmp_path / "bfsp_training_summary.json").write_text(json.dumps({"data_range": {"min_date": "2022-03-01"}}))
+    assert training_start(tmp_path) == "2022-03-01"
+    assert training_start(tmp_path / "absent") == TRAINING_START_FALLBACK
+    # the committed model says where its own history began
+    import os
+    committed = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "models")
+    assert training_start(committed) == "2021-01-01"
