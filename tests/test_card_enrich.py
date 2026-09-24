@@ -144,3 +144,11 @@ def test_a_median_ending_in_half_is_missing_as_the_table_stores_it():
     out = enrich_card(four, _history())                          # 0, 60, 71, 80 -> median 65.5
     assert out["median_or"].isna().all()
     assert enrich_card(card, _history())["median_or"].tolist() == [40.0, 40.0]
+
+
+def test_the_card_csv_keeps_the_dams_sire_under_the_tables_name():
+    from daily_predictions import parse_racecard_csv
+    csv_text = "racedate,racetime,track,horse_name,stallion,damstallion,official_rating\n" \
+               "2026-09-24,2.30,Kempton,Newcomer,Kodiac,Galileo (IRE),\n"
+    card = parse_racecard_csv(csv_text)
+    assert card.loc[0, "dam_stallion"] == "Galileo (IRE)" and card.loc[0, "stallion"] == "Kodiac"
