@@ -797,7 +797,7 @@ def main():
         "--blocks", default="",
         help="Research blocks to add to the production features: shape "
              "(model/race_shape.py), drawcurve (model/draw_curve.py), intent "
-             "(model/intent_features.py)",
+             "(model/intent_features.py), ae (model/ae_features.py, pre-off entities)",
     )
     parser.add_argument(
         "--output-csv", default=None,
@@ -858,8 +858,13 @@ def main():
         elif block == "intent":
             from model.intent_features import add_intent_features
             df, cols = add_intent_features(df)
+        elif block == "ae":
+            # how the market has priced each trainer, jockey, sire and horse on earlier
+            # days; the pre-off entities only, since the forecast's target is today's price
+            from model.ae_features import PRE_OFF_ENTITIES, add_ae_features
+            df, cols = add_ae_features(df, entities=PRE_OFF_ENTITIES)
         else:
-            raise SystemExit(f"unknown block {block!r} (shape, drawcurve, intent)")
+            raise SystemExit(f"unknown block {block!r} (shape, drawcurve, intent, ae)")
         log.info("block %s: %d features", block, len(cols))
         extra += cols
 

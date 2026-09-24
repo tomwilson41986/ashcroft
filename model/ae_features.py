@@ -36,6 +36,11 @@ ENTITIES = {
     "track_front": ["track", "_dist_band", "_price_band"],
 }
 
+#: The entities a forecast made BEFORE the off may use. `track_front` keys its cell on
+#: today's market rank -- known at the off, which is when the outcome model runs, but it
+#: is the very thing a forecast of BSP is trying to predict.
+PRE_OFF_ENTITIES = {k: v for k, v in ENTITIES.items() if "_price_band" not in v}
+
 
 def _race_key(df: pd.DataFrame) -> pd.Series:
     if "raceid" in df.columns:
@@ -45,7 +50,7 @@ def _race_key(df: pd.DataFrame) -> pd.Series:
 
 
 def add_ae_features(df: pd.DataFrame, half_life_days: float = HALF_LIFE_DAYS,
-                    shrink_n: float = SHRINK_N) -> tuple[pd.DataFrame, list[str]]:
+                    shrink_n: float = SHRINK_N, entities: dict | None = None) -> tuple[pd.DataFrame, list[str]]:
     d = df.copy()
     race = _race_key(d)
     d["raceid"] = race
@@ -68,7 +73,7 @@ def add_ae_features(df: pd.DataFrame, half_life_days: float = HALF_LIFE_DAYS,
     d["_price_band"] = pd.cut(rank, [0, 1, 3, 100], labels=["fav", "2-3", "rest"]).astype(str)
 
     names = []
-    for name, keys in ENTITIES.items():
+    for name, keys in (ENTITIES if entities is None else entities).items():
         if any(k not in d.columns for k in keys):
             continue
         mean, n_eff = race_lagged_decayed_mean(d, keys, "_ae_resid", halflife_days=half_life_days)
