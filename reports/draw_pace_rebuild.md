@@ -259,3 +259,26 @@ There are two ways to serve them:
 - **In shadow now:** run the blocks in the 06:00 job and store their predictions next to the served ones, without changing what is served. The forward test stays clean, and the blocks build a forward record of their own.
 
 Either needs the live path to build the blocks from the card plus history. The block functions already handle card rows: they take no comment and no result, get features from earlier days, and contribute nothing. What is missing is the wiring into `predict_bfsp_today.py` and a parity check.
+
+## 6. Promoted to production features (24 September, later the same day)
+
+At the owner's request, both blocks became standard inputs to the price model and so to its win probability (the served `predicted_win_prob_norm` is that model's normalised price). §5's verdict is left as written, because iteration 18's numbers have not changed. The promotion is measured afresh, as it will be served.
+
+**What changed.**
+- **Built on every row.** `CustomMetricsEngine.calculate_all` builds the shape block and then the draw curves (with the by-style cells) on every row of the history. Iteration 18 built them on the priced rows of the cached matrix only, which left non-runners without a price out of the field.
+- **Served feature list.** `ALL_FEATURE_COLS` carries all 32 (`SHAPE_DRAW_FEATURES`), going from 501 to 533. The legacy win model's list (`PreRaceBuilder.get_feature_columns`) carries them too.
+- **Guards.** The per-run columns (`RACE_SHAPE_POST_RACE`: a run's own style, finishing position and margin) join the post-race guard, so neither training nor serving accepts them.
+- **The live path builds the block only for a model that reads it** (`needs_race_shape`). The model served today does not read it, so its 06:00 runs are untouched.
+- **Research tooling.** `evaluate_oos.py --withhold shape_draw` fits without the block by exact name; prefix matching would also drop the older `pred_epf_norm`. The `shape` and `drawcurve` research blocks are retired and refuse to run, because rebuilding them there would replace the production values with priced-rows-only ones.
+
+**Tests.** `tests/test_shape_draw_production.py`:
+- A card with no results, margins, comments or prices, priced through the whole engine, gets bit-identical values to the same day with its results in.
+- The control: the same blanking a day earlier moves more than ten of the card day's features.
+- `tests/test_leakage.py`'s reversed-result test now covers all 32 features, because they are deployed.
+
+**Measurement.** Iteration 25 is the served price model walk-forward without the block (the feature set served today) against with it:
+- same quarterly folds from 1 Jul 2025 to the holdout;
+- paired by runner;
+- the early-price trade scored on both.
+
+**Deployment.** Serving a model trained with the block is a separate decision. It would replace the model the forward CLV test opens on (25 September, 06:00), so it waits for the owner.

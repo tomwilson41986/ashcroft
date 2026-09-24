@@ -44,6 +44,7 @@ from model.bfsp_model import (
     predict_prices,
     resolve_feature_columns,
 )
+from model.bfsp_features import SHAPE_DRAW_FEATURES
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -795,9 +796,16 @@ def main():
     )
     parser.add_argument(
         "--blocks", default="",
-        help="Research blocks to add to the production features: shape "
-             "(model/race_shape.py), drawcurve (model/draw_curve.py), intent "
-             "(model/intent_features.py), ae (model/ae_features.py, pre-off entities)",
+        help="Research blocks to add to the production features: intent "
+             "(model/intent_features.py), ae (model/ae_features.py, pre-off entities). "
+             "Shape and draw curves are production features now; see --withhold",
+    )
+    parser.add_argument(
+        "--withhold", default="", metavar="BLOCKS",
+        help="Production blocks to fit the model without, by exact feature name: "
+             "shape_draw (run style, race shape, position value and draw curves, "
+             "model/bfsp_features.py SHAPE_DRAW_FEATURES). Measures what a block "
+             "adds to the served model on the same matrix and folds",
     )
     parser.add_argument(
         "--output-csv", default=None,
@@ -846,15 +854,21 @@ def main():
         names = tuple(
             n.strip() for n in open(args.drop_feature_list).read().split() if n.strip()
         )
+    # By name, not by prefix: pred_epf is a prefix of the older pred_epf_norm.
+    standard_blocks = {"shape_draw": SHAPE_DRAW_FEATURES}
+    for block in [b.strip() for b in (args.withhold or "").split(",") if b.strip()]:
+        if block not in standard_blocks:
+            raise SystemExit(f"unknown production block {block!r} ({', '.join(standard_blocks)})")
+        names += tuple(standard_blocks[block])
+        log.info("withholding production block %s: %d features", block, len(standard_blocks[block]))
 
     extra: list[str] = []
     for block in [b.strip() for b in (args.blocks or "").split(",") if b.strip()]:
-        if block == "shape":
-            from model.race_shape import add_race_shape_features
-            df, cols = add_race_shape_features(df)
-        elif block == "drawcurve":
-            from model.draw_curve import add_draw_curve
-            df, cols = add_draw_curve(df)
+        if block in ("shape", "drawcurve"):
+            # Built by the metrics engine on every row; rebuilt here they would be
+            # computed on the priced rows alone and replace the served values.
+            raise SystemExit(f"{block!r} is a production block now (SHAPE_DRAW_FEATURES); "
+                             "it is in every run, and --withhold shape_draw measures it")
         elif block == "intent":
             from model.intent_features import add_intent_features
             df, cols = add_intent_features(df)
@@ -864,7 +878,7 @@ def main():
             from model.ae_features import PRE_OFF_ENTITIES, add_ae_features
             df, cols = add_ae_features(df, entities=PRE_OFF_ENTITIES)
         else:
-            raise SystemExit(f"unknown block {block!r} (shape, drawcurve, intent, ae)")
+            raise SystemExit(f"unknown block {block!r} (intent, ae)")
         log.info("block %s: %d features", block, len(cols))
         extra += cols
 
@@ -879,7 +893,7 @@ def main():
         dropped = [c for c in wanted if c in df.columns and c not in set(feature_cols_full)]
         log.info("Withholding %d features (%s%s)", len(dropped),
                  f"prefixes {list(prefixes)}" if prefixes else "",
-                 f" names from {args.drop_feature_list}" if names else "")
+                 f" {len(names)} names" if names else "")
         for c in sorted(dropped)[:20]:
             log.info("    - %s", c)
         if len(dropped) > 20:

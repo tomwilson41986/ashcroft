@@ -19,8 +19,10 @@ from model.lagsafe import (race_lagged_expanding_count, race_lagged_expanding_me
                            race_lagged_expanding_sum)
 from model.perf_figures import MARGIN_WORDS
 
+from model.draw_curve import add_draw_curve
 from model.draw_metrics import DrawMetricsEngine
 from model.pace_metrics import PaceMetricsEngine
+from model.race_shape import add_race_shape_features
 
 
 # ---------------------------------------------------------------------------
@@ -261,11 +263,17 @@ class CustomMetricsEngine:
 
     Args:
         windows: Lookback windows for rolling metrics (default: [3, 5, 10]).
+        race_shape: Build the run-style, race-shape, position-value and
+            draw-curve features (model/race_shape.py, model/draw_curve.py).
+            Standard features; off only for a model trained before them,
+            which does not read them (see `needs_race_shape`).
     """
 
-    def __init__(self, windows: list[int] | None = None, gp_draw_surface: bool = False):
+    def __init__(self, windows: list[int] | None = None, gp_draw_surface: bool = False,
+                 race_shape: bool = True):
         self.windows = windows or [3, 5, 10]
         self.max_window = max(self.windows)
+        self.race_shape = race_shape
         #: Per-stall Gaussian-process draw surface. Off by default: it costs one
         #: GP fit per course per year, and the closed-form shrunk cells already
         #: resolve single stalls. Enable it to let the surface borrow strength
@@ -377,6 +385,19 @@ class CustomMetricsEngine:
 
         # --- Draw bias & stall position features ---
         df = DrawMetricsEngine(gp_draw_surface=self.gp_draw_surface).calculate(df)
+
+        # --- Run style, race shape, position value, draw curves ---
+        # Each runner's style projected from the comments on its earlier runs,
+        # the shape of the race the field's styles imply, what the projected
+        # position has been worth in that shape at this course and trip, and
+        # what the draw has been worth here in finishing position and pounds.
+        # Every statistic reads earlier days only, so a card row gets these
+        # from the history before it and adds nothing to it. Shape first: the
+        # draw's by-style cells read the projected style.
+        if self.race_shape:
+            df = df.copy()                     # defragment before ~40 more columns
+            df, _ = add_race_shape_features(df)
+            df, _ = add_draw_curve(df)
 
         df = self._calc_within_race_ranks(df)
 

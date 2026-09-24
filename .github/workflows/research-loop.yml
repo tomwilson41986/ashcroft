@@ -73,6 +73,7 @@ jobs:
           print(f"bfsp={'true' if c.get('bfsp', False) else 'false'}")
           print(f"bfsp_from={c.get('bfsp_from', '2025-07-01')}")
           print(f"bfsp_variant_drop={c.get('bfsp_variant_drop', '')}")
+          print(f"bfsp_base_withhold={c.get('bfsp_base_withhold', '')}")
           EOF
           cat research/loop.json
 
@@ -153,15 +154,20 @@ jobs:
           set -o pipefail
           mkdir -p reports/bfsp_compare
           common="--start-date $START_DATE --feature-cache .feature_cache --eval-from ${{ steps.cfg.outputs.bfsp_from }} --eval-until 2026-04-01 --step-days 91 --val-window 91 --output-csv reports/bfsp_compare/oos.csv --output-json reports/bfsp_compare/summary.json"
-          python evaluate_oos.py $common --tag base 2>&1 | grep -v PerformanceWarning | tail -60
+          # bfsp_base_withhold: production blocks the BASE is fitted without (evaluate_oos.py
+          # --withhold, exact names), so a block already in production is measured as the
+          # served model gains it
+          bwh="${{ steps.cfg.outputs.bfsp_base_withhold }}"
+          python evaluate_oos.py $common --tag base ${bwh:+--withhold "$bwh"} 2>&1 | grep -v PerformanceWarning | tail -60
           # bfsp_variant_drop: feature prefixes the VARIANT is fitted without (the base is untouched),
           # e.g. the parts of a block the 06:00 card cannot know
           vdrop="${{ steps.cfg.outputs.bfsp_variant_drop }}"
-          python evaluate_oos.py $common --tag blocks --blocks "${{ steps.cfg.outputs.blocks }}" \
+          blocks="${{ steps.cfg.outputs.blocks }}"
+          python evaluate_oos.py $common --tag blocks --blocks "$blocks" \
             ${vdrop:+--drop-features "$vdrop"} 2>&1 | grep -v PerformanceWarning | tail -60
           python scripts/compare_oos_runs.py --base reports/bfsp_compare/oos_base.csv \
             --variant reports/bfsp_compare/oos_blocks.csv --out reports/bfsp_compare/compare.md \
-            --note "${{ steps.cfg.outputs.tag }}: production features vs + ${{ steps.cfg.outputs.blocks }}"
+            --note "${{ steps.cfg.outputs.tag }}: production features${bwh:+ without $bwh} vs production features${blocks:+ + $blocks}${vdrop:+ without $vdrop}"
           # The trade itself: each forecast against Betfair's morning prices, where the
           # price files cover the development window (Jan-Mar 2026; never past 1 Apr).
           for v in base blocks; do

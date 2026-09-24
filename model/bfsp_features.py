@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from model.draw_curve import DRAW_CURVE_FEATURES, DRAW_STYLE_FEATURES
 from model.draw_metrics import ALL_DRAW_FEATURES, GP_DRAW_FEATURES
 from model.financial_features import FINANCIAL_FEATURES, FINANCIAL_RANK_FEATURES
 from model.pace_metrics import (
@@ -36,6 +37,7 @@ from model.pace_metrics import (
     TACTICAL_FEATURES,
     TRACK_PACE_BIAS_FEATURES,
 )
+from model.race_shape import RACE_SHAPE_FEATURES
 
 # ---------------------------------------------------------------------------
 # Feature columns: all custom metrics + engineered features
@@ -510,6 +512,21 @@ CONTEXT_FEATURES = [
     "or_vs_median",
 ]
 
+# Run style projected from the comments on each runner's earlier runs, the
+# race's shape from the field's projected styles, what the projected position
+# has been worth in that shape at this course and trip (model/race_shape.py),
+# and what the draw has been worth at this course, trip and field size, in
+# finishing position and in pounds, overall and for the runner's style
+# (model/draw_curve.py). Built by CustomMetricsEngine.calculate_all.
+SHAPE_DRAW_FEATURES = RACE_SHAPE_FEATURES + DRAW_CURVE_FEATURES + DRAW_STYLE_FEATURES
+
+
+def needs_race_shape(feature_cols) -> bool:
+    """Whether a model reads the shape and draw-curve block. A model trained
+    before the block does not, and serving it need not build the block."""
+    return bool(set(feature_cols) & set(SHAPE_DRAW_FEATURES))
+
+
 # Opt-in feature blocks appended by CLI flags (see main): ABM simulation
 # features, Betfair market-movement features, performance-figure features.
 EXTRA_FEATURE_COLS: list[str] = []
@@ -555,6 +572,7 @@ ALL_FEATURE_COLS = (
     + ALL_DRAW_FEATURES
     + FINANCIAL_FEATURES
     + FINANCIAL_RANK_FEATURES
+    + SHAPE_DRAW_FEATURES
 )
 
 
@@ -576,12 +594,14 @@ def assert_no_post_race_features(feature_cols) -> None:
     from model.draw_metrics import DRAW_POST_RACE_ONLY
     from model.pace_metrics import PACE_POST_RACE_ONLY
     from model.primitives import POST_RACE_PRIMITIVES
+    from model.race_shape import RACE_SHAPE_POST_RACE
 
-    # Four modules describe the race being predicted, so the guard covers all
-    # four. The union lives here rather than in any one of them so none has to
+    # Five modules describe the race being predicted, so the guard covers all
+    # five. The union lives here rather than in any one of them so none has to
     # import the others just to be checked.
     banned = (set(POST_RACE_ONLY) | set(POST_RACE_PRIMITIVES)
-              | set(PACE_POST_RACE_ONLY) | set(DRAW_POST_RACE_ONLY))
+              | set(PACE_POST_RACE_ONLY) | set(DRAW_POST_RACE_ONLY)
+              | set(RACE_SHAPE_POST_RACE))
     bad = sorted(set(feature_cols) & banned)
     if bad:
         raise ValueError(

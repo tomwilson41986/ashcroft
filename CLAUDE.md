@@ -118,6 +118,7 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
 3-stage pipeline: Custom Metrics (19 proprietary) -> LightGBM regression on log(BFSP) -> Predictions
 
 - `model/custom_metrics.py` — NFP, RB, WIV, WAX, WOA, CWO, ORR2, EPF, FSS, FCS, PFD, WPMRF, PMW, OFS, DSLR, LRP, pace, trainer-jockey, race strength (187 features total)
+- `model/race_shape.py`, `model/draw_curve.py` — run style from past comments, race shape, position value, draw curves (production features, `SHAPE_DRAW_FEATURES`, built by `CustomMetricsEngine`)
 - `train_bfsp.py` — Walk-forward training with all custom metrics
 - `predict_bfsp_today.py` — Daily BFSP predictions
 - `model/trainer.py` — Win probability model (classification)

@@ -12,6 +12,8 @@ and the prediction model.
 import numpy as np
 import pandas as pd
 
+from model.bfsp_features import SHAPE_DRAW_FEATURES
+
 
 class PreRaceBuilder:
     """Build pre-race feature vectors by looking up each entity's history.
@@ -480,5 +482,8 @@ class PreRaceBuilder:
                 "rFSS",
                 "rFCS",
             ]
+            # run style, race shape, position value and draw curves: built by
+            # CustomMetricsEngine, shared with the BFSP model
+            + SHAPE_DRAW_FEATURES
         )
         return cols
