@@ -101,7 +101,9 @@ DROP_IN = [
      "candidate"),
     ("time_figure", "Time figure", "The horse's own time against standard, going-adjusted", "candidate"),
     ("exposure", "Exposure", "Exposure, improvement, and what horses like it went on to do", "candidate"),
+    ("head_to_head", "Collateral form", "Each runner's earlier meetings with today's rivals", "candidate"),
     ("shrunk_rates", "Shrunk records", "Small-sample records pulled toward the level above", "built"),
+    ("rank_fix", "Rank fix", "The four misdirected ranks, lowest first, missing last", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
     ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
 ]
@@ -126,14 +128,20 @@ BLOCK_EVIDENCE = {
     "Form variants": "Iteration 34: -0.0021 (-0.0037 to -0.0006) beyond the form windows, rank 1 -0.0046. Iteration "
                      "36 confirms on the served recipe at 6000 rounds.",
     "Within-race readings": "Iteration 35: -0.0074 (-0.0092 to -0.0057), every rank band resolved (Lessmann, Sung "
-                            "and Johnson 2009, eq. 14). Iteration 36 confirms on the served recipe.",
+                            "and Johnson 2009, eq. 14). Iteration 36 (served recipe, 6000 rounds): -0.0078 beyond "
+                            "the 615. Trained and verified as the 675 (train-bfsp run 33); not served.",
     "Wide within-race readings": "Iteration 37: -0.0012 alone (unresolved); with the time figure and exposure "
-                                 "-0.0038 (resolved). Iteration 39 measures the seed floor before it goes further.",
+                                 "-0.0038 (resolved), -0.0056 at another seed (iteration 39), -0.0063 on the 615 + "
+                                 "within-race readings (iteration 41). Served-recipe confirmation next.",
     "Time figure": "Iteration 37: -0.0005 alone, ranks 1-3 better and outsiders worse; Brier skill vs market "
                    "+0.0021 and concordance +0.0035 (both resolved). Part of iteration 37's -0.0038.",
     "Exposure": "Iteration 37: -0.0003 alone; part of iteration 37's -0.0038 with the time figure and wide readings.",
     "Shrunk records": "Iteration 38: -0.00002 on the price; the trainer and jockey cells move Brier skill vs market "
                       "+0.0025 (resolved).",
+    "Collateral form": "Iteration 41: -0.0019 alone and -0.0020 on top of all3 (all3 + collateral form -0.0083 on the "
+                       "615 + within-race readings), Brier skill vs market +0.0036, beyond the seed floor.",
+    "Rank fix": "Iteration 41: -0.0000 with the four originals withheld: the trees had worked round the defect. "
+                "Hygiene for the next engine rebuild.",
     "Draw v2": "Iteration 35: -0.0004 (-0.0021 to +0.0010): nothing, alone or on top of the within-race readings.",
     "Pace v2": "Iteration 35: +0.0009 (-0.0004 to +0.0026): nothing; the outsiders' error worse.",
     "Shape and draw (old)": "Iterations 18 and 25: no gain to the price forecast (-0.0000), a little concordance lost. "
