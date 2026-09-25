@@ -159,8 +159,10 @@ BLOCK_EVIDENCE = {
                 "market and the engine's pace features already read the comments. Retired.",
     "Stablemates": "Iteration 47: +0.0018 alone (+0.0002 to +0.0034), the outsiders worse; -0.0038 with bookings, "
                    "about bookings' own gain. Iteration 48 tests the pair on the served recipe.",
-    "Dam line": "Iteration 49 screens it (quick recipe): for the lightly raced horses where the forecast errs most.",
-    "Sire aptitudes": "Iteration 49 screens it (quick recipe): the served sire levels read as residual aptitudes.",
+    "Dam line": "Iteration 49: +0.0008 (-0.0007 to +0.0025), -0.0008 in maiden, novice and bumper races: nothing beyond "
+                "the placebo bar (iteration 50: +0.0022). Retired.",
+    "Sire aptitudes": "Iteration 49: +0.0002 overall; -0.0032 (-0.0061 to -0.0002) in maiden, novice and bumper races, "
+                      "+0.0017 elsewhere. Inside the placebo bar; one retest on a steadier screen.",
     "Within-race readings (newer blocks)": "Iteration 44: +0.0007 (-0.0009 to +0.0022), the outsiders worse: the "
                                            "trees already read these measures against the field. Retired.",
     "Draw v2": "Iteration 35: -0.0004 (-0.0021 to +0.0010): nothing, alone or on top of the within-race readings.",
