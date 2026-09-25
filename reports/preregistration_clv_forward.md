@@ -120,3 +120,16 @@ At the owner's instruction, the window opens on a model retrained since this doc
 - **Day 1 is scored on run 196's file, the 535 model,** so the whole window runs on one model as the previous amendment intends.
 - **The 501's day-1 forecast is not kept as a file, but can be rebuilt.** Run 195's card is kept at `racecards/2026-09-25_0613.csv` and the model is deterministic. It is not scored.
 - **No bets were affected.** No bet had been placed when the file was rewritten (execute.yml runs from 10:00 UTC), and `BETFAIR_APP_KEY` is unset, so the job records no exchange prices at prediction time.
+
+## Amendment, 25 Sep 2026 (11:40 UTC), before the 26 September card: the model from day 2
+
+At the owner's instruction of 25 September ("add the form windows into the main model"), **the 06:00 run of 26 September serves the price model on 615 features:** the 535 served on 25 September plus the 80 form windows (`model/form_windows.py`), fitted at 6000 rounds instead of 3000.
+- **Artefact:** train-bfsp run 32 (commit 24df459), trained through 2026-09-22 (697,903 runs from 2021-01-01), feature code hash `f879b10c8369467a`, 6000 rounds. Verified before commit (`scripts/verify_model.py`): PASS (`reports/model_verify_615.md`): every feature built by the live path, books of 1, log prices correlated 0.993 with the 535's on the last fortnight's 5,225 runners.
+- **Why it qualifies:** it passed the research loop's decision rule on the development window.
+  - Iteration 29 (served recipe): −0.0073 in the price-forecast error against the 535 (90% CI −0.0083 to −0.0064), Brier skill against the market +0.0022 (+0.0011 to +0.0034).
+  - Iteration 36 (served recipe, both at 6000 rounds): −0.0088 (−0.0099 to −0.0078); the rule at 22% shorter +6.06% → +7.70% on January–March.
+- **The change is between days,** as the amendment of 24 September requires. Day 1 (25 September) stays scored on the 535, run 196's file. From day 2 the window runs on the 615.
+- **Reporting:** the headline, its interval and the halves are given for the 535's day and the 615's days separately, as well as for the whole window. The whole window is still the criterion.
+- **The backtest's forecast** for the forward days (the reading-2 comparison) is rebuilt with each day's model: the 535 recipe for 25 September, the 615 at 6000 rounds from 26 September.
+
+**Nothing else changes:** not the rule, not the criteria, not the window's length or its exclusions.
