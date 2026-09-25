@@ -160,6 +160,10 @@ def test_blocks_keep_the_raw_columns_they_need(monkeypatch, tmp_path):
     assert "or_num" not in keep                                   # engineered, not raw
     with pytest.raises(RuntimeError, match="block perf failed"):
         rs.attach_blocks(df[["horse_name"]].assign(raceid="r"), ["perf"], db="x", strict=True)
+    # a drop-in block reads the engine's production features (race_relative standardises
+    # or_num's kin): with one asked for, nothing is dropped
+    assert rs.columns_for_blocks(df, ALL_FEATURE_COLS, ["perf"]) == keep
+    assert rs.columns_for_blocks(df, ALL_FEATURE_COLS, ["form_windows", "race_relative"]) == list(df.columns)
 
 
 def test_linear_mode_keeps_only_the_named_features_and_finds_the_signal(tmp_path, monkeypatch):

@@ -484,6 +484,18 @@ def raw_and_block_columns(df: pd.DataFrame, feature_cols) -> list[str]:
     return [c for c in df.columns if c not in engineered]
 
 
+def columns_for_blocks(df: pd.DataFrame, feature_cols, blocks) -> list[str]:
+    """raw_and_block_columns, unless a drop-in block (model/blocks) is asked for.
+
+    Those are computed on the engine's output and may read its production
+    features (race_relative standardises thirty of them within the race), so
+    with one in the list every column stays."""
+    from model import blocks as drop_in
+    if any(b in drop_in.names() for b in blocks):
+        return list(df.columns)
+    return raw_and_block_columns(df, feature_cols)
+
+
 def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = False) -> tuple[pd.DataFrame, dict]:
     """Opt-in research blocks production does not train on. With `strict`, a
     block that fails stops the run: a silently skipped block made one
@@ -700,9 +712,9 @@ def run(args) -> dict:
         prod = prod[: args.limit]
     rows_in_sample = df.index.get_indexer(sample.index)
     frame_vals = {c: df[c].to_numpy()[rows_in_sample] for c in prod}
-    # The blocks need only the raw columns; dropping the production features
-    # now halves the peak memory of everything that follows.
-    df = df[raw_and_block_columns(df, ALL_FEATURE_COLS)]
+    # The blocks need only the raw columns (a drop-in block aside); dropping the
+    # production features now halves the peak memory of everything that follows.
+    df = df[columns_for_blocks(df, ALL_FEATURE_COLS, [b for b in (args.blocks or "").split(",") if b])]
     parts = build_parts(sample, args.split, args.val_months)
     tr_bsp, te_bsp = parts["bsp"]
     train_mask = np.zeros(len(sample), bool); train_mask[tr_bsp.idx] = True

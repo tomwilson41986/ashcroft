@@ -128,6 +128,37 @@ def test_the_base_key_moves_with_what_decides_the_base_and_not_with_the_variant(
     assert k != rl.base_key(CFG, "fkey", [dict(folds[0], n_val=2)])                  # the fold plan
 
 
+def test_every_arm_or_only_the_base_can_take_further_arguments():
+    cfg = {**CFG, "bfsp_args": "--num-boost-round 6000"}
+    assert rl.arm_args(cfg, "base") == ["--num-boost-round", "6000"]
+    assert rl.arm_args({**cfg, "bfsp_base_args": "--learning-rate 0.02"}, "base")[-2:] == ["--learning-rate", "0.02"]
+    assert rl.arm_args({**cfg, "bfsp_base_args": "--learning-rate 0.02"}, "blocks").count("--learning-rate") == 0
+    v = rl.arm_args({**cfg, "variants": [{"name": "fw", "blocks": "form_windows"}]}, "fw")
+    assert v == ["--blocks", "form_windows", "--num-boost-round", "6000"]
+    folds = [{"fold": 0}]
+    assert rl.base_key(cfg, "fkey", folds) != rl.base_key(CFG, "fkey", folds)
+
+
+def test_the_base_key_follows_the_source_of_a_drop_in_block_the_base_carries(tmp_path, monkeypatch):
+    from model import feature_cache
+    assert rl.block_code_hash("") == rl.block_code_hash("form_windows,shape_form") == ""   # engine blocks: in the matrix key
+    assert rl.block_code_hash("form_variants") != ""
+    assert rl.block_code_hash("form_variants") != rl.block_code_hash("race_relative")
+    # a block's imports are walked: pace_v2 reads form_variants' ladder and the shrinkage module
+    files = {p.name for p in feature_cache.feature_source_files(["model/blocks/__init__.py", "model/blocks/pace_v2.py"])}
+    assert {"form_variants.py", "shrinkage.py", "__init__.py", "pace_v2.py"} <= files
+
+    src = tmp_path / "block.py"
+    src.write_text("FEATURES = ['x_a']\n")
+    monkeypatch.setattr(feature_cache, "feature_source_files", lambda entry_points: [src])
+    folds = [{"fold": 0}]
+    cfg = {**CFG, "bfsp_base_blocks": "form_variants"}
+    before = rl.base_key(cfg, "fkey", folds)
+    src.write_text("FEATURES = ['x_a']  # edited\n")
+    assert rl.base_key(cfg, "fkey", folds) != before          # the block changed: the cached base is stale
+    assert rl.base_key(CFG, "fkey", folds) == rl.base_key(CFG, "fkey", folds)
+
+
 def _fold_output(root, arm, k, n):
     d = root / f"fit-{arm}-{k}" / "reports" / "fit"
     d.mkdir(parents=True)

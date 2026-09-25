@@ -52,6 +52,7 @@ jobs:
       bfsp: ${{ steps.cfg.outputs.bfsp }}
       outcome: ${{ steps.cfg.outputs.outcome }}
       screen: ${{ steps.cfg.outputs.screen }}
+      depths: ${{ steps.cfg.outputs.depths }}
       fkey: ${{ steps.fkey.outputs.key }}
       folds: ${{ steps.plan.outputs.folds }}
       base_key: ${{ steps.plan.outputs.base_key }}
@@ -93,6 +94,9 @@ jobs:
           print(f"screen={'true' if c.get('screen', False) else 'false'}")
           print(f"final={'--final' if c.get('final', False) else ''}")
           print(f"bfsp={'true' if c.get('bfsp', False) else 'false'}")
+          d = c.get("depth", 1)                    # 2, or [1, 2] / "1,2": one outcome job per depth
+          ds = [int(x) for x in (d if isinstance(d, list) else str(d).split(",")) if str(x).strip()]
+          print(f"depths={json.dumps(ds or [1])}")
           EOF
           cat research/loop.json
 
@@ -169,10 +173,16 @@ jobs:
     # The win model on top of the market and the residual screen, beside the
     # price-forecast fits rather than in front of them: an outcome run takes an
     # hour or more and the fold fits need only the prepared matrix.
+    # With "depth": [1, 2] the likelihood depths run side by side, one job each
+    # (the rank-ordered fit against the winner-only one on the same folds).
     needs: prepare
     if: needs.prepare.outputs.outcome == 'true' || needs.prepare.outputs.screen == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        depth: ${{ fromJson(needs.prepare.outputs.depths) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -229,14 +239,14 @@ jobs:
           mkdir -p reports/outcome_model
           ( while true; do echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print $3"/"$2" MB"}') swap $(free -m | awk '/^Swap:/{print $3}') MB"; sleep 180; done ) &
           python scripts/outcome_model.py --db horse_racing.db --feature-cache .feature_cache \
-            --start-date "$START_DATE" --tag "${{ steps.cfg.outputs.tag }}" \
+            --start-date "$START_DATE" --tag "${{ steps.cfg.outputs.tag }}-d${{ matrix.depth }}" \
             --first-fold "${{ steps.cfg.outputs.first_fold }}" --fold-months "${{ steps.cfg.outputs.fold_months }}" \
             --blocks "${{ steps.cfg.outputs.blocks }}" --drop "${{ steps.cfg.outputs.drop }}" \
-            --keep "${{ steps.cfg.outputs.keep }}" --until "${{ steps.cfg.outputs.until }}" --params '${{ steps.cfg.outputs.params }}' --mode "${{ steps.cfg.outputs.mode }}" --depth "${{ steps.cfg.outputs.depth }}" ${{ steps.cfg.outputs.final }} \
-            --out-dir reports/outcome_model 2>&1 | grep -v PerformanceWarning | tee "reports/outcome_model/log_${{ steps.cfg.outputs.tag }}.txt"
+            --keep "${{ steps.cfg.outputs.keep }}" --until "${{ steps.cfg.outputs.until }}" --params '${{ steps.cfg.outputs.params }}' --mode "${{ steps.cfg.outputs.mode }}" --depth "${{ matrix.depth }}" ${{ steps.cfg.outputs.final }} \
+            --out-dir reports/outcome_model 2>&1 | grep -v PerformanceWarning | tee "reports/outcome_model/log_${{ steps.cfg.outputs.tag }}-d${{ matrix.depth }}.txt"
 
       - name: Residual screen
-        if: steps.cfg.outputs.screen == 'true'
+        if: steps.cfg.outputs.screen == 'true' && strategy.job-index == 0
         run: |
           set -o pipefail
           mkdir -p reports/residual_screen
@@ -254,7 +264,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: research-${{ steps.cfg.outputs.tag }}-${{ github.run_number }}-outcome
+          name: research-${{ steps.cfg.outputs.tag }}-${{ github.run_number }}-outcome-d${{ matrix.depth }}
           path: |
             reports/outcome_model/
             reports/residual_screen/

@@ -469,7 +469,8 @@ def run(args) -> dict:
     cols = [np.array(pd.to_numeric(df[c], errors="coerce"), dtype=np.float32)[rows_in_sample] for c in feats]
     blocks = [b for b in (args.blocks or "").split(",") if b]
     if blocks:
-        keep = df[rs.raw_and_block_columns(df, ALL_FEATURE_COLS)].copy()
+        needed = rs.columns_for_blocks(df, ALL_FEATURE_COLS, blocks)
+        keep = df if len(needed) == df.shape[1] else df[needed].copy()   # no second copy of the whole frame
         del df
         keep, added = rs.attach_blocks(keep, blocks, args.db, strict=True)
         key = pd.DataFrame({"race": rs.race_key(keep), "horse_name": keep["horse_name"].values})

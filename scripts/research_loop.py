@@ -33,6 +33,9 @@ its own extra arguments. Several can run at once, each against the same base:
 
 Without "variants" the single variant is the old top-level keys (arm `blocks`:
 `blocks`, `bfsp_variant_drop`, `bfsp_variant_withhold`, `bfsp_variant_args`).
+`bfsp_args` go to every arm (e.g. "--num-boost-round 6000" to confirm a
+promotion at the round cap it will be served with), `bfsp_base_args` to the
+base arms alone.
 
 Every step reads the same config, so the YAML only wires jobs together.
 """
@@ -114,11 +117,16 @@ def _join_blocks(*parts: str) -> str:
 
 
 def arm_args(cfg: dict, arm: str) -> list[str]:
+    """One arm's evaluate_oos.py arguments beyond common_args.
+
+    `bfsp_args` go to every arm (a round cap the whole comparison is run at),
+    `bfsp_base_args` to the base alone, a variant's `args` to that variant."""
     base_blocks = cfg.get("bfsp_base_blocks", "")
+    shared = shlex.split(cfg.get("bfsp_args", ""))
     if arm in BASE_ARMS:
         a = ["--blocks", base_blocks] if base_blocks else []
         wh = cfg.get("bfsp_base_withhold", "")
-        return a + (["--withhold", wh] if wh else [])
+        return a + (["--withhold", wh] if wh else []) + shared + shlex.split(cfg.get("bfsp_base_args", ""))
     for v in variants(cfg):
         if v["name"] == arm:
             a = ["--blocks", _join_blocks(base_blocks, v["blocks"])]
@@ -127,7 +135,7 @@ def arm_args(cfg: dict, arm: str) -> list[str]:
             wh = _join_blocks(cfg.get("bfsp_base_withhold", ""), v["withhold"])
             if wh:
                 a += ["--withhold", wh]
-            return a + shlex.split(v["args"])
+            return a + shared + shlex.split(v["args"])
     raise SystemExit(f"unknown arm {arm!r}")
 
 
@@ -139,17 +147,40 @@ def fit_code_hash() -> str:
     return h.hexdigest()[:16]
 
 
+def block_code_hash(blocks: str) -> str:
+    """The source of the drop-in blocks in `blocks`, and of everything they import.
+
+    A drop-in block is computed on the cached matrix, so the matrix's key, which
+    covers the engine's code, does not cover it. Without this a base carrying a
+    block would be reused from the cache after the block was edited: the old
+    block's predictions served as the new one's. Engine blocks (flags such as
+    form_windows) are in the matrix and its key already; they add nothing here."""
+    from model import blocks as blk, feature_cache
+    drop_in = [b for b in _join_blocks(blocks).split(",") if b in blk.names()]
+    if not drop_in:
+        return ""
+    files = feature_cache.feature_source_files(
+        ["model/blocks/__init__.py"] + [f"model/blocks/{b}.py" for b in drop_in])
+    h = hashlib.sha256()
+    for path in files:
+        rel = path.relative_to(REPO) if path.is_relative_to(REPO) else path
+        h.update(str(rel).encode())
+        h.update(path.read_bytes())
+    return h.hexdigest()[:16]
+
+
 def base_key(cfg: dict, feature_key: str, folds: list) -> str:
     """Everything the base run's predictions are a function of.
 
     The matrix (its key covers the feature code and the data), the arguments,
-    the fold plan, the fitting code and the library. Fits are deterministic
+    the fold plan, the fitting code, the library, and the source of any drop-in
+    block the base carries. Fits are deterministic
     (DEFAULT_PARAMS), so an equal key means the same predictions: reusing them
     is the base run, not an approximation of it."""
     import lightgbm
     parts = [feature_key, json.dumps(common_args(cfg)), json.dumps(arm_args(cfg, "base")),
              json.dumps(folds, sort_keys=True), fit_code_hash(), lightgbm.__version__,
-             sys.version.split()[0]]
+             sys.version.split()[0], block_code_hash(cfg.get("bfsp_base_blocks", ""))]
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:20]
 
 
