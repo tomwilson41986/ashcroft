@@ -110,6 +110,9 @@ DROP_IN = [
     ("dam_line", "Dam line", "The dam's produce record, the siblings and the female family", "built"),
     ("sire_apt", "Sire aptitudes", "Sire and damsire aptitudes against their own level, and the nick", "built"),
     ("elo", "Finishing-order rating", "Each horse's strength from whom it beat, across the race network", "built"),
+    ("cond_form", "Condition form", "Form at today's trip, going, course, race type and headgear, against form "
+     "everywhere", "built"),
+    ("form_lines", "Form lines", "How the rivals from its recent races have done since", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
      "against this field", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
@@ -539,6 +542,16 @@ EXPLICIT_BLOCKS = {
     "h2h_last_net": "Rivals ahead of less behind at the latest meeting",
 }
 RR_PREFIX = {"rr": "Within-race reading", "rw": "Wide within-race reading", "rn": "Within-race reading (newer blocks)"}
+CF_COND = {"trip": "today's trip band", "going": "today's going group", "course": "this course",
+           "hcap": "today's race type (handicap or not)", "gear": "today's headgear status (on or off)"}
+CF_MEASURE = {"perf": "performance figure", "nfp": "normalised finishing position", "mkt": "the market's view (BSP)"}
+CF_STAT = {"car": "career mean", "m3": "mean of the last three",
+           "d": "career mean less its mean everywhere, shrunk by n / (n + 3)"}
+FL_WINDOW = {"l1": "its last race", "l3": "its last three races"}
+FL_STAT = {"n": "rival runs since (each rival's next three, before today)", "wins": "rival wins since",
+           "wr": "rivals' win rate since, shrunk to 1 in 10 by five runs",
+           "plc": "rivals' place rate since, shrunk to 3 in 10 by five runs",
+           "ae": "rivals' wins less their BSP chances since, per run, shrunk to 0"}
 
 
 def describe(f: str, group: str = "") -> str:
@@ -553,6 +566,15 @@ def describe(f: str, group: str = "") -> str:
     if m:
         how = "z-score against today's field" if m.group(3) == "z" else "gap to the best in today's field"
         return f"{RR_PREFIX[m.group(1)]}, {how}: {_lower_first(describe(m.group(2)))}"
+    m = re.fullmatch(r"cf_(trip|going|course|hcap|gear)_n", f)
+    if m:
+        return f"Earlier runs at {CF_COND[m.group(1)]}"
+    m = re.fullmatch(r"cf_(trip|going|course|hcap|gear)_(perf|nfp|mkt)_(car|m3|d)", f)
+    if m:
+        return f"At {CF_COND[m.group(1)]}: {CF_MEASURE[m.group(2)]}, {CF_STAT[m.group(3)]} (earlier days)"
+    m = re.fullmatch(r"fl_(l1|l3)_(n|wins|wr|plc|ae)", f)
+    if m:
+        return f"Form lines of {FL_WINDOW[m.group(1)]}: {FL_STAT[m.group(2)]}"
     m = re.fullmatch(r"rfix_(\w+)", f)
     if m:
         return f"Within-race rank of {m.group(1)}, lowest first, missing last"
