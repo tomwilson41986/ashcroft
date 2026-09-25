@@ -104,6 +104,10 @@ DROP_IN = [
     ("head_to_head", "Collateral form", "Each runner's earlier meetings with today's rivals", "candidate"),
     ("shrunk_rates", "Shrunk records", "Small-sample records pulled toward the level above", "built"),
     ("rank_fix", "Rank fix", "The four misdirected ranks, lowest first, missing last", "built"),
+    ("bookings", "Bookings", "The jockey and the yard as the market rated their runners", "built"),
+    ("comments", "Comments", "What the in-running comments of earlier runs say", "built"),
+    ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
+     "against this field", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
     ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
 ]
@@ -142,6 +146,12 @@ BLOCK_EVIDENCE = {
                        "615 + within-race readings), Brier skill vs market +0.0036, beyond the seed floor.",
     "Rank fix": "Iteration 41: -0.0000 with the four originals withheld: the trees had worked round the defect. "
                 "Hygiene for the next engine rebuild.",
+    "Bookings": "Iteration 43: -0.0027 (-0.0044 to -0.0011), neither half resolves, no Brier gain; iteration 44 "
+                "(with the newer within-race readings): -0.0028. Weak: one served-recipe arm at most.",
+    "Comments": "Iteration 45 screens it (quick recipe): trouble, slow starts, keenness, a kind ride, a fade, in the "
+                "last run and the last 3 and 6.",
+    "Within-race readings (newer blocks)": "Iteration 44: +0.0007 (-0.0009 to +0.0022), the outsiders worse: the "
+                                           "trees already read these measures against the field. Retired.",
     "Draw v2": "Iteration 35: -0.0004 (-0.0021 to +0.0010): nothing, alone or on top of the within-race readings.",
     "Pace v2": "Iteration 35: +0.0009 (-0.0004 to +0.0026): nothing; the outsiders' error worse.",
     "Shape and draw (old)": "Iterations 18 and 25: no gain to the price forecast (-0.0000), a little concordance lost. "
@@ -456,18 +466,69 @@ def _metric(x: str) -> str:
     return METRIC.get(x, x)
 
 
+def _upper_first(d: str) -> str:
+    """Capitalise a description's first letter only (str.capitalize lower-cases BSP, NFP, OR)."""
+    return d[:1].upper() + d[1:]
+
+
 def _lower_first(d: str) -> str:
     """Lower-case a description's first letter unless it opens with an acronym (RSI, NFP, OR)."""
     first = d.split(" ", 1)[0]
     return d if len(first) > 1 and first[:2].isupper() else d[:1].lower() + d[1:]
 
 
+COMMENT_CLASS = {
+    "trouble": "trouble in running (hampered, no clear run, checked)", "switched": "switched to find room",
+    "slow_start": "a slow start (slowly away, dwelt)", "keen": "racing keen", "wide": "racing wide",
+    "finished_well": "running on late", "tender": "a kind ride or greenness (eased, not knocked about)",
+    "weakened": "weakening (faded, no extra)", "no_finish": "not finishing (pulled up, fell, unseated)",
+    "problem": "a physical problem (lost action, bled, lost a shoe)", "easy_win": "an easy win",
+    "excuse": "any excuse (trouble, slow start, keen, wide or a problem)",
+}
+CM_WINDOW = {"lr": "in the last run", "l3": "share of the last 3 runs", "l6": "share of the last 6 runs"}
+EXPLICIT_BLOCKS = {
+    "cm_excuse_close": "An excuse last time and beaten 5 lengths or less",
+    "cm_excuse_nfp": "An excuse last time x its normalised finishing position",
+    "cm_noexcuse_poor": "No excuse last time and in the bottom half of the field",
+    "cm_tender_close": "A kind ride last time and beaten 5 lengths or less",
+    "cm_finished_well_nfp": "Ran on last time x its normalised finishing position",
+    "cm_easy_win": "Won easily last time",
+    "cm_runs_since_trouble": "Runs since the last one with trouble in running",
+    "cm_runs_since_excuse": "Runs since the last one with an excuse",
+    "bk_jk_mkt": "Jockey's rides as the market rated them (decayed, shrunk to 0)",
+    "bk_jk_upgrade": "Today's jockey against the jockeys of the horse's last three runs, as the market rated them",
+    "bk_jk_same": "Today's jockey rode the last run",
+    "bk_jk_rides_on_horse": "Earlier rides of this horse by today's jockey",
+    "bk_tr_mkt": "Trainer's runners as the market rated them (decayed, shrunk to 0)",
+    "bk_tr_mkt_trend": "Trainer's runners as the market rated them over the last fortnight, less the long view",
+    "h2h_rivals_met": "Today's rivals met before", "h2h_meetings": "Earlier meetings with today's rivals",
+    "h2h_win_share": "Share of meetings with today's rivals finished ahead (shrunk to a half)",
+    "h2h_net": "Meetings with today's rivals finished ahead less behind",
+    "h2h_lbs": "Pounds ahead of today's rivals over earlier meetings (shrunk to 0)",
+    "h2h_last_lbs": "Pounds ahead of today's rivals at the latest meeting",
+    "h2h_last_net": "Rivals ahead of less behind at the latest meeting",
+}
+RR_PREFIX = {"rr": "Within-race reading", "rw": "Wide within-race reading", "rn": "Within-race reading (newer blocks)"}
+
+
 def describe(f: str, group: str = "") -> str:
     if f in EXPLICIT:
         return EXPLICIT[f]
+    if f in EXPLICIT_BLOCKS:
+        return EXPLICIT_BLOCKS[f]
+    m = re.fullmatch(r"cm_(lr|l3|l6)_([a-z_]+)", f)
+    if m and m.group(2) in COMMENT_CLASS:
+        return f"In-running comment: {COMMENT_CLASS[m.group(2)]}, {CM_WINDOW[m.group(1)]} (earlier days)"
+    m = re.fullmatch(r"(rr|rw|rn)_(\w+)_(z|gap)", f)
+    if m:
+        how = "z-score against today's field" if m.group(3) == "z" else "gap to the best in today's field"
+        return f"{RR_PREFIX[m.group(1)]}, {how}: {_lower_first(describe(m.group(2)))}"
+    m = re.fullmatch(r"rfix_(\w+)", f)
+    if m:
+        return f"Within-race rank of {m.group(1)}, lowest first, missing last"
     m = re.fullmatch(r"fw_([a-z]+)_(car|l1|m3|m5|w3|w5|w10)", f)
     if m:
-        return f"{FW_MEASURE.get(m.group(1), m.group(1)).capitalize()}: {FW_WINDOW[m.group(2)]} (earlier days only)"
+        return f"{_upper_first(FW_MEASURE.get(m.group(1), m.group(1)))}: {FW_WINDOW[m.group(2)]} (earlier days only)"
     m = re.fullmatch(r"fw_perf_(l1|w5|car)_vs_or", f)
     if m:
         return f"Performance figure ({FW_WINDOW[m.group(1)]}) less today's official rating (+ = well in)"
@@ -491,11 +552,11 @@ def describe(f: str, group: str = "") -> str:
     m = re.fullmatch(r"LR(\d?)_(EPF\d?)", f)
     if m:
         n = m.group(1)
-        return f"{_metric(m.group(2)).capitalize()} in the {'last' if not n else ('%s-back' % n)} run"
+        return f"{_upper_first(_metric(m.group(2)))} in the {'last' if not n else ('%s-back' % n)} run"
     m = re.fullmatch(r"(LR\d*_)?(\w+?)_?(RSR|LB)", f)
     if m and f.startswith(("LR", "preracehorse")):
         n = re.match(r"LR(\d*)", f).group(1)
-        return f"{_metric(m.group(3)).capitalize()}: {'last run' if not n else 'mean of the last %s runs' % n}"
+        return f"{_upper_first(_metric(m.group(3)))}: {'last run' if not n else 'mean of the last %s runs' % n}"
     m = re.fullmatch(r"EXP_(NFP|RB|ORR2)(\d+)", f)
     if m:
         return f"Exponentially decayed (0.85) mean {_metric(m.group(1))}, last {m.group(2)} runs"
