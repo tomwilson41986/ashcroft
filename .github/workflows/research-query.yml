@@ -11,6 +11,7 @@ on:
     paths:
       - 'research/queries/**'
       - '.github/workflows/research-query.yml'
+      - '.github/workflows/research-query.yml'
 
 permissions:
   contents: read
@@ -51,6 +52,8 @@ jobs:
           PRED_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           PRED_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
         run: |
+          # no pending query (all moved to done/) must run nothing, not a file named '*'
+          shopt -s nullglob
           mkdir -p out
           for q in research/queries/*.py; do
             name=$(basename "$q" .py)
@@ -64,5 +67,6 @@ jobs:
         with:
           name: research-query-${{ github.run_number }}
           path: out/
+          if-no-files-found: ignore
           # snapshots kept long enough for the forward revision test
           retention-days: 90
