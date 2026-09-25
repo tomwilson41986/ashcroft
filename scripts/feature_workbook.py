@@ -17,6 +17,7 @@ is current whenever it is re-run. Sheets:
 from __future__ import annotations
 
 import argparse
+import importlib
 import re
 import sys
 from pathlib import Path
@@ -89,7 +90,21 @@ GROUPS = {
                                "model/intent_features.py"),
     "SERVED_FRESHNESS_FEATURES": ("Freshness", "Days since the last run, in context",
                                   "model/freshness_features.py"),
+    "SERVED_FORM_WINDOW_FEATURES": ("Form windows", "Every measure over seven windows", "model/form_windows.py"),
 }
+
+#: Drop-in blocks (model/blocks/): (module, block label, group, status)
+DROP_IN = [
+    ("form_variants", "Form variants", "NFP and lengths beaten in every variant", "candidate"),
+    ("race_relative", "Within-race readings", "Strongest form measures against this field", "candidate"),
+    ("race_relative_wide", "Wide within-race readings", "Every ranked input as a distance from this field",
+     "candidate"),
+    ("time_figure", "Time figure", "The horse's own time against standard, going-adjusted", "candidate"),
+    ("exposure", "Exposure", "Exposure, improvement, and what horses like it went on to do", "candidate"),
+    ("shrunk_rates", "Shrunk records", "Small-sample records pulled toward the level above", "built"),
+    ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
+    ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
+]
 
 BLOCK_EVIDENCE = {
     "Custom metrics": "The 19 proprietary metrics and their ranks (the original model). Within-race ranks carry about "
@@ -103,10 +118,24 @@ BLOCK_EVIDENCE = {
                           "served): -0.0085, Brier skill vs market +0.0013. Served from 25 Sep.",
     "Freshness": "Iteration 26: -0.0049, Brier skill vs market +0.0010 (resolved); leak probe clean. Served from 25 Sep.",
     "Form windows": "Iteration 29: -0.0073 on the 535 (rank 1 -0.0092), Brier skill vs market +0.0022 (resolved), "
-                    "early-price rule +6.01% -> +6.50%; leak probe clean. Promotion waits on iteration 32.",
-    "Shape form (shape/draw remodel)": "Iteration 30: -0.0051 on the 535, Brier skill vs market +0.0018 (resolved), "
-                                       "early-price rule +5.80% -> +6.91%; leak probe clean. Promotion waits on "
-                                       "iteration 32.",
+                    "early-price rule +6.01% -> +6.50%; iteration 32 (with shape form, 6000 rounds): -0.0128, Brier "
+                    "skill +0.0032 (resolved); leak probe clean. Served from 26 Sep (the 615).",
+    "Shape form (shape/draw remodel)": "Iteration 30: -0.0051 on the 535, Brier skill vs market +0.0018 (resolved); "
+                                       "iteration 34: -0.0001 on top of the form windows, which carry what it found. "
+                                       "Not served.",
+    "Form variants": "Iteration 34: -0.0021 (-0.0037 to -0.0006) beyond the form windows, rank 1 -0.0046. Iteration "
+                     "36 confirms on the served recipe at 6000 rounds.",
+    "Within-race readings": "Iteration 35: -0.0074 (-0.0092 to -0.0057), every rank band resolved (Lessmann, Sung "
+                            "and Johnson 2009, eq. 14). Iteration 36 confirms on the served recipe.",
+    "Wide within-race readings": "Iteration 37: -0.0012 alone (unresolved); with the time figure and exposure "
+                                 "-0.0038 (resolved). Iteration 39 measures the seed floor before it goes further.",
+    "Time figure": "Iteration 37: -0.0005 alone, ranks 1-3 better and outsiders worse; Brier skill vs market "
+                   "+0.0021 and concordance +0.0035 (both resolved). Part of iteration 37's -0.0038.",
+    "Exposure": "Iteration 37: -0.0003 alone; part of iteration 37's -0.0038 with the time figure and wide readings.",
+    "Shrunk records": "Iteration 38: -0.00002 on the price; the trainer and jockey cells move Brier skill vs market "
+                      "+0.0025 (resolved).",
+    "Draw v2": "Iteration 35: -0.0004 (-0.0021 to +0.0010): nothing, alone or on top of the within-race readings.",
+    "Pace v2": "Iteration 35: +0.0009 (-0.0004 to +0.0026): nothing; the outsiders' error worse.",
     "Shape and draw (old)": "Iterations 18 and 25: no gain to the price forecast (-0.0000), a little concordance lost. "
                             "Built by the engine, not served; the inputs shape form reads.",
     "Intent (card-unsafe)": "The 06:00 card cannot know these (a gelding since the last run; the jockey or claim as "
@@ -499,9 +528,6 @@ NOT_BUILT = [
      "Available", "Not built", "Medium"),
     ("B4", "Closing-sectional proxy", "Form", "Speed over the final furlongs", "Not available",
      "No sectional or per-horse times in the data", "Blocked"),
-    ("A1-A4", "Per-horse speed figures", "Speed", "Speed from the horse's own time, going-adjusted, best, trend",
-     "Not available", "comptime_numeric is the race's winning time, so RSR rates the race, not the horse. "
-     "The horse's time can be derived as winning time + lengths beaten x seconds per length.", "High"),
     ("D2", "Headgear type flags", "Equipment", "One flag per headgear item (blinkers, visor, cheekpieces, hood, tongue-tie)",
      "Available", "Partial: one category column", "Low"),
     ("D3", "Form with / without headgear", "Equipment", "The horse's form when wearing today's headgear vs without",
@@ -559,12 +585,20 @@ NOT_BUILT = [
      "Builds on shape form", "Medium"),
     ("N8", "Model hyperparameters", "Recipe", "Leaves, learning rate, min child samples at the 6000-round cap",
      "n/a", "Iteration 31: the recipe was under-fitted at 3000 rounds", "High"),
-    ("X1", "Fix: track_draw_bias", "Defect", "Blank on every row (draw_metrics.py:643)", "n/a", "Zero gain; fix or drop",
-     "Low"),
+    ("X1", "Fix: track_draw_bias", "Defect", "Blank on every row (draw_metrics.py:643)", "n/a",
+     "Zero gain; fix or drop. Its code shifts by row within the track, not by day: filled, it would read earlier "
+     "races on the same day", "Low"),
     ("X2", "Fix: FCS without official ratings", "Defect", "FCS is 0 when today's race has no ratings", "n/a",
      "custom_metrics.py:656", "Low"),
     ("X3", "Fix: duplicate columns", "Defect", "RB = NFP (9), WOA = WAX (7), OFS = ORR2 (7), racepacescore = RPS (1)",
-     "n/a", "Harmless to accuracy; splits importance readings", "Low"),
+     "n/a", "Harmless to accuracy; splits importance readings. WOA needs the owner's definition of the average it "
+     "is measured against (reports/metric_audit.md)", "Low"),
+    ("X4", "Fix: rank direction for missing values", "Defect",
+     "rLB, rConsistency, rDistApt, rGoingPref rank highest first with missing values last, which for a "
+     "lower-is-better measure puts a runner with no figure beside the best", "n/a",
+     "reports/metric_audit.md; the wide within-race readings read the four sources without the defect", "Medium"),
+    ("X5", "Fix: void races read as non-finishes", "Defect", "154 VOI rows count as a run that did not finish", "n/a",
+     "reports/metric_audit.md", "Low"),
     ("M1", "The rest of the racing2 master framework", "Research",
      "RESEARCH_FRAMEWORK.md s14 counted 277 items: 75 implemented, 80 partial, 122 missing", "Mixed",
      "The framework document is not in the repository, so the items cannot be listed one by one", "Review"),
@@ -589,8 +623,11 @@ def feature_rows(importance: pd.DataFrame) -> list[dict]:
             rows.append(dict(feature=f, block=block, group=group, module=module, status=SERVED, gain=gain.get(f),
                              card_safe=card_safe(f), constant=g))
     extra = [(FORM_WINDOW_FEATURES, "Form windows", "Every measure over seven windows", "model/form_windows.py",
-              CANDIDATE),
-             (SHAPE_FORM_FEATURES, "Shape form (shape/draw remodel)", "Past runs read against pace and draw; "
+              CANDIDATE)]
+    for mod, label, group, status in DROP_IN:
+        cols = importlib.import_module(f"model.blocks.{mod}").FEATURES
+        extra.append((cols, label, group, f"model/blocks/{mod}.py", CANDIDATE if status == "candidate" else BUILT))
+    extra += [(SHAPE_FORM_FEATURES, "Shape form (shape/draw remodel)", "Past runs read against pace and draw; "
               "speed drawn near; market misses", "model/shape_form.py", CANDIDATE),
              (B.SHAPE_DRAW_FEATURES, "Shape and draw (old)", "Run style, race shape, position value, draw curves",
               "model/race_shape.py, model/draw_curve.py", BUILT),

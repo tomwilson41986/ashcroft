@@ -257,6 +257,40 @@ QUICK_ROUNDS = 1000
 RECIPES = {"served": ({}, 3000), "quick": (QUICK_PARAMS, QUICK_ROUNDS)}
 
 
+def parse_param_overrides(items: list[str] | None) -> dict:
+    """LightGBM overrides from the command line: ["num_leaves=255", "min_child_samples=20"].
+
+    Values are read as int, then float, then left as text, so a recipe iteration
+    can move any setting without a flag of its own. A setting the model family
+    does not have is refused rather than passed to LightGBM to ignore."""
+    out: dict = {}
+    for item in items or []:
+        key, sep, raw = item.partition("=")
+        key = key.strip()
+        if not sep or not key or not raw.strip():
+            raise ValueError(f"--param wants KEY=VALUE, got {item!r}")
+        if key not in DEFAULT_PARAMS and key not in QUICK_PARAMS and key not in _EXTRA_PARAMS:
+            raise ValueError(f"--param {key!r} is not a setting of this model family")
+        raw = raw.strip()
+        if raw.lower() in ("true", "false"):
+            out[key] = raw.lower() == "true"
+            continue
+        for cast in (int, float):
+            try:
+                out[key] = cast(raw)
+                break
+            except ValueError:
+                continue
+        else:
+            out[key] = raw
+    return out
+
+
+#: Settings a recipe iteration may add that the defaults leave to LightGBM.
+_EXTRA_PARAMS = {"max_depth", "min_sum_hessian_in_leaf", "min_gain_to_split", "extra_trees", "path_smooth",
+                 "max_bin", "cat_smooth", "cat_l2", "feature_fraction_bynode"}
+
+
 def profit_weighted_objective(preds, train_data):
     """Asymmetric, price-weighted loss in log space.
 

@@ -52,6 +52,7 @@ from model.bfsp_model import (
     build_target,
     fit_bfsp,
     invert_target,
+    parse_param_overrides,
     predict_prices,
     profit_weighted_metric,
     profit_weighted_objective,
@@ -996,6 +997,11 @@ def main():
         help="Number of leaves (default: 127)",
     )
     parser.add_argument(
+        "--param", action="append", default=None, metavar="KEY=VALUE",
+        help="Any other LightGBM setting, e.g. --param min_child_samples=20 (repeatable): "
+             "serve the recipe a research-loop iteration chose",
+    )
+    parser.add_argument(
         "--num-boost-round", type=int, default=3000,
         help="Boosting rounds cap; early stopping on the holdout picks the count "
              "the published refit uses (default: 3000)",
@@ -1250,6 +1256,7 @@ def main():
         # Override params from CLI
         params["learning_rate"] = args.learning_rate
         params["num_leaves"] = args.num_leaves
+        params.update(parse_param_overrides(args.param))
 
     # Train
     cfg = TrainConfig(

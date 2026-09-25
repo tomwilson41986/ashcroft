@@ -128,7 +128,7 @@ def _readme(ws, df: pd.DataFrame, meta: dict, day: str, note: str) -> None:
         ("Trained through", meta.get("trained_through")),
         ("Boosting rounds", meta.get("best_iteration")),
         ("Target", meta.get("target")),
-        ("Feature list hash", meta.get("feature_hash")),
+        ("Feature code hash", meta.get("feature_code_hash") or meta.get("feature_hash")),
         (None, None),
         ("How to read it", None),
         ("Predicted BSP", "The model's forecast of the Betfair Starting Price, from pre-race information only. "

@@ -43,6 +43,7 @@ from model.bfsp_model import (
     all_nan_columns,
     fit_bfsp,
     fold_masks,
+    parse_param_overrides,
     predict_prices,
     resolve_feature_columns,
 )
@@ -824,6 +825,11 @@ def main():
         help="LightGBM learning rate (default: the recipe's; served 0.03, quick 0.1)",
     )
     parser.add_argument(
+        "--param", action="append", default=None, metavar="KEY=VALUE",
+        help="Any other LightGBM setting on top of the recipe, e.g. --param num_leaves=255 "
+             "--param min_child_samples=20 (repeatable; a recipe iteration)",
+    )
+    parser.add_argument(
         "--fold", type=int, default=None, metavar="K",
         help="Fit and score only the K-th scored fold of the schedule (0-based, after "
              "--eval-from/--eval-until), keeping its index. The parallel research loop "
@@ -901,7 +907,7 @@ def main():
 
     # The recipe. Built before the data, so the fold plan can use its purge.
     recipe_params, recipe_rounds = RECIPES[args.recipe]
-    params = {**DEFAULT_PARAMS, **recipe_params}
+    params = {**DEFAULT_PARAMS, **recipe_params, **parse_param_overrides(args.param)}
     if args.learning_rate:
         params["learning_rate"] = args.learning_rate
     cfg = TrainConfig(

@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 
 import evaluate_oos
-from model.bfsp_model import DEFAULT_PARAMS, QUICK_PARAMS, RECIPES, TrainConfig
+from model.bfsp_model import DEFAULT_PARAMS, QUICK_PARAMS, RECIPES, TrainConfig, parse_param_overrides
 from scripts import research_loop as rl
 
 
@@ -226,3 +226,17 @@ def test_the_summary_table_reads_the_decision():
     t = rl.summary_table([("fv", row), ("x", {**row, "replaces": False, "rank1_delta": None})])
     assert "| fv | -0.0066 (-0.0082 to -0.0050) | -0.0104 |" in t and "**replaces the base**" in t
     assert "| x |" in t and "base stands" in t
+
+
+def test_a_recipe_iteration_can_move_any_setting_and_only_real_ones():
+    assert parse_param_overrides(None) == {}
+    got = parse_param_overrides(["num_leaves=255", "min_child_samples=20", "feature_fraction=0.7",
+                                 "extra_trees=true"])
+    assert got == {"num_leaves": 255, "min_child_samples": 20, "feature_fraction": 0.7, "extra_trees": True}
+    assert isinstance(got["num_leaves"], int) and isinstance(got["feature_fraction"], float)
+    for bad in (["num_leaves"], ["=3"], ["num_leaves="], ["num_leafs=255"]):
+        with pytest.raises(ValueError):
+            parse_param_overrides(bad)
+    # the override reaches the fit's parameters, on top of the recipe
+    cfg = TrainConfig(params={**DEFAULT_PARAMS, **QUICK_PARAMS, **parse_param_overrides(["num_leaves=31"])})
+    assert cfg.params["num_leaves"] == 31 and cfg.params["learning_rate"] == QUICK_PARAMS["learning_rate"]
