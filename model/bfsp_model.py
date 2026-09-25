@@ -368,6 +368,13 @@ class TrainConfig:
     num_boost_round: int = 3000
     early_stopping_rounds: int = 100
 
+    #: Fit once, on the whole window, at exactly this many rounds: no
+    #: early-stopping fit first. The published model's round count is already
+    #: known from the walk-forward evaluation (its fits stop at or near the
+    #: cap), so choosing it again on a holdout doubled the training time to
+    #: arrive at the same number. None keeps the holdout-then-refit protocol.
+    fixed_rounds: int | None = None
+
     #: Refit on the whole training window at the chosen iteration count once
     #: early stopping has picked it. True for the published model, False per
     #: evaluation fold (one fit, and the fold is what is being measured).
@@ -539,9 +546,6 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
             reference=ref, categorical_feature=cat or "auto",
         )
 
-    fit_set = _ds(~is_holdout)
-    hold_set = _ds(is_holdout, ref=fit_set)
-
     params = dict(cfg.params)
     feval = None
     if cfg.objective == "profit_weighted":
@@ -551,6 +555,28 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         # A custom fobj turns off boost_from_average, so the fit starts at 0 in
         # log space and spends its first rounds travelling to the mean.
         params["boost_from_average"] = False
+
+    if cfg.fixed_rounds:
+        # One fit on everything at a count chosen elsewhere (the walk-forward
+        # evaluation). The holdout rows are in the fit, so their error is
+        # in-sample and recorded as such.
+        full = _ds(np.ones(len(d), dtype=bool))
+        booster = lgb.train(params, full, num_boost_round=int(cfg.fixed_rounds), feval=feval,
+                            callbacks=[lgb.log_evaluation(period=0)])
+        del full
+        gc.collect()
+        hp = booster.predict(d.loc[is_holdout, feature_cols].astype(float)) + init_offset
+        hy = y[is_holdout]
+        return FitResult(
+            booster=booster, best_iteration=int(cfg.fixed_rounds), holdout_start=holdout_start,
+            holdout_metrics={"n": int(is_holdout.sum()), "mae": float(np.mean(np.abs(hp - hy))),
+                             "rmse": float(np.sqrt(np.mean((hp - hy) ** 2))), "in_sample": True},
+            n_train=int(len(d)), n_holdout=int(is_holdout.sum()), refit=True,
+            early_stopped=False, init_offset=init_offset,
+        )
+
+    fit_set = _ds(~is_holdout)
+    hold_set = _ds(is_holdout, ref=fit_set)
 
     booster = lgb.train(
         params, fit_set,

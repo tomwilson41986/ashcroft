@@ -211,8 +211,13 @@ class BFSPTrainer:
         gp_draw_surface: bool = False,
         cfg: TrainConfig | None = None,
         wf_folds: int = 0,
+        prob_model: bool = True,
     ):
         self.wf_folds = int(wf_folds)
+        #: The Benter stage-2 win model. Nothing served loads it (the train
+        #: workflow neither commits nor uploads it) and it costs about eight
+        #: minutes, so the fast path turns it off.
+        self.fit_prob_model = bool(prob_model)
         self.min_train_days = min_train_days
         self.val_window_days = val_window_days
         self.step_days = step_days
@@ -236,19 +241,25 @@ class BFSPTrainer:
         self.model: lgb.Booster | None = None
         self.feature_cols: list[str] = []
 
-    def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Full data preparation: custom metrics + context features + target."""
-        log.info("Calculating all custom metrics...")
-        df = self.metrics_engine.calculate_all(df)
-        log.info(f"  Custom metrics done: {len(df.columns)} columns")
+    def prepare_data(self, df: pd.DataFrame, prepared: bool = False) -> pd.DataFrame:
+        """Full data preparation: custom metrics + context features + target.
 
-        log.info("Building context features...")
-        df = build_context_features(df)
+        `prepared`: `df` is already the feature matrix (evaluate_oos.
+        build_feature_frame, as the feature cache stores it: the same engine,
+        context features and price filter), so only the feature columns are
+        chosen here."""
+        if not prepared:
+            log.info("Calculating all custom metrics...")
+            df = self.metrics_engine.calculate_all(df)
+            log.info(f"  Custom metrics done: {len(df.columns)} columns")
 
-        # Target: log(BFSP)
-        df["bfsp"] = pd.to_numeric(df["bfsp"], errors="coerce")
-        df = df[df["bfsp"].notna() & (df["bfsp"] > 1.0)].copy()
-        df["log_bfsp"] = np.log(df["bfsp"])
+            log.info("Building context features...")
+            df = build_context_features(df)
+
+            # Target: log(BFSP)
+            df["bfsp"] = pd.to_numeric(df["bfsp"], errors="coerce")
+            df = df[df["bfsp"].notna() & (df["bfsp"] > 1.0)].copy()
+            df["log_bfsp"] = np.log(df["bfsp"])
 
         # Determine available feature columns (+ any opt-in extra blocks)
         available = [c for c in list(ALL_FEATURE_COLS) + EXTRA_FEATURE_COLS if c in df.columns]
@@ -329,6 +340,7 @@ class BFSPTrainer:
         self,
         df: pd.DataFrame,
         output_dir: str = MODEL_DIR,
+        prepared: bool = False,
     ) -> dict:
         """Full training pipeline with walk-forward validation.
 
@@ -339,7 +351,7 @@ class BFSPTrainer:
         4. Save model artifacts and evaluation report
         """
         # Step 1: Prepare data
-        df = self.prepare_data(df)
+        df = self.prepare_data(df, prepared=prepared)
         log.info(f"Prepared {len(df):,} rows with valid BFSP")
 
         if len(df) < 200:
@@ -573,7 +585,7 @@ class BFSPTrainer:
         # Step 6: Train win probability model (Benter Stage 2)
         self.prob_model = None
         self.blender = None
-        if "won" in df.columns:
+        if "won" in df.columns and self.fit_prob_model:
             from model.benter_blend import BenterBlender
             from model.probability_model import FundamentalModel
 
@@ -954,6 +966,24 @@ def main():
              "the published refit uses (default: 3000)",
     )
     parser.add_argument(
+        "--fixed-rounds", type=int, default=None, metavar="N",
+        help="Fit once on the whole window at exactly N rounds, skipping the "
+             "early-stopping fit (half the fitting time). Take N from the "
+             "walk-forward evaluation of the same recipe",
+    )
+    parser.add_argument(
+        "--feature-cache", default=None, metavar="DIR",
+        help="Load the feature matrix from the cache evaluate_oos.py and the research "
+             "loop build (the same engine, context features and price filter; the key "
+             "covers the feature code and the data), building and storing it on a "
+             "miss. Skips the 15-minute build when the matrix is already there",
+    )
+    parser.add_argument(
+        "--skip-prob-model", action="store_true",
+        help="Do not fit the Benter stage-2 win model: nothing served loads it, "
+             "and it costs about eight minutes",
+    )
+    parser.add_argument(
         "--start-date", type=str, default=None,
         help="Only load data from this date onward (YYYY-MM-DD). "
              "Reduces memory usage for large databases.",
@@ -1066,9 +1096,28 @@ def main():
             print("  --db <path>       Specify database path")
             sys.exit(1)
 
-    # Load data
-    log.info("Loading data...")
-    df = load_data(args.db, start_date=args.start_date)
+    if args.feature_cache:
+        # The matrix the evaluation measured, not a second build of it: the
+        # same builder, the same key. The opt-in research blocks are added to
+        # the raw rows before the engine and the cache holds none of them.
+        optin = [f for f in ("gp_draw", "pedigree_features", "connection_features", "odds_features",
+                             "perf_features", "market_features", "blandford_features", "abm_features")
+                 if getattr(args, f, False)]
+        if optin:
+            raise SystemExit(f"--feature-cache cannot carry the opt-in blocks {optin}; drop one or the other")
+        from evaluate_oos import build_feature_frame
+        from model import feature_cache
+        df, info = feature_cache.build_or_load(
+            lambda: build_feature_frame(args.db, args.start_date), args.db,
+            start_date=args.start_date, cache_dir=args.feature_cache)
+        log.info("Feature matrix %s: %s rows x %s columns",
+                 "from the cache" if info.get("cached") else "built", f"{len(df):,}", f"{len(df.columns):,}")
+        prepared = True
+    else:
+        # Load data
+        log.info("Loading data...")
+        df = load_data(args.db, start_date=args.start_date)
+        prepared = False
 
     # Opt-in research feature blocks (RESEARCH_FRAMEWORK.md)
     if getattr(args, "gp_draw", False):
@@ -1166,6 +1215,7 @@ def main():
         seed=args.seed,
         params=params,
         num_boost_round=args.num_boost_round,
+        fixed_rounds=args.fixed_rounds,
     )
     log.info("Training recipe: objective=%s target=%s decay=%.2f holdout=%dd "
              "purge=%dd seed=%d", cfg.objective, cfg.target, cfg.decay_rate,
@@ -1178,9 +1228,10 @@ def main():
         gp_draw_surface=getattr(args, "gp_draw", False),
         cfg=cfg,
         wf_folds=args.wf_folds,
+        prob_model=not args.skip_prob_model,
     )
 
-    summary = trainer.train(df, output_dir=args.output_dir)
+    summary = trainer.train(df, output_dir=args.output_dir, prepared=prepared)
 
     if "error" not in summary:
         print(f"\n  Model saved to: {args.output_dir}")
