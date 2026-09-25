@@ -69,6 +69,10 @@ FEATURES = (
 #: A run's own readings, kept for inspection by nothing: the block drops them.
 POST_RACE: set[str] = set()
 
+#: Every column build() reads (the live path copies only these).
+READS = ["raceid", "race_date", "race_time", "track", "horse_name", "trainer", "number_of_runners",
+         "placing_numerical", "LB", "total_dst_bt", "dist_furlongs"]
+
 MEAN_WINDOWS = (3, 5, 10)
 WEIGHTED = 5
 

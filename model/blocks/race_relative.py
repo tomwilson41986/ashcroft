@@ -35,6 +35,9 @@ BASE = [
 ]
 FEATURES = [f"rr_{m}_{k}" for m in BASE for k in ("z", "gap")]
 POST_RACE: set[str] = set()
+#: Every column build() reads, and the engine blocks that make some of them.
+READS = ["raceid", "race_date", "race_time", "track"] + BASE
+ENGINE = ("form_windows", "freshness")
 
 
 def build(df: pd.DataFrame) -> pd.DataFrame:

@@ -830,6 +830,9 @@ class BFSPTrainer:
                 for r in importance_df.head(20).itertuples()
             ] if len(importance_df) else [],
         )
+        # for the record: the live path finds these from the feature names itself
+        from model import blocks as drop_in
+        meta["drop_in_blocks"] = drop_in.used_by(self.feature_cols)
         assert_meta_is_servable(meta)
         meta_path = os.path.join(output_dir, "bfsp_model_meta.json")
         with open(meta_path, "w") as f:
@@ -920,6 +923,38 @@ class BFSPTrainer:
 # CLI
 # ---------------------------------------------------------------------------
 
+def attach_training_blocks(df: pd.DataFrame, spec: str) -> tuple[pd.DataFrame, list[str]]:
+    """--blocks: what to train on beyond the served list, from the cached matrix.
+
+    Engine blocks the matrix carries but the served list leaves out
+    (model/bfsp_features.py RESEARCH_BLOCKS: shape_form, shape_draw) and
+    drop-in blocks (model/blocks), the latter built as the live path will build
+    them (`blocks.attach_as_trained`), so the model is served the computation it
+    was evaluated and trained on. Returns the frame and the features, in order."""
+    from model import blocks as drop_in
+    from model.bfsp_features import PRODUCTION_BLOCKS, RESEARCH_BLOCKS
+    names = [b.strip() for b in (spec or "").split(",") if b.strip()]
+    cols: list[str] = []
+    late: list[str] = []
+    for b in names:
+        if b in PRODUCTION_BLOCKS and b not in RESEARCH_BLOCKS:
+            raise SystemExit(f"{b} is served: its features are in the production list already")
+        if b in RESEARCH_BLOCKS:
+            absent = [c for c in RESEARCH_BLOCKS[b] if c not in df.columns]
+            if absent:
+                raise SystemExit(f"{b}: {len(absent)} columns not in the matrix ({absent[:3]}...)")
+            cols += list(RESEARCH_BLOCKS[b])
+        elif b in drop_in.names():
+            late.append(b)
+        else:
+            raise SystemExit(f"unknown block {b!r} ({', '.join(RESEARCH_BLOCKS)} or a drop-in block: "
+                             f"{', '.join(drop_in.names())})")
+    if late:
+        df, added = drop_in.attach_as_trained(df, late)
+        cols += added
+    return df, list(dict.fromkeys(cols))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Train BFSP prediction model using all custom metrics"
@@ -977,6 +1012,13 @@ def main():
              "loop build (the same engine, context features and price filter; the key "
              "covers the feature code and the data), building and storing it on a "
              "miss. Skips the 15-minute build when the matrix is already there",
+    )
+    parser.add_argument(
+        "--blocks", default="", metavar="BLOCKS",
+        help="With --feature-cache: train on these beyond the served list -- engine blocks the "
+             "matrix carries (shape_form, shape_draw) and drop-in blocks (model/blocks), built "
+             "as the live path builds them. The model's feature list then names them, and the "
+             "live path builds what it names",
     )
     parser.add_argument(
         "--skip-prob-model", action="store_true",
@@ -1113,7 +1155,13 @@ def main():
         log.info("Feature matrix %s: %s rows x %s columns",
                  "from the cache" if info.get("cached") else "built", f"{len(df):,}", f"{len(df.columns):,}")
         prepared = True
+        if args.blocks:
+            df, block_cols = attach_training_blocks(df, args.blocks)
+            EXTRA_FEATURE_COLS.extend(block_cols)
+            log.info("Blocks %s: %d features beyond the served list", args.blocks, len(block_cols))
     else:
+        if args.blocks:
+            raise SystemExit("--blocks trains on the cached matrix: add --feature-cache DIR")
         # Load data
         log.info("Loading data...")
         df = load_data(args.db, start_date=args.start_date)

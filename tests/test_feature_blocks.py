@@ -160,3 +160,30 @@ def test_the_row_order_does_not_matter(name, engine_frames):
     shuffled = frame.sample(frac=1.0, random_state=3).reset_index(drop=True)
     b = _block_on(shuffled, name)
     pd.testing.assert_frame_equal(a, b, check_exact=False, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("name", [n for n in BLOCKS if getattr(blocks.load(n), "READS", None) is not None])
+def test_reads_names_every_column_the_block_reads(name, engine_frames):
+    """The live path copies only a block's READS; built on those alone it must give
+    exactly what it gives on the whole frame (a column read but not declared comes
+    back as NaN or a KeyError, and fails here)."""
+    mod = blocks.load(name)
+    frame, _ = blocks.attach(engine_frames["base"].copy(), list(getattr(mod, "AFTER", ())))
+    assert all(c in frame.columns for c in mod.READS), [c for c in mod.READS if c not in frame.columns]
+    full = mod.build(frame.copy())
+    narrow = mod.build(frame[list(dict.fromkeys(mod.READS))].copy())
+    for c in mod.FEATURES:
+        np.testing.assert_array_equal(pd.to_numeric(full[c]).to_numpy(float),
+                                      pd.to_numeric(narrow[c]).to_numpy(float), err_msg=c)
+
+
+@pytest.mark.parametrize("name", BLOCKS)
+def test_what_a_block_declares_for_serving_is_real(name):
+    """ENGINE names engine flags, AFTER names blocks: a typo would leave the live
+    path building a block on columns nobody made."""
+    import inspect
+    from model.custom_metrics import CustomMetricsEngine as E
+    mod = blocks.load(name)
+    flags = set(inspect.signature(E.__init__).parameters) - {"self"}
+    assert set(getattr(mod, "ENGINE", ())) <= flags
+    assert set(getattr(mod, "AFTER", ())) <= set(BLOCKS) - {name}

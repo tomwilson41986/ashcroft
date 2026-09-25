@@ -13,11 +13,13 @@ This is the gate in between. It fails (exit 1) unless:
    input, a recorded objective and target), and the booster reads exactly the
    features its metadata lists;
 2. the live path builds every feature it reads: each engine block with a feature
-   in the model is switched on by `blocks_needed`, and no feature comes from a
-   drop-in block (model/blocks), which the live engine does not build;
+   in the model is switched on by `blocks_needed`, and each drop-in block
+   (model/blocks) it reads is one the live path builds (`blocks.used_by`), from
+   engine blocks it can switch on (the block's ENGINE);
 3. on the matrix's last days it prices every runner (finite, positive) with a
    book of 1 in every race, and its log prices correlate with the served
-   model's at 0.9 or better. The new model has seen these days, so this is a
+   model's at 0.9 or better. Drop-in blocks are built on the matrix as the
+   live path builds them (`blocks.attach_as_trained`). The new model has seen these days, so this is a
    test that it is sane, not that it is better: the walk-forward evaluation is
    where better is decided.
 
@@ -75,11 +77,16 @@ def check_live_path(cols: list[str]) -> list[str]:
     for flag, feats in owners.items():
         if set(cols) & feats and not need.get(flag):
             problems.append(f"the model reads {flag} features but blocks_needed leaves {flag} off")
-    for name in blocks.names():
-        hit = sorted(set(cols) & set(blocks.features(name)))
-        if hit:
-            problems.append(f"{len(hit)} features from the drop-in block {name} ({hit[:3]}...): the live "
-                            f"engine does not build drop-in blocks; promote it into the engine first")
+    for name in blocks.used_by(cols):
+        try:
+            mod = blocks.load(name)
+        except (TypeError, KeyError) as exc:
+            problems.append(f"the drop-in block {name} breaks the contract: {exc}")
+            continue
+        unknown = [f for f in getattr(mod, "ENGINE", ()) if f not in need]
+        if unknown:
+            problems.append(f"the drop-in block {name} reads the engine blocks {unknown}, which the live "
+                            f"engine has no flag for")
     return problems
 
 
@@ -149,17 +156,31 @@ def main() -> None:
                      f"+{len(gained)} ({', '.join(gained[:6])}{' ...' if len(gained) > 6 else ''}), "
                      f"-{len(lost)} ({', '.join(lost[:6])}{' ...' if len(lost) > 6 else ''})")
 
-    from model import feature_cache
+    from model import blocks, feature_cache
     key = feature_cache.cache_key(a.db, a.start_date)
-    want = sorted(set(meta["feature_cols"]) | set((served_meta or {}).get("feature_cols", [])))
+    every = set(meta["feature_cols"]) | set((served_meta or {}).get("feature_cols", []))
+    drop_in = blocks.used_by(every)
+    built = {c for b in drop_in for c in blocks.features(b)}
+    want = sorted(every - built)
     path = Path(a.feature_cache, f"features_{key}.parquet")
     if not path.exists():
         problems.append(f"no cached matrix under {a.feature_cache} for key {key}: the prices were not checked")
     else:
         import pyarrow.parquet as pq
         have = set(pq.ParquetFile(path).schema_arrow.names)
-        cols = [c for c in KEY + ["raceid", "bfsp"] + want if c in have]
+        reads: list[str] = []
+        for b in drop_in:                      # a block without READS reads anything: the whole matrix
+            r = getattr(blocks.load(b), "READS", None)
+            reads += sorted(have) if r is None else list(r)
+        cols = list(dict.fromkeys(c for c in KEY + ["raceid", "bfsp"] + want + reads if c in have))
         frame = pd.read_parquet(path, columns=cols)
+        if drop_in:
+            # on the whole matrix, as training built them: their windows need the history
+            try:
+                frame, _ = blocks.attach_as_trained(frame, drop_in)
+                notes.append(f"drop-in blocks built on the matrix as the live path builds them: {', '.join(drop_in)}")
+            except Exception as exc:                     # noqa: BLE001 - reported, and the gate fails
+                problems.append(f"the drop-in blocks {drop_in} could not be built on the matrix: {exc}")
         last = pd.to_datetime(frame["race_date"]).max()
         frame = frame[pd.to_datetime(frame["race_date"]) > last - pd.Timedelta(days=a.days)].reset_index(drop=True)
         p2, n2 = check_prices(new, meta, served, served_meta, frame)

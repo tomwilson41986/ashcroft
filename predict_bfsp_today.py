@@ -195,8 +195,11 @@ def prepare_and_predict(
     """
     # The shape, intent, freshness and window blocks are minutes of work over the
     # whole history. Each is built only for a model that reads it -- the same
-    # features either way for the one that does.
-    engine = CustomMetricsEngine(**blocks_needed(feature_cols))
+    # features either way for the one that does. A drop-in block the model reads
+    # (model/blocks) switches on the engine blocks it is computed from.
+    from model import blocks as drop_in
+    served_blocks = drop_in.used_by(feature_cols)
+    engine = CustomMetricsEngine(**{**blocks_needed(feature_cols), **drop_in.engine_flags(served_blocks)})
 
     # Check if target runners are already in the historical data
     target_date_str = str(target_date)
@@ -244,6 +247,13 @@ def prepare_and_predict(
     # Extract rows for the target date
     full_df["race_date"] = pd.to_datetime(full_df["race_date"])
     target_mask = full_df["race_date"].dt.strftime("%Y-%m-%d") == target_date_str
+
+    # Drop-in blocks, built as training built them: on the runs the feature
+    # matrix holds (those with a usable price) plus the card's.
+    if served_blocks:
+        log.info("Building drop-in blocks %s...", ", ".join(served_blocks))
+        full_df, _ = drop_in.attach_as_trained(full_df, served_blocks, card=target_mask.to_numpy())
+
     target_df = full_df[target_mask].copy()
 
     if len(target_df) == 0:

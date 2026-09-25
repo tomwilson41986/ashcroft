@@ -61,7 +61,7 @@ Edit `research/loop.json` and push:
 
 ```json
 {"tag": "iter36-going-pref", "recipe": "quick", "bfsp": true, "outcome": false,
- "bfsp_base_blocks": "form_windows,form_variants",
+ "bfsp_base_blocks": "form_variants,race_relative",
  "variants": [{"name": "gp", "blocks": "going_pref"},
               {"name": "gp_no_x", "blocks": "going_pref", "drop": "gp_x"}]}
 ```
@@ -93,17 +93,27 @@ The same `loop.json` with `"recipe": "served"`, plus `"bfsp_variant_args":
 "--num-boost-round 6000"` if the promotion comes with the round cap. The
 screen ranks blocks; this run decides.
 
-## 5. Promote a block into the engine
+## 5. Serve a block: nothing to port
 
-The live 06:00 path builds features with the engine, not from `model/blocks`.
-`scripts/verify_model.py` refuses a model that reads a drop-in feature until
-the block is promoted. To promote one:
-- import its `build` in `model/custom_metrics.py` and call it after the
-  existing blocks, behind a flag like `form_windows`;
-- add its served features to `model/bfsp_features.py`;
-- add the flag to `blocks_needed`.
+A model that reads a drop-in block's features is served that block. The live
+06:00 path finds it by the model's feature names (`blocks.used_by`), switches on
+the engine blocks it declares it reads (`ENGINE`), and builds it with
+`blocks.attach_as_trained`: on the runs the training matrix holds (those with a
+usable price) plus the card's, which is exactly how training built it. So the
+features served are the ones evaluated, not a re-implementation of them.
 
-This is the one change that rebuilds the matrix (once).
+What a block needs before it is served:
+- `READS`: every column `build()` reads. The live path then copies only those,
+  not the whole history, and `tests/test_feature_blocks.py` checks that a build
+  on those columns alone equals the build on the whole frame;
+- `ENGINE` (engine flags whose columns it reads) and `AFTER` (drop-in blocks it
+  reads), both checked for typos by the same tests.
+
+`scripts/verify_model.py` builds every block the model reads on the matrix the
+same way before an artefact is committed. Moving a block into the engine
+(`model/custom_metrics.py` and `model/bfsp_features.py`, as the form windows
+were on 25 Sep) is still possible, and is the one change that rebuilds the
+matrix once.
 
 ## 6. Retrain (about 30 minutes, estimate)
 
@@ -113,7 +123,8 @@ Dispatch **Train BFSP Model** (`train-bfsp.yml`) on the branch with:
   stage-2 model;
 - `fixed_rounds`: the round count the evaluation's folds reached, or empty to
   choose it on a holdout (twice the time);
-- `extra_args` as needed;
+- `extra_args` as needed, e.g. `--blocks form_variants,race_relative` to train on
+  drop-in blocks (built on the cached matrix as the live path will build them);
 - `publish: true` to commit the artefact.
 
 Before anything is committed, the job runs `scripts/verify_model.py`. It
