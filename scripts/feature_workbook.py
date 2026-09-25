@@ -151,11 +151,12 @@ BLOCK_EVIDENCE = {
     "Rank fix": "Iteration 41: -0.0000 with the four originals withheld: the trees had worked round the defect. "
                 "Hygiene for the next engine rebuild.",
     "Bookings": "Iteration 43: -0.0027 (-0.0044 to -0.0011), neither half resolves, no Brier gain; iteration 44 "
-                "(with the newer within-race readings): -0.0028. Weak: one served-recipe arm at most.",
+                "(with the newer within-race readings): -0.0028; iteration 47 (with stablemates): -0.0038. The "
+                "early-price rule up each time. Iteration 48 tests it on the served recipe against the 853.",
     "Comments": "Iteration 45: +0.0019 (+0.0004 to +0.0035), Brier skill vs market -0.0020 (resolved worse): the "
                 "market and the engine's pace features already read the comments. Retired.",
-    "Stablemates": "Iteration 47 screens it (quick recipe): a yard's runners in the race, at the meeting and today, "
-                   "their order by rating, and which one gets the yard's first-choice jockey.",
+    "Stablemates": "Iteration 47: +0.0018 alone (+0.0002 to +0.0034), the outsiders worse; -0.0038 with bookings, "
+                   "about bookings' own gain. Iteration 48 tests the pair on the served recipe.",
     "Within-race readings (newer blocks)": "Iteration 44: +0.0007 (-0.0009 to +0.0022), the outsiders worse: the "
                                            "trees already read these measures against the field. Retired.",
     "Draw v2": "Iteration 35: -0.0004 (-0.0021 to +0.0010): nothing, alone or on top of the within-race readings.",
