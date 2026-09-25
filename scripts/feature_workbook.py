@@ -134,7 +134,8 @@ BLOCK_EVIDENCE = {
                                        "iteration 34: -0.0001 on top of the form windows, which carry what it found. "
                                        "Not served.",
     "Form variants": "Iteration 34: -0.0021 (-0.0037 to -0.0006) beyond the form windows, rank 1 -0.0046. Iteration "
-                     "36 confirms on the served recipe at 6000 rounds.",
+                     "54 (steadier screen, on the 853): -0.0022 (-0.0036 to -0.0008), five times the placebo. To the "
+                     "served recipe with bookings.",
     "Within-race readings": "Iteration 35: -0.0074 (-0.0092 to -0.0057), every rank band resolved (Lessmann, Sung "
                             "and Johnson 2009, eq. 14). Iteration 36 (served recipe, 6000 rounds): -0.0078 beyond "
                             "the 615. Trained and verified as the 675 (train-bfsp run 33); not served.",
@@ -145,14 +146,14 @@ BLOCK_EVIDENCE = {
     "Time figure": "Iteration 37: -0.0005 alone, ranks 1-3 better and outsiders worse; Brier skill vs market "
                    "+0.0021 and concordance +0.0035 (both resolved). Part of iteration 37's -0.0038.",
     "Exposure": "Iteration 37: -0.0003 alone; part of iteration 37's -0.0038 with the time figure and wide readings.",
-    "Shrunk records": "Iteration 38: -0.00002 on the price; the trainer and jockey cells move Brier skill vs market "
-                      "+0.0025 (resolved).",
+    "Shrunk records": "Iteration 38: -0.00002 on the price. Iteration 54 (steadier screen): -0.0013 (-0.0028 to "
+                      "+0.0001): marginal.",
     "Collateral form": "Iteration 41: -0.0019 alone and -0.0020 on top of all3 (all3 + collateral form -0.0083 on the "
                        "615 + within-race readings), Brier skill vs market +0.0036, beyond the seed floor. Iteration "
                        "42 (served recipe): all3 + collateral form -0.0053 (-0.0064 to -0.0041); the next served "
                        "candidate, in training.",
-    "Rank fix": "Iteration 41: -0.0000 with the four originals withheld: the trees had worked round the defect. "
-                "Hygiene for the next engine rebuild.",
+    "Rank fix": "Iteration 41: -0.0000; iteration 54 (steadier screen): +0.0006, with the four originals withheld: "
+                "the trees had worked round the defect. Hygiene for the next engine rebuild.",
     "Bookings": "Iteration 43: -0.0027 (-0.0044 to -0.0011), neither half resolves, no Brier gain; iteration 44 "
                 "(with the newer within-race readings): -0.0028; iteration 47 (with stablemates): -0.0038. The "
                 "early-price rule up each time. Iteration 48 tests it on the served recipe against the 853.",
@@ -167,8 +168,8 @@ BLOCK_EVIDENCE = {
     "Finishing-order rating": "Iteration 55 screens it on the steadier screen.",
     "Within-race readings (newer blocks)": "Iteration 44: +0.0007 (-0.0009 to +0.0022), the outsiders worse: the "
                                            "trees already read these measures against the field. Retired.",
-    "Draw v2": "Iteration 35: -0.0004 (-0.0021 to +0.0010): nothing, alone or on top of the within-race readings.",
-    "Pace v2": "Iteration 35: +0.0009 (-0.0004 to +0.0026): nothing; the outsiders' error worse.",
+    "Draw v2": "Iteration 35: -0.0004; iteration 54 (steadier screen): -0.0009 (-0.0023 to +0.0003): nothing.",
+    "Pace v2": "Iteration 35: +0.0009; iteration 54 (steadier screen): -0.0007 (-0.0021 to +0.0005): nothing.",
     "Shape and draw (old)": "Iterations 18 and 25: no gain to the price forecast (-0.0000), a little concordance lost. "
                             "Built by the engine, not served; the inputs shape form reads.",
     "Intent (card-unsafe)": "The 06:00 card cannot know these (a gelding since the last run; the jockey or claim as "
