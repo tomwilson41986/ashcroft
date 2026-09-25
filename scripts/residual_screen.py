@@ -552,7 +552,7 @@ def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = F
                 if absent:
                     raise ValueError(f"{b}: {len(absent)} columns not in the frame ({absent[:3]}...); "
                                      "the engine builds them -- refresh the feature cache")
-            elif b in ("shape", "drawcurve", "intent", "freshness"):
+            elif b in ("shape", "drawcurve", "intent", "freshness", "form_windows"):
                 # built by the metrics engine on every row (model/bfsp_features.py
                 # PRODUCTION_BLOCKS); rebuilt here they would come from the priced rows
                 # alone and sit beside the engine's copies
@@ -919,7 +919,7 @@ def main(argv=None):
                     help="withhold every race on or after this date (the locked holdout); '' to disable")
     ap.add_argument("--val-months", type=int, default=6, help="inner validation tail of the training window")
     ap.add_argument("--ridge-grid", type=float, nargs="+", default=[1.0, 10.0, 100.0, 1000.0])
-    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>], the engine-built shape_draw, form_windows and shape_form (shape, drawcurve, intent and freshness are built by the metrics engine now), and any drop-in block in model/blocks")
+    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>], the engine-built shape_draw and shape_form (shape and drawcurve are retired; intent, freshness and form_windows are served), and any drop-in block in model/blocks")
     ap.add_argument("--limit", type=int, default=0, help="screen only the first N production features (smoke runs)")
     ap.add_argument("--no-alone", action="store_true")
     ap.add_argument("--no-boost", action="store_true")

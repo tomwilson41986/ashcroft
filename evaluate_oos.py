@@ -871,17 +871,18 @@ def main():
     )
     parser.add_argument(
         "--blocks", default="",
-        help="Blocks to add to the served features: shape_draw, form_windows and "
-             "shape_form (built by the engine, not served: model/bfsp_features.py "
-             "RESEARCH_BLOCKS), intent_unsafe (the four intent features the 06:00 card "
-             "cannot know), ae (model/ae_features.py, pre-off entities), or any drop-in "
-             "block in model/blocks (computed on the cached matrix, no rebuild). Intent "
-             "and freshness are served now; see --withhold",
+        help="Blocks to add to the served features: shape_draw and shape_form (built "
+             "by the engine, not served: model/bfsp_features.py RESEARCH_BLOCKS), "
+             "intent_unsafe (the four intent features the 06:00 card cannot know), ae "
+             "(model/ae_features.py, pre-off entities), or any drop-in block in "
+             "model/blocks (computed on the cached matrix, no rebuild). Intent, freshness "
+             "and the form windows are served; see --withhold",
     )
     parser.add_argument(
         "--withhold", default="", metavar="BLOCKS",
         help="Production blocks to fit the model without, by exact feature name: "
-             "shape_draw, intent, freshness (model/bfsp_features.py PRODUCTION_BLOCKS). "
+             "shape_draw, intent, freshness, form_windows (model/bfsp_features.py "
+             "PRODUCTION_BLOCKS). "
              "Measures what a block adds to the served model on the same matrix and folds",
     )
     parser.add_argument(
@@ -983,12 +984,14 @@ def main():
 
     extra: list[str] = []
     for block in [b.strip() for b in (args.blocks or "").split(",") if b.strip()]:
-        if block in ("shape", "drawcurve", "intent", "freshness"):
+        if block in ("shape", "drawcurve"):
             # Built by the metrics engine on every row; rebuilt here they would be
             # computed on the priced rows alone and replace the engine's values.
             raise SystemExit(f"{block!r} is built by the metrics engine now: shape_draw adds "
-                             "the built shape and draw columns, and --withhold measures a "
-                             "served block")
+                             "the built shape and draw columns")
+        elif block in PRODUCTION_BLOCKS and block not in RESEARCH_BLOCKS:
+            raise SystemExit(f"{block!r} is served: its features are in the production list "
+                             "already, and --withhold measures what it adds")
         elif block in RESEARCH_BLOCKS or block == "intent_unsafe":
             cols = list(RESEARCH_BLOCKS[block]) if block in RESEARCH_BLOCKS else list(INTENT_CARD_UNSAFE)
             absent = [c for c in cols if c not in df.columns]
