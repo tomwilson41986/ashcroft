@@ -101,6 +101,17 @@ its interval reads. To test a seed, add a variant `{"name": "seed7", "args":
 "--seed 7"}` and compare it with the base. To re-read a variant against its own
 seed, run `scripts/compare_oos_runs.py` on the two arms' prediction files.
 
+**The placebo.** `model/blocks/placebo.py` adds ten columns of noise. Iteration
+50 ran it on the quick recipe:
+- it read +0.0022 (90% CI +0.0006 to +0.0038), a "resolved" loss;
+- Brier skill also read as a resolved loss;
+- its forecasts moved 0.17 in log price a runner, as a new seed's do.
+
+Adding any block reshuffles the quick fit, so the bar is about ±0.0025. A
+smaller quick-recipe result counts only when it repeats across different
+feature sets. Add `{"name": "placebo", "blocks": "placebo"}` to an iteration to
+measure the bar on the recipe and base in use.
+
 ## 4. Confirm on the served recipe (25–45 minutes, estimate)
 
 The same `loop.json` with `"recipe": "served"`, plus `"bfsp_variant_args":
