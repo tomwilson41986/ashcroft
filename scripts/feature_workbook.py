@@ -106,6 +106,7 @@ DROP_IN = [
     ("rank_fix", "Rank fix", "The four misdirected ranks, lowest first, missing last", "built"),
     ("bookings", "Bookings", "The jockey and the yard as the market rated their runners", "built"),
     ("comments", "Comments", "What the in-running comments of earlier runs say", "built"),
+    ("stable", "Stablemates", "A yard's runners today, their order, and whose jockey it books", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
      "against this field", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
@@ -148,8 +149,10 @@ BLOCK_EVIDENCE = {
                 "Hygiene for the next engine rebuild.",
     "Bookings": "Iteration 43: -0.0027 (-0.0044 to -0.0011), neither half resolves, no Brier gain; iteration 44 "
                 "(with the newer within-race readings): -0.0028. Weak: one served-recipe arm at most.",
-    "Comments": "Iteration 45 screens it (quick recipe): trouble, slow starts, keenness, a kind ride, a fade, in the "
-                "last run and the last 3 and 6.",
+    "Comments": "Iteration 45: +0.0019 (+0.0004 to +0.0035), Brier skill vs market -0.0020 (resolved worse): the "
+                "market and the engine's pace features already read the comments. Retired.",
+    "Stablemates": "Iteration 47 screens it (quick recipe): a yard's runners in the race, at the meeting and today, "
+                   "their order by rating, and which one gets the yard's first-choice jockey.",
     "Within-race readings (newer blocks)": "Iteration 44: +0.0007 (-0.0009 to +0.0022), the outsiders worse: the "
                                            "trees already read these measures against the field. Retired.",
     "Draw v2": "Iteration 35: -0.0004 (-0.0021 to +0.0010): nothing, alone or on top of the within-race readings.",
@@ -501,6 +504,13 @@ EXPLICIT_BLOCKS = {
     "bk_jk_rides_on_horse": "Earlier rides of this horse by today's jockey",
     "bk_tr_mkt": "Trainer's runners as the market rated them (decayed, shrunk to 0)",
     "bk_tr_mkt_trend": "Trainer's runners as the market rated them over the last fortnight, less the long view",
+    "st_n_race": "Trainer's runners in this race", "st_n_meeting": "Trainer's runners at this meeting today",
+    "st_n_day": "Trainer's runners anywhere today",
+    "st_or_rank": "Rank by official rating among the trainer's runners in the race (1 = highest)",
+    "st_or_gap": "Official rating less the best of the trainer's runners in the race",
+    "st_jk_share": "Today's jockey's share of the trainer's rides on earlier days (decayed)",
+    "st_jk_first": "Gets the yard's first-choice jockey among its stablemates in the race",
+    "st_jk_gap": "Today's jockey's share of the yard's rides less the best among its stablemates' jockeys",
     "h2h_rivals_met": "Today's rivals met before", "h2h_meetings": "Earlier meetings with today's rivals",
     "h2h_win_share": "Share of meetings with today's rivals finished ahead (shrunk to a half)",
     "h2h_net": "Meetings with today's rivals finished ahead less behind",
