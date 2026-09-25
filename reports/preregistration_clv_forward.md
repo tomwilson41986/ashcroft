@@ -111,3 +111,12 @@ At the owner's instruction, the window opens on a model retrained since this doc
 **Nothing in the rule, the criteria or the window changes.** The rule reads the 06:00 job's `predicted_bfsp`, whichever model makes it. Two consequences are fixed now, before any forward card is served:
 - **The backtest's forecast** for the forward days (the reading-2 comparison) is rebuilt with this 535-feature recipe, so the two forecasts compared are the same model.
 - **A later model may replace this one during the window only under strict conditions.** It must pass the research loop's decision rule on the development window, and it can never be swapped in mid-day. Every change is written to the ledger with its first 06:00 date. The report gives the headline for each model's days as well as for the whole window. The criterion stays the whole window.
+
+## Amendment, 25 Sep 2026 (07:10 UTC): what day 1 ran on
+
+**The 06:00 run of 25 September served the 501-feature model, not the 535.** The artefact was committed on 24 September, but PR #75, which puts it on the default branch, merged at 06:44 UTC on 25 September, after that day's scheduled run.
+- **Run 195** (scheduled, 06:13–06:26 UTC): the 501 model. It wrote `racecards/2026-09-25_0613.csv` and `predictions/2026-09-25.csv` (528 runners, 44 races).
+- **Run 196** (dispatched 06:46 UTC on the merged commit eeb5dec): the 535 model, same card, 528 of 528 runners priced. It wrote `racecards/2026-09-25_0646.csv`, and **rewrote `predictions/2026-09-25.csv` at 06:57:40 UTC (07:57 UK).** That is inside the rule that excludes a day only when the file is written after 09:00 UK.
+- **Day 1 is scored on run 196's file, the 535 model,** so the whole window runs on one model as the previous amendment intends.
+- **The 501's day-1 forecast is not kept as a file, but can be rebuilt.** Run 195's card is kept at `racecards/2026-09-25_0613.csv` and the model is deterministic. It is not scored.
+- **No bets were affected.** No bet had been placed when the file was rewritten (execute.yml runs from 10:00 UTC), and `BETFAIR_APP_KEY` is unset, so the job records no exchange prices at prediction time.
