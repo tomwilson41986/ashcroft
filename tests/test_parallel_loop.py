@@ -163,3 +163,35 @@ def test_the_replicate_report_reads_identical_as_identical(tmp_path):
     assert "identical predictions on 100.0%" in rl.replicate_report(str(tmp_path / "a.csv"), str(tmp_path / "b.csv"))
     a.assign(predicted_bfsp=a["predicted_bfsp"] * 1.01).to_csv(tmp_path / "c.csv", index=False)
     assert "identical predictions on 0.0%" in rl.replicate_report(str(tmp_path / "a.csv"), str(tmp_path / "c.csv"))
+
+
+def test_several_variants_against_one_base():
+    cfg = {**CFG, "bfsp_base_blocks": "form_windows", "bfsp_base_withhold": "shape_draw", "replicate_base": True,
+           "variants": [{"name": "fv", "blocks": "form_variants"},
+                        {"name": "fv_nolb", "blocks": "form_variants", "drop": "fv_lb"},
+                        {"name": "r6000", "args": "--num-boost-round 6000", "withhold": "intent"}]}
+    assert rl.all_arms(cfg) == ["base", "fv", "fv_nolb", "r6000", "base_rep"]
+    assert rl.arm_args(cfg, "base") == ["--blocks", "form_windows", "--withhold", "shape_draw"]
+    # a variant is the base plus its own blocks, less its own withheld features
+    assert rl.arm_args(cfg, "fv") == ["--blocks", "form_windows,form_variants", "--withhold", "shape_draw"]
+    assert rl.arm_args(cfg, "fv_nolb")[:4] == ["--blocks", "form_windows,form_variants", "--drop-features", "fv_lb"]
+    assert rl.arm_args(cfg, "r6000") == ["--blocks", "form_windows", "--withhold", "shape_draw,intent",
+                                         "--num-boost-round", "6000"]
+    # the base key sees the base's blocks, not the variants
+    folds = [{"fold": 0}]
+    k = rl.base_key(cfg, "f", folds)
+    assert k == rl.base_key({**cfg, "variants": [{"name": "x", "blocks": "shape_form"}]}, "f", folds)
+    assert k != rl.base_key({**cfg, "bfsp_base_blocks": ""}, "f", folds)
+    for bad in ("base", "Base", "a b", "", "base_rep"):
+        with pytest.raises(SystemExit):
+            rl.variants({**CFG, "variants": [{"name": bad}]})
+    with pytest.raises(SystemExit):
+        rl.variants({**CFG, "variants": [{"name": "a"}, {"name": "a"}]})
+
+
+def test_the_summary_table_reads_the_decision():
+    row = {"delta": -0.0066, "delta_ci": [-0.0082, -0.0050], "rank1_delta": -0.0104, "brier_skill": 0.00222,
+           "brier_skill_ci": [0.00063, 0.0039], "concordance": 0.00146, "replaces": True}
+    t = rl.summary_table([("fv", row), ("x", {**row, "replaces": False, "rank1_delta": None})])
+    assert "| fv | -0.0066 (-0.0082 to -0.0050) | -0.0104 |" in t and "**replaces the base**" in t
+    assert "| x |" in t and "base stands" in t

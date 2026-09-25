@@ -84,6 +84,12 @@ def build_feature_frame(db_path: str, start_date: str | None = None) -> pd.DataF
     return d.sort_values(["race_date", "race_time"]).reset_index(drop=True)
 
 
+def drop_in_blocks() -> list[str]:
+    """The blocks in model/blocks, which --blocks computes on the cached matrix."""
+    from model import blocks
+    return blocks.names()
+
+
 # ---------------------------------------------------------------------------
 # Walk-Forward Out-of-Sample Predictions
 # ---------------------------------------------------------------------------
@@ -868,8 +874,9 @@ def main():
         help="Blocks to add to the served features: shape_draw, form_windows and "
              "shape_form (built by the engine, not served: model/bfsp_features.py "
              "RESEARCH_BLOCKS), intent_unsafe (the four intent features the 06:00 card "
-             "cannot know), ae (model/ae_features.py, pre-off entities). Intent and "
-             "freshness are served now; see --withhold",
+             "cannot know), ae (model/ae_features.py, pre-off entities), or any drop-in "
+             "block in model/blocks (computed on the cached matrix, no rebuild). Intent "
+             "and freshness are served now; see --withhold",
     )
     parser.add_argument(
         "--withhold", default="", metavar="BLOCKS",
@@ -961,8 +968,10 @@ def main():
     prefixes = tuple(p.strip() for p in (args.drop_features or "").split(",") if p.strip())
     names = ()
     if args.drop_feature_list:
+        # one name per line; '#' starts a comment
         names = tuple(
-            n.strip() for n in open(args.drop_feature_list).read().split() if n.strip()
+            n for line in open(args.drop_feature_list)
+            for n in line.split("#", 1)[0].split() if n.strip()
         )
     # By name, not by prefix: pred_epf is a prefix of the older pred_epf_norm.
     standard_blocks = PRODUCTION_BLOCKS
@@ -991,8 +1000,17 @@ def main():
             # days; the pre-off entities only, since the forecast's target is today's price
             from model.ae_features import PRE_OFF_ENTITIES, add_ae_features
             df, cols = add_ae_features(df, entities=PRE_OFF_ENTITIES)
+        elif block in drop_in_blocks():
+            # a drop-in block (model/blocks): computed here on the cached matrix, so
+            # adding or changing one costs its own seconds, not a rebuild
+            from model import blocks as drop_in
+            import time as _t
+            t0 = _t.time()
+            df, cols = drop_in.attach(df, [block])
+            log.info("block %s built on the cached matrix in %.0fs", block, _t.time() - t0)
         else:
-            raise SystemExit(f"unknown block {block!r} ({', '.join(RESEARCH_BLOCKS)}, intent_unsafe, ae)")
+            raise SystemExit(f"unknown block {block!r} ({', '.join(RESEARCH_BLOCKS)}, intent_unsafe, ae, "
+                             f"or a drop-in block: {', '.join(drop_in_blocks()) or 'none'})")
         log.info("block %s: %d features", block, len(cols))
         extra += cols
 

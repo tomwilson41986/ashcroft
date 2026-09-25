@@ -339,6 +339,8 @@ def main():
     ap.add_argument("--commission", type=float, default=0.05)
     ap.add_argument("--note", default=None,
                     help="a line of context to put under the title, e.g. what the two runs are")
+    ap.add_argument("--json-out", default=None,
+                    help="also write the decision's numbers as JSON (the research loop's table)")
     ap.add_argument("--folds", default=None,
                     help="restrict both runs to these walk-forward folds, e.g. 0-4, "
                          "5-10, 3, or 0,2,5-7. Use it to ask whether a difference "
@@ -419,6 +421,22 @@ def main():
 
     text = "\n".join(L)
     print(text)
+    if a.json_out:
+        import json
+        r1 = by_rank(m)
+        r1 = r1[r1["rank"] == "1"] if "rank" in r1.columns else r1.iloc[0:0]
+        summary = {
+            "n": int(len(m)), "races": int(m["raceid"].nunique()),
+            "err_base": float(m["err_b"].mean()), "err_variant": float(m["err_v"].mean()),
+            "delta": delta, "delta_ci": [float(lo), float(hi)],
+            "rank1_delta": float(r1["delta"].iloc[0]) if len(r1) else None,
+            "brier_skill": float(sk["brier_skill"]), "brier_skill_ci": [float(x) for x in sk["brier_skill_ci"]],
+            "concordance": float(sk["concordance"]), "concordance_ci": [float(x) for x in sk["concordance_ci"]],
+            "top_pick_roi": [float(rb), float(rv)], "replaces": bool(replaces),
+        }
+        os.makedirs(os.path.dirname(a.json_out) or ".", exist_ok=True)
+        with open(a.json_out, "w") as f:
+            json.dump(summary, f, indent=2)
     if a.out:
         os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
         with open(a.out, "w") as f:

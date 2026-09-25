@@ -553,7 +553,11 @@ def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = F
                     from model.connections import add_connection_features
                     df, cols = add_connection_features(df)
             else:
-                log.warning("unknown block %s", b); continue
+                from model import blocks as drop_in
+                if b not in drop_in.names():
+                    log.warning("unknown block %s", b); continue
+                # a drop-in block (model/blocks), computed on this frame
+                df, cols = drop_in.attach(df, [b])
         except Exception as exc:                    # noqa: BLE001 - a research block may not fit this frame
             if strict:
                 raise RuntimeError(f"block {b} failed: {type(exc).__name__}: {exc}") from exc
@@ -900,7 +904,7 @@ def main(argv=None):
                     help="withhold every race on or after this date (the locked holdout); '' to disable")
     ap.add_argument("--val-months", type=int, default=6, help="inner validation tail of the training window")
     ap.add_argument("--ridge-grid", type=float, nargs="+", default=[1.0, 10.0, 100.0, 1000.0])
-    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>], and the engine-built shape_draw, form_windows and shape_form (shape, drawcurve, intent and freshness are built by the metrics engine now)")
+    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>], the engine-built shape_draw, form_windows and shape_form (shape, drawcurve, intent and freshness are built by the metrics engine now), and any drop-in block in model/blocks")
     ap.add_argument("--limit", type=int, default=0, help="screen only the first N production features (smoke runs)")
     ap.add_argument("--no-alone", action="store_true")
     ap.add_argument("--no-boost", action="store_true")

@@ -19,11 +19,20 @@ the served one.
     compare  the paired comparison, the replicate check and the early-price
              trade, into reports/bfsp_compare/compare.md
 
-The arms: `base` (production features, `bfsp_base_withhold` withheld), `blocks`
-(the variant: `blocks` added, `bfsp_variant_drop` / `bfsp_variant_withhold`
-withheld, `bfsp_variant_args` passed) and, with `"replicate_base": true`,
-`base_rep`: the base fitted again in another job, whose distance from `base` is
+The arms: `base` (production features, plus `bfsp_base_blocks`, less
+`bfsp_base_withhold`); one arm per variant; and, with `"replicate_base": true`,
+`base_rep`, the base fitted again in another job, whose distance from `base` is
 the noise floor any difference between arms has to clear.
+
+A variant is the base plus its own blocks, less its own withheld features, with
+its own extra arguments. Several can run at once, each against the same base:
+
+    "variants": [{"name": "fv", "blocks": "form_variants"},
+                 {"name": "fv_no_lb", "blocks": "form_variants", "drop": "fv_lb"},
+                 {"name": "r6000", "args": "--num-boost-round 6000"}]
+
+Without "variants" the single variant is the old top-level keys (arm `blocks`:
+`blocks`, `bfsp_variant_drop`, `bfsp_variant_withhold`, `bfsp_variant_args`).
 
 Every step reads the same config, so the YAML only wires jobs together.
 """
@@ -74,17 +83,51 @@ def common_args(cfg: dict) -> list[str]:
             "--step-days", "91", "--val-window", "91", "--recipe", recipe(cfg)]
 
 
+BASE_ARMS = ("base", "base_rep")
+
+
+def variants(cfg: dict) -> list[dict]:
+    """The variant arms, each {name, blocks, drop, withhold, args}."""
+    if "variants" not in cfg:
+        return [{"name": "blocks", "blocks": cfg.get("blocks", ""), "drop": cfg.get("bfsp_variant_drop", ""),
+                 "withhold": cfg.get("bfsp_variant_withhold", ""), "args": cfg.get("bfsp_variant_args", "")}]
+    out, seen = [], set()
+    for v in cfg["variants"]:
+        name = v.get("name", "")
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,30}", name) or name in BASE_ARMS or name in seen:
+            raise SystemExit(f"variant name {name!r}: lower-case, unique, not {BASE_ARMS}")
+        seen.add(name)
+        out.append({"name": name, "blocks": v.get("blocks", ""), "drop": v.get("drop", ""),
+                    "withhold": v.get("withhold", ""), "args": v.get("args", "")})
+    if not out:
+        raise SystemExit("variants is empty")
+    return out
+
+
+def _join_blocks(*parts: str) -> str:
+    seen = []
+    for p in parts:
+        for b in (p or "").split(","):
+            if b.strip() and b.strip() not in seen:
+                seen.append(b.strip())
+    return ",".join(seen)
+
+
 def arm_args(cfg: dict, arm: str) -> list[str]:
-    if arm in ("base", "base_rep"):
+    base_blocks = cfg.get("bfsp_base_blocks", "")
+    if arm in BASE_ARMS:
+        a = ["--blocks", base_blocks] if base_blocks else []
         wh = cfg.get("bfsp_base_withhold", "")
-        return ["--withhold", wh] if wh else []
-    if arm == "blocks":
-        a = ["--blocks", cfg.get("blocks", "")]
-        if cfg.get("bfsp_variant_drop"):
-            a += ["--drop-features", cfg["bfsp_variant_drop"]]
-        if cfg.get("bfsp_variant_withhold"):
-            a += ["--withhold", cfg["bfsp_variant_withhold"]]
-        return a + shlex.split(cfg.get("bfsp_variant_args", ""))
+        return a + (["--withhold", wh] if wh else [])
+    for v in variants(cfg):
+        if v["name"] == arm:
+            a = ["--blocks", _join_blocks(base_blocks, v["blocks"])]
+            if v["drop"]:
+                a += ["--drop-features", v["drop"]]
+            wh = _join_blocks(cfg.get("bfsp_base_withhold", ""), v["withhold"])
+            if wh:
+                a += ["--withhold", wh]
+            return a + shlex.split(v["args"])
     raise SystemExit(f"unknown arm {arm!r}")
 
 
@@ -139,11 +182,13 @@ def cmd_plan(args) -> None:
     })
 
 
+def all_arms(cfg: dict) -> list[str]:
+    return ["base"] + [v["name"] for v in variants(cfg)] + (["base_rep"] if cfg.get("replicate_base") else [])
+
+
 def cmd_arms(args) -> None:
     cfg = load_config(args.config)
-    arms = ([] if args.base_hit == "true" else ["base"]) + ["blocks"]
-    if cfg.get("replicate_base"):
-        arms.append("base_rep")
+    arms = [a for a in all_arms(cfg) if not (a == "base" and args.base_hit == "true")]
     _outputs({"arms": json.dumps(arms)})
 
 
@@ -199,7 +244,7 @@ def gather(src: str, out: str, arm: str, expect: list[int] | None = None) -> boo
 
 def cmd_gather(args) -> None:
     expect = json.loads(args.folds) if args.folds else None
-    for arm in ("base", "blocks", "base_rep"):
+    for arm in all_arms(load_config(args.config)):
         gather(args.src, OUT_DIR, arm, expect)
 
 
@@ -218,23 +263,46 @@ def replicate_report(a_path: str, b_path: str) -> str:
             f"max {float(d.max()) if len(m) else float('nan'):.6f}")
 
 
+def _note(cfg: dict, v: dict, base_cached: bool) -> str:
+    bb, bwh = cfg.get("bfsp_base_blocks", ""), cfg.get("bfsp_base_withhold", "")
+    base = f"production features{' + ' + bb if bb else ''}{' without ' + bwh if bwh else ''}"
+    return (f"{cfg.get('tag', '')} / {v['name']}: {base} vs the same"
+            f"{' + ' + v['blocks'] if v['blocks'] else ''}{' without ' + v['drop'] if v['drop'] else ''}"
+            f"{' without ' + v['withhold'] if v['withhold'] else ''}{' with ' + v['args'] if v['args'] else ''}; "
+            f"recipe {recipe(cfg)}{'; base from the cache' if base_cached else ''}")
+
+
+def summary_table(rows: list[tuple[str, dict]]) -> str:
+    """One line per variant: what the decision rule turns on."""
+    L = ["| variant | paired error (90% CI) | rank 1 | Brier skill vs base (90% CI) | concordance | decision |",
+         "|---|---|---|---|---|---|"]
+    for name, j in rows:
+        r1 = j.get("rank1_delta")
+        L.append(f"| {name} | {j['delta']:+.4f} ({j['delta_ci'][0]:+.4f} to {j['delta_ci'][1]:+.4f}) | "
+                 f"{'' if r1 is None else f'{r1:+.4f}'} | {j['brier_skill']:+.5f} ({j['brier_skill_ci'][0]:+.5f} to "
+                 f"{j['brier_skill_ci'][1]:+.5f}) | {j['concordance']:+.5f} | "
+                 f"{'**replaces the base**' if j['replaces'] else 'base stands'} |")
+    return "\n".join(L)
+
+
 def cmd_compare(args) -> None:
     cfg = load_config(args.config)
     out = Path(OUT_DIR)
     base = out / "oos_base.csv"
     if not base.exists():
         raise SystemExit("no base predictions: neither fitted here nor restored from the cache")
-    bwh, vwh = cfg.get("bfsp_base_withhold", ""), cfg.get("bfsp_variant_withhold", "")
-    blocks, vdrop, vargs = cfg.get("blocks", ""), cfg.get("bfsp_variant_drop", ""), cfg.get("bfsp_variant_args", "")
-    note = (f"{cfg.get('tag', '')}: production features{' without ' + bwh if bwh else ''} vs production "
-            f"features{' without ' + vwh if vwh else ''}{' + ' + blocks if blocks else ''}"
-            f"{' without ' + vdrop if vdrop else ''}{' with ' + vargs if vargs else ''}; "
-            f"recipe {recipe(cfg)}{'; base from the cache' if args.base_cached == 'true' else ''}")
-    subprocess.run([sys.executable, "scripts/compare_oos_runs.py", "--base", str(base),
-                    "--variant", str(out / "oos_blocks.csv"), "--out", str(out / "compare.md"),
-                    "--note", note], check=True, cwd=REPO)
-    md = out / "compare.md"
-    text = md.read_text()
+    cached = args.base_cached == "true"
+    rows, sections = [], []
+    for v in variants(cfg):
+        name = v["name"]
+        md, js = out / f"compare_{name}.md", out / f"compare_{name}.json"
+        subprocess.run([sys.executable, "scripts/compare_oos_runs.py", "--base", str(base),
+                        "--variant", str(out / f"oos_{name}.csv"), "--out", str(md), "--json-out", str(js),
+                        "--note", _note(cfg, v, cached)], check=True, cwd=REPO)
+        rows.append((name, json.loads(js.read_text())))
+        sections.append(md.read_text())
+    text = (f"# {cfg.get('tag', '')}: {len(rows)} variant(s) against the base, recipe {recipe(cfg)}\n\n"
+            + summary_table(rows) + "\n\n" + "\n\n".join(sections))
     rep = out / "oos_base_rep.csv"
     if rep.exists():
         subprocess.run([sys.executable, "scripts/compare_oos_runs.py", "--base", str(base),
@@ -243,14 +311,14 @@ def cmd_compare(args) -> None:
                        check=True, cwd=REPO)
         text += ("\n\n## Replicate: the base fitted twice\n\n" + replicate_report(str(base), str(rep))
                  + "\n\n" + (out / "replicate.md").read_text())
-    for arm in ("base", "blocks"):
+    for arm in ["base"] + [v["name"] for v in variants(cfg)]:
         res = subprocess.run([sys.executable, "scripts/clv_betfair.py", "--predictions",
                               str(out / f"oos_{arm}.csv"), "--db", args.db, "--until", EVAL_UNTIL],
                              cwd=REPO, capture_output=True, text=True)
         body = res.stdout + (res.stderr[-2000:] if res.returncode else "")
         (out / f"clv_{arm}.txt").write_text(body)
         text += f"\n\n### Early-price trade on Betfair's morning prices: {arm}\n```\n{body}\n```\n"
-    md.write_text(text)
+    (out / "compare.md").write_text(text)
     print(text)
 
 
@@ -263,7 +331,7 @@ def main() -> None:
     a = sub.add_parser("arms")
     a.add_argument("--base-hit", default="false")
     f = sub.add_parser("fit")
-    f.add_argument("--arm", required=True, choices=["base", "blocks", "base_rep"])
+    f.add_argument("--arm", required=True)
     f.add_argument("--fold", required=True, type=int)
     g = sub.add_parser("gather")
     g.add_argument("--src", default="fits")
