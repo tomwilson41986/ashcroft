@@ -286,3 +286,64 @@ def test_results_report_reads_the_results_it_reports_on(tmp_path):
 
     assert {r["horse_name"] for r in rows} == {"Diplomata", "Bai Tong"}
     assert all(r["racetime"] == "1.20" for r in rows), "downstream reads the key 'racetime'"
+
+
+# ---------------------------------------------------------------------------
+# The account's downloads paused (25 Sep 2026)
+# ---------------------------------------------------------------------------
+
+PAUSE_PAGE = ("Data downloads temporarily unavailable An unusually high number of data download requests "
+              "has been detected from this account. Access to data downloads has been temporarily paused to "
+              "protect the service. Download access will become available again: Wednesday 30th September "
+              "2026 at 13:53 The remainder of HorseRaceBase remains available.")
+
+
+def test_the_pause_page_gives_its_end():
+    from datetime import datetime
+    assert scraper.paused_until(PAUSE_PAGE) == datetime(2026, 9, 30, 13, 53)
+    assert scraper.paused_until("no time given") is None
+
+
+def test_a_pause_stops_the_scrape_at_once_and_holds_until_it_ends(hrb, monkeypatch):
+    """The first paused answer stops the run (no five more requests), records
+    no day, and every later run asks nothing until the pause is over."""
+    from datetime import datetime
+
+    def paused(session, user_id, d):
+        hrb.asked.append(d)
+        raise scraper.DownloadsPaused(scraper.paused_until(PAUSE_PAGE), PAUSE_PAGE)
+
+    monkeypatch.setattr(scraper, "download_csv", paused)
+    monkeypatch.setattr(scraper, "uk_now", lambda: datetime(2026, 9, 25, 11, 0))
+    days = [ago(k) for k in range(1, 4)]
+    scraper.scrape_date_range(min(days), max(days), hrb.db)
+    assert len(hrb.asked) == 1
+    assert _log(hrb.db) == {}
+    conn = scraper.init_db(hrb.db)
+    assert scraper.pause_in_force(conn) == datetime(2026, 9, 30, 13, 53)
+    conn.close()
+
+    scraper.scrape_date_range(min(days), max(days), hrb.db)      # the next night
+    assert len(hrb.asked) == 1, "nothing asked while paused"
+
+    monkeypatch.setattr(scraper, "uk_now", lambda: datetime(2026, 9, 30, 14, 0))
+    monkeypatch.setattr(scraper, "download_csv", lambda s, u, d: hrb.asked.append(d) or _csv(d))
+    scraper.scrape_date_range(min(days), max(days), hrb.db)      # after it ends
+    assert len(hrb.asked) == 4 and all(_results(hrb.db, d) == 2 for d in days)
+
+
+def test_download_csv_turns_the_pause_page_into_the_pause(monkeypatch):
+    class R:
+        headers = {"Content-Type": "text/html; charset=UTF-8"}
+        text = '<div style="width:700px"><h2>Data downloads temporarily unavailable</h2><p>' + PAUSE_PAGE + "</p></div>"
+
+        def raise_for_status(self):
+            pass
+
+    class S:
+        def post(self, url, data):
+            return R()
+
+    with pytest.raises(scraper.DownloadsPaused) as e:
+        scraper.download_csv(S(), "1", ago(1))
+    assert e.value.until.year == 2026 and e.value.until.hour == 13

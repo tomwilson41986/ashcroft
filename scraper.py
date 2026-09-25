@@ -21,7 +21,7 @@ import re
 import sqlite3
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import requests
 from bs4 import BeautifulSoup
@@ -56,6 +56,51 @@ RETRY_EMPTY_DAYS = 7
 #: 179-day run got nothing for every day of a range that had returned 62,973
 #: rows the night before -- and asking on only spends more of the allowance.
 MAX_UNAVAILABLE_IN_A_ROW = 5
+
+
+#: horseracebase's page when it has paused an account's downloads, and the
+#: time it gives for their return ("Download access will become available
+#: again: Wednesday 30th September 2026 at 13:53"). On 25 Sep 2026 every request
+#: for five days had been answered with it since the night of the 23rd.
+_PAUSED_RX = re.compile(r"data downloads temporarily unavailable|downloads? (?:has|have) been temporarily paused", re.I)
+_PAUSED_UNTIL_RX = re.compile(r"available again:?\s*(?:[A-Za-z]+day\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(\d{4})"
+                              r"(?:\s+at\s+(\d{1,2}):(\d{2}))?", re.I)
+
+
+class DownloadsPaused(Exception):
+    """horseracebase has paused this account's data downloads until `until`
+    (UK time, naive; None when the page gave no time)."""
+
+    def __init__(self, until: datetime | None, message: str):
+        super().__init__(message)
+        self.until = until
+
+
+def paused_until(text: str) -> datetime | None:
+    """The time horseracebase says downloads return, from its pause page."""
+    m = _PAUSED_UNTIL_RX.search(text or "")
+    if not m:
+        return None
+    day, month, year, hh, mm = m.groups()
+    try:
+        return datetime.strptime(f"{int(day)} {month} {year} {hh or 0}:{mm or 0}", "%d %B %Y %H:%M")
+    except ValueError:
+        return None
+
+
+def pause_in_force(conn, now: datetime | None = None) -> datetime | None:
+    """The end of a download pause still in force, or None."""
+    row = conn.execute("SELECT MAX(until) FROM download_pause").fetchone()
+    if not row or not row[0]:
+        return None
+    until = datetime.fromisoformat(row[0])
+    return until if (now or uk_now()) < until else None
+
+
+def uk_now() -> datetime:
+    """Now on horseracebase's clock (UK), naive, to compare with its pause time."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Europe/London")).replace(tzinfo=None)
 
 
 def is_recent(d: date, today: date | None = None) -> bool:
@@ -165,6 +210,13 @@ def init_db(db_path: str = DB_PATH) -> sqlite3.Connection:
             status TEXT DEFAULT 'ok',
             scraped_at TEXT DEFAULT (datetime('now'))
         );
+
+        -- a download pause horseracebase announced, and when it said it ends
+        CREATE TABLE IF NOT EXISTS download_pause (
+            noted_at TEXT,
+            until TEXT,
+            message TEXT
+        );
     """)
     conn.commit()
     return conn
@@ -262,6 +314,8 @@ def download_csv(session: requests.Session, user_id: str,
         words = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", resp.text, flags=re.S | re.I)
         snippet = " ".join(re.sub(r"<[^>]+>", " ", words).split())[:400]
         log.info(f"{target_date}: no results file ({content_type or 'no content type'}): {snippet!r}")
+        if _PAUSED_RX.search(snippet):
+            raise DownloadsPaused(paused_until(snippet), snippet)
         return None
 
     return resp.text
@@ -454,6 +508,16 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH,
     before its BSPs were out (the upsert fills them in).
     """
     conn = init_db(db_path)
+    held = pause_in_force(conn)
+    if held:
+        # Every request while paused is another "unusually high number", and
+        # there is nothing to gain: ask nothing, record nothing, and leave the
+        # days as they are for the first run after the pause.
+        log.warning(f"horseracebase has paused this account's downloads until {held:%Y-%m-%d %H:%M} "
+                    f"(UK); not asking for {start_date}..{end_date}")
+        print(f"::warning::horseracebase downloads paused until {held:%Y-%m-%d %H:%M} UK; nothing asked")
+        conn.close()
+        return
     session = create_session()
 
     user_id = login(session)
@@ -534,6 +598,18 @@ def scrape_date_range(start_date: date, end_date: date, db_path: str = DB_PATH,
             if days_done % 50 == 0:
                 log.info(f"Progress: {days_done}/{total_days} days, "
                          f"{total_rows} total rows")
+
+        except DownloadsPaused as e:
+            until = e.until or (uk_now() + timedelta(days=1))
+            conn.execute("INSERT INTO download_pause (noted_at, until, message) VALUES (?, ?, ?)",
+                         (uk_now().isoformat(timespec="seconds"), until.isoformat(timespec="minutes"), str(e)))
+            conn.commit()
+            left = (current - start_date).days + 1
+            log.error(f"horseracebase has paused this account's downloads until {until:%Y-%m-%d %H:%M} (UK). "
+                      f"Stopping: {left} days not asked, none recorded; no request until then.")
+            print(f"::warning::horseracebase paused downloads until {until:%Y-%m-%d %H:%M} UK; "
+                  f"stopped with {left} days not asked")
+            break
 
         except requests.RequestException as e:
             log.error(f"Network error on {current}: {e}")
