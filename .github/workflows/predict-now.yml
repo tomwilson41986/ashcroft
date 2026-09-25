@@ -13,11 +13,24 @@ on:
         description: 'Date to price (YYYY-MM-DD). Empty for today.'
         required: false
         type: string
+      model_run:
+        description: 'Price with a candidate: the id of a train-bfsp run whose model artifact to use (empty: the model in data/models)'
+        required: false
+        type: string
+      model_artifact:
+        description: "That run's model artifact, e.g. bfsp-model-33"
+        required: false
+        type: string
   push:
     # A workflow only on a feature branch cannot be dispatched, so a push to a
     # branch of this name runs it. Scoped to this file.
     branches: ['claude/predict-now-*']
     paths: ['.github/workflows/predict-now.yml']
+
+# download-artifact reads another run's artifacts with this token
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   predict:
@@ -42,6 +55,17 @@ jobs:
           AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
         run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
 
+      - name: Fetch the candidate model
+        # A dry run of a trained, verified model on the live path before it is
+        # committed anywhere: the train run's artifact, not a second copy in git.
+        if: inputs.model_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.model_artifact }}
+          run-id: ${{ inputs.model_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: candidate
+
       - name: Price the card
         shell: bash   # explicit, so the pipe into tee keeps python's exit code
         env:
@@ -49,9 +73,11 @@ jobs:
           HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
         run: |
           mkdir -p out
+          MODEL_DIR=data/models
+          if [ -n "${{ inputs.model_run }}" ]; then MODEL_DIR=candidate/data/models; fi
           python predict_bfsp_today.py \
             ${{ inputs.date && format('--date {0}', inputs.date) || '' }} \
-            --start-date 2021-01-01 \
+            --start-date 2021-01-01 --model-dir "$MODEL_DIR" \
             --output-csv out/predictions.csv 2>&1 | tee out/predict.log
           cp csv/racecards/racecard_*.csv out/ 2>/dev/null || true
 
