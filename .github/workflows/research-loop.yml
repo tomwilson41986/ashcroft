@@ -50,6 +50,8 @@ jobs:
     outputs:
       tag: ${{ steps.cfg.outputs.tag }}
       bfsp: ${{ steps.cfg.outputs.bfsp }}
+      outcome: ${{ steps.cfg.outputs.outcome }}
+      screen: ${{ steps.cfg.outputs.screen }}
       fkey: ${{ steps.fkey.outputs.key }}
       folds: ${{ steps.plan.outputs.folds }}
       base_key: ${{ steps.plan.outputs.base_key }}
@@ -85,6 +87,7 @@ jobs:
           for k in ("tag", "blocks", "drop", "keep", "params", "first_fold", "until"):
               print(f"{k}={c.get(k, '')}")
           print(f"fold_months={c.get('fold_months', 3)}")
+          print(f"depth={c.get('depth', 1)}")
           print(f"mode={c.get('mode', 'offset')}")
           print(f"outcome={'true' if c.get('outcome', True) else 'false'}")
           print(f"screen={'true' if c.get('screen', False) else 'false'}")
@@ -157,6 +160,68 @@ jobs:
         id: arms
         run: python scripts/research_loop.py arms --base-hit "${{ steps.bcache.outputs.cache-hit }}"
 
+      - name: Summarise into the run page
+        if: always()
+        run: |
+          { echo "### Fold plan"; echo '```'; cat reports/fit/folds.json 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  outcome:
+    # The win model on top of the market and the residual screen, beside the
+    # price-forecast fits rather than in front of them: an outcome run takes an
+    # hour or more and the fold fits need only the prepared matrix.
+    needs: prepare
+    if: needs.prepare.outputs.outcome == 'true' || needs.prepare.outputs.screen == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile /mnt/swapfile || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+
+      - name: Read the iteration config
+        id: cfg
+        run: |
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json
+          c = json.load(open("research/loop.json"))
+          for k in ("tag", "blocks", "drop", "keep", "params", "first_fold", "until"):
+              print(f"{k}={c.get(k, '')}")
+          print(f"fold_months={c.get('fold_months', 3)}")
+          print(f"depth={c.get('depth', 1)}")
+          print(f"mode={c.get('mode', 'offset')}")
+          print(f"outcome={'true' if c.get('outcome', True) else 'false'}")
+          print(f"screen={'true' if c.get('screen', False) else 'false'}")
+          print(f"final={'--final' if c.get('final', False) else ''}")
+          EOF
+
+      - name: Download historic database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
+
+      - name: Restore the feature matrix
+        uses: actions/cache/restore@v4
+        with:
+          path: .feature_cache
+          key: features-${{ needs.prepare.outputs.fkey }}
+          fail-on-cache-miss: true
+
       - name: Outcome model and rank-1 scoring
         if: steps.cfg.outputs.outcome == 'true'
         run: |
@@ -167,7 +232,7 @@ jobs:
             --start-date "$START_DATE" --tag "${{ steps.cfg.outputs.tag }}" \
             --first-fold "${{ steps.cfg.outputs.first_fold }}" --fold-months "${{ steps.cfg.outputs.fold_months }}" \
             --blocks "${{ steps.cfg.outputs.blocks }}" --drop "${{ steps.cfg.outputs.drop }}" \
-            --keep "${{ steps.cfg.outputs.keep }}" --until "${{ steps.cfg.outputs.until }}" --params '${{ steps.cfg.outputs.params }}' --mode "${{ steps.cfg.outputs.mode }}" ${{ steps.cfg.outputs.final }} \
+            --keep "${{ steps.cfg.outputs.keep }}" --until "${{ steps.cfg.outputs.until }}" --params '${{ steps.cfg.outputs.params }}' --mode "${{ steps.cfg.outputs.mode }}" --depth "${{ steps.cfg.outputs.depth }}" ${{ steps.cfg.outputs.final }} \
             --out-dir reports/outcome_model 2>&1 | grep -v PerformanceWarning | tee "reports/outcome_model/log_${{ steps.cfg.outputs.tag }}.txt"
 
       - name: Residual screen
@@ -184,17 +249,15 @@ jobs:
         run: |
           cat reports/outcome_model/summary_*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           cat reports/residual_screen/summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
-          { echo "### Fold plan"; echo '```'; cat reports/fit/folds.json 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: research-${{ steps.cfg.outputs.tag }}-${{ github.run_number }}-prepare
+          name: research-${{ steps.cfg.outputs.tag }}-${{ github.run_number }}-outcome
           path: |
             reports/outcome_model/
             reports/residual_screen/
-            reports/fit/folds.json
           if-no-files-found: ignore
           retention-days: 90
 

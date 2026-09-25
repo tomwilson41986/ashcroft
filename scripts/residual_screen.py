@@ -425,6 +425,9 @@ def screening_sample(df: pd.DataFrame, mp: pd.DataFrame | None = None) -> pd.Dat
     d["horse_name"] = df["horse_name"].values
     won = df["won"] if "won" in df.columns else (pd.to_numeric(df["placing_numerical"], errors="coerce") == 1)
     d["y"] = pd.to_numeric(won, errors="coerce").fillna(0).astype(float)
+    # the finishing position, for likelihoods over more than the winner (NaN: did not finish)
+    pl = pd.to_numeric(df["placing_numerical"], errors="coerce") if "placing_numerical" in df.columns else np.nan
+    d["pos"] = pd.Series(pl, index=df.index).where(lambda s: s > 0) if "placing_numerical" in df.columns else np.nan
     d["bfsp"] = pd.to_numeric(df["bfsp"], errors="coerce")
     for c in ("race_type", "race_code", "surface_type", "number_of_runners", "race_class", "track"):
         if c in df.columns:

@@ -292,15 +292,21 @@ def cmd_compare(args) -> None:
     if not base.exists():
         raise SystemExit("no base predictions: neither fitted here nor restored from the cache")
     cached = args.base_cached == "true"
-    rows, sections = [], []
-    for v in variants(cfg):
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(v):
         name = v["name"]
         md, js = out / f"compare_{name}.md", out / f"compare_{name}.json"
         subprocess.run([sys.executable, "scripts/compare_oos_runs.py", "--base", str(base),
                         "--variant", str(out / f"oos_{name}.csv"), "--out", str(md), "--json-out", str(js),
-                        "--note", _note(cfg, v, cached)], check=True, cwd=REPO)
-        rows.append((name, json.loads(js.read_text())))
-        sections.append(md.read_text())
+                        "--note", _note(cfg, v, cached)], check=True, cwd=REPO, capture_output=True)
+        return name, json.loads(js.read_text()), md.read_text()
+
+    # each comparison is its own process; run them side by side (a runner has four cores)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        done = list(pool.map(one, variants(cfg)))
+    rows = [(name, j) for name, j, _ in done]
+    sections = [md for _, _, md in done]
     text = (f"# {cfg.get('tag', '')}: {len(rows)} variant(s) against the base, recipe {recipe(cfg)}\n\n"
             + summary_table(rows) + "\n\n" + "\n\n".join(sections))
     rep = out / "oos_base_rep.csv"
@@ -311,13 +317,17 @@ def cmd_compare(args) -> None:
                        check=True, cwd=REPO)
         text += ("\n\n## Replicate: the base fitted twice\n\n" + replicate_report(str(base), str(rep))
                  + "\n\n" + (out / "replicate.md").read_text())
-    for arm in ["base"] + [v["name"] for v in variants(cfg)]:
+    def clv(arm):
         res = subprocess.run([sys.executable, "scripts/clv_betfair.py", "--predictions",
                               str(out / f"oos_{arm}.csv"), "--db", args.db, "--until", EVAL_UNTIL],
                              cwd=REPO, capture_output=True, text=True)
         body = res.stdout + (res.stderr[-2000:] if res.returncode else "")
         (out / f"clv_{arm}.txt").write_text(body)
-        text += f"\n\n### Early-price trade on Betfair's morning prices: {arm}\n```\n{body}\n```\n"
+        return arm, body
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for arm, body in pool.map(clv, ["base"] + [v["name"] for v in variants(cfg)]):
+            text += f"\n\n### Early-price trade on Betfair's morning prices: {arm}\n```\n{body}\n```\n"
     (out / "compare.md").write_text(text)
     print(text)
 
