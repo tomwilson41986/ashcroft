@@ -112,6 +112,18 @@ smaller quick-recipe result counts only when it repeats across different
 feature sets. Add `{"name": "placebo", "blocks": "placebo"}` to an iteration to
 measure the bar on the recipe and base in use.
 
+**The screen.** Screen blocks on the quick recipe with every feature in every
+tree: set `"bfsp_args": "--param feature_fraction=1.0"` in research/loop.json.
+Iteration 51 tested it against the same base:
+- the placebo read −0.0004 and seed 7 −0.0005;
+- bookings read −0.0044 (−0.0060 to −0.0029), clear of both;
+- its base is 0.0015 weaker than the quick recipe's, which does not matter for
+  a comparison.
+
+The loop caches its base under its own key, so later screens reuse it. The
+early-price rule still moves by a point with the seed, so do not read it from
+one screen arm.
+
 ## 4. Confirm on the served recipe (25–45 minutes, estimate)
 
 The same `loop.json` with `"recipe": "served"`, plus `"bfsp_variant_args":
