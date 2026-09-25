@@ -109,6 +109,7 @@ DROP_IN = [
     ("stable", "Stablemates", "A yard's runners today, their order, and whose jockey it books", "built"),
     ("dam_line", "Dam line", "The dam's produce record, the siblings and the female family", "built"),
     ("sire_apt", "Sire aptitudes", "Sire and damsire aptitudes against their own level, and the nick", "built"),
+    ("elo", "Finishing-order rating", "Each horse's strength from whom it beat, across the race network", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
      "against this field", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
@@ -163,6 +164,7 @@ BLOCK_EVIDENCE = {
                 "the placebo bar (iteration 50: +0.0022). Retired.",
     "Sire aptitudes": "Iteration 49: +0.0002 overall; -0.0032 (-0.0061 to -0.0002) in maiden, novice and bumper races, "
                       "+0.0017 elsewhere. Inside the placebo bar; one retest on a steadier screen.",
+    "Finishing-order rating": "Iteration 55 screens it on the steadier screen.",
     "Within-race readings (newer blocks)": "Iteration 44: +0.0007 (-0.0009 to +0.0022), the outsiders worse: the "
                                            "trees already read these measures against the field. Retired.",
     "Draw v2": "Iteration 35: -0.0004 (-0.0021 to +0.0010): nothing, alone or on top of the within-race readings.",
@@ -521,6 +523,12 @@ EXPLICIT_BLOCKS = {
     "st_jk_share": "Today's jockey's share of the trainer's rides on earlier days (decayed)",
     "st_jk_first": "Gets the yard's first-choice jockey among its stablemates in the race",
     "st_jk_gap": "Today's jockey's share of the yard's rides less the best among its stablemates' jockeys",
+    "elo": "Rating from finishing orders (Elo, Flat and jumps apart), as it stood before the day",
+    "elo_runs": "Finishes against other finishers behind the rating",
+    "elo_z": "Rating against today's field (z-score over rated runners)",
+    "elo_gap": "Rating less the best in today's field",
+    "elo_trend": "Rating now less its value three finishes ago",
+    "elo_field": "Today's field's mean rating",
     "h2h_rivals_met": "Today's rivals met before", "h2h_meetings": "Earlier meetings with today's rivals",
     "h2h_win_share": "Share of meetings with today's rivals finished ahead (shrunk to a half)",
     "h2h_net": "Meetings with today's rivals finished ahead less behind",
