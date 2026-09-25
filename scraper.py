@@ -17,6 +17,7 @@ import csv
 import io
 import logging
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -256,7 +257,10 @@ def download_csv(session: requests.Session, user_id: str,
         # downloads per account), or logged out. None of those is "no racing",
         # so the caller must not record it as done. What came back is logged
         # because it is the only evidence of which it was.
-        snippet = " ".join(resp.text[:160].split())
+        # the page's words, not its markup: the first 160 characters of the HTML
+        # were only the styling of the box the message sits in
+        words = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", resp.text, flags=re.S | re.I)
+        snippet = " ".join(re.sub(r"<[^>]+>", " ", words).split())[:400]
         log.info(f"{target_date}: no results file ({content_type or 'no content type'}): {snippet!r}")
         return None
 
