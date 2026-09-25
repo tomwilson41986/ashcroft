@@ -35,6 +35,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from model import feature_cache
 from model.bfsp_model import (
+    DEFAULT_PARAMS,
     OBJECTIVES,
     TARGETS,
     TrainConfig,
@@ -44,6 +45,7 @@ from model.bfsp_model import (
     predict_prices,
     resolve_feature_columns,
 )
+from model.bfsp_features import INTENT_CARD_UNSAFE, PRODUCTION_BLOCKS, RESEARCH_BLOCKS
 from model.custom_metrics import CustomMetricsEngine
 from train_bfsp import (
     ALL_FEATURE_COLS,
@@ -93,8 +95,13 @@ def walk_forward_predict(
     step_days: int = 30,
     cfg: TrainConfig | None = None,
     eval_from: str | None = None,
+    eval_until: str | None = None,
 ) -> pd.DataFrame:
     """Train and predict in walk-forward fashion.
+
+    `eval_until` stops the walk at that date: no fold starts on or after it and
+    no row on or after it is scored, so a development run never touches a
+    locked holdout (training rows are before each fold in any case).
 
     For each validation window, train a fresh model on all data before it,
     then predict on the validation window. This guarantees every prediction
@@ -128,6 +135,11 @@ def walk_forward_predict(
         tr_mask, va_mask = fold_masks(df["race_date"], val_start, val_end, cfg)
         train_df = df[tr_mask].copy()
         val_df = df[va_mask].copy()
+
+        if eval_until is not None and val_start >= pd.Timestamp(eval_until):
+            break
+        if eval_until is not None:
+            val_df = val_df[val_df["race_date"] < pd.Timestamp(eval_until)]
 
         if eval_from is not None and val_start < pd.Timestamp(eval_from):
             # Fold skipped, not re-keyed: --eval-from shortens a run without
@@ -748,6 +760,15 @@ def main():
                         help="Refit on the full training window at the chosen "
                              "iteration count (what the published model does)")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--num-boost-round", type=int, default=TrainConfig.num_boost_round,
+        help="Boosting rounds cap per fit (early stopping on the holdout still applies). "
+             "The served recipe's fits stop at or near 3000, the cap, not converged",
+    )
+    parser.add_argument(
+        "--learning-rate", type=float, default=None,
+        help="LightGBM learning rate (default: model/bfsp_model.py DEFAULT_PARAMS, 0.03)",
+    )
     parser.add_argument("--native-categoricals", action="store_true",
                         help="Declare the _cat columns to LightGBM as categorical "
                              "rather than letting it split them as ordered integers")
@@ -777,6 +798,25 @@ def main():
              "single fold. Lets a caller persist the cache the moment the "
              "expensive half is done, instead of at the end of a run that may "
              "never reach its end",
+    )
+    parser.add_argument(
+        "--eval-until", default=None, metavar="DATE",
+        help="Score only validation windows before DATE (exclusive). With "
+             "--eval-from, a development window that never reads the holdout",
+    )
+    parser.add_argument(
+        "--blocks", default="",
+        help="Blocks to add to the served features: shape_draw, form_windows and "
+             "shape_form (built by the engine, not served: model/bfsp_features.py "
+             "RESEARCH_BLOCKS), intent_unsafe (the four intent features the 06:00 card "
+             "cannot know), ae (model/ae_features.py, pre-off entities). Intent and "
+             "freshness are served now; see --withhold",
+    )
+    parser.add_argument(
+        "--withhold", default="", metavar="BLOCKS",
+        help="Production blocks to fit the model without, by exact feature name: "
+             "shape_draw, intent, freshness (model/bfsp_features.py PRODUCTION_BLOCKS). "
+             "Measures what a block adds to the served model on the same matrix and folds",
     )
     parser.add_argument(
         "--output-csv", default=None,
@@ -825,8 +865,39 @@ def main():
         names = tuple(
             n.strip() for n in open(args.drop_feature_list).read().split() if n.strip()
         )
+    # By name, not by prefix: pred_epf is a prefix of the older pred_epf_norm.
+    standard_blocks = PRODUCTION_BLOCKS
+    for block in [b.strip() for b in (args.withhold or "").split(",") if b.strip()]:
+        if block not in standard_blocks:
+            raise SystemExit(f"unknown production block {block!r} ({', '.join(standard_blocks)})")
+        names += tuple(standard_blocks[block])
+        log.info("withholding production block %s: %d features", block, len(standard_blocks[block]))
 
-    wanted = list(dict.fromkeys(ALL_FEATURE_COLS))
+    extra: list[str] = []
+    for block in [b.strip() for b in (args.blocks or "").split(",") if b.strip()]:
+        if block in ("shape", "drawcurve", "intent", "freshness"):
+            # Built by the metrics engine on every row; rebuilt here they would be
+            # computed on the priced rows alone and replace the engine's values.
+            raise SystemExit(f"{block!r} is built by the metrics engine now: shape_draw adds "
+                             "the built shape and draw columns, and --withhold measures a "
+                             "served block")
+        elif block in RESEARCH_BLOCKS or block == "intent_unsafe":
+            cols = list(RESEARCH_BLOCKS[block]) if block in RESEARCH_BLOCKS else list(INTENT_CARD_UNSAFE)
+            absent = [c for c in cols if c not in df.columns]
+            if absent:
+                raise SystemExit(f"{block}: {len(absent)} columns not in the matrix ({absent[:3]}...); "
+                                 "the engine builds them -- refresh the feature cache")
+        elif block == "ae":
+            # how the market has priced each trainer, jockey, sire and horse on earlier
+            # days; the pre-off entities only, since the forecast's target is today's price
+            from model.ae_features import PRE_OFF_ENTITIES, add_ae_features
+            df, cols = add_ae_features(df, entities=PRE_OFF_ENTITIES)
+        else:
+            raise SystemExit(f"unknown block {block!r} ({', '.join(RESEARCH_BLOCKS)}, intent_unsafe, ae)")
+        log.info("block %s: %d features", block, len(cols))
+        extra += cols
+
+    wanted = list(dict.fromkeys(list(ALL_FEATURE_COLS) + extra))
     feature_cols_full = resolve_feature_columns(
         df, wanted, drop_prefixes=prefixes, drop_names=names,
         strict=not args.allow_missing_features, log=log,
@@ -837,7 +908,7 @@ def main():
         dropped = [c for c in wanted if c in df.columns and c not in set(feature_cols_full)]
         log.info("Withholding %d features (%s%s)", len(dropped),
                  f"prefixes {list(prefixes)}" if prefixes else "",
-                 f" names from {args.drop_feature_list}" if names else "")
+                 f" {len(names)} names" if names else "")
         for c in sorted(dropped)[:20]:
             log.info("    - %s", c)
         if len(dropped) > 20:
@@ -873,11 +944,14 @@ def main():
         refit_on_full=args.refit,
         seed=args.seed,
         native_categoricals=args.native_categoricals,
+        num_boost_round=args.num_boost_round,
+        params={**DEFAULT_PARAMS, **({"learning_rate": args.learning_rate} if args.learning_rate else {})},
     )
     log.info("Training recipe: objective=%s target=%s decay=%.2f holdout=%dd "
-             "purge=%dd embargo=%dd refit=%s seed=%d",
+             "purge=%dd embargo=%dd refit=%s seed=%d rounds<=%d lr=%.3f",
              cfg.objective, cfg.target, cfg.decay_rate, cfg.holdout_days,
-             cfg.purge_days, cfg.embargo_days, cfg.refit_on_full, cfg.seed)
+             cfg.purge_days, cfg.embargo_days, cfg.refit_on_full, cfg.seed,
+             cfg.num_boost_round, cfg.params["learning_rate"])
 
     oos = walk_forward_predict(
         df,
@@ -887,6 +961,7 @@ def main():
         step_days=args.step_days,
         cfg=cfg,
         eval_from=args.eval_from,
+        eval_until=args.eval_until,
     )
 
     if oos.empty:

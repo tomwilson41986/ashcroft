@@ -100,3 +100,14 @@ Neither item changes the rule or the criteria. Without them the test cannot be s
 ## Start date (24 Sep 2026)
 
 The fixed path merged on 24 September. That day's 06:00 run had already served on the old path, so **the forward window opens with the 06:00 run of 25 September 2026.**
+
+## Amendment, 24 Sep 2026 (21:45 UTC), before the window opens: the model it opens on
+
+At the owner's instruction, the window opens on a model retrained since this document was written. **The 06:00 run of 25 September serves the price model on 535 features:** the 501 of the model served on 24 September, plus the card-safe intent block (20) and the freshness block (14).
+- **Artefact:** train-bfsp run 31 (commit 86ca911), trained through 2026-09-22, feature hash `9bc95363f3181433`, 3000 rounds.
+- **On its own 60-day holdout** (24 Jul – 22 Sep 2026, 21,491 runners), against the model it replaces on the same rows: MAE of the target 0.4936 → 0.4866, RMSE 0.6374 → 0.6282.
+- **Walk-forward, Jan–Mar 2026** (research-loop iteration 27): the rule +5.74% on the old model, +5.85% on this one.
+
+**Nothing in the rule, the criteria or the window changes.** The rule reads the 06:00 job's `predicted_bfsp`, whichever model makes it. Two consequences are fixed now, before any forward card is served:
+- **The backtest's forecast** for the forward days (the reading-2 comparison) is rebuilt with this 535-feature recipe, so the two forecasts compared are the same model.
+- **A later model may replace this one during the window only under strict conditions.** It must pass the research loop's decision rule on the development window, and it can never be swapped in mid-day. Every change is written to the ledger with its first 06:00 date. The report gives the headline for each model's days as well as for the whole window. The criterion stays the whole window.

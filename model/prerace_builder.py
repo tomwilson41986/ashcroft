@@ -12,6 +12,8 @@ and the prediction model.
 import numpy as np
 import pandas as pd
 
+from model.bfsp_features import INTENT_SERVED_FEATURES, SERVED_FRESHNESS_FEATURES
+
 
 class PreRaceBuilder:
     """Build pre-race feature vectors by looking up each entity's history.
@@ -480,5 +482,9 @@ class PreRaceBuilder:
                 "rFSS",
                 "rFCS",
             ]
+            # intent (card-safe) and freshness: built by CustomMetricsEngine,
+            # served by the BFSP model too
+            + INTENT_SERVED_FEATURES
+            + SERVED_FRESHNESS_FEATURES
         )
         return cols

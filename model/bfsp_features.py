@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from model.draw_curve import DRAW_CURVE_FEATURES, DRAW_STYLE_FEATURES
 from model.draw_metrics import ALL_DRAW_FEATURES, GP_DRAW_FEATURES
 from model.financial_features import FINANCIAL_FEATURES, FINANCIAL_RANK_FEATURES
 from model.pace_metrics import (
@@ -36,6 +37,11 @@ from model.pace_metrics import (
     TACTICAL_FEATURES,
     TRACK_PACE_BIAS_FEATURES,
 )
+from model.form_windows import FORM_WINDOW_FEATURES
+from model.freshness_features import FRESHNESS_FEATURES
+from model.intent_features import INTENT_FEATURES
+from model.race_shape import RACE_SHAPE_FEATURES
+from model.shape_form import SHAPE_FORM_FEATURES
 
 # ---------------------------------------------------------------------------
 # Feature columns: all custom metrics + engineered features
@@ -510,6 +516,66 @@ CONTEXT_FEATURES = [
     "or_vs_median",
 ]
 
+# Run style projected from the comments on each runner's earlier runs, the
+# race's shape from the field's projected styles, what the projected position
+# has been worth in that shape at this course and trip (model/race_shape.py),
+# and what the draw has been worth at this course, trip and field size, in
+# finishing position and in pounds, overall and for the runner's style
+# (model/draw_curve.py). Built by CustomMetricsEngine.calculate_all.
+SHAPE_DRAW_FEATURES = RACE_SHAPE_FEATURES + DRAW_CURVE_FEATURES + DRAW_STYLE_FEATURES
+
+# The connections' choices today and each trainer's record with them against the
+# price on earlier days (model/intent_features.py), less what a 06:00 card cannot
+# know: the card fills sex from the horse's last run, so a gelding since then is
+# never seen, and it carries the jockey booked at 06:00, not the one who rode.
+# Iteration 24: the card-safe block still sharpens the price forecast (-0.0052).
+INTENT_CARD_UNSAFE = ["it_gelded", "it_ae_gelded", "it_jockey_upgrade", "it_claim_change"]
+INTENT_SERVED_FEATURES = [c for c in INTENT_FEATURES if c not in INTENT_CARD_UNSAFE]
+
+# Days since the last run in context (model/freshness_features.py): against the
+# horse's usual spacing, the yard's and the field's; runs since a break; workload;
+# since the last win. Iteration 26: -0.0049, and Brier skill against the market
+# +0.0010; iteration 27 with card-safe intent: -0.0089.
+SERVED_FRESHNESS_FEATURES = list(FRESHNESS_FEATURES)
+
+#: The blocks the metrics engine builds, by name, with the features each serves
+#: (shape and draw are built, and measured, but not served: iteration 25).
+PRODUCTION_BLOCKS = {
+    "shape_draw": SHAPE_DRAW_FEATURES,
+    "intent": INTENT_SERVED_FEATURES,
+    "freshness": SERVED_FRESHNESS_FEATURES,
+}
+
+#: Built by the engine and measurable (evaluate_oos.py --blocks), not served:
+#: every per-run measure over career, last run, last 3, last 5 and the last
+#: 3/5/10 weighted by recency (model/form_windows.py); past form read against the
+#: pace and draw each run met, and the speed drawn near each runner today
+#: (model/shape_form.py).
+RESEARCH_BLOCKS = {
+    "shape_draw": SHAPE_DRAW_FEATURES,
+    "form_windows": FORM_WINDOW_FEATURES,
+    "shape_form": SHAPE_FORM_FEATURES,
+}
+
+
+def blocks_needed(feature_cols) -> dict[str, bool]:
+    """Which engine blocks a model reads, as CustomMetricsEngine flags. A model
+    trained before a block does not read it, and serving it need not build it."""
+    cols = set(feature_cols)
+    return {
+        "race_shape": bool(cols & (set(SHAPE_DRAW_FEATURES) | set(SHAPE_FORM_FEATURES))),
+        "intent": bool(cols & set(INTENT_FEATURES)),
+        "freshness": bool(cols & set(FRESHNESS_FEATURES)),
+        "form_windows": bool(cols & set(FORM_WINDOW_FEATURES)),
+        "shape_form": bool(cols & set(SHAPE_FORM_FEATURES)),
+    }
+
+
+def needs_race_shape(feature_cols) -> bool:
+    """Whether a model reads the shape and draw-curve block."""
+    return blocks_needed(feature_cols)["race_shape"]
+
+
 # Opt-in feature blocks appended by CLI flags (see main): ABM simulation
 # features, Betfair market-movement features, performance-figure features.
 EXTRA_FEATURE_COLS: list[str] = []
@@ -555,6 +621,8 @@ ALL_FEATURE_COLS = (
     + ALL_DRAW_FEATURES
     + FINANCIAL_FEATURES
     + FINANCIAL_RANK_FEATURES
+    + INTENT_SERVED_FEATURES
+    + SERVED_FRESHNESS_FEATURES
 )
 
 
@@ -576,17 +644,28 @@ def assert_no_post_race_features(feature_cols) -> None:
     from model.draw_metrics import DRAW_POST_RACE_ONLY
     from model.pace_metrics import PACE_POST_RACE_ONLY
     from model.primitives import POST_RACE_PRIMITIVES
+    from model.race_shape import RACE_SHAPE_POST_RACE
+    from model.shape_form import SHAPE_FORM_POST_RACE
 
-    # Four modules describe the race being predicted, so the guard covers all
-    # four. The union lives here rather than in any one of them so none has to
+    # Six modules describe the race being predicted, so the guard covers all
+    # six. The union lives here rather than in any one of them so none has to
     # import the others just to be checked.
     banned = (set(POST_RACE_ONLY) | set(POST_RACE_PRIMITIVES)
-              | set(PACE_POST_RACE_ONLY) | set(DRAW_POST_RACE_ONLY))
+              | set(PACE_POST_RACE_ONLY) | set(DRAW_POST_RACE_ONLY)
+              | set(RACE_SHAPE_POST_RACE) | set(SHAPE_FORM_POST_RACE))
     bad = sorted(set(feature_cols) & banned)
     if bad:
         raise ValueError(
             "These feature columns describe the race being predicted and cannot be "
             f"model inputs: {bad}. Use their lagged form instead."
+        )
+    # Not the race's result, but not on the 06:00 card either: trained on, they
+    # would be served as values the live path cannot reproduce.
+    unsafe = sorted(set(feature_cols) & set(INTENT_CARD_UNSAFE))
+    if unsafe:
+        raise ValueError(
+            f"These feature columns cannot be known from the 06:00 card: {unsafe}. "
+            "The results table has them; the live card does not."
         )
 
 

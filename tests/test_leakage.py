@@ -373,7 +373,10 @@ def _optin_features_for(flip_last_race):
     d, ped = add_pedigree_features(d)
     d, con = add_connection_features(d)
     d = add_perf_figure_features(d)
-    return d, list(ped) + list(con) + list(PERF_FIGURE_FEATURES)
+    # the engine builds its research blocks by default: shape and draw, form windows, shape form
+    from model.bfsp_features import RESEARCH_BLOCKS
+    engine = [c for cols in RESEARCH_BLOCKS.values() for c in cols]
+    return d, list(ped) + list(con) + list(PERF_FIGURE_FEATURES) + engine
 
 
 def test_no_optin_feature_reads_the_race_it_is_predicting():

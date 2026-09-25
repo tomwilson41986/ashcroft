@@ -465,8 +465,9 @@ def post_race_names() -> set[str]:
     from model.draw_metrics import DRAW_POST_RACE_ONLY
     from model.pace_metrics import PACE_POST_RACE_ONLY
     from model.primitives import POST_RACE_PRIMITIVES
+    from model.race_shape import RACE_SHAPE_POST_RACE
     return (set(POST_RACE_ONLY) | set(POST_RACE_PRIMITIVES) | set(PACE_POST_RACE_ONLY)
-            | set(DRAW_POST_RACE_ONLY) | {"perf_lbs", "kf_post", "kf_innov"})
+            | set(DRAW_POST_RACE_ONLY) | set(RACE_SHAPE_POST_RACE) | {"perf_lbs", "kf_post", "kf_innov"})
 
 
 def raw_and_block_columns(df: pd.DataFrame, feature_cols) -> list[str]:
@@ -484,6 +485,7 @@ def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = F
     """Opt-in research blocks production does not train on. With `strict`, a
     block that fails stops the run: a silently skipped block made one
     iteration a copy of another and nothing said so."""
+    from model.bfsp_features import RESEARCH_BLOCKS
     added: dict[str, list[str]] = {}
     if "raceid" not in df.columns:
         df["raceid"] = race_key(df)
@@ -527,6 +529,19 @@ def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = F
             elif b == "comments":
                 from model.comment_features import add_comment_features
                 df, cols = add_comment_features(df)
+            elif b in RESEARCH_BLOCKS:
+                # built by the metrics engine on every row and not served, so the frame
+                # kept them when it dropped the production features
+                cols = list(RESEARCH_BLOCKS[b])
+                absent = [c for c in cols if c not in df.columns]
+                if absent:
+                    raise ValueError(f"{b}: {len(absent)} columns not in the frame ({absent[:3]}...); "
+                                     "the engine builds them -- refresh the feature cache")
+            elif b in ("shape", "drawcurve", "intent", "freshness"):
+                # built by the metrics engine on every row (model/bfsp_features.py
+                # PRODUCTION_BLOCKS); rebuilt here they would come from the priced rows
+                # alone and sit beside the engine's copies
+                raise ValueError(f"{b} is built by the metrics engine now; it is already in the frame")
             elif b in ("pedigree", "connections"):
                 if "nmfp" not in df.columns:
                     from model.primitives import add_run_primitives
@@ -885,7 +900,7 @@ def main(argv=None):
                     help="withhold every race on or after this date (the locked holdout); '' to disable")
     ap.add_argument("--val-months", type=int, default=6, help="inner validation tail of the training window")
     ap.add_argument("--ridge-grid", type=float, nargs="+", default=[1.0, 10.0, 100.0, 1000.0])
-    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>]")
+    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>], and the engine-built shape_draw, form_windows and shape_form (shape, drawcurve, intent and freshness are built by the metrics engine now)")
     ap.add_argument("--limit", type=int, default=0, help="screen only the first N production features (smoke runs)")
     ap.add_argument("--no-alone", action="store_true")
     ap.add_argument("--no-boost", action="store_true")

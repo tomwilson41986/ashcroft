@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from model.ae_features import add_ae_features
+from model.ae_features import PRE_OFF_ENTITIES, add_ae_features
 
 
 def _history():
@@ -46,3 +46,18 @@ def test_shrinkage_pulls_thin_records_toward_zero():
     tight, _ = add_ae_features(d, shrink_n=100.0)
     t_last = lambda o: o[(o["trainer"] == "T")].sort_values("race_date")["ae_trainer"].iloc[-1]
     assert 0 < t_last(tight) < t_last(loose)
+
+
+def test_the_pre_off_block_never_sees_todays_price():
+    d = _history()
+    out1, names = add_ae_features(d, entities=PRE_OFF_ENTITIES)
+    assert names and not any(n.startswith("ae_track_front") for n in names)
+    d2 = d.copy()
+    last = d2["race_date"] == d2["race_date"].max()
+    d2.loc[last, "bfsp"] = [1.5, 30.0, 8.0, 3.0]            # a different market today
+    d2.loc[last, "placing_numerical"] = [4, 1, 2, 3]
+    out2, _ = add_ae_features(d2, entities=PRE_OFF_ENTITIES)
+    for c in names:
+        a = out1.loc[last.to_numpy(), c].to_numpy()
+        b = out2.loc[last.to_numpy(), c].to_numpy()
+        assert np.array_equal(a, b, equal_nan=True), c
