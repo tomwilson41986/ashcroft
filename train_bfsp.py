@@ -52,6 +52,7 @@ from model.bfsp_model import (
     build_target,
     fit_bfsp,
     invert_target,
+    parse_param_overrides,
     predict_prices,
     profit_weighted_metric,
     profit_weighted_objective,
@@ -211,8 +212,13 @@ class BFSPTrainer:
         gp_draw_surface: bool = False,
         cfg: TrainConfig | None = None,
         wf_folds: int = 0,
+        prob_model: bool = True,
     ):
         self.wf_folds = int(wf_folds)
+        #: The Benter stage-2 win model. Nothing served loads it (the train
+        #: workflow neither commits nor uploads it) and it costs about eight
+        #: minutes, so the fast path turns it off.
+        self.fit_prob_model = bool(prob_model)
         self.min_train_days = min_train_days
         self.val_window_days = val_window_days
         self.step_days = step_days
@@ -236,19 +242,25 @@ class BFSPTrainer:
         self.model: lgb.Booster | None = None
         self.feature_cols: list[str] = []
 
-    def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Full data preparation: custom metrics + context features + target."""
-        log.info("Calculating all custom metrics...")
-        df = self.metrics_engine.calculate_all(df)
-        log.info(f"  Custom metrics done: {len(df.columns)} columns")
+    def prepare_data(self, df: pd.DataFrame, prepared: bool = False) -> pd.DataFrame:
+        """Full data preparation: custom metrics + context features + target.
 
-        log.info("Building context features...")
-        df = build_context_features(df)
+        `prepared`: `df` is already the feature matrix (evaluate_oos.
+        build_feature_frame, as the feature cache stores it: the same engine,
+        context features and price filter), so only the feature columns are
+        chosen here."""
+        if not prepared:
+            log.info("Calculating all custom metrics...")
+            df = self.metrics_engine.calculate_all(df)
+            log.info(f"  Custom metrics done: {len(df.columns)} columns")
 
-        # Target: log(BFSP)
-        df["bfsp"] = pd.to_numeric(df["bfsp"], errors="coerce")
-        df = df[df["bfsp"].notna() & (df["bfsp"] > 1.0)].copy()
-        df["log_bfsp"] = np.log(df["bfsp"])
+            log.info("Building context features...")
+            df = build_context_features(df)
+
+            # Target: log(BFSP)
+            df["bfsp"] = pd.to_numeric(df["bfsp"], errors="coerce")
+            df = df[df["bfsp"].notna() & (df["bfsp"] > 1.0)].copy()
+            df["log_bfsp"] = np.log(df["bfsp"])
 
         # Determine available feature columns (+ any opt-in extra blocks)
         available = [c for c in list(ALL_FEATURE_COLS) + EXTRA_FEATURE_COLS if c in df.columns]
@@ -329,6 +341,7 @@ class BFSPTrainer:
         self,
         df: pd.DataFrame,
         output_dir: str = MODEL_DIR,
+        prepared: bool = False,
     ) -> dict:
         """Full training pipeline with walk-forward validation.
 
@@ -339,7 +352,7 @@ class BFSPTrainer:
         4. Save model artifacts and evaluation report
         """
         # Step 1: Prepare data
-        df = self.prepare_data(df)
+        df = self.prepare_data(df, prepared=prepared)
         log.info(f"Prepared {len(df):,} rows with valid BFSP")
 
         if len(df) < 200:
@@ -573,7 +586,7 @@ class BFSPTrainer:
         # Step 6: Train win probability model (Benter Stage 2)
         self.prob_model = None
         self.blender = None
-        if "won" in df.columns:
+        if "won" in df.columns and self.fit_prob_model:
             from model.benter_blend import BenterBlender
             from model.probability_model import FundamentalModel
 
@@ -818,6 +831,9 @@ class BFSPTrainer:
                 for r in importance_df.head(20).itertuples()
             ] if len(importance_df) else [],
         )
+        # for the record: the live path finds these from the feature names itself
+        from model import blocks as drop_in
+        meta["drop_in_blocks"] = drop_in.used_by(self.feature_cols)
         assert_meta_is_servable(meta)
         meta_path = os.path.join(output_dir, "bfsp_model_meta.json")
         with open(meta_path, "w") as f:
@@ -908,6 +924,38 @@ class BFSPTrainer:
 # CLI
 # ---------------------------------------------------------------------------
 
+def attach_training_blocks(df: pd.DataFrame, spec: str) -> tuple[pd.DataFrame, list[str]]:
+    """--blocks: what to train on beyond the served list, from the cached matrix.
+
+    Engine blocks the matrix carries but the served list leaves out
+    (model/bfsp_features.py RESEARCH_BLOCKS: shape_form, shape_draw) and
+    drop-in blocks (model/blocks), the latter built as the live path will build
+    them (`blocks.attach_as_trained`), so the model is served the computation it
+    was evaluated and trained on. Returns the frame and the features, in order."""
+    from model import blocks as drop_in
+    from model.bfsp_features import PRODUCTION_BLOCKS, RESEARCH_BLOCKS
+    names = [b.strip() for b in (spec or "").split(",") if b.strip()]
+    cols: list[str] = []
+    late: list[str] = []
+    for b in names:
+        if b in PRODUCTION_BLOCKS and b not in RESEARCH_BLOCKS:
+            raise SystemExit(f"{b} is served: its features are in the production list already")
+        if b in RESEARCH_BLOCKS:
+            absent = [c for c in RESEARCH_BLOCKS[b] if c not in df.columns]
+            if absent:
+                raise SystemExit(f"{b}: {len(absent)} columns not in the matrix ({absent[:3]}...)")
+            cols += list(RESEARCH_BLOCKS[b])
+        elif b in drop_in.names():
+            late.append(b)
+        else:
+            raise SystemExit(f"unknown block {b!r} ({', '.join(RESEARCH_BLOCKS)} or a drop-in block: "
+                             f"{', '.join(drop_in.names())})")
+    if late:
+        df, added = drop_in.attach_as_trained(df, late)
+        cols += added
+    return df, list(dict.fromkeys(cols))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Train BFSP prediction model using all custom metrics"
@@ -949,9 +997,39 @@ def main():
         help="Number of leaves (default: 127)",
     )
     parser.add_argument(
+        "--param", action="append", default=None, metavar="KEY=VALUE",
+        help="Any other LightGBM setting, e.g. --param min_child_samples=20 (repeatable): "
+             "serve the recipe a research-loop iteration chose",
+    )
+    parser.add_argument(
         "--num-boost-round", type=int, default=3000,
         help="Boosting rounds cap; early stopping on the holdout picks the count "
              "the published refit uses (default: 3000)",
+    )
+    parser.add_argument(
+        "--fixed-rounds", type=int, default=None, metavar="N",
+        help="Fit once on the whole window at exactly N rounds, skipping the "
+             "early-stopping fit (half the fitting time). Take N from the "
+             "walk-forward evaluation of the same recipe",
+    )
+    parser.add_argument(
+        "--feature-cache", default=None, metavar="DIR",
+        help="Load the feature matrix from the cache evaluate_oos.py and the research "
+             "loop build (the same engine, context features and price filter; the key "
+             "covers the feature code and the data), building and storing it on a "
+             "miss. Skips the 15-minute build when the matrix is already there",
+    )
+    parser.add_argument(
+        "--blocks", default="", metavar="BLOCKS",
+        help="With --feature-cache: train on these beyond the served list -- engine blocks the "
+             "matrix carries (shape_form, shape_draw) and drop-in blocks (model/blocks), built "
+             "as the live path builds them. The model's feature list then names them, and the "
+             "live path builds what it names",
+    )
+    parser.add_argument(
+        "--skip-prob-model", action="store_true",
+        help="Do not fit the Benter stage-2 win model: nothing served loads it, "
+             "and it costs about eight minutes",
     )
     parser.add_argument(
         "--start-date", type=str, default=None,
@@ -1066,9 +1144,34 @@ def main():
             print("  --db <path>       Specify database path")
             sys.exit(1)
 
-    # Load data
-    log.info("Loading data...")
-    df = load_data(args.db, start_date=args.start_date)
+    if args.feature_cache:
+        # The matrix the evaluation measured, not a second build of it: the
+        # same builder, the same key. The opt-in research blocks are added to
+        # the raw rows before the engine and the cache holds none of them.
+        optin = [f for f in ("gp_draw", "pedigree_features", "connection_features", "odds_features",
+                             "perf_features", "market_features", "blandford_features", "abm_features")
+                 if getattr(args, f, False)]
+        if optin:
+            raise SystemExit(f"--feature-cache cannot carry the opt-in blocks {optin}; drop one or the other")
+        from evaluate_oos import build_feature_frame
+        from model import feature_cache
+        df, info = feature_cache.build_or_load(
+            lambda: build_feature_frame(args.db, args.start_date), args.db,
+            start_date=args.start_date, cache_dir=args.feature_cache)
+        log.info("Feature matrix %s: %s rows x %s columns",
+                 "from the cache" if info.get("cached") else "built", f"{len(df):,}", f"{len(df.columns):,}")
+        prepared = True
+        if args.blocks:
+            df, block_cols = attach_training_blocks(df, args.blocks)
+            EXTRA_FEATURE_COLS.extend(block_cols)
+            log.info("Blocks %s: %d features beyond the served list", args.blocks, len(block_cols))
+    else:
+        if args.blocks:
+            raise SystemExit("--blocks trains on the cached matrix: add --feature-cache DIR")
+        # Load data
+        log.info("Loading data...")
+        df = load_data(args.db, start_date=args.start_date)
+        prepared = False
 
     # Opt-in research feature blocks (RESEARCH_FRAMEWORK.md)
     if getattr(args, "gp_draw", False):
@@ -1153,6 +1256,7 @@ def main():
         # Override params from CLI
         params["learning_rate"] = args.learning_rate
         params["num_leaves"] = args.num_leaves
+        params.update(parse_param_overrides(args.param))
 
     # Train
     cfg = TrainConfig(
@@ -1166,6 +1270,7 @@ def main():
         seed=args.seed,
         params=params,
         num_boost_round=args.num_boost_round,
+        fixed_rounds=args.fixed_rounds,
     )
     log.info("Training recipe: objective=%s target=%s decay=%.2f holdout=%dd "
              "purge=%dd seed=%d", cfg.objective, cfg.target, cfg.decay_rate,
@@ -1178,9 +1283,10 @@ def main():
         gp_draw_surface=getattr(args, "gp_draw", False),
         cfg=cfg,
         wf_folds=args.wf_folds,
+        prob_model=not args.skip_prob_model,
     )
 
-    summary = trainer.train(df, output_dir=args.output_dir)
+    summary = trainer.train(df, output_dir=args.output_dir, prepared=prepared)
 
     if "error" not in summary:
         print(f"\n  Model saved to: {args.output_dir}")

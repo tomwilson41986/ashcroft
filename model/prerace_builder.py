@@ -12,7 +12,7 @@ and the prediction model.
 import numpy as np
 import pandas as pd
 
-from model.bfsp_features import INTENT_SERVED_FEATURES, SERVED_FRESHNESS_FEATURES
+from model.bfsp_features import INTENT_SERVED_FEATURES, SERVED_FORM_WINDOW_FEATURES, SERVED_FRESHNESS_FEATURES
 
 
 class PreRaceBuilder:
@@ -482,9 +482,10 @@ class PreRaceBuilder:
                 "rFSS",
                 "rFCS",
             ]
-            # intent (card-safe) and freshness: built by CustomMetricsEngine,
-            # served by the BFSP model too
+            # intent (card-safe), freshness and the form windows: built by
+            # CustomMetricsEngine, served by the BFSP model too
             + INTENT_SERVED_FEATURES
             + SERVED_FRESHNESS_FEATURES
+            + SERVED_FORM_WINDOW_FEATURES
         )
         return cols

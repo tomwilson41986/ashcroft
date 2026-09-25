@@ -425,6 +425,9 @@ def screening_sample(df: pd.DataFrame, mp: pd.DataFrame | None = None) -> pd.Dat
     d["horse_name"] = df["horse_name"].values
     won = df["won"] if "won" in df.columns else (pd.to_numeric(df["placing_numerical"], errors="coerce") == 1)
     d["y"] = pd.to_numeric(won, errors="coerce").fillna(0).astype(float)
+    # the finishing position, for likelihoods over more than the winner (NaN: did not finish)
+    pl = pd.to_numeric(df["placing_numerical"], errors="coerce") if "placing_numerical" in df.columns else np.nan
+    d["pos"] = pd.Series(pl, index=df.index).where(lambda s: s > 0) if "placing_numerical" in df.columns else np.nan
     d["bfsp"] = pd.to_numeric(df["bfsp"], errors="coerce")
     for c in ("race_type", "race_code", "surface_type", "number_of_runners", "race_class", "track"):
         if c in df.columns:
@@ -479,6 +482,18 @@ def raw_and_block_columns(df: pd.DataFrame, feature_cols) -> list[str]:
     raw = set(RESULT_COLS) | {"id", "raceid", "won", "placed"}
     engineered = set(feature_cols) - raw
     return [c for c in df.columns if c not in engineered]
+
+
+def columns_for_blocks(df: pd.DataFrame, feature_cols, blocks) -> list[str]:
+    """raw_and_block_columns, unless a drop-in block (model/blocks) is asked for.
+
+    Those are computed on the engine's output and may read its production
+    features (race_relative standardises thirty of them within the race), so
+    with one in the list every column stays."""
+    from model import blocks as drop_in
+    if any(b in drop_in.names() for b in blocks):
+        return list(df.columns)
+    return raw_and_block_columns(df, feature_cols)
 
 
 def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = False) -> tuple[pd.DataFrame, dict]:
@@ -537,7 +552,7 @@ def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = F
                 if absent:
                     raise ValueError(f"{b}: {len(absent)} columns not in the frame ({absent[:3]}...); "
                                      "the engine builds them -- refresh the feature cache")
-            elif b in ("shape", "drawcurve", "intent", "freshness"):
+            elif b in ("shape", "drawcurve", "intent", "freshness", "form_windows"):
                 # built by the metrics engine on every row (model/bfsp_features.py
                 # PRODUCTION_BLOCKS); rebuilt here they would come from the priced rows
                 # alone and sit beside the engine's copies
@@ -553,7 +568,11 @@ def attach_blocks(df: pd.DataFrame, blocks: list[str], db: str, strict: bool = F
                     from model.connections import add_connection_features
                     df, cols = add_connection_features(df)
             else:
-                log.warning("unknown block %s", b); continue
+                from model import blocks as drop_in
+                if b not in drop_in.names():
+                    log.warning("unknown block %s", b); continue
+                # a drop-in block (model/blocks), computed on this frame
+                df, cols = drop_in.attach(df, [b])
         except Exception as exc:                    # noqa: BLE001 - a research block may not fit this frame
             if strict:
                 raise RuntimeError(f"block {b} failed: {type(exc).__name__}: {exc}") from exc
@@ -693,9 +712,9 @@ def run(args) -> dict:
         prod = prod[: args.limit]
     rows_in_sample = df.index.get_indexer(sample.index)
     frame_vals = {c: df[c].to_numpy()[rows_in_sample] for c in prod}
-    # The blocks need only the raw columns; dropping the production features
-    # now halves the peak memory of everything that follows.
-    df = df[raw_and_block_columns(df, ALL_FEATURE_COLS)]
+    # The blocks need only the raw columns (a drop-in block aside); dropping the
+    # production features now halves the peak memory of everything that follows.
+    df = df[columns_for_blocks(df, ALL_FEATURE_COLS, [b for b in (args.blocks or "").split(",") if b])]
     parts = build_parts(sample, args.split, args.val_months)
     tr_bsp, te_bsp = parts["bsp"]
     train_mask = np.zeros(len(sample), bool); train_mask[tr_bsp.idx] = True
@@ -900,7 +919,7 @@ def main(argv=None):
                     help="withhold every race on or after this date (the locked holdout); '' to disable")
     ap.add_argument("--val-months", type=int, default=6, help="inner validation tail of the training window")
     ap.add_argument("--ridge-grid", type=float, nargs="+", default=[1.0, 10.0, 100.0, 1000.0])
-    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>], and the engine-built shape_draw, form_windows and shape_form (shape, drawcurve, intent and freshness are built by the metrics engine now)")
+    ap.add_argument("--blocks", default="", help="comma list: perf,kalman,blandford,pedigree,connections,comments,markets,handicap,ae,inday[<gap minutes>], the engine-built shape_draw and shape_form (shape and drawcurve are retired; intent, freshness and form_windows are served), and any drop-in block in model/blocks")
     ap.add_argument("--limit", type=int, default=0, help="screen only the first N production features (smoke runs)")
     ap.add_argument("--no-alone", action="store_true")
     ap.add_argument("--no-boost", action="store_true")

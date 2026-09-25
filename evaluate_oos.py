@@ -37,11 +37,13 @@ from model import feature_cache
 from model.bfsp_model import (
     DEFAULT_PARAMS,
     OBJECTIVES,
+    RECIPES,
     TARGETS,
     TrainConfig,
     all_nan_columns,
     fit_bfsp,
     fold_masks,
+    parse_param_overrides,
     predict_prices,
     resolve_feature_columns,
 )
@@ -83,9 +85,61 @@ def build_feature_frame(db_path: str, start_date: str | None = None) -> pd.DataF
     return d.sort_values(["race_date", "race_time"]).reset_index(drop=True)
 
 
+def drop_in_blocks() -> list[str]:
+    """The blocks in model/blocks, which --blocks computes on the cached matrix."""
+    from model import blocks
+    return blocks.names()
+
+
 # ---------------------------------------------------------------------------
 # Walk-Forward Out-of-Sample Predictions
 # ---------------------------------------------------------------------------
+
+def evaluated_folds(dates, min_train_days: int = 365, val_window_days: int = 30,
+                    step_days: int = 30, cfg: TrainConfig | None = None,
+                    eval_from: str | None = None, eval_until: str | None = None):
+    """The walk-forward schedule: every fold a run scores, in order.
+
+    Yields (k, val_start, val_end, train_mask, val_mask), where k counts the
+    folds that are scored. The walk is anchored at the first date and steps by
+    `step_days`; `eval_from` skips folds without re-keying the rest and
+    `eval_until` ends the walk and cuts the last fold short. One generator
+    serves the serial walk and the parallel one (`--fold k`, `--list-folds`),
+    so a fold fitted on its own is the fold the serial run would have fitted."""
+    cfg = cfg or TrainConfig()
+    dates = pd.to_datetime(pd.Series(dates).reset_index(drop=True))
+    max_date = dates.max()
+    train_end = dates.min() + timedelta(days=min_train_days)
+    until = pd.Timestamp(eval_until) if eval_until is not None else None
+    k = 0
+    while train_end + timedelta(days=val_window_days) <= max_date:
+        val_start = train_end
+        val_end = val_start + timedelta(days=val_window_days)
+        train_end += timedelta(days=step_days)
+        if until is not None and val_start >= until:
+            break
+        if eval_from is not None and val_start < pd.Timestamp(eval_from):
+            # Fold skipped, not re-keyed: --eval-from shortens a run without
+            # changing the feature matrix, so variants still share one cache.
+            continue
+        # Purged and embargoed by the shared helper. A strict date split left
+        # trailing-window features (30-day trainer form, rolling strike rates)
+        # straddling the boundary.
+        tr_mask, va_mask = fold_masks(dates, val_start, val_end, cfg)
+        if until is not None:
+            va_mask = va_mask & (dates < until).to_numpy()
+        if tr_mask.sum() < 200 or va_mask.sum() < 5:
+            continue
+        yield k, val_start, val_end, tr_mask, va_mask
+        k += 1
+
+
+def fold_plan(dates, **kwargs) -> list[dict]:
+    """The scored folds as plain records, for a caller that fans them out."""
+    return [{"fold": k, "val_start": str(a.date()), "val_end": str(b.date()),
+             "n_train": int(tr.sum()), "n_val": int(va.sum())}
+            for k, a, b, tr, va in evaluated_folds(dates, **kwargs)]
+
 
 def walk_forward_predict(
     df: pd.DataFrame,
@@ -96,6 +150,7 @@ def walk_forward_predict(
     cfg: TrainConfig | None = None,
     eval_from: str | None = None,
     eval_until: str | None = None,
+    only_fold: int | None = None,
 ) -> pd.DataFrame:
     """Train and predict in walk-forward fashion.
 
@@ -112,44 +167,25 @@ def walk_forward_predict(
         - predicted_log_bfsp, predicted_bfsp
         - predicted_win_prob, predicted_win_prob_norm
         - fold_idx (which fold produced this prediction)
+
+    `only_fold` fits and scores that one fold of the schedule and no other,
+    keeping its index: the parallel loop runs each fold as its own job.
     """
     # The recipe, recorded and shared with train_bfsp.py. These used to be two
     # different models: plain L2 here, profit-weighted plus recency decay there.
     cfg = cfg or TrainConfig()
     fold_fits: list = []
-
-    min_date = df["race_date"].min()
-    max_date = df["race_date"].max()
-
     all_oos = []
-    fold_idx = 0
-    train_end = min_date + timedelta(days=min_train_days)
 
-    while train_end + timedelta(days=val_window_days) <= max_date:
-        val_start = train_end
-        val_end = val_start + timedelta(days=val_window_days)
-
-        # Purged and embargoed by the shared helper. A strict date split left
-        # trailing-window features (30-day trainer form, rolling strike rates)
-        # straddling the boundary.
-        tr_mask, va_mask = fold_masks(df["race_date"], val_start, val_end, cfg)
+    for fold_idx, val_start, val_end, tr_mask, va_mask in evaluated_folds(
+            df["race_date"], min_train_days, val_window_days, step_days, cfg,
+            eval_from, eval_until):
+        if only_fold is not None and fold_idx != only_fold:
+            continue
+        # Copied only for a fold that is fitted: the skipped folds of a
+        # development window used to copy the whole history each, for nothing.
         train_df = df[tr_mask].copy()
         val_df = df[va_mask].copy()
-
-        if eval_until is not None and val_start >= pd.Timestamp(eval_until):
-            break
-        if eval_until is not None:
-            val_df = val_df[val_df["race_date"] < pd.Timestamp(eval_until)]
-
-        if eval_from is not None and val_start < pd.Timestamp(eval_from):
-            # Fold skipped, not re-keyed: --eval-from shortens a run without
-            # changing the feature matrix, so variants still share one cache.
-            train_end += timedelta(days=step_days)
-            continue
-
-        if len(train_df) < 200 or len(val_df) < 5:
-            train_end += timedelta(days=step_days)
-            continue
 
         log.info(
             f"  Fold {fold_idx + 1}: train {len(train_df):,} rows "
@@ -159,7 +195,7 @@ def walk_forward_predict(
 
         fit = fit_bfsp(train_df, feature_cols, cfg)
         model = fit.booster
-        if fold_idx == 0:
+        if not fold_fits:
             log.info(
                 "    early stopping on the %d days before the fold (%d rows, from %s), "
                 "not on the fold being scored",
@@ -184,8 +220,6 @@ def walk_forward_predict(
         val_df["fold_idx"] = fold_idx
 
         all_oos.append(val_df)
-        fold_idx += 1
-        train_end += timedelta(days=step_days)
 
     if not all_oos:
         log.error("No walk-forward folds produced. Need more data.")
@@ -208,7 +242,7 @@ def walk_forward_predict(
             subset=available_id, keep="last"
         )
 
-    log.info(f"\nTotal OOS predictions: {len(combined):,} across {fold_idx} folds")
+    log.info(f"\nTotal OOS predictions: {len(combined):,} across {len(all_oos)} folds")
     return combined
 
 
@@ -682,7 +716,21 @@ def print_report(
 # Main
 # ---------------------------------------------------------------------------
 
+def _cpu_model() -> str | None:
+    """The runner's CPU, recorded with each run: fits on different hardware can
+    differ in the last bits, which a replicate check has to be able to see."""
+    try:
+        for line in open("/proc/cpuinfo"):
+            if line.startswith("model name"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return None
+
+
 def main():
+    import time
+    started = time.time()
     parser = argparse.ArgumentParser(
         description="Out-of-sample model evaluation with walk-forward predictions"
     )
@@ -761,13 +809,36 @@ def main():
                              "iteration count (what the published model does)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
-        "--num-boost-round", type=int, default=TrainConfig.num_boost_round,
+        "--recipe", default="served", choices=list(RECIPES),
+        help="served: the recipe the 06:00 model is trained with (default). quick: the "
+             "screening recipe (model/bfsp_model.py QUICK_PARAMS), about seven times "
+             "faster a fit, for ranking feature blocks; confirm on served before promoting",
+    )
+    parser.add_argument(
+        "--num-boost-round", type=int, default=None,
         help="Boosting rounds cap per fit (early stopping on the holdout still applies). "
-             "The served recipe's fits stop at or near 3000, the cap, not converged",
+             "Default: the recipe's (served 3000, quick 1000). The served recipe's fits "
+             "stop at or near 3000, the cap, not converged",
     )
     parser.add_argument(
         "--learning-rate", type=float, default=None,
-        help="LightGBM learning rate (default: model/bfsp_model.py DEFAULT_PARAMS, 0.03)",
+        help="LightGBM learning rate (default: the recipe's; served 0.03, quick 0.1)",
+    )
+    parser.add_argument(
+        "--param", action="append", default=None, metavar="KEY=VALUE",
+        help="Any other LightGBM setting on top of the recipe, e.g. --param num_leaves=255 "
+             "--param min_child_samples=20 (repeatable; a recipe iteration)",
+    )
+    parser.add_argument(
+        "--fold", type=int, default=None, metavar="K",
+        help="Fit and score only the K-th scored fold of the schedule (0-based, after "
+             "--eval-from/--eval-until), keeping its index. The parallel research loop "
+             "runs each fold as its own job; the predictions are the serial run's",
+    )
+    parser.add_argument(
+        "--list-folds", default=None, metavar="FILE",
+        help="Write the scored folds (index, window, row counts) to FILE as JSON and "
+             "stop. Reads only the dates from a cached matrix",
     )
     parser.add_argument("--native-categoricals", action="store_true",
                         help="Declare the _cat columns to LightGBM as categorical "
@@ -806,16 +877,18 @@ def main():
     )
     parser.add_argument(
         "--blocks", default="",
-        help="Blocks to add to the served features: shape_draw, form_windows and "
-             "shape_form (built by the engine, not served: model/bfsp_features.py "
-             "RESEARCH_BLOCKS), intent_unsafe (the four intent features the 06:00 card "
-             "cannot know), ae (model/ae_features.py, pre-off entities). Intent and "
-             "freshness are served now; see --withhold",
+        help="Blocks to add to the served features: shape_draw and shape_form (built "
+             "by the engine, not served: model/bfsp_features.py RESEARCH_BLOCKS), "
+             "intent_unsafe (the four intent features the 06:00 card cannot know), ae "
+             "(model/ae_features.py, pre-off entities), or any drop-in block in "
+             "model/blocks (computed on the cached matrix, no rebuild). Intent, freshness "
+             "and the form windows are served; see --withhold",
     )
     parser.add_argument(
         "--withhold", default="", metavar="BLOCKS",
         help="Production blocks to fit the model without, by exact feature name: "
-             "shape_draw, intent, freshness (model/bfsp_features.py PRODUCTION_BLOCKS). "
+             "shape_draw, intent, freshness, form_windows (model/bfsp_features.py "
+             "PRODUCTION_BLOCKS). "
              "Measures what a block adds to the served model on the same matrix and folds",
     )
     parser.add_argument(
@@ -831,6 +904,46 @@ def main():
     if not os.path.exists(args.db):
         log.error(f"Database not found: {args.db}")
         sys.exit(1)
+
+    # The recipe. Built before the data, so the fold plan can use its purge.
+    recipe_params, recipe_rounds = RECIPES[args.recipe]
+    params = {**DEFAULT_PARAMS, **recipe_params, **parse_param_overrides(args.param)}
+    if args.learning_rate:
+        params["learning_rate"] = args.learning_rate
+    cfg = TrainConfig(
+        objective=args.objective,
+        decay_rate=args.decay_rate,
+        target=args.target,
+        holdout_days=args.holdout_days,
+        purge_days=args.purge_days,
+        embargo_days=args.embargo_days,
+        refit_on_full=args.refit,
+        seed=args.seed,
+        native_categoricals=args.native_categoricals,
+        num_boost_round=args.num_boost_round or recipe_rounds,
+        params=params,
+    )
+    schedule = dict(min_train_days=args.min_train_days, val_window_days=args.val_window,
+                    step_days=args.step_days, cfg=cfg, eval_from=args.eval_from,
+                    eval_until=args.eval_until)
+
+    if args.list_folds:
+        # Only the dates are needed, and a cached matrix gives them without the
+        # other seven hundred columns.
+        dates = None
+        if args.feature_cache and not args.refresh_cache:
+            hit = feature_cache.load(args.feature_cache,
+                                     feature_cache.cache_key(args.db, args.start_date),
+                                     columns=["race_date"])
+            dates = hit[0]["race_date"] if hit else None
+        if dates is None:
+            dates = build_feature_frame(args.db, args.start_date)["race_date"]
+        plan = fold_plan(dates, **schedule)
+        with open(args.list_folds, "w") as f:
+            json.dump(plan, f, indent=2)
+        log.info("%d scored folds: %s", len(plan),
+                 ", ".join(f"{p['fold']}: {p['val_start']}..{p['val_end']} ({p['n_val']:,})" for p in plan))
+        return
 
     # Build the feature matrix, or reload it from cache.
     #
@@ -862,8 +975,10 @@ def main():
     prefixes = tuple(p.strip() for p in (args.drop_features or "").split(",") if p.strip())
     names = ()
     if args.drop_feature_list:
+        # one name per line; '#' starts a comment
         names = tuple(
-            n.strip() for n in open(args.drop_feature_list).read().split() if n.strip()
+            n for line in open(args.drop_feature_list)
+            for n in line.split("#", 1)[0].split() if n.strip()
         )
     # By name, not by prefix: pred_epf is a prefix of the older pred_epf_norm.
     standard_blocks = PRODUCTION_BLOCKS
@@ -875,12 +990,14 @@ def main():
 
     extra: list[str] = []
     for block in [b.strip() for b in (args.blocks or "").split(",") if b.strip()]:
-        if block in ("shape", "drawcurve", "intent", "freshness"):
+        if block in ("shape", "drawcurve"):
             # Built by the metrics engine on every row; rebuilt here they would be
             # computed on the priced rows alone and replace the engine's values.
             raise SystemExit(f"{block!r} is built by the metrics engine now: shape_draw adds "
-                             "the built shape and draw columns, and --withhold measures a "
-                             "served block")
+                             "the built shape and draw columns")
+        elif block in PRODUCTION_BLOCKS and block not in RESEARCH_BLOCKS:
+            raise SystemExit(f"{block!r} is served: its features are in the production list "
+                             "already, and --withhold measures what it adds")
         elif block in RESEARCH_BLOCKS or block == "intent_unsafe":
             cols = list(RESEARCH_BLOCKS[block]) if block in RESEARCH_BLOCKS else list(INTENT_CARD_UNSAFE)
             absent = [c for c in cols if c not in df.columns]
@@ -892,8 +1009,17 @@ def main():
             # days; the pre-off entities only, since the forecast's target is today's price
             from model.ae_features import PRE_OFF_ENTITIES, add_ae_features
             df, cols = add_ae_features(df, entities=PRE_OFF_ENTITIES)
+        elif block in drop_in_blocks():
+            # a drop-in block (model/blocks): computed here on the cached matrix, so
+            # adding or changing one costs its own seconds, not a rebuild
+            from model import blocks as drop_in
+            import time as _t
+            t0 = _t.time()
+            df, cols = drop_in.attach(df, [block])
+            log.info("block %s built on the cached matrix in %.0fs", block, _t.time() - t0)
         else:
-            raise SystemExit(f"unknown block {block!r} ({', '.join(RESEARCH_BLOCKS)}, intent_unsafe, ae)")
+            raise SystemExit(f"unknown block {block!r} ({', '.join(RESEARCH_BLOCKS)}, intent_unsafe, ae, "
+                             f"or a drop-in block: {', '.join(drop_in_blocks()) or 'none'})")
         log.info("block %s: %d features", block, len(cols))
         extra += cols
 
@@ -934,35 +1060,15 @@ def main():
 
     # Walk-forward predictions
     log.info("\nRunning walk-forward out-of-sample evaluation...")
-    cfg = TrainConfig(
-        objective=args.objective,
-        decay_rate=args.decay_rate,
-        target=args.target,
-        holdout_days=args.holdout_days,
-        purge_days=args.purge_days,
-        embargo_days=args.embargo_days,
-        refit_on_full=args.refit,
-        seed=args.seed,
-        native_categoricals=args.native_categoricals,
-        num_boost_round=args.num_boost_round,
-        params={**DEFAULT_PARAMS, **({"learning_rate": args.learning_rate} if args.learning_rate else {})},
-    )
-    log.info("Training recipe: objective=%s target=%s decay=%.2f holdout=%dd "
-             "purge=%dd embargo=%dd refit=%s seed=%d rounds<=%d lr=%.3f",
-             cfg.objective, cfg.target, cfg.decay_rate, cfg.holdout_days,
+    log.info("Training recipe: %s, objective=%s target=%s decay=%.2f holdout=%dd "
+             "purge=%dd embargo=%dd refit=%s seed=%d rounds<=%d lr=%.3f%s",
+             args.recipe, cfg.objective, cfg.target, cfg.decay_rate, cfg.holdout_days,
              cfg.purge_days, cfg.embargo_days, cfg.refit_on_full, cfg.seed,
-             cfg.num_boost_round, cfg.params["learning_rate"])
+             cfg.num_boost_round, cfg.params["learning_rate"],
+             "" if args.fold is None else f", fold {args.fold} only")
 
-    oos = walk_forward_predict(
-        df,
-        feature_cols_full,
-        min_train_days=args.min_train_days,
-        val_window_days=args.val_window,
-        step_days=args.step_days,
-        cfg=cfg,
-        eval_from=args.eval_from,
-        eval_until=args.eval_until,
-    )
+    oos = walk_forward_predict(df, feature_cols_full, cfg=cfg, only_fold=args.fold,
+                               **{k: v for k, v in schedule.items() if k != "cfg"})
 
     if oos.empty:
         log.error("No out-of-sample predictions generated.")
@@ -1045,6 +1151,10 @@ def main():
             "n_folds": int(oos["fold_idx"].nunique()),
             "n_features_used": len(feature_cols_full),
             "train_config": cfg.describe(),
+            "recipe": args.recipe,
+            "fold": args.fold,
+            "elapsed_seconds": round(time.time() - started, 1),
+            "cpu": _cpu_model(),
             "fold_fits": oos.attrs.get("fold_fits", []),
             "folds_early_stopped": sum(
                 1 for f in oos.attrs.get("fold_fits", []) if f["early_stopped"]

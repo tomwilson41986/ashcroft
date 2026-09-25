@@ -11,6 +11,7 @@ on:
     paths:
       - 'research/queries/**'
       - '.github/workflows/research-query.yml'
+      - '.github/workflows/research-query.yml'
 
 permissions:
   contents: read
@@ -33,6 +34,16 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
         run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
+      - name: Feature cache key
+        id: fkey
+        run: echo "key=$(python -c "import model.feature_cache as f; print(f.cache_key('horse_racing.db', '2021-01-01'))")" >> "$GITHUB_OUTPUT"
+      - name: Restore the feature matrix (if one is cached for this code and data)
+        # Best effort: a query that wants the matrix loads it from .feature_cache
+        # and skips its part when the restore missed.
+        uses: actions/cache/restore@v4
+        with:
+          path: .feature_cache
+          key: features-${{ steps.fkey.outputs.key }}
       - name: Run the queries
         env:
           # read-only S3 for queries that need files beside the database (the 06:00 record)
@@ -41,6 +52,8 @@ jobs:
           PRED_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           PRED_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
         run: |
+          # no pending query (all moved to done/) must run nothing, not a file named '*'
+          shopt -s nullglob
           mkdir -p out
           for q in research/queries/*.py; do
             name=$(basename "$q" .py)
@@ -54,5 +67,6 @@ jobs:
         with:
           name: research-query-${{ github.run_number }}
           path: out/
+          if-no-files-found: ignore
           # snapshots kept long enough for the forward revision test
           retention-days: 90

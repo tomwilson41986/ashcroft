@@ -231,7 +231,64 @@ DEFAULT_PARAMS = {
     "lambda_l2": 0.1,
     "verbose": -1,
     "seed": 42,
+    # Reproducible fits. Column-wise histograms are what LightGBM chooses for
+    # this shape anyway (0.296 s a round against 0.317 s on auto, 300k x 535),
+    # and `deterministic` pins the rest, so the same matrix and the same recipe
+    # give the same booster: a cached base run is then the base run, exactly.
+    "deterministic": True,
+    "force_col_wise": True,
 }
+
+#: A screening recipe: the same model family, cheaper per round (63 bins, half
+#: the features and half the rows per tree: 0.131 s a round against 0.296 s) and
+#: at a coarser learning rate, so it needs a third of the rounds. About seven
+#: times faster a fit. It ranks feature blocks; it is not what is served. A block
+#: it passes is confirmed on the served recipe before it is promoted.
+QUICK_PARAMS = {
+    "learning_rate": 0.1,
+    "max_bin": 63,
+    "feature_fraction": 0.5,
+    "bagging_fraction": 0.5,
+    "bagging_freq": 1,
+}
+QUICK_ROUNDS = 1000
+
+#: The recipes a run can name: the LightGBM overrides and the round cap.
+RECIPES = {"served": ({}, 3000), "quick": (QUICK_PARAMS, QUICK_ROUNDS)}
+
+
+def parse_param_overrides(items: list[str] | None) -> dict:
+    """LightGBM overrides from the command line: ["num_leaves=255", "min_child_samples=20"].
+
+    Values are read as int, then float, then left as text, so a recipe iteration
+    can move any setting without a flag of its own. A setting the model family
+    does not have is refused rather than passed to LightGBM to ignore."""
+    out: dict = {}
+    for item in items or []:
+        key, sep, raw = item.partition("=")
+        key = key.strip()
+        if not sep or not key or not raw.strip():
+            raise ValueError(f"--param wants KEY=VALUE, got {item!r}")
+        if key not in DEFAULT_PARAMS and key not in QUICK_PARAMS and key not in _EXTRA_PARAMS:
+            raise ValueError(f"--param {key!r} is not a setting of this model family")
+        raw = raw.strip()
+        if raw.lower() in ("true", "false"):
+            out[key] = raw.lower() == "true"
+            continue
+        for cast in (int, float):
+            try:
+                out[key] = cast(raw)
+                break
+            except ValueError:
+                continue
+        else:
+            out[key] = raw
+    return out
+
+
+#: Settings a recipe iteration may add that the defaults leave to LightGBM.
+_EXTRA_PARAMS = {"max_depth", "min_sum_hessian_in_leaf", "min_gain_to_split", "extra_trees", "path_smooth",
+                 "max_bin", "cat_smooth", "cat_l2", "feature_fraction_bynode"}
 
 
 def profit_weighted_objective(preds, train_data):
@@ -344,6 +401,13 @@ class TrainConfig:
 
     num_boost_round: int = 3000
     early_stopping_rounds: int = 100
+
+    #: Fit once, on the whole window, at exactly this many rounds: no
+    #: early-stopping fit first. The published model's round count is already
+    #: known from the walk-forward evaluation (its fits stop at or near the
+    #: cap), so choosing it again on a holdout doubled the training time to
+    #: arrive at the same number. None keeps the holdout-then-refit protocol.
+    fixed_rounds: int | None = None
 
     #: Refit on the whole training window at the chosen iteration count once
     #: early stopping has picked it. True for the published model, False per
@@ -516,9 +580,6 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
             reference=ref, categorical_feature=cat or "auto",
         )
 
-    fit_set = _ds(~is_holdout)
-    hold_set = _ds(is_holdout, ref=fit_set)
-
     params = dict(cfg.params)
     feval = None
     if cfg.objective == "profit_weighted":
@@ -528,6 +589,28 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         # A custom fobj turns off boost_from_average, so the fit starts at 0 in
         # log space and spends its first rounds travelling to the mean.
         params["boost_from_average"] = False
+
+    if cfg.fixed_rounds:
+        # One fit on everything at a count chosen elsewhere (the walk-forward
+        # evaluation). The holdout rows are in the fit, so their error is
+        # in-sample and recorded as such.
+        full = _ds(np.ones(len(d), dtype=bool))
+        booster = lgb.train(params, full, num_boost_round=int(cfg.fixed_rounds), feval=feval,
+                            callbacks=[lgb.log_evaluation(period=0)])
+        del full
+        gc.collect()
+        hp = booster.predict(d.loc[is_holdout, feature_cols].astype(float)) + init_offset
+        hy = y[is_holdout]
+        return FitResult(
+            booster=booster, best_iteration=int(cfg.fixed_rounds), holdout_start=holdout_start,
+            holdout_metrics={"n": int(is_holdout.sum()), "mae": float(np.mean(np.abs(hp - hy))),
+                             "rmse": float(np.sqrt(np.mean((hp - hy) ** 2))), "in_sample": True},
+            n_train=int(len(d)), n_holdout=int(is_holdout.sum()), refit=True,
+            early_stopped=False, init_offset=init_offset,
+        )
+
+    fit_set = _ds(~is_holdout)
+    hold_set = _ds(is_holdout, ref=fit_set)
 
     booster = lgb.train(
         params, fit_set,

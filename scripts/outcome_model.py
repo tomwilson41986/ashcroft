@@ -200,12 +200,83 @@ def fold_starts(first: str, last_exclusive: pd.Timestamp, months: int) -> list[p
     return out
 
 
-def fit_boosted(X, tr: rs.Part, va: rs.Part, market_beta, params=None, rounds=2000, early=100):
+def pl_stages(pos: np.ndarray, starts: np.ndarray, seg: np.ndarray, depth: int) -> list[tuple[np.ndarray, np.ndarray]]:
+    """The stages of a rank-ordered (Plackett-Luce) likelihood to `depth` places.
+
+    Stage k chooses the k-th finisher from the runners not yet placed (those
+    that finished k-th or worse, and those that did not finish), in races where
+    someone finished k-th. Returns (in_set, label) per stage; the label is 1 for
+    the k-th finisher, shared on a dead heat. Stage 1 is the winner's softmax.
+    Bolton & Chapman (1986) and Sung & Johnson (2007) read the order to depth 3:
+    standard errors fall 28% from depth 1 to 2 and a further 17-19% to 3."""
+    out = []
+    posf = np.where(np.isfinite(pos), pos, np.inf)
+    for k in range(1, depth + 1):
+        chosen = (posf == k).astype(float)
+        n_chosen = np.add.reduceat(chosen, starts)[seg]
+        race_ok = n_chosen > 0
+        in_set = (posf >= k) & race_ok
+        label = np.where(race_ok, chosen / np.where(n_chosen > 0, n_chosen, 1.0), 0.0)
+        out.append((in_set, label))
+    return out
+
+
+def masked_softmax(eta: np.ndarray, in_set: np.ndarray, starts: np.ndarray, seg: np.ndarray) -> np.ndarray:
+    """The race softmax over the rows in `in_set` (0 elsewhere)."""
+    z = np.where(in_set, eta, -np.inf)
+    m = np.maximum.reduceat(z, starts)
+    m = np.where(np.isfinite(m), m, 0.0)
+    e = np.where(in_set, np.exp(z - m[seg]), 0.0)
+    tot = np.add.reduceat(e, starts)[seg]
+    return np.where(in_set & (tot > 0), e / np.where(tot > 0, tot, 1.0), 0.0)
+
+
+def stage_loglik(eta: np.ndarray, stage, starts, seg) -> float:
+    in_set, label = stage
+    p = masked_softmax(eta, in_set, starts, seg)
+    return float(np.sum(label * np.log(np.where(label > 0, p, 1.0))))
+
+
+def fit_stage_discounts(utility: np.ndarray, stages, starts, seg, grid=None) -> list[float]:
+    """Benter's gamma, delta: the market is less decisive about second and third
+    than about the winner ("the increasing randomness of the contests for second
+    and third place"), so stage k >= 2 scores lambda_k times the utility. Each
+    lambda is the one maximising that stage's likelihood of the market's own
+    utility on the training window (Benter's Hong Kong values: .81, .65)."""
+    grid = np.arange(0.30, 1.2001, 0.05) if grid is None else grid
+    lams = [1.0]
+    for st in stages[1:]:
+        ll = [stage_loglik(g * utility, st, starts, seg) for g in grid]
+        lams.append(round(float(grid[int(np.argmax(ll))]), 2))
+    return lams
+
+
+def fit_boosted(X, tr: rs.Part, va: rs.Part, market_beta, params=None, rounds=2000, early=100,
+                tr_pos: np.ndarray | None = None, depth: int = 1):
+    """LightGBM on the race softmax, boosted from the market's utility. With
+    `depth` > 1 and the training rows' finishing positions, the objective is the
+    rank-ordered likelihood to that depth, each place below the first scored at
+    its fitted discount; early stopping still reads the winner's likelihood, the
+    quantity the model is for."""
     import lightgbm as lgb
 
-    def fobj(preds, ds):
-        p = rs.softmax_blocks(preds, *tr.blk)
-        return p - tr.y, np.maximum(p * (1 - p), 1e-6)
+    if depth > 1 and tr_pos is not None:
+        stages = pl_stages(tr_pos, *tr.blk, depth)
+        lambdas = fit_stage_discounts(tr.M @ market_beta, stages, *tr.blk)
+        log.info("rank-ordered fit to depth %d, stage discounts %s", depth, lambdas)
+
+        def fobj(preds, ds):
+            g = np.zeros_like(preds)
+            h = np.zeros_like(preds)
+            for lam, (in_set, label) in zip(lambdas, stages):
+                p = masked_softmax(lam * preds, in_set, *tr.blk)
+                g += lam * (p - label)
+                h += lam * lam * p * (1 - p)
+            return g, np.maximum(h, 1e-6)
+    else:
+        def fobj(preds, ds):
+            p = rs.softmax_blocks(preds, *tr.blk)
+            return p - tr.y, np.maximum(p * (1 - p), 1e-6)
 
     def feval(preds, ds):
         return "race_nll", float(-rs.race_loglik(preds, va.y, *va.blk).mean()), False
@@ -234,7 +305,7 @@ def linear_design(X: np.ndarray, train_mask: np.ndarray) -> tuple[np.ndarray, np
 
 def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.Timestamp, fold_months: int,
                  val_months: int, params=None, feature_names=None,
-                 mode: str = "offset") -> tuple[pd.DataFrame, list[dict], pd.DataFrame]:
+                 mode: str = "offset", depth: int = 1) -> tuple[pd.DataFrame, list[dict], pd.DataFrame]:
     """mode "offset": trees boosted from the market-only logit (one pass).
     mode "free": Benter's two stages -- a market-free fundamental model f on the
     winner, then Stage C, softmax(a ln pi + b (ln pi)^2 + c ln f), fitted on the
@@ -247,6 +318,7 @@ def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.T
     pos = np.arange(len(sample))
     date = sample["date"].to_numpy()
     M = rs.market_columns(sample["ln_pi"].to_numpy(float))
+    finish = sample["pos"].to_numpy(float) if "pos" in sample.columns else np.full(len(sample), np.nan)
 
     def part(mask):
         return rs.Part(pos[mask], codes[mask], y[mask], M[mask])
@@ -267,7 +339,9 @@ def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.T
         off = p_te.M @ bm
         if mode == "free":
             p_va = part(va_m)
-            booster, best = fit_boosted(X, part(fit_m), p_va, np.zeros(rs.MARKET_TERMS), params=params)
+            p_fit = part(fit_m)
+            booster, best = fit_boosted(X, p_fit, p_va, np.zeros(rs.MARKET_TERMS), params=params,
+                                        tr_pos=finish[p_fit.idx], depth=depth)
             f_va = booster.predict(X[p_va.idx], raw_score=True, num_iteration=best)
             f_te = booster.predict(X[p_te.idx], raw_score=True, num_iteration=best)
             # the fundamental model's log-probability is its raw score less the race's log-sum-exp
@@ -300,7 +374,9 @@ def walk_forward(sample: pd.DataFrame, X: np.ndarray, first_fold: str, end: pd.T
             np.add.at(coef, owner, np.abs(b[rs.MARKET_TERMS:]))
             booster = None
         else:
-            booster, best = fit_boosted(X, part(fit_m), part(va_m), bm, params=params)
+            p_fit = part(fit_m)
+            booster, best = fit_boosted(X, p_fit, part(va_m), bm, params=params,
+                                        tr_pos=finish[p_fit.idx], depth=depth)
             eta = off + booster.predict(X[p_te.idx], raw_score=True, num_iteration=best)
             p_fund = np.full(len(p_te.idx), np.nan)
         p_model = rs.softmax_blocks(eta, *p_te.blk)
@@ -393,7 +469,8 @@ def run(args) -> dict:
     cols = [np.array(pd.to_numeric(df[c], errors="coerce"), dtype=np.float32)[rows_in_sample] for c in feats]
     blocks = [b for b in (args.blocks or "").split(",") if b]
     if blocks:
-        keep = df[rs.raw_and_block_columns(df, ALL_FEATURE_COLS)].copy()
+        needed = rs.columns_for_blocks(df, ALL_FEATURE_COLS, blocks)
+        keep = df if len(needed) == df.shape[1] else df[needed].copy()   # no second copy of the whole frame
         del df
         keep, added = rs.attach_blocks(keep, blocks, args.db, strict=True)
         key = pd.DataFrame({"race": rs.race_key(keep), "horse_name": keep["horse_name"].values})
@@ -424,10 +501,11 @@ def run(args) -> dict:
            "drop": args.drop, "keep": getattr(args, "keep", ""),
            "blocks": args.blocks, "fold_months": args.fold_months, "val_months": args.val_months,
            "params": args.params, "first_fold": first, "until": getattr(args, "until", ""),
+           "depth": getattr(args, "depth", 1),
            "final": bool(args.final)}
     params = json.loads(args.params) if args.params else None
     oos, folds, importance = walk_forward(sample, X, first, end, args.fold_months, args.val_months, params, feats,
-                                          mode=args.mode)
+                                          mode=args.mode, depth=getattr(args, "depth", 1))
     if args.final:
         oos = oos[pd.to_datetime(oos["date"]) >= lock]
     oos.to_csv(out / f"oos_{args.tag}.csv.gz", index=False)
@@ -515,6 +593,9 @@ def main(argv=None):
     ap.add_argument("--params", default="", help="LightGBM params as JSON, merged over the defaults")
     ap.add_argument("--keep", default="", help="comma list of feature-name prefixes: use only these")
     ap.add_argument("--until", default="", help="score only folds before this date (exclusive)")
+    ap.add_argument("--depth", type=int, default=1,
+                    help="places of the finishing order the boosted fit reads: 1 = the winner (race softmax), "
+                         "2 or 3 = the rank-ordered likelihood, each place below the first at its fitted discount")
     ap.add_argument("--mode", default="offset", choices=["offset", "free", "linear"],
                     help="offset: trees boosted from the market; free: market-free Stage F, then Stage C; "
                          "linear: ridge conditional logit on market + features (use with --keep)")

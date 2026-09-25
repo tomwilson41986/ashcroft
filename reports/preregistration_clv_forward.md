@@ -111,3 +111,25 @@ At the owner's instruction, the window opens on a model retrained since this doc
 **Nothing in the rule, the criteria or the window changes.** The rule reads the 06:00 job's `predicted_bfsp`, whichever model makes it. Two consequences are fixed now, before any forward card is served:
 - **The backtest's forecast** for the forward days (the reading-2 comparison) is rebuilt with this 535-feature recipe, so the two forecasts compared are the same model.
 - **A later model may replace this one during the window only under strict conditions.** It must pass the research loop's decision rule on the development window, and it can never be swapped in mid-day. Every change is written to the ledger with its first 06:00 date. The report gives the headline for each model's days as well as for the whole window. The criterion stays the whole window.
+
+## Amendment, 25 Sep 2026 (07:10 UTC): what day 1 ran on
+
+**The 06:00 run of 25 September served the 501-feature model, not the 535.** The artefact was committed on 24 September, but PR #75, which puts it on the default branch, merged at 06:44 UTC on 25 September, after that day's scheduled run.
+- **Run 195** (scheduled, 06:13–06:26 UTC): the 501 model. It wrote `racecards/2026-09-25_0613.csv` and `predictions/2026-09-25.csv` (528 runners, 44 races).
+- **Run 196** (dispatched 06:46 UTC on the merged commit eeb5dec): the 535 model, same card, 528 of 528 runners priced. It wrote `racecards/2026-09-25_0646.csv`, and **rewrote `predictions/2026-09-25.csv` at 06:57:40 UTC (07:57 UK).** That is inside the rule that excludes a day only when the file is written after 09:00 UK.
+- **Day 1 is scored on run 196's file, the 535 model,** so the whole window runs on one model as the previous amendment intends.
+- **The 501's day-1 forecast is not kept as a file, but can be rebuilt.** Run 195's card is kept at `racecards/2026-09-25_0613.csv` and the model is deterministic. It is not scored.
+- **No bets were affected.** No bet had been placed when the file was rewritten (execute.yml runs from 10:00 UTC), and `BETFAIR_APP_KEY` is unset, so the job records no exchange prices at prediction time.
+
+## Amendment, 25 Sep 2026 (11:40 UTC), before the 26 September card: the model from day 2
+
+At the owner's instruction of 25 September ("add the form windows into the main model"), **the 06:00 run of 26 September serves the price model on 615 features:** the 535 served on 25 September plus the 80 form windows (`model/form_windows.py`), fitted at 6000 rounds instead of 3000.
+- **Artefact:** train-bfsp run 32 (commit 24df459), trained through 2026-09-22 (697,903 runs from 2021-01-01), feature code hash `f879b10c8369467a`, 6000 rounds. Verified before commit (`scripts/verify_model.py`): PASS (`reports/model_verify_615.md`): every feature built by the live path, books of 1, log prices correlated 0.993 with the 535's on the last fortnight's 5,225 runners.
+- **Why it qualifies:** it passed the research loop's decision rule on the development window.
+  - Iteration 29 (served recipe): −0.0073 in the price-forecast error against the 535 (90% CI −0.0083 to −0.0064), Brier skill against the market +0.0022 (+0.0011 to +0.0034).
+  - Iteration 36 (served recipe, both at 6000 rounds): −0.0088 (−0.0099 to −0.0078); the rule at 22% shorter +6.06% → +7.70% on January–March.
+- **The change is between days,** as the amendment of 24 September requires. Day 1 (25 September) stays scored on the 535, run 196's file. From day 2 the window runs on the 615.
+- **Reporting:** the headline, its interval and the halves are given for the 535's day and the 615's days separately, as well as for the whole window. The whole window is still the criterion.
+- **The backtest's forecast** for the forward days (the reading-2 comparison) is rebuilt with each day's model: the 535 recipe for 25 September, the 615 at 6000 rounds from 26 September.
+
+**Nothing else changes:** not the rule, not the criteria, not the window's length or its exclusions.

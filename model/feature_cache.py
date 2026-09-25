@@ -134,15 +134,35 @@ def _paths(cache_dir: str, key: str) -> tuple[Path, Path]:
     return d / f"features_{key}.parquet", d / f"features_{key}.json"
 
 
-def load(cache_dir: str, key: str) -> tuple[pd.DataFrame, dict] | None:
+def load(cache_dir: str, key: str, columns: list[str] | None = None) -> tuple[pd.DataFrame, dict] | None:
+    """The cached frame and its metadata, or None on a miss. `columns` reads just
+    those (Parquet is columnar, so the dates alone cost a second, not a minute)."""
     data, meta = _paths(cache_dir, key)
     if not (data.exists() and meta.exists()):
         return None
     info = json.loads(meta.read_text())
-    df = pd.read_parquet(data)
+    df = pd.read_parquet(data, columns=columns)
     log.info("Feature cache hit: %s rows x %s columns from %s",
              f"{len(df):,}", f"{len(df.columns):,}", data)
     return df, info
+
+
+def column_fingerprints(df: pd.DataFrame) -> dict[str, str]:
+    """A content hash per column, in row order.
+
+    Two builds from the same code and the same data should agree on every one.
+    Stored with the cache so a second build can be compared against the first
+    column by column: a feature whose hash moves between identical builds is
+    not a pure function of the history, which is a bug in its own right (the
+    live path would then serve it with noise)."""
+    out = {}
+    for c in df.columns:
+        try:
+            h = pd.util.hash_pandas_object(df[c], index=False).to_numpy()
+            out[c] = hashlib.sha256(h.tobytes()).hexdigest()[:16]
+        except TypeError:                          # unhashable cells (lists)
+            out[c] = hashlib.sha256(df[c].astype(str).str.cat().encode()).hexdigest()[:16]
+    return out
 
 
 def save(df: pd.DataFrame, cache_dir: str, key: str, info: dict | None = None) -> Path:
@@ -155,6 +175,7 @@ def save(df: pd.DataFrame, cache_dir: str, key: str, info: dict | None = None) -
         "feature_code_hash": feature_code_hash(),
         "built_at": pd.Timestamp.utcnow().isoformat(timespec="seconds"),
         "bytes": data.stat().st_size,
+        "column_fingerprints": column_fingerprints(df),
     })
     meta.write_text(json.dumps(payload, indent=2))
     log.info("Feature cache written: %s (%.1f MB)", data, data.stat().st_size / 1e6)

@@ -64,6 +64,16 @@ on:
         required: false
         type: number
         default: 30
+      fixed_rounds:
+        description: 'Fit once at exactly N rounds (skips the early-stopping fit; take N from the walk-forward evaluation). Empty: holdout then refit'
+        required: false
+        default: ''
+        type: string
+      fast:
+        description: 'Train from the cached feature matrix and skip the unused stage-2 win model'
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -132,19 +142,63 @@ jobs:
           echo "Database size: $(du -h horse_racing.db | cut -f1)"
           python3 scripts/db_info.py
 
+      - name: Feature cache key
+        if: inputs.fast
+        id: fkey
+        run: |
+          KEY=$(python -c "import model.feature_cache as f; print(f.cache_key('horse_racing.db', '${{ inputs.start_date || '2021-01-01' }}'))")
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+          echo "Feature cache key: $KEY"
+
+      - name: Restore the feature matrix
+        # The research loop and the evaluation build this same matrix (the same
+        # builder, the same key: feature code and data). On a hit the trainer
+        # skips its fifteen-minute build.
+        if: inputs.fast && !inputs.refresh_cache
+        id: fcache
+        uses: actions/cache/restore@v4
+        with:
+          path: .feature_cache
+          key: features-${{ steps.fkey.outputs.key }}
+
       - name: Train BFSP model
         run: |
           # --start-date was never passed, so this loaded the whole database
           # while the evaluation job was given a window. --wf-folds keeps the
           # in-trainer walk-forward off by default: evaluate_oos.py is the
           # evaluation, and a fold now costs about thirteen minutes.
+          FAST=""
+          if [ "${{ inputs.fast }}" = "true" ]; then FAST="--feature-cache .feature_cache --skip-prob-model"; fi
+          FIXED="${{ inputs.fixed_rounds }}"
           python train_bfsp.py \
             --start-date "${{ inputs.start_date || '2021-01-01' }}" \
             --wf-folds ${{ inputs.wf_folds || 0 }} \
+            $FAST ${FIXED:+--fixed-rounds $FIXED} \
             ${{ inputs.extra_args }} \
             --min-train-days ${{ inputs.min_train_days || 365 }} \
             --val-window ${{ inputs.val_window || 30 }} \
             --step-days ${{ inputs.step_days || 30 }}
+
+      - name: Save the feature matrix
+        if: inputs.fast && steps.fcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .feature_cache
+          key: features-${{ steps.fkey.outputs.key }}
+
+      - name: Verify the artefact before it goes anywhere
+        # Servable, every feature built by the live path, and sane prices on the
+        # matrix's last fortnight next to the model served now (the committed
+        # one). A failure stops the job here: nothing is committed or released.
+        if: inputs.fast
+        run: |
+          mkdir -p /tmp/served
+          git show HEAD:data/models/bfsp_model.lgb > /tmp/served/bfsp_model.lgb
+          git show HEAD:data/models/bfsp_model_meta.json > /tmp/served/bfsp_model_meta.json
+          python scripts/verify_model.py --model-dir data/models --served-dir /tmp/served \
+            --feature-cache .feature_cache --db horse_racing.db \
+            --start-date "${{ inputs.start_date || '2021-01-01' }}" --out reports/model_verify.md
+          cat reports/model_verify.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit model to repository
         if: inputs.publish
@@ -165,6 +219,9 @@ jobs:
           git push origin "HEAD:$BRANCH"
 
       - name: Upload model artifacts
+        # Uploaded even when verification fails, so the artefact can be looked at;
+        # only a verified one is committed.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bfsp-model-${{ github.run_number }}
@@ -173,6 +230,7 @@ jobs:
             data/models/bfsp_model_meta.json
             data/models/bfsp_training_summary.json
             data/models/bfsp_feature_importance.csv
+            reports/model_verify.md
           retention-days: 90
 
       - name: Create GitHub Release

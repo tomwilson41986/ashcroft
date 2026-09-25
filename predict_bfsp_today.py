@@ -195,8 +195,11 @@ def prepare_and_predict(
     """
     # The shape, intent, freshness and window blocks are minutes of work over the
     # whole history. Each is built only for a model that reads it -- the same
-    # features either way for the one that does.
-    engine = CustomMetricsEngine(**blocks_needed(feature_cols))
+    # features either way for the one that does. A drop-in block the model reads
+    # (model/blocks) switches on the engine blocks it is computed from.
+    from model import blocks as drop_in
+    served_blocks = drop_in.used_by(feature_cols)
+    engine = CustomMetricsEngine(**{**blocks_needed(feature_cols), **drop_in.engine_flags(served_blocks)})
 
     # Check if target runners are already in the historical data
     target_date_str = str(target_date)
@@ -244,6 +247,13 @@ def prepare_and_predict(
     # Extract rows for the target date
     full_df["race_date"] = pd.to_datetime(full_df["race_date"])
     target_mask = full_df["race_date"].dt.strftime("%Y-%m-%d") == target_date_str
+
+    # Drop-in blocks, built as training built them: on the runs the feature
+    # matrix holds (those with a usable price) plus the card's.
+    if served_blocks:
+        log.info("Building drop-in blocks %s...", ", ".join(served_blocks))
+        full_df, _ = drop_in.attach_as_trained(full_df, served_blocks, card=target_mask.to_numpy())
+
     target_df = full_df[target_mask].copy()
 
     if len(target_df) == 0:
@@ -287,6 +297,27 @@ def prepare_and_predict(
 # ---------------------------------------------------------------------------
 # Output Formatting
 # ---------------------------------------------------------------------------
+
+#: The CSV --output-csv writes: the race and the runner as the card has them,
+#: then the model's price, probability and rank in the race, then the result
+#: when the day is in the database.
+OUTPUT_COLS = [
+    "race_date", "race_time", "track", "race_name", "race_type", "race_class", "dist_furlongs",
+    "going_description", "number_of_runners", "horse_name", "jockey_name", "trainer", "stall",
+    "official_rating", "pounds", "horse_age", "days_since_lr", "headgear", "odds",
+    "predicted_bfsp", "predicted_win_prob_norm", "model_rank",
+    "actual_bfsp", "bfsp_diff_pct", "value_edge", "placing_numerical",
+]
+
+
+def with_model_rank(predictions: pd.DataFrame) -> pd.DataFrame:
+    """The model's rank of each runner in its race: 1 = its shortest price."""
+    out = predictions.copy()
+    race = out["raceid"] if "raceid" in out.columns else (
+        out["race_date"].astype(str) + "|" + out["track"].astype(str) + "|" + out["race_time"].astype(str))
+    out["model_rank"] = out.groupby(race)["predicted_bfsp"].rank(method="min").astype("Int64")
+    return out
+
 
 def format_predictions(predictions: pd.DataFrame, target_date: date) -> str:
     """Format predictions into a readable report."""
@@ -560,14 +591,8 @@ def main():
             print(report)
 
             if args.output_csv:
-                output_cols = [
-                    "race_date", "race_time", "track", "horse_name",
-                    "predicted_bfsp", "actual_bfsp", "bfsp_diff_pct",
-                    "predicted_win_prob_norm", "value_edge",
-                    "placing_numerical",
-                ]
-                avail = [c for c in output_cols if c in combined.columns]
-                combined[avail].to_csv(args.output_csv, index=False)
+                out = with_model_rank(combined)
+                out[[c for c in OUTPUT_COLS if c in out.columns]].to_csv(args.output_csv, index=False)
                 log.info(f"Saved predictions to {args.output_csv}")
         else:
             log.warning("No predictions generated")
@@ -630,14 +655,8 @@ def main():
 
     # Save to CSV if requested
     if args.output_csv:
-        output_cols = [
-            "race_date", "race_time", "track", "horse_name",
-            "predicted_bfsp", "actual_bfsp", "bfsp_diff_pct",
-            "predicted_win_prob_norm", "value_edge",
-            "placing_numerical",
-        ]
-        avail = [c for c in output_cols if c in predictions.columns]
-        predictions[avail].to_csv(args.output_csv, index=False)
+        out = with_model_rank(predictions)
+        out[[c for c in OUTPUT_COLS if c in out.columns]].to_csv(args.output_csv, index=False)
         log.info(f"Saved predictions to {args.output_csv}")
 
 

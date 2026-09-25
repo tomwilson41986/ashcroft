@@ -535,9 +535,89 @@
     "fr_days_since_win",
     "fr_runs_since_win",
     "fr_days_since_placed",
-    "fr_days_since_code"
+    "fr_days_since_code",
+    "fw_win_car",
+    "fw_win_l1",
+    "fw_win_m3",
+    "fw_win_m5",
+    "fw_win_w3",
+    "fw_win_w5",
+    "fw_win_w10",
+    "fw_plc_car",
+    "fw_plc_l1",
+    "fw_plc_m3",
+    "fw_plc_m5",
+    "fw_plc_w3",
+    "fw_plc_w5",
+    "fw_plc_w10",
+    "fw_wax_car",
+    "fw_wax_l1",
+    "fw_wax_m3",
+    "fw_wax_m5",
+    "fw_wax_w3",
+    "fw_wax_w5",
+    "fw_wax_w10",
+    "fw_nfp_car",
+    "fw_nfp_l1",
+    "fw_nfp_m3",
+    "fw_nfp_m5",
+    "fw_nfp_w3",
+    "fw_nfp_w5",
+    "fw_nfp_w10",
+    "fw_lbs_car",
+    "fw_lbs_l1",
+    "fw_lbs_m3",
+    "fw_lbs_m5",
+    "fw_lbs_w3",
+    "fw_lbs_w5",
+    "fw_lbs_w10",
+    "fw_lbsc_car",
+    "fw_lbsc_l1",
+    "fw_lbsc_m3",
+    "fw_lbsc_m5",
+    "fw_lbsc_w3",
+    "fw_lbsc_w5",
+    "fw_lbsc_w10",
+    "fw_perf_car",
+    "fw_perf_l1",
+    "fw_perf_m3",
+    "fw_perf_m5",
+    "fw_perf_w3",
+    "fw_perf_w5",
+    "fw_perf_w10",
+    "fw_rsr_car",
+    "fw_rsr_l1",
+    "fw_rsr_m3",
+    "fw_rsr_m5",
+    "fw_rsr_w3",
+    "fw_rsr_w5",
+    "fw_rsr_w10",
+    "fw_mkt_car",
+    "fw_mkt_l1",
+    "fw_mkt_m3",
+    "fw_mkt_m5",
+    "fw_mkt_w3",
+    "fw_mkt_w5",
+    "fw_mkt_w10",
+    "fw_ae_car",
+    "fw_ae_l1",
+    "fw_ae_m3",
+    "fw_ae_m5",
+    "fw_ae_w3",
+    "fw_ae_w5",
+    "fw_ae_w10",
+    "fw_nres_car",
+    "fw_nres_l1",
+    "fw_nres_m3",
+    "fw_nres_m5",
+    "fw_nres_w3",
+    "fw_nres_w5",
+    "fw_nres_w10",
+    "fw_perf_l1_vs_or",
+    "fw_perf_w5_vs_or",
+    "fw_perf_car_vs_or"
   ],
-  "n_features": 535,
+  "n_features": 615,
   "categorical_vocab": {
     "surface_type": [
       "Beach",
@@ -716,7 +796,9 @@
     "lambda_l1": 0.1,
     "lambda_l2": 0.1,
     "verbose": -1,
-    "seed": 42
+    "seed": 42,
+    "deterministic": true,
+    "force_col_wise": true
   },
   "post_race_guard": "passed",
   "objective": "l2",
@@ -727,6 +809,7 @@
   "embargo_days": 0,
   "num_boost_round": 3000,
   "early_stopping_rounds": 100,
+  "fixed_rounds": 6000,
   "refit_on_full": true,
   "seed": 42,
   "native_categoricals": false,
@@ -735,112 +818,114 @@
     "type": "none",
     "decay_rate": 0.0
   },
-  "best_iteration": 3000,
+  "best_iteration": 6000,
   "holdout_metrics": {
     "n": 21491,
-    "mae": 0.4866380917141554,
-    "rmse": 0.6282497091039373
+    "mae": 0.3042133040457633,
+    "rmse": 0.38820051173271203,
+    "in_sample": true
   },
   "holdout_start": "2026-07-24",
-  "train_rows": 676412,
+  "train_rows": 697903,
   "holdout_rows": 21491,
   "early_stopped": false,
   "init_offset": 0.0,
-  "feature_code_hash": "9bc95363f3181433",
+  "feature_code_hash": "f879b10c8369467a",
   "final_metrics": {
     "target": "logit_norm_prob",
-    "log_mae": 0.3841,
-    "log_rmse": 0.4891,
-    "log_r2": 0.8923,
-    "bfsp_mae": 21.25,
-    "median_ape_pct": 27.64,
-    "mean_ape_pct": 36.19,
-    "correlation": 0.9452,
-    "best_iteration": 3000,
-    "holdout_mae": 0.4866380917141554
+    "log_mae": 0.3001,
+    "log_rmse": 0.3827,
+    "log_r2": 0.9341,
+    "bfsp_mae": 16.77,
+    "median_ape_pct": 21.75,
+    "mean_ape_pct": 27.52,
+    "correlation": 0.9673,
+    "best_iteration": 6000,
+    "holdout_mae": 0.3042133040457633
   },
   "trained_through": "2026-09-22",
   "train_rows_total": 697903,
   "top_gain": [
     [
       "rPMW3",
-      2705640.907748461
-    ],
-    [
-      "LR_ORR2",
-      1703933.7769771814
+      2353561.9107025266
     ],
     [
       "rPMW5",
-      1305201.1795754433
+      1333310.3560870886
     ],
     [
-      "rPMW10",
-      1135964.7356170416
+      "LR_ORR2",
+      1013539.5116460323
     ],
     [
       "or_num",
-      1015769.682448864
+      1010728.4246454239
     ],
     [
-      "LR3_RWO",
-      735213.6260070801
+      "rPMW10",
+      997482.012362361
+    ],
+    [
+      "fw_mkt_w3",
+      693613.3240602612
+    ],
+    [
+      "fw_lbsc_w3",
+      652663.4075576663
     ],
     [
       "trainerWAXrank",
-      503031.7984099388
-    ],
-    [
-      "LR_LB",
-      495559.03357720375
+      540334.4766728878
     ],
     [
       "rTJNFP",
-      459213.9156341553
+      463080.54409343004
     ],
     [
-      "median_or_num",
-      326439.95066332817
+      "fw_lbs_w3",
+      432305.3678534031
     ],
     [
       "or_vs_max",
-      325203.11927998066
+      298054.05163252354
     ],
     [
-      "jockeyWAXrank",
-      298843.45951902866
+      "median_or_num",
+      290972.13321745396
+    ],
+    [
+      "OFS1",
+      276034.1564171314
+    ],
+    [
+      "fw_lbs_l1",
+      275456.584158957
     ],
     [
       "race_type_cat",
-      265609.05752778053
+      274488.8986916542
+    ],
+    [
+      "jockeyWAXrank",
+      265655.7682777047
+    ],
+    [
+      "fw_lbsc_l1",
+      243934.5870027542
     ],
     [
       "jockeyCWOrank",
-      236846.44161772728
+      226723.01761507988
     ],
     [
-      "PMW10",
-      236616.89969348907
-    ],
-    [
-      "fr_days_since_placed",
-      200810.79377162457
+      "LR5_RWO",
+      201173.665260911
     ],
     [
       "rORR2LR",
-      185338.8296482563
-    ],
-    [
-      "LRNFP",
-      178800.35163795948
-    ],
-    [
-      "trainerWIVrank",
-      154193.8857600689
-    ],
-    [
-      "rRWOLR3",
-      142687.79654204845
+      199688.05566763878
     ]
-  ]
+  ],
+  "drop_in_blocks": []
 }

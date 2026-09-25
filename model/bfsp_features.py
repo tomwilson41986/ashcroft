@@ -538,22 +538,27 @@ INTENT_SERVED_FEATURES = [c for c in INTENT_FEATURES if c not in INTENT_CARD_UNS
 # +0.0010; iteration 27 with card-safe intent: -0.0089.
 SERVED_FRESHNESS_FEATURES = list(FRESHNESS_FEATURES)
 
+# Every per-run measure over career, last run, last 3, last 5 and the last 3/5/10
+# weighted by recency (model/form_windows.py). Iteration 29: -0.0073 on the 535
+# (90% CI -0.0083 to -0.0064), Brier skill against the market +0.0022; served
+# from 26 Sep at the owner's instruction.
+SERVED_FORM_WINDOW_FEATURES = list(FORM_WINDOW_FEATURES)
+
 #: The blocks the metrics engine builds, by name, with the features each serves
 #: (shape and draw are built, and measured, but not served: iteration 25).
 PRODUCTION_BLOCKS = {
     "shape_draw": SHAPE_DRAW_FEATURES,
     "intent": INTENT_SERVED_FEATURES,
     "freshness": SERVED_FRESHNESS_FEATURES,
+    "form_windows": SERVED_FORM_WINDOW_FEATURES,
 }
 
 #: Built by the engine and measurable (evaluate_oos.py --blocks), not served:
-#: every per-run measure over career, last run, last 3, last 5 and the last
-#: 3/5/10 weighted by recency (model/form_windows.py); past form read against the
-#: pace and draw each run met, and the speed drawn near each runner today
-#: (model/shape_form.py).
+#: past form read against the pace and draw each run met, and the speed drawn
+#: near each runner today (model/shape_form.py; iteration 34: nothing beyond the
+#: form windows on the quick recipe).
 RESEARCH_BLOCKS = {
     "shape_draw": SHAPE_DRAW_FEATURES,
-    "form_windows": FORM_WINDOW_FEATURES,
     "shape_form": SHAPE_FORM_FEATURES,
 }
 
@@ -623,6 +628,7 @@ ALL_FEATURE_COLS = (
     + FINANCIAL_RANK_FEATURES
     + INTENT_SERVED_FEATURES
     + SERVED_FRESHNESS_FEATURES
+    + SERVED_FORM_WINDOW_FEATURES
 )
 
 

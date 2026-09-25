@@ -5,9 +5,9 @@ tests/test_intent_features.py, tests/test_freshness_features.py,
 tests/test_form_windows.py and tests/test_shape_form.py. These tests pin their
 place in production:
 - the engine builds all five on every frame, and each can be left out;
-- the served feature list carries card-safe intent and freshness, not shape and
-  draw (built and measured, but not served: iteration 25) nor the form windows
-  and shape form (built, to be measured);
+- the served feature list carries card-safe intent, freshness and the form
+  windows (from 26 Sep), not shape and draw (built and measured, but not served:
+  iteration 25) nor shape form (built, nothing beyond the windows: iteration 34);
 - a run's own style and margins, and the four intent features a 06:00 card
   cannot know, are refused as inputs;
 - the live path builds only what the model it serves reads;
@@ -46,13 +46,13 @@ def test_the_served_feature_list():
     assert set(INTENT_SERVED_FEATURES) <= set(ALL_FEATURE_COLS)
     assert set(SERVED_FRESHNESS_FEATURES) == set(FRESHNESS_FEATURES) <= set(ALL_FEATURE_COLS)
     assert not set(SHAPE_DRAW_FEATURES) & set(ALL_FEATURE_COLS)      # built, not served
-    assert not (set(FORM_WINDOW_FEATURES) | set(SHAPE_FORM_FEATURES)) & set(ALL_FEATURE_COLS)
-    assert RESEARCH_BLOCKS == {"shape_draw": SHAPE_DRAW_FEATURES, "form_windows": FORM_WINDOW_FEATURES,
-                               "shape_form": SHAPE_FORM_FEATURES}
+    assert set(FORM_WINDOW_FEATURES) <= set(ALL_FEATURE_COLS)            # served from 26 Sep
+    assert not set(SHAPE_FORM_FEATURES) & set(ALL_FEATURE_COLS)
+    assert RESEARCH_BLOCKS == {"shape_draw": SHAPE_DRAW_FEATURES, "shape_form": SHAPE_FORM_FEATURES}
     assert not set(INTENT_CARD_UNSAFE) & set(ALL_FEATURE_COLS)
-    assert len(ALL_FEATURE_COLS) == len(set(ALL_FEATURE_COLS)) == 501 + 20 + 14
+    assert len(ALL_FEATURE_COLS) == len(set(ALL_FEATURE_COLS)) == 501 + 20 + 14 + 80
     assert not set(ALL_FEATURE_COLS) & RACE_SHAPE_POST_RACE
-    assert set(PRODUCTION_BLOCKS) == {"shape_draw", "intent", "freshness"}
+    assert set(PRODUCTION_BLOCKS) == {"shape_draw", "intent", "freshness", "form_windows"}
 
 
 @pytest.mark.parametrize("col", sorted(RACE_SHAPE_POST_RACE))
@@ -70,14 +70,18 @@ def test_what_the_card_cannot_know_is_refused_as_an_input(col):
 def test_the_win_probability_model_reads_the_served_blocks_too():
     from model.prerace_builder import PreRaceBuilder
     cols = PreRaceBuilder.get_feature_columns(PreRaceBuilder.__new__(PreRaceBuilder))
-    assert set(INTENT_SERVED_FEATURES) | set(SERVED_FRESHNESS_FEATURES) <= set(cols)
+    assert set(INTENT_SERVED_FEATURES) | set(SERVED_FRESHNESS_FEATURES) | set(FORM_WINDOW_FEATURES) <= set(cols)
     assert not set(INTENT_CARD_UNSAFE) & set(cols)
 
 
 def test_the_live_path_builds_only_what_the_model_reads():
-    assert blocks_needed(ALL_FEATURE_COLS) == {**NO_BLOCKS, "intent": True, "freshness": True}
-    served_before = [c for c in ALL_FEATURE_COLS if c not in set(INTENT_FEATURES) | set(FRESHNESS_FEATURES)]
-    assert blocks_needed(served_before) == NO_BLOCKS
+    assert blocks_needed(ALL_FEATURE_COLS) == {**NO_BLOCKS, "intent": True, "freshness": True, "form_windows": True}
+    engine_built = set(INTENT_FEATURES) | set(FRESHNESS_FEATURES) | set(FORM_WINDOW_FEATURES)
+    served_before = [c for c in ALL_FEATURE_COLS if c not in engine_built]
+    assert len(served_before) == 501 and blocks_needed(served_before) == NO_BLOCKS
+    served_on_25_sep = [c for c in ALL_FEATURE_COLS if c not in set(FORM_WINDOW_FEATURES)]
+    assert len(served_on_25_sep) == 535
+    assert blocks_needed(served_on_25_sep) == {**NO_BLOCKS, "intent": True, "freshness": True}
     assert needs_race_shape(["rNFP", "dc_edge_lbs"])
     assert blocks_needed(["fr_runs_30d"]) == {**NO_BLOCKS, "freshness": True}
     assert blocks_needed(["fw_perf_w5"]) == {**NO_BLOCKS, "form_windows": True}

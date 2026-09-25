@@ -6,6 +6,13 @@ name: Research loop
 # the development window (the locked holdout from 1 Apr 2026 is never read
 # unless the config says "final": true, and every run writes a ledger entry).
 #
+# The price-forecast comparison runs as one job per (arm, fold), so the wall
+# clock is one fold's fit rather than six in a row; the base run is reused from
+# the cache while nothing that decides it has changed; and "recipe": "quick"
+# screens on a recipe about seven times faster a fit before a block is
+# confirmed on the served one. scripts/research_loop.py does the work; this
+# file only wires the jobs together.
+#
 # Push-triggered on the research branch because a workflow that exists only on
 # a feature branch cannot be dispatched.
 
@@ -16,6 +23,7 @@ on:
     paths:
       - 'research/loop.json'
       - 'scripts/outcome_model.py'
+      - 'scripts/research_loop.py'
       - 'model/**'
       - '.github/workflows/research-loop.yml'
 
@@ -33,9 +41,23 @@ env:
   START_DATE: '2021-01-01'
 
 jobs:
-  iterate:
+  prepare:
+    # The feature matrix (built once per feature-code and data change, cached),
+    # the fold plan, the base run's cache key, and the outcome-model and
+    # residual-screen paths, which stay serial.
     runs-on: ubuntu-latest
     timeout-minutes: 340
+    outputs:
+      tag: ${{ steps.cfg.outputs.tag }}
+      bfsp: ${{ steps.cfg.outputs.bfsp }}
+      outcome: ${{ steps.cfg.outputs.outcome }}
+      screen: ${{ steps.cfg.outputs.screen }}
+      depths: ${{ steps.cfg.outputs.depths }}
+      fkey: ${{ steps.fkey.outputs.key }}
+      folds: ${{ steps.plan.outputs.folds }}
+      base_key: ${{ steps.plan.outputs.base_key }}
+      base_hit: ${{ steps.bcache.outputs.cache-hit }}
+      arms: ${{ steps.arms.outputs.arms }}
 
     steps:
       - uses: actions/checkout@v4
@@ -66,16 +88,15 @@ jobs:
           for k in ("tag", "blocks", "drop", "keep", "params", "first_fold", "until"):
               print(f"{k}={c.get(k, '')}")
           print(f"fold_months={c.get('fold_months', 3)}")
+          print(f"depth={c.get('depth', 1)}")
           print(f"mode={c.get('mode', 'offset')}")
           print(f"outcome={'true' if c.get('outcome', True) else 'false'}")
           print(f"screen={'true' if c.get('screen', False) else 'false'}")
           print(f"final={'--final' if c.get('final', False) else ''}")
           print(f"bfsp={'true' if c.get('bfsp', False) else 'false'}")
-          print(f"bfsp_from={c.get('bfsp_from', '2025-07-01')}")
-          print(f"bfsp_variant_drop={c.get('bfsp_variant_drop', '')}")
-          print(f"bfsp_base_withhold={c.get('bfsp_base_withhold', '')}")
-          print(f"bfsp_variant_withhold={c.get('bfsp_variant_withhold', '')}")
-          print(f"bfsp_variant_args={c.get('bfsp_variant_args', '')}")
+          d = c.get("depth", 1)                    # 2, or [1, 2] / "1,2": one outcome job per depth
+          ds = [int(x) for x in (d if isinstance(d, list) else str(d).split(",")) if str(x).strip()]
+          print(f"depths={json.dumps(ds or [1])}")
           EOF
           cat research/loop.json
 
@@ -122,6 +143,95 @@ jobs:
           path: .feature_cache
           key: features-${{ steps.fkey.outputs.key }}
 
+      - name: Plan the folds and key the base run
+        if: steps.cfg.outputs.bfsp == 'true'
+        id: plan
+        run: |
+          set -o pipefail
+          python scripts/research_loop.py plan 2>&1 | grep -v PerformanceWarning | tail -20
+
+      - name: Is the base run cached?
+        if: steps.cfg.outputs.bfsp == 'true'
+        id: bcache
+        uses: actions/cache/restore@v4
+        with:
+          path: reports/base_cache
+          key: oos-base-${{ steps.plan.outputs.base_key }}
+          lookup-only: true
+
+      - name: Arms to fit
+        if: steps.cfg.outputs.bfsp == 'true'
+        id: arms
+        run: python scripts/research_loop.py arms --base-hit "${{ steps.bcache.outputs.cache-hit }}"
+
+      - name: Summarise into the run page
+        if: always()
+        run: |
+          { echo "### Fold plan"; echo '```'; cat reports/fit/folds.json 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  outcome:
+    # The win model on top of the market and the residual screen, beside the
+    # price-forecast fits rather than in front of them: an outcome run takes an
+    # hour or more and the fold fits need only the prepared matrix.
+    # With "depth": [1, 2] the likelihood depths run side by side, one job each
+    # (the rank-ordered fit against the winner-only one on the same folds).
+    needs: prepare
+    if: needs.prepare.outputs.outcome == 'true' || needs.prepare.outputs.screen == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        depth: ${{ fromJson(needs.prepare.outputs.depths) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile /mnt/swapfile || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+
+      - name: Read the iteration config
+        id: cfg
+        run: |
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json
+          c = json.load(open("research/loop.json"))
+          for k in ("tag", "blocks", "drop", "keep", "params", "first_fold", "until"):
+              print(f"{k}={c.get(k, '')}")
+          print(f"fold_months={c.get('fold_months', 3)}")
+          print(f"depth={c.get('depth', 1)}")
+          print(f"mode={c.get('mode', 'offset')}")
+          print(f"outcome={'true' if c.get('outcome', True) else 'false'}")
+          print(f"screen={'true' if c.get('screen', False) else 'false'}")
+          print(f"final={'--final' if c.get('final', False) else ''}")
+          EOF
+
+      - name: Download historic database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
+
+      - name: Restore the feature matrix
+        uses: actions/cache/restore@v4
+        with:
+          path: .feature_cache
+          key: features-${{ needs.prepare.outputs.fkey }}
+          fail-on-cache-miss: true
+
       - name: Outcome model and rank-1 scoring
         if: steps.cfg.outputs.outcome == 'true'
         run: |
@@ -129,14 +239,14 @@ jobs:
           mkdir -p reports/outcome_model
           ( while true; do echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print $3"/"$2" MB"}') swap $(free -m | awk '/^Swap:/{print $3}') MB"; sleep 180; done ) &
           python scripts/outcome_model.py --db horse_racing.db --feature-cache .feature_cache \
-            --start-date "$START_DATE" --tag "${{ steps.cfg.outputs.tag }}" \
+            --start-date "$START_DATE" --tag "${{ steps.cfg.outputs.tag }}-d${{ matrix.depth }}" \
             --first-fold "${{ steps.cfg.outputs.first_fold }}" --fold-months "${{ steps.cfg.outputs.fold_months }}" \
             --blocks "${{ steps.cfg.outputs.blocks }}" --drop "${{ steps.cfg.outputs.drop }}" \
-            --keep "${{ steps.cfg.outputs.keep }}" --until "${{ steps.cfg.outputs.until }}" --params '${{ steps.cfg.outputs.params }}' --mode "${{ steps.cfg.outputs.mode }}" ${{ steps.cfg.outputs.final }} \
-            --out-dir reports/outcome_model 2>&1 | grep -v PerformanceWarning | tee "reports/outcome_model/log_${{ steps.cfg.outputs.tag }}.txt"
+            --keep "${{ steps.cfg.outputs.keep }}" --until "${{ steps.cfg.outputs.until }}" --params '${{ steps.cfg.outputs.params }}' --mode "${{ steps.cfg.outputs.mode }}" --depth "${{ matrix.depth }}" ${{ steps.cfg.outputs.final }} \
+            --out-dir reports/outcome_model 2>&1 | grep -v PerformanceWarning | tee "reports/outcome_model/log_${{ steps.cfg.outputs.tag }}-d${{ matrix.depth }}.txt"
 
       - name: Residual screen
-        if: steps.cfg.outputs.screen == 'true'
+        if: steps.cfg.outputs.screen == 'true' && strategy.job-index == 0
         run: |
           set -o pipefail
           mkdir -p reports/residual_screen
@@ -144,62 +254,152 @@ jobs:
             --start-date "$START_DATE" --lockbox-from 2026-04-01 --blocks "${{ steps.cfg.outputs.blocks }}" \
             --out-dir reports/residual_screen 2>&1 | grep -v PerformanceWarning | tee reports/residual_screen/screen.log
 
-      - name: BFSP forecast with and without the blocks
-        # The price model the 06:00 job serves, fitted walk-forward on the cached
-        # matrix twice -- production features, then production features plus the
-        # research blocks -- over quarterly folds from bfsp_from to the end of the
-        # development window (--eval-until 2026-04-01: the holdout is never scored),
-        # and paired runner by runner. This is the test that decides whether a block
-        # belongs in the served model: the early-price trade lives on this forecast.
-        if: steps.cfg.outputs.bfsp == 'true'
-        run: |
-          set -o pipefail
-          mkdir -p reports/bfsp_compare
-          common="--start-date $START_DATE --feature-cache .feature_cache --eval-from ${{ steps.cfg.outputs.bfsp_from }} --eval-until 2026-04-01 --step-days 91 --val-window 91 --output-csv reports/bfsp_compare/oos.csv --output-json reports/bfsp_compare/summary.json"
-          # bfsp_base_withhold: production blocks the BASE is fitted without (evaluate_oos.py
-          # --withhold, exact names), so a block already in production is measured as the
-          # served model gains it
-          bwh="${{ steps.cfg.outputs.bfsp_base_withhold }}"
-          python evaluate_oos.py $common --tag base ${bwh:+--withhold "$bwh"} 2>&1 | grep -v PerformanceWarning | tail -60
-          # bfsp_variant_drop: feature prefixes the VARIANT is fitted without (the base is untouched),
-          # e.g. the parts of a block the 06:00 card cannot know
-          vdrop="${{ steps.cfg.outputs.bfsp_variant_drop }}"
-          # bfsp_variant_withhold: production blocks the VARIANT is fitted without, by name
-          vwh="${{ steps.cfg.outputs.bfsp_variant_withhold }}"
-          # bfsp_variant_args: further evaluate_oos.py options for the VARIANT alone, e.g. the
-          # training recipe (--num-boost-round, --learning-rate); split into words on purpose
-          vargs="${{ steps.cfg.outputs.bfsp_variant_args }}"
-          blocks="${{ steps.cfg.outputs.blocks }}"
-          python evaluate_oos.py $common --tag blocks --blocks "$blocks" \
-            ${vdrop:+--drop-features "$vdrop"} ${vwh:+--withhold "$vwh"} $vargs 2>&1 | grep -v PerformanceWarning | tail -60
-          python scripts/compare_oos_runs.py --base reports/bfsp_compare/oos_base.csv \
-            --variant reports/bfsp_compare/oos_blocks.csv --out reports/bfsp_compare/compare.md \
-            --note "${{ steps.cfg.outputs.tag }}: production features${bwh:+ without $bwh} vs production features${vwh:+ without $vwh}${blocks:+ + $blocks}${vdrop:+ without $vdrop}${vargs:+ with $vargs}"
-          # The trade itself: each forecast against Betfair's morning prices, where the
-          # price files cover the development window (Jan-Mar 2026; never past 1 Apr).
-          for v in base blocks; do
-            { echo; echo "### Early-price trade on Betfair's morning prices: $v"; echo '```'; } >> reports/bfsp_compare/compare.md
-            python scripts/clv_betfair.py --predictions reports/bfsp_compare/oos_$v.csv --db horse_racing.db \
-              --until 2026-04-01 > reports/bfsp_compare/clv_$v.txt 2>&1 || echo "clv scoring failed" >> reports/bfsp_compare/clv_$v.txt
-            cat reports/bfsp_compare/clv_$v.txt >> reports/bfsp_compare/compare.md
-            echo '```' >> reports/bfsp_compare/compare.md
-          done
-          cat reports/bfsp_compare/compare.md
-
       - name: Summarise into the run page
         if: always()
         run: |
           cat reports/outcome_model/summary_*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           cat reports/residual_screen/summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
-          cat reports/bfsp_compare/compare.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: research-${{ steps.cfg.outputs.tag }}-${{ github.run_number }}
+          name: research-${{ steps.cfg.outputs.tag }}-${{ github.run_number }}-outcome-d${{ matrix.depth }}
           path: |
             reports/outcome_model/
             reports/residual_screen/
-            reports/bfsp_compare/
+          if-no-files-found: ignore
+          retention-days: 90
+
+  fit:
+    # One arm on one fold: the fold the serial walk would fit (evaluate_oos.py
+    # --fold), on the cached matrix.
+    needs: prepare
+    if: needs.prepare.outputs.bfsp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: ${{ fromJSON(needs.prepare.outputs.arms) }}
+        fold: ${{ fromJSON(needs.prepare.outputs.folds) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile /mnt/swapfile || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+
+      - name: Download historic database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
+
+      - name: Restore the feature matrix
+        uses: actions/cache/restore@v4
+        with:
+          path: .feature_cache
+          key: features-${{ needs.prepare.outputs.fkey }}
+          fail-on-cache-miss: true
+
+      - name: Fit ${{ matrix.arm }}, fold ${{ matrix.fold }}
+        run: |
+          set -o pipefail
+          python scripts/research_loop.py fit --arm "${{ matrix.arm }}" --fold "${{ matrix.fold }}" \
+            2>&1 | grep -v PerformanceWarning | tail -80
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fit-${{ github.run_number }}-${{ matrix.arm }}-${{ matrix.fold }}
+          path: |
+            reports/fit/oos_*.csv
+            reports/fit/summary_*.json
+          retention-days: 7
+
+  compare:
+    # Gather each arm's folds, bring the base back from the cache or store it
+    # there, and pair the arms runner by runner, as the serial loop did.
+    needs: [prepare, fit]
+    if: needs.prepare.outputs.bfsp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download historic database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fit-${{ github.run_number }}-*
+          path: fits
+
+      - name: Gather the folds
+        run: python scripts/research_loop.py gather --src fits --folds '${{ needs.prepare.outputs.folds }}'
+
+      - name: Restore the cached base run
+        if: needs.prepare.outputs.base_hit == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: reports/base_cache
+          key: oos-base-${{ needs.prepare.outputs.base_key }}
+          fail-on-cache-miss: true
+
+      - name: Use the cached base run
+        if: needs.prepare.outputs.base_hit == 'true'
+        run: cp reports/base_cache/oos_base.csv reports/base_cache/summary_base.json reports/bfsp_compare/
+
+      - name: Keep the base run for the next iteration
+        if: needs.prepare.outputs.base_hit != 'true'
+        run: mkdir -p reports/base_cache && cp reports/bfsp_compare/oos_base.csv reports/bfsp_compare/summary_base.json reports/base_cache/
+
+      - name: Save the base run
+        if: needs.prepare.outputs.base_hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: reports/base_cache
+          key: oos-base-${{ needs.prepare.outputs.base_key }}
+
+      - name: Compare
+        run: |
+          set -o pipefail
+          python scripts/research_loop.py compare --base-cached "${{ needs.prepare.outputs.base_hit }}" \
+            2>&1 | grep -v PerformanceWarning
+
+      - name: Summarise into the run page
+        if: always()
+        run: cat reports/bfsp_compare/compare.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-${{ needs.prepare.outputs.tag }}-${{ github.run_number }}
+          path: reports/bfsp_compare/
           retention-days: 90
