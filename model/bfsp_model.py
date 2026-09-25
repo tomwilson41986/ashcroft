@@ -231,7 +231,30 @@ DEFAULT_PARAMS = {
     "lambda_l2": 0.1,
     "verbose": -1,
     "seed": 42,
+    # Reproducible fits. Column-wise histograms are what LightGBM chooses for
+    # this shape anyway (0.296 s a round against 0.317 s on auto, 300k x 535),
+    # and `deterministic` pins the rest, so the same matrix and the same recipe
+    # give the same booster: a cached base run is then the base run, exactly.
+    "deterministic": True,
+    "force_col_wise": True,
 }
+
+#: A screening recipe: the same model family, cheaper per round (63 bins, half
+#: the features and half the rows per tree: 0.131 s a round against 0.296 s) and
+#: at a coarser learning rate, so it needs a third of the rounds. About seven
+#: times faster a fit. It ranks feature blocks; it is not what is served. A block
+#: it passes is confirmed on the served recipe before it is promoted.
+QUICK_PARAMS = {
+    "learning_rate": 0.1,
+    "max_bin": 63,
+    "feature_fraction": 0.5,
+    "bagging_fraction": 0.5,
+    "bagging_freq": 1,
+}
+QUICK_ROUNDS = 1000
+
+#: The recipes a run can name: the LightGBM overrides and the round cap.
+RECIPES = {"served": ({}, 3000), "quick": (QUICK_PARAMS, QUICK_ROUNDS)}
 
 
 def profit_weighted_objective(preds, train_data):
