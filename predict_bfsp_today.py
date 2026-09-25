@@ -298,6 +298,27 @@ def prepare_and_predict(
 # Output Formatting
 # ---------------------------------------------------------------------------
 
+#: The CSV --output-csv writes: the race and the runner as the card has them,
+#: then the model's price, probability and rank in the race, then the result
+#: when the day is in the database.
+OUTPUT_COLS = [
+    "race_date", "race_time", "track", "race_name", "race_type", "race_class", "dist_furlongs",
+    "going_description", "number_of_runners", "horse_name", "jockey_name", "trainer", "stall",
+    "official_rating", "pounds", "horse_age", "days_since_lr", "headgear", "odds",
+    "predicted_bfsp", "predicted_win_prob_norm", "model_rank",
+    "actual_bfsp", "bfsp_diff_pct", "value_edge", "placing_numerical",
+]
+
+
+def with_model_rank(predictions: pd.DataFrame) -> pd.DataFrame:
+    """The model's rank of each runner in its race: 1 = its shortest price."""
+    out = predictions.copy()
+    race = out["raceid"] if "raceid" in out.columns else (
+        out["race_date"].astype(str) + "|" + out["track"].astype(str) + "|" + out["race_time"].astype(str))
+    out["model_rank"] = out.groupby(race)["predicted_bfsp"].rank(method="min").astype("Int64")
+    return out
+
+
 def format_predictions(predictions: pd.DataFrame, target_date: date) -> str:
     """Format predictions into a readable report."""
     lines = []
@@ -570,14 +591,8 @@ def main():
             print(report)
 
             if args.output_csv:
-                output_cols = [
-                    "race_date", "race_time", "track", "horse_name",
-                    "predicted_bfsp", "actual_bfsp", "bfsp_diff_pct",
-                    "predicted_win_prob_norm", "value_edge",
-                    "placing_numerical",
-                ]
-                avail = [c for c in output_cols if c in combined.columns]
-                combined[avail].to_csv(args.output_csv, index=False)
+                out = with_model_rank(combined)
+                out[[c for c in OUTPUT_COLS if c in out.columns]].to_csv(args.output_csv, index=False)
                 log.info(f"Saved predictions to {args.output_csv}")
         else:
             log.warning("No predictions generated")
@@ -640,14 +655,8 @@ def main():
 
     # Save to CSV if requested
     if args.output_csv:
-        output_cols = [
-            "race_date", "race_time", "track", "horse_name",
-            "predicted_bfsp", "actual_bfsp", "bfsp_diff_pct",
-            "predicted_win_prob_norm", "value_edge",
-            "placing_numerical",
-        ]
-        avail = [c for c in output_cols if c in predictions.columns]
-        predictions[avail].to_csv(args.output_csv, index=False)
+        out = with_model_rank(predictions)
+        out[[c for c in OUTPUT_COLS if c in out.columns]].to_csv(args.output_csv, index=False)
         log.info(f"Saved predictions to {args.output_csv}")
 
 
