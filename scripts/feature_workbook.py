@@ -156,14 +156,14 @@ BLOCK_EVIDENCE = {
     "Bookings": "Iteration 43: -0.0027 (-0.0044 to -0.0011), neither half resolves, no Brier gain; iteration 44 "
                 "(with the newer within-race readings): -0.0028; iteration 47 (with stablemates): -0.0038. The "
                 "early-price rule up each time. Iteration 48 tests it on the served recipe against the 853.",
-    "Comments": "Iteration 45: +0.0019 (+0.0004 to +0.0035), Brier skill vs market -0.0020 (resolved worse): the "
-                "market and the engine's pace features already read the comments. Retired.",
-    "Stablemates": "Iteration 47: +0.0018 alone (+0.0002 to +0.0034), the outsiders worse; -0.0038 with bookings, "
-                   "about bookings' own gain. Iteration 48 tests the pair on the served recipe.",
-    "Dam line": "Iteration 49: +0.0008 (-0.0007 to +0.0025), -0.0008 in maiden, novice and bumper races: nothing beyond "
-                "the placebo bar (iteration 50: +0.0022). Retired.",
-    "Sire aptitudes": "Iteration 49: +0.0002 overall; -0.0032 (-0.0061 to -0.0002) in maiden, novice and bumper races, "
-                      "+0.0017 elsewhere. Inside the placebo bar; one retest on a steadier screen.",
+    "Comments": "Iteration 45 (quick): +0.0019, inside the quick recipe's placebo bar; iteration 52 (steadier "
+                "screen): -0.0001 (-0.0014 to +0.0011). Nothing the market and the pace features do not read. Retired.",
+    "Stablemates": "Iteration 47 (quick): +0.0018, inside the placebo bar; iteration 52 (steadier screen): -0.0007 "
+                   "(-0.0020 to +0.0007). Retired; iteration 48 also carries it with bookings on the served recipe.",
+    "Dam line": "Iteration 49 (quick): +0.0008; iteration 52 (steadier screen): -0.0001, -0.0002 in maiden, novice "
+                "and bumper races. Retired.",
+    "Sire aptitudes": "Iteration 49 (quick): +0.0002, -0.0032 in maiden, novice and bumper races; iteration 52 "
+                      "(steadier screen): -0.0006 overall, -0.0001 in those races: the split was the reshuffle. Retired.",
     "Finishing-order rating": "Iteration 55 screens it on the steadier screen.",
     "Within-race readings (newer blocks)": "Iteration 44: +0.0007 (-0.0009 to +0.0022), the outsiders worse: the "
                                            "trees already read these measures against the field. Retired.",
