@@ -137,14 +137,17 @@ BLOCK_EVIDENCE = {
                             "the 615. Trained and verified as the 675 (train-bfsp run 33); not served.",
     "Wide within-race readings": "Iteration 37: -0.0012 alone (unresolved); with the time figure and exposure "
                                  "-0.0038 (resolved), -0.0056 at another seed (iteration 39), -0.0063 on the 615 + "
-                                 "within-race readings (iteration 41). Served-recipe confirmation next.",
+                                 "within-race readings (iteration 41). Iteration 42 (served recipe, 6000 rounds): "
+                                 "-0.0045 with the time figure and exposure, -0.0053 with collateral form as well.",
     "Time figure": "Iteration 37: -0.0005 alone, ranks 1-3 better and outsiders worse; Brier skill vs market "
                    "+0.0021 and concordance +0.0035 (both resolved). Part of iteration 37's -0.0038.",
     "Exposure": "Iteration 37: -0.0003 alone; part of iteration 37's -0.0038 with the time figure and wide readings.",
     "Shrunk records": "Iteration 38: -0.00002 on the price; the trainer and jockey cells move Brier skill vs market "
                       "+0.0025 (resolved).",
     "Collateral form": "Iteration 41: -0.0019 alone and -0.0020 on top of all3 (all3 + collateral form -0.0083 on the "
-                       "615 + within-race readings), Brier skill vs market +0.0036, beyond the seed floor.",
+                       "615 + within-race readings), Brier skill vs market +0.0036, beyond the seed floor. Iteration "
+                       "42 (served recipe): all3 + collateral form -0.0053 (-0.0064 to -0.0041); the next served "
+                       "candidate, in training.",
     "Rank fix": "Iteration 41: -0.0000 with the four originals withheld: the trees had worked round the defect. "
                 "Hygiene for the next engine rebuild.",
     "Bookings": "Iteration 43: -0.0027 (-0.0044 to -0.0011), neither half resolves, no Brier gain; iteration 44 "
