@@ -107,6 +107,8 @@ DROP_IN = [
     ("bookings", "Bookings", "The jockey and the yard as the market rated their runners", "built"),
     ("comments", "Comments", "What the in-running comments of earlier runs say", "built"),
     ("stable", "Stablemates", "A yard's runners today, their order, and whose jockey it books", "built"),
+    ("dam_line", "Dam line", "The dam's produce record, the siblings and the female family", "built"),
+    ("sire_apt", "Sire aptitudes", "Sire and damsire aptitudes against their own level, and the nick", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
      "against this field", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
@@ -157,6 +159,8 @@ BLOCK_EVIDENCE = {
                 "market and the engine's pace features already read the comments. Retired.",
     "Stablemates": "Iteration 47: +0.0018 alone (+0.0002 to +0.0034), the outsiders worse; -0.0038 with bookings, "
                    "about bookings' own gain. Iteration 48 tests the pair on the served recipe.",
+    "Dam line": "Iteration 49 screens it (quick recipe): for the lightly raced horses where the forecast errs most.",
+    "Sire aptitudes": "Iteration 49 screens it (quick recipe): the served sire levels read as residual aptitudes.",
     "Within-race readings (newer blocks)": "Iteration 44: +0.0007 (-0.0009 to +0.0022), the outsiders worse: the "
                                            "trees already read these measures against the field. Retired.",
     "Draw v2": "Iteration 35: -0.0004 (-0.0021 to +0.0010): nothing, alone or on top of the within-race readings.",
