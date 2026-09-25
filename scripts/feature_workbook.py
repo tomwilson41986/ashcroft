@@ -165,7 +165,8 @@ BLOCK_EVIDENCE = {
                 "and bumper races. Retired.",
     "Sire aptitudes": "Iteration 49 (quick): +0.0002, -0.0032 in maiden, novice and bumper races; iteration 52 "
                       "(steadier screen): -0.0006 overall, -0.0001 in those races: the split was the reshuffle. Retired.",
-    "Finishing-order rating": "Iteration 55 screens it on the steadier screen.",
+    "Finishing-order rating": "Iteration 55 (steadier screen): +0.0001 (-0.0013 to +0.0014), -0.0015 in maiden, "
+                              "novice and bumper races: official ratings and the form blocks already carry it. Retired.",
     "Within-race readings (newer blocks)": "Iteration 44: +0.0007 (-0.0009 to +0.0022), the outsiders worse: the "
                                            "trees already read these measures against the field. Retired.",
     "Draw v2": "Iteration 35: -0.0004; iteration 54 (steadier screen): -0.0009 (-0.0023 to +0.0003): nothing.",
