@@ -27,7 +27,7 @@ RESULTS = ["placing_numerical", "place", "total_dst_bt", "distbt", "comment", "c
            "comptime_numeric", "bfsp", "bfsp_place"]
 COMMENTS = ["led, kept on", "made all", "prominent, weakened", "tracked leaders, one pace",
             "chased leaders, no extra", "mid-division, stayed on", "held up, headway 2f out",
-            "in rear, never dangerous", "towards rear, ran on late", "pulled up"]
+            "in rear, never dangerous", "towards rear, short of room, ran on late", "pulled up"]
 TRACKS = [("York", "Turf", "Flat", 6.0, "Handicap"), ("Kempton", "Standard", "Flat", 7.0, "Handicap"),
           ("Cheltenham", "Turf", "Hurdle", 16.0, "Handicap Hurdle")]
 FLIP_DAY = pd.Timestamp("2025-02-20")
