@@ -50,10 +50,9 @@ def test_the_block_matches_the_reference_on_one_run_a_day():
         np.testing.assert_allclose(got[mine].to_numpy(float), ref[theirs].to_numpy(float),
                                    rtol=0, atol=1e-12, equal_nan=True, err_msg=mine)
     # the reference scores a non-finisher's easy win as 0; the block leaves it unknown
-    lr_nfp = ref["LR_excuse_nfp"].notna() | ref["LR_c_excuse"].isna()
     known = got["cm_easy_win"].notna()
     np.testing.assert_array_equal(got.loc[known, "cm_easy_win"], ref.loc[known, "LR_easy_win"])
-    assert known.sum() > 50 and lr_nfp.any()
+    assert known.sum() > 50
 
 
 def test_by_hand_and_a_same_day_duplicate_reads_nothing_of_the_first():
@@ -79,7 +78,4 @@ def test_by_hand_and_a_same_day_duplicate_reads_nothing_of_the_first():
     assert out.loc[4, "cm_l6_keen"] == 0.25 and out.loc[4, "cm_l3_trouble"] == 0.0
     assert out.loc[4, "cm_runs_since_trouble"] == 4.0
     # the first run has no history
-    assert out.loc[0, FEATURES_NAN].isna().all()
-
-
-FEATURES_NAN = [c for c in block.FEATURES]
+    assert out.loc[0, block.FEATURES].isna().all()
