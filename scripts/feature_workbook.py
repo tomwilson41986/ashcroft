@@ -104,7 +104,7 @@ DROP_IN = [
     ("head_to_head", "Collateral form", "Each runner's earlier meetings with today's rivals", "candidate"),
     ("shrunk_rates", "Shrunk records", "Small-sample records pulled toward the level above", "built"),
     ("rank_fix", "Rank fix", "The four misdirected ranks, lowest first, missing last", "built"),
-    ("bookings", "Bookings", "The jockey and the yard as the market rated their runners", "built"),
+    ("bookings", "Bookings", "The jockey and the yard as the market rated their runners", "candidate"),
     ("comments", "Comments", "What the in-running comments of earlier runs say", "built"),
     ("stable", "Stablemates", "A yard's runners today, their order, and whose jockey it books", "built"),
     ("dam_line", "Dam line", "The dam's produce record, the siblings and the female family", "built"),
@@ -154,9 +154,9 @@ BLOCK_EVIDENCE = {
                        "candidate, in training.",
     "Rank fix": "Iteration 41: -0.0000; iteration 54 (steadier screen): +0.0006, with the four originals withheld: "
                 "the trees had worked round the defect. Hygiene for the next engine rebuild.",
-    "Bookings": "Iteration 43: -0.0027 (-0.0044 to -0.0011), neither half resolves, no Brier gain; iteration 44 "
-                "(with the newer within-race readings): -0.0028; iteration 47 (with stablemates): -0.0038. The "
-                "early-price rule up each time. Iteration 48 tests it on the served recipe against the 853.",
+    "Bookings": "Quick recipe: -0.0027, -0.0028, -0.0038 on three feature sets. Iteration 51 (steadier screen, on "
+                "the 853): -0.0044 (-0.0060 to -0.0029), concordance +0.0029, the placebo -0.0004. Iteration 48 "
+                "tests it on the served recipe.",
     "Comments": "Iteration 45 (quick): +0.0019, inside the quick recipe's placebo bar; iteration 52 (steadier "
                 "screen): -0.0001 (-0.0014 to +0.0011). Nothing the market and the pace features do not read. Retired.",
     "Stablemates": "Iteration 47 (quick): +0.0018, inside the placebo bar; iteration 52 (steadier screen): -0.0007 "
