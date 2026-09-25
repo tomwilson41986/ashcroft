@@ -85,7 +85,21 @@ comparisons and the early-price trade for each arm.
 **The decision rule.** A variant replaces the base only if its paired error
 interval excludes zero in its favour, and neither Brier skill nor concordance
 is worse by more than its own interval. With `"replicate_base": true` the base
-is fitted twice to show the noise floor. Fits are deterministic, so it is zero.
+is fitted twice to check that fits are reproducible. They are deterministic, so
+that floor is zero, and it is not the noise that matters.
+
+**The seed floor.** The race bootstrap does not see the fit's own randomness:
+the quick recipe samples half the columns and half the rows per tree, and any
+added column changes that draw. Iteration 39 refitted the base at seeds 7 and
+11:
+- the paired error moved by up to 0.0016, as much as the interval's half-width;
+- Brier skill moved by up to 0.002, and concordance by up to 0.003;
+- the early-price rule moved by a point.
+
+So on the quick recipe a difference inside those sizes is not evidence, however
+its interval reads. To test a seed, add a variant `{"name": "seed7", "args":
+"--seed 7"}` and compare it with the base. To re-read a variant against its own
+seed, run `scripts/compare_oos_runs.py` on the two arms' prediction files.
 
 ## 4. Confirm on the served recipe (25–45 minutes, estimate)
 
