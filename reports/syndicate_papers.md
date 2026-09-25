@@ -44,9 +44,9 @@
 5. **ΔR² over the market, and the market's R² by segment.** Two cheap diagnostics, from Benter's eq. 3–4 and Leung & Leung:
    - Report our mnats per race also as Benter's ΔR², so it is comparable with his .009–.018.
    - Map where the BSP is least informative (season, code, class, handicap, field size, price band). That is where fundamentals have the most room.
-6. **A free coefficient on the market** (Benter's β; Sung & Johnson's one-step model).
-   - This lets the win model correct any favourite–longshot bias in the BSP instead of taking it at face value.
-   - The outcome model already has `--mode free`; rerun it on the current features.
+6. **A free coefficient on the market** (Benter's β; Sung & Johnson's one-step model): **already in place.**
+   - The outcome model fits a market-only conditional logit on ln π and (ln π)² in every fold, which is Benter's free β plus a favourite–longshot correction. It then boosts from that fit as its offset (`scripts/outcome_model.py`).
+   - Nothing to add here. What the papers add on top is item 3, the likelihood over more than the winner.
 7. **The place market.**
    - Method: convert win probabilities to place probabilities with Harville plus Benter's corrections for the lower places (γ .81, δ .65 in Hong Kong; Leung & Leung find them stable over 37 years). Compare with the place BSP.
    - Benter notes that when the public bets consistently across pools, a win overlay is a worse place bet.
