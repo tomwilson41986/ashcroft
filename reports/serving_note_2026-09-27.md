@@ -34,6 +34,7 @@ All at 6000 rounds, on the development window of 27 Sep 2025 to 31 Mar 2026: 53,
 - Brier skill against the market improves by +0.0017 (+0.0007 to +0.0026). Its probabilities are measurably closer to the results, not only to the price.
 - The early-price rule is positive in every month from December to March (+6.9% to +10.6%).
 - It is positive in every morning-price band, including 1-4 (+3.1%), where the earlier models were not.
+- The gain holds in each part of the window: September to December 2025 −0.0033 (−0.0046 to −0.0021), December to March −0.0051 (−0.0065 to −0.0037).
 
 ## The checks
 
