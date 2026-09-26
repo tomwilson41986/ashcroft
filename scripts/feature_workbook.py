@@ -113,6 +113,8 @@ DROP_IN = [
     ("cond_form", "Condition form", "Form at today's trip, going, course, race type and headgear, against form "
      "everywhere", "built"),
     ("form_lines", "Form lines", "How the rivals from its recent races have done since", "built"),
+    ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
+     "prices, against what they ran there", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
      "against this field", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
@@ -552,6 +554,11 @@ FL_STAT = {"n": "rival runs since (each rival's next three, before today)", "win
            "wr": "rivals' win rate since, shrunk to 1 in 10 by five runs",
            "plc": "rivals' place rate since, shrunk to 3 in 10 by five runs",
            "ae": "rivals' wins less their BSP chances since, per run, shrunk to 0"}
+FU_STAT = {"perf": "rivals' performance figures since less theirs in the race (lb), per run, shrunk to 0",
+           "or": "rivals' official ratings since less theirs that day (the handicapper's reassessment), "
+                 "per run, shrunk to 0",
+           "mkt": "the market's view of the rivals since less its view there, per run, shrunk to 0",
+           "nres": "rivals' finishing positions since against the market's order, per run, shrunk to 0"}
 
 
 def describe(f: str, group: str = "") -> str:
@@ -575,6 +582,12 @@ def describe(f: str, group: str = "") -> str:
     m = re.fullmatch(r"fl_(l1|l3)_(n|wins|wr|plc|ae)", f)
     if m:
         return f"Form lines of {FL_WINDOW[m.group(1)]}: {FL_STAT[m.group(2)]}"
+    m = re.fullmatch(r"fu_(l1|l3)_(perf|or|mkt|nres)", f)
+    if m:
+        return f"Form uplift of {FL_WINDOW[m.group(1)]}: {FU_STAT[m.group(2)]}"
+    if f == "fu_l1_adj_vs_or":
+        return ("Its performance figure in its last race, revised by the rivals' figures since, "
+                "less today's official rating")
     m = re.fullmatch(r"rfix_(\w+)", f)
     if m:
         return f"Within-race rank of {m.group(1)}, lowest first, missing last"
