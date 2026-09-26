@@ -112,7 +112,9 @@ DROP_IN = [
     ("elo", "Finishing-order rating", "Each horse's strength from whom it beat, across the race network", "built"),
     ("cond_form", "Condition form", "Form at today's trip, going, course, race type and headgear, against form "
      "everywhere", "built"),
-    ("form_lines", "Form lines", "How the rivals from its recent races have done since", "built"),
+    ("form_lines", "Form lines", "How the rivals from its recent races have done since", "candidate"),
+    ("form_lines_ab", "Form lines split", "Rivals ahead of it and behind it, and form lines against today's field",
+     "built"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
      "prices, against what they ran there", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
@@ -139,8 +141,9 @@ BLOCK_EVIDENCE = {
                                        "iteration 34: -0.0001 on top of the form windows, which carry what it found. "
                                        "Not served.",
     "Form variants": "Iteration 34: -0.0021 (-0.0037 to -0.0006) beyond the form windows, rank 1 -0.0046. Iteration "
-                     "54 (steadier screen, on the 853): -0.0022 (-0.0036 to -0.0008), five times the placebo. To the "
-                     "served recipe with bookings.",
+                     "54 (steadier screen, on the 853): -0.0022 (-0.0036 to -0.0008), five times the placebo. "
+                     "Iteration 56 (served recipe, on the 853): -0.0025 (-0.0034 to -0.0018); iteration 59: -0.0013 "
+                     "beyond form lines. In the 944 candidate.",
     "Within-race readings": "Iteration 35: -0.0074 (-0.0092 to -0.0057), every rank band resolved (Lessmann, Sung "
                             "and Johnson 2009, eq. 14). Iteration 36 (served recipe, 6000 rounds): -0.0078 beyond "
                             "the 615. Trained and verified as the 675 (train-bfsp run 33); not served.",
@@ -155,13 +158,23 @@ BLOCK_EVIDENCE = {
                       "+0.0001): marginal.",
     "Collateral form": "Iteration 41: -0.0019 alone and -0.0020 on top of all3 (all3 + collateral form -0.0083 on the "
                        "615 + within-race readings), Brier skill vs market +0.0036, beyond the seed floor. Iteration "
-                       "42 (served recipe): all3 + collateral form -0.0053 (-0.0064 to -0.0041); the next served "
-                       "candidate, in training.",
+                       "42 (served recipe): all3 + collateral form -0.0053 (-0.0064 to -0.0041). Trained and "
+                       "verified as the 853 (train-bfsp run 34), dry-run clean on a real card.",
+    "Form lines": "Iteration 58 (steadier screen, on the 853): -0.0029 (-0.0044 to -0.0016), Brier skill vs "
+                  "market +0.0018 and concordance +0.0026 (both resolved), early-price rule +6.35% -> +7.41%. "
+                  "Iteration 59 (served recipe, on the 859): -0.0038 (-0.0047 to -0.0028), Brier skill +0.0017 "
+                  "(resolved), rule +8.09% -> +8.81%; with form variants -0.0051, rule +8.94%. In the 944 candidate.",
+    "Form lines split": "Iteration 60 (steadier screen): -0.0007 (-0.0020 to +0.0007) beyond form lines, Brier skill "
+                        "and concordance worse (resolved): the split and the field readings add nothing. Retired.",
+    "Condition form": "Iteration 57 (steadier screen, on the 853): -0.0002 (-0.0017 to +0.0013), unresolved: the "
+                      "horse's form in today's conditions adds nothing the engine's aptitude features lack. Retired.",
+    "Form uplift": "Iteration 62 (steadier screen, on the 853): being screened, alone and beside form lines.",
     "Rank fix": "Iteration 41: -0.0000; iteration 54 (steadier screen): +0.0006, with the four originals withheld: "
                 "the trees had worked round the defect. Hygiene for the next engine rebuild.",
     "Bookings": "Quick recipe: -0.0027, -0.0028, -0.0038 on three feature sets. Iteration 51 (steadier screen, on "
                 "the 853): -0.0044 (-0.0060 to -0.0029), concordance +0.0029, the placebo -0.0004. Iteration 48 "
-                "tests it on the served recipe.",
+                "(served recipe, on the 853): -0.0041 (-0.0051 to -0.0032), early-price rule +7.83% -> +8.09%. "
+                "Trained and verified as the 859 (train-bfsp run 35), dry-run clean.",
     "Comments": "Iteration 45 (quick): +0.0019, inside the quick recipe's placebo bar; iteration 52 (steadier "
                 "screen): -0.0001 (-0.0014 to +0.0011). Nothing the market and the pace features do not read. Retired.",
     "Stablemates": "Iteration 47 (quick): +0.0018, inside the placebo bar; iteration 52 (steadier screen): -0.0007 "
@@ -582,6 +595,17 @@ def describe(f: str, group: str = "") -> str:
     m = re.fullmatch(r"fl_(l1|l3)_(n|wins|wr|plc|ae)", f)
     if m:
         return f"Form lines of {FL_WINDOW[m.group(1)]}: {FL_STAT[m.group(2)]}"
+    m = re.fullmatch(r"fa_(ahead|behind)_(n|wins|ae)", f)
+    if m:
+        side = "finished ahead of it" if m.group(1) == "ahead" else "finished behind it (or did not finish)"
+        what = {"n": "runs since", "wins": "wins since", "ae": "wins less BSP chances since, per run, shrunk to 0"}
+        return f"Form lines of its last race, rivals that {side}: {what[m.group(2)]}"
+    if f == "fa_beat_winner":
+        return "1 if a rival it beat in its last race has won since, else 0"
+    m = re.fullmatch(r"fa_(l1|l3)_(ae|wr)_(z|gap)", f)
+    if m:
+        how = "z-score against today's field" if m.group(3) == "z" else "gap to the best in today's field"
+        return f"Form lines of {FL_WINDOW[m.group(1)]} ({'wins less chances' if m.group(2) == 'ae' else 'win rate'}), {how}"
     m = re.fullmatch(r"fu_(l1|l3)_(perf|or|mkt|nres)", f)
     if m:
         return f"Form uplift of {FL_WINDOW[m.group(1)]}: {FU_STAT[m.group(2)]}"
