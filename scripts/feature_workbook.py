@@ -118,7 +118,7 @@ DROP_IN = [
     ("form_lines_close", "Form lines by closeness", "Rivals' results since, weighted by how close they finished to "
      "it", "built"),
     ("collateral", "Collateral form (common opponents)", "Today's runners compared through horses both have met, "
-     "in pounds", "built"),
+     "in pounds", "candidate"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
      "prices, against what they ran there", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
@@ -174,7 +174,8 @@ BLOCK_EVIDENCE = {
                                "-0.0012 (-0.0027 to +0.0002), Brier skill -0.0010: nothing the pooled form lines "
                                "lack. Retired.",
     "Collateral form (common opponents)": "Iteration 66 (steadier screen, on the 853, which reads the direct "
-                                          "meetings): being screened, alone and beside form lines.",
+                                          "meetings): -0.0013 alone (ranks 1-3 resolved); beside form lines -0.0015 "
+                                          "(-0.0028 to -0.0000), rank 1 -0.0027: a candidate for the next bundle.",
     "Condition form": "Iteration 57 (steadier screen, on the 853): -0.0002 (-0.0017 to +0.0013), unresolved: the "
                       "horse's form in today's conditions adds nothing the engine's aptitude features lack. Retired.",
     "Form uplift": "Iteration 62 (steadier screen, on the 853): -0.0046 alone, Brier skill flat; beside form lines "
