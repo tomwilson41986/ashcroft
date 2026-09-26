@@ -99,7 +99,8 @@ The 958 is the 944 plus connection windows: the trainer's and jockey's recent ru
   - Neither Brier skill nor concordance against the market is worse.
   - The early-price rule is **+9.60% (+8.23 to +10.99)** against the 944's +8.41% on the same runs.
 - **Training:** started at 11:24 UTC at 7000 rounds, due about 13:15.
-- **Checks still to pass:** verify, a dry run on today's card, and the parity of connection windows between the 06:00 path and training (research query run 36236954512, already running).
+- **Parity: clean** (research query run 36236954512). On a perfect card and on the 06:00 card with its own gaps, every connection-window feature equals training's, runner for runner. The 944 control repeated its earlier check exactly.
+- **Checks still to pass:** verify, and a dry run on today's card.
 
 If every check passes, the 958 is the stronger recommendation; if any fails, or it is late, the 944 stands. Collateral form was tested beside it and added nothing (−0.0036 with it, against −0.0040 without).
 
