@@ -97,12 +97,14 @@ def test_the_served_average_is_the_loops_average_of_the_members(averaged, tmp_pa
     np.testing.assert_allclose(book, 1.0, rtol=1e-12)
 
 
-def test_each_members_offset_counts_and_the_raw_output_is_the_mean(averaged):
+def test_each_members_offset_counts_and_the_output_is_the_mean_log_price(averaged):
     model, cols, _ = pbt.load_bfsp_model(str(averaged))
     X = _frame(seed=5)[cols].astype(float)
+    # both fixture members are fitted on log prices: the mean of their offset outputs
     means = np.mean([b.predict(X[c]) + getattr(b, "serving_offset", 0.0) for _, b, c in model.members], axis=0)
     np.testing.assert_allclose(model.predict(X), means, rtol=0, atol=1e-12)
     assert model.members[0][1].serving_offset == 0.25 and model.serving_offset == 0.0
+    assert model.serving_target == "log_bfsp"
 
 
 def test_without_a_manifest_one_booster_serves_as_before(tmp_path):
@@ -119,12 +121,21 @@ def test_members_that_number_categories_differently_are_refused(tmp_path):
         pbt.load_bfsp_model(str(tmp_path))
 
 
-def test_members_with_different_targets_are_refused(tmp_path):
-    _member(tmp_path, ".", ["f_a", "f_b"], "regression", seed=3)
-    _member(tmp_path, "b", ["f_a", "f_b"], "huber", seed=4, target="logit_norm_prob")
+@pytest.mark.parametrize("targets", [("logit_norm_prob", "logit_norm_prob"), ("logit_norm_prob", "log_bfsp")])
+def test_members_on_the_served_target_average_as_the_loop_averages(tmp_path, targets):
+    """The served models are fitted on the logit of the race-normalised probability: each
+    member's output is priced by its own target's rule before the prices are averaged."""
+    _member(tmp_path, ".", ["f_a", "f_b"], "regression", seed=3, target=targets[0])
+    _member(tmp_path, "b", ["f_c", "f_a"], "huber", seed=4, target=targets[1])
     _manifest(tmp_path, [("a", "."), ("b", "b")])
-    with pytest.raises(ValueError):
-        pbt.load_bfsp_model(str(tmp_path))
+    model, cols, _ = pbt.load_bfsp_model(str(tmp_path))
+    frame = _frame(seed=9)
+    served = predict_prices(model, frame, cols, race_col="raceid")
+    logs = [np.log(predict_prices(b, frame, c, race_col="raceid")["predicted_bfsp"].to_numpy())
+            for _, b, c in model.members]
+    p = np.exp(-np.mean(logs, axis=0))
+    want = p / pd.Series(p).groupby(frame["raceid"].to_numpy()).transform("sum").to_numpy()
+    np.testing.assert_allclose(served["predicted_win_prob_norm"].to_numpy(), want, rtol=1e-9)
 
 
 def test_a_member_whose_booster_disagrees_with_its_metadata_is_refused(tmp_path):

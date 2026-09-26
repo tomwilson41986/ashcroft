@@ -83,37 +83,37 @@ def load_historical(db_path: str, start_date: str | None = None) -> pd.DataFrame
 #: average (scripts/research_loop.average_arms). Without one, one booster serves.
 ENSEMBLE_MANIFEST = "bfsp_ensemble.json"
 
-#: Targets whose output is a log price up to a constant per race: the mean of
-#: several such outputs is the log of the geometric mean of their prices.
-_LOG_PRICE_TARGETS = ("log_bfsp", "demeaned_log")
-
-
 class AveragedBooster:
     """Several boosters served as one.
 
-    `predict` returns the mean of the members' outputs, each with its own fit's
-    offset. For log-price targets that is the log of the geometric mean of their
-    raw prices, and after `predict_prices` normalises each race's book to one it is
-    exactly the research loop's average of their normalised prices (the members'
-    books differ only by a constant within a race, which the normalisation
-    removes). A member reads its own features, by name, from the frame it is given."""
+    Each member's output is turned into its raw price by its own fit's rule (its
+    target and offset, as `attach_serving_rule` put them on it), and `predict`
+    returns the mean of the log prices, under the target "log_bfsp". After
+    `predict_prices` normalises each race's book to one, that is exactly the research
+    loop's average of the members' normalised prices (the geometric mean,
+    renormalised: scripts/research_loop.average_arms), because a member's own
+    normalisation divides every runner in a race by the same number. A member reads
+    its own features, by name, from the frame it is given."""
+
+    serving_target = "log_bfsp"
+    serving_offset = 0.0                        # each member's own offset is applied in predict
 
     def __init__(self, members: list[tuple[str, "lgb.Booster", list[str]]]):
         if len(members) < 2:
             raise ValueError("an averaged model needs at least two members")
-        targets = {getattr(b, "serving_target", None) or "log_bfsp" for _, b, _ in members}
-        if len(targets) != 1 or not targets <= set(_LOG_PRICE_TARGETS):
-            raise ValueError(f"the members' targets {sorted(targets)} cannot be averaged as prices: "
-                             f"every member must share one of {_LOG_PRICE_TARGETS}")
         self.members = members
-        self.serving_target = targets.pop()
-        self.serving_offset = 0.0                # each member's own offset is added in predict
         self._features = list(dict.fromkeys(c for _, _, cols in members for c in cols))
 
     def predict(self, X: pd.DataFrame, num_iteration=None) -> np.ndarray:
-        outs = [np.asarray(b.predict(X[cols], num_iteration=num_iteration), dtype=float)
-                + float(getattr(b, "serving_offset", 0.0) or 0.0) for _, b, cols in self.members]
-        return np.mean(outs, axis=0)
+        from model.bfsp_model import invert_target
+        logs = []
+        for _, b, cols in self.members:
+            out = (np.asarray(b.predict(X[cols], num_iteration=num_iteration), dtype=float)
+                   + float(getattr(b, "serving_offset", 0.0) or 0.0))
+            price = invert_target(out, X, getattr(b, "serving_target", None) or "log_bfsp")
+            with np.errstate(divide="ignore", invalid="ignore"):
+                logs.append(np.log(price))
+        return np.mean(logs, axis=0)
 
     def feature_name(self) -> list[str]:
         return list(self._features)
@@ -160,9 +160,9 @@ def load_averaged_model(model_dir: str, manifest: str) -> tuple[AveragedBooster,
 
     The manifest is {"members": [{"name": ..., "dir": ...}, ...]}, each dir relative
     to the model directory ("." for the model directory itself, whose metadata then
-    also gives the history's start). Every member must be servable on its own, read
+    also gives the history's start). Every member must be servable on its own and read
     the same categorical vocabulary (the same training matrix numbers the tracks the
-    same way) and share a log-price target."""
+    same way). Each member's output is priced by its own target's rule."""
     with open(manifest) as f:
         spec = json.load(f)
     members, vocab = [], None
