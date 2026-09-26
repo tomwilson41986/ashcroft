@@ -1,6 +1,6 @@
 # Which model serves from 27 September: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 14:35 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 15:12 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -120,7 +120,10 @@ The morning card is the HTML page, which has no pedigree column. A horse with ea
   - sire filled for 31 debutants, damsire for 24, sex for 31;
   - the debutants' prices moved by a mean 0.28 in log terms, the well-bred ones shorter (a Frankel debutant 27.6 to 15.0);
   - the other runners moved by 0.009, and the top pick changed in 1 race of 53.
-- **Still running:** the parity query for the March days, which measures how much of the gap to training is left.
+- **The parity check** (the March days, research query run 36247323034):
+  - With the old card fill, the 958 was priced a mean 0.035 in log terms from training (debutants 0.273), with the same top pick in 92.0% of races.
+  - With the fix it is 0.014 (debutants 0.075), with the same top pick in 98.7% of races. The 944 goes from 0.031 to 0.012, and the 615 from 0.035 to 0.016.
+  - What is left are the card's other gaps: rail moves, jockeys' claims, geldings since the last run, and first foals' damsires.
 
 It changes what the 06:00 job serves for debutants, for any model, so it goes out only with the owner's word. It is in PR #77 with the model.
 
