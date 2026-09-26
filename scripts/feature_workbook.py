@@ -139,6 +139,8 @@ DROP_IN = [
 ]
 
 BLOCK_EVIDENCE = {
+    "debut_market": "Iteration 75 (screen): -0.0011 (-0.0027 to +0.0006) beyond form lines and connection windows, "
+                    "unresolved; maiden, novice and bumper races -0.0048 (resolved), handicaps +0.0008. Not carried.",
     "Custom metrics": "The 19 proprietary metrics and their ranks (the original model). Within-race ranks carry about "
                       "40% of gain; rPMW3 alone about 14%.",
     "Card fields": "Today's card as fetched at 06:00 (card fill: model/card_enrich.py, parity checked).",
