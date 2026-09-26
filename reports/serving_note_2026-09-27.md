@@ -79,8 +79,24 @@ Averaging three fits at different seeds beat each single fit by −0.0013 to −
 2. Add an amendment to `reports/preregistration_clv_forward.md`. It records the change between days, as the pre-registration requires, the evidence above, and its first 06:00 date. The forward report then gives the 615's days and the 944's days separately as well as the whole window.
 3. Merge PR #77 to the default branch before 06:00 UTC on 27 Sep. The 06:00 job reads `data/models` from the default branch; nothing else in the merge changes what is served.
 
+## A third option, if it is ready in time: the 958
+
+The 958 is the 944 plus connection windows: the trainer's and jockey's recent runners over a window ladder, with their career NFP ranked in the race. The specification lists these ranks as trainerNFPrank and jockeyNFPrank, but the engine never built them.
+
+- **On the screen (iteration 67):** −0.0060 (−0.0076 to −0.0046) beyond form lines, the largest gain since the form windows.
+- **On the 944 itself, at the served recipe (iteration 68):** −0.0040 (−0.0050 to −0.0032).
+  - Every rank band is resolved.
+  - Each part of the window is resolved: September to December −0.0043, December to March −0.0037.
+  - Neither Brier skill nor concordance against the market is worse.
+  - The early-price rule is **+9.60% (+8.23 to +10.99)** against the 944's +8.41% on the same runs.
+- **Training:** started at 11:24 UTC at 7000 rounds, due about 13:15.
+- **Checks still to pass:** verify, a dry run on today's card, and the parity of connection windows between the 06:00 path and training (research query run 36236954512, already running).
+
+If every check passes, the 958 is the stronger recommendation; if any fails, or it is late, the 944 stands. Collateral form was tested beside it and added nothing (−0.0036 with it, against −0.0040 without).
+
+**A note on repeat fits.** GitHub's runners are not all the same CPU. The same fit on a different processor is not identical to the bit. The effect on the error was measured at −0.0001 (−0.0009 to +0.0006), far below every step in the table above.
+
 ## In progress, not needed for this decision
 
 - A slower learning rate (0.02) at 9000 rounds read −0.0018 against the 6000-round 944, but it hit its cap again. It is left for the next recipe test at a higher cap.
-- Collateral form through common opponents: −0.0015 beyond form lines on the screen. It is a candidate for the next model's bundle.
-- Connection windows: the trainer's and jockey's recent runners over a window ladder, with their career NFP ranked in the race (the specification's trainerNFPrank and jockeyNFPrank). On the screen it was −0.0060 (−0.0076 to −0.0046) beyond form lines, the largest gain since the form windows. The early-price rule was +8.47% against +7.41%. Iteration 68 is testing it on the 944 itself at the served recipe. It is for the next model, not the 944.
+- Connection grains: the connections' last fortnight, race code, course and pairing. They added nothing beyond connection windows (−0.0008, unresolved) and are retired.
