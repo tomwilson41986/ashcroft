@@ -1,6 +1,6 @@
 # Which model serves from 27 September: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 13:50 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 14:35 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -11,6 +11,10 @@
 - a dry run on today's card
 
 If the owner prefers a smaller step, the 7000-round 944 (run 38, `bfsp-model-38`) is verified and dry-run clean. The 859 is a further fallback.
+
+**Deploy it with the card pedigree fix** (found 26 Sep afternoon; see "The 06:00 card's missing pedigree" below). The 06:00 card gave debutants no sire, damsire or sex, so every model so far priced them a mean 0.26 in log terms (about 30%) away from the price its training features give. The fix reads the pedigree the card does carry, and it applies to whichever model serves.
+
+**Still being tested: the Huber loss.** On the screen it beat the squared-error loss by −0.0029 on the 958's features (iteration 74). Iteration 76 checks it at the served recipe, and the 958 trained with it (the 958h) is training alongside. If both hold before the evening, the 958h would replace the 958 as the recommendation, after the same verify and dry run.
 
 What each adds:
 - **The 944** is the 615 served today plus six blocks that each passed the research loop's decision rule on the served recipe, less the two sire counts found faulty. In order of adoption:
@@ -102,13 +106,31 @@ Compressed, a 7000-round booster is 33 MB with gzip or 25 MB with xz. It loads i
 
 This is a storage decision for the owner, not needed for 27 Sep.
 
+## The 06:00 card's missing pedigree (found and fixed 26 Sep)
+
+The morning card is the HTML page, which has no pedigree column. A horse with earlier runs gets its sire, damsire and sex from its own history. A debutant has none, so it reached the model with them missing, though training always had them.
+
+- **The size of it.** On the parity days (28 and 25 March, 745 runners), the 54 runners without a sire on the card were priced a mean 0.257 in log terms away from training's price for them, against 0.016 for the rest. That was 56% of the whole difference between the 06:00 path and training.
+- **Where the pedigree is.** Every horse name on the card carries a tooltip: "Bay, Male, Stallion - Harry Angel (IRE), Dam - Twist n Shake". On 26 Sep all 568 runners had one, all 31 debutants included. There is no damsire in it.
+- **The fix.** The scraper reads the tooltip. A horse with history keeps its history's pedigree, and the tooltip's sire agreed with history's on all 537 horses with both. A horse without history takes:
+  - the tooltip's sire, spelled as history spells it;
+  - the damsire from the dam's other offspring, or her own sire where she raced;
+  - Filly or Mare from "Female" by age, and for "Male" the sex history's debutants of that age and race type most often are.
+- **The dry run** (the 958 on 26 Sep's card, before and after, the same 568 runners):
+  - sire filled for 31 debutants, damsire for 24, sex for 31;
+  - the debutants' prices moved by a mean 0.28 in log terms, the well-bred ones shorter (a Frankel debutant 27.6 to 15.0);
+  - the other runners moved by 0.009, and the top pick changed in 1 race of 53.
+- **Still running:** the parity query for the March days, which measures how much of the gap to training is left.
+
+It changes what the 06:00 job serves for debutants, for any model, so it goes out only with the owner's word. It is in PR #77 with the model.
+
 ## What deploying involves (only with the owner's word)
 
 1. Commit the chosen artefact to `data/models` on the branch, with its verify report.
    - For the 958: train-bfsp run 39, artifact `bfsp-model-39`.
    - For the 944: the 7000-round file, run 38, artifact `bfsp-model-38`.
 2. Add an amendment to `reports/preregistration_clv_forward.md`. It records the change between days, as the pre-registration requires, the evidence above, and its first 06:00 date. The forward report then gives the 615's days and the new model's days separately, as well as the whole window.
-3. Merge PR #77 to the default branch before 06:00 UTC on 27 Sep. The 06:00 job reads `data/models` from the default branch; nothing else in the merge changes what is served.
+3. Merge PR #77 to the default branch before 06:00 UTC on 27 Sep. The 06:00 job reads `data/models` from the default branch. The only other change to what it serves is the card pedigree fix above, which the amendment records with the model.
 
 ## Tested today and not carried
 
