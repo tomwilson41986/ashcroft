@@ -4,8 +4,9 @@ Every feature is built from 2021-01-01, in training and at 06:00 alike, so a hor
 before then do not exist for the model (research query career_truncation: 8% of the
 development window's runners, priced +0.052 worse within age and race code). A longer
 history does not fit a runner's memory (iteration 82). This writes, per horse, from
-race_results before 2021-01-01, the pieces model/blocks/career_before.py adds to the
-horse's runs since:
+race_results before 2021-01-01 with a usable price (the runs a block sees on the matrix),
+the pieces model/blocks/career_before.py adds to the horse's runs since, built by that
+block's own pre_window_table:
 
     pw_runs, pw_jumps_runs        runs, and runs over hurdles, fences or in bumpers
     pw_<m>_sum, pw_<m>_n          the sum and count of each measure the career windows
@@ -34,18 +35,71 @@ import pandas as pd
 
 sys.path.insert(0, ".")
 from model.form_windows import run_measures  # noqa: E402
+from model.freshness_features import _col  # noqa: E402
 from model.race_shape import race_code  # noqa: E402
 
 CUTOFF = "2021-01-01"
-WINDOW = ("2025-09-27", "2026-03-31")
-OUT = Path("out/pre_window_careers")
 MEASURES = ("win", "plc", "nfp", "mkt", "ae")
+STITCHED = ("nfp", "mkt")
 LAST = 3
 JUMPS = ("hurdle", "chase", "nhflat")
+_BLANK = ("", "nan", "none")
 
 
-def horse_key(s: pd.Series) -> pd.Series:
-    return s.fillna("").astype(str).str.strip().str.lower()
+def horse_key(names: pd.Series) -> pd.Series:
+    """A horse as the engine keys it (form_windows, freshness): the name stripped, in lower case."""
+    return names.fillna("").astype(str).str.strip().str.lower()
+
+
+def _num(df: pd.DataFrame, name: str) -> np.ndarray:
+    return pd.to_numeric(_col(df, name), errors="coerce").to_numpy(dtype=float)
+
+
+# A verbatim copy of model/blocks/career_before.pre_window_table: the block lands with the
+# table this writes (a push under model/ starts the research loop, which needs the table).
+
+def pre_window_table(history: pd.DataFrame, cutoff: str = CUTOFF) -> pd.DataFrame:
+    """TABLE's rows from a history: each horse's runs before `cutoff`, one row per horse.
+
+    The runs a block sees on the matrix (a usable price: blocks.matrix_rows), each
+    measured by run_measures on its own race as the engine measures the runs since:
+    runs and runs over jumps; the sum and count of each measure's known values; the
+    last LAST runs' NFP and market view, last first (unknown where a run's is); the
+    highest official rating carried on the Flat and over jumps; the first and last
+    run. research/queries/done/pre_window_careers.py runs this on race_results."""
+    from model.blocks import matrix_rows
+    date = pd.to_datetime(history["race_date"], errors="coerce")
+    d = history[((date < pd.Timestamp(cutoff)).to_numpy()) & matrix_rows(history)]
+    key = horse_key(d["horse_name"])
+    d, key = d[~key.isin(_BLANK)], key[~key.isin(_BLANK)]
+    m = run_measures(d)
+    jumps = np.isin(race_code(d).to_numpy(), JUMPS)
+    orr = _num(d, "official_rating")
+    orr = np.where(orr > 0, orr, np.nan)
+    f = pd.DataFrame({"key": key.to_numpy(), "date": pd.to_datetime(d["race_date"]).to_numpy(),
+                      "time": d["race_time"].astype(str).to_numpy(), "jumps": jumps.astype(float),
+                      "or_flat": np.where(jumps, np.nan, orr), "or_jumps": np.where(jumps, orr, np.nan),
+                      **{k: m[k] for k in MEASURES}})
+    f = f.sort_values(["key", "date", "time"], kind="mergesort").reset_index(drop=True)
+    g = f.groupby("key", sort=True)
+    out = pd.DataFrame({"pw_runs": g.size(), "pw_jumps_runs": g["jumps"].sum()})
+    for k in MEASURES:
+        out[f"pw_{k}_sum"] = g[k].sum()
+        out[f"pw_{k}_n"] = g[k].count()
+    back = g.cumcount(ascending=False) + 1                 # 1 = the horse's last run before the cut-off
+    for j in range(1, LAST + 1):
+        last = f[back == j].set_index("key")
+        for k in STITCHED:
+            out[f"pw_{k}_l{j}"] = last[k]
+    out["pw_or_max_flat"] = g["or_flat"].max()
+    out["pw_or_max_jumps"] = g["or_jumps"].max()
+    out["pw_first_run"] = g["date"].min().dt.strftime("%Y-%m-%d")
+    out["pw_last_run"] = g["date"].max().dt.strftime("%Y-%m-%d")
+    return out.rename_axis("horse_key").reset_index()
+
+
+WINDOW = ("2025-09-27", "2026-03-31")
+OUT = Path("out/pre_window_careers")
 
 
 def main() -> None:
@@ -59,37 +113,13 @@ def main() -> None:
         "SELECT race_date, horse_name, horse_age FROM race_results WHERE race_date >= ? AND race_date <= ?",
         conn, params=(CUTOFF, WINDOW[1]))
     conn.close()
-    df["key"] = horse_key(df["horse_name"])
-    df = df[~df["key"].isin(["", "nan", "none"])].reset_index(drop=True)
     print(f"{len(df):,} runs before {CUTOFF}, {df['race_date'].min()} to {df['race_date'].max()}, "
-          f"{df['key'].nunique():,} horses")
-
-    m = run_measures(df)
-    jumps = race_code(df).isin(JUMPS).to_numpy()
-    orr = pd.to_numeric(df["official_rating"], errors="coerce")
-    orr = orr.where(orr > 0).to_numpy(dtype=float)
-    f = pd.DataFrame({"key": df["key"], "date": df["race_date"].astype(str), "time": df["race_time"].astype(str),
-                      "jumps": jumps.astype(float), "or_flat": np.where(jumps, np.nan, orr),
-                      "or_jumps": np.where(jumps, orr, np.nan), **{k: m[k] for k in MEASURES}})
-    f = f.sort_values(["key", "date", "time"], kind="mergesort").reset_index(drop=True)
-    g = f.groupby("key", sort=True)
-    out = pd.DataFrame({"pw_runs": g.size(), "pw_jumps_runs": g["jumps"].sum()})
-    for k in MEASURES:
-        out[f"pw_{k}_sum"] = g[k].sum()
-        out[f"pw_{k}_n"] = g[k].count()
-    back = g.cumcount(ascending=False) + 1                   # 1 = the horse's last run before the cut-off
-    for j in range(1, LAST + 1):
-        last = f[back == j].set_index("key")
-        out[f"pw_nfp_l{j}"] = last["nfp"]
-        out[f"pw_mkt_l{j}"] = last["mkt"]
-    out["pw_or_max_flat"] = g["or_flat"].max()
-    out["pw_or_max_jumps"] = g["or_jumps"].max()
-    out["pw_first_run"] = g["date"].min()
-    out["pw_last_run"] = g["date"].max()
-    out = out.reset_index().rename(columns={"key": "horse_key"})
+          f"{horse_key(df['horse_name']).nunique():,} names")
+    out = pre_window_table(df)
     path = OUT / f"pre_window_careers_{CUTOFF}.csv.gz"
-    out.to_csv(path, index=False, float_format="%.6g")
-    print(f"wrote {path}: {len(out):,} horses, {path.stat().st_size / 1e6:.1f} MB")
+    out.to_csv(path, index=False, float_format="%.9g")
+    print(f"wrote {path}: {len(out):,} horses, {int(out['pw_runs'].sum()):,} runs with a usable price, "
+          f"{path.stat().st_size / 1e6:.1f} MB")
     print(out.describe().T.to_string())
 
     # the horses that ran on or after the cut-off: a record before it, and namesakes by age
