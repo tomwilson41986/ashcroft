@@ -121,6 +121,8 @@ DROP_IN = [
      "in pounds", "built"),
     ("connection_windows", "Connection windows", "The trainer's and jockey's recent runners over a window ladder, "
      "and their career NFP ranked in the race", "candidate"),
+    ("connection_relative", "Connection windows against the field", "The trainer's and jockey's recent form as "
+     "within-race z-scores and gaps to the best", "built"),
     ("connection_grains", "Connection grains", "The trainer's and jockey's last fortnight, the trainer in today's "
      "race code, both at today's course, and the pair together", "built"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
@@ -182,6 +184,8 @@ BLOCK_EVIDENCE = {
                                           "(-0.0028 to -0.0000), rank 1 -0.0027. Iteration 68, on the 944 beside "
                                           "connection windows: -0.0036 against -0.0040 without it, the rule +9.19% "
                                           "against +9.60%: nothing beyond connection windows. Not carried.",
+    "Connection windows against the field": "Iteration 71 (steadier screen, on the 853): beside form lines and "
+                                            "connection windows, read against iteration 67's fl_cw arm.",
     "Connection grains": "Iteration 69 (steadier screen, on the 853): -0.0056 (-0.0072 to -0.0041) alone, but beside "
                          "form lines and connection windows -0.0008 (-0.0021 to +0.0005), unresolved, the early-price "
                          "rule +7.84% against +8.47%: what it reads, connection windows already carry. Retired.",
@@ -652,6 +656,13 @@ def describe(f: str, group: str = "") -> str:
                 "ae_l100": "wins less BSP chances of the last 100 runners, per run, shrunk to 0",
                 "nfp_rank": "career NFP ranked in today's race (1 = best; trainerNFPrank / jockeyNFPrank)"}
         return f"Connection windows, {who} {what[m.group(2)]}"
+    m = re.fullmatch(r"cwr_(tr|jk)_(nfp_l20|nfp_l100|nfp_car|lbs_l100|ae_l100)_(z|gap)", f)
+    if m:
+        who = {"tr": "the trainer's", "jk": "the jockey's"}[m.group(1)]
+        what = {"nfp_l20": "last-20 NFP", "nfp_l100": "last-100 NFP", "nfp_car": "career NFP (shrunk)",
+                "lbs_l100": "last-100 pounds beaten", "ae_l100": "last-100 wins less BSP chances"}[m.group(2)]
+        how = {"z": "as a z-score within today's race", "gap": "less the race's highest"}[m.group(3)]
+        return f"Connection windows against the field, {who} {what} {how}"
     m = re.fullmatch(r"cg_(tr|jk|tj)_(d14_n|d14_nfp|d14_dnfp|d14_ae|code_n|code_nfp|code_dnfp|trk_n|trk_nfp|n|nfp|ae)",
                      f)
     if m:
