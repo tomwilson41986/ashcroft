@@ -78,6 +78,110 @@ def load_historical(db_path: str, start_date: str | None = None) -> pd.DataFrame
     return df
 
 
+#: A manifest in the model directory serves several boosters as one: the geometric
+#: mean of their prices, renormalised per race, as the research loop scores an
+#: average (scripts/research_loop.average_arms). Without one, one booster serves.
+ENSEMBLE_MANIFEST = "bfsp_ensemble.json"
+
+#: Targets whose output is a log price up to a constant per race: the mean of
+#: several such outputs is the log of the geometric mean of their prices.
+_LOG_PRICE_TARGETS = ("log_bfsp", "demeaned_log")
+
+
+class AveragedBooster:
+    """Several boosters served as one.
+
+    `predict` returns the mean of the members' outputs, each with its own fit's
+    offset. For log-price targets that is the log of the geometric mean of their
+    raw prices, and after `predict_prices` normalises each race's book to one it is
+    exactly the research loop's average of their normalised prices (the members'
+    books differ only by a constant within a race, which the normalisation
+    removes). A member reads its own features, by name, from the frame it is given."""
+
+    def __init__(self, members: list[tuple[str, "lgb.Booster", list[str]]]):
+        if len(members) < 2:
+            raise ValueError("an averaged model needs at least two members")
+        targets = {getattr(b, "serving_target", None) or "log_bfsp" for _, b, _ in members}
+        if len(targets) != 1 or not targets <= set(_LOG_PRICE_TARGETS):
+            raise ValueError(f"the members' targets {sorted(targets)} cannot be averaged as prices: "
+                             f"every member must share one of {_LOG_PRICE_TARGETS}")
+        self.members = members
+        self.serving_target = targets.pop()
+        self.serving_offset = 0.0                # each member's own offset is added in predict
+        self._features = list(dict.fromkeys(c for _, _, cols in members for c in cols))
+
+    def predict(self, X: pd.DataFrame, num_iteration=None) -> np.ndarray:
+        outs = [np.asarray(b.predict(X[cols], num_iteration=num_iteration), dtype=float)
+                + float(getattr(b, "serving_offset", 0.0) or 0.0) for _, b, cols in self.members]
+        return np.mean(outs, axis=0)
+
+    def feature_name(self) -> list[str]:
+        return list(self._features)
+
+    def num_feature(self) -> int:
+        return len(self._features)
+
+    def num_trees(self) -> int:
+        return sum(b.num_trees() for _, b, _ in self.members)
+
+
+def _read_booster(path: str) -> lgb.Booster:
+    """A booster from its file, plain or xz-compressed (`bfsp_model.lgb.xz`)."""
+    if path.endswith(".xz"):
+        import lzma
+        with lzma.open(path, "rt") as f:
+            return lgb.Booster(model_str=f.read())
+    return lgb.Booster(model_file=path)
+
+
+def _load_member(member_dir: str) -> tuple[lgb.Booster, list[str], dict, dict]:
+    """One member of an averaged model: its booster, features, vocabulary and metadata,
+    held to the same checks as a single served model."""
+    plain = os.path.join(member_dir, "bfsp_model.lgb")
+    path = plain if os.path.exists(plain) else plain + ".xz"
+    meta_path = os.path.join(member_dir, "bfsp_model_meta.json")
+    if not os.path.exists(path) or not os.path.exists(meta_path):
+        raise FileNotFoundError(f"{member_dir}: an averaged model's member needs bfsp_model.lgb (or .lgb.xz) "
+                                f"and bfsp_model_meta.json")
+    with open(meta_path) as f:
+        meta = json.load(f)
+    booster = _read_booster(path)
+    cols = list(meta.get("feature_cols") or [])
+    assert_meta_is_servable({**meta, "feature_cols": cols})
+    if booster.num_feature() != len(cols):
+        raise ValueError(f"{member_dir}: the booster reads {booster.num_feature()} features, "
+                         f"its metadata lists {len(cols)}")
+    attach_serving_rule(booster, meta)
+    return booster, cols, meta.get("categorical_vocab", {}) or {}, meta
+
+
+def load_averaged_model(model_dir: str, manifest: str) -> tuple[AveragedBooster, list[str], dict]:
+    """The members a manifest names, served as one (`AveragedBooster`).
+
+    The manifest is {"members": [{"name": ..., "dir": ...}, ...]}, each dir relative
+    to the model directory ("." for the model directory itself, whose metadata then
+    also gives the history's start). Every member must be servable on its own, read
+    the same categorical vocabulary (the same training matrix numbers the tracks the
+    same way) and share a log-price target."""
+    with open(manifest) as f:
+        spec = json.load(f)
+    members, vocab = [], None
+    for m in spec.get("members", []):
+        name, sub = m.get("name") or m.get("dir"), m.get("dir", ".")
+        booster, cols, mvocab, meta = _load_member(os.path.normpath(os.path.join(model_dir, sub)))
+        if vocab is None:
+            vocab = mvocab
+        elif mvocab != vocab:
+            raise ValueError(f"member {name} numbers its categories differently from the first member: "
+                             f"its vocabulary would price a different track")
+        members.append((name, booster, cols))
+        log.info("Averaged model member %s: %d features, objective=%s, trained through %s", name, len(cols),
+                 meta.get("objective", "?"), meta.get("trained_through", "?"))
+    model = AveragedBooster(members)
+    log.info("Loaded an averaged BFSP model: %d members, %d features in all", len(members), model.num_feature())
+    return model, model.feature_name(), vocab or {}
+
+
 def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
     """Load the trained BFSP model, its feature columns and its categorical vocabulary.
 
@@ -85,7 +189,13 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
     categories are present in the frame it is given, so a track that is one
     integer across the training history is a different integer on a six-race
     card unless the levels are pinned. It is the third return value, and
-    `build_context_features` takes it."""
+    `build_context_features` takes it.
+
+    A manifest (`ENSEMBLE_MANIFEST`) in the directory serves its members as one
+    (`load_averaged_model`); without one, the directory's single booster serves."""
+    manifest = os.path.join(model_dir, ENSEMBLE_MANIFEST)
+    if os.path.exists(manifest):
+        return load_averaged_model(model_dir, manifest)
     model_path = os.path.join(model_dir, "bfsp_model.lgb")
     meta_path = os.path.join(model_dir, "bfsp_model_meta.json")
 
