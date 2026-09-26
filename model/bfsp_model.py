@@ -288,7 +288,9 @@ def parse_param_overrides(items: list[str] | None) -> dict:
 
 #: Settings a recipe iteration may add that the defaults leave to LightGBM.
 _EXTRA_PARAMS = {"max_depth", "min_sum_hessian_in_leaf", "min_gain_to_split", "extra_trees", "path_smooth",
-                 "max_bin", "cat_smooth", "cat_l2", "feature_fraction_bynode"}
+                 "max_bin", "cat_smooth", "cat_l2", "feature_fraction_bynode",
+                 # the Huber loss's threshold and the Fair loss's scale (--param objective=huber alpha=1.3)
+                 "alpha", "fair_c"}
 
 
 def profit_weighted_objective(preds, train_data):
