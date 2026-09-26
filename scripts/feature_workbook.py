@@ -168,8 +168,9 @@ BLOCK_EVIDENCE = {
                   "(resolved), rule +8.09% -> +8.81%; with form variants -0.0051, rule +8.94%. In the 944 candidate.",
     "Form lines split": "Iteration 60 (steadier screen): -0.0007 (-0.0020 to +0.0007) beyond form lines, Brier skill "
                         "and concordance worse (resolved): the split and the field readings add nothing. Retired.",
-    "Form lines by closeness": "Iteration 65 (steadier screen, on the 853): being screened, alone and beside form "
-                               "lines.",
+    "Form lines by closeness": "Iteration 65 (steadier screen, on the 853): -0.0021 alone; beside form lines "
+                               "-0.0012 (-0.0027 to +0.0002), Brier skill -0.0010: nothing the pooled form lines "
+                               "lack. Retired.",
     "Condition form": "Iteration 57 (steadier screen, on the 853): -0.0002 (-0.0017 to +0.0013), unresolved: the "
                       "horse's form in today's conditions adds nothing the engine's aptitude features lack. Retired.",
     "Form uplift": "Iteration 62 (steadier screen, on the 853): -0.0046 alone, Brier skill flat; beside form lines "
