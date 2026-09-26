@@ -1,6 +1,6 @@
 # Which model serves from 27 September: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 21:20 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 21:30 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -125,7 +125,7 @@ It needs two to four boosters of 72–84 MB each. Compressed, a 7000-round boost
 
 This is a storage decision for the owner, not needed for 27 Sep.
 
-The serving path is ready and inert until a manifest is committed: `bfsp_ensemble.json` in `data/models`, naming each member's directory, makes the 06:00 job serve the members as one. Each member is priced by its own target's rule, and their prices are averaged as the research loop averages arms (the geometric mean, renormalised per race; `predict_bfsp_today.AveragedBooster`, tested in `tests/test_averaged_serving.py`). `predict-now.yml` dry-runs a candidate averaged with a second model (`twin_run`, `twin_artifact`). The 968's Huber twin (train-bfsp run 42, `bfsp-model-42`) has passed verify: 968 features, the Huber loss, 7000 rounds, books of 1, log prices correlating 0.9931 with the 615's. The pair's dry run on 26 Sep's card is running (predict-now with `twin_run`).
+The serving path is ready and inert until a manifest is committed: `bfsp_ensemble.json` in `data/models`, naming each member's directory, makes the 06:00 job serve the members as one. Each member is priced by its own target's rule, and their prices are averaged as the research loop averages arms (the geometric mean, renormalised per race; `predict_bfsp_today.AveragedBooster`, tested in `tests/test_averaged_serving.py`). `predict-now.yml` dry-runs a candidate averaged with a second model (`twin_run`, `twin_artifact`). The 968's Huber twin (train-bfsp run 42, `bfsp-model-42`) has passed verify: 968 features, the Huber loss, 7000 rounds, books of 1, log prices correlating 0.9931 with the 615's. The pair's dry run on 26 Sep's card is clean (predict-now run 18): the averaged model loaded both members; 566 runners in 53 races, every one priced, books of 1, 17 minutes from load to prices. Against the 968 alone, correlation 0.9990 and the same top pick in 51 of 53 races. The pair is ready to serve, with the owner's word on the change and on storing two boosters.
 
 ## The 06:00 card's missing pedigree (found and fixed 26 Sep)
 
