@@ -1,6 +1,6 @@
 # Which model serves from 27 September: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 15:12 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 16:40 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -14,7 +14,7 @@ If the owner prefers a smaller step, the 7000-round 944 (run 38, `bfsp-model-38`
 
 **Deploy it with the card pedigree fix** (found 26 Sep afternoon; see "The 06:00 card's missing pedigree" below). The 06:00 card gave debutants no sire, damsire or sex, so every model so far priced them a mean 0.26 in log terms (about 30%) away from the price its training features give. The fix reads the pedigree the card does carry, and it applies to whichever model serves.
 
-**Still being tested: the Huber loss.** On the screen it beat the squared-error loss by −0.0029 on the 958's features (iteration 74). Iteration 76 checks it at the served recipe, and the 958 trained with it (the 958h) is training alongside. If both hold before the evening, the 958h would replace the 958 as the recommendation, after the same verify and dry run.
+**The Huber loss does not change the recommendation** (iteration 76, 16:00 UTC). On the screen it beat the squared-error loss by −0.0029 on the 958's features (iteration 74). On the served recipe the gap closes: −0.0003 (−0.0010 to +0.0006), unresolved. Only the runners over 50 on the BSP improve (−0.0050); the runners at 8 to 16 are a little worse. Its trading readings are lower too: the early-price rule makes +9.20% against the 958's +9.60%, and the top pick traded out makes +1.14% against +1.45%. The 958 trained with it (train-bfsp run 40) passed verify, but it is not a candidate.
 
 What each adds:
 - **The 944** is the 615 served today plus six blocks that each passed the research loop's decision rule on the served recipe, less the two sire counts found faulty. In order of adoption:
