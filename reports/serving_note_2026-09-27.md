@@ -1,6 +1,6 @@
 # Which model serves from 27 September: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 20:35 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 21:00 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -22,7 +22,7 @@ If the owner prefers a smaller step, the 7000-round 944 (run 38, `bfsp-model-38`
 - under the Huber loss (iteration 80): −0.0032 (−0.0040 to −0.0024), and −0.0067 in maiden, novice and bumper races, where the error is largest;
 - under the served squared-error loss (iteration 81, 18:50 UTC): −0.0018 (−0.0028 to −0.0008), with concordance better (+0.0021, resolved). The early-price rule reads +9.45% against the same run's 958 at +9.46%.
 
-The 958 with it (the 968, train-bfsp run 41, `bfsp-model-41`) has since passed verify (968 features, books of 1, log prices correlating 0.9932 with the 615's) and its parity check (research query run 36266481019, 745 runners on two March days): every debut market feature is identical on the 06:00 card and in training, and its prices on the card sit a mean |Δlog| of 0.0122 from training's, the smallest of the 615 (0.0156), the 958 (0.0129) and the 968, with the same top pick in 73 of 75 races. Its dry run on 26 Sep's card is running (predict-now). Its step over the 958 on its own, −0.0018, is close to what a refit alone can move, so tomorrow's recommendation stays the 958; the 968 is the next step, and averaged with its Huber twin (below) it is the largest one on the table.
+The 958 with it (the 968, train-bfsp run 41, `bfsp-model-41`) has since passed verify (968 features, books of 1, log prices correlating 0.9932 with the 615's) and its parity check (research query run 36266481019, 745 runners on two March days): every debut market feature is identical on the 06:00 card and in training, and its prices on the card sit a mean |Δlog| of 0.0122 from training's, the smallest of the 615 (0.0156), the 958 (0.0129) and the 968, with the same top pick in 73 of 75 races. Its dry run on 26 Sep's card is clean (predict-now run 17): 566 runners in 53 races, every one priced, books of 1, 16 minutes from load to prices; against the 958 on the same card, correlation 0.9950 and the same top pick in 47 of 53 races. Its step over the 958 on its own, −0.0018, is close to what a refit alone can move, so tomorrow's recommendation stays the 958; the 968 is the next step, and averaged with its Huber twin (below) it is the largest one on the table.
 
 What each adds:
 - **The 944** is the 615 served today plus six blocks that each passed the research loop's decision rule on the served recipe, less the two sire counts found faulty. In order of adoption:
