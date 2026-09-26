@@ -52,7 +52,7 @@ All at 6000 rounds, on the development window of 27 Sep 2025 to 31 Mar 2026: 53,
   - Against this morning's 615: correlation 0.9859, the same top pick in 46 of 53 races.
 - **Parity, the live path against training.**
   - The overnight check (research query, two March days) found the within-race readings, time figure, wide readings, exposure, collateral form and bookings identical runner for runner.
-  - The 944's own check (form lines and form variants included): running (research query on commit 1bcbea7, started 08:40 UTC, about an hour); this note is updated with its result.
+  - The 944's own check (form lines and form variants included): **clean** (research query run 36230342697). On a perfect card every feature of every block the 944 reads (form lines and form variants included) equals training's, runner for runner, and its prices are identical (correlation 1.0000, the same top pick in every race). As the 06:00 job runs, with the card's own gaps (debutants' sires, rail moves, sex, claims), its prices stay within 0.031 in mean |Δlog| of training's (the 615: 0.035), the same top pick in 96% of races (the 615: 92%).
 - **The sire counts.** `sire_runners` and `damsire_runners` are misaligned within each sire in the engine: a lookahead in training, and a different value at 06:00. The 944 leaves them out, at no cost (iteration 61: −0.0005). The 615 serving today still reads them. The engine fix waits for the next engine rebuild.
 
 ## The top pick: the goal of a profitable rank 1
