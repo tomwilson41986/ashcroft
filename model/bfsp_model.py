@@ -288,7 +288,9 @@ def parse_param_overrides(items: list[str] | None) -> dict:
 
 #: Settings a recipe iteration may add that the defaults leave to LightGBM.
 _EXTRA_PARAMS = {"max_depth", "min_sum_hessian_in_leaf", "min_gain_to_split", "extra_trees", "path_smooth",
-                 "max_bin", "cat_smooth", "cat_l2", "feature_fraction_bynode"}
+                 "max_bin", "cat_smooth", "cat_l2", "feature_fraction_bynode",
+                 # the Huber loss's threshold and the Fair loss's scale (--param objective=huber alpha=1.3)
+                 "alpha", "fair_c"}
 
 
 def profit_weighted_objective(preds, train_data):
@@ -530,6 +532,10 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
     rows the caller intends to score. That is the whole point: choosing the
     iteration count on the scored fold is model selection on the test set."""
     d = train_df.sort_values("race_date")
+    # The unsorted frame is not read again; where the caller holds no other name
+    # on it (evaluate_oos.walk_forward_predict), dropping it frees a copy of the
+    # training rows before the feature array is built.
+    del train_df
     dates = pd.to_datetime(d["race_date"])
     holdout_start = dates.max() - pd.Timedelta(days=int(cfg.holdout_days))
     is_holdout = (dates >= holdout_start).to_numpy()
@@ -573,7 +579,7 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         LightGBM free the raw data once it has binned it."""
         n = int(np.count_nonzero(mask))
         return lgb.Dataset(
-            d.loc[mask, feature_cols].astype(float),
+            d.loc[mask, feature_cols].astype(float, copy=False),   # no second copy of float64 columns
             label=y[mask],
             weight=None if w is None else w[mask],
             init_score=None if init_offset == 0.0 else np.full(n, init_offset),

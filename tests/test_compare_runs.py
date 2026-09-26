@@ -201,3 +201,19 @@ def test_a_whole_sample_report_still_names_its_span(tmp_path):
     assert "Folds" not in text.split("## Mean")[0]
     assert "over 30 races" in text
     assert "2025-01-01 to 2025-01-30" in text
+
+
+@pytest.mark.parametrize("brier_ci, conc_ci, want", [
+    ((-0.0005, +0.0010), (-0.0010, +0.0020), True),     # both unresolved: the price decides
+    ((+0.0005, +0.0020), (+0.0001, +0.0030), True),     # both resolved better
+    ((-0.0041, -0.0009), (-0.0038, +0.0003), False),    # Brier skill resolved worse (iteration 62's fl_fu)
+    ((-0.0010, +0.0010), (-0.0040, -0.0001), False),    # concordance resolved worse
+])
+def test_the_guards_refuse_a_resolved_loss_against_the_market(brier_ci, conc_ci, want):
+    primary, brier_ok, conc_ok, replaces = cor.decide(-0.0005, brier_ci, conc_ci)
+    assert primary and replaces is want
+    assert brier_ok is (brier_ci[1] >= 0) and conc_ok is (conc_ci[1] >= 0)
+
+
+def test_no_guard_passes_a_price_forecast_that_is_not_better():
+    assert cor.decide(+0.0001, (0.001, 0.002), (0.001, 0.002))[3] is False

@@ -101,12 +101,57 @@ DROP_IN = [
      "candidate"),
     ("time_figure", "Time figure", "The horse's own time against standard, going-adjusted", "candidate"),
     ("exposure", "Exposure", "Exposure, improvement, and what horses like it went on to do", "candidate"),
+    ("head_to_head", "Collateral form", "Each runner's earlier meetings with today's rivals", "candidate"),
     ("shrunk_rates", "Shrunk records", "Small-sample records pulled toward the level above", "built"),
+    ("rank_fix", "Rank fix", "The four misdirected ranks, lowest first, missing last", "built"),
+    ("bookings", "Bookings", "The jockey and the yard as the market rated their runners", "candidate"),
+    ("comments", "Comments", "What the in-running comments of earlier runs say", "built"),
+    ("stable", "Stablemates", "A yard's runners today, their order, and whose jockey it books", "built"),
+    ("dam_line", "Dam line", "The dam's produce record, the siblings and the female family", "built"),
+    ("sire_apt", "Sire aptitudes", "Sire and damsire aptitudes against their own level, and the nick", "built"),
+    ("elo", "Finishing-order rating", "Each horse's strength from whom it beat, across the race network", "built"),
+    ("cond_form", "Condition form", "Form at today's trip, going, course, race type and headgear, against form "
+     "everywhere", "built"),
+    ("form_lines", "Form lines", "How the rivals from its recent races have done since", "candidate"),
+    ("form_lines_ab", "Form lines split", "Rivals ahead of it and behind it, and form lines against today's field",
+     "built"),
+    ("form_lines_close", "Form lines by closeness", "Rivals' results since, weighted by how close they finished to "
+     "it", "built"),
+    ("collateral", "Collateral form (common opponents)", "Today's runners compared through horses both have met, "
+     "in pounds", "built"),
+    ("connection_windows", "Connection windows", "The trainer's and jockey's recent runners over a window ladder, "
+     "and their career NFP ranked in the race", "candidate"),
+    ("connection_relative", "Connection windows against the field", "The trainer's and jockey's recent form as "
+     "within-race z-scores and gaps to the best", "built"),
+    ("sire_windows", "Sire windows", "The sire's and damsire's progeny over recent windows, and the sire's "
+     "young runners", "built"),
+    ("debut_market", "The yard's unknowns as the market priced them", "How the market priced the trainer's "
+     "debutants, second-time-outers and lightly raced runners, the rider's debut rides, and the field's share of "
+     "debutants", "built"),
+    ("connection_grains", "Connection grains", "The trainer's and jockey's last fortnight, the trainer in today's "
+     "race code, both at today's course, and the pair together", "built"),
+    ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
+     "prices, against what they ran there", "built"),
+    ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
+     "against this field", "built"),
+    ("pedigree_market", "The pedigree as the market priced it", "How the market has priced the sire's "
+     "debutants and young runners, the damsire's grandchildren on debut and the dam's other foals", "built"),
+    ("career_before", "Whole careers", "Each horse's runs before 2021, which the matrix does not hold, added to "
+     "its runs since: whole-career record, the last three runs across the cut, the peak rating by sphere", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
     ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
 ]
 
 BLOCK_EVIDENCE = {
+    "The pedigree as the market priced it": "Built 26 Sep beside the debut market block: the engine reads the pedigree only by results. "
+                       "Iteration 84 (the 968 + the block, two seeds each, served recipe): the averages -0.0006 (-0.0012 to "
+                       "-0.0000), maiden/novice/bumper races -0.0012 unresolved; the early-price rule lower in every "
+                       "reading (+9.26% against +9.66%). Retired.",
+    "Whole careers": "Built 26 Sep from a table of every horse's runs before 2021 (114,078 horses, 1.31m runs): 74% "
+                     "of 2021's runs, 47% of 2022's and 8% of the development window's have such a record. Iteration "
+                     "83 (the 958 + the block, served recipe): against four refits of the 958 -0.0008 to +0.0002; on "
+                     "the 4,330 runners with a pre-2021 record +0.0010. Retired.",
+    "The yard's unknowns as the market priced them": "Iteration 75 (screen): -0.0011, unresolved; maiden, novice and bumper races -0.0048. Iteration 80 (served recipe, Huber): -0.0032 beside the 958h, those races -0.0067. Iteration 81 (served recipe, squared error): -0.0018 (-0.0028 to -0.0008) beside the 958, concordance resolved better. In the 968, the next candidate (train-bfsp run 41: verify PASS, parity clean, every feature identical on the 06:00 card; its Huber twin run 42).",
     "Custom metrics": "The 19 proprietary metrics and their ranks (the original model). Within-race ranks carry about "
                       "40% of gain; rPMW3 alone about 14%.",
     "Card fields": "Today's card as fetched at 06:00 (card fill: model/card_enrich.py, parity checked).",
@@ -124,18 +169,79 @@ BLOCK_EVIDENCE = {
                                        "iteration 34: -0.0001 on top of the form windows, which carry what it found. "
                                        "Not served.",
     "Form variants": "Iteration 34: -0.0021 (-0.0037 to -0.0006) beyond the form windows, rank 1 -0.0046. Iteration "
-                     "36 confirms on the served recipe at 6000 rounds.",
+                     "54 (steadier screen, on the 853): -0.0022 (-0.0036 to -0.0008), five times the placebo. "
+                     "Iteration 56 (served recipe, on the 853): -0.0025 (-0.0034 to -0.0018); iteration 59: -0.0013 "
+                     "beyond form lines. In the 944 candidate.",
     "Within-race readings": "Iteration 35: -0.0074 (-0.0092 to -0.0057), every rank band resolved (Lessmann, Sung "
-                            "and Johnson 2009, eq. 14). Iteration 36 confirms on the served recipe.",
+                            "and Johnson 2009, eq. 14). Iteration 36 (served recipe, 6000 rounds): -0.0078 beyond "
+                            "the 615. Trained and verified as the 675 (train-bfsp run 33); not served.",
     "Wide within-race readings": "Iteration 37: -0.0012 alone (unresolved); with the time figure and exposure "
-                                 "-0.0038 (resolved). Iteration 39 measures the seed floor before it goes further.",
+                                 "-0.0038 (resolved), -0.0056 at another seed (iteration 39), -0.0063 on the 615 + "
+                                 "within-race readings (iteration 41). Iteration 42 (served recipe, 6000 rounds): "
+                                 "-0.0045 with the time figure and exposure, -0.0053 with collateral form as well.",
     "Time figure": "Iteration 37: -0.0005 alone, ranks 1-3 better and outsiders worse; Brier skill vs market "
                    "+0.0021 and concordance +0.0035 (both resolved). Part of iteration 37's -0.0038.",
     "Exposure": "Iteration 37: -0.0003 alone; part of iteration 37's -0.0038 with the time figure and wide readings.",
-    "Shrunk records": "Iteration 38: -0.00002 on the price; the trainer and jockey cells move Brier skill vs market "
-                      "+0.0025 (resolved).",
-    "Draw v2": "Iteration 35: -0.0004 (-0.0021 to +0.0010): nothing, alone or on top of the within-race readings.",
-    "Pace v2": "Iteration 35: +0.0009 (-0.0004 to +0.0026): nothing; the outsiders' error worse.",
+    "Shrunk records": "Iteration 38: -0.00002 on the price. Iteration 54 (steadier screen): -0.0013 (-0.0028 to "
+                      "+0.0001): marginal.",
+    "Collateral form": "Iteration 41: -0.0019 alone and -0.0020 on top of all3 (all3 + collateral form -0.0083 on the "
+                       "615 + within-race readings), Brier skill vs market +0.0036, beyond the seed floor. Iteration "
+                       "42 (served recipe): all3 + collateral form -0.0053 (-0.0064 to -0.0041). Trained and "
+                       "verified as the 853 (train-bfsp run 34), dry-run clean on a real card.",
+    "Form lines": "Iteration 58 (steadier screen, on the 853): -0.0029 (-0.0044 to -0.0016), Brier skill vs "
+                  "market +0.0018 and concordance +0.0026 (both resolved), early-price rule +6.35% -> +7.41%. "
+                  "Iteration 59 (served recipe, on the 859): -0.0038 (-0.0047 to -0.0028), Brier skill +0.0017 "
+                  "(resolved), rule +8.09% -> +8.81%; with form variants -0.0051, rule +8.94%. In the 944 candidate.",
+    "Form lines split": "Iteration 60 (steadier screen): -0.0007 (-0.0020 to +0.0007) beyond form lines, Brier skill "
+                        "and concordance worse (resolved): the split and the field readings add nothing. Retired.",
+    "Form lines by closeness": "Iteration 65 (steadier screen, on the 853): -0.0021 alone; beside form lines "
+                               "-0.0012 (-0.0027 to +0.0002), Brier skill -0.0010: nothing the pooled form lines "
+                               "lack. Retired.",
+    "Collateral form (common opponents)": "Iteration 66 (steadier screen, on the 853, which reads the direct "
+                                          "meetings): -0.0013 alone (ranks 1-3 resolved); beside form lines -0.0015 "
+                                          "(-0.0028 to -0.0000), rank 1 -0.0027. Iteration 68, on the 944 beside "
+                                          "connection windows: -0.0036 against -0.0040 without it, the rule +9.19% "
+                                          "against +9.60%: nothing beyond connection windows. Not carried.",
+    "Connection windows against the field": "Iteration 71 (steadier screen, on the 853): beside form lines and "
+                                            "connection windows +0.0003 (-0.0011 to +0.0018), unresolved, the "
+                                            "early-price rule +7.96% against +8.47%. Retired.",
+    "Sire windows": "Iteration 73 (steadier screen, on the 853): beside form lines and connection windows +0.0017 "
+                    "(+0.0003 to +0.0033), resolved worse, the outsiders +0.0074: the third pedigree reading to fail. "
+                    "Retired.",
+    "Connection grains": "Iteration 69 (steadier screen, on the 853): -0.0056 (-0.0072 to -0.0041) alone, but beside "
+                         "form lines and connection windows -0.0008 (-0.0021 to +0.0005), unresolved, the early-price "
+                         "rule +7.84% against +8.47%: what it reads, connection windows already carry. Retired.",
+    "Connection windows": "Iteration 67 (steadier screen, on the 853): -0.0062 (-0.0079 to -0.0048) alone; beside "
+                          "form lines -0.0060 (-0.0076 to -0.0046) more than form lines alone, every rank band "
+                          "resolved, the early-price rule +8.47% against +7.41%. Iteration 68, on the 944 at the "
+                          "served recipe: -0.0040 (-0.0050 to -0.0032), every rank band and both halves of the window "
+                          "resolved, the rule +9.60% against +8.41%. In the next model (the 958). Builds the "
+                          "specification's trainerNFPrank and jockeyNFPrank (RB = NFP in this data).",
+    "Condition form": "Iteration 57 (steadier screen, on the 853): -0.0002 (-0.0017 to +0.0013), unresolved: the "
+                      "horse's form in today's conditions adds nothing the engine's aptitude features lack. Retired.",
+    "Form uplift": "Iteration 62 (steadier screen, on the 853): -0.0046 alone, Brier skill flat; beside form lines "
+                   "-0.0020 on the price but Brier skill vs market -0.0025 (resolved worse). Iteration 64: without "
+                   "the market's revised view of the rivals it adds -0.0003 beyond form lines. Retired.",
+    "Rank fix": "Iteration 41: -0.0000; iteration 54 (steadier screen): +0.0006, with the four originals withheld: "
+                "the trees had worked round the defect. Hygiene for the next engine rebuild.",
+    "Bookings": "Quick recipe: -0.0027, -0.0028, -0.0038 on three feature sets. Iteration 51 (steadier screen, on "
+                "the 853): -0.0044 (-0.0060 to -0.0029), concordance +0.0029, the placebo -0.0004. Iteration 48 "
+                "(served recipe, on the 853): -0.0041 (-0.0051 to -0.0032), early-price rule +7.83% -> +8.09%. "
+                "Trained and verified as the 859 (train-bfsp run 35), dry-run clean.",
+    "Comments": "Iteration 45 (quick): +0.0019, inside the quick recipe's placebo bar; iteration 52 (steadier "
+                "screen): -0.0001 (-0.0014 to +0.0011). Nothing the market and the pace features do not read. Retired.",
+    "Stablemates": "Iteration 47 (quick): +0.0018, inside the placebo bar; iteration 52 (steadier screen): -0.0007 "
+                   "(-0.0020 to +0.0007). Retired; iteration 48 also carries it with bookings on the served recipe.",
+    "Dam line": "Iteration 49 (quick): +0.0008; iteration 52 (steadier screen): -0.0001, -0.0002 in maiden, novice "
+                "and bumper races. Retired.",
+    "Sire aptitudes": "Iteration 49 (quick): +0.0002, -0.0032 in maiden, novice and bumper races; iteration 52 "
+                      "(steadier screen): -0.0006 overall, -0.0001 in those races: the split was the reshuffle. Retired.",
+    "Finishing-order rating": "Iteration 55 (steadier screen): +0.0001 (-0.0013 to +0.0014), -0.0015 in maiden, "
+                              "novice and bumper races: official ratings and the form blocks already carry it. Retired.",
+    "Within-race readings (newer blocks)": "Iteration 44: +0.0007 (-0.0009 to +0.0022), the outsiders worse: the "
+                                           "trees already read these measures against the field. Retired.",
+    "Draw v2": "Iteration 35: -0.0004; iteration 54 (steadier screen): -0.0009 (-0.0023 to +0.0003): nothing.",
+    "Pace v2": "Iteration 35: +0.0009; iteration 54 (steadier screen): -0.0007 (-0.0021 to +0.0005): nothing.",
     "Shape and draw (old)": "Iterations 18 and 25: no gain to the price forecast (-0.0000), a little concordance lost. "
                             "Built by the engine, not served; the inputs shape form reads.",
     "Intent (card-unsafe)": "The 06:00 card cannot know these (a gelding since the last run; the jockey or claim as "
@@ -448,18 +554,199 @@ def _metric(x: str) -> str:
     return METRIC.get(x, x)
 
 
+def _upper_first(d: str) -> str:
+    """Capitalise a description's first letter only (str.capitalize lower-cases BSP, NFP, OR)."""
+    return d[:1].upper() + d[1:]
+
+
 def _lower_first(d: str) -> str:
     """Lower-case a description's first letter unless it opens with an acronym (RSI, NFP, OR)."""
     first = d.split(" ", 1)[0]
     return d if len(first) > 1 and first[:2].isupper() else d[:1].lower() + d[1:]
 
 
+COMMENT_CLASS = {
+    "trouble": "trouble in running (hampered, no clear run, checked)", "switched": "switched to find room",
+    "slow_start": "a slow start (slowly away, dwelt)", "keen": "racing keen", "wide": "racing wide",
+    "finished_well": "running on late", "tender": "a kind ride or greenness (eased, not knocked about)",
+    "weakened": "weakening (faded, no extra)", "no_finish": "not finishing (pulled up, fell, unseated)",
+    "problem": "a physical problem (lost action, bled, lost a shoe)", "easy_win": "an easy win",
+    "excuse": "any excuse (trouble, slow start, keen, wide or a problem)",
+}
+CM_WINDOW = {"lr": "in the last run", "l3": "share of the last 3 runs", "l6": "share of the last 6 runs"}
+EXPLICIT_BLOCKS = {
+    "cm_excuse_close": "An excuse last time and beaten 5 lengths or less",
+    "cm_excuse_nfp": "An excuse last time x its normalised finishing position",
+    "cm_noexcuse_poor": "No excuse last time and in the bottom half of the field",
+    "cm_tender_close": "A kind ride last time and beaten 5 lengths or less",
+    "cm_finished_well_nfp": "Ran on last time x its normalised finishing position",
+    "cm_easy_win": "Won easily last time",
+    "cm_runs_since_trouble": "Runs since the last one with trouble in running",
+    "cm_runs_since_excuse": "Runs since the last one with an excuse",
+    "bk_jk_mkt": "Jockey's rides as the market rated them (decayed, shrunk to 0)",
+    "bk_jk_upgrade": "Today's jockey against the jockeys of the horse's last three runs, as the market rated them",
+    "bk_jk_same": "Today's jockey rode the last run",
+    "bk_jk_rides_on_horse": "Earlier rides of this horse by today's jockey",
+    "bk_tr_mkt": "Trainer's runners as the market rated them (decayed, shrunk to 0)",
+    "bk_tr_mkt_trend": "Trainer's runners as the market rated them over the last fortnight, less the long view",
+    "st_n_race": "Trainer's runners in this race", "st_n_meeting": "Trainer's runners at this meeting today",
+    "st_n_day": "Trainer's runners anywhere today",
+    "st_or_rank": "Rank by official rating among the trainer's runners in the race (1 = highest)",
+    "st_or_gap": "Official rating less the best of the trainer's runners in the race",
+    "st_jk_share": "Today's jockey's share of the trainer's rides on earlier days (decayed)",
+    "st_jk_first": "Gets the yard's first-choice jockey among its stablemates in the race",
+    "st_jk_gap": "Today's jockey's share of the yard's rides less the best among its stablemates' jockeys",
+    "elo": "Rating from finishing orders (Elo, Flat and jumps apart), as it stood before the day",
+    "elo_runs": "Finishes against other finishers behind the rating",
+    "elo_z": "Rating against today's field (z-score over rated runners)",
+    "elo_gap": "Rating less the best in today's field",
+    "elo_trend": "Rating now less its value three finishes ago",
+    "elo_field": "Today's field's mean rating",
+    "h2h_rivals_met": "Today's rivals met before", "h2h_meetings": "Earlier meetings with today's rivals",
+    "h2h_win_share": "Share of meetings with today's rivals finished ahead (shrunk to a half)",
+    "h2h_net": "Meetings with today's rivals finished ahead less behind",
+    "h2h_lbs": "Pounds ahead of today's rivals over earlier meetings (shrunk to 0)",
+    "h2h_last_lbs": "Pounds ahead of today's rivals at the latest meeting",
+    "h2h_last_net": "Rivals ahead of less behind at the latest meeting",
+}
+RR_PREFIX = {"rr": "Within-race reading", "rw": "Wide within-race reading", "rn": "Within-race reading (newer blocks)"}
+CF_COND = {"trip": "today's trip band", "going": "today's going group", "course": "this course",
+           "hcap": "today's race type (handicap or not)", "gear": "today's headgear status (on or off)"}
+CF_MEASURE = {"perf": "performance figure", "nfp": "normalised finishing position", "mkt": "the market's view (BSP)"}
+CF_STAT = {"car": "career mean", "m3": "mean of the last three",
+           "d": "career mean less its mean everywhere, shrunk by n / (n + 3)"}
+FL_WINDOW = {"l1": "its last race", "l3": "its last three races"}
+FL_STAT = {"n": "rival runs since (each rival's next three, before today)", "wins": "rival wins since",
+           "wr": "rivals' win rate since, shrunk to 1 in 10 by five runs",
+           "plc": "rivals' place rate since, shrunk to 3 in 10 by five runs",
+           "ae": "rivals' wins less their BSP chances since, per run, shrunk to 0"}
+FU_STAT = {"perf": "rivals' performance figures since less theirs in the race (lb), per run, shrunk to 0",
+           "or": "rivals' official ratings since less theirs that day (the handicapper's reassessment), "
+                 "per run, shrunk to 0",
+           "mkt": "the market's view of the rivals since less its view there, per run, shrunk to 0",
+           "nres": "rivals' finishing positions since against the market's order, per run, shrunk to 0"}
+
+
 def describe(f: str, group: str = "") -> str:
     if f in EXPLICIT:
         return EXPLICIT[f]
+    if f in EXPLICIT_BLOCKS:
+        return EXPLICIT_BLOCKS[f]
+    m = re.fullmatch(r"cm_(lr|l3|l6)_([a-z_]+)", f)
+    if m and m.group(2) in COMMENT_CLASS:
+        return f"In-running comment: {COMMENT_CLASS[m.group(2)]}, {CM_WINDOW[m.group(1)]} (earlier days)"
+    m = re.fullmatch(r"(rr|rw|rn)_(\w+)_(z|gap)", f)
+    if m:
+        how = "z-score against today's field" if m.group(3) == "z" else "gap to the best in today's field"
+        return f"{RR_PREFIX[m.group(1)]}, {how}: {_lower_first(describe(m.group(2)))}"
+    m = re.fullmatch(r"cf_(trip|going|course|hcap|gear)_n", f)
+    if m:
+        return f"Earlier runs at {CF_COND[m.group(1)]}"
+    m = re.fullmatch(r"cf_(trip|going|course|hcap|gear)_(perf|nfp|mkt)_(car|m3|d)", f)
+    if m:
+        return f"At {CF_COND[m.group(1)]}: {CF_MEASURE[m.group(2)]}, {CF_STAT[m.group(3)]} (earlier days)"
+    m = re.fullmatch(r"fl_(l1|l3)_(n|wins|wr|plc|ae)", f)
+    if m:
+        return f"Form lines of {FL_WINDOW[m.group(1)]}: {FL_STAT[m.group(2)]}"
+    m = re.fullmatch(r"fa_(ahead|behind)_(n|wins|ae)", f)
+    if m:
+        side = "finished ahead of it" if m.group(1) == "ahead" else "finished behind it (or did not finish)"
+        what = {"n": "runs since", "wins": "wins since", "ae": "wins less BSP chances since, per run, shrunk to 0"}
+        return f"Form lines of its last race, rivals that {side}: {what[m.group(2)]}"
+    if f == "fa_beat_winner":
+        return "1 if a rival it beat in its last race has won since, else 0"
+    m = re.fullmatch(r"fa_(l1|l3)_(ae|wr)_(z|gap)", f)
+    if m:
+        how = "z-score against today's field" if m.group(3) == "z" else "gap to the best in today's field"
+        return f"Form lines of {FL_WINDOW[m.group(1)]} ({'wins less chances' if m.group(2) == 'ae' else 'win rate'}), {how}"
+    CL = {"cl_rivals": "Today's rivals it is linked to through an opponent both have met (last three runs each)",
+          "cl_links": "Collateral lines to today's rivals (one per common opponent)",
+          "cl_lbs": "Collateral form: mean implied margin over the linked rivals in pounds, shrunk to 0 by two rivals",
+          "cl_lbs_min": "Collateral form: implied margin against the rival it comes out worst against (lb)",
+          "cl_lbs_max": "Collateral form: implied margin against the rival it comes out best against (lb)",
+          "cl_ahead_share": "Collateral form: share of linked rivals it comes out ahead of, shrunk to one half",
+          "cl_net": "Collateral form: linked rivals it comes out ahead of less those ahead of it"}
+    if f in CL:
+        return CL[f]
+    m = re.fullmatch(r"cw_(tr|jk)_(n|nfp_car|nfp_l20|nfp_l100|lbs_l100|ae_l100|nfp_rank)", f)
+    if m:
+        who = {"tr": "the trainer's", "jk": "the jockey's"}[m.group(1)]
+        what = {"n": "runners before today",
+                "nfp_car": "mean NFP of all earlier runners (a non-finisher 0), shrunk to 0.5 by 20 runners",
+                "nfp_l20": "mean NFP of the last 20 runners", "nfp_l100": "mean NFP of the last 100 runners",
+                "lbs_l100": "mean pounds behind the winner of the last 100 runners",
+                "ae_l100": "wins less BSP chances of the last 100 runners, per run, shrunk to 0",
+                "nfp_rank": "career NFP ranked in today's race (1 = best; trainerNFPrank / jockeyNFPrank)"}
+        return f"Connection windows, {who} {what[m.group(2)]}"
+    m = re.fullmatch(r"sw_(sr|ds)_(n|nfp_car|nfp_l100|nfp_l500|ae_l300|young_nfp|nfp_rank)", f)
+    if m:
+        who = {"sr": "the sire's", "ds": "the damsire's"}[m.group(1)]
+        what = {"n": "progeny runs before today",
+                "nfp_car": "progeny's mean NFP of all runs (a non-finisher 0), shrunk to 0.5 by fifty runs",
+                "nfp_l100": "progeny's mean NFP over the last 100 runs",
+                "nfp_l500": "progeny's mean NFP over the last 500 runs",
+                "ae_l300": "progeny's wins less BSP chances over the last 300 runs, per run, shrunk to 0 by fifty",
+                "young_nfp": "two- and three-year-old progeny's NFP over their last 200 runs, shrunk to the sire's own "
+                             "level (for young runners only)",
+                "nfp_rank": "progeny's last-500 NFP ranked in today's race (1 = best)"}[m.group(2)]
+        return f"Sire windows, {who} {what}"
+    dm = {"dm_tr_debut_mkt": "the trainer's debutants as the market rated them (the run's BSP normalised in its "
+                              "race), decayed and shrunk to all debutants' level",
+          "dm_tr_debut_n": "the effective number of the trainer's earlier debutants",
+          "dm_tr_second_mkt": "the trainer's second-time-outers as the market rated them",
+          "dm_tr_early_mkt": "the trainer's third- and fourth-time-outers as the market rated them",
+          "dm_trc_debut_mkt": "the trainer's debutants in today's race code as the market rated them, shrunk to its "
+                              "debutants in all",
+          "dm_jk_debut_mkt": "the rider's debut rides as the market rated them",
+          "dm_stage_mkt": "the reading for the runner's own stage (debut, second run, third or fourth run)",
+          "dm_stage_mkt_z": "the stage reading as a z-score within today's race",
+          "dm_race_debut_share": "the share of today's field making its debut",
+          "dm_race_unexposed_share": "the share of today's field with three runs or fewer"}
+    if f in dm:
+        return f"The yard's unknowns, {dm[f]}"
+    m = re.fullmatch(r"cwr_(tr|jk)_(nfp_l20|nfp_l100|nfp_car|lbs_l100|ae_l100)_(z|gap)", f)
+    if m:
+        who = {"tr": "the trainer's", "jk": "the jockey's"}[m.group(1)]
+        what = {"nfp_l20": "last-20 NFP", "nfp_l100": "last-100 NFP", "nfp_car": "career NFP (shrunk)",
+                "lbs_l100": "last-100 pounds beaten", "ae_l100": "last-100 wins less BSP chances"}[m.group(2)]
+        how = {"z": "as a z-score within today's race", "gap": "less the race's highest"}[m.group(3)]
+        return f"Connection windows against the field, {who} {what} {how}"
+    m = re.fullmatch(r"cg_(tr|jk|tj)_(d14_n|d14_nfp|d14_dnfp|d14_ae|code_n|code_nfp|code_dnfp|trk_n|trk_nfp|n|nfp|ae)",
+                     f)
+    if m:
+        who = {"tr": "the trainer's", "jk": "the jockey's", "tj": "the trainer and jockey together:"}[m.group(1)]
+        what = {"d14_n": "runners in the 14 days before today",
+                "d14_nfp": "mean NFP of the last 14 days' runners, shrunk to its own last-100 NFP by five",
+                "d14_dnfp": "last 14 days' NFP (shrunk) less its own last-100 NFP: in or out of form now",
+                "d14_ae": "wins less BSP chances of the last 14 days' runners, per run, shrunk to 0 by five",
+                "code_n": "runners in today's race code (flat, all-weather, hurdle, chase, bumper)",
+                "code_nfp": "mean NFP of its last 50 runners in today's race code, shrunk to its last-100 NFP by ten",
+                "code_dnfp": "race-code NFP (shrunk) less its own last-100 NFP",
+                "trk_n": "runners at today's course", "trk_nfp": "mean NFP of its last 20 runners at today's "
+                                                                  "course, shrunk to its last-100 NFP by five",
+                "n": "runners", "nfp": "mean NFP of their last 20 runners, shrunk to the trainer's last-100 NFP "
+                                       "by five",
+                "ae": "wins less BSP chances of their last 20 runners, shrunk to 0 by five"}
+        return f"Connection grains, {who} {what[m.group(2)]}"
+    m = re.fullmatch(r"flc_(l1|l3)_(n|wins|wr|ae)", f)
+    if m:
+        what = {"n": "rival runs since", "wins": "rival wins since",
+                "wr": "rivals' win rate since, shrunk to 1 in 10 by five runs",
+                "ae": "rivals' wins less their BSP chances since, per run, shrunk to 0"}
+        return (f"Form lines of {FL_WINDOW[m.group(1)]}, each rival weighted by how close it finished "
+                f"(exp(-lengths/3)): {what[m.group(2)]}")
+    m = re.fullmatch(r"fu_(l1|l3)_(perf|or|mkt|nres)", f)
+    if m:
+        return f"Form uplift of {FL_WINDOW[m.group(1)]}: {FU_STAT[m.group(2)]}"
+    if f == "fu_l1_adj_vs_or":
+        return ("Its performance figure in its last race, revised by the rivals' figures since, "
+                "less today's official rating")
+    m = re.fullmatch(r"rfix_(\w+)", f)
+    if m:
+        return f"Within-race rank of {m.group(1)}, lowest first, missing last"
     m = re.fullmatch(r"fw_([a-z]+)_(car|l1|m3|m5|w3|w5|w10)", f)
     if m:
-        return f"{FW_MEASURE.get(m.group(1), m.group(1)).capitalize()}: {FW_WINDOW[m.group(2)]} (earlier days only)"
+        return f"{_upper_first(FW_MEASURE.get(m.group(1), m.group(1)))}: {FW_WINDOW[m.group(2)]} (earlier days only)"
     m = re.fullmatch(r"fw_perf_(l1|w5|car)_vs_or", f)
     if m:
         return f"Performance figure ({FW_WINDOW[m.group(1)]}) less today's official rating (+ = well in)"
@@ -483,11 +770,11 @@ def describe(f: str, group: str = "") -> str:
     m = re.fullmatch(r"LR(\d?)_(EPF\d?)", f)
     if m:
         n = m.group(1)
-        return f"{_metric(m.group(2)).capitalize()} in the {'last' if not n else ('%s-back' % n)} run"
+        return f"{_upper_first(_metric(m.group(2)))} in the {'last' if not n else ('%s-back' % n)} run"
     m = re.fullmatch(r"(LR\d*_)?(\w+?)_?(RSR|LB)", f)
     if m and f.startswith(("LR", "preracehorse")):
         n = re.match(r"LR(\d*)", f).group(1)
-        return f"{_metric(m.group(3)).capitalize()}: {'last run' if not n else 'mean of the last %s runs' % n}"
+        return f"{_upper_first(_metric(m.group(3)))}: {'last run' if not n else 'mean of the last %s runs' % n}"
     m = re.fullmatch(r"EXP_(NFP|RB|ORR2)(\d+)", f)
     if m:
         return f"Exponentially decayed (0.85) mean {_metric(m.group(1))}, last {m.group(2)} runs"

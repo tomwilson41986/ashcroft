@@ -64,3 +64,20 @@ def test_training_from_the_prepared_matrix_skips_the_engine_and_stage_2(tmp_path
     meta = json.loads((tmp_path / "bfsp_model_meta.json").read_text())
     assert meta["best_iteration"] == 20 and meta["fixed_rounds"] == 20
     assert not (tmp_path / "probability_model.lgb").exists()
+
+
+def test_drop_features_withholds_by_prefix_and_records_it(tmp_path):
+    trainer = train_bfsp.BFSPTrainer(cfg=TrainConfig(fixed_rounds=20, params=SMALL), prob_model=False,
+                                     drop_features=("LR_",))
+    summary = trainer.train(_matrix(), output_dir=str(tmp_path), prepared=True)
+    assert "error" not in summary
+    assert set(trainer.feature_cols) == {"rPMW3", "or_num"}
+    meta = json.loads((tmp_path / "bfsp_model_meta.json").read_text())
+    assert meta["dropped_features"] == ["LR_ORR2"] and "LR_ORR2" not in meta["feature_cols"]
+
+
+def test_a_drop_prefix_that_matches_nothing_is_an_error(tmp_path):
+    trainer = train_bfsp.BFSPTrainer(cfg=TrainConfig(fixed_rounds=20, params=SMALL), prob_model=False,
+                                     drop_features=("sire_runners",))
+    with pytest.raises(ValueError, match="sire_runners"):
+        trainer.train(_matrix(), output_dir=str(tmp_path), prepared=True)

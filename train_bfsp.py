@@ -213,8 +213,14 @@ class BFSPTrainer:
         cfg: TrainConfig | None = None,
         wf_folds: int = 0,
         prob_model: bool = True,
+        drop_features: tuple[str, ...] = (),
     ):
         self.wf_folds = int(wf_folds)
+        #: Name prefixes withheld from the model, as evaluate_oos.py
+        #: --drop-features withholds them: the model that serves is the one the
+        #: evaluation measured. What they removed goes into the metadata.
+        self.drop_features = tuple(drop_features)
+        self.dropped_features: list[str] = []
         #: The Benter stage-2 win model. Nothing served loads it (the train
         #: workflow neither commits nor uploads it) and it costs about eight
         #: minutes, so the fast path turns it off.
@@ -264,6 +270,15 @@ class BFSPTrainer:
 
         # Determine available feature columns (+ any opt-in extra blocks)
         available = [c for c in list(ALL_FEATURE_COLS) + EXTRA_FEATURE_COLS if c in df.columns]
+        if self.drop_features:
+            unmatched = [p for p in self.drop_features if not any(c.startswith(p) for c in available)]
+            if unmatched:
+                # a typo would otherwise train and serve the model it meant to change
+                raise ValueError(f"--drop-features {unmatched} match no feature the model would read")
+            self.dropped_features = list(dict.fromkeys(c for c in available if c.startswith(self.drop_features)))
+            available = [c for c in available if not c.startswith(self.drop_features)]
+            log.info(f"  Withheld {len(self.dropped_features)} features by prefix {list(self.drop_features)}: "
+                     f"{self.dropped_features}")
 
         # Deduplicate while preserving order
         seen = set()
@@ -834,6 +849,7 @@ class BFSPTrainer:
         # for the record: the live path finds these from the feature names itself
         from model import blocks as drop_in
         meta["drop_in_blocks"] = drop_in.used_by(self.feature_cols)
+        meta["dropped_features"] = self.dropped_features
         assert_meta_is_servable(meta)
         meta_path = os.path.join(output_dir, "bfsp_model_meta.json")
         with open(meta_path, "w") as f:
@@ -1025,6 +1041,12 @@ def main():
              "matrix carries (shape_form, shape_draw) and drop-in blocks (model/blocks), built "
              "as the live path builds them. The model's feature list then names them, and the "
              "live path builds what it names",
+    )
+    parser.add_argument(
+        "--drop-features", default=None, metavar="PREFIXES",
+        help="Comma-separated name prefixes to withhold from the model, as evaluate_oos.py "
+             "--drop-features withholds them, so the model served is the one evaluated. "
+             "The metadata records what they removed; a prefix that matches nothing is an error",
     )
     parser.add_argument(
         "--skip-prob-model", action="store_true",
@@ -1284,6 +1306,7 @@ def main():
         cfg=cfg,
         wf_folds=args.wf_folds,
         prob_model=not args.skip_prob_model,
+        drop_features=tuple(p.strip() for p in (args.drop_features or "").split(",") if p.strip()),
     )
 
     summary = trainer.train(df, output_dir=args.output_dir, prepared=prepared)

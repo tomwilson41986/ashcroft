@@ -152,3 +152,116 @@ def test_the_card_csv_keeps_the_dams_sire_under_the_tables_name():
                "2026-09-24,2.30,Kempton,Newcomer,Kodiac,Galileo (IRE),\n"
     card = parse_racecard_csv(csv_text)
     assert card.loc[0, "dam_stallion"] == "Galileo (IRE)" and card.loc[0, "stallion"] == "Kodiac"
+
+
+def _with_pedigree_history():
+    """History with the sire's and the dam's other runners, and debutant males of two on the all-weather."""
+    base = {"track": "Kempton", "going_description": "Standard", "surface_type": "Polytrack", "race_type": "Novices",
+            "jockey_name": "Other Jockey", "jockeys_claim": "0"}
+    extra = [{**base, "race_date": "2025-06-01", "race_time": "5.00", "horse_name": "Older Sibling",
+              "horse_sex": "Gelding", "stallion": "Harry Angel (IRE)", "dam": "Twist n Shake",
+              "dam_stallion": "Dansili", "horse_age": 3, "career_runs": 4}]
+    extra += [{**base, "race_date": "2025-06-02", "race_time": f"{i + 1}.00", "horse_name": f"debut colt {i}",
+               "horse_sex": "Colt", "stallion": "Kodiac", "horse_age": 2, "career_runs": 0} for i in range(3)]
+    extra += [{**base, "race_date": "2025-06-03", "race_time": "1.00", "horse_name": "debut gelding",
+               "horse_sex": "Gelding", "stallion": "Kodiac", "horse_age": 2, "career_runs": 0}]
+    return pd.concat([_history(), pd.DataFrame(extra)], ignore_index=True)
+
+
+def test_a_debutant_takes_its_pedigree_and_sex_from_the_card_tooltip():
+    card = _card()                                   # row 1, 'Newcomer', two, on the all-weather: no history
+    card["card_stallion"] = [None, "Harry Angel", None]          # printed without the suffix history has
+    card["card_dam"] = [None, "Twist n Shake", None]
+    card["card_sex"] = ["Male", "Male", None]
+    out = enrich_card(card, _with_pedigree_history())
+    new = out.loc[1]
+    assert new["stallion"] == "Harry Angel (IRE)"                # as history spells it
+    assert new["dam_stallion"] == "Dansili"                      # from the dam's other offspring
+    assert new["horse_sex"] == "Colt"                            # history's male debutants of two here: 3 colts, 1 gelding
+    # a horse history knows keeps history's pedigree and sex; the tooltip's 'Male' cannot make Lady Luck a colt
+    assert out.loc[0, "stallion"] == "Kodiac" and out.loc[0, "horse_sex"] == "Mare"
+
+
+def test_the_dam_comes_from_the_horse_s_rows_else_the_tooltip_as_history_spells_her():
+    card = _card()
+    card["card_dam"] = [None, "twist n shake", None]               # the tooltip's own spelling
+    hist = _with_pedigree_history()
+    hist.loc[hist["horse_name"] == "Lady Luck (IRE)", "dam"] = "Lucky Lady"
+    out = enrich_card(card, hist)
+    assert out.loc[0, "dam"] == "Lucky Lady"                      # history's, for a horse it knows
+    assert out.loc[1, "dam"] == "Twist n Shake"                   # the tooltip's, as history spells her
+    assert pd.isna(out.loc[2, "dam"])                             # neither: missing, not guessed
+    kept = card.assign(dam=["Card Dam", None, None])
+    assert enrich_card(kept, hist).loc[0, "dam"] == "Card Dam"    # the card's own is never overwritten
+
+
+def test_the_tooltip_fills_only_what_it_can():
+    card = _card().iloc[[1, 1]].reset_index(drop=True)
+    card["horse_age"] = [2, 6]
+    card["card_stallion"] = ["First Crop Sire (GB)", "First Crop Sire (GB)"]   # no progeny in history yet
+    card["card_dam"] = ["Maiden Dam", "Maiden Dam"]                            # a first foal
+    card["card_sex"] = ["Female", "Female"]
+    out = enrich_card(card, _with_pedigree_history())
+    assert out["stallion"].tolist() == ["First Crop Sire (GB)"] * 2           # the card's own name
+    assert out["dam_stallion"].isna().all()                                     # nothing to find it from
+    assert out["horse_sex"].tolist() == ["Filly", "Mare"]
+
+
+def test_the_card_tooltip_is_read_from_the_horse_cell():
+    from daily_predictions import parse_horse_title
+    assert parse_horse_title("Bay, Male, Stallion - Harry Angel (IRE), Dam - Twist n Shake") == {
+        "card_stallion": "Harry Angel (IRE)", "card_dam": "Twist n Shake", "card_sex": "Male"}
+    assert parse_horse_title("Bay/Brown, Female, Stallion - Kodiac, Dam - Rue De Russie (IRE)")["card_dam"] \
+        == "Rue De Russie (IRE)"
+    assert parse_horse_title("Name of horse - click for full record in new screen") == {}
+    assert parse_horse_title(None) == {}
+
+
+def test_the_html_card_carries_the_tooltip_into_the_runner():
+    from datetime import date
+
+    from daily_predictions import scrape_racecard_html
+
+    html = """<html><body><span>1.20 Curragh(2 runners)</span><span>Class 1, 6f , Good, 2yo, Win: £10,000</span>
+    <span>Some Maiden</span>
+    <table><tr><td>No.</td><td>Form</td><td>Days</td><td>Horse</td><td>Age</td><td>Weight</td><td>Headgear</td>
+    <td>Jockey</td><td>Trainer</td><td>Stall</td><td>OR</td><td>Odds</td></tr>
+    <tr><td>6</td><td>none</td><td>-</td><td title="Bay, Male, Stallion - Harry Angel (IRE), Dam - Twist n Shake">
+    <a href="horses.php?id=415718">Shake It Out</a></td><td>2</td><td>9-7</td><td></td><td>Whelan, R P</td>
+    <td>Cotter, Kieran P</td><td>10</td><td>0</td><td>50/1</td></tr>
+    <tr><td>7</td><td>2</td><td>17</td><td title="Name of horse - click for full record in new screen">
+    <a href="horses.php?id=1">Known Horse</a></td><td>2</td><td>9-7</td><td></td><td>Coen, Ben M</td>
+    <td>Murphy, Daniel</td><td>8</td><td>0</td><td>10/1</td></tr></table></body></html>"""
+
+    class _Resp:
+        text = html
+
+        def raise_for_status(self):
+            pass
+
+    class _Session:
+        def get(self, url):
+            return _Resp()
+
+    df = scrape_racecard_html(_Session(), date(2026, 9, 26)).set_index("horse_name")
+    assert df.loc["Shake It Out", "card_stallion"] == "Harry Angel (IRE)"
+    assert df.loc["Shake It Out", "card_dam"] == "Twist n Shake" and df.loc["Shake It Out", "card_sex"] == "Male"
+    assert pd.isna(df.loc["Known Horse", "card_stallion"])
+
+
+def test_a_first_foal_takes_its_damsire_from_the_dam_s_own_races():
+    h = _with_pedigree_history()
+    raced = [{"race_date": "2019-06-01", "race_time": "2.00", "track": "Kempton", "going_description": "Standard",
+              "horse_name": "Racing Dam (IRE)", "horse_sex": "Filly", "stallion": "Sea The Stars (IRE)",
+              "jockey_name": "Other Jockey", "jockeys_claim": "0"},
+             {"race_date": "2019-06-01", "race_time": "3.00", "track": "Kempton", "going_description": "Standard",
+              "horse_name": "Namesake", "horse_sex": "Gelding", "stallion": "Wrong Sire",
+              "jockey_name": "Other Jockey", "jockeys_claim": "0"}]
+    card = _card().iloc[[1, 1]].reset_index(drop=True)
+    card["horse_name"] = ["First Foal", "Other First Foal"]
+    card["card_stallion"] = ["Kodiac", "Kodiac"]
+    card["card_dam"] = ["Racing Dam", "Namesake"]           # the card may print the dam without her suffix
+    card["card_sex"] = ["Male", "Male"]
+    out = enrich_card(card, pd.concat([h, pd.DataFrame(raced)], ignore_index=True))
+    assert out.loc[0, "dam_stallion"] == "Sea The Stars (IRE)"       # her own sire
+    assert pd.isna(out.loc[1, "dam_stallion"])                        # a gelding of that name is not a dam

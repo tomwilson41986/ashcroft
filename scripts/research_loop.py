@@ -37,6 +37,12 @@ Without "variants" the single variant is the old top-level keys (arm `blocks`:
 promotion at the round cap it will be served with), `bfsp_base_args` to the
 base arms alone.
 
+An ensemble is scored as an arm but never fitted: the geometric mean of some
+arms' price forecasts, renormalised to a book of 1 in each race, built at the
+compare step (how several seeds of one recipe would be served as one):
+
+    "ensembles": [{"name": "cw_avg3", "arms": ["cw", "cw_s7", "cw_s11"]}]
+
 Every step reads the same config, so the YAML only wires jobs together.
 """
 
@@ -79,11 +85,21 @@ def recipe(cfg: dict) -> str:
     return r
 
 
+def start_date(cfg: dict) -> str:
+    """Where the matrix's history starts: the config's `start_date`, else START_DATE.
+
+    An earlier start gives every career, sire and yard record the years before
+    it; `fold_anchor` then keeps the folds those of the default start, so the
+    runners scored and each fold's cut-off are unchanged."""
+    return str(cfg.get("start_date") or START_DATE)
+
+
 def common_args(cfg: dict) -> list[str]:
     """Arguments every arm shares: the matrix, the folds, the recipe."""
-    return ["--start-date", START_DATE, "--feature-cache", FEATURE_CACHE,
+    anchor = ["--fold-anchor", str(cfg["fold_anchor"])] if cfg.get("fold_anchor") else []
+    return ["--start-date", start_date(cfg), "--feature-cache", FEATURE_CACHE,
             "--eval-from", cfg.get("bfsp_from", "2025-07-01"), "--eval-until", EVAL_UNTIL,
-            "--step-days", "91", "--val-window", "91", "--recipe", recipe(cfg)]
+            "--step-days", "91", "--val-window", "91", "--recipe", recipe(cfg), *anchor]
 
 
 BASE_ARMS = ("base", "base_rep")
@@ -105,6 +121,56 @@ def variants(cfg: dict) -> list[dict]:
     if not out:
         raise SystemExit("variants is empty")
     return out
+
+
+def ensembles(cfg: dict) -> list[dict]:
+    """The averaged arms, each {name, arms}: built from fitted arms, never fitted themselves."""
+    names = {v["name"] for v in variants(cfg)}
+    out, seen = [], set()
+    for e in cfg.get("ensembles", []):
+        name, arms = e.get("name", ""), list(e.get("arms", []))
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,30}", name) or name in BASE_ARMS or name in names or name in seen:
+            raise SystemExit(f"ensemble name {name!r}: lower-case, unique, not an arm's")
+        fitted = set(all_arms(cfg))
+        if len(set(arms)) < 2 or len(set(arms)) != len(arms) or not set(arms) <= fitted:
+            raise SystemExit(f"ensemble {name!r}: two or more distinct fitted arms, not {arms}")
+        seen.add(name)
+        out.append({"name": name, "arms": arms})
+    return out
+
+
+def average_arms(paths: list, out) -> None:
+    """Several arms' forecasts as one: the geometric mean of their prices, renormalised to a book of 1 per race.
+
+    Every arm must price every runner of the first; the result keeps the first's rows, order and other columns."""
+    import numpy as np
+    import pandas as pd
+    key = ["race_date", "race_time", "track", "horse_name"]
+    frames = [pd.read_csv(p, dtype={"race_time": str}) for p in paths]
+    first = frames[0]
+    idx = first.set_index(key).index
+    if not idx.is_unique:
+        raise SystemExit(f"{paths[0]}: a runner appears twice")
+    logs, raws = [], []
+    for p, f in zip(paths, frames):
+        r = f.set_index(key).reindex(idx)
+        if r["predicted_bfsp"].isna().any():
+            raise SystemExit(f"{p}: lacks runners of {paths[0]}")
+        logs.append(np.log(r["predicted_bfsp"].to_numpy(float)))
+        if "predicted_bfsp_raw" in r:
+            raws.append(np.log(r["predicted_bfsp_raw"].to_numpy(float)))
+    race = (first["race_date"].astype(str) + "|" + first["track"].astype(str) + "|"
+            + first["race_time"].astype(str)).to_numpy()
+    p = np.exp(-np.mean(logs, axis=0))
+    pn = p / pd.Series(p).groupby(race).transform("sum").to_numpy()
+    avg = first.copy()
+    avg["predicted_win_prob_norm"] = pn
+    avg["predicted_bfsp"] = 1.0 / pn
+    if len(raws) == len(logs):
+        avg["predicted_bfsp_raw"] = np.exp(np.mean(raws, axis=0))
+    if "overlay_pct" in avg and "bfsp" in avg:
+        avg["overlay_pct"] = (avg["bfsp"] / avg["predicted_bfsp"] - 1) * 100
+    avg.to_csv(out, index=False)
 
 
 def _join_blocks(*parts: str) -> str:
@@ -161,6 +227,8 @@ def block_code_hash(blocks: str) -> str:
         return ""
     files = feature_cache.feature_source_files(
         ["model/blocks/__init__.py"] + [f"model/blocks/{b}.py" for b in drop_in])
+    # and the data a block reads besides the records (DATA: e.g. career_before's table)
+    files += [Path(f) for b in drop_in for f in getattr(blk.load(b), "DATA", ())]
     h = hashlib.sha256()
     for path in files:
         rel = path.relative_to(REPO) if path.is_relative_to(REPO) else path
@@ -197,7 +265,7 @@ def _outputs(pairs: dict) -> None:
 def cmd_plan(args) -> None:
     cfg = load_config(args.config)
     from model import feature_cache
-    fkey = feature_cache.cache_key(args.db, START_DATE)
+    fkey = feature_cache.cache_key(args.db, start_date(cfg))
     Path(FIT_DIR).mkdir(parents=True, exist_ok=True)
     plan_file = Path(FIT_DIR) / "folds.json"
     subprocess.run([sys.executable, "evaluate_oos.py", "--db", args.db, *common_args(cfg),
@@ -210,6 +278,7 @@ def cmd_plan(args) -> None:
         "base_key": base_key(cfg, fkey, folds),
         "recipe": recipe(cfg),
         "replicate": "true" if cfg.get("replicate_base") else "false",
+        "start_date": start_date(cfg),
     })
 
 
@@ -325,17 +394,22 @@ def cmd_compare(args) -> None:
     cached = args.base_cached == "true"
     from concurrent.futures import ThreadPoolExecutor
 
-    def one(v):
-        name = v["name"]
+    def one(arm):
+        name, note = arm
         md, js = out / f"compare_{name}.md", out / f"compare_{name}.json"
         subprocess.run([sys.executable, "scripts/compare_oos_runs.py", "--base", str(base),
                         "--variant", str(out / f"oos_{name}.csv"), "--out", str(md), "--json-out", str(js),
-                        "--note", _note(cfg, v, cached)], check=True, cwd=REPO, capture_output=True)
+                        "--note", note], check=True, cwd=REPO, capture_output=True)
         return name, json.loads(js.read_text()), md.read_text()
 
+    arms = [(v["name"], _note(cfg, v, cached)) for v in variants(cfg)]
+    for e in ensembles(cfg):
+        average_arms([out / f"oos_{a}.csv" for a in e["arms"]], out / f"oos_{e['name']}.csv")
+        arms.append((e["name"], f"{cfg.get('tag', '')} / {e['name']}: the geometric mean of "
+                                f"{', '.join(e['arms'])}, renormalised per race; recipe {recipe(cfg)}"))
     # each comparison is its own process; run them side by side (a runner has four cores)
     with ThreadPoolExecutor(max_workers=4) as pool:
-        done = list(pool.map(one, variants(cfg)))
+        done = list(pool.map(one, arms))
     rows = [(name, j) for name, j, _ in done]
     sections = [md for _, _, md in done]
     text = (f"# {cfg.get('tag', '')}: {len(rows)} variant(s) against the base, recipe {recipe(cfg)}\n\n"
@@ -357,7 +431,7 @@ def cmd_compare(args) -> None:
         return arm, body
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for arm, body in pool.map(clv, ["base"] + [v["name"] for v in variants(cfg)]):
+        for arm, body in pool.map(clv, ["base"] + [name for name, _ in arms]):
             text += f"\n\n### Early-price trade on Betfair's morning prices: {arm}\n```\n{body}\n```\n"
     (out / "compare.md").write_text(text)
     print(text)

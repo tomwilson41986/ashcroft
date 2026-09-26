@@ -43,7 +43,24 @@ KEY = ["race_date", "race_time", "track", "horse_name"]
 MIN_CORRELATION = 0.9
 
 
+ENSEMBLE_MANIFEST = "bfsp_ensemble.json"          # predict_bfsp_today.ENSEMBLE_MANIFEST
+
+
 def _load(model_dir: str):
+    """The model a directory serves: its booster, or the members its manifest names served
+    as one (predict_bfsp_today.load_averaged_model, which checks each member on its own),
+    with the metadata the checks read: the first member's, over every member's features."""
+    manifest = Path(model_dir, ENSEMBLE_MANIFEST)
+    if manifest.exists():
+        from predict_bfsp_today import load_averaged_model
+        model, cols, _ = load_averaged_model(model_dir, str(manifest))
+        spec = json.loads(manifest.read_text())
+        metas = [json.loads(Path(model_dir, m.get("dir", "."), "bfsp_model_meta.json").read_text())
+                 for m in spec["members"]]
+        meta = {**metas[0], "feature_cols": cols,
+                "objective": " + ".join(str(m.get("objective")) for m in metas),
+                "members": [m.get("name") or m.get("dir") for m in spec["members"]]}
+        return model, meta
     import lightgbm as lgb
     from model.bfsp_model import attach_serving_rule
     meta = json.loads(Path(model_dir, "bfsp_model_meta.json").read_text())
@@ -143,12 +160,16 @@ def main() -> None:
 
     new, meta = _load(a.model_dir)
     served, served_meta = (None, None)
-    if a.served_dir and Path(a.served_dir, "bfsp_model.lgb").exists():
+    if a.served_dir and (Path(a.served_dir, "bfsp_model.lgb").exists()
+                         or Path(a.served_dir, ENSEMBLE_MANIFEST).exists()):
         served, served_meta = _load(a.served_dir)
 
     problems = check_servable(new, meta) + check_live_path(meta.get("feature_cols", []))
     notes = [f"{len(meta.get('feature_cols', []))} features, target {meta.get('target')}, "
              f"best_iteration {meta.get('best_iteration')}, trained through {meta.get('trained_through')}"]
+    if meta.get("members"):
+        notes.append(f"an averaged model: {len(meta['members'])} members ({', '.join(meta['members'])}), "
+                     f"objectives {meta['objective']}; each member passed the served model's own checks on load")
     if served_meta:
         gained = sorted(set(meta["feature_cols"]) - set(served_meta["feature_cols"]))
         lost = sorted(set(served_meta["feature_cols"]) - set(meta["feature_cols"]))

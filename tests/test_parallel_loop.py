@@ -159,6 +159,19 @@ def test_the_base_key_follows_the_source_of_a_drop_in_block_the_base_carries(tmp
     assert rl.base_key(CFG, "fkey", folds) == rl.base_key(CFG, "fkey", folds)
 
 
+def test_the_base_key_follows_the_data_a_drop_in_block_reads(tmp_path, monkeypatch):
+    """A block's DATA (career_before's table of runs before 2021) is as much its source as
+    its code: a base carrying it is stale once the table changes."""
+    from model.blocks import career_before
+    table = tmp_path / "careers.csv.gz"
+    table.write_bytes(b"one")
+    monkeypatch.setattr(career_before, "DATA", (table,))
+    before = rl.block_code_hash("career_before")
+    assert before != "" and before != rl.block_code_hash("form_variants")
+    table.write_bytes(b"two")
+    assert rl.block_code_hash("career_before") != before
+
+
 def _fold_output(root, arm, k, n):
     d = root / f"fit-{arm}-{k}" / "reports" / "fit"
     d.mkdir(parents=True)
@@ -240,3 +253,85 @@ def test_a_recipe_iteration_can_move_any_setting_and_only_real_ones():
     # the override reaches the fit's parameters, on top of the recipe
     cfg = TrainConfig(params={**DEFAULT_PARAMS, **QUICK_PARAMS, **parse_param_overrides(["num_leaves=31"])})
     assert cfg.params["num_leaves"] == 31 and cfg.params["learning_rate"] == QUICK_PARAMS["learning_rate"]
+
+
+def test_an_ensemble_is_the_geometric_mean_of_its_arms_renormalised_per_race(tmp_path):
+    rows = {"race_date": ["2025-10-01"] * 3 + ["2025-10-02"] * 2, "race_time": ["2.30"] * 5, "track": "york",
+            "horse_name": list("abcde"), "bfsp": [2.0, 4.0, 8.0, 3.0, 1.5], "overlay_pct": 0.0}
+    a = pd.DataFrame({**rows, "predicted_bfsp": [2.0, 4.0, 4.0, 2.0, 2.0], "predicted_bfsp_raw": [2.2, 4.4, 4.4, 2, 2]})
+    b = pd.DataFrame({**rows, "predicted_bfsp": [8.0, 2.0, 8 / 5, 4.0, 4 / 3], "predicted_bfsp_raw": [8, 2, 1.6, 4, 1.3]})
+    a.to_csv(tmp_path / "oos_a.csv", index=False)
+    b.iloc[::-1].to_csv(tmp_path / "oos_b.csv", index=False)           # row order does not matter
+    rl.average_arms([tmp_path / "oos_a.csv", tmp_path / "oos_b.csv"], tmp_path / "oos_ab.csv")
+    got = pd.read_csv(tmp_path / "oos_ab.csv")
+    assert list(got["horse_name"]) == list("abcde")                     # the first arm's rows and order
+    gm = np.sqrt(np.array([2 * 8, 4 * 2, 4 * 8 / 5, 2 * 4, 2 * 4 / 3]))   # the geometric mean of the prices
+    p = 1 / gm
+    p[:3] /= p[:3].sum()
+    p[3:] /= p[3:].sum()
+    assert np.allclose(got["predicted_win_prob_norm"], p) and np.allclose(got["predicted_bfsp"], 1 / p)
+    assert np.isclose(got.loc[0, "predicted_bfsp_raw"], np.sqrt(2.2 * 8))
+    assert np.allclose(got["overlay_pct"], (got["bfsp"] / got["predicted_bfsp"] - 1) * 100)
+    # an arm that does not price every runner of the first is refused
+    b.iloc[1:].to_csv(tmp_path / "oos_short.csv", index=False)
+    with pytest.raises(SystemExit, match="lacks runners"):
+        rl.average_arms([tmp_path / "oos_a.csv", tmp_path / "oos_short.csv"], tmp_path / "x.csv")
+
+
+def test_an_ensemble_names_two_or_more_fitted_arms_and_is_never_fitted():
+    cfg = {**CFG, "variants": [{"name": "cw"}, {"name": "cw_s7", "args": "--seed 7"}],
+           "ensembles": [{"name": "cw_avg", "arms": ["cw", "cw_s7"]}]}
+    assert rl.ensembles(cfg) == [{"name": "cw_avg", "arms": ["cw", "cw_s7"]}]
+    assert "cw_avg" not in rl.all_arms(cfg)                             # built at the compare step, not fitted
+    assert rl.ensembles({**cfg, "ensembles": [{"name": "with_base", "arms": ["base", "cw"]}]})
+    for bad in ([{"name": "cw", "arms": ["cw", "cw_s7"]}],              # an arm's name
+                [{"name": "base", "arms": ["cw", "cw_s7"]}],
+                [{"name": "one", "arms": ["cw"]}],                      # one arm is not an average
+                [{"name": "twice", "arms": ["cw", "cw"]}],
+                [{"name": "ghost", "arms": ["cw", "nope"]}],            # an arm nobody fits
+                [{"name": "e", "arms": ["cw", "cw_s7"]}, {"name": "e", "arms": ["cw", "cw_s7"]}]):
+        with pytest.raises(SystemExit):
+            rl.ensembles({**cfg, "ensembles": bad})
+    assert rl.ensembles(CFG) == []
+
+
+def test_an_earlier_history_scores_the_same_folds_when_anchored_and_can_train_on_the_later_rows(monkeypatch):
+    late = _frame(days=("2023-01-01", "2025-12-31"))
+    early = _frame(days=("2021-01-01", "2025-12-31"))
+    sched = {k: v for k, v in SCHEDULE.items()}
+    plain = evaluate_oos.fold_plan(late["race_date"], cfg=TrainConfig(), **sched)
+    unanchored = evaluate_oos.fold_plan(early["race_date"], cfg=TrainConfig(), **sched)
+    anchored = evaluate_oos.fold_plan(early["race_date"], cfg=TrainConfig(), fold_anchor="2023-01-01", **sched)
+    key = [(p["val_start"], p["val_end"], p["n_val"]) for p in plain]
+    assert [(p["val_start"], p["val_end"], p["n_val"]) for p in anchored] == key          # the same folds
+    assert [(p["val_start"], p["val_end"]) for p in unanchored] != [k[:2] for k in key]  # anchored at 2021, they move
+    # an earlier history trains on more rows, unless it is told to train from the later start
+    assert all(a["n_train"] > p["n_train"] for a, p in zip(anchored, plain))
+    since = evaluate_oos.fold_plan(early["race_date"], cfg=TrainConfig(), fold_anchor="2023-01-01",
+                                   train_from="2023-01-01", **sched)
+    assert [p["n_train"] for p in since] == [p["n_train"] for p in plain]
+    # and the fit sees only those rows
+    _stub(monkeypatch)
+    seen = []
+    orig = evaluate_oos.fit_bfsp
+
+    def fit(train_df, feature_cols, cfg):
+        seen.append(train_df["race_date"].min())
+        return orig(train_df, feature_cols, cfg)
+
+    monkeypatch.setattr(evaluate_oos, "fit_bfsp", fit)
+    evaluate_oos.walk_forward_predict(early, ["a"], fold_anchor="2023-01-01", train_from="2023-01-01", **sched)
+    assert seen and min(seen) >= pd.Timestamp("2023-01-01")
+
+
+def test_the_loop_reads_its_history_start_and_fold_anchor_from_the_config(monkeypatch):
+    monkeypatch.setattr(rl, "START_DATE", "2021-01-01")
+    args = rl.common_args(CFG)
+    assert args[args.index("--start-date") + 1] == "2021-01-01" and "--fold-anchor" not in args
+    cfg = {**CFG, "start_date": "2018-01-01", "fold_anchor": "2021-01-01"}
+    args = rl.common_args(cfg)
+    assert args[args.index("--start-date") + 1] == "2018-01-01"
+    assert args[args.index("--fold-anchor") + 1] == "2021-01-01"
+    # the base run is keyed by the history it was built on
+    folds = [{"fold": 0}]
+    assert rl.base_key(cfg, "f", folds) != rl.base_key(CFG, "f", folds)
