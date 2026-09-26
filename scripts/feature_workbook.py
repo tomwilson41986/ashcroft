@@ -119,6 +119,8 @@ DROP_IN = [
      "it", "built"),
     ("collateral", "Collateral form (common opponents)", "Today's runners compared through horses both have met, "
      "in pounds", "candidate"),
+    ("connection_windows", "Connection windows", "The trainer's and jockey's recent runners over a window ladder, "
+     "and their career NFP ranked in the race", "built"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
      "prices, against what they ran there", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
@@ -176,6 +178,8 @@ BLOCK_EVIDENCE = {
     "Collateral form (common opponents)": "Iteration 66 (steadier screen, on the 853, which reads the direct "
                                           "meetings): -0.0013 alone (ranks 1-3 resolved); beside form lines -0.0015 "
                                           "(-0.0028 to -0.0000), rank 1 -0.0027: a candidate for the next bundle.",
+    "Connection windows": "Iteration 67 (steadier screen, on the 853): being screened, alone and beside form lines. "
+                          "Builds the specification's trainerNFPrank and jockeyNFPrank (RB = NFP in this data).",
     "Condition form": "Iteration 57 (steadier screen, on the 853): -0.0002 (-0.0017 to +0.0013), unresolved: the "
                       "horse's form in today's conditions adds nothing the engine's aptitude features lack. Retired.",
     "Form uplift": "Iteration 62 (steadier screen, on the 853): -0.0046 alone, Brier skill flat; beside form lines "
@@ -627,6 +631,16 @@ def describe(f: str, group: str = "") -> str:
           "cl_net": "Collateral form: linked rivals it comes out ahead of less those ahead of it"}
     if f in CL:
         return CL[f]
+    m = re.fullmatch(r"cw_(tr|jk)_(n|nfp_car|nfp_l20|nfp_l100|lbs_l100|ae_l100|nfp_rank)", f)
+    if m:
+        who = {"tr": "the trainer's", "jk": "the jockey's"}[m.group(1)]
+        what = {"n": "runners before today",
+                "nfp_car": "mean NFP of all earlier runners (a non-finisher 0), shrunk to 0.5 by 20 runners",
+                "nfp_l20": "mean NFP of the last 20 runners", "nfp_l100": "mean NFP of the last 100 runners",
+                "lbs_l100": "mean pounds behind the winner of the last 100 runners",
+                "ae_l100": "wins less BSP chances of the last 100 runners, per run, shrunk to 0",
+                "nfp_rank": "career NFP ranked in today's race (1 = best; trainerNFPrank / jockeyNFPrank)"}
+        return f"Connection windows, {who} {what[m.group(2)]}"
     m = re.fullmatch(r"flc_(l1|l3)_(n|wins|wr|ae)", f)
     if m:
         what = {"n": "rival runs since", "wins": "rival wins since",
