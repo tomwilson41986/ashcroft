@@ -80,7 +80,13 @@ The pre-registered forward test measures exactly the traded version, from the 06
 
 ## An option: the three-seed average
 
-Averaging three fits at different seeds beat each single fit by −0.0013 to −0.0040 (iteration 46), and would make the served forecast repeatable. It needs three 72 MB boosters: about 216 MB in git, or release files plus a change to how the 06:00 job fetches the model. This is a storage decision for the owner, not needed for 27 Sep.
+Averaging three fits at different seeds beat each single fit by −0.0013 to −0.0040 (iteration 46). It would also make the served forecast repeatable: one fit differs from another by the choice of CPU alone (the fit-hardware-noise entry in the ledger). It needs three boosters of 72–84 MB each.
+
+Compressed, a 7000-round booster is 33 MB with gzip or 25 MB with xz. A compressed booster loads in 2–3 seconds and predicts identically. The options:
+- about 76 MB in git per retrain (xz), or
+- release files, plus a change to how the 06:00 job fetches the model.
+
+This is a storage decision for the owner, not needed for 27 Sep.
 
 ## What deploying involves (only with the owner's word)
 
