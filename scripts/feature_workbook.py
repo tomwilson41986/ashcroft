@@ -180,8 +180,9 @@ BLOCK_EVIDENCE = {
     "Collateral form (common opponents)": "Iteration 66 (steadier screen, on the 853, which reads the direct "
                                           "meetings): -0.0013 alone (ranks 1-3 resolved); beside form lines -0.0015 "
                                           "(-0.0028 to -0.0000), rank 1 -0.0027: a candidate for the next bundle.",
-    "Connection grains": "Iteration 69 (steadier screen, on the 853): alone, and beside form lines and connection "
-                         "windows, read against iteration 67's fl_cw arm.",
+    "Connection grains": "Iteration 69 (steadier screen, on the 853): -0.0056 (-0.0072 to -0.0041) alone, but beside "
+                         "form lines and connection windows -0.0008 (-0.0021 to +0.0005), unresolved, the early-price "
+                         "rule +7.84% against +8.47%: what it reads, connection windows already carry. Retired.",
     "Connection windows": "Iteration 67 (steadier screen, on the 853): -0.0062 (-0.0079 to -0.0048) alone; beside "
                           "form lines -0.0060 (-0.0076 to -0.0046) more than form lines alone, every rank band "
                           "resolved, the early-price rule +8.47% against +7.41%. Iteration 68 tests it on the 944 at "
