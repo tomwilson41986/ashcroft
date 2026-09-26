@@ -1,6 +1,6 @@
 # Which model serves from 27 September: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 19:05 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 20:35 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -22,7 +22,7 @@ If the owner prefers a smaller step, the 7000-round 944 (run 38, `bfsp-model-38`
 - under the Huber loss (iteration 80): −0.0032 (−0.0040 to −0.0024), and −0.0067 in maiden, novice and bumper races, where the error is largest;
 - under the served squared-error loss (iteration 81, 18:50 UTC): −0.0018 (−0.0028 to −0.0008), with concordance better (+0.0021, resolved). The early-price rule reads +9.45% against the same run's 958 at +9.46%.
 
-The 958 with it (the 968, train-bfsp run 41) is training. It needs its parity check and verify before it could serve, so it is not part of tomorrow's recommendation.
+The 958 with it (the 968, train-bfsp run 41, `bfsp-model-41`) has since passed verify (968 features, books of 1, log prices correlating 0.9932 with the 615's) and its parity check (research query run 36266481019, 745 runners on two March days): every debut market feature is identical on the 06:00 card and in training, and its prices on the card sit a mean |Δlog| of 0.0122 from training's, the smallest of the 615 (0.0156), the 958 (0.0129) and the 968, with the same top pick in 73 of 75 races. Its dry run on 26 Sep's card is running (predict-now). Its step over the 958 on its own, −0.0018, is close to what a refit alone can move, so tomorrow's recommendation stays the 958; the 968 is the next step, and averaged with its Huber twin (below) it is the largest one on the table.
 
 What each adds:
 - **The 944** is the 615 served today plus six blocks that each passed the research loop's decision rule on the served recipe, less the two sire counts found faulty. In order of adoption:
@@ -115,6 +115,7 @@ A single fit is one draw of a noise the paired test does not see. Fitted again w
 | **three seeds** | **−0.0026 (−0.0030 to −0.0021)**, every rank band | +0.0003 | **+10.04% (+8.66 to +11.48)** | +1.35% |
 | the 958 and its Huber twin | −0.0026 (−0.0030 to −0.0022), against iteration 68's fit | +0.0006, resolved | +9.18% | +1.48% |
 | three seeds and the Huber twin | −0.0032 (−0.0037 to −0.0027) | +0.0005 | | |
+| **the 968 and its Huber twin** | **−0.0048 (−0.0057 to −0.0039)**, against the single 958 | +0.0006, resolved; concordance +0.0025, resolved | | |
 
 Every average passes the decision rule. The rule's and the top pick's readings move between single seeds by as much as between the averages (the top pick's by half a point), so the price error is the steadier measure. The 958's Huber twin (train-bfsp run 40) is already trained and verified, so the two-loss average could serve with no new training.
 
@@ -123,6 +124,8 @@ It needs two to four boosters of 72–84 MB each. Compressed, a 7000-round boost
 - S3 beside the database, with a manifest in the repository naming each file and its checksum. The 06:00 job already reads S3.
 
 This is a storage decision for the owner, not needed for 27 Sep.
+
+The serving path is ready and inert until a manifest is committed: `bfsp_ensemble.json` in `data/models`, naming each member's directory, makes the 06:00 job serve the members as one. Each member is priced by its own target's rule, and their prices are averaged as the research loop averages arms (the geometric mean, renormalised per race; `predict_bfsp_today.AveragedBooster`, tested in `tests/test_averaged_serving.py`). `predict-now.yml` dry-runs a candidate averaged with a second model (`twin_run`, `twin_artifact`). The 968's Huber twin (train-bfsp run 42) finishes training this evening; the pair's dry run follows its verify.
 
 ## The 06:00 card's missing pedigree (found and fixed 26 Sep)
 
@@ -161,5 +164,7 @@ These were each screened against form lines plus connection windows (reports/res
 - **Sire windows** (the progeny's recent form): +0.0017, resolved worse.
 - **Recency weighting of the training rows:** worse for the outsiders.
 - **Collateral form through common opponents:** nothing beyond connection windows.
+- **Whole careers** (iteration 83): each horse's runs before 2021, restored exactly from the database, add nothing against four refits of the 958 (−0.0008 to +0.0002), not even for the runners who have them (+0.0010). Fitting only on rows from 2022 is worse (+0.0009 to +0.0019), so the matrix keeps its 2021 start.
+- **The conditions in the race name** (auction, sales, EBF, mares', restricted, classified): small biases on a few hundred runners each, worth about 0.0001 in all; not built.
 
 The remaining price error is where public form is thin: maiden, novice and bumper races (0.52 against 0.36 in handicaps), outsiders, and big fields. Ireland's higher error is mostly its greater share of those races.
