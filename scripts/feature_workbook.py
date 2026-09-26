@@ -117,6 +117,8 @@ DROP_IN = [
      "built"),
     ("form_lines_close", "Form lines by closeness", "Rivals' results since, weighted by how close they finished to "
      "it", "built"),
+    ("collateral", "Collateral form (common opponents)", "Today's runners compared through horses both have met, "
+     "in pounds", "built"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
      "prices, against what they ran there", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
@@ -171,6 +173,8 @@ BLOCK_EVIDENCE = {
     "Form lines by closeness": "Iteration 65 (steadier screen, on the 853): -0.0021 alone; beside form lines "
                                "-0.0012 (-0.0027 to +0.0002), Brier skill -0.0010: nothing the pooled form lines "
                                "lack. Retired.",
+    "Collateral form (common opponents)": "Iteration 66 (steadier screen, on the 853, which reads the direct "
+                                          "meetings): being screened, alone and beside form lines.",
     "Condition form": "Iteration 57 (steadier screen, on the 853): -0.0002 (-0.0017 to +0.0013), unresolved: the "
                       "horse's form in today's conditions adds nothing the engine's aptitude features lack. Retired.",
     "Form uplift": "Iteration 62 (steadier screen, on the 853): -0.0046 alone, Brier skill flat; beside form lines "
@@ -613,6 +617,15 @@ def describe(f: str, group: str = "") -> str:
     if m:
         how = "z-score against today's field" if m.group(3) == "z" else "gap to the best in today's field"
         return f"Form lines of {FL_WINDOW[m.group(1)]} ({'wins less chances' if m.group(2) == 'ae' else 'win rate'}), {how}"
+    CL = {"cl_rivals": "Today's rivals it is linked to through an opponent both have met (last three runs each)",
+          "cl_links": "Collateral lines to today's rivals (one per common opponent)",
+          "cl_lbs": "Collateral form: mean implied margin over the linked rivals in pounds, shrunk to 0 by two rivals",
+          "cl_lbs_min": "Collateral form: implied margin against the rival it comes out worst against (lb)",
+          "cl_lbs_max": "Collateral form: implied margin against the rival it comes out best against (lb)",
+          "cl_ahead_share": "Collateral form: share of linked rivals it comes out ahead of, shrunk to one half",
+          "cl_net": "Collateral form: linked rivals it comes out ahead of less those ahead of it"}
+    if f in CL:
+        return CL[f]
     m = re.fullmatch(r"flc_(l1|l3)_(n|wins|wr|ae)", f)
     if m:
         what = {"n": "rival runs since", "wins": "rival wins since",
