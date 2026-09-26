@@ -83,3 +83,4 @@ Averaging three fits at different seeds beat each single fit by −0.0013 to −
 
 - A slower learning rate (0.02) at 9000 rounds read −0.0018 against the 6000-round 944, but it hit its cap again. It is left for the next recipe test at a higher cap.
 - Collateral form through common opponents: −0.0015 beyond form lines on the screen. It is a candidate for the next model's bundle.
+- Connection windows: the trainer's and jockey's recent runners over a window ladder, with their career NFP ranked in the race (the specification's trainerNFPrank and jockeyNFPrank). On the screen it was −0.0060 (−0.0076 to −0.0046) beyond form lines, the largest gain since the form windows. The early-price rule was +8.47% against +7.41%. Iteration 68 is testing it on the 944 itself at the served recipe. It is for the next model, not the 944.
