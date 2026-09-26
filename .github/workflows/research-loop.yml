@@ -58,6 +58,7 @@ jobs:
       base_key: ${{ steps.plan.outputs.base_key }}
       base_hit: ${{ steps.bcache.outputs.cache-hit }}
       arms: ${{ steps.arms.outputs.arms }}
+      start_date: ${{ steps.cfg.outputs.start_date }}
 
     steps:
       - uses: actions/checkout@v4
@@ -99,6 +100,11 @@ jobs:
           print(f"depths={json.dumps(ds or [1])}")
           EOF
           cat research/loop.json
+          # the matrix's history start: the config's start_date, else the default
+          # above; every later step, and the outcome job, reads it from here
+          SD=$(python -c "import json; print(json.load(open('research/loop.json')).get('start_date') or '${{ env.START_DATE }}')")
+          echo "START_DATE=$SD" >> "$GITHUB_ENV"
+          echo "start_date=$SD" >> "$GITHUB_OUTPUT"
 
       - name: Download historic database from S3
         if: steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true' || steps.cfg.outputs.bfsp == 'true'
@@ -117,7 +123,7 @@ jobs:
         if: steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true' || steps.cfg.outputs.bfsp == 'true'
         id: fkey
         run: |
-          KEY=$(python -c "import model.feature_cache as f; print(f.cache_key('horse_racing.db', '${{ env.START_DATE }}'))")
+          KEY=$(python -c "import model.feature_cache as f; print(f.cache_key('horse_racing.db', '$START_DATE'))")
           echo "key=$KEY" >> "$GITHUB_OUTPUT"
           echo "Feature cache key: $KEY"
 
@@ -179,6 +185,8 @@ jobs:
     if: needs.prepare.outputs.outcome == 'true' || needs.prepare.outputs.screen == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 340
+    env:
+      START_DATE: ${{ needs.prepare.outputs.start_date }}
     strategy:
       fail-fast: false
       matrix:

@@ -97,7 +97,8 @@ def drop_in_blocks() -> list[str]:
 
 def evaluated_folds(dates, min_train_days: int = 365, val_window_days: int = 30,
                     step_days: int = 30, cfg: TrainConfig | None = None,
-                    eval_from: str | None = None, eval_until: str | None = None):
+                    eval_from: str | None = None, eval_until: str | None = None,
+                    fold_anchor: str | None = None, train_from: str | None = None):
     """The walk-forward schedule: every fold a run scores, in order.
 
     Yields (k, val_start, val_end, train_mask, val_mask), where k counts the
@@ -105,11 +106,19 @@ def evaluated_folds(dates, min_train_days: int = 365, val_window_days: int = 30,
     `step_days`; `eval_from` skips folds without re-keying the rest and
     `eval_until` ends the walk and cuts the last fold short. One generator
     serves the serial walk and the parallel one (`--fold k`, `--list-folds`),
-    so a fold fitted on its own is the fold the serial run would have fitted."""
+    so a fold fitted on its own is the fold the serial run would have fitted.
+
+    `fold_anchor` anchors the walk at that date instead of the first row's, so a
+    matrix built from an earlier start scores exactly the folds a later-starting
+    one does; `train_from` keeps a fold's training rows on or after that date
+    while the features still see every earlier row. Together they separate what
+    a longer history gives the features from what its rows give the fit."""
     cfg = cfg or TrainConfig()
     dates = pd.to_datetime(pd.Series(dates).reset_index(drop=True))
     max_date = dates.max()
-    train_end = dates.min() + timedelta(days=min_train_days)
+    anchor = pd.Timestamp(fold_anchor) if fold_anchor is not None else dates.min()
+    train_end = anchor + timedelta(days=min_train_days)
+    since = (dates >= pd.Timestamp(train_from)).to_numpy() if train_from is not None else None
     until = pd.Timestamp(eval_until) if eval_until is not None else None
     k = 0
     while train_end + timedelta(days=val_window_days) <= max_date:
@@ -126,6 +135,8 @@ def evaluated_folds(dates, min_train_days: int = 365, val_window_days: int = 30,
         # trailing-window features (30-day trainer form, rolling strike rates)
         # straddling the boundary.
         tr_mask, va_mask = fold_masks(dates, val_start, val_end, cfg)
+        if since is not None:
+            tr_mask = tr_mask & since
         if until is not None:
             va_mask = va_mask & (dates < until).to_numpy()
         if tr_mask.sum() < 200 or va_mask.sum() < 5:
@@ -151,6 +162,8 @@ def walk_forward_predict(
     eval_from: str | None = None,
     eval_until: str | None = None,
     only_fold: int | None = None,
+    fold_anchor: str | None = None,
+    train_from: str | None = None,
 ) -> pd.DataFrame:
     """Train and predict in walk-forward fashion.
 
@@ -179,7 +192,7 @@ def walk_forward_predict(
 
     for fold_idx, val_start, val_end, tr_mask, va_mask in evaluated_folds(
             df["race_date"], min_train_days, val_window_days, step_days, cfg,
-            eval_from, eval_until):
+            eval_from, eval_until, fold_anchor, train_from):
         if only_fold is not None and fold_idx != only_fold:
             continue
         # Copied only for a fold that is fitted: the skipped folds of a
@@ -871,6 +884,16 @@ def main():
              "never reach its end",
     )
     parser.add_argument(
+        "--fold-anchor", default=None, metavar="DATE",
+        help="Anchor the walk-forward schedule at DATE instead of the first row's date, so a "
+             "matrix from an earlier --start-date scores the same folds as a later one",
+    )
+    parser.add_argument(
+        "--train-from", default=None, metavar="DATE",
+        help="Train each fold only on rows on or after DATE; the features still see the whole "
+             "history from --start-date",
+    )
+    parser.add_argument(
         "--eval-until", default=None, metavar="DATE",
         help="Score only validation windows before DATE (exclusive). With "
              "--eval-from, a development window that never reads the holdout",
@@ -925,7 +948,8 @@ def main():
     )
     schedule = dict(min_train_days=args.min_train_days, val_window_days=args.val_window,
                     step_days=args.step_days, cfg=cfg, eval_from=args.eval_from,
-                    eval_until=args.eval_until)
+                    eval_until=args.eval_until, fold_anchor=args.fold_anchor,
+                    train_from=args.train_from)
 
     if args.list_folds:
         # Only the dates are needed, and a cached matrix gives them without the
@@ -1153,6 +1177,8 @@ def main():
             "train_config": cfg.describe(),
             "recipe": args.recipe,
             "fold": args.fold,
+            "history": {"start_date": args.start_date, "fold_anchor": args.fold_anchor,
+                        "train_from": args.train_from},
             "elapsed_seconds": round(time.time() - started, 1),
             "cpu": _cpu_model(),
             "fold_fits": oos.attrs.get("fold_fits", []),

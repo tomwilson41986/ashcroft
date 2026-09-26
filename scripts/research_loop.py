@@ -85,11 +85,21 @@ def recipe(cfg: dict) -> str:
     return r
 
 
+def start_date(cfg: dict) -> str:
+    """Where the matrix's history starts: the config's `start_date`, else START_DATE.
+
+    An earlier start gives every career, sire and yard record the years before
+    it; `fold_anchor` then keeps the folds those of the default start, so the
+    runners scored and each fold's cut-off are unchanged."""
+    return str(cfg.get("start_date") or START_DATE)
+
+
 def common_args(cfg: dict) -> list[str]:
     """Arguments every arm shares: the matrix, the folds, the recipe."""
-    return ["--start-date", START_DATE, "--feature-cache", FEATURE_CACHE,
+    anchor = ["--fold-anchor", str(cfg["fold_anchor"])] if cfg.get("fold_anchor") else []
+    return ["--start-date", start_date(cfg), "--feature-cache", FEATURE_CACHE,
             "--eval-from", cfg.get("bfsp_from", "2025-07-01"), "--eval-until", EVAL_UNTIL,
-            "--step-days", "91", "--val-window", "91", "--recipe", recipe(cfg)]
+            "--step-days", "91", "--val-window", "91", "--recipe", recipe(cfg), *anchor]
 
 
 BASE_ARMS = ("base", "base_rep")
@@ -253,7 +263,7 @@ def _outputs(pairs: dict) -> None:
 def cmd_plan(args) -> None:
     cfg = load_config(args.config)
     from model import feature_cache
-    fkey = feature_cache.cache_key(args.db, START_DATE)
+    fkey = feature_cache.cache_key(args.db, start_date(cfg))
     Path(FIT_DIR).mkdir(parents=True, exist_ok=True)
     plan_file = Path(FIT_DIR) / "folds.json"
     subprocess.run([sys.executable, "evaluate_oos.py", "--db", args.db, *common_args(cfg),
@@ -266,6 +276,7 @@ def cmd_plan(args) -> None:
         "base_key": base_key(cfg, fkey, folds),
         "recipe": recipe(cfg),
         "replicate": "true" if cfg.get("replicate_base") else "false",
+        "start_date": start_date(cfg),
     })
 
 

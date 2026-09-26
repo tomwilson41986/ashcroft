@@ -280,3 +280,45 @@ def test_an_ensemble_names_two_or_more_fitted_arms_and_is_never_fitted():
         with pytest.raises(SystemExit):
             rl.ensembles({**cfg, "ensembles": bad})
     assert rl.ensembles(CFG) == []
+
+
+def test_an_earlier_history_scores_the_same_folds_when_anchored_and_can_train_on_the_later_rows(monkeypatch):
+    late = _frame(days=("2023-01-01", "2025-12-31"))
+    early = _frame(days=("2021-01-01", "2025-12-31"))
+    sched = {k: v for k, v in SCHEDULE.items()}
+    plain = evaluate_oos.fold_plan(late["race_date"], cfg=TrainConfig(), **sched)
+    unanchored = evaluate_oos.fold_plan(early["race_date"], cfg=TrainConfig(), **sched)
+    anchored = evaluate_oos.fold_plan(early["race_date"], cfg=TrainConfig(), fold_anchor="2023-01-01", **sched)
+    key = [(p["val_start"], p["val_end"], p["n_val"]) for p in plain]
+    assert [(p["val_start"], p["val_end"], p["n_val"]) for p in anchored] == key          # the same folds
+    assert [(p["val_start"], p["val_end"]) for p in unanchored] != [k[:2] for k in key]  # anchored at 2021, they move
+    # an earlier history trains on more rows, unless it is told to train from the later start
+    assert all(a["n_train"] > p["n_train"] for a, p in zip(anchored, plain))
+    since = evaluate_oos.fold_plan(early["race_date"], cfg=TrainConfig(), fold_anchor="2023-01-01",
+                                   train_from="2023-01-01", **sched)
+    assert [p["n_train"] for p in since] == [p["n_train"] for p in plain]
+    # and the fit sees only those rows
+    _stub(monkeypatch)
+    seen = []
+    orig = evaluate_oos.fit_bfsp
+
+    def fit(train_df, feature_cols, cfg):
+        seen.append(train_df["race_date"].min())
+        return orig(train_df, feature_cols, cfg)
+
+    monkeypatch.setattr(evaluate_oos, "fit_bfsp", fit)
+    evaluate_oos.walk_forward_predict(early, ["a"], fold_anchor="2023-01-01", train_from="2023-01-01", **sched)
+    assert seen and min(seen) >= pd.Timestamp("2023-01-01")
+
+
+def test_the_loop_reads_its_history_start_and_fold_anchor_from_the_config(monkeypatch):
+    monkeypatch.setattr(rl, "START_DATE", "2021-01-01")
+    args = rl.common_args(CFG)
+    assert args[args.index("--start-date") + 1] == "2021-01-01" and "--fold-anchor" not in args
+    cfg = {**CFG, "start_date": "2018-01-01", "fold_anchor": "2021-01-01"}
+    args = rl.common_args(cfg)
+    assert args[args.index("--start-date") + 1] == "2018-01-01"
+    assert args[args.index("--fold-anchor") + 1] == "2021-01-01"
+    # the base run is keyed by the history it was built on
+    folds = [{"fold": 0}]
+    assert rl.base_key(cfg, "f", folds) != rl.base_key(CFG, "f", folds)
