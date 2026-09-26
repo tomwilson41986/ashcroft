@@ -157,3 +157,18 @@ def test_verify_reads_an_averaged_model_and_its_checks_pass(averaged):
     assert vm.check_servable(model, meta) == []
     problems, notes = vm.check_prices(model, meta, None, None, _frame(seed=6))
     assert problems == [], problems
+
+
+def test_each_members_log_line_names_the_loss_it_was_fitted_with(averaged, caplog):
+    """The metadata's "objective" is the training config's label ("l2" for a loss set through
+    --param objective=huber); the log reads the booster's own parameters instead."""
+    import logging
+    for sub in (".", "members/huber"):                 # as train_bfsp.py writes it for either loss
+        path = averaged / sub / "bfsp_model_meta.json"
+        path.write_text(json.dumps({**json.loads(path.read_text()), "objective": "l2"}))
+    with caplog.at_level(logging.INFO, logger=pbt.log.name):
+        pbt.load_bfsp_model(str(averaged))
+    lines = [r.getMessage() for r in caplog.records if "Averaged model member" in r.getMessage()]
+    assert len(lines) == 2
+    assert "member l2:" in lines[0] and "objective=regression" in lines[0]
+    assert "member huber:" in lines[1] and "objective=huber" in lines[1]

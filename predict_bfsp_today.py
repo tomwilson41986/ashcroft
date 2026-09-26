@@ -134,6 +134,14 @@ def _read_booster(path: str) -> lgb.Booster:
     return lgb.Booster(model_file=path)
 
 
+def _objective(booster: lgb.Booster, meta: dict) -> str:
+    """The loss the booster was fitted with, from its own parameters. The metadata's
+    "objective" is the training config's label ("l2" for any loss set through --param
+    objective=...), so a Huber model would be logged as l2."""
+    params = getattr(booster, "params", None) or {}
+    return str(params.get("objective") or meta.get("objective", "?"))
+
+
 def _load_member(member_dir: str) -> tuple[lgb.Booster, list[str], dict, dict]:
     """One member of an averaged model: its booster, features, vocabulary and metadata,
     held to the same checks as a single served model."""
@@ -176,7 +184,7 @@ def load_averaged_model(model_dir: str, manifest: str) -> tuple[AveragedBooster,
                              f"its vocabulary would price a different track")
         members.append((name, booster, cols))
         log.info("Averaged model member %s: %d features, objective=%s, trained through %s", name, len(cols),
-                 meta.get("objective", "?"), meta.get("trained_through", "?"))
+                 _objective(booster, meta), meta.get("trained_through", "?"))
     model = AveragedBooster(members)
     log.info("Loaded an averaged BFSP model: %d members, %d features in all", len(members), model.num_feature())
     return model, model.feature_name(), vocab or {}
@@ -228,7 +236,7 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
     attach_serving_rule(model, meta)
 
     log.info("Loaded BFSP model (%d features, objective=%s, target=%s, trained through %s)",
-             len(feature_cols), meta.get("objective", "?"),
+             len(feature_cols), _objective(model, meta),
              meta.get("target", "?"), meta.get("trained_through", "?"))
     if not vocab:
         log.warning(
