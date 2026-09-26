@@ -115,6 +115,8 @@ DROP_IN = [
     ("form_lines", "Form lines", "How the rivals from its recent races have done since", "candidate"),
     ("form_lines_ab", "Form lines split", "Rivals ahead of it and behind it, and form lines against today's field",
      "built"),
+    ("form_lines_close", "Form lines by closeness", "Rivals' results since, weighted by how close they finished to "
+     "it", "built"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
      "prices, against what they ran there", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
@@ -166,6 +168,8 @@ BLOCK_EVIDENCE = {
                   "(resolved), rule +8.09% -> +8.81%; with form variants -0.0051, rule +8.94%. In the 944 candidate.",
     "Form lines split": "Iteration 60 (steadier screen): -0.0007 (-0.0020 to +0.0007) beyond form lines, Brier skill "
                         "and concordance worse (resolved): the split and the field readings add nothing. Retired.",
+    "Form lines by closeness": "Iteration 65 (steadier screen, on the 853): being screened, alone and beside form "
+                               "lines.",
     "Condition form": "Iteration 57 (steadier screen, on the 853): -0.0002 (-0.0017 to +0.0013), unresolved: the "
                       "horse's form in today's conditions adds nothing the engine's aptitude features lack. Retired.",
     "Form uplift": "Iteration 62 (steadier screen, on the 853): -0.0046 alone, Brier skill flat; beside form lines "
@@ -608,6 +612,13 @@ def describe(f: str, group: str = "") -> str:
     if m:
         how = "z-score against today's field" if m.group(3) == "z" else "gap to the best in today's field"
         return f"Form lines of {FL_WINDOW[m.group(1)]} ({'wins less chances' if m.group(2) == 'ae' else 'win rate'}), {how}"
+    m = re.fullmatch(r"flc_(l1|l3)_(n|wins|wr|ae)", f)
+    if m:
+        what = {"n": "rival runs since", "wins": "rival wins since",
+                "wr": "rivals' win rate since, shrunk to 1 in 10 by five runs",
+                "ae": "rivals' wins less their BSP chances since, per run, shrunk to 0"}
+        return (f"Form lines of {FL_WINDOW[m.group(1)]}, each rival weighted by how close it finished "
+                f"(exp(-lengths/3)): {what[m.group(2)]}")
     m = re.fullmatch(r"fu_(l1|l3)_(perf|or|mkt|nres)", f)
     if m:
         return f"Form uplift of {FL_WINDOW[m.group(1)]}: {FU_STAT[m.group(2)]}"
