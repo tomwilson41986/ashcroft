@@ -21,6 +21,7 @@ Usage:
 """
 
 import argparse
+import gc
 import json
 import logging
 import os
@@ -197,16 +198,22 @@ def walk_forward_predict(
             continue
         # Copied only for a fold that is fitted: the skipped folds of a
         # development window used to copy the whole history each, for nothing.
-        train_df = df[tr_mask].copy()
         val_df = df[va_mask].copy()
 
         log.info(
-            f"  Fold {fold_idx + 1}: train {len(train_df):,} rows "
+            f"  Fold {fold_idx + 1}: train {int(tr_mask.sum()):,} rows "
             f"(< {val_start.date()}), predict {len(val_df):,} rows "
             f"({val_start.date()} to {val_end.date()})"
         )
 
-        fit = fit_bfsp(train_df, feature_cols, cfg)
+        # The fold's rows with only the columns the fit reads, and no name held
+        # on them here: fit_bfsp sorts its own copy and lets this one go. With a
+        # history from 2018 (50% more rows) the matrix, the fold's rows, their
+        # sorted copy and the feature array no longer fit in a runner's memory
+        # (iteration 82's first run). The rows and their order are unchanged.
+        fit_cols = list(dict.fromkeys(list(feature_cols) + [
+            c for c in ("race_date", "race_time", "track", "raceid", "bfsp") if c in df.columns]))
+        fit = fit_bfsp(df.loc[tr_mask, fit_cols], feature_cols, cfg)
         model = fit.booster
         if not fold_fits:
             log.info(
@@ -1090,6 +1097,16 @@ def main():
              cfg.purge_days, cfg.embargo_days, cfg.refit_on_full, cfg.seed,
              cfg.num_boost_round, cfg.params["learning_rate"],
              "" if args.fold is None else f", fold {args.fold} only")
+
+    # Only what the folds and the report read: the features, the race keys, the
+    # price and result, and the race metadata the prediction file carries. Every
+    # other column of the matrix is carried into each fold's copies for nothing
+    # (a history from 2018 did not fit in a runner's memory with them).
+    carry = ["race_date", "race_time", "track", "horse_name", "raceid", "bfsp", "log_bfsp",
+             "placing_numerical", "won", "race_type", "race_code", "surface_type", "going_description",
+             "dist_furlongs", "number_of_runners", "race_class"]
+    df = df[list(dict.fromkeys(list(feature_cols_full) + [c for c in carry if c in df.columns]))]
+    gc.collect()
 
     oos = walk_forward_predict(df, feature_cols_full, cfg=cfg, only_fold=args.fold,
                                **{k: v for k, v in schedule.items() if k != "cfg"})
