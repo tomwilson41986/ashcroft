@@ -185,7 +185,8 @@ BLOCK_EVIDENCE = {
                                           "connection windows: -0.0036 against -0.0040 without it, the rule +9.19% "
                                           "against +9.60%: nothing beyond connection windows. Not carried.",
     "Connection windows against the field": "Iteration 71 (steadier screen, on the 853): beside form lines and "
-                                            "connection windows, read against iteration 67's fl_cw arm.",
+                                            "connection windows +0.0003 (-0.0011 to +0.0018), unresolved, the "
+                                            "early-price rule +7.96% against +8.47%. Retired.",
     "Connection grains": "Iteration 69 (steadier screen, on the 853): -0.0056 (-0.0072 to -0.0041) alone, but beside "
                          "form lines and connection windows -0.0008 (-0.0021 to +0.0005), unresolved, the early-price "
                          "rule +7.84% against +8.47%: what it reads, connection windows already carry. Retired.",
