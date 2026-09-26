@@ -227,6 +227,8 @@ def block_code_hash(blocks: str) -> str:
         return ""
     files = feature_cache.feature_source_files(
         ["model/blocks/__init__.py"] + [f"model/blocks/{b}.py" for b in drop_in])
+    # and the data a block reads besides the records (DATA: e.g. career_before's table)
+    files += [Path(f) for b in drop_in for f in getattr(blk.load(b), "DATA", ())]
     h = hashlib.sha256()
     for path in files:
         rel = path.relative_to(REPO) if path.is_relative_to(REPO) else path

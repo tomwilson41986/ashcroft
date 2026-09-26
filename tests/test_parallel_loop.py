@@ -159,6 +159,19 @@ def test_the_base_key_follows_the_source_of_a_drop_in_block_the_base_carries(tmp
     assert rl.base_key(CFG, "fkey", folds) == rl.base_key(CFG, "fkey", folds)
 
 
+def test_the_base_key_follows_the_data_a_drop_in_block_reads(tmp_path, monkeypatch):
+    """A block's DATA (career_before's table of runs before 2021) is as much its source as
+    its code: a base carrying it is stale once the table changes."""
+    from model.blocks import career_before
+    table = tmp_path / "careers.csv.gz"
+    table.write_bytes(b"one")
+    monkeypatch.setattr(career_before, "DATA", (table,))
+    before = rl.block_code_hash("career_before")
+    assert before != "" and before != rl.block_code_hash("form_variants")
+    table.write_bytes(b"two")
+    assert rl.block_code_hash("career_before") != before
+
+
 def _fold_output(root, arm, k, n):
     d = root / f"fit-{arm}-{k}" / "reports" / "fit"
     d.mkdir(parents=True)
