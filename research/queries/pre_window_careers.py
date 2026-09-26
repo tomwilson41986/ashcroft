@@ -26,13 +26,15 @@ out/pre_window_careers/pre_window_careers_2021-01-01.csv.gz. Read-only.
 """
 
 import sqlite3
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from model.form_windows import run_measures
-from model.race_shape import race_code
+sys.path.insert(0, ".")
+from model.form_windows import run_measures  # noqa: E402
+from model.race_shape import race_code  # noqa: E402
 
 CUTOFF = "2021-01-01"
 WINDOW = ("2025-09-27", "2026-03-31")
