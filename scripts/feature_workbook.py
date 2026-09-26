@@ -134,6 +134,8 @@ DROP_IN = [
      "prices, against what they ran there", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
      "against this field", "built"),
+    ("pedigree_market", "The pedigree as the market priced it", "How the market has priced the sire's "
+     "debutants and young runners, the damsire's grandchildren on debut and the dam's other foals", "built"),
     ("career_before", "Whole careers", "Each horse's runs before 2021, which the matrix does not hold, added to "
      "its runs since: whole-career record, the last three runs across the cut, the peak rating by sphere", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
@@ -141,11 +143,12 @@ DROP_IN = [
 ]
 
 BLOCK_EVIDENCE = {
-    "career_before": "Built 26 Sep from a table of every horse's runs before 2021 (114,078 horses, 1.31m runs): 74% "
+    "The pedigree as the market priced it": "Built 26 Sep beside the debut market block: the engine reads the pedigree only by results. "
+                       "Iteration 84 (the 968 + the block, two seeds each, served recipe) queued.",
+    "Whole careers": "Built 26 Sep from a table of every horse's runs before 2021 (114,078 horses, 1.31m runs): 74% "
                      "of 2021's runs, 47% of 2022's and 8% of the development window's have such a record. Iteration "
                      "83 (the 958 + the block, served recipe) under test.",
-    "debut_market": "Iteration 75 (screen): -0.0011 (-0.0027 to +0.0006) beyond form lines and connection windows, "
-                    "unresolved; maiden, novice and bumper races -0.0048 (resolved), handicaps +0.0008. Not carried.",
+    "The yard's unknowns as the market priced them": "Iteration 75 (screen): -0.0011, unresolved; maiden, novice and bumper races -0.0048. Iteration 80 (served recipe, Huber): -0.0032 beside the 958h, those races -0.0067. Iteration 81 (served recipe, squared error): -0.0018 (-0.0028 to -0.0008) beside the 958, concordance resolved better. In the 968, the next candidate (train-bfsp run 41; its Huber twin run 42).",
     "Custom metrics": "The 19 proprietary metrics and their ranks (the original model). Within-race ranks carry about "
                       "40% of gain; rPMW3 alone about 14%.",
     "Card fields": "Today's card as fetched at 06:00 (card fill: model/card_enrich.py, parity checked).",

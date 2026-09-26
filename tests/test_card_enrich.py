@@ -182,6 +182,19 @@ def test_a_debutant_takes_its_pedigree_and_sex_from_the_card_tooltip():
     assert out.loc[0, "stallion"] == "Kodiac" and out.loc[0, "horse_sex"] == "Mare"
 
 
+def test_the_dam_comes_from_the_horse_s_rows_else_the_tooltip_as_history_spells_her():
+    card = _card()
+    card["card_dam"] = [None, "twist n shake", None]               # the tooltip's own spelling
+    hist = _with_pedigree_history()
+    hist.loc[hist["horse_name"] == "Lady Luck (IRE)", "dam"] = "Lucky Lady"
+    out = enrich_card(card, hist)
+    assert out.loc[0, "dam"] == "Lucky Lady"                      # history's, for a horse it knows
+    assert out.loc[1, "dam"] == "Twist n Shake"                   # the tooltip's, as history spells her
+    assert pd.isna(out.loc[2, "dam"])                             # neither: missing, not guessed
+    kept = card.assign(dam=["Card Dam", None, None])
+    assert enrich_card(kept, hist).loc[0, "dam"] == "Card Dam"    # the card's own is never overwritten
+
+
 def test_the_tooltip_fills_only_what_it_can():
     card = _card().iloc[[1, 1]].reset_index(drop=True)
     card["horse_age"] = [2, 6]

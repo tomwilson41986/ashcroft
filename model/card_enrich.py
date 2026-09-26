@@ -24,6 +24,8 @@ uses (checked against it: research/queries/done/card_field_semantics.py):
   horse_sex         the horse's latest recorded sex; a filly of 5+ is a mare, a
                     colt of 5+ a horse (a gelding since its last run cannot be known)
   stallion, dam_stallion   the horse's (constant per horse)
+  dam               the horse's (constant per horse); a debutant's from the card's tooltip, as
+                    history spells her (read by the pedigree market block, by no served feature)
   career_runs       the table's count at the horse's last run, plus that run (the table
                     counts the runs before each one; history may start after the first)
   jockeys_claim     the jockey's latest claim (0 for a jockey never seen)
@@ -52,7 +54,7 @@ import numpy as np
 import pandas as pd
 
 CARD_FILLED = ("dist_furlongs", "race_type", "surface_type", "track_direction", "horse_sex", "stallion",
-               "dam_stallion", "career_runs", "jockeys_claim", "max_or_in_race", "median_or",
+               "dam_stallion", "dam", "career_runs", "jockeys_claim", "max_or_in_race", "median_or",
                "official_rating", "prize_money")
 
 log = logging.getLogger(__name__)
@@ -267,6 +269,10 @@ def _fill_from_card_pedigree(card: pd.DataFrame, hist: pd.DataFrame) -> dict:
         by_dam = _last_by(hist, _per_value(hist["dam"], _full), "dam_stallion").drop("", errors="ignore")
         _fill(card, "dam_stallion", _per_value(dam, _full).map(by_dam))
         n["damsire"] = int((miss & ~_missing(card["dam_stallion"])).sum())
+        # the dam herself, as history spells her (the pedigree market block reads her other foals)
+        dam_miss = _missing(card["dam"]) if "dam" in card.columns else pd.Series(True, index=card.index)
+        _fill(card, "dam", dam.where(~_missing(card["card_dam"])))
+        n["dam"] = int((dam_miss & ~_missing(card["dam"])).sum())
     if "card_dam" in card.columns and {"horse_name", "stallion", "horse_sex"} <= set(hist.columns):
         # a first foal has no siblings to read it from, but a dam that raced is in history herself, and
         # her sire is the damsire; a mare or filly of that name only, so a namesake gelding cannot answer
@@ -342,7 +348,7 @@ def enrich_card(card: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
         def by_horse(per_full: pd.Series, per_base: pd.Series) -> pd.Series:
             return fk_card.map(per_full).where(exact, bk_card.map(per_base))
 
-        for col in ("stallion", "dam_stallion", "horse_sex"):
+        for col in ("stallion", "dam_stallion", "horse_sex", "dam"):
             _fill(card, col, by_horse(_last_by(hist, fk_hist, col), _last_by(hist, bk_hist, col)))
         filled = _fill_from_card_pedigree(card, hist)
         if filled:
