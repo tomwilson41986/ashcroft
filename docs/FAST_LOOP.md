@@ -83,8 +83,12 @@ Brier skill against the base, and the decision. Then come the full
 comparisons and the early-price trade for each arm.
 
 **The decision rule.** A variant replaces the base only if its paired error
-interval excludes zero in its favour, and neither Brier skill nor concordance
-is worse by more than its own interval. With `"replicate_base": true` the base
+interval excludes zero in its favour, and neither Brier skill against the market
+nor concordance is resolved worse: each 90% interval must reach zero or above.
+(`scripts/compare_oos_runs.py decide`. Until 26 Sep the two guards compared a
+point estimate with its own interval's lower bound, which it always passes, so
+they never fired; none of the 72 iteration comparisons kept from 28-60 changes
+under the corrected rule.) With `"replicate_base": true` the base
 is fitted twice to check that fits are reproducible. They are deterministic, so
 that floor is zero, and it is not the noise that matters.
 
