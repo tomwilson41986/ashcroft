@@ -1,6 +1,6 @@
 # Which model serves from 27 September: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 16:40 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 16:50 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -9,6 +9,8 @@
 - verify
 - the parity of its new block between the 06:00 path and training
 - a dry run on today's card
+
+**Directly against the 615 it would replace** (same 53,910 runners, both at 6000 rounds): the price-forecast error falls by −0.0243 (90% CI −0.0261 to −0.0229), in every rank band. Its Brier skill against the market improves by +0.0048 (+0.0031 to +0.0065), and the winner-vs-loser concordance by +0.0032 (+0.0011 to +0.0053), both intervals clear of zero. The early-price rule goes from +7.70% to +9.60%.
 
 If the owner prefers a smaller step, the 7000-round 944 (run 38, `bfsp-model-38`) is verified and dry-run clean. The 859 is a further fallback.
 
