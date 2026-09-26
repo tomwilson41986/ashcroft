@@ -1,6 +1,6 @@
 # Which model serves from 27 September: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 21:00 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 21:20 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -125,7 +125,7 @@ It needs two to four boosters of 72–84 MB each. Compressed, a 7000-round boost
 
 This is a storage decision for the owner, not needed for 27 Sep.
 
-The serving path is ready and inert until a manifest is committed: `bfsp_ensemble.json` in `data/models`, naming each member's directory, makes the 06:00 job serve the members as one. Each member is priced by its own target's rule, and their prices are averaged as the research loop averages arms (the geometric mean, renormalised per race; `predict_bfsp_today.AveragedBooster`, tested in `tests/test_averaged_serving.py`). `predict-now.yml` dry-runs a candidate averaged with a second model (`twin_run`, `twin_artifact`). The 968's Huber twin (train-bfsp run 42) finishes training this evening; the pair's dry run follows its verify.
+The serving path is ready and inert until a manifest is committed: `bfsp_ensemble.json` in `data/models`, naming each member's directory, makes the 06:00 job serve the members as one. Each member is priced by its own target's rule, and their prices are averaged as the research loop averages arms (the geometric mean, renormalised per race; `predict_bfsp_today.AveragedBooster`, tested in `tests/test_averaged_serving.py`). `predict-now.yml` dry-runs a candidate averaged with a second model (`twin_run`, `twin_artifact`). The 968's Huber twin (train-bfsp run 42, `bfsp-model-42`) has passed verify: 968 features, the Huber loss, 7000 rounds, books of 1, log prices correlating 0.9931 with the 615's. The pair's dry run on 26 Sep's card is running (predict-now with `twin_run`).
 
 ## The 06:00 card's missing pedigree (found and fixed 26 Sep)
 
@@ -165,6 +165,7 @@ These were each screened against form lines plus connection windows (reports/res
 - **Recency weighting of the training rows:** worse for the outsiders.
 - **Collateral form through common opponents:** nothing beyond connection windows.
 - **Whole careers** (iteration 83): each horse's runs before 2021, restored exactly from the database, add nothing against four refits of the 958 (−0.0008 to +0.0002), not even for the runners who have them (+0.0010). Fitting only on rows from 2022 is worse (+0.0009 to +0.0019), so the matrix keeps its 2021 start.
+- **The pedigree as the market priced it** (iteration 84, two seeds each beside the 968): −0.0006 (−0.0012 to −0.0000) on the averages, and the early-price rule lower in every reading (+9.26% against +9.66%). The yard already carries what the market pays for in an unknown horse.
 - **The conditions in the race name** (auction, sales, EBF, mares', restricted, classified): small biases on a few hundred runners each, worth about 0.0001 in all; not built.
 
 The remaining price error is where public form is thin: maiden, novice and bumper races (0.52 against 0.36 in handicaps), outsiders, and big fields. Ireland's higher error is mostly its greater share of those races.

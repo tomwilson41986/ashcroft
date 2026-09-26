@@ -144,7 +144,9 @@ DROP_IN = [
 
 BLOCK_EVIDENCE = {
     "The pedigree as the market priced it": "Built 26 Sep beside the debut market block: the engine reads the pedigree only by results. "
-                       "Iteration 84 (the 968 + the block, two seeds each, served recipe) queued.",
+                       "Iteration 84 (the 968 + the block, two seeds each, served recipe): the averages -0.0006 (-0.0012 to "
+                       "-0.0000), maiden/novice/bumper races -0.0012 unresolved; the early-price rule lower in every "
+                       "reading (+9.26% against +9.66%). Retired.",
     "Whole careers": "Built 26 Sep from a table of every horse's runs before 2021 (114,078 horses, 1.31m runs): 74% "
                      "of 2021's runs, 47% of 2022's and 8% of the development window's have such a record. Iteration "
                      "83 (the 958 + the block, served recipe): against four refits of the 958 -0.0008 to +0.0002; on "
