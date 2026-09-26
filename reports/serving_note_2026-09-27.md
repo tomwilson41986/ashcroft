@@ -14,7 +14,16 @@ The 944 is the 615 served today plus six blocks that each passed the research lo
 - form lines (10)
 - form variants (77)
 
-**Trained longer.** Iteration 63 found the 6000-round cap was costing a little. The same 944 grown to 9000 rounds was −0.0014 better (−0.0018 to −0.0009) than at 6000. Its first 6000 trees are the same fit, so no seed noise is in that number. A 7000-round training of the 944 was started at 09:35 UTC (the middle of the rounds early stopping chose). If it verifies and dry-runs clean before the deploy, it is the artefact to serve; otherwise the 6000-round 944 is.
+**Trained longer: serve the 7000-round 944.** Iteration 63 found the 6000-round cap was costing a little. The same 944 grown to 9000 rounds was −0.0014 better (−0.0018 to −0.0009) than at 6000. Its first 6000 trees are the same fit, so no seed noise is in that number.
+
+The 944 was then trained at 7000 rounds (train-bfsp run 38, artifact `bfsp-model-38`), the middle of the rounds early stopping chose.
+- **Verify: PASS.** The same 944 features, every block built as served, books of 1. Its log prices correlate 0.9939 with the 615's (the 6000-round 944: 0.9942).
+- **Dry run on today's card (predict-now run 13): clean.**
+  - 569 runners in 53 races, every one priced, books of 1.
+  - 16 minutes from load to prices.
+  - Against the 6000-round 944 on the 48 races with an unchanged field: correlation 0.9972, the same top pick in 43.
+
+If the 944 is chosen, this is the file. The model file is 84 MB, under GitHub's 100 MB limit.
 
 ## The evidence, on the served recipe
 
@@ -75,7 +84,7 @@ Averaging three fits at different seeds beat each single fit by −0.0013 to −
 
 ## What deploying involves (only with the owner's word)
 
-1. Commit the 944 artefact (train-bfsp run 37, artifact `bfsp-model-37`) to `data/models` on the branch, with its verify report.
+1. Commit the chosen artefact to `data/models` on the branch, with its verify report. For the 944, that is the 7000-round file (train-bfsp run 38, artifact `bfsp-model-38`). For the 958, it is its own run's file, once its checks pass.
 2. Add an amendment to `reports/preregistration_clv_forward.md`. It records the change between days, as the pre-registration requires, the evidence above, and its first 06:00 date. The forward report then gives the 615's days and the 944's days separately as well as the whole window.
 3. Merge PR #77 to the default branch before 06:00 UTC on 27 Sep. The 06:00 job reads `data/models` from the default branch; nothing else in the merge changes what is served.
 
