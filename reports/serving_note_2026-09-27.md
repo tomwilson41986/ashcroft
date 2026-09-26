@@ -1,6 +1,6 @@
 # Which model serves from 27 September: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 17:25 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 19:05 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -18,7 +18,11 @@ If the owner prefers a smaller step, the 7000-round 944 (run 38, `bfsp-model-38`
 
 **The Huber loss does not change the recommendation** (iteration 76, 16:00 UTC). On the screen it beat the squared-error loss by −0.0029 on the 958's features (iteration 74). On the served recipe the gap closes: −0.0003 (−0.0010 to +0.0006), unresolved. Only the runners over 50 on the BSP improve (−0.0050); the runners at 8 to 16 are a little worse. Its trading readings are lower too: the early-price rule makes +9.20% against the 958's +9.60%, and the top pick traded out makes +1.14% against +1.45%. The 958 trained with it (train-bfsp run 40) passed verify, but it is not a candidate.
 
-**The next candidate after the 958: the debut market block** (iteration 80, 17:15 UTC). How the market has priced each yard's debutants and lightly raced runners (`model/blocks/debut_market.py`, 10 features), beside the 958's features at the served recipe: −0.0032 (−0.0040 to −0.0024) on the price, every rank band better, and −0.0067 in maiden, novice and bumper races, where the error is largest. That was measured under the Huber loss. Iteration 81 measures it under the served squared-error loss, and it would need its parity check and verify before it could serve, so it is not part of tomorrow's recommendation.
+**The next candidate after the 958: the debut market block** (iterations 80 and 81). How the market has priced each yard's debutants and lightly raced runners (`model/blocks/debut_market.py`, 10 features), beside the 958's features at the served recipe:
+- under the Huber loss (iteration 80): −0.0032 (−0.0040 to −0.0024), and −0.0067 in maiden, novice and bumper races, where the error is largest;
+- under the served squared-error loss (iteration 81, 18:50 UTC): −0.0018 (−0.0028 to −0.0008), with concordance better (+0.0021, resolved). The early-price rule reads +9.45% against the same run's 958 at +9.46%.
+
+The 958 with it (the 968, train-bfsp run 41) is training. It needs its parity check and verify before it could serve, so it is not part of tomorrow's recommendation.
 
 What each adds:
 - **The 944** is the 615 served today plus six blocks that each passed the research loop's decision rule on the served recipe, less the two sire counts found faulty. In order of adoption:
@@ -100,13 +104,23 @@ The 944's top pick on the same runs traded out at +1.05%, and +5.31% with the ru
 
 The top pick makes money as a trade against the price, not as a bet held to the result. That holds for every model so far, because the model forecasts the price. The pre-registered forward test measures exactly the traded version, from the 06:00 run's own prices.
 
-## An option: the three-seed average
+## An option: several fits served as one
 
-Averaging three fits at different seeds beat each single fit by −0.0013 to −0.0040 (iteration 46). It would also make the served forecast repeatable: one fit differs from another by the choice of CPU alone (the fit-hardware-noise entry in the ledger). It needs three boosters of 72–84 MB each.
+A single fit is one draw of a noise the paired test does not see. Fitted again with the same recipe and seed on other machines, the 958 prices the window with the same error: −0.0005 (−0.0011 to +0.0002). But each runner's price moves by about 7%, three quarters of what another seed moves it (iteration 81). Averaging the prices of several fits removes most of that. Against the single 958 (iteration 81, the same runners):
 
-Compressed, a 7000-round booster is 33 MB with gzip or 25 MB with xz. It loads in 2–3 seconds and predicts identically. The options:
-- about 76 MB in git per retrain (xz), or
-- release files, plus a change to how the 06:00 job fetches the model.
+| served as one | price error (90% CI) | Brier skill | early-price rule | top pick traded out |
+|---|---|---|---|---|
+| the 958, one fit | — | — | +9.46% (+9.33% to +9.60% across three seeds) | +1.57% (+1.00% to +1.57%) |
+| two seeds | −0.0021 (−0.0026 to −0.0017) | +0.0006, resolved | +9.57% | +1.42% |
+| **three seeds** | **−0.0026 (−0.0030 to −0.0021)**, every rank band | +0.0003 | **+10.04% (+8.66 to +11.48)** | +1.35% |
+| the 958 and its Huber twin | −0.0026 (−0.0030 to −0.0022), against iteration 68's fit | +0.0006, resolved | +9.18% | +1.48% |
+| three seeds and the Huber twin | −0.0032 (−0.0037 to −0.0027) | +0.0005 | | |
+
+Every average passes the decision rule. The rule's and the top pick's readings move between single seeds by as much as between the averages (the top pick's by half a point), so the price error is the steadier measure. The 958's Huber twin (train-bfsp run 40) is already trained and verified, so the two-loss average could serve with no new training.
+
+It needs two to four boosters of 72–84 MB each. Compressed, a 7000-round booster is 33 MB with gzip or 25 MB with xz, and it loads in 2–3 seconds with identical predictions. The options:
+- about 25 MB in git per booster per retrain (xz), or
+- S3 beside the database, with a manifest in the repository naming each file and its checksum. The 06:00 job already reads S3.
 
 This is a storage decision for the owner, not needed for 27 Sep.
 
