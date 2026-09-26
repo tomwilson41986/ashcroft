@@ -1,6 +1,6 @@
 # Which model serves from 27 September: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 21:30 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 23:55 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -103,6 +103,19 @@ The top pick is the model's rank 1, its highest win probability. Here it is with
 The 944's top pick on the same runs traded out at +1.05%, and +5.31% with the rule. Where the top pick is not the morning favourite, it traded out at +4.88% (755 races). The market's favourite, for scale, loses −1.44% traded out.
 
 The top pick makes money as a trade against the price, not as a bet held to the result. That holds for every model so far, because the model forecasts the price. The pre-registered forward test measures exactly the traded version, from the 06:00 run's own prices.
+
+## The next step after the 958: the 968 at a slower learning rate (iteration 85, 23:35 UTC)
+
+Fitted at learning rate 0.02 (to about 10,000 rounds) with leaves of at least 200 runners, one fit of the 968's features prices the development window better than anything served or proposed so far, including the 968 averaged with its Huber twin, and it needs one booster, not two:
+
+| on the window (53,910 runners) | mean absolute log error | against the 968 | early-price rule | rank 1 traded out |
+|---|---|---|---|---|
+| the 968 (lr 0.03, one fit) | 0.4091 | — | +9.43% | +1.29% |
+| the 968 and its Huber twin, averaged | 0.4062 | −0.0029 | | |
+| **the 968 at lr 0.02, leaves of 200 (one fit)** | **0.4050** | **−0.0041 (−0.0048 to −0.0034)**, Brier skill resolved better | **+9.92%** | **+1.43%** |
+| the same averaged with the extra-trees 968 | 0.4034 | −0.0057 | | |
+
+The 968 at the slow recipe is training for serving (train-bfsp run 44, 10,000 rounds, not published), beside the extra-trees 968 (run 43). Each needs its verify and a dry run before it could serve; the slow 968 would then replace the 968 pair as the next candidate after the 958, and it raises no storage question.
 
 ## An option: several fits served as one
 
