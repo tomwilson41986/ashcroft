@@ -267,6 +267,15 @@ def _fill_from_card_pedigree(card: pd.DataFrame, hist: pd.DataFrame) -> dict:
         by_dam = _last_by(hist, _per_value(hist["dam"], _full), "dam_stallion").drop("", errors="ignore")
         _fill(card, "dam_stallion", _per_value(dam, _full).map(by_dam))
         n["damsire"] = int((miss & ~_missing(card["dam_stallion"])).sum())
+    if "card_dam" in card.columns and {"horse_name", "stallion", "horse_sex"} <= set(hist.columns):
+        # a first foal has no siblings to read it from, but a dam that raced is in history herself, and
+        # her sire is the damsire; a mare or filly of that name only, so a namesake gelding cannot answer
+        miss = _missing(card["dam_stallion"]) if "dam_stallion" in card.columns else pd.Series(True, index=card.index)
+        mares = hist[hist["horse_sex"].isin(["Filly", "Mare"])]
+        own_sire = _last_by(mares, _per_value(mares["horse_name"], _full), "stallion").drop("", errors="ignore")
+        dam_key = _per_value(_as_history_names(card["card_dam"], mares["horse_name"]), _full)
+        _fill(card, "dam_stallion", dam_key.map(own_sire))
+        n["damsire from the dam's own races"] = int((miss & ~_missing(card["dam_stallion"])).sum())
     if "card_sex" in card.columns:
         miss = _missing(card["horse_sex"]) if "horse_sex" in card.columns else pd.Series(True, index=card.index)
         said = card["card_sex"].astype(str).str.strip().str.lower()

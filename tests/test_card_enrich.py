@@ -234,3 +234,21 @@ def test_the_html_card_carries_the_tooltip_into_the_runner():
     assert df.loc["Shake It Out", "card_stallion"] == "Harry Angel (IRE)"
     assert df.loc["Shake It Out", "card_dam"] == "Twist n Shake" and df.loc["Shake It Out", "card_sex"] == "Male"
     assert pd.isna(df.loc["Known Horse", "card_stallion"])
+
+
+def test_a_first_foal_takes_its_damsire_from_the_dam_s_own_races():
+    h = _with_pedigree_history()
+    raced = [{"race_date": "2019-06-01", "race_time": "2.00", "track": "Kempton", "going_description": "Standard",
+              "horse_name": "Racing Dam (IRE)", "horse_sex": "Filly", "stallion": "Sea The Stars (IRE)",
+              "jockey_name": "Other Jockey", "jockeys_claim": "0"},
+             {"race_date": "2019-06-01", "race_time": "3.00", "track": "Kempton", "going_description": "Standard",
+              "horse_name": "Namesake", "horse_sex": "Gelding", "stallion": "Wrong Sire",
+              "jockey_name": "Other Jockey", "jockeys_claim": "0"}]
+    card = _card().iloc[[1, 1]].reset_index(drop=True)
+    card["horse_name"] = ["First Foal", "Other First Foal"]
+    card["card_stallion"] = ["Kodiac", "Kodiac"]
+    card["card_dam"] = ["Racing Dam", "Namesake"]           # the card may print the dam without her suffix
+    card["card_sex"] = ["Male", "Male"]
+    out = enrich_card(card, pd.concat([h, pd.DataFrame(raced)], ignore_index=True))
+    assert out.loc[0, "dam_stallion"] == "Sea The Stars (IRE)"       # her own sire
+    assert pd.isna(out.loc[1, "dam_stallion"])                        # a gelding of that name is not a dam
