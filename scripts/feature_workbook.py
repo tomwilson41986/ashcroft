@@ -125,6 +125,9 @@ DROP_IN = [
      "within-race z-scores and gaps to the best", "built"),
     ("sire_windows", "Sire windows", "The sire's and damsire's progeny over recent windows, and the sire's "
      "young runners", "built"),
+    ("debut_market", "The yard's unknowns as the market priced them", "How the market priced the trainer's "
+     "debutants, second-time-outers and lightly raced runners, the rider's debut rides, and the field's share of "
+     "debutants", "built"),
     ("connection_grains", "Connection grains", "The trainer's and jockey's last fortnight, the trainer in today's "
      "race code, both at today's course, and the pair together", "built"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
@@ -674,6 +677,20 @@ def describe(f: str, group: str = "") -> str:
                              "level (for young runners only)",
                 "nfp_rank": "progeny's last-500 NFP ranked in today's race (1 = best)"}[m.group(2)]
         return f"Sire windows, {who} {what}"
+    dm = {"dm_tr_debut_mkt": "the trainer's debutants as the market rated them (the run's BSP normalised in its "
+                              "race), decayed and shrunk to all debutants' level",
+          "dm_tr_debut_n": "the effective number of the trainer's earlier debutants",
+          "dm_tr_second_mkt": "the trainer's second-time-outers as the market rated them",
+          "dm_tr_early_mkt": "the trainer's third- and fourth-time-outers as the market rated them",
+          "dm_trc_debut_mkt": "the trainer's debutants in today's race code as the market rated them, shrunk to its "
+                              "debutants in all",
+          "dm_jk_debut_mkt": "the rider's debut rides as the market rated them",
+          "dm_stage_mkt": "the reading for the runner's own stage (debut, second run, third or fourth run)",
+          "dm_stage_mkt_z": "the stage reading as a z-score within today's race",
+          "dm_race_debut_share": "the share of today's field making its debut",
+          "dm_race_unexposed_share": "the share of today's field with three runs or fewer"}
+    if f in dm:
+        return f"The yard's unknowns, {dm[f]}"
     m = re.fullmatch(r"cwr_(tr|jk)_(nfp_l20|nfp_l100|nfp_car|lbs_l100|ae_l100)_(z|gap)", f)
     if m:
         who = {"tr": "the trainer's", "jk": "the jockey's"}[m.group(1)]

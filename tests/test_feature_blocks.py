@@ -71,7 +71,7 @@ def _history(n_days=60, seed=11) -> pd.DataFrame:
                     "odds": float(rng.uniform(2, 30)), "fav": "", "bfsp": float(rng.uniform(1.5, 60)),
                     "bfsp_place": float(rng.uniform(1.1, 10)), "plcs_paid": 3, "bf_plcs_paid": 3,
                     "horse_age": 3 + h % 6, "horse_sex": "G", "days_since_lr": int(rng.integers(7, 90)),
-                    "career_runs": 5 + h % 20, "stallion": f"S{h % 7}", "dam": f"D{h % 11}",
+                    "career_runs": h % 20, "stallion": f"S{h % 7}", "dam": f"D{h % 11}",
                     "dam_stallion": f"S{(h + 3) % 7}", "surface_type": surface, "horse_prizewin": "1000",
                     "headgear": "b" if h % 5 == 0 else "", "rail_move": "", "track_direction": "L",
                     "stall_positioning": rng.choice(["Stands", "Far", "Centre"]) if rtype == "Flat" else "",
