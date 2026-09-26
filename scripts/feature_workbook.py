@@ -123,6 +123,8 @@ DROP_IN = [
      "and their career NFP ranked in the race", "candidate"),
     ("connection_relative", "Connection windows against the field", "The trainer's and jockey's recent form as "
      "within-race z-scores and gaps to the best", "built"),
+    ("sire_windows", "Sire windows", "The sire's and damsire's progeny over recent windows, and the sire's "
+     "young runners", "built"),
     ("connection_grains", "Connection grains", "The trainer's and jockey's last fortnight, the trainer in today's "
      "race code, both at today's course, and the pair together", "built"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
@@ -187,6 +189,8 @@ BLOCK_EVIDENCE = {
     "Connection windows against the field": "Iteration 71 (steadier screen, on the 853): beside form lines and "
                                             "connection windows +0.0003 (-0.0011 to +0.0018), unresolved, the "
                                             "early-price rule +7.96% against +8.47%. Retired.",
+    "Sire windows": "Iteration 73 (steadier screen, on the 853): beside form lines and connection windows, read "
+                    "against iteration 67's fl_cw arm.",
     "Connection grains": "Iteration 69 (steadier screen, on the 853): -0.0056 (-0.0072 to -0.0041) alone, but beside "
                          "form lines and connection windows -0.0008 (-0.0021 to +0.0005), unresolved, the early-price "
                          "rule +7.84% against +8.47%: what it reads, connection windows already carry. Retired.",
@@ -657,6 +661,18 @@ def describe(f: str, group: str = "") -> str:
                 "ae_l100": "wins less BSP chances of the last 100 runners, per run, shrunk to 0",
                 "nfp_rank": "career NFP ranked in today's race (1 = best; trainerNFPrank / jockeyNFPrank)"}
         return f"Connection windows, {who} {what[m.group(2)]}"
+    m = re.fullmatch(r"sw_(sr|ds)_(n|nfp_car|nfp_l100|nfp_l500|ae_l300|young_nfp|nfp_rank)", f)
+    if m:
+        who = {"sr": "the sire's", "ds": "the damsire's"}[m.group(1)]
+        what = {"n": "progeny runs before today",
+                "nfp_car": "progeny's mean NFP of all runs (a non-finisher 0), shrunk to 0.5 by fifty runs",
+                "nfp_l100": "progeny's mean NFP over the last 100 runs",
+                "nfp_l500": "progeny's mean NFP over the last 500 runs",
+                "ae_l300": "progeny's wins less BSP chances over the last 300 runs, per run, shrunk to 0 by fifty",
+                "young_nfp": "two- and three-year-old progeny's NFP over their last 200 runs, shrunk to the sire's own "
+                             "level (for young runners only)",
+                "nfp_rank": "progeny's last-500 NFP ranked in today's race (1 = best)"}[m.group(2)]
+        return f"Sire windows, {who} {what}"
     m = re.fullmatch(r"cwr_(tr|jk)_(nfp_l20|nfp_l100|nfp_car|lbs_l100|ae_l100)_(z|gap)", f)
     if m:
         who = {"tr": "the trainer's", "jk": "the jockey's"}[m.group(1)]
