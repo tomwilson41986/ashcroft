@@ -14,6 +14,8 @@ The 944 is the 615 served today plus six blocks that each passed the research lo
 - form lines (10)
 - form variants (77)
 
+**Trained longer.** Iteration 63 found the 6000-round cap was costing a little. The same 944 grown to 9000 rounds was −0.0014 better (−0.0018 to −0.0009) than at 6000. Its first 6000 trees are the same fit, so no seed noise is in that number. A 7000-round training of the 944 was started at 09:35 UTC (the middle of the rounds early stopping chose). If it verifies and dry-runs clean before the deploy, it is the artefact to serve; otherwise the 6000-round 944 is.
+
 ## The evidence, on the served recipe
 
 All at 6000 rounds, on the development window of 27 Sep 2025 to 31 Mar 2026: 53,910 runners in 5,923 races. The locked holdout was not read.
@@ -79,5 +81,5 @@ Averaging three fits at different seeds beat each single fit by −0.0013 to −
 
 ## In progress, not needed for this decision
 
-- Iteration 63: the 944's features at 9000 rounds and at a slower learning rate. The 6000-round cap binds in every fold.
+- A slower learning rate (0.02) at 9000 rounds read −0.0018 against the 6000-round 944, but it hit its cap again. It is left for the next recipe test at a higher cap.
 - Collateral form through common opponents: −0.0015 beyond form lines on the screen. It is a candidate for the next model's bundle.
