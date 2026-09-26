@@ -168,7 +168,9 @@ BLOCK_EVIDENCE = {
                         "and concordance worse (resolved): the split and the field readings add nothing. Retired.",
     "Condition form": "Iteration 57 (steadier screen, on the 853): -0.0002 (-0.0017 to +0.0013), unresolved: the "
                       "horse's form in today's conditions adds nothing the engine's aptitude features lack. Retired.",
-    "Form uplift": "Iteration 62 (steadier screen, on the 853): being screened, alone and beside form lines.",
+    "Form uplift": "Iteration 62 (steadier screen, on the 853): -0.0046 alone, Brier skill flat; beside form lines "
+                   "-0.0020 on the price but Brier skill vs market -0.0025 (resolved worse). Iteration 64: without "
+                   "the market's revised view of the rivals it adds -0.0003 beyond form lines. Retired.",
     "Rank fix": "Iteration 41: -0.0000; iteration 54 (steadier screen): +0.0006, with the four originals withheld: "
                 "the trees had worked round the defect. Hygiene for the next engine rebuild.",
     "Bookings": "Quick recipe: -0.0027, -0.0028, -0.0038 on three feature sets. Iteration 51 (steadier screen, on "
