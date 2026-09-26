@@ -240,3 +240,43 @@ def test_a_recipe_iteration_can_move_any_setting_and_only_real_ones():
     # the override reaches the fit's parameters, on top of the recipe
     cfg = TrainConfig(params={**DEFAULT_PARAMS, **QUICK_PARAMS, **parse_param_overrides(["num_leaves=31"])})
     assert cfg.params["num_leaves"] == 31 and cfg.params["learning_rate"] == QUICK_PARAMS["learning_rate"]
+
+
+def test_an_ensemble_is_the_geometric_mean_of_its_arms_renormalised_per_race(tmp_path):
+    rows = {"race_date": ["2025-10-01"] * 3 + ["2025-10-02"] * 2, "race_time": ["2.30"] * 5, "track": "york",
+            "horse_name": list("abcde"), "bfsp": [2.0, 4.0, 8.0, 3.0, 1.5], "overlay_pct": 0.0}
+    a = pd.DataFrame({**rows, "predicted_bfsp": [2.0, 4.0, 4.0, 2.0, 2.0], "predicted_bfsp_raw": [2.2, 4.4, 4.4, 2, 2]})
+    b = pd.DataFrame({**rows, "predicted_bfsp": [8.0, 2.0, 8 / 5, 4.0, 4 / 3], "predicted_bfsp_raw": [8, 2, 1.6, 4, 1.3]})
+    a.to_csv(tmp_path / "oos_a.csv", index=False)
+    b.iloc[::-1].to_csv(tmp_path / "oos_b.csv", index=False)           # row order does not matter
+    rl.average_arms([tmp_path / "oos_a.csv", tmp_path / "oos_b.csv"], tmp_path / "oos_ab.csv")
+    got = pd.read_csv(tmp_path / "oos_ab.csv")
+    assert list(got["horse_name"]) == list("abcde")                     # the first arm's rows and order
+    gm = np.sqrt(np.array([2 * 8, 4 * 2, 4 * 8 / 5, 2 * 4, 2 * 4 / 3]))   # the geometric mean of the prices
+    p = 1 / gm
+    p[:3] /= p[:3].sum()
+    p[3:] /= p[3:].sum()
+    assert np.allclose(got["predicted_win_prob_norm"], p) and np.allclose(got["predicted_bfsp"], 1 / p)
+    assert np.isclose(got.loc[0, "predicted_bfsp_raw"], np.sqrt(2.2 * 8))
+    assert np.allclose(got["overlay_pct"], (got["bfsp"] / got["predicted_bfsp"] - 1) * 100)
+    # an arm that does not price every runner of the first is refused
+    b.iloc[1:].to_csv(tmp_path / "oos_short.csv", index=False)
+    with pytest.raises(SystemExit, match="lacks runners"):
+        rl.average_arms([tmp_path / "oos_a.csv", tmp_path / "oos_short.csv"], tmp_path / "x.csv")
+
+
+def test_an_ensemble_names_two_or_more_fitted_arms_and_is_never_fitted():
+    cfg = {**CFG, "variants": [{"name": "cw"}, {"name": "cw_s7", "args": "--seed 7"}],
+           "ensembles": [{"name": "cw_avg", "arms": ["cw", "cw_s7"]}]}
+    assert rl.ensembles(cfg) == [{"name": "cw_avg", "arms": ["cw", "cw_s7"]}]
+    assert "cw_avg" not in rl.all_arms(cfg)                             # built at the compare step, not fitted
+    assert rl.ensembles({**cfg, "ensembles": [{"name": "with_base", "arms": ["base", "cw"]}]})
+    for bad in ([{"name": "cw", "arms": ["cw", "cw_s7"]}],              # an arm's name
+                [{"name": "base", "arms": ["cw", "cw_s7"]}],
+                [{"name": "one", "arms": ["cw"]}],                      # one arm is not an average
+                [{"name": "twice", "arms": ["cw", "cw"]}],
+                [{"name": "ghost", "arms": ["cw", "nope"]}],            # an arm nobody fits
+                [{"name": "e", "arms": ["cw", "cw_s7"]}, {"name": "e", "arms": ["cw", "cw_s7"]}]):
+        with pytest.raises(SystemExit):
+            rl.ensembles({**cfg, "ensembles": bad})
+    assert rl.ensembles(CFG) == []
