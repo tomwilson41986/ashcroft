@@ -21,6 +21,14 @@ on:
         description: "That run's model artifact, e.g. bfsp-model-33"
         required: false
         type: string
+      twin_run:
+        description: 'Price the candidate averaged with a second model: the id of its train-bfsp run (empty: the candidate alone)'
+        required: false
+        type: string
+      twin_artifact:
+        description: "The second model's artifact, e.g. bfsp-model-42"
+        required: false
+        type: string
       probe_card:
         description: 'Only save the HTML card and a debutant horse page (scripts/probe_card_html.py); price nothing'
         required: false
@@ -72,6 +80,17 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: candidate
 
+      - name: Fetch the second model
+        # The two served as one (predict_bfsp_today.AveragedBooster): the candidate's model
+        # directory with the second model as a member and a manifest naming both.
+        if: inputs.model_run != '' && inputs.twin_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.twin_artifact }}
+          run-id: ${{ inputs.twin_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: twin
+
       - name: Probe the card
         if: inputs.probe_card
         env:
@@ -89,6 +108,13 @@ jobs:
           mkdir -p out
           MODEL_DIR=data/models
           if [ -n "${{ inputs.model_run }}" ]; then MODEL_DIR=candidate/data/models; fi
+          if [ -n "${{ inputs.model_run }}" ] && [ -n "${{ inputs.twin_run }}" ]; then
+            mkdir -p "$MODEL_DIR/members/twin"
+            cp twin/data/models/bfsp_model.lgb twin/data/models/bfsp_model_meta.json "$MODEL_DIR/members/twin/"
+            printf '{"members": [{"name": "candidate", "dir": "."}, {"name": "twin", "dir": "members/twin"}]}\n' \
+              > "$MODEL_DIR/bfsp_ensemble.json"
+            cat "$MODEL_DIR/bfsp_ensemble.json"
+          fi
           python predict_bfsp_today.py \
             ${{ inputs.date && format('--date {0}', inputs.date) || '' }} \
             --start-date 2021-01-01 --model-dir "$MODEL_DIR" \
