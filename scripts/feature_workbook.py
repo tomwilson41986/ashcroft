@@ -120,7 +120,7 @@ DROP_IN = [
     ("collateral", "Collateral form (common opponents)", "Today's runners compared through horses both have met, "
      "in pounds", "candidate"),
     ("connection_windows", "Connection windows", "The trainer's and jockey's recent runners over a window ladder, "
-     "and their career NFP ranked in the race", "built"),
+     "and their career NFP ranked in the race", "candidate"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
      "prices, against what they ran there", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
@@ -178,8 +178,11 @@ BLOCK_EVIDENCE = {
     "Collateral form (common opponents)": "Iteration 66 (steadier screen, on the 853, which reads the direct "
                                           "meetings): -0.0013 alone (ranks 1-3 resolved); beside form lines -0.0015 "
                                           "(-0.0028 to -0.0000), rank 1 -0.0027: a candidate for the next bundle.",
-    "Connection windows": "Iteration 67 (steadier screen, on the 853): being screened, alone and beside form lines. "
-                          "Builds the specification's trainerNFPrank and jockeyNFPrank (RB = NFP in this data).",
+    "Connection windows": "Iteration 67 (steadier screen, on the 853): -0.0062 (-0.0079 to -0.0048) alone; beside "
+                          "form lines -0.0060 (-0.0076 to -0.0046) more than form lines alone, every rank band "
+                          "resolved, the early-price rule +8.47% against +7.41%. Iteration 68 tests it on the 944 at "
+                          "the served recipe. Builds the specification's trainerNFPrank and jockeyNFPrank (RB = NFP "
+                          "in this data).",
     "Condition form": "Iteration 57 (steadier screen, on the 853): -0.0002 (-0.0017 to +0.0013), unresolved: the "
                       "horse's form in today's conditions adds nothing the engine's aptitude features lack. Retired.",
     "Form uplift": "Iteration 62 (steadier screen, on the 853): -0.0046 alone, Brier skill flat; beside form lines "
