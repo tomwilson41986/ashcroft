@@ -121,6 +121,8 @@ DROP_IN = [
      "in pounds", "candidate"),
     ("connection_windows", "Connection windows", "The trainer's and jockey's recent runners over a window ladder, "
      "and their career NFP ranked in the race", "candidate"),
+    ("connection_grains", "Connection grains", "The trainer's and jockey's last fortnight, the trainer in today's "
+     "race code, both at today's course, and the pair together", "built"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
      "prices, against what they ran there", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
@@ -178,6 +180,8 @@ BLOCK_EVIDENCE = {
     "Collateral form (common opponents)": "Iteration 66 (steadier screen, on the 853, which reads the direct "
                                           "meetings): -0.0013 alone (ranks 1-3 resolved); beside form lines -0.0015 "
                                           "(-0.0028 to -0.0000), rank 1 -0.0027: a candidate for the next bundle.",
+    "Connection grains": "Iteration 69 (steadier screen, on the 853): alone, and beside form lines and connection "
+                         "windows, read against iteration 67's fl_cw arm.",
     "Connection windows": "Iteration 67 (steadier screen, on the 853): -0.0062 (-0.0079 to -0.0048) alone; beside "
                           "form lines -0.0060 (-0.0076 to -0.0046) more than form lines alone, every rank band "
                           "resolved, the early-price rule +8.47% against +7.41%. Iteration 68 tests it on the 944 at "
@@ -644,6 +648,23 @@ def describe(f: str, group: str = "") -> str:
                 "ae_l100": "wins less BSP chances of the last 100 runners, per run, shrunk to 0",
                 "nfp_rank": "career NFP ranked in today's race (1 = best; trainerNFPrank / jockeyNFPrank)"}
         return f"Connection windows, {who} {what[m.group(2)]}"
+    m = re.fullmatch(r"cg_(tr|jk|tj)_(d14_n|d14_nfp|d14_dnfp|d14_ae|code_n|code_nfp|code_dnfp|trk_n|trk_nfp|n|nfp|ae)",
+                     f)
+    if m:
+        who = {"tr": "the trainer's", "jk": "the jockey's", "tj": "the trainer and jockey together:"}[m.group(1)]
+        what = {"d14_n": "runners in the 14 days before today",
+                "d14_nfp": "mean NFP of the last 14 days' runners, shrunk to its own last-100 NFP by five",
+                "d14_dnfp": "last 14 days' NFP (shrunk) less its own last-100 NFP: in or out of form now",
+                "d14_ae": "wins less BSP chances of the last 14 days' runners, per run, shrunk to 0 by five",
+                "code_n": "runners in today's race code (flat, all-weather, hurdle, chase, bumper)",
+                "code_nfp": "mean NFP of its last 50 runners in today's race code, shrunk to its last-100 NFP by ten",
+                "code_dnfp": "race-code NFP (shrunk) less its own last-100 NFP",
+                "trk_n": "runners at today's course", "trk_nfp": "mean NFP of its last 20 runners at today's "
+                                                                  "course, shrunk to its last-100 NFP by five",
+                "n": "runners", "nfp": "mean NFP of their last 20 runners, shrunk to the trainer's last-100 NFP "
+                                       "by five",
+                "ae": "wins less BSP chances of their last 20 runners, shrunk to 0 by five"}
+        return f"Connection grains, {who} {what[m.group(2)]}"
     m = re.fullmatch(r"flc_(l1|l3)_(n|wins|wr|ae)", f)
     if m:
         what = {"n": "rival runs since", "wins": "rival wins since",
