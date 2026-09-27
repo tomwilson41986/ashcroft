@@ -1,6 +1,6 @@
 # Which model serves next: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 09:00 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 12:00 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -18,9 +18,14 @@ Fallbacks, each verified and dry-run clean: the 968s (run 44, leaves of 200), th
 
 **Deploy it with the card pedigree fix** (found 26 Sep afternoon; see "The 06:00 card's missing pedigree" below). The 06:00 card gave debutants no sire, damsire or sex, so every model so far priced them a mean 0.26 in log terms (about 30%) away from the price its training features give. The fix reads the pedigree the card does carry, and it applies to whichever model serves.
 
-**The next step: the pair at leaves of 500** (iteration 89). The slow extra-trees and slow Huber fits, both with leaves of 500, averaged, price the window at 0.3995: −0.0034 (−0.0041 to −0.0027) on the 968s5 alone, and −0.0016 (−0.0020 to −0.0012) on the pair at leaves of 200 (0.4011, iteration 86). Against the 958 −0.0115 (−0.0124 to −0.0106), against the 615 −0.0364 (−0.0380 to −0.0348), with Brier skill and concordance resolved better against both. The early-price rule reads +10.44% and the model's weight beside the morning price 0.455, both the highest yet; the top pick traded out +1.63%. Both members are training for serving (train-bfsp runs 48 and 49) and will be verified and dry-run as a pair. The pair at leaves of 200 (runs 45 and 46: verify PASS, 43.1 and 42.5 MB with xz, dry run on 27 Sep's card clean, predict-now run 21) stands behind it.
+**The next step: the pair at leaves of 500** (iteration 89). The slow extra-trees and slow Huber fits, both with leaves of 500, averaged, price the window at 0.3995: −0.0034 (−0.0041 to −0.0027) on the 968s5 alone, and −0.0016 (−0.0020 to −0.0012) on the pair at leaves of 200 (0.4011, iteration 86). Against the 958 −0.0115 (−0.0124 to −0.0106), against the 615 −0.0364 (−0.0380 to −0.0348), with Brier skill and concordance resolved better against both. The early-price rule reads +10.44% and the model's weight beside the morning price 0.455, both the highest yet; the top pick traded out +1.63%. Both members are trained, verified and dry-run as a pair:
+- the extra-trees 968 at leaves of 500 (train-bfsp run 48, `bfsp-model-48`): verify PASS, 968 features, 11,000 rounds, log prices correlating 0.9924 with the 615's; 40.5 MB with xz;
+- the Huber 968 at leaves of 500 (run 49, `bfsp-model-49`): verify PASS, 10,500 rounds, 0.9928; 38.2 MB with xz;
+- the pair's dry run on 27 Sep's card (predict-now run 23): both members loaded, 221 runners in 23 races priced, books of 1, 16.5 minutes, no warnings; against the 968s5 alone, correlation 0.9926 and the same top pick in 19 of 23 races.
 
-Serving any pair needs the owner's word on the model and on storing two boosters (about 85 MB with xz; a manifest in `data/models`).
+The pair at leaves of 200 (runs 45 and 46: verify PASS, 43.1 and 42.5 MB with xz, dry run on 27 Sep's card clean, predict-now run 21) stands behind it.
+
+Serving any pair needs the owner's word on the model and on storing two boosters (78.7 MB with xz for the pair at leaves of 500; a manifest in `data/models`).
 
 **Leaves of 1,000** are no better than 500 (iteration 89: −0.0007, the refit noise's size). A slower learning rate (0.015) and other tree sizes (255 or 63 leaves) add nothing (iteration 88).
 
