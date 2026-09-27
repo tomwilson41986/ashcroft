@@ -1,28 +1,30 @@
-# Which model serves from 27 September: the recommendation
+# Which model serves next: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 02:30 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 03:10 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
 
 ## Recommendation
 
-**Serve the 958 from the 06:00 run of 27 September** (train-bfsp run 39, artifact `bfsp-model-39`). Every check has passed:
-- the test on the served recipe against the 944
-- verify
-- the parity of its new block between the 06:00 path and training
-- a dry run on today's card
+**Serve the 968s from the first 06:00 run after the owner's word** (train-bfsp run 44, artifact `bfsp-model-44`). It is the 968's features (the 958 plus the debut market block) fitted at the slow recipe: learning rate 0.02 for 10,000 rounds, with leaves of at least 200 runners. It is one booster, committed compressed: 38.6 MB with xz, 123 MB plain, which is over GitHub's 100 MB file limit. The 06:00 job reads the compressed file (commit 673d23c); it decompresses to the verified booster byte for byte and predicts identically. Every check has passed:
+- the tests on the served recipe (iterations 81 and 85)
+- verify (`reports/model_verify_968s.md`): 968 features, books of 1, log prices correlating 0.9936 with the 615's
+- the parity of its features between the 06:00 path and training (the 968's features, checked for the 968; the recipe changes only the fit)
+- a dry run on 27 Sep's card (predict-now run 20): 241 runners in 23 races, every one priced, books of 1, 12.5 minutes from load to prices, no warnings
 
-**Directly against the 615 it would replace** (same 53,910 runners, both at 6000 rounds): the price-forecast error falls by −0.0243 (90% CI −0.0261 to −0.0229), in every rank band. Its Brier skill against the market improves by +0.0048 (+0.0031 to +0.0065), and the winner-vs-loser concordance by +0.0032 (+0.0011 to +0.0053), both intervals clear of zero. The early-price rule goes from +7.70% to +9.60%.
+**Against the 958**, the previous recommendation (same 53,910 runners): the price-forecast error falls by −0.0060 (90% CI −0.0069 to −0.0051). Brier skill against the market improves by +0.0014 (+0.0006 to +0.0022) and concordance by +0.0028 (+0.0011 to +0.0042), both resolved better.
 
-If the owner prefers a smaller step, the 7000-round 944 (run 38, `bfsp-model-38`) is verified and dry-run clean. The 859 is a further fallback.
+**Against the 615 it would replace:** −0.0308 (−0.0325 to −0.0292), in every rank band. Brier skill +0.0064 (+0.0047 to +0.0081) and concordance +0.0057 (+0.0035 to +0.0081), both clear of zero. The early-price rule goes from +7.70% to +9.92%, and the top pick traded out makes +1.43%.
+
+Fallbacks, each verified and dry-run clean: the 958 (run 39, `bfsp-model-39`), then the 7000-round 944 (run 38).
 
 **Deploy it with the card pedigree fix** (found 26 Sep afternoon; see "The 06:00 card's missing pedigree" below). The 06:00 card gave debutants no sire, damsire or sex, so every model so far priced them a mean 0.26 in log terms (about 30%) away from the price its training features give. The fix reads the pedigree the card does carry, and it applies to whichever model serves.
 
-**The Huber loss does not change the recommendation** (iteration 76, 16:00 UTC). On the screen it beat the squared-error loss by −0.0029 on the 958's features (iteration 74). On the served recipe the gap closes: −0.0003 (−0.0010 to +0.0006), unresolved. Only the runners over 50 on the BSP improve (−0.0050); the runners at 8 to 16 are a little worse. Its trading readings are lower too: the early-price rule makes +9.20% against the 958's +9.60%, and the top pick traded out makes +1.14% against +1.45%. The 958 trained with it (train-bfsp run 40) passed verify, but it is not a candidate.
+**The next step: two slow fits served as one** (iteration 86, 02:45 UTC). The slow extra-trees 968 and the slow Huber 968, averaged, price the window at 0.4011: −0.0039 (−0.0046 to −0.0032) on the 968s alone. The early-price rule reads +10.34% and the model's weight beside the morning price 0.452, both the highest yet. Both are training for serving (train-bfsp runs 45 and 46). Each then needs its verify, and the pair a dry run. Serving them needs the owner's word on storing two boosters of about 40 MB each (xz).
 
-**The next candidate after the 958: the debut market block** (iterations 80 and 81). How the market has priced each yard's debutants and lightly raced runners (`model/blocks/debut_market.py`, 10 features), beside the 958's features at the served recipe:
-- under the Huber loss (iteration 80): −0.0032 (−0.0040 to −0.0024), and −0.0067 in maiden, novice and bumper races, where the error is largest;
-- under the served squared-error loss (iteration 81, 18:50 UTC): −0.0018 (−0.0028 to −0.0008), with concordance better (+0.0021, resolved). The early-price rule reads +9.45% against the same run's 958 at +9.46%.
+**The Huber loss alone does not change the recommendation.** On the 958's features at the served recipe it was level with squared error: −0.0003 (−0.0010 to +0.0006), unresolved (iteration 76). At the slow recipe it is −0.0017 on the 968s (iteration 86), within reach of the refit noise. Its value is as a partner (above).
 
-The 958 with it (the 968, train-bfsp run 41, `bfsp-model-41`) has since passed verify (968 features, books of 1, log prices correlating 0.9932 with the 615's) and its parity check (research query run 36266481019, 745 runners on two March days): every debut market feature is identical on the 06:00 card and in training, and its prices on the card sit a mean |Δlog| of 0.0122 from training's, the smallest of the 615 (0.0156), the 958 (0.0129) and the 968, with the same top pick in 73 of 75 races. Its dry run on 26 Sep's card is clean (predict-now run 17): 566 runners in 53 races, every one priced, books of 1, 16 minutes from load to prices; against the 958 on the same card, correlation 0.9950 and the same top pick in 47 of 53 races. Its step over the 958 on its own, −0.0018, is close to what a refit alone can move, so tomorrow's recommendation stays the 958; the 968 is the next step, and averaged with its Huber twin (below) it is the largest one on the table.
+**What the 968s adds to the 958:**
+- **the debut market block** (iterations 80 and 81): how the market has priced each yard's debutants and lightly raced runners (`model/blocks/debut_market.py`, 10 features). Beside the 958's features at the served recipe under squared error: −0.0018 (−0.0028 to −0.0008), concordance +0.0021, resolved better. Parity is clean: every debut market feature is identical on the 06:00 card and in training (research query run 36266481019);
+- **the slow recipe** (iteration 85): −0.0041 (−0.0048 to −0.0034) on the same features, with Brier skill resolved better. A refit at another seed moves the slow recipe's error by 0.0007 (iteration 86), so the step is six times the refit noise.
 
 What each adds:
 - **The 944** is the 615 served today plus six blocks that each passed the research loop's decision rule on the served recipe, less the two sire counts found faulty. In order of adoption:
@@ -38,7 +40,7 @@ Both are trained at 7000 rounds, where early stopping lands (iterations 63 and 7
 
 ## The evidence, on the served recipe
 
-All at 6000 rounds, on the development window of 27 Sep 2025 to 31 Mar 2026: 53,910 runners in 5,923 races. The locked holdout was not read.
+All at 6000 rounds (the 968s at learning rate 0.02 to a 12,000-round cap, stopping at 9,549 to 10,058), on the development window of 27 Sep 2025 to 31 Mar 2026: 53,910 runners in 5,923 races. The locked holdout was not read.
 
 | model | what it adds | price-forecast error (mean abs log) | step, paired (90% CI) | early-price rule, Jan–Mar 2026 |
 |---|---|---|---|---|
@@ -47,9 +49,11 @@ All at 6000 rounds, on the development window of 27 Sep 2025 to 31 Mar 2026: 53,
 | the 853 | time figure, wide readings, exposure, collateral form | — | −0.0053 (−0.0064 to −0.0041) | +7.59% to +7.83% |
 | the 859 | bookings | 0.4197 | −0.0041 (−0.0051 to −0.0032) | +8.09% |
 | the 944 | form lines, form variants, less the two sire counts | 0.4156 | −0.0040 (−0.0049 to −0.0031) | +8.44% (+7.17 to +9.82) |
-| **the 958** | connection windows | **0.4115** | **−0.0040 (−0.0050 to −0.0032)** | **+9.60% (+8.23 to +10.99)** |
+| the 958 | connection windows | 0.4115 | −0.0040 (−0.0050 to −0.0032) | +9.60% (+8.23 to +10.99) |
+| the 968 | the debut market block | 0.4091 | −0.0018 (−0.0028 to −0.0008), against iteration 81's 958 | +9.43% |
+| **the 968s** | **the slow recipe: learning rate 0.02, leaves of 200, about 10,000 rounds** | **0.4050** | **−0.0041 (−0.0048 to −0.0034)** | **+9.92% (+8.63 to +11.26)** |
 
-- Each row's step is measured against the row above, on the same runners (iterations 36, 42, 48, 61 and 68). The 853 was fitted as a variant only, so the table gives no level for it.
+- Each row's step is measured against the row above, on the same runners (iterations 36, 42, 48, 61, 68, 81 and 85). The 853 was fitted as a variant only, so the table gives no level for it.
 - The rule's figure moves by about a point between fits of the same model. The served recipe's seed floor is about ±0.003 on the error and a point on the rule.
 
 **The 958 against the 944 (iteration 68):**
@@ -66,6 +70,18 @@ All at 6000 rounds, on the development window of 27 Sep 2025 to 31 Mar 2026: 53,
 **Trained longer.** For the 944, the trees beyond 6000 were worth −0.0014 (iteration 63). For the 958, early stopping lands at 4,300 to 6,700 rounds and the extra trees are worth −0.0003 (iteration 70). A slower learning rate (0.02, about 9,000 rounds) is a further −0.0010 on the price. It does not show in the rule (+9.27% against +9.66%) or the top pick, so it is left for the next retrain.
 
 ## The checks
+
+**The 968s (train-bfsp run 44):**
+- **Verify: PASS** (`reports/model_verify_968s.md`).
+  - 968 features, 10,000 rounds at learning rate 0.02, trained through 22 Sep on 697,903 runs.
+  - Every drop-in block, the debut market block included, built on the matrix exactly as the 06:00 path builds it.
+  - Books of 1. Log prices correlate 0.9936 with the 615's over 9–22 Sep.
+- **Parity: the 968's** (research query run 36266481019): every debut market feature is identical on the 06:00 card and in training, and the 968's card prices sit a mean |Δlog| of 0.0122 from training's. The 968s reads the same features through the same path.
+- **Dry run on 27 Sep's card (predict-now run 20): clean.**
+  - 241 runners in 23 races, every one priced, books of 1, no warnings.
+  - 12.5 minutes from load to prices; the limit is 45.
+  - Against the extra-trees 968 averaged with its Huber twin on the same card (run 19): correlation 0.9974, the same top pick in all 23 races.
+- **The compressed file:** it decompresses to the verified booster byte for byte, and loaded alone it predicts identically (max difference 0.0 on 2,000 rows). It loads in 4.9 seconds.
 
 **The 958 (train-bfsp run 39):**
 - **Verify: PASS.**
@@ -104,7 +120,7 @@ The 944's top pick on the same runs traded out at +1.05%, and +5.31% with the ru
 
 The top pick makes money as a trade against the price, not as a bet held to the result. That holds for every model so far, because the model forecasts the price. The pre-registered forward test measures exactly the traded version, from the 06:00 run's own prices.
 
-## The next step after the 958: the 968 at a slower learning rate (iterations 85 and 86)
+## The slow recipe and its partners (iterations 85 and 86)
 
 Fitted at learning rate 0.02 (to about 10,000 rounds) with leaves of at least 200 runners, one fit of the 968's features prices the development window better than anything served or proposed so far, including the 968 averaged with its Huber twin, and it needs one booster, not two:
 
@@ -117,10 +133,13 @@ Fitted at learning rate 0.02 (to about 10,000 rounds) with leaves of at least 20
 | the extra-trees 968 at the slow recipe (one fit, iteration 86) | 0.4036 | −0.0055; against the slow 968 −0.0014 (−0.0023 to −0.0005), but concordance resolved worse | | |
 | **the slow 968 and the slow extra-trees 968, averaged** | **0.4019** | **−0.0072**; against the slow 968 −0.0031 (−0.0035 to −0.0026), Brier skill and concordance level | | |
 | the same with a third fit at another seed | 0.4015 | −0.0076; against the slow 968 −0.0035 (−0.0039 to −0.0031) | | |
+| the Huber 968 at the slow recipe (one fit) | 0.4033 | −0.0058; against the slow 968 −0.0017 (−0.0024 to −0.0009) | +10.28% | +1.35% |
+| **the slow extra-trees 968 and the slow Huber 968, averaged** | **0.4011** | **−0.0080**; against the slow 968 −0.0039 (−0.0046 to −0.0032) | **+10.34%** | +1.50% |
+| the slow 968, extra-trees and Huber fits, averaged | 0.4011 | −0.0080 | | |
 
-The 968 at the slow recipe is training for serving (train-bfsp run 44, 10,000 rounds, not published). It needs its verify and a dry run before it could serve; it would then replace the 968 pair as the next candidate after the 958, and it raises no storage question.
+The 968 at the slow recipe (the 968s, train-bfsp run 44) has since passed verify and its dry run: it is the recommendation above, and it raises no storage question.
 
-Iteration 86 (02:30 UTC, 27 Sep) found its best partner. At the slow recipe, a fit at another seed moves the error by only 0.0007 (at lr 0.03, up to 0.0010), so a second seed adds little; extremely randomised split points add more. Alone, the slow extra-trees fit ranks winners over losers slightly worse (concordance −0.0015, −0.0031 to −0.00002), so it serves only beside the slow 968, where the pair prices the window at 0.4019. The slow extra-trees 968 is training for serving (train-bfsp run 45, 11,000 rounds, not published). The pair would need two boosters, the storage question below.
+Iteration 86 (02:30 UTC, 27 Sep) found its best partner. At the slow recipe, a fit at another seed moves the error by only 0.0007 (at lr 0.03, up to 0.0010), so a second seed adds little; extremely randomised split points add more. Alone, the slow extra-trees fit ranks winners over losers slightly worse (concordance −0.0015, −0.0031 to −0.00002), so it serves only beside the slow 968, where the pair prices the window at 0.4019. Its Huber fit is a better partner still: the slow extra-trees and slow Huber fits average to 0.4011, as good as any three, with the early-price rule at +10.34% and the model's weight beside the morning price at 0.452, both the highest yet. Both are training for serving (train-bfsp runs 45 and 46, 11,000 rounds, not published). The pair would need two boosters, the storage question below.
 
 ## An option: several fits served as one
 
@@ -169,10 +188,11 @@ It changes what the 06:00 job serves for debutants, for any model, so it goes ou
 ## What deploying involves (only with the owner's word)
 
 1. Commit the chosen artefact to `data/models` on the branch, with its verify report.
+   - For the 968s: train-bfsp run 44, artifact `bfsp-model-44`, as `bfsp_model.lgb.xz` (38.6 MB), deleting the 615's `bfsp_model.lgb` in the same commit. A test refuses the two side by side, since the plain file would be read.
    - For the 958: train-bfsp run 39, artifact `bfsp-model-39`.
    - For the 944: the 7000-round file, run 38, artifact `bfsp-model-38`.
 2. Add an amendment to `reports/preregistration_clv_forward.md`. It records the change between days, as the pre-registration requires, the evidence above, and its first 06:00 date. The forward report then gives the 615's days and the new model's days separately, as well as the whole window.
-3. Merge PR #77 to the default branch before 06:00 UTC on 27 Sep. The 06:00 job reads `data/models` from the default branch. The only other change to what it serves is the card pedigree fix above, which the amendment records with the model.
+3. Merge PR #77 to the default branch before 06:00 UTC. The 06:00 job reads `data/models` from the default branch. The only other change to what it serves is the card pedigree fix above, which the amendment records with the model.
 
 ## Tested today and not carried
 
