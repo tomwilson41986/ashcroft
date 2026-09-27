@@ -1,6 +1,6 @@
 # Which model serves next: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 12:00 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 13:40 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -27,7 +27,11 @@ The pair at leaves of 200 (runs 45 and 46: verify PASS, 43.1 and 42.5 MB with xz
 
 Serving any pair needs the owner's word on the model and on storing two boosters (78.7 MB with xz for the pair at leaves of 500; a manifest in `data/models`).
 
-**Leaves of 1,000** are no better than 500 (iteration 89: −0.0007, the refit noise's size). A slower learning rate (0.015) and other tree sizes (255 or 63 leaves) add nothing (iteration 88).
+**In training: the extra-trees Huber fit at leaves of 500** (iteration 91), the best single booster yet. The slow recipe with extremely randomised trees under the Huber loss prices the window at 0.4001: −0.0028 (−0.0037 to −0.0019) on the 968s5, four times the slow recipe's refit noise, with neither Brier skill nor concordance worse; against the extra-trees fit alone (xt500) −0.0016 (−0.0022 to −0.0010), Brier skill resolved better. The early-price rule +10.16% and the top pick traded out +1.78% (the 968s5: +10.03%, +1.55%). One booster, within 0.0006 of the pair at leaves of 500. Its folds reached the 12,000-round cap without stopping, so it is being trained for serving at 12,000 rounds (train-bfsp, train only, dispatched 13:15 UTC); it replaces the 968s5 as the single-booster recommendation once it passes verify and a dry run. Iteration 93 fits it at another seed, at leaves of 1,000 and to a 16,000-round cap.
+
+Iteration 91 also checked the extra-trees fit at leaves of 500 at another seed: 0.4015 against 0.4017, so the recipe holds (run 48 alone dry-runs clean on 27 Sep's card, predict-now run 24: 221 runners, books of 1, 10 minutes, the same top pick as the pair in 23 of 23 races). Averages of these fits reach 0.3984 to 0.3989 (against the pair at leaves of 500's 0.3995): the extra-trees Huber fit with run 49 0.3989, three members 0.3986, four 0.3984. Small steps, each one more booster to store.
+
+**Leaves of 1,000** are no better than 500 on their own (iteration 89: −0.0007, the refit noise's size); with extra trees −0.0011 (−0.0017 to −0.0004), 0.4006, at the noise's edge (iteration 91). A slower learning rate (0.015) and other tree sizes (255 or 63 leaves) add nothing (iteration 88).
 
 **Future form** (the owner's ask of 27 Sep: `model/blocks/future_form.py`, 64 features) **is built, checked and not carried** (iteration 90):
 - its parity at 06:00 is clean: every feature identical on the card and in training (research query run 36301993859);
@@ -167,6 +171,11 @@ Fitted at learning rate 0.02 (to about 10,000 rounds) with leaves of at least 20
 | the extra-trees fit at leaves of 500 | 0.4017 | −0.0074 | +10.17% | +2.17% |
 | the Huber fit at leaves of 500 | 0.4020 | −0.0071 | +9.94% | +1.32% |
 | **the extra-trees and Huber fits at leaves of 500, averaged** | **0.3995** | **−0.0096**; against the pair at leaves of 200 −0.0016 (−0.0020 to −0.0012) | **+10.44%** | +1.63% |
+| the extra-trees fit at leaves of 500, seed 7 (iteration 91) | 0.4015 | −0.0076; against seed 42 −0.0002 (−0.0009 to +0.0005), the refit noise | +10.06% | +1.76% |
+| the extra-trees fit at leaves of 1,000 | 0.4006 | −0.0085; against leaves of 500 −0.0011 (−0.0017 to −0.0004) | +10.49% | +1.92% |
+| **the extra-trees Huber fit at leaves of 500 (one fit)** | **0.4001** | **−0.0090**; against the 968s5 −0.0028 (−0.0037 to −0.0019), Brier and concordance not worse | **+10.16%** | **+1.78%** |
+| the extra-trees Huber fit with the Huber fit at leaves of 500 (run 49), averaged | 0.3989 | −0.0102; against the pair at leaves of 500 −0.0006 (−0.0009 to −0.0003) | | |
+| the pair at leaves of 500 with the extra-trees Huber fit (three members) | 0.3986 | −0.0105; against the pair −0.0009 (−0.0011 to −0.0007) | | |
 
 The 968 at the slow recipe (the 968s, train-bfsp run 44) passed verify and its dry run; with leaves of 500 (the 968s5, run 47) it is the recommendation above, and neither raises a storage question.
 
