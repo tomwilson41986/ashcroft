@@ -285,7 +285,7 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.bfsp == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 340
     strategy:
       fail-fast: false
       matrix:
