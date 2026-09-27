@@ -160,7 +160,7 @@ BLOCK_EVIDENCE = {
                      "of 2021's runs, 47% of 2022's and 8% of the development window's have such a record. Iteration "
                      "83 (the 958 + the block, served recipe): against four refits of the 958 -0.0008 to +0.0002; on "
                      "the 4,330 runners with a pre-2021 record +0.0010. Retired.",
-    "The yard's unknowns as the market priced them": "Iteration 75 (screen): -0.0011, unresolved; maiden, novice and bumper races -0.0048. Iteration 80 (served recipe, Huber): -0.0032 beside the 958h, those races -0.0067. Iteration 81 (served recipe, squared error): -0.0018 (-0.0028 to -0.0008) beside the 958, concordance resolved better. In the 968 (train-bfsp run 41: verify PASS, parity clean, every feature identical on the 06:00 card), the 968s (run 44: the 968's features at learning rate 0.02, 10,000 rounds) and the 968s5, the recommendation (run 47: the same with leaves of 500, 10,500 rounds; -0.0082 against the 958, verify PASS, dry run clean on 27 Sep's card).",
+    "The yard's unknowns as the market priced them": "Iteration 75 (screen): -0.0011, unresolved; maiden, novice and bumper races -0.0048. Iteration 80 (served recipe, Huber): -0.0032 beside the 958h, those races -0.0067. Iteration 81 (served recipe, squared error): -0.0018 (-0.0028 to -0.0008) beside the 958, concordance resolved better. In the 968 (train-bfsp run 41: verify PASS, parity clean, every feature identical on the 06:00 card), the 968s (run 44: the 968's features at learning rate 0.02, 10,000 rounds) the 968s5 (run 47: the same with leaves of 500, 10,500 rounds; -0.0082 against the 958) and the 968s5xh, the single-booster recommendation (run 50: with extra trees under the Huber loss, 12,000 rounds; 0.4001 on the development window, -0.0109 against the 958; verify PASS, dry run clean on 27 Sep's card), and both members of the pair that comes next (runs 50 and 51, 0.3981).",
     "Custom metrics": "The 19 proprietary metrics and their ranks (the original model). Within-race ranks carry about "
                       "40% of gain; rPMW3 alone about 14%.",
     "Card fields": "Today's card as fetched at 06:00 (card fill: model/card_enrich.py, parity checked).",
@@ -826,14 +826,10 @@ NOT_BUILT = [
      "No sectional or per-horse times in the data", "Blocked"),
     ("D2", "Headgear type flags", "Equipment", "One flag per headgear item (blinkers, visor, cheekpieces, hood, tongue-tie)",
      "Available", "Partial: one category column", "Low"),
-    ("D3", "Form with / without headgear", "Equipment", "The horse's form when wearing today's headgear vs without",
-     "Available", "Not built", "Medium"),
     ("F1", "SP-to-BSP spread (lagged)", "Market", "How far industry SP differed from BSP in past runs",
      "Available", "The same-race version added nothing (markets block)", "Low"),
     ("F2", "Win/place price ratio (lagged)", "Market", "Place-market view relative to the win market in past runs",
      "Partial (Betfair files from Jan 2026)", "Opt-in behind --market-features", "Medium"),
-    ("G2", "Horse handicap / non-handicap form", "Form", "The horse's form split by handicap and non-handicap",
-     "Available", "Only trainer and jockey splits exist (opt-in)", "Medium"),
     ("G4", "Age restriction", "Race conditions", "Age band of the race (2yo, 3yo only, 3yo+, 4yo+)", "Available",
      "race_restrictions_age is never read", "Low"),
     ("H3", "Claimer flag", "Connections", "Whether the jockey claims an allowance", "Available",
@@ -849,7 +845,8 @@ NOT_BUILT = [
     ("J4", "Campaign stage", "Form", "Run number within the current campaign", "Available",
      "Written in model/primitives.py, never called; fr_runs_since_break now covers most of it", "Low"),
     ("K1", "Major-race experience", "Class", "Runs and form in Group / Listed / major races", "Available",
-     "`major` feeds only the opt-in connections block", "Medium"),
+     "Screened 27 Sep against the best model's errors (mj_: black-type runs, finishing position and win rate "
+     "before today; research/queries/travel_residuals.py)", "Medium"),
     ("K2", "Class ladder vs career median", "Class", "Today's class against the horse's career median class",
      "Available", "Partial: against a three-run mean", "Low"),
     ("L2", "Class x speed", "Speed", "Speed figures scaled by the class they were run in", "Available",
@@ -857,30 +854,30 @@ NOT_BUILT = [
     ("L4", "Weight per OR point", "Handicap", "Weight carried relative to the official rating", "Available",
      "The handicap block's hc_wt_vs_mark is close (opt-in, added nothing against the result)", "Medium"),
     ("R1", "Trainer and jockey career NFP / RB", "Connections", "Career finishing-position quality of runners and rides",
-     "Available", "Never built, so five spec rank columns are skipped: trainerRBrank, trainerNFPrank, jockeyRBrank, "
-     "jockeyNFPrank, horsexRBMARrank", "Medium"),
-    ("N1", "Connection form windows", "Connections",
-     "The window ladder (career, last 3/5, weighted 3/5/10) for trainer and jockey: A-E, strike rate, pounds beaten",
-     "Available", "New idea: form windows gave the largest gain of any block for the horse", "High"),
-    ("N2", "Condition-specific form windows", "Form",
-     "Form windows restricted to runs at today's trip band, going, course and code", "Available",
-     "New idea: extends form windows and the unexposure features", "High"),
+     "Available", "Built as the connection windows' cw_tr_nfp_car / cw_jk_nfp_car and their within-race ranks (the "
+     "spec's trainerNFPrank and jockeyNFPrank; RB is NFP in this data), in the 968. horsexRBMARrank alone is still "
+     "skipped", "Low"),
     ("N3", "Re-test research blocks on the price forecast", "Research",
      "Perf figures, Kalman ratings, pedigree suite, connections, comments, handicap angles, A-E by entity",
-     "Available", "Each was tested only against the result (nothing beyond BSP); freshness, intent and form windows "
-     "all failed that test yet sharpened the BSP forecast", "High"),
-    ("N4", "Head-to-head ratings", "Form", "Pairwise results between today's rivals (who has beaten whom, by how much)",
-     "Available (h2h fetch)", "data/h2h exists; not a model feature", "Medium"),
-    ("N5", "Jockey booking strength (card-safe)", "Connections",
-     "Jockey booked at 06:00 against the horse's usual jockey quality", "Available",
-     "The ridden version is card-unsafe; the booked version is safe", "Medium"),
+     "Available", "Since re-tested on the price: comments (iterations 45, 52), the pedigree suite (dam line, sire "
+     "aptitudes, pedigree market: 49, 52, 84), connections (connection windows, in the 968; grains 69); the "
+     "performance figure is read by the form windows. Screened 27 Sep against the best model's errors: a Kalman "
+     "rating on the performance figure, handicap angles, the A-E cells no block reads (trainer at the course, "
+     "course/trip/draw, trainer with jockey, sire) (research/queries/travel_residuals.py)", "Medium"),
     ("N6", "Betfair price-history windows", "Market", "Past runs' morning-to-BSP drift and volume, windowed",
      "Partial (Betfair files from Jan 2026)", "Needs more history before it can train", "Low"),
     ("N7", "Race shape x horse style fit, learned per horse", "Pace",
      "How this horse has run in each pace scenario (from shape form's per-run readings)", "Available",
      "Builds on shape form", "Medium"),
-    ("N8", "Model hyperparameters", "Recipe", "Leaves, learning rate, min child samples at the 6000-round cap",
-     "n/a", "Iteration 31: the recipe was under-fitted at 3000 rounds", "High"),
+    ("T1", "Travel: how far the yard sends a horse", "Intent",
+     "Km from today's course to the yard's base (the centre of its earlier runners' courses) against its usual "
+     "trip; a raid across the Irish Sea; the yard's share of runners at the course; the horse's trip from its last "
+     "course", "Available (course locations written for the 86 British and Irish courses)",
+     "Screened 27 Sep against the best model's errors (research/queries/travel_residuals.py); a drop-in block and "
+     "a research-loop arm if it reads", "High"),
+    ("O1", "Owner", "Connections", "The owner's runners, market and record (debutants above all)",
+     "Not available", "race_results has no owner column; the Timeform feed has one, but its same-day fields are "
+     "banned (leak) and it covers too little history", "Blocked"),
     ("X1", "Fix: track_draw_bias", "Defect", "Blank on every row (draw_metrics.py:643)", "n/a",
      "Zero gain; fix or drop. Its code shifts by row within the track, not by day: filled, it would read earlier "
      "races on the same day", "Low"),
