@@ -151,7 +151,7 @@ BLOCK_EVIDENCE = {
                      "of 2021's runs, 47% of 2022's and 8% of the development window's have such a record. Iteration "
                      "83 (the 958 + the block, served recipe): against four refits of the 958 -0.0008 to +0.0002; on "
                      "the 4,330 runners with a pre-2021 record +0.0010. Retired.",
-    "The yard's unknowns as the market priced them": "Iteration 75 (screen): -0.0011, unresolved; maiden, novice and bumper races -0.0048. Iteration 80 (served recipe, Huber): -0.0032 beside the 958h, those races -0.0067. Iteration 81 (served recipe, squared error): -0.0018 (-0.0028 to -0.0008) beside the 958, concordance resolved better. In the 968, the next candidate (train-bfsp run 41: verify PASS, parity clean, every feature identical on the 06:00 card; its Huber twin run 42).",
+    "The yard's unknowns as the market priced them": "Iteration 75 (screen): -0.0011, unresolved; maiden, novice and bumper races -0.0048. Iteration 80 (served recipe, Huber): -0.0032 beside the 958h, those races -0.0067. Iteration 81 (served recipe, squared error): -0.0018 (-0.0028 to -0.0008) beside the 958, concordance resolved better. In the 968 (train-bfsp run 41: verify PASS, parity clean, every feature identical on the 06:00 card) and the 968s, the recommendation (run 44: the 968's features at learning rate 0.02, 10,000 rounds; -0.0060 against the 958, verify PASS, dry run clean on 27 Sep's card).",
     "Custom metrics": "The 19 proprietary metrics and their ranks (the original model). Within-race ranks carry about "
                       "40% of gain; rPMW3 alone about 14%.",
     "Card fields": "Today's card as fetched at 06:00 (card fill: model/card_enrich.py, parity checked).",
