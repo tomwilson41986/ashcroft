@@ -140,11 +140,27 @@ DROP_IN = [
      "debutants and young runners, the damsire's grandchildren on debut and the dam's other foals", "built"),
     ("career_before", "Whole careers", "Each horse's runs before 2021, which the matrix does not hold, added to "
      "its runs since: whole-career record, the last three runs across the cut, the peak rating by sphere", "built"),
+    ("kalman", "Kalman rating", "Ability as a drifting state read from the performance figures, with its "
+     "uncertainty, against today's mark and field", "built"),
+    ("handicap_angles", "Handicap angles", "Weight against the mark, well in under a penalty, the mark against "
+     "its winning marks", "built"),
+    ("travel", "Travel", "How far the yard has sent the horse against how far it usually sends them, raids "
+     "across the Irish Sea, the yard's use of the course", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
     ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
 ]
 
 BLOCK_EVIDENCE = {
+    "Kalman rating": "Built 27 Sep from model/state_space.py, strictly from earlier days. Screened against the "
+                     "pair's errors (research/queries/travel_residuals.py): -3.89 x 10^-4 jointly (-6.12 to "
+                     "-1.64), the rating's uncertainty and its gap to today's mark the strongest cells. "
+                     "Iteration 96 fits it on the 968s5xh's recipe.",
+    "Handicap angles": "Built 27 Sep from model/handicap_features.py, last runs on earlier days only. Screened: "
+                       "-2.31 x 10^-4 jointly (-3.98 to -0.51). Iteration 96 fits it with the Kalman rating.",
+    "Travel": "Built 27 Sep with coordinates for the 86 British and Irish courses. Screened: -1.45 x 10^-4 "
+              "jointly (-3.36 to +0.52), unresolved; maidens, novices and bumpers -4.08 and Irish courses "
+              "-5.28, both resolved; the yard's share of runners at the course -1.19 alone. Iteration 96 "
+              "fits it alone and with the other two.",
     "Future form": "Built 27 Sep at the owner's ask (the last 1, 3 and 5 races back, each rival's next 1, 2, 3 and 5 runs forward). "
                    "Parity clean at 06:00 (research query run 36301993859). Cell by cell against the best fit's miss: -0.0013 jointly, "
                    "most in the rivals' later finishing positions from the last five races; deeper windows add nothing. Iteration 90: "
@@ -845,8 +861,8 @@ NOT_BUILT = [
     ("J4", "Campaign stage", "Form", "Run number within the current campaign", "Available",
      "Written in model/primitives.py, never called; fr_runs_since_break now covers most of it", "Low"),
     ("K1", "Major-race experience", "Class", "Runs and form in Group / Listed / major races", "Available",
-     "Screened 27 Sep against the best model's errors (mj_: black-type runs, finishing position and win rate "
-     "before today; research/queries/travel_residuals.py)", "Medium"),
+     "Screened 27 Sep against the best model's errors (black-type runs, finishing position and win "
+     "rate before today: +0.53 x 10^-4, nothing; research/queries/travel_residuals.py)", "Low"),
     ("K2", "Class ladder vs career median", "Class", "Today's class against the horse's career median class",
      "Available", "Partial: against a three-run mean", "Low"),
     ("L2", "Class x speed", "Speed", "Speed figures scaled by the class they were run in", "Available",
@@ -861,20 +877,15 @@ NOT_BUILT = [
      "Perf figures, Kalman ratings, pedigree suite, connections, comments, handicap angles, A-E by entity",
      "Available", "Since re-tested on the price: comments (iterations 45, 52), the pedigree suite (dam line, sire "
      "aptitudes, pedigree market: 49, 52, 84), connections (connection windows, in the 968; grains 69); the "
-     "performance figure is read by the form windows. Screened 27 Sep against the best model's errors: a Kalman "
-     "rating on the performance figure, handicap angles, the A-E cells no block reads (trainer at the course, "
-     "course/trip/draw, trainer with jockey, sire) (research/queries/travel_residuals.py)", "Medium"),
+     "performance figure is read by the form windows. Screened 27 Sep against the best model's errors "
+     "(research/queries/travel_residuals.py): the Kalman rating (-3.89 x 10^-4) and handicap angles (-2.31) "
+     "resolved and are built as drop-in blocks (iteration 96); the A-E cells no block reads (trainer at the "
+     "course, course/trip/draw, trainer with jockey, sire) nothing (-0.30)", "Low"),
     ("N6", "Betfair price-history windows", "Market", "Past runs' morning-to-BSP drift and volume, windowed",
      "Partial (Betfair files from Jan 2026)", "Needs more history before it can train", "Low"),
     ("N7", "Race shape x horse style fit, learned per horse", "Pace",
      "How this horse has run in each pace scenario (from shape form's per-run readings)", "Available",
      "Builds on shape form", "Medium"),
-    ("T1", "Travel: how far the yard sends a horse", "Intent",
-     "Km from today's course to the yard's base (the centre of its earlier runners' courses) against its usual "
-     "trip; a raid across the Irish Sea; the yard's share of runners at the course; the horse's trip from its last "
-     "course", "Available (course locations written for the 86 British and Irish courses)",
-     "Screened 27 Sep against the best model's errors (research/queries/travel_residuals.py); a drop-in block and "
-     "a research-loop arm if it reads", "High"),
     ("O1", "Owner", "Connections", "The owner's runners, market and record (debutants above all)",
      "Not available", "race_results has no owner column; the Timeform feed has one, but its same-day fields are "
      "banned (leak) and it covers too little history", "Blocked"),
