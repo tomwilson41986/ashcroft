@@ -1,6 +1,6 @@
 # Which model serves next: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 17:00 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 19:55 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -18,7 +18,15 @@ Fallbacks, each verified and dry-run clean: the 968s5 (run 47, 0.4029), the 968s
 
 **Deploy it with the card pedigree fix** (found 26 Sep afternoon; see "The 06:00 card's missing pedigree" below). The 06:00 card gave debutants no sire, damsire or sex, so every model so far priced them a mean 0.26 in log terms (about 30%) away from the price its training features give. The fix reads the pedigree the card does carry, and it applies to whichever model serves.
 
-**The next step: the 968s5xh with a within-race partner** (iteration 92). The extra-trees fit on the within-race demeaned log price prices the window worse alone (0.4027) but errs differently from every logit fit: averaged with the 968s5xh it reaches 0.3982, −0.0019 (−0.0025 to −0.0014) on the 968s5xh alone, −0.0013 (−0.0019 to −0.0006) on the pair at leaves of 500 and −0.0047 on the 968s5; with the Huber fit at leaves of 500 as a third member 0.3974. The within-race target is adopted for serving as an average's member (`SERVABLE_TARGETS`, commit 49d236f; its price is exp of the output, renormalised per race, as for log BSP). The partner is training for serving (train-bfsp run 51, 11,500 rounds); iteration 94 scores the pair in one run, with its early-price rule, and tries the partner under the Huber loss and with an L2 penalty. The pair's verify and dry run follow.
+**The next step: the 968s5xh with the within-race partner** (iterations 92 and 94), trained, verified and dry-run as a pair. The within-race extra-trees fit (train-bfsp run 51, `bfsp-model-51`: the 968's features, the within-race demeaned log price as the target, 11,500 rounds) prices the window worse alone (0.4027) but errs differently from every logit fit; served beside the 968s5xh the two price it at **0.3981**, the best measured model:
+- against the 968s5xh alone −0.0019 (−0.0025 to −0.0014), against the pair at leaves of 500 −0.0013 (−0.0020 to −0.0006), against the 968s5 −0.0047 (−0.0056 to −0.0039);
+- against the 958 −0.0129 (−0.0140 to −0.0118) and against the 615 −0.0377 (−0.0395 to −0.0360), with Brier skill and concordance resolved better against both;
+- scored in one run (iteration 94): the early-price rule +10.77%, the top pick traded out +1.72%, and the model's weight beside the morning price 0.462, the highest yet;
+- the partner's verify (`reports/model_verify_968s5xd.md`): PASS, 968 features, books of 1, log prices correlating 0.9913 with the 615's; 42.4 MB with xz, decompressing byte for byte. The within-race target is adopted for serving as an average's member (`SERVABLE_TARGETS`, commit 49d236f);
+- staged as a pair (the 968s5xh at `data/models`, the partner at `data/models/members/dml`, a manifest; 86.5 MB with xz), the 06:00 path loads it as one in 12 s;
+- its dry run on 27 Sep's card (predict-now run 26): both members loaded, 217 runners in 23 races priced, books of 1, 17 minutes, the engine's usual warnings only; against the 968s5xh alone correlation 0.9985 and the same top pick in 22 of 23 races.
+
+The Huber within-race partner prices the pair the same (0.3981; the rule +10.96%, the top pick traded out +1.55%), so it is not trained. A third member, the Huber fit at leaves of 500 (run 49, verified), takes the pair to 0.3974 offline (about 125 MB with xz); unequal weights for the pair gain 0.0002. Iteration 95 tries the within-race partner at leaves of 1,000 and without extra trees.
 
 Behind it, the pair at leaves of 500 (iteration 89: the extra-trees and Huber fits at leaves of 500, train-bfsp runs 48 and 49) prices the window at 0.3995, within 0.0006 of the 968s5xh alone, and is trained, verified and dry-run as a pair (predict-now run 23; 78.7 MB with xz). The pair at leaves of 200 (runs 45 and 46) stands behind that.
 
@@ -234,6 +242,7 @@ It changes what the 06:00 job serves for debutants, for any model, so it goes ou
 
 1. Commit the chosen artefact to `data/models` on the branch, with its verify report.
    - For the 968s5xh: train-bfsp run 50, artifact `bfsp-model-50`, as `bfsp_model.lgb.xz` (44.2 MB), with its meta file, deleting the 615's `bfsp_model.lgb` in the same commit. A test refuses the two side by side, since the plain file would be read.
+   - For the pair of the 968s5xh and the within-race partner: run 50's booster as `data/models/bfsp_model.lgb.xz` with its meta file, run 51's as `data/models/members/dml/bfsp_model.lgb.xz` with its meta file, and `data/models/bfsp_ensemble.json` naming the two members (86.5 MB with xz; staged and dry-run as a pair, predict-now run 26), deleting the 615's `bfsp_model.lgb` in the same commit.
    - For the 968s5: train-bfsp run 47, artifact `bfsp-model-47`, as `bfsp_model.lgb.xz` (38.2 MB), the same way.
    - For the 968s: train-bfsp run 44, artifact `bfsp-model-44`, as `bfsp_model.lgb.xz` (38.6 MB), the same way.
    - For the 958: train-bfsp run 39, artifact `bfsp-model-39`.
