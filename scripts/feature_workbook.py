@@ -132,6 +132,8 @@ DROP_IN = [
      "race code, both at today's course, and the pair together", "built"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
      "prices, against what they ran there", "built"),
+    ("future_form", "Future form", "How the rivals from its last race, last three and last five ran in their next "
+     "1, 2, 3 and 5 runs: wins, wins against the price, finishing positions and figures", "built"),
     ("race_relative_new", "Within-race readings (newer blocks)", "Time figure, exposure and three-run windows "
      "against this field", "built"),
     ("pedigree_market", "The pedigree as the market priced it", "How the market has priced the sire's "
