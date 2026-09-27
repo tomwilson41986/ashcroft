@@ -1,6 +1,6 @@
 # Which model serves from 27 September: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 23:55 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 02:30 UTC. Nothing changes without the owner's word; if there is no answer before 06:00 UTC on 27 Sep, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -104,7 +104,7 @@ The 944's top pick on the same runs traded out at +1.05%, and +5.31% with the ru
 
 The top pick makes money as a trade against the price, not as a bet held to the result. That holds for every model so far, because the model forecasts the price. The pre-registered forward test measures exactly the traded version, from the 06:00 run's own prices.
 
-## The next step after the 958: the 968 at a slower learning rate (iteration 85, 23:35 UTC)
+## The next step after the 958: the 968 at a slower learning rate (iterations 85 and 86)
 
 Fitted at learning rate 0.02 (to about 10,000 rounds) with leaves of at least 200 runners, one fit of the 968's features prices the development window better than anything served or proposed so far, including the 968 averaged with its Huber twin, and it needs one booster, not two:
 
@@ -113,9 +113,14 @@ Fitted at learning rate 0.02 (to about 10,000 rounds) with leaves of at least 20
 | the 968 (lr 0.03, one fit) | 0.4091 | — | +9.43% | +1.29% |
 | the 968 and its Huber twin, averaged | 0.4062 | −0.0029 | | |
 | **the 968 at lr 0.02, leaves of 200 (one fit)** | **0.4050** | **−0.0041 (−0.0048 to −0.0034)**, Brier skill resolved better | **+9.92%** | **+1.43%** |
-| the same averaged with the extra-trees 968 | 0.4034 | −0.0057 | | |
+| the same averaged with the extra-trees 968 (lr 0.03) | 0.4034 | −0.0057 | | |
+| the extra-trees 968 at the slow recipe (one fit, iteration 86) | 0.4036 | −0.0055; against the slow 968 −0.0014 (−0.0023 to −0.0005), but concordance resolved worse | | |
+| **the slow 968 and the slow extra-trees 968, averaged** | **0.4019** | **−0.0072**; against the slow 968 −0.0031 (−0.0035 to −0.0026), Brier skill and concordance level | | |
+| the same with a third fit at another seed | 0.4015 | −0.0076; against the slow 968 −0.0035 (−0.0039 to −0.0031) | | |
 
-The 968 at the slow recipe is training for serving (train-bfsp run 44, 10,000 rounds, not published), beside the extra-trees 968 (run 43). Each needs its verify and a dry run before it could serve; the slow 968 would then replace the 968 pair as the next candidate after the 958, and it raises no storage question.
+The 968 at the slow recipe is training for serving (train-bfsp run 44, 10,000 rounds, not published). It needs its verify and a dry run before it could serve; it would then replace the 968 pair as the next candidate after the 958, and it raises no storage question.
+
+Iteration 86 (02:30 UTC, 27 Sep) found its best partner. At the slow recipe, a fit at another seed moves the error by only 0.0007 (at lr 0.03, up to 0.0010), so a second seed adds little; extremely randomised split points add more. Alone, the slow extra-trees fit ranks winners over losers slightly worse (concordance −0.0015, −0.0031 to −0.00002), so it serves only beside the slow 968, where the pair prices the window at 0.4019. The slow extra-trees 968 is training for serving (train-bfsp run 45, 11,000 rounds, not published). The pair would need two boosters, the storage question below.
 
 ## An option: several fits served as one
 
