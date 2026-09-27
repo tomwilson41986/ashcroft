@@ -1,6 +1,6 @@
 # Which model serves next: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 19:55 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 20:15 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -26,7 +26,7 @@ Fallbacks, each verified and dry-run clean: the 968s5 (run 47, 0.4029), the 968s
 - staged as a pair (the 968s5xh at `data/models`, the partner at `data/models/members/dml`, a manifest; 86.5 MB with xz), the 06:00 path loads it as one in 12 s;
 - its dry run on 27 Sep's card (predict-now run 26): both members loaded, 217 runners in 23 races priced, books of 1, 17 minutes, the engine's usual warnings only; against the 968s5xh alone correlation 0.9985 and the same top pick in 22 of 23 races.
 
-The Huber within-race partner prices the pair the same (0.3981; the rule +10.96%, the top pick traded out +1.55%), so it is not trained. A third member, the Huber fit at leaves of 500 (run 49, verified), takes the pair to 0.3974 offline (about 125 MB with xz); unequal weights for the pair gain 0.0002. Iteration 95 tries the within-race partner at leaves of 1,000 and without extra trees.
+The Huber within-race partner prices the pair the same (0.3981; the rule +10.96%, the top pick traded out +1.55%), so it is not trained. **A third member is not worth serving**: the Huber fit at leaves of 500 (run 49, verified) takes the pair's price to 0.3974 offline, but its bets do not follow (research query run 36346258544, which reproduces the pair's own line exactly): the rule falls from +10.77% to +10.49% and the top pick traded out from +1.72% to +1.66%, the weight beside the morning price unchanged at 0.462; four members are level with the pair (+10.74%, +1.66%). Unequal weights for the pair gain 0.0002. Iteration 95 tries the within-race partner at leaves of 1,000 and without extra trees; iteration 96 three new blocks on the 968s5xh (below).
 
 Behind it, the pair at leaves of 500 (iteration 89: the extra-trees and Huber fits at leaves of 500, train-bfsp runs 48 and 49) prices the window at 0.3995, within 0.0006 of the 968s5xh alone, and is trained, verified and dry-run as a pair (predict-now run 23; 78.7 MB with xz). The pair at leaves of 200 (runs 45 and 46) stands behind that.
 
@@ -35,6 +35,8 @@ Serving any pair needs the owner's word on the model and on storing two boosters
 **How the 968s5xh was found** (iteration 91). The slow recipe's extra-trees fit at leaves of 500 holds at another seed (0.4015 against 0.4017; run 48 alone dry-runs clean, predict-now run 24); at leaves of 1,000 it prices 0.4006; under the Huber loss 0.4001, against xt500 −0.0016 (−0.0022 to −0.0010), Brier skill resolved better. Its folds reached the 12,000-round cap without stopping; to a 16,000 cap they stop near 13,000 rounds, worth −0.0005 (iteration 93), within the refit noise: noted for its next retrain. Averages of the logit fits reach 0.3984 to 0.3989; the within-race partner takes the pair further.
 
 **Leaves of 1,000** are no better than 500 on their own (iteration 89: −0.0007, the refit noise's size); with extra trees −0.0011 (−0.0017 to −0.0004), 0.4006, at the noise's edge (iteration 91). A slower learning rate (0.015) and other tree sizes (255 or 63 leaves) add nothing (iteration 88).
+
+**Three new blocks under test** (iteration 96, results about 23:30 UTC). A screen against the pair's own out-of-sample errors (research query run 36346258544; x 10^-4 on the mean |log error|, 90% intervals) found a Kalman rating on the performance figure worth −3.89 (−6.12 to −1.64) jointly and handicap angles −2.31 (−3.98 to −0.51); travel, how far the yard sends a horse, −1.45 overall (unresolved) but −4.08 in maidens, novices and bumpers and −5.28 at Irish courses. The A-E cells no block reads and black-type experience added nothing. The three are built as drop-in blocks strictly from earlier days (`model/blocks/kalman.py`, `handicap_angles.py`, `travel.py`) and fitted on the 968s5xh's recipe. A screen's read has overstated the refit before (future form's −13.25 became −0.0003), so nothing moves until the fits say so.
 
 **Future form** (the owner's ask of 27 Sep: `model/blocks/future_form.py`, 64 features) **is built, checked and not carried** (iteration 90):
 - its parity at 06:00 is clean: every feature identical on the card and in training (research query run 36301993859);
