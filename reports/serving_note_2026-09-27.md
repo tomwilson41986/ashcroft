@@ -1,6 +1,6 @@
 # Which model serves next: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 20:15 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 22:45 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -26,7 +26,7 @@ Fallbacks, each verified and dry-run clean: the 968s5 (run 47, 0.4029), the 968s
 - staged as a pair (the 968s5xh at `data/models`, the partner at `data/models/members/dml`, a manifest; 86.5 MB with xz), the 06:00 path loads it as one in 12 s;
 - its dry run on 27 Sep's card (predict-now run 26): both members loaded, 217 runners in 23 races priced, books of 1, 17 minutes, the engine's usual warnings only; against the 968s5xh alone correlation 0.9985 and the same top pick in 22 of 23 races.
 
-The Huber within-race partner prices the pair the same (0.3981; the rule +10.96%, the top pick traded out +1.55%), so it is not trained. **A third member is not worth serving**: the Huber fit at leaves of 500 (run 49, verified) takes the pair's price to 0.3974 offline, but its bets do not follow (research query run 36346258544, which reproduces the pair's own line exactly): the rule falls from +10.77% to +10.49% and the top pick traded out from +1.72% to +1.66%, the weight beside the morning price unchanged at 0.462; four members are level with the pair (+10.74%, +1.66%). Unequal weights for the pair gain 0.0002. Iteration 95 tries the within-race partner at leaves of 1,000 and without extra trees; iteration 96 three new blocks on the 968s5xh (below).
+The Huber within-race partner prices the pair the same (0.3981; the rule +10.96%, the top pick traded out +1.55%), so it is not trained. **A third member is not worth serving**: the Huber fit at leaves of 500 (run 49, verified) takes the pair's price to 0.3974 offline, but its bets do not follow (research query run 36346258544, which reproduces the pair's own line exactly): the rule falls from +10.77% to +10.49% and the top pick traded out from +1.72% to +1.66%, the weight beside the morning price unchanged at 0.462; four members are level with the pair (+10.74%, +1.66%). Unequal weights for the pair gain 0.0002. Other within-race partners do no better (iteration 95): at leaves of 1,000 the pair prices 0.3980, without extra trees 0.3979, under Huber 0.3982, none resolved, so the trained partner (run 51) stays. Iteration 96 fits three new blocks on the 968s5xh (below).
 
 Behind it, the pair at leaves of 500 (iteration 89: the extra-trees and Huber fits at leaves of 500, train-bfsp runs 48 and 49) prices the window at 0.3995, within 0.0006 of the 968s5xh alone, and is trained, verified and dry-run as a pair (predict-now run 23; 78.7 MB with xz). The pair at leaves of 200 (runs 45 and 46) stands behind that.
 
