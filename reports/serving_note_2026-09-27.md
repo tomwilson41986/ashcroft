@@ -1,6 +1,6 @@
 # Which model serves next: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 03:10 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 07:00 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -18,7 +18,14 @@ Fallbacks, each verified and dry-run clean: the 958 (run 39, `bfsp-model-39`), t
 
 **Deploy it with the card pedigree fix** (found 26 Sep afternoon; see "The 06:00 card's missing pedigree" below). The 06:00 card gave debutants no sire, damsire or sex, so every model so far priced them a mean 0.26 in log terms (about 30%) away from the price its training features give. The fix reads the pedigree the card does carry, and it applies to whichever model serves.
 
-**The next step: two slow fits served as one** (iteration 86, 02:45 UTC). The slow extra-trees 968 and the slow Huber 968, averaged, price the window at 0.4011: −0.0039 (−0.0046 to −0.0032) on the 968s alone. The early-price rule reads +10.34% and the model's weight beside the morning price 0.452, both the highest yet. Both are training for serving (train-bfsp runs 45 and 46). Each then needs its verify, and the pair a dry run. Serving them needs the owner's word on storing two boosters of about 40 MB each (xz).
+**The next step: two slow fits served as one** (iteration 86). The slow extra-trees 968 and the slow Huber 968, averaged, price the window at 0.4011: −0.0039 (−0.0046 to −0.0032) on the 968s alone. The early-price rule reads +10.34% and the model's weight beside the morning price 0.452, both the highest yet. Both are trained, verified and dry-run (27 Sep 07:00 UTC):
+- the slow extra-trees 968 (train-bfsp run 45, `bfsp-model-45`): verify PASS, 968 features, 11,000 rounds, log prices correlating 0.9929 with the 615's; 43.1 MB with xz;
+- the slow Huber 968 (run 46, `bfsp-model-46`): verify PASS, 11,000 rounds, 0.9930; 42.5 MB with xz;
+- the pair's dry run on 27 Sep's card (predict-now run 21): both members loaded, 244 runners in 23 races priced, books of 1, 10 minutes; against the 968s alone, correlation 0.9967 and the same top pick in 21 of 23 races.
+
+Serving the pair needs the owner's word on the model and on storing two boosters (85.6 MB with xz; a manifest in `data/models`).
+
+**Leaves of 500 runners** (iteration 87) take the single fit from 0.4050 to 0.4029 (−0.0021, −0.0028 to −0.0014), and a 968s trained that way is in training (train-bfsp run 47); if it verifies and dry-runs clean it replaces the 968s as the single-booster recommendation. A slower learning rate (0.015) and other tree sizes (255 or 63 leaves) add nothing (iteration 88).
 
 **The Huber loss alone does not change the recommendation.** On the 958's features at the served recipe it was level with squared error: −0.0003 (−0.0010 to +0.0006), unresolved (iteration 76). At the slow recipe it is −0.0017 on the 968s (iteration 86), within reach of the refit noise. Its value is as a partner (above).
 
@@ -139,7 +146,7 @@ Fitted at learning rate 0.02 (to about 10,000 rounds) with leaves of at least 20
 
 The 968 at the slow recipe (the 968s, train-bfsp run 44) has since passed verify and its dry run: it is the recommendation above, and it raises no storage question.
 
-Iteration 86 (02:30 UTC, 27 Sep) found its best partner. At the slow recipe, a fit at another seed moves the error by only 0.0007 (at lr 0.03, up to 0.0010), so a second seed adds little; extremely randomised split points add more. Alone, the slow extra-trees fit ranks winners over losers slightly worse (concordance −0.0015, −0.0031 to −0.00002), so it serves only beside the slow 968, where the pair prices the window at 0.4019. Its Huber fit is a better partner still: the slow extra-trees and slow Huber fits average to 0.4011, as good as any three, with the early-price rule at +10.34% and the model's weight beside the morning price at 0.452, both the highest yet. Both are training for serving (train-bfsp runs 45 and 46, 11,000 rounds, not published). The pair would need two boosters, the storage question below.
+Iteration 86 (02:30 UTC, 27 Sep) found its best partner. At the slow recipe, a fit at another seed moves the error by only 0.0007 (at lr 0.03, up to 0.0010), so a second seed adds little; extremely randomised split points add more. Alone, the slow extra-trees fit ranks winners over losers slightly worse (concordance −0.0015, −0.0031 to −0.00002), so it serves only beside the slow 968, where the pair prices the window at 0.4019. Its Huber fit is a better partner still: the slow extra-trees and slow Huber fits average to 0.4011, as good as any three, with the early-price rule at +10.34% and the model's weight beside the morning price at 0.452, both the highest yet. Both are trained, verified and dry-run as a pair (train-bfsp runs 45 and 46, predict-now run 21; see the recommendation above). The pair needs two boosters, the storage question below.
 
 ## An option: several fits served as one
 
