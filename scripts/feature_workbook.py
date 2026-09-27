@@ -127,7 +127,7 @@ DROP_IN = [
      "young runners", "built"),
     ("debut_market", "The yard's unknowns as the market priced them", "How the market priced the trainer's "
      "debutants, second-time-outers and lightly raced runners, the rider's debut rides, and the field's share of "
-     "debutants", "built"),
+     "debutants", "candidate"),
     ("connection_grains", "Connection grains", "The trainer's and jockey's last fortnight, the trainer in today's "
      "race code, both at today's course, and the pair together", "built"),
     ("form_uplift", "Form uplift", "What the rivals from its recent races have run since, in figures, marks and "
@@ -145,6 +145,13 @@ DROP_IN = [
 ]
 
 BLOCK_EVIDENCE = {
+    "Future form": "Built 27 Sep at the owner's ask (the last 1, 3 and 5 races back, each rival's next 1, 2, 3 and 5 runs forward). "
+                   "Parity clean at 06:00 (research query run 36301993859). Cell by cell against the best fit's miss: -0.0013 jointly, "
+                   "most in the rivals' later finishing positions from the last five races; deeper windows add nothing. Iteration 90: "
+                   "served recipe -0.0018 and -0.0006 against two refits of the 968; slow recipe with leaves of 500 -0.0003 "
+                   "(-0.0011 to +0.0004) on the 968s5, the rule +10.34% against +10.03%, the top pick traded out lower; without form "
+                   "lines concordance resolved worse. Not carried: the fitted model already holds what it knows. As a third member "
+                   "beside the pair at leaves of 500: -0.0006.",
     "The pedigree as the market priced it": "Built 26 Sep beside the debut market block: the engine reads the pedigree only by results. "
                        "Iteration 84 (the 968 + the block, two seeds each, served recipe): the averages -0.0006 (-0.0012 to "
                        "-0.0000), maiden/novice/bumper races -0.0012 unresolved; the early-price rule lower in every "
@@ -153,7 +160,7 @@ BLOCK_EVIDENCE = {
                      "of 2021's runs, 47% of 2022's and 8% of the development window's have such a record. Iteration "
                      "83 (the 958 + the block, served recipe): against four refits of the 958 -0.0008 to +0.0002; on "
                      "the 4,330 runners with a pre-2021 record +0.0010. Retired.",
-    "The yard's unknowns as the market priced them": "Iteration 75 (screen): -0.0011, unresolved; maiden, novice and bumper races -0.0048. Iteration 80 (served recipe, Huber): -0.0032 beside the 958h, those races -0.0067. Iteration 81 (served recipe, squared error): -0.0018 (-0.0028 to -0.0008) beside the 958, concordance resolved better. In the 968 (train-bfsp run 41: verify PASS, parity clean, every feature identical on the 06:00 card) and the 968s, the recommendation (run 44: the 968's features at learning rate 0.02, 10,000 rounds; -0.0060 against the 958, verify PASS, dry run clean on 27 Sep's card).",
+    "The yard's unknowns as the market priced them": "Iteration 75 (screen): -0.0011, unresolved; maiden, novice and bumper races -0.0048. Iteration 80 (served recipe, Huber): -0.0032 beside the 958h, those races -0.0067. Iteration 81 (served recipe, squared error): -0.0018 (-0.0028 to -0.0008) beside the 958, concordance resolved better. In the 968 (train-bfsp run 41: verify PASS, parity clean, every feature identical on the 06:00 card), the 968s (run 44: the 968's features at learning rate 0.02, 10,000 rounds) and the 968s5, the recommendation (run 47: the same with leaves of 500, 10,500 rounds; -0.0082 against the 958, verify PASS, dry run clean on 27 Sep's card).",
     "Custom metrics": "The 19 proprietary metrics and their ranks (the original model). Within-race ranks carry about "
                       "40% of gain; rPMW3 alone about 14%.",
     "Card fields": "Today's card as fetched at 06:00 (card fill: model/card_enrich.py, parity checked).",

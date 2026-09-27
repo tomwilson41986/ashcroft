@@ -24,11 +24,12 @@ Serving any pair needs the owner's word on the model and on storing two boosters
 
 **Leaves of 1,000** are no better than 500 (iteration 89: −0.0007, the refit noise's size). A slower learning rate (0.015) and other tree sizes (255 or 63 leaves) add nothing (iteration 88).
 
-**Future form** (the owner's ask of 27 Sep: `model/blocks/future_form.py`, 64 features) is under test in iteration 90:
+**Future form** (the owner's ask of 27 Sep: `model/blocks/future_form.py`, 64 features) **is built, checked and not carried** (iteration 90):
 - its parity at 06:00 is clean: every feature identical on the card and in training (research query run 36301993859);
-- read cell by cell against the best single fit's miss, it explains −0.0013 jointly, most in the rivals' later finishing positions from the last five races (research query runs 36303528074 and 36303839023);
-- beside the 968 at the served recipe it is −0.0018 (−0.0026 to −0.0009) against one refit of the 968 and −0.0006 (−0.0014 to +0.0003) against another, about the refit noise at that recipe;
-- the fits at the slow recipe with leaves of 500, with and without form lines, decide (about 10:30 UTC).
+- read cell by cell against the best single fit's miss, it explains −0.0013 jointly, most in the rivals' later finishing positions from the last five races; deeper windows add nothing (research query runs 36303528074 and 36303839023);
+- at the recipe that serves (learning rate 0.02, leaves of 500) it moves the price error by −0.0003 (−0.0011 to +0.0004), no more than a refit; the early-price rule +10.34% against +10.03%, within a fit's spread; the top pick traded out lower (+1.13% against +1.55%). At the faster recipe it was −0.0018 and −0.0006 against two refits of the 968;
+- it does not stand in for form lines: without them concordance is resolved worse;
+- the fitted model already holds what it knows, through form lines, form variants and connection windows. As a third member beside the pair at leaves of 500 it is worth −0.0006 (0.3989 against 0.3995).
 
 **The Huber loss alone does not change the recommendation.** On the 958's features at the served recipe it was level with squared error: −0.0003 (−0.0010 to +0.0006), unresolved (iteration 76). At the slow recipe it is −0.0017 on the 968s (iteration 86), within reach of the refit noise. Its value is as a partner (above).
 
