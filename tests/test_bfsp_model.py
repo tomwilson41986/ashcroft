@@ -470,10 +470,11 @@ def test_a_model_the_serving_path_would_misread_is_refused():
     base = dict(feature_cols=["f1", "f2"], objective="l2", target="log_bfsp")
     assert_meta_is_servable(base)                      # the historical target
     assert_meta_is_servable({**base, "target": "logit_norm_prob"})   # the adopted one
+    assert_meta_is_servable({**base, "target": "demeaned_log"})      # adopted as an average's member
     assert_meta_is_servable({**base, "init_offset": 1.42})           # now carried, not refused
 
     with pytest.raises(ValueError, match="not in SERVABLE_TARGETS"):
-        assert_meta_is_servable({**base, "target": "demeaned_log"})
+        assert_meta_is_servable({**base, "target": "rank_in_race"})
 
 
 def test_the_model_carries_its_own_inversion_rule():

@@ -723,10 +723,14 @@ def model_meta(cfg: TrainConfig, feature_cols: list[str], fit: FitResult | None 
 #: caller goes through), so this list is no longer "what the default happens to
 #: be" but "what `invert_target` has a rule for and the head-to-head has
 #: measured". `logit_norm_prob` joined it when the split-half check confirmed
-#: v4_logit's win held in both halves of the window; `demeaned_log` has not been
-#: adopted, so a mismatch is still a refusal at load time rather than a wrong
-#: price at 06:00.
-SERVABLE_TARGETS = ("log_bfsp", "logit_norm_prob")
+#: v4_logit's win held in both halves of the window. `demeaned_log` joined it as
+#: a member of an average: alone it prices worse than the logit fits, but its
+#: errors differ from theirs, and the extra-trees fit on it averaged with the
+#: extra-trees Huber fit prices the window at 0.3982 against 0.4001 for the
+#: better of the two (iteration 92). Its rule is the log target's, exp; the
+#: race-level term it drops is cancelled by the normalisation. Any other target
+#: is still a refusal at load time rather than a wrong price at 06:00.
+SERVABLE_TARGETS = ("log_bfsp", "logit_norm_prob", "demeaned_log")
 
 
 def attach_serving_rule(booster, meta: dict):
