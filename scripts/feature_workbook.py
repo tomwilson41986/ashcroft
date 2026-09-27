@@ -145,22 +145,25 @@ DROP_IN = [
     ("handicap_angles", "Handicap angles", "Weight against the mark, well in under a penalty, the mark against "
      "its winning marks", "built"),
     ("travel", "Travel", "How far the yard has sent the horse against how far it usually sends them, raids "
-     "across the Irish Sea, the yard's use of the course", "built"),
+     "across the Irish Sea, the yard's use of the course", "candidate"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
     ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
 ]
 
 BLOCK_EVIDENCE = {
-    "Kalman rating": "Built 27 Sep from model/state_space.py, strictly from earlier days. Screened against the "
-                     "pair's errors (research/queries/travel_residuals.py): -3.89 x 10^-4 jointly (-6.12 to "
-                     "-1.64), the rating's uncertainty and its gap to today's mark the strongest cells. "
-                     "Iteration 96 fits it on the 968s5xh's recipe.",
-    "Handicap angles": "Built 27 Sep from model/handicap_features.py, last runs on earlier days only. Screened: "
-                       "-2.31 x 10^-4 jointly (-3.98 to -0.51). Iteration 96 fits it with the Kalman rating.",
-    "Travel": "Built 27 Sep with coordinates for the 86 British and Irish courses. Screened: -1.45 x 10^-4 "
-              "jointly (-3.36 to +0.52), unresolved; maidens, novices and bumpers -4.08 and Irish courses "
-              "-5.28, both resolved; the yard's share of runners at the course -1.19 alone. Iteration 96 "
-              "fits it alone and with the other two.",
+    "Kalman rating": "Built 27 Sep from model/state_space.py, strictly from earlier days; parity clean at 06:00. "
+                     "Screened against the pair's errors: -3.89 x 10^-4 jointly, but iteration 96 fitted it with the "
+                     "handicap angles on the 968s5xh at -0.0002 (Brier skill resolved worse); beside travel about "
+                     "-0.0005, within the refit noise.",
+    "Handicap angles": "Built 27 Sep from model/handicap_features.py, last runs on earlier days only; parity "
+                       "clean. Screened -2.31 x 10^-4; fitted with the Kalman rating on the 968s5xh: -0.0002 "
+                       "(iteration 96), nothing alone.",
+    "Travel": "Built 27 Sep with coordinates for the 86 British and Irish courses; parity clean at 06:00. The "
+              "screen read it weakly (-1.45 x 10^-4, unresolved; maidens, novices and bumpers -4.08, Irish "
+              "courses -5.28), but iteration 96 fitted it on the 968s5xh at -0.0012 (-0.0018 to -0.0005), "
+              "maidens, novices and bumpers -0.0025; with the Kalman rating and handicap angles -0.0017 "
+              "(-0.0024 to -0.0011), Brier skill and concordance level, the rule unchanged; beside the "
+              "within-race partner the pair 0.3970 against 0.3981. Iteration 97 fits the partner with it.",
     "Future form": "Built 27 Sep at the owner's ask (the last 1, 3 and 5 races back, each rival's next 1, 2, 3 and 5 runs forward). "
                    "Parity clean at 06:00 (research query run 36301993859). Cell by cell against the best fit's miss: -0.0013 jointly, "
                    "most in the rivals' later finishing positions from the last five races; deeper windows add nothing. Iteration 90: "
