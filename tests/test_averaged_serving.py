@@ -172,3 +172,44 @@ def test_each_members_log_line_names_the_loss_it_was_fitted_with(averaged, caplo
     assert len(lines) == 2
     assert "member l2:" in lines[0] and "objective=regression" in lines[0]
     assert "member huber:" in lines[1] and "objective=huber" in lines[1]
+
+
+def test_a_lone_compressed_booster_serves_as_the_plain_file_would(tmp_path):
+    """A booster past GitHub's 100 MB file limit is committed as bfsp_model.lgb.xz alone."""
+    plain, packed = tmp_path / "plain", tmp_path / "packed"
+    _member(plain, ".", ["f_a", "f_b"], "regression", seed=3)
+    _member(packed, ".", ["f_a", "f_b"], "regression", seed=3, xz=True)
+    assert not (packed / "bfsp_model.lgb").exists()
+    a, cols, vocab = pbt.load_bfsp_model(str(plain))
+    b, cols_b, vocab_b = pbt.load_bfsp_model(str(packed))
+    assert isinstance(b, lgb.Booster) and cols_b == cols and vocab_b == vocab
+    X = _frame(seed=5)[cols].astype(float)
+    np.testing.assert_array_equal(a.predict(X), b.predict(X))
+    assert b.serving_target == a.serving_target
+
+
+def test_verify_reads_a_lone_compressed_booster(tmp_path):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    import verify_model as vm
+    _member(tmp_path, ".", ["f_a", "f_b"], "regression", seed=3, xz=True)
+    model, meta = vm._load(str(tmp_path))
+    assert isinstance(model, lgb.Booster) and meta["feature_cols"] == ["f_a", "f_b"]
+    assert vm.check_servable(model, meta) == []
+
+
+def test_with_both_files_the_plain_one_is_read_and_the_stale_pair_is_named(tmp_path, caplog):
+    import logging
+    _member(tmp_path, ".", ["f_a", "f_b"], "regression", seed=3)
+    (tmp_path / "bfsp_model.lgb.xz").write_bytes(b"stale")
+    with caplog.at_level(logging.WARNING, logger=pbt.log.name):
+        assert pbt.booster_path(str(tmp_path)).endswith("bfsp_model.lgb")
+    assert any("both bfsp_model.lgb and bfsp_model.lgb.xz" in r.getMessage() for r in caplog.records)
+
+
+def test_the_repo_never_holds_a_plain_and_a_compressed_booster_side_by_side():
+    """The plain file would be read and the compressed one ignored: a deploy that adds a
+    model as .lgb.xz must delete the bfsp_model.lgb it replaces."""
+    root = Path(__file__).resolve().parent.parent / "data" / "models"
+    both = [str(d.relative_to(root.parent.parent)) for d in [root, *root.rglob("*")]
+            if d.is_dir() and (d / "bfsp_model.lgb").exists() and (d / "bfsp_model.lgb.xz").exists()]
+    assert both == [], f"stale booster beside its compressed replacement in {both}"

@@ -61,10 +61,10 @@ def _load(model_dir: str):
                 "objective": " + ".join(str(m.get("objective")) for m in metas),
                 "members": [m.get("name") or m.get("dir") for m in spec["members"]]}
         return model, meta
-    import lightgbm as lgb
     from model.bfsp_model import attach_serving_rule
+    from predict_bfsp_today import _read_booster, booster_path
     meta = json.loads(Path(model_dir, "bfsp_model_meta.json").read_text())
-    booster = lgb.Booster(model_file=str(Path(model_dir, "bfsp_model.lgb")))
+    booster = _read_booster(booster_path(model_dir))            # plain, or committed as .lgb.xz
     attach_serving_rule(booster, meta)
     return booster, meta
 

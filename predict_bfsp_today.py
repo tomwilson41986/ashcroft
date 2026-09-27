@@ -125,6 +125,19 @@ class AveragedBooster:
         return sum(b.num_trees() for _, b, _ in self.members)
 
 
+def booster_path(model_dir: str) -> str:
+    """The booster file a model directory holds: `bfsp_model.lgb`, or `bfsp_model.lgb.xz` where
+    only the compressed file is there. A booster past GitHub's 100 MB file limit (10,000 rounds
+    of 127 leaves is 123 MB) can only be committed compressed. With both present the plain file
+    is read and the other is stale: `tests/test_averaged_serving.py` refuses that in the repo."""
+    plain = os.path.join(model_dir, "bfsp_model.lgb")
+    if os.path.exists(plain):
+        if os.path.exists(plain + ".xz"):
+            log.warning("%s holds both bfsp_model.lgb and bfsp_model.lgb.xz; reading the plain file", model_dir)
+        return plain
+    return plain + ".xz" if os.path.exists(plain + ".xz") else plain
+
+
 def _read_booster(path: str) -> lgb.Booster:
     """A booster from its file, plain or xz-compressed (`bfsp_model.lgb.xz`)."""
     if path.endswith(".xz"):
@@ -145,8 +158,7 @@ def _objective(booster: lgb.Booster, meta: dict) -> str:
 def _load_member(member_dir: str) -> tuple[lgb.Booster, list[str], dict, dict]:
     """One member of an averaged model: its booster, features, vocabulary and metadata,
     held to the same checks as a single served model."""
-    plain = os.path.join(member_dir, "bfsp_model.lgb")
-    path = plain if os.path.exists(plain) else plain + ".xz"
+    path = booster_path(member_dir)
     meta_path = os.path.join(member_dir, "bfsp_model_meta.json")
     if not os.path.exists(path) or not os.path.exists(meta_path):
         raise FileNotFoundError(f"{member_dir}: an averaged model's member needs bfsp_model.lgb (or .lgb.xz) "
@@ -204,7 +216,7 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
     manifest = os.path.join(model_dir, ENSEMBLE_MANIFEST)
     if os.path.exists(manifest):
         return load_averaged_model(model_dir, manifest)
-    model_path = os.path.join(model_dir, "bfsp_model.lgb")
+    model_path = booster_path(model_dir)
     meta_path = os.path.join(model_dir, "bfsp_model_meta.json")
 
     if not os.path.exists(model_path):
@@ -212,7 +224,7 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
         log.error("Run 'python train_bfsp.py' first to train the model.")
         sys.exit(1)
 
-    model = lgb.Booster(model_file=model_path)
+    model = _read_booster(model_path)
 
     feature_cols, vocab, meta = [], {}, {}
     if os.path.exists(meta_path):
