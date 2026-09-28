@@ -45,9 +45,13 @@ What it says:
 - **Race-level Kelly** is the exact form of "back a slight underlay when it helps the race": it does so only
   when the underlay raises the bank's growth. It is available as a strategy, but it adds nothing here once
   positions are traded out.
-- **Scale is set by liquidity.** The median morning volume on a runner is £495; a tenth of it is under £50
-  for half the runners. Stakes of a few pounds to a few tens of pounds per bet are what the morning market
-  takes without moving.
+- **Scale is set by liquidity** (research query `trading_capacity.py`, run 36412850300). On the runners the
+  rule backs, a median of £504 trades all morning (10% of them under £149), and the long shots, where the
+  edge per £ is largest, are the thinnest (£208 at 30+). The day's money comes later (median £11,963
+  pre-play, the morning 4.6% of it), but by then the edge has gone: backed at the pre-play average price
+  the same runners lose 11-13% per £. Realistic scale is a tenth of what trades on the runner all morning,
+  capped at £25-£50 a bet: about £140-£210 profit a day on £1,200-£1,900 turnover (+11%); £100 caps about
+  £310. Fills of hundreds of pounds a runner are not there.
 
 ## Other options tested (28 Sep): any price above the forecast, all the liquidity, smaller stakes on long shots
 
