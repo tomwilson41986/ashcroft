@@ -1,17 +1,26 @@
-"""Market history and seasonality against what the best model still gets wrong, and a tree screen
-calibrated on the three blocks iteration 96 fitted.
+"""Market history and seasonality against what the best model still gets wrong, screened beyond the
+forecast's own correction.
 
-The quadratic screen (travel_residuals, misc_residuals) misjudged iteration 96 both ways: it read
-the Kalman rating (-3.89 x 10^-4) and the handicap angles (-2.31) resolved, and at the fit they gave
-nothing; it read travel unresolved (-1.45), and travel carried (-0.0012 on the 968s5xh), because a
-quadratic in km cannot hold travel's tail (the long trips) and a tree splits it. So every group is
-screened twice here: the quadratic as before (ridge 100), and a small, slow gradient-boosted tree
-(Huber loss, fitted out of month) on the same within-race error, each against placebos of noise columns put
-through the same screen.
+The screen of travel_residuals and misc_residuals fitted each reading to the out-of-sample error on its
+own. Its first run here (research query run 36359800214) showed what that measures: the Kalman rating,
+the handicap angles and travel read the same against the errors of a model that already holds them
+(iteration 96's 968s5xh with all three, 0.3984: Kalman -4.58, handicap -2.48, travel -2.62 in the tree)
+as against one that does not (iteration 94's pair, 0.3981: -5.07, -2.44, -3.27). A correction on the
+forecast alone takes -5.11 the same way, all of it in the long shots (ranks 8+ -38.35) at the top of the
+market's cost (rank 1 +53.08): the within-race stretch (ledger within-race-stretch, not carried). Any
+reading that tracks ability stands in for part of that stretch, so the old screen could not tell new
+information from the compression, which is why it misjudged iteration 96 (Kalman and handicap angles
+resolved and gave nothing at the fit; travel unresolved and carried).
 
-Calibration: on the errors of iteration 94's pair (0.3981, none of the three blocks) travel should
-read and the Kalman rating and handicap angles should not. On the errors of iteration 96's 968s5xh
-with all three (0.3984) the three are controls: in that model already, they should read nothing.
+So every group is now read BEYOND the forecast: the correction fitted on the forecast's own readings
+(its log price, that against the race, its rank, the field size) and on the group together, against the
+correction on the forecast alone, out of month, the difference in mean |log error| x 10^4 with a 90%
+race-bootstrap interval, by the forecast's rank (the bets are at the top of the market) and for maidens,
+novices and bumpers and Irish races (where travel carried). Twice: the quadratic as before (ridge 100) and
+a small, slow gradient-boosted tree (Huber loss), with placebos of noise columns through both.
+
+Calibration: against iteration 94's pair (no blocks) travel should read and the Kalman rating and handicap
+angles should not; against iteration 96's 968s5xh with all three, none of the three should.
 
 The new readings, each from earlier days (or earlier years) only:
 
@@ -284,6 +293,33 @@ def fmt(d, lo, hi):
     return f"{1e4 * d:+7.2f} ({1e4 * lo:+7.2f} to {1e4 * hi:+7.2f}){' *' if hi < 0 else '  '}"
 
 
+def forecast_design(m, race):
+    """The forecast's own readings: its log price, that against the race's mean, its rank as a share of the
+    field, and the field size. A correction on these alone is the within-race stretch (ledger
+    within-race-stretch): all long shots, at the top of the market's cost."""
+    lp = np.log(m["predicted_bfsp"].to_numpy(float))
+    lp_c = lp - pd.Series(lp).groupby(race).transform("mean").to_numpy()
+    rank = pd.Series(lp).groupby(race).rank(method="first").to_numpy()
+    nr = pd.Series(np.ones(len(m))).groupby(race).transform("sum").to_numpy()
+    return np.column_stack([lp, lp_c, rank / nr, nr]), rank
+
+
+def incr_ci(e0, adj_base, adj_full, race_codes, rng, rows=None):
+    """Mean of |e0 - full| - |e0 - base| with a 90% race-bootstrap interval: what the readings add beyond the
+    correction on the forecast alone (negative = they explain some of the miss the forecast does not)."""
+    d = np.abs(e0 - adj_full) - np.abs(e0 - adj_base)
+    rc = race_codes
+    if rows is not None:
+        d, rc = d[rows], pd.factorize(race_codes[rows])[0]
+    sums = np.bincount(rc, weights=d)
+    counts = np.bincount(rc).astype(float)
+    boots = np.empty(T.N_BOOT)
+    for i in range(T.N_BOOT):
+        pick = rng.integers(0, len(sums), len(sums))
+        boots[i] = sums[pick].sum() / counts[pick].sum()
+    return d.mean(), np.quantile(boots, 0.05), np.quantile(boots, 0.95)
+
+
 def screen(label, oos, frame, groups, singles):
     print(f"\n===== {label} =====")
     keep = [c for c in T.KEY + ["predicted_bfsp", "bfsp", "race_type", "race_class"] if c in oos.columns]
@@ -298,13 +334,24 @@ def screen(label, oos, frame, groups, singles):
     print(f"{len(m):,} of {len(left):,} forecasts joined; mean |log error| {np.abs(e0).mean():.4f}")
     rt = m["race_type"].fillna("").astype(str).str.lower() if "race_type" in m.columns else pd.Series([""] * len(m))
     irish = (m["race_class"].astype(str) == "Irish").to_numpy() if "race_class" in m.columns else np.zeros(len(m), bool)
-    segs = {"mdn/nov/bumper": rt.str.contains("maiden|novice|bumper|nh flat").to_numpy(),
-            "handicaps": rt.str.contains("handicap").to_numpy(), "Irish": irish, "British": ~irish}
+    C, rank = forecast_design(m, race)
+    Cq = np.column_stack([T.design(C[:, j]) for j in range(C.shape[1])])
+    segs = {"rank 1": rank == 1, "ranks 2-3": (rank >= 2) & (rank <= 3), "ranks 4-7": (rank >= 4) & (rank <= 7),
+            "ranks 8+": rank >= 8, "mdn/nov/bmp": rt.str.contains("maiden|novice|bumper|nh flat").to_numpy(),
+            "Irish": irish}
     rng = np.random.default_rng(0)
+    zero = np.zeros(len(m))
+    base_q = T.oof_adjustment(Cq, e_dm, race, month, ridge=100.0)
+    base_t = tree_adjustment(C, e_dm, race, month)
+    print("the correction on the forecast alone (the stretch; x 10^4): quadratic "
+          f"{fmt(*incr_ci(e0, zero, base_q, race, rng))}, tree {fmt(*incr_ci(e0, zero, base_t, race, rng))}")
+    print("   tree by segment: " + ", ".join(f"{s} {1e4 * incr_ci(e0, zero, base_t, race, rng, rows=r)[0]:+.2f}"
+                                          for s, r in segs.items()))
     noise = np.random.default_rng(1).normal(size=(len(m), 12))
     rows_out = []
-    print(f"\n{'group':28s} {'k':>3s}   {'quadratic, ridge 100 (x 10^4)':31s}   {'tree, Huber out of month (x 10^4)':31s}   "
-          + "   ".join(f"tree {s}" for s in segs))
+    print("\nBeyond the forecast: each group added to the correction on the forecast (x 10^4; * = interval below zero)")
+    print(f"{'group':28s} {'k':>3s}   {'uncorrected tree':16s}   {'quadratic beyond':27s}   {'tree beyond':27s}   "
+          + "  ".join(f"{s:>11s}" for s in segs))
     all_groups = list(groups.items()) + [("placebo, 6 noise columns", None), ("placebo, 12 noise columns", None)]
     for gl, cols in all_groups:
         if cols is None:
@@ -317,35 +364,37 @@ def screen(label, oos, frame, groups, singles):
             X = np.column_stack([pd.to_numeric(m[c], errors="coerce").to_numpy(float) for c in cols])
             k = len(cols)
         t = time.time()
+        raw_t = incr_ci(e0, zero, tree_adjustment(X, e_dm, race, month), race, rng)
         Xq = np.column_stack([T.design(X[:, j]) for j in range(X.shape[1])])
-        adj_q = T.oof_adjustment(Xq, e_dm, race, month, ridge=100.0)
-        q = T.delta_with_ci(e0, adj_q, race, rng)
-        adj_t = tree_adjustment(X, e_dm, race, month)
-        tt = T.delta_with_ci(e0, adj_t, race, rng)
+        q = incr_ci(e0, base_q, T.oof_adjustment(np.column_stack([Cq, Xq]), e_dm, race, month, ridge=100.0), race, rng)
+        full_t = tree_adjustment(np.column_stack([C, X]), e_dm, race, month)
+        tt = incr_ci(e0, base_t, full_t, race, rng)
         seg_txt = []
         for s, rows in segs.items():
             if rows.sum() > 500:
-                d, lo, hi = T.delta_with_ci(e0, adj_t, race, rng, rows=rows)
-                seg_txt.append(f"{1e4 * d:+7.2f}{'*' if hi < 0 else ' '}")
+                d, lo, hi = incr_ci(e0, base_t, full_t, race, rng, rows=rows)
+                seg_txt.append(f"{1e4 * d:+10.2f}{'*' if hi < 0 else ' '}")
             else:
-                seg_txt.append("      - ")
-        print(f"{gl:28s} {k:3d}   {fmt(*q)}   {fmt(*tt)}   " + "   ".join(f"{x:>{len('tree ' + s)}s}"
-                                                                          for x, s in zip(seg_txt, segs))
-              + f"   [{time.time() - t:.0f}s]", flush=True)
-        rows_out.append(dict(base=label, group=gl, k=k, quad=q[0], quad_lo=q[1], quad_hi=q[2], tree=tt[0],
-                             tree_lo=tt[1], tree_hi=tt[2]))
+                seg_txt.append(f"{'-':>11s}")
+        print(f"{gl:28s} {k:3d}   {1e4 * raw_t[0]:+7.2f}{'*' if raw_t[2] < 0 else ' '}          {fmt(*q)}   {fmt(*tt)}   "
+              + "  ".join(seg_txt) + f"   [{time.time() - t:.0f}s]", flush=True)
+        rows_out.append(dict(base=label, group=gl, k=k, raw_tree=raw_t[0], quad=q[0], quad_lo=q[1], quad_hi=q[2],
+                             tree=tt[0], tree_lo=tt[1], tree_hi=tt[2]))
     if singles:
-        print("\nEach new reading alone, quadratic and tree (x 10^4; * = the interval below zero)")
+        print("\nEach new reading alone, beyond the forecast (x 10^4; * = the interval below zero)")
         for c in singles:
             if c not in m.columns:
                 continue
             x = pd.to_numeric(m[c], errors="coerce").to_numpy(float)
             if np.isfinite(x).sum() < 100 or np.nanstd(x) == 0:
                 continue
-            q = T.delta_with_ci(e0, T.oof_adjustment(T.design(x), e_dm, race, month), race, rng)
-            tt = T.delta_with_ci(e0, tree_adjustment(x[:, None], e_dm, race, month), race, rng)
-            print(f"  {c:18s} read {np.isfinite(x).mean():5.3f} mean {np.nanmean(x):+8.3f}   quad {fmt(*q)}"
-                  f"   tree {fmt(*tt)}", flush=True)
+            q = incr_ci(e0, base_q, T.oof_adjustment(np.column_stack([Cq, T.design(x)]), e_dm, race, month,
+                                                     ridge=100.0), race, rng)
+            full_t = tree_adjustment(np.column_stack([C, x]), e_dm, race, month)
+            tt = incr_ci(e0, base_t, full_t, race, rng)
+            top = incr_ci(e0, base_t, full_t, race, rng, rows=rank <= 3)
+            print(f"  {c:18s} read {np.isfinite(x).mean():5.3f}   quad {fmt(*q)}   tree {fmt(*tt)}   "
+                  f"ranks 1-3 {1e4 * top[0]:+6.2f}{'*' if top[2] < 0 else ' '}", flush=True)
     return rows_out
 
 
