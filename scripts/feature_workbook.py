@@ -141,9 +141,9 @@ DROP_IN = [
     ("career_before", "Whole careers", "Each horse's runs before 2021, which the matrix does not hold, added to "
      "its runs since: whole-career record, the last three runs across the cut, the peak rating by sphere", "built"),
     ("kalman", "Kalman rating", "Ability as a drifting state read from the performance figures, with its "
-     "uncertainty, against today's mark and field", "built"),
+     "uncertainty, against today's mark and field", "candidate"),
     ("handicap_angles", "Handicap angles", "Weight against the mark, well in under a penalty, the mark against "
-     "its winning marks", "built"),
+     "its winning marks", "candidate"),
     ("travel", "Travel", "How far the yard has sent the horse against how far it usually sends them, raids "
      "across the Irish Sea, the yard's use of the course", "candidate"),
     ("market_history", "Market history", "How the bookmakers (industry SP) and the place market priced the horse, its yard and its rider before, each against its cell's usual", "candidate"),
@@ -154,18 +154,18 @@ DROP_IN = [
 
 BLOCK_EVIDENCE = {
     "Kalman rating": "Built 27 Sep from model/state_space.py, strictly from earlier days; parity clean at 06:00. "
-                     "Screened against the pair's errors: -3.89 x 10^-4 jointly, but iteration 96 fitted it with the "
-                     "handicap angles on the 968s5xh at -0.0002 (Brier skill resolved worse); beside travel about "
-                     "-0.0005, within the refit noise.",
+                     "Alone with the handicap angles on the 968s5xh -0.0002 (iteration 96); with travel too -0.0017 "
+                     "(seed 42) and -0.0011 (seed 7, iteration 97); the within-race partner with all three -0.0014 on "
+                     "the trained partner. In the recommended pair (0.3966 against 0.3981).",
     "Handicap angles": "Built 27 Sep from model/handicap_features.py, last runs on earlier days only; parity "
-                       "clean. Screened -2.31 x 10^-4; fitted with the Kalman rating on the 968s5xh: -0.0002 "
-                       "(iteration 96), nothing alone.",
+                       "clean. Nothing alone; with the Kalman rating and travel in the combined 968s5xh and its "
+                       "partner (iterations 96-97), the recommended pair (0.3966 against 0.3981).",
     "Travel": "Built 27 Sep with coordinates for the 86 British and Irish courses; parity clean at 06:00. The "
-              "screen read it weakly (-1.45 x 10^-4, unresolved; maidens, novices and bumpers -4.08, Irish "
-              "courses -5.28), but iteration 96 fitted it on the 968s5xh at -0.0012 (-0.0018 to -0.0005), "
-              "maidens, novices and bumpers -0.0025; with the Kalman rating and handicap angles -0.0017 "
-              "(-0.0024 to -0.0011), Brier skill and concordance level, the rule unchanged; beside the "
-              "within-race partner the pair 0.3970 against 0.3981. Iteration 97 fits the partner with it.",
+              "screen read it weakly, the fits carried it: on the 968s5xh -0.0012 (-0.0018 to -0.0005), with the "
+              "Kalman rating and handicap angles -0.0017 (seed 42) and -0.0011 (seed 7); the within-race partner "
+              "with travel -0.0010, with all three -0.0014 (iteration 97). The pair of the two with all three prices "
+              "0.3966 against 0.3981, concordance resolved better: the recommendation, in training for serving "
+              "(train-bfsp runs 52 and 53).",
     "Market history": "Built 28 Sep: the industry SP (odds, net) against the Betfair SP, and the Betfair place SP against the win SP, in past runs, each against its price band, field size and code or places paid on earlier days; the horse's, its yard's and its rider's. A residual screen could not say whether it adds (research query run 36360636883 reads features the model already holds as strongly as new ones); iteration 98 fits it on the 968s5xh with the three blocks.",
     "Seasonality": "Built 28 Sep: the horse's finishing position and its yard's A-E against the Betfair SP in today's month and the month either side, 300 days back or more. Iteration 98 fits it with market history.",
     "Future form": "Built 27 Sep at the owner's ask (the last 1, 3 and 5 races back, each rival's next 1, 2, 3 and 5 runs forward). "
