@@ -1,0 +1,46 @@
+{
+  "model_type": "bfsp_regression",
+  "target": "race_xent",
+  "n_features": 993,
+  "walk_forward_avg": {
+    "n_folds": 0
+  },
+  "overall_walk_forward": {},
+  "final_model": {
+    "target": "race_xent",
+    "log_mae": 0.9922,
+    "log_rmse": 1.346,
+    "log_r2": -128.1037,
+    "bfsp_mae": 4.13,
+    "median_ape_pct": 64.96,
+    "mean_ape_pct": 403.52,
+    "correlation": -0.6743,
+    "best_iteration": 12600,
+    "holdout_mae": 0.9812515943650595
+  },
+  "fold_details": [],
+  "params": {
+    "objective": "regression",
+    "metric": "mae",
+    "boosting_type": "gbdt",
+    "num_leaves": 127,
+    "learning_rate": 0.02,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 5,
+    "min_child_samples": 500,
+    "lambda_l1": 0.1,
+    "lambda_l2": 0.1,
+    "verbose": -1,
+    "seed": 42,
+    "deterministic": true,
+    "force_col_wise": true,
+    "extra_trees": true
+  },
+  "data_range": {
+    "min_date": "2021-01-01",
+    "max_date": "2026-09-22",
+    "total_rows": 697903
+  },
+  "history_start": "2018-01-01"
+}
