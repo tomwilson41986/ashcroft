@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -276,7 +277,8 @@ def build(pred: pd.DataFrame, meta: dict, out: str, note: str = "", label: str =
     if non_runners is not None:
         _non_runner_sheet(wb.create_sheet("Non-runners"), non_runners)
     if other is not None:
-        name = f"{label or 'model'} vs {other_label or 'other'}"[:31]
+        # a sheet's name may not hold : \ / ? * [ ] (a label such as 12:48 is fine in the cells)
+        name = re.sub(r"[:\\/?*\[\]]", ".", f"{label or 'model'} vs {other_label or 'other'}")[:31]
         _compare_sheet(wb.create_sheet(name), df, other, label or "model", other_label or "other", other_note)
     _runner_sheet(wb.create_sheet("All runners"), df, rule_ref)
     for track, g in df.groupby("track", sort=False):
