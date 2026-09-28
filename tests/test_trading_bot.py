@@ -332,3 +332,17 @@ def test_paper_never_sends_an_order_to_betfair():
     x.lay_at_bsp("1.1", 1, 5.0, "r")
     x.cancel_all()
     assert {m for m, _ in c.calls} <= {"listMarketBook", "listMarketCatalogue", "login"}
+
+
+def test_the_job_stands_down_without_credentials_and_settles_nothing_untraded(monkeypatch, tmp_path):
+    """Until the owner stores the Betfair secrets the scheduled job says why and exits cleanly,
+    and an evening with no morning ledger has nothing to settle."""
+    import auto_trade
+
+    for k in ("BETFAIR_USERNAME", "BETFAIR_PASSWORD", "BETFAIR_APP_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    out = auto_trade.main(["--date", "2026-09-28", "--out", str(tmp_path)])
+    assert out["traded"] is False and "BETFAIR_APP_KEY" in out["reason"]
+
+    monkeypatch.setattr(auto_trade, "_s3", lambda: (_ for _ in ()).throw(RuntimeError("no bucket here")))
+    assert auto_trade.read_ledger(date(2026, 9, 28), tmp_path / "absent.csv") is None

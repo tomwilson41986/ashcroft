@@ -98,7 +98,8 @@ def kill_switch(kill_file: str | None):
     return check
 
 
-def read_ledger(day: date, local: Path) -> list[dict]:
+def read_ledger(day: date, local: Path) -> list[dict] | None:
+    """The day's ledger, local or from S3; None where the day was not traded."""
     if local.exists():
         with local.open() as f:
             return list(csv.DictReader(f))
@@ -106,7 +107,8 @@ def read_ledger(day: date, local: Path) -> list[dict]:
         obj = _s3().get_object(Bucket=BUCKET, Key=_prefix(day) + "ledger.csv")
         return list(csv.DictReader(io.StringIO(obj["Body"].read().decode())))
     except Exception as exc:
-        raise SystemExit(f"no ledger for {day}: {exc}")
+        log.warning("No ledger for %s (%s): the day was not traded", day, exc)
+        return None
 
 
 def publish(day: date, ledger: Path, summary: dict) -> None:
@@ -153,12 +155,18 @@ def main(argv=None) -> dict:
                                            "trade_from": a.trade_from, "trade_until": a.trade_until})
     log.info("Paper trading %s: strategy %s, staking %s, window %s-%s UK, close at BSP %s (%s)", day,
              cfg.strategy, cfg.staking, cfg.trade_from, cfg.trade_until, cfg.trade_out, cfg.trade_out_at)
+    missing = [k for k in ("BETFAIR_USERNAME", "BETFAIR_PASSWORD", "BETFAIR_APP_KEY") if not os.getenv(k)]
+    if missing:                                           # a notice, not a daily failure, until they are set
+        log.warning("Not trading: %s not set (TRADING.md: what the owner provides)", ", ".join(missing))
+        return {"day": str(day), "mode": MODE, "traded": False, "reason": f"missing {', '.join(missing)}"}
     exchange = PaperExchange(BetfairData(), bank=cfg.limits.bank)
     exchange.login()
     ledger = Path(a.out) / f"ledger_{MODE}_{day:%Y-%m-%d}.csv"
 
     if a.settle:
         rows = read_ledger(day, ledger)
+        if rows is None:                                  # nothing traded: nothing to settle or send
+            return {"day": str(day), "mode": MODE, "settled": False, "reason": "no ledger"}
         session = Session(exchange, pd.DataFrame(columns=["market_id", "selection_id", "predicted_bfsp"]), cfg, day,
                           ledger_path=str(ledger))
         session.restore(rows, exchange.markets(*uk_day_window(day), cfg.countries))
