@@ -976,13 +976,13 @@ def build(importance_path: Path, out: Path, model_note: str):
     ws = wb.active
     ws.title = "Features"
     head = ["Feature", "Block", "Group", "Description", "Module", "Status", "Gain (split gain)",
-            "Share of served gain", "Rank (served)", "Card-safe at 06:00"]
+            "Share of gain", "Rank", "Card-safe at 06:00"]
     ws.append(head)
     style_header(ws, 1, len(head))
     for i, r in enumerate(rows, start=2):
         ws.append([r["feature"], r["block"], r["group"], r["description"], r["module"], r["status"],
-                   r["gain"] if r["status"] == SERVED else None,
-                   f'=IF(G{i}="","",G{i}/SUMIFS($G$2:$G${last},$F$2:$F${last},"{SERVED}"))',
+                   r["gain"],
+                   f'=IF(G{i}="","",G{i}/SUM($G$2:$G${last}))',
                    f'=IF(G{i}="","",RANK(G{i},$G$2:$G${last},0))',
                    r["card_safe"]])
     for row in ws.iter_rows(min_row=2, max_row=last):
@@ -991,8 +991,9 @@ def build(importance_path: Path, out: Path, model_note: str):
         row[6].number_format = "#,##0"
         row[7].number_format = "0.00%"
         row[3].alignment = Alignment(wrap_text=False)
-    ws["G1"].comment = Comment(f"Split gain of the served model. Source: {model_note}. Candidates and unserved "
-                               "features have no gain in this model.", "feature_workbook.py")
+    ws["G1"].comment = Comment(f"Split gain. Source: {model_note}. A feature that model does not read has "
+                               "no gain; served, candidate and built features alike have one where it does.",
+                               "feature_workbook.py")
     for col, w in zip("ABCDEFGHIJ", (28, 26, 34, 80, 30, 36, 16, 12, 10, 12)):
         ws.column_dimensions[col].width = w
     ws.freeze_panes = "B2"
@@ -1000,7 +1001,7 @@ def build(importance_path: Path, out: Path, model_note: str):
 
     # --- Blocks --------------------------------------------------------------------------
     wb_blocks = wb.create_sheet("Blocks")
-    head = ["Block", "Status", "Features", "Served", "Share of served gain", "Module", "Evidence"]
+    head = ["Block", "Status", "Features", "Served", "Share of gain", "Module", "Evidence"]
     wb_blocks.append(head)
     style_header(wb_blocks, 1, len(head))
     blocks = []
@@ -1079,6 +1080,7 @@ def build(importance_path: Path, out: Path, model_note: str):
         sm.append([s, f'=COUNTIF(Features!$F$2:$F${last},A{sm.max_row + 1})'])
     sm.append(["All features listed", f"=SUM(B5:B{4 + len(statuses)})"])
     r_all = sm.max_row
+    sm.append(["Features the gain file's model reads", f"=COUNT(Features!$G$2:$G${last})"])
     sm.append(["Served features with zero gain", f'=COUNTIFS(Features!$F$2:$F${last},"{SERVED}",Features!$G$2:$G${last},0)'])
     sm.append(["Share of gain check (should be 100%)", f"=SUM(Features!$H$2:$H${last})"])
     sm.cell(row=sm.max_row, column=2).number_format = "0.00%"
@@ -1089,7 +1091,7 @@ def build(importance_path: Path, out: Path, model_note: str):
         sm.append([p, f"=COUNTIF('Not yet developed'!$G$2:$G${nlast},A{sm.max_row + 1})"])
     sm.append([])
     top_hdr = sm.max_row + 1
-    sm.append(["Top 15 served features by gain", "Share of gain", "Block", "Description"])
+    sm.append(["Top 15 features by gain", "Share of gain", "Block", "Description"])
     style_header(sm, top_hdr, 4)
     for k in range(1, 16):
         r = sm.max_row + 1
