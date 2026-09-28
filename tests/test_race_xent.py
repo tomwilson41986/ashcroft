@@ -125,3 +125,23 @@ def test_race_xent_cannot_be_combined_with_the_profit_weighted_objective():
     with pytest.raises(ValueError, match="race_xent"):
         fit_bfsp(_history(n_days=40), ["f1", "f2"],
                  TrainConfig(target="race_xent", objective="profit_weighted", params=SMALL, num_boost_round=5))
+
+
+def test_a_fitted_booster_serves_from_its_file_as_it_predicted_in_memory():
+    """The 06:00 path reads a booster from its file and prices it by its metadata's target.
+    A booster fitted with the custom objective is written as "custom"; read back, it must
+    give the same raw score, so the served price is the fitted one."""
+    import lightgbm as lgb
+    from model.bfsp_model import assert_meta_is_servable, attach_serving_rule
+    df = _history(n_days=120)
+    cfg = TrainConfig(target="race_xent", params=SMALL, num_boost_round=60, holdout_days=20,
+                      early_stopping_rounds=20)
+    fit = fit_bfsp(df, ["f1", "f2"], cfg)
+    meta = {"feature_cols": ["f1", "f2"], "objective": "l2", "target": "race_xent"}
+    assert_meta_is_servable(meta)
+    loaded = attach_serving_rule(lgb.Booster(model_str=fit.booster.model_to_string()), meta)
+    want = predict_prices(fit.booster, df, ["f1", "f2"], target="race_xent")
+    got = predict_prices(loaded, df, ["f1", "f2"])
+    np.testing.assert_allclose(got["predicted_bfsp"].to_numpy(), want["predicted_bfsp"].to_numpy(), rtol=1e-12)
+    book = got.groupby("raceid")["predicted_win_prob_norm"].sum()
+    np.testing.assert_allclose(book.to_numpy(), 1.0, atol=1e-9)

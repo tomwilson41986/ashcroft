@@ -122,7 +122,7 @@ def test_members_that_number_categories_differently_are_refused(tmp_path):
 
 
 @pytest.mark.parametrize("targets", [("logit_norm_prob", "logit_norm_prob"), ("logit_norm_prob", "log_bfsp"),
-                                     ("logit_norm_prob", "demeaned_log")])
+                                     ("logit_norm_prob", "demeaned_log"), ("logit_norm_prob", "race_xent")])
 def test_members_on_the_served_target_average_as_the_loop_averages(tmp_path, targets):
     """The served models are fitted on the logit of the race-normalised probability: each
     member's output is priced by its own target's rule before the prices are averaged."""

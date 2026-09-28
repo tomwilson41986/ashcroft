@@ -1107,6 +1107,12 @@ def main():
              "that the evaluation never made",
     )
     parser.add_argument(
+        "--share-weight", type=float, default=0.0,
+        help="Weight each training row by its share of its race's Betfair SP book to this "
+             "power, normalised to a mean of 1; 0 disables it (default). 1 counts a runner "
+             "for its share of the race, as race_xent does",
+    )
+    parser.add_argument(
         "--objective", default="l2", choices=list(OBJECTIVES),
         help="l2 (default): squared error on log(BFSP), every runner weighted "
              "equally -- the model forecasts the price of the whole field, and "
@@ -1325,6 +1331,7 @@ def main():
     cfg = TrainConfig(
         objective=objective,
         decay_rate=decay_rate,
+        share_weight=args.share_weight,
         target=args.target,
         holdout_days=args.holdout_days,
         purge_days=args.purge_days,

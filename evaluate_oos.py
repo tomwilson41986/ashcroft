@@ -814,6 +814,12 @@ def main():
              "(default). 1.0 gives a three-year-old race 5%% of today's weight",
     )
     parser.add_argument(
+        "--share-weight", type=float, default=0.0,
+        help="Weight each training row by its share of its race's Betfair SP book to this "
+             "power, normalised to a mean of 1; 0 disables it (default). 1 counts a runner "
+             "for its share of the race, as race_xent does",
+    )
+    parser.add_argument(
         "--target", default=TrainConfig.target, choices=list(TARGETS),
         help=f"logit_norm_prob (default: logit of the race-normalised "
              f"probability), log_bfsp (the log price), demeaned_log "
@@ -949,6 +955,7 @@ def main():
     cfg = TrainConfig(
         objective=args.objective,
         decay_rate=args.decay_rate,
+        share_weight=args.share_weight,
         target=args.target,
         holdout_days=args.holdout_days,
         purge_days=args.purge_days,

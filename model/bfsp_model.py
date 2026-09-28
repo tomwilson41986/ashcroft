@@ -434,6 +434,14 @@ class TrainConfig:
     #: history. Off by default, measured as a variant.
     decay_rate: float = 0.0
 
+    #: Weight each training row by its share of its race's Betfair SP book raised
+    #: to this power, normalised to a mean of 1 (0 disables it, the default).
+    #: Squared error on log prices counts every runner alike, so the long shots,
+    #: most of any field, carry most of the fit; race_xent counts a runner for its
+    #: share of the race and trades better, but prices the long shots worse
+    #: (iteration 101). A power between 0 and 1 asks for part of each.
+    share_weight: float = 0.0
+
     #: Fit the logit of the race-normalised implied probability, not log(BFSP).
     #: The same model either way; what changes is that the label lives on the
     #: scale the served price is finally judged on, since the price is
@@ -508,6 +516,8 @@ class TrainConfig:
             else {"type": "exponential_decay", "decay_rate": self.decay_rate,
                   "half_life_days": round(365.0 * np.log(2) / self.decay_rate, 1)}
         )
+        if self.share_weight > 0:
+            d["sample_weighting"]["share_power"] = self.share_weight
         return d
 
 
@@ -540,6 +550,20 @@ def sample_weights(dates, decay_rate: float, reference=None):
     ref = pd.Timestamp(reference) if reference is not None else d.max()
     days = (ref - d).dt.days.to_numpy(dtype=float)
     return np.exp(-decay_rate * days / 365.0)
+
+
+def row_weights(d: pd.DataFrame, cfg: "TrainConfig", race_col: str = "raceid"):
+    """The training rows' weights (recency and market share), or None when every row counts alike."""
+    w = sample_weights(d["race_date"], cfg.decay_rate)
+    if cfg.share_weight > 0:
+        if cfg.target == "race_xent":
+            raise ValueError("race_xent already counts a runner for its share of the race; "
+                             "share_weight is for the other targets")
+        share = build_target(d, "race_xent", race_col)       # the runner's share of its race's book
+        sw = np.power(np.clip(share, 1e-6, None), cfg.share_weight)
+        sw = sw / sw.mean()
+        w = sw if w is None else w * sw
+    return w
 
 
 def build_target(df: pd.DataFrame, target: str, race_col: str = "raceid") -> np.ndarray:
@@ -623,7 +647,7 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         holdout_start = dates.iloc[cut] if cut < len(d) else dates.max()
 
     y = build_target(d, cfg.target, race_col)
-    w = sample_weights(d["race_date"], cfg.decay_rate)
+    w = row_weights(d, cfg, race_col)
 
     cat = [c for c in feature_cols if c.endswith("_cat")] if cfg.native_categoricals else None
 
@@ -817,9 +841,16 @@ def model_meta(cfg: TrainConfig, feature_cols: list[str], fit: FitResult | None 
 #: errors differ from theirs, and the extra-trees fit on it averaged with the
 #: extra-trees Huber fit prices the window at 0.3982 against 0.4001 for the
 #: better of the two (iteration 92). Its rule is the log target's, exp; the
-#: race-level term it drops is cancelled by the normalisation. Any other target
-#: is still a refusal at load time rather than a wrong price at 06:00.
-SERVABLE_TARGETS = ("log_bfsp", "logit_norm_prob", "demeaned_log")
+#: race-level term it drops is cancelled by the normalisation. `race_xent` joined
+#: it as a member for the bets: its score is a log price like demeaned_log's (the
+#: same rule, exp, then the book), and though it prices the window worse than the
+#: demeaned-log partner (iteration 101: +0.0079), it trades better alone and in
+#: every average that holds it (research query run 36383360553, a paired race
+#: bootstrap of the early-price rule: +1.32 points alone, +0.38 to +0.49 in the
+#: pair). A booster fitted with its custom objective loads from its file as
+#: "custom" and predicts the same raw score. Any other target is still a refusal
+#: at load time rather than a wrong price at 06:00.
+SERVABLE_TARGETS = ("log_bfsp", "logit_norm_prob", "demeaned_log", "race_xent")
 
 
 def attach_serving_rule(booster, meta: dict):
