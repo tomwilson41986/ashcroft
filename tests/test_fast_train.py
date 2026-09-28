@@ -81,3 +81,19 @@ def test_a_drop_prefix_that_matches_nothing_is_an_error(tmp_path):
                                      drop_features=("sire_runners",))
     with pytest.raises(ValueError, match="sire_runners"):
         trainer.train(_matrix(), output_dir=str(tmp_path), prepared=True)
+
+
+def test_float32_casts_the_model_inputs_only_and_the_booster_reads_float64_the_same(tmp_path):
+    df = _matrix()
+    out = train_bfsp.to_single_precision(df.copy())
+    assert all(out[c].dtype == np.float32 for c in ("rPMW3", "LR_ORR2", "or_num"))
+    assert all(out[c].dtype == np.float64 for c in ("bfsp", "log_bfsp", "placing_numerical", "won"))
+    np.testing.assert_array_equal(out["log_bfsp"].to_numpy(), df["log_bfsp"].to_numpy())
+    trainer = train_bfsp.BFSPTrainer(cfg=TrainConfig(fixed_rounds=30, params=SMALL, float32=True), prob_model=False)
+    summary = trainer.train(out, output_dir=str(tmp_path), prepared=True)
+    assert "error" not in summary
+    meta = json.loads((tmp_path / "bfsp_model_meta.json").read_text())
+    assert meta["float32"] is True
+    # served on float64 inputs: every split falls the same way as on the float32 ones it learned from
+    x64 = df[["rPMW3", "LR_ORR2", "or_num"]].astype(float)
+    np.testing.assert_array_equal(trainer.model.predict(x64), trainer.model.predict(x64.astype(np.float32)))

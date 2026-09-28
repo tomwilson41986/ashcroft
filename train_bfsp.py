@@ -105,6 +105,19 @@ from model.bfsp_features import (  # noqa: E402,F401
 # Data loading
 # ---------------------------------------------------------------------------
 
+def to_single_precision(df: pd.DataFrame) -> pd.DataFrame:
+    """The model's float64 inputs (the served list and any blocks added to it) in single
+    precision, before the trainer sorts and copies the rows; the price, the target and
+    every other column as they were."""
+    import gc
+    cols = dict.fromkeys(list(ALL_FEATURE_COLS) + EXTRA_FEATURE_COLS)
+    cast = [c for c in cols if c in df.columns and df[c].dtype == np.float64]
+    df = df.astype({c: np.float32 for c in cast}, copy=False)
+    gc.collect()
+    log.info("float32: %d model inputs stored in single precision", len(cast))
+    return df
+
+
 def load_data(db_path: str, start_date: str | None = None) -> pd.DataFrame:
     """Load race results from SQLite, optionally filtering by start date."""
     conn = sqlite3.connect(db_path)
@@ -1029,6 +1042,12 @@ def main():
              "walk-forward evaluation of the same recipe",
     )
     parser.add_argument(
+        "--float32", action="store_true",
+        help="Store the model's input columns and fit in single precision: half the memory of "
+             "the matrix and its copies (a history from 2018 needs it). The published booster "
+             "reads float64 inputs the same way: its thresholds lie between float32 values",
+    )
+    parser.add_argument(
         "--feature-cache", default=None, metavar="DIR",
         help="Load the feature matrix from the cache evaluate_oos.py and the research "
              "loop build (the same engine, context features and price filter; the key "
@@ -1293,6 +1312,7 @@ def main():
         params=params,
         num_boost_round=args.num_boost_round,
         fixed_rounds=args.fixed_rounds,
+        float32=args.float32,
     )
     log.info("Training recipe: objective=%s target=%s decay=%.2f holdout=%dd "
              "purge=%dd seed=%d", cfg.objective, cfg.target, cfg.decay_rate,
@@ -1308,6 +1328,9 @@ def main():
         prob_model=not args.skip_prob_model,
         drop_features=tuple(p.strip() for p in (args.drop_features or "").split(",") if p.strip()),
     )
+
+    if args.float32:
+        df = to_single_precision(df)
 
     summary = trainer.train(df, output_dir=args.output_dir, prepared=prepared)
 
