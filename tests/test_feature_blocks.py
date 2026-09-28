@@ -24,7 +24,7 @@ from model.custom_metrics import CustomMetricsEngine
 
 KEY = ["race_date", "track", "race_time", "horse_name"]
 RESULTS = ["placing_numerical", "place", "total_dst_bt", "distbt", "comment", "comptime",
-           "comptime_numeric", "bfsp", "bfsp_place"]
+           "comptime_numeric", "bfsp", "bfsp_place", "odds"]
 COMMENTS = ["led, kept on", "made all", "prominent, weakened", "tracked leaders, one pace",
             "chased leaders, no extra", "mid-division, stayed on", "held up, headway 2f out",
             "in rear, never dangerous", "towards rear, short of room, ran on late", "pulled up"]
@@ -103,6 +103,20 @@ def engine_frames():
     rng = np.random.default_rng(5)
     run = lambda f: CustomMetricsEngine().calculate_all(f)          # noqa: E731
     return {"base": run(base), "scrambled": run(_scrambled(base, rng)), "blanked": run(_blanked(base))}
+
+
+@pytest.fixture(autouse=True)
+def _reach(request, monkeypatch):
+    """A block whose readings reach further back than this 60-day history (a year, for seasonality)
+    names the constants that set the reach in TEST_REACH, with values the history exercises: the
+    lag, card, order and READS tests then run the same code on a reach they can see. Its own tests
+    check the real reach."""
+    name = getattr(getattr(request.node, "callspec", None), "params", {}).get("name")
+    if name in BLOCKS:
+        mod = blocks.load(name)
+        for const, value in getattr(mod, "TEST_REACH", {}).items():
+            assert hasattr(mod, const), f"TEST_REACH names {const}, which {name} does not define"
+            monkeypatch.setattr(mod, const, value)
 
 
 def _block_on(frame, name):

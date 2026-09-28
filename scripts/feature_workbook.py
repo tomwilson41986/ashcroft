@@ -146,6 +146,8 @@ DROP_IN = [
      "its winning marks", "built"),
     ("travel", "Travel", "How far the yard has sent the horse against how far it usually sends them, raids "
      "across the Irish Sea, the yard's use of the course", "candidate"),
+    ("market_history", "Market history", "How the bookmakers (industry SP) and the place market priced the horse, its yard and its rider before, each against its cell's usual", "candidate"),
+    ("seasonal", "Seasonality", "The horse's form and its yard's winners against the price in the same months of earlier years", "candidate"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
     ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
 ]
@@ -164,6 +166,8 @@ BLOCK_EVIDENCE = {
               "maidens, novices and bumpers -0.0025; with the Kalman rating and handicap angles -0.0017 "
               "(-0.0024 to -0.0011), Brier skill and concordance level, the rule unchanged; beside the "
               "within-race partner the pair 0.3970 against 0.3981. Iteration 97 fits the partner with it.",
+    "Market history": "Built 28 Sep: the industry SP (odds, net) against the Betfair SP, and the Betfair place SP against the win SP, in past runs, each against its price band, field size and code or places paid on earlier days; the horse's, its yard's and its rider's. A residual screen could not say whether it adds (research query run 36360636883 reads features the model already holds as strongly as new ones); iteration 98 fits it on the 968s5xh with the three blocks.",
+    "Seasonality": "Built 28 Sep: the horse's finishing position and its yard's A-E against the Betfair SP in today's month and the month either side, 300 days back or more. Iteration 98 fits it with market history.",
     "Future form": "Built 27 Sep at the owner's ask (the last 1, 3 and 5 races back, each rival's next 1, 2, 3 and 5 runs forward). "
                    "Parity clean at 06:00 (research query run 36301993859). Cell by cell against the best fit's miss: -0.0013 jointly, "
                    "most in the rivals' later finishing positions from the last five races; deeper windows add nothing. Iteration 90: "
@@ -845,10 +849,6 @@ NOT_BUILT = [
      "No sectional or per-horse times in the data", "Blocked"),
     ("D2", "Headgear type flags", "Equipment", "One flag per headgear item (blinkers, visor, cheekpieces, hood, tongue-tie)",
      "Available", "Partial: one category column", "Low"),
-    ("F1", "SP-to-BSP spread (lagged)", "Market", "How far industry SP differed from BSP in past runs",
-     "Available", "The same-race version added nothing (markets block)", "Low"),
-    ("F2", "Win/place price ratio (lagged)", "Market", "Place-market view relative to the win market in past runs",
-     "Partial (Betfair files from Jan 2026)", "Opt-in behind --market-features", "Medium"),
     ("G4", "Age restriction", "Race conditions", "Age band of the race (2yo, 3yo only, 3yo+, 4yo+)", "Available",
      "race_restrictions_age is never read", "Low"),
     ("H3", "Claimer flag", "Connections", "Whether the jockey claims an allowance", "Available",
@@ -860,7 +860,6 @@ NOT_BUILT = [
     ("J1", "Month / season", "Context", "Seasonal effects", "Available",
      "Surveyed on 24 Sep: nothing for the price to miss", "Low"),
     ("J2", "Day of week", "Context", "Weekday effects (strength of meetings)", "Available", "Surveyed: nothing", "Low"),
-    ("J3", "Horse seasonality", "Form", "The horse's form by time of year", "Available", "Surveyed: nothing", "Low"),
     ("J4", "Campaign stage", "Form", "Run number within the current campaign", "Available",
      "Written in model/primitives.py, never called; fr_runs_since_break now covers most of it", "Low"),
     ("K1", "Major-race experience", "Class", "Runs and form in Group / Listed / major races", "Available",
