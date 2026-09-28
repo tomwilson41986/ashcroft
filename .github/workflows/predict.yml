@@ -11,7 +11,9 @@ jobs:
     # so bound the whole thing rather than let a hung connection sit until
     # GitHub's six-hour default. The predictions CSV is written before the
     # price snapshot, so a kill here costs the prices and not the card.
-    timeout-minutes: 45
+    # 60, not 45: the served models build their features on the history from 2018
+    # (1.05m rows), which with swap priced a card in 23-26 minutes on a dry run.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -26,8 +28,25 @@ jobs:
       - name: Download model from latest release
         run: |
           python scripts/fetch_data.py --model-only || true
-          # Fallback: check if model exists in repo
-          test -f data/models/bfsp_model.lgb || echo "WARNING: No model found"
+          # The BFSP model is committed in data/models: a booster (plain or xz-compressed),
+          # or a manifest naming several (predict_bfsp_today.load_bfsp_model)
+          test -f data/models/bfsp_model.lgb || test -f data/models/bfsp_model.lgb.xz \
+            || echo "WARNING: No model found"
+
+      - name: Add swap
+        # The served models build their features on the history from 2018 (their training
+        # summary's history_start): 1.05m rows, which runs the runner's 16 GB out of memory
+        # in the feature engine without swap (predict-now run 27) and priced the card in
+        # 23-26 minutes with it (predict-now runs 28 and 31, peak 15.5 GB).
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile /mnt/swapfile || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
 
       - name: Run predictions
         env:

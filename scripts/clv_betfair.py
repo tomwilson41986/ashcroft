@@ -12,7 +12,9 @@ race-bootstrap interval is above zero.
 
 Also prints the checks that decide what a pass means: the edge by how many races that day
 had already been run (the same-day-leak test), by morning price band against every runner
-in the band, month by month, and settled three ways.
+in the band, month by month, and settled three ways. And the model's rank 1 in each race
+(its shortest price, so its highest win probability) settled the same three ways, alone and
+where the rule also picks it: the owner's measure of a profitable model.
 """
 
 from __future__ import annotations
@@ -122,6 +124,26 @@ def information(d: pd.DataFrame) -> None:
               f" -> with the model {np.sqrt(np.mean((y[te] - X[te] @ cb) ** 2)):.4f}  (n={te.sum():,})")
 
 
+def rank1(d: pd.DataFrame, base: pd.DataFrame, threshold: float) -> None:
+    """The model's rank 1 in each race (shortest forecast over every runner priced that morning),
+    each way it could be settled, and the morning favourite beside it."""
+    r = d.groupby("race")["predicted_bfsp"].rank(method="first")
+    fav = d.groupby("race")["morningwap"].rank(method="first")
+    top = base[(r.reindex(base.index) == 1).to_numpy()]
+    mfav = base[(fav.reindex(base.index) == 1).to_numpy()]
+    print("\nThe model's rank 1 (its highest win probability), settled three ways")
+    for lab, g in (("every race", top), (f"and >= {100 * (np.exp(threshold) - 1):.0f}% shorter than the morning",
+                                          top[top["pred_move"] >= threshold]),
+                   ("and not the morning favourite", top[~top.index.isin(mfav.index)]),
+                   ("the morning favourite (for scale)", mfav)):
+        print(f"  {lab}")
+        print(f"    traded out at BSP     {interval(g, 'net')}")
+        print(f"    held, morning price   {interval(g, 'hold_morning')}")
+        print(f"    held, BSP             {interval(g, 'hold_bsp')}")
+    agree = top.index.isin(mfav.index).mean() if len(top) else float("nan")
+    print(f"  rank 1 is the morning favourite in {100 * agree:.1f}% of races")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--predictions", required=True)
@@ -164,6 +186,7 @@ def main(argv=None) -> int:
     print(f"  held, morning price   {interval(rule, 'hold_morning')}")
     print(f"  held, BSP             {interval(rule, 'hold_bsp')}   every runner at BSP {100 * base['hold_bsp'].mean():+.2f}%")
     print(f"\nMorning volume on the rule's bets: median £{rule['morning_vol'].median():,.0f}")
+    rank1(d, base, a.threshold)
     return 0
 
 

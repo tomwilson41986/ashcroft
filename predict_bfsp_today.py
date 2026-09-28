@@ -78,6 +78,189 @@ def load_historical(db_path: str, start_date: str | None = None) -> pd.DataFrame
     return df
 
 
+#: A manifest in the model directory serves several boosters as one: the geometric
+#: mean of their prices, renormalised per race, as the research loop scores an
+#: average (scripts/research_loop.average_arms). Without one, one booster serves.
+ENSEMBLE_MANIFEST = "bfsp_ensemble.json"
+
+
+def _check_gate(gate: dict, names: list[str]) -> dict:
+    """A manifest's gate, refused unless it names a member, leaves at least one other to
+    rank the runners, and gives every rank a weight between 0 and 1."""
+    member, weights = gate.get("member"), gate.get("weights")
+    if member not in names:
+        raise ValueError(f"the gate names {member!r}, which is not a member ({', '.join(names)})")
+    if len(names) < 2:
+        raise ValueError("a gate needs at least one other member to rank the runners")
+    if not isinstance(weights, list) or not weights:
+        raise ValueError("a gate needs its weights by rank: a list, the last for every rank past it")
+    w = np.asarray(weights, dtype=float)
+    if not np.all(np.isfinite(w)) or w.min() < 0 or w.max() > 1:
+        raise ValueError(f"a gate's weights lie between 0 and 1: {weights}")
+    return {"member": member, "weights": [float(x) for x in w]}
+
+
+def _race_normalised_log(log_price: np.ndarray, race: np.ndarray) -> np.ndarray:
+    """Log prices shifted so that each race's implied probabilities sum to one."""
+    book = pd.Series(np.exp(-log_price)).groupby(race).transform("sum").to_numpy()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return log_price + np.log(book)
+
+
+class AveragedBooster:
+    """Several boosters served as one.
+
+    Each member's output is turned into its raw price by its own fit's rule (its
+    target and offset, as `attach_serving_rule` put them on it), and `predict`
+    returns the mean of the log prices, under the target "log_bfsp". After
+    `predict_prices` normalises each race's book to one, that is exactly the research
+    loop's average of the members' normalised prices (the geometric mean,
+    renormalised: scripts/research_loop.average_arms), because a member's own
+    normalisation divides every runner in a race by the same number. A member reads
+    its own features, by name, from the frame it is given.
+
+    A gate (the manifest's "gate": {"member": ..., "weights": [w1, ..., wK]}) gives one
+    member the runners the others rank near the top of their race instead of a share of
+    every runner. Each member's price is normalised to a book of one in its race; the
+    other members are averaged as above (the base); a runner the base ranks r-th in its
+    race takes the gated member's log price with weight w_r (wK for every rank past K)
+    and the base's with 1 - w_r. That is the blend the research queries scored
+    (research/queries/done/gate_clv.py: race_xent for the pair's leaders). It needs each
+    runner's race, which `predict_prices` passes to a booster that `reads_races`."""
+
+    serving_target = "log_bfsp"
+    serving_offset = 0.0                        # each member's own offset is applied in predict
+
+    def __init__(self, members: list[tuple[str, "lgb.Booster", list[str]]], gate: dict | None = None):
+        if len(members) < 2:
+            raise ValueError("an averaged model needs at least two members")
+        self.members = members
+        self._features = list(dict.fromkeys(c for _, _, cols in members for c in cols))
+        self.gate = _check_gate(gate, [n for n, _, _ in members]) if gate else None
+
+    @property
+    def reads_races(self) -> bool:
+        return self.gate is not None
+
+    def _member_logs(self, X: pd.DataFrame, num_iteration=None) -> list[np.ndarray]:
+        from model.bfsp_model import invert_target
+        logs = []
+        for _, b, cols in self.members:
+            out = (np.asarray(b.predict(X[cols], num_iteration=num_iteration), dtype=float)
+                   + float(getattr(b, "serving_offset", 0.0) or 0.0))
+            price = invert_target(out, X, getattr(b, "serving_target", None) or "log_bfsp")
+            with np.errstate(divide="ignore", invalid="ignore"):
+                logs.append(np.log(price))
+        return logs
+
+    def predict(self, X: pd.DataFrame, num_iteration=None, races=None) -> np.ndarray:
+        logs = self._member_logs(X, num_iteration)
+        if self.gate is None:
+            return np.mean(logs, axis=0)
+        if races is None:
+            raise ValueError("a gated average ranks the runners of each race: it needs their races "
+                             "(model.bfsp_model.predict_prices passes them)")
+        race = pd.factorize(np.asarray(races))[0]
+        names = [n for n, _, _ in self.members]
+        g = names.index(self.gate["member"])
+        norm = [_race_normalised_log(lp, race) for lp in logs]
+        base = _race_normalised_log(np.mean([lp for i, lp in enumerate(norm) if i != g], axis=0), race)
+        weights = np.asarray(self.gate["weights"], dtype=float)
+        rank = pd.Series(base).groupby(race).rank(method="first").fillna(len(weights)).to_numpy()
+        w = weights[np.minimum(rank, len(weights)).astype(int) - 1]
+        return w * norm[g] + (1 - w) * base
+
+    def feature_name(self) -> list[str]:
+        return list(self._features)
+
+    def num_feature(self) -> int:
+        return len(self._features)
+
+    def num_trees(self) -> int:
+        return sum(b.num_trees() for _, b, _ in self.members)
+
+
+def booster_path(model_dir: str) -> str:
+    """The booster file a model directory holds: `bfsp_model.lgb`, or `bfsp_model.lgb.xz` where
+    only the compressed file is there. A booster past GitHub's 100 MB file limit (10,000 rounds
+    of 127 leaves is 123 MB) can only be committed compressed. With both present the plain file
+    is read and the other is stale: `tests/test_averaged_serving.py` refuses that in the repo."""
+    plain = os.path.join(model_dir, "bfsp_model.lgb")
+    if os.path.exists(plain):
+        if os.path.exists(plain + ".xz"):
+            log.warning("%s holds both bfsp_model.lgb and bfsp_model.lgb.xz; reading the plain file", model_dir)
+        return plain
+    return plain + ".xz" if os.path.exists(plain + ".xz") else plain
+
+
+def _read_booster(path: str) -> lgb.Booster:
+    """A booster from its file, plain or xz-compressed (`bfsp_model.lgb.xz`)."""
+    if path.endswith(".xz"):
+        import lzma
+        with lzma.open(path, "rt") as f:
+            return lgb.Booster(model_str=f.read())
+    return lgb.Booster(model_file=path)
+
+
+def _objective(booster: lgb.Booster, meta: dict) -> str:
+    """The loss the booster was fitted with, from its own parameters. The metadata's
+    "objective" is the training config's label ("l2" for any loss set through --param
+    objective=...), so a Huber model would be logged as l2."""
+    params = getattr(booster, "params", None) or {}
+    return str(params.get("objective") or meta.get("objective", "?"))
+
+
+def _load_member(member_dir: str) -> tuple[lgb.Booster, list[str], dict, dict]:
+    """One member of an averaged model: its booster, features, vocabulary and metadata,
+    held to the same checks as a single served model."""
+    path = booster_path(member_dir)
+    meta_path = os.path.join(member_dir, "bfsp_model_meta.json")
+    if not os.path.exists(path) or not os.path.exists(meta_path):
+        raise FileNotFoundError(f"{member_dir}: an averaged model's member needs bfsp_model.lgb (or .lgb.xz) "
+                                f"and bfsp_model_meta.json")
+    with open(meta_path) as f:
+        meta = json.load(f)
+    booster = _read_booster(path)
+    cols = list(meta.get("feature_cols") or [])
+    assert_meta_is_servable({**meta, "feature_cols": cols})
+    if booster.num_feature() != len(cols):
+        raise ValueError(f"{member_dir}: the booster reads {booster.num_feature()} features, "
+                         f"its metadata lists {len(cols)}")
+    attach_serving_rule(booster, meta)
+    return booster, cols, meta.get("categorical_vocab", {}) or {}, meta
+
+
+def load_averaged_model(model_dir: str, manifest: str) -> tuple[AveragedBooster, list[str], dict]:
+    """The members a manifest names, served as one (`AveragedBooster`).
+
+    The manifest is {"members": [{"name": ..., "dir": ...}, ...]}, each dir relative
+    to the model directory ("." for the model directory itself, whose metadata then
+    also gives the history's start), and optionally a "gate" (`AveragedBooster`). Every
+    member must be servable on its own and read the same categorical vocabulary (the
+    same training matrix numbers the tracks the same way). Each member's output is
+    priced by its own target's rule."""
+    with open(manifest) as f:
+        spec = json.load(f)
+    members, vocab = [], None
+    for m in spec.get("members", []):
+        name, sub = m.get("name") or m.get("dir"), m.get("dir", ".")
+        booster, cols, mvocab, meta = _load_member(os.path.normpath(os.path.join(model_dir, sub)))
+        if vocab is None:
+            vocab = mvocab
+        elif mvocab != vocab:
+            raise ValueError(f"member {name} numbers its categories differently from the first member: "
+                             f"its vocabulary would price a different track")
+        members.append((name, booster, cols))
+        log.info("Averaged model member %s: %d features, objective=%s, trained through %s", name, len(cols),
+                 _objective(booster, meta), meta.get("trained_through", "?"))
+    model = AveragedBooster(members, gate=spec.get("gate"))
+    log.info("Loaded an averaged BFSP model: %d members, %d features in all", len(members), model.num_feature())
+    if model.gate:
+        log.info("Gated: member %s takes weights %s by the other members' rank in the race",
+                 model.gate["member"], model.gate["weights"])
+    return model, model.feature_name(), vocab or {}
+
+
 def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
     """Load the trained BFSP model, its feature columns and its categorical vocabulary.
 
@@ -85,8 +268,14 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
     categories are present in the frame it is given, so a track that is one
     integer across the training history is a different integer on a six-race
     card unless the levels are pinned. It is the third return value, and
-    `build_context_features` takes it."""
-    model_path = os.path.join(model_dir, "bfsp_model.lgb")
+    `build_context_features` takes it.
+
+    A manifest (`ENSEMBLE_MANIFEST`) in the directory serves its members as one
+    (`load_averaged_model`); without one, the directory's single booster serves."""
+    manifest = os.path.join(model_dir, ENSEMBLE_MANIFEST)
+    if os.path.exists(manifest):
+        return load_averaged_model(model_dir, manifest)
+    model_path = booster_path(model_dir)
     meta_path = os.path.join(model_dir, "bfsp_model_meta.json")
 
     if not os.path.exists(model_path):
@@ -94,7 +283,7 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
         log.error("Run 'python train_bfsp.py' first to train the model.")
         sys.exit(1)
 
-    model = lgb.Booster(model_file=model_path)
+    model = _read_booster(model_path)
 
     feature_cols, vocab, meta = [], {}, {}
     if os.path.exists(meta_path):
@@ -118,7 +307,7 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
     attach_serving_rule(model, meta)
 
     log.info("Loaded BFSP model (%d features, objective=%s, target=%s, trained through %s)",
-             len(feature_cols), meta.get("objective", "?"),
+             len(feature_cols), _objective(model, meta),
              meta.get("target", "?"), meta.get("trained_through", "?"))
     if not vocab:
         log.warning(

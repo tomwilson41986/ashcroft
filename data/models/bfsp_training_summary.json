@@ -1,44 +1,46 @@
 {
   "model_type": "bfsp_regression",
   "target": "logit_norm_prob",
-  "n_features": 615,
+  "n_features": 993,
   "walk_forward_avg": {
     "n_folds": 0
   },
   "overall_walk_forward": {},
   "final_model": {
     "target": "logit_norm_prob",
-    "log_mae": 0.3001,
-    "log_rmse": 0.3827,
-    "log_r2": 0.9341,
-    "bfsp_mae": 16.77,
-    "median_ape_pct": 21.75,
-    "mean_ape_pct": 27.52,
-    "correlation": 0.9673,
-    "best_iteration": 6000,
-    "holdout_mae": 0.3042133040457633
+    "log_mae": 0.3002,
+    "log_rmse": 0.3972,
+    "log_r2": 0.9289,
+    "bfsp_mae": 17.2,
+    "median_ape_pct": 20.88,
+    "mean_ape_pct": 28.36,
+    "correlation": 0.9643,
+    "best_iteration": 12000,
+    "holdout_mae": 0.3025156669991649
   },
   "fold_details": [],
   "params": {
-    "objective": "regression",
+    "objective": "huber",
     "metric": "mae",
     "boosting_type": "gbdt",
     "num_leaves": 127,
-    "learning_rate": 0.03,
+    "learning_rate": 0.02,
     "feature_fraction": 0.8,
     "bagging_fraction": 0.8,
     "bagging_freq": 5,
-    "min_child_samples": 50,
+    "min_child_samples": 500,
     "lambda_l1": 0.1,
     "lambda_l2": 0.1,
     "verbose": -1,
     "seed": 42,
     "deterministic": true,
-    "force_col_wise": true
+    "force_col_wise": true,
+    "extra_trees": true
   },
   "data_range": {
     "min_date": "2021-01-01",
     "max_date": "2026-09-22",
     "total_rows": 697903
-  }
+  },
+  "history_start": "2018-01-01"
 }

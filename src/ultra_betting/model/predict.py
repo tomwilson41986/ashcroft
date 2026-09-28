@@ -28,12 +28,15 @@ def training_start(model_dir) -> str:
     rate (a sire's runners, a yard's strike rate) depends on where history starts,
     and serving from 2020 while training from 2021 gave the live rows a year of
     history no training row had (QA review M6). Read from the model's own training
-    summary so a retrain on another window carries its start with it."""
+    summary so a retrain on another window carries its start with it: its
+    `history_start` where the features were built on a longer history than the
+    rows it was fitted on (train_bfsp.py --train-from), else its first row."""
     import json
     try:
         with open(Path(model_dir) / "bfsp_training_summary.json") as f:
-            return str(json.load(f)["data_range"]["min_date"])[:10]
-    except (OSError, KeyError, TypeError, ValueError):
+            s = json.load(f)
+        return str(s.get("history_start") or s["data_range"]["min_date"])[:10]
+    except (OSError, KeyError, TypeError, ValueError, AttributeError):
         return TRAINING_START_FALLBACK
 
 

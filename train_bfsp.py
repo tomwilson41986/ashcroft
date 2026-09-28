@@ -105,6 +105,27 @@ from model.bfsp_features import (  # noqa: E402,F401
 # Data loading
 # ---------------------------------------------------------------------------
 
+def to_single_precision(df: pd.DataFrame) -> pd.DataFrame:
+    """The model's float64 inputs (the served list and any blocks added to it) in single
+    precision, before the trainer sorts and copies the rows; the price, the target and
+    every other column as they were."""
+    import gc
+    cols = dict.fromkeys(list(ALL_FEATURE_COLS) + EXTRA_FEATURE_COLS)
+    cast = [c for c in cols if c in df.columns and df[c].dtype == np.float64]
+    df = df.astype({c: np.float32 for c in cast}, copy=False)
+    gc.collect()
+    log.info("float32: %d model inputs stored in single precision", len(cast))
+    return df
+
+
+def keep_rows_from(df: pd.DataFrame, train_from: str) -> pd.DataFrame:
+    """The rows on or after `train_from`, for a fit whose features were built on the
+    longer history before it (iteration 99: careers from 2018, rows from 2021)."""
+    keep = (pd.to_datetime(df["race_date"]) >= pd.Timestamp(train_from)).to_numpy()
+    log.info("--train-from %s: fitting %d of %d rows", train_from, int(keep.sum()), len(df))
+    return df.loc[keep].reset_index(drop=True)
+
+
 def load_data(db_path: str, start_date: str | None = None) -> pd.DataFrame:
     """Load race results from SQLite, optionally filtering by start date."""
     conn = sqlite3.connect(db_path)
@@ -213,8 +234,17 @@ class BFSPTrainer:
         cfg: TrainConfig | None = None,
         wf_folds: int = 0,
         prob_model: bool = True,
+        drop_features: tuple[str, ...] = (),
     ):
         self.wf_folds = int(wf_folds)
+        #: Name prefixes withheld from the model, as evaluate_oos.py
+        #: --drop-features withholds them: the model that serves is the one the
+        #: evaluation measured. What they removed goes into the metadata.
+        self.drop_features = tuple(drop_features)
+        self.dropped_features: list[str] = []
+        #: where the features' history began, when the rows fitted start later
+        #: (--train-from): the live path must build its features from here
+        self.history_start: str | None = None
         #: The Benter stage-2 win model. Nothing served loads it (the train
         #: workflow neither commits nor uploads it) and it costs about eight
         #: minutes, so the fast path turns it off.
@@ -264,6 +294,15 @@ class BFSPTrainer:
 
         # Determine available feature columns (+ any opt-in extra blocks)
         available = [c for c in list(ALL_FEATURE_COLS) + EXTRA_FEATURE_COLS if c in df.columns]
+        if self.drop_features:
+            unmatched = [p for p in self.drop_features if not any(c.startswith(p) for c in available)]
+            if unmatched:
+                # a typo would otherwise train and serve the model it meant to change
+                raise ValueError(f"--drop-features {unmatched} match no feature the model would read")
+            self.dropped_features = list(dict.fromkeys(c for c in available if c.startswith(self.drop_features)))
+            available = [c for c in available if not c.startswith(self.drop_features)]
+            log.info(f"  Withheld {len(self.dropped_features)} features by prefix {list(self.drop_features)}: "
+                     f"{self.dropped_features}")
 
         # Deduplicate while preserving order
         seen = set()
@@ -834,6 +873,9 @@ class BFSPTrainer:
         # for the record: the live path finds these from the feature names itself
         from model import blocks as drop_in
         meta["drop_in_blocks"] = drop_in.used_by(self.feature_cols)
+        meta["dropped_features"] = self.dropped_features
+        if self.history_start:
+            meta["history_start"] = self.history_start
         assert_meta_is_servable(meta)
         meta_path = os.path.join(output_dir, "bfsp_model_meta.json")
         with open(meta_path, "w") as f:
@@ -858,6 +900,9 @@ class BFSPTrainer:
                 "total_rows": len(df),
             },
         }
+        if self.history_start:
+            # the 06:00 path builds features from here (ultra_betting training_start)
+            summary["history_start"] = self.history_start
         summary_path = os.path.join(output_dir, "bfsp_training_summary.json")
         with open(summary_path, "w") as f:
             json.dump(summary, f, indent=2, default=str)
@@ -1013,6 +1058,18 @@ def main():
              "walk-forward evaluation of the same recipe",
     )
     parser.add_argument(
+        "--train-from", default=None, metavar="DATE",
+        help="Fit only the rows on or after DATE, their features built on the whole history from "
+             "--start-date (the blocks too). The summary records the history's start, so the 06:00 "
+             "path builds its features from there. Needs --feature-cache",
+    )
+    parser.add_argument(
+        "--float32", action="store_true",
+        help="Store the model's input columns and fit in single precision: half the memory of "
+             "the matrix and its copies (a history from 2018 needs it). The published booster "
+             "reads float64 inputs the same way: its thresholds lie between float32 values",
+    )
+    parser.add_argument(
         "--feature-cache", default=None, metavar="DIR",
         help="Load the feature matrix from the cache evaluate_oos.py and the research "
              "loop build (the same engine, context features and price filter; the key "
@@ -1025,6 +1082,12 @@ def main():
              "matrix carries (shape_form, shape_draw) and drop-in blocks (model/blocks), built "
              "as the live path builds them. The model's feature list then names them, and the "
              "live path builds what it names",
+    )
+    parser.add_argument(
+        "--drop-features", default=None, metavar="PREFIXES",
+        help="Comma-separated name prefixes to withhold from the model, as evaluate_oos.py "
+             "--drop-features withholds them, so the model served is the one evaluated. "
+             "The metadata records what they removed; a prefix that matches nothing is an error",
     )
     parser.add_argument(
         "--skip-prob-model", action="store_true",
@@ -1042,6 +1105,12 @@ def main():
              "This defaulted to 1.0, which hands a three-year-old race 5%% of "
              "today's weight -- a silent decision to discard most of the history "
              "that the evaluation never made",
+    )
+    parser.add_argument(
+        "--share-weight", type=float, default=0.0,
+        help="Weight each training row by its share of its race's Betfair SP book to this "
+             "power, normalised to a mean of 1; 0 disables it (default). 1 counts a runner "
+             "for its share of the race, as race_xent does",
     )
     parser.add_argument(
         "--objective", default="l2", choices=list(OBJECTIVES),
@@ -1262,6 +1331,7 @@ def main():
     cfg = TrainConfig(
         objective=objective,
         decay_rate=decay_rate,
+        share_weight=args.share_weight,
         target=args.target,
         holdout_days=args.holdout_days,
         purge_days=args.purge_days,
@@ -1271,6 +1341,7 @@ def main():
         params=params,
         num_boost_round=args.num_boost_round,
         fixed_rounds=args.fixed_rounds,
+        float32=args.float32,
     )
     log.info("Training recipe: objective=%s target=%s decay=%.2f holdout=%dd "
              "purge=%dd seed=%d", cfg.objective, cfg.target, cfg.decay_rate,
@@ -1284,7 +1355,17 @@ def main():
         cfg=cfg,
         wf_folds=args.wf_folds,
         prob_model=not args.skip_prob_model,
+        drop_features=tuple(p.strip() for p in (args.drop_features or "").split(",") if p.strip()),
     )
+
+    if args.train_from:
+        if not args.feature_cache:
+            raise SystemExit("--train-from trims the cached matrix: add --feature-cache DIR")
+        trainer.history_start = str(args.start_date or pd.to_datetime(df["race_date"]).min().date())[:10]
+        df = keep_rows_from(df, args.train_from)
+
+    if args.float32:
+        df = to_single_precision(df)
 
     summary = trainer.train(df, output_dir=args.output_dir, prepared=prepared)
 

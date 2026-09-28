@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  actions: read   # a query may read a train run's model artifact (matrix_live_parity.py)
 
 jobs:
   query:
@@ -28,6 +29,15 @@ jobs:
           cache: 'pip'
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Add swap
+        # a query may build the live path's features on the whole history (matrix_live_parity.py)
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile /mnt/swapfile || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          free -h
       - name: Download historic database from S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -51,6 +61,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           PRED_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           PRED_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # no pending query (all moved to done/) must run nothing, not a file named '*'
           shopt -s nullglob

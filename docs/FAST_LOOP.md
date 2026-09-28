@@ -83,8 +83,12 @@ Brier skill against the base, and the decision. Then come the full
 comparisons and the early-price trade for each arm.
 
 **The decision rule.** A variant replaces the base only if its paired error
-interval excludes zero in its favour, and neither Brier skill nor concordance
-is worse by more than its own interval. With `"replicate_base": true` the base
+interval excludes zero in its favour, and neither Brier skill against the market
+nor concordance is resolved worse: each 90% interval must reach zero or above.
+(`scripts/compare_oos_runs.py decide`. Until 26 Sep the two guards compared a
+point estimate with its own interval's lower bound, which it always passes, so
+they never fired; none of the 72 iteration comparisons kept from 28-60 changes
+under the corrected rule.) With `"replicate_base": true` the base
 is fitted twice to check that fits are reproducible. They are deterministic, so
 that floor is zero, and it is not the noise that matters.
 
@@ -100,6 +104,29 @@ So on the quick recipe a difference inside those sizes is not evidence, however
 its interval reads. To test a seed, add a variant `{"name": "seed7", "args":
 "--seed 7"}` and compare it with the base. To re-read a variant against its own
 seed, run `scripts/compare_oos_runs.py` on the two arms' prediction files.
+
+**The placebo.** `model/blocks/placebo.py` adds ten columns of noise. Iteration
+50 ran it on the quick recipe:
+- it read +0.0022 (90% CI +0.0006 to +0.0038), a "resolved" loss;
+- Brier skill also read as a resolved loss;
+- its forecasts moved 0.17 in log price a runner, as a new seed's do.
+
+Adding any block reshuffles the quick fit, so the bar is about ±0.0025. A
+smaller quick-recipe result counts only when it repeats across different
+feature sets. Add `{"name": "placebo", "blocks": "placebo"}` to an iteration to
+measure the bar on the recipe and base in use.
+
+**The screen.** Screen blocks on the quick recipe with every feature in every
+tree: set `"bfsp_args": "--param feature_fraction=1.0"` in research/loop.json.
+Iteration 51 tested it against the same base:
+- the placebo read −0.0004 and seed 7 −0.0005;
+- bookings read −0.0044 (−0.0060 to −0.0029), clear of both;
+- its base is 0.0015 weaker than the quick recipe's, which does not matter for
+  a comparison.
+
+The loop caches its base under its own key, so later screens reuse it. The
+early-price rule still moves by a point with the seed, so do not read it from
+one screen arm.
 
 ## 4. Confirm on the served recipe (25–45 minutes, estimate)
 

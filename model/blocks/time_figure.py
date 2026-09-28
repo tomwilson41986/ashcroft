@@ -48,6 +48,8 @@ WEIGHT_BASE = 130.0
 FEATURES = ["tf_l1", "tf_m3", "tf_m5", "tf_w5", "tf_e3", "tf_car", "tf_best5", "tf_best", "tf_trend", "tf_n",
             "tf_best5_rel", "tf_w5_rel", "tf_ga_l1"]
 POST_RACE: set[str] = set()
+READS = ["raceid", "race_date", "race_time", "track", "horse_name", "dist_furlongs", "comptime_numeric", "race_type",
+         "surface_type", "going_description", "placing_numerical", "LB", "total_dst_bt", "pounds"]
 
 
 def _num(df, name):

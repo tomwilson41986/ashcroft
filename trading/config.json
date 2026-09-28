@@ -1,0 +1,33 @@
+{
+  "strategy": "rule",
+  "staking": "level",
+  "unit": 5.0,
+  "target": 10.0,
+  "kelly_fraction": 0.25,
+  "model_weight": 0.5,
+  "margin": 0.2,
+  "min_edge": 0.02,
+  "underlay": 0.10,
+  "commission": 0.05,
+  "trade_from": "08:00",
+  "trade_until": "11:00",
+  "stop_before_off": 5,
+  "trade_out": true,
+  "trade_out_at": "fill",
+  "trade_out_before_off": 3,
+  "poll_seconds": 60,
+  "countries": ["GB", "IE"],
+  "limits": {
+    "bank": 1000.0,
+    "max_stake": 25.0,
+    "max_race_stake": 75.0,
+    "max_daily_turnover": 1000.0,
+    "max_bets_per_day": 150,
+    "daily_stop_loss": 150.0,
+    "min_stake": 2.0,
+    "min_price": 1.5,
+    "max_price": 30.0,
+    "min_market_matched": 500.0,
+    "liquidity_share": 0.5
+  }
+}

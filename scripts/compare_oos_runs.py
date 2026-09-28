@@ -329,6 +329,22 @@ def _label(path: str, other: str) -> str:
     return f"{parent}/{name}" if parent else name
 
 
+def decide(delta_ci_hi: float, brier_skill_ci, concordance_ci) -> tuple[bool, bool, bool, bool]:
+    """The decision rule: (primary, brier_ok, concordance_ok, replaces).
+
+    A variant replaces the base only if its paired error interval excludes zero
+    in its favour, and neither Brier skill against the market nor concordance
+    is resolved worse: each interval must reach zero or above. The guard read
+    `skill >= 0 or skill >= ci_lo` until 26 Sep, which a point estimate all but
+    always passes (it sits inside its own interval), so the two guards never
+    fired: iteration 62's form uplift, beside form lines, lost 0.0025 of Brier
+    skill (-0.0041 to -0.0009) and was reported as replacing the base."""
+    primary = delta_ci_hi < 0
+    brier_ok = brier_skill_ci[1] >= 0
+    conc_ok = concordance_ci[1] >= 0
+    return primary, brier_ok, conc_ok, primary and brier_ok and conc_ok
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -406,16 +422,13 @@ def main():
              "any difference worth acting on.\n")
 
     # The rule, applied here rather than left to the reader.
-    primary = hi < 0
-    brier_ok = sk["brier_skill"] >= 0 or sk["brier_skill"] >= sk["brier_skill_ci"][0]
-    conc_ok = sk["concordance"] >= 0 or sk["concordance"] >= sk["concordance_ci"][0]
-    replaces = primary and brier_ok and conc_ok
+    primary, brier_ok, conc_ok, replaces = decide(hi, sk["brier_skill_ci"], sk["concordance_ci"])
     L.append("\n## Decision\n")
     L.append(f"- paired error interval excludes zero in the variant's favour: "
              f"**{'yes' if primary else 'no'}**")
-    L.append(f"- Brier skill not worse by more than its own interval: "
+    L.append(f"- Brier skill against the market not resolved worse (its interval reaches zero): "
              f"**{'yes' if brier_ok else 'no'}**")
-    L.append(f"- concordance not worse by more than its own interval: "
+    L.append(f"- concordance not resolved worse (its interval reaches zero): "
              f"**{'yes' if conc_ok else 'no'}**")
     L.append(f"\n**{'The variant replaces the default.' if replaces else 'The default stands.'}**\n")
 

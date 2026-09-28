@@ -79,6 +79,7 @@ def test_the_upload_is_keyed_on_the_scrape_not_on_always_alone():
 @pytest.mark.parametrize("workflow,job", [
     ("daily-results.yml", "collect-results"),
     ("settle.yml", "settle"),
+    ("paper-trade.yml", "paper"),
 ])
 def test_no_live_workflow_passes_the_unset_smtp_aliases(workflow, job):
     """`SMTP_USER`/`SMTP_PASS` are not set; passing them blanks the fallback."""
@@ -90,6 +91,16 @@ def test_no_live_workflow_passes_the_unset_smtp_aliases(workflow, job):
                 f"unset -- the empty string it becomes shadows the "
                 f"SMTP_USERNAME/SMTP_PASSWORD the code falls back to"
             )
+
+
+def test_the_paper_trading_workflow_only_paper_trades():
+    """It runs the paper trader and nothing that can send an order (TRADING.md)."""
+    runs = "\n".join(str(s.get("run", "")) for s in _steps("paper-trade.yml", "paper"))
+    assert "auto_trade.py" in runs
+    for live in ("pipeline.execute", "pipeline/execute", "placeOrders", "TRADING_MODE", "--live"):
+        assert live not in runs, f"paper-trade.yml runs {live!r}"
+    env = {k for s in _steps("paper-trade.yml", "paper") for k in (s.get("env") or {})}
+    assert not {"TRADING_MODE", "LIVE_ACK"} & env
 
 
 # ---------------------------------------------------------------------------

@@ -24,6 +24,8 @@ uses (checked against it: research/queries/done/card_field_semantics.py):
   horse_sex         the horse's latest recorded sex; a filly of 5+ is a mare, a
                     colt of 5+ a horse (a gelding since its last run cannot be known)
   stallion, dam_stallion   the horse's (constant per horse)
+  dam               the horse's (constant per horse); a debutant's from the card's tooltip, as
+                    history spells her (read by the pedigree market block, by no served feature)
   career_runs       the table's count at the horse's last run, plus that run (the table
                     counts the runs before each one; history may start after the first)
   jockeys_claim     the jockey's latest claim (0 for a jockey never seen)
@@ -32,20 +34,33 @@ uses (checked against it: research/queries/done/card_field_semantics.py):
   official_rating   0 where blank: the table records unrated as 0, not missing
   prize_money       '84,405' -> 84405
 
-A value the card already has is never overwritten. A debutant has no history, so
-its sex and pedigree stay missing -- the one gap this cannot close.
+A value the card already has is never overwritten. A debutant has no history to
+fill from, so its pedigree and sex come from the card's own horse tooltip
+(daily_predictions.parse_horse_title: 'Bay, Male, Stallion - X, Dam - Y'): the
+sire as history spells it, the damsire from the dam's other offspring, a filly or
+mare from 'Female', and for 'Male' the sex history's debutants of that age and
+race code most often are. Without it a debutant's sire, damsire and sex were
+missing at 06:00 though training always had them: on the parity days (28 and 25
+March) that moved the 944's price for debutants by a mean 0.26 in log terms, over
+half of all the difference between the live path and training.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 
 import numpy as np
 import pandas as pd
 
 CARD_FILLED = ("dist_furlongs", "race_type", "surface_type", "track_direction", "horse_sex", "stallion",
-               "dam_stallion", "career_runs", "jockeys_claim", "max_or_in_race", "median_or",
+               "dam_stallion", "dam", "career_runs", "jockeys_claim", "max_or_in_race", "median_or",
                "official_rating", "prize_money")
+
+log = logging.getLogger(__name__)
+
+#: What a debutant's 'Male' on the card can be; history's commonest at its age and race code is taken.
+_MALE = ("Colt", "Gelding", "Horse", "Rig")
 
 _AW_GOING = re.compile(r"standard|\bslow\b", re.I)
 _DIST = re.compile(r"(?:(\d+)\s*m)?\s*(?:(\d+(?:\.\d+)?)\s*f)?\s*(?:(\d+)\s*y)?", re.I)
@@ -198,6 +213,86 @@ def _last_by(history: pd.DataFrame, keys: pd.Series, col: str) -> pd.Series:
     return v.groupby(keys).last()
 
 
+def _as_history_names(names: pd.Series, known: pd.Series) -> pd.Series:
+    """Each name as history spells it: the same name, suffix and all, else the one name history has
+    with the same base ('Kodiac' for a card's 'Kodiac (GB)'), else the card's own."""
+    kn = pd.Series(pd.unique(known[~_missing(known)].astype(str)), dtype=object)
+    full, base = _per_value(kn, _full), _per_value(kn, _norm)
+    single = base.map(base.value_counts()) == 1
+    by_full = dict(zip(full, kn))
+    by_base = dict(zip(base[single], kn[single]))
+    out = _per_value(names, _full).map(by_full)
+    out = out.where(out.notna(), _per_value(names, _norm).map(by_base))
+    return out.where(out.notna(), names)
+
+
+def _male_sex_guess(card: pd.DataFrame, hist: pd.DataFrame) -> pd.Series:
+    """For a male debutant: the male sex history's debutants of its age (five and over as one) and
+    race code most often were, else of its race code, else Gelding."""
+    from model.race_shape import race_code
+    guess = pd.Series("Gelding", index=card.index, dtype=object)
+    if not {"horse_sex", "career_runs", "horse_age"} <= set(hist.columns):
+        return guess
+    h = hist[pd.to_numeric(hist["career_runs"], errors="coerce").eq(0) & hist["horse_sex"].isin(_MALE)]
+    if h.empty:
+        return guess
+    hk = pd.DataFrame({"age": pd.to_numeric(h["horse_age"], errors="coerce").clip(upper=5).to_numpy(),
+                       "code": race_code(h).to_numpy(), "sex": h["horse_sex"].to_numpy()})
+    commonest = lambda s: s.value_counts().index[0]          # noqa: E731
+    by_age_code = hk.groupby(["age", "code"])["sex"].agg(commonest)
+    by_code = hk.groupby("code")["sex"].agg(commonest)
+    age = pd.to_numeric(card.get("horse_age", pd.Series(np.nan, index=card.index)), errors="coerce").clip(upper=5)
+    code = race_code(card)
+    g = pd.Series([by_age_code.get((a, c)) for a, c in zip(age, code)], index=card.index, dtype=object)
+    g = g.where(g.notna(), code.map(by_code))
+    return g.where(g.notna(), guess)
+
+
+def _fill_from_card_pedigree(card: pd.DataFrame, hist: pd.DataFrame) -> dict:
+    """Where the horse's own rows left its sire, damsire or sex missing (a debutant), the card's
+    tooltip (card_stallion, card_dam, card_sex): the sire as history spells it, the damsire from the
+    dam's other offspring, the sex from Female or Male. The counts filled, by field."""
+    n = {}
+    if "card_stallion" in card.columns and "stallion" in card.columns:
+        # the tooltip against history, where both name the sire: a check that the two spell sires alike
+        both = ~_missing(card["stallion"]) & ~_missing(card["card_stallion"])
+        if both.any():
+            agree = _per_value(card.loc[both, "stallion"], _norm) == _per_value(card.loc[both, "card_stallion"], _norm)
+            n["sire as history has it"] = f"{int(agree.sum())} of {int(both.sum())}"
+    if "card_stallion" in card.columns and "stallion" in hist.columns:
+        miss = _missing(card["stallion"]) if "stallion" in card.columns else pd.Series(True, index=card.index)
+        _fill(card, "stallion", _as_history_names(card["card_stallion"], hist["stallion"]))
+        n["sire"] = int((miss & ~_missing(card["stallion"])).sum())
+    if "card_dam" in card.columns and {"dam", "dam_stallion"} <= set(hist.columns):
+        miss = _missing(card["dam_stallion"]) if "dam_stallion" in card.columns else pd.Series(True, index=card.index)
+        dam = _as_history_names(card["card_dam"], hist["dam"])
+        by_dam = _last_by(hist, _per_value(hist["dam"], _full), "dam_stallion").drop("", errors="ignore")
+        _fill(card, "dam_stallion", _per_value(dam, _full).map(by_dam))
+        n["damsire"] = int((miss & ~_missing(card["dam_stallion"])).sum())
+        # the dam herself, as history spells her (the pedigree market block reads her other foals)
+        dam_miss = _missing(card["dam"]) if "dam" in card.columns else pd.Series(True, index=card.index)
+        _fill(card, "dam", dam.where(~_missing(card["card_dam"])))
+        n["dam"] = int((dam_miss & ~_missing(card["dam"])).sum())
+    if "card_dam" in card.columns and {"horse_name", "stallion", "horse_sex"} <= set(hist.columns):
+        # a first foal has no siblings to read it from, but a dam that raced is in history herself, and
+        # her sire is the damsire; a mare or filly of that name only, so a namesake gelding cannot answer
+        miss = _missing(card["dam_stallion"]) if "dam_stallion" in card.columns else pd.Series(True, index=card.index)
+        mares = hist[hist["horse_sex"].isin(["Filly", "Mare"])]
+        own_sire = _last_by(mares, _per_value(mares["horse_name"], _full), "stallion").drop("", errors="ignore")
+        dam_key = _per_value(_as_history_names(card["card_dam"], mares["horse_name"]), _full)
+        _fill(card, "dam_stallion", dam_key.map(own_sire))
+        n["damsire from the dam's own races"] = int((miss & ~_missing(card["dam_stallion"])).sum())
+    if "card_sex" in card.columns:
+        miss = _missing(card["horse_sex"]) if "horse_sex" in card.columns else pd.Series(True, index=card.index)
+        said = card["card_sex"].astype(str).str.strip().str.lower()
+        age = pd.to_numeric(card.get("horse_age", pd.Series(np.nan, index=card.index)), errors="coerce")
+        sex = np.where(said.eq("female"), np.where(age >= 5, "Mare", "Filly"),
+                       np.where(said.eq("male"), _male_sex_guess(card, hist).to_numpy(), None))
+        _fill(card, "horse_sex", pd.Series(sex, index=card.index, dtype=object))
+        n["sex"] = int((miss & ~_missing(card["horse_sex"])).sum())
+    return n
+
+
 def enrich_card(card: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
     """The card with every field in CARD_FILLED present, filled only where missing.
 
@@ -253,8 +348,11 @@ def enrich_card(card: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
         def by_horse(per_full: pd.Series, per_base: pd.Series) -> pd.Series:
             return fk_card.map(per_full).where(exact, bk_card.map(per_base))
 
-        for col in ("stallion", "dam_stallion", "horse_sex"):
+        for col in ("stallion", "dam_stallion", "horse_sex", "dam"):
             _fill(card, col, by_horse(_last_by(hist, fk_hist, col), _last_by(hist, bk_hist, col)))
+        filled = _fill_from_card_pedigree(card, hist)
+        if filled:
+            log.info("Card pedigree for horses with no history: " + ", ".join(f"{k} {v}" for k, v in filled.items()))
         age = pd.to_numeric(card.get("horse_age"), errors="coerce")
         sex = card["horse_sex"]
         card["horse_sex"] = np.where((sex == "Filly") & (age >= 5), "Mare",

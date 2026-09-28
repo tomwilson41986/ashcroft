@@ -114,7 +114,12 @@ def predict_prices(
         out[race_col] = ensure_race_id(out, race_col)
 
     X = out[feature_cols].astype(float)
-    raw_out = np.asarray(booster.predict(X, num_iteration=num_iteration), dtype=float)
+    if getattr(booster, "reads_races", False):
+        # a gated average ranks each race's runners (predict_bfsp_today.AveragedBooster)
+        raw_out = np.asarray(booster.predict(X, num_iteration=num_iteration,
+                                             races=out[race_col].to_numpy()), dtype=float)
+    else:
+        raw_out = np.asarray(booster.predict(X, num_iteration=num_iteration), dtype=float)
     # `booster.predict` excludes any init_score the fit started from, so the
     # caller passes it back in. Only the raw columns move: `predicted_bfsp` is
     # normalised to a book of 1, which cancels a constant offset exactly.
@@ -288,7 +293,9 @@ def parse_param_overrides(items: list[str] | None) -> dict:
 
 #: Settings a recipe iteration may add that the defaults leave to LightGBM.
 _EXTRA_PARAMS = {"max_depth", "min_sum_hessian_in_leaf", "min_gain_to_split", "extra_trees", "path_smooth",
-                 "max_bin", "cat_smooth", "cat_l2", "feature_fraction_bynode"}
+                 "max_bin", "cat_smooth", "cat_l2", "feature_fraction_bynode",
+                 # the Huber loss's threshold and the Fair loss's scale (--param objective=huber alpha=1.3)
+                 "alpha", "fair_c"}
 
 
 def profit_weighted_objective(preds, train_data):
@@ -354,7 +361,67 @@ def profit_weighted_metric(preds, train_data):
 EARLY_STOP_MARGIN = 0.05
 
 OBJECTIVES = ("l2", "profit_weighted")
-TARGETS = ("log_bfsp", "logit_norm_prob", "demeaned_log")
+TARGETS = ("log_bfsp", "logit_norm_prob", "demeaned_log", "race_xent")
+
+
+class RaceIndex:
+    """A Dataset's rows grouped by race for the within-race objective: a stable sort by
+    race and each race's first position in it, so a race's sum or maximum is one
+    reduceat over the sorted scores. The rows need not arrive race by race."""
+
+    def __init__(self, races):
+        codes = pd.factorize(pd.Series(np.asarray(races)).astype(str), sort=False)[0]
+        self.order = np.argsort(codes, kind="stable")
+        sc = codes[self.order]
+        self.starts = np.flatnonzero(np.r_[True, sc[1:] != sc[:-1]]) if len(sc) else np.array([], dtype=int)
+        self.sizes = np.diff(np.r_[self.starts, len(sc)])
+        self.n_races = len(self.starts)
+
+    def softmax_neg(self, score):
+        """q = softmax(-score) within each race: a score is a log price, so the shorter
+        the price, the larger the share of the race's probability."""
+        z = -np.asarray(score, dtype=float)[self.order]
+        z = z - np.repeat(np.maximum.reduceat(z, self.starts), self.sizes)
+        e = np.exp(z)
+        q_sorted = e / np.repeat(np.add.reduceat(e, self.starts), self.sizes)
+        q = np.empty_like(q_sorted)
+        q[self.order] = q_sorted
+        return q
+
+
+def race_xent_objective(preds, train_data):
+    """Cross-entropy of the model's within-race probabilities against the market's.
+
+    The label is the runner's share of its race's Betfair SP book (book 1); the score
+    is a log price, so the model's probabilities are softmax(-score) within the race.
+    The loss, -sum p log q per race, is the price's own error weighted by how much of
+    the race's probability a runner holds: the favourites, where the bets are, carry
+    the gradient, and a long shot's price counts for its share of the book rather than
+    one runner's worth as it does under the squared error on log prices.
+
+    d/ds_i = p_i - q_i and d2/ds_i2 = q_i (1 - q_i). LightGBM passes a custom
+    objective's gradients straight to the trees, so a row weight is applied here, as
+    profit_weighted_objective does."""
+    q = train_data.race_index.softmax_neg(preds)
+    p = train_data.get_label()
+    grad = p - q
+    hess = np.maximum(q * (1.0 - q), 1e-6)
+    w = train_data.get_weight()
+    if w is not None:
+        grad = grad * w
+        hess = hess * w
+    return grad, hess
+
+
+def race_xent_metric(preds, eval_data):
+    """Mean cross-entropy per race, what race_xent_objective minimises: early stopping
+    reads it on the holdout."""
+    idx = eval_data.race_index
+    q = idx.softmax_neg(preds)
+    p = eval_data.get_label()
+    ce = -float(np.sum(p * np.log(np.clip(q, 1e-12, None))))
+    return "race_xent", ce / max(idx.n_races, 1), False
+
 
 
 @dataclass
@@ -371,6 +438,14 @@ class TrainConfig:
     #: weight of a current one -- a silent decision to discard most of the
     #: history. Off by default, measured as a variant.
     decay_rate: float = 0.0
+
+    #: Weight each training row by its share of its race's Betfair SP book raised
+    #: to this power, normalised to a mean of 1 (0 disables it, the default).
+    #: Squared error on log prices counts every runner alike, so the long shots,
+    #: most of any field, carry most of the fit; race_xent counts a runner for its
+    #: share of the race and trades better, but prices the long shots worse
+    #: (iteration 101). A power between 0 and 1 asks for part of each.
+    share_weight: float = 0.0
 
     #: Fit the logit of the race-normalised implied probability, not log(BFSP).
     #: The same model either way; what changes is that the label lives on the
@@ -418,6 +493,14 @@ class TrainConfig:
     native_categoricals: bool = False
     params: dict = field(default_factory=lambda: dict(DEFAULT_PARAMS))
 
+    #: Hand the booster its inputs in single precision. Off by default: every
+    #: fit so far is float64 and stays byte for byte what it was. On, each copy
+    #: of the fold's rows halves, which a history from 2018 needs (iteration 99:
+    #: the matrix, the fold's rows and their sorted copy, 1.05m rows of about
+    #: 1,000 float64 columns, exceed a runner's memory). Measured against a
+    #: float32 fit on the same matrix, never against a float64 one.
+    float32: bool = False
+
     def __post_init__(self):
         if self.objective not in OBJECTIVES:
             raise ValueError(f"objective must be one of {OBJECTIVES}, got {self.objective!r}")
@@ -430,13 +513,16 @@ class TrainConfig:
         """The config as it goes into the model metadata."""
         d = asdict(self)
         d["lightgbm_objective"] = (
-            "custom:profit_weighted" if self.objective == "profit_weighted" else self.params.get("objective")
+            "custom:profit_weighted" if self.objective == "profit_weighted"
+            else "custom:race_xent" if self.target == "race_xent" else self.params.get("objective")
         )
         d["sample_weighting"] = (
             {"type": "none", "decay_rate": 0.0} if self.decay_rate <= 0
             else {"type": "exponential_decay", "decay_rate": self.decay_rate,
                   "half_life_days": round(365.0 * np.log(2) / self.decay_rate, 1)}
         )
+        if self.share_weight > 0:
+            d["sample_weighting"]["share_power"] = self.share_weight
         return d
 
 
@@ -471,6 +557,20 @@ def sample_weights(dates, decay_rate: float, reference=None):
     return np.exp(-decay_rate * days / 365.0)
 
 
+def row_weights(d: pd.DataFrame, cfg: "TrainConfig", race_col: str = "raceid"):
+    """The training rows' weights (recency and market share), or None when every row counts alike."""
+    w = sample_weights(d["race_date"], cfg.decay_rate)
+    if cfg.share_weight > 0:
+        if cfg.target == "race_xent":
+            raise ValueError("race_xent already counts a runner for its share of the race; "
+                             "share_weight is for the other targets")
+        share = build_target(d, "race_xent", race_col)       # the runner's share of its race's book
+        sw = np.power(np.clip(share, 1e-6, None), cfg.share_weight)
+        sw = sw / sw.mean()
+        w = sw if w is None else w * sw
+    return w
+
+
 def build_target(df: pd.DataFrame, target: str, race_col: str = "raceid") -> np.ndarray:
     """The label to regress on.
 
@@ -484,6 +584,9 @@ def build_target(df: pd.DataFrame, target: str, race_col: str = "raceid") -> np.
     - `logit_norm_prob`  logit of the race-normalised implied probability, which
                          is the target that lives on the same scale as the
                          thing the model is finally judged on.
+    - `race_xent`        the race-normalised implied probability itself, fitted by
+                         the within-race cross-entropy (race_xent_objective): the
+                         booster's score is a log price up to the race's constant.
     """
     lp = np.log(pd.to_numeric(df["bfsp"], errors="coerce").to_numpy(dtype=float))
     if target == "log_bfsp":
@@ -496,13 +599,17 @@ def build_target(df: pd.DataFrame, target: str, race_col: str = "raceid") -> np.
         book = pd.Series(ip).groupby(races.to_numpy()).transform("sum").to_numpy()
         q = np.clip(ip / book, 1e-6, 1 - 1e-6)
         return np.log(q / (1.0 - q))
+    if target == "race_xent":
+        ip = 1.0 / np.exp(lp)
+        book = pd.Series(ip).groupby(races.to_numpy()).transform("sum").to_numpy()
+        return ip / book
     raise ValueError(f"unknown target {target!r}")
 
 
 def invert_target(pred: np.ndarray, df: pd.DataFrame, target: str,
                   race_col: str = "raceid") -> np.ndarray:
     """Model output back to a raw price, before the book is normalised."""
-    if target in ("log_bfsp", "demeaned_log"):
+    if target in ("log_bfsp", "demeaned_log", "race_xent"):
         return np.exp(pred)
     if target == "logit_norm_prob":
         q = 1.0 / (1.0 + np.exp(-np.clip(pred, -30, 30)))
@@ -530,6 +637,10 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
     rows the caller intends to score. That is the whole point: choosing the
     iteration count on the scored fold is model selection on the test set."""
     d = train_df.sort_values("race_date")
+    # The unsorted frame is not read again; where the caller holds no other name
+    # on it (evaluate_oos.walk_forward_predict), dropping it frees a copy of the
+    # training rows before the feature array is built.
+    del train_df
     dates = pd.to_datetime(d["race_date"])
     holdout_start = dates.max() - pd.Timedelta(days=int(cfg.holdout_days))
     is_holdout = (dates >= holdout_start).to_numpy()
@@ -541,7 +652,7 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         holdout_start = dates.iloc[cut] if cut < len(d) else dates.max()
 
     y = build_target(d, cfg.target, race_col)
-    w = sample_weights(d["race_date"], cfg.decay_rate)
+    w = row_weights(d, cfg, race_col)
 
     cat = [c for c in feature_cols if c.endswith("_cat")] if cfg.native_categoricals else None
 
@@ -561,6 +672,8 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
     if cfg.objective == "profit_weighted":
         init_offset = float(np.mean(y[~is_holdout]))
 
+    dtype = np.float32 if cfg.float32 else float
+
     def _ds(mask, ref=None):
         """A Dataset over the masked rows, materialising one slice at a time.
 
@@ -572,16 +685,27 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         fit with a runner shutdown. Slice straight out of the frame and let
         LightGBM free the raw data once it has binned it."""
         n = int(np.count_nonzero(mask))
-        return lgb.Dataset(
-            d.loc[mask, feature_cols].astype(float),
+        ds = lgb.Dataset(
+            d.loc[mask, feature_cols].astype(dtype, copy=False),   # no second copy of columns already in dtype
             label=y[mask],
             weight=None if w is None else w[mask],
             init_score=None if init_offset == 0.0 else np.full(n, init_offset),
             reference=ref, categorical_feature=cat or "auto",
         )
+        if cfg.target == "race_xent":
+            # the within-race objective and metric read the Dataset's races
+            ds.race_index = RaceIndex(ensure_race_id(d, race_col).to_numpy()[mask])
+        return ds
 
     params = dict(cfg.params)
     feval = None
+    if cfg.target == "race_xent":
+        if cfg.objective == "profit_weighted":
+            raise ValueError("race_xent is its own objective; it cannot be profit_weighted too")
+        # the objective is the target's: a params objective (huber, say) cannot apply to it
+        params["objective"] = race_xent_objective
+        params["metric"] = "None"
+        feval = race_xent_metric
     if cfg.objective == "profit_weighted":
         params["objective"] = profit_weighted_objective
         params.pop("metric", None)
@@ -599,7 +723,7 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
                             callbacks=[lgb.log_evaluation(period=0)])
         del full
         gc.collect()
-        hp = booster.predict(d.loc[is_holdout, feature_cols].astype(float)) + init_offset
+        hp = booster.predict(d.loc[is_holdout, feature_cols].astype(dtype)) + init_offset
         hy = y[is_holdout]
         return FitResult(
             booster=booster, best_iteration=int(cfg.fixed_rounds), holdout_start=holdout_start,
@@ -625,7 +749,7 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
     # booster.predict() excludes init_score, so add it back before comparing
     # with the label -- otherwise the holdout MAE measures the wrong thing and
     # early stopping is judged on it.
-    hp = booster.predict(d.loc[is_holdout, feature_cols].astype(float),
+    hp = booster.predict(d.loc[is_holdout, feature_cols].astype(dtype),
                          num_iteration=best) + init_offset
     hy = y[is_holdout]
     holdout_metrics = {
@@ -717,10 +841,21 @@ def model_meta(cfg: TrainConfig, feature_cols: list[str], fit: FitResult | None 
 #: caller goes through), so this list is no longer "what the default happens to
 #: be" but "what `invert_target` has a rule for and the head-to-head has
 #: measured". `logit_norm_prob` joined it when the split-half check confirmed
-#: v4_logit's win held in both halves of the window; `demeaned_log` has not been
-#: adopted, so a mismatch is still a refusal at load time rather than a wrong
-#: price at 06:00.
-SERVABLE_TARGETS = ("log_bfsp", "logit_norm_prob")
+#: v4_logit's win held in both halves of the window. `demeaned_log` joined it as
+#: a member of an average: alone it prices worse than the logit fits, but its
+#: errors differ from theirs, and the extra-trees fit on it averaged with the
+#: extra-trees Huber fit prices the window at 0.3982 against 0.4001 for the
+#: better of the two (iteration 92). Its rule is the log target's, exp; the
+#: race-level term it drops is cancelled by the normalisation. `race_xent` joined
+#: it as a member for the bets: its score is a log price like demeaned_log's (the
+#: same rule, exp, then the book), and though it prices the window worse than the
+#: demeaned-log partner (iteration 101: +0.0079), it trades better alone and in
+#: every average that holds it (research query run 36383360553, a paired race
+#: bootstrap of the early-price rule: +1.32 points alone, +0.38 to +0.49 in the
+#: pair). A booster fitted with its custom objective loads from its file as
+#: "custom" and predicts the same raw score. Any other target is still a refusal
+#: at load time rather than a wrong price at 06:00.
+SERVABLE_TARGETS = ("log_bfsp", "logit_norm_prob", "demeaned_log", "race_xent")
 
 
 def attach_serving_rule(booster, meta: dict):

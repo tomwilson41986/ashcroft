@@ -297,6 +297,7 @@ def scrape_racecard_html(
                 runner["stall"] = _safe_int(cell_texts[col_idx["No."]])
             if "Horse" in col_idx:
                 runner["horse_name"] = cell_texts[col_idx["Horse"]]
+                runner.update(parse_horse_title(cells[col_idx["Horse"]].get("title")))
             if "Age" in col_idx:
                 runner["horse_age"] = _safe_int(cell_texts[col_idx["Age"]])
             if "Weight" in col_idx:
@@ -344,6 +345,29 @@ def scrape_racecard_html(
     df = pd.DataFrame(all_runners)
     log.info(f"Scraped {len(df)} runners from {race_count} races")
     return df
+
+
+# The horse cell's tooltip on the HTML card, the only pedigree the card carries:
+# 'Bay, Female, Stallion - Blue Point (IRE), Dam - Rue De Russie (IRE)'.
+_HORSE_TITLE = re.compile(r"^\s*(?P<colour>[^,]+),\s*(?P<sex>Male|Female)\s*,\s*Stallion\s*-\s*(?P<sire>.+?)\s*,"
+                          r"\s*Dam\s*-\s*(?P<dam>.+?)\s*$", re.I)
+
+
+def parse_horse_title(title: str | None) -> dict:
+    """The sire, dam and sex in the card's horse tooltip, as card_* fields ({} when it has none).
+
+    A debutant has no earlier rows to take its pedigree from, so without these it
+    reached the model with no sire, damsire or sex although training always had
+    them: on the parity days that moved its price by a mean 0.26 in log terms
+    against training's (model/card_enrich.py fills from them).
+
+        'Bay, Male, Stallion - Harry Angel (IRE), Dam - Twist n Shake'
+            -> {'card_stallion': 'Harry Angel (IRE)', 'card_dam': 'Twist n Shake', 'card_sex': 'Male'}
+    """
+    m = _HORSE_TITLE.match(title or "")
+    if not m:
+        return {}
+    return {"card_stallion": m["sire"], "card_dam": m["dam"], "card_sex": m["sex"].title()}
 
 
 def parse_odds_text(text: str | None) -> float | None:
