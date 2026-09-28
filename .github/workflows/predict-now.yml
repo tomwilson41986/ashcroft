@@ -39,6 +39,11 @@ on:
         description: "First day of history to build features from (empty: the priced model's own, as at 06:00)"
         required: false
         type: string
+      swap:
+        description: 'Add 16 GB of swap first (the 06:00 job has none): for measuring a longer history'
+        required: false
+        type: boolean
+        default: false
   push:
     # A workflow only on a feature branch cannot be dispatched, so a push to a
     # branch of this name runs it. Scoped to this file.
@@ -65,6 +70,23 @@ jobs:
 
       - name: Install dependencies
         run: pip install -e ".[pipeline]" && pip install -r requirements.txt
+
+      - name: Add swap
+        # Only when asked: the 06:00 job runs without swap, and a dry run should
+        # price the card as it would. A dry run on a longer history (start_date)
+        # was killed for memory in the feature engine (predict-now run 27, 2018);
+        # swap says whether it can finish at all, and in what time.
+        if: ${{ inputs.swap }}
+        continue-on-error: true
+        run: |
+          set -x
+          sudo swapoff -a || true
+          sudo rm -f /swapfile /mnt/swapfile || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
 
       - name: Download the database
         if: ${{ !inputs.probe_card }}
@@ -125,7 +147,9 @@ jobs:
             START=$(PYTHONPATH=src python -c "from ultra_betting.model.predict import training_start; print(training_start('$MODEL_DIR'))")
           fi
           echo "history from $START" | tee out/history_start.txt
-          python predict_bfsp_today.py \
+          TIMER=""
+          if [ -x /usr/bin/time ]; then TIMER="/usr/bin/time -v"; fi   # peak memory into the log
+          $TIMER python predict_bfsp_today.py \
             ${{ inputs.date && format('--date {0}', inputs.date) || '' }} \
             --start-date "$START" --model-dir "$MODEL_DIR" \
             --output-csv out/predictions.csv 2>&1 | tee out/predict.log
