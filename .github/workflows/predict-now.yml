@@ -3,8 +3,9 @@ name: Predict Now (artifact only)
 # Prices a day's card with the model on this branch and uploads the result as an
 # artifact. Unlike predict.yml it writes nothing to S3, so a run in the middle of
 # the day never overwrites the 06:00 record that closing-line value is measured
-# against. History starts where training did (2021-01-01), not at the live
-# pipeline's 2020-01-01.
+# against. History starts where the priced model's features did (its training
+# summary's history_start, else its first row; 2021-01-01 for the models so far),
+# as at 06:00, unless start_date says otherwise.
 
 on:
   workflow_dispatch:
@@ -34,6 +35,10 @@ on:
         required: false
         type: boolean
         default: false
+      start_date:
+        description: "First day of history to build features from (empty: the priced model's own, as at 06:00)"
+        required: false
+        type: string
   push:
     # A workflow only on a feature branch cannot be dispatched, so a push to a
     # branch of this name runs it. Scoped to this file.
@@ -115,9 +120,14 @@ jobs:
               > "$MODEL_DIR/bfsp_ensemble.json"
             cat "$MODEL_DIR/bfsp_ensemble.json"
           fi
+          START="${{ inputs.start_date }}"
+          if [ -z "$START" ]; then
+            START=$(PYTHONPATH=src python -c "from ultra_betting.model.predict import training_start; print(training_start('$MODEL_DIR'))")
+          fi
+          echo "history from $START" | tee out/history_start.txt
           python predict_bfsp_today.py \
             ${{ inputs.date && format('--date {0}', inputs.date) || '' }} \
-            --start-date 2021-01-01 --model-dir "$MODEL_DIR" \
+            --start-date "$START" --model-dir "$MODEL_DIR" \
             --output-csv out/predictions.csv 2>&1 | tee out/predict.log
           cp csv/racecards/racecard_*.csv out/ 2>/dev/null || true
 

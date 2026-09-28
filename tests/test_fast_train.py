@@ -97,3 +97,19 @@ def test_float32_casts_the_model_inputs_only_and_the_booster_reads_float64_the_s
     # served on float64 inputs: every split falls the same way as on the float32 ones it learned from
     x64 = df[["rPMW3", "LR_ORR2", "or_num"]].astype(float)
     np.testing.assert_array_equal(trainer.model.predict(x64), trainer.model.predict(x64.astype(np.float32)))
+
+
+def test_train_from_fits_the_later_rows_and_records_where_the_history_began(tmp_path):
+    df = _matrix()
+    kept = train_bfsp.keep_rows_from(df, "2024-04-01")
+    assert pd.to_datetime(kept["race_date"]).min() == pd.Timestamp("2024-04-01")
+    assert len(kept) == int((pd.to_datetime(df["race_date"]) >= "2024-04-01").sum())
+    trainer = train_bfsp.BFSPTrainer(cfg=TrainConfig(fixed_rounds=20, params=SMALL), prob_model=False)
+    trainer.history_start = "2024-01-01"
+    assert "error" not in trainer.train(kept, output_dir=str(tmp_path), prepared=True)
+    summary = json.loads((tmp_path / "bfsp_training_summary.json").read_text())
+    meta = json.loads((tmp_path / "bfsp_model_meta.json").read_text())
+    assert summary["history_start"] == meta["history_start"] == "2024-01-01"
+    assert summary["data_range"]["min_date"] == "2024-04-01"
+    from ultra_betting.model.predict import training_start
+    assert training_start(tmp_path) == "2024-01-01"      # the 06:00 path builds from the history's start

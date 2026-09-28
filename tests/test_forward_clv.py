@@ -283,6 +283,10 @@ def test_serving_builds_history_from_where_training_did(tmp_path):
 
     (tmp_path / "bfsp_training_summary.json").write_text(json.dumps({"data_range": {"min_date": "2022-03-01"}}))
     assert training_start(tmp_path) == "2022-03-01"
+    # fitted on rows from 2021 with features built on the history from 2018: the history's start
+    (tmp_path / "bfsp_training_summary.json").write_text(
+        json.dumps({"data_range": {"min_date": "2021-01-01"}, "history_start": "2018-01-01"}))
+    assert training_start(tmp_path) == "2018-01-01"
     assert training_start(tmp_path / "absent") == TRAINING_START_FALLBACK
     # the committed model says where its own history began
     import os

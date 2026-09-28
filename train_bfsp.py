@@ -118,6 +118,14 @@ def to_single_precision(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def keep_rows_from(df: pd.DataFrame, train_from: str) -> pd.DataFrame:
+    """The rows on or after `train_from`, for a fit whose features were built on the
+    longer history before it (iteration 99: careers from 2018, rows from 2021)."""
+    keep = (pd.to_datetime(df["race_date"]) >= pd.Timestamp(train_from)).to_numpy()
+    log.info("--train-from %s: fitting %d of %d rows", train_from, int(keep.sum()), len(df))
+    return df.loc[keep].reset_index(drop=True)
+
+
 def load_data(db_path: str, start_date: str | None = None) -> pd.DataFrame:
     """Load race results from SQLite, optionally filtering by start date."""
     conn = sqlite3.connect(db_path)
@@ -234,6 +242,9 @@ class BFSPTrainer:
         #: evaluation measured. What they removed goes into the metadata.
         self.drop_features = tuple(drop_features)
         self.dropped_features: list[str] = []
+        #: where the features' history began, when the rows fitted start later
+        #: (--train-from): the live path must build its features from here
+        self.history_start: str | None = None
         #: The Benter stage-2 win model. Nothing served loads it (the train
         #: workflow neither commits nor uploads it) and it costs about eight
         #: minutes, so the fast path turns it off.
@@ -863,6 +874,8 @@ class BFSPTrainer:
         from model import blocks as drop_in
         meta["drop_in_blocks"] = drop_in.used_by(self.feature_cols)
         meta["dropped_features"] = self.dropped_features
+        if self.history_start:
+            meta["history_start"] = self.history_start
         assert_meta_is_servable(meta)
         meta_path = os.path.join(output_dir, "bfsp_model_meta.json")
         with open(meta_path, "w") as f:
@@ -887,6 +900,9 @@ class BFSPTrainer:
                 "total_rows": len(df),
             },
         }
+        if self.history_start:
+            # the 06:00 path builds features from here (ultra_betting training_start)
+            summary["history_start"] = self.history_start
         summary_path = os.path.join(output_dir, "bfsp_training_summary.json")
         with open(summary_path, "w") as f:
             json.dump(summary, f, indent=2, default=str)
@@ -1040,6 +1056,12 @@ def main():
         help="Fit once on the whole window at exactly N rounds, skipping the "
              "early-stopping fit (half the fitting time). Take N from the "
              "walk-forward evaluation of the same recipe",
+    )
+    parser.add_argument(
+        "--train-from", default=None, metavar="DATE",
+        help="Fit only the rows on or after DATE, their features built on the whole history from "
+             "--start-date (the blocks too). The summary records the history's start, so the 06:00 "
+             "path builds its features from there. Needs --feature-cache",
     )
     parser.add_argument(
         "--float32", action="store_true",
@@ -1328,6 +1350,12 @@ def main():
         prob_model=not args.skip_prob_model,
         drop_features=tuple(p.strip() for p in (args.drop_features or "").split(",") if p.strip()),
     )
+
+    if args.train_from:
+        if not args.feature_cache:
+            raise SystemExit("--train-from trims the cached matrix: add --feature-cache DIR")
+        trainer.history_start = str(args.start_date or pd.to_datetime(df["race_date"]).min().date())[:10]
+        df = keep_rows_from(df, args.train_from)
 
     if args.float32:
         df = to_single_precision(df)
