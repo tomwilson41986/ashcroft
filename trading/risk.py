@@ -21,9 +21,13 @@ class DayState:
             self.race_stake[market_id] = self.race_stake.get(market_id, 0.0) + matched
 
 
-def allowed_stake(stake: float, price: float, market_id: str, market_matched: float, back_size: float,
+def allowed_stake(stake: float, price: float, market_id: str, market_matched: float | None, back_size: float,
                   state: DayState, limits) -> tuple[float, str]:
-    """The stake the limits allow (rounded down to the penny), or 0 and the reason."""
+    """The stake the limits allow (rounded down to the penny), or 0 and the reason.
+
+    A market whose matched volume Betfair did not report (None) is not held to the volume floor;
+    the share of the size on offer still caps the stake.
+    """
     if state.stopped:
         return 0.0, state.stopped
     if state.settled_pnl <= -abs(limits.daily_stop_loss):
@@ -33,7 +37,7 @@ def allowed_stake(stake: float, price: float, market_id: str, market_matched: fl
         return 0.0, "max bets per day"
     if not (limits.min_price <= price <= limits.max_price):
         return 0.0, f"price {price} outside {limits.min_price}-{limits.max_price}"
-    if market_matched < limits.min_market_matched:
+    if market_matched is not None and market_matched < limits.min_market_matched:
         return 0.0, f"market matched £{market_matched:,.0f} below £{limits.min_market_matched:,.0f}"
     s = min(stake, limits.max_stake,
             limits.max_race_stake - state.race_stake.get(market_id, 0.0),

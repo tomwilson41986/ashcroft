@@ -179,6 +179,22 @@ def test_non_runners_are_dropped_and_the_model_renormalised_over_the_rest():
     assert got[0].p_model + got[1].p_model == pytest.approx(1.0)
 
 
+def test_a_market_without_its_matched_volume_is_not_held_to_the_volume_floor():
+    """A delayed application key may leave totalMatched out: unknown is not thin."""
+    from trading.config import Limits
+    from trading.risk import DayState, allowed_stake
+    b = parse_book({"marketId": "1.9", "status": "OPEN", "inplay": False, "runners": []})
+    assert b.total_matched is None
+    assert parse_book({"marketId": "1.9", "totalMatched": 0, "runners": []}).total_matched == 0.0
+    lim = Limits()
+    stake, why = allowed_stake(10.0, 5.0, "1.9", None, 100.0, DayState(), lim)
+    assert (stake, why) == (10.0, "")
+    stake, why = allowed_stake(10.0, 5.0, "1.9", 0.0, 100.0, DayState(), lim)
+    assert stake == 0.0 and "below" in why
+    stake, _ = allowed_stake(10.0, 5.0, "1.9", None, 6.0, DayState(), lim)
+    assert stake == 3.0                              # half the size on offer still caps it
+
+
 def test_the_limits_cap_every_stake_and_the_stop_loss_ends_the_day():
     cfg = _cfg(limits={"max_stake": 20.0, "max_race_stake": 30.0, "liquidity_share": 0.5})
     st = DayState()

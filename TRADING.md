@@ -65,6 +65,18 @@ simulated lay at BSP. Nothing is placed on the exchange: the package has no orde
 - `python auto_trade.py --until 11:05` in the morning; `python auto_trade.py --settle` in the evening
   settles the day from the closed markets (winner, non-runner, BSP) and emails a summary.
 - Tests: `tests/test_trading_bot.py`, `tests/test_trading_staking.py`.
+- Schedule: `.github/workflows/paper-trade.yml` trades from 06:50 UTC (the trader waits for its window) and
+  settles at 21:45 UTC, and either can be run by hand. GitHub runs scheduled and hand-run workflows only
+  from the default branch, so it starts once this branch is merged. The ledger is also kept as the run's
+  artifact. It needs the secrets the other Betfair jobs use (`BETFAIR_USERNAME`, `BETFAIR_PASSWORD`,
+  `BETFAIR_APP_KEY`; the certificate secrets `BETFAIR_CERT` and `BETFAIR_KEY` if present) and the AWS ones.
+- A delayed application key serves the paper trader, with two caveats: its prices lag the exchange (by
+  up to a few minutes), so simulated fills are against a slightly old book; and it may leave out a
+  market's matched volume, in which case that market is not held to the volume floor (the share of the
+  size on offer still caps each stake). If the first ledgers show every market skipped as below the
+  floor, set the repository variable `TRADING_MIN_MARKET_MATCHED` to 0.
+- GitHub's runners are in the US; Betfair restricts access from some countries. The first scheduled run
+  shows whether a runner can log in and read the markets; if not, the trader runs from a UK machine.
 
 **The paper trader is the forward test.** It measures the edge at the prices actually on offer at the
 moment of decision, on the card as known that morning. The criterion to go further, fixed now: after at

@@ -83,7 +83,7 @@ class Book:
     market_id: str
     status: str                            # OPEN, SUSPENDED, CLOSED
     inplay: bool
-    total_matched: float
+    total_matched: float | None            # None when Betfair leaves it out (a delayed key may)
     runners: dict                          # selection_id -> Quote
     bsp_reconciled: bool = False
 
@@ -116,7 +116,8 @@ def parse_book(raw: dict) -> Book:
             last_traded=r.get("lastPriceTraded"), traded=float(r.get("totalMatched") or 0.0),
             bsp=sp.get("actualSP") if isinstance(sp.get("actualSP"), (int, float)) else None)
     return Book(market_id=raw["marketId"], status=raw.get("status", "OPEN"), inplay=bool(raw.get("inplay")),
-                total_matched=float(raw.get("totalMatched") or 0.0), runners=runners,
+                total_matched=(float(raw["totalMatched"]) if raw.get("totalMatched") is not None else None),
+                runners=runners,
                 bsp_reconciled=bool(raw.get("bspReconciled")))
 
 
