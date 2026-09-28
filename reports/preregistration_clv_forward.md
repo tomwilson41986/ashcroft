@@ -133,3 +133,16 @@ At the owner's instruction of 25 September ("add the form windows into the main 
 - **The backtest's forecast** for the forward days (the reading-2 comparison) is rebuilt with each day's model: the 535 recipe for 25 September, the 615 at 6000 rounds from 26 September.
 
 **Nothing else changes:** not the rule, not the criteria, not the window's length or its exclusions.
+
+## Amendment, 28 Sep 2026 (13:00 UTC), before the 29 September card: the model from day 5
+
+At the owner's instruction of 28 September ("switch to the best model"), **the 06:00 run of 29 September serves the complete-careers pair gated with race_xent**, in place of the 615 (days 2-4, 26-28 September).
+- **Artefact:** three boosters served as one (`data/models/bfsp_ensemble.json`), each on 993 features built on the history from 2018 and fitted on rows from 2021, trained through 2026-09-22, all verified before commit (`scripts/verify_model.py`: PASS):
+  - the main: the combined 968s5xh with the Kalman rating, handicap angles and travel (train-bfsp run 54; `reports/model_verify_968s5xh_h18.md`);
+  - the within-race partner (run 55; `reports/model_verify_968s5xd_h18.md`), averaged with the main;
+  - race_xent (run 56; `reports/model_verify_race_xent_h18.md`), gated to the pair's leaders: its log price takes weight 1 for the pair's ranks 1-3 in each race, 0.5 for ranks 4-7 and 0 from rank 8, each race renormalised to a book of 1.
+- **Why it qualifies:** on the development window (27 Sep 2025 - 31 Mar 2026, 53,910 runners) it prices the BSP at 0.3926 mean absolute log error against the 615's 0.4358, and against the best model before it (0.3966) −0.0040 (−0.0048 to −0.0031), with Brier skill against the market resolved better; the rule, paired by race bootstrap against that model on Jan-Mar 2026, +12.65% against +10.70%, +1.95 points (+1.21 to +2.75) (research query run 36401419654). The gate's weights were set before its bets were scored.
+- **Checked on the 06:00 path:** the committed files dry-run on 28 September's card (predict-now runs 32 and the gated run after it): every runner priced, books of 1. The history the job builds starts in 2018 (the members' training summaries), which needs swap on the runner: `predict.yml` gains the opt-in swap step of the dry runs and a 60-minute limit.
+- **The change is between days**, as the amendment of 24 September requires. Days 1-4 stay scored on the models that served them (the 535 on 25 September, the 615 from 26 to 28 September); from 29 September the window runs on this model. The headline, its interval and the halves are reported for each model's days as well as for the whole window, which is still the criterion.
+
+**Nothing else changes:** not the rule, not the criteria, not the window's length or its exclusions.
