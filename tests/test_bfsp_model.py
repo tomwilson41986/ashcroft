@@ -583,3 +583,19 @@ def test_price_scale_metrics_are_prices_whichever_label_was_fitted():
     assert old["target"] == "log_bfsp"
     assert old["bfsp_mae"] == pytest.approx(
         np.mean(np.abs(np.exp(lp) - np.exp(lp + 0.1))), abs=1e-2)
+
+
+def test_float32_is_off_by_default_and_on_fits_the_same_rows_in_single_precision():
+    """--float32 halves the fold's copies for a long history. Off by default, so every
+    existing fit is unchanged; on, the booster sees the same rows and features at single
+    precision and lands close to the float64 fit (never compared with one in research)."""
+    assert TrainConfig().float32 is False
+    df = _history(n_days=120)
+    base = TrainConfig(num_boost_round=30, early_stopping_rounds=5, holdout_days=20)
+    f64 = fit_bfsp(df, ["f1", "f2"], base)
+    f32 = fit_bfsp(df, ["f1", "f2"], replace(base, float32=True))
+    assert f32.n_train == f64.n_train and f32.n_holdout == f64.n_holdout
+    x = df[["f1", "f2"]].astype(float).head(200)
+    p64, p32 = f64.booster.predict(x), f32.booster.predict(x)
+    assert np.corrcoef(p64, p32)[0, 1] > 0.99
+    assert model_meta(replace(base, float32=True), ["f1", "f2"], fit=f32)["float32"] is True

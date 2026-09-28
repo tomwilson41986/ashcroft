@@ -420,6 +420,14 @@ class TrainConfig:
     native_categoricals: bool = False
     params: dict = field(default_factory=lambda: dict(DEFAULT_PARAMS))
 
+    #: Hand the booster its inputs in single precision. Off by default: every
+    #: fit so far is float64 and stays byte for byte what it was. On, each copy
+    #: of the fold's rows halves, which a history from 2018 needs (iteration 99:
+    #: the matrix, the fold's rows and their sorted copy, 1.05m rows of about
+    #: 1,000 float64 columns, exceed a runner's memory). Measured against a
+    #: float32 fit on the same matrix, never against a float64 one.
+    float32: bool = False
+
     def __post_init__(self):
         if self.objective not in OBJECTIVES:
             raise ValueError(f"objective must be one of {OBJECTIVES}, got {self.objective!r}")
@@ -567,6 +575,8 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
     if cfg.objective == "profit_weighted":
         init_offset = float(np.mean(y[~is_holdout]))
 
+    dtype = np.float32 if cfg.float32 else float
+
     def _ds(mask, ref=None):
         """A Dataset over the masked rows, materialising one slice at a time.
 
@@ -579,7 +589,7 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         LightGBM free the raw data once it has binned it."""
         n = int(np.count_nonzero(mask))
         return lgb.Dataset(
-            d.loc[mask, feature_cols].astype(float, copy=False),   # no second copy of float64 columns
+            d.loc[mask, feature_cols].astype(dtype, copy=False),   # no second copy of columns already in dtype
             label=y[mask],
             weight=None if w is None else w[mask],
             init_score=None if init_offset == 0.0 else np.full(n, init_offset),
@@ -605,7 +615,7 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
                             callbacks=[lgb.log_evaluation(period=0)])
         del full
         gc.collect()
-        hp = booster.predict(d.loc[is_holdout, feature_cols].astype(float)) + init_offset
+        hp = booster.predict(d.loc[is_holdout, feature_cols].astype(dtype)) + init_offset
         hy = y[is_holdout]
         return FitResult(
             booster=booster, best_iteration=int(cfg.fixed_rounds), holdout_start=holdout_start,
@@ -631,7 +641,7 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
     # booster.predict() excludes init_score, so add it back before comparing
     # with the label -- otherwise the holdout MAE measures the wrong thing and
     # early stopping is judged on it.
-    hp = booster.predict(d.loc[is_holdout, feature_cols].astype(float),
+    hp = booster.predict(d.loc[is_holdout, feature_cols].astype(dtype),
                          num_iteration=best) + init_offset
     hy = y[is_holdout]
     holdout_metrics = {

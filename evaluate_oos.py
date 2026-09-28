@@ -804,6 +804,11 @@ def main():
              "does not matter",
     )
     parser.add_argument(
+        "--float32", action="store_true",
+        help="Store the model's input columns and fit in single precision: half the memory of the "
+             "fold's copies (a history from 2018 needs it). Compare only with float32 fits",
+    )
+    parser.add_argument(
         "--decay-rate", type=float, default=0.0,
         help="Exponential recency weight exp(-rate*days/365); 0 disables it "
              "(default). 1.0 gives a three-year-old race 5%% of today's weight",
@@ -952,6 +957,7 @@ def main():
         native_categoricals=args.native_categoricals,
         num_boost_round=args.num_boost_round or recipe_rounds,
         params=params,
+        float32=args.float32,
     )
     schedule = dict(min_train_days=args.min_train_days, val_window_days=args.val_window,
                     step_days=args.step_days, cfg=cfg, eval_from=args.eval_from,
@@ -1060,6 +1066,14 @@ def main():
         strict=not args.allow_missing_features, log=log,
     )
     missing_features = [c for c in wanted if c not in df.columns]
+
+    if args.float32:
+        # The model's float64 inputs to single precision now, before the folds copy
+        # them: the matrix itself halves too.
+        cast = [c for c in feature_cols_full if df[c].dtype == np.float64]
+        df = df.astype({c: np.float32 for c in cast}, copy=False)
+        gc.collect()
+        log.info("float32: %d of %d model inputs stored in single precision", len(cast), len(feature_cols_full))
 
     if prefixes or names:
         dropped = [c for c in wanted if c in df.columns and c not in set(feature_cols_full)]
