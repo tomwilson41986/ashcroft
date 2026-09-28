@@ -1,6 +1,6 @@
 # Which model serves next: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 28 Sep 00:50 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 28 Sep 02:45 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -42,9 +42,19 @@ Serving any pair needs the owner's word on the model and on storing two boosters
 - the Kalman rating and handicap angles alone: −0.0002, Brier skill resolved worse;
 - beside the trained within-race partner, which reads none of them, the pairs price 0.3975 and **0.3970** (against 0.3981), the best measured model, Brier skill and concordance level.
 
-The blocks are built strictly from earlier days and identical at 06:00 and in training (research query run 36347217357). The 968s5xh with all three is the new pair's first member whichever partner iteration 97 picks, so it is **in training for serving now** (train-bfsp run 52: train only, nothing published, 12,000 rounds as its folds reached, the served blocks plus the three; about 03:00 UTC). Iteration 97 fits the within-race partner with the blocks and the combined 968s5xh at another seed (about 02:30 UTC); a query reads the pairs' bets; the pair that holds is verified and dry-run as the 968s5xh and run 51 were. Until then the recommendation stands.
+The blocks are built strictly from earlier days and identical at 06:00 and in training (research query run 36347217357).
+
+**The within-race partner reads them too: the next pair** (iteration 97, research-loop run 36358454411):
+- the partner with travel, the Kalman rating and handicap angles prices the window at 0.4013 alone against the trained partner's 0.4027, −0.0014 (−0.0021 to −0.0007), concordance resolved better; with travel alone 0.4018;
+- the combined 968s5xh at another seed (7) prices 0.3990, −0.0011 (−0.0017 to −0.0004) on the 968s5xh (seed 42: −0.0017), so the blocks hold;
+- **the 968s5xh with the three blocks beside the partner with them: 0.3966**, −0.0016 (−0.0021 to −0.0010) on the pair's 0.3981, 2.3 times the refit noise, concordance +0.0015 resolved better, Brier skill level; the best measured model;
+- **its bets hold** (research query run 36369570799, which reproduces the pair's own line exactly): the early-price rule +10.70% (the pair's +10.77%), the top pick traded out **+2.01%** (+1.72%), held at the morning price −3.07% (−3.43%), the model's weight beside the morning price 0.464 (0.462). The same pair at seed 7, in one run: 0.3969, +10.73%, +1.88%.
+
+Both members are in training for serving: the 968s5xh with the three blocks (train-bfsp run 52, 12,000 rounds as its folds reached, about 03:00 UTC) and the partner with them (run 53, 12,000 rounds, about 05:30 UTC). When both are done they are verified, staged as a pair and dry-run on the day's card; the pair then replaces the 968s5xh and run 51 as the recommendation, with the same storage question (two boosters, about 87 MB with xz). Until then the recommendation stands.
 
 **Two more sources in a fit** (iteration 98, about 03:30 UTC): how the bookmakers and the place market priced each horse, yard and rider before (the industry SP and the Betfair place SP of past runs, which no feature read), and the horse's and yard's record in the same months of earlier years, each as a drop-in block on the combined 968s5xh. The residual screen that chose the last blocks cannot rank candidates: it reads the Kalman rating, handicap angles and travel as strongly against the model that already holds them as against one without them, even beyond a correction on the forecast itself (research query runs 36359800214 and 36360636883), so from here the fits decide.
+
+**More training rows** (iterations 99 and 100, about 06:00 UTC). Fitting from 2022 instead of 2021 cost about 0.0015 (iteration 83), so the rows before 2021 may be worth more; a history from 2018 (1.05m rows against 0.70m) was built but never fitted, because the fits ran out of memory. The blocks now attach without copying the matrix, and a single-precision option (off by default) halves the fold's copies: iteration 100 fits the combined 968s5xh on every row from 2018 and on rows from 2021 only, both at single precision, and iteration 99 the latter in double precision, which separates more rows, complete careers and the precision itself. If more rows carry, the 06:00 path must build the same history each morning, which is checked before any of it could serve.
 
 **Future form** (the owner's ask of 27 Sep: `model/blocks/future_form.py`, 64 features) **is built, checked and not carried** (iteration 90):
 - its parity at 06:00 is clean: every feature identical on the card and in training (research query run 36301993859);
