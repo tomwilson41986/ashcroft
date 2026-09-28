@@ -49,6 +49,43 @@ What it says:
   for half the runners. Stakes of a few pounds to a few tens of pounds per bet are what the morning market
   takes without moving.
 
+## Other options tested (28 Sep): any price above the forecast, all the liquidity, smaller stakes on long shots
+
+The owner asked about backing at any price above our forecast, taking all the liquidity, and staking
+less on long shots. Research queries `trading_options.py` (1-3; runs 36410545194, 36411192738,
+36411631298) score them on the same data, traded out at BSP.
+
+**Where the edge is.** At £1 level stakes, by how far the morning price sat above the forecast:
+
+| above the forecast | under 4.0 | 4-8 | 8-16 | 16-30 | 30+ | all prices |
+|---|---|---|---|---|---|---|
+| 0-5% | −0.4% | +0.8% | −3.5% | −4.8% | −12.3% | −2.3% |
+| 5-10% | +2.6% | +2.4% | −2.7% | −3.6% | −3.0% | −0.3% |
+| 10-22% | +3.3% | +2.7% | +0.1% | −3.3% | −1.0% | +0.7% |
+| 22-42% | +7.0% | +5.6% | +3.4% | +3.7% | +9.0% | +5.1% |
+| 42%+ | +7.7% | +10.3% | +10.5% | +14.8% | +34.2% | +19.1% |
+
+Our forecast is not the break-even price: the morning price carries about half of what the BSP will
+be, so a small overlay is mostly noise and loses to commission. It pays only on short prices, where
+the forecast is sharpest.
+
+- **Any price above the forecast** doubles the bets (8,692 against 4,476) for the same profit: +6.3%
+  per £ against +12.7% for the 22% rule, 551 units against 566.
+- **A threshold by price** (about 5% under 8.0, 22% from 8.0), chosen on one half of the window and
+  scored on the other: +8.8% on 6,799 bets, 599 units: some 6% more profit for half as many bets
+  again.
+- **All the liquidity**: take every offer at or above the threshold price (a limit order at the
+  forecast × 1.22, filled down the ladder), not down to the forecast itself: the offers between the
+  two are the slices that lose. The historic files hold no order book, so how much that is can only
+  be measured forward; a backtest's profit grows with the money taken only because it cannot see the
+  price move that money would cause.
+- **Long shots are not where the bank goes when trading out**: a big overlay on a long shot is the
+  best bet of all; a small one is the worst. The cure is a larger threshold there, not a smaller
+  stake. Tapering the stake by price (at £500 a runner, the 22% rule) cuts the profit from £186k to
+  £114k (1/√price past 4.0), £72k (bands) or £55k (to win a set amount) over the 88 days, while
+  halving the daily swings at best (the square-root taper: the best profit per unit of risk). Held
+  to the result instead, long shots are where the bank goes, and the taper matters far more.
+
 ## The paper trader (built)
 
 `auto_trade.py` with the `trading/` package reads Betfair's live markets and prices (read-only), plans each
