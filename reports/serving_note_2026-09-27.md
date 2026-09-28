@@ -1,6 +1,6 @@
 # Which model serves next: the recommendation
 
-*Written 26 Sep 2026 for the owner's decision, last updated 27 Sep 23:25 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
+*Written 26 Sep 2026 for the owner's decision, last updated 28 Sep 00:50 UTC. Nothing changes without the owner's word; without an answer before a 06:00 UTC run, the 615 keeps serving.*
 
 ## Recommendation
 
@@ -42,7 +42,9 @@ Serving any pair needs the owner's word on the model and on storing two boosters
 - the Kalman rating and handicap angles alone: −0.0002, Brier skill resolved worse;
 - beside the trained within-race partner, which reads none of them, the pairs price 0.3975 and **0.3970** (against 0.3981), the best measured model, Brier skill and concordance level.
 
-The blocks are built strictly from earlier days and identical at 06:00 and in training (research query run 36347217357). Before any of this can serve: iteration 97 fits the within-race partner with the blocks and the combined 968s5xh at another seed (results about 02:30 UTC), a query reads the pairs' bets, and whichever holds is trained, verified and dry-run as the 968s5xh and run 51 were. Until then the recommendation stands.
+The blocks are built strictly from earlier days and identical at 06:00 and in training (research query run 36347217357). The 968s5xh with all three is the new pair's first member whichever partner iteration 97 picks, so it is **in training for serving now** (train-bfsp run 52: train only, nothing published, 12,000 rounds as its folds reached, the served blocks plus the three; about 03:00 UTC). Iteration 97 fits the within-race partner with the blocks and the combined 968s5xh at another seed (about 02:30 UTC); a query reads the pairs' bets; the pair that holds is verified and dry-run as the 968s5xh and run 51 were. Until then the recommendation stands.
+
+**Two more sources in a fit** (iteration 98, about 03:30 UTC): how the bookmakers and the place market priced each horse, yard and rider before (the industry SP and the Betfair place SP of past runs, which no feature read), and the horse's and yard's record in the same months of earlier years, each as a drop-in block on the combined 968s5xh. The residual screen that chose the last blocks cannot rank candidates: it reads the Kalman rating, handicap angles and travel as strongly against the model that already holds them as against one without them, even beyond a correction on the forecast itself (research query runs 36359800214 and 36360636883), so from here the fits decide.
 
 **Future form** (the owner's ask of 27 Sep: `model/blocks/future_form.py`, 64 features) **is built, checked and not carried** (iteration 90):
 - its parity at 06:00 is clean: every feature identical on the card and in training (research query run 36301993859);
