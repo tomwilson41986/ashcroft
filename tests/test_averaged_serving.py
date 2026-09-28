@@ -160,6 +160,89 @@ def test_verify_reads_an_averaged_model_and_its_checks_pass(averaged):
     assert problems == [], problems
 
 
+STEP = [1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.0]
+
+
+def _gated(root: Path, weights=STEP) -> Path:
+    _member(root, ".", ["f_a", "f_b"], "huber", seed=3, target="logit_norm_prob")
+    _member(root, "members/twin", ["f_b", "f_c"], "regression", seed=4, target="demeaned_log")
+    _member(root, "members/rx", ["f_c", "f_a"], "regression", seed=5, target="race_xent")
+    (root / pbt.ENSEMBLE_MANIFEST).write_text(json.dumps({
+        "members": [{"name": "main", "dir": "."}, {"name": "twin", "dir": "members/twin"},
+                    {"name": "rx", "dir": "members/rx"}],
+        "gate": {"member": "rx", "weights": weights}}))
+    return root
+
+
+def test_a_gated_average_is_the_blend_the_research_queries_scored(tmp_path):
+    """research/queries/done/gate_clv.py: the other members' average (the pair) ranks each race;
+    the gated member's normalised log price takes weight w by that rank, the pair's 1 - w, and
+    the race is renormalised."""
+    model, cols, _ = pbt.load_bfsp_model(str(_gated(tmp_path)))
+    assert model.reads_races and model.gate == {"member": "rx", "weights": STEP}
+    frame = _frame(seed=9)
+    served = predict_prices(model, frame, cols, race_col="raceid")
+    race = frame["raceid"].to_numpy()
+    own = {n: np.log(predict_prices(b, frame, c, race_col="raceid")["predicted_bfsp"].to_numpy())
+           for n, b, c in model.members}
+    p = np.exp(-(own["main"] + own["twin"]) / 2)
+    pair = -np.log(p / pd.Series(p).groupby(race).transform("sum").to_numpy())
+    rank = pd.Series(pair).groupby(race).rank(method="first").to_numpy()
+    w = np.where(rank <= 3, 1.0, np.where(rank <= 7, 0.5, 0.0))
+    q = np.exp(-(w * own["rx"] + (1 - w) * pair))
+    want = q / pd.Series(q).groupby(race).transform("sum").to_numpy()
+    np.testing.assert_allclose(served["predicted_win_prob_norm"].to_numpy(), want, rtol=1e-9)
+    assert (w == 1).any() and (w == 0.5).any() and (w == 0).any()     # the frame reaches every step
+    book = served.groupby("raceid")["predicted_bfsp"].apply(lambda s: (1 / s).sum())
+    np.testing.assert_allclose(book, 1.0, rtol=1e-12)
+
+
+def test_weights_of_nothing_and_everything_are_the_pair_and_the_gated_member(tmp_path):
+    frame = _frame(seed=11)
+    a = tmp_path / "zero"
+    b = tmp_path / "one"
+    zero, cols, _ = pbt.load_bfsp_model(str(_gated(a, weights=[0.0])))
+    one, _, _ = pbt.load_bfsp_model(str(_gated(b, weights=[1.0])))
+    got0 = predict_prices(zero, frame, cols, race_col="raceid")["predicted_bfsp"].to_numpy()
+    got1 = predict_prices(one, frame, cols, race_col="raceid")["predicted_bfsp"].to_numpy()
+    main, twin, rx = zero.members
+    logs = [np.log(predict_prices(bst, frame, c, race_col="raceid")["predicted_bfsp"].to_numpy())
+            for _, bst, c in (main, twin)]
+    p = np.exp(-np.mean(logs, axis=0))
+    pair = 1 / (p / pd.Series(p).groupby(frame["raceid"].to_numpy()).transform("sum").to_numpy())
+    np.testing.assert_allclose(got0, pair, rtol=1e-9)
+    alone = predict_prices(rx[1], frame, rx[2], race_col="raceid")["predicted_bfsp"].to_numpy()
+    np.testing.assert_allclose(got1, alone, rtol=1e-9)
+
+
+def test_a_gate_without_the_races_is_refused(tmp_path):
+    model, cols, _ = pbt.load_bfsp_model(str(_gated(tmp_path)))
+    with pytest.raises(ValueError, match="races"):
+        model.predict(_frame(seed=5)[cols].astype(float))
+
+
+@pytest.mark.parametrize("gate, match", [({"member": "nobody", "weights": [1.0]}, "not a member"),
+                                         ({"member": "rx", "weights": []}, "weights by rank"),
+                                         ({"member": "rx", "weights": [1.2, 0.0]}, "between 0 and 1"),
+                                         ({"member": "rx", "weights": [float("nan")]}, "between 0 and 1")])
+def test_a_gate_that_cannot_be_served_is_refused(tmp_path, gate, match):
+    _gated(tmp_path)
+    spec = json.loads((tmp_path / pbt.ENSEMBLE_MANIFEST).read_text())
+    (tmp_path / pbt.ENSEMBLE_MANIFEST).write_text(json.dumps({**spec, "gate": gate}))
+    with pytest.raises(ValueError, match=match):
+        pbt.load_bfsp_model(str(tmp_path))
+
+
+def test_verify_reads_a_gated_model_and_its_checks_pass(tmp_path):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    import verify_model as vm
+    model, meta = vm._load(str(_gated(tmp_path)))
+    assert meta["members"] == ["main", "twin", "rx"] and meta["gate"]["member"] == "rx"
+    assert vm.check_servable(model, meta) == []
+    problems, notes = vm.check_prices(model, meta, None, None, _frame(seed=6))
+    assert problems == [], problems
+
+
 def test_each_members_log_line_names_the_loss_it_was_fitted_with(averaged, caplog):
     """The metadata's "objective" is the training config's label ("l2" for a loss set through
     --param objective=huber); the log reads the booster's own parameters instead."""

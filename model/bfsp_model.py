@@ -114,7 +114,12 @@ def predict_prices(
         out[race_col] = ensure_race_id(out, race_col)
 
     X = out[feature_cols].astype(float)
-    raw_out = np.asarray(booster.predict(X, num_iteration=num_iteration), dtype=float)
+    if getattr(booster, "reads_races", False):
+        # a gated average ranks each race's runners (predict_bfsp_today.AveragedBooster)
+        raw_out = np.asarray(booster.predict(X, num_iteration=num_iteration,
+                                             races=out[race_col].to_numpy()), dtype=float)
+    else:
+        raw_out = np.asarray(booster.predict(X, num_iteration=num_iteration), dtype=float)
     # `booster.predict` excludes any init_score the fit started from, so the
     # caller passes it back in. Only the raw columns move: `predicted_bfsp` is
     # normalised to a book of 1, which cancels a constant offset exactly.

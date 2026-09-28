@@ -83,6 +83,30 @@ def load_historical(db_path: str, start_date: str | None = None) -> pd.DataFrame
 #: average (scripts/research_loop.average_arms). Without one, one booster serves.
 ENSEMBLE_MANIFEST = "bfsp_ensemble.json"
 
+
+def _check_gate(gate: dict, names: list[str]) -> dict:
+    """A manifest's gate, refused unless it names a member, leaves at least one other to
+    rank the runners, and gives every rank a weight between 0 and 1."""
+    member, weights = gate.get("member"), gate.get("weights")
+    if member not in names:
+        raise ValueError(f"the gate names {member!r}, which is not a member ({', '.join(names)})")
+    if len(names) < 2:
+        raise ValueError("a gate needs at least one other member to rank the runners")
+    if not isinstance(weights, list) or not weights:
+        raise ValueError("a gate needs its weights by rank: a list, the last for every rank past it")
+    w = np.asarray(weights, dtype=float)
+    if not np.all(np.isfinite(w)) or w.min() < 0 or w.max() > 1:
+        raise ValueError(f"a gate's weights lie between 0 and 1: {weights}")
+    return {"member": member, "weights": [float(x) for x in w]}
+
+
+def _race_normalised_log(log_price: np.ndarray, race: np.ndarray) -> np.ndarray:
+    """Log prices shifted so that each race's implied probabilities sum to one."""
+    book = pd.Series(np.exp(-log_price)).groupby(race).transform("sum").to_numpy()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return log_price + np.log(book)
+
+
 class AveragedBooster:
     """Several boosters served as one.
 
@@ -93,18 +117,32 @@ class AveragedBooster:
     loop's average of the members' normalised prices (the geometric mean,
     renormalised: scripts/research_loop.average_arms), because a member's own
     normalisation divides every runner in a race by the same number. A member reads
-    its own features, by name, from the frame it is given."""
+    its own features, by name, from the frame it is given.
+
+    A gate (the manifest's "gate": {"member": ..., "weights": [w1, ..., wK]}) gives one
+    member the runners the others rank near the top of their race instead of a share of
+    every runner. Each member's price is normalised to a book of one in its race; the
+    other members are averaged as above (the base); a runner the base ranks r-th in its
+    race takes the gated member's log price with weight w_r (wK for every rank past K)
+    and the base's with 1 - w_r. That is the blend the research queries scored
+    (research/queries/done/gate_clv.py: race_xent for the pair's leaders). It needs each
+    runner's race, which `predict_prices` passes to a booster that `reads_races`."""
 
     serving_target = "log_bfsp"
     serving_offset = 0.0                        # each member's own offset is applied in predict
 
-    def __init__(self, members: list[tuple[str, "lgb.Booster", list[str]]]):
+    def __init__(self, members: list[tuple[str, "lgb.Booster", list[str]]], gate: dict | None = None):
         if len(members) < 2:
             raise ValueError("an averaged model needs at least two members")
         self.members = members
         self._features = list(dict.fromkeys(c for _, _, cols in members for c in cols))
+        self.gate = _check_gate(gate, [n for n, _, _ in members]) if gate else None
 
-    def predict(self, X: pd.DataFrame, num_iteration=None) -> np.ndarray:
+    @property
+    def reads_races(self) -> bool:
+        return self.gate is not None
+
+    def _member_logs(self, X: pd.DataFrame, num_iteration=None) -> list[np.ndarray]:
         from model.bfsp_model import invert_target
         logs = []
         for _, b, cols in self.members:
@@ -113,7 +151,24 @@ class AveragedBooster:
             price = invert_target(out, X, getattr(b, "serving_target", None) or "log_bfsp")
             with np.errstate(divide="ignore", invalid="ignore"):
                 logs.append(np.log(price))
-        return np.mean(logs, axis=0)
+        return logs
+
+    def predict(self, X: pd.DataFrame, num_iteration=None, races=None) -> np.ndarray:
+        logs = self._member_logs(X, num_iteration)
+        if self.gate is None:
+            return np.mean(logs, axis=0)
+        if races is None:
+            raise ValueError("a gated average ranks the runners of each race: it needs their races "
+                             "(model.bfsp_model.predict_prices passes them)")
+        race = pd.factorize(np.asarray(races))[0]
+        names = [n for n, _, _ in self.members]
+        g = names.index(self.gate["member"])
+        norm = [_race_normalised_log(lp, race) for lp in logs]
+        base = _race_normalised_log(np.mean([lp for i, lp in enumerate(norm) if i != g], axis=0), race)
+        weights = np.asarray(self.gate["weights"], dtype=float)
+        rank = pd.Series(base).groupby(race).rank(method="first").fillna(len(weights)).to_numpy()
+        w = weights[np.minimum(rank, len(weights)).astype(int) - 1]
+        return w * norm[g] + (1 - w) * base
 
     def feature_name(self) -> list[str]:
         return list(self._features)
@@ -180,9 +235,10 @@ def load_averaged_model(model_dir: str, manifest: str) -> tuple[AveragedBooster,
 
     The manifest is {"members": [{"name": ..., "dir": ...}, ...]}, each dir relative
     to the model directory ("." for the model directory itself, whose metadata then
-    also gives the history's start). Every member must be servable on its own and read
-    the same categorical vocabulary (the same training matrix numbers the tracks the
-    same way). Each member's output is priced by its own target's rule."""
+    also gives the history's start), and optionally a "gate" (`AveragedBooster`). Every
+    member must be servable on its own and read the same categorical vocabulary (the
+    same training matrix numbers the tracks the same way). Each member's output is
+    priced by its own target's rule."""
     with open(manifest) as f:
         spec = json.load(f)
     members, vocab = [], None
@@ -197,8 +253,11 @@ def load_averaged_model(model_dir: str, manifest: str) -> tuple[AveragedBooster,
         members.append((name, booster, cols))
         log.info("Averaged model member %s: %d features, objective=%s, trained through %s", name, len(cols),
                  _objective(booster, meta), meta.get("trained_through", "?"))
-    model = AveragedBooster(members)
+    model = AveragedBooster(members, gate=spec.get("gate"))
     log.info("Loaded an averaged BFSP model: %d members, %d features in all", len(members), model.num_feature())
+    if model.gate:
+        log.info("Gated: member %s takes weights %s by the other members' rank in the race",
+                 model.gate["member"], model.gate["weights"])
     return model, model.feature_name(), vocab or {}
 
 

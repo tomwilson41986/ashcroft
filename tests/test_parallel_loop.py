@@ -295,6 +295,56 @@ def test_an_ensemble_names_two_or_more_fitted_arms_and_is_never_fitted():
     assert rl.ensembles(CFG) == []
 
 
+def test_a_gated_ensemble_gives_the_gated_arm_the_leaders_of_the_average(tmp_path):
+    rows = {"race_date": ["2025-10-01"] * 4 + ["2025-10-02"] * 2, "race_time": ["2.30"] * 6, "track": "york",
+            "horse_name": list("abcdef"), "bfsp": [2.0, 4.0, 8.0, 9.0, 3.0, 1.5], "overlay_pct": 0.0}
+    a = pd.DataFrame({**rows, "predicted_bfsp": [2.0, 4.0, 5.0, 20.0, 2.0, 2.0]})
+    b = pd.DataFrame({**rows, "predicted_bfsp": [2.5, 5.0, 4.0, 4.0, 2.0, 2.0]})
+    rx = pd.DataFrame({**rows, "predicted_bfsp": [3.0, 3.0, 3.0, 30.0, 1.5, 3.0]})
+    for name, d in (("a", a), ("b", b), ("rx", rx.iloc[::-1])):         # row order does not matter
+        d.to_csv(tmp_path / f"oos_{name}.csv", index=False)
+    e = {"name": "g", "arms": ["a", "b"], "gate": {"arm": "rx", "weights": [1.0, 0.5, 0.0]}}
+    rl.build_ensemble(e, tmp_path)
+    got = pd.read_csv(tmp_path / "oos_g.csv")
+    rl.average_arms([tmp_path / "oos_a.csv", tmp_path / "oos_b.csv"], tmp_path / "pair.csv")
+    pair = pd.read_csv(tmp_path / "pair.csv")["predicted_bfsp"].to_numpy()
+    lrx = np.log(rx["predicted_bfsp"].to_numpy())
+    lp = np.log(pair)
+    rank = np.array([1, 2, 3, 4, 1, 2])                                  # the pair's order in each race
+    assert (pd.Series(lp).groupby([0, 0, 0, 0, 1, 1]).rank(method="first").to_numpy() == rank).all()
+    w = np.array([1.0, 0.5, 0.0, 0.0, 1.0, 0.5])                         # the last weight past the list
+    p = np.exp(-(w * lrx + (1 - w) * lp))
+    p[:4] /= p[:4].sum()
+    p[4:] /= p[4:].sum()
+    assert np.allclose(got["predicted_win_prob_norm"], p) and np.allclose(got["predicted_bfsp"], 1 / p)
+    assert list(got["horse_name"]) == list("abcdef")
+    # weights of 0 everywhere are the average itself; of 1, the gated arm renormalised
+    rl.build_ensemble({**e, "gate": {"arm": "rx", "weights": [0.0]}}, tmp_path)
+    assert np.allclose(pd.read_csv(tmp_path / "oos_g.csv")["predicted_bfsp"], pair)
+    rl.build_ensemble({**e, "gate": {"arm": "rx", "weights": [1.0]}}, tmp_path)
+    q = 1 / rx["predicted_bfsp"].to_numpy()
+    q[:4] /= q[:4].sum()
+    q[4:] /= q[4:].sum()
+    assert np.allclose(pd.read_csv(tmp_path / "oos_g.csv")["predicted_bfsp"], 1 / q)
+
+
+def test_a_gated_ensemble_is_the_gate_served_and_names_its_parts():
+    cfg = {**CFG, "variants": [{"name": "dml"}, {"name": "rx", "args": "--target race_xent"}],
+           "ensembles": [{"name": "gate_step", "arms": ["base", "dml"],
+                          "gate": {"arm": "rx", "weights": [1, 1, 1, 0.5, 0.5, 0.5, 0.5, 0]}},
+                         {"name": "gate_one", "arms": ["dml"], "gate": {"arm": "rx", "weights": [1]}}]}
+    got = rl.ensembles(cfg)
+    assert got[0]["gate"] == {"arm": "rx", "weights": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.0]}
+    assert got[1]["arms"] == ["dml"]                                     # a gate over one arm is allowed
+    for bad in ({"arm": "nope", "weights": [1]},                        # an arm nobody fits
+                {"arm": "dml", "weights": [1]},                         # one of the averaged arms
+                {"arm": "rx", "weights": []},
+                {"arm": "rx", "weights": [1.5, 0]},
+                {"arm": "rx"}):
+        with pytest.raises(SystemExit):
+            rl.ensembles({**cfg, "ensembles": [{"name": "g", "arms": ["base", "dml"], "gate": bad}]})
+
+
 def test_an_earlier_history_scores_the_same_folds_when_anchored_and_can_train_on_the_later_rows(monkeypatch):
     late = _frame(days=("2023-01-01", "2025-12-31"))
     early = _frame(days=("2021-01-01", "2025-12-31"))

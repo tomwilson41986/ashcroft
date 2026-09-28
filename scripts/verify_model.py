@@ -59,7 +59,8 @@ def _load(model_dir: str):
                  for m in spec["members"]]
         meta = {**metas[0], "feature_cols": cols,
                 "objective": " + ".join(str(m.get("objective")) for m in metas),
-                "members": [m.get("name") or m.get("dir") for m in spec["members"]]}
+                "members": [m.get("name") or m.get("dir") for m in spec["members"]],
+                "gate": model.gate}
         return model, meta
     from model.bfsp_model import attach_serving_rule
     from predict_bfsp_today import _read_booster, booster_path

@@ -43,6 +43,15 @@ compare step (how several seeds of one recipe would be served as one):
 
     "ensembles": [{"name": "cw_avg3", "arms": ["cw", "cw_s7", "cw_s11"]}]
 
+A gated ensemble gives one more arm the runners its arms' average ranks near the top
+of each race (predict_bfsp_today.AveragedBooster's gate, as it would be served): a
+runner ranked r-th takes the gated arm's log price with weight w_r (the last weight
+for every rank past the list) and the average's with 1 - w_r, then each race is
+renormalised:
+
+    "ensembles": [{"name": "gate_step", "arms": ["base", "dml"],
+                   "gate": {"arm": "rx", "weights": [1, 1, 1, 0.5, 0.5, 0.5, 0.5, 0]}}]
+
 Every step reads the same config, so the YAML only wires jobs together.
 """
 
@@ -124,18 +133,29 @@ def variants(cfg: dict) -> list[dict]:
 
 
 def ensembles(cfg: dict) -> list[dict]:
-    """The averaged arms, each {name, arms}: built from fitted arms, never fitted themselves."""
+    """The averaged arms, each {name, arms} and a gated one's {gate}: built from fitted arms, never
+    fitted themselves. A gate is {arm, weights}: a fitted arm outside `arms` and its weight by rank."""
     names = {v["name"] for v in variants(cfg)}
     out, seen = [], set()
     for e in cfg.get("ensembles", []):
-        name, arms = e.get("name", ""), list(e.get("arms", []))
+        name, arms, gate = e.get("name", ""), list(e.get("arms", [])), e.get("gate")
         if not re.fullmatch(r"[a-z][a-z0-9_]{0,30}", name) or name in BASE_ARMS or name in names or name in seen:
             raise SystemExit(f"ensemble name {name!r}: lower-case, unique, not an arm's")
         fitted = set(all_arms(cfg))
-        if len(set(arms)) < 2 or len(set(arms)) != len(arms) or not set(arms) <= fitted:
-            raise SystemExit(f"ensemble {name!r}: two or more distinct fitted arms, not {arms}")
+        least = 1 if gate else 2
+        if len(set(arms)) < least or len(set(arms)) != len(arms) or not set(arms) <= fitted:
+            raise SystemExit(f"ensemble {name!r}: {'one' if gate else 'two'} or more distinct fitted arms, "
+                             f"not {arms}")
+        if gate:
+            weights = gate.get("weights")
+            if gate.get("arm") not in fitted or gate.get("arm") in arms:
+                raise SystemExit(f"ensemble {name!r}: the gate's arm must be a fitted arm outside {arms}")
+            if (not isinstance(weights, list) or not weights
+                    or not all(isinstance(w, (int, float)) and 0 <= w <= 1 for w in weights)):
+                raise SystemExit(f"ensemble {name!r}: the gate's weights by rank lie between 0 and 1")
+            gate = {"arm": gate["arm"], "weights": [float(w) for w in weights]}
         seen.add(name)
-        out.append({"name": name, "arms": arms})
+        out.append({"name": name, "arms": arms, **({"gate": gate} if gate else {})})
     return out
 
 
@@ -171,6 +191,48 @@ def average_arms(paths: list, out) -> None:
     if "overlay_pct" in avg and "bfsp" in avg:
         avg["overlay_pct"] = (avg["bfsp"] / avg["predicted_bfsp"] - 1) * 100
     avg.to_csv(out, index=False)
+
+
+def gate_arms(base_path, gated_path, weights: list, out) -> None:
+    """One arm's forecast for the runners another ranks near the top of each race.
+
+    A runner the base arm ranks r-th in its race (1 = its shortest price) takes the gated
+    arm's normalised log price with weight weights[r - 1] (the last weight for every rank
+    past the list) and the base's with the rest, and each race is renormalised to a book
+    of 1: predict_bfsp_today.AveragedBooster's gate, as served. Keeps the base's rows."""
+    import numpy as np
+    import pandas as pd
+    key = ["race_date", "race_time", "track", "horse_name"]
+    a = pd.read_csv(base_path, dtype={"race_time": str})
+    b = pd.read_csv(gated_path, dtype={"race_time": str}).set_index(key).reindex(a.set_index(key).index)
+    if b["predicted_bfsp"].isna().any():
+        raise SystemExit(f"{gated_path}: lacks runners of {base_path}")
+    race = (a["race_date"].astype(str) + "|" + a["track"].astype(str) + "|" + a["race_time"].astype(str)).to_numpy()
+    la, lb = np.log(a["predicted_bfsp"].to_numpy(float)), np.log(b["predicted_bfsp"].to_numpy(float))
+    w_by_rank = np.asarray(weights, dtype=float)
+    rank = pd.Series(la).groupby(race).rank(method="first").to_numpy()
+    w = w_by_rank[np.minimum(rank, len(w_by_rank)).astype(int) - 1]
+    p = np.exp(-(w * lb + (1 - w) * la))
+    pn = p / pd.Series(p).groupby(race).transform("sum").to_numpy()
+    g = a.copy()
+    g["predicted_win_prob_norm"] = pn
+    g["predicted_bfsp"] = 1.0 / pn
+    if "overlay_pct" in g and "bfsp" in g:
+        g["overlay_pct"] = (g["bfsp"] / g["predicted_bfsp"] - 1) * 100
+    g.to_csv(out, index=False)
+
+
+def build_ensemble(e: dict, out: Path) -> None:
+    """An ensemble's forecast from its arms' files in `out`: their average, gated if it has a gate."""
+    dest = out / f"oos_{e['name']}.csv"
+    if not e.get("gate"):
+        average_arms([out / f"oos_{a}.csv" for a in e["arms"]], dest)
+        return
+    base = out / f"oos_{e['arms'][0]}.csv"
+    if len(e["arms"]) > 1:
+        base = out / f"oos_{e['name']}__avg.csv"
+        average_arms([out / f"oos_{a}.csv" for a in e["arms"]], base)
+    gate_arms(base, out / f"oos_{e['gate']['arm']}.csv", e["gate"]["weights"], dest)
 
 
 def _join_blocks(*parts: str) -> str:
@@ -404,9 +466,11 @@ def cmd_compare(args) -> None:
 
     arms = [(v["name"], _note(cfg, v, cached)) for v in variants(cfg)]
     for e in ensembles(cfg):
-        average_arms([out / f"oos_{a}.csv" for a in e["arms"]], out / f"oos_{e['name']}.csv")
+        build_ensemble(e, out)
+        gated = (f", gated with {e['gate']['arm']} (weights by rank {e['gate']['weights']})"
+                 if e.get("gate") else "")
         arms.append((e["name"], f"{cfg.get('tag', '')} / {e['name']}: the geometric mean of "
-                                f"{', '.join(e['arms'])}, renormalised per race; recipe {recipe(cfg)}"))
+                                f"{', '.join(e['arms'])}, renormalised per race{gated}; recipe {recipe(cfg)}"))
     # each comparison is its own process; run them side by side (a runner has four cores)
     with ThreadPoolExecutor(max_workers=4) as pool:
         done = list(pool.map(one, arms))

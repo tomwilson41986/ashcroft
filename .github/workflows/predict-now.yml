@@ -30,6 +30,14 @@ on:
         description: "The second model's artifact, e.g. bfsp-model-42"
         required: false
         type: string
+      third:
+        description: 'A third member beside the two: its train-bfsp run and artifact as RUN_ID:ARTIFACT (e.g. 36400000000:bfsp-model-56)'
+        required: false
+        type: string
+      gate:
+        description: "Gate the third member by the other two's rank in each race: weights by rank, comma-separated, the last for every rank past them (e.g. 1,1,1,0.5,0.5,0.5,0.5,0). Empty: an equal average"
+        required: false
+        type: string
       probe_card:
         description: 'Only save the HTML card and a debutant horse page (scripts/probe_card_html.py); price nothing'
         required: false
@@ -118,6 +126,27 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: twin
 
+      - name: Name the third model
+        id: third
+        if: inputs.model_run != '' && inputs.twin_run != '' && inputs.third != ''
+        env:
+          THIRD: ${{ inputs.third }}
+        run: |
+          if ! [[ "$THIRD" =~ ^[0-9]+:[A-Za-z0-9._-]+$ ]]; then echo "third must be RUN_ID:ARTIFACT, got $THIRD"; exit 1; fi
+          echo "run=${THIRD%%:*}" >> "$GITHUB_OUTPUT"
+          echo "artifact=${THIRD#*:}" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the third model
+        # A gated three-member model (predict_bfsp_today.AveragedBooster's gate): the third
+        # member takes the runners the other two rank near the top of each race.
+        if: steps.third.outputs.run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.third.outputs.artifact }}
+          run-id: ${{ steps.third.outputs.run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: third
+
       - name: Probe the card
         if: inputs.probe_card
         env:
@@ -131,6 +160,7 @@ jobs:
         env:
           HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
           HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
+          GATE_WEIGHTS: ${{ inputs.gate }}
         run: |
           mkdir -p out
           MODEL_DIR=data/models
@@ -138,8 +168,19 @@ jobs:
           if [ -n "${{ inputs.model_run }}" ] && [ -n "${{ inputs.twin_run }}" ]; then
             mkdir -p "$MODEL_DIR/members/twin"
             cp twin/data/models/bfsp_model.lgb twin/data/models/bfsp_model_meta.json "$MODEL_DIR/members/twin/"
-            printf '{"members": [{"name": "candidate", "dir": "."}, {"name": "twin", "dir": "members/twin"}]}\n' \
-              > "$MODEL_DIR/bfsp_ensemble.json"
+            MEMBERS='{"name": "candidate", "dir": "."}, {"name": "twin", "dir": "members/twin"}'
+            if [ -d third/data/models ]; then
+              mkdir -p "$MODEL_DIR/members/third"
+              cp third/data/models/bfsp_model.lgb third/data/models/bfsp_model_meta.json "$MODEL_DIR/members/third/"
+              MEMBERS="$MEMBERS, {\"name\": \"third\", \"dir\": \"members/third\"}"
+            fi
+            GATE=""
+            if [ -n "$GATE_WEIGHTS" ]; then
+              if [ ! -d third/data/models ]; then echo "a gate needs a third member"; exit 1; fi
+              if ! [[ "$GATE_WEIGHTS" =~ ^[0-9.]+(,[0-9.]+)*$ ]]; then echo "gate weights must be numbers, comma-separated"; exit 1; fi
+              GATE=", \"gate\": {\"member\": \"third\", \"weights\": [$GATE_WEIGHTS]}"
+            fi
+            printf '{"members": [%s]%s}\n' "$MEMBERS" "$GATE" > "$MODEL_DIR/bfsp_ensemble.json"
             cat "$MODEL_DIR/bfsp_ensemble.json"
           fi
           START="${{ inputs.start_date }}"
