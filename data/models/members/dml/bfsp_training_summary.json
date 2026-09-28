@@ -1,0 +1,46 @@
+{
+  "model_type": "bfsp_regression",
+  "target": "demeaned_log",
+  "n_features": 993,
+  "walk_forward_avg": {
+    "n_folds": 0
+  },
+  "overall_walk_forward": {},
+  "final_model": {
+    "target": "demeaned_log",
+    "log_mae": 0.2572,
+    "log_rmse": 0.3309,
+    "log_r2": 0.9243,
+    "bfsp_mae": 0.55,
+    "median_ape_pct": 20.78,
+    "mean_ape_pct": 26.99,
+    "correlation": 0.9622,
+    "best_iteration": 12000,
+    "holdout_mae": 0.26001068969425617
+  },
+  "fold_details": [],
+  "params": {
+    "objective": "regression",
+    "metric": "mae",
+    "boosting_type": "gbdt",
+    "num_leaves": 127,
+    "learning_rate": 0.02,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 5,
+    "min_child_samples": 500,
+    "lambda_l1": 0.1,
+    "lambda_l2": 0.1,
+    "verbose": -1,
+    "seed": 42,
+    "deterministic": true,
+    "force_col_wise": true,
+    "extra_trees": true
+  },
+  "data_range": {
+    "min_date": "2021-01-01",
+    "max_date": "2026-09-22",
+    "total_rows": 697903
+  },
+  "history_start": "2018-01-01"
+}
