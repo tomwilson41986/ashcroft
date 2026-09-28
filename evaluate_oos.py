@@ -816,8 +816,9 @@ def main():
     parser.add_argument(
         "--target", default=TrainConfig.target, choices=list(TARGETS),
         help=f"logit_norm_prob (default: logit of the race-normalised "
-             f"probability), log_bfsp (the log price) or demeaned_log "
-             f"(within-race differences only)",
+             f"probability), log_bfsp (the log price), demeaned_log "
+             f"(within-race differences only) or race_xent (the within-race "
+             f"probabilities by their cross-entropy against the Betfair SP book)",
     )
     parser.add_argument(
         "--holdout-days", type=int, default=60,

@@ -356,7 +356,67 @@ def profit_weighted_metric(preds, train_data):
 EARLY_STOP_MARGIN = 0.05
 
 OBJECTIVES = ("l2", "profit_weighted")
-TARGETS = ("log_bfsp", "logit_norm_prob", "demeaned_log")
+TARGETS = ("log_bfsp", "logit_norm_prob", "demeaned_log", "race_xent")
+
+
+class RaceIndex:
+    """A Dataset's rows grouped by race for the within-race objective: a stable sort by
+    race and each race's first position in it, so a race's sum or maximum is one
+    reduceat over the sorted scores. The rows need not arrive race by race."""
+
+    def __init__(self, races):
+        codes = pd.factorize(pd.Series(np.asarray(races)).astype(str), sort=False)[0]
+        self.order = np.argsort(codes, kind="stable")
+        sc = codes[self.order]
+        self.starts = np.flatnonzero(np.r_[True, sc[1:] != sc[:-1]]) if len(sc) else np.array([], dtype=int)
+        self.sizes = np.diff(np.r_[self.starts, len(sc)])
+        self.n_races = len(self.starts)
+
+    def softmax_neg(self, score):
+        """q = softmax(-score) within each race: a score is a log price, so the shorter
+        the price, the larger the share of the race's probability."""
+        z = -np.asarray(score, dtype=float)[self.order]
+        z = z - np.repeat(np.maximum.reduceat(z, self.starts), self.sizes)
+        e = np.exp(z)
+        q_sorted = e / np.repeat(np.add.reduceat(e, self.starts), self.sizes)
+        q = np.empty_like(q_sorted)
+        q[self.order] = q_sorted
+        return q
+
+
+def race_xent_objective(preds, train_data):
+    """Cross-entropy of the model's within-race probabilities against the market's.
+
+    The label is the runner's share of its race's Betfair SP book (book 1); the score
+    is a log price, so the model's probabilities are softmax(-score) within the race.
+    The loss, -sum p log q per race, is the price's own error weighted by how much of
+    the race's probability a runner holds: the favourites, where the bets are, carry
+    the gradient, and a long shot's price counts for its share of the book rather than
+    one runner's worth as it does under the squared error on log prices.
+
+    d/ds_i = p_i - q_i and d2/ds_i2 = q_i (1 - q_i). LightGBM passes a custom
+    objective's gradients straight to the trees, so a row weight is applied here, as
+    profit_weighted_objective does."""
+    q = train_data.race_index.softmax_neg(preds)
+    p = train_data.get_label()
+    grad = p - q
+    hess = np.maximum(q * (1.0 - q), 1e-6)
+    w = train_data.get_weight()
+    if w is not None:
+        grad = grad * w
+        hess = hess * w
+    return grad, hess
+
+
+def race_xent_metric(preds, eval_data):
+    """Mean cross-entropy per race, what race_xent_objective minimises: early stopping
+    reads it on the holdout."""
+    idx = eval_data.race_index
+    q = idx.softmax_neg(preds)
+    p = eval_data.get_label()
+    ce = -float(np.sum(p * np.log(np.clip(q, 1e-12, None))))
+    return "race_xent", ce / max(idx.n_races, 1), False
+
 
 
 @dataclass
@@ -440,7 +500,8 @@ class TrainConfig:
         """The config as it goes into the model metadata."""
         d = asdict(self)
         d["lightgbm_objective"] = (
-            "custom:profit_weighted" if self.objective == "profit_weighted" else self.params.get("objective")
+            "custom:profit_weighted" if self.objective == "profit_weighted"
+            else "custom:race_xent" if self.target == "race_xent" else self.params.get("objective")
         )
         d["sample_weighting"] = (
             {"type": "none", "decay_rate": 0.0} if self.decay_rate <= 0
@@ -494,6 +555,9 @@ def build_target(df: pd.DataFrame, target: str, race_col: str = "raceid") -> np.
     - `logit_norm_prob`  logit of the race-normalised implied probability, which
                          is the target that lives on the same scale as the
                          thing the model is finally judged on.
+    - `race_xent`        the race-normalised implied probability itself, fitted by
+                         the within-race cross-entropy (race_xent_objective): the
+                         booster's score is a log price up to the race's constant.
     """
     lp = np.log(pd.to_numeric(df["bfsp"], errors="coerce").to_numpy(dtype=float))
     if target == "log_bfsp":
@@ -506,13 +570,17 @@ def build_target(df: pd.DataFrame, target: str, race_col: str = "raceid") -> np.
         book = pd.Series(ip).groupby(races.to_numpy()).transform("sum").to_numpy()
         q = np.clip(ip / book, 1e-6, 1 - 1e-6)
         return np.log(q / (1.0 - q))
+    if target == "race_xent":
+        ip = 1.0 / np.exp(lp)
+        book = pd.Series(ip).groupby(races.to_numpy()).transform("sum").to_numpy()
+        return ip / book
     raise ValueError(f"unknown target {target!r}")
 
 
 def invert_target(pred: np.ndarray, df: pd.DataFrame, target: str,
                   race_col: str = "raceid") -> np.ndarray:
     """Model output back to a raw price, before the book is normalised."""
-    if target in ("log_bfsp", "demeaned_log"):
+    if target in ("log_bfsp", "demeaned_log", "race_xent"):
         return np.exp(pred)
     if target == "logit_norm_prob":
         q = 1.0 / (1.0 + np.exp(-np.clip(pred, -30, 30)))
@@ -588,16 +656,27 @@ def fit_bfsp(train_df: pd.DataFrame, feature_cols: list[str], cfg: TrainConfig,
         fit with a runner shutdown. Slice straight out of the frame and let
         LightGBM free the raw data once it has binned it."""
         n = int(np.count_nonzero(mask))
-        return lgb.Dataset(
+        ds = lgb.Dataset(
             d.loc[mask, feature_cols].astype(dtype, copy=False),   # no second copy of columns already in dtype
             label=y[mask],
             weight=None if w is None else w[mask],
             init_score=None if init_offset == 0.0 else np.full(n, init_offset),
             reference=ref, categorical_feature=cat or "auto",
         )
+        if cfg.target == "race_xent":
+            # the within-race objective and metric read the Dataset's races
+            ds.race_index = RaceIndex(ensure_race_id(d, race_col).to_numpy()[mask])
+        return ds
 
     params = dict(cfg.params)
     feval = None
+    if cfg.target == "race_xent":
+        if cfg.objective == "profit_weighted":
+            raise ValueError("race_xent is its own objective; it cannot be profit_weighted too")
+        # the objective is the target's: a params objective (huber, say) cannot apply to it
+        params["objective"] = race_xent_objective
+        params["metric"] = "None"
+        feval = race_xent_metric
     if cfg.objective == "profit_weighted":
         params["objective"] = profit_weighted_objective
         params.pop("metric", None)
