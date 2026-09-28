@@ -97,6 +97,10 @@ race from the model's prices, and simulates every order against the order book a
 fills at the prices offered at or above its limit, the rest lapses, and each fill is closed with a
 simulated lay at BSP. Nothing is placed on the exchange: the package has no order-placing code.
 
+- Non-runners: each race is planned over the runners still active on Betfair, the model's probabilities
+  re-normalised over them, so a withdrawal shortens the model's fair prices as it shortens the market's. In the
+  races that lost runners on 28 Sep that left the 06:00 prices about 5% from a full re-run's, against 15% left
+  stale (research ledger, non-runners-0928).
 - Settings: `trading/config.json` (strategy `rule`, level £5 stakes, trade out at BSP on the fill, window
   08:00-11:00 UK, limits), overridable by `TRADING_*` variables.
 - Limits on every simulated order: stake, race, daily turnover and bets, daily stop-loss on settled
