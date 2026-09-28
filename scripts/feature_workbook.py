@@ -844,19 +844,22 @@ NOT_BUILT = [
      "Available", "The unlagged version leaked the result and was removed. fw_lbs / fw_lbsc now cover pounds beaten.",
      "Low"),
     ("B3", "Lengths per position", "Form", "Lengths beaten per place behind the winner (how strung out the field was)",
-     "Available", "Not built", "Medium"),
+     "Available", "Screened (research query misc_residuals, 27 Sep, x 10^-4 on the pair's mean |log error|): the last race's lengths per place and the horse's lengths against it "
+     "+0.66 jointly, nothing. Not built", "Low"),
     ("B4", "Closing-sectional proxy", "Form", "Speed over the final furlongs", "Not available",
      "No sectional or per-horse times in the data", "Blocked"),
     ("D2", "Headgear type flags", "Equipment", "One flag per headgear item (blinkers, visor, cheekpieces, hood, tongue-tie)",
-     "Available", "Partial: one category column", "Low"),
+     "Available", "Partial: one category column. Screened (research query misc_residuals, 27 Sep, x 10^-4 on the pair's mean |log error|): each item worn, the number worn and "
+     "headgear taken off -0.98 jointly (-2.23 to +0.24), unresolved; the items alone -0.76, resolved", "Low"),
     ("G4", "Age restriction", "Race conditions", "Age band of the race (2yo, 3yo only, 3yo+, 4yo+)", "Available",
      "race_restrictions_age is never read", "Low"),
     ("H3", "Claimer flag", "Connections", "Whether the jockey claims an allowance", "Available",
      "Partial: raw claim only; is_claimer is opt-in", "Low"),
     ("I1", "OR percentile in the field", "Ratings", "Official rating's percentile within the race", "Available",
-     "Partial: difference to the max and median only", "Low"),
+     "Partial: difference to the max and median only. Screened (research query misc_residuals, 27 Sep, x 10^-4 on the pair's mean |log error|) with the rating ladder: nothing", "Low"),
     ("I2", "OR trajectory slope", "Ratings", "Slope of the official rating over recent runs", "Available",
-     "Partial: changes only", "Low"),
+     "Partial: changes only. Screened (research query misc_residuals, 27 Sep, x 10^-4 on the pair's mean |log error|): the rating's slope over three runs and against its peak, "
+     "with the class ladder, -0.85 jointly (-2.33 to +0.55), unresolved; against the peak alone -0.72", "Low"),
     ("J1", "Month / season", "Context", "Seasonal effects", "Available",
      "Surveyed on 24 Sep: nothing for the price to miss", "Low"),
     ("J2", "Day of week", "Context", "Weekday effects (strength of meetings)", "Available", "Surveyed: nothing", "Low"),
@@ -866,11 +869,14 @@ NOT_BUILT = [
      "Screened 27 Sep against the best model's errors (black-type runs, finishing position and win "
      "rate before today: +0.53 x 10^-4, nothing; research/queries/travel_residuals.py)", "Low"),
     ("K2", "Class ladder vs career median", "Class", "Today's class against the horse's career median class",
-     "Available", "Partial: against a three-run mean", "Low"),
+     "Available", "Partial: against a three-run mean. Screened (research query misc_residuals, 27 Sep, x 10^-4 on the pair's mean |log error|) against the median and best class: "
+     "nothing (against the best +0.91, worse)", "Low"),
     ("L2", "Class x speed", "Speed", "Speed figures scaled by the class they were run in", "Available",
      "Not built", "Medium"),
-    ("L4", "Weight per OR point", "Handicap", "Weight carried relative to the official rating", "Available",
-     "The handicap block's hc_wt_vs_mark is close (opt-in, added nothing against the result)", "Medium"),
+    ("L5", "Weight against the last three runs", "Handicap", "Weight carried today less the mean of its last "
+     "three runs", "Available", "Screened (research query misc_residuals, 27 Sep, x 10^-4 on the pair's mean |log error|): -2.14 (-3.64 to -0.62), resolved, the size of the handicap "
+     "angles' read; the model reads the weight against the last run (weight_change_lr) only. The next small "
+     "candidate for a fit", "Medium"),
     ("R1", "Trainer and jockey career NFP / RB", "Connections", "Career finishing-position quality of runners and rides",
      "Available", "Built as the connection windows' cw_tr_nfp_car / cw_jk_nfp_car and their within-race ranks (the "
      "spec's trainerNFPrank and jockeyNFPrank; RB is NFP in this data), in the 968. horsexRBMARrank alone is still "
