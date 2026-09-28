@@ -146,8 +146,8 @@ DROP_IN = [
      "its winning marks", "candidate"),
     ("travel", "Travel", "How far the yard has sent the horse against how far it usually sends them, raids "
      "across the Irish Sea, the yard's use of the course", "candidate"),
-    ("market_history", "Market history", "How the bookmakers (industry SP) and the place market priced the horse, its yard and its rider before, each against its cell's usual", "candidate"),
-    ("seasonal", "Seasonality", "The horse's form and its yard's winners against the price in the same months of earlier years", "candidate"),
+    ("market_history", "Market history", "How the bookmakers (industry SP) and the place market priced the horse, its yard and its rider before, each against its cell's usual", "built"),
+    ("seasonal", "Seasonality", "The horse's form and its yard's winners against the price in the same months of earlier years", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
     ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
 ]
@@ -166,8 +166,8 @@ BLOCK_EVIDENCE = {
               "with travel -0.0010, with all three -0.0014 (iteration 97). The pair of the two with all three prices "
               "0.3966 against 0.3981, concordance resolved better: the recommendation, in training for serving "
               "(train-bfsp runs 52 and 53).",
-    "Market history": "Built 28 Sep: the industry SP (odds, net) against the Betfair SP, and the Betfair place SP against the win SP, in past runs, each against its price band, field size and code or places paid on earlier days; the horse's, its yard's and its rider's. A residual screen could not say whether it adds (research query run 36360636883 reads features the model already holds as strongly as new ones); iteration 98 fits it on the 968s5xh with the three blocks.",
-    "Seasonality": "Built 28 Sep: the horse's finishing position and its yard's A-E against the Betfair SP in today's month and the month either side, 300 days back or more. Iteration 98 fits it with market history.",
+    "Market history": "Built 28 Sep: the industry SP (odds, net) against the Betfair SP, and the Betfair place SP against the win SP, in past runs, each against its price band, field size and code or places paid on earlier days; the horse's, its yard's and its rider's. Iteration 98, on the 968s5xh with the three blocks: +0.0006 (+0.0000 to +0.0012), resolved worse at the edge; beside the partner +0.0003 against the candidate pair. The rule +10.33% and the top pick +1.66% against +10.16% and +1.57%, inside their noise. Retired.",
+    "Seasonality": "Built 28 Sep: the horse's finishing position and its yard's A-E against the Betfair SP in today's month and the month either side, 300 days back or more. Iteration 98, with market history: -0.0000 alone, -0.0002 (-0.0005 to +0.0001) in the pair with its concordance resolved worse (-0.0011). Retired.",
     "Future form": "Built 27 Sep at the owner's ask (the last 1, 3 and 5 races back, each rival's next 1, 2, 3 and 5 runs forward). "
                    "Parity clean at 06:00 (research query run 36301993859). Cell by cell against the best fit's miss: -0.0013 jointly, "
                    "most in the rivals' later finishing positions from the last five races; deeper windows add nothing. Iteration 90: "
