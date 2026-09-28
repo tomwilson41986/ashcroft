@@ -101,21 +101,37 @@ def post_race(name: str) -> set[str]:
 def attach(df: pd.DataFrame, block_names) -> tuple[pd.DataFrame, list[str]]:
     """Build each named block on `df`, in order, after any drop-in block it reads
     (AFTER) that the frame does not carry yet. Returns (frame, the named blocks'
-    features): a block built only as another's input is not a feature."""
+    features): a block built only as another's input is not a feature.
+
+    A block that declares READS is built on those columns alone and its features
+    are written into `df` in place: the same values (tests/test_feature_blocks.py
+    checks a build on READS equals the build on the whole frame), without the copy
+    of the whole matrix a build returns, which on a history from 2018 (1.05m rows)
+    was more than a runner holds. The frame passed in is extended, not copied."""
     named = list(dict.fromkeys(block_names))
     cols: list[str] = []
     for name in build_order(named):
         mod = load(name)
         if name not in named and all(c in df.columns for c in mod.FEATURES):
             continue
-        out = mod.build(df)
+        reads = getattr(mod, "READS", None)
+        narrow = reads is not None and all(c in df.columns for c in reads)
+        src = df[list(dict.fromkeys(reads))].copy() if narrow else df
+        out = mod.build(src)
         missing = [c for c in mod.FEATURES if c not in out.columns]
         if missing:
             raise ValueError(f"block {name}: build() did not add {missing[:5]}"
                              f"{' ...' if len(missing) > 5 else ''}")
         if len(out) != len(df):
             raise ValueError(f"block {name}: build() changed the row count ({len(df)} -> {len(out)})")
-        df = out
+        if narrow:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
+                for c in mod.FEATURES:
+                    df[c] = out[c].to_numpy()
+            del out, src
+        else:
+            df = out
         if name in named:
             cols += list(mod.FEATURES)
     return df, cols
