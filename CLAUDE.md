@@ -55,6 +55,13 @@ python predict_bfsp_today.py --from-db --date 2025-12-30
 # Backtest last 7 days
 python predict_bfsp_today.py --last-n-days 7
 
+# Update an earlier run's predictions for the non-runners since: drop every runner the card as it
+# stands no longer lists, lists with no jockey (withdrawn) or as a reserve not yet in, re-normalise its race
+# (writes the non-runners and why beside the output; every card is read that way: declared_runners). The card
+# comes from HRB, or from a file: a racecard CSV, or the HTML card page predict-now's probe_card saves
+python predict_bfsp_today.py --non-runners out/predictions.csv --output-csv out/now.csv [--card onedayracecards.html]
+python scripts/predictions_workbook.py --predictions out/now.csv --non-runners out/now_non_runners.csv --meta data/models/bfsp_model_meta.json --out reports/predictions.xlsx
+
 # Daily predictions pipeline (email, auto-fetches Betfair odds if configured)
 python daily_predictions.py --dry-run
 

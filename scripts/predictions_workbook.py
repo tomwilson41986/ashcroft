@@ -8,6 +8,9 @@
     python scripts/predictions_workbook.py --predictions out/predictions.csv --label 944 \\
         --compare 0600.csv --compare-label 615 --meta ... --out ...
 
+    # without the runners withdrawn since (predict_bfsp_today.py --non-runners writes both files)
+    python scripts/predictions_workbook.py --predictions now.csv --non-runners now_non_runners.csv ...
+
 Reads the CSV predict_bfsp_today.py --output-csv writes (the card's race and
 runner fields, the model's predicted BSP, its win probability normalised
 within the race, and its rank in the race). The model's outputs are values;
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -174,6 +178,29 @@ def _compare_sheet(ws, df: pd.DataFrame, other: pd.DataFrame, label: str, other_
         ws.column_dimensions[get_column_letter(j)].width = w
 
 
+def _non_runner_sheet(ws, nr: pd.DataFrame) -> None:
+    """The runners withdrawn since the prices were first made, and the share of their race's book each took
+    with it: every other runner in the race is that much more likely, its price shorter by that share."""
+    head = ["Time", "Course", "Horse", "Its predicted BSP", "Share of the book", "Others' prices ×", "Why"]
+    ws.append(head)
+    for r in nr.itertuples(index=False):
+        i = ws.max_row + 1
+        for j, v in enumerate([str(r.race_time), r.track, r.horse_name, float(r.predicted_bfsp),
+                               float(r.share_of_book)], start=1):
+            ws.cell(row=i, column=j, value=v)
+        # the other runners' probabilities are divided by (1 - share), so their prices are multiplied by it
+        ws.cell(row=i, column=6, value=f'=IF(ISNUMBER(E{i}),1-E{i},"")')
+        why = getattr(r, "why", None)
+        ws.cell(row=i, column=7, value=why if isinstance(why, str) else "off the card")
+        for j, fmt in ((4, "0.00"), (5, "0.0%"), (6, "0.000")):
+            ws.cell(row=i, column=j).number_format = fmt
+        for j in range(1, 8):
+            ws.cell(row=i, column=j).font = Font(name=FONT)
+    _style_header(ws, len(head))
+    for j, w in enumerate([7, 16, 26, 11, 11, 13, 20], start=1):
+        ws.column_dimensions[get_column_letter(j)].width = w
+
+
 def _readme(ws, df: pd.DataFrame, meta: dict, day: str, note: str, label: str = "") -> str:
     """The summary and the key; returns the absolute reference of the rule's margin cell."""
     rows = [
@@ -226,7 +253,8 @@ def _readme(ws, df: pd.DataFrame, meta: dict, day: str, note: str, label: str = 
 
 
 def build(pred: pd.DataFrame, meta: dict, out: str, note: str = "", label: str = "",
-          other: pd.DataFrame | None = None, other_label: str = "", other_note: str = "") -> Path:
+          other: pd.DataFrame | None = None, other_label: str = "", other_note: str = "",
+          non_runners: pd.DataFrame | None = None) -> Path:
     df = pred.copy()
     df["race_date"] = pd.to_datetime(df["race_date"]).dt.strftime("%Y-%m-%d")
     t = pd.to_datetime(df["race_time"].astype(str).str.replace(".", ":", regex=False), format="%H:%M", errors="coerce")
@@ -238,10 +266,21 @@ def build(pred: pd.DataFrame, meta: dict, out: str, note: str = "", label: str =
 
     wb = Workbook()
     wb.active.title = "Read me"
+    if non_runners is not None:
+        n = len(non_runners)
+        races = non_runners.groupby(["track", "race_time"]).ngroups if n else 0
+        line = (f"{n} non-runner{'s' if n != 1 else ''} since the prices were first made, in {races} "
+                f"race{'s' if races != 1 else ''} (sheet Non-runners). The prices here are without them, each race "
+                "a book of 100%: a non-runner's share of the book goes to the rest of its race, whose prices "
+                "shorten by about that share.")
+        note = f"{note} {line}".strip()
     rule_ref = _readme(wb.active, df, meta, day, note, label)
     _top_sheet(wb.create_sheet("Top picks"), df, rule_ref)
+    if non_runners is not None:
+        _non_runner_sheet(wb.create_sheet("Non-runners"), non_runners)
     if other is not None:
-        name = f"{label or 'model'} vs {other_label or 'other'}"[:31]
+        # a sheet's name may not hold : \ / ? * [ ] (a label such as 12:48 is fine in the cells)
+        name = re.sub(r"[:\\/?*\[\]]", ".", f"{label or 'model'} vs {other_label or 'other'}")[:31]
         _compare_sheet(wb.create_sheet(name), df, other, label or "model", other_label or "other", other_note)
     _runner_sheet(wb.create_sheet("All runners"), df, rule_ref)
     for track, g in df.groupby("track", sort=False):
@@ -271,12 +310,16 @@ def main() -> None:
     ap.add_argument("--compare", default="", help="Another model's predictions for the same day, set beside these")
     ap.add_argument("--compare-label", default="", help="Its name, e.g. 615")
     ap.add_argument("--compare-note", default="", help="A line under the comparison: where its prices came from")
+    ap.add_argument("--non-runners", default="",
+                    help="The runners withdrawn since (predict_bfsp_today.py --non-runners writes them), listed "
+                         "on their own sheet")
     a = ap.parse_args()
     pred = pd.read_csv(a.predictions)
     pred["race_time"] = pred["race_time"].astype(str)
     meta = json.loads(Path(a.meta).read_text())
     other = read_other(a.compare) if a.compare else None
-    print(build(pred, meta, a.out, a.note, a.label, other, a.compare_label, a.compare_note))
+    nr = pd.read_csv(a.non_runners, dtype={"race_time": str}) if a.non_runners else None
+    print(build(pred, meta, a.out, a.note, a.label, other, a.compare_label, a.compare_note, nr))
 
 
 if __name__ == "__main__":

@@ -75,3 +75,22 @@ def test_the_comparison_sheet_picks_among_the_runners_still_declared(tmp_path):
         assert ws.cell(row=r, column=5).value == race.loc[race["predicted_bfsp"].idxmin(), "horse_name"]
         assert ws.cell(row=r, column=8).value == o.loc[o["predicted_bfsp"].idxmin(), "horse_name"]
         assert ws.cell(row=r, column=10).value == f'=IF(E{r}=H{r},"yes","no")'
+
+
+def test_the_non_runners_have_their_own_sheet_and_a_line_on_the_read_me(tmp_path):
+    from predict_bfsp_today import without_non_runners
+
+    day = with_model_rank(_day())
+    card = day.loc[~day["horse_name"].isin(["Newmarket1.300", "Haydock2.051"]), ["race_time", "track", "horse_name"]]
+    now, nr, _ = without_non_runners(day, card)
+    path = pw.build(now, {}, str(tmp_path / "p.xlsx"), note="test", non_runners=nr)
+    wb = load_workbook(path)
+    assert wb.sheetnames[:3] == ["Read me", "Top picks", "Non-runners"]
+    ws = wb["Non-runners"]
+    assert ws.max_row == 3 and {ws.cell(row=r, column=3).value for r in (2, 3)} == {"Newmarket1.300", "Haydock2.051"}
+    assert ws.cell(row=2, column=6).value == "=IF(ISNUMBER(E2),1-E2,\"\")"
+    readme = wb["Read me"]
+    note = next(readme.cell(row=r, column=2).value for r in range(1, readme.max_row + 1)
+                if readme.cell(row=r, column=1).value == "Note")
+    assert note.startswith("test 2 non-runners since the prices were first made, in 2 races")
+    assert wb["All runners"].max_row == 14

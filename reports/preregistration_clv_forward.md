@@ -146,3 +146,33 @@ At the owner's instruction of 28 September ("switch to the best model"), **the 0
 - **The change is between days**, as the amendment of 24 September requires. Days 1-4 stay scored on the models that served them (the 535 on 25 September, the 615 from 26 to 28 September); from 29 September the window runs on this model. The headline, its interval and the halves are reported for each model's days as well as for the whole window, which is still the criterion.
 
 **Nothing else changes:** not the rule, not the criteria, not the window's length or its exclusions.
+
+## Record, 29 Sep 2026 (07:10 UTC): day 5 written by a dispatched run
+
+**The scheduled 06:00 run of 29 September wrote nothing; a dispatched run wrote the day's file at 07:03 UTC (08:03 UK), inside the rule.**
+- **Run 200** (scheduled, 06:13-06:14 UTC): horseracebase's login page came back without its form, so the job could not log in, priced no card and wrote no file. It still ended green.
+- **Run 201** (dispatched 06:42 UTC on the same commit, 5023faa): logged in at once, wrote `racecards/2026-09-29_0642.csv` (375 runners in 38 races) and `predictions/2026-09-29.csv` at 07:03:11 UTC. Every runner was priced by the gated three, on the history from 2018.
+- **Day 5 is scored on run 201's file.** Nothing else changes. PR #78 makes the login try again after 30 s, 60 s and 120 s, and makes a morning that prices nothing fail red.
+
+## Amendment, 29 Sep 2026 (11:45 UTC), before the 30 September card: horses the card lists that are not running
+
+**From the 06:00 run of 30 September the job leaves out every horse the card lists that is not running.** The owner found non-runners still priced on 29 September.
+- **What horseracebase does:** it does not always drop a withdrawn horse from its card. It can keep the horse with the jockey blanked (a link to `jockeys.php?id=0`, sometimes with the claim left beside it: "(7)"). It also lists Irish reserves as RESERVE until they get into the race.
+- **The effect:** priced as runners, both took their share of the race's book from the horses that ran, so every other price in those races was too long by that share.
+- **Days 1-5 in the record** (research query `records_not_running_0925_0929.py`, run 36562950937; each day's file against the card it was priced on):
+
+  | Day | Reserves priced | Blank jockeys priced | Races affected |
+  |---|---|---|---|
+  | 25 Sep | 33 | 0 | 12 |
+  | 26 Sep | 3 | 0 | 1 |
+  | 27 Sep | 3 | 1 (Out On Friday, Curragh 5:30) | 2 |
+  | 28 Sep | 15 | 1 (Popeye Doyle, Wolverhampton 4:22) | 7 |
+  | 29 Sep | 3 | 0 | 1 |
+
+  - That is 23 races in all. Such horses held 7.4% of an affected race's book on average and 20.4% at most.
+  - The research ledger (`non-runners-blank-jockey-0929`) has the detail.
+- **The change:** `daily_predictions.declared_runners` drops both kinds on the HTML and the CSV card and counts each race's field again (PR #78).
+  - Training's rows are the horses that ran, so the card now matches what the model was trained on.
+- **Scoring:** days 1-5 stay scored on their files as written; the report gives the headline with and without the races whose book held a reserve or a blank jockey.
+
+**Nothing else changes:** not the rule, not the criteria, not the window's length or its exclusions.

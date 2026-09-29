@@ -345,6 +345,31 @@ def fetch_racecard_from_hrb(target_date: date) -> pd.DataFrame:
     return runners
 
 
+def read_card(path: str, target_date: date) -> pd.DataFrame:
+    """A card saved to a file: a racecard CSV (csv/racecards/) or the HTML card page, read as the
+    06:00 fetch reads it (daily_predictions.scrape_racecard_html), with the horses it lists that
+    are not running kept in: without_non_runners leaves them out and says why."""
+    if not path.lower().endswith((".html", ".htm")):
+        return pd.read_csv(path, dtype={"race_time": str})
+    from daily_predictions import scrape_racecard_html
+
+    with open(path, encoding="utf-8") as f:
+        html = f.read()
+
+    class _Page:
+        text = html
+
+        def raise_for_status(self):
+            pass
+
+    class _Saved:
+        def get(self, url):
+            return _Page()
+
+    card = scrape_racecard_html(_Saved(), target_date, keep_withdrawn=True)
+    return card if card is not None else pd.DataFrame(columns=["race_time", "track", "horse_name"])
+
+
 def get_runners_from_db(db_path: str, target_date: str) -> pd.DataFrame:
     """Get runners for a specific date from the local database.
 
@@ -506,6 +531,100 @@ def with_model_rank(predictions: pd.DataFrame) -> pd.DataFrame:
         out["race_date"].astype(str) + "|" + out["track"].astype(str) + "|" + out["race_time"].astype(str))
     out["model_rank"] = out.groupby(race)["predicted_bfsp"].rank(method="min").astype("Int64")
     return out
+
+
+def _race_key(df: pd.DataFrame) -> pd.Series:
+    """Course and off time as the card writes them (12-hour, 1:24 or 1.24), for matching one fetch to another."""
+    def hhmm(v) -> str:
+        s = str(v).strip().replace(".", ":")
+        h, _, m = s.partition(":")
+        return f"{int(h)}:{int(m):02d}" if h.isdigit() and m.isdigit() else s
+    return df["track"].astype(str).str.strip().str.casefold() + "|" + df["race_time"].map(hhmm)
+
+
+def _runner_key(df: pd.DataFrame) -> pd.Series:
+    return _race_key(df) + "|" + df["horse_name"].astype(str).str.split().str.join(" ").str.casefold()
+
+
+def without_non_runners(predictions: pd.DataFrame, card: pd.DataFrame):
+    """The predictions with the runners since withdrawn taken out, each race's book back to 100%.
+
+    A non-runner declared after the card was fetched stays in the predictions, and the race's
+    other runners are priced too long by its share of the book. HRB's card either drops a runner
+    once it is withdrawn or keeps it with its jockey blanked (daily_predictions.card_status), so a
+    later fetch names them: every predicted runner of a race the card still lists that the card no
+    longer does, or lists without a jockey (a reserve not yet in counts too; `why` says which).
+    The race's remaining probabilities are rescaled to sum to
+    one, the model's own normalisation over the smaller field, and its prices, ranks and field
+    size follow; races that lost no one are left exactly as they were. This is the quick update:
+    a full re-run also rebuilds what depends on the field (the within-race readings, the draw
+    adjusted for non-runners, the gate's ranks).
+
+    A race the card no longer lists at all is left as it was, not voided: an abandonment and a
+    failed fetch look the same from here. Runners on the card the predictions never priced
+    cannot be priced without a re-run and are only reported.
+
+    Returns (predictions, non_runners, unpriced): the updated predictions; the runners taken
+    out, with the share of the book each carried; the card's runners with no prediction.
+    """
+    from daily_predictions import card_status, declared_runners
+
+    if "race_date" in predictions.columns and predictions["race_date"].nunique() > 1:
+        raise ValueError("predictions for one day at a time: the card is one day's")
+    listed = card
+    card = declared_runners(card, quiet=True)
+    out = predictions.copy()
+    if "predicted_win_prob_norm" not in out.columns:
+        out["predicted_win_prob_norm"] = 1.0 / out["predicted_bfsp"]
+    race, runner = _race_key(out), _runner_key(out)
+    card_race, card_runner = _race_key(card), _runner_key(card)
+    gone = (race.isin(set(card_race)) & ~runner.isin(set(card_runner))).to_numpy()
+    ids = [c for c in ("race_date", "race_time", "track", "horse_name") if c in out.columns]
+    non_runners = out.loc[gone, ids + ["predicted_bfsp", "predicted_win_prob_norm"]].rename(
+        columns={"predicted_win_prob_norm": "share_of_book"}).reset_index(drop=True)
+    status = {}
+    if "jockey_name" in listed.columns:
+        status = dict(zip(_runner_key(listed), listed["jockey_name"].map(card_status)))
+    why = {"withdrawn": "no jockey on the card", "reserve": "reserve, not in"}
+    non_runners["why"] = [why.get(status.get(k), "off the card") for k in runner[gone]]
+    new = (card_race.isin(set(race)) & ~card_runner.isin(set(runner))).to_numpy()
+    unpriced = card.loc[new, [c for c in ("race_time", "track", "horse_name") if c in card.columns]]
+
+    lost = set(race[gone])
+    out, race = out[~gone], race[~gone]
+    hit = race.isin(lost).to_numpy()
+    if hit.any():
+        r = race[hit]
+        p = out.loc[hit, "predicted_win_prob_norm"]
+        p = p / p.groupby(r).transform("sum")
+        out.loc[hit, "predicted_win_prob_norm"] = p
+        out.loc[hit, "predicted_bfsp"] = 1.0 / p
+        if "number_of_runners" in out.columns:
+            out.loc[hit, "number_of_runners"] = r.map(r.value_counts())
+        if "model_rank" in out.columns:
+            out.loc[hit, "model_rank"] = (1.0 / p).groupby(r).rank(method="min").astype(int)
+    return out.reset_index(drop=True), non_runners, unpriced.reset_index(drop=True)
+
+
+def update_for_non_runners(base_csv: str, output_csv: str, card: pd.DataFrame) -> pd.DataFrame:
+    """Write base_csv's predictions without the runners the card no longer lists (without_non_runners),
+    and beside them <output>_non_runners.csv, the runners taken out. Returns the non-runners."""
+    base = pd.read_csv(base_csv, dtype={"race_time": str})
+    card = card.copy()
+    card["race_time"] = card["race_time"].astype(str)
+    out, nr, unpriced = without_non_runners(base, card)
+    out.to_csv(output_csv, index=False)
+    nr_csv = os.path.splitext(output_csv)[0] + "_non_runners.csv"
+    nr.to_csv(nr_csv, index=False)
+    races = nr.groupby(["track", "race_time"]).ngroups if len(nr) else 0
+    log.info(f"{len(nr)} non-runners since {base_csv} in {races} races, their races re-normalised: "
+             f"{len(out)} runners written to {output_csv}, the non-runners to {nr_csv}")
+    for r in nr.itertuples(index=False):
+        log.info(f"  NR {r.race_time} {r.track}: {r.horse_name} ({r.share_of_book:.1%} of the book)")
+    if len(unpriced):
+        log.warning(f"{len(unpriced)} runners on the card have no prediction (a re-run prices them): "
+                    + "; ".join(f"{r.race_time} {r.track} {r.horse_name}" for r in unpriced.itertuples(index=False)))
+    return nr
 
 
 def format_predictions(predictions: pd.DataFrame, target_date: date) -> str:
@@ -730,11 +849,38 @@ def main():
         "--start-date", type=str, default="2020-01-01",
         help="Earliest historical date to load (default: 2020-01-01). Reduces memory.",
     )
+    parser.add_argument(
+        "--non-runners", type=str, default=None, metavar="PREDICTIONS_CSV",
+        help="Update an earlier run's predictions (its --output-csv) for the runners withdrawn since: "
+             "drop every runner the card as it stands no longer lists and re-normalise its race "
+             "(without_non_runners). Needs no database or model; writes --output-csv and, beside it, "
+             "the non-runners",
+    )
+    parser.add_argument(
+        "--card", type=str, default=None,
+        help="With --non-runners: the card as it stands from a file, a racecard CSV or the HTML card page "
+             "(predict-now's probe_card saves it), in place of a fetch from HRB",
+    )
     args = parser.parse_args()
 
     target_date = (
         date.fromisoformat(args.date) if args.date else date.today()
     )
+
+    if args.non_runners:
+        if not args.output_csv:
+            parser.error("--non-runners writes the updated predictions to --output-csv")
+        if args.card:
+            card = read_card(args.card, target_date)
+        elif os.getenv("HRB_USERNAME"):
+            card = fetch_racecard_from_hrb(target_date)
+        else:
+            parser.error("--non-runners needs the card as it stands: HRB_USERNAME and HRB_PASSWORD, or --card")
+        if len(card) == 0:
+            log.error("No card to check the predictions against")
+            sys.exit(1)
+        update_for_non_runners(args.non_runners, args.output_csv, card)
+        return
 
     if not os.path.exists(args.db):
         log.error(f"Database not found: {args.db}")
