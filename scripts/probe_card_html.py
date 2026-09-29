@@ -53,6 +53,16 @@ def main() -> int:
     (out / "onedayracecards.html").write_text(r.text, encoding="utf-8")
     print(f"card page: {len(r.text):,} bytes")
 
+    # the day's results page as it stands (the HTML page, not the CSV export the download pause stops)
+    time.sleep(1.5)
+    res = s.get(f"{BASE_URL}/horse-racing-results.php")
+    (out / "results.html").write_text(res.text, encoding="utf-8")
+    rsoup = BeautifulSoup(res.text, "lxml")
+    print(f"results page: HTTP {res.status_code}, {len(res.text):,} bytes, title {rsoup.title.get_text(strip=True) if rsoup.title else ''!r}")
+    for f in rsoup.find_all("form")[:6]:
+        fields = [(i.get("name"), i.get("type"), (i.get("value") or "")[:20]) for i in f.find_all(["input", "select"])]
+        print(f"  form action={f.get('action')!r} method={f.get('method')!r} fields={fields[:12]}")
+
     soup = BeautifulSoup(r.text, "lxml")
     tables = [t for t in soup.find_all("table")
               if t.find("tr") and _cells(t.find("tr"))[:1] == ["No."]]
