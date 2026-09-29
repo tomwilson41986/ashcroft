@@ -29,6 +29,7 @@ import re
 import smtplib
 import sqlite3
 import sys
+import time
 from datetime import date, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -94,8 +95,18 @@ def create_session() -> requests.Session:
     return session
 
 
-def login(session: requests.Session) -> str | None:
-    """Log in to horseracebase.com. Returns user ID on success."""
+# Waits before each further login attempt. The 06:00 run of 29 Sep 2026 was given a
+# login page without its form, once, and priced nothing; the same page was whole
+# half an hour later.
+LOGIN_WAITS = (30, 60, 120)
+_TRY_AGAIN = object()
+
+
+def login(session: requests.Session, waits=LOGIN_WAITS) -> str | None:
+    """Log in to horseracebase.com. Returns user ID on success.
+
+    A page without its form, a request that fails or a missing user ID is tried
+    again after each wait in `waits`; credentials the site rejects are not."""
     username = os.getenv("HRB_USERNAME")
     password = os.getenv("HRB_PASSWORD")
 
@@ -105,35 +116,54 @@ def login(session: requests.Session) -> str | None:
         )
         return None
 
-    # Get CSRF token from the login page
-    resp = session.get(LOGIN_URL)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "lxml")
-    csrf_input = (soup.find("input", {"name": "csrf_token"})
-                  or soup.find("input", {"name": "CSRFtoken"}))
-    if not csrf_input:
-        log.error("Could not find CSRF token on page")
-        return None
+    for attempt, wait in enumerate((*waits, None), start=1):
+        outcome = _login_once(session, username, password)
+        if outcome is not _TRY_AGAIN:
+            return outcome
+        if wait is None:
+            log.error(f"Login failed after {attempt} attempts")
+            return None
+        log.warning(f"Login attempt {attempt} failed; trying again in {wait}s")
+        time.sleep(wait)
 
-    # Post login back to the login page
-    resp2 = session.post(LOGIN_URL, data={
-        "login": username,
-        "password": password,
-        csrf_input.get("name"): csrf_input.get("value"),
-    })
-    resp2.raise_for_status()
 
-    if "not recognised" in resp2.text.lower():
-        log.error("Login failed: credentials not recognised")
-        return None
+def _login_once(session: requests.Session, username: str, password: str):
+    """One login: the user ID, None if the credentials are rejected, else _TRY_AGAIN."""
+    try:
+        # Get CSRF token from the login page
+        resp = session.get(LOGIN_URL)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "lxml")
+        csrf_input = (soup.find("input", {"name": "csrf_token"})
+                      or soup.find("input", {"name": "CSRFtoken"}))
+        if not csrf_input:
+            title = soup.title.get_text(" ", strip=True)[:80] if soup.title else ""
+            log.error(f"Could not find CSRF token on page "
+                      f"(HTTP {resp.status_code}, {len(resp.text)} bytes, title {title!r})")
+            return _TRY_AGAIN
 
-    # Get user ID from results page
-    resp3 = session.get(RESULTS_URL)
-    soup3 = BeautifulSoup(resp3.text, "lxml")
-    user_input = soup3.find("input", {"name": "user"})
-    if not user_input:
-        log.error("Login failed: could not find user ID")
-        return None
+        # Post login back to the login page
+        resp2 = session.post(LOGIN_URL, data={
+            "login": username,
+            "password": password,
+            csrf_input.get("name"): csrf_input.get("value"),
+        })
+        resp2.raise_for_status()
+
+        if "not recognised" in resp2.text.lower():
+            log.error("Login failed: credentials not recognised")
+            return None
+
+        # Get user ID from results page
+        resp3 = session.get(RESULTS_URL)
+        soup3 = BeautifulSoup(resp3.text, "lxml")
+        user_input = soup3.find("input", {"name": "user"})
+        if not user_input:
+            log.error("Login failed: could not find user ID")
+            return _TRY_AGAIN
+    except requests.RequestException as e:
+        log.error(f"Login request failed: {e}")
+        return _TRY_AGAIN
 
     user_id = user_input.get("value")
     log.info(f"Logged in successfully (user_id={user_id})")

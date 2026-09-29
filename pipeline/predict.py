@@ -169,8 +169,10 @@ def main():
     )
 
     if not predictions:
-        log.warning("No predictions generated, exiting")
-        return
+        # A failure, so the run shows red and says so: on 29 Sep 2026 a login that
+        # failed left the 06:00 run green with nothing written.
+        log.error("No predictions generated, exiting")
+        raise SystemExit(1)
 
     log.info(f"Generated {len(predictions)} predictions")
 
