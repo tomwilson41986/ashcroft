@@ -62,6 +62,13 @@ def main() -> int:
     for f in rsoup.find_all("form")[:6]:
         fields = [(i.get("name"), i.get("type"), (i.get("value") or "")[:20]) for i in f.find_all(["input", "select"])]
         print(f"  form action={f.get('action')!r} method={f.get('method')!r} fields={fields[:12]}")
+    # the day's results as they come in, horseracebase's own list of non-runners, and its live odds
+    for name, page in (("results_today", "horse-racing-results.php?today=yes"), ("nonrunners", "nonrunners.php"),
+                       ("liveodds", "liveoddstracker.php")):
+        time.sleep(1.5)
+        p = s.get(f"{BASE_URL}/{page}")
+        (out / f"{name}.html").write_text(p.text, encoding="utf-8")
+        print(f"{page}: HTTP {p.status_code}, {len(p.text):,} bytes")
 
     soup = BeautifulSoup(r.text, "lxml")
     tables = [t for t in soup.find_all("table")
