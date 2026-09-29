@@ -146,3 +146,10 @@ At the owner's instruction of 28 September ("switch to the best model"), **the 0
 - **The change is between days**, as the amendment of 24 September requires. Days 1-4 stay scored on the models that served them (the 535 on 25 September, the 615 from 26 to 28 September); from 29 September the window runs on this model. The headline, its interval and the halves are reported for each model's days as well as for the whole window, which is still the criterion.
 
 **Nothing else changes:** not the rule, not the criteria, not the window's length or its exclusions.
+
+## Record, 29 Sep 2026 (07:10 UTC): day 5 written by a dispatched run
+
+**The scheduled 06:00 run of 29 September wrote nothing; a dispatched run wrote the day's file at 07:03 UTC (08:03 UK), inside the rule.**
+- **Run 200** (scheduled, 06:13-06:14 UTC): horseracebase's login page came back without its form, so the job could not log in, priced no card and wrote no file. It still ended green.
+- **Run 201** (dispatched 06:42 UTC on the same commit, 5023faa): logged in at once, wrote `racecards/2026-09-29_0642.csv` (375 runners in 38 races) and `predictions/2026-09-29.csv` at 07:03:11 UTC. Every runner was priced by the gated three, on the history from 2018.
+- **Day 5 is scored on run 201's file.** Nothing else changes. PR #78 makes the login try again after 30 s, 60 s and 120 s, and makes a morning that prices nothing fail red.
