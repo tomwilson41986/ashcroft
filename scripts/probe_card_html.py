@@ -12,7 +12,8 @@ its source if the card has it.
 
     python scripts/probe_card_html.py --out out/
 
-Read-only: one login, the day's card page and at most two horse pages.
+Read-only: one login, the day's card page, horseracebase's results, non-runner and live-odds
+pages, each recent day's results page (--results-days) and at most two horse pages.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ import argparse
 import re
 import sys
 import time
+from datetime import date, timedelta
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -40,6 +42,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default="out")
     ap.add_argument("--horse-pages", type=int, default=2)
+    ap.add_argument("--results-days", type=int, default=5, help="results pages to save, today and the days before")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -63,8 +66,14 @@ def main() -> int:
         fields = [(i.get("name"), i.get("type"), (i.get("value") or "")[:20]) for i in f.find_all(["input", "select"])]
         print(f"  form action={f.get('action')!r} method={f.get('method')!r} fields={fields[:12]}")
     # the day's results as they come in, horseracebase's own list of non-runners, and its live odds
-    for name, page in (("results_today", "horse-racing-results.php?today=yes"), ("nonrunners", "nonrunners.php"),
-                       ("liveodds", "liveoddstracker.php")):
+    pages = [("results_today", "horse-racing-results.php?today=yes"), ("nonrunners", "nonrunners.php"),
+             ("liveodds", "liveoddstracker.php")]
+    # and each recent day's results page, so the forward-test days can be scored while the CSV export is paused
+    today = date.today()
+    for back in range(args.results_days):
+        d = today - timedelta(days=back)
+        pages.append((f"results_{d.isoformat()}", f"horse-racing-results.php?day={d.day}&month={d.month}&year={d.year}"))
+    for name, page in pages:
         time.sleep(1.5)
         p = s.get(f"{BASE_URL}/{page}")
         (out / f"{name}.html").write_text(p.text, encoding="utf-8")
