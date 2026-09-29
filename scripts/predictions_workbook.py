@@ -181,7 +181,7 @@ def _compare_sheet(ws, df: pd.DataFrame, other: pd.DataFrame, label: str, other_
 def _non_runner_sheet(ws, nr: pd.DataFrame) -> None:
     """The runners withdrawn since the prices were first made, and the share of their race's book each took
     with it: every other runner in the race is that much more likely, its price shorter by that share."""
-    head = ["Time", "Course", "Horse", "Its predicted BSP", "Share of the book", "Others' prices ×"]
+    head = ["Time", "Course", "Horse", "Its predicted BSP", "Share of the book", "Others' prices ×", "Why"]
     ws.append(head)
     for r in nr.itertuples(index=False):
         i = ws.max_row + 1
@@ -190,12 +190,14 @@ def _non_runner_sheet(ws, nr: pd.DataFrame) -> None:
             ws.cell(row=i, column=j, value=v)
         # the other runners' probabilities are divided by (1 - share), so their prices are multiplied by it
         ws.cell(row=i, column=6, value=f'=IF(ISNUMBER(E{i}),1-E{i},"")')
+        why = getattr(r, "why", None)
+        ws.cell(row=i, column=7, value=why if isinstance(why, str) else "off the card")
         for j, fmt in ((4, "0.00"), (5, "0.0%"), (6, "0.000")):
             ws.cell(row=i, column=j).number_format = fmt
-        for j in range(1, 7):
+        for j in range(1, 8):
             ws.cell(row=i, column=j).font = Font(name=FONT)
     _style_header(ws, len(head))
-    for j, w in enumerate([7, 16, 26, 11, 11, 13], start=1):
+    for j, w in enumerate([7, 16, 26, 11, 11, 13, 20], start=1):
         ws.column_dimensions[get_column_letter(j)].width = w
 
 

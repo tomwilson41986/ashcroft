@@ -126,3 +126,96 @@ def test_the_saved_html_card_is_read_as_the_06_00_fetch_reads_it(tmp_path):
     card = read_card(str(page), date(2026, 9, 28))
     assert card[["race_time", "track", "horse_name"]].values.tolist() == [
         ["1:20", "Curragh", "Shake It Out"], ["1:20", "Curragh", "Known Horse"]]
+
+
+# --- horses the card still lists that are not running ------------------------------------------
+
+@pytest.mark.parametrize("jockey,status", [
+    ("Lordan, W M", "runner"), ("Cusack, C(7)", "runner"), ("Tucker, Charlie(7)", "runner"),
+    ("", "withdrawn"), ("   ", "withdrawn"), ("(7)", "withdrawn"), (" (3) ", "withdrawn"),
+    (None, "withdrawn"), (float("nan"), "withdrawn"), ("NR", "withdrawn"),
+    ("RESERVE", "reserve"), ("Reserve", "reserve"),
+])
+def test_a_card_row_s_jockey_says_whether_it_runs(jockey, status):
+    from daily_predictions import card_status
+    assert card_status(jockey) == status
+
+
+def _card_with_jockeys(pred: pd.DataFrame, jockeys: dict) -> pd.DataFrame:
+    card = _card(pred)
+    card["jockey_name"] = [jockeys.get(h, "Rider, A") for h in card["horse_name"]]
+    card["number_of_runners"] = card.groupby(["track", "race_time"])["horse_name"].transform("size")
+    return card
+
+
+def test_a_horse_listed_without_a_jockey_is_a_non_runner():
+    pred = _predictions()
+    card = _card_with_jockeys(pred, {"Dow 1 (IRE)": "", "Dow 2 (IRE)": "(7)"})
+    out, nr, unpriced = without_non_runners(pred, card)
+    assert set(nr["horse_name"]) == {"Dow 1 (IRE)", "Dow 2 (IRE)"} and len(unpriced) == 0
+    assert set(nr["why"]) == {"no jockey on the card"}
+    race = out[out["track"] == "Down Royal"]
+    assert len(race) == 2 and race["predicted_win_prob_norm"].sum() == pytest.approx(1.0)
+
+
+def test_a_reserve_not_yet_in_is_left_out_and_said_to_be_one():
+    pred = _predictions()
+    card = _card_with_jockeys(pred, {"Wol 2 (IRE)": "RESERVE"})
+    card = card[card["horse_name"] != "Dow 3 (IRE)"]
+    _, nr, _ = without_non_runners(pred, card)
+    assert dict(zip(nr["horse_name"], nr["why"])) == {"Dow 3 (IRE)": "off the card",
+                                                      "Wol 2 (IRE)": "reserve, not in"}
+
+
+def test_the_field_is_counted_again_without_them():
+    from daily_predictions import declared_runners
+    pred = _predictions()
+    card = declared_runners(_card_with_jockeys(pred, {"Dow 0 (IRE)": "", "Wol 1 (IRE)": "RESERVE"}))
+    assert len(card) == len(pred) - 2
+    assert card.groupby("track")["number_of_runners"].first().to_dict() == {"Down Royal": 3, "Wolverhampton": 2}
+
+
+def test_a_card_that_names_no_jockeys_at_all_is_left_as_it_is():
+    from daily_predictions import declared_runners
+    pred = _predictions()
+    card = _card(pred).assign(jockey_name="")
+    assert len(declared_runners(card)) == len(card)
+
+
+_ROW = ("<tr><td>{no}</td><td>1</td><td>9</td><td><a href='horses.php?id={no}'>{horse}</a></td><td>3</td>"
+        "<td>9-2</td><td></td><td><a href='jockeys.php?id={jid}'>{jockey}</a>{claim}</td><td>Some, Trainer</td>"
+        "<td>{no}</td><td>70</td><td>5/1</td></tr>")
+
+
+def _html_card(rows) -> str:
+    head = ("<tr><td>No.</td><td>Form</td><td>Days</td><td>Horse</td><td>Age</td><td>Weight</td>"
+            "<td>Headgear</td><td>Jockey</td><td>Trainer</td><td>Stall</td><td>OR</td><td>Odds</td></tr>")
+    body = "".join(_ROW.format(no=i + 1, horse=h, jid=j, jockey=jk, claim=c) for i, (h, j, jk, c) in enumerate(rows))
+    return ("<html><body><span>1.55 Cork(4 runners)</span><span>Class 1, 5f , Yielding, 2yo, Win: £10,000</span>"
+            f"<span>A Maiden</span><table>{head}{body}</table></body></html>")
+
+
+def test_the_card_page_leaves_out_a_horse_whose_jockey_is_blanked(tmp_path):
+    from daily_predictions import scrape_racecard_html
+    html = _html_card([("Runs Today", 3865, "Lordan, W M", ""), ("Sapphire Sun (IRE)", 0, "", ""),
+                       ("Its Life", 0, "", " (7)"), ("Watercraft (IRE)", 0, "RESERVE", "")])
+
+    class _Page:
+        text = html
+        def raise_for_status(self): pass
+
+    class _Saved:
+        def get(self, url): return _Page()
+
+    card = scrape_racecard_html(_Saved(), date(2026, 9, 29))
+    assert list(card["horse_name"]) == ["Runs Today"] and list(card["number_of_runners"]) == [1]
+    kept = scrape_racecard_html(_Saved(), date(2026, 9, 29), keep_withdrawn=True)
+    assert len(kept) == 4
+    page = tmp_path / "onedayracecards.html"
+    page.write_text(html, encoding="utf-8")
+    pred = pd.DataFrame({"race_date": "2026-09-29", "race_time": "1:55", "track": "Cork",
+                         "horse_name": list(kept["horse_name"]), "predicted_bfsp": [2.0, 4.0, 8.0, 8.0]})
+    pred["predicted_win_prob_norm"] = (1 / pred["predicted_bfsp"]) / (1 / pred["predicted_bfsp"]).sum()
+    out, nr, _ = without_non_runners(pred, read_card(str(page), date(2026, 9, 29)))
+    assert list(out["horse_name"]) == ["Runs Today"] and out["predicted_bfsp"].item() == pytest.approx(1.0)
+    assert list(nr["why"]) == ["no jockey on the card", "no jockey on the card", "reserve, not in"]

@@ -201,13 +201,14 @@ def download_racecard_csv(
 
 
 def scrape_racecard_html(
-    session: requests.Session, target_date: date
+    session: requests.Session, target_date: date, keep_withdrawn: bool = False
 ) -> pd.DataFrame | None:
     """Scrape today's racecards from the onedayracecards.php page.
 
     This page contains all races for the day in structured tables,
     each preceded by span elements with race metadata (time, track,
-    class, distance, going, prize money).
+    class, distance, going, prize money). The horses on it that are not
+    running (declared_runners) are left out unless keep_withdrawn.
     """
     log.info("Attempting HTML racecard scrape from onedayracecards.php...")
     racecard_url = f"{BASE_URL}/onedayracecards.php"
@@ -374,7 +375,53 @@ def scrape_racecard_html(
 
     df = pd.DataFrame(all_runners)
     log.info(f"Scraped {len(df)} runners from {race_count} races")
-    return df
+    return df if keep_withdrawn else declared_runners(df)
+
+
+# A withdrawn horse can stay on horseracebase's card with its jockey blanked (the
+# jockey link points at id 0, sometimes with the claim left beside it: "(7)"), and
+# an Irish reserve shows RESERVE there until it gets into the race. Neither is a
+# runner, and priced as one it takes its share of the race's book from the horses
+# that do run: on 29 Sep 2026 four withdrawn horses stayed on the card all morning,
+# priced at up to 3/1, beside three reserves at 06:43.
+_CLAIM = re.compile(r"\(\s*\d+\s*\)")
+_NOT_A_JOCKEY = {"", "NR", "N/R", "NON RUNNER", "NON-RUNNER"}
+
+
+def card_status(jockey) -> str:
+    """'runner', 'withdrawn' (the card names no jockey) or 'reserve', from a card row's jockey."""
+    text = jockey.strip().upper() if isinstance(jockey, str) else ""
+    if "RESERVE" in text:
+        return "reserve"
+    return "withdrawn" if _CLAIM.sub("", text).strip() in _NOT_A_JOCKEY else "runner"
+
+
+def declared_runners(card: pd.DataFrame, quiet: bool = False) -> pd.DataFrame:
+    """The card without the horses on it that are not running: withdrawn (no jockey) and reserves
+    not yet in, each race's field counted again. Logs each unless quiet.
+
+    A card with no jockey column is returned as it is, and so is one that names no jockey at all
+    or, 20 runners or more, none for most of them: that is a card in another format, not a
+    morning of withdrawals (a day's card loses one to five in a hundred)."""
+    if card is None or card.empty or "jockey_name" not in card.columns:
+        return card
+    status = card["jockey_name"].map(card_status)
+    out_of_it = status.ne("runner")
+    n_out = int(out_of_it.sum())
+    if n_out == len(card) or (len(card) >= 20 and n_out > len(card) / 2):
+        log.warning(f"Card: {n_out} of {len(card)} runners without a jockey; "
+                    "read as a different card format, nothing left out")
+        return card
+    if not quiet:
+        for kind, what in (("withdrawn", "withdrawn (no jockey)"), ("reserve", "reserves not yet in")):
+            gone = card[status.eq(kind)]
+            if len(gone):
+                log.info(f"Card: {len(gone)} {what} left out: " + "; ".join(
+                    f"{r.race_time} {r.track} {r.horse_name}" for r in gone.itertuples()))
+    out = card[~out_of_it].copy()
+    if "number_of_runners" in out.columns and {"race_time", "track", "horse_name"} <= set(out.columns):
+        out["number_of_runners"] = out.groupby(["track", "race_time"])["horse_name"].transform("size")
+    return out.reset_index(drop=True)
 
 
 # The horse cell's tooltip on the HTML card, the only pedigree the card carries:
@@ -527,7 +574,7 @@ def get_todays_runners(
 
     if csv_text:
         save_racecard_csv(csv_text, target_date)
-        df = parse_racecard_csv(csv_text)
+        df = declared_runners(parse_racecard_csv(csv_text))
         if len(df) > 0:
             log.info(
                 f"Got {len(df)} runners from CSV for {target_date}"

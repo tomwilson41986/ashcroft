@@ -347,7 +347,8 @@ def fetch_racecard_from_hrb(target_date: date) -> pd.DataFrame:
 
 def read_card(path: str, target_date: date) -> pd.DataFrame:
     """A card saved to a file: a racecard CSV (csv/racecards/) or the HTML card page, read as the
-    06:00 fetch reads it (daily_predictions.scrape_racecard_html)."""
+    06:00 fetch reads it (daily_predictions.scrape_racecard_html), with the horses it lists that
+    are not running kept in: without_non_runners leaves them out and says why."""
     if not path.lower().endswith((".html", ".htm")):
         return pd.read_csv(path, dtype={"race_time": str})
     from daily_predictions import scrape_racecard_html
@@ -365,7 +366,7 @@ def read_card(path: str, target_date: date) -> pd.DataFrame:
         def get(self, url):
             return _Page()
 
-    card = scrape_racecard_html(_Saved(), target_date)
+    card = scrape_racecard_html(_Saved(), target_date, keep_withdrawn=True)
     return card if card is not None else pd.DataFrame(columns=["race_time", "track", "horse_name"])
 
 
@@ -549,9 +550,11 @@ def without_non_runners(predictions: pd.DataFrame, card: pd.DataFrame):
     """The predictions with the runners since withdrawn taken out, each race's book back to 100%.
 
     A non-runner declared after the card was fetched stays in the predictions, and the race's
-    other runners are priced too long by its share of the book. HRB's card drops a runner once
-    it is withdrawn, so a later fetch names them: every predicted runner of a race the card still
-    lists that the card no longer does. The race's remaining probabilities are rescaled to sum to
+    other runners are priced too long by its share of the book. HRB's card either drops a runner
+    once it is withdrawn or keeps it with its jockey blanked (daily_predictions.card_status), so a
+    later fetch names them: every predicted runner of a race the card still lists that the card no
+    longer does, or lists without a jockey (a reserve not yet in counts too; `why` says which).
+    The race's remaining probabilities are rescaled to sum to
     one, the model's own normalisation over the smaller field, and its prices, ranks and field
     size follow; races that lost no one are left exactly as they were. This is the quick update:
     a full re-run also rebuilds what depends on the field (the within-race readings, the draw
@@ -564,8 +567,12 @@ def without_non_runners(predictions: pd.DataFrame, card: pd.DataFrame):
     Returns (predictions, non_runners, unpriced): the updated predictions; the runners taken
     out, with the share of the book each carried; the card's runners with no prediction.
     """
+    from daily_predictions import card_status, declared_runners
+
     if "race_date" in predictions.columns and predictions["race_date"].nunique() > 1:
         raise ValueError("predictions for one day at a time: the card is one day's")
+    listed = card
+    card = declared_runners(card, quiet=True)
     out = predictions.copy()
     if "predicted_win_prob_norm" not in out.columns:
         out["predicted_win_prob_norm"] = 1.0 / out["predicted_bfsp"]
@@ -575,6 +582,11 @@ def without_non_runners(predictions: pd.DataFrame, card: pd.DataFrame):
     ids = [c for c in ("race_date", "race_time", "track", "horse_name") if c in out.columns]
     non_runners = out.loc[gone, ids + ["predicted_bfsp", "predicted_win_prob_norm"]].rename(
         columns={"predicted_win_prob_norm": "share_of_book"}).reset_index(drop=True)
+    status = {}
+    if "jockey_name" in listed.columns:
+        status = dict(zip(_runner_key(listed), listed["jockey_name"].map(card_status)))
+    why = {"withdrawn": "no jockey on the card", "reserve": "reserve, not in"}
+    non_runners["why"] = [why.get(status.get(k), "off the card") for k in runner[gone]]
     new = (card_race.isin(set(race)) & ~card_runner.isin(set(runner))).to_numpy()
     unpriced = card.loc[new, [c for c in ("race_time", "track", "horse_name") if c in card.columns]]
 
