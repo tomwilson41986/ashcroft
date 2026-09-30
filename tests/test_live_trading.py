@@ -448,9 +448,11 @@ def test_the_evening_job_settles_the_live_day_from_betfairs_record(monkeypatch, 
     monkeypatch.setattr(auto_trade, "BetfairData", lambda recorder=None: data)
     sent = []
     monkeypatch.setattr(auto_trade, "publish", lambda *a, **k: None)
-    monkeypatch.setattr(auto_trade, "email", lambda summary: sent.append(summary))
+    monkeypatch.setattr(auto_trade, "running_totals", lambda mode: None)
+    monkeypatch.setattr(auto_trade, "email", lambda summary, races=None, totals=None: sent.append((summary, races)))
     out = auto_trade.main(["--live", "--settle", "--date", "2026-09-30", "--out", str(tmp_path)])
-    assert out["settled_pnl"] == 0.0 and out["races_settled"] == 1 and sent and sent[0]["settled_pnl"] == 0.0
+    assert out["settled_pnl"] == 0.0 and out["races_settled"] == 1 and sent and sent[0][0]["settled_pnl"] == 0.0
+    assert [(r["off"], r["venue"], r["winner"], r["pnl"]) for r in sent[0][1]] == [("19:00", "Kempton", "Elan Dor", 0.0)]
     with ledger.open() as f:
         events = [r["event"] for r in _csv.DictReader(f)]
     assert events == ["back", "trade_out", "unsettled", "unsettled", "settle", "commission"]
@@ -473,3 +475,53 @@ def test_the_settled_bets_are_read_page_by_page_and_only_read():
                                                 "fromRecord": 0, "recordCount": 1000})
     with pytest.raises(ValueError):
         BetfairData(client=c)._read("placeOrders", {})
+
+
+# ---------------------------------------------------------------- the evening email
+
+def test_the_email_shows_each_race_and_the_running_total(monkeypatch):
+    import io as _io
+    import json as _json
+    import auto_trade
+    rows = [
+        {"event": "settle", "market_id": "1.1", "venue": "Kempton", "off": "19:00", "runner": "A", "matched": "10.0",
+         "result": "LOSER", "clv": "0.5", "pnl": "8.0"},
+        {"event": "settle", "market_id": "1.1", "venue": "Kempton", "off": "19:00", "runner": "B", "matched": "30.0",
+         "result": "WINNER", "clv": "0.1", "pnl": "0.0"},
+        {"event": "commission", "market_id": "1.1", "venue": "Kempton", "off": "19:00", "pnl": "-0.4"},
+        {"event": "unsettled", "market_id": "1.2", "venue": "Kempton", "off": "19:30", "matched": "9", "pnl": "99"},
+        {"event": "settle", "market_id": "1.3", "venue": "Kempton", "off": "20:00", "runner": "C", "matched": "5.0",
+         "result": "LOSER", "clv": "", "pnl": "-5.0"},
+        {"event": "commission", "market_id": "1.3", "venue": "Kempton", "off": "20:00", "pnl": "0"},
+    ]
+    races = auto_trade.race_lines(rows)
+    assert [(r["off"], r["horses"], r["staked"], r["winner"], r["pnl"]) for r in races] == [
+        ("19:00", 2, 40.0, "B", 7.6), ("20:00", 1, 5.0, "", -5.0)]
+    assert races[0]["clv"] == pytest.approx((0.5 * 10 + 0.1 * 30) / 40) and races[1]["clv"] is None
+
+    class S3:
+        def list_objects_v2(self, **kw):
+            return {"Contents": [{"Key": "trading/live/2026-09-30/summary.json"},
+                                 {"Key": "trading/live/2026-09-30/ledger.csv"},
+                                 {"Key": "trading/live/2026-10-01/summary.json"}], "IsTruncated": False}
+
+        def get_object(self, Bucket, Key):
+            day = Key.split("/")[2]
+            got = {"2026-09-30": {"bets_matched": 38, "turnover": 548.99, "settled_pnl": 37.47},
+                   "2026-10-01": {"bets_matched": 10, "turnover": 100.0, "settled_pnl": -2.5}}[day]
+            return {"Body": _io.BytesIO(_json.dumps(got).encode())}
+    tot = auto_trade.running_totals("live", s3=S3())
+    assert tot == {"since": "2026-09-30", "days": 2, "bets": 48, "staked": pytest.approx(648.99),
+                   "pnl": pytest.approx(34.97)}
+
+    sent = []
+    import ultra_betting.reporting.daily_report as dr
+    monkeypatch.setattr(dr, "send_email_report", lambda html, subject=None: sent.append((html, subject)))
+    summary = {"mode": "live", "day": "2026-10-01", "bets_matched": 10, "turnover": 100.0, "races_settled": 2,
+               "settled_pnl": -2.5, "stake_weighted_clv": 0.2}
+    auto_trade.email(summary, races=races, totals=tot)
+    html, subject = sent[0]
+    assert "19:00 Kempton" in html and "+7.60" in html and "+20.0%" in html and "Since 2026-09-30: 2 days" in html
+    assert subject == "Ashcroft live trading 2026-10-01: settled -2.50 on GBP100.00 (10 bets), CLV +20.0%"
+    auto_trade.email({**summary, "stake_weighted_clv": None})       # no CLV yet, no races: still sent
+    assert sent[1][1].endswith("CLV n/a")
