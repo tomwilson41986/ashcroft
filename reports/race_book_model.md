@@ -193,8 +193,8 @@ With the lay price 2% worse, the close book with lays still makes +13.5%.
 The owner backs every selected horse to win the same £250, so a horse at price m gets £250 ÷ (m − 1). Which
 horse wins does not matter; the portfolio does.
 
-Same data and closing model: February–March 2026. Research query `to_win_staking.py`, run on the database as
-well as locally.
+Same data and closing model: February–March 2026. Research query `research/queries/done/to_win_staking.py`,
+run 36677259421 on the database; a local run on the 23 Sep export gave identical numbers.
 
 | Horses backed | Bets | Turnover | CLV at the close | Held to the result (90%) | Days up | Worst drawdown | Longest losing run |
 |---|---|---|---|---|---|---|---|
