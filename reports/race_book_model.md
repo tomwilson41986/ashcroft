@@ -188,6 +188,53 @@ it is long. The optimiser makes that choice by itself: it laid 0.4 horses a race
 
 With the lay price 2% worse, the close book with lays still makes +13.5%.
 
+## Staking to win £250 on every horse (the owner's staking)
+
+The owner backs every selected horse to win the same £250, so a horse at price m gets £250 ÷ (m − 1). Which
+horse wins does not matter; the portfolio does.
+
+Same data and closing model: February–March 2026. Research query `to_win_staking.py`, run on the database as
+well as locally.
+
+| Horses backed | Bets | Turnover | CLV at the close | Held to the result (90%) | Days up | Worst drawdown | Longest losing run |
+|---|---|---|---|---|---|---|---|
+| Every horse with positive expected CLV | 5,237 | £270,127 | +£12,629 (+4.7%) | +£3,698, +1.4% (−2.7 to +5.4) | 46% | −£3,378 | 4 days |
+| **Expected CLV ≥ +3%** | 3,816 | £164,478 | **+£11,855 (+7.2%)** | **+£11,364, +6.9% (+1.3 to +12.5)** | 54% | −£2,681 | 6 days |
+| Expected CLV ≥ +5% | 3,004 | £111,780 | +£9,848 (+8.8%) | +£8,372, +7.5% (+0.3 to +14.3) | 51% | −£1,916 | 6 days |
+| Expected CLV ≥ +10% | 1,720 | £43,805 | +£6,417 (+14.7%) | +£9,072, +20.7% (+8.1 to +32.8) | 56% | −£1,131 | 4 days |
+| Pre-registered rule | 3,016 | £82,432 | +£6,096 (+7.4%) | +£1,145, +1.4% (−6.9 to +9.8) | 47% | −£3,411 | 3 days |
+| Owner's book (by edge, each ≥ −3%, race ≥ +3%) | 5,515 | £240,256 | +£11,605 (+4.8%) | +£4,668, +1.9% (−2.1 to +6.2) | 47% | −£2,425 | 4 days |
+
+### Staking to win puts the money on the short prices
+
+Among every horse with positive expected CLV:
+
+- Horses under 3.0 were 399 of the 5,237 bets but took £102,159 of the £270,127 staked.
+- Their CLV is the smallest, +3.7%. Horses over 21.0 make +19.4%, but on £8,229.
+
+So the same horses at level stakes make about twice the percentage: +9.3% at the close for every
+positive-expected-CLV horse, against +4.7% to win. They also carry far more risk. Staking to win is the
+steadier choice.
+
+### The marginal horses are not worth the turnover
+
+Going from "expected CLV ≥ +3%" down to "any positive expected CLV" adds:
+
+- £105,649 of turnover;
+- +£774 of CLV (+0.7%);
+- −£7,666 held to the result.
+
+After spread and slippage those horses are worth nothing. Under this staking the bar should be about +3%.
+
+### Profit over time
+
+Three of the selections were tracked week by week: every positive-expected-CLV horse, ≥ +5%, and the owner's
+book. At the close, each one's cumulative CLV rose in every one of the ten weeks scored. For the
+positive-expected-CLV selection it went +£215, +£1,609, +£3,104 … +£12,629. Held to the result the curve is
+noisier, but every row of the table ends up.
+
+Stakes above half of a runner's morning matched volume were 0.1% of bets or fewer.
+
 ## Caveats
 
 1. **The backtest forecasts know race-day facts** (the going at the off, the jockey who rode, the horses that
@@ -212,4 +259,7 @@ With the lay price 2% worse, the close book with lays still makes +13.5%.
 - **Trade** single backs, and close-out books, where the expected CLV is at least 5%, closed out at the off.
 - **Book** with the Kelly result book (backs only, θ = 3%, δ = 3%) where the owner wants a book of several
   horses to hold.
+- **Staking to win £250 on each horse** (the owner's staking): back every horse whose expected CLV is at
+  least +3%. That is where the pounds are: +£11,855 at the close and +£11,364 held to the result over the two
+  months. Lower bars add turnover and no profit.
 - Start both in paper mode alongside the pre-registered forward test. That test is left unchanged.
