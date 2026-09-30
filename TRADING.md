@@ -160,6 +160,23 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
 - **The record**: s3://$ULTRA_BETTING_S3_BUCKET/trading/live/<day>/ (ledger and summary), emailed after the
   morning session and after the evening settlement (each race's result, the BSP, the CLV, commission on the net).
 
+**The first live session** (30 Sep, a test the owner chose; ledger `live-first-session-0930`). The session ran at
+Kempton, 19:00-20:30 UK, and entered 28 to 118 minutes before each off, a window the backtest never tested.
+
+| Race (UK) | Horses | Staked | Result |
+|---|---|---|---|
+| 19:00 | 11 | GBP121.94 | +25.70 |
+| 19:30 | 3 | GBP180.63 | -1.36 |
+| 20:00 | 5 | GBP59.91 | +15.21 |
+| 20:30 | 9 | GBP186.51 | -2.08 |
+| **Total** | **28** | **GBP548.99** | **+37.47** |
+
+- 38 of the 45 backs sent were matched, and every matched back was laid at the SP.
+- The result is after GBP2.15 commission.
+- Our prices beat the Betfair SP by +18.4%, stake-weighted.
+- Four of our horses won. A winner laid at the SP nets nothing, so the night kept about 40% of the roughly GBP100
+  the price moves were worth at the SP.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):

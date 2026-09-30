@@ -31,6 +31,7 @@ import csv
 import io
 import json
 import logging
+import math
 import os
 import signal
 import sys
@@ -171,18 +172,103 @@ def publish(day: date, ledger: Path, summary: dict, mode: str = MODE) -> None:
         log.warning("Could not publish to S3: %s", exc)
 
 
-def email(summary: dict) -> None:
+def _f(x) -> float:
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def race_lines(ledger: list[dict]) -> list[dict]:
+    """The day's settled races from the ledger: course and off, horses backed, staked, the winner if we held it,
+    the stake-weighted CLV (our average price against the Betfair SP) and the P&L after commission."""
+    races: dict = {}
+    for r in ledger:
+        if r.get("event") not in ("settle", "commission"):
+            continue
+        g = races.setdefault(str(r.get("market_id")), {"venue": r.get("venue") or "", "off": r.get("off") or "",
+                                                       "horses": 0, "staked": 0.0, "pnl": 0.0, "won": [],
+                                                       "clv_w": 0.0, "clv_s": 0.0})
+        pnl = _f(r.get("pnl"))
+        g["pnl"] += pnl if math.isfinite(pnl) else 0.0
+        if r.get("event") == "commission":
+            continue
+        stake, clv = _f(r.get("matched")), _f(r.get("clv"))
+        g["horses"] += 1
+        g["staked"] += stake if math.isfinite(stake) else 0.0
+        if r.get("result") == "WINNER":
+            g["won"].append(str(r.get("runner") or ""))
+        if math.isfinite(clv) and math.isfinite(stake) and stake > 0:
+            g["clv_w"] += clv * stake
+            g["clv_s"] += stake
+    out = [{"market_id": mid, "venue": g["venue"], "off": g["off"], "horses": g["horses"],
+            "staked": round(g["staked"], 2), "winner": ", ".join(g["won"]), "pnl": round(g["pnl"], 2),
+            "clv": g["clv_w"] / g["clv_s"] if g["clv_s"] > 0 else None} for mid, g in races.items()]
+    return sorted(out, key=lambda x: (x["off"], x["venue"]))
+
+
+def running_totals(mode: str = MODE, s3=None) -> dict | None:
+    """Every day's published summary under trading/<mode>/ in S3: the days, bets, stakes and settled P&L to date."""
+    try:
+        s3 = s3 or _s3()
+        keys, token = {}, None
+        while True:
+            kw = {"Bucket": BUCKET, "Prefix": f"trading/{mode}/"}
+            if token:
+                kw["ContinuationToken"] = token
+            page = s3.list_objects_v2(**kw)
+            for o in page.get("Contents", []) or []:
+                parts = o["Key"].split("/")
+                if len(parts) == 4 and parts[3] == "summary.json":
+                    keys[parts[2]] = o["Key"]
+            if not page.get("IsTruncated"):
+                break
+            token = page.get("NextContinuationToken")
+        tot = {"since": min(keys) if keys else None, "days": 0, "bets": 0, "staked": 0.0, "pnl": 0.0}
+        for day in sorted(keys):
+            got = json.loads(s3.get_object(Bucket=BUCKET, Key=keys[day])["Body"].read())
+            tot["days"] += 1
+            tot["bets"] += int(got.get("bets_matched") or 0)
+            tot["staked"] += float(got.get("turnover") or 0.0)
+            tot["pnl"] += float(got.get("settled_pnl") or 0.0)
+        return tot if tot["days"] else None
+    except Exception as exc:                              # the email goes without the running total
+        log.warning("Running totals not read: %s", exc)
+        return None
+
+
+def email(summary: dict, races: list[dict] | None = None, totals: dict | None = None) -> None:
     try:
         from ultra_betting.reporting.daily_report import send_email_report
     except Exception:
         return
     mode = str(summary.get("mode", MODE)).capitalize()
-    rows = "".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in summary.items() if k != "config")
+    clv = summary.get("stake_weighted_clv")
+    clv_text = f"{clv:+.1%}" if isinstance(clv, (int, float)) else "n/a"
     try:                                                  # a failed email never costs the day's record
-        send_email_report(f"<h3>{mode} trading {summary['day']}</h3><table>{rows}</table>",
-                          subject=f"Ashcroft {mode.lower()} trading {summary['day']}: {summary['bets_matched']} "
-                                  f"bets, GBP{summary['turnover']:,.2f} staked, settled {summary['settled_pnl']:+.2f}, "
-                                  f"CLV {summary['stake_weighted_clv']}")
+        head = (f"<h3>{mode} trading {summary['day']}: settled {summary['settled_pnl']:+,.2f} after commission"
+                f"</h3><p>{summary['bets_matched']} bets matched, GBP{summary['turnover']:,.2f} staked, "
+                f"{summary.get('races_settled', 0)} races settled; our prices against the Betfair SP: {clv_text} "
+                f"(stake-weighted). Each back is laid at the SP, so a horse of ours that wins nets nothing: the "
+                f"profit is the price move on the ones that lose.</p>")
+        body = ""
+        if races:
+            def pct(v):
+                return f"{v:+.1%}" if v is not None else "-"
+            cells = "".join(
+                f"<tr><td>{r['off']} {r['venue']}</td><td>{r['horses']}</td><td>{r['staked']:,.2f}</td>"
+                f"<td>{r['winner'] or '-'}</td><td>{pct(r['clv'])}</td><td>{r['pnl']:+,.2f}</td></tr>"
+                for r in races)
+            body += ("<table border='1' cellpadding='4' cellspacing='0'><tr><th>Race</th><th>Horses</th>"
+                     "<th>Staked</th><th>Our winner</th><th>CLV</th><th>P&amp;L</th></tr>" + cells + "</table>")
+        if totals:
+            body += (f"<p>Since {totals['since']}: {totals['days']} days, {totals['bets']} bets, "
+                     f"GBP{totals['staked']:,.2f} staked, settled {totals['pnl']:+,.2f}.</p>")
+        rows = "".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in summary.items() if k != "config")
+        send_email_report(head + body + f"<p>The day's summary:</p><table>{rows}</table>",
+                          subject=f"Ashcroft {mode.lower()} trading {summary['day']}: settled "
+                                  f"{summary['settled_pnl']:+,.2f} on GBP{summary['turnover']:,.2f} "
+                                  f"({summary['bets_matched']} bets), CLV {clv_text}")
     except Exception as exc:
         log.warning("Email not sent: %s", exc)
 
@@ -271,7 +357,7 @@ def main(argv=None) -> dict:
     log.info("Summary: %s", {k: v for k, v in summary.items() if k != "config"})
     publish(day, ledger, summary, mode)
     if a.settle or a.live:
-        email(summary)
+        email(summary, races=race_lines(session.ledger), totals=running_totals(mode))
     return summary
 
 
