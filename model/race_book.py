@@ -311,3 +311,82 @@ def settle_result(back_stakes, lay_stakes, back, lay, winner: int | None, commis
     if winner is not None:
         p += back_stakes[winner] * np.asarray(back, float)[winner] - lay_stakes[winner] * np.asarray(lay, float)[winner]
     return p - commission * max(p, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# the owner's staking, walk-forward: every horse backed to win the same amount
+# ---------------------------------------------------------------------------
+
+TO_WIN = 250.0
+MIN_VOL = 100.0
+
+
+def whole_races(d: pd.DataFrame, field: pd.Series | None = None, race_col: str = "race") -> pd.DataFrame:
+    """The races where every runner has a morning price, a BSP and a forecast (and three runners or more).
+    ``field`` is each race's number of runners forecast (default: the rows of ``d``)."""
+    ok = (d["morningwap"] > 1) & (d["bsp"] > 1) & (d["predicted_bfsp"] > 1)
+    got = d[ok].groupby(race_col).size()
+    n = d.groupby(race_col).size() if field is None else field
+    keep = got.index[(got.reindex(got.index) == n.reindex(got.index)) & (got >= 3)]
+    return d[d[race_col].isin(keep) & ok].copy()
+
+
+def expected_clv_walk_forward(d: pd.DataFrame, n_draws: int = 300, race_col: str = "race",
+                              min_train_races: int = 500) -> pd.DataFrame:
+    """Each runner's expected CLV for a back at its morning price, E[morning / BSP] - 1, from a closing model fitted
+    on the months before the runner's own. A month is scored only once the months before it hold
+    ``min_train_races`` races; until then it is only fitted on (a stray day of prices before the first full month
+    must not make a model). ``d``: whole races, with race_date, morningwap, morning_vol, predicted_bfsp and bsp.
+    The draws are seeded by month, the races taken in the order of ``d``, so a run repeats exactly. Returns the
+    scored months' rows with ``ev`` and ``month``."""
+    d = d.copy()
+    d["month"] = d["race_date"].astype(str).str[:7]
+    out = []
+    months = sorted(d["month"].unique())
+    for test_month in months[1:]:
+        train, test = d[d["month"] < test_month], d[d["month"] == test_month]
+        if train[race_col].nunique() < min_train_races:
+            continue
+        model = fit_closing_model(closing_inputs(train, race_col=race_col), train["bsp"], race_codes(train[race_col]))
+        rng = np.random.default_rng(int(test_month.replace("-", "")))
+        for _, r in test.groupby(race_col, sort=False):
+            inputs = closing_inputs(r, race_col=race_col)
+            g = np.zeros(len(r), int)
+            draws = closing_draws(model.predict(inputs, g), model.sigma(inputs), book=model.book, n_draws=n_draws,
+                                  rng=rng)
+            out.append(r.assign(ev=(r["morningwap"].to_numpy(float) * draws).mean(axis=0) - 1.0))
+    return pd.concat(out) if out else d.iloc[:0].assign(ev=np.nan)
+
+
+def to_win_selection(scored: pd.DataFrame, bar: float = 0.03, to_win: float = TO_WIN, min_vol: float = MIN_VOL,
+                     race_col: str = "race", commission: float = COMMISSION) -> pd.DataFrame:
+    """The owner's staking on the scored rows: every horse whose expected CLV is at least ``bar`` (and at least
+    ``min_vol`` matched in the morning) backed to win ``to_win`` at its morning price, stake to_win / (price - 1).
+    One row per race with a bet: its bets, stakes, expected CLV, CLV closed out at the BSP and profit held to the
+    result, each net of commission on the race's net winnings."""
+    s = scored[(scored["ev"] >= bar) & (scored["morning_vol"].fillna(0) >= min_vol)].copy()
+    if s.empty:
+        return pd.DataFrame(columns=[race_col, "race_date", "bets", "staked", "expected", "clv", "result"])
+    m, bsp = s["morningwap"].to_numpy(float), s["bsp"].to_numpy(float)
+    stake = to_win / (m - 1.0)
+    won = s["won"].astype(bool).to_numpy()
+    s["stake"], s["exp_v"] = stake, stake * s["ev"].to_numpy(float)
+    s["clv_v"] = stake * (m / bsp - 1.0)
+    s["res_v"] = np.where(won, stake * (m - 1.0), -stake)
+    g = s.groupby(race_col, sort=False).agg(race_date=("race_date", "first"), bets=("stake", "size"),
+                                            staked=("stake", "sum"), expected=("exp_v", "sum"),
+                                            clv=("clv_v", "sum"), result=("res_v", "sum")).reset_index()
+    g["clv"] -= commission * g["clv"].clip(lower=0)
+    g["result"] -= commission * g["result"].clip(lower=0)
+    return g
+
+
+def ratio_interval(num: np.ndarray, den: np.ndarray, n: int = 2000, seed: int = 0) -> tuple[float, float]:
+    """A 90% race-bootstrap interval for sum(num) / sum(den)."""
+    num, den = np.asarray(num, float), np.asarray(den, float)
+    if len(num) < 2 or den.sum() <= 0:
+        return np.nan, np.nan
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(num), (n, len(num)))
+    r = num[idx].sum(1) / np.maximum(den[idx].sum(1), 1e-12)
+    return float(np.percentile(r, 5)), float(np.percentile(r, 95))

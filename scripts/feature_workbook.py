@@ -148,11 +148,21 @@ DROP_IN = [
      "across the Irish Sea, the yard's use of the course", "candidate"),
     ("market_history", "Market history", "How the bookmakers (industry SP) and the place market priced the horse, its yard and its rider before, each against its cell's usual", "built"),
     ("seasonal", "Seasonality", "The horse's form and its yard's winners against the price in the same months of earlier years", "built"),
+    ("quant", "Quant metrics", "The yard's, rider's, sire's and horse's record against the Betfair SP read as a "
+     "track record (Sharpe ratio, signed chi, A/E), and the horse's form as a return series (volatility, downside "
+     "deviation, drawdown, the market's trend on it)", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
     ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
 ]
 
 BLOCK_EVIDENCE = {
+    "Quant metrics": "Built 30 Sep at the owner's ask (measures from the financial markets): the Sharpe ratio of "
+                     "level-stake returns at the Betfair SP, the signed chi (z-score) of winners against the prices' "
+                     "expectation and A/E for the trainer, jockey, the two together, the trainer at the course, the "
+                     "sire and the horse, over 90- and 365-day half-lives and the career; the horse's pounds-beaten "
+                     "volatility, downside deviation, best, drawdown and runs since the best, and the market's "
+                     "volatility and trend on it. Lag, card, order and READS tests pass. Iteration 106 (served "
+                     "recipe): the served main with the block, and with its record half only.",
     "Kalman rating": "Built 27 Sep from model/state_space.py, strictly from earlier days; parity clean at 06:00. "
                      "Alone with the handicap angles on the 968s5xh -0.0002 (iteration 96); with travel too -0.0017 "
                      "(seed 42) and -0.0011 (seed 7, iteration 97); the within-race partner with all three -0.0014 on "
@@ -664,6 +674,30 @@ def describe(f: str, group: str = "") -> str:
         return EXPLICIT[f]
     if f in EXPLICIT_BLOCKS:
         return EXPLICIT_BLOCKS[f]
+    m = re.fullmatch(r"qm_(tr|jk|tj|tc|sr|hs)_(sh|z|ae|n)_(90|365|car)", f)
+    if m:
+        who = {"tr": "The trainer's runners", "jk": "The jockey's rides", "tj": "The trainer and jockey together",
+               "tc": "The trainer's runners at this course", "sr": "The sire's runners", "hs": "The horse's runs"}
+        what = {"sh": "Sharpe ratio of level-stake returns at the Betfair SP (the mean shrunk to -5% by 30 runs, "
+                      "over their standard deviation)",
+                "z": "signed chi, the winners less the winners the BSPs expected over its standard deviation "
+                     "(a z-score; its square is the chi-squared)",
+                "ae": "A/E, winners over the winners the BSPs expected (both plus 2)",
+                "n": "the weighted number of runs behind these"}
+        span = {"90": "90-day half-life", "365": "365-day half-life", "car": "career"}
+        return f"{who[m.group(1)]}: {what[m.group(2)]}; {span[m.group(3)]}, earlier days"
+    QM = {"qm_hs_lbs_sd5": "Volatility of the horse's form: standard deviation of pounds beaten over its last five "
+                           "runs (a non-finisher 20)",
+          "qm_hs_lbs_dn5": "Downside deviation of the horse's form (Sortino's): root mean square of its last five "
+                           "runs' pounds beaten above their mean",
+          "qm_hs_lbs_best5": "Best (fewest pounds beaten) of the horse's last five runs",
+          "qm_hs_lbs_dd10": "Drawdown: pounds beaten in the last run less the best of the last ten",
+          "qm_hs_since_best10": "Runs since the best of the horse's last ten (0: the last run was the best)",
+          "qm_hs_mkt_sd5": "The market's volatility on the horse: standard deviation of its last five log Betfair SPs",
+          "qm_hs_mkt_tr5": "The market's trend on the horse: least-squares slope of its last five log Betfair SPs, "
+                           "oldest to newest (negative: shortening)"}
+    if f in QM:
+        return QM[f]
     m = re.fullmatch(r"cm_(lr|l3|l6)_([a-z_]+)", f)
     if m and m.group(2) in COMMENT_CLASS:
         return f"In-running comment: {COMMENT_CLASS[m.group(2)]}, {CM_WINDOW[m.group(1)]} (earlier days)"
@@ -921,8 +955,17 @@ NOT_BUILT = [
 # Workbook
 # ---------------------------------------------------------------------------
 
+def served_features() -> set[str]:
+    """The features the served model reads (its meta), which is what makes a feature served: a drop-in block the
+    model reads is served with it, and an engine feature the model does not read is not."""
+    import json
+    meta = ROOT / "data" / "models" / "bfsp_model_meta.json"
+    return set(json.loads(meta.read_text()).get("feature_cols", [])) if meta.exists() else set()
+
+
 def feature_rows(importance: pd.DataFrame) -> list[dict]:
     gain = dict(zip(importance["feature"], importance["importance"]))
+    served = served_features()
     src = (ROOT / "model" / "bfsp_features.py").read_text()
     order = re.findall(r"\+?\s*([A-Z_]+FEATURES)", re.search(r"ALL_FEATURE_COLS = \((.*?)\n\)", src, re.S).group(1))
     rows, seen = [], set()
@@ -952,6 +995,15 @@ def feature_rows(importance: pd.DataFrame) -> list[dict]:
             seen.add(f)
             rows.append(dict(feature=f, block=block, group=group, module=module, status=status,
                              gain=gain.get(f), card_safe=card_safe(f), constant=""))
+    if served:
+        for r in rows:
+            if r["feature"] in served:
+                r["status"] = SERVED
+            elif r["status"] == SERVED:
+                r["status"] = BUILT
+        missing = served - seen
+        if missing:
+            print(f"warning: {len(missing)} served features in no block: {sorted(missing)[:10]}")
     for r in rows:
         r["description"] = describe(r["feature"], r["constant"])
     return rows

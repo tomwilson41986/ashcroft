@@ -115,3 +115,52 @@ def test_settlement_charges_commission_once_on_the_race_net():
     # a lay of the favourite at 2.0 when the other wins: +1, less 5%; when it wins: -1
     assert rb.settle_result([0, 0], [1.0, 0], back, back, 1) == pytest.approx(0.95)
     assert rb.settle_result([0, 0], [1.0, 0], back, back, 0) == pytest.approx(-1.0)
+
+
+def _priced(n_months=3, races_per_month=6, seed=4):
+    """Stand-in races, eight runners each, over consecutive months: morning prices, forecasts, BSPs, a winner."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for mth in range(n_months):
+        for k in range(races_per_month):
+            race = f"2026-0{mth + 1}-10|York|{k}"
+            q = rng.dirichlet(np.ones(8) * 2)
+            w = rng.choice(8, p=q)
+            for i in range(8):
+                rows.append({"race": race, "race_date": f"2026-0{mth + 1}-10", "horse_name": f"h{k}{i}",
+                             "morningwap": 1 / q[i] * 1.02, "predicted_bfsp": 1 / q[i] * rng.uniform(0.8, 1.25),
+                             "bsp": 1 / q[i] * rng.uniform(0.85, 1.15), "morning_vol": 500.0, "won": i == w})
+    return pd.DataFrame(rows)
+
+
+def test_whole_races_keeps_only_races_priced_for_every_runner():
+    d = _priced(1, 3)
+    d.loc[d.index[0], "morningwap"] = np.nan                        # one runner of the first race unpriced
+    field = d.groupby("race").size()
+    w = rb.whole_races(d, field=field)
+    assert set(w["race"]) == set(d["race"].unique()[1:])
+
+
+def test_the_walk_forward_scores_only_months_with_enough_behind_them():
+    d = _priced(3, 6)
+    s = rb.expected_clv_walk_forward(d, n_draws=50, min_train_races=6)
+    assert sorted(s["month"].unique()) == ["2026-02", "2026-03"]    # January is only fitted on
+    again = rb.expected_clv_walk_forward(d, n_draws=50, min_train_races=6)
+    assert np.allclose(s["ev"], again["ev"])                        # seeded: a run repeats exactly
+    assert rb.expected_clv_walk_forward(d, n_draws=50, min_train_races=12)["month"].unique().tolist() == ["2026-03"]
+
+
+def test_the_to_win_selection_stakes_and_settles_as_the_owner_does():
+    s = pd.DataFrame({"race": ["a", "a", "a", "b"], "race_date": ["2026-02-01"] * 4,
+                      "morningwap": [3.0, 6.0, 11.0, 5.0], "bsp": [2.5, 6.0, 12.0, 4.0],
+                      "ev": [0.10, 0.03, 0.02, 0.2], "morning_vol": [500.0, 500.0, 500.0, 50.0],
+                      "won": [False, True, False, True]})
+    g = rb.to_win_selection(s, bar=0.03)
+    assert list(g["race"]) == ["a"]                                 # race b's horse had too little matched
+    stakes = np.array([250 / 2, 250 / 5])                           # to win 250 at 3.0 and 6.0
+    assert g["bets"].iat[0] == 2 and g["staked"].iat[0] == pytest.approx(stakes.sum())
+    clv = stakes @ (np.array([3.0, 6.0]) / np.array([2.5, 6.0]) - 1)
+    assert g["clv"].iat[0] == pytest.approx(clv * 0.95)             # commission on the race's net
+    held = 250.0 - stakes[0]                                        # the 6.0 winner pays 250, the other stake lost
+    assert g["result"].iat[0] == pytest.approx(held * 0.95)
+    assert g["expected"].iat[0] == pytest.approx(stakes @ np.array([0.10, 0.03]))
