@@ -166,6 +166,19 @@ walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `la
 | Near the off, the morning model, no matched money | 44.9 | -5.8% (-6.5 to -5.1) | -87 |
 | Near the off, a model fitted on late prices | 4.8 | +2.9% (+2.0 to +3.8) | +16 |
 
+**The delayed key's feed, seen live** (the first snapshot on the owner's UK runner, 30 Sep 15:10 UK, live-odds run
+36726881232): the login from London works, and each market's matched money is reported (median GBP12,407) but each
+runner's is not (0 on all 274 priced runners). The trader then reads the model fitted without volume, the best of
+what that feed allows. Estimating each runner's volume as the race's total times its share of the book (as the
+hourly list does) gives the same CLV for fewer pounds (ledger `delayed-key-volume-0930`):
+
+| Runner volume read by the closing model | Bets a day | CLV (90%) | GBP a day |
+|---|---|---|---|
+| The runner's own (not on the delayed key) | 56.6 | +6.7% (+5.8 to +7.7) | +172 |
+| None, the model fitted without volume (the trader) | 63.8 | +5.3% (+4.3 to +6.2) | +132 |
+| Estimated from the race's total, fitted on the estimate | 52.2 | +5.3% (+4.3 to +6.3) | +115 |
+| Estimated, read by the model fitted on the runner's own (the hourly list) | 58.9 | +5.3% (+4.3 to +6.3) | +110 |
+
 Still the owner's to supply: a live application key restores the matched money the delayed key leaves out
 (worth about a quarter of the backtested CLV), and a certificate (`BETFAIR_CERT`, `BETFAIR_KEY`) makes the login
 non-interactive. The backtest behind the rule covers February-March 2026 only; the live record is the test now.
