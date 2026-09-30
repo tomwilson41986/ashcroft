@@ -8,7 +8,8 @@ model, and the backs (expected CLV at least the bar, at least MIN_VOL matched on
 --live is betfair_sync.py --live's CSV (venue, market_start_time in UTC, runner_name, best back and lay with their
 sizes, runner_matched and total_matched), or a transcribed one (race_time, track, horse, back, back_avail, lay,
 lay_avail, race_matched: the owner's screenshots, where each runner's matched money is estimated as the race's total
-shared by the prices). --predictions is predict_bfsp_today.py's CSV, after --non-runners.
+shared by the prices). --predictions is predict_bfsp_today.py's CSV (after --non-runners), or the 06:00 record as
+S3 keeps it (predictions/<day>.csv).
 
 The closing model (data/models/closing_model.json, model/race_book.py) forecasts the BSP book from the Betfair price
 now and ours, with traded volume; expected CLV = E[price / BSP] - 1 over its draws. 'min_back' is the least price that
@@ -120,6 +121,9 @@ def main(argv=None) -> int:
     ap.add_argument("--draws", type=int, default=200000, help="closing-model draws a race (fewer is noisier at the bar)")
     a = ap.parse_args(argv)
     pred = pd.read_csv(a.predictions, dtype={"race_time": str})
+    # the 06:00 record as S3 keeps it names the course and horse as Betfair does
+    pred = pred.rename(columns={k: v for k, v in {"venue": "track", "runner_name": "horse_name"}.items()
+                                if k in pred.columns and v not in pred.columns})
     live = read_live(a.live)
     d = score(pred, live, load_model(a.model), a.bar, a.to_win, a.min_vol, n_draws=a.draws)
     d.to_csv(a.out, index=False)
