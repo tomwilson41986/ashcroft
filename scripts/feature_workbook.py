@@ -162,7 +162,11 @@ BLOCK_EVIDENCE = {
                      "sire and the horse, over 90- and 365-day half-lives and the career; the horse's pounds-beaten "
                      "volatility, downside deviation, best, drawdown and runs since the best, and the market's "
                      "volatility and trend on it. Lag, card, order and READS tests pass. Iteration 106 (served "
-                     "recipe): the served main with the block, and with its record half only.",
+                     "recipe, 53,910 runners in 5,923 races): the served main with the block +0.0001 (-0.0005 to "
+                     "+0.0008), with its record half only +0.0002 (-0.0004 to +0.0009), Brier skill and concordance "
+                     "level; the rule +10.50% and +10.69% against +10.38%; the owner's staking at expected CLV >= 3% "
+                     "+6.62% and +6.30% against +6.11% (held +4.12% and +1.78% against +3.88%), at >= 0% +3.94% and "
+                     "+4.24% against +4.23%: all inside the noise. Retired.",
     "Kalman rating": "Built 27 Sep from model/state_space.py, strictly from earlier days; parity clean at 06:00. "
                      "Alone with the handicap angles on the 968s5xh -0.0002 (iteration 96); with travel too -0.0017 "
                      "(seed 42) and -0.0011 (seed 7, iteration 97); the within-race partner with all three -0.0014 on "
