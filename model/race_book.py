@@ -390,3 +390,57 @@ def ratio_interval(num: np.ndarray, den: np.ndarray, n: int = 2000, seed: int = 
     idx = rng.integers(0, len(num), (n, len(num)))
     r = num[idx].sum(1) / np.maximum(den[idx].sum(1), 1e-12)
     return float(np.percentile(r, 5)), float(np.percentile(r, 95))
+
+
+# ---------------------------------------------------------------------------
+# 5. live: the closing model as a file, and one race's expected CLV at the prices on offer
+# ---------------------------------------------------------------------------
+
+TIGHT = 1.25          # lay / back at most this: the mid is the market's price now, else the back price
+
+
+def save_closing_model(m: ClosingModel, path, **about) -> None:
+    """The fitted closing model as JSON (``about``: where it was fitted, and anything else worth keeping)."""
+    import json
+    from pathlib import Path
+    out = {**about, "features": FEATURES, "beta": [float(b) for b in m.beta], "vol_mean": m.vol_mean,
+           "vol_sd": m.vol_sd, "depth_mean": m.depth_mean, "depth_sd": m.depth_sd,
+           "band_edges": [float(e) for e in m.band_edges], "band_sigma": [float(s) for s in m.band_sigma],
+           "book": m.book, "n_train": m.n_train}
+    Path(path).write_text(json.dumps(out, indent=1) + "\n")
+
+
+def load_closing_model(path) -> ClosingModel:
+    import json
+    from pathlib import Path
+    j = json.loads(Path(path).read_text())
+    return ClosingModel(beta=np.asarray(j["beta"], float), vol_mean=j["vol_mean"], vol_sd=j["vol_sd"],
+                        depth_mean=j["depth_mean"], depth_sd=j["depth_sd"],
+                        band_edges=np.asarray(j["band_edges"], float), band_sigma=np.asarray(j["band_sigma"], float),
+                        book=j["book"], n_train=j["n_train"])
+
+
+def market_now(back, lay) -> np.ndarray:
+    """The market's price now, as the closing model reads it: the geometric mid of the best back and lay when the
+    spread is tight (lay / back at most TIGHT), otherwise the back price."""
+    back = np.asarray(back, float)
+    lay = np.asarray(lay, float)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        tight = np.isfinite(lay) & (lay > 1) & (lay / back <= TIGHT)
+        return np.where(tight, np.sqrt(back * np.where(tight, lay, back)), back)
+
+
+def race_expected_clv(back, lay, model_price, matched, model: ClosingModel, n_draws: int = 50000,
+                      rng=None) -> tuple[np.ndarray, np.ndarray]:
+    """One race's expected CLV at every runner's best back price: E[back / BSP] - 1 over the closing model's draws
+    of the BSP book, from the market's price now (market_now), our price and each runner's matched money (zeros
+    when the feed carries none: use a model fitted without volume). Returns (expected CLV, 1 / E[1 / BSP])."""
+    back = np.asarray(back, float)
+    d = pd.DataFrame({"race": 0, "morningwap": market_now(back, lay), "predicted_bfsp": np.asarray(model_price, float),
+                      "morning_vol": np.asarray(matched, float)})
+    inputs = closing_inputs(d)
+    g = np.zeros(len(d), int)
+    draws = closing_draws(model.predict(inputs, g), model.sigma(inputs), book=model.book, n_draws=n_draws,
+                          rng=np.random.default_rng(0) if rng is None else rng)
+    inv = draws.mean(axis=0)
+    return back * inv - 1.0, 1.0 / inv
