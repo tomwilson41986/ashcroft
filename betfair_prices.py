@@ -84,6 +84,7 @@ BF_COURSE_MAP = {
     "taun": "taunton", "wcnt": "wincanton", "winc": "wincanton", "exet": "exeter", "chel": "cheltenham",
     "aint": "aintree", "mras": "market rasen", "faken": "fakenham", "towc": "towcester", "weth": "wetherby",
     "newt": "newton abbot", "ntab": "newton abbot", "here": "hereford",
+    "royalascot": "ascot",           # Betfair names the June meeting in full (1,268 runners in 2026)
 }
 
 

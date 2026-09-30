@@ -35,6 +35,7 @@ def test_normalisers():
     assert bp.course_from_hint("GB / Kemp 12th Mar") == "kempton"
     assert bp.course_from_hint("IRE / Dund 12th Mar", {"dundalk": "Dundalk"}) == "Dundalk"
     assert bp.course_from_hint("GB / Zzzz 1st Jan", {"kempton": "Kempton"}) is None
+    assert bp.course_from_hint("GB / Royal Ascot 16th Jun", {"ascot": "Ascot"}) == "Ascot"
 
 
 def test_load_and_match_to_results(tmp_path):
