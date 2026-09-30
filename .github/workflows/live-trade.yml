@@ -85,11 +85,17 @@ jobs:
         if: steps.session.outputs.go == 'true'
 
       - name: Python on the UK server
-        # The server's own Python 3.12 (Ubuntu 24.04) in a virtual environment kept between runs.
+        # Python 3.12, the version CI tests, in a virtual environment kept between runs, made by uv (from PyPI):
+        # from the server's own 3.12 where it has one (Ubuntu 24.04), else from a 3.12 fetched once (26.04 has 3.14).
         if: steps.session.outputs.go == 'true'
         run: |
           VENV="$HOME/.venvs/ashcroft"
-          [ -x "$VENV/bin/python" ] || python3 -m venv "$VENV"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
           echo "$VENV/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
