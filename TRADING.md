@@ -151,6 +151,12 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
 - **The switches**: the repository variable `TRADING_LIVE` must be `yes` for any order; the job runs only on the UK
   runner named by `BETFAIR_RUNNER` (Betfair refuses GitHub's own runners). To stop at once: cancel the running
   "Live trading" run, or create the S3 object `trading/STOP` (no new bets within a minute).
+- **Settlement**: each race is settled from Betfair's record of the settled bets (listClearedOrders): what Betfair
+  paid on every back and every lay at SP, and the SP the lays matched at (the CLV), with commission at 5% of the
+  race's net winnings. Betfair settles a race some minutes after it is run and the race waits until then: the
+  delayed key's feed carries no SP, and on the first live evening (30 Sep) settling from the feed counted every
+  lay as nothing. The evening job settles such a race again from Betfair's record; the old rows stay in the ledger
+  as `unsettled`.
 - **The record**: s3://$ULTRA_BETTING_S3_BUCKET/trading/live/<day>/ (ledger and summary), emailed after the
   morning session and after the evening settlement (each race's result, the BSP, the CLV, commission on the net).
 
@@ -182,6 +188,24 @@ hourly list does) gives the same CLV for fewer pounds (ledger `delayed-key-volum
 Still the owner's to supply: a live application key restores the matched money the delayed key leaves out
 (worth about a quarter of the backtested CLV), and a certificate (`BETFAIR_CERT`, `BETFAIR_KEY`) makes the login
 non-interactive. The backtest behind the rule covers February-March 2026 only; the live record is the test now.
+
+**The market record (the owner's ask, 30 Sep: keep all of it for the models).** Read-only, on the UK runner:
+
+| What | How often | Kept in S3 | Loaded nightly into horse_racing.db |
+|---|---|---|---|
+| Every book the trader reads (`BETFAIR_RECORD=1`) | each minute, 08:00-11:00 UK | `betfair_live/<day>/books.csv.gz` | `betfair_live_marks` |
+| The day's GB/IE win and place markets (live-record.yml) | every 5 minutes, each minute in the last hour, to 21:30 UK | the same | `betfair_live_marks` |
+| The catalogue: cloth, stall, jockey, trainer, age, weight, rating, form, headgear, forecast price | once a market | `betfair_live/<day>/markets.csv.gz` | `betfair_live_markets` (matched to race_results) |
+| The settled books: BSP, winners, removals and reduction factors | after racing and next morning | in `books.csv.gz` (source `final`) | `betfair_live_marks`, mark `final` |
+| Betfair's daily price files (morning and pre-play prices and volumes, BSP, in-play range), which Betfair refuses to GitHub's runners | daily (live-record.yml), backfills by hand (betfair-prices.yml) | `betfair_prices_raw/` | `betfair_prices` (every file the database lacks) |
+| The live trader's ledger | each order | `trading/live/<day>/ledger.csv` | `live_orders` |
+
+`betfair_live_marks` keeps, for each runner, the book nearest to 08:00-12:00 UK and to 120, 60, 30, 15, 10, 5, 3
+and 1 minutes before the off, the last book before the off, and the settled one. The full-resolution books stay in
+S3. One runner serves both jobs, so the recorder gives way to the trader: its 06:55 UTC run records the whole day
+only when the trader is not live, and its 10:10 UTC run takes the day from the end of the morning session.
+daily-results.yml, the one job that writes the database, does the loading; a failed load never costs the night's
+results.
 
 The old `execute.yml` workflow (disabled by hand on 19 Aug) places live bets by default and has known
 faults (real bets never settle, the stop-loss never counts them, the timing window is unused, the

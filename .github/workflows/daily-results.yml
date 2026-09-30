@@ -25,7 +25,7 @@ jobs:
   # Step 1: Scrape results from HRB and sync BSPs from Betfair
   collect-results:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60                  # the market-data loads below are capped at 25 minutes between them
 
     steps:
       - name: Checkout repository
@@ -85,6 +85,27 @@ jobs:
           python edge_scanner.py \
             --settle \
             --date "${{ steps.date.outputs.target }}"
+
+      # The market data the owner's UK server archives in S3 (Betfair refuses GitHub's runners), loaded here
+      # because this is the one job that writes the database. Never at the cost of the night's results: each
+      # step may fail, or run out of time, and the upload below still goes.
+      - name: Load Betfair's price files archived by the UK server
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 900 python betfair_prices.py --pull-s3 --load --match --dir data/betfair_raw
+
+      - name: Load the live Betfair record (books at each mark, catalogue, live orders)
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 600 python betfair_recorder.py --load-db --days 3 --date "${{ steps.date.outputs.target }}"
 
       # A notification is not worth a day of racing. Without this the job failed
       # here every night from the day it was written -- SMTP credentials were

@@ -1,12 +1,14 @@
-"""A paper-trading day: read the markets, decide, check the limits, simulate, close at BSP, settle.
+"""A trading day: read the markets, decide, check the limits, place or simulate, close at BSP, settle.
 
-One `Session` runs one UK racing day against the paper exchange (trading/exchange.py), which reads
-Betfair's live prices and simulates every order. Each `step` reads the books of the races still
-ahead, plans each race (trading/strategy.py), backs the difference between the plan and what is
-already matched, subject to the limits (trading/risk.py), closes each fill with a lay at BSP when
-`trade_out` is on, and settles the races that have finished from the closed market (winner, loser
-or non-runner, and the BSP). Every simulated order and every settlement is a row in the ledger:
-the forward test of the edge at the prices actually on offer.
+One `Session` runs one UK racing day against an exchange (trading/exchange.py): the paper exchange reads
+Betfair's live prices and simulates every order, the live one places them. Each `step` reads the books of
+the races still ahead, plans each race (trading/strategy.py), backs the difference between the plan and
+what is already matched, subject to the limits (trading/risk.py), closes each fill with a lay at BSP when
+`trade_out` is on, and settles the races that have finished: live, from Betfair's record of the settled
+bets (what it paid on each back and each lay at SP, and the SP the lays matched at); on paper, from the
+closed market (winner, loser or non-runner, and the BSP). A race whose lays at SP cannot yet be priced
+waits: a lay is never counted as nothing for want of its price. Every order and every settlement is a
+row in the ledger: the forward test of the edge at the prices actually on offer.
 """
 
 from __future__ import annotations
@@ -34,6 +36,8 @@ LEDGER_FIELDS = [
     "result", "bsp", "clv", "pnl_back", "pnl_lay", "pnl", "commission",
 ]
 MAX_HEDGE_TRIES = 5
+#: the reason on a live settlement taken from Betfair's record of the bets (listClearedOrders)
+SETTLED_BY_BETFAIR = "Betfair's record of the settled bets"
 
 
 def _num(x) -> float:
@@ -42,6 +46,12 @@ def _num(x) -> float:
         return float(x)
     except (TypeError, ValueError):
         return float("nan")
+
+
+def _num0(x) -> float:
+    """A number from Betfair's record, a missing one as 0."""
+    v = _num(x)
+    return v if np.isfinite(v) else 0.0
 
 
 @dataclass
@@ -140,9 +150,7 @@ class Session:
         for m, book, d in planned:
             self.execute(m, book, d, now)
         if to_settle:
-            done = self.x.books([m.market_id for m in to_settle], with_sp=True)
-            for m in to_settle:
-                self.settle(m, done.get(m.market_id), now)
+            self._settle(to_settle, now)
 
     def run(self, until: datetime) -> dict:
         self.load_markets()
@@ -266,10 +274,45 @@ class Session:
                             "matched": pos.matched, "avg_price": round(pos.avg_price, 4), "hedged": pos.hedged,
                             "hedge_liability": liability})
 
+    def _settle(self, markets: list, now: datetime) -> None:
+        """Settle the races that have finished: live from Betfair's record of the settled bets, on paper from the
+        closed markets. A read that fails leaves the races to the next poll or the evening job; it never ends the
+        day's trading."""
+        ids = [m.market_id for m in markets]
+        cleared = None
+        if self.mode == "live":
+            try:
+                cleared = self.x.cleared(ids)
+            except Exception as exc:
+                log.warning("Betfair's settled bets not read (%s): %d races wait", str(exc)[:200], len(ids))
+                return
+        try:
+            books = self.x.books(ids, with_sp=True)
+        except Exception as exc:
+            if cleared is None:
+                log.warning("closed markets not read (%s): %d races wait", str(exc)[:200], len(ids))
+                return
+            books = {}                                       # live, the book only names the result
+        for m in markets:
+            if cleared is None:
+                self.settle(m, books.get(m.market_id), now)
+            else:
+                self.settle_live(m, books.get(m.market_id), cleared, now)
+
     def settle(self, m: Market, book: Book | None, now: datetime) -> None:
-        """Settle a race from its closed market: void a non-runner, back and BSP-lay profits, then
-        commission on the market's net winnings."""
+        """Settle a race on paper from its closed market: void a non-runner, back and BSP-lay profits, then
+        commission on the market's net winnings. A race with a lay at BSP on a runner the market has not priced
+        (a feed without the SP) waits for the price."""
         if book is None or book.status != "CLOSED":
+            return
+        unpriced = [sid for (mid, sid), pos in self.positions.items()
+                    if mid == m.market_id and not pos.settled and pos.matched > 0 and pos.hedge_liability > 0
+                    and sid in book.runners and book.runners[sid].status != "REMOVED"
+                    and not (book.runners[sid].bsp and book.runners[sid].bsp > 1)]
+        if unpriced:
+            if (m.market_id, "unpriced") not in self._skips:
+                self._skips.add((m.market_id, "unpriced"))
+                log.warning("%s: no BSP for the laid runners %s yet; the race waits for it", m.market_id, unpriced)
             return
         net, rows = 0.0, []
         for (mid, sid), pos in self.positions.items():
@@ -302,10 +345,103 @@ class Session:
         self.ledger.append({**self._row(now, "commission", m, 0, ""), "commission": commission,
                             "pnl": round(-commission, 2)})
 
+    def settle_live(self, m: Market, book: Book | None, cleared: list[dict], now: datetime) -> None:
+        """Settle a race from Betfair's record of the settled bets (listClearedOrders): what Betfair paid on each
+        back and on each lay at SP, the SP the lays were matched at, then commission on the market's net winnings.
+        Betfair settles a market some minutes after the race; until it has, the race waits, so a lay at SP is never
+        counted as nothing for want of its price (the delayed feed carries no SP)."""
+        held = [(sid, pos) for (mid, sid), pos in self.positions.items()
+                if mid == m.market_id and not pos.settled and pos.matched > 0]
+        if not held:
+            return
+        ours = self._bet_ids()
+        mine = [o for o in cleared or [] if str(o.get("marketId")) == m.market_id and self._ours(o, ours)]
+        runners = book.runners if book is not None else {}
+        if not mine:
+            # nothing of ours settled on the market yet, unless every horse held was a non-runner (void bets are
+            # never settled)
+            void = book is not None and book.status == "CLOSED" and all(
+                sid not in runners or runners[sid].status == "REMOVED" for sid, _ in held)
+            if not void:
+                return
+        net, rows = 0.0, []
+        for sid, pos in held:
+            bets = [o for o in mine if int(_num0(o.get("selectionId"))) == sid]
+            backs = [o for o in bets if o.get("side") == "BACK"]
+            lays = [o for o in bets if o.get("side") == "LAY"]
+            pnl_back = sum(_num0(o.get("profit")) for o in backs)
+            pnl_lay = sum(_num0(o.get("profit")) for o in lays)
+            laid = sum(_num0(o.get("sizeSettled")) for o in lays)
+            bsp = (sum(_num0(o.get("priceMatched")) * _num0(o.get("sizeSettled")) for o in lays) / laid
+                   if laid > 0 else None)
+            q = runners.get(sid)
+            if bsp is None and q is not None and q.bsp and q.bsp > 1:
+                bsp = q.bsp
+            if q is not None and q.status in ("WINNER", "LOSER", "REMOVED"):
+                result = q.status
+            elif backs:
+                result = "WINNER" if pnl_back > 0 else "LOSER"
+            elif lays:
+                result = "LOSER" if pnl_lay > 0 else "WINNER"
+            else:
+                result = "REMOVED"                           # nothing settled on the horse: its bets were void
+            notes = []
+            settled_back = sum(_num0(o.get("sizeSettled")) for o in backs)
+            if result != "REMOVED" and abs(settled_back - pos.matched) >= 0.01:
+                notes.append(f"Betfair settled GBP{settled_back:.2f} of backs; the ledger holds GBP{pos.matched:.2f}")
+            if result != "REMOVED" and pos.hedge_liability > 0 and not lays:
+                notes.append("no lay at SP settled: the back stood alone")
+            pos.settled = True
+            clv = (pos.avg_price / bsp - 1.0) if bsp and bsp > 1 else np.nan
+            net += pnl_back + pnl_lay
+            rows.append({**self._row(now, "settle", m, sid, pos.name), "reason": SETTLED_BY_BETFAIR,
+                         "matched": pos.matched, "avg_price": round(pos.avg_price, 4), "hedged": pos.hedged,
+                         "hedge_liability": pos.hedge_liability, "result": result,
+                         "bsp": round(bsp, 4) if bsp else None, "clv": clv, "pnl_back": round(pnl_back, 2),
+                         "pnl_lay": round(pnl_lay, 2), "pnl": round(pnl_back + pnl_lay, 2),
+                         "error": "; ".join(notes)})
+            if notes:
+                log.warning("%s %s: %s", m.market_id, sid, "; ".join(notes))
+        commission = round(self.cfg.commission * max(net, 0.0), 2)
+        self.state.settled_pnl += net - commission
+        self.ledger.extend(rows)
+        self.ledger.append({**self._row(now, "commission", m, 0, ""), "reason": SETTLED_BY_BETFAIR,
+                            "commission": commission, "pnl": round(-commission, 2)})
+
+    def _bet_ids(self) -> set:
+        """The bet ids of every order this ledger placed."""
+        return {str(r.get("bet_id")) for r in self.ledger
+                if r.get("event") in ("back", "trade_out") and str(r.get("bet_id") or "").strip()}
+
+    def _ours(self, order: dict, bet_ids: set) -> bool:
+        """A settled bet of this trader's (its reference, or a bet id in the ledger), not one the owner placed."""
+        ref = str(order.get("customerOrderRef") or "")
+        return ref.startswith(f"ash{self.day:%m%d}") or str(order.get("betId") or "") in bet_ids
+
+    def _start(self, hhmm: str) -> datetime:
+        from zoneinfo import ZoneInfo
+        h, mi = (int(x) for x in str(hhmm).split(":"))
+        return datetime(self.day.year, self.day.month, self.day.day, h, mi,
+                        tzinfo=ZoneInfo("Europe/London")).astimezone(timezone.utc)
+
     def restore(self, rows: list[dict], markets: list[Market]) -> None:
-        """Take up a day from its ledger, to settle it after the job that traded it has ended."""
+        """Take up a day from its ledger, to settle it after the job that traded it has ended. A race whose market
+        the catalogue no longer lists (closed) keeps its course and off from the ledger. Live, a race settled from
+        the price feed rather than from Betfair's record of the bets (the first live day's, when the delayed feed's
+        missing SP counted every lay at SP as nothing) is settled again: its rows stay in the ledger as unsettled."""
         self.ledger = list(rows)
         self.markets = {m.market_id: m for m in markets}
+        stale = set()
+        if self.mode == "live":
+            stale = {str(r["market_id"]) for r in rows
+                     if r["event"] in ("settle", "commission") and r.get("reason") != SETTLED_BY_BETFAIR}
+        for r in rows:
+            mid = str(r["market_id"])
+            if mid not in self.markets and r.get("off"):
+                try:
+                    self.markets[mid] = Market(mid, r.get("venue") or "", "", self._start(r["off"]))
+                except ValueError:
+                    pass
         for r in rows:
             key = (str(r["market_id"]), int(float(r["selection_id"] or 0)))
             if r["event"] == "back" and float(r.get("matched") or 0) > 0:
@@ -317,8 +453,15 @@ class Session:
                 pos = self.positions[key]
                 pos.hedge_liability = round(pos.hedge_liability + float(r.get("hedge_liability") or 0), 2)
                 pos.hedged = pos.hedge_liability >= round(pos.matched * (pos.avg_price - 1.0), 2) - 0.01
-            elif r["event"] == "settle" and key in self.positions:
+            elif r["event"] == "settle" and key in self.positions and key[0] not in stale:
                 self.positions[key].settled = True
+        for r in rows:
+            if r["event"] in ("settle", "commission") and str(r["market_id"]) in stale:
+                r["event"] = "unsettled"
+                r["error"] = "settled from the price feed with the lays at SP unpriced; settled again from " \
+                             "Betfair's record"
+        if stale:
+            log.warning("%d races settled from the price feed are settled again from Betfair's record", len(stale))
         self.state.settled_pnl = sum(float(r.get("pnl") or 0) for r in rows if r["event"] in ("settle", "commission"))
 
     def settle_all(self, now: datetime | None = None) -> None:
@@ -327,9 +470,7 @@ class Session:
         mids = sorted({pm for (pm, _), p in self.positions.items() if p.matched > 0 and not p.settled})
         if not mids:
             return
-        books = self.x.books(mids, with_sp=True)
-        for mid in mids:
-            self.settle(self.markets.get(mid) or Market(mid, "", "", now), books.get(mid), now)
+        self._settle([self.markets.get(mid) or Market(mid, "", "", now) for mid in mids], now)
 
     # ------------------------------------------------------------------ records
 

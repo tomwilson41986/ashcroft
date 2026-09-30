@@ -310,6 +310,22 @@ def test_closing_on_the_fill_lays_at_bsp_at_once_and_the_day_settles_from_its_le
     assert len([r for r in later.ledger if r["event"] == "settle"]) == 1
 
 
+def test_paper_waits_for_the_sp_before_settling_a_runner_laid_at_it():
+    """A feed without the SP (Betfair's delayed key) must never count a lay at SP as nothing: the race waits."""
+    s, data, clock, off = _day(trade_out=True, trade_out_at="fill")
+    s.step(clock())
+    data._books["1.9"] = _book("1.9", status="CLOSED", runners={
+        1: Quote(1, status="LOSER"), 2: Quote(2, status="WINNER"), 3: Quote(3, status="LOSER")})
+    clock.t = off + timedelta(minutes=10)
+    s.step(clock())
+    assert not [r for r in s.ledger if r["event"] == "settle"] and s.state.settled_pnl == 0.0
+    data._books["1.9"] = _book("1.9", status="CLOSED", runners={
+        1: Quote(1, status="LOSER", bsp=2.0), 2: Quote(2, status="WINNER", bsp=5.5), 3: Quote(3, status="LOSER", bsp=6.0)})
+    s.step(clock())
+    settle = [r for r in s.ledger if r["event"] == "settle"]
+    assert len(settle) == 1 and settle[0]["result"] == "WINNER" and settle[0]["pnl"] == pytest.approx(0.0, abs=0.02)
+
+
 def test_the_kill_switch_stops_new_bets():
     s, data, clock, off = _day(kill=lambda: True)
     s.step(clock())

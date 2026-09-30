@@ -71,6 +71,20 @@ def _prefix(day: date, mode: str = MODE) -> str:
     return f"trading/{mode}/{day:%Y-%m-%d}/"
 
 
+def book_recorder(day: date, env=None):
+    """The day's record of every catalogue and book the session reads (betfair_recorder.py), with BETFAIR_RECORD=1
+    (set on the UK runner): research data, never in the way of the trading."""
+    env = os.environ if env is None else env
+    if str(env.get("BETFAIR_RECORD", "")).strip() != "1":
+        return None
+    try:
+        from betfair_recorder import DayRecorder
+        return DayRecorder(day)
+    except Exception as exc:
+        log.warning("Book recorder unavailable (%s): trading without a record of the books", exc)
+        return None
+
+
 def live_switch_on(env=None) -> bool:
     """The owner's switch for real orders: TRADING_LIVE=yes (a repository variable in the workflow)."""
     env = os.environ if env is None else env
@@ -207,7 +221,7 @@ def main(argv=None) -> dict:
     if a.live and not a.settle and not live_switch_on():
         log.warning("Not trading live: the owner's switch TRADING_LIVE is not 'yes'; nothing placed")
         return {"day": str(day), "mode": mode, "traded": False, "reason": "TRADING_LIVE is not yes"}
-    data = BetfairData()
+    data = BetfairData(recorder=None if a.settle else book_recorder(day))
     # settling reads the closed markets only: the live book is settled through the read-only exchange
     exchange = LiveExchange(data) if (a.live and not a.settle) else PaperExchange(data, bank=cfg.limits.bank)
     exchange.login()
@@ -242,10 +256,15 @@ def main(argv=None) -> dict:
         def stop(signum, _frame):                             # a cancelled workflow: write what we have
             log.warning("Signal %s: writing the ledger", signum)
             session.shutdown()
+            if data.recorder is not None:
+                data.recorder.maybe_upload(force=True)
             raise SystemExit(0)
         signal.signal(signal.SIGTERM, stop)
         signal.signal(signal.SIGINT, stop)
         summary = session.run(uk_time_on(day, a.until))
+        if data.recorder is not None:                         # the day's books so far, to S3 before the email
+            data.recorder.maybe_upload(force=True)
+            summary["books_recorded"] = data.recorder.rows
     summary["config"] = cfg.to_dict()
     Path(a.out).mkdir(parents=True, exist_ok=True)
     (Path(a.out) / f"summary_{mode}_{day:%Y-%m-%d}.json").write_text(json.dumps(summary, indent=2, default=str))
