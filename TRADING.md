@@ -183,6 +183,24 @@ Still the owner's to supply: a live application key restores the matched money t
 (worth about a quarter of the backtested CLV), and a certificate (`BETFAIR_CERT`, `BETFAIR_KEY`) makes the login
 non-interactive. The backtest behind the rule covers February-March 2026 only; the live record is the test now.
 
+**The market record (the owner's ask, 30 Sep: keep all of it for the models).** Read-only, on the UK runner:
+
+| What | How often | Kept in S3 | Loaded nightly into horse_racing.db |
+|---|---|---|---|
+| Every book the trader reads (`BETFAIR_RECORD=1`) | each minute, 08:00-11:00 UK | `betfair_live/<day>/books.csv.gz` | `betfair_live_marks` |
+| The day's GB/IE win and place markets (live-record.yml) | every 5 minutes, each minute in the last hour, to 21:30 UK | the same | `betfair_live_marks` |
+| The catalogue: cloth, stall, jockey, trainer, age, weight, rating, form, headgear, forecast price | once a market | `betfair_live/<day>/markets.csv.gz` | `betfair_live_markets` (matched to race_results) |
+| The settled books: BSP, winners, removals and reduction factors | after racing and next morning | in `books.csv.gz` (source `final`) | `betfair_live_marks`, mark `final` |
+| Betfair's daily price files (morning and pre-play prices and volumes, BSP, in-play range), which Betfair refuses to GitHub's runners | daily (live-record.yml), backfills by hand (betfair-prices.yml) | `betfair_prices_raw/` | `betfair_prices` (every file the database lacks) |
+| The live trader's ledger | each order | `trading/live/<day>/ledger.csv` | `live_orders` |
+
+`betfair_live_marks` keeps, for each runner, the book nearest to 08:00-12:00 UK and to 120, 60, 30, 15, 10, 5, 3
+and 1 minutes before the off, the last book before the off, and the settled one. The full-resolution books stay in
+S3. One runner serves both jobs, so the recorder gives way to the trader: its 06:55 UTC run records the whole day
+only when the trader is not live, and its 10:10 UTC run takes the day from the end of the morning session.
+daily-results.yml, the one job that writes the database, does the loading; a failed load never costs the night's
+results.
+
 The old `execute.yml` workflow (disabled by hand on 19 Aug) places live bets by default and has known
 faults (real bets never settle, the stop-loss never counts them, the timing window is unused, the
 certificate path is never expanded). It should stay disabled.

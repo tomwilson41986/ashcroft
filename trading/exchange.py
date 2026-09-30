@@ -122,13 +122,27 @@ def parse_book(raw: dict) -> Book:
 
 
 class BetfairData:
-    """Betfair's markets and prices, read-only."""
+    """Betfair's markets and prices, read-only. With a ``recorder`` (betfair_recorder.DayRecorder) every catalogue
+    and book read is kept for research; the record never stands in the way of the reading."""
 
-    def __init__(self, client=None):
+    def __init__(self, client=None, recorder=None, source: str = "trader"):
         if client is None:
             from betfair_client import BetfairClient
             client = BetfairClient()
         self.client = client
+        self.recorder = recorder
+        self.source = source
+
+    def _keep(self, kind: str, raw) -> None:
+        if self.recorder is None or not raw:
+            return
+        try:
+            if kind == "books":
+                self.recorder.record_books(raw, source=self.source)
+            else:
+                self.recorder.record_catalogue(raw)
+        except Exception as exc:                       # research data must never stop trading
+            log.warning("recorder: %s not kept (%s)", kind, exc)
 
     def login(self) -> None:
         self.client.login()
@@ -153,6 +167,7 @@ class BetfairData:
                                            "to": end.strftime("%Y-%m-%dT%H:%M:%SZ")}},
             "marketProjection": ["EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION"],
             "maxResults": 1000, "sort": "FIRST_TO_START"})
+        self._keep("catalogue", raw)
         out = []
         for m in raw or []:
             ev = m.get("event", {}) or {}
@@ -171,6 +186,7 @@ class BetfairData:
             raw = self._read("listMarketBook", {
                 "marketIds": market_ids[i:i + batch],
                 "priceProjection": {"priceData": data, "exBestOffersOverrides": {"bestPricesDepth": 3}}})
+            self._keep("books", raw)
             for b in raw or []:
                 out[b["marketId"]] = parse_book(b)
         return out

@@ -400,6 +400,7 @@ def load_files(paths, db_path: str = DEFAULT_DB) -> dict:
         rows = df[cols].astype(object).where(df[cols].notna(), None).values.tolist()
         conn.executemany(
             f"INSERT OR REPLACE INTO betfair_prices ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", rows)
+        conn.commit()                                   # file by file: a long backfill cut short keeps what it loaded
         n_rows += len(rows); n_files += 1
     conn.commit(); conn.close()
     log.info("loaded %d rows from %d files", n_rows, n_files)
@@ -481,6 +482,74 @@ def coverage_report(db_path: str = DEFAULT_DB) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# The raw archive in S3: the UK server fetches (the site refuses GitHub's runners), the nightly job loads
+# ---------------------------------------------------------------------------
+
+S3_PREFIX = "betfair_prices_raw"
+
+
+def _capture():
+    from betfair_recorder import bucket, s3_client
+    return s3_client(), bucket()
+
+
+def push_s3(raw: Path, d_from: date | None = None, d_to: date | None = None, s3=None, bucket: str | None = None) -> dict:
+    """Archive the day files in ``raw`` (within the dates, when given) to s3://<bucket>/betfair_prices_raw/, leaving
+    any already there at the same size."""
+    if s3 is None or bucket is None:
+        s3, bucket = _capture()
+    counts = {"uploaded": 0, "present": 0}
+    for p in sorted(Path(raw).glob("dwbfprices*.csv")):
+        meta = parse_file_name(p.name)
+        if not meta or (d_from and not (d_from <= meta[2] <= (d_to or meta[2]))):
+            continue
+        key = f"{S3_PREFIX}/{p.name}"
+        try:
+            if int(s3.head_object(Bucket=bucket, Key=key).get("ContentLength", -1)) == p.stat().st_size:
+                counts["present"] += 1
+                continue
+        except Exception:                                   # not there yet
+            pass
+        s3.put_object(Bucket=bucket, Key=key, Body=p.read_bytes())
+        counts["uploaded"] += 1
+    log.info("archived to s3://%s/%s/: %s", bucket, S3_PREFIX, counts)
+    return counts
+
+
+def pull_s3(raw: Path, db_path: str | None = None, s3=None, bucket: str | None = None) -> list[Path]:
+    """Fetch the archived day files the database has not loaded yet (by source_file) into ``raw``; their paths."""
+    if s3 is None or bucket is None:
+        s3, bucket = _capture()
+    loaded: set[str] = set()
+    if db_path and Path(db_path).exists():
+        conn = sqlite3.connect(db_path)
+        ensure_table(conn)
+        loaded = {r[0] for r in conn.execute("SELECT DISTINCT source_file FROM betfair_prices") if r[0]}
+        conn.close()
+    raw = Path(raw)
+    raw.mkdir(parents=True, exist_ok=True)
+    out, token = [], None
+    while True:
+        kw = {"Bucket": bucket, "Prefix": f"{S3_PREFIX}/"}
+        if token:
+            kw["ContinuationToken"] = token
+        page = s3.list_objects_v2(**kw)
+        for o in page.get("Contents", []):
+            name = o["Key"].rsplit("/", 1)[-1]
+            if not parse_file_name(name) or name in loaded:
+                continue
+            path = raw / name
+            if not path.exists() or path.stat().st_size != o.get("Size"):
+                path.write_bytes(s3.get_object(Bucket=bucket, Key=o["Key"])["Body"].read())
+            out.append(path)
+        if not page.get("IsTruncated"):
+            break
+        token = page.get("NextContinuationToken")
+    log.info("pulled %d archived day files not yet loaded (%d already in the database)", len(out), len(loaded))
+    return sorted(out)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -506,6 +575,10 @@ def main(argv=None):
     ap.add_argument("--markets", default="win,place")
     ap.add_argument("--proxy", default=None, help="UK/IE HTTP(S) proxy URL (or set BETFAIR_PROXY)")
     ap.add_argument("--combined", nargs="*", default=None, help="notebook _combined_<market>.csv file(s) to load")
+    ap.add_argument("--push-s3", action="store_true",
+                    help="archive the day files in --dir to s3://$CAPTURE_BUCKET/betfair_prices_raw/ (the UK server)")
+    ap.add_argument("--pull-s3", action="store_true",
+                    help="fetch the archived day files not yet in --db; with --load, load (and --match) just those")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -531,16 +604,27 @@ def main(argv=None):
                 break
         log.info("fetch summary: %s", summary)
 
+    if args.push_s3:
+        push_s3(raw, d_from, d_to)
+
+    pulled = pull_s3(raw, args.db) if args.pull_s3 else None
+    if pulled is not None:                                  # match over the days just pulled
+        days = sorted(m[2] for p in pulled if (m := parse_file_name(p.name)))
+        d_from, d_to = (days[0], days[-1]) if days else (None, None)
+
     if args.combined:
         print("combined load:", load_combined(args.combined, args.db))
 
     if args.load:
-        paths = sorted(p for p in raw.glob("dwbfprices*.csv"))
-        if d_from:
-            paths = [p for p in paths if (m := parse_file_name(p.name)) and d_from <= m[2] <= d_to]
+        if pulled is not None:
+            paths = pulled
+        else:
+            paths = sorted(p for p in raw.glob("dwbfprices*.csv"))
+            if d_from:
+                paths = [p for p in paths if (m := parse_file_name(p.name)) and d_from <= m[2] <= d_to]
         load_files(paths, args.db)
 
-    if args.match:
+    if args.match and (pulled is None or pulled):
         stats = match_to_results(args.db, d_from.isoformat() if d_from else None, d_to.isoformat() if d_to else None)
         print(f"matched {stats['matched']}/{stats['total']} ({100 * stats['rate']:.1f}%) by {stats.get('by_method')}")
         if stats["unmatched_hints"]:
@@ -549,7 +633,7 @@ def main(argv=None):
     if args.report:
         print(coverage_report(args.db).to_string(index=False))
 
-    if not any([args.fetch, args.load, args.match, args.report, args.combined]):
+    if not any([args.fetch, args.load, args.match, args.report, args.combined, args.push_s3, args.pull_s3]):
         ap.print_help()
         return 1
     return 0

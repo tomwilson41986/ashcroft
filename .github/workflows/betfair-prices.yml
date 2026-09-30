@@ -1,111 +1,84 @@
-name: Betfair Historic Prices
-
-# Fetches the previous days' Betfair SP price files (win + place, UK + IRE),
-# loads them into horse_racing.db, links them to race_results and backs the
-# DB up to S3. promo.betfair.com sits behind Cloudflare: if the runner is
-# refused (HTTP 403) the job fails loudly — download the files elsewhere and
-# run `python betfair_prices.py --dir <folder> --load --match` instead.
-
+name: Betfair Historic Prices (backfill)
+# Betfair's SP price files (win + place, UK + IRE: morning and pre-play prices and volumes, BSP, in-play range)
+# for a range of days, fetched on the owner's UK runner and archived to s3://$CAPTURE_BUCKET/betfair_prices_raw/.
+# promo.betfair.com refuses GitHub's own runners (HTTP 403 from Azure US), which is why this runs on the UK server.
+# The nightly job daily-results.yml, the one job that writes horse_racing.db, loads every archived file the database
+# does not hold yet. The daily fetch is part of live-record.yml; this workflow is for backfills, by hand.
+#
+# Until 30 Sep 2026 this job also downloaded, changed and re-uploaded the whole database on a 06:15 UTC schedule. It
+# only ever failed at the probe (GitHub's runners are refused); once the UK runner was named it would have run
+# there before the morning's trading, a second writer of the database beside blandford-sync at 06:45.
 on:
-  schedule:
-    - cron: '15 06 * * *'   # 06:15 UTC, after the previous day's files are published
   workflow_dispatch:
     inputs:
       date_from:
-        description: 'Start date (YYYY-MM-DD). Leave empty for the last 3 days.'
+        description: 'Start date (YYYY-MM-DD). Leave empty for the last 5 days.'
         required: false
         type: string
       date_to:
         description: 'End date (YYYY-MM-DD). Defaults to yesterday.'
         required: false
         type: string
-      runner:
-        description: 'Runner to use. GitHub-hosted runners are Azure US and Betfair refuses them; pick self-hosted if you have a UK runner registered.'
-        required: false
-        default: 'ubuntu-latest'
-        type: choice
-        options: ['ubuntu-latest', 'self-hosted']
 
-env:
-  PYTHON_VERSION: '3.11'
-  S3_BUCKET: horseracingresults
-  S3_DB_KEY: horse_racing.db
+permissions:
+  contents: read
+
+concurrency:
+  group: betfair-prices-backfill   # its own group: a pending recorder run must not be cancelled by a backfill
+  cancel-in-progress: false
 
 jobs:
-  probe:
-    # promo.betfair.com is geo-fenced. Establish, cheaply and visibly, whether this
-    # runner's egress IP is allowed before spending minutes pulling the DB from S3.
-    # GitHub-hosted runners are Azure US and are refused (verified: HTTP 403 from
-    # 172.203.195.5, Virginia). Register a self-hosted runner on a UK machine and set
-    # the BETFAIR_RUNNER repository variable to its label to make the schedule use it.
-    runs-on: ${{ inputs.runner || vars.BETFAIR_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    outputs:
-      reachable: ${{ steps.geo.outputs.reachable }}
-      country: ${{ steps.geo.outputs.country }}
+  archive:
+    if: vars.BETFAIR_RUNNER != ''
+    runs-on: ${{ vars.BETFAIR_RUNNER }}
+    timeout-minutes: 120
     steps:
       - name: Probe Betfair from this runner
-        id: geo
-        env:
-          BETFAIR_PROXY: ${{ secrets.BETFAIR_PROXY }}
         run: |
           set +e
-          ip_json=$(curl -sS --max-time 15 https://ipinfo.io/json)
-          country=$(printf '%s' "$ip_json" | sed -n 's/.*"country"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-          echo "Runner egress: $(printf '%s' "$ip_json" | tr -d '\n' | cut -c1-200)"
-          proxy_args=""
-          if [ -n "$BETFAIR_PROXY" ]; then proxy_args="--proxy $BETFAIR_PROXY"; echo "Using BETFAIR_PROXY"; fi
-          code=$(curl -sS -o /tmp/listing.html -w '%{http_code}' --max-time 30 $proxy_args \
+          code=$(curl -sS -o /tmp/listing.html -w '%{http_code}' --max-time 30 \
                  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' \
                  https://promo.betfair.com/betfairsp/prices)
           csvs=$(grep -o -i 'dwbf[a-z]*[0-9]\{8\}\.csv' /tmp/listing.html 2>/dev/null | sort -u | wc -l)
-          echo "HTTP $code from promo.betfair.com; $csvs distinct CSV names in the response"
-          head -c 400 /tmp/listing.html; echo
-          if [ "$code" = "200" ] && [ "$csvs" -gt 0 ]; then
-            echo "reachable=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "reachable=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Betfair refused this runner (HTTP $code, country ${country:-unknown}). Set the BETFAIR_PROXY secret to a UK/IE proxy, or fetch the files from a UK machine and load them with: python betfair_prices.py --dir <folder> --load --match"
-          fi
-          echo "country=${country:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "HTTP $code from promo.betfair.com; $csvs distinct CSV names in the listing"
+          if [ "$code" != "200" ]; then echo "::error::promo.betfair.com refused this runner (HTTP $code)"; exit 1; fi
 
-  prices:
-    needs: probe
-    if: needs.probe.outputs.reachable == 'true'
-    runs-on: ${{ inputs.runner || vars.BETFAIR_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 45
-    steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
+      - name: Python on the UK server
+        # the same Python 3.12 environment the trader uses (live-trade.yml)
+        run: |
+          VENV="$HOME/.venvs/ashcroft"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
 
-      - name: Download database from S3
+      - name: Fetch the price files and archive them to S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
-        run: python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
-
-      - name: Fetch, load and match price files
-        env:
-          BETFAIR_PROXY: ${{ secrets.BETFAIR_PROXY }}   # promo.betfair.com geo-blocks GitHub's US runners; set a UK/IE proxy
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          DATE_FROM: ${{ inputs.date_from }}
+          DATE_TO: ${{ inputs.date_to }}
         run: |
-          if [ -n "${{ inputs.date_from }}" ]; then
-            python betfair_prices.py --fetch --load --match --from "${{ inputs.date_from }}" ${{ inputs.date_to && format('--to {0}', inputs.date_to) || '' }}
+          RAW="$HOME/.ashcroft/betfair_raw"
+          if [ -n "$DATE_FROM" ]; then
+            if ! [[ "$DATE_FROM" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date_from must be YYYY-MM-DD"; exit 1; fi
+            ARGS=(--from "$DATE_FROM")
+            if [ -n "$DATE_TO" ]; then
+              if ! [[ "$DATE_TO" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date_to must be YYYY-MM-DD"; exit 1; fi
+              ARGS+=(--to "$DATE_TO")
+            fi
           else
-            python betfair_prices.py --fetch --load --match --days 3
+            ARGS=(--days 5)
           fi
-          python betfair_prices.py --report | tail -12
-
-      - name: Back up database to S3
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
-        run: python backup_to_s3.py
+          python betfair_prices.py --fetch "${ARGS[@]}" --dir "$RAW" --push-s3
+          echo "files on the server: $(ls "$RAW" | wc -l)"

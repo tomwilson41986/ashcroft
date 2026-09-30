@@ -134,6 +134,10 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           REPORT_EMAIL: ${{ secrets.REPORT_EMAIL }}
           TRADING_LIVE: ${{ vars.TRADING_LIVE }}
+          # every book the session reads, kept for research (betfair_recorder.py; never in the way of trading)
+          BETFAIR_RECORD: '1'
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           MODE: ${{ steps.session.outputs.mode }}
           DAY: ${{ steps.session.outputs.day }}
           TRADE_UNTIL: ${{ steps.session.outputs.trade_until }}

@@ -1,0 +1,114 @@
+name: Betfair market recorder (read-only)
+
+# The owner's ask (30 Sep 2026): keep all the market data the UK server reaches, so the models can learn from it.
+# On the UK runner (Betfair refuses GitHub's own runners), read-only, nothing here can place an order:
+#   1. Betfair's daily price files for the last days (morning and pre-play prices and volumes, BSP, in-play
+#      range, for every GB/IE win and place runner), which promo.betfair.com refuses to GitHub's runners too,
+#      archived to s3://$CAPTURE_BUCKET/betfair_prices_raw/;
+#   2. the day's GB/IE win and place markets, a snapshot every 5 minutes and every minute in the last hour before
+#      each off, until the last race (betfair_recorder.py), with yesterday's settled books (BSP, results), to
+#      s3://$CAPTURE_BUCKET/betfair_live/<day>/.
+# The nightly job daily-results.yml, the one job that writes horse_racing.db, loads both.
+#
+# One runner serves trading too, so this job gives way to it: the 06:55 UTC run records the morning only when the
+# owner is not trading live (with TRADING_LIVE=yes the trader records the books it reads itself); the 10:10 UTC run
+# takes the rest of the day, after the morning session (it waits for the session to finish when that runs late).
+
+on:
+  schedule:
+    - cron: '55 6 * * *'     # the whole day, on days the trader is not live
+    - cron: '10 10 * * *'    # after the morning session, to the last race
+  workflow_dispatch:
+    inputs:
+      until:
+        description: 'last UK time to record, HH:MM'
+        required: false
+        type: string
+        default: '21:30'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: betfair-recorder
+  cancel-in-progress: false
+
+jobs:
+  record:
+    if: vars.BETFAIR_RUNNER != ''
+    runs-on: ${{ vars.BETFAIR_RUNNER }}
+    timeout-minutes: 900
+    steps:
+      - name: Choose the run
+        id: run
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          LIVE: ${{ vars.TRADING_LIVE }}
+          UNTIL: ${{ inputs.until }}
+        run: |
+          GO=true
+          if [ "$EVENT" = schedule ] && [ "$SCHEDULE" = '55 6 * * *' ] && [ "$LIVE" = yes ]; then
+            echo "The trader is live this morning and records its own books: this run gives way"
+            GO=false
+          fi
+          UNTIL="${UNTIL:-21:30}"
+          if ! [[ "$UNTIL" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then echo "until must be HH:MM"; exit 1; fi
+          echo "go=$GO" >> "$GITHUB_OUTPUT"
+          echo "until=$UNTIL" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.run.outputs.go == 'true'
+
+      - name: Python on the UK server
+        # the same Python 3.12 environment the trader uses (live-trade.yml)
+        if: steps.run.outputs.go == 'true'
+        run: |
+          VENV="$HOME/.venvs/ashcroft"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        if: steps.run.outputs.go == 'true'
+        run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
+
+      - name: Betfair's price files for the last days, to S3
+        if: steps.run.outputs.go == 'true'
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 900 python betfair_prices.py --fetch --days 5 --dir "$HOME/.ashcroft/betfair_raw" --push-s3
+
+      - name: Yesterday's settled books (BSP, results)
+        if: steps.run.outputs.go == 'true'
+        continue-on-error: true
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 600 python betfair_recorder.py --final --date "$(TZ=Europe/London date -d yesterday +%F)"
+
+      - name: Record the day's markets to the last race
+        if: steps.run.outputs.go == 'true'
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          UNTIL: ${{ steps.run.outputs.until }}
+        run: python betfair_recorder.py --record --final --until "$UNTIL"
