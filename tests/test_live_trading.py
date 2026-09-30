@@ -8,8 +8,8 @@ import pandas as pd
 import pytest
 
 from trading import config as tc
-from trading.exchange import Book, LiveExchange, Market, Quote
-from trading.session import Session
+from trading.exchange import BetfairData, Book, LiveExchange, Market, PaperExchange, Quote
+from trading.session import LEDGER_FIELDS, SETTLED_BY_BETFAIR, Session
 from trading.strategy import RunnerView, plan_race
 
 UTC = timezone.utc
@@ -90,8 +90,9 @@ class _Client:
 
 
 class _Data:
-    def __init__(self, client, markets=(), books=None):
+    def __init__(self, client, markets=(), books=None, cleared=None, cleared_fail=False):
         self.client, self._markets, self._books = client, list(markets), books or {}
+        self._cleared, self.cleared_fail = list(cleared or []), cleared_fail
 
     def login(self):
         self.client.login()
@@ -101,6 +102,11 @@ class _Data:
 
     def books(self, ids, with_sp=False):
         return {i: self._books[i] for i in ids if i in self._books}
+
+    def cleared(self, ids):                                         # Betfair's record of the settled bets
+        if self.cleared_fail:
+            raise ConnectionError("no route")
+        return [o for o in self._cleared if o["marketId"] in ids]
 
 
 def test_a_back_is_a_fill_or_kill_limit_order_at_the_price_read():
@@ -298,3 +304,172 @@ def test_the_trader_waits_for_a_late_0600_record(monkeypatch):
     later = datetime.now(UTC) + timedelta(hours=1)
     df = auto_trade.load_predictions(DAY, None, wait_until=later, sleep=lambda _: None)
     assert tries["n"] == 3 and len(df) == 1
+
+
+# ---------------------------------------------------------------- settling from Betfair's record
+
+def _settled(mid, sid, side, profit, price, size, ref=None, bet="B"):
+    """One bet as listClearedOrders reports it once the market is settled."""
+    return {"marketId": mid, "selectionId": sid, "side": side, "betId": f"{bet}{sid}{side[0]}",
+            "orderType": "MARKET_ON_CLOSE" if side == "LAY" else "LIMIT", "priceMatched": price,
+            "sizeSettled": size, "profit": profit, "customerOrderRef": ref or f"ash1001{sid}{'x' if side == 'LAY' else ''}"}
+
+
+def _closed(mid, winner, n=4):
+    """The market after the race as the delayed feed shows it: results, and no SP."""
+    return Book(market_id=mid, status="CLOSED", inplay=False, total_matched=None, runners={
+        i: Quote(i, status="WINNER" if i == winner else "LOSER") for i in range(1, n + 1)})
+
+
+def test_a_live_race_is_settled_from_betfairs_record_and_waits_for_it():
+    """30 Sep: the delayed feed carries no SP, so the lays at SP were counted as nothing (+523.80 reported for three
+    races whose winners were each laid back at the SP). A live race is settled from what Betfair paid on each bet."""
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    c = _Client()
+    s, clock = _session(c, [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])])
+    s.step(clock())                                                # backs horse 1 at 7.0, lays GBP249.96 at the SP
+    assert s.positions[("1.7", 1)].hedge_liability == pytest.approx(249.96)
+    s.x.data._books["1.7"] = _closed("1.7", winner=2)
+    clock.t = off + timedelta(minutes=10)
+    s.step(clock())                                                # the race is over, Betfair has not settled it
+    assert not [r for r in s.ledger if r["event"] == "settle"] and not s.positions[("1.7", 1)].settled
+    s.x.data._cleared = [_settled("1.7", 1, "BACK", -41.66, 7.0, 41.66),
+                         _settled("1.7", 1, "LAY", 62.49, 5.0, 62.49),       # 249.96 laid at an SP of 5.0
+                         _settled("1.7", 2, "BACK", 400.0, 3.0, 200.0, ref="the-owners-own-bet", bet="X")]
+    s.step(clock())
+    settle = [r for r in s.ledger if r["event"] == "settle"]
+    assert len(settle) == 1 and settle[0]["result"] == "LOSER" and settle[0]["reason"] == SETTLED_BY_BETFAIR
+    assert settle[0]["pnl_back"] == -41.66 and settle[0]["pnl_lay"] == 62.49 and settle[0]["pnl"] == 20.83
+    assert settle[0]["bsp"] == 5.0 and settle[0]["clv"] == pytest.approx(7.0 / 5.0 - 1)
+    commission = [r for r in s.ledger if r["event"] == "commission"][0]["commission"]
+    assert commission == pytest.approx(0.05 * 20.83, abs=0.01)
+    assert s.summary()["settled_pnl"] == pytest.approx(20.83 - commission, abs=0.01)
+    assert s.summary()["stake_weighted_clv"] == pytest.approx(0.4)
+    s.step(clock())
+    assert len([r for r in s.ledger if r["event"] == "settle"]) == 1     # settled once
+
+
+def test_a_winner_laid_at_the_sp_nets_nothing_and_a_missing_lay_is_named():
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    s, clock = _session(_Client(), [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])])
+    s.step(clock())
+    s.x.data._books["1.7"] = _closed("1.7", winner=1)
+    s.x.data._cleared = [_settled("1.7", 1, "BACK", 249.96, 7.0, 41.66), _settled("1.7", 1, "LAY", -249.96, 5.0, 62.49)]
+    clock.t = off + timedelta(minutes=10)
+    s.step(clock())
+    settle = [r for r in s.ledger if r["event"] == "settle"][0]
+    assert settle["result"] == "WINNER" and settle["pnl"] == 0.0 and settle["error"] == ""
+    assert s.summary()["settled_pnl"] == 0.0
+    # a back whose lay Betfair never settled stands alone, and the row says so
+    s2, clock2 = _session(_Client(), [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])])
+    s2.step(clock2())
+    s2.x.data._books["1.7"] = _closed("1.7", winner=1)
+    s2.x.data._cleared = [_settled("1.7", 1, "BACK", 249.96, 7.0, 41.66)]
+    clock2.t = off + timedelta(minutes=10)
+    s2.step(clock2())
+    settle = [r for r in s2.ledger if r["event"] == "settle"][0]
+    assert settle["pnl"] == 249.96 and "no lay at SP settled" in settle["error"]
+
+
+def test_a_failed_read_of_the_settled_bets_never_stops_the_day():
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    s, clock = _session(_Client(), [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])])
+    s.step(clock())
+    s.x.data._books["1.7"] = _closed("1.7", winner=2)
+    s.x.data.cleared_fail = True
+    clock.t = off + timedelta(minutes=10)
+    s.step(clock())                                                # no exception: the race waits
+    assert s.state.stopped == "" and not s.positions[("1.7", 1)].settled
+
+
+def _old_rows():
+    """The first live day's ledger as the evening job finds it: a back, its lay at SP, and a settlement written from
+    the delayed feed, which had no SP, so the lay counted as nothing (strings, as read from the CSV)."""
+    base = {k: "" for k in LEDGER_FIELDS}
+    common = {"mode": "live", "market_id": "1.263045597", "venue": "Kempton", "off": "19:00", "selection_id": "85907638",
+              "runner": "Elan Dor"}
+    return [
+        {**base, **common, "ts": "2026-09-30T17:31:49Z", "event": "back", "asked": "8.62", "matched": "8.62",
+         "avg_price": "30.0", "bet_id": "445070659999", "status": "SUCCESS"},
+        {**base, **common, "ts": "2026-09-30T17:31:49Z", "event": "trade_out", "asked": "249.98", "matched": "8.62",
+         "avg_price": "30.0", "bet_id": "445070660000", "status": "PENDING", "hedged": "True",
+         "hedge_liability": "249.98"},
+        {**base, **common, "ts": "2026-09-30T18:08:42Z", "event": "settle", "matched": "8.62", "avg_price": "30.0",
+         "hedged": "True", "hedge_liability": "249.98", "result": "WINNER", "pnl_back": "249.98", "pnl_lay": "0.0",
+         "pnl": "249.98"},
+        {**base, **common, "ts": "2026-09-30T18:08:42Z", "event": "commission", "selection_id": "0", "runner": "",
+         "commission": "12.5", "pnl": "-12.5"},
+    ]
+
+
+def _paid(mid="1.263045597"):
+    """Betfair's record of that race: the winner's back paid 249.98, its lay at SP (21.0) cost 249.98. The bet ids
+    are the ledger's (the references are left off: the ids alone must find them)."""
+    return [{"marketId": mid, "selectionId": 85907638, "side": "BACK", "betId": "445070659999", "orderType": "LIMIT",
+             "priceMatched": 30.0, "sizeSettled": 8.62, "profit": 249.98},
+            {"marketId": mid, "selectionId": 85907638, "side": "LAY", "betId": "445070660000",
+             "orderType": "MARKET_ON_CLOSE", "priceMatched": 21.0, "sizeSettled": 12.5, "profit": -249.98}]
+
+
+def test_a_day_settled_without_its_lays_is_settled_again_from_betfairs_record():
+    data = _Data(_Client(), markets=[], books={}, cleared=_paid())       # the closed market is off the catalogue
+    s = Session(PaperExchange(data), pd.DataFrame(columns=["market_id", "selection_id", "predicted_bfsp"]),
+                _live_cfg(), date(2026, 9, 30), clock=lambda: datetime(2026, 9, 30, 21, 45, tzinfo=UTC))
+    s.mode = "live"
+    s.restore(_old_rows(), [])
+    assert [r["event"] for r in s.ledger] == ["back", "trade_out", "unsettled", "unsettled"]
+    assert s.state.settled_pnl == 0.0 and not s.positions[("1.263045597", 85907638)].settled
+    assert s.markets["1.263045597"].venue == "Kempton"                  # course and off kept from the ledger
+    s.settle_all()
+    settle = [r for r in s.ledger if r["event"] == "settle"]
+    assert len(settle) == 1 and settle[0]["pnl"] == 0.0 and settle[0]["bsp"] == 21.0 and settle[0]["off"] == "19:00"
+    assert settle[0]["clv"] == pytest.approx(30.0 / 21.0 - 1)
+    assert s.summary()["settled_pnl"] == 0.0 and s.summary()["races_settled"] == 1
+    # the next evening's job takes the day up again: settled from Betfair's record, it stays settled
+    again = Session(PaperExchange(data), pd.DataFrame(columns=["market_id", "selection_id", "predicted_bfsp"]),
+                    _live_cfg(), date(2026, 9, 30))
+    again.mode = "live"
+    again.restore([{k: ("" if v is None else v) for k, v in r.items()} for r in s.ledger], [])
+    again.settle_all()
+    assert len([r for r in again.ledger if r["event"] == "settle"]) == 1 and again.state.settled_pnl == 0.0
+
+
+def test_the_evening_job_settles_the_live_day_from_betfairs_record(monkeypatch, tmp_path):
+    import csv as _csv
+    import auto_trade
+    for k in ("BETFAIR_USERNAME", "BETFAIR_PASSWORD", "BETFAIR_APP_KEY"):
+        monkeypatch.setenv(k, "x")
+    ledger = tmp_path / "ledger_live_2026-09-30.csv"
+    with ledger.open("w", newline="") as f:
+        w = _csv.DictWriter(f, fieldnames=LEDGER_FIELDS)
+        w.writeheader()
+        w.writerows(_old_rows())
+    data = _Data(_Client(), markets=[], books={}, cleared=_paid())
+    monkeypatch.setattr(auto_trade, "BetfairData", lambda recorder=None: data)
+    sent = []
+    monkeypatch.setattr(auto_trade, "publish", lambda *a, **k: None)
+    monkeypatch.setattr(auto_trade, "email", lambda summary: sent.append(summary))
+    out = auto_trade.main(["--live", "--settle", "--date", "2026-09-30", "--out", str(tmp_path)])
+    assert out["settled_pnl"] == 0.0 and out["races_settled"] == 1 and sent and sent[0]["settled_pnl"] == 0.0
+    with ledger.open() as f:
+        events = [r["event"] for r in _csv.DictReader(f)]
+    assert events == ["back", "trade_out", "unsettled", "unsettled", "settle", "commission"]
+
+
+def test_the_settled_bets_are_read_page_by_page_and_only_read():
+    class Pages:
+        def __init__(self):
+            self.calls = []
+
+        def _api_call(self, method, params):
+            self.calls.append((method, params))
+            if params["fromRecord"] == 0:
+                return {"clearedOrders": [{"betId": "1"}], "moreAvailable": True}
+            return {"clearedOrders": [{"betId": "2"}], "moreAvailable": False}
+    c = Pages()
+    got = BetfairData(client=c).cleared(["1.5", "1.6"])
+    assert [o["betId"] for o in got] == ["1", "2"]
+    assert c.calls[0] == ("listClearedOrders", {"betStatus": "SETTLED", "marketIds": ["1.5", "1.6"],
+                                                "fromRecord": 0, "recordCount": 1000})
+    with pytest.raises(ValueError):
+        BetfairData(client=c)._read("placeOrders", {})

@@ -151,6 +151,12 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
 - **The switches**: the repository variable `TRADING_LIVE` must be `yes` for any order; the job runs only on the UK
   runner named by `BETFAIR_RUNNER` (Betfair refuses GitHub's own runners). To stop at once: cancel the running
   "Live trading" run, or create the S3 object `trading/STOP` (no new bets within a minute).
+- **Settlement**: each race is settled from Betfair's record of the settled bets (listClearedOrders): what Betfair
+  paid on every back and every lay at SP, and the SP the lays matched at (the CLV), with commission at 5% of the
+  race's net winnings. Betfair settles a race some minutes after it is run and the race waits until then: the
+  delayed key's feed carries no SP, and on the first live evening (30 Sep) settling from the feed counted every
+  lay as nothing. The evening job settles such a race again from Betfair's record; the old rows stay in the ledger
+  as `unsettled`.
 - **The record**: s3://$ULTRA_BETTING_S3_BUCKET/trading/live/<day>/ (ledger and summary), emailed after the
   morning session and after the evening settlement (each race's result, the BSP, the CLV, commission on the net).
 

@@ -1,7 +1,7 @@
 """The Betfair Exchange: read-only data, a paper exchange that simulates orders, and the live exchange.
 
 BetfairData      reads markets and prices through betfair_client.BetfairClient (listMarketCatalogue,
-                 listMarketBook). It has no order methods.
+                 listMarketBook), and the account's settled bets (listClearedOrders). It has no order methods.
 PaperExchange    reads through BetfairData and simulates orders: a back fills at once against the book
                  last read, at the prices offered at or above its limit (as a fill-or-kill limit order
                  would), and the rest lapses; a lay at BSP is held until the market reconciles.
@@ -148,8 +148,8 @@ class BetfairData:
         self.client.login()
 
     def _read(self, method: str, params: dict):
-        if method not in ("listMarketCatalogue", "listMarketBook"):
-            raise ValueError(f"{method}: this client only reads markets and prices")
+        if method not in ("listMarketCatalogue", "listMarketBook", "listClearedOrders"):
+            raise ValueError(f"{method}: this client only reads markets, prices and settled bets")
         try:
             return self.client._api_call(method, params)
         except Exception as exc:                       # an expired session: log in once and retry
@@ -191,6 +191,25 @@ class BetfairData:
                 out[b["marketId"]] = parse_book(b)
         return out
 
+    def cleared(self, market_ids: list[str]) -> list[dict]:
+        """The account's settled bets on these markets, one record per bet (listClearedOrders, SETTLED): what
+        Betfair paid on each back and each lay at SP ("profit", before commission) and the price each was matched
+        at (for a lay at SP, the Betfair SP). A market appears once Betfair has settled it, some minutes after the
+        race; a void bet (a non-runner) never does."""
+        out = []
+        for i in range(0, len(market_ids), 50):
+            start = 0
+            while True:
+                reply = self._read("listClearedOrders", {
+                    "betStatus": "SETTLED", "marketIds": list(market_ids[i:i + 50]),
+                    "fromRecord": start, "recordCount": 1000}) or {}
+                got = reply.get("clearedOrders", []) or []
+                out += got
+                if not reply.get("moreAvailable") or not got:
+                    break
+                start += len(got)
+        return out
+
 
 class PaperExchange:
     """Reads Betfair's markets and prices; simulates every order; sends none."""
@@ -212,6 +231,10 @@ class PaperExchange:
         got = self.data.books(market_ids, with_sp)
         self._books.update(got)
         return got
+
+    def cleared(self, market_ids: list[str]) -> list[dict]:
+        """The account's settled bets (read-only): the evening job settles the live ledger through this exchange."""
+        return self.data.cleared(market_ids)
 
     def back(self, market_id, selection_id, price, size, ref, min_fill: float = 2.0) -> Fill:
         """Fill now against the book last read: every level offered at `price` or better, up to `size`."""
@@ -275,6 +298,9 @@ class LiveExchange:
 
     def books(self, market_ids: list[str], with_sp: bool = False) -> dict[str, Book]:
         return self.data.books(market_ids, with_sp)
+
+    def cleared(self, market_ids: list[str]) -> list[dict]:
+        return self.data.cleared(market_ids)
 
     # ------------------------------------------------------------------ orders
 
