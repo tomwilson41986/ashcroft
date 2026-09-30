@@ -329,7 +329,9 @@ class BetfairClient:
                 continue
 
             market_status = book.get("status", "UNKNOWN")
-            total_matched = book.get("totalMatched", 0)
+            # The delayed application key returns no traded volume in the market book; the catalogue's
+            # figure for the market (when Betfair fills it) stands in for the race's matched money.
+            total_matched = book.get("totalMatched") or market.get("totalMatched") or 0
 
             for runner in book.get("runners", []):
                 sel_id = runner["selectionId"]

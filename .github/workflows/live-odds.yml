@@ -1,0 +1,76 @@
+name: Live Betfair odds (read-only)
+
+# A snapshot of today's British and Irish win markets on the Betfair exchange for the owner's staking
+# (scripts/score_live_prices.py scores it): best back and lay with their sizes, last traded, the market's
+# and each runner's matched money. Read-only: a login and market data, nothing that can place an order.
+# Push-triggered on the research branch (a workflow only on a branch cannot be dispatched): edit
+# research/live/snapshot.txt and push to take one.
+
+on:
+  push:
+    branches: ['claude/happy-ritchie-*']
+    paths:
+      - 'research/live/snapshot.txt'
+      - '.github/workflows/live-odds.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-odds
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    # Betfair refuses API logins from the USA, where GitHub's own runners are: a runner in the UK or Ireland
+    # (the owner's PC or a London server, registered as a self-hosted runner) is named by the repository
+    # variable BETFAIR_RUNNER, e.g. 'self-hosted'. Unset, the job tries GitHub's runner.
+    runs-on: ${{ vars.BETFAIR_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -e ".[pipeline]" && pip install -r requirements.txt
+
+      - name: Write the Betfair certificate
+        # Optional: certificate login when the secrets exist, otherwise the username and password.
+        env:
+          BETFAIR_CERT: ${{ secrets.BETFAIR_CERT }}
+          BETFAIR_KEY: ${{ secrets.BETFAIR_KEY }}
+        run: |
+          if [ -n "$BETFAIR_CERT" ] && [ -n "$BETFAIR_KEY" ]; then
+            mkdir -p "$HOME/.betfair/certs"
+            printf '%s\n' "$BETFAIR_CERT" > "$HOME/.betfair/certs/betfair.crt"
+            printf '%s\n' "$BETFAIR_KEY" > "$HOME/.betfair/certs/betfair.key"
+            chmod 600 "$HOME/.betfair/certs/betfair.key"
+            echo "BETFAIR_CERT_FILE=$HOME/.betfair/certs/betfair.crt" >> "$GITHUB_ENV"
+            echo "BETFAIR_KEY_FILE=$HOME/.betfair/certs/betfair.key" >> "$GITHUB_ENV"
+          fi
+
+      - name: Snapshot the win markets
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+        run: |
+          mkdir -p out
+          if [ -z "$BETFAIR_APP_KEY" ]; then
+            echo "BETFAIR_APP_KEY is not set: save the delayed application key as that repository secret" | tee out/live_odds.log
+            exit 0
+          fi
+          date -u +"snapshot taken %Y-%m-%dT%H:%M:%SZ" | tee out/live_odds.log
+          python betfair_sync.py --live --csv out/live_odds.csv 2>&1 | tee -a out/live_odds.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-odds-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 30
