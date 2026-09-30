@@ -134,7 +134,8 @@ The owner chose to trade live from the start, without a paper period, and set th
 permission mode was changed by the owner to allow the work. `auto_trade.py --live` with
 `trading/config_live.json` and the workflow `live-trade.yml` place real orders on the owner's account:
 
-- **The rule** (`closing_clv`, trading/strategy.py): 08:00-11:00 UK, polled every minute, every runner of a race
+- **The rule** (`closing_clv`, trading/strategy.py): 08:00-11:00 UK and never within 15 minutes of a race's off (the
+  owner's limit), polled every minute, every runner of a race
   priced whole whose expected CLV at the best back price is at least +3% under the closing model
   (`model/race_book.py`; the model fitted without volume when the delayed key's feed carries none), with at least
   GBP100 matched on it when the feed reports matched money. Staked to win GBP250 before commission.
@@ -152,6 +153,18 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   "Live trading" run, or create the S3 object `trading/STOP` (no new bets within a minute).
 - **The record**: s3://$ULTRA_BETTING_S3_BUCKET/trading/live/<day>/ (ledger and summary), emailed after the
   morning session and after the evening settlement (each race's result, the BSP, the CLV, commission on the net).
+
+**Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
+closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
+walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
+
+| Entry | Bets a day | CLV (90%) | GBP a day |
+|---|---|---|---|
+| Morning, with matched money (the tested case) | 56.6 | +6.8% (+5.8 to +7.8) | +173 |
+| Morning, no matched money (the delayed key) | 63.9 | +5.3% (+4.3 to +6.2) | +131 |
+| Near the off, the morning model | 21.9 | -1.8% (-2.6 to -1.2) | -19 |
+| Near the off, the morning model, no matched money | 44.9 | -5.8% (-6.5 to -5.1) | -87 |
+| Near the off, a model fitted on late prices | 4.8 | +2.9% (+2.0 to +3.8) | +16 |
 
 Still the owner's to supply: a live application key restores the matched money the delayed key leaves out
 (worth about a quarter of the backtested CLV), and a certificate (`BETFAIR_CERT`, `BETFAIR_KEY`) makes the login

@@ -9,7 +9,7 @@
   "commission": 0.05,
   "trade_from": "08:00",
   "trade_until": "11:00",
-  "stop_before_off": 5,
+  "stop_before_off": 15,
   "trade_out": true,
   "trade_out_at": "fill",
   "poll_seconds": 60,
