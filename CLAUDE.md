@@ -80,6 +80,12 @@ python betfair_sync.py --upcoming
 # Export live odds to CSV
 python betfair_sync.py --live --csv live_odds.csv
 
+# Live trading on the owner's account (the owner's decision, 30 Sep 2026; TRADING.md): the owner's rule, GBP250 to
+# win, at most GBP300 a bet and GBP4,000 a day, each back laid at the SP. Places real orders only with
+# TRADING_LIVE=yes, and only on the UK runner (live-trade.yml); the S3 object trading/STOP stops new bets
+TRADING_LIVE=yes python auto_trade.py --live --until 11:05
+python auto_trade.py --live --settle
+
 # --- Research toolkit (see RESEARCH_FRAMEWORK.md) ---
 # Model-vs-market scoring (Murphy decomposition, skill vs BSP, concordance, drift)
 python research_lab.py score --predictions data/oos_predictions.csv
@@ -130,6 +136,8 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
 - `model/form_windows.py` — every per-run measure (win, place, WAX, NFP, pounds beaten, race-centred pounds, rating-scale performance figure, RSR, the market's view, A−E vs BSP, position vs the market's order) over career, last run, last 3, last 5 and last 3/5/10 weighted linearly by recency (served from 26 Sep: `SERVED_FORM_WINDOW_FEATURES`; iteration 29)
 - `model/shape_form.py` — the shape/draw remodel: each past run read against the pace (its actual position in the race's actual shape) and draw it met, windowed; speed drawn inside/outside/near today; the market's miss (A−E) by draw cell and projected position (`SHAPE_FORM_FEATURES`, built with the shape block, not served; a `RESEARCH_BLOCKS` entry: `evaluate_oos.py --blocks shape_form`)
 - `model/blocks/` — drop-in feature blocks (one file each, computed on the cached matrix, no rebuild; see docs/FAST_LOOP.md). A model that reads one is served it: the live path builds it as training did (`blocks.attach_as_trained`); `train_bfsp.py --feature-cache .feature_cache --blocks form_variants,race_relative`
+- `model/blocks/quant.py` — quant metrics (owner, 30 Sep; `qm_`, not served, retired: iteration 106 found nothing beyond the served main): the yard's, rider's, sire's and horse's record against the Betfair SP as a track record (Sharpe ratio of level-stake returns, signed chi of winners against the prices, A/E) and the horse's form as a return series (volatility, downside deviation, drawdown, the market's trend); `scripts/clv_betfair.py` scores every research arm on the owner's staking (GBP250 to win on each horse whose expected CLV clears 0/3/5%, `race_book.expected_clv_walk_forward`)
+- `model/race_book.py` — the race book (owner, 30 Sep): a closing-price model (conditional logit on the BSP book from the market's price now and ours) and a whole-race book of backs and lays, sized for growth at the close or at the result under a race-level value floor (theta) and a per-position underlay limit (delta); `reports/race_book_model.md`
 - `train_bfsp.py` — Walk-forward training with all custom metrics
 - `predict_bfsp_today.py` — Daily BFSP predictions
 - `model/trainer.py` — Win probability model (classification)

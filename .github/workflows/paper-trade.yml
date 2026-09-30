@@ -32,7 +32,11 @@ concurrency:
 
 jobs:
   paper:
-    runs-on: ubuntu-latest
+    # Betfair refuses API logins from GitHub's own runners (the USA): the forward test runs only on a UK runner
+    # named by the repository variable PAPER_RUNNER, and stands down without one. Keep it off the runner that
+    # takes the hourly snapshots (live-odds.yml) unless the server runs a second runner: this job holds its
+    # runner from 06:50 to 11:05 UK.
+    runs-on: ${{ vars.PAPER_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
@@ -111,7 +115,12 @@ jobs:
           MODE: ${{ steps.session.outputs.mode }}
           DAY: ${{ steps.session.outputs.day }}
           UNTIL: ${{ steps.session.outputs.until }}
+          UK_RUNNER: ${{ vars.PAPER_RUNNER }}
         run: |
+          if [ -z "$UK_RUNNER" ]; then
+            echo "Standing down: Betfair refuses GitHub's own runners; set PAPER_RUNNER to a UK self-hosted runner to paper trade"
+            exit 0
+          fi
           ARGS=()
           if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); fi
           if [ "$MODE" = settle ]; then

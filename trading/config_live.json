@@ -1,0 +1,32 @@
+{
+  "strategy": "closing_clv",
+  "staking": "to_win",
+  "target": 250.0,
+  "clv_bar": 0.03,
+  "closing_model": "data/models/closing_model.json",
+  "closing_model_novol": "data/models/closing_model_novol.json",
+  "clv_draws": 20000,
+  "commission": 0.05,
+  "trade_from": "08:00",
+  "trade_until": "11:00",
+  "stop_before_off": 15,
+  "trade_out": true,
+  "trade_out_at": "fill",
+  "poll_seconds": 60,
+  "countries": ["GB", "IE"],
+  "limits": {
+    "bank": 4000.0,
+    "max_stake": 300.0,
+    "max_race_stake": 1000000.0,
+    "max_daily_turnover": 4000.0,
+    "max_bets_per_day": 250,
+    "daily_stop_loss": 1000000.0,
+    "min_stake": 2.0,
+    "min_price": 1.01,
+    "max_price": 1000.0,
+    "min_market_matched": 0.0,
+    "min_runner_matched": 100.0,
+    "min_bsp_liability": 10.0,
+    "liquidity_share": 1.0
+  }
+}

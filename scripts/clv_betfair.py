@@ -14,7 +14,9 @@ Also prints the checks that decide what a pass means: the edge by how many races
 had already been run (the same-day-leak test), by morning price band against every runner
 in the band, month by month, and settled three ways. And the model's rank 1 in each race
 (its shortest price, so its highest win probability) settled the same three ways, alone and
-where the rule also picks it: the owner's measure of a profitable model.
+where the rule also picks it: the owner's measure of a profitable model. And the owner's staking
+(30 Sep): every horse whose expected CLV under the closing model (model/race_book.py, fitted on
+the months before each month scored) clears a bar, backed to win GBP250 at the morning price.
 """
 
 from __future__ import annotations
@@ -53,7 +55,9 @@ def load(predictions: str, db: str | None, extract: str | None, until: str | Non
     if until:
         o = o[o["race_date"].astype(str) < until]
         ex = ex[ex["race_date"].astype(str) < until]
-    d = o.merge(ex[KEY + ["morningwap", "morning_vol", "bsp"]], on=KEY)
+    # each race's field as forecast, so a race missing a runner's price can be told from a whole one
+    o = o.assign(field=o.groupby(["race_date", "track", "race_time"])["horse_name"].transform("size"))
+    d = o.merge(ex[KEY + ["morningwap", "morning_vol", "bsp"]].drop_duplicates(KEY), on=KEY)
     d["race"] = d["race_date"] + "|" + d["track"] + "|" + d["race_time"]
     d = d[(d["morningwap"] > 1) & (d["bsp"] > 1) & (d["predicted_bfsp"] > 1)].copy()
     d["won"] = d["won"].astype(bool)
@@ -144,6 +148,37 @@ def rank1(d: pd.DataFrame, base: pd.DataFrame, threshold: float) -> None:
     print(f"  rank 1 is the morning favourite in {100 * agree:.1f}% of races")
 
 
+def owner_staking(d: pd.DataFrame, bars=(0.0, 0.03, 0.05)) -> None:
+    """The owner's staking: every horse whose expected CLV under the closing model is at least the bar, backed to
+    win GBP250 at the morning price (stake 250 / (price - 1)), on whole races; the closing model is fitted on the
+    months before each month scored, so the first month with prices is only fitted on."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))       # run as a script from the repository
+    from model import race_book as rb
+
+    w = rb.whole_races(d, field=d.groupby("race")["field"].first())
+    w = w.sort_values(["race_date", "race", "predicted_bfsp"]).reset_index(drop=True)
+    scored = rb.expected_clv_walk_forward(w)
+    print(f"\nThe owner's staking: GBP{rb.TO_WIN:.0f} to win on every horse whose expected CLV clears the bar "
+          f"(closing model fitted walk-forward by month; at least GBP{rb.MIN_VOL:.0f} matched in the morning)")
+    if scored.empty:
+        print("  too few months with Betfair prices to fit on")
+        return
+    print(f"  scored {scored['race'].nunique():,} whole races, {scored['race_date'].min()} to {scored['race_date'].max()}")
+    for bar in bars:
+        g = rb.to_win_selection(scored, bar=bar)
+        if g.empty:
+            print(f"  expected CLV >= {100 * bar:+.0f}%: no bets")
+            continue
+        st = g["staked"].sum()
+        lo_c, hi_c = rb.ratio_interval(g["clv"], g["staked"])
+        lo_r, hi_r = rb.ratio_interval(g["result"], g["staked"])
+        print(f"  expected CLV >= {100 * bar:+.0f}%: {g['bets'].sum():,} bets, turnover GBP{st:,.0f}, "
+              f"CLV GBP{g['clv'].sum():+,.0f} ({100 * g['clv'].sum() / st:+.2f}%, {100 * lo_c:+.2f} to {100 * hi_c:+.2f}), "
+              f"held GBP{g['result'].sum():+,.0f} ({100 * g['result'].sum() / st:+.2f}%, {100 * lo_r:+.2f} to {100 * hi_r:+.2f})")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--predictions", required=True)
@@ -187,6 +222,7 @@ def main(argv=None) -> int:
     print(f"  held, BSP             {interval(rule, 'hold_bsp')}   every runner at BSP {100 * base['hold_bsp'].mean():+.2f}%")
     print(f"\nMorning volume on the rule's bets: median £{rule['morning_vol'].median():,.0f}")
     rank1(d, base, a.threshold)
+    owner_staking(d)
     return 0
 
 

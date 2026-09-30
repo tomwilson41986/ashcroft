@@ -1,0 +1,40 @@
+{
+ "fitted_on": "January-March 2026: iteration 105's walk-forward forecasts (the served blend) against Betfair's morning volume-weighted price, morning volume and BSP; 2,504 whole races (research query run 36676743958's data)",
+ "features": [
+  "lq_market",
+  "lq_model",
+  "vol",
+  "lq_market_x_vol",
+  "lq_model_x_vol",
+  "lq_market_x_depth",
+  "lq_model_x_depth"
+ ],
+ "beta": [
+  0.5487328046580302,
+  0.35364744383831787,
+  0.17827381197660436,
+  0.1563966852187145,
+  -0.16977760701183067,
+  -0.047679067655231375,
+  0.06716927526851951
+ ],
+ "vol_mean": 5.998638173187162,
+ "vol_sd": 1.7203368498328613,
+ "depth_mean": 8.975659744112454,
+ "depth_sd": 0.897577699627952,
+ "band_edges": [
+  4.5392438989786275,
+  5.771428661682615,
+  6.6007408682612185,
+  7.419141875728087
+ ],
+ "band_sigma": [
+  0.5379207644221468,
+  0.402410168036338,
+  0.3366839805715364,
+  0.2817659759028075,
+  0.2309416556653011
+ ],
+ "book": 1.0014819852524603,
+ "n_train": 22003
+}

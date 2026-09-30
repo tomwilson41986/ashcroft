@@ -176,3 +176,22 @@ At the owner's instruction of 28 September ("switch to the best model"), **the 0
 - **Scoring:** days 1-5 stay scored on their files as written; the report gives the headline with and without the races whose book held a reserve or a blank jockey.
 
 **Nothing else changes:** not the rule, not the criteria, not the window's length or its exclusions.
+
+## Amendment (29 Sep 2026, 17:40 UTC): the history has not been current since 23 Sep
+
+- **The start condition not met:** "history that is current to the day before". horseracebase has paused its results download since 23 Sep, and `race_results` ends on 22 Sep (research query `qa_stale_history_0929.py`, run 36603403959).
+- **Days 1-5 were priced on that history.** Runners whose latest run is missing from it:
+
+  | Day | Runners | Latest run missing |
+  |---|---|---|
+  | 25 Sep | 528 | 4 |
+  | 26 Sep | 599 | 4 |
+  | 27 Sep | 244 | 1 |
+  | 28 Sep | 468 | 10 |
+  | 29 Sep | 375 | 8 |
+
+  - Every trainer and jockey window is as old as the history.
+- **Scoring:** the days stay in the window, because the exclusion rule is unchanged. The report gives the headline with and without the runners whose latest run was missing.
+- **The owner's QA of the five days against their results** is in `reports/qa_live_days_0929.md`. It does not touch the Betfair prices the test is scored on.
+
+**Nothing else changes:** not the rule, not the criteria, not the window's length or its exclusions.

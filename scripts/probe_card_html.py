@@ -12,7 +12,8 @@ its source if the card has it.
 
     python scripts/probe_card_html.py --out out/
 
-Read-only: one login, the day's card page and at most two horse pages.
+Read-only: one login, the day's card page, horseracebase's results, non-runner and live-odds
+pages, each recent day's results page (--results-days) and at most two horse pages.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ import argparse
 import re
 import sys
 import time
+from datetime import date, timedelta
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -40,6 +42,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default="out")
     ap.add_argument("--horse-pages", type=int, default=2)
+    ap.add_argument("--results-days", type=int, default=5, help="results pages to save, today and the days before")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -52,6 +55,29 @@ def main() -> int:
     r.raise_for_status()
     (out / "onedayracecards.html").write_text(r.text, encoding="utf-8")
     print(f"card page: {len(r.text):,} bytes")
+
+    # the day's results page as it stands (the HTML page, not the CSV export the download pause stops)
+    time.sleep(1.5)
+    res = s.get(f"{BASE_URL}/horse-racing-results.php")
+    (out / "results.html").write_text(res.text, encoding="utf-8")
+    rsoup = BeautifulSoup(res.text, "lxml")
+    print(f"results page: HTTP {res.status_code}, {len(res.text):,} bytes, title {rsoup.title.get_text(strip=True) if rsoup.title else ''!r}")
+    for f in rsoup.find_all("form")[:6]:
+        fields = [(i.get("name"), i.get("type"), (i.get("value") or "")[:20]) for i in f.find_all(["input", "select"])]
+        print(f"  form action={f.get('action')!r} method={f.get('method')!r} fields={fields[:12]}")
+    # the day's results as they come in, horseracebase's own list of non-runners, and its live odds
+    pages = [("results_today", "horse-racing-results.php?today=yes"), ("nonrunners", "nonrunners.php"),
+             ("liveodds", "liveoddstracker.php")]
+    # and each recent day's results page, so the forward-test days can be scored while the CSV export is paused
+    today = date.today()
+    for back in range(args.results_days):
+        d = today - timedelta(days=back)
+        pages.append((f"results_{d.isoformat()}", f"horse-racing-results.php?day={d.day}&month={d.month}&year={d.year}"))
+    for name, page in pages:
+        time.sleep(1.5)
+        p = s.get(f"{BASE_URL}/{page}")
+        (out / f"{name}.html").write_text(p.text, encoding="utf-8")
+        print(f"{page}: HTTP {p.status_code}, {len(p.text):,} bytes")
 
     soup = BeautifulSoup(r.text, "lxml")
     tables = [t for t in soup.find_all("table")

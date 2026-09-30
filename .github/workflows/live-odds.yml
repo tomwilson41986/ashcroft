@@ -1,0 +1,149 @@
+name: Live Betfair odds (read-only)
+
+# A snapshot of today's British and Irish win markets on the Betfair exchange for the owner's staking
+# (scripts/score_live_prices.py scores it): best back and lay with their sizes, last traded, the market's
+# and each runner's matched money. Read-only: a login and market data, nothing that can place an order.
+# Every hour of the morning (08:00-11:00 UK) the day's backs are emailed to the owner: horse, price, the least
+# price that still clears the bar, and the stake to win GBP250. The owner places them.
+# Push-triggered on the research branch too: edit research/live/snapshot.txt and push to take one.
+
+on:
+  schedule:
+    - cron: '5 7-11 * * *'     # UTC; the job keeps the runs that fall 08:00-11:59 UK (summer or winter time)
+  push:
+    branches: ['claude/happy-ritchie-*']
+    paths:
+      - 'research/live/snapshot.txt'
+      - '.github/workflows/live-odds.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-odds
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    # while the owner trades live (TRADING_LIVE=yes) the live trader holds the UK runner all morning and emails
+    # what it backed: the hourly list stands down (a push still takes a snapshot)
+    if: github.event_name != 'schedule' || vars.TRADING_LIVE != 'yes'
+    # Betfair refuses API logins from the USA, where GitHub's own runners are (a 403 at the login, run 2): the job
+    # has to run on a machine in the UK or Ireland, registered as a self-hosted runner and named by the repository
+    # variable BETFAIR_RUNNER, e.g. 'self-hosted'. The repository is public, so that machine should be a dedicated
+    # server, not a personal computer, with workflow runs from outside contributors held for approval.
+    runs-on: ${{ vars.BETFAIR_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - name: Morning hours only (scheduled runs)
+        id: window
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          HOUR=$(TZ=Europe/London date +%H)
+          if [ "$EVENT" = schedule ] && { [ "$HOUR" -lt 8 ] || [ "$HOUR" -gt 11 ]; }; then
+            echo "outside 08:00-11:59 UK ($HOUR:xx): nothing to do"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.window.outputs.go == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.window.outputs.go == 'true' && runner.environment == 'github-hosted'
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Python on the UK server
+        # Python 3.12, the version CI tests, in a virtual environment kept between runs, made by uv (from PyPI):
+        # from the server's own 3.12 where it has one (Ubuntu 24.04), else from a 3.12 fetched once (26.04 has 3.14).
+        if: steps.window.outputs.go == 'true' && runner.environment != 'github-hosted'
+        run: |
+          VENV="$HOME/.venvs/ashcroft"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        if: steps.window.outputs.go == 'true'
+        run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
+
+      - name: Write the Betfair certificate
+        # Optional: certificate login when the secrets exist, otherwise the username and password.
+        if: steps.window.outputs.go == 'true'
+        env:
+          BETFAIR_CERT: ${{ secrets.BETFAIR_CERT }}
+          BETFAIR_KEY: ${{ secrets.BETFAIR_KEY }}
+        run: |
+          if [ -n "$BETFAIR_CERT" ] && [ -n "$BETFAIR_KEY" ]; then
+            mkdir -p "$HOME/.betfair/certs"
+            printf '%s\n' "$BETFAIR_CERT" > "$HOME/.betfair/certs/betfair.crt"
+            printf '%s\n' "$BETFAIR_KEY" > "$HOME/.betfair/certs/betfair.key"
+            chmod 600 "$HOME/.betfair/certs/betfair.key"
+            echo "BETFAIR_CERT_FILE=$HOME/.betfair/certs/betfair.crt" >> "$GITHUB_ENV"
+            echo "BETFAIR_KEY_FILE=$HOME/.betfair/certs/betfair.key" >> "$GITHUB_ENV"
+          fi
+
+      - name: Snapshot the win markets
+        if: steps.window.outputs.go == 'true'
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          UK_RUNNER: ${{ vars.BETFAIR_RUNNER }}
+        run: |
+          set -o pipefail
+          rm -rf out && mkdir -p out
+          if [ -z "$UK_RUNNER" ]; then
+            echo "Betfair refuses GitHub's own runners (403 at the login): set the repository variable BETFAIR_RUNNER to a self-hosted runner in the UK" | tee out/live_odds.log
+            exit 0
+          fi
+          if [ -z "$BETFAIR_APP_KEY" ]; then
+            echo "BETFAIR_APP_KEY is not set: save the delayed application key as that repository secret" | tee out/live_odds.log
+            exit 0
+          fi
+          date -u +"snapshot taken %Y-%m-%dT%H:%M:%SZ" | tee out/live_odds.log
+          python betfair_sync.py --live --csv out/live_odds.csv 2>&1 | tee -a out/live_odds.log
+
+      - name: Score the snapshot (the owner's staking)
+        if: steps.window.outputs.go == 'true' && hashFiles('out/live_odds.csv') != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          PRED_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          PRED_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: |
+          set -o pipefail
+          DAY=$(TZ=Europe/London date +%F)
+          python -c "import boto3, os, sys; boto3.client('s3', region_name=os.environ['PRED_REGION']).download_file(os.environ['PRED_BUCKET'], sys.argv[1], sys.argv[2])" \
+              "predictions/$DAY.csv" "out/predictions_$DAY.csv"
+          # the owner's limits (GBP300 a bet, GBP4,000 a day); the backs already sent today are kept on the server,
+          # so each hour's email marks the new ones and the day's limit counts the earlier ones
+          python scripts/score_live_prices.py --predictions "out/predictions_$DAY.csv" --live out/live_odds.csv \
+              --out out/scored.csv --max-stake 300 --max-day 4000 --seen "$HOME/.ashcroft/backs_sent_$DAY.csv" \
+              2>&1 | tee out/scored.txt
+
+      - name: Email the backs to the owner
+        if: steps.window.outputs.go == 'true' && hashFiles('out/scored.txt') != ''
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          REPORT_EMAIL: ${{ secrets.REPORT_EMAIL }}
+        run: python scripts/email_text.py --subject "Betfair backs $(TZ=Europe/London date '+%a %d %b %H:%M') UK" --file out/scored.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.window.outputs.go == 'true'
+        with:
+          name: live-odds-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 30

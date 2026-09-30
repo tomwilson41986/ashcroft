@@ -163,8 +163,13 @@ class BetfairClient:
             "Accept": "application/json",
         }
 
-        resp = self._session.post(url, json=params or {}, headers=headers)
-        resp.raise_for_status()
+        # A timeout, so a call can never hang the caller; Betfair's error body (e.g. INVALID_SESSION_INFORMATION)
+        # is kept in the message, so a caller can tell a lost session from anything else.
+        resp = self._session.post(url, json=params or {}, headers=headers, timeout=30)
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            raise requests.HTTPError(f"{exc}: {resp.text[:300]}", response=resp) from None
         data = resp.json()
 
         # Check for API-level errors
@@ -329,7 +334,9 @@ class BetfairClient:
                 continue
 
             market_status = book.get("status", "UNKNOWN")
-            total_matched = book.get("totalMatched", 0)
+            # The delayed application key returns no traded volume in the market book; the catalogue's
+            # figure for the market (when Betfair fills it) stands in for the race's matched money.
+            total_matched = book.get("totalMatched") or market.get("totalMatched") or 0
 
             for runner in book.get("runners", []):
                 sel_id = runner["selectionId"]

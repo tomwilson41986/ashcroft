@@ -1,20 +1,20 @@
-"""The Betfair Exchange, read-only, and a paper exchange that simulates orders against it.
+"""The Betfair Exchange: read-only data, a paper exchange that simulates orders, and the live exchange.
 
 BetfairData      reads markets and prices through betfair_client.BetfairClient (listMarketCatalogue,
-                 listMarketBook). It has no order methods: nothing in this package can place, change
-                 or cancel a bet on the exchange.
+                 listMarketBook). It has no order methods.
 PaperExchange    reads through BetfairData and simulates orders: a back fills at once against the book
                  last read, at the prices offered at or above its limit (as a fill-or-kill limit order
                  would), and the rest lapses; a lay at BSP is held until the market reconciles.
-
-Placing real orders is deliberately not built here: it is the owner's decision to enable, and
-TRADING.md says what it would take.
+LiveExchange     the owner's decision (30 Sep 2026): reads through BetfairData and places real orders on
+                 the owner's account, the same two kinds the paper exchange simulates. Only auto_trade.py
+                 --live makes one, and only with TRADING_LIVE=yes.
 """
 
 from __future__ import annotations
 
 import logging
 import math
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -228,6 +228,156 @@ class PaperExchange:
 
     def cancel_all(self, market_id=None) -> None:
         return None
+
+
+def _floor2(x: float) -> float:
+    return math.floor(float(x) * 100 + 1e-9) / 100
+
+
+class LiveExchange:
+    """Reads through BetfairData and places real orders on the owner's account.
+
+    A back is a limit order at the price read, filled at once or not at all (FILL_OR_KILL, at least `min_fill`):
+    nothing rests in the book, so a price that has moved is missed, never chased. The trade-out is a lay at the
+    Betfair SP for a liability (MARKET_ON_CLOSE), matched when the market reconciles at the off. Nothing is ever
+    cancelled: the only orders left open are those lays, and they are the hedges. When a reply is lost (a timeout,
+    a dropped connection) the order may still have been placed, so the exchange asks Betfair for the orders under
+    that reference before reporting a failure: a bet is never placed twice for want of an answer.
+    """
+
+    mode = "live"
+
+    def __init__(self, data: BetfairData):
+        self.data = data
+        self._n = 0
+
+    def login(self) -> None:
+        self.data.login()
+
+    def markets(self, start, end, countries=("GB", "IE")) -> list[Market]:
+        return self.data.markets(start, end, countries)
+
+    def books(self, market_ids: list[str], with_sp: bool = False) -> dict[str, Book]:
+        return self.data.books(market_ids, with_sp)
+
+    # ------------------------------------------------------------------ orders
+
+    def _call(self, method: str, params: dict):
+        """One API call; an expired session is logged in again and the call made once more (Betfair refuses a call
+        without a session before doing anything, so an order refused that way was not placed)."""
+        try:
+            return self.data.client._api_call(method, params)
+        except Exception as exc:
+            text = str(exc)
+            if "INVALID_SESSION" in text or "NO_SESSION" in text or "Not logged in" in text:
+                log.warning("Betfair session lost on %s (%s); logging in again", method, text[:120])
+                self.data.client.login()
+                return self.data.client._api_call(method, params)
+            raise
+
+    def _place(self, market_id: str, instruction: dict, ref: str) -> dict | None:
+        """placeOrders for one instruction; None when the reply was lost."""
+        self._n += 1
+        params = {"marketId": market_id, "instructions": [instruction],
+                  "customerRef": f"{ref[:22]}-{int(time.time()) % 100000}-{self._n % 100}"[:32]}
+        try:
+            return self._call("placeOrders", params) or {}
+        except Exception as exc:
+            log.error("placeOrders %s %s: no reply (%s); asking Betfair what was placed", market_id, ref, exc)
+            return None
+
+    def orders(self, market_ids: list[str], refs: list[str] | None = None) -> list[dict]:
+        """Our orders on these markets as Betfair holds them (listCurrentOrders: open, and matched but not yet
+        settled), optionally only those under the given references."""
+        out, start = [], 0
+        while True:
+            params = {"marketIds": list(market_ids), "orderProjection": "ALL", "fromRecord": start,
+                      "recordCount": 1000}
+            if refs:
+                params["customerOrderRefs"] = list(refs)
+            reply = self._call("listCurrentOrders", params) or {}
+            got = reply.get("currentOrders", []) or []
+            out += got
+            if not reply.get("moreAvailable") or not got:
+                return out
+            start += len(got)
+
+    @staticmethod
+    def _report(reply: dict) -> tuple[dict, bool]:
+        reps = reply.get("instructionReports") or [{}]
+        rep = reps[0] or {}
+        ok = reply.get("status") == "SUCCESS" and rep.get("status", "SUCCESS") == "SUCCESS"
+        return rep, ok
+
+    def back(self, market_id, selection_id, price, size, ref, min_fill: float = 2.0) -> Fill:
+        size = _floor2(size)
+        fill = Fill(market_id=market_id, selection_id=int(selection_id), side="BACK", order_type="LIMIT",
+                    price=float(price), size=size)
+        instruction = {"selectionId": int(selection_id), "handicap": 0, "side": "BACK", "orderType": "LIMIT",
+                       "customerOrderRef": ref[:32],
+                       "limitOrder": {"size": size, "price": float(price), "persistenceType": "LAPSE",
+                                      "timeInForce": "FILL_OR_KILL", "minFillSize": _floor2(min(min_fill, size))}}
+        reply = self._place(market_id, instruction, ref)
+        if reply is None:                                  # placed or not? Betfair's own record decides
+            return self._confirm_back(fill, ref)
+        rep, ok = self._report(reply)
+        fill.bet_id = str(rep.get("betId") or "")
+        matched = _floor2(rep.get("sizeMatched") or 0.0)
+        if ok and matched > 0:
+            fill.matched, fill.avg_price, fill.status = matched, float(rep.get("averagePriceMatched") or price), "SUCCESS"
+        else:
+            fill.status = "FAILURE"
+            fill.error = str(rep.get("errorCode") or reply.get("errorCode") or rep.get("orderStatus") or "NOT_MATCHED")
+        return fill
+
+    def _confirm_back(self, fill: Fill, ref: str) -> Fill:
+        try:
+            got = [o for o in self.orders([fill.market_id], [ref[:32]])
+                   if o.get("side") == "BACK" and int(o.get("selectionId", 0)) == fill.selection_id]
+        except Exception as exc:
+            fill.status, fill.error = "UNKNOWN", f"no reply, and the orders could not be read: {exc}"[:200]
+            return fill
+        # the orders under this reference may include earlier fills of the same horse today: the newest is ours
+        got.sort(key=lambda o: str(o.get("placedDate", "")))
+        if got and float(got[-1].get("sizeMatched") or 0) > 0:
+            o = got[-1]
+            fill.bet_id, fill.status = str(o.get("betId") or ""), "SUCCESS"
+            fill.matched, fill.avg_price = _floor2(o["sizeMatched"]), float(o.get("averagePriceMatched") or fill.price)
+            fill.error = "reply lost; confirmed from Betfair's orders"
+        else:
+            fill.status, fill.error = "FAILURE", "reply lost; no matched order found under the reference"
+        return fill
+
+    def lay_at_bsp(self, market_id, selection_id, liability, ref) -> Fill:
+        liability = _floor2(liability)
+        fill = Fill(market_id=market_id, selection_id=int(selection_id), side="LAY", order_type="MARKET_ON_CLOSE",
+                    price=0.0, size=liability)
+        instruction = {"selectionId": int(selection_id), "handicap": 0, "side": "LAY", "orderType": "MARKET_ON_CLOSE",
+                       "customerOrderRef": ref[:32], "marketOnCloseOrder": {"liability": liability}}
+        reply = self._place(market_id, instruction, ref)
+        if reply is None:
+            try:
+                have = sum(float(o.get("bspLiability") or 0) for o in self.orders([market_id], [ref[:32]])
+                           if o.get("side") == "LAY" and int(o.get("selectionId", 0)) == int(selection_id))
+            except Exception as exc:
+                fill.status, fill.error = "UNKNOWN", f"no reply, and the orders could not be read: {exc}"[:200]
+                return fill
+            fill.status = "PENDING" if have + 0.01 >= liability else "FAILURE"
+            fill.error = f"reply lost; Betfair holds GBP{have:.2f} of lays at SP under the reference"
+            return fill
+        rep, ok = self._report(reply)
+        fill.bet_id = str(rep.get("betId") or "")
+        if ok:
+            fill.status = "PENDING"                        # matched at the off, at the Betfair SP
+        else:
+            fill.status = "FAILURE"
+            fill.error = str(rep.get("errorCode") or reply.get("errorCode") or "FAILURE")
+        return fill
+
+    def cancel_all(self, market_id=None) -> None:
+        """Nothing to cancel: the backs are fill-or-kill, and the only open orders are the lays at SP that hedge
+        them. The kill switch stops new bets; it never unhedges a position."""
+        log.warning("live: the kill switch stops new bets; the open lays at SP are the hedges and stay")
 
 
 def uk_day_window(day, now: datetime | None = None) -> tuple[datetime, datetime]:

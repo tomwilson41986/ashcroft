@@ -1,8 +1,9 @@
-"""The paper-trading settings.
+"""The trading settings.
 
-A setting comes from trading/config.json, then from an environment variable TRADING_<NAME>
-(so a repository variable can change it without a commit), then from the command line.
-The trader is paper only: it simulates orders against Betfair's live prices and places none.
+A setting comes from trading/config.json (the paper forward test) or trading/config_live.json (the owner's
+live book), then from an environment variable TRADING_<NAME> (so a repository variable can change it without a
+commit), then from the command line. The paper trader simulates orders against Betfair's live prices and places
+none; the live trader (auto_trade.py --live, and only with TRADING_LIVE=yes) places them.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import os
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-STRATEGIES = ("rule", "value", "owner", "race_kelly")
+STRATEGIES = ("rule", "value", "owner", "race_kelly", "closing_clv")
 STAKINGS = ("level", "to_win", "kelly")
 
 
@@ -28,13 +29,15 @@ class Limits:
     min_price: float = 1.5
     max_price: float = 30.0
     min_market_matched: float = 500.0    # the market's matched volume before we trade, £
+    min_runner_matched: float = 100.0    # closing_clv: the runner's matched money before we back it (when reported), £
+    min_bsp_liability: float = 10.0      # the smallest lay at BSP sent; a smaller trade-out waits for more fills, £
     liquidity_share: float = 0.5         # of the size offered at the best back price
 
 
 @dataclass
 class TradingConfig:
-    strategy: str = "rule"               # rule | value | owner | race_kelly
-    staking: str = "level"               # level | to_win | kelly (race_kelly always stakes Kelly)
+    strategy: str = "rule"               # rule | value | owner | race_kelly | closing_clv
+    staking: str = "level"               # level | to_win | kelly (race_kelly: Kelly; closing_clv: to win before commission)
     unit: float = 5.0                    # level stake, £
     target: float = 10.0                 # stake to win this much after commission, £
     kelly_fraction: float = 0.25
@@ -42,6 +45,10 @@ class TradingConfig:
     margin: float = 0.2                  # rule: back where ln(best back / model price) >= margin
     min_edge: float = 0.02               # value, owner: expected profit per unit on the pooled price
     underlay: float = 0.10               # owner: back the favourite down to this far under fair
+    clv_bar: float = 0.03                # closing_clv: back where the expected CLV at the best back is at least this
+    closing_model: str = "data/models/closing_model.json"              # closing_clv: the closing model
+    closing_model_novol: str = "data/models/closing_model_novol.json"  # ... for a race whose feed has no volume
+    clv_draws: int = 20000               # closing_clv: draws of the BSP book per race
     commission: float = 0.05
     trade_from: str = "08:00"            # UK time: the tested edge is on the morning price
     trade_until: str = "11:00"

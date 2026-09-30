@@ -1,0 +1,40 @@
+{
+ "fitted_on": "January-March 2026, as data/models/closing_model.json (2,504 whole races), with every runner's matched money set to nothing: the closing model for a price feed without traded volume (Betfair's delayed application key). Walk-forward Feb-Mar at a backer's price, the owner's rule at +3%: CLV +5.3% (+4.3 to +6.2) against +6.7% with volume.",
+ "features": [
+  "lq_market",
+  "lq_model",
+  "vol",
+  "lq_market_x_vol",
+  "lq_model_x_vol",
+  "lq_market_x_depth",
+  "lq_model_x_depth"
+ ],
+ "beta": [
+  0.7740312675756482,
+  0.2626841875491709,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "vol_mean": 0.0,
+ "vol_sd": 1.0,
+ "depth_mean": 0.0,
+ "depth_sd": 1.0,
+ "band_edges": [
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "band_sigma": [
+  0.4393607654341079,
+  0.4393607654341079,
+  0.4393607654341079,
+  0.4393607654341079,
+  0.347008863377325
+ ],
+ "book": 1.0014819852524603,
+ "n_train": 22003
+}
