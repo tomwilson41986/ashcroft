@@ -128,22 +128,34 @@ moment of decision, on the card as known that morning. The criterion to go furth
 least three weeks and 1,000 simulated trades, the stake-weighted CLV and the settled traded-out return
 both above zero with their 90% intervals clear of it.
 
-## Live execution: not built, the owner's decision
+## Live execution (the owner's decision, 30 Sep 2026)
 
-Placing real orders was started and then stopped: the session's permission system classed automatic
-order placement as a real-world transaction and blocked it, and that is the owner's call, not the
-code's. Nothing here can place a bet. To go live later the owner would need to:
+The owner chose to trade live from the start, without a paper period, and set the limits; the session's
+permission mode was changed by the owner to allow the work. `auto_trade.py --live` with
+`trading/config_live.json` and the workflow `live-trade.yml` place real orders on the owner's account:
 
-1. **Decide and grant it**: allow this work to build and run live order placement (a permission rule in
-   Claude Code's settings, or an explicit instruction in a session where it is permitted).
-2. **Betfair API access**: a live application key (requested) stored as the GitHub secret
-   `BETFAIR_APP_KEY`, never in code or chat; the delayed key serves the paper trader meanwhile.
-3. **Non-interactive login**: a self-signed certificate uploaded to the Betfair account (Security
-   settings, automated betting program access) and its `.crt` and `.key` stored as the secrets
-   `BETFAIR_CERT` and `BETFAIR_KEY`.
-4. **A bank and limits** chosen by the owner: the money in the account, the largest stake, race and daily
-   exposure, and the daily stop-loss.
-5. **The forward test passed** (above), on the model that would trade.
+- **The rule** (`closing_clv`, trading/strategy.py): 08:00-11:00 UK, polled every minute, every runner of a race
+  priced whole whose expected CLV at the best back price is at least +3% under the closing model
+  (`model/race_book.py`; the model fitted without volume when the delayed key's feed carries none), with at least
+  GBP100 matched on it when the feed reports matched money. Staked to win GBP250 before commission.
+- **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, at most
+  GBP4,000 staked a day; when the day's limit binds, each poll's backs go in order of expected CLV.
+- **Orders**: a back is a limit order at the price read, FILL_OR_KILL (at least GBP2), so nothing rests in the
+  book; each matched back is laid at once at the Betfair SP for its winnings (MARKET_ON_CLOSE, liability stake x
+  (price - 1)), so the price's move is kept whatever the result. A refused lay is sent again each minute, five
+  times at most; nothing is ever cancelled (the open lays are the hedges).
+- **Never twice**: every order is on record at once (the ledger, copied to S3 after each); a session that starts
+  again takes up the day from the ledger and from Betfair's own list of the orders (listCurrentOrders), and a lost
+  reply is settled by that list before anything else is sent. An order whose fate cannot be read stops the day.
+- **The switches**: the repository variable `TRADING_LIVE` must be `yes` for any order; the job runs only on the UK
+  runner named by `BETFAIR_RUNNER` (Betfair refuses GitHub's own runners). To stop at once: cancel the running
+  "Live trading" run, or create the S3 object `trading/STOP` (no new bets within a minute).
+- **The record**: s3://$ULTRA_BETTING_S3_BUCKET/trading/live/<day>/ (ledger and summary), emailed after the
+  morning session and after the evening settlement (each race's result, the BSP, the CLV, commission on the net).
+
+Still the owner's to supply: a live application key restores the matched money the delayed key leaves out
+(worth about a quarter of the backtested CLV), and a certificate (`BETFAIR_CERT`, `BETFAIR_KEY`) makes the login
+non-interactive. The backtest behind the rule covers February-March 2026 only; the live record is the test now.
 
 The old `execute.yml` workflow (disabled by hand on 19 Aug) places live bets by default and has known
 faults (real bets never settle, the stop-loss never counts them, the timing window is unused, the

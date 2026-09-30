@@ -163,8 +163,13 @@ class BetfairClient:
             "Accept": "application/json",
         }
 
-        resp = self._session.post(url, json=params or {}, headers=headers)
-        resp.raise_for_status()
+        # A timeout, so a call can never hang the caller; Betfair's error body (e.g. INVALID_SESSION_INFORMATION)
+        # is kept in the message, so a caller can tell a lost session from anything else.
+        resp = self._session.post(url, json=params or {}, headers=headers, timeout=30)
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            raise requests.HTTPError(f"{exc}: {resp.text[:300]}", response=resp) from None
         data = resp.json()
 
         # Check for API-level errors

@@ -431,12 +431,14 @@ def market_now(back, lay) -> np.ndarray:
 
 
 def race_expected_clv(back, lay, model_price, matched, model: ClosingModel, n_draws: int = 50000,
-                      rng=None) -> tuple[np.ndarray, np.ndarray]:
+                      rng=None, market=None) -> tuple[np.ndarray, np.ndarray]:
     """One race's expected CLV at every runner's best back price: E[back / BSP] - 1 over the closing model's draws
-    of the BSP book, from the market's price now (market_now), our price and each runner's matched money (zeros
-    when the feed carries none: use a model fitted without volume). Returns (expected CLV, 1 / E[1 / BSP])."""
+    of the BSP book, from the market's price now (market_now, or ``market`` when given), our price and each
+    runner's matched money (zeros when the feed carries none: use a model fitted without volume). Returns
+    (expected CLV, 1 / E[1 / BSP]); a runner with no back price has no expected CLV (NaN)."""
     back = np.asarray(back, float)
-    d = pd.DataFrame({"race": 0, "morningwap": market_now(back, lay), "predicted_bfsp": np.asarray(model_price, float),
+    now = market_now(back, lay) if market is None else np.asarray(market, float)
+    d = pd.DataFrame({"race": 0, "morningwap": now, "predicted_bfsp": np.asarray(model_price, float),
                       "morning_vol": np.asarray(matched, float)})
     inputs = closing_inputs(d)
     g = np.zeros(len(d), int)

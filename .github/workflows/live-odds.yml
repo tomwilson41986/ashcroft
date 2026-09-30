@@ -25,6 +25,9 @@ concurrency:
 
 jobs:
   snapshot:
+    # while the owner trades live (TRADING_LIVE=yes) the live trader holds the UK runner all morning and emails
+    # what it backed: the hourly list stands down (a push still takes a snapshot)
+    if: github.event_name != 'schedule' || vars.TRADING_LIVE != 'yes'
     # Betfair refuses API logins from the USA, where GitHub's own runners are (a 403 at the login, run 2): the job
     # has to run on a machine in the UK or Ireland, registered as a self-hosted runner and named by the repository
     # variable BETFAIR_RUNNER, e.g. 'self-hosted'. The repository is public, so that machine should be a dedicated

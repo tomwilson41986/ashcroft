@@ -80,6 +80,12 @@ python betfair_sync.py --upcoming
 # Export live odds to CSV
 python betfair_sync.py --live --csv live_odds.csv
 
+# Live trading on the owner's account (the owner's decision, 30 Sep 2026; TRADING.md): the owner's rule, GBP250 to
+# win, at most GBP300 a bet and GBP4,000 a day, each back laid at the SP. Places real orders only with
+# TRADING_LIVE=yes, and only on the UK runner (live-trade.yml); the S3 object trading/STOP stops new bets
+TRADING_LIVE=yes python auto_trade.py --live --until 11:05
+python auto_trade.py --live --settle
+
 # --- Research toolkit (see RESEARCH_FRAMEWORK.md) ---
 # Model-vs-market scoring (Murphy decomposition, skill vs BSP, concordance, drift)
 python research_lab.py score --predictions data/oos_predictions.csv

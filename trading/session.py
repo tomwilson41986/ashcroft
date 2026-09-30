@@ -33,6 +33,15 @@ LEDGER_FIELDS = [
     "target", "asked", "matched", "avg_price", "bet_id", "status", "error", "hedged", "hedge_liability",
     "result", "bsp", "clv", "pnl_back", "pnl_lay", "pnl", "commission",
 ]
+MAX_HEDGE_TRIES = 5
+
+
+def _num(x) -> float:
+    """A ledger value as a number (a restored ledger holds strings; a blank is NaN)."""
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return float("nan")
 
 
 @dataclass
@@ -44,6 +53,7 @@ class Position:
     cost: float = 0.0                    # sum of matched stake x price
     hedged: bool = False
     hedge_liability: float = 0.0
+    hedge_failures: int = 0              # lays at BSP refused; after MAX_HEDGE_TRIES the position is left to settle
     settled: bool = False
 
     @property
@@ -63,11 +73,12 @@ def _hhmm(s: str):
 
 class Session:
     def __init__(self, exchange, predictions: pd.DataFrame, cfg, day: date, *, kill=None, clock=None,
-                 sleep=None, ledger_path: str | None = None):
+                 sleep=None, ledger_path: str | None = None, on_flush=None):
         self.x = exchange
         self.cfg = cfg
         self.day = day
-        self.mode = "paper"
+        self.mode = getattr(exchange, "mode", "paper")     # live: the orders are real (trading/exchange.py)
+        self.on_flush = on_flush                           # called after each write of the ledger (live: to S3)
         self.kill = kill or (lambda: False)
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.sleep = sleep or _time.sleep
@@ -112,14 +123,22 @@ class Session:
                     and (m.start - now) <= timedelta(minutes=self.cfg.trade_out_before_off)
                     and any(p.matched > 0 and not p.hedged for (mid, _), p in self.positions.items()
                             if mid == m.market_id)]
+        # closing on the fill: a lay at BSP that did not go through (or waited for a bigger liability) is sent again
+        to_hedge += [m for m in ahead.values() if self.cfg.trade_out and self.cfg.trade_out_at == "fill"
+                     and any(p.matched > 0 and not p.hedged and p.hedge_failures < MAX_HEDGE_TRIES
+                             and self._unhedged(p) >= self.cfg.limits.min_bsp_liability
+                             for (mid, _), p in self.positions.items() if mid == m.market_id)]
         to_settle = [m for mid, m in self.markets.items() if now - m.start >= timedelta(minutes=5)
                      and any(not p.settled and p.matched > 0 for (pm, _), p in self.positions.items() if pm == mid)]
         ids = list(dict.fromkeys([m.market_id for m in to_hedge + to_trade]))
         books = self.x.books(ids) if ids else {}
         for m in to_hedge:
             self.close_out(m, now)
-        for m in to_trade:
-            self.trade(m, books.get(m.market_id), now)
+        # every race's plan first, then the orders by expected value: when a limit binds, the best go first
+        planned = [(m, books.get(m.market_id), d) for m in to_trade for d in self.plan(m, books.get(m.market_id))]
+        planned.sort(key=lambda t: -(t[2].edge if np.isfinite(t[2].edge) else -1e9))
+        for m, book, d in planned:
+            self.execute(m, book, d, now)
         if to_settle:
             done = self.x.books([m.market_id for m in to_settle], with_sp=True)
             for m in to_settle:
@@ -154,61 +173,94 @@ class Session:
     # ------------------------------------------------------------------ one race
 
     def trade(self, m: Market, book: Book | None, now: datetime) -> None:
+        for d in self.plan(m, book):
+            self.execute(m, book, d, now)
+
+    def plan(self, m: Market, book: Book | None) -> list:
+        """The strategy's decisions for one open race, from its book and the model's prices."""
         if book is None or book.status != "OPEN" or book.inplay:
-            return
+            return []
         views = []
         for sid, q in book.runners.items():
             bb, bl = q.best_back, q.best_lay
             views.append(RunnerView(selection_id=sid, name=m.runners.get(sid, str(sid)),
                                     model_price=self.prices.get((m.market_id, sid)),
                                     back=bb[0] if bb else None, back_size=bb[1] if bb else 0.0,
-                                    lay=bl[0] if bl else None, last_traded=q.last_traded, status=q.status))
-        for d in plan_race(views, self.cfg, self.bank()):
-            key = (m.market_id, d.selection_id)
-            pos = self.positions.get(key)
-            want = d.target - (pos.matched if pos else 0.0)
-            if want < self.cfg.limits.min_stake:
-                continue
-            stake, why = allowed_stake(want, d.price, m.market_id, book.total_matched, d.back_size,
-                                       self.state, self.cfg.limits)
-            base = self._row(now, "back", m, d.selection_id, d.name, strategy=self.cfg.strategy,
-                             staking=self.cfg.staking, reason=d.reason, p_model=d.p_model, p_market=d.p_market,
-                             p_pool=d.p_pool, edge=d.edge, move=d.move, best_back=d.price, back_size=d.back_size,
-                             target=d.target)
-            if stake <= 0:
-                if (key, why) not in self._skips:            # one line per runner and reason, not one per poll
-                    self._skips.add((key, why))
-                    self.ledger.append({**base, "event": "skip", "error": why})
-                continue
-            fill = self.x.back(m.market_id, d.selection_id, d.price, stake,
-                               ref=f"ash{self.day:%m%d}{d.selection_id}"[:32], min_fill=self.cfg.limits.min_stake)
-            if fill.matched > 0:
-                pos = self.positions.setdefault(key, Position(m.market_id, d.selection_id, d.name))
-                pos.matched += fill.matched
-                pos.cost += fill.matched * fill.avg_price
-                self.state.record(m.market_id, fill.matched)
-            self.ledger.append({**base, "asked": stake, "matched": fill.matched, "avg_price": fill.avg_price,
-                                "bet_id": fill.bet_id, "status": fill.status, "error": fill.error})
-            if fill.matched > 0 and self.cfg.trade_out and self.cfg.trade_out_at == "fill":
-                self._lay_at_bsp(m, pos, round(fill.matched * (fill.avg_price - 1.0), 2), now)
+                                    lay=bl[0] if bl else None, last_traded=q.last_traded, status=q.status,
+                                    traded=q.traded))
+        return plan_race(views, self.cfg, self.bank())
+
+    def execute(self, m: Market, book: Book, d, now: datetime) -> None:
+        """Back the difference between a decision's target and what is matched already, within the limits."""
+        key = (m.market_id, d.selection_id)
+        pos = self.positions.get(key)
+        want = d.target - (pos.matched if pos else 0.0)
+        if self.cfg.strategy == "closing_clv" and pos and pos.matched > 0:
+            # a fixed win: only what is left to win, at the price now, within the per-bet limit, so a horse
+            # that has shortened since it was backed is not topped up beyond the target
+            left = self.cfg.target - pos.matched * (pos.avg_price - 1.0)
+            want = min(left / (d.price - 1.0), self.cfg.limits.max_stake - pos.matched)
+        if want < self.cfg.limits.min_stake:
+            return
+        stake, why = allowed_stake(want, d.price, m.market_id, book.total_matched, d.back_size,
+                                   self.state, self.cfg.limits)
+        base = self._row(now, "back", m, d.selection_id, d.name, strategy=self.cfg.strategy,
+                         staking=self.cfg.staking, reason=d.reason, p_model=d.p_model, p_market=d.p_market,
+                         p_pool=d.p_pool, edge=d.edge, move=d.move, best_back=d.price, back_size=d.back_size,
+                         target=d.target)
+        if stake <= 0:
+            if (key, why) not in self._skips:                # one line per runner and reason, not one per poll
+                self._skips.add((key, why))
+                self.ledger.append({**base, "event": "skip", "error": why})
+            return
+        fill = self.x.back(m.market_id, d.selection_id, d.price, stake,
+                           ref=f"ash{self.day:%m%d}{d.selection_id}"[:32], min_fill=self.cfg.limits.min_stake)
+        if fill.matched > 0:
+            pos = self.positions.setdefault(key, Position(m.market_id, d.selection_id, d.name))
+            pos.matched += fill.matched
+            pos.cost += fill.matched * fill.avg_price
+            self.state.record(m.market_id, fill.matched)
+        if fill.status == "UNKNOWN":                         # placed or not cannot be told: no more bets today
+            self.state.stopped = f"order state unknown on {m.market_id} {d.selection_id}: {fill.error}"
+            log.error("%s", self.state.stopped)
+        self.ledger.append({**base, "asked": stake, "matched": fill.matched, "avg_price": fill.avg_price,
+                            "bet_id": fill.bet_id, "status": fill.status, "error": fill.error})
+        if fill.matched > 0 and self.cfg.trade_out and self.cfg.trade_out_at == "fill":
+            self._lay_at_bsp(m, pos, self._unhedged(pos), now)
+        self.flush()                                         # an order on record at once, not at the poll's end
+
+    @staticmethod
+    def _unhedged(pos: Position) -> float:
+        """The liability still to lay at BSP: the position's winnings less the lays already sent."""
+        return round(pos.matched * (pos.avg_price - 1.0) - pos.hedge_liability, 2)
 
     def close_out(self, m: Market, now: datetime) -> None:
         """Lay each open position at BSP with the position's unhedged winnings as the liability."""
         for (mid, sid), pos in self.positions.items():
             if mid != m.market_id or pos.hedged or pos.matched <= 0:
                 continue
-            self._lay_at_bsp(m, pos, round(pos.matched * (pos.avg_price - 1.0) - pos.hedge_liability, 2), now)
+            self._lay_at_bsp(m, pos, self._unhedged(pos), now)
 
     def _lay_at_bsp(self, m: Market, pos: Position, liability: float, now: datetime) -> None:
-        """A simulated lay at BSP for `liability`: if the runner wins it costs what the backs win; if it
-        loses it wins liability / (BSP - 1). Across fills the liabilities add up to the position's winnings."""
-        if liability < 1.0:
+        """A lay at BSP for `liability` (simulated on paper, placed when live): if the runner wins it costs what
+        the backs win; if it loses it wins liability / (BSP - 1). Across fills the liabilities add up to the
+        position's winnings. A liability under the smallest Betfair takes waits for the next fill or poll."""
+        if liability < max(1.0, self.cfg.limits.min_bsp_liability):
             return
         fill = self.x.lay_at_bsp(m.market_id, pos.selection_id, liability,
                                  ref=f"ash{self.day:%m%d}{pos.selection_id}x"[:32])
         if fill.status in ("PENDING", "SUCCESS"):
             pos.hedge_liability = round(pos.hedge_liability + liability, 2)
             pos.hedged = pos.hedge_liability >= round(pos.matched * (pos.avg_price - 1.0), 2) - 0.01
+        elif fill.status == "UNKNOWN":                       # hedged or not cannot be told: never lay it twice
+            pos.hedge_failures = MAX_HEDGE_TRIES
+            self.state.stopped = f"trade-out state unknown on {m.market_id} {pos.selection_id}: {fill.error}"
+            log.error("%s", self.state.stopped)
+        else:
+            pos.hedge_failures += 1
+            if pos.hedge_failures >= MAX_HEDGE_TRIES:
+                log.error("lay at BSP refused %d times on %s %s (%s): left to the result", pos.hedge_failures,
+                          m.market_id, pos.selection_id, fill.error)
         self.ledger.append({**self._row(now, "trade_out", m, pos.selection_id, pos.name), "asked": liability,
                             "bet_id": fill.bet_id, "status": fill.status, "error": fill.error,
                             "matched": pos.matched, "avg_price": round(pos.avg_price, 4), "hedged": pos.hedged,
@@ -296,12 +348,57 @@ class Session:
             w = csv.DictWriter(f, fieldnames=LEDGER_FIELDS, extrasaction="ignore")
             w.writeheader()
             w.writerows(self.ledger)
+        if self.on_flush is not None:
+            try:
+                self.on_flush(path, len(self.ledger))
+            except Exception as exc:                         # a copy that failed is tried again next flush
+                log.warning("ledger copy failed: %s", exc)
+
+    def sync(self, orders: list[dict]) -> None:
+        """Take today's positions from Betfair's own record of our orders (live): what is matched on each runner
+        and what is laid at SP against it. Where Betfair and the ledger differ, Betfair is right, so a job that
+        starts again never backs a horse a second time for want of its own notes."""
+        prefix = f"ash{self.day:%m%d}"
+        got: dict = {}
+        for o in orders:
+            if not str(o.get("customerOrderRef", "")).startswith(prefix):
+                continue
+            key = (str(o["marketId"]), int(o["selectionId"]))
+            g = got.setdefault(key, {"matched": 0.0, "cost": 0.0, "laid": 0.0})
+            if o.get("side") == "BACK":
+                size = float(o.get("sizeMatched") or 0.0)
+                g["matched"] += size
+                g["cost"] += size * float(o.get("averagePriceMatched") or 0.0)
+            elif o.get("side") == "LAY" and o.get("orderType") == "MARKET_ON_CLOSE":
+                g["laid"] += float(o.get("bspLiability") or 0.0)
+        now = self.clock()
+        for key, g in got.items():
+            if g["matched"] <= 0:
+                continue
+            pos = self.positions.get(key)
+            if pos and abs(pos.matched - g["matched"]) < 0.01 and abs(pos.hedge_liability - g["laid"]) < 0.01:
+                continue
+            m = self.markets.get(key[0]) or Market(key[0], "", "", now)
+            name = m.runners.get(key[1], pos.name if pos else str(key[1]))
+            before = pos.matched if pos else 0.0
+            pos = self.positions.setdefault(key, Position(key[0], key[1], name))
+            self.state.turnover += g["matched"] - before
+            self.state.race_stake[key[0]] = self.state.race_stake.get(key[0], 0.0) + g["matched"] - before
+            if before <= 0:
+                self.state.bets += 1
+            pos.matched, pos.cost, pos.hedge_liability = g["matched"], g["cost"], g["laid"]
+            pos.hedged = pos.hedge_liability >= round(pos.matched * (pos.avg_price - 1.0), 2) - 0.01
+            self.ledger.append({**self._row(now, "sync", m, key[1], name), "matched": round(pos.matched, 2),
+                                "avg_price": round(pos.avg_price, 4), "hedge_liability": pos.hedge_liability,
+                                "hedged": pos.hedged, "error": f"from Betfair's orders (ledger had {before:.2f})"})
+            log.warning("positions from Betfair: %s %s matched %.2f (the ledger had %.2f)", key[0], key[1],
+                        pos.matched, before)
 
     def summary(self) -> dict:
-        backs = [r for r in self.ledger if r["event"] == "back" and (r.get("matched") or 0) > 0]
+        backs = [r for r in self.ledger if r["event"] == "back" and _num(r.get("matched")) > 0]
         settled = [r for r in self.ledger if r["event"] == "settle"]
-        stakes = np.array([r["matched"] for r in settled], float)
-        clvs = np.array([r["clv"] for r in settled], float)
+        stakes = np.array([_num(r.get("matched")) for r in settled], float)
+        clvs = np.array([_num(r.get("clv")) for r in settled], float)
         ok = np.isfinite(clvs) & (stakes > 0)
         return {
             "mode": self.mode, "day": str(self.day), "strategy": self.cfg.strategy, "staking": self.cfg.staking,
