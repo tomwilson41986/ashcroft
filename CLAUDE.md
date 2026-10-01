@@ -110,10 +110,13 @@ python evaluate_oos.py --feature-cache .feature_cache --refresh-cache
 
 # Betfair historic price files: fetch (not from Cloudflare-blocked hosts), load, match, coverage
 python betfair_prices.py --fetch --days 3 --load --match --report
-# ... on the owner's UK server: fetch and archive to s3://$CAPTURE_BUCKET/betfair_prices_raw/ (live-record.yml
-# daily, betfair-prices.yml for backfills); the nightly job loads what the database lacks
-python betfair_prices.py --fetch --days 5 --dir ~/.ashcroft/betfair_raw --push-s3
-python betfair_prices.py --pull-s3 --load --match --dir data/betfair_raw
+# ... on the owner's UK server: every file Betfair lists, all markets (the owner's ask, 1 Oct), archived slowly to
+# s3://$CAPTURE_BUCKET/betfair_prices_raw/, one file at a time: what the archive lacks and the last week again, the last
+# week first, then UK/IE racing, then the rest, newest first (betfair-prices.yml nightly from 22:30 UTC, stopping by
+# 06:15; live-record.yml after the last race for the UK/IE files); the nightly job loads UK/IE racing from 2018
+python betfair_prices.py --archive --max-minutes 10
+python betfair_prices.py --archive --market ukwin,ukplace,irewin,ireplace --refresh-days 2 --max-minutes 5
+python betfair_prices.py --pull-s3 --load --match --dir data/betfair_raw --load-from 2018-01-01 --max-files 2500
 
 # The live market record (the owner's ask, 30 Sep): every book the trader reads (BETFAIR_RECORD=1) and all-day
 # snapshots on the UK server, raw to s3://$CAPTURE_BUCKET/betfair_live/<day>/; the nightly load builds
@@ -153,7 +156,7 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
 - `model/trainer.py` — Win probability model (classification)
 - `model/abm/` — Monte-Carlo race simulator (pace / traffic / draw) → `abm_*` features
 - `model/diagnostics.py`, `effects.py`, `causal.py`, `selection.py`, `uncertainty.py`, `spatial.py`, `interpret.py`, `perf_figures.py`, `market_features.py` — research toolkit (RESEARCH_FRAMEWORK.md)
-- `betfair_prices.py` — Betfair historic SP/price-movement files → `betfair_prices` table (fetched on the UK server, archived in S3, loaded by daily-results.yml)
+- `betfair_prices.py` — Betfair historic SP/price-movement files, every market Betfair lists, archived in S3 from the UK server (`--archive`); UK/IE racing → `betfair_prices` table, each day file noted in `betfair_prices_files` (loaded by daily-results.yml)
 - `betfair_recorder.py` — the live market record (read-only): the trader's books (hook in `trading/exchange.py BetfairData`) and the recorder job's snapshots (live-record.yml), day files on the UK server and in S3, loaded nightly into `betfair_live_markets`, `betfair_live_marks`, `live_orders`
 - S3 bucket: `horseracingresults`, key: `horse_racing.db`
 
