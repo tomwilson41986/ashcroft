@@ -525,3 +525,149 @@ def test_the_email_shows_each_race_and_the_running_total(monkeypatch):
     assert subject == "Ashcroft live trading 2026-10-01: settled -2.50 on GBP100.00 (10 bets), CLV +20.0%"
     auto_trade.email({**summary, "stake_weighted_clv": None})       # no CLV yet, no races: still sent
     assert sent[1][1].endswith("CLV n/a")
+
+
+# ---------------------------------------------------------------- short of funds (1 Oct: the morning's exposure)
+
+class _Short(_Client):
+    """Betfair refusing every order as a whole for want of funds while `short`, as it did from 10:19 UK on 1 Oct."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.short = True
+
+    def _api_call(self, method, params):
+        if method == "placeOrders" and self.short:
+            self.calls.append((method, params))
+            return {"status": "FAILURE", "errorCode": "INSUFFICIENT_FUNDS",
+                    "instructionReports": [{"status": "FAILURE", "errorCode": "ERROR_IN_ORDER"}]}
+        return super()._api_call(method, params)
+
+
+class _Funded(_Data):
+    def __init__(self, *a, funds=None, **kw):
+        super().__init__(*a, **kw)
+        self.available, self.reads = funds, 0
+
+    def funds(self):
+        self.reads += 1
+        return None if self.available is None else {"available": self.available, "exposure": -1490.84}
+
+
+def test_a_refused_order_keeps_betfairs_own_reason():
+    x = LiveExchange(_Data(_Short()))
+    assert x.back("1.5", 7, 10.0, 20.0, "ash10017").error == "INSUFFICIENT_FUNDS (ERROR_IN_ORDER)"
+    assert x.lay_at_bsp("1.5", 7, 250.0, "ash10017x").error == "INSUFFICIENT_FUNDS (ERROR_IN_ORDER)"
+    why = LiveExchange._reason
+    assert why({"errorCode": "PROCESSED_WITH_ERRORS"}, {"errorCode": "INVALID_BET_SIZE"}, "-") == \
+        "INVALID_BET_SIZE (PROCESSED_WITH_ERRORS)"
+    assert why({"errorCode": "MARKET_SUSPENDED"}, {}, "-") == "MARKET_SUSPENDED"
+    assert why({}, {"errorCode": "ERROR_IN_ORDER"}, "-") == "ERROR_IN_ORDER"
+    assert why({}, {}, "EXPIRED") == "EXPIRED"
+
+
+def _orders(c):
+    return [p["instructions"][0] for m, p in c.calls if m == "placeOrders"]
+
+
+def test_short_of_funds_the_day_holds_and_trades_again_when_the_funds_are_back():
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    c = _Short()
+    market, book, preds = _race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])
+    data = _Funded(c, [market], {"1.7": book}, funds=1.0)
+    clock = _Clock(datetime(2026, 10, 1, 8, 0, tzinfo=UTC))
+    s = Session(LiveExchange(data), preds, _live_cfg(), DAY, clock=clock, sleep=lambda _: None)
+    s.load_markets()
+    s.step(clock())                                             # refused: the account's funds are short
+    assert len(_orders(c)) == 1 and s.hold_until == clock() + timedelta(minutes=5)
+    for minute in range(1, 5):                                  # held: nothing more is sent
+        clock.t = datetime(2026, 10, 1, 8, minute, tzinfo=UTC)
+        s.step(clock())
+    assert len(_orders(c)) == 1
+    clock.t = datetime(2026, 10, 1, 8, 5, tzinfo=UTC)          # GBP1 back: still short, held again
+    s.step(clock())
+    assert len(_orders(c)) == 1 and s.hold_until == clock() + timedelta(minutes=5)
+    c.short, data.available = False, 30.0                       # a race run, a deposit: the funds are back
+    clock.t = datetime(2026, 10, 1, 8, 10, tzinfo=UTC)
+    s.step(clock())
+    back, lay = _orders(c)[1:]
+    assert back["limitOrder"]["size"] == 30.0                   # no more than the account has
+    assert lay["marketOnCloseOrder"]["liability"] == pytest.approx(30.0 * 6.0, abs=0.01)
+    clock.t = datetime(2026, 10, 1, 8, 11, tzinfo=UTC)          # the funds read are spent: held, nothing sent
+    s.step(clock())
+    assert len(_orders(c)) == 3 and s.hold_until is not None
+    out = s.summary()
+    assert out["backs_refused"] == {"INSUFFICIENT_FUNDS (ERROR_IN_ORDER)": 1} and out["held_for_funds"] == 2
+    skips = [r["error"] for r in s.ledger if r["event"] == "skip"]
+    assert skips and set(skips) == {"held: the account's funds are short"}
+
+
+def test_funds_too_low_for_a_layable_fill_hold_the_day_rather_than_skip_the_horse():
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    c = _Short()
+    market, book, preds = _race("1.7", off, [4.6, 2.3, 3.6, 6.0], [2.8, 2.6, 4.2, 8.0], [500, 900, 800, 300])
+    data = _Funded(c, [market], {"1.7": book}, funds=2.5)      # GBP2.50 at 4.6 wins 9.00: not enough to lay
+    clock = _Clock(datetime(2026, 10, 1, 8, 0, tzinfo=UTC))
+    s = Session(LiveExchange(data), preds, _live_cfg(), DAY, clock=clock, sleep=lambda _: None)
+    s.load_markets()
+    s.step(clock())                                             # refused, held
+    c.short = False
+    clock.t = datetime(2026, 10, 1, 8, 5, tzinfo=UTC)
+    s.step(clock())                                             # GBP2.50 back: too little to lay, so held again
+    assert len(_orders(c)) == 1 and s.hold_until == clock() + timedelta(minutes=5)
+    data.available = 500.0
+    clock.t = datetime(2026, 10, 1, 8, 10, tzinfo=UTC)
+    s.step(clock())
+    assert [o["side"] for o in _orders(c)] == ["BACK", "BACK", "LAY"] and _orders(c)[1]["limitOrder"]["size"] == 69.44
+
+
+def test_funds_that_cannot_be_read_hold_the_day_for_five_minutes_only():
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    c = _Short()
+    market, book, preds = _race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])
+    data = _Funded(c, [market], {"1.7": book}, funds=None)
+    clock = _Clock(datetime(2026, 10, 1, 8, 0, tzinfo=UTC))
+    s = Session(LiveExchange(data), preds, _live_cfg(), DAY, clock=clock, sleep=lambda _: None)
+    s.load_markets()
+    s.step(clock())
+    c.short = False
+    clock.t = datetime(2026, 10, 1, 8, 5, tzinfo=UTC)
+    s.step(clock())                                             # tried again: Betfair's answer decides
+    assert [o["side"] for o in _orders(c)] == ["BACK", "BACK", "LAY"] and s.hold_until is None
+    assert _orders(c)[1]["limitOrder"]["size"] == 41.66        # the full stake: no funds were read to cap it
+
+
+def test_a_back_too_small_to_lay_at_the_sp_is_never_sent_and_a_fill_is_always_one_it_can_lay():
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    c = _Client()
+    s, clock = _session(c, [_race("1.7", off, [4.6, 2.3, 3.6, 6.0], [2.8, 2.6, 4.2, 8.0], [500, 900, 800, 300])])
+    s.step(clock())
+    back = _orders(c)[0]["limitOrder"]
+    assert back["size"] == 69.44 and back["minFillSize"] == 2.78   # GBP2.78 at 4.6 wins GBP10, the least laid at SP
+    c2 = _Client()
+    market, book, preds = _race("1.7", off, [4.6, 2.3, 3.6, 6.0], [2.8, 2.6, 4.2, 8.0], [500, 900, 800, 300])
+    book.runners[1] = Quote(1, back=[(4.6, 2.27)], lay=[(4.8, 500.0)], traded=500)   # GBP2.27 on offer: wins 8.17
+    s2, clock2 = _session(c2, [(market, book, preds)])
+    s2.step(clock2())
+    assert not _orders(c2)
+    assert [r["error"] for r in s2.ledger if r["event"] == "skip"] == ["too small to lay at the SP (winnings under GBP10)"]
+
+
+def test_the_live_summary_carries_the_accounts_funds_at_the_start_and_the_end(monkeypatch, tmp_path):
+    import csv as _csv
+    import auto_trade
+    for k in ("BETFAIR_USERNAME", "BETFAIR_PASSWORD", "BETFAIR_APP_KEY"):
+        monkeypatch.setenv(k, "x")
+    ledger = tmp_path / "ledger_live_2026-09-30.csv"
+    with ledger.open("w", newline="") as f:
+        w = _csv.DictWriter(f, fieldnames=LEDGER_FIELDS)
+        w.writeheader()
+        w.writerows(_old_rows())
+    data = _Funded(_Client(), markets=[], books={}, cleared=_paid(), funds=1520.0)
+    monkeypatch.setattr(auto_trade, "BetfairData", lambda recorder=None: data)
+    monkeypatch.setattr(auto_trade, "publish", lambda *a, **k: None)
+    monkeypatch.setattr(auto_trade, "running_totals", lambda mode: None)
+    monkeypatch.setattr(auto_trade, "email", lambda summary, races=None, totals=None: None)
+    out = auto_trade.main(["--live", "--settle", "--date", "2026-09-30", "--out", str(tmp_path)])
+    assert out["funds_start"] == {"available": 1520.0, "exposure": -1490.84}
+    assert out["funds_end"] == out["funds_start"] and data.reads == 2

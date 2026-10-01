@@ -237,6 +237,15 @@ def running_totals(mode: str = MODE, s3=None) -> dict | None:
         return None
 
 
+def account_funds(data) -> dict | None:
+    """The account's funds, for the record: never a reason for a run to fail."""
+    try:
+        return data.funds()
+    except Exception as exc:
+        log.warning("account funds not read (%s)", str(exc)[:200])
+        return None
+
+
 def email(summary: dict, races: list[dict] | None = None, totals: dict | None = None) -> None:
     try:
         from ultra_betting.reporting.daily_report import send_email_report
@@ -312,6 +321,10 @@ def main(argv=None) -> dict:
     exchange = LiveExchange(data) if (a.live and not a.settle) else PaperExchange(data, bank=cfg.limits.bank)
     exchange.login()
     ledger = Path(a.out) / f"ledger_{mode}_{day:%Y-%m-%d}.csv"
+    funds_start = account_funds(data) if a.live else None   # read-only; what the account can bet, for the record
+    if funds_start:
+        log.info("Account funds: GBP%s available to bet, exposure GBP%s, exposure limit GBP%s",
+                 funds_start.get("available"), funds_start.get("exposure"), funds_start.get("exposure_limit"))
 
     if a.settle:
         rows = read_ledger(day, ledger, mode)
@@ -351,6 +364,8 @@ def main(argv=None) -> dict:
         if data.recorder is not None:                         # the day's books so far, to S3 before the email
             data.recorder.maybe_upload(force=True)
             summary["books_recorded"] = data.recorder.rows
+    if a.live:
+        summary["funds_start"], summary["funds_end"] = funds_start, account_funds(data)
     summary["config"] = cfg.to_dict()
     Path(a.out).mkdir(parents=True, exist_ok=True)
     (Path(a.out) / f"summary_{mode}_{day:%Y-%m-%d}.json").write_text(json.dumps(summary, indent=2, default=str))
