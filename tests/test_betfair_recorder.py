@@ -365,7 +365,7 @@ PRICE_FILE = ("EVENT_ID,MENU_HINT,EVENT_NAME,EVENT_DT,SELECTION_ID,SELECTION_NAM
               "1,GB / Kemp 1st Oct,7f Hcap,01-10-2026 15:30,11,Real Bullet,1,3.9,3.8,3.4,4.2,3.3,4,1.01,812.5,9000,300\n")
 
 
-def test_the_price_files_go_to_s3_once_and_come_back_only_when_not_loaded(tmp_path):
+def test_the_price_files_go_to_s3_once_and_come_back_only_when_not_loaded_or_still_being_rewritten(tmp_path):
     raw = tmp_path / "raw"
     raw.mkdir()
     name = bp.file_name("uk", "win", DAY)
@@ -377,7 +377,229 @@ def test_the_price_files_go_to_s3_once_and_come_back_only_when_not_loaded(tmp_pa
     pulled = bp.pull_s3(tmp_path / "dl", str(db), s3=s3, bucket="ashcroft")
     assert [p.name for p in pulled] == [name]
     bp.load_files(pulled, str(db))
-    assert bp.pull_s3(tmp_path / "dl", str(db), s3=s3, bucket="ashcroft") == []     # loaded: not pulled again
+    # loaded: not pulled again, unless it is one of the last week's, which Betfair rewrites
+    assert bp.pull_s3(tmp_path / "dl", str(db), s3=s3, bucket="ashcroft", refresh_days=0) == []
+    assert [p.name for p in bp.pull_s3(tmp_path / "dl", str(db), s3=s3, bucket="ashcroft")] == [name]
     conn = sqlite3.connect(db)
     assert conn.execute("SELECT morningwap, morning_vol, bsp FROM betfair_prices").fetchone() == (3.4, 812.5, 3.9)
     conn.close()
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Every file Betfair publishes, all markets (the owner's ask, 1 Oct 2026)
+# ---------------------------------------------------------------------------------------------------------------
+
+class _Reply:
+    def __init__(self, code, content, headers=None):
+        self.status_code, self.content, self.headers = code, content, dict(headers or {})
+        self.text = content.decode("latin-1")
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class FakeSite:
+    """promo.betfair.com as the UK server sees it: the listing page, and each file (or the status it answers with)."""
+
+    def __init__(self, files, status=None, listing=None):
+        self.files, self.status, self.listing, self.gets = dict(files), dict(status or {}), listing, []
+
+    def get(self, url, timeout=None):
+        self.gets.append(url)
+        if url == bp.BASE_URL:
+            page = self.listing if self.listing is not None else "".join(
+                f'<a href="{bp.BASE_URL}/{n}">{n}</a><br>\n' for n in sorted(self.files))
+            return _Reply(self.status.get("", 200), page.encode())
+        name = url.rsplit("/", 1)[-1]
+        code = self.status.get(name, 200 if name in self.files else 404)
+        if isinstance(code, list):                                   # a run of answers, one a request
+            code = code.pop(0) if len(code) > 1 else code[0]
+        body = self.files.get(name, b"") if code == 200 else b"<html>Betfair Restricted, Region: US</html>"
+        return _Reply(code, body, {"Retry-After": "120"} if code == 429 else None)
+
+
+def _csv(tag):
+    return (PRICE_FILE + f"2,GB / Kemp 1st Oct,7f Hcap,01-10-2026 15:30,12,{tag},0,9,9,9,9,9,9,9,1,1,1\n").encode()
+
+
+def test_every_listed_file_is_named_by_its_market_and_day():
+    assert bp.parse_listed_name("dwbfpricesukwin14092026.csv") == ("ukwin", date(2026, 9, 14))
+    assert bp.parse_listed_name("dwbfpricesireplace01012019.csv") == ("ireplace", date(2019, 1, 1))
+    assert bp.parse_listed_name("dwbfgreyhoundwin30092026.csv") == ("greyhoundwin", date(2026, 9, 30))
+    assert bp.parse_listed_name("DWBFPRICESAUSWIN05052021.csv") == ("auswin", date(2021, 5, 5))
+    assert bp.parse_listed_name("dwbfpricesuk4tbp01102026.csv") == ("uk4tbp", date(2026, 10, 1))
+    assert bp.parse_listed_name("dwbfpricesukwin31022026.csv") is None          # no such day
+    assert bp.parse_listed_name("notes.csv") is None and bp.parse_listed_name("dwbfpricesukwin2026.csv") is None
+
+
+def test_the_listing_is_read_from_its_links_or_its_text_and_a_refusal_is_an_error():
+    names = ["dwbfpricesukwin30092026.csv", "dwbfgreyhoundwin01102026.csv", "dwbfpricesirewin01012019.csv"]
+    got = bp.list_published(FakeSite({n: b"x" for n in names}))
+    assert [f["name"] for f in got] == ["dwbfgreyhoundwin01102026.csv", "dwbfpricesukwin30092026.csv",
+                                        "dwbfpricesirewin01012019.csv"]                    # newest first
+    assert got[0]["url"] == f"{bp.BASE_URL}/dwbfgreyhoundwin01102026.csv" and got[0]["market"] == "greyhoundwin"
+    relative = FakeSite({}, listing='<a href="dwbfpricesukplace30092026.csv">x</a>')
+    assert bp.list_published(relative)[0]["url"] == f"{bp.BASE_URL}/dwbfpricesukplace30092026.csv"
+    text = FakeSite({}, listing="dwbfpricesukwin30092026.csv dwbfpricesukplace30092026.csv")
+    assert len(bp.list_published(text)) == 2                                               # names without links
+    with pytest.raises(RuntimeError, match="refused"):
+        bp.list_published(FakeSite({}, status={"": 403}, listing="Betfair Restricted, Region: US"))
+
+
+def _site_and_archive():
+    old_uk, old_aus = "dwbfpricesukwin01012019.csv", "dwbfpricesauswin01012019.csv"
+    new_uk, new_place, new_dogs = "dwbfpricesukwin01102026.csv", "dwbfpricesukplace01102026.csv", "dwbfgreyhoundwin01102026.csv"
+    last_week, gap = "dwbfpricesirewin28092026.csv", "dwbfpricesukwin15062024.csv"
+    site = FakeSite({old_uk: _csv("a"), old_aus: _csv("b"), new_uk: _csv("rewritten"), new_place: _csv("c"),
+                     new_dogs: _csv("d"), last_week: _csv("e"), gap: _csv("f")})
+    s3 = FakeS3()
+    s3.put_object(Bucket="ashcroft", Key=f"{bp.S3_PREFIX}/{old_uk}", Body=_csv("a"))       # archived already
+    s3.put_object(Bucket="ashcroft", Key=f"{bp.S3_PREFIX}/{new_uk}", Body=_csv("first"))   # since rewritten by Betfair
+    return site, s3
+
+
+def test_every_market_is_archived_slowly_the_last_week_first_and_rewritten_files_again():
+    site, s3 = _site_and_archive()
+    pauses = []
+    out = bp.archive_published(s3=s3, bucket="ashcroft", session=site, sleep=pauses.append)
+    fetched = [u.rsplit("/", 1)[-1] for u in site.gets[1:]]
+    # the last week first (every market), then the UK and Irish racing files, then the rest, each newest first;
+    # the 2019 UK file the archive holds is not fetched again
+    assert fetched == ["dwbfgreyhoundwin01102026.csv", "dwbfpricesukplace01102026.csv", "dwbfpricesukwin01102026.csv",
+                       "dwbfpricesirewin28092026.csv", "dwbfpricesukwin15062024.csv", "dwbfpricesauswin01012019.csv"]
+    assert out["listed"] == 7 and out["markets"] == 5 and out["stored"] == 6 and out["unchanged"] == 0
+    assert s3.objects[("ashcroft", f"{bp.S3_PREFIX}/dwbfpricesukwin01102026.csv")] == _csv("rewritten")
+    assert pauses == [1.5] * 5                                       # one file at a time, a pause between each
+    again = bp.archive_published(s3=s3, bucket="ashcroft", session=FakeSite(site.files), sleep=lambda _: None)
+    assert again["to_fetch"] == 4 and again["stored"] == 0 and again["unchanged"] == 4    # only the last week
+
+
+def test_a_backfill_of_old_days_fetches_only_what_the_archive_lacks():
+    site, s3 = _site_and_archive()
+    # the last week is Betfair's last week, not the backfill's: the 2019 UK file the archive holds stays as it is
+    out = bp.archive_published(s3=s3, bucket="ashcroft", session=site, date_to=date(2019, 1, 1), sleep=lambda _: None)
+    assert out["listed"] == 2 and out["to_fetch"] == 1 and out["stored"] == 1
+    assert [u.rsplit("/", 1)[-1] for u in site.gets[1:]] == ["dwbfpricesauswin01012019.csv"]
+    only = bp.archive_published(s3=s3, bucket="ashcroft", session=FakeSite(site.files), markets=["ukplace"],
+                                sleep=lambda _: None)
+    assert only["listed"] == 1 and only["markets"] == 1 and only["unchanged"] == 0 and only["stored"] == 1
+
+
+def test_the_archive_stops_at_its_time_and_the_next_run_takes_up_the_rest():
+    site, s3 = _site_and_archive()
+    t = {"now": 0.0}
+
+    def clock():
+        t["now"] += 60.0                                             # a minute a file
+        return t["now"]
+    out = bp.archive_published(s3=s3, bucket="ashcroft", session=site, max_minutes=3, clock=clock,
+                               sleep=lambda _: None)
+    assert out["stored"] == 2 and out["left"] == 4
+    rest = bp.archive_published(s3=s3, bucket="ashcroft", session=FakeSite(site.files), sleep=lambda _: None)
+    # the rewritten UK file, the Irish one, the 2024 and the 2019 files; the two stored before are unchanged
+    assert rest["stored"] == 4 and rest["unchanged"] == 2 and rest["left"] == 0
+    assert len([k for b, k in s3.objects if b == "ashcroft"]) == 7
+
+
+def test_a_block_page_is_never_archived_and_a_refusal_stops_the_run():
+    site, s3 = _site_and_archive()
+    site.files["dwbfgreyhoundwin01102026.csv"] = b"<html><body>Betfair Restricted</body></html>"
+    site.status["dwbfpricesukwin15062024.csv"] = 403
+    out = bp.archive_published(s3=s3, bucket="ashcroft", session=site, sleep=lambda _: None)
+    assert ("ashcroft", f"{bp.S3_PREFIX}/dwbfgreyhoundwin01102026.csv") not in s3.objects
+    assert out["failed"] == 2 and out["stored"] == 3 and out["left"] == 1      # the 2019 Australian file waits
+    assert ("ashcroft", f"{bp.S3_PREFIX}/dwbfpricesauswin01012019.csv") not in s3.objects
+
+
+def test_asked_to_slow_down_the_archive_waits_as_long_as_asked_and_stops_if_asked_again_and_again():
+    site, s3 = _site_and_archive()
+    site.status["dwbfgreyhoundwin01102026.csv"] = [429, 200]                # once: wait, then the file
+    site.status["dwbfpricesukwin15062024.csv"] = [429]                      # every time: stop for the night
+    waits = []
+    out = bp.archive_published(s3=s3, bucket="ashcroft", session=site, sleep=waits.append)
+    assert waits[0] == 120.0 and waits.count(120.0) == 3                    # as long as asked (Retry-After)
+    assert ("ashcroft", f"{bp.S3_PREFIX}/dwbfgreyhoundwin01102026.csv") in s3.objects
+    assert out["stored"] == 4 and out["failed"] == 1 and out["left"] == 1   # the 2019 Australian file waits
+
+
+class _DownS3(FakeS3):
+    def put_object(self, Bucket, Key, Body):
+        raise RuntimeError("S3 is down")
+
+
+def test_s3_refusing_five_files_running_stops_the_run():
+    site, _ = _site_and_archive()
+    names = [f"dwbfpricesukwin{d:02d}092026.csv" for d in range(1, 11)]
+    site.files.update({n: _csv(n) for n in names})
+    out = bp.archive_published(s3=_DownS3(), bucket="ashcroft", session=site, sleep=lambda _: None)
+    assert out["failed"] == 5 and out["stored"] == 0 and out["left"] == out["to_fetch"] - 5
+
+
+def test_the_nightly_load_takes_the_last_week_first_then_the_newest_within_its_cap(tmp_path):
+    s3 = FakeS3()
+    days = [date(2017, 12, 31), date(2018, 1, 1), date(2024, 6, 15), date(2026, 9, 25), date(2026, 10, 1)]
+    for i, d in enumerate(days):                                     # each day its own race
+        body = PRICE_FILE.replace("\n1,GB", f"\n{100 + i},GB").replace("01-10-2026", d.strftime("%d-%m-%Y"))
+        s3.put_object(Bucket="ashcroft", Key=f"{bp.S3_PREFIX}/{bp.file_name('uk', 'win', d)}", Body=body.encode())
+    s3.put_object(Bucket="ashcroft", Key=f"{bp.S3_PREFIX}/dwbfgreyhoundwin01102026.csv", Body=b"x")   # stays raw
+    db = tmp_path / "t.db"
+    first = bp.pull_s3(tmp_path / "dl", str(db), s3=s3, bucket="ashcroft", load_from=date(2018, 1, 1), max_files=3)
+    assert sorted(bp.parse_file_name(p.name)[2] for p in first) == [date(2024, 6, 15), date(2026, 9, 25),
+                                                                    date(2026, 10, 1)]
+    bp.load_files(first, str(db))
+    second = bp.pull_s3(tmp_path / "dl", str(db), s3=s3, bucket="ashcroft", load_from=date(2018, 1, 1), max_files=3)
+    # the last week again (Betfair rewrites it), then what is left from 2018 on; 2017 and the greyhounds never
+    assert sorted(bp.parse_file_name(p.name)[2] for p in second) == [date(2018, 1, 1), date(2026, 9, 25),
+                                                                     date(2026, 10, 1)]
+
+
+def test_a_day_without_racing_or_a_file_that_cannot_be_read_is_taken_once_and_old_names_read_in_latin_1(tmp_path):
+    s3 = FakeS3()
+    header = PRICE_FILE.split("\n", 1)[0] + "\n"
+    empty, broken, latin = (bp.file_name("uk", "win", date(2020, 4, 1)), bp.file_name("ire", "win", date(2019, 5, 1)),
+                            bp.file_name("uk", "place", date(2019, 5, 1)))
+    s3.put_object(Bucket="ashcroft", Key=f"{bp.S3_PREFIX}/{empty}", Body=header.encode())          # no racing that day
+    s3.put_object(Bucket="ashcroft", Key=f"{bp.S3_PREFIX}/{broken}", Body=b"EVENT_ID,MENU_HINT\n1,x\n")
+    body = PRICE_FILE.replace("Real Bullet", "Sí Señor").replace("01-10-2026", "01-05-2019").replace("1st Oct", "1st May")
+    s3.put_object(Bucket="ashcroft", Key=f"{bp.S3_PREFIX}/{latin}", Body=body.encode("latin-1"))
+    recent = bp.file_name("uk", "win", DAY)
+    s3.put_object(Bucket="ashcroft", Key=f"{bp.S3_PREFIX}/{recent}", Body=PRICE_FILE.encode())
+    db = tmp_path / "t.db"
+    first = bp.pull_s3(tmp_path / "dl", str(db), s3=s3, bucket="ashcroft")
+    assert sorted(p.name for p in first) == sorted([empty, broken, latin, recent])
+    assert bp.load_files(first, str(db)) == {"files": 3, "rows": 2}
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT selection_name FROM betfair_prices WHERE market_type = 'place'").fetchone() == ("Sí Señor",)
+    noted = dict(conn.execute("SELECT source_file, status FROM betfair_prices_files").fetchall())
+    conn.close()
+    assert noted[empty] == "loaded" and noted[latin] == "loaded" and noted[broken].startswith("skipped: ")
+    # none of the three old files is pulled again; only the last week, which Betfair rewrites
+    assert [p.name for p in bp.pull_s3(tmp_path / "dl", str(db), s3=s3, bucket="ashcroft")] == [recent]
+
+
+def test_the_command_line_archives_with_its_markets_dates_pause_and_time(monkeypatch, capsys):
+    site, s3 = _site_and_archive()
+    monkeypatch.setattr(bp, "_capture", lambda: (s3, "ashcroft"))
+    monkeypatch.setattr(bp, "make_session", lambda proxy=None: site)
+    real, seen, pauses = bp.archive_published, {}, []
+
+    def archive(**kw):
+        seen.update(kw)
+        return real(**kw, sleep=pauses.append)
+    monkeypatch.setattr(bp, "archive_published", archive)
+    assert bp.main(["--archive", "--market", "ukwin, ukplace", "--from", "2024-01-01", "--pause", "0.5",
+                    "--max-minutes", "30", "--refresh-days", "0"]) == 0
+    assert seen["markets"] == ["ukwin", " ukplace"] and seen["date_from"] == date(2024, 1, 1)
+    assert seen["date_to"] is None and seen["max_minutes"] == 30 and seen["refresh_days"] == 0
+    out = capsys.readouterr().out
+    assert "'listed': 3" in out and "'stored': 2" in out                 # 2026 ukwin (held), ukplace, the 2024 ukwin
+    assert [u.rsplit("/", 1)[-1] for u in site.gets[1:]] == ["dwbfpricesukplace01102026.csv",
+                                                             "dwbfpricesukwin15062024.csv"]
+    assert pauses == [0.5]
+
+
+def test_a_load_is_matched_run_by_run_not_across_the_years_between():
+    runs = bp.day_runs([date(2026, 10, 1), date(2026, 9, 29), date(2026, 9, 30), date(2019, 3, 2), date(2019, 3, 1)])
+    assert runs == [(date(2019, 3, 1), date(2019, 3, 2)), (date(2026, 9, 29), date(2026, 10, 1))]
+    assert bp.day_runs([]) == []

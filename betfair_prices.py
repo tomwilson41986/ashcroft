@@ -262,7 +262,10 @@ def download_day(d: date, dest: Path = RAW_DIR, countries=COUNTRIES, markets=MAR
 def parse_file(path: str | Path) -> pd.DataFrame:
     """Parse one Betfair price CSV into a typed frame with country/market/date."""
     meta = parse_file_name(Path(path).name)
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    try:
+        df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    except UnicodeDecodeError:                           # older files write some names in latin-1
+        df = pd.read_csv(path, dtype=str, keep_default_na=False, encoding="latin-1")
     df.columns = [c.strip().upper() for c in df.columns]
     missing = [c for c in RAW_COLUMNS if c not in df.columns]
     if missing:
@@ -356,6 +359,11 @@ def ensure_table(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_bfp_date ON betfair_prices(race_date);
         CREATE INDEX IF NOT EXISTS idx_bfp_rr ON betfair_prices(race_results_id);
         CREATE INDEX IF NOT EXISTS idx_bfp_horse ON betfair_prices(horse_norm);
+        -- every day file loaded, with its rows or why it gave none, so the nightly load never takes it again
+        CREATE TABLE IF NOT EXISTS betfair_prices_files (
+            source_file TEXT PRIMARY KEY, rows INTEGER, status TEXT,
+            loaded_at TEXT DEFAULT (datetime('now'))
+        );
     """)
     conn.commit()
 
@@ -391,16 +399,20 @@ def load_files(paths, db_path: str = DEFAULT_DB) -> dict:
     ensure_table(conn)
     n_rows = n_files = 0
     cols = LOAD_COLS
+    noted = "INSERT OR REPLACE INTO betfair_prices_files (source_file, rows, status) VALUES (?, ?, ?)"
     for p in paths:
         try:
             df = parse_file(p)
         except Exception as exc:
             log.warning("skip %s: %s", p, exc)
+            conn.execute(noted, (Path(p).name, 0, f"skipped: {exc}"[:300]))
+            conn.commit()
             continue
         df["track_bf"] = df["menu_hint"].map(lambda h: course_from_hint(h) or "")
         rows = df[cols].astype(object).where(df[cols].notna(), None).values.tolist()
         conn.executemany(
             f"INSERT OR REPLACE INTO betfair_prices ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", rows)
+        conn.execute(noted, (Path(p).name, len(rows), "loaded"))
         conn.commit()                                   # file by file: a long backfill cut short keeps what it loaded
         n_rows += len(rows); n_files += 1
     conn.commit(); conn.close()
@@ -494,6 +506,188 @@ def _capture():
     return s3_client(), bucket()
 
 
+# ---------------------------------------------------------------------------
+# Every file Betfair publishes, all markets (the owner's ask, 1 Oct 2026): the listing, archived slowly
+# ---------------------------------------------------------------------------
+
+LISTED_RE = re.compile(r"dwbf([a-z0-9]+?)(\d{8})\.csv", re.I)
+#: the markets the models read (UK and Irish horse racing, win and place); the archive takes these first
+CORE_MARKETS = ("ukwin", "ukplace", "irewin", "ireplace")
+
+
+def parse_listed_name(name) -> tuple[str, date] | None:
+    """Any of Betfair's price file names -> (market, day): 'dwbfpricesukwin14092026.csv' -> ('ukwin', 14 Sep 2026).
+    A name without the 'prices' stem keeps its own ('dwbfgreyhoundwin...' -> 'greyhoundwin')."""
+    m = LISTED_RE.fullmatch(Path(str(name)).name)
+    if not m:
+        return None
+    try:
+        day = datetime.strptime(m.group(2), "%d%m%Y").date()
+    except ValueError:
+        return None
+    raw = m.group(1).lower()
+    return (raw[len("prices"):] if raw.startswith("prices") and len(raw) > len("prices") else raw), day
+
+
+def list_published(session: requests.Session | None = None, timeout: int = 60) -> list[dict]:
+    """Every file Betfair lists at promo.betfair.com/betfairsp/prices, newest first: name, url, market and day."""
+    from urllib.parse import urljoin
+    s = session or make_session()
+    r = s.get(BASE_URL, timeout=timeout)
+    blocked = _geo_block_reason(r.text[:5000])
+    if r.status_code == 403 or (blocked and ".csv" not in r.text):
+        raise RuntimeError(f"promo.betfair.com refused this host (HTTP {r.status_code}{', ' + blocked if blocked else ''})")
+    r.raise_for_status()
+    urls: dict[str, str] = {}
+    for href in re.findall(r'href=["\']([^"\']+?\.csv)["\']', r.text, flags=re.I):
+        full = urljoin(BASE_URL + "/", href)
+        urls[full.rsplit("/", 1)[-1]] = full
+    if not urls:                                         # the names in the page, without links
+        for m in LISTED_RE.finditer(r.text):
+            urls[m.group(0)] = f"{BASE_URL}/{m.group(0)}"
+    files = []
+    for name, url in urls.items():
+        meta = parse_listed_name(name)
+        if meta:
+            files.append({"name": name, "url": url, "market": meta[0], "day": meta[1]})
+    files.sort(key=lambda f: (f["day"], f["name"]), reverse=True)
+    return files
+
+
+def archive_index(s3, bucket: str) -> dict[str, dict]:
+    """Every file in the S3 archive by name: its size and, where S3 gives it, its ETag (the MD5 of a file put whole)."""
+    out, token = {}, None
+    while True:
+        kw = {"Bucket": bucket, "Prefix": f"{S3_PREFIX}/"}
+        if token:
+            kw["ContinuationToken"] = token
+        page = s3.list_objects_v2(**kw)
+        for o in page.get("Contents", []) or []:
+            out[o["Key"].rsplit("/", 1)[-1]] = {"size": int(o.get("Size") or 0),
+                                                 "etag": str(o.get("ETag") or "").strip('"')}
+        if not page.get("IsTruncated"):
+            return out
+        token = page.get("NextContinuationToken")
+
+
+def _same_file(held: dict | None, content: bytes) -> bool:
+    if not held:
+        return False
+    etag = held.get("etag") or ""
+    if etag and "-" not in etag:                         # a file put whole: its ETag is its MD5
+        import hashlib
+        return hashlib.md5(content).hexdigest() == etag
+    return held.get("size") == len(content)
+
+
+def _fetch_listed(url: str, session, retries: int = 3, backoff: float = 10.0, sleep=time.sleep) -> tuple[str, bytes | None]:
+    """One listed file: ('ok', content), ('missing', None) on a 404, ('blocked', None) on a 403 or when the site keeps
+    asking us to slow down (429), else ('failed', None). An HTML page in place of a file (Betfair's block page) is
+    never a file."""
+    for attempt in range(retries):
+        last = attempt == retries - 1
+        try:
+            r = session.get(url, timeout=60)
+        except requests.RequestException as exc:
+            log.warning("%s: %s (attempt %d)", url, exc, attempt + 1)
+            if not last:
+                sleep(backoff * (attempt + 1))
+            continue
+        if r.status_code == 200:
+            if r.content[:512].lstrip().startswith(b"<"):
+                return "failed", None
+            return "ok", r.content
+        if r.status_code == 404:
+            return "missing", None
+        if r.status_code == 403:
+            return "blocked", None
+        if r.status_code == 429:                         # slow down: wait as long as it asks, a minute at least
+            if last:
+                return "blocked", None
+            wait = str((getattr(r, "headers", None) or {}).get("Retry-After", ""))
+            sleep(max(60.0, float(wait) if wait.isdigit() else 0.0))
+            continue
+        if not last:
+            sleep(backoff * (attempt + 1))
+    return "failed", None
+
+
+def archive_published(s3=None, bucket: str | None = None, session=None, markets=None, date_from: date | None = None,
+                      date_to: date | None = None, refresh_days: int = 7, max_minutes: float | None = None,
+                      pause: float = 1.5, clock=time.monotonic, sleep=time.sleep) -> dict:
+    """Every price file Betfair publishes, all markets, into the S3 archive (betfair_prices_raw/<name>), slowly: one
+    file at a time with a pause between, so the server never presses Betfair's site.
+
+    A file the archive lacks is fetched; so is each of the last `refresh_days` days (Betfair rewrites recent files),
+    stored again only when it has changed. The recent days go first, then the UK and Irish racing files, then the
+    other markets, each newest first, so a run that stops at `max_minutes` has the files that matter most and the
+    next run takes up the rest. A 403 (the site refusing the host), the site asking again and again to slow down, or
+    S3 refusing five files running stops the run at once."""
+    if s3 is None or bucket is None:
+        s3, bucket = _capture()
+    s = session or make_session()
+    listed = list_published(s)
+    newest = max((f["day"] for f in listed), default=None)      # the last week is Betfair's, not the backfill's
+    if markets:
+        wanted = {str(m).strip().lower() for m in markets}
+        listed = [f for f in listed if f["market"] in wanted]
+    if date_from:
+        listed = [f for f in listed if f["day"] >= date_from]
+    if date_to:
+        listed = [f for f in listed if f["day"] <= date_to]
+    have = archive_index(s3, bucket)
+    fresh = newest - timedelta(days=refresh_days) if newest and refresh_days > 0 else None
+    recent = lambda f: fresh is not None and f["day"] >= fresh          # noqa: E731
+    todo = [f for f in listed if f["name"] not in have or recent(f)]
+    todo.sort(key=lambda f: (0 if recent(f) else 1 if f["market"] in CORE_MARKETS else 2,
+                             -f["day"].toordinal(), f["name"]))
+    counts = {"listed": len(listed), "markets": len({f["market"] for f in listed}),
+              "in_archive": sum(1 for f in listed if f["name"] in have), "to_fetch": len(todo),
+              "stored": 0, "unchanged": 0, "missing": 0, "failed": 0, "left": 0}
+    log.info("Betfair lists %d files in %d markets, %s to %s; %d in the archive; %d to fetch", counts["listed"],
+             counts["markets"], min((f["day"] for f in listed), default=None),
+             max((f["day"] for f in listed), default=None), counts["in_archive"], len(todo))
+    deadline = clock() + 60.0 * max_minutes if max_minutes else None
+    put_errors = 0
+    for i, f in enumerate(todo):
+        if deadline is not None and clock() >= deadline:
+            counts["left"] = len(todo) - i
+            log.info("time is up: %d files left for the next run", counts["left"])
+            break
+        status, content = _fetch_listed(f["url"], s, sleep=sleep)
+        if status == "blocked":
+            counts["failed"] += 1
+            counts["left"] = len(todo) - i - 1
+            log.error("promo.betfair.com refused %s (HTTP 403, or 429 again and again): stopping; the next run takes "
+                      "up the rest", f["name"])
+            break
+        if status == "missing":
+            counts["missing"] += 1
+        elif status == "failed":
+            counts["failed"] += 1
+        elif _same_file(have.get(f["name"]), content):
+            counts["unchanged"] += 1
+        else:
+            try:
+                s3.put_object(Bucket=bucket, Key=f"{S3_PREFIX}/{f['name']}", Body=content)
+                counts["stored"] += 1
+                put_errors = 0
+            except Exception as exc:                     # boto3 has tried again already
+                counts["failed"] += 1
+                put_errors += 1
+                log.warning("%s not stored in S3: %s", f["name"], exc)
+                if put_errors >= 5:
+                    counts["left"] = len(todo) - i - 1
+                    log.error("S3 refused five files running: stopping; the next run takes up the rest")
+                    break
+        if (i + 1) % 500 == 0:
+            log.info("%d of %d: %s", i + 1, len(todo), {k: counts[k] for k in ("stored", "unchanged", "missing", "failed")})
+        if i + 1 < len(todo):
+            sleep(pause)
+    log.info("Betfair's price files, all markets, archived to s3://%s/%s/: %s", bucket, S3_PREFIX, counts)
+    return counts
+
+
 def push_s3(raw: Path, d_from: date | None = None, d_to: date | None = None, s3=None, bucket: str | None = None) -> dict:
     """Archive the day files in ``raw`` (within the dates, when given) to s3://<bucket>/betfair_prices_raw/, leaving
     any already there at the same size."""
@@ -517,8 +711,12 @@ def push_s3(raw: Path, d_from: date | None = None, d_to: date | None = None, s3=
     return counts
 
 
-def pull_s3(raw: Path, db_path: str | None = None, s3=None, bucket: str | None = None) -> list[Path]:
-    """Fetch the archived day files the database has not loaded yet (by source_file) into ``raw``; their paths."""
+def pull_s3(raw: Path, db_path: str | None = None, s3=None, bucket: str | None = None, load_from: date | None = None,
+            max_files: int | None = None, refresh_days: int = 7) -> list[Path]:
+    """Fetch into ``raw`` the archived UK and Irish racing files (win and place) the database has not loaded (by
+    source_file), from ``load_from`` on; and each of the last ``refresh_days`` days again, which Betfair rewrites. The
+    recent days first, then newest first, at most ``max_files``: a long backfill loads over several nights. The
+    archive's other markets stay in S3, raw."""
     if s3 is None or bucket is None:
         s3, bucket = _capture()
     loaded: set[str] = set()
@@ -526,28 +724,43 @@ def pull_s3(raw: Path, db_path: str | None = None, s3=None, bucket: str | None =
         conn = sqlite3.connect(db_path)
         ensure_table(conn)
         loaded = {r[0] for r in conn.execute("SELECT DISTINCT source_file FROM betfair_prices") if r[0]}
+        loaded |= {r[0] for r in conn.execute("SELECT source_file FROM betfair_prices_files") if r[0]}
         conn.close()
+    held = []
+    for name, info in archive_index(s3, bucket).items():
+        meta = parse_file_name(name)
+        if meta and not (load_from and meta[2] < load_from):
+            held.append((meta[2], name, info["size"]))
+    newest = max((d for d, _, _ in held), default=None)
+    fresh = newest - timedelta(days=refresh_days) if newest and refresh_days > 0 else None
+    todo = [h for h in held if h[1] not in loaded or (fresh is not None and h[0] >= fresh)]
+    todo.sort(key=lambda h: (fresh is not None and h[0] >= fresh, h[0], h[1]), reverse=True)
+    left = max(0, len(todo) - max_files) if max_files else 0
+    if max_files:
+        todo = todo[:max_files]
     raw = Path(raw)
     raw.mkdir(parents=True, exist_ok=True)
-    out, token = [], None
-    while True:
-        kw = {"Bucket": bucket, "Prefix": f"{S3_PREFIX}/"}
-        if token:
-            kw["ContinuationToken"] = token
-        page = s3.list_objects_v2(**kw)
-        for o in page.get("Contents", []):
-            name = o["Key"].rsplit("/", 1)[-1]
-            if not parse_file_name(name) or name in loaded:
-                continue
-            path = raw / name
-            if not path.exists() or path.stat().st_size != o.get("Size"):
-                path.write_bytes(s3.get_object(Bucket=bucket, Key=o["Key"])["Body"].read())
-            out.append(path)
-        if not page.get("IsTruncated"):
-            break
-        token = page.get("NextContinuationToken")
-    log.info("pulled %d archived day files not yet loaded (%d already in the database)", len(out), len(loaded))
+    out = []
+    for _, name, size in todo:
+        path = raw / name
+        if not path.exists() or path.stat().st_size != size:
+            path.write_bytes(s3.get_object(Bucket=bucket, Key=f"{S3_PREFIX}/{name}")["Body"].read())
+        out.append(path)
+    log.info("pulled %d archived day files to load (%d already in the database; %d left for later nights)",
+             len(out), len(loaded), left)
     return sorted(out)
+
+
+def day_runs(days, gap: int = 3) -> list[tuple[date, date]]:
+    """The days as runs of near-consecutive days, so a load of recent days and of an old month is matched as two
+    spans, not as the years between them."""
+    runs: list[list[date]] = []
+    for d in sorted(set(days)):
+        if runs and (d - runs[-1][1]).days <= gap:
+            runs[-1][1] = d
+        else:
+            runs.append([d, d])
+    return [(a, b) for a, b in runs]
 
 
 # ---------------------------------------------------------------------------
@@ -580,6 +793,19 @@ def main(argv=None):
                     help="archive the day files in --dir to s3://$CAPTURE_BUCKET/betfair_prices_raw/ (the UK server)")
     ap.add_argument("--pull-s3", action="store_true",
                     help="fetch the archived day files not yet in --db; with --load, load (and --match) just those")
+    ap.add_argument("--load-from", default=None,
+                    help="--pull-s3: the first day to load (YYYY-MM-DD); older files stay in S3, raw")
+    ap.add_argument("--max-files", type=int, default=None,
+                    help="--pull-s3: at most this many files a run, the recent days first (a backfill loads over nights)")
+    ap.add_argument("--archive", action="store_true",
+                    help="every file Betfair lists, all markets, to s3://$CAPTURE_BUCKET/betfair_prices_raw/ (the UK "
+                         "server): what the archive lacks and the last --refresh-days days, one file at a time")
+    ap.add_argument("--market", default=None, help="--archive: only these markets, e.g. ukwin,ukplace (default all)")
+    ap.add_argument("--refresh-days", type=int, default=7,
+                    help="--archive / --pull-s3: fetch the last N days again (Betfair rewrites recent files)")
+    ap.add_argument("--max-minutes", type=float, default=None,
+                    help="--archive: take no new file after this many minutes; the next run takes up the rest")
+    ap.add_argument("--pause", type=float, default=1.5, help="--archive: seconds between files (be slow with the site)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -608,10 +834,21 @@ def main(argv=None):
     if args.push_s3:
         push_s3(raw, d_from, d_to)
 
-    pulled = pull_s3(raw, args.db) if args.pull_s3 else None
-    if pulled is not None:                                  # match over the days just pulled
-        days = sorted(m[2] for p in pulled if (m := parse_file_name(p.name)))
-        d_from, d_to = (days[0], days[-1]) if days else (None, None)
+    if args.archive:
+        day = lambda v: datetime.strptime(v, "%Y-%m-%d").date() if v else None      # noqa: E731
+        markets = [m for m in (args.market or "").split(",") if m.strip()] or None
+        sess = make_session(args.proxy)
+        print("archive:", archive_published(session=sess, markets=markets, date_from=day(args.date_from),
+                                            date_to=day(args.date_to), refresh_days=args.refresh_days,
+                                            max_minutes=args.max_minutes, pause=args.pause))
+
+    pulled = None
+    if args.pull_s3:
+        load_from = datetime.strptime(args.load_from, "%Y-%m-%d").date() if args.load_from else None
+        pulled = pull_s3(raw, args.db, load_from=load_from, max_files=args.max_files, refresh_days=args.refresh_days)
+    runs = None
+    if pulled is not None:                                  # match over the days just pulled, run by run
+        runs = day_runs(m[2] for p in pulled if (m := parse_file_name(p.name)))
 
     if args.combined:
         print("combined load:", load_combined(args.combined, args.db))
@@ -626,15 +863,20 @@ def main(argv=None):
         load_files(paths, args.db)
 
     if args.match and (pulled is None or pulled):
-        stats = match_to_results(args.db, d_from.isoformat() if d_from else None, d_to.isoformat() if d_to else None)
-        print(f"matched {stats['matched']}/{stats['total']} ({100 * stats['rate']:.1f}%) by {stats.get('by_method')}")
-        if stats["unmatched_hints"]:
-            print("unmatched course hints (add to BF_COURSE_MAP):", stats["unmatched_hints"])
+        spans = [(a.isoformat(), b.isoformat()) for a, b in runs] if runs is not None else \
+            [(d_from.isoformat() if d_from else None, d_to.isoformat() if d_to else None)]
+        for a, b in spans:
+            stats = match_to_results(args.db, a, b)
+            print(f"matched {a} to {b}: {stats['matched']}/{stats['total']} ({100 * stats['rate']:.1f}%) "
+                  f"by {stats.get('by_method')}")
+            if stats["unmatched_hints"]:
+                print("unmatched course hints (add to BF_COURSE_MAP):", stats["unmatched_hints"])
 
     if args.report:
         print(coverage_report(args.db).to_string(index=False))
 
-    if not any([args.fetch, args.load, args.match, args.report, args.combined, args.push_s3, args.pull_s3]):
+    if not any([args.fetch, args.load, args.match, args.report, args.combined, args.push_s3, args.pull_s3,
+                args.archive]):
         ap.print_help()
         return 1
     return 0

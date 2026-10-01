@@ -96,7 +96,11 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-        run: timeout 900 python betfair_prices.py --pull-s3 --load --match --dir data/betfair_raw
+        # the UK and Irish racing files from 2018 (the models' history), the last week first, then newest first, at
+        # most 2,500 a night (about five minutes): the archive's backfill loads over a few nights
+        run: >-
+          timeout 900 python betfair_prices.py --pull-s3 --load --match --dir data/betfair_raw
+          --load-from 2018-01-01 --max-files 2500
 
       - name: Load the live Betfair record (books at each mark, catalogue, live orders)
         continue-on-error: true

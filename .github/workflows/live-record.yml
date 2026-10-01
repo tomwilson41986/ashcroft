@@ -2,12 +2,13 @@ name: Betfair market recorder (read-only)
 
 # The owner's ask (30 Sep 2026): keep all the market data the UK server reaches, so the models can learn from it.
 # On the UK runner (Betfair refuses GitHub's own runners), read-only, nothing here can place an order:
-#   1. Betfair's daily price files for the last days (morning and pre-play prices and volumes, BSP, in-play
-#      range, for every GB/IE win and place runner), which promo.betfair.com refuses to GitHub's runners too,
-#      archived to s3://$CAPTURE_BUCKET/betfair_prices_raw/;
-#   2. the day's GB/IE win and place markets, a snapshot every 5 minutes and every minute in the last hour before
+#   1. the day's GB/IE win and place markets, a snapshot every 5 minutes and every minute in the last hour before
 #      each off, until the last race (betfair_recorder.py), with yesterday's settled books (BSP, results), to
-#      s3://$CAPTURE_BUCKET/betfair_live/<day>/.
+#      s3://$CAPTURE_BUCKET/betfair_live/<day>/;
+#   2. after the last race, Betfair's UK and Irish price files of the last days (morning and pre-play prices and
+#      volumes, BSP, in-play range, for every GB/IE win and place runner), which promo.betfair.com refuses to
+#      GitHub's runners too, to s3://$CAPTURE_BUCKET/betfair_prices_raw/, so the night's load has yesterday's.
+#      Every other market, and the archive's backfill, is the nightly job betfair-prices.yml.
 # The nightly job daily-results.yml, the one job that writes horse_racing.db, loads both.
 #
 # One runner serves trading too, so this job gives way to it: the 06:55 UTC run records the morning only when the
@@ -77,16 +78,6 @@ jobs:
         if: steps.run.outputs.go == 'true'
         run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
 
-      - name: Betfair's price files for the last days, to S3
-        if: steps.run.outputs.go == 'true'
-        continue-on-error: true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
-          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-        run: timeout 900 python betfair_prices.py --fetch --days 5 --dir "$HOME/.ashcroft/betfair_raw" --push-s3
-
       - name: Yesterday's settled books (BSP, results)
         if: steps.run.outputs.go == 'true'
         continue-on-error: true
@@ -112,3 +103,16 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           UNTIL: ${{ steps.run.outputs.until }}
         run: python betfair_recorder.py --record --final --until "$UNTIL"
+
+      # After the last race, so it never costs a snapshot: the UK and Irish files of the last days, for the night's
+      # load (betfair-prices.yml takes every market and the backfill from 22:30 UTC). One file at a time, from the
+      # listing, each stored only when it is new or Betfair has rewritten it.
+      - name: Betfair's UK and Irish price files of the last days, to S3
+        if: ${{ !cancelled() && steps.run.outputs.go == 'true' }}
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 480 python betfair_prices.py --archive --market ukwin,ukplace,irewin,ireplace --refresh-days 2 --max-minutes 5

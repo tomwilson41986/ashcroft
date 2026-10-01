@@ -1,22 +1,40 @@
-name: Betfair Historic Prices (backfill)
-# Betfair's SP price files (win + place, UK + IRE: morning and pre-play prices and volumes, BSP, in-play range)
-# for a range of days, fetched on the owner's UK runner and archived to s3://$CAPTURE_BUCKET/betfair_prices_raw/.
-# promo.betfair.com refuses GitHub's own runners (HTTP 403 from Azure US), which is why this runs on the UK server.
-# The nightly job daily-results.yml, the one job that writes horse_racing.db, loads every archived file the database
-# does not hold yet. The daily fetch is part of live-record.yml; this workflow is for backfills, by hand.
+name: Betfair price files (every market, nightly)
+# Every price file Betfair publishes at promo.betfair.com/betfairsp/prices, all markets (the owner's ask, 1 Oct 2026:
+# "Pull in all betfair price files daily, for all markets"), archived on the owner's UK runner to
+# s3://$CAPTURE_BUCKET/betfair_prices_raw/<name>. promo.betfair.com refuses GitHub's own runners (HTTP 403 from
+# Azure US), which is why this runs on the UK server.
+#
+# Slowly (the owner's word): one file at a time with a pause between, never in parallel. Each night: the files the
+# archive lacks, and the last week again (Betfair rewrites recent files; a file is stored again only when it has
+# changed). The last week goes first, then the UK and Irish racing files, then the other markets, each newest first.
+# The run takes no new file after 06:15 UTC, before the morning's trading, and the next night takes up the rest:
+# Betfair listed 72,443 files on 1 Oct 2026, several nights' work at this pace.
+#
+# The nightly job daily-results.yml, the one job that writes horse_racing.db, loads the UK and Irish racing files from
+# the archive; the other markets stay in S3, raw. Nothing here touches the database.
 #
 # Until 30 Sep 2026 this job also downloaded, changed and re-uploaded the whole database on a 06:15 UTC schedule. It
 # only ever failed at the probe (GitHub's runners are refused); once the UK runner was named it would have run
 # there before the morning's trading, a second writer of the database beside blandford-sync at 06:45.
 on:
+  schedule:
+    - cron: '30 22 * * *'    # after the evening settlement (21:45 UTC); no new file after 06:15 UTC
   workflow_dispatch:
     inputs:
       date_from:
-        description: 'Start date (YYYY-MM-DD). Leave empty for the last 5 days.'
+        description: 'Only files from this day (YYYY-MM-DD). Leave empty for every day Betfair lists.'
         required: false
         type: string
       date_to:
-        description: 'End date (YYYY-MM-DD). Defaults to yesterday.'
+        description: 'Only files to this day (YYYY-MM-DD).'
+        required: false
+        type: string
+      market:
+        description: 'Only these markets, e.g. ukwin,ukplace. Leave empty for every market.'
+        required: false
+        type: string
+      max_minutes:
+        description: 'Take no new file after this many minutes (at most: until 06:15 UTC at night, 15 minutes by day).'
         required: false
         type: string
 
@@ -24,14 +42,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: betfair-prices-backfill   # its own group: a pending recorder run must not be cancelled by a backfill
+  group: betfair-prices-archive   # its own group: a pending recorder run must not be cancelled by this one
   cancel-in-progress: false
 
 jobs:
   archive:
     if: vars.BETFAIR_RUNNER != ''
     runs-on: ${{ vars.BETFAIR_RUNNER }}
-    timeout-minutes: 120
+    timeout-minutes: 480                 # 22:30 UTC + 8 h: stopped by 06:30 UTC whatever happens
     steps:
       - name: Probe Betfair from this runner
         run: |
@@ -60,7 +78,7 @@ jobs:
       - name: Install dependencies
         run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
 
-      - name: Fetch the price files and archive them to S3
+      - name: Archive the price files to S3, one file at a time
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -68,17 +86,39 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           DATE_FROM: ${{ inputs.date_from }}
           DATE_TO: ${{ inputs.date_to }}
+          MARKET: ${{ inputs.market }}
+          WANT: ${{ inputs.max_minutes }}
         run: |
-          RAW="$HOME/.ashcroft/betfair_raw"
-          if [ -n "$DATE_FROM" ]; then
-            if ! [[ "$DATE_FROM" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date_from must be YYYY-MM-DD"; exit 1; fi
-            ARGS=(--from "$DATE_FROM")
-            if [ -n "$DATE_TO" ]; then
-              if ! [[ "$DATE_TO" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date_to must be YYYY-MM-DD"; exit 1; fi
-              ARGS+=(--to "$DATE_TO")
-            fi
-          else
-            ARGS=(--days 5)
+          ARGS=()
+          for v in "$DATE_FROM" "$DATE_TO"; do
+            if [ -n "$v" ] && ! [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "dates must be YYYY-MM-DD"; exit 1; fi
+          done
+          if [ -n "$DATE_FROM" ]; then ARGS+=(--from "$DATE_FROM"); fi
+          if [ -n "$DATE_TO" ]; then ARGS+=(--to "$DATE_TO"); fi
+          if [ -n "$MARKET" ]; then
+            if ! [[ "$MARKET" =~ ^[a-z0-9]+(,[a-z0-9]+)*$ ]]; then echo "market must be names like ukwin,ukplace"; exit 1; fi
+            ARGS+=(--market "$MARKET")
           fi
-          python betfair_prices.py --fetch "${ARGS[@]}" --dir "$RAW" --push-s3
-          echo "files on the server: $(ls "$RAW" | wc -l)"
+          # The runner's other jobs: the trader from 06:50 UTC, the recorder from 10:10 UTC to the last race, the
+          # evening settlement at 21:45 UTC. At night the archive takes new files until 06:15 UTC; by day (a dispatch
+          # that finds the runner free between jobs) for 15 minutes at most, and never past 21:40 UTC.
+          now=$(date -u +%s)
+          day=$(date -u -d "@$now" +%F)
+          dawn=$(date -u -d "$day 06:15" +%s)
+          dusk=$(date -u -d "$day 21:40" +%s)
+          if [ "$now" -ge "$dusk" ]; then
+            MAX=$(( (dawn + 86400 - now) / 60 ))
+          elif [ "$now" -lt "$dawn" ]; then
+            MAX=$(( (dawn - now) / 60 ))
+          else
+            MAX=$(( (dusk - now) / 60 ))
+            if [ "$MAX" -gt 15 ]; then MAX=15; fi
+          fi
+          if [ "$MAX" -gt 450 ]; then MAX=450; fi
+          if [ -n "$WANT" ]; then
+            if ! [[ "$WANT" =~ ^[0-9]+$ ]]; then echo "max_minutes must be a whole number"; exit 1; fi
+            if [ "$WANT" -lt "$MAX" ]; then MAX=$WANT; fi
+          fi
+          if [ "$MAX" -lt 1 ]; then echo "No time before the runner's next job: the next night takes it up"; exit 0; fi
+          echo "Taking new files for up to $MAX minutes"
+          python betfair_prices.py --archive "${ARGS[@]}" --max-minutes "$MAX"
