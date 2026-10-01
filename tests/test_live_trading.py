@@ -671,3 +671,35 @@ def test_the_live_summary_carries_the_accounts_funds_at_the_start_and_the_end(mo
     out = auto_trade.main(["--live", "--settle", "--date", "2026-09-30", "--out", str(tmp_path)])
     assert out["funds_start"] == {"available": 1520.0, "exposure": -1490.84}
     assert out["funds_end"] == out["funds_start"] and data.reads == 2
+
+
+def test_the_summary_scores_the_bets_entered_by_11_apart_from_the_later_ones():
+    s = Session(LiveExchange(_Data(_Client())), pd.DataFrame(columns=["market_id", "selection_id", "predicted_bfsp"]),
+                _live_cfg(), DAY)
+    s.ledger += [
+        {"event": "back", "market_id": "1.1", "selection_id": 1, "ts": "2026-10-01T08:30:00Z", "matched": 10.0},
+        {"event": "back", "market_id": "1.1", "selection_id": 1, "ts": "2026-10-01T10:30:00Z", "matched": 5.0},
+        {"event": "back", "market_id": "1.2", "selection_id": 2, "ts": "2026-10-01T13:00:00Z", "matched": 20.0},
+        {"event": "settle", "market_id": "1.1", "selection_id": 1, "matched": 15.0, "clv": 0.10},
+        {"event": "settle", "market_id": "1.2", "selection_id": 2, "matched": 20.0, "clv": -0.05},
+    ]
+    out = s.summary()
+    # a horse is scored by its first back: 09:30 UK for the first (topped up at 11:30), 14:00 UK for the second
+    assert out["staked_entered_by_11_uk"] == 15.0 and out["clv_entered_by_11_uk"] == 0.10
+    assert out["staked_entered_after_11_uk"] == 20.0 and out["clv_entered_after_11_uk"] == -0.05
+    assert out["stake_weighted_clv"] == round((15 * 0.10 - 20 * 0.05) / 35, 4)
+
+
+def test_the_owners_window_runs_to_15_minutes_before_each_off():
+    assert LIVE.trade_from == "08:00" and LIVE.trade_until == "21:30" and LIVE.stop_before_off == 15
+    off = datetime(2026, 10, 1, 17, 30, tzinfo=UTC)                 # 18:30 UK
+    c = _Client()
+    s, clock = _session(c, [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])])
+    clock.t = datetime(2026, 10, 1, 17, 14, tzinfo=UTC)             # 16 minutes before: still on
+    s.step(clock())
+    assert [o["side"] for o in _orders(c)] == ["BACK", "LAY"]
+    c2 = _Client()
+    s2, clock2 = _session(c2, [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])])
+    clock2.t = datetime(2026, 10, 1, 17, 15, tzinfo=UTC)            # 15 minutes before: no more bets
+    s2.step(clock2())
+    assert not _orders(c2)

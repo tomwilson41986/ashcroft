@@ -116,3 +116,11 @@ def test_the_trader_records_its_books_on_the_uk_runner():
     spec = _spec("live-trade.yml")
     env = _step(spec, "live", "Trade or settle")["env"]
     assert env["BETFAIR_RECORD"] == "1"
+
+
+def test_on_a_trading_day_the_trade_job_records_the_markets_beside_the_trader():
+    run = _step(_spec("live-trade.yml"), "live", "Trade or settle")["run"]
+    rec = run.index("betfair_recorder.py --record --final --until 21:30")
+    assert run[rec:].split("\n", 1)[0].rstrip().endswith("&")           # in the background
+    assert rec < run.index("python auto_trade.py \"${ARGS[@]}\" --trade-until") < run.index('wait "$REC"')
+    assert "exit $CODE" in run                                            # the job is the trader's verdict

@@ -197,12 +197,14 @@ class DayRecorder:
     is logged and counted, and the trading (or recording) goes on."""
 
     def __init__(self, day: date, root: Path | str | None = None, s3=None, upload_every: float = 900.0,
-                 clock=time.monotonic, background: bool = True):
+                 clock=time.monotonic, background: bool = True, tag: str = ""):
         self.day = day
         self.dir = Path(root or ROOT) / f"{day:%Y-%m-%d}"
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.books_path = self.dir / "books.csv"
-        self.markets_path = self.dir / "markets.csv"
+        # a tag gives a writer its own files (books_trader.csv): the trader and the recorder run side by side
+        suffix = f"_{tag}" if tag else ""
+        self.books_path = self.dir / f"books{suffix}.csv"
+        self.markets_path = self.dir / f"markets{suffix}.csv"
         self._s3 = s3
         self.upload_every = upload_every
         self._clock = clock
@@ -296,12 +298,18 @@ class DayRecorder:
                               Body=gzip.compress(p.read_bytes()))
 
 
+#: the day's writers: the recorder's files, and the trader's (books_trader.csv) when the two ran side by side
+DAY_FILE_TAGS = ("", "trader")
+
+
 def market_ids_on_file(day: date, root: Path | str | None = None) -> list[str]:
-    path = Path(root or ROOT) / f"{day:%Y-%m-%d}" / "markets.csv"
-    if not path.exists():
-        return []
-    with path.open() as f:
-        return sorted({r["market_id"] for r in csv.DictReader(f)})
+    ids: set[str] = set()
+    for tag in DAY_FILE_TAGS:
+        path = Path(root or ROOT) / f"{day:%Y-%m-%d}" / f"markets{'_' + tag if tag else ''}.csv"
+        if path.exists():
+            with path.open() as f:
+                ids |= {r["market_id"] for r in csv.DictReader(f)}
+    return sorted(ids)
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -578,11 +586,19 @@ def _read_ledger(day: date, mode: str = "live", s3=None):
     return pd.read_csv(io.BytesIO(obj["Body"].read()), dtype=str, keep_default_na=False)
 
 
+def _read_day_files(day: date, stem: str, s3=None, root: Path | None = None):
+    """A day's file from every writer (the recorder's and the trader's), as one frame; None when there is none."""
+    import pandas as pd
+    parts = [f for tag in DAY_FILE_TAGS
+             if (f := _read_day_csv(day, f"{stem}{'_' + tag if tag else ''}.csv", s3, root)) is not None and len(f)]
+    return pd.concat(parts, ignore_index=True) if parts else None
+
+
 def load_day(conn: sqlite3.Connection, day: date, s3=None, root: Path | None = None) -> dict:
     from trading.session import LEDGER_FIELDS
     out = {"day": f"{day:%Y-%m-%d}", "markets": 0, "marks": 0, "orders": 0}
-    markets = _read_day_csv(day, "markets.csv", s3, root)
-    books = _read_day_csv(day, "books.csv", s3, root)
+    markets = _read_day_files(day, "markets", s3, root)
+    books = _read_day_files(day, "books", s3, root)
     if markets is not None and len(markets):
         out["markets"] = _upsert(conn, "betfair_live_markets", match_markets(markets, conn, day))
         out["marks"] = _upsert(conn, "betfair_live_marks", marks(books, markets, day))

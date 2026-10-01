@@ -80,7 +80,7 @@ def book_recorder(day: date, env=None):
         return None
     try:
         from betfair_recorder import DayRecorder
-        return DayRecorder(day)
+        return DayRecorder(day, tag="trader")             # its own files: the recorder runs beside the trader
     except Exception as exc:
         log.warning("Book recorder unavailable (%s): trading without a record of the books", exc)
         return None
