@@ -159,6 +159,16 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   as `unsettled`.
 - **The record**: s3://$ULTRA_BETTING_S3_BUCKET/trading/live/<day>/ (ledger and summary), emailed after the
   morning session and after the evening settlement (each race's result, the BSP, the CLV, commission on the net).
+- **Short of funds** (the owner, 1 Oct: "hold and then continue trading later when balance is back up"): a race's
+  stakes come back only once it is run, so a morning's backs can use up the account's balance (on 1 Oct Betfair
+  refused new backs from 10:19 UK, after GBP1,455 staked; a lay at SP on a horse already backed added no exposure).
+  Refused for want of funds, the trader holds new bets for five minutes, reads the account's funds
+  (getAccountFunds, read-only), and trades again once they are back, staking no more than the account has; the lays
+  at SP that hedge the backs already matched still go. Each refused order is kept with Betfair's own reason, and the
+  summary and email carry the funds at the start and the end of the session.
+- **Every back can be laid**: Betfair takes no lay at SP under GBP10 of liability, so no back is sent whose winnings,
+  with what the horse has unhedged already, would be smaller, and every fill is at least that (minFillSize); on
+  1 Oct two such fills, GBP15.37 of winnings between them, were left without a lay.
 
 **The first live session** (30 Sep, a test the owner chose; ledger `live-first-session-0930`). The session ran at
 Kempton, 19:00-20:30 UK, and entered 28 to 118 minutes before each off, a window the backtest never tested.

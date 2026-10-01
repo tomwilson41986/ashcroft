@@ -45,6 +45,7 @@ log = logging.getLogger(__name__)
 LOGIN_URL = "https://identitysso.betfair.com/api/login"
 CERT_LOGIN_URL = "https://identitysso-cert.betfair.com/api/certlogin"
 BETTING_URL = "https://api.betfair.com/exchange/betting/rest/v1.0/"
+ACCOUNT_URL = "https://api.betfair.com/exchange/account/rest/v1.0/"
 
 # Horse Racing event type ID on Betfair
 HORSE_RACING_EVENT_TYPE_ID = "7"
@@ -178,6 +179,27 @@ class BetfairClient:
                 f"Betfair API error: {data.get('faultstring', data)}"
             )
 
+        return data
+
+    def account_funds(self) -> dict:
+        """The account's funds (Accounts API getAccountFunds; read-only): availableToBetBalance, exposure,
+        exposureLimit, retainedCommission."""
+        if not self.session_token:
+            raise BetfairAPIError("Not logged in. Call login() first.")
+        headers = {
+            "X-Application": self.app_key,
+            "X-Authentication": self.session_token,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        resp = self._session.post(f"{ACCOUNT_URL}getAccountFunds/", json={}, headers=headers, timeout=30)
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            raise requests.HTTPError(f"{exc}: {resp.text[:300]}", response=resp) from None
+        data = resp.json()
+        if isinstance(data, dict) and "faultcode" in data:
+            raise BetfairAPIError(f"Betfair API error: {data.get('faultstring', data)}")
         return data
 
     # ------------------------------------------------------------------

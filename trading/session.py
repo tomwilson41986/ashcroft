@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import math
 import time as _time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -36,8 +37,16 @@ LEDGER_FIELDS = [
     "result", "bsp", "clv", "pnl_back", "pnl_lay", "pnl", "commission",
 ]
 MAX_HEDGE_TRIES = 5
+#: refused for want of funds (the morning's own exposure: a race's stakes come back only when it has run), the
+#: session holds new bets this long, reads the account's funds, and trades again once they are back (owner, 1 Oct)
+FUNDS_HOLD_MINUTES = 5
+HELD = "held: the account's funds are short"
 #: the reason on a live settlement taken from Betfair's record of the bets (listClearedOrders)
 SETTLED_BY_BETFAIR = "Betfair's record of the settled bets"
+
+
+def _short_of_funds(error) -> bool:
+    return "INSUFFICIENT_FUNDS" in str(error or "")
 
 
 def _num(x) -> float:
@@ -98,6 +107,9 @@ class Session:
         self.ledger: list[dict] = []
         self.markets: dict[str, Market] = {}
         self._skips: set = set()
+        self.hold_until: datetime | None = None              # short of funds: no new bets until then
+        self.available: float | None = None                  # the account's funds as last read while short
+        self.holds = 0
         p = predictions.dropna(subset=["market_id", "selection_id"]).copy()
         p["market_id"] = p["market_id"].astype(str)
         p["selection_id"] = p["selection_id"].astype("int64")
@@ -140,6 +152,8 @@ class Session:
                              for (mid, _), p in self.positions.items() if mid == m.market_id)]
         to_settle = [m for mid, m in self.markets.items() if now - m.start >= timedelta(minutes=5)
                      and any(not p.settled and p.matched > 0 for (pm, _), p in self.positions.items() if pm == mid)]
+        if self.hold_until is not None and now >= self.hold_until:
+            self._funds_back(now)
         ids = list(dict.fromkeys([m.market_id for m in to_hedge + to_trade]))
         books = self.x.books(ids) if ids else {}
         for m in to_hedge:
@@ -212,6 +226,29 @@ class Session:
             return
         stake, why = allowed_stake(want, d.price, m.market_id, book.total_matched, d.back_size,
                                    self.state, self.cfg.limits)
+        capped = False
+        if stake > 0 and self.hold_until is not None:
+            stake, why = 0.0, HELD
+        elif stake > 0 and self.available is not None and stake > self.available:
+            stake, capped = math.floor(max(0.0, self.available) * 100) / 100, True   # since a hold: what it has
+            if stake < self.cfg.limits.min_stake:
+                self._hold(now, "the funds read are spent")
+                stake, why = 0.0, HELD
+        min_fill = self.cfg.limits.min_stake
+        if stake > 0 and self.cfg.trade_out and d.price > 1.0:
+            # every fill must be one the lay at the SP can close: its winnings, with what the horse has unhedged
+            # already, at least the smallest lay at SP Betfair takes; a back too small for that is not sent
+            owed = self.cfg.limits.min_bsp_liability - (self._unhedged(pos) if pos else 0.0)
+            if owed > 0:
+                need = math.ceil(owed / (d.price - 1.0) * 100 - 1e-9) / 100
+                if need > stake + 1e-9 and capped:          # the funds are short, not the market: read them again
+                    self._hold(now, "the funds read are spent")
+                    stake, why = 0.0, HELD
+                elif need > stake + 1e-9:
+                    stake, why = 0.0, (f"too small to lay at the SP (winnings under "
+                                       f"GBP{self.cfg.limits.min_bsp_liability:.0f})")
+                else:
+                    min_fill = max(min_fill, need)
         base = self._row(now, "back", m, d.selection_id, d.name, strategy=self.cfg.strategy,
                          staking=self.cfg.staking, reason=d.reason, p_model=d.p_model, p_market=d.p_market,
                          p_pool=d.p_pool, edge=d.edge, move=d.move, best_back=d.price, back_size=d.back_size,
@@ -222,12 +259,16 @@ class Session:
                 self.ledger.append({**base, "event": "skip", "error": why})
             return
         fill = self.x.back(m.market_id, d.selection_id, d.price, stake,
-                           ref=f"ash{self.day:%m%d}{d.selection_id}"[:32], min_fill=self.cfg.limits.min_stake)
+                           ref=f"ash{self.day:%m%d}{d.selection_id}"[:32], min_fill=min_fill)
         if fill.matched > 0:
             pos = self.positions.setdefault(key, Position(m.market_id, d.selection_id, d.name))
             pos.matched += fill.matched
             pos.cost += fill.matched * fill.avg_price
             self.state.record(m.market_id, fill.matched)
+            if self.available is not None:
+                self.available = max(0.0, self.available - fill.matched)
+        elif fill.status == "FAILURE" and _short_of_funds(fill.error):
+            self._hold(now, fill.error)
         if fill.status == "UNKNOWN":                         # placed or not cannot be told: no more bets today
             self.state.stopped = f"order state unknown on {m.market_id} {d.selection_id}: {fill.error}"
             log.error("%s", self.state.stopped)
@@ -236,6 +277,37 @@ class Session:
         if fill.matched > 0 and self.cfg.trade_out and self.cfg.trade_out_at == "fill":
             self._lay_at_bsp(m, pos, self._unhedged(pos), now)
         self.flush()                                         # an order on record at once, not at the poll's end
+
+    def _funds(self) -> dict | None:
+        try:
+            return self.x.funds() if hasattr(self.x, "funds") else None
+        except Exception as exc:                           # the funds are for the hold; never a failed step
+            log.warning("account funds not read (%s)", str(exc)[:200])
+            return None
+
+    def _hold(self, now: datetime, why) -> None:
+        """Short of funds: no new bets for FUNDS_HOLD_MINUTES, then the funds are read again (the lays at SP that
+        hedge the backs already matched still go)."""
+        if self.hold_until is None:
+            self.holds += 1
+            f = self._funds() or {}
+            log.warning("Short of funds (%s): GBP%s available, exposure GBP%s; holding new bets for %d minutes",
+                        why, f.get("available"), f.get("exposure"), FUNDS_HOLD_MINUTES)
+        self.hold_until = now + timedelta(minutes=FUNDS_HOLD_MINUTES)
+
+    def _funds_back(self, now: datetime) -> None:
+        """At the end of a hold: trade again if the account has the funds for a bet, or hold again."""
+        f = self._funds()
+        avail = f.get("available") if f else None
+        try:
+            avail = float(avail) if avail is not None else None
+        except (TypeError, ValueError):
+            avail = None
+        if avail is not None and avail < self.cfg.limits.min_stake:
+            self.hold_until = now + timedelta(minutes=FUNDS_HOLD_MINUTES)
+            return
+        log.info("Trading again: GBP%s available to bet", "unknown" if avail is None else f"{avail:,.2f}")
+        self.hold_until, self.available = None, avail
 
     @staticmethod
     def _unhedged(pos: Position) -> float:
@@ -265,6 +337,8 @@ class Session:
             self.state.stopped = f"trade-out state unknown on {m.market_id} {pos.selection_id}: {fill.error}"
             log.error("%s", self.state.stopped)
         else:
+            if _short_of_funds(fill.error):               # no new backs while a hedge waits for the funds
+                self._hold(now, fill.error)
             pos.hedge_failures += 1
             if pos.hedge_failures >= MAX_HEDGE_TRIES:
                 log.error("lay at BSP refused %d times on %s %s (%s): left to the result", pos.hedge_failures,
@@ -541,6 +615,11 @@ class Session:
         stakes = np.array([_num(r.get("matched")) for r in settled], float)
         clvs = np.array([_num(r.get("clv")) for r in settled], float)
         ok = np.isfinite(clvs) & (stakes > 0)
+        refused: dict[str, int] = {}                     # the backs Betfair did not take, by its reason
+        for r in self.ledger:
+            if r["event"] == "back" and r.get("status") == "FAILURE":
+                why = str(r.get("error") or "unknown")
+                refused[why] = refused.get(why, 0) + 1
         return {
             "mode": self.mode, "day": str(self.day), "strategy": self.cfg.strategy, "staking": self.cfg.staking,
             "markets": len(self.markets), "bets_matched": len(backs),
@@ -549,4 +628,6 @@ class Session:
             "settled_pnl": round(self.state.settled_pnl, 2),
             "stake_weighted_clv": round(float(np.sum(stakes[ok] * clvs[ok]) / stakes[ok].sum()), 4) if ok.any() else None,
             "stopped": self.state.stopped,
+            "backs_refused": refused,
+            "held_for_funds": self.holds,
         }

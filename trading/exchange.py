@@ -147,6 +147,17 @@ class BetfairData:
     def login(self) -> None:
         self.client.login()
 
+    def funds(self) -> dict | None:
+        """The account's funds (the Accounts API's getAccountFunds; read-only): available to bet, the exposure, the
+        exposure limit and the retained commission. None when they cannot be read: they are for the record."""
+        try:
+            raw = self.client.account_funds() or {}
+        except Exception as exc:
+            log.warning("account funds not read (%s)", str(exc)[:200])
+            return None
+        return {"available": raw.get("availableToBetBalance"), "exposure": raw.get("exposure"),
+                "exposure_limit": raw.get("exposureLimit"), "retained_commission": raw.get("retainedCommission")}
+
     def _read(self, method: str, params: dict):
         if method not in ("listMarketCatalogue", "listMarketBook", "listClearedOrders"):
             raise ValueError(f"{method}: this client only reads markets, prices and settled bets")
@@ -236,6 +247,9 @@ class PaperExchange:
         """The account's settled bets (read-only): the evening job settles the live ledger through this exchange."""
         return self.data.cleared(market_ids)
 
+    def funds(self) -> dict | None:
+        return None                                        # paper money is never short
+
     def back(self, market_id, selection_id, price, size, ref, min_fill: float = 2.0) -> Fill:
         """Fill now against the book last read: every level offered at `price` or better, up to `size`."""
         self._n += 1
@@ -302,6 +316,9 @@ class LiveExchange:
     def cleared(self, market_ids: list[str]) -> list[dict]:
         return self.data.cleared(market_ids)
 
+    def funds(self) -> dict | None:
+        return self.data.funds()
+
     # ------------------------------------------------------------------ orders
 
     def _call(self, method: str, params: dict):
@@ -351,6 +368,18 @@ class LiveExchange:
         ok = reply.get("status") == "SUCCESS" and rep.get("status", "SUCCESS") == "SUCCESS"
         return rep, ok
 
+    @staticmethod
+    def _reason(reply: dict, rep: dict, default: str) -> str:
+        """Why Betfair refused an order. An instruction's ERROR_IN_ORDER says only that the order as a whole failed;
+        the reason (INSUFFICIENT_FUNDS, MARKET_SUSPENDED, ...) is the report's own code, so that goes first."""
+        codes = list(dict.fromkeys(c for c in (str(rep.get("errorCode") or ""), str(reply.get("errorCode") or ""))
+                                   if c))
+        telling = [c for c in codes if c != "ERROR_IN_ORDER"] or codes
+        if not telling:
+            return default
+        rest = [c for c in codes if c != telling[0]]
+        return f"{telling[0]} ({', '.join(rest)})" if rest else telling[0]
+
     def back(self, market_id, selection_id, price, size, ref, min_fill: float = 2.0) -> Fill:
         size = _floor2(size)
         fill = Fill(market_id=market_id, selection_id=int(selection_id), side="BACK", order_type="LIMIT",
@@ -369,7 +398,7 @@ class LiveExchange:
             fill.matched, fill.avg_price, fill.status = matched, float(rep.get("averagePriceMatched") or price), "SUCCESS"
         else:
             fill.status = "FAILURE"
-            fill.error = str(rep.get("errorCode") or reply.get("errorCode") or rep.get("orderStatus") or "NOT_MATCHED")
+            fill.error = self._reason(reply, rep, str(rep.get("orderStatus") or "NOT_MATCHED"))
         return fill
 
     def _confirm_back(self, fill: Fill, ref: str) -> Fill:
@@ -413,7 +442,7 @@ class LiveExchange:
             fill.status = "PENDING"                        # matched at the off, at the Betfair SP
         else:
             fill.status = "FAILURE"
-            fill.error = str(rep.get("errorCode") or reply.get("errorCode") or "FAILURE")
+            fill.error = self._reason(reply, rep, "FAILURE")
         return fill
 
     def cancel_all(self, market_id=None) -> None:
