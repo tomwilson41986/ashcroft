@@ -49,6 +49,15 @@ def _short_of_funds(error) -> bool:
     return "INSUFFICIENT_FUNDS" in str(error or "")
 
 
+def _entered_after(ts: str, hour: int) -> bool | None:
+    """Whether a ledger time (UTC) is at or after `hour` UK; None when it cannot be read."""
+    try:
+        t = datetime.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return _uk(t).hour >= hour
+
+
 def _num(x) -> float:
     """A ledger value as a number (a restored ledger holds strings; a blank is NaN)."""
     try:
@@ -620,6 +629,19 @@ class Session:
             if r["event"] == "back" and r.get("status") == "FAILURE":
                 why = str(r.get("error") or "unknown")
                 refused[why] = refused.get(why, 0) + 1
+        # the bets entered in the tested window (to 11:00 UK) scored apart from the later ones (the owner, 1 Oct)
+        first: dict[tuple[str, str], str] = {}
+        for r in self.ledger:
+            if r["event"] == "back" and _num(r.get("matched")) > 0:
+                first.setdefault((str(r.get("market_id")), str(r.get("selection_id"))), str(r.get("ts") or ""))
+        window = {"by_11": [0.0, 0.0], "after_11": [0.0, 0.0]}  # staked, staked x CLV
+        for r, st, cv in zip(settled, stakes, clvs):
+            late = _entered_after(first.get((str(r.get("market_id")), str(r.get("selection_id"))), ""), 11)
+            if late is None or not (np.isfinite(cv) and st > 0):
+                continue
+            w = window["after_11" if late else "by_11"]
+            w[0] += st
+            w[1] += st * cv
         return {
             "mode": self.mode, "day": str(self.day), "strategy": self.cfg.strategy, "staking": self.cfg.staking,
             "markets": len(self.markets), "bets_matched": len(backs),
@@ -630,4 +652,9 @@ class Session:
             "stopped": self.state.stopped,
             "backs_refused": refused,
             "held_for_funds": self.holds,
+            "staked_entered_by_11_uk": round(window["by_11"][0], 2),
+            "clv_entered_by_11_uk": round(window["by_11"][1] / window["by_11"][0], 4) if window["by_11"][0] else None,
+            "staked_entered_after_11_uk": round(window["after_11"][0], 2),
+            "clv_entered_after_11_uk": (round(window["after_11"][1] / window["after_11"][0], 4)
+                                        if window["after_11"][0] else None),
         }

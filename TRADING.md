@@ -134,7 +134,8 @@ The owner chose to trade live from the start, without a paper period, and set th
 permission mode was changed by the owner to allow the work. `auto_trade.py --live` with
 `trading/config_live.json` and the workflow `live-trade.yml` place real orders on the owner's account:
 
-- **The rule** (`closing_clv`, trading/strategy.py): 08:00-11:00 UK and never within 15 minutes of a race's off (the
+- **The rule** (`closing_clv`, trading/strategy.py): from 08:00 UK until 15 minutes before each race's off (the owner's
+  decision of 1 Oct; 08:00-11:00 UK until then, the tested window) and never within 15 minutes of a race's off (the
   owner's limit), polled every minute, every runner of a race
   priced whole whose expected CLV at the best back price is at least +3% under the closing model
   (`model/race_book.py`; the model fitted without volume when the delayed key's feed carries none), with at least
@@ -166,6 +167,14 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   (getAccountFunds, read-only), and trades again once they are back, staking no more than the account has; the lays
   at SP that hedge the backs already matched still go. Each refused order is kept with Betfair's own reason, and the
   summary and email carry the funds at the start and the end of the session.
+- **To 15 minutes before each off** (the owner, 1 Oct: "You can trade right up until 15 minutes before race start. Just
+  use what's in the balance"): the session trades every race from 08:00 UK until 15 minutes before its off, with the
+  balance as the races are run and their stakes come back. It is a choice made knowing the Jan-Mar test: entered near
+  the off with the morning's closing model the rule lost (late-entry-0930: CLV -5.8% on the delayed key's feed, about
+  GBP87 a day), against +5.3% for the morning's entries. The summary and email score the bets entered by 11:00 UK
+  apart from the later ones (`clv_entered_by_11_uk`, `clv_entered_after_11_uk`), so the live record answers it. One
+  runner serves both, so on a trading day the trading job runs the market recorder beside the trader (read-only; the
+  trader's own books go to `books_trader.csv`), and the recorder's own 10:10 UTC run takes the evening's part.
 - **Every back can be laid**: Betfair takes no lay at SP under GBP10 of liability, so no back is sent whose winnings,
   with what the horse has unhedged already, would be smaller, and every fill is at least that (minFillSize); on
   1 Oct two such fills, GBP15.37 of winnings between them, were left without a lay.
@@ -220,7 +229,7 @@ non-interactive. The backtest behind the rule covers February-March 2026 only; t
 
 | What | How often | Kept in S3 | Loaded nightly into horse_racing.db |
 |---|---|---|---|
-| Every book the trader reads (`BETFAIR_RECORD=1`) | each minute, 08:00-11:00 UK | `betfair_live/<day>/books.csv.gz` | `betfair_live_marks` |
+| Every book the trader reads (`BETFAIR_RECORD=1`) | each minute, from 08:00 UK to 15 minutes before each off | `betfair_live/<day>/books_trader.csv.gz` (its own files: the recorder runs beside it) | `betfair_live_marks` |
 | The day's GB/IE win and place markets (live-record.yml) | every 5 minutes, each minute in the last hour, to 21:30 UK | the same | `betfair_live_marks` |
 | The catalogue: cloth, stall, jockey, trainer, age, weight, rating, form, headgear, forecast price | once a market | `betfair_live/<day>/markets.csv.gz` | `betfair_live_markets` (matched to race_results) |
 | The settled books: BSP, winners, removals and reduction factors | after racing and next morning | in `books.csv.gz` (source `final`) | `betfair_live_marks`, mark `final` |

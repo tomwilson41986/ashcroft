@@ -215,6 +215,26 @@ def test_the_trader_records_only_on_the_uk_runner(tmp_path, monkeypatch):
     assert auto_trade.book_recorder(DAY, env={"BETFAIR_RECORD": "0"}) is None
     rec = auto_trade.book_recorder(DAY, env={"BETFAIR_RECORD": "1"})
     assert isinstance(rec, br.DayRecorder) and rec.dir == tmp_path / f"{DAY}"
+    assert rec.books_path.name == "books_trader.csv"                   # its own files: the recorder runs beside it
+
+
+def test_the_trader_and_the_recorder_write_side_by_side_and_the_nightly_load_reads_both(tmp_path):
+    s3 = FakeS3()
+    trader = br.DayRecorder(DAY, root=tmp_path / "server", s3=s3, background=False, tag="trader")
+    recorder = br.DayRecorder(DAY, root=tmp_path / "server", s3=s3, background=False)
+    trader.record_catalogue([raw_catalogue()])
+    trader.record_books([raw_book()], "trader")
+    recorder.record_catalogue([raw_catalogue(), raw_catalogue("1.200", "2026-10-01T15:00:00.000Z")])
+    recorder.record_books([raw_book(), raw_book("1.200")], "recorder")
+    trader.maybe_upload(force=True)
+    recorder.maybe_upload(force=True)
+    keys = {k for _, k in s3.objects}
+    assert {f"betfair_live/{DAY}/{n}.csv.gz" for n in ("books", "markets", "books_trader", "markets_trader")} <= keys
+    assert br.market_ids_on_file(DAY, root=tmp_path / "server") == ["1.100", "1.200"]
+    books = br._read_day_files(DAY, "books", s3, root=tmp_path / "nothing-here")       # the S3 copies, both writers
+    assert len(books) == 6 and set(books["source"]) == {"trader", "recorder"}
+    out = br.load_db(str(tmp_path / "t.db"), days=1, day_to=DAY, s3=s3, root=tmp_path / "nothing-here")
+    assert out[0]["markets"] == 4 and out[0]["marks"] > 0     # each runner once, whichever writer caught it
 
 
 # ---------------------------------------------------------------------------------------------------------------

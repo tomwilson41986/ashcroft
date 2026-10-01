@@ -1,11 +1,17 @@
 name: Live trading (the owner's book)
 
 # The owner's rule with real money on the owner's Betfair account (auto_trade.py --live, trading/config_live.json;
-# the owner's decision of 30 Sep 2026): 08:00-11:00 UK and never within 15 minutes of a race's off (the owner's limit),
-# every runner whose expected CLV at the best back price is at least +3% under the closing model, staked to win GBP250
-# (at most GBP300 a bet, at most GBP4,000 staked a day), each back filled at once or not at all and laid at the Betfair
-# SP as soon as it is matched. The window is the tested one: entered near the off, the rule lost (reports ledger
-# late-entry-0930: CLV -5.8% without matched money), so a later trade_until on a manual run is at the owner's choice.
+# the owner's decision of 30 Sep 2026): every runner whose expected CLV at the best back price is at least +3% under
+# the closing model, staked to win GBP250 (at most GBP300 a bet, at most GBP4,000 staked a day), each back filled at
+# once or not at all and laid at the Betfair SP as soon as it is matched, with what the account has (short of funds it
+# holds, and trades again as the races are run and the stakes come back). From 08:00 UK until 15 minutes before each
+# off: the owner's decision of 1 Oct, made knowing that entered near the off the rule lost in the Jan-Mar test
+# (ledger late-entry-0930: CLV -5.8% without matched money); the summary scores the bets entered by 11:00 UK, the
+# tested window, apart from the later ones.
+#
+# One runner serves the trading and the market record, so on a trading day this job records the markets itself
+# (betfair_recorder.py, read-only, beside the trader; the trader's own books go to their own files); the recorder's
+# 10:10 UTC run waits for the runner and takes the evening's part (yesterday's settled books, the price files).
 #
 # The owner's switches: the repository variable TRADING_LIVE must be 'yes' for any order to be placed, and
 # BETFAIR_RUNNER must name the UK runner (Betfair refuses GitHub's own runners); without it the job is skipped.
@@ -15,7 +21,7 @@ name: Live trading (the owner's book)
 
 on:
   schedule:
-    - cron: '50 6 * * *'     # trade: the session waits for 08:00 UK and stops at 11:05 UK
+    - cron: '50 6 * * *'     # trade: the session waits for 08:00 UK and trades to 15 minutes before each off
     - cron: '45 21 * * *'    # settle: after the last race
   workflow_dispatch:
     inputs:
@@ -29,7 +35,7 @@ on:
         required: false
         type: string
       trade_until:
-        description: 'trade: last UK time to place bets, HH:MM (blank: the tested 11:00; never within 15 min of an off)'
+        description: 'trade: last UK time to place bets, HH:MM (blank: the config, to the last race; never within 15 min of an off)'
         required: false
         type: string
         default: ''
@@ -152,7 +158,16 @@ jobs:
               TRADE_UNTIL=$(python -c "import json; print(json.load(open('trading/config_live.json'))['trade_until'])")
               UNTIL=$(date -u -d "2000-01-01 $TRADE_UNTIL UTC + 5 minutes" +%H:%M)
             fi
+            # the day's market record (read-only) beside the trader: one runner serves both
+            python betfair_recorder.py --record --final --until 21:30 > "$RUNNER_TEMP/recorder.log" 2>&1 &
+            REC=$!
+            set +e
             python auto_trade.py "${ARGS[@]}" --trade-until "$TRADE_UNTIL" --until "$UNTIL"
+            CODE=$?
+            wait "$REC"
+            echo "recorder exited $?"
+            tail -n 30 "$RUNNER_TEMP/recorder.log"
+            exit $CODE
           fi
 
       - name: Keep the ledger
