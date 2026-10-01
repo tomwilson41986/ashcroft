@@ -19,14 +19,14 @@ log = setup_logging("pipeline.predict")
 def match_predictions_to_markets(predictions, target_date):
     """Match model predictions to Betfair market/selection IDs."""
     from ultra_betting.betfair.auth import ensure_session
-    from ultra_betting.betfair.client import get_client, BetfairAPIError
-    from betfair_client import match_runner_name
+    from ultra_betting.betfair.client import get_client
 
     try:
         ensure_session()
         client = get_client()
         markets = client.list_horse_racing_markets(target_date)
-    except BetfairAPIError as e:
+    except Exception as e:      # BetfairAPIError, or Betfair refusing GitHub's runners (403 at the login): the
+        # predictions are written without market ids, and the trader on the UK server matches its own markets
         log.warning(f"Could not fetch Betfair markets: {e}")
         return predictions
 
