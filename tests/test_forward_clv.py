@@ -124,6 +124,27 @@ def test_attach_exchange_prices_never_fails_the_job(monkeypatch):
     assert attach_exchange_prices(preds, "2026-07-04")[0].bf_best_back is None
 
 
+def test_a_refused_betfair_login_never_costs_the_mornings_predictions(monkeypatch):
+    """1 Oct 2026: once the Betfair secrets were set, the 06:00 run on GitHub's runner logged in to match markets,
+    Betfair refused the login (403, GitHub's runners are in the US) and the run died with 426 prices made and none
+    written. The trader on the UK server matches its own markets, so a refusal leaves the predictions as they are."""
+    import requests
+    from pipeline.predict import match_predictions_to_markets
+    auth = types.ModuleType("ultra_betting.betfair.auth")
+
+    def _refused():
+        raise requests.exceptions.HTTPError("403 Client Error: Forbidden for url: https://identitysso.betfair.com/api/login")
+
+    auth.ensure_session = _refused
+    client_mod = types.ModuleType("ultra_betting.betfair.client")
+    client_mod.get_client = lambda: None
+    monkeypatch.setitem(sys.modules, "ultra_betting.betfair.auth", auth)
+    monkeypatch.setitem(sys.modules, "ultra_betting.betfair.client", client_mod)
+    preds = [_pred()]
+    out = match_predictions_to_markets(preds, "2026-10-01")
+    assert out is preds and not out[0].market_id
+
+
 # --- the join back to the result ------------------------------------------
 
 def test_live_loader_joins_on_normalised_keys(tmp_path):
