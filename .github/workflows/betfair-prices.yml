@@ -6,7 +6,8 @@ name: Betfair price files (every market, nightly)
 #
 # Slowly (the owner's word): one file at a time with a pause between, never in parallel. Each night: the files the
 # archive lacks, and the last week again (Betfair rewrites recent files; a file is stored again only when it has
-# changed). The last week goes first, then the UK and Irish racing files, then the other markets, each newest first.
+# changed). The last week goes first, then the UK and Irish racing files from 2018 (what the nightly load reads), then
+# the other markets from 2018, then every older file, each newest first.
 # The run takes no new file after 06:15 UTC, before the morning's trading, and the next night takes up the rest:
 # Betfair listed 72,443 files on 1 Oct 2026, several nights' work at this pace.
 #

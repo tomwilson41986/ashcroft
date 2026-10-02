@@ -496,6 +496,22 @@ def test_every_market_is_archived_slowly_the_last_week_first_and_rewritten_files
     assert again["to_fetch"] == 4 and again["stored"] == 0 and again["unchanged"] == 4    # only the last week
 
 
+def test_the_other_markets_from_2018_come_before_anything_older():
+    """The nightly load reads UK and Irish racing from 2018, and the owner's research of 2 Oct wants the other
+    markets: after the last week, UK/IE from 2018, then the other markets from 2018, then every older file."""
+    names = ["dwbfpricesukwin01012012.csv", "dwbfpricesauswin01012012.csv", "dwbfpricesauswin01012020.csv",
+             "dwbfpricesusaplace01012019.csv", "dwbfpricesireplace01012018.csv", "dwbfpricesukwin31122017.csv",
+             "dwbfpricesukwin01102026.csv"]
+    site = FakeSite({n: _csv(n) for n in names})
+    bp.archive_published(s3=FakeS3(), bucket="ashcroft", session=site, sleep=lambda _: None)
+    fetched = [u.rsplit("/", 1)[-1] for u in site.gets[1:]]
+    assert fetched == ["dwbfpricesukwin01102026.csv",                                      # the last week
+                       "dwbfpricesireplace01012018.csv",                                   # UK/IE from 2018
+                       "dwbfpricesauswin01012020.csv", "dwbfpricesusaplace01012019.csv",   # the rest from 2018
+                       "dwbfpricesukwin31122017.csv", "dwbfpricesauswin01012012.csv",      # then the older files
+                       "dwbfpricesukwin01012012.csv"]
+
+
 def test_a_backfill_of_old_days_fetches_only_what_the_archive_lacks():
     site, s3 = _site_and_archive()
     # the last week is Betfair's last week, not the backfill's: the 2019 UK file the archive holds stays as it is
