@@ -369,11 +369,19 @@ def replay(day: date, name: str, balance) -> dict:
         clock_t[0] = t
     data.now = t + timedelta(hours=12)                 # the settled books, recorded after the last race
     s.settle_all(t)
-    led = pd.DataFrame(s.ledger)
+    out = score(pd.DataFrame(s.ledger), day, name, balance, s.holds,
+                s.state.turnover >= cfg.limits.max_daily_turnover - 2, s.state.settled_pnl)
+    pd.DataFrame(s.ledger).to_csv(OUT / f"ledger_{day}_{name}_{balance}.csv", index=False)
+    return out
+
+
+def score(led: pd.DataFrame, day, name, balance, holds, day_limit, settled_pnl) -> dict:
+    """A replay's ledger scored: CLV against the BSP, the first fills and the top-ups apart, the horses held."""
     st = led[(led.event == "settle") & (led.result != "REMOVED")].copy()
     st["matched"], st["clv"], st["pnl"] = (pd.to_numeric(st[c], errors="coerce") for c in ("matched", "clv", "pnl"))
     ok = st[np.isfinite(st.clv) & (st.matched > 0)]
-    backs = led[(led.event == "back") & (pd.to_numeric(led.matched, errors="coerce") > 0)].copy()
+    backs = led[(led.event == "back") & (pd.to_numeric(led.matched, errors="coerce") > 0)][
+        ["market_id", "selection_id", "matched", "avg_price"]].copy()       # in the ledger's order, which is time's
     backs["matched"], backs["avg_price"] = (pd.to_numeric(backs[c], errors="coerce") for c in ("matched", "avg_price"))
     backs["k"] = backs.groupby(["market_id", "selection_id"]).cumcount()
     backs = backs.merge(ok[["market_id", "selection_id", "bsp"]], on=["market_id", "selection_id"])
@@ -388,11 +396,10 @@ def replay(day: date, name: str, balance) -> dict:
            "first_staked": round(float(first.matched.sum()), 2), "first_clv": round(_clv(first), 4),
            "topup_staked": round(float(tops.matched.sum()), 2), "topup_clv": round(_clv(tops), 4),
            "result_before_commission": round(float(st.pnl.sum()), 2),
-           "result_after_commission": round(float(s.state.settled_pnl), 2), "holds": s.holds,
+           "result_after_commission": round(float(settled_pnl), 2), "holds": holds,
            "horses_held": int(len(held)),
            "held_never_backed": int(sum(1 for r in held.astype(str).itertuples(index=False) if tuple(r) not in backed)),
-           "day_limit_reached": s.state.turnover >= cfg.limits.max_daily_turnover - 2}
-    led.to_csv(OUT / f"ledger_{day}_{name}_{balance}.csv", index=False)
+           "day_limit_reached": bool(day_limit)}
     return out
 
 

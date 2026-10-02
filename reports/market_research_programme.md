@@ -22,7 +22,7 @@ The holdout (1 Apr 2026 on) is read once, at stage 5, for the rule that is going
 
 | Market | Liquidity (median traded a runner) | Data held | Model now | Stage | Next |
 |---|---|---|---|---|---|
-| UK/IE win | GBP11.8k (UK), GBP4.7k (IE) | Betfair files from 2017, HRB from 2010, live books from 1 Oct | BFSP model + closing model | 6, live | the entry time and the top-ups (both live days: first fills +9.5%, top-ups +2.6%; the last hour -1.2%), replayed on the recorded days; then the model and the closing model |
+| UK/IE win | GBP11.8k (UK), GBP4.7k (IE) | Betfair files from 2017, HRB from 2010, live books from 1 Oct | BFSP model + closing model | 6, live | entry time and top-ups: 1 Oct replayed, the live rule best with the account's money; 2 Oct next. Then the model and the closing model |
 | UK/IE place | GBP1.8k (UK), GBP0.7k (IE) | HRB place BSP from 2010; Betfair files from 2017 (the place files' in-running fields are placeholders, their pre-play fields to be checked) | none; the win-implied place chance | 1 passed (2 Oct): the place pocket clean on 2010-20 (+1.15%, t 3.05); the place SP against the win-implied chance, 14 of 14 rules chosen on 2010-17 positive on 2018-26Q1 | stage 3: a place model from our win probabilities; stage 5: every rule at prices 15 minutes before the off, from the recorded win and place books (from 1 Oct) |
 | UK/IE in-play offsets | in-running volume | IPMIN/IPMAX in the win files (sound); the place files hold placeholders | none | closed for win (2 Oct): every cell negative, both directions, train and test | place only with a live in-play recording, not planned |
 | SP bias (back or lay at the SP by segment) | the SP pool | HRB from 2010 | none | closed (2 Oct): the two cells chosen on 2010-17 did not hold on 2018-26Q1 | |
@@ -71,5 +71,6 @@ Next:
 1. Check the place files' pre-play fields (PPWAP, PPMIN, PPMAX) before any place study reads them.
 2. The place rules at prices 15 minutes before the off, from the recorder's win and place books (1 Oct on).
 3. The place model from our win probabilities (stage 3).
-4. The win rule's entry time and top-ups, replayed on the recorded days (both live days point the same way).
+4. The win rule's entry time and top-ups: 1 Oct replayed (the live rule earned the most with the account's money;
+   ledger `topup-policy-replay-1001`); 2 Oct once its price file is published.
 5. When the archive has them: the same scans on the greyhound and Australian files.
