@@ -141,7 +141,8 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   (`model/race_book.py`; the model fitted without volume when the delayed key's feed carries none), with at least
   GBP100 matched on it when the feed reports matched money. Staked to win GBP250 before commission.
 - **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, at most
-  GBP4,000 staked a day; when the day's limit binds, each poll's backs go in order of expected CLV.
+  GBP4,000 staked a day; when the day's limit binds, each poll's backs go in order of expected CLV. No limit on the
+  number of bets (the owner, 2 Oct; a cap of 250 a day, set when the trader was built, stopped seven backs on 1 Oct).
 - **Orders**: a back is a limit order at the price read, FILL_OR_KILL (at least GBP2), so nothing rests in the
   book; each matched back is laid at once at the Betfair SP for its winnings (MARKET_ON_CLOSE, liability stake x
   (price - 1)), so the price's move is kept whatever the result. A refused lay is sent again each minute, five
@@ -153,8 +154,12 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   runner named by `BETFAIR_RUNNER` (Betfair refuses GitHub's own runners). To stop at once: cancel the running
   "Live trading" run, or create the S3 object `trading/STOP` (no new bets within a minute).
 - **Settlement**: each race is settled from Betfair's record of the settled bets (listClearedOrders): what Betfair
-  paid on every back and every lay at SP, and the SP the lays matched at (the CLV), with commission at 5% of the
-  race's net winnings. Betfair settles a race some minutes after it is run and the race waits until then: the
+  paid on every back and every lay at SP, and the SP the lays matched at (the CLV), with commission at 2% of the
+  race's net winnings, the account's rate (the owner, 2 Oct; on 1 Oct the day's settled result at 2% met the account's
+  balance to the penny). Each back is scored at the price Betfair settled it: less, where a horse withdrawn after
+  the bet brought a reduction factor, and so the price to set against the smaller field's BSP (from 2 Oct; on 1 Oct
+  the price as matched overstated the day's CLV by about half a point). Betfair settles a race some minutes after
+  it is run and the race waits until then: the
   delayed key's feed carries no SP, and on the first live evening (30 Sep) settling from the feed counted every
   lay as nothing. The evening job settles such a race again from Betfair's record; the old rows stay in the ledger
   as `unsettled`.
@@ -177,7 +182,8 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   trader's own books go to `books_trader.csv`), and the recorder's own 10:10 UTC run takes the evening's part.
 - **Every back can be laid**: Betfair takes no lay at SP under GBP10 of liability, so no back is sent whose winnings,
   with what the horse has unhedged already, would be smaller, and every fill is at least that (minFillSize); on
-  1 Oct two such fills, GBP15.37 of winnings between them, were left without a lay.
+  1 Oct two such fills, GBP15.37 of winnings between them, were left without a lay (one was laid with the afternoon's
+  top-up; the other's horse won).
 
 **The first live session** (30 Sep, a test the owner chose; ledger `live-first-session-0930`). The session ran at
 Kempton, 19:00-20:30 UK, and entered 28 to 118 minutes before each off, a window the backtest never tested.
@@ -191,10 +197,41 @@ Kempton, 19:00-20:30 UK, and entered 28 to 118 minutes before each off, a window
 | **Total** | **28** | **GBP548.99** | **+37.47** |
 
 - 38 of the 45 backs sent were matched, and every matched back was laid at the SP.
-- The result is after GBP2.15 commission.
+- The result is after GBP2.15 commission, at 5%; at the account's 2% it was GBP0.86 and +38.76.
 - Our prices beat the Betfair SP by +18.4%, stake-weighted.
 - Four of our horses won. A winner laid at the SP nets nothing, so the night kept about 40% of the roughly GBP100
   the price moves were worth at the SP.
+
+**The first full day** (1 Oct; ledger `live-day-1001`). The morning session (08:07-11:06 UK), then from 12:19 UK every
+race to 15 minutes before its off (the owner's decision of that morning). 250 backs were matched on 124 horses in 41
+races and each horse was laid at the SP for its winnings; two of the horses were withdrawn and their bets were void.
+
+| Horse first backed | Horses | Races | Staked | Result before commission | CLV |
+|---|---|---|---|---|---|
+| By 11:00 UK (the tested window) | 57 | 26 | GBP1,605.92 | +153.58 | +9.9% |
+| After 11:00 UK | 65 | 29 | GBP1,085.65 | +40.99 | +8.2% |
+| **Day** | **122** | **41** | **GBP2,691.57** | **+194.57** | **+9.2%** |
+
+- **+GBP188.19 after commission.** Betfair charged 2% of each race's net winnings (GBP6.38): the account went from
+  GBP1,480.11 at 12:19 UK, before the first race, to GBP1,668.30 with nothing at risk, the settled result at 2% to the
+  penny. The ledger and the emails of the day applied 5% (GBP15.95, +178.62); 2% from 2 Oct.
+- **By time to the off** at the horse's first back: three hours or more +9.2% (61 horses, GBP1,684, +148.64 before
+  commission), one to three hours +17.8% (29, GBP536, +44.20), 15 to 60 minutes -0.4% (32, GBP472, +1.73). One day;
+  the Jan-Mar test had entries near the off at -5.8%.
+- **Funds.** The morning's backs used up the balance: Betfair refused 113 backs on 9 horses from 10:19 UK (its reason
+  then shown only as ERROR_IN_ORDER). The afternoon began with GBP2.95 to bet; the trader held 25 times and traded
+  again each time races were run and their stakes came back. Of the 91 horses held for funds, 28 were never backed.
+  From 16:35 UK the balance was enough.
+- **The number of bets.** The cap of 250 a day was reached at 17:41 UK and stopped seven backs in Newcastle's last
+  four races (expected CLV +3.0% to +3.7%); no cap from 2 Oct.
+- **Non-runners.** The afternoon session took the reduced prices from Betfair at its start (8 horses in three races).
+  For races that lost a runner later the day's CLV sets the price as matched against the smaller field's BSP; from
+  what Betfair paid on the lays, that is about half a point: some +8.7% on the day, +9.6% by 11:00, +7.5% after.
+- **The two small fills** left without a lay in the morning: Louiescall's (GBP8.27 of winnings) was laid with the
+  afternoon's top-up (the horse lost, +20.39); Crafty Gael's (GBP7.09) stood alone and the horse won, +7.09.
+- 47 backs were killed (FILL_OR_KILL, the price had gone): 35 in the morning, 12 in the afternoon. Every race was
+  settled from Betfair's record, with the BSP. The recorder ran beside the trader all afternoon (88 markets, 494
+  polls), the trader kept 89,615 books, and the night's load took 10,956 marks and the 928 ledger rows.
 
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,

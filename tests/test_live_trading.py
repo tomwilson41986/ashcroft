@@ -342,7 +342,7 @@ def test_a_live_race_is_settled_from_betfairs_record_and_waits_for_it():
     assert settle[0]["pnl_back"] == -41.66 and settle[0]["pnl_lay"] == 62.49 and settle[0]["pnl"] == 20.83
     assert settle[0]["bsp"] == 5.0 and settle[0]["clv"] == pytest.approx(7.0 / 5.0 - 1)
     commission = [r for r in s.ledger if r["event"] == "commission"][0]["commission"]
-    assert commission == pytest.approx(0.05 * 20.83, abs=0.01)
+    assert commission == pytest.approx(0.02 * 20.83, abs=0.01)                # the account's rate
     assert s.summary()["settled_pnl"] == pytest.approx(20.83 - commission, abs=0.01)
     assert s.summary()["stake_weighted_clv"] == pytest.approx(0.4)
     s.step(clock())
@@ -369,6 +369,33 @@ def test_a_winner_laid_at_the_sp_nets_nothing_and_a_missing_lay_is_named():
     s2.step(clock2())
     settle = [r for r in s2.ledger if r["event"] == "settle"][0]
     assert settle["pnl"] == 249.96 and "no lay at SP settled" in settle["error"]
+
+
+def test_a_back_reduced_for_a_non_runner_is_scored_at_the_price_betfair_settled():
+    """1 Oct: a horse withdrawn after our bets made Betfair reduce the prices matched on the others, and the BSP is the
+    smaller field's; set against it, the price as matched overstated the day's CLV by about half a point."""
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    s, clock = _session(_Client(), [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])])
+    s.step(clock())                                                # backs horse 1 at 7.0
+    s.x.data._books["1.7"] = _closed("1.7", winner=2)
+    reduced = {**_settled("1.7", 1, "BACK", -41.66, 6.3, 41.66), "priceReduced": True}   # a 10% reduction factor
+    s.x.data._cleared = [reduced, _settled("1.7", 1, "LAY", 56.23, 5.0, 56.23)]
+    clock.t = off + timedelta(minutes=10)
+    s.step(clock())
+    settle = [r for r in s.ledger if r["event"] == "settle"][0]
+    assert settle["avg_price"] == 6.3 and settle["clv"] == pytest.approx(6.3 / 5.0 - 1)
+    assert "reduced the price for a non-runner" in settle["error"] and "matched at 7.00" in settle["error"]
+    assert settle["pnl"] == pytest.approx(-41.66 + 56.23)                       # what Betfair paid, as before
+    assert s.summary()["stake_weighted_clv"] == pytest.approx(0.26)
+
+
+def test_the_owners_commission_rate_and_no_limit_on_the_number_of_bets():
+    """The owner, 2 Oct. Betfair charges the account 2% of each race's net winnings: on 1 Oct the settled result at 2%
+    met the account's balance to the penny (+GBP188.19; 5% gave 178.62). The number of bets is not limited (a cap of
+    250 stopped seven backs on 1 Oct): GBP300 a bet and GBP4,000 a day are the limits."""
+    assert LIVE.commission == 0.02
+    assert LIVE.limits.max_bets_per_day * LIVE.limits.min_stake > 100 * LIVE.limits.max_daily_turnover
+    assert LIVE.limits.max_stake == 300.0 and LIVE.limits.max_daily_turnover == 4000.0
 
 
 def test_a_failed_read_of_the_settled_bets_never_stops_the_day():
