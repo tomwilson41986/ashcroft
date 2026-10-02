@@ -513,6 +513,8 @@ def _capture():
 LISTED_RE = re.compile(r"dwbf([a-z0-9]+?)(\d{8})\.csv", re.I)
 #: the markets the models read (UK and Irish horse racing, win and place); the archive takes these first
 CORE_MARKETS = ("ukwin", "ukplace", "irewin", "ireplace")
+#: the first day the nightly load takes (daily-results.yml): the archive fetches from here before anything older
+ARCHIVE_FIRST_FROM = date(2018, 1, 1)
 
 
 def parse_listed_name(name) -> tuple[str, date] | None:
@@ -619,9 +621,9 @@ def archive_published(s3=None, bucket: str | None = None, session=None, markets=
     file at a time with a pause between, so the server never presses Betfair's site.
 
     A file the archive lacks is fetched; so is each of the last `refresh_days` days (Betfair rewrites recent files),
-    stored again only when it has changed. The recent days go first, then the UK and Irish racing files, then the
-    other markets, each newest first, so a run that stops at `max_minutes` has the files that matter most and the
-    next run takes up the rest. A 403 (the site refusing the host), the site asking again and again to slow down, or
+    stored again only when it has changed. The recent days go first, then the UK and Irish racing files from 2018
+    (what the nightly load reads), then the other markets from 2018, then everything older, each newest first, so a
+    run that stops at `max_minutes` has the files that matter most and the next run takes up the rest. A 403 (the site refusing the host), the site asking again and again to slow down, or
     S3 refusing five files running stops the run at once."""
     if s3 is None or bucket is None:
         s3, bucket = _capture()
@@ -639,8 +641,8 @@ def archive_published(s3=None, bucket: str | None = None, session=None, markets=
     fresh = newest - timedelta(days=refresh_days) if newest and refresh_days > 0 else None
     recent = lambda f: fresh is not None and f["day"] >= fresh          # noqa: E731
     todo = [f for f in listed if f["name"] not in have or recent(f)]
-    todo.sort(key=lambda f: (0 if recent(f) else 1 if f["market"] in CORE_MARKETS else 2,
-                             -f["day"].toordinal(), f["name"]))
+    todo.sort(key=lambda f: (0 if recent(f) else 3 if f["day"] < ARCHIVE_FIRST_FROM
+                             else 1 if f["market"] in CORE_MARKETS else 2, -f["day"].toordinal(), f["name"]))
     counts = {"listed": len(listed), "markets": len({f["market"] for f in listed}),
               "in_archive": sum(1 for f in listed if f["name"] in have), "to_fetch": len(todo),
               "stored": 0, "unchanged": 0, "missing": 0, "failed": 0, "left": 0}

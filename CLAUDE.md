@@ -112,8 +112,9 @@ python evaluate_oos.py --feature-cache .feature_cache --refresh-cache
 python betfair_prices.py --fetch --days 3 --load --match --report
 # ... on the owner's UK server: every file Betfair lists, all markets (the owner's ask, 1 Oct), archived slowly to
 # s3://$CAPTURE_BUCKET/betfair_prices_raw/, one file at a time: what the archive lacks and the last week again, the last
-# week first, then UK/IE racing, then the rest, newest first (betfair-prices.yml nightly from 22:30 UTC, stopping by
-# 06:15; live-record.yml after the last race for the UK/IE files); the nightly job loads UK/IE racing from 2018
+# week first, then UK/IE racing from 2018, then the other markets from 2018, then the older files, newest first
+# (betfair-prices.yml nightly from 22:30 UTC, stopping by 06:15; live-record.yml after the last race for the UK/IE
+# files); the nightly job loads UK/IE racing from 2018
 python betfair_prices.py --archive --max-minutes 10
 python betfair_prices.py --archive --market ukwin,ukplace,irewin,ireplace --refresh-days 2 --max-minutes 5
 python betfair_prices.py --pull-s3 --load --match --dir data/betfair_raw --load-from 2018-01-01 --max-files 2500

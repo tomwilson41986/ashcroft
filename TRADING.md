@@ -143,6 +143,9 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
 - **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, at most
   GBP4,000 staked a day; when the day's limit binds, each poll's backs go in order of expected CLV. No limit on the
   number of bets (the owner, 2 Oct; a cap of 250 a day, set when the trader was built, stopped seven backs on 1 Oct).
+  The to-win target stays at GBP250 (the owner asked, 2 Oct): 1 Oct replayed at GBP300-500 was worth less, since the
+  money and the day's limit bind before the book and a bigger target buys top-ups at half the CLV of the first fills
+  (reports/other_markets_and_stakes_1002.md, ledger `stake-uplift-replay-1002`).
 - **Orders**: a back is a limit order at the price read, FILL_OR_KILL (at least GBP2), so nothing rests in the
   book; each matched back is laid at once at the Betfair SP for its winnings (MARKET_ON_CLOSE, liability stake x
   (price - 1)), so the price's move is kept whatever the result. A refused lay is sent again each minute, five
@@ -270,7 +273,7 @@ non-interactive. The backtest behind the rule covers February-March 2026 only; t
 | The day's GB/IE win and place markets (live-record.yml) | every 5 minutes, each minute in the last hour, to 21:30 UK | the same | `betfair_live_marks` |
 | The catalogue: cloth, stall, jockey, trainer, age, weight, rating, form, headgear, forecast price | once a market | `betfair_live/<day>/markets.csv.gz` | `betfair_live_markets` (matched to race_results) |
 | The settled books: BSP, winners, removals and reduction factors | after racing and next morning | in `books.csv.gz` (source `final`) | `betfair_live_marks`, mark `final` |
-| Betfair's daily price files (morning and pre-play prices and volumes, BSP, in-play range), which Betfair refuses to GitHub's runners: every file it lists, all markets (72,443 on 1 Oct 2026), one at a time | nightly from 22:30 UTC, stopping by 06:15 (betfair-prices.yml: the last week, then UK/IE racing, then the rest, newest first, several nights for the backfill); the UK/IE files after the last race (live-record.yml) | `betfair_prices_raw/` | `betfair_prices`: UK/IE win and place from 2018, at most 2,500 files a night; other markets stay in S3 |
+| Betfair's daily price files (morning and pre-play prices and volumes, BSP, in-play range), which Betfair refuses to GitHub's runners: every file it lists, all markets (72,443 on 1 Oct 2026), one at a time | nightly from 22:30 UTC, stopping by 06:15 (betfair-prices.yml: the last week, then UK/IE racing from 2018, then the other markets from 2018, then the older files, newest first, several nights for the backfill); the UK/IE files after the last race (live-record.yml) | `betfair_prices_raw/` | `betfair_prices`: UK/IE win and place from 2018, at most 2,500 files a night; other markets stay in S3 |
 | The live trader's ledger | each order | `trading/live/<day>/ledger.csv` | `live_orders` |
 
 `betfair_live_marks` keeps, for each runner, the book nearest to 08:00-12:00 UK and to 120, 60, 30, 15, 10, 5, 3

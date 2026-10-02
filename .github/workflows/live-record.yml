@@ -116,3 +116,15 @@ jobs:
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
         run: timeout 480 python betfair_prices.py --archive --market ukwin,ukplace,irewin,ireplace --refresh-days 2 --max-minutes 5
+
+      # Which markets Betfair lists on the next day's racing beside win and place (match bets, the other place markets,
+      # forecasts): one read of the catalogue, any type, printed for the research (the owner's question of 2 Oct on
+      # AvB markets, which the price files do not hold).
+      - name: Market types on tomorrow's racing (census, read-only)
+        if: ${{ !cancelled() && steps.run.outputs.go == 'true' }}
+        continue-on-error: true
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+        run: timeout 180 python betfair_recorder.py --census --date "$(TZ=Europe/London date -d tomorrow +%F)"
