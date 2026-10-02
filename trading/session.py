@@ -72,6 +72,16 @@ def _num0(x) -> float:
     return v if np.isfinite(v) else 0.0
 
 
+def _settled_price(bets: list[dict]) -> float | None:
+    """The price Betfair settled these bets at, weighted by the size settled; None unless every settled bet carries
+    one. For a back it is the matched price less any reduction factor for a horse withdrawn after the bet."""
+    sized = [o for o in bets if _num0(o.get("sizeSettled")) > 0]
+    if not sized or any(_num0(o.get("priceMatched")) <= 1 for o in sized):
+        return None
+    size = sum(_num0(o["sizeSettled"]) for o in sized)
+    return sum(_num0(o["priceMatched"]) * _num0(o["sizeSettled"]) for o in sized) / size
+
+
 @dataclass
 class Position:
     market_id: str
@@ -454,9 +464,7 @@ class Session:
             lays = [o for o in bets if o.get("side") == "LAY"]
             pnl_back = sum(_num0(o.get("profit")) for o in backs)
             pnl_lay = sum(_num0(o.get("profit")) for o in lays)
-            laid = sum(_num0(o.get("sizeSettled")) for o in lays)
-            bsp = (sum(_num0(o.get("priceMatched")) * _num0(o.get("sizeSettled")) for o in lays) / laid
-                   if laid > 0 else None)
+            bsp = _settled_price(lays)
             q = runners.get(sid)
             if bsp is None and q is not None and q.bsp and q.bsp > 1:
                 bsp = q.bsp
@@ -474,11 +482,17 @@ class Session:
                 notes.append(f"Betfair settled GBP{settled_back:.2f} of backs; the ledger holds GBP{pos.matched:.2f}")
             if result != "REMOVED" and pos.hedge_liability > 0 and not lays:
                 notes.append("no lay at SP settled: the back stood alone")
+            # a horse withdrawn after the bet: Betfair reduced the price, and the BSP is the smaller field's, so the CLV
+            # is the price Betfair settled at against it (on 1 Oct the matched price overstated it by half a point)
+            price = _settled_price(backs) or pos.avg_price
+            if any(o.get("priceReduced") for o in backs) and abs(price - pos.avg_price) >= 0.005:
+                notes.append(f"Betfair reduced the price for a non-runner: settled at {price:.2f}, matched at "
+                             f"{pos.avg_price:.2f}")
             pos.settled = True
-            clv = (pos.avg_price / bsp - 1.0) if bsp and bsp > 1 else np.nan
+            clv = (price / bsp - 1.0) if bsp and bsp > 1 else np.nan
             net += pnl_back + pnl_lay
             rows.append({**self._row(now, "settle", m, sid, pos.name), "reason": SETTLED_BY_BETFAIR,
-                         "matched": pos.matched, "avg_price": round(pos.avg_price, 4), "hedged": pos.hedged,
+                         "matched": pos.matched, "avg_price": round(price, 4), "hedged": pos.hedged,
                          "hedge_liability": pos.hedge_liability, "result": result,
                          "bsp": round(bsp, 4) if bsp else None, "clv": clv, "pnl_back": round(pnl_back, 2),
                          "pnl_lay": round(pnl_lay, 2), "pnl": round(pnl_back + pnl_lay, 2),

@@ -222,10 +222,11 @@ def test_the_trader_and_the_recorder_write_side_by_side_and_the_nightly_load_rea
     s3 = FakeS3()
     trader = br.DayRecorder(DAY, root=tmp_path / "server", s3=s3, background=False, tag="trader")
     recorder = br.DayRecorder(DAY, root=tmp_path / "server", s3=s3, background=False)
+    morning = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)                    # 10:00 UK, before the offs
     trader.record_catalogue([raw_catalogue()])
-    trader.record_books([raw_book()], "trader")
+    trader.record_books([raw_book()], "trader", polled_at=morning)
     recorder.record_catalogue([raw_catalogue(), raw_catalogue("1.200", "2026-10-01T15:00:00.000Z")])
-    recorder.record_books([raw_book(), raw_book("1.200")], "recorder")
+    recorder.record_books([raw_book(), raw_book("1.200")], "recorder", polled_at=morning)
     trader.maybe_upload(force=True)
     recorder.maybe_upload(force=True)
     keys = {k for _, k in s3.objects}
