@@ -122,34 +122,37 @@ for (mid, t), g in books.groupby(["market_id", "t"], sort=True):
                                                     bsp_reconciled=bool(first.get("bsp_reconciled")))))
 
 # the settled books: every runner's BSP and result from Betfair's price files for the day (the delayed key's own
-# settled books carry no SP)
+# settled books carry no SP). The files are matched to the exchange's markets as the trader matches its prices: by
+# course, UK off time and horse (their EVENT_ID and SELECTION_ID are not the exchange's ids)
+import betfair_prices as bp  # noqa: E402
 sp_rows = []
 for f in (f"dwbfpricesukwin{DAY:%d%m%Y}.csv", f"dwbfpricesirewin{DAY:%d%m%Y}.csv"):
     raw = _get(f"betfair_prices_raw/{f}")
     if raw is not None:
-        sp_rows.append(pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False))
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("latin-1")
+        sp_rows.append(bp.parse_file_text(text, f))
 spf = pd.concat(sp_rows, ignore_index=True)
-spf.columns = [c.strip().upper() for c in spf.columns]
-spf["sid"] = pd.to_numeric(spf["SELECTION_ID"], errors="coerce")
-spf["bsp"] = pd.to_numeric(spf["BSP"], errors="coerce")
-spf["won"] = pd.to_numeric(spf["WIN_LOSE"], errors="coerce")
-spf["mid"] = "1." + spf["EVENT_ID"].astype(str).str.strip()
-by_mid = {mid: g for mid, g in spf.groupby("mid")}
-by_sid = spf.drop_duplicates("sid", keep=False).set_index("sid")
+spf["venue"] = spf["menu_hint"].map(bp.course_from_hint)
+spf["runner_name"] = spf["selection_name"]
+spf = spf.rename(columns={"event_id": "file_event_id", "selection_id": "file_selection_id"})
+spm = attach_ids(spf[["venue", "race_time", "runner_name", "bsp", "win_lose", "file_event_id", "file_selection_id"]],
+                 markets)
+spm = spm[spm["market_id"].notna()].copy()
+same_sid = (spm["file_selection_id"].astype("Int64") == spm["selection_id"].astype("Int64")).mean()
+print(f"  price files: {len(spf):,} runners, {len(spm):,} matched to the exchange's markets by course, time and horse; "
+      f"the file's SELECTION_ID equals the exchange's on {same_sid:.0%}; e.g. EVENT_ID "
+      f"{spm['file_event_id'].iloc[0]} for market {spm['market_id'].iloc[0]}")
 settled_at = datetime(2026, 10, 1, 23, 0, tzinfo=timezone.utc)
-matched_mid = 0
 for m in markets:
-    g = by_mid.get(m.market_id)
-    if g is not None:
-        matched_mid += 1
-        rows = {int(r.sid): (float(r.bsp), int(r.won)) for r in g.itertuples() if pd.notna(r.sid) and pd.notna(r.bsp)}
-    else:                                          # the files name the market otherwise: find each runner by id
-        rows = {sid: (float(by_sid.at[sid, "bsp"]), int(by_sid.at[sid, "won"])) for sid in m.runners
-                if sid in by_sid.index and pd.notna(by_sid.at[sid, "bsp"])}
-    runners = {sid: Quote(sid, status="WINNER" if won == 1 else "LOSER", bsp=bsp) for sid, (bsp, won) in rows.items()}
+    g = spm[spm["market_id"] == m.market_id]
+    runners = {int(r.selection_id): Quote(int(r.selection_id), status="WINNER" if r.win_lose == 1 else "LOSER",
+                                          bsp=float(r.bsp)) for r in g.itertuples() if pd.notna(r.bsp) and r.bsp > 1}
     polls[m.market_id] = [p for p in polls.get(m.market_id, []) if p[1].status != "CLOSED"]
     polls[m.market_id].append((settled_at, Book(m.market_id, "CLOSED", False, None, runners, True)))
-print(f"  settled from the price files: {len(spf):,} runners; {matched_mid} of {len(markets)} markets by id")
+print(f"  settled books for {sum(1 for m in markets if not spm[spm.market_id == m.market_id].empty)} of {len(markets)} markets")
 poll_times = {mid: [t for t, _ in v] for mid, v in polls.items()}
 starts = {m.market_id: m.start for m in markets}
 
