@@ -1,4 +1,4 @@
-"""The to-win target at GBP250 to 500, replayed through 1 Oct's own books, with the account's money (second run).
+"""The to-win target at GBP250 to 500, replayed through 1 Oct's own books, with the account's money (fourth run).
 
 The first run (research-query run 36965830970, research/queries/done/stake_uplift_replay.py) replayed 1 Oct
 minute by minute through the books the trader and the recorder kept and found the day's GBP4,000 limit reached
@@ -135,15 +135,34 @@ for f in (f"dwbfpricesukwin{DAY:%d%m%Y}.csv", f"dwbfpricesirewin{DAY:%d%m%Y}.csv
             text = raw.decode("latin-1")
         sp_rows.append(bp.parse_file_text(text, f))
 spf = pd.concat(sp_rows, ignore_index=True)
-spf["venue"] = spf["menu_hint"].map(bp.course_from_hint)
+# the course from the file's menu hint, read against the day's own venues (the third run passed none, and a hint
+# naming the course in full, or an abbreviation the map lacks, matched nothing)
+day_tracks = {bp.normalise_track(m.venue): m.venue for m in markets}
+spf["venue"] = spf["menu_hint"].map(lambda h: bp.course_from_hint(h, day_tracks))
+print(f"  price-file meetings: {sorted(spf['menu_hint'].dropna().unique())} -> "
+      f"{sorted(spf['venue'].dropna().unique())}")
 spf["runner_name"] = spf["selection_name"]
 spf = spf.rename(columns={"event_id": "file_event_id", "selection_id": "file_selection_id"})
 spm = attach_ids(spf[["venue", "race_time", "runner_name", "bsp", "win_lose", "file_event_id", "file_selection_id"]],
                  markets)
+# a runner the course left unmatched is found by its UK off time and name alone, where that pair is unique on the day
+ex = pd.DataFrame([{"_t": bp.utc_iso_to_uk_hhmm(m.start.strftime("%Y-%m-%dT%H:%M:%S.000Z")),
+                    "_h": bp.normalise_horse(n), "market_id": m.market_id, "selection_id": int(s)}
+                   for m in markets for s, n in m.runners.items()]).drop_duplicates(["_t", "_h"], keep=False)
+miss = spm["market_id"].isna()
+spm["market_id"], spm["selection_id"] = spm["market_id"].astype(object), spm["selection_id"].astype(object)
+by_time = spm.loc[miss, ["race_time", "runner_name"]].assign(
+    _t=lambda d: d["race_time"].astype(str).map(bp.race_time_to_24h),
+    _h=lambda d: d["runner_name"].map(bp.normalise_horse)).merge(ex, on=["_t", "_h"], how="left")
+spm.loc[miss, "market_id"] = by_time["market_id"].to_numpy()
+spm.loc[miss, "selection_id"] = by_time["selection_id"].to_numpy()
+print(f"  price files: {len(spf):,} runners; {int((~miss).sum()):,} matched by course, time and horse, "
+      f"{int(by_time['market_id'].notna().sum()):,} more by time and horse")
 spm = spm[spm["market_id"].notna()].copy()
+if spm.empty:
+    raise SystemExit("no price-file runner matched the exchange's markets: the replay cannot settle")
 same_sid = (spm["file_selection_id"].astype("Int64") == spm["selection_id"].astype("Int64")).mean()
-print(f"  price files: {len(spf):,} runners, {len(spm):,} matched to the exchange's markets by course, time and horse; "
-      f"the file's SELECTION_ID equals the exchange's on {same_sid:.0%}; e.g. EVENT_ID "
+print(f"  the file's SELECTION_ID equals the exchange's on {same_sid:.0%}; e.g. EVENT_ID "
       f"{spm['file_event_id'].iloc[0]} for market {spm['market_id'].iloc[0]}")
 settled_at = datetime(2026, 10, 1, 23, 0, tzinfo=timezone.utc)
 for m in markets:
