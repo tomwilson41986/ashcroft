@@ -143,9 +143,10 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
 - **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, at most
   GBP4,000 staked a day; when the day's limit binds, each poll's backs go in order of expected CLV. No limit on the
   number of bets (the owner, 2 Oct; a cap of 250 a day, set when the trader was built, stopped seven backs on 1 Oct).
-  The to-win target stays at GBP250 (the owner asked, 2 Oct): 1 Oct replayed at GBP300-500 was worth less, since the
-  money and the day's limit bind before the book and a bigger target buys top-ups at half the CLV of the first fills
-  (reports/other_markets_and_stakes_1002.md, ledger `stake-uplift-replay-1002`).
+  The to-win target stays at GBP250 (the owner asked, 2 Oct): 1 Oct replayed at GBP300-500, settled on every horse,
+  was worth less with the account's money, since the funds bind before the book and a bigger target buys top-ups at
+  a fraction of the CLV of the first fills (reports/other_markets_and_stakes_1002.md, ledger
+  `stake-uplift-replay-1002`, `stake-uplift-replay-full-1002`).
 - **Orders**: a back is a limit order at the price read, FILL_OR_KILL (at least GBP2), so nothing rests in the
   book; each matched back is laid at once at the Betfair SP for its winnings (MARKET_ON_CLOSE, liability stake x
   (price - 1)), so the price's move is kept whatever the result. A refused lay is sent again each minute, five
@@ -235,6 +236,39 @@ races and each horse was laid at the SP for its winnings; two of the horses were
 - 47 backs were killed (FILL_OR_KILL, the price had gone): 35 in the morning, 12 in the afternoon. Every race was
   settled from Betfair's record, with the BSP. The recorder ran beside the trader all afternoon (88 markets, 494
   polls), the trader kept 89,615 books, and the night's load took 10,956 marks and the 928 ledger rows.
+
+**The second full day** (2 Oct; ledger `live-day-1002`). One session from 08:05 UK to 15 minutes before each off, the
+last back at 19:30 UK. 281 backs were matched on 125 horses in 43 races, each laid at the SP for its winnings; four
+horses were withdrawn and their GBP206.71 was void (GBP182.48 of it on Cranachan, Ascot 16:45).
+
+| Horse first backed | Horses | Races | Staked | Result before commission | CLV |
+|---|---|---|---|---|---|
+| By 11:00 UK | 49 | 27 | GBP1,805.06 | +121.77 | +4.1% |
+| After 11:00 UK | 72 | 30 | GBP1,677.84 | -72.64 | -4.5% |
+| **Day** | **121** | **43** | **GBP3,482.90** | **+49.13** | **-0.1%** |
+
+- **+GBP44.30 after commission** (GBP4.83 at 2%): the account went from GBP1,668.30 to GBP1,712.60. Thirteen of the
+  121 horses won. At -0.1% CLV the day was worth about nothing beforehand (about -GBP2); the +44 is the results.
+- **By time to the off** at the horse's first back: three hours or more +3.3% (58 horses, GBP2,099, +119.25 before
+  commission), one to three hours -6.7% (38, GBP946, -66.86), 15 to 60 minutes -2.0% (25, GBP438, -3.26). Every horse
+  first backed by 11:00 was three hours or more from its off.
+- **The two days together** (243 horses, GBP6,174.47, CLV +4.0%, +243.70 before commission): first backed by 11:00 UK
+  +6.8% (106 horses, GBP3,411), after 11:00 +0.5% (137, GBP2,763); three hours or more before the off +5.9% (119,
+  GBP3,783), one to three hours +2.2% (67, GBP1,482), the last hour -1.2% (57, GBP910). The backtest put entries near
+  the off at -1.8% to -5.8% (below); the live record agrees for the last hour.
+- **First fills and top-ups.** Each horse's first fill made +6.1% against its BSP; the top-ups (152 fills, GBP1,923,
+  55% of the stake) made nothing, at prices 2.2% shorter. On 1 Oct the figures were +13.8% and +6.0%. Over the two
+  days: first fills +9.5% (GBP2,821), top-ups +2.6% (GBP3,354), a gap of 7.1 points (90% interval 2.1 to 12.0,
+  resampled by horse). The closing model expected the same of both (+5.4% and +5.3%), since it does not know a horse
+  is being topped up. Where it expected 3-6%, first fills made +8.9% and top-ups +1.3%. A replay of the recorded days
+  will test a higher bar for top-ups, and new horses before top-ups when funds are short. Any change to the rule is
+  the owner's.
+- **Funds.** Betfair refused one back for funds. The trader held new backs each time the funds it read were spent,
+  from 09:54 to 17:31 UK: 76 horses were held, 16 of them never backed. The day's settled summary showed
+  `held_for_funds` 0, because the settling run never holds. From 3 Oct the summary also counts the horses held, from
+  the ledger (`horses_held_for_funds`, `horses_held_never_backed`).
+- 68 backs were killed (fill-or-kill: the price had gone), against 47 on 1 Oct. Every race was settled from Betfair's
+  record, with the BSP. The day staked GBP3,689.61 including the void bets, short of the GBP4,000 day limit.
 
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,

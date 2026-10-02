@@ -22,13 +22,14 @@ The holdout (1 Apr 2026 on) is read once, at stage 5, for the rule that is going
 
 | Market | Liquidity (median traded a runner) | Data held | Model now | Stage | Next |
 |---|---|---|---|---|---|
-| UK/IE win | GBP11.8k (UK), GBP4.7k (IE) | Betfair files from 2017, HRB from 2010, live books from 1 Oct | BFSP model + closing model | 6, live | improve the model and the closing model |
-| UK/IE place | GBP1.8k (UK), GBP0.7k (IE) | the same, place BSP in HRB from 2010 | none; the win-implied place chance | 1 passed (place pocket, 2 Oct) | the years before 2021 as a clean test (scan 2); a place model from our win probabilities (stage 3-4); the rule at T-15 from the recorded books (stage 6) |
-| UK/IE in-play offsets (back at the SP and lay in running, or the reverse; orders resting from before the off) | in-running volume | IPMIN/IPMAX in every file from 2017 | none | 1 (scan 1, 2 Oct) | if a cell holds: a model of how far a horse trades in running, from run style and pace (our race-shape features) |
-| SP bias (back or lay at the SP by segment) | the SP pool | HRB from 2010 | none | 1 (scan 2, 2 Oct) | |
-| Greyhounds, UK and Australia (win, place) | GBP1.3k | files arriving from 2018 (the nightly archive, about four nights) | none | 1 waits for the files | edge scan first; form data (GBGB results) only if the market alone shows something |
+| UK/IE win | GBP11.8k (UK), GBP4.7k (IE) | Betfair files from 2017, HRB from 2010, live books from 1 Oct | BFSP model + closing model | 6, live | the entry time and the top-ups (both live days: first fills +9.5%, top-ups +2.6%; the last hour -1.2%), replayed on the recorded days; then the model and the closing model |
+| UK/IE place | GBP1.8k (UK), GBP0.7k (IE) | HRB place BSP from 2010; Betfair files from 2017 (the place files' in-running fields are placeholders, their pre-play fields to be checked) | none; the win-implied place chance | 1 passed (2 Oct): the place pocket clean on 2010-20 (+1.15%, t 3.05); the place SP against the win-implied chance, 14 of 14 rules chosen on 2010-17 positive on 2018-26Q1 | stage 3: a place model from our win probabilities; stage 5: every rule at prices 15 minutes before the off, from the recorded win and place books (from 1 Oct) |
+| UK/IE in-play offsets | in-running volume | IPMIN/IPMAX in the win files (sound); the place files hold placeholders | none | closed for win (2 Oct): every cell negative, both directions, train and test | place only with a live in-play recording, not planned |
+| SP bias (back or lay at the SP by segment) | the SP pool | HRB from 2010 | none | closed (2 Oct): the two cells chosen on 2010-17 did not hold on 2018-26Q1 | |
+| Greyhounds, UK and Australia (win, place) | GBP1.3k | files arriving from 2018 (the nightly archive) | none | 1 waits for the files | edge scan first; form data (GBGB results) only if the market alone shows something |
 | Australia racing (win, place) | GBP1.2k pre-play | files arriving | none | 1 waits | pre-play prices only (the files' "morning" includes post-race trading there); trading would run overnight UK time |
-| AvB match bets | not known yet | none: no SP, so no files | from our win probabilities (who finishes ahead) | 1 waits for the census | record the markets once the census shows their code (live-record.yml, each evening) |
+| AvB match bets | none offered | none | from our win probabilities (who finishes ahead) | dropped (3 Oct census: no match bets on GB/IE racing) | the census keeps running each evening |
+| Other place markets (2/3/4 TBP, each way) | not known | none: no price files | the place model, once built | not started | recording first (the census lists 65 OTHER_PLACE and 39 EACH_WAY markets on 3 Oct) |
 | France, USA, South Africa (win) | GBP250-600 | files arriving | none | low priority | |
 
 ## Which kind of edge suits which market
@@ -57,8 +58,18 @@ the net figure for a new strategy is its profit less the extra fee it brings.
 
 ## This week
 
-1. Scan 1 (`research/queries/edge_inplay_offsets.py`): in-play offsets, UK/IE win and place, 2018 to 2026 Q1.
-2. Scan 2 (`research/queries/edge_bsp_bias.py`): the place pocket on 2010-20; backs and lays at the SP by segment;
-   the place SP against the win-implied place chance.
-3. Tonight: the market-type census (AvB), the 2 Oct settlement, the stake replay on every horse.
-4. When the archive has them (about four nights): the same scans on the greyhound and Australian files.
+Done 2 Oct (ledger `edge-inplay-offsets-1002`, `edge-bsp-bias-1002`, `market-census-1003`):
+
+1. Scan 1, in-play offsets: closed for the win markets. The place files' in-running fields are placeholders (field
+   check, research-query run 37070286949), so the place cells were void.
+2. Scan 2: the place pocket holds on the clean years, and the place SP misprices against the win market out of sample.
+   The SP-bias segments did not hold.
+3. The census: no AvB markets.
+
+Next:
+
+1. Check the place files' pre-play fields (PPWAP, PPMIN, PPMAX) before any place study reads them.
+2. The place rules at prices 15 minutes before the off, from the recorder's win and place books (1 Oct on).
+3. The place model from our win probabilities (stage 3).
+4. The win rule's entry time and top-ups, replayed on the recorded days (both live days point the same way).
+5. When the archive has them: the same scans on the greyhound and Australian files.
