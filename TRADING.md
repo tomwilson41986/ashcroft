@@ -143,6 +143,9 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
 - **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, at most
   GBP4,000 staked a day; when the day's limit binds, each poll's backs go in order of expected CLV. No limit on the
   number of bets (the owner, 2 Oct; a cap of 250 a day, set when the trader was built, stopped seven backs on 1 Oct).
+  The to-win target stays at GBP250 (the owner asked, 2 Oct): 1 Oct replayed at GBP300-500 was worth less, since the
+  money and the day's limit bind before the book and a bigger target buys top-ups at half the CLV of the first fills
+  (reports/other_markets_and_stakes_1002.md, ledger `stake-uplift-replay-1002`).
 - **Orders**: a back is a limit order at the price read, FILL_OR_KILL (at least GBP2), so nothing rests in the
   book; each matched back is laid at once at the Betfair SP for its winnings (MARKET_ON_CLOSE, liability stake x
   (price - 1)), so the price's move is kept whatever the result. A refused lay is sent again each minute, five

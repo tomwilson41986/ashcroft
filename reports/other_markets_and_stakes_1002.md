@@ -6,7 +6,12 @@ The owner asked, the day after the first full live day:
    AvB (match bet) markets, other countries' racing;
 2. should the to-win target go from GBP250 to GBP300, 350, 400 or 500, and is there the liquidity for it.
 
-Research-query runs 36965830970, 36966868668 and the replay's third run; queries in `research/queries/done/`.
+Research-query runs 36965830970, 36966868668 and 36969508159; queries in `research/queries/done/`.
+
+**In short.** The place market has one rule worth a forward test: it passes its gate at the account's 2%
+commission, to be scored next from the recorded books 15 minutes before the off. AvB match bets are not in the price
+files, so they must be recorded live; a census of tomorrow's market types runs each evening. Other countries' racing
+has only Australia with real liquidity, and no model of ours. The to-win target should stay at GBP250.
 
 ## 1. What the archive holds (2 Oct, 04:46 UTC, after one night)
 
@@ -98,6 +103,56 @@ rule, which keeps the price move whatever the result.
 - Australian racing runs from about 01:00 to 09:00 UK, while the UK server archives from 22:30 to 06:15 UTC; trading
   there would need the archive moved or another server.
 
-## 5. Bigger stakes
+## 5. Bigger stakes: keep GBP250 to win for now
 
-(Filled in from the replay's third run.)
+1 Oct replayed minute by minute through the books the trader and the recorder kept (research-query run 36969508159):
+the same rule and closing model, each target from GBP250 to GBP500, the account's money held as Betfair holds it (a
+back larger than the funds is refused; a race's stakes come back after it is run), and each back filled against the
+book as recorded. Betfair's price file for 1 Oct's racing is not yet published (it is dated 2 Oct), so every replay
+is scored on the 122 horses the real day backed, from the real day's settled bets; a horse only a replay backed is
+left out (7-10 horses at the day's balance, up to 38 with more money). One day: read the CLV, not the result.
+
+**With the money the account had** (GBP1,480.11 at the start of 1 Oct; GBP1,668.30 now):
+
+| To win | Horses | Staked | CLV | CLV x stake | Result after 2% |
+|---|---|---|---|---|---|
+| **GBP250** | 125 | GBP2,936 | **+8.0%** | **GBP215** | +157.88 |
+| GBP300 | 111 | GBP2,988 | +6.4% | GBP172 | +112.52 |
+| GBP350 | 105 | GBP3,202 | +6.2% | GBP181 | +127.31 |
+| GBP400 | 100 | GBP3,319 | +6.1% | GBP183 | +154.14 |
+| GBP500 | 91 | GBP3,534 | +5.0% | GBP158 | +136.20 |
+
+The GBP250 replay stands for the real day (124 horses, GBP2,733, +9.2%, +188.19). Every bigger target is worth less:
+it spends the balance sooner, on fewer horses, and more of each horse's stake goes in as top-ups after the first
+fill. Top-ups are taken at worse prices: on the real day each horse's first fill made +13.8% CLV against +6.0% for
+the top-ups, which were 2.6% shorter. At GBP500 two thirds of the stake is top-ups.
+
+**With more money, under the GBP4,000 day limit**, every target stakes the GBP4,000, and a bigger one spends it sooner:
+
+| To win | Horses | Last back (UK) | CLV x stake |
+|---|---|---|---|
+| GBP250 | 157 | 20:02 | GBP174 |
+| GBP300 | 133 | 15:37 | GBP194 |
+| GBP350 | 119 | 14:26 | GBP182 |
+| GBP400 | 100 | 13:32 | GBP193 |
+| GBP500 | 81 | 12:23 | GBP182 |
+
+The same expected value spread over fewer horses: more variance for nothing. At GBP500 the afternoon's races go
+unbacked. (Scored on the horses the real day backed: the GBP250 row leaves out 35 horses, GBP932 of stake, that the
+real day never reached for want of funds; GBP500's leaves out 10. Betfair's file decides those this evening.)
+
+**With the limits lifted** (GBP600 a bet, GBP8,000 a day), GBP400 stakes GBP6,072 and GBP500 GBP7,365 a day. The
+account needs GBP3,794 and GBP4,540 at the busiest moment, against GBP2,508 at GBP250. The stake over GBP250's earns
+about +2.5% CLV, against +5.7% on the first GBP4,000, before the 2% commission on winnings.
+
+**Liquidity.** Not what stops a bigger target, but thin where the stakes are biggest. Most of the horses the rule
+backs are long prices (82 of 128 on 1 Oct at 12.0 or more), and there the size at the best back (GBP11-14 at the
+first poll on the delayed key) covers a GBP250 target at once and a GBP500 one after a top-up or two. At 2.5-7.0 the
+target needs GBP52-123 against GBP14 shown, and is reached over many minutes. Over the day the book took 88% of horses
+to within 5% of a GBP250 target, 79-83% of a GBP400-500 one with the limits lifted.
+
+**The recommendation.** Keep GBP250 to win. A bigger target pays only with more money and a higher day limit, and
+even then the extra stake earns half the CLV of the first. One day decides nothing finally: the replay is scored again
+on every horse when Betfair publishes 1 Oct's file (this evening), and on each day the recorder keeps. With the
+first fills earning twice the top-ups, a better use of short funds is likely to give a new horse priority over a
+top-up when the money runs low; that is the next replay, not a change yet.
