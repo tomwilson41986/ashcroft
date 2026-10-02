@@ -23,7 +23,7 @@ The holdout (1 Apr 2026 on) is read once, at stage 5, for the rule that is going
 | Market | Liquidity (median traded a runner) | Data held | Model now | Stage | Next |
 |---|---|---|---|---|---|
 | UK/IE win | GBP11.8k (UK), GBP4.7k (IE) | Betfair files from 2017, HRB from 2010, live books from 1 Oct | BFSP model + closing model | 6, live | entry time and top-ups: 1 Oct replayed, the live rule best with the account's money; 2 Oct next. Then the model and the closing model |
-| UK/IE place | GBP1.8k (UK), GBP0.7k (IE) | HRB place BSP from 2010; Betfair files from 2017 (the place files' in-running fields are placeholders, their pre-play fields to be checked) | none; the win-implied place chance | 1 passed (2 Oct): the place pocket clean on 2010-20 (+1.15%, t 3.05); the place SP against the win-implied chance, 14 of 14 rules chosen on 2010-17 positive on 2018-26Q1 | stage 3: a place model from our win probabilities; stage 5: every rule at prices 15 minutes before the off, from the recorded win and place books (from 1 Oct) |
+| UK/IE place | GBP1.8k (UK), GBP0.7k (IE) | HRB place BSP from 2010; Betfair files from 2017 (place PPWAP sound; the other place columns placeholders) | none; the win-implied place chance | 1 passed at the SP (2 Oct); 5 failed at pre-play prices (ledger `place-rules-preplay-1002`): decided before the off only the long-shot lays keep an edge, +0.2% of the liability | the recorded books from 1 Oct (T-60 to T-5) for the price path; stage 3, a place model from our win probabilities, the remaining route |
 | UK/IE in-play offsets | in-running volume | IPMIN/IPMAX in the win files (sound); the place files hold placeholders | none | closed for win (2 Oct): every cell negative, both directions, train and test | place only with a live in-play recording, not planned |
 | SP bias (back or lay at the SP by segment) | the SP pool | HRB from 2010 | none | closed (2 Oct): the two cells chosen on 2010-17 did not hold on 2018-26Q1 | |
 | Greyhounds, UK and Australia (win, place) | GBP1.3k | files arriving from 2018 (the nightly archive) | none | 1 waits for the files | edge scan first; form data (GBGB results) only if the market alone shows something |
@@ -68,8 +68,9 @@ Done 2 Oct (ledger `edge-inplay-offsets-1002`, `edge-bsp-bias-1002`, `market-cen
 
 Next:
 
-1. Check the place files' pre-play fields (PPWAP, PPMIN, PPMAX) before any place study reads them.
-2. The place rules at prices 15 minutes before the off, from the recorder's win and place books (1 Oct on).
+1. Done: the place files' pre-play WAP is sound, the other place columns are not (ledger `place-fields-check-1002`).
+   At those pre-play prices the place rules lose their edge (ledger `place-rules-preplay-1002`).
+2. The place market's price path from the recorder's books (T-60 to T-5, 1 Oct on), and the rules at T-15.
 3. The place model from our win probabilities (stage 3).
 4. The win rule's entry time and top-ups: 1 Oct replayed (the live rule earned the most with the account's money;
    ledger `topup-policy-replay-1001`); 2 Oct once its price file is published.

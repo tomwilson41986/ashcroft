@@ -79,7 +79,7 @@ def price_file(day, market):
         return pd.DataFrame()
     f = pd.concat(parts, ignore_index=True)
     f["market_id"] = "1." + f.event_id.astype("Int64").astype(str)   # the file's EVENT_ID is the market's number
-    return f[["market_id", "selection_id", "selection_name", "win_lose", "bsp"]]
+    return f[["market_id", "selection_id", "selection_name", "win_lose", "bsp", "event_dt", "menu_hint"]]
 
 
 def band_of(n):
@@ -116,7 +116,8 @@ def snapshot(books, mid, at):
 
 
 rng = np.random.default_rng(0)
-bets = []
+bets, path = [], []
+MARKS = (60, 30, 15, 5)
 for day in DAYS:
     print(f"\n== {day}")
     pf = price_file(day, "place")
@@ -125,17 +126,30 @@ for day in DAYS:
         print("  Betfair's price files for the day's racing are not in the archive yet: the day waits")
         continue
     books = _csv(f"betfair_live/{day}/books.csv.gz")
-    cat = _csv(f"betfair_live/{day}/markets.csv.gz")
-    if books.empty or cat.empty:
+    cat = pd.concat([_csv(f"betfair_live/{day}/{n}.csv.gz") for n in ("markets", "markets_trader")], ignore_index=True)
+    if books.empty:
         print("  no recorder books for the day")
         continue
     books = books[books.source == "recorder"].copy()
     books["t"] = pd.to_datetime(books.polled_utc, utc=True)
-    cat = cat[cat.country.isin(["GB", "IE"])].drop_duplicates(["market_id", "selection_id"])
-    mk = cat.drop_duplicates("market_id")[["market_id", "market_type", "event_id", "market_start_utc", "venue"]]
-    pairs = mk[mk.market_type == "WIN"].merge(mk[mk.market_type == "PLACE"], on=["event_id", "market_start_utc"],
-                                               suffixes=("_w", "_p"))
-    print(f"  {len(pairs)} races with a win and a place market recorded; {books.market_id.nunique()} markets polled")
+    if not cat.empty:
+        print("  the recorder's catalogue, market types:",
+              cat.drop_duplicates("market_id").market_type.astype(str).value_counts(dropna=False).to_dict())
+    # each horse runs once a day: its SELECTION_ID pairs its win market with its place market in Betfair's files
+    pr = (wf[["market_id", "selection_id"]].merge(pf[["market_id", "selection_id"]], on="selection_id",
+                                                  suffixes=("_w", "_p"))
+          .groupby(["market_id_w", "market_id_p"]).size().reset_index(name="n"))
+    pr = pr.sort_values("n").drop_duplicates("market_id_w", keep="last")
+    starts = (cat.dropna(subset=["market_start_utc"]).drop_duplicates("market_id").set_index("market_id")
+              .market_start_utc.to_dict() if not cat.empty else {})
+    venues = (cat.drop_duplicates("market_id").set_index("market_id").venue.to_dict() if not cat.empty else {})
+    pairs = pd.DataFrame({"market_id_w": pr.market_id_w, "market_id_p": pr.market_id_p,
+                          "market_start_utc": pr.market_id_w.map(starts), "venue_w": pr.market_id_w.map(venues)})
+    pairs = pairs.dropna(subset=["market_start_utc"])
+    polled = set(books.market_id.unique())
+    print(f"  {len(pr)} races paired through the files; {len(pairs)} with a start time; "
+          f"{int(pairs.market_id_w.isin(polled).sum())} win and {int(pairs.market_id_p.isin(polled).sum())} place "
+          f"markets among the {len(polled)} the recorder polled")
     n_read = 0
     for r in pairs.itertuples(index=False):
         off = pd.Timestamp(r.market_start_utc).tz_convert("UTC")
@@ -156,6 +170,16 @@ for day in DAYS:
         q = place_q(pi, k, rng)
         pb = pbk.set_index("selection_id")
         n_read += 1
+        for mark in MARKS:                                   # the place market's price path to the off
+            snap = snapshot(books, r.market_id_p, off - pd.Timedelta(minutes=mark))
+            if snap is None:
+                continue
+            for sr in snap.itertuples(index=False):
+                sid = int(sr.selection_id)
+                if sid in settle.index:
+                    path.append({"day": str(day), "race": r.market_id_w, "selection_id": sid, "mark": mark,
+                                 "back": sr.back1, "lay": sr.lay1, "place_bsp": settle.loc[sid].bsp,
+                                 "placed": int(settle.loc[sid].win_lose == 1)})
         for sid, wmid, qi in zip(w.selection_id.astype(int), w.mid, q):
             if sid not in pb.index or sid not in settle.index:
                 continue
@@ -205,3 +229,16 @@ print("\n== the T-15 place prices against the place SP, and the win mid against 
 print(B.groupby("band").apply(lambda g: pd.Series({
     "n": len(g), "back_t15/sp": (g.place_back / g.place_bsp).median(), "lay_t15/sp": (g.place_lay / g.place_bsp).median(),
     "q": g.q.mean(), "placed": g.placed.mean()})).round(3).to_string())
+
+print("\n== the place market's best back and lay before the off against the place SP (median ratio), by win band")
+P = pd.DataFrame(path).merge(B[["day", "selection_id", "band"]], on=["day", "selection_id"], how="inner")
+if not P.empty:
+    P.to_csv(OUT / "place_path.csv", index=False)
+    P["lay/sp"], P["back/sp"] = P.lay / P.place_bsp, P.back / P.place_bsp
+    print(P.groupby(["band", "mark"]).agg(n=("lay", "size"), lay_sp=("lay/sp", "median"), back_sp=("back/sp", "median"),
+                                          placed=("placed", "mean")).round(3).to_string())
+    # a lay matched at the price shown stands to the result: +1 unplaced, -(price - 1) placed, per GBP1 laid
+    P["lay_fixed"] = net(np.where(P.placed == 1, -(P.lay - 1), 1.0))
+    print("\nlay to place at the price shown, win 50+ (per GBP1 laid):")
+    print(P[P.band == "50+"].groupby("mark").agg(n=("lay_fixed", "size"), roi=("lay_fixed", "mean"),
+                                                 placed=("placed", "sum")).round(4).to_string())
