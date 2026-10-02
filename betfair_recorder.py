@@ -337,6 +337,35 @@ def read_catalogue(data, start: datetime, end: datetime, market_types=("WIN", "P
     return out
 
 
+def census(data, day: date, countries=("GB", "IE"), window_hours: float = 2.0) -> dict:
+    """Every market Betfair lists on a day's racing, by type, with a few names of each (read-only): which markets a
+    recording could add beside win and place (match bets, the other place markets, forecasts). One call a window of
+    hours, any market type; a weight of 1 a market lets Betfair answer 200 a call."""
+    from trading.exchange import uk_day_window
+    start, end = uk_day_window(day)
+    by_type: dict[str, list[str]] = {}
+    seen, full = set(), 0
+    t = start
+    while t < end:
+        t2 = min(end, t + timedelta(hours=window_hours))
+        got = data._read("listMarketCatalogue", {
+            "filter": {"eventTypeIds": ["7"], "marketCountries": list(countries),
+                       "marketStartTime": {"from": t.strftime("%Y-%m-%dT%H:%M:%SZ"), "to": t2.strftime("%Y-%m-%dT%H:%M:%SZ")}},
+            "marketProjection": ["MARKET_DESCRIPTION", "EVENT"], "maxResults": 200, "sort": "FIRST_TO_START"}) or []
+        full += len(got) >= 200                           # a window Betfair may have cut short
+        for m in got:
+            if m.get("marketId") in seen:
+                continue
+            seen.add(m.get("marketId"))
+            kind = (m.get("description") or {}).get("marketType") or "?"
+            by_type.setdefault(kind, []).append(f"{(m.get('event') or {}).get('venue', '')}: {m.get('marketName', '')}")
+        t = t2
+    out = {k: {"markets": len(v), "e.g.": v[:4]} for k, v in sorted(by_type.items(), key=lambda kv: -len(kv[1]))}
+    if full:
+        out["_note"] = f"{full} window(s) returned 200 markets, the most a call answers: some may be missing"
+    return out
+
+
 def read_books(data, market_ids: list[str], settled: bool = False) -> list[dict]:
     """The books of the markets; ``settled`` asks for the BSP (SP_TRADED) with the prices. Batches keep each call
     under Betfair's weight limit of 200 (EX_BEST_OFFERS 5 a market, SP_TRADED 7)."""
@@ -641,6 +670,8 @@ def main(argv=None) -> int:
     ap.add_argument("--final", action="store_true", help="record the day's settled books (BSP, results)")
     ap.add_argument("--upload", action="store_true", help="copy the day's files to S3 now")
     ap.add_argument("--load-db", action="store_true", help="load the last --days of the record into --db")
+    ap.add_argument("--census", action="store_true",
+                    help="print every market type Betfair lists on the --date's racing, with examples (read-only)")
     ap.add_argument("--date", default=None, help="UK racing day, YYYY-MM-DD (default today)")
     ap.add_argument("--until", default="21:30", help="stop recording at this UK time")
     ap.add_argument("--every", type=float, default=300.0, help="seconds between snapshots of a market")
@@ -657,6 +688,13 @@ def main(argv=None) -> int:
     if a.load_db:
         for r in load_db(a.db, a.days, day):
             print(r)
+        return 0
+    if a.census:
+        from trading.exchange import BetfairData
+        data = BetfairData()
+        data.login()
+        for kind, v in census(data, day, tuple(a.countries.split(","))).items():
+            print(kind, v)
         return 0
     if not (a.record or a.final or a.upload):
         ap.print_help()

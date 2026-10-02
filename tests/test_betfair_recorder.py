@@ -615,6 +615,34 @@ def test_a_day_without_racing_or_a_file_that_cannot_be_read_is_taken_once_and_ol
     assert [p.name for p in bp.pull_s3(tmp_path / "dl", str(db), s3=s3, bucket="ashcroft")] == [recent]
 
 
+def test_the_census_counts_every_market_type_on_the_day_once():
+    """The owner asked about match bets (AvB), which Betfair's price files do not hold: the census reads every market
+    on a day's racing, any type, read-only, so the recording can be told which to add."""
+    def market(mid, kind, name, venue="Kempton"):
+        return {"marketId": mid, "marketName": name, "description": {"marketType": kind}, "event": {"venue": venue}}
+
+    class Data:
+        def __init__(self):
+            self.calls = []
+
+        def _read(self, method, params):
+            self.calls.append((method, params))
+            if len(self.calls) == 1:
+                return [market("1.1", "WIN", "7f Hcap"), market("1.2", "PLACE", "To Be Placed"),
+                        market("1.3", "MATCH_BET", "Alpha v Bravo")]
+            if len(self.calls) == 2:                                     # the next window: one new, one seen
+                return [market("1.3", "MATCH_BET", "Alpha v Bravo"), market("1.4", "MATCH_BET", "Charlie v Delta")]
+            return []
+
+    data = Data()
+    got = br.census(data, DAY)
+    assert got["MATCH_BET"] == {"markets": 2, "e.g.": ["Kempton: Alpha v Bravo", "Kempton: Charlie v Delta"]}
+    assert got["WIN"]["markets"] == 1 and got["PLACE"]["markets"] == 1 and "_note" not in got
+    assert {m for m, _ in data.calls} == {"listMarketCatalogue"}                         # reads only
+    assert all("marketTypeCodes" not in p["filter"] for _, p in data.calls)              # every type
+    assert len(data.calls) == 12                                                       # 2-hour windows of the day
+
+
 def test_the_command_line_archives_with_its_markets_dates_pause_and_time(monkeypatch, capsys):
     site, s3 = _site_and_archive()
     monkeypatch.setattr(bp, "_capture", lambda: (s3, "ashcroft"))
