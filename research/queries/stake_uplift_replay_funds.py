@@ -241,10 +241,10 @@ class ReplayExchange(PaperExchange):
     def __init__(self, data, bank, balance=None):
         super().__init__(data, bank=bank)
         self.balance = balance
-        self.fills = []                            # (market_id, stake)
+        self.fills = []                            # (market_id, stake, when matched)
 
     def open_stakes(self) -> float:
-        return sum(s for mid, s in self.fills if self.data.now < starts[mid] + timedelta(minutes=10))
+        return sum(s for mid, s, _ in self.fills if self.data.now < starts[mid] + timedelta(minutes=10))
 
     def funds(self):
         if self.balance is None:
@@ -260,7 +260,7 @@ class ReplayExchange(PaperExchange):
         f = super().back(market_id, selection_id, price, size, ref, min_fill)
         if f.status == "SUCCESS":
             self.data.taken[(market_id, int(selection_id), round(float(price), 2))] += f.matched
-            self.fills.append((market_id, f.matched))
+            self.fills.append((market_id, f.matched, self.data.now))
         return f
 
 
@@ -309,10 +309,11 @@ def replay(target: float, max_stake: float = 300.0, max_day: float = 4000.0, bal
     data.now = t + timedelta(hours=12)                 # the settled books, recorded after the last race
     s.settle_all(t)
     pos = [p for p in s.positions.values() if p.matched > 0]
-    # the money the target needs at the busiest moment: stakes of races not yet ten minutes past their off
+    # the money the target needs at the busiest moment: stakes already matched on races not yet ten minutes past
+    # their off (the second and third runs counted every fill of the day as open at once)
     peak = 0.0
     for minute in pd.date_range(datetime(2026, 10, 1, 7, 0, tzinfo=timezone.utc), last_off, freq="1min"):
-        peak = max(peak, sum(st for mid, st in x.fills if minute < starts[mid] + timedelta(minutes=10)))
+        peak = max(peak, sum(st for mid, st, tf in x.fills if tf <= minute < starts[mid] + timedelta(minutes=10)))
     exposure_peak = peak
     win = np.array([p.matched * (p.avg_price - 1) for p in pos])
     can_win = np.array([min(target, max_stake * (p.avg_price - 1)) for p in pos])
