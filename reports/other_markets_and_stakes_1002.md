@@ -12,7 +12,9 @@ Research-query runs 36965830970, 36966868668 and the replay's third run; queries
 
 13,372 files in 16 markets. UK and Irish win and place (Betfair's "To Be Placed") go back to 31 Aug 2017, 3,319 days
 each. The other twelve markets have their last eight days so far; from tonight the archive takes them from 2018,
-newest first (betfair-prices.yml), before the older UK/IE files that are never loaded.
+newest first (betfair-prices.yml), before the older UK/IE files that are never loaded. Betfair dates each file by the
+morning after its racing (`dwbfpricesukwin01102026.csv` holds 30 Sep's races), so a day's prices reach the archive the
+evening after; the nightly load dates each race by its own start time, not the file's name.
 
 | Market | Races a day | Traded a runner before the off (median) |
 |---|---|---|
