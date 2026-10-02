@@ -648,6 +648,9 @@ class Session:
         for r in self.ledger:
             if r["event"] == "back" and _num(r.get("matched")) > 0:
                 first.setdefault((str(r.get("market_id")), str(r.get("selection_id"))), str(r.get("ts") or ""))
+        # the horses held for want of funds, from the ledger (so the settling run, which never held, counts them too)
+        held = {(str(r.get("market_id")), str(r.get("selection_id"))) for r in self.ledger
+                if r["event"] == "skip" and r.get("error") == HELD}
         window = {"by_11": [0.0, 0.0], "after_11": [0.0, 0.0]}  # staked, staked x CLV
         for r, st, cv in zip(settled, stakes, clvs):
             late = _entered_after(first.get((str(r.get("market_id")), str(r.get("selection_id"))), ""), 11)
@@ -666,6 +669,8 @@ class Session:
             "stopped": self.state.stopped,
             "backs_refused": refused,
             "held_for_funds": self.holds,
+            "horses_held_for_funds": len(held),
+            "horses_held_never_backed": len(held - set(first)),
             "staked_entered_by_11_uk": round(window["by_11"][0], 2),
             "clv_entered_by_11_uk": round(window["by_11"][1] / window["by_11"][0], 4) if window["by_11"][0] else None,
             "staked_entered_after_11_uk": round(window["after_11"][0], 2),

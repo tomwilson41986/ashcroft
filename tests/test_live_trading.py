@@ -625,6 +625,11 @@ def test_short_of_funds_the_day_holds_and_trades_again_when_the_funds_are_back()
     assert len(_orders(c)) == 3 and s.hold_until is not None
     out = s.summary()
     assert out["backs_refused"] == {"INSUFFICIENT_FUNDS (ERROR_IN_ORDER)": 1} and out["held_for_funds"] == 2
+    assert out["horses_held_for_funds"] == 1 and out["horses_held_never_backed"] == 0   # held, then backed
+    again = Session(LiveExchange(data), preds, _live_cfg(), DAY, clock=clock, sleep=lambda _: None)
+    again.restore(s.ledger, [market])                           # the settling run: it never held, the ledger did
+    restored = again.summary()
+    assert restored["held_for_funds"] == 0 and restored["horses_held_for_funds"] == 1
     skips = [r["error"] for r in s.ledger if r["event"] == "skip"]
     assert skips and set(skips) == {"held: the account's funds are short"}
 
