@@ -125,39 +125,66 @@ for (mid, t), g in books.groupby(["market_id", "t"], sort=True):
 # settled books carry no SP). The files are matched to the exchange's markets as the trader matches its prices: by
 # course, UK off time and horse (their EVENT_ID and SELECTION_ID are not the exchange's ids)
 import betfair_prices as bp  # noqa: E402
+# Betfair names a day's file by the day after its racing (dwbfpricesukwin01102026.csv holds 30 Sep's races: the fourth
+# run), so the files of 2 Oct and 1 Oct are read and only 1 Oct's races kept
 sp_rows = []
-for f in (f"dwbfpricesukwin{DAY:%d%m%Y}.csv", f"dwbfpricesirewin{DAY:%d%m%Y}.csv"):
-    raw = _get(f"betfair_prices_raw/{f}")
-    if raw is not None:
+for d in (DAY + timedelta(days=1), DAY):
+    for f in (f"dwbfpricesukwin{d:%d%m%Y}.csv", f"dwbfpricesirewin{d:%d%m%Y}.csv"):
+        try:
+            when = s3.head_object(Bucket=bucket, Key=f"betfair_prices_raw/{f}")["LastModified"]
+        except Exception:
+            print(f"  {f}: not in the archive yet")
+            continue
+        raw = _get(f"betfair_prices_raw/{f}")
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
             text = raw.decode("latin-1")
-        sp_rows.append(bp.parse_file_text(text, f))
-spf = pd.concat(sp_rows, ignore_index=True)
+        t = bp.parse_file_text(text, f)
+        print(f"  {f} (archived {when:%Y-%m-%d %H:%M} UTC): {len(t):,} runners, race days "
+              f"{sorted(t['race_date'].dropna().unique())}")
+        sp_rows.append(t[t["race_date"] == DAY.isoformat()])
+spf = pd.concat(sp_rows, ignore_index=True) if sp_rows else pd.DataFrame()
+SETTLED_FROM = "Betfair's price files: every runner's BSP and result"
+if spf.empty:
+    # until the file is published: the real day's own settled bets (listClearedOrders), the BSP and result of each
+    # horse the real trader backed; a horse it never backed has no BSP here and is void in the replay
+    st_real = ledger[ledger["event"] == "settle"].copy()
+    st_real["bsp"] = pd.to_numeric(st_real["bsp"], errors="coerce")
+    st_real = st_real[st_real["bsp"] > 1]
+    spf = pd.DataFrame({"market_id": st_real["market_id"].astype(str).to_numpy(),
+                        "selection_id": st_real["selection_id"].astype(int).to_numpy(),
+                        "bsp": st_real["bsp"].to_numpy(),
+                        "win_lose": (st_real["result"] == "WINNER").astype(int).to_numpy()})
+    SETTLED_FROM = (f"the real day's settled bets: the BSP and result of the {len(spf)} horses the real trader backed; "
+                    f"any other horse a replay backs is void, so each replay is scored on those horses")
+print(f"  settled from {SETTLED_FROM}")
 # the course from the file's menu hint, read against the day's own venues (the third run passed none, and a hint
 # naming the course in full, or an abbreviation the map lacks, matched nothing)
 day_tracks = {bp.normalise_track(m.venue): m.venue for m in markets}
-spf["venue"] = spf["menu_hint"].map(lambda h: bp.course_from_hint(h, day_tracks))
-print(f"  price-file meetings: {sorted(spf['menu_hint'].dropna().unique())} -> "
-      f"{sorted(spf['venue'].dropna().unique())}")
-spf["runner_name"] = spf["selection_name"]
-spf = spf.rename(columns={"event_id": "file_event_id", "selection_id": "file_selection_id"})
-spm = attach_ids(spf[["venue", "race_time", "runner_name", "bsp", "win_lose", "file_event_id", "file_selection_id"]],
-                 markets)
-# a runner the course left unmatched is found by its UK off time and name alone, where that pair is unique on the day
-ex = pd.DataFrame([{"_t": bp.utc_iso_to_uk_hhmm(m.start.strftime("%Y-%m-%dT%H:%M:%S.000Z")),
-                    "_h": bp.normalise_horse(n), "market_id": m.market_id, "selection_id": int(s)}
-                   for m in markets for s, n in m.runners.items()]).drop_duplicates(["_t", "_h"], keep=False)
-miss = spm["market_id"].isna()
-spm["market_id"], spm["selection_id"] = spm["market_id"].astype(object), spm["selection_id"].astype(object)
-by_time = spm.loc[miss, ["race_time", "runner_name"]].assign(
-    _t=lambda d: d["race_time"].astype(str).map(bp.race_time_to_24h),
-    _h=lambda d: d["runner_name"].map(bp.normalise_horse)).merge(ex, on=["_t", "_h"], how="left")
-spm.loc[miss, "market_id"] = by_time["market_id"].to_numpy()
-spm.loc[miss, "selection_id"] = by_time["selection_id"].to_numpy()
-print(f"  price files: {len(spf):,} runners; {int((~miss).sum()):,} matched by course, time and horse, "
-      f"{int(by_time['market_id'].notna().sum()):,} more by time and horse")
+if "menu_hint" not in spf:                           # the real day's bets carry the exchange's own ids
+    spm = spf.assign(file_event_id=pd.NA, file_selection_id=spf["selection_id"])
+else:
+    spf["venue"] = spf["menu_hint"].map(lambda h: bp.course_from_hint(h, day_tracks))
+    print(f"  price-file meetings: {sorted(spf['menu_hint'].dropna().unique())} -> "
+          f"{sorted(spf['venue'].dropna().unique())}")
+    spf["runner_name"] = spf["selection_name"]
+    spf = spf.rename(columns={"event_id": "file_event_id", "selection_id": "file_selection_id"})
+    spm = attach_ids(spf[["venue", "race_time", "runner_name", "bsp", "win_lose", "file_event_id",
+                          "file_selection_id"]], markets)
+    # a runner the course left unmatched is found by its UK off time and name alone, where that pair is unique
+    ex = pd.DataFrame([{"_t": bp.utc_iso_to_uk_hhmm(m.start.strftime("%Y-%m-%dT%H:%M:%S.000Z")),
+                        "_h": bp.normalise_horse(n), "market_id": m.market_id, "selection_id": int(s)}
+                       for m in markets for s, n in m.runners.items()]).drop_duplicates(["_t", "_h"], keep=False)
+    miss = spm["market_id"].isna()
+    spm["market_id"], spm["selection_id"] = spm["market_id"].astype(object), spm["selection_id"].astype(object)
+    by_time = spm.loc[miss, ["race_time", "runner_name"]].assign(
+        _t=lambda d: d["race_time"].astype(str).map(bp.race_time_to_24h),
+        _h=lambda d: d["runner_name"].map(bp.normalise_horse)).merge(ex, on=["_t", "_h"], how="left")
+    spm.loc[miss, "market_id"] = by_time["market_id"].to_numpy()
+    spm.loc[miss, "selection_id"] = by_time["selection_id"].to_numpy()
+    print(f"  price files: {len(spf):,} runners; {int((~miss).sum()):,} matched by course, time and horse, "
+          f"{int(by_time['market_id'].notna().sum()):,} more by time and horse")
 spm = spm[spm["market_id"].notna()].copy()
 if spm.empty:
     raise SystemExit("no price-file runner matched the exchange's markets: the replay cannot settle")
@@ -326,6 +353,8 @@ def replay(target: float, max_stake: float = 300.0, max_day: float = 4000.0, bal
     out = {"target": target, "max_stake": max_stake, "max_day": max_day,
            "balance": balance if balance is not None else "none", "horses": len(pos),
            "staked": round(float(sum(p.matched for p in pos)), 2),
+           "staked_settled": round(float(sum(float(r["matched"]) for r in settled if r["result"] != "REMOVED")), 2),
+           "horses_void": sum(1 for r in settled if r["result"] == "REMOVED"),
            "reached_95pc": round(float(np.mean(win >= 0.95 * can_win)), 3),
            "clv": round(float(np.sum(st[ok] * cv[ok]) / np.sum(st[ok])), 4) if ok.any() else None,
            "clv_x_stake": round(float(np.sum(st[ok] * cv[ok])), 2),
@@ -349,11 +378,14 @@ for balance in (5000.0, None):                       # the owner's limits lifted
 res = pd.DataFrame(rows)
 base = res[(res.target == 250.0) & (res.max_day == 4000.0)].set_index("balance")
 res["marginal_clv_over_250"] = [
-    round((r.clv_x_stake - base.at[r.balance, "clv_x_stake"]) / (r.staked - base.at[r.balance, "staked"]), 4)
-    if r.balance in base.index and r.staked - base.at[r.balance, "staked"] > 1 else None for r in res.itertuples()]
+    round((r.clv_x_stake - base.at[r.balance, "clv_x_stake"]) / (r.staked_settled - base.at[r.balance, "staked_settled"]),
+          4)
+    if r.balance in base.index and r.staked_settled - base.at[r.balance, "staked_settled"] > 1 else None
+    for r in res.itertuples()]
 res.to_csv(OUT / "targets.csv", index=False)
 print()
 print(res.drop(columns=["clv_x_stake"]).to_string(index=False))
 real_pos = real.groupby(["market_id", "selection_id"]).agg(staked=("matched", "sum"))
-print(f"\nthe real day: {len(real_pos)} horses, GBP{real_pos.staked.sum():,.2f} staked, CLV +9.2%, +GBP194.57 before "
+print(f"\nsettled from {SETTLED_FROM}")
+print(f"the real day: {len(real_pos)} horses, GBP{real_pos.staked.sum():,.2f} staked, CLV +9.2%, +GBP194.57 before "
       f"commission (the replay at GBP250 with the day's balance stands for it)")
