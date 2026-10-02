@@ -172,6 +172,9 @@ to within 5% of a GBP250 target, and 79-83% of a GBP400-500 one with the limits 
 
 **The recommendation.** Keep GBP250 to win while the account's money is what binds (GBP1,712.60 on 2 Oct). At the
 account's balance GBP250 earns the most. With more money a bigger target would earn more, but for a reason a smaller
-change gets at directly: it stops the trader before the afternoon's weaker entries. The next replays test that change
-directly on the recorded days. They also test top-ups held to a higher bar than a new horse, and a new horse given the
-money before a top-up when funds run short. The owner decides any change to the rule.
+change gets at directly: it stops the trader before the afternoon's weaker entries. The replay of 1 Oct tested that
+change directly, along with top-ups held to a higher bar and new horses given the money first (research-query run
+37072291665, ledger `topup-policy-replay-1001`). With the account's money the live rule earned the most: CLV x stake
+GBP214, against GBP84-185 for the variants. Money a variant frees goes to later, weaker horses. Only with GBP5,000
+in the account did a variant gain: no backs in the last hour, GBP184 against GBP159. 2 Oct is replayed once its
+price file is published. The owner decides any change to the rule.

@@ -260,9 +260,18 @@ horses were withdrawn and their GBP206.71 was void (GBP182.48 of it on Cranachan
   55% of the stake) made nothing, at prices 2.2% shorter. On 1 Oct the figures were +13.8% and +6.0%. Over the two
   days: first fills +9.5% (GBP2,821), top-ups +2.6% (GBP3,354), a gap of 7.1 points (90% interval 2.1 to 12.0,
   resampled by horse). The closing model expected the same of both (+5.4% and +5.3%), since it does not know a horse
-  is being topped up. Where it expected 3-6%, first fills made +8.9% and top-ups +1.3%. A replay of the recorded days
-  will test a higher bar for top-ups, and new horses before top-ups when funds are short. Any change to the rule is
-  the owner's.
+  is being topped up. Where it expected 3-6%, first fills made +8.9% and top-ups +1.3%. But the first fills are
+  mostly the morning's and the top-ups come later, so the gap is largely the time of day. The replay of 1 Oct,
+  settled on every horse (research-query run 37072291665, ledger `topup-policy-replay-1001`), found the live rule
+  worth the most at the day's balance: CLV x stake GBP214. The variants were worth less:
+  - no top-ups GBP84;
+  - top-ups only at 6% GBP169;
+  - new horses first, with GBP300 kept free, GBP158;
+  - no backs in the last hour GBP185;
+  - morning only GBP149.
+  The money a variant frees goes to later, weaker horses (with no top-ups the first fills made only +4.4%). With
+  GBP5,000 in the account (the day limit binding), no backs in the last hour was worth GBP184 against GBP159. 2 Oct
+  is replayed once its price file is published. Any change to the rule is the owner's.
 - **Funds.** Betfair refused one back for funds. The trader held new backs each time the funds it read were spent,
   from 09:54 to 17:31 UK: 76 horses were held, 16 of them never backed. The day's settled summary showed
   `held_for_funds` 0, because the settling run never holds. From 3 Oct the summary also counts the horses held, from
