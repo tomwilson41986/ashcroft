@@ -306,7 +306,18 @@ hourly list does) gives the same CLV for fewer pounds (ledger `delayed-key-volum
 
 Still the owner's to supply: a live application key restores the matched money the delayed key leaves out
 (worth about a quarter of the backtested CLV), and a certificate (`BETFAIR_CERT`, `BETFAIR_KEY`) makes the login
-non-interactive. The backtest behind the rule covers February-March 2026 only; the live record is the test now.
+non-interactive. The backtest behind the rule covered February-March 2026. Since 3 Oct it covers five months
+(`research/queries/done/to_win_five_months.py`, research query run 37115884197; ledger `to-win-five-months-1003`).
+That is November 2025 to March 2026, 4,342 races, the closing model reading the runner's matched volume as the live
+key gives it, and 2% commission:
+- CLV +8.2% (+7.7 to +8.7), positive every month (+6.8% to +10.2%); held to the result +9.2% (+5.6 to +12.7).
+- 63 bets and GBP240 of CLV a day when money does not bind.
+- Under 4.0 the backs took +5.6% to +8.2% CLV, so the short prices are not the leak that 1-2 Oct (-0.3%) suggests.
+- Money binds: with GBP1,500 committed a day and nothing recycled, the rule earns GBP125 a day taking races in
+  order, or GBP162 taking the best expected CLV first, which is the order the session already uses within each
+  sweep. With GBP3,000 it earns GBP220.
+
+The live record is the test now.
 
 **The market record (the owner's ask, 30 Sep: keep all of it for the models).** Read-only, on the UK runner:
 
