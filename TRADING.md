@@ -308,8 +308,11 @@ Still the owner's to supply: a live application key restores the matched money t
 (worth about a quarter of the backtested CLV), and a certificate (`BETFAIR_CERT`, `BETFAIR_KEY`) makes the login
 non-interactive. The backtest behind the rule covered February-March 2026. Since 3 Oct it covers five months
 (`research/queries/done/to_win_five_months.py`, research query run 37115884197; ledger `to-win-five-months-1003`).
-That is November 2025 to March 2026, 4,342 races, the closing model reading the runner's matched volume as the live
-key gives it, and 2% commission:
+That is November 2025 to March 2026, 4,342 races, and 2% commission. The closing model there reads the runner's
+matched volume, which only the live application key's feed carries. The trader is still on the delayed key: every
+back on 1-2 Oct logged "feed without volume". So it reads the model fitted without volume, which took a fifth less
+CLV in the February-March backtest (+5.3% against +6.7%). The five months read that way are research query
+`to_win_five_months_novol.py`:
 - CLV +8.2% (+7.7 to +8.7), positive every month (+6.8% to +10.2%); held to the result +9.2% (+5.6 to +12.7).
 - 63 bets and GBP240 of CLV a day when money does not bind.
 - Under 4.0 the backs took +5.6% to +8.2% CLV, so the short prices are not the leak that 1-2 Oct (-0.3%) suggests.
