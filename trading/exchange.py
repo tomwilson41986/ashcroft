@@ -159,7 +159,8 @@ class BetfairData:
                 "exposure_limit": raw.get("exposureLimit"), "retained_commission": raw.get("retainedCommission")}
 
     def _read(self, method: str, params: dict):
-        if method not in ("listMarketCatalogue", "listMarketBook", "listClearedOrders"):
+        if method not in ("listMarketCatalogue", "listMarketBook", "listClearedOrders", "listEventTypes",
+                          "listMarketTypes"):
             raise ValueError(f"{method}: this client only reads markets, prices and settled bets")
         try:
             return self.client._api_call(method, params)

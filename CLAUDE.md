@@ -125,6 +125,18 @@ python betfair_prices.py --pull-s3 --load --match --dir data/betfair_raw --load-
 python betfair_recorder.py --record --final --until 21:30
 python betfair_recorder.py --load-db --days 3
 
+# The other markets' data (the owner's ask, 3 Oct; reports/all_markets_priorities.md): greyhound results (GBGB),
+# football (football-data.co.uk), tennis (Sackmann, tennis-data.co.uk), Australian form (Punting Form, keyed), raw and
+# tables to s3://$CAPTURE_BUCKET/sources/ (source-data.yml nightly); Betfair's Historic Data per sport (UK server)
+python source_data.py --source all --fetch --build --report --max-minutes 280
+python betfair_historic.py --my-data
+python betfair_historic.py --fetch --max-minutes 60 && python betfair_historic.py --build
+# Every sport's markets and matched money (census), the ante-post books, greyhound and 2/3/4 TBP/each-way records
+python betfair_recorder.py --census-sports
+python betfair_recorder.py --antepost
+python betfair_recorder.py --record --event-type 4339 --tag greyhound --until 21:30
+python betfair_recorder.py --record --market-types OTHER_PLACE,EACH_WAY --tag other_place --until 21:30
+
 # Race ABM: simulate a card, batch features for training, pattern-oriented calibration
 python research_lab.py abm --db horse_racing.db --date 2026-03-12
 python research_lab.py abm-features --db horse_racing.db --from 2024-01-01 --jobs 8 --out data/abm_features.parquet
@@ -159,6 +171,7 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
 - `model/diagnostics.py`, `effects.py`, `causal.py`, `selection.py`, `uncertainty.py`, `spatial.py`, `interpret.py`, `perf_figures.py`, `market_features.py` — research toolkit (RESEARCH_FRAMEWORK.md)
 - `betfair_prices.py` — Betfair historic SP/price-movement files, every market Betfair lists, archived in S3 from the UK server (`--archive`); UK/IE racing → `betfair_prices` table, each day file noted in `betfair_prices_files` (loaded by daily-results.yml)
 - `betfair_recorder.py` — the live market record (read-only): the trader's books (hook in `trading/exchange.py BetfairData`) and the recorder job's snapshots (live-record.yml), day files on the UK server and in S3, loaded nightly into `betfair_live_markets`, `betfair_live_marks`, `live_orders`
+- `sources/` (`source_data.py`) — the historic data for the models beyond UK/IE racing, one module a source (GBGB, football-data, tennis, Punting Form); `betfair_historic.py` — Betfair's Historic Data service (BASIC plan, every sport) to opening/closing-price tables
 - S3 bucket: `horseracingresults`, key: `horse_racing.db`
 
 ## Data

@@ -89,7 +89,12 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-        run: timeout 600 python betfair_recorder.py --final --date "$(TZ=Europe/London date -d yesterday +%F)"
+        run: |
+          Y="$(TZ=Europe/London date -d yesterday +%F)"
+          timeout 600 python betfair_recorder.py --final --date "$Y"
+          # the records of their own (the owner's ask of 3 Oct: the other place markets and the greyhounds)
+          timeout 300 python betfair_recorder.py --final --tag other_place --date "$Y" || true
+          timeout 300 python betfair_recorder.py --final --event-type 4339 --tag greyhound --date "$Y" || true
 
       - name: Record the day's markets to the last race
         if: steps.run.outputs.go == 'true'
@@ -102,7 +107,22 @@ jobs:
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           UNTIL: ${{ steps.run.outputs.until }}
-        run: python betfair_recorder.py --record --final --until "$UNTIL"
+        # Beside the win and place record, two of their own (books_other_place.csv, books_greyhound.csv; the nightly
+        # load reads neither): the 2/3/4 TBP and each-way markets for the place model, and the GB/IE greyhound win
+        # and place markets for the greyhound model. Either failing leaves the main record as it was.
+        run: |
+          python betfair_recorder.py --record --final --until "$UNTIL" --market-types OTHER_PLACE,EACH_WAY \
+            --tag other_place > other_place.log 2>&1 &
+          OTHER=$!
+          python betfair_recorder.py --record --final --until "$UNTIL" --event-type 4339 --tag greyhound \
+            --market-types WIN,PLACE > greyhound.log 2>&1 &
+          DOGS=$!
+          rc=0
+          python betfair_recorder.py --record --final --until "$UNTIL" || rc=$?
+          wait "$OTHER" || echo "::warning::the other place markets' record ended with an error"
+          wait "$DOGS" || echo "::warning::the greyhound record ended with an error"
+          tail -n 3 other_place.log greyhound.log || true
+          exit "$rc"
 
       # After the last race, so it never costs a snapshot: the UK and Irish files of the last days, for the night's
       # load (betfair-prices.yml takes every market and the backfill from 22:30 UTC). One file at a time, from the
@@ -128,3 +148,32 @@ jobs:
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
         run: timeout 180 python betfair_recorder.py --census --date "$(TZ=Europe/London date -d tomorrow +%F)"
+
+      # The ante-post win markets (the big races weeks or months ahead), once a day: for the ante-post model.
+      - name: Ante-post markets (one snapshot, read-only)
+        if: ${{ !cancelled() && steps.run.outputs.go == 'true' }}
+        continue-on-error: true
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 300 python betfair_recorder.py --antepost
+
+      # Every sport's open markets of the next 24 hours, their types and the money matched on them so far, read after
+      # the last race each day: which sport to model next (the owner's ask of 3 Oct). One read, about a minute.
+      - name: Every sport's markets (census, read-only)
+        if: ${{ !cancelled() && steps.run.outputs.go == 'true' }}
+        continue-on-error: true
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 180 python betfair_recorder.py --census-sports

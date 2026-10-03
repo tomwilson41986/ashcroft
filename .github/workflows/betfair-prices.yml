@@ -79,6 +79,25 @@ jobs:
       - name: Install dependencies
         run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
 
+      # Betfair's Historic Data service (the free BASIC plan: each sport's markets, the last traded price each minute
+      # and the result), for the models outside UK/IE racing (the owner's ask of 3 Oct). Its share of the night comes
+      # first and is capped at an hour; the archive takes what is left. The tables are built off the UK server
+      # (source-data.yml). Nothing is fetched until the account holds a sport on the service.
+      - name: Betfair Historic Data, other sports (an hour at most)
+        continue-on-error: true
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != schedule ]; then echo "Only on the nightly run"; exit 0; fi
+          timeout 3900 python betfair_historic.py --fetch --max-minutes 60
+
       - name: Archive the price files to S3, one file at a time
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
