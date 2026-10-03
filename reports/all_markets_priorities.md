@@ -52,7 +52,8 @@ racing and greyhounds), the census of every sport (section 4) replaces that know
 |---|---|---|---|---|
 | GBGB (`sources/gbgb.py`) | Every GB greyhound meeting from 2018: each dog each race | `s3://ashcroft/sources/gbgb/raw/<year>/<day>.json.gz`, `gbgb/runs_<year>.parquet` | `source-data.yml` nightly (GitHub's runners), backfill newest first over the first nights | Nothing |
 | football-data.co.uk (`sources/football.py`) | 22 main divisions from 1993/94, 16 extra leagues from 2012 | `sources/football/raw/...`, `football/matches.parquet` | Nightly; the current season again each run | Nothing |
-| Tennis (`sources/tennis.py`) | Sackmann ATP/WTA matches from 2000 (tour, Challenger/qualifying, Futures, ITF) and players; tennis-data.co.uk odds | `sources/tennis/raw/...`, `tennis/sackmann_matches.parquet`, `tennis/odds_matches.parquet` | Nightly; this and last year again | Nothing (Sackmann's licence is CC BY-NC-SA: check before staking money on a model trained on it) |
+| Tennis stats (`sources/tennis.py`) | Sackmann's ATP/WTA matches from 2000 (tour, Futures, qualifying/ITF) and players, from the archive mirror (Sackmann's own repositories were taken down in 2026; snapshot June 2026); TML's ATP tour-level matches for the months since | `sources/tennis/raw/...`, `tennis/sackmann_matches.parquet` | Nightly; this and last year again | Nothing. Both are licensed non-commercial (CC BY-NC-SA): check before staking money on a model trained on them |
+| Tennis odds (`sources/tennis_odds.py`) | tennis-data.co.uk results with closing odds (Pinnacle, Bet365, max, average) | `tennis/odds_matches.parquet` | `betfair-prices.yml` on the UK server, ten minutes a night: its Cloudflare refuses GitHub's runners (403 on every file, 3 Oct) | Nothing, if the UK server gets through; else Betfair Historic Data is the tennis close |
 | Punting Form (`sources/puntingform.py`) | AU meetings, fields and results a day | `sources/puntingform/raw/...` | Nightly, once keyed | **Owner: a subscription and the secret `PUNTINGFORM_API_KEY`** |
 | Betfair Historic Data (`betfair_historic.py`) | BASIC files for greyhounds, tennis, soccer, cricket, darts, snooker; tables of first / T-24h / T-60 / T-15 / T-1 / closing price and result | `sources/betfair_historic/raw/<sport>/...`, `betfair_historic/markets_<sport>_<year>.parquet` | `betfair-prices.yml` nightly on the UK server, an hour before the price-file archive; tables built in `source-data.yml` | **Owner: "buy" the free BASIC plan for each sport at historicdata.betfair.com with the trading account** |
 | 2/3/4 TBP and each-way books | Every snapshot, as for win/place | `betfair_live/<day>/books_other_place.csv.gz` | Beside the trader (`live-trade.yml`) or the recorder (`live-record.yml`) | Nothing |
@@ -64,6 +65,16 @@ None of these touch `horse_racing.db`. The new live records have their own tagge
 read, so the existing tables and queries are unchanged. The greyhound record stops at 21:30 UK with the others, so the
 late evening's dog races are left to the price files and GBGB.
 
+### The first run (3 Oct, source-data.yml run 37106841528, 2 h 27 min)
+
+| Source | Fetched | Table |
+|---|---|---|
+| GBGB | 3,197 days, 1 Jan 2018 to 2 Oct 2026 (8 days reached the API's 500-race list cap, so some meetings may be missing) | 853,412 races, 3.35m runs; `runs_2018` 107k races ... `runs_2026` 62k |
+| football-data.co.uk | 732 files (32 division-seasons not published) | 300,254 matches, 38 leagues, 23 Jul 1993 to 2 Oct 2026; 25,679 with Betfair's closing price |
+| Tennis | none: Sackmann's repositories 404 (taken down), tennis-data.co.uk 403 (Cloudflare) | moved to the mirror and TML, and the odds to the UK server (this change) |
+| Punting Form | none: no key | |
+| Betfair Historic Data | none yet: runs on the UK server after merge, once the account holds a sport | |
+
 ## 5. The owner's to supply
 
 1. At historicdata.betfair.com, signed in with the trading account: the free BASIC plan for Greyhound Racing, Tennis,
@@ -71,7 +82,7 @@ late evening's dog races are left to the price files and GBGB.
 2. A Punting Form subscription and the secret `PUNTINGFORM_API_KEY`, only if Australian racing goes ahead.
 3. The live application key (a one-off fee, about GBP299 when last published), which restores the traded volume
    the delayed key leaves out. It mattered for racing; it matters more where only the books show liquidity.
-4. Licences: check the Sackmann and football-data.co.uk terms before any of their data trains a model that stakes money.
+4. Licences: check the Sackmann, TML and football-data.co.uk terms before any of their data trains a model that stakes money.
 
 ## 6. Next
 

@@ -17,7 +17,7 @@ import logging
 import sys
 from datetime import date
 
-from sources import SOURCES
+from sources import OTHER_SOURCES, SOURCES
 from sources.common import Budget, Store
 
 log = logging.getLogger("source_data")
@@ -35,7 +35,8 @@ def report(store: Store, names) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--source", default="all", help=f"comma-separated, of {','.join(SOURCES)}, or all")
+    ap.add_argument("--source", default="all",
+                    help=f"comma-separated, of {','.join(SOURCES + OTHER_SOURCES)}, or all ({','.join(SOURCES)})")
     ap.add_argument("--fetch", action="store_true")
     ap.add_argument("--build", action="store_true")
     ap.add_argument("--report", action="store_true")
@@ -46,7 +47,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     names = SOURCES if a.source == "all" else tuple(x.strip() for x in a.source.split(",") if x.strip())
-    bad = [n for n in names if n not in SOURCES]
+    bad = [n for n in names if n not in SOURCES + OTHER_SOURCES]
     if bad:
         ap.error(f"unknown source(s): {bad}")
     store = Store(root=a.root)
@@ -69,7 +70,7 @@ def main(argv=None) -> int:
                         kw["date_to"] = d_to
                 elif name == "football" and year_from:
                     kw["first_season"] = year_from
-                elif name == "tennis" and year_from:
+                elif name in ("tennis", "tennis_odds") and year_from:
                     kw["first_year"] = year_from
                 res["fetch"] = mod.fetch(store, **kw)
             if a.build:

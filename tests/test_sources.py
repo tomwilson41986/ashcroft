@@ -179,6 +179,45 @@ def test_tennis_builds_sackmann_matches_with_tour_and_level(tmp_path):
     assert out["tennis_data"]["with_pinnacle"] == 1 and o.iloc[0]["PSW"] == 1.9 and o.iloc[0]["tour"] == "atp"
 
 
+class TennisSite:
+    """The mirror has the tour files, TML its ATP years; tennis-data's Cloudflare refuses everything."""
+
+    def __init__(self):
+        self.urls = []
+
+    def get(self, url, params=None, timeout=None):
+        self.urls.append(url)
+        if "tennis-data.co.uk" in url:
+            return Reply(status=403, content=b"<html>blocked</html>")
+        if url.endswith("/atp/atp_matches_2026.csv") or url.endswith("/wta/wta_matches_2025.csv"):
+            return Reply(content=SACK.encode())
+        if "TML-Database" in url and url.endswith("/2026.csv"):
+            return Reply(content=SACK.replace("Dimitrov", "Sinner").encode())
+        return Reply(status=404, content=b"404: Not Found")
+
+
+def test_tennis_reads_the_sackmann_mirror_and_tml_and_keeps_one_row_a_match(tmp_path, monkeypatch):
+    monkeypatch.setattr("sources.common.time.sleep", lambda s: None)
+    store, site = Store(root=tmp_path), TennisSite()
+    got = tennis.fetch(store, first_year=2025, s=site, today=date(2026, 10, 3))
+    assert got["fetched"] == 3 and got["failed"] == 0
+    assert all("JeffSackmann" not in u for u in site.urls)                   # the taken-down repositories
+    assert not any("tennis-data" in u for u in site.urls)                   # the odds are their own source
+    store.put("tennis/raw/tml/2025.csv", SACK.encode())                     # the same match as the mirror's 2025
+    tennis.build(store)
+    m = store.get_parquet("tennis/sackmann_matches.parquet")
+    assert sorted(m["winner_name"]) == ["Dimitrov", "Dimitrov", "Sinner"]
+    assert set(m["source"]) == {"sackmann", "tml"}
+
+
+def test_tennis_odds_stop_at_the_first_refusal(tmp_path, monkeypatch):
+    monkeypatch.setattr("sources.common.time.sleep", lambda s: None)
+    site = TennisSite()
+    got = tennis.fetch_odds(Store(root=tmp_path), first_year=2000, s=site, today=date(2026, 10, 3))
+    assert got["refused"] and got["fetched"] == 0
+    assert len(site.urls) <= 4                                               # not 94 refused requests
+
+
 def test_tennis_lists_wta_odds_only_from_2007():
     stems = [s for s, _ in tennis.tennis_data_files(2005, 2008)]
     assert "wta_2006" not in stems and "wta_2007" in stems and "atp_2005" in stems
