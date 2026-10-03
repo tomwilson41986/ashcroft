@@ -161,12 +161,23 @@ jobs:
             # the day's market record (read-only) beside the trader: one runner serves both
             python betfair_recorder.py --record --final --until 21:30 > "$RUNNER_TEMP/recorder.log" 2>&1 &
             REC=$!
+            # beside it, two records of their own (the owner's ask of 3 Oct; read-only, the nightly load reads
+            # neither): the 2/3/4 TBP and each-way markets, and the GB/IE greyhound win and place markets
+            python betfair_recorder.py --record --final --until 21:30 --market-types OTHER_PLACE,EACH_WAY \
+              --tag other_place > "$RUNNER_TEMP/other_place.log" 2>&1 &
+            OTHER=$!
+            python betfair_recorder.py --record --final --until 21:30 --event-type 4339 --tag greyhound \
+              --market-types WIN,PLACE > "$RUNNER_TEMP/greyhound.log" 2>&1 &
+            DOGS=$!
             set +e
             python auto_trade.py "${ARGS[@]}" --trade-until "$TRADE_UNTIL" --until "$UNTIL"
             CODE=$?
             wait "$REC"
             echo "recorder exited $?"
             tail -n 30 "$RUNNER_TEMP/recorder.log"
+            wait "$OTHER"; echo "other place record exited $?"
+            wait "$DOGS"; echo "greyhound record exited $?"
+            tail -n 5 "$RUNNER_TEMP/other_place.log" "$RUNNER_TEMP/greyhound.log"
             exit $CODE
           fi
 
