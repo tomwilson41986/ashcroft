@@ -279,6 +279,67 @@ horses were withdrawn and their GBP206.71 was void (GBP182.48 of it on Cranachan
 - 68 backs were killed (fill-or-kill: the price had gone), against 47 on 1 Oct. Every race was settled from Betfair's
   record, with the BSP. The day staked GBP3,689.61 including the void bets, short of the GBP4,000 day limit.
 
+**The third full day** (3 Oct, a Saturday; ledger `live-day-1003`). One session from 08:09 UK to 15 minutes before
+each off, the last back at 19:43 UK. 286 backs were matched on 128 horses in 41 races, each laid at the SP for its
+winnings; no horse was withdrawn. The day's stakes reached the GBP4,000 day limit at the last race (GBP3,999.99;
+one horse at Southwell 20:00 was left with less than the minimum stake).
+
+| Horse first backed | Horses | Races | Staked | Result before commission | CLV |
+|---|---|---|---|---|---|
+| By 11:00 UK | 55 | 26 | GBP2,094.51 | +291.25 | +9.6% |
+| After 11:00 UK | 73 | 30 | GBP1,905.48 | +25.85 | +1.8% |
+| **Day** | **128** | **41** | **GBP3,999.99** | **+317.10** | **+5.9%** |
+
+- **+GBP307.16 after commission** (GBP9.94 at 2%): the account went from GBP1,712.60 to GBP2,019.76. Eleven of the
+  128 horses won. At +5.9% CLV the day was worth about +GBP236 beforehand (CLV x stake); the results did the rest.
+- **By time to the off** at the horse's first back:
+
+  | Time to the off | Horses | Staked | Result | CLV |
+  |---|---|---|---|---|
+  | Three hours or more | 62 | GBP2,216 | +315.97 | +9.9% |
+  | One to three hours | 46 | GBP1,353 | -37.46 | -1.8% |
+  | The last hour | 20 | GBP431 | +38.59 | +9.7% |
+
+- **The three days together**: 371 horses, GBP10,174.46 staked, CLV +4.7%, +560.80 before commission. After
+  commission the account went from GBP1,480.11 to GBP2,019.76 (+GBP539.65).
+
+  | Horse first backed | Horses | Staked | CLV |
+  |---|---|---|---|
+  | By 11:00 UK | 161 | GBP5,505 | +7.9% |
+  | After 11:00 UK | 210 | GBP4,669 | +1.0% |
+  | Three hours or more before the off | 181 | GBP5,999 | +7.4% |
+  | One to three hours | 113 | GBP2,835 | +0.3% |
+  | The last hour | 77 | GBP1,341 | +2.3% |
+
+- **First fills and top-ups.** On 3 Oct the top-ups made more than the first fills: +8.4% (158 fills, GBP2,198, 55%
+  of the stake) against +5.2% (GBP1,802). Over the three days the first fills made +7.8% (GBP4,623) and the top-ups
+  +4.9% (GBP5,552). The gap is 3.0 points (90% interval -0.6 to 7.0, resampled by horse), so it is no longer
+  resolved.
+- **The replay of 1-2 Oct** (research-query run 37156819718, ledger `topup-policy-replay-1002`): settled on every
+  horse, scored on CLV x stake before commission. At each day's balance the live rule earned GBP261 over the two days
+  (GBP214 and GBP47), and no variant beat it on both days:
+
+  | Variant | 1 Oct | 2 Oct | Two days |
+  |---|---|---|---|
+  | The live rule | 214 | 47 | 261 |
+  | Morning only | 149 | 125 | 274 |
+  | No top-ups | 84 | 166 | 250 |
+  | Top-ups only at 6% | 169 | 74 | 243 |
+  | No backs in the last hour | 185 | 57 | 242 |
+  | No backs in the last three hours | 139 | 91 | 230 |
+  | New horses first | 158 | 60 | 219 |
+  | Top-ups at 6%, not in the last hour | 124 | 81 | 206 |
+  | A horse under 4.0 only at 6% expected CLV | 164 | 26 | 190 |
+  | A horse under 4.0 only at 10% expected CLV | 165 | 20 | 185 |
+
+  The short-price variants did worst, as the five-month backtest said they would. With GBP5,000 in the account (the
+  day limit binding), no backs in the last hour beat the live rule on both days, narrowly: GBP184 against GBP159,
+  and GBP227 against GBP225. The live rule stays; any change to it is the owner's.
+- **Funds.** Betfair refused one back for funds. The trader held new backs each time the funds it read were spent,
+  from 09:29 to 16:55 UK: 86 horses were held, 23 of them never backed. 55 backs were killed (fill-or-kill: the price
+  had gone). Every race was settled from Betfair's record, with the BSP. The 21:45 UTC settling run never started, so
+  it was run by hand at 22:10 UTC (run 37157529273).
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
