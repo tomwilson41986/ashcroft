@@ -9,6 +9,15 @@ exponents give the place chances for the places the place market pays, and the p
 the best back for a back, the best lay for a lay. Each bet is settled two ways, at the place SP (an order at the SP
 sent at T-15) and at the price shown at T-15, from Betfair's place price file for the day (each runner's place SP and
 whether it placed). A day whose file is not yet published waits. A few days decide nothing: this starts the record.
+
+Two more readings of the same books (stage 4 for the place market, its closing-line value):
+- the place market in the morning: each runner's best back at 09:00, 10:00, 11:00 and 12:00 UK against its place SP;
+- the live trader's horses: for each horse the win rule backed (its first matched back in the trader's ledger), the
+  place market's best back at that moment against the place SP, beside the win CLV the same back took and every
+  other runner in the same place book at the same moment (the baseline).
+A horse whose place price in the morning is longer than its place SP is a place back that would have closed in our
+favour; if the win rule's horses drift in the place market as they do in the win market, the same rule could trade
+there too.
 """
 
 from __future__ import annotations
@@ -30,7 +39,7 @@ from model.ordering import position_probabilities, simulate_finishing_orders  # 
 
 pd.set_option("display.width", 240)
 pd.set_option("display.max_rows", 300)
-DAYS = [date(2026, 10, 1), date(2026, 10, 2)]
+DAYS = [date(2026, 10, 1), date(2026, 10, 2), date(2026, 10, 3)]
 COMM = 0.02
 T_MINUS = 15
 BANDS = ((2, 7), (8, 11), (12, 15), (16, 40))
@@ -104,9 +113,9 @@ def place_q(pi, k, rng):
 
 
 def snapshot(books, mid, at):
-    """The market's poll nearest T-15, within five minutes of it."""
-    b = books[books.market_id == mid]
-    if b.empty:
+    """The market's poll nearest ``at``, within five minutes of it (``books`` grouped by market, or the whole frame)."""
+    b = books.get(mid) if isinstance(books, dict) else books[books.market_id == mid]
+    if b is None or b.empty:
         return None
     t = b.t.unique()
     near = t[np.argmin(np.abs((pd.to_datetime(t) - at).total_seconds()))]
@@ -116,8 +125,9 @@ def snapshot(books, mid, at):
 
 
 rng = np.random.default_rng(0)
-bets, path = [], []
+bets, path, morning, live = [], [], [], []
 MARKS = (60, 30, 15, 5)
+MORNING_UK = (9, 10, 11, 12)                          # UK hours; British Summer Time until 25 Oct (UTC + 1)
 for day in DAYS:
     print(f"\n== {day}")
     pf = price_file(day, "place")
@@ -147,6 +157,7 @@ for day in DAYS:
                           "market_start_utc": pr.market_id_w.map(starts), "venue_w": pr.market_id_w.map(venues)})
     pairs = pairs.dropna(subset=["market_start_utc"])
     polled = set(books.market_id.unique())
+    books = {m: g for m, g in books.groupby("market_id")}          # one pass, not one per snapshot
     print(f"  {len(pr)} races paired through the files; {len(pairs)} with a start time; "
           f"{int(pairs.market_id_w.isin(polled).sum())} win and {int(pairs.market_id_p.isin(polled).sum())} place "
           f"markets among the {len(polled)} the recorder polled")
@@ -191,6 +202,61 @@ for day in DAYS:
                          "place_back": back, "place_lay": lay, "place_bsp": s.bsp, "placed": int(s.win_lose == 1),
                          "place_back_size": row.back1_size, "place_lay_size": row.lay1_size})
     print(f"  {n_read} races read at T-{T_MINUS}")
+    # the place market in the morning, every runner, against the place SP
+    wsp = wf.drop_duplicates(["market_id", "selection_id"]).set_index(["market_id", "selection_id"]).bsp
+    for r in pairs.itertuples(index=False):
+        off = pd.Timestamp(r.market_start_utc).tz_convert("UTC")
+        settle = pf[pf.market_id == r.market_id_p].drop_duplicates("selection_id").set_index("selection_id")
+        if settle.empty:
+            continue
+        for hour in MORNING_UK:
+            at = pd.Timestamp(f"{day} {hour - 1:02d}:00", tz="UTC")
+            if at >= off - pd.Timedelta(minutes=T_MINUS):
+                continue
+            snap = snapshot(books, r.market_id_p, at)
+            if snap is None:
+                continue
+            for sr in snap[snap.runner_status.eq("ACTIVE")].itertuples(index=False):
+                sid = int(sr.selection_id)
+                if sid in settle.index:
+                    morning.append({"day": str(day), "race": r.market_id_w, "selection_id": sid, "uk_hour": hour,
+                                    "back": sr.back1, "lay": sr.lay1, "back_size": sr.back1_size,
+                                    "place_bsp": settle.loc[sid].bsp, "placed": int(settle.loc[sid].win_lose == 1),
+                                    "win_bsp": wsp.get((r.market_id_w, sid), np.nan)})
+    # the live trader's horses: the place book when each horse's first win back matched
+    led = _csv(f"trading/live/{day}/ledger.csv")
+    if led.empty:
+        print("  no live ledger for the day")
+        continue
+    bk = led[(led.event == "back") & (pd.to_numeric(led.matched, errors="coerce") > 0)].copy()
+    bk["t"] = pd.to_datetime(bk.ts, utc=True)
+    first = bk.sort_values("t").drop_duplicates(["market_id", "selection_id"])
+    to_place = dict(zip(pairs.market_id_w, pairs.market_id_p))
+    n_live = 0
+    for r in first.itertuples(index=False):
+        mp = to_place.get(str(r.market_id))
+        if mp is None:
+            continue
+        snap = snapshot(books, mp, r.t)
+        settle = pf[pf.market_id == mp].drop_duplicates("selection_id").set_index("selection_id")
+        if snap is None or settle.empty:
+            continue
+        snap = snap[snap.runner_status.eq("ACTIVE") & snap.back1.notna()]
+        snap = snap[snap.selection_id.astype(int).isin(settle.index)]
+        sid = int(r.selection_id)
+        if sid not in set(snap.selection_id.astype(int)):
+            continue
+        n_live += 1
+        for sr in snap.itertuples(index=False):
+            o = int(sr.selection_id)
+            live.append({"day": str(day), "race": str(r.market_id), "selection_id": o, "ours": o == sid,
+                         "uk_time": (r.t + pd.Timedelta(hours=1)).strftime("%H:%M"),
+                         "minutes_to_off": float(r.minutes_to_off) if pd.notna(r.minutes_to_off) else np.nan,
+                         "back": sr.back1, "back_size": sr.back1_size, "place_bsp": settle.loc[o].bsp,
+                         "placed": int(settle.loc[o].win_lose == 1),
+                         "win_back": float(r.avg_price) if o == sid else np.nan,
+                         "win_bsp": wsp.get((str(r.market_id), o), np.nan)})
+    print(f"  the live trader's horses read in the place market: {n_live} of {len(first)}")
 if not bets:
     raise SystemExit("no day could be read")
 B = pd.DataFrame(bets)
@@ -242,3 +308,35 @@ if not P.empty:
     print("\nlay to place at the price shown, win 50+ (per GBP1 laid):")
     print(P[P.band == "50+"].groupby("mark").agg(n=("lay_fixed", "size"), roi=("lay_fixed", "mean"),
                                                  placed=("placed", "sum")).round(4).to_string())
+
+print("\n== the place market in the morning: each runner's best back against its place SP (stage 4, the place CLV)")
+M = pd.DataFrame(morning)
+if not M.empty:
+    M = M[(M.back > 1) & (M.place_bsp > 1)].copy()
+    M.to_csv(OUT / "place_morning.csv", index=False)
+    M["win_band"] = pd.cut(M.win_bsp, [1, 3, 5, 8, 13, 21, 1e9], right=False,
+                           labels=["<3", "3-5", "5-8", "8-13", "13-21", "21+"])
+    M["log_back_sp"] = np.log(M.back / M.place_bsp)
+    print(M.groupby(["uk_hour"]).agg(runners=("back", "size"), back_sp_median=("log_back_sp", lambda v: np.exp(v.median())),
+                                     back_sp_mean=("log_back_sp", lambda v: np.exp(v.mean())),
+                                     size_median=("back_size", "median")).round(3).to_string())
+    print(M.groupby(["win_band"], observed=True).agg(
+        runners=("back", "size"), back_sp_median=("log_back_sp", lambda v: np.exp(v.median())),
+        clv_level=("log_back_sp", lambda v: (np.exp(v) - 1).mean()), size_median=("back_size", "median")).round(3).to_string())
+print("\n== the live trader's horses in the place market, at the moment of each first win back")
+L = pd.DataFrame(live)
+if not L.empty:
+    L = L[(L.back > 1) & (L.place_bsp > 1)].copy()
+    L.to_csv(OUT / "place_live_horses.csv", index=False)
+    L["place_clv"] = L.back / L.place_bsp - 1
+    ours, rest = L[L.ours], L[~L.ours]
+    for name, g in (("the win rule's horses", ours), ("every other runner in the same books", rest)):
+        print(f"  {name}: {len(g)} runners; place back/SP median {np.exp(np.log(g.back / g.place_bsp).median()):.3f}, "
+              f"place CLV at level stakes {g.place_clv.mean():+.2%}, placed {g.placed.mean():.2f}, "
+              f"best back size median GBP{g.back_size.median():.0f}")
+    ow = ours.dropna(subset=["win_back", "win_bsp"])
+    if len(ow):
+        print(f"  the same horses' win backs: CLV {(ow.win_back / ow.win_bsp - 1).mean():+.2%} at level stakes "
+              f"({len(ow)} horses); by day: " + "  ".join(
+                  f"{d} place {g.place_clv.mean():+.2%} / win {(g.win_back / g.win_bsp - 1).mean():+.2%} ({len(g)})"
+                  for d, g in ow.groupby("day")))
