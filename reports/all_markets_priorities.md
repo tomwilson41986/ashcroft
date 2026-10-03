@@ -65,13 +65,13 @@ None of these touch `horse_racing.db`. The new live records have their own tagge
 read, so the existing tables and queries are unchanged. The greyhound record stops at 21:30 UK with the others, so the
 late evening's dog races are left to the price files and GBGB.
 
-### The first run (3 Oct, source-data.yml run 37106841528, 2 h 27 min)
+### The first runs (3 Oct, source-data.yml runs 37106841528, 2 h 27 min, and 37115308769, 12 min)
 
 | Source | Fetched | Table |
 |---|---|---|
-| GBGB | 3,197 days, 1 Jan 2018 to 2 Oct 2026 (8 days reached the API's 500-race list cap, so some meetings may be missing) | 853,412 races, 3.35m runs; `runs_2018` 107k races ... `runs_2026` 62k |
+| GBGB | 3,197 days, 1 Jan 2018 to 2 Oct 2026 (the second run: the last 3 days again, as designed) (8 days reached the API's 500-race list cap, so some meetings may be missing) | 853,412 races, 3.35m runs; `runs_2018` 107k races ... `runs_2026` 62k |
 | football-data.co.uk | 732 files (32 division-seasons not published) | 300,254 matches, 38 leagues, 23 Jul 1993 to 2 Oct 2026; 25,679 with Betfair's closing price |
-| Tennis | none: Sackmann's repositories 404 (taken down), tennis-data.co.uk 403 (Cloudflare) | moved to the mirror and TML, and the odds to the UK server (this change) |
+| Tennis | first run: none (Sackmann's repositories 404, taken down; tennis-data.co.uk 403, Cloudflare). Second run (37115308769, after this change moved to the mirror and TML): 166 files | 1,268,349 matches, 27 Dec 1999 to 2 Jun 2026 (the mirror's snapshot; TML's 2026 file ends in mid-January), 342,310 with serve statistics. The months since June: Betfair Historic Data's tennis closes, once the account holds the plan |
 | Punting Form | none: no key | |
 | Betfair Historic Data | none yet: runs on the UK server after merge, once the account holds a sport | |
 
