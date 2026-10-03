@@ -306,19 +306,26 @@ hourly list does) gives the same CLV for fewer pounds (ledger `delayed-key-volum
 
 Still the owner's to supply: a live application key restores the matched money the delayed key leaves out
 (worth about a quarter of the backtested CLV), and a certificate (`BETFAIR_CERT`, `BETFAIR_KEY`) makes the login
-non-interactive. The backtest behind the rule covered February-March 2026. Since 3 Oct it covers five months
-(`research/queries/done/to_win_five_months.py`, research query run 37115884197; ledger `to-win-five-months-1003`).
-That is November 2025 to March 2026, 4,342 races, and 2% commission. The closing model there reads the runner's
-matched volume, which only the live application key's feed carries. The trader is still on the delayed key: every
-back on 1-2 Oct logged "feed without volume". So it reads the model fitted without volume, which took a fifth less
-CLV in the February-March backtest (+5.3% against +6.7%). The five months read that way are research query
-`to_win_five_months_novol.py`:
-- CLV +8.2% (+7.7 to +8.7), positive every month (+6.8% to +10.2%); held to the result +9.2% (+5.6 to +12.7).
-- 63 bets and GBP240 of CLV a day when money does not bind.
-- Under 4.0 the backs took +5.6% to +8.2% CLV, so the short prices are not the leak that 1-2 Oct (-0.3%) suggests.
-- Money binds: with GBP1,500 committed a day and nothing recycled, the rule earns GBP125 a day taking races in
-  order, or GBP162 taking the best expected CLV first, which is the order the session already uses within each
-  sweep. With GBP3,000 it earns GBP220.
+non-interactive. The backtest behind the rule covered February-March 2026. Since 3 Oct it covers five months,
+November 2025 to March 2026 (4,342 races, 2% commission). Research query runs 37115884197 and 37134803377; ledger
+`to-win-five-months-1003` and `to-win-five-months-novol-1003`.
+
+The trader is still on the delayed key: every back on 1-2 Oct logged "feed without volume". So it reads the closing
+model fitted without matched volume and holds no runner to the GBP100 floor. The live key's feed carries the volume.
+
+| GBP of CLV a day, best expected CLV first (the session's order) | Delayed key (now) | Live key |
+|---|---|---|
+| CLV, money unconstrained | +6.6% (+6.1 to +7.1), 73 bets a day | +8.2% (+7.7 to +8.7), 63 bets a day |
+| GBP a day, money unconstrained | 214 | 240 |
+| GBP1,500 committed a day, nothing recycled | 144 | 162 |
+| GBP3,000 a day | 196 | 220 |
+| GBP5,000 a day | 212 | 240 |
+
+- Every month was positive both ways: +4.6% to +8.5% now, +6.8% to +10.2% with the live key. Held to the result,
+  the live-key rule made +9.2% (+5.6 to +12.7).
+- Under 4.0 the backs took +5.6% to +8.2% CLV (with volume), so the short prices are not the leak that 1-2 Oct
+  (-0.3%) suggests.
+- Taking the day's races in order instead of best first, GBP1,500 earns GBP125 a day (with volume).
 
 The live record is the test now.
 
