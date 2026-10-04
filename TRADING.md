@@ -384,7 +384,26 @@ was never short.
 - **Against the closing model** (`fill_calibration.py`, 1-4 Oct, 992 fills in 152 races, at the settled price): all
   fills +3.5% staked (90% +0.9% to +6.2%), 1.2 points under the expected CLV they were backed on (-3.8 to +1.5); first
   fills +5.7% (+3.1% to +8.5%), 0.4 points over; top-ups +1.8% (-2.0% to +5.3%), 2.5 points under (-6.1 to +1.0).
-- **The replay of 1-3 Oct** (with 3 Oct's price file now archived) is running; its result follows here.
+- **The replay of 1-3 Oct** (research-query run 37238310484, ledger `topup-policy-replay-1003`): settled on every
+  horse, scored on CLV x stake before commission, at each day's balance. The live rule earned GBP487 over the three
+  days and was best on 3 Oct; no variant beat it on all three days, nor over the three together:
+
+  | Variant | 1 Oct | 2 Oct | 3 Oct | Three days |
+  |---|---|---|---|---|
+  | The live rule | 214 | 47 | 226 | 487 |
+  | New horses first | 158 | 60 | 213 | 432 |
+  | Morning only | 149 | 125 | 149 | 423 |
+  | Top-ups only at 6% | 169 | 74 | 155 | 398 |
+  | No backs in the last three hours | 139 | 91 | 167 | 397 |
+  | No backs in the last hour | 185 | 57 | 145 | 387 |
+  | Top-ups at 6%, not in the last hour | 124 | 81 | 145 | 351 |
+  | A horse under 4.0 only at 6% expected CLV | 164 | 26 | 133 | 322 |
+  | No top-ups | 84 | 166 | 72 | 322 |
+  | A horse under 4.0 only at 10% expected CLV | 165 | 20 | 114 | 299 |
+
+  At the account's money the top-ups still add (GBP165 over no top-ups): their CLV is lower than the first fills',
+  but the money they use would mostly have sat idle. With GBP5,000 in the account no backs in the last hour was ahead
+  on all three days, narrowly (GBP770 against GBP742). The live rule stays; any change to it is the owner's.
 - **Funds and the scheduler.** No hold for funds (the session started late with the whole balance); 91 backs were
   killed (fill-or-kill: the price had gone). Every race was settled from Betfair's record, with the BSP; the 21:45 UTC
   settling run started at 21:52 UTC.
