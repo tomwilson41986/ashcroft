@@ -340,6 +340,55 @@ one horse at Southwell 20:00 was left with less than the minimum stake).
   had gone). Every race was settled from Betfair's record, with the BSP. The 21:45 UTC settling run never started, so
   it was run by hand at 22:10 UTC (run 37157529273).
 
+**The fourth full day** (4 Oct, a Sunday; ledger `live-day-1004`). GitHub's scheduler did not start the 06:50 UTC
+session (it created the run at 08:50 UTC, too late), so the session was started by hand and traded from 09:39 UK: the
+08:00-09:39 window, the best of the morning so far, was missed. The last back went on at 17:08 UK. 212 backs were
+matched on 88 horses in 27 races at four meetings (Uttoxeter, Kelso, Curragh, Killarney), each laid at the SP for its
+winnings; 7 of the horses were withdrawn (GBP363.80 void). GBP3,203 was staked, under the day limit, and the account
+was never short.
+
+| Horse first backed | Horses | Races | Staked | Result before commission | CLV |
+|---|---|---|---|---|---|
+| By 11:00 UK | 27 | 16 | GBP1,175.58 | -4.74 | +4.3% |
+| After 11:00 UK | 54 | 21 | GBP1,663.97 | -126.76 | -4.7% |
+| **Day** | **81** | **27** | **GBP2,839.55** | **-131.50** | **-1.0%** |
+
+- **-GBP135.12 after commission** (GBP3.62 at 2%): the account went from GBP2,019.76 to GBP1,884.64. Twelve of the 81
+  horses won.
+- **Non-runners took the day.** Later withdrawals cut the settled price of 28% of the stake (GBP793 in nine races at
+  Kelso, Uttoxeter, Curragh and Killarney) by 4% to 41%: at the fill prices the day's CLV was +6.9%, at Betfair's
+  settled prices -1.0%. Over 1-3 Oct the same cost was 1.5 points. The closing model does not price it.
+- **By time to the off** at the horse's first back:
+
+  | Time to the off | Horses | Staked | Result | CLV |
+  |---|---|---|---|---|
+  | Three hours or more | 36 | GBP1,498 | -44.64 | +2.5% |
+  | One to three hours | 27 | GBP809 | -97.25 | -10.9% |
+  | The last hour | 18 | GBP532 | +10.39 | +4.5% |
+
+- **The four days together**: 452 horses, GBP13,014.01 staked, CLV +3.5%, +429.30 before commission. After
+  commission the account went from GBP1,480.11 to GBP1,884.64 (+GBP404.53; the four days' results +GBP394.96).
+
+  | Horse first backed | Horses | Staked | CLV |
+  |---|---|---|---|
+  | By 11:00 UK | 188 | GBP6,681 | +7.3% |
+  | After 11:00 UK | 264 | GBP6,333 | -0.5% |
+  | Three hours or more before the off | 217 | GBP7,497 | +6.4% |
+  | One to three hours | 140 | GBP3,644 | -2.2% |
+  | The last hour | 95 | GBP1,873 | +2.9% |
+
+- **First fills and top-ups, at the settled price** (the three-day figures above were at the fill price): over the
+  four days the first fills made +5.7% (GBP5,687) and the top-ups +1.8% (GBP7,327, 56% of the stake); the gap is 3.9
+  points (90% interval 0.3 to 7.8, resampled by horse). On 4 Oct the top-ups lost 4.1% (63% of the day's stake),
+  the first fills made +4.2%.
+- **Against the closing model** (`fill_calibration.py`, 1-4 Oct, 992 fills in 152 races, at the settled price): all
+  fills +3.5% staked (90% +0.9% to +6.2%), 1.2 points under the expected CLV they were backed on (-3.8 to +1.5); first
+  fills +5.7% (+3.1% to +8.5%), 0.4 points over; top-ups +1.8% (-2.0% to +5.3%), 2.5 points under (-6.1 to +1.0).
+- **The replay of 1-3 Oct** (with 3 Oct's price file now archived) is running; its result follows here.
+- **Funds and the scheduler.** No hold for funds (the session started late with the whole balance); 91 backs were
+  killed (fill-or-kill: the price had gone). Every race was settled from Betfair's record, with the BSP; the 21:45 UTC
+  settling run started at 21:52 UTC.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
