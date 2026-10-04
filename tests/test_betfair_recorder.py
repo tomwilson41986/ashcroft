@@ -678,8 +678,9 @@ def test_tomorrows_markets_recorded_the_evening_before_go_to_their_own_files(tmp
         def login(self):
             pass
 
-    def fake_record(day, until, data, rec, *args):
-        seen.update(day=day, until=until, books=rec.books_path.name, markets=rec.markets_path.name)
+    def fake_record(day, until, data, rec, *args, wait_for_markets=False):
+        seen.update(day=day, until=until, books=rec.books_path.name, markets=rec.markets_path.name,
+                    wait=wait_for_markets)
         return {"markets": 0}
 
     monkeypatch.setattr("trading.exchange.BetfairData", FakeData)
@@ -691,5 +692,95 @@ def test_tomorrows_markets_recorded_the_evening_before_go_to_their_own_files(tmp
     assert seen["day"] == date(2026, 10, 5)
     assert (seen["books"], seen["markets"]) == ("books_evening.csv", "markets_evening.csv")
     assert timedelta(minutes=44) < seen["until"] - before < timedelta(minutes=46)
+    assert seen["wait"] is False                    # a record for minutes from now ends when nothing is listed
     # the nightly load reads only the day's own writers, so an evening record never moves the race-day marks
     assert "evening" not in br.DAY_FILE_TAGS
+
+
+class EveningData:
+    """Tomorrow's two markets, listed only from 15:20 UTC the evening before; neither goes in play this evening."""
+
+    def __init__(self, clock):
+        self.clock, self.reads, self.catalogue_reads = clock, [], 0
+        self.listed = datetime(2026, 10, 4, 15, 20, tzinfo=timezone.utc)
+
+    def _read(self, method, params):
+        if method == "listMarketCatalogue":
+            self.catalogue_reads += 1
+            if self.clock[0] < self.listed:
+                return []
+            return [raw_catalogue(m, f"2026-10-05T{h}:00:00.000Z") for m, h in (("1.1", "13"), ("1.2", "14"))]
+        self.reads.append((self.clock[0], tuple(params["marketIds"])))
+        return [raw_book(m) for m in params["marketIds"]]
+
+
+def test_an_evening_record_waits_for_tomorrows_markets_to_be_listed(tmp_path):
+    clock = [datetime(2026, 10, 4, 15, 0, tzinfo=timezone.utc)]
+
+    def sleep(seconds):
+        assert 5.0 <= seconds <= 60.0
+        clock[0] += timedelta(seconds=seconds)
+
+    until = datetime(2026, 10, 4, 18, 0, tzinfo=timezone.utc)
+    rec = br.DayRecorder(date(2026, 10, 5), root=tmp_path, s3=FakeS3(), background=False, tag="evening")
+    data = EveningData(clock)
+    out = br.record(date(2026, 10, 5), until, data, rec, every_far=900, market_types=("WIN",),
+                    now=lambda: clock[0], sleep=sleep, wait_for_markets=True)
+    first = min(t for t, _ in data.reads)
+    assert data.listed <= first <= data.listed + timedelta(minutes=31)      # found at the next catalogue read
+    gaps = {round((b - a).total_seconds()) for (a, _), (b, _) in zip(data.reads, data.reads[1:])}
+    assert min(gaps) >= 899 and max(gaps) <= 900 + 60                       # then every 15 minutes, to the end
+    assert max(t for t, _ in data.reads) >= until - timedelta(minutes=16) and clock[0] >= until
+    assert out["markets"] == 2 and out["left"] == 2 and out["rows"] > 0
+    assert (tmp_path / "2026-10-05" / "books_evening.csv").exists()
+    # the day's own record still ends when nothing is listed: a day without racing does not hold the runner
+    clock[0] = datetime(2026, 10, 4, 15, 0, tzinfo=timezone.utc)
+    quiet = EveningData(clock)
+    rec2 = br.DayRecorder(date(2026, 10, 5), root=tmp_path / "day", s3=FakeS3(), background=False)
+    out2 = br.record(date(2026, 10, 5), until, quiet, rec2, now=lambda: clock[0], sleep=sleep)
+    assert out2["markets"] == 0 and quiet.reads == [] and clock[0] < until
+
+
+def test_the_evening_before_is_read_in_uk_time_on_the_day_before():
+    assert br.evening_window(date(2026, 10, 6), "17:00-21:30") == (
+        datetime(2026, 10, 5, 16, 0, tzinfo=timezone.utc), datetime(2026, 10, 5, 20, 30, tzinfo=timezone.utc))
+    assert br.evening_window(date(2026, 12, 2), "17:00-21:30") == (                 # GMT in winter
+        datetime(2026, 12, 1, 17, 0, tzinfo=timezone.utc), datetime(2026, 12, 1, 21, 30, tzinfo=timezone.utc))
+    for bad in ("21:30-17:00", "17:00", "5pm-9pm", "25:00-26:00"):
+        with pytest.raises(ValueError):
+            br.evening_window(date(2026, 10, 6), bad)
+
+
+def test_an_evening_record_sleeps_to_its_start_before_logging_in(tmp_path, monkeypatch):
+    """The trader's job starts it in the morning: it waits for 17:00 UK the evening before, logs in, and records
+    tomorrow's markets to its own files until 21:30, waiting for them to be listed."""
+    events, seen = [], {}
+
+    class FakeData:
+        def login(self):
+            events.append("login")
+
+    def fake_record(day, until, data, rec, *args, wait_for_markets=False):
+        seen.update(day=day, until=until, books=rec.books_path.name, wait=wait_for_markets)
+        return {"markets": 0}
+
+    monkeypatch.setattr("trading.exchange.BetfairData", FakeData)
+    monkeypatch.setattr(br, "ROOT", tmp_path)
+    monkeypatch.setattr(br, "record", fake_record)
+    monkeypatch.setattr(br.time, "sleep", lambda s: events.append(("sleep", s)))
+    start, end = br.evening_window(date(2099, 7, 2), "17:00-21:30")
+    assert br.main(["--record", "--date", "2099-07-02", "--tag", "evening", "--market-types", "WIN",
+                    "--evening", "17:00-21:30"]) == 0
+    assert events[0][0] == "sleep" and events[1] == "login"                  # the wait comes before the login
+    assert abs(events[0][1] - (start - datetime.now(timezone.utc)).total_seconds()) < 60
+    assert seen == {"day": date(2099, 7, 2), "until": end, "books": "books_evening.csv", "wait": True}
+    # an evening already over records nothing and does not log in
+    events.clear()
+    assert br.main(["--record", "--date", "2020-07-02", "--tag", "evening", "--evening", "17:00-21:30"]) == 0
+    assert events == []
+    # and the evening is never written over the day's own files, nor settled
+    for argv in (["--record", "--date", "2099-07-02", "--evening", "17:00-21:30"],
+                 ["--record", "--final", "--date", "2099-07-02", "--tag", "evening", "--evening", "17:00-21:30"],
+                 ["--record", "--date", "2099-07-02", "--tag", "evening", "--evening", "21:30-17:00"]):
+        with pytest.raises(SystemExit):
+            br.main(argv)

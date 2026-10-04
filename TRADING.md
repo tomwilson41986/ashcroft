@@ -390,6 +390,19 @@ model fitted without matched volume and holds no runner to the GBP100 floor. The
 
 The live record is the test now.
 
+**Betting the evening before (the owner's question, 4 Oct: "even betting at 7pm the evening before?").** No history
+holds an evening price (Betfair's price files start on the morning of the race), so it cannot be backtested; it is
+being recorded instead, read-only: tomorrow's win markets after the last race from 4 Oct, and from 17:00 to 21:30 UK
+from 5 Oct (table below). What argues for it: the live rule's earliest backs closed best (08:00 UK fills +11.4%
+CLV, 09:00 +7.7%, 10:00 +4.8%, 1-3 Oct). What argues against: the books are thinner the earlier the hour (the best
+back held a median of about GBP13 at 08:00), every non-runner taken out overnight cuts a back matched before it by
+its reduction factor while the lay at SP is not cut, and the model would price the evening's card, before the
+morning's non-runners and going. `evening_entry_check.py` reads each recorded evening: every runner's evening price
+against its BSP, the trader's own plan at 17:00-21:00 on the evening's book (what the size on offer would have
+matched, and its CLV before and after the later reductions), the same day's morning as traded, and, first, a check
+that its replication of the plan picks the horses the trader picked at 08:00. A few evenings decide nothing; the
+owner decides whether the trader ever bets the evening before.
+
 **The market record (the owner's ask, 30 Sep: keep all of it for the models).** Read-only, on the UK runner:
 
 | What | How often | Kept in S3 | Loaded nightly into horse_racing.db |
@@ -400,6 +413,7 @@ The live record is the test now.
 | The settled books: BSP, winners, removals and reduction factors | after racing and next morning | in `books.csv.gz` (source `final`) | `betfair_live_marks`, mark `final` |
 | Betfair's daily price files (morning and pre-play prices and volumes, BSP, in-play range), which Betfair refuses to GitHub's runners: every file it lists, all markets (72,443 on 1 Oct 2026), one at a time | nightly from 22:30 UTC, stopping by 06:15 (betfair-prices.yml: the last week, then UK/IE racing from 2018, then the other markets from 2018, then the older files, newest first, several nights for the backfill); the UK/IE files after the last race (live-record.yml) | `betfair_prices_raw/` | `betfair_prices`: UK/IE win and place from 2018, at most 2,500 files a night; other markets stay in S3 |
 | The live trader's ledger | each order | `trading/live/<day>/ledger.csv` | `live_orders` |
+| Tomorrow's GB/IE win markets, the evening before (the owner's question of 4 Oct) | every 15 minutes from 17:00 to 21:30 UK beside the trader, then every 10 minutes for 45 minutes after the last race (live-record.yml) | `betfair_live/<day>/books_evening.csv.gz` (its own files, under the racing day) | not yet: read by `research/queries/evening_entry_check.py` |
 
 `betfair_live_marks` keeps, for each runner, the book nearest to 08:00-12:00 UK and to 120, 60, 30, 15, 10, 5, 3
 and 1 minutes before the off, the last book before the off, and the settled one. The full-resolution books stay in
