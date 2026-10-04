@@ -390,6 +390,14 @@ model fitted without matched volume and holds no runner to the GBP100 floor. The
 
 The live record is the test now.
 
+**Does the expected CLV come true? (ledger `closing-model-forward-1004`).** On the 804 settled live fills of 1-3 Oct
+(125 races) the CLV at the fill price against the BSP was +6.2% staked (90% +3.5% to +9.1%), 1.1 points above the
+expected CLV they were backed on (-1.9 to +4.3): first fills +7.8% (+4.7% to +11.2%), top-ups +4.9% (+1.3% to
++8.4%). The more expected, the more came true (first fills: 3-4% expected +4.2% level, 6-8% +9.8%, 8-10% +24%), so
+nothing says the +3% bar is too low. At the delayed feed's own book price the same horses look worse (2 Oct: +1.2%
+staked): the book is stale, so a back sent at it fills better on a drifter and misses a steamer; the fills are the
+result. `research/queries/done/fill_calibration.py` re-reads it as days come in.
+
 **Betting the evening before (the owner's question, 4 Oct: "even betting at 7pm the evening before?").** No history
 holds an evening price (Betfair's price files start on the morning of the race), so it cannot be backtested; it is
 being recorded instead, read-only: tomorrow's win markets after the last race from 4 Oct, and from 17:00 to 21:30 UK
