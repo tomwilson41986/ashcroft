@@ -261,6 +261,22 @@ for col, title in (("mark", "by hour"), ("off_band", "by time to the off"), ("pr
         "clv_cut_staked": (g.stake * g.clv_cut).sum() / g.stake.sum(),
         "closed_shorter": (g.clv > 0).mean(), "size_median": g.back_size.median()})).round(4).to_string())
 
+F = C.sort_values("t").drop_duplicates(KEY)                      # each runner at the first mark it crossed the bar
+w = F.stake
+print(f"\n== each runner at the first mark it crossed the bar (the trader's first back, at the book's price): "
+      f"{len(F)} runners; level expected {F.ev.mean():+.2%}, came true {F.clv_cut.mean():+.2%}; staked expected "
+      f"{(w * F.ev).sum() / w.sum():+.2%}, came true {(w * F.clv_cut).sum() / w.sum():+.2%}")
+print(F.groupby("mark").apply(lambda g: pd.Series({
+    "n": len(g), "ev_mean": g.ev.mean(), "clv_cut_mean": g.clv_cut.mean(),
+    "clv_cut_staked": (g.stake * g.clv_cut).sum() / g.stake.sum()})).round(4).to_string())
+L = C.merge(F[KEY + ["t"]].rename(columns={"t": "t_first"}), on=KEY)
+L = L[L.t > L.t_first]
+if len(L):
+    print(f"   the same runners at later marks (where top-ups go): {len(L)} runner-marks, expected {L.ev.mean():+.2%}, "
+          f"came true {L.clv_cut.mean():+.2%}")
+print("   (the book's price is the delayed feed's: a back sent at it fills at a better price on a drifter and misses a "
+      "steamer; the ledger's fills, not this, are the trade's result)")
+
 print("\n== every runner by hour: expected and realised CLV of the whole field (does the market's drift change?)")
 print(D.groupby("mark").apply(lambda g: pd.Series({"n": len(g), "ev_mean": g.ev.mean(), "clv_mean": g.clv.mean(),
                                                     "chosen_share": g.chosen.mean()})).round(4).to_string())
