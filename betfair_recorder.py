@@ -674,6 +674,12 @@ def main(argv=None) -> int:
                     help="print every market type Betfair lists on the --date's racing, with examples (read-only)")
     ap.add_argument("--date", default=None, help="UK racing day, YYYY-MM-DD (default today)")
     ap.add_argument("--until", default="21:30", help="stop recording at this UK time")
+    ap.add_argument("--for-minutes", type=float, default=None,
+                    help="stop recording this many minutes from now instead (--until is read on --date, so an "
+                         "evening record of tomorrow's markets needs this)")
+    ap.add_argument("--tag", default="",
+                    help="write the record to its own files (books_<tag>.csv): tomorrow's markets recorded the "
+                         "evening before (--tag evening) are kept apart from the day's own record")
     ap.add_argument("--every", type=float, default=300.0, help="seconds between snapshots of a market")
     ap.add_argument("--every-near", type=float, default=60.0, help="... in its last --near minutes")
     ap.add_argument("--near", type=float, default=60.0)
@@ -699,7 +705,7 @@ def main(argv=None) -> int:
     if not (a.record or a.final or a.upload):
         ap.print_help()
         return 1
-    rec = DayRecorder(day)
+    rec = DayRecorder(day, tag=a.tag)
     if a.upload:
         rec.maybe_upload(force=True)
     if a.record or a.final:
@@ -707,7 +713,9 @@ def main(argv=None) -> int:
         data = BetfairData()
         data.login()
         if a.record:
-            print(record(day, uk_time_on(day, a.until), data, rec, a.every, a.every_near, a.near,
+            until = (datetime.now(timezone.utc) + timedelta(minutes=a.for_minutes) if a.for_minutes
+                     else uk_time_on(day, a.until))
+            print(record(day, until, data, rec, a.every, a.every_near, a.near,
                          tuple(a.market_types.split(",")), tuple(a.countries.split(","))))
         if a.final:
             print({"final": final(day, data, rec)})

@@ -128,3 +128,22 @@ jobs:
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
         run: timeout 180 python betfair_recorder.py --census --date "$(TZ=Europe/London date -d tomorrow +%F)"
+
+      # The owner's ask (4 Oct): would backs taken the evening before close better than the morning's? Tomorrow's
+      # GB/IE win markets, each snapshotted every ten minutes for 45 minutes, kept apart from the day's own record
+      # (s3://.../betfair_live/<tomorrow>/books_evening.csv.gz; the nightly load reads only the day's writers).
+      # Read-only: no order is placed.
+      - name: Tomorrow's win markets the evening before (read-only)
+        if: ${{ !cancelled() && steps.run.outputs.go == 'true' }}
+        continue-on-error: true
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: >-
+          timeout 3300 python betfair_recorder.py --record --date "$(TZ=Europe/London date -d tomorrow +%F)"
+          --tag evening --market-types WIN --every 600 --for-minutes 45

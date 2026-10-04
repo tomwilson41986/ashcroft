@@ -668,3 +668,28 @@ def test_a_load_is_matched_run_by_run_not_across_the_years_between():
     runs = bp.day_runs([date(2026, 10, 1), date(2026, 9, 29), date(2026, 9, 30), date(2019, 3, 2), date(2019, 3, 1)])
     assert runs == [(date(2019, 3, 1), date(2019, 3, 2)), (date(2026, 9, 29), date(2026, 10, 1))]
     assert bp.day_runs([]) == []
+
+
+def test_tomorrows_markets_recorded_the_evening_before_go_to_their_own_files(tmp_path, monkeypatch):
+    """The owner's ask (4 Oct): tomorrow's markets recorded in the evening, for minutes from now, kept apart."""
+    seen = {}
+
+    class FakeData:
+        def login(self):
+            pass
+
+    def fake_record(day, until, data, rec, *args):
+        seen.update(day=day, until=until, books=rec.books_path.name, markets=rec.markets_path.name)
+        return {"markets": 0}
+
+    monkeypatch.setattr("trading.exchange.BetfairData", FakeData)
+    monkeypatch.setattr(br, "ROOT", tmp_path)
+    monkeypatch.setattr(br, "record", fake_record)
+    before = datetime.now(timezone.utc)
+    assert br.main(["--record", "--date", "2026-10-05", "--tag", "evening", "--for-minutes", "45",
+                    "--market-types", "WIN"]) == 0
+    assert seen["day"] == date(2026, 10, 5)
+    assert (seen["books"], seen["markets"]) == ("books_evening.csv", "markets_evening.csv")
+    assert timedelta(minutes=44) < seen["until"] - before < timedelta(minutes=46)
+    # the nightly load reads only the day's own writers, so an evening record never moves the race-day marks
+    assert "evening" not in br.DAY_FILE_TAGS
