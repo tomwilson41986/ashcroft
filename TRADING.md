@@ -399,9 +399,10 @@ back held a median of about GBP13 at 08:00), every non-runner taken out overnigh
 its reduction factor while the lay at SP is not cut, and the model would price the evening's card, before the
 morning's non-runners and going. `evening_entry_check.py` reads each recorded evening: every runner's evening price
 against its BSP, the trader's own plan at 17:00-21:00 on the evening's book (what the size on offer would have
-matched, and its CLV before and after the later reductions), the same day's morning as traded, and, first, a check
-that its replication of the plan picks the horses the trader picked at 08:00. A few evenings decide nothing; the
-owner decides whether the trader ever bets the evening before.
+matched, and its CLV before and after the later reductions), and the same day's morning as traded. Its replication
+of the plan is exact: on the books the trader read at its first step it picks the same horses with the same expected
+CLV (2 Oct 16 of 16, 3 Oct 19 of 19; run 37191766228). A few evenings decide nothing; the owner decides whether the
+trader ever bets the evening before.
 
 **The market record (the owner's ask, 30 Sep: keep all of it for the models).** Read-only, on the UK runner:
 
