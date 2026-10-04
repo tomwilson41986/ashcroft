@@ -32,6 +32,8 @@ import pandas as pd
 sys.path.insert(0, os.getcwd())
 import betfair_prices as bp  # noqa: E402
 from trading.config import load_config  # noqa: E402
+from trading.exchange import Market  # noqa: E402
+from trading.matching import attach_ids  # noqa: E402
 from trading.strategy import RunnerView, plan_race  # noqa: E402
 
 pd.set_option("display.width", 250)
@@ -194,13 +196,28 @@ def clv(df, price="price", w="matched", red="reduction"):
                 clv_cut=float((s * eff).sum() / s.sum()), exp_gbp=float((s * eff).sum()))
 
 
-def predictions(day):
-    p = _csv(f"predictions/{day}.csv", dtype={"market_id": str})
-    if p.empty or "predicted_bfsp" not in p:
+def predictions(day, *catalogues):
+    """The day's model prices (the 06:00 run's file, the one the trader reads) keyed by Betfair's ids, matched to
+    the record's win markets as the trader matches them (trading.matching.attach_ids: course, off, name)."""
+    p = _csv(f"predictions/{day}.csv", dtype={"race_time": str, "market_id": str})
+    cat = pd.concat([c for c in catalogues if not c.empty]) if any(not c.empty for c in catalogues) else pd.DataFrame()
+    if p.empty or "predicted_bfsp" not in p or cat.empty:
         return {}
+    cat = cat[cat.market_type.eq("WIN")] if "market_type" in cat else cat
+    cat = _num(cat.copy(), ["selection_id"]).dropna(subset=["selection_id"])
+    markets = [Market(market_id=str(mid), venue=str(g.venue.iloc[0]), country=str(g.country.iloc[0]),
+                      start=pd.Timestamp(g.market_start_utc.iloc[0]).to_pydatetime(),
+                      runners={int(a): str(b) for a, b in zip(g.selection_id, g.runner_name)})
+               for mid, g in cat.groupby("market_id")]
+    p = attach_ids(p, markets)
     p = _num(p, ["selection_id", "predicted_bfsp"]).dropna(subset=["market_id", "selection_id", "predicted_bfsp"])
     return {(str(r.market_id), int(r.selection_id)): float(r.predicted_bfsp) for r in p.itertuples()
             if r.predicted_bfsp > 1}
+
+
+def catalogue(day, *tags):
+    parts = [_csv(f"betfair_live/{day}/markets{'_' + t if t else ''}.csv.gz", dtype={"market_id": str}) for t in tags]
+    return [x for x in parts if not x.empty]
 
 
 def ledger(day):
@@ -221,7 +238,7 @@ day = LIVE_FROM
 while day <= LAST:
     b = books(f"betfair_live/{day}/books.csv.gz")
     led, _ = ledger(day)
-    prices = predictions(day)
+    prices = predictions(day, *catalogue(day, ""))
     if b.empty or led.empty or not prices:
         print(f"{day}: books {len(b)}, ledger {len(led)}, prices {len(prices)}: not checked")
         day += timedelta(days=1)
@@ -259,7 +276,7 @@ while day <= LAST:
         continue
     eve = day - timedelta(days=1)
     bsp, rem = settled(day)
-    prices = predictions(day)
+    prices = predictions(day, *catalogue(day, "evening", ""))
     _, fills = ledger(day)
     rem_keys = set(zip(rem.market_id, rem.selection_id))
     print(f"{day}: evening record {_hm(ev.t.min())} to {_hm(ev.t.max())} UTC, {ev.market_id.nunique()} markets; "
