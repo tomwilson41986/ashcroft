@@ -391,12 +391,15 @@ model fitted without matched volume and holds no runner to the GBP100 floor. The
 The live record is the test now.
 
 **Does the expected CLV come true? (ledger `closing-model-forward-1004`).** On the 804 settled live fills of 1-3 Oct
-(125 races) the CLV at the fill price against the BSP was +6.2% staked (90% +3.5% to +9.1%), 1.1 points above the
-expected CLV they were backed on (-1.9 to +4.3): first fills +7.8% (+4.7% to +11.2%), top-ups +4.9% (+1.3% to
-+8.4%). The more expected, the more came true (first fills: 3-4% expected +4.2% level, 6-8% +9.8%, 8-10% +24%), so
-nothing says the +3% bar is too low. At the delayed feed's own book price the same horses look worse (2 Oct: +1.2%
-staked): the book is stale, so a back sent at it fills better on a drifter and misses a steamer; the fills are the
-result. `research/queries/done/fill_calibration.py` re-reads it as days come in.
+(125 races), at Betfair's settled price (the fill price cut by the reduction factors of non-runners taken out after
+it) against the BSP, the CLV was +4.7% staked (90% +2.1% to +7.6%), within a third of a point of the expected CLV
+the fills were backed on (-0.3 points, -3.2 to +2.8): first fills +6.0% (+3.2% to +9.1%), top-ups +3.7% (0.0% to
++7.3%). The more expected, the more came true (first fills: 3-4% expected +2.4% level, 6-8% +7.6%, 8-10% +24%), so
+nothing says the +3% bar is too low. Non-runners are a cost the closing model does not price: the reductions cut
+about one fill in ten and took 1.5 points (+6.2% at the fill price). At the delayed feed's own book price the same
+horses look worse (2 Oct: +1.2% staked): the book is stale, so a back sent at it fills better on a drifter and
+misses a steamer; the fills are the result. `research/queries/done/fill_calibration.py` re-reads it as days come
+in.
 
 **Betting the evening before (the owner's question, 4 Oct: "even betting at 7pm the evening before?").** No history
 holds an evening price (Betfair's price files start on the morning of the race), so it cannot be backtested; it is
@@ -405,7 +408,10 @@ from 5 Oct (table below). What argues for it: the live rule's earliest backs clo
 CLV, 09:00 +7.7%, 10:00 +4.8%, 1-3 Oct). What argues against: the books are thinner the earlier the hour (the best
 back held a median of about GBP13 at 08:00), every non-runner taken out overnight cuts a back matched before it by
 its reduction factor while the lay at SP is not cut, and the model would price the evening's card, before the
-morning's non-runners and going. `evening_entry_check.py` reads each recorded evening: every runner's evening price
+morning's non-runners and going. The non-runners' cost is measured (1-3 Oct, 135 races, `nonrunner_timing.py`):
+most are taken out between 08:00 and 12:00 on the day, so a back already carries it in the morning (a mean cut of
+4.0% of the price matched at 08:00, 2.2% at 11:00); one matched at 19:00 the evening before carries 4.75%, 0.8%
+more than at 08:00. `evening_entry_check.py` reads each recorded evening: every runner's evening price
 against its BSP, the trader's own plan at 17:00-21:00 on the evening's book (what the size on offer would have
 matched, and its CLV before and after the later reductions), and the same day's morning as traded. Its replication
 of the plan is exact: on the books the trader read at its first step it picks the same horses with the same expected
