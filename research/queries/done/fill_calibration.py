@@ -1,9 +1,12 @@
 """Does the closing model's expected CLV come true on the live trader's own fills? (read-only)
 
-For every live day's ledger (trading/live/<day>/ledger.csv in S3, settled: each horse's BSP on its settle row), each
-matched back's CLV at its fill price (avg_price / BSP - 1) against the expected CLV the trader backed it on (the
-ledger's edge), for each horse's first fill and for the top-ups, by expected-CLV band; the stake-weighted and level
-means with 90% intervals from a bootstrap over races; and realised minus expected. CLV before commission.
+For every live day's ledger (trading/live/<day>/ledger.csv in S3, settled: each horse's BSP and Betfair's settled
+price on its settle row), each matched back's CLV at Betfair's settled price (the price the bet was settled at: the
+fill price cut by the reduction factors of non-runners taken out after it; each horse's settled price over its
+fills' average price, applied to each fill) against the BSP, set against the expected CLV the trader backed it on
+(the ledger's edge): for each horse's first fill and for the top-ups, by expected-CLV band; the stake-weighted and
+level means with 90% intervals from a bootstrap over races; realised minus expected; and the same at the fill price,
+to show what the reductions took. CLV before commission.
 """
 
 from __future__ import annotations
@@ -35,10 +38,13 @@ def ledger(day):
     led["t"] = pd.to_datetime(led.ts, utc=True)
     for c in ("selection_id", "matched", "avg_price", "edge", "bsp", "minutes_to_off"):
         led[c] = pd.to_numeric(led[c], errors="coerce")
-    st = led[(led.event == "settle") & (led.result != "REMOVED") & (led.bsp > 1)][KEY + ["bsp"]]
-    st = st.drop_duplicates(KEY)
+    st = led[(led.event == "settle") & (led.result != "REMOVED") & (led.bsp > 1)][KEY + ["bsp", "avg_price"]]
+    st = st.drop_duplicates(KEY).rename(columns={"avg_price": "settled_price"})
     m = led[(led.event == "back") & (led.matched > 0)].drop(columns=["bsp"]).merge(st, on=KEY)
-    m["clv"] = m.avg_price / m.bsp - 1.0
+    vwap = (m.matched * m.avg_price).groupby([m.market_id, m.selection_id]).sum() / m.groupby(KEY).matched.sum()
+    m["cut"] = (m.settled_price / m.set_index(KEY).index.map(vwap)).clip(upper=1.0)   # the reductions' share
+    m["clv_fill"] = m.avg_price / m.bsp - 1.0
+    m["clv"] = m.avg_price * m.cut / m.bsp - 1.0
     m["day"] = str(day)
     return m
 
@@ -61,8 +67,9 @@ A["race"] = A.day + A.market_id
 def tab(g):
     w = g.matched
     return pd.Series({"n": len(g), "expected": g.edge.mean(), "realised_level": g.clv.mean(),
-                      "realised_staked": (w * g.clv).sum() / w.sum(), "closed_shorter": (g.clv > 0).mean(),
-                      "gbp_staked": w.sum()})
+                      "realised_staked": (w * g.clv).sum() / w.sum(),
+                      "at_fill_price_staked": (w * g.clv_fill).sum() / w.sum(), "cut_share": (g.cut < 0.995).mean(),
+                      "closed_shorter": (g.clv > 0).mean(), "gbp_staked": w.sum()})
 
 
 def boot(g, n=5000, seed=1):
