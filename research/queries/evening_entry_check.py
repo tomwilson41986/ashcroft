@@ -10,8 +10,8 @@ recorder's evening run after the last race from 4 Oct (5 Oct's markets on), and 
    model prices) on the evening's book, what the size on offer would have matched, and the CLV of those backs
    at the evening's price against the BSP, before and after the reductions of later non-runners;
 3. the day's morning as it was traded (the ledger's first fills), by the same measures, and the horses both chose.
-First, a check of the replication itself: the plan run on the recorder's 08:00 books of each live day, against the
-horses the trader chose in its first minutes.
+First, a check of the replication itself: the plan run on the books the trader read at its first step of each live
+day (books_trader), against the horses it chose then.
 The model's prices are the 06:00 run's, made after the evening (an evening session would price the evening's card),
 so a race with a runner the morning's card no longer lists is not planned. A few evenings decide nothing; CLV is
 before commission.
@@ -233,36 +233,39 @@ def ledger(day):
 
 
 # ----------------------------------------------------------------------------------------------------- the check
-print("== the replication: the plan on the recorder's books at 08:00 against what the trader chose at the start")
+print("== the replication: the plan on the books the trader read at its first step, against the horses it chose then")
 day = LIVE_FROM
 while day <= LAST:
-    b = books(f"betfair_live/{day}/books.csv.gz")
+    bt = books(f"betfair_live/{day}/books_trader.csv.gz")
     led, _ = ledger(day)
     prices = predictions(day, *catalogue(day, ""))
-    if b.empty or led.empty or not prices:
-        print(f"{day}: books {len(b)}, ledger {len(led)}, prices {len(prices)}: not checked")
+    if bt.empty or led.empty or not prices:
+        print(f"{day}: the trader's books {len(bt)}, ledger {len(led)}, model prices {len(prices)}: not checked")
         day += timedelta(days=1)
         continue
     acts = led[led.event.isin(["back", "skip"])]
     start = acts.t.min()
-    early = acts[acts.t <= start + pd.Timedelta(minutes=5)]
-    theirs = set(zip(early.market_id, early.selection_id))
-    b = b[(b.source == "recorder") & (b.t >= start)]
-    m0 = int((start.tz_convert(UK) - pd.Timestamp(day, tz=UK)).total_seconds() // 60)
-    snap = snapshot(b, day, m0 + 2)
+    first = acts[acts.t <= start + pd.Timedelta(seconds=30)]           # the first step's orders and skips
+    theirs = set(zip(first.market_id, first.selection_id))
+    seen = bt[bt.t <= start + pd.Timedelta(seconds=5)]
+    polls = seen.groupby(["market_id", "polled_utc"], as_index=False).agg(t=("t", "first"))
+    pick = polls.sort_values("t", ascending=False).drop_duplicates("market_id")[["market_id", "polled_utc"]]
+    snap = seen.merge(pick, on=["market_id", "polled_utc"])
     ours, n_races, unpriced = plan(snap, prices)
     mine = set(zip(ours.market_id, ours.selection_id)) if len(ours) else set()
     both = mine & theirs
-    print(f"{day}: the trader began {start.tz_convert(UK):%H:%M:%S} UK; the recorder's books "
-          f"{_hm(snap.t.min())}-{_hm(snap.t.max())[-5:]} UTC ({n_races} win races priced by the model, "
-          f"{unpriced} with a runner unpriced): chosen by the replication {len(mine)}, by the trader {len(theirs)}, "
-          f"by both {len(both)}")
+    print(f"{day}: the trader's first step {start.tz_convert(UK):%H:%M:%S} UK on books read {_hm(snap.t.min())[-5:]}-"
+          f"{_hm(snap.t.max())[-5:]} UTC ({n_races} win races priced, {unpriced} with a runner unpriced): chosen by "
+          f"the replication {len(mine)}, by the trader {len(theirs)}, by both {len(both)}")
     if both:
-        e = ours.set_index(KEY).edge
-        tr = early.drop_duplicates(KEY).set_index(KEY).edge
+        e = ours.drop_duplicates(KEY).set_index(KEY).edge
+        tr = first.drop_duplicates(KEY).set_index(KEY).edge
         k = sorted(both)
         print(f"   the expected CLV of the horses both chose: replication {e.loc[k].mean():+.4f}, "
-              f"trader {tr.loc[k].mean():+.4f}")
+              f"trader {tr.loc[k].mean():+.4f} (largest gap {float((e.loc[k] - tr.loc[k]).abs().max()):.4f})")
+    for label, ks in (("only the replication", sorted(mine - theirs)), ("only the trader", sorted(theirs - mine))):
+        if ks:
+            print(f"   {label}: {ks[:6]}")
     day += timedelta(days=1)
 
 # ---------------------------------------------------------------------------------------------- the evenings
