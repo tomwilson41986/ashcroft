@@ -124,3 +124,15 @@ def test_on_a_trading_day_the_trade_job_records_the_markets_beside_the_trader():
     assert run[rec:].split("\n", 1)[0].rstrip().endswith("&")           # in the background
     assert rec < run.index("python auto_trade.py \"${ARGS[@]}\" --trade-until") < run.index('wait "$REC"')
     assert "exit $CODE" in run                                            # the job is the trader's verdict
+
+
+def test_tomorrows_markets_are_recorded_the_evening_before_apart_and_bounded():
+    spec = _spec("live-record.yml")
+    names = [s.get("name", "") for s in spec["jobs"]["record"]["steps"]]
+    step = _step(spec, "record", "the evening before")
+    assert names.index(step["name"]) > names.index("Market types on tomorrow's racing (census, read-only)")
+    assert step.get("continue-on-error") is True and "!cancelled()" in step["if"]
+    run = " ".join(step["run"].split())
+    assert run.startswith("timeout ") and "--record" in run and "-d tomorrow" in run
+    assert "--tag evening" in run and "--for-minutes" in run and "--market-types WIN" in run
+    assert "--final" not in run                     # tomorrow's markets are unsettled; the day's own run settles them
