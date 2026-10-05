@@ -23,7 +23,7 @@ for prefix in ("betfair_live/2026-10-06/", "betfair_live/2026-10-05/"):
 try:
     raw = s3.get_object(Bucket=bucket, Key="betfair_live/2026-10-06/books_evening.csv.gz")["Body"].read()
     ev = pd.read_csv(io.BytesIO(gzip.decompress(raw)), dtype={"market_id": str}, low_memory=False)
-    t = pd.to_datetime(ev[[c for c in ev.columns if c in ("ts", "t", "time")][0]], utc=True)
+    t = pd.to_datetime(ev[[c for c in ev.columns if c in ("polled_utc", "ts", "t", "time")][0]], utc=True)
     print(f"books_evening 6 Oct: {len(ev):,} rows, {ev.market_id.nunique()} markets, "
           f"{t.dt.tz_convert('Europe/London').min():%H:%M} to {t.dt.tz_convert('Europe/London').max():%H:%M} UK, "
           f"{t.dt.floor('min').nunique()} poll minutes")

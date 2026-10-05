@@ -155,9 +155,11 @@ def cut(rows, rem, t_col="t"):
                      for m, t in zip(rows.market_id, rows[t_col])])
 
 
-def plan(snap, prices):
+def plan(snap, prices, blind=False):
     """The live rule on each market's book: the trader's own plan, and what the best back's size would match. Like
-    the trader, only the win markets the day's model prices carry are read."""
+    the trader, only the win markets the day's model prices carry are read. blind: read the book as the trader's
+    delayed feed does, with no matched money (no GBP100 floor per runner, the no-volume closing model); the
+    evening recorder's books carry matched money the trader would not see."""
     rows, n_races, unpriced = [], 0, 0
     snap = snap[snap.market_id.isin({m for m, _ in prices})]
     for mid, g in snap.groupby("market_id"):
@@ -167,7 +169,8 @@ def plan(snap, prices):
                             back_size=float(np.nan_to_num(r.back1_size)),
                             lay=float(r.lay1) if r.lay1 > 1 else None,
                             last_traded=float(r.last_traded) if r.last_traded > 1 else None,
-                            status=str(r.runner_status), traded=float(np.nan_to_num(r.runner_total_matched)))
+                            status=str(r.runner_status),
+                            traded=0.0 if blind else float(np.nan_to_num(r.runner_total_matched)))
                  for r in g.itertuples()]
         active = [v for v in views if v.status == "ACTIVE"]
         if len(active) < 2:
@@ -293,10 +296,12 @@ while day <= LAST:
         a["removed_later"] = [k in rem_keys for k in zip(a.market_id, a.selection_id)]
         a["reduction"] = cut(a, rem)
         every.append(a.assign(mark=name, day=str(day)))
-        ours, n_races, unpriced = plan(snap, prices)
+        ours, n_races, unpriced = plan(snap, prices, blind=True)      # as the trader's delayed feed reads it
+        seen, _, _ = plan(snap, prices)                                # with the recorder's matched money
         print(f"   {name}: {snap.market_id.nunique()} markets polled {_hm(snap.t.min())[-5:]}-{_hm(snap.t.max())[-5:]}"
               f" UTC, {len(a)} runners priced; the rule read {n_races} races ({unpriced} with a runner unpriced) "
-              f"and chose {len(ours)}")
+              f"and chose {len(ours)} as the trader would read the book (no matched money), {len(seen)} with the "
+              f"recorded matched money (the GBP100 floor a runner)")
         if len(ours):
             ours = ours.merge(bsp, on=KEY, how="left")
             ours["reduction"] = cut(ours, rem)
@@ -307,7 +312,9 @@ while day <= LAST:
                 pr["m_reduction"] = cut(pr, rem, t_col="m_t")
                 pairs.append(pr.assign(mark=name, day=str(day)))
     if len(fills):
-        f = fills.merge(bsp, on=KEY, how="left").rename(columns={"avg_price": "price"})
+        # the settled ledger carries its own bsp and clv: the BSP here is the record's, as for the evening's rows
+        f = fills.drop(columns=["bsp", "clv"], errors="ignore").merge(bsp, on=KEY, how="left").rename(
+            columns={"avg_price": "price"})
         f["reduction"] = cut(f, rem)
         morning.append(f.assign(day=str(day)))
     day += timedelta(days=1)
