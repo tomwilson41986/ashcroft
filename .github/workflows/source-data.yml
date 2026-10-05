@@ -1,0 +1,95 @@
+name: Source data for the other markets
+
+# The historic data for the prospective models beyond UK/IE horse racing (the owner's ask, 3 Oct 2026; see
+# reports/all_markets_priorities.md): greyhound results (GBGB), football results and odds (football-data.co.uk),
+# tennis match statistics and odds (Sackmann, tennis-data.co.uk), Australian form (Punting Form, once a key is
+# supplied). Raw files and tables to s3://$CAPTURE_BUCKET/sources/; nothing here touches horse_racing.db or the UK
+# runner (these sites serve GitHub's runners; Betfair's own history is fetched on the UK runner, betfair-prices.yml,
+# and its tables are built here, needing only S3).
+#
+# Each run takes what the store lacks, newest first, within its budget, and the recent days or current season again:
+# the first nights backfill, then each night is a few minutes.
+
+on:
+  schedule:
+    - cron: '20 3 * * *'
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Sources, comma-separated (football,tennis,puntingform,gbgb) or all'
+        required: false
+        type: string
+        default: 'all'
+      date_from:
+        description: 'First day (YYYY-MM-DD) or year; empty for each source default'
+        required: false
+        type: string
+      max_minutes:
+        description: 'The fetch budget, minutes'
+        required: false
+        type: string
+        default: '280'
+  push:
+    branches: ['claude/dreamy-dirac-*']
+    paths:
+      - 'sources/**'
+      - 'source_data.py'
+      - 'betfair_historic.py'
+      - '.github/workflows/source-data.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-data
+  cancel-in-progress: false
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt openpyxl xlrd
+
+      - name: Fetch and build
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          PUNTINGFORM_API_KEY: ${{ secrets.PUNTINGFORM_API_KEY }}
+          SOURCE: ${{ inputs.source || 'all' }}
+          DATE_FROM: ${{ inputs.date_from }}
+          WANT: ${{ inputs.max_minutes || '280' }}
+        run: |
+          if ! [[ "$SOURCE" =~ ^[a-z,]+$ ]]; then echo "source must be names like gbgb,football"; exit 1; fi
+          if ! [[ "$WANT" =~ ^[0-9]+$ ]] || [ "$WANT" -gt 320 ]; then echo "max_minutes must be a whole number, at most 320"; exit 1; fi
+          ARGS=(--source "$SOURCE" --fetch --build --report --max-minutes "$WANT")
+          if [ -n "$DATE_FROM" ]; then
+            if ! [[ "$DATE_FROM" =~ ^[0-9]{4}(-[0-9]{2}-[0-9]{2})?$ ]]; then echo "date_from must be YYYY or YYYY-MM-DD"; exit 1; fi
+            ARGS+=(--from "$DATE_FROM")
+          fi
+          python source_data.py "${ARGS[@]}" | tee source_report.json
+
+      - name: Betfair Historic Data tables (from the files the UK runner fetched)
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 1800 python betfair_historic.py --build | tee betfair_historic_report.json
+
+      - name: Summary
+        if: always()
+        run: |
+          for f in source_report.json betfair_historic_report.json; do
+            [ -f "$f" ] && { echo "## $f"; echo '```'; cat "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
+          true

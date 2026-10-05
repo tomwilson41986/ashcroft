@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import json
 import io
 import logging
 import math
@@ -67,6 +68,8 @@ CATALOGUE_PROJECTION = ["EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION", "RUN
 #: marks of the morning, UK clock time; marks before the off, minutes, each with how far a snapshot may stray
 CLOCK_MARKS = ("08:00", "09:00", "10:00", "11:00", "12:00")
 OFF_MARKS = (120, 60, 30, 15, 10, 5, 3, 1)
+#: Betfair's event type ids: the record is of horse racing unless asked otherwise (greyhounds: --event-type 4339)
+HORSE_RACING, GREYHOUNDS = "7", "4339"
 
 
 def bucket() -> str:
@@ -213,6 +216,7 @@ class DayRecorder:
     def __init__(self, day: date, root: Path | str | None = None, s3=None, upload_every: float = 900.0,
                  clock=time.monotonic, background: bool = True, tag: str = ""):
         self.day = day
+        self.tag = tag
         self.dir = Path(root or ROOT) / f"{day:%Y-%m-%d}"
         self.dir.mkdir(parents=True, exist_ok=True)
         # a tag gives a writer its own files (books_trader.csv): the trader and the recorder run side by side
@@ -331,7 +335,7 @@ def market_ids_on_file(day: date, root: Path | str | None = None) -> list[str]:
 # --------------------------------------------------------------------------------------------------------------------
 
 def read_catalogue(data, start: datetime, end: datetime, market_types=("WIN", "PLACE"),
-                   countries=("GB", "IE"), window_hours: float = 4.0) -> list[dict]:
+                   countries=("GB", "IE"), window_hours: float = 4.0, event_type: str = HORSE_RACING) -> list[dict]:
     """The catalogue, one market type and a few hours at a time: with MARKET_DESCRIPTION and RUNNER_METADATA (a
     weight of 2 a market) Betfair answers at most 100 markets a call, and a big Saturday has more than that."""
     out, seen = [], set()
@@ -340,7 +344,7 @@ def read_catalogue(data, start: datetime, end: datetime, market_types=("WIN", "P
         while t < end:
             t2 = min(end, t + timedelta(hours=window_hours))
             for m in data._read("listMarketCatalogue", {
-                    "filter": {"eventTypeIds": ["7"], "marketCountries": list(countries), "marketTypeCodes": [mtype],
+                    "filter": {"eventTypeIds": [event_type], "marketCountries": list(countries), "marketTypeCodes": [mtype],
                                "marketStartTime": {"from": t.strftime("%Y-%m-%dT%H:%M:%SZ"),
                                                    "to": t2.strftime("%Y-%m-%dT%H:%M:%SZ")}},
                     "marketProjection": CATALOGUE_PROJECTION, "maxResults": 100, "sort": "FIRST_TO_START"}) or []:
@@ -380,6 +384,72 @@ def census(data, day: date, countries=("GB", "IE"), window_hours: float = 2.0) -
     return out
 
 
+def census_sports(data, hours: float = 24.0, top: int = 200, now: datetime | None = None) -> dict:
+    """Every sport Betfair lists open markets on that start in the next ``hours``, with its market types and the money
+    matched so far on its busiest markets (read-only): the liquidity behind the choice of which sport to model next
+    (the owner's ask, 3 Oct 2026). One listEventTypes, then for each sport a listMarketTypes and one catalogue of its
+    ``top`` markets by matched money. Read once a day at the same time, the matched money compares the sports like
+    with like; it is the money matched by then, not each market's final total."""
+    start = now or datetime.now(timezone.utc)
+    end = start + timedelta(hours=hours)
+    window = {"marketStartTime": {"from": start.strftime("%Y-%m-%dT%H:%M:%SZ"), "to": end.strftime("%Y-%m-%dT%H:%M:%SZ")}}
+    out: dict = {"read_utc": _iso(start), "hours": hours, "sports": []}
+    for et in data._read("listEventTypes", {"filter": window}) or []:
+        sport = et.get("eventType") or {}
+        sid = str(sport.get("id"))
+        flt = {**window, "eventTypeIds": [sid]}
+        row = {"event_type_id": sid, "sport": sport.get("name"), "markets": et.get("marketCount")}
+        try:
+            types = data._read("listMarketTypes", {"filter": flt}) or []
+            row["market_types"] = {t.get("marketType"): t.get("marketCount")
+                                   for t in sorted(types, key=lambda t: -(t.get("marketCount") or 0))}
+            cat = data._read("listMarketCatalogue", {"filter": flt, "maxResults": top, "sort": "MAXIMUM_TRADED",
+                                                     "marketProjection": ["EVENT", "MARKET_DESCRIPTION"]}) or []
+            matched = sorted((float(m.get("totalMatched") or 0.0) for m in cat), reverse=True)
+            row["top_matched_total"] = round(sum(matched), 2)
+            row["top_matched_median"] = round(matched[len(matched) // 2], 2) if matched else 0.0
+            by_type: dict[str, float] = {}
+            for m in cat:
+                k = (m.get("description") or {}).get("marketType") or "?"
+                by_type[k] = by_type.get(k, 0.0) + float(m.get("totalMatched") or 0.0)
+            row["top_matched_by_type"] = {k: round(v, 2) for k, v in sorted(by_type.items(), key=lambda kv: -kv[1])}
+            row["busiest"] = [f"{(m.get('event') or {}).get('name', '')}: {m.get('marketName', '')} "
+                              f"({float(m.get('totalMatched') or 0):,.0f})" for m in cat[:5]]
+        except Exception as exc:                          # one sport unread: the census goes on
+            row["error"] = str(exc)[:200]
+        out["sports"].append(row)
+    out["sports"].sort(key=lambda r: -(r.get("top_matched_total") or 0.0))
+    return out
+
+
+def save_census(result: dict, day: date, s3=None, root: Path | str | None = None) -> str:
+    """The census beside the day's record: on the server and in S3 (betfair_live/<day>/census_sports.json)."""
+    body = json.dumps(result, indent=1, default=str).encode()
+    path = Path(root or ROOT) / f"{day:%Y-%m-%d}" / "census_sports.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(body)
+    key = f"{PREFIX}/{day:%Y-%m-%d}/census_sports.json"
+    try:
+        (s3 or s3_client()).put_object(Bucket=bucket(), Key=key, Body=body)
+    except Exception as exc:
+        log.warning("census not copied to S3 (%s); kept at %s", exc, path)
+        return str(path)
+    return f"s3://{bucket()}/{key}"
+
+
+def antepost(data, rec: "DayRecorder", countries=("GB", "IE"), days_ahead: int = 400, now=None) -> dict:
+    """One snapshot a day of every ante-post win market on GB/IE racing (the big races weeks or months ahead), its
+    catalogue and its book, for the ante-post model (read-only)."""
+    t = now or datetime.now(timezone.utc)
+    cat = read_catalogue(data, t, t + timedelta(days=days_ahead), ("ANTEPOST_WIN",), countries,
+                         window_hours=24.0 * 30)
+    rec.record_catalogue(cat, t)
+    raw = read_books(data, [m["marketId"] for m in cat if m.get("marketId")])
+    n = rec.record_books(raw, source="antepost", polled_at=t)
+    rec.maybe_upload(force=True)
+    return {"markets": len(cat), "rows": n}
+
+
 def read_books(data, market_ids: list[str], settled: bool = False) -> list[dict]:
     """The books of the markets; ``settled`` asks for the BSP (SP_TRADED) with the prices. Batches keep each call
     under Betfair's weight limit of 200 (EX_BEST_OFFERS 5 a market, SP_TRADED 7)."""
@@ -400,7 +470,7 @@ def _interval(minutes_to_off: float, every_far: float, every_near: float, near_m
 def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float = 300.0, every_near: float = 60.0,
            near_minutes: float = 60.0, market_types=("WIN", "PLACE"), countries=("GB", "IE"),
            now=lambda: datetime.now(timezone.utc), sleep=time.sleep, refresh_minutes: float = 30.0,
-           wait_for_markets: bool = False) -> dict:
+           event_type: str = HORSE_RACING, wait_for_markets: bool = False) -> dict:
     """Snapshot the day's markets until ``until``: each market every ``every_far`` seconds, and every ``every_near``
     in its last ``near_minutes`` before the off; a market is left once it is in play or closed. The catalogue is read
     again every ``refresh_minutes`` for markets added in the day. With ``wait_for_markets`` a catalogue with nothing
@@ -413,7 +483,9 @@ def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float 
     polls = books = 0
 
     def refresh() -> None:
-        cat = read_catalogue(data, start, end, market_types, countries)
+        # a greyhound race every few minutes at each track: an hour's window keeps each call under its 100 markets
+        cat = read_catalogue(data, start, end, market_types, countries, event_type=event_type,
+                             window_hours=1.0 if event_type == GREYHOUNDS else 4.0)
         rec.record_catalogue(cat, now())
         for m in cat:
             t = _utc(m.get("marketStartTime"))
@@ -476,7 +548,12 @@ def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float 
 
 def final(day: date, data, rec: DayRecorder, market_ids: list[str] | None = None, now=None) -> int:
     """The settled books of the day's markets (status CLOSED: BSP, WINNER/LOSER/REMOVED, reduction factors)."""
-    ids = market_ids if market_ids is not None else market_ids_on_file(day, rec.dir.parent)
+    if market_ids is not None:
+        ids = market_ids
+    elif getattr(rec, "tag", "") not in DAY_FILE_TAGS:     # a record of its own (other place markets, greyhounds)
+        ids = sorted(rec._markets_on_file())
+    else:
+        ids = market_ids_on_file(day, rec.dir.parent)
     if not ids:
         return 0
     raw = read_books(data, ids, settled=True)
@@ -688,14 +765,20 @@ def main(argv=None) -> int:
     ap.add_argument("--load-db", action="store_true", help="load the last --days of the record into --db")
     ap.add_argument("--census", action="store_true",
                     help="print every market type Betfair lists on the --date's racing, with examples (read-only)")
+    ap.add_argument("--census-sports", action="store_true",
+                    help="every sport's markets and matched money on the --date, saved beside the day's record")
+    ap.add_argument("--antepost", action="store_true", help="snapshot every GB/IE ante-post win market once")
+    ap.add_argument("--event-type", default=HORSE_RACING, help="Betfair event type: 7 horse racing, 4339 greyhounds")
     ap.add_argument("--date", default=None, help="UK racing day, YYYY-MM-DD (default today)")
     ap.add_argument("--until", default="21:30", help="stop recording at this UK time")
     ap.add_argument("--for-minutes", type=float, default=None,
                     help="stop recording this many minutes from now instead (--until is read on --date, so an "
                          "evening record of tomorrow's markets needs this)")
-    ap.add_argument("--tag", default="",
+    ap.add_argument("--tag", default=None,
                     help="write the record to its own files (books_<tag>.csv): tomorrow's markets recorded the "
-                         "evening before (--tag evening) are kept apart from the day's own record")
+                         "evening before (--tag evening), the other place markets (other_place), the greyhounds "
+                         "(greyhound, the default with --event-type 4339); the nightly load reads the untagged and "
+                         "the trader's files only")
     ap.add_argument("--evening", default=None, metavar="HH:MM-HH:MM",
                     help="record --date's markets the evening before, between these UK times on the day before "
                          "(--date tomorrow --tag evening --evening 17:00-21:30): waits for the start, and goes on "
@@ -722,6 +805,23 @@ def main(argv=None) -> int:
         for kind, v in census(data, day, tuple(a.countries.split(","))).items():
             print(kind, v)
         return 0
+    if a.census_sports:
+        from trading.exchange import BetfairData
+        data = BetfairData()
+        data.login()
+        got = census_sports(data)
+        for r in got["sports"]:
+            print(r.get("sport"), {k: r.get(k) for k in ("markets", "top_matched_total", "top_matched_median")},
+                  dict(list((r.get("market_types") or {}).items())[:8]))
+        print("saved:", save_census(got, day))
+        return 0
+    if a.antepost:
+        from trading.exchange import BetfairData
+        data = BetfairData()
+        data.login()
+        rec = DayRecorder(day, tag=a.tag or "antepost")
+        print(antepost(data, rec, tuple(a.countries.split(","))))
+        return 0 if rec.errors == 0 else 2
     if not (a.record or a.final or a.upload):
         ap.print_help()
         return 1
@@ -741,7 +841,10 @@ def main(argv=None) -> int:
         if wait > 0:                                   # before the login: an idle session would lapse
             log.info("Waiting %.0f minutes for the evening's record of %s", wait / 60.0, day)
             time.sleep(wait)
-    rec = DayRecorder(day, tag=a.tag)
+    tag = a.tag if a.tag is not None else ("greyhound" if a.event_type == GREYHOUNDS else "")
+    if a.event_type != HORSE_RACING and not tag:
+        ap.error("a sport other than horse racing needs its own --tag: the nightly load reads the untagged files")
+    rec = DayRecorder(day, tag=tag)
     if a.upload:
         rec.maybe_upload(force=True)
     if a.record or a.final:
@@ -755,9 +858,10 @@ def main(argv=None) -> int:
                 until = datetime.now(timezone.utc) + timedelta(minutes=a.for_minutes)
             else:
                 until = uk_time_on(day, a.until)
+            sport = {} if a.event_type == HORSE_RACING else {"event_type": a.event_type}
             print(record(day, until, data, rec, a.every, a.every_near, a.near,
                          tuple(a.market_types.split(",")), tuple(a.countries.split(",")),
-                         wait_for_markets=window is not None))
+                         wait_for_markets=window is not None, **sport))
         if a.final:
             print({"final": final(day, data, rec)})
     return 0 if rec.errors == 0 else 2
