@@ -69,9 +69,80 @@ first prices on them are worth more than their BSPs. Every threshold is shown, n
 the test. A rank objective over the race (LightGBM xendcg, softmax with a fitted temperature) did worse (0.455-0.468
 by fold) and is not used.
 
-## 4. Next
+## 4. The full history (CI run 37308130136: GBGB 2018-2026, fit from 2019, test a year at a time 2021-2026)
 
-1. The CI run on the full history (fit from 2019, a year at a time to 2026) and the price files' morning WAP with
-   its traded volume: does the early rule hold over eight years, and at prices that traded in size?
-2. If it does: the recorded GB greyhound books (from 5 Oct) for the depth at the time a bet would go in, a paper
-   forward test, then small stakes, with the same gates as the horse rule.
+**The model against the BSP, by year (price-file markets)**
+
+| Year | Model | BSP |
+|---|---|---|
+| 2021 | 0.4357 | 0.4219 |
+| 2022 | 0.4364 | 0.4218 |
+| 2023 | 0.4414 | 0.4244 |
+| 2024 | 0.4462 | 0.4265 |
+| 2025 | 0.4481 | 0.4265 |
+| 2026 | 0.4500 | 0.4275 |
+
+Over the whole period it scores 0.44348 against the BSP's 0.42499, across 1.39m runners and 244,933 markets. In a
+blend it takes a weight of 0.115 against the market's 0.946, and the blend scores the same as the market alone.
+**The model does not add to the BSP**, and it falls further behind it every year. Whether that is the market
+getting sharper or the model's inputs changing (GBGB's grading, sectionals, the number of meetings) is still to
+be checked.
+
+The strongest features are: the dog's last three SPs, the recency-weighted GSR against the field (z-score, gap and
+rank), runs before, grade change, weight against its mean, A/E against the SP, GSR at the course and distance, and
+age.
+
+**The early market: the 2026 Betfair bundle**
+
+The rule is to back at the first traded price where the model's edge there exceeds the threshold.
+
+| Edge | Bets/day | Return at the first price (90%) | CLV vs BSP | The same bets at BSP |
+|---|---|---|---|---|
+| > 0.1 | 236 | +5.2% (+3.4 to +7.1) | +4.5% | +1.4% |
+| > 0.2 | 186 | +7.9% (+5.7 to +10.0) | +6.0% | |
+| > 0.3 | 147 | +10.0% (+7.5 to +12.6) | +7.6% | +3.1% (+0.4 to +5.9) |
+
+At T-1 the same rule makes about nothing at the T-1 price, and +1.8% to +2.5% at BSP, with lower bounds just
+above zero. The first traded price can be thin: the bundle shows no volume behind it, so these fills are unverified.
+
+**The price files (2021-2026): morning WAP with its traded volume**
+
+Morning volume per runner is £0 at the median and £263 at the 90th percentile. Pre-play volume is £2,213 at the
+median.
+
+| Morning rule | Bets/day | At the morning WAP | CLV | The same bets at BSP |
+|---|---|---|---|---|
+| edge > 0.3, any volume | 13.5 | +8.2% (+5.2 to +11.2) | +4.7% | +7.5% |
+| edge > 0.x, volume >= £20 or £100 | | -14% to -20% | about -20% | +4% to +12.6% |
+
+The morning figures in this run are not to be trusted:
+- The morning WAP's log-loss came out at 1.78, and the pre-play WAP's could not be computed. Both were normalised
+  over races where only some runners had traded, and a WAP on two dogs of six says nothing about the race.
+- Morning prices shorter than BSP by 20% on dogs the model calls value is not a market reading of the same race.
+
+The scoring now:
+- reads each price only on the markets where it prices every runner;
+- reports how many runners and markets each price covers;
+- drops any market whose result in the file disagrees with GBGB's, because a join to the wrong race would score
+  one race's prices against another's result;
+- reports the main morning rule year by year.
+
+The next CI run gives the corrected figures.
+
+**What the full history says**
+
+- The model is not a better price than the BSP. Its value, if any, is in the early market: form predicts which
+  dogs the market will shorten. In 2026 the first prices on those dogs beat the BSP by 4.5-7.6%, and the at-BSP
+  returns are positive with lower bounds near zero.
+- None of these thresholds was chosen out of sample. They are all reported, and none has yet been tested on a
+  period it was not seen on.
+- The at-BSP returns of a market-blind selection (+1.4% to +3% on the bundle) are worth a leak and robustness
+  check before anything else. The lag-safety test covers the features, but it does not cover the joins.
+
+## 5. Next
+
+1. The corrected price-file scores (whole-field prices, result-checked joins, by year) from the next CI run.
+2. Why the model falls behind the BSP by year: refit on recent years only, and check the feature drift.
+3. If the early rule holds: the recorded GB greyhound books (from 5 Oct) for the depth at the time a bet would go
+   in, then a paper forward test with thresholds fixed in advance, then small stakes, with the same gates as the
+   horse rule.

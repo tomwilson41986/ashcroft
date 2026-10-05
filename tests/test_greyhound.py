@@ -97,6 +97,14 @@ def test_probabilities_sum_to_one_in_a_race_and_the_price_file_join_needs_the_wh
     assert against_price_files(pred, prices.iloc[:1])["markets"] == 0   # one runner of two: no whole race to score
     got = against_price_files(pred, prices)
     assert got["markets"] == 1 and got["runners"] == 2
+    # a morning WAP on one runner of two prices no whole field: no log-loss from it, and the BSP's still read
+    part = prices.assign(morningwap=[2.0, float("nan")], win_lose=[1.0, 0.0])
+    got = against_price_files(pred, part)
+    assert got["logloss"]["morningwap"] is None and got["logloss"]["bsp"] is not None
+    assert got["price_coverage"]["morningwap"] == {"runners_priced": 0.5, "markets_whole_field": 0.0}
+    # the file's result disagrees with GBGB's: the join found another race, and the market is dropped
+    got = against_price_files(pred, prices.assign(win_lose=[0.0, 1.0]))
+    assert got["markets"] == 0 and got["markets_result_disagrees"] == 1
 
 
 def test_a_greyhound_price_file_reads_track_trap_and_country_and_skips_a_broken_row(tmp_path):

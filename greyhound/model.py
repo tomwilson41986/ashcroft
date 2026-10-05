@@ -166,24 +166,40 @@ def against_price_files(pred: pd.DataFrame, prices: pd.DataFrame, edges=(0.0, 0.
                         min_vols=(0.0, 20.0, 100.0)) -> dict:
     """The predictions on Betfair's greyhound price files (every year archived): log-loss against the BSP, the
     pre-play and the morning weighted average prices, and the early rule at the MORNING price where the morning
-    traded volume on the runner reaches ``min_vol`` (the fillability the basic plan cannot show)."""
+    traded volume on the runner reaches ``min_vol`` (the fillability the basic plan cannot show).
+
+    A market is kept only when its result in the file (WIN_LOSE) agrees with GBGB's on every runner: a join on
+    the wrong race (a time an hour out) would otherwise score one race's prices on another's result. A price's
+    log-loss is read only on the markets where it prices the whole field: a WAP on two runners of six,
+    normalised, says nothing of the race."""
     w = prices[(prices.market == "win") & (prices.country == "GB")].copy()
     w = w.rename(columns={"dog": "dog_bf"})
-    m = pred.merge(w[["race_date", "race_time", "track", "trap", "event_id", "bsp", "ppwap", "morningwap",
-                      "morning_vol", "pp_vol"]], on=["race_date", "race_time", "track", "trap"], how="inner")
+    cols = ["race_date", "race_time", "track", "trap", "event_id", "bsp", "ppwap", "morningwap", "morning_vol",
+            "pp_vol"] + (["win_lose"] if "win_lose" in w.columns else [])
+    m = pred.merge(w[cols], on=["race_date", "race_time", "track", "trap"], how="inner")
     m = m[m.groupby("event_id").race_id.transform("size") == m.groupby("event_id").field.transform("first")]
     m = m.dropna(subset=["bsp"])
-    out = {"runners": len(m), "markets": int(m.event_id.nunique()),
+    joined = int(m.event_id.nunique())
+    if "win_lose" in m.columns:
+        agree = (m.win_lose.isna() | (m.win_lose == m.won)).groupby(m.event_id).transform("all")
+        m = m[agree]
+    out = {"runners": len(m), "markets": int(m.event_id.nunique()), "markets_joined": joined,
+           "markets_result_disagrees": joined - int(m.event_id.nunique()),
            "morning_vol_per_runner": {q: round(float(m.morning_vol.quantile(q)), 1) for q in (0.25, 0.5, 0.75, 0.9)},
            "pp_vol_per_runner": {q: round(float(m.pp_vol.quantile(q)), 1) for q in (0.25, 0.5, 0.75)}}
-    ll = {"model": logloss(m.p_model, m.won)}
+    ll, cover = {"model": logloss(m.p_model, m.won)}, {}
     for col in ("bsp", "ppwap", "morningwap"):
         q = m[col].where(m[col] > 1)
-        p = race_norm(1.0 / q, m.event_id)
-        ok = p.notna() & q.notna()
-        ll[col] = logloss(p[ok], m.won[ok])
+        whole = q.notna().groupby(m.event_id).transform("all")
+        p = race_norm(1.0 / q.where(whole), m.event_id)
+        cover[col] = {"runners_priced": round(float(q.notna().mean()), 4),
+                      "markets_whole_field": round(float(whole.groupby(m.event_id).first().mean()), 4)}
+        ll[col] = logloss(p[whole], m.won[whole]) if whole.any() else None
+        if whole.any():
+            ll[f"model_on_{col}_markets"] = logloss(m.p_model[whole], m.won[whole])
         m[f"p_{col}"] = p
-    out["logloss"] = {k: round(v, 5) for k, v in ll.items()}
+    out["price_coverage"] = cover
+    out["logloss"] = {k: (round(v, 5) if v is not None else None) for k, v in ll.items()}
     out["blend_with_bsp"] = blend_test(m.assign(market_id=m.event_id), "p_bsp")
     rules = {}
     e = m[m.morningwap > 1].copy()
@@ -196,8 +212,10 @@ def against_price_files(pred: pd.DataFrame, prices: pd.DataFrame, edges=(0.0, 0.
     out["rules"] = rules
     by_year = {}
     for y, g in m.groupby(m.race_date.str[:4]):
+        sel = e[(e.race_date.str[:4] == y) & (e.edge > 0.2) & (e.morningwap <= cap)]
         by_year[y] = {"runners": len(g), "model": round(logloss(g.p_model, g.won), 5),
-                      "bsp": round(logloss(g.p_bsp.fillna(1 / g.field), g.won), 5)}
+                      "bsp": round(logloss(g.p_bsp.fillna(1 / g.field), g.won), 5),
+                      "morning_edge>0.2": {"at_morning": _settle(sel, "morningwap"), "at_bsp": _settle(sel, "bsp")}}
     out["by_year"] = by_year
     return out
 
