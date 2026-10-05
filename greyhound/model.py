@@ -232,6 +232,7 @@ def main(argv=None) -> int:
             df.to_parquet(a.save_features)
             Path(a.save_features + ".features.json").write_text(json.dumps(feats))
     pred = walk_forward(df, feats, a.folds.split(","), a.date_from)
+    importance = pred.attrs.pop("importance")          # off the frame: parquet writes attrs as JSON
     report = {"features": len(feats), "score": score(pred)}
     bf_key = "betfair_historic/markets_greyhound_racing_2026.parquet"
     bf = store.get_parquet(bf_key)
@@ -241,7 +242,7 @@ def main(argv=None) -> int:
     if keys:
         prices = pd.concat([store.get_parquet(k) for k in keys], ignore_index=True)
         report["price_files"] = against_price_files(pred, prices)
-    report["top_features"] = {k: round(float(v), 4) for k, v in pred.attrs["importance"].head(25).items()}
+    report["top_features"] = {k: round(float(v), 4) for k, v in importance.head(25).items()}
     if a.save_pred:
         pred.to_parquet(a.save_pred)
     txt = json.dumps(report, indent=1, default=str)
