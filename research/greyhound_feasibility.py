@@ -232,6 +232,30 @@ def main(argv=None) -> int:
     sel = test[(test.edge > best[0]) & (test.ltp_t_1 <= best[1])]
     report["test"] = settle(sel)
     report["test_at_t1_price"] = settle(sel, "ltp_t_1")
+    # the early market: a form-only model (no price at all) against the first price traded, which is a median 5.7%
+    # off the BSP. A back taken at the first price where the form model sees value: its CLV (first price against the
+    # BSP) and its result at the first price. The basic plan gives no volume, so whether that price could be filled is
+    # not known: this sizes the opportunity, it is not a rule.
+    form = lgb.train({**params, "learning_rate": 0.02, "num_leaves": 15, "min_child_samples": 400},
+                     lgb.Dataset(tr[feats], tr.won), 2000, valid_sets=[lgb.Dataset(es[feats], es.won)],
+                     callbacks=[lgb.early_stopping(100, verbose=False)])
+    early = {}
+    for name, d in (("val", val), ("test", test)):
+        d["p_form"] = race_norm(d.assign(pf=form.predict(d[feats], num_iteration=form.best_iteration)), "pf")
+        e = d.dropna(subset=["ltp_first"])
+        e = e[e.ltp_first > 1].copy()
+        fp = race_norm(e.assign(fp=1 / e.ltp_first), "fp")
+        ll = lambda q: float(-np.mean(np.log(np.where(e.won == 1, q, 1 - q).clip(1e-9))))  # noqa: E731
+        res = {"logloss": {"form_only": round(ll(e.p_form), 5), "first_price": round(ll(fp), 5),
+                           "bsp": round(ll(race_norm(e.assign(bp=1 / e.bsp), "bp")), 5)}}
+        e["edge_first"] = e.p_form * (1 + (e.ltp_first - 1) * (1 - COM)) - 1
+        for th in (0.0, 0.1, 0.2, 0.3):
+            sel = e[(e.edge_first > th) & (e.ltp_first <= 20)]
+            got = settle(sel, "ltp_first")
+            got["clv_first_vs_bsp%"] = round(100 * (sel.ltp_first / sel.bsp - 1).mean(), 2) if len(sel) else None
+            res[f"edge>{th:.1f}"] = got
+        early[name] = res
+    report["early_market_form_only"] = early
     imp = pd.Series(model.feature_importance("gain"), index=feats).sort_values(ascending=False)
     report["top_features"] = {k: round(float(v / imp.sum()), 3) for k, v in imp.head(12).items()}
     txt = json.dumps(report, indent=1, default=str)
