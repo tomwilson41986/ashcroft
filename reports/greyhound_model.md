@@ -160,7 +160,31 @@ BSP in 2024-2026.
 - The at-BSP returns of a market-blind selection (+1.4% to +3% on the bundle) are worth a leak and robustness
   check before anything else. The lag-safety test covers the features, but it does not cover the joins.
 
-## 5. Next
+## 5. The forward test (from 5 Oct 2026)
+
+Paper only (`greyhound/track.py`, `.github/workflows/greyhound-track.yml`, daily at 11:41 UTC once merged to the
+default branch). What is fixed in advance:
+- **The model:** fitted on every GBGB race before 5 Oct 2026 and frozen in S3 (`sources/greyhound/track/model.txt`)
+  with its features and rules (`meta.json`). It is never refitted during the test.
+- **The prices:** each day's GB races are priced from the dogs' earlier days only. The model is set against the
+  recorded Betfair greyhound books (live-record.yml), at the first book recorded and at 60, 10 and 1 minutes before
+  the off.
+- **The bets:** a paper back of GBP2 on every dog whose edge at the best back price clears 0.1, 0.2 or 0.3, with no
+  bet above 20. A bet counts as filled only if the book offered at least the stake. It is settled at that price and
+  at the BSP, with CLV against the BSP.
+- **The primary rule**, fixed before any tracked day: the first recorded price, edge > 0.2. The other marks and
+  thresholds are reported, not judged.
+- **The gate:** after 2,000 primary bets or 30 days, whichever is later, move to small real stakes only if the
+  return at the taken price has a 90% lower bound above 0 and the mean CLV is above 0.
+- **The ledger:** `sources/greyhound/track/days/<day>.parquet`; the priced runners and their marks,
+  `pred/<day>.parquet`; the running summary, `summary.json` and each run's summary.
+
+The limits of the test:
+- The books come from the delayed key, so a price may be a few seconds old.
+- A race's field is the one that ran, so a late non-runner is not seen as the market saw it.
+- The first recorded book is the recorder's first snapshot (from 06:55 or 10:10 UTC), not the market's first trade.
+
+## 6. Next
 
 1. **Why the model falls behind the BSP from 2023.** Check whether GBGB's data changed (the coverage of sectionals and
    calculated times, comments, grading, the meetings held). Refit on a rolling recent window rather than everything

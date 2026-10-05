@@ -23,6 +23,7 @@ on:
     branches: ['claude/dreamy-dirac-*']
     paths:
       - 'greyhound/**'
+      - '!greyhound/track.py'        # the forward test has its own workflow (greyhound-track.yml)
       - 'sources/greyhound_prices.py'
       - '.github/workflows/greyhound-model.yml'
 

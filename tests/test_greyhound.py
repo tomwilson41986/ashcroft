@@ -128,3 +128,37 @@ def test_a_greyhound_price_file_reads_track_trap_and_country_and_skips_a_broken_
     au = t[t.country == "AUS"].iloc[0]
     assert au.track == "Albion Park" and au.trap == 3
     assert gp.build(store)[2026] == {"files": 1, "unchanged": True}
+
+
+def test_the_forward_test_backs_at_the_first_book_only_where_it_was_offered_and_settles_at_bsp():
+    from greyhound.track import STAKE, book_marks, join_markets, paper_bets
+    day = pd.Timestamp("2026-10-05").date()
+    pred = pd.DataFrame({"race_id": [7, 7], "race_date": ["2026-10-05"] * 2, "race_time": ["19:04"] * 2,
+                         "track": ["Romford"] * 2, "trap": [1, 2], "field": [2, 2], "won": [1.0, 0.0],
+                         "p_model": [0.6, 0.4], "dog_id": [1, 2], "dog_name": ["A", "B"], "sp_decimal": [1.8, 2.5]})
+    markets = pd.DataFrame({"market_id": ["1.5"] * 2, "market_type": ["WIN"] * 2, "country": ["GB"] * 2,
+                            "venue": ["Romford"] * 2, "market_start_utc": ["2026-10-05T18:04:00Z"] * 2,
+                            "selection_id": [11, 12], "runner_name": ["1. Alpha", "2. Beta"]})
+    book = dict(source="recorder", market_id="1.5", status="OPEN", inplay=0, number_of_active_runners=2,
+                sp_actual=None)
+    books = pd.DataFrame([
+        dict(book, polled_utc="2026-10-05T10:00:00Z", selection_id=11, back1=2.5, back1_size=10.0),   # edge 0.47
+        dict(book, polled_utc="2026-10-05T10:00:00Z", selection_id=12, back1=4.0, back1_size=1.0),    # edge 0.58, GBP1
+        dict(book, polled_utc="2026-10-05T18:03:00Z", selection_id=11, back1=1.7, back1_size=50.0),
+        dict(book, polled_utc="2026-10-05T18:03:00Z", selection_id=12, back1=2.6, back1_size=50.0),
+        dict(book, source="final", status="CLOSED", polled_utc="2026-10-06T07:00:00Z", selection_id=11, back1=None,
+             back1_size=None, sp_actual=2.0),
+        dict(book, source="final", status="CLOSED", polled_utc="2026-10-06T07:00:00Z", selection_id=12, back1=None,
+             back1_size=None, sp_actual=2.2)])
+    from betfair_recorder import BOOK_FIELDS
+    books = books.reindex(columns=BOOK_FIELDS)                                 # the recorder's file, all its columns
+    priced = join_markets(pred, markets)
+    assert len(priced) == 2 and set(priced.selection_id) == {11, 12}
+    assert join_markets(pred, markets.iloc[:1]).empty                          # one runner of two: no race
+    bets = paper_bets(priced, book_marks(books, markets, day))
+    first = bets[(bets.mark == "first") & (bets.threshold == 0.2)].set_index("selection_id")
+    assert first.loc[11].filled and not first.loc[12].filled                  # GBP1 offered: not a fill at GBP2
+    assert first.loc[11].pnl == round((2.5 - 1) * 0.98 * STAKE, 10)
+    assert abs(first.loc[11].pnl_bsp - (2.0 - 1) * 0.98 * STAKE) < 1e-9 and abs(first.loc[11].clv - 0.25) < 1e-9
+    assert first.loc[12].pnl == -STAKE
+    assert not len(bets[(bets.mark == "off_1") & (bets.selection_id == 11)])  # 1.7 at the off: no edge left

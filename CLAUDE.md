@@ -140,6 +140,12 @@ python betfair_recorder.py --antepost
 python betfair_recorder.py --record --event-type 4339 --tag greyhound --until 21:30
 python betfair_recorder.py --record --market-types OTHER_PLACE,EACH_WAY --tag other_place --until 21:30
 
+# The greyhound model (reports/greyhound_model.md): GBGB metrics, walk-forward win model, scored against the SP and
+# Betfair (greyhound-model.yml); its paper forward test from 5 Oct 2026, the model and rules frozen, daily after the
+# recorded books settle (greyhound-track.yml, ledger in s3://$CAPTURE_BUCKET/sources/greyhound/track/)
+python -m greyhound.model --years 2018-2026 --folds 2024-01,2025-01,2026-01 --from 2019-01-01 --out out/report.json
+python -m greyhound.track --freeze --cutoff 2026-10-05 --days 3 --summary --out out/greyhound_track.json
+
 # Race ABM: simulate a card, batch features for training, pattern-oriented calibration
 python research_lab.py abm --db horse_racing.db --date 2026-03-12
 python research_lab.py abm-features --db horse_racing.db --from 2024-01-01 --jobs 8 --out data/abm_features.parquet
