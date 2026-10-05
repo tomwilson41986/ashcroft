@@ -75,9 +75,27 @@ late evening's dog races are left to the price files and GBGB.
 | Punting Form | none: no key | |
 | Betfair Historic Data | none yet: runs on the UK server after merge, once the account holds a sport | |
 
+### The owner's Betfair Historic Data bundle (5 Oct)
+
+The owner's download from historicdata.betfair.com (BASIC, greyhounds, Jan to Sep 2026; `data.tar` on Google Drive,
+queued in `sources/betfair_imports.json`) holds 261,008 files: 251,748 markets, 3.05m runner rows, every file
+readable. The import puts each file into the raw store the API fetch fills, and builds
+`sources/betfair_historic/markets_greyhound_racing_2026.parquet` (checked locally before the push):
+
+| Market type | GB | AU | NZ | IE |
+|---|---|---|---|---|
+| WIN | 35,306 | 34,394 | 2,996 | 87 |
+| PLACE | 35,306 | 34,203 | 2,963 | 45 |
+| FORECAST | 35,385 | | | |
+| MATCH_BET, EXACTA, QUINELLA, MONEY_BACK_2ND | | 34,221 / 16,777 / 16,768 / 3,296 | | |
+
+On the GB win markets every runner has a closing price and a BSP. The close equals the BSP at the median, and a
+race's closing prices sum to 100.2% (the median book). The basic plan keeps the last traded price only when it changes, so the
+price standing at a fixed mark is sparse (T-15: 17% of GB win runners): the close and the BSP are the benchmark.
+
 ## 5. The owner's to supply
 
-1. At historicdata.betfair.com, signed in with the trading account: the free BASIC plan for Greyhound Racing, Tennis,
+1. Greyhounds: done (the 5 Oct bundle above). At historicdata.betfair.com, signed in with the trading account: the free BASIC plan for Tennis,
    Soccer (and Cricket, Darts, Snooker if wanted). Until then `betfair_historic.py` fetches nothing and says so.
 2. A Punting Form subscription and the secret `PUNTINGFORM_API_KEY`, only if Australian racing goes ahead.
 3. The live application key (a one-off fee, about GBP299 when last published), which restores the traded volume

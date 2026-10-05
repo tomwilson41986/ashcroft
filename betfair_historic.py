@@ -97,6 +97,16 @@ def raw_key(sport: str, path: str) -> str:
     return f"betfair_historic/raw/{sport_dir(sport)}/{path.lstrip('/')}"
 
 
+def _plan_path(key: str) -> str:
+    """A file's path from its plan on ('/xds_nfs/edp_processed/BASIC/2026/Sep/1/35/1.5.bz2' -> 'BASIC/2026/Sep/1/35/
+    1.5.bz2'): the API's paths and a website bundle's name the same file alike from there."""
+    for plan in ("BASIC/", "ADVANCED/", "PRO/"):
+        i = key.find(plan)
+        if i >= 0:
+            return key[i:]
+    return key
+
+
 def path_year(key: str) -> int | None:
     """The year in the service's path ('.../BASIC/2023/Jan/1/32040445/1.207795034.bz2' -> 2023)."""
     m = re.search(r"/(\d{4})/[A-Za-z]{3}/\d{1,2}/", key)
@@ -131,6 +141,7 @@ def fetch(store: Store, hd: Historic, sports: list[str] | None = None, d_from: d
                         "historicdata.betfair.com, signed in with the trading account", PLAN)
             return {"fetched": 0, "sports": []}
     have = store.listing("betfair_historic/raw/")
+    held_paths = {_plan_path(k) for k in have}            # a file imported from a website bundle is held too
     budget = Budget(max_minutes)
     out = {"fetched": 0, "skipped": 0, "failed": 0, "stopped": False, "sports": {}}
     iters = {s: months_back(d_to, d_from) for s in sports}
@@ -147,7 +158,7 @@ def fetch(store: Store, hd: Historic, sports: list[str] | None = None, d_from: d
                 log.warning("%s %s: file list not read (%s)", sport, month[0], exc)
                 out["failed"] += 1
                 continue
-            todo = [p for p in paths if raw_key(sport, p) not in have]
+            todo = [p for p in paths if raw_key(sport, p) not in have and _plan_path(p) not in held_paths]
             out["skipped"] += len(paths) - len(todo)
 
             def one(p):
@@ -189,72 +200,200 @@ def _iso_utc(text) -> datetime | None:
         return None
 
 
+class _MarketState:
+    """One market's reading of a stream file: its last definition, the prices standing at each mark, the close."""
+
+    def __init__(self):
+        self.defn: dict = {}
+        self.first: dict[int, float] = {}
+        self.last_pre: dict[int, float] = {}
+        self.ltp_now: dict[int, float] = {}
+        self.marks: dict[str, dict[int, float]] = {k: {} for k in MARKS_MIN}
+        self.pending = sorted(MARKS_MIN.items(), key=lambda kv: -kv[1])
+        self.off = None
+        self.inplay_at = None
+
+    def read(self, pt: datetime, mc: dict) -> None:
+        d = mc.get("marketDefinition")
+        # the marks pass before this message's prices: the price standing at the mark is the last one before it
+        if self.off is not None and self.inplay_at is None:
+            while self.pending and pt >= self.off - timedelta(minutes=self.pending[0][1]):
+                self.marks[self.pending[0][0]] = dict(self.ltp_now)
+                self.pending.pop(0)
+        if d:
+            self.defn = d
+            self.off = _iso_utc(d.get("marketTime")) or self.off
+            if d.get("inPlay") and self.inplay_at is None:
+                self.inplay_at = pt
+        for rc in mc.get("rc") or []:
+            if "ltp" not in rc:
+                continue
+            sid, p = int(rc["id"]), float(rc["ltp"])
+            self.ltp_now[sid] = p
+            self.first.setdefault(sid, p)
+            if self.inplay_at is None:
+                self.last_pre[sid] = p
+
+    def rows(self, market_id: str) -> list[dict]:
+        defn, out = self.defn, []
+        for r in defn.get("runners") or []:
+            sid = int(r.get("id"))
+            row = {
+                "market_id": market_id, "event_id": defn.get("eventId"), "event_name": defn.get("eventName"),
+                "event_type_id": defn.get("eventTypeId"), "market_type": defn.get("marketType"),
+                "market_name": defn.get("name"), "country": defn.get("countryCode"), "venue": defn.get("venue"),
+                "market_time": defn.get("marketTime"), "open_date": defn.get("openDate"),
+                "turned_in_play": defn.get("turnInPlayEnabled"),
+                "went_in_play_utc": self.inplay_at.isoformat() if self.inplay_at else None,
+                "number_of_winners": defn.get("numberOfWinners"), "settled": defn.get("settledTime"),
+                "bsp_market": defn.get("bspMarket"),
+                "selection_id": sid, "runner_name": r.get("name"), "handicap": r.get("hc"),
+                "sort_priority": r.get("sortPriority"), "runner_status": r.get("status"),
+                "won": {"WINNER": 1, "LOSER": 0, "PLACED": 1}.get(r.get("status")),
+                "bsp": r.get("bsp"), "ltp_first": self.first.get(sid), "ltp_close": self.last_pre.get(sid),
+            }
+            for k in MARKS_MIN:
+                row[f"ltp_{k}"] = self.marks[k].get(sid)
+            out.append(row)
+        return out
+
+
 def parse_market(raw: bytes) -> list[dict]:
-    """One market's file (bz2 or plain JSON lines of 'mcm' messages) -> one row a runner: definition, the first
-    traded price, the price traded at each mark before the scheduled off, the close (last before in play) and the
-    result."""
+    """A stream file (bz2 or plain JSON lines of 'mcm' messages) -> one row a runner a market: definition, the
+    first traded price, the price traded at each mark before the scheduled off, the close (last before in play) and
+    the result. A market's own file holds one market; an event's file (named by the event) may hold several."""
     text = bz2.decompress(raw) if raw[:3] == b"BZh" else raw
-    defn: dict = {}
-    first: dict[int, float] = {}
-    last_pre: dict[int, float] = {}
-    marks: dict[str, dict[int, float]] = {k: {} for k in MARKS_MIN}
-    off = None
-    inplay_at = None
-    market_id = None
-    ltp_now: dict[int, float] = {}
-    pending = sorted(MARKS_MIN.items(), key=lambda kv: -kv[1])
+    markets: dict[str, _MarketState] = {}
     for line in text.splitlines():
         if not line.strip():
             continue
         msg = json.loads(line)
         pt = _ts(msg.get("pt", 0))
         for mc in msg.get("mc") or []:
-            market_id = mc.get("id", market_id)
-            d = mc.get("marketDefinition")
-            # the marks pass before this message's prices: the price standing at the mark is the last one before it
-            if off is not None and inplay_at is None:
-                while pending and pt >= off - timedelta(minutes=pending[0][1]):
-                    marks[pending[0][0]] = dict(ltp_now)
-                    pending.pop(0)
-            if d:
-                defn = d
-                off = _iso_utc(d.get("marketTime")) or off
-                if d.get("inPlay") and inplay_at is None:
-                    inplay_at = pt
-            for rc in mc.get("rc") or []:
-                if "ltp" not in rc:
-                    continue
-                sid, p = int(rc["id"]), float(rc["ltp"])
-                ltp_now[sid] = p
-                first.setdefault(sid, p)
-                if inplay_at is None:
-                    last_pre[sid] = p
-    if not defn:
-        return []
+            mid = mc.get("id")
+            if mid is None:
+                continue
+            markets.setdefault(mid, _MarketState()).read(pt, mc)
     rows = []
-    for r in defn.get("runners") or []:
-        sid = int(r.get("id"))
-        row = {
-            "market_id": market_id, "event_id": defn.get("eventId"), "event_name": defn.get("eventName"),
-            "event_type_id": defn.get("eventTypeId"), "market_type": defn.get("marketType"),
-            "market_name": defn.get("name"), "country": defn.get("countryCode"), "venue": defn.get("venue"),
-            "market_time": defn.get("marketTime"), "open_date": defn.get("openDate"),
-            "turned_in_play": defn.get("turnInPlayEnabled"), "went_in_play_utc": inplay_at.isoformat() if inplay_at else None,
-            "number_of_winners": defn.get("numberOfWinners"), "settled": defn.get("settledTime"),
-            "selection_id": sid, "runner_name": r.get("name"), "handicap": r.get("hc"),
-            "sort_priority": r.get("sortPriority"), "runner_status": r.get("status"),
-            "won": {"WINNER": 1, "LOSER": 0, "PLACED": 1}.get(r.get("status")),
-            "bsp": r.get("bsp"), "ltp_first": first.get(sid), "ltp_close": last_pre.get(sid),
-        }
-        for k in MARKS_MIN:
-            row[f"ltp_{k}"] = marks[k].get(sid)
-        rows.append(row)
+    for mid, st in markets.items():
+        if st.defn:
+            rows += st.rows(mid)
     return rows
 
 
-def build(store: Store, sports: list[str] | None = None, years: list[int] | None = None) -> dict:
-    """The closing-price tables, a sport and year each, from the raw files (the year in the service's path)."""
+def _parse_logged(item: tuple[str, bytes]) -> tuple[str, list[dict] | None]:
+    try:
+        return item[0], parse_market(item[1])
+    except Exception:
+        return item[0], None
+
+
+def import_tar(store: Store, path: str, sport: str, workers: int = 16, build_tables: bool = True) -> dict:
+    """A bundle downloaded from the Historic Data website (data.tar: BASIC/<year>/<Mon>/<day>/<event>/<market>.bz2)
+    into the store, each file under the sport's raw folder (the API's fetch knows it by its path from the plan on, and does
+    not fetch it again), then the
+    sport's tables for the years it touched, read from the bundle itself."""
+    import tarfile
+    from concurrent.futures import ProcessPoolExecutor
+    have = store.listing(f"betfair_historic/raw/{sport_dir(sport)}/")
     import pandas as pd
+    out = {"files": 0, "stored": 0, "already": 0, "unreadable": 0, "years": {}}
+    by_year: dict[int, list] = {}                         # a frame a batch: a dict a runner would not fit in memory
+
+    def members():
+        with tarfile.open(path) as t:
+            for m in t:
+                if m.isfile() and m.name.endswith(".bz2"):
+                    yield "/" + m.name.lstrip("./"), t.extractfile(m).read()
+
+    def put(item):
+        key = raw_key(sport, item[0])
+        if key in have:
+            return 0
+        store.put(key, item[1])
+        return 1
+
+    batch: list[tuple[str, bytes]] = []
+
+    def flush(pool, ex):
+        nonlocal batch
+        stored = list(ex.map(put, batch))
+        out["stored"] += sum(stored)
+        out["already"] += len(stored) - sum(stored)
+        if build_tables:
+            got: dict[int, list[dict]] = {}
+            for name, rows in pool.map(_parse_logged, batch, chunksize=64):
+                if rows is None:
+                    out["unreadable"] += 1
+                    continue
+                y = path_year(name)
+                if y is not None:
+                    got.setdefault(y, []).extend(rows)
+            for y, rows in got.items():
+                by_year.setdefault(y, []).append(pd.DataFrame(rows))
+        batch = []
+
+    with ThreadPoolExecutor(max_workers=workers) as ex, ProcessPoolExecutor() as pool:
+        for item in members():
+            batch.append(item)
+            out["files"] += 1
+            if len(batch) >= 5000:
+                flush(pool, ex)
+                log.info("%s: %d files read, %d stored", path, out["files"], out["stored"])
+        if batch:
+            flush(pool, ex)
+    held = [path_year(k) for k in store.listing(f"betfair_historic/raw/{sport_dir(sport)}/")]
+    for y, frames in sorted(by_year.items()):
+        key = f"betfair_historic/markets_{sport_dir(sport)}_{y}.parquet"
+        old = store.get_parquet(key)
+        df = pd.concat(([old] if old is not None and len(old) else []) + frames, ignore_index=True)
+        df = _tidy(df).drop_duplicates(["market_id", "selection_id", "handicap"], keep="last")
+        store.put_parquet(key, df)
+        _note_built(store, sport, y, held.count(y))
+        out["years"][y] = {"markets": int(df["market_id"].nunique()) if len(df) else 0, "runners": len(df),
+                           "with_close": int(df["ltp_close"].notna().sum()) if len(df) else 0}
+    log.info("imported %s: %s", path, out)
+    return out
+
+
+NUMERIC = ("bsp", "handicap", "sort_priority", "number_of_winners", "won", "ltp_first", "ltp_close") + tuple(
+    f"ltp_{k}" for k in MARKS_MIN)
+
+
+def _tidy(df):
+    """One type a column: Betfair writes a missing price as the text "NaN" (or "Infinity") beside numbers."""
+    import pandas as pd
+    for c in NUMERIC:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    for c in ("turned_in_play", "bsp_market"):
+        if c in df.columns:
+            df[c] = df[c].astype("boolean")
+    return df
+
+
+def _manifest_key(sport: str, year: int) -> str:
+    return f"betfair_historic/built_{sport_dir(sport)}_{year}.json"
+
+
+def _note_built(store: Store, sport: str, year: int, files: int) -> None:
+    store.put(_manifest_key(sport, year), json.dumps({"files": files}).encode())
+
+
+def _built_files(store: Store, sport: str, year: int) -> int | None:
+    raw = store.get(_manifest_key(sport, year))
+    try:
+        return int(json.loads(raw)["files"]) if raw else None
+    except (ValueError, KeyError):
+        return None
+
+
+def build(store: Store, sports: list[str] | None = None, years: list[int] | None = None, force: bool = False,
+          workers: int = 16) -> dict:
+    """The closing-price tables, a sport and year each, from the raw files (the year in the service's path). A
+    sport-year whose file count is the one its table was last built from is left as it is, unless ``force``."""
+    import pandas as pd
+    from concurrent.futures import ProcessPoolExecutor
     out = {}
     for sport in sports or list(PLAN_SCOPE):
         by_year: dict[int, list[str]] = {}
@@ -263,21 +402,57 @@ def build(store: Store, sports: list[str] | None = None, years: list[int] | None
             if y is not None and (not years or y in years):
                 by_year.setdefault(y, []).append(k)
         for y, keys in sorted(by_year.items()):
-            rows, bad = [], 0
-            for k in sorted(keys):
-                try:
-                    rows += parse_market(store.get(k))
-                except Exception:
-                    bad += 1
-            df = pd.DataFrame(rows)
+            name = f"{sport_dir(sport)}_{y}"
+            if not force and _built_files(store, sport, y) == len(keys):
+                out[name] = {"files": len(keys), "unchanged": True}
+                continue
+            frames, bad = [], 0
+            keys = sorted(keys)
+            with ThreadPoolExecutor(max_workers=workers) as ex, ProcessPoolExecutor() as pool:
+                for i in range(0, len(keys), 5000):
+                    chunk = keys[i:i + 5000]
+                    raw = list(ex.map(store.get, chunk))
+                    rows = []
+                    for _, got in pool.map(_parse_logged, zip(chunk, raw), chunksize=64):
+                        if got is None:
+                            bad += 1
+                        else:
+                            rows += got
+                    frames.append(pd.DataFrame(rows))
+            df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
             if len(df):
-                df = df.drop_duplicates(["market_id", "selection_id", "handicap"], keep="last")
-            store.put_parquet(f"betfair_historic/markets_{sport_dir(sport)}_{y}.parquet", df)
-            out[f"{sport_dir(sport)}_{y}"] = {"files": len(keys), "unreadable": bad,
-                                              "markets": int(df["market_id"].nunique()) if len(df) else 0,
-                                              "runners": len(df),
-                                              "with_close": int(df["ltp_close"].notna().sum()) if len(df) else 0}
+                df = _tidy(df).drop_duplicates(["market_id", "selection_id", "handicap"], keep="last")
+            store.put_parquet(f"betfair_historic/markets_{name}.parquet", df)
+            _note_built(store, sport, y, len(keys))
+            out[name] = {"files": len(keys), "unreadable": bad,
+                         "markets": int(df["market_id"].nunique()) if len(df) else 0, "runners": len(df),
+                         "with_close": int(df["ltp_close"].notna().sum()) if len(df) else 0}
     log.info("betfair historic tables: %s", out)
+    return out
+
+
+IMPORT_QUEUE = "sources/betfair_imports.json"
+
+
+def import_queue(store: Store, queue: str = IMPORT_QUEUE, dest: str = ".") -> dict:
+    """The bundles listed in the queue file ([{"name", "url", "sport"}]), each imported once: a bundle the store
+    notes as imported (betfair_historic/imports/<name>.json) is not downloaded again."""
+    import subprocess
+    from pathlib import Path
+    out = {}
+    items = json.loads(Path(queue).read_text()) if Path(queue).exists() else []
+    for it in items:
+        name, url, sport = it["name"], it["url"], it["sport"]
+        marker = f"betfair_historic/imports/{name}.json"
+        if store.get(marker) is not None:
+            out[name] = "already imported"
+            continue
+        tar = Path(dest) / f"{name}.tar"
+        subprocess.run(["curl", "-sSL", "--retry", "5", "-C", "-", "-o", str(tar), url], check=True)
+        got = import_tar(store, str(tar), sport)
+        store.put(marker, json.dumps({**it, **got}, default=str).encode())
+        tar.unlink(missing_ok=True)
+        out[name] = got
     return out
 
 
@@ -291,6 +466,10 @@ def main(argv=None) -> int:
     ap.add_argument("--to", dest="date_to", default=None)
     ap.add_argument("--max-minutes", type=float, default=None)
     ap.add_argument("--root", default=None, help="a local folder in place of S3")
+    ap.add_argument("--import-tar", default=None, help="a bundle downloaded from the website (data.tar), with --sport")
+    ap.add_argument("--import-queue", nargs="?", const=IMPORT_QUEUE, default=None,
+                    help=f"import each bundle the queue file lists, once (default {IMPORT_QUEUE})")
+    ap.add_argument("--force", action="store_true", help="--build: rebuild every table, changed or not")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     store = Store(root=a.root)
@@ -305,8 +484,14 @@ def main(argv=None) -> int:
         if a.fetch:
             out["fetch"] = fetch(store, hd, sports, date.fromisoformat(a.date_from),
                                  date.fromisoformat(a.date_to) if a.date_to else None, a.max_minutes)
+    if a.import_tar:
+        if not sports or len(sports) != 1:
+            ap.error("--import-tar needs the bundle's one --sport, e.g. 'Greyhound Racing'")
+        out["import"] = import_tar(store, a.import_tar, sports[0])
+    if a.import_queue:
+        out["import_queue"] = import_queue(store, a.import_queue)
     if a.build:
-        out["build"] = build(store, sports)
+        out["build"] = build(store, sports, force=a.force)
     if not out:
         ap.print_help()
         return 1

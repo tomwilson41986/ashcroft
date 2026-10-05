@@ -131,6 +131,9 @@ python betfair_recorder.py --load-db --days 3
 python source_data.py --source all --fetch --build --report --max-minutes 280
 python betfair_historic.py --my-data
 python betfair_historic.py --fetch --max-minutes 60 && python betfair_historic.py --build
+# a bundle downloaded from the Historic Data website: list it in sources/betfair_imports.json (source-data.yml imports
+# each once), or import a local data.tar directly
+python betfair_historic.py --import-tar data.tar --sport "Greyhound Racing"
 # Every sport's markets and matched money (census), the ante-post books, greyhound and 2/3/4 TBP/each-way records
 python betfair_recorder.py --census-sports
 python betfair_recorder.py --antepost
