@@ -31,7 +31,7 @@ permissions:
 
 concurrency:
   group: greyhound-model
-  cancel-in-progress: true
+  cancel-in-progress: false      # a run takes an hour or more: a push queues behind it, never throws it away
 
 jobs:
   model:
