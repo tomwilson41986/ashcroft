@@ -74,7 +74,8 @@ def parse(raw: bytes, name: str) -> pd.DataFrame:
         text = raw.decode("latin-1")
     if text.lstrip()[:1] == "<":                                # an HTML refusal stored by mistake
         return pd.DataFrame()
-    d = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
+    # a few files (2015-17 most) carry a runner or race name with an unquoted comma: that row, not the file, is lost
+    d = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False, on_bad_lines="skip")
     d.columns = [c.strip().upper() for c in d.columns]
     market, day = file_day(name)
     out = pd.DataFrame({
@@ -117,10 +118,11 @@ def build(store: Store, years: list[int] | None = None) -> dict:
         if set(names) <= built:
             out[y] = {"files": len(names), "unchanged": True}
             continue
-        frames, bad = [], 0
+        frames, bad, read = [], 0, []
         for name in sorted(names):
             try:
                 frames.append(parse(_read_raw(store, files[name]), name))
+                read.append(name)
             except Exception as exc:
                 bad += 1
                 log.warning("%s not read (%s)", name, exc)
@@ -128,7 +130,7 @@ def build(store: Store, years: list[int] | None = None) -> dict:
         if len(df):
             df = df.drop_duplicates(["market", "event_id", "selection_id"], keep="last")
         store.put_parquet(f"greyhound_prices/prices_{y}.parquet", df)
-        store.put(mkey, json.dumps(sorted(names)).encode())
+        store.put(mkey, json.dumps(sorted(read)).encode())        # a file not read is tried again next build
         out[y] = {"files": len(names), "unreadable": bad, "runners": len(df),
                   "win_markets": int(df[df.market == "win"].event_id.nunique()) if len(df) else 0,
                   "gb_share": round(float((df.country == "GB").mean()), 3) if len(df) else 0}

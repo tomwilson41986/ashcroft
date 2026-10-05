@@ -97,3 +97,26 @@ def test_probabilities_sum_to_one_in_a_race_and_the_price_file_join_needs_the_wh
     assert against_price_files(pred, prices.iloc[:1])["markets"] == 0   # one runner of two: no whole race to score
     got = against_price_files(pred, prices)
     assert got["markets"] == 1 and got["runners"] == 2
+
+
+def test_a_greyhound_price_file_reads_track_trap_and_country_and_skips_a_broken_row(tmp_path):
+    from sources import greyhound_prices as gp
+    from sources.common import Store
+    head = ("EVENT_ID,MENU_HINT,EVENT_NAME,EVENT_DT,SELECTION_ID,SELECTION_NAME,WIN_LOSE,BSP,PPWAP,MORNINGWAP,PPMAX,"
+            "PPMIN,IPMAX,IPMIN,MORNINGTRADEDVOL,PPTRADEDVOL,IPTRADEDVOL\n")
+    rows = ("1,Romford 3rd Oct,A5 400m,03-10-2026 18:33,11,1. Goldcash Warrior,1,3.2,3.4,3.6,4,3,3,1.01,25.5,800,90\n"
+            "1,Romford 3rd Oct,A5 400m,03-10-2026 18:33,12,2. Bad, Name,0,5.1,5,5.2,6,4,5,4,10,300,20\n"
+            "2,AUS / Albion Park (AUS) 3rd Oct,R1 331m,03-10-2026 09:10,21,3. Zoom,0,7,7,7,8,6,7,6,5,100,1\n")
+    raw = tmp_path / "betfair_prices_raw"
+    raw.mkdir()
+    (raw / "dwbfgreyhoundwin04102026.csv").write_text(head + rows)
+    store = Store(root=tmp_path / "sources")
+    got = gp.build(store)
+    assert got[2026]["files"] == 1 and got[2026]["unreadable"] == 0 and got[2026]["runners"] == 2
+    t = store.get_parquet("greyhound_prices/prices_2026.parquet")
+    gb = t[t.track == "Romford"].iloc[0]
+    assert (gb.trap, gb.dog, gb.country, gb.race_time, gb.bsp, gb.morning_vol) == (1, "Goldcash Warrior", "GB",
+                                                                                  "18:33", 3.2, 25.5)
+    au = t[t.country == "AUS"].iloc[0]
+    assert au.track == "Albion Park" and au.trap == 3
+    assert gp.build(store)[2026] == {"files": 1, "unchanged": True}
