@@ -408,6 +408,92 @@ was never short.
   killed (fill-or-kill: the price had gone). Every race was settled from Betfair's record, with the BSP; the 21:45 UTC
   settling run started at 21:52 UTC.
 
+**The fifth full day** (5 Oct, a Monday; ledger `live-day-1005`). GitHub's scheduler created the 06:50 UTC session at
+07:20 UTC; the 07:05 UTC watchdog had already started it (07:07 UTC), and it traded from 08:08 UK to the last back at
+20:11 UK. The late scheduled run waited behind it and ran for a minute at 21:30 UK without trading. 299 backs were
+matched on 139 horses in 52 races at seven meetings (Kempton, Wolverhampton, Pontefract, Yarmouth, Killarney,
+Fairyhouse, Stratford), each laid at the SP for its winnings; one horse was withdrawn (GBP12.88 void).
+
+| Horse first backed | Horses | Races | Staked | Result before commission | CLV |
+|---|---|---|---|---|---|
+| By 11:00 UK | 71 | 36 | GBP2,404.79 | +93.58 | +5.1% |
+| After 11:00 UK | 68 | 37 | GBP1,477.70 | -15.10 | -2.9% |
+| **Day** | **139** | **52** | **GBP3,882.49** | **+78.48** | **+2.1%** |
+
+- **+GBP71.98 after commission** (GBP6.50 at 2%): the account went from GBP1,884.64 to GBP1,956.62. Ten of the 139
+  horses won.
+- **Non-runners.** Later withdrawals cut the settled price of 17% of the stake (GBP643 in nine races) by 2% to 13%: at
+  the fill prices the day's CLV was +2.9%, at Betfair's settled prices +2.0%.
+- **By time to the off** at the horse's first back:
+
+  | Time to the off | Horses | Staked | Result | CLV |
+  |---|---|---|---|---|
+  | Three hours or more | 77 | GBP2,511 | +45.17 | +3.3% |
+  | One to three hours | 34 | GBP844 | +33.45 | +0.1% |
+  | The last hour | 28 | GBP527 | -0.14 | -0.6% |
+
+- **The five days together**: 591 horses, GBP16,896.50 staked, CLV +3.2%, +507.78 before commission. After commission
+  the account went from GBP1,480.11 to GBP1,956.62 (+GBP476.51; the five days' results +GBP466.94).
+
+  | Horse first backed | Horses | Staked | CLV |
+  |---|---|---|---|
+  | By 11:00 UK | 259 | GBP9,086 | +6.7% |
+  | After 11:00 UK | 332 | GBP7,811 | -0.9% |
+  | Three hours or more before the off | 294 | GBP10,008 | +5.6% |
+  | One to three hours | 174 | GBP4,488 | -1.8% |
+  | The last hour | 123 | GBP2,401 | +2.2% |
+
+- **First fills and top-ups, at the settled price.** On 5 Oct the top-ups made more than the first fills: +2.9% (160
+  fills, GBP2,241, 58% of the stake) against +0.9% (GBP1,641). Over the five days the first fills made +4.6% (GBP7,328)
+  and the top-ups +2.0% (GBP9,569); the gap is 2.6 points (90% interval -0.8 to 5.9, resampled by horse), no longer
+  resolved.
+- **Against the closing model** (`fill_calibration.py`, 1-5 Oct, 1,291 fills in 204 races, at the settled price): all
+  fills +3.2% staked (90% +0.7% to +5.6%), 1.9 points under the expected CLV they were backed on (-4.2 to +0.5); first
+  fills +4.6% (+2.2% to +7.1%), 0.4 points under (-3.4 to +2.6); top-ups +2.0% (-1.4% to +5.5%), 3.1 points under
+  (-6.0 to +0.1). On 5 Oct the fills were backed at +5.1% expected and closed +2.0% staked.
+- **The replay of 1-4 Oct** (research-query run 37379755993, ledger `topup-policy-replay-1004`): settled on every
+  horse, scored on CLV x stake before commission, at each day's balance (4 Oct opened with GBP2,019.76). New horses
+  first came out GBP4 ahead of the live rule over the four days but was behind it on 1 and 3 Oct; no variant beat the
+  live rule on every day:
+
+  | Variant | 1 Oct | 2 Oct | 3 Oct | 4 Oct | Four days |
+  |---|---|---|---|---|---|
+  | New horses first | 158 | 60 | 213 | 229 | 661 |
+  | The live rule | 214 | 47 | 226 | 169 | 656 |
+  | Morning only | 149 | 125 | 149 | 200 | 623 |
+  | No backs in the last three hours | 139 | 91 | 167 | 213 | 610 |
+  | No backs in the last hour | 185 | 57 | 145 | 222 | 609 |
+  | Top-ups only at 6% | 169 | 74 | 155 | 137 | 535 |
+  | Top-ups at 6%, not in the last hour | 124 | 81 | 145 | 143 | 494 |
+  | A horse under 4.0 only at 6% expected CLV | 164 | 26 | 133 | 163 | 485 |
+  | A horse under 4.0 only at 10% expected CLV | 165 | 20 | 114 | 136 | 435 |
+  | No top-ups | 84 | 166 | 72 | 91 | 413 |
+
+  On 4 Oct, the day the late backs lost, new horses first, morning only and both variants without late backs were
+  ahead of the live rule, and the variants that cut the top-ups were behind it. With GBP5,000 in the account no
+  backs in the last hour was ahead on all four days, narrowly (GBP1,044 against GBP998), and new horses first was
+  the live rule (the order matters only when the money runs out). The live rule stays; any change to it is the
+  owner's.
+- **Funds and the limit.** The money bound, not the GBP4,000 day limit (turnover GBP3,895): the trader held new backs
+  each time the funds it read were spent, from 13:43 to 16:55 UK; 97 horses were held, 30 of them never backed. Betfair
+  refused one back for funds, and 73 were killed (fill-or-kill: the price had gone). Every race was settled from
+  Betfair's record, with the BSP; the 21:45 UTC settling run started at 21:50 UTC.
+- **The evening record.** For the first time the trader's job recorded tomorrow's markets from 17:00 to 21:30 UK:
+  6 Oct's 35 GB/IE win markets, 18 polls, 6,102 rows; the late look after the last race added 5 polls (1,695 rows).
+  The recorder's evening part ran once: the 10:10 UTC run waited for the session and ran from 20:31 to 21:22 UTC,
+  and the 06:55 UTC run, which waited behind the trader all day, stood down by itself at 20:30 UTC. The census of 6
+  Oct's racing found no new market type (win 35, place 35, other place 52, each way 34).
+- **The first evening read** (`evening_entry_check.py`, research-query run 37382868223, ledger `evening-before-1005`;
+  the replication and the coverage only, as one evening decides nothing). The replication is exact on the books the
+  trader read at its first step: 2-5 Oct, 16, 19, 14 and 11 horses, the same expected CLV. 5 Oct's evening record (4
+  Oct, 17:39 to 19:10 UK) held 54 win markets and 547 runners priced at 18:00 and at 19:00, 9% of whom were taken out
+  before the off; the model priced every runner in 49 of the races. The rule chose no horse at either mark because the
+  books had not formed: the best lay was a median 227 times the best back at 18:00 and 83 times at 19:00, against 1.4
+  to 1.8 times at the trader's first step each morning, so no runner reached the 3% bar. The query now reads the
+  evening's book without matched money, as the trader's feed does, and says why the rule chose what it did on each
+  book. The trader's own evening record (17:00 to 21:30 UK, from 6 Oct's racing) shows whether the books form later in
+  the evening.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
