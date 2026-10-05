@@ -15,7 +15,9 @@ it, and settles every horse from Betfair's price file for the day's racing:
 - not in the last hour: no backs within 60 minutes of the off;
 - not in the last three hours: none within 180 minutes;
 - morning only: 08:00 to 11:00 UK, the window the backtest tested;
-- top-ups at 6% and not in the last hour.
+- top-ups at 6% and not in the last hour;
+- short prices at 6% or 10%: a horse under 4.0 backed only at an expected CLV of 6% (or 10%) or more, since to-win
+  staking puts the most money on short prices and they earn the least CLV.
 
 Each runs at the day's opening balance (the funds binding, as live) and with GBP5,000 (the day limit binding). Each is
 scored on the CLV against the BSP and on CLV x stake (the expected value of the hedged backs, before commission), with
@@ -48,7 +50,7 @@ from trading.exchange import Book, Fill, Market, PaperExchange, Quote  # noqa: E
 from trading.matching import attach_ids  # noqa: E402
 from trading.session import HELD, Session  # noqa: E402
 
-DAYS = {date(2026, 10, 1): 1480.11, date(2026, 10, 2): 1668.30}      # each day's opening balance
+DAYS = {date(2026, 10, 1): 1480.11, date(2026, 10, 2): 1668.30, date(2026, 10, 3): 1712.60}  # opening balances
 POLICIES = {
     "live": {},
     "no_topups": {"no_topups": True},
@@ -58,6 +60,10 @@ POLICIES = {
     "not_last_3h": {"stop_before_off": 180},
     "morning_only": {"trade_until": "11:00"},
     "topups_6pc_not_last_hour": {"topup_bar": 0.06, "stop_before_off": 60},
+    # the short prices take the most money under to-win staking and earn the least CLV (backtest: under 3.0 38% of
+    # the stake at +3.7%, over 21.0 +19%; live 1-2 Oct: under 4.0 30% of the stake at -0.3%): a higher bar there
+    "short_6pc": {"short_price": 4.0, "short_bar": 0.06},
+    "short_10pc": {"short_price": 4.0, "short_bar": 0.10},
 }
 STALE = timedelta(minutes=6)                     # a book older than this is no book (the gaps between the sessions)
 pd.set_option("display.width", 250)
@@ -285,6 +291,9 @@ class PolicySession(Session):
         self._defer = None
 
     def execute(self, m, book, d, now):
+        sp = self.policy.get("short_price")
+        if sp is not None and d.price < sp and not (np.isfinite(d.edge) and d.edge >= self.policy["short_bar"]):
+            return                                              # a short price below its own, higher bar
         pos = self.positions.get((m.market_id, d.selection_id))
         if pos is not None and pos.matched > 0:                 # a top-up
             pol = self.policy
@@ -377,6 +386,8 @@ def replay(day: date, name: str, balance) -> dict:
 
 def score(led: pd.DataFrame, day, name, balance, holds, day_limit, settled_pnl) -> dict:
     """A replay's ledger scored: CLV against the BSP, the first fills and the top-ups apart, the horses held."""
+    need = ["event", "result", "error", "market_id", "selection_id", "matched", "avg_price", "bsp", "clv", "pnl"]
+    led = led.reindex(columns=list(dict.fromkeys([*led.columns, *need])))   # a policy that backed nothing logs nothing
     st = led[(led.event == "settle") & (led.result != "REMOVED")].copy()
     st["matched"], st["clv"], st["pnl"] = (pd.to_numeric(st[c], errors="coerce") for c in ("matched", "clv", "pnl"))
     ok = st[np.isfinite(st.clv) & (st.matched > 0)]

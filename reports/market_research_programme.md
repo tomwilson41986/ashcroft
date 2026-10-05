@@ -22,8 +22,8 @@ The holdout (1 Apr 2026 on) is read once, at stage 5, for the rule that is going
 
 | Market | Liquidity (median traded a runner) | Data held | Model now | Stage | Next |
 |---|---|---|---|---|---|
-| UK/IE win | GBP11.8k (UK), GBP4.7k (IE) | Betfair files from 2017, HRB from 2010, live books from 1 Oct | BFSP model + closing model | 6, live | entry time and top-ups: 1 Oct replayed, the live rule best with the account's money; 2 Oct next. Then the model and the closing model |
-| UK/IE place | GBP1.8k (UK), GBP0.7k (IE) | HRB place BSP from 2010; Betfair files from 2017 (place PPWAP sound; the other place columns placeholders) | none; the win-implied place chance | 1 passed at the SP (2 Oct); 5 failed at pre-play prices (ledger `place-rules-preplay-1002`): decided before the off only the long-shot lays keep an edge, +0.2% of the liability | the recorded books from 1 Oct (T-60 to T-5) for the price path; stage 3, a place model from our win probabilities, the remaining route |
+| UK/IE win | GBP11.8k (UK), GBP4.7k (IE) | Betfair files from 2017, HRB from 2010, live books from 1 Oct, evening books from 4 Oct | BFSP model + closing model | 6, live | entry time and top-ups: 1-2 Oct replayed, the live rule best with the account's money; 3 Oct next. Entry the evening before: recording (from 4 Oct). The closing model on the live fills: calibrated (1-3 Oct, ledger `closing-model-forward-1004`). Then the model |
+| UK/IE place | GBP1.8k (UK), GBP0.7k (IE) | HRB place BSP from 2010; Betfair files from 2017 (place PPWAP sound; the other place columns placeholders) | none; the win-implied place chance | 1 passed at the SP (2 Oct); 5 failed at pre-play prices (ledger `place-rules-preplay-1002`): decided before the off only the long-shot lays keep an edge, +0.2% of the liability. 3 closed (3 Oct, ledger `place-model-stage3-1003`): our forecast adds nothing beyond the place SP (+0.00002 log loss) and no rule decided before the off finds value at the place SP | closed (3 Oct, ledger `place-clv-forward-1002`): stage 4 failed at morning prices. The morning book's best back sits a quarter to a third below the place SP and its best lay half again to twice above it; the win rule's horses lose 12.5% backed there (the field 17.0%). The recorder keeps the books |
 | UK/IE in-play offsets | in-running volume | IPMIN/IPMAX in the win files (sound); the place files hold placeholders | none | closed for win (2 Oct): every cell negative, both directions, train and test | place only with a live in-play recording, not planned |
 | SP bias (back or lay at the SP by segment) | the SP pool | HRB from 2010 | none | closed (2 Oct): the two cells chosen on 2010-17 did not hold on 2018-26Q1 | |
 | Greyhounds, UK and Australia (win, place) | GBP1.3k | files arriving from 2018 (the nightly archive) | none | 1 waits for the files | edge scan first; form data (GBGB results) only if the market alone shows something |
@@ -70,8 +70,16 @@ Next:
 
 1. Done: the place files' pre-play WAP is sound, the other place columns are not (ledger `place-fields-check-1002`).
    At those pre-play prices the place rules lose their edge (ledger `place-rules-preplay-1002`).
-2. The place market's price path from the recorder's books (T-60 to T-5, 1 Oct on), and the rules at T-15.
-3. The place model from our win probabilities (stage 3).
-4. The win rule's entry time and top-ups: 1 Oct replayed (the live rule earned the most with the account's money;
-   ledger `topup-policy-replay-1001`); 2 Oct once its price file is published.
+2. Done 3 Oct: the place market's morning prices and the place price at each live win back, against the place SP
+   (ledger `place-clv-forward-1002`). Neither side of the morning book closes in our favour; the place market is
+   closed. The T-15 rules decide nothing on two days.
+3. Done 3 Oct: the place model from our win probabilities (stage 3). It adds nothing beyond the place SP, and no rule
+   decided before the off finds value there (ledger `place-model-stage3-1003`). Only a closing-line trade is left for
+   place: the win rule's horses close shorter than the field there too, and item 2 reads it at the morning price.
+4. Done 3 Oct: the win rule's entry time and top-ups on 1-2 Oct (ledger `topup-policy-replay-1002`). No variant beat
+   the live rule on both days at the account's money; the short-price bars did worst. Replayed again as days accrue.
 5. When the archive has them: the same scans on the greyhound and Australian files.
+6. The owner's question of 4 Oct: the win rule entered the evening before, even at 7pm (ledger
+   `evening-before-1004`). No history holds an evening price, so tomorrow's win markets are recorded from 4 Oct
+   (17:00-21:30 UK from 5 Oct). The replication of the trader's plan is exact (2-3 Oct); the first read comes after a
+   few evenings, from about 8 Oct.

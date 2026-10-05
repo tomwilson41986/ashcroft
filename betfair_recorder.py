@@ -21,6 +21,8 @@ job (daily-results.yml, the one job that writes the database) loads them into ho
 Usage:
     python betfair_recorder.py --record --until 21:30          # snapshots to 21:30 UK (live-record.yml)
     python betfair_recorder.py --final --date 2026-09-30       # that day's settled books (BSP, winners)
+    python betfair_recorder.py --record --date 2026-10-06 --tag evening --market-types WIN --evening 17:00-21:30
+                                                               # 6 Oct's win markets, on the evening of 5 Oct
     python betfair_recorder.py --upload --date 2026-09-30      # copy the day's files to S3 now
     python betfair_recorder.py --load-db --days 3              # the nightly load, from S3 into horse_racing.db
 """
@@ -120,6 +122,18 @@ def uk_time_on(day: date, hhmm: str) -> datetime:
     from zoneinfo import ZoneInfo
     h, m = (int(x) for x in hhmm.split(":"))
     return datetime(day.year, day.month, day.day, h, m, tzinfo=ZoneInfo("Europe/London")).astimezone(timezone.utc)
+
+
+def evening_window(day: date, spec: str) -> tuple[datetime, datetime]:
+    """The evening before ``day``, between two UK times ("17:00-21:30"), in UTC: when ``day``'s markets are
+    recorded the evening before."""
+    try:
+        a, b = (uk_time_on(day - timedelta(days=1), s.strip()) for s in spec.split("-"))
+    except ValueError:
+        raise ValueError(f"an evening is two UK times, HH:MM-HH:MM, not {spec!r}") from None
+    if not a < b:
+        raise ValueError(f"the evening {spec!r} ends before it starts")
+    return a, b
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -456,10 +470,11 @@ def _interval(minutes_to_off: float, every_far: float, every_near: float, near_m
 def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float = 300.0, every_near: float = 60.0,
            near_minutes: float = 60.0, market_types=("WIN", "PLACE"), countries=("GB", "IE"),
            now=lambda: datetime.now(timezone.utc), sleep=time.sleep, refresh_minutes: float = 30.0,
-           event_type: str = HORSE_RACING) -> dict:
+           event_type: str = HORSE_RACING, wait_for_markets: bool = False) -> dict:
     """Snapshot the day's markets until ``until``: each market every ``every_far`` seconds, and every ``every_near``
     in its last ``near_minutes`` before the off; a market is left once it is in play or closed. The catalogue is read
-    again every ``refresh_minutes`` for markets added in the day."""
+    again every ``refresh_minutes`` for markets added in the day. With ``wait_for_markets`` a catalogue with nothing
+    in it yet does not end the record: tomorrow's markets, recorded the evening before, are listed during the day."""
     from trading.exchange import uk_day_window
     start, end = uk_day_window(day)
     offs: dict[str, datetime] = {}
@@ -521,11 +536,11 @@ def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float 
                 log.warning("catalogue not read again (%s)", exc)
             next_refresh = t + timedelta(minutes=refresh_minutes)
         pending = [m for m in offs if m not in done]
-        if not pending:
+        if not pending and not (wait_for_markets and not offs):
             break
-        nxt = min((last[m] + timedelta(seconds=_interval((offs[m] - t).total_seconds() / 60.0, every_far, every_near,
-                                                         near_minutes)) - t).total_seconds()
-                  if m in last else 0.0 for m in pending)
+        nxt = min(((last[m] + timedelta(seconds=_interval((offs[m] - t).total_seconds() / 60.0, every_far, every_near,
+                                                          near_minutes)) - t).total_seconds()
+                   if m in last else 0.0 for m in pending), default=(next_refresh - t).total_seconds())
         sleep(min(60.0, max(5.0, nxt)))
     rec.maybe_upload(force=True)
     return {"markets": len(offs), "polls": polls, "rows": books, "left": len(offs) - len(done)}
@@ -754,11 +769,20 @@ def main(argv=None) -> int:
                     help="every sport's markets and matched money on the --date, saved beside the day's record")
     ap.add_argument("--antepost", action="store_true", help="snapshot every GB/IE ante-post win market once")
     ap.add_argument("--event-type", default=HORSE_RACING, help="Betfair event type: 7 horse racing, 4339 greyhounds")
-    ap.add_argument("--tag", default=None,
-                    help="the record's own files (books_<tag>.csv), e.g. other_place, greyhound; the nightly load "
-                         "reads the untagged and the trader's files only")
     ap.add_argument("--date", default=None, help="UK racing day, YYYY-MM-DD (default today)")
     ap.add_argument("--until", default="21:30", help="stop recording at this UK time")
+    ap.add_argument("--for-minutes", type=float, default=None,
+                    help="stop recording this many minutes from now instead (--until is read on --date, so an "
+                         "evening record of tomorrow's markets needs this)")
+    ap.add_argument("--tag", default=None,
+                    help="write the record to its own files (books_<tag>.csv): tomorrow's markets recorded the "
+                         "evening before (--tag evening), the other place markets (other_place), the greyhounds "
+                         "(greyhound, the default with --event-type 4339); the nightly load reads the untagged and "
+                         "the trader's files only")
+    ap.add_argument("--evening", default=None, metavar="HH:MM-HH:MM",
+                    help="record --date's markets the evening before, between these UK times on the day before "
+                         "(--date tomorrow --tag evening --evening 17:00-21:30): waits for the start, and goes on "
+                         "while nothing is listed yet")
     ap.add_argument("--every", type=float, default=300.0, help="seconds between snapshots of a market")
     ap.add_argument("--every-near", type=float, default=60.0, help="... in its last --near minutes")
     ap.add_argument("--near", type=float, default=60.0)
@@ -801,6 +825,22 @@ def main(argv=None) -> int:
     if not (a.record or a.final or a.upload):
         ap.print_help()
         return 1
+    window = None
+    if a.evening:
+        if not (a.record and a.tag) or a.final:
+            ap.error("--evening records (--record) to its own files (--tag), and the markets are not settled yet")
+        try:
+            window = evening_window(day, a.evening)
+        except ValueError as exc:
+            ap.error(str(exc))
+        now = datetime.now(timezone.utc)
+        if now >= window[1]:
+            print({"evening": "over", "until": window[1].isoformat()})
+            return 0
+        wait = (window[0] - now).total_seconds()
+        if wait > 0:                                   # before the login: an idle session would lapse
+            log.info("Waiting %.0f minutes for the evening's record of %s", wait / 60.0, day)
+            time.sleep(wait)
     tag = a.tag if a.tag is not None else ("greyhound" if a.event_type == GREYHOUNDS else "")
     if a.event_type != HORSE_RACING and not tag:
         ap.error("a sport other than horse racing needs its own --tag: the nightly load reads the untagged files")
@@ -812,8 +852,16 @@ def main(argv=None) -> int:
         data = BetfairData()
         data.login()
         if a.record:
-            print(record(day, uk_time_on(day, a.until), data, rec, a.every, a.every_near, a.near,
-                         tuple(a.market_types.split(",")), tuple(a.countries.split(",")), event_type=a.event_type))
+            if window:
+                until = window[1]
+            elif a.for_minutes:
+                until = datetime.now(timezone.utc) + timedelta(minutes=a.for_minutes)
+            else:
+                until = uk_time_on(day, a.until)
+            sport = {} if a.event_type == HORSE_RACING else {"event_type": a.event_type}
+            print(record(day, until, data, rec, a.every, a.every_near, a.near,
+                         tuple(a.market_types.split(",")), tuple(a.countries.split(",")),
+                         wait_for_markets=window is not None, **sport))
         if a.final:
             print({"final": final(day, data, rec)})
     return 0 if rec.errors == 0 else 2
