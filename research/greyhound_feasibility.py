@@ -6,9 +6,9 @@ calculated time, position, comment, grade, weight).
 
 Design, fixed before the first run:
 - each runner's features come only from runs before the race (GBGB, by dog id);
-- the model is a LightGBM classifier of "won" on the form features and the market's own view at T-1 minute
-  (log of the implied chance from the last traded price a minute before the off, and that chance's rank in the race),
-  its output normalised within each race;
+- the model is a LightGBM classifier of "won" that starts from the market's own view at T-1 minute (the log-odds of
+  the implied chance from the last traded price a minute before the off, normalised in the race) and learns the form
+  features' correction to it; its output normalised within each race;
 - fit: Jan-Apr 2026; the betting threshold is chosen on May-Jun; Jul-Sep is scored once, with the chosen rule;
 - the rule decides at T-1 on the model's chance and the T-1 price, backs at the Betfair SP (a MARKET_ON_CLOSE back),
   and is settled at the BSP with 2% commission on winnings; CLV is the T-1 price against the BSP.
@@ -192,19 +192,26 @@ def main(argv=None) -> int:
     m["mkt_p"] = race_norm(m, "mkt_p")
     m["mkt_logit"] = np.log(m.mkt_p / (1 - m.mkt_p))
     m["mkt_rank"] = m.groupby("market_id").mkt_p.rank(ascending=False)
-    X = feats + ["mkt_logit", "mkt_rank"]
     month = m.t.dt.month
     fit, val, test = m[month <= 4], m[month.isin([5, 6])], m[month >= 7]
     report = {"joined_markets": int(m.market_id.nunique()), "betfair_markets": int(w.market_id.nunique()),
               "split_markets": [int(x.market_id.nunique()) for x in (fit, val, test)]}
     params = dict(objective="binary", learning_rate=0.03, num_leaves=31, min_child_samples=200,
                   feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, lambda_l2=5.0, verbose=-1)
-    base = lgb.train(params, lgb.Dataset(fit[["mkt_logit", "mkt_rank"]], fit.won), 300)
-    model = lgb.train(params, lgb.Dataset(fit[X], fit.won), 600)
+    # the model learns the form's correction to the market: the market's T-1 view is its starting point (init_score),
+    # the form features the residual; rounds by early stopping on the fit window's last fifth (by time)
+    cut = fit.t.quantile(0.8)
+    tr, es = fit[fit.t < cut], fit[fit.t >= cut]
+    model = lgb.train({**params, "learning_rate": 0.02, "num_leaves": 15, "min_child_samples": 400},
+                      lgb.Dataset(tr[feats], tr.won, init_score=tr.mkt_logit),
+                      2000, valid_sets=[lgb.Dataset(es[feats], es.won, init_score=es.mkt_logit)],
+                      callbacks=[lgb.early_stopping(100, verbose=False)])
+    report["rounds"] = model.best_iteration
     for name, d in (("val", val), ("test", test)):
-        for tag, mdl, cols in (("market", base, ["mkt_logit", "mkt_rank"]), ("model", model, X)):
-            d[f"p_{tag}"] = mdl.predict(d[cols])
-            d[f"p_{tag}"] = race_norm(d, f"p_{tag}")
+        d["p_market"] = d.mkt_p
+        d["p_model"] = 1 / (1 + np.exp(-(d.mkt_logit + model.predict(d[feats], num_iteration=model.best_iteration,
+                                                                      raw_score=True))))
+        d["p_model"] = race_norm(d, "p_model")
         ll = {t: float(-np.mean(np.log(np.where(d.won == 1, d[f"p_{t}"], 1 - d[f"p_{t}"]).clip(1e-9))))
               for t in ("market", "model")}
         bsp_p = race_norm(d.assign(bp=1 / d.bsp), "bp")
@@ -225,7 +232,7 @@ def main(argv=None) -> int:
     sel = test[(test.edge > best[0]) & (test.ltp_t_1 <= best[1])]
     report["test"] = settle(sel)
     report["test_at_t1_price"] = settle(sel, "ltp_t_1")
-    imp = pd.Series(model.feature_importance("gain"), index=X).sort_values(ascending=False)
+    imp = pd.Series(model.feature_importance("gain"), index=feats).sort_values(ascending=False)
     report["top_features"] = {k: round(float(v / imp.sum()), 3) for k, v in imp.head(12).items()}
     txt = json.dumps(report, indent=1, default=str)
     print(txt)
