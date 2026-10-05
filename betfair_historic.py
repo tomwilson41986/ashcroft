@@ -347,13 +347,29 @@ def import_tar(store: Store, path: str, sport: str, workers: int = 16, build_tab
         key = f"betfair_historic/markets_{sport_dir(sport)}_{y}.parquet"
         old = store.get_parquet(key)
         df = pd.concat(([old] if old is not None and len(old) else []) + frames, ignore_index=True)
-        df = df.drop_duplicates(["market_id", "selection_id", "handicap"], keep="last")
+        df = _tidy(df).drop_duplicates(["market_id", "selection_id", "handicap"], keep="last")
         store.put_parquet(key, df)
         _note_built(store, sport, y, held.count(y))
         out["years"][y] = {"markets": int(df["market_id"].nunique()) if len(df) else 0, "runners": len(df),
                            "with_close": int(df["ltp_close"].notna().sum()) if len(df) else 0}
     log.info("imported %s: %s", path, out)
     return out
+
+
+NUMERIC = ("bsp", "handicap", "sort_priority", "number_of_winners", "won", "ltp_first", "ltp_close") + tuple(
+    f"ltp_{k}" for k in MARKS_MIN)
+
+
+def _tidy(df):
+    """One type a column: Betfair writes a missing price as the text "NaN" (or "Infinity") beside numbers."""
+    import pandas as pd
+    for c in NUMERIC:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    for c in ("turned_in_play", "bsp_market"):
+        if c in df.columns:
+            df[c] = df[c].astype("boolean")
+    return df
 
 
 def _manifest_key(sport: str, year: int) -> str:
@@ -405,7 +421,7 @@ def build(store: Store, sports: list[str] | None = None, years: list[int] | None
                     frames.append(pd.DataFrame(rows))
             df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
             if len(df):
-                df = df.drop_duplicates(["market_id", "selection_id", "handicap"], keep="last")
+                df = _tidy(df).drop_duplicates(["market_id", "selection_id", "handicap"], keep="last")
             store.put_parquet(f"betfair_historic/markets_{name}.parquet", df)
             _note_built(store, sport, y, len(keys))
             out[name] = {"files": len(keys), "unreadable": bad,

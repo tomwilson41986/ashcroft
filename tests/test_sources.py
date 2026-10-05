@@ -537,3 +537,12 @@ def test_the_queued_bundles_name_a_sport_the_service_knows():
     items = json.loads(open("sources/betfair_imports.json").read())
     assert items and all(it["sport"] in bh.PLAN_SCOPE and it["url"].startswith("https://") for it in items)
     assert len({it["name"] for it in items}) == len(items)
+
+
+def test_a_price_betfair_writes_as_text_is_read_as_missing(tmp_path):
+    df = bh._tidy(pd.DataFrame({"bsp": [2.5, "NaN", "Infinity", None], "market_id": ["1.1"] * 4,
+                                "turned_in_play": [True, None, False, True]}))
+    assert df["bsp"].iloc[0] == 2.5 and df["bsp"].iloc[1:].isna().iloc[0]
+    store = Store(root=tmp_path)
+    store.put_parquet("t.parquet", df)                                # the write that failed on 5 Oct
+    assert len(store.get_parquet("t.parquet")) == 4
