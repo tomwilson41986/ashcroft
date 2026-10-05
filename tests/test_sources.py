@@ -454,3 +454,86 @@ def test_greyhounds_need_their_own_tag_and_read_their_event_type(monkeypatch, tm
     assert seen == {"event_type": "4339", "books": "books_greyhound.csv"}
     with pytest.raises(SystemExit):
         br.main(["--record", "--event-type", "1", "--date", "2026-10-03"])
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# A bundle downloaded from the Historic Data website (the owner's data.tar of 5 Oct)
+# --------------------------------------------------------------------------------------------------------------------
+
+def _event_file():
+    """An event's own file: two markets in one stream (an ante-post market and a win market)."""
+    msgs = [{"op": "mcm", "pt": _ms(OFF - timedelta(days=1)), "mc": [
+                {"id": "1.7", "marketDefinition": {"eventId": "35", "eventTypeId": "4339", "marketType": "ANTEPOST_WIN",
+                                                   "marketTime": "2026-09-01T15:00:00.000Z",
+                                                   "runners": [{"id": 1, "status": "ACTIVE"}]},
+                 "rc": [{"ltp": 5.0, "id": 1}]},
+                {"id": "1.8", "marketDefinition": {"eventId": "35", "eventTypeId": "4339", "marketType": "WIN",
+                                                   "marketTime": "2026-09-01T15:00:00.000Z",
+                                                   "runners": [{"id": 1, "status": "ACTIVE"}, {"id": 2, "status": "ACTIVE"}]},
+                 "rc": [{"ltp": 3.0, "id": 1}, {"ltp": 1.5, "id": 2}]}]}]
+    return bz2.compress("\n".join(json.dumps(m) for m in msgs).encode())
+
+
+def _bundle(path):
+    import tarfile
+    with tarfile.open(path, "w") as t:
+        for name, body in (("BASIC/2026/Sep/1/35/1.5.bz2", _stream()), ("BASIC/2026/Sep/1/35/35.bz2", _event_file()),
+                           ("BASIC/2026/Sep/1/35/1.9.bz2", b"not a stream")):
+            info = tarfile.TarInfo(name)
+            info.size = len(body)
+            t.addfile(info, io.BytesIO(body))
+
+
+def test_an_event_file_reads_each_of_its_markets_apart():
+    rows = bh.parse_market(_event_file())
+    assert sorted((r["market_id"], r["selection_id"]) for r in rows) == [("1.7", 1), ("1.8", 1), ("1.8", 2)]
+    assert {r["market_id"]: r["market_type"] for r in rows} == {"1.7": "ANTEPOST_WIN", "1.8": "WIN"}
+    assert [r["ltp_close"] for r in rows if r["market_id"] == "1.8"] == [3.0, 1.5]
+
+
+def test_a_website_bundle_is_stored_as_the_api_would_and_its_table_built(tmp_path):
+    _bundle(tmp_path / "data.tar")
+    store = Store(root=tmp_path / "store")
+    got = bh.import_tar(store, str(tmp_path / "data.tar"), "Greyhound Racing", workers=2)
+    assert got["files"] == 3 and got["stored"] == 3 and got["unreadable"] == 1
+    assert got["years"][2026]["markets"] == 3                       # 1.5 (its own file), 1.7 and 1.8 (the event's)
+    raw = store.listing("betfair_historic/raw/greyhound_racing/")
+    assert "betfair_historic/raw/greyhound_racing/BASIC/2026/Sep/1/35/1.5.bz2" in raw
+    t = store.get_parquet("betfair_historic/markets_greyhound_racing_2026.parquet")
+    assert set(t["market_id"]) == {"1.5", "1.7", "1.8"}
+    # the nightly build finds the table built from these very files and leaves it
+    assert bh.build(store, ["Greyhound Racing"])["greyhound_racing_2026"] == {"files": 3, "unchanged": True}
+    # imported again: nothing stored twice, the table the same
+    again = bh.import_tar(store, str(tmp_path / "data.tar"), "Greyhound Racing", workers=2)
+    assert again["stored"] == 0 and again["already"] == 3 and again["years"][2026]["markets"] == 3
+
+
+def test_the_api_fetch_skips_a_file_a_bundle_already_brought(tmp_path):
+    store = Store(root=tmp_path)
+    store.put("betfair_historic/raw/tennis/BASIC/2026/Sep/1/35/1.5.bz2", _stream())
+    hd = FakeHistoric()
+    got = bh.fetch(store, hd, ["Tennis"], date(2026, 9, 1), date(2026, 9, 30), workers=1)
+    assert hd.downloads == ["/xds/BASIC/2026/Sep/1/35/1.6.bz2"] and got["skipped"] == 1
+
+
+def test_the_import_queue_takes_each_bundle_once(tmp_path, monkeypatch):
+    _bundle(tmp_path / "data.tar")
+    queue = tmp_path / "queue.json"
+    queue.write_text(json.dumps([{"name": "dogs", "sport": "Greyhound Racing", "url": "https://example/dl"}]))
+    runs = []
+
+    def fake_run(cmd, check):
+        runs.append(cmd)
+        import shutil
+        shutil.copy(tmp_path / "data.tar", cmd[cmd.index("-o") + 1])
+    monkeypatch.setattr("subprocess.run", fake_run)
+    store = Store(root=tmp_path / "store")
+    first = bh.import_queue(store, str(queue), dest=str(tmp_path))
+    assert first["dogs"]["stored"] == 3 and len(runs) == 1
+    assert bh.import_queue(store, str(queue), dest=str(tmp_path)) == {"dogs": "already imported"} and len(runs) == 1
+
+
+def test_the_queued_bundles_name_a_sport_the_service_knows():
+    items = json.loads(open("sources/betfair_imports.json").read())
+    assert items and all(it["sport"] in bh.PLAN_SCOPE and it["url"].startswith("https://") for it in items)
+    assert len({it["name"] for it in items}) == len(items)
