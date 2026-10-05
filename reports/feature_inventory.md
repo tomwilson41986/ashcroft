@@ -252,7 +252,7 @@ What the features do predict is the move from the morning price to BSP (joint Δ
 
 Most of the 13 missing proposals are cheap to build. Every fundamental feature tested so far adds nothing beyond BSP, though. So they are more likely to sharpen the BSP forecast behind the early-price trade than to make a rank-1 selection profitable.
 
-Two things cannot be built from this data, because it has no sectional or per-horse times (`RESEARCH_FRAMEWORK.md` §15.8):
+Two things cannot be built from this data, because it has no sectional or per-horse times (`RESEARCH_FRAMEWORK.md` §15.8). The Blandford repositories hold both (5 Oct 2026, `reports/external_data_review.md`):
 - B4, the closing-sectional proxy;
 - true per-horse speed figures.
 
