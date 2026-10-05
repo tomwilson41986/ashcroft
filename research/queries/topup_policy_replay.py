@@ -50,7 +50,8 @@ from trading.exchange import Book, Fill, Market, PaperExchange, Quote  # noqa: E
 from trading.matching import attach_ids  # noqa: E402
 from trading.session import HELD, Session  # noqa: E402
 
-DAYS = {date(2026, 10, 1): 1480.11, date(2026, 10, 2): 1668.30, date(2026, 10, 3): 1712.60}  # opening balances
+DAYS = {date(2026, 10, 1): 1480.11, date(2026, 10, 2): 1668.30, date(2026, 10, 3): 1712.60,
+        date(2026, 10, 4): 2019.76}  # opening balances
 POLICIES = {
     "live": {},
     "no_topups": {"no_topups": True},

@@ -40,7 +40,7 @@ pd.set_option("display.width", 250)
 pd.set_option("display.max_columns", 30)
 UK = "Europe/London"
 FIRST = date.fromisoformat(os.environ.get("EVENING_FROM") or "2026-10-05")   # the first day recorded the evening before
-LAST = date.fromisoformat(os.environ["EVENING_TO"]) if os.environ.get("EVENING_TO") else date.today() - timedelta(days=1)
+LAST = date.fromisoformat(os.environ.get("EVENING_TO") or "2026-10-05")   # 5 Oct, recorded 17:40-19:15 UK on 4 Oct
 LIVE_FROM = date.fromisoformat(os.environ.get("CHECK_FROM") or "2026-10-01")  # the trader's first full day
 MARKS = [("17:00", 17 * 60), ("18:00", 18 * 60), ("19:00", 19 * 60), ("20:00", 20 * 60), ("21:00", 21 * 60)]
 LATE = (21 * 60 + 35, 24 * 60 + 6 * 60)        # the recorder's look after the trader: 21:35 UK to 06:00 on the day
