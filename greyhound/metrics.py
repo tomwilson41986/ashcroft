@@ -175,6 +175,9 @@ class GreyhoundMetricsEngine:
         df["gsr"] = (df.std_time - (df.adjusted_time - df.variant)) / LENGTH_S
         df["esr"] = (df.std_sec - df.sectional) / LENGTH_S
         df["fsr"] = (df.std_runin - (df.runin - df.variant)) / LENGTH_S
+        # a figure more than 40 lengths from the standard is a bad time or a wrong distance in the source, not a run
+        for c in ("gsr", "esr", "fsr"):
+            df[c] = df[c].where(df[c].abs() <= 40)
         # a run spoiled at the start (hand-slipped, fell) or a trial is not a fair rating
         bad = df.comment.fillna("").str.contains(r"\(Handslip\)|Fell|Fll|BrkLine", case=False)
         for c in ("gsr", "esr", "fsr"):
