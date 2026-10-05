@@ -16,10 +16,11 @@ the betting model.
   | Data | Beyond Betfair SP on the winner | Cut in our model's BSP-forecast error |
   |---|---|---|
   | Sectionals (per-furlong times, finishing speed, stride) | Nothing | 1.2–1.4% in Flat/AW races; 1.7–1.8% with the same export's past ratings |
-  | Auction sale prices | Nothing | 2.7–3.2% in maidens and novice races |
+  | Auction sale prices | Nothing | 1.6% against the served model, on maidens and novice races after the file's date (t 2.1, 295 races); corrected the same day from 2.7–3.2%, which carried a look-ahead |
 
 - **What that means.** Neither tells us who wins beyond the market. Both make our price forecast closer to the closing price, and the closing price is what the live trade is paid on.
-- **The caveat.** Both gains are measured against the September out-of-sample file, an older model than the one serving today. The served model's gain will be smaller, and only an iteration on it, scored on CLV, can say how much.
+- **The caveat.** The sectional gains are measured against the September out-of-sample file, an older model than the one serving today, so the served model's gain will be smaller. The sale-price gain is measured against the served model itself, but on 295 races only.
+- **A correction (same day).** Timeform's horse files are snapshots (July 2025), and Timeform rewrites a horse's comment as its career grows: the sale clause survives in 97–99% of horses with three runs or fewer by the snapshot and 3% of those with sixteen or more. So for a race before the snapshot, whether its runner shows a price depends on how much it ran afterwards, which is the future. The first sale-price reading (2.7–3.2%) included such races. Read only on races after the snapshot, against the served model, it is 1.6%. Iteration 107 (the block on the served model) was cancelled for the same reason, because its training years carry the look-ahead; the block now reads nothing before the snapshot.
 - **Thrown away now.** Some of the most interesting data is discarded today:
   - Timeform's pre-race tips and flags, pace map and early-pace figure, which the paid API already returns;
   - the dated history of entries and declarations.
@@ -77,7 +78,9 @@ Both are cross-fitted: by calendar-month parity, and forward.
   - whether it was a breeze-up sale;
   - debut × price.
 - **Winner beyond the SP: nothing.** +0.3 ± 1.3 millinats per race (parity) and +1.3 ± 2.3 (forward). With our model added: +0.4 ± 1.3 and +1.5 ± 2.3.
-- **Forecast: a real cut.** Sale price cuts the within-race error of our log-BSP forecast in these races by 3.18% (t 8.9, parity) and 2.74% (t 3.9, forward). The served model's debut-market block (the yard as the market rated it) may already hold part of this; the next step measures that.
+- **Forecast, first reading (withdrawn).** 3.18% (t 8.9, parity) and 2.74% (t 3.9, forward). Most of these races came before the July 2025 snapshot, where a price's presence depends on the horse's later career (see the correction above), so these figures carry a look-ahead and are not the measure.
+- **Forecast, clean reading** (`reports/external_sales_screen_served.json`). On the served model's own out-of-sample predictions (iteration 106's base, 27 Sep 2025 to 31 Mar 2026, every race after the snapshot): 2,573 runners in 295 maidens and novice races, 97% in Timeform's file, 59% sold (median £38,250). Sale price cuts the within-race error of the served model's log-BSP forecast by 1.6% (t 2.1, parity), with nothing beyond the SP on the winner (+2.7 ± 7.3 millinats per race). The forward split had only 8 qualifying races and is not read.
+- **What the market makes of it** (`research/queries/done/sales_block_coverage.py`, run 37304363093). Over 2021 to March 2026, Timeform's file holds 95% of Flat maiden and novice runners, 22.5% of them sold before racing. In maidens, novice races and bumpers (runners with at most two runs), the dearer horse is the shorter one: the within-race rank correlation of price and Betfair SP is −0.45 (2,793 races). Favourites' median price is £42,500, sixth choice and beyond £17,000.
 
 ## What could not be tested, and why
 
@@ -87,8 +90,9 @@ Both are cross-fitted: by calendar-month parity, and forward.
 
 ## What to do, in order
 
-1. **Sale prices into the model.** Build a sales block from the Timeform horse files; they cover the whole development window. Run it as an iteration on the served model, scored on CLV.
-   - **Live source:** the horse files stop at July 2025, so this year's two-year-olds need a feed. The Timeform entries the scraper already pulls each morning return each horse's record, and its production comment carries the sale.
+1. **Sale prices into the model, from a point-in-time source.** The block is built (`model/blocks/sales.py`, reading nothing before the snapshot), and the clean reading is small so far (1.6%, 295 races). A snapshot cannot train it honestly, because the file's comments know each horse's later career.
+   - **The source that can:** the Timeform horse record as it stood on each race day. The scraper already fetches it every morning for that week's entries (`FindHorses`, kept in S3 under `raw/<date>/race_entries/`). If those files go back a season or more, they are the clean history; if not, keeping them from now builds it.
+   - **Live:** the same feed serves this year's two-year-olds, whom the July 2025 files do not hold.
 2. **Sectionals into the model.**
    - **For training:** ask the developer for a one-off export of `attheraces`, `racingtv` and `sectionsparsed` (UK/IE, one row per run) to S3.
    - **For serving:** use the site's twice-daily files, which hold every UK/IE runner since 18 April 2026.
