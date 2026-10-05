@@ -151,11 +151,21 @@ DROP_IN = [
     ("quant", "Quant metrics", "The yard's, rider's, sire's and horse's record against the Betfair SP read as a "
      "track record (Sharpe ratio, signed chi, A/E), and the horse's form as a return series (volatility, downside "
      "deviation, drawdown, the market's trend on it)", "built"),
+    ("sales", "Sale prices", "What the horse sold for before it ran (foal, yearling, breeze-up, store), from "
+     "Timeform's horse files, read only for races after the files' July 2025 snapshot", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
     ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
 ]
 
 BLOCK_EVIDENCE = {
+    "Sale prices": "Built 5 Oct from the Blandford scraper's Timeform horse files (reports/external_data_review.md). "
+                   "The files are July 2025 snapshots whose comments drop the sale clause as careers grow (kept by "
+                   "97-99% of horses with three runs or fewer, 3% with sixteen or more), so before the snapshot a "
+                   "price's presence depends on the horse's later career: the block reads nothing on or before "
+                   "3 Jul 2025, iteration 107 was cancelled before scoring, and the first screen (2.7-3.2%) is "
+                   "withdrawn. Clean, on the served model's own predictions after the snapshot: a 1.6% cut in the "
+                   "within-race BSP-forecast error in 295 maidens and novice races (t 2.1), nothing beyond the SP on "
+                   "the winner. Training it needs Timeform's horse records as they stood on race day. Not served.",
     "Quant metrics": "Built 30 Sep at the owner's ask (measures from the financial markets): the Sharpe ratio of "
                      "level-stake returns at the Betfair SP, the signed chi (z-score) of winners against the prices' "
                      "expectation and A/E for the trainer, jockey, the two together, the trainer at the course, the "
@@ -621,6 +631,16 @@ COMMENT_CLASS = {
 }
 CM_WINDOW = {"lr": "in the last run", "l3": "share of the last 3 runs", "l6": "share of the last 6 runs"}
 EXPLICIT_BLOCKS = {
+    "sl_known": "In Timeform's horse file (by name and foaling year); races after the July 2025 snapshot only",
+    "sl_sold": "Sold at a public sale before racing (1), known but not (0); after the snapshot only",
+    "sl_ln_price": "Log of its last sale price before racing, in pounds",
+    "sl_ln_yearling": "Log of its yearling sale price, in pounds",
+    "sl_ln_breeze": "Log of its two-year-old (breeze-up) sale price, in pounds",
+    "sl_ln_store": "Log of its store sale price (three- or four-year-old), in pounds",
+    "sl_kind": "Its last sale before racing: 0 foal, 1 yearling, 2 breeze-up, 3 store",
+    "sl_price_z": "Its log sale price against the field's, over the runners with one (z-score)",
+    "sl_price_rank": "Its rank by sale price among the priced runners, 1 the dearest, as a share of them",
+    "sl_race_sold_share": "The share of the field known to have sold before racing",
     "cm_excuse_close": "An excuse last time and beaten 5 lengths or less",
     "cm_excuse_nfp": "An excuse last time x its normalised finishing position",
     "cm_noexcuse_poor": "No excuse last time and in the bottom half of the field",
