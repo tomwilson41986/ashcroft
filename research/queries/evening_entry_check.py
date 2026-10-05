@@ -23,6 +23,7 @@ import gzip
 import io
 import os
 import sys
+from dataclasses import replace
 from datetime import date, timedelta
 
 import boto3
@@ -34,7 +35,7 @@ import betfair_prices as bp  # noqa: E402
 from trading.config import load_config  # noqa: E402
 from trading.exchange import Market  # noqa: E402
 from trading.matching import attach_ids  # noqa: E402
-from trading.strategy import RunnerView, plan_race  # noqa: E402
+from trading.strategy import RunnerView, _market_price, plan_race  # noqa: E402
 
 pd.set_option("display.width", 250)
 pd.set_option("display.max_columns", 30)
@@ -155,6 +156,52 @@ def cut(rows, rem, t_col="t"):
                      for m, t in zip(rows.market_id, rows[t_col])])
 
 
+def _views(mid, g, prices, blind):
+    """One market's runners as the trader's plan reads them."""
+    return [RunnerView(selection_id=int(r.selection_id), name=str(r.selection_id),
+                       model_price=prices.get((mid, int(r.selection_id))),
+                       back=float(r.back1) if r.back1 > 1 else None,
+                       back_size=float(np.nan_to_num(r.back1_size)),
+                       lay=float(r.lay1) if r.lay1 > 1 else None,
+                       last_traded=float(r.last_traded) if r.last_traded > 1 else None,
+                       status=str(r.runner_status),
+                       traded=0.0 if blind else float(np.nan_to_num(r.runner_total_matched)))
+            for r in g.itertuples()]
+
+
+def reach(snap, prices):
+    """Why the rule chose what it did on a book, read blind as the trader reads it: of the races it reads (every
+    runner priced by the model), those it skips because the market cannot price a runner (no back, lay or last
+    traded price), and on the rest each runner in the price range with its expected CLV at the best back (the
+    trader's own plan with the bar set aside: cfg.clv_bar -1), beside the book's back-lay spread and back size."""
+    open_bar = replace(cfg, clv_bar=-1.0)
+    snap = snap[snap.market_id.isin({m for m, _ in prices})]
+    races, unmarketed, evs, best = 0, 0, [], []
+    for mid, g in snap.groupby("market_id"):
+        views = _views(mid, g, prices, True)
+        active = [v for v in views if v.status == "ACTIVE"]
+        if len(active) < 2 or any(not (v.model_price and v.model_price > 1) for v in active):
+            continue
+        races += 1
+        if any(_market_price(v) is None for v in active):
+            unmarketed += 1
+            continue
+        e = np.array([d.edge for d in plan_race(views, open_bar, lim.bank)], float)
+        e = e[np.isfinite(e)]
+        evs.append(e)
+        if len(e):
+            best.append(e.max())
+    e = np.concatenate(evs) if evs else np.array([])
+    act = snap[snap.runner_status.eq("ACTIVE")]
+    two = act[(act.back1 > 1) & (act.lay1 > 1)]
+    return (f"{races} races read, {unmarketed} skipped for a runner the market cannot price; in the rest "
+            f"{len(e)} runners in the price range, {int((e >= cfg.clv_bar).sum())} at the {cfg.clv_bar:.0%} bar "
+            f"(expected CLV median {np.median(e) if len(e) else np.nan:+.3f}, each race's best: median "
+            f"{np.median(best) if best else np.nan:+.3f}, highest {max(best) if best else np.nan:+.3f}); "
+            f"lay/back median {(two.lay1 / two.back1).median():.2f} on {len(two)} runners with both, "
+            f"size at the best back median GBP{act.back1_size[act.back1 > 1].median():.0f}")
+
+
 def plan(snap, prices, blind=False):
     """The live rule on each market's book: the trader's own plan, and what the best back's size would match. Like
     the trader, only the win markets the day's model prices carry are read. blind: read the book as the trader's
@@ -163,15 +210,7 @@ def plan(snap, prices, blind=False):
     rows, n_races, unpriced = [], 0, 0
     snap = snap[snap.market_id.isin({m for m, _ in prices})]
     for mid, g in snap.groupby("market_id"):
-        views = [RunnerView(selection_id=int(r.selection_id), name=str(r.selection_id),
-                            model_price=prices.get((mid, int(r.selection_id))),
-                            back=float(r.back1) if r.back1 > 1 else None,
-                            back_size=float(np.nan_to_num(r.back1_size)),
-                            lay=float(r.lay1) if r.lay1 > 1 else None,
-                            last_traded=float(r.last_traded) if r.last_traded > 1 else None,
-                            status=str(r.runner_status),
-                            traded=0.0 if blind else float(np.nan_to_num(r.runner_total_matched)))
-                 for r in g.itertuples()]
+        views = _views(mid, g, prices, blind)
         active = [v for v in views if v.status == "ACTIVE"]
         if len(active) < 2:
             continue
@@ -269,6 +308,8 @@ while day <= LAST:
     for label, ks in (("only the replication", sorted(mine - theirs)), ("only the trader", sorted(theirs - mine))):
         if ks:
             print(f"   {label}: {ks[:6]}")
+    if n_races:
+        print(f"   the book then: {reach(snap, prices)}")
     day += timedelta(days=1)
 
 # ---------------------------------------------------------------------------------------------- the evenings
@@ -302,6 +343,7 @@ while day <= LAST:
               f" UTC, {len(a)} runners priced; the rule read {n_races} races ({unpriced} with a runner unpriced) "
               f"and chose {len(ours)} as the trader would read the book (no matched money), {len(seen)} with the "
               f"recorded matched money (the GBP100 floor a runner)")
+        print(f"      why: {reach(snap, prices)}")
         if len(ours):
             ours = ours.merge(bsp, on=KEY, how="left")
             ours["reduction"] = cut(ours, rem)
