@@ -105,29 +105,50 @@ The rule is to back at the first traded price where the model's edge there excee
 At T-1 the same rule makes about nothing at the T-1 price, and +1.8% to +2.5% at BSP, with lower bounds just
 above zero. The first traded price can be thin: the bundle shows no volume behind it, so these fills are unverified.
 
-**The price files (2021-2026): morning WAP with its traded volume**
+**The price files (2021-2026): morning WAP with its traded volume** (CI run 37316328027, the corrected scoring;
+`reports/greyhound_model_ci_1005.json`)
 
-Morning volume per runner is £0 at the median and £263 at the 90th percentile. Pre-play volume is £2,213 at the
-median.
+The joins are sound: 244,933 markets matched GBGB's races, and the file's result disagrees with GBGB's in only 219
+of them, which are dropped.
 
-| Morning rule | Bets/day | At the morning WAP | CLV | The same bets at BSP |
+The prices are sparser than they looked:
+- **The pre-play WAP is empty** in every greyhound file (0% of runners priced), so it cannot be scored.
+- **The morning WAP prices 14.7% of runners**, and every runner in only 11.1% of markets. Morning volume per runner
+  is £0 up to the 75th percentile and £259 at the 90th. Pre-play volume is £2,213 at the median.
+
+Where the morning WAP prices the whole field, it is a real price. It scores 0.4315 against the model's 0.4438 on
+the same markets, and the BSP's 0.4248 across all of them. The broken 1.78 in the first run came from normalising it
+over part of a field.
+
+The morning rules: back a dog at its morning WAP where the model's edge there exceeds the threshold.
+
+| Morning rule | Bets/day | At the morning WAP (90%) | CLV vs BSP | The same bets at BSP (90%) |
 |---|---|---|---|---|
-| edge > 0.3, any volume | 13.5 | +8.2% (+5.2 to +11.2) | +4.7% | +7.5% |
-| edge > 0.x, volume >= £20 or £100 | | -14% to -20% | about -20% | +4% to +12.6% |
+| edge > 0.2, any volume | 17.7 | +5.4% (+2.9 to +7.9) | +2.3% | +6.4% (+1.0 to +11.8) |
+| edge > 0.3, any volume | 13.5 | +8.1% (+5.1 to +11.1) | +4.7% | +7.4% (+0.5 to +14.3) |
+| edge > 0.2, volume >= £20 | 11.2 | -15.1% | -19.6% | +10.4% (+2.0 to +18.8) |
+| edge > 0.2, volume >= £100 | 10.7 | -18.6% | -23.1% | +6.2% (+2.0 to +10.5) |
 
-The morning figures in this run are not to be trusted:
-- The morning WAP's log-loss came out at 1.78, and the pre-play WAP's could not be computed. Both were normalised
-  over races where only some runners had traded, and a WAP on two dogs of six says nothing about the race.
-- Morning prices shorter than BSP by 20% on dogs the model calls value is not a market reading of the same race.
+The traded morning prices are about 20% shorter than the BSP on these dogs: they are dogs that drift, and backing
+them in the morning loses. The positive at-BSP returns come with very wide intervals, because the BSP is uncapped and
+a few long-priced winners carry them.
 
-The scoring now:
-- reads each price only on the markets where it prices every runner;
-- reports how many runners and markets each price covers;
-- drops any market whose result in the file disagrees with GBGB's, because a join to the wrong race would score
-  one race's prices against another's result;
-- reports the main morning rule year by year.
+By year, the morning rule (edge > 0.2, any volume):
 
-The next CI run gives the corrected figures.
+| Year | Bets/day | At the morning WAP (90%) | CLV | At BSP (90%) |
+|---|---|---|---|---|
+| 2021 | 24.1 | +3.4% (-2.3 to +9.1) | +5.1% | +0.5% (-5.9 to +6.8) |
+| 2022 | 24.2 | +12.1% (+7.0 to +17.1) | +9.3% | +1.3% (-3.9 to +6.6) |
+| 2023 | 22.4 | +14.5% (+9.1 to +19.8) | +7.3% | +8.6% (+2.7 to +14.5) |
+| 2024 | 12.8 | -1.6% (-8.4 to +5.2) | -6.0% | +28.0% (-7.8 to +63.7) |
+| 2025 | 11.6 | -8.3% (-15.4 to -1.2) | -5.4% | -5.9% (-13.9 to +2.2) |
+| 2026 | 11.2 | -3.8% (-12.4 to +4.8) | -13.5% | +12.3% (+1.2 to +23.4) |
+
+**The morning edge was there in 2021-2023 and has gone since 2024.** CLV turns negative, the bets fall to half as
+many, and this is the same period in which the model falls further behind the BSP. In 2026 the first-traded-price
+rule on the Betfair bundle still shows +7.9% at that price. It is a different price, though, often the first
+matched bet of a thin market, and the price files say that a morning price which traded in volume did not beat the
+BSP in 2024-2026.
 
 **What the full history says**
 
@@ -141,8 +162,10 @@ The next CI run gives the corrected figures.
 
 ## 5. Next
 
-1. The corrected price-file scores (whole-field prices, result-checked joins, by year) from the next CI run.
-2. Why the model falls behind the BSP by year: refit on recent years only, and check the feature drift.
-3. If the early rule holds: the recorded GB greyhound books (from 5 Oct) for the depth at the time a bet would go
-   in, then a paper forward test with thresholds fixed in advance, then small stakes, with the same gates as the
-   horse rule.
+1. **Why the model falls behind the BSP from 2023.** Check whether GBGB's data changed (the coverage of sectionals and
+   calculated times, comments, grading, the meetings held). Refit on a rolling recent window rather than everything
+   since 2019. Check the drift of the features that matter most.
+2. **The first traded price, with its depth.** The recorded GB greyhound books (from 5 Oct) show what was on offer
+   when a bet would have gone in. Only that can say whether the bundle's first-price returns could have been taken.
+3. **The at-BSP returns:** cap the BSP, then check by price band and track before reading anything into them.
+4. Only after all three, a paper forward test with thresholds fixed in advance.
