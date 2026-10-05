@@ -51,7 +51,7 @@ def table(tmp_path, monkeypatch):
 
 
 def test_a_race_by_hand(table):
-    race = pd.DataFrame({"raceid": "r1", "race_date": pd.Timestamp("2025-06-01"), "race_time": "2.00",
+    race = pd.DataFrame({"raceid": "r1", "race_date": pd.Timestamp("2025-08-01"), "race_time": "2.00",
                          "track": "York", "horse_name": ["Alpha (IRE)", "Beta", "Gamma", "Delta", "Echo", "Zulu"],
                          "horse_age": [3, 3, 3, 3, 3, 3]})
     out = sales.build(race).set_index("horse_name")
@@ -71,3 +71,13 @@ def test_a_race_by_hand(table):
     assert np.isnan(out.loc["Gamma", "sl_price_z"])
     # Four known, three of them sold
     assert out["sl_race_sold_share"].iloc[0] == pytest.approx(0.75)
+
+
+def test_nothing_is_read_on_or_before_the_snapshot(table):
+    """The file is a snapshot whose sale clauses depend on careers run after a race before it."""
+    race = pd.DataFrame({"raceid": ["a", "a", "b", "b"], "race_time": "2.00", "track": "York",
+                         "race_date": pd.to_datetime(["2025-07-03", "2025-07-03", "2025-07-04", "2025-07-04"]),
+                         "horse_name": ["Alpha", "Beta", "Alpha", "Beta"], "horse_age": 3})
+    out = sales.build(race)
+    assert out.loc[:1, sales.FEATURES].isna().all().all()
+    assert out.loc[2, "sl_known"] == 1 and out.loc[2, "sl_ln_price"] == pytest.approx(np.log(100000))

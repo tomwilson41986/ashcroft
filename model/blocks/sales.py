@@ -24,9 +24,14 @@ by name alone when one horse in the file has it and its foaling year is within o
     sl_race_sold_share  the share of the field known to have sold
 
 Nothing here reads a result: the sale came before the horse's first run, and the
-field-relative readings use only the card. Live gap: the files stop in July 2025, so
-horses foaled in 2024 on (this year's two-year-olds) have no record until a Timeform
-horse feed serves one.
+field-relative readings use only the card. But the file itself is a snapshot (3 July
+2025), and Timeform rewrites a horse's comment as its career grows: the sale clause
+survives in 97-99% of horses with three runs or fewer by the snapshot and 3% of those
+with sixteen or more (sales-block-coverage-1005). Before the snapshot, then, whether a
+race's runner shows a price depends on how much it ran afterwards, which is the future.
+So every reading is missing for a race on or before SNAPSHOT: the block reads the file
+only as it stood before the race. Live gap: horses foaled in 2024 on (this year's
+two-year-olds) have no record until a Timeform horse feed serves one.
 """
 
 from __future__ import annotations
@@ -51,7 +56,10 @@ _ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 TABLE_PATH = os.path.normpath(os.path.join(_ROOT, "data", "external", "timeform_sales.csv.gz"))
 # The synthetic history the block tests run on has its own horses, which Timeform's file does not
 # hold; the tests read a fabricated table of them (mechanics only, never scored).
-TEST_REACH = {"TABLE_PATH": os.path.normpath(os.path.join(_ROOT, "tests", "fixtures", "sales_synthetic.csv"))}
+# The day the horse files were taken; a race on or before it reads nothing (see the docstring).
+SNAPSHOT = "2025-07-03"
+TEST_REACH = {"TABLE_PATH": os.path.normpath(os.path.join(_ROOT, "tests", "fixtures", "sales_synthetic.csv")),
+              "SNAPSHOT": "2000-01-01"}
 
 
 def norm_name(name) -> str:
@@ -94,6 +102,8 @@ def _match(df: pd.DataFrame, t: pd.DataFrame) -> pd.DataFrame:
 def build(df: pd.DataFrame) -> pd.DataFrame:
     n = len(df)
     rec = _match(df, _table(TABLE_PATH))
+    after = (pd.to_datetime(df["race_date"], errors="coerce") > pd.Timestamp(SNAPSHOT)).to_numpy()
+    rec.loc[~after, :] = np.nan                      # before the snapshot the file knows the future
     known = rec["has_comment"].notna().to_numpy()
     last = pd.to_numeric(rec["last_gbp"], errors="coerce").to_numpy(dtype=float)
     sold = np.isfinite(last) & (last > 0)

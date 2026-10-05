@@ -74,19 +74,35 @@ def load_sales(paths: list[str]) -> pd.DataFrame:
     return hd.loc[~dup, ["horse_norm", "foal_year", "price_gbp", "sale_kind", "has_comment"]]
 
 
+def load_table(path: str) -> pd.DataFrame:
+    """The sales block's extract, as load_sales returns it: young horses, a name two share read for neither."""
+    t = pd.read_csv(path, dtype={"name_norm": str})
+    t = t[t["foal_year"] >= 2021]
+    t = t[~t["name_norm"].duplicated(keep=False)]
+    kinds = {0: "foal", 1: "yearling", 2: "2yo", 3: "store"}
+    return pd.DataFrame({"horse_norm": t["name_norm"], "foal_year": t["foal_year"], "price_gbp": t["last_gbp"],
+                         "sale_kind": t["last_kind"].map(kinds), "has_comment": t["has_comment"].astype(bool)})
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--horses", nargs="+", required=True)
+    ap.add_argument("--horses", nargs="+", default=None)
     ap.add_argument("--oos", default="data/oos_predictions.csv")
+    ap.add_argument("--table", default=None,
+                    help="the sales block's extract (data/external/timeform_sales.csv.gz) instead of --horses")
+    ap.add_argument("--since", default="2024-08-01", help="first race date scored")
+    ap.add_argument("--forward-from", default="2025-06-01", help="the forward split's first scored date")
+    ap.add_argument("--max-prior", type=int, default=2,
+                    help="runs in the file before the race (-1: no limit, for a file that starts mid-season)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
 
-    sales = load_sales(args.horses)
+    sales = load_table(args.table) if args.table else load_sales(args.horses)
     s = build_sample(args.oos)
     s["prior_runs"] = s.groupby("horse_norm").cumcount()     # runs in the window before this one (sorted by date)
     s = s.merge(sales, on="horse_norm", how="left")
-    s = s[(s["race_type"].isin(["Maiden", "Novices"])) & (s["date"] >= "2024-08-01")].copy()
-    young = (s["foal_year"] >= 2022) & (s["prior_runs"] <= 2)
+    s = s[(s["race_type"].isin(["Maiden", "Novices"])) & (s["date"] >= args.since)].copy()
+    young = (s["foal_year"] >= 2022) & ((s["prior_runs"] <= args.max_prior) if args.max_prior >= 0 else True)
     cov = young.groupby(s["race"]).transform("mean") >= 0.8
     s = s[cov].sort_values(["date", "race"], kind="stable").reset_index(drop=True)
 
@@ -106,7 +122,7 @@ def main(argv=None) -> int:
 
     month = s["date"].dt.year.to_numpy() * 12 + s["date"].dt.month.to_numpy()
     even, odd = month % 2 == 0, month % 2 == 1
-    tr_fwd = (s["date"] < "2025-06-01").to_numpy()
+    tr_fwd = (s["date"] < args.forward_from).to_numpy()
     vals = {c: s[c].to_numpy(float) for c in feats}
     for split_name, splits, trm in (("parity", [parts_for(s, even, odd), parts_for(s, odd, even)], even | odd),
                                     ("forward", [parts_for(s, tr_fwd, ~tr_fwd)], tr_fwd)):
