@@ -70,9 +70,10 @@ def walk_forward(df: pd.DataFrame, features: list[str], folds: list[str], date_f
         t["rounds"] = m.best_iteration
         out.append(t)
         imp = pd.Series(m.feature_importance("gain"), index=features)
-        t.attrs["importance"] = (imp / imp.sum()).sort_values(ascending=False)
+        last_importance = (imp / imp.sum()).sort_values(ascending=False)
     pred = pd.concat(out, ignore_index=True)
-    pred.attrs["importance"] = out[-1].attrs["importance"] if out else pd.Series(dtype=float)
+    # set after the concat: pandas compares frames' attrs when it concatenates, and a Series there cannot be compared
+    pred.attrs["importance"] = last_importance if out else pd.Series(dtype=float)
     return pred
 
 
