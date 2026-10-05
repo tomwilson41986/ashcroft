@@ -1,0 +1,89 @@
+name: Greyhound model (walk-forward, full history)
+
+# The greyhound model on everything S3 holds (the owner's ask, 5 Oct 2026; reports/greyhound_model.md): GBGB results
+# from 2018 (sources/gbgb/), Betfair's greyhound price files from 2018 (built here into sources/greyhound_prices/ from
+# the UK server's archive), the owner's 2026 Historic Data bundle. The metrics engine, a walk-forward fit a year at a
+# time, the scores against the SP and the Betfair prices, and the early-market rules at the morning price with its
+# traded volume. Read-only on horse_racing.db (never touched); the report is the run's summary and artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: 'GBGB years to read, e.g. 2018-2026'
+        required: false
+        type: string
+        default: '2018-2026'
+      folds:
+        description: 'test period starts'
+        required: false
+        type: string
+        default: '2021-01,2022-01,2023-01,2024-01,2025-01,2026-01'
+  push:
+    branches: ['claude/dreamy-dirac-*']
+    paths:
+      - 'greyhound/**'
+      - 'sources/greyhound_prices.py'
+      - '.github/workflows/greyhound-model.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-model
+  cancel-in-progress: true
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          free -h
+      - name: Betfair greyhound price files into tables (incremental)
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 3600 python source_data.py --source greyhound_prices --build | tee prices_report.json
+      - name: Metrics, walk-forward fit and scores
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          YEARS: ${{ inputs.years || '2018-2026' }}
+          FOLDS: ${{ inputs.folds || '2021-01,2022-01,2023-01,2024-01,2025-01,2026-01' }}
+        run: |
+          if ! [[ "$YEARS" =~ ^[0-9]{4}-[0-9]{4}$ ]]; then echo "years must be YYYY-YYYY"; exit 1; fi
+          if ! [[ "$FOLDS" =~ ^[0-9]{4}-[0-9]{2}(,[0-9]{4}-[0-9]{2})*$ ]]; then echo "folds must be YYYY-MM,..."; exit 1; fi
+          mkdir -p out
+          python -m greyhound.model --years "$YEARS" --folds "$FOLDS" --from 2019-01-01 \
+            --save-pred out/greyhound_predictions.parquet --out out/greyhound_report.json
+      - name: Summary
+        if: always()
+        run: |
+          for f in prices_report.json out/greyhound_report.json; do
+            [ -f "$f" ] && { echo "## $f"; echo '```'; head -c 60000 "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-model-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90
