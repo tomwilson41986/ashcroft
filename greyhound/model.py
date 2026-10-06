@@ -233,36 +233,44 @@ def main(argv=None) -> int:
     ap.add_argument("--save-features", default=None)
     ap.add_argument("--save-pred", default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--compare", action="store_true",
+                    help="fit the base features and base + the parity block (greyhound/parity.py) on the same folds")
     a = ap.parse_args(argv)
     store = Store(root=a.store)
+    keys = sorted(k for k in store.listing("greyhound_prices/") if k.endswith(".parquet"))
+    prices = pd.concat([store.get_parquet(k) for k in keys], ignore_index=True) if keys else None
     eng = GreyhoundMetricsEngine()
     if a.features and Path(a.features).exists():
         df = pd.read_parquet(a.features)
-        feats = json.loads(Path(a.features + ".features.json").read_text())
+        sets = json.loads(Path(a.features + ".features.json").read_text())
     else:
         years = None
         if a.years:
             lo, hi = (int(x) for x in a.years.split("-"))
             years = list(range(lo, hi + 1))
-        df = eng.calculate_all(load_runs(store, years=years))
-        feats = eng.features
+        df = eng.calculate_all(load_runs(store, years=years), prices=prices)
+        sets = {"base": eng.block_features["base"], "all": eng.features}
         if a.save_features:
             df.to_parquet(a.save_features)
-            Path(a.save_features + ".features.json").write_text(json.dumps(feats))
-    pred = walk_forward(df, feats, a.folds.split(","), a.date_from)
-    importance = pred.attrs.pop("importance")          # off the frame: parquet writes attrs as JSON
-    report = {"features": len(feats), "score": score(pred)}
-    bf_key = "betfair_historic/markets_greyhound_racing_2026.parquet"
-    bf = store.get_parquet(bf_key)
-    if bf is not None:
-        report["betfair_2026"] = against_betfair(pred, bf)
-    keys = sorted(k for k in store.listing("greyhound_prices/") if k.endswith(".parquet"))
-    if keys:
-        prices = pd.concat([store.get_parquet(k) for k in keys], ignore_index=True)
-        report["price_files"] = against_price_files(pred, prices)
-    report["top_features"] = {k: round(float(v), 4) for k, v in importance.head(25).items()}
-    if a.save_pred:
-        pred.to_parquet(a.save_pred)
+            Path(a.save_features + ".features.json").write_text(json.dumps(sets))
+    if isinstance(sets, list):                              # a features file from before the blocks
+        sets = {"all": sets}
+    names = ["base", "all"] if a.compare and "base" in sets else ["all"]
+    bf = store.get_parquet("betfair_historic/markets_greyhound_racing_2026.parquet")
+    report = {"timings": getattr(eng, "timings", None), "sets": {}}
+    for name in names:
+        feats = sets[name]
+        pred = walk_forward(df, feats, a.folds.split(","), a.date_from)
+        importance = pred.attrs.pop("importance")          # off the frame: parquet writes attrs as JSON
+        r = {"features": len(feats), "score": score(pred)}
+        if bf is not None:
+            r["betfair_2026"] = against_betfair(pred, bf)
+        if prices is not None:
+            r["price_files"] = against_price_files(pred, prices)
+        r["top_features"] = {k: round(float(v), 4) for k, v in importance.head(30).items()}
+        report["sets"][name] = r
+        if a.save_pred and name == names[-1]:
+            pred.to_parquet(a.save_pred)
     txt = json.dumps(report, indent=1, default=str)
     print(txt)
     if a.out:
