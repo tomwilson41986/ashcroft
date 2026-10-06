@@ -51,7 +51,7 @@ def _runs(n_days=12, tracks=("Romford", "Hove"), seed=0):
 
 def test_every_metric_is_blind_to_its_own_race_and_its_day():
     runs = _runs()
-    eng = GreyhoundMetricsEngine()
+    eng = GreyhoundMetricsEngine(blocks=("parity", "hrb"))
     base = eng.calculate_all(runs)
     feats = eng.features
     last_day = runs.race_date.max()
@@ -66,7 +66,7 @@ def test_every_metric_is_blind_to_its_own_race_and_its_day():
     alt.loc[day, "comment"] = "VSAw,Crd1,Wide,Fdd"
     alt = clean(alt.drop(columns=["won", "placed2", "field", "grade", "grade_family", "sp_p", "sp_p_norm", "raceid",
                                   "t", "is_trial"]))
-    other = GreyhoundMetricsEngine().calculate_all(alt)
+    other = GreyhoundMetricsEngine(blocks=("parity", "hrb")).calculate_all(alt)
     a = base[base.race_id == target].sort_values("trap")[feats].reset_index(drop=True)
     b = other[other.race_id == target].sort_values("trap")[feats].reset_index(drop=True)
     pd.testing.assert_frame_equal(a, b, check_exact=False, rtol=1e-9)
@@ -219,3 +219,17 @@ def test_the_day_so_far_settles_the_paper_bets_on_the_result_and_reads_the_move_
     assert abs(p["pnl"] - ((2.5 - 1) * 0.98 * T.STAKE - T.STAKE)) < 0.01                # one won at 2.5, one lost
     assert abs(p["clv_vs_last%"] - 100 * ((2.5 / 2.0 - 1) + (4.0 / 2.2 - 1)) / 2) < 0.01
     assert list(s["primary_by_hour_uk"]) == ["19:00"]
+
+
+def test_head_to_head_counts_earlier_days_meetings_with_todays_field_only():
+    from greyhound.hrb import h2h, season_date
+    df = pd.DataFrame({"race_id": [1, 1, 1, 2, 2, 3, 3, 3], "race_date": ["2026-01-01"] * 3 + ["2026-01-02"] * 2
+                       + ["2026-01-03"] * 3, "dog_id": [10, 20, 30, 10, 20, 10, 20, 30],
+                       "position": [1, 2, 3, 2, 1, np.nan, np.nan, np.nan]})          # race 3: today's card
+    h = h2h(df)
+    a = h.loc[5]                                                                         # dog 10 in race 3
+    assert a.hb_h2h_meetings == 3 and a.hb_h2h_ahead == 2 and a.hb_h2h_opponents_met == 2
+    assert h.loc[7].hb_h2h_meetings == 2 and h.loc[7].hb_h2h_ahead == 0                  # dog 30: behind both, once
+    assert h.loc[3].hb_h2h_meetings == 1 and h.loc[3].hb_h2h_ahead == 1                  # race 2 reads race 1 only
+    assert h.loc[0].hb_h2h_meetings == 0                                                 # nothing before day 1
+    assert season_date("15.Sp.25") == pd.Timestamp("2025-09-15") and season_date("Suppressed") is None

@@ -95,7 +95,9 @@ def price_day(df: pd.DataFrame, booster, features: list[str], day: str) -> pd.Da
 # --------------------------------------------------------------------------------------------------------------------
 
 def book_marks(books: pd.DataFrame, markets: pd.DataFrame, day: date) -> pd.DataFrame:
-    """The recorder's marks (betfair_recorder.marks) and the first book recorded before the off."""
+    """The recorder's marks (betfair_recorder.marks) and the first price recorded before the off: the first book
+    that offers the dog at a price (a greyhound market is often listed hours before anyone offers a price in it, and
+    an empty book is not a price to take)."""
     from betfair_recorder import marks
     mk = marks(books, markets, day)
     b = books.copy()
@@ -106,7 +108,8 @@ def book_marks(books: pd.DataFrame, markets: pd.DataFrame, day: date) -> pd.Data
     b["minutes_to_off"] = (b.off - b.polled).dt.total_seconds() / 60.0
     pre = b[(b.source != "final") & (b.status == "OPEN") & b.inplay.astype(str).isin(["0", "False", "false"])
             & (b.minutes_to_off > 0)]
-    first = pre.sort_values("polled").drop_duplicates(["market_id", "selection_id"]).assign(mark="first")
+    priced = pre[pd.to_numeric(pre.back1, errors="coerce") > 1]
+    first = priced.sort_values("polled").drop_duplicates(["market_id", "selection_id"]).assign(mark="first")
     first["bsp"] = np.nan
     first["race_date"] = f"{day:%Y-%m-%d}"
     cols = ["market_id", "selection_id", "mark", "polled_utc", "minutes_to_off", "back1", "back1_size", "bsp"]
@@ -208,8 +211,11 @@ def intraday(store, day: date, df: pd.DataFrame, booster, meta: dict, s3=None, n
     priced = join_markets(pred, markets)
     mk = book_marks(books, markets, day)
     bets = paper_bets(priced, mk)
+    first = mk[mk.mark == "first"]
     out.update({"races_on_betfair": int(priced.race_id.nunique()),
-                "unmatched_tracks": sorted(set(pred.track) - set(priced.track))})
+                "unmatched_tracks": sorted(set(pred.track) - set(priced.track)),
+                "first_price_minutes_before_off": {q: round(float(first.minutes_to_off.quantile(q)), 1)
+                                                   for q in (0.1, 0.5, 0.9)} if len(first) else None})
     if not len(bets):
         out["note"] = "no paper bets yet"
         return out
@@ -245,6 +251,10 @@ def intraday_markdown(s: dict) -> str:
     lines = [f"## Greyhound paper trading today: {s.get('day')} (as of {s.get('as_of_utc')})", "",
              f"Races resulted: {s.get('races_resulted')}, on Betfair: {s.get('races_on_betfair', 0)}"
              + (f"; {s['note']}" if s.get("note") else ""), ""]
+    if s.get("first_price_minutes_before_off"):
+        q = s["first_price_minutes_before_off"]
+        lines += [f"The first price in a market came {q[0.5]} minutes before the off (median; 10% of runners {q[0.9]}+ "
+                  f"minutes, 10% under {q[0.1]})", ""]
     p = s.get("primary")
     if p:
         lines += [f"**Primary rule** (first recorded price, edge > 0.2, GBP{STAKE:g} paper): {p['filled']} bets, "

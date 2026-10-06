@@ -320,5 +320,13 @@ class GreyhoundMetricsEngine:
             self.block_features["parity"] = names
             feats += names
             self.timings["parity"] = round(time.monotonic() - clock, 1)
+        if "hrb" in self.blocks:
+            from greyhound import hrb
+            clock = time.monotonic()
+            cols, names = hrb.calculate(df, DogDays)
+            df = df.join(cols)
+            self.block_features["hrb"] = names
+            feats += names
+            self.timings["hrb"] = round(time.monotonic() - clock, 1)
         self.features = list(dict.fromkeys(feats))
         return df
