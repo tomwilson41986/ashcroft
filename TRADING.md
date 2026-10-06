@@ -494,6 +494,38 @@ Fairyhouse, Stratford), each laid at the SP for its winnings; one horse was with
   book. The trader's own evening record (17:00 to 21:30 UK, from 6 Oct's racing) shows whether the books form later in
   the evening.
 
+**The sixth full day** (6 Oct, a Tuesday; ledger `live-day-1006`). The 06:50 UTC session started at 07:06 UTC and
+traded from 08:00 UK until a GitHub internal error ended it at 10:47 UK (run 37427640563). The owner restarted it at
+13:55 UK (run 37466865912) and again at 15:25 UK, after PR #117 (run 37478841166); the 15:25 UK session took up the
+day's ledger (561 rows, GBP2,937.90 matched) and from then on read the live key's feed. It traded to 15 minutes before
+the last off and stopped at 21:35 UK.
+
+| Horse first backed | Staked | CLV |
+|---|---|---|
+| By 11:00 UK | GBP1,874.07 | +1.7% |
+| After 11:00 UK | GBP1,989.09 | +4.7% |
+| **Day** | **GBP3,886.75** | **+3.2%** |
+
+- **+GBP119.52 after commission** on 307 backs in 33 races, CLV +3.2% at Betfair's settled price (the 21:45 UTC
+  settling run started at 21:48 UTC, run 37536497358). The account opened at GBP1,956.62 and closed at GBP2,577.13.
+  The other GBP500.99 is not from trading: a deposit, by its size.
+- **For the first time the backs after 11:00 UK closed better than the morning's** (+4.7% against +1.7%). Over the
+  five days before, the morning held +6.7% against -0.9%.
+- **Funds and the limit.** The money bound again, not the GBP4,000 limit (turnover GBP3,886.75): 31 horses were held
+  for funds, 6 of them never backed. At the 15:25 UK restart GBP706.47 was free and GBP1,828.47 at risk. Betfair
+  refused one back for funds, and 55 were killed (fill-or-kill: the price had gone).
+- **The six days** (1-6 Oct): GBP20,783.25 staked, CLV about +3.2%, +GBP586.46 after commission.
+- **The records beside it**, from 15:25 UK:
+  - the win and place markets: 44 markets, 309 polls, 27,238 rows;
+  - the other-place markets: 59 markets, 37,763 rows;
+  - the greyhounds: 130 markets, 64,102 rows;
+  - the Tote: 35 races, 521 pool reads and 50 result reads, no errors;
+  - and, for the first time over the whole window, the evening record of 7 Oct's 38 win markets from 17:00 to 21:30
+    UK: 18 polls, 7,308 rows.
+
+  The day record held no BSP. Betfair sends none in a closed market's book, and the recorder reads it at the off from
+  7 Oct (ledger `recorder-bsp-1006`). The trader's CLV is unaffected: it takes the BSP from Betfair's cleared orders.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
@@ -525,19 +557,22 @@ non-interactive. The backtest behind the rule covered February-March 2026. Since
 November 2025 to March 2026 (4,342 races, 2% commission). Research query runs 37115884197 and 37134803377; ledger
 `to-win-five-months-1003` and `to-win-five-months-novol-1003`.
 
-**The live key (the owner's, 6 Oct).** The owner bought Betfair's live application key on 6 Oct. It goes in the
-GitHub secret `BETFAIR_LIVE_APP_KEY`, and only the trader's own process in `live-trade.yml` reads it. The market
-records beside the trader, and every other workflow, keep the delayed key (`BETFAIR_APP_KEY`), because Betfair permits
-no read-only use of live data (`tests/test_workflow_guards.py` holds the split). On the live key the feed reports each
-runner's matched money, so the trader reads the closing model fitted with volume (`data/models/closing_model.json`) and
-holds each runner to the GBP100 matched floor, as the backtest below did. Its log then says "The trader reads the live
-key's feed", and its backs stop saying "feed without volume". A lost session is logged into again, once
-(`trading/exchange.py`); a trading day is far inside Betfair's 24-hour session.
+**The live key (the owner's, 6 Oct).** The owner bought Betfair's live application key on 6 Oct. It goes in the GitHub
+secret `BETFAIR_LIVE_APP_KEY`, and only a trader's own process reads it (this trader in `live-trade.yml`, and from
+PR #117 the greyhound trader). The market records beside the trader, and every other workflow, keep the delayed key
+(`BETFAIR_APP_KEY`), because Betfair permits no read-only use of live data (`tests/test_workflow_guards.py` holds the
+split). On the live key the feed reports each runner's matched money, so the trader reads the closing model fitted
+with volume (`data/models/closing_model.json`) and holds each runner to the GBP100 matched floor, as the backtest
+below did. Its log then says "The trader reads the live key's feed", and its backs stop saying "feed without volume".
+A lost session is logged into again, once (`trading/exchange.py`); a trading day is far inside Betfair's 24-hour
+session.
 
-The trader is still on the delayed key: every back on 1-2 Oct logged "feed without volume". So it reads the closing
-model fitted without matched volume and holds no runner to the GBP100 floor. The live key's feed carries the volume.
+Until 15:25 UK on 6 Oct the trader read the delayed key's feed (every back on 1-2 Oct logged "feed without volume"),
+so it read the closing model fitted without matched volume and held no runner to the GBP100 floor. Since the owner's
+restart at 15:25 UK on 6 Oct (run 37478841166, with the secret set) it reads the live key's feed, and its log says so.
+The live key's feed carries the volume.
 
-| GBP of CLV a day, best expected CLV first (the session's order) | Delayed key (now) | Live key |
+| GBP of CLV a day, best expected CLV first (the session's order) | Delayed key (to 6 Oct) | Live key |
 |---|---|---|
 | CLV, money unconstrained | +6.6% (+6.1 to +7.1), 73 bets a day | +8.2% (+7.7 to +8.7), 63 bets a day |
 | GBP a day, money unconstrained | 214 | 240 |
