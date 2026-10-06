@@ -51,7 +51,7 @@ def _runs(n_days=12, tracks=("Romford", "Hove"), seed=0):
 
 def test_every_metric_is_blind_to_its_own_race_and_its_day():
     runs = _runs()
-    eng = GreyhoundMetricsEngine()
+    eng = GreyhoundMetricsEngine(blocks=("parity", "hrb"))
     base = eng.calculate_all(runs)
     feats = eng.features
     last_day = runs.race_date.max()
@@ -66,7 +66,7 @@ def test_every_metric_is_blind_to_its_own_race_and_its_day():
     alt.loc[day, "comment"] = "VSAw,Crd1,Wide,Fdd"
     alt = clean(alt.drop(columns=["won", "placed2", "field", "grade", "grade_family", "sp_p", "sp_p_norm", "raceid",
                                   "t", "is_trial"]))
-    other = GreyhoundMetricsEngine().calculate_all(alt)
+    other = GreyhoundMetricsEngine(blocks=("parity", "hrb")).calculate_all(alt)
     a = base[base.race_id == target].sort_values("trap")[feats].reset_index(drop=True)
     b = other[other.race_id == target].sort_values("trap")[feats].reset_index(drop=True)
     pd.testing.assert_frame_equal(a, b, check_exact=False, rtol=1e-9)
@@ -178,9 +178,58 @@ def test_parity_measures_read_a_race_as_the_horse_engine_does_and_the_bsp_joins_
                                           "bsp": [2.0, 4.0, 5.0, 20.0]}))
     m = per_run(race)
     assert m.nfp.tolist() == [1.0, 2 / 3, 1 / 3, 0.0]                     # 1 the winner .. 0 last
+    z = (5 - 2 * np.arange(1, 5)) / (3 * np.sqrt(5 / 9) * 3)               # the owner's formula, N = 4
+    np.testing.assert_allclose(m.nfpz.values, z) and None
+    assert abs(m.nfpz.mean()) < 1e-12 and abs(m.nfpz.std(ddof=0) - 1 / 3) < 1e-12
     assert m.ep.tolist() == [1 / 3, 0.0, 2 / 3, 1.0] and m.lead.tolist() == [0.0, 1.0, 0.0, 0.0]
     assert m.gain.tolist()[0] == (2 - 1) / 3                               # second at the bend, won: one place made
     assert abs(m.nres[0] - (1.0 - 2 / 3)) < 1e-12                          # won from second in the market's order
     assert abs(m.rs[3] - 2.0) < 1e-12 and abs(m.rs[0] - 2.5) < 1e-12       # the others' pre-race ratings
     p = 1 / np.array([2.0, 4.0, 5.0, 20.0])
     assert abs(m.bsp_ae[0] - (1 - p[0] / p.sum())) < 1e-12
+
+
+def test_the_day_so_far_settles_the_paper_bets_on_the_result_and_reads_the_move_against_the_last_book(tmp_path):
+    import greyhound.track as T
+    import betfair_recorder
+    from betfair_recorder import BOOK_FIELDS
+    from sources.common import Store
+    pred = pd.DataFrame({"race_id": [7, 7], "race_date": ["2026-10-06"] * 2, "race_time": ["19:04"] * 2,
+                         "track": ["Romford"] * 2, "trap": [1, 2], "field": [2, 2], "won": [1.0, 0.0],
+                         "p_model": [0.6, 0.4], "dog_id": [1, 2], "dog_name": ["A", "B"], "sp_decimal": [1.8, 2.5]})
+    markets = pd.DataFrame({"market_id": ["1.5"] * 2, "market_type": ["WIN"] * 2, "country": ["GB"] * 2,
+                            "venue": ["Romford"] * 2, "market_start_utc": ["2026-10-06T18:04:00Z"] * 2,
+                            "selection_id": [11, 12], "runner_name": ["1. Alpha", "2. Beta"]})
+    b = dict(source="recorder", market_id="1.5", status="OPEN", inplay=0, number_of_active_runners=2)
+    books = pd.DataFrame([dict(b, polled_utc="2026-10-06T10:30:00Z", selection_id=11, back1=2.5, back1_size=10.0),
+                          dict(b, polled_utc="2026-10-06T10:30:00Z", selection_id=12, back1=4.0, back1_size=5.0),
+                          dict(b, polled_utc="2026-10-06T18:03:30Z", selection_id=11, back1=2.0, back1_size=50.0),
+                          dict(b, polled_utc="2026-10-06T18:03:30Z", selection_id=12, back1=2.2, back1_size=50.0)]
+                         ).reindex(columns=BOOK_FIELDS)
+    old_read, old_price = betfair_recorder._read_day_csv, T.price_day
+    betfair_recorder._read_day_csv = lambda day, name, s3=None: books if name.startswith("books") else markets
+    T.price_day = lambda df, bo, f, d: pred
+    try:
+        s = T.intraday(Store(root=tmp_path / "sources"), pd.Timestamp("2026-10-06").date(), None, None,
+                       {"features": []})
+    finally:
+        betfair_recorder._read_day_csv, T.price_day = old_read, old_price
+    p = s["primary"]
+    assert p["filled"] == 2 and p["winners"] == 1
+    assert abs(p["pnl"] - ((2.5 - 1) * 0.98 * T.STAKE - T.STAKE)) < 0.01                # one won at 2.5, one lost
+    assert abs(p["clv_vs_last%"] - 100 * ((2.5 / 2.0 - 1) + (4.0 / 2.2 - 1)) / 2) < 0.01
+    assert list(s["primary_by_hour_uk"]) == ["19:00"]
+
+
+def test_head_to_head_counts_earlier_days_meetings_with_todays_field_only():
+    from greyhound.hrb import h2h, season_date
+    df = pd.DataFrame({"race_id": [1, 1, 1, 2, 2, 3, 3, 3], "race_date": ["2026-01-01"] * 3 + ["2026-01-02"] * 2
+                       + ["2026-01-03"] * 3, "dog_id": [10, 20, 30, 10, 20, 10, 20, 30],
+                       "position": [1, 2, 3, 2, 1, np.nan, np.nan, np.nan]})          # race 3: today's card
+    h = h2h(df)
+    a = h.loc[5]                                                                         # dog 10 in race 3
+    assert a.hb_h2h_meetings == 3 and a.hb_h2h_ahead == 2 and a.hb_h2h_opponents_met == 2
+    assert h.loc[7].hb_h2h_meetings == 2 and h.loc[7].hb_h2h_ahead == 0                  # dog 30: behind both, once
+    assert h.loc[3].hb_h2h_meetings == 1 and h.loc[3].hb_h2h_ahead == 1                  # race 2 reads race 1 only
+    assert h.loc[0].hb_h2h_meetings == 0                                                 # nothing before day 1
+    assert season_date("15.Sp.25") == pd.Timestamp("2025-09-15") and season_date("Suppressed") is None

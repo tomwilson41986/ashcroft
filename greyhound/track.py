@@ -41,7 +41,7 @@ MODEL_KEY = f"{PREFIX}/model.txt"
 META_KEY = f"{PREFIX}/meta.json"
 STAKE = 2.0                       # paper stake (Betfair's minimum is GBP1): the fill test is that the book offered it
 CAP = 20.0                        # no bet above this price
-MARKS = ("first", "off_60", "off_10", "off_1")
+MARKS = ("first", "first_traded", "off_60", "off_10", "off_1")
 EDGES = (0.1, 0.2, 0.3)
 #: fixed before the first tracked day, with the model; the summary judges the primary rule only
 RULES = {
@@ -95,7 +95,9 @@ def price_day(df: pd.DataFrame, booster, features: list[str], day: str) -> pd.Da
 # --------------------------------------------------------------------------------------------------------------------
 
 def book_marks(books: pd.DataFrame, markets: pd.DataFrame, day: date) -> pd.DataFrame:
-    """The recorder's marks (betfair_recorder.marks) and the first book recorded before the off."""
+    """The recorder's marks (betfair_recorder.marks) and the first price recorded before the off: the first book
+    that offers the dog at a price (a greyhound market is often listed hours before anyone offers a price in it, and
+    an empty book is not a price to take)."""
     from betfair_recorder import marks
     mk = marks(books, markets, day)
     b = books.copy()
@@ -106,11 +108,23 @@ def book_marks(books: pd.DataFrame, markets: pd.DataFrame, day: date) -> pd.Data
     b["minutes_to_off"] = (b.off - b.polled).dt.total_seconds() / 60.0
     pre = b[(b.source != "final") & (b.status == "OPEN") & b.inplay.astype(str).isin(["0", "False", "false"])
             & (b.minutes_to_off > 0)]
-    first = pre.sort_values("polled").drop_duplicates(["market_id", "selection_id"]).assign(mark="first")
-    first["bsp"] = np.nan
-    first["race_date"] = f"{day:%Y-%m-%d}"
-    cols = ["market_id", "selection_id", "mark", "polled_utc", "minutes_to_off", "back1", "back1_size", "bsp"]
-    return pd.concat([mk[cols], first[cols]], ignore_index=True)
+    for c in ("back1", "back1_size", "lay1", "last_traded"):
+        pre[c] = pd.to_numeric(pre[c], errors="coerce")
+    priced = pre[pre.back1 > 1]
+    first = priced.sort_values("polled").drop_duplicates(["market_id", "selection_id"]).assign(mark="first")
+    # the first book after the dog's first matched bet (the Historic Data's "first traded price" is that bet)
+    traded = pre[pre.last_traded > 1]
+    first_traded = traded.sort_values("polled").drop_duplicates(["market_id", "selection_id"]).assign(
+        mark="first_traded")
+    cols = ["market_id", "selection_id", "mark", "polled_utc", "minutes_to_off", "back1", "back1_size", "lay1",
+            "last_traded", "bsp"]
+    parts = []
+    for f in (first, first_traded):
+        f = f.assign(bsp=np.nan)
+        parts.append(f[cols])
+    mk = mk.assign(lay1=pd.to_numeric(mk.get("lay1"), errors="coerce"),
+                   last_traded=pd.to_numeric(mk.get("last_traded"), errors="coerce"))
+    return pd.concat([mk[cols]] + parts, ignore_index=True)
 
 
 def join_markets(pred: pd.DataFrame, markets: pd.DataFrame) -> pd.DataFrame:
@@ -187,6 +201,105 @@ def track_day(store, day: date, df: pd.DataFrame, booster, meta: dict, s3=None) 
                 "primary_bets": int(((bets.mark == RULES["primary"]["mark"])
                                      & (bets.threshold == RULES["primary"]["edge"])).sum()) if len(bets) else 0})
     return out
+
+
+def intraday(store, day: date, df: pd.DataFrame, booster, meta: dict, s3=None, now=None) -> dict:
+    """The day so far (the owner's ask, 6 Oct 2026: "track how paper trading would be performing throughout the
+    day"): the races GBGB has already resulted, set against the books recorded so far (the recorder copies them to S3
+    every 15 minutes), the paper bets settled at the price taken on GBGB's result. The BSP comes only with the next
+    morning's settled books, so the price's move is read against the last book before the off instead. Written to
+    ``greyhound/track/intraday/<day>.json``; the day's ledger proper is the next morning's run."""
+    from betfair_recorder import _read_day_csv
+    ds = f"{day:%Y-%m-%d}"
+    stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    pred = price_day(df, booster, meta["features"], ds)
+    books = _read_day_csv(day, "books_greyhound.csv", s3=s3)
+    markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
+    out = {"day": ds, "as_of_utc": stamp, "races_resulted": int(pred.race_id.nunique())}
+    if books is None or markets is None or not len(pred):
+        out["note"] = "no recorded greyhound books yet" if books is None or markets is None else "no GBGB results yet"
+        return out
+    priced = join_markets(pred, markets)
+    mk = book_marks(books, markets, day)
+    bets = paper_bets(priced, mk)
+    first = mk[mk.mark == "first"]
+    # what each mark's book looked like: how wide the best back and lay were, and the best back against the last
+    # matched price (a book of placeholder offers is not a price anyone can take)
+    books_at = {}
+    for mark, g in mk[mk.mark.isin(list(MARKS))].groupby("mark"):
+        spread = (g.lay1 / g.back1).replace([np.inf, -np.inf], np.nan)
+        books_at[mark] = {"runners": int(len(g)),
+                          "minutes_before_off_median": round(float(g.minutes_to_off.median()), 1),
+                          "lay_over_back_median": round(float(spread.median()), 3) if spread.notna().any() else None,
+                          "tight_share(<=1.1)": round(float((spread <= 1.1).mean()), 3),
+                          "back_over_last_traded_median": round(float((g.back1 / g.last_traded).median()), 3)
+                          if g.last_traded.notna().any() else None,
+                          "back1_median": round(float(g.back1.median()), 2) if g.back1.notna().any() else None}
+    out["books_at_marks"] = books_at
+    out.update({"races_on_betfair": int(priced.race_id.nunique()),
+                "unmatched_tracks": sorted(set(pred.track) - set(priced.track)),
+                "first_price_minutes_before_off": {q: round(float(first.minutes_to_off.quantile(q)), 1)
+                                                   for q in (0.1, 0.5, 0.9)} if len(first) else None})
+    if not len(bets):
+        out["note"] = "no paper bets yet"
+        return out
+    last = mk[mk.mark == "last"].assign(market_id=lambda x: x.market_id.astype(str),
+                                         selection_id=lambda x: pd.to_numeric(x.selection_id, errors="coerce"))
+    bets = bets.merge(last[["market_id", "selection_id", "back1"]].rename(columns={"back1": "last_back"}),
+                      on=["market_id", "selection_id"], how="left")
+    bets["clv_last"] = bets.back1 / bets.last_back - 1
+    rules = {}
+    for (mark, th), g in bets.groupby(["mark", "threshold"]):
+        f = g[g.filled]
+        r = f.pnl / STAKE
+        rules[f"{mark}: edge>{th:.1f}"] = {
+            "signals": int(len(g)), "filled": int(len(f)), "winners": int(f.won.sum()),
+            "staked": round(float(STAKE * len(f)), 2), "pnl": round(float(f.pnl.sum()), 2),
+            "roi%": round(100 * float(r.mean()), 2) if len(f) else None,
+            "clv_vs_last%": round(100 * float(f.clv_last.mean()), 2) if f.clv_last.notna().any() else None}
+    out["rules_by_mark"] = rules
+    p = RULES["primary"]
+    prim = bets[(bets.mark == p["mark"]) & (bets.threshold == p["edge"]) & bets.filled].copy()
+    out["primary"] = rules.get(f"{p['mark']}: edge>{p['edge']:.1f}")
+    if len(prim):
+        hour = pd.to_datetime(prim.race_date + " " + prim.race_time.astype(str).str[:5]).dt.strftime("%H:00")
+        by = prim.groupby(hour).agg(bets=("pnl", "size"), pnl=("pnl", "sum"), winners=("won", "sum"))
+        by["cum_pnl"] = by.pnl.cumsum()
+        out["primary_by_hour_uk"] = {h: {"bets": int(r.bets), "winners": int(r.winners), "pnl": round(float(r.pnl), 2),
+                                         "cum_pnl": round(float(r.cum_pnl), 2)} for h, r in by.iterrows()}
+    store.put(f"{PREFIX}/intraday/{ds}.json", json.dumps(out, indent=1, default=str).encode())
+    return out
+
+
+def intraday_markdown(s: dict) -> str:
+    lines = [f"## Greyhound paper trading today: {s.get('day')} (as of {s.get('as_of_utc')})", "",
+             f"Races resulted: {s.get('races_resulted')}, on Betfair: {s.get('races_on_betfair', 0)}"
+             + (f"; {s['note']}" if s.get("note") else ""), ""]
+    if s.get("first_price_minutes_before_off"):
+        q = s["first_price_minutes_before_off"]
+        lines += [f"The first price in a market came {q[0.5]} minutes before the off (median; 10% of runners {q[0.9]}+ "
+                  f"minutes, 10% under {q[0.1]})", ""]
+    if s.get("books_at_marks"):
+        lines += ["| Mark | Runners | Minutes before the off | Lay / back (median) | Tight (<= 1.1) | Back / last traded |",
+                  "|---|---|---|---|---|---|"]
+        lines += [f"| {m} | {b['runners']} | {b['minutes_before_off_median']} | {b['lay_over_back_median']} | "
+                  f"{b['tight_share(<=1.1)']} | {b['back_over_last_traded_median']} |" for m, b in s["books_at_marks"].items()]
+        lines.append("")
+    p = s.get("primary")
+    if p:
+        lines += [f"**Primary rule** (first recorded price, edge > 0.2, GBP{STAKE:g} paper): {p['filled']} bets, "
+                  f"{p['winners']} winners, P&L GBP{p['pnl']} ({p['roi%']}%), price against the last book before the "
+                  f"off {p['clv_vs_last%']}%", ""]
+    if s.get("primary_by_hour_uk"):
+        lines += ["| Hour (UK) | Bets | Winners | P&L | Cumulative |", "|---|---|---|---|---|"]
+        lines += [f"| {h} | {r['bets']} | {r['winners']} | {r['pnl']} | {r['cum_pnl']} |"
+                  for h, r in s["primary_by_hour_uk"].items()]
+        lines.append("")
+    if s.get("rules_by_mark"):
+        lines += ["| Rule | Filled / signals | Winners | P&L | ROI | vs last book |", "|---|---|---|---|---|---|"]
+        lines += [f"| {k} | {r['filled']} / {r['signals']} | {r['winners']} | {r['pnl']} | {r['roi%']}% | "
+                  f"{r['clv_vs_last%']}% |" for k, r in s["rules_by_mark"].items()]
+    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -305,6 +418,7 @@ def main(argv=None) -> int:
     ap.add_argument("--days", type=int, default=0, help="track the last N days (to yesterday, UK)")
     ap.add_argument("--date", default=None, help="track this one day")
     ap.add_argument("--summary", action="store_true")
+    ap.add_argument("--intraday", action="store_true", help="today so far: the resulted races against the books so far")
     ap.add_argument("--out", default=None, help="write the summary JSON here (and markdown beside it)")
     a = ap.parse_args(argv)
     store = Store(root=a.store)
@@ -312,6 +426,19 @@ def main(argv=None) -> int:
     today = uk_today()
     report = {}
     booster, meta = load_frozen(store)
+    if a.intraday:
+        if booster is None:
+            ap.error("no frozen model: run --freeze --cutoff first")
+        day = date.fromisoformat(a.date) if a.date else today
+        eng = GreyhoundMetricsEngine(blocks=tuple(meta.get("blocks", [])))
+        df = eng.calculate_all(runs_through(store, day))
+        s = intraday(store, day, df, booster, meta)
+        txt = json.dumps({"intraday": s}, indent=1, default=str)
+        print(txt)
+        if a.out:
+            Path(a.out).write_text(txt)
+            Path(a.out).with_suffix(".md").write_text(intraday_markdown(s))
+        return 0
     days = []
     if a.date:
         days = [date.fromisoformat(a.date)]

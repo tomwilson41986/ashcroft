@@ -1,0 +1,1639 @@
+{
+ "timings": {
+  "per_run": 43.5,
+  "dog_form": 217.6,
+  "groups": 91.1,
+  "race_relative": 82.4,
+  "parity": 114.2
+ },
+ "sets": {
+  "base": {
+   "features": 135,
+   "score": {
+    "runners": 1642140,
+    "races": 288759,
+    "logloss": {
+     "model": 0.4421,
+     "sp": 0.42612,
+     "uniform": 0.46438
+    },
+    "by_fold": {
+     "2021-01": {
+      "runners": 292631,
+      "model": 0.43551,
+      "sp": 0.42247,
+      "rounds": 548
+     },
+     "2022-01": {
+      "runners": 286672,
+      "model": 0.43596,
+      "sp": 0.42258,
+      "rounds": 1008
+     },
+     "2023-01": {
+      "runners": 295227,
+      "model": 0.44076,
+      "sp": 0.42617,
+      "rounds": 1357
+     },
+     "2024-01": {
+      "runners": 295281,
+      "model": 0.44572,
+      "sp": 0.42831,
+      "rounds": 988
+     },
+     "2025-01": {
+      "runners": 273927,
+      "model": 0.44783,
+      "sp": 0.42889,
+      "rounds": 1704
+     },
+     "2026-01": {
+      "runners": 193035,
+      "model": 0.44955,
+      "sp": 0.42957,
+      "rounds": 1424
+     }
+    },
+    "blend_with_sp": {
+     "weights": {
+      "market": 1.103,
+      "model": 0.181
+     },
+     "logloss_second_half": {
+      "market": 0.42855,
+      "model": 0.44703,
+      "blend": 0.42763
+     }
+    },
+    "calibration": {
+     "0": [
+      0.0703,
+      0.0579
+     ],
+     "1": [
+      0.1017,
+      0.0931
+     ],
+     "2": [
+      0.122,
+      0.1161
+     ],
+     "3": [
+      0.1398,
+      0.1369
+     ],
+     "4": [
+      0.1571,
+      0.1548
+     ],
+     "5": [
+      0.1751,
+      0.1753
+     ],
+     "6": [
+      0.1951,
+      0.1953
+     ],
+     "7": [
+      0.2191,
+      0.226
+     ],
+     "8": [
+      0.252,
+      0.2577
+     ],
+     "9": [
+      0.3262,
+      0.3475
+     ]
+    }
+   },
+   "betfair_2026": {
+    "runners": 187115,
+    "markets": 34168,
+    "logloss": {
+     "model": 0.44993,
+     "bsp": 0.42752,
+     "ltp_t_1": 0.43307,
+     "ltp_first": 0.44111
+    },
+    "blend_with_bsp": {
+     "weights": {
+      "market": 0.961,
+      "model": 0.063
+     },
+     "logloss_second_half": {
+      "market": 0.4281,
+      "model": 0.45028,
+      "blend": 0.42807
+     }
+    },
+    "rules": {
+     "ltp_first: edge>0.0": {
+      "at_that_price": {
+       "bets": 80706,
+       "per_day": 296.7,
+       "roi%": 3.51,
+       "90%": [
+        1.93,
+        5.1
+       ],
+       "clv_vs_bsp%": 3.29
+      },
+      "at_bsp": {
+       "bets": 80706,
+       "per_day": 296.7,
+       "roi%": 1.14,
+       "90%": [
+        -0.63,
+        2.92
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_first: edge>0.1": {
+      "at_that_price": {
+       "bets": 64233,
+       "per_day": 236.2,
+       "roi%": 5.59,
+       "90%": [
+        3.73,
+        7.44
+       ],
+       "clv_vs_bsp%": 4.58
+      },
+      "at_bsp": {
+       "bets": 64233,
+       "per_day": 236.2,
+       "roi%": 1.87,
+       "90%": [
+        -0.19,
+        3.92
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_first: edge>0.2": {
+      "at_that_price": {
+       "bets": 50745,
+       "per_day": 186.6,
+       "roi%": 7.47,
+       "90%": [
+        5.3,
+        9.65
+       ],
+       "clv_vs_bsp%": 5.97
+      },
+      "at_bsp": {
+       "bets": 50745,
+       "per_day": 186.6,
+       "roi%": 2.33,
+       "90%": [
+        -0.06,
+        4.72
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_first: edge>0.3": {
+      "at_that_price": {
+       "bets": 39808,
+       "per_day": 146.4,
+       "roi%": 9.66,
+       "90%": [
+        7.1,
+        12.21
+       ],
+       "clv_vs_bsp%": 7.51
+      },
+      "at_bsp": {
+       "bets": 39808,
+       "per_day": 146.4,
+       "roi%": 2.83,
+       "90%": [
+        0.07,
+        5.58
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_t_1: edge>0.0": {
+      "at_that_price": {
+       "bets": 83958,
+       "per_day": 308.7,
+       "roi%": 0.2,
+       "90%": [
+        -1.39,
+        1.8
+       ],
+       "clv_vs_bsp%": -1.27
+      },
+      "at_bsp": {
+       "bets": 83958,
+       "per_day": 308.7,
+       "roi%": 1.83,
+       "90%": [
+        0.16,
+        3.49
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_t_1: edge>0.1": {
+      "at_that_price": {
+       "bets": 68400,
+       "per_day": 251.5,
+       "roi%": 0.68,
+       "90%": [
+        -1.16,
+        2.52
+       ],
+       "clv_vs_bsp%": -1.28
+      },
+      "at_bsp": {
+       "bets": 68400,
+       "per_day": 251.5,
+       "roi%": 2.39,
+       "90%": [
+        0.47,
+        4.31
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_t_1: edge>0.2": {
+      "at_that_price": {
+       "bets": 55407,
+       "per_day": 203.7,
+       "roi%": 1.2,
+       "90%": [
+        -0.92,
+        3.32
+       ],
+       "clv_vs_bsp%": -1.25
+      },
+      "at_bsp": {
+       "bets": 55407,
+       "per_day": 203.7,
+       "roi%": 2.97,
+       "90%": [
+        0.75,
+        5.18
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_t_1: edge>0.3": {
+      "at_that_price": {
+       "bets": 44713,
+       "per_day": 164.4,
+       "roi%": 1.0,
+       "90%": [
+        -1.43,
+        3.43
+       ],
+       "clv_vs_bsp%": -1.21
+      },
+      "at_bsp": {
+       "bets": 44713,
+       "per_day": 164.4,
+       "roi%": 2.76,
+       "90%": [
+        0.22,
+        5.29
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     }
+    }
+   },
+   "price_files": {
+    "runners": 1386014,
+    "markets": 244714,
+    "markets_joined": 244933,
+    "markets_result_disagrees": 219,
+    "morning_vol_per_runner": {
+     "0.25": 0.0,
+     "0.5": 0.0,
+     "0.75": 0.0,
+     "0.9": 258.7
+    },
+    "pp_vol_per_runner": {
+     "0.25": 1260.2,
+     "0.5": 2213.0,
+     "0.75": 4201.1
+    },
+    "price_coverage": {
+     "bsp": {
+      "runners_priced": 1.0,
+      "markets_whole_field": 1.0
+     },
+     "ppwap": {
+      "runners_priced": 0.0,
+      "markets_whole_field": 0.0
+     },
+     "morningwap": {
+      "runners_priced": 0.1473,
+      "markets_whole_field": 0.1113
+     }
+    },
+    "logloss": {
+     "model": 0.44325,
+     "bsp": 0.42475,
+     "model_on_bsp_markets": 0.44325,
+     "ppwap": null,
+     "morningwap": 0.4315,
+     "model_on_morningwap_markets": 0.44397
+    },
+    "blend_with_bsp": {
+     "weights": {
+      "market": 0.946,
+      "model": 0.116
+     },
+     "logloss_second_half": {
+      "market": 0.4271,
+      "model": 0.44834,
+      "blend": 0.42711
+     }
+    },
+    "rules": {
+     "morning: edge>0.0, vol>=0": {
+      "at_morning": {
+       "bets": 61666,
+       "per_day": 30.9,
+       "roi%": -0.78,
+       "90%": [
+        -2.51,
+        0.95
+       ],
+       "clv_vs_bsp%": -2.58
+      },
+      "at_bsp": {
+       "bets": 61666,
+       "per_day": 30.9,
+       "roi%": 3.92,
+       "90%": [
+        0.62,
+        7.21
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.1, vol>=0": {
+      "at_morning": {
+       "bets": 46681,
+       "per_day": 23.4,
+       "roi%": 1.9,
+       "90%": [
+        -0.18,
+        3.99
+       ],
+       "clv_vs_bsp%": -0.09
+      },
+      "at_bsp": {
+       "bets": 46681,
+       "per_day": 23.4,
+       "roi%": 4.65,
+       "90%": [
+        0.46,
+        8.84
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.2, vol>=0": {
+      "at_morning": {
+       "bets": 35241,
+       "per_day": 17.7,
+       "roi%": 6.33,
+       "90%": [
+        3.81,
+        8.84
+       ],
+       "clv_vs_bsp%": 2.38
+      },
+      "at_bsp": {
+       "bets": 35241,
+       "per_day": 17.7,
+       "roi%": 7.46,
+       "90%": [
+        2.07,
+        12.84
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.3, vol>=0": {
+      "at_morning": {
+       "bets": 26493,
+       "per_day": 13.4,
+       "roi%": 8.72,
+       "90%": [
+        5.7,
+        11.74
+       ],
+       "clv_vs_bsp%": 4.84
+      },
+      "at_bsp": {
+       "bets": 26493,
+       "per_day": 13.4,
+       "roi%": 4.37,
+       "90%": [
+        1.01,
+        7.73
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.0, vol>=20": {
+      "at_morning": {
+       "bets": 39546,
+       "per_day": 19.9,
+       "roi%": -17.58,
+       "90%": [
+        -19.67,
+        -15.49
+       ],
+       "clv_vs_bsp%": -20.17
+      },
+      "at_bsp": {
+       "bets": 39546,
+       "per_day": 19.9,
+       "roi%": 5.85,
+       "90%": [
+        0.92,
+        10.78
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.1, vol>=20": {
+      "at_morning": {
+       "bets": 29368,
+       "per_day": 14.9,
+       "roi%": -16.48,
+       "90%": [
+        -19.03,
+        -13.93
+       ],
+       "clv_vs_bsp%": -19.91
+      },
+      "at_bsp": {
+       "bets": 29368,
+       "per_day": 14.9,
+       "roi%": 7.73,
+       "90%": [
+        1.29,
+        14.17
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.2, vol>=20": {
+      "at_morning": {
+       "bets": 21906,
+       "per_day": 11.2,
+       "roi%": -14.44,
+       "90%": [
+        -17.54,
+        -11.34
+       ],
+       "clv_vs_bsp%": -19.56
+      },
+      "at_bsp": {
+       "bets": 21906,
+       "per_day": 11.2,
+       "roi%": 11.18,
+       "90%": [
+        2.76,
+        19.6
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.3, vol>=20": {
+      "at_morning": {
+       "bets": 16356,
+       "per_day": 8.5,
+       "roi%": -13.58,
+       "90%": [
+        -17.31,
+        -9.84
+       ],
+       "clv_vs_bsp%": -19.08
+      },
+      "at_bsp": {
+       "bets": 16356,
+       "per_day": 8.5,
+       "roi%": 6.92,
+       "90%": [
+        2.02,
+        11.82
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.0, vol>=100": {
+      "at_morning": {
+       "bets": 36956,
+       "per_day": 18.8,
+       "roi%": -20.55,
+       "90%": [
+        -22.7,
+        -18.4
+       ],
+       "clv_vs_bsp%": -23.12
+      },
+      "at_bsp": {
+       "bets": 36956,
+       "per_day": 18.8,
+       "roi%": 3.58,
+       "90%": [
+        0.66,
+        6.49
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.1, vol>=100": {
+      "at_morning": {
+       "bets": 27500,
+       "per_day": 14.1,
+       "roi%": -19.73,
+       "90%": [
+        -22.34,
+        -17.12
+       ],
+       "clv_vs_bsp%": -23.11
+      },
+      "at_bsp": {
+       "bets": 27500,
+       "per_day": 14.1,
+       "roi%": 4.61,
+       "90%": [
+        1.08,
+        8.14
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.2, vol>=100": {
+      "at_morning": {
+       "bets": 20541,
+       "per_day": 10.6,
+       "roi%": -18.07,
+       "90%": [
+        -21.24,
+        -14.9
+       ],
+       "clv_vs_bsp%": -23.1
+      },
+      "at_bsp": {
+       "bets": 20541,
+       "per_day": 10.6,
+       "roi%": 6.96,
+       "90%": [
+        2.68,
+        11.25
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.3, vol>=100": {
+      "at_morning": {
+       "bets": 15334,
+       "per_day": 8.1,
+       "roi%": -17.66,
+       "90%": [
+        -21.47,
+        -13.86
+       ],
+       "clv_vs_bsp%": -23.07
+      },
+      "at_bsp": {
+       "bets": 15334,
+       "per_day": 8.1,
+       "roi%": 7.42,
+       "90%": [
+        2.28,
+        12.56
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     }
+    },
+    "by_year": {
+     "2021": {
+      "runners": 159971,
+      "model": 0.43484,
+      "bsp": 0.4209,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 6783,
+        "per_day": 24.2,
+        "roi%": 2.9,
+        "90%": [
+         -2.77,
+         8.58
+        ],
+        "clv_vs_bsp%": 5.08
+       },
+       "at_bsp": {
+        "bets": 6783,
+        "per_day": 24.2,
+        "roi%": -0.55,
+        "90%": [
+         -6.84,
+         5.75
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     },
+     "2022": {
+      "runners": 202814,
+      "model": 0.43563,
+      "bsp": 0.42097,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 8635,
+        "per_day": 24.1,
+        "roi%": 13.83,
+        "90%": [
+         8.72,
+         18.93
+        ],
+        "clv_vs_bsp%": 9.32
+       },
+       "at_bsp": {
+        "bets": 8635,
+        "per_day": 24.1,
+        "roi%": 3.94,
+        "90%": [
+         -1.4,
+         9.29
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     },
+     "2023": {
+      "runners": 276268,
+      "model": 0.44135,
+      "bsp": 0.42439,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 7981,
+        "per_day": 22.3,
+        "roi%": 14.45,
+        "90%": [
+         9.08,
+         19.83
+        ],
+        "clv_vs_bsp%": 7.4
+       },
+       "at_bsp": {
+        "bets": 7981,
+        "per_day": 22.3,
+        "roi%": 8.26,
+        "90%": [
+         2.37,
+         14.15
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     },
+     "2024": {
+      "runners": 287997,
+      "model": 0.44617,
+      "bsp": 0.42646,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 4668,
+        "per_day": 12.9,
+        "roi%": -0.11,
+        "90%": [
+         -6.93,
+         6.72
+        ],
+        "clv_vs_bsp%": -5.87
+       },
+       "at_bsp": {
+        "bets": 4668,
+        "per_day": 12.9,
+        "roi%": 28.7,
+        "90%": [
+         -6.86,
+         64.25
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     },
+     "2025": {
+      "runners": 268945,
+      "model": 0.44812,
+      "bsp": 0.42649,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 4141,
+        "per_day": 11.5,
+        "roi%": -5.08,
+        "90%": [
+         -12.3,
+         2.13
+        ],
+        "clv_vs_bsp%": -5.51
+       },
+       "at_bsp": {
+        "bets": 4141,
+        "per_day": 11.5,
+        "roi%": -1.6,
+        "90%": [
+         -9.8,
+         6.6
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     },
+     "2026": {
+      "runners": 190019,
+      "model": 0.44992,
+      "bsp": 0.4275,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 3033,
+        "per_day": 11.2,
+        "roi%": -3.29,
+        "90%": [
+         -11.95,
+         5.37
+        ],
+        "clv_vs_bsp%": -13.14
+       },
+       "at_bsp": {
+        "bets": 3033,
+        "per_day": 11.2,
+        "roi%": 12.94,
+        "90%": [
+         1.73,
+         24.15
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     }
+    }
+   },
+   "top_features": {
+    "sp_p_mean3": 0.0811,
+    "gsr_ewm_z": 0.0736,
+    "gsr_ewm_gap": 0.0328,
+    "gsr_ewm_rank": 0.0271,
+    "runs_before": 0.0241,
+    "grade_change": 0.0227,
+    "weight_vs_mean": 0.0223,
+    "dog_ae6": 0.0212,
+    "age_months": 0.019,
+    "cd_gsr": 0.0183,
+    "trap_bias": 0.0178,
+    "trainer_win_gap": 0.0169,
+    "days_since": 0.0159,
+    "weight_change": 0.0155,
+    "esr_mean3_z": 0.0131,
+    "trainer_win_z": 0.013,
+    "esr_ewm": 0.0122,
+    "trk_win": 0.0118,
+    "field": 0.0116,
+    "sire_win": 0.0111,
+    "trk_gsr": 0.011,
+    "gsr_std6": 0.011,
+    "gsr_trend": 0.011,
+    "days_since2": 0.0101,
+    "cd_runs": 0.01,
+    "trk_runs": 0.0099,
+    "esr_mean3_gap": 0.0096,
+    "position_mean1": 0.0095,
+    "grade_par": 0.0094,
+    "trap_gsr_vs_all": 0.0093
+   }
+  },
+  "all": {
+   "features": 267,
+   "score": {
+    "runners": 1642140,
+    "races": 288759,
+    "logloss": {
+     "model": 0.43874,
+     "sp": 0.42612,
+     "uniform": 0.46438
+    },
+    "by_fold": {
+     "2021-01": {
+      "runners": 292631,
+      "model": 0.43242,
+      "sp": 0.42247,
+      "rounds": 858
+     },
+     "2022-01": {
+      "runners": 286672,
+      "model": 0.43242,
+      "sp": 0.42258,
+      "rounds": 1568
+     },
+     "2023-01": {
+      "runners": 295227,
+      "model": 0.43766,
+      "sp": 0.42617,
+      "rounds": 1301
+     },
+     "2024-01": {
+      "runners": 295281,
+      "model": 0.44238,
+      "sp": 0.42831,
+      "rounds": 1258
+     },
+     "2025-01": {
+      "runners": 273927,
+      "model": 0.44427,
+      "sp": 0.42889,
+      "rounds": 1389
+     },
+     "2026-01": {
+      "runners": 193035,
+      "model": 0.4459,
+      "sp": 0.42957,
+      "rounds": 1834
+     }
+    },
+    "blend_with_sp": {
+     "weights": {
+      "market": 1.041,
+      "model": 0.249
+     },
+     "logloss_second_half": {
+      "market": 0.42855,
+      "model": 0.44354,
+      "blend": 0.42765
+     }
+    },
+    "calibration": {
+     "0": [
+      0.0622,
+      0.0522
+     ],
+     "1": [
+      0.0949,
+      0.0893
+     ],
+     "2": [
+      0.1168,
+      0.1102
+     ],
+     "3": [
+      0.1363,
+      0.1329
+     ],
+     "4": [
+      0.1553,
+      0.153
+     ],
+     "5": [
+      0.175,
+      0.1738
+     ],
+     "6": [
+      0.1968,
+      0.1984
+     ],
+     "7": [
+      0.2231,
+      0.2255
+     ],
+     "8": [
+      0.2589,
+      0.2652
+     ],
+     "9": [
+      0.3391,
+      0.3602
+     ]
+    }
+   },
+   "betfair_2026": {
+    "runners": 187115,
+    "markets": 34168,
+    "logloss": {
+     "model": 0.44624,
+     "bsp": 0.42752,
+     "ltp_t_1": 0.43307,
+     "ltp_first": 0.44111
+    },
+    "blend_with_bsp": {
+     "weights": {
+      "market": 0.945,
+      "model": 0.085
+     },
+     "logloss_second_half": {
+      "market": 0.4281,
+      "model": 0.44669,
+      "blend": 0.42806
+     }
+    },
+    "rules": {
+     "ltp_first: edge>0.0": {
+      "at_that_price": {
+       "bets": 79927,
+       "per_day": 293.8,
+       "roi%": 5.77,
+       "90%": [
+        4.2,
+        7.35
+       ],
+       "clv_vs_bsp%": 5.44
+      },
+      "at_bsp": {
+       "bets": 79927,
+       "per_day": 293.8,
+       "roi%": 1.31,
+       "90%": [
+        -0.41,
+        3.03
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_first: edge>0.1": {
+      "at_that_price": {
+       "bets": 62435,
+       "per_day": 229.5,
+       "roi%": 8.68,
+       "90%": [
+        6.81,
+        10.55
+       ],
+       "clv_vs_bsp%": 7.13
+      },
+      "at_bsp": {
+       "bets": 62435,
+       "per_day": 229.5,
+       "roi%": 2.58,
+       "90%": [
+        0.56,
+        4.61
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_first: edge>0.2": {
+      "at_that_price": {
+       "bets": 48246,
+       "per_day": 177.4,
+       "roi%": 10.09,
+       "90%": [
+        7.88,
+        12.31
+       ],
+       "clv_vs_bsp%": 8.97
+      },
+      "at_bsp": {
+       "bets": 48246,
+       "per_day": 177.4,
+       "roi%": 2.41,
+       "90%": [
+        0.05,
+        4.77
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_first: edge>0.3": {
+      "at_that_price": {
+       "bets": 37136,
+       "per_day": 136.5,
+       "roi%": 12.08,
+       "90%": [
+        9.46,
+        14.7
+       ],
+       "clv_vs_bsp%": 11.07
+      },
+      "at_bsp": {
+       "bets": 37136,
+       "per_day": 136.5,
+       "roi%": 2.1,
+       "90%": [
+        -0.64,
+        4.84
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_t_1: edge>0.0": {
+      "at_that_price": {
+       "bets": 83327,
+       "per_day": 306.3,
+       "roi%": 0.6,
+       "90%": [
+        -0.98,
+        2.19
+       ],
+       "clv_vs_bsp%": -0.93
+      },
+      "at_bsp": {
+       "bets": 83327,
+       "per_day": 306.3,
+       "roi%": 1.92,
+       "90%": [
+        0.28,
+        3.57
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_t_1: edge>0.1": {
+      "at_that_price": {
+       "bets": 66510,
+       "per_day": 244.5,
+       "roi%": 0.88,
+       "90%": [
+        -0.97,
+        2.72
+       ],
+       "clv_vs_bsp%": -0.9
+      },
+      "at_bsp": {
+       "bets": 66510,
+       "per_day": 244.5,
+       "roi%": 2.06,
+       "90%": [
+        0.15,
+        3.98
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_t_1: edge>0.2": {
+      "at_that_price": {
+       "bets": 52378,
+       "per_day": 192.6,
+       "roi%": 1.52,
+       "90%": [
+        -0.64,
+        3.67
+       ],
+       "clv_vs_bsp%": -0.78
+      },
+      "at_bsp": {
+       "bets": 52378,
+       "per_day": 192.6,
+       "roi%": 2.73,
+       "90%": [
+        0.49,
+        4.97
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "ltp_t_1: edge>0.3": {
+      "at_that_price": {
+       "bets": 41163,
+       "per_day": 151.3,
+       "roi%": 1.23,
+       "90%": [
+        -1.28,
+        3.74
+       ],
+       "clv_vs_bsp%": -0.68
+      },
+      "at_bsp": {
+       "bets": 41163,
+       "per_day": 151.3,
+       "roi%": 2.47,
+       "90%": [
+        -0.14,
+        5.08
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     }
+    }
+   },
+   "price_files": {
+    "runners": 1386014,
+    "markets": 244714,
+    "markets_joined": 244933,
+    "markets_result_disagrees": 219,
+    "morning_vol_per_runner": {
+     "0.25": 0.0,
+     "0.5": 0.0,
+     "0.75": 0.0,
+     "0.9": 258.7
+    },
+    "pp_vol_per_runner": {
+     "0.25": 1260.2,
+     "0.5": 2213.0,
+     "0.75": 4201.1
+    },
+    "price_coverage": {
+     "bsp": {
+      "runners_priced": 1.0,
+      "markets_whole_field": 1.0
+     },
+     "ppwap": {
+      "runners_priced": 0.0,
+      "markets_whole_field": 0.0
+     },
+     "morningwap": {
+      "runners_priced": 0.1473,
+      "markets_whole_field": 0.1113
+     }
+    },
+    "logloss": {
+     "model": 0.43991,
+     "bsp": 0.42475,
+     "model_on_bsp_markets": 0.43991,
+     "ppwap": null,
+     "morningwap": 0.4315,
+     "model_on_morningwap_markets": 0.44073
+    },
+    "blend_with_bsp": {
+     "weights": {
+      "market": 0.91,
+      "model": 0.166
+     },
+     "logloss_second_half": {
+      "market": 0.4271,
+      "model": 0.44479,
+      "blend": 0.42713
+     }
+    },
+    "rules": {
+     "morning: edge>0.0, vol>=0": {
+      "at_morning": {
+       "bets": 59109,
+       "per_day": 29.6,
+       "roi%": 2.66,
+       "90%": [
+        0.91,
+        4.42
+       ],
+       "clv_vs_bsp%": 0.31
+      },
+      "at_bsp": {
+       "bets": 59109,
+       "per_day": 29.6,
+       "roi%": 4.82,
+       "90%": [
+        1.45,
+        8.19
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.1, vol>=0": {
+      "at_morning": {
+       "bets": 43879,
+       "per_day": 22.0,
+       "roi%": 6.05,
+       "90%": [
+        3.92,
+        8.18
+       ],
+       "clv_vs_bsp%": 3.83
+      },
+      "at_bsp": {
+       "bets": 43879,
+       "per_day": 22.0,
+       "roi%": 4.79,
+       "90%": [
+        0.43,
+        9.15
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.2, vol>=0": {
+      "at_morning": {
+       "bets": 32298,
+       "per_day": 16.3,
+       "roi%": 10.1,
+       "90%": [
+        7.5,
+        12.69
+       ],
+       "clv_vs_bsp%": 7.43
+      },
+      "at_bsp": {
+       "bets": 32298,
+       "per_day": 16.3,
+       "roi%": 5.99,
+       "90%": [
+        0.26,
+        11.71
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.3, vol>=0": {
+      "at_morning": {
+       "bets": 23891,
+       "per_day": 12.1,
+       "roi%": 14.37,
+       "90%": [
+        11.22,
+        17.52
+       ],
+       "clv_vs_bsp%": 11.23
+      },
+      "at_bsp": {
+       "bets": 23891,
+       "per_day": 12.1,
+       "roi%": 3.41,
+       "90%": [
+        0.08,
+        6.74
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.0, vol>=20": {
+      "at_morning": {
+       "bets": 36731,
+       "per_day": 18.5,
+       "roi%": -15.17,
+       "90%": [
+        -17.32,
+        -13.02
+       ],
+       "clv_vs_bsp%": -18.5
+      },
+      "at_bsp": {
+       "bets": 36731,
+       "per_day": 18.5,
+       "roi%": 7.17,
+       "90%": [
+        1.95,
+        12.38
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.1, vol>=20": {
+      "at_morning": {
+       "bets": 26205,
+       "per_day": 13.3,
+       "roi%": -14.96,
+       "90%": [
+        -17.63,
+        -12.28
+       ],
+       "clv_vs_bsp%": -18.01
+      },
+      "at_bsp": {
+       "bets": 26205,
+       "per_day": 13.3,
+       "roi%": 7.82,
+       "90%": [
+        0.75,
+        14.89
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.2, vol>=20": {
+      "at_morning": {
+       "bets": 18761,
+       "per_day": 9.6,
+       "roi%": -13.12,
+       "90%": [
+        -16.43,
+        -9.81
+       ],
+       "clv_vs_bsp%": -17.41
+      },
+      "at_bsp": {
+       "bets": 18761,
+       "per_day": 9.6,
+       "roi%": 10.67,
+       "90%": [
+        1.07,
+        20.27
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.3, vol>=20": {
+      "at_morning": {
+       "bets": 13597,
+       "per_day": 7.1,
+       "roi%": -11.47,
+       "90%": [
+        -15.52,
+        -7.42
+       ],
+       "clv_vs_bsp%": -16.56
+      },
+      "at_bsp": {
+       "bets": 13597,
+       "per_day": 7.1,
+       "roi%": 6.41,
+       "90%": [
+        1.22,
+        11.61
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.0, vol>=100": {
+      "at_morning": {
+       "bets": 33976,
+       "per_day": 17.3,
+       "roi%": -18.6,
+       "90%": [
+        -20.82,
+        -16.37
+       ],
+       "clv_vs_bsp%": -21.94
+      },
+      "at_bsp": {
+       "bets": 33976,
+       "per_day": 17.3,
+       "roi%": 4.73,
+       "90%": [
+        1.75,
+        7.72
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.1, vol>=100": {
+      "at_morning": {
+       "bets": 24235,
+       "per_day": 12.4,
+       "roi%": -18.83,
+       "90%": [
+        -21.59,
+        -16.08
+       ],
+       "clv_vs_bsp%": -21.9
+      },
+      "at_bsp": {
+       "bets": 24235,
+       "per_day": 12.4,
+       "roi%": 4.38,
+       "90%": [
+        0.69,
+        8.07
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.2, vol>=100": {
+      "at_morning": {
+       "bets": 17347,
+       "per_day": 9.0,
+       "roi%": -18.06,
+       "90%": [
+        -21.46,
+        -14.67
+       ],
+       "clv_vs_bsp%": -21.81
+      },
+      "at_bsp": {
+       "bets": 17347,
+       "per_day": 9.0,
+       "roi%": 5.35,
+       "90%": [
+        0.81,
+        9.89
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     },
+     "morning: edge>0.3, vol>=100": {
+      "at_morning": {
+       "bets": 12555,
+       "per_day": 6.7,
+       "roi%": -16.68,
+       "90%": [
+        -20.83,
+        -12.53
+       ],
+       "clv_vs_bsp%": -21.65
+      },
+      "at_bsp": {
+       "bets": 12555,
+       "per_day": 6.7,
+       "roi%": 6.77,
+       "90%": [
+        1.24,
+        12.29
+       ],
+       "clv_vs_bsp%": 0.0
+      }
+     }
+    },
+    "by_year": {
+     "2021": {
+      "runners": 159971,
+      "model": 0.43194,
+      "bsp": 0.4209,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 6372,
+        "per_day": 22.8,
+        "roi%": 7.75,
+        "90%": [
+         1.95,
+         13.54
+        ],
+        "clv_vs_bsp%": 9.3
+       },
+       "at_bsp": {
+        "bets": 6372,
+        "per_day": 22.8,
+        "roi%": 1.28,
+        "90%": [
+         -4.99,
+         7.54
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     },
+     "2022": {
+      "runners": 202814,
+      "model": 0.4322,
+      "bsp": 0.42097,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 8086,
+        "per_day": 22.6,
+        "roi%": 17.56,
+        "90%": [
+         12.41,
+         22.7
+        ],
+        "clv_vs_bsp%": 15.1
+       },
+       "at_bsp": {
+        "bets": 8086,
+        "per_day": 22.6,
+        "roi%": 1.14,
+        "90%": [
+         -3.92,
+         6.2
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     },
+     "2023": {
+      "runners": 276268,
+      "model": 0.43828,
+      "bsp": 0.42439,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 7335,
+        "per_day": 20.5,
+        "roi%": 17.1,
+        "90%": [
+         11.58,
+         22.62
+        ],
+        "clv_vs_bsp%": 12.85
+       },
+       "at_bsp": {
+        "bets": 7335,
+        "per_day": 20.5,
+        "roi%": 4.37,
+        "90%": [
+         -1.35,
+         10.1
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     },
+     "2024": {
+      "runners": 287997,
+      "model": 0.44279,
+      "bsp": 0.42646,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 4196,
+        "per_day": 11.6,
+        "roi%": 2.37,
+        "90%": [
+         -4.7,
+         9.45
+        ],
+        "clv_vs_bsp%": -1.08
+       },
+       "at_bsp": {
+        "bets": 4196,
+        "per_day": 11.6,
+        "roi%": 27.41,
+        "90%": [
+         -11.9,
+         66.72
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     },
+     "2025": {
+      "runners": 268945,
+      "model": 0.44456,
+      "bsp": 0.42649,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 3717,
+        "per_day": 10.4,
+        "roi%": 2.59,
+        "90%": [
+         -5.24,
+         10.42
+        ],
+        "clv_vs_bsp%": -1.58
+       },
+       "at_bsp": {
+        "bets": 3717,
+        "per_day": 10.4,
+        "roi%": 3.05,
+        "90%": [
+         -5.69,
+         11.78
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     },
+     "2026": {
+      "runners": 190019,
+      "model": 0.44626,
+      "bsp": 0.4275,
+      "morning_edge>0.2": {
+       "at_morning": {
+        "bets": 2592,
+        "per_day": 9.6,
+        "roi%": -3.93,
+        "90%": [
+         -13.14,
+         5.28
+        ],
+        "clv_vs_bsp%": -9.78
+       },
+       "at_bsp": {
+        "bets": 2592,
+        "per_day": 9.6,
+        "roi%": 6.8,
+        "90%": [
+         -4.71,
+         18.3
+        ],
+        "clv_vs_bsp%": 0.0
+       }
+      }
+     }
+    }
+   },
+   "top_features": {
+    "gp_rs_vs_past": 0.0456,
+    "gsr_ewm_z": 0.0382,
+    "gp_mkt_w3": 0.0321,
+    "gsr_ewm_rank": 0.0221,
+    "runs_before": 0.0175,
+    "gsr_ewm_gap": 0.0173,
+    "weight_vs_mean": 0.0163,
+    "gp_mkt_w5": 0.0159,
+    "grade_change": 0.0159,
+    "gp_mkt_l1": 0.0147,
+    "age_months": 0.0129,
+    "days_since": 0.0129,
+    "gp_lbsc_l1": 0.0125,
+    "trap_bias": 0.0117,
+    "trainer_win_gap": 0.0114,
+    "cd_gsr": 0.0112,
+    "gsr_trend": 0.0109,
+    "field": 0.0109,
+    "weight_change": 0.0109,
+    "gp_rating_vs_rs": 0.0105,
+    "gp_rs_car": 0.0099,
+    "gp_nres_w5_z": 0.0093,
+    "sp_p_mean3": 0.0089,
+    "esr_mean3_z": 0.0087,
+    "trainer_win_z": 0.0082,
+    "gp_mkt_car": 0.0081,
+    "gp_bsp_ae_w10_z": 0.0078,
+    "gp_ae_l1": 0.0077,
+    "sire_win": 0.0074,
+    "gp_lbsc_w3": 0.007
+   }
+  }
+ }
+}
