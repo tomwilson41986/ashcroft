@@ -22,10 +22,18 @@ import pandas as pd
 NAME_RE = re.compile(r"^\s*([A-Z]{1,2}\d{0,2})\s+(\d{3,4})m\b", re.I)
 
 
+#: Betfair's class codes where GBGB writes the grade differently (the card check of 6 Oct 2026: Betfair's "HC" hurdle
+#: races are GBGB's "HP")
+BETFAIR_TO_GBGB = {"HC": "HP"}
+
+
 def parse_market_name(name) -> tuple[str | None, float | None]:
     """"A5 480m" -> ("A5", 480.0); "OR3 500m" -> ("OR3", 500.0); anything else -> (None, None)."""
     m = NAME_RE.match(str(name or ""))
-    return (m.group(1).upper(), float(m.group(2))) if m else (None, None)
+    if not m:
+        return (None, None)
+    cls = m.group(1).upper()
+    return (BETFAIR_TO_GBGB.get(cls, cls), float(m.group(2)))
 
 
 def norm_name(s) -> str:

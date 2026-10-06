@@ -205,7 +205,9 @@ def card_check(store, day: date, blocks=LIVE_BLOCKS, s3=None) -> dict:
     hist = full[full.race_date.astype(str) < ds]
     card = cards(markets, hist)
     card = drop_removed(card[card.race_date == ds], removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
-    card = card[card.matched_history]
+    # every runner is priced (a dog with no history still counts in its field); only the matched are compared
+    m = card[card.matched_history]
+    matched = set(zip(m.track, m.race_time.astype(str).str[:5], m.trap.astype(float)))
     prices = load_prices(store, f"2014-{day.year}")
     eng = GreyhoundMetricsEngine(blocks=tuple(blocks))
     a = eng.calculate_all(clean(with_cards(hist, card)), prices=prices)
@@ -214,6 +216,7 @@ def card_check(store, day: date, blocks=LIVE_BLOCKS, s3=None) -> dict:
     a = a[a.is_card.fillna(False).astype(bool)].assign(race_time=lambda x: x.race_time.astype(str).str[:5])
     b = b[(b.race_date.astype(str) == ds)].assign(race_time=lambda x: x.race_time.astype(str).str[:5])
     j = a.merge(b, on=k, suffixes=("_card", "_res"))
+    j = j[[(t, r, float(p)) in matched for t, r, p in zip(j.track, j.race_time, j.trap)]]
     agree = {}
     for f in eng.features:
         if f in k:                                           # a join key: equal by construction

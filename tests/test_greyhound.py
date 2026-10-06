@@ -244,6 +244,7 @@ def test_a_card_reads_grade_trip_trap_and_dog_from_the_catalogue_and_finds_the_d
     from greyhound.card import cards, parse_market_name
     assert parse_market_name("A5 480m") == ("A5", 480.0) and parse_market_name("OR3 500m") == ("OR3", 500.0)
     assert parse_market_name("To Be Placed") == (None, None)
+    assert parse_market_name("HC 500m") == ("HP", 500.0)                        # Betfair's hurdle code, GBGB's grade
     hist = pd.DataFrame({"dog_id": [7, 8], "dog_name": ["Goldcash Warrior", "Other"], "race_date": ["2026-10-01"] * 2,
                          "race_time": ["18:00:00"] * 2, "sire": ["S", "T"], "dam": ["D", "E"], "trainer": ["X", "Y"],
                          "born": ["Jan-2024"] * 2, "sex": ["d", "b"]})
