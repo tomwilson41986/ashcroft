@@ -122,7 +122,7 @@ python betfair_prices.py --pull-s3 --load --match --dir data/betfair_raw --load-
 
 # The live market record (the owner's ask, 30 Sep): every book the trader reads (BETFAIR_RECORD=1) and all-day
 # snapshots on the UK server, raw to s3://$CAPTURE_BUCKET/betfair_live/<day>/; the nightly load builds
-# betfair_live_markets, betfair_live_marks (the book at 08:00-12:00 UK and T-120..T-1 min, last, settled) and live_orders
+# betfair_live_markets, betfair_live_marks (the book at 08:00-12:00 UK and T-120..T-1 min, last, settled; the BSP read at each off, from 7 Oct) and live_orders
 python betfair_recorder.py --record --final --until 21:30
 python betfair_recorder.py --load-db --days 3
 

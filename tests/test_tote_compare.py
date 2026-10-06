@@ -70,3 +70,56 @@ def test_fair_dividends():
     assert sw[0, 1] == pytest.approx(1 / tc.swinger_matrix(P)[0, 1])
     with pytest.raises(ValueError):
         tc.fair_dividends(P, "win")
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# The record read: declared dividends and the join to Betfair (made-up answers in the shape the API returns)
+# ---------------------------------------------------------------------------------------------------------------
+
+def _result(race_id, track="BRIGHTON", post="2026-10-06T12:38:00Z", win=(5, 4.2), abandoned=False):
+    placed = [("3", "Launceston", 1, 500, win, (1.9, 1.9)), ("2", "Jenson Benson", 2, 600, (6, 5), (1.7, 1.7)),
+              ("7", "Private Project", 3, 500, (5, 5), (1.9, 1.9))]
+    return {"raceId": str(race_id), "trackName": track, "postTime": post, "runners": 9, "nonRunners": [10],
+            "abandoned": abandoned,
+            "placeRunners": [{"programNumber": c, "name": n, "finishingPosition": f, "decimalShowPrice": sp,
+                              "winDividend": {"dividend": w[0], "baseDividend": w[1], "paid": True},
+                              "placeDividend": {"dividend": p[0], "baseDividend": p[1], "paid": True}}
+                             for c, n, f, sp, w, p in placed],
+            "pools": [{"name": "WIN", "total": 5792.08, "dividends": [5], "baseDividends": [5]},
+                      {"name": "PLACE", "total": 1704.6, "dividends": [1.9, 1.7, 1.9], "baseDividends": [1.9, 1.7, 1.9]},
+                      {"name": "EXACTA", "total": 3579.42, "dividends": [19.2], "baseDividends": [19.2]},
+                      {"name": "SWINGER", "total": 725.66, "dividends": [3.3, 4.1, 3.9]},
+                      {"name": "PLACEPOT", "total": 58893.61, "estimatedDividends": 89.2}]}
+
+
+def test_the_declared_dividends_are_read_from_each_races_latest_answer():
+    early = {"polled_utc": "2026-10-06T12:48:00+00:00", "answer": {"results": [_result(1, win=(5, 4.0))]}}
+    late = {"polled_utc": "2026-10-06T13:08:00+00:00",
+            "answer": {"results": [_result(1), _result(2, abandoned=True)]}}
+    broken = {"polled_utc": "2026-10-06T13:09:00+00:00", "answer": None}
+    runners, pools = tc.declared([late, broken, early])
+    assert set(runners.race_id) == {"1"}                                       # the abandoned race is left out
+    w = runners[runners.finish == 1].iloc[0]
+    assert (w.cloth, w["name"], w.sp, w.win, w.win_base) == ("3", "Launceston", 5.0, 5.0, 4.2)   # the later answer
+    assert runners.place.tolist() == [1.9, 1.7, 1.9] and runners.non_runners.iloc[0] == 1
+    sw = pools[pools.pool == "SWINGER"].iloc[0]
+    assert sw.dividends == [3.3, 4.1, 3.9] and sw.base_dividends == [] and sw.total == pytest.approx(725.66)
+    assert pools[pools.pool == "PLACEPOT"].iloc[0].dividends == []
+
+
+def test_tote_races_and_runners_find_their_betfair_markets():
+    import pandas as pd
+    tote = pd.DataFrame({"race_id": ["1", "2", "3"], "track": ["BRIGHTON", "CHELMSFORD", "BRIGHTON"],
+                         "post_utc": ["2026-10-06T12:38:00Z", "2026-10-06T18:00:00Z", "2026-10-06T15:00:00Z"]})
+    cat = pd.DataFrame({
+        "market_id": ["1.10", "1.10", "1.11", "1.20", "1.20"], "market_type": ["WIN", "WIN", "PLACE", "WIN", "WIN"],
+        "venue": ["Brighton", "Brighton", "Brighton", "Chelmsford City", "Chelmsford City"],
+        "market_start_utc": ["2026-10-06T12:38:00.000Z"] * 3 + ["2026-10-06T18:01:00.000Z"] * 2,
+        "selection_id": [11, 12, 11, 21, 22], "cloth_number": ["3", None, "3", "1", "2"],
+        "runner_name": ["Launceston", "Jenson Benson (IRE)", "Launceston", "Alpha", "Beta"]})
+    m = tc.match_races(tote, cat)
+    assert m == {"1": "1.10", "2": "1.20"}                     # race 3 has no market at its off
+    assert tc.match_races(tote, cat, market_type="PLACE") == {"1": "1.11"}
+    rows = pd.DataFrame({"race_id": ["1", "1", "2", "3"], "cloth": ["3", "2", "9", "3"],
+                         "name": ["Launceston", "Jenson Benson", "Beta", "Launceston"]})
+    assert tc.selection_ids(rows, cat, m).tolist() == [11, 12, 22, None]   # by cloth, by name, by name, no market

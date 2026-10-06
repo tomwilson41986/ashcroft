@@ -81,3 +81,26 @@ Three read-only probes from the UK server (`tote_probe.py`; runs 37442604100, 37
 
 No login is needed for any of this. The owner's Tote password was shared in chat on 6 Oct: it is not stored or
 used anywhere here, and should be changed.
+
+## The first comparison (6 Oct, from 12:56 UTC)
+
+`research/queries/done/tote_vs_betfair.py`, ledger `tote-compare-1006`. The record began with the restarted
+trading session, so it covers 32 GB/IE races. Every one was matched to its Betfair win and place markets by course,
+off time and cloth number.
+
+- **Before the off the Tote is dear.** At every mark from an hour out to a minute out, the win pool's dividend is a
+  median 26-30% below the break-even of a Betfair lay at the same minute, and the place pool's 25-36% below. The
+  figure the site shows with the Tote Guarantee is 16-20% below. Only 9-18% of runners show any edge at a mark.
+- **Late money moves the dividends.** The median win pool holds £339 an hour before the off, £2,488 five minutes
+  before, £4,127 a minute before and £7,797 just after it: about half the pool arrives at the off. A runner's
+  dividend at a minute before ends anywhere from 0.77x to 1.36x of it (the middle 80%), and a third fall 10% or more.
+- **The edges seen before the off do not hold.** The pairs that showed more than 5% (back on the Tote, lay on
+  Betfair at the same minute) lost 22% to 66% a unit once paid at the declared dividend: 20-42 pairs a mark, 3-7
+  winners.
+- **The guarantee.** The win pool's listed dividend is the guaranteed figure (at least the industry SP) in all 35
+  races. Against the BSP, the guarantee is the one structural feature worth testing. That test, and the exotics
+  against their fair dividends, need the BSPs, which the day record did not hold (ledger `recorder-bsp-1006`; the
+  recorder reads them at the off from 7 Oct).
+
+So far, no gap between the Tote and Betfair survives to the declared dividend. The comparison runs again on 7 Oct,
+the first whole day with the BSPs.

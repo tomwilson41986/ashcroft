@@ -12,8 +12,10 @@ of these would be useful in our model. Ledger `hrb-features-1006`.
   draw, pace, prize money and travel.
 - What the records could give that the model did not read is now in two drop-in blocks, screened on the winner and
   put in front of the served model (iteration 109):
-  - the in-running low and high of each past run, from the price files;
-  - six small extras.
+  - the in-running low and high of each past run, from the price files. **It sharpens the served model's price
+    forecast** (-0.0008, resolved; most at the top of the market), though it adds nothing to the BSP on the winner.
+    Iteration 110 tries it in every member of the served blend before any training;
+  - six small extras: nothing. Retired.
 - What horseracebase holds and our export does not is listed at the end: wind operations, foal dates, owners,
   opening prices and others.
 
@@ -145,7 +147,27 @@ What it means:
   noise.
 - The served model forecasts the BSP rather than beating it on the winner, so the deciding test is iteration 109.
   It puts each block in front of the served model (main_ir, main_hx) and scores the price forecast, the rule and
-  the owner's staking. Until then both blocks are built, not served.
+  the owner's staking.
+
+**Iteration 109** (research loop run 37474104512; the served recipe, 53,910 runners in 5,923 races, 27 Sep 2025 to
+31 Mar 2026):
+
+| | Price-forecast error (90% CI) | Rank 1 | Brier skill, concordance | The rule | The owner's staking at >= 3% |
+|---|---|---|---|---|---|
+| The served main | 0.3973 | | | +9.04% | CLV +6.50% (8,605 bets) |
+| + the in-running block | **-0.0008 (-0.0014 to -0.0002)** | -0.0020 (-0.0030 to -0.0010) | level | +9.07% | CLV +6.88% (8,620 bets) |
+| + the extras | +0.0001 (-0.0004 to +0.0007) | -0.0011 | level | +9.05% | CLV +6.66% |
+
+- The in-running block is the first block to improve the served main since 28 Sep. The gain is small (0.2% of the
+  error) and largest for the favourites (0.8%), where the money is.
+- The served model is not the main alone. It is three models blended (data/models/bfsp_ensemble.json): the main and a
+  partner averaged, then race_xent gated in by rank, so the three shortest prices in a race are race_xent's alone.
+  A gain in the main reaches those prices only through the ranks. **Iteration 110** fits the block into all three
+  members, compares the blend with it against the served blend refitted, and repeats the main at a second seed
+  (seed 7), because refits alone move this measure by a few ten-thousandths.
+- If it holds, the block is trained into the served models and goes through the usual verification, the
+  matrix-against-live parity check and a dry run before it is served. The rule itself does not change.
+- The extras are retired.
 
 ## What horseracebase holds that our export does not take
 

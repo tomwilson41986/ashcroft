@@ -56,18 +56,23 @@ BOOK_FIELDS = [
     "back1", "back1_size", "back2", "back2_size", "back3", "back3_size",
     "lay1", "lay1_size", "lay2", "lay2_size", "lay3", "lay3_size",
     "sp_near", "sp_far", "sp_actual", "sp_back_taken", "sp_lay_taken",
+    "number_of_winners",                                    # the places the market pays (from 7 Oct 2026)
 ]
 MARKET_FIELDS = [
     "market_id", "market_type", "market_name", "market_start_utc", "venue", "country", "event_id", "event_name",
     "race_type", "selection_id", "runner_name", "sort_priority", "cloth_number", "stall_draw", "jockey", "trainer",
     "age", "weight_value", "official_rating", "form", "days_since_last_run", "wearing", "forecast_num",
     "forecast_den", "recorded_utc",
+    "each_way_divisor",                                     # an each-way market's place fraction, 1/divisor (7 Oct)
 ]
 #: the catalogue the recorder asks for (the trader's own catalogue call is left as it is)
 CATALOGUE_PROJECTION = ["EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION", "RUNNER_METADATA", "MARKET_DESCRIPTION"]
 #: marks of the morning, UK clock time; marks before the off, minutes, each with how far a snapshot may stray
 CLOCK_MARKS = ("08:00", "09:00", "10:00", "11:00", "12:00")
 OFF_MARKS = (120, 60, 30, 15, 10, 5, 3, 1)
+#: a market's BSP is read once it has reconciled at the off (Betfair's book of a closed market carries none): up to
+#: BSP_TRIES reads, BSP_EVERY seconds apart, within 15 minutes of the off
+BSP_TRIES, BSP_EVERY = 3, 15.0
 #: Betfair's event type ids: the record is of horse racing unless asked otherwise (greyhounds: --event-type 4339)
 HORSE_RACING, GREYHOUNDS = "7", "4339"
 
@@ -152,7 +157,7 @@ def book_rows(raw_books, polled_at: datetime, source: str) -> list[dict]:
                 "number_of_active_runners": b.get("numberOfActiveRunners"),
                 "market_total_matched": _num(b.get("totalMatched")), "last_match_utc": b.get("lastMatchTime"),
                 "is_delayed": int(bool(b.get("isMarketDataDelayed"))), "bet_delay": b.get("betDelay"),
-                "version": b.get("version")}
+                "version": b.get("version"), "number_of_winners": b.get("numberOfWinners")}
         for r in b.get("runners") or []:
             ex, sp = r.get("ex") or {}, r.get("sp") or {}
             row = dict(base, selection_id=r.get("selectionId"), runner_status=r.get("status"),
@@ -190,7 +195,7 @@ def catalogue_rows(raw_catalogue, recorded_at: datetime) -> list[dict]:
                 "official_rating": md.get("OFFICIAL_RATING"), "form": md.get("FORM"),
                 "days_since_last_run": md.get("DAYS_SINCE_LAST_RUN"), "wearing": md.get("WEARING"),
                 "forecast_num": md.get("FORECASTPRICE_NUMERATOR"), "forecast_den": md.get("FORECASTPRICE_DENOMINATOR"),
-                "recorded_utc": ts})
+                "recorded_utc": ts, "each_way_divisor": _num(desc.get("eachWayDivisor"))})
     return rows
 
 
@@ -198,6 +203,11 @@ def _append(path: Path, fields: list[str], rows: list[dict]) -> None:
     if not rows:
         return
     new = not path.exists() or path.stat().st_size == 0
+    if not new:                                 # a file begun by an older recorder keeps its own columns
+        with path.open(newline="") as f:
+            head = next(csv.reader(f), None)
+        if head:
+            fields = head
     with path.open("a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
         if new:
@@ -480,6 +490,8 @@ def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float 
     offs: dict[str, datetime] = {}
     last: dict[str, datetime] = {}
     done: set[str] = set()
+    await_bsp: dict[str, int] = {}                        # markets at the off whose BSP is still to read: tries
+    last_bsp: dict[str, datetime] = {}
     polls = books = 0
 
     def refresh() -> None:
@@ -528,7 +540,28 @@ def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float 
                 last[mid] = t
                 if b.get("inplay") or b.get("status") == "CLOSED" or (
                         b.get("status") == "SUSPENDED" and t >= offs.get(mid, t)):
+                    if mid not in done:
+                        await_bsp.setdefault(mid, 0)
                     done.add(mid)
+        # the BSP, read once the market has reconciled it at the off (a closed market's book carries none)
+        bsp_due = [m for m, n in await_bsp.items()
+                   if n < BSP_TRIES and (m not in last_bsp or (t - last_bsp[m]).total_seconds() >= BSP_EVERY - 1.0)]
+        if bsp_due:
+            try:
+                raw_sp = read_books(data, bsp_due, settled=True)
+            except Exception as exc:                        # the next pass tries again, BSP_TRIES in all
+                log.warning("BSPs not read (%s)", exc)
+                raw_sp = []
+            for m in bsp_due:
+                await_bsp[m] += 1
+                last_bsp[m] = t
+            got = {b.get("marketId") for b in raw_sp
+                   if any(_num((r.get("sp") or {}).get("actualSP")) is not None for r in b.get("runners") or [])}
+            if got:
+                books += rec.record_books([b for b in raw_sp if b.get("marketId") in got], source="bsp", polled_at=t)
+            for m in list(await_bsp):
+                if m in got or await_bsp[m] >= BSP_TRIES or t > offs.get(m, t) + timedelta(minutes=15):
+                    del await_bsp[m]
         if t >= next_refresh:
             try:
                 refresh()
@@ -536,18 +569,35 @@ def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float 
                 log.warning("catalogue not read again (%s)", exc)
             next_refresh = t + timedelta(minutes=refresh_minutes)
         pending = [m for m in offs if m not in done]
-        if not pending and not (wait_for_markets and not offs):
+        if not pending and not await_bsp and not (wait_for_markets and not offs):
             break
         nxt = min(((last[m] + timedelta(seconds=_interval((offs[m] - t).total_seconds() / 60.0, every_far, every_near,
                                                           near_minutes)) - t).total_seconds()
                    if m in last else 0.0 for m in pending), default=(next_refresh - t).total_seconds())
+        if await_bsp:
+            nxt = min(nxt, BSP_EVERY)
         sleep(min(60.0, max(5.0, nxt)))
     rec.maybe_upload(force=True)
     return {"markets": len(offs), "polls": polls, "rows": books, "left": len(offs) - len(done)}
 
 
+def _bsp_on_file(rec: DayRecorder) -> dict:
+    """(market id, selection id) -> the BSP read as its market reconciled at the off, from the day file's "bsp" rows."""
+    out = {}
+    try:
+        with rec.books_path.open(newline="") as f:
+            for r in csv.DictReader(f):
+                if r.get("source") == "bsp" and _num(r.get("sp_actual")) is not None:
+                    out[(str(r.get("market_id")), str(r.get("selection_id")))] = _num(r.get("sp_actual"))
+    except OSError:
+        pass
+    return out
+
+
 def final(day: date, data, rec: DayRecorder, market_ids: list[str] | None = None, now=None) -> int:
-    """The settled books of the day's markets (status CLOSED: BSP, WINNER/LOSER/REMOVED, reduction factors)."""
+    """The settled books of the day's markets (status CLOSED: WINNER/LOSER/REMOVED, reduction factors). Betfair sends
+    no BSP in a closed market's book, so each runner's is the one read as its market reconciled at the off (record()),
+    where the day file has it."""
     if market_ids is not None:
         ids = market_ids
     elif getattr(rec, "tag", "") not in DAY_FILE_TAGS:     # a record of its own (other place markets, greyhounds)
@@ -557,6 +607,15 @@ def final(day: date, data, rec: DayRecorder, market_ids: list[str] | None = None
     if not ids:
         return 0
     raw = read_books(data, ids, settled=True)
+    known = _bsp_on_file(rec)
+    for b in raw if known else []:
+        for r in b.get("runners") or []:
+            if not isinstance(r.get("sp"), dict):
+                r["sp"] = {}
+            if _num(r["sp"].get("actualSP")) is None:
+                v = known.get((str(b.get("marketId")), str(r.get("selectionId"))))
+                if v is not None:
+                    r["sp"]["actualSP"] = v
     n = rec.record_books(raw, source="final", polled_at=(now or datetime.now(timezone.utc)))
     rec.maybe_upload(force=True)
     return n
@@ -594,6 +653,11 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS live_orders (race_date TEXT, seq INTEGER, {ocols},
             loaded_at TEXT DEFAULT (datetime('now')), PRIMARY KEY (race_date, mode, seq));
     """)
+    have = {r[1] for r in conn.execute("PRAGMA table_info(betfair_live_markets)")}
+    for c in LIVE_MARKET_FIELDS:                # columns added to the record since the table was made
+        if c not in have:
+            kind = "INTEGER" if c in ("selection_id", "sort_priority", "race_results_id") else "TEXT"
+            conn.execute(f"ALTER TABLE betfair_live_markets ADD COLUMN {c} {kind}")
     conn.commit()
 
 
@@ -639,6 +703,14 @@ def marks(books, markets, day: date):
     out["market_status"] = out["status"]
     out["active_runners"] = pd.to_numeric(out["number_of_active_runners"], errors="coerce")
     out["bsp"] = pd.to_numeric(out["sp_actual"], errors="coerce")
+    # the settled book of a closed market carries no BSP: the one read as the market reconciled it at the off
+    sp = b[b["source"].isin(["bsp", "final"])].copy()
+    sp["_sp"] = pd.to_numeric(sp["sp_actual"], errors="coerce")
+    sp = sp.dropna(subset=["_sp"]).sort_values("polled").groupby(["market_id", "selection_id"])["_sp"].last()
+    fill = out["mark"].eq("final") & out["bsp"].isna()
+    if fill.any() and len(sp):
+        out.loc[fill, "bsp"] = [sp.get((m, s)) for m, s in zip(out.loc[fill, "market_id"],
+                                                               out.loc[fill, "selection_id"])]
     return out[MARK_FIELDS]
 
 

@@ -19,6 +19,7 @@ These are cheap assertions about YAML and about two env readers. They are here
 because the failure mode was silence: nothing crashed loudly enough to notice.
 """
 
+import re
 import os
 from pathlib import Path
 
@@ -159,6 +160,17 @@ def test_only_the_trader_runs_on_the_live_key():
     recorders = [ln for ln in lines if "betfair_recorder.py" in ln and not ln.startswith("#")]
     assert recorders and not any("TRADER_KEY" in ln or "LIVE_APP_KEY" in ln for ln in recorders)
     assert not any("echo" in ln and "$TRADER_KEY" in ln for ln in lines)       # the key is never printed
-    others = [p.name for p in WORKFLOWS.glob("*.yml") if p.name != "live-trade.yml"
-              and "BETFAIR_LIVE_APP_KEY" in p.read_text()]
-    assert others == []
+    # the workflows that place bets, and nothing else, name the live key; in each, only a trader's own process
+    # takes it (the horse trader, the greyhound trader: greyhound-trade.yml, 6 Oct), never a record beside it
+    named = {p.name for p in WORKFLOWS.glob("*.yml") if "BETFAIR_LIVE_APP_KEY" in p.read_text()}
+    assert named <= {"live-trade.yml", "greyhound-trade.yml"}, named          # a new one is checked here first
+    for name in named:
+        for ln in ((WORKFLOWS / name).read_text().splitlines()):
+            ln = ln.strip()
+            if ln.startswith("#"):
+                continue
+            if "python" in ln and ("LIVE_APP_KEY" in ln or "TRADER_KEY" in ln):
+                assert "auto_trade.py" in ln or "greyhound.live --trade" in ln, (name, ln)
+            if "betfair_recorder.py" in ln or "tote_recorder.py" in ln:
+                assert "LIVE_APP_KEY" not in ln and "TRADER_KEY" not in ln, (name, ln)
+            assert not re.search(r"echo[^;]*\$\{?(BETFAIR_LIVE_APP_KEY|TRADER_KEY)\b", ln), (name, ln)

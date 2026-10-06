@@ -93,6 +93,18 @@ def test_catalogue_rows_carry_the_card_metadata():
     assert rows[1]["jockey"] is None                              # no metadata asked for, or none sent
 
 
+def test_the_places_paid_and_the_each_way_divisor_are_recorded():
+    book = raw_book(mid="1.300")
+    book["numberOfWinners"] = 3
+    rows = br.book_rows([book, raw_book()], datetime(2026, 10, 7, 9, 0, tzinfo=timezone.utc), "recorder")
+    assert [r["number_of_winners"] for r in rows] == [3, 3, None, None]       # a book that does not say: blank
+    ew = raw_catalogue(mid="1.301")
+    ew["marketName"], ew["description"] = "Each Way", {"marketType": "EACH_WAY", "eachWayDivisor": 5.0}
+    rows = br.catalogue_rows([ew, raw_catalogue()], datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc))
+    assert [r["each_way_divisor"] for r in rows] == [5.0, 5.0, None, None]
+    assert "number_of_winners" in br.BOOK_FIELDS and "each_way_divisor" in br.MARKET_FIELDS
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # The day's files
 # ---------------------------------------------------------------------------------------------------------------
@@ -112,6 +124,53 @@ def test_the_day_files_append_with_one_header_and_upload_gzipped(tmp_path):
     key = ("ashcroft", f"betfair_live/{DAY}/books.csv.gz")
     assert gzip.decompress(s3.objects[key]) == rec.books_path.read_bytes()
     assert ("ashcroft", f"betfair_live/{DAY}/markets.csv.gz") in s3.objects
+
+
+def test_a_day_file_begun_by_an_older_recorder_keeps_its_own_columns(tmp_path):
+    old_fields = [f for f in br.BOOK_FIELDS if f != "number_of_winners"]
+    rec = br.DayRecorder(DAY, root=tmp_path, background=False)
+    with rec.books_path.open("w", newline="") as f:                   # the morning's file, before the change
+        csv.DictWriter(f, fieldnames=old_fields, lineterminator="\n").writeheader()
+    book = raw_book()
+    book["numberOfWinners"] = 1
+    rec.record_books([book], "recorder")                              # a restart on the new code, the same day
+    with rec.books_path.open() as f:
+        rows = list(csv.DictReader(f))
+    assert list(rows[0]) == old_fields                                # one header, the rows under it in line
+    assert (rows[0]["market_id"], rows[0]["back1"], rows[0]["sp_lay_taken"]) == ("1.100", "3.4", "")
+    fresh = br.DayRecorder(DAY + timedelta(days=1), root=tmp_path, background=False)
+    fresh.record_books([book], "recorder")
+    with fresh.books_path.open() as f:
+        assert next(csv.DictReader(f))["number_of_winners"] == "1"    # a new day's file carries the new column
+
+
+def test_the_nightly_load_adds_new_columns_to_an_older_table_and_reads_older_files(tmp_path):
+    db = tmp_path / "t.db"
+    conn = sqlite3.connect(db)
+    old_cols = [c for c in br.LIVE_MARKET_FIELDS if c != "each_way_divisor"]
+    conn.execute(f"CREATE TABLE betfair_live_markets ({', '.join(old_cols)}, loaded_at TEXT, "
+                 "PRIMARY KEY (market_id, selection_id))")
+    conn.commit()
+    br.ensure_tables(conn)
+    assert "each_way_divisor" in {r[1] for r in conn.execute("PRAGMA table_info(betfair_live_markets)")}
+    br.ensure_tables(conn)                                            # twice is harmless
+    conn.close()
+    books, markets = _books_frame()
+    d = tmp_path / "live" / f"{DAY}"
+    d.mkdir(parents=True)
+    books.drop(columns=["number_of_winners"]).to_csv(d / "books.csv", index=False)     # files of before 7 Oct
+    markets.drop(columns=["each_way_divisor"]).to_csv(d / "markets.csv", index=False)
+    out = br.load_db(str(db), days=1, day_to=DAY, s3=FakeS3(), root=tmp_path / "live")
+    assert out[0]["markets"] == 2 and out[0]["marks"] > 0
+    ew = raw_catalogue(mid="1.301")
+    ew["description"] = {"marketType": "EACH_WAY", "eachWayDivisor": 4.0}
+    pd.concat([markets, pd.DataFrame(br.catalogue_rows([ew], datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc)))]
+              ).to_csv(d / "markets.csv", index=False)                  # a file of the new recorder's
+    br.load_db(str(db), days=1, day_to=DAY, s3=FakeS3(), root=tmp_path / "live")
+    conn = sqlite3.connect(db)
+    got = conn.execute("SELECT market_type, each_way_divisor FROM betfair_live_markets WHERE market_id = '1.301'")
+    assert {tuple(r) for r in got} == {("EACH_WAY", "4.0")}
+    conn.close()
 
 
 def test_a_new_recorder_takes_up_the_markets_already_on_file(tmp_path):
@@ -279,6 +338,77 @@ def test_the_recorder_snapshots_far_then_near_and_leaves_a_market_at_the_off(tmp
     assert max(first) >= data.offs["1.1"]                       # read at the off, seen in play, then left
     assert all(t <= data.offs["1.1"] + timedelta(minutes=2) for t in first)
     assert out["left"] == 0 and out["rows"] > 0
+
+
+class SpData(LoopData):
+    """LoopData whose books carry the BSP once asked with SP_TRADED in play: 1.1 from its second such read, 1.2
+    never (a market without a BSP of its own)."""
+
+    def __init__(self, clock):
+        super().__init__(clock)
+        self.sp_reads = []
+
+    def _read(self, method, params):
+        out = super()._read(method, params)
+        if method == "listMarketBook" and "SP_TRADED" in params["priceProjection"]["priceData"]:
+            for b in out:
+                m = b["marketId"]
+                self.sp_reads.append((self.clock[0], m))
+                b["bspReconciled"] = True
+                if m == "1.1" and sum(1 for _, x in self.sp_reads if x == m) >= 2:
+                    for r in b["runners"]:
+                        r["sp"] = {"actualSP": 3.75 if r["selectionId"] == 11 else "NaN"}
+        return out
+
+
+def test_the_bsp_is_read_as_each_market_reconciles_it_at_the_off(tmp_path):
+    clock = [datetime(2026, 10, 1, 11, 50, tzinfo=timezone.utc)]
+    data = SpData(clock)
+    rec = br.DayRecorder(DAY, root=tmp_path, s3=FakeS3(), background=False)
+
+    def sleep(seconds):
+        clock[0] += timedelta(seconds=seconds)
+
+    out = br.record(DAY, datetime(2026, 10, 1, 13, 0, tzinfo=timezone.utc), data, rec, every_far=300, every_near=60,
+                    near_minutes=60, now=lambda: clock[0], sleep=sleep)
+    reads = {m: [t for t, x in data.sp_reads if x == m] for m in ("1.1", "1.2")}
+    assert len(reads["1.1"]) == 2 and len(reads["1.2"]) == br.BSP_TRIES        # found on the second; given up after 3
+    assert all(data.offs[m] <= t <= data.offs[m] + timedelta(minutes=2) for m in reads for t in reads[m])
+    with rec.books_path.open() as f:
+        rows = [r for r in csv.DictReader(f) if r["source"] == "bsp"]
+    assert {(r["market_id"], r["selection_id"], r["sp_actual"]) for r in rows} == {("1.1", "11", "3.75"),
+                                                                                  ("1.1", "12", "")}
+    assert out["left"] == 0
+
+
+def test_the_final_mark_takes_the_bsp_read_at_the_off_when_the_settled_book_has_none():
+    books, markets = _books_frame()
+    books.loc[books["source"] == "final", "sp_actual"] = None              # as Betfair sends a closed market
+    at_off = pd.DataFrame(br.book_rows([raw_book(inplay=True, runners=[
+        {"selectionId": 11, "status": "ACTIVE", "sp": {"actualSP": 4.1}}])],
+        datetime(2026, 10, 1, 14, 30, 20, tzinfo=timezone.utc), "bsp"))
+    m = br.marks(pd.concat([books, at_off], ignore_index=True), markets, DAY).set_index(["selection_id", "mark"])
+    assert m.loc[(11, "final"), "bsp"] == pytest.approx(4.1)
+    assert m.loc[(11, "last"), "polled_utc"] == "2026-10-01T14:29:00Z"   # the in-play read is no pre-off mark
+    assert "final" not in m.loc[12].index
+
+
+def test_the_final_pass_carries_the_bsp_read_at_the_off(tmp_path):
+    rec = br.DayRecorder(DAY, root=tmp_path, s3=FakeS3(), background=False)
+    rec.record_books([raw_book(inplay=True, runners=[{"selectionId": 11, "status": "ACTIVE", "sp": {"actualSP": 4.4}},
+                                                     {"selectionId": 12, "status": "ACTIVE"}])],
+                     source="bsp", polled_at=datetime(2026, 10, 1, 14, 30, 20, tzinfo=timezone.utc))
+
+    class Closed:
+        def _read(self, method, params):                       # a closed market's book: results, no BSP
+            return [raw_book(status="CLOSED", runners=[{"selectionId": 11, "status": "WINNER", "sp": {}},
+                                                       {"selectionId": 12, "status": "LOSER"}])]
+
+    assert br.final(DAY, Closed(), rec, market_ids=["1.100"]) == 2
+    with rec.books_path.open() as f:
+        fin = {r["selection_id"]: r for r in csv.DictReader(f) if r["source"] == "final"}
+    assert (fin["11"]["runner_status"], fin["11"]["sp_actual"]) == ("WINNER", "4.4")
+    assert fin["12"]["sp_actual"] == ""                                 # none read at the off: left blank
 
 
 def test_the_catalogue_is_read_in_pieces_under_betfairs_100_market_limit():

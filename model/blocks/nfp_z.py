@@ -4,9 +4,10 @@
 
 Each race's finishers average 0 with a spread of 1/3, and a place counts for more in a big field: a win scores 0.33
 in a two-runner race and 0.55 in a twenty-runner one, where the engine's NFP, (N - F)/(N - 1), scores both 1. On
-61,423 GB/IE races from 2022 it predicted the winner a little better than the engine's NFP over every window
-(+0.5 to +0.9 millinats a race, research/queries/done/nfp_formula_check.py), and neither adds anything beside the
-BSP; this block puts it in front of the served model, which forecasts the BSP.
+54,151 GB/IE races from 2022 to Mar 2026 it predicted the winner a little better than the engine's NFP over every
+window (+0.55 to +0.93 millinats a race, research/queries/done/nfp_formula_check.py), and neither adds anything
+beside the BSP. In front of the served model (iteration 108) it added nothing either (+0.0002, -0.0004 to +0.0008):
+built, not served.
 
     nz_car  nz_l1  nz_m3  nz_m5  nz_m10  nz_w5     career, last run, the mean of the last 3, 5 and 10 runs, and
                                                     the last 5 weighted 5..1 (form_variants' ladder)
