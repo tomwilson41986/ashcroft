@@ -46,31 +46,48 @@ def modelling_rows(df: pd.DataFrame) -> pd.DataFrame:
 def walk_forward(df: pd.DataFrame, features: list[str], folds: list[str], date_from: str | None = None,
                  rounds: int = 3000) -> pd.DataFrame:
     """Out-of-sample predictions: fold i fits on [date_from, folds[i]) and predicts [folds[i], folds[i+1])."""
+    import gc
+
     import lightgbm as lgb
-    d = modelling_rows(df)
+    mask = ~df.is_trial.to_numpy(bool) & (df.field.to_numpy() >= 4)
+    if "is_card" in df:
+        mask &= ~df.is_card.to_numpy(bool)
     if date_from:
-        d = d[d.t >= date_from]
+        mask &= (df.t >= date_from).to_numpy()
+    # the modelling rows' features once, as float32; each fold slices it (copies of the frame do not fit a runner)
+    rows = np.flatnonzero(mask)
+    meta = df.iloc[rows][["race_id", "t", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "won",
+                          "sp_p_norm", "sp_decimal", "field"]].reset_index(drop=True)
+    X = np.empty((len(rows), len(features)), dtype=np.float32)
+    for j, f in enumerate(features):
+        X[:, j] = df[f].to_numpy(np.float32, na_value=np.nan)[rows]
+    y, t_all = meta.won.to_numpy(), meta.t.to_numpy().astype("datetime64[ns]")
     out = []
-    edges = [pd.Timestamp(f) for f in folds] + [d.t.max() + pd.Timedelta(days=1)]
+    edges = [np.datetime64(pd.Timestamp(f), "ns") for f in folds] + [
+        np.datetime64(meta.t.max() + pd.Timedelta(days=1), "ns")]
     for i in range(len(folds)):
-        fit = d[d.t < edges[i]]
-        test = d[(d.t >= edges[i]) & (d.t < edges[i + 1])]
-        if fit.empty or test.empty:
+        fit_i = np.flatnonzero(t_all < edges[i])
+        test_i = np.flatnonzero((t_all >= edges[i]) & (t_all < edges[i + 1]))
+        if not len(fit_i) or not len(test_i):
             continue
-        cut = fit.t.quantile(0.9)
-        tr, es = fit[fit.t < cut], fit[fit.t >= cut]
-        m = lgb.train(PARAMS, lgb.Dataset(tr[features], tr.won), rounds,
-                      valid_sets=[lgb.Dataset(es[features], es.won)],
-                      callbacks=[lgb.early_stopping(100, verbose=False)])
-        t = test[["race_id", "t", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "won", "sp_p_norm",
-                  "sp_decimal", "field"]].copy()
-        t["p_raw"] = m.predict(test[features], num_iteration=m.best_iteration)
+        cut = np.quantile(t_all[fit_i].astype("int64"), 0.9).astype("datetime64[ns]")
+        tr_i, es_i = fit_i[t_all[fit_i] < cut], fit_i[t_all[fit_i] >= cut]
+        print(f"fold {folds[i]}: fit {len(tr_i):,} + {len(es_i):,} rows, test {len(test_i):,}, {len(features)} features",
+              flush=True)
+        dtr = lgb.Dataset(X[tr_i], y[tr_i], feature_name=list(features), free_raw_data=True)
+        des = lgb.Dataset(X[es_i], y[es_i], reference=dtr, free_raw_data=True)
+        m = lgb.train(PARAMS, dtr, rounds, valid_sets=[des], callbacks=[lgb.early_stopping(100, verbose=False)])
+        del dtr, des
+        gc.collect()
+        t = meta.iloc[test_i].copy()
+        t["p_raw"] = m.predict(X[test_i], num_iteration=m.best_iteration)
         t["p_model"] = race_norm(t.p_raw, t.race_id)
         t["fold"] = folds[i]
         t["rounds"] = m.best_iteration
         out.append(t)
         imp = pd.Series(m.feature_importance("gain"), index=features)
         last_importance = (imp / imp.sum()).sort_values(ascending=False)
+    del X
     pred = pd.concat(out, ignore_index=True)
     # set after the concat: pandas compares frames' attrs when it concatenates, and a Series there cannot be compared
     pred.attrs["importance"] = last_importance if out else pd.Series(dtype=float)
@@ -220,6 +237,23 @@ def against_price_files(pred: pd.DataFrame, prices: pd.DataFrame, edges=(0.0, 0.
     return out
 
 
+#: the columns the fits and the scores read beside the features
+KEEP_COLS = ["race_id", "raceid", "t", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "won",
+             "sp_p_norm", "sp_decimal", "field", "is_trial", "is_card"]
+
+
+def slim(df: pd.DataFrame, features: list[str]) -> pd.DataFrame:
+    """The frame the walk-forward needs, in place: the columns the scores read and the features as float32, nothing
+    else (the full history at 267 features is about 5m rows; in float64 beside the raw columns it does not fit a
+    runner)."""
+    keep = set(KEEP_COLS) | set(features)
+    df.drop(columns=[c for c in df.columns if c not in keep], inplace=True)
+    for f in dict.fromkeys(features):
+        if f in df.columns and f not in KEEP_COLS and df[f].dtype != np.float32:
+            df[f] = pd.to_numeric(df[f], errors="coerce").astype(np.float32)
+    return df
+
+
 PRICE_COLS = ["market", "country", "event_id", "race_date", "race_time", "track", "trap", "bsp", "ppwap", "morningwap",
               "morning_vol", "pp_vol", "win_lose"]
 
@@ -271,6 +305,8 @@ def main(argv=None) -> int:
             years = list(range(lo, hi + 1))
         df = eng.calculate_all(load_runs(store, years=years), prices=prices)
         sets = {"base": eng.block_features["base"], "all": eng.features}
+        print(f"features built: {len(df):,} runs, {len(eng.features)} features, {eng.timings}", flush=True)
+        df = slim(df, eng.features)
         if a.save_features:
             df.to_parquet(a.save_features)
             Path(a.save_features + ".features.json").write_text(json.dumps(sets))
