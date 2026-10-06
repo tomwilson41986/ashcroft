@@ -21,9 +21,9 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'predict, train, or settle'
+        description: 'predict, train, settle, or check-card (a past day: the card against the results)'
         type: choice
-        options: [predict, train, settle]
+        options: [predict, train, settle, check-card]
         default: predict
       date:
         description: 'UK racing day, YYYY-MM-DD (default today)'
@@ -80,7 +80,7 @@ jobs:
             DAY=""
           fi
           TASK="${TASK:-predict}"
-          case "$TASK" in predict|train|settle) ;; *) echo "task must be predict, train or settle"; exit 1 ;; esac
+          case "$TASK" in predict|train|settle|check-card) ;; *) echo "task must be predict, train, settle or check-card"; exit 1 ;; esac
           if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
           mkdir -p out
           ARGS=()
@@ -89,6 +89,7 @@ jobs:
             train)   python -m greyhound.live --train "${ARGS[@]}" | tee out/greyhound_live.json ;;
             predict) python -m greyhound.live --train-if-missing --predict "${ARGS[@]}" | tee out/greyhound_live.json ;;
             settle)  python -m greyhound.live --settle --days 3 "${ARGS[@]}" | tee out/greyhound_live.json ;;
+            check-card) python -m greyhound.live --check-card "${ARGS[@]}" | tee out/greyhound_live.json ;;
           esac
       - name: Summary
         if: always()

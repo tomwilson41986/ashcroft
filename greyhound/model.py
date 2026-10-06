@@ -176,6 +176,50 @@ def against_betfair(pred: pd.DataFrame, bf: pd.DataFrame, edges=(0.0, 0.1, 0.2, 
             sel = e[(e.edge > th) & (e[price] <= cap)]
             rules[f"{price}: edge>{th:.1f}"] = {"at_that_price": _settle(sel, price), "at_bsp": _settle(sel, "bsp")}
     out["rules"] = rules
+    out["blended"] = {price: blended_rules(m, price) for price in ("ltp_first", "ltp_t_1")}
+    return out
+
+
+def blended_rules(m: pd.DataFrame, price: str, raw_edges=(0.1, 0.2, 0.3), blend_edges=(0.0, 0.02, 0.05, 0.1),
+                  cap: float = 20.0) -> dict:
+    """The edge on the model blended with the price it would be taken at (the owner's ask of 6 Oct 2026, after the
+    model's own chances proved about twice the winners its picks won). The blend, a logistic regression on both
+    log-odds normalised in the race, is fitted on the first half of the days and every rule is scored on the second
+    half only, the raw model's rules beside it on the same days. ``m`` holds ``p_model``, the price and its
+    race-normalised chance ``p_<price>``, ``won``, ``bsp``, ``race_date`` and ``market_id``."""
+    from sklearn.linear_model import LogisticRegression
+    pc = f"p_{price}"
+    d = m[(m[price] > 1) & m[pc].notna()].copy()
+    if not len(d):
+        return {"skipped": "no prices"}
+    half = sorted(d.race_date.astype(str).unique())[d.race_date.nunique() // 2]
+    d["race_date"] = d.race_date.astype(str)
+    a, b = d[d.race_date < half], d[d.race_date >= half].copy()
+    if a.won.nunique() < 2 or not len(b):
+        return {"skipped": "too few days to fit a blend"}
+    X = lambda x: np.c_[_logit(x[pc]), _logit(x.p_model)]  # noqa: E731
+    lr = LogisticRegression(C=1.0).fit(X(a), a.won)
+    b["p_blend"] = race_norm(pd.Series(lr.predict_proba(X(b))[:, 1], index=b.index), b.market_id)
+    odds = 1 + (b[price] - 1) * (1 - COM)
+    out = {"fit_days": f"{a.race_date.min()}..{a.race_date.max()}", "test_days": f"{b.race_date.min()}.."
+           f"{b.race_date.max()}", "weights": {"price": round(float(lr.coef_[0][0]), 3),
+                                               "model": round(float(lr.coef_[0][1]), 3)},
+           "logloss_test": {"price": round(logloss(b[pc], b.won), 5), "model": round(logloss(b.p_model, b.won), 5),
+                            "blend": round(logloss(b.p_blend, b.won), 5)}, "rules": {}}
+
+    def rule(sel):
+        r = {"at_that_price": _settle(sel, price), "at_bsp": _settle(sel, "bsp")}
+        if len(sel):
+            r["winners"] = {"won": int(sel.won.sum()), "expected_model": round(float(sel.p_model.sum()), 1),
+                            "expected_price": round(float(sel[pc].sum()), 1),
+                            "expected_blend": round(float(sel.p_blend.sum()), 1)}
+        return r
+    for th in raw_edges:
+        sel = b[(b.p_model * odds - 1 > th) & (b[price] <= cap)]
+        out["rules"][f"raw model, edge>{th:.2f}"] = rule(sel)
+    for th in blend_edges:
+        sel = b[(b.p_blend * odds - 1 > th) & (b[price] <= cap)]
+        out["rules"][f"blend, edge>{th:.2f}"] = rule(sel)
     return out
 
 
@@ -289,11 +333,15 @@ def main(argv=None) -> int:
     ap.add_argument("--save-features", default=None)
     ap.add_argument("--save-pred", default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--pred", default=None,
+                    help="score saved walk-forward predictions (a --save-pred parquet) against the prices; no fit")
     ap.add_argument("--compare", action="store_true",
                     help="fit the base features and base + the parity block (greyhound/parity.py) on the same folds")
     a = ap.parse_args(argv)
     store = Store(root=a.store)
     prices = load_prices(store, a.years)
+    if a.pred:
+        return rescore(store, pd.read_parquet(a.pred), prices, a.out)
     eng = GreyhoundMetricsEngine(blocks=("parity", "hrb"))
     if a.features and Path(a.features).exists():
         df = pd.read_parquet(a.features)
@@ -334,6 +382,22 @@ def main(argv=None) -> int:
     print(txt)
     if a.out:
         Path(a.out).write_text(txt)
+    return 0
+
+
+def rescore(store, pred: pd.DataFrame, prices, out_path=None) -> int:
+    """Saved predictions scored again, without a refit: a new rule costs minutes, not the hours of a fit."""
+    bf = store.get_parquet("betfair_historic/markets_greyhound_racing_2026.parquet")
+    pred = pred.assign(race_date=pred.race_date.astype(str), race_time=pred.race_time.astype(str).str[:5])
+    r = {"runners": len(pred), "score": score(pred)}
+    if bf is not None:
+        r["betfair_2026"] = against_betfair(pred, bf)
+    if prices is not None:
+        r["price_files"] = against_price_files(pred, prices)
+    txt = json.dumps(r, indent=1, default=str)
+    print(txt)
+    if out_path:
+        Path(out_path).write_text(txt)
     return 0
 
 

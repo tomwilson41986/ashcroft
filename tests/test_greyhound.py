@@ -256,6 +256,11 @@ def test_a_card_reads_grade_trip_trap_and_dog_from_the_catalogue_and_finds_the_d
     assert c.loc[2, "dog_id"] == -12 and not bool(c.loc[2, "matched_history"])
     assert c.loc[1, "race_time"] == "18:04:00" and c.loc[1, "race_class"] == "A5" and c.loc[1, "distance_m"] == 480.0
     assert c.is_card.all() and c.position.isna().all() and c.weight_kg.isna().all()
+    m2 = pd.concat([m, m.assign(market_id="1.8", market_start_utc="2026-10-06T16:47:00Z")], ignore_index=True)
+    c2 = cards(m2, hist)
+    assert dict(zip(c2.market_id, c2.race_number)) == {"1.8": 1.0, "1.9": 2.0}     # numbered by the off
+    from greyhound.live import CARD_UNSAFE, LIVE_BLOCKS
+    assert "hrb" in LIVE_BLOCKS and {"hb_weight_vs_max", "hb_win_going", "hb_prize_1st"} <= CARD_UNSAFE
 
 
 class _Book:

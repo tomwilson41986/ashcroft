@@ -57,12 +57,14 @@ def cards(markets: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
     out["race_id"] = out.market_id.map(_race_id)
     out["meeting_id"] = -out.groupby(["track", "race_date"]).ngroup() - 1
     out["runners"] = out.groupby("market_id").trap.transform("size")
+    # the race's number at its meeting, as GBGB numbers a card: its order by the off
+    out["race_number"] = out.groupby(["track", "race_date"]).race_time.rank(method="dense").astype(float)
     # each dog's GBGB history by name: the most recent dog of the name, with its static fields from its last run
     h = history.dropna(subset=["dog_id"]).sort_values(["race_date", "race_time"], kind="stable")
     last = h.assign(_n=h.dog_name.map(norm_name)).drop_duplicates("_n", keep="last").set_index("_n")
     key = out.dog_name.map(norm_name)
     found = key.isin(last.index)
-    for col in ("dog_id", "sire", "dam", "trainer", "born", "sex"):
+    for col in ("dog_id", "sire", "dam", "trainer", "born", "sex", "season"):
         out[col] = key.map(last[col]) if col in last else np.nan
     new = ~found
     # a dog GBGB has no run for: its trainer from Betfair's catalogue, where the catalogue gives one
