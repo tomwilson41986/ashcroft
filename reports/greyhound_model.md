@@ -271,6 +271,63 @@ Dropping one group at a time, the log-loss change (positive: the group helps):
 The block now serves all but the last two groups. Those are still computed but are not features (`hrb.LEFT_OUT`).
 `greyhound-model.yml --compare` scores base, base + parity and base + parity + HRB on the full history.
 
+### 8.1 On the full history (CI run 37476323556; `reports/greyhound_hrb_ci_1006.json`)
+
+GBGB 2018-2026, fitted from 2019, tested a year at a time 2021-2026, 1.64m runners. "All" is base + parity + HRB
+(316 features).
+
+| Log-loss | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | All years |
+|---|---|---|---|---|---|---|---|
+| Base | .43551 | .43596 | .44076 | .44572 | .44783 | .44955 | 0.44210 |
+| Base + parity | .43240 | .43235 | .43775 | .44256 | .44430 | .44581 | 0.43876 |
+| All | **.43163** | **.43155** | **.43664** | **.44153** | **.44311** | **.44429** | **0.43772** |
+| SP | .42247 | .42258 | .42617 | .42831 | .42889 | .42957 | 0.42612 |
+
+The HRB block is better in every year, by about a third as much as the parity block was. The model still falls behind
+the market from 2023.
+
+| | Base | Base + parity | All |
+|---|---|---|---|
+| Blend weight on the model (with SP) | 0.18 | 0.25 | **0.26** |
+| Blend weight on the model (with BSP, 2026 Betfair bundle) | 0.06 | 0.09 | **0.12** |
+| 2026 bundle, first traded price, edge > 0.2: ROI (CLV vs BSP) | +7.5% (+6.0%) | +10.2% (+9.0%) | **+13.2% (+10.0%)** |
+| 2026 bundle, T-1 minute, edge > 0.2: ROI (CLV) | +1.2% (−1.3%) | +1.9% (−0.8%) | **+3.4% (−0.6%)** |
+| 2026 bundle, the same bets at BSP | +2.3% | +2.2% | **+4.7%** (90%: +2.3 to +7.0) |
+| Price files, morning price, edge > 0.2, all years: ROI (CLV) | +6.3% (+2.4%) | +10.8% (+7.3%) | **+13.0% (+8.4%)** |
+
+Morning price, edge > 0.2, by year (all features): 2021 +8.9%, 2022 +20.7%, 2023 +23.2%, 2024 +2.0%, 2025 +3.4%,
+2026 +1.1% (CLV −9.0%). The morning books with volume (≥ GBP20 matched) lose 11-16% at the morning price, as in §6.
+
+**Verdict:** the HRB block (less class/trip/wins and breeding/owner) belongs in the live model. Before it goes in,
+its two weight features (`hb_weight_vs_max`, `hb_weight_vs_min`) must join `live.CARD_UNSAFE`: they read the day's
+weigh-in, which the morning card does not have. Then the live training's engine takes `blocks=("parity", "hrb")`.
+
+### 8.2 The model overrates the dogs it picks
+
+On the first live paper day (§9), the edge > 0.2 bets at the first traded price had 3 winners where the prices
+expected 6.9 and the model 10.5. The full history says the second half of that is not bad luck. On every test year,
+for the dogs the model backs at the SP with edge > 0.2 (price up to 20, all features):
+
+| | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | All |
+|---|---|---|---|---|---|---|---|
+| Bets | 29,209 | 27,160 | 30,315 | 31,589 | 31,104 | 23,800 | 173,177 |
+| Winners | 3,079 | 2,865 | 3,130 | 3,063 | 2,928 | 2,321 | 17,386 |
+| Model's expected | 5,470 | 5,137 | 5,805 | 5,926 | 5,916 | 4,522 | 32,775 |
+| SP's expected (overround removed) | 2,975 | 2,813 | 3,164 | 3,204 | 3,169 | 2,380 | 17,705 |
+| Winners / model | 0.56 | 0.56 | 0.54 | 0.52 | 0.50 | 0.51 | **0.53** |
+| Winners / SP | 1.04 | 1.02 | 0.99 | 0.96 | 0.92 | 0.98 | **0.98** |
+
+The dogs it picks win about half as often as it says, and about as often as the SP says. Some of that is built into
+picking on the largest edges. But the model's probabilities, used raw, overstate every edge they select on.
+
+The blend with the market (0.26 on the model) is calibrated on the same bets: 0.98 of its expected winners. Selecting
+on the blended edge instead leaves few bets at the SP (481 over six years at edge > 0.02), but they made +4.8% at the
+SP.
+
+So the edge a live rule acts on should be the blended probability against the price, the blend fitted on Betfair
+prices rather than the SP. The live trader's rule (raw model, edge > 0.2) is unchanged until that is tested on the
+recorded books.
+
 ## 9. Through the day
 
 `greyhound-track.yml` runs every hour from 11:11 to 21:11 UTC and again at 22:41 (`greyhound/track.py --intraday`).
@@ -284,6 +341,8 @@ day properly, at BSP.
 
 ## 10. Next
 
+0. **The edge on the blended probability** (§8.2): fit the blend on the recorded Betfair books and the 2026 bundle,
+   then rescore the first-price and T-1 rules on the blended edge.
 1. **Why the model falls behind the BSP from 2023.** Check whether GBGB's data changed (the coverage of sectionals and
    calculated times, comments, grading, the meetings held). Refit on a rolling recent window rather than everything
    since 2019. Check the drift of the features that matter most.
