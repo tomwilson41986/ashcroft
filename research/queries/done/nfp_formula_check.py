@@ -12,7 +12,10 @@ weighted 5..1, exponential in runs with a half-life of 3, career) and compared o
 runner has a BSP and one winner: (1) on their own, the conditional logit's out-of-sample log-likelihood gain on the
 winner over picking at random (millinats a race); (2) beside the BSP (Benter's test: the market's log chance and
 its square, then the feature), the gain over the market alone; (3) the within-race rank correlation with where the
-horse finishes. Two folds, each fitted on one period and scored on the other (2022-23, 2024-26Q1).
+horse finishes. Two folds, each fitted on one period and scored on the other (2022-23, 2024 to Mar 2026).
+
+Re-run 6 Oct with END: the first run's second fold ran to the latest race (6 Oct 2026), so it read the locked
+holdout (from 1 Apr 2026, kept for --final); this one stops at 31 Mar 2026.
 """
 
 from __future__ import annotations
@@ -31,12 +34,12 @@ from residual_screen import OutcomeScreen, Part, feature_design, gain_summary, m
 pd.set_option("display.width", 220)
 DB = os.environ.get("DB_PATH") or "horse_racing.db"
 FROM = "2018-01-01"                                 # history for the windows
-EVAL_FROM, SPLIT = "2022-01-01", "2024-01-01"
+EVAL_FROM, SPLIT, END = "2022-01-01", "2024-01-01", "2026-03-31"
 
 con = sqlite3.connect(DB)
 d = pd.read_sql_query(
     "SELECT race_date, race_time, track, horse_name, number_of_runners, placing_numerical, bfsp "
-    f"FROM race_results WHERE race_date >= '{FROM}'", con)
+    f"FROM race_results WHERE race_date >= '{FROM}' AND race_date <= '{END}'", con)
 con.close()
 for c in ("number_of_runners", "placing_numerical", "bfsp"):
     d[c] = pd.to_numeric(d[c], errors="coerce")
@@ -75,7 +78,7 @@ for m in ("nfp", "nfpz"):
 WINDOWS = ("l1", "m3", "m5", "w5", "e3", "car")
 
 # the sample: whole races from 2022 with a BSP for every runner and one winner
-e = d[d.date >= EVAL_FROM].copy()
+e = d[(d.date >= EVAL_FROM) & (d.date <= END)].copy()
 ok = e.groupby("race").agg(n=("bfsp", "size"), good=("bfsp", lambda s: bool((s > 1).all())),
                            wins=("placing_numerical", lambda s: int((s == 1).sum())))
 e = e[e.race.isin(ok.index[ok.good & (ok.wins == 1) & (ok.n >= 3)])].copy()

@@ -156,15 +156,35 @@ DROP_IN = [
     ("nfp_z", "Owner's NFP", "The owner's normalised finishing position, (N + 1 - 2F)/(3 sqrt((N + 1)/(3 (N - 1))) "
      "(N - 1)): a place as a z-score over its field, divided by 3, over career, last run, the last 3/5/10, the last 5 "
      "weighted, exponential in runs and in days", "built"),
+    ("inrunning", "In-running", "Each past run's in-running low and high on the Betfair win market (horseracebase's "
+     "\"BF In Play (Min)/(Max)\"), from Betfair's price files: the low, the low and the high against the BSP, the "
+     "share of beaten runs that traded at 2.0 or shorter", "built"),
+    ("hrb_extras", "HRB extras", "Horseracebase's system-builder readings the model lacked: rider and trainer share "
+     "a surname, the share of seconds, the last race's winner's BSP and non-finishers, the biggest field won in, last "
+     "year's run at the course and trip", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
     ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
 ]
 
 BLOCK_EVIDENCE = {
-    "Owner's NFP": "The owner's formula (6 Oct): on 61,423 GB/IE races from 2022 it predicted the winner a little "
-                   "better than the engine's NFP over every window, +0.5 to +0.9 millinats a race on its own "
-                   "(research/queries/done/nfp_formula_check.py), and like it adds nothing beside the BSP. Iteration "
-                   "108 puts the block in front of the served model, which forecasts the BSP.",
+    "In-running": "Built 6 Oct from the owner's horseracebase list (reports/hrb_system_builder_review.md). On 54,151 "
+                  "GB/IE races from 2022 to Mar 2026 (research/queries/done/hrb_features_screen.py) 84.8% of runs "
+                  "have a price-file record. On the winner alone the block scores +137 millinats a race (t 61), the "
+                  "last five weighted low +112: it reads form as the market saw it run. Beside the BSP it adds "
+                  "nothing (-0.69, t -1.6), and A/E by the last run's in-running low runs 0.97-1.01: the market "
+                  "already prices a horse that traded short and was beaten. Iteration 109 puts it in front of the "
+                  "served model, which forecasts the BSP. Not served.",
+    "HRB extras": "Built 6 Oct from the owner's horseracebase list. Beside the BSP on the winner, the same screen: "
+                  "same surname +0.01 (t 0.5; 1.9% of runners, winning 14.1% against the market's 13.7%), seconds "
+                  "~0, the last race's winner's BSP -0.06, its non-finishers -0.04, the biggest field won in -0.33 "
+                  "(t -5.0), last year's run at the course and trip -0.18 (t -2.5); together -0.65 (t -4.8). "
+                  "Iteration 109 puts it in front of the served model. Not served.",
+    "Owner's NFP": "The owner's formula (6 Oct): on 54,151 GB/IE races from 2022 to Mar 2026 it predicted the winner "
+                   "a little better than the engine's NFP over every window, +0.55 to +0.93 millinats a race on its "
+                   "own (research/queries/done/nfp_formula_check.py, capped at the holdout's start), and like it adds "
+                   "nothing beside the BSP. Iteration 108 (served recipe, 53,910 runners in 5,923 races): the served main "
+                   "with the block +0.0002 (-0.0004 to +0.0008), Brier skill and concordance level, the rule +9.03% "
+                   "against +9.04%, the owner's staking at expected CLV >= 3% +6.53% against +6.50%. Retired.",
     "Sale prices": "Built 5 Oct from the Blandford scraper's Timeform horse files (reports/external_data_review.md). "
                    "The files are July 2025 snapshots whose comments drop the sale clause as careers grow (kept by "
                    "97-99% of horses with three runs or fewer, 3% with sixteen or more), so before the snapshot a "
@@ -638,6 +658,27 @@ COMMENT_CLASS = {
 }
 CM_WINDOW = {"lr": "in the last run", "l3": "share of the last 3 runs", "l6": "share of the last 6 runs"}
 EXPLICIT_BLOCKS = {
+    "ir_low_l1": "Log of the in-running low on the Betfair win market, last run",
+    "ir_low_m3": "Log of the in-running low on the Betfair win market, mean of the last 3 runs",
+    "ir_low_w5": "Log of the in-running low on the Betfair win market, the last 5 runs weighted 5..1",
+    "ir_low_car": "Log of the in-running low on the Betfair win market, career mean",
+    "ir_lowr_l1": "Log of the in-running low over the BSP, last run",
+    "ir_lowr_m3": "Log of the in-running low over the BSP, mean of the last 3 runs",
+    "ir_lowr_w5": "Log of the in-running low over the BSP, the last 5 runs weighted 5..1",
+    "ir_lowr_car": "Log of the in-running low over the BSP, career mean",
+    "ir_short_m5": "Share of beaten runs that traded at 2.0 or shorter in running, the last 5 runs",
+    "ir_short_car": "Share of beaten runs that traded at 2.0 or shorter in running, career",
+    "ir_highr_l1": "Log of the in-running high (capped at 1000) over the BSP, last run",
+    "ir_highr_m3": "Log of the in-running high (capped at 1000) over the BSP, mean of the last 3 runs",
+    "ir_runs": "Earlier runs with a Betfair price-file record",
+    "hx_same_surname": "The rider and the trainer share a surname (1), not (0)",
+    "hx_second_car": "Share of its earlier finishes that were seconds, career",
+    "hx_second_m10": "Share of its earlier finishes that were seconds, the last 10 runs",
+    "hx_lr_winner_lbsp": "Log BSP of the winner of its last race",
+    "hx_lr_nonfin": "Share of its last race's runners that did not finish",
+    "hx_maxfield_won": "The biggest field it has won in (earlier days)",
+    "hx_lastyear_nfp": "Its normalised finishing position (0 for a non-finisher) at this course and trip 335-395 "
+                       "days ago",
     "nz_car": "The owner's NFP (z-score over the field / 3), career mean",
     "nz_l1": "The owner's NFP, last run",
     "nz_m3": "The owner's NFP, mean of the last 3 runs",
