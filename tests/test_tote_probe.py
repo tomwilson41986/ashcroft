@@ -96,3 +96,67 @@ def test_a_refused_robots_file_stops_the_probe(tmp_path, monkeypatch):
                                       ("https://tote.co.uk/racecards/a b", "tote.co.uk_racecards_a_b.html")])
 def test_file_names(url, name):
     assert tp.safe_name(url, ".html") == name
+
+
+# --- the API stage (made-up config, scripts and answers; the key is a placeholder) ---------------------------------
+KEY = "PLACEHOLDERKEY123"
+CONFIG = ('window.config = {sportsbook: {apiUrl: "https://sb.example.test/", apiKey: "other"}, '
+          f'tote: {{apiUrl: "https://api.production.racing.tote.co.uk/", apiKey: "{KEY}"}}}};')
+INDEX = ('const m=__vite__mapDeps(["assets/results-AbC1.js","assets/header-x.js"]);'
+         'let u=`${a.tote.apiUrl}race-card/cards/today?key=${a.tote.apiKey}`;import("./event-results.lazy-Q9.js")')
+RESULTS_JS = 'let t=`${c.tote.apiUrl}race-card/results/today?key=${c.tote.apiKey}`,v=`${c.tote.apiUrl}x/${id}?key=`'
+
+
+def test_the_api_address_and_key_are_read_from_the_config():
+    assert tp.api_config(CONFIG) == ("https://api.production.racing.tote.co.uk/", KEY)
+    assert tp.api_config("window.config = {}") == (None, None)
+
+
+def test_the_key_is_redacted():
+    assert tp.redact(f"https://h/race-card/pool/9?key={KEY}&x=1", None) == "https://h/race-card/pool/9?key=REDACTED&x=1"
+    assert KEY not in tp.redact(f'{{"apiKey": "{KEY}"}}', KEY)
+
+
+def test_path_templates_and_pools_of_one_race():
+    assert tp.path_templates(RESULTS_JS) == ["race-card/results/today?key=${c.tote.apiKey}", "x/${id}?key="]
+    pools = [{"id": 1, "poolType": {"name": "Exacta"}, "raceId": 7}, {"id": 2, "poolType": {"name": "Win"}, "raceId": 7},
+             {"id": 3, "poolType": {"name": "Win"}, "raceId": 8}, {"id": 4, "poolType": {"name": "Placepot"}, "raceId": 7}]
+    assert [p["id"] for p in tp.pools_of_one_race(pools)] == [2, 1]
+    assert tp.shape({"a": [{"b": 1}, {"b": 2}], "c": "x" * 50}) == {"a": ["len 2", {"b": 1}], "c": "str(50)"}
+
+
+def test_an_api_run_keeps_the_key_out_of_every_file(tmp_path, monkeypatch):
+    api = "https://api.production.racing.tote.co.uk/"
+    answers = {
+        "https://tote.co.uk/robots.txt": _Response("", "User-agent: *\nDisallow: /account\n", ctype="text/plain"),
+        "https://tote.co.uk/config.js": _Response("", CONFIG, ctype="text/javascript"),
+        "https://tote.co.uk/": _Response("", '<script type="module" src="/assets/index-Zz.js"></script>'),
+        "https://tote.co.uk/assets/index-Zz.js": _Response("", INDEX, ctype="text/javascript"),
+        "https://tote.co.uk/assets/results-AbC1.js": _Response("", RESULTS_JS, ctype="text/javascript"),
+        f"{api}race-card/cards/today?key={KEY}": _Response("", '[{"races": [{"raceId": 7}]}]', ctype="application/json"),
+        f"{api}race-card/pools/today?key={KEY}": _Response(
+            "", '{"pools": [{"id": 2, "poolType": {"name": "Win"}, "raceId": 7, "status": "OPEN"},'
+                ' {"id": 1, "poolType": {"name": "Exacta"}, "raceId": 7}]}', ctype="application/json"),
+        f"{api}race-card/pool/2?key={KEY}": _Response("", '{"id": 2, "total": 100}', ctype="application/json"),
+        f"{api}race-card/pool/1?key={KEY}": _Response("", '{"id": 1, "total": 40}', ctype="application/json"),
+        f"{api}race-card/results/today?key={KEY}": _Response("", '[{"dividends": []}]', ctype="application/json"),
+    }
+    asked = []
+
+    def get(self, url, headers=None, timeout=None, allow_redirects=True):
+        asked.append(url)
+        r = answers.get(url) or _Response(url, "not here", status=404)
+        r.url = url
+        return r
+    monkeypatch.setattr(tp.requests.Session, "get", get)
+    s = tp.ApiProbe(tmp_path, max_requests=30, pause=0).run()
+    assert s["api_url"] == api and s["key_found"] is True
+    got = {e["path"]: e.get("status") for e in s["endpoints"]}
+    assert got["race-card/cards/today?key=REDACTED"] == 200
+    assert got["race-card/pool/2?key=REDACTED"] == 200 and got["race-card/pool/1?key=REDACTED"] == 200
+    assert got["race-card/results/today?key=REDACTED"] == 200
+    assert s["pool_types_today"] == {"Win": 1, "Exacta": 1}
+    assert "https://tote.co.uk/assets/results-AbC1.js" in asked
+    for f in tmp_path.iterdir():                       # every file: pages, answers, config and summary
+        assert KEY not in f.read_text(), f.name
+    assert len(asked) <= 30

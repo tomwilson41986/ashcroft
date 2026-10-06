@@ -9,6 +9,12 @@ name: Tote probe (read-only)
 
 on:
   workflow_dispatch:
+    inputs:
+      stage:
+        description: 'pages: the public pages; api: the racing API behind them, each endpoint once'
+        type: choice
+        options: [api, pages]
+        default: api
   push:
     branches: ['claude/happy-ritchie-*']
     paths:
@@ -51,7 +57,8 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-        run: timeout 600 python tote_probe.py --out tote_probe_out --max-requests 40
+          STAGE: ${{ inputs.stage || 'api' }}
+        run: timeout 600 python tote_probe.py --out tote_probe_out --max-requests 40 --stage "$STAGE"
 
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
