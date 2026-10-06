@@ -294,7 +294,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     store = Store(root=a.store)
     prices = load_prices(store, a.years)
-    eng = GreyhoundMetricsEngine()
+    eng = GreyhoundMetricsEngine(blocks=("parity", "hrb"))
     if a.features and Path(a.features).exists():
         df = pd.read_parquet(a.features)
         sets = json.loads(Path(a.features + ".features.json").read_text())
@@ -305,6 +305,8 @@ def main(argv=None) -> int:
             years = list(range(lo, hi + 1))
         df = eng.calculate_all(load_runs(store, years=years), prices=prices)
         sets = {"base": eng.block_features["base"], "all": eng.features}
+        if "hrb" in eng.block_features:                    # the step before the last block, to score what it adds
+            sets["base+parity"] = eng.block_features["base"] + eng.block_features.get("parity", [])
         print(f"features built: {len(df):,} runs, {len(eng.features)} features, {eng.timings}", flush=True)
         df = slim(df, eng.features)
         if a.save_features:
@@ -312,7 +314,7 @@ def main(argv=None) -> int:
             Path(a.save_features + ".features.json").write_text(json.dumps(sets))
     if isinstance(sets, list):                              # a features file from before the blocks
         sets = {"all": sets}
-    names = ["base", "all"] if a.compare and "base" in sets else ["all"]
+    names = ([n for n in ("base", "base+parity", "all") if n in sets] if a.compare and "base" in sets else ["all"])
     bf = store.get_parquet("betfair_historic/markets_greyhound_racing_2026.parquet")
     report = {"timings": getattr(eng, "timings", None), "sets": {}}
     for name in names:

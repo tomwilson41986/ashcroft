@@ -39,6 +39,13 @@ import pandas as pd
 from model.lagsafe import race_lagged_expanding_count, race_lagged_expanding_mean, race_lagged_expanding_sum
 
 PREFIX = "hb_"
+#: the groups left out of the block's features (computed, not served): dropping each made the model better on 2026's
+#: three folds (reports/greyhound_hrb_local_1006.json): class, trip and wins (best grade raced and won, longest trip
+#: won, days and runs since a win, best of ten), and breeding and owner (sire by trip, dam, owner)
+LEFT_OUT = ("hb_best_grade_run", "hb_best_grade_won", "hb_grade_vs_best_run", "hb_grade_vs_best_won",
+            "hb_grade_vs_last_win", "hb_max_dist_won", "hb_trip_vs_max_won", "hb_days_since_win", "hb_runs_since_win",
+            "hb_days_since_track_win", "hb_days_since_cd_win", "hb_best_gsr10", "hb_sire_band_win", "hb_dam_win",
+            "hb_owner_win")
 MONTHS = {"ja": 1, "fe": 2, "mr": 3, "ap": 4, "my": 5, "jn": 6, "jy": 7, "au": 8, "sp": 9, "oc": 10, "nv": 11, "de": 12}
 
 
@@ -206,4 +213,4 @@ def calculate(df: pd.DataFrame, dog_days) -> tuple[pd.DataFrame, list[str]]:
     out = out.join(h2h(df))
     out[f"{PREFIX}h2h_rate_rank"] = out[f"{PREFIX}h2h_rate"].groupby(g).rank(ascending=False, method="average")
     out = out.replace([np.inf, -np.inf], np.nan).astype(np.float32)
-    return out, list(out.columns)
+    return out, [c for c in out.columns if c not in LEFT_OUT]
