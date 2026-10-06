@@ -15,6 +15,7 @@ One module a source, each with the same two halves:
 | ``tennis`` | Jeff Sackmann's ATP/WTA files (the archive mirror) and TML's ATP (match stats) | tennis | nothing |
 | ``tennis_odds`` | tennis-data.co.uk (results with closing odds; its Cloudflare refuses GitHub's runners) | tennis | the UK server |
 | ``puntingform`` | api.puntingform.com.au (Australian form and results) | Australian racing | ``PUNTINGFORM_API_KEY`` |
+| ``greyhound_prices`` | Betfair's greyhound price files in the S3 archive (BSP, morning/pre-play WAP and volume) | greyhounds | the UK server's archive |
 
 Betfair's own historic prices for these sports are ``betfair_historic.py`` (Betfair's Historic Data service), and its
 live books ``betfair_recorder.py``: both need a Betfair login, so they run on the UK server.
@@ -23,6 +24,6 @@ live books ``betfair_recorder.py``: both need a Betfair login, so they run on th
 """
 
 #: the quick sources first: a shared --max-minutes then leaves the rest to the greyhound backfill
-SOURCES = ("football", "tennis", "puntingform", "gbgb")
+SOURCES = ("football", "tennis", "puntingform", "greyhound_prices", "gbgb")
 #: named on their own, not in "all": tennis_odds runs from the UK server
 OTHER_SOURCES = ("tennis_odds",)

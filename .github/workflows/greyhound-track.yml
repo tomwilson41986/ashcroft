@@ -1,0 +1,83 @@
+name: Greyhound forward test (paper)
+
+# The greyhound model's forward test (the owner's ask, 5 Oct 2026: "start tracking this"; greyhound/track.py,
+# reports/greyhound_model.md). Paper only: nothing here reaches Betfair, it reads what the recorder kept.
+#   - once: the model fitted on every GBGB race before 5 Oct 2026 and frozen in S3 with its rules
+#     (sources/greyhound/track/model.txt, meta.json);
+#   - each day: the last days' GB races priced from GBGB, the recorded greyhound books (live-record.yml, settled the
+#     next morning) read at fixed marks, the paper bets and their settlement, the running summary
+#     (sources/greyhound/track/summary.json), shown as this run's summary.
+# After the next morning's settled books (live-record.yml's 06:55 and 10:10 UTC runs read them).
+
+on:
+  schedule:
+    - cron: '41 11 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'track the last N days not yet final'
+        required: false
+        type: string
+        default: '3'
+      date:
+        description: 'track this one day again, YYYY-MM-DD'
+        required: false
+        type: string
+  push:
+    branches: ['claude/dreamy-dirac-*']
+    paths:
+      - 'greyhound/track.py'
+      - '.github/workflows/greyhound-track.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-track
+  cancel-in-progress: false
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+      - name: Freeze (once), price, settle, summarise
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          DAYS: ${{ inputs.days || '3' }}
+          DAY: ${{ inputs.date }}
+        run: |
+          if ! [[ "$DAYS" =~ ^[0-9]{1,2}$ ]]; then echo "days must be a number"; exit 1; fi
+          if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
+          mkdir -p out
+          ARGS=(--freeze --cutoff 2026-10-05 --summary --out out/greyhound_track.json)
+          if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); else ARGS+=(--days "$DAYS"); fi
+          python -m greyhound.track "${ARGS[@]}"
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/greyhound_track.md ] && cat out/greyhound_track.md >> "$GITHUB_STEP_SUMMARY"
+          [ -f out/greyhound_track.json ] && { echo; echo '```'; head -c 40000 out/greyhound_track.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-track-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90
