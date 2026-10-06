@@ -340,6 +340,77 @@ def test_the_recorder_snapshots_far_then_near_and_leaves_a_market_at_the_off(tmp
     assert out["left"] == 0 and out["rows"] > 0
 
 
+class SpData(LoopData):
+    """LoopData whose books carry the BSP once asked with SP_TRADED in play: 1.1 from its second such read, 1.2
+    never (a market without a BSP of its own)."""
+
+    def __init__(self, clock):
+        super().__init__(clock)
+        self.sp_reads = []
+
+    def _read(self, method, params):
+        out = super()._read(method, params)
+        if method == "listMarketBook" and "SP_TRADED" in params["priceProjection"]["priceData"]:
+            for b in out:
+                m = b["marketId"]
+                self.sp_reads.append((self.clock[0], m))
+                b["bspReconciled"] = True
+                if m == "1.1" and sum(1 for _, x in self.sp_reads if x == m) >= 2:
+                    for r in b["runners"]:
+                        r["sp"] = {"actualSP": 3.75 if r["selectionId"] == 11 else "NaN"}
+        return out
+
+
+def test_the_bsp_is_read_as_each_market_reconciles_it_at_the_off(tmp_path):
+    clock = [datetime(2026, 10, 1, 11, 50, tzinfo=timezone.utc)]
+    data = SpData(clock)
+    rec = br.DayRecorder(DAY, root=tmp_path, s3=FakeS3(), background=False)
+
+    def sleep(seconds):
+        clock[0] += timedelta(seconds=seconds)
+
+    out = br.record(DAY, datetime(2026, 10, 1, 13, 0, tzinfo=timezone.utc), data, rec, every_far=300, every_near=60,
+                    near_minutes=60, now=lambda: clock[0], sleep=sleep)
+    reads = {m: [t for t, x in data.sp_reads if x == m] for m in ("1.1", "1.2")}
+    assert len(reads["1.1"]) == 2 and len(reads["1.2"]) == br.BSP_TRIES        # found on the second; given up after 3
+    assert all(data.offs[m] <= t <= data.offs[m] + timedelta(minutes=2) for m in reads for t in reads[m])
+    with rec.books_path.open() as f:
+        rows = [r for r in csv.DictReader(f) if r["source"] == "bsp"]
+    assert {(r["market_id"], r["selection_id"], r["sp_actual"]) for r in rows} == {("1.1", "11", "3.75"),
+                                                                                  ("1.1", "12", "")}
+    assert out["left"] == 0
+
+
+def test_the_final_mark_takes_the_bsp_read_at_the_off_when_the_settled_book_has_none():
+    books, markets = _books_frame()
+    books.loc[books["source"] == "final", "sp_actual"] = None              # as Betfair sends a closed market
+    at_off = pd.DataFrame(br.book_rows([raw_book(inplay=True, runners=[
+        {"selectionId": 11, "status": "ACTIVE", "sp": {"actualSP": 4.1}}])],
+        datetime(2026, 10, 1, 14, 30, 20, tzinfo=timezone.utc), "bsp"))
+    m = br.marks(pd.concat([books, at_off], ignore_index=True), markets, DAY).set_index(["selection_id", "mark"])
+    assert m.loc[(11, "final"), "bsp"] == pytest.approx(4.1)
+    assert m.loc[(11, "last"), "polled_utc"] == "2026-10-01T14:29:00Z"   # the in-play read is no pre-off mark
+    assert "final" not in m.loc[12].index
+
+
+def test_the_final_pass_carries_the_bsp_read_at_the_off(tmp_path):
+    rec = br.DayRecorder(DAY, root=tmp_path, s3=FakeS3(), background=False)
+    rec.record_books([raw_book(inplay=True, runners=[{"selectionId": 11, "status": "ACTIVE", "sp": {"actualSP": 4.4}},
+                                                     {"selectionId": 12, "status": "ACTIVE"}])],
+                     source="bsp", polled_at=datetime(2026, 10, 1, 14, 30, 20, tzinfo=timezone.utc))
+
+    class Closed:
+        def _read(self, method, params):                       # a closed market's book: results, no BSP
+            return [raw_book(status="CLOSED", runners=[{"selectionId": 11, "status": "WINNER", "sp": {}},
+                                                       {"selectionId": 12, "status": "LOSER"}])]
+
+    assert br.final(DAY, Closed(), rec, market_ids=["1.100"]) == 2
+    with rec.books_path.open() as f:
+        fin = {r["selection_id"]: r for r in csv.DictReader(f) if r["source"] == "final"}
+    assert (fin["11"]["runner_status"], fin["11"]["sp_actual"]) == ("WINNER", "4.4")
+    assert fin["12"]["sp_actual"] == ""                                 # none read at the off: left blank
+
+
 def test_the_catalogue_is_read_in_pieces_under_betfairs_100_market_limit():
     calls = []
 

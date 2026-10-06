@@ -91,6 +91,26 @@ books["selection_id"] = books["selection_id"].astype(int)
 for c in ("lay1", "back1", "sp_actual", "lay1_size"):
     books[c] = pd.to_numeric(books[c], errors="coerce")
 bsp = books.dropna(subset=["sp_actual"]).groupby(["market_id", "selection_id"])["sp_actual"].last()
+# the record's BSP is read as each market reconciles at the off (from 7 Oct); before, and wherever it is missing, the
+# price files' (betfair_prices, loaded nightly the day after), by the runner's selection id and the market type
+bsp_files = {}
+try:
+    import sqlite3
+    with sqlite3.connect(os.environ.get("DB_PATH") or "horse_racing.db") as conn:
+        pf = pd.read_sql_query("SELECT selection_id, market_type, bsp FROM betfair_prices WHERE race_date = ? AND bsp > 1",
+                               conn, params=[DAY])
+    bsp_files = {(str(t).lower(), int(sid)): float(v) for sid, t, v in zip(pf.selection_id, pf.market_type, pf.bsp)}
+except Exception as exc:
+    print(f"   the price files' BSPs not read ({type(exc).__name__})")
+mtype = cat.drop_duplicates("market_id").set_index("market_id")["market_type"].astype(str).str.lower().to_dict()
+print(f"   BSPs: {len(bsp):,} runners in the day record, {len(bsp_files):,} in the price files for {DAY}")
+
+
+def bsp_of(market_id, selection_id):
+    v = bsp.get((market_id, selection_id))
+    if v is None or not np.isfinite(v):
+        v = bsp_files.get((mtype.get(market_id, "win"), int(selection_id)))
+    return v
 
 rows["race_id"] = rows["race_id"].astype(str)
 rows["t"] = pd.to_datetime(rows["polled_utc"], utc=True, errors="coerce")
@@ -114,7 +134,7 @@ def attach(frame, race_map):
     b = b.sort_values("t")
     f = pd.merge_asof(f.sort_values("t"), b, on="t", by=["market_id", "selection_id"], direction="nearest",
                       tolerance=pd.Timedelta(seconds=90))
-    f["bsp"] = [bsp.get((m, s)) for m, s in zip(f["market_id"], f["selection_id"])]
+    f["bsp"] = [bsp_of(m, s) for m, s in zip(f["market_id"], f["selection_id"])]
     return f
 
 
@@ -218,7 +238,7 @@ if len(dec) and len(win):
     w = dec[dec["finish"].eq(1)].copy()
     w["market_id"] = w["race_id"].map(win_map)
     w["selection_id"] = tc.selection_ids(w, cat, win_map)
-    w["bsp"] = [bsp.get((m, int(s))) if m is not None and s is not None else None
+    w["bsp"] = [bsp_of(m, int(s)) if isinstance(m, str) and s is not None else None
                 for m, s in zip(w["market_id"], w["selection_id"])]
     w = w.dropna(subset=["bsp", "win_base"])
     if len(w):
@@ -249,7 +269,7 @@ if len(dec) and len(declared_pools):
         if mid is None:
             continue
         sel = cat[cat["market_id"].eq(mid) & cat["market_type"].eq("WIN")]
-        prices = np.array([bsp.get((mid, int(s)), np.nan) for s in sel["selection_id"]], float)
+        prices = np.array([bsp_of(mid, int(s)) or np.nan for s in sel["selection_id"]], float)
         if not len(prices) or not np.isfinite(prices).all():
             continue
         p = tc.market_probabilities(prices)

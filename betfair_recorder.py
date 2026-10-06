@@ -70,6 +70,9 @@ CATALOGUE_PROJECTION = ["EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION", "RUN
 #: marks of the morning, UK clock time; marks before the off, minutes, each with how far a snapshot may stray
 CLOCK_MARKS = ("08:00", "09:00", "10:00", "11:00", "12:00")
 OFF_MARKS = (120, 60, 30, 15, 10, 5, 3, 1)
+#: a market's BSP is read once it has reconciled at the off (Betfair's book of a closed market carries none): up to
+#: BSP_TRIES reads, BSP_EVERY seconds apart, within 15 minutes of the off
+BSP_TRIES, BSP_EVERY = 3, 15.0
 #: Betfair's event type ids: the record is of horse racing unless asked otherwise (greyhounds: --event-type 4339)
 HORSE_RACING, GREYHOUNDS = "7", "4339"
 
@@ -487,6 +490,8 @@ def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float 
     offs: dict[str, datetime] = {}
     last: dict[str, datetime] = {}
     done: set[str] = set()
+    await_bsp: dict[str, int] = {}                        # markets at the off whose BSP is still to read: tries
+    last_bsp: dict[str, datetime] = {}
     polls = books = 0
 
     def refresh() -> None:
@@ -535,7 +540,28 @@ def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float 
                 last[mid] = t
                 if b.get("inplay") or b.get("status") == "CLOSED" or (
                         b.get("status") == "SUSPENDED" and t >= offs.get(mid, t)):
+                    if mid not in done:
+                        await_bsp.setdefault(mid, 0)
                     done.add(mid)
+        # the BSP, read once the market has reconciled it at the off (a closed market's book carries none)
+        bsp_due = [m for m, n in await_bsp.items()
+                   if n < BSP_TRIES and (m not in last_bsp or (t - last_bsp[m]).total_seconds() >= BSP_EVERY - 1.0)]
+        if bsp_due:
+            try:
+                raw_sp = read_books(data, bsp_due, settled=True)
+            except Exception as exc:                        # the next pass tries again, BSP_TRIES in all
+                log.warning("BSPs not read (%s)", exc)
+                raw_sp = []
+            for m in bsp_due:
+                await_bsp[m] += 1
+                last_bsp[m] = t
+            got = {b.get("marketId") for b in raw_sp
+                   if any(_num((r.get("sp") or {}).get("actualSP")) is not None for r in b.get("runners") or [])}
+            if got:
+                books += rec.record_books([b for b in raw_sp if b.get("marketId") in got], source="bsp", polled_at=t)
+            for m in list(await_bsp):
+                if m in got or await_bsp[m] >= BSP_TRIES or t > offs.get(m, t) + timedelta(minutes=15):
+                    del await_bsp[m]
         if t >= next_refresh:
             try:
                 refresh()
@@ -543,18 +569,35 @@ def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float 
                 log.warning("catalogue not read again (%s)", exc)
             next_refresh = t + timedelta(minutes=refresh_minutes)
         pending = [m for m in offs if m not in done]
-        if not pending and not (wait_for_markets and not offs):
+        if not pending and not await_bsp and not (wait_for_markets and not offs):
             break
         nxt = min(((last[m] + timedelta(seconds=_interval((offs[m] - t).total_seconds() / 60.0, every_far, every_near,
                                                           near_minutes)) - t).total_seconds()
                    if m in last else 0.0 for m in pending), default=(next_refresh - t).total_seconds())
+        if await_bsp:
+            nxt = min(nxt, BSP_EVERY)
         sleep(min(60.0, max(5.0, nxt)))
     rec.maybe_upload(force=True)
     return {"markets": len(offs), "polls": polls, "rows": books, "left": len(offs) - len(done)}
 
 
+def _bsp_on_file(rec: DayRecorder) -> dict:
+    """(market id, selection id) -> the BSP read as its market reconciled at the off, from the day file's "bsp" rows."""
+    out = {}
+    try:
+        with rec.books_path.open(newline="") as f:
+            for r in csv.DictReader(f):
+                if r.get("source") == "bsp" and _num(r.get("sp_actual")) is not None:
+                    out[(str(r.get("market_id")), str(r.get("selection_id")))] = _num(r.get("sp_actual"))
+    except OSError:
+        pass
+    return out
+
+
 def final(day: date, data, rec: DayRecorder, market_ids: list[str] | None = None, now=None) -> int:
-    """The settled books of the day's markets (status CLOSED: BSP, WINNER/LOSER/REMOVED, reduction factors)."""
+    """The settled books of the day's markets (status CLOSED: WINNER/LOSER/REMOVED, reduction factors). Betfair sends
+    no BSP in a closed market's book, so each runner's is the one read as its market reconciled at the off (record()),
+    where the day file has it."""
     if market_ids is not None:
         ids = market_ids
     elif getattr(rec, "tag", "") not in DAY_FILE_TAGS:     # a record of its own (other place markets, greyhounds)
@@ -564,6 +607,15 @@ def final(day: date, data, rec: DayRecorder, market_ids: list[str] | None = None
     if not ids:
         return 0
     raw = read_books(data, ids, settled=True)
+    known = _bsp_on_file(rec)
+    for b in raw if known else []:
+        for r in b.get("runners") or []:
+            if not isinstance(r.get("sp"), dict):
+                r["sp"] = {}
+            if _num(r["sp"].get("actualSP")) is None:
+                v = known.get((str(b.get("marketId")), str(r.get("selectionId"))))
+                if v is not None:
+                    r["sp"]["actualSP"] = v
     n = rec.record_books(raw, source="final", polled_at=(now or datetime.now(timezone.utc)))
     rec.maybe_upload(force=True)
     return n
@@ -651,6 +703,14 @@ def marks(books, markets, day: date):
     out["market_status"] = out["status"]
     out["active_runners"] = pd.to_numeric(out["number_of_active_runners"], errors="coerce")
     out["bsp"] = pd.to_numeric(out["sp_actual"], errors="coerce")
+    # the settled book of a closed market carries no BSP: the one read as the market reconciled it at the off
+    sp = b[b["source"].isin(["bsp", "final"])].copy()
+    sp["_sp"] = pd.to_numeric(sp["sp_actual"], errors="coerce")
+    sp = sp.dropna(subset=["_sp"]).sort_values("polled").groupby(["market_id", "selection_id"])["_sp"].last()
+    fill = out["mark"].eq("final") & out["bsp"].isna()
+    if fill.any() and len(sp):
+        out.loc[fill, "bsp"] = [sp.get((m, s)) for m, s in zip(out.loc[fill, "market_id"],
+                                                               out.loc[fill, "selection_id"])]
     return out[MARK_FIELDS]
 
 
