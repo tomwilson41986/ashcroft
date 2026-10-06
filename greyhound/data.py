@@ -46,7 +46,10 @@ def load_runs(store: Store | None = None, years=None, frames=None) -> pd.DataFra
 
 def clean(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    df = df[df.dog_id.notna() & df.position.notna() & df.race_id.notna() & df.race_date.notna()]
+    # a race card (greyhound/card.py: today's runners, before the off) has no result yet and is kept as it is
+    card = df["is_card"].fillna(False).astype(bool) if "is_card" in df else pd.Series(False, index=df.index)
+    df = df.assign(is_card=card)
+    df = df[df.dog_id.notna() & (df.position.notna() | card) & df.race_id.notna() & df.race_date.notna()]
     # trials (T1..T4, IT) stay: they are form a model reads, but no market prices them, so they are never a target
     df["is_trial"] = df.race_class.astype(str).str.upper().str.match(r"^(T\d*|IT)$")
     df["dog_id"] = df.dog_id.astype("int64")
@@ -58,6 +61,7 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     df["field"] = df.groupby("race_id").dog_id.transform("size")
     df["won"] = (df.position == 1).astype(float)
     df["placed2"] = (df.position <= 2).astype(float)
+    df.loc[df.is_card, ["won", "placed2"]] = np.nan
     df["grade"] = df.race_class.map(grade_rank)
     df["grade_family"] = df.race_class.map(grade_family)
     df["sp_p"] = 1.0 / df.sp_decimal

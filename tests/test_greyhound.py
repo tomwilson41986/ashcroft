@@ -1,6 +1,8 @@
 """The greyhound model's engine: comments read as GBGB writes them, and every metric lag-safe (a race's own result,
 and its day's other results, never reach its features)."""
 
+import io
+
 import numpy as np
 import pandas as pd
 
@@ -233,3 +235,88 @@ def test_head_to_head_counts_earlier_days_meetings_with_todays_field_only():
     assert h.loc[3].hb_h2h_meetings == 1 and h.loc[3].hb_h2h_ahead == 1                  # race 2 reads race 1 only
     assert h.loc[0].hb_h2h_meetings == 0                                                 # nothing before day 1
     assert season_date("15.Sp.25") == pd.Timestamp("2025-09-15") and season_date("Suppressed") is None
+
+
+def test_a_card_reads_grade_trip_trap_and_dog_from_the_catalogue_and_finds_the_dogs_history():
+    from greyhound.card import cards, parse_market_name
+    assert parse_market_name("A5 480m") == ("A5", 480.0) and parse_market_name("OR3 500m") == ("OR3", 500.0)
+    assert parse_market_name("To Be Placed") == (None, None)
+    hist = pd.DataFrame({"dog_id": [7, 8], "dog_name": ["Goldcash Warrior", "Other"], "race_date": ["2026-10-01"] * 2,
+                         "race_time": ["18:00:00"] * 2, "sire": ["S", "T"], "dam": ["D", "E"], "trainer": ["X", "Y"],
+                         "born": ["Jan-2024"] * 2, "sex": ["d", "b"]})
+    m = pd.DataFrame({"market_id": ["1.9"] * 2, "market_type": ["WIN"] * 2, "country": ["GB"] * 2,
+                      "market_name": ["A5 480m"] * 2, "market_start_utc": ["2026-10-06T17:04:00Z"] * 2,
+                      "venue": ["Romford"] * 2, "selection_id": [11, 12],
+                      "runner_name": ["1. Goldcash Warrior", "2. New Dog"]})
+    c = cards(m, hist).set_index("trap")
+    assert c.loc[1, "dog_id"] == 7 and c.loc[1, "trainer"] == "X" and bool(c.loc[1, "matched_history"])
+    assert c.loc[2, "dog_id"] == -12 and not bool(c.loc[2, "matched_history"])
+    assert c.loc[1, "race_time"] == "18:04:00" and c.loc[1, "race_class"] == "A5" and c.loc[1, "distance_m"] == 480.0
+    assert c.is_card.all() and c.position.isna().all() and c.weight_kg.isna().all()
+
+
+class _Book:
+    def __init__(self, runners, status="OPEN"):
+        self.status, self.inplay, self.runners = status, False, runners
+
+
+def test_the_live_rule_backs_each_dog_once_at_its_first_real_price_within_its_limits(tmp_path):
+    import copy
+    from greyhound.live import Trader, decide, load_config, settle_rows, stake_for
+    from sources.common import Store
+    from trading.exchange import PaperExchange, Quote
+    cfg = load_config()                                                 # the live settings: GBP2 level, held
+    assert stake_for(4.0, cfg) == 2.0 and stake_for(13.0, cfg) == 2.0 and not cfg["trade_out"]
+    out = copy.deepcopy(cfg)                                            # the trading variant: staked to win GBP12
+    out.update(trade_out=True)
+    out["limits"].update(max_stake=10.0)
+    assert stake_for(4.0, out) == 4.0 and stake_for(2.0, out) == 10.0 and stake_for(1.8, out) is None
+    book = _Book({11: Quote(11, back=[(4.0, 50.0)], lay=[(4.2, 30.0)]), 12: Quote(12, back=[(1.6, 80.0)], lay=[(1.65, 9.0)]),
+                  13: Quote(13, back=[(9.0, 1.0)], lay=[(9.6, 5.0)]), 15: Quote(15, back=[(1.01, 5.0)], lay=[(1000.0, 2.0)]),
+                  14: Quote(14, status="REMOVED")})
+    pred = pd.DataFrame({"selection_id": [11, 12, 13, 14, 15], "p_model": [0.3, 0.4, 0.15, 0.1, 0.05],
+                         "track": ["Hove"] * 5, "race_time": ["18:04:00"] * 5, "trap": [1, 2, 3, 4, 5],
+                         "dog_name": list("ABCDE")})
+    rows = {r["selection_id"]: r for r in decide(pred, book, cfg)}
+    assert rows[11]["action"] == "back" and rows[11]["stake"] == 2.0    # edge +0.31 at 4.0, a real book (lay 4.2)
+    assert rows[12]["action"] == "none" and 14 not in rows              # no edge; a non-runner is left out
+    assert rows[13]["action"] == "skip" and "offered" in rows[13]["error"]   # GBP1 offered, under the stake
+    assert rows[15]["action"] == "wait"                                 # 1.01 against 1000: placeholders, not a price
+    assert decide(pred[pred.selection_id != 13], book, cfg)[0]["action"] == "skip"   # the field is not all priced
+
+    class X(PaperExchange):
+        def __init__(self):
+            super().__init__(None)
+            self.sent = []
+
+        def books(self, mids, with_sp=False):
+            self._books.update({m: book for m in mids})
+            return {m: book for m in mids}
+
+        def lay_at_bsp(self, market_id, selection_id, liability, ref):
+            self.sent.append((market_id, selection_id, liability))
+            return super().lay_at_bsp(market_id, selection_id, liability, ref)
+
+    store = Store(root=tmp_path / "sources")
+    day = pd.Timestamp("2026-10-06").date()
+    p = pred.assign(market_id="1.9", race_date="2026-10-06")
+    buf = io.StringIO()
+    p.to_csv(buf, index=False)
+    store.put("greyhound/live/predictions/2026-10-06.csv", buf.getvalue().encode())
+    now = pd.Timestamp("2026-10-06T08:00:00Z").to_pydatetime()
+    x = X()
+    t = Trader(store, x, cfg, day, "paper", tmp_path / "ledger.csv", now=lambda: now)
+    assert t.step() == 0 and t.bets == 1 and t.turnover == 2.0          # dog 15 still waits: the market stays open
+    assert x.sent == []                                                 # held to the result: no lay at SP
+    assert "1.9" not in t.decided and ("1.9", 11) in t.decided_sel
+    book.runners[15] = Quote(15, back=[(30.0, 5.0)], lay=[(34.0, 5.0)])   # its book forms
+    assert t.step() == 1 and t.bets == 1                                # decided (30.0 is over the price cap)
+    assert t.step() == 0                                                # every dog decided: never again
+    t2 = Trader(store, X(), cfg, day, "paper", tmp_path / "ledger.csv", now=lambda: now)
+    assert ("1.9", 11) in t2.decided_sel and t2.turnover == 2.0          # a restart carries the day on
+    ledger = pd.read_csv(tmp_path / "ledger.csv", dtype={"market_id": str})
+    final = pd.DataFrame({"market_id": ["1.9"], "selection_id": [11], "runner_status": ["LOSER"], "sp_actual": [3.0],
+                          "polled_utc": ["2026-10-07T07:00:00Z"]})
+    s = settle_rows(ledger, final).iloc[0]
+    assert abs(s.pnl_back + 2.0) < 1e-9 and s.pnl_lay == 0.0           # lost, nothing laid
+    assert abs(s.clv - (4.0 / 3.0 - 1)) < 1e-9

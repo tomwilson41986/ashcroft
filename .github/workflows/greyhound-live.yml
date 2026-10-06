@@ -1,0 +1,97 @@
+name: Greyhound live (model, prices, settlement)
+
+# The greyhound trading model (the owner's ask, 6 Oct 2026: "bring the real money trades live", "focus on the
+# trading model"; greyhound/live.py). This workflow is the half on GitHub's runners (S3, no Betfair):
+#   - the live model: every GBGB race to yesterday, without the features built on the day's weigh-in (unknown in the
+#     morning); weekly, and once now if none is stored;
+#   - today's prices: the cards from the recorder's greyhound catalogue (S3), priced from the dogs' earlier days, to
+#     sources/greyhound/live/predictions/<day>.csv, four times a day as the day's markets are listed;
+#   - yesterday's settlement from the recorder's settled books (the BSP and the winner).
+# The orders are placed by the trader on the UK runner, beside the horse trader (live-trade.yml), with real money
+# only when the repository variable GREYHOUND_LIVE is 'yes'. Stop new bets: the S3 object greyhound/STOP.
+
+on:
+  schedule:
+    - cron: '41 4 * * 0'     # Sunday: refit the live model
+    - cron: '21 7 * * *'     # prices: the morning's catalogue (the recorder starts 06:50-06:55 UTC)
+    - cron: '21 10 * * *'
+    - cron: '21 13 * * *'
+    - cron: '21 16 * * *'
+    - cron: '56 11 * * *'    # settle the last days (the settled books are read by 10:10 UTC)
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'predict, train, or settle'
+        type: choice
+        options: [predict, train, settle]
+        default: predict
+      date:
+        description: 'UK racing day, YYYY-MM-DD (default today)'
+        required: false
+        type: string
+  push:
+    branches: ['claude/dreamy-dirac-*']
+    paths:
+      - 'greyhound/live.py'
+      - 'greyhound/card.py'
+      - '.github/workflows/greyhound-live.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+      - name: Model, prices or settlement
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          TASK: ${{ inputs.task }}
+          DAY: ${{ inputs.date }}
+        run: |
+          if [ "$EVENT" = schedule ]; then
+            case "$SCHEDULE" in
+              '41 4 * * 0') TASK=train ;;
+              '56 11 * * *') TASK=settle ;;
+              *) TASK=predict ;;
+            esac
+            DAY=""
+          fi
+          TASK="${TASK:-predict}"
+          case "$TASK" in predict|train|settle) ;; *) echo "task must be predict, train or settle"; exit 1 ;; esac
+          if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
+          mkdir -p out
+          ARGS=()
+          if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); fi
+          case "$TASK" in
+            train)   python -m greyhound.live --train "${ARGS[@]}" | tee out/greyhound_live.json ;;
+            predict) python -m greyhound.live --train-if-missing --predict "${ARGS[@]}" | tee out/greyhound_live.json ;;
+            settle)  python -m greyhound.live --settle --days 3 "${ARGS[@]}" | tee out/greyhound_live.json ;;
+          esac
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/greyhound_live.json ] && { echo '```'; head -c 30000 out/greyhound_live.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          true
