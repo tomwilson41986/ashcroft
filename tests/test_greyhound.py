@@ -221,6 +221,9 @@ def test_the_day_so_far_settles_the_paper_bets_on_the_result_and_reads_the_move_
     assert abs(p["pnl"] - ((2.5 - 1) * 0.98 * T.STAKE - T.STAKE)) < 0.01                # one won at 2.5, one lost
     assert abs(p["clv_vs_last%"] - 100 * ((2.5 / 2.0 - 1) + (4.0 / 2.2 - 1)) / 2) < 0.01
     assert list(s["primary_by_hour_uk"]) == ["19:00"]
+    assert abs(p["expected_winners_at_price"] - (1 / 2.5 + 1 / 4.0)) < 0.01           # the prices' own expectation
+    assert abs(p["expected_winners_at_last"] - (1 / 2.0 + 1 / 2.2)) < 0.01
+    assert "Expected" in T.intraday_markdown(s)
 
 
 def test_head_to_head_counts_earlier_days_meetings_with_todays_field_only():
