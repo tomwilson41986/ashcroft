@@ -259,7 +259,11 @@ def test_a_card_reads_grade_trip_trap_and_dog_from_the_catalogue_and_finds_the_d
     m2 = pd.concat([m, m.assign(market_id="1.8", market_start_utc="2026-10-06T16:47:00Z")], ignore_index=True)
     c2 = cards(m2, hist)
     assert dict(zip(c2.market_id, c2.race_number)) == {"1.8": 1.0, "1.9": 2.0}     # numbered by the off
-    from greyhound.live import CARD_UNSAFE, LIVE_BLOCKS
+    from greyhound.live import CARD_UNSAFE, LIVE_BLOCKS, drop_removed, removed_runners
+    books = pd.DataFrame({"polled_utc": ["a", "b", "a"], "market_id": ["1.9", "1.9", "1.9"],
+                          "selection_id": [12, 12, 11], "runner_status": ["ACTIVE", "REMOVED", "ACTIVE"]})
+    left = drop_removed(cards(m, hist), removed_runners(books))
+    assert list(left.selection_id) == [11] and left.runners.tolist() == [1]           # the non-runner is off
     assert "hrb" in LIVE_BLOCKS and {"hb_weight_vs_max", "hb_win_going", "hb_prize_1st"} <= CARD_UNSAFE
 
 
