@@ -298,7 +298,7 @@ the market from 2023.
 Morning price, edge > 0.2, by year (all features): 2021 +8.9%, 2022 +20.7%, 2023 +23.2%, 2024 +2.0%, 2025 +3.4%,
 2026 +1.1% (CLV −9.0%). The morning books with volume (≥ GBP20 matched) lose 11-16% at the morning price, as in §6.
 
-**Verdict:** the HRB block (less class/trip/wins and breeding/owner) belongs in the live model. Before it goes in,
+**Verdict:** the HRB block (less class/trip/wins and breeding/owner) belongs in the live model (the card check, §8.4). Before it goes in,
 its two weight features (`hb_weight_vs_max`, `hb_weight_vs_min`) must join `live.CARD_UNSAFE`: they read the day's
 weigh-in, which the morning card does not have. Then the live training's engine takes `blocks=("parity", "hrb")`.
 
@@ -363,6 +363,35 @@ Three readings:
   (§9) showed the first-traded bets beating the last book by only 1-2%, against the bundle's 11.6%. Until the
   recorded books show the first traded price as takeable as the bundle says, the raw T-1 result (+4.6%, the same at
   BSP) is the one to trust.
+
+### 8.4 The morning card against the results (6 Oct 2026; `greyhound.live --check-card`)
+
+The live model prices the morning's card: Betfair's catalogue, each dog matched to its GBGB history by name. The
+check prices a past day twice, once from its card and once from GBGB's results, and compares every feature for every
+dog with a GBGB history. 6 Oct, 544 dogs:
+
+| | Features agreeing (≥ 99% of dogs) | Field size agrees |
+|---|---|---|
+| First check | 236 of 316 | 87% |
+| Removed runners left off the card | 255 | 91% |
+| Betfair's HC read as GBGB's HP; every runner priced | **300** | **100%** |
+
+Of the 16 that still differ:
+- **Nine cannot be known in the morning** and are left out of the live model (`live.CARD_UNSAFE`):
+  - the four weigh-in features;
+  - the three going features;
+  - the prize and the handicap mark.
+- **Seven are race-relative and differ only where a dog in the race has no GBGB history in the morning:**
+  - the trainer's z, gap and rank (89-96% agree);
+  - age against the youngest (96%);
+  - three of the lead features (99%).
+
+  On 6 Oct that dog was a GBGB debutant or a dog its first run named differently, and the results know it while the
+  card does not. That gap is the card's, not a bug.
+
+The removed-runner and grade fixes help the current live model as much as the HorseRaceBase one. Their features were
+the ones off. The HorseRaceBase live model is ready to fit (`greyhound-live.yml` task `train`) once these fixes reach
+the default branch, where the morning prices run.
 
 ## 9. Through the day
 
