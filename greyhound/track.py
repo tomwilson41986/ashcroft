@@ -41,7 +41,7 @@ MODEL_KEY = f"{PREFIX}/model.txt"
 META_KEY = f"{PREFIX}/meta.json"
 STAKE = 2.0                       # paper stake (Betfair's minimum is GBP1): the fill test is that the book offered it
 CAP = 20.0                        # no bet above this price
-MARKS = ("first", "off_60", "off_10", "off_1")
+MARKS = ("first", "first_traded", "off_60", "off_10", "off_1")
 EDGES = (0.1, 0.2, 0.3)
 #: fixed before the first tracked day, with the model; the summary judges the primary rule only
 RULES = {
@@ -108,12 +108,23 @@ def book_marks(books: pd.DataFrame, markets: pd.DataFrame, day: date) -> pd.Data
     b["minutes_to_off"] = (b.off - b.polled).dt.total_seconds() / 60.0
     pre = b[(b.source != "final") & (b.status == "OPEN") & b.inplay.astype(str).isin(["0", "False", "false"])
             & (b.minutes_to_off > 0)]
-    priced = pre[pd.to_numeric(pre.back1, errors="coerce") > 1]
+    for c in ("back1", "back1_size", "lay1", "last_traded"):
+        pre[c] = pd.to_numeric(pre[c], errors="coerce")
+    priced = pre[pre.back1 > 1]
     first = priced.sort_values("polled").drop_duplicates(["market_id", "selection_id"]).assign(mark="first")
-    first["bsp"] = np.nan
-    first["race_date"] = f"{day:%Y-%m-%d}"
-    cols = ["market_id", "selection_id", "mark", "polled_utc", "minutes_to_off", "back1", "back1_size", "bsp"]
-    return pd.concat([mk[cols], first[cols]], ignore_index=True)
+    # the first book after the dog's first matched bet (the Historic Data's "first traded price" is that bet)
+    traded = pre[pre.last_traded > 1]
+    first_traded = traded.sort_values("polled").drop_duplicates(["market_id", "selection_id"]).assign(
+        mark="first_traded")
+    cols = ["market_id", "selection_id", "mark", "polled_utc", "minutes_to_off", "back1", "back1_size", "lay1",
+            "last_traded", "bsp"]
+    parts = []
+    for f in (first, first_traded):
+        f = f.assign(bsp=np.nan)
+        parts.append(f[cols])
+    mk = mk.assign(lay1=pd.to_numeric(mk.get("lay1"), errors="coerce"),
+                   last_traded=pd.to_numeric(mk.get("last_traded"), errors="coerce"))
+    return pd.concat([mk[cols]] + parts, ignore_index=True)
 
 
 def join_markets(pred: pd.DataFrame, markets: pd.DataFrame) -> pd.DataFrame:
@@ -212,6 +223,19 @@ def intraday(store, day: date, df: pd.DataFrame, booster, meta: dict, s3=None, n
     mk = book_marks(books, markets, day)
     bets = paper_bets(priced, mk)
     first = mk[mk.mark == "first"]
+    # what each mark's book looked like: how wide the best back and lay were, and the best back against the last
+    # matched price (a book of placeholder offers is not a price anyone can take)
+    books_at = {}
+    for mark, g in mk[mk.mark.isin(list(MARKS))].groupby("mark"):
+        spread = (g.lay1 / g.back1).replace([np.inf, -np.inf], np.nan)
+        books_at[mark] = {"runners": int(len(g)),
+                          "minutes_before_off_median": round(float(g.minutes_to_off.median()), 1),
+                          "lay_over_back_median": round(float(spread.median()), 3) if spread.notna().any() else None,
+                          "tight_share(<=1.1)": round(float((spread <= 1.1).mean()), 3),
+                          "back_over_last_traded_median": round(float((g.back1 / g.last_traded).median()), 3)
+                          if g.last_traded.notna().any() else None,
+                          "back1_median": round(float(g.back1.median()), 2) if g.back1.notna().any() else None}
+    out["books_at_marks"] = books_at
     out.update({"races_on_betfair": int(priced.race_id.nunique()),
                 "unmatched_tracks": sorted(set(pred.track) - set(priced.track)),
                 "first_price_minutes_before_off": {q: round(float(first.minutes_to_off.quantile(q)), 1)
@@ -255,6 +279,12 @@ def intraday_markdown(s: dict) -> str:
         q = s["first_price_minutes_before_off"]
         lines += [f"The first price in a market came {q[0.5]} minutes before the off (median; 10% of runners {q[0.9]}+ "
                   f"minutes, 10% under {q[0.1]})", ""]
+    if s.get("books_at_marks"):
+        lines += ["| Mark | Runners | Minutes before the off | Lay / back (median) | Tight (<= 1.1) | Back / last traded |",
+                  "|---|---|---|---|---|---|"]
+        lines += [f"| {m} | {b['runners']} | {b['minutes_before_off_median']} | {b['lay_over_back_median']} | "
+                  f"{b['tight_share(<=1.1)']} | {b['back_over_last_traded_median']} |" for m, b in s["books_at_marks"].items()]
+        lines.append("")
     p = s.get("primary")
     if p:
         lines += [f"**Primary rule** (first recorded price, edge > 0.2, GBP{STAKE:g} paper): {p['filled']} bets, "
