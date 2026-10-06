@@ -322,12 +322,14 @@ def main(argv=None) -> int:
     need_runs = (a.freeze and (booster is None or a.refreeze)) or days
     if need_runs:
         last = max(days) if days else date.fromisoformat(a.cutoff) - timedelta(days=1)
-        eng = GreyhoundMetricsEngine()
+        # the frozen model's own feature blocks (none beyond the base for the model frozen on 5 Oct 2026)
+        eng = GreyhoundMetricsEngine(blocks=tuple(meta.get("blocks", [])) if meta else ())
         df = eng.calculate_all(runs_through(store, last))
         if a.freeze and (booster is None or a.refreeze):
             if not a.cutoff:
                 ap.error("--freeze needs --cutoff (the first day to track)")
             text, meta = freeze(df, eng.features, a.cutoff)
+            meta["blocks"] = list(eng.blocks)
             store.put(MODEL_KEY, text.encode())
             store.put(META_KEY, json.dumps(meta, indent=1).encode())
             import lightgbm as lgb

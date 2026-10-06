@@ -146,9 +146,11 @@ def _shrunk(df: pd.DataFrame, group: str | list[str], col: str, k: float = 30.0)
 class GreyhoundMetricsEngine:
     """``calculate_all(runs)`` -> the runs with every metric added; ``features`` lists the model's columns."""
 
-    def __init__(self, windows=(1, 3, 6)):
+    def __init__(self, windows=(1, 3, 6), blocks=("parity",)):
         self.windows = windows
+        self.blocks = tuple(blocks)
         self.features: list[str] = []
+        self.block_features: dict[str, list[str]] = {}
 
     # ------------------------------------------------------------------------------------------------ per-run figures
     def _per_run(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -293,7 +295,12 @@ class GreyhoundMetricsEngine:
         feats += list(out.columns) + ["trap", "field", "distance_m", "grade"]      # today's race, as it is
         return out
 
-    def calculate_all(self, runs: pd.DataFrame) -> pd.DataFrame:
+    def calculate_all(self, runs: pd.DataFrame, prices: pd.DataFrame | None = None) -> pd.DataFrame:
+        """Every metric. With the ``parity`` block (``greyhound.parity``) the horse model's families too, the Betfair
+        SP history among them when ``prices`` (the greyhound price-file tables) is given."""
+        if "parity" in self.blocks:
+            from greyhound.parity import attach_bsp
+            runs = attach_bsp(runs, prices)
         df = runs.sort_values(["t", "race_id", "trap"], kind="stable").reset_index(drop=True)
         import time
         clock = time.monotonic()
@@ -304,5 +311,14 @@ class GreyhoundMetricsEngine:
             clock = time.monotonic()
             df = df.join(step(df, feats))
             self.timings[name] = round(time.monotonic() - clock, 1)
+        self.block_features = {"base": list(dict.fromkeys(feats))}
+        if "parity" in self.blocks:
+            from greyhound import parity
+            clock = time.monotonic()
+            cols, names = parity.calculate(df, DogDays)
+            df = df.join(cols)
+            self.block_features["parity"] = names
+            feats += names
+            self.timings["parity"] = round(time.monotonic() - clock, 1)
         self.features = list(dict.fromkeys(feats))
         return df

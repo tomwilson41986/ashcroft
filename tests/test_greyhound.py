@@ -162,3 +162,25 @@ def test_the_forward_test_backs_at_the_first_book_only_where_it_was_offered_and_
     assert abs(first.loc[11].pnl_bsp - (2.0 - 1) * 0.98 * STAKE) < 1e-9 and abs(first.loc[11].clv - 0.25) < 1e-9
     assert first.loc[12].pnl == -STAKE
     assert not len(bets[(bets.mark == "off_1") & (bets.selection_id == 11)])  # 1.7 at the off: no edge left
+
+
+def test_parity_measures_read_a_race_as_the_horse_engine_does_and_the_bsp_joins_by_trap():
+    from greyhound.parity import attach_bsp, per_run
+    race = pd.DataFrame({"race_id": [1] * 4, "raceid": ["1"] * 4, "race_date": ["2026-01-01"] * 4,
+                         "race_time": ["18:10"] * 4, "track": ["Hove"] * 4, "distance_m": [515.0] * 4,
+                         "trap": [1, 2, 3, 4], "field": [4] * 4, "position": [1.0, 2.0, 3.0, 4.0],
+                         "won": [1.0, 0, 0, 0], "sectional": [4.40, 4.30, 4.50, 4.60], "lbw": [0.0, 1.0, 2.0, 5.0],
+                         "esr": [0.0] * 4, "gsr": [0.0] * 4, "gsr_ewm": [1.0, 2.0, 3.0, np.nan],
+                         "sp_p_norm": [0.4, 0.3, 0.2, 0.1], "market_pos": [2, 1, 3, 4]})
+    race = attach_bsp(race, pd.DataFrame({"market": ["win"] * 4, "country": ["GB"] * 4,
+                                          "race_date": ["2026-01-01"] * 4, "race_time": ["18:10"] * 4,
+                                          "track": ["Hove"] * 4, "trap": [1.0, 2.0, 3.0, 4.0],
+                                          "bsp": [2.0, 4.0, 5.0, 20.0]}))
+    m = per_run(race)
+    assert m.nfp.tolist() == [1.0, 2 / 3, 1 / 3, 0.0]                     # 1 the winner .. 0 last
+    assert m.ep.tolist() == [1 / 3, 0.0, 2 / 3, 1.0] and m.lead.tolist() == [0.0, 1.0, 0.0, 0.0]
+    assert m.gain.tolist()[0] == (2 - 1) / 3                               # second at the bend, won: one place made
+    assert abs(m.nres[0] - (1.0 - 2 / 3)) < 1e-12                          # won from second in the market's order
+    assert abs(m.rs[3] - 2.0) < 1e-12 and abs(m.rs[0] - 2.5) < 1e-12       # the others' pre-race ratings
+    p = 1 / np.array([2.0, 4.0, 5.0, 20.0])
+    assert abs(m.bsp_ae[0] - (1 - p[0] / p.sum())) < 1e-12
