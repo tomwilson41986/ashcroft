@@ -129,3 +129,20 @@ def test_a_sample_takes_the_next_races_pools_at_once(tmp_path):
     detail = [json.loads(x) for x in gzip.open(tmp_path / "2026-10-06" / "detail.jsonl.gz", "rt")]
     assert [(d["pool"], d["mark"]) for d in detail] == [("WIN", "sample"), ("PLACE", "sample")]
     assert s["detail"] == 2 and s["results"] == 0
+
+
+def test_the_day_is_read_back_runner_by_runner(tmp_path):
+    t = [OFF - timedelta(minutes=61)]
+
+    def sleep(s):
+        t[0] += timedelta(seconds=max(s, 1))
+    rec = tr.ToteRecorder(date(2026, 10, 6), tmp_path, OFF + timedelta(minutes=6), session=_Session(),
+                          clock=lambda: t[0], sleep=sleep, pause=0, upload_every=10 ** 9)
+    rec.run()
+    path = tmp_path / "2026-10-06" / "detail.jsonl.gz"
+    with gzip.open(path, "at") as f:                         # a torn line at the end, as a copy mid-write
+        f.write('{"polled_utc": "2026')
+    rows = tr.runner_rows(tr.read_lines(path))
+    assert set(rows["pool"]) == {"WIN", "PLACE"} and len(rows) == 2 * len(tr.WIN_PLACE_MARKS)
+    win = rows[rows["pool"] == "WIN"].iloc[0]
+    assert (win["cloth"], win["base"], win["shown"], win["show_price"]) == ("1", 4.9, 5.5, 5.5)

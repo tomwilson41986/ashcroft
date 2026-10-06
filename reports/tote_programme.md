@@ -41,15 +41,38 @@ is a bet against the pool, and the deduction is 25-30%.
 
 The arithmetic is `tote_compare.py` (tested in `tests/test_tote_compare.py`).
 
+## What the Tote serves (the probes of 6 Oct)
+
+Three read-only probes from the UK server (`tote_probe.py`; runs 37442604100, 37449057994) found:
+
+- **The site.** tote.co.uk is a single-page app: every page is the same shell. Its scripts read a REST API whose
+  address and public client key come from `/config.js`, a file every visitor's browser is served. robots.txt
+  disallows only `/account`. The key is read at run time and kept out of every file and log line.
+- **`race-card/pools/today`.** Every pool open today, with its total, status and race. On 6 Oct there were 86 win,
+  86 place, 68 exacta, 68 trifecta, 41 swinger and 18 quinella pools, plus placepots and jackpots. They cover 35
+  GB/IE races (the same 35 Betfair priced), and the US and French meetings besides.
+- **`race-card/pool/<id>`.** The pool and its race's runners.
+  - The win pool gives each runner's approximate dividend from the pool, per unit staked (`baseWinStake`), and
+    the figure the site shows (`winstake`). The site's figure is the better of the pool's dividend and the
+    bookmakers' current show price: that is the Tote Guarantee. The pool's dividends summed to a book of
+    124.8% (1/(1 − 19.25%) is 123.8%, and dividends are rounded down).
+  - The place pool does the same (`basePlaceStake`, `placestake`).
+  - The exacta, trifecta and swinger pools give their totals only: no combination's dividend before the off.
+- **`race-card/race-results/<race ids>`.** The declared dividends (the site's results module). Its answer is read
+  on the first evening of the record.
+
 ## How it is built
 
-1. **The probe** (`tote_probe.py`, `tote-probe.yml`). tote.co.uk answers "Unavailable in Region" outside the UK, so
-   it is read from the UK server, read-only: no login, nothing posted, robots.txt kept, at most 40 requests two
-   seconds apart. It saves what the racecard and results pages serve and the addresses of the data behind them.
-   The runner serves the trader, so the probe waits behind the day's session.
-2. **The record.** From what the probe finds: the Tote's prices for every GB/IE race and pool through the day to
-   the off, and the declared dividends, raw to S3 beside the Betfair record. On trading days it runs inside the
-   trader's job (one runner), as the evening record does.
+1. **The probe** (`tote_probe.py`, `tote-probe.yml`): done (above).
+2. **The record** (`tote_recorder.py`, from the session of 7 Oct inside the trader's job, one runner). It is
+   read-only, at most one request a second, about 1,000 requests and 2 MB a day:
+   - every pool's total, every 10 minutes;
+   - each GB/IE race's win and place pools at 60, 30, 15, 10, 5, 3, 2 and 1 minutes before the off and 2 and 5
+     minutes after it;
+   - the exacta, trifecta, swinger and quinella pools at 5 minutes before and after;
+   - the declared dividends at 10 and 30 minutes after the off.
+
+   The raw answers go to s3 `tote/live/<day>/`.
 3. **The comparison.** Daily: each runner's Tote price against Betfair's best lay at the same minute, and the
    declared dividends against the BSP and the Betfair-implied fair dividends, by price band and time to the off.
 4. **Betting.** Not before the record shows a gap that holds to the off. The Tote has no public betting API for

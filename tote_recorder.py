@@ -336,6 +336,52 @@ class ToteRecorder:
         return {"started": True, "races": len(ids), **self.counts}
 
 
+def read_lines(path: Path) -> list[dict]:
+    """A day file's records (a gzipped file appended to by several runs is read whole; a torn last line is
+    passed over)."""
+    out = []
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        try:
+            for line in f:
+                try:
+                    out.append(json.loads(line))
+                except ValueError:
+                    continue
+        except (EOFError, OSError):                          # a copy taken while a run was writing
+            pass
+    return out
+
+
+def runner_rows(records: list[dict]):
+    """The win and place pools' runners, one row a runner a mark: when, race, pool, mark, the meeting and post
+    time, the pool's total and state, and each runner's cloth number, name, scratched, the pool's dividend
+    (base: baseWinStake or basePlaceStake), the figure the site shows (shown: with the Tote Guarantee) and the
+    bookmakers' show price (decimal)."""
+    import pandas as pd
+    rows = []
+    for rec in records:
+        p = rec.get("answer")
+        if rec.get("pool") not in WIN_PLACE or not isinstance(p, dict):
+            continue
+        legs = p.get("legs") or []
+        race = (legs[0].get("race") if legs else None) or {}
+        base_key, shown_key = ("baseWinStake", "winstake") if rec["pool"] == "WIN" else ("basePlaceStake",
+                                                                                          "placestake")
+        for r in race.get("runners") or []:
+            show = r.get("decimalShowPrice")
+            rows.append({
+                "polled_utc": rec.get("polled_utc"), "race_id": rec.get("race_id"), "pool": rec["pool"],
+                "mark": rec.get("mark"), "meeting": race.get("cardName") or (p.get("meeting") or {}).get("name"),
+                "post_utc": race.get("postTime") or (legs[0].get("racePostTime") if legs else None),
+                "places": legs[0].get("numPositions") if legs else None, "pool_total": p.get("total"),
+                "betting_on": p.get("bettingOn"), "finalised": p.get("finalised"),
+                "cloth": str(r.get("programNumber") or ""), "name": r.get("name"),
+                "scratched": bool(r.get("scratched")), "base": r.get(base_key), "shown": r.get(shown_key),
+                "show_price": (show / 100.0) if isinstance(show, (int, float)) and show > 0 else None,
+            })
+    return pd.DataFrame(rows)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--record", action="store_true", help="record today's pools until --until (UK)")

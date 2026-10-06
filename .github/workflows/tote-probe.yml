@@ -5,7 +5,8 @@ name: Tote probe (read-only)
 # outside the UK, so the first look at what its public pages serve runs on the UK runner: no login, nothing
 # posted, robots.txt kept, at most 40 requests two seconds apart (tote_probe.py). The pages, the JSON they carry
 # and the summary are kept as the run's artifact and in s3://$CAPTURE_BUCKET/tote/probe/. The runner serves the
-# trader too: a run waits behind the day's session and takes a minute or two.
+# trader too: a run waits behind the day's session and takes a minute or two, so it runs only when dispatched (a
+# push no longer queues one ahead of a trading session).
 
 on:
   workflow_dispatch:
@@ -16,12 +17,6 @@ on:
         type: choice
         options: [record-test, results, api, pages]
         default: record-test
-  push:
-    branches: ['claude/happy-ritchie-*']
-    paths:
-      - 'tote_probe.py'
-      - 'tote_recorder.py'
-      - '.github/workflows/tote-probe.yml'
 
 permissions:
   contents: read
