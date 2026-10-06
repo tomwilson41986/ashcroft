@@ -525,6 +525,15 @@ non-interactive. The backtest behind the rule covered February-March 2026. Since
 November 2025 to March 2026 (4,342 races, 2% commission). Research query runs 37115884197 and 37134803377; ledger
 `to-win-five-months-1003` and `to-win-five-months-novol-1003`.
 
+**The live key (the owner's, 6 Oct).** The owner bought Betfair's live application key on 6 Oct. It goes in the
+GitHub secret `BETFAIR_LIVE_APP_KEY`, and only the trader's own process in `live-trade.yml` reads it. The market
+records beside the trader, and every other workflow, keep the delayed key (`BETFAIR_APP_KEY`), because Betfair permits
+no read-only use of live data (`tests/test_workflow_guards.py` holds the split). On the live key the feed reports each
+runner's matched money, so the trader reads the closing model fitted with volume (`data/models/closing_model.json`) and
+holds each runner to the GBP100 matched floor, as the backtest below did. Its log then says "The trader reads the live
+key's feed", and its backs stop saying "feed without volume". A lost session is logged into again, once
+(`trading/exchange.py`); a trading day is far inside Betfair's 24-hour session.
+
 The trader is still on the delayed key: every back on 1-2 Oct logged "feed without volume". So it reads the closing
 model fitted without matched volume and holds no runner to the GBP100 floor. The live key's feed carries the volume.
 
