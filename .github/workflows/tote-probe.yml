@@ -11,14 +11,16 @@ on:
   workflow_dispatch:
     inputs:
       stage:
-        description: 'pages: the public pages; api: the racing API behind them, each endpoint once'
+        description: 'record-test: the Tote recorder for four minutes; results: today''s declared dividends, once;
+          api: the racing API behind the pages, each endpoint once; pages: the public pages'
         type: choice
-        options: [api, pages]
-        default: api
+        options: [record-test, results, api, pages]
+        default: record-test
   push:
     branches: ['claude/happy-ritchie-*']
     paths:
       - 'tote_probe.py'
+      - 'tote_recorder.py'
       - '.github/workflows/tote-probe.yml'
 
 permissions:
@@ -57,8 +59,15 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-          STAGE: ${{ inputs.stage || 'api' }}
-        run: timeout 600 python tote_probe.py --out tote_probe_out --max-requests 40 --stage "$STAGE"
+          STAGE: ${{ inputs.stage || 'record-test' }}
+        run: |
+          # the recorder keeps its day files where the trader's job keeps them (one record a day on the server)
+          case "$STAGE" in
+            record-test) timeout 600 python tote_recorder.py --record --minutes 4 --sample 2 ;;
+            results) timeout 600 python tote_recorder.py --results ;;
+            *) timeout 600 python tote_probe.py --out tote_probe_out --max-requests 40 --stage "$STAGE" ;;
+          esac
+          mkdir -p tote_probe_out && cp -r "$HOME/.ashcroft/tote_live/." tote_probe_out/ 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
