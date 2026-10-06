@@ -191,7 +191,9 @@ jobs:
             # bets. Ledger: s3://$CAPTURE_BUCKET/sources/greyhound/live/<mode>/<day>/
             GHLIVE=()
             if [ "$GREYHOUND_LIVE" = yes ]; then GHLIVE=(--live); fi
-            python -m greyhound.live --trade "${GHLIVE[@]}" --until 21:30 > "$RUNNER_TEMP/greyhound_trader.log" 2>&1 &
+            # a trader too: it reads the live key's feed (a fill-or-kill back on a delayed price is missed)
+            BETFAIR_APP_KEY="$TRADER_KEY" python -m greyhound.live --trade "${GHLIVE[@]}" --until 21:30 \
+              > "$RUNNER_TEMP/greyhound_trader.log" 2>&1 &
             GHT=$!
             # and the Tote's pools (the owner's ask of 6 Oct; read-only, no login, tote_recorder.py): each GB/IE
             # race's win and place dividends near the off, every pool's total, the declared dividends
