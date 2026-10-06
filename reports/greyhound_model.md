@@ -328,6 +328,42 @@ So the edge a live rule acts on should be the blended probability against the pr
 prices rather than the SP. The live trader's rule (raw model, edge > 0.2) is unchanged until that is tested on the
 recorded books.
 
+### 8.3 The edge on the blended chance, out of sample (CI run 37516339956; `reports/greyhound_blend_ci_1006.json`)
+
+These use the 2026 Betfair bundle. The blend (both log-odds, normalised in the race) is fitted on 1 Jan to 16 May and
+every rule is scored on 17 May to 29 Sep only. The model is the full-history "all" model, with weigh-in features.
+
+| | First traded price | T-1 minute |
+|---|---|---|
+| Blend weights (price / model) | 0.66 / 0.55 | 0.82 / 0.26 |
+| Test log-loss: price / model / blend | 0.4427 / 0.4453 / **0.4381** | 0.4315 / 0.4464 / 0.4316 |
+
+The first traded price is a weak price, and the model adds a lot to it. A minute before the off, the price has taken
+in almost everything the model knows.
+
+| Rule (test half) | Bets | ROI at the price (90%) | CLV | At BSP | Winners: actual / price's / model's |
+|---|---|---|---|---|---|
+| First price, raw edge > 0.2 | 23,192 | +14.6% (+11.4, +17.8) | +11.6% | +4.2% | 3,611 / 3,043 / 4,784 |
+| First price, blend edge > 0.05 | 23,980 | +16.0% (+13.2, +18.8) | +15.3% | +1.5% | 5,109 / 4,480 / 5,914 |
+| First price, blend edge > 0.10 | 17,380 | +19.9% (+16.5, +23.3) | +19.7% | +0.9% | 3,628 / 3,133 / 4,378 |
+| T-1, raw edge > 0.2 | 25,212 | **+4.6%** (+1.4, +7.7) | +0.3% | +4.6% | 3,272 / 3,059 / 4,793 |
+| T-1, raw edge > 0.3 | 19,616 | +5.9% (+2.2, +9.6) | +0.5% | +6.0% | 2,384 / 2,198 / 3,696 |
+| T-1, blend edge > 0.05 | 15,836 | +3.5% (−0.2, +7.1) | +0.9% | +2.8% | 2,493 / 2,397 / 3,686 |
+
+Three readings:
+
+- **Against Betfair's prices, the model's picks beat the price.** At T-1 they win 1.07 times the winners the price
+  expects, and at the first traded price 1.19 times. The model still expects 1.5 times what they win. So the edge is
+  real but about a third of the size the model says. Against the SP (§8.2) the picks only matched the price, because
+  the SP is a bookmaker's price.
+- **The blend does not beat the raw rule a minute before the off.** At the first traded price it buys more return at
+  that price but less at BSP. It is finding the first price's mistakes (the price moves its way) more than the dog's.
+  That is only worth having where the first traded price can really be taken.
+- **The live rule is unchanged:** raw model, edge > 0.2. The blend is not wired into the trader. Today's recorded books
+  (§9) showed the first-traded bets beating the last book by only 1-2%, against the bundle's 11.6%. Until the
+  recorded books show the first traded price as takeable as the bundle says, the raw T-1 result (+4.6%, the same at
+  BSP) is the one to trust.
+
 ## 9. Through the day
 
 `greyhound-track.yml` runs every hour from 11:11 to 21:11 UTC and again at 22:41 (`greyhound/track.py --intraday`).
@@ -341,8 +377,9 @@ day properly, at BSP.
 
 ## 10. Next
 
-0. **The edge on the blended probability** (§8.2): fit the blend on the recorded Betfair books and the 2026 bundle,
-   then rescore the first-price and T-1 rules on the blended edge.
+0. **The first traded price, recorded against the bundle's** (§8.3): over the coming days, compare what the recorded books
+   offered at the first match with the bundle's first traded price. The first-price rule and the blend only matter if
+   the two agree.
 1. **Why the model falls behind the BSP from 2023.** Check whether GBGB's data changed (the coverage of sectionals and
    calculated times, comments, grading, the meetings held). Refit on a rolling recent window rather than everything
    since 2019. Check the drift of the features that matter most.
