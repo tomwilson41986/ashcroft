@@ -84,6 +84,7 @@ jobs:
           AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
           GREYHOUND_LIVE: ${{ vars.GREYHOUND_LIVE }}
           UNTIL: ${{ steps.run.outputs.until }}
         run: |
@@ -99,7 +100,9 @@ jobs:
           GHLIVE=()
           if [ "$GREYHOUND_LIVE" = yes ]; then GHLIVE=(--live); else echo "GREYHOUND_LIVE is not 'yes': paper"; fi
           set +e
-          python -m greyhound.live --trade "${GHLIVE[@]}" --until "$UNTIL"
+          # the trader alone reads the live key's feed when there is one; the records keep the delayed key
+          BETFAIR_APP_KEY="${BETFAIR_LIVE_APP_KEY:-$BETFAIR_APP_KEY}" python -m greyhound.live --trade "${GHLIVE[@]}" \
+            --until "$UNTIL"
           CODE=$?
           wait "$REC"; echo "recorder exited $?"
           wait "$OTHER"; echo "other place record exited $?"
