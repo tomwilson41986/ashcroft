@@ -117,7 +117,7 @@ for w in WINDOWS:
             r[f"{tag}_mnats"], r[f"{tag}_t"] = s["dll_mnats"], s["t"]
         x = e[[col, "placing_numerical", "race"]].dropna()
         x = x[x.groupby("race")[col].transform("size") >= 3]
-        rk = x.groupby("race")[[col, "placing_numerical"]].rank()
+        rk = x.groupby("race")[[col, "placing_numerical"]].rank(pct=True)   # within-race shares: raw ranks grow with the field
         r["rank_corr_with_finish"] = float(-rk[col].corr(rk["placing_numerical"]))
         rows.append(r)
 out = pd.DataFrame(rows)
