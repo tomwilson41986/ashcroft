@@ -38,6 +38,9 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.getcwd())
+from scipy.optimize import linprog  # noqa: E402
+
+from model import race_book as rb  # noqa: E402
 from model.ordering import place_probabilities  # noqa: E402
 from trading.exchange import Market  # noqa: E402
 from trading.matching import attach_ids  # noqa: E402
@@ -52,6 +55,9 @@ BANDS = (((2, 7), (0.734, 0.557)), ((8, 11), (0.804, 0.640)), ((12, 15), (0.839,
 CLOCK_MARKS = (("10:00", 600), ("12:00", 720))
 OFF_MARKS = (60, 15, 5)                         # minutes before the off
 KEY = ["market_id", "selection_id"]
+CLOSING = rb.load_closing_model("data/models/closing_model_novol.json")   # the trader's, for a feed without volume
+ARB_WINDOW = 120                                # minutes before the off in which every poll is searched for arbitrage
+SYNC = 90                                       # seconds: books of other markets read with a poll
 bucket = os.environ.get("PRED_BUCKET") or "ashcroft"
 s3 = boto3.client("s3", region_name=os.environ.get("PRED_REGION") or "eu-west-2")
 
@@ -259,6 +265,13 @@ for race, g in mk.groupby("race"):
             sources["model"] = (1 / mp) / (1 / mp).sum()
         if np.isfinite(mids).all():
             sources["market"] = (1 / mids) / (1 / mids).sum()
+        if np.isfinite(mp).all() and np.isfinite(mids).all():   # the closing model: our price and the market's, a la Benter
+            bk, ly = w.back1.to_numpy(float), w.lay1.to_numpy(float)
+            now = np.where(np.isfinite(bk) & (bk > 1), rb.market_now(bk, ly), mids)
+            _, exp_bsp = rb.race_expected_clv(bk, ly, mp, np.zeros(n), CLOSING, n_draws=4000,
+                                              rng=np.random.default_rng(0), market=now)
+            if np.isfinite(exp_bsp).all():
+                sources["combined"] = (1 / exp_bsp) / (1 / exp_bsp).sum()
         if not sources:
             continue
         books_now = nearest(oth[oth.market_id.isin(others)], others, t, tol)
@@ -309,7 +322,7 @@ print(S.groupby(["market", "mark"]).agg(races=("race", "nunique"), offers=("sele
                                         spread_median=("spread", "median"), back_size_median=("back_size", "median"),
                                         lay_size_median=("lay_size", "median")).round(2).to_string())
 
-for src in ("model", "market"):
+for src in ("model", "combined", "market"):
     if f"evb_{src}" not in S:
         continue
     print(f"\n== expected value under the {src}'s chances (a unit at the best back / best lay, 2% commission)")
@@ -324,20 +337,171 @@ for src in ("model", "market"):
 
 names = allcat.drop_duplicates(KEY).set_index(KEY).runner_name
 venue = mk.venue
-for side, col, size in (("backs", "evb_model", "back_size"), ("lays", "evl_model", "lay_size")):
+for side, col, size in (("backs", "evb_combined", "back_size"), ("lays", "evl_combined", "lay_size")):
     if col not in S:
         continue
     top = S[S[col] > 0.05].sort_values(col, ascending=False).head(15).copy()
     if top.empty:
-        print(f"\n== no {side} above 5% under the model")
+        print(f"\n== no {side} above 5% under the combined chances")
         continue
     top["horse"] = [names.get((m, s), s) for m, s in zip(top.market_id, top.selection_id)]
     top["venue"] = [venue.get(m) for m in top.market_id]
     top["off"] = top.start.dt.tz_convert(UK).dt.strftime("%H:%M")
     cols = ["venue", "off", "mark", "market", "horse", "runners", "back", "back_size", "lay", "lay_size",
-            "p_model", "p_market", col, col.replace("model", "market")]
-    print(f"\n== the best {side} under the model (expected value over 5%)")
+            "p_model", "p_combined", "p_market", col.replace("combined", "model"), col, col.replace("combined", "market")]
+    print(f"\n== the best {side} under the combined chances (expected value over 5%)")
     print(top[[c for c in cols if c in top]].round(3).to_string(index=False))
+
+# ------------------------------------------------------------------------------------------------ arbitrage
+def unit_payoffs(kind, k, d, price, side, n_states):
+    """P/L of a unit stake (the backer's stake for a lay) in each state: finishing 1st, 2nd, ... the last state the
+    rest. Commission on a market's net winnings: one position a market, so a winning state's P/L carries it."""
+    out = np.zeros(n_states)
+    for s_ in range(1, n_states + 1):
+        if kind == "EACH_WAY":
+            if s_ == 1:
+                v = 0.5 * (price - 1) * (1 + 1 / d)
+                v = v * (1 - C) if side == "back" else -v
+            elif s_ <= k:
+                v = -0.5 + 0.5 * (price - 1) / d
+                v = v if side == "back" else -v
+                v = v * (1 - C) if v > 0 else v
+            else:
+                v = -1.0 if side == "back" else 1 - C
+        elif side == "back":
+            v = (price - 1) * (1 - C) if s_ <= k else -1.0
+        else:
+            v = -(price - 1) if s_ <= k else 1 - C
+        out[s_ - 1] = v
+    return out
+
+
+def horse_arbitrage(legs, n_states):
+    """The most a horse's offers across its markets guarantee whatever its finishing place, at the best prices
+    and within the sizes on offer: max z with every state's P/L at least z (a linear programme). legs: (market,
+    kind, k, d, back, back size, lay, lay size). Returns (z, money at risk, legs used) or None."""
+    cols, ub, desc = [], [], []
+    for name, kind, k, d, b, bs, l, ls in legs:
+        if b > 1 and bs >= 1:
+            cols.append(unit_payoffs(kind, k, d, b, "back", n_states)); ub.append(bs); desc.append((name, "back", b))
+        if 1 < l < 1000 and ls >= 1:
+            cols.append(unit_payoffs(kind, k, d, l, "lay", n_states)); ub.append(ls); desc.append((name, "lay", l))
+    if len(cols) < 2:
+        return None
+    A = np.array(cols).T
+    nv = A.shape[1]
+    res = linprog(np.r_[np.zeros(nv), -1.0], A_ub=np.c_[-A, np.ones(n_states)], b_ub=np.zeros(n_states),
+                  bounds=[(0, u) for u in ub] + [(None, None)], method="highs")
+    if not res.success or -res.fun <= 0.01:
+        return None
+    x = res.x[:nv]
+    risk = sum(xi if side == "back" else xi * (pr - 1) for xi, (_, side, pr) in zip(x, desc))
+    used = [(nm, side, pr, round(float(xi), 2)) for xi, (nm, side, pr) in zip(x, desc) if xi > 0.005]
+    return float(-res.fun), float(risk), used
+
+
+def book_arbitrage(ob, k):
+    """Back every runner (a stake of 1/price each pays exactly k, whoever fills the k places) or lay every runner:
+    the profit locked at the best prices, after commission, as far as the smallest size allows."""
+    out = []
+    b, bs = ob.back1.to_numpy(float), ob.back1_size.to_numpy(float)
+    lay, ls = ob.lay1.to_numpy(float), ob.lay1_size.to_numpy(float)
+    if len(b) and (b > 1).all():
+        book = (1 / b).sum()
+        if book < k:
+            lam = float(np.min(b * bs))
+            out.append(("back every runner", book, lam * (k - book) * (1 - C)))
+    if len(lay) and ((lay > 1) & (lay < 1000)).all():
+        book = (1 / lay).sum()
+        if book > k:
+            lam = float(np.min(lay * ls))
+            out.append(("lay every runner", book, lam * (book - k) * (1 - C)))
+    return out
+
+
+arbs, books_found, polls_searched = [], [], 0
+for race, g in mk.groupby("race"):
+    wins = g.index[g.market_type.eq("WIN")]
+    if len(wins) != 1:
+        continue
+    wmid, start = wins[0], g.start.iloc[0]
+    handicap = bool(re.search(r"hcap|handicap", str(g.loc[wmid, "market_name"]), re.I))
+    others = [m for m in g.index if m != wmid]
+    ob_all = oth[oth.market_id.isin(others)]
+    lo = start - pd.Timedelta(minutes=ARB_WINDOW)
+    for polled, pb in ob_all[(ob_all.t >= lo) & (ob_all.t < start)].groupby("polled_utc"):
+        t = pb.t.iloc[0]
+        w = nearest(win_book[win_book.market_id.eq(wmid)], [wmid], t, SYNC / 60)
+        w = w[w.runner_status.eq("ACTIVE")].drop_duplicates("selection_id")
+        if len(w) < 2:
+            continue
+        polls_searched += 1
+        n = len(w)
+        n_states = min(n, 5)
+        plc = nearest(day[day.market_id.isin(others)], others, t, SYNC / 60) if not day.empty else day
+        nowb = pd.concat([pb, plc], ignore_index=True).drop_duplicates(KEY)
+        nowb = nowb[nowb.runner_status.eq("ACTIVE")]
+        mins_to_off = (start - t).total_seconds() / 60
+        terms = {}
+        for omid in nowb.market_id.unique():
+            kname, k = kind(omid)
+            d = None
+            if kname == "PLACE":
+                k = place_terms(n, handicap)
+            elif kname == "EACH_WAY":
+                k, d = each_way_terms(n, handicap)
+            if k:
+                terms[omid] = (kname, k, d)
+        for omid, (kname, k, d) in terms.items():
+            if kname != "EACH_WAY":
+                for how, book, prof in book_arbitrage(nowb[nowb.market_id.eq(omid)], k):
+                    books_found.append(dict(race=race, start=start, mins_to_off=mins_to_off, market=kname, how=how,
+                                            book=book, places=k, profit=prof))
+        for r in w.itertuples():
+            legs = [("WIN", "WIN", 1, None, r.back1, r.back1_size, r.lay1, r.lay1_size)]
+            for q in nowb[nowb.selection_id.eq(r.selection_id)].itertuples():
+                if q.market_id in terms:
+                    kname, k, d = terms[q.market_id]
+                    legs.append((kname, kname, k, d, q.back1, q.back1_size, q.lay1, q.lay1_size))
+            if len(legs) < 2:
+                continue
+            got = horse_arbitrage(legs, n_states)
+            if got:
+                z, risk, used = got
+                arbs.append(dict(race=race, start=start, mins_to_off=round(mins_to_off, 1), selection_id=r.selection_id,
+                                 runners=n, profit=z, at_risk=risk, legs=used))
+
+print(f"\n== arbitrage: {polls_searched} race-polls in the last {ARB_WINDOW} minutes before the offs searched "
+      f"(every horse across win, place, 2/3/4 TBP and each way; books of each market)")
+if arbs:
+    A_ = pd.DataFrame(arbs)
+    A_["return_on_risk"] = A_.profit / A_.at_risk
+    A_["pair"] = [" + ".join(sorted(f"{side} {nm}" for nm, side, _, _ in legs)) for legs in A_.legs]
+    A_["horse"] = [names.get((mk[(mk.race == rc) & mk.market_type.eq("WIN")].index[0], s_), s_)
+                   for rc, s_ in zip(A_.race, A_.selection_id)]
+    print(f"   {len(A_)} horse-polls ({A_[['race', 'selection_id']].drop_duplicates().shape[0]} horses, "
+          f"{A_.race.nunique()} races) with a guaranteed profit after commission; GBP median "
+          f"{A_.profit.median():.2f}, largest {A_.profit.max():.2f}; return on the money at risk median "
+          f"{A_.return_on_risk.median():.1%}")
+    print(A_.groupby("pair").agg(polls=("profit", "size"), horses=("selection_id", "nunique"),
+                                 gbp_median=("profit", "median"), gbp_max=("profit", "max"),
+                                 ror_median=("return_on_risk", "median")).sort_values("polls", ascending=False)
+          .round(3).head(20).to_string())
+    best = A_.sort_values("profit", ascending=False).drop_duplicates(["race", "selection_id"]).head(15)
+    best["off"] = best.start.dt.tz_convert(UK).dt.strftime("%H:%M")
+    best["venue"] = [mk.loc[mk[(mk.race == rc)].index[0], "venue"] for rc in best.race]
+    print(best[["venue", "off", "mins_to_off", "horse", "runners", "profit", "at_risk", "return_on_risk", "legs"]]
+          .round(3).to_string(index=False))
+else:
+    print("   none: no horse's offers guarantee a profit after commission at the best prices")
+if books_found:
+    B_ = pd.DataFrame(books_found)
+    print(f"\n   books: {len(B_)} market-polls where backing or laying every runner locks a profit")
+    print(B_.groupby(["market", "how"]).agg(polls=("profit", "size"), gbp_median=("profit", "median"),
+                                            gbp_max=("profit", "max"), book_median=("book", "median")).round(3)
+          .to_string())
+else:
+    print("   books: none locks a profit (every back book over its places, every lay book under)")
 
 # ------------------------------------------------------------------------------------------- the close and results
 fin_w = day[day.source.eq("final")] if "source" in day else pd.DataFrame()
