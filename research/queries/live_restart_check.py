@@ -56,3 +56,19 @@ for name in ("pools", "detail", "results"):
             print(f"  last poll: {len(pools)} pools, {sum(1 for p in pools if p.get('bettingOn'))} betting on")
     except Exception as e:
         print(f"tote {name}:", type(e).__name__, e)
+
+# the orders since the restart: what each event was, and why any failed
+try:
+    t = pd.to_datetime(led["ts"], utc=True, errors="coerce")
+    after = led[t >= RESTART]
+    print("events after the restart:", dict(Counter(after["event"].astype(str))))
+    bad = after[after["status"].astype(str).eq("FAILURE")]
+    print("failed orders:", bad[["ts", "event", "venue", "off", "runner", "asked", "matched", "error"]]
+          .to_string(index=False) if len(bad) else "none")
+    morning = led[t < RESTART]
+    print("morning failures:", dict(Counter(morning.loc[morning["status"].astype(str).eq("FAILURE"), "error"]
+                                             .astype(str).str[:80])))
+    backs = after[after["event"].astype(str).str.contains("back", case=False)]
+    print(f"backs since the restart: {len(backs)}, matched GBP{pd.to_numeric(backs['matched'], errors='coerce').sum():.2f}")
+except Exception as e:
+    print("events:", type(e).__name__, e)
