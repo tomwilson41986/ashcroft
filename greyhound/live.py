@@ -194,6 +194,9 @@ def card_check(store, day: date, blocks=LIVE_BLOCKS, s3=None) -> dict:
     j = a.merge(b, on=k, suffixes=("_card", "_res"))
     agree = {}
     for f in eng.features:
+        if f in k:                                           # a join key: equal by construction
+            agree[f] = 1.0
+            continue
         x, y = j[f"{f}_card"].astype(float), j[f"{f}_res"].astype(float)
         agree[f] = round(float(((x.isna() & y.isna()) | ((x - y).abs() <= 1e-6)).mean()), 4) if len(j) else None
     bad = {f: v for f, v in sorted(agree.items(), key=lambda kv: kv[1] or 0) if v is not None and v < 0.99}
