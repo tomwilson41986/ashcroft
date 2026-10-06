@@ -254,6 +254,13 @@ def intraday(store, day: date, df: pd.DataFrame, booster, meta: dict, s3=None, n
         r = f.pnl / STAKE
         rules[f"{mark}: edge>{th:.1f}"] = {
             "signals": int(len(g)), "filled": int(len(f)), "winners": int(f.won.sum()),
+            # the winners the prices expected (the price taken, and the last book's, 1/price summed; the overround
+            # is left in, so a fair book expects a touch fewer) and the model's own expectation
+            "expected_winners_at_price": round(float((1 / f.back1).sum()), 2),
+            "expected_winners_at_last": round(float((1 / f.last_back).sum()), 2) if f.last_back.notna().any()
+            else None,
+            "expected_winners_model": round(float(f.p_model.sum()), 2),
+            "price_median": round(float(f.back1.median()), 2) if len(f) else None,
             "staked": round(float(STAKE * len(f)), 2), "pnl": round(float(f.pnl.sum()), 2),
             "roi%": round(100 * float(r.mean()), 2) if len(f) else None,
             "clv_vs_last%": round(100 * float(f.clv_last.mean()), 2) if f.clv_last.notna().any() else None}
@@ -296,9 +303,11 @@ def intraday_markdown(s: dict) -> str:
                   for h, r in s["primary_by_hour_uk"].items()]
         lines.append("")
     if s.get("rules_by_mark"):
-        lines += ["| Rule | Filled / signals | Winners | P&L | ROI | vs last book |", "|---|---|---|---|---|---|"]
-        lines += [f"| {k} | {r['filled']} / {r['signals']} | {r['winners']} | {r['pnl']} | {r['roi%']}% | "
-                  f"{r['clv_vs_last%']}% |" for k, r in s["rules_by_mark"].items()]
+        lines += ["| Rule | Filled / signals | Winners | Expected (price / last book / model) | Median price | P&L | "
+                  "ROI | vs last book |", "|---|---|---|---|---|---|---|---|"]
+        lines += [f"| {k} | {r['filled']} / {r['signals']} | {r['winners']} | {r.get('expected_winners_at_price')} / "
+                  f"{r.get('expected_winners_at_last')} / {r.get('expected_winners_model')} | {r.get('price_median')} | "
+                  f"{r['pnl']} | {r['roi%']}% | {r['clv_vs_last%']}% |" for k, r in s["rules_by_mark"].items()]
     return "\n".join(lines)
 
 
