@@ -38,7 +38,8 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 | `SMTP_PASSWORD` | Email app password |
 | `BETFAIR_USERNAME` | Betfair Exchange login |
 | `BETFAIR_PASSWORD` | Betfair Exchange password |
-| `BETFAIR_APP_KEY` | Betfair API application key |
+| `BETFAIR_APP_KEY` | Betfair API application key (the delayed key: every read-only job, the market records) |
+| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process only (live-trade.yml); Betfair permits no read-only use of live data |
 
 ## Key Commands
 

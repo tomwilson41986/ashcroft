@@ -144,3 +144,21 @@ def test_results_report_does_not_die_on_an_empty_port(clean_smtp_env):
     # No username or password, so it must report that and return False --
     # rather than raising ValueError on the port and never getting there.
     assert results_report.send_email("x@example.com", "s", "t", "<p>h</p>") is False
+
+
+def test_only_the_trader_runs_on_the_live_key():
+    """The owner's live application key (6 Oct) is for betting: Betfair permits no read-only use of live data, so
+    the market records beside the trader, and every other workflow, keep the delayed key (BETFAIR_APP_KEY)."""
+    step = _step("live-trade.yml", "live", "Trade or settle")
+    assert step["env"]["BETFAIR_LIVE_APP_KEY"] == "${{ secrets.BETFAIR_LIVE_APP_KEY }}"
+    assert step["env"]["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
+    lines = [ln.strip() for ln in step["run"].splitlines()]
+    assert 'TRADER_KEY="${BETFAIR_LIVE_APP_KEY:-$BETFAIR_APP_KEY}"' in lines
+    traders = [ln for ln in lines if "auto_trade.py" in ln and not ln.startswith("#")]
+    assert len(traders) == 2 and all(ln.startswith('BETFAIR_APP_KEY="$TRADER_KEY" python auto_trade.py') for ln in traders)
+    recorders = [ln for ln in lines if "betfair_recorder.py" in ln and not ln.startswith("#")]
+    assert recorders and not any("TRADER_KEY" in ln or "LIVE_APP_KEY" in ln for ln in recorders)
+    assert not any("echo" in ln and "$TRADER_KEY" in ln for ln in lines)       # the key is never printed
+    others = [p.name for p in WORKFLOWS.glob("*.yml") if p.name != "live-trade.yml"
+              and "BETFAIR_LIVE_APP_KEY" in p.read_text()]
+    assert others == []

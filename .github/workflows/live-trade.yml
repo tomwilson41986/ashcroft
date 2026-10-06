@@ -17,6 +17,9 @@ name: Live trading (the owner's book)
 #
 # The owner's switches: the repository variable TRADING_LIVE must be 'yes' for any order to be placed, and
 # BETFAIR_RUNNER must name the UK runner (Betfair refuses GitHub's own runners); without it the job is skipped.
+# The keys: the secret BETFAIR_LIVE_APP_KEY (the owner's live application key, 6 Oct) goes to the trader's own
+# process only; the market records beside it, read-only, keep BETFAIR_APP_KEY (the delayed key), as do all the other
+# workflows, because Betfair permits no read-only use of live data.
 # To stop at once: cancel the running "Live trading" run (the ledger is written, the lays at SP that hedge the
 # backs stay), or create the S3 object trading/STOP (no new bets within a minute). The evening run settles the day
 # from the closed markets and emails the result; the morning run emails what it backed.
@@ -136,6 +139,10 @@ jobs:
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          # the owner's live application key (6 Oct): the trader's own process only, the one that bets; every
+          # read-only process (the market records beside it) keeps the delayed key above, as Betfair requires
+          # (no read-only use of live data). Without this secret the trader reads the delayed key's feed.
+          BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
@@ -153,8 +160,12 @@ jobs:
         run: |
           ARGS=(--live)
           if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); fi
+          # the trader alone runs on the live key when there is one (its value is never printed)
+          TRADER_KEY="${BETFAIR_LIVE_APP_KEY:-$BETFAIR_APP_KEY}"
+          if [ -n "$BETFAIR_LIVE_APP_KEY" ]; then echo "The trader reads the live key's feed"
+          else echo "The trader reads the delayed key's feed (no BETFAIR_LIVE_APP_KEY secret)"; fi
           if [ "$MODE" = settle ]; then
-            python auto_trade.py "${ARGS[@]}" --settle
+            BETFAIR_APP_KEY="$TRADER_KEY" python auto_trade.py "${ARGS[@]}" --settle
           else
             if [ -z "$TRADE_UNTIL" ]; then                      # the config's window
               TRADE_UNTIL=$(python -c "import json; print(json.load(open('trading/config_live.json'))['trade_until'])")
@@ -185,7 +196,7 @@ jobs:
               EVE=$!
             fi
             set +e
-            python auto_trade.py "${ARGS[@]}" --trade-until "$TRADE_UNTIL" --until "$UNTIL"
+            BETFAIR_APP_KEY="$TRADER_KEY" python auto_trade.py "${ARGS[@]}" --trade-until "$TRADE_UNTIL" --until "$UNTIL"
             CODE=$?
             wait "$REC"
             echo "recorder exited $?"
