@@ -153,11 +153,18 @@ DROP_IN = [
      "deviation, drawdown, the market's trend on it)", "built"),
     ("sales", "Sale prices", "What the horse sold for before it ran (foal, yearling, breeze-up, store), from "
      "Timeform's horse files, read only for races after the files' July 2025 snapshot", "built"),
+    ("nfp_z", "Owner's NFP", "The owner's normalised finishing position, (N + 1 - 2F)/(3 sqrt((N + 1)/(3 (N - 1))) "
+     "(N - 1)): a place as a z-score over its field, divided by 3, over career, last run, the last 3/5/10, the last 5 "
+     "weighted, exponential in runs and in days", "built"),
     ("draw_v2", "Draw v2", "Draw by course, trip, going and stall placement", "built"),
     ("pace_v2", "Pace v2", "Early position and race shape from sharper projections", "built"),
 ]
 
 BLOCK_EVIDENCE = {
+    "Owner's NFP": "The owner's formula (6 Oct): on 61,423 GB/IE races from 2022 it predicted the winner a little "
+                   "better than the engine's NFP over every window, +0.5 to +0.9 millinats a race on its own "
+                   "(research/queries/done/nfp_formula_check.py), and like it adds nothing beside the BSP. Iteration "
+                   "108 puts the block in front of the served model, which forecasts the BSP.",
     "Sale prices": "Built 5 Oct from the Blandford scraper's Timeform horse files (reports/external_data_review.md). "
                    "The files are July 2025 snapshots whose comments drop the sale clause as careers grow (kept by "
                    "97-99% of horses with three runs or fewer, 3% with sixteen or more), so before the snapshot a "
@@ -631,6 +638,15 @@ COMMENT_CLASS = {
 }
 CM_WINDOW = {"lr": "in the last run", "l3": "share of the last 3 runs", "l6": "share of the last 6 runs"}
 EXPLICIT_BLOCKS = {
+    "nz_car": "The owner's NFP (z-score over the field / 3), career mean",
+    "nz_l1": "The owner's NFP, last run",
+    "nz_m3": "The owner's NFP, mean of the last 3 runs",
+    "nz_m5": "The owner's NFP, mean of the last 5 runs",
+    "nz_m10": "The owner's NFP, mean of the last 10 runs",
+    "nz_w5": "The owner's NFP, the last 5 runs weighted 5..1",
+    "nz_e3": "The owner's NFP, exponential in runs (half-life 3)",
+    "nz_e6": "The owner's NFP, exponential in runs (half-life 6)",
+    "nz_d365": "The owner's NFP, exponential in days (half-life a year)",
     "sl_known": "In Timeform's horse file (by name and foaling year); races after the July 2025 snapshot only",
     "sl_sold": "Sold at a public sale before racing (1), known but not (0); after the snapshot only",
     "sl_ln_price": "Log of its last sale price before racing, in pounds",

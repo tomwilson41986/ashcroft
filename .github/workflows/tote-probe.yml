@@ -1,0 +1,62 @@
+name: Tote probe (read-only)
+
+# The owner's ask (6 Oct 2026): bring in the Tote's horse-racing pools (win, place, exacta, trifecta, swinger) and
+# back on the Tote against a lay on Betfair where the prices part. tote.co.uk answers "Unavailable in Region"
+# outside the UK, so the first look at what its public pages serve runs on the UK runner: no login, nothing
+# posted, robots.txt kept, at most 40 requests two seconds apart (tote_probe.py). The pages, the JSON they carry
+# and the summary are kept as the run's artifact and in s3://$CAPTURE_BUCKET/tote/probe/. The runner serves the
+# trader too: a run waits behind the day's session and takes a minute or two.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/happy-ritchie-*']
+    paths:
+      - 'tote_probe.py'
+      - '.github/workflows/tote-probe.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tote-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: vars.BETFAIR_RUNNER != ''
+    runs-on: ${{ vars.BETFAIR_RUNNER }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python on the UK server
+        # the same Python 3.12 environment the trader uses (live-trade.yml)
+        run: |
+          VENV="$HOME/.venvs/ashcroft"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+
+      - name: Dependencies
+        run: pip install -q requests boto3
+
+      - name: Read what tote.co.uk serves
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 600 python tote_probe.py --out tote_probe_out --max-requests 40
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: tote-probe-${{ github.run_number }}
+          path: tote_probe_out
+          retention-days: 30
+          if-no-files-found: warn
