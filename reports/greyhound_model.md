@@ -162,6 +162,10 @@ BSP in 2024-2026.
 
 ## 5. The forward test (from 5 Oct 2026)
 
+The first day with recorded greyhound books is 6 Oct, from about 10:25 UTC. On 5 Oct the trading day ran a version of
+`live-trade.yml` that had no greyhound recorder yet, so the tracking run on 6 Oct priced 5 Oct's 136 races and found
+no books to set them against.
+
 Paper only (`greyhound/track.py`, `.github/workflows/greyhound-track.yml`, daily at 11:41 UTC once merged to the
 default branch). What is fixed in advance:
 - **The model:** fitted on every GBGB race before 5 Oct 2026 and frozen in S3 (`sources/greyhound/track/model.txt`)
@@ -189,7 +193,7 @@ The limits of the test:
 1. **Why the model falls behind the BSP from 2023.** Check whether GBGB's data changed (the coverage of sectionals and
    calculated times, comments, grading, the meetings held). Refit on a rolling recent window rather than everything
    since 2019. Check the drift of the features that matter most.
-2. **The first traded price, with its depth.** The recorded GB greyhound books (from 5 Oct) show what was on offer
+2. **The first traded price, with its depth.** The recorded GB greyhound books (from 6 Oct) show what was on offer
    when a bet would have gone in. Only that can say whether the bundle's first-price returns could have been taken.
 3. **The at-BSP returns:** cap the BSP, then check by price band and track before reading anything into them.
 4. Only after all three, a paper forward test with thresholds fixed in advance.
