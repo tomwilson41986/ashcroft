@@ -188,7 +188,32 @@ The limits of the test:
 - A race's field is the one that ran, so a late non-runner is not seen as the market saw it.
 - The first recorded book is the recorder's first snapshot (from 06:55 or 10:10 UTC), not the market's first trade.
 
-## 6. The owner's normalised finishing position (6 Oct 2026)
+## 6. The parity metrics on the full history (CI run 37458951248; `reports/greyhound_parity_ci_1006.json`)
+
+The base 135 features and base + the parity block (267: the horse model's families on GBGB, `greyhound/parity.py`)
+were fitted on the same 2.6m runs and the same folds (fit from 2019, test a year at a time 2021-2026).
+
+| | Base | + parity |
+|---|---|---|
+| Log-loss against the SP (SP 0.42612) | 0.44210 | **0.43874** |
+| By fold 2021 / 22 / 23 / 24 / 25 / 26 | .4355 / .4360 / .4408 / .4457 / .4478 / .4496 | **.4324 / .4324 / .4377 / .4424 / .4443 / .4459** |
+| Blend weight beside the SP | 0.181 | 0.249 |
+| Blend weight beside the BSP (2026 bundle) | 0.063 | 0.085 |
+| 2026 first price, edge > 0.1: return (90%), CLV | +5.6% (+3.7 to +7.4), +4.6% | **+8.7% (+6.8 to +10.6), +7.1%** |
+| 2026 first price, edge > 0.2 | +7.5% (+5.3 to +9.7), +6.0% | **+10.1% (+7.9 to +12.3), +9.0%** |
+| 2026 first price, edge > 0.3 | +9.7% (+7.1 to +12.2), +7.5% | **+12.1% (+9.5 to +14.7), +11.1%** |
+| Morning rule (edge > 0.2), 2022 / 23 / 24 / 25 / 26 | +13.8 / +14.5 / −0.1 / −5.1 / −3.3% | +17.6 / +17.1 / +2.4 / +2.6 / −3.9% |
+
+The parity block is better in every year, by about 0.003 of log-loss, and the model now takes a quarter of the weight
+in a blend with the SP. It is still well short of the BSP, and it still falls further behind it each year. The early
+price is where it gains most: the first-price CLV rises from +6.0% to +9.0%. The morning price in volume still did not
+beat the BSP from 2024. The top features now include the race-strength change (`gp_rs_vs_past`) and the dog's market
+history against the field (`gp_mkt_w3`, `gp_mkt_w5`, `gp_mkt_l1`).
+
+The paper forward test still runs on the base model frozen on 5 Oct; it is the pre-registered test and is not changed
+mid-way. A second frozen model with the parity block would be a second track, run beside it.
+
+## 7. The owner's normalised finishing position (6 Oct 2026)
 
 The owner's formula, (N + 1 − 2P) / (3·√((N + 1) / (3(N − 1)))·(N − 1)), centres the finishing position on the middle
 of the field and scales it so that every field size has the same spread (standard deviation 1/3). Ours runs from 1 for
@@ -205,7 +230,7 @@ It is better in two folds and level in the third. The gain is small, and the ret
 best of the three on every summary, so the parity block now uses it in place of ours. Ours is still computed
 beneath it, as the base of the shape and market-order measures.
 
-## 7. Through the day
+## 8. Through the day
 
 `greyhound-track.yml` runs every hour from 11:11 to 21:11 UTC and again at 22:41 (`greyhound/track.py --intraday`).
 Each run sets the races GBGB has already resulted against the greyhound books recorded so far. It reports:
@@ -216,7 +241,7 @@ Each run sets the races GBGB has already resulted against the greyhound books re
 The output is the run's summary and `sources/greyhound/track/intraday/<day>.json`. The next morning's run settles the
 day properly, at BSP.
 
-## 8. Next
+## 9. Next
 
 1. **Why the model falls behind the BSP from 2023.** Check whether GBGB's data changed (the coverage of sectionals and
    calculated times, comments, grading, the meetings held). Refit on a rolling recent window rather than everything
