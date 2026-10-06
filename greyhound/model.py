@@ -220,6 +220,28 @@ def against_price_files(pred: pd.DataFrame, prices: pd.DataFrame, edges=(0.0, 0.
     return out
 
 
+PRICE_COLS = ["market", "country", "event_id", "race_date", "race_time", "track", "trap", "bsp", "ppwap", "morningwap",
+              "morning_vol", "pp_vol", "win_lose"]
+
+
+def load_prices(store, years: str | None = None):
+    """The greyhound price-file tables, GB win markets only, the columns the scores and the BSP history read, the years
+    asked for: the whole archive (every market and country from 2014) does not fit beside the metrics."""
+    import re
+    keys = sorted(k for k in store.listing("greyhound_prices/") if re.search(r"prices_(\d{4})\.parquet$", k))
+    if years:
+        lo, hi = (int(x) for x in years.split("-"))
+        keys = [k for k in keys if lo <= int(re.search(r"prices_(\d{4})", k).group(1)) <= hi]
+    parts = []
+    for k in keys:
+        t = store.get_parquet(k)
+        if t is None or not len(t):
+            continue
+        t = t[(t.market == "win") & (t.country == "GB")]
+        parts.append(t[[c for c in PRICE_COLS if c in t.columns]].copy())
+    return pd.concat(parts, ignore_index=True) if parts else None
+
+
 def main(argv=None) -> int:
     from greyhound.data import load_runs
     from greyhound.metrics import GreyhoundMetricsEngine
@@ -237,8 +259,7 @@ def main(argv=None) -> int:
                     help="fit the base features and base + the parity block (greyhound/parity.py) on the same folds")
     a = ap.parse_args(argv)
     store = Store(root=a.store)
-    keys = sorted(k for k in store.listing("greyhound_prices/") if k.endswith(".parquet"))
-    prices = pd.concat([store.get_parquet(k) for k in keys], ignore_index=True) if keys else None
+    prices = load_prices(store, a.years)
     eng = GreyhoundMetricsEngine()
     if a.features and Path(a.features).exists():
         df = pd.read_parquet(a.features)

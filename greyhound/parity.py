@@ -111,17 +111,27 @@ def per_run(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _windows(dd, col: str) -> dict:
-    """The seven windows of one measure on the dog-days (``greyhound.metrics.DogDays``)."""
-    prev = {i: dd.prev(col, i) for i in range(1, 11)}
+    """The seven windows of one measure on the dog-days (``greyhound.metrics.DogDays``). The weighted windows are
+    accumulated a lag at a time, so no more than one lagged copy of the measure is held at once (the full history is
+    about 4.5m dog-days a measure)."""
     known = dd.dd[col].notna().astype(float)
     s = dd.dd[col].fillna(0.0)
     cs, ck = s.groupby(dd.dd.dog_id).cumsum() - s, known.groupby(dd.dd.dog_id).cumsum() - known
-    w = {"car": cs / ck.replace(0, np.nan), "l1": prev[1], "m3": dd.window(col, 3), "m5": dd.window(col, 5)}
-    for k in (3, 5, 10):
-        num = sum((k - i + 1) * prev[i].fillna(0.0) for i in range(1, k + 1))
-        den = sum((k - i + 1) * prev[i].notna() for i in range(1, k + 1))
-        w[f"w{k}"] = num / den.replace(0, np.nan)
-    return w
+    w = {"car": cs / ck.replace(0, np.nan), "m3": dd.window(col, 3), "m5": dd.window(col, 5)}
+    del known, s, cs, ck
+    acc = {k: [0.0, 0.0] for k in (3, 5, 10)}
+    for i in range(1, 11):
+        p = dd.prev(col, i)
+        if i == 1:
+            w["l1"] = p
+        v, n = p.fillna(0.0).values, p.notna().values
+        for k in acc:
+            if i <= k:
+                acc[k][0] = acc[k][0] + (k - i + 1) * v
+                acc[k][1] = acc[k][1] + (k - i + 1) * n
+    for k, (num, den) in acc.items():
+        w[f"w{k}"] = pd.Series(np.where(den > 0, num / np.where(den > 0, den, 1), np.nan), index=dd.dd.index)
+    return {k: w[k] for k in WINDOWS}
 
 
 def _trainer_30d(df: pd.DataFrame) -> pd.DataFrame:
@@ -146,15 +156,15 @@ def calculate(df: pd.DataFrame, dog_days) -> tuple[pd.DataFrame, list[str]]:
     m = per_run(df)
     tmp = df[["dog_id", "race_date"]].join(m)
     dd = dog_days(tmp, MEASURES, [])
-    day = {}
-    for col in MEASURES:
+    cols = {}
+    for col in MEASURES:                      # each window onto the runs as it is made, as float32: memory, not speed
         for name, v in _windows(dd, col).items():
-            day[f"{PREFIX}{col}_{name}"] = v
-    # career counts for the shrunk lead share and WIV
+            cols[f"{PREFIX}{col}_{name}"] = dd.back(v).astype(np.float32)
+    # career counts for the shrunk lead share
     lead_known = dd.dd["lead"].notna().astype(float)
-    day["_lead_n"] = lead_known.groupby(dd.dd.dog_id).cumsum() - lead_known
-    cols = {k: dd.back(v) for k, v in day.items()}
+    cols["_lead_n"] = dd.back(lead_known.groupby(dd.dd.dog_id).cumsum() - lead_known).astype(np.float32)
     out = pd.DataFrame(cols, index=df.index)
+    del cols, dd
     # WIV: career wins over the wins chance gave (from the dog's earlier runs: wins and 1/field summed)
     fair = (1.0 / df.field).where(df.position.notna())
     t2 = df[["dog_id", "raceid", "race_date"]].assign(_won=df.won, _fair=fair)
