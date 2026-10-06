@@ -189,6 +189,79 @@ def track_day(store, day: date, df: pd.DataFrame, booster, meta: dict, s3=None) 
     return out
 
 
+def intraday(store, day: date, df: pd.DataFrame, booster, meta: dict, s3=None, now=None) -> dict:
+    """The day so far (the owner's ask, 6 Oct 2026: "track how paper trading would be performing throughout the
+    day"): the races GBGB has already resulted, set against the books recorded so far (the recorder copies them to S3
+    every 15 minutes), the paper bets settled at the price taken on GBGB's result. The BSP comes only with the next
+    morning's settled books, so the price's move is read against the last book before the off instead. Written to
+    ``greyhound/track/intraday/<day>.json``; the day's ledger proper is the next morning's run."""
+    from betfair_recorder import _read_day_csv
+    ds = f"{day:%Y-%m-%d}"
+    stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    pred = price_day(df, booster, meta["features"], ds)
+    books = _read_day_csv(day, "books_greyhound.csv", s3=s3)
+    markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
+    out = {"day": ds, "as_of_utc": stamp, "races_resulted": int(pred.race_id.nunique())}
+    if books is None or markets is None or not len(pred):
+        out["note"] = "no recorded greyhound books yet" if books is None or markets is None else "no GBGB results yet"
+        return out
+    priced = join_markets(pred, markets)
+    mk = book_marks(books, markets, day)
+    bets = paper_bets(priced, mk)
+    out.update({"races_on_betfair": int(priced.race_id.nunique()),
+                "unmatched_tracks": sorted(set(pred.track) - set(priced.track))})
+    if not len(bets):
+        out["note"] = "no paper bets yet"
+        return out
+    last = mk[mk.mark == "last"].assign(market_id=lambda x: x.market_id.astype(str),
+                                         selection_id=lambda x: pd.to_numeric(x.selection_id, errors="coerce"))
+    bets = bets.merge(last[["market_id", "selection_id", "back1"]].rename(columns={"back1": "last_back"}),
+                      on=["market_id", "selection_id"], how="left")
+    bets["clv_last"] = bets.back1 / bets.last_back - 1
+    rules = {}
+    for (mark, th), g in bets.groupby(["mark", "threshold"]):
+        f = g[g.filled]
+        r = f.pnl / STAKE
+        rules[f"{mark}: edge>{th:.1f}"] = {
+            "signals": int(len(g)), "filled": int(len(f)), "winners": int(f.won.sum()),
+            "staked": round(float(STAKE * len(f)), 2), "pnl": round(float(f.pnl.sum()), 2),
+            "roi%": round(100 * float(r.mean()), 2) if len(f) else None,
+            "clv_vs_last%": round(100 * float(f.clv_last.mean()), 2) if f.clv_last.notna().any() else None}
+    out["rules_by_mark"] = rules
+    p = RULES["primary"]
+    prim = bets[(bets.mark == p["mark"]) & (bets.threshold == p["edge"]) & bets.filled].copy()
+    out["primary"] = rules.get(f"{p['mark']}: edge>{p['edge']:.1f}")
+    if len(prim):
+        hour = pd.to_datetime(prim.race_date + " " + prim.race_time.astype(str).str[:5]).dt.strftime("%H:00")
+        by = prim.groupby(hour).agg(bets=("pnl", "size"), pnl=("pnl", "sum"), winners=("won", "sum"))
+        by["cum_pnl"] = by.pnl.cumsum()
+        out["primary_by_hour_uk"] = {h: {"bets": int(r.bets), "winners": int(r.winners), "pnl": round(float(r.pnl), 2),
+                                         "cum_pnl": round(float(r.cum_pnl), 2)} for h, r in by.iterrows()}
+    store.put(f"{PREFIX}/intraday/{ds}.json", json.dumps(out, indent=1, default=str).encode())
+    return out
+
+
+def intraday_markdown(s: dict) -> str:
+    lines = [f"## Greyhound paper trading today: {s.get('day')} (as of {s.get('as_of_utc')})", "",
+             f"Races resulted: {s.get('races_resulted')}, on Betfair: {s.get('races_on_betfair', 0)}"
+             + (f"; {s['note']}" if s.get("note") else ""), ""]
+    p = s.get("primary")
+    if p:
+        lines += [f"**Primary rule** (first recorded price, edge > 0.2, GBP{STAKE:g} paper): {p['filled']} bets, "
+                  f"{p['winners']} winners, P&L GBP{p['pnl']} ({p['roi%']}%), price against the last book before the "
+                  f"off {p['clv_vs_last%']}%", ""]
+    if s.get("primary_by_hour_uk"):
+        lines += ["| Hour (UK) | Bets | Winners | P&L | Cumulative |", "|---|---|---|---|---|"]
+        lines += [f"| {h} | {r['bets']} | {r['winners']} | {r['pnl']} | {r['cum_pnl']} |"
+                  for h, r in s["primary_by_hour_uk"].items()]
+        lines.append("")
+    if s.get("rules_by_mark"):
+        lines += ["| Rule | Filled / signals | Winners | P&L | ROI | vs last book |", "|---|---|---|---|---|---|"]
+        lines += [f"| {k} | {r['filled']} / {r['signals']} | {r['winners']} | {r['pnl']} | {r['roi%']}% | "
+                  f"{r['clv_vs_last%']}% |" for k, r in s["rules_by_mark"].items()]
+    return "\n".join(lines)
+
+
 # --------------------------------------------------------------------------------------------------------------------
 # The summary
 # --------------------------------------------------------------------------------------------------------------------
@@ -305,6 +378,7 @@ def main(argv=None) -> int:
     ap.add_argument("--days", type=int, default=0, help="track the last N days (to yesterday, UK)")
     ap.add_argument("--date", default=None, help="track this one day")
     ap.add_argument("--summary", action="store_true")
+    ap.add_argument("--intraday", action="store_true", help="today so far: the resulted races against the books so far")
     ap.add_argument("--out", default=None, help="write the summary JSON here (and markdown beside it)")
     a = ap.parse_args(argv)
     store = Store(root=a.store)
@@ -312,6 +386,19 @@ def main(argv=None) -> int:
     today = uk_today()
     report = {}
     booster, meta = load_frozen(store)
+    if a.intraday:
+        if booster is None:
+            ap.error("no frozen model: run --freeze --cutoff first")
+        day = date.fromisoformat(a.date) if a.date else today
+        eng = GreyhoundMetricsEngine(blocks=tuple(meta.get("blocks", [])))
+        df = eng.calculate_all(runs_through(store, day))
+        s = intraday(store, day, df, booster, meta)
+        txt = json.dumps({"intraday": s}, indent=1, default=str)
+        print(txt)
+        if a.out:
+            Path(a.out).write_text(txt)
+            Path(a.out).with_suffix(".md").write_text(intraday_markdown(s))
+        return 0
     days = []
     if a.date:
         days = [date.fromisoformat(a.date)]

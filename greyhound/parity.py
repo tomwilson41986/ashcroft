@@ -8,7 +8,9 @@ three parts, every one lag-safe (one row a dog a day, lagged a day; group statis
 
 1. **Per-run measures**, each describing one past run from that run's own race only (never features themselves):
 
-       nfp     normalised finishing position, 1 the winner .. 0 last (the horse engine's NFP)
+       nfpz    the owner's normalised finishing position, (N + 1 - 2P) / (3 sqrt((N + 1) / (3 (N - 1))) (N - 1)): the
+               position centred on the field's middle and scaled so every field size has the same spread (sd 1/3);
+               the horse engine's 1..0 NFP is kept beneath it, as the base of ``shape`` and ``nres``
        wax     won less 1/field, a random runner's chance (WAX; its career sum over chance is WIV)
        lbw     lengths behind the winner;  lbsc  lengths better than the race's average runner
        gsr     the speed rating (the horse model's RSR / performance figure)
@@ -44,7 +46,10 @@ import pandas as pd
 from model.lagsafe import race_lagged_expanding_mean
 
 #: the measures windowed, in feature order
-MEASURES = ["nfp", "wax", "lbw", "lbsc", "gsr", "ep", "lead", "gain", "shape", "mkt", "ae", "nres", "bsp_ae",
+#: the finishing position as the owner's formula (nfpz), not the 1..0 NFP: on 2026's three folds it scored better
+#: in place of NFP (log-loss 0.45104 against 0.45138; reports/greyhound_parity_local_1006.json); NFP is still the
+#: base of the shape and market-order measures
+MEASURES = ["nfpz", "wax", "lbw", "lbsc", "gsr", "ep", "lead", "gain", "shape", "mkt", "ae", "nres", "bsp_ae",
             "bsp_mkt", "rs"]
 WINDOWS = ("car", "l1", "m3", "m5", "w3", "w5", "w10")
 PREFIX = "gp_"
@@ -76,6 +81,9 @@ def per_run(df: pd.DataFrame) -> pd.DataFrame:
     n = df.field.astype(float)
     denom = (n - 1).where(n > 1)
     out["nfp"] = (n - df.position) / denom
+    # the owner's normalised finishing position (6 Oct 2026): (N + 1 - 2P) / (3 sqrt((N + 1) / (3 (N - 1))) (N - 1)),
+    # the finishing position centred on the field's middle and scaled by its spread
+    out["nfpz"] = (n + 1 - 2 * df.position) / (3 * np.sqrt((n + 1) / (3 * (n - 1)).where(n > 1)) * (n - 1))
     out["wax"] = df.won - 1.0 / n
     out["lbsc"] = df.lbw.groupby(df.race_id).transform("mean") - df.lbw
     # the early order at the first sectional (lower sectional = faster away); a race with no sectionals is unknown
@@ -202,7 +210,7 @@ def calculate(df: pd.DataFrame, dog_days) -> tuple[pd.DataFrame, list[str]]:
     # the trainer's last 30 days
     out = out.join(_trainer_30d(df))
     # today's market-free race-relative reads of the new windows
-    for col in (f"{PREFIX}nfp_w5", f"{PREFIX}shape_w5", f"{PREFIX}gain_w5", f"{PREFIX}nres_w5", f"{PREFIX}bsp_ae_w10"):
+    for col in (f"{PREFIX}nfpz_w5", f"{PREFIX}shape_w5", f"{PREFIX}gain_w5", f"{PREFIX}nres_w5", f"{PREFIX}bsp_ae_w10"):
         x = out[col]
         out[f"{col}_rank"] = x.groupby(g).rank(ascending=False, method="average")
         out[f"{col}_z"] = (x - x.groupby(g).transform("mean")) / x.groupby(g).transform("std").replace(0, np.nan)

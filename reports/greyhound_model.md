@@ -188,7 +188,35 @@ The limits of the test:
 - A race's field is the one that ran, so a late non-runner is not seen as the market saw it.
 - The first recorded book is the recorder's first snapshot (from 06:55 or 10:10 UTC), not the market's first trade.
 
-## 6. Next
+## 6. The owner's normalised finishing position (6 Oct 2026)
+
+The owner's formula, (N + 1 − 2P) / (3·√((N + 1) / (3(N − 1)))·(N − 1)), centres the finishing position on the middle
+of the field and scales it so that every field size has the same spread (standard deviation 1/3). Ours runs from 1 for
+the winner to 0 for last. Each was windowed as the parity block windows every measure, and fitted on the same features
+and folds (local real GBGB, three 2026 folds; `reports/greyhound_nfpz_local_1006.json`):
+
+| Finishing position | Log-loss | Jan / Apr / Jul 2026 | First price, edge > 0.2 | Edge > 0.3 |
+|---|---|---|---|---|
+| Ours (1 .. 0) | 0.45138 | 0.45402 / 0.44860 / 0.45145 | +5.2% | +7.4% |
+| Both | 0.45113 | 0.45331 / 0.44842 / 0.45162 | +5.8% | +7.7% |
+| **The owner's, in place of ours** | **0.45104** | 0.45352 / 0.44808 / 0.45145 | **+6.0%** | **+7.8%** |
+
+It is better in two folds and level in the third. The gain is small, and the returns' ranges overlap, but it is the
+best of the three on every summary, so the parity block now uses it in place of ours. Ours is still computed
+beneath it, as the base of the shape and market-order measures.
+
+## 7. Through the day
+
+`greyhound-track.yml` runs every hour from 11:11 to 21:11 UTC and again at 22:41 (`greyhound/track.py --intraday`).
+Each run sets the races GBGB has already resulted against the greyhound books recorded so far. It reports:
+- the paper bets of every rule, settled at the price taken on GBGB's result;
+- the price taken against the last book before the off (the BSP arrives only the next morning);
+- the primary rule's profit hour by hour, cumulative through the day.
+
+The output is the run's summary and `sources/greyhound/track/intraday/<day>.json`. The next morning's run settles the
+day properly, at BSP.
+
+## 8. Next
 
 1. **Why the model falls behind the BSP from 2023.** Check whether GBGB's data changed (the coverage of sectionals and
    calculated times, comments, grading, the meetings held). Refit on a rolling recent window rather than everything

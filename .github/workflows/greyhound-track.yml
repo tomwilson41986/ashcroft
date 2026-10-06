@@ -8,12 +8,23 @@ name: Greyhound forward test (paper)
 #     next morning) read at fixed marks, the paper bets and their settlement, the running summary
 #     (sources/greyhound/track/summary.json), shown as this run's summary.
 # After the next morning's settled books (live-record.yml's 06:55 and 10:10 UTC runs read them).
+#   - through the day (the owner's ask, 6 Oct: "track how paper trading would be performing throughout the day"):
+#     hourly, the races GBGB has resulted so far against the books recorded so far, the paper bets settled at the
+#     price on the result, the price against the last book before the off (sources/greyhound/track/intraday/<day>.json
+#     and this run's summary); the day's ledger proper is still the next morning's run.
 
 on:
   schedule:
-    - cron: '41 11 * * *'
+    - cron: '41 11 * * *'    # the last days, settled
+    - cron: '11 11-21 * * *' # today so far, hourly through the racing
+    - cron: '41 22 * * *'    # today, after the last race
   workflow_dispatch:
     inputs:
+      intraday:
+        description: 'today so far instead of the settled days'
+        required: false
+        type: boolean
+        default: false
       days:
         description: 'track the last N days not yet final'
         required: false
@@ -61,12 +72,22 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           DAYS: ${{ inputs.days || '3' }}
           DAY: ${{ inputs.date }}
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          INTRADAY: ${{ inputs.intraday }}
         run: |
+          if [ "$EVENT" = schedule ] && [ "$SCHEDULE" != '41 11 * * *' ]; then INTRADAY=true; DAY=""; fi
+          if [ "$EVENT" = push ]; then INTRADAY=true; DAY=""; fi   # a push shows today so far
           if ! [[ "$DAYS" =~ ^[0-9]{1,2}$ ]]; then echo "days must be a number"; exit 1; fi
           if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
           mkdir -p out
-          ARGS=(--freeze --cutoff 2026-10-05 --summary --out out/greyhound_track.json)
-          if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); else ARGS+=(--days "$DAYS"); fi
+          if [ "$INTRADAY" = true ]; then
+            ARGS=(--intraday --out out/greyhound_track.json)
+            if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); fi
+          else
+            ARGS=(--freeze --cutoff 2026-10-05 --summary --out out/greyhound_track.json)
+            if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); else ARGS+=(--days "$DAYS"); fi
+          fi
           python -m greyhound.track "${ARGS[@]}"
       - name: Summary
         if: always()
