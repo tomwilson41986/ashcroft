@@ -1,0 +1,309 @@
+{
+ "base+parity": {
+  "features": 267,
+  "logloss": 0.45104,
+  "by_fold": {
+   "2026-01": 0.45352,
+   "2026-04": 0.44808,
+   "2026-07": 0.45145
+  },
+  "blend_bsp": {
+   "market": 0.988,
+   "model": 0.001
+  },
+  "first_0.2": [
+   6.04,
+   [
+    3.86,
+    8.22
+   ],
+   5.74
+  ],
+  "top_hrb": null
+ },
+ "+hrb": {
+  "features": 331,
+  "logloss": 0.44993,
+  "by_fold": {
+   "2026-01": 0.45222,
+   "2026-04": 0.44781,
+   "2026-07": 0.44972
+  },
+  "blend_bsp": {
+   "market": 0.984,
+   "model": 0.012
+  },
+  "first_0.2": [
+   6.77,
+   [
+    4.58,
+    8.96
+   ],
+   6.18
+  ],
+  "top_hrb": {
+   "hb_h2h_rate_rank": 0.013,
+   "hb_age_vs_youngest": 0.0125,
+   "hb_age_vs_oldest": 0.0104,
+   "hb_h2h_rate": 0.0065,
+   "hb_trainer7_win": 0.0063,
+   "hb_grade_vs_last_win": 0.0063,
+   "hb_dam_win": 0.006,
+   "hb_trainer_track_win": 0.0052,
+   "hb_trainer14_win": 0.005,
+   "hb_sire_band_win": 0.0049,
+   "hb_prize_1st": 0.0049,
+   "hb_owner_win": 0.0046,
+   "hb_weight_vs_max": 0.0046,
+   "hb_trainer_track_share": 0.0043,
+   "hb_h2h_net": 0.004,
+   "hb_days_since_cd_win": 0.0037,
+   "hb_runs_grade": 0.0036,
+   "hb_plc_grade": 0.0034,
+   "hb_days_since_win": 0.0033,
+   "hb_weight_vs_min": 0.0031,
+   "hb_trainer7_runs": 0.0031,
+   "hb_win_grade_rank": 0.0031,
+   "hb_trainer14_runs": 0.0031,
+   "hb_plc_going": 0.0028,
+   "hb_days_since_rank": 0.0028,
+   "hb_win_grade": 0.0027,
+   "hb_plc_trap": 0.0027,
+   "hb_days_since_track_win": 0.0027,
+   "hb_runs_trip": 0.0027,
+   "hb_days_since_season": 0.0027,
+   "hb_best_gsr10": 0.0024,
+   "hb_win_going": 0.0023,
+   "hb_win_trap": 0.0022,
+   "hb_win_trip": 0.0022,
+   "hb_hour": 0.0021,
+   "hb_grade_vs_best_run": 0.0021,
+   "hb_runs_going": 0.0021,
+   "hb_runs_band": 0.0021,
+   "hb_plc_band": 0.002,
+   "hb_best_grade_run": 0.002,
+   "hb_plc_trainer": 0.002,
+   "hb_plc_trip": 0.0017,
+   "hb_win_band": 0.0016,
+   "hb_birth_month": 0.0015,
+   "hb_runs_trainer": 0.0013,
+   "hb_h2h_ahead": 0.0013,
+   "hb_h2h_meetings": 0.0012,
+   "hb_field_ran_30d": 0.0012,
+   "hb_field_cd_winners": 0.0012,
+   "hb_runs_trap": 0.0012,
+   "hb_race_number": 0.0012,
+   "hb_win_trainer": 0.0011,
+   "hb_field_placed_lr": 0.0011,
+   "hb_weekday": 0.0011,
+   "hb_grade_vs_best_won": 0.001,
+   "hb_month": 0.001,
+   "hb_field_track_winners": 0.0009,
+   "hb_max_dist_won": 0.0009,
+   "hb_h2h_opponents_met": 0.0007,
+   "hb_runs_since_win": 0.0006,
+   "hb_field_won_lr": 0.0006,
+   "hb_handicap": 0.0006,
+   "hb_best_grade_won": 0.0003,
+   "hb_trip_vs_max_won": 0.0002
+  }
+ },
+ "+hrb without h2h": {
+  "features": 325,
+  "logloss": 0.45008,
+  "by_fold": {
+   "2026-01": 0.45239,
+   "2026-04": 0.44771,
+   "2026-07": 0.4501
+  },
+  "blend_bsp": {
+   "market": 0.982,
+   "model": 0.017
+  },
+  "first_0.2": [
+   7.67,
+   [
+    5.48,
+    9.86
+   ],
+   6.31
+  ],
+  "top_hrb": null
+ },
+ "+hrb without field": {
+  "features": 324,
+  "logloss": 0.45003,
+  "by_fold": {
+   "2026-01": 0.45213,
+   "2026-04": 0.44783,
+   "2026-07": 0.45007
+  },
+  "blend_bsp": {
+   "market": 0.985,
+   "model": 0.01
+  },
+  "first_0.2": [
+   7.25,
+   [
+    5.06,
+    9.45
+   ],
+   6.3
+  ],
+  "top_hrb": null
+ },
+ "+hrb without by_condition": {
+  "features": 312,
+  "logloss": 0.45002,
+  "by_fold": {
+   "2026-01": 0.45185,
+   "2026-04": 0.44782,
+   "2026-07": 0.45036
+  },
+  "blend_bsp": {
+   "market": 0.979,
+   "model": 0.022
+  },
+  "first_0.2": [
+   7.39,
+   [
+    5.19,
+    9.59
+   ],
+   6.28
+  ],
+  "top_hrb": null
+ },
+ "+hrb without class_trip_wins": {
+  "features": 322,
+  "logloss": 0.44983,
+  "by_fold": {
+   "2026-01": 0.45165,
+   "2026-04": 0.44765,
+   "2026-07": 0.45016
+  },
+  "blend_bsp": {
+   "market": 0.975,
+   "model": 0.03
+  },
+  "first_0.2": [
+   7.97,
+   [
+    5.77,
+    10.16
+   ],
+   6.3
+  ],
+  "top_hrb": null
+ },
+ "+hrb without weight": {
+  "features": 329,
+  "logloss": 0.45006,
+  "by_fold": {
+   "2026-01": 0.45235,
+   "2026-04": 0.44783,
+   "2026-07": 0.44995
+  },
+  "blend_bsp": {
+   "market": 0.986,
+   "model": 0.007
+  },
+  "first_0.2": [
+   6.76,
+   [
+    4.56,
+    8.95
+   ],
+   6.01
+  ],
+  "top_hrb": null
+ },
+ "+hrb without trainer": {
+  "features": 325,
+  "logloss": 0.45012,
+  "by_fold": {
+   "2026-01": 0.45216,
+   "2026-04": 0.44815,
+   "2026-07": 0.45002
+  },
+  "blend_bsp": {
+   "market": 0.983,
+   "model": 0.014
+  },
+  "first_0.2": [
+   6.17,
+   [
+    3.99,
+    8.36
+   ],
+   6.08
+  ],
+  "top_hrb": null
+ },
+ "+hrb without breeding_owner": {
+  "features": 328,
+  "logloss": 0.44983,
+  "by_fold": {
+   "2026-01": 0.45216,
+   "2026-04": 0.44712,
+   "2026-07": 0.45017
+  },
+  "blend_bsp": {
+   "market": 0.981,
+   "model": 0.017
+  },
+  "first_0.2": [
+   7.33,
+   [
+    5.14,
+    9.52
+   ],
+   6.54
+  ],
+  "top_hrb": null
+ },
+ "+hrb without race": {
+  "features": 325,
+  "logloss": 0.4499,
+  "by_fold": {
+   "2026-01": 0.45204,
+   "2026-04": 0.44782,
+   "2026-07": 0.44981
+  },
+  "blend_bsp": {
+   "market": 0.98,
+   "model": 0.019
+  },
+  "first_0.2": [
+   7.21,
+   [
+    5.02,
+    9.4
+   ],
+   6.2
+  ],
+  "top_hrb": null
+ },
+ "+hrb without age_season": {
+  "features": 327,
+  "logloss": 0.45001,
+  "by_fold": {
+   "2026-01": 0.45216,
+   "2026-04": 0.44789,
+   "2026-07": 0.44994
+  },
+  "blend_bsp": {
+   "market": 0.988,
+   "model": 0.003
+  },
+  "first_0.2": [
+   7.01,
+   [
+    4.81,
+    9.2
+   ],
+   6.13
+  ],
+  "top_hrb": null
+ }
+}

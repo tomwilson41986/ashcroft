@@ -230,7 +230,48 @@ It is better in two folds and level in the third. The gain is small, and the ret
 best of the three on every summary, so the parity block now uses it in place of ours. Ours is still computed
 beneath it, as the base of the shape and market-order measures.
 
-## 8. Through the day
+## 8. HorseRaceBase's System Builder categories, converted (6 Oct 2026)
+
+The owner's list (HRB's v4 System Builder) was converted to greyhounds where a greyhound version exists and the model
+did not already have it: `greyhound/hrb.py`, the `hrb` block, 64 features.
+- **Head to head** with today's field.
+- **The field's make-up:** course-and-distance and track winners, won or placed last time, ran in the last 30 days.
+- **The dog's record** at today's grade, trap, trip, going and with its trainer.
+- **Class, trip and wins:** best grade raced and won, longest trip won, days and runs since a win, best of ten.
+- **Weight** against its heaviest and lightest.
+- **Trainer:** the last 7 and 14 days, at the track, its home-track share.
+- **Breeding and owner:** sire by trip, dam, owner.
+- **The race:** hour, card number, weekday, month, winner's prize, handicap.
+- **Age** against the field, birth month, and days since a bitch's season.
+
+Jockey, headgear, official ratings, fences, surface and the day's odds have no greyhound counterpart, or are left to
+the market-blind design.
+
+On real GBGB data, with three 2026 folds and the same features (`reports/greyhound_hrb_local_1006.json`):
+
+| | Log-loss | Jan / Apr / Jul | First price, edge > 0.2 (CLV) |
+|---|---|---|---|
+| Base + parity | 0.45104 | .45352 / .44808 / .45145 | +6.0% (+5.7%) |
+| + the HRB block | **0.44993** | **.45222 / .44781 / .44972** | **+6.8% (+6.2%)** |
+
+Dropping one group at a time, the log-loss change (positive: the group helps):
+
+| Group | Change | Verdict |
+|---|---|---|
+| Trainer | +0.00019 | helps |
+| Head to head | +0.00015 | helps |
+| Weight | +0.00013 | helps |
+| Field | +0.00010 | helps |
+| Record by condition | +0.00009 | helps |
+| Age and season | +0.00008 | helps |
+| Race | −0.00003 | neutral |
+| Class, trip and wins | −0.00010 | slightly hurts |
+| Breeding and owner | −0.00010 | slightly hurts |
+
+The block now serves all but the last two groups. Those are still computed but are not features (`hrb.LEFT_OUT`).
+`greyhound-model.yml --compare` scores base, base + parity and base + parity + HRB on the full history.
+
+## 9. Through the day
 
 `greyhound-track.yml` runs every hour from 11:11 to 21:11 UTC and again at 22:41 (`greyhound/track.py --intraday`).
 Each run sets the races GBGB has already resulted against the greyhound books recorded so far. It reports:
@@ -241,7 +282,7 @@ Each run sets the races GBGB has already resulted against the greyhound books re
 The output is the run's summary and `sources/greyhound/track/intraday/<day>.json`. The next morning's run settles the
 day properly, at BSP.
 
-## 9. Next
+## 10. Next
 
 1. **Why the model falls behind the BSP from 2023.** Check whether GBGB's data changed (the coverage of sectionals and
    calculated times, comments, grading, the meetings held). Refit on a rolling recent window rather than everything
