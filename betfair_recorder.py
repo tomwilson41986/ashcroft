@@ -56,12 +56,14 @@ BOOK_FIELDS = [
     "back1", "back1_size", "back2", "back2_size", "back3", "back3_size",
     "lay1", "lay1_size", "lay2", "lay2_size", "lay3", "lay3_size",
     "sp_near", "sp_far", "sp_actual", "sp_back_taken", "sp_lay_taken",
+    "number_of_winners",                                    # the places the market pays (from 7 Oct 2026)
 ]
 MARKET_FIELDS = [
     "market_id", "market_type", "market_name", "market_start_utc", "venue", "country", "event_id", "event_name",
     "race_type", "selection_id", "runner_name", "sort_priority", "cloth_number", "stall_draw", "jockey", "trainer",
     "age", "weight_value", "official_rating", "form", "days_since_last_run", "wearing", "forecast_num",
     "forecast_den", "recorded_utc",
+    "each_way_divisor",                                     # an each-way market's place fraction, 1/divisor (7 Oct)
 ]
 #: the catalogue the recorder asks for (the trader's own catalogue call is left as it is)
 CATALOGUE_PROJECTION = ["EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION", "RUNNER_METADATA", "MARKET_DESCRIPTION"]
@@ -152,7 +154,7 @@ def book_rows(raw_books, polled_at: datetime, source: str) -> list[dict]:
                 "number_of_active_runners": b.get("numberOfActiveRunners"),
                 "market_total_matched": _num(b.get("totalMatched")), "last_match_utc": b.get("lastMatchTime"),
                 "is_delayed": int(bool(b.get("isMarketDataDelayed"))), "bet_delay": b.get("betDelay"),
-                "version": b.get("version")}
+                "version": b.get("version"), "number_of_winners": b.get("numberOfWinners")}
         for r in b.get("runners") or []:
             ex, sp = r.get("ex") or {}, r.get("sp") or {}
             row = dict(base, selection_id=r.get("selectionId"), runner_status=r.get("status"),
@@ -190,7 +192,7 @@ def catalogue_rows(raw_catalogue, recorded_at: datetime) -> list[dict]:
                 "official_rating": md.get("OFFICIAL_RATING"), "form": md.get("FORM"),
                 "days_since_last_run": md.get("DAYS_SINCE_LAST_RUN"), "wearing": md.get("WEARING"),
                 "forecast_num": md.get("FORECASTPRICE_NUMERATOR"), "forecast_den": md.get("FORECASTPRICE_DENOMINATOR"),
-                "recorded_utc": ts})
+                "recorded_utc": ts, "each_way_divisor": _num(desc.get("eachWayDivisor"))})
     return rows
 
 
@@ -198,6 +200,11 @@ def _append(path: Path, fields: list[str], rows: list[dict]) -> None:
     if not rows:
         return
     new = not path.exists() or path.stat().st_size == 0
+    if not new:                                 # a file begun by an older recorder keeps its own columns
+        with path.open(newline="") as f:
+            head = next(csv.reader(f), None)
+        if head:
+            fields = head
     with path.open("a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
         if new:
@@ -594,6 +601,11 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS live_orders (race_date TEXT, seq INTEGER, {ocols},
             loaded_at TEXT DEFAULT (datetime('now')), PRIMARY KEY (race_date, mode, seq));
     """)
+    have = {r[1] for r in conn.execute("PRAGMA table_info(betfair_live_markets)")}
+    for c in LIVE_MARKET_FIELDS:                # columns added to the record since the table was made
+        if c not in have:
+            kind = "INTEGER" if c in ("selection_id", "sort_priority", "race_results_id") else "TEXT"
+            conn.execute(f"ALTER TABLE betfair_live_markets ADD COLUMN {c} {kind}")
     conn.commit()
 
 

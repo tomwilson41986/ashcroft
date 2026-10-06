@@ -172,13 +172,17 @@ BLOCK_EVIDENCE = {
                   "have a price-file record. On the winner alone the block scores +137 millinats a race (t 61), the "
                   "last five weighted low +112: it reads form as the market saw it run. Beside the BSP it adds "
                   "nothing (-0.69, t -1.6), and A/E by the last run's in-running low runs 0.97-1.01: the market "
-                  "already prices a horse that traded short and was beaten. Iteration 109 puts it in front of the "
-                  "served model, which forecasts the BSP. Not served.",
+                  "already prices a horse that traded short and was beaten. Iteration 109 (served recipe, 53,910 "
+                  "runners in 5,923 races): the served main with the block -0.0008 (-0.0014 to -0.0002), resolved, "
+                  "rank 1 -0.0020 (-0.0030 to -0.0010), Brier skill and concordance level, the rule +9.07% against "
+                  "+9.04%, the owner's staking at expected CLV >= 3% +6.88% against +6.50%. Iteration 110 tries it in "
+                  "every member of the served blend and at seed 7. Not yet served.",
     "HRB extras": "Built 6 Oct from the owner's horseracebase list. Beside the BSP on the winner, the same screen: "
                   "same surname +0.01 (t 0.5; 1.9% of runners, winning 14.1% against the market's 13.7%), seconds "
                   "~0, the last race's winner's BSP -0.06, its non-finishers -0.04, the biggest field won in -0.33 "
                   "(t -5.0), last year's run at the course and trip -0.18 (t -2.5); together -0.65 (t -4.8). "
-                  "Iteration 109 puts it in front of the served model. Not served.",
+                  "Iteration 109: the served main with the block +0.0001 (-0.0004 to +0.0007), Brier skill and "
+                  "concordance level, the owner's staking at >= 3% +6.66% against +6.50%. Retired.",
     "Owner's NFP": "The owner's formula (6 Oct): on 54,151 GB/IE races from 2022 to Mar 2026 it predicted the winner "
                    "a little better than the engine's NFP over every window, +0.55 to +0.93 millinats a race on its "
                    "own (research/queries/done/nfp_formula_check.py, capped at the holdout's start), and like it adds "

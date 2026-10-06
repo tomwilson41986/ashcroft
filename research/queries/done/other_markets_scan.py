@@ -12,9 +12,10 @@ place market and the each-way bet's place part) comes from a race's win probabil
 (Benter's discounted Harville, the exponents fitted on 2021-22 by field size: ledger place-market-vs-win), from
 three sources: our model's predicted BSP (known before racing: what a rule would trade on), the win market's mid at
 the same minute (the market's own view), and the win BSP (fixed at the off: the closing benchmark, the CLV of
-markets with no SP of their own). The record does not yet keep the each-way terms or the places a market pays, so
-the standard terms are taken: place 2 at 5-7 runners, 3 at 8-15, at 16+ 4 in a handicap else 3; each way 1/4 at 5-7
-runners, 1/5 at 8+, 1/4 in handicaps of 12 or more (4 places at 16+).
+markets with no SP of their own). The places a market pays (numberOfWinners on its book) and an each-way market's
+divisor (eachWayDivisor in its catalogue) are recorded from 7 Oct and used where present; before, the standard terms
+are taken: place 2 at 5-7 runners, 3 at 8-15, at 16+ 4 in a handicap else 3; each way 1/4 at 5-7 runners, 1/5 at
+8+, 1/4 in handicaps of 12 or more (4 places at 16+).
 
 At each mark (10:00 and 12:00 UK; 60, 15 and 5 minutes before each off) every runner's best back and best lay in
 every market: the expected value of a unit back at the best back and of a unit lay at the best lay under each
@@ -225,6 +226,35 @@ mk = allcat.drop_duplicates("market_id").set_index("market_id")
 win_book = pd.concat([day, trader], ignore_index=True) if not trader.empty else day
 
 
+def _last_known(frame, col):
+    if frame.empty or col not in frame.columns:
+        return {}
+    v = frame.assign(_v=pd.to_numeric(frame[col], errors="coerce")).dropna(subset=["_v"])
+    return v.groupby("market_id")["_v"].last().to_dict()
+
+
+RECORDED_PLACES = {**_last_known(day, "number_of_winners"), **_last_known(oth, "number_of_winners")}
+RECORDED_DIVISOR = _last_known(oth_cat, "each_way_divisor")
+TERMS_USED = {"recorded": 0, "standard": 0}
+
+
+def market_terms(omid, kname, k, n, handicap):
+    """(places, divisor) of a place, each-way or TBP market: its own where the record keeps them, else the standard
+    terms (a TBP market's places from its name)."""
+    rk, rd = RECORDED_PLACES.get(omid), RECORDED_DIVISOR.get(omid)
+    d = None
+    if kname == "PLACE":
+        k = int(rk) if rk else place_terms(n, handicap)
+    elif kname == "EACH_WAY":
+        sk, sd = each_way_terms(n, handicap)
+        k, d = (int(rk) if rk else sk), (float(rd) if rd else sd)
+        rk = rk if rd else None                     # an each-way bet's terms count as recorded only with both
+    elif rk:
+        k = int(rk)
+    TERMS_USED["recorded" if rk else "standard"] += 1
+    return k, d
+
+
 def kind(mid_):
     m = mk.loc[mid_]
     if m.market_type == "WIN":
@@ -280,11 +310,8 @@ for race, g in mk.groupby("race"):
         pk_cache = {}
         for omid, ob in books_now.groupby("market_id"):
             kname, k = kind(omid)
-            if kname == "PLACE":
-                k = place_terms(n, handicap)
-            ew = each_way_terms(n, handicap) if kname == "EACH_WAY" else None
-            if kname == "EACH_WAY":
-                k = ew[0]
+            k, d_ew = market_terms(omid, kname, k, n, handicap)
+            ew = (k, d_ew) if kname == "EACH_WAY" else None
             if not k:
                 continue
             idx = {int(s): i for i, s in enumerate(sel)}
@@ -312,7 +339,8 @@ for race, g in mk.groupby("race"):
 
 S = pd.DataFrame(rows)
 print(f"   offers read: {len(S):,} (runner x market x mark); runners linked to the win market {linked:,}, "
-      f"not linked {unlinked:,}")
+      f"not linked {unlinked:,}; market terms {TERMS_USED['recorded']:,} recorded, {TERMS_USED['standard']:,} "
+      "standard (recorded from 7 Oct)")
 if S.empty:
     raise SystemExit(0)
 S["spread"] = S.lay / S.back
@@ -445,11 +473,7 @@ for race, g in mk.groupby("race"):
         terms = {}
         for omid in nowb.market_id.unique():
             kname, k = kind(omid)
-            d = None
-            if kname == "PLACE":
-                k = place_terms(n, handicap)
-            elif kname == "EACH_WAY":
-                k, d = each_way_terms(n, handicap)
+            k, d = market_terms(omid, kname, k, n, handicap)
             if k:
                 terms[omid] = (kname, k, d)
         for omid, (kname, k, d) in terms.items():

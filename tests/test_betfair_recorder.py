@@ -93,6 +93,18 @@ def test_catalogue_rows_carry_the_card_metadata():
     assert rows[1]["jockey"] is None                              # no metadata asked for, or none sent
 
 
+def test_the_places_paid_and_the_each_way_divisor_are_recorded():
+    book = raw_book(mid="1.300")
+    book["numberOfWinners"] = 3
+    rows = br.book_rows([book, raw_book()], datetime(2026, 10, 7, 9, 0, tzinfo=timezone.utc), "recorder")
+    assert [r["number_of_winners"] for r in rows] == [3, 3, None, None]       # a book that does not say: blank
+    ew = raw_catalogue(mid="1.301")
+    ew["marketName"], ew["description"] = "Each Way", {"marketType": "EACH_WAY", "eachWayDivisor": 5.0}
+    rows = br.catalogue_rows([ew, raw_catalogue()], datetime(2026, 10, 7, 8, 0, tzinfo=timezone.utc))
+    assert [r["each_way_divisor"] for r in rows] == [5.0, 5.0, None, None]
+    assert "number_of_winners" in br.BOOK_FIELDS and "each_way_divisor" in br.MARKET_FIELDS
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # The day's files
 # ---------------------------------------------------------------------------------------------------------------
@@ -112,6 +124,53 @@ def test_the_day_files_append_with_one_header_and_upload_gzipped(tmp_path):
     key = ("ashcroft", f"betfair_live/{DAY}/books.csv.gz")
     assert gzip.decompress(s3.objects[key]) == rec.books_path.read_bytes()
     assert ("ashcroft", f"betfair_live/{DAY}/markets.csv.gz") in s3.objects
+
+
+def test_a_day_file_begun_by_an_older_recorder_keeps_its_own_columns(tmp_path):
+    old_fields = [f for f in br.BOOK_FIELDS if f != "number_of_winners"]
+    rec = br.DayRecorder(DAY, root=tmp_path, background=False)
+    with rec.books_path.open("w", newline="") as f:                   # the morning's file, before the change
+        csv.DictWriter(f, fieldnames=old_fields, lineterminator="\n").writeheader()
+    book = raw_book()
+    book["numberOfWinners"] = 1
+    rec.record_books([book], "recorder")                              # a restart on the new code, the same day
+    with rec.books_path.open() as f:
+        rows = list(csv.DictReader(f))
+    assert list(rows[0]) == old_fields                                # one header, the rows under it in line
+    assert (rows[0]["market_id"], rows[0]["back1"], rows[0]["sp_lay_taken"]) == ("1.100", "3.4", "")
+    fresh = br.DayRecorder(DAY + timedelta(days=1), root=tmp_path, background=False)
+    fresh.record_books([book], "recorder")
+    with fresh.books_path.open() as f:
+        assert next(csv.DictReader(f))["number_of_winners"] == "1"    # a new day's file carries the new column
+
+
+def test_the_nightly_load_adds_new_columns_to_an_older_table_and_reads_older_files(tmp_path):
+    db = tmp_path / "t.db"
+    conn = sqlite3.connect(db)
+    old_cols = [c for c in br.LIVE_MARKET_FIELDS if c != "each_way_divisor"]
+    conn.execute(f"CREATE TABLE betfair_live_markets ({', '.join(old_cols)}, loaded_at TEXT, "
+                 "PRIMARY KEY (market_id, selection_id))")
+    conn.commit()
+    br.ensure_tables(conn)
+    assert "each_way_divisor" in {r[1] for r in conn.execute("PRAGMA table_info(betfair_live_markets)")}
+    br.ensure_tables(conn)                                            # twice is harmless
+    conn.close()
+    books, markets = _books_frame()
+    d = tmp_path / "live" / f"{DAY}"
+    d.mkdir(parents=True)
+    books.drop(columns=["number_of_winners"]).to_csv(d / "books.csv", index=False)     # files of before 7 Oct
+    markets.drop(columns=["each_way_divisor"]).to_csv(d / "markets.csv", index=False)
+    out = br.load_db(str(db), days=1, day_to=DAY, s3=FakeS3(), root=tmp_path / "live")
+    assert out[0]["markets"] == 2 and out[0]["marks"] > 0
+    ew = raw_catalogue(mid="1.301")
+    ew["description"] = {"marketType": "EACH_WAY", "eachWayDivisor": 4.0}
+    pd.concat([markets, pd.DataFrame(br.catalogue_rows([ew], datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc)))]
+              ).to_csv(d / "markets.csv", index=False)                  # a file of the new recorder's
+    br.load_db(str(db), days=1, day_to=DAY, s3=FakeS3(), root=tmp_path / "live")
+    conn = sqlite3.connect(db)
+    got = conn.execute("SELECT market_type, each_way_divisor FROM betfair_live_markets WHERE market_id = '1.301'")
+    assert {tuple(r) for r in got} == {("EACH_WAY", "4.0")}
+    conn.close()
 
 
 def test_a_new_recorder_takes_up_the_markets_already_on_file(tmp_path):
