@@ -266,14 +266,21 @@ CONFIG_PATH = "/config.js"
 FLAT_OBJECT = re.compile(r"\{[^{}]*\}")
 API_URL = re.compile(r"""["']?apiUrl["']?\s*:\s*["'`]([^"'`]+)["'`]""")
 API_KEY = re.compile(r"""(["']?apiKey["']?\s*:\s*["'`])([^"'`]+)(["'`])""")
+ENV_URL = re.compile(r"""\bREACT_APP_TOTE_API_URL["']?\s*:\s*["'`]([^"'`]+)["'`]""")     # window.env = {...}
+ENV_KEY = re.compile(r"""\bREACT_APP_TOTE_API_KEY["']?\s*:\s*["'`]([^"'`]+)["'`]""")
+SECRETISH = re.compile(r"""(\b[\w$]*(?:KEY|TOKEN|SECRET|PASSWORD|CLIENT_ID)["']?\s*:\s*["'`])([^"'`]*)(["'`])""",
+                       re.I)
 TEMPLATE = re.compile(r"\$\{[A-Za-z_$][\w$]*\.tote\.apiUrl\}([^`]*)`")
 MODULE = re.compile(r"""["'(/]((?:\./|assets/)?[A-Za-z0-9._-]*result[A-Za-z0-9._-]*\.js)""", re.I)
 POOL_ORDER = ("WIN", "PLACE", "EXACTA", "TRIFECTA", "SWINGER", "QUINELLA")
 
 
 def api_config(js: str) -> tuple[str | None, str | None]:
-    """The racing API's address and client key from the site's config script: the first flat object naming both,
-    the racing host's first."""
+    """The racing API's address and client key from the site's config script: its window.env entries
+    (REACT_APP_TOTE_API_URL, REACT_APP_TOTE_API_KEY), else the first flat object naming both, the racing host's."""
+    u, k = ENV_URL.search(js), ENV_KEY.search(js)
+    if u and k:
+        return u.group(1), k.group(1)
     pairs = []
     for m in FLAT_OBJECT.finditer(js):
         u, k = API_URL.search(m.group(0)), API_KEY.search(m.group(0))
@@ -287,6 +294,26 @@ def redact(text: str, key: str | None) -> str:
     """Text with the client key taken out (as a query value or anywhere else)."""
     text = re.sub(r"([?&]key=)[^&\s\"']+", r"\1REDACTED", text)
     return text.replace(key, "REDACTED") if key else text
+
+
+def mask_config(js: str) -> str:
+    """The config script as kept: every key, token, secret or client id it serves the browser taken out."""
+    return SECRETISH.sub(r"\1REDACTED\3", js)
+
+
+def scrub_kept_configs(s3, bucket: str, prefix: str = "tote/probe/") -> int:
+    """Mask the config copies already kept under prefix (the second probe's copy was kept with its keys)."""
+    n = 0
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            if not obj["Key"].endswith("config.js.txt"):
+                continue
+            text = s3.get_object(Bucket=bucket, Key=obj["Key"])["Body"].read().decode("utf-8", "replace")
+            masked = mask_config(text)
+            if masked != text:
+                s3.put_object(Bucket=bucket, Key=obj["Key"], Body=masked.encode())
+                n += 1
+    return n
 
 
 def path_templates(js: str) -> list[str]:
@@ -394,7 +421,7 @@ class ApiProbe(Probe):
             summary["error"] = "config.js not read"
             return self.finish(summary)
         api_url, self.key = api_config(r.text)
-        self.save("config.js.txt", API_KEY.sub(r"\1REDACTED\3", r.text).encode())
+        self.save("config.js.txt", redact(mask_config(API_KEY.sub(r"\1REDACTED\3", r.text)), self.key).encode())
         summary["api_url"], summary["key_found"] = api_url, bool(self.key)
         if not api_url or not self.key:
             summary["error"] = "no API address and key in config.js"
@@ -511,8 +538,12 @@ def _upload_if_set(out: Path) -> None:
     bucket = os.environ.get("CAPTURE_BUCKET")
     if bucket:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        region = os.environ.get("CAPTURE_REGION") or "eu-west-2"
         try:
-            n = upload(out, bucket, os.environ.get("CAPTURE_REGION") or "eu-west-2", stamp)
+            import boto3
+            log.info("%d kept config copies masked", scrub_kept_configs(boto3.client("s3", region_name=region),
+                                                                          bucket))
+            n = upload(out, bucket, region, stamp)
             log.info("%d files to s3://%s/tote/probe/%s/", n, bucket, stamp)
         except Exception as exc:                # the artifact keeps them either way
             log.warning("S3 upload failed: %s", exc)

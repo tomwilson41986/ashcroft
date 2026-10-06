@@ -100,8 +100,12 @@ def test_file_names(url, name):
 
 # --- the API stage (made-up config, scripts and answers; the key is a placeholder) ---------------------------------
 KEY = "PLACEHOLDERKEY123"
-CONFIG = ('window.config = {sportsbook: {apiUrl: "https://sb.example.test/", apiKey: "other"}, '
-          f'tote: {{apiUrl: "https://api.production.racing.tote.co.uk/", apiKey: "{KEY}"}}}};')
+CONFIG = ('// Production\nwindow.env = {\n  REACT_APP_CMS_ACCESS_TOKEN: "PLACEHOLDERTOKEN99",\n'
+          '  REACT_APP_GRAPHQL_API_KEY: "PLACEHOLDERGQL77",\n  REACT_APP_PUSHER_CHANNEL: "tote",\n'
+          f'  REACT_APP_TOTE_API_KEY: "{KEY}",\n'
+          '  REACT_APP_TOTE_API_URL: "https://api.production.racing.tote.co.uk/",\n};')
+OLD_CONFIG = ('window.config = {sportsbook: {apiUrl: "https://sb.example.test/", apiKey: "other"}, '
+              f'tote: {{apiUrl: "https://api.production.racing.tote.co.uk/", apiKey: "{KEY}"}}}};')
 INDEX = ('const m=__vite__mapDeps(["assets/results-AbC1.js","assets/header-x.js"]);'
          'let u=`${a.tote.apiUrl}race-card/cards/today?key=${a.tote.apiKey}`;import("./event-results.lazy-Q9.js")')
 RESULTS_JS = 'let t=`${c.tote.apiUrl}race-card/results/today?key=${c.tote.apiKey}`,v=`${c.tote.apiUrl}x/${id}?key=`'
@@ -109,7 +113,42 @@ RESULTS_JS = 'let t=`${c.tote.apiUrl}race-card/results/today?key=${c.tote.apiKey
 
 def test_the_api_address_and_key_are_read_from_the_config():
     assert tp.api_config(CONFIG) == ("https://api.production.racing.tote.co.uk/", KEY)
+    assert tp.api_config(OLD_CONFIG) == ("https://api.production.racing.tote.co.uk/", KEY)
     assert tp.api_config("window.config = {}") == (None, None)
+
+
+def test_the_kept_config_has_no_keys_or_tokens():
+    kept = tp.mask_config(CONFIG)
+    for value in (KEY, "PLACEHOLDERTOKEN99", "PLACEHOLDERGQL77"):
+        assert value not in kept
+    assert 'REACT_APP_PUSHER_CHANNEL: "tote"' in kept and "https://api.production.racing.tote.co.uk/" in kept
+
+
+def test_kept_config_copies_are_masked_in_place():
+    class _S3:
+        def __init__(self):
+            self.objects = {"tote/probe/a/config.js.txt": CONFIG.encode(), "tote/probe/a/summary.json": b"{}",
+                            "tote/probe/b/config.js.txt": tp.mask_config(CONFIG).encode()}
+            self.put = []
+
+        def get_paginator(self, name):
+            objects = self.objects
+
+            class _P:
+                def paginate(self, Bucket, Prefix):
+                    return [{"Contents": [{"Key": k} for k in objects if k.startswith(Prefix)]}]
+            return _P()
+
+        def get_object(self, Bucket, Key):
+            import io
+            return {"Body": io.BytesIO(self.objects[Key])}
+
+        def put_object(self, Bucket, Key, Body):
+            self.objects[Key] = Body
+            self.put.append(Key)
+    s3 = _S3()
+    assert tp.scrub_kept_configs(s3, "bucket") == 1
+    assert s3.put == ["tote/probe/a/config.js.txt"] and KEY.encode() not in s3.objects["tote/probe/a/config.js.txt"]
 
 
 def test_the_key_is_redacted():
@@ -158,5 +197,6 @@ def test_an_api_run_keeps_the_key_out_of_every_file(tmp_path, monkeypatch):
     assert s["pool_types_today"] == {"Win": 1, "Exacta": 1}
     assert "https://tote.co.uk/assets/results-AbC1.js" in asked
     for f in tmp_path.iterdir():                       # every file: pages, answers, config and summary
-        assert KEY not in f.read_text(), f.name
+        for value in (KEY, "PLACEHOLDERTOKEN99", "PLACEHOLDERGQL77"):
+            assert value not in f.read_text(), (f.name, value)
     assert len(asked) <= 30
