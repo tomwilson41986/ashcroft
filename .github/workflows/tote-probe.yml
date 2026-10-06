@@ -5,15 +5,18 @@ name: Tote probe (read-only)
 # outside the UK, so the first look at what its public pages serve runs on the UK runner: no login, nothing
 # posted, robots.txt kept, at most 40 requests two seconds apart (tote_probe.py). The pages, the JSON they carry
 # and the summary are kept as the run's artifact and in s3://$CAPTURE_BUCKET/tote/probe/. The runner serves the
-# trader too: a run waits behind the day's session and takes a minute or two.
+# trader too: a run waits behind the day's session and takes a minute or two, so it runs only when dispatched (a
+# push no longer queues one ahead of a trading session).
 
 on:
   workflow_dispatch:
-  push:
-    branches: ['claude/happy-ritchie-*']
-    paths:
-      - 'tote_probe.py'
-      - '.github/workflows/tote-probe.yml'
+    inputs:
+      stage:
+        description: 'record-test: the Tote recorder for four minutes; results: today''s declared dividends, once;
+          api: the racing API behind the pages, each endpoint once; pages: the public pages'
+        type: choice
+        options: [record-test, results, api, pages]
+        default: record-test
 
 permissions:
   contents: read
@@ -51,7 +54,15 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-        run: timeout 600 python tote_probe.py --out tote_probe_out --max-requests 40
+          STAGE: ${{ inputs.stage || 'record-test' }}
+        run: |
+          # the recorder keeps its day files where the trader's job keeps them (one record a day on the server)
+          case "$STAGE" in
+            record-test) timeout 600 python tote_recorder.py --record --minutes 4 --sample 2 ;;
+            results) timeout 600 python tote_recorder.py --results ;;
+            *) timeout 600 python tote_probe.py --out tote_probe_out --max-requests 40 --stage "$STAGE" ;;
+          esac
+          mkdir -p tote_probe_out && cp -r "$HOME/.ashcroft/tote_live/." tote_probe_out/ 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}

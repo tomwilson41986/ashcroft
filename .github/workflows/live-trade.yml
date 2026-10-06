@@ -171,6 +171,10 @@ jobs:
             python betfair_recorder.py --record --final --until 21:30 --event-type 4339 --tag greyhound \
               --market-types WIN,PLACE > "$RUNNER_TEMP/greyhound.log" 2>&1 &
             DOGS=$!
+            # and the Tote's pools (the owner's ask of 6 Oct; read-only, no login, tote_recorder.py): each GB/IE
+            # race's win and place dividends near the off, every pool's total, the declared dividends
+            timeout 14h python tote_recorder.py --record --until 21:30 > "$RUNNER_TEMP/tote.log" 2>&1 &
+            TOTE=$!
             # tomorrow's win markets the evening before, 17:00-21:30 UK (read-only, to their own files; the owner's
             # question of 4 Oct: would the rule's backs close better taken at 7pm the evening before?)
             TOMORROW=$(date -d "${DAY:-$(TZ=Europe/London date +%F)} + 1 day" +%F) || TOMORROW=""
@@ -188,7 +192,8 @@ jobs:
             tail -n 30 "$RUNNER_TEMP/recorder.log"
             wait "$OTHER"; echo "other place record exited $?"
             wait "$DOGS"; echo "greyhound record exited $?"
-            tail -n 5 "$RUNNER_TEMP/other_place.log" "$RUNNER_TEMP/greyhound.log"
+            wait "$TOTE"; echo "Tote record exited $?"
+            tail -n 5 "$RUNNER_TEMP/other_place.log" "$RUNNER_TEMP/greyhound.log" "$RUNNER_TEMP/tote.log"
             if [ -n "$EVE" ]; then
               wait "$EVE"
               echo "evening recorder exited $?"
