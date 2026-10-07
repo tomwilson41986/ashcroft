@@ -283,7 +283,7 @@ def test_the_live_rule_takes_what_is_offered_within_the_edge_and_tops_up_to_the_
     assert S == 5.0 and stake_for(4.0, cfg) == S and stake_for(13.0, cfg) == S and not cfg["trade_out"]
     assert cfg["limits"]["max_daily_turnover"] is None and cfg["limits"]["max_bets_per_day"] is None   # no daily cap
     assert cfg["stop_before_off"] == 0 and cfg["tight"] is None                # to the off, every real offer
-    assert cfg["limits"]["max_race_stake"] == 30.0                      # every dog of six its GBP5 (owner, 7 Oct)
+    assert cfg["limits"]["max_race_stake"] is None                      # no race limit (the owner, 7 Oct)
     cfg["limits"]["max_race_stake"] = 10.0                              # the limit itself tested at GBP10
     out = copy.deepcopy(cfg)                                            # the trading variant: staked to win GBP12
     out.update(trade_out=True)
@@ -337,6 +337,10 @@ def test_the_live_rule_takes_what_is_offered_within_the_edge_and_tops_up_to_the_
     assert ("1.9", 13) in t.decided_sel                                 # stake complete
     book.runners[12] = Quote(12, back=[(3.0, 80.0)], lay=[(3.1, 9.0)])    # 12 drifts into an edge
     assert t.step() == 0 and t.bets == 3                                # but the race is full
+    free = dict(cfg, limits=dict(cfg["limits"], max_race_stake=None))  # no race limit: 12 is backed too
+    t3 = Trader(store, X(), free, day, "paper", tmp_path / "free.csv", now=lambda: now["t"])
+    t3.step()
+    assert t3.race_stake["1.9"] == 15.0 and ("1.9", 12) in t3.decided_sel
     ledger = pd.read_csv(tmp_path / "ledger.csv", dtype={"market_id": str})
     assert (ledger.action == "none").sum() == 3                        # 12, 15 and 13 (no edge) noted once each
     now["t"] = pd.Timestamp("2026-10-06T17:08:00Z").to_pydatetime()      # 18:08 UK: 4 minutes late, still open

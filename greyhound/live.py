@@ -21,7 +21,7 @@ rests), and is topped up on later polls to the GBP5 level stake. Nothing is fina
 too little offered, a field not all priced, or a back refused (the account's funds) are looked at again on the next
 poll. The model's chances are renormalised over the runners still in the market. Level backs held to the result
 (``trade_out`` false); with ``trade_out`` each back is staked to win ``target`` and laid at the Betfair SP for its
-winnings. GBP30 a race (every dog of six its GBP5; the owner, 7 Oct); no daily cap (``null`` in ``live_config.json``); the S3 objects ``greyhound/STOP`` and
+winnings. No race limit and no daily cap (the owner, 7 Oct: ``null`` in ``live_config.json``; a number sets one); the S3 objects ``greyhound/STOP`` and
 ``trading/STOP`` stop new bets within a minute.
 
 ``--settle`` (GitHub's runners, each day): the day's ledger against the recorder's settled books (BSP, the winner),
@@ -435,7 +435,9 @@ class Trader:
                 key = (mid, int(sid)) if sid is not None else (mid, None)
                 if r["action"] == "back":
                     stake = r["stake"]
-                    room = math.floor(100 * (lim["max_race_stake"] - self.race_stake.get(mid, 0.0)) + 1e-6) / 100
+                    cap = lim.get("max_race_stake")                  # null: no race limit
+                    room = math.inf if cap is None else \
+                        math.floor(100 * (cap - self.race_stake.get(mid, 0.0)) + 1e-6) / 100
                     day_cap, bet_cap = lim.get("max_daily_turnover"), lim.get("max_bets_per_day")
                     if room + 1e-9 < float(lim.get("min_order", 1.0)) \
                             or (day_cap is not None and self.turnover + min(stake, room) > day_cap) \
