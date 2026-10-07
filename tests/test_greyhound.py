@@ -53,7 +53,7 @@ def _runs(n_days=12, tracks=("Romford", "Hove"), seed=0):
 
 def test_every_metric_is_blind_to_its_own_race_and_its_day():
     runs = _runs()
-    eng = GreyhoundMetricsEngine(blocks=("parity", "hrb"))
+    eng = GreyhoundMetricsEngine(blocks=("parity", "hrb", "lib"))
     base = eng.calculate_all(runs)
     feats = eng.features
     last_day = runs.race_date.max()
@@ -68,7 +68,7 @@ def test_every_metric_is_blind_to_its_own_race_and_its_day():
     alt.loc[day, "comment"] = "VSAw,Crd1,Wide,Fdd"
     alt = clean(alt.drop(columns=["won", "placed2", "field", "grade", "grade_family", "sp_p", "sp_p_norm", "raceid",
                                   "t", "is_trial"]))
-    other = GreyhoundMetricsEngine(blocks=("parity", "hrb")).calculate_all(alt)
+    other = GreyhoundMetricsEngine(blocks=("parity", "hrb", "lib")).calculate_all(alt)
     a = base[base.race_id == target].sort_values("trap")[feats].reset_index(drop=True)
     b = other[other.race_id == target].sort_values("trap")[feats].reset_index(drop=True)
     pd.testing.assert_frame_equal(a, b, check_exact=False, rtol=1e-9)
@@ -295,9 +295,14 @@ def test_the_live_rule_backs_each_dog_once_at_its_first_real_price_within_its_li
     rows = {r["selection_id"]: r for r in decide(pred, book, cfg)}
     assert rows[11]["action"] == "back" and rows[11]["stake"] == S      # edge +0.31 at 4.0, a real book (lay 4.2)
     assert rows[12]["action"] == "none" and 14 not in rows              # no edge; a non-runner is left out
-    assert rows[13]["action"] == "skip" and "offered" in rows[13]["error"]   # GBP1 offered, under the stake
+    assert rows[13]["action"] == "retry" and "offered" in rows[13]["error"]  # GBP1 offered: looked at again
+    deep = _Book({**book.runners, 13: Quote(13, back=[(9.0, 1.0), (8.8, 10.0)], lay=[(9.6, 5.0)])})
+    r13 = {r["selection_id"]: r for r in decide(pred, deep, cfg)}[13]
+    assert r13["action"] == "back" and r13["price"] == 8.8               # the stake down the ladder, the edge holding
+    thin = _Book({**book.runners, 13: Quote(13, back=[(9.0, 1.0), (4.0, 10.0)], lay=[(9.6, 5.0)])})
+    assert {r["selection_id"]: r for r in decide(pred, thin, cfg)}[13]["action"] == "retry"   # no edge at 4.0
     assert rows[15]["action"] == "wait"                                 # 1.01 against 1000: placeholders, not a price
-    assert decide(pred[pred.selection_id != 13], book, cfg)[0]["action"] == "skip"   # the field is not all priced
+    assert decide(pred[pred.selection_id != 13], book, cfg)[0]["action"] == "retry"  # the field not all priced: again
 
     class X(PaperExchange):
         def __init__(self):
@@ -325,16 +330,60 @@ def test_the_live_rule_backs_each_dog_once_at_its_first_real_price_within_its_li
     assert x.sent == []                                                 # held to the result: no lay at SP
     assert "1.9" not in t.decided and ("1.9", 11) in t.decided_sel
     book.runners[15] = Quote(15, back=[(30.0, 5.0)], lay=[(34.0, 5.0)])   # its book forms
-    assert t.step() == 1 and t.bets == 1                                # decided (30.0 is over the price cap)
+    assert t.step() == 0 and t.bets == 1                                # dog 13 is still short of the stake
+    assert ("1.9", 13) not in t.decided_sel
+    book.runners[13] = Quote(13, back=[(9.0, 6.0)], lay=[(9.6, 5.0)])     # the money comes
+    assert t.step() == 1 and t.bets == 2                                # decided (30.0 is over the price cap)
     assert t.step() == 0                                                # every dog decided: never again
     t2 = Trader(store, X(), cfg, day, "paper", tmp_path / "ledger.csv", now=lambda: now)
-    assert ("1.9", 11) in t2.decided_sel and t2.turnover == S            # a restart carries the day on
+    assert ("1.9", 11) in t2.decided_sel and t2.turnover == 2 * S        # a restart carries the day on
     ledger = pd.read_csv(tmp_path / "ledger.csv", dtype={"market_id": str})
     final = pd.DataFrame({"market_id": ["1.9"], "selection_id": [11], "runner_status": ["LOSER"], "sp_actual": [3.0],
                           "polled_utc": ["2026-10-07T07:00:00Z"]})
     s = settle_rows(ledger, final).iloc[0]
     assert abs(s.pnl_back + S) < 1e-9 and s.pnl_lay == 0.0             # lost, nothing laid
     assert abs(s.clv - (4.0 / 3.0 - 1)) < 1e-9
+
+
+def test_a_back_refused_for_funds_is_tried_again_and_a_restart_does_not_count_it(tmp_path):
+    from greyhound.live import Trader, load_config
+    from sources.common import Store
+    from trading.exchange import Fill, PaperExchange, Quote
+    cfg = load_config()
+    book = _Book({11: Quote(11, back=[(4.0, 50.0)], lay=[(4.2, 30.0)]), 12: Quote(12, back=[(1.6, 80.0)], lay=[(1.65, 9.0)])})
+    pred = pd.DataFrame({"selection_id": [11, 12], "p_model": [0.4, 0.6], "track": ["Hove"] * 2,
+                         "race_time": ["18:04:00"] * 2, "trap": [1, 2], "dog_name": list("AB"),
+                         "market_id": "1.9", "race_date": "2026-10-06"})
+
+    class X(PaperExchange):
+        def __init__(self, broke):
+            super().__init__(None)
+            self.broke, self.tries = broke, 0
+
+        def books(self, mids, with_sp=False):
+            self._books.update({m: book for m in mids})
+            return {m: book for m in mids}
+
+        def back(self, market_id, selection_id, price, size, ref, min_fill=2.0):
+            self.tries += 1
+            if self.broke:
+                return Fill(market_id, int(selection_id), "BACK", "LIMIT", price, size, status="FAILURE",
+                            error="INSUFFICIENT_FUNDS (ERROR_IN_ORDER)")
+            return super().back(market_id, selection_id, price, size, ref, min_fill)
+
+    store = Store(root=tmp_path / "sources")
+    buf = io.StringIO()
+    pred.to_csv(buf, index=False)
+    store.put("greyhound/live/predictions/2026-10-06.csv", buf.getvalue().encode())
+    now = pd.Timestamp("2026-10-06T08:00:00Z").to_pydatetime()
+    day = pd.Timestamp("2026-10-06").date()
+    x = X(broke=True)
+    t = Trader(store, x, cfg, day, "live", tmp_path / "ledger.csv", now=lambda: now)
+    assert t.step() == 0 and t.step() == 0 and x.tries == 2 and t.bets == 0   # refused: tried again, not decided
+    assert len(pd.read_csv(tmp_path / "ledger.csv")) == 2                     # the refusal noted once, dog 12 once
+    t2 = Trader(store, X(broke=False), cfg, day, "live", tmp_path / "ledger.csv", now=lambda: now)
+    assert ("1.9", 11) not in t2.decided_sel                                  # a restart tries it again
+    assert t2.step() == 1 and t2.bets == 1                                    # the money is back: backed
 
 
 def test_the_racecard_recorder_writes_a_card_only_when_it_changes_and_counts_the_weights(tmp_path):
@@ -370,3 +419,19 @@ def test_the_racecard_recorder_writes_a_card_only_when_it_changes_and_counts_the
     assert T.poll(store, Session(), seen, pause=0, now=now)["tracks"]["Romford"]["written"] == 0   # unchanged
     day = tmp_path / "sources" / "greyhounds_today" / "2026-10-07"
     assert len(list(day.glob("*Z_Romford_rom-0710.json"))) == 1 and len((day / "polls.jsonl").read_text().splitlines()) == 2
+
+
+def test_the_race_softmax_objective_is_a_conditional_logit_over_each_race():
+    from greyhound.model import _race_softmax, _starts, race_objective
+    race = np.array([0, 0, 0, 1, 1])
+    won = np.array([0.0, 1.0, 0.0, 1.0, 0.0])
+    second = np.array([1.0, 0.0, 0.0, 0.0, 1.0])
+    s = np.array([0.2, 1.0, -0.5, 0.0, 0.3])
+    p = _race_softmax(s, _starts(race))
+    assert np.allclose([p[:3].sum(), p[3:].sum()], 1.0)
+    fobj, feval = race_objective(race, won)
+    g, h = fobj(s, None)
+    assert np.allclose([g[:3].sum(), g[3:].sum()], 0.0) and (h > 0).all()        # a softmax's gradient sums to 0
+    assert abs(feval(s, None)[1] + (np.log(p[1]) + np.log(p[3])) / 2) < 1e-12      # mean -log p(winner)
+    g2, _ = race_objective(race, won, second)[0](s, None)
+    assert not np.allclose(g2, g) and g2[1] == g[1]                                 # the winner: first stage only

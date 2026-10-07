@@ -5,7 +5,7 @@ name: Greyhound live (model, prices, settlement)
 #   - the live model: every GBGB race to yesterday, without the features built on the day's weigh-in (unknown in the
 #     morning); weekly, and once now if none is stored;
 #   - today's prices: the cards from the recorder's greyhound catalogue (S3), priced from the dogs' earlier days, to
-#     sources/greyhound/live/predictions/<day>.csv, four times a day as the day's markets are listed;
+#     sources/greyhound/live/predictions/<day>.csv, hourly as the day's markets are listed;
 #   - yesterday's settlement from the recorder's settled books (the BSP and the winner).
 # The orders are placed by the trader on the UK runner, beside the horse trader (live-trade.yml), with real money
 # only when the repository variable GREYHOUND_LIVE is 'yes'. Stop new bets: the S3 object greyhound/STOP.
@@ -13,17 +13,15 @@ name: Greyhound live (model, prices, settlement)
 on:
   schedule:
     - cron: '41 4 * * 0'     # Sunday: refit the live model
-    - cron: '21 7 * * *'     # prices: the morning's catalogue (the recorder starts 06:50-06:55 UTC)
-    - cron: '21 10 * * *'
-    - cron: '21 13 * * *'
-    - cron: '21 16 * * *'
+    - cron: '21 7-19 * * *'  # prices, hourly from the morning's catalogue (the recorder starts 06:50-06:55 UTC):
+                             # a race listed late, or a reserve in, is priced within the hour (the trader reloads)
     - cron: '56 11 * * *'    # settle the last days (the settled books are read by 10:10 UTC)
   workflow_dispatch:
     inputs:
       task:
-        description: 'predict, train, settle, or check-card (a past day: the card against the results)'
+        description: 'predict, train, settle, check-card (a past day: the card against the results), or coverage (the day''s races against what was priced and decided)'
         type: choice
-        options: [predict, train, settle, check-card]
+        options: [predict, train, settle, check-card, coverage]
         default: predict
       date:
         description: 'UK racing day, YYYY-MM-DD (default today)'
@@ -81,7 +79,7 @@ jobs:
           fi
           set -o pipefail                    # a failing step fails the run, through the tee
           TASK="${TASK:-predict}"
-          case "$TASK" in predict|train|settle|check-card) ;; *) echo "task must be predict, train, settle or check-card"; exit 1 ;; esac
+          case "$TASK" in predict|train|settle|check-card|coverage) ;; *) echo "task must be predict, train, settle, check-card or coverage"; exit 1 ;; esac
           if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
           mkdir -p out
           ARGS=()
@@ -91,6 +89,7 @@ jobs:
             predict) python -m greyhound.live --train-if-missing --predict "${ARGS[@]}" | tee out/greyhound_live.json ;;
             settle)  python -m greyhound.live --settle --days 3 "${ARGS[@]}" | tee out/greyhound_live.json ;;
             check-card) python -m greyhound.live --check-card "${ARGS[@]}" | tee out/greyhound_live.json ;;
+            coverage) python -m greyhound.live --coverage "${ARGS[@]}" | tee out/greyhound_live.json ;;
           esac
       - name: Summary
         if: always()

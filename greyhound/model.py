@@ -28,6 +28,46 @@ PARAMS = dict(objective="binary", learning_rate=0.03, num_leaves=63, min_child_s
               bagging_fraction=0.8, bagging_freq=1, lambda_l2=10.0, verbose=-1)
 
 
+def _starts(race: np.ndarray) -> np.ndarray:
+    """The first row of each race in rows grouped by race (contiguous)."""
+    return np.r_[0, np.flatnonzero(race[1:] != race[:-1]) + 1]
+
+
+def _race_softmax(score: np.ndarray, starts: np.ndarray) -> np.ndarray:
+    mx = np.maximum.reduceat(score, starts)
+    e = np.exp(score - np.repeat(mx, np.diff(np.r_[starts, len(score)])))
+    s = np.add.reduceat(e, starts)
+    return e / np.repeat(s, np.diff(np.r_[starts, len(score)]))
+
+
+def race_objective(race: np.ndarray, won: np.ndarray, second: np.ndarray | None = None, w2: float = 0.5):
+    """A conditional logit (Bolton and Chapman, Benter) as a LightGBM objective: the race's runners compete in a
+    softmax, the winner the outcome, so the scores are each race's log-odds by construction (the owner's ask of
+    7 Oct 2026; the research's first structural change). With ``second`` (1 for the dog placed second) the exploded
+    (Plackett-Luce) logit's next stage too: the second among those left, weighted ``w2``. Rows grouped by race."""
+    starts = _starts(race)
+    sizes = np.diff(np.r_[starts, len(race)])
+    has_win = np.repeat(np.add.reduceat(won, starts) > 0, sizes)
+    y = won / np.repeat(np.maximum(np.add.reduceat(won, starts), 1), sizes)
+
+    def fobj(score, data):
+        p = _race_softmax(score, starts)
+        grad, hess = np.where(has_win, p - y, 0.0), np.where(has_win, p * (1 - p), 0.0)
+        if second is not None:
+            s2 = np.where(won > 0, -np.inf, score)                   # the winner out of the second stage
+            p2 = _race_softmax(np.where(np.isfinite(s2), s2, -1e9), starts)
+            ok = has_win & (won == 0) & np.repeat(np.add.reduceat(second, starts) > 0, sizes)
+            grad = grad + np.where(ok, w2 * (p2 - second), 0.0)
+            hess = hess + np.where(ok, w2 * p2 * (1 - p2), 0.0)
+        return grad, np.maximum(hess, 1e-6)
+
+    def feval(score, data):
+        p = _race_softmax(score, starts)
+        pw = np.where(won > 0, p, 1.0)
+        return "race_logloss", float(-np.log(np.clip(pw, 1e-12, 1)).sum() / max(has_win[starts].sum(), 1)), False
+    return fobj, feval
+
+
 def race_norm(p: pd.Series, race: pd.Series) -> pd.Series:
     return p / p.groupby(race).transform("sum")
 
@@ -44,8 +84,10 @@ def modelling_rows(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def walk_forward(df: pd.DataFrame, features: list[str], folds: list[str], date_from: str | None = None,
-                 rounds: int = 3000) -> pd.DataFrame:
-    """Out-of-sample predictions: fold i fits on [date_from, folds[i]) and predicts [folds[i], folds[i+1])."""
+                 rounds: int = 3000, objective: str = "binary") -> pd.DataFrame:
+    """Out-of-sample predictions: fold i fits on [date_from, folds[i]) and predicts [folds[i], folds[i+1]).
+    ``objective``: ``binary`` (a runner's win, renormalised in its race), ``softmax`` (the race's conditional logit)
+    or ``pl2`` (the exploded logit's first two places)."""
     import gc
 
     import lightgbm as lgb
@@ -57,11 +99,14 @@ def walk_forward(df: pd.DataFrame, features: list[str], folds: list[str], date_f
     # the modelling rows' features once, as float32; each fold slices it (copies of the frame do not fit a runner)
     rows = np.flatnonzero(mask)
     meta = df.iloc[rows][["race_id", "t", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "won",
-                          "sp_p_norm", "sp_decimal", "field"]].reset_index(drop=True)
+                          "sp_p_norm", "sp_decimal", "field"] + (["runs_before"] if "runs_before" in df else [])
+                         ].reset_index(drop=True)
     X = np.empty((len(rows), len(features)), dtype=np.float32)
     for j, f in enumerate(features):
         X[:, j] = df[f].to_numpy(np.float32, na_value=np.nan)[rows]
     y, t_all = meta.won.to_numpy(), meta.t.to_numpy().astype("datetime64[ns]")
+    race = pd.factorize(meta.race_id)[0]
+    pos = df.position.to_numpy(float)[rows] if "position" in df else np.full(len(rows), np.nan)
     out = []
     edges = [np.datetime64(pd.Timestamp(f), "ns") for f in folds] + [
         np.datetime64(meta.t.max() + pd.Timedelta(days=1), "ns")]
@@ -76,12 +121,23 @@ def walk_forward(df: pd.DataFrame, features: list[str], folds: list[str], date_f
               flush=True)
         dtr = lgb.Dataset(X[tr_i], y[tr_i], feature_name=list(features), free_raw_data=True)
         des = lgb.Dataset(X[es_i], y[es_i], reference=dtr, free_raw_data=True)
-        m = lgb.train(PARAMS, dtr, rounds, valid_sets=[des], callbacks=[lgb.early_stopping(100, verbose=False)])
+        if objective == "binary":
+            m = lgb.train(PARAMS, dtr, rounds, valid_sets=[des], callbacks=[lgb.early_stopping(100, verbose=False)])
+        else:
+            second = (pos == 2).astype(float) if objective == "pl2" else None
+            fobj, _ = race_objective(race[tr_i], y[tr_i].astype(float), None if second is None else second[tr_i])
+            _, feval = race_objective(race[es_i], y[es_i].astype(float))
+            params = dict(PARAMS, objective=fobj, metric="None")
+            m = lgb.train(params, dtr, rounds, valid_sets=[des], feval=feval,
+                          callbacks=[lgb.early_stopping(100, verbose=False)])
         del dtr, des
         gc.collect()
         t = meta.iloc[test_i].copy()
         t["p_raw"] = m.predict(X[test_i], num_iteration=m.best_iteration)
-        t["p_model"] = race_norm(t.p_raw, t.race_id)
+        if objective == "binary":
+            t["p_model"] = race_norm(t.p_raw, t.race_id)
+        else:
+            t["p_model"] = _race_softmax(t.p_raw.to_numpy(float), _starts(race[test_i]))
         t["fold"] = folds[i]
         t["rounds"] = m.best_iteration
         out.append(t)
@@ -220,6 +276,22 @@ def blended_rules(m: pd.DataFrame, price: str, raw_edges=(0.1, 0.2, 0.3), blend_
     for th in blend_edges:
         sel = b[(b.p_blend * odds - 1 > th) & (b[price] <= cap)]
         out["rules"][f"blend, edge>{th:.2f}"] = rule(sel)
+    if "runs_before" in d:
+        # the model's weight by how much is known of the dog (the research: shrink a lightly raced dog's chance
+        # harder to the market): the model's log-odds and its product with u = 1 / (1 + runs before)
+        u = lambda x: 1.0 / (1.0 + x.runs_before.fillna(0).clip(lower=0).to_numpy(float))  # noqa: E731
+        Xu = lambda x: np.c_[_logit(x[pc]), _logit(x.p_model), _logit(x.p_model) * u(x), u(x)]  # noqa: E731
+        lu = LogisticRegression(C=1.0).fit(Xu(a), a.won)
+        b["p_blend"] = race_norm(pd.Series(lu.predict_proba(Xu(b))[:, 1], index=b.index), b.market_id)
+        c = lu.coef_[0]
+        out["poverty_blend"] = {"weights": {"price": round(float(c[0]), 3), "model": round(float(c[1]), 3),
+                                            "model_x_u": round(float(c[2]), 3), "u": round(float(c[3]), 3)},
+                                "model_weight_by_runs": {r: round(float(c[1] + c[2] / (1 + r)), 3)
+                                                         for r in (0, 1, 3, 10, 30)},
+                                "logloss_test": round(logloss(b.p_blend, b.won), 5), "rules": {}}
+        for th in blend_edges:
+            sel = b[(b.p_blend * odds - 1 > th) & (b[price] <= cap)]
+            out["poverty_blend"]["rules"][f"blend, edge>{th:.2f}"] = rule(sel)
     return out
 
 
@@ -283,7 +355,7 @@ def against_price_files(pred: pd.DataFrame, prices: pd.DataFrame, edges=(0.0, 0.
 
 #: the columns the fits and the scores read beside the features
 KEEP_COLS = ["race_id", "raceid", "t", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "won",
-             "sp_p_norm", "sp_decimal", "field", "is_trial", "is_card"]
+             "sp_p_norm", "sp_decimal", "field", "is_trial", "is_card", "position"]
 
 
 def slim(df: pd.DataFrame, features: list[str]) -> pd.DataFrame:
@@ -337,12 +409,16 @@ def main(argv=None) -> int:
                     help="score saved walk-forward predictions (a --save-pred parquet) against the prices; no fit")
     ap.add_argument("--compare", action="store_true",
                     help="fit the base features and base + the parity block (greyhound/parity.py) on the same folds")
+    ap.add_argument("--variants", default=None,
+                    help="the fits to compare, set[:objective] (sets: base, base+parity, all, all+lib; objectives: "
+                         "binary, softmax, pl2), e.g. all,all+lib,all:softmax,all+lib:pl2")
     a = ap.parse_args(argv)
     store = Store(root=a.store)
     prices = load_prices(store, a.years)
     if a.pred:
         return rescore(store, pd.read_parquet(a.pred), prices, a.out)
-    eng = GreyhoundMetricsEngine(blocks=("parity", "hrb"))
+    eng = GreyhoundMetricsEngine(blocks=("parity", "hrb", "lib") if a.variants and "lib" in a.variants
+                                 else ("parity", "hrb"))
     if a.features and Path(a.features).exists():
         df = pd.read_parquet(a.features)
         sets = json.loads(Path(a.features + ".features.json").read_text())
@@ -352,7 +428,10 @@ def main(argv=None) -> int:
             lo, hi = (int(x) for x in a.years.split("-"))
             years = list(range(lo, hi + 1))
         df = eng.calculate_all(load_runs(store, years=years), prices=prices)
-        sets = {"base": eng.block_features["base"], "all": eng.features}
+        lib = eng.block_features.get("lib", [])
+        sets = {"base": eng.block_features["base"], "all": [f for f in eng.features if f not in lib]}
+        if lib:
+            sets["all+lib"] = eng.features
         if "hrb" in eng.block_features:                    # the step before the last block, to score what it adds
             sets["base+parity"] = eng.block_features["base"] + eng.block_features.get("parity", [])
         print(f"features built: {len(df):,} runs, {len(eng.features)} features, {eng.timings}", flush=True)
@@ -363,11 +442,14 @@ def main(argv=None) -> int:
     if isinstance(sets, list):                              # a features file from before the blocks
         sets = {"all": sets}
     names = ([n for n in ("base", "base+parity", "all") if n in sets] if a.compare and "base" in sets else ["all"])
+    if a.variants:
+        names = [v.strip() for v in a.variants.split(",") if v.strip()]
     bf = store.get_parquet("betfair_historic/markets_greyhound_racing_2026.parquet")
     report = {"timings": getattr(eng, "timings", None), "sets": {}}
     for name in names:
-        feats = sets[name]
-        pred = walk_forward(df, feats, a.folds.split(","), a.date_from)
+        set_name, _, objective = name.partition(":")
+        feats = sets[set_name]
+        pred = walk_forward(df, feats, a.folds.split(","), a.date_from, objective=objective or "binary")
         importance = pred.attrs.pop("importance")          # off the frame: parquet writes attrs as JSON
         r = {"features": len(feats), "score": score(pred)}
         if bf is not None:
