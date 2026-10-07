@@ -335,3 +335,38 @@ def test_the_live_rule_backs_each_dog_once_at_its_first_real_price_within_its_li
     s = settle_rows(ledger, final).iloc[0]
     assert abs(s.pnl_back + S) < 1e-9 and s.pnl_lay == 0.0             # lost, nothing laid
     assert abs(s.clv - (4.0 / 3.0 - 1)) < 1e-9
+
+
+def test_the_racecard_recorder_writes_a_card_only_when_it_changes_and_counts_the_weights(tmp_path):
+    from greyhound import today_cards as T
+    from sources.common import Store
+    card = {"races": [{"prizes": "1st £150", "runners": [{"trap": 1, "name": "A", "weight": {"weight": 312}},
+                                                          {"trap": 2, "name": "B", "weight": None}]}]}
+
+    class Resp:
+        def __init__(self, data):
+            self.data = data
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.data
+
+    class Session:
+        def get(self, url, headers=None, timeout=None):
+            if url.endswith("/tracks"):
+                return Resp(["Romford"])
+            if "/content/" in url:
+                return Resp({"content": [{"filename": "rom-0710.json"}]})
+            return Resp(card)
+
+    assert T.card_files({"content": ["a.json", {"name": "b.json"}]}) == ["a.json", "b.json"]
+    assert T.weight_count(card) == (2, 1)
+    store, seen = Store(root=tmp_path / "sources"), {}
+    now = pd.Timestamp("2026-10-07T17:00:00Z").to_pydatetime()
+    s = T.poll(store, Session(), seen, pause=0, now=now)
+    assert s["tracks"]["Romford"] == {"cards": 1, "written": 1, "runners": 2, "weighted": 1}
+    assert T.poll(store, Session(), seen, pause=0, now=now)["tracks"]["Romford"]["written"] == 0   # unchanged
+    day = tmp_path / "sources" / "greyhounds_today" / "2026-10-07"
+    assert len(list(day.glob("*Z_Romford_rom-0710.json"))) == 1 and len((day / "polls.jsonl").read_text().splitlines()) == 2
