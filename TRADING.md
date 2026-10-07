@@ -148,6 +148,24 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   was worth less with the account's money, since the funds bind before the book and a bigger target buys top-ups at
   a fraction of the CLV of the first fills (reports/other_markets_and_stakes_1002.md, ledger
   `stake-uplift-replay-1002`, `stake-uplift-replay-full-1002`).
+  **Replayed on 1-5 Oct** (7 Oct, after the owner added funds and lifted the day limit; research-query run
+  37588620637, ledger `stake-target-replay-1007`), the replay at each day's own balance came within GBP16 of the real
+  days: GBP250 to win, +GBP482.51 after commission, against the real +GBP466.94. CLV x stake (the expected profit,
+  before commission) over the five days:
+
+  | GBP5,000 in the account | Staked | CLV x stake | Result after 2% | Ahead of GBP250 on |
+  |---|---|---|---|---|
+  | GBP250 to win, GBP4,000 a day | GBP18,981 | GBP899 | +GBP612 | |
+  | GBP250, no day limit (GBP8,000 never reached) | GBP23,161 | GBP895 | +GBP535 | |
+  | **GBP400, GBP4,000 a day** | GBP19,319 | **GBP1,314** | **+GBP1,061** | every day |
+  | GBP400, GBP8,000 a day and GBP600 a bet | GBP34,302 | GBP1,011 | +GBP466 | |
+
+  - Beyond GBP4,000 a day the stake goes on the afternoon's entries. At GBP250 the extra GBP4,180 earned nothing.
+  - A bigger target under the limit spends the day's money on the morning's horses: the last back came at 10:34-14:19
+    UK at GBP400, against 13:12-20:02 at GBP250.
+  - At the account's own balance (the money binding), GBP250 was best: GBP670 against GBP563-620.
+  - These are five days on the delayed key's books. 6 Oct (its afternoon at +4.7%) and the live key's days are added as
+    their price files arrive. The owner decides.
 - **Orders**: a back is a limit order at the price read, FILL_OR_KILL (at least GBP2), so nothing rests in the
   book; each matched back is laid at once at the Betfair SP for its winnings (MARKET_ON_CLOSE, liability stake x
   (price - 1)), so the price's move is kept whatever the result. A refused lay is sent again each minute, five
