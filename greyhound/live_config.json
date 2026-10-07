@@ -2,10 +2,10 @@
   "edge": 0.2,
   "commission": 0.02,
   "trade_out": false,
-  "tight": 1.25,
+  "tight": null,
   "target": 12.0,
   "trade_from": "08:00",
-  "stop_before_off": 1,
+  "stop_before_off": 0,
   "poll_seconds": 20,
   "ledger_all": true,
   "limits": {
@@ -17,6 +17,12 @@
     "max_price": 20.0,
     "max_race_stake": 10.0,
     "max_daily_turnover": null,
-    "max_bets_per_day": null
-  }
+    "max_bets_per_day": null,
+    "min_order": 1.0
+  },
+  "late_start_minutes": 5,
+  "near_off_poll_seconds": 5,
+  "near_off_minutes": 3,
+  "top_up": true,
+  "max_tries": 30
 }

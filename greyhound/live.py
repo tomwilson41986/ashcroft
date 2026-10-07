@@ -9,18 +9,20 @@ which GBGB records at the weigh-in and the morning does not know, so the live mo
 on it (``CARD_UNSAFE``); fitted on every GBGB race to yesterday, base, parity and HorseRaceBase features, saved to
 ``sources/greyhound/live/model.txt`` with its meta.
 
-``--predict`` (GitHub's runners, three times a morning): today's cards from the recorder's greyhound catalogue in
+``--predict`` (GitHub's runners, hourly 07:21-19:21 UTC): today's cards from the recorder's greyhound catalogue in
 S3 (``greyhound.card``), priced from the dogs' earlier days, to ``sources/greyhound/live/predictions/<day>.csv``.
 
-``--trade`` (the UK runner, beside the recorder): every runner is decided once, at the first book after its price is
-in where the price is real (the best back and lay within ``tight``, 25%: an early greyhound book is placeholder offers,
-a back at 1.01 against a lay at 1000). A dog is backed when its edge at the best back price clears the bar
-(``live_config.json``: 0.2, the forward test's primary rule), at no more than the price cap, filled at once in full
-or not at all (fill-or-kill: nothing rests, a price that has moved is missed). The model's chances are renormalised
-over the runners still in the market. Live from 6 Oct 2026 as the owner asked: level backs held to the result, GBP5
-from 7 Oct (``trade_out`` false); with ``trade_out`` each back is staked to win ``target`` and laid at the Betfair SP
-for its winnings. Stakes are capped a bet and a race; no daily cap from 7 Oct (the owner's ask; ``null`` in
-``live_config.json`` turns a daily cap off, a number turns it on); the S3 objects ``greyhound/STOP`` and ``trading/STOP`` stop new bets within a minute.
+``--trade`` (the UK runner, beside the recorder; the owner, 7 Oct 2026: "take whatever profit / stake we can where we
+believe we have an edge", "keep going right until the off"): every runner in every race is looked at each poll (20
+seconds; every 5 within 3 minutes of the off) from 08:00 UK until Betfair suspends the market at the off. A dog is
+backed whenever its edge at the best back price clears the bar (``live_config.json``: 0.2), at no more than the price
+cap: the order takes what is offered down the ladder while the edge holds, at least GBP1, fill-or-kill (nothing
+rests), and is topped up on later polls to the GBP5 level stake. Nothing is final but a stake complete: no edge now,
+too little offered, a field not all priced, or a back refused (the account's funds) are looked at again on the next
+poll. The model's chances are renormalised over the runners still in the market. Level backs held to the result
+(``trade_out`` false); with ``trade_out`` each back is staked to win ``target`` and laid at the Betfair SP for its
+winnings. GBP10 a race; no daily cap (``null`` in ``live_config.json``); the S3 objects ``greyhound/STOP`` and
+``trading/STOP`` stop new bets within a minute.
 
 ``--settle`` (GitHub's runners, each day): the day's ledger against the recorder's settled books (BSP, the winner),
 to ``sources/greyhound/live/<mode>/<day>/settled.csv`` and the running summary ``.../summary.json``.
@@ -254,19 +256,24 @@ def stake_for(price: float, cfg: dict) -> float | None:
     return s if s * (price - 1.0) + 1e-9 >= lim["min_bsp_liability"] else None
 
 
-def decide(market_pred: pd.DataFrame, book, cfg: dict, done=frozenset()) -> list[dict]:
-    """One market's decisions: every runner still in it and not yet decided (``done``), its edge at the best back
-    price, and the backs the rule makes (before the day's limits). A runner is decided once, at the first book where
-    its price is real: a best back and lay within ``tight`` of each other (an early greyhound book is placeholder
-    offers, a back at 1.01 against a lay at 1000); until then it waits."""
+def decide(market_pred: pd.DataFrame, book, cfg: dict, done=frozenset(), have=None) -> list[dict]:
+    """One market's decisions this poll: every runner still in it and not done (``done``: its stake is on, or it can
+    never be backed), its edge at the best back price, and the back the rule makes (before the race's limit). Nothing
+    is final but a stake complete: a runner without an edge now is looked at again each poll until the off, and a
+    back takes whatever is offered within the edge (``have``: what is matched on it already), topped up later to the
+    stake. With ``tight`` set, a runner waits until its back and lay are within ``tight`` of each other (an early
+    greyhound book is placeholder offers, a back at 1.01 against a lay at 1000)."""
+    have = have or {}
+    lim = cfg["limits"]
     active = {sid: q for sid, q in book.runners.items() if q.status == "ACTIVE"}
     p = market_pred.set_index("selection_id")
     if not active or any(sid not in p.index for sid in active):
         # a runner the prices lack (a reserve in, a field priced before it was settled): the race is looked at again
-        # each poll, as the prices are reloaded, until it can be priced whole or the off is too near
+        # each poll, as the prices are reloaded, until it can be priced whole or the off
         return [{"selection_id": None, "action": "retry", "error": "the field as it stands is not all priced"}]
     probs = p.loc[list(active), "p_model"].astype(float)
     probs = probs / probs.sum()                                 # renormalised over the runners still in
+    smallest = float(lim.get("min_order", 1.0))
     out = []
     for sid, q in active.items():
         if sid in done:
@@ -286,29 +293,29 @@ def decide(market_pred: pd.DataFrame, book, cfg: dict, done=frozenset()) -> list
         edge = probs[sid] * (1 + (price - 1) * (1 - cfg["commission"])) - 1
         row["edge"] = round(float(edge), 4)
         stake = stake_for(price, cfg) if price > 1 else None
-        if edge <= cfg["edge"] or price > cfg["limits"]["max_price"] or price < cfg["limits"]["min_price"]:
+        if edge <= cfg["edge"] or price > lim["max_price"] or price < lim["min_price"]:
             out.append({**row, "action": "none"})
             continue
         if stake is None:
             out.append({**row, "action": "skip", "error": "the stake cannot reach the smallest SP lay"})
             continue
-        # the stake down the ladder: the limit is the lowest price needed for the stake to be offered, so long as the
-        # edge holds there (the order fills at that price or better)
+        want = math.floor(100 * (stake - have.get(sid, 0.0)) + 1e-6) / 100
+        # down the ladder while the edge holds: the limit is the lowest price taken (the order fills at it or better)
         limit, got = None, 0.0
         for lv_price, lv_size in q.back:
             e = probs[sid] * (1 + (lv_price - 1) * (1 - cfg["commission"])) - 1
-            if e <= cfg["edge"] or lv_price < cfg["limits"]["min_price"]:
+            if e <= cfg["edge"] or lv_price < lim["min_price"]:
                 break
             got += lv_size
-            if got + 1e-9 >= stake:
-                limit = lv_price
+            limit = lv_price
+            if got + 1e-9 >= want:
                 break
-        if limit is None:
-            # too little offered within the edge: looked at again each poll until the stake is there or the off
-            out.append({**row, "action": "retry", "stake": stake,
-                        "error": f"GBP{got:.2f} offered within the edge, under the stake"})
+        take = math.floor(100 * min(want, got) + 1e-6) / 100
+        if limit is None or take + 1e-9 < smallest:
+            out.append({**row, "action": "retry", "stake": take,
+                        "error": f"GBP{got:.2f} offered within the edge, under the smallest order"})
         else:
-            out.append({**row, "action": "back", "stake": stake, "price": limit})
+            out.append({**row, "action": "back", "stake": take, "target": stake, "price": limit})
     return out
 
 
@@ -317,31 +324,44 @@ class Trader:
                  now=lambda: datetime.now(timezone.utc)):
         self.store, self.x, self.cfg, self.day, self.mode = store, exchange, cfg, day, mode
         self.ledger_path, self.kill, self.now = ledger_path, kill, now
-        self.decided: set[str] = set()                     # markets with every runner decided
-        self.decided_sel: set[tuple[str, int]] = set()      # (market, selection) decided
+        self.decided: set[str] = set()                     # markets with every runner done
+        self.decided_sel: set[tuple[str, int]] = set()      # (market, selection) done: its stake on, or never
+        self.have: dict = {}                                # (market, selection) -> matched so far
+        self.tries: dict = {}                               # (market, selection) -> orders sent
         self.turnover, self.bets, self.race_stake = 0.0, 0, {}
-        self.noted: set = set()                             # (market, selection, reason) retries already written
+        self.noted: set = set()                             # (market, selection, reason) already written
         self.preds: pd.DataFrame | None = None
         self._loaded_at = None
         self._resume()
 
+    def _target(self) -> float:
+        return float(self.cfg["limits"]["level_stake"])
+
     def _resume(self) -> None:
-        """A restarted session reads its own ledger: no market is decided twice, the day's limits carry on."""
+        """A restarted session reads its own ledger: what is matched stays matched, a stake complete is not backed
+        again, and the race's limit carries on."""
         if not self.ledger_path.exists():
             return
         with self.ledger_path.open() as f:
             for r in csv.DictReader(f):
-                if r["action"] == "retry":                  # noted, not decided: looked at again
+                if not r.get("selection_id"):
                     continue
-                if r.get("selection_id"):
-                    self.decided_sel.add((r["market_id"], int(float(r["selection_id"]))))
-                else:                                   # a market skipped as a whole
-                    self.decided.add(r["market_id"])
-                if r["action"] == "back" and r["status"] == "SUCCESS":
-                    m = float(r["matched"] or 0)
-                    self.turnover += m
-                    self.bets += 1
-                    self.race_stake[r["market_id"]] = self.race_stake.get(r["market_id"], 0.0) + m
+                key = (r["market_id"], int(float(r["selection_id"])))
+                if r["action"] == "back":
+                    self.tries[key] = self.tries.get(key, 0) + 1
+                    if r["status"] == "SUCCESS":
+                        m = float(r["matched"] or 0)
+                        self.turnover += m
+                        self.bets += 1
+                        self.race_stake[r["market_id"]] = self.race_stake.get(r["market_id"], 0.0) + m
+                        self.have[key] = self.have.get(key, 0.0) + m
+                    elif r["status"] == "UNKNOWN":
+                        self.decided_sel.add(key)           # its fate unread: never sent twice
+                elif r["action"] == "skip":
+                    self.decided_sel.add(key)
+        for key, m in self.have.items():
+            if m + 0.01 >= self._target() or not self.cfg.get("top_up", True):
+                self.decided_sel.add(key)
 
     def _write(self, rows: list[dict]) -> None:
         new = not self.ledger_path.exists()
@@ -368,9 +388,18 @@ class Trader:
                 "Europe/London").dt.tz_convert("UTC")
             self.preds = p
 
-    def step(self) -> int:
-        """One poll: every undecided market whose prices are in and whose off is far enough away, decided at this
-        first look. Returns how many markets were decided."""
+    def _open(self, t: pd.Timestamp) -> pd.Series:
+        """The races still to bet on: up to ``stop_before_off`` minutes before the off; at 0, to the off itself and
+        past it by ``late_start_minutes`` (a race goes off late; Betfair suspends the market at the off, and a
+        suspended book is never bet on)."""
+        stop = float(self.cfg.get("stop_before_off", 0))
+        if stop > 0:
+            return self.preds.off > t + pd.Timedelta(minutes=stop)
+        return self.preds.off + pd.Timedelta(minutes=float(self.cfg.get("late_start_minutes", 5))) > t
+
+    def step(self, horizon_minutes: float | None = None) -> int:
+        """One poll: every race still open (``horizon_minutes``: only those off within it), every runner not done
+        looked at in its book now. Returns how many races were done this poll (every runner's stake on or never)."""
         if self.kill():
             log.warning("kill switch on: no new bets")
             return 0
@@ -379,8 +408,10 @@ class Trader:
             return 0
         t = pd.Timestamp(self.now())
         lim = self.cfg["limits"]
-        todo = self.preds[(~self.preds.market_id.isin(self.decided))
-                          & (self.preds.off > t + pd.Timedelta(minutes=self.cfg["stop_before_off"]))]
+        sel = (~self.preds.market_id.isin(self.decided)) & self._open(t)
+        if horizon_minutes is not None:
+            sel &= self.preds.off <= t + pd.Timedelta(minutes=horizon_minutes)
+        todo = self.preds[sel]
         mids = sorted(todo.market_id.dropna().unique())
         if not mids:
             return 0
@@ -391,65 +422,87 @@ class Trader:
             if b is None or b.status != "OPEN" or b.inplay:
                 continue
             done_here = {sid for m, sid in self.decided_sel if m == mid}
-            rows = decide(todo[todo.market_id == mid], b, self.cfg, done=done_here)
-            waiting = any(r["action"] in ("wait", "retry") for r in rows)
+            have = {sid: v for (m, sid), v in self.have.items() if m == mid}
+            rows = decide(todo[todo.market_id == mid], b, self.cfg, done=done_here, have=have)
+            open_here = any(r["action"] in ("wait", "retry", "none") for r in rows)
             rows = [r for r in rows if r["action"] != "wait"]
             mins = round(float((todo[todo.market_id == mid].off.iloc[0] - t).total_seconds() / 60), 1)
             out = []
             for r in rows:
                 r.update({"time_utc": t.strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": self.mode, "market_id": mid,
                           "minutes_to_off": mins})
+                sid = r.get("selection_id")
+                key = (mid, int(sid)) if sid is not None else (mid, None)
                 if r["action"] == "back":
                     stake = r["stake"]
+                    room = math.floor(100 * (lim["max_race_stake"] - self.race_stake.get(mid, 0.0)) + 1e-6) / 100
                     day_cap, bet_cap = lim.get("max_daily_turnover"), lim.get("max_bets_per_day")
-                    if ((day_cap is not None and self.turnover + stake > day_cap)            # null: no daily cap
-                            or (bet_cap is not None and self.bets >= bet_cap)
-                            or self.race_stake.get(mid, 0.0) + stake > lim["max_race_stake"]):
+                    if room + 1e-9 < float(lim.get("min_order", 1.0)) \
+                            or (day_cap is not None and self.turnover + min(stake, room) > day_cap) \
+                            or (bet_cap is not None and self.bets >= bet_cap):
                         r.update({"action": "skip", "error": "the day's or the race's limit"})
+                    elif self.tries.get(key, 0) >= int(self.cfg.get("max_tries", 30)):
+                        r.update({"action": "skip", "error": "too many orders refused"})
                     else:
-                        ref = f"gh-{self.day:%m%d}-{str(mid)[-8:]}-{r['selection_id']}"
-                        fill = self.x.back(mid, r["selection_id"], r["price"], stake, ref, min_fill=stake)
-                        r.update({"matched": fill.matched, "avg_price": fill.avg_price, "bet_id": fill.bet_id,
-                                  "status": fill.status, "error": fill.error})
-                        if fill.status != "SUCCESS" and "INSUFFICIENT_FUNDS" in str(fill.error):
-                            # the account's money is out on other bets: tried again each poll as it comes back
-                            r["action"] = "retry"
-                            waiting = True
+                        stake = min(stake, room)
+                        n = self.tries.get(key, 0) + 1
+                        self.tries[key] = n
+                        ref = f"gh-{self.day:%m%d}-{str(mid)[-8:]}-{sid}-{n}"
+                        fill = self.x.back(mid, sid, r["price"], stake, ref, min_fill=stake)
+                        r.update({"stake": stake, "matched": fill.matched, "avg_price": fill.avg_price,
+                                  "bet_id": fill.bet_id, "status": fill.status, "error": fill.error})
                         if fill.status == "SUCCESS" and fill.matched > 0:
                             self.turnover += fill.matched
                             self.bets += 1
                             self.race_stake[mid] = self.race_stake.get(mid, 0.0) + fill.matched
+                            self.have[key] = self.have.get(key, 0.0) + fill.matched
+                            if self.have[key] + 0.01 < r.get("target", stake) and self.cfg.get("top_up", True):
+                                open_here = True            # topped up later, while the edge holds
+                            else:
+                                self.decided_sel.add(key)
                             if self.cfg.get("trade_out", True):
                                 liab = math.floor(100 * fill.matched * (fill.avg_price - 1.0)) / 100
                                 if liab >= lim["min_bsp_liability"]:
-                                    lay = self.x.lay_at_bsp(mid, r["selection_id"], liab, ref + "-L")
+                                    lay = self.x.lay_at_bsp(mid, sid, liab, ref + "-L")
                                     r.update({"lay_liability": liab, "lay_status": lay.status})
                                 else:
                                     r.update({"lay_status": f"not laid: GBP{liab:.2f} under the smallest SP lay"})
-                if r["action"] == "retry":                  # noted once a runner and reason, not each poll
-                    key = (mid, r.get("selection_id"), str(r.get("error", ""))[:24])
-                    if key in self.noted:
+                        elif fill.status == "UNKNOWN":
+                            self.decided_sel.add(key)       # its fate unread: never sent twice
+                        else:
+                            open_here = True                # not filled (the money gone, funds): tried again
+                if r["action"] == "skip" and sid is not None:
+                    self.decided_sel.add(key)
+                if r["action"] in ("retry", "none"):        # noted once a runner and reason, not each poll
+                    note = (mid, sid, r["action"], str(r.get("error", ""))[:24])
+                    if note in self.noted:
                         continue
-                    self.noted.add(key)
+                    self.noted.add(note)
                 if r["action"] != "none" or self.cfg.get("ledger_all", True):
                     out.append(r)
             if out:
                 self._write(out)
-            for r in rows:
-                if r.get("selection_id") is not None and r["action"] != "retry":
-                    self.decided_sel.add((mid, int(r["selection_id"])))
-            if not waiting:
+            if not open_here:
                 self.decided.add(mid)
                 done += 1
         return done
 
     def run(self, until: datetime, poll_seconds: float = 60.0, sleep=time.sleep) -> dict:
+        """Every race each ``poll_seconds``; between, every ``near_off_poll_seconds`` the races off within
+        ``near_off_minutes`` (the last money before the off)."""
+        fast = self.cfg.get("near_off_poll_seconds")
+        near = float(self.cfg.get("near_off_minutes", 3))
+        last_full = None
         while self.now() < until:
             try:
-                self.step()
+                if fast and last_full is not None and (self.now() - last_full).total_seconds() < poll_seconds:
+                    self.step(horizon_minutes=near)
+                else:
+                    last_full = self.now()
+                    self.step()
             except Exception as exc:                            # one failed poll: the next tries again
                 log.warning("poll failed (%s)", exc)
-            sleep(poll_seconds)
+            sleep(fast or poll_seconds)
         return {"day": f"{self.day:%Y-%m-%d}", "mode": self.mode, "markets_decided": len(self.decided),
                 "bets": self.bets, "turnover": round(self.turnover, 2)}
 
@@ -616,7 +669,7 @@ def coverage(store, day: date, cfg: dict | None = None, s3=None, now=None) -> di
             b = b[b.t < b.off - pd.Timedelta(minutes=cfg["stop_before_off"])]
             for c in ("back1", "lay1"):
                 b[c] = pd.to_numeric(b[c], errors="coerce")
-            b["tight"] = (b.back1 > 1) & (b.lay1 / b.back1 <= cfg["tight"])
+            b["tight"] = (b.back1 > 1) & (b.lay1 / b.back1 <= (cfg.get("tight") or np.inf))
             snap = b.groupby(["market_id", "t"]).tight.all()
             ever = snap.groupby(level=0).any()
             have = set(zip(pred.market_id.astype(str), pd.to_numeric(pred.selection_id, errors="coerce")))
