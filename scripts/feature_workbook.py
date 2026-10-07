@@ -175,8 +175,13 @@ BLOCK_EVIDENCE = {
                   "already prices a horse that traded short and was beaten. Iteration 109 (served recipe, 53,910 "
                   "runners in 5,923 races): the served main with the block -0.0008 (-0.0014 to -0.0002), resolved, "
                   "rank 1 -0.0020 (-0.0030 to -0.0010), Brier skill and concordance level, the rule +9.07% against "
-                  "+9.04%, the owner's staking at expected CLV >= 3% +6.88% against +6.50%. Iteration 110 tries it in "
-                  "every member of the served blend and at seed 7. Not yet served.",
+                  "+9.04%, the owner's staking at expected CLV >= 3% +6.88% against +6.50%. Iteration 110 (research "
+                  "loop run 37532787409): the main with the block -0.0007 again (-0.0013 to -0.0001), but at seed "
+                  "7 -0.0005 on its own refit (-0.0011 to +0.0001) with Brier skill against the market resolved "
+                  "worse (-0.00066); in the served blend, all three members with the block against the blend "
+                  "refitted -0.0003 (-0.0008 to +0.0002), race_xent only -0.0002, the pair only -0.0002, none "
+                  "resolved (research/queries/done/iter110_gate_pairwise.py); the owner's staking +7.74% against "
+                  "+7.67%. Built, not served.",
     "HRB extras": "Built 6 Oct from the owner's horseracebase list. Beside the BSP on the winner, the same screen: "
                   "same surname +0.01 (t 0.5; 1.9% of runners, winning 14.1% against the market's 13.7%), seconds "
                   "~0, the last race's winner's BSP -0.06, its non-finishers -0.04, the biggest field won in -0.33 "
