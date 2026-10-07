@@ -283,6 +283,8 @@ def test_the_live_rule_takes_what_is_offered_within_the_edge_and_tops_up_to_the_
     assert S == 5.0 and stake_for(4.0, cfg) == S and stake_for(13.0, cfg) == S and not cfg["trade_out"]
     assert cfg["limits"]["max_daily_turnover"] is None and cfg["limits"]["max_bets_per_day"] is None   # no daily cap
     assert cfg["stop_before_off"] == 0 and cfg["tight"] is None                # to the off, every real offer
+    assert cfg["limits"]["max_race_stake"] == 30.0                      # every dog of six its GBP5 (owner, 7 Oct)
+    cfg["limits"]["max_race_stake"] = 10.0                              # the limit itself tested at GBP10
     out = copy.deepcopy(cfg)                                            # the trading variant: staked to win GBP12
     out.update(trade_out=True)
     out["limits"].update(min_stake=2.0, max_stake=10.0)

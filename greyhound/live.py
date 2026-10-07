@@ -21,7 +21,7 @@ rests), and is topped up on later polls to the GBP5 level stake. Nothing is fina
 too little offered, a field not all priced, or a back refused (the account's funds) are looked at again on the next
 poll. The model's chances are renormalised over the runners still in the market. Level backs held to the result
 (``trade_out`` false); with ``trade_out`` each back is staked to win ``target`` and laid at the Betfair SP for its
-winnings. GBP10 a race; no daily cap (``null`` in ``live_config.json``); the S3 objects ``greyhound/STOP`` and
+winnings. GBP30 a race (every dog of six its GBP5; the owner, 7 Oct); no daily cap (``null`` in ``live_config.json``); the S3 objects ``greyhound/STOP`` and
 ``trading/STOP`` stop new bets within a minute.
 
 ``--settle`` (GitHub's runners, each day): the day's ledger against the recorder's settled books (BSP, the winner),
