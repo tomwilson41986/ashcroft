@@ -91,7 +91,7 @@ jobs:
           PRED_RUN: ${{ inputs.pred_run }}
           VARIANTS: ${{ inputs.variants || 'all,all+lib,all:softmax,all+lib:softmax,all+lib:pl2' }}
         run: |
-          if ! [[ "$VARIANTS" =~ ^[a-z+:,]+$ ]]; then echo "variants: sets and objectives only"; exit 1; fi
+          if ! [[ "$VARIANTS" =~ ^[a-z0-9+:,]+$ ]]; then echo "variants: sets and objectives only"; exit 1; fi
           if ! [[ "$YEARS" =~ ^[0-9]{4}-[0-9]{4}$ ]]; then echo "years must be YYYY-YYYY"; exit 1; fi
           if ! [[ "$FOLDS" =~ ^[0-9]{4}-[0-9]{2}(,[0-9]{4}-[0-9]{2})*$ ]]; then echo "folds must be YYYY-MM,..."; exit 1; fi
           mkdir -p out
