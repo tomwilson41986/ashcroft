@@ -389,13 +389,15 @@ def test_a_back_reduced_for_a_non_runner_is_scored_at_the_price_betfair_settled(
     assert s.summary()["stake_weighted_clv"] == pytest.approx(0.26)
 
 
-def test_the_owners_commission_rate_and_no_limit_on_the_number_of_bets():
+def test_the_owners_commission_rate_and_no_limit_on_the_number_of_bets_or_the_days_stakes():
     """The owner, 2 Oct. Betfair charges the account 2% of each race's net winnings: on 1 Oct the settled result at 2%
     met the account's balance to the penny (+GBP188.19; 5% gave 178.62). The number of bets is not limited (a cap of
-    250 stopped seven backs on 1 Oct): GBP300 a bet and GBP4,000 a day are the limits."""
+    250 stopped seven backs on 1 Oct). The owner, 7 Oct: no limit on the day's stakes either (GBP4,000 until then),
+    so the account's money is the limit; GBP300 a bet stays."""
     assert LIVE.commission == 0.02
-    assert LIVE.limits.max_bets_per_day * LIVE.limits.min_stake > 100 * LIVE.limits.max_daily_turnover
-    assert LIVE.limits.max_stake == 300.0 and LIVE.limits.max_daily_turnover == 4000.0
+    assert LIVE.limits.max_bets_per_day >= 1_000_000
+    assert LIVE.limits.max_daily_turnover >= 1_000_000
+    assert LIVE.limits.max_stake == 300.0 and LIVE.target == 250.0
 
 
 def test_a_failed_read_of_the_settled_bets_never_stops_the_day():
