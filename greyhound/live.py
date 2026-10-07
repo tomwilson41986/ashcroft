@@ -673,7 +673,8 @@ def coverage(store, day: date, cfg: dict | None = None, s3=None, now=None) -> di
             snap = b.groupby(["market_id", "t"]).tight.all()
             ever = snap.groupby(level=0).any()
             have = set(zip(pred.market_id.astype(str), pd.to_numeric(pred.selection_id, errors="coerce")))
-            unpriced = b[[(m, float(s)) not in have for m, s in zip(b.market_id, pd.to_numeric(b.selection_id))]]
+            unpriced = b.loc[np.array([(m, float(s)) not in have for m, s in
+                                       zip(b.market_id, pd.to_numeric(b.selection_id))], dtype=bool)]
             r["missed"] = {
                 "with_books_seen": int(b.market_id.nunique()),
                 "all_tight_at_some_poll": int(ever.sum()),
