@@ -186,8 +186,8 @@ jobs:
             DOGS=$!
             # the greyhound model (greyhound/live.py, greyhound/live_config.json; the owner's ask of 6 Oct): each GB
             # greyhound runner backed once, at its first real price (back and lay within 25%) after the morning's
-            # prices are in, where the edge clears 0.2: GBP2 level, held, no price over 20, GBP4 a race, GBP120 and
-            # 60 bets a day. Real orders only with GREYHOUND_LIVE=yes; S3 greyhound/STOP or trading/STOP stops new
+            # prices are in, where the edge clears 0.2: GBP5 level, held, no price over 20, GBP10 a race, no daily
+            # cap (from 7 Oct). Real orders only with GREYHOUND_LIVE=yes; S3 greyhound/STOP or trading/STOP stops new
             # bets. Ledger: s3://$CAPTURE_BUCKET/sources/greyhound/live/<mode>/<day>/
             GHLIVE=()
             if [ "$GREYHOUND_LIVE" = yes ]; then GHLIVE=(--live); fi

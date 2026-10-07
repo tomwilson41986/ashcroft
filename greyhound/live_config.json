@@ -9,14 +9,14 @@
   "poll_seconds": 60,
   "ledger_all": true,
   "limits": {
-    "min_stake": 2.0,
-    "max_stake": 2.0,
-    "level_stake": 2.0,
+    "min_stake": 5.0,
+    "max_stake": 5.0,
+    "level_stake": 5.0,
     "min_bsp_liability": 10.0,
     "min_price": 1.5,
     "max_price": 20.0,
-    "max_race_stake": 4.0,
-    "max_daily_turnover": 120.0,
-    "max_bets_per_day": 60
+    "max_race_stake": 10.0,
+    "max_daily_turnover": null,
+    "max_bets_per_day": null
   }
 }

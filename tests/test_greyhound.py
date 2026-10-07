@@ -278,11 +278,13 @@ def test_the_live_rule_backs_each_dog_once_at_its_first_real_price_within_its_li
     from greyhound.live import Trader, decide, load_config, settle_rows, stake_for
     from sources.common import Store
     from trading.exchange import PaperExchange, Quote
-    cfg = load_config()                                                 # the live settings: GBP2 level, held
-    assert stake_for(4.0, cfg) == 2.0 and stake_for(13.0, cfg) == 2.0 and not cfg["trade_out"]
+    cfg = load_config()                                                 # the live settings: GBP5 level, held
+    S = cfg["limits"]["level_stake"]
+    assert S == 5.0 and stake_for(4.0, cfg) == S and stake_for(13.0, cfg) == S and not cfg["trade_out"]
+    assert cfg["limits"]["max_daily_turnover"] is None and cfg["limits"]["max_bets_per_day"] is None   # no daily cap
     out = copy.deepcopy(cfg)                                            # the trading variant: staked to win GBP12
     out.update(trade_out=True)
-    out["limits"].update(max_stake=10.0)
+    out["limits"].update(min_stake=2.0, max_stake=10.0)
     assert stake_for(4.0, out) == 4.0 and stake_for(2.0, out) == 10.0 and stake_for(1.8, out) is None
     book = _Book({11: Quote(11, back=[(4.0, 50.0)], lay=[(4.2, 30.0)]), 12: Quote(12, back=[(1.6, 80.0)], lay=[(1.65, 9.0)]),
                   13: Quote(13, back=[(9.0, 1.0)], lay=[(9.6, 5.0)]), 15: Quote(15, back=[(1.01, 5.0)], lay=[(1000.0, 2.0)]),
@@ -291,7 +293,7 @@ def test_the_live_rule_backs_each_dog_once_at_its_first_real_price_within_its_li
                          "track": ["Hove"] * 5, "race_time": ["18:04:00"] * 5, "trap": [1, 2, 3, 4, 5],
                          "dog_name": list("ABCDE")})
     rows = {r["selection_id"]: r for r in decide(pred, book, cfg)}
-    assert rows[11]["action"] == "back" and rows[11]["stake"] == 2.0    # edge +0.31 at 4.0, a real book (lay 4.2)
+    assert rows[11]["action"] == "back" and rows[11]["stake"] == S      # edge +0.31 at 4.0, a real book (lay 4.2)
     assert rows[12]["action"] == "none" and 14 not in rows              # no edge; a non-runner is left out
     assert rows[13]["action"] == "skip" and "offered" in rows[13]["error"]   # GBP1 offered, under the stake
     assert rows[15]["action"] == "wait"                                 # 1.01 against 1000: placeholders, not a price
@@ -319,17 +321,17 @@ def test_the_live_rule_backs_each_dog_once_at_its_first_real_price_within_its_li
     now = pd.Timestamp("2026-10-06T08:00:00Z").to_pydatetime()
     x = X()
     t = Trader(store, x, cfg, day, "paper", tmp_path / "ledger.csv", now=lambda: now)
-    assert t.step() == 0 and t.bets == 1 and t.turnover == 2.0          # dog 15 still waits: the market stays open
+    assert t.step() == 0 and t.bets == 1 and t.turnover == S            # dog 15 still waits: the market stays open
     assert x.sent == []                                                 # held to the result: no lay at SP
     assert "1.9" not in t.decided and ("1.9", 11) in t.decided_sel
     book.runners[15] = Quote(15, back=[(30.0, 5.0)], lay=[(34.0, 5.0)])   # its book forms
     assert t.step() == 1 and t.bets == 1                                # decided (30.0 is over the price cap)
     assert t.step() == 0                                                # every dog decided: never again
     t2 = Trader(store, X(), cfg, day, "paper", tmp_path / "ledger.csv", now=lambda: now)
-    assert ("1.9", 11) in t2.decided_sel and t2.turnover == 2.0          # a restart carries the day on
+    assert ("1.9", 11) in t2.decided_sel and t2.turnover == S            # a restart carries the day on
     ledger = pd.read_csv(tmp_path / "ledger.csv", dtype={"market_id": str})
     final = pd.DataFrame({"market_id": ["1.9"], "selection_id": [11], "runner_status": ["LOSER"], "sp_actual": [3.0],
                           "polled_utc": ["2026-10-07T07:00:00Z"]})
     s = settle_rows(ledger, final).iloc[0]
-    assert abs(s.pnl_back + 2.0) < 1e-9 and s.pnl_lay == 0.0           # lost, nothing laid
+    assert abs(s.pnl_back + S) < 1e-9 and s.pnl_lay == 0.0             # lost, nothing laid
     assert abs(s.clv - (4.0 / 3.0 - 1)) < 1e-9

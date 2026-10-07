@@ -17,10 +17,10 @@ in where the price is real (the best back and lay within ``tight``, 25%: an earl
 a back at 1.01 against a lay at 1000). A dog is backed when its edge at the best back price clears the bar
 (``live_config.json``: 0.2, the forward test's primary rule), at no more than the price cap, filled at once in full
 or not at all (fill-or-kill: nothing rests, a price that has moved is missed). The model's chances are renormalised
-over the runners still in the market. Live from 6 Oct 2026 as the owner asked: GBP2 level backs held to the result
-(``trade_out`` false; a GBP2 back cannot be laid at the SP below 6.0, Betfair's smallest SP lay being GBP10); with
-``trade_out`` each back is staked to win ``target`` and laid at the Betfair SP for its winnings. Stakes are capped (a
-bet, a race, a day); the S3 objects ``greyhound/STOP`` and ``trading/STOP`` stop new bets within a minute.
+over the runners still in the market. Live from 6 Oct 2026 as the owner asked: level backs held to the result, GBP5
+from 7 Oct (``trade_out`` false); with ``trade_out`` each back is staked to win ``target`` and laid at the Betfair SP
+for its winnings. Stakes are capped a bet and a race; no daily cap from 7 Oct (the owner's ask; ``null`` in
+``live_config.json`` turns a daily cap off, a number turns it on); the S3 objects ``greyhound/STOP`` and ``trading/STOP`` stop new bets within a minute.
 
 ``--settle`` (GitHub's runners, each day): the day's ledger against the recorder's settled books (BSP, the winner),
 to ``sources/greyhound/live/<mode>/<day>/settled.csv`` and the running summary ``.../summary.json``.
@@ -381,7 +381,9 @@ class Trader:
                           "minutes_to_off": mins})
                 if r["action"] == "back":
                     stake = r["stake"]
-                    if (self.turnover + stake > lim["max_daily_turnover"] or self.bets >= lim["max_bets_per_day"]
+                    day_cap, bet_cap = lim.get("max_daily_turnover"), lim.get("max_bets_per_day")
+                    if ((day_cap is not None and self.turnover + stake > day_cap)            # null: no daily cap
+                            or (bet_cap is not None and self.bets >= bet_cap)
                             or self.race_stake.get(mid, 0.0) + stake > lim["max_race_stake"]):
                         r.update({"action": "skip", "error": "the day's or the race's limit"})
                     else:
