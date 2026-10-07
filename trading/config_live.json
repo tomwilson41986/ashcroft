@@ -18,7 +18,7 @@
     "bank": 4000.0,
     "max_stake": 300.0,
     "max_race_stake": 1000000.0,
-    "max_daily_turnover": 4000.0,
+    "max_daily_turnover": 1000000.0,
     "max_bets_per_day": 1000000,
     "daily_stop_loss": 1000000.0,
     "min_stake": 2.0,

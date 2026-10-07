@@ -140,9 +140,10 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   priced whole whose expected CLV at the best back price is at least +3% under the closing model
   (`model/race_book.py`; the model fitted without volume when the delayed key's feed carries none), with at least
   GBP100 matched on it when the feed reports matched money. Staked to win GBP250 before commission.
-- **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, at most
-  GBP4,000 staked a day; when the day's limit binds, each poll's backs go in order of expected CLV. No limit on the
-  number of bets (the owner, 2 Oct; a cap of 250 a day, set when the trader was built, stopped seven backs on 1 Oct).
+- **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, and no limit
+  on the day's stakes (the owner, 7 Oct: the account's money is the limit; GBP4,000 a day until then, when each
+  poll's backs went in order of expected CLV once it bound). No limit on the number of bets (the owner, 2 Oct; a cap of
+  250 a day, set when the trader was built, stopped seven backs on 1 Oct).
   The to-win target stays at GBP250 (the owner asked, 2 Oct): 1 Oct replayed at GBP300-500, settled on every horse,
   was worth less with the account's money, since the funds bind before the book and a bigger target buys top-ups at
   a fraction of the CLV of the first fills (reports/other_markets_and_stakes_1002.md, ledger

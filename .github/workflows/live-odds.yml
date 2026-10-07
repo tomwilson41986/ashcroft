@@ -124,10 +124,10 @@ jobs:
           DAY=$(TZ=Europe/London date +%F)
           python -c "import boto3, os, sys; boto3.client('s3', region_name=os.environ['PRED_REGION']).download_file(os.environ['PRED_BUCKET'], sys.argv[1], sys.argv[2])" \
               "predictions/$DAY.csv" "out/predictions_$DAY.csv"
-          # the owner's limits (GBP300 a bet, GBP4,000 a day); the backs already sent today are kept on the server,
+          # the owner's limits (GBP300 a bet; no limit a day since 7 Oct); the backs already sent today are kept on the server,
           # so each hour's email marks the new ones and the day's limit counts the earlier ones
           python scripts/score_live_prices.py --predictions "out/predictions_$DAY.csv" --live out/live_odds.csv \
-              --out out/scored.csv --max-stake 300 --max-day 4000 --seen "$HOME/.ashcroft/backs_sent_$DAY.csv" \
+              --out out/scored.csv --max-stake 300 --max-day 1000000 --seen "$HOME/.ashcroft/backs_sent_$DAY.csv" \
               2>&1 | tee out/scored.txt
 
       - name: Email the backs to the owner
