@@ -73,7 +73,9 @@ CATALOGUE_PROJECTION = ["EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION", "RUN
 CLOCK_MARKS = ("08:00", "09:00", "10:00", "11:00", "12:00")
 OFF_MARKS = (120, 60, 30, 15, 10, 5, 3, 1)
 #: a market's BSP is read once it has reconciled at the off (Betfair's book of a closed market carries none): up to
-#: BSP_TRIES reads, BSP_EVERY seconds apart, within 15 minutes of the off
+#: BSP_TRIES reads, BSP_EVERY seconds apart, within 15 minutes of the off. On 7 Oct none found one (189 WIN markets),
+#: nor did the trader's reads after the off on the live key (ledger bsp-at-off-1007): the day's BSPs come with
+#: Betfair's price files the next day
 BSP_TRIES, BSP_EVERY = 3, 15.0
 #: Betfair's event type ids: the record is of horse racing unless asked otherwise (greyhounds: --event-type 4339)
 HORSE_RACING, GREYHOUNDS = "7", "4339"

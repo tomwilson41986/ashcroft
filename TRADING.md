@@ -581,6 +581,10 @@ the last off and stopped at 21:35 UK.
 
   The day record held no BSP. Betfair sends none in a closed market's book, and the recorder reads it at the off from
   7 Oct (ledger `recorder-bsp-1006`). The trader's CLV is unaffected: it takes the BSP from Betfair's cleared orders.
+  On 7 Oct the reads at the off found none either: no BSP in any of the 189 WIN markets (38 horse, 151 greyhound)
+  read after the off on the records' delayed key, nor in the trader's own reads of each race after the off on the live
+  key, which ask for it the same way (ledger `bsp-at-off-1007`). Why Betfair sends none is open; until it is known the
+  day's BSPs come with Betfair's price files the next day.
 
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,

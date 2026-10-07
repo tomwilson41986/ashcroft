@@ -465,7 +465,6 @@ for race, g in mk.groupby("race"):
             continue
         polls_searched += 1
         n = len(w)
-        n_states = min(n, 5)
         plc = nearest(day[day.market_id.isin(others)], others, t, SYNC / 60) if not day.empty else day
         nowb = pd.concat([pb, plc], ignore_index=True).drop_duplicates(KEY)
         nowb = nowb[nowb.runner_status.eq("ACTIVE")]
@@ -476,6 +475,9 @@ for race, g in mk.groupby("race"):
             k, d = market_terms(omid, kname, k, n, handicap)
             if k:
                 terms[omid] = (kname, k, d)
+        # the states: each place up to the most any market pays, then the rest. With a state for 1st-4th and one for
+        # 5th or worse, a 5 TBP back (from 7 Oct) won in every state: no risk where it has one
+        n_states = min(n, 1 + max([4] + [k for _, k, _ in terms.values()]))
         for omid, (kname, k, d) in terms.items():
             if kname != "EACH_WAY":
                 for how, book, prof in book_arbitrage(nowb[nowb.market_id.eq(omid)], k):
@@ -496,7 +498,7 @@ for race, g in mk.groupby("race"):
                                  runners=n, profit=z, at_risk=risk, legs=used))
 
 print(f"\n== arbitrage: {polls_searched} race-polls in the last {ARB_WINDOW} minutes before the offs searched "
-      f"(every horse across win, place, 2/3/4 TBP and each way; books of each market)")
+      f"(every horse across win, place, the TBP markets and each way; books of each market)")
 if arbs:
     A_ = pd.DataFrame(arbs)
     A_["return_on_risk"] = A_.profit / A_.at_risk
@@ -533,11 +535,40 @@ fin_o = oth[oth.source.eq("final")] if "source" in oth else pd.DataFrame()
 if fin_w.empty or fin_o.empty:
     print("\nthe day's final pass has not run: the close (win BSP) and the results come with it")
     raise SystemExit(0)
-# the win BSP read as each market reconciled it at the off (source "bsp", from 7 Oct: a closed market's final book
-# carries none), else a final book's
+# the win BSP: from Betfair's price files (named by the day after the racing, in S3 from that evening), else one read
+# at the off (source "bsp"), else a final book's. The record's own reads carry none on the delayed application key,
+# which returns no Starting Price data (7 Oct: ledger bsp-at-off-1007), so the close comes with the files.
+
+
+def price_file_bsp(day_):
+    import betfair_prices as bp
+    parts = []
+    for d_ in (date.fromordinal(day_.toordinal() + 1), day_):
+        for c_ in ("uk", "ire"):
+            name = f"dwbfprices{c_}win{d_:%d%m%Y}.csv"
+            try:
+                raw = s3.get_object(Bucket=bucket, Key=f"{bp.S3_PREFIX}/{name}")["Body"].read()
+            except Exception:
+                continue
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                text = raw.decode("latin-1")
+            t_ = bp.parse_file_text(text, name)
+            parts.append(t_[t_.race_date == day_.isoformat()])
+    if not parts:
+        return pd.DataFrame(columns=KEY + ["sp_actual"])
+    pf = pd.concat(parts, ignore_index=True).dropna(subset=["bsp", "selection_id"])
+    return pd.DataFrame({"market_id": "1." + pf.event_id.astype("Int64").astype(str),
+                         "selection_id": pf.selection_id.astype("int64"), "sp_actual": pf.bsp.astype(float)})
+
+
 at_off = day[day.source.eq("bsp") & (day.sp_actual > 1)]
-bsp = (pd.concat([fin_w[fin_w.sp_actual > 1], at_off]).drop_duplicates(KEY, keep="last").set_index(KEY).sp_actual)
-print(f"   the close: {len(at_off):,} BSPs read at the off, {int((fin_w.sp_actual > 1).sum()):,} in final books")
+files = price_file_bsp(DAY)
+bsp = (pd.concat([fin_w.loc[fin_w.sp_actual > 1, KEY + ["sp_actual"]], at_off[KEY + ["sp_actual"]], files])
+       .drop_duplicates(KEY, keep="last").set_index(KEY).sp_actual)
+print(f"   the close: {len(files):,} BSPs in the price files, {len(at_off):,} read at the off, "
+      f"{int((fin_w.sp_actual > 1).sum()):,} in final books")
 res = pd.concat([fin_o, fin_w]).drop_duplicates(KEY, keep="last").set_index(KEY).runner_status
 S["result"] = [res.get((m, s)) for m, s in zip(S.market_id, S.selection_id)]
 done = S[S.result.isin(["WINNER", "LOSER"])].copy()
