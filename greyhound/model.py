@@ -99,7 +99,8 @@ def walk_forward(df: pd.DataFrame, features: list[str], folds: list[str], date_f
     # the modelling rows' features once, as float32; each fold slices it (copies of the frame do not fit a runner)
     rows = np.flatnonzero(mask)
     meta = df.iloc[rows][["race_id", "t", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "won",
-                          "sp_p_norm", "sp_decimal", "field"]].reset_index(drop=True)
+                          "sp_p_norm", "sp_decimal", "field"] + (["runs_before"] if "runs_before" in df else [])
+                         ].reset_index(drop=True)
     X = np.empty((len(rows), len(features)), dtype=np.float32)
     for j, f in enumerate(features):
         X[:, j] = df[f].to_numpy(np.float32, na_value=np.nan)[rows]
@@ -275,6 +276,22 @@ def blended_rules(m: pd.DataFrame, price: str, raw_edges=(0.1, 0.2, 0.3), blend_
     for th in blend_edges:
         sel = b[(b.p_blend * odds - 1 > th) & (b[price] <= cap)]
         out["rules"][f"blend, edge>{th:.2f}"] = rule(sel)
+    if "runs_before" in d:
+        # the model's weight by how much is known of the dog (the research: shrink a lightly raced dog's chance
+        # harder to the market): the model's log-odds and its product with u = 1 / (1 + runs before)
+        u = lambda x: 1.0 / (1.0 + x.runs_before.fillna(0).clip(lower=0).to_numpy(float))  # noqa: E731
+        Xu = lambda x: np.c_[_logit(x[pc]), _logit(x.p_model), _logit(x.p_model) * u(x), u(x)]  # noqa: E731
+        lu = LogisticRegression(C=1.0).fit(Xu(a), a.won)
+        b["p_blend"] = race_norm(pd.Series(lu.predict_proba(Xu(b))[:, 1], index=b.index), b.market_id)
+        c = lu.coef_[0]
+        out["poverty_blend"] = {"weights": {"price": round(float(c[0]), 3), "model": round(float(c[1]), 3),
+                                            "model_x_u": round(float(c[2]), 3), "u": round(float(c[3]), 3)},
+                                "model_weight_by_runs": {r: round(float(c[1] + c[2] / (1 + r)), 3)
+                                                         for r in (0, 1, 3, 10, 30)},
+                                "logloss_test": round(logloss(b.p_blend, b.won), 5), "rules": {}}
+        for th in blend_edges:
+            sel = b[(b.p_blend * odds - 1 > th) & (b[price] <= cap)]
+            out["poverty_blend"]["rules"][f"blend, edge>{th:.2f}"] = rule(sel)
     return out
 
 

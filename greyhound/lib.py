@@ -180,6 +180,67 @@ def form_lines(df: pd.DataFrame) -> pd.DataFrame:
                          "fl3_n": n3, "fl3_wr": (w3 + 0.5) / (n3 + 3.0)}, index=df.index)
 
 
+def first_bend(df: pd.DataFrame) -> pd.DataFrame:
+    """Crossings at the first bend (the research: congestion builds where dogs move off their traps onto their
+    running lines). Two dogs cross when their running lines (``path_mean6``, 1 rails to 3 wide, from earlier days)
+    run the other way to their traps; a crossing matters most between dogs that reach the bend together (early speed
+    ``esr_mean3`` close). Per dog: crossings, crossings weighted by closeness in early speed, the nearest early
+    speed on either side and its gap."""
+    path = df.path_mean6.to_numpy(float)
+    esr = df.esr_mean3.to_numpy(float)
+    trap = df.trap.to_numpy(float)
+    race = pd.factorize(df.race_id)[0]
+    order = np.lexsort((trap, race))
+    starts = np.r_[0, np.flatnonzero(np.diff(race[order])) + 1, len(order)]
+    n_cross, w_cross, near = (np.full(len(df), np.nan) for _ in range(3))
+    for a, b in zip(starts[:-1], starts[1:]):
+        rows = order[a:b]
+        p, e, t = path[rows], esr[rows], trap[rows]
+        known = np.isfinite(p)
+        cross = ((t[:, None] - t[None, :]) * (p[:, None] - p[None, :]) < 0) & known[:, None] & known[None, :]
+        de = np.abs(e[:, None] - e[None, :])
+        close = np.exp(-np.nan_to_num(de, nan=10.0) / 2.0)
+        np.fill_diagonal(de, np.inf)
+        n_cross[rows] = np.where(known, cross.sum(1), np.nan)
+        w_cross[rows] = np.where(known, (cross * close).sum(1), np.nan)
+        near[rows] = np.where(np.isfinite(e), np.nanmin(np.where(np.isfinite(de), de, np.inf), axis=1), np.nan)
+    near[~np.isfinite(near)] = np.nan
+    return pd.DataFrame({"fb_cross": n_cross, "fb_cross_w": w_cross, "fb_esr_nearest": near}, index=df.index)
+
+
+def since_break(df: pd.DataFrame, gap_days: int = 42) -> pd.DataFrame:
+    """Days and runs since the dog came back from a break of ``gap_days`` or more: for a bitch most often her season
+    (21 days' rest at least, the best form 12-20 weeks after it, the research). Dates only, so known on the card:
+    a dog back today reads 0."""
+    d = pd.DataFrame({"dog": df.dog_id.to_numpy(), "day": _day_codes(df)}).drop_duplicates()
+    d = d.sort_values(["dog", "day"], kind="stable")
+    gap = d.groupby("dog").day.diff()
+    fresh = (gap >= gap_days) | gap.isna()                   # a debut counts as a return: no break yet
+    d["ret"] = d.day.where(fresh).groupby(d.dog).ffill()
+    d["k"] = d.groupby("dog").cumcount()
+    d["k_ret"] = d.k.where(fresh).groupby(d.dog).ffill()
+    m = pd.DataFrame({"dog": df.dog_id.to_numpy(), "day": _day_codes(df)}).merge(d, on=["dog", "day"], how="left")
+    days = (m.day - m.ret).to_numpy(float)
+    runs = (m.k - m.k_ret).to_numpy(float)
+    bitch = (df.sex.astype(str).str.lower() == "b").to_numpy() if "sex" in df else np.zeros(len(df), bool)
+    return pd.DataFrame({"brk_days": days, "brk_runs": runs, "brk_days_bitch": np.where(bitch, days, np.nan)},
+                        index=df.index)
+
+
+def class_variant_gsr(df: pd.DataFrame) -> pd.Series:
+    """A speed figure on a class-adjusted meeting variant. The engine's variant is the night's median winner against
+    the track standard, so a night of top grades reads as fast going. Here each winner's deviation is first measured
+    against what its grade usually runs at the track and trip (from earlier days), then the night's median taken."""
+    from model.lagsafe import race_lagged_expanding_mean
+    from greyhound.metrics import LENGTH_S
+    dev = df.adjusted_time.where(df.won == 1) - df.std_time
+    tmp = df.assign(_dev=dev)
+    grade_dev = race_lagged_expanding_mean(tmp, ["track", "distance_m", "race_class"], "_dev")
+    adj = (dev - grade_dev.fillna(0.0))
+    variant = adj.groupby(df.meeting_id).transform("median").fillna(0.0)
+    return (df.std_time - (df.adjusted_time - variant)) / LENGTH_S
+
+
 def calculate(df: pd.DataFrame, dog_days=None) -> tuple[pd.DataFrame, list[str]]:
     """The block for the engine's frame (after the base features): its columns and their names."""
     g = df.race_id
@@ -199,5 +260,20 @@ def calculate(df: pd.DataFrame, dog_days=None) -> tuple[pd.DataFrame, list[str]]
     f = form_lines(df)
     for c in f.columns:
         cols[f"{PREFIX}{c}"] = f[c].astype(np.float32)
+    if {"path_mean6", "esr_mean3"} <= set(df.columns):
+        fb = first_bend(df)
+        for c in fb.columns:
+            cols[f"{PREFIX}{c}"] = fb[c].astype(np.float32)
+    sb = since_break(df)
+    for c in sb.columns:
+        cols[f"{PREFIX}{c}"] = sb[c].astype(np.float32)
+    if dog_days is not None and {"std_time", "adjusted_time", "meeting_id"} <= set(df.columns):
+        tmp = df[["dog_id", "race_date"]].assign(_g2=class_variant_gsr(df).to_numpy())
+        dd = dog_days(tmp, ["_g2"], [])
+        cols[f"{PREFIX}cv_gsr_mean3"] = dd.back(dd.window("_g2", 3)).astype(np.float32)
+        cols[f"{PREFIX}cv_gsr_max6"] = dd.back(dd.window("_g2", 6, "max")).astype(np.float32)
+        cols[f"{PREFIX}cv_gsr_ewm"] = dd.back(dd.ewm("_g2")).astype(np.float32)
+        s = pd.Series(cols[f"{PREFIX}cv_gsr_ewm"], index=df.index)
+        cols[f"{PREFIX}cv_gsr_ewm_z"] = _race_stats(s, g, f"{PREFIX}cv")[f"{PREFIX}cv_z"]
     out = pd.DataFrame(cols, index=df.index)
     return out, list(out.columns)
