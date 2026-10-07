@@ -262,7 +262,9 @@ def decide(market_pred: pd.DataFrame, book, cfg: dict, done=frozenset()) -> list
     active = {sid: q for sid, q in book.runners.items() if q.status == "ACTIVE"}
     p = market_pred.set_index("selection_id")
     if not active or any(sid not in p.index for sid in active):
-        return [{"selection_id": None, "action": "skip", "error": "the field as it stands is not all priced"}]
+        # a runner the prices lack (a reserve in, a field priced before it was settled): the race is looked at again
+        # each poll, as the prices are reloaded, until it can be priced whole or the off is too near
+        return [{"selection_id": None, "action": "retry", "error": "the field as it stands is not all priced"}]
     probs = p.loc[list(active), "p_model"].astype(float)
     probs = probs / probs.sum()                                 # renormalised over the runners still in
     out = []
@@ -286,12 +288,27 @@ def decide(market_pred: pd.DataFrame, book, cfg: dict, done=frozenset()) -> list
         stake = stake_for(price, cfg) if price > 1 else None
         if edge <= cfg["edge"] or price > cfg["limits"]["max_price"] or price < cfg["limits"]["min_price"]:
             out.append({**row, "action": "none"})
-        elif stake is None:
+            continue
+        if stake is None:
             out.append({**row, "action": "skip", "error": "the stake cannot reach the smallest SP lay"})
-        elif size + 1e-9 < stake:
-            out.append({**row, "action": "skip", "stake": stake, "error": f"GBP{size:.2f} offered, under the stake"})
+            continue
+        # the stake down the ladder: the limit is the lowest price needed for the stake to be offered, so long as the
+        # edge holds there (the order fills at that price or better)
+        limit, got = None, 0.0
+        for lv_price, lv_size in q.back:
+            e = probs[sid] * (1 + (lv_price - 1) * (1 - cfg["commission"])) - 1
+            if e <= cfg["edge"] or lv_price < cfg["limits"]["min_price"]:
+                break
+            got += lv_size
+            if got + 1e-9 >= stake:
+                limit = lv_price
+                break
+        if limit is None:
+            # too little offered within the edge: looked at again each poll until the stake is there or the off
+            out.append({**row, "action": "retry", "stake": stake,
+                        "error": f"GBP{got:.2f} offered within the edge, under the stake"})
         else:
-            out.append({**row, "action": "back", "stake": stake})
+            out.append({**row, "action": "back", "stake": stake, "price": limit})
     return out
 
 
@@ -303,6 +320,7 @@ class Trader:
         self.decided: set[str] = set()                     # markets with every runner decided
         self.decided_sel: set[tuple[str, int]] = set()      # (market, selection) decided
         self.turnover, self.bets, self.race_stake = 0.0, 0, {}
+        self.noted: set = set()                             # (market, selection, reason) retries already written
         self.preds: pd.DataFrame | None = None
         self._loaded_at = None
         self._resume()
@@ -313,6 +331,8 @@ class Trader:
             return
         with self.ledger_path.open() as f:
             for r in csv.DictReader(f):
+                if r["action"] == "retry":                  # noted, not decided: looked at again
+                    continue
                 if r.get("selection_id"):
                     self.decided_sel.add((r["market_id"], int(float(r["selection_id"]))))
                 else:                                   # a market skipped as a whole
@@ -372,7 +392,7 @@ class Trader:
                 continue
             done_here = {sid for m, sid in self.decided_sel if m == mid}
             rows = decide(todo[todo.market_id == mid], b, self.cfg, done=done_here)
-            waiting = any(r["action"] == "wait" for r in rows)
+            waiting = any(r["action"] in ("wait", "retry") for r in rows)
             rows = [r for r in rows if r["action"] != "wait"]
             mins = round(float((todo[todo.market_id == mid].off.iloc[0] - t).total_seconds() / 60), 1)
             out = []
@@ -391,6 +411,10 @@ class Trader:
                         fill = self.x.back(mid, r["selection_id"], r["price"], stake, ref, min_fill=stake)
                         r.update({"matched": fill.matched, "avg_price": fill.avg_price, "bet_id": fill.bet_id,
                                   "status": fill.status, "error": fill.error})
+                        if fill.status != "SUCCESS" and "INSUFFICIENT_FUNDS" in str(fill.error):
+                            # the account's money is out on other bets: tried again each poll as it comes back
+                            r["action"] = "retry"
+                            waiting = True
                         if fill.status == "SUCCESS" and fill.matched > 0:
                             self.turnover += fill.matched
                             self.bets += 1
@@ -402,12 +426,17 @@ class Trader:
                                     r.update({"lay_liability": liab, "lay_status": lay.status})
                                 else:
                                     r.update({"lay_status": f"not laid: GBP{liab:.2f} under the smallest SP lay"})
+                if r["action"] == "retry":                  # noted once a runner and reason, not each poll
+                    key = (mid, r.get("selection_id"), str(r.get("error", ""))[:24])
+                    if key in self.noted:
+                        continue
+                    self.noted.add(key)
                 if r["action"] != "none" or self.cfg.get("ledger_all", True):
                     out.append(r)
             if out:
                 self._write(out)
             for r in rows:
-                if r.get("selection_id") is not None:
+                if r.get("selection_id") is not None and r["action"] != "retry":
                     self.decided_sel.add((mid, int(r["selection_id"])))
             if not waiting:
                 self.decided.add(mid)
@@ -551,8 +580,8 @@ def coverage(store, day: date, cfg: dict | None = None, s3=None, now=None) -> di
            "name_not_read": int((~races.parsed).sum()),
            "name_not_read_examples": races[~races.parsed].market_name.astype(str).value_counts().head(10).to_dict(),
            "priced": int(races.priced.sum()), "not_priced": int((~races.priced).sum()),
-           "not_priced_examples": races[~races.priced][["venue", "market_name"]].assign(
-               off=races.off.dt.strftime("%H:%M")).head(15).astype(str).to_dict("records"),
+           "not_priced_examples": races[~races.priced].assign(off=lambda r: r.off.dt.strftime("%H:%M"))[
+               ["venue", "market_name", "off"]].head(15).astype(str).to_dict("records"),
            "off_so_far": int(races.gone.sum())}
     books = _read_day_csv(day, "books_greyhound.csv", s3=s3)
     for mode in ("paper", "live"):

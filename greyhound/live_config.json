@@ -5,8 +5,8 @@
   "tight": 1.25,
   "target": 12.0,
   "trade_from": "08:00",
-  "stop_before_off": 2,
-  "poll_seconds": 60,
+  "stop_before_off": 1,
+  "poll_seconds": 20,
   "ledger_all": true,
   "limits": {
     "min_stake": 5.0,
