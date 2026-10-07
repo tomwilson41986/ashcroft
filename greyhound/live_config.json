@@ -15,7 +15,7 @@
     "min_bsp_liability": 10.0,
     "min_price": 1.5,
     "max_price": 20.0,
-    "max_race_stake": 10.0,
+    "max_race_stake": 30.0,
     "max_daily_turnover": null,
     "max_bets_per_day": null,
     "min_order": 1.0
