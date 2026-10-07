@@ -2,13 +2,14 @@ name: Live trading (the owner's book)
 
 # The owner's rule with real money on the owner's Betfair account (auto_trade.py --live, trading/config_live.json;
 # the owner's decision of 30 Sep 2026): every runner whose expected CLV at the best back price is at least +3% under
-# the closing model, staked to win GBP400 (the owner, 7 Oct; GBP250 until then), at most GBP300 a bet and GBP4,000 a
-# day (no day limit on the morning of 7 Oct), each back filled at
-# once or not at all and laid at the Betfair SP as soon as it is matched, with what the account has (short of funds it
-# holds, and trades again as the races are run and the stakes come back). From 08:00 UK until 15 minutes before each
-# off: the owner's decision of 1 Oct, made knowing that entered near the off the rule lost in the Jan-Mar test
-# (ledger late-entry-0930: CLV -5.8% without matched money); the summary scores the bets entered by 11:00 UK, the
-# tested window, apart from the later ones.
+# the closing model, staked to win GBP400 (the owner, 7 Oct; GBP250 until then), at most GBP300 a bet, each back filled
+# at once or not at all and laid at the Betfair SP as soon as it is matched, with what the account has (short of funds
+# it holds, and trades again as the races are run and the stakes come back). From 08:00 to 14:00 UK, never within 15
+# minutes of an off, and no limit on the day's stakes: the owner's decision of 7 Oct, time and not money deciding the
+# stop (the 1-5 Oct replay at the account's GBP3,578: a 14:00 stop worth GBP1,203 of CLV x stake against GBP912 to the
+# last race and GBP1,165 under a GBP4,000 day limit; ledger stop-1400-1007). 1-7 Oct it traded to 15 minutes before
+# each off (the owner, 1 Oct). The session ends five minutes after 14:00; the market records beside it run on to the
+# last race. The summary scores the bets entered by 11:00 UK apart from the later ones.
 #
 # One runner serves the trading and the market record, so on a trading day this job records the markets itself
 # (betfair_recorder.py, read-only, beside the trader; the trader's own books go to their own files), and tomorrow's
@@ -27,7 +28,7 @@ name: Live trading (the owner's book)
 
 on:
   schedule:
-    - cron: '50 6 * * *'     # trade: the session waits for 08:00 UK and trades to 15 minutes before each off
+    - cron: '50 6 * * *'     # trade: the session waits for 08:00 UK and trades to 14:00 UK (trading/config_live.json)
     - cron: '45 21 * * *'    # settle: after the last race
   workflow_dispatch:
     inputs:
