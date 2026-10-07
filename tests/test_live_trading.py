@@ -15,13 +15,19 @@ from trading.strategy import RunnerView, plan_race
 UTC = timezone.utc
 DAY = date(2026, 10, 1)
 LIVE = tc.load_config("trading/config_live.json", env={})
+STAKE = 250.0      # the mechanics below are written to win GBP250 (the live target until 7 Oct); the owner's own
+                   # target and limits are tested on LIVE itself (test_the_owners_commission_stake_and_limits)
 
 
 def _live_cfg(**limits):
     cfg = tc.load_config("trading/config_live.json", env={})
+    cfg.target = STAKE
     for k, v in limits.items():
         setattr(cfg.limits, k, v)
     return cfg
+
+
+MECH = _live_cfg()
 
 
 def _views(backs, ours, traded, lays=None):
@@ -34,10 +40,10 @@ def _views(backs, ours, traded, lays=None):
 
 def test_the_rule_backs_the_value_to_win_250_at_most_300_a_bet():
     # books like a real market's: the back prices add to about 100%
-    got = plan_race(_views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300]), LIVE, 4000)
+    got = plan_race(_views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300]), MECH, 4000)
     assert [d.selection_id for d in got] == [1]
     assert got[0].edge >= 0.03 and got[0].target == pytest.approx(250 / 6.0)
-    short = plan_race(_views([1.4, 5.0, 12.0], [1.15, 12.0, 20.0], [5000, 900, 800]), LIVE, 4000)
+    short = plan_race(_views([1.4, 5.0, 12.0], [1.15, 12.0, 20.0], [5000, 900, 800]), MECH, 4000)
     assert [d.selection_id for d in short] == [1]
     assert short[0].target == pytest.approx(300.0)                # to win 250 at 1.4 would be GBP625
 
@@ -45,14 +51,14 @@ def test_the_rule_backs_the_value_to_win_250_at_most_300_a_bet():
 def test_a_race_not_wholly_priced_is_left_alone():
     views = _views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])
     views[2].model_price = None                                    # a reserve that got in: the model never priced it
-    assert plan_race(views, LIVE, 4000) == []
+    assert plan_race(views, MECH, 4000) == []
 
 
 def test_matched_money_is_required_unless_the_feed_has_none():
     thin = _views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [50, 900, 800, 300])   # the value horse: GBP50
-    assert plan_race(thin, LIVE, 4000) == []
+    assert plan_race(thin, MECH, 4000) == []
     blind = _views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [0, 0, 0, 0])          # the delayed key's feed
-    got = plan_race(blind, LIVE, 4000)
+    got = plan_race(blind, MECH, 4000)
     assert [d.selection_id for d in got] == [1] and "without volume" in got[0].reason
 
 
@@ -389,15 +395,16 @@ def test_a_back_reduced_for_a_non_runner_is_scored_at_the_price_betfair_settled(
     assert s.summary()["stake_weighted_clv"] == pytest.approx(0.26)
 
 
-def test_the_owners_commission_rate_and_no_limit_on_the_number_of_bets_or_the_days_stakes():
+def test_the_owners_commission_stake_and_limits():
     """The owner, 2 Oct. Betfair charges the account 2% of each race's net winnings: on 1 Oct the settled result at 2%
     met the account's balance to the penny (+GBP188.19; 5% gave 178.62). The number of bets is not limited (a cap of
-    250 stopped seven backs on 1 Oct). The owner, 7 Oct: no limit on the day's stakes either (GBP4,000 until then),
-    so the account's money is the limit; GBP300 a bet stays."""
+    250 stopped seven backs on 1 Oct). The owner, 7 Oct: GBP400 to win (GBP250 until then) with the GBP4,000 day
+    limit (lifted that morning, back with the bigger target: the 1-5 Oct replay's best with about GBP5,000 in the
+    account); GBP300 a bet stays."""
     assert LIVE.commission == 0.02
     assert LIVE.limits.max_bets_per_day >= 1_000_000
-    assert LIVE.limits.max_daily_turnover >= 1_000_000
-    assert LIVE.limits.max_stake == 300.0 and LIVE.target == 250.0
+    assert LIVE.limits.max_daily_turnover == 4000.0
+    assert LIVE.limits.max_stake == 300.0 and LIVE.target == 400.0
 
 
 def test_a_failed_read_of_the_settled_bets_never_stops_the_day():
