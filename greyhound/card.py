@@ -22,10 +22,18 @@ import pandas as pd
 NAME_RE = re.compile(r"^\s*([A-Z]{1,2}\d{0,2})\s+(\d{3,4})m\b", re.I)
 
 
+#: Betfair's class codes where GBGB writes the grade differently (the card check of 6 Oct 2026: Betfair's "HC" hurdle
+#: races are GBGB's "HP")
+BETFAIR_TO_GBGB = {"HC": "HP"}
+
+
 def parse_market_name(name) -> tuple[str | None, float | None]:
     """"A5 480m" -> ("A5", 480.0); "OR3 500m" -> ("OR3", 500.0); anything else -> (None, None)."""
     m = NAME_RE.match(str(name or ""))
-    return (m.group(1).upper(), float(m.group(2))) if m else (None, None)
+    if not m:
+        return (None, None)
+    cls = m.group(1).upper()
+    return (BETFAIR_TO_GBGB.get(cls, cls), float(m.group(2)))
 
 
 def norm_name(s) -> str:
@@ -57,12 +65,14 @@ def cards(markets: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
     out["race_id"] = out.market_id.map(_race_id)
     out["meeting_id"] = -out.groupby(["track", "race_date"]).ngroup() - 1
     out["runners"] = out.groupby("market_id").trap.transform("size")
+    # the race's number at its meeting, as GBGB numbers a card: its order by the off
+    out["race_number"] = out.groupby(["track", "race_date"]).race_time.rank(method="dense").astype(float)
     # each dog's GBGB history by name: the most recent dog of the name, with its static fields from its last run
     h = history.dropna(subset=["dog_id"]).sort_values(["race_date", "race_time"], kind="stable")
     last = h.assign(_n=h.dog_name.map(norm_name)).drop_duplicates("_n", keep="last").set_index("_n")
     key = out.dog_name.map(norm_name)
     found = key.isin(last.index)
-    for col in ("dog_id", "sire", "dam", "trainer", "born", "sex"):
+    for col in ("dog_id", "sire", "dam", "trainer", "born", "sex", "season"):
         out[col] = key.map(last[col]) if col in last else np.nan
     new = ~found
     # a dog GBGB has no run for: its trainer from Betfair's catalogue, where the catalogue gives one

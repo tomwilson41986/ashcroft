@@ -6,7 +6,7 @@ otherwise everything runs on paper (the same decisions, simulated against the li
 
 ``--train`` (GitHub's runners, weekly): the card-safe model. The research model reads the dog's weight on the day,
 which GBGB records at the weigh-in and the morning does not know, so the live model leaves out every feature built
-on it (``CARD_UNSAFE``); fitted on every GBGB race to yesterday, base and parity features, saved to
+on it (``CARD_UNSAFE``); fitted on every GBGB race to yesterday, base, parity and HorseRaceBase features, saved to
 ``sources/greyhound/live/model.txt`` with its meta.
 
 ``--predict`` (GitHub's runners, three times a morning): today's cards from the recorder's greyhound catalogue in
@@ -54,8 +54,12 @@ log = logging.getLogger(__name__)
 PREFIX = "greyhound/live"
 MODEL_KEY, META_KEY = f"{PREFIX}/model.txt", f"{PREFIX}/meta.json"
 CONFIG_PATH = Path(__file__).with_name("live_config.json")
-#: features built on the dog's weight on the day (GBGB's weigh-in, not known in the morning)
-CARD_UNSAFE = {"weight_change", "weight_vs_mean"}
+#: features the morning card cannot know: the dog's weight on the day (GBGB's weigh-in), the going (declared at the
+#: meeting), the prize money and the handicap marks (GBGB's result, not Betfair's catalogue)
+CARD_UNSAFE = {"weight_change", "weight_vs_mean", "hb_weight_vs_max", "hb_weight_vs_min", "hb_win_going",
+               "hb_plc_going", "hb_runs_going", "hb_prize_1st", "hb_handicap"}
+#: the feature blocks the live model is fitted with (``greyhound.metrics``; HorseRaceBase's from 6 Oct 2026, report §8.1)
+LIVE_BLOCKS = ("parity", "hrb")
 LEDGER_FIELDS = ["time_utc", "mode", "market_id", "selection_id", "track", "race_time", "trap", "dog", "p_model",
                  "price", "size_offered", "edge", "action", "stake", "matched", "avg_price", "bet_id", "status",
                  "error", "lay_liability", "lay_status", "minutes_to_off"]
@@ -107,7 +111,7 @@ def train(store, today: date) -> dict:
     from greyhound.model import load_prices
     from greyhound.track import runs_through
     runs = runs_through(store, today - timedelta(days=1))
-    eng = GreyhoundMetricsEngine()
+    eng = GreyhoundMetricsEngine(blocks=LIVE_BLOCKS)
     df = eng.calculate_all(runs, prices=load_prices(store, f"2014-{today.year}"))
     feats = card_safe(eng.features)
     m, meta = fit(df, feats, before=f"{today:%Y-%m-%d}")
@@ -145,6 +149,7 @@ def predict(store, day: date, s3=None) -> dict:
     hist = runs_through(store, day - timedelta(days=1))
     card = cards(markets, hist)
     card = card[card.race_date == f"{day:%Y-%m-%d}"]
+    card = drop_removed(card, removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
     eng = GreyhoundMetricsEngine(blocks=tuple(meta.get("blocks", ["parity"])))
     df = eng.calculate_all(clean(with_cards(hist, card)), prices=load_prices(store, f"2014-{day.year}"))
     missing = [f for f in meta["features"] if f not in df.columns]
@@ -159,6 +164,78 @@ def predict(store, day: date, s3=None) -> dict:
     return {"day": f"{day:%Y-%m-%d}", "markets": int(pred.market_id.nunique()), "runners": len(pred),
             "dogs_with_history": round(float(pred.matched_history.mean()), 3) if len(pred) else 0,
             "unknown_grade_or_trip": int(card.race_class.isna().sum())}
+
+
+def removed_runners(books) -> set:
+    """The (market, selection) pairs Betfair has marked removed (a non-runner, a reserve not in) in the recorded
+    books: the card leaves them out, as the result will."""
+    if books is None or not len(books) or "runner_status" not in books:
+        return set()
+    b = books.sort_values("polled_utc") if "polled_utc" in books else books
+    last = b.drop_duplicates(["market_id", "selection_id"], keep="last")
+    r = last[last.runner_status.astype(str).str.upper() == "REMOVED"]
+    return set(zip(r.market_id.astype(str), pd.to_numeric(r.selection_id, errors="coerce")))
+
+
+def drop_removed(card: pd.DataFrame, removed: set) -> pd.DataFrame:
+    if not removed or not len(card):
+        return card
+    gone = [(m, s) in removed for m, s in zip(card.market_id.astype(str), card.selection_id)]
+    out = card[~pd.Series(gone, index=card.index)].copy()
+    out["runners"] = out.groupby("market_id").trap.transform("size")
+    return out
+
+
+def card_check(store, day: date, blocks=LIVE_BLOCKS, s3=None) -> dict:
+    """Are the card's features the results' features? A past day priced twice: from the morning's card (the
+    recorder's catalogue, history to the day before) and from GBGB's results for it. Each feature's share of runners
+    where the two agree (both missing, or within 1e-6); a card-safe feature should agree for every dog with a GBGB
+    history."""
+    from betfair_recorder import _read_day_csv
+    from greyhound.card import cards, with_cards
+    from greyhound.data import clean
+    from greyhound.metrics import GreyhoundMetricsEngine
+    from greyhound.model import load_prices
+    from greyhound.track import runs_through
+    ds = f"{day:%Y-%m-%d}"
+    markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
+    if markets is None or not len(markets):
+        return {"day": ds, "note": "no greyhound catalogue recorded"}
+    full = runs_through(store, day)
+    hist = full[full.race_date.astype(str) < ds]
+    card = cards(markets, hist)
+    card = drop_removed(card[card.race_date == ds], removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
+    # every runner is priced (a dog with no history still counts in its field); only the matched are compared
+    m = card[card.matched_history]
+    matched = set(zip(m.track, m.race_time.astype(str).str[:5], m.trap.astype(float)))
+    prices = load_prices(store, f"2014-{day.year}")
+    eng = GreyhoundMetricsEngine(blocks=tuple(blocks))
+    a = eng.calculate_all(clean(with_cards(hist, card)), prices=prices)
+    b = GreyhoundMetricsEngine(blocks=tuple(blocks)).calculate_all(clean(full), prices=prices)
+    k = ["track", "race_time", "trap"]
+    a = a[a.is_card.fillna(False).astype(bool)].assign(race_time=lambda x: x.race_time.astype(str).str[:5])
+    b = b[(b.race_date.astype(str) == ds)].assign(race_time=lambda x: x.race_time.astype(str).str[:5])
+    j = a.merge(b, on=k, suffixes=("_card", "_res"))
+    j = j[[(t, r, float(p)) in matched for t, r, p in zip(j.track, j.race_time, j.trap)]]
+    agree = {}
+    for f in eng.features:
+        if f in k:                                           # a join key: equal by construction
+            agree[f] = 1.0
+            continue
+        x, y = j[f"{f}_card"].astype(float), j[f"{f}_res"].astype(float)
+        agree[f] = round(float(((x.isna() & y.isna()) | ((x - y).abs() <= 1e-6)).mean()), 4) if len(j) else None
+    bad = {f: v for f, v in sorted(agree.items(), key=lambda kv: kv[1] or 0) if v is not None and v < 0.99}
+    examples = {}
+    for f in [f for f in ("field", "grade", "trainer_win_z", "gp_lead_share", "hb_age_vs_youngest") if f in bad]:
+        x, y = j[f"{f}_card"].astype(float), j[f"{f}_res"].astype(float)
+        off = j[~((x.isna() & y.isna()) | ((x - y).abs() <= 1e-6))]
+        cols = [c for c in ("track", "race_time", "trap", "dog_name_card", "race_class_card", "race_class_res",
+                            "trainer_card", "trainer_res") if c in j.columns]
+        examples[f] = off[cols].assign(card=x[off.index], res=y[off.index]).head(6).astype(str).to_dict("records")
+    return {"day": ds, "runners_compared": len(j), "features": len(agree),
+            "agree_all": sum(1 for v in agree.values() if v is not None and v >= 0.99),
+            "disagree": bad, "disagree_not_card_unsafe": [f for f in bad if f not in CARD_UNSAFE],
+            "examples": examples}
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -459,6 +536,8 @@ def main(argv=None) -> int:
     ap.add_argument("--live", action="store_true", help="real orders (only with GREYHOUND_LIVE=yes)")
     ap.add_argument("--until", default="21:30", help="trade: stop at this UK time")
     ap.add_argument("--settle", action="store_true")
+    ap.add_argument("--check-card", action="store_true",
+                    help="a past day (--date): the card's features against the results' features, feature by feature")
     ap.add_argument("--days", type=int, default=1, help="settle: the last N days")
     ap.add_argument("--date", default=None)
     ap.add_argument("--config", default=str(CONFIG_PATH))
@@ -466,6 +545,8 @@ def main(argv=None) -> int:
     store = Store(root=a.store)
     day = date.fromisoformat(a.date) if a.date else uk_today()
     out = {}
+    if a.check_card:
+        out["check_card"] = card_check(store, day)
     if a.train or (a.train_if_missing and load_model(store)[0] is None):
         out["train"] = train(store, day)
     if a.predict:
