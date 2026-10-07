@@ -398,8 +398,8 @@ def test_a_back_reduced_for_a_non_runner_is_scored_at_the_price_betfair_settled(
 def test_the_owners_commission_stake_and_limits():
     """The owner, 2 Oct. Betfair charges the account 2% of each race's net winnings: on 1 Oct the settled result at 2%
     met the account's balance to the penny (+GBP188.19; 5% gave 178.62). The number of bets is not limited (a cap of
-    250 stopped seven backs on 1 Oct). The owner, 7 Oct: GBP400 to win (GBP250 until then), GBP300 a bet, and time,
-    not money, ends the day: no new bet after 14:00 UK (test_the_owners_window_*), no limit on the day's stakes."""
+    250 stopped seven backs on 1 Oct). The owner, 7 Oct: GBP400 to win (GBP250 until then), GBP300 a bet, no limit on
+    the day's stakes and no stop time: "We should just trade if we think the price is right" (test_the_owners_window_*)."""
     assert LIVE.commission == 0.02
     assert LIVE.limits.max_bets_per_day >= 1_000_000
     assert LIVE.limits.max_daily_turnover >= 1_000_000
@@ -730,30 +730,19 @@ def test_the_summary_scores_the_bets_entered_by_11_apart_from_the_later_ones():
     assert out["stake_weighted_clv"] == round((15 * 0.10 - 20 * 0.05) / 35, 4)
 
 
-def test_the_owners_window_stops_new_bets_at_14_uk_and_15_minutes_before_each_off():
-    """The owner, 7 Oct: no new bet after 14:00 UK (time, not money, decides; 1 Oct-7 Oct to 15 minutes before each
-    off), and never within 15 minutes of an off."""
-    assert LIVE.trade_from == "08:00" and LIVE.trade_until == "14:00" and LIVE.stop_before_off == 15
+def test_the_owners_window_runs_to_15_minutes_before_each_off():
+    """The owner, 1 Oct, and again 7 Oct ("Let's not stop. We should just trade if we think the price is right"): every
+    race from 08:00 UK until 15 minutes before its off, however late the day."""
+    assert LIVE.trade_from == "08:00" and LIVE.trade_until == "21:30" and LIVE.stop_before_off == 15
     race = [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300]
-    off = datetime(2026, 10, 1, 12, 30, tzinfo=UTC)                 # 13:30 UK
+    off = datetime(2026, 10, 1, 17, 30, tzinfo=UTC)                 # 18:30 UK
     c = _Client()
     s, clock = _session(c, [_race("1.7", off, *race)])
-    clock.t = datetime(2026, 10, 1, 12, 14, tzinfo=UTC)             # 16 minutes before: still on
+    clock.t = datetime(2026, 10, 1, 17, 14, tzinfo=UTC)             # 16 minutes before: still on
     s.step(clock())
     assert [o["side"] for o in _orders(c)] == ["BACK", "LAY"]
     c2 = _Client()
     s2, clock2 = _session(c2, [_race("1.7", off, *race)])
-    clock2.t = datetime(2026, 10, 1, 12, 15, tzinfo=UTC)            # 15 minutes before: no more bets
+    clock2.t = datetime(2026, 10, 1, 17, 15, tzinfo=UTC)            # 15 minutes before: no more bets
     s2.step(clock2())
     assert not _orders(c2)
-    late = datetime(2026, 10, 1, 17, 30, tzinfo=UTC)                # 18:30 UK, hours away
-    c3 = _Client()
-    s3, clock3 = _session(c3, [_race("1.8", late, *race)])
-    clock3.t = datetime(2026, 10, 1, 13, 0, tzinfo=UTC)             # 14:00 UK: the last minute
-    s3.step(clock3())
-    assert [o["side"] for o in _orders(c3)] == ["BACK", "LAY"]
-    c4 = _Client()
-    s4, clock4 = _session(c4, [_race("1.8", late, *race)])
-    clock4.t = datetime(2026, 10, 1, 13, 1, tzinfo=UTC)             # 14:01 UK: the day's betting is over
-    s4.step(clock4())
-    assert not _orders(c4)
