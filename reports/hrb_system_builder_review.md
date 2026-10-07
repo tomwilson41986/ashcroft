@@ -14,7 +14,8 @@ of these would be useful in our model. Ledger `hrb-features-1006`.
   put in front of the served model (iteration 109):
   - the in-running low and high of each past run, from the price files. **It sharpens the served model's price
     forecast** (-0.0008, resolved; most at the top of the market), though it adds nothing to the BSP on the winner.
-    Iteration 110 tries it in every member of the served blend before any training;
+    In the served blend (iteration 110) the gain shrinks to -0.0002 to -0.0003 and does not resolve: built, not
+    served;
   - six small extras: nothing. Retired.
 - What horseracebase holds and our export does not is listed at the end: wind operations, foal dates, owners,
   opening prices and others.
@@ -168,6 +169,25 @@ What it means:
 - If it holds, the block is trained into the served models and goes through the usual verification, the
   matrix-against-live parity check and a dry run before it is served. The rule itself does not change.
 - The extras are retired.
+
+**Iteration 110** (research loop run 37532787409, the same runners; the blends compared pairwise by
+`research/queries/done/iter110_gate_pairwise.py`, research-query run 37593498244):
+
+| Against | Price-forecast error (90% CI) | Rank 1 | Brier skill, concordance |
+|---|---|---|---|
+| The main with the block, against the main | -0.0007 (-0.0013 to -0.0001) | -0.0023 | level |
+| The same at seed 7, against the main at seed 7 | -0.0005 (-0.0011 to +0.0001) | +0.0003 | Brier skill resolved worse (-0.00066) |
+| The block in all three members, against the served blend refitted | -0.0003 (-0.0008 to +0.0002) | -0.0011 (-0.0022 to -0.0001) | level |
+| The block in race_xent only | -0.0002 (-0.0006 to +0.0001) | -0.0011 | level |
+| The block in the main and partner only | -0.0002 (-0.0005 to +0.0002) | -0.0000 | level |
+
+- On the main alone the gain holds at the served seed, after iteration 109's -0.0008. At a second seed it is a
+  little smaller and not resolved, and that fit is worse on the winner against the market.
+- In the served blend the gain shrinks to -0.0002 to -0.0003 and resolves nowhere. The rank gate gives race_xent the
+  three shortest prices in each race, and there the block moves the error by about a thousandth.
+- The rule is level: +10.90% for both blends. On the owner's staking at expected CLV >= 3% the blend with the block
+  made +7.74% against +7.67%.
+- So the block is **built, not served**. It stays in `model/blocks/inrunning.py` for any later blend.
 
 ## What horseracebase holds that our export does not take
 
