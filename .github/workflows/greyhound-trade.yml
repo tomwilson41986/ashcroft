@@ -7,8 +7,8 @@ name: Greyhound trading (the owner's book, on its own)
 # start it after cancelling the day's recorder run (live-record.yml), and the record carries on in the same day files.
 #
 # The rule: each GB greyhound runner backed once, at its first real price (back and lay within 25%) after the
-# morning's prices are in (greyhound-live.yml), where the edge clears 0.2; GBP2 level, held, no price over 20, GBP4 a
-# race, GBP120 and 60 bets a day, fill-or-kill. Real orders only with the repository variable GREYHOUND_LIVE=yes;
+# morning's prices are in (greyhound-live.yml), where the edge clears 0.2; GBP5 level, held, no price over 20, GBP10 a
+# race, no daily cap (from 7 Oct), fill-or-kill. Real orders only with the repository variable GREYHOUND_LIVE=yes;
 # the S3 object greyhound/STOP or trading/STOP stops new bets within a minute; cancelling this run stops everything
 # (a matched back stays matched).
 
