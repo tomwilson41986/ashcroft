@@ -11,7 +11,7 @@
   "catalogue_seconds": 900,
   "poll_seconds": 60,
   "ledger_all": true,
-  "model_params": {"xi": 0.0023, "l2": 3.0, "sot_mix": 0.0},
+  "model_params": {"xi": 0.0023, "l2": 3.0, "sot_mix": 0.3},
   "limits": {
     "level_stake": 2.0,
     "min_price": 1.3,

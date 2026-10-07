@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 
 COM = 0.02                     # Betfair commission on net winnings assumed for exchange prices
 EDGES = (0.02, 0.05, 0.10)
-DEFAULTS = {"xi": 0.0023, "l2": 3.0, "window_days": 1100, "sot_mix": 0.0, "refit_days": 7}
+DEFAULTS = {"xi": 0.0023, "l2": 3.0, "window_days": 1100, "sot_mix": 0.3, "refit_days": 7}
 
 
 # --------------------------------------------------------------------------------------------------------------------
