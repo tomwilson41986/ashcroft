@@ -113,6 +113,31 @@ def test_a_book_is_read_from_betfairs_reply():
     assert b.runners[6].status == "REMOVED" and b.runners[6].bsp is None
 
 
+#: Betfair's weight for each kind of price data, a market; a call's markets times their weight must not pass 200
+PRICE_DATA_WEIGHT = {"EX_BEST_OFFERS": 5, "SP_AVAILABLE": 3, "SP_TRADED": 7}
+
+
+def test_the_read_after_the_off_asks_for_the_bsp_with_the_projection_and_the_money_taken():
+    """SP_TRADED alone brought the money taken at SP but no BSP on 6-7 Oct (the live key; ledger bsp-at-off-1007):
+    the trader settling its races asks SP_AVAILABLE too, within Betfair's weight limit, and reads the BSP it sends."""
+    c = _Client(replies={"listMarketBook": [{"marketId": "1.1", "status": "OPEN", "inplay": True,
+                                              "bspReconciled": True, "runners": [
+                                                  {"selectionId": 5, "status": "ACTIVE",
+                                                   "sp": {"actualSP": 4.4, "backStakeTaken": [{"price": 4.4,
+                                                                                               "size": 88.0}]}}]}]})
+    books = BetfairData(client=c).books([f"1.{i}" for i in range(23)], with_sp=True)
+    asks = [params for method, params in c.calls if method == "listMarketBook"]
+    assert len(asks) == 3
+    for params in asks:
+        kinds = params["priceProjection"]["priceData"]
+        assert {"SP_AVAILABLE", "SP_TRADED"} <= set(kinds)
+        assert len(params["marketIds"]) * sum(PRICE_DATA_WEIGHT[k] for k in kinds) <= 200
+    assert books["1.1"].runners[5].bsp == 4.4
+    c.calls.clear()
+    BetfairData(client=c).books(["1.1"])                       # before the off: the prices alone
+    assert c.calls[0][1]["priceProjection"]["priceData"] == ["EX_BEST_OFFERS"]
+
+
 # ---------------------------------------------------------------- strategy and limits
 
 def _cfg(**kw):

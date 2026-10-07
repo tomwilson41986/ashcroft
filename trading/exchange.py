@@ -191,7 +191,10 @@ class BetfairData:
         return out
 
     def books(self, market_ids: list[str], with_sp: bool = False) -> dict[str, Book]:
-        data = ["EX_BEST_OFFERS"] + (["SP_TRADED"] if with_sp else [])
+        # with_sp, after the off: SP_TRADED alone brought the money taken at SP but never the BSP itself (6-7 Oct, the
+        # live key; ledger bsp-at-off-1007), so the projection's SP_AVAILABLE is asked too. Betfair's weight a market:
+        # EX_BEST_OFFERS 5, SP_AVAILABLE 3, SP_TRADED 7; ten markets a call stay under its limit of 200
+        data = ["EX_BEST_OFFERS"] + (["SP_AVAILABLE", "SP_TRADED"] if with_sp else [])
         batch = 10 if with_sp else 25
         out = {}
         for i in range(0, len(market_ids), batch):

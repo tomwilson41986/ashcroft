@@ -140,6 +140,9 @@ def attach(frame, race_map):
 
 win = attach(rows[rows["pool"].eq("WIN") & ~rows["scratched"]], win_map)
 plc = attach(rows[rows["pool"].eq("PLACE") & ~rows["scratched"]], place_map)
+# the Tote record restarts with the trader's job (seven times on 7 Oct), so a mark can be answered twice: the last
+win = win.sort_values("t").drop_duplicates(["race_id", "cloth", "mark"], keep="last")
+plc = plc.sort_values("t").drop_duplicates(["race_id", "cloth", "mark"], keep="last")
 # a place comparison needs the same terms: the Tote's places (the pool's numPositions) against the places the Betfair
 # market pays (numberOfWinners on its book, recorded from 7 Oct; before, taken to be the same)
 if "number_of_winners" in books.columns and len(plc):

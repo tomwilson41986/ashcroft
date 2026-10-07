@@ -381,6 +381,42 @@ def test_the_bsp_is_read_as_each_market_reconciles_it_at_the_off(tmp_path):
     assert out["left"] == 0
 
 
+def test_the_read_at_the_off_asks_for_the_bsp_within_betfairs_weight_limit():
+    """SP_TRADED alone brought no BSP (ledger bsp-at-off-1007): the read at the off asks SP_AVAILABLE too, a call's
+    markets times their weight (EX_BEST_OFFERS 5, SP_AVAILABLE 3, SP_TRADED 7) never over 200."""
+    weight = {"EX_BEST_OFFERS": 5, "SP_AVAILABLE": 3, "SP_TRADED": 7}
+    asked = []
+
+    class Data:
+        def _read(self, method, params):
+            asked.append(params)
+            return [raw_book(m) for m in params["marketIds"]]
+
+    got = br.read_books(Data(), [f"1.{i}" for i in range(40)], settled=True)
+    assert len(got) == 40
+    for params in asked:
+        kinds = params["priceProjection"]["priceData"]
+        assert {"SP_AVAILABLE", "SP_TRADED"} <= set(kinds)
+        assert len(params["marketIds"]) * sum(weight[k] for k in kinds) <= 200
+    asked.clear()
+    br.read_books(Data(), ["1.1"])
+    assert asked[0]["priceProjection"]["priceData"] == ["EX_BEST_OFFERS"]
+
+
+def test_the_final_mark_takes_the_bsp_from_the_traders_read_after_the_off():
+    """The trader's own reads as it settles its races (the live key) carry the BSP once Betfair sends it: the final
+    mark takes it when neither the settled book nor the recorder's reads at the off have one."""
+    books, markets = _books_frame()
+    books.loc[books["source"] == "final", "sp_actual"] = None              # as Betfair sends a closed market
+    trader = pd.DataFrame(br.book_rows([raw_book(inplay=True, runners=[
+        {"selectionId": 11, "status": "ACTIVE", "sp": {"actualSP": 4.2, "backStakeTaken": [{"price": 4.2,
+                                                                                            "size": 50.0}]}}])],
+        datetime(2026, 10, 1, 14, 35, 10, tzinfo=timezone.utc), "trader"))
+    m = br.marks(pd.concat([books, trader], ignore_index=True), markets, DAY).set_index(["selection_id", "mark"])
+    assert m.loc[(11, "final"), "bsp"] == pytest.approx(4.2)
+    assert m.loc[(11, "last"), "polled_utc"] == "2026-10-01T14:29:00Z"   # the in-play read is no pre-off mark
+
+
 def test_the_final_mark_takes_the_bsp_read_at_the_off_when_the_settled_book_has_none():
     books, markets = _books_frame()
     books.loc[books["source"] == "final", "sp_actual"] = None              # as Betfair sends a closed market

@@ -73,7 +73,10 @@ CATALOGUE_PROJECTION = ["EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION", "RUN
 CLOCK_MARKS = ("08:00", "09:00", "10:00", "11:00", "12:00")
 OFF_MARKS = (120, 60, 30, 15, 10, 5, 3, 1)
 #: a market's BSP is read once it has reconciled at the off (Betfair's book of a closed market carries none): up to
-#: BSP_TRIES reads, BSP_EVERY seconds apart, within 15 minutes of the off
+#: BSP_TRIES reads, BSP_EVERY seconds apart, within 15 minutes of the off. On 7 Oct none found one (189 WIN markets):
+#: the delayed key sends no Starting Price data after the off at all (1-7 Oct), and the live key's reads (the trader's
+#: settling, SP_TRADED) brought the money taken at SP but no BSP (ledger bsp-at-off-1007). Both ask SP_AVAILABLE too
+#: from 8 Oct; until a BSP is read the day's come with Betfair's price files the next day
 BSP_TRIES, BSP_EVERY = 3, 15.0
 #: Betfair's event type ids: the record is of horse racing unless asked otherwise (greyhounds: --event-type 4339)
 HORSE_RACING, GREYHOUNDS = "7", "4339"
@@ -463,10 +466,11 @@ def antepost(data, rec: "DayRecorder", countries=("GB", "IE"), days_ahead: int =
 
 
 def read_books(data, market_ids: list[str], settled: bool = False) -> list[dict]:
-    """The books of the markets; ``settled`` asks for the BSP (SP_TRADED) with the prices. Batches keep each call
-    under Betfair's weight limit of 200 (EX_BEST_OFFERS 5 a market, SP_TRADED 7)."""
-    data_kinds = ["EX_BEST_OFFERS"] + (["SP_TRADED"] if settled else [])
-    batch = 15 if settled else 25
+    """The books of the markets; ``settled`` asks for the BSP with the prices (SP_AVAILABLE and SP_TRADED: SP_TRADED
+    alone brought the money taken at SP but no BSP, ledger bsp-at-off-1007). Batches keep each call under Betfair's
+    weight limit of 200 (a market: EX_BEST_OFFERS 5, SP_AVAILABLE 3, SP_TRADED 7)."""
+    data_kinds = ["EX_BEST_OFFERS"] + (["SP_AVAILABLE", "SP_TRADED"] if settled else [])
+    batch = 12 if settled else 25                      # 180 and 125: some room under the limit
     out = []
     for i in range(0, len(market_ids), batch):
         out += data._read("listMarketBook", {
@@ -705,8 +709,9 @@ def marks(books, markets, day: date):
     out["market_status"] = out["status"]
     out["active_runners"] = pd.to_numeric(out["number_of_active_runners"], errors="coerce")
     out["bsp"] = pd.to_numeric(out["sp_actual"], errors="coerce")
-    # the settled book of a closed market carries no BSP: the one read as the market reconciled it at the off
-    sp = b[b["source"].isin(["bsp", "final"])].copy()
+    # the settled book of a closed market carries no BSP: the one read as the market reconciled it at the off, by the
+    # recorder or by the trader settling its races
+    sp = b[b["source"].isin(["bsp", "final", "trader"])].copy()
     sp["_sp"] = pd.to_numeric(sp["sp_actual"], errors="coerce")
     sp = sp.dropna(subset=["_sp"]).sort_values("polled").groupby(["market_id", "selection_id"])["_sp"].last()
     fill = out["mark"].eq("final") & out["bsp"].isna()
