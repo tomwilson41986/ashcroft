@@ -10,7 +10,8 @@ Two kinds of file:
   Romania, Russia, Sweden, Switzerland, the USA), one file holding every season since 2012: result and closing 1X2
   (Pinnacle, Betfair Exchange, the market's maximum and average).
 
-Raw: ``football/raw/<season>/<div>.csv`` (e.g. ``2526/E0.csv``) and ``football/raw/new/<code>.csv``, as published.
+Raw: ``football/raw/<season>/<div>.csv`` (e.g. ``2526/E0.csv``) and ``football/raw/new/<code>.csv``, as published,
+and the upcoming fixtures with their opening prices, ``football/raw/fixtures/<day>/fixtures.csv``, kept a day a folder.
 The current season's files and the extra leagues are fetched again each run. Table: ``football/matches.parquet``, one
 row a match, the result columns named alike across both kinds and every odds column kept as football-data names it
 (its notes: https://www.football-data.co.uk/notes.txt).
@@ -31,6 +32,7 @@ MAIN = ("E0", "E1", "E2", "E3", "EC", "SC0", "SC1", "SC2", "SC3", "D1", "D2", "I
         "N1", "B1", "P1", "T1", "G1")
 EXTRA = ("ARG", "AUT", "BRA", "CHN", "DNK", "FIN", "IRL", "JPN", "MEX", "NOR", "POL", "ROU", "RUS", "SWE", "SWZ", "USA")
 FIRST_SEASON = 1993
+FIXTURES = ("fixtures.csv", "new_league_fixtures.csv")
 #: the extra leagues' result columns, named as in the main files
 RENAME = {"Home": "HomeTeam", "Away": "AwayTeam", "HG": "FTHG", "AG": "FTAG", "Res": "FTR"}
 
@@ -56,6 +58,10 @@ def fetch(store: Store, first_season: int = FIRST_SEASON, max_minutes: float | N
         for div in MAIN:
             jobs.append((f"football/raw/{season_code(y)}/{div}.csv", f"{BASE}/mmz4281/{season_code(y)}/{div}.csv",
                          y >= now - (1 if (today or date.today()).month in (7, 8) else 0)))
+    # the upcoming fixtures with their opening prices (collected Friday and Tuesday afternoons): bronze, by day
+    stamp = (today or date.today()).isoformat()
+    for name in FIXTURES:
+        jobs.insert(0, (f"football/raw/fixtures/{stamp}/{name}", f"{BASE}/{name}", True))
     for key, url, always in jobs:
         if not budget.left():
             out["stopped"] = True
@@ -97,6 +103,8 @@ def build(store: Store) -> dict:
         if df.empty or "HomeTeam" not in df.columns:
             continue
         bits = key.split("/")
+        if bits[2] == "fixtures":
+            continue                                     # upcoming matches: the gold build reads them (football.data)
         if bits[2] == "new":
             df["source_file"] = f"new/{bits[3]}"
             df["Div"] = bits[3][:-4]

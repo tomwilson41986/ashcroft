@@ -152,6 +152,8 @@ jobs:
           TRADING_LIVE: ${{ vars.TRADING_LIVE }}
           # the greyhound model's own switch (greyhound/live.py): real orders only when 'yes'
           GREYHOUND_LIVE: ${{ vars.GREYHOUND_LIVE }}
+          # the football model's own switch (football/live.py): real orders only when 'yes'; paper otherwise
+          FOOTBALL_LIVE: ${{ vars.FOOTBALL_LIVE }}
           # every book the session reads, kept for research (betfair_recorder.py; never in the way of trading)
           BETFAIR_RECORD: '1'
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
@@ -196,6 +198,17 @@ jobs:
             BETFAIR_APP_KEY="$TRADER_KEY" python -m greyhound.live --trade "${GHLIVE[@]}" --until 21:30 \
               > "$RUNNER_TEMP/greyhound_trader.log" 2>&1 &
             GHT=$!
+            # the football model (football/live.py, football/live_config.json; reports/football_model.md): Betfair's
+            # MATCH_ODDS and OVER_UNDER_25 markets in scope, each selection decided once in the 6 hours before kick-off,
+            # backed where the pooled chance's expected return clears the edge: GBP2 level, capped a match and a day.
+            # Paper unless FOOTBALL_LIVE=yes; on paper it is read-only, so it keeps the delayed key. S3 football/STOP or
+            # trading/STOP stops new bets. Ledger: s3://$CAPTURE_BUCKET/sources/football/live/<mode>/<day>/
+            FBLIVE=()
+            FBKEY="$BETFAIR_APP_KEY"
+            if [ "$FOOTBALL_LIVE" = yes ]; then FBLIVE=(--live); FBKEY="$TRADER_KEY"; fi
+            BETFAIR_APP_KEY="$FBKEY" timeout 15h python -m football.live --trade "${FBLIVE[@]}" --until 21:30 \
+              > "$RUNNER_TEMP/football_trader.log" 2>&1 &
+            FBT=$!
             # and the Tote's pools (the owner's ask of 6 Oct; read-only, no login, tote_recorder.py): each GB/IE
             # race's win and place dividends near the off, every pool's total, the declared dividends
             timeout 14h python tote_recorder.py --record --until 21:30 > "$RUNNER_TEMP/tote.log" 2>&1 &
@@ -219,6 +232,8 @@ jobs:
             wait "$DOGS"; echo "greyhound record exited $?"
             wait "$GHT"; echo "greyhound trader exited $?"
             tail -n 20 "$RUNNER_TEMP/greyhound_trader.log"
+            wait "$FBT"; echo "football trader exited $?"
+            tail -n 20 "$RUNNER_TEMP/football_trader.log"
             wait "$TOTE"; echo "Tote record exited $?"
             tail -n 5 "$RUNNER_TEMP/other_place.log" "$RUNNER_TEMP/greyhound.log" "$RUNNER_TEMP/tote.log"
             if [ -n "$EVE" ]; then
