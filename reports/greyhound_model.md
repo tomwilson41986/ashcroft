@@ -416,3 +416,60 @@ day properly, at BSP.
    when a bet would have gone in. Only that can say whether the bundle's first-price returns could have been taken.
 3. **The at-BSP returns:** cap the BSP, then check by price band and track before reading anything into them.
 4. Only after all three, a paper forward test with thresholds fixed in advance.
+
+## 11. The feature library and the race's own loss (CI run 37665090403; `reports/greyhound_lib_ci_1007.json`)
+
+Three models were fitted on the same GBGB rows and folds (fit from 2019, tested a year at a time 2021-2026, 1.64m
+runners), all with the weigh-in features, so none of them is the card-safe live model:
+- **all:** base, parity and HRB, 316 features, fitted runner by runner (binary).
+- **all+lib:** the same plus the `lib` block (Elo, Kalman rating, form lines, first-bend crossings, time since a
+  break, the class-adjusted speed figure), 342 features.
+- **all+lib:softmax:** the same features, fitted on the race's conditional logit (each race's runners in a softmax).
+
+A run with five variants (the two above plus all:softmax and all+lib:pl2) reached the job's 340-minute limit on its
+fourth and was re-run with these three.
+
+**Log-loss (lower is better; SP 0.42613)**
+
+| | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | All years |
+|---|---|---|---|---|---|---|---|
+| all | .43167 | .43162 | .43672 | .44141 | .44299 | .44435 | 0.43772 |
+| all+lib | .43059 | .43087 | .43511 | .43948 | .44145 | .44262 | 0.43630 |
+| all+lib:softmax | **.42992** | **.42960** | **.43398** | **.43848** | **.43986** | **.44121** | **0.43514** |
+| SP | .42247 | .42258 | .42617 | .42831 | .42889 | .42964 | 0.42613 |
+
+Both changes help in every year. The library is worth about 0.0014 and the race's loss another 0.0012, together
+closing about a quarter of the gap to the SP. The model is still well behind the market and still falls further
+behind it each year.
+
+**On the 2026 Betfair bundle**
+
+| | all | all+lib | all+lib:softmax |
+|---|---|---|---|
+| Log-loss (BSP 0.42752) | 0.44466 | 0.44292 | **0.44150** |
+| Blend weight on the model, with the BSP | 0.119 | 0.123 | **0.130** |
+| T-1, edge > 0.2: ROI at the price (90%) | +3.4% (+1.2, +5.5) | +4.1% (+1.9, +6.3) | **+4.6% (+2.4, +6.8)** |
+| T-1, edge > 0.2: the same bets at BSP | +4.5% | +5.2% | **+5.3%** |
+| T-1, edge > 0.3: ROI at the price (90%) | +3.7% (+1.2, +6.3) | +4.4% (+1.8, +7.0) | **+6.4% (+3.7, +9.1)** |
+| T-1, edge > 0.2: CLV vs BSP | −0.6% | −0.5% | 0.0% |
+| Test half only (17 May-29 Sep), T-1 raw edge > 0.2 | +3.6% (+0.4, +6.7) | +3.2% (+0.1, +6.4) | **+4.1% (+0.9, +7.3)** |
+| Test half, T-1 blend edge > 0.02 | +2.5% (−0.3, +5.3) | +1.8% (−1.0, +4.5) | **+3.9% (+1.2, +6.6)** |
+| Test half, T-1 raw edge > 0.2: winners / model's / price's | 3,214 / 4,776 / 3,044 | 3,147 / 4,615 / 2,986 | 3,273 / 4,681 / 3,071 |
+
+- **The race's loss is the better model on every measure a minute before the off.** Its picks still win 1.07 times what
+  the price expects and 0.70 of what the model expects: the softmax is better calibrated (the binary models' 0.67) but
+  still overconfident.
+- **The first traded price shows the largest numbers again** (+17% at that price for the softmax), but the live day
+  of 7 Oct is why those are not to be trusted: early books are thin, and what fills there is not what the bundle
+  records.
+- **The poverty blend adds nothing.** The model's fitted weight runs from 0.23 for a debutant to 0.27 at 30 runs, and
+  its test log-loss is the plain blend's.
+- **The library's strongest features:** the class-adjusted speed figure's recency-weighted z in the race
+  (`lb_cv_gsr_ewm_z`, now the model's first feature), the Kalman rating's z and gap in the race (`lb_kr_z`, `lb_kr_gap`).
+  Elo, the form lines, the first-bend crossings and time since a break do not reach the top 30.
+
+**Verdict.** all+lib:softmax is the research model from here. None of this goes live: every number above is the
+model with the weigh-in, which the morning card does not have. The decisive check is still to come: the card-safe
+model (no `CARD_UNSAFE` features) with the library and the race's loss, scored on the same Betfair test at T-1. Then
+the library's card check (`greyhound.live --check-card`), and only then a paper test of the near-the-off rule with its
+thresholds fixed in advance. Greyhound trading has been paper-only since 14:53 UTC on 7 Oct (the owner).
