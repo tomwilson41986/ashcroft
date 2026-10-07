@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import gzip
 import json
@@ -37,6 +38,7 @@ import io
 import logging
 import math
 import os
+import signal
 import sqlite3
 import sys
 import time
@@ -829,6 +831,28 @@ def load_db(db_path: str, days: int = 3, day_to: date | None = None, s3=None, ro
 # CLI
 # --------------------------------------------------------------------------------------------------------------------
 
+class Stopped(SystemExit):
+    """The record was asked to stop (SIGTERM): the recorder giving way to the trader (scripts/give_way.py), or the job
+    cancelled. A clean exit."""
+
+
+@contextlib.contextmanager
+def _stopped_by_sigterm():
+    """While recording, SIGTERM ends the record at once and cleanly: the signal raises in the main thread between two
+    statements, so no row is cut in half, and the day's files are copied to S3 on the way out (main)."""
+    def stop(signum, frame):
+        raise Stopped(0)
+    try:
+        old = signal.signal(signal.SIGTERM, stop)
+    except ValueError:                                   # not the main thread: the default stands
+        yield
+        return
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, old)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--record", action="store_true", help="snapshot the day's markets until --until (UK)")
@@ -921,21 +945,27 @@ def main(argv=None) -> int:
         rec.maybe_upload(force=True)
     if a.record or a.final:
         from trading.exchange import BetfairData
-        data = BetfairData()
-        data.login()
-        if a.record:
-            if window:
-                until = window[1]
-            elif a.for_minutes:
-                until = datetime.now(timezone.utc) + timedelta(minutes=a.for_minutes)
-            else:
-                until = uk_time_on(day, a.until)
-            sport = {} if a.event_type == HORSE_RACING else {"event_type": a.event_type}
-            print(record(day, until, data, rec, a.every, a.every_near, a.near,
-                         tuple(a.market_types.split(",")), tuple(a.countries.split(",")),
-                         wait_for_markets=window is not None, **sport))
-        if a.final:
-            print({"final": final(day, data, rec)})
+        with _stopped_by_sigterm():
+            try:
+                data = BetfairData()
+                data.login()
+                if a.record:
+                    if window:
+                        until = window[1]
+                    elif a.for_minutes:
+                        until = datetime.now(timezone.utc) + timedelta(minutes=a.for_minutes)
+                    else:
+                        until = uk_time_on(day, a.until)
+                    sport = {} if a.event_type == HORSE_RACING else {"event_type": a.event_type}
+                    print(record(day, until, data, rec, a.every, a.every_near, a.near,
+                                 tuple(a.market_types.split(",")), tuple(a.countries.split(",")),
+                                 wait_for_markets=window is not None, **sport))
+                if a.final:
+                    print({"final": final(day, data, rec)})
+            except Stopped:
+                log.info("Asked to stop (the trader comes first, or the job was cancelled): the day's files go to S3")
+                rec.maybe_upload(force=True)
+                raise
     return 0 if rec.errors == 0 else 2
 
 

@@ -150,3 +150,93 @@ def test_tomorrows_markets_are_recorded_the_evening_before_apart_and_bounded():
     assert run.startswith("timeout ") and "--record" in run and "-d tomorrow" in run
     assert "--tag evening" in run and "--for-minutes" in run and "--market-types WIN" in run
     assert "--final" not in run                     # tomorrow's markets are unsettled; the day's own run settles them
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# The trader comes first: the recorder gives way to a Live trading run waiting for the runner (from 7 Oct 2026)
+# ---------------------------------------------------------------------------------------------------------------
+
+def test_the_recorder_gives_way_to_a_trader_waiting_for_the_runner():
+    """7 Oct: the recorder's 10:10 UTC run took the one UK runner when the owner cancelled the trader to restart it,
+    and held it; both restarts waited behind it. It now looks for a waiting trader before anything slow and every
+    minute while it records, and once it has given way nothing else of the run goes on."""
+    spec = _spec("live-record.yml")
+    assert spec["permissions"] == {"contents": "read", "actions": "write"}
+    steps = spec["jobs"]["record"]["steps"]
+    names = [s.get("name", s.get("uses", "")) for s in steps]
+    first = _step(spec, "record", "Give way to a Live trading run")
+    assert names.index(first["name"]) == names.index("actions/checkout@v4") + 1      # before Python and the installs
+    assert "python3 scripts/give_way.py --check" in first["run"]                     # the system's Python 3
+    assert first["env"]["GH_TOKEN"] == "${{ github.token }}"
+    for s in steps[names.index(first["name"]) + 1:]:
+        assert "env.GAVE_WAY != '1'" in str(s.get("if", "")), s.get("name")
+    rec = _step(spec, "record", "Record the day's markets to the last race")
+    assert rec["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert 'give_way.py --watch --pids "$REC,$OTHER,$DOGS"' in rec["run"]
+    # the trader's own workflow is untouched by the recorder: the recorder only reads it
+    assert "give_way" not in (WORKFLOWS / "live-trade.yml").read_text().split("\njobs:", 1)[1]
+
+
+def _stub_python(tmp_path: Path, name: str) -> dict:
+    """A stand-in for python: logs its arguments; give_way.py answers as told; the records sleep a moment."""
+    if not shutil.which("bash"):
+        pytest.skip("needs bash")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / name
+    stub.write_text("#!/bin/bash\n"
+                    'echo "$*" >> "$LOG"\n'
+                    'case "$*" in\n'
+                    '  *give_way.py\\ --check*) exit "${CHECK_RC:-3}" ;;\n'
+                    '  *give_way.py\\ --watch*) exit "${WATCH_RC:-3}" ;;\n'
+                    '  *give_way.py\\ --requeue*) exit "${REQUEUE_RC:-0}" ;;\n'
+                    '  *betfair_recorder.py*--tag*) sleep 0.2; exit 0 ;;\n'
+                    '  *betfair_recorder.py*) sleep 0.2; exit "${MAIN_RC:-0}" ;;\n'
+                    "esac\n"
+                    "exit 99\n")
+    stub.chmod(0o755)
+    return {"PATH": f"{bin_dir}:/usr/bin:/bin", "LOG": str(tmp_path / "calls.log"),
+            "GITHUB_ENV": str(tmp_path / "github_env"), "UNTIL": "21:30"}
+
+
+def _run_step(tmp_path: Path, contains: str, env: dict, **answers) -> tuple[int, str, str]:
+    run = _step(_spec("live-record.yml"), "record", contains)["run"]
+    for f in (env["LOG"], env["GITHUB_ENV"]):
+        Path(f).write_text("")
+    out = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run], cwd=tmp_path,
+                         env={**env, **{k: str(v) for k, v in answers.items()}}, capture_output=True, text=True,
+                         timeout=60)
+    return out.returncode, Path(env["LOG"]).read_text(), Path(env["GITHUB_ENV"]).read_text()
+
+
+def test_the_record_step_stops_and_queues_again_when_the_trader_waits(tmp_path):
+    env = _stub_python(tmp_path, "python")
+    # a trader waits: the run gives way, queues again to the same time, and the step ends clean
+    rc, calls, genv = _run_step(tmp_path, "Record the day's markets", env, WATCH_RC=0)
+    assert rc == 0 and "GAVE_WAY=1" in genv
+    watch = next(line for line in calls.splitlines() if "--watch" in line)
+    pids = watch.split("--pids ", 1)[1].split()[0].split(",")
+    assert len(pids) == 3 and all(p.isdigit() for p in pids)
+    assert "scripts/give_way.py --requeue --until 21:30" in calls
+    # a failed requeue is a warning, not a failed step
+    rc, calls, genv = _run_step(tmp_path, "Record the day's markets", env, WATCH_RC=0, REQUEUE_RC=1)
+    assert rc == 0 and "GAVE_WAY=1" in genv
+    # the records ran to their end: no requeue, and the step is the main record's verdict, as before
+    for watch_rc in (3, 1):                                     # ended by themselves, or the watch itself failed
+        rc, calls, genv = _run_step(tmp_path, "Record the day's markets", env, WATCH_RC=watch_rc)
+        assert rc == 0 and "GAVE_WAY" not in genv and "--requeue" not in calls
+        rc, calls, genv = _run_step(tmp_path, "Record the day's markets", env, WATCH_RC=watch_rc, MAIN_RC=2)
+        assert rc == 2 and "GAVE_WAY" not in genv
+    assert calls.count("betfair_recorder.py --record --final --until 21:30") == 3
+
+
+def test_the_first_look_gives_way_before_anything_slow(tmp_path):
+    env = _stub_python(tmp_path, "python3")
+    rc, calls, genv = _run_step(tmp_path, "Give way to a Live trading run", env, CHECK_RC=0)
+    assert rc == 0 and "GAVE_WAY=1" in genv and "scripts/give_way.py --requeue --until 21:30" in calls
+    rc, calls, genv = _run_step(tmp_path, "Give way to a Live trading run", env, CHECK_RC=0, REQUEUE_RC=1)
+    assert rc == 0 and "GAVE_WAY=1" in genv
+    for check_rc in (3, 1):                                     # nothing waits, or GitHub could not be read
+        rc, calls, genv = _run_step(tmp_path, "Give way to a Live trading run", env, CHECK_RC=check_rc)
+        assert rc == 0 and genv == "" and "--requeue" not in calls
+
