@@ -134,7 +134,7 @@ def main(argv=None) -> int:
     ap.add_argument("--model-novol", default=str(NOVOL),
                     help="the closing model for races with no matched money ('' to score them as the rest)")
     ap.add_argument("--bar", type=float, default=0.03)
-    ap.add_argument("--to-win", type=float, default=250.0)
+    ap.add_argument("--to-win", type=float, default=400.0, help="the owner's target, GBP (400 from 7 Oct, 250 before)")
     ap.add_argument("--min-vol", type=float, default=100.0)
     ap.add_argument("--draws", type=int, default=200000, help="closing-model draws a race (fewer is noisier at the bar)")
     ap.add_argument("--max-stake", type=float, default=300.0, help="the owner's limit on one bet, GBP")

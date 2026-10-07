@@ -305,7 +305,7 @@ def main(argv=None) -> dict:
     config = a.config or ("trading/config_live.json" if a.live else "trading/config.json")
     cfg = load_config(config, overrides={"strategy": a.strategy, "staking": a.staking,
                                          "trade_from": a.trade_from, "trade_until": a.trade_until})
-    day_limit = ("no limit a day" if cfg.limits.max_daily_turnover >= 1e6     # none: the owner, 7 Oct
+    day_limit = ("no limit a day" if cfg.limits.max_daily_turnover >= 1e6     # none on the morning of 7 Oct
                  else f"GBP{cfg.limits.max_daily_turnover:.0f} a day")
     log.info("%s trading %s (%s): strategy %s, staking %s, window %s-%s UK, close at BSP %s (%s); limits: "
              "GBP%.0f a bet, %s", mode.capitalize(), day, config, cfg.strategy, cfg.staking,

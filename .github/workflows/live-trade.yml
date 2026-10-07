@@ -2,8 +2,8 @@ name: Live trading (the owner's book)
 
 # The owner's rule with real money on the owner's Betfair account (auto_trade.py --live, trading/config_live.json;
 # the owner's decision of 30 Sep 2026): every runner whose expected CLV at the best back price is at least +3% under
-# the closing model, staked to win GBP250 (at most GBP300 a bet; no limit on the day's stakes since 7 Oct, GBP4,000
-# until then), each back filled at
+# the closing model, staked to win GBP400 (the owner, 7 Oct; GBP250 until then), at most GBP300 a bet and GBP4,000 a
+# day (no day limit on the morning of 7 Oct), each back filled at
 # once or not at all and laid at the Betfair SP as soon as it is matched, with what the account has (short of funds it
 # holds, and trades again as the races are run and the stakes come back). From 08:00 UK until 15 minutes before each
 # off: the owner's decision of 1 Oct, made knowing that entered near the off the rule lost in the Jan-Mar test

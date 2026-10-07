@@ -139,12 +139,14 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   owner's limit), polled every minute, every runner of a race
   priced whole whose expected CLV at the best back price is at least +3% under the closing model
   (`model/race_book.py`; the model fitted without volume when the delayed key's feed carries none), with at least
-  GBP100 matched on it when the feed reports matched money. Staked to win GBP250 before commission.
-- **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, and no limit
-  on the day's stakes (the owner, 7 Oct: the account's money is the limit; GBP4,000 a day until then, when each
-  poll's backs went in order of expected CLV once it bound). No limit on the number of bets (the owner, 2 Oct; a cap of
-  250 a day, set when the trader was built, stopped seven backs on 1 Oct).
-  The to-win target stays at GBP250 (the owner asked, 2 Oct): 1 Oct replayed at GBP300-500, settled on every horse,
+  GBP100 matched on it when the feed reports matched money. Staked to win GBP400 before commission (the owner, 7 Oct;
+  GBP250 until then).
+- **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, and at most
+  GBP4,000 a day (each poll's backs go in order of expected CLV once it binds). The owner lifted the day limit on the
+  morning of 7 Oct (the account's money the limit) and put it back the same day with the bigger target, the replay's
+  best below. No limit on the number of bets (the owner, 2 Oct; a cap of 250 a day, set when the trader was built,
+  stopped seven backs on 1 Oct).
+  The to-win target stayed at GBP250 until 7 Oct (the owner asked, 2 Oct): 1 Oct replayed at GBP300-500, settled on every horse,
   was worth less with the account's money, since the funds bind before the book and a bigger target buys top-ups at
   a fraction of the CLV of the first fills (reports/other_markets_and_stakes_1002.md, ledger
   `stake-uplift-replay-1002`, `stake-uplift-replay-full-1002`).
@@ -165,7 +167,10 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
     UK at GBP400, against 13:12-20:02 at GBP250.
   - At the account's own balance (the money binding), GBP250 was best: GBP670 against GBP563-620.
   - These are five days on the delayed key's books. 6 Oct (its afternoon at +4.7%) and the live key's days are added as
-    their price files arrive. The owner decides.
+    their price files arrive.
+  - **The owner's decision (7 Oct): GBP400 to win with the GBP4,000 day limit**, from the trader's next start (the
+    session running on 7 Oct keeps GBP250 and no day limit unless restarted; a restart takes up the day's ledger, so
+    what it has staked counts towards the GBP4,000).
 - **Orders**: a back is a limit order at the price read, FILL_OR_KILL (at least GBP2), so nothing rests in the
   book; each matched back is laid at once at the Betfair SP for its winnings (MARKET_ON_CLOSE, liability stake x
   (price - 1)), so the price's move is kept whatever the result. A refused lay is sent again each minute, five
