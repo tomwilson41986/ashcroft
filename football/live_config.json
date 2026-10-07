@@ -1,0 +1,24 @@
+{
+  "prob": "pooled",
+  "markets": ["MATCH_ODDS", "OVER_UNDER_25"],
+  "edge": 0.05,
+  "commission": 0.02,
+  "tight": 1.1,
+  "countries": ["GB", "DE", "IT", "ES", "FR", "NL", "BE", "PT", "TR", "GR"],
+  "hours_ahead": 14,
+  "decide_from_minutes": 360,
+  "stop_before_off": 5,
+  "catalogue_seconds": 900,
+  "poll_seconds": 60,
+  "ledger_all": true,
+  "model_params": {"xi": 0.0023, "l2": 3.0, "sot_mix": 0.3},
+  "limits": {
+    "level_stake": 2.0,
+    "min_price": 1.3,
+    "max_price": 8.0,
+    "max_match_stake": 4.0,
+    "max_daily_turnover": 100.0,
+    "max_bets_per_day": null,
+    "min_team_matches": 10
+  }
+}

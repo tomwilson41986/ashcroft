@@ -68,7 +68,9 @@ def main(argv=None) -> int:
                         kw["date_from"] = d_from
                     if d_to:
                         kw["date_to"] = d_to
-                elif name == "football" and year_from:
+                elif name == "api_football" and d_from:
+                    kw["first_day"] = d_from
+                elif name in ("football", "openfootball") and year_from:
                     kw["first_season"] = year_from
                 elif name in ("tennis", "tennis_odds") and year_from:
                     kw["first_year"] = year_from

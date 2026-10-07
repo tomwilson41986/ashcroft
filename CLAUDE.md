@@ -39,6 +39,7 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 | `BETFAIR_USERNAME` | Betfair Exchange login |
 | `BETFAIR_PASSWORD` | Betfair Exchange password |
 | `BETFAIR_APP_KEY` | Betfair API application key (the delayed key: every read-only job, the market records) |
+| `API_FOOTBALL_KEY` | API-Football (optional: fixture status, kick-off, cups; the football model runs without it) |
 | `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process only (live-trade.yml); Betfair permits no read-only use of live data |
 
 ## Key Commands
@@ -147,6 +148,17 @@ python betfair_recorder.py --record --market-types OTHER_PLACE,EACH_WAY --tag ot
 python -m greyhound.model --years 2018-2026 --folds 2024-01,2025-01,2026-01 --from 2019-01-01 --out out/report.json
 python -m greyhound.track --freeze --cutoff 2026-10-05 --days 3 --summary --out out/greyhound_track.json
 
+# The football model (reports/football_model.md): football-data.co.uk + openfootball (+ API-Football once keyed, Betfair
+# Historic Data soccer once held) into gold tables with data-quality checks; Dixon-Coles ratings walk-forward, pooled
+# with the opening price, scored by CLV against the close; a Betfair trader, paper unless FOOTBALL_LIVE=yes
+# (football-model.yml daily on GitHub's runners; the trader beside the horse session in live-trade.yml)
+python source_data.py --source football,openfootball,api_football --fetch --build
+python -m football.data --build
+python -m football.model --from 2012-07-01 --out out/football_report.json
+python -m football.live --fit
+python -m football.live --trade --until 21:30                      # paper; --live with FOOTBALL_LIVE=yes
+python -m football.live --settle --days 7
+
 # Race ABM: simulate a card, batch features for training, pattern-oriented calibration
 python research_lab.py abm --db horse_racing.db --date 2026-03-12
 python research_lab.py abm-features --db horse_racing.db --from 2024-01-01 --jobs 8 --out data/abm_features.parquet
@@ -181,6 +193,10 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
 - `model/diagnostics.py`, `effects.py`, `causal.py`, `selection.py`, `uncertainty.py`, `spatial.py`, `interpret.py`, `perf_figures.py`, `market_features.py` — research toolkit (RESEARCH_FRAMEWORK.md)
 - `betfair_prices.py` — Betfair historic SP/price-movement files, every market Betfair lists, archived in S3 from the UK server (`--archive`); UK/IE racing → `betfair_prices` table, each day file noted in `betfair_prices_files` (loaded by daily-results.yml)
 - `betfair_recorder.py` — the live market record (read-only): the trader's books (hook in `trading/exchange.py BetfairData`) and the recorder job's snapshots (live-record.yml), day files on the UK server and in S3, loaded nightly into `betfair_live_markets`, `betfair_live_marks`, `live_orders`
+- `football/` — the football model: `reference.py` (competitions, canonical team ids, name matching across sources),
+  `data.py` (gold tables: canonical matches with stable `match_id` and versions, odds long, benchmark open/close,
+  data-quality checks, the Betfair market map), `ratings.py` (pooled Dixon-Coles, score-matrix prices incl. Asian
+  handicap), `model.py` (walk-forward, market pooling, CLV scoring), `live.py` (fit, trade, settle)
 - `sources/` (`source_data.py`) — the historic data for the models beyond UK/IE racing, one module a source (GBGB, football-data, tennis, Punting Form); `betfair_historic.py` — Betfair's Historic Data service (BASIC plan, every sport) to opening/closing-price tables
 - S3 bucket: `horseracingresults`, key: `horse_racing.db`
 

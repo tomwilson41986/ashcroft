@@ -131,7 +131,7 @@ def test_football_fetches_each_league_season_and_names_both_layouts_alike(tmp_pa
     monkeypatch.setattr("sources.common.time.sleep", lambda s: None)
     store, site = Store(root=tmp_path), FootballSite()
     got = football.fetch(store, first_season=2025, s=site, today=date(2026, 3, 1))
-    assert got["fetched"] == 2 and got["missing"] == len(football.EXTRA) + len(football.MAIN) - 2
+    assert got["fetched"] == 2 and got["missing"] == len(football.EXTRA) + len(football.MAIN) + len(football.FIXTURES) - 2
     out = football.build(store)
     m = store.get_parquet("football/matches.parquet")
     assert out["matches"] == 3 and out["with_betfair_close"] == 1

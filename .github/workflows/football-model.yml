@@ -1,0 +1,113 @@
+name: Football model (gold tables, walk-forward report, live fit, paper settle)
+
+# The football model (reports/football_model.md; football/): S3 only, nothing here reaches Betfair.
+#   - every run: the gold tables from the bronze files source-data.yml fetched (football-data.co.uk, openfootball,
+#     API-Football once keyed, Betfair Historic Data soccer once the account holds it), with the data-quality checks
+#     (s3://$CAPTURE_BUCKET/sources/football/gold/, .../football/dq/latest.json); the live ratings and pooling weights
+#     the trader reads (sources/football/live/model.json); the paper and live ledgers settled against the results;
+#   - Mondays, by hand or on a push of the model: the full walk-forward report (the model against the open and the
+#     close since 2012/13), shown as the run's summary and kept as its artifact.
+
+on:
+  schedule:
+    - cron: '35 5 * * *'     # after source-data.yml's 03:20 UTC run
+  workflow_dispatch:
+    inputs:
+      report:
+        description: 'run the full walk-forward report'
+        required: false
+        type: boolean
+        default: true
+      date_from:
+        description: 'first match the report prices, YYYY-MM-DD'
+        required: false
+        type: string
+        default: '2012-07-01'
+  push:
+    branches: ['claude/youthful-cray-*']
+    paths:
+      - 'football/**'
+      - 'sources/football.py'
+      - 'sources/openfootball.py'
+      - 'sources/api_football.py'
+      - '.github/workflows/football-model.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: football-model
+  cancel-in-progress: false
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Sources (a push only; the nightly source-data.yml run keeps them otherwise)
+        if: github.event_name == 'push'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: python source_data.py --source football,openfootball,api_football --fetch --build --max-minutes 60 | tee sources_report.json
+      - name: Gold tables and data quality
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: python -m football.data --build | tee gold_report.json
+      - name: Live ratings and pooling weights
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: python -m football.live --fit | tee fit_report.json
+      - name: Settle the paper and live ledgers
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: python -m football.live --settle --days 7 | tee settle_report.json
+      - name: Walk-forward report
+        if: github.event_name != 'workflow_dispatch' || inputs.report
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          DATE_FROM: ${{ inputs.date_from || '2012-07-01' }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = schedule ] && [ "$(date -u +%u)" != 1 ]; then echo "the report runs on Mondays"; exit 0; fi
+          if ! [[ "$DATE_FROM" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date_from must be YYYY-MM-DD"; exit 1; fi
+          mkdir -p out
+          python -m football.model --from "$DATE_FROM" --workers 4 --save-pred out/football_predictions.parquet \
+            --out out/football_report.json > /dev/null
+      - name: Summary
+        if: always()
+        run: |
+          for f in sources_report.json gold_report.json fit_report.json settle_report.json out/football_report.json; do
+            [ -f "$f" ] && { echo "## $f"; echo '```'; head -c 60000 "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: football-model-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90

@@ -1,0 +1,99 @@
+name: Football trading (paper unless switched on)
+
+# The football model's trader on its own (football/live.py, football/live_config.json; reports/football_model.md), for
+# a day the horse session (live-trade.yml, which runs it beside the horse trader) is not running. Run by hand. Paper
+# unless the repository variable FOOTBALL_LIVE=yes: then real orders, GBP2 level fill-or-kill backs on MATCH_ODDS and
+# OVER_UNDER_25 where the pooled chance's expected return clears the edge, capped a match and a day. On paper it is
+# read-only and keeps the delayed key (Betfair permits no read-only use of live data). The S3 object football/STOP or
+# trading/STOP stops new bets within a minute; cancelling this run stops everything (a matched back stays matched).
+
+on:
+  workflow_dispatch:
+    inputs:
+      until:
+        description: 'last UK time to trade and record, HH:MM'
+        required: false
+        type: string
+        default: '21:30'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: football-trade
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    if: vars.BETFAIR_RUNNER != ''
+    runs-on: ${{ vars.BETFAIR_RUNNER }}
+    timeout-minutes: 900
+    steps:
+      - name: Choose the session
+        id: run
+        env:
+          UNTIL: ${{ inputs.until }}
+        run: |
+          UNTIL="${UNTIL:-21:30}"
+          if ! [[ "$UNTIL" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then echo "until must be HH:MM"; exit 1; fi
+          echo "until=$UNTIL" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+
+      - name: Python on the UK server
+        # the same Python 3.12 environment the trader uses (live-trade.yml)
+        run: |
+          VENV="$HOME/.venvs/ashcroft"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
+
+      - name: Write the Betfair certificate
+        env:
+          BETFAIR_CERT: ${{ secrets.BETFAIR_CERT }}
+          BETFAIR_KEY: ${{ secrets.BETFAIR_KEY }}
+        run: |
+          if [ -n "$BETFAIR_CERT" ] && [ -n "$BETFAIR_KEY" ]; then
+            mkdir -p "$HOME/.betfair/certs"
+            printf '%s\n' "$BETFAIR_CERT" > "$HOME/.betfair/certs/betfair.crt"
+            printf '%s\n' "$BETFAIR_KEY" > "$HOME/.betfair/certs/betfair.key"
+            chmod 600 "$HOME/.betfair/certs/betfair.key"
+            echo "BETFAIR_CERT_FILE=$HOME/.betfair/certs/betfair.crt" >> "$GITHUB_ENV"
+            echo "BETFAIR_KEY_FILE=$HOME/.betfair/certs/betfair.key" >> "$GITHUB_ENV"
+          fi
+
+      - name: Trade football
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          FOOTBALL_LIVE: ${{ vars.FOOTBALL_LIVE }}
+          UNTIL: ${{ steps.run.outputs.until }}
+        run: |
+          FBLIVE=()
+          FBKEY="$BETFAIR_APP_KEY"
+          if [ "$FOOTBALL_LIVE" = yes ]; then FBLIVE=(--live); FBKEY="${BETFAIR_LIVE_APP_KEY:-$BETFAIR_APP_KEY}"
+          else echo "FOOTBALL_LIVE is not 'yes': paper"; fi
+          BETFAIR_APP_KEY="$FBKEY" python -m football.live --trade "${FBLIVE[@]}" --until "$UNTIL"
+
+      - name: Keep the ledger
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: football-trade-${{ github.run_id }}
+          path: ~/.ashcroft/football/
+          if-no-files-found: ignore
+          retention-days: 90
