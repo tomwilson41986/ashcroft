@@ -161,16 +161,23 @@ def test_only_the_trader_runs_on_the_live_key():
     assert recorders and not any("TRADER_KEY" in ln or "LIVE_APP_KEY" in ln for ln in recorders)
     assert not any("echo" in ln and "$TRADER_KEY" in ln for ln in lines)       # the key is never printed
     # the workflows that place bets, and nothing else, name the live key; in each, only a trader's own process
-    # takes it (the horse trader, the greyhound trader: greyhound-trade.yml, 6 Oct), never a record beside it
+    # takes it (the horse trader, the greyhound trader: greyhound-trade.yml, 6 Oct; the football trader, and only
+    # with FOOTBALL_LIVE=yes: football-trade.yml and beside the horse trader, 7 Oct), never a record beside it
     named = {p.name for p in WORKFLOWS.glob("*.yml") if "BETFAIR_LIVE_APP_KEY" in p.read_text()}
-    assert named <= {"live-trade.yml", "greyhound-trade.yml"}, named          # a new one is checked here first
+    assert named <= {"live-trade.yml", "greyhound-trade.yml", "football-trade.yml"}, named   # a new one: checked here
+    traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade")
     for name in named:
-        for ln in ((WORKFLOWS / name).read_text().splitlines()):
+        text = (WORKFLOWS / name).read_text()
+        for ln in text.splitlines():
             ln = ln.strip()
             if ln.startswith("#"):
                 continue
-            if "python" in ln and ("LIVE_APP_KEY" in ln or "TRADER_KEY" in ln):
-                assert "auto_trade.py" in ln or "greyhound.live --trade" in ln, (name, ln)
+            if "python" in ln and any(k in ln for k in ("LIVE_APP_KEY", "TRADER_KEY", "FBKEY")):
+                assert any(t in ln for t in traders), (name, ln)
+            if "FBKEY=" in ln and ("LIVE_APP_KEY" in ln or "TRADER_KEY" in ln):
+                assert '"$FOOTBALL_LIVE" = yes' in ln, (name, ln)           # the live key only when switched on
             if "betfair_recorder.py" in ln or "tote_recorder.py" in ln:
-                assert "LIVE_APP_KEY" not in ln and "TRADER_KEY" not in ln, (name, ln)
+                assert not any(k in ln for k in ("LIVE_APP_KEY", "TRADER_KEY", "FBKEY")), (name, ln)
+        if "football.live --trade" in text:                                 # on paper: read-only, the delayed key
+            assert 'FBKEY="$BETFAIR_APP_KEY"' in text, name
             assert not re.search(r"echo[^;]*\$\{?(BETFAIR_LIVE_APP_KEY|TRADER_KEY)\b", ln), (name, ln)
