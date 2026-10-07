@@ -134,18 +134,19 @@ The owner chose to trade live from the start, without a paper period, and set th
 permission mode was changed by the owner to allow the work. `auto_trade.py --live` with
 `trading/config_live.json` and the workflow `live-trade.yml` place real orders on the owner's account:
 
-- **The rule** (`closing_clv`, trading/strategy.py): from 08:00 to 14:00 UK (the owner's decision of 7 Oct, below; to
-  15 minutes before each off 1-7 Oct, and 08:00-11:00 UK before that, the tested window) and never within 15 minutes of
-  a race's off (the owner's limit), polled every minute, every runner of a race
+- **The rule** (`closing_clv`, trading/strategy.py): from 08:00 UK until 15 minutes before each race's off (the owner's
+  decision of 1 Oct, kept on 7 Oct: "Let's not stop. We should just trade if we think the price is right"; 08:00-11:00
+  UK before 1 Oct, the tested window) and never within 15 minutes of a race's off (the owner's limit), polled every
+  minute, every runner of a race
   priced whole whose expected CLV at the best back price is at least +3% under the closing model
   (`model/race_book.py`; the model fitted without volume when the delayed key's feed carries none), with at least
   GBP100 matched on it when the feed reports matched money. Staked to win GBP400 before commission (the owner, 7 Oct;
   GBP250 until then).
 - **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, and no limit on
-  the day's stakes: the 14:00 stop decides (the owner, 7 Oct: "time is the decision point, not balance"; below). The
-  day limit was GBP4,000 to 7 Oct; the owner lifted it that morning, put it back with the bigger target, then replaced
-  it with the stop time the same day. No limit on the number of bets (the owner, 2 Oct; a cap of 250 a day, set when
-  the trader was built, stopped seven backs on 1 Oct).
+  the day's stakes and no stop time: the account's money is the only limit (the owner, 7 Oct, below). The day limit
+  was GBP4,000 to 7 Oct; that day the owner lifted it, put it back with the bigger target, weighed a stop time in its
+  place, and settled on neither. No limit on the number of bets (the owner, 2 Oct; a cap of 250 a day, set when the
+  trader was built, stopped seven backs on 1 Oct).
   The to-win target stayed at GBP250 until 7 Oct (the owner asked, 2 Oct): 1 Oct replayed at GBP300-500, settled on every horse,
   was worth less with the account's money, since the funds bind before the book and a bigger target buys top-ups at
   a fraction of the CLV of the first fills (reports/other_markets_and_stakes_1002.md, ledger
@@ -168,11 +169,14 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   - At the account's own balance (the money binding), GBP250 was best: GBP670 against GBP563-620.
   - These are five days on the delayed key's books. 6 Oct (its afternoon at +4.7%) and the live key's days are added as
     their price files arrive.
-  - **The owner's decision (7 Oct): GBP400 to win**, from the trader's next start, first with the GBP4,000 day limit,
-    then (the same day) with the stop time below in its place.
-- **The stop time: 14:00 UK** (the owner, 7 Oct: "after what time should we stop betting or trading? I'd suggest that
-  time is the decision point, not balance"; research-query runs 37607762394 and 37609290495, ledger
-  `time-cutoff-replay-1007`, `stop-1400-1007`). Each recorded day (1-5 Oct; 6 Oct waits for its price file) replayed at
+  - **The owner's decision (7 Oct): GBP400 to win**, from the trader's next start, with no day limit and no stop time.
+- **A stop time, weighed and not taken** (7 Oct). The owner asked "after what time should we stop betting or trading?
+  I'd suggest that time is the decision point, not balance". The replay below put the best stop at 14:00 UK, and the
+  owner decided against any stop: "Let's not stop. We should just trade if we think the price is right" (ledger
+  `time-cutoff-replay-1007`, `stop-1400-1007`, `no-stop-1007`). The open question it leaves is whether the rule's
+  expected CLV is as right in the afternoon as in the morning: entered after 14:00 the real backs closed +0.8% where
+  the rule asked for +3% expected. Research-query runs 37607762394 and 37609290495: each recorded day (1-5 Oct; 6 Oct
+  waits for its price file) replayed at
   GBP400 to win with each stop time and no money limit, at the account's own size: Betfair refused the first back for
   funds at 10:54 UK on 7 Oct with GBP3,572 open and no race yet run, so the account held about GBP3,578.
 
@@ -224,9 +228,9 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   (getAccountFunds, read-only), and trades again once they are back, staking no more than the account has; the lays
   at SP that hedge the backs already matched still go. Each refused order is kept with Betfair's own reason, and the
   summary and email carry the funds at the start and the end of the session.
-- **To 15 minutes before each off, 1-7 Oct; to 14:00 UK from 8 Oct** (above). The owner, 1 Oct: "You can trade right
-  up until 15 minutes before race start. Just use what's in the balance": the session traded every race from 08:00 UK
-  until 15 minutes before its off, with the
+- **To 15 minutes before each off** (the owner, 1 Oct, and again 7 Oct: "We should just trade if we think the price is
+  right"). The owner, 1 Oct: "You can trade right up until 15 minutes before race start. Just use what's in the
+  balance": the session trades every race from 08:00 UK until 15 minutes before its off, with the
   balance as the races are run and their stakes come back. It is a choice made knowing the Jan-Mar test: entered near
   the off with the morning's closing model the rule lost (late-entry-0930: CLV -5.8% on the delayed key's feed, about
   GBP87 a day), against +5.3% for the morning's entries. The summary and email score the bets entered by 11:00 UK
@@ -669,7 +673,7 @@ trader ever bets the evening before.
 
 | What | How often | Kept in S3 | Loaded nightly into horse_racing.db |
 |---|---|---|---|
-| Every book the trader reads (`BETFAIR_RECORD=1`) | each minute, from 08:00 UK to 14:00 UK (to 15 minutes before each off until 7 Oct) | `betfair_live/<day>/books_trader.csv.gz` (its own files: the recorder runs beside it) | `betfair_live_marks` |
+| Every book the trader reads (`BETFAIR_RECORD=1`) | each minute, from 08:00 UK to 15 minutes before each off | `betfair_live/<day>/books_trader.csv.gz` (its own files: the recorder runs beside it) | `betfair_live_marks` |
 | The day's GB/IE win and place markets (live-record.yml) | every 5 minutes, each minute in the last hour, to 21:30 UK | the same | `betfair_live_marks` |
 | The catalogue: cloth, stall, jockey, trainer, age, weight, rating, form, headgear, forecast price | once a market | `betfair_live/<day>/markets.csv.gz` | `betfair_live_markets` (matched to race_results) |
 | The settled books: BSP, winners, removals and reduction factors | after racing and next morning | in `books.csv.gz` (source `final`) | `betfair_live_marks`, mark `final` |

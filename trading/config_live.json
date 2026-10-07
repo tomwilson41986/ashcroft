@@ -8,7 +8,7 @@
   "clv_draws": 20000,
   "commission": 0.02,
   "trade_from": "08:00",
-  "trade_until": "14:00",
+  "trade_until": "21:30",
   "stop_before_off": 15,
   "trade_out": true,
   "trade_out_at": "fill",
