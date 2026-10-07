@@ -523,6 +523,93 @@ def summary(store, mode: str) -> dict:
             "clv%": round(100 * float(s.clv.mean()), 2)}
 
 
+def coverage(store, day: date, cfg: dict | None = None, s3=None, now=None) -> dict:
+    """Does the trader see every race? The day's GB WIN markets in the recorder's catalogue, against the markets the
+    card could read (a name "A5 480m"), the markets priced (``predictions/<day>.csv``) and each mode's ledger: what was
+    decided and why not backed. A race whose off has passed and that no ledger decided is a race missed; for those,
+    whether the recorder's books ever showed every runner tight (lay within ``tight`` of back) while the trader could
+    still bet, and the runners the books had in that the prices did not (a whole field not priced is skipped)."""
+    from betfair_recorder import _read_day_csv
+    from greyhound.card import parse_market_name
+    cfg = cfg or load_config()
+    ds = f"{day:%Y-%m-%d}"
+    now = pd.Timestamp(now or datetime.now(timezone.utc))
+    mk = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
+    if mk is None or not len(mk):
+        return {"day": ds, "note": "no greyhound catalogue recorded"}
+    w = mk[(mk.market_type.fillna("WIN") == "WIN") & (mk.country.fillna("GB") == "GB")].copy()
+    w["off"] = pd.to_datetime(w.market_start_utc, utc=True, errors="coerce")
+    w = w[w.off.dt.tz_convert("Europe/London").dt.strftime("%Y-%m-%d") == ds]
+    races = w.drop_duplicates("market_id", keep="last").set_index("market_id")
+    races["parsed"] = races.market_name.map(lambda n: parse_market_name(n)[1] is not None)
+    raw = store.get(f"{PREFIX}/predictions/{ds}.csv")
+    pred = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str}) if raw else pd.DataFrame(
+        columns=["market_id", "selection_id"])
+    races["priced"] = races.index.isin(set(pred.market_id))
+    races["gone"] = races.off <= now
+    out = {"day": ds, "as_of_utc": now.strftime("%H:%M"), "gb_win_markets": len(races),
+           "name_not_read": int((~races.parsed).sum()),
+           "name_not_read_examples": races[~races.parsed].market_name.astype(str).value_counts().head(10).to_dict(),
+           "priced": int(races.priced.sum()), "not_priced": int((~races.priced).sum()),
+           "not_priced_examples": races[~races.priced][["venue", "market_name"]].assign(
+               off=races.off.dt.strftime("%H:%M")).head(15).astype(str).to_dict("records"),
+           "off_so_far": int(races.gone.sum())}
+    books = _read_day_csv(day, "books_greyhound.csv", s3=s3)
+    for mode in ("paper", "live"):
+        lraw = store.get(f"{PREFIX}/{mode}/{ds}/ledger.csv")
+        if not lraw:
+            out[mode] = {"note": "no ledger"}
+            continue
+        led = pd.read_csv(io.BytesIO(lraw), dtype={"market_id": str})
+        led["t"] = pd.to_datetime(led.time_utc, utc=True, errors="coerce")
+        start = led.t.min()
+        seen = set(led.market_id)
+        window = races[(races.off > start + pd.Timedelta(minutes=cfg["stop_before_off"])) & races.gone]
+        missed = window[~window.index.isin(seen)]
+        sk = led[led.action == "skip"]
+        bk = led[led.action == "back"]
+        r = {"first_decision_utc": start.strftime("%H:%M") if pd.notna(start) else None,
+             "markets_decided": len(seen), "runners_decided": int(led.selection_id.notna().sum()),
+             "actions": led.action.value_counts().to_dict(),
+             "skip_reasons": sk.error.fillna("").astype(str).str.replace(r"GBP[\d.]+", "GBPx", regex=True)
+             .value_counts().to_dict(),
+             "backs": {"sent": len(bk), "matched": int((bk.status == "SUCCESS").sum()),
+                       "status": bk.status.fillna("").astype(str).value_counts().to_dict(),
+                       "errors": bk.error.fillna("").astype(str).value_counts().head(8).to_dict()},
+             "minutes_to_off_at_decision": led.dropna(subset=["selection_id"]).groupby("market_id")
+             .minutes_to_off.max().describe(percentiles=[.1, .5, .9]).round(1).drop("count").to_dict(),
+             "races_off_since_start": len(window), "races_off_not_decided": len(missed)}
+        if len(missed) and books is not None and len(books):
+            b = books[books.market_id.isin(missed.index)].copy()
+            b["t"] = pd.to_datetime(b.polled_utc, utc=True, errors="coerce")
+            b = b[(b.runner_status.astype(str).str.upper() == "ACTIVE") & (b.t >= start)]
+            b = b.join(races.off, on="market_id")
+            b = b[b.t < b.off - pd.Timedelta(minutes=cfg["stop_before_off"])]
+            for c in ("back1", "lay1"):
+                b[c] = pd.to_numeric(b[c], errors="coerce")
+            b["tight"] = (b.back1 > 1) & (b.lay1 / b.back1 <= cfg["tight"])
+            snap = b.groupby(["market_id", "t"]).tight.all()
+            ever = snap.groupby(level=0).any()
+            have = set(zip(pred.market_id.astype(str), pd.to_numeric(pred.selection_id, errors="coerce")))
+            unpriced = b[[(m, float(s)) not in have for m, s in zip(b.market_id, pd.to_numeric(b.selection_id))]]
+            r["missed"] = {
+                "with_books_seen": int(b.market_id.nunique()),
+                "all_tight_at_some_poll": int(ever.sum()),
+                "never_all_tight": int((~ever).sum()),
+                "with_an_active_runner_not_priced": int(unpriced.market_id.nunique()),
+                "not_priced_at_all": int((~missed.priced).sum()),
+                "examples": missed[["venue", "market_name", "priced"]].assign(
+                    off=missed.off.dt.strftime("%H:%M"),
+                    ever_tight=[bool(ever.get(m, False)) for m in missed.index],
+                    unpriced_runner=[m in set(unpriced.market_id) for m in missed.index]).head(20)
+                .astype(str).to_dict("records")}
+        if len(sk):
+            r["skip_examples"] = sk[["track", "race_time", "trap", "price", "size_offered", "edge", "error",
+                                     "minutes_to_off"]].head(12).astype(str).to_dict("records")
+        out[mode] = r
+    return out
+
+
 # --------------------------------------------------------------------------------------------------------------------
 
 def main(argv=None) -> int:
@@ -540,6 +627,8 @@ def main(argv=None) -> int:
     ap.add_argument("--settle", action="store_true")
     ap.add_argument("--check-card", action="store_true",
                     help="a past day (--date): the card's features against the results' features, feature by feature")
+    ap.add_argument("--coverage", action="store_true",
+                    help="the day's GB races against what was priced and what each mode's trader decided")
     ap.add_argument("--days", type=int, default=1, help="settle: the last N days")
     ap.add_argument("--date", default=None)
     ap.add_argument("--config", default=str(CONFIG_PATH))
@@ -549,6 +638,8 @@ def main(argv=None) -> int:
     out = {}
     if a.check_card:
         out["check_card"] = card_check(store, day)
+    if a.coverage:
+        out["coverage"] = coverage(store, day, load_config(Path(a.config)))
     if a.train or (a.train_if_missing and load_model(store)[0] is None):
         out["train"] = train(store, day)
     if a.predict:

@@ -21,9 +21,9 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'predict, train, settle, or check-card (a past day: the card against the results)'
+        description: 'predict, train, settle, check-card (a past day: the card against the results), or coverage (the day''s races against what was priced and decided)'
         type: choice
-        options: [predict, train, settle, check-card]
+        options: [predict, train, settle, check-card, coverage]
         default: predict
       date:
         description: 'UK racing day, YYYY-MM-DD (default today)'
@@ -81,7 +81,7 @@ jobs:
           fi
           set -o pipefail                    # a failing step fails the run, through the tee
           TASK="${TASK:-predict}"
-          case "$TASK" in predict|train|settle|check-card) ;; *) echo "task must be predict, train, settle or check-card"; exit 1 ;; esac
+          case "$TASK" in predict|train|settle|check-card|coverage) ;; *) echo "task must be predict, train, settle, check-card or coverage"; exit 1 ;; esac
           if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
           mkdir -p out
           ARGS=()
@@ -91,6 +91,7 @@ jobs:
             predict) python -m greyhound.live --train-if-missing --predict "${ARGS[@]}" | tee out/greyhound_live.json ;;
             settle)  python -m greyhound.live --settle --days 3 "${ARGS[@]}" | tee out/greyhound_live.json ;;
             check-card) python -m greyhound.live --check-card "${ARGS[@]}" | tee out/greyhound_live.json ;;
+            coverage) python -m greyhound.live --coverage "${ARGS[@]}" | tee out/greyhound_live.json ;;
           esac
       - name: Summary
         if: always()
