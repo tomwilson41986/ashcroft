@@ -208,7 +208,10 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   reply is settled by that list before anything else is sent. An order whose fate cannot be read stops the day.
 - **The switches**: the repository variable `TRADING_LIVE` must be `yes` for any order; the job runs only on the UK
   runner named by `BETFAIR_RUNNER` (Betfair refuses GitHub's own runners). To stop at once: cancel the running
-  "Live trading" run, or create the S3 object `trading/STOP` (no new bets within a minute).
+  "Live trading" run, or create the S3 object `trading/STOP` (no new bets within a minute). To restart (a new rule
+  takes effect at the next start): cancel it and run "Live trading" again with mode `trade`; it takes up the day from
+  its ledger. The market recorder may take the runner in between, but it gives way to the waiting run within a
+  minute or two (from 7 Oct; that day both restarts waited behind it from 11:07 to 11:57 UTC).
 - **Settlement**: each race is settled from Betfair's record of the settled bets (listClearedOrders): what Betfair
   paid on every back and every lay at SP, and the SP the lays matched at (the CLV), with commission at 2% of the
   race's net winnings, the account's rate (the owner, 2 Oct; on 1 Oct the day's settled result at 2% met the account's
@@ -684,7 +687,10 @@ trader ever bets the evening before.
 `betfair_live_marks` keeps, for each runner, the book nearest to 08:00-12:00 UK and to 120, 60, 30, 15, 10, 5, 3
 and 1 minutes before the off, the last book before the off, and the settled one. The full-resolution books stay in
 S3. One runner serves both jobs, so the recorder gives way to the trader: its 06:55 UTC run records the whole day
-only when the trader is not live, and its 10:10 UTC run takes the day from the end of the morning session.
+only when the trader is not live, and its 10:10 UTC run waits behind the trader and takes the evening's part after
+it. Whenever the recorder holds the runner while a Live trading run waits for it (a restart), it stops its records
+within a minute or two, ends and queues again behind the trader (`scripts/give_way.py`; the trader's job records the
+same files on the same server, so nothing is lost).
 daily-results.yml, the one job that writes the database, does the loading; a failed load never costs the night's
 results.
 

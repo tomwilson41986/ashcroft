@@ -914,3 +914,43 @@ def test_an_evening_record_sleeps_to_its_start_before_logging_in(tmp_path, monke
                  ["--record", "--date", "2099-07-02", "--tag", "evening", "--evening", "21:30-17:00"]):
         with pytest.raises(SystemExit):
             br.main(argv)
+
+
+def test_a_record_asked_to_stop_ends_cleanly_and_copies_its_files_first(tmp_path, monkeypatch):
+    """The recorder giving way to the trader (scripts/give_way.py), or its job cancelled: SIGTERM ends the record at
+    once, between two writes, the day's files go to S3 on the way out, and the exit is clean. The handler is the
+    record's only while it records; the trader's job then writes on to the same files."""
+    import os
+    import signal
+    import time
+
+    forced = []
+    before = signal.getsignal(signal.SIGTERM)
+
+    class FakeData:
+        def login(self):
+            pass
+
+    def fake_record(day, until, data, rec, *args, **kw):
+        rec.record_books([raw_book()], source="recorder")
+        assert signal.getsignal(signal.SIGTERM) is not before, "no SIGTERM handler while recording"
+        os.kill(os.getpid(), signal.SIGTERM)          # the watch's signal, mid-record
+        time.sleep(5)                                 # cut short by it
+        raise AssertionError("the record was not stopped")
+
+    monkeypatch.setattr("trading.exchange.BetfairData", FakeData)
+    monkeypatch.setattr(br, "ROOT", tmp_path)
+    monkeypatch.setattr(br, "record", fake_record)
+    monkeypatch.setattr(br.DayRecorder, "maybe_upload", lambda self, force=False: forced.append(force) or True)
+    t0 = time.monotonic()
+    with pytest.raises(SystemExit) as stop:
+        br.main(["--record", "--date", "2026-10-07"])
+    assert stop.value.code == 0 and time.monotonic() - t0 < 4
+    assert forced and forced[-1] is True                     # the day's files copied on the way out
+    assert signal.getsignal(signal.SIGTERM) is before        # and the process's own handler back
+    rows = list(csv.DictReader((tmp_path / "2026-10-07" / "books.csv").open()))
+    assert rows and {r["market_id"] for r in rows} == {"1.100"}
+    # a record that ends by itself leaves no handler behind either
+    monkeypatch.setattr(br, "record", lambda *a, **k: {"markets": 0})
+    assert br.main(["--record", "--date", "2026-10-07"]) == 0
+    assert signal.getsignal(signal.SIGTERM) is before

@@ -13,7 +13,12 @@ name: Betfair market recorder (read-only)
 #
 # One runner serves trading too, so this job gives way to it: the 06:55 UTC run records the morning only when the
 # owner is not trading live (with TRADING_LIVE=yes the trader records the books it reads itself); the 10:10 UTC run
-# takes the rest of the day, after the morning session (it waits for the session to finish when that runs late).
+# waits for the runner behind the trader (it trades to the last race from 7 Oct) and takes the evening's part after it.
+# The trader always comes first (scripts/give_way.py, from 7 Oct): a Live trading run waiting for the runner, as when
+# the owner restarts the trader and this run took the runner meanwhile, is seen at this job's start and every minute
+# while it records; the records stop (the trader's job records the same files on the same server), this run ends,
+# and a fresh run queues behind the trader for the evening's part. On 7 Oct, before this, the 10:10 run took the
+# runner at 11:07 UTC when the trader was cancelled to restart, and both restarts waited behind it until 11:57.
 
 on:
   schedule:
@@ -29,6 +34,7 @@ on:
 
 permissions:
   contents: read
+  actions: write      # the trader comes first: read the Live trading runs, and queue this workflow again (give_way.py)
 
 concurrency:
   group: betfair-recorder
@@ -61,9 +67,23 @@ jobs:
       - uses: actions/checkout@v4
         if: steps.run.outputs.go == 'true'
 
+      - name: Give way to a Live trading run waiting for the runner
+        # Before anything slow (scripts/give_way.py, the system's Python 3: standard library only). A trader waiting
+        # for the runner takes it now; this run queues again behind it for the evening's part. A failed read carries on.
+        if: steps.run.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UNTIL: ${{ steps.run.outputs.until }}
+        run: |
+          if python3 scripts/give_way.py --check; then
+            echo "GAVE_WAY=1" >> "$GITHUB_ENV"
+            python3 scripts/give_way.py --requeue --until "$UNTIL" \
+              || echo "::warning::the recorder could not queue again; tonight's price files come with betfair-prices.yml"
+          fi
+
       - name: Python on the UK server
         # the same Python 3.12 environment the trader uses (live-trade.yml)
-        if: steps.run.outputs.go == 'true'
+        if: steps.run.outputs.go == 'true' && env.GAVE_WAY != '1'
         run: |
           VENV="$HOME/.venvs/ashcroft"
           if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
@@ -75,11 +95,11 @@ jobs:
           echo "$VENV/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
-        if: steps.run.outputs.go == 'true'
+        if: steps.run.outputs.go == 'true' && env.GAVE_WAY != '1'
         run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
 
       - name: Yesterday's settled books (BSP, results)
-        if: steps.run.outputs.go == 'true'
+        if: steps.run.outputs.go == 'true' && env.GAVE_WAY != '1'
         continue-on-error: true
         env:
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
@@ -97,8 +117,10 @@ jobs:
           timeout 300 python betfair_recorder.py --final --event-type 4339 --tag greyhound --date "$Y" || true
 
       - name: Record the day's markets to the last race
-        if: steps.run.outputs.go == 'true'
+        id: record
+        if: steps.run.outputs.go == 'true' && env.GAVE_WAY != '1'
         env:
+          GH_TOKEN: ${{ github.token }}
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
@@ -110,6 +132,10 @@ jobs:
         # Beside the win and place record, two of their own (books_other_place.csv, books_greyhound.csv; the nightly
         # load reads neither): the 2/3/4 TBP and each-way markets for the place model, and the GB/IE greyhound win
         # and place markets for the greyhound model. Either failing leaves the main record as it was.
+        # The trader comes first: give_way.py looks every minute for a Live trading run waiting for the runner (the
+        # owner restarting the trader). When one waits, the three records stop cleanly (SIGTERM: their files go to
+        # S3, and the trader's job writes on to the same files), this run ends, and a fresh one queues behind the
+        # trader for the evening's part. Should the watch itself fail, the records run on to the last race as before.
         run: |
           python betfair_recorder.py --record --final --until "$UNTIL" --market-types OTHER_PLACE,EACH_WAY \
             --tag other_place > other_place.log 2>&1 &
@@ -117,8 +143,18 @@ jobs:
           python betfair_recorder.py --record --final --until "$UNTIL" --event-type 4339 --tag greyhound \
             --market-types WIN,PLACE > greyhound.log 2>&1 &
           DOGS=$!
+          python betfair_recorder.py --record --final --until "$UNTIL" &
+          REC=$!
+          if python scripts/give_way.py --watch --pids "$REC,$OTHER,$DOGS"; then
+            echo "GAVE_WAY=1" >> "$GITHUB_ENV"
+            wait "$REC" "$OTHER" "$DOGS" || true
+            tail -n 3 other_place.log greyhound.log || true
+            python scripts/give_way.py --requeue --until "$UNTIL" \
+              || echo "::warning::the recorder could not queue again; tonight's price files come with betfair-prices.yml"
+            exit 0
+          fi
           rc=0
-          python betfair_recorder.py --record --final --until "$UNTIL" || rc=$?
+          wait "$REC" || rc=$?
           wait "$OTHER" || echo "::warning::the other place markets' record ended with an error"
           wait "$DOGS" || echo "::warning::the greyhound record ended with an error"
           tail -n 3 other_place.log greyhound.log || true
@@ -128,7 +164,7 @@ jobs:
       # load (betfair-prices.yml takes every market and the backfill from 22:30 UTC). One file at a time, from the
       # listing, each stored only when it is new or Betfair has rewritten it.
       - name: Betfair's UK and Irish price files of the last days, to S3
-        if: ${{ !cancelled() && steps.run.outputs.go == 'true' }}
+        if: ${{ !cancelled() && steps.run.outputs.go == 'true' && env.GAVE_WAY != '1' }}
         continue-on-error: true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -141,7 +177,7 @@ jobs:
       # forecasts): one read of the catalogue, any type, printed for the research (the owner's question of 2 Oct on
       # AvB markets, which the price files do not hold).
       - name: Market types on tomorrow's racing (census, read-only)
-        if: ${{ !cancelled() && steps.run.outputs.go == 'true' }}
+        if: ${{ !cancelled() && steps.run.outputs.go == 'true' && env.GAVE_WAY != '1' }}
         continue-on-error: true
         env:
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
@@ -154,7 +190,7 @@ jobs:
       # (s3://.../betfair_live/<tomorrow>/books_evening.csv.gz; the nightly load reads only the day's writers).
       # Read-only: no order is placed.
       - name: Tomorrow's win markets the evening before (read-only)
-        if: ${{ !cancelled() && steps.run.outputs.go == 'true' }}
+        if: ${{ !cancelled() && steps.run.outputs.go == 'true' && env.GAVE_WAY != '1' }}
         continue-on-error: true
         env:
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
@@ -170,7 +206,7 @@ jobs:
 
       # The ante-post win markets (the big races weeks or months ahead), once a day: for the ante-post model.
       - name: Ante-post markets (one snapshot, read-only)
-        if: ${{ !cancelled() && steps.run.outputs.go == 'true' }}
+        if: ${{ !cancelled() && steps.run.outputs.go == 'true' && env.GAVE_WAY != '1' }}
         continue-on-error: true
         env:
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
@@ -185,7 +221,7 @@ jobs:
       # Every sport's open markets of the next 24 hours, their types and the money matched on them so far, read after
       # the last race each day: which sport to model next (the owner's ask of 3 Oct). One read, about a minute.
       - name: Every sport's markets (census, read-only)
-        if: ${{ !cancelled() && steps.run.outputs.go == 'true' }}
+        if: ${{ !cancelled() && steps.run.outputs.go == 'true' && env.GAVE_WAY != '1' }}
         continue-on-error: true
         env:
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}

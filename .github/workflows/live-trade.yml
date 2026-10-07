@@ -13,7 +13,9 @@ name: Live trading (the owner's book)
 # (betfair_recorder.py, read-only, beside the trader; the trader's own books go to their own files), and tomorrow's
 # win markets from 17:00 to 21:30 UK (books_evening, the owner's question of 4 Oct on betting the evening before);
 # the recorder's 10:10 UTC run waits for the runner and takes the evening's part (yesterday's settled books, the
-# price files).
+# price files). A restart never waits behind the recorder: when the owner cancels this run to restart it and the
+# recorder takes the runner meanwhile, the recorder sees the new run waiting, stops within a minute or two and queues
+# again behind it (scripts/give_way.py, from 7 Oct; that day both restarts waited behind it for 50 minutes).
 #
 # The owner's switches: the repository variable TRADING_LIVE must be 'yes' for any order to be placed, and
 # BETFAIR_RUNNER must name the UK runner (Betfair refuses GitHub's own runners); without it the job is skipped.
