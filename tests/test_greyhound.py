@@ -53,7 +53,7 @@ def _runs(n_days=12, tracks=("Romford", "Hove"), seed=0):
 
 def test_every_metric_is_blind_to_its_own_race_and_its_day():
     runs = _runs()
-    eng = GreyhoundMetricsEngine(blocks=("parity", "hrb"))
+    eng = GreyhoundMetricsEngine(blocks=("parity", "hrb", "lib"))
     base = eng.calculate_all(runs)
     feats = eng.features
     last_day = runs.race_date.max()
@@ -68,7 +68,7 @@ def test_every_metric_is_blind_to_its_own_race_and_its_day():
     alt.loc[day, "comment"] = "VSAw,Crd1,Wide,Fdd"
     alt = clean(alt.drop(columns=["won", "placed2", "field", "grade", "grade_family", "sp_p", "sp_p_norm", "raceid",
                                   "t", "is_trial"]))
-    other = GreyhoundMetricsEngine(blocks=("parity", "hrb")).calculate_all(alt)
+    other = GreyhoundMetricsEngine(blocks=("parity", "hrb", "lib")).calculate_all(alt)
     a = base[base.race_id == target].sort_values("trap")[feats].reset_index(drop=True)
     b = other[other.race_id == target].sort_values("trap")[feats].reset_index(drop=True)
     pd.testing.assert_frame_equal(a, b, check_exact=False, rtol=1e-9)
@@ -370,3 +370,19 @@ def test_the_racecard_recorder_writes_a_card_only_when_it_changes_and_counts_the
     assert T.poll(store, Session(), seen, pause=0, now=now)["tracks"]["Romford"]["written"] == 0   # unchanged
     day = tmp_path / "sources" / "greyhounds_today" / "2026-10-07"
     assert len(list(day.glob("*Z_Romford_rom-0710.json"))) == 1 and len((day / "polls.jsonl").read_text().splitlines()) == 2
+
+
+def test_the_race_softmax_objective_is_a_conditional_logit_over_each_race():
+    from greyhound.model import _race_softmax, _starts, race_objective
+    race = np.array([0, 0, 0, 1, 1])
+    won = np.array([0.0, 1.0, 0.0, 1.0, 0.0])
+    second = np.array([1.0, 0.0, 0.0, 0.0, 1.0])
+    s = np.array([0.2, 1.0, -0.5, 0.0, 0.3])
+    p = _race_softmax(s, _starts(race))
+    assert np.allclose([p[:3].sum(), p[3:].sum()], 1.0)
+    fobj, feval = race_objective(race, won)
+    g, h = fobj(s, None)
+    assert np.allclose([g[:3].sum(), g[3:].sum()], 0.0) and (h > 0).all()        # a softmax's gradient sums to 0
+    assert abs(feval(s, None)[1] + (np.log(p[1]) + np.log(p[3])) / 2) < 1e-12      # mean -log p(winner)
+    g2, _ = race_objective(race, won, second)[0](s, None)
+    assert not np.allclose(g2, g) and g2[1] == g[1]                                 # the winner: first stage only
