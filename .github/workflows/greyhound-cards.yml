@@ -1,0 +1,56 @@
+name: Greyhound racecards (greyhounds.today, recorded)
+
+# The tracks' own racecards from greyhounds.today recorded through the day (greyhound/today_cards.py; the owner's ask
+# of 7 Oct 2026): each card written raw to s3://$CAPTURE_BUCKET/sources/greyhounds_today/<day>/ whenever it changes,
+# with a poll log, to learn when the weigh-in weights, prizes and handicaps appear before the off. Read-only; nothing
+# here bets or feeds the model. A hosted job runs at most six hours, so the day is three sessions.
+
+on:
+  schedule:
+    - cron: '0 7 * * *'       # 07:00-12:45 UTC
+    - cron: '50 12 * * *'     # 12:50-18:35 UTC
+    - cron: '40 18 * * *'     # 18:40-22:30 UK
+  workflow_dispatch:
+    inputs:
+      until:
+        description: 'last UK time to record, HH:MM'
+        required: false
+        type: string
+        default: '22:30'
+      every:
+        description: 'seconds between passes'
+        required: false
+        type: string
+        default: '300'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-cards
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Record the cards
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          UNTIL: ${{ inputs.until || '22:30' }}
+          EVERY: ${{ inputs.every || '300' }}
+        run: |
+          if ! [[ "$UNTIL" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then echo "until must be HH:MM"; exit 1; fi
+          if ! [[ "$EVERY" =~ ^[0-9]{2,4}$ ]]; then echo "every must be seconds"; exit 1; fi
+          python -m greyhound.today_cards --until "$UNTIL" --every "$EVERY" --max-minutes 345
