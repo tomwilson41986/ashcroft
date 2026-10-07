@@ -114,14 +114,17 @@ def snapshot(b, on: date, mark: int | None):
 
 
 def settled(day):
-    """The day's BSPs and its non-runners (when taken out, and each one's reduction factor) from Betfair's final
-    books, with the price files' BSPs where no final book has one."""
+    """The day's BSPs and its non-runners (when taken out, and each one's reduction factor) from Betfair's books: the
+    BSP read as each market reconciled it at the off (source "bsp", from 7 Oct; a closed market's final book carries
+    none), else a final book's, else the price files'."""
     f = books(f"betfair_live/{day}/books.csv.gz")
     bsp = pd.DataFrame(columns=KEY + ["bsp"])
     rem = pd.DataFrame(columns=KEY + ["removed_at", "rf"])
     if not f.empty:
+        at_off = f[(f.source == "bsp") & (f.sp_actual > 1)]
         f = f[f.source == "final"].drop_duplicates(KEY, keep="last").copy()
-        bsp = f.loc[f.sp_actual > 1, KEY + ["sp_actual"]].rename(columns={"sp_actual": "bsp"})
+        bsp = (pd.concat([f.loc[f.sp_actual > 1, KEY + ["sp_actual"]], at_off[KEY + ["sp_actual"]]])
+               .drop_duplicates(KEY, keep="last").rename(columns={"sp_actual": "bsp"}))
         rem = f.loc[f.runner_status == "REMOVED", KEY + ["adjustment_factor", "removal_utc"]].copy()
         rem["removed_at"] = pd.to_datetime(rem.removal_utc, utc=True, errors="coerce")
         rem["rf"] = rem.adjustment_factor.fillna(0.0)

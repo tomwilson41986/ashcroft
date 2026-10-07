@@ -533,7 +533,11 @@ fin_o = oth[oth.source.eq("final")] if "source" in oth else pd.DataFrame()
 if fin_w.empty or fin_o.empty:
     print("\nthe day's final pass has not run: the close (win BSP) and the results come with it")
     raise SystemExit(0)
-bsp = fin_w.drop_duplicates(KEY, keep="last").set_index(KEY).sp_actual
+# the win BSP read as each market reconciled it at the off (source "bsp", from 7 Oct: a closed market's final book
+# carries none), else a final book's
+at_off = day[day.source.eq("bsp") & (day.sp_actual > 1)]
+bsp = (pd.concat([fin_w[fin_w.sp_actual > 1], at_off]).drop_duplicates(KEY, keep="last").set_index(KEY).sp_actual)
+print(f"   the close: {len(at_off):,} BSPs read at the off, {int((fin_w.sp_actual > 1).sum()):,} in final books")
 res = pd.concat([fin_o, fin_w]).drop_duplicates(KEY, keep="last").set_index(KEY).runner_status
 S["result"] = [res.get((m, s)) for m, s in zip(S.market_id, S.selection_id)]
 done = S[S.result.isin(["WINNER", "LOSER"])].copy()
