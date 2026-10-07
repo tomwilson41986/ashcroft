@@ -581,10 +581,59 @@ the last off and stopped at 21:35 UK.
 
   The day record held no BSP. Betfair sends none in a closed market's book, and the recorder reads it at the off from
   7 Oct (ledger `recorder-bsp-1006`). The trader's CLV is unaffected: it takes the BSP from Betfair's cleared orders.
-  On 7 Oct the reads at the off found none either: no BSP in any of the 189 WIN markets (38 horse, 151 greyhound)
-  read after the off on the records' delayed key, nor in the trader's own reads of each race after the off on the live
-  key, which ask for it the same way (ledger `bsp-at-off-1007`). Why Betfair sends none is open; until it is known the
-  day's BSPs come with Betfair's price files the next day.
+  On 7 Oct the reads at the off found none either, in 189 WIN markets (38 horse, 151 greyhound). Over 1-7 Oct (ledger
+  `bsp-at-off-1007`):
+  - on the delayed key, which the records use, no read after the off carried any Starting Price data at all;
+  - on the live key, the trader's own reads of each race after the off, asked with SP_TRADED, carried the money taken
+    at SP (backStakeTaken, layLiabilityTaken) but never the BSP.
+
+  From 8 Oct both reads ask SP_AVAILABLE as well, and the nightly load takes a BSP from the trader's reads too. Until
+  one is read, the day's BSPs come with Betfair's price files the next day.
+
+**The seventh full day** (7 Oct, a Wednesday; ledger `live-day-1007`), the first whole day on the live key's feed.
+The 06:50 UTC session started at 07:06 UTC (run 37585355891) on GBP250 to win under the GBP4,000 day limit. The owner
+restarted it at 09:00 UK with no day limit (PR #122, run 37590881649), and at 13:00 UK on GBP400 to win, GBP300 a bet,
+no day limit and no stop (PRs #128 and #131, run 37617919958). Nothing was sent from 12:07 to 13:00 UK: the market
+recorder held the one runner (ledger `runner-give-way-1007`). Six more restarts followed for the greyhound trader's
+changes, each costing a minute or two. The last (15:53 UK, run 37640369476) traded to 15 minutes before the last off
+and had every race settled by 20:41 UK.
+
+| Horse first backed | Staked | CLV |
+|---|---|---|
+| By 11:00 UK | GBP5,518.01 | -0.8% |
+| After 11:00 UK | GBP1,887.27 | -8.3% |
+| **Day** | **GBP7,405.28** | **-2.7%** |
+
+- **-GBP52.18 after commission** on 923 backs in 38 races (GBP7,440.90 matched), CLV -2.7% at Betfair's settled
+  price. The account opened at GBP2,577.13 and closed at GBP5,410.91. About GBP2,886 came in during the day not from
+  trading (the owner's deposits).
+- **The afternoon closed badly** (-8.3%) and the morning level (-0.8%). It was the first day with no day limit, and
+  the first at GBP400 to win (from 13:00 UK).
+- **Funds.** The day staked GBP7,405.28, nearly twice the old GBP4,000 limit, and the money still bound:
+  - Betfair refused 16 backs for funds;
+  - 106 horses were held for funds, 8 of them never backed;
+  - 31 backs were killed (fill-or-kill);
+  - at the 15:53 UK restart GBP2,473.74 was free and GBP3,100.30 at risk.
+- **The seven days** (1-7 Oct): about GBP28,220 matched, +GBP534.28 after commission.
+- **The records beside it** (the day files):
+  - the win and place markets: 76 markets, 123,997 rows;
+  - the other-place markets: 98 markets (62 2/3/4 TBP, 36 each way), 171,677 rows;
+  - the greyhounds: 302 markets, 255,356 rows;
+  - the trader's own books: 157,343 rows;
+  - the Tote: 38 races, no errors;
+  - the evening record of 8 Oct's 46 win markets from 17:00 UK: 18 polls, 8,442 rows.
+
+  None held a BSP (above).
+- **The replays with 6 Oct** (ledgers `stake-target-replay-1007b`, `time-cutoff-replay-1007b`), GBP400 to win with
+  GBP5,000, as CLV x stake over 1-6 Oct:
+  - the GBP4,000 day limit is still best, at GBP1,382;
+  - a 12:00-13:00 stop comes next, at GBP1,288-1,335;
+  - trading to the last race with no limit, the owner's rule from 7 Oct, comes last, at GBP995: about GBP65 a day
+    behind.
+
+  The value is in backs entered before noon and more than two hours before the off. The closing model's expected CLV
+  is over-confident later in the day (ledger `closing-model-by-hour-1007`). A correction by time to the off and price
+  is the candidate fix (task 233); the owner decides.
 
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,

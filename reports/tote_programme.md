@@ -104,3 +104,28 @@ off time and cloth number.
 
 So far, no gap between the Tote and Betfair survives to the declared dividend. The comparison runs again on 7 Oct,
 the first whole day with the BSPs.
+
+## The first whole day (7 Oct), and 6 Oct with its BSPs
+
+`tote_vs_betfair.py` again (ledger `tote-compare-1007`). 7 Oct is the first whole day on the record: 38 races, each
+matched to its Betfair win and place markets, with Betfair's place terms recorded. 6 Oct's price files brought its
+BSPs (628 runners), so the parts against the BSP ran on 6 Oct.
+
+- **Before the off, the same picture as 6 Oct.** On 7 Oct the win pool's dividend is a median 27-28% below a Betfair
+  lay's break-even at every mark, 18-22% with the guarantee. The place pool's is 27-36% below.
+- **Late money moves the dividends.** A runner's dividend at the off is a median 1.05-1.08 times its dividend at a
+  mark. The middle 80% runs from about 0.6-0.7 to 1.7-2.1 times, and about a third fall 10% or more.
+- **The pairs still lose.** Backing on the Tote and laying on Betfair wherever the edge cleared 5% lost 6% to 58% a
+  unit at every mark, and 6% to 48% with the guarantee (22-72 pairs a mark, 5-10 winners).
+- **Against the BSP (6 Oct).**
+  - The near-final win dividend is a median 22% below the break-even of a lay at the BSP. Only 4% of runners are
+    above it.
+  - On the 32 winners the pool's dividend was a median 0.825 of the BSP and the guaranteed one 0.912 (the industry
+    SP 0.884). A Betfair back at the BSP pays about 0.98 of it after 2% commission.
+  - The guarantee is real (the listed dividend is the paid figure in every race), but it does not lift the Tote to
+    the BSP.
+- **The exotics (6 Oct).** Against their fair value under the BSP's chances, the exacta paid a mean 0.78 (9 races)
+  and the trifecta 0.75 (9 races). The swinger's 1.06 over 7 races (median 0.71) needs more days.
+
+No gap between the Tote and Betfair survives to the result. 7 Oct's parts against the BSP come with 8 Oct's price
+file: no read after the off has yet carried a BSP (ledger `bsp-at-off-1007`).
