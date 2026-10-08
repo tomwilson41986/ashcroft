@@ -2,10 +2,10 @@
   "edge": 0.2,
   "commission": 0.02,
   "trade_out": false,
-  "tight": null,
+  "tight": 1.25,
   "target": 12.0,
   "trade_from": "08:00",
-  "stop_before_off": 0,
+  "stop_before_off": 0.5,
   "poll_seconds": 20,
   "ledger_all": true,
   "limits": {
@@ -23,6 +23,8 @@
   "late_start_minutes": 5,
   "near_off_poll_seconds": 5,
   "near_off_minutes": 3,
-  "top_up": true,
-  "max_tries": 30
+  "top_up": false,
+  "max_tries": 30,
+  "decide_window_minutes": 1.5,
+  "reconsider": false
 }

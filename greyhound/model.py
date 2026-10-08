@@ -410,8 +410,8 @@ def main(argv=None) -> int:
     ap.add_argument("--compare", action="store_true",
                     help="fit the base features and base + the parity block (greyhound/parity.py) on the same folds")
     ap.add_argument("--variants", default=None,
-                    help="the fits to compare, set[:objective] (sets: base, base+parity, all, all+lib; objectives: "
-                         "binary, softmax, pl2), e.g. all,all+lib,all:softmax,all+lib:pl2")
+                    help="the fits to compare, set[:objective] (sets: base, base+parity, all, all+lib, each with -card for the "
+                         "card-safe features only; objectives: binary, softmax, pl2), e.g. all,all-card,all+lib-card:softmax")
     a = ap.parse_args(argv)
     store = Store(root=a.store)
     prices = load_prices(store, a.years)
@@ -448,7 +448,11 @@ def main(argv=None) -> int:
     report = {"timings": getattr(eng, "timings", None), "sets": {}}
     for name in names:
         set_name, _, objective = name.partition(":")
-        feats = sets[set_name]
+        card = set_name.endswith("-card")                  # the live model's view: what the morning card knows
+        feats = sets[set_name.removesuffix("-card")]
+        if card:
+            from greyhound.live import card_safe
+            feats = card_safe(feats)
         pred = walk_forward(df, feats, a.folds.split(","), a.date_from, objective=objective or "binary")
         importance = pred.attrs.pop("importance")          # off the frame: parquet writes attrs as JSON
         r = {"features": len(feats), "score": score(pred)}
