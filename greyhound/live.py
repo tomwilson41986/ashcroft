@@ -12,17 +12,14 @@ on it (``CARD_UNSAFE``); fitted on every GBGB race to yesterday, base, parity an
 ``--predict`` (GitHub's runners, hourly 07:21-19:21 UTC): today's cards from the recorder's greyhound catalogue in
 S3 (``greyhound.card``), priced from the dogs' earlier days, to ``sources/greyhound/live/predictions/<day>.csv``.
 
-``--trade`` (the UK runner, beside the recorder; the owner, 7 Oct 2026: "take whatever profit / stake we can where we
-believe we have an edge", "keep going right until the off"): every runner in every race is looked at each poll (20
-seconds; every 5 within 3 minutes of the off) from 08:00 UK until Betfair suspends the market at the off. A dog is
-backed whenever its edge at the best back price clears the bar (``live_config.json``: 0.2), at no more than the price
-cap: the order takes what is offered down the ladder while the edge holds, at least GBP1, fill-or-kill (nothing
-rests), and is topped up on later polls to the GBP5 level stake. Nothing is final but a stake complete: no edge now,
-too little offered, a field not all priced, or a back refused (the account's funds) are looked at again on the next
-poll. The model's chances are renormalised over the runners still in the market. Level backs held to the result
-(``trade_out`` false); with ``trade_out`` each back is staked to win ``target`` and laid at the Betfair SP for its
-winnings. No race limit and no daily cap (the owner, 7 Oct: ``null`` in ``live_config.json``; a number sets one); the S3 objects ``greyhound/STOP`` and
-``trading/STOP`` stop new bets within a minute.
+``--trade`` (the UK runner, beside the recorder). Paper only since 7 Oct 14:53 UTC (the owner: GREYHOUND_LIVE=no),
+on the tested rule (the owner, 8 Oct; ``live_config.json``): each runner looked at once, in the last 1.5 minutes before
+the off and no later than 30 seconds before it, at a book whose back and lay are within ``tight`` (25%); backed when
+its edge at the best back price clears 0.2, at a price from 1.5 to 20, GBP5 level, the stake taken down the ladder while
+the edge holds. The model's chances are renormalised over the runners still in the market. The anytime rule of 7 Oct
+(every poll to the off, no tightness, top-ups) is still there: ``decide_window_minutes`` null, ``reconsider`` and
+``top_up`` true. No race limit and no daily cap (``null``); the S3 objects ``greyhound/STOP`` and ``trading/STOP`` stop
+new bets within a minute.
 
 ``--settle`` (GitHub's runners, each day): the day's ledger against the recorder's settled books (BSP, the winner),
 to ``sources/greyhound/live/<mode>/<day>/settled.csv`` and the running summary ``.../summary.json``.
@@ -357,7 +354,7 @@ class Trader:
                         self.have[key] = self.have.get(key, 0.0) + m
                     elif r["status"] == "UNKNOWN":
                         self.decided_sel.add(key)           # its fate unread: never sent twice
-                elif r["action"] == "skip":
+                elif r["action"] == "skip" or (r["action"] == "none" and not self.cfg.get("reconsider", True)):
                     self.decided_sel.add(key)
         for key, m in self.have.items():
             if m + 0.01 >= self._target() or not self.cfg.get("top_up", True):
@@ -409,6 +406,9 @@ class Trader:
         t = pd.Timestamp(self.now())
         lim = self.cfg["limits"]
         sel = (~self.preds.market_id.isin(self.decided)) & self._open(t)
+        window = self.cfg.get("decide_window_minutes")           # only this close to the off (the tested T-1 rule)
+        if window is not None:
+            sel &= self.preds.off <= t + pd.Timedelta(minutes=float(window))
         if horizon_minutes is not None:
             sel &= self.preds.off <= t + pd.Timedelta(minutes=horizon_minutes)
         todo = self.preds[sel]
@@ -424,7 +424,8 @@ class Trader:
             done_here = {sid for m, sid in self.decided_sel if m == mid}
             have = {sid: v for (m, sid), v in self.have.items() if m == mid}
             rows = decide(todo[todo.market_id == mid], b, self.cfg, done=done_here, have=have)
-            open_here = any(r["action"] in ("wait", "retry", "none") for r in rows)
+            again = ("wait", "retry", "none") if self.cfg.get("reconsider", True) else ("wait", "retry")
+            open_here = any(r["action"] in again for r in rows)
             rows = [r for r in rows if r["action"] != "wait"]
             mins = round(float((todo[todo.market_id == mid].off.iloc[0] - t).total_seconds() / 60), 1)
             out = []
@@ -475,6 +476,8 @@ class Trader:
                             open_here = True                # not filled (the money gone, funds): tried again
                 if r["action"] == "skip" and sid is not None:
                     self.decided_sel.add(key)
+                if r["action"] == "none" and sid is not None and not self.cfg.get("reconsider", True):
+                    self.decided_sel.add(key)                   # decided once: no edge at its look is final
                 if r["action"] in ("retry", "none"):        # noted once a runner and reason, not each poll
                     note = (mid, sid, r["action"], str(r.get("error", ""))[:24])
                     if note in self.noted:

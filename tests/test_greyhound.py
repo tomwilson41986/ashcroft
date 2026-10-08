@@ -282,8 +282,9 @@ def test_the_live_rule_takes_what_is_offered_within_the_edge_and_tops_up_to_the_
     S = cfg["limits"]["level_stake"]
     assert S == 5.0 and stake_for(4.0, cfg) == S and stake_for(13.0, cfg) == S and not cfg["trade_out"]
     assert cfg["limits"]["max_daily_turnover"] is None and cfg["limits"]["max_bets_per_day"] is None   # no daily cap
-    assert cfg["stop_before_off"] == 0 and cfg["tight"] is None                # to the off, every real offer
+    assert cfg["tight"] == 1.25 and cfg["decide_window_minutes"] == 1.5 and not cfg["reconsider"]   # the T-1 rule
     assert cfg["limits"]["max_race_stake"] is None                      # no race limit (the owner, 7 Oct)
+    cfg.update(tight=None, stop_before_off=0, decide_window_minutes=None, reconsider=True, top_up=True)  # anytime
     cfg["limits"]["max_race_stake"] = 10.0                              # the limit itself tested at GBP10
     out = copy.deepcopy(cfg)                                            # the trading variant: staked to win GBP12
     out.update(trade_out=True)
@@ -360,7 +361,7 @@ def test_a_back_refused_for_funds_is_tried_again_and_a_restart_does_not_count_it
     from greyhound.live import Trader, load_config
     from sources.common import Store
     from trading.exchange import Fill, PaperExchange, Quote
-    cfg = load_config()
+    cfg = dict(load_config(), decide_window_minutes=None, reconsider=True)
     book = _Book({11: Quote(11, back=[(4.0, 50.0)], lay=[(4.2, 30.0)]), 12: Quote(12, back=[(1.6, 80.0)], lay=[(1.65, 9.0)])})
     pred = pd.DataFrame({"selection_id": [11, 12], "p_model": [0.4, 0.6], "track": ["Hove"] * 2,
                          "race_time": ["18:04:00"] * 2, "trap": [1, 2], "dog_name": list("AB"),
@@ -398,6 +399,36 @@ def test_a_back_refused_for_funds_is_tried_again_and_a_restart_does_not_count_it
     t3 = Trader(store, X(broke=True), cap, day, "live", tmp_path / "other.csv", now=lambda: now)
     t3.step(), t3.step(), t3.step()
     assert ("1.9", 11) in t3.decided_sel                                      # refused too often: given up
+
+
+def test_the_paper_rule_decides_each_dog_once_in_the_last_minutes_before_the_off(tmp_path):
+    from greyhound.live import Trader, load_config
+    from sources.common import Store
+    from trading.exchange import PaperExchange, Quote
+    cfg = load_config()
+    book = _Book({11: Quote(11, back=[(4.0, 50.0)], lay=[(4.2, 30.0)]), 12: Quote(12, back=[(1.6, 80.0)], lay=[(1.65, 9.0)])})
+    pred = pd.DataFrame({"selection_id": [11, 12], "p_model": [0.4, 0.6], "track": ["Hove"] * 2,
+                         "race_time": ["18:04:00"] * 2, "trap": [1, 2], "dog_name": list("AB"),
+                         "market_id": "1.9", "race_date": "2026-10-06"})
+
+    class X(PaperExchange):
+        def books(self, mids, with_sp=False):
+            self._books.update({m: book for m in mids})
+            return {m: book for m in mids}
+
+    store = Store(root=tmp_path / "sources")
+    buf = io.StringIO()
+    pred.to_csv(buf, index=False)
+    store.put("greyhound/live/predictions/2026-10-06.csv", buf.getvalue().encode())
+    now = {"t": pd.Timestamp("2026-10-06T16:30:00Z").to_pydatetime()}             # 17:30 UK: 34 minutes out
+    t = Trader(store, X(None), cfg, pd.Timestamp("2026-10-06").date(), "paper", tmp_path / "l.csv", now=lambda: now["t"])
+    assert t.step() == 0 and t.bets == 0 and not t.decided_sel                      # too early: not looked at
+    now["t"] = pd.Timestamp("2026-10-06T17:03:00Z").to_pydatetime()                 # a minute before the off
+    assert t.step() == 1 and t.bets == 1                                            # 11 backed, 12 no edge: done
+    book.runners[12] = Quote(12, back=[(3.0, 80.0)], lay=[(3.1, 9.0)])               # 12 drifts after its look
+    assert t.step() == 0 and t.bets == 1                                            # decided once: not backed
+    now["t"] = pd.Timestamp("2026-10-06T17:03:45Z").to_pydatetime()                 # under 30 seconds: no bet
+    assert not t._open(pd.Timestamp(now["t"])).any()
 
 
 def test_the_racecard_recorder_writes_a_card_only_when_it_changes_and_counts_the_weights(tmp_path):

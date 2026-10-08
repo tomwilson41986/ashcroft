@@ -20,10 +20,10 @@ on:
         type: string
         default: '2021-01,2022-01,2023-01,2024-01,2025-01,2026-01'
       variants:
-        description: 'the fits to compare, set[:objective], e.g. all,all+lib,all:softmax'
+        description: 'the fits to compare, set[:objective] (-card: card-safe features only), e.g. all,all+lib-card:softmax; three fit the time limit'
         required: false
         type: string
-        default: 'all,all+lib,all:softmax,all+lib:softmax,all+lib:pl2'
+        default: 'all-card,all+lib-card,all+lib-card:softmax'
       pred_run:
         description: 'rescore only: the run id of an earlier full run whose saved predictions to score again (no fit)'
         required: false
@@ -89,9 +89,9 @@ jobs:
           YEARS: ${{ inputs.years || '2018-2026' }}
           FOLDS: ${{ inputs.folds || '2021-01,2022-01,2023-01,2024-01,2025-01,2026-01' }}
           PRED_RUN: ${{ inputs.pred_run }}
-          VARIANTS: ${{ inputs.variants || 'all,all+lib,all:softmax,all+lib:softmax,all+lib:pl2' }}
+          VARIANTS: ${{ inputs.variants || 'all-card,all+lib-card,all+lib-card:softmax' }}
         run: |
-          if ! [[ "$VARIANTS" =~ ^[a-z0-9+:,]+$ ]]; then echo "variants: sets and objectives only"; exit 1; fi
+          if ! [[ "$VARIANTS" =~ ^[a-z0-9+:,-]+$ ]]; then echo "variants: sets and objectives only"; exit 1; fi
           if ! [[ "$YEARS" =~ ^[0-9]{4}-[0-9]{4}$ ]]; then echo "years must be YYYY-YYYY"; exit 1; fi
           if ! [[ "$FOLDS" =~ ^[0-9]{4}-[0-9]{2}(,[0-9]{4}-[0-9]{2})*$ ]]; then echo "folds must be YYYY-MM,..."; exit 1; fi
           mkdir -p out
