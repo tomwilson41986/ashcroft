@@ -129,3 +129,39 @@ BSPs (628 runners), so the parts against the BSP ran on 6 Oct.
 
 No gap between the Tote and Betfair survives to the result. 7 Oct's parts against the BSP come with 8 Oct's price
 file: no read after the off has yet carried a BSP (ledger `bsp-at-off-1007`).
+
+## 7 Oct against the BSP, and 8 Oct the same night
+
+`tote_vs_betfair.py` again (ledger `tote-compare-1008`, research query run 37850395101). 7 Oct's price file brought
+its BSPs (768 runners, matching the day record's 768). 8 Oct's BSPs came the same night, from the reads at the off:
+the first day the record held them before the price file (864 runners; ledger `bsp-at-off-1008`). Both days were
+matched in full (38 of 38 races on 7 Oct, 45 of 45 on 8 Oct).
+
+- **Before the off, unchanged.** The win pool's dividend is a median 25-31% below a Betfair lay's break-even at every
+  mark, or 17-23% with the guarantee. The place pool's is 27-37% below.
+- **Late money.** A dividend at the off is a median 1.04-1.13 times its value at a mark, and a quarter to a third of
+  runners fall 10% or more.
+- **The pairs lose.** Back on the Tote and lay on Betfair wherever the edge cleared 5%:
+  - 7 Oct: -6% to -58% a unit at every mark;
+  - 8 Oct: -3% to -41% a unit at every mark.
+- **Against the BSP.**
+  - The near-final win dividend is a median 21-23% below the break-even of a lay at the BSP, and above it for only
+    3.5-4.4% of runners.
+  - On the winners (medians):
+
+    | Day | Winners | Pool's dividend / BSP | With the guarantee / BSP | Industry SP / BSP | Pool above the BSP |
+    |---|---|---|---|---|---|
+    | 7 Oct | 38 | 0.795 | 0.888 | 0.858 | 0 races |
+    | 8 Oct | 45 | 0.825 | 0.896 | 0.875 | 1 race |
+- **The exotics** (declared dividend × its chance under the BSP; 1 is fair):
+
+  | Day | Exacta (mean) | Trifecta (mean / median) | Swinger (mean / median) |
+  |---|---|---|---|
+  | 7 Oct (15, 15 and 11 races) | 0.72 | 0.80 / 0.71 | 1.04 / 0.60 |
+  | 8 Oct (16, 16 and 12 races) | 0.81 | 0.95 / 1.12 | 0.96 / 0.86 |
+
+  The trifecta's 1.12 median on 8 Oct comes from 16 races, and the 6-8 Oct means run 0.75-0.95. Nothing yet
+  reaches fair value.
+
+Three days now agree: no gap between the Tote and Betfair survives to the result. With the BSP read at the off, each
+day can be scored the same night.

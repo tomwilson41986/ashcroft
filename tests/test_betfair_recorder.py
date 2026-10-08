@@ -990,3 +990,18 @@ def test_a_record_asked_to_stop_ends_cleanly_and_copies_its_files_first(tmp_path
     monkeypatch.setattr(br, "record", lambda *a, **k: {"markets": 0})
     assert br.main(["--record", "--date", "2026-10-07"]) == 0
     assert signal.getsignal(signal.SIGTERM) is before
+
+
+def test_the_final_mark_keeps_its_bsp_blank_when_no_read_has_one():
+    """7 Oct's load: most settled books carried the BSP, 43 had none and no read at the off had one either. Filling
+    the float column with nothing but blanks raised in pandas 3 and stopped the night's load (7 and 8 Oct unloaded)."""
+    books, markets = _books_frame()
+    off = datetime(2026, 10, 1, 14, 30, tzinfo=timezone.utc)
+    settled = raw_book(status="CLOSED", runners=[{"selectionId": 13, "status": "LOSER", "sp": {}}])
+    other = raw_book(mid="1.999", inplay=True, runners=[{"selectionId": 77, "status": "ACTIVE",
+                                                         "sp": {"actualSP": 9.0}}])
+    extra = pd.DataFrame(br.book_rows([settled], off + timedelta(hours=8), "final")
+                         + br.book_rows([other], off + timedelta(seconds=20), "bsp"))
+    m = br.marks(pd.concat([books, extra], ignore_index=True), markets, DAY).set_index(["selection_id", "mark"])
+    assert m.loc[(11, "final"), "bsp"] == pytest.approx(3.9)
+    assert pd.isna(m.loc[(13, "final"), "bsp"])
