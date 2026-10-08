@@ -716,8 +716,9 @@ def marks(books, markets, day: date):
     sp = sp.dropna(subset=["_sp"]).sort_values("polled").groupby(["market_id", "selection_id"])["_sp"].last()
     fill = out["mark"].eq("final") & out["bsp"].isna()
     if fill.any() and len(sp):
-        out.loc[fill, "bsp"] = [sp.get((m, s)) for m, s in zip(out.loc[fill, "market_id"],
-                                                               out.loc[fill, "selection_id"])]
+        # as floats, a blank where no read has one (a list of None alone raises in pandas 3: 7 Oct's load)
+        keys = pd.MultiIndex.from_arrays([out.loc[fill, "market_id"], out.loc[fill, "selection_id"]])
+        out.loc[fill, "bsp"] = sp.reindex(keys).to_numpy(dtype=float)
     return out[MARK_FIELDS]
 
 

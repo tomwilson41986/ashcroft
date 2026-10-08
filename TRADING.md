@@ -635,6 +635,75 @@ and had every race settled by 20:41 UK.
   is over-confident later in the day (ledger `closing-model-by-hour-1007`). A correction by time to the off and price
   is the candidate fix (task 233); the owner decides.
 
+**The eighth full day** (8 Oct, a Thursday; ledger `live-day-1008`). This was the first whole day under the owner's
+rule from 7 Oct: GBP400 to win, GBP300 a bet, no day limit and no stop, 08:00 UK to 15 minutes before each off, on the
+live key's feed (the closing model fitted with volume).
+- The 06:50 UTC session started at 07:09 UTC (run 37741708911) and was cancelled at 08:01 UTC.
+- Run 37747028330 traded from 08:00 UTC to the last race (20:30 UTC).
+- The 21:45 UTC settle ran at 21:51 UTC (run 37849621049): 42 of 43 markets were settled, and the 43rd held no
+  exposure.
+
+| Horse first backed | Staked | CLV |
+|---|---|---|
+| By 11:00 UK | GBP5,868.74 | -5.3% |
+| After 11:00 UK | GBP2,220.03 | -6.7% |
+| **Day** | **GBP8,088.77** | **-5.7%** |
+
+- **-GBP459.25 after commission** on 1,172 backs (GBP8,241.41 matched), CLV -5.7% at Betfair's settled price. The
+  account opened at GBP5,410.91 and closed at GBP4,951.66, with no deposits.
+- **The day lost in the morning too.**
+  - It backed 185 horses. Their first backs, GBP1,122.12, lost 5.4%; top-ups were 86% of the stake.
+  - Betfair refused 62 backs for funds and 35 were killed (fill-or-kill).
+  - 126 horses were held for funds, 31 of them never backed.
+- **The eight days** (1-8 Oct): +GBP75.03 after commission, or +GBP112.50 from 30 Sep. The volume model has lost
+  since 6 Oct 15:25 UK (CLV -3.9%); the no-volume model made +3.6% to 6 Oct (the live review, ledger
+  `live-review-1008`). The owner has four proposed changes:
+  - price with the no-volume model even on the live feed;
+  - one back a horse, no top-ups;
+  - GBP250 to win under the GBP4,000 day limit;
+  - the +3% bar.
+
+  The owner decides; the live rule is unchanged.
+- **The BSP after the off is fixed** (ledger `bsp-at-off-1008`). With SP_AVAILABLE asked from 8 Oct:
+  - the trader's live-key reads after the off carry the BSP (1,128 of 1,213 rows; 7 Oct none);
+  - the recorder's delayed-key reads carry it too: 41 of 46 win markets were read at the off, and the 5 missed by
+    the minute are in their settled books;
+  - so did 115 of 121 greyhound win markets and 59 of 68 TBP markets. Each-way markets have no BSP.
+
+  The nightly load then crashed. The final-mark BSP fill put a list of blanks into a float column, which pandas 3
+  refuses, so 7 and 8 Oct were not loaded. Fixed in `betfair_recorder.marks`, with a test. The 9 Oct load (three
+  days) loads 7-9 Oct.
+- **The Tote** (ledger `tote-compare-1008`; `reports/tote_programme.md`). On 7 Oct (with its price file) and 8 Oct
+  (with the BSPs read at the off) the winners' pool dividend was 0.80-0.83 of the BSP, and 0.89-0.90 with the
+  guarantee. No gap survives to the result.
+- **The other markets on 7 Oct** (ledger `all-markets-scan-1008`):
+  - the arbitrages are pennies (median GBP0.47);
+  - the model's flagged offers are negative at the BSP in nearly every market.
+
+  Nothing to trade.
+- **The replays with 7 Oct** (ledgers `stake-target-replay-1008`, `time-cutoff-replay-1008`), GBP400 to win with
+  GBP5,000, CLV x stake over 1-7 Oct:
+
+  | Rule | CLV x stake | CLV |
+  |---|---|---|
+  | The GBP4,000 day limit | GBP1,637 | 6% |
+  | A 12:00-13:00 stop | GBP1,515-1,562 | |
+  | To the last race, no limit (the owner's rule) | GBP892 | 2% |
+
+  The order is unchanged: the owner's rule is about GBP100 a day behind. By the UK hour entered, backs at 08:00-09:59
+  make +6-8% and backs from 12:00 lose (13:00 -6%). The replay's 7 Oct is positive under the day limit, where the
+  real day lost: the replay fills once a minute at the recorded book, not as the live fills did.
+- **Task 233: the closing model corrected** (ledger `closing-correction-1008`; `research/live/closing_correction/`).
+  - The BSP of the horses we backed came out above the model's expected BSP: a mean 10% on the no-volume model, 18%
+    on the volume model (22% on 8 Oct). Longer prices drift more.
+  - A walk-forward correction by time to the off and price cuts the forecast's squared error by 12%.
+  - The corrected rule (expected CLV still over 3% after the correction) would have kept 298 of 1,072 horses. Their
+    CLV is +0.9% (+GBP176), against 0.0% (-GBP5) for all.
+  - On 7 Oct it is -GBP66 against -GBP204, and on 8 Oct -GBP83 against -GBP459. With top-ups it still loses on
+    both days. First backs alone: +6.1% kept against +5.2% for all.
+
+  Shown to the owner; the owner decides.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
