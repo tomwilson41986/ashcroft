@@ -473,3 +473,32 @@ model with the weigh-in, which the morning card does not have. The decisive chec
 model (no `CARD_UNSAFE` features) with the library and the race's loss, scored on the same Betfair test at T-1. Then
 the library's card check (`greyhound.live --check-card`), and only then a paper test of the near-the-off rule with its
 thresholds fixed in advance. Greyhound trading has been paper-only since 14:53 UTC on 7 Oct (the owner).
+
+## 12. The card-safe model: what the morning card knows (CI run 37746930297; `reports/greyhound_cardsafe_ci_1008.json`)
+
+The models of §11 with the nine features the morning card cannot know left out (`live.CARD_UNSAFE`: the weigh-in, the
+going, the prize, the handicap), on the same rows and folds: the model as it would trade.
+
+| | Log-loss, all years | 2026 | Blend weight with the BSP | T-1, edge > 0.2, at the price (90%) | Same bets at BSP | Test half, T-1 edge > 0.2 (90%) |
+|---|---|---|---|---|---|---|
+| all (§11, weigh-in) | 0.43772 | 0.44435 | 0.119 | +3.4% (+1.2, +5.5) | +4.5% | +3.6% (+0.4, +6.7) |
+| **all-card** | 0.43890 | 0.44571 | 0.035 | +1.2% (−1.0, +3.4) | +2.7% | +1.6% (−1.5, +4.8) |
+| all+lib (§11, weigh-in) | 0.43630 | 0.44262 | 0.123 | +4.1% (+1.9, +6.3) | +5.2% | +3.2% (+0.1, +6.4) |
+| **all+lib-card** | 0.43751 | 0.44389 | 0.027 | +0.6% (−1.6, +2.8) | +1.9% | +1.1% (−2.1, +4.2) |
+| all+lib:softmax (§11, weigh-in) | 0.43514 | 0.44121 | 0.130 | +4.6% (+2.4, +6.8) | +5.3% | +4.1% (+0.9, +7.3) |
+| **all+lib-card:softmax** | 0.43632 | 0.44248 | 0.055 | +0.7% (−1.5, +3.0) | +1.5% | −0.4% (−3.6, +2.8) |
+
+**The card-safe model has no edge a minute before the off.** Every T-1 rule's 90% range spans zero, in the full year and
+in the test half, and its weight beside the BSP falls from 0.12-0.13 to 0.03-0.06. The library and the race's loss still
+improve its log-loss, but the edge near the off was the weigh-in's: the dog's weight on the day against its usual
+weight, which the market a minute before the off has not fully priced and the morning card cannot know.
+
+Only the first traded price still shows a large return at that price (+10% to +14%), with nothing at BSP (−0.2% to
++1.4%). That is the early-price rule the live day of 7 Oct lost on; it is not evidence.
+
+**What follows:**
+- the greyhound trader stays on paper (since 7 Oct 14:53 UTC); its paper test runs the card-safe model on the T-1 rule,
+  where this section expects about nothing after commission;
+- a T-1 edge needs the day's weights before the off. greyhounds.today published none on 7 Oct (§9 of the record);
+  the weigh-in is taken before racing, so any source that carries it in the last hour would restore the features;
+- without that source, the greyhound model is not a trading model and the work is parked.
