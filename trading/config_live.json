@@ -5,6 +5,8 @@
   "clv_bar": 0.03,
   "closing_model": "data/models/closing_model.json",
   "closing_model_novol": "data/models/closing_model_novol.json",
+  "closing_volume": false,
+  "topups": false,
   "clv_draws": 20000,
   "commission": 0.02,
   "trade_from": "08:00",

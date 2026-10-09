@@ -22,6 +22,8 @@ STAKE = 250.0      # the mechanics below are written to win GBP250 (the live tar
 def _live_cfg(**limits):
     cfg = tc.load_config("trading/config_live.json", env={})
     cfg.target = STAKE
+    cfg.closing_volume, cfg.topups = True, True   # the mechanics below read the feed's volume and top up; the owner's
+                                                  # rule from 9 Oct (neither) is tested on LIVE (test_the_owners_rule_*)
     for k, v in limits.items():
         setattr(cfg.limits, k, v)
     return cfg
@@ -280,6 +282,40 @@ def test_a_horse_backed_already_is_topped_up_only_to_what_is_left_to_win():
     s.sync(s.x.orders(["1.7"]))
     s.step(clock())
     assert not [p for m, p in c.calls if m == "placeOrders" and p["instructions"][0]["selectionId"] == 1]
+
+
+def test_the_owners_rule_from_9_oct_reads_every_race_without_volume_and_backs_each_horse_once():
+    """The owner, 9 Oct: "No-volume model, first back only". The live record 30 Sep - 8 Oct: first backs priced by
+    the model fitted without volume +7.9% CLV against the BSP; the volume model on the live key's feed -3.9%, and
+    top-ups -2.2% against first backs +5.7%."""
+    assert LIVE.closing_volume is False and LIVE.topups is False
+    thin = _views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [50, 900, 800, 300])   # the live key's feed
+    blind = _views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [0, 0, 0, 0])         # the delayed key's
+    cfg = _live_cfg()
+    cfg.closing_volume = False
+    got, same = plan_race(thin, cfg, 4000), plan_race(blind, cfg, 4000)
+    assert [d.selection_id for d in got] == [1] and "no-volume model" in got[0].reason   # no GBP100 floor
+    assert [(d.selection_id, d.edge, d.p_pool) for d in got] == [(d.selection_id, d.edge, d.p_pool) for d in same]
+
+
+@pytest.mark.parametrize("topups,more", [(True, True), (False, False)])
+def test_with_top_ups_off_a_horse_backed_already_is_not_backed_again(topups, more):
+    # backed at 7.0 for GBP20 (to win 120 of 250); the price is now 6.0 and still value
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    held = [{"marketId": "1.7", "selectionId": 1, "side": "BACK", "orderType": "LIMIT", "sizeMatched": 20.0,
+             "averagePriceMatched": 7.0, "customerOrderRef": "ash10011"},
+            {"marketId": "1.7", "selectionId": 1, "side": "LAY", "orderType": "MARKET_ON_CLOSE",
+             "bspLiability": 120.0, "customerOrderRef": "ash10011x"}]
+    c = _Client(orders=held)
+    cfg = _live_cfg()
+    cfg.topups = topups
+    s, clock = _session(c, [_race("1.7", off, [6.0, 2.3, 3.6, 6.0], [3.5, 2.6, 4.2, 8.0], [500, 900, 800, 300])],
+                        cfg)
+    s.sync(s.x.orders(["1.7"]))
+    s.step(clock())
+    again = [p for m, p in c.calls if m == "placeOrders" and p["instructions"][0]["selectionId"] == 1
+             and p["instructions"][0]["side"] == "BACK"]
+    assert bool(again) is more
 
 
 def test_a_lost_session_is_logged_in_again_and_the_order_sent_once_more():
