@@ -149,8 +149,9 @@ def _plan_closing_clv(live: list[RunnerView], cfg) -> list[Decision]:
     """The owner's rule on one race. Only a whole race is read: every runner still running priced by the model and
     by the market. A runner is backed where its expected CLV at the best back price is at least cfg.clv_bar and it
     has at least limits.min_runner_matched matched; a race whose feed reports no matched money at all (Betfair's
-    delayed key) is read by the closing model fitted without volume and not held to that floor. The target is the
-    day's whole stake on the runner: enough to win cfg.target before commission, at most limits.max_stake."""
+    delayed key) is read by the closing model fitted without volume and not held to that floor. With
+    cfg.closing_volume off (the owner, 9 Oct) every race is read that way, whatever the feed carries. The target is
+    the day's whole stake on the runner: enough to win cfg.target before commission, at most limits.max_stake."""
     from model import race_book as rb
     if len(live) < 2 or any(not (r.model_price and r.model_price > 1) for r in live):
         return []
@@ -160,7 +161,10 @@ def _plan_closing_clv(live: list[RunnerView], cfg) -> list[Decision]:
     back = np.array([r.back if (r.back and r.back > 1) else np.nan for r in live], float)
     lay = np.array([r.lay if (r.lay and r.lay > 1) else np.nan for r in live], float)
     traded = np.array([max(float(r.traded or 0.0), 0.0) for r in live], float)
-    blind = not (traded > 0).any()
+    feed_blind = not (traded > 0).any()
+    blind = feed_blind or not getattr(cfg, "closing_volume", True)
+    if blind:
+        traded = np.zeros(len(live), float)            # read as the delayed key's feed gives it: no runner's money
     model = _closing_model(cfg.closing_model_novol if blind else cfg.closing_model)
     with np.errstate(invalid="ignore", divide="ignore"):
         market = np.where(np.isfinite(back), rb.market_now(back, lay), np.array(fallback, float))
@@ -184,5 +188,6 @@ def _plan_closing_clv(live: list[RunnerView], cfg) -> list[Decision]:
                             back_size=float(r.back_size), p_model=float(p_model[i]), p_market=float(p_mkt[i]),
                             p_pool=float(1.0 / exp_bsp[i]), edge=float(ev[i]),
                             move=float(np.log(back[i] / r.model_price)),
-                            reason="closing CLV" + (", feed without volume" if blind else "")))
+                            reason="closing CLV" + (", feed without volume" if feed_blind
+                                                    else ", no-volume model" if blind else "")))
     return out

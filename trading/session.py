@@ -236,6 +236,8 @@ class Session:
         key = (m.market_id, d.selection_id)
         pos = self.positions.get(key)
         want = d.target - (pos.matched if pos else 0.0)
+        if self.cfg.strategy == "closing_clv" and pos and pos.matched > 0 and not getattr(self.cfg, "topups", True):
+            return                                          # one back a horse (the owner, 9 Oct): no top-ups
         if self.cfg.strategy == "closing_clv" and pos and pos.matched > 0:
             # a fixed win: only what is left to win, at the price now, within the per-bet limit, so a horse
             # that has shortened since it was backed is not topped up beyond the target

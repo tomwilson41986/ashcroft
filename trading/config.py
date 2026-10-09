@@ -48,6 +48,9 @@ class TradingConfig:
     clv_bar: float = 0.03                # closing_clv: back where the expected CLV at the best back is at least this
     closing_model: str = "data/models/closing_model.json"              # closing_clv: the closing model
     closing_model_novol: str = "data/models/closing_model_novol.json"  # ... for a race whose feed has no volume
+    closing_volume: bool = True          # closing_clv: read each runner's matched money where the feed carries it (the
+                                         # volume model, the GBP100 floor); False reads every race as the delayed feed
+    topups: bool = True                  # closing_clv: top a horse up to its target; False backs each horse once
     clv_draws: int = 20000               # closing_clv: draws of the BSP book per race
     commission: float = 0.05
     trade_from: str = "08:00"            # UK time: the tested edge is on the morning price

@@ -83,7 +83,8 @@ python betfair_sync.py --upcoming
 python betfair_sync.py --live --csv live_odds.csv
 
 # Live trading on the owner's account (the owner's decision, 30 Sep 2026; TRADING.md): the owner's rule, GBP400 to
-# win, at most GBP300 a bet, no day limit and no stop time (the owner, 7 Oct), each back laid at the SP. Places real
+# win, at most GBP300 a bet, no day limit and no stop time (the owner, 7 Oct), each back laid at the SP; from 9 Oct the
+# closing model fitted without volume on every feed and one back a horse (closing_volume, topups). Places real
 # orders only with TRADING_LIVE=yes, and only on the UK runner (live-trade.yml); the S3 object trading/STOP stops new bets
 TRADING_LIVE=yes python auto_trade.py --live --until 21:35   # 08:00 UK to 15 min before each off (owner, 1 and 7 Oct)
 python auto_trade.py --live --settle
