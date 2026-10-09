@@ -284,11 +284,12 @@ def test_a_horse_backed_already_is_topped_up_only_to_what_is_left_to_win():
     assert not [p for m, p in c.calls if m == "placeOrders" and p["instructions"][0]["selectionId"] == 1]
 
 
-def test_the_owners_rule_from_9_oct_reads_every_race_without_volume_and_backs_each_horse_once():
-    """The owner, 9 Oct: "No-volume model, first back only". The live record 30 Sep - 8 Oct: first backs priced by
-    the model fitted without volume +7.9% CLV against the BSP; the volume model on the live key's feed -3.9%, and
-    top-ups -2.2% against first backs +5.7%."""
-    assert LIVE.closing_volume is False and LIVE.topups is False
+def test_the_owners_rule_from_9_oct_reads_every_race_without_volume_and_tops_up_under_the_day_limit():
+    """The owner, 9 Oct: "No-volume model, first back only", then, after the replay of 1-7 Oct (research query
+    strategy_replay_1009: the no-volume model with top-ups under GBP4,000 a day GBP1,693 CLV x stake, one back a horse
+    GBP410), "no-volume model with top-ups on and the GBP4,000 day limit back, at GBP400 to win"."""
+    assert LIVE.closing_volume is False and LIVE.topups is True
+    assert LIVE.limits.max_daily_turnover == 4000.0 and LIVE.target == 400.0
     thin = _views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [50, 900, 800, 300])   # the live key's feed
     blind = _views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [0, 0, 0, 0])         # the delayed key's
     cfg = _live_cfg()
@@ -435,10 +436,11 @@ def test_the_owners_commission_stake_and_limits():
     """The owner, 2 Oct. Betfair charges the account 2% of each race's net winnings: on 1 Oct the settled result at 2%
     met the account's balance to the penny (+GBP188.19; 5% gave 178.62). The number of bets is not limited (a cap of
     250 stopped seven backs on 1 Oct). The owner, 7 Oct: GBP400 to win (GBP250 until then), GBP300 a bet, no limit on
-    the day's stakes and no stop time: "We should just trade if we think the price is right" (test_the_owners_window_*)."""
+    the day's stakes and no stop time: "We should just trade if we think the price is right" (test_the_owners_window_*).
+    The owner, 9 Oct: the GBP4,000 day limit back (test_the_owners_rule_from_9_oct_*)."""
     assert LIVE.commission == 0.02
     assert LIVE.limits.max_bets_per_day >= 1_000_000
-    assert LIVE.limits.max_daily_turnover >= 1_000_000
+    assert LIVE.limits.max_daily_turnover == 4000.0
     assert LIVE.limits.max_stake == 300.0 and LIVE.target == 400.0
 
 
