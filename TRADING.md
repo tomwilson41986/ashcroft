@@ -142,21 +142,29 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   (`model/race_book.py`; the model fitted without volume when the delayed key's feed carries none), with at least
   GBP100 matched on it when the feed reports matched money. Staked to win GBP400 before commission (the owner, 7 Oct;
   GBP250 until then).
-- **From 9 Oct: the no-volume model, first back only** (the owner, 9 Oct: "switch to this: No-volume model, first back
-  only"). Every race is now read by the closing model fitted without volume, whatever the feed carries
-  (`closing_volume: false`), so no runner is held to the GBP100 floor. Each horse is backed once and never topped up
-  (`topups: false`); the lay at the SP still closes each back. The ledger's reason reads "closing CLV, no-volume
-  model" on the live key's feed. The live record of 30 Sep - 8 Oct behind it (ledger `live-review-1008`):
+- **From 9 Oct: the no-volume model, with top-ups under the GBP4,000 day limit** (the owner, 9 Oct). Every race is
+  read by the closing model fitted without volume, whatever the feed carries (`closing_volume: false`), so no runner
+  is held to the GBP100 floor; the ledger's reason reads "closing CLV, no-volume model" on the live key's feed. Each
+  horse is topped up to win GBP400 (`topups: true`) and the day's stakes stop at GBP4,000 (`max_daily_turnover`),
+  which keeps the top-ups in the morning. The owner first chose "No-volume model, first back only" (PR #142) on the
+  live record; the replay of 1-7 Oct on the recorded books with GBP5,000 (research query
+  `research/queries/done/strategy_replay_1009.py`, run 37900973153; ledger `strategy-replay-1009`) then put one back a
+  horse well behind, and the owner switched (ledger `owner-rule-1009b`):
 
-  | Backs | CLV against the BSP | Locked before commission |
-  |---|---|---|
-  | No-volume model, first backs | +7.9% on GBP9,035 | +GBP716 |
-  | No-volume model, with top-ups | +3.6% on GBP20,408 | +GBP741 |
-  | Volume model (live feed, 6-8 Oct), first backs | -2.1% on GBP2,544 | -GBP54 |
-  | Volume model, with top-ups | -3.9% on GBP16,392 | -GBP645 |
+  | Rule, GBP400 to win, GBP5,000 | CLV x stake | After commission | CLV |
+  |---|---|---|---|
+  | **No-volume, top-ups, GBP4,000 a day (the rule)** | **GBP1,693** | **GBP1,425** | 6% |
+  | As read (volume model on the live feed), top-ups, GBP4,000 a day | GBP1,637 | GBP1,398 | 6% |
+  | No-volume, top-ups, no limit, nothing new after 12:00 | GBP1,502 | GBP1,379 | 6% |
+  | No-volume, top-ups, no limit | GBP1,037 | GBP868 | 2% |
+  | The rule of 7-8 Oct (as read, top-ups, no limit) | GBP892 | GBP827 | 2% |
+  | No-volume, one back a horse, nothing new after 12:00 | GBP563 | GBP486 | 8% |
+  | No-volume, one back a horse (PR #142) | GBP410 | GBP323 | 3% |
 
-  The no-volume model had traded only on the delayed key's feed; on the live key's feed it is untested. Ledger
-  `owner-rule-1009`.
+  One back a horse keeps the CLV but stakes a third as much (GBP13,500 against GBP27,000-46,000). The top-ups that
+  lost in the live record were the late ones on the volume model; morning top-ups under the limit made +7% on 7 Oct.
+  The no-volume model matches the trader on 1-5 Oct (the delayed feed) and leads on the live key's days (7 Oct: GBP312
+  against GBP255 under the limit; GBP36 against -GBP103 without). 8 Oct waits for its price file.
 - **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, and no limit on
   the day's stakes and no stop time: the account's money is the only limit (the owner, 7 Oct, below). The day limit
   was GBP4,000 to 7 Oct; that day the owner lifted it, put it back with the bigger target, weighed a stop time in its
