@@ -164,9 +164,14 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   One back a horse keeps the CLV but stakes a third as much (GBP13,500 against GBP27,000-46,000). The top-ups that
   lost in the live record were the late ones on the volume model; morning top-ups under the limit made +7% on 7 Oct.
   The no-volume model matches the trader on 1-5 Oct (the delayed feed) and leads on the live key's days (7 Oct: GBP312
-  against GBP255 under the limit; GBP36 against -GBP103 without). 8 Oct waits for its price file.
-- **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, and no limit on
-  the day's stakes and no stop time: the account's money is the only limit (the owner, 7 Oct, below). The day limit
+  against GBP255 under the limit; GBP36 against -GBP103 without). With 8 Oct added (run 37996675992; ledger
+  `strategy-replay-1009b`) the order holds: the rule GBP1,924 CLV x stake over 1-8 Oct (GBP1,602 after commission,
+  6%; 8 Oct +GBP231), top-ups with no limit to 12:00 GBP1,681, top-ups with no limit GBP1,156, one back a horse
+  GBP443. The recorded books carry no runner volume on most polls, so the replay reads the no-volume model either
+  way; it cannot test the volume model the trader used live.
+- **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, GBP4,000 of
+  stakes a day from 9 Oct (above) and no stop time. From 7 to 9 Oct there was no day limit: the account's money was the
+  only limit (the owner, 7 Oct, below). The day limit
   was GBP4,000 to 7 Oct; that day the owner lifted it, put it back with the bigger target, weighed a stop time in its
   place, and settled on neither. No limit on the number of bets (the owner, 2 Oct; a cap of 250 a day, set when the
   trader was built, stopped seven backs on 1 Oct).
@@ -726,6 +731,34 @@ live key's feed (the closing model fitted with volume).
     both days. First backs alone: +6.1% kept against +5.2% for all.
 
   Shown to the owner; the owner decides.
+
+**The ninth full day** (9 Oct, a Friday; ledger `live-day-1009`; the full review is
+`reports/review_2026-10-09.md`). The trader started on 8 Oct's rule (the volume model on the live key's feed, top-ups,
+no day limit) and the owner restarted it on the new rule at 10:19 UK.
+- The 06:50 UTC session (run 37897398797) traded 07:09-09:19 UTC; the owner's dispatch on the merged rule (run
+  37910495792) ran 09:19-20:30 UTC; the settle ran at 21:51 UTC (run 37995871473).
+- **-GBP62.91 after commission** on 676 backs in 44 markets (GBP4,972.63 matched), CLV -0.6% on GBP4,878.39 staked.
+  The account went from GBP4,951.66 to GBP4,888.75.
+- **It was the old rule's morning.** All 124 horses were first backed by 10:15 UK. By the restart the day's stakes were
+  past GBP4,000, so the new rule (which counts the day's stakes already placed) placed nothing.
+- **First backs made money again; the top-ups lost it.** First backs GBP867.77 at +6.9% (+GBP60 CLV x stake); the
+  top-ups, GBP4,010.62, -2.2% (-GBP89). The old rule spent GBP4,878 in 2 hours 19 minutes.
+- **The model behind the prices** (ledgers `model-quality-1009`, `model-quality-1009b`): no change since 30 Sep and
+  no loss of quality. Spearman against the BSP 0.91 (29 Sep-5 Oct) and 0.92 (6-8 Oct); runners priced 20%+ over our
+  price in the morning made +3.9% and +8.9% CLV; 8 Oct, the worst trading day, +9.6%.
+- **The marks** (ledger `marks-load-1009`): with PR #141 the nightly load took 7-9 Oct, and the final marks carry the
+  BSP (7 Oct 768 of 811, 8 Oct 864 of 938, 9 Oct 1,030 of 1,130).
+- **The price-match gap** (ledger `price-match-1009`): the nightly reload of the price files cleared the match of the
+  oldest racing day in each reload, so 23-27 Sep and 29 Sep-1 Oct dropped out of the joined history. Fixed in
+  `betfair_prices.match_days`, with a test; the next nightly load re-matches them.
+- **The Tote** (ledgers `tote-compare-1009`, `tote-exotics-1009`): the win pool a median 25-27% under a Betfair lay's
+  break-even before the off; the 47 winners paid 0.838 of the BSP (0.909 with the guarantee); exactas, trifectas and
+  swingers 0.87-0.91 of fair at the median. Four days agree: no gap.
+- **The other markets on 8 Oct** (ledger `all-markets-scan-1008`): arbitrages a median GBP0.37; nothing to trade.
+- **The closing correction refitted with 9 Oct** (ledger `closing-correction-1009`): +0.4% against -0.1% overall, but
+  -4.4% against -0.6% on 9 Oct. Not robust; not recommended.
+- **The rule from 10 Oct**: the no-volume model, top-ups, GBP400 to win, GBP300 a bet, GBP4,000 a day, 08:00 UK to 15
+  minutes before each off. Its replay over 1-8 Oct leads (GBP1,924 CLV x stake, above). It has not yet traded live.
 
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
