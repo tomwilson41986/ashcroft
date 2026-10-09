@@ -753,6 +753,30 @@ def pull_s3(raw: Path, db_path: str | None = None, s3=None, bucket: str | None =
     return sorted(out)
 
 
+def match_days(paths, db_path: str | None = None, since: date | None = None) -> list[date]:
+    """The race days a load must match: each file's date and the day before it (a day file holds the racing of the
+    day before its name; the load replaces its rows, which clears their match), and with a database, every day since
+    ``since`` that still has unmatched rows (the days earlier loads left unmatched, 23 Sep - 1 Oct)."""
+    days: set[date] = set()
+    for p in paths:
+        if m := parse_file_name(Path(p).name):
+            days.update((m[2] - timedelta(days=1), m[2]))
+    if db_path and since:
+        conn = sqlite3.connect(db_path)
+        try:
+            ensure_table(conn)
+            rows = conn.execute("SELECT DISTINCT race_date FROM betfair_prices WHERE race_results_id IS NULL "
+                                "AND race_date >= ?", (since.isoformat(),)).fetchall()
+        finally:
+            conn.close()
+        for (d,) in rows:
+            try:
+                days.add(date.fromisoformat(str(d)[:10]))
+            except ValueError:
+                continue
+    return sorted(days)
+
+
 def day_runs(days, gap: int = 3) -> list[tuple[date, date]]:
     """The days as runs of near-consecutive days, so a load of recent days and of an old month is matched as two
     spans, not as the years between them."""
@@ -850,7 +874,7 @@ def main(argv=None):
         pulled = pull_s3(raw, args.db, load_from=load_from, max_files=args.max_files, refresh_days=args.refresh_days)
     runs = None
     if pulled is not None:                                  # match over the days just pulled, run by run
-        runs = day_runs(m[2] for p in pulled if (m := parse_file_name(p.name)))
+        runs = day_runs(match_days(pulled, args.db, date.today() - timedelta(days=60)))
 
     if args.combined:
         print("combined load:", load_combined(args.combined, args.db))

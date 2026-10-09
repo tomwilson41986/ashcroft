@@ -836,6 +836,26 @@ def test_a_load_is_matched_run_by_run_not_across_the_years_between():
     assert bp.day_runs([]) == []
 
 
+def test_a_load_matches_the_racing_in_its_files_and_the_days_left_unmatched(tmp_path):
+    """9 Oct: the nightly reload of the last week's files replaces their rows (clearing the match), and was matched
+    over the files' dates only; a file holds the racing of the day before its name, so the oldest day of each reload
+    (1 Oct that night, 23 Sep - 30 Sep on the nights before) was left unmatched for good."""
+    files = [tmp_path / "dwbfpricesukwin02102026.csv", tmp_path / "dwbfpricesirewin09102026.csv"]
+    assert bp.match_days(files) == [date(2026, 10, 1), date(2026, 10, 2), date(2026, 10, 8), date(2026, 10, 9)]
+    db = tmp_path / "h.db"
+    conn = sqlite3.connect(db)
+    bp.ensure_table(conn)
+    conn.executemany("INSERT INTO betfair_prices (market_type, event_id, selection_id, race_date, race_results_id) "
+                     "VALUES ('win', ?, 1, ?, ?)", [(1, "2026-09-24", None), (2, "2026-09-25", 7),
+                                                    (3, "2026-07-01", None)])
+    conn.commit()
+    conn.close()
+    got = bp.match_days(files, str(db), since=date(2026, 9, 1))
+    assert date(2026, 9, 24) in got and date(2026, 9, 25) not in got and date(2026, 7, 1) not in got
+    assert bp.day_runs(got) == [(date(2026, 9, 24), date(2026, 9, 24)), (date(2026, 10, 1), date(2026, 10, 2)),
+                                (date(2026, 10, 8), date(2026, 10, 9))]
+
+
 def test_tomorrows_markets_recorded_the_evening_before_go_to_their_own_files(tmp_path, monkeypatch):
     """The owner's ask (4 Oct): tomorrow's markets recorded in the evening, for minutes from now, kept apart."""
     seen = {}
