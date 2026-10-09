@@ -284,13 +284,17 @@ if len(dec) and len(declared_pools):
             continue
         a, b, c3 = pos[:3]
         pools = declared_pools[declared_pools["race_id"].astype(str).eq(str(rid))].set_index("pool")
-        if "EXACTA" in pools.index and pools.loc["EXACTA", "dividends"]:
+        # a pool with no winning ticket declares no dividend (None): no fair-value reading for that race (9 Oct)
+        if "EXACTA" in pools.index and pools.loc["EXACTA", "dividends"] and \
+                pools.loc["EXACTA", "dividends"][0] is not None:
             d = pools.loc["EXACTA", "dividends"][0]
             out.append({"pool": "exacta", "race": rid, "pd": exacta_matrix(p)[a, b] * d})
-        if "TRIFECTA" in pools.index and pools.loc["TRIFECTA", "dividends"]:
+        if "TRIFECTA" in pools.index and pools.loc["TRIFECTA", "dividends"] and \
+                pools.loc["TRIFECTA", "dividends"][0] is not None:
             d = pools.loc["TRIFECTA", "dividends"][0]
             out.append({"pool": "trifecta", "race": rid, "pd": tc.trifecta_tensor(p)[a, b, c3] * d})
-        if "SWINGER" in pools.index and len(pools.loc["SWINGER", "dividends"] or []) == 3:
+        if "SWINGER" in pools.index and len(pools.loc["SWINGER", "dividends"] or []) == 3 and \
+                all(x is not None for x in pools.loc["SWINGER", "dividends"]):
             m = tc.swinger_matrix(p)
             d12, dx, dy = pools.loc["SWINGER", "dividends"]
             for order, pairs in (("12,13,23", [(a, b), (a, c3), (b, c3)]), ("12,23,13", [(a, b), (b, c3), (a, c3)])):
