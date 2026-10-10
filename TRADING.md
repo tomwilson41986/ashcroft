@@ -168,7 +168,8 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   `strategy-replay-1009b`) the order holds: the rule GBP1,924 CLV x stake over 1-8 Oct (GBP1,602 after commission,
   6%; 8 Oct +GBP231), top-ups with no limit to 12:00 GBP1,681, top-ups with no limit GBP1,156, one back a horse
   GBP443. The recorded books carry no runner volume on most polls, so the replay reads the no-volume model either
-  way; it cannot test the volume model the trader used live.
+  way; it cannot test the volume model the trader used live. With 9 Oct (ledger `strategy-replay-1010`) the rule reads GBP2,207
+  over 1-9 Oct (GBP1,837 after commission); its first live day, 10 Oct, made +12.1% on the GBP4,000 (below).
 - **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, GBP4,000 of
   stakes a day from 9 Oct (above) and no stop time. From 7 to 9 Oct there was no day limit: the account's money was the
   only limit (the owner, 7 Oct, below). The day limit
@@ -759,6 +760,36 @@ no day limit) and the owner restarted it on the new rule at 10:19 UK.
   -4.4% against -0.6% on 9 Oct. Not robust; not recommended.
 - **The rule from 10 Oct**: the no-volume model, top-ups, GBP400 to win, GBP300 a bet, GBP4,000 a day, 08:00 UK to 15
   minutes before each off. Its replay over 1-8 Oct leads (GBP1,924 CLV x stake, above). It has not yet traded live.
+
+**The tenth full day** (10 Oct, a Saturday; ledger `live-day-1010`), the first whole day of the owner's rule of 9 Oct:
+the no-volume model on every book, top-ups, GBP400 to win, GBP300 a bet, GBP4,000 a day.
+- The 06:12 UTC predictions failed at horseracebase.com's Cloudflare page ("One moment, please...", four logins). The
+  morning watchdog re-ran them at 07:07 UTC (run 38033348739: 557 runners in 51 races, written 07:34 UTC). The trader
+  (run 38033123413, started 07:04 UTC) waited for the file and sent its first orders at 08:36 UK.
+- **+GBP584.11 after commission** (GBP16.43) on 692 backs on 170 horses in 51 markets, GBP4,000.00 staked, CLV +12.1%
+  at Betfair's settled price: about GBP461 of CLV x stake, the most of any live day. The account went from
+  GBP4,888.75 to GBP5,472.86. Every back's reason reads "closing CLV, no-volume model".
+- **The day limit was spent in 47 minutes**: GBP1,000 by 08:41, GBP2,000 by 08:46, GBP3,000 by 09:01, the last back at
+  09:23 UK. Nothing was traded after that.
+
+  | At Betfair's settled price | 10 Oct staked | CLV | 9 Oct staked | CLV |
+  |---|---|---|---|---|
+  | First backs | GBP904.46 | +18.7% | GBP867.77 | +5.6% |
+  | Top-ups | GBP2,903.29 | +10.0% | GBP4,010.62 | -1.9% |
+  | **Day** | **GBP3,807.75** | **+12.1%** | **GBP4,878.39** | **-0.6%** |
+
+  The top-ups made money under the no-volume model (08:00 UK +8.5%, 09:00 +13.2%), where 9 Oct's under the volume
+  model lost (10:00 UK -11.2%). No change is put to the owner. Betfair reduced the price for a non-runner on 54 of the
+  165 settled horses; at the matched price the day would have read +20.5%.
+- **The eleven days** (30 Sep - 10 Oct): +GBP643.27 after commission.
+- **The data** (ledger `price-match-1010`): the nightly load re-matched 23 Sep - 10 Oct (99.8%), so the price history
+  the research joins has no gap from 23 Sep; 10 Oct's marks are in (1,057 of 1,131 final marks with a BSP).
+- **The model** (ledger `model-quality-1010`, with the re-matched days): Spearman against the BSP 0.91 on 29 Sep - 5
+  Oct and on 6-9 Oct; runners priced 20%+ over ours in the morning +5.5% and +10.7% CLV; 9 Oct +14.2%, its slope back
+  to 1.06.
+- **The Tote on 10 Oct** (ledger `tote-compare-1010`): no gap (winners 0.849 of the BSP, 0.913 with the guarantee;
+  pairs negative at every mark). **The other markets on 9 Oct** (ledger `all-markets-scan-1009`): arbitrages a median
+  GBP0.49; nothing to trade.
 
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
