@@ -791,6 +791,36 @@ the no-volume model on every book, top-ups, GBP400 to win, GBP300 a bet, GBP4,00
   pairs negative at every mark). **The other markets on 9 Oct** (ledger `all-markets-scan-1009`): arbitrages a median
   GBP0.49; nothing to trade.
 
+**The eleventh full day** (11 Oct, a Sunday; ledger `live-day-1011`), the second day of the owner's rule of 9 Oct.
+The 06:12 UTC predictions ran first time and the trader traded from 08:00 UK (run 38120190873; settle 38178016765).
+- **+GBP505.44 after commission** on 689 backs in 30 markets, GBP3,999.99 staked, CLV +9.9% at Betfair's settled price.
+  The settle read GBP5,000.00 in the account: with the day's result, about GBP978.30 left it after 10 Oct's close of
+  GBP5,472.86 (a withdrawal, presumably the owner's).
+- **The limit bound late**: GBP1,000 by 08:17 UK, GBP2,000 by 08:41, GBP3,000 by 09:39, the last back at 11:50.
+
+  | At Betfair's settled price, by UK hour entered | Staked | CLV |
+  |---|---|---|
+  | 08:00 (first backs +23.9%, top-ups +19.5%) | GBP2,253.60 | +20.4% |
+  | 09:00 | GBP591.29 | +0.3% |
+  | 10:00 | GBP633.79 | -10.7% |
+  | 11:00 | GBP210.09 | -13.1% |
+  | **Day** (first backs +13.6%, top-ups +9.2%) | **GBP3,688.77** | **+9.9%** |
+
+  Top-ups made money again; no change is put to the owner. The 08:00 UK hour carried the day, as in the backtest by
+  hour entered (backs at 08:00-09:59 +6-8%, from 12:00 negative); one day of backs at 10:00-11:59 losing is not yet a
+  pattern.
+- **A higher day limit?** (ledger `strategy-replay-1011`; asked because 10 Oct spent the GBP4,000 in 47 minutes). The
+  replay of 1-10 Oct with GBP5,000, CLV x stake: GBP4,000 a day GBP2,984 (8%), GBP5,000 GBP2,956 (6%), GBP6,000
+  GBP2,825 (5%), no limit GBP2,877 (4%), no limit with nothing new after 12:00 GBP2,932 (7%). The higher limits win on
+  the good days (10 Oct GBP892 and GBP970 against GBP777) and lose more on the bad (5 Oct -GBP49 and -GBP259 against
+  +GBP103). GBP4,000 a day stays the best over ten days.
+- **The twelve days** (30 Sep - 11 Oct): +GBP1,148.71 after commission.
+- **The data** (ledger `marks-load-1011`): 10 Oct's results (528 rows) and price file are in; the join holds every
+  racing day 22 Sep - 10 Oct; 11 Oct's marks are in (594 of 635 final marks with a BSP). The model check (ledger
+  `model-quality-1011`) has no 10 Oct: that morning's 06:00 file was never written.
+- **The Tote on 11 Oct** (ledger `tote-compare-1011`): no gap (winners 0.840 of the BSP). **The other markets on 10
+  Oct** (ledger `all-markets-scan-1010`): arbitrages a median GBP0.49; nothing to trade.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
