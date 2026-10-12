@@ -826,9 +826,44 @@ The 06:12 UTC predictions ran first time and the trader traded from 08:00 UK (ru
 - **The twelve days** (30 Sep - 11 Oct): +GBP1,148.71 after commission.
 - **The data** (ledger `marks-load-1011`): 10 Oct's results (528 rows) and price file are in; the join holds every
   racing day 22 Sep - 10 Oct; 11 Oct's marks are in (594 of 635 final marks with a BSP). The model check (ledger
-  `model-quality-1011`) has no 10 Oct: that morning's 06:00 file was never written.
+  `model-quality-1011`) had no 10 Oct: the query's end date was 9 Oct (corrected 12 Oct; 10 Oct's file was there).
 - **The Tote on 11 Oct** (ledger `tote-compare-1011`): no gap (winners 0.840 of the BSP). **The other markets on 10
   Oct** (ledger `all-markets-scan-1010`): arbitrages a median GBP0.49; nothing to trade.
+
+**The twelfth full day** (12 Oct, a Monday; ledger `live-day-1012`), the third day of the owner's rule of 9 Oct.
+GitHub's scheduler created the 06:50 UTC session at 07:23 UTC (run 38217482072; settle 38313105651), so the first backs
+were at about 08:24 UK, not 08:00. The owner asked the same morning for an earlier start; from 13 Oct predictions run at
+04:00 UTC and the session at 05:15 UTC, trading from 06:15 UK (ledger `owner-earlier-start-1012`, PR #148).
+- **+GBP159.15 after commission** on 632 backs on 135 horses, GBP3,908.41 staked at Betfair's settled price (GBP4,000.00
+  matched), CLV +6.6% (the trader's horse-level figure; +7.2% order by order). A non-runner reduced the price on 23 of
+  the 135 horses. The settle read GBP5,159.15 in the account: GBP5,000 plus the day.
+- **The limit bound early**: GBP1,000 by 08:30 UK, GBP2,000 by 08:46, GBP3,000 by 09:23, the last back at 10:06.
+
+  | At Betfair's settled price, by UK hour entered | Staked | CLV |
+  |---|---|---|
+  | 08:00 (first backs +22.1%, top-ups +4.0%) | GBP2,261.03 | +8.5% |
+  | 09:00 (first backs +6.7%, top-ups +6.4%) | GBP1,466.70 | +6.4% |
+  | 10:00 (first backs +28.5%, top-ups -5.9%) | GBP180.68 | -2.4% |
+  | **Day** (first backs +19.6%, top-ups +4.5%) | **GBP3,908.41** | **+7.2%** |
+
+  Top-ups made money for the third day running, if less than the first backs, so no cap is put to the owner. The 10:00
+  hour lost again but on GBP181 (11 Oct: -10.7% on GBP634 and -13.1% at 11:00).
+- **Stops at 10:00, 11:00 or 12:00 UK?** (ledger `strategy-replay-1012`; the replay of 1-11 Oct, GBP5,000 in the
+  account; 12 Oct's price file is not in yet). CLV x stake and the result after commission: the rule GBP3,645 and
+  GBP3,890; to 12:00 GBP3,422 and GBP3,751; to 11:00 GBP3,335 and GBP3,830; to 10:00 GBP3,277 and GBP3,722; GBP5,000 a
+  day GBP3,554 and GBP3,786; one back a horse GBP1,003 and GBP1,012. A stop at 10:00 would have won on 11 Oct (GBP1,069
+  against GBP988) and lost on 3 Oct (GBP304 against GBP409) and 5 Oct; over eleven days the full window is best on both
+  measures. The rule stays as the owner set it.
+- **The thirteen days** (30 Sep - 12 Oct): +GBP1,307.86 after commission.
+- **The data** (ledger `marks-load-1012`): 11 Oct's results (297 rows) and price file are in; the join holds every
+  racing day 28 Sep - 11 Oct; 12 Oct's marks are in (930 of 989 final marks with a BSP). The model check (ledger
+  `model-quality-1012`, run 38318827579) with 10 and 11 Oct: 10 Oct mean absolute log error 0.408, rank
+  correlation 0.911, rule CLV +2.1% (to win +4.7%); 11 Oct 0.391, 0.917, +10.1% (+5.2%); from 6 Oct 0.429, 0.912,
+  +6.8% on 567 horses (to win +3.9%). The model holds; 12 Oct waits for its price file. The check had stopped at 9 Oct
+  (its end date was fixed in the query), which is why 11 Oct's entry missed 10 Oct.
+- **The Tote on 12 Oct** (ledger `tote-compare-1012`): no gap (47 winners, the pool 0.859 of the BSP, guaranteed
+  0.900). **The other markets on 11 Oct** (ledger `all-markets-scan-1011`): 102 arbitrage polls, median GBP0.47, largest
+  GBP5.93; nothing to trade.
 
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
