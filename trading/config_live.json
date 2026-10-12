@@ -9,7 +9,7 @@
   "topups": true,
   "clv_draws": 20000,
   "commission": 0.02,
-  "trade_from": "08:00",
+  "trade_from": "06:15",
   "trade_until": "21:30",
   "stop_before_off": 15,
   "trade_out": true,

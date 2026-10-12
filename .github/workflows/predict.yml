@@ -1,7 +1,7 @@
 name: Daily Predictions
 on:
   schedule:
-    - cron: '0 6 * * *'   # 06:00 UTC daily
+    - cron: '0 4 * * *'   # 04:00 UTC daily (the owner, 12 Oct; 06:00 UTC until then): in S3 before the 05:15 UTC trading
   workflow_dispatch:         # Manual trigger
 
 jobs:

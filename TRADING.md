@@ -134,9 +134,9 @@ The owner chose to trade live from the start, without a paper period, and set th
 permission mode was changed by the owner to allow the work. `auto_trade.py --live` with
 `trading/config_live.json` and the workflow `live-trade.yml` place real orders on the owner's account:
 
-- **The rule** (`closing_clv`, trading/strategy.py): from 08:00 UK until 15 minutes before each race's off (the owner's
+- **The rule** (`closing_clv`, trading/strategy.py): from 06:15 UK until 15 minutes before each race's off (the owner's
   decision of 1 Oct, kept on 7 Oct: "Let's not stop. We should just trade if we think the price is right"; 08:00-11:00
-  UK before 1 Oct, the tested window) and never within 15 minutes of a race's off (the owner's limit), polled every
+  UK before 1 Oct, the tested window; from 08:00 UK until 12 Oct) and never within 15 minutes of a race's off (the owner's limit), polled every
   minute, every runner of a race
   priced whole whose expected CLV at the best back price is at least +3% under the closing model
   (`model/race_book.py`; the model fitted without volume when the delayed key's feed carries none), with at least
@@ -170,6 +170,15 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   GBP443. The recorded books carry no runner volume on most polls, so the replay reads the no-volume model either
   way; it cannot test the volume model the trader used live. With 9 Oct (ledger `strategy-replay-1010`) the rule reads GBP2,207
   over 1-9 Oct (GBP1,837 after commission); its first live day, 10 Oct, made +12.1% on the GBP4,000 (below).
+- **From 13 Oct: predictions at 04:00 UTC, trading from 05:15 UTC** (the owner, 12 Oct: "can we start earlier?
+  predictions at 04:00 UTC, trading at 05:15 UTC"). The Daily Predictions run moves from 06:00 to 04:00 UTC
+  (predict.yml), the trading session from 06:50 to 05:15 UTC (live-trade.yml), and its window opens at 06:15 UK
+  (`trade_from`; 05:15 UTC in summer time, 06:15 UTC once the clocks go back on 25 Oct). The night's price archive,
+  which shares the UK runner, now stops by 04:50 UTC (betfair-prices.yml; 06:15 until then). Asked the morning GitHub's
+  scheduler started the 06:50 session 33 minutes late (12 Oct, run 38217482072). No backtest covers backs before 08:00
+  UK and the live record holds none (the earliest hour traded, 08:00 UK, made +11.7% on 10 Oct and +20.4% on 11 Oct);
+  the evening-before books were too thin to trade (ledger `evening-before-1007`), so the earliest books may give few
+  backs. The day limit of GBP4,000 bounds the stake, and the check-ins score the 06:15-07:59 backs on their own.
 - **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, GBP4,000 of
   stakes a day from 9 Oct (above) and no stop time. From 7 to 9 Oct there was no day limit: the account's money was the
   only limit (the owner, 7 Oct, below). The day limit

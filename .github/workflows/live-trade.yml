@@ -4,9 +4,10 @@ name: Live trading (the owner's book)
 # the owner's decision of 30 Sep 2026): every runner whose expected CLV at the best back price is at least +3% under
 # the closing model, staked to win GBP400 (the owner, 7 Oct; GBP250 until then), at most GBP300 a bet, each back filled
 # at once or not at all and laid at the Betfair SP as soon as it is matched, with what the account has (short of funds
-# it holds, and trades again as the races are run and the stakes come back). From 08:00 UK until 15 minutes before each
-# off, with no limit on the day's stakes: the owner's decisions of 1 Oct and 7 Oct ("Let's not stop. We should just
-# trade if we think the price is right"; a 14:00 stop, ledger stop-1400-1007, was not taken up). The summary scores the
+# it holds, and trades again as the races are run and the stakes come back). From 06:15 UK (the owner, 12 Oct:
+# "predictions at 04:00 UTC, trading at 05:15 UTC"; 08:00 UK until then) until 15 minutes before each off (the owner,
+# 1 Oct and 7 Oct: "Let's not stop. We should just trade if we think the price is right"; a 14:00 stop, ledger
+# stop-1400-1007, was not taken up), at most GBP4,000 of stakes a day (the owner, 9 Oct). The summary scores the
 # bets entered by 11:00 UK apart from the later ones.
 #
 # One runner serves the trading and the market record, so on a trading day this job records the markets itself
@@ -28,7 +29,7 @@ name: Live trading (the owner's book)
 
 on:
   schedule:
-    - cron: '50 6 * * *'     # trade: the session waits for 08:00 UK and trades to 15 minutes before each off
+    - cron: '15 5 * * *'     # trade (the owner, 12 Oct; 06:50 until then): from 06:15 UK to 15 minutes before each off
     - cron: '45 21 * * *'    # settle: after the last race
   workflow_dispatch:
     inputs:
@@ -58,7 +59,7 @@ jobs:
   live:
     if: vars.BETFAIR_RUNNER != ''
     runs-on: ${{ vars.BETFAIR_RUNNER }}
-    timeout-minutes: 960                 # a trading day runs from 07:50 until the last race, 21:30 at the latest
+    timeout-minutes: 1020                # a trading day runs from 05:15 UTC until the last race, 21:30 UK at the latest
     steps:
       - name: Choose the session
         id: session
