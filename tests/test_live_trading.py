@@ -770,8 +770,9 @@ def test_the_summary_scores_the_bets_entered_by_11_apart_from_the_later_ones():
 
 def test_the_owners_window_runs_to_15_minutes_before_each_off():
     """The owner, 1 Oct, and again 7 Oct ("Let's not stop. We should just trade if we think the price is right"): every
-    race from 08:00 UK until 15 minutes before its off, however late the day."""
-    assert LIVE.trade_from == "08:00" and LIVE.trade_until == "21:30" and LIVE.stop_before_off == 15
+    race until 15 minutes before its off, however late the day; from 06:15 UK since 12 Oct ("predictions at 04:00 UTC,
+    trading at 05:15 UTC"; 08:00 UK until then)."""
+    assert LIVE.trade_from == "06:15" and LIVE.trade_until == "21:30" and LIVE.stop_before_off == 15
     race = [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300]
     off = datetime(2026, 10, 1, 17, 30, tzinfo=UTC)                 # 18:30 UK
     c = _Client()
@@ -784,3 +785,16 @@ def test_the_owners_window_runs_to_15_minutes_before_each_off():
     clock2.t = datetime(2026, 10, 1, 17, 15, tzinfo=UTC)            # 15 minutes before: no more bets
     s2.step(clock2())
     assert not _orders(c2)
+
+
+def test_the_owners_morning_from_12_oct_predictions_at_0400_and_trading_at_0515_utc():
+    """The owner, 12 Oct: "predictions at 04:00 UTC, trading at 05:15 UTC". The session opens its window at 06:15 UK
+    (05:15 UTC in summer time); the predictions run first, and the night's price archive leaves the UK runner free."""
+    from pathlib import Path
+
+    import yaml
+    wf = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+    on = lambda name: (lambda s: s.get("on", s.get(True)))(yaml.safe_load((wf / name).read_text()))
+    assert [c["cron"] for c in on("predict.yml")["schedule"]] == ["0 4 * * *"]
+    assert [c["cron"] for c in on("live-trade.yml")["schedule"]] == ["15 5 * * *", "45 21 * * *"]
+    assert LIVE.trade_from == "06:15"

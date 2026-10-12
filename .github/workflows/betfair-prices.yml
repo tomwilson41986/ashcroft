@@ -8,7 +8,8 @@ name: Betfair price files (every market, nightly)
 # archive lacks, and the last week again (Betfair rewrites recent files; a file is stored again only when it has
 # changed). The last week goes first, then the UK and Irish racing files from 2018 (what the nightly load reads), then
 # the other markets from 2018, then every older file, each newest first.
-# The run takes no new file after 06:15 UTC, before the morning's trading, and the next night takes up the rest:
+# The run takes no new file after 04:50 UTC, before the morning's trading at 05:15 UTC (from 12 Oct; until then it
+# stopped at 06:15, before the 06:50 trading), and the next night takes up the rest:
 # Betfair listed 72,443 files on 1 Oct 2026, several nights' work at this pace.
 #
 # The nightly job daily-results.yml, the one job that writes horse_racing.db, loads the UK and Irish racing files from
@@ -19,7 +20,7 @@ name: Betfair price files (every market, nightly)
 # there before the morning's trading, a second writer of the database beside blandford-sync at 06:45.
 on:
   schedule:
-    - cron: '30 22 * * *'    # after the evening settlement (21:45 UTC); no new file after 06:15 UTC
+    - cron: '30 22 * * *'    # after the evening settlement (21:45 UTC); no new file after 04:50 UTC
   workflow_dispatch:
     inputs:
       date_from:
@@ -35,7 +36,7 @@ on:
         required: false
         type: string
       max_minutes:
-        description: 'Take no new file after this many minutes (at most: until 06:15 UTC at night, 15 minutes by day).'
+        description: 'Take no new file after this many minutes (at most: until 04:50 UTC at night, 15 minutes by day).'
         required: false
         type: string
 
@@ -50,7 +51,7 @@ jobs:
   archive:
     if: vars.BETFAIR_RUNNER != ''
     runs-on: ${{ vars.BETFAIR_RUNNER }}
-    timeout-minutes: 480                 # 22:30 UTC + 8 h: stopped by 06:30 UTC whatever happens
+    timeout-minutes: 395                 # 22:30 UTC + 6 h 35: stopped by 05:05 UTC whatever happens (the trader at 05:15)
     steps:
       - name: Probe Betfair from this runner
         run: |
@@ -134,12 +135,12 @@ jobs:
             if ! [[ "$MARKET" =~ ^[a-z0-9]+(,[a-z0-9]+)*$ ]]; then echo "market must be names like ukwin,ukplace"; exit 1; fi
             ARGS+=(--market "$MARKET")
           fi
-          # The runner's other jobs: the trader from 06:50 UTC, the recorder from 10:10 UTC to the last race, the
-          # evening settlement at 21:45 UTC. At night the archive takes new files until 06:15 UTC; by day (a dispatch
+          # The runner's other jobs: the trader from 05:15 UTC, the recorder from 10:10 UTC to the last race, the
+          # evening settlement at 21:45 UTC. At night the archive takes new files until 04:50 UTC; by day (a dispatch
           # that finds the runner free between jobs) for 15 minutes at most, and never past 21:40 UTC.
           now=$(date -u +%s)
           day=$(date -u -d "@$now" +%F)
-          dawn=$(date -u -d "$day 06:15" +%s)
+          dawn=$(date -u -d "$day 04:50" +%s)
           dusk=$(date -u -d "$day 21:40" +%s)
           if [ "$now" -ge "$dusk" ]; then
             MAX=$(( (dawn + 86400 - now) / 60 ))

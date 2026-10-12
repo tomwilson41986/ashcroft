@@ -3,7 +3,8 @@ of the nightly results.
 
 One UK runner serves the live trader and the data jobs, and one job (daily-results.yml) writes the database. So: the
 morning recording run gives way when the trader is live; the price files are fetched after the last race and through
-the night, never past 06:15 UTC, and that job never touches the database; the nightly loads cannot fail the night;
+the night, never past 04:50 UTC (06:15 until 12 Oct, when the trading moved to 05:15 UTC), and that job never touches
+the database; the nightly loads cannot fail the night;
 the trader records its books on the UK runner only.
 """
 
@@ -80,13 +81,13 @@ def _budget(start: str, want: str = "") -> str:
 
 
 def test_the_price_files_take_the_night_and_stop_before_the_morning_trading():
-    assert _budget("2026-10-01 22:30").endswith("--max-minutes 450")       # 22:30 to 06:00 UTC at the most
-    assert _budget("2026-10-02 01:00").endswith("--max-minutes 315")       # a late start still stops by 06:15
-    assert _budget("2026-10-02 06:10").endswith("--max-minutes 5")
+    assert _budget("2026-10-01 22:30").endswith("--max-minutes 380")       # 22:30 to 04:50 UTC at the most
+    assert _budget("2026-10-02 01:00").endswith("--max-minutes 230")       # a late start still stops by 04:50
+    assert _budget("2026-10-02 04:45").endswith("--max-minutes 5")         # the trader starts at 05:15 UTC
     assert _budget("2026-10-01 10:05").endswith("--max-minutes 15")        # by day, between the runner's jobs
     assert _budget("2026-10-01 21:35").endswith("--max-minutes 5")         # never into the 21:45 settlement
     assert _budget("2026-10-01 22:30", want="60").endswith("--max-minutes 60")
-    assert _budget("2026-10-01 22:30", want="900").endswith("--max-minutes 450")
+    assert _budget("2026-10-01 22:30", want="900").endswith("--max-minutes 380")
 
 
 def test_the_recorder_fetches_the_uk_and_irish_price_files_only_after_the_last_race():

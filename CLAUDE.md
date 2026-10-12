@@ -86,7 +86,7 @@ python betfair_sync.py --live --csv live_odds.csv
 # win, at most GBP300 a bet, each back laid at the SP; from 9 Oct the closing model fitted without volume on every feed
 # (closing_volume), top-ups on and the GBP4,000 day limit back (the owner, 9 Oct). Places real
 # orders only with TRADING_LIVE=yes, and only on the UK runner (live-trade.yml); the S3 object trading/STOP stops new bets
-TRADING_LIVE=yes python auto_trade.py --live --until 21:35   # 08:00 UK to 15 min before each off (owner, 1 and 7 Oct)
+TRADING_LIVE=yes python auto_trade.py --live --until 21:35   # 06:15 UK to 15 min before each off (owner, 1, 7 and 12 Oct)
 python auto_trade.py --live --settle
 
 # --- Research toolkit (see RESEARCH_FRAMEWORK.md) ---
