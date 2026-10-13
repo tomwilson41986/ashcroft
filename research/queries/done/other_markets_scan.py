@@ -233,15 +233,35 @@ def _last_known(frame, col):
     return v.groupby("market_id")["_v"].last().to_dict()
 
 
-RECORDED_PLACES = {**_last_known(day, "number_of_winners"), **_last_known(oth, "number_of_winners")}
+def _first_known(frame, col):
+    if frame.empty or col not in frame.columns:
+        return {}
+    v = frame.assign(_v=pd.to_numeric(frame[col], errors="coerce")).dropna(subset=["_v"]).sort_values("t")
+    return v.groupby("market_id")["_v"].first().to_dict()
+
+
+# The places a market pays as its book showed them at each poll (places_now), else its earliest record: a market's
+# last record is after the race, and Betfair cuts a TBP market's places when non-runners shrink the field (Worcester
+# 16:37 on 12 Oct: 4 TBP showed 4 places to 15:39 UTC, 3 after the race, settled on 3), so the last record read on
+# the morning's books found a "lay every runner" that no one could have priced (fixed 13 Oct).
+RECORDED_PLACES = {**_first_known(day, "number_of_winners"), **_first_known(oth, "number_of_winners")}
 RECORDED_DIVISOR = _last_known(oth_cat, "each_way_divisor")
 TERMS_USED = {"recorded": 0, "standard": 0}
 
 
-def market_terms(omid, kname, k, n, handicap):
-    """(places, divisor) of a place, each-way or TBP market: its own where the record keeps them, else the standard
-    terms (a TBP market's places from its name)."""
-    rk, rd = RECORDED_PLACES.get(omid), RECORDED_DIVISOR.get(omid)
+def places_now(ob):
+    """The places a market's book showed at its poll (number_of_winners on the rows), or None."""
+    if "number_of_winners" not in ob.columns:
+        return None
+    v = pd.to_numeric(ob["number_of_winners"], errors="coerce").dropna()
+    return float(v.iloc[0]) if len(v) else None
+
+
+def market_terms(omid, kname, k, n, handicap, now=None):
+    """(places, divisor) of a place, each-way or TBP market: its own where the record keeps them (as its book showed
+    them at the poll when given, else its earliest record), else the standard terms (a TBP market's places from its
+    name)."""
+    rk, rd = (now if now else RECORDED_PLACES.get(omid)), RECORDED_DIVISOR.get(omid)
     d = None
     if kname == "PLACE":
         k = int(rk) if rk else place_terms(n, handicap)
@@ -310,7 +330,7 @@ for race, g in mk.groupby("race"):
         pk_cache = {}
         for omid, ob in books_now.groupby("market_id"):
             kname, k = kind(omid)
-            k, d_ew = market_terms(omid, kname, k, n, handicap)
+            k, d_ew = market_terms(omid, kname, k, n, handicap, places_now(ob))
             ew = (k, d_ew) if kname == "EACH_WAY" else None
             if not k:
                 continue
@@ -472,7 +492,7 @@ for race, g in mk.groupby("race"):
         terms = {}
         for omid in nowb.market_id.unique():
             kname, k = kind(omid)
-            k, d = market_terms(omid, kname, k, n, handicap)
+            k, d = market_terms(omid, kname, k, n, handicap, places_now(nowb[nowb.market_id.eq(omid)]))
             if k:
                 terms[omid] = (kname, k, d)
         # the states: each place up to the most any market pays, then the rest. With a state for 1st-4th and one for
