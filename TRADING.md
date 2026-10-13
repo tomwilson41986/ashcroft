@@ -900,7 +900,13 @@ were at about 08:24 UK, not 08:00. The owner asked the same morning for an earli
   `model-quality-1013`) on 12 Oct: mean absolute log error 0.388, rank correlation 0.912, rule CLV +4.7% (to win +4.4%);
   from 6 Oct 0.422, 0.913, +6.5% on 658 horses. It holds.
 - **The Tote on 13 Oct** (ledger `tote-compare-1013`): no gap (36 winners, the pool 0.814 of the BSP, guaranteed 0.905).
-  **The other markets on 12 Oct** (ledger `all-markets-scan-1012`): ARB_PLACEHOLDER
+  **The other markets on 12 Oct** (ledger `all-markets-scan-1012`): the first read showed 477 arbitrage polls
+  at a median GBP3.35 (to GBP15.37), all of the large ones Worcester 16:37's 4 TBP market. A bug in the scan, not money:
+  three non-runners left five, the market showed 4 places to the off and was cut to 3 after the race (settled on 3), and
+  the scan read every poll at the market's last record. Fixed to read the places each book showed at its poll
+  (`research/queries/done/other_markets_scan.py`); re-run, 138 polls at a median GBP0.40, the largest GBP5.26. Nothing to
+  trade.
+
 
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
