@@ -865,6 +865,49 @@ were at about 08:24 UK, not 08:00. The owner asked the same morning for an earli
   0.900). **The other markets on 11 Oct** (ledger `all-markets-scan-1011`): 102 arbitrage polls, median GBP0.47, largest
   GBP5.93; nothing to trade.
 
+**The thirteenth full day** (13 Oct, a Tuesday; ledger `live-day-1013`), the first under the owner's early start
+(12 Oct): predictions at 04:00 UTC, the session at 05:15 UTC, trading from 06:15 UK.
+- **The start.** GitHub created the 04:00 UTC predictions run at 04:17 (run 38345708274); its file was in S3 at 04:45:56
+  UTC. It created the 05:15 UTC session at 05:30:58 (run 38351783965; settle 38473398044), and the first back went on at
+  06:31 UK, 16 minutes into the window. The night's price archive (run 38317727386) had finished at 22:41 UTC on 12 Oct:
+  Betfair's whole list is now archived (72,611 files, none left), so nothing held the UK runner in the morning.
+- **+GBP416.62 after commission** on 811 backs on 137 horses in 38 races, GBP3,999.11 matched (GBP3,739.87 at Betfair's
+  settled price), CLV +8.5% (the trader's horse-level figure; +8.9% order by order). A non-runner reduced the price on 49
+  of the 137 horses. First backs +16.1%, top-ups +7.7%.
+- **The account** read GBP5,469.67 at the settle: 12 Oct's close (GBP5,159.15) and the day make GBP5,575.77, so about
+  GBP106.10 left the account (a withdrawal, presumably the owner's).
+- **The limit bound by 09:34 UK**: GBP1,000 by 07:05 UK, GBP2,000 by 07:54, GBP3,000 by 08:35.
+
+  | At Betfair's settled price, by UK hour entered | Staked | CLV |
+  |---|---|---|
+  | 06:00 (from 06:31; first backs +15.1%, top-ups +20.7%) | GBP778.91 | +18.9% |
+  | 07:00 (first backs +33.4%, top-ups +9.1%) | GBP1,301.89 | +12.1% |
+  | 08:00 (first backs -3.0%, top-ups +6.6%) | GBP1,144.92 | +5.7% |
+  | 09:00 (first backs -8.1%, top-ups -7.6%) | GBP514.15 | -7.6% |
+  | **Day** (first backs +16.1%, top-ups +7.7%) | **GBP3,739.87** | **+8.9%** |
+
+  **The early window on its own**: 06:15-07:59 UK GBP2,080.80 on 109 horses at +14.7% (first backs +22.4%, top-ups
+  +12.8%); 08:00-09:59 GBP1,659.07 on 73 horses at +1.6% (first backs -3.9%, top-ups +2.0%). One day, but the same
+  shape as 10-12 Oct: the first hours of the window carry the day and the last hour before the limit binds loses (11 Oct
+  10:00-11:59 -11%, 12 Oct 10:00 -2.4%, 13 Oct 09:00 -7.6%). The numbers are shown to the owner; the rule stays as set.
+- **The replay with 12 Oct** (ledger `strategy-replay-1013`; 1-12 Oct, GBP5,000; 13 Oct's price file comes tomorrow).
+  CLV x stake and the result after commission: the rule GBP4,056 and GBP4,158; a 10:00 stop GBP3,692 and GBP3,992;
+  GBP5,000 a day GBP3,966 and GBP4,079; one back a horse GBP1,175 and GBP1,165. An 08:00 opening is the rule's twin
+  before 13 Oct (no book was recorded earlier); 13 Oct is the first day the two can differ.
+- **The fourteen days** (30 Sep - 13 Oct): +GBP1,724.48 after commission.
+- **The data** (ledger `marks-load-1013`): 12 Oct's results (462 rows) and price file are in, the join holds every racing
+  day 1-12 Oct (12 Oct 462 rows), 13 Oct's marks are in (750 final marks, 705 with a BSP). **The model** (ledger
+  `model-quality-1013`) on 12 Oct: mean absolute log error 0.388, rank correlation 0.912, rule CLV +4.7% (to win +4.4%);
+  from 6 Oct 0.422, 0.913, +6.5% on 658 horses. It holds.
+- **The Tote on 13 Oct** (ledger `tote-compare-1013`): no gap (36 winners, the pool 0.814 of the BSP, guaranteed 0.905).
+  **The other markets on 12 Oct** (ledger `all-markets-scan-1012`): the first read showed 477 arbitrage polls
+  at a median GBP3.35 (to GBP15.37), all of the large ones Worcester 16:37's 4 TBP market. A bug in the scan, not money:
+  three non-runners left five, the market showed 4 places to the off and was cut to 3 after the race (settled on 3), and
+  the scan read every poll at the market's last record. Fixed to read the places each book showed at its poll
+  (`research/queries/done/other_markets_scan.py`); re-run, 138 polls at a median GBP0.40, the largest GBP5.26. Nothing to
+  trade.
+
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
