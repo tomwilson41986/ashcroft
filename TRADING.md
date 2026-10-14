@@ -908,6 +908,51 @@ were at about 08:24 UK, not 08:00. The owner asked the same morning for an earli
   trade.
 
 
+**The fourteenth full day** (14 Oct, a Wednesday; ledger `live-day-1014`), the second early session.
+- **The start.** GitHub created the predictions run at 04:13 UTC (run 38510259509), and its file was in S3 at 04:43:35
+  UTC. It created the session at 05:24:32 UTC (run 38516469441; settle 38643081982), and the first back went on at 06:24
+  UK, 9 minutes into the window (13 Oct: 16 minutes). The night's archive (run 38478642126) had finished at 22:38 UTC.
+- **+GBP35.33 after commission** on 737 backs on 124 horses in 38 races, GBP4,000.00 matched (GBP3,891.51 at Betfair's
+  settled price), CLV +1.0%. A non-runner reduced the price on 43 of the 124 horses. The account read GBP5,505.00, exactly
+  13 Oct's GBP5,469.67 plus the day.
+- **First backs +13.1%, top-ups -0.9%**: the first day top-ups lost while first backs won.
+- **The limit bound by 09:13 UK**: GBP1,000 by 06:48 UK, GBP2,000 by 07:24, GBP3,000 by 08:21.
+
+  | At Betfair's settled price, by UK hour entered | Staked | CLV |
+  |---|---|---|
+  | 06:00 (from 06:24; first backs +7.0%, top-ups +2.7%) | GBP1,200.96 | +3.8% |
+  | 07:00 (first backs +22.6%, top-ups +0.5%) | GBP1,379.74 | +2.5% |
+  | 08:00 (first backs +8.2%, top-ups -5.0%) | GBP1,111.67 | -3.9% |
+  | 09:00 (first backs +53.8% on GBP25, top-ups -5.6%) | GBP199.14 | +2.0% |
+  | **Day** (first backs +13.1%, top-ups -0.9%) | **GBP3,891.51** | **+1.0%** |
+
+- **Five days by window entered** (Betfair's settled price; the session opened at 08:00 UK to 12 Oct, 06:15 from 13 Oct):
+
+  | Day | 06:15-07:59 | 08:00-09:59 | 10:00 on | First backs | Top-ups |
+  |---|---|---|---|---|---|
+  | 10 Oct | - | GBP3,808 +12.1% | - | +18.7% | +10.0% |
+  | 11 Oct | - | GBP2,845 +16.2% | GBP844 -11.3% | +13.6% | +9.2% |
+  | 12 Oct | - | GBP3,728 +7.7% | GBP181 -2.4% | +19.6% | +4.5% |
+  | 13 Oct | GBP2,081 +14.7% | GBP1,659 +1.6% | - | +16.1% | +7.7% |
+  | 14 Oct | GBP2,581 +3.1% | GBP1,311 -3.0% | - | +13.1% | -0.9% |
+
+  On each of 11-14 Oct the money staked last, as the GBP4,000 nears, made the least; first backs made money every day and
+  top-ups on four days of five. The replay (below) still puts the rule ahead of one back a horse by a wide margin, so no
+  change is proposed; the numbers are put to the owner, who decides.
+- **06:15 against 08:00** (ledger `strategy-replay-1014`; 1-13 Oct, GBP5,000). 13 Oct, the first day the two openings
+  differ: from 06:15 GBP663 after commission (CLV x stake GBP601), from 08:00 GBP410 (GBP313). Over 13 days: the rule
+  (from 06:15) GBP4,821 and GBP4,657; from 08:00 GBP4,568 and GBP4,369; 06:15 to 10:00 GBP4,655 and GBP4,293; GBP5,000 a
+  day GBP4,748 and GBP4,538; one back a horse GBP1,379 and GBP1,380. The early opening is the rule's best day yet in the
+  replay; 14 Oct's price file comes tomorrow.
+- **The fifteen days** (30 Sep - 14 Oct): +GBP1,759.81 after commission.
+- **The data** (ledger `marks-load-1014`): 13 Oct's results (352 rows) and price file are in, the join holds every racing
+  day 1-13 Oct, 14 Oct's marks are in (696 final marks, 638 with a BSP). **The model** (ledger `model-quality-1014`) on
+  13 Oct: mean absolute log error 0.417, rank correlation 0.910, rule CLV -0.2% on 82 horses (to win +0.6%); from 6 Oct
+  0.422, 0.912, +5.8% on 740. It holds; 13 Oct was its weakest day since 2 Oct on that measure.
+- **The Tote on 14 Oct** (ledger `tote-compare-1014`): no gap (37 winners, the pool 0.795 of the BSP, guaranteed 0.909).
+  **The other markets on 13 Oct** (ledger `all-markets-scan-1013`), the first day on the fixed scan: 113 arbitrage polls
+  at a median GBP0.48, the largest GBP4.91; no large one came back. Nothing to trade.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
