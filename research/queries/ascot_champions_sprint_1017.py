@@ -55,15 +55,31 @@ jockeys = recent.jockey_name.dropna().value_counts()
 trainers = recent.trainer.dropna().value_counts()
 
 
+def db_parts(n):
+    """A database name, 'Surname, First' (trainers 'Haggas, W J'), as (surname, first names)."""
+    n = re.sub(r"^\s*(mr|mrs|miss|ms)\s+", "", str(n), flags=re.I)
+    if "," in n:
+        sur, first = n.split(",", 1)
+        first = re.sub(r"^\s*(mr|mrs|miss|ms)\s+", "", first.strip(), flags=re.I)
+        return norm(sur), norm(first)
+    return norm(n), ""
+
+
 def match_person(name, counts):
-    """The database's spelling of a jockey or trainer: same surname and first initial, the most frequent recently."""
+    """The database's spelling of a jockey ('Marquand, Tom'): the Racing Post's 'First Surname' with the same
+    surname (all words after the first name, so 'Browne McMonagle') and first initial, the most frequent recently;
+    amateurs ('Mr', 'Miss') only if no professional matches."""
     if not name:
         return None
-    sur, ini = surname(name), norm(name)[:1]
-    cands = [n for n in counts.index if surname(n) == sur and norm(n)[:1] == ini]
-    if not cands:
-        cands = [n for n in counts.index if surname(n) == sur]
-    return cands[0] if cands else name
+    words = name.split()
+    first, sur = norm(words[0]), norm(" ".join(words[1:]))
+    pro, ama = [], []
+    for n in counts.index:
+        s_, f_ = db_parts(n)
+        if s_ == sur and f_[:1] == first[:1]:
+            (ama if re.match(r"\s*(mr|mrs|miss|ms)\b", str(n).split(",")[-1].strip(), re.I) else pro).append(n)
+    cands = pro or ama
+    return cands[0] if cands else None
 
 
 rows = []
@@ -73,8 +89,11 @@ for horse, age, wt, orat, draw, jock, trn in CARD:
     dbname = h.horse_name.iloc[-1] if len(h) else horse
     last = h.race_date.iloc[-1] if len(h) else None
     last_tr = h.trainer.iloc[-1] if len(h) else None
-    tr = last_tr if last_tr and surname(last_tr) == surname(trn) else match_person(trn, trainers)
-    jk = match_person(jock, jockeys) if jock else "Not Declared"
+    tr_sur = norm(trn.replace("-", " ").split()[-1])
+    tr = last_tr if last_tr and tr_sur in db_parts(last_tr)[0] else None
+    if tr is None:
+        tr = next((n for n in trainers.index if tr_sur in db_parts(n)[0]), trn)
+    jk = (match_person(jock, jockeys) or jock) if jock else "Not Declared"
     st, lb = (int(x) for x in wt.split("-"))
     days = (DAY - date.fromisoformat(str(last)[:10])).days if last else None
     print(f"{horse} | {dbname} | {len(h)} | {last} | {last_tr} | {tr} | {jk}")
