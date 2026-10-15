@@ -953,6 +953,64 @@ were at about 08:24 UK, not 08:00. The owner asked the same morning for an earli
   **The other markets on 13 Oct** (ledger `all-markets-scan-1013`), the first day on the fixed scan: 113 arbitrage polls
   at a median GBP0.48, the largest GBP4.91; no large one came back. Nothing to trade.
 
+**The fifteenth full day** (15 Oct, a Thursday; ledger `live-day-1015`; the audit of the evening, ledger
+`audit-1015`), the third early session.
+- **The start.** Predictions created 04:11 UTC (run 38680193629), file in S3 04:40:53 UTC; the session created 05:24:37
+  UTC (run 38686627451; settle 38812659344), first back 06:24 UK.
+- **-GBP315.66 after commission** on 606 backs on 103 horses in 38 markets (36 races settled at 21:48 UTC), GBP3,998.63
+  matched, CLV -5.9%. The account read GBP5,189.34: 14 Oct's GBP5,505.00 less the day.
+- **First backs +13.1%, top-ups -8.9%**, the second day running that top-ups lost while first backs won.
+- **The limit bound by 08:53 UK**: GBP1,000 by 07:02, GBP2,000 by 07:38, GBP3,000 by 08:08.
+
+  | At Betfair's settled price, by UK hour entered | Staked | CLV |
+  |---|---|---|
+  | 06:00 (from 06:24; first backs +12.4%, top-ups -4.1%) | GBP820.96 | +1.1% |
+  | 07:00 (first backs +17.1%, top-ups -9.2%) | GBP1,813.96 | -5.9% |
+  | 08:00 (first backs +0.8%, top-ups -10.7%) | GBP1,336.80 | -10.2% |
+  | **Day** (first backs +13.1%, top-ups -8.9%) | **GBP3,971.72** | **-5.9%** |
+
+- **The audit** (ledger `audit-1015`, runs 38795881426 and 38796296785). Nothing changed: the rule ran as set (the config
+  identical since 12 Oct but for the 06:15 opening), the model is the one trained through 22 Sep, the predictions were
+  on time; nothing went wrong: no execution error, every back's lay at the SP sent, 12 backs expired as on other days,
+  the account agrees with the settle. The weakness is the top-ups, about 80% of the money, and their concentration:
+
+  | Day | First backs | Top-ups | Horses | Ten largest horses' share | Staked under 5.0 |
+  |---|---|---|---|---|---|
+  | 10 Oct | +18.7% | +10.0% | 165 | 33% | 31% |
+  | 11 Oct | +13.6% | +9.2% | 125 | 40% | 36% |
+  | 12 Oct | +19.6% | +4.5% | 135 | 37% | 36% |
+  | 13 Oct | +16.1% | +7.7% | 137 | 35% | 37% |
+  | 14 Oct | +13.1% | -0.9% | 124 | 40% | 47% |
+  | 15 Oct | +13.1% | -8.9% | 103 | 46% | 53% |
+
+  The eight largest positions of 15 Oct were favourites at 2.0-3.4 with GBP140-300 each, most drifting 5-12% to the off.
+  The expected edge at entry was 5-8% every day, today too. Top-ups into a horse that had drifted more than 5% since its
+  first back lost 7.9% over 10-15 Oct (GBP1,153). Read as variance on a concentration that the 06:15 opening (the limit
+  spent by about 09:00 UK, on fewer horses) has grown.
+- **The stake a horse** (ledger `stake-per-horse-1015`, the owner's question; 1-14 Oct, GBP5,000): GBP400 to win with
+  the cap a horse at GBP300 (the rule) GBP4,988, sd a day GBP331, worst day -GBP43; cap GBP200 GBP5,009, GBP326, +GBP14,
+  no losing day; cap GBP150 GBP4,679, GBP304, +GBP23; cap GBP100 GBP4,365; cap GBP75 GBP4,002; GBP600 to win GBP5,442
+  but sd GBP415 and worst -GBP125; GBP250 to win GBP3,582; no top-up after a 5% drift GBP4,784. A GBP200 cap matches the
+  rule's profit with smaller swings; put to the owner, who decides.
+- **06:15 against 08:00 again** (ledger `strategy-replay-1015`): 14 Oct in the replay, from 06:15 GBP168 after commission
+  against GBP47 from 08:00 (13 Oct GBP663 against GBP410). Over 1-14 Oct: the rule GBP4,988, from 08:00 GBP4,615, cap
+  GBP200 GBP5,009, cap GBP150 GBP4,679, GBP5,000 a day GBP4,950, one back a horse GBP1,498. The replay fills more kindly
+  than live (14 Oct: GBP168 against the live GBP35).
+- **The sixteen days** (30 Sep - 15 Oct): +GBP1,444.15 after commission.
+- **horseracebase has paused the account's downloads until 22 Oct 10:42 UK** (ledger `hrb-pause-1015`): the night's
+  results job (run 38811464015) was refused ("an unusually high number of data download requests"), and the scraper stops
+  itself until then. Results in the database end at 13 Oct (the 14 Oct night run found 14 Oct not yet published, as
+  usual). The pause began between 14 Oct 21:39 UTC and 15 Oct 04:13 UTC; our only requests in that time were the nightly
+  results job (it re-asks the last 8 days each night) and the 04:00 card. The 06:00 card still comes from HRB's card page
+  (15 Oct 04:13 and 11:59 UTC both scraped it), so the predictions run; but until the pause lifts the model prices each
+  day without results after 13 Oct, a horse that ran on 14 Oct or later priced without that run. When it lifts the
+  scraper takes up the gap itself. The model check against results (and the price join) waits for it.
+- **The data** (ledger `marks-load-1015`): 15 Oct's marks are in (876 final marks, 814 with a BSP); 14 Oct's results and
+  price file are not (above). **The Tote on 15 Oct** (ledger `tote-compare-1015`): no gap (38 winners, the pool 0.839 of
+  the BSP, guaranteed 0.923). **The other markets on 14 Oct** (ledger `all-markets-scan-1014`): 104 arbitrage polls at a
+  median GBP0.48, the largest GBP11.90 (Kempton 18:30, a 42.0 shot 1.1 minutes before the off, each way against win and
+  place, 1.8% of the money at risk); no large one. Nothing to trade.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
