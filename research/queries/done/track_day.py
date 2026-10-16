@@ -79,12 +79,12 @@ for c in ("sp_actual", "back1", "selection_id"):
 bk = bk.sort_values("polled_utc")
 last = bk.groupby(K).agg(back_now=("back1", "last"), sp=("sp_actual", lambda x: x[x > 1].iloc[-1] if (x > 1).any()
                                                              else np.nan),
-                         status=("runner_status", "last"), polled=("polled_utc", "last")).reset_index()
+                         status_bk=("runner_status", "last"), polled=("polled_utc", "last")).reset_index()
 mk = bk.groupby("market_id").agg(inplay=("inplay", "max"), mstatus=("status", "last")).reset_index()
-b = b.merge(last, on=K, how="left").merge(mk, on="market_id", how="left")
+b = b.drop(columns=["status", "sp", "back_now"], errors="ignore").merge(last, on=K, how="left").merge(mk, on="market_id", how="left")
 off = b.sp > 1
 b["vs"] = np.where(off, b.avg_price / b.sp - 1, b.avg_price / b.back_now - 1)
-b["state"] = np.where(off, "off (at the BSP)", np.where(b.status.eq("REMOVED"), "non-runner", "before the off"))
+b["state"] = np.where(off, "off (at the BSP)", np.where(b.status_bk.eq("REMOVED"), "non-runner", "before the off"))
 
 
 def summ(g):
