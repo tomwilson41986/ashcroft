@@ -71,7 +71,7 @@ print(f"today's priced runners that ran on 14 or 15 Oct (their last run unseen b
 led = csv(f"trading/live/{today}/ledger.csv")
 for c in ("matched", "avg_price", "selection_id", "edge"):
     led[c] = pd.to_numeric(led[c], errors="coerce")
-b = led[(led.event == "back") & (led.matched > 0)].copy()
+b = led[(led.event == "back") & (led.matched > 0)].drop(columns=["bsp", "clv", "result"], errors="ignore").copy()
 b = b.merge(cat[K + ["key", "runner_name"]], on=K, how="left")
 bk = pd.concat([csv(f"betfair_live/{today}/{n}.csv.gz") for n in ("books_trader", "books")], ignore_index=True)
 bk["sp_actual"] = pd.to_numeric(bk.sp_actual, errors="coerce")
