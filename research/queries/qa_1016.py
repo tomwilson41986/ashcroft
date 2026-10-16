@@ -101,7 +101,7 @@ for d in DAYS:
     for c in ("matched", "selection_id", "p_model", "p_market"):
         if c in l.columns:
             l[c] = pd.to_numeric(l[c], errors="coerce")
-    bb = l[(l.event == "back") & (pd.to_numeric(l.matched, errors="coerce") > 0)].drop_duplicates(K)
+    bb = l[(l.event == "back") & (pd.to_numeric(l.matched, errors="coerce") > 0)].drop_duplicates(K).drop(columns=["bsp"], errors="ignore")
     s = l[l.event == "settle"].drop_duplicates(K, keep="last")
     s = s.assign(bsp=pd.to_numeric(s.bsp, errors="coerce"))[K + ["bsp"]] if len(s) else pd.DataFrame(columns=K + ["bsp"])
     if not len(s):
