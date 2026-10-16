@@ -78,7 +78,7 @@ bk["sp_actual"] = pd.to_numeric(bk.sp_actual, errors="coerce")
 bk["selection_id"] = pd.to_numeric(bk.selection_id, errors="coerce")
 bk = bk.sort_values("polled_utc")
 sp = bk[bk.sp_actual > 1].groupby(K).sp_actual.last().rename("bsp")
-stt = bk.groupby(K).runner_status.last().rename("status")
+stt = bk.groupby(K).runner_status.last().rename("status_books")
 b = b.merge(pd.concat([sp, stt], axis=1).reset_index(), on=K, how="left")
 b["clv"] = b.avg_price / b.bsp - 1
 b["ran_14_15"] = b.key.isin(ran["2026-10-14"] | ran["2026-10-15"])
@@ -89,7 +89,7 @@ g = b[ok].groupby("ran_14_15").apply(lambda x: pd.Series({
 print("\ntoday's backs by whether the horse ran on 14-15 Oct (CLV at the books' BSP and the matched price, before any "
       "non-runner reduction):")
 print(g.round(4).to_string())
-print("horses backed that were removed (non-runners):", int(b[b.status == "REMOVED"].selection_id.nunique()),
+print("horses backed that were removed (non-runners):", int(b[b.status_books == "REMOVED"].selection_id.nunique()),
       "| backs with no BSP yet:", int((~ok).sum()))
 
 print("\n== the model's price against the BSP for the horses backed, by day (median of log(model/BSP); below 0 means "
