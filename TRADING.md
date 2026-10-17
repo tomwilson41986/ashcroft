@@ -1093,9 +1093,12 @@ session, tracked through the day at the owner's ask (research/queries/done/track
 - **The tracker against the settle**: at 17:17 UK the tracker read +8.6% on what had raced, at the books' BSP; the
   settle made +4.3%, because 31 of the horses backed had their price reduced for a non-runner (14 non-runners on the
   card's horses we backed), which the tracker does not apply. Champions Sprint: Almeraq GBP290 at 2.38, BSP 2.40.
-- **The owner's review of 17 Oct** (ledger `strategy-review-1017`, `stake-scheme-replay-1017`; the questions, the
-  answers and the numbers are under "The owner's staking from 17 Oct" above): keep the lay at BSP, no lay before the
-  off, no price cut-off; stake to win GBP400 with a GBP15 floor and a GBP200 cap, top-ups to the stake at the price now.
+- **The owner's review of 17 Oct** (ledger `strategy-review-1017`, `stake-scheme-replay-1017`, with the numbers): keep
+  the lay at BSP (the backed horses win as the BSP says, A/E 1.02, and the model adds nothing to the BSP once it is
+  known; holding every horse GBP550 with a worst day of -GBP1,239, against GBP1,555 laid), no lay before the off (the
+  best lay 30 s before is 2.2% over the BSP: -GBP130), no price cut-off (21 and over is the best band, +11.7% CLV);
+  stake to win GBP400 with a GBP15 floor and a GBP200 cap, top-ups to the stake at the price now (GBP5,776 over 1-15
+  Oct in the replay against the rule's GBP4,950).
   The owner asked for it to be implemented; it is built and tested (a local commit), and the session's permission
   check held back its push to the live trader, so 18 Oct trades on the rule as before unless the owner lets it through.
 - **The replay with 16 Oct** (ledger `strategy-replay-1017`): the rule from 06:15 +GBP366 after commission on 16 Oct
