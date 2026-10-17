@@ -221,27 +221,6 @@ print(v.groupby(np.select([v.short30, v.drift30], ["shortened", "not shortened"]
 print("   by the first back's price:")
 print(v.groupby("band", observed=True).apply(ae).round(3).to_string())
 
-# the model against the BSP on every runner of the 06:00 files (30 Sep on, the books' results)
-fin = pd.concat(finals, ignore_index=True)
-fin["selection_id"] = fin.selection_id.astype("int64")
-preds = []
-for day in DAYS:
-    raw = get(f"predictions/{day}.csv")
-    if raw is None:
-        continue
-    x = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str}, low_memory=False)
-    if not {"market_id", "selection_id", "predicted_bfsp"} <= set(x.columns):
-        continue
-    x = num(x, ["selection_id", "predicted_bfsp", "predicted_win_prob"]).dropna(subset=["selection_id"])
-    x["selection_id"], x["day"] = x.selection_id.astype("int64"), day
-    preds.append(x[["day", "selection_id", "predicted_bfsp"]])
-pp = pd.concat(preds, ignore_index=True).drop_duplicates(["day", "selection_id"], keep="last")
-print(f"\n   06:00 files: {len(pp):,} runners on {pp.day.nunique()} days; books' results {len(fin):,} "
-      f"({fin.runner_status.value_counts().to_dict()})")
-pr = pp.merge(fin, on=["day", "selection_id"])
-pr = pr[pr.runner_status.isin(["WINNER", "LOSER"]) & (pr.bsp > 1) & (pr.predicted_bfsp > 1)].copy()
-
-
 def clogit(df, race, cols, y):
     """Conditional logit (one winner a race) by Newton: the weights of the features and their standard errors."""
     df = df.copy()
@@ -276,47 +255,56 @@ def clogit(df, race, cols, y):
     return th, se, ll, nr
 
 
-pr["race"] = pr.day + "|" + pr.market_id
-pr["win"] = pr.runner_status.eq("WINNER")
-for c, src in (("x_bsp", "bsp"), ("x_model", "predicted_bfsp")):
-    inv = 1.0 / pr[src]
-    pr[c] = np.log(inv / inv.groupby(pr.race).transform("sum"))
-print(f"\n   the model against the BSP, every runner of the 06:00 files 30 Sep on ({len(pr):,} runners): "
-      "conditional logit of the winner on log chances, the BSP's and the model's")
-for cols in (["x_bsp"], ["x_model"], ["x_bsp", "x_model"]):
-    th, se, ll, nr = clogit(pr, "race", cols, "win")
-    print(f"     {' + '.join(cols):18s} weights {np.round(th, 3)} se {np.round(se, 3)} log-lik {ll:,.1f} ({nr} races)")
-try:
-    conn = sqlite3.connect("file:horse_racing.db?mode=ro", uri=True)
-    hist = pd.read_sql_query("""SELECT substr(race_date, 1, 10) AS day, event_id, selection_id, win_lose, bsp
-                                FROM betfair_prices WHERE LOWER(market_type) = 'win' AND race_date >= '2026-08-01'
-                                AND race_date < '2026-09-30'""", conn)
-    hp = []
-    for dd in pd.date_range("2026-08-01", "2026-09-29"):
-        raw = get(f"predictions/{dd:%Y-%m-%d}.csv")
-        if raw is None:
-            continue
-        x = pd.read_csv(io.BytesIO(raw), low_memory=False)
-        if not {"selection_id", "predicted_bfsp"} <= set(x.columns):
-            continue
-        x = num(x, ["selection_id", "predicted_bfsp"]).dropna(subset=["selection_id"])
-        x["day"], x["selection_id"] = f"{dd:%Y-%m-%d}", x.selection_id.astype("int64")
-        hp.append(x[["day", "selection_id", "predicted_bfsp"]])
-    print(f"   price-file rows 1 Aug - 29 Sep: {len(hist):,}")
-    hist["selection_id"] = pd.to_numeric(hist.selection_id, errors="coerce").astype("Int64")
-    h = pd.concat(hp, ignore_index=True).merge(hist.dropna(subset=["selection_id"]).astype({"selection_id": "int64"}),
-                                               on=["day", "selection_id"])
-    h = h[(h.bsp > 1) & (h.predicted_bfsp > 1)].copy()
-    h["race"], h["win"] = h.day + "|" + h.event_id.astype(str), h.win_lose.eq(1)
-    for c, src in (("x_bsp", "bsp"), ("x_model", "predicted_bfsp")):
-        inv = 1.0 / h[src]
-        h[c] = np.log(inv / inv.groupby(h.race).transform("sum"))
-    print(f"   the same, 1 Aug - 29 Sep from Betfair's price files ({len(h):,} runners):")
-    for cols in (["x_bsp"], ["x_bsp", "x_model"]):
-        th, se, ll, nr = clogit(h, "race", cols, "win")
+
+# the model against the BSP on every runner of the 06:00 files, joined to Betfair's price files by track, time and
+# horse (the files' selection ids are not filled), through the results horseracebase gives (to 13 Oct)
+import sys  # noqa: E402
+
+sys.path.insert(0, ".")
+from betfair_prices import normalise_horse, normalise_track, race_time_to_24h  # noqa: E402
+
+text = {c: str for c in ("date", "race_date", "venue", "track", "race_time", "runner_name", "horse_name")}
+fr = []
+for dd in pd.date_range("2026-08-01", "2026-10-17"):
+    raw = get(f"predictions/{dd:%Y-%m-%d}.csv")
+    if raw is None:
+        continue
+    x = pd.read_csv(io.BytesIO(raw), dtype=text, low_memory=False)
+    x["file_day"] = f"{dd:%Y-%m-%d}"
+    fr.append(x)
+pq = pd.concat(fr, ignore_index=True)
+for a_, b_ in (("race_date", "date"), ("track", "venue"), ("horse_name", "runner_name")):
+    if a_ not in pq.columns and b_ in pq.columns:
+        pq[a_] = pq[b_]
+pq["race_date"] = pq["race_date"].fillna(pq["file_day"])
+pq["predicted_bfsp"] = pd.to_numeric(pq["predicted_bfsp"], errors="coerce")
+conn = sqlite3.connect("file:horse_racing.db?mode=ro", uri=True)
+bfh = pd.read_sql_query("""SELECT r.race_date, r.track, r.race_time, r.horse_name, b.win_lose, b.bsp, b.event_id
+                           FROM betfair_prices b JOIN race_results r ON r.id = b.race_results_id
+                           WHERE LOWER(b.market_type) = 'win' AND r.race_date >= '2026-08-01'""", conn)
+
+
+def key(x):
+    return (x["race_date"].astype(str).str.slice(0, 10) + "|" + x["track"].map(normalise_track) + "|"
+            + x["race_time"].map(race_time_to_24h).astype(str) + "|" + x["horse_name"].map(normalise_horse))
+
+
+pq["_k"], bfh["_k"] = key(pq), key(bfh)
+h = pq.drop_duplicates("_k", keep="last")[["_k", "predicted_bfsp"]].merge(bfh.drop_duplicates("_k"), on="_k")
+h = h[(h.bsp > 1) & (h.predicted_bfsp > 1)].copy()
+h["day"] = h.race_date.astype(str).str.slice(0, 10)
+h["race"], h["win"] = h.day + "|" + h.event_id.astype(str), h.win_lose.eq(1)
+for c, src_ in (("x_bsp", "bsp"), ("x_model", "predicted_bfsp")):
+    inv = 1.0 / h[src_]
+    h[c] = np.log(inv / inv.groupby(h.race).transform("sum"))
+print(f"\n   the model against the BSP: every runner of the 06:00 files joined to Betfair's price files "
+      f"({len(h):,} runners, {h.day.min()} .. {h.day.max()}); conditional logit of the winner on log chances")
+for label, part in (("1 Aug - 28 Sep", h[h.day < "2026-09-29"]), ("29 Sep on (the live model)", h[h.day >= "2026-09-29"]),
+                    ("all", h)):
+    print(f"   {label}:")
+    for cols in (["x_bsp"], ["x_model"], ["x_bsp", "x_model"]):
+        th, se, ll, nr = clogit(part, "race", cols, "win")
         print(f"     {' + '.join(cols):18s} weights {np.round(th, 3)} se {np.round(se, 3)} log-lik {ll:,.1f} ({nr} races)")
-except Exception as e:  # noqa: BLE001
-    print("   the history test failed:", type(e).__name__, e)
 
 print("\n== 3/4. by the first back's price: drift, CLV, P&L (the owner's question: do long prices drift a lot?)")
 v["lmove"] = np.log(v.bsp / v.Pm)
@@ -367,3 +355,29 @@ for name, wt in w.items():
                   "largest_stake": st_.max(), "share_over_5": st_[v.Pm >= 5].sum() / st_.sum()}
 print("   the same positions, each day's stake shared out another way (greened at BSP, before commission):")
 print(pd.DataFrame(rows).T.round(3).to_string())
+
+
+print("\n== robustness: the CLV of each band with each horse's P/B - 1 capped at +100% (a few huge shorteners), and by day")
+v["c_cap"] = v.c.clip(upper=1.0)
+print(v.groupby("band", observed=True).apply(lambda g: pd.Series(
+    {"clv": (g.c * g.S).sum() / g.S.sum(), "clv_capped": (g.c_cap * g.S).sum() / g.S.sum(),
+     "level_clv": g.c.mean(), "level_clv_capped": g.c_cap.mean(), "share_over_+100%": (g.c > 1).mean(),
+     "days_positive": int((g.groupby("day").apply(lambda d: (d.c * d.S).sum()) > 0).sum()),
+     "days": g.day.nunique()})).round(3).to_string())
+mx = b.groupby(K).back_size.max().rename("max_back_size")
+v = v.join(mx, on=K)
+rows = {}
+for name, wt in w.items():
+    wt = pd.Series(np.asarray(wt, dtype=float), index=v.index).fillna(0)
+    scale = v.S.groupby(v.day).transform("sum") / wt.groupby(v.day).transform("sum")
+    st_ = wt * scale
+    cap_ = np.minimum(st_, np.maximum(v.S, v.max_back_size.fillna(0)))
+    for lab, stake in (("as shared", st_), ("capped at the size offered", cap_)):
+        pnl = stake * v.c
+        pnl_c = stake * v.c_cap
+        d = pnl.groupby(v.day).sum()
+        rows[(name, lab)] = {"staked": stake.sum(), "total_gbp": d.sum(), "total_capped_moves": pnl_c.sum(),
+                             "sd_day": d.std(), "days_better_than_actual": int((d > (v.S * v.c).groupby(v.day).sum()).sum())}
+print("   the reweights again: capped at the best back's size the trader saw (no more than was offered), and with each "
+      "horse's move capped at +100%")
+print(pd.DataFrame(rows).T.round(2).to_string())
