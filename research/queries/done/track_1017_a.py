@@ -1,4 +1,4 @@
-"""The live tracker tried on 16 Oct (its first run, before 17 Oct; read-only)."""
+"""The live tracker on 17 Oct, 07:46 UK (the early pace; the owner's ask "Let's track tomorrow"; read-only)."""
 import os
 import runpy
 import sys
