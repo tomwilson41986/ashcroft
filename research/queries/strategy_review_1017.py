@@ -234,8 +234,11 @@ for day in DAYS:
         continue
     x = num(x, ["selection_id", "predicted_bfsp", "predicted_win_prob"]).dropna(subset=["selection_id"])
     x["selection_id"], x["day"] = x.selection_id.astype("int64"), day
-    preds.append(x[["day", "market_id", "selection_id", "predicted_bfsp"]])
-pr = pd.concat(preds, ignore_index=True).merge(fin, on=K)
+    preds.append(x[["day", "selection_id", "predicted_bfsp"]])
+pp = pd.concat(preds, ignore_index=True).drop_duplicates(["day", "selection_id"], keep="last")
+print(f"\n   06:00 files: {len(pp):,} runners on {pp.day.nunique()} days; books' results {len(fin):,} "
+      f"({fin.runner_status.value_counts().to_dict()})")
+pr = pp.merge(fin, on=["day", "selection_id"])
 pr = pr[pr.runner_status.isin(["WINNER", "LOSER"]) & (pr.bsp > 1) & (pr.predicted_bfsp > 1)].copy()
 
 
@@ -245,6 +248,8 @@ def clogit(df, race, cols, y):
     df["_r"] = df.groupby(race).ngroup()
     ok = df.groupby("_r")[y].transform("sum") == 1
     df = df[ok].sort_values("_r")
+    if df.empty:
+        return np.full(len(cols), np.nan), np.full(len(cols), np.nan), np.nan, 0
     r = df._r.to_numpy()
     r = pd.factorize(r)[0]
     X, yy = df[cols].to_numpy(float), df[y].to_numpy(bool)
