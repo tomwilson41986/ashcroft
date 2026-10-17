@@ -239,10 +239,15 @@ class Session:
         if self.cfg.strategy == "closing_clv" and pos and pos.matched > 0 and not getattr(self.cfg, "topups", True):
             return                                          # one back a horse (the owner, 9 Oct): no top-ups
         if self.cfg.strategy == "closing_clv" and pos and pos.matched > 0:
-            # a fixed win: only what is left to win, at the price now, within the per-bet limit, so a horse
-            # that has shortened since it was backed is not topped up beyond the target
-            left = self.cfg.target - pos.matched * (pos.avg_price - 1.0)
-            want = min(left / (d.price - 1.0), self.cfg.limits.max_stake - pos.matched)
+            if getattr(self.cfg, "topup_to", "winnings") == "stake":
+                # the owner, 17 Oct: up to the stake that wins the target at the price now (with the floor and the
+                # cap), so a horse that has shortened is topped up and one that has drifted is not
+                want = min(d.target, self.cfg.limits.max_stake) - pos.matched
+            else:
+                # a fixed win: only what is left to win, at the price now, within the per-bet limit, so a horse
+                # that has shortened since it was backed is not topped up beyond the target
+                left = self.cfg.target - pos.matched * (pos.avg_price - 1.0)
+                want = min(left / (d.price - 1.0), self.cfg.limits.max_stake - pos.matched)
         if want < self.cfg.limits.min_stake:
             return
         stake, why = allowed_stake(want, d.price, m.market_id, book.total_matched, d.back_size,

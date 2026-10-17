@@ -24,6 +24,8 @@ def _live_cfg(**limits):
     cfg.target = STAKE
     cfg.closing_volume, cfg.topups = True, True   # the mechanics below read the feed's volume and top up; the owner's
                                                   # rule from 9 Oct (neither) is tested on LIVE (test_the_owners_rule_*)
+    cfg.limits.max_stake, cfg.stake_floor, cfg.topup_to = 300.0, 0.0, "winnings"   # written for GBP300 a bet and
+                                                  # the top-ups to win; the owner's of 17 Oct on LIVE (test_*_17_oct)
     for k, v in limits.items():
         setattr(cfg.limits, k, v)
     return cfg
@@ -437,11 +439,12 @@ def test_the_owners_commission_stake_and_limits():
     met the account's balance to the penny (+GBP188.19; 5% gave 178.62). The number of bets is not limited (a cap of
     250 stopped seven backs on 1 Oct). The owner, 7 Oct: GBP400 to win (GBP250 until then), GBP300 a bet, no limit on
     the day's stakes and no stop time: "We should just trade if we think the price is right" (test_the_owners_window_*).
-    The owner, 9 Oct: the GBP4,000 day limit back (test_the_owners_rule_from_9_oct_*)."""
+    The owner, 9 Oct: the GBP4,000 day limit back (test_the_owners_rule_from_9_oct_*). The owner, 17 Oct: GBP200 a
+    horse (test_the_owners_staking_from_17_oct_*)."""
     assert LIVE.commission == 0.02
     assert LIVE.limits.max_bets_per_day >= 1_000_000
     assert LIVE.limits.max_daily_turnover == 4000.0
-    assert LIVE.limits.max_stake == 300.0 and LIVE.target == 400.0
+    assert LIVE.limits.max_stake == 200.0 and LIVE.target == 400.0          # GBP300 a bet until 17 Oct
 
 
 def test_a_failed_read_of_the_settled_bets_never_stops_the_day():
@@ -798,3 +801,49 @@ def test_the_owners_morning_from_12_oct_predictions_at_0400_and_trading_at_0515_
     assert [c["cron"] for c in on("predict.yml")["schedule"]] == ["0 4 * * *"]
     assert [c["cron"] for c in on("live-trade.yml")["schedule"]] == ["15 5 * * *", "45 21 * * *"]
     assert LIVE.trade_from == "06:15"
+
+
+def test_the_owners_staking_from_17_oct_a_floor_and_a_lower_cap():
+    """The owner, 17 Oct ("implement these changes"): the review of 30 Sep - 17 Oct and the replay of 1-15 Oct
+    (research queries strategy_review_1017, stake_scheme_replay_1017) found the to-win stakes put the most money on the
+    short prices, whose CLV is the weakest, and a few pounds on the long prices, the best band; to win GBP400 with a
+    GBP15 floor a horse, GBP200 at most, and top-ups to the stake at the price now made GBP5,776 against the rule's
+    GBP4,950. So: at least GBP15 a horse, at most GBP200, to win GBP400 between."""
+    assert LIVE.stake_floor == 15.0 and LIVE.limits.max_stake == 200.0 and LIVE.target == 400.0
+    assert LIVE.topup_to == "stake"
+    views = _views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])
+    cfg = _live_cfg()
+    cfg.stake_floor, cfg.limits.max_stake = LIVE.stake_floor, LIVE.limits.max_stake
+    for target, stake in ((30.0, 15.0), (400.0, 400.0 / 6.0), (2000.0, 200.0)):   # under the floor, between, over the cap
+        cfg.target = target
+        got = plan_race(views, cfg, 4000)
+        assert [d.selection_id for d in got] == [1] and got[0].target == pytest.approx(stake)
+
+
+@pytest.mark.parametrize("topup_to,ask", [("stake", 8.34), ("winnings", None)])
+def test_the_owners_top_ups_from_17_oct_fill_to_the_stake_at_the_price_now(topup_to, ask):
+    # backed at 7.0 for GBP41.66 (to win 249.96); the price is now 6.0, still value: to win 250 at 6.0 is GBP50, so
+    # the top-up to the stake backs GBP8.34 more, while the top-up to the winnings has nothing left to win
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    held = [{"marketId": "1.7", "selectionId": 1, "side": "BACK", "orderType": "LIMIT", "sizeMatched": 41.66,
+             "averagePriceMatched": 7.0, "customerOrderRef": "ash10011"},
+            {"marketId": "1.7", "selectionId": 1, "side": "LAY", "orderType": "MARKET_ON_CLOSE",
+             "bspLiability": 249.96, "customerOrderRef": "ash10011x"}]
+    c = _Client(orders=held)
+    cfg = _live_cfg()
+    cfg.topup_to = topup_to
+    s, clock = _session(c, [_race("1.7", off, [6.0, 2.3, 3.6, 6.0], [3.5, 2.6, 4.2, 8.0], [500, 900, 800, 300])],
+                        cfg)
+    s.sync(s.x.orders(["1.7"]))
+    s.step(clock())
+    backs = [p["instructions"][0] for m, p in c.calls if m == "placeOrders"
+             and p["instructions"][0]["selectionId"] == 1 and p["instructions"][0]["side"] == "BACK"]
+    if ask is None:
+        assert not backs
+    else:
+        assert len(backs) == 1 and backs[0]["limitOrder"]["size"] == pytest.approx(ask, abs=0.01)
+
+
+def test_the_config_refuses_an_unknown_top_up_mode():
+    with pytest.raises(ValueError):
+        tc.load_config("trading/config_live.json", env={}, overrides={"topup_to": "result"})

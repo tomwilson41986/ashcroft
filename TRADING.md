@@ -179,7 +179,22 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   UK and the live record holds none (the earliest hour traded, 08:00 UK, made +11.7% on 10 Oct and +20.4% on 11 Oct);
   the evening-before books were too thin to trade (ledger `evening-before-1007`), so the earliest books may give few
   backs. The day limit of GBP4,000 bounds the stake, and the check-ins score the 06:15-07:59 backs on their own.
-- **The owner's limits**: at most GBP300 a bet (the day's whole stake on a horse), no limit per race, GBP4,000 of
+- **The owner's staking from 17 Oct** ("implement these changes", after the review of that day, ledger
+  `strategy-review-1017` and `stake-scheme-replay-1017`): to win GBP400 at the price now, **at least GBP15 and at most
+  GBP200 a horse** (`stake_floor`, `limits.max_stake`), and **top-ups to that stake at the price now**
+  (`topup_to: stake`): a horse that has shortened since it was backed is topped up to the stake that wins GBP400 at
+  its new price, one that has drifted is not (until then the top-ups filled what was left to win at the prices
+  matched, which bought more of the drifters). The review of 30 Sep - 17 Oct (2,270 horses, GBP72,348): the to-win
+  stakes put the most money on the short prices, whose CLV was the weakest (stakes of GBP200-300, median price 2.4,
+  -1.5%), and a few pounds on the long prices, the best band (21 and over +11.7%, GBP806 of the GBP1,686 before
+  commission on 9% of the money); the replay of 1-15 Oct (GBP4,000 a day, the sizes recorded, Betfair's settled
+  prices): this staking GBP5,776 after commission, sd GBP372 a day, worst day -GBP40, against the rule's GBP4,950
+  (worst -GBP43); stakes in proportion to the expected CLV GBP5,649-5,748 (worst -GBP100 to -GBP180); level GBP25 /
+  GBP40 a horse GBP3,804 / 4,735. The same review kept the rest: the lay at BSP (the backed horses win as the BSP says,
+  A/E 1.02; the model adds nothing to the BSP once it is known; holding every horse GBP550 with a worst day of
+  -GBP1,239), no lay before the off (the best lay 30 s before the off is 2.2% over the BSP: -GBP130 against GBP1,555),
+  and no price cut-off (the long prices are the best band).
+- **The owner's limits**: at most GBP300 a bet until 17 Oct (GBP200 a horse from then, above) (the day's whole stake on a horse), no limit per race, GBP4,000 of
   stakes a day from 9 Oct (above) and no stop time. From 7 to 9 Oct there was no day limit: the account's money was the
   only limit (the owner, 7 Oct, below). The day limit
   was GBP4,000 to 7 Oct; that day the owner lifted it, put it back with the bigger target, weighed a stop time in its
