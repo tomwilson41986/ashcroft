@@ -7,6 +7,8 @@
   "closing_model_novol": "data/models/closing_model_novol.json",
   "closing_volume": false,
   "topups": true,
+  "stake_floor": 15.0,
+  "topup_to": "stake",
   "clv_draws": 20000,
   "commission": 0.02,
   "trade_from": "06:15",
@@ -18,7 +20,7 @@
   "countries": ["GB", "IE"],
   "limits": {
     "bank": 4000.0,
-    "max_stake": 300.0,
+    "max_stake": 200.0,
     "max_race_stake": 1000000.0,
     "max_daily_turnover": 4000.0,
     "max_bets_per_day": 1000000,

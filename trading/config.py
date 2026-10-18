@@ -51,6 +51,9 @@ class TradingConfig:
     closing_volume: bool = True          # closing_clv: read each runner's matched money where the feed carries it (the
                                          # volume model, the GBP100 floor); False reads every race as the delayed feed
     topups: bool = True                  # closing_clv: top a horse up to its target; False backs each horse once
+    stake_floor: float = 0.0             # closing_clv: the least a horse is staked, whatever its price (0: none), £
+    topup_to: str = "winnings"           # closing_clv top-ups: winnings (to win cfg.target at the prices matched) or
+                                         # stake (to the stake that wins cfg.target at the price now, floor and cap kept)
     clv_draws: int = 20000               # closing_clv: draws of the BSP book per race
     commission: float = 0.05
     trade_from: str = "08:00"            # UK time: the tested edge is on the morning price
@@ -68,6 +71,10 @@ class TradingConfig:
             raise ValueError(f"strategy {self.strategy!r}: one of {STRATEGIES}")
         if self.staking not in STAKINGS:
             raise ValueError(f"staking {self.staking!r}: one of {STAKINGS}")
+        if self.topup_to not in ("winnings", "stake"):
+            raise ValueError("topup_to: winnings or stake")
+        if self.stake_floor < 0:
+            raise ValueError("stake_floor is at least 0")
         if self.trade_out_at not in ("fill", "before_off"):
             raise ValueError("trade_out_at: fill or before_off")
         if not 0 < self.kelly_fraction <= 1:

@@ -151,7 +151,8 @@ def _plan_closing_clv(live: list[RunnerView], cfg) -> list[Decision]:
     has at least limits.min_runner_matched matched; a race whose feed reports no matched money at all (Betfair's
     delayed key) is read by the closing model fitted without volume and not held to that floor. With
     cfg.closing_volume off (the owner, 9 Oct) every race is read that way, whatever the feed carries. The target is
-    the day's whole stake on the runner: enough to win cfg.target before commission, at most limits.max_stake."""
+    the day's whole stake on the runner: enough to win cfg.target before commission, at least cfg.stake_floor
+    (the owner, 17 Oct: a long price's to-win stake is a few pounds) and at most limits.max_stake."""
     from model import race_book as rb
     if len(live) < 2 or any(not (r.model_price and r.model_price > 1) for r in live):
         return []
@@ -183,7 +184,7 @@ def _plan_closing_clv(live: list[RunnerView], cfg) -> list[Decision]:
     for i, r in enumerate(live):
         if not chosen[i]:
             continue
-        stake = min(cfg.target / (back[i] - 1.0), lim.max_stake)
+        stake = min(max(cfg.target / (back[i] - 1.0), getattr(cfg, "stake_floor", 0.0)), lim.max_stake)
         out.append(Decision(selection_id=r.selection_id, name=r.name, target=float(stake), price=float(back[i]),
                             back_size=float(r.back_size), p_model=float(p_model[i]), p_market=float(p_mkt[i]),
                             p_pool=float(1.0 / exp_bsp[i]), edge=float(ev[i]),
