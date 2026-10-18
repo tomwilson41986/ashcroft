@@ -1127,6 +1127,38 @@ session, tracked through the day at the owner's ask (research/queries/done/track
   `tote-compare-1017`): no gap (58 winners, the pool 0.831 of the BSP, guaranteed 0.918). **The other markets on 16 Oct**
   (ledger `all-markets-scan-1016`): 123 arbitrage polls at a median GBP0.35, the largest GBP2.90; nothing to trade.
 
+**The eighteenth full day** (18 Oct, a Sunday; ledger `live-day-1018`; the owner's QA of the afternoon, ledger
+`qa-1018`), the sixth early session and **the last on the old staking**: the owner's staking (to win GBP400 at the
+price now, at least GBP15 and at most GBP200 a horse, top-ups to that stake) was merged in PR #155 at about 07:00 UTC
+("push the staking changes"), after the session had started at 05:22 UTC with the code of that time, so 18 Oct traded
+on GBP300 a bet and top-ups to the winnings (the largest stake GBP300, every horse at 25.0 or longer under GBP15).
+**19 Oct is the first day on the new staking.**
+- **The start.** Predictions created 04:11 UTC (run 39096227647), file in S3 04:37:04 UTC (229 runners in 21 races, the
+  card from HRB's card page); the session created 05:22 UTC (run 39100307210; settle 39169476837), first back 06:22 UK.
+- **-GBP101.04 after commission** on 459 backs on 71 horses in 17 markets, GBP3,498.31 matched (a 21-race card: the
+  day limit not reached; the last back 16:08 UK), CLV -3.1% at Betfair's settled price. The account read GBP5,126.30:
+  17 Oct's GBP5,227.34 less the day.
+- **First backs +3.4% (GBP435.05), top-ups -4.0% (GBP2,975.13)**: on a thin card the top-ups were 87% of the money, the
+  ten largest horses 55% (Tommy Pickles GBP300 at 2.13), 58% under 5.0: the concentration the new staking caps.
+
+  | At Betfair's settled price, by window entered | Staked | CLV |
+  |---|---|---|
+  | 06:15-07:59 (first backs +14.8%, top-ups -0.5%) | GBP394.29 | +2.1% |
+  | 08:00-09:59 (first backs -12.2%, top-ups -11.2%) | GBP924.63 | -11.3% |
+  | 10:00 on (first backs +5.2%, top-ups -1.3%) | GBP2,091.26 | -0.4% |
+  | **Day** (first backs +3.4%, top-ups -4.0%) | **GBP3,410.18** | **-3.1%** |
+
+- **The QA of the afternoon** (ledger `qa-1018`): no fault in the inputs or the trader; every market priced, 6 of 229
+  runners had run since horseracebase's pause began (1 backed, GBP8); 5 backed horses non-runners, and 24 of the 66
+  settled had their price reduced for a non-runner (the tracker read +2.2% before the reductions); the model against
+  the BSP steady (median log -0.18; -0.22 to -0.35 on 10-17 Oct); the morning price's margin over the BSP +11.4%.
+- **The nineteen days** (30 Sep - 18 Oct): +GBP1,381.11 after commission.
+- **The data** (ledger `marks-load-1018`): 18 Oct's marks are in (476 final marks, 399 with a BSP); Betfair's price
+  files to 17 Oct; results to 13 Oct until the pause lifts (22 Oct). **The model** (ledger `model-quality-1018`):
+  nothing new. **The Tote on 18 Oct** (ledger `tote-compare-1018`): no gap (21 winners, the pool 0.825 of the BSP).
+  **The other markets on 17 Oct** (ledger `all-markets-scan-1017`): 131 arbitrage polls at a median GBP0.54, the
+  largest GBP5.16; nothing to trade.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
