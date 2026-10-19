@@ -1159,6 +1159,40 @@ on GBP300 a bet and top-ups to the winnings (the largest stake GBP300, every hor
   **The other markets on 17 Oct** (ledger `all-markets-scan-1017`): 131 arbitrage polls at a median GBP0.54, the
   largest GBP5.16; nothing to trade.
 
+**The nineteenth full day** (19 Oct, a Monday; ledger `live-day-1019`), the seventh early session and **the first
+day on the owner's staking** (PR #155: to win GBP400 at the price now, at least GBP15 and at most GBP200 a horse,
+top-ups to that stake).
+- **The start.** Predictions created 04:12 UTC (run 39198318293), file in S3 04:34:04 UTC (489 runners in 47 races, the
+  card from HRB's card page); the session created 05:25 UTC (run 39204506610; settle 39330378278), first back 06:26 UK.
+- **+GBP339.39 after commission** on 820 backs on 140 horses in 45 markets (42 races settled), GBP4,000.00 matched, CLV
+  +6.4% at Betfair's settled price. The account read GBP5,465.69: 18 Oct's GBP5,126.30 plus the day.
+- **First backs +17.3%, top-ups +3.8%**; the limit bound at 08:55 UK (GBP1,000 by 06:53, GBP2,000 by 07:37, GBP3,000
+  by 08:24); 06:15-07:59 +10.8% (GBP2,309.83), 08:00-09:59 -0.2% (GBP1,511.66).
+- **The staking as built** (checked at 09:47 and 13:13 UK): every one of 1,049 targets was min(max(400 / (price - 1),
+  15), 200); the largest horse GBP185.23 (Bass Hunter at 1.38); no horse past its target. Of the 49 horses first
+  backed at 27.67 or longer (where the floor is above the to-win stake), 10 reached GBP15 (median GBP13.20): they fill
+  from the sizes offered, a minute at a time, until the day limit.
+- **The money moved to the long prices, and they closed best** (CLV at Betfair's settled price):
+
+  | First price | Share 10-18 Oct (old) | Share 19 Oct (new) | CLV 10-18 Oct | CLV 19 Oct |
+  |---|---|---|---|---|
+  | under 3 | 17% | 8% | +2.0% | -4.0% |
+  | 3-5 | 23% | 12% | +0.2% | +5.9% |
+  | 5-8 | 23% | 31% | +2.0% | -7.4% |
+  | 8-13 | 16% | 20% | +2.5% | +4.6% |
+  | 13-21 | 11% | 12% | -2.0% | +17.3% |
+  | 21 and over | 10% | 17% | +23.8% | +30.9% |
+  | **All** | | | **+3.5%** | **+6.4%** |
+
+  The ten largest horses took 31% of the money (35-55% on 14-18 Oct), 26% was staked under 5.0 (36-58%). One day: the
+  bands swing widely from day to day.
+- **The twenty days** (30 Sep - 19 Oct): +GBP1,720.50 after commission.
+- **The data** (ledger `marks-load-1019`): 19 Oct's marks are in (996 final marks, 948 with a BSP); Betfair's price
+  files to 18 Oct; results to 13 Oct until the pause lifts (22 Oct). **The model** (ledger `model-quality-1019`):
+  nothing new. **The Tote on 19 Oct** (ledger `tote-compare-1019`): no gap (44 winners, the pool 0.815 of the BSP).
+  **The other markets on 18 Oct** (ledger `all-markets-scan-1018`): 62 arbitrage polls at a median GBP0.42, the
+  largest GBP7.94; nothing to trade.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
