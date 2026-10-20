@@ -179,6 +179,15 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   UK and the live record holds none (the earliest hour traded, 08:00 UK, made +11.7% on 10 Oct and +20.4% on 11 Oct);
   the evening-before books were too thin to trade (ledger `evening-before-1007`), so the earliest books may give few
   backs. The day limit of GBP4,000 bounds the stake, and the check-ins score the 06:15-07:59 backs on their own.
+- **The owner's guard from 20 Oct** ("implement the guard now", after research queries liquidity_1020 and
+  below_model_1020, ledger `liquidity-1020`, `below-model-1020`): **never back, first back or top-up, where the best back
+  is under the model's own predicted BFSP** (`min_move: 0.0`, ln(best back / predicted BFSP) >= 0). Of 6,210 fills of
+  10-19 Oct, 103 (GBP782, 2.1%) went in under the model's price: first backs GBP272 at +5.2% CLV, top-ups GBP510 at
+  -1.8%, and the top-ups after a thin top price (the best back over 10% above the second) GBP31.53 at -29%. The same
+  queries found the thin books themselves closed best (a lone better price on top +33.8% CLV, GBP5 or less offered
+  +6.1%), so no guard on the size offered; and the larger leak in the top-ups at 10-50% over the model's price
+  (GBP24,369 at about -1 to -2%), which the replay tests. Merged during the session of 20 Oct (started 05:25 UTC), so
+  21 Oct is the first day on it.
 - **The owner's staking from 17 Oct** ("implement these changes", after the review of that day, ledger
   `strategy-review-1017` and `stake-scheme-replay-1017`): to win GBP400 at the price now, **at least GBP15 and at most
   GBP200 a horse** (`stake_floor`, `limits.max_stake`), and **top-ups to that stake at the price now**

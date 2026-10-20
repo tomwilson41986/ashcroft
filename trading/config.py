@@ -54,6 +54,8 @@ class TradingConfig:
     stake_floor: float = 0.0             # closing_clv: the least a horse is staked, whatever its price (0: none), £
     topup_to: str = "winnings"           # closing_clv top-ups: winnings (to win cfg.target at the prices matched) or
                                          # stake (to the stake that wins cfg.target at the price now, floor and cap kept)
+    min_move: float = -100.0             # closing_clv: back only where ln(best back / predicted BFSP) is at least this:
+                                         # 0 never backs under the model's own price (the owner, 20 Oct); -100 is off
     clv_draws: int = 20000               # closing_clv: draws of the BSP book per race
     commission: float = 0.05
     trade_from: str = "08:00"            # UK time: the tested edge is on the morning price

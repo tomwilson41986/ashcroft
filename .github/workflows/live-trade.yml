@@ -3,7 +3,8 @@ name: Live trading (the owner's book)
 # The owner's rule with real money on the owner's Betfair account (auto_trade.py --live, trading/config_live.json;
 # the owner's decision of 30 Sep 2026): every runner whose expected CLV at the best back price is at least +3% under
 # the closing model, staked to win GBP400 (the owner, 7 Oct; GBP250 until then), at least GBP15 and at most GBP200 a
-# horse with top-ups to that stake at the price now (the owner, 17 Oct; GBP300 a bet until then), each back filled
+# horse with top-ups to that stake at the price now (the owner, 17 Oct; GBP300 a bet until then), never under the
+# model's predicted BFSP (the owner, 20 Oct), each back filled
 # at once or not at all and laid at the Betfair SP as soon as it is matched, with what the account has (short of funds
 # it holds, and trades again as the races are run and the stakes come back). From 06:15 UK (the owner, 12 Oct:
 # "predictions at 04:00 UTC, trading at 05:15 UTC"; 08:00 UK until then) until 15 minutes before each off (the owner,

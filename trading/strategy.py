@@ -176,7 +176,10 @@ def _plan_closing_clv(live: list[RunnerView], cfg) -> list[Decision]:
     lim = cfg.limits
     tradable = np.isfinite(back) & (back >= lim.min_price) & (back <= lim.max_price)
     enough = np.ones(len(live), bool) if blind else traded >= lim.min_runner_matched
-    chosen = tradable & (np.nan_to_num(ev, nan=-1.0) >= cfg.clv_bar) & enough
+    # the owner, 20 Oct: never back (first back or top-up) at a price under the model's own predicted BFSP
+    with np.errstate(invalid="ignore", divide="ignore"):
+        over_model = np.log(back / model_price) >= getattr(cfg, "min_move", -100.0)
+    chosen = tradable & (np.nan_to_num(ev, nan=-1.0) >= cfg.clv_bar) & enough & over_model
     race = np.zeros(len(live), dtype=int)
     p_model = pricing.normalise(1.0 / model_price, race)
     p_mkt = pricing.market_probabilities(market, race)
