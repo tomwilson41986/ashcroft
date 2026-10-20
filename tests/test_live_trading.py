@@ -922,3 +922,17 @@ def test_the_ladder_stops_at_the_owners_guard():
     cfg.min_move = float(np.log(p2 / 4.0)) + 0.01                      # the second level under the guard, 7.0 over it
     backs, _ = _ladder_session(cfg, [(7.0, 10.0), (p2, 15.0), (p3, 500.0)])
     assert len(backs) == 1 and backs[0]["limitOrder"]["price"] == 7.0 and backs[0]["limitOrder"]["size"] == 10.0
+
+
+def test_the_owners_max_price_from_21_oct_is_200():
+    """The owner, 20 Oct ("set the max price to 200", after research query longshots_1020, ledger longshots-1020):
+    nothing backed over 200. 30 Sep - 19 Oct the 200-1000 band was 8 horses, GBP29 at -5.1% CLV, and a back's lay at the
+    SP there can outrun the SP's money: GBP15 at 1000 lays GBP14,985 of liability, and on 19 Oct only GBP5,239 of SP lay
+    liability was matched in that market. 21-200 made +GBP933 at +9.5% to +26.7%."""
+    import copy
+    assert LIVE.limits.max_price == 200.0
+    views = _views([250.0, 2.0, 3.0, 6.0], [100.0, 2.1, 3.0, 6.0], [0, 0, 0, 0])
+    wide = copy.deepcopy(LIVE)
+    wide.limits.max_price = 1000.0
+    assert 1 in [d.selection_id for d in plan_race(views, wide, 4000)]          # value at 250 under the old cap
+    assert 1 not in [d.selection_id for d in plan_race(views, LIVE, 4000)]      # never over 200
