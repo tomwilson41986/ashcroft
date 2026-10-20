@@ -179,6 +179,14 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   UK and the live record holds none (the earliest hour traded, 08:00 UK, made +11.7% on 10 Oct and +20.4% on 11 Oct);
   the evening-before books were too thin to trade (ledger `evening-before-1007`), so the earliest books may give few
   backs. The day limit of GBP4,000 bounds the stake, and the check-ins score the 06:15-07:59 backs on their own.
+- **The owner's maximum price from 21 Oct** ("set the max price to 200", after research query longshots_1020, ledger
+  `longshots-1020`): **nothing is backed over 200** (`limits.max_price`, 1000 until then, Betfair's highest). The
+  question came from GBP15 at 1000 on Cherry Amber (Yarmouth, 20 Oct; our price 328, the closing model's expected BSP
+  853, expected CLV +17%, the GBP15 floor setting the stake). By the price backed at, 30 Sep - 19 Oct: under 5 GBP33,635
+  (42% of the money) at +0.5% CLV, +GBP395; 21-50 +9.5%, +GBP550; 50-100 +26.7%, +GBP315; 100-200 +21.6%, +GBP68; over
+  200 8 horses, GBP29, -5.1%. Over 200 the lay at the SP can outrun the SP's money: GBP15 at 1000 lays GBP14,985 of
+  liability, and on 19 Oct (Suspect One, Gowran Park) the market matched GBP5,239 of SP lay liability, so a third of the
+  lay filled and the loser cost GBP9.76. The long prices to 200 stay: they carry the best CLV.
 - **The owner's ladder from 21 Oct** ("implement the ladder", after research queries depth_refill_1020,
   benter_blend_1020, blend_ladder_replay_1020 and day_limit_replay_1020, ledger `depth-refill-1020`,
   `benter-blend-1020`, `blend-ladder-replay-1020`, `day-limit-replay-1020`): **each back's limit is the lowest of the
