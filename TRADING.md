@@ -1224,6 +1224,38 @@ top-ups to that stake).
   **The other markets on 18 Oct** (ledger `all-markets-scan-1018`): 62 arbitrage polls at a median GBP0.42, the
   largest GBP7.94; nothing to trade.
 
+**The twentieth full day** (20 Oct, a Tuesday; ledger `live-day-1020`), the eighth early session, the second day on
+the owner's staking and **the last without the guard, the ladder and the maximum price of 200** (all three merged
+during the day, live from 21 Oct; sections above).
+- **The start.** Predictions created 04:11 UTC (run 39368258792), file in S3 04:30:01 UTC (318 runners, the card from
+  HRB's card page); the session created 05:25 UTC (run 39374771718; settle 39503342099), first back 06:25 UK.
+- **-GBP205.87 after commission** on 690 backs on 109 horses in 30 markets (29 races settled), GBP4,000.00 matched, CLV
+  -3.85% at the fill prices after non-runners' reductions (24 horses' prices were cut; the trader's horse-level CLV
+  -5.86%). The account read GBP5,259.81: 19 Oct's GBP5,465.69 less the day.
+- **First backs +5.6% (GBP584), top-ups -5.6% (GBP3,166)**; the limit bound at 09:42 UK (GBP1,000 by 06:55, GBP2,000 by
+  07:30, GBP3,000 by 08:23); 06:15-07:59 -3.0%, 08:00-09:59 -5.3%. Top-ups at a price above the horse's average closed
+  -4.0% over 19-20 Oct (GBP1,097), the rest +1.2%.
+- **The short and middle prices lost; the long ones held** (19-20 Oct): under 3 13% of the money at -5.4%, 3-5 13% at
+  -6.4%, 5-8 26% at -8.4%, 8-13 +5.5%, 13-21 +3.2%, 21 and over 15% at +22.6%. The largest horses were GBP200 on Stay
+  Hopeful (2.26, -9.4%) and Coded Welder (2.64, -2.1%) and GBP199.99 on Tralee Girl (3.15, -13.5%, won). Cherry Amber,
+  GBP15 at 1000 (the owner's question), closed at 735 (+GBP1.47).
+- **The owner's questions of the day, answered from the record** (ledger entries named): liquidity (`liquidity-1020`:
+  thin books closed best, no size guard); the prices under our own (`below-model-1020`: 2% of the money, the guard
+  now live); the top-ups in detail (`topups-1020`: the 6th and later, and those far from the first back, lose);
+  drip feeding (`depth-refill-1020`: no, the levels are a few pounds and the price does not come back with money; the
+  ladder instead, now live); the Benter blend (`benter-blend-1020`, `blend-ladder-replay-1020`: our blend to the BSP
+  stays, a blend to the winner adds nothing to the BSP); the day limit (`day-limit-replay-1020`: keep GBP4,000, the
+  money past it is about level); long prices (`longshots-1020`: the cap at 200, now live); the full review
+  (`review-1020`, `rule-candidates-replay-1020`: results track CLV, 0.95; a 6% bar and the drift filters lose under
+  the day limit).
+- **The replay** (12-19 Oct; 20 Oct's price file not out; ledger `replay-1020`): the rule of 20 Oct GBP2,461 CLV x stake
+  (GBP2,401 after commission); the ladder (the rule from 21 Oct) GBP2,711 (GBP2,611), ahead on 7 of 8 days; the ladder
+  at GBP6,000 GBP2,816; **the ladder with at most 5 top-ups a horse GBP3,091 (GBP2,994)**, its money going to more
+  horses' first backs (1,110 horses against 870), ahead of the ladder on 6 of 8 days: put to the owner.
+- **Data.** Final marks with a BSP for 20 Oct 606 of 636; price files loaded to 19 Oct; results to 13 Oct (the pause,
+  to 22 Oct). The Tote: no gap (the win pool 0.845 of the BSP); the other-markets scan of 19 Oct: arbitrage of a few
+  pence a horse.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
