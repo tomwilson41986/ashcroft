@@ -4,6 +4,7 @@ exchange, and nothing is evaluated on these numbers."""
 
 from datetime import date, datetime, timedelta, timezone
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -25,6 +26,7 @@ def _live_cfg(**limits):
     cfg.closing_volume, cfg.topups = True, True   # the mechanics below read the feed's volume and top up; the owner's
                                                   # rule from 9 Oct (neither) is tested on LIVE (test_the_owners_rule_*)
     cfg.limits.max_stake, cfg.stake_floor, cfg.topup_to = 300.0, 0.0, "winnings"   # written for GBP300 a bet and
+    cfg.min_move = -100.0                         # and backing at any price over the closing model's bar
                                                   # the top-ups to win; the owner's of 17 Oct on LIVE (test_*_17_oct)
     for k, v in limits.items():
         setattr(cfg.limits, k, v)
@@ -847,3 +849,21 @@ def test_the_owners_top_ups_from_17_oct_fill_to_the_stake_at_the_price_now(topup
 def test_the_config_refuses_an_unknown_top_up_mode():
     with pytest.raises(ValueError):
         tc.load_config("trading/config_live.json", env={}, overrides={"topup_to": "result"})
+
+
+def test_the_owners_guard_from_20_oct_never_backs_under_the_predicted_bfsp():
+    """The owner, 20 Oct ("implement the guard now"): never back, first back or top-up, where the best back is under
+    the model's own predicted BFSP (min_move 0: ln(best back / predicted BFSP) >= 0). Research query below_model_1020:
+    2% of the money of 10-19 Oct went in under the model's price, the top-ups among it at -1.8% CLV, those after a
+    thin top price at -29%."""
+    assert LIVE.min_move == 0.0
+    views = _views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])
+    cfg = _live_cfg()
+    assert [d.selection_id for d in plan_race(views, cfg, 4000)] == [1]            # 7.0 over the model's 4.0: backed
+    cfg.min_move = 0.0
+    assert [d.selection_id for d in plan_race(views, cfg, 4000)] == [1]            # still over the model's price
+    cfg.min_move = float(np.log(7.0 / 4.0)) + 0.01                                 # a bar the 7.0 does not reach
+    assert plan_race(views, cfg, 4000) == []
+    under = _views([7.0, 2.3, 3.6, 6.0], [7.5, 2.6, 4.2, 8.0], [500, 900, 800, 300])
+    cfg.min_move = 0.0
+    assert 1 not in [d.selection_id for d in plan_race(under, cfg, 4000)]             # 7.0 under the 7.5: never
