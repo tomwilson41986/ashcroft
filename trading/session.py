@@ -250,7 +250,8 @@ class Session:
                 want = min(left / (d.price - 1.0), self.cfg.limits.max_stake - pos.matched)
         if want < self.cfg.limits.min_stake:
             return
-        stake, why = allowed_stake(want, d.price, m.market_id, book.total_matched, d.back_size,
+        limit, offered = self._ladder(book, d)
+        stake, why = allowed_stake(want, d.price, m.market_id, book.total_matched, offered,
                                    self.state, self.cfg.limits)
         capped = False
         if stake > 0 and self.hold_until is not None:
@@ -261,12 +262,13 @@ class Session:
                 self._hold(now, "the funds read are spent")
                 stake, why = 0.0, HELD
         min_fill = self.cfg.limits.min_stake
-        if stake > 0 and self.cfg.trade_out and d.price > 1.0:
+        if stake > 0 and self.cfg.trade_out and limit > 1.0:
             # every fill must be one the lay at the SP can close: its winnings, with what the horse has unhedged
-            # already, at least the smallest lay at SP Betfair takes; a back too small for that is not sent
+            # already, at least the smallest lay at SP Betfair takes; a back too small for that is not sent (read at
+            # the order's limit, the worst price it can fill at)
             owed = self.cfg.limits.min_bsp_liability - (self._unhedged(pos) if pos else 0.0)
             if owed > 0:
-                need = math.ceil(owed / (d.price - 1.0) * 100 - 1e-9) / 100
+                need = math.ceil(owed / (limit - 1.0) * 100 - 1e-9) / 100
                 if need > stake + 1e-9 and capped:          # the funds are short, not the market: read them again
                     self._hold(now, "the funds read are spent")
                     stake, why = 0.0, HELD
@@ -275,8 +277,9 @@ class Session:
                                        f"GBP{self.cfg.limits.min_bsp_liability:.0f})")
                 else:
                     min_fill = max(min_fill, need)
+        reason = d.reason + (f", ladder to {limit:g}" if limit < d.price else "")
         base = self._row(now, "back", m, d.selection_id, d.name, strategy=self.cfg.strategy,
-                         staking=self.cfg.staking, reason=d.reason, p_model=d.p_model, p_market=d.p_market,
+                         staking=self.cfg.staking, reason=reason, p_model=d.p_model, p_market=d.p_market,
                          p_pool=d.p_pool, edge=d.edge, move=d.move, best_back=d.price, back_size=d.back_size,
                          target=d.target)
         if stake <= 0:
@@ -284,7 +287,7 @@ class Session:
                 self._skips.add((key, why))
                 self.ledger.append({**base, "event": "skip", "error": why})
             return
-        fill = self.x.back(m.market_id, d.selection_id, d.price, stake,
+        fill = self.x.back(m.market_id, d.selection_id, limit, stake,
                            ref=f"ash{self.day:%m%d}{d.selection_id}"[:32], min_fill=min_fill)
         if fill.matched > 0:
             pos = self.positions.setdefault(key, Position(m.market_id, d.selection_id, d.name))
@@ -303,6 +306,25 @@ class Session:
         if fill.matched > 0 and self.cfg.trade_out and self.cfg.trade_out_at == "fill":
             self._lay_at_bsp(m, pos, self._unhedged(pos), now)
         self.flush()                                         # an order on record at once, not at the poll's end
+
+    def _ladder(self, book: Book, d) -> tuple[float, float]:
+        """The order's limit and the money offered down to it: the best back, or with cfg.ladder (the owner, 20 Oct)
+        the lowest of the best backs, in order, still at expected CLV >= cfg.clv_bar at their own price and at or over
+        the guard (ln(price / predicted BFSP) >= cfg.min_move). A back limit fills each level at its own price."""
+        limit, offered = d.price, d.back_size
+        if not (self.cfg.strategy == "closing_clv" and getattr(self.cfg, "ladder", False)):
+            return limit, offered
+        q = book.runners.get(d.selection_id)
+        if q is None or not q.back or not (d.price and d.price > 1.0) or not (d.p_pool > 0) \
+                or not math.isfinite(d.move):
+            return limit, offered
+        ours = d.price / math.exp(d.move)                    # the model's predicted BFSP, as the plan read it
+        size = 0.0
+        for p, s in q.back:                                   # best (highest) first
+            if p * d.p_pool - 1.0 < self.cfg.clv_bar or math.log(p / ours) < self.cfg.min_move - 1e-12:
+                break
+            limit, size = p, size + s
+        return (limit, size) if size > 0 else (d.price, offered)
 
     def _funds(self) -> dict | None:
         try:

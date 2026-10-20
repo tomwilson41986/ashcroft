@@ -27,6 +27,7 @@ def _live_cfg(**limits):
                                                   # rule from 9 Oct (neither) is tested on LIVE (test_the_owners_rule_*)
     cfg.limits.max_stake, cfg.stake_floor, cfg.topup_to = 300.0, 0.0, "winnings"   # written for GBP300 a bet and
     cfg.min_move = -100.0                         # and backing at any price over the closing model's bar
+    cfg.ladder = False                            # at the best back only; the owner's ladder of 20 Oct on LIVE (test_*_ladder*)
                                                   # the top-ups to win; the owner's of 17 Oct on LIVE (test_*_17_oct)
     for k, v in limits.items():
         setattr(cfg.limits, k, v)
@@ -867,3 +868,57 @@ def test_the_owners_guard_from_20_oct_never_backs_under_the_predicted_bfsp():
     under = _views([7.0, 2.3, 3.6, 6.0], [7.5, 2.6, 4.2, 8.0], [500, 900, 800, 300])
     cfg.min_move = 0.0
     assert 1 not in [d.selection_id for d in plan_race(under, cfg, 4000)]             # 7.0 under the 7.5: never
+
+
+def _ladder_session(cfg, levels):
+    """A race whose value horse (1: our price 4.0, the best back 7.0) offers `levels` to back."""
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    market, book, preds = _race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])
+    book.runners[1].back = list(levels)
+    c = _Client()
+    s, clock = _session(c, [(market, book, preds)], cfg)
+    s.step(clock())
+    backs = [p["instructions"][0] for m, p in c.calls if m == "placeOrders"
+             and p["instructions"][0]["side"] == "BACK" and p["instructions"][0]["selectionId"] == 1]
+    return backs, s
+
+
+def _ladder_prices(cfg):
+    views = _views([7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300],
+                   lays=[round(b * 1.04, 2) for b in [7.0, 2.3, 3.6, 6.0]])
+    d = plan_race(views, cfg, 4000)[0]
+    p2, p3 = round(1.06 / d.p_pool, 2), round(0.99 / d.p_pool, 2)   # expected CLV +6% and -1% at their own prices
+    assert 4.0 < p3 < p2 < 7.0
+    return p2, p3
+
+
+def test_the_owners_ladder_from_21_oct_takes_the_levels_still_at_the_bar():
+    """The owner, 20 Oct ("implement the ladder"): one order takes the levels below the best back while they are still
+    at expected CLV >= the bar at their own price and over the guard. Replayed through this code 12-18 Oct
+    (blend-ladder-replay-1020): CLV x stake GBP2,388 against GBP2,131 at the best back only, ahead on every day."""
+    assert LIVE.ladder is True and LIVE.clv_bar == 0.03 and LIVE.min_move == 0.0
+    cfg = _live_cfg()
+    cfg.ladder = True
+    p2, p3 = _ladder_prices(cfg)
+    backs, s = _ladder_session(cfg, [(7.0, 10.0), (p2, 15.0), (p3, 500.0)])
+    assert len(backs) == 1
+    assert backs[0]["limitOrder"]["price"] == p2                       # down to the last level at the bar, no further
+    assert backs[0]["limitOrder"]["size"] == pytest.approx(25.0)       # the money on the two levels taken
+    row = [r for r in s.ledger if r["event"] == "back" and r["selection_id"] == 1][0]
+    assert row["best_back"] == 7.0 and f"ladder to {p2:g}" in row["reason"]
+
+
+def test_without_the_ladder_the_order_is_at_the_best_back_and_its_money():
+    cfg = _live_cfg()
+    p2, p3 = _ladder_prices(cfg)
+    backs, _ = _ladder_session(cfg, [(7.0, 10.0), (p2, 15.0), (p3, 500.0)])
+    assert len(backs) == 1 and backs[0]["limitOrder"]["price"] == 7.0 and backs[0]["limitOrder"]["size"] == 10.0
+
+
+def test_the_ladder_stops_at_the_owners_guard():
+    cfg = _live_cfg()
+    cfg.ladder = True
+    p2, p3 = _ladder_prices(cfg)
+    cfg.min_move = float(np.log(p2 / 4.0)) + 0.01                      # the second level under the guard, 7.0 over it
+    backs, _ = _ladder_session(cfg, [(7.0, 10.0), (p2, 15.0), (p3, 500.0)])
+    assert len(backs) == 1 and backs[0]["limitOrder"]["price"] == 7.0 and backs[0]["limitOrder"]["size"] == 10.0

@@ -179,6 +179,20 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   UK and the live record holds none (the earliest hour traded, 08:00 UK, made +11.7% on 10 Oct and +20.4% on 11 Oct);
   the evening-before books were too thin to trade (ledger `evening-before-1007`), so the earliest books may give few
   backs. The day limit of GBP4,000 bounds the stake, and the check-ins score the 06:15-07:59 backs on their own.
+- **The owner's ladder from 21 Oct** ("implement the ladder", after research queries depth_refill_1020,
+  benter_blend_1020, blend_ladder_replay_1020 and day_limit_replay_1020, ledger `depth-refill-1020`,
+  `benter-blend-1020`, `blend-ladder-replay-1020`, `day-limit-replay-1020`): **each back's limit is the lowest of the
+  three best backs still at expected CLV >= 3% at its own price and at or over the guard** (`ladder: true`), so one
+  order takes the levels below the best back too, each at its own price, up to the stake the horse still wants. The
+  best back is thin (median GBP2.72 on a first back, GBP3.08 on a top-up) and taken whole in 83% of fills; after it is
+  taken the best back is 2-2.5% lower at the next read and our price back at the top 30-43% of the time with a median
+  GBP0 at it, and a fill that left money on the level got no better next price (so no drip feeding). Replayed through
+  the trader's code, 12-18 Oct at GBP4,000 a day: CLV x stake GBP2,388 (9.0%) against GBP2,131 (8.0%) at the best
+  back only, GBP2,206 against GBP2,002 after commission, ahead on all seven days. The same replays kept the served
+  closing model (a blend refitted on the trader's books with weights by spread made GBP1,878; Benter's blend to the
+  winner adds nothing beyond the BSP), no bar on the top-ups (6%: GBP1,822) and the GBP4,000 day limit (the owner asked
+  whether to lift it: GBP6,000 GBP2,159 at 5.6%, no limit GBP2,085 at 4.2% on GBP49,509; the money past the first
+  GBP4,000 goes on later races at about level CLV and the account's own money binds).
 - **The owner's guard from 20 Oct** ("implement the guard now", after research queries liquidity_1020 and
   below_model_1020, ledger `liquidity-1020`, `below-model-1020`): **never back, first back or top-up, where the best back
   is under the model's own predicted BFSP** (`min_move: 0.0`, ln(best back / predicted BFSP) >= 0). Of 6,210 fills of

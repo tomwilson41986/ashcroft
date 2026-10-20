@@ -10,6 +10,7 @@
   "stake_floor": 15.0,
   "topup_to": "stake",
   "min_move": 0.0,
+  "ladder": true,
   "clv_draws": 20000,
   "commission": 0.02,
   "trade_from": "06:15",
