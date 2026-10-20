@@ -2,8 +2,8 @@
 (read-only). done/blend_ladder_replay_1020.py's replay (the trader's own code a minute at a time, 12-19 Oct, fills
 against the recorded sizes, settled at Betfair's price files) with GBP5,500 in the account (the account closed 19 Oct
 at GBP5,465.69), so without the day limit the account's own money is the limit: a back larger than the money not
-yet back from its races is refused, and the session holds new backs until it is. Arms: the live rule and the spread
-blend with the ladder, each at GBP4,000, GBP6,000 and no day limit. Before (1-9 Oct, the rule of then, GBP5,000):
+yet back from its races is refused, and the session holds new backs until it is. Arms: the live rule, and the live rule
+with the ladder (blend-ladder-replay-1020: the best arm), each at GBP4,000, GBP6,000 and no day limit. Before (1-9 Oct, the rule of then, GBP5,000):
 no limit made CLV x stake GBP1,686 against GBP2,207 with the limit (strategy-replay-1010)."""
 import os
 import sys
@@ -16,9 +16,9 @@ ARMS = [  # name, blend, policy, day limit
     ("live, GBP4,000 a day", False, {}, 4000.0),
     ("live, GBP6,000 a day", False, {}, 6000.0),
     ("live, no day limit", False, {}, NOLIMIT),
-    ("spread blend + the ladder, GBP4,000 a day", True, {"ladder": BAR}, 4000.0),
-    ("spread blend + the ladder, GBP6,000 a day", True, {"ladder": BAR}, 6000.0),
-    ("spread blend + the ladder, no day limit", True, {"ladder": BAR}, NOLIMIT),
+    ("live + the ladder, GBP4,000 a day", False, {"ladder": BAR}, 4000.0),
+    ("live + the ladder, GBP6,000 a day", False, {"ladder": BAR}, 6000.0),
+    ("live + the ladder, no day limit", False, {"ladder": BAR}, NOLIMIT),
 ''' + src[b:]
 old = "    for name, blend, pol in ARMS:\n"
 assert old in src
