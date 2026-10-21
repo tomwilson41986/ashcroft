@@ -28,6 +28,7 @@ def _live_cfg(**limits):
     cfg.limits.max_stake, cfg.stake_floor, cfg.topup_to = 300.0, 0.0, "winnings"   # written for GBP300 a bet and
     cfg.min_move = -100.0                         # and backing at any price over the closing model's bar
     cfg.ladder = False                            # at the best back only; the owner's ladder of 20 Oct on LIVE (test_*_ladder*)
+    cfg.max_topups = None                         # no cap on top-ups; the owner's cap of 21 Oct on LIVE (test_*_max_topups*)
                                                   # the top-ups to win; the owner's of 17 Oct on LIVE (test_*_17_oct)
     for k, v in limits.items():
         setattr(cfg.limits, k, v)
@@ -936,3 +937,46 @@ def test_the_owners_max_price_from_21_oct_is_200():
     wide.limits.max_price = 1000.0
     assert 1 in [d.selection_id for d in plan_race(views, wide, 4000)]          # value at 250 under the old cap
     assert 1 not in [d.selection_id for d in plan_race(views, LIVE, 4000)]      # never over 200
+
+
+@pytest.mark.parametrize("fills, topped_up", [(5, True), (6, False)])
+def test_the_owners_max_topups_from_22_oct_is_5(fills, topped_up):
+    """The owner, 21 Oct ("cap the top-ups at 5", after research query replay_1020, ledger replay-1020): a horse takes
+    its first back and at most 5 top-ups. Replayed through this code 12-19 Oct with the ladder: CLV x stake GBP3,091
+    against GBP2,711 uncapped, the money going to more horses' first backs. The count comes from Betfair's own record
+    of the day's orders, so a session that starts again keeps it."""
+    assert LIVE.max_topups == 5
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    each = round(41.66 / fills, 2)
+    held = [{"marketId": "1.7", "selectionId": 1, "side": "BACK", "orderType": "LIMIT", "sizeMatched": each,
+             "averagePriceMatched": 7.0, "customerOrderRef": "ash10011"} for _ in range(fills)]
+    held.append({"marketId": "1.7", "selectionId": 1, "side": "LAY", "orderType": "MARKET_ON_CLOSE",
+                 "bspLiability": round(each * fills * 6.0, 2), "customerOrderRef": "ash10011x"})
+    c = _Client(orders=held)
+    cfg = _live_cfg()
+    cfg.topup_to, cfg.max_topups = "stake", 5
+    s, clock = _session(c, [_race("1.7", off, [6.0, 2.3, 3.6, 6.0], [3.5, 2.6, 4.2, 8.0], [500, 900, 800, 300])],
+                        cfg)
+    s.sync(s.x.orders(["1.7"]))
+    assert s.positions[("1.7", 1)].fills == fills
+    s.step(clock())
+    backs = [p["instructions"][0] for m, p in c.calls if m == "placeOrders"
+             and p["instructions"][0]["selectionId"] == 1 and p["instructions"][0]["side"] == "BACK"]
+    assert bool(backs) is topped_up
+
+
+def test_a_restarted_session_counts_the_fills_from_its_ledger():
+    cfg = _live_cfg()
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    race = _race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])
+    s, clock = _session(_Client(), [race], cfg)
+    s.step(clock())
+    assert s.positions[("1.7", 1)].fills == 1
+    again, _ = _session(_Client(), [race], cfg)
+    again.restore([dict(r) for r in s.ledger] * 3, [race[0]])                  # the same back read three times over
+    assert again.positions[("1.7", 1)].fills == 3
+
+
+def test_the_config_refuses_a_negative_top_up_cap():
+    with pytest.raises(ValueError):
+        tc.load_config("trading/config_live.json", env={}, overrides={"max_topups": -1})

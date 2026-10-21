@@ -56,6 +56,8 @@ class TradingConfig:
                                          # stake (to the stake that wins cfg.target at the price now, floor and cap kept)
     min_move: float = -100.0             # closing_clv: back only where ln(best back / predicted BFSP) is at least this:
                                          # 0 never backs under the model's own price (the owner, 20 Oct); -100 is off
+    max_topups: int | None = None        # closing_clv: at most this many top-ups a horse (a first back and this many more
+                                         # matched backs; the owner, 21 Oct: 5); None: no cap
     ladder: bool = False                 # closing_clv: each back's limit at the lowest of the best backs still at the bar
                                          # (expected CLV at its own price) and the guard (min_move), so one order takes
                                          # the levels below the best back too (the owner, 20 Oct); False: the best back
@@ -80,6 +82,8 @@ class TradingConfig:
             raise ValueError("topup_to: winnings or stake")
         if self.stake_floor < 0:
             raise ValueError("stake_floor is at least 0")
+        if self.max_topups is not None and int(self.max_topups) < 0:
+            raise ValueError("max_topups is at least 0, or null for no cap")
         if self.trade_out_at not in ("fill", "before_off"):
             raise ValueError("trade_out_at: fill or before_off")
         if not 0 < self.kelly_fraction <= 1:

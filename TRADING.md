@@ -179,6 +179,14 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   UK and the live record holds none (the earliest hour traded, 08:00 UK, made +11.7% on 10 Oct and +20.4% on 11 Oct);
   the evening-before books were too thin to trade (ledger `evening-before-1007`), so the earliest books may give few
   backs. The day limit of GBP4,000 bounds the stake, and the check-ins score the 06:15-07:59 backs on their own.
+- **The owner's cap on the top-ups from 22 Oct** ("cap the top-ups at 5", after research query replay_1020, ledger
+  `replay-1020`): **a horse takes its first back and at most 5 top-ups** (`max_topups: 5`; the count is each horse's
+  matched backs of the day, rebuilt from the ledger and from Betfair's own record of the orders when a session starts
+  again). Replayed through the trader's code 12-19 Oct with the ladder: CLV x stake GBP3,091 (10.7%) against GBP2,711
+  (9.0%) uncapped, GBP2,994 against GBP2,611 after commission, ahead on 6 of 8 days, the smallest spread of the arms
+  (sd GBP213 a day): the day's money goes to more horses' first backs (1,110 horses against 870) instead of the 6th and
+  later top-ups, which closed at -3% to -5% (`topups-1020`). The QA of 21 Oct (`qa-1021`) found the morning prices
+  nearer the close since 14 Oct, so the first look at a price matters more.
 - **The owner's maximum price from 21 Oct** ("set the max price to 200", after research query longshots_1020, ledger
   `longshots-1020`): **nothing is backed over 200** (`limits.max_price`, 1000 until then, Betfair's highest). The
   question came from GBP15 at 1000 on Cherry Amber (Yarmouth, 20 Oct; our price 328, the closing model's expected BSP

@@ -92,6 +92,7 @@ class Position:
     hedged: bool = False
     hedge_liability: float = 0.0
     hedge_failures: int = 0              # lays at BSP refused; after MAX_HEDGE_TRIES the position is left to settle
+    fills: int = 0                       # matched backs today: the first back and its top-ups (cfg.max_topups)
     settled: bool = False
 
     @property
@@ -238,6 +239,9 @@ class Session:
         want = d.target - (pos.matched if pos else 0.0)
         if self.cfg.strategy == "closing_clv" and pos and pos.matched > 0 and not getattr(self.cfg, "topups", True):
             return                                          # one back a horse (the owner, 9 Oct): no top-ups
+        if self.cfg.strategy == "closing_clv" and pos and pos.matched > 0 and \
+                getattr(self.cfg, "max_topups", None) is not None and pos.fills >= self.cfg.max_topups + 1:
+            return                                          # the horse has had its top-ups (the owner, 21 Oct)
         if self.cfg.strategy == "closing_clv" and pos and pos.matched > 0:
             if getattr(self.cfg, "topup_to", "winnings") == "stake":
                 # the owner, 17 Oct: up to the stake that wins the target at the price now (with the floor and the
@@ -292,6 +296,7 @@ class Session:
         if fill.matched > 0:
             pos = self.positions.setdefault(key, Position(m.market_id, d.selection_id, d.name))
             pos.matched += fill.matched
+            pos.fills += 1
             pos.cost += fill.matched * fill.avg_price
             self.state.record(m.market_id, fill.matched)
             if self.available is not None:
@@ -574,6 +579,7 @@ class Session:
                 pos = self.positions.setdefault(key, Position(key[0], key[1], r.get("runner", "")))
                 pos.matched += float(r["matched"])
                 pos.cost += float(r["matched"]) * float(r["avg_price"])
+                pos.fills += 1
                 self.state.record(key[0], float(r["matched"]))
             elif r["event"] == "trade_out" and r.get("status") in ("PENDING", "SUCCESS") and key in self.positions:
                 pos = self.positions[key]
@@ -631,10 +637,11 @@ class Session:
             if not str(o.get("customerOrderRef", "")).startswith(prefix):
                 continue
             key = (str(o["marketId"]), int(o["selectionId"]))
-            g = got.setdefault(key, {"matched": 0.0, "cost": 0.0, "laid": 0.0})
+            g = got.setdefault(key, {"matched": 0.0, "cost": 0.0, "laid": 0.0, "fills": 0})
             if o.get("side") == "BACK":
                 size = float(o.get("sizeMatched") or 0.0)
                 g["matched"] += size
+                g["fills"] += size > 0
                 g["cost"] += size * float(o.get("averagePriceMatched") or 0.0)
             elif o.get("side") == "LAY" and o.get("orderType") == "MARKET_ON_CLOSE":
                 g["laid"] += float(o.get("bspLiability") or 0.0)
@@ -643,6 +650,8 @@ class Session:
             if g["matched"] <= 0:
                 continue
             pos = self.positions.get(key)
+            if pos:
+                pos.fills = max(pos.fills, g["fills"])
             if pos and abs(pos.matched - g["matched"]) < 0.01 and abs(pos.hedge_liability - g["laid"]) < 0.01:
                 continue
             m = self.markets.get(key[0]) or Market(key[0], "", "", now)
@@ -654,6 +663,7 @@ class Session:
             if before <= 0:
                 self.state.bets += 1
             pos.matched, pos.cost, pos.hedge_liability = g["matched"], g["cost"], g["laid"]
+            pos.fills = max(pos.fills, g["fills"])
             pos.hedged = pos.hedge_liability >= round(pos.matched * (pos.avg_price - 1.0), 2) - 0.01
             self.ledger.append({**self._row(now, "sync", m, key[1], name), "matched": round(pos.matched, 2),
                                 "avg_price": round(pos.avg_price, 4), "hedge_liability": pos.hedge_liability,
