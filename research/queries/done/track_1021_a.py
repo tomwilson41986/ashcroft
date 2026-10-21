@@ -74,7 +74,7 @@ h["Pm"], h["ev"] = h.sxp / h.S, h.exs / h.S
 h["ref"] = np.where(h.bsp > 1, h.bsp, h.back_now)
 h["clv_now"] = np.where(h.rstatus.eq("REMOVED"), np.nan, h.Pm / h.ref - 1)
 h["state"] = np.where(h.rstatus.eq("REMOVED"), "non-runner", np.where(h.bsp > 1, "run (BSP)", "to run"))
-h["off_uk"] = pd.to_datetime(h.off, utc=True, errors="coerce").dt.tz_convert("Europe/London").dt.strftime("%H:%M")
+h["off_uk"] = pd.to_datetime(h.off, errors="coerce").dt.strftime("%H:%M")   # the ledger keeps the UK time (run 39577487440 read it as UTC: an hour late)
 ok = h.clv_now.notna()
 
 
