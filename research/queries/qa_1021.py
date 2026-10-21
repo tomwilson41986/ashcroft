@@ -33,7 +33,7 @@ pd.set_option("display.max_columns", 40)
 s3 = boto3.client("s3", region_name=os.environ.get("PRED_REGION") or "eu-west-2")
 bucket = os.environ.get("PRED_BUCKET") or "ashcroft"
 conn = sqlite3.connect("file:horse_racing.db?mode=ro", uri=True)
-D0, D1 = date(2026, 10, 1), date(2026, 10, 20)
+D0, D1 = date(2026, 10, 1), date(2026, 10, 20)  # (re-run: the stale table's group key)
 DAYS = [(D0 + timedelta(n)).isoformat() for n in range((D1 - D0).days + 1)]
 
 
@@ -101,7 +101,7 @@ def stats(g):
                       "model_spearman": g.predicted_bfsp.corr(g.bsp, method="spearman"),
                       "m08_runners": len(h8), "m08_mae_log": h8.err8.abs().mean(),
                       "model_mae_same": h8.err.abs().mean(),
-                      "m08_spearman": h8.mid8.corr(h8.bsp, method="spearman"), "stale_share": g.stale.mean()})
+                      "m08_spearman": h8.mid8.corr(h8.bsp, method="spearman"), "stale_share": g["stale"].mean() if "stale" in g else np.nan})
 
 
 print("\n== 1. the model and the 08:00 market against the BSP, by day")
