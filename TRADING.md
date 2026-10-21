@@ -1264,6 +1264,41 @@ during the day, live from 21 Oct; sections above).
   to 22 Oct). The Tote: no gap (the win pool 0.845 of the BSP); the other-markets scan of 19 Oct: arbitrage of a few
   pence a horse.
 
+**The twenty-first full day** (21 Oct, a Wednesday; ledger `live-day-1021`), the ninth early session and **the first
+on the guard, the ladder and the maximum price of 200**; the cap of 5 top-ups a horse merged during the day, live from
+22 Oct.
+- **The start.** Predictions created 04:12 UTC (run 39542749402), file in S3 04:34:53 UTC (375 runners, the card from
+  HRB's card page); the session created 05:24 UTC (run 39549422005; settle 39681967928), first back 06:25 UK.
+- **+GBP209.37 after commission** (Betfair's funds GBP5,469.18 against 20 Oct's GBP5,259.81; GBP214.44 settled before
+  commission) on 597 backs on 97 horses in 36 markets, GBP3,999.99 matched; CLV +4.44% at Betfair's settled prices
+  (19 horses' prices cut by a non-runner; the trader's horse-level +4.36%).
+- **First backs +24.4% (GBP679), top-ups +0.3% (GBP3,245)**; the limit bound at 08:38 UK (GBP1,000 by 06:48, GBP2,000
+  by 07:22, GBP3,000 by 07:53); 06:15-07:59 +6.0%, 08:00-09:59 -1.0%. The entry margin fell again: the first backs'
+  price over the BSP, median log +4.4% (10-13 Oct +13.3%, 14-20 Oct +6.7%; `qa-1021`).
+- **The three changes, first day** (`changes-1021`). The ladder: 110 fills, GBP1,312 (33% of the money), a median 1.2%
+  below the best back (at most 6.0%); its first backs +31.3% against +19.3% at the best back, its top-ups +0.7%
+  against +0.1%. The cap: nothing over 110 backed; 11 horses over 200 cleared the bar and were left (GBP15 each). The
+  guard: 10 horses kept out at a read under the model's price; 5 of them were backed later over it, and at the
+  reads it refused they would have closed -13.4% at the BSP.
+- **The owner's questions of the day, answered from the record**: the last seven days (`qa-1021`: no change of code
+  moved us; the market's morning margin over the BSP halved, the model held, HRB's stale form cost about GBP85); the
+  hedge (`hedge-ratio-1021`: keep it, the even split is EV-neutral); the race types and the lay-off time
+  (`review-1021`: wait for the BSP; beginners' chases -21% CLV, put to the owner); the model prototype
+  (`move-model-1021`, `combo-replay-1021`: no gain in the full replay); **an accurate P&L** (`replay-vs-live-1021`,
+  `execution-audit-1021`, `replay-sources-1021`): the P&L is Betfair's own, but every CLV at the fill (the trader's,
+  the in-day EV, every replay to date) overstates, because Betfair cuts the price matched when a runner is withdrawn
+  later: live 10-20 Oct +7.65% at the fill, +3.08% settled; the replays halve after the cuts, and live then runs at
+  0.80 of them; the execution itself is clean (fills at or better than the price read, a median 0 s book, 152
+  orders expired). A bar after the expected cut (`reductions-1021`, `replay-nr-bar-1021`) loses in the full replay
+  (-GBP231 to -GBP481): not adopted. Replays are scored after the cuts from now on.
+- **The replay** (12-20 Oct, scored after the cuts; 21 Oct's price file not out; ledger `replay-1021`), result after
+  commission: the rule of 20 Oct GBP1,234; the ladder GBP1,419; **the ladder with at most 5 top-ups (from 22 Oct)
+  GBP2,139** (CLV +6.1%, 1,233 horses against 967, ahead on 6 of 9 days); GBP6,000 with the cap GBP2,167 (GBP11,092
+  more staked for GBP28: GBP4,000 stays). At live's 0.80 the cap is worth about GBP575 over the 9 days.
+- **Data.** Final marks with a BSP for 21 Oct 706 of 757; price files loaded to 20 Oct; results to 13 Oct (the pause,
+  to 22 Oct). The Tote: no gap (the winners' dividend 0.819 of the BSP); the other-markets scan of 20 Oct: arbitrage
+  of GBP0.29 a horse (largest GBP2.68), the model's flagged backs negative at the BSP.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
