@@ -50,13 +50,14 @@ for day in DAYS:
                      usecols=lambda c: c in ("polled_utc", "market_id", "selection_id", "status", "inplay", "back1",
                                              "back1_size", "sp_actual")) if raw is not None else pd.DataFrame()
     if len(bk):
-        bk["selection_id"] = pd.to_numeric(bk.selection_id, errors="coerce")
+        bk["selection_id"] = pd.to_numeric(bk.selection_id, errors="coerce").astype("float64")
         bk["back1"] = pd.to_numeric(bk.back1, errors="coerce")
         bk["t"] = pd.to_datetime(bk.polled_utc, utc=True, errors="coerce")
         bk = bk.dropna(subset=["t", "selection_id"]).sort_values("t")
         sp = bk[pd.to_numeric(bk.sp_actual, errors="coerce") > 1].groupby(["market_id", "selection_id"]).sp_actual.last()
     backs = led[led.event == "back"].copy()
     backs["selection_id"] = backs.selection_id.astype("float64")
+    backs = backs.dropna(subset=["t"])
     if len(bk):
         mreads = bk[["market_id", "t"]].drop_duplicates().sort_values("t").rename(columns={"t": "t_read"})
         backs = pd.merge_asof(backs.sort_values("t"), mreads, left_on="t", right_on="t_read", by="market_id",
