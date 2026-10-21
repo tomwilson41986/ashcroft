@@ -65,7 +65,7 @@ for day in DAYS:
         nxt = bk[["market_id", "selection_id", "t", "back1"]].rename(columns={"t": "t_next", "back1": "back_next"})
         backs = pd.merge_asof(backs.sort_values("t"), nxt, left_on="t", right_on="t_next",
                               by=["market_id", "selection_id"], direction="forward", allow_exact_matches=False)
-    backs = backs.merge(st.assign(selection_id=st.selection_id.astype("float64")), on=["market_id", "selection_id"],
+    backs = backs.drop(columns=["result"]).merge(st.assign(selection_id=st.selection_id.astype("float64")), on=["market_id", "selection_id"],
                         how="left")
     if len(bk):
         sp = sp.rename("B_book").reset_index()
@@ -118,5 +118,5 @@ print(f"   refused backs with a BSP: {len(rr):,}, GBP{rr.asked.sum():,.2f} asked
 
 print("\n== 5. the CLV by the share of the best back's money taken")
 s["took"] = s.matched / s.back_size
-print(s.groupby(pd.cut(s.took, [0, 0.5, 0.95, 1.05, 100])).apply(lambda g: pd.Series({
+print(s.groupby(pd.cut(s.took, [0, 0.5, 0.95, 1.05, 100]), observed=True).apply(lambda g: pd.Series({
     "fills": len(g), "staked": g.matched.sum(), "clv_settled": (g.clv_settled * g.matched).sum() / g.matched.sum()})).round(4).to_string())
