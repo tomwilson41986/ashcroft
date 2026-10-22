@@ -165,10 +165,24 @@ def column_fingerprints(df: pd.DataFrame) -> dict[str, str]:
     return out
 
 
+def _write_parquet(df: pd.DataFrame, path: Path, rows_per_chunk: int = 100_000) -> None:
+    """The frame to Parquet in row chunks. ``df.to_parquet`` converts the whole frame to an Arrow table first, a
+    second copy of a matrix that already fills most of a runner's memory (the 1.05m-row history from 2018: the
+    build's peak is the save, and it is where a runner's shutdown signal came twice on 22 Oct). A chunk at a time,
+    the second copy is a hundredth of the frame; the file and its contents are the same."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    schema = pa.Schema.from_pandas(df.iloc[:1], preserve_index=False)
+    with pq.ParquetWriter(path, schema) as w:
+        for start in range(0, len(df), rows_per_chunk):
+            w.write_table(pa.Table.from_pandas(df.iloc[start:start + rows_per_chunk], schema=schema,
+                                               preserve_index=False))
+
+
 def save(df: pd.DataFrame, cache_dir: str, key: str, info: dict | None = None) -> Path:
     data, meta = _paths(cache_dir, key)
     data.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(data, index=False)
+    _write_parquet(df, data)
     payload = dict(info or {})
     payload.update({
         "key": key, "rows": int(len(df)), "columns": int(len(df.columns)),

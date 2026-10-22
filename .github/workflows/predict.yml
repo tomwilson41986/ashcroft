@@ -48,6 +48,17 @@ jobs:
           sudo swapon /mnt/swapfile
           free -h
 
+      - name: Refresh the sectionals table
+        # The sectionals block (model/blocks/sectionals.py) reads data/external/sectionals.csv.gz: the Blandford
+        # site's per-run sectionals, which it serves publicly and refreshes twice a day. Rebuilt here from the site's
+        # files (the last week refetched) so the card is priced on runs to yesterday; a failure keeps the committed
+        # table, which is the training-time one.
+        continue-on-error: true
+        run: |
+          python scripts/build_sectionals.py --fetch --site .sectionals_site \
+            --history-table data/external/sectionals.csv.gz --out .sectionals_site/sectionals.csv.gz \
+            && cp .sectionals_site/sectionals.csv.gz data/external/sectionals.csv.gz
+
       - name: Run predictions
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

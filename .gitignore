@@ -41,3 +41,4 @@ data/blandford_raw/
 # results_report.py attaches a FileHandler at import, so merely importing it --
 # which tests/test_workflow_guards.py does -- drops this in the working tree.
 results_report.log
+.sectionals_site/

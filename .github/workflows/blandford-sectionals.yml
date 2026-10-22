@@ -1,0 +1,84 @@
+name: Blandford sectionals (At The Races, Racing TV)
+
+# The Blandford backend's sectional tables (the owner, 22 Oct): At The Races' archive pulled a page at a time
+# (resumed from its cursor in S3, a few nights to complete), Racing TV's runs for the horses in our results over
+# the window asked, both loaded into horse_racing.db, and the per-run readings rebuilt for the sectionals block
+# (sectional_runs). Runs after the night's results and price loads and before source-data (03:20 UTC).
+
+on:
+  schedule:
+    - cron: '20 0 * * *'
+  workflow_dispatch:
+    inputs:
+      atr_minutes:
+        description: 'Minutes to spend on the At The Races archive (0 to skip)'
+        required: false
+        default: '120'
+        type: string
+      rtv_from:
+        description: 'Racing TV: first day of the window of horses to fetch'
+        required: false
+        default: '2025-07-01'
+        type: string
+      rtv_to:
+        description: 'Racing TV: last day of the window'
+        required: false
+        default: '2026-04-17'
+        type: string
+      rtv_minutes:
+        description: 'Minutes to spend on Racing TV (0 to skip)'
+        required: false
+        default: '30'
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+  S3_BUCKET: horseracingresults
+  S3_DB_KEY: horse_racing.db
+  CAPTURE_BUCKET: ashcroft
+  PRED_REGION: eu-west-2
+
+concurrency:
+  group: horse-racing-db
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 175
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket "$S3_BUCKET" --s3-key "$S3_DB_KEY"
+      - name: Fetch, load and build
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: |
+          ATR="${{ inputs.atr_minutes || '120' }}"
+          RTV="${{ inputs.rtv_minutes || '30' }}"
+          if [ "$ATR" != "0" ]; then python blandford_sectionals.py --fetch-atr --max-minutes "$ATR"; fi
+          python blandford_sectionals.py --load-atr
+          if [ "$RTV" != "0" ]; then
+            python blandford_sectionals.py --fetch-rtv --from "${{ inputs.rtv_from || '2025-07-01' }}" \
+              --to "${{ inputs.rtv_to || '2026-04-17' }}" --max-minutes "$RTV"
+          fi
+          python blandford_sectionals.py --build
+          python blandford_sectionals.py --report
+      - name: Back up database to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python backup_to_s3.py

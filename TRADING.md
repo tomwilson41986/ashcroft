@@ -1299,6 +1299,34 @@ on the guard, the ladder and the maximum price of 200**; the cap of 5 top-ups a 
   to 22 Oct). The Tote: no gap (the winners' dividend 0.819 of the BSP); the other-markets scan of 20 Oct: arbitrage
   of GBP0.29 a horse (largest GBP2.68), the model's flagged backs negative at the BSP.
 
+**The twenty-second full day** (22 Oct, a Thursday; ledger `live-day-1022`), the tenth early session and **the first
+on the cap of 5 top-ups a horse**, with the guard, the ladder and the maximum price of 200.
+- **The start.** Predictions run 39720997915 (04:11 UTC); the session created 05:25 UTC (run 39727897245; settle
+  39860269291), first back 06:25 UK.
+- **+GBP367.72 after commission** (Betfair's funds GBP5,836.90 against 21 Oct's GBP5,469.18, no exposure left) on 727
+  fills on 155 horses, GBP3,999.93 matched; CLV +10.40% at Betfair's settled prices (45 horses' prices cut by a
+  non-runner; the trader's horse-level +9.86%). The ledger settled all 38 markets it backed at GBP294.68 after its
+  commission rows, GBP73.04 under the funds: no market is unsettled, so the gap is to reconcile against Betfair's
+  cleared orders. The funds rule.
+- **First backs +17.4% (GBP917), top-ups +8.1% (GBP2,860)**; the limit bound at 10:27 UK (GBP1,000 by 06:28, GBP2,000
+  by 06:47, GBP3,000 by 08:14); 06:15-07:59 +12.9% (GBP2,609), 08:00-09:59 +5.8%, 10:00 on +0.3%. The entry margin
+  recovered: the first backs' price over the BSP, median log +12.4% (21 Oct +4.4%).
+- **The cap, first day** (`changes-1022`): 77 horses reached 6 fills and none went over; the trader's plan asked for
+  GBP2,298 more on 71 of them, refused. The capped horses closed +4.8%, the rest +23.3%. The ladder: 47% of the money,
+  its first backs +20.8% against +12.3% at the best back. The staking of 19-22 Oct: GBP15,273 at +4.37% against the
+  old rule's +3.47% on the same books (`staking-1022`).
+- **The replay** (12-21 Oct, scored after the cuts; 22 Oct's price file not out; `replay-1022`), result after
+  commission: best back GBP1,378; the ladder GBP1,642; **the ladder with at most 5 top-ups GBP2,430** (CLV +6.1%,
+  ahead on 9 of 10 days); GBP6,000 with the cap GBP2,486 (GBP12,181 more staked for GBP56: GBP4,000 stays). At live's
+  0.80 the rule now is worth about GBP194 a day.
+- **Data.** Final marks with a BSP for 22 Oct 782 of 866; price files loaded to 21 Oct; HRB's results back-filled
+  14-21 Oct. The model's error through the stale-form days unchanged (14-21 Oct mean absolute log error 0.401, as
+  10-13 Oct; `model-quality-1022`). The Tote: no gap (the winners' dividend 0.817 of the BSP); the other-markets scan
+  of 21 Oct: arbitrage of GBP0.58 a horse-poll (largest GBP7.19), the model's flagged backs negative at the BSP.
+- **The sectionals** (`iter111-sectionals-tf-pace`, `iter113-sectionals-served-blend`): the Blandford site's sectionals
+  in every member of the served blend cut its error 0.0012 on the folds they cover (-0.0018 to -0.0006); the three
+  members retrained to 13 Oct with them, to be priced on a card before they serve.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
