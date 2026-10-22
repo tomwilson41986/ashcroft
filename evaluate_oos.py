@@ -81,9 +81,15 @@ def build_feature_frame(db_path: str, start_date: str | None = None) -> pd.DataF
     log.info(f"  {len(d.columns)} columns after metrics")
     d = build_context_features(d)
     d["bfsp"] = pd.to_numeric(d["bfsp"], errors="coerce")
-    d = d[d["bfsp"].notna() & (d["bfsp"] > 1.0)].copy()
+    # The rows with a BSP, in race order, taken in one pass. Masking, copying and sorting as three statements held
+    # three copies of the matrix at once, and on the history from 2018 (1.05m rows, about 1,000 columns) that is where
+    # a standard runner ran out of memory and swap (22 Oct: 16 GB and 16 GB, the shutdown signal at the build's end).
+    keep = (d["bfsp"].notna() & (d["bfsp"] > 1.0)).to_numpy()
+    order = np.lexsort((pd.factorize(d["race_time"], sort=True)[0], pd.factorize(d["race_date"], sort=True)[0]))
+    d = d.take(order[keep[order]])
+    d.reset_index(drop=True, inplace=True)
     d["log_bfsp"] = np.log(d["bfsp"])
-    return d.sort_values(["race_date", "race_time"]).reset_index(drop=True)
+    return d
 
 
 def drop_in_blocks() -> list[str]:
