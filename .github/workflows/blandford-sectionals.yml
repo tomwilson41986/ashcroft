@@ -39,7 +39,7 @@ env:
   PRED_REGION: eu-west-2
 
 concurrency:
-  group: horse-racing-db-writer
+  group: horse-racing-db
   cancel-in-progress: false
 
 jobs:
