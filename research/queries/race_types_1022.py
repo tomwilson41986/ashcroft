@@ -1,20 +1,20 @@
 """The owner (22 Oct): "which type of races our model performs poorly in and whether we can do race type adjustments
 for them" (read-only).
 
-The history: every runner of 1 Aug - 13 Oct (results to 13 Oct: HRB's pause) with the 06:00 file's price (the model
-as served each day), Betfair's price files (morning WAP, its matched money, BSP) and the race from race_results
-(code from race_type and surface_type; kind from the race name; Ireland by course).
+The sample: the served blend's walk-forward predictions (iteration 110's gate_step: the three members as served,
+27 Sep 2025 - 31 Mar 2026, 53,910 runners; research/data/oos_served_iter110.csv.gz), joined to Betfair's price files
+(morning WAP, its matched money, BSP). The 06:00 files of August and September are not the sample: they were older
+models (an error of about 0.9 in log against 0.4 today). The locked holdout (from 1 Apr 2026) is not read.
 
-1. Where the model prices worst: by code, kind, code x kind, country, field size and price band, the 06:00 price's
-   error against the BSP (mean absolute log error, and its bias: above zero, our price longer than the BSP), the
+1. Where the model prices worst: by code, kind, code x kind, country, class, field size and price band, our price's
+   error against the BSP (within-race mean absolute log error, and its bias: above zero, our price longer than the BSP), the
    morning WAP's error, and the model's skill against it (1 - our error / the market's); and the blend the closing
    model would fit in that segment alone (the weights on the market's log chance and ours).
-2. Race-type adjustments, walk-forward by week (each week scored by fits on the weeks before, from the fourth):
+2. Race-type adjustments, walk-forward by month (each month scored by fits on the months before, from the third):
    - one blend for every race (the closing model's form refitted: market and ours);
    - the blend with the weights by race type (each segment's own weights on the market and ours, shrunk to the
      common blend by L2);
-   - our price corrected for each segment's bias before the one blend;
-   - the one blend, races of a type skipped where the weeks before closed below zero on the rule.
+   - the one blend, races of a type skipped where the months before closed below zero on the rule.
    Each scored by nearness to the BSP book out of sample (cross-entropy per race against the one blend) and by the
    owner's rule on it: backed at the morning WAP where the expected CLV is at least 3%, the WAP at or over our price
    and GBP100 matched on the horse, staked to win GBP400 (GBP15-200), CLV at the BSP. The price files' WAP is not
@@ -24,7 +24,7 @@ import io
 import os
 import sqlite3
 import sys
-from datetime import date, timedelta
+from datetime import timedelta
 
 import boto3
 import numpy as np
@@ -34,7 +34,6 @@ from scipy.optimize import minimize
 sys.path.insert(0, ".")
 from betfair_prices import normalise_horse, normalise_track, race_time_to_24h  # noqa: E402
 from model import race_book as rb  # noqa: E402
-from model.race_shape import race_code  # noqa: E402
 
 pd.set_option("display.width", 250)
 pd.set_option("display.max_columns", 40)
@@ -99,36 +98,39 @@ def xent(X, b, q, g):
     return -float(np.sum(q * rb.group_log_softmax(X @ b, g))) / (g.max() + 1)
 
 
-# ------------------------------------------------------------------ the history
-p = preds(date(2026, 8, 1), date(2026, 10, 13))
-bf = pd.read_sql_query("""SELECT r.race_date, r.track, r.race_time, r.horse_name, r.race_type, r.surface_type,
-                                 r.race_name, b.event_id, b.win_lose, b.bsp, b.morningwap, b.morning_vol
+# ------------------------------------------------------------------ the served blend's walk-forward predictions
+o = pd.read_csv("research/data/oos_served_iter110.csv.gz", dtype={"race_time": str})
+o["_k"] = (o.race_date.astype(str).str.slice(0, 10) + "|" + o.track.map(normalise_track) + "|"
+           + o.race_time.map(race_time_to_24h).astype(str) + "|" + o.horse_name.map(normalise_horse))
+bf = pd.read_sql_query("""SELECT r.race_date, r.track, r.race_time, r.horse_name, b.event_id, b.bsp, b.morningwap,
+                                 b.morning_vol
                           FROM betfair_prices b JOIN race_results r ON r.id = b.race_results_id
-                          WHERE LOWER(b.market_type) = 'win' AND r.race_date >= '2026-08-01'
-                          AND r.race_date <= '2026-10-13'""", conn)
+                          WHERE LOWER(b.market_type) = 'win' AND r.race_date >= '2025-09-27'
+                          AND r.race_date < '2026-04-01'""", conn)
 bf["_k"] = (bf.race_date.astype(str).str.slice(0, 10) + "|" + bf.track.map(normalise_track) + "|"
             + bf.race_time.map(race_time_to_24h).astype(str) + "|" + bf.horse_name.map(normalise_horse))
-h = bf.drop_duplicates("_k").merge(p, on="_k")
+h = o.merge(bf.drop_duplicates("_k", keep=False)[["_k", "event_id", "bsp", "morningwap", "morning_vol"]], on="_k")
+print(f"the served blend's predictions: {len(o):,} runners; joined to Betfair's price files {len(h):,}")
 h["day"] = h.race_date.astype(str).str.slice(0, 10)
 h["race"] = h.day + "|" + h.event_id.astype(str)
 ok = (h.bsp > 1) & (h.predicted_bfsp > 1) & (h.morningwap > 1)
 field = h.groupby("race").race.transform("size")
 h = h[ok.groupby(h.race).transform("all") & (field >= 2)].sort_values(["day", "race"]).reset_index(drop=True)
 h["field"] = h.groupby("race").race.transform("size")
-
-code = race_code(h)
-nm = h.race_name.fillna("").str.lower()
-h["code"] = np.where(code.eq("flat"), "flat turf", np.where(code.eq("aw"), "all-weather", code.str.replace("nhflat", "NH flat")))
-kind = np.select([nm.str.contains(r"\bbeg|beginner"), nm.str.contains(r"mdn|maiden"), nm.str.contains(r"\bnov|novice"),
-                  nm.str.contains(r"nursery|hcap|handicap"), nm.str.contains(r"claim|clm|sell|slr"),
-                  nm.str.contains(r"grp|group|listed|\(l\)|grade|\(g[123]\)")],
-                 ["beginners", "maiden", "novice", "handicap", "claimer/seller", "group/listed/graded"], "other")
-h["kind"] = kind
-h.loc[h.code.eq("NH flat"), "kind"] = "bumper"
-h["country"] = np.where(h.track.map(normalise_track).isin(IRE), "Ireland", "GB")
+rt = h.race_type.fillna("").str.lower()
+rc = h.race_code.fillna("").str.lower()
+h["code"] = np.select([rt.str.contains("nh flat"), rt.str.contains("chase"), rt.str.contains("hurdle"),
+                       rc.str.contains("all weather")], ["NH flat", "chase", "hurdle", "all-weather"], "flat turf")
+h["kind"] = np.select([rt.str.contains("hunters"), rt.str.contains("beginners"), rt.str.contains("seller|claimer"),
+                       rt.str.contains("handicap") & rt.str.contains("novices"), rt.str.contains("handicap"),
+                       rt.str.contains("maiden"), rt.str.contains("novices"), rt.str.contains("nh flat")],
+                      ["hunters", "beginners", "claimer/seller", "novice handicap", "handicap", "maiden", "novice",
+                       "bumper"], "other non-handicap")
+h["country"] = np.where(h.race_class.eq("Irish"), "Ireland", "GB")
+h["class"] = h.race_class.fillna("?")
 h["fieldband"] = pd.cut(h.field, [0, 6, 9, 12, 16, 100], labels=["2-6", "7-9", "10-12", "13-16", "17+"])
 h["band"] = pd.cut(h.bsp, [1, 3, 6, 11, 21, 51, 1001], right=False, labels=["<3", "3-6", "6-11", "11-21", "21-51", "51+"])
-h["seg"] = h.code + " | " + np.where(h.kind.isin(["handicap"]), "handicap",
+h["seg"] = h.code + " | " + np.where(h.kind.isin(["handicap", "novice handicap"]), "handicap",
                                      np.where(h.kind.isin(["maiden", "novice", "beginners", "bumper"]),
                                               "maiden/novice/beg/bumper", "other"))
 g = rb.race_codes(h.race)
@@ -155,12 +157,12 @@ def seg_table(col):
 
 print("\n== 1. where the model prices worst (within-race mean absolute log error against the BSP; bias above 0 = ours "
       "longer than the BSP; the blend the closing model fits on the segment alone)")
-for col in ("code", "kind", "seg", "country", "fieldband", "band"):
+for col in ("code", "kind", "seg", "country", "class", "fieldband", "band"):
     print(f"\n   by {col}")
     print(seg_table(col).round(3).to_string())
 
 # ------------------------------------------------------------------ 2. adjustments, walk-forward by week
-h["week"] = pd.to_datetime(h.day).dt.to_period("W-SUN").astype(str)
+h["week"] = h.day.str.slice(0, 7)
 weeks = sorted(h.week.unique())
 segs = sorted(h.seg.unique())
 S = (h.seg.to_numpy()[:, None] == np.array(segs)[None, :]).astype(float)
@@ -180,7 +182,7 @@ def rule(te, ev):
 
 out, picks = [], []
 for i, wk in enumerate(weeks):
-    if i < 3:
+    if i < 2:
         continue
     tr, te = h.week < wk, h.week == wk
     gtr, gte = rb.race_codes(h.race[tr]), rb.race_codes(h.race[te])
@@ -191,13 +193,7 @@ for i, wk in enumerate(weeks):
     # by race type: each segment's weights shrunk to the one blend
     prior = np.r_[b1, np.zeros(2 * len(segs))]
     b2 = fit(seg_X[tr.to_numpy()], qtr, gtr, l2=2e-3, prior=prior)
-    # our price corrected for its segment's bias (training weeks), then the one blend
-    bias = h[tr].groupby("seg").e_model.mean()
-    adj = h.predicted_bfsp * np.exp(-h.seg.map(bias).fillna(0.0))
-    lq_adj = lq(adj.to_numpy(float), g)
-    X3 = np.column_stack([h.lq_m.to_numpy(float), lq_adj])
-    b3 = fit(X3[tr.to_numpy()], qtr, gtr)
-    arms = {"one blend": (base_X, b1), "weights by race type": (seg_X, b2), "bias-corrected price": (X3, b3)}
+    arms = {"one blend": (base_X, b1), "weights by race type": (seg_X, b2)}
     for name, (X, b) in arms.items():
         Xte = X[te.to_numpy()]
         ev = T.morningwap.to_numpy() * book * np.exp(rb.group_log_softmax(Xte @ b, gte)) - 1
@@ -205,14 +201,14 @@ for i, wk in enumerate(weeks):
         out.append({"week": wk, "arm": name, "xent": xent(Xte, b, qte, gte), "bets": len(r), "staked": r.w.sum(),
                     "clv_x_stake": (r.w * r.clv).sum()})
         picks.append(r.assign(arm=name, week=wk))
-    # the one blend, race types skipped where the weeks before closed below zero on the rule
+    # the one blend, race types skipped where the months before closed below zero on the rule
     prev = pd.concat([x for x in picks if x.arm.iloc[0] == "one blend" and x.week.iloc[0] < wk], ignore_index=True) \
         if any(x.arm.iloc[0] == "one blend" and x.week.iloc[0] < wk for x in picks if len(x)) else pd.DataFrame()
     bad = set()
     if len(prev):
         s = prev.groupby("seg").apply(lambda x: (x.w * x.clv).sum())
         n = prev.groupby("seg").size()
-        bad = set(s[(s < 0) & (n >= 30)].index)
+        bad = set(s[(s < 0) & (n >= 20)].index)
     ev = T.morningwap.to_numpy() * book * np.exp(rb.group_log_softmax(base_X[te.to_numpy()] @ b1, gte)) - 1
     r = rule(T, ev)
     r = r[~r.seg.isin(bad)]
@@ -221,8 +217,9 @@ for i, wk in enumerate(weeks):
     picks.append(r.assign(arm="one blend, losing types skipped", week=wk))
 
 R = pd.DataFrame(out)
-print("\n== 2. race-type adjustments, walk-forward by week (cross-entropy to the BSP book: lower is nearer)")
+print("\n== 2. race-type adjustments, walk-forward by month (cross-entropy to the BSP book: lower is nearer)")
 print(R.pivot_table(index="week", columns="arm", values="xent").round(5).to_string())
+print(R.pivot_table(index="week", columns="arm", values="clv_x_stake").round(0).to_string())
 tot = R.groupby("arm", sort=False).agg(weeks=("week", "nunique"), xent=("xent", "mean"), bets=("bets", "sum"),
                                        staked=("staked", "sum"), clv_x_stake=("clv_x_stake", "sum"))
 tot["clv"] = tot.clv_x_stake / tot.staked
