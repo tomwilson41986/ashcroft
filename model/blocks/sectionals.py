@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import sqlite3
 from functools import lru_cache
 
 import numpy as np
@@ -43,6 +44,8 @@ READINGS = ["fsp_rel", "fsp_vs_pos", "early_pct", "late_rel", "sl_rel"]
 
 _ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 TABLE_PATH = os.path.join(_ROOT, "data", "external", "sectionals.csv.gz")
+# the backend's runs (blandford_sectionals.py --build), in horse_racing.db's sectional_runs table
+DB_PATH = os.environ.get("ASHCROFT_DB") or os.path.join(_ROOT, "horse_racing.db")
 # "table": the site's runs in TABLE_PATH; "synthetic": readings made up from the frame's own results, for the
 # block tests' synthetic history, which the site does not hold (mechanics only, never scored)
 SOURCE = "table"
@@ -81,16 +84,36 @@ def _synthetic(df: pd.DataFrame) -> pd.DataFrame:
                         index=df.index)
 
 
+@lru_cache(maxsize=2)
+def _db_runs(path: str) -> pd.DataFrame:
+    """The backend's runs (blandford_sectionals.py --build: At The Races and Racing TV, in sectional_runs), one row
+    a (day, horse), Racing TV's readings before At The Races' where both hold the run; empty when there is no
+    table."""
+    empty = pd.DataFrame(columns=["day", "name_norm", *READINGS])
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return empty
+    try:
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+            t = pd.read_sql_query(f"SELECT day, name_norm, src, {', '.join(READINGS)} FROM sectional_runs", conn)
+    except (sqlite3.Error, pd.errors.DatabaseError):
+        return empty
+    t["_rank"] = t["src"].map({"rtv": 0, "atr": 1}).fillna(2)
+    t = t.sort_values(["day", "name_norm", "_rank"]).drop_duplicates(["day", "name_norm"], keep="first")
+    return t[["day", "name_norm", *READINGS]]
+
+
 def readings(df: pd.DataFrame) -> pd.DataFrame:
-    """Each row's sectional readings for that day's run (NaN where none)."""
+    """Each row's sectional readings for that day's run (NaN where none): the site's table first, the backend's
+    runs where the site has none."""
     if SOURCE == "synthetic":
         return _synthetic(df)
-    t = _table(TABLE_PATH)
     q = pd.DataFrame({"day": pd.to_datetime(df["race_date"], errors="coerce").dt.strftime("%Y-%m-%d").to_numpy(),
                       "name_norm": df["horse_name"].map(norm_name).to_numpy()})
-    out = q.merge(t, on=["day", "name_norm"], how="left")[READINGS]
+    site = q.merge(_table(TABLE_PATH), on=["day", "name_norm"], how="left")[READINGS].apply(pd.to_numeric, errors="coerce")
+    db = q.merge(_db_runs(DB_PATH), on=["day", "name_norm"], how="left")[READINGS].apply(pd.to_numeric, errors="coerce")
+    out = site.where(site["fsp_rel"].notna().to_numpy()[:, None], db)
     out.index = df.index
-    return out.apply(pd.to_numeric, errors="coerce")
+    return out
 
 
 def build(df: pd.DataFrame) -> pd.DataFrame:
