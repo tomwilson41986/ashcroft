@@ -1,11 +1,6 @@
-"""The tracker on 22 Oct (the owner: "how are we doing today so far?"), as done/track_1021_d.py: each fill cut by the
-GBP16.13, against the tracker's +GBP40.86). Read-only. Two fixes to the tracker's "CLV now":
-- a non-runner's reduction factor cuts the price of every bet matched before its removal (Under Arrest, 10.6% at 10:29
-  UK in the 15:35 Newmarket): each fill's price is cut by the factors of the runners removed after it was matched, and
-  a non-runner's own stakes are void;
-- the value now is shown against the best back (as before), the mid, and the best lay (what Betfair's Cash Out reads:
-  the positions greened at the lay prices now).
-Every market, and the total."""
+"""The tracker on 22 Oct (the owner: "how are we doing today so far?"; read-only), as done/track_1021_d.py: each fill's
+price cut by the factors of the runners removed after it was matched, a non-runner's own stakes void, and the value now
+against the best back, the mid and the best lay (Betfair's Cash Out). Every market, and the total."""
 import io
 import os
 
