@@ -139,8 +139,12 @@ jobs:
         if: (steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true' || steps.cfg.outputs.bfsp == 'true') && steps.fcache.outputs.cache-hit != 'true'
         run: |
           set -o pipefail
+          # memory every minute, printed live: a runner shut down mid-build (exit 143, 22 Oct) leaves no other trace
+          ( while sleep 60; do free -m | awk -v t="$(date -u +%H:%M)" 'NR==2{u=$3; a=$7} NR==3{print t, "mem used", u, "MB avail", a, "MB swap used", $3, "MB"}'; done ) &
+          SAMPLER=$!
           python evaluate_oos.py --start-date "$START_DATE" --feature-cache .feature_cache \
             --build-cache-only 2>&1 | grep -v PerformanceWarning | tail -30
+          kill $SAMPLER || true
 
       - name: Save the feature matrix
         if: (steps.cfg.outputs.outcome == 'true' || steps.cfg.outputs.screen == 'true' || steps.cfg.outputs.bfsp == 'true') && steps.fcache.outputs.cache-hit != 'true'
