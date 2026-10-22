@@ -2,7 +2,7 @@
 iteration 113, the owner's ask of 22 Oct to bring the sectionals through).
 
 Both priced by predict-now.yml on 22 Oct's card after the racing (the card's pre-race fields; nothing from the
-results): the served blend from data/models (run 39872671163) and the candidate, its three members retrained to 13 Oct
+results): the served blend from data/models (predict-now 39872671163) and the candidate, its three members retrained to 13 Oct
 with the sectionals block (runs 39843011851, 39843027319, 39843043011; predict-now 39869609141), gated as served. Each
 against the BSP as the trader read it (betfair_live_marks' final mark; the price file for 22 Oct is not out), with the
 06:00 file (the served blend on the morning's card) beside them:
