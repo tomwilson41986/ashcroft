@@ -24,6 +24,7 @@ on:
       - 'research/loop.json'
       - 'scripts/outcome_model.py'
       - 'scripts/research_loop.py'
+      - 'evaluate_oos.py'
       - 'model/**'
       - '.github/workflows/research-loop.yml'
 
