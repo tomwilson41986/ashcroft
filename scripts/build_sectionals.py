@@ -96,8 +96,54 @@ def _season_runs(path: str) -> list[dict]:
     return rows
 
 
-def build(site: str) -> pd.DataFrame:
-    h = pd.DataFrame(_history_runs(site) + _season_runs(site))
+SITE_URL = "https://www.blandfordbloodstock.tech/data/rtv"
+
+
+def fetch_site(dest: str, url: str = SITE_URL, keep_days: int | None = None) -> int:
+    """The site's UK/IE meeting files (index.json's meetings with no country: the French ones carry FRA) to
+    dest/meetings/, refetching the last keep_days days (the site rewrites a meeting's file as its PDFs arrive) and
+    any file not yet held. The site serves them publicly and refreshes them twice a day (06:30, 13:30 UTC)."""
+    import urllib.request
+    from datetime import date, timedelta
+    os.makedirs(os.path.join(dest, "meetings"), exist_ok=True)
+    with urllib.request.urlopen(f"{url}/index.json", timeout=60) as r:
+        index = json.load(r)
+    recent = (date.today() - timedelta(days=keep_days)).isoformat() if keep_days else None
+    n = 0
+    for m in index.get("meetings", []):
+        if m.get("country") or not m.get("file"):
+            continue
+        path = os.path.join(dest, m["file"])
+        if os.path.exists(path) and not (recent and m["date"] >= recent):
+            continue
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(f"{url}/{m['file']}", timeout=60) as r:
+                    body = r.read()
+                json.loads(body)
+                with open(path, "wb") as fh:
+                    fh.write(body)
+                n += 1
+                break
+            except Exception as exc:  # noqa: BLE001
+                print(f"  {m['file']}: {exc} (attempt {attempt + 1})")
+    print(f"fetched {n} meeting files from {url}")
+    return n
+
+
+def build(site: str, history_table: str | None = None) -> pd.DataFrame:
+    """The table from the site's files; with history_table, the history rows come from that table (the racing2
+    export, which the site no longer serves) and the season's from the files."""
+    runs = _season_runs(site)
+    if history_table:
+        hist = pd.read_csv(history_table, dtype={"name_norm": str})
+        hist = hist[hist["src"].eq("history")]
+    else:
+        runs = _history_runs(site) + runs
+        hist = None
+    h = pd.DataFrame(runs)
+    if h.empty:
+        return hist.reset_index(drop=True) if hist is not None else h
     h["name_norm"] = h["horse"].map(norm_name)
     h = h[h["name_norm"].str.len() > 0].copy()
     h["race"] = h["day"].astype(str) + "|" + h["track"].astype(str) + "|" + h["time"].astype(str)
@@ -115,18 +161,27 @@ def build(site: str) -> pd.DataFrame:
     h.loc[h["n_field"] < 3, ["fsp_rel", "fsp_vs_pos", "early_pct", "late_rel", "sl_rel"]] = np.nan
     cols = ["day", "name_norm", "track", "src", "n_field", "pos", "fsp", "fsp_rel", "fsp_vs_pos", "early_pct",
             "late_rel", "sl_rel"]
-    out = h[cols].sort_values(["day", "track", "name_norm"]).reset_index(drop=True)
+    out = h[cols]
     for c in ("fsp", "fsp_rel", "fsp_vs_pos", "early_pct", "late_rel", "sl_rel"):
         out[c] = out[c].round(4)
-    return out
+    if hist is not None:
+        out = pd.concat([hist[cols], out], ignore_index=True)
+    return out.sort_values(["day", "track", "name_norm"]).reset_index(drop=True)
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--site", required=True, help="the site's public/data/rtv folder")
+    ap.add_argument("--site", required=True, help="the site's public/data/rtv folder (with --fetch, where to keep it)")
+    ap.add_argument("--fetch", action="store_true", help="first fetch the site's UK/IE meeting files from --url")
+    ap.add_argument("--url", default=SITE_URL)
+    ap.add_argument("--refetch-days", type=int, default=7)
+    ap.add_argument("--history-table", default=None,
+                    help="take the racing2 history rows from this table (the site no longer serves those files)")
     ap.add_argument("--out", default="data/external/sectionals.csv.gz")
     a = ap.parse_args(argv)
-    t = build(a.site)
+    if a.fetch:
+        fetch_site(a.site, a.url, a.refetch_days)
+    t = build(a.site, a.history_table)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     t.to_csv(a.out, index=False, compression="gzip")
     by = t.groupby("src").agg(runs=("day", "size"), first=("day", "min"), last=("day", "max"))
