@@ -64,6 +64,10 @@ python predict_bfsp_today.py --last-n-days 7
 python predict_bfsp_today.py --non-runners out/predictions.csv --output-csv out/now.csv [--card onedayracecards.html]
 python scripts/predictions_workbook.py --predictions out/now.csv --non-runners out/now_non_runners.csv --meta data/models/bfsp_model_meta.json --out reports/predictions.xlsx
 
+# The owner's day report (the standard approach, 22 Oct; .claude/skills/day-report): settled P&L, the mark at the mid
+# and Cash Out after the non-runners' cuts, the forecast through the record with its range; never the raw expected value
+REPORT_DAY=2026-10-22 python research/queries/done/day_report.py
+
 # Daily predictions pipeline (email, auto-fetches Betfair odds if configured)
 python daily_predictions.py --dry-run
 
