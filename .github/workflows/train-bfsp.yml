@@ -193,8 +193,10 @@ jobs:
         if: inputs.fast
         run: |
           mkdir -p /tmp/served
-          git show HEAD:data/models/bfsp_model.lgb > /tmp/served/bfsp_model.lgb
-          git show HEAD:data/models/bfsp_model_meta.json > /tmp/served/bfsp_model_meta.json
+          # the served booster is committed plain or, past GitHub's file limit, as .lgb.xz
+          for f in bfsp_model.lgb bfsp_model.lgb.xz bfsp_model_meta.json; do
+            if git cat-file -e "HEAD:data/models/$f" 2>/dev/null; then git show "HEAD:data/models/$f" > "/tmp/served/$f"; fi
+          done
           python scripts/verify_model.py --model-dir data/models --served-dir /tmp/served \
             --feature-cache .feature_cache --db horse_racing.db \
             --start-date "${{ inputs.start_date || '2021-01-01' }}" --out reports/model_verify.md
