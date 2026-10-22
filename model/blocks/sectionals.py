@@ -111,9 +111,9 @@ def readings(df: pd.DataFrame) -> pd.DataFrame:
                       "name_norm": df["horse_name"].map(norm_name).to_numpy()})
     site = q.merge(_table(TABLE_PATH), on=["day", "name_norm"], how="left")[READINGS].apply(pd.to_numeric, errors="coerce")
     db = q.merge(_db_runs(DB_PATH), on=["day", "name_norm"], how="left")[READINGS].apply(pd.to_numeric, errors="coerce")
-    out = site.where(site["fsp_rel"].notna().to_numpy()[:, None], db)
-    out.index = df.index
-    return out
+    has_site = site["fsp_rel"].notna().to_numpy()
+    vals = np.where(has_site[:, None], site.to_numpy(dtype=float), db.to_numpy(dtype=float))
+    return pd.DataFrame(vals, index=df.index, columns=READINGS)
 
 
 def build(df: pd.DataFrame) -> pd.DataFrame:
