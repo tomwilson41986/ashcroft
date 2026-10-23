@@ -46,6 +46,10 @@ _ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__))
 TABLE_PATH = os.path.join(_ROOT, "data", "external", "sectionals.csv.gz")
 # the backend's runs (blandford_sectionals.py --build), in horse_racing.db's sectional_runs table
 DB_PATH = os.environ.get("ASHCROFT_DB") or os.path.join(_ROOT, "horse_racing.db")
+# read the backend's runs too (SECTIONALS_DB=1): off until a model trained and tested with them serves. The served
+# models (trained 22 Oct, before sectional_runs was filled on 23 Oct) learned the site's runs alone, so the live
+# path reads the same (23 Oct)
+USE_DB = os.environ.get("SECTIONALS_DB") == "1"
 # "table": the site's runs in TABLE_PATH; "synthetic": readings made up from the frame's own results, for the
 # block tests' synthetic history, which the site does not hold (mechanics only, never scored)
 SOURCE = "table"
@@ -104,13 +108,14 @@ def _db_runs(path: str) -> pd.DataFrame:
 
 def readings(df: pd.DataFrame) -> pd.DataFrame:
     """Each row's sectional readings for that day's run (NaN where none): the site's table first, the backend's
-    runs where the site has none."""
+    runs where the site has none (with USE_DB)."""
     if SOURCE == "synthetic":
         return _synthetic(df)
     q = pd.DataFrame({"day": pd.to_datetime(df["race_date"], errors="coerce").dt.strftime("%Y-%m-%d").to_numpy(),
                       "name_norm": df["horse_name"].map(norm_name).to_numpy()})
     site = q.merge(_table(TABLE_PATH), on=["day", "name_norm"], how="left")[READINGS].apply(pd.to_numeric, errors="coerce")
-    db = q.merge(_db_runs(DB_PATH), on=["day", "name_norm"], how="left")[READINGS].apply(pd.to_numeric, errors="coerce")
+    runs = _db_runs(DB_PATH) if USE_DB else pd.DataFrame(columns=["day", "name_norm", *READINGS])
+    db = q.merge(runs, on=["day", "name_norm"], how="left")[READINGS].apply(pd.to_numeric, errors="coerce")
     has_site = site["fsp_rel"].notna().to_numpy()
     vals = np.where(has_site[:, None], site.to_numpy(dtype=float), db.to_numpy(dtype=float))
     return pd.DataFrame(vals, index=df.index, columns=READINGS)
