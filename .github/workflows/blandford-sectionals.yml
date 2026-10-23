@@ -68,12 +68,14 @@ jobs:
         run: |
           ATR="${{ inputs.atr_minutes || '120' }}"
           RTV="${{ inputs.rtv_minutes || '30' }}"
-          if [ "$ATR" != "0" ]; then python blandford_sectionals.py --fetch-atr --max-minutes "$ATR"; fi
-          python blandford_sectionals.py --load-atr
+          # Racing TV first: on 23 Oct every horse's request timed out after the At The Races paging (the backend
+          # answered the same request in 8 s that evening)
           if [ "$RTV" != "0" ]; then
             python blandford_sectionals.py --fetch-rtv --from "${{ inputs.rtv_from || '2025-07-01' }}" \
               --to "${{ inputs.rtv_to || '2026-04-17' }}" --max-minutes "$RTV"
           fi
+          if [ "$ATR" != "0" ]; then python blandford_sectionals.py --fetch-atr --max-minutes "$ATR"; fi
+          python blandford_sectionals.py --load-atr
           python blandford_sectionals.py --build
           python blandford_sectionals.py --report
       - name: Back up database to S3
