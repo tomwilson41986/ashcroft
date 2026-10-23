@@ -63,7 +63,13 @@ def run_card(args) -> int:
     cfg = load_config()
     day = _day(args.day)
     until = uk_at(day, args.until) if args.until else None
-    cands = build(day, until=until)
+    if args.candidates_file:
+        from professor.candidates import from_frame
+        cands = from_frame(pd.read_csv(args.candidates_file, dtype={"market_id": str}))
+        if until is not None:
+            cands = [c for c in cands if c.first_utc is not None and c.first_utc <= until]
+    else:
+        cands = build(day, until=until)
     out = store.out_dir(day)
     print(f"{day}: {len(cands)} positions in the ledger" + (f" by {args.until} UK" if args.until else ""))
     if not cands:
@@ -187,6 +193,7 @@ def main(argv=None) -> int:
     ap.add_argument("--only-ours", action="store_true", help="scrape only the races we hold a horse in")
     ap.add_argument("--sources", default="racingpost,oddschecker,marketform")
     ap.add_argument("--test-channels", action="store_true")
+    ap.add_argument("--candidates-file", help="the card from a saved candidates.csv instead of the ledger")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     if args.dry_run or args.replay:

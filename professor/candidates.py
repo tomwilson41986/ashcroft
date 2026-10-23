@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 
@@ -90,6 +91,20 @@ except Exception:  # noqa: BLE001
 
 
 # ---------------------------------------------------------------------------------- the ledger
+def off_to_utc(x, day: date | None):
+    """The ledger's `off`: a UK clock time (HH:MM) on the day, or an ISO timestamp; UTC either way."""
+    if x is None or (isinstance(x, float) and x != x):
+        return pd.NaT
+    t = str(x).strip()
+    if re.match(r"^\d{1,2}:\d{2}$", t) and day is not None:
+        h, m = t.split(":")
+        try:
+            return pd.Timestamp(datetime(day.year, day.month, day.day, int(h), int(m), tzinfo=_LONDON)).tz_convert("UTC")
+        except ValueError:
+            return pd.NaT
+    return pd.to_datetime(t, utc=True, errors="coerce")
+
+
 def read_ledger(day: date | str) -> pd.DataFrame | None:
     """The live ledger's copy in S3, numeric where it should be; None when the day has none yet."""
     local = os.getenv("PROFESSOR_LEDGER_FILE")
@@ -119,7 +134,7 @@ def positions(led: pd.DataFrame, until: datetime | None = None) -> pd.DataFrame:
         best_back=("best_back", "first"), back_size=("back_size", "first"), p_pool=("p_pool", "first"),
         edge=("edge", "first"), move=("move", "first"), first_t=("t", "first"), stake=("matched", "sum"),
         backs=("matched", "size")).reset_index()
-    pos["off_utc"] = pd.to_datetime(pos["off"], utc=True, errors="coerce")
+    pos["off_utc"] = pos["off"].map(lambda x: off_to_utc(x, led["t"].dropna().iloc[0].date() if led["t"].notna().any() else None))
     pos["selection_id"] = pd.to_numeric(pos["selection_id"], errors="coerce").astype("Int64")
     return pos
 
@@ -137,6 +152,10 @@ def predictions_file(day: date | str) -> pd.DataFrame | None:
     if p is None or p.empty:
         return None
     p["selection_id"] = pd.to_numeric(p.get("selection_id"), errors="coerce").astype("Int64")
+    if "venue" in p.columns and "race_time" in p.columns and "runner_name" in p.columns:
+        p["_track"] = p["venue"].map(_norm_track)
+        p["_hhmm"] = p["race_time"].map(race_time_to_24h).astype(str)
+        p["_horse"] = p["runner_name"].map(normalise_horse)
     return p
 
 
@@ -159,7 +178,8 @@ def catalogue(day: date | str) -> pd.DataFrame | None:
     keep = [c for c in CATALOGUE_COLS if c in cat.columns]
     cat = cat[keep].copy()
     cat["selection_id"] = pd.to_numeric(cat["selection_id"], errors="coerce").astype("Int64")
-    return cat.drop_duplicates(K, keep="last")
+    cat = cat.dropna(subset=["market_id", "selection_id"])
+    return cat.groupby(K, as_index=False, sort=False).first()        # the first non-null a column: the metadata
 
 
 def racecard(day: date | str) -> pd.DataFrame | None:
@@ -205,6 +225,11 @@ def facts_for(pos: pd.DataFrame, day: date | str) -> dict[tuple, dict]:
         f: dict = {}
         if pred is not None:
             m = pred[(pred["market_id"] == key[0]) & (pred["selection_id"] == key[1])]
+            if not len(m) and "_horse" in pred.columns:
+                off = pd.Timestamp(r.off_utc) if pd.notna(r.off_utc) else None
+                hhmm = off.tz_convert(_LONDON).strftime("%H:%M") if off is not None else ""
+                m = pred[(pred["_track"] == _norm_track(r.venue)) & (pred["_hhmm"] == hhmm)
+                         & (pred["_horse"] == normalise_horse(str(r.runner)))]
             if len(m):
                 row = m.iloc[0]
                 FACTS_STATUS["matched_predictions"] += 1
@@ -268,3 +293,20 @@ def build(day: date | str, until: datetime | None = None, with_facts: bool = Tru
 
 def frame(cands: list[Candidate]) -> pd.DataFrame:
     return pd.DataFrame([c.to_row() for c in cands])
+
+
+def from_frame(df: pd.DataFrame) -> list[Candidate]:
+    """Candidates back from candidates.csv (a dry run on another machine's ledger read)."""
+    out = []
+    for r in df.to_dict("records"):
+        facts = {k[5:]: v for k, v in r.items() if k.startswith("fact_") and v == v and v is not None}
+        off = pd.to_datetime(facts.get("market_start_utc") or r.get("off_utc"), utc=True, errors="coerce")
+        first = pd.to_datetime(r.get("first_utc"), utc=True, errors="coerce")
+        out.append(Candidate(
+            day=str(r["day"]), market_id=str(r["market_id"]), selection_id=int(r["selection_id"]), runner=str(r["runner"]),
+            venue=str(r["venue"]), off_utc=off.to_pydatetime() if pd.notna(off) else None,
+            first_utc=first.to_pydatetime() if pd.notna(first) else None, first_price=float(r["first_price"]),
+            best_back=float(r["best_back"]), back_size=float(r.get("back_size") or 0), p_win=float(r["p_win"]),
+            edge=float(r.get("edge") or np.nan), exp_bsp=float(r["exp_bsp"]), predicted_bfsp=float(r["predicted_bfsp"]),
+            stake=float(r.get("stake") or 0), backs=int(r.get("backs") or 1), facts=facts))
+    return out

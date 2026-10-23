@@ -98,6 +98,14 @@ python betfair_sync.py --live --csv live_odds.csv
 TRADING_LIVE=yes python auto_trade.py --live --until 21:35   # 06:15 UK to 15 min before each off (owner, 1, 7 and 12 Oct)
 python auto_trade.py --live --settle
 
+# The Professor, the owner's automated tipster on the model (23 Oct 2026; reports/professor_design.md, the rule's backtest
+# reports/professor_rule.md, the dry run reports/professor_dryrun_1023.md): the syndicate's morning horses with a bookmaker price
+# (Racing Post's odds comparison; the UK server, Racing Post refuses GitHub's runners) 10% over the closing model's expected BSP,
+# one a race, by win probability, 5 a day, the top two free, nothing over 50/1; posts only with PROFESSOR_LIVE=yes
+python -m professor --card --dry-run --only-ours                     # the day's card now: tips, write-ups, cards to out/professor/<day>/
+python -m professor --alerts --until 10:00                           # the live loop beside the trader: each qualifying fill at once
+python -m professor --odds                                           # the bookmaker prices alone (the snapshot, the raw pages)
+
 # --- Research toolkit (see RESEARCH_FRAMEWORK.md) ---
 # Model-vs-market scoring (Murphy decomposition, skill vs BSP, concordance, drift)
 python research_lab.py score --predictions data/oos_predictions.csv

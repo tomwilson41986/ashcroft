@@ -67,7 +67,7 @@ def norm_name(x: str) -> str:
 
 
 def norm_venue(x: str) -> str:
-    x = re.sub(r"\((?:aw|a\.w\.|all weather)\)", "", str(x or ""), flags=re.I)
+    x = re.sub(r"\((?:a\.?w\.?|all[ -]?weather)\)", "", str(x or ""), flags=re.I)
     return norm_name(x)
 
 

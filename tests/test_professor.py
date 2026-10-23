@@ -123,6 +123,7 @@ def test_prices_parse():
     assert to_decimal("7/2") == 4.5 and to_decimal("EVS") == 2.0 and to_decimal("4.50") == 4.5
     assert to_decimal("SP") is None and to_decimal("") is None and to_decimal("1/5") == 1.2
     assert norm_name("JPR One (IRE)") == "jprone" and norm_venue("Wolverhampton (AW)") == "wolverhampton"
+    assert norm_venue("Dundalk (A.W)") == "dundalk" and norm_venue("Wolverhampton (A.W)") == "wolverhampton"
 
 
 def test_racing_post_index_lists_the_days_races():
