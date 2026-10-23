@@ -325,3 +325,92 @@ None of them documents when the morning prices first appear; UK books price the 
   quoted only when three or more proper bookmakers offer it; ROI to advised prices and separately to SP/BSP; BOG
   disclosed (it overstates a record by about 2-3%); strike rate, average odds, longest losing run, drawdown, sample
   size.
+
+## The service, redesigned for profit (the owner's ask, 23 Oct, after the backtest)
+
+The backtest's lesson is about time and price, not about the horses. The trader's own first price returns +27%
+implied on the live record; the Betfair price at 10:00 returns -6%; the industry SP loses 29-55%. A 10:00 bulletin
+at bookmaker prices sells the followers the move after it has happened. The service below sells them the move.
+
+### 1. The product: early alerts at the exchange price
+
+- **The alert, not the bulletin.** A tip is published the moment the trader's first back on a qualifying horse
+  fills (06:15 to about 09:00 UK; the GBP4,000 is spent by 08:38-10:27), to the members' Telegram at once. The
+  10:00 post on X and Instagram is the day's card: the two free tips, 60-90 minutes after the members had them.
+- **The advised price is the Betfair exchange price**, the best back at the alert with the money at it (both on
+  record from the trader's own book), and the bookmaker prices at or above it beside it ("7.0 on the exchange,
+  GBP140 there; 13/2 with bet365, Hills, PP"). The exchange price is real, timestamped, available to anyone with
+  an account, never restricted, and it is the price the whole record is already scored on: the proofing problem
+  of the first design (no bookmaker price on record) goes away. Bookmaker prices stay as the second route, with
+  the 3-books rule and BOG, for the followers who have accounts.
+- **The selection as set** (`professor/config.json`): the trader's horses, 10% over the expected BSP, one a race,
+  by win probability, 5 a day, the top two free. One addition: the alert fires only while the exchange still shows
+  at least `min_alert_size` (GBP50) at or above the advised price, so a member can take it.
+- **Staking**: 1 point level, a 100-point bank, the worst run (12-27 tips) and drawdown (20-30 points) of the
+  backtest stated up front; to-win staking as an option in the write-up, never Kelly.
+- **The write-up** says why the price will move (the model's price against the market's, the horse's form in the
+  model's terms, the connections' record), never why the horse will win: the claim is the move.
+
+### 2. Why this is what the syndicate can sell without hurting itself
+
+- **The tips are the short end of the book, where the trader's own edge is smallest** (under 5.0 the live CLV is
+  +0.5%; 21-200 is +10-27%). Publishing the short-priced qualifiers gives away the least and keeps the long end,
+  which is the trading profit, private.
+- **Publishing shortens our own horses' BSP.** Every back is laid at the SP, so a tip that moves the close helps
+  the position already held. This is a real, measurable second income and a conflict to disclose on every post
+  ("the syndicate holds every horse before it is advised"). It is measured, not assumed: in the proofing period
+  a random fifth of the qualifying horses is withheld from publication, and the BSP move of the published against
+  the withheld, matched by rank and price, is the published impact (the same experiment shows whether the tips
+  cost the trader's later top-ups their price).
+- **The CLV record is the sales pitch**, and it is the one no other tipster can show: a page with the advised
+  price against the BSP on every tip, updated nightly from the same data the trading settles on.
+
+### 3. Capacity: the constraint that sets the price
+
+Followers' money moves the price. A horse the rule picks has a median of about GBP500 traded all morning and
+GBP150 or less a tenth of the time; 100 members backing GBP25 each is GBP2,500 on the alert. So:
+
+- **Membership is capped**, at 100 seats to begin, raised only as the record shows the advised price still
+  standing a minute after the alert (the alert records the book; the first minute's trades are in the market
+  record). A waiting list is the marketing.
+- **The price follows the cap**: GBP49 a month at 100 seats (GBP4,900 a month, about GBP59,000 a year gross) is
+  the working figure; the free tier (two tips a day, an hour late) is the funnel. Costs are about GBP100 a month
+  (X about GBP2, the Claude API GBP10-30, the site and runner already paid for), so the margin is the revenue.
+- **No affiliate links in year one.** They need "#ad" and a bookmaker's permission regime, they pay best on losing
+  players, and they tie the brand to firms that will restrict its best followers.
+
+### 4. The money, honestly
+
+| Line | Working figure | What it rests on |
+|---|---|---|
+| Membership | GBP4,900 a month at 100 seats and GBP49 | the record after the proofing period; churn of 10-15% a month is normal, so the funnel must refill 10-15 seats a month |
+| The syndicate's own book | +1-2% CLV on the tipped horses, about GBP20-60 a day on today's stakes | the withheld-fifth experiment; nil until measured |
+| Costs | about GBP100 a month | the design's accounts |
+| The followers' return | about 0 to +10% ROI at the exchange price after commission, 23% strike at 5-6 | the backtest; the first weeks' record settles it |
+
+A service at this size is worth about a fifth of the trading book's current run rate. It is worth building because
+the cost is near nil, the brand and the proofed CLV record compound, and the cap can rise with the liquidity the
+record shows.
+
+### 5. The sequence
+
+1. **Weeks 1-6, free and proofed.** The alerts to a free Telegram channel at the moment of the fill; the two free
+   tips to X and Instagram at 10:00; the withheld fifth; the proof page from day one with the CLV, the ROI at the
+   advised exchange price and at the best bookmaker price, and the share of tips whose price still stood a minute
+   on. Collect the waiting list.
+2. **Decision at week 6**, on the record: the implied ROI at the advised price positive, the price standing a
+   minute on for most tips, and the published impact measured. If the record carries it, the paid channel opens at
+   100 seats; the free channel keeps the two late tips. If not, the service stays free and the brand keeps the
+   content, which costs nothing.
+3. **From then**: raise the cap only on liquidity evidence; add the write-up archive and the monthly letter to the
+   paid tier; revisit affiliate income only with CPA deals and the labels, and only once the record is a year old.
+
+### What changes in the design above
+
+- `professor-publish.yml` becomes a session on the UK runner from 06:15 UK beside the trader (the pattern of the
+  recorder: it reads the trader's ledger copy in S3 every minute and alerts on new fills that qualify), with the
+  10:00 card as a step in the same session; `scrape_at` is a loop from 07:00 (bookmaker prices as they appear).
+- `selection.py` gains `min_alert_size` and the withheld fifth (a seeded random draw by day and market, recorded
+  in tips.json as `withheld: true`, settled and reported like a tip, never published).
+- The advised price field is `advised_exchange` (with `exchange_size`) and `advised_books` (price, bookmakers);
+  the proof page scores both.
