@@ -29,6 +29,7 @@ def sources(tmp_path, monkeypatch):
     monkeypatch.setattr(sc, "TABLE_PATH", str(csv))
     monkeypatch.setattr(sc, "DB_PATH", str(db))
     monkeypatch.setattr(sc, "SOURCE", "table")
+    monkeypatch.setattr(sc, "USE_DB", True)
     sc._table.cache_clear()
     sc._db_runs.cache_clear()
     return site
@@ -53,3 +54,11 @@ def test_readings_without_a_database_or_table(tmp_path, monkeypatch):
     sc._db_runs.cache_clear()
     r = sc.readings(pd.DataFrame({"race_date": ["2026-05-01"], "horse_name": ["Alpha"]}))
     assert r.shape == (1, len(sc.READINGS)) and np.isnan(r.to_numpy(dtype=float)).all()
+
+
+def test_readings_skip_the_backend_unless_asked(sources, monkeypatch):
+    """The served models learned the site's runs alone: without USE_DB the backend's runs are not read."""
+    monkeypatch.setattr(sc, "USE_DB", False)
+    df = pd.DataFrame({"race_date": ["2026-05-01", "2025-09-01"], "horse_name": ["Beta", "Gamma"]})
+    r = sc.readings(df)
+    assert r.loc[0, "fsp_rel"] == -1.5 and np.isnan(r.loc[1]).all()

@@ -993,9 +993,22 @@
     "tv_track_share",
     "tv_n_meeting",
     "tv_km_single",
-    "tv_horse_km"
+    "tv_horse_km",
+    "sc_fsp_l1",
+    "sc_fsp_m3",
+    "sc_fsp_w5",
+    "sc_fsp_car",
+    "sc_fvp_l1",
+    "sc_fvp_m3",
+    "sc_early_l1",
+    "sc_early_m3",
+    "sc_late_l1",
+    "sc_late_m3",
+    "sc_sl_l1",
+    "sc_sl_car",
+    "sc_runs"
   ],
-  "n_features": 993,
+  "n_features": 1006,
   "categorical_vocab": {
     "surface_type": [
       "Beach",
@@ -1201,111 +1214,111 @@
   },
   "best_iteration": 12600,
   "holdout_metrics": {
-    "n": 21491,
-    "mae": 0.9812515943650595,
-    "rmse": 1.3348700387368009,
+    "n": 22831,
+    "mae": 0.9984732415193676,
+    "rmse": 1.3596938311672653,
     "in_sample": true
   },
-  "holdout_start": "2026-07-24",
-  "train_rows": 697903,
-  "holdout_rows": 21491,
+  "holdout_start": "2026-08-14",
+  "train_rows": 706242,
+  "holdout_rows": 22831,
   "early_stopped": false,
   "init_offset": 0.0,
   "feature_code_hash": "f879b10c8369467a",
   "final_metrics": {
     "target": "race_xent",
-    "log_mae": 0.9922,
-    "log_rmse": 1.346,
-    "log_r2": -128.1037,
-    "bfsp_mae": 4.13,
-    "median_ape_pct": 64.96,
-    "mean_ape_pct": 403.52,
-    "correlation": -0.6743,
+    "log_mae": 0.9966,
+    "log_rmse": 1.3515,
+    "log_r2": -130.4628,
+    "bfsp_mae": 4.19,
+    "median_ape_pct": 65.09,
+    "mean_ape_pct": 409.95,
+    "correlation": -0.6719,
     "best_iteration": 12600,
-    "holdout_mae": 0.9812515943650595
+    "holdout_mae": 0.9984732415193676
   },
-  "trained_through": "2026-09-22",
-  "train_rows_total": 697903,
+  "trained_through": "2026-10-13",
+  "train_rows_total": 706242,
   "top_gain": [
     [
       "rr_PMW3_z",
-      117156.3833771646
+      84857.27223922312
     ],
     [
       "rw_PMW5_z",
-      75234.25335432403
+      73794.90937651321
     ],
     [
       "rr_PMW10_z",
-      64672.49657259695
-    ],
-    [
-      "rw_fv_nfp_s8_gap",
-      37356.64992866106
+      59746.55503428541
     ],
     [
       "rw_fv_nfp_s8_z",
-      29727.800666755065
+      40487.37384850718
     ],
     [
-      "hca_wt_vs_mark",
-      26899.3492559772
-    ],
-    [
-      "fw_lbsc_w3",
-      22454.614208355546
+      "rw_fv_nfp_s8_gap",
+      29838.84848990105
     ],
     [
       "fw_lbsc_l1",
-      21719.228732444346
+      25182.78532115929
     ],
     [
-      "rr_OFS3_z",
-      17879.44906325452
+      "hca_wt_vs_mark",
+      23429.368140975013
     ],
     [
-      "rr_LR3_ORR2_z",
-      16058.349597452208
+      "fw_lbsc_w3",
+      21773.360780388117
     ],
     [
-      "rr_LR3_RWO_z",
-      14173.463148128241
-    ],
-    [
-      "fv_lbrel_l1",
-      13839.002736207098
-    ],
-    [
-      "fw_mkt_l1",
-      11853.557122021914
-    ],
-    [
-      "dm_stage_mkt_z",
-      11060.0528838709
-    ],
-    [
-      "rr_LR_RACE_RB_z",
-      10425.290054894984
-    ],
-    [
-      "rr_LR_LB_z",
-      10267.106119349599
-    ],
-    [
-      "rw_EXP_NFP5_z",
-      10159.36272066459
-    ],
-    [
-      "dm_stage_mkt",
-      9727.384021475911
+      "rr_OFS5_z",
+      16116.778449201956
     ],
     [
       "rw_fv_nfp_e3_z",
-      9488.753783898428
+      14821.717405511066
     ],
     [
-      "rr_LR10_RWO_z",
-      9454.222876790911
+      "rr_fw_nfp_w5_z",
+      13674.487471988425
+    ],
+    [
+      "rr_LR_LB_z",
+      13577.648050617427
+    ],
+    [
+      "rr_LR3_ORR2_z",
+      13427.357250537723
+    ],
+    [
+      "rw_preracetrainercareerWOA_z",
+      12413.957243291661
+    ],
+    [
+      "dm_stage_mkt_z",
+      11601.490687232465
+    ],
+    [
+      "fv_lbrel_l1",
+      10991.724351692945
+    ],
+    [
+      "rr_LRNFP_z",
+      10766.856586927548
+    ],
+    [
+      "rw_PFD3_z",
+      10451.162727246061
+    ],
+    [
+      "rw_EXP_RB5_z",
+      10338.724294858053
+    ],
+    [
+      "fw_lbs_l1",
+      10043.902246983722
     ]
   ],
   "drop_in_blocks": [
@@ -1320,6 +1333,7 @@
     "kalman",
     "race_relative",
     "race_relative_wide",
+    "sectionals",
     "time_figure",
     "travel"
   ],

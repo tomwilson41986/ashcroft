@@ -993,9 +993,22 @@
     "tv_track_share",
     "tv_n_meeting",
     "tv_km_single",
-    "tv_horse_km"
+    "tv_horse_km",
+    "sc_fsp_l1",
+    "sc_fsp_m3",
+    "sc_fsp_w5",
+    "sc_fsp_car",
+    "sc_fvp_l1",
+    "sc_fvp_m3",
+    "sc_early_l1",
+    "sc_early_m3",
+    "sc_late_l1",
+    "sc_late_m3",
+    "sc_sl_l1",
+    "sc_sl_car",
+    "sc_runs"
   ],
-  "n_features": 993,
+  "n_features": 1006,
   "categorical_vocab": {
     "surface_type": [
       "Beach",
@@ -1182,6 +1195,7 @@
   "post_race_guard": "passed",
   "objective": "l2",
   "decay_rate": 0.0,
+  "share_weight": 0.0,
   "target": "demeaned_log",
   "holdout_days": 60,
   "purge_days": 30,
@@ -1200,111 +1214,111 @@
   },
   "best_iteration": 12000,
   "holdout_metrics": {
-    "n": 21491,
-    "mae": 0.26001068969425617,
-    "rmse": 0.3339548869211022,
+    "n": 22831,
+    "mae": 0.2586417385944912,
+    "rmse": 0.3337210284277995,
     "in_sample": true
   },
-  "holdout_start": "2026-07-24",
-  "train_rows": 697903,
-  "holdout_rows": 21491,
+  "holdout_start": "2026-08-14",
+  "train_rows": 706242,
+  "holdout_rows": 22831,
   "early_stopped": false,
   "init_offset": 0.0,
   "feature_code_hash": "f879b10c8369467a",
   "final_metrics": {
     "target": "demeaned_log",
-    "log_mae": 0.2572,
-    "log_rmse": 0.3309,
-    "log_r2": 0.9243,
+    "log_mae": 0.2563,
+    "log_rmse": 0.3298,
+    "log_r2": 0.9254,
     "bfsp_mae": 0.55,
-    "median_ape_pct": 20.78,
-    "mean_ape_pct": 26.99,
-    "correlation": 0.9622,
+    "median_ape_pct": 20.75,
+    "mean_ape_pct": 26.88,
+    "correlation": 0.9628,
     "best_iteration": 12000,
-    "holdout_mae": 0.26001068969425617
+    "holdout_mae": 0.2586417385944912
   },
-  "trained_through": "2026-09-22",
-  "train_rows_total": 697903,
+  "trained_through": "2026-10-13",
+  "train_rows_total": 706242,
   "top_gain": [
     [
       "rw_PMW5_z",
-      1689313.5678232908
-    ],
-    [
-      "rw_fv_nfp_s8_z",
-      1493141.384205103
+      1465213.504805982
     ],
     [
       "rr_PMW3_z",
-      1443371.5197169185
+      1427881.5971792042
+    ],
+    [
+      "rw_fv_nfp_s8_z",
+      1383216.2735910416
     ],
     [
       "rr_PMW10_z",
-      1111175.5293900669
+      1062604.6212178469
     ],
     [
       "hca_wt_vs_mark",
-      642753.5043969452
-    ],
-    [
-      "LR_ORR2",
-      352164.1602181494
-    ],
-    [
-      "fw_mkt_l1",
-      343797.38105908036
-    ],
-    [
-      "rr_LR_LB_z",
-      326819.7525745034
-    ],
-    [
-      "dm_stage_mkt_z",
-      236336.2577059865
-    ],
-    [
-      "rw_fv_lblog_e3_gap",
-      235729.183832407
-    ],
-    [
-      "rw_preracetrainercareerWIV_z",
-      234445.52180555463
-    ],
-    [
-      "rr_fw_nfp_w5_z",
-      223315.3368910551
-    ],
-    [
-      "rr_trainerjockeycareerNFP_z",
-      221507.51413834095
+      546594.9400971234
     ],
     [
       "rw_fv_nfp_e3_z",
-      219468.46157306433
+      469264.6876196861
+    ],
+    [
+      "rr_LR_LB_z",
+      368091.86923128366
+    ],
+    [
+      "LR_ORR2",
+      315626.13454678655
+    ],
+    [
+      "fw_mkt_l1",
+      309956.35705816746
+    ],
+    [
+      "dm_stage_mkt_z",
+      258573.2241065204
     ],
     [
       "rw_preracetrainercareerWOA_z",
-      192471.4422275126
+      253079.6919131875
     ],
     [
-      "rr_OFS1_z",
-      191512.46053382754
+      "rw_fv_nfp_e6_z",
+      243100.24156591296
     ],
     [
-      "rw_fv_nfp_s8_gap",
-      186030.34169572592
+      "rw_preracetrainercareerWIV_z",
+      238363.64707627892
     ],
     [
-      "rw_preracetrainercareerWAX_z",
-      181750.52219304442
+      "rr_trainerjockeycareerNFP_z",
+      226736.5040732026
     ],
     [
       "median_or_num",
-      180981.0383992195
+      219272.08725133538
     ],
     [
-      "rr_LR3_RWO_z",
-      146622.79307842255
+      "OFS1",
+      191916.5713508427
+    ],
+    [
+      "rr_fw_nfp_w5_z",
+      178490.22394806147
+    ],
+    [
+      "OFS3",
+      176629.74131953716
+    ],
+    [
+      "rw_EXP_NFP5_z",
+      166888.87125068903
+    ],
+    [
+      "rw_preracejockeycareerWAX_z",
+      162095.07743024826
     ]
   ],
   "drop_in_blocks": [
@@ -1319,6 +1333,7 @@
     "kalman",
     "race_relative",
     "race_relative_wide",
+    "sectionals",
     "time_figure",
     "travel"
   ],
