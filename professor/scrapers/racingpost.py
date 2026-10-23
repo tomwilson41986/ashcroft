@@ -102,9 +102,18 @@ class RacingPost:
         self.raw: dict[str, str] = {}
 
     def day_races(self, day: date | str) -> list[dict]:
-        html = self.b.html(f"{BASE}/racecards/{day}", settle_ms=3000)
-        self.raw[f"index_{day}"] = html
-        races = races_from_index(html, str(day))
+        races: list[dict] = []
+        for i, url in enumerate((f"{BASE}/racecards/{day}", f"{BASE}/racecards")):
+            html = self.b.html(url, settle_ms=4000)
+            self.raw[f"index_{day}" + ("" if i == 0 else "_undated")] = html
+            soup = BeautifulSoup(html, "lxml")
+            title = soup.title.get_text(strip=True) if soup.title else ""
+            st = _state(html)
+            log.info("racingpost index %s: %d bytes, title %r, state %s", url, len(html), title[:60],
+                     "yes" if st else "no")
+            races = races_from_index(html, str(day))
+            if races:
+                break
         log.info("racingpost: %d races on %s", len(races), day)
         return races
 

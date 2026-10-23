@@ -104,10 +104,12 @@ def snapshot(day: date | str, df: pd.DataFrame, raw: dict[str, str], status: dic
     out = store.out_dir(day)
     store.write_csv(k, df.drop(columns=[c for c in ("_venue", "_horse") if c in df.columns]), out / f"snapshot_{when}.csv")
     store.write_json(f"professor/odds/{day}/status_{when}.json", status, out / f"odds_status_{when}.json")
+    (out / "raw").mkdir(exist_ok=True)
     for name, html in raw.items():
         if html:
-            store.put_bytes(f"professor/odds/{day}/raw/{name}_{when}.html.gz", gzip.compress(html.encode()),
-                            "application/gzip")
+            body = gzip.compress(html.encode())
+            (out / "raw" / f"{name}_{when}.html.gz").write_bytes(body)
+            store.put_bytes(f"professor/odds/{day}/raw/{name}_{when}.html.gz", body, "application/gzip")
     return k
 
 

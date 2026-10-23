@@ -52,7 +52,7 @@ def test_a_horse_qualifies_on_the_overlay_over_the_expected_bsp(cfg):
 
 def test_the_exchange_stands_in_only_when_no_bookmaker_quotes_the_race(cfg):
     c = cand(p_win=0.25, best_back=4.8)
-    tip, why = selection.qualify(c, cfg, None)             # the race was not read: the exchange price is advised
+    tip, why = selection.qualify(c, cfg, None)             # the race was not read: the exchange price is advised (GBP120 at it)
     assert tip is not None and tip.price_source == "exchange" and tip.advised == 4.8
     tip, why = selection.qualify(c, cfg, {"bet365": 4.8})   # the race was read and the horse has one quote: not advised
     assert tip is None and "bookmakers" in why

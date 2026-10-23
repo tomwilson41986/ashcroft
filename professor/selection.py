@@ -112,6 +112,8 @@ def qualify(c: Candidate, cfg: dict, quotes: dict[str, float] | None, bog: dict 
         # the race is quoted and this horse is not with enough bookmakers, or bookmakers are required
         return None, f"fewer than {cfg['min_books']} major bookmakers quote it" if quotes else "no bookmaker quotes"
     else:
+        if float(c.back_size or 0) < float(cfg.get("min_alert_size", 0)):
+            return None, f"no bookmaker quotes and too little money at the exchange price (GBP{c.back_size:.0f})"
         advised, source = ex_price, "exchange"
     if advised > float(cfg["max_price"]):
         return None, f"over the maximum price ({advised:.1f})"

@@ -25,6 +25,7 @@ from professor import store
 log = logging.getLogger(__name__)
 
 K = ["market_id", "selection_id"]
+FACTS_STATUS: dict = {}          # what the last facts_for() found: the sources' rows and columns, the matches
 NUM = ["matched", "avg_price", "best_back", "back_size", "p_model", "p_market", "p_pool", "edge", "move", "bsp",
        "selection_id", "minutes_to_off"]
 CATALOGUE_COLS = ["market_id", "selection_id", "runner_name", "cloth_number", "stall_draw", "jockey", "trainer", "age",
@@ -186,6 +187,19 @@ def facts_for(pos: pd.DataFrame, day: date | str) -> dict[tuple, dict]:
     track, time and horse."""
     out: dict[tuple, dict] = {}
     pred, cat, card = predictions_file(day), catalogue(day), racecard(day)
+    FACTS_STATUS.clear()
+    FACTS_STATUS.update({
+        "predictions_rows": 0 if pred is None else int(len(pred)),
+        "predictions_columns": [] if pred is None else list(pred.columns)[:30],
+        "catalogue_rows": 0 if cat is None else int(len(cat)),
+        "catalogue_columns": [] if cat is None else list(cat.columns),
+        "catalogue_filled": {} if cat is None else {c: int(cat[c].notna().sum()) for c in cat.columns},
+        "racecard_rows": 0 if card is None else int(len(card)),
+        "racecard_columns": [] if card is None else list(card.columns),
+        "racecard_sample": [] if card is None else card.head(3).astype(str).to_dict("records"),
+        "positions_sample": pos.head(3).astype(str).to_dict("records"),
+        "matched_predictions": 0, "matched_catalogue": 0, "matched_racecard": 0,
+    })
     for r in pos.itertuples(index=False):
         key = (str(r.market_id), int(r.selection_id))
         f: dict = {}
@@ -193,6 +207,7 @@ def facts_for(pos: pd.DataFrame, day: date | str) -> dict[tuple, dict]:
             m = pred[(pred["market_id"] == key[0]) & (pred["selection_id"] == key[1])]
             if len(m):
                 row = m.iloc[0]
+                FACTS_STATUS["matched_predictions"] += 1
                 for c in ("runner_name", "venue", "race_time", "predicted_bfsp", "predicted_win_prob", "racecard_odds",
                           "bf_best_back", "bf_best_lay", "bf_total_matched"):
                     if c in m.columns and pd.notna(row[c]):
@@ -201,6 +216,7 @@ def facts_for(pos: pd.DataFrame, day: date | str) -> dict[tuple, dict]:
             m = cat[(cat["market_id"] == key[0]) & (cat["selection_id"] == key[1])]
             if len(m):
                 row = m.iloc[0]
+                FACTS_STATUS["matched_catalogue"] += 1
                 for c in CATALOGUE_COLS[2:]:
                     if c in m.columns and pd.notna(row[c]):
                         f[c] = row[c]
@@ -211,6 +227,7 @@ def facts_for(pos: pd.DataFrame, day: date | str) -> dict[tuple, dict]:
                      & (card["_horse"] == normalise_horse(str(r.runner)))]
             if len(m):
                 row = m.iloc[0]
+                FACTS_STATUS["matched_racecard"] += 1
                 for c in CARD_COLS:
                     if c in m.columns and pd.notna(row[c]) and c not in f:
                         f[c] = row[c]

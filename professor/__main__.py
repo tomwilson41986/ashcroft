@@ -70,6 +70,8 @@ def run_card(args) -> int:
         return 0
     cdf = frame(cands)
     store.write_csv(store.key(day, "candidates.csv"), cdf, out / "candidates.csv")
+    from professor.candidates import FACTS_STATUS
+    (out / "facts_status.json").write_text(json.dumps(FACTS_STATUS, indent=1, default=str))
     quotes, bog, status = {}, {}, {}
     if not args.no_scrape:
         df, status = odds_mod.scrape(day, cfg, sources=tuple(args.sources.split(",")), wanted=_wanted(cands) if args.only_ours else None)
