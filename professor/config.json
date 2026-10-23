@@ -1,0 +1,30 @@
+{
+  "_about": "The Professor's selection rule (reports/professor_design.md; the parameters from reports/professor_rule.md, research-query runs 39950331744 and 39950972382, ledger professor-rule-1023). Among the horses the syndicate holds at select_at UK (the live rule's own backs), advise each whose advised bookmaker price clears the closing model's expected BSP by overlay_bar, at most max_per_race a race, ranked by the expected win probability (p_pool in the ledger), at most max_tips a day; ranks 1..free_tips are the free tips.",
+  "overlay_bar": 0.10,
+  "min_p_win": 0.0,
+  "max_per_race": 1,
+  "max_tips": 5,
+  "free_tips": 2,
+  "max_price": 51.0,
+  "min_books": 3,
+  "min_minutes_to_off": 60,
+  "scrape_at": "09:35",
+  "select_at": "09:55",
+  "publish_at": "10:00",
+  "major_bookmakers": ["bet365", "William Hill", "Paddy Power", "Betfair Sportsbook", "Sky Bet", "Ladbrokes", "Coral",
+                       "BetVictor", "Unibet", "Betfred", "888sport", "BoyleSports"],
+  "bookmaker_aliases": {"B365": "bet365", "Bet365": "bet365", "WH": "William Hill", "PP": "Paddy Power",
+                        "SkyBet": "Sky Bet", "Betfair": "Betfair Sportsbook", "VC": "BetVictor", "Victor": "BetVictor"},
+  "stake_points": 1.0,
+  "bog": true,
+  "commission_bsp": 0.02,
+  "writeup": {"model": "claude-sonnet-5-5", "effort": "low", "max_tokens": 1200,
+              "banned": ["guarantee", "guaranteed", "can't lose", "cannot lose", "sure thing", "income", "risk-free",
+                         "easy money", "investment"]},
+  "compliance": {
+    "age": "18+. BeGambleAware.org. Please gamble responsibly.",
+    "basis": "Advised prices are the best price available at three or more major bookmakers at publication. Results are proofed to the advised price and to the Betfair SP at 1 point level stakes; take the early price, the SP loses.",
+    "position": "The Professor's syndicate holds a position on every horse advised before it is published."
+  },
+  "members": {"grace_days": 3}
+}

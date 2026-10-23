@@ -69,6 +69,12 @@ BSP is positive and whose free-tip (ranks 1-2) strike rate is at least 20%.
   max drawdown, the same for ranks 1-2 alone, by price band (<4, 4-8, 8-16, 16-51), a race-bootstrap 90% interval
   (`race_book.ratio_interval`); and ranking by `p_win` against ranking by overlay and by `edge`.
 
+**Phase 0 outcome (23 Oct, reports/professor_rule.md)**: the backtest set `overlay_bar` 0.10, `min_p_win` 0, one a race,
+`max_tips` 5 (ranks 6-10 return nothing; the owner's 10 stays the ceiling), the ranking by expected win probability confirmed
+(by the overlay or the expected CLV the tips are the long prices: strike 5%, -12%). The expected return at the Betfair
+morning price is +5 to +10% implied (+11 to +19% realised, intervals spanning zero); at the Betfair price at 10:00 UK on the
+live record -6%; the industry SP loses 29-55%. What a bookmaker's price at 10:00 returns is the proofing period's question.
+
 ## Package `professor/` (one module a concern, like `football/` and `greyhound/`)
 
 ```
