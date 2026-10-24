@@ -218,7 +218,8 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
 - `professor/` — The Professor, the owner's automated tipster on the model (23 Oct 2026; reports/professor_design.md, the rule's
   backtest reports/professor_rule.md): `config.json` holds the selection (the syndicate's morning horses, a bookmaker price 10% over
   the closing model's expected BSP, one a race, ranked by the expected win probability, 5 a day, the top two free, nothing over
-  50/1); the modules (candidates, odds scrapers, write-ups, cards, Telegram/X/Instagram, Stripe members, settle, proof) follow in Phase 1
+  50/1); Phase 1 built to a dry run (candidates from the live ledger, Racing Post's bookmaker prices, the rule, write-ups,
+  cards, Telegram, `professor-publish.yml`; reports/professor_dryrun_1023.md); settle, proof, X/Instagram and Stripe follow
 - `sources/` (`source_data.py`) — the historic data for the models beyond UK/IE racing, one module a source (GBGB, football-data, tennis, Punting Form); `betfair_historic.py` — Betfair's Historic Data service (BASIC plan, every sport) to opening/closing-price tables
 - S3 bucket: `horseracingresults`, key: `horse_racing.db`
 

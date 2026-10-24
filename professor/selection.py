@@ -137,9 +137,15 @@ def card(cands: list[Candidate], cfg: dict, quotes_by_horse: dict[tuple, dict] |
     tips, fates = [], []
     for c in cands:
         key = (c.market_id, c.selection_id)
-        tip, why = qualify(c, cfg, quotes_by_horse.get(key), bog_by_horse.get(key))
+        q = quotes_by_horse.get(key)
+        tip, why = qualify(c, cfg, q, bog_by_horse.get(key))
+        books, n_books = (books_price(q, cfg["major_bookmakers"], int(cfg["min_books"]))[0], len(q)) if q else (None, 0)
         fates.append({"market_id": c.market_id, "selection_id": c.selection_id, "runner": c.runner, "venue": c.venue,
-                      "off_uk": c.off_uk, "p_win": c.p_win, "exp_bsp": c.exp_bsp, "first_price": c.first_price,
+                      "off_uk": c.off_uk, "first_uk": c.first_uk, "p_win": c.p_win, "exp_bsp": c.exp_bsp,
+                      "first_price": c.first_price, "n_quotes": n_books, "books_price": books,
+                      # the bookmakers' price now against the trader's fill and against the expected close
+                      "books_over_fill": (books / c.first_price - 1.0) if books and c.first_price > 1 else None,
+                      "books_over_close": (books / c.exp_bsp - 1.0) if books and c.exp_bsp == c.exp_bsp else None,
                       "fate": why})
         if tip is not None:
             tips.append(tip)
