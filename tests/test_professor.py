@@ -170,3 +170,19 @@ def test_the_workflow_posts_nothing_by_itself():
     assert run["env"]["PROFESSOR_LIVE"] == "${{ vars.PROFESSOR_LIVE }}"
     assert "BETFAIR_LIVE_APP_KEY" not in json.dumps(spec)                 # the tipster never holds the live key
     assert spec["concurrency"]["cancel-in-progress"] is False
+
+
+def test_racing_posts_non_runners_are_read_and_never_advised(cfg):
+    from professor import odds
+    state = {"props": {"pageProps": {"initialState": {"racePage": {"data": {"runners": [
+        {"horseName": "Palamon", "nonRunner": True}, {"horseName": "Sony Bill", "nonRunner": False}]}}}}}}
+    html = ('<html><body><script id="__NEXT_DATA__" type="application/json">' + json.dumps(state) + "</script></body></html>")
+    assert racingpost.non_runners_from_race(html) == ["Palamon"]
+    from professor.scrapers.base import Quote
+    df = odds.frame([Quote("racingpost", racingpost.NON_RUNNER, "Cheltenham", "15:35", "Palamon", 0.0)], cfg)
+    ours = [cand("Palamon", "Cheltenham", sel=7, off_utc="2026-10-23T14:35:00+00:00")]
+    nrs = odds.non_runners(df, ours)
+    assert nrs == {("1.1", 7)}
+    tips, fates = selection.card(ours, cfg, {}, {}, nrs)
+    assert tips == [] and fates[0]["fate"] == "a non-runner"
+    assert odds.match(df, ours)[0].get(("1.1", 7), {}) == {}          # a non-runner row is never a price

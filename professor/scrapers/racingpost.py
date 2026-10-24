@@ -20,6 +20,7 @@ from professor.scrapers.base import Browser, Quote, to_decimal, utc_now_iso
 
 log = logging.getLogger(__name__)
 NAME = "racingpost"
+NON_RUNNER = "NON-RUNNER"
 BASE = "https://www.racingpost.com"
 CODES = {
     "WH_OXI": "William Hill", "LADB": "Ladbrokes", "BET365": "bet365", "CORAL": "Coral", "PADDYPOWER": "Paddy Power",
@@ -94,6 +95,16 @@ def quotes_from_race(html: str, venue: str, hhmm: str, race_key: str = "") -> li
     return out
 
 
+def non_runners_from_race(html: str) -> list[str]:
+    """The runners Racing Post's own page state flags as non-runners (withdrawn: absent from the odds table)."""
+    st = _state(html)
+    try:
+        runners = st["props"]["pageProps"]["initialState"]["racePage"]["data"]["runners"] or []
+    except (KeyError, TypeError):
+        return []
+    return [r.get("horseName", "") for r in runners if r.get("nonRunner") and r.get("horseName")]
+
+
 class RacingPost:
     name = NAME
 
@@ -121,5 +132,9 @@ class RacingPost:
         html = self.b.html(race["url"], settle_ms=8000, wait_selector='[data-testid="Table__OddsComparison"]')
         self.raw[f"race_{race['race_id']}"] = html
         q = quotes_from_race(html, race["venue"], race["hhmm"], race.get("race_id", ""))
+        now = utc_now_iso()
+        for name in non_runners_from_race(html):                # marked, never priced: odds.non_runners() reads them
+            q.append(Quote(source=NAME, bookmaker=NON_RUNNER, venue=race["venue"], race_hhmm=race["hhmm"], horse=name,
+                           price=0.0, fetched_utc=now, race_key=race.get("race_id", "")))
         log.info("racingpost: %s %s: %d quotes", race["hhmm"], race["venue"], len(q))
         return q

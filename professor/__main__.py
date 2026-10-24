@@ -78,12 +78,13 @@ def run_card(args) -> int:
     store.write_csv(store.key(day, "candidates.csv"), cdf, out / "candidates.csv")
     from professor.candidates import FACTS_STATUS
     (out / "facts_status.json").write_text(json.dumps(FACTS_STATUS, indent=1, default=str))
-    quotes, bog, status = {}, {}, {}
+    quotes, bog, status, nrs = {}, {}, {}, set()
     if not args.no_scrape:
         df, status = odds_mod.scrape(day, cfg, sources=tuple(args.sources.split(",")), wanted=_wanted(cands) if args.only_ours else None)
         quotes, bog = odds_mod.match(df, cands)
+        nrs = odds_mod.non_runners(df, cands)
         print("odds:", json.dumps(status), f"| {len(df)} quotes, {len(quotes)} of our horses matched")
-    tips, fates = select_card(cands, cfg, quotes, bog)
+    tips, fates = select_card(cands, cfg, quotes, bog, nrs)
     pd.DataFrame(fates).to_csv(out / "fates.csv", index=False)
     rows = tips_json(tips)
     for t, r in zip(tips, rows):

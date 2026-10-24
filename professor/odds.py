@@ -136,3 +136,13 @@ def match(df: pd.DataFrame, cands: list[Candidate]) -> tuple[dict[tuple, dict], 
         bog[(c.market_id, c.selection_id)] = {r.bookmaker: r.bog for r in g.itertuples(index=False)
                                               if r.bog is not None and r.bog == r.bog}
     return quotes, bog
+
+
+def non_runners(df: pd.DataFrame, cands: list[Candidate]) -> set[tuple]:
+    """Our horses a source flags as non-runners (Racing Post's page state), by course, UK time and name."""
+    if df is None or df.empty:
+        return set()
+    nr = df[df["bookmaker"] == "NON-RUNNER"]
+    keys = set(zip(nr["_venue"], nr["race_hhmm"], nr["_horse"]))
+    return {(c.market_id, c.selection_id) for c in cands
+            if (norm_venue(c.venue), c.off_uk, norm_name(c.runner)) in keys}

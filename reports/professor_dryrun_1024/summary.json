@@ -1,0 +1,38 @@
+{
+  "day": "2026-10-24",
+  "positions": 130,
+  "quoted": 120,
+  "tips": 4,
+  "withheld": 1,
+  "odds_status": {
+    "racingpost": "31 of 31 races read, 2790 quotes"
+  },
+  "posts": [
+    {
+      "slug": "1530-cheltenham-north-shore",
+      "withheld": false,
+      "posted": []
+    },
+    {
+      "slug": "1405-doncaster-hi-corbett-court",
+      "withheld": false,
+      "posted": []
+    },
+    {
+      "slug": "1900-southwell-african-spirit",
+      "withheld": false,
+      "posted": []
+    },
+    {
+      "slug": "1730-southwell-wyvill",
+      "withheld": true,
+      "posted": []
+    }
+  ],
+  "day_card": {
+    "key": "telegram:free:day-card",
+    "dry_run": true,
+    "caption": "<b>The Professor's free tips, Sat 24 Oct</b>\n15:30 Cheltenham: North Shore 4/1\n14:05 Doncaster: Hi Corbett Court 9/2\n\nThe Professor's syndicate holds a position on every horse advised before it is published.\n18+. BeGambleAware.org. Please gamble responsibly."
+  },
+  "live": false
+}
