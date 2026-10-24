@@ -993,9 +993,22 @@
     "tv_track_share",
     "tv_n_meeting",
     "tv_km_single",
-    "tv_horse_km"
+    "tv_horse_km",
+    "sc_fsp_l1",
+    "sc_fsp_m3",
+    "sc_fsp_w5",
+    "sc_fsp_car",
+    "sc_fvp_l1",
+    "sc_fvp_m3",
+    "sc_early_l1",
+    "sc_early_m3",
+    "sc_late_l1",
+    "sc_late_m3",
+    "sc_sl_l1",
+    "sc_sl_car",
+    "sc_runs"
   ],
-  "n_features": 993,
+  "n_features": 1006,
   "categorical_vocab": {
     "surface_type": [
       "Beach",
@@ -1182,6 +1195,7 @@
   "post_race_guard": "passed",
   "objective": "l2",
   "decay_rate": 0.0,
+  "share_weight": 0.0,
   "target": "logit_norm_prob",
   "holdout_days": 60,
   "purge_days": 30,
@@ -1200,111 +1214,111 @@
   },
   "best_iteration": 12000,
   "holdout_metrics": {
-    "n": 21491,
-    "mae": 0.3025156669991649,
-    "rmse": 0.3994772978409692,
+    "n": 22831,
+    "mae": 0.3008993187171279,
+    "rmse": 0.40009284744401985,
     "in_sample": true
   },
-  "holdout_start": "2026-07-24",
-  "train_rows": 697903,
-  "holdout_rows": 21491,
+  "holdout_start": "2026-08-14",
+  "train_rows": 706242,
+  "holdout_rows": 22831,
   "early_stopped": false,
   "init_offset": 0.0,
   "feature_code_hash": "f879b10c8369467a",
   "final_metrics": {
     "target": "logit_norm_prob",
-    "log_mae": 0.3002,
-    "log_rmse": 0.3972,
-    "log_r2": 0.9289,
-    "bfsp_mae": 17.2,
-    "median_ape_pct": 20.88,
-    "mean_ape_pct": 28.36,
-    "correlation": 0.9643,
+    "log_mae": 0.2987,
+    "log_rmse": 0.3954,
+    "log_r2": 0.9298,
+    "bfsp_mae": 17.4,
+    "median_ape_pct": 20.92,
+    "mean_ape_pct": 28.18,
+    "correlation": 0.9648,
     "best_iteration": 12000,
-    "holdout_mae": 0.3025156669991649
+    "holdout_mae": 0.3008993187171279
   },
-  "trained_through": "2026-09-22",
-  "train_rows_total": 697903,
+  "trained_through": "2026-10-13",
+  "train_rows_total": 706242,
   "top_gain": [
     [
       "rw_fv_nfp_s8_gap",
-      1104556.909938991
-    ],
-    [
-      "rw_fv_nfp_e3_gap",
-      672441.9387938976
+      1200876.9804354906
     ],
     [
       "rPMW3",
-      509287.36549782753
+      612258.5167405903
     ],
     [
-      "rPMW10",
-      487905.3459623456
-    ],
-    [
-      "rr_PMW3_z",
-      476435.71064823866
-    ],
-    [
-      "hca_wt_vs_mark",
-      395162.2030157447
+      "rw_fv_nfp_e3_gap",
+      609645.5680507421
     ],
     [
       "rPMW5",
-      364839.6651788354
+      543074.3506527245
     ],
     [
       "rr_fw_mkt_w5_gap",
-      357266.2586719692
+      449788.0176771879
     ],
     [
-      "rw_PMW5_z",
-      304927.4124931693
+      "rPMW10",
+      418371.2571941614
     ],
     [
-      "OFS1",
-      230971.95166230202
+      "hca_wt_vs_mark",
+      404653.37490165234
     ],
     [
-      "rORR2LR",
-      214468.83292418718
-    ],
-    [
-      "fw_lbs_l1",
-      191335.49436050653
+      "rr_PMW3_z",
+      365494.1160173416
     ],
     [
       "rr_fw_nfp_w5_gap",
-      189713.25499981642
+      295953.53549671173
     ],
     [
-      "LR_ORR2",
-      183427.9096905887
+      "rw_PMW5_z",
+      286979.26680886745
     ],
     [
-      "rRWOLR3",
-      180252.80656903982
-    ],
-    [
-      "fw_lbsc_w3",
-      170720.27644568682
-    ],
-    [
-      "cw_jk_nfp_rank",
-      164187.81197863817
-    ],
-    [
-      "dm_stage_mkt",
-      161131.28915435076
+      "OFS1",
+      201949.04089200497
     ],
     [
       "fw_mkt_l1",
-      159489.4926586151
+      188549.93719160557
+    ],
+    [
+      "rOFS3",
+      187471.93081367016
+    ],
+    [
+      "fv_lbpf_l1",
+      183927.2437005639
+    ],
+    [
+      "rORR2LR",
+      173597.98496121168
+    ],
+    [
+      "rw_fv_nfp_e6_gap",
+      172781.92139935493
     ],
     [
       "rTJNFP",
-      154584.91621991992
+      171923.47228878736
+    ],
+    [
+      "fw_lbs_l1",
+      167488.28103369474
+    ],
+    [
+      "rRWOLR3",
+      166980.8941296339
+    ],
+    [
+      "rw_fv_nfp_fsw_e6_gap",
+      161494.2305009961
     ]
   ],
   "drop_in_blocks": [
@@ -1319,6 +1333,7 @@
     "kalman",
     "race_relative",
     "race_relative_wide",
+    "sectionals",
     "time_figure",
     "travel"
   ],

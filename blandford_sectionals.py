@@ -301,7 +301,7 @@ def fetch_rtv(db_path: str, d_from: str, d_to: str, max_minutes: float, sleep: f
         rows = None
         for attempt in range(2):
             try:
-                resp = s.get(f"{BASE_URL}/api/racingtv/{urllib.parse.quote(name)}", timeout=120)
+                resp = s.get(f"{BASE_URL}/api/racingtv/{urllib.parse.quote(name)}", timeout=60)
                 if resp.status_code == 200:
                     j = resp.json()
                     rows = j.get("data", j) if isinstance(j, dict) else j
