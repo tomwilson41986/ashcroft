@@ -1,0 +1,6 @@
+# The Professor's own needs beyond requirements.txt (professor-publish.yml installs both)
+playwright>=1.47
+Pillow>=10.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0

@@ -1,0 +1,172 @@
+name: The Professor (tips)
+
+# The Professor, the owner's automated tipster on the model (the owner's ask of 23 Oct 2026; reports/professor_design.md,
+# the rule's backtest reports/professor_rule.md, the package professor/). Among the horses the syndicate holds this
+# morning (the live trader's ledger, its copy in S3), each with a bookmaker price 10% over the closing model's expected
+# BSP (the Betfair price when no bookmaker quotes the race: the owner, 23 Oct, "you can use BF price. But really we want
+# to find horses that are with bookmaker prices"), one a race, ranked by the expected win probability, at most 5 a
+# day, the top two free, nothing over 50/1; a random fifth withheld from publication so the published impact on our
+# own BSP can be measured. The bookmaker prices come from Racing Post's odds comparison (Oddschecker is a probe until a
+# UK browser is seen to pass its challenge; Market Form waits for the owner's key).
+#
+# Two modes. `alerts` is the live session (the design, 23 Oct): from 06:15 UK beside the trader, the ledger read every
+# minute and each new fill that qualifies posted at once, the free tips' card at 10:00 UK. `card` is the day's card at a
+# point in time: the dry run (nothing posted, the tips, write-ups and cards as the run's artifact), the replay and the
+# 10:00 post. Nothing is posted unless the repository variable PROFESSOR_LIVE is 'yes' and the run is not a dry run;
+# the S3 object professor/STOP (or trading/STOP) stops the alerts within a minute.
+#
+# The runner: the dry run and the card can run on GitHub's runners (Racing Post answers a browser from them; S3 holds the
+# ledger). The alerts session runs on the UK server beside the trader, on a second runner registration
+# (vars.PROFESSOR_RUNNER: the trading job holds vars.BETFAIR_RUNNER all day), where Oddschecker may answer too.
+# Until the owner registers it, the schedule below runs the card on GitHub's runners at 09:35 UK as a dry run.
+
+on:
+  schedule:
+    - cron: '35 8 * * *'      # 09:35 UK in summer time
+    - cron: '35 9 * * *'      # 09:35 UK in winter time (the other fires at 10:35 and stands down)
+  push:                       # the dry run of the day on every push of the package to its branch (a workflow only on
+    branches: ['claude/modest-cerf-*']   # a branch cannot be dispatched, as research-query.yml found)
+    paths:
+      - 'professor/**'
+      - '.github/workflows/professor-publish.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'card (the day at a point in time), alerts (the live loop), odds (the scrape alone)'
+        type: choice
+        options: [card, alerts, odds]
+        default: card
+      date:
+        description: 'UK racing day, YYYY-MM-DD (default today)'
+        required: false
+        type: string
+      until:
+        description: 'card: the ledger by this UK time (default now); alerts: run until this UK time'
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: 'write everything to the artifact and S3 nothing; post nothing'
+        type: boolean
+        default: true
+      sources:
+        description: 'odds sources, comma-separated'
+        required: false
+        type: string
+        default: 'racingpost,oddschecker,marketform'
+      runner:
+        description: 'github (ubuntu-latest) or uk (vars.PROFESSOR_RUNNER)'
+        type: choice
+        options: [github, uk]
+        default: github
+
+permissions:
+  contents: read
+
+concurrency:
+  group: professor-${{ inputs.mode || 'card' }}
+  cancel-in-progress: false
+
+jobs:
+  choose:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.pick.outputs.go }}
+      runner: ${{ steps.pick.outputs.runner }}
+      mode: ${{ steps.pick.outputs.mode }}
+      dry: ${{ steps.pick.outputs.dry }}
+    steps:
+      - name: Choose the run
+        id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          MODE: ${{ inputs.mode }}
+          DRY: ${{ inputs.dry_run }}
+          RUNNER_CHOICE: ${{ inputs.runner }}
+          UK_RUNNER: ${{ vars.PROFESSOR_RUNNER }}
+        run: |
+          GO=true
+          if [ "$EVENT" = schedule ]; then
+            H=$(TZ=Europe/London date +%H)
+            [ "$H" = 09 ] || { echo "not 09:xx UK (it is $H); the other cron's turn"; GO=false; }
+          fi
+          if [ "$EVENT" = schedule ] || [ "$EVENT" = push ]; then
+            MODE=card; DRY=true; RUNNER_CHOICE=github
+          fi
+          RUNNER=ubuntu-latest
+          if [ "$RUNNER_CHOICE" = uk ]; then
+            [ -n "$UK_RUNNER" ] || { echo "no PROFESSOR_RUNNER registered"; GO=false; }
+            RUNNER="$UK_RUNNER"
+          fi
+          echo "go=$GO" >> "$GITHUB_OUTPUT"
+          echo "runner=$RUNNER" >> "$GITHUB_OUTPUT"
+          echo "mode=${MODE:-card}" >> "$GITHUB_OUTPUT"
+          echo "dry=${DRY:-true}" >> "$GITHUB_OUTPUT"
+
+  professor:
+    needs: choose
+    if: needs.choose.outputs.go == 'true'
+    runs-on: ${{ needs.choose.outputs.runner }}
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        if: needs.choose.outputs.runner == 'ubuntu-latest'
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Python on the UK server
+        if: needs.choose.outputs.runner != 'ubuntu-latest'
+        run: |
+          VENV="$HOME/.venvs/professor"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: |
+          pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt -r professor/requirements.txt
+          if [ "${{ needs.choose.outputs.runner }}" = ubuntu-latest ]; then
+            python -m playwright install --with-deps chromium
+          else
+            python -m playwright install chromium
+          fi
+
+      - name: Run
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          PROFESSOR_LIVE: ${{ vars.PROFESSOR_LIVE }}
+          PROFESSOR_PAID_OPEN: ${{ vars.PROFESSOR_PAID_OPEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_FREE_CHANNEL_ID: ${{ vars.TELEGRAM_FREE_CHANNEL_ID }}
+          TELEGRAM_MEMBERS_CHANNEL_ID: ${{ vars.TELEGRAM_MEMBERS_CHANNEL_ID }}
+          MARKETFORM_API_KEY: ${{ secrets.MARKETFORM_API_KEY }}
+          MODE: ${{ needs.choose.outputs.mode }}
+          DRY: ${{ needs.choose.outputs.dry }}
+          DAY: ${{ inputs.date }}
+          UNTIL: ${{ inputs.until }}
+          SOURCES: ${{ inputs.sources || 'racingpost,oddschecker,marketform' }}
+        run: |
+          ARGS="--$MODE --sources $SOURCES"
+          [ -n "$DAY" ] && ARGS="$ARGS --day $DAY"
+          [ -n "$UNTIL" ] && ARGS="$ARGS --until $UNTIL"
+          [ "$DRY" = true ] && ARGS="$ARGS --dry-run"
+          echo "python -m professor $ARGS"
+          python -m professor $ARGS
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: professor-${{ needs.choose.outputs.mode }}-${{ github.run_id }}
+          path: out/professor/
+          if-no-files-found: ignore
+          retention-days: 90

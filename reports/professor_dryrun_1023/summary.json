@@ -1,0 +1,43 @@
+{
+  "day": "2026-10-23",
+  "positions": 164,
+  "quoted": 144,
+  "tips": 5,
+  "withheld": 0,
+  "odds_status": {
+    "racingpost": "33 of 33 races read, 3528 quotes"
+  },
+  "posts": [
+    {
+      "slug": "1500-cheltenham-planters-punch",
+      "withheld": false,
+      "posted": []
+    },
+    {
+      "slug": "1830-wolverhampton-way-to-dubai",
+      "withheld": false,
+      "posted": []
+    },
+    {
+      "slug": "1425-cheltenham-loriko",
+      "withheld": false,
+      "posted": []
+    },
+    {
+      "slug": "1400-sligo-beat-the-devil",
+      "withheld": false,
+      "posted": []
+    },
+    {
+      "slug": "1410-doncaster-dark-thirty",
+      "withheld": false,
+      "posted": []
+    }
+  ],
+  "day_card": {
+    "key": "telegram:free:day-card",
+    "dry_run": true,
+    "caption": "<b>The Professor's free tips, Fri 23 Oct</b>\n15:00 Cheltenham: Planters Punch 9/2\n18:30 Wolverhampton: Way To Dubai 14/1\n\nThe Professor's syndicate holds a position on every horse advised before it is published.\n18+. BeGambleAware.org. Please gamble responsibly."
+  },
+  "live": false
+}
