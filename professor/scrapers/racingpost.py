@@ -111,6 +111,7 @@ class RacingPost:
     def __init__(self, browser: Browser):
         self.b = browser
         self.raw: dict[str, str] = {}
+        self.abandoned: list[dict] = []
 
     def day_races(self, day: date | str) -> list[dict]:
         races: list[dict] = []
@@ -125,6 +126,7 @@ class RacingPost:
             races = races_from_index(html, str(day))
             if races:
                 break
+        self.abandoned = [r for r in races if r.get("abandoned")]
         log.info("racingpost: %d races on %s", len(races), day)
         return races
 

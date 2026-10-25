@@ -65,6 +65,11 @@ def scrape(day: date | str, cfg: dict, sources: tuple[str, ...] = ("racingpost",
                     except Exception as e:  # noqa: BLE001
                         log.warning("racingpost %s %s: %s", r["hhmm"], r["venue"], str(e)[:100])
                 status["racingpost"] = f"{n} of {len(races)} races read, {sum(q.source == 'racingpost' for q in quotes)} quotes"
+                for r in rp.abandoned:                     # the meeting is off: every horse in it is void
+                    quotes.append(Quote(source="racingpost", bookmaker="ABANDONED", venue=r["venue"], race_hhmm=r["hhmm"],
+                                        horse="*", price=0.0, race_key=r.get("race_id", "")))
+                if rp.abandoned:
+                    status["abandoned"] = sorted({f"{r['venue']} {r['hhmm']}" for r in rp.abandoned})
             except Exception as e:  # noqa: BLE001
                 status["racingpost"] = f"failed: {str(e)[:120]}"
             raw.update({f"racingpost_{k}": v for k, v in rp.raw.items()})
@@ -146,3 +151,12 @@ def non_runners(df: pd.DataFrame, cands: list[Candidate]) -> set[tuple]:
     keys = set(zip(nr["_venue"], nr["race_hhmm"], nr["_horse"]))
     return {(c.market_id, c.selection_id) for c in cands
             if (norm_venue(c.venue), c.off_uk, norm_name(c.runner)) in keys}
+
+
+def abandoned(df: pd.DataFrame, cands: list[Candidate]) -> set[tuple]:
+    """Our horses in races a source shows abandoned."""
+    if df is None or df.empty:
+        return set()
+    ab = df[df["bookmaker"] == "ABANDONED"]
+    races = set(zip(ab["_venue"], ab["race_hhmm"]))
+    return {(c.market_id, c.selection_id) for c in cands if (norm_venue(c.venue), c.off_uk) in races}

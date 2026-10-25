@@ -130,8 +130,8 @@ def qualify(c: Candidate, cfg: dict, quotes: dict[str, float] | None, bog: dict 
 
 
 def card(cands: list[Candidate], cfg: dict, quotes_by_horse: dict[tuple, dict] | None = None,
-         bog_by_horse: dict[tuple, dict] | None = None, non_runners: set[tuple] | None = None
-         ) -> tuple[list[Tip], list[dict]]:
+         bog_by_horse: dict[tuple, dict] | None = None, non_runners: set[tuple] | None = None,
+         abandoned: set[tuple] | None = None) -> tuple[list[Tip], list[dict]]:
     """The day's card at a point in time: every qualifier ranked by p_win, one a race, capped, tiered, the withheld
     marked. Returns the tips (published and withheld) and a log of every candidate's fate."""
     quotes_by_horse, bog_by_horse = quotes_by_horse or {}, bog_by_horse or {}
@@ -139,7 +139,9 @@ def card(cands: list[Candidate], cfg: dict, quotes_by_horse: dict[tuple, dict] |
     for c in cands:
         key = (c.market_id, c.selection_id)
         q = quotes_by_horse.get(key)
-        if non_runners and key in non_runners:
+        if abandoned and key in abandoned:
+            tip, why = None, "the meeting is abandoned"
+        elif non_runners and key in non_runners:
             tip, why = None, "a non-runner"
         else:
             tip, why = qualify(c, cfg, q, bog_by_horse.get(key))

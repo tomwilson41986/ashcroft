@@ -208,3 +208,15 @@ def test_a_tip_is_settled_at_the_advised_price_and_at_the_bsp():
     summ = summary(s)
     assert summ["published"]["settled"] == 2 and summ["published"]["pts_advised"] == 3.0
     assert summ["published"]["non_runners"] == 1 and summ["withheld"]["pending"] == 1
+
+
+def test_an_abandoned_meeting_voids_our_horses_in_it(cfg):
+    from professor import odds
+    from professor.scrapers.base import Quote
+    df = odds.frame([Quote("racingpost", "ABANDONED", "Aintree", "12:40", "*", 0.0)], cfg)
+    ours = [cand("Anything", "Aintree", sel=9, off_utc="2026-10-25T12:40:00+00:00"),
+            cand("Elsewhere", "Galway", sel=10, off_utc="2026-10-25T12:32:00+00:00")]
+    ab = odds.abandoned(df, ours)
+    assert ab == {("1.1", 9)}
+    _, fates = selection.card(ours, cfg, {}, {}, set(), ab)
+    assert fates[0]["fate"] == "the meeting is abandoned" and fates[1]["fate"] != "the meeting is abandoned"
