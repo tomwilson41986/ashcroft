@@ -205,9 +205,12 @@ def run_settle(args) -> int:
         st.write(day, settled, summ)
         print(f"{f}:\n{st.report(settled, summ)}")
         frames.append(settled)
-    if len(frames) > 1:
+    if frames:
         allt = pd.concat(frames, ignore_index=True)
-        print("\nall days:\n" + "\n".join(st.report(allt, st.summary(allt)).splitlines()[-2:]))
+        summ = st.summary(allt)
+        print("\nthe record, every day (1 pt level; the profit at the advised price and at the Betfair SP):")
+        print("\n".join(st.report(allt, summ).splitlines()[-2:]))
+        store.write_json(f"{store.PREFIX}/results/record.json", summ, store.OUT / "record.json")
     return 0
 
 

@@ -100,8 +100,10 @@ python auto_trade.py --live --settle
 
 # The Professor, the owner's automated tipster on the model (23 Oct 2026; reports/professor_design.md, the rule's backtest
 # reports/professor_rule.md, the dry run reports/professor_dryrun_1023.md): the syndicate's morning horses with a bookmaker price
-# (Racing Post's odds comparison; the UK server, Racing Post refuses GitHub's runners) 10% over the closing model's expected BSP,
-# one a race, by win probability, 5 a day, the top two free, nothing over 50/1; posts only with PROFESSOR_LIVE=yes
+# (Racing Post's odds comparison; the UK server, Racing Post refuses GitHub's runners; bookmaker prices only, the owner 25 Oct) 10% over the closing model's expected BSP,
+# one a race, by win probability, 5 a day, the top two free, nothing over 50/1; posts only with PROFESSOR_LIVE=yes; the record
+# at the advised price and at the Betfair SP (reports/professor_record.md)
+python -m professor --settle --tips-file 'reports/professor_dryrun_*/tips.json'   # tips settled from the trader's ledger
 python -m professor --card --dry-run --only-ours                     # the day's card now: tips, write-ups, cards to out/professor/<day>/
 python -m professor --alerts --until 10:00                           # the live loop beside the trader: each qualifying fill at once
 python -m professor --odds                                           # the bookmaker prices alone (the snapshot, the raw pages)

@@ -7,6 +7,7 @@
   "free_tips": 2,
   "max_price": 51.0,
   "min_books": 3,
+  "require_books": true,
   "min_minutes_to_off": 60,
   "scrape_at": "09:35",
   "select_at": "09:55",

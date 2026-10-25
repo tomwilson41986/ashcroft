@@ -50,7 +50,17 @@ def test_a_horse_qualifies_on_the_overlay_over_the_expected_bsp(cfg):
     assert tip is None and "overlay" in why
 
 
+def test_bookmaker_prices_only_by_the_owners_decision(cfg):
+    assert cfg["require_books"] is True                    # the owner, 25 Oct: "bookmaker only"
+    c = cand(p_win=0.25, best_back=4.8)
+    tip, why = selection.qualify(c, cfg, None)             # no bookmaker quotes the race: no tip
+    assert tip is None and why == "no bookmaker quotes"
+    tip, _ = selection.qualify(c, cfg, {"bet365": 4.8, "William Hill": 4.8, "Coral": 4.8})
+    assert tip is not None and tip.price_source == "books"
+
+
 def test_the_exchange_stands_in_only_when_no_bookmaker_quotes_the_race(cfg):
+    cfg = dict(cfg, require_books=False)                    # the fallback, kept for an owner who turns it back on
     c = cand(p_win=0.25, best_back=4.8)
     tip, why = selection.qualify(c, cfg, None)             # the race was not read: the exchange price is advised (GBP120 at it)
     assert tip is not None and tip.price_source == "exchange" and tip.advised == 4.8
@@ -70,7 +80,8 @@ def test_the_card_ranks_by_win_probability_one_a_race_and_caps(cfg):
     cands = [cand("A", p_win=0.30, best_back=4.0, market="1.1", sel=1), cand("B", p_win=0.28, best_back=4.5, market="1.1", sel=2),
              cand("C", p_win=0.20, best_back=6.5, market="1.2", sel=3), cand("D", p_win=0.15, best_back=9.0, market="1.3", sel=4),
              cand("E", p_win=0.12, best_back=11.0, market="1.4", sel=5)]
-    tips, fates = selection.card(cands, cfg, {})
+    quotes = {(c.market_id, c.selection_id): {b: c.best_back for b in ("bet365", "William Hill", "Coral")} for c in cands}
+    tips, fates = selection.card(cands, cfg, quotes)
     assert [t.cand.runner for t in tips] == ["A", "C", "D"]        # B is the same race as A; E is past the cap
     assert [t.tier for t in tips] == ["free", "free", "private"]
     assert len(fates) == 5 and all(f["fate"] == "qualifies" for f in fates)
@@ -79,12 +90,13 @@ def test_the_card_ranks_by_win_probability_one_a_race_and_caps(cfg):
 def test_the_withheld_fifth_takes_no_rank_and_is_a_fixed_draw(cfg):
     cfg = dict(cfg, withheld_share=0.5, max_tips=10)
     cands = [cand(f"H{i}", p_win=0.3 - i * 0.01, best_back=4.0 + i, market=f"1.{i}", sel=i) for i in range(1, 21)]
-    tips, _ = selection.card(cands, cfg, {})
+    quotes = {(c.market_id, c.selection_id): {b: c.best_back for b in ("bet365", "William Hill", "Coral")} for c in cands}
+    tips, _ = selection.card(cands, cfg, quotes)
     held = [t for t in tips if t.withheld]
     shown = [t for t in tips if not t.withheld]
     assert held and shown and all(t.rank == 0 and t.tier == "withheld" for t in held)
     assert [t.rank for t in shown] == list(range(1, len(shown) + 1))
-    again, _ = selection.card(cands, cfg, {})
+    again, _ = selection.card(cands, cfg, quotes)
     assert [t.withheld for t in again] == [t.withheld for t in tips]
 
 
@@ -93,10 +105,11 @@ def test_the_alert_loop_takes_fills_in_arrival_order_with_the_floor_and_the_cap(
     cands = [cand("A", p_win=0.20, best_back=6.0, market="1.1", sel=1), cand("B", p_win=0.10, best_back=12.0, market="1.2", sel=2),
              cand("C", p_win=0.22, best_back=5.5, market="1.3", sel=3, size=10), cand("D", p_win=0.25, best_back=5.0, market="1.4", sel=4),
              cand("E", p_win=0.30, best_back=4.0, market="1.5", sel=5)]
-    new, fates = selection.alerts(cands, [], cfg, {})
+    quotes = {(c.market_id, c.selection_id): {b: c.best_back for b in ("bet365", "William Hill", "Coral")} for c in cands}
+    new, fates = selection.alerts(cands, [], cfg, quotes)
     assert [t.cand.runner for t in new] == ["A", "D"]              # B under the floor, C too little money, E past the cap
     assert [t.rank for t in new] == [1, 2]
-    later, _ = selection.alerts(cands, new, cfg, {})
+    later, _ = selection.alerts(cands, new, cfg, quotes)
     assert later == []
 
 
