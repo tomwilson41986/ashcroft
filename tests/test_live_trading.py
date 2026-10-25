@@ -803,7 +803,7 @@ def test_the_owners_morning_from_12_oct_predictions_at_0400_and_trading_at_0515_
     wf = Path(__file__).resolve().parents[1] / ".github" / "workflows"
     on = lambda name: (lambda s: s.get("on", s.get(True)))(yaml.safe_load((wf / name).read_text()))
     assert [c["cron"] for c in on("predict.yml")["schedule"]] == ["0 4 * * *"]
-    assert [c["cron"] for c in on("live-trade.yml")["schedule"]] == ["15 5 * * *", "45 21 * * *"]
+    assert [c["cron"] for c in on("live-trade.yml")["schedule"]] == ["15 5 * * *", "25 22 * * *"]   # settle 22:25 from 25 Oct
     assert LIVE.trade_from == "06:15"
 
 
