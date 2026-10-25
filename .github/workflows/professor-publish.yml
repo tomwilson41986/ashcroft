@@ -32,9 +32,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'card (the day at a point in time), alerts (the live loop), odds (the scrape alone)'
+        description: 'card (the day at a point in time), alerts (the live loop), odds (the scrape alone), settle (the dry runs)'
         type: choice
-        options: [card, alerts, odds]
+        options: [card, alerts, odds, settle]
         default: card
       date:
         description: 'UK racing day, YYYY-MM-DD (default today)'
@@ -162,6 +162,17 @@ jobs:
           [ "$DRY" = true ] && ARGS="$ARGS --dry-run"
           echo "python -m professor $ARGS"
           python -m professor $ARGS
+
+      - name: Settle the dry runs' tips
+        # every tip is a horse the syndicate holds, so the trader's ledger in S3 carries its result and Betfair SP
+        if: github.event_name == 'push' || needs.choose.outputs.mode == 'settle'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          PROFESSOR_DRY: '1'
+        run: python -m professor --settle --tips-file 'reports/professor_dryrun_*/tips.json'
 
       - uses: actions/upload-artifact@v4
         if: always()

@@ -180,11 +180,43 @@ def run_odds(args) -> int:
     return 0
 
 
+def run_settle(args) -> int:
+    """Settle tips files (a glob: the dry runs' kept in reports/, or a day's tips.json) against their days' ledgers."""
+    import glob as _glob
+    from professor import settle as st
+    files = sorted(_glob.glob(args.tips_file)) if args.tips_file else []
+    if not files and args.day:
+        local = store.out_dir(args.day) / "tips.json"
+        if not local.exists():
+            raw = store.get_bytes(store.key(args.day, "tips.json"))
+            if raw:
+                local.write_bytes(raw)
+        files = [str(local)] if local.exists() else []
+    if not files:
+        print("no tips to settle")
+        return 0
+    frames = []
+    for f in files:
+        settled, summ = st.settle_file(f)
+        if settled.empty:
+            continue
+        day = str(settled["day"].iloc[0])
+        st.write(day, settled, summ)
+        print(f"{f}:\n{st.report(settled, summ)}")
+        frames.append(settled)
+    if len(frames) > 1:
+        allt = pd.concat(frames, ignore_index=True)
+        print("\nall days:\n" + "\n".join(st.report(allt, st.summary(allt)).splitlines()[-2:]))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="professor", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--card", action="store_true")
     ap.add_argument("--alerts", action="store_true")
     ap.add_argument("--odds", action="store_true")
+    ap.add_argument("--settle", action="store_true", help="settle tips against the ledger's results and BSPs")
+    ap.add_argument("--tips-file", help="--settle: a tips.json or a glob of them (default: the day's)")
     ap.add_argument("--replay", action="store_true", help="--card at select_at with no posting")
     ap.add_argument("--day")
     ap.add_argument("--until", help="UK HH:MM")
@@ -208,6 +240,8 @@ def main(argv=None) -> int:
         return run_alerts(args)
     if args.odds:
         return run_odds(args)
+    if args.settle:
+        return run_settle(args)
     ap.print_help()
     return 2
 

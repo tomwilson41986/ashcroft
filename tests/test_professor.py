@@ -186,3 +186,25 @@ def test_racing_posts_non_runners_are_read_and_never_advised(cfg):
     tips, fates = selection.card(ours, cfg, {}, {}, nrs)
     assert tips == [] and fates[0]["fate"] == "a non-runner"
     assert odds.match(df, ours)[0].get(("1.1", 7), {}) == {}          # a non-runner row is never a price
+
+
+def test_a_tip_is_settled_at_the_advised_price_and_at_the_bsp():
+    import pandas as pd
+    from professor.settle import settle_tips, summary
+    tips = pd.DataFrame([
+        {"day": "2026-10-24", "market_id": "1.1", "selection_id": 1, "advised": 5.0, "withheld": False},
+        {"day": "2026-10-24", "market_id": "1.2", "selection_id": 2, "advised": 8.0, "withheld": False},
+        {"day": "2026-10-24", "market_id": "1.3", "selection_id": 3, "advised": 6.0, "withheld": False},
+        {"day": "2026-10-24", "market_id": "1.4", "selection_id": 4, "advised": 9.0, "withheld": True}])
+    results = pd.DataFrame([
+        {"market_id": "1.1", "selection_id": 1, "result": "WINNER", "bsp": 4.0},
+        {"market_id": "1.2", "selection_id": 2, "result": "LOSER", "bsp": 10.0},
+        {"market_id": "1.3", "selection_id": 3, "result": "REMOVED", "bsp": None}])
+    s = settle_tips(tips, results)
+    assert list(s["pts_advised"]) == [4.0, -1.0, 0.0, 0.0]
+    assert abs(s["pts_bsp"].iloc[0] - 3.0 * 0.98) < 1e-9 and s["pts_bsp"].iloc[1] == -1.0
+    assert abs(s["clv"].iloc[0] - 0.25) < 1e-9 and abs(s["clv"].iloc[1] + 0.2) < 1e-9
+    assert list(s["result"]) == ["WINNER", "LOSER", "REMOVED", "PENDING"]
+    summ = summary(s)
+    assert summ["published"]["settled"] == 2 and summ["published"]["pts_advised"] == 3.0
+    assert summ["published"]["non_runners"] == 1 and summ["withheld"]["pending"] == 1
