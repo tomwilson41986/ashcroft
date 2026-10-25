@@ -13,7 +13,7 @@ on:
       atr_minutes:
         description: 'Minutes to spend on the At The Races archive (0 to skip)'
         required: false
-        default: '120'
+        default: '30'
         type: string
       rtv_from:
         description: 'Racing TV: first day of the window of horses to fetch'
@@ -28,7 +28,7 @@ on:
       rtv_minutes:
         description: 'Minutes to spend on Racing TV (0 to skip)'
         required: false
-        default: '30'
+        default: '100'
         type: string
 
 env:
@@ -66,8 +66,10 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
         run: |
-          ATR="${{ inputs.atr_minutes || '120' }}"
-          RTV="${{ inputs.rtv_minutes || '30' }}"
+          # the At The Races archive reached its last page on 24 Oct (314 pages): a nightly top-up; Racing TV, at about
+          # 9 s a horse, takes the time (12,292 horses left on 24 Oct)
+          ATR="${{ inputs.atr_minutes || '30' }}"
+          RTV="${{ inputs.rtv_minutes || '100' }}"
           # Racing TV first: on 23 Oct every horse's request timed out after the At The Races paging (the backend
           # answered the same request in 8 s that evening)
           if [ "$RTV" != "0" ]; then

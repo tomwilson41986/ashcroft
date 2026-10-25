@@ -1356,6 +1356,30 @@ when the UK runner received a shutdown signal (run 39905555613), restarted by th
   sectional_runs; they are not read at serving until a model trained with them is tested. Racing TV fetched nothing
   (every request timed out after the paging): it now runs first.
 
+**The twenty-fourth full day** (24 Oct, a Saturday; ledger `live-day-1024`), the twelfth early session and **the first
+on the sectionals blend** (`serve-sectionals-1023`, PR #168).
+- **The start.** Predictions run 40061334615 (04:11 UTC; the three members with 1,006 features, trained through 13 Oct,
+  the sectionals table refreshed to 112,271 runs); the session created 05:23 UTC (run 40066046774; settle
+  40135853173), first back 06:23 UK. No drop.
+- **+GBP399.15 after commission** (Betfair's funds GBP6,410.61 against 23 Oct's GBP6,011.46; the ledger GBP399.16), the
+  best day to date, on 528 fills on 130 horses in 31 markets, GBP3,999.99 matched; CLV +7.35% at Betfair's settled
+  prices (37 horses' prices cut by a non-runner; the trader's horse-level +6.94%).
+- **First backs +13.5% (GBP1,252), top-ups +4.3% (GBP2,526)**; GBP2,000 by 06:30 UK, the limit bound at 10:36 UK;
+  06:15-07:59 +8.8% (GBP2,776), 08:00-09:59 +2.5%, 10:00 on +6.1%. Entry margin: first backs' price over the BSP,
+  median log +10.9%.
+- **The changes** (`changes-1024`): the ladder 46% of the money, its first backs +17.3% against +7.9% at the best back;
+  the cap: 46 horses at 6 fills, none over, all 46 refused GBP1,562 more, the capped horses +0.4% against +14.3%; one
+  fill matched at 205.36 on 200 asked (Betfair's better price). Staking 19-24 Oct: GBP22,806 at +4.94% against the
+  old rule's +3.47% (`staking-1024`).
+- **The replay** (12-23 Oct, after the cuts; `replay-1024`), result after commission: best back GBP1,734; the ladder
+  GBP2,037; **the rule now GBP2,974** (+6.4%); GBP6,000 GBP3,060 (GBP16,037 more staked for GBP86: GBP4,000 stays). At
+  0.80 the rule is worth about GBP198 a day.
+- **Data.** Final marks with a BSP for 24 Oct 554 of 601; price files to 23 Oct (22 Oct's came in after the refused
+  night). The model's 23 Oct error 0.406; the sectionals blend's first card is scored when 24 Oct's file lands. The
+  Tote: no gap (the winners' dividend 0.792 of the BSP); the other-markets scan of 23 Oct: arbitrage GBP0.52 a
+  horse-poll. The backend sync (`blandford-sync-1024`): Racing TV 210 horses on its first full try, At The Races
+  complete (111,500 runs with sectionals); Racing TV now 100 minutes a night.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
