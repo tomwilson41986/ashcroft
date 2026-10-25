@@ -34,7 +34,7 @@ name: Live trading (the owner's book)
 on:
   schedule:
     - cron: '15 5 * * *'     # trade (the owner, 12 Oct; 06:50 until then): from 06:15 UK to 15 minutes before each off
-    - cron: '45 21 * * *'    # settle: after the last race
+    - cron: '25 22 * * *'    # settle: after the last race and the recorder's evening step (21:45 until 25 Oct: in GMT the recorder's evening books run to 22:15 UTC on the same runner)
   workflow_dispatch:
     inputs:
       mode:
@@ -76,7 +76,7 @@ jobs:
           LIVE: ${{ vars.TRADING_LIVE }}
         run: |
           if [ "$EVENT" = schedule ]; then
-            if [ "$SCHEDULE" = '45 21 * * *' ]; then MODE=settle; else MODE=trade; fi
+            if [ "$SCHEDULE" = '25 22 * * *' ]; then MODE=settle; else MODE=trade; fi
             DAY=""
             TRADE_UNTIL=""
           fi

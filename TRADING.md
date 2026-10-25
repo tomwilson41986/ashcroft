@@ -111,7 +111,7 @@ simulated lay at BSP. Nothing is placed on the exchange: the package has no orde
   settles the day from the closed markets (winner, non-runner, BSP) and emails a summary.
 - Tests: `tests/test_trading_bot.py`, `tests/test_trading_staking.py`.
 - Schedule: `.github/workflows/paper-trade.yml` trades from 06:50 UTC (the trader waits for its window) and
-  settles at 21:45 UTC, and either can be run by hand. GitHub runs scheduled and hand-run workflows only
+  settles at 21:45 UTC (the live trader, live-trade.yml, at 22:25 UTC from 25 Oct), and either can be run by hand. GitHub runs scheduled and hand-run workflows only
   from the default branch, so it starts once this branch is merged. The ledger is also kept as the run's
   artifact. It needs the secrets the other Betfair jobs use (`BETFAIR_USERNAME`, `BETFAIR_PASSWORD`,
   `BETFAIR_APP_KEY`; the certificate secrets `BETFAIR_CERT` and `BETFAIR_KEY` if present) and the AWS ones.
