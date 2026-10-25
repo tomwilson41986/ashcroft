@@ -1,4 +1,4 @@
-"""25 Oct (and 10-24 Oct), the sixteenth day of the owner's rule of 9 Oct: first backs against top-ups by UK hour, each order's price scaled to the price Betfair
+"""25 Oct (and 10-24 Oct), the sixteenth day (settled 22:18 UTC, behind the recorder's evening step: the clocks went back) of the owner's rule of 9 Oct: first backs against top-ups by UK hour, each order's price scaled to the price Betfair
 settled the horse at (a non-runner's reduction lowers it), so the CLV is the trader's own (stake_weighted_clv)
 (the evening check-in of 25 Oct; read-only). research/queries/done/live_day_1024.py with 25 Oct added; before that
 research/queries/done/live_day_1023.py with 24 Oct added; before that
