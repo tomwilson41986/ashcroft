@@ -66,3 +66,27 @@ most, and on the dry runs' evidence often the long prices about to drift.
   (more tips, the edge kept, followers need an exchange account), or bookmaker-only tips (few, thin).
 - Either way, the alert loop on the UK runner at 06:15 is the next test: it reads the bookmakers at the minute of
   each fill, which no dry run here has done.
+
+## 26 Oct: the card at 09:25 UK, settled (research-query run 40349529269)
+
+| Race | Horse | Tier | Advised | Result | BSP | CLV | Points at advised | At the BSP |
+|---|---|---|---|---|---|---|---|---|
+| 13:55 Redcar | Merci Monsieur | free | 9/4, 3.25 (9 books) | **won** | 3.30 | -2% | **+2.25** | +2.25 |
+| 14:52 Hereford | Getarose | free | 3/1, 4.0 (9 books) | lost | 3.20 | +25% | -1.00 | -1.00 |
+| 12:48 Hereford | God Of Fire | private | 11/2, 6.5 (4 books) | lost | 7.27 | -11% | -1.00 | -1.00 |
+
+**+0.25 points** at the advised price and at the BSP; mean CLV +4%.
+
+The short-priced shadow rule (win probability at least 0.25, the bookmakers' price at least 95% of the expected BSP;
+recorded, never posted) had 3 winners from 5: Sharkeyboy (4/5, BSP 1.71), Kamille Au Kanada (11/8, BSP 1.48) and Karl
+Des Tourelles (13/8, BSP 1.97) won; Our Wee Horse and Coolishael lost. **+1.80 points** at the advised price, +0.12
+at the BSP, mean CLV +15%.
+
+## The record so far (bookmaker prices, 1 point level)
+
+| | Days | Tips | Winners | Points at advised | At the BSP | Mean CLV |
+|---|---|---|---|---|---|---|
+| Published rule | 3 (23, 24, 26 Oct; none on 25 Oct) | 11 | 2 | -2.75 | -3.51 | -6.3% |
+| Short-priced shadow | 1 (26 Oct) | 5 | 3 | +1.80 | +0.12 | +14.7% |
+
+Far too few to choose between the rules: the record keeps both, every day, until it can.
