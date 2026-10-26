@@ -91,6 +91,15 @@ def run_card(args) -> int:
     for t, r in zip(tips, rows):
         r["odds_status"] = status
     store.write_json(store.key(day, "tips.json"), rows, out / "tips.json")
+    shadows = {}
+    for name, over in cfg.get("shadow_rules", {}).items():
+        if name.startswith("_"):
+            continue
+        st_tips, _ = select_card(cands, {**cfg, **over, "withheld_share": 0.0}, quotes, bog, nrs, ab)  # no withheld fifth
+        for t in st_tips:
+            t.tier = f"shadow:{name}"
+        store.write_json(store.key(day, f"tips_shadow_{name}.json"), tips_json(st_tips), out / f"tips_shadow_{name}.json")
+        shadows[name] = st_tips
     chans = channels(cfg, test=args.test_channels)
     paid_open = os.getenv("PROFESSOR_PAID_OPEN", "").lower() == "yes"
     results = [post_tip(t, cfg, chans, paid_open) for t in tips]
@@ -100,6 +109,12 @@ def run_card(args) -> int:
                "live": os.getenv("PROFESSOR_LIVE", "").lower() == "yes" and not store.dry()}
     store.write_json(store.key(day, "summary.json"), summary, out / "summary.json")
     _print_tips(tips, fates)
+    for name, st_tips in shadows.items():
+        print(f"\nshadow rule '{name}' (recorded, never posted): {len(st_tips)} tips")
+        for t in st_tips:
+            c = t.cand
+            print(f"  {c.off_uk} {c.venue} {c.runner}: {t.advised:.2f} ({len(t.bookmakers)} books), expected SP "
+                  f"{c.exp_bsp:.2f}, {t.overlay:+.0%}, p_win {c.p_win:.2f}")
     return 0
 
 

@@ -233,3 +233,14 @@ def test_an_abandoned_meeting_voids_our_horses_in_it(cfg):
     assert ab == {("1.1", 9)}
     _, fates = selection.card(ours, cfg, {}, {}, set(), ab)
     assert fates[0]["fate"] == "the meeting is abandoned" and fates[1]["fate"] != "the meeting is abandoned"
+
+
+def test_the_short_priced_shadow_rule_is_in_the_config_and_selects_short_prices(cfg):
+    sh = selection.load_config()["shadow_rules"]["short"]
+    scfg = {**cfg, **sh}
+    cands = [cand("Short", p_win=0.30, best_back=3.2, market="1.1", sel=1), cand("Long", p_win=0.10, best_back=12.0, market="1.2", sel=2)]
+    quotes = {("1.1", 1): {b: 3.25 for b in ("bet365", "William Hill", "Coral")},      # 97.5% of the expected BSP 3.33
+              ("1.2", 2): {b: 12.0 for b in ("bet365", "William Hill", "Coral")}}
+    tips, fates = selection.card(cands, scfg, quotes)
+    assert [t.cand.runner for t in tips] == ["Short"]
+    assert "win-probability" in fates[1]["fate"]

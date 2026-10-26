@@ -27,5 +27,9 @@
     "basis": "Advised prices are the best price available at three or more major bookmakers at publication. Results are proofed to the advised price and to the Betfair SP at 1 point level stakes; take the early price, the SP loses.",
     "position": "The Professor's syndicate holds a position on every horse advised before it is published."
   },
-  "members": {"grace_days": 3}
+  "members": {"grace_days": 3},
+  "shadow_rules": {
+    "_about": "Rules recorded every day beside the published one, never posted, settled like tips (reports/professor_bsp.md): the record decides between them. short: the short-priced variant, win probability at least 0.25 and the bookmakers' price at least 95% of the expected BSP.",
+    "short": {"overlay_bar": -0.05, "min_p_win": 0.25}
+  }
 }
