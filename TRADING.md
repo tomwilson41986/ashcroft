@@ -111,7 +111,7 @@ simulated lay at BSP. Nothing is placed on the exchange: the package has no orde
   settles the day from the closed markets (winner, non-runner, BSP) and emails a summary.
 - Tests: `tests/test_trading_bot.py`, `tests/test_trading_staking.py`.
 - Schedule: `.github/workflows/paper-trade.yml` trades from 06:50 UTC (the trader waits for its window) and
-  settles at 21:45 UTC, and either can be run by hand. GitHub runs scheduled and hand-run workflows only
+  settles at 21:45 UTC (the live trader, live-trade.yml, at 22:25 UTC from 25 Oct), and either can be run by hand. GitHub runs scheduled and hand-run workflows only
   from the default branch, so it starts once this branch is merged. The ledger is also kept as the run's
   artifact. It needs the secrets the other Betfair jobs use (`BETFAIR_USERNAME`, `BETFAIR_PASSWORD`,
   `BETFAIR_APP_KEY`; the certificate secrets `BETFAIR_CERT` and `BETFAIR_KEY` if present) and the AWS ones.
@@ -1379,6 +1379,31 @@ on the sectionals blend** (`serve-sectionals-1023`, PR #168).
   Tote: no gap (the winners' dividend 0.792 of the BSP); the other-markets scan of 23 Oct: arbitrage GBP0.52 a
   horse-poll. The backend sync (`blandford-sync-1024`): Racing TV 210 horses on its first full try, At The Races
   complete (111,500 runs with sectionals); Racing TV now 100 minutes a night.
+
+**The twenty-fifth full day** (25 Oct, a Sunday, the clocks back at 02:00; ledger `live-day-1025`), the thirteenth early
+session and the second on the sectionals blend; Aintree's meeting was off after we had backed it.
+- **The start.** Predictions run 40160950327 (04:11 UTC, now the same on the UK clock); the session created 05:23 UTC
+  (run 40165337489), first back 06:15 UK, as before the clocks changed. The settle (run 40237211154) waited from 21:48
+  to 22:17 UTC behind the recorder's evening books, which in GMT run to 22:15 UTC on the same runner: from 26 Oct the
+  settle runs at 22:25 UTC.
+- **+GBP308.96 after commission** by the ledger (settled from Betfair's record of the bets) on 571 fills on 123 horses in
+  30 races, GBP3,609.20 matched, of which GBP710.64 void (Aintree's 7 races, GBP590.06 on 23 horses, every runner
+  removed; and our own non-runners); CLV +3.69% at Betfair's settled prices (the trader's horse-level +2.96%). **The
+  funds do not reconcile**: GBP6,410.61 at the session's start, GBP5,000.00 after the settle, where the day's result
+  leaves about GBP6,719.57: GBP1,719.57 left the account during the day, put to the owner as a withdrawal to confirm.
+- **First backs +12.4% (GBP540), top-ups +1.7% (GBP2,359)**; 06:15-07:59 +9.4% (GBP1,235), 08:00-09:59 -8.0%, 10:00 on
+  +1.2% (GBP1,356): the void stakes counted to the GBP4,000 and the thin Sunday books spread the money through the day
+  (the last back 16:05 UK). Entry margin +6.6%.
+- **The changes** (`changes-1025`): the ladder 36% of the money, its first backs +20.5% against +6.4% at the best back;
+  the cap: 74 of 123 horses at 6 fills, none over, 66 refused GBP3,258 more. Staking 19-25 Oct GBP25,705 at +4.80%
+  against the old rule's +3.47%.
+- **The replay** (12-24 Oct, after the cuts; `replay-1025`): the rule now GBP3,418 over 13 days (+6.5%); best back
+  GBP2,134; the ladder GBP2,452; GBP6,000 GBP3,533 (GBP17,608 more staked for GBP115: GBP4,000 stays). At 0.80 about
+  GBP210 a day.
+- **The sectionals blend's first card** (`model-quality-1025`): 24 Oct mean absolute log error 0.382 (14-23 Oct
+  0.367-0.435, about 0.40): within the range, no break; judged over the weeks to come.
+- **Data.** Final marks with a BSP for 25 Oct 384 of 568; price files to 24 Oct (the night job refused by Betfair's
+  file host for the second time in three nights). The Tote: no gap. Racing TV: 394 horses on the night (11,898 left).
 
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
