@@ -56,11 +56,17 @@ jobs:
       - name: Probe Betfair from this runner
         run: |
           set +e
-          code=$(curl -sS -o /tmp/listing.html -w '%{http_code}' --max-time 30 \
-                 -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' \
-                 https://promo.betfair.com/betfairsp/prices)
-          csvs=$(grep -o -i 'dwbf[a-z]*[0-9]\{8\}\.csv' /tmp/listing.html 2>/dev/null | sort -u | wc -l)
-          echo "HTTP $code from promo.betfair.com; $csvs distinct CSV names in the listing"
+          # three tries two minutes apart: the host answered 302 on 22, 24 and 25 Oct and 200 on the nights between
+          for try in 1 2 3; do
+            code=$(curl -sS -o /tmp/listing.html -D /tmp/headers.txt -w '%{http_code}' --max-time 30 \
+                   -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' \
+                   https://promo.betfair.com/betfairsp/prices)
+            csvs=$(grep -o -i 'dwbf[a-z]*[0-9]\{8\}\.csv' /tmp/listing.html 2>/dev/null | sort -u | wc -l)
+            echo "try $try: HTTP $code from promo.betfair.com; $csvs distinct CSV names in the listing"
+            grep -i '^location:' /tmp/headers.txt || true
+            [ "$code" = "200" ] && break
+            [ "$try" -lt 3 ] && sleep 120
+          done
           if [ "$code" != "200" ]; then echo "::error::promo.betfair.com refused this runner (HTTP $code)"; exit 1; fi
 
       - uses: actions/checkout@v4
