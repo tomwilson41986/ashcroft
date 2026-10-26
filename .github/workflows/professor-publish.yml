@@ -172,7 +172,7 @@ jobs:
           AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           PROFESSOR_DRY: '1'
-        run: python -m professor --settle --tips-file 'reports/professor_dryrun_*/tips.json'
+        run: python -m professor --settle --tips-file 'reports/professor_dryrun_*/tips*.json'
 
       - uses: actions/upload-artifact@v4
         if: always()
