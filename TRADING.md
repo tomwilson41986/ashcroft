@@ -1405,6 +1405,27 @@ session and the second on the sectionals blend; Aintree's meeting was off after 
 - **Data.** Final marks with a BSP for 25 Oct 384 of 568; price files to 24 Oct (the night job refused by Betfair's
   file host for the second time in three nights). The Tote: no gap. Racing TV: 394 horses on the night (11,898 left).
 
+**The twenty-sixth full day** (26 Oct, a Monday; ledger `live-day-1026`), the fourteenth early session, the first
+measured from the GBP5,000.00 the owner left in the account on 25 Oct (`withdrawal-1025`).
+- **The start.** Predictions run 40267953199 (04:13 UTC); the session created 05:28 UTC (run 40274377727), first back
+  06:15 UK. The settle ran at 22:35 UTC on the new 22:25 schedule (run 40413626020), in settle mode and not queued.
+- **+GBP240.79 after commission** (Betfair's funds GBP5,240.79 against GBP5,000.00; the ledger GBP240.80) on 664 fills
+  on 162 horses in 48 races, GBP3,999.99 matched (GBP368.61 void on our own non-runners); CLV +8.04% at Betfair's
+  settled prices (the trader's horse-level +7.30%). Redcar 12:25, one horse for GBP145, settled GBP+215.05: the largest
+  race result to date.
+- **First backs +14.0% (GBP996), top-ups +5.8% (GBP2,635)**; GBP2,000 by 06:58 UK, the limit bound at 09:30 UK;
+  06:15-07:59 +9.3% (GBP2,675), 08:00-09:59 +4.5% (GBP957). Entry margin +8.3%.
+- **The changes** (`changes-1026`): the ladder 47% of the money, its first backs +23.1% against +6.5% at the best back;
+  the cap: 66 of 162 horses at 6 fills, none over, 62 refused GBP2,607 more. Staking 19-26 Oct GBP29,336 at +5.20%
+  against the old rule's +3.47%.
+- **The replay** (12-25 Oct, after the cuts; `replay-1026`): the rule now GBP3,696 over 14 days (+6.3%); at 0.80 about
+  GBP211 a day. GBP6,000 adds GBP115 for GBP17,608 more staked: GBP4,000 stays.
+- **The sectionals blend** (`model-quality-1026`): 24 Oct 0.382, 25 Oct 0.437 (a Sunday of small fields): 0.41 over
+  two days against about 0.40 before, inside the noise.
+- **Data.** Final marks with a BSP for 26 Oct 970 of 1,191; price files to 25 Oct (the night job's probe refused by
+  Betfair's file host on 25 Oct too; the files came in by live-record.yml; the probe now retries). The Tote: no gap.
+  Racing TV: 374 horses on the night (11,524 left).
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
