@@ -1,0 +1,38 @@
+{
+  "day": "2026-10-27",
+  "positions": 107,
+  "quoted": 72,
+  "tips": 2,
+  "withheld": 0,
+  "odds_status": {
+    "racingpost": "17 of 17 races read, 1582 quotes",
+    "abandoned": [
+      "Galway 12:50",
+      "Galway 13:20",
+      "Galway 13:55",
+      "Galway 14:25",
+      "Galway 14:55",
+      "Galway 15:25",
+      "Galway 15:55",
+      "Galway 16:25"
+    ]
+  },
+  "posts": [
+    {
+      "slug": "1601-newcastle-mon-missel",
+      "withheld": false,
+      "posted": []
+    },
+    {
+      "slug": "1501-newcastle-hunters-spring",
+      "withheld": false,
+      "posted": []
+    }
+  ],
+  "day_card": {
+    "key": "telegram:free:day-card",
+    "dry_run": true,
+    "caption": "<b>The Professor's free tips, Tue 27 Oct</b>\n16:01 Newcastle: Mon Missel 9/2\n15:01 Newcastle: Hunters Spring 16/1\n\nThe Professor's syndicate holds a position on every horse advised before it is published.\n18+. BeGambleAware.org. Please gamble responsibly."
+  },
+  "live": false
+}

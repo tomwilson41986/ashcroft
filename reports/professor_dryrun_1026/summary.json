@@ -1,0 +1,42 @@
+{
+  "day": "2026-10-26",
+  "positions": 157,
+  "quoted": 146,
+  "tips": 3,
+  "withheld": 0,
+  "odds_status": {
+    "racingpost": "44 of 44 races read, 4499 quotes",
+    "abandoned": [
+      "Wexford 13:00",
+      "Wexford 13:30",
+      "Wexford 14:00",
+      "Wexford 14:30",
+      "Wexford 15:05",
+      "Wexford 15:40",
+      "Wexford 16:15"
+    ]
+  },
+  "posts": [
+    {
+      "slug": "1355-redcar-merci-monsieur",
+      "withheld": false,
+      "posted": []
+    },
+    {
+      "slug": "1452-hereford-getarose",
+      "withheld": false,
+      "posted": []
+    },
+    {
+      "slug": "1248-hereford-god-of-fire",
+      "withheld": false,
+      "posted": []
+    }
+  ],
+  "day_card": {
+    "key": "telegram:free:day-card",
+    "dry_run": true,
+    "caption": "<b>The Professor's free tips, Mon 26 Oct</b>\n13:55 Redcar: Merci Monsieur 9/4\n14:52 Hereford: Getarose 3/1\n\nThe Professor's syndicate holds a position on every horse advised before it is published.\n18+. BeGambleAware.org. Please gamble responsibly."
+  },
+  "live": false
+}

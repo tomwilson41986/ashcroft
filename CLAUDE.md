@@ -98,6 +98,16 @@ python betfair_sync.py --live --csv live_odds.csv
 TRADING_LIVE=yes python auto_trade.py --live --until 21:35   # 06:15 UK to 15 min before each off (owner, 1, 7 and 12 Oct)
 python auto_trade.py --live --settle
 
+# The Professor, the owner's automated tipster on the model (23 Oct 2026; reports/professor_design.md, the rule's backtest
+# reports/professor_rule.md, the dry run reports/professor_dryrun_1023.md): the syndicate's morning horses with a bookmaker price
+# (Racing Post's odds comparison; the UK server, Racing Post refuses GitHub's runners; bookmaker prices only, the owner 25 Oct) 10% over the closing model's expected BSP,
+# one a race, by win probability, 5 a day, the top two free, nothing over 50/1; posts only with PROFESSOR_LIVE=yes; the record
+# at the advised price and at the Betfair SP (reports/professor_record.md)
+python -m professor --settle --tips-file 'reports/professor_dryrun_*/tips.json'   # tips settled from the trader's ledger
+python -m professor --card --dry-run --only-ours                     # the day's card now: tips, write-ups, cards to out/professor/<day>/
+python -m professor --alerts --until 10:00                           # the live loop beside the trader: each qualifying fill at once
+python -m professor --odds                                           # the bookmaker prices alone (the snapshot, the raw pages)
+
 # --- Research toolkit (see RESEARCH_FRAMEWORK.md) ---
 # Model-vs-market scoring (Murphy decomposition, skill vs BSP, concordance, drift)
 python research_lab.py score --predictions data/oos_predictions.csv
@@ -207,6 +217,11 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
   `data.py` (gold tables: canonical matches with stable `match_id` and versions, odds long, benchmark open/close,
   data-quality checks, the Betfair market map), `ratings.py` (pooled Dixon-Coles, score-matrix prices incl. Asian
   handicap), `model.py` (walk-forward, market pooling, CLV scoring), `live.py` (fit, trade, settle)
+- `professor/` — The Professor, the owner's automated tipster on the model (23 Oct 2026; reports/professor_design.md, the rule's
+  backtest reports/professor_rule.md): `config.json` holds the selection (the syndicate's morning horses, a bookmaker price 10% over
+  the closing model's expected BSP, one a race, ranked by the expected win probability, 5 a day, the top two free, nothing over
+  50/1); Phase 1 built to a dry run (candidates from the live ledger, Racing Post's bookmaker prices, the rule, write-ups,
+  cards, Telegram, `professor-publish.yml`; reports/professor_dryrun_1023.md); settle, proof, X/Instagram and Stripe follow
 - `sources/` (`source_data.py`) — the historic data for the models beyond UK/IE racing, one module a source (GBGB, football-data, tennis, Punting Form); `betfair_historic.py` — Betfair's Historic Data service (BASIC plan, every sport) to opening/closing-price tables
 - S3 bucket: `horseracingresults`, key: `horse_racing.db`
 
