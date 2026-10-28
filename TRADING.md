@@ -1426,6 +1426,24 @@ measured from the GBP5,000.00 the owner left in the account on 25 Oct (`withdraw
   Betfair's file host on 25 Oct too; the files came in by live-record.yml; the probe now retries). The Tote: no gap.
   Racing TV: 374 horses on the night (11,524 left).
 
+**The twenty-seventh full day** (27 Oct, a Tuesday; ledger `live-day-1027`), the fifteenth early session, on a thin
+card (Catterick, Newcastle, Wolverhampton).
+- **The start.** Predictions run 40448372631 (04:11 UTC); the session created 05:26 UTC (run 40455286031), first back
+  06:15 UK; the settle at 22:30 UTC (run 40595283961).
+- **+GBP112.72 after commission** (Betfair's funds GBP5,353.51 against GBP5,240.79; the ledger the same) on 566 fills on
+  117 horses in 29 races, GBP3,630.54 matched (GBP355.78 void): the GBP4,000 was not reached, the last back 18:43 UK;
+  CLV +5.84% at Betfair's settled prices (the trader's horse-level +5.28%).
+- **First backs +14.8% (GBP739), top-ups +3.2% (GBP2,535)**; 06:15-07:59 +14.6% (GBP1,401), 08:00-09:59 +0.1%, 10:00
+  on -1.1% (GBP1,200): on a thin card the money after the morning made nothing. Entry margin +5.5%.
+- **The changes** (`changes-1027`): the ladder 30% of the money, its first backs +24.8% against +10.3% at the best back;
+  the cap: 69 of 117 horses at 6 fills, none over. Staking 19-27 Oct GBP32,611 at +5.27% against the old rule's +3.47%.
+- **The replay** (12-26 Oct, after the cuts; `replay-1027`): the rule now GBP3,915 over 15 days (+6.5%); at 0.80 about
+  GBP209 a day.
+- **The sectionals blend** (`model-quality-1027`): 24-26 Oct 0.382, 0.437, 0.409: about 0.41 against 0.40 before, no
+  change beyond the noise yet.
+- **Data.** Final marks with a BSP for 27 Oct 560 of 803; price files to 26 Oct; the price-file probe passed at its first
+  try (the archive holds 72,863 of Betfair's 72,875 files). The Tote: no gap. Racing TV: 387 horses (11,137 left).
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
