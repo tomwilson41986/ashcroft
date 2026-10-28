@@ -1444,6 +1444,26 @@ card (Catterick, Newcastle, Wolverhampton).
 - **Data.** Final marks with a BSP for 27 Oct 560 of 803; price files to 26 Oct; the price-file probe passed at its first
   try (the archive holds 72,863 of Betfair's 72,875 files). The Tote: no gap. Racing TV: 387 horses (11,137 left).
 
+**The twenty-eighth full day** (28 Oct, a Wednesday; ledger `live-day-1028`), the sixteenth early session and **the best
+day to date**.
+- **The start.** Predictions run 40630717411 (04:09 UTC); the session created 05:19 UTC (run 40637295622), first back
+  06:15 UK; the settle at 22:29 UTC (run 40780359753).
+- **+GBP530.62 after commission** (Betfair's funds GBP5,884.13 against GBP5,353.51; the ledger the same) on 788 fills on
+  173 horses in 38 races, GBP4,000.00 matched (GBP159.22 void); CLV +9.95% at Betfair's settled prices (the trader's
+  horse-level +9.56%).
+- **First backs +15.4% (GBP870), top-ups +8.3% (GBP2,970)**; GBP2,000 by 07:36 UK, the limit bound at 13:40 UK;
+  06:15-07:59 +16.0% (GBP2,034), 08:00-09:59 +0.2%, 10:00 on +4.6% (GBP1,194). Entry margin +13.1%, the widest since
+  10-13 Oct.
+- **The changes** (`changes-1028`): the ladder 26% of the money, its first backs +28.0% against +8.9% at the best back;
+  the cap: 87 of 173 horses at 6 fills, none over. Staking 19-28 Oct GBP36,452 at +5.76% against the old rule's
+  +3.47%.
+- **The replay** (12-27 Oct, after the cuts; `replay-1028`): the rule now GBP4,029 over 16 days (+6.5%); at 0.80 about
+  GBP201 a day.
+- **The sectionals blend** (`model-quality-1028`): 24-27 Oct 0.382, 0.437, 0.409, 0.360: 0.396 over 1,231 runners
+  against about 0.40 before, level to slightly better.
+- **Data.** Final marks with a BSP for 28 Oct 690 of 748; price files to 27 Oct; the probe passed at its first try. The
+  Tote: no gap. Racing TV: 361 horses (10,776 left).
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
