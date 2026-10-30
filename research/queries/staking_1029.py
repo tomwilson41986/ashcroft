@@ -12,7 +12,7 @@ import pandas as pd
 s3 = boto3.client("s3", region_name=os.environ.get("PRED_REGION") or "eu-west-2")
 bucket = os.environ.get("PRED_BUCKET") or "ashcroft"
 K = ["day", "market_id", "selection_id"]
-DAYS = [f"2026-10-{d}" for d in range(10, 29)]
+DAYS = [f"2026-10-{d}" for d in range(10, 30)]
 frames = []
 for day in DAYS:
     raw = s3.get_object(Bucket=bucket, Key=f"trading/live/{day}/ledger.csv")["Body"].read()
