@@ -20,7 +20,8 @@ permissions:
 jobs:
   query:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    # the evening replay grows by a day a night (2 h 11 min on 30 Oct, 12-29 Oct); GitHub's runners stop at 6 h
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

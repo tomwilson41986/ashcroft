@@ -1483,6 +1483,24 @@ day to date**.
   archive complete (72,907 files). The Tote: no gap. Racing TV: 317 horses (10,459 left), the backend timing out late
   in the run.
 
+**The thirtieth full day** (30 Oct, a Friday; ledger `live-day-1030`), the eighteenth early session.
+- **The start.** Predictions run 41001288644 (04:09 UTC); the session created 05:19 UTC (run 41007766826), first back
+  06:15 UK; the settle at 22:29 UTC (run 41138471176; its email report failed, the connection closed).
+- **+GBP257.90 after commission** (Betfair's funds GBP6,436.53 against GBP6,178.63; the ledger +GBP257.91, a penny of
+  rounding) on 674 fills on 151 horses in 40 races, GBP4,000.00 matched (GBP188.36 void); CLV +8.50% at Betfair's
+  settled prices (the trader's horse-level +8.10%). The record: 21 days, +GBP4,283.79, 17 up.
+- **First backs +12.0% (GBP1,021), top-ups +7.2% (GBP2,791)**; GBP2,000 by 07:11 UK, the limit bound at 10:37 UK;
+  06:15-07:59 +6.4% (GBP2,443), 08:00-09:59 +14.1% (GBP1,052), 10:00 on +5.9% (GBP316). Entry margin +14.6%.
+- **The changes** (`changes-1030`): the ladder 33% of the money, its first backs +3.5% against +22.4% at the best back
+  (behind the best back for the first time since 21 Oct); the cap: 71 of 151 horses at 6 fills, none over; the capped
+  horses +9.3%, the rest +6.2%. Staking 19-30 Oct GBP44,149 at +6.07% against the old rule's +3.47%.
+- **The replay** (12-29 Oct, after the cuts; `replay-1030`): the rule now GBP4,841 over 18 days (+6.8%); at 0.80 about
+  GBP215 a day. It took 2 h 11 min; the query job's limit is raised from 180 to 330 minutes.
+- **The sectionals blend** (`model-quality-1030`): 24-29 Oct 0.382, 0.437, 0.409, 0.360, 0.376, 0.402: 0.394 over 1,963
+  runners against 0.405 on 14-23 Oct, slightly better.
+- **Data.** Final marks with a BSP for 30 Oct 875 of 972; price files to 29 Oct; the probe passed at its first try. The
+  Tote: no gap. Racing TV: 181 horses (10,278 left), 73 requests timed out.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
