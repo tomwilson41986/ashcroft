@@ -26,9 +26,9 @@ on:
         default: '2026-04-17'
         type: string
       rtv_minutes:
-        description: 'Minutes to spend on Racing TV (0 to skip)'
+        description: 'Minutes to spend on Racing TV (0 to skip; off from 31 Oct, the owner: not needed)'
         required: false
-        default: '100'
+        default: '0'
         type: string
 
 env:
@@ -66,10 +66,11 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
         run: |
-          # the At The Races archive reached its last page on 24 Oct (314 pages): a nightly top-up; Racing TV, at about
-          # 9 s a horse, takes the time (12,292 horses left on 24 Oct)
+          # the At The Races archive reached its last page on 24 Oct (314 pages): a nightly top-up. Racing TV is off
+          # from 31 Oct (the owner: "not needed"; 10,278 horses were left, the backend timing out); a dispatch can
+          # still ask for it with rtv_minutes
           ATR="${{ inputs.atr_minutes || '30' }}"
-          RTV="${{ inputs.rtv_minutes || '100' }}"
+          RTV="${{ inputs.rtv_minutes || '0' }}"
           # Racing TV first: on 23 Oct every horse's request timed out after the At The Races paging (the backend
           # answered the same request in 8 s that evening)
           if [ "$RTV" != "0" ]; then
