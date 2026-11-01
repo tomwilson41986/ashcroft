@@ -129,8 +129,8 @@ def _now() -> datetime:
 
 def raw_key(source: str, endpoint: str, fetched: datetime, tag: str) -> str:
     tag = re.sub(r"[^A-Za-z0-9_.-]+", "-", tag)[:80]
-    # milliseconds in the name: two snapshots in one second must not overwrite each other
-    return f"{SOURCE}/raw/{source}/{endpoint}/{fetched:%Y-%m-%d}/{fetched:%H%M%S}{fetched.microsecond // 1000:03d}_{tag}.json.gz"
+    # microseconds in the name: two snapshots in one second must not overwrite each other
+    return f"{SOURCE}/raw/{source}/{endpoint}/{fetched:%Y-%m-%d}/{fetched:%H%M%S%f}_{tag}.json.gz"
 
 
 def save(store: Store, p: Parse, source: str, endpoint: str, params: dict, tag: str) -> dict:
@@ -182,7 +182,7 @@ def held_feed_days(store: Store) -> set[tuple[str, str]]:
     """(sport, match day) of every finished day of the daily feed already held, from the raw keys."""
     held = set()
     for key in store.listing(f"{SOURCE}/raw/flashscore/get_fixtures_with_odds/"):
-        m = re.search(r"/(\d{4}-\d{2}-\d{2})/\d{6,9}_(.+)_d(-\d+)\.json\.gz$", key)
+        m = re.search(r"/(\d{4}-\d{2}-\d{2})/\d{6,12}_(.+)_d(-\d+)\.json\.gz$", key)
         if m:
             day = date.fromisoformat(m.group(1)) + timedelta(days=int(m.group(3)))
             held.add((m.group(2), day.isoformat()))
@@ -221,7 +221,7 @@ def flashscore_team_results(store: Store, p: Parse, teams: list[str], sport: str
     of about 40 each (two pages reach back about a year for a tour player): the route to match ids older than the
     daily feed's 7 days. Players already held at that page are skipped."""
     held = set(store.listing(f"{SOURCE}/raw/flashscore/get_team_results/"))
-    held = {re.sub(r"^.*/\d{6,9}_", "", k) for k in held}
+    held = {re.sub(r"^.*/\d{6,12}_", "", k) for k in held}
     n = 0
     for tid in teams:
         for page in range(1, pages + 1):
@@ -559,8 +559,15 @@ def panel_flashscore(store: Store, use_match_odds: bool = True) -> pd.DataFrame:
                                            n_runners=len(g), open_price=s["opening"], close_price=s["last"],
                                            result=res, source=f"flashscore:{bk}"))
             per_book = _frame(rows)
-            if not per_book.empty and not df.empty:
-                sport = df.drop_duplicates("event_id").set_index("event_id")["sport"]
+            if not per_book.empty:
+                # the sport: from the daily feed where the match is in it, else from the results the id came from
+                sport = pd.Series(dtype=object)
+                res = table_flashscore_results(store)
+                if not res.empty:
+                    sport = res.set_index("match_id")["sport"]
+                if not df.empty:
+                    feed = df.drop_duplicates("event_id").set_index("event_id")["sport"]
+                    sport = pd.concat([sport[~sport.index.isin(feed.index)], feed])
                 per_book["sport"] = per_book["event_id"].map(sport)
             df = pd.concat([df, per_book], ignore_index=True) if not per_book.empty else df
     return df

@@ -162,6 +162,9 @@ def test_pinnacle_table_and_panel(tmp_path, monkeypatch):
 
     http = FakeHTTP({"get_matchups": mu, "get_odds": odds})
     p = po.Parse(key="k", floor=0, http=http)
+    from datetime import datetime, timedelta, timezone
+    clock = iter(datetime(2026, 11, 1, 12, tzinfo=timezone.utc) + timedelta(hours=h) for h in range(10))
+    monkeypatch.setattr(po, "_now", lambda: next(clock))     # each snapshot under its own time
     po.pinnacle_snapshot(store, p, [33])
     po.pinnacle_snapshot(store, p, [33])
     t = po.table_pinnacle(store)
