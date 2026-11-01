@@ -64,11 +64,33 @@ week's Hong Kong and Japanese markets before they trade much. The money near the
 those countries race, about 01:00-09:30 UK. The UK server is busy then (the price archive to 06:15, then the
 trader), so that is left until the listing shows the markets exist.
 
-## 4. Next
+## 4. The backfill (1 Nov 2026): a year of Japan and Hong Kong
 
-1. If the census shows Hong Kong or Japanese win markets with money: backfill that jurisdiction's results through
-   Parse into its own data module, following the greyhound port (`reports/international_racing.md` section 3), and
-   run the market-only edge scan once its Betfair books are recorded.
+`sources/parse_racing.py` (2 tests): every race from 1 Nov 2025 to 31 Oct 2026, raw responses kept, tables in
+`data/parse/` (from the schedule's store, `sources/parse/`).
+
+| Table | Rows | Covers |
+|---|---|---|
+| `jra_races` | 3,438 races | All 10 JRA courses; 109 race days (52 Saturdays, 52 Sundays, 5 holiday Mondays); turf 1,690, dirt 1,629, jumps 119 |
+| `jra_results` | 47,596 runners | 11,371 horses; median field 15. No duplicate race-horse pairs. 363 without a finish, all non-finishers: 195 did not finish (中止), 111 excluded (除外), 57 withdrawn (取消). 166 without odds. The going on every runner |
+| `hk_results` | 10,810 runners | 88 meetings (Sha Tin and Happy Valley), 872 races, 1,473 horses; median field 12. No duplicates and no missing draw, odds, class or venue |
+| `hk_sectionals` | 39,354 runner-sections | Every one of the 872 races |
+
+Data checks: every Japanese call succeeded (157 day lists, 3,438 results). Of the Hong Kong calls, 28 returned an
+error, all race-1 probes of days with no meeting (mostly Saturdays and the summer break). A first pass probed
+Wednesdays, Saturdays and Sundays only. A second pass probed every day and found 6 more meetings on holiday weekdays
+(3 Thursdays, 2 Mondays, 1 Tuesday) with 66 races. Cost: 5,537 credits in all (Japan 3,545, Hong Kong 1,920, the
+trial weekend 72), leaving 7,892.
+
+Names are as each source gives them: Japanese courses, horses and jockeys in Japanese, Hong Kong's in English. A
+join to Betfair's runner names, if the census shows those markets, needs a name map for Japan.
+
+## 5. Next
+
+1. If the census shows Hong Kong or Japanese win markets with money: build that jurisdiction's metrics on the
+   backfilled results, following the greyhound port (`reports/international_racing.md` section 3), extend the
+   history further back (about 3,500 credits a year for Japan, about 1,900 for Hong Kong), and record its Betfair
+   books for the market-only edge scan.
 2. Australia still needs a history source: Punting Form (with its consent), or Betfair's own Australian data
    (`reports/international_racing.md` sections 1.2 and 2).
 3. Unsubscribe the sources marked out or broken, if the owner wants the account kept tidy: TAB, Equibase, Brisnet,

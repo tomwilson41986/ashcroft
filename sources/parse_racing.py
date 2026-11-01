@@ -139,7 +139,7 @@ def table_jra_results(store: Store) -> pd.DataFrame:
 
 # --------------------------------------------------------------------------------------------------- Hong Kong
 
-def hk(store: Store, p: po.Parse, d_from: date, d_to: date, workers: int = 6) -> dict:
+def hk(store: Store, p: po.Parse, d_from: date, d_to: date, workers: int = 6, weekdays: set[int] | None = None) -> dict:
     """Race 1 of every Wednesday, Saturday and Sunday finds the meetings; then races 2..11 of each meeting until one
     comes back empty; then the sectionals of every race with finishers."""
     held = held_tags(store, "hkjc_racing", "get_race_results")
@@ -153,7 +153,7 @@ def hk(store: Store, p: po.Parse, d_from: date, d_to: date, workers: int = 6) ->
         except po.OutOfCredits:
             return None
 
-    probe = days(d_from, d_to, HK_DAYS)
+    probe = days(d_from, d_to, HK_DAYS if weekdays is None else weekdays)
     _pool(lambda d: res(d, 1), probe, workers)
     meet_days = sorted({r["date"] for r in _hk_raw(store) if r["race_no"] == 1 and r["finishers"]})
 
@@ -261,6 +261,8 @@ def main(argv=None) -> int:
     ap.add_argument("--from", dest="d_from", default=None)
     ap.add_argument("--to", dest="d_to", default=None)
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--hk-all-days", action="store_true",
+                    help="probe every day for Hong Kong meetings, not only Wednesdays, Saturdays and Sundays (holiday meetings)")
     ap.add_argument("--build", action="store_true")
     a = ap.parse_args(argv)
     store = Store(root=a.root) if a.root else Store()
@@ -272,7 +274,7 @@ def main(argv=None) -> int:
         if a.jra:
             report["jra"] = jra(store, p, d_from, d_to, a.workers)
         if a.hk:
-            report["hk"] = hk(store, p, d_from, d_to, a.workers)
+            report["hk"] = hk(store, p, d_from, d_to, a.workers, set(range(7)) if a.hk_all_days else None)
         report["credits_spent"] = p.spent
         report["credits_remaining"] = p.remaining
     if a.build:
