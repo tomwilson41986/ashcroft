@@ -437,13 +437,46 @@ def census_sports(data, hours: float = 24.0, top: int = 200, now: datetime | Non
     return out
 
 
-def save_census(result: dict, day: date, s3=None, root: Path | str | None = None) -> str:
-    """The census beside the day's record: on the server and in S3 (betfair_live/<day>/census_sports.json)."""
+def census_racing_countries(data, hours: float = 24.0, top: int = 200, now: datetime | None = None) -> dict:
+    """Every country Betfair lists horse racing in over the next ``hours``, with its win markets, their venues and the
+    money matched on them so far (read-only): whether Hong Kong, Japan and the rest trade at all, and how much (the
+    owner's ask of 1 Nov 2026: the model on international racing; reports/international_racing.md). One
+    listCountries, then one catalogue of each country's ``top`` win markets by matched money. Read at the same
+    times each day, the money compares like with like; it is the money matched by then, not the final total, so a
+    reading taken while a country is racing (its markets near the off) is the one to quote for it."""
+    start = now or datetime.now(timezone.utc)
+    end = start + timedelta(hours=hours)
+    window = {"marketStartTime": {"from": start.strftime("%Y-%m-%dT%H:%M:%SZ"), "to": end.strftime("%Y-%m-%dT%H:%M:%SZ")}}
+    out: dict = {"read_utc": _iso(start), "hours": hours, "countries": []}
+    for c in data._read("listCountries", {"filter": {**window, "eventTypeIds": ["7"]}}) or []:
+        cc = c.get("countryCode")
+        row = {"country": cc, "markets": c.get("marketCount")}
+        try:
+            cat = data._read("listMarketCatalogue", {
+                "filter": {**window, "eventTypeIds": ["7"], "marketCountries": [cc], "marketTypeCodes": ["WIN"]},
+                "maxResults": top, "sort": "MAXIMUM_TRADED", "marketProjection": ["EVENT", "MARKET_START_TIME"]}) or []
+            matched = sorted((float(m.get("totalMatched") or 0.0) for m in cat), reverse=True)
+            row["win_markets"] = len(cat)
+            row["win_matched_total"] = round(sum(matched), 2)
+            row["win_matched_median"] = round(matched[len(matched) // 2], 2) if matched else 0.0
+            row["venues"] = sorted({(m.get("event") or {}).get("venue") or (m.get("event") or {}).get("name") or ""
+                                    for m in cat} - {""})
+            row["first_off_utc"] = min((m.get("marketStartTime") for m in cat if m.get("marketStartTime")), default=None)
+        except Exception as exc:                          # one country unread: the census goes on
+            row["error"] = str(exc)[:200]
+        out["countries"].append(row)
+    out["countries"].sort(key=lambda r: -(r.get("win_matched_total") or 0.0))
+    return out
+
+
+def save_census(result: dict, day: date, s3=None, root: Path | str | None = None,
+                name: str = "census_sports.json") -> str:
+    """The census beside the day's record: on the server and in S3 (betfair_live/<day>/<name>)."""
     body = json.dumps(result, indent=1, default=str).encode()
-    path = Path(root or ROOT) / f"{day:%Y-%m-%d}" / "census_sports.json"
+    path = Path(root or ROOT) / f"{day:%Y-%m-%d}" / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(body)
-    key = f"{PREFIX}/{day:%Y-%m-%d}/census_sports.json"
+    key = f"{PREFIX}/{day:%Y-%m-%d}/{name}"
     try:
         (s3 or s3_client()).put_object(Bucket=bucket(), Key=key, Body=body)
     except Exception as exc:
@@ -867,6 +900,9 @@ def main(argv=None) -> int:
     ap.add_argument("--load-db", action="store_true", help="load the last --days of the record into --db")
     ap.add_argument("--census", action="store_true",
                     help="print every market type Betfair lists on the --date's racing, with examples (read-only)")
+    ap.add_argument("--census-racing", action="store_true",
+                    help="every country's horse racing win markets of the next --census-hours and their money (read-only)")
+    ap.add_argument("--census-hours", type=float, default=24.0, help="the window of --census-racing, hours")
     ap.add_argument("--census-sports", action="store_true",
                     help="every sport's markets and matched money on the --date, saved beside the day's record")
     ap.add_argument("--antepost", action="store_true", help="snapshot every GB/IE ante-post win market once")
@@ -916,6 +952,17 @@ def main(argv=None) -> int:
             print(r.get("sport"), {k: r.get(k) for k in ("markets", "top_matched_total", "top_matched_median")},
                   dict(list((r.get("market_types") or {}).items())[:8]))
         print("saved:", save_census(got, day))
+        return 0
+    if a.census_racing:
+        from trading.exchange import BetfairData
+        data = BetfairData()
+        data.login()
+        got = census_racing_countries(data, hours=a.census_hours)
+        for r in got["countries"]:
+            print(r.get("country"), {k: r.get(k) for k in ("markets", "win_markets", "win_matched_total",
+                                                           "win_matched_median")}, (r.get("venues") or [])[:8])
+        stamp = datetime.now(timezone.utc).strftime("%H%M")
+        print("saved:", save_census(got, day, name=f"census_racing_{stamp}.json"))
         return 0
     if a.antepost:
         from trading.exchange import BetfairData

@@ -1,0 +1,77 @@
+name: Parse odds
+
+# Odds from the owner's Parse (parse.bot) APIs, 1 Nov 2026 (sources/parse_odds.py; reports/open_close/parse_odds.md):
+#   - nightly: Flashscore's daily feed for yesterday, every sport (opening and final match-winner odds, the score), and
+#     each bookmaker's opening and final prices for yesterday's tour-level tennis singles; then the tables;
+#   - every two hours: a Pinnacle snapshot (tennis, soccer, cricket): polling is what makes Pinnacle's open and close;
+#   - on the day: Oddschecker's bookmaker prices for every GB/IE race, the morning book and T-15.
+# Raw responses and tables to s3://$CAPTURE_BUCKET/sources/parse/. Read-only on every site; places nothing anywhere.
+# Needs the secret PARSE_API_KEY. The month's credits: about 14,000 of the plan's 20,000 at these settings; the
+# collectors stop when the account's remaining credits fall under PARSE_CREDIT_FLOOR.
+
+on:
+  schedule:
+    - cron: '35 2 * * *'          # nightly: yesterday's Flashscore, the tennis per-match odds, the tables
+    - cron: '5 6-22/2 * * *'      # Pinnacle every two hours
+    - cron: '40 7 * * *'          # Oddschecker: every race's morning book, then T-15 to 13:30 UK
+    - cron: '25 13 * * *'         # Oddschecker: T-15 for the afternoon and evening races
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'flashscore, pinnacle, oddschecker_am, oddschecker_pm or build'
+        required: true
+        default: 'build'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parse-odds-${{ github.event.schedule || github.event.inputs.job }}
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Which job
+        id: job
+        run: |
+          case "${{ github.event.schedule }}" in
+            '35 2 * * *')       echo "job=flashscore" >> "$GITHUB_OUTPUT" ;;
+            '5 6-22/2 * * *')   echo "job=pinnacle" >> "$GITHUB_OUTPUT" ;;
+            '40 7 * * *')       echo "job=oddschecker_am" >> "$GITHUB_OUTPUT" ;;
+            '25 13 * * *')      echo "job=oddschecker_pm" >> "$GITHUB_OUTPUT" ;;
+            *)                  echo "job=${{ github.event.inputs.job }}" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - name: Collect
+        env:
+          PARSE_API_KEY: ${{ secrets.PARSE_API_KEY }}
+          PARSE_CREDIT_FLOOR: ${{ vars.PARSE_CREDIT_FLOOR || '2000' }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: |
+          case "${{ steps.job.outputs.job }}" in
+            flashscore)     python -m sources.parse_odds --flashscore-days 2 --sports all \
+                              --match-odds-from-feed ${{ vars.PARSE_TENNIS_MATCHES || '80' }} --match-sports tennis --build ;;
+            pinnacle)       python -m sources.parse_odds --pinnacle --pin-sports ${{ vars.PARSE_PIN_SPORTS || '33,29,8' }} ;;
+            oddschecker_am) python -m sources.parse_odds --oddschecker --marks ${{ vars.PARSE_OC_MARKS || '15' }} --until 13:30 ;;
+            oddschecker_pm) python -m sources.parse_odds --oddschecker --marks ${{ vars.PARSE_OC_MARKS || '15' }} --until 21:30 --no-first ;;
+            build)          python -m sources.parse_odds --build ;;
+          esac | tee parse_report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: parse-odds-${{ steps.job.outputs.job }}-${{ github.run_number }}
+          path: parse_report.json
+          if-no-files-found: ignore
+          retention-days: 30
