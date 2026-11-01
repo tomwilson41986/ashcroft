@@ -2,7 +2,8 @@
 
 Four forecasts of ``y = log(close / open)`` per selection, each a class with ``fit(train)`` and ``predict(test)``:
 
-(a) ``NoChange``: close = open, the baseline every other model is scored against (the efficient-market null).
+(a) ``NoChange``: close = open, the baseline every other model is scored against (the efficient-market null);
+    ``MeanShift``, the training mean of y, is the constant-shift floor a permuted target still earns.
 (b) ``BandShrinkage``: ordinary least squares of y on log open within each price band, the favourite-longshot
     unwind (the market's early prices sit too long on the outsiders and too short on the favourites, and the close
     corrects part of it).
@@ -17,8 +18,8 @@ Four forecasts of ``y = log(close / open)`` per selection, each a class with ``f
 
 ``walk_forward`` fits every model on the months before each scored month and scores that month only (never a
 training row); ``refit_every`` lets a long panel refit less often, the scored month always after the fit's last.
-``shuffle_test`` refits with the training target permuted: a model that still scores above the baseline is
-reading the answer from somewhere (a leak).
+``shuffle_test`` refits with the training closes permuted across rows (the targets and the closing book with them):
+a model that still scores above the baseline is reading the answer from somewhere (a leak).
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from scipy.optimize import minimize
 
 from model.race_book import group_log_softmax, normalise_within
 
-from .features import BAND_LABELS, MODEL_FEATURES, feature_columns, market_codes, price_band
+from .features import BAND_LABELS, MODEL_FEATURES, add_targets, feature_columns, market_codes, price_band
 
 _EPS = 1e-12
 
@@ -90,6 +91,22 @@ class NoChange:
 
     def predict(self, test: pd.DataFrame) -> np.ndarray:
         return np.zeros(len(test))
+
+
+class MeanShift:
+    """The training mean of y for every selection: the constant-shift baseline (the open's book and the close's
+    differ in overround, so every price moves a little the same way). The permuted leak test keeps this component;
+    a model's worth is its R2 above this one's."""
+
+    name = "mean_shift"
+    mean: float = 0.0
+
+    def fit(self, train: pd.DataFrame) -> "MeanShift":
+        self.mean = float(np.nanmean(train["y"].to_numpy(float)))
+        return self
+
+    def predict(self, test: pd.DataFrame) -> np.ndarray:
+        return np.full(len(test), self.mean)
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +289,7 @@ class BookCoherent:
 
 def default_models(with_model: bool = False, n_jobs: int = 4) -> list:
     """The arms a run scores: (a) to (d), and the boosted model made coherent."""
-    models = [NoChange(), BandShrinkage(), GradientBoosting(n_jobs=n_jobs), ConditionalLogit()]
+    models = [NoChange(), MeanShift(), BandShrinkage(), GradientBoosting(n_jobs=n_jobs), ConditionalLogit()]
     models.append(BookCoherent(GradientBoosting(n_jobs=n_jobs)))
     if with_model:
         models += [GradientBoosting(with_model=True, n_jobs=n_jobs), ConditionalLogit(with_model=True)]
@@ -304,10 +321,9 @@ def walk_forward(d: pd.DataFrame, models: list, min_train_months: int = 12, refi
             continue
         if fitted is None or (i - last_fit_at) >= refit_every:
             train = d[d["month"] < m]
-            if shuffle_seed is not None:
+            if shuffle_seed is not None:                   # the closes permuted across the training rows
                 rng = np.random.default_rng(shuffle_seed + i)
-                train = train.assign(y=rng.permutation(train["y"].to_numpy()),
-                                     y_share=rng.permutation(train["y_share"].to_numpy()))
+                train = add_targets(train.assign(close_price=rng.permutation(train["close_price"].to_numpy())))
             fitted = [mod.fit(train) for mod in models]
             last_fit_at, fit_month = i, months[i - 1]
             if log:

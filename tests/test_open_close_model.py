@@ -71,6 +71,16 @@ def test_clean_drops_unpriced_and_single_rows():
     assert len(d) == len(p) - 1 - (p["market_id"] == "m1").sum() - (p["market_id"] == "m2").sum()
 
 
+def test_fair_prices_make_a_book_of_one_at_both_ends():
+    p = synthetic_panel(n_markets=30)
+    d = features.prepare(p, normalise_book=True)
+    assert np.allclose((1 / d["open_price"]).groupby(d["market_id"]).sum(), 1.0)
+    assert np.allclose((1 / d["close_price"]).groupby(d["market_id"]).sum(), 1.0)
+    assert np.allclose(d["overround_open"], 1.0)
+    raw = features.prepare(p)
+    assert np.allclose(d["y"] - raw["y"], np.log(d["overround_close_raw"] / d["overround_open_raw"]))
+
+
 def test_walk_forward_never_scores_training_rows(prepared):
     models = [drift.NoChange(), drift.BandShrinkage(min_rows=20)]
     scored = drift.walk_forward(prepared, models, min_train_months=3, refit_every=1)
@@ -83,6 +93,15 @@ def test_walk_forward_never_scores_training_rows(prepared):
     acc = backtest.accuracy_table(scored, ["pred_no_change", "pred_band_ols"])
     assert acc.loc["band_ols", "r2_vs_no_change"] > 0.05
     assert acc.loc["no_change", "r2_vs_no_change"] == pytest.approx(0.0)
+
+
+def test_mean_shift_is_the_constant_floor(prepared):
+    scored = drift.walk_forward(prepared, [drift.NoChange(), drift.MeanShift(), drift.BandShrinkage(min_rows=20)],
+                                min_train_months=3)
+    acc = backtest.accuracy_table(scored, ["pred_no_change", "pred_mean_shift", "pred_band_ols"])
+    assert scored["pred_mean_shift"].nunique() <= scored["fit_month"].nunique()
+    assert acc.loc["band_ols", "r2_vs_no_change"] > acc.loc["mean_shift", "r2_vs_no_change"]
+    assert "mean_shift" in {m.name for m in drift.default_models()}
 
 
 def test_refit_every_fits_before_the_scored_month(prepared):

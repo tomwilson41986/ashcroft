@@ -119,9 +119,28 @@ def add_features(d: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
-def prepare(d: pd.DataFrame) -> pd.DataFrame:
-    """clean -> targets -> features, the frame every model and the backtest read."""
-    return add_features(add_targets(clean(d)))
+def fair_prices(d: pd.DataFrame) -> pd.DataFrame:
+    """Each market's open and close prices scaled so the implied probabilities sum to one at both ends (the
+    bookmaker's margin taken out). A bookmaker's margin shrinks from the open to the close, which lengthens every
+    price a little and reads as a drift that no exchange trade can catch: a Betfair book sums to about one at both
+    ends. On a proxy panel this is the comparison that matches the exchange; ``overround_open_raw`` and
+    ``overround_close_raw`` keep the margins."""
+    d = d.copy()
+    g = d["market_id"]
+    oo = (1.0 / d["open_price"]).groupby(g).transform("sum")
+    oc = (1.0 / d["close_price"]).groupby(g).transform("sum")
+    d["overround_open_raw"], d["overround_close_raw"] = oo, oc
+    d["open_price"] = d["open_price"] * oo
+    d["close_price"] = d["close_price"] * oc
+    return d
+
+
+def prepare(d: pd.DataFrame, normalise_book: bool = False) -> pd.DataFrame:
+    """clean -> (fair prices) -> targets -> features, the frame every model and the backtest read."""
+    d = clean(d)
+    if normalise_book:
+        d = fair_prices(d)
+    return add_features(add_targets(d))
 
 
 def feature_columns(d: pd.DataFrame, with_model: bool) -> list[str]:
