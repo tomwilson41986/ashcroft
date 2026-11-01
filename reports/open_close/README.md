@@ -34,7 +34,17 @@ ties the four reports together and says what happens next. Nothing in this chang
    pre-play close is an unbiased forecast and the maker side earns about zero after fees (Whelan 2025), so the move
    is team news, not drift. Cricket carries GBP6.8m a day ahead in about 17 match-odds markets, with the toss as the
    information event. Neither has a first-traded price held: the free BASIC Historic Data plans unblock both.
-5. **Everything else is parked or never**, each for a stated reason in `all_markets.md`: tennis (median next-day
+5. **The drift models confirm it on takeable prices: nothing market-only survives the spread** (`model.md`, run
+   41292736133). On UK win the move from the morning price to the BSP is forecastable (R2 against no change 0.19-0.27
+   in development, 0.02-0.11 on the April-October 2026 holdout) and the hedged trade pays +6% at the morning
+   volume-weighted price, which nobody is offered; a tick worse at each end it is -3% in development and -6% to -7% on
+   the holdout. The pre-registered lay of 21-51 shots at the best lay on October's recorded books lost 0.62% of
+   liability (90% interval -0.99 to -0.31), every cell negative. The greyhound first print "pays" only because it is
+   the first bet in an empty book. Football's bookmaker open-to-close move is noise once the margin is removed; one
+   thin cell on Betfair's own early snapshot (+3.4% a tick worse on the holdout, 5 bets a day) goes to the football
+   recorder for a test. The model's forecast adds to the market where it exists (UK R2 0.33 against 0.25), which is
+   the live rule's edge restated.
+6. **Everything else is parked or never**, each for a stated reason in `all_markets.md`: tennis (median next-day
    market GBP5), basketball, ice hockey, baseball, motor sport, rugby, boxing, snooker, darts (no money a day ahead);
    politics and specials (no close); golf outrights are research later (GBP507k on 3 markets, ticks 3-7%); 11 event
    types had no October markets at all.
