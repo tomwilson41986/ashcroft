@@ -1025,3 +1025,38 @@ def test_the_final_mark_keeps_its_bsp_blank_when_no_read_has_one():
     m = br.marks(pd.concat([books, extra], ignore_index=True), markets, DAY).set_index(["selection_id", "mark"])
     assert m.loc[(11, "final"), "bsp"] == pytest.approx(3.9)
     assert pd.isna(m.loc[(13, "final"), "bsp"])
+
+
+def test_census_racing_countries_sorts_and_survives_a_bad_country(tmp_path):
+    import datetime as _dt
+    import json as _json
+    import betfair_recorder as _br
+
+    class Data:
+        def _read(self, method, params):
+            if method == "listCountries":
+                assert params["filter"]["eventTypeIds"] == ["7"]
+                return [{"countryCode": "JP", "marketCount": 24}, {"countryCode": "HK", "marketCount": 20},
+                        {"countryCode": "XX", "marketCount": 1}]
+            cc = params["filter"]["marketCountries"][0]
+            assert params["filter"]["marketTypeCodes"] == ["WIN"]
+            if cc == "XX":
+                raise RuntimeError("unread")
+            m = 100.0 if cc == "JP" else 500.0
+            return [{"totalMatched": m, "event": {"venue": "V" + cc}, "marketStartTime": "2026-11-02T04:30:00Z"},
+                    {"totalMatched": 2 * m, "event": {"venue": "V" + cc}, "marketStartTime": "2026-11-02T05:00:00Z"}]
+
+    got = _br.census_racing_countries(Data(), now=_dt.datetime(2026, 11, 1, 5, 30, tzinfo=_dt.timezone.utc))
+    assert [r["country"] for r in got["countries"]][:2] == ["HK", "JP"]
+    hk = got["countries"][0]
+    assert hk["win_markets"] == 2 and hk["win_matched_total"] == 1500.0 and hk["venues"] == ["VHK"]
+    assert hk["first_off_utc"] == "2026-11-02T04:30:00Z"
+    assert "error" in [r for r in got["countries"] if r["country"] == "XX"][0]
+
+    class NoS3:
+        def put_object(self, **kw):
+            raise RuntimeError("no S3 here")
+
+    where = _br.save_census(got, _dt.date(2026, 11, 1), s3=NoS3(), root=tmp_path, name="census_racing_0530.json")
+    assert where.endswith("census_racing_0530.json")
+    assert _json.loads((tmp_path / "2026-11-01" / "census_racing_0530.json").read_text())["countries"][0]["country"] == "HK"
