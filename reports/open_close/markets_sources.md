@@ -57,6 +57,15 @@ search engine's extract was available because the page refused the fetch (HTTP 4
 | botblog, Expert Fee explained | fetched (third party) | buffer from losing weeks; 100-market condition; lifetime profit |
 | sportstradinglife, tennis trading (2019) | snippet | "about 90% of the money enters the market once the event begins" (unverified) |
 
+## The data agent's inventory (added after the first commit)
+
+| Source | How read | What was taken |
+|---|---|---|
+| research-query run 41291139483, job 124802487010 (`research/queries/open_close_inventory_1101.py`) | the job log fetched with the GitHub MCP tool, 1,694 lines, unescaped and read in full for sections A2, A3, B4, C2 and D | C2: 25 days of `census_sports.json` (7-31 Oct 2026), 24 sports, the by-sport and sport x market-type tables, copied into section 3.4 of the report; A2: money matched and the top of the book at each mark; A3: the mid at each mark against the BSP by band; B4: greyhound morning WAP -> BSP by band and country, 2012-26; D: 1,863,552 greyhound runners, first traded -> close and -> BSP by band and country, T-60/T-15/T-1 -> close, the close's calibration, prices 24 h out |
+
+Sign convention in A3, B4 and D: `med_log_move` is log(close or BSP / the earlier price); negative means the price
+shortened. The report quotes these as "drifted out" when positive.
+
 ## Not done this session
 
 - No S3 or Betfair access: the census files for October and the recorded books were not read. Section 3.4 of the
