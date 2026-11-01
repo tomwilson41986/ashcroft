@@ -6,27 +6,43 @@ day: a hedged pre-off trade from the opening price to the closing price, automat
 on the same criteria, and gives every row a verdict. It is not a shortlist.
 
 Conventions: hyphens only; every number traces to research-query run 41291139483 (job 124802487010; "C2" is its census
-section, 25 days 7-31 Oct 2026, 24 sports; "A2", "A3", "B4", "D" its other sections), to a repository file, or to a
-URL in section 5; "unverified" marks a claim with no source. Cells marked **census pending** wait for the data agent's
-complete census dump (`census_all_markets_1101.py`), which lists every sport x market type row with its busiest
-events; they are filled when its log lands. "A day ahead" means the money matched by the census's evening read on a
-sport's 200 busiest markets starting in the next 24 hours (`betfair_recorder.py`, `census_sports`, lines 402-438).
+section, 25 days 7-31 Oct 2026, 24 sports; "A2", "A3", "B4", "D" its other sections), to the complete census dump,
+research-query run 41294133067 (job 124811312983; its section 1 is every sport with ids and busiest events, section 2
+every one of the 426 sport x market type rows, 3a the horse money on the day at each mark, 3b the greyhound money on
+the day; cited as "run 41294133067 s.N"), to a repository file, or to a URL in section 5; "unverified" marks a claim
+with no source. "A day ahead" means the money matched by the census's evening read (21:17-22:19 UTC: run 41294133067
+s.0) on a sport's 200 busiest markets starting in the next 24 hours (`betfair_recorder.py`, `census_sports`, lines
+402-438). Section 2 of each sport gives "share": the type's share of the sport's money within the top 200 over the
+month (run 41294133067 s.2).
+
+**The evening read's bias, stated once.** The census reads the next day's markets the evening before. For sports whose
+money arrives on the day it understates the tradable money by two orders of magnitude. Horses: the evening read sees
+GBP23,155 across the next day's top 200 markets, while the GB and IE win markets' matched money at the last book
+before the off sums to a median GBP3,646,192 a day (min GBP1,854,510, max GBP6,813,849 over 31 days): a factor of about
+157 (run 41294133067 s.3a). Greyhounds: the evening read sees GBP109; the GB/IE win markets' last books sum to a median
+GBP427,681 a day over 137 markets: a factor of about 3,900 (s.3b). The day-ahead figures are therefore the right
+measure for sports whose markets form a day or more ahead (football, cricket, golf, US sports, politics) and the wrong
+one for the two racing sports, for which the on-the-day profiles in sections 2.1 and 2.2 are used instead.
 
 ## The result in six lines
 
-1. **Of 35 event types Betfair's API lists, 24 had markets in October 2026 and 11 had none** (C2; section 1). Of the
-   24, four carry pre-off money a day ahead in size: cricket (GBP6.8m on its top 200 markets, in about 17 match-odds
-   markets), football (GBP0.9m, spread over 185 match-odds and 185 Asian-handicap markets), golf (GBP0.65m, in 3
-   outrights) and American football (GBP0.29m, in 3 handicap markets). Horse racing (GBP23k) and greyhounds (GBP109)
-   have almost nothing a day ahead because their money arrives on the day: 83% of a UK win market's pre-off money
-   after T-60 (A2).
+1. **Of 35 event types Betfair's API lists, 24 had markets in October 2026 and 11 had none** (run 41294133067 s.1 and
+   s.4; section 1). Of the 24, four carry pre-off money a day ahead in size: cricket (GBP6.8m on its top 200 markets,
+   97.7% of it in about 17 match-odds markets), football (GBP0.9m, 57% match odds and 21% Asian handicap across 185
+   matches), golf (GBP0.65m, 86% in 3 outrights) and American football (GBP0.29m, 54% in 3 handicap markets) (s.2).
+   Horse racing (GBP23k) and greyhounds (GBP109) have almost nothing a day ahead because their money arrives on the
+   day: a GB win market holds GBP1,650 at 08:00, GBP15,760 at T-60, GBP30,690 at T-15 and GBP97,168 at the last book
+   (s.3a); a GB greyhound win market GBP0 at T-15, GBP34 at T-5, GBP380 at T-3, GBP1,993 at T-1 and GBP2,377 at the last
+   book (s.3b). **The greyhound open worth trading exists only in the last three minutes.**
 2. **Only two sports have a single-price close**: horse racing and greyhound racing (the Betfair SP), and only there
    does the exit cost no spread. Everywhere else the close is the last pre-play trade and the exit crosses a tick or
    rests an order (`betfair_historic.py`, lines 1-4; `markets.md` section 2).
 3. **One market is proven and live:** UK/IE horse win, +6.15% CLV on GBP47,274 staked 19-31 Oct (research ledger
    `staking-1031`). **One has a measured market-only drift to test:** GB greyhound win, where the first traded price
-   drifts out to the BSP by a median 2.5-13% at 3-51 (D). **Two need data first:** football (the free Historic Data
-   Soccer plan) and cricket (the Cricket plan). **One is research later:** golf outrights.
+   drifts out to the BSP by a median 2.5-13% at 3-51 (D) and the T-1 price still by 2-6% at 5-51; but since the book
+   holds GBP0 until T-5 (run 41294133067 s.3b), the test is a lay at T-3 or T-1 greened at the SP against a tick of
+   2-5%, not a lay at the first book (section 2.2). **Two need data first:** football (the free Historic Data Soccer
+   plan) and cricket (the Cricket plan). **One is research later:** golf outrights.
 4. **Every other sport and every secondary market type is parked or never**, each for a stated reason: no money a day
    ahead (tennis's median market GBP5; basketball GBP4; darts GBP872 across the top 200), no close (politics, specials),
    an information event that is the whole move (the toss, the weigh-in, the line-up), or no evidence anywhere that
@@ -45,8 +61,11 @@ sport's 200 busiest markets starting in the next 24 hours (`betfair_recorder.py`
 The universe is Betfair's event-type list as `listEventTypes` returns it. Betfair publishes no table of ids; the list
 below is the union of three public client libraries that embed the API's response (jBetfair `EventTypes.java`, 31
 types; the betfairlightweight tutorial's `listEventTypes` output, 29; less-stupid-betfair, 26: section 5), which agree
-on every shared id, plus the 24 sports the census saw. Betfair adds and retires types; the complete census dump is
-the live list (census pending for any type it adds).
+on every shared id, plus the 24 sports the census saw (run 41294133067 s.4, with ids: the same 24 as C2 and the same
+ids as the libraries). The census lists only sports with a market starting in the next 24 hours at the evening read,
+so "an event type with no market in that window on any of the days (a sport out of season, or one Betfair lists only
+around its events) is absent here, not absent from Betfair" (s.4). Betfair adds and retires types; the eleven absent
+ones are scored on that basis.
 
 Columns: census (days seen of 25 / markets a day / top-200 matched a day ahead, GBP / median market of the 200 /
 concentration = mean over median); open = when a tradable price first exists; close = BSP (single price) or LPT (last
@@ -58,17 +77,17 @@ with a model or information, (c) unpredictable or untested, with the source; cos
 
 | # | Sport (event type id) | Census: days / markets a day / a-day-ahead GBP / median market / concentration | Open | Close | IP | Events before the off | Drift evidence | Data route | Cost | Verdict |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 | Horse Racing (7) | 25 / 413 / 23,155 / 4 / 28.9 (the evening before; on the day a UK win market holds GBP1,423 at 08:00, GBP13,493 at T-60, GBP77,294 at T-1: A2) | 06:15 UK on the day; the evening before unformed (ledger `evening-before-1007`) | **BSP** | Yes, at the off (IPMIN/IPMAX in the files: ledger `edge-inplay-offsets-1002`) | Non-runners, going, jockey changes, the market's own money (80% of pre-off volume in the last 20 min: Brown & Yang 2017) | (b) proven: the model carries half the weight beside the morning price (TRADING.md); (a) back side none, lay side at 8-21 a 2-5% drift of the order of half the spread (A3, A2; `markets.md` 4.1) | Price files 2017 on, recorder from 1 Oct, `betfair_live_marks` | 2.6% at 8, 3.4% at 15; nil at the SP exit | **Trade now** (UK/IE win, live). **Test next:** the 8-21 lay with the model (`markets.md` 6.1). Place, TBP, each way: park (closed 3 Oct). Ante-post: research later. AU/FR/USA/RSA: park |
-| 2 | Greyhound Racing (4339) | 25 / 481 / 109 / 0 / n/a | On the day, close to the off; the first trade thin (morning WAP on 14.7% of runners: `greyhound_model.md` s.4) | **BSP** | Yes, at the off | Trap draw is known days ahead; vacancies and reserves; the market's own money | (a) measured: GB first traded -> BSP median +0.025 (3-5) to +0.129 (13-21), +0.117 (21-51), shortened 33-45%; T-1 -> close still +0.017 to +0.057 at 5-51 (D); morning WAP -> BSP +0.137 to +0.215 at 2-51 since 2012 (B4). (b) form predicts which dogs shorten (`greyhound_model.md` s.4) | GBGB 2018 on, price files 2012 on, the 2026 bundle, GB/IE books from 6 Oct | 1.4-2.6% at 3.5-8; nil at the SP exit | **Test next:** lay at the first two-sided book where the best lay is 8-51 and GBP10+ is offered, closed at the BSP (`markets.md` 6.2, pre-registered) |
+| 1 | Horse Racing (7) | 25 / 413 / 23,155 / 4 / 28.9 (the evening before, when the busiest next-day markets are Australian Group 1s: Randwick GBP177,636, Caulfield GBP72,699; Newmarket GBP42,934: run 41294133067 s.1). On the day a GB win market holds GBP1,650 at 08:00, GBP4,197 at 10:00, GBP8,030 at 12:00, GBP15,760 at T-60, GBP30,690 at T-15, GBP89,503 at T-1, GBP97,168 at the last book; IE GBP641 to GBP52,095 (s.3a) | 06:15 UK on the day; the evening before unformed (ledger `evening-before-1007`) | **BSP** | Yes, at the off (IPMIN/IPMAX in the files: ledger `edge-inplay-offsets-1002`) | Non-runners, going, jockey changes, the market's own money (80% of pre-off volume in the last 20 min: Brown & Yang 2017) | (b) proven: the model carries half the weight beside the morning price (TRADING.md); (a) back side none, lay side at 8-21 a 2-5% drift of the order of half the spread (A3, A2; `markets.md` 4.1) | Price files 2017 on, recorder from 1 Oct, `betfair_live_marks` | 2.6% at 8, 3.4% at 15; nil at the SP exit | **Trade now** (UK/IE win, live). **Test next:** the 8-21 lay with the model (`markets.md` 6.1). Place, TBP, each way: park (closed 3 Oct). Ante-post: research later. AU/FR/USA/RSA: park |
+| 2 | Greyhound Racing (4339) | 25 / 481 / 109 / 0 / n/a (WIN 166 markets a day, GBP71; PLACE 165, GBP0; FORECAST 136, GBP0; MATCH_BET 12, GBP0: run 41294133067 s.2). On the day a GB/IE WIN market holds GBP0 at T-15, GBP2 at T-10, GBP34 at T-5, GBP380 at T-3, GBP1,993 at T-1, GBP2,377 at the last book; the day's WIN total GBP427,681 over 137 markets (s.3b) | **The last three minutes.** The record's first book is a median 612 minutes before the off with GBP0 matched, and no market's first book holds GBP100 (s.3b): there is no early open to trade | **BSP** | Yes, at the off | Trap draw known days ahead; vacancies and reserves; the market's own money, all of it in the last five minutes | (a) measured: GB first traded -> BSP median +0.025 (3-5) to +0.129 (13-21), +0.117 (21-51), shortened 33-45%; T-1 -> close +0.017 (5-8), +0.021 (8-13), +0.030 (13-21), +0.044 (21-51), +0.057 (51+) on 44,015-85,391 runners (D); morning WAP -> BSP +0.137 to +0.215 at 2-51 since 2012 (B4). (b) form predicts which dogs shorten (`greyhound_model.md` s.4) | GBGB 2018 on, price files 2012 on, the 2026 bundle, GB/IE books from 6 Oct (27 days) | 2.0-2.6% at 5-8, 2.6-5% at 8-20; nil at the SP exit | **Test next, redefined by s.3b:** a lay at the best lay at T-3 and at T-1 on GB WIN runners at 8-51, greened at the BSP, 2% commission, on the 27 recorded days; pass as `markets.md` 6.2. The first-book lay cannot be tested: the first book is empty. The T-1 drift of 2-6% against a tick of 2.6-5% says the margin is thin; the test says whether the best lay sits inside it |
 | 3 | Soccer (1) | 25 / 6,106 / 908,482 / 993 / 4.6 | Days ahead for the big leagues (unverified); the last hour adds 55-150% (betaminic: EPL GBP381k at T-60, GBP592k at T-1) | LPT | Yes; football is one of the two exceptions to the at-the-off rule (managed in-play reform after goals) | Line-ups about an hour before kick-off, injuries, weather, the week's results | (c) market alone: the pre-play LPT is an unbiased forecast; takers -2.5%, makers +0.6% on 902,568 bets 2022-24 (Whelan 2025); (b) team news: the close beats the open by 0.0034 log-loss and a team model cannot see why (`football_model.md` s.3) | football-data.co.uk 2012 on; Historic Data Soccer BASIC once held; gold tables | 0.8-1.4% at 2.5-3.5 | **Data first:** the free Soccer plan, then the first -> close read by tier and type (`markets.md` 6.3). MATCH_ODDS and ASIAN_HANDICAP first |
 | 4 | Cricket (4) | 25 / 135 / 6,799,296 / 0 / n/a (17 match-odds markets carry GBP1.67m; 118 other markets hold nothing) | Days ahead for internationals and franchise leagues (the census sees it a day ahead) | LPT | Yes, at the start; the toss market settles before it | The toss and the teams about 30 min before the start (general knowledge, unverified); weather and pitch | (c) pre-match untested anywhere found; in play the market over-reacts in the first innings (Norton, Gray & Faff 2015), outside the brief | Historic Data Cricket BASIC once held; nothing held | 0.7-0.8% at 1.5-2.5 | **Data first:** the free Cricket plan; the first -> close and T-60 -> close read by format; a hedged trade must close before the toss window or price it |
 | 5 | Golf (3) | 17 / 37 / 653,691 / 378 / 8.6 (WINNER GBP506,658 on 3 markets; TOP_10 GBP44,235; TOP_5 GBP27,513) | A week ahead for outrights; matchups a day ahead (datagolf) | LPT at the Thursday start | Yes, across four days | The field, withdrawals, the draw of tee times, weather | (b) Pinnacle's close prices the return about 1:1 and its open moves 54.7% towards Betcris's (datagolf, 106,204 matchups); Betfair untested | Historic Data Golf BASIC once held | 3.4-7.1% at 15-100 | **Research later:** depth on 3 markets a week, long prices (a tick is 3-7%), no model; data first if the owner wants the read |
 | 6 | American Football (6423) | 25 / 19 / 291,257 / 1,554 / 0.9 (HANDICAP GBP143,448, COMBINED_TOTAL GBP54,122, MATCH_ODDS GBP37,564 on about 3 markets a day) | Days ahead (US books open the week before: general knowledge, unverified) | LPT | Yes | Injury reports, weather; US sharp books lead (unverified) | (c) opening and closing NFL lines not significantly different in accuracy 2002-11 (arXiv 1211.4000); (b) NBA spreads: line moves erase the opening bias by the close (Gandar et al. 1998) | Historic Data American Football BASIC (plan existence unverified) | 0.7-0.8% at 1.9 | **Park:** three markets a day, a weekly sport, the move made in US books; revisit only with the census's `busiest` list and a US-book feed |
-| 7 | Tennis (2) | 25 / 2,781 / 115,954 / 5 / 116.0 (MATCH_ODDS GBP107,574 on 105 markets; HANDICAP GBP2,651) | A day ahead for a handful of main-tour matches; most markets empty (Italian exchange: median EUR0 across 6,477: theoddslab) | LPT | Yes | Withdrawals, retirements, scheduling, weather | (a) favourite-longshot bias on exchange tennis (Abinzano et al. 2016); pre-match drift on Betfair untested; about 90% of money in play (trading guide, unverified) | Sackmann, tennis-data.co.uk; Historic Data Tennis BASIC once held | 0.7-0.8% at 1.5-2.5 | **Park:** concentration 116 says a few matches carry the money; re-read the `busiest` field (census pending) before any test |
+| 7 | Tennis (2) | 25 / 2,781 / 115,954 / 5 / 116.0 (MATCH_ODDS GBP107,574 on 105 markets a day, 24% of the sport's money; the GAME_BY_GAME and WIN_A_SET types hold 74% on single in-play days and GBP0 at the median: run 41294133067 s.2). The busiest pre-match reads of the month: Del Olmo v Masarova GBP529,903, Boulter v Sakatsume GBP320,893, Hurkacz v Duckworth GBP87,733 (s.1) | A day ahead for a handful of main-tour matches; most markets empty (Italian exchange: median EUR0 across 6,477: theoddslab) | LPT | Yes | Withdrawals, retirements, scheduling, weather | (a) favourite-longshot bias on exchange tennis (Abinzano et al. 2016); pre-match drift on Betfair untested; about 90% of money in play (trading guide, unverified) | Sackmann, tennis-data.co.uk; Historic Data Tennis BASIC once held | 0.7-0.8% at 1.5-2.5 | **Park:** the money a day ahead is in two or three matches a day (the three busiest of the month above against a median market of GBP5); a test would need the Tennis BASIC plan and would cover only main-tour matches |
 | 8 | Basketball (7522) | 25 / 126 / 92,200 / 4 / 115.2 (MATCH_ODDS GBP34,533 across 42 markets, about GBP800 each) | A day ahead, thin | LPT | Yes | Injury reports (late scratches are the move: Player absence and betting lines in the NBA, 2015) | (b) NBA line moves are informed (Gandar et al. 1998) | Historic Data Basketball BASIC (unverified) | 0.7% at 1.9 | **Park:** GBP800 a market a day ahead |
 | 9 | Mixed Martial Arts (26420387) | 8 / 24 / 42,997 / 6 / 35.8 (MATCH_ODDS GBP40,866 on 7 markets, event nights only) | Weeks ahead for a card (unverified) | LPT | Yes | Weigh-in, late replacements | (c) untested | None | 0.7-1% at 1.5-3 | **Park:** one or two cards a week, event-driven |
 | 10 | Ice Hockey (7524) | 25 / 80 / 30,179 / 0 / n/a (MONEY_LINE GBP18,817 across 20 markets) | A day ahead, thin | LPT | Yes | Goalie confirmations | (c) untested | None | 0.7-1% | **Park:** under GBP1,000 a market |
-| 11 | Baseball (7511) | 20 / 8 / 25,453 / 12 / 10.6 (OUTRIGHT_WINNER GBP52,891; MATCH_ODDS GBP7,550 on 2 markets: the season's end) | A day ahead | LPT | Yes | Starting pitchers (the move: general knowledge, unverified) | (c) untested here | None | 0.7-1% | **Park:** season over in October; census pending for a summer read |
+| 11 | Baseball (7511) | 20 / 8 / 25,453 / 12 / 10.6 (OUTRIGHT_WINNER GBP52,891 on 5 days, the World Series winner; MATCH_ODDS GBP7,550, COMBINED_TOTAL GBP5,811, HANDICAP GBP3,096 on 2 markets a day; WORLD_SERIES_MVP GBP71: run 41294133067 s.2) | A day ahead | LPT | Yes | Starting pitchers (the move: general knowledge, unverified) | (c) untested here | None | 0.7-1% | **Park:** October is the play-offs (2 games a day); a regular-season census (April-September) is the only thing that could change it |
 | 12 | Motor Sport (8) | 5 / 10 / 22,768 / 442 / 0.3 (WINNER GBP14,252) | Race week | LPT at lights out | Yes | Qualifying (the whole move: unverified), weather | (c) untested | None | 3-7% at long outright prices | **Park:** one event a week, qualifying is the information |
 | 13 | Rugby League (1477) | 10 / 20 / 7,544 / 0 / n/a | A day ahead, thin | LPT | Yes | Team lists | (c) untested | None | 0.7-1% | **Park:** thin |
 | 14 | Boxing (6) | 8 / 15 / 6,746 / 0 / n/a (MATCH_ODDS GBP6,383; max day GBP238,809) | Weeks ahead for a title fight | LPT | Yes | Weigh-in | (c) untested | None | 0.7-1% | **Park:** event-driven, thin except big nights |
@@ -76,14 +95,14 @@ with a model or information, (c) unpredictable or untested, with the source; cos
 | 16 | Snooker (6422) | 8 / 8 / 3,344 / 131 / 0.1 | Tournament days | LPT | Yes | None of note | (c) nothing found | Historic Data Snooker BASIC (in `PLAN_SCOPE`) | 0.7-1% | **Park:** GBP3k a day ahead |
 | 17 | Politics (2378961) | 7 / 1 / 2,040 / 1,993 / 0.0 (max day GBP205,093; GBP317m across the 2024 US election markets: oddschecker) | Months ahead | **No scheduled close**; settles on the result | Stays open through counting | News, polls | (b) markets beat polls and improve nearer the vote (Vaughan Williams & Reade 2016): the forecast converges on the result, not on a close | None | 0.7-3% | **Never** for this purpose: no close to trade to, and a hedged position is a bet on news |
 | 18 | Cycling (11) | 1 / 1 / 1,832 / 1,832 / 0.0 | Race week | LPT | Yes | Start lists | (c) | None | 3-7% | **Park:** one market in a month |
-| 19 | Darts (3503) | 24 / 15 / 872 / 18 / 0.2 (OUTRIGHT_WINNER GBP4,960 on 3 days; a BEAT_LUKE_LITTLER special GBP6,951 once) | Tournament days | LPT | Yes | None of note | (c) nothing found | Historic Data Darts BASIC (in `PLAN_SCOPE`) | 0.7-1% | **Park:** GBP872 a day ahead in October; census pending for the World Championship (Dec-Jan), when it may differ |
+| 19 | Darts (3503) | 24 / 15 / 872 / 18 / 0.2 (MATCH_ODDS GBP781 across 15 markets a day; OUTRIGHT_WINNER GBP4,960 on 3 days, max GBP31,393 for the European Championship; HANDICAP, COMBINED_TOTAL, MOST_180S, CORRECT_SCORE, PLAYER_AVERAGE GBP0-54: run 41294133067 s.1-2) | Tournament days | LPT | Yes | None of note | (c) nothing found | Historic Data Darts BASIC (in `PLAN_SCOPE`) | 0.7-1% | **Park:** GBP52 a match a day ahead in October; the World Championship (Dec-Jan) is the one period that could read differently, and only a census then says so |
 | 20 | Special Bets (10) | 18 / 2 / 617 / 291 / 0.0 (max day GBP139,824) | Varies | No scheduled close | Varies | News | Does not repeat (`all_markets_priorities.md` s.2) | None | n/a | **Never:** one-off markets, no close, no history |
 | 21 | Gaelic Games (2152880) | 1 / 2 / 567 / 105 / 0.0 | Match week | LPT | Yes | Team lists | (c) | None | 0.7-1% | **Park:** season over; thin |
 | 22 | Australian Rules (61420) | 12 / 8 / 473 / 0 / n/a | Match week | LPT | Yes (Australian markets are the other exception to the at-the-off rule: unverified) | Team lists | (c) | None | 0.7-1% | **Park:** off-season in October; thin |
 | 23 | Esports (27454571) | 14 / 9 / 297 / 0 / n/a | A day ahead, thin | LPT | Yes | Roster changes | (c) on Betfair; bookmaker and parimutuel studies find both a favourite-longshot bias and its reverse by game (Sweeney et al. 2021; Dagaev & Stoyan 2019; JIFS 2024) | None | 0.7-1% | **Park:** GBP297 a day ahead |
 | 24 | Volleyball (998917) | 11 / 1 / 0 / 0 / n/a | | LPT | Yes | | (c) | None | | **Never:** no money |
-| 25 | Athletics (3988) | not seen in Oct 2026 | Championship weeks | LPT | Yes | | (c) | None | | **Never:** seasonal, no markets in the census; census pending for existence |
-| 26 | Winter Sports (451485) | not seen | Season Nov-Mar | LPT | Yes | | (c) | None | | **Never:** no markets in the census; census pending |
+| 25 | Athletics (3988) | not seen in Oct 2026 (run 41294133067 s.4: no market in any evening's 24-hour window) | Championship weeks | LPT | Yes | | (c) | None | | **Never:** seasonal, no markets in the census; a championship-week census is the only thing that could change it |
+| 26 | Winter Sports (451485) | not seen (s.4) | Season Nov-Mar | LPT | Yes | | (c) | None | | **Never:** no markets in the census; a winter census is the only thing that could change it |
 | 27 | Handball (468328) | not seen | | LPT | Yes | | (c) | None | | **Never:** no markets in the census |
 | 28 | Netball (606611) | not seen | | LPT | Yes | | (c) | None | | **Never:** no markets in the census |
 | 29 | Badminton (627555) | not seen | | LPT | Yes | | (c) | None | | **Never:** no markets in the census |
@@ -99,36 +118,59 @@ with a model or information, (c) unpredictable or untested, with the source; cos
 Each table lists the market types the census saw for the sport (C2: markets a day, the money matched on the type
 within the sport's top 200 a day ahead, both medians over the days the type appeared; max day), with the criteria that
 differ by type and a verdict for every row. Types with a blank matched column never reached the top 200. Where the
-census printed only a sport's best types (the cross-sport top 60), the rest are census pending.
+first run printed only a sport's best types, the complete dump (run 41294133067 s.2) supplies the rest.
 
 ### 2.1 Horse Racing (7)
 
-The census's day-ahead read misses the racing money (it arrives on the day: A2); the types are from the repository's
-own racing census (ledger `market-census-1003`, 3 Oct: 44 WIN, 43 PLACE, 65 OTHER_PLACE, 39 EACH_WAY, 2 ANTEPOST_WIN
-on one card) and C2.
+The census's day-ahead read misses the racing money; the on-the-day profile (run 41294133067 s.3a, 31 days, 2,515
+markets, GBP matched a market, median and 90th percentile) is the measure:
 
-| Market type | Markets a day (C2) | A day ahead, GBP (C2) | On the day | Close | Drift evidence | Cost | Verdict |
+| Market | 08:00 | 10:00 | 12:00 | T-120 | T-60 | T-15 | T-1 | Last book |
+|---|---|---|---|---|---|---|---|---|
+| GB WIN | 1,650 (4,735) | 4,197 (10,101) | 8,030 (22,832) | 12,064 | 15,760 (31,922) | 30,690 (63,471) | 89,503 (162,759) | 97,168 (170,561) |
+| IE WIN | 641 (1,755) | 1,556 | 3,126 | 5,044 | 6,703 | 14,424 | 47,406 | 52,095 (91,887) |
+| GB PLACE | 39 (166) | 120 | 286 | 468 | 893 | 2,524 | 9,670 | 10,597 (19,488) |
+| IE PLACE | 30 (50) | 43 | 80 | 128 | 231 | 1,192 | 4,899 | 5,555 (12,176) |
+
+So a GB win market has 1.7% of its final money at 08:00, 8% at 12:00, 16% at T-60 and 32% at T-15; a GB place market
+0.4% at 08:00 and 24% at T-15. The twelve market types the census saw on the sport (run 41294133067 s.2; markets a day
+and the money a day ahead are medians over the days the type appeared):
+
+| Market type | Days / markets a day | A day ahead, GBP (share of the sport's) | On the day | Close | Drift evidence | Cost | Verdict |
 |---|---|---|---|---|---|---|---|
-| WIN (GB/IE) | 177 | 22,667 (all WIN markets together) | GBP1,423 a market at 08:00, GBP26,368 at T-15, GBP83,454 last (A2); UK GBP11,821 a runner pre-off (`other_markets_and_stakes_1002.md`) | BSP | (b) proven, live; (a) 8-21 band drifts out 2-5% (A3) | nil at the SP exit; 2.6-4.2% a tick at 8-25 | **Trade now** (live); **test next** the 8-21 lay with the model |
-| WIN (AU, FR, USA, RSA, UAE) | in the 177 | | AU GBP1,180 a runner pre-play; FR GBP256, USA GBP300, RSA GBP615 (`other_markets_and_stakes_1002.md` s.1) | BSP | (c) untested; the files' morning window unusable for AU | 2-4% | **Park:** no model, overnight (AU), thin (the rest) |
-| PLACE (To Be Placed) | 43 on a card | census pending (not in the top 60) | GBP35 a market at 08:00, GBP2,137 at T-15, GBP9,310 last; relative spread 1.238 at 08:00, 0.098 at T-15 (A2); UK GBP1,825 a runner | place BSP | (c) closed: the 08:00 mid sits above the place SP in every band (A3); morning back a quarter to a third under the SP, lay 1.5-2x it (ledger `place-clv-forward-1002`) | 0.7-2% a tick at 1.3-5 | **Park (closed 3 Oct):** the morning book is a spread, not a price |
-| OTHER_PLACE (2/3/4 TBP) | 65 on a card | census pending | recorded from 6 Oct (`books_other_place.csv.gz`, 27 days: C1); the daily scan finds arbitrage of GBP0.35-0.58 a horse-poll (TRADING.md, 15-23 Oct) | no SP: LPT | (c) untested; the scan's flagged backs negative at the BSP (TRADING.md, 21 Oct) | 1-3% | **Park:** no SP exit, thin, the scan finds pence |
-| EACH_WAY | 39 on a card | census pending | recorded from 6 Oct | no SP: LPT | (c) as above | 2-4% | **Park** |
-| ANTEPOST_WIN | 2 (6 days) | 16,678; max 182,765 | thin daily | the race's BSP weeks later; all-in run or not (Betfair ante-post rules: unverified) | (b) the model prices big fields weeks ahead | 3-7% at long prices | **Research later:** few bets, non-runner risk, the one racing market with money a day ahead |
-| FORECAST, REVERSE_FC, TRICAST, match bets | none on GB/IE racing (ledger `market-census-1003`; `tote_programme.md` line 36) | | | | | | **Never:** not offered |
+| WIN (GB/IE) | 25 / 177 (max 323) | 22,667 (84%), all WIN markets together; the busiest next-day markets are AU Group 1s | the table above; UK GBP11,821 a runner pre-off (`other_markets_and_stakes_1002.md`) | BSP | (b) proven, live; (a) 8-21 band drifts out 2-5% (A3) | nil at the SP exit; 2.6-4.2% a tick at 8-25 | **Trade now** (live); **test next** the 8-21 lay with the model (`markets.md` 6.1) |
+| WIN (AU, FR, USA, RSA, UAE) | in the 177 | in the 22,667: Randwick GBP177,636, Caulfield GBP72,699, Flemington GBP65,023 a day ahead on Group 1 days (s.1) | AU GBP1,180 a runner pre-play; FR GBP256, USA GBP300, RSA GBP615 (`other_markets_and_stakes_1002.md` s.1) | BSP | (c) untested; the files' morning window unusable for AU | 2-4% | **Park:** no model, overnight (AU), thin (the rest); the AU Group 1s are the one place with money a day ahead and a model would have to be built from Punting Form |
+| PLACE (To Be Placed) | 25 / 95 (max 209) | 456 (2.8%); max 29,932 | GBP39 at 08:00, GBP2,524 at T-15, GBP10,597 last (s.3a); relative spread 1.238 at 08:00, 0.098 at T-15 (A2) | place BSP | (c) closed: the 08:00 mid sits above the place SP in every band (A3); morning back a quarter to a third under the SP, lay 1.5-2x it (ledger `place-clv-forward-1002`) | 0.7-2% a tick at 1.3-5 | **Park (closed 3 Oct):** the morning book is a spread, not a price; 0.4% of the final money at 08:00 |
+| OTHER_PLACE (2/3/4 TBP) | 25 / 89 (max 185) | 127 (0.4%); max 1,852 | recorded from 6 Oct (`books_other_place.csv.gz`, 27 days: C1); the daily scan finds arbitrage of GBP0.35-0.58 a horse-poll (TRADING.md, 15-23 Oct) | no SP: LPT | (c) untested; the scan's flagged backs negative at the BSP (TRADING.md, 21 Oct) | 1-3% | **Park:** no SP exit, GBP127 a day ahead across 89 markets, the scan finds pence |
+| EACH_WAY | 25 / 36 (max 53) | 48 (0.2%); max 1,967 | recorded from 6 Oct | no SP: LPT | (c) as above | 2-4% | **Park:** GBP48 a day ahead across 36 markets |
+| ANTEPOST_WIN | 6 / 2 (max 8) | 16,678 (12%); max 182,765 | thin daily | the race's BSP weeks later; all-in run or not (Betfair ante-post rules: unverified) | (b) the model prices big fields weeks ahead | 3-7% at long prices | **Research later:** few bets, non-runner risk, the one GB/IE racing market with money a day ahead |
+| ANTEPOST_PLACE | 1 / 1 | 1,710 | | as above | (b) as above | 3-7% | **Park:** one market in the month |
+| MATCH_BET | 17 / 16 (max 45) | 0 (max 160) | | LPT | (c) nothing trades: GBP0 at the median | 0.7-1% | **Never:** listed (not on GB/IE racing: ledger `market-census-1003`) but untraded |
+| EXACTA, QUINELLA | 2 / 15 | 0 | | LPT | (c) | 3-7% | **Never:** untraded combination markets (AU) |
+| WITHOUT_FAV | 1 / 1 | 226 | | LPT | (c) | 1-3% | **Never:** one market in the month |
+| WILL_RACING_GO_AHEAD, MONEY_BACK_2ND | 1 / 4 and 1 / 22 | 10 and 2 | | | | | **Never:** novelty and promotional markets |
+| FORECAST, REVERSE_FC, TRICAST | not seen on the sport in October (s.2); none on GB/IE racing (`tote_programme.md` line 36) | | | | | | **Never:** not offered |
 
 ### 2.2 Greyhound Racing (4339)
 
 Types from the owner's Historic Data bundle (GB: WIN, PLACE, FORECAST; AU: WIN, PLACE, MATCH_BET, EXACTA, QUINELLA,
-MONEY_BACK_2ND: `all_markets_priorities.md` s.4) and section D's first -> close by type; the census saw GBP109 a day
-ahead across the sport (C2: nothing before the day).
+MONEY_BACK_2ND: `all_markets_priorities.md` s.4), the census (run 41294133067 s.2: WIN 166 markets a day GBP71, 98% of
+the sport's GBP109; PLACE 165 GBP0; FORECAST 136 GBP0; MATCH_BET 12 GBP0) and section D's first -> close by type.
+
+**On the day** (run 41294133067 s.3b; 27 recorded days 6 Oct-1 Nov, 6,993 GB/IE markets; GBP matched a market, median
+and 90th percentile): WIN GBP0 from 08:00 to T-15 (90th pct GBP20 at T-15), GBP2 at T-10 (50), GBP34 at T-5 (434),
+GBP380 at T-3 (1,735), GBP1,993 at T-1 (5,717), GBP2,377 at the last book (6,831); PLACE GBP0 to T-5, GBP129 at T-1,
+GBP218 at the last book. The record's first book for a market is a median 612 minutes before the off, holds GBP0, and
+no market's first book holds GBP100. The day's WIN markets sum to a median GBP427,681 at the last book over 137
+markets. **The tradable open in greyhounds is T-3 to T-1**, which changes the test below from the first book to those
+marks.
 
 | Market type | Markets (bundle, Jan-Sep 2026) | First traded -> close, median log move by band (D) | Close | Drift evidence | Cost | Verdict |
 |---|---|---|---|---|---|---|
-| WIN (GB) | 35,306 | +0.025 (3-5) to +0.129 (13-21); 51+ -0.262 (first -> BSP) | BSP | (a) measured drift out at 2-51; (b) form picks the shorteners | nil at the SP exit; 1.4-2.6% a tick at 3.5-8 | **Test next:** the pre-registered lay at the first two-sided book (`markets.md` 6.2) |
+| WIN (GB) | 35,306 | +0.025 (3-5) to +0.129 (13-21); 51+ -0.262 (first -> BSP); from T-1: +0.017 (5-8), +0.021 (8-13), +0.030 (13-21), +0.044 (21-51) | BSP | (a) measured drift out at 2-51, 2-4% of it left at T-1; (b) form picks the shorteners | nil at the SP exit; 2.0-2.6% a tick at 5-8, 2.6-5% at 8-20 | **Test next, at T-3 and T-1 (s.3b):** lay at the best lay where it is 8-51 and GBP10+ is offered, greened at the BSP, 2% commission, on the 27 recorded days; report by band and mark the mean CLV with its 90% interval, the size offered and the share under the BSP; pass as `markets.md` 6.2. The first-book cell is void: the first book is empty |
 | WIN (AU) | 34,394 | +0.034 (2-3) to +0.142 (21-51) first -> BSP | BSP | (a) the same shape as GB (D) | as GB | **Park** behind GB: overnight UK time, no recorder there yet; the same test runs on the Historic Data table alone |
 | WIN (NZ, IE) | 2,996 / 87 | NZ +0.013 to +0.270 (D) | BSP | (a) as above, thin | | **Park:** thin |
-| PLACE (GB, AU, NZ) | 35,306 / 34,203 / 2,963 | median 0.000 in every band; mean +0.016 to +0.047; shortened 20-40% (D) | place BSP | (c) the median first price does not move; the price files' place pre-play WAP is empty (`greyhound_model.md` s.4) | 0.7-2% | **Park:** no measured drift, thin |
+| PLACE (GB, AU, NZ) | 35,306 / 34,203 / 2,963 | median 0.000 in every band; mean +0.016 to +0.047; shortened 20-40% (D) | place BSP | (c) the median first price does not move; the price files' place pre-play WAP is empty (`greyhound_model.md` s.4); on the day GBP0 to T-5, GBP218 at the last book (run 41294133067 s.3b) | 0.7-2% | **Park:** no measured drift, GBP218 a market at the off |
 | FORECAST (GB) | 35,385 | median 0.000 at 8+; +0.027 to +0.068 at 2-8; the 1.0-1.5 band +2.978 (a first trade at 1.12 on a forecast is a mistake that is corrected) (D) | LPT | (c) no systematic move; combination markets, no SP | 3-7% at 10-50 | **Never** for this trade: no SP, combination prices, the first trade is noise |
 | MATCH_BET (AU) | 34,221 | 0.000 at 1-5; -0.123 at 5-8 (113 runners) (D) | LPT | (c) nothing at the median | 0.7-1% | **Park:** AU only, thin, no SP |
 | EXACTA, QUINELLA (AU) | 16,777 / 16,768 | median 0.000 in every band; shortened 1-37% (D) | LPT | (c) the first price rarely moves at all: these markets barely trade | 3-7% | **Never:** combination markets, no SP, no trade |
@@ -155,7 +197,7 @@ type that reached the top 200 and groups the rest). 6,106 markets a day; 185 mat
 | SHOTS_ON_TARGET_P1, CORNER_ODDS, OVER_UNDER_105_CORNR, OVER_UNDER_85_CORNR, TO_SCORE, PENALTY_TAKEN, FIRST_GOAL_SCORER, TO_SCORE_2_OR_MORE, TO_SCORE_HATTRICK, BOOKING_ODDS, OVER_UNDER_25/35_CARDS, SENDING_OFF, SHOWN_A_CARD, CORRECT_SCORE2 | 5-10 each (a few matches a day) | 2,840 / 1,350 / 1,245 / blank / 1,043 / 1,558 / blank / blank / blank / blank / blank / blank / blank / blank | 12,973 | LPT | line-ups (player props) | (c) untested; `football_model.md` s.5 named corners and cards as thin enough for a stats model to beat, which is an outcome edge, not a drift | 1-7% | **Park:** player and corner props exist on 5-10 matches a day and most never reach the top 200 |
 | SPECIAL (2 days) | 2 | 327,424 | 646,448 | varies | | | | **Never:** one-off |
 | TO_QUALIFY (4 days) | 10 | 5,134 | 9,525 | LPT | | (c) | 0.7-1% | **Park:** cup weeks only |
-| Outrights (WINNER, TOP_N_FINISH, RELEGATION: not in C2's printed lists) | census pending | census pending | | end of season | | (c) | 3-7% | **Park:** season-long markets have no close before the result |
+| Outrights and the long tail | 65 types in all on the sport (run 41294133067 s.2); the 47 types below the ones listed here each hold under GBP1,700 a day ahead, most GBP0 | | | end of season for outrights | | (c) | 3-7% | **Park / never:** season-long markets have no close before the result; the props never reach the top 200 |
 
 ### 2.4 Cricket (4)
 
@@ -178,7 +220,7 @@ type that reached the top 200 and groups the rest). 6,106 markets a day; 185 mat
 | EACH_WAY (14 days) | 1 | 6,304 | 10,313 | LPT | | (c) | 3-7% | **Park:** thin |
 | ROUND_LEADER (5 days) | 1 | 10,243 | 14,871 | LPT at the round's start | tee times, weather | (c) | 3-7% | **Park:** thin |
 | TOUR_MATCHBET_NTIE1 (13 days), TOUR_MATCHBET_NTIE3 (8) | 1-2 | 3,550 / 2,960 | 5,397 | LPT | | (b) Pinnacle vs Betcris convergence (datagolf) | 0.7-1% | **Park:** GBP3k a day across the type |
-| Others (TOP_NATIONALITY, MAKE_THE_CUT, HOLE_IN_ONE, three-balls) | census pending | | | | | | | **Park / never:** not in the top 200 in October |
+| TOUR_MATCHBET_NTIE2 / 4 / 5 / 8 / 10, THREE_BALLS_3 / 5 / 7 / 8, PLAYER_SCORE_1 / 2 / 4 / 5 / 8 / 9 / 10 and the rest of the 36 types (run 41294133067 s.2) | 1-2 each | 953 / 1,132 / 334 / 7 / 15; three-balls 12-41; player scores 0-636 | 6,609 | LPT | | (c) | 0.7-7% | **Never:** tens of pounds a day ahead; WINNER holds 86% of the sport's money, TOP_5/10/20 another 11% |
 
 ### 2.6 American Football (6423)
 
@@ -187,13 +229,13 @@ type that reached the top 200 and groups the rest). 6,106 markets a day; 185 mat
 | HANDICAP | 3 | 143,448 | 905,078 | LPT | injury reports (Wed-Fri), weather | (c) NFL open vs close no significant accuracy difference 2002-11 (arXiv 1211.4000) | 0.7% at 1.9 | **Park:** three markets a day (Sundays are many at once); the move is made in US books |
 | COMBINED_TOTAL | 3 | 54,122 | 426,137 | LPT | weather | (c) | 0.7% | **Park** |
 | MATCH_ODDS | 3 | 37,564 | 239,724 | LPT | | (c) | 0.7-1% | **Park** |
-| Others (SUPER_BOWL outright, player props) | census pending | | | | | | | **Park / never** |
+| TO_SCORE_A_TOUCHDOWN, 1ST_TOUCHDOWN_SCORER, HALF_TIME_FULL_TIME, PASSING / RUSHING / RECEIVING_YARDS_1 / 2, HALF_HIGHEST_SCORING, 1ST_QUARTER_TD, BTTS_10 / 20_POINTS (16 types in all: run 41294133067 s.2) | 1 each (12 on a Sunday for touchdown scorers) | 2,511 / 209 / 56 / 0-12 / 0 / 0 / 0 | 7,016 | LPT | line-ups | (c) | 1-7% | **Never:** props with GBP0-2,511 a day ahead; the three main types hold 99% of the sport's money |
 
 ### 2.7 Tennis (2)
 
 | Market type | Markets a day | A day ahead, GBP | Max day | Close | Events | Drift evidence | Cost | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| MATCH_ODDS | 105 | 107,574 | 694,887 | LPT | withdrawals, scheduling | (a) exchange FLB (Abinzano et al. 2016); drift untested; the Italian exchange's shorteners over-shoot (theoddslab, one month, pooled with football) | 0.7-0.8% at 1.5-2.5 | **Park:** median market GBP5; re-read the `busiest` matches (census pending) |
+| MATCH_ODDS | 105 | 107,574 (24% of the sport's money; the busiest pre-match reads of the month GBP529,903, GBP320,893 and GBP87,733: run 41294133067 s.1) | 694,887 | LPT | withdrawals, scheduling | (a) exchange FLB (Abinzano et al. 2016); drift untested; the Italian exchange's shorteners over-shoot (theoddslab, one month, pooled with football) | 0.7-0.8% at 1.5-2.5 | **Park:** median market GBP5; two or three matches a day carry the money |
 | HANDICAP, COMBINED_TOTAL, SET_CORRECT_SCORE, SET_BETTING, NUMBER_OF_SETS | 23 / 23 / 23 / 88 / 23 | 2,651 / 1,894 / 1,439 / 708 / 31 | 15,948 | LPT | | (c) | 1-3% | **Never** for this trade: GBP30-2,700 a day across each type |
 | SET_WINNER (176), PLAYER_A/B_WIN_A_SET (23 each), GAME_BY_GAME_xx_yy (61 each, 30 types) | | 145 / 23 / 5 / 0 | 1,692,103 / 3,794,759 / 4,616,153 (single days: in-play crowds on one match) | in play | | in-play markets | | **Never:** in-play markets; the max days are one match's in-play volume |
 | TOURNAMENT_WINNER (7 days) | 4 | 8,588 | 15,762 | end of the tournament | draws | (c) | 3-7% | **Park:** a week-long market, long prices |
@@ -204,26 +246,26 @@ type that reached the top 200 and groups the rest). 6,106 markets a day; 185 mat
 |---|---|---|---|---|---|---|---|---|
 | Basketball | MATCH_ODDS / COMBINED_TOTAL / HANDICAP | 42 / 42 / 42 | 34,533 / 31,603 / 26,065 | 429,385 | LPT | (b) NBA line moves informed (Gandar et al. 1998); Betfair thin | 0.7% | **Park:** about GBP800 a market a day ahead; TOURNAMENT_WINNER once (GBP25,226) |
 | Ice Hockey | MONEY_LINE / COMBINED_TOTAL / HANDICAP / RT_MATCH_ODDS | 20 each | 18,817 / 5,130 / 3,771 / 1,621 | 97,345 | LPT | (c) | 0.7-1% | **Park:** under GBP1,000 a market |
-| Baseball | OUTRIGHT_WINNER (5 days) / MATCH_ODDS / COMBINED_TOTAL / HANDICAP | 1 / 2 / 2 / 2 | 52,891 / 7,550 / 5,811 / 3,096 | 65,239 | LPT | (c); starting pitchers (unverified) | 0.7-1% | **Park:** October is the play-offs; census pending for a regular-season read |
-| Mixed Martial Arts | MATCH_ODDS / METHOD_OF_VICTORY / UNDIFFERENTIATED / ROUND_BETTING | 7 / 9 / 9 / 9 | 40,866 / 709 / 12 / 0 | 141,380 | LPT | (c) | 0.7-1% | **Park:** fight nights only; the props never trade |
+| Baseball | OUTRIGHT_WINNER (5 days) / MATCH_ODDS / COMBINED_TOTAL / HANDICAP / WORLD_SERIES_MVP (5 types: run 41294133067 s.2) | 1 / 2 / 2 / 2 / 1 | 52,891 / 7,550 / 5,811 / 3,096 / 71 | 65,239 | LPT | (c); starting pitchers (unverified) | 0.7-1% | **Park:** October is the play-offs (the World Series winner market carries 40% of the money); only an April-September census could change it |
+| Mixed Martial Arts | MATCH_ODDS / METHOD_OF_VICTORY / UNDIFFERENTIATED / ROUND_BETTING (4 types) | 7 / 9 / 9 / 9 | 40,866 (96%) / 709 / 12 / 0 | 141,380 (Yan v Dvalishvili GBP67,343 the month's busiest: s.1) | LPT | (c) | 0.7-1% | **Park:** fight nights only (8 days of 25); the props never trade |
 
 ### 2.9 Motor Sport (8), Rugby League (1477), Rugby Union (5), Boxing (6), Snooker (6422), Darts (3503)
 
 | Sport | Market type | Markets a day | A day ahead, GBP | Max day | Close | Drift evidence | Cost | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| Motor Sport | WINNER (5 days); others census pending | 1 | 14,252 | 65,910 | LPT at lights out | (c); qualifying is the information (unverified) | 3-7% | **Park** |
-| Rugby League | MATCH_ODDS (10 days) / OUTRIGHT_WINNER (2) | 3 / 1 | 4,033 / 2,918 | 13,939 | LPT | (c) | 0.7-1% | **Park:** thin, season's end |
-| Rugby Union | MATCH_ODDS (13 days); handicaps census pending | 4 | 3,175 | 17,196 | LPT | (c) | 0.7-1% | **Park:** thin |
-| Boxing | MATCH_ODDS (8 days); method and rounds census pending | 3 | 6,383 | 130,108 | LPT | (c) | 0.7-1% | **Park:** event-driven |
-| Snooker | MATCH_ODDS and the rest: census pending (sport total GBP3,344, median market GBP131) | 8 | | 6,597 | LPT | (c) nothing found | 0.7-1% | **Park** |
-| Darts | OUTRIGHT_WINNER (3 days) / BEAT_LUKE_LITTLER (1 day) / MATCH_ODDS census pending | 1 / 1 | 4,960 / 6,951 | 31,393 | LPT | (c) nothing found | 0.7-1% | **Park:** GBP872 a day in October; the December-January World Championship is census pending |
+| Motor Sport | WINNER (5 days, 73% of the money) / TOP_3_FINISH / 1ST_LAP_LEADER / SPRINT_RACE / POINTS_FINISH / QUALIFYING_WINNER / TOP_6_FINISH / SPRINT_QUALIFYING / PODIUM, TOP_N, SAFETY_CAR, FASTEST_LAP, PRACTICE_SESSIONS, WINNING_CAR, TO_BE_CLASSIFIED (15 types: run 41294133067 s.2) | 1 each | 14,252 / 2,365 / 2,117 / 1,912 / 1,653 / 1,307 / 442 / 652 / 0-275 | 65,910 (F1 Singapore GP winner GBP62,666: s.1) | LPT at lights out | (c); QUALIFYING_WINNER at GBP1,307 says the market prices qualifying itself; the race-winner move after it is unmeasured | 3-7% | **Park:** one race weekend a week; GBP14k a day ahead on the winner market |
+| Rugby League | MATCH_ODDS (10 days, 75%) / OUTRIGHT_WINNER (2) / HANDICAP / SPECIAL / TO_SCORE / FIRST_TRY_SCORER, COMBINED_TOTAL, WINNING_MARGIN, TOTAL_MATCH_POINTS, HALF_TIME, HALF_TIME_FULL_TIME, TOTAL_MATCH_TRIES (12 types) | 3 / 1 / 2 / 2 / 1 / 1-4 | 4,033 / 2,918 / 174 / 46 / 35 / 0 | 13,939 (internationals: NZ v Fiji GBP9,381) | LPT | (c) | 0.7-1% | **Park:** GBP1,300 a match a day ahead, internationals only in October |
+| Rugby Union | MATCH_ODDS (13 days, 48%) / HANDICAP (44%) / OUTRIGHT_WINNER / COMBINED_TOTAL / HALF_TIME / TO_SCORE_A_TRY, WINNING_MARGIN, SPECIAL, HALF_TIME_FULL_TIME, FIRST_TRY_SCORER (10 types) | 4 / 4 / 1 / 4 / 1 / 2-4 | 3,175 / 1,447 / 2,222 / 20 / 13 / 0 | 17,196 (NZ v Australia GBP10,980) | LPT | (c) | 0.7-1% | **Park:** GBP800 a match a day ahead |
+| Boxing | MATCH_ODDS (8 days, 60%) / METHOD_OF_VICTORY (22%, max 60,022) / ROUND_BETTING (max 24,788) / GO_THE_DISTANCE / TOTAL_ROUNDS / GR_ROUND_BETTING1 / 3, GR2, GROUP_ROUND_BETTING, SPECIAL, HEAD_TO_HEAD (11 types) | 3 / 3 / 3 / 3 / 1 / 1 | 6,383 / 148 / 0 / 70 / 2,509 / 0 | 130,108 (Dubois v Wardley GBP119,513: s.1) | LPT | (c) | 0.7-1% | **Park:** one big fight a month carries the sport; the median fight GBP2,000 |
+| Snooker | MATCH_ODDS (7 days, 64%) / OUTRIGHT_WINNER (3 days, 36%) (2 types) | 9 / 1 | 1,705 / 2,360 | 5,700 / 6,597 (Higgins v Highfield GBP5,239; the Northern Ireland Open winner GBP6,597) | LPT | (c) nothing found | 0.7-1% | **Park:** GBP190 a match a day ahead |
+| Darts | MATCH_ODDS (24 days, 51%) / OUTRIGHT_WINNER (3 days, 41%) / BEAT_LUKE_LITTLER (1 day) / HANDICAP / COMBINED_TOTAL / MOST_180S / CORRECT_SCORE / PLAYER_AVERAGE_A / B (9 types) | 15 / 1 / 1 / 5 / 5 / 5 / 5 / 8 / 8 | 781 / 4,960 / 6,951 / 54 / 50 / 18 / 0 / 0 / 0 | 13,263 / 31,393 | LPT | (c) nothing found | 0.7-1% | **Park:** GBP52 a match a day ahead in October; only a December-January census could change it |
 
 ### 2.10 Politics (2378961), Special Bets (10), Current Affairs (27388198), Financial Bets (6231)
 
 | Sport | Market type | Markets a day | A day ahead, GBP | Max day | Close | Verdict |
 |---|---|---|---|---|---|---|
-| Politics | NONSPORT (6 days) | 1 | 7,490 | 205,093 | none scheduled; the result | **Never** for this purpose: GBP317m traded on the 2024 US election (oddschecker) shows depth, but a hedged open-to-close trade needs a close, and the move between is news. Vaughan Williams & Reade (2016): the market's forecast improves towards the vote, i.e. it converges on the result |
-| Special Bets | varies (18 days) | 2 | 617 | 139,824 | none scheduled | **Never:** one-off markets, no history, no close |
+| Politics | NONSPORT (6 days, 99%) / PMQS_SPECIALS (1 day) (2 types: run 41294133067 s.2) | 1 / 1 | 7,490 / 1,993 | 205,093 (the Holborn and St Pancras by-election GBP204,105; the next President of Brazil GBP104,689: s.1) | none scheduled; the result | **Never** for this purpose: GBP317m traded on the 2024 US election (oddschecker) shows depth, but a hedged open-to-close trade needs a close, and the move between is news. Vaughan Williams & Reade (2016): the market's forecast improves towards the vote, i.e. it converges on the result |
+| Special Bets | OUTRIGHT_WINNER (18 days, 80%) / NONSPORT (6 days) / NEXT_ELIMINATION (1 day) / OTHER_SPECIALS (4 types) | 1 / 2 / 1 / 1 | 465 / 1,107 / 924 / 13 | 138,036 (Strictly Come Dancing winner GBP138,036; the next James Bond GBP134,266: s.1) | none scheduled | **Never:** one-off markets, no history, no close; the two with money are a television vote and a casting decision |
 | Current Affairs | not seen in October | | | | none | **Never** |
 | Financial Bets | not seen in October | | | | a fixing | **Never:** the type exists in the API; nothing listed in October |
 
@@ -231,19 +273,20 @@ type that reached the top 200 and groups the rest). 6,106 markets a day; 185 mat
 
 | Sport | Market types | Markets a day | A day ahead, GBP | Close | Drift evidence | Verdict |
 |---|---|---|---|---|---|---|
-| Esports | census pending (sport total GBP297; 9 markets a day; 14 days) | 9 | 297 | LPT | bookmaker and parimutuel studies find FLB and its reverse by game (Sweeney et al. 2021; Dagaev & Stoyan 2019; JIFS 2024); nothing on Betfair | **Park:** no money |
-| Volleyball | census pending (total GBP0) | 1 | 0 | LPT | (c) | **Never** |
-| Cycling | census pending (1 day, GBP1,832) | 1 | 1,832 | LPT | (c) | **Park:** one market in the month |
-| Gaelic Games | census pending (1 day, GBP567) | 2 | 567 | LPT | (c) | **Park:** out of season |
-| Australian Rules | census pending (12 days, GBP473) | 8 | 473 | LPT | (c) | **Park:** out of season (Grand Final late September) |
+| Esports | MATCH_ODDS (14 days, 92%) / HANDICAP / MAP_WINNER_1 / MAP_WINNER_2 (4 types: run 41294133067 s.2) | 4 / 2 / 2 / 2 | 190 / 0 / 0 / 0 (the month's busiest Team Liquid v CTBC Flying Oyster GBP2,781: s.1) | LPT | bookmaker and parimutuel studies find FLB and its reverse by game (Sweeney et al. 2021; Dagaev & Stoyan 2019; JIFS 2024); nothing on Betfair | **Never** for this trade: GBP190 a day ahead across the sport |
+| Volleyball | MATCH_ODDS (the five busiest GBP4-99: s.1) | 1 | 0 | LPT | (c) | **Never:** no money |
+| Cycling | OUTRIGHT_WINNER (1 day: Il Lombardia) | 1 | 1,832 | LPT | (c) | **Never** for this trade: one market in the month |
+| Gaelic Games | OUTRIGHT_WINNER (1 day: footballer and hurler of the year) | 2 | 567 | award, no close | (c) | **Never:** awards markets in October; the championship (May-July) is not in this census |
+| Australian Rules | MATCH_ODDS (44%) / HANDICAP (56%, max 10,498) / COMBINED_TOTAL (3 types; the women's league in October) | 4 / 4 / 4 | 431 / 13 / 0 | LPT | (c) | **Park:** off-season for the men's league (Grand Final late September); GBP450 a match a day ahead on the women's |
 
 ### 2.12 The eleven event types with no markets in October 2026
 
 Athletics (3988), Winter Sports (451485), Handball (468328), Netball (606611), Badminton (627555), Bowls (998918),
 Chess (136332), Pool (72382), Poker (315220), Financial Bets (6231), Current Affairs (27388198): listed by the API
-(section 5, the three client libraries), none seen by the census on any of 25 days. Verdict for each: **never** for
-this purpose until a census shows markets; the seasonal ones (Athletics, Winter Sports) are census pending for their
-seasons, and a complete dump in January or July would settle them. None has a BSP, a model, a data route held or any
+(section 5, the three client libraries), none seen by the census on any of 25 days (run 41294133067 s.4: the 24 seen
+are exactly C2's). The run's own caveat: a type absent from every evening's 24-hour window "is absent here, not
+absent from Betfair" (s.4). Verdict for each: **never** for this purpose; the seasonal ones (Athletics, Winter
+Sports) could only be re-read by a census in their seasons, and none has a BSP, a model, a data route held or any
 literature found on exchange pre-off moves.
 
 ## 3. What the evidence says across sports (the criteria applied)
@@ -281,17 +324,22 @@ literature found on exchange pre-off moves.
    2-2.6%, at 15 3.4%, at 25 4.2%, at 40 5.3%, at 75+ 7.1% (`markets.md` 5.2); the Expert Fee at 20% of weekly gross
    profit above GBP25,000 over 52 active weeks applies to the account as a whole (`markets.md` 5.1).
 
-## 4. What is pending, and what changes when it lands
+## 4. What the complete census changed, and what is still seasonal
 
-- The complete census dump (`census_all_markets_1101.py`): every sport x market type row with days seen, markets a
-  day, matched medians and the busiest events; the on-the-day money profile for racing. It fills the "census
-  pending" cells (horse PLACE/OTHER_PLACE/EACH_WAY a day ahead; golf, NFL, motor sport, rugby, boxing, snooker, darts
-  and esports type lists; the busiest tennis and basketball events) and may add event types the API lists that
-  October's census did not reach.
-- Seasonal re-reads: darts (December-January), winter sports, athletics, baseball's regular season, Australian
-  rules, Gaelic games. A verdict of "never" on a seasonal sport is a verdict on October.
-- None of the pending cells can move a sport into "trade now": that needs a measured drift and a close, which only
-  racing has.
+- The complete dump (run 41294133067: 426 sport x market type rows, 268 types that ever reached a sport's top 200,
+  1,709 busiest-event rows, 377 sport-days) filled every pending cell. It added one verdict change: **the greyhound
+  test moves from the first book to T-3 and T-1**, because the recorded books hold GBP0 until T-5 and GBP380 at T-3
+  (s.3b). It confirmed the rest: horse PLACE, OTHER_PLACE and EACH_WAY hold GBP456, GBP127 and GBP48 a day ahead; the
+  long tails of golf (36 types), the NFL (16), motor sport (15), rugby league (12), boxing (11), rugby union (10),
+  darts (9) and soccer (65) are tens of pounds a day ahead outside each sport's two or three main types; tennis's
+  money sits in two or three matches a day.
+- The racing bias of the evening read is now quantified (a factor of 157 for horses, 3,900 for greyhounds: s.3a,
+  s.3b) and the day-ahead figures are used only for sports whose markets form a day ahead.
+- Seasonal re-reads remain the one thing that could move a verdict: darts (December-January), winter sports,
+  athletics, baseball's regular season, Australian rules and Gaelic games' championships. A verdict of "never" or
+  "park" on a seasonal sport is a verdict on October.
+- Nothing seasonal can move a sport into "trade now": that needs a measured drift and a single-price close, which
+  only the two racing sports have.
 
 ## 5. Sources
 
@@ -300,6 +348,11 @@ Repository:
   `reports/open_close/data.md` (section 6, the data to obtain next; licences 6.5)
 - research-query run 41291139483, job 124802487010 (`research/queries/done/open_close_inventory_1101.py`): sections
   A2, A3, B4, C1, C2, D as cited
+- research-query run 41294133067, job 124811312983 (`research/queries/census_all_markets_1101.py`, the complete census
+  dump, read from the GitHub Actions log on 1 Nov 2026): section 0 (25 census files, read 21:17-22:19 UTC), 1 (24
+  sports with ids and the five busiest events each), 2 (426 sport x market type rows), 3a (horse money at the marks,
+  31 days, 2,515 markets), 3b (greyhound money at the marks, 27 days, 6,993 markets), 4 (the event types seen and the
+  census's limits)
 - `TRADING.md`; `reports/other_markets_and_stakes_1002.md` (section 1, liquidity by jurisdiction; section 3, the racing
   census of 3 Oct); `reports/all_markets_priorities.md` (sections 2, 4, 5); `reports/greyhound_model.md` (sections
   4-5); `reports/football_model.md` (sections 3, 5); `reports/tote_programme.md` (line 36); `reports/research_ledger.jsonl`
