@@ -224,6 +224,7 @@ def _greyhound_record(tmp_path, day="2026-10-06"):
         (f"{day}T09:00:00Z", "recorder", "OPEN", 0, 120.0, [(2.8, 3.0), (4.5, 4.9), (6.0, 6.6)], None, "ACTIVE"),
         (f"{day}T10:04:00Z", "recorder", "OPEN", 0, 900.0, [(2.6, 2.7), (4.8, 5.0), (6.4, 6.8)], None, "ACTIVE"),
         (f"{day}T10:49:00Z", "recorder", "OPEN", 0, 1800.0, [(2.5, 2.6), (4.9, 5.1), (6.6, 7.0)], None, "ACTIVE"),
+        (f"{day}T11:01:00Z", "recorder", "OPEN", 0, 2500.0, [(2.45, 2.55), (5.0, 5.1), (6.7, 7.1)], None, "ACTIVE"),
         (f"{day}T11:03:10Z", "recorder", "OPEN", 0, 3000.0, [(2.4, 2.5), (5.0, 5.2), (6.8, 7.2)], None, "ACTIVE"),
         (f"{day}T11:05:00Z", "bsp", "SUSPENDED", 1, 3400.0, [(None, None)] * 3, [2.42, 5.1, 7.0], "ACTIVE"),
         (f"{day}T11:10:00Z", "final", "CLOSED", 0, 3400.0, [(None, None)] * 3, None, ["WINNER", "LOSER", "LOSER"]),
@@ -252,6 +253,7 @@ def test_the_recorded_books_reader_takes_the_first_two_sided_book_as_the_open_wi
     assert r["open_price"] == pytest.approx(3.2) and r["open_time_utc"] == pd.Timestamp("2026-10-06T08:30:00Z")
     assert r["open_matched"] == 50.0
     assert r["p_t60"] == pytest.approx(2.65) and r["p_t15"] == pytest.approx(2.55) and r["p_t1"] == pytest.approx(2.45)
+    assert r["p_t3"] == pytest.approx(2.5)
     assert r["close_price"] == pytest.approx(2.45) and r["pre_play_matched"] == 3000.0
     assert r["bsp"] == pytest.approx(2.42) and r["result"] == 1 and r["n_runners"] == 3
     assert r["off_time_utc"] == pd.Timestamp("2026-10-06T11:04:00Z") and r["country"] == "GB"
@@ -262,9 +264,16 @@ def test_the_recorded_books_reader_takes_the_first_two_sided_book_as_the_open_wi
     assert r1["open_matched"] == 120.0 and r1["result"] == 0 and r1["bsp"] == pytest.approx(5.1)
     assert oc.read_recorded_books(store, date_from="2026-10-07").empty
     assert oc.read_recorded_books(Store(root=tmp_path / "elsewhere" / "sources")).empty
+    # the greyhound open the build uses: the T-3 book (the money arrives in the last three minutes), its time and money
+    t3 = oc.read_recorded_books(store, open_mark=oc.GREYHOUND_OPEN_MARK)
+    g0 = t3[t3["selection_id"] == "800"].iloc[0]
+    assert g0["open_price"] == pytest.approx(2.5) and g0["open_time_utc"] == pd.Timestamp("2026-10-06T11:01:00Z")
+    assert g0["open_matched"] == 2500.0 and g0["p_t3"] == pytest.approx(2.5) and g0["close_price"] == pytest.approx(2.45)
     out = oc.build(store, "greyhound_racing")
     assert out["readers"] == {"betfair_historic": 0, "greyhound_prices": 0, "betfair_live_books": 3}
     assert out["years"]["2026"]["rows"] == 3
+    built = store.get_parquet("open_close/panel_greyhound_racing_2026.parquet")
+    assert built[built["selection_id"] == "800"]["open_matched"].iloc[0] == 2500.0
 
 
 def test_a_sport_with_nothing_held_builds_nothing_and_the_cli_runs_from_a_local_root(tmp_path, capsys):

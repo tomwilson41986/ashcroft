@@ -60,7 +60,7 @@ One schema across markets, one row a selection a market:
 | off_time_utc | the scheduled off or kick-off, tz-aware UTC (the price files' UK wall-clock times converted DST-aware) |
 | n_runners | selections not removed |
 | open_price, open_time_utc, open_matched | the earliest price the source holds, when it stood, the money matched by then (only the recorder's books give a time; the Historic Data BASIC files give neither time nor volume) |
-| p_t24h, p_t60, p_t15, p_t1 | the price standing at each mark before the off, where the source has it |
+| p_t24h, p_t60, p_t15, p_t3, p_t1 | the price standing at each mark before the off, where the source has it (T-3 from the recorder only: added 1 Nov for the greyhound open, section 4.2) |
 | close_price | the source's close: the BSP where the market has one, else the last pre-play trade, else the benchmark bookmaker close |
 | bsp | the Betfair SP where the market has one |
 | pre_play_matched | the money matched before the off: a runner's in the price files, the market's in the recorder's books |
@@ -77,7 +77,7 @@ frame and never an error:
 | `read_horse_marks(db_path)` | `betfair_live_marks` + `betfair_live_markets` | the 08:00 UK mid (back1/lay1), its poll time, the market's matched money then | the `off_60`, `off_15`, `off_1` mids | the last pre-off mid; `bsp` from the settled mark | the alternative open the brief asked for; a one-sided book gives no price |
 | `read_football_gold(store)` | `football/gold/matches.parquet` | the benchmark open (`football.data.benchmarks`) | none | the benchmark close | one row an outcome (H/D/A, Over/Under 2.5, AH home/away with the line); `source` names the books, e.g. `football_gold:PS>PSC`; AH result left empty |
 | `read_greyhound_prices(store)` | `greyhound_prices/prices_<year>.parquet` | MORNINGWAP with its volume | none | the BSP | as the horses' files |
-| `read_recorded_books(store, sport, tag)` | `betfair_live/<day>/books_<tag>.csv.gz` + `markets_<tag>.csv.gz` (the greyhound record: tag `greyhound`) | the first two-sided pre-off book the record holds, its time, the market's matched money then | T-60, T-15, T-1 through `betfair_recorder.marks` (the nightly load's own picks) | the last pre-off mid; the BSP as the market reconciled it | the open for greyhounds the coordinator asked for; the same reader reads the horse record with tag `""` |
+| `read_recorded_books(store, sport, tag, open_mark=None)` | `betfair_live/<day>/books_<tag>.csv.gz` + `markets_<tag>.csv.gz` (the greyhound record: tag `greyhound`) | the book at `open_mark` (the build passes `off_3` for greyhounds: `GREYHOUND_OPEN_MARK`), its time, the market's matched money then; with no mark, the first two-sided pre-off book | T-60, T-15, T-3, T-1 through `betfair_recorder.marks` (the nightly load's own picks) | the last pre-off mid; the BSP as the market reconciled it | the greyhound open is T-3 because the money arrives only in the last three minutes (section 4.2); the same reader reads the horse record with tag `""` |
 
 `build(store, sport, db_path=None)` concatenates the sport's readers and writes `sources/open_close/panel_<sport>_
 <year>.parquet` (the year of the off), overwriting the same keys, so a rerun is safe. `horse_racing` takes the price
@@ -122,6 +122,25 @@ the long-shot "shortening" is the wide 08:00 book's mid, not a price anyone coul
 08:00 against 5.4% at the last). The same at 10:00 and 12:00 (section 7.3). The place market's 08:00 mid is
 unusable: relative spread 124% of the mid, median log move -0.3 to -2.9 in the bands above 8.
 
+The on-the-day profile (census_all_markets_1101, research-query run 41294133067, section 3a: 31 days, 2,515
+markets; the market's matched money, median a market, 90th percentile in brackets):
+
+| Mark | GB WIN | IE WIN | GB PLACE | IE PLACE |
+|---|---|---|---|---|
+| 08:00 UK | 1,650 (4,735) | 641 (1,755) | 39 (166) | 30 (50) |
+| 10:00 | 4,197 (10,101) | 1,556 (3,791) | 120 (446) | 43 (128) |
+| 12:00 | 8,030 (22,832) | 3,126 (7,978) | 286 (1,282) | 80 (346) |
+| T-120 | 12,064 (24,445) | 5,044 (9,141) | 468 (1,327) | 128 (428) |
+| T-60 | 15,760 (31,922) | 6,703 (13,084) | 893 (2,269) | 231 (716) |
+| T-15 | 30,690 (63,471) | 14,424 (27,105) | 2,524 (5,098) | 1,192 (2,493) |
+| T-1 | 89,503 (162,759) | 47,406 (86,369) | 9,670 (18,009) | 4,899 (11,049) |
+| last | 97,168 (170,561) | 52,095 (91,887) | 10,597 (19,488) | 5,555 (12,176) |
+
+A day's GB+IE WIN markets hold GBP3,646,192 at the last book (median over 31 days; min 1,854,510, max 6,813,849),
+against GBP23,155 on the next day's top 200 Horse Racing markets in the evening census (run 41291139483): the
+evening read sees under 1% of the day's racing money, so the census compares the other sports' day-ahead money, not
+racing's. A GB win market has 1.7% of its final money at 08:00, 8% at 12:00, 16% at T-60, 32% at T-15.
+
 Missing: the true first price with its time before 06:15 UK, and the traded-volume ladder. Next data: section 6.1.
 
 ### 4.2 UK greyhounds (research next)
@@ -144,11 +163,33 @@ boundary: greyhound markets do not turn in play (0.0% went in play), so `ltp_clo
 runners), so the files size the close only. (e) The close is well calibrated: won 0.734 against implied 0.758 at
 1-1.5, 0.259 against 0.260 at 3-5, 0.034 against 0.033 at 21-51 (section 7.8).
 
-The research agent's test (best back and lay at the first recorded book and at T-60/T-10/T-1 against the BSP, on the
-recorded GB books from 6 Oct) reads off `read_recorded_books(store, "greyhound_racing", "greyhound")`; T-10 is a
-recorder mark (`off_10`) not yet a panel column (one line in `MARK_PRICE`). Missing: the first trade's time and
-volume in the bundle (BASIC holds the last traded price each minute; `betfair_historic._MarketState` could keep the
-`pt` of the first `ltp`, a small change outside this note's paths). Next data: section 6.2.
+The on-the-day profile from the recorded books (census_all_markets_1101, research-query run 41294133067, section 3b:
+27 days, 6 Oct to 1 Nov, 6,993 markets, through `betfair_recorder.marks`; the market's matched money, median a
+market, 90th percentile in brackets):
+
+| Mark | GB/IE WIN | GB/IE PLACE |
+|---|---|---|
+| 08:00 to 12:00 UK, T-120, T-60 | 0 (0) | 0 (0) |
+| T-30 | 0 (7) | 0 (0) |
+| T-15 | 0 (20) | 0 (0) |
+| T-10 | 2 (50) | 0 (2) |
+| T-5 | 34 (434) | 0 (2) |
+| T-3 | 380 (1,735) | 0 (57) |
+| T-1 | 1,993 (5,717) | 129 (1,155) |
+| last | 2,377 (6,831) | 218 (1,528) |
+
+The first book the record holds a market stands 612 minutes before the off at the median (90th pct 869) with GBP0
+matched behind it (0% of markets over GBP100). A day's GB/IE WIN markets hold GBP427,681 at the last book (median
+over 27 days, 137 markets a day) against GBP109 on the next day's top 200 in the evening census (run 41291139483).
+
+The consequence for the panel: a greyhound market's open exists only in the last three minutes. The first two-sided
+book is a hollow spread hours out, T-15 carries nothing, T-5 GBP34, T-3 GBP380 and T-1 GBP1,993 at the median; so the
+panel's greyhound open is the T-3 book (`GREYHOUND_OPEN_MARK = "off_3"`, `p_t3` added to the schema from the
+recorder's `off_3` mark, 1 Nov), with T-1 and the last book as the later marks and the BSP as the close. The
+research agent's lay-early test is a T-3 (or T-1) to BSP test, with GBP380 (T-3) or GBP1,993 (T-1) matched a market
+behind it: the size of any such trade is bounded by that money. The Historic Data bundle's first traded price (a
+price at T-60 on 1.2% of rows) is the same late money seen from the other side. Missing: nothing a purchase would
+mend; the record from 6 Oct is the data, and it grows a day a night. Next data: section 6.2.
 
 ### 4.3 Football match odds (research next)
 

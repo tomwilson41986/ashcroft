@@ -10,7 +10,7 @@ One row a selection a market, the same columns whatever the source (``SCHEMA``):
 | off_time_utc | the scheduled off / kick-off, UTC, tz-aware |
 | n_runners | selections in the market that were not removed |
 | open_price, open_time_utc, open_matched | the earliest price the source holds, when it stood (only the recorder has a time), the money matched by then |
-| p_t24h, p_t60, p_t15, p_t1 | the price standing 24 h, 60, 15 and 1 minute before the off, where the source has them |
+| p_t24h, p_t60, p_t15, p_t3, p_t1 | the price standing 24 h, 60, 15, 3 and 1 minute before the off, where the source has them (T-3 from the recorder only) |
 | close_price | the source's closing price: the BSP where the market has one, else the last price traded before in play (Historic Data), else the benchmark close (football) |
 | bsp | the Betfair SP where the market has one |
 | pre_play_matched | the money matched before the off (a runner's in the price files; the market's in the recorder's books) |
@@ -66,8 +66,8 @@ log = logging.getLogger(__name__)
 PREFIX = "open_close"
 SCHEMA = ["sport", "country", "market_type", "market_id", "event_id", "event_name", "selection_id", "selection_name",
           "off_time_utc", "n_runners", "open_price", "open_time_utc", "open_matched", "p_t24h", "p_t60", "p_t15",
-          "p_t1", "close_price", "bsp", "pre_play_matched", "result", "source"]
-PRICE_COLS = ["open_price", "open_matched", "p_t24h", "p_t60", "p_t15", "p_t1", "close_price", "bsp",
+          "p_t3", "p_t1", "close_price", "bsp", "pre_play_matched", "result", "source"]
+PRICE_COLS = ["open_price", "open_matched", "p_t24h", "p_t60", "p_t15", "p_t3", "p_t1", "close_price", "bsp",
               "pre_play_matched"]
 #: the panel's sport names -> the Historic Data service's (betfair_historic.PLAN_SCOPE) and its table stem
 HISTORIC_SPORT = {"greyhound_racing": "greyhound_racing", "football": "soccer", "tennis": "tennis",
@@ -207,7 +207,12 @@ def read_horse_prices(db_path: str, date_from: str | None = None, date_to: str |
 
 
 MARK_OPEN = "clock_08:00"
-MARK_PRICE = {"off_60": "p_t60", "off_15": "p_t15", "off_1": "p_t1"}
+#: the recorder's marks -> the panel's columns; T-3 (``off_3``) because a greyhound market's money arrives only in the
+#: last three minutes (census_all_markets_1101, run 41294133067: GB WIN median market matched GBP0 at T-15, GBP380 at
+#: T-3, GBP1,993 at T-1), so T-3 is the earliest book that is an open there
+MARK_PRICE = {"off_60": "p_t60", "off_15": "p_t15", "off_3": "p_t3", "off_1": "p_t1"}
+#: the greyhound open: the T-3 book, not the first two-sided one (which stands hours out with nothing matched)
+GREYHOUND_OPEN_MARK = "off_3"
 LIVE_PREFIX = "betfair_live"                       # the recorder's day files, beside sources/ in the capture bucket
 
 
@@ -262,7 +267,7 @@ def _panel_from_marks(marks: pd.DataFrame, cat: pd.DataFrame, sport: str, source
         "selection_id": out["selection_id"], "selection_name": out["runner_name"],
         "off_time_utc": out["market_start_utc"], "n_runners": out["n_runners"], "open_price": out["open_price"],
         "open_time_utc": out["open_time_utc"], "open_matched": out["open_matched"], "p_t24h": np.nan,
-        "p_t60": out["p_t60"], "p_t15": out["p_t15"], "p_t1": out["p_t1"], "close_price": out["close_price"],
+        **{col: out[col] for col in MARK_PRICE.values()}, "close_price": out["close_price"],
         "bsp": out["bsp"], "pre_play_matched": out["pre_play_matched"], "result": out["result"],
         "source": source}))
 
@@ -332,13 +337,16 @@ def _read_live_csv(store: Store, where: str | None) -> pd.DataFrame | None:
 
 
 def read_recorded_books(store: Store, sport: str = "greyhound_racing", tag: str = "greyhound",
-                        date_from: str | None = None, date_to: str | None = None) -> pd.DataFrame:
+                        date_from: str | None = None, date_to: str | None = None,
+                        open_mark: str | None = None) -> pd.DataFrame:
     """The recorder's own day files (``betfair_live/<day>/books_<tag>.csv.gz`` with ``markets_<tag>.csv.gz``; the GB/IE
-    greyhound record from 6 Oct 2026 is tag ``greyhound``): the FIRST two-sided pre-off book the record holds as the
-    open, with its time and the market's matched money then (the Historic Data files have no time or volume for
-    the first trade; this is the tradable open), the mids at T-60/T-15/T-1 and the last pre-off book through
-    ``betfair_recorder.marks`` (the same picks as the nightly load's), the BSP as the market reconciled it, the
-    settled result. Source ``betfair_live_books:<tag>``."""
+    greyhound record from 6 Oct 2026 is tag ``greyhound``): the open is the book at ``open_mark`` (one of the
+    recorder's marks, e.g. ``off_3``) or, with none given, the FIRST two-sided pre-off book the record holds, either
+    with its time and the market's matched money then (the Historic Data files have no time or volume for the first
+    trade); the mids at T-60/T-15/T-3/T-1 and the last pre-off book through ``betfair_recorder.marks`` (the same picks
+    as the nightly load's), the BSP as the market reconciled it, the settled result. Source
+    ``betfair_live_books:<tag>``. For greyhounds ``build`` passes ``GREYHOUND_OPEN_MARK`` (T-3): the first two-sided
+    book stands hours out with nothing matched behind it."""
     from datetime import date as _date
     import betfair_recorder as br
     frames = []
@@ -364,7 +372,8 @@ def read_recorded_books(store: Store, sport: str = "greyhound_racing", tag: str 
                  .set_index(["market_id", "selection_id"])
                  .rename(columns={"mid": "open_price", "polled_utc": "open_time_utc",
                                   "market_total_matched": "open_matched"}))
-        frames.append(_panel_from_marks(marks, markets, sport, f"betfair_live_books:{tag or 'horse'}", None, first))
+        frames.append(_panel_from_marks(marks, markets, sport, f"betfair_live_books:{tag or 'horse'}", open_mark,
+                                        None if open_mark else first))
     frames = [f for f in frames if len(f)]
     return conform(pd.concat(frames, ignore_index=True)) if frames else empty()
 
@@ -476,7 +485,8 @@ def readers(store: Store, sport: str, db_path: str | None = None) -> list[tuple[
         out.append(("betfair_historic", lambda: read_betfair_historic(store, sport)))
     if sport == "greyhound_racing":
         out.append(("greyhound_prices", lambda: read_greyhound_prices(store)))
-        out.append(("betfair_live_books", lambda: read_recorded_books(store, "greyhound_racing", "greyhound")))
+        out.append(("betfair_live_books", lambda: read_recorded_books(store, "greyhound_racing", "greyhound",
+                                                                      open_mark=GREYHOUND_OPEN_MARK)))
     if sport == "football":
         out.append(("football_gold", lambda: read_football_gold(store)))
     return out
