@@ -550,6 +550,9 @@ markets at T-60 and after the off would give each sport's a-day-ahead share of i
 alone cannot (`betfair_recorder.py`, `census_sports` reads once); (ii) the `busiest` field already names the top five
 markets a sport a day, which is enough to see which tennis and basketball matches carry the GBP116k and GBP92k.
 
+Every sport Betfair lists, and every market type within each, is scored on these criteria with a verdict a row in
+`reports/open_close/all_markets.md` (the owner's ask of 1 Nov, "evaluate all markets on Betfair").
+
 ## 7. What this note does not claim
 
 - No market outside UK/IE horse win has a measured, tradable open-to-close edge in hand. The greyhound drift (section
