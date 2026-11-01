@@ -1,4 +1,4 @@
-"""Oddschecker's bookmaker prices against the Betfair books and the BSP (the owner's ask, 1 Nov 2026; read-only).
+"""Oddschecker's bookmaker prices as a signal for the Betfair books and the BSP (the owner's ask, 1 Nov 2026; read-only).
 
 Reads the Parse capture committed beside the code (data/parse/oddschecker_prices.parquet: every GB/IE runner's price at
 about 25 bookmakers, the first snapshot of the day and T-120/T-60/T-15) and horse_racing.db (betfair_live_markets,
@@ -12,10 +12,15 @@ It asks three things, on the days held (one day at first: descriptive, not a tes
   1. which morning price is nearer the BSP: the bookmakers' median, their best, or the Betfair 08:00 mid (median and
      spread of log(BSP / price), and the log loss of each book's normalised chances against the result);
   2. does the bookmakers' morning price add to the Betfair mid in forecasting the BSP (OLS of log BSP on both);
-  3. the trade that needs no winner: back with the best bookmaker in the morning, lay at the BSP on Betfair. Per
-     GBP1 backed at B and B/BSP laid: B/BSP - 1 if the horse wins, (B/BSP)(1 - c) - 1 if it loses (c the 2%
-     commission on the lay's winnings). Reported by how far the morning best price sat above the 08:00 mid. It
-     ignores what bookmakers do to accounts that take early prices, which is the binding limit in practice.
+  3. the exchange trade it would signal (exchange legs only, the owner's rule, 1 Nov 2026: no bookmaker bets). The
+     bookmakers' morning median is information, not a venue. Where it sits shorter than Betfair's 08:00 book, back
+     at the 08:00 best back on Betfair and lay at the BSP; where it sits longer, lay at the 08:00 best lay and back
+     at the BSP. Greened, per GBP1 backed: B/BSP - 1; per GBP1 laid: 1 - L/BSP (return on the liability L - 1);
+     2% commission on each market's net profit. Reported by how far the bookmakers' median sat from the 08:00 book.
+  3b. across exchanges: back at Matchbook's morning price (Oddschecker's code MA: its price sits above every
+     bookmaker's, as an exchange's would; the name is unverified), lay at the Betfair BSP, where
+     Matchbook's price is over Betfair's 08:00 best back. Matchbook's own commission rate is not applied (to
+     re-check before any money); Betfair's 2% is.
 """
 import json
 import os
@@ -93,7 +98,7 @@ def main() -> int:
     print(f"betfair WIN runners on those days {len(bf):,}, with a BSP {bf['bsp'].notna().sum():,}, with an 08:00 mid "
           f"{bf['open_price'].notna().sum():,}")
     j = runners.merge(bf[["key_course", "off", "key_horse", "open_price", "p_t15", "close_price", "bsp", "result",
-                          "market_id"]], on=["key_course", "off", "key_horse"], how="left")
+                          "market_id", "selection_id"]], on=["key_course", "off", "key_horse"], how="left")
     print(f"joined: {j['market_id'].notna().sum():,} of {len(j):,} runners matched a Betfair WIN runner "
           f"(by course, off time and name); with a BSP {j['bsp'].notna().sum():,}")
     j = j.dropna(subset=["bsp"])
@@ -146,22 +151,63 @@ def main() -> int:
     else:
         print(f"no data found: {len(d)} runners with both prices")
 
-    # 3. back with the best bookmaker in the morning, lay at the BSP
-    print("\n-- 3. back at the bookmakers' best morning price, lay at the BSP: per GBP1 backed, after 2% on the lay")
-    d = j.dropna(subset=["bk_am_best", "result"]).copy()
-    r = d["bk_am_best"] / d["bsp"]
-    d["pnl"] = np.where(d["result"] == 1, r - 1, r * (1 - COMM) - 1)
-    d["gap"] = np.where(d["open_price"].notna(), d["bk_am_best"] / d["open_price"] - 1, np.nan)
-    bins = [-np.inf, 0.0, 0.05, 0.10, 0.20, np.inf]
-    labs = ["best <= 08:00 mid", "0-5% over", "5-10% over", "10-20% over", "20%+ over"]
-    d["band"] = pd.cut(d["gap"], bins, labels=labs)
-    tab = d.groupby("band", observed=True)["pnl"].agg(["size", "mean", "sum"]).round(3)
-    print(tab.to_string())
-    print(f"every runner: n {len(d)}, mean {d['pnl'].mean():+.3f} a GBP1, share with the best price over the BSP "
-          f"{(r > 1).mean():.1%}")
+    # 3. the exchange trade the bookmakers' morning price would signal: every leg on Betfair
+    print("\n-- 3. exchange only: the bookmakers' morning median against Betfair's 08:00 book, traded on Betfair "
+          "at the 08:00 best back or best lay, closed at the BSP")
+    conn = sqlite3.connect(DB)
+    m8 = pd.read_sql_query("SELECT market_id, selection_id, back1, lay1 FROM betfair_live_marks "
+                           "WHERE mark = 'clock_08:00' AND race_date >= ? AND race_date <= ?", conn,
+                           params=(days[0], days[-1]))
+    conn.close()
+    m8["selection_id"] = pd.to_numeric(m8["selection_id"], errors="coerce").astype("Int64").astype(str)
+    j["selection_id"] = j["selection_id"].astype(str)
+    d = j.merge(m8.drop_duplicates(["market_id", "selection_id"], keep="last"), on=["market_id", "selection_id"],
+                how="inner")
+    for c in ("back1", "lay1"):
+        d[c] = pd.to_numeric(d[c], errors="coerce")
+    d = d.dropna(subset=["bk_am_median", "back1", "lay1", "bsp"])
+    d = d[(d["back1"] > 1) & (d["lay1"] > 1)]
+    rows = []
+    if not d.empty:
+        short = d["bk_am_median"] < d["back1"]            # the bookmakers shorter than Betfair's best back: back
+        long_ = d["bk_am_median"] > d["lay1"]             # longer than Betfair's best lay: lay
+        d["gap"] = np.where(short, np.log(d["back1"] / d["bk_am_median"]),
+                            np.where(long_, np.log(d["bk_am_median"] / d["lay1"]), 0.0))
+        d["side"] = np.where(short, "back", np.where(long_, "lay", "none"))
+        d["pnl"] = np.where(short, d["back1"] / d["bsp"] - 1, np.where(long_, 1 - d["lay1"] / d["bsp"], 0.0))
+        d["risk"] = np.where(short, 1.0, np.where(long_, d["lay1"] - 1, 0.0))
+        d["net"] = d["pnl"] - COMM * d["pnl"].clip(lower=0)
+        t = d[d["side"] != "none"]
+        bins = [0, 0.05, 0.10, 0.20, np.inf]
+        t["gap_band"] = pd.cut(t["gap"], bins, labels=["0-5%", "5-10%", "10-20%", "20%+"])
+        tab = t.groupby(["side", "gap_band"], observed=True).agg(bets=("net", "size"), net=("net", "sum"),
+                                                                    risk=("risk", "sum"),
+                                                                    right_way=("pnl", lambda x: (x > 0).mean()))
+        tab["roi_on_risk"] = (tab["net"] / tab["risk"]).round(4)
+        print(tab.round(3).to_string())
+        print(f"runners with an 08:00 two-sided book and a morning bookmaker price: {len(d)}; signalled "
+              f"{len(t)} ({(t['side'] == 'back').sum()} backs, {(t['side'] == 'lay').sum()} lays); the rest sat "
+              f"inside Betfair's spread")
+        rows = [{"bets": int(len(t)), "net": round(float(t["net"].sum()), 3), "risk": round(float(t["risk"].sum()), 3)}]
+    else:
+        print("no data found: no runner with an 08:00 two-sided book and a morning bookmaker price")
+
+    # 3b. across exchanges: Matchbook's morning price against the Betfair BSP
+    print("\n-- 3b. across exchanges: back at Matchbook's morning price (Oddschecker MA), lay at the Betfair BSP, "
+          "where it is over Betfair's 08:00 best back (Betfair's 2% only; Matchbook's commission not applied)")
+    ma = morning[morning["bookmaker"] == "MA"].groupby(["race_url", "key_horse"])["price"].max().rename("ma_am")
+    x = d.join(ma, on=["race_url", "key_horse"]) if not d.empty else d
+    if not x.empty and x["ma_am"].notna().any():
+        x = x.dropna(subset=["ma_am"])
+        over = x[x["ma_am"] > x["back1"]]
+        pnl = over["ma_am"] / over["bsp"] - 1
+        net = pnl - COMM * pnl.clip(lower=0)
+        print(f"runners with a Matchbook morning price {len(x)}; over Betfair's 08:00 best back {len(over)} "
+              f"({len(over) / len(x):.1%}); their mean per GBP1 backed {net.mean():+.4f}, right way {(pnl > 0).mean():.1%}")
+    else:
+        print("no data found: no Matchbook (MA) morning price joined")
     print("\n=== JSON ===")
-    print(json.dumps({"runners_joined": int(len(j)), "days": days, "ols": out,
-                      "trade_mean": round(float(d["pnl"].mean()), 4) if len(d) else None}))
+    print(json.dumps({"runners_joined": int(len(j)), "days": days, "ols": out, "exchange_trade": rows}))
     print("=== JSON ===")
     return 0
 

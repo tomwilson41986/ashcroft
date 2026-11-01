@@ -14,6 +14,9 @@ ties the four reports together and says what happens next. Nothing in this chang
 
 ## The result
 
+**Exchange trades only** (the owner, 1 Nov 2026): every leg on Betfair or another exchange, never a bookmaker bet.
+Bookmaker prices are used only as information.
+
 1. **One market is proven and live: UK and Irish horse win.** The live rule is already this trade: back in the morning
    where the model's BSP forecast sits well under the price, lay at the BSP. GBP47,274 staked 19-31 Oct at +6.15%
    (research ledger `staking-1031`; TRADING.md). The edge is the model's: on the market alone the morning price

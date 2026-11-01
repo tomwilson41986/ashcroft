@@ -22,8 +22,17 @@ below comes from those tables or from the response headers of the calls made on 
    at each end. The holdout (Oct-Nov, read once) shows small positives that the development months do not support
    (section 4). The prices are US bookmakers', and Betfair's pre-match tennis money is a median GBP5 a market
    (`all_markets.md`), so nothing here is a Betfair trade.
-5. **Horses are tomorrow's test.** Today's capture (62 GB/IE races, 661 runners, 25 bookmakers, 79 snapshots) is
+5. **Exchange trades only** (the owner, 1 Nov 2026): no bets with bookmakers. Bookmaker prices are information, never a
+   venue. Every trade tested here has its legs on Betfair or another exchange.
+6. **Horses are tomorrow's test.** Today's capture (62 GB/IE races, 661 runners, 25 price sources, 79 snapshots) is
    joined to the Betfair books and the BSP once tonight's load holds the day (`research/queries/parse_horses_1102.py`).
+   It asks whether the bookmakers' morning price signals where the Betfair price goes, traded on Betfair: back at the
+   08:00 best back or lay at the 08:00 best lay, then close at the BSP. It also prices a cross-exchange version, backing
+   at Matchbook's morning price and laying at the Betfair BSP.
+7. **Matchbook is in the capture.** Oddschecker's code `MA` sits a median 9.7% above the 25 sources' median morning
+   price, and above it on 92% of runners. Every other code sits at the median, as an exchange's back price (no
+   bookmaker margin) would. That points to Matchbook, but the name is unverified. Betfair Sportsbook (`BF`) is a
+   bookmaker and is not an exchange leg.
 
 ## 1. What each API gives
 
@@ -63,8 +72,10 @@ is safe to rerun. The key never reaches a file: it is read from `PARSE_API_KEY`.
   hedged trade after 2% and a tick each end, the leak test, the holdout read once. For bookmaker prices, each book is
   scaled to 100% at both ends first (`--normalise-book`), because the margin changes between the open and the close.
 - **Horses.** The bookmakers' morning price is a candidate input to the closing model (`model/race_book.py`) and to
-  the BFSP forecast's morning features. It can be trained only once weeks of the schedule's capture are held. The
-  first read is tomorrow's join.
+  the BFSP forecast's morning features: information for the Betfair trade, never a bet. It can be trained only once
+  weeks of the schedule's capture are held. The first read is tomorrow's join.
+- **Other exchanges.** Matchbook's price arrives through Oddschecker (`MA`). It gives one cross-exchange trade to price:
+  back on Matchbook, lay at the Betfair BSP. Matchbook's own commission and its API are to check before any money.
 
 ## 4. Tennis: the first result
 
@@ -103,3 +114,5 @@ About 14,000 of the 20,000 a month. A floor stops every collector when the accou
 2. **Check the terms.** Flashscore, Pinnacle and Oddschecker are scraped through Parse, and racing²'s use is
    commercial. Their terms have not been read here.
 3. Decide whether to spend about 4,000 credits on the rest of the tennis history (section 4).
+4. Oddschecker is the largest cost in the schedule (about 8,100 credits a month) and is now a signal only. If
+   tomorrow's join shows it adds nothing beyond the Betfair book, set `PARSE_OC_MARKS` to fewer marks or drop the job.
