@@ -1501,6 +1501,25 @@ day to date**.
 - **Data.** Final marks with a BSP for 30 Oct 875 of 972; price files to 29 Oct; the probe passed at its first try. The
   Tote: no gap. Racing TV: 181 horses (10,278 left), 73 requests timed out.
 
+**The thirty-first full day** (31 Oct, a Saturday; ledger `live-day-1031`), the nineteenth early session.
+- **The start.** Predictions run 41167268550 (04:07 UTC); the session created 05:16 UTC (run 41171940492), first back
+  06:15 UK; the settle at 22:29 UTC (run 41248406523; its email report failed again, the connection closed).
+- **+GBP248.14 after commission** (Betfair's funds GBP6,684.67 against GBP6,436.53; the ledger the same) on 686 fills
+  on 167 horses in 45 races, GBP3,999.99 matched (GBP889.21 void: Southwell's last five races, GBP482.12, voided); CLV
+  +7.33% at Betfair's settled prices (the trader's horse-level +5.69%). The record: 22 days, +GBP4,531.93, 18 up.
+- **First backs +10.7% (GBP928), top-ups +5.9% (GBP2,197)**; GBP2,000 by 06:59 UK, the limit bound at 09:19 UK, the
+  earliest yet; 06:15-07:59 +8.5% (GBP2,351), 08:00-09:59 +3.8% (GBP774). Entry margin +17.4%, the widest yet.
+- **The changes** (`changes-1031`): the ladder 34% of the money, its first backs +9.5% against +11.8% at the best back;
+  the cap: 62 of 167 horses at 6 fills, none over; the capped horses +1.3%, the rest +10.7%. Staking 19-31 Oct
+  GBP47,274 at +6.15% against the old rule's +3.47%.
+- **The replay** (12-30 Oct, after the cuts; `replay-1031`): the rule now GBP5,441 over 19 days (+6.9%); at 0.80 about
+  GBP229 a day.
+- **The sectionals blend** (`model-quality-1031`): 24-30 Oct 0.382, 0.437, 0.409, 0.360, 0.376, 0.402, 0.389: 0.393 over
+  2,399 runners against 0.405 on 14-23 Oct, slightly better over a week.
+- **Data.** Final marks with a BSP for 31 Oct 740 of 914; price files to 30 Oct; the probe passed at its first try. The
+  Tote: no gap. The last Racing TV night: 999 horses (9,279 left); At The Races added 555,760 rows; Racing TV off from
+  1 Nov (the owner, PR #177).
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
