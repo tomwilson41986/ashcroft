@@ -62,6 +62,20 @@ its fetch time (UTC), the call and the credits charged. The tables are rebuilt f
 is safe to rerun. The key never reaches a file: it is read from `PARSE_API_KEY`. Spent on 1 Nov: about 2,700 credits
 (the probes, the 7-day backfill, the tennis history, the recorders), leaving 13,480 after the tennis history.
 
+### The day's capture, as it ended (1 Nov, 18:45 UTC)
+
+The two forward recorders ran inside this working session, and stopped each time the session went idle. Both were
+restarted at 15:23 UTC with network retries, and both had stopped by 15:59. What the day holds:
+
+| Recorder | Held |
+|---|---|
+| Oddschecker | 62 GB/IE races, 661 runners, 103 snapshots: every race once from 11:53 UTC; 40 snapshots 130+ minutes before the off, 16 at 70-130, 25 at 20-70, 19 within 20 minutes (7 races) |
+| Pinnacle | 6 snapshots (tennis, soccer and cricket at 11:53 and 15:23 UTC) |
+
+So tomorrow's horse test reads the bookmakers' price from late morning (the first snapshot), not 08:00, and has no
+T-15 reading worth scoring. Forward recording belongs to the scheduled job (`parse-odds.yml`), which runs once the
+key is a repository secret, not to a working session. Raw responses for the day: `data/parse/raw_capture_odds_2026-11-01.tar`.
+
 ## 3. Into the models
 
 - **The panel.** `panel_flashscore` turns the feed, and every bookmaker's winner market, into the standard open-close
