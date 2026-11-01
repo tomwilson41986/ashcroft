@@ -95,6 +95,15 @@ def test_walk_forward_never_scores_training_rows(prepared):
     assert acc.loc["no_change", "r2_vs_no_change"] == pytest.approx(0.0)
 
 
+def test_mean_shift_is_the_constant_floor(prepared):
+    scored = drift.walk_forward(prepared, [drift.NoChange(), drift.MeanShift(), drift.BandShrinkage(min_rows=20)],
+                                min_train_months=3)
+    acc = backtest.accuracy_table(scored, ["pred_no_change", "pred_mean_shift", "pred_band_ols"])
+    assert scored["pred_mean_shift"].nunique() <= scored["fit_month"].nunique()
+    assert acc.loc["band_ols", "r2_vs_no_change"] > acc.loc["mean_shift", "r2_vs_no_change"]
+    assert "mean_shift" in {m.name for m in drift.default_models()}
+
+
 def test_refit_every_fits_before_the_scored_month(prepared):
     scored = drift.walk_forward(prepared, [drift.BandShrinkage(min_rows=20)], min_train_months=3, refit_every=4)
     assert (scored["fit_month"] < scored["month"]).all()

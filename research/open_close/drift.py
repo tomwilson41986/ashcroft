@@ -2,7 +2,8 @@
 
 Four forecasts of ``y = log(close / open)`` per selection, each a class with ``fit(train)`` and ``predict(test)``:
 
-(a) ``NoChange``: close = open, the baseline every other model is scored against (the efficient-market null).
+(a) ``NoChange``: close = open, the baseline every other model is scored against (the efficient-market null);
+    ``MeanShift``, the training mean of y, is the constant-shift floor a permuted target still earns.
 (b) ``BandShrinkage``: ordinary least squares of y on log open within each price band, the favourite-longshot
     unwind (the market's early prices sit too long on the outsiders and too short on the favourites, and the close
     corrects part of it).
@@ -90,6 +91,22 @@ class NoChange:
 
     def predict(self, test: pd.DataFrame) -> np.ndarray:
         return np.zeros(len(test))
+
+
+class MeanShift:
+    """The training mean of y for every selection: the constant-shift baseline (the open's book and the close's
+    differ in overround, so every price moves a little the same way). The permuted leak test keeps this component;
+    a model's worth is its R2 above this one's."""
+
+    name = "mean_shift"
+    mean: float = 0.0
+
+    def fit(self, train: pd.DataFrame) -> "MeanShift":
+        self.mean = float(np.nanmean(train["y"].to_numpy(float)))
+        return self
+
+    def predict(self, test: pd.DataFrame) -> np.ndarray:
+        return np.full(len(test), self.mean)
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +289,7 @@ class BookCoherent:
 
 def default_models(with_model: bool = False, n_jobs: int = 4) -> list:
     """The arms a run scores: (a) to (d), and the boosted model made coherent."""
-    models = [NoChange(), BandShrinkage(), GradientBoosting(n_jobs=n_jobs), ConditionalLogit()]
+    models = [NoChange(), MeanShift(), BandShrinkage(), GradientBoosting(n_jobs=n_jobs), ConditionalLogit()]
     models.append(BookCoherent(GradientBoosting(n_jobs=n_jobs)))
     if with_model:
         models += [GradientBoosting(with_model=True, n_jobs=n_jobs), ConditionalLogit(with_model=True)]

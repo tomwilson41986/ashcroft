@@ -59,7 +59,7 @@ def score_window(scored: pd.DataFrame, pred_cols: list[str], thresholds: dict | 
            "accuracy": accuracy_table(scored, pred_cols).to_dict(orient="index"), "models": {}}
     for c in pred_cols:
         name = c.removeprefix("pred_")
-        if name == "no_change":
+        if name in ("no_change", "mean_shift"):
             continue
         sw = sweep(scored, c, commission=commission, commission_alt=commission_alt, n_boot=n_boot)
         t = thresholds[name] if thresholds else choose_threshold(sw)
