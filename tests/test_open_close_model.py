@@ -71,6 +71,16 @@ def test_clean_drops_unpriced_and_single_rows():
     assert len(d) == len(p) - 1 - (p["market_id"] == "m1").sum() - (p["market_id"] == "m2").sum()
 
 
+def test_fair_prices_make_a_book_of_one_at_both_ends():
+    p = synthetic_panel(n_markets=30)
+    d = features.prepare(p, normalise_book=True)
+    assert np.allclose((1 / d["open_price"]).groupby(d["market_id"]).sum(), 1.0)
+    assert np.allclose((1 / d["close_price"]).groupby(d["market_id"]).sum(), 1.0)
+    assert np.allclose(d["overround_open"], 1.0)
+    raw = features.prepare(p)
+    assert np.allclose(d["y"] - raw["y"], np.log(d["overround_close_raw"] / d["overround_open_raw"]))
+
+
 def test_walk_forward_never_scores_training_rows(prepared):
     models = [drift.NoChange(), drift.BandShrinkage(min_rows=20)]
     scored = drift.walk_forward(prepared, models, min_train_months=3, refit_every=1)

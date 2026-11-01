@@ -77,10 +77,11 @@ def score_window(scored: pd.DataFrame, pred_cols: list[str], thresholds: dict | 
 def run_panel(panel: pd.DataFrame, name: str, holdout_months: int = 3, holdout_from: str | None = None,
               min_train_months: int = 12, refit_every: int = 1, commission: float = COMMISSION,
               commission_alt: float = COMMISSION_ALT, n_jobs: int = 4, n_boot: int = 2000, shuffle: bool = True,
-              read_holdout: bool = True, log=_log) -> dict:
-    """The whole evaluation of one panel: development walk-forward, the leak test, then the holdout once."""
+              read_holdout: bool = True, normalise_book: bool = False, log=_log) -> dict:
+    """The whole evaluation of one panel: development walk-forward, the leak test, then the holdout once.
+    ``normalise_book``: the prices scaled to a book of one at both ends first (features.fair_prices)."""
     t0 = time.time()
-    d = prepare(panel)
+    d = prepare(panel, normalise_book=normalise_book)
     with_model = MODEL_COL in d.columns and d[MODEL_COL].gt(1).any()
     months = sorted(d["month"].unique())
     dev_months, hold_months = split_months(months, holdout_months, holdout_from)
@@ -90,7 +91,8 @@ def run_panel(panel: pd.DataFrame, name: str, holdout_months: int = 3, holdout_f
            "development_months": [dev_months[0], dev_months[-1]] if dev_months else [],
            "holdout_months": [hold_months[0], hold_months[-1]] if hold_months else [],
            "settings": {"min_train_months": min_train_months, "refit_every": refit_every, "commission": commission,
-                        "commission_alt": commission_alt, "thresholds": list(THRESHOLDS), "n_boot": n_boot},
+                        "commission_alt": commission_alt, "thresholds": list(THRESHOLDS), "n_boot": n_boot,
+                        "normalise_book": bool(normalise_book)},
            "by_market_rows": d.groupby(["sport", "country", "market_type"]).size().reset_index()
            .rename(columns={0: "rows"}).to_dict(orient="records")}
     log(f"[{name}] {len(d):,} rows, {res['markets']:,} markets, {months[0] if months else '-'} to "
@@ -215,7 +217,8 @@ def report_md(res: dict) -> str:
            f"{'; the model forecast on ' + format(res['model_rows'], ',') + ' rows' if res['with_model'] else '; market-only'}.",
            f"Walk-forward by month, first {s['min_train_months']} months fit only, refit every {s['refit_every']} month(s); "
            f"commission {s['commission']:.0%} on each market's net (sensitivity {s['commission_alt']:.0%}); "
-           f"{s['n_boot']} day-bootstrap draws; a tick worse at each end on Betfair's ladder (trading/exchange.py).",
+           f"{s['n_boot']} day-bootstrap draws; a tick worse at each end on Betfair's ladder (trading/exchange.py)"
+           + ("; prices scaled to a book of one at both ends (the bookmaker's margin taken out)." if s.get("normalise_book") else "."),
            "", "Rows by market:", "", "| sport | country | market_type | rows |", "|---|---|---|---|"]
     out += [f"| {r['sport']} | {r['country']} | {r['market_type']} | {r['rows']:,} |" for r in res["by_market_rows"]]
     out += [""]
@@ -263,12 +266,14 @@ def main(argv=None) -> int:
     ap.add_argument("--split-by", default=None, help="a column: run each value as its own dataset")
     ap.add_argument("--no-shuffle", action="store_true", help="skip the leak test")
     ap.add_argument("--no-holdout", action="store_true", help="do not read the holdout")
+    ap.add_argument("--normalise-book", action="store_true",
+                    help="scale each market's prices to a book of one at both ends first (a bookmaker proxy)")
     a = ap.parse_args(argv)
     panel = read_panel(a.panel)
     name = a.name or Path(a.panel).stem
     kw = dict(holdout_months=a.holdout_months, holdout_from=a.holdout_from, min_train_months=a.min_train_months,
               refit_every=a.refit_every, commission=a.commission, commission_alt=a.commission_alt, n_jobs=a.n_jobs,
-              n_boot=a.n_boot, shuffle=not a.no_shuffle, read_holdout=not a.no_holdout)
+              n_boot=a.n_boot, shuffle=not a.no_shuffle, read_holdout=not a.no_holdout, normalise_book=a.normalise_book)
     if a.split_by:
         results = [run_panel(part, f"{name}:{a.split_by}={val}", **kw) for val, part in panel.groupby(a.split_by)]
     else:
