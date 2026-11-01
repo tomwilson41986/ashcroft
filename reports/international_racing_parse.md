@@ -14,7 +14,7 @@ comes from those responses.
    Hong Kong record with its rating, back to 2019 for the horse tried. Each costs about 1 credit a race.
 2. **Neither is known to trade on Betfair.** Betfair publishes no price files for Hong Kong or Japan
    (`reports/international_racing.md`), and October's census does not settle it. A by-country racing census now
-   answers it (`betfair-racing-census.yml`, section 3). Nothing is built for either until it shows exchange money.
+   answers it (section 3). Nothing is built for either until it shows exchange money.
 3. **Australia, the market with the money, has no history among the nine.** TAB crashes on every date. Racenet and
    Neds give today only. Racenet's field is rich: barrier, weight, a form summary, and 18 price sources including
    Betfair's back and lay. But it costs 10 credits a race and holds no past results.
@@ -52,11 +52,17 @@ started, because the model needs an exchange to trade on first (the owner's rule
 ## 3. The deciding check: does Betfair trade these races?
 
 `betfair_recorder.py --census-racing` reads, for every country Betfair lists horse racing in: its win markets,
-venues and the money matched so far. It makes one read-only call per country, on the delayed key. It runs three
-times a day (`betfair-racing-census.yml`), so each region is read while it races: 05:30 UTC (Japan, Hong Kong,
-Australia), 12:30 (Europe, South Africa) and 21:30 (the Americas). Readings are saved to
-`betfair_live/<day>/census_racing_<HHMM>.json`. The first reading, from this branch over the week ahead, is below
-when it lands.
+venues and the money matched so far. It makes one read-only call per country, on the delayed key. It runs each
+evening in the recorder job on the UK server (`live-record.yml`, after the sports census), with a 7-day window, so
+it lists every country's markets for the week, Hong Kong and Japan included. Readings are saved to
+`betfair_live/<day>/census_racing_<HHMM>.json`.
+
+A first attempt from GitHub's own runners failed: Betfair refused the login (403 at identitysso.betfair.com) from
+that host. So the census runs only where the account's other Betfair reads run. The first reading comes the evening
+after this branch merges, because the recorder job runs from the default branch. The evening reading lists the
+week's Hong Kong and Japanese markets before they trade much. The money near the off would need a reading while
+those countries race, about 01:00-09:30 UK. The UK server is busy then (the price archive to 06:15, then the
+trader), so that is left until the listing shows the markets exist.
 
 ## 4. Next
 
