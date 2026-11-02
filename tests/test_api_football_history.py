@@ -96,3 +96,19 @@ def test_no_key_fetches_nothing(tmp_path, monkeypatch):
 
 def test_placeholder_ratings_read_as_missing():
     assert h._num("6.89") == 6.89 and h._num("\u2013") is None and h._num("") is None and h._num(None) is None
+
+
+def test_a_rate_limit_reply_waits_and_tries_again(tmp_path):
+    f = Fake(n=3)
+    real = f.__call__
+    state = {"n": 0}
+
+    def limited(path, params):
+        state["n"] += 1
+        if state["n"] == 2:
+            return {"errors": {"rateLimit": "Too many requests."}, "response": []}, f.quota
+        return real(path, params)
+    slept = []
+    out = h.fetch(Store(root=tmp_path), first_season=2025, fetcher=limited, today=date(2025, 11, 2), leagues={39},
+                  sleep=slept.append)
+    assert out["stopped"] is None and out["matches_fetched"] == 3 and out["rate_limited"] == 1 and slept == [61.0]

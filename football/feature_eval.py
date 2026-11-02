@@ -149,6 +149,8 @@ def outcome_test(d: pd.DataFrame, families: dict = FAMILIES, scored: str = "dev"
         for k, arm in arms.items():
             mod = type(arm)(arm.feats, arm.use_model).fit(tr)
             lls[k].append(_ll(mod.predict(te), te["y"].to_numpy()))
+    if not test_rows:
+        return {"rows": 0, "log_loss": {}, "gain_vs_open_model": {}, "gain_vs_open": {}}
     day = pd.concat(test_rows)["date"].dt.strftime("%Y-%m-%d").to_numpy()
     ll = {k: np.concatenate(v) for k, v in lls.items()}
     out = {"rows": int(len(day)), "log_loss": {k: float(v.mean()) for k, v in ll.items()}, "gain_vs_open_model": {},

@@ -37,6 +37,7 @@ from sources.common import Budget, Store, env, gunzip, gz
 log = logging.getLogger(__name__)
 
 FIRST_SEASON = 2020
+RATE_TRIES, RATE_WAIT_S = 5, 61.0   # API-Football's per-minute limit (Pro: 300 a minute, its reply of 2 Nov 2026)
 QUOTA_FLOOR = 1500          # the same reserve as the nightly fixtures backfill: the day's line-up polls need it
 FINISHED = {"FT", "AET", "PEN"}
 DONE_KEY = f"{PREFIX}/history/done_ids.json"
@@ -75,7 +76,8 @@ def done_ids(store: Store) -> set[int]:
 
 
 def fetch(store: Store, max_minutes: float | None = None, first_season: int = FIRST_SEASON, fetcher=None,
-          today: date | None = None, quota_floor: int = QUOTA_FLOOR, leagues: set[int] | None = None) -> dict:
+          today: date | None = None, quota_floor: int = QUOTA_FLOOR, leagues: set[int] | None = None,
+          sleep=None) -> dict:
     out = {"season_lists": 0, "requests": 0, "matches_fetched": 0, "already_held": 0, "stopped": None,
            "quota_left": None}
     if fetcher is None:
@@ -85,6 +87,8 @@ def fetch(store: Store, max_minutes: float | None = None, first_season: int = FI
             log.warning("api_football_history: %s", out["error"])
             return out
         fetcher = http_fetch(key)
+    import time
+    sleep = sleep or time.sleep
     today = today or date.today()
     cur = current_season(today)
     leagues = sorted(leagues or main_league_ids())
@@ -101,11 +105,18 @@ def fetch(store: Store, max_minutes: float | None = None, first_season: int = FI
         if not budget.left():
             out["stopped"] = "time budget"
             return None
-        body, left = fetcher(path, params)
-        out["requests"] += 1
-        n += 1
-        if left is not None:
-            out["quota_left"] = left
+        for attempt in range(RATE_TRIES):
+            body, left = fetcher(path, params)
+            out["requests"] += 1
+            n += 1
+            if left is not None:
+                out["quota_left"] = left
+            errs = (body or {}).get("errors")
+            if errs and "rateLimit" in str(errs) and attempt < RATE_TRIES - 1:
+                out["rate_limited"] = out.get("rate_limited", 0) + 1     # the plan's per-minute limit: wait, again
+                sleep(RATE_WAIT_S)
+                continue
+            break
         if body is not None and body.get("errors"):
             out["stopped"] = f"API error: {str(body['errors'])[:200]}"
             return None
