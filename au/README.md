@@ -28,3 +28,21 @@ Each gate is pass/fail. A fail stops the work, and the next stage costs nothing 
 - `data.py`: the BSP targets, every Australian thoroughbred runner's Betfair SP and result from Sep 2012, from our
   price-file archive, reconciled with Betfair's ANZ files (`python -m au.data --build --anz-check`; workflow
   `au-data.yml`). Stored at `s3://$CAPTURE_BUCKET/sources/au/bsp_targets.parquet` with its data report beside it.
+
+## Status (2 Nov 2026)
+
+Stage 1 started: the BSP targets are built (au-data run 41461018554,
+https://github.com/tomwilson41986/ashcroft/actions/runs/41461018554), at `s3://ashcroft/sources/au/bsp_targets.parquet`.
+
+- 5,154 archive files (20 Sep 2012 to 1 Nov 2026; 18 empty, 0 unreadable), 4,119,258 rows in, 2,326,223 out:
+  1,792,381 harness, 460 duplicates, 116 with no meeting name, 78 New Zealand dropped; rows in = out + dropped.
+- 237,943 markets, 18 Sep 2012 to 31 Oct 2026, about 16,300-17,500 races a year from 2013; 237,446 with one winner,
+  103 dead heats, 394 with none; 308 runners without a BSP, 696 without a result; 180 without a race number or
+  distance.
+- Against Betfair's ANZ files, 2020 to Oct 2026: 1,130,747 runners matched (99.87% of ours found there, 99.99% of
+  theirs found here); BSP, result, race number, distance, meeting date and track agree on 100%.
+- Betfair's short meeting names ('AUS / Flem') mapped to full names from the ANZ files: 178 learned, each at 99% or
+  more agreement; 12,180 rows (0.5%) keep a short name, courses not raced since 2019 (Mdra 4,069, Stcr 3,089, ...).
+- `off_uk` is UK local time: the ANZ clock runs 9, 10 or 11 hours ahead of it, with the two countries' clock changes.
+
+Waiting on the owner for stage 0: the Historic Data plan, Punting Form's consent and key, the `au-night` runner.
