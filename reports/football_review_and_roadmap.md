@@ -1,11 +1,14 @@
 # Football: QA review, research ideas and the roadmap to profit (2 Nov 2026)
 
-**Bottom line: the football work is sound, and it has found a real, repeatable signal: the move from the early price
-to the close is forecastable. It has not found a profit. Every test so far loses once we pay to cross Betfair's spread
-at both ends. The road to profit is therefore not a better result model. It is (1) a stronger move forecast from
-stacking models and new data we already hold (xG, injuries, the recorded books), (2) cheaper execution (resting orders
-instead of crossing the spread, and the team-sheet window), and (3) checking capacity, how much money the books actually
-take. All three are blocked on one thing: the paper-models runner, which has never run.**
+**Bottom line: after a full QA (two independent code reviews, 15 fixes, every result re-run), the football work has one
+real, repeatable signal and no proven profit. The move from the early price to the close is forecastable: 64% the
+right way and +3.3% at the mid on 1,926 Betfair holdout trades. Whether that is profit depends entirely on the price of
+the lay at the early book, which our historical data does not record: -1.1% if every fill is a tick worse than fair,
+about break-even (-0.17%) if books are symmetric, +2.2% if the lay sits one tick over the back. So the road to profit
+is: (1) measure the real spread and depth with the Betfair recorder (this alone decides the current rule); (2) raise the
+forecast by stacking models (a two-model stack already lifts the move caught from 4.0% to 5.1% in development) and with
+data we hold but do not use (xG, injuries); (3) cut the cost of execution (resting orders, the team-sheet window). All
+three wait on one thing: the paper-models runner, which has never run.**
 
 Every figure below names its source file. "Development" means seasons the model may be tuned on. "Holdout" means data
 read once against a rule written down beforehand.
@@ -17,14 +20,14 @@ read once against a rule written down beforehand.
 | Dixon-Coles team model vs the open | 92,766 matches, 2012-2026 | Behind the open every season; pooled weight negative | `reports/football_model.md` s.3 |
 | Paper trader (pooled model, 5% edge) | Live, since Oct 2026 | 15 bets, 0 settled (settlement fault, see 2.2) | football-model.yml settle logs |
 | Exchange gap rule, pre-registered | Holdout Aug-Nov 2026 | Failed: -1.40% a tick worse (39 bets) | `reports/open_close/model_football_exchange.md` |
-| Team features vs the result's price | 68,535 matches, development | Nothing adds; best +0.12 per thousand (-0.01 to +0.26) | `reports/football_team_features.md` |
-| Team features vs the early-to-close move | 60,807 Pinnacle matches, development | R2 4.6% (floor -0.07%); top decile catches 4.0% before costs | same |
-| Team-feature move rule on Betfair, pre-registered | Holdout Jul 2025-Nov 2026 | Failed: -1.10% a tick worse (-1.64 to -0.54), 1,827 bets; +3.27% at the mid, 64% right way | `reports/football_runs/team_move_holdout.json` |
-| Player ratings, line-up surprise | 46,869 matches, development | 0.7% of the move; adds nothing to the close | `reports/football_player_ratings.md` |
-| Stacked move model (QA experiment, 2.4) | 60,807 Pinnacle matches, development | R2 5.2% vs 4.1% (linear); top decile catches 4.9% vs 4.0% | `reports/football_runs/move_model_comparison_dev.json` |
+| Team features vs the result's price (corrected) | 68,533 matches, development | Performance added vs market +0.17 per thousand (+0.02 to +0.32); about 5% of what the close adds; weak (14 comparisons) | `reports/football_team_features.md` |
+| Team features vs the early-to-close move (corrected) | 60,805 Pinnacle matches, development | R2 4.51% (floor -0.13%); top decile catches 3.98% before costs | same |
+| Team-feature move rule on Betfair, pre-registered (corrected) | Holdout Jul 2025-Nov 2026, 1,926 trades | Registered headline failed: -1.11% a tick off fair (-1.67 to -0.61). At the mid +3.29%, 64.2% right way. At recorded backs with symmetric lays -0.17% (-0.68 to +0.33) | `reports/football_runs/team_move_holdout.json`, `team_move_cost_check.json` |
+| Player ratings, line-up surprise (corrected) | 46,869 matches, development | 0.7-0.8% of the move; adds nothing to the close | `reports/football_player_ratings.md` |
+| Stacked move model (QA experiment, corrected) | 60,805 Pinnacle matches, development | R2 5.46% vs 4.17% (linear); top decile catches 5.09% vs 3.98% | `reports/football_runs/move_model_comparison_dev.json` |
 
 **The pattern:** results are priced efficiently. The path of the price is not, but its predictable part is about the
-size of the cost of trading it.
+size of the cost of trading it, and that cost is the one number we have not measured.
 
 ## 2. QA review
 
@@ -58,21 +61,21 @@ old code before fixing it. Fixes: commit aa6f196. Findings and status: section 2
 | Multiple testing | 18 width x threshold cells examined in development; the one positive cell was registered as a secondary read and failed | Keep registering the chooser, not the best cell |
 | Data quality | API-Football: 34 of 49,206 matches have a repeated player id (source errors); 715 substitutions unresolved; 207 players without an id | Negligible; documented |
 
-### 2.4 The model comparison (QA experiment, development only)
+### 2.4 The model comparison (QA experiment, development only, on the corrected features)
 
 Early-to-close home move, Pinnacle to Pinnacle, 2016/17-2024/25, walk-forward by season
 (`research/queries/football_move_model_comparison.py`, `reports/football_runs/move_model_comparison_dev.json`):
 
 | Model | R2 vs mean | Top-decile move caught | Right way |
 |---|---|---|---|
-| Linear on team features (the current model) | 4.08% | 4.03% | 65.5% |
-| LightGBM on team features | 3.19% | 3.48% | 61.8% |
-| LightGBM on team features + market state + league | 4.58% | 4.48% | 64.6% |
-| **Stack: mean of linear and LightGBM (market)** | **5.24%** | **4.91%** | **66.4%** |
-| LightGBM on a permuted target (floor) | -0.81% | 0.01% | 49.4% |
+| Linear on team features (the current model) | 4.17% | 3.98% | 65.9% |
+| LightGBM on team features | 3.62% | 3.90% | 62.9% |
+| LightGBM on team features + market state + league | 4.90% | 4.81% | 65.3% |
+| **Stack: mean of linear and LightGBM (market)** | **5.46%** | **5.09%** | **66.9%** |
+| LightGBM on a permuted target (floor) | -0.78% | 0.37% | 50.6% |
 
-A simple two-model stack beats either model alone by a clear margin. That is the strongest evidence today that model
-work (ensembles, more market-state features) can still raise the captured move.
+A simple two-model stack beats either model alone by a clear margin. It is the strongest evidence today that model work
+(ensembles, market-state features) can still raise the captured move, by about a quarter.
 
 ### 2.5 Reviewer findings and fixes
 
@@ -110,6 +113,23 @@ work (ensembles, more market-state features) can still raise the captured move.
 - No multiple-comparison adjustment across families. Every family's result is reported, none selected.
 - Market ratings have a free level (attack + c, defence + c), so `own_r_d5` moves slightly with the pool's make-up.
 - The line-up tables build reads every raw poll each night and will slow as files accumulate (incremental build later).
+
+### 2.6 The re-run on the corrected code, and the cost question
+
+Every result was re-run after the fixes (commit aa6f196). The leak was small: no conclusion moved (table in section 1;
+details in `reports/football_team_features.md` and `reports/football_player_ratings.md`, "Corrected figures"). One
+check changed the picture: the Betfair rule's result depends on the lay price at the early book, which football-data
+does not record (`reports/football_runs/team_move_cost_check.json`):
+
+| Holdout, takeable books, threshold 0.03 | Backs (611) | Lays (1,315) | All (1,926) |
+|---|---|---|---|
+| A tick off the fair price (the registered headline) | | | -1.11% (-1.67 to -0.61) |
+| Recorded back; lay one tick over the back | +0.29% | +3.11% | +2.22% (+1.70 to +2.72) |
+| Recorded back; lay from a book symmetric about fair | -0.52% | -0.01% | -0.17% (-0.68 to +0.33) |
+
+A symmetric book implies a median early spread of 4 ticks in the holdout. "One tick over the back" is therefore
+optimistic for every lay, and the realistic reading is break-even. The registered verdict stands (fail). But the
+distance between break-even and profit is about one tick of spread, and only the recorder measures it.
 
 ## 3. Feature engineering: what to build next
 
@@ -162,9 +182,9 @@ Each phase has a gate. Nothing moves to money without passing the gate in the ph
 
 | Phase | When | Work | Gate to the next |
 |---|---|---|---|
-| **0. Unblock** | This week | Register the paper-models runner; fix settlement (re-settle every unsettled day; log why a bet cannot settle); read-only S3 keys for research sessions; apply the QA fixes (2.5); recorder snapshots at the Friday and Tuesday collection for Sun/Mon/Wed/Thu matches | The recorder, collector and paper traders write files every day |
+| **0. Unblock** | This week | Register the paper-models runner (owner); read-only S3 keys for research sessions (owner). Done in code (commit aa6f196): the QA fixes, settlement re-settles and explains, recorder snapshots at the Friday and Tuesday collection | The recorder, collector and paper traders write files every day |
 | **1. Build the stack** | Weeks 1-4 | F2, F3, F5, F6, F8 into the team features; the stacked move model (4.1), the meta-label (4.2); all on development data to 2024/25 with season folds | Development: top-decile move caught at least 1.5x the measured round-trip cost at Betfair prices, interval above it |
-| **2. Measure costs and capacity** | Weeks 2-6, from the recorder | Real spreads, sizes and queue fills on the recorded books; the resting-order simulator (4.5); the team-sheet window using the collector's first-seen times against the 2-minute books | Known cost per trade and money available per signal. If capacity is under about GBP 50 a signal, football cannot carry meaningful profit: stop here |
+| **2. Measure costs and capacity** | Weeks 1-6, from the recorder (starts the day the runner does) | **First: the real early spread at the collection moment.** It decides whether the current rule is -1.1%, break-even or +2.2% (2.6). Then sizes at the best prices, queue fills, the resting-order simulator (4.5), and the team-sheet window (the collector's first-seen times against the 2-minute books) | Known cost per trade and money available per signal. If the median early spread in takeable books is over 2 ticks, or capacity is under about GBP 50 a signal, crossing the spread cannot pay: only resting orders remain |
 | **3. Pre-register and paper-trade** | From week 4 | Write the stacked rule (and a resting-order variant) into pre-registration files before forward data; run on paper on the recorder's books with sizes | The pre-registered gate: at least 300 trades and 90 days, 90% lower bound of return at taken prices above zero, CLV above zero, both halves positive |
 | **4. Second-tier markets** | Months 2-4, in parallel | Asian handicap and alternative totals (same engine); corners and cards (F10), where a stats model is more plausible, after the census shows liquidity; Betfair Historic BASIC files for 2016-on paths (owner's action) | Same gate per market |
 | **5. Live, small** | After a paper pass | Live key, minimum stakes, match and day caps, the STOP switch; written permission from football-data.co.uk first (its terms: private use only) | Live CLV inside the paper interval for a month before any increase |
@@ -173,10 +193,11 @@ Each phase has a gate. Nothing moves to money without passing the gate in the ph
 recorder and data collection continue at no marginal cost as research inputs. The decision is then whether to redirect
 the effort to the markets already trading.
 
-**Economics to check early (Phase 2).** At the development rate of about 1,800 signals a year in takeable books
-(1,827 in 16 holdout months), a GBP 10 stake and a 2% net edge make about GBP 360 a year. Profit at a level that matters
-needs stakes in the hundreds a signal, which only the recorder's sizes can show the books will take. This is the first
-number to establish, because it decides whether the rest is worth doing.
+**Economics to check early (Phase 2).** The registered rule gave 1,926 signals in 16 holdout months in takeable books,
+about 1,450 a year. At GBP 10 a signal and a 2% net edge that is about GBP 290 a year; at GBP 100 a signal, about
+GBP 2,900; at GBP 500, about GBP 14,500. Profit at a level that matters needs stakes in the hundreds a signal at the
+best prices, which only the recorder's sizes can show the books take. With the spread, this is the first number to
+establish, because together they decide whether the rest is worth doing.
 
 ## 6. Owner's actions
 

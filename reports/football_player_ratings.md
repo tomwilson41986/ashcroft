@@ -58,3 +58,13 @@ Linked to the gold table: 47,982 of 49,206 API-Football matches (97.5%). With fe
 
 Data notes: 40 player rows repeat a player within a match (0.002%; starters are de-duplicated before fitting); 715
 substitutions could not be resolved from the events; 207 players have no API-Football id.
+
+## Corrected figures after the QA review (2 Nov 2026, commit aa6f196)
+
+The review found own goals credited to the wrong side and stoppage-time goals lost after late substitutions. Both are
+fixed: stint goals now reconcile with the final score in 99.99% of matches (`stint_goals_reconciled`), from about 88%.
+It also found the monthly fits could hold closes from after a match's collection; each match now takes the fit of its
+collection month. Re-run (`reports/football_runs/player_ratings_dev.json`): 320,048 stints. The line-up surprise
+explains 0.67% (market) and 0.79% (goals) of the early-to-close move, and team features plus the surprise 4.08%. Against
+the close the surprise gains -0.06 per thousand (-0.28 to +0.15). No conclusion moves. The goals rating's top names are
+now H. Kane, M. Olise, S. Dest, G. Til, D. Upamecano, Mauro Júnior, L. Díaz, Lamine Yamal, C. McGregor, B. Mechele.

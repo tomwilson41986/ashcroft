@@ -1,5 +1,5 @@
 {
- "rows": 60807,
+ "rows": 60805,
  "seasons": [
   2016,
   2017,
@@ -12,28 +12,28 @@
   2024
  ],
  "p_ols": {
-  "r2_vs_mean": 0.040810237365243474,
-  "top_decile_caught": 0.0402661520124917,
-  "top_decile_right_way": 0.6553198487090939
+  "r2_vs_mean": 0.04170346994251417,
+  "top_decile_caught": 0.039759515239621686,
+  "top_decile_right_way": 0.6591021213616182
  },
  "p_gbm": {
-  "r2_vs_mean": 0.031939770896678765,
-  "top_decile_caught": 0.034830693573927804,
-  "top_decile_right_way": 0.6178260154579839
+  "r2_vs_mean": 0.03624766718586114,
+  "top_decile_caught": 0.039047335052156254,
+  "top_decile_right_way": 0.6291728334155566
  },
  "p_gbm_mkt": {
-  "r2_vs_mean": 0.04580669220728173,
-  "top_decile_caught": 0.04476006551084847,
-  "top_decile_right_way": 0.6456174971221839
+  "r2_vs_mean": 0.04896018524292878,
+  "top_decile_caught": 0.048133452122253874,
+  "top_decile_right_way": 0.6531820424272323
  },
  "p_stack": {
-  "r2_vs_mean": 0.052360414666216215,
-  "top_decile_caught": 0.04914747429861505,
-  "top_decile_right_way": 0.6638710738365401
+  "r2_vs_mean": 0.054637657979384135,
+  "top_decile_caught": 0.05094378689536692,
+  "top_decile_right_way": 0.6694622594967933
  },
  "p_perm": {
-  "r2_vs_mean": -0.008056889995534444,
-  "top_decile_caught": 0.0001481114448241435,
-  "top_decile_right_way": 0.4938332511100148
+  "r2_vs_mean": -0.007830856501533257,
+  "top_decile_caught": 0.0036594866123184806,
+  "top_decile_right_way": 0.5061667488899853
  }
 }

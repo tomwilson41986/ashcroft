@@ -132,3 +132,39 @@ What could still be tested (not pre-registered, ideas only):
   often they are picked off (`reports/football_quant_approach.md` s.6.4, rule 4).
 - **Holding to the result instead of greening:** the entry beats the fair close by +1.13% (CLV) after paying the tick
   in, which commission on winnings roughly cancels. A test, not a finding.
+
+## Corrected figures after the QA review (2 Nov 2026, commit aa6f196)
+
+The QA review (`reports/football_review_and_roadmap.md` s.2.5) found that the weekly refits could let a Saturday result
+or close into a Sunday or Monday feature whose early price was taken on the Friday. It also found a season-window
+overlap and an optimistic cost model. Every figure above was re-run on the corrected code; the JSON files in
+`reports/football_runs/` now hold the corrected run (the first run is in git history).
+
+| Figure | First run | Corrected |
+|---|---|---|
+| Outcome, performance added vs market, gain over open + model (per thousand) | +0.12 (-0.01 to +0.26) | **+0.17 (+0.02 to +0.32)** |
+| Outcome, performance added vs model | +0.09 (-0.03 to +0.21) | +0.14 (+0.004 to +0.28) |
+| Outcome, strength of schedule | -0.03 (-0.11 to +0.05) | -0.01 (-0.06 to +0.03) |
+| Move, all families, R2 vs mean (permuted floor) | 4.60% (-0.07%) | 4.51% (-0.13%) |
+| Move, top decile caught, right way | 4.03%, 65.5% | 3.98%, 65.9% |
+| Betfair, development, takeable, threshold 0.03, a tick off fair | -0.40% (-1.15 to +0.40) | -0.29% (-1.06 to +0.45) |
+| Betfair, holdout, registered rule, a tick off fair | -1.10% (-1.64 to -0.54) | -1.11% (-1.67 to -0.61), 1,926 bets |
+
+The leak was small: no conclusion moves. Two outcome families now have lower bounds just above zero. With 7 families
+read against 2 baselines at 90%, about one such result is expected by chance, and the effect is about 5% of what the
+close adds over the open. It is a lead for the stack, not a finding.
+
+**The cost model decides the Betfair result (`reports/football_runs/team_move_cost_check.json`).** football-data
+records only Betfair's back prices, so the lay price at the early book has to be assumed:
+
+| Holdout, takeable books, threshold 0.03 | Backs (611) | Lays (1,315) | All (1,926) |
+|---|---|---|---|
+| A tick off the fair price (the registered headline) | | | -1.11% (-1.67 to -0.61) |
+| Recorded back; lay one tick over the back | +0.29% (-0.50 to +1.08) | +3.11% (+2.55 to +3.64) | +2.22% (+1.70 to +2.72) |
+| Recorded back; lay from a book symmetric about the fair price | -0.52% (-1.31 to +0.26) | -0.01% (-0.56 to +0.52) | -0.17% (-0.68 to +0.33) |
+
+A symmetric book implies a median early spread of 4 ticks in the holdout (3 in development), so "one tick over the
+back" flatters every lay. The realistic reading is break-even. The registered verdict stands (fail, on its registered
+headline). The honest summary is that **the rule is between -1.1% and +2.2% depending only on a price we did not record.**
+The recorder's best lay with sizes settles it, which makes it the most valuable data we can get. This re-read used the
+holdout a second time, for the correction only; nothing was selected on it.
