@@ -3,8 +3,9 @@ name: Greyhound card-safe full model, scored for the trade-out study (read-only)
 # The owner (2 Nov 2026): score the card-safe full greyhound model and rerun the trade-out study with it
 # (research/greyhound/score_full.py; reports/greyhound_model.md section 14). The metrics on every GBGB run from 2018
 # with the parity, HorseRaceBase and library blocks, the weigh-in features left out, one fit on the race's softmax
-# to 5 Oct 2026, every race from 6 Oct predicted; then the trade-out study twice on the same days, our price from the
-# 5 Oct base model and from this one. Read-only: S3 in, the reports and the day files as the run's artifact.
+# to 5 Oct 2026, every race from 6 Oct predicted, and beside it the horse model's target (log BSP, L2) on the same
+# features; then the trade-out study three times on the same days, our price from the 5 Oct base model, the full win
+# model and the log-BSP model. Read-only: S3 in, the reports and the day files as the run's artifact.
 
 on:
   workflow_dispatch:
@@ -60,7 +61,7 @@ jobs:
             ARGS+=(--to "$TO")
           fi
           timeout 290m python -m research.greyhound.score_full "${ARGS[@]}"
-      - name: The trade-out study, the 5 Oct base model and the full model
+      - name: The trade-out study, our price from the 5 Oct base model, the full win model and the log-BSP model
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -71,12 +72,15 @@ jobs:
           EXTRA=()
           if [ -n "$TO" ]; then EXTRA+=(--to "$TO"); fi
           python -m research.greyhound.tradeout_study "${EXTRA[@]}" --out out/study_base
-          python -m research.greyhound.tradeout_study "${EXTRA[@]}" --pred-dir out/pred_full --out out/study_full
+          python -m research.greyhound.tradeout_study "${EXTRA[@]}" --pred-dir out/pred_full/full --out out/study_full
+          if [ -d out/pred_full/logbsp ]; then
+            python -m research.greyhound.tradeout_study "${EXTRA[@]}" --pred-dir out/pred_full/logbsp --out out/study_logbsp
+          fi
       - name: Summary
         if: always()
         run: |
           [ -f out/greyhound_full_score.json ] && { echo '## The full model'; echo '```'; head -c 20000 out/greyhound_full_score.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          for f in out/study_full.md out/study_base.md; do
+          for f in out/study_full.md out/study_logbsp.md out/study_base.md; do
             [ -f "$f" ] && { echo; echo "## $f"; head -c 25000 "$f"; } >> "$GITHUB_STEP_SUMMARY"
           done
           true

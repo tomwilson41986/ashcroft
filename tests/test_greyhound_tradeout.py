@@ -267,9 +267,32 @@ def test_full_model_days_join_their_markets_and_meet_the_base_and_the_sp(tmp_pat
     full["p_model"] = full.groupby("race_id").p_model.transform(lambda s: (s ** 0.8) / (s ** 0.8).sum())
     files = {"markets_greyhound.csv": markets, "books_greyhound.csv": books}
     monkeypatch.setattr(betfair_recorder, "_read_day_csv", lambda day, name, s3=None, root=None: files.get(name))
-    out = sf.score_days(full, DAY, DAY, store, tmp_path / "pred")
-    assert out["days"][0]["races_on_betfair"] == 6
-    day = pd.read_parquet(tmp_path / "pred" / f"{DAY}.parquet")
+    logbsp = full.assign(pred_bsp=1.0 / full.p_model)
+    out = sf.score_days({"full": full, "logbsp": logbsp}, DAY, DAY, store, tmp_path / "pred")
+    assert out["days"][0]["races_on_betfair_full"] == 6 and out["days"][0]["races_on_betfair_logbsp"] == 6
+    day = pd.read_parquet(tmp_path / "pred" / "full" / f"{DAY}.parquet")
     assert {"market_id", "selection_id", "p_model"} <= set(day.columns) and len(day) == 36
+    assert "pred_bsp" in pd.read_parquet(tmp_path / "pred" / "logbsp" / f"{DAY}.parquet").columns
     h = out["head_to_head"]
-    assert h["races"] == 6 and h["logloss_base_5oct"] != h["logloss_full_card_safe"]
+    assert h["races"] == 6 and h["logloss"]["base_5oct"] != h["logloss"]["full"]
+    assert set(h["logloss"]) == {"base_5oct", "full", "logbsp", "bsp"} and h["log_bsp_model_vs_sp"]["rmse_log"] > 0
+
+
+def test_log_bsp_model_fits_before_the_cutoff_and_prices_after():
+    from research.greyhound import score_full as sf
+    rng = np.random.default_rng(0)
+    n_races, field = 1500, 6
+    days = pd.date_range("2026-08-01", periods=100, freq="D")
+    race = np.repeat(np.arange(n_races), field)
+    t = np.repeat(days[np.arange(n_races) % len(days)], field)
+    x = rng.normal(size=len(race))
+    bsp = np.exp(1.6 - 0.6 * x + rng.normal(0, 0.2, len(race)))
+    df = pd.DataFrame({"race_id": race, "t": t, "race_date": t.strftime("%Y-%m-%d"), "race_time": "12:00",
+                       "track": "X", "trap": np.tile(np.arange(1, 7), n_races), "dog_id": 1, "dog_name": "d",
+                       "won": 0, "sp_decimal": 3.0, "field": field, "is_trial": False, "x": x.astype(np.float32),
+                       "bsp": bsp})
+    out, info = sf.fit_log_bsp(df, ["x"], "2026-10-20", date_from="2026-01-01", rounds=200)
+    assert (pd.to_datetime(out.race_date) >= "2026-10-20").all() and len(out)
+    assert np.allclose(out.groupby("race_id").p_model.sum(), 1.0)
+    assert np.corrcoef(np.log(out.pred_bsp), -out.merge(df[["race_id", "trap", "x"]], on=["race_id", "trap"]).x)[0, 1] > 0.9
+    assert info["fit_rows"] < len(df)
