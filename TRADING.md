@@ -1528,8 +1528,10 @@ day to date**.
   same) on 751 fills on 156 horses in 35 races, GBP4,000.00 matched (GBP110.04 void); CLV +7.99% at Betfair's settled
   prices (the trader's horse-level +7.77%). The record: 23 days, +GBP5,000.29, 19 up.
 - **The funds after the day.** At the settle the account read GBP5,000.00 with nothing exposed: GBP2,153.03 left it
-  between 16:39 and 22:30 UTC, read as a withdrawal leaving GBP5,000 (put to the owner to confirm). The next day starts
-  from GBP5,000.00; the GBP4,000 day limit is inside it.
+  between 16:39 and 22:30 UTC, the owner's withdrawal leaving GBP5,000 (confirmed 2 Nov, `withdrawal-1101`). The next
+  day starts from GBP5,000.00; the GBP4,000 day limit is inside it. **The owner withdraws each Sunday** (2 Nov; 25 Oct
+  and 1 Nov were both Sundays, each leaving GBP5,000.00): a Sunday's result is the funds at the session's end against
+  the day before (the session's own funds_end, before the withdrawal), and the Monday is measured from what is left.
 - **First backs +13.3% (GBP852), top-ups +6.5% (GBP3,038)**; GBP2,000 by 07:18 UK, the limit bound at 10:56 UK;
   06:15-07:59 +13.1% (GBP2,195), 08:00-09:59 -0.3% (GBP1,195), 10:00 on +5.1% (GBP500).
 - **The changes** (`changes-1101`): the ladder 37% of the money, its first backs +22.8% against +3.5% at the best back;
