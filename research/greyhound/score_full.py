@@ -125,7 +125,10 @@ def fit_log_bsp(df: pd.DataFrame, features: list[str], first: str, date_from: st
     out["p_model"] = race_norm(1.0 / out.pred_bsp, out.race_id)
     es_err = m.predict(X[es_i], num_iteration=m.best_iteration) - y[es_i]
     imp = pd.Series(m.feature_importance("gain"), index=features)
-    info = {"rounds": m.best_iteration, "cap": rounds, "hit_cap": bool(m.best_iteration >= rounds),
+    # ran to the cap (early stopping never fired) whenever every round allowed was fitted: the best round may sit a
+    # few short of it (run 41460911545: best 19,966 of 20,000, still gaining)
+    info = {"rounds": m.best_iteration, "rounds_run": int(m.current_iteration()), "cap": rounds,
+            "hit_cap": bool(m.current_iteration() >= rounds),
             "learning_rate": BSP_PARAMS["learning_rate"], "patience": patience, "fit_rows": int(len(fit_i)),
             # the early-stopping slice's RMSE of log BSP every 1,000 rounds: where the fit stopped gaining
             "es_rmse_by_round": {i + 1: round(float(np.sqrt(v)), 5) for i, v in enumerate(l2)

@@ -614,3 +614,33 @@ and they are what any greyhound trade should use from here. They do not make the
 limit remains the books themselves (about 90 seconds stale, a minute apart, section 13); the next test is the same
 three models on the trader's live 5-second books once 10 days of them are held. The log-BSP model should be refitted
 with more rounds (or a higher learning rate) before it is frozen, since it stopped at the 3,000-round cap.
+
+## 15. The log-BSP model refitted with more rounds (greyhound-full-score.yml run 41460911545)
+
+The owner (2 Nov 2026): refit the log-BSP model with more rounds. Same features (333 card-safe), rows (1,282,488 +
+142,505 priced) and cutoff (5 Oct) as section 14; learning rate 0.03 unchanged; the cap raised from 3,000 to 20,000,
+early stopping after 200 rounds without gain. The fit took about two hours on GitHub's runner.
+
+**It ran to the cap again.** Best round 19,966 of 20,000; early stopping never fired. The early-stopping slice's RMSE of
+log BSP by round: 1,000 0.4759; 3,000 0.4574; 5,000 0.4532; 10,000 0.4492; 15,000 0.4476; 20,000 0.4469. The last
+5,000 rounds gained 0.0007, so the fit is close to flat; more rounds at this rate would add little, a higher learning
+rate would get there faster.
+
+**Against the result** (the same 18,240 runners, 3,295 races, 26 days; lower is better): the log-BSP model 0.44368
+(0.44458 at 3,000 rounds); the full win model 0.44498, the 5 Oct base 0.45140, the Betfair SP 0.42612 (unchanged: the
+same fits). The refit is now the best of the three, 0.0013 ahead of the win model and 0.0176 behind the SP. Its
+predicted SP misses the BSP by 0.4451 in log terms (RMSE; 0.4560 before), a median 26.6% (27.0% before).
+
+**Forecasting the SP from the book** (holdout, cross-entropy gain over the market a race, our price from the log-BSP
+model, 3,000 then 20,000 rounds): 1 minute out, the horses' closing model 0.00142 then 0.00158, microstructure + our
+price 0.00446 then 0.00450; 3 minutes out 0.02080 then 0.02164; 5 minutes out 0.05645 then 0.05874; first traded,
+LightGBM 0.04442 then 0.04487. Better at every mark, a little.
+
+**The trade still fails.** Holdout, each rule at its development bar: one rule of 43 positive, 1 minute out,
+microstructure, lay, bar 0.05: +2.46% (90% -3.41 to +6.49) on 15 trades, its interval across zero; none with a lower
+bound above zero. The primary rule in development: -3.11% (90% -5.85 to -0.53, 169 trades; -3.05% at 3,000 rounds).
+The market-only models, which do not read our price, also moved a little between the two runs, so the recorder's day
+files changed in between (the latest day's settled books); not every small difference here is the refit's.
+
+**Reading.** The refit is the better log-BSP model and the one to freeze when the live books allow (section 13). It
+does not change the trade-out's verdict on the recorder's books.

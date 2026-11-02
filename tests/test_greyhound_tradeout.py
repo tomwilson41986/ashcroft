@@ -297,4 +297,4 @@ def test_log_bsp_model_fits_before_the_cutoff_and_prices_after():
     assert np.corrcoef(np.log(out.pred_bsp), -out.merge(df[["race_id", "trap", "x"]], on=["race_id", "trap"]).x)[0, 1] > 0.9
     assert info["fit_rows"] < len(df)
     assert info["cap"] == 200 and info["rounds"] <= 200 and info["es_rmse_by_round"]
-    assert all(v > 0 for v in info["es_rmse_by_round"].values()) and info["hit_cap"] == (info["rounds"] >= 200)
+    assert all(v > 0 for v in info["es_rmse_by_round"].values()) and info["hit_cap"] == (info["rounds_run"] >= 200)
