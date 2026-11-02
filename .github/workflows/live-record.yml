@@ -232,18 +232,3 @@ jobs:
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
         run: timeout 180 python betfair_recorder.py --census-sports
-      # Every country's horse racing win markets of the week ahead, their venues and the money matched so far (the
-      # owner's ask of 1 Nov 2026: whether Hong Kong and Japan trade before their form data is built;
-      # reports/international_racing_parse.md). One call a country, read-only.
-      - name: Racing by country (census, read-only)
-        if: ${{ !cancelled() && steps.run.outputs.go == 'true' && env.GAVE_WAY != '1' }}
-        continue-on-error: true
-        env:
-          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
-          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
-          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
-          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-        run: timeout 300 python betfair_recorder.py --census-racing --census-hours 168

@@ -207,3 +207,16 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
         if p.name != "paper-models.yml":
             body = p.read_text()
             assert "greyhound.live --trade" not in body and "football.live --trade" not in body, p.name
+
+
+def test_the_live_horse_jobs_carry_nothing_from_another_sport():
+    """The owner, 2 Nov 2026: nothing in the live UK/IE horse system changes for another sport or country; other
+    models reuse its features and setup from their own modules and jobs (paper-models.yml)."""
+    for name in ("live-trade.yml", "live-record.yml"):
+        text = (WORKFLOWS / name).read_text()
+        for other in ("betfair_census", "census-racing", "parse_odds", "parse_racing", "greyhound.live --trade",
+                      "football.live --trade", "paper-models", "--event-type 1 "):
+            assert other not in text, f"{name} names {other!r}"
+    import betfair_recorder
+    assert not hasattr(betfair_recorder, "census_racing_countries")
+    assert not hasattr(betfair_recorder, "SOCCER")

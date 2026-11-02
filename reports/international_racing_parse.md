@@ -51,18 +51,16 @@ started, because the model needs an exchange to trade on first (the owner's rule
 
 ## 3. The deciding check: does Betfair trade these races?
 
-`betfair_recorder.py --census-racing` reads, for every country Betfair lists horse racing in: its win markets,
-venues and the money matched so far. It makes one read-only call per country, on the delayed key. It runs each
-evening in the recorder job on the UK server (`live-record.yml`, after the sports census), with a 7-day window, so
-it lists every country's markets for the week, Hong Kong and Japan included. Readings are saved to
+`sources/betfair_census.py` reads, for every country Betfair lists horse racing in: its win markets,
+venues and the money matched so far. It makes one read-only call per country, on the delayed key. It runs at
+the start of the paper-models job (`paper-models.yml`, 05:45 UTC, its own runner, never in the live horse jobs: the
+owner, 2 Nov 2026), with a 7-day window, so it lists every country's markets for the week, Hong Kong and Japan
+included, while Japan, Hong Kong and Australia race. Readings are saved to
 `betfair_live/<day>/census_racing_<HHMM>.json`.
 
 A first attempt from GitHub's own runners failed: Betfair refused the login (403 at identitysso.betfair.com) from
-that host. So the census runs only where the account's other Betfair reads run. The first reading comes the evening
-after this branch merges, because the recorder job runs from the default branch. The evening reading lists the
-week's Hong Kong and Japanese markets before they trade much. The money near the off would need a reading while
-those countries race, about 01:00-09:30 UK. The UK server is busy then (the price archive to 06:15, then the
-trader), so that is left until the listing shows the markets exist.
+that host. So the census runs only on the UK server, and there on the paper models' own runner. The first reading
+comes the morning after that runner is registered and the branch is merged.
 
 ## 4. The backfill (1 Nov 2026): a year of Japan and Hong Kong
 

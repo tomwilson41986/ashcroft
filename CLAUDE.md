@@ -221,6 +221,10 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
 ## Rules
 
 - **NEVER use sample/generated data** for training or evaluation. Always use the real `horse_racing.db` from S3.
+- **Never change the live UK/IE horse model or its jobs for another sport or country** (the owner, 2 Nov 2026): `live-trade.yml`,
+  `live-record.yml`, `auto_trade.py`, `trading/`, `betfair_recorder.py`, `model/`, the BFSP training and prediction path. Every other
+  model reuses their features and setup from its own modules and jobs (`paper-models.yml`, `sources/`, `research/`) and runs on
+  paper until it passes a pre-registered gate; `tests/test_workflow_guards.py` holds the line.
 
 ## Git Conventions
 

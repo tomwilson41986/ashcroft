@@ -189,8 +189,6 @@ jobs:
             python betfair_recorder.py --record --final --until 21:30 --event-type 4339 --tag greyhound \
               --market-types WIN,PLACE > "$RUNNER_TEMP/greyhound.log" 2>&1 &
             DOGS=$!
-            # the greyhound and football paper traders run in their own job, paper-models.yml, on their own runner
-            # (the owner, 2 Nov 2026): nothing but the horse trader and its read-only records runs in this job
             # and the Tote's pools (the owner's ask of 6 Oct; read-only, no login, tote_recorder.py): each GB/IE
             # race's win and place dividends near the off, every pool's total, the declared dividends
             timeout 14h python tote_recorder.py --record --until 21:30 > "$RUNNER_TEMP/tote.log" 2>&1 &
