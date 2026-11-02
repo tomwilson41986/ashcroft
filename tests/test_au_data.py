@@ -20,7 +20,13 @@ def test_the_meeting_name_gives_track_country_and_day():
     assert (short["track"], short["abbrev"], short["day"], short["month"]) == ("Flem", True, 2, 11)
     assert parse_hint("WARWICK FARM (AUS) 1ST APR")["track"] == "Warwick Farm"
     assert parse_hint("TRENTHAM (NZL) 3RD JAN")["country"] == "NZL"
-    assert parse_hint("") is None and parse_hint("GB / Kemp 12th Mar") is None
+    assert parse_hint("") is None and parse_hint("no meeting here") is None
+    for raw, want in [("AUS / Toowoomba 17th Jul", ("Toowoomba", "AUS", 17, 7, False)),
+                      ("AUS / GLOUCESTER PARK 8th May", ("Gloucester Park", "AUS", 8, 5, False)),
+                      ("AUS / Melt (AUS 18th Sep", ("Melt", "AUS", 18, 9, True)),
+                      ("AUS / Carn AUS) 12th Jul", ("Carn", "AUS", 12, 7, True))]:
+        h = parse_hint(raw)
+        assert (h["track"], h["country"], h["day"], h["month"], h["abbrev"]) == want, raw
 
 
 def test_the_market_name_gives_race_distance_type_and_gait():
@@ -66,7 +72,7 @@ def test_the_build_keeps_au_thoroughbreds_and_accounts_for_every_row():
     assert rep["rows_in"] == 6 and rep["rows_out"] == 2
     assert rep["dropped"]["harness (Pace/Trot)"] == 1
     assert rep["dropped"]["not Australian (country in the meeting name)"] == 1
-    assert rep["dropped"]["meeting name unreadable (no '(AUS)')"] == 1
+    assert rep["dropped"]["meeting name unreadable"] == 1
     assert rep["dropped"]["duplicate (market, selection): first kept"] == 1
     assert rep["rows_in_minus_out_equals_dropped"] is True
     assert rep["markets_winners"] == {"one": 1, "dead_heat": 0, "none": 0}

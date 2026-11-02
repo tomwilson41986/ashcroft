@@ -45,6 +45,9 @@ MONTHS = {m: i for i, m in enumerate(["JAN", "FEB", "MAR", "APR", "MAY", "JUN", 
 HINT_RE = re.compile(r"^\s*(?P<track>.*?)\s*\((?P<country>[A-Z]{2,4})\)\s*(?P<day>\d{1,2})(?:ST|ND|RD|TH)?\s+"
                      r"(?P<mon>[A-Z]{3})", re.I)
 PREFIX_RE = re.compile(r"^[A-Z]{2,4}\s*/\s*", re.I)
+#: Betfair's other form, without the bracketed country or with half of it: the country is the prefix
+LOOSE_HINT_RE = re.compile(r"^\s*(?P<country>[A-Z]{2,4})\s*/\s*(?P<track>.*?)\s*(?:\(AUS\)?|AUS\))?\s+"
+                           r"(?P<day>\d{1,2})(?:ST|ND|RD|TH)?\s+(?P<mon>[A-Z]{3})", re.I)
 NAME_RE = re.compile(r"^\s*R(?P<race>\d+)\s+(?P<dist>\d+)\s*m\s*(?P<type>.*)$", re.I)
 ANZ_LISTING = "https://betfair-datascientists.github.io/data/dataListing/"
 ANZ_ASSETS = "https://betfair-datascientists.github.io/data/assets/"
@@ -54,15 +57,18 @@ ANZ_ASSETS = "https://betfair-datascientists.github.io/data/assets/"
 
 def parse_hint(hint) -> dict | None:
     """'WAGGA (AUS) 28TH FEB' -> {'track': 'Wagga', 'country': 'AUS', 'day': 28, 'month': 2}; None when unreadable."""
-    m = HINT_RE.match(str(hint or ""))
+    s = str(hint or "")
+    m = HINT_RE.match(s) or LOOSE_HINT_RE.match(s)   # the loose form: 'AUS / Toowoomba 17th Jul', 'AUS / Melt (AUS 18th Sep'
     if not m or m.group("mon").upper() not in MONTHS:
         return None
     track = m.group("track").strip()
     pre = PREFIX_RE.match(track)                      # some files write 'AUS / Flem (AUS) 2nd Nov': a short name
     if pre:
         track = track[pre.end():]
-    return {"track": track.strip().title(), "country": m.group("country").upper(),
-            "day": int(m.group("day")), "month": MONTHS[m.group("mon").upper()], "abbrev": bool(pre)}
+    track = track.strip()
+    short = bool(re.fullmatch(r"[A-Za-z]{2,4}", track)) and (bool(pre) or m.re is LOOSE_HINT_RE)
+    return {"track": track.title(), "country": m.group("country").upper(),
+            "day": int(m.group("day")), "month": MONTHS[m.group("mon").upper()], "abbrev": short}
 
 
 def parse_event_name(name) -> dict:
@@ -148,7 +154,7 @@ def build_targets(raw: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         return d[~mask]
 
     d = drop(d["market_id"].isna() | d["selection_id"].isna(), "no market or selection id")
-    d = drop(d["country"].isna(), "meeting name unreadable (no '(AUS)')")
+    d = drop(d["country"].isna(), "meeting name unreadable")
     d = drop(d["country"] != config.COUNTRY, "not Australian (country in the meeting name)")
     d = drop(d["harness"], "harness (Pace/Trot)")
     d = drop(d["meeting_date"].isna(), "no meeting date")
