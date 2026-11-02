@@ -1,4 +1,4 @@
-name: Paper models (greyhounds, football)
+name: Paper models (greyhounds, football) and the football book record
 
 # The paper trials, apart from the live trader (the owner, 2 Nov 2026: keep UK/IE safe; every other model runs on its
 # own and has to prove itself). Until 2 Nov these two traders ran as background processes inside live-trade.yml's
@@ -90,8 +90,24 @@ jobs:
           # selection decided once in the 6 hours before kick-off, on paper. S3 football/STOP or trading/STOP stops it.
           timeout 15h python -m football.live --trade --until 21:30 > "$RUNNER_TEMP/football_trader.log" 2>&1 &
           FBT=$!
+          # the Betfair football books with their sizes (read-only; betfair_recorder.py, tag football): today's
+          # MATCH_ODDS and OVER_UNDER_25 in the leagues football-data covers, every 15 minutes and every 2 in the hour
+          # before kick-off; and tomorrow's the evening before (the early price a trade would open at). The prices a
+          # football paper trial is scored at (the owner, 2 Nov 2026: reports/open_close/model_football_exchange.md).
+          FB_COUNTRIES=GB,ES,IT,DE,FR,NL,BE,PT,TR,GR
+          python betfair_recorder.py --record --until 21:30 --event-type 1 --market-types MATCH_ODDS,OVER_UNDER_25 \
+            --countries "$FB_COUNTRIES" --tag football --every 900 --every-near 120 \
+            > "$RUNNER_TEMP/football_record.log" 2>&1 &
+          FBR=$!
+          TOMORROW=$(TZ=Europe/London date -d tomorrow +%F)
+          python betfair_recorder.py --record --date "$TOMORROW" --evening 17:00-21:30 --event-type 1 \
+            --market-types MATCH_ODDS,OVER_UNDER_25 --countries "$FB_COUNTRIES" --tag football_eve --every 1800 \
+            > "$RUNNER_TEMP/football_eve.log" 2>&1 &
+          FBE=$!
           wait "$GHT"; GC=$?; echo "greyhound paper trader exited $GC"
           tail -n 20 "$RUNNER_TEMP/greyhound_trader.log"
           wait "$FBT"; FC=$?; echo "football paper trader exited $FC"
           tail -n 20 "$RUNNER_TEMP/football_trader.log"
+          wait "$FBR"; echo "football record exited $?"; tail -n 5 "$RUNNER_TEMP/football_record.log"
+          wait "$FBE"; echo "football evening record exited $?"; tail -n 5 "$RUNNER_TEMP/football_eve.log"
           [ "$GC" = 0 ] && [ "$FC" = 0 ]

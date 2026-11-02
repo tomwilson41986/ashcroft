@@ -80,6 +80,7 @@ OFF_MARKS = (120, 60, 30, 15, 10, 5, 3, 1)
 BSP_TRIES, BSP_EVERY = 3, 15.0
 #: Betfair's event type ids: the record is of horse racing unless asked otherwise (greyhounds: --event-type 4339)
 HORSE_RACING, GREYHOUNDS = "7", "4339"
+SOCCER = "1"
 
 
 def bucket() -> str:
@@ -535,8 +536,15 @@ def record(day: date, until: datetime, data, rec: DayRecorder, every_far: float 
 
     def refresh() -> None:
         # a greyhound race every few minutes at each track: an hour's window keeps each call under its 100 markets
-        cat = read_catalogue(data, start, end, market_types, countries, event_type=event_type,
-                             window_hours=1.0 if event_type == GREYHOUNDS else 4.0)
+        if event_type == SOCCER:
+            # football's kick-offs bunch (a Saturday's 15:00 in several countries): one country and one hour a call,
+            # so no call reaches its 100 markets (the owner, 2 Nov 2026: the football book record, paper-models.yml)
+            cat = [m for c in countries
+                   for m in read_catalogue(data, start, end, market_types, (c,), event_type=event_type,
+                                           window_hours=1.0)]
+        else:
+            cat = read_catalogue(data, start, end, market_types, countries, event_type=event_type,
+                                 window_hours=1.0 if event_type == GREYHOUNDS else 4.0)
         rec.record_catalogue(cat, now())
         for m in cat:
             t = _utc(m.get("marketStartTime"))

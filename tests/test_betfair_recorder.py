@@ -1060,3 +1060,33 @@ def test_census_racing_countries_sorts_and_survives_a_bad_country(tmp_path):
     where = _br.save_census(got, _dt.date(2026, 11, 1), s3=NoS3(), root=tmp_path, name="census_racing_0530.json")
     assert where.endswith("census_racing_0530.json")
     assert _json.loads((tmp_path / "2026-11-01" / "census_racing_0530.json").read_text())["countries"][0]["country"] == "HK"
+
+
+def test_the_football_record_reads_the_catalogue_a_country_and_an_hour_at_a_time(tmp_path):
+    """Football's kick-offs bunch, so each catalogue call is one country and one hour (no call reaches its 100
+    markets); the horse record's calls are unchanged (the owner, 2 Nov 2026)."""
+    from datetime import datetime as _dt, timezone as _tz
+
+    class Data:
+        def __init__(self):
+            self.calls = []
+
+        def _read(self, method, params):
+            if method == "listMarketCatalogue":
+                self.calls.append(params["filter"])
+            return []
+
+    day = DAY
+    for event_type, countries, expect_per_type in ((br.SOCCER, ("GB", "ES"), 2 * 24), (br.HORSE_RACING, ("GB", "IE"), 6)):
+        d = Data()
+        rec = br.DayRecorder(day, root=tmp_path / event_type, background=False)
+        start = _dt(day.year, day.month, day.day, tzinfo=_tz.utc)
+        got = br.record(day, start, d, rec, market_types=("MATCH_ODDS",), countries=countries, event_type=event_type,
+                        now=lambda: start, sleep=lambda s: None)
+        assert isinstance(got, dict)
+        if event_type == br.SOCCER:
+            assert all(len(f["marketCountries"]) == 1 for f in d.calls)
+            assert {f["marketCountries"][0] for f in d.calls} == {"GB", "ES"}
+        else:
+            assert all(f["marketCountries"] == ["GB", "IE"] for f in d.calls)
+        assert len(d.calls) in range(expect_per_type - 2, expect_per_type + 3), (event_type, len(d.calls))
