@@ -221,6 +221,37 @@ def move_test(d: pd.DataFrame, families: dict = FAMILIES, scored: str = "dev", s
     return res
 
 
+def move_size(d: pd.DataFrame, feats: list[str], scored: str = "dev") -> dict:
+    """How big the forecast move is: the home price's move from the open to the close at fair prices (log of the
+    close's chance over the open's: above zero, the price shortened and a back at the open gains), forecast walk-
+    forward by least squares on ``feats``; the move a trade on the forecast's side would catch, by decile of the
+    forecast's size, before any spread or commission (same-book rows only)."""
+    m = d[d["same_book"]].copy()
+    m["yh"] = np.log(m["qc_h"] / m["qo_h"])
+    plan = ([(m[(m["season"] >= TRAIN_FROM) & (m["season"] < s)], m[m["season"] == s]) for s in range(DEV_FROM, DEV_TO + 1)]
+            if scored == "dev" else [(m[(m["season"] >= TRAIN_FROM) & (m["season"] <= DEV_TO)],
+                                      m[m["season"] >= HOLDOUT_FROM])])
+    parts = []
+    for tr, te in plan:
+        if len(tr) < 500 or te.empty:
+            continue
+        X = tr[feats].to_numpy(float)
+        mu, sd = np.nanmean(X, axis=0), np.nanstd(X, axis=0)
+        sd[~np.isfinite(sd) | (sd == 0)] = 1.0
+        mu[~np.isfinite(mu)] = 0.0
+        Z = np.c_[np.ones(len(tr)), np.nan_to_num((X - mu) / sd)]
+        Zt = np.c_[np.ones(len(te)), np.nan_to_num((te[feats].to_numpy(float) - mu) / sd)]
+        beta = np.linalg.lstsq(Z, tr["yh"].to_numpy(float), rcond=None)[0]
+        parts.append(te.assign(pred=Zt @ beta))
+    t = pd.concat(parts)
+    t["decile"] = pd.qcut(t["pred"].abs(), 10, labels=False) + 1
+    t["caught"] = np.sign(t["pred"]) * t["yh"]
+    by = t.groupby("decile").agg(rows=("caught", "size"), mean_abs_forecast=("pred", lambda x: float(x.abs().mean())),
+                                 mean_caught=("caught", "mean"), right_way=("caught", lambda x: float((x > 0).mean())))
+    return {"rows": int(len(t)), "mean_abs_move": float(t["yh"].abs().mean()), "sd_move": float(t["yh"].std()),
+            "open_books": t["open_1x2_src"].value_counts().to_dict(), "by_decile": by.reset_index().to_dict("records")}
+
+
 def _json(o) -> str:
     import json
 
@@ -270,9 +301,11 @@ def main(argv=None) -> int:
                     "evaluated": int(len(d)), "by_season": d.groupby("season").size().to_dict(),
                     "same_book_moves": int(d["same_book"].sum())},
            "null_share": {c: float(d[c].isna().mean()) for c in FAMILIES["all"]},
-           "dev": {"outcome": outcome_test(d), "move": move_test(d), "coefficients": coefficients(d, n_boot=a.n_boot)}}
+           "dev": {"outcome": outcome_test(d), "move": move_test(d), "move_size_all": move_size(d, FAMILIES["all"]),
+                   "coefficients": coefficients(d, n_boot=a.n_boot)}}
     if a.holdout:
-        res["holdout"] = {"outcome": outcome_test(d, scored="holdout"), "move": move_test(d, scored="holdout")}
+        res["holdout"] = {"outcome": outcome_test(d, scored="holdout"), "move": move_test(d, scored="holdout"),
+                          "move_size_all": move_size(d, FAMILIES["all"], scored="holdout")}
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text(_json(res) + "\n")
     print(_json({k: v for k, v in res.items() if k != "null_share"})[:6000])
