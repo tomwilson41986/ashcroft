@@ -62,6 +62,20 @@ its fetch time (UTC), the call and the credits charged. The tables are rebuilt f
 is safe to rerun. The key never reaches a file: it is read from `PARSE_API_KEY`. Spent on 1 Nov: about 2,700 credits
 (the probes, the 7-day backfill, the tennis history, the recorders), leaving 13,480 after the tennis history.
 
+### The day's capture, as it ended (1 Nov, 18:45 UTC)
+
+The two forward recorders ran inside this working session, and stopped each time the session went idle. Both were
+restarted at 15:23 UTC with network retries, and both had stopped by 15:59. What the day holds:
+
+| Recorder | Held |
+|---|---|
+| Oddschecker | 62 GB/IE races, 661 runners, 103 snapshots: every race once from 11:53 UTC; 40 snapshots 130+ minutes before the off, 16 at 70-130, 25 at 20-70, 19 within 20 minutes (7 races) |
+| Pinnacle | 6 snapshots (tennis, soccer and cricket at 11:53 and 15:23 UTC) |
+
+So tomorrow's horse test reads the bookmakers' price from late morning (the first snapshot), not 08:00, and has no
+T-15 reading worth scoring. Forward recording belongs to the scheduled job (`parse-odds.yml`), which runs once the
+key is a repository secret, not to a working session. Raw responses for the day: `data/parse/raw_capture_odds_2026-11-01.tar`.
+
 ## 3. Into the models
 
 - **The panel.** `panel_flashscore` turns the feed, and every bookmaker's winner market, into the standard open-close
@@ -76,6 +90,38 @@ is safe to rerun. The key never reaches a file: it is read from `PARSE_API_KEY`.
   weeks of the schedule's capture are held. The first read is tomorrow's join.
 - **Other exchanges.** Matchbook's price arrives through Oddschecker (`MA`). It gives one cross-exchange trade to price:
   back on Matchbook, lay at the Betfair BSP. Matchbook's own commission and its API are to check before any money.
+
+### Horses: the first read (1 Nov, research-query run 41421619889)
+
+One day, so descriptive only, not a test. 384 GB/IE runners joined to a Betfair win market with a BSP (of 661
+captured; the join is by course, off time and name).
+
+| Morning price | log(BSP / price), median (IQR) | Log loss of the winner (36 full races) |
+|---|---|---|
+| Bookmakers' median, first snapshot (median 171 minutes before the off) | +0.41 (+0.13 to +0.85) | 1.824 |
+| Bookmakers' best | +0.13 (-0.07 to +0.41) | |
+| Betfair 08:00 mid | +0.03 (-0.31 to +0.35) | 1.979 |
+| BSP | | 1.756 |
+
+The trade the bookmakers' price would signal, every leg on Betfair (back at the best back, or lay at the best lay,
+closed at the BSP, 2% commission):
+
+| Version | Bets | Net | Read |
+|---|---|---|---|
+| At Betfair's 08:00 book | 262 | -0.98 on 461.6 at risk; the 20%+ back cell +8.9% on 138 | **Look-ahead**: the bookmakers' prices were taken hours after 08:00 |
+| At Betfair's 12:00 book (bookmakers' snapshot within 30 minutes, the race after it) | 314 backs | **-24.02 on 314, -7.6%**; every gap band negative | The tradable version |
+| Matchbook's price backed, laid at the Betfair BSP (12:00) | 101 | -7.8% a GBP1 backed | Before Matchbook's commission |
+
+Read:
+1. The 08:00 cell's +8.9% was the look-ahead. At the time-matched book, the signal loses in every band.
+2. The comparison is also unfair to the signal. The bookmakers' raw median carries their margin, so it sits
+   shorter than Betfair's best back on almost every runner (314 of 326) and says little about a single horse. The
+   next version compares chances with the margin removed, at matched times.
+3. The bookmakers' morning book forecasts the result better than Betfair's 08:00 mid, but it was read about four
+   hours later, so that is no evidence of an edge.
+
+Nothing here supports an exchange trade. The fair test needs the scheduled recorder's 07:40 snapshot each day, a
+normalised book, and weeks of days.
 
 ## 4. Tennis: the first result
 

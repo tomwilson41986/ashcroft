@@ -157,11 +157,18 @@ python betfair_recorder.py --record --market-types OTHER_PLACE,EACH_WAY --tag ot
 # recorded books settle (greyhound-track.yml, ledger in s3://$CAPTURE_BUCKET/sources/greyhound/track/)
 python -m greyhound.model --years 2018-2026 --folds 2024-01,2025-01,2026-01 --from 2019-01-01 --out out/report.json
 python -m greyhound.track --freeze --cutoff 2026-10-05 --days 3 --summary --out out/greyhound_track.json
+# The greyhound trade-out (the owner, 2 Nov 2026; reports/greyhound_model.md 12): a price taken before the off, closed
+# at the SP, forecast by the horses' closing model; a forward test fixed before its first day, read off the greyhound
+# trader's live-key books (kept with BETFAIR_RECORD=1), frozen once 10 days of them are held (the recorder's are ~90 s
+# stale: report section 13), after the 5 Oct test's run in greyhound-track.yml; the read-only study (greyhound-research.yml)
+python -m greyhound.tradeout --freeze --days 4 --summary --out out/greyhound_tradeout.json
+python -m research.greyhound.tradeout_study --source trader --out out/greyhound_tradeout_study
 
 # The football model (reports/football_model.md): football-data.co.uk + openfootball (+ API-Football once keyed, Betfair
 # Historic Data soccer once held) into gold tables with data-quality checks; Dixon-Coles ratings walk-forward, pooled
 # with the opening price, scored by CLV against the close; a Betfair trader, paper unless FOOTBALL_LIVE=yes
-# (football-model.yml daily on GitHub's runners; the trader beside the horse session in live-trade.yml)
+# (football-model.yml daily on GitHub's runners; the paper trader, with the greyhound one, in paper-models.yml on its
+# own runner, never in the live job: the owner, 2 Nov 2026)
 python source_data.py --source football,openfootball,api_football --fetch --build
 python -m football.data --build
 python -m football.model --from 2012-07-01 --out out/football_report.json
@@ -220,6 +227,10 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
 ## Rules
 
 - **NEVER use sample/generated data** for training or evaluation. Always use the real `horse_racing.db` from S3.
+- **Never change the live UK/IE horse model or its jobs for another sport or country** (the owner, 2 Nov 2026): `live-trade.yml`,
+  `live-record.yml`, `auto_trade.py`, `trading/`, `betfair_recorder.py`, `model/`, the BFSP training and prediction path. Every other
+  model reuses their features and setup from its own modules and jobs (`paper-models.yml`, `sources/`, `research/`) and runs on
+  paper until it passes a pre-registered gate; `tests/test_workflow_guards.py` holds the line.
 
 ## Git Conventions
 
