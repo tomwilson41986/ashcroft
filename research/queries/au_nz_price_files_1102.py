@@ -114,7 +114,10 @@ print(f"  race dates {d.race_date.min()} to {d.race_date.max()}; morning price p
       f"(the UK morning: not read)")
 
 # ---------------------------------------------------------------- 3. country and code split
-d["country"] = d["MENU_HINT"].astype(str).str.split("/", n=1).str[0].str.strip().str.upper()
+# AU files write the meeting as 'WAGGA (AUS) 28TH FEB': the country is the bracket; else the prefix before '/'
+hint = d["MENU_HINT"].astype(str)
+d["country"] = hint.str.extract(r"\(([A-Z]{2,4})\)", expand=False).fillna(
+    hint.str.split("/", n=1).str[0].str.strip().str.upper().str[:12])
 name = d["EVENT_NAME"].astype(str)
 d["code"] = np.where(name.str.contains(r"\b(?:Pace|Trot)\b", case=False, regex=True), "harness", "thoroughbred")
 print("\n== 3. the split. MENU_HINT country prefixes (runners):")
@@ -126,6 +129,17 @@ races = d.groupby(["year", "country", "code"]).agg(races=("EVENT_ID", "nunique")
                                                    runners=("SELECTION_ID", "size"))
 races["races_a_day"] = (races.races / races.days).round(1)
 print(races.to_string())
+# the windows the file's two prices cover: how much money sits in 'morning' against 'pre-play', by year
+win = t_ = d[d.code == "thoroughbred"]
+w = win.groupby("year").agg(morning_vol_med=("MORNINGTRADEDVOL", "median"), pp_vol_med=("PPTRADEDVOL", "median"),
+                            morning_price_cover=("MORNINGWAP", lambda s: (s > 1).mean()))
+w["morning_share_of_money"] = (win.groupby("year").MORNINGTRADEDVOL.sum()
+                               / (win.groupby("year").MORNINGTRADEDVOL.sum() + win.groupby("year").PPTRADEDVOL.sum()))
+print("  thoroughbreds: the file's 'morning' against 'pre-play' money by year (which window PPWAP covers):")
+print(w.round(3).to_string())
+b = win[(win.BSP > 1) & (win.PPWAP > 1) & (win.MORNINGWAP > 1)]
+print("  median log(BSP / MORNINGWAP) by year, all bands:",
+      np.log(b.BSP / b.MORNINGWAP).groupby(b.year).median().round(3).to_dict())
 
 # ---------------------------------------------------------------- 4. money
 t = d[d.code == "thoroughbred"]
