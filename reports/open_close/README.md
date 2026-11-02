@@ -11,6 +11,7 @@ ties the four reports together and says what happens next. Nothing in this chang
 | `all_markets.md` | Every one of Betfair's 35 event types and every market type inside each, a verdict a row, from the complete census of October 2026 |
 | `data.md` | What open and close data is held, per market, with the real counts; the standard open-close panel (`sources/open_close.py`); the best data to obtain next, with prices and licences |
 | `model.md` | The drift models: predict log(close / open) from the opening book, walk-forward by month, scored as a hedged trade after 2% commission and a tick each end, holdout read once |
+| `model_football_exchange.md` | Football on Betfair (2 Nov 2026): Betfair's early price to its close against Pinnacle's and the market's same-moment prices; the apparent edge is stale quotes in wide lower-league books, nothing survives a tick each end in takeable books, the pre-registered holdout rule failed (`../preregistration_football_exchange.md`) |
 
 ## The result
 

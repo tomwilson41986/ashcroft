@@ -159,10 +159,12 @@ class BandShrinkage:
 @dataclass
 class GradientBoosting:
     """LightGBM regression of y on the opening-book features; fixed settings chosen in advance (no tuning on the
-    scored months). ``with_model`` adds the model's forecast features where the panel holds them."""
+    scored months). ``with_model`` adds the model's forecast features where the panel holds them; ``features``, when
+    given, is the exact column list instead (the columns absent from the training frame are left out)."""
 
     with_model: bool = False
     name: str = "gbm"
+    features: list | None = None
     n_estimators: int = 400
     learning_rate: float = 0.03
     num_leaves: int = 31
@@ -188,7 +190,8 @@ class GradientBoosting:
 
     def fit(self, train: pd.DataFrame) -> "GradientBoosting":
         import lightgbm as lgb
-        self.columns = feature_columns(train, self.with_model)
+        self.columns = ([c for c in self.features if c in train.columns] if self.features is not None
+                        else feature_columns(train, self.with_model))
         self.categories = {c: sorted(train[c].astype(str).unique()) for c in self.columns
                            if str(train[c].dtype) == "category"}
         X = self._frame(train)
