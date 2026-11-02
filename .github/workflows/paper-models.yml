@@ -93,6 +93,8 @@ jobs:
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
           GREYHOUND_LIVE: 'no'
           FOOTBALL_LIVE: 'no'
+          # API-Football (read-only data, not a betting key): the football line-ups and injuries collector
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: |
           set +e
           # the greyhound model (greyhound/live.py, greyhound/live_config.json): each GB greyhound runner backed once on
@@ -121,10 +123,27 @@ jobs:
               > "$RUNNER_TEMP/football_eve_$C.log" 2>&1 &
             FBREC+=($!)
           done
+          # the football line-ups and injuries (sources/api_football_lineups.py, API-Football, read-only): each match of
+          # the 22 divisions polled from 75 minutes before kick-off until both elevens are out (the time they first
+          # appear kept), and once more at T-10; the day's injuries every 3 hours. The team-news test's data, to set
+          # against the football book record above (reports/football_model.md s.5). It places nothing.
+          python -m sources.api_football_lineups --collect --until 21:30 > "$RUNNER_TEMP/football_lineups.log" 2>&1 &
+          FBL=$!
           wait "$GHT"; GC=$?; echo "greyhound paper trader exited $GC"
           tail -n 20 "$RUNNER_TEMP/greyhound_trader.log"
           wait "$FBT"; FC=$?; echo "football paper trader exited $FC"
           tail -n 20 "$RUNNER_TEMP/football_trader.log"
           for P in "${FBREC[@]}"; do wait "$P"; done
           echo "football records exited"; tail -n 2 "$RUNNER_TEMP"/football_*.log
+          wait "$FBL"; echo "football line-ups exited $?"; tail -n 3 "$RUNNER_TEMP/football_lineups.log"
           [ "$GC" = 0 ] && [ "$FC" = 0 ]
+      - name: Football line-up tables
+        # rebuilt whole from the raw polls (safe to rerun); a failure here costs no data
+        if: always()
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 900 python -m sources.api_football_lineups --build

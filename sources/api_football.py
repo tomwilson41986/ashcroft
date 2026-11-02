@@ -23,7 +23,9 @@ log = logging.getLogger(__name__)
 
 API = "https://v3.football.api-sports.io"
 FIRST_DAY = date(2016, 1, 1)
-QUOTA_FLOOR = 300
+#: the nightly backfill stops with this many of the day's requests left: the line-up collector
+#: (sources/api_football_lineups.py) polls through the UK day on the same quota (a busy Saturday ~300 calls)
+QUOTA_FLOOR = int(env("API_FOOTBALL_QUOTA_FLOOR") or 1500)
 STATUS = {"FT": "FINISHED", "AET": "FINISHED", "PEN": "FINISHED", "NS": "SCHEDULED", "TBD": "SCHEDULED",
           "PST": "POSTPONED", "CANC": "CANCELLED", "ABD": "ABANDONED", "AWD": "AWARDED", "WO": "AWARDED",
           "SUSP": "SUSPENDED", "INT": "SUSPENDED"}
