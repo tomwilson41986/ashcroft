@@ -659,3 +659,29 @@ in the models, and these that bear on the sections above:
 - **Trades a day counted active days only**, so the bar filter "at least once a day" did nothing.
 The roadmap (`reports/greyhound_roadmap.md`) sets out the fixes, the feature and model work, and the gated path from
 here.
+
+## 17. Re-timed books and the horse model's settlement (greyhound-research.yml run 41508653282)
+
+The study on the recorder's books placed at each snapshot's last match (`source="retimed"`, roadmap 0.1) with
+positions taken and settled as the horse trader's (to win GBP100 down the three best prices, each back's winnings laid
+at the SP, settled by the result; roadmap section 9). Panel: 53,460 runner-marks, 3,205 races, 26 days (fewer marks
+than section 13's 70,014: a 60-second poll does not fall in every true one-minute window). Development 14-25 Oct,
+holdout 26 Oct-1 Nov.
+
+**At the true last minute the book is the SP.** One minute before the off the geometric mid of the best back and lay
+sits a mean 0.14% from the BSP in log terms (-0.0014; section 13's stale stamps: -0.104), the best back a median 8.58%
+from it (11.59% before). The forecast of the move to the SP gains nothing there: 0.0001 a race over the market for the
+microstructure models, -0.00001 for the horses' closing model. Three and five minutes out a move remains (gain 0.0078
+and 0.0308, LightGBM, holdout).
+
+**The trade, holdout, each rule at its development bar** (trades a day and the bootstrap over every scored day):
+3 of 44 rules positive, none with a 90% lower bound above zero. The nearest to level: the first traded book,
+LightGBM, lay, +0.67% (90% -1.02 to +2.03, 40.6 a day); 1 minute out, microstructure, back, +0.03% (-1.17 to +1.31,
+14.6 a day). The old selection (edge to win over 0.2) closed at the SP: 1 minute out -3.60% (-4.30 to -2.82),
+first traded -15.40%. The pre-registered primary rule took 4 positions in 12 development days: at the true last
+minute almost no dog's price clears 3% over the forecast SP.
+
+**Reading.** Read on books that are current, the market a minute before the off has already found the SP, and
+earlier, where a move is left to forecast, it does not pay after the spread and commission on these models. The
+live-key books (roadmap 0.2) will say the same or not with 5-second books and volume; the levers left are the late
+information (the weigh-in, roadmap L1) and the cross-market signals (M5).
