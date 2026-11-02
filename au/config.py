@@ -14,6 +14,7 @@ COUNTRY = "AUS"
 #: the S3 store keys (under s3://$CAPTURE_BUCKET/sources/, sources.common.Store)
 TARGETS_KEY = "au/bsp_targets.parquet"
 TARGETS_REPORT_KEY = "au/bsp_targets_report.json"
+TRACK_NAMES_KEY = "au/track_names.json"         # Betfair's short meeting names to full names (au/data.py)
 
 #: Australian race times in UK hours (reports/international_racing.md s.4.1, from the ANZ files): about 00:20-10:30
 #: UK, so every Betfair job for Australia needs a runner free overnight (au/README.md, stage 0)

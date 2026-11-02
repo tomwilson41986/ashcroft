@@ -44,6 +44,7 @@ MONTHS = {m: i for i, m in enumerate(["JAN", "FEB", "MAR", "APR", "MAY", "JUN", 
                                       "DEC"], start=1)}
 HINT_RE = re.compile(r"^\s*(?P<track>.*?)\s*\((?P<country>[A-Z]{2,4})\)\s*(?P<day>\d{1,2})(?:ST|ND|RD|TH)?\s+"
                      r"(?P<mon>[A-Z]{3})", re.I)
+PREFIX_RE = re.compile(r"^[A-Z]{2,4}\s*/\s*", re.I)
 NAME_RE = re.compile(r"^\s*R(?P<race>\d+)\s+(?P<dist>\d+)\s*m\s*(?P<type>.*)$", re.I)
 ANZ_LISTING = "https://betfair-datascientists.github.io/data/dataListing/"
 ANZ_ASSETS = "https://betfair-datascientists.github.io/data/assets/"
@@ -56,8 +57,12 @@ def parse_hint(hint) -> dict | None:
     m = HINT_RE.match(str(hint or ""))
     if not m or m.group("mon").upper() not in MONTHS:
         return None
-    return {"track": m.group("track").strip().title(), "country": m.group("country").upper(),
-            "day": int(m.group("day")), "month": MONTHS[m.group("mon").upper()]}
+    track = m.group("track").strip()
+    pre = PREFIX_RE.match(track)                      # some files write 'AUS / Flem (AUS) 2nd Nov': a short name
+    if pre:
+        track = track[pre.end():]
+    return {"track": track.strip().title(), "country": m.group("country").upper(),
+            "day": int(m.group("day")), "month": MONTHS[m.group("mon").upper()], "abbrev": bool(pre)}
 
 
 def parse_event_name(name) -> dict:
@@ -114,6 +119,9 @@ def build_targets(raw: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     names = d["EVENT_NAME"].map(parse_event_name)
     d["track"] = [h["track"] if h else None for h in hints]
     d["country"] = [h["country"] if h else None for h in hints]
+    d["track_abbrev"] = [bool(h and h["abbrev"]) for h in hints]
+    rep["unreadable_hint_examples"] = (d.loc[hints.isna(), "MENU_HINT"].astype(str).value_counts().head(10)
+                                       .to_dict())
     d["harness"] = [n["harness"] for n in names]
     when = d["EVENT_DT"].map(event_time)
     d["meeting_date"] = [meeting_date(h["day"], h["month"], w) if h else None for h, w in zip(hints, when)]
@@ -147,7 +155,8 @@ def build_targets(raw: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     dup = d.duplicated(["market_id", "selection_id"], keep="first")
     d = drop(dup, "duplicate (market, selection): first kept")
     rep["dropped"] = dropped
-    cols = ["market_id", "selection_id", "horse", "horse_norm", "cloth", "track", "meeting_date", "race_no",
+    cols = ["market_id", "selection_id", "horse", "horse_norm", "cloth", "track", "track_abbrev", "meeting_date",
+            "race_no",
             "distance_m", "race_type", "off_uk", "bsp", "won", "pp_vol", "ip_vol", "source_file"]
     t = d[cols].copy()
     t["race_family"] = t["race_type"].map(config.race_family)
@@ -196,6 +205,13 @@ def read_csv_bytes(raw: bytes) -> pd.DataFrame | None:
 
 
 def read_archive(s3, bucket: str, limit: int | None = None, workers: int = 24) -> tuple[pd.DataFrame, dict]:
+    if s3 is None:                                      # our own client, its pool as large as the workers
+        import os
+
+        import boto3
+        from botocore.config import Config
+        s3 = boto3.client("s3", region_name=os.getenv("CAPTURE_REGION") or "eu-west-2",
+                          config=Config(max_pool_connections=workers + 4, retries={"max_attempts": 5}))
     keys = archive_keys(s3, bucket)
     if limit:
         keys = keys[-limit:]
@@ -289,6 +305,36 @@ def anz_check(t: pd.DataFrame, anz: pd.DataFrame) -> dict:
     return rep
 
 
+def learn_track_names(t: pd.DataFrame, anz: pd.DataFrame) -> tuple[dict, dict]:
+    """Betfair's short meeting names ('Flem') to the ANZ files' full ones ('Flemington'), learned from the runners
+    both hold (matched on market and selection): each short name takes the full name most of its rows carry."""
+    a = anz[["WIN_MARKET_ID", "TRACK"]].drop_duplicates("WIN_MARKET_ID").copy()
+    a["market_id"] = pd.to_numeric(a["WIN_MARKET_ID"], errors="coerce").astype("Int64")
+    m = (t[t["track_abbrev"]][["market_id", "track"]].drop_duplicates("market_id")
+         .merge(a[["market_id", "TRACK"]], on="market_id", how="inner"))
+    out, shares = {}, []
+    for short, g in m.groupby("track"):
+        vc = g["TRACK"].value_counts()
+        out[short] = vc.index[0]
+        shares.append((short, vc.index[0], int(len(g)), round(float(vc.iloc[0] / len(g)), 4)))
+    shaky = [s for s in shares if s[3] < 0.99]
+    rep = {"short_names_learned": len(out), "markets_used": int(len(m)),
+           "short_names_under_99pct_agreement": shaky[:20]}
+    return out, rep
+
+
+def apply_track_names(t: pd.DataFrame, names_map: dict) -> tuple[pd.DataFrame, dict]:
+    t = t.copy()
+    short = t["track_abbrev"].astype(bool)
+    full = t["track"].map(names_map)
+    ok = short & full.notna()
+    t.loc[ok, "track"] = full[ok]
+    left = t.loc[short & ~ok, "track"]
+    rep = {"rows_short": int(short.sum()), "rows_mapped": int(ok.sum()),
+           "rows_left_short": int(len(left)), "short_names_left": left.value_counts().head(20).to_dict()}
+    return t, rep
+
+
 # -------------------------------------------------------------------------------------------------------------- CLI
 
 def main(argv=None) -> int:
@@ -304,13 +350,22 @@ def main(argv=None) -> int:
     report = {"built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     if not args.build:
         ap.error("nothing to do: pass --build")
-    raw, read_rep = read_archive(store.s3, store.bucket, limit=args.limit)
+    raw, read_rep = read_archive(None, store.bucket, limit=args.limit)
     report["archive"] = read_rep
     t, build_rep = build_targets(raw)
     report["build"] = build_rep
+    names_map = None
     if args.anz_check:
         anz, names = read_anz()
         report["anz_files"] = names
+        names_map, report["track_names"] = learn_track_names(t, anz)
+        store.put(config.TRACK_NAMES_KEY, json.dumps(names_map, indent=1, sort_keys=True).encode())
+    else:
+        held = store.get(config.TRACK_NAMES_KEY)
+        names_map = json.loads(held) if held else None
+    if names_map:
+        t, report["track_names_applied"] = apply_track_names(t, names_map)
+    if args.anz_check:
         report["anz_check"] = anz_check(t, anz)
     store.put_parquet(config.TARGETS_KEY, t)
     store.put(config.TARGETS_REPORT_KEY, json.dumps(report, indent=1, default=str).encode())

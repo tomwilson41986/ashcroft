@@ -9,12 +9,15 @@ from datetime import date, datetime
 import pandas as pd
 
 from au import config
-from au.data import (KEEP, anz_check, build_targets, cloth_and_name, meeting_date, parse_event_name, parse_hint,
+from au.data import (KEEP, anz_check, apply_track_names, build_targets, learn_track_names, cloth_and_name, meeting_date, parse_event_name, parse_hint,
                      read_csv_bytes)
 
 
 def test_the_meeting_name_gives_track_country_and_day():
-    assert parse_hint("WAGGA (AUS) 28TH FEB") == {"track": "Wagga", "country": "AUS", "day": 28, "month": 2}
+    assert parse_hint("WAGGA (AUS) 28TH FEB") == {"track": "Wagga", "country": "AUS", "day": 28, "month": 2,
+                                                  "abbrev": False}
+    short = parse_hint("AUS / Flem (AUS) 2nd Nov")
+    assert (short["track"], short["abbrev"], short["day"], short["month"]) == ("Flem", True, 2, 11)
     assert parse_hint("WARWICK FARM (AUS) 1ST APR")["track"] == "Warwick Farm"
     assert parse_hint("TRENTHAM (NZL) 3RD JAN")["country"] == "NZL"
     assert parse_hint("") is None and parse_hint("GB / Kemp 12th Mar") is None
@@ -93,3 +96,17 @@ def test_the_anz_check_matches_on_market_and_selection():
     assert rep["bsp_equal_within_0.01"] == 1.0 and rep["result_agrees"] == 1.0
     assert rep["track_agrees"] == 1.0 and rep["race_no_agrees"] == 1.0 and rep["distance_agrees"] == 1.0
     assert rep["clock_offset_hours_top"] == {"11.0": 2}
+
+
+def test_short_track_names_are_learned_from_the_anz_files_and_applied():
+    raw = _raw([["7", "AUS / Flem (AUS) 2nd Nov", "R1 1200m Hcap", "02-11-2025 04:00", "1", "1. A", "1", "3", "1", "1",
+                 "f.csv"],
+                ["8", "AUS / Zzzz (AUS) 2nd Nov", "R1 1200m Hcap", "02-11-2025 04:30", "1", "1. A", "1", "3", "1", "1",
+                 "f.csv"]])
+    t, _ = build_targets(raw)
+    anz = pd.DataFrame({"WIN_MARKET_ID": ["7"], "TRACK": ["Flemington"]})
+    names, rep = learn_track_names(t, anz)
+    assert names == {"Flem": "Flemington"} and rep["short_names_learned"] == 1
+    t2, rep2 = apply_track_names(t, names)
+    assert list(t2["track"]) == ["Flemington", "Zzzz"]
+    assert rep2["rows_short"] == 2 and rep2["rows_mapped"] == 1 and rep2["short_names_left"] == {"Zzzz": 1}
