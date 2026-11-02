@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       source:
-        description: 'Sources, comma-separated (football,tennis,puntingform,gbgb) or all'
+        description: 'Sources, comma-separated (football,tennis,puntingform,gbgb,api_football_history) or all'
         required: false
         type: string
         default: 'all'
@@ -72,7 +72,7 @@ jobs:
           DATE_FROM: ${{ inputs.date_from }}
           WANT: ${{ inputs.max_minutes || '280' }}
         run: |
-          if ! [[ "$SOURCE" =~ ^[a-z,]+$ ]]; then echo "source must be names like gbgb,football"; exit 1; fi
+          if ! [[ "$SOURCE" =~ ^[a-z_,]+$ ]]; then echo "source must be names like gbgb,football,api_football"; exit 1; fi
           if ! [[ "$WANT" =~ ^[0-9]+$ ]] || [ "$WANT" -gt 320 ]; then echo "max_minutes must be a whole number, at most 320"; exit 1; fi
           ARGS=(--source "$SOURCE" --fetch --build --report --max-minutes "$WANT")
           if [ -n "$DATE_FROM" ]; then
