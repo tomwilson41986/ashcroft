@@ -129,13 +129,14 @@ def boot_gain(base_ll: np.ndarray, arm_ll: np.ndarray, day: np.ndarray, n: int =
     return float(s.sum() / c.sum()), float(np.quantile(draws, 0.05)), float(np.quantile(draws, 0.95))
 
 
-def outcome_test(d: pd.DataFrame, families: dict = FAMILIES, scored: str = "dev") -> dict:
+def outcome_test(d: pd.DataFrame, families: dict = FAMILIES, scored: str = "dev", train_from: int = TRAIN_FROM,
+                 dev_from: int = DEV_FROM, dev_to: int = DEV_TO, holdout_from: int = HOLDOUT_FROM) -> dict:
     """Every arm's log-loss on the scored seasons (dev: walk-forward; holdout: once), gains against open + model."""
     if scored == "dev":
-        plan = [(s, d[(d["season"] >= TRAIN_FROM) & (d["season"] < s)], d[d["season"] == s])
-                for s in range(DEV_FROM, DEV_TO + 1)]
+        plan = [(s, d[(d["season"] >= train_from) & (d["season"] < s)], d[d["season"] == s])
+                for s in range(dev_from, dev_to + 1)]
     else:
-        plan = [("holdout", d[(d["season"] >= TRAIN_FROM) & (d["season"] <= DEV_TO)], d[d["season"] >= HOLDOUT_FROM])]
+        plan = [("holdout", d[(d["season"] >= train_from) & (d["season"] <= dev_to)], d[d["season"] >= holdout_from])]
     arms = {"open": Stage2(use_model=False), "open+model": Stage2()}
     arms.update({k: Stage2(v) for k, v in families.items()})
     lls = {k: [] for k in arms}
@@ -183,14 +184,15 @@ def coefficients(d: pd.DataFrame, families: dict = FAMILIES, n_boot: int = 100, 
     return out
 
 
-def move_test(d: pd.DataFrame, families: dict = FAMILIES, scored: str = "dev", seed: int = 0) -> dict:
+def move_test(d: pd.DataFrame, families: dict = FAMILIES, scored: str = "dev", seed: int = 0, train_from: int = TRAIN_FROM,
+              dev_from: int = DEV_FROM, dev_to: int = DEV_TO, holdout_from: int = HOLDOUT_FROM) -> dict:
     """Out-of-sample R2 of the open-to-close move on each family, against no change and the training mean, with the
     permuted-training floor."""
     m = d[d["same_book"] & d["move"].notna()]
     if scored == "dev":
-        plan = [(m[(m["season"] >= TRAIN_FROM) & (m["season"] < s)], m[m["season"] == s]) for s in range(DEV_FROM, DEV_TO + 1)]
+        plan = [(m[(m["season"] >= train_from) & (m["season"] < s)], m[m["season"] == s]) for s in range(dev_from, dev_to + 1)]
     else:
-        plan = [(m[(m["season"] >= TRAIN_FROM) & (m["season"] <= DEV_TO)], m[m["season"] >= HOLDOUT_FROM])]
+        plan = [(m[(m["season"] >= train_from) & (m["season"] <= dev_to)], m[m["season"] >= holdout_from])]
     rng = np.random.default_rng(seed)
     res = {}
     for k, feats in families.items():
