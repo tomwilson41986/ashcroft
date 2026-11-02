@@ -116,14 +116,20 @@ def audit_day(day: date, pred, books, markets, panel: pd.DataFrame, trader) -> d
     return out
 
 
-def load(store, first: date, last: date, source: str = "recorder") -> tuple[pd.DataFrame, list[dict]]:
+def load(store, first: date, last: date, source: str = "recorder",
+         pred_dir: str | None = None) -> tuple[pd.DataFrame, list[dict]]:
     """Every day's panel (entry books from ``source``: the recorder's 60-second delayed books, or the trader's live
-    5-second books; the SP from the recorder's settled books) and its audit row."""
+    5-second books; the SP from the recorder's settled books) and its audit row. Our price is the 5 Oct forward
+    test's model unless ``pred_dir`` holds another's days (``research.greyhound.score_full``)."""
     from betfair_recorder import _read_day_csv
     frames, audit, d = [], [], first
     while d <= last:
         try:
-            pred = store.get_parquet(f"{to.TRACK_PRED}/{d:%Y-%m-%d}.parquet")
+            if pred_dir:
+                f = Path(pred_dir) / f"{d:%Y-%m-%d}.parquet"
+                pred = pd.read_parquet(f) if f.exists() else None
+            else:
+                pred = store.get_parquet(f"{to.TRACK_PRED}/{d:%Y-%m-%d}.parquet")
             books = _read_day_csv(d, "books_greyhound.csv")
             markets = _read_day_csv(d, "markets_greyhound.csv")
             trader = _read_day_csv(d, "books_greyhound_trader.csv")
@@ -335,7 +341,7 @@ def _tbl(rows: list[dict], cols: list[str]) -> list[str]:
 
 def report_md(res: dict) -> str:
     L = [f"# Greyhound trade-out study ({res['first_day']} to {res['last_day']})", "",
-         f"Entry books: {res.get('source')}. Panel: {res['panel_rows']} runner-marks, {res['panel_races']} races, {res['panel_days']} days; scored days "
+         f"Our price: {res.get('model')}. Entry books: {res.get('source')}. Panel: {res['panel_rows']} runner-marks, {res['panel_races']} races, {res['panel_days']} days; scored days "
          f"{res['dev_days'][0] if res['dev_days'] else None} to {res['holdout_days'][-1] if res['holdout_days'] else None}"
          f" (development {len(res['dev_days'])}, holdout {len(res['holdout_days'])}).", "",
          "## 1. Data audit (a day a row)", ""]
@@ -380,14 +386,17 @@ def main(argv=None) -> int:
     ap.add_argument("--from", dest="first", default=str(to.FIRST_BOOK_DAY))
     ap.add_argument("--to", dest="last", default=None, help="default: yesterday (UK)")
     ap.add_argument("--out", default="out/greyhound_tradeout_study")
+    ap.add_argument("--pred-dir", default=None,
+                    help="our price from these day files (research.greyhound.score_full) instead of the 5 Oct model's")
     ap.add_argument("--source", choices=["recorder", "trader"], default="recorder",
                     help="whose books at the entry marks: the recorder's (delayed, 60 s) or the trader's (live, 5 s)")
     a = ap.parse_args(argv)
     t0 = time.time()
     store = Store(root=a.store)
     last = date.fromisoformat(a.last) if a.last else uk_today() - timedelta(days=1)
-    panel, audit = load(store, date.fromisoformat(a.first), last, source=a.source)
-    res = {"first_day": a.first, "last_day": f"{last}", "source": a.source, "audit": audit,
+    panel, audit = load(store, date.fromisoformat(a.first), last, source=a.source, pred_dir=a.pred_dir)
+    res = {"first_day": a.first, "last_day": f"{last}", "source": a.source,
+           "model": a.pred_dir or "the 5 Oct forward test's base model", "audit": audit,
            "panel_rows": int(len(panel))}
     if not len(panel):
         res["note"] = "no panel"

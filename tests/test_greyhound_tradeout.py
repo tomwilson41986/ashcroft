@@ -229,7 +229,7 @@ def test_study_end_to_end_on_synthetic_days(tmp_path, monkeypatch):
         pred["race_id"] = pred.race_id + 1000 * k
         frames.append(to.day_panel(pred, books, markets, day))
     panel = pd.concat(frames, ignore_index=True)
-    monkeypatch.setattr(st, "load", lambda store, first, last, source="recorder": (panel, [{"day": "x", "races_priced": 1}]))
+    monkeypatch.setattr(st, "load", lambda store, first, last, source="recorder", pred_dir=None: (panel, [{"day": "x", "races_priced": 1}]))
     monkeypatch.setattr(st, "WINDOWS", (3, None))
     out = tmp_path / "study"
     assert st.main(["--store", str(tmp_path), "--from", str(DAY), "--to", str(DAY + timedelta(days=17)),
@@ -253,3 +253,23 @@ def test_the_trader_keeps_its_books_only_when_asked(tmp_path, monkeypatch):
     monkeypatch.setattr(betfair_recorder, "ROOT", tmp_path)
     rec = live.book_recorder(DAY, env={"BETFAIR_RECORD": "1"})
     assert rec is not None and rec.books_path.name == "books_greyhound_trader.csv"
+
+
+def test_full_model_days_join_their_markets_and_meet_the_base_and_the_sp(tmp_path, monkeypatch):
+    from research.greyhound import score_full as sf
+    import betfair_recorder
+    pred, books, markets = synthetic_day(n_races=6)
+    uk = pd.to_datetime(markets.drop_duplicates("market_id").set_index("market_id").market_start_utc, utc=True)
+    pred["race_time"] = pred.market_id.map(uk.dt.tz_convert("Europe/London").dt.strftime("%H:%M"))
+    store = MemStore()
+    store.put_parquet(f"{to.TRACK_PRED}/{DAY}.parquet", pred)            # the 5 Oct model's day, joined already
+    full = pred.drop(columns=["market_id", "selection_id"]).assign(dog_id=1, dog_name="d", sp_decimal=3.0)
+    full["p_model"] = full.groupby("race_id").p_model.transform(lambda s: (s ** 0.8) / (s ** 0.8).sum())
+    files = {"markets_greyhound.csv": markets, "books_greyhound.csv": books}
+    monkeypatch.setattr(betfair_recorder, "_read_day_csv", lambda day, name, s3=None, root=None: files.get(name))
+    out = sf.score_days(full, DAY, DAY, store, tmp_path / "pred")
+    assert out["days"][0]["races_on_betfair"] == 6
+    day = pd.read_parquet(tmp_path / "pred" / f"{DAY}.parquet")
+    assert {"market_id", "selection_id", "p_model"} <= set(day.columns) and len(day) == 36
+    h = out["head_to_head"]
+    assert h["races"] == 6 and h["logloss_base_5oct"] != h["logloss_full_card_safe"]
