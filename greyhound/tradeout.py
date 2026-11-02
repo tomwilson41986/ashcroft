@@ -20,11 +20,17 @@ rules that did fire chose by the chance to win and took prices 7-12% under the S
 
 The forward test, fixed here before any test day (``RULES``):
 
+- **The books:** the greyhound trader's own (``books_greyhound_trader.csv``: the live key, every 5 seconds in a
+  race's last 3 minutes, kept from 2 Nov 2026), not the recorder's. The recorder's are the delayed key's, about 90
+  seconds old at the median in the last 3 minutes (reports/greyhound_model.md section 13), so a fill read off them is
+  at a price already gone. The SP still comes from the recorder's settled books. (The owner, 2 Nov 2026: gather the
+  live books first; the paper trader keeps the live key.)
+- **Frozen once** (``--freeze``), when ``MIN_FREEZE_DAYS`` (10) days of the trader's books are held: the closing
+  models, fitted on those days at each entry mark; written with the rules to ``greyhound/tradeout/frozen.json``.
+  Until then ``--freeze`` reports how many days it has and writes nothing. The win model is the forward test's model
+  of 5 Oct, not refitted, so the closing model's training prices are out of sample too.
 - **Start:** the later of ``START`` (4 Nov 2026) and the day after the freeze. Paper only; nothing here can place an
   order.
-- **Frozen once** (``--freeze``): the closing models, fitted on every recorded day from 6 Oct to the day before the
-  freeze, at each entry mark; written with the rules to ``greyhound/tradeout/frozen.json``. The win model is the
-  forward test's model of 5 Oct, not refitted, so the closing model's training prices are out of sample too.
 - **Primary rule:** entry 1 minute before the off (the recorder's ``off_1`` mark), the horses' closing model, back
   where the expected CLV clears 0.03, a price up to 20 with at least the stake offered, GBP2 a position, closed at the
   SP; 2% commission on each market's net.
@@ -36,9 +42,8 @@ The forward test, fixed here before any test day (``RULES``):
   GBP staked after commission has a 90% lower bound above 0 (a bootstrap by day). A pass goes to the owner, who
   decides on small real stakes.
 
-The limits: the recorder's books are the delayed key's, every 60 seconds in a race's last hour, so a price at a mark
-may be a few seconds old and the fill is taken on trust when the book offered the stake; the SP leg is assumed
-matched; the race's field is the one that ran (GBGB), so a late non-runner is not seen as the market saw it.
+The limits: the fill is taken on trust when the book offered the stake (each day's feed lag is reported, so a day
+whose books turn out stale can be seen); the SP leg is assumed matched; the race's field is the one that ran (GBGB), so a late non-runner is not seen as the market saw it.
 
     python -m greyhound.tradeout --freeze                # once: fit and freeze the closing models and the rules
     python -m greyhound.tradeout --days 4                # the nightly run (after greyhound.track's): settle, summarise
@@ -66,6 +71,10 @@ TRACK_PRED = "greyhound/track/pred"          # the forward test of 5 Oct's price
 FROZEN_KEY = f"{PREFIX}/frozen.json"
 FIRST_BOOK_DAY = date(2026, 10, 6)            # the first day with recorded greyhound books
 START = "2026-11-04"
+#: whose books the test reads at the entry marks; the SP is always the recorder's settled book
+ENTRY_BOOKS = {"trader": "books_greyhound_trader.csv", "recorder": "books_greyhound.csv"}
+SOURCE = "trader"
+MIN_FREEZE_DAYS = 10
 STAKE = 2.0
 COMMISSION = 0.02
 MAX_PRICE = 20.0
@@ -83,7 +92,9 @@ BOOK_COLS = ["back1", "back1_size", "back2", "back2_size", "back3", "back3_size"
 MICRO = ("lq_market", "lq_model", "last_vs_mid", "move", "imbalance", "log_spread", "lq_market_x_vol",
          "lq_model_x_vol")
 RULES = {
-    "start": START,
+    "start": f"the later of {START} and the day after the freeze",
+    "books": "the greyhound trader's live-key books (books_greyhound_trader.csv); the SP from the recorder's settled "
+             f"books; frozen once {MIN_FREEZE_DAYS} days of the trader's books are held",
     "primary": {"mark": "off_1", "model": "racebook", "side": "back", "bar": 0.03},
     "reported": {"marks": list(ENTRY_MARKS), "models": list(MODELS) + ["win_edge"], "sides": list(SIDES),
                  "bars": list(BARS)},
@@ -154,8 +165,20 @@ def closing_prices(books: pd.DataFrame, markets: pd.DataFrame, day: date) -> pd.
     return f.dropna(subset=["bsp"]).drop_duplicates(["market_id", "selection_id"])
 
 
-def day_panel(pred: pd.DataFrame, books: pd.DataFrame, markets: pd.DataFrame, day: date) -> pd.DataFrame:
-    """One day's runners at each entry mark: our price, the book, the SP, the result. A race is kept at a mark only
+def feed_lag(pre: pd.DataFrame, minutes: float = 3.0) -> pd.Series:
+    """Each market's median age of its books in its last ``minutes``: the poll's time less the market's last match
+    (money matches every few seconds there, so this is the feed's delay)."""
+    if "last_match_utc" not in pre:
+        return pd.Series(dtype=float)
+    x = pre[pre.minutes_to_off <= minutes].drop_duplicates(["market_id", "polled"])
+    lag = (x.polled - pd.to_datetime(x.last_match_utc, utc=True, errors="coerce")).dt.total_seconds()
+    return lag.groupby(x.market_id).median()
+
+
+def day_panel(pred: pd.DataFrame, books: pd.DataFrame, markets: pd.DataFrame, day: date,
+              closing_books: pd.DataFrame | None = None) -> pd.DataFrame:
+    """One day's runners at each entry mark: our price, the book (``books``), the SP (from ``closing_books``, the
+    recorder's settled books, when the entry books are another writer's), the result. A race is kept at a mark only
     when every runner that ran has a back price there and an SP."""
     if pred is None or not len(pred) or books is None or markets is None or not len(books):
         return pd.DataFrame()
@@ -168,10 +191,11 @@ def day_panel(pred: pd.DataFrame, books: pd.DataFrame, markets: pd.DataFrame, da
     if not len(pre):
         return pd.DataFrame()
     e = entry_books(pre)
-    bsp = closing_prices(books, markets, day)
+    bsp = closing_prices(books if closing_books is None else closing_books, markets, day)
     d = p.merge(e, on=["market_id", "selection_id"], how="inner").merge(bsp, on=["market_id", "selection_id"],
                                                                        how="inner")
     d = d[(d.back1 > 1) & (d.bsp > 1)]
+    d = d.assign(feed_lag_s=d.market_id.map(feed_lag(pre)))
     whole = d.groupby(["race_id", "mark"]).selection_id.transform("size") == d.field
     return add_features(d[whole].reset_index(drop=True))
 
@@ -359,22 +383,26 @@ def rule_table(p: pd.DataFrame, keys=("mark", "model", "side", "bar"), n_boot: i
 # The store: panels, the freeze, the nightly run
 # --------------------------------------------------------------------------------------------------------------------
 
-def load_panel(store, day: date, s3=None) -> pd.DataFrame:
-    """A day's panel from the forward test's priced runners and the recorded greyhound books."""
+def load_panel(store, day: date, s3=None, source: str = SOURCE) -> pd.DataFrame:
+    """A day's panel from the forward test's priced runners and the greyhound books at the entry marks (``source``:
+    the trader's or the recorder's), the SP from the recorder's settled books."""
     from betfair_recorder import _read_day_csv
     pred = store.get_parquet(f"{TRACK_PRED}/{day:%Y-%m-%d}.parquet")
     if pred is None or not len(pred):
         return pd.DataFrame()
-    books = _read_day_csv(day, "books_greyhound.csv", s3=s3)
+    recorder = _read_day_csv(day, ENTRY_BOOKS["recorder"], s3=s3)
+    books = recorder if source == "recorder" else _read_day_csv(day, ENTRY_BOOKS[source], s3=s3)
     markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
-    return day_panel(pred, books, markets, day)
+    if books is None or recorder is None:
+        return pd.DataFrame()
+    return day_panel(pred, books, markets, day, closing_books=recorder)
 
 
-def load_panels(store, first: date, last: date, s3=None) -> pd.DataFrame:
+def load_panels(store, first: date, last: date, s3=None, source: str = SOURCE) -> pd.DataFrame:
     frames, d = [], first
     while d <= last:
         try:
-            f = load_panel(store, d, s3=s3)
+            f = load_panel(store, d, s3=s3, source=source)
         except Exception as exc:                                  # one bad day file: the rest are still read
             log.warning("%s: panel not built (%s)", d, exc)
             f = pd.DataFrame()
@@ -385,15 +413,18 @@ def load_panels(store, first: date, last: date, s3=None) -> pd.DataFrame:
 
 
 def freeze(store, today: date, s3=None) -> dict:
-    """Fit both closing models at every entry mark on every recorded day before ``today`` and freeze them with the
-    rules; the forward test starts the later of START and the day after."""
+    """Fit both closing models at every entry mark on every day of the trader's books before ``today`` and freeze them
+    with the rules, once ``MIN_FREEZE_DAYS`` such days are held (else nothing is written: ``waiting``); the forward
+    test starts the later of START and the day after."""
     d = load_panels(store, FIRST_BOOK_DAY, today - timedelta(days=1), s3=s3)
-    if not len(d):
-        raise SystemExit("no panel: the forward test of 5 Oct has no priced days with recorded books")
+    n_days = int(d.race_date.nunique()) if len(d) else 0
+    if n_days < MIN_FREEZE_DAYS:
+        return {"waiting": f"{n_days} of {MIN_FREEZE_DAYS} days of the trader's books with priced runners held"}
     fitted = {m: fit_models(g) for m, g in d.groupby("mark")}
     first = max(date.fromisoformat(START), today + timedelta(days=1))
-    out = {"frozen_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "fit_from": str(FIRST_BOOK_DAY),
-           "fit_to": str(today - timedelta(days=1)), "first_test_day": str(first), "rules": RULES, "models": fitted}
+    out = {"frozen_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "fit_from": str(d.race_date.min()),
+           "fit_to": str(d.race_date.max()), "fit_days": n_days,
+           "feed_lag_s_p50": round(float(d.drop_duplicates("market_id").feed_lag_s.median()), 1), "first_test_day": str(first), "rules": RULES, "models": fitted}
     store.put(FROZEN_KEY, json.dumps(out, indent=1).encode())
     return out
 
@@ -403,7 +434,8 @@ def track_day(store, frozen: dict, day: date, s3=None) -> dict:
     ds = f"{day:%Y-%m-%d}"
     d = load_panel(store, day, s3=s3)
     if not len(d):
-        return {"day": ds, "note": "no panel yet (the forward test of 5 Oct has not priced the day, or no books)"}
+        return {"day": ds, "note": "no panel yet (the forward test of 5 Oct has not priced the day, or no trader or "
+                                   "settled books)"}
     parts = []
     for mark, g in d.groupby("mark"):
         if mark not in frozen["models"]:
@@ -417,7 +449,9 @@ def track_day(store, frozen: dict, day: date, s3=None) -> dict:
     pr = RULES["primary"]
     prim = p[(p["mark"] == pr["mark"]) & (p.model == pr["model"]) & (p.side == pr["side"]) & (p.bar == pr["bar"])] \
         if len(p) else p
+    lag = d.drop_duplicates("market_id").feed_lag_s
     return {"day": ds, "races": int(d.race_id.nunique()), "positions": int(len(p)), "primary_trades": int(len(prim)),
+            "feed_lag_s_p50": round(float(lag.median()), 1) if lag.notna().any() else None,
             "primary_net": round(float(settle(prim).net.sum()), 2) if len(prim) else 0.0}
 
 
@@ -474,11 +508,23 @@ def main(argv=None) -> int:
             report["frozen"] = "already frozen: " + frozen["frozen_utc"]
         else:
             frozen = freeze(store, today)
-            report["frozen"] = {k: v for k, v in frozen.items() if k != "models"}
-            report["frozen"]["fitted"] = {m: {k: v for k, v in f.items() if k in ("rows", "races", "days")}
-                                          for m, f in frozen["models"].items()}
-    if (a.days or a.date or a.summary) and not frozen:
-        ap.error("not frozen: run --freeze first")
+            if "waiting" in frozen:                            # not enough of the trader's books yet: nothing written
+                report["frozen"] = frozen
+                frozen = None
+            else:
+                report["frozen"] = {k: v for k, v in frozen.items() if k != "models"}
+                report["frozen"]["fitted"] = {m: {k: v for k, v in f.items() if k in ("rows", "races", "days")}
+                                              for m, f in frozen["models"].items()}
+    if not frozen:
+        if not a.freeze and (a.days or a.date or a.summary):
+            ap.error("not frozen: run --freeze first")
+        txt = json.dumps(report, indent=1, default=str)
+        print(txt)
+        if a.out:
+            Path(a.out).write_text(txt)
+            Path(a.out).with_suffix(".md").write_text(
+                f"## Greyhound trade-out forward test: not started\n\n{(report.get('frozen') or {}).get('waiting', '')}\n")
+        return 0
     days = []
     if a.date:
         days = [date.fromisoformat(a.date)]

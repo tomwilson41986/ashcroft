@@ -91,8 +91,9 @@ jobs:
           python -m greyhound.track "${ARGS[@]}"
       # The trade-out forward test (greyhound/tradeout.py; the owner, 2 Nov 2026): take a price before the off, close
       # it at the SP. Reads the priced runners the step above has just written, so it runs after it, on the settled
-      # days only: freezes its closing models once (the first test day is the later of 4 Nov 2026 and the day after),
-      # then settles the days since.
+      # days only, at the greyhound trader's own live-key books: freezes its closing models once 10 days of those books
+      # are held (until then it reports the count and writes nothing; the first test day is the later of 4 Nov 2026
+      # and the day after the freeze), then settles the days since.
       - name: Trade-out forward test (freeze once, settle, summarise)
         if: >-
           (github.event_name == 'schedule' && github.event.schedule == '41 11 * * *')

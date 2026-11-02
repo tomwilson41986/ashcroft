@@ -111,11 +111,14 @@ def audit_day(day: date, pred, books, markets, panel: pd.DataFrame, trader) -> d
         tp = to.pre_off_books(trader, markets)
         t3 = tp[tp.minutes_to_off <= 3].drop_duplicates(["market_id", "polled"])
         out["trader_books"] = {"rows": int(len(trader)), "markets": int(tp.market_id.nunique()),
-                               "polls_last3_per_market": _q(t3.groupby("market_id").polled.nunique())}
+                               "polls_last3_per_market": _q(t3.groupby("market_id").polled.nunique()),
+                               "feed_lag_last3_s": _q(to.feed_lag(tp))}
     return out
 
 
-def load(store, first: date, last: date) -> tuple[pd.DataFrame, list[dict]]:
+def load(store, first: date, last: date, source: str = "recorder") -> tuple[pd.DataFrame, list[dict]]:
+    """Every day's panel (entry books from ``source``: the recorder's 60-second delayed books, or the trader's live
+    5-second books; the SP from the recorder's settled books) and its audit row."""
     from betfair_recorder import _read_day_csv
     frames, audit, d = [], [], first
     while d <= last:
@@ -124,7 +127,9 @@ def load(store, first: date, last: date) -> tuple[pd.DataFrame, list[dict]]:
             books = _read_day_csv(d, "books_greyhound.csv")
             markets = _read_day_csv(d, "markets_greyhound.csv")
             trader = _read_day_csv(d, "books_greyhound_trader.csv")
-            panel = to.day_panel(pred, books, markets, d) if pred is not None else pd.DataFrame()
+            entry = books if source == "recorder" else trader
+            panel = (to.day_panel(pred, entry, markets, d, closing_books=books)
+                     if pred is not None and entry is not None and books is not None else pd.DataFrame())
             audit.append(audit_day(d, pred, books, markets, panel, trader))
             if len(panel):
                 frames.append(panel)
@@ -330,7 +335,7 @@ def _tbl(rows: list[dict], cols: list[str]) -> list[str]:
 
 def report_md(res: dict) -> str:
     L = [f"# Greyhound trade-out study ({res['first_day']} to {res['last_day']})", "",
-         f"Panel: {res['panel_rows']} runner-marks, {res['panel_races']} races, {res['panel_days']} days; scored days "
+         f"Entry books: {res.get('source')}. Panel: {res['panel_rows']} runner-marks, {res['panel_races']} races, {res['panel_days']} days; scored days "
          f"{res['dev_days'][0] if res['dev_days'] else None} to {res['holdout_days'][-1] if res['holdout_days'] else None}"
          f" (development {len(res['dev_days'])}, holdout {len(res['holdout_days'])}).", "",
          "## 1. Data audit (a day a row)", ""]
@@ -338,9 +343,10 @@ def report_md(res: dict) -> str:
                 (a.get("races_in_panel") or {}).get("off_1"), "polls last 5 min (p50)":
                 (a.get("polls_last5_per_market") or {}).get("p50"), "poll gap s (p50)":
                 (a.get("poll_gap_last5_s") or {}).get("p50"), "feed lag s (p50/p90)": a.get("feed_lag_last3_s"),
-                "trader books": (a.get("trader_books") or {}).get("rows"), "note": a.get("note") or a.get("error")}
+                "trader books (lag p50)": ((a.get("trader_books") or {}).get("rows"),
+                                          ((a.get("trader_books") or {}).get("feed_lag_last3_s") or {}).get("p50")), "note": a.get("note") or a.get("error")}
                for a in res["audit"]], ["day", "races", "panel races (off_1)", "polls last 5 min (p50)",
-                                        "poll gap s (p50)", "feed lag s (p50/p90)", "trader books", "note"])
+                                        "poll gap s (p50)", "feed lag s (p50/p90)", "trader books (lag p50)", "note"])
     L += ["### Each price at each mark against the SP (all panel days)", ""]
     L += _tbl(res.get("baselines", []), ["mark", "price", "rows", "mape%", "median_ape%", "mean_log_bsp_over_price"])
     L += ["## 2. Accuracy of the SP forecast, development days", "",
@@ -374,12 +380,15 @@ def main(argv=None) -> int:
     ap.add_argument("--from", dest="first", default=str(to.FIRST_BOOK_DAY))
     ap.add_argument("--to", dest="last", default=None, help="default: yesterday (UK)")
     ap.add_argument("--out", default="out/greyhound_tradeout_study")
+    ap.add_argument("--source", choices=["recorder", "trader"], default="recorder",
+                    help="whose books at the entry marks: the recorder's (delayed, 60 s) or the trader's (live, 5 s)")
     a = ap.parse_args(argv)
     t0 = time.time()
     store = Store(root=a.store)
     last = date.fromisoformat(a.last) if a.last else uk_today() - timedelta(days=1)
-    panel, audit = load(store, date.fromisoformat(a.first), last)
-    res = {"first_day": a.first, "last_day": f"{last}", "audit": audit, "panel_rows": int(len(panel))}
+    panel, audit = load(store, date.fromisoformat(a.first), last, source=a.source)
+    res = {"first_day": a.first, "last_day": f"{last}", "source": a.source, "audit": audit,
+           "panel_rows": int(len(panel))}
     if not len(panel):
         res["note"] = "no panel"
     else:

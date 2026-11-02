@@ -495,7 +495,8 @@ second stage with the SP book, not the result, as the target (`reports/greyhound
 
 **The new forward test, fixed before its first day** (`greyhound/tradeout.py` RULES; `greyhound-track.yml`, the
 daily run after the 5 Oct test's): frozen once on the recorded days from 6 Oct to the day before the freeze; first test
-day the later of 4 Nov 2026 and the day after the freeze; primary rule: entry at the book 1 minute before the off,
+day the later of 4 Nov 2026 and the day after the freeze (amended the same day, section 13: the trader's live books,
+frozen after 10 days of them); primary rule: entry at the book 1 minute before the off,
 the horses' closing model, back where the expected CLV clears 0.03, a price up to 20 with the stake offered, GBP2 paper,
 closed at the SP, 2% commission on each market's net. Reported, not judged: the first traded book and 3 and 5 minutes
 out, the lay side, bars 0 and 0.05, the microstructure closing model, and the old edge-to-win selection closed at the
@@ -552,9 +553,13 @@ traded -14.10%. The pre-registered primary rule (1 minute out, the horses' closi
 the 1-minute microstructure model's gain is 0.00462, 0.00468, 0.00459, 0.00457 a race on the same scored days. The
 limit is the books' age and cadence, not their number.
 
-**What follows.**
-- The forward test of section 12, read off the recorder's books, would score fills at prices about 90 seconds stale.
-  It should not start on them. The fix is the trader's own books (live key, 5 seconds in the last 3 minutes, kept
-  from this PR): gather them, refit the closing models on them, then freeze and start the test.
-- Before that, the owner's call on reading the live key in paper mode (CLAUDE.md: no read-only use of live data).
-- The literature's order-flow tests (reports/greyhound_literature.md tests 10, 11, 14, 17) need the same books.
+**The owner's decisions (2 Nov 2026).** Gather the live books first; the paper trader keeps the live key. So the
+forward test of section 12 reads the trader's own books (live key, 5 seconds in the last 3 minutes, kept from this
+change) at its entry marks, with the SP from the recorder's settled books, and freezes only once 10 days of them are
+held (``MIN_FREEZE_DAYS``); until then the daily run reports how many days it has and writes nothing. Each test day
+reports its books' feed lag, so a stale day shows. Its first test day is the later of 4 Nov and the day after that
+freeze (mid-November at the earliest, if the trader runs every day).
+
+**Next.** Once the trader's books exist, the study again on them (`greyhound-research.yml`, source `trader`): the
+same tables on books that are current, then the literature's order-flow tests (reports/greyhound_literature.md
+tests 10, 11, 14, 17), which only 5-second books can carry.

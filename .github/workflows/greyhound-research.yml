@@ -16,6 +16,12 @@ on:
         description: 'last day, YYYY-MM-DD (default yesterday, UK)'
         required: false
         type: string
+      source:
+        description: "whose books at the entry marks: recorder (delayed, 60 s) or trader (live key, 5 s, from 2 Nov 2026)"
+        required: false
+        type: choice
+        options: ['recorder', 'trader']
+        default: 'recorder'
   push:
     branches: ['claude/determined-fermi-*']
     paths:
@@ -50,9 +56,10 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           FROM: ${{ inputs.date_from }}
           TO: ${{ inputs.date_to }}
+          SOURCE: ${{ inputs.source || 'recorder' }}
         run: |
           mkdir -p out
-          ARGS=(--out out/greyhound_tradeout_study)
+          ARGS=(--out out/greyhound_tradeout_study --source "$SOURCE")
           for v in "$FROM" "$TO"; do
             if [ -n "$v" ] && ! [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "dates must be YYYY-MM-DD"; exit 1; fi
           done

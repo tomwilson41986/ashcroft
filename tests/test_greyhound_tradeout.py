@@ -155,13 +155,21 @@ def test_freeze_starts_the_day_after_and_never_before_start():
     pred, books, markets = synthetic_day(n_races=30)
     store.put_parquet(f"{to.TRACK_PRED}/{DAY}.parquet", pred)
 
+    one = to.day_panel(pred, books, markets, DAY)
+    n_days = {"n": to.MIN_FREEZE_DAYS - 1}
+
     def fake_load(store_, first, last, s3=None):
-        return to.day_panel(pred, books, markets, DAY) if first <= DAY <= last else pd.DataFrame()
+        return pd.concat([one.assign(race_date=f"2026-10-{10 + k:02d}") for k in range(n_days["n"])],
+                         ignore_index=True)
 
     orig = to.load_panels
     to.load_panels = fake_load
     try:
+        waiting = to.freeze(store, date(2026, 11, 2))         # nine days of the trader's books: not yet
+        assert "waiting" in waiting and to.FROZEN_KEY not in store.d
+        n_days["n"] = to.MIN_FREEZE_DAYS
         out = to.freeze(store, date(2026, 11, 2))
+        assert out["fit_days"] == to.MIN_FREEZE_DAYS
         assert out["first_test_day"] == "2026-11-04"
         assert set(out["models"]) == {"first_traded", "off_5", "off_3", "off_1"}
         assert json.loads(store.get(to.FROZEN_KEY))["rules"]["primary"]["mark"] == "off_1"
@@ -189,6 +197,29 @@ def test_a_test_day_writes_every_rule_and_the_summary_reads_it():
     assert "| off_1 |" in to.markdown(s)
 
 
+def test_entry_books_from_the_trader_and_the_sp_from_the_recorder():
+    pred, books, markets = synthetic_day(n_races=5)
+    trader = books[books.source == "recorder"].copy()
+    trader["back1"] = trader.back1 + 0.5                       # the trader's own, fresher book
+    trader["last_match_utc"] = trader.polled_utc
+    d = to.day_panel(pred, trader, markets, DAY, closing_books=books)
+    assert len(d) and (d.feed_lag_s == 0).all()
+    r = d.iloc[0]
+    src = books[(books.selection_id == r.selection_id) & (books.source == "final")]
+    assert r.bsp == pytest.approx(float(src.sp_actual.iloc[0]))
+    # without the recorder's settled books there is no SP in the trader's: no panel
+    assert to.day_panel(pred, trader, markets, DAY).empty
+
+
+def test_main_waits_for_the_trader_books_without_failing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(to, "load_panels", lambda *a, **k: pd.DataFrame())
+    import sources.common as sc
+    monkeypatch.setattr(sc, "Store", lambda root=None: MemStore())
+    out = tmp_path / "t.json"
+    assert to.main(["--freeze", "--summary", "--days", "4", "--out", str(out)]) == 0
+    assert "0 of 10 days" in out.read_text()
+
+
 def test_study_end_to_end_on_synthetic_days(tmp_path, monkeypatch):
     from research.greyhound import tradeout_study as st
     frames = []
@@ -198,7 +229,7 @@ def test_study_end_to_end_on_synthetic_days(tmp_path, monkeypatch):
         pred["race_id"] = pred.race_id + 1000 * k
         frames.append(to.day_panel(pred, books, markets, day))
     panel = pd.concat(frames, ignore_index=True)
-    monkeypatch.setattr(st, "load", lambda store, first, last: (panel, [{"day": "x", "races_priced": 1}]))
+    monkeypatch.setattr(st, "load", lambda store, first, last, source="recorder": (panel, [{"day": "x", "races_priced": 1}]))
     monkeypatch.setattr(st, "WINDOWS", (3, None))
     out = tmp_path / "study"
     assert st.main(["--store", str(tmp_path), "--from", str(DAY), "--to", str(DAY + timedelta(days=17)),
