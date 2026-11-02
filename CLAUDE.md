@@ -169,6 +169,8 @@ python -m football.model --from 2012-07-01 --out out/football_report.json
 python -m football.live --fit
 python -m football.live --trade --until 21:30                      # paper; --live with FOOTBALL_LIVE=yes
 python -m football.live --settle --days 7
+# the pre-registered early-to-close rule scored at the recorded books (paper trial; gate 'running' until complete)
+python -m research.open_close.football_paper_trial --panel data/football_exchange_panel.parquet --out out/football_paper_trial.json
 
 # Race ABM: simulate a card, batch features for training, pattern-oriented calibration
 python research_lab.py abm --db horse_racing.db --date 2026-03-12
