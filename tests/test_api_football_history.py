@@ -92,3 +92,7 @@ def test_stops_at_the_quota_floor(tmp_path):
 def test_no_key_fetches_nothing(tmp_path, monkeypatch):
     monkeypatch.delenv("API_FOOTBALL_KEY", raising=False)
     assert "no API_FOOTBALL_KEY" in h.fetch(Store(root=tmp_path))["error"]
+
+
+def test_placeholder_ratings_read_as_missing():
+    assert h._num("6.89") == 6.89 and h._num("\u2013") is None and h._num("") is None and h._num(None) is None

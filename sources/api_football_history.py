@@ -195,6 +195,15 @@ def minutes_from_events(lineups: list, events: list, full: int = 90) -> tuple[di
     return mins, unresolved
 
 
+def _num(x) -> float | None:
+    """A player statistic as a number; None for API-Football's blanks and placeholders ('', '-', '\u2013')."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return v if v == v else None
+
+
 def build(store: Store) -> dict:
     import pandas as pd
     matches, players, events = [], [], []
@@ -237,7 +246,7 @@ def build(store: Store) -> dict:
                                         "role": role, "apif_player_id": pid, "player": q.get("name"),
                                         "pos": q.get("pos"), "minutes_stats": sm,
                                         "minutes_events": ev_min.get(pid, 0) if pid is not None else None,
-                                        "rating": float(rating) if rating not in (None, "") else None})
+                                        "rating": _num(rating)})
             for e in ev:
                 events.append({"apif_fixture_id": fid, "minute": _minute(e), "type": e.get("type"),
                                "detail": e.get("detail"), "apif_team_id": (e.get("team") or {}).get("id"),
