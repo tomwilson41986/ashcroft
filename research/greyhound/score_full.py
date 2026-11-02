@@ -19,7 +19,8 @@ day, which the morning card does not know. This is that model without those feat
 4. **The log-BSP model** (the owner, 2 Nov 2026: "add the log-BSP target like the horse model"): the horse model's
    recipe (``train_bfsp.py``: LightGBM regression, L2, on log BFSP) on the same card-safe features and rows, the
    target the Betfair SP from the price files (``greyhound.parity.attach_bsp``), fitted on every priced run before
-   ``--from`` and early-stopped on its last tenth. Its predicted SP is our price the way the horses' closing model reads
+   ``--from`` and early-stopped on its last tenth (up to ``BSP_ROUNDS``, 20,000: the first run hit its 3,000 cap still
+   improving). Its predicted SP is our price the way the horses' closing model reads
    one: the chance 1 / predicted SP, normalised within the race. Written to ``--pred-dir``/logbsp beside the win
    model's ``--pred-dir``/full.
 5. The head to head on the same runners: log-loss against the result of the 5 Oct base model, the full win model, the
@@ -82,8 +83,14 @@ BSP_PARAMS = dict(objective="regression", learning_rate=0.03, num_leaves=63, min
                   feature_fraction=0.7, bagging_fraction=0.8, bagging_freq=1, lambda_l2=10.0, verbose=-1)
 
 
+#: the log-BSP fit's cap: the first run stopped at 3,000 rounds still improving (report section 14), so the owner asked
+#: for more rounds (2 Nov 2026); the learning rate and everything else unchanged, early stopping after BSP_PATIENCE
+BSP_ROUNDS = 20000
+BSP_PATIENCE = 200
+
+
 def fit_log_bsp(df: pd.DataFrame, features: list[str], first: str, date_from: str = FIT_FROM,
-                rounds: int = 3000) -> tuple[pd.DataFrame, dict]:
+                rounds: int = BSP_ROUNDS, patience: int = BSP_PATIENCE) -> tuple[pd.DataFrame, dict]:
     """LightGBM on log BSP (the horse model's target), fitted on every priced modelling run in [date_from, first),
     early-stopped on its last tenth; every modelling run from ``first`` priced: ``pred_bsp`` and ``p_model`` (1 /
     pred_bsp normalised within the race)."""
@@ -107,7 +114,10 @@ def fit_log_bsp(df: pd.DataFrame, features: list[str], first: str, date_from: st
     _log(f"log-BSP: fit {len(tr_i):,} + {len(es_i):,} priced rows, test {len(test_i):,}, {len(features)} features")
     dtr = lgb.Dataset(X[tr_i], y[tr_i], feature_name=list(features), free_raw_data=True)
     des = lgb.Dataset(X[es_i], y[es_i], reference=dtr, free_raw_data=True)
-    m = lgb.train(BSP_PARAMS, dtr, rounds, valid_sets=[des], callbacks=[lgb.early_stopping(100, verbose=False)])
+    curve: dict = {}
+    m = lgb.train(BSP_PARAMS, dtr, rounds, valid_sets=[des], valid_names=["es"],
+                  callbacks=[lgb.early_stopping(patience, verbose=False), lgb.record_evaluation(curve)])
+    l2 = curve.get("es", {}).get("l2", [])
     keep = ["race_id", "t", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "won", "sp_decimal",
             "field"]
     out = df.iloc[rows[test_i]][[c for c in keep if c in df.columns]].reset_index(drop=True)
@@ -115,7 +125,14 @@ def fit_log_bsp(df: pd.DataFrame, features: list[str], first: str, date_from: st
     out["p_model"] = race_norm(1.0 / out.pred_bsp, out.race_id)
     es_err = m.predict(X[es_i], num_iteration=m.best_iteration) - y[es_i]
     imp = pd.Series(m.feature_importance("gain"), index=features)
-    info = {"rounds": m.best_iteration, "fit_rows": int(len(fit_i)),
+    # ran to the cap (early stopping never fired) whenever every round allowed was fitted: the best round may sit a
+    # few short of it (run 41460911545: best 19,966 of 20,000, still gaining)
+    info = {"rounds": m.best_iteration, "rounds_run": int(m.current_iteration()), "cap": rounds,
+            "hit_cap": bool(m.current_iteration() >= rounds),
+            "learning_rate": BSP_PARAMS["learning_rate"], "patience": patience, "fit_rows": int(len(fit_i)),
+            # the early-stopping slice's RMSE of log BSP every 1,000 rounds: where the fit stopped gaining
+            "es_rmse_by_round": {i + 1: round(float(np.sqrt(v)), 5) for i, v in enumerate(l2)
+                                 if (i + 1) % 1000 == 0 or i + 1 == len(l2)},
             "early_stop_rmse_log_bsp": round(float(np.sqrt(np.mean(es_err ** 2))), 4),
             "top_features": {k: round(float(v), 4) for k, v in (imp / imp.sum()).sort_values(ascending=False)
                              .head(30).items()}}
@@ -199,6 +216,7 @@ def main(argv=None) -> int:
     ap.add_argument("--to", dest="last", default=None, help="the last day (default yesterday, UK)")
     ap.add_argument("--pred-dir", default="out/pred_full")
     ap.add_argument("--out", default="out/greyhound_full_score.json")
+    ap.add_argument("--bsp-rounds", type=int, default=BSP_ROUNDS, help="the log-BSP fit's round cap")
     a = ap.parse_args(argv)
     t0 = time.monotonic()
     store = Store(root=a.store)
@@ -213,7 +231,7 @@ def main(argv=None) -> int:
          f"{pred.race_date.max()} ({pred.rounds.iloc[0] if len(pred) else 0} rounds)")
     gc.collect()
     try:                                       # the win model's scores stand even if this fit fails (memory, time)
-        bsp_pred, bsp_info = fit_log_bsp(df, feats, f"{first:%Y-%m-%d}")
+        bsp_pred, bsp_info = fit_log_bsp(df, feats, f"{first:%Y-%m-%d}", rounds=a.bsp_rounds)
         bsp_pred = bsp_pred[bsp_pred.race_date.astype(str) <= f"{last:%Y-%m-%d}"]
     except Exception as exc:
         _log(f"log-BSP model failed: {exc!r}")
