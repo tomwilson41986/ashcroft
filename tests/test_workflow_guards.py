@@ -181,3 +181,29 @@ def test_only_the_trader_runs_on_the_live_key():
         if "football.live --trade" in text:                                 # on paper: read-only, the delayed key
             assert 'FBKEY="$BETFAIR_APP_KEY"' in text, name
             assert not re.search(r"echo[^;]*\$\{?(BETFAIR_LIVE_APP_KEY|TRADER_KEY)\b", ln), (name, ln)
+
+
+def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
+    """The owner, 2 Nov 2026: the greyhound and football paper traders run in paper-models.yml, never in the live
+    trader's job or on its runner, on the delayed key, with no route to a real order."""
+    import yaml as _yaml
+    live = (WORKFLOWS / "live-trade.yml").read_text()
+    for t in ("greyhound.live --trade", "football.live --trade", "GREYHOUND_LIVE", "FOOTBALL_LIVE"):
+        assert t not in live, f"live-trade.yml still names {t!r}"
+    text = (WORKFLOWS / "paper-models.yml").read_text()
+    wf = _yaml.safe_load(text)
+    job = wf["jobs"]["paper"]
+    assert "BETFAIR_RUNNER" not in str(job["runs-on"]), job["runs-on"]
+    steps = job["steps"]
+    assert any("Not on the live trader's runner" == s.get("name") for s in steps)
+    assert "LIVE_APP_KEY" not in text.replace("the live key is never given", "")
+    runs = "\n".join(str(s.get("run", "")) for s in steps)
+    assert "--live" not in runs and "greyhound.live --trade" in runs and "football.live --trade" in runs
+    env = next(s["env"] for s in steps if s.get("name") == "Trade on paper (read-only)")
+    assert env["GREYHOUND_LIVE"] == "no" and env["FOOTBALL_LIVE"] == "no"
+    assert env["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
+    # no other workflow starts either trader
+    for p in WORKFLOWS.glob("*.yml"):
+        if p.name != "paper-models.yml":
+            body = p.read_text()
+            assert "greyhound.live --trade" not in body and "football.live --trade" not in body, p.name

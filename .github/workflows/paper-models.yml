@@ -1,0 +1,97 @@
+name: Paper models (greyhounds, football)
+
+# The paper trials, apart from the live trader (the owner, 2 Nov 2026: keep UK/IE safe; every other model runs on its
+# own and has to prove itself). Until 2 Nov these two traders ran as background processes inside live-trade.yml's
+# trading step; they now run here, on their own runner, and can place no order:
+#   - no --live is ever passed, and GREYHOUND_LIVE / FOOTBALL_LIVE are pinned to 'no' (each trader stays on paper
+#     unless both its switch and --live are given: greyhound/live.py, football/live.py);
+#   - the delayed application key only (Betfair permits no read-only use of live data);
+#   - its own Python environment and certificate folder, so nothing here touches the live job's.
+# The runner: a second self-hosted runner on the UK server (Betfair refuses logins from GitHub's own runners: 403,
+# 1 Nov), labelled with vars.PAPER_MODELS_RUNNER (default 'paper-models'). It must not be the live trader's runner: the
+# job stops if the two are the same, because a job there would hold the live trader's runner and could delay its
+# 05:15 UTC start. Until such a runner is registered, the scheduled runs wait in GitHub's queue and the trials pause.
+# Ledgers as before: s3://$CAPTURE_BUCKET/sources/greyhound/live/paper/<day>/, sources/football/live/paper/<day>/.
+
+on:
+  schedule:
+    - cron: '45 5 * * *'      # both traders, to 21:30 UK
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paper-models
+  cancel-in-progress: false
+
+jobs:
+  paper:
+    runs-on: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+    timeout-minutes: 1000
+    steps:
+      - name: Not on the live trader's runner
+        env:
+          PAPER_RUNNER_LABEL: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+          LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
+        run: |
+          if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$PAPER_RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
+            echo "PAPER_MODELS_RUNNER is the live trader's runner ($LIVE_RUNNER_LABEL): the paper models do not run there"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - name: Python (its own environment)
+        run: |
+          VENV="$HOME/.venvs/ashcroft-paper"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv-paper"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
+      - name: Write the Betfair certificate (its own folder)
+        env:
+          BETFAIR_CERT: ${{ secrets.BETFAIR_CERT }}
+          BETFAIR_KEY: ${{ secrets.BETFAIR_KEY }}
+        run: |
+          if [ -n "$BETFAIR_CERT" ] && [ -n "$BETFAIR_KEY" ]; then
+            D="$HOME/.betfair/certs-paper"
+            mkdir -p "$D"
+            printf '%s\n' "$BETFAIR_CERT" > "$D/betfair.crt"
+            printf '%s\n' "$BETFAIR_KEY" > "$D/betfair.key"
+            chmod 600 "$D/betfair.key"
+            echo "BETFAIR_CERT_FILE=$D/betfair.crt" >> "$GITHUB_ENV"
+            echo "BETFAIR_KEY_FILE=$D/betfair.key" >> "$GITHUB_ENV"
+          fi
+      - name: Trade on paper (read-only)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          # the delayed key only; the live key is never given to this job
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          GREYHOUND_LIVE: 'no'
+          FOOTBALL_LIVE: 'no'
+        run: |
+          set +e
+          # the greyhound model (greyhound/live.py, greyhound/live_config.json): each GB greyhound runner backed once on
+          # paper, at its first real price, where the edge clears 0.2. S3 greyhound/STOP or trading/STOP stops it.
+          python -m greyhound.live --trade --until 21:30 > "$RUNNER_TEMP/greyhound_trader.log" 2>&1 &
+          GHT=$!
+          # the football model (football/live.py, football/live_config.json): MATCH_ODDS and OVER_UNDER_25, each
+          # selection decided once in the 6 hours before kick-off, on paper. S3 football/STOP or trading/STOP stops it.
+          timeout 15h python -m football.live --trade --until 21:30 > "$RUNNER_TEMP/football_trader.log" 2>&1 &
+          FBT=$!
+          wait "$GHT"; GC=$?; echo "greyhound paper trader exited $GC"
+          tail -n 20 "$RUNNER_TEMP/greyhound_trader.log"
+          wait "$FBT"; FC=$?; echo "football paper trader exited $FC"
+          tail -n 20 "$RUNNER_TEMP/football_trader.log"
+          [ "$GC" = 0 ] && [ "$FC" = 0 ]
