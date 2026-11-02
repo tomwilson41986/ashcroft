@@ -1,0 +1,1052 @@
+{
+ "prereg": "reports/preregistration_football_team_move.md",
+ "prereg_sha256": "e08e604ddb0e3c7b18b882384a6a26c162de5ee2e12122c8d5ccec246e8ddda3",
+ "rule": {
+  "model": "ols_team_features_all_fit_on_pinnacle",
+  "market_types": [
+   "MATCH_ODDS"
+  ],
+  "selections": [
+   "H",
+   "A"
+  ],
+  "book_width": [
+   "tight <1.02",
+   "medium 1.02-1.05"
+  ],
+  "threshold": 0.03,
+  "commission": 0.02,
+  "headline": "a tick worse at each end",
+  "gate": {
+   "min_bets": 300,
+   "roi_lo90_above": 0,
+   "clv_mean_above": 0
+  },
+  "holdout_from_season": 2025,
+  "written_utc": "2026-11-02T15:41Z",
+  "secondary": [
+   {
+    "book_width": [
+     "medium 1.02-1.05"
+    ],
+    "threshold": 0.03,
+    "note": "chosen after looking"
+   }
+  ]
+ },
+ "seasons": [
+  2025,
+  2026
+ ],
+ "fit": {
+  "2025": {
+   "rows": 82737,
+   "seasons": [
+    2013,
+    2024
+   ]
+  },
+  "2026": {
+   "rows": 82737,
+   "seasons": [
+    2013,
+    2024
+   ]
+  }
+ },
+ "rows": 18490,
+ "matches": 9245,
+ "result": {
+  "rows": 14918,
+  "spread": {
+   "bets": 1827,
+   "days": 236,
+   "bets_per_day": 7.741525423728813,
+   "staked": 1827.0,
+   "profit": -20.1365541575884,
+   "roi": -0.011021649785215325,
+   "roi_lo90": -0.01642955324628508,
+   "roi_hi90": -0.005446220697120043,
+   "worst_drawdown": 21.607502062691754,
+   "worst_drawdown_per_staked": 0.011826766317838945,
+   "right_way": 0.6403940886699507,
+   "backs_share": 0.2988505747126437,
+   "losing_days": 0.5932203389830508
+  },
+  "mid": {
+   "bets": 1827,
+   "days": 236,
+   "bets_per_day": 7.741525423728813,
+   "staked": 1827.0,
+   "profit": 59.79723648608627,
+   "roi": 0.03272974082434935,
+   "roi_lo90": 0.02755503442312817,
+   "roi_hi90": 0.03809342322478238,
+   "worst_drawdown": 2.010869000489457,
+   "worst_drawdown_per_staked": 0.001100639847011197,
+   "right_way": 0.6403940886699507,
+   "backs_share": 0.2988505747126437,
+   "losing_days": 0.288135593220339
+  },
+  "clv_mean_spread": 0.011338231499295125,
+  "quoted_back": {
+   "bets": 546,
+   "days": 173,
+   "bets_per_day": 3.1560693641618496,
+   "staked": 546.0,
+   "profit": 2.752644296524285,
+   "roi": 0.005041473070557299,
+   "roi_lo90": -0.0027989238841722892,
+   "roi_hi90": 0.01297431500507011,
+   "worst_drawdown": 1.6126656727226023,
+   "worst_drawdown_per_staked": 0.0029536001331915795,
+   "right_way": 0.6172161172161172,
+   "backs_share": 1.0,
+   "losing_days": 0.4624277456647399
+  },
+  "by_band": {
+   "1-2": {
+    "bets": 322.0,
+    "days": 142.0,
+    "bets_per_day": 2.267605633802817,
+    "roi": -0.000868106756790496,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 0.9653554706210586,
+    "right_way": 0.6086956521739131,
+    "backs_share": 0.38819875776397517
+   },
+   "13-21": {
+    "bets": 51.0,
+    "days": 45.0,
+    "bets_per_day": 1.1333333333333333,
+    "roi": 0.005595872443145467,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 1.1086246351228604,
+    "right_way": 0.7058823529411765,
+    "backs_share": 0.1568627450980392
+   },
+   "2-3": {
+    "bets": 524.0,
+    "days": 169.0,
+    "bets_per_day": 3.100591715976331,
+    "roi": -0.000773010615242328,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 2.7188825366041804,
+    "right_way": 0.6335877862595419,
+    "backs_share": 0.3244274809160305
+   },
+   "21-51": {
+    "bets": 10.0,
+    "days": 10.0,
+    "bets_per_day": 1.0,
+    "roi": -0.14490655518105608,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 1.5579544406994499,
+    "right_way": 0.6,
+    "backs_share": 0.2
+   },
+   "3-5": {
+    "bets": 596.0,
+    "days": 186.0,
+    "bets_per_day": 3.204301075268817,
+    "roi": -0.020153092097512745,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 12.958637399258171,
+    "right_way": 0.6291946308724832,
+    "backs_share": 0.25
+   },
+   "5-8": {
+    "bets": 212.0,
+    "days": 113.0,
+    "bets_per_day": 1.8761061946902655,
+    "roi": -0.021828618912260813,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 5.407459850434823,
+    "right_way": 0.6933962264150944,
+    "backs_share": 0.3018867924528302
+   },
+   "51+": {
+    "bets": 1.0,
+    "days": 1.0,
+    "bets_per_day": 1.0,
+    "roi": -0.09090909090909094,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 0.09090909090909094,
+    "right_way": 1.0,
+    "backs_share": 1.0
+   },
+   "8-13": {
+    "bets": 111.0,
+    "days": 78.0,
+    "bets_per_day": 1.4230769230769231,
+    "roi": -0.014170539859089127,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 2.672148885771099,
+    "right_way": 0.6936936936936937,
+    "backs_share": 0.24324324324324326
+   }
+  },
+  "by_month": {
+   "2025-07": {
+    "bets": 7.0,
+    "days": 2.0,
+    "bets_per_day": 3.5,
+    "roi": -0.03894067806819412,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 0.3104106606268028,
+    "right_way": 0.42857142857142855,
+    "backs_share": 0.2857142857142857
+   },
+   "2025-08": {
+    "bets": 259.0,
+    "days": 21.0,
+    "bets_per_day": 12.333333333333334,
+    "roi": -0.011750675751728794,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 4.715722249625417,
+    "right_way": 0.6293436293436293,
+    "backs_share": 0.3552123552123552
+   },
+   "2025-09": {
+    "bets": 156.0,
+    "days": 18.0,
+    "bets_per_day": 8.666666666666666,
+    "roi": -0.014533086361472889,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 2.487855916834215,
+    "right_way": 0.6346153846153846,
+    "backs_share": 0.32051282051282054
+   },
+   "2025-10": {
+    "bets": 105.0,
+    "days": 16.0,
+    "bets_per_day": 6.5625,
+    "roi": 0.0044035315449331884,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 0.6105813586724902,
+    "right_way": 0.6952380952380952,
+    "backs_share": 0.3333333333333333
+   },
+   "2025-11": {
+    "bets": 91.0,
+    "days": 15.0,
+    "bets_per_day": 6.066666666666666,
+    "roi": -0.011911020541551862,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 1.5233268322836024,
+    "right_way": 0.5934065934065934,
+    "backs_share": 0.24175824175824176
+   },
+   "2025-12": {
+    "bets": 84.0,
+    "days": 20.0,
+    "bets_per_day": 4.2,
+    "roi": -0.0012448826956023113,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 1.597668034599914,
+    "right_way": 0.6785714285714286,
+    "backs_share": 0.23809523809523808
+   },
+   "2026-01": {
+    "bets": 125.0,
+    "days": 19.0,
+    "bets_per_day": 6.578947368421052,
+    "roi": -0.027314761032079037,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 4.118940102702866,
+    "right_way": 0.632,
+    "backs_share": 0.248
+   },
+   "2026-02": {
+    "bets": 100.0,
+    "days": 19.0,
+    "bets_per_day": 5.2631578947368425,
+    "roi": 0.008115577183029282,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 0.4363870805354375,
+    "right_way": 0.69,
+    "backs_share": 0.21
+   },
+   "2026-03": {
+    "bets": 69.0,
+    "days": 20.0,
+    "bets_per_day": 3.45,
+    "roi": -0.017891914658602095,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 1.8359971444784537,
+    "right_way": 0.6811594202898551,
+    "backs_share": 0.2028985507246377
+   },
+   "2026-04": {
+    "bets": 105.0,
+    "days": 15.0,
+    "bets_per_day": 7.0,
+    "roi": -0.026087006756362146,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 3.0307424507212724,
+    "right_way": 0.6190476190476191,
+    "backs_share": 0.29523809523809524
+   },
+   "2026-05": {
+    "bets": 143.0,
+    "days": 12.0,
+    "bets_per_day": 11.916666666666666,
+    "roi": -0.0004538774606588657,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 1.2192285726378387,
+    "right_way": 0.6643356643356644,
+    "backs_share": 0.3706293706293706
+   },
+   "2026-08": {
+    "bets": 246.0,
+    "days": 20.0,
+    "bets_per_day": 12.3,
+    "roi": -0.011239865208541344,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 4.513097881610184,
+    "right_way": 0.6056910569105691,
+    "backs_share": 0.35365853658536583
+   },
+   "2026-09": {
+    "bets": 177.0,
+    "days": 19.0,
+    "bets_per_day": 9.31578947368421,
+    "roi": -0.020305565654628106,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 3.5940851208691744,
+    "right_way": 0.6214689265536724,
+    "backs_share": 0.2937853107344633
+   },
+   "2026-10": {
+    "bets": 147.0,
+    "days": 19.0,
+    "bets_per_day": 7.7368421052631575,
+    "roi": -0.007716094200876022,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 1.432037253446075,
+    "right_way": 0.6666666666666666,
+    "backs_share": 0.21768707482993196
+   },
+   "2026-11": {
+    "bets": 13.0,
+    "days": 1.0,
+    "bets_per_day": 13.0,
+    "roi": 0.0236497540470905,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 0.0,
+    "right_way": 0.6923076923076923,
+    "backs_share": 0.3076923076923077
+   }
+  },
+  "by_width": {
+   "medium 1.02-1.05": {
+    "bets": 775.0,
+    "days": 158.0,
+    "bets_per_day": 4.905063291139241,
+    "roi": 0.003710000053026001,
+    "roi_lo90": -0.0053257135979343,
+    "roi_hi90": 0.012278546815943857,
+    "worst_drawdown": 3.2275303752381745,
+    "right_way": 0.6735483870967742,
+    "backs_share": 0.2967741935483871
+   },
+   "tight <1.02": {
+    "bets": 1052.0,
+    "days": 208.0,
+    "bets_per_day": 5.0576923076923075,
+    "roi": -0.021874338591904515,
+    "roi_lo90": -0.02844967522995941,
+    "roi_hi90": -0.015524016631388927,
+    "worst_drawdown": 23.551986294678905,
+    "right_way": 0.6159695817490495,
+    "backs_share": 0.30038022813688214
+   },
+   "wide >1.05": {
+    "bets": 543.0,
+    "days": 118.0,
+    "bets_per_day": 4.601694915254237,
+    "roi": 0.04919229367989175,
+    "roi_lo90": 0.02742565687780487,
+    "roi_hi90": 0.07162358067295374,
+    "worst_drawdown": 7.192042573534003,
+    "right_way": 0.6961325966850829,
+    "backs_share": 0.30386740331491713
+   }
+  }
+ },
+ "gate": {
+  "checks": {
+   "bets": true,
+   "roi_lo90_above_0": false,
+   "clv_above_0": true
+  },
+  "passed": false
+ },
+ "secondary": [
+  {
+   "rule": {
+    "book_width": [
+     "medium 1.02-1.05"
+    ],
+    "threshold": 0.03,
+    "note": "chosen after looking"
+   },
+   "result": {
+    "rows": 5992,
+    "spread": {
+     "bets": 775,
+     "days": 158,
+     "bets_per_day": 4.905063291139241,
+     "staked": 775.0,
+     "profit": 2.8752500410951507,
+     "roi": 0.003710000053026001,
+     "roi_lo90": -0.005032686903174571,
+     "roi_hi90": 0.01219881400179219,
+     "worst_drawdown": 3.2275303752381745,
+     "worst_drawdown_per_staked": 0.004164555322887968,
+     "right_way": 0.6735483870967742,
+     "backs_share": 0.2967741935483871,
+     "losing_days": 0.47468354430379744
+    },
+    "mid": {
+     "bets": 775,
+     "days": 158,
+     "bets_per_day": 4.905063291139241,
+     "staked": 775.0,
+     "profit": 35.77304573237611,
+     "roi": 0.04615876868693692,
+     "roi_lo90": 0.037410790936055566,
+     "roi_hi90": 0.05444886558807229,
+     "worst_drawdown": 1.785338265443464,
+     "worst_drawdown_per_staked": 0.0023036622779915666,
+     "right_way": 0.6735483870967742,
+     "backs_share": 0.2967741935483871,
+     "losing_days": 0.24050632911392406
+    },
+    "clv_mean_spread": 0.02588661367795081,
+    "quoted_back": {
+     "bets": 230,
+     "days": 105,
+     "bets_per_day": 2.1904761904761907,
+     "staked": 230.0,
+     "profit": -0.10214208261745111,
+     "roi": -0.00044409601138022223,
+     "roi_lo90": -0.013582900103282244,
+     "roi_hi90": 0.012591342284935796,
+     "worst_drawdown": 2.0604890397505162,
+     "worst_drawdown_per_staked": 0.008958647998915287,
+     "right_way": 0.6304347826086957,
+     "backs_share": 1.0,
+     "losing_days": 0.47619047619047616
+    },
+    "by_band": {
+     "1-2": {
+      "bets": 130.0,
+      "days": 87.0,
+      "bets_per_day": 1.4942528735632183,
+      "roi": 0.006177016309690752,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.37977943399326364,
+      "right_way": 0.6538461538461539,
+      "backs_share": 0.46923076923076923
+     },
+     "13-21": {
+      "bets": 15.0,
+      "days": 15.0,
+      "bets_per_day": 1.0,
+      "roi": 0.10033942161844975,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.36212121212121207,
+      "right_way": 0.8,
+      "backs_share": 0.2
+     },
+     "2-3": {
+      "bets": 221.0,
+      "days": 102.0,
+      "bets_per_day": 2.1666666666666665,
+      "roi": 0.00595254263038009,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.846757480731016,
+      "right_way": 0.6425339366515838,
+      "backs_share": 0.3031674208144796
+     },
+     "21-51": {
+      "bets": 2.0,
+      "days": 2.0,
+      "bets_per_day": 1.0,
+      "roi": 0.014444444444444433,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.08000000000000007,
+      "right_way": 1.0,
+      "backs_share": 0.0
+     },
+     "3-5": {
+      "bets": 272.0,
+      "days": 118.0,
+      "bets_per_day": 2.305084745762712,
+      "roi": -0.007665967991460099,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 3.3591644438124293,
+      "right_way": 0.6654411764705882,
+      "backs_share": 0.23529411764705882
+     },
+     "5-8": {
+      "bets": 92.0,
+      "days": 66.0,
+      "bets_per_day": 1.393939393939394,
+      "roi": 0.001764729867070508,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 1.339920991870731,
+      "right_way": 0.7282608695652174,
+      "backs_share": 0.2826086956521739
+     },
+     "8-13": {
+      "bets": 43.0,
+      "days": 36.0,
+      "bets_per_day": 1.1944444444444444,
+      "roi": 0.02648845426022338,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.661817171717172,
+      "right_way": 0.7674418604651163,
+      "backs_share": 0.20930232558139536
+     }
+    },
+    "by_month": {
+     "2025-07": {
+      "bets": 6.0,
+      "days": 2.0,
+      "bets_per_day": 3.0,
+      "roi": -0.05623961460897159,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.33743768765382953,
+      "right_way": 0.3333333333333333,
+      "backs_share": 0.3333333333333333
+     },
+     "2025-08": {
+      "bets": 92.0,
+      "days": 17.0,
+      "bets_per_day": 5.411764705882353,
+      "roi": -0.008970891857278732,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 2.1572127798697847,
+      "right_way": 0.6195652173913043,
+      "backs_share": 0.33695652173913043
+     },
+     "2025-09": {
+      "bets": 56.0,
+      "days": 9.0,
+      "bets_per_day": 6.222222222222222,
+      "roi": -0.007286698803768635,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 1.012663365241047,
+      "right_way": 0.6785714285714286,
+      "backs_share": 0.3392857142857143
+     },
+     "2025-10": {
+      "bets": 52.0,
+      "days": 10.0,
+      "bets_per_day": 5.2,
+      "roi": 0.031746354639007504,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.2101695373121909,
+      "right_way": 0.7884615384615384,
+      "backs_share": 0.3269230769230769
+     },
+     "2025-11": {
+      "bets": 48.0,
+      "days": 11.0,
+      "bets_per_day": 4.363636363636363,
+      "roi": -0.01441869074323046,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.6920971556750619,
+      "right_way": 0.6041666666666666,
+      "backs_share": 0.25
+     },
+     "2025-12": {
+      "bets": 37.0,
+      "days": 13.0,
+      "bets_per_day": 2.8461538461538463,
+      "roi": 0.02290176210883364,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.818006103852394,
+      "right_way": 0.7837837837837838,
+      "backs_share": 0.21621621621621623
+     },
+     "2026-01": {
+      "bets": 52.0,
+      "days": 10.0,
+      "bets_per_day": 5.2,
+      "roi": -0.006060516068096032,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.8237655103946155,
+      "right_way": 0.6346153846153846,
+      "backs_share": 0.2692307692307692
+     },
+     "2026-02": {
+      "bets": 34.0,
+      "days": 11.0,
+      "bets_per_day": 3.090909090909091,
+      "roi": 0.046507045789787434,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.14504198970950943,
+      "right_way": 0.6764705882352942,
+      "backs_share": 0.20588235294117646
+     },
+     "2026-03": {
+      "bets": 26.0,
+      "days": 13.0,
+      "bets_per_day": 2.0,
+      "roi": -0.010301812137414192,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.8591380112226645,
+      "right_way": 0.8076923076923077,
+      "backs_share": 0.15384615384615385
+     },
+     "2026-04": {
+      "bets": 47.0,
+      "days": 10.0,
+      "bets_per_day": 4.7,
+      "roi": -0.011988634568446028,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 1.1502176411626246,
+      "right_way": 0.6595744680851063,
+      "backs_share": 0.2978723404255319
+     },
+     "2026-05": {
+      "bets": 67.0,
+      "days": 9.0,
+      "bets_per_day": 7.444444444444445,
+      "roi": 0.028017270914588575,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.46947698519475856,
+      "right_way": 0.6417910447761194,
+      "backs_share": 0.373134328358209
+     },
+     "2026-08": {
+      "bets": 110.0,
+      "days": 15.0,
+      "bets_per_day": 7.333333333333333,
+      "roi": -0.0017963150963634757,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 2.1411547798120685,
+      "right_way": 0.6363636363636364,
+      "backs_share": 0.36363636363636365
+     },
+     "2026-09": {
+      "bets": 67.0,
+      "days": 15.0,
+      "bets_per_day": 4.466666666666667,
+      "roi": -0.004757579634930889,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 1.086375595426106,
+      "right_way": 0.6716417910447762,
+      "backs_share": 0.26865671641791045
+     },
+     "2026-10": {
+      "bets": 73.0,
+      "days": 12.0,
+      "bets_per_day": 6.083333333333333,
+      "roi": 0.01119247559600828,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.5709313245486871,
+      "right_way": 0.7534246575342466,
+      "backs_share": 0.2328767123287671
+     },
+     "2026-11": {
+      "bets": 8.0,
+      "days": 1.0,
+      "bets_per_day": 8.0,
+      "roi": 0.003418909297720034,
+      "roi_lo90": NaN,
+      "roi_hi90": NaN,
+      "worst_drawdown": 0.0,
+      "right_way": 0.625,
+      "backs_share": 0.25
+     }
+    },
+    "by_width": {
+     "medium 1.02-1.05": {
+      "bets": 775.0,
+      "days": 158.0,
+      "bets_per_day": 4.905063291139241,
+      "roi": 0.003710000053026001,
+      "roi_lo90": -0.0053257135979343,
+      "roi_hi90": 0.012278546815943857,
+      "worst_drawdown": 3.2275303752381745,
+      "right_way": 0.6735483870967742,
+      "backs_share": 0.2967741935483871
+     },
+     "tight <1.02": {
+      "bets": 1052.0,
+      "days": 208.0,
+      "bets_per_day": 5.0576923076923075,
+      "roi": -0.021874338591904515,
+      "roi_lo90": -0.02844967522995941,
+      "roi_hi90": -0.015524016631388927,
+      "worst_drawdown": 23.551986294678905,
+      "right_way": 0.6159695817490495,
+      "backs_share": 0.30038022813688214
+     },
+     "wide >1.05": {
+      "bets": 543.0,
+      "days": 118.0,
+      "bets_per_day": 4.601694915254237,
+      "roi": 0.04919229367989175,
+      "roi_lo90": 0.02742565687780487,
+      "roi_hi90": 0.07162358067295374,
+      "worst_drawdown": 7.192042573534003,
+      "right_way": 0.6961325966850829,
+      "backs_share": 0.30386740331491713
+     }
+    }
+   },
+   "gate": {
+    "checks": {
+     "bets": true,
+     "roi_lo90_above_0": false,
+     "clv_above_0": true
+    },
+    "passed": false
+   }
+  }
+ ],
+ "width_rows": {
+  "tight <1.02": 8926,
+  "medium 1.02-1.05": 5992,
+  "wide >1.05": 3572
+ },
+ "sweep_for_the_record": [
+  {
+   "threshold": 0.0,
+   "spread": {
+    "bets": 14918,
+    "days": 316,
+    "bets_per_day": 47.20886075949367,
+    "staked": 14918.0,
+    "profit": -409.40912054905925,
+    "roi": -0.027443968397175174,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 409.56198133599753,
+    "worst_drawdown_per_staked": 0.027454215131786936,
+    "right_way": 0.5520176967421906,
+    "backs_share": 0.39603163962997723,
+    "losing_days": 0.8575949367088608
+   },
+   "mid": {
+    "bets": 14918,
+    "days": 316,
+    "bets_per_day": 47.20886075949367,
+    "staked": 14918.0,
+    "profit": 166.51322059543247,
+    "roi": 0.011161899758374613,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 5.663797866509384,
+    "worst_drawdown_per_staked": 0.00037966201008911277,
+    "right_way": 0.5520176967421906,
+    "backs_share": 0.39603163962997723,
+    "losing_days": 0.3227848101265823
+   },
+   "quoted_back": {
+    "bets": 5908,
+    "days": 312,
+    "bets_per_day": 18.935897435897434,
+    "staked": 5908.0,
+    "profit": -79.64739643974988,
+    "roi": -0.013481279018237962,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 80.00183878345159,
+    "worst_drawdown_per_staked": 0.013541272644456937,
+    "right_way": 0.552809749492214,
+    "backs_share": 1.0,
+    "losing_days": 0.7275641025641025
+   }
+  },
+  {
+   "threshold": 0.01,
+   "spread": {
+    "bets": 8718,
+    "days": 310,
+    "bets_per_day": 28.12258064516129,
+    "staked": 8718.0,
+    "profit": -199.14568766228751,
+    "roi": -0.022843047449218574,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 199.29900435957003,
+    "worst_drawdown_per_staked": 0.02286063367281143,
+    "right_way": 0.5801789401238816,
+    "backs_share": 0.35214498738242717,
+    "losing_days": 0.8032258064516129
+   },
+   "mid": {
+    "bets": 8718,
+    "days": 310,
+    "bets_per_day": 28.12258064516129,
+    "staked": 8718.0,
+    "profit": 147.44906506121123,
+    "roi": 0.016913175620694106,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 4.8159066571762,
+    "worst_drawdown_per_staked": 0.0005524095729727231,
+    "right_way": 0.5801789401238816,
+    "backs_share": 0.35214498738242717,
+    "losing_days": 0.32903225806451614
+   },
+   "quoted_back": {
+    "bets": 3070,
+    "days": 289,
+    "bets_per_day": 10.622837370242214,
+    "staked": 3070.0,
+    "profit": -24.525058312892497,
+    "roi": -0.007988618342961726,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 25.27993774176437,
+    "worst_drawdown_per_staked": 0.008234507407740838,
+    "right_way": 0.5820846905537459,
+    "backs_share": 1.0,
+    "losing_days": 0.5847750865051903
+   }
+  },
+  {
+   "threshold": 0.02,
+   "spread": {
+    "bets": 4292,
+    "days": 287,
+    "bets_per_day": 14.954703832752614,
+    "staked": 4292.0,
+    "profit": -74.5909900095545,
+    "roi": -0.01737907502552528,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 75.05850559214171,
+    "worst_drawdown_per_staked": 0.017488002234888562,
+    "right_way": 0.6104380242311277,
+    "backs_share": 0.32315936626281455,
+    "losing_days": 0.662020905923345
+   },
+   "mid": {
+    "bets": 4292,
+    "days": 287,
+    "bets_per_day": 14.954703832752614,
+    "staked": 4292.0,
+    "profit": 103.10749404726911,
+    "roi": 0.02402318127848768,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 2.7739630754171003,
+    "worst_drawdown_per_staked": 0.0006463101294075257,
+    "right_way": 0.6104380242311277,
+    "backs_share": 0.32315936626281455,
+    "losing_days": 0.3170731707317073
+   },
+   "quoted_back": {
+    "bets": 1387,
+    "days": 243,
+    "bets_per_day": 5.707818930041152,
+    "staked": 1387.0,
+    "profit": -5.716187707585549,
+    "roi": -0.004121260063147476,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 6.356133998055426,
+    "worst_drawdown_per_staked": 0.004582648881078173,
+    "right_way": 0.5984138428262437,
+    "backs_share": 1.0,
+    "losing_days": 0.551440329218107
+   }
+  },
+  {
+   "threshold": 0.03,
+   "spread": {
+    "bets": 1827,
+    "days": 236,
+    "bets_per_day": 7.741525423728813,
+    "staked": 1827.0,
+    "profit": -20.1365541575884,
+    "roi": -0.011021649785215325,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 21.607502062691754,
+    "worst_drawdown_per_staked": 0.011826766317838945,
+    "right_way": 0.6403940886699507,
+    "backs_share": 0.2988505747126437,
+    "losing_days": 0.5932203389830508
+   },
+   "mid": {
+    "bets": 1827,
+    "days": 236,
+    "bets_per_day": 7.741525423728813,
+    "staked": 1827.0,
+    "profit": 59.79723648608627,
+    "roi": 0.03272974082434935,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 2.010869000489457,
+    "worst_drawdown_per_staked": 0.001100639847011197,
+    "right_way": 0.6403940886699507,
+    "backs_share": 0.2988505747126437,
+    "losing_days": 0.288135593220339
+   },
+   "quoted_back": {
+    "bets": 546,
+    "days": 173,
+    "bets_per_day": 3.1560693641618496,
+    "staked": 546.0,
+    "profit": 2.752644296524285,
+    "roi": 0.005041473070557299,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 1.6126656727226023,
+    "worst_drawdown_per_staked": 0.0029536001331915795,
+    "right_way": 0.6172161172161172,
+    "backs_share": 1.0,
+    "losing_days": 0.4624277456647399
+   }
+  },
+  {
+   "threshold": 0.04,
+   "spread": {
+    "bets": 756,
+    "days": 164,
+    "bets_per_day": 4.609756097560975,
+    "staked": 756.0,
+    "profit": -4.1069843718280685,
+    "roi": -0.005432519010354588,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 6.367353159924957,
+    "worst_drawdown_per_staked": 0.008422424814715552,
+    "right_way": 0.6587301587301587,
+    "backs_share": 0.31613756613756616,
+    "losing_days": 0.5121951219512195
+   },
+   "mid": {
+    "bets": 756,
+    "days": 164,
+    "bets_per_day": 4.609756097560975,
+    "staked": 756.0,
+    "profit": 30.30096042897996,
+    "roi": 0.04008063548806873,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 0.913275111759603,
+    "worst_drawdown_per_staked": 0.0012080358621158768,
+    "right_way": 0.6587301587301587,
+    "backs_share": 0.31613756613756616,
+    "losing_days": 0.2926829268292683
+   },
+   "quoted_back": {
+    "bets": 239,
+    "days": 103,
+    "bets_per_day": 2.320388349514563,
+    "staked": 239.0,
+    "profit": 3.232452247157113,
+    "roi": 0.013524904799820556,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 1.8024407108308176,
+    "worst_drawdown_per_staked": 0.0075415929323465174,
+    "right_way": 0.6317991631799164,
+    "backs_share": 1.0,
+    "losing_days": 0.4563106796116505
+   }
+  },
+  {
+   "threshold": 0.05,
+   "spread": {
+    "bets": 317,
+    "days": 103,
+    "bets_per_day": 3.0776699029126213,
+    "staked": 317.0,
+    "profit": 0.5307035558041607,
+    "roi": 0.0016741437091613903,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 1.7568878185985404,
+    "worst_drawdown_per_staked": 0.005542232866241452,
+    "right_way": 0.6845425867507886,
+    "backs_share": 0.33753943217665616,
+    "losing_days": 0.47572815533980584
+   },
+   "mid": {
+    "bets": 317,
+    "days": 103,
+    "bets_per_day": 3.0776699029126213,
+    "staked": 317.0,
+    "profit": 15.162640526127529,
+    "roi": 0.047831673583998514,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 0.5243053184585489,
+    "worst_drawdown_per_staked": 0.001653959995137378,
+    "right_way": 0.6845425867507886,
+    "backs_share": 0.33753943217665616,
+    "losing_days": 0.24271844660194175
+   },
+   "quoted_back": {
+    "bets": 107,
+    "days": 56,
+    "bets_per_day": 1.9107142857142858,
+    "staked": 107.0,
+    "profit": 2.046026435875623,
+    "roi": 0.01912174239136096,
+    "roi_lo90": NaN,
+    "roi_hi90": NaN,
+    "worst_drawdown": 0.8440092892749679,
+    "worst_drawdown_per_staked": 0.007887937282943625,
+    "right_way": 0.6728971962616822,
+    "backs_share": 1.0,
+    "losing_days": 0.44642857142857145
+   }
+  }
+ ]
+}

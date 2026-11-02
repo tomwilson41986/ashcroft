@@ -95,3 +95,40 @@ The move a trade would catch, home price, by the forecast's size (all families; 
    once the paper-models runner records them.
 3. Player level: the API-Football history (49,205 matches from 2020, built 2 Nov 2026) for minutes-weighted player
    ratings and the confirmed-eleven difference.
+
+## Betfair's own prices: development and the holdout (read once, 2 Nov 2026)
+
+**Bottom line: the forecast holds on Betfair's prices and on new data, but a tick at each end takes all of it.** The
+pre-registered rule (`reports/preregistration_football_team_move.md`, SHA-256 e08e604d..., committed before the holdout
+was read) failed its gate. Figures: `reports/football_runs/team_move_dev.json`, `reports/football_runs/team_move_holdout.json`;
+code: `research/open_close/football_team_move.py`.
+
+The trade: the forecast fitted on Pinnacle's moves only (2013/14-2023/24 for development, to 2024/25 for the holdout),
+applied to football-data's Betfair early (BFE) and closing (BFEC) prices; GBP1 on the home or away side, back then lay
+(or lay then back), greened; a tick worse at each end on the fair prices, 2% commission on each market's net.
+
+| Read | Books | Bets | Tick worse each end | 90% interval | At the mid | CLV | Right way | Back side as quoted |
+|---|---|---|---|---|---|---|---|---|
+| Development 2024/25 | 1.05 or under, threshold 0.03 | 1,316 | -0.40% | -1.15 to +0.40 | +3.85% | | 63.5% | +0.06% |
+| Development 2024/25 | wide (over 1.05), 0.03 | 527 | +7.16% | +4.25 to +10.41 | +11.13% | | 69.4% | -8.37% |
+| **Holdout, primary** (Jul 2025-1 Nov 2026) | 1.05 or under, 0.03 | 1,827 | **-1.10%** | **-1.64 to -0.54** | +3.27% | +1.13% | 64.0% | +0.50% |
+| Holdout, secondary (found by looking) | 1.02-1.05, 0.03 | 775 | +0.37% | -0.50 to +1.22 | +4.62% | +2.59% | 67.4% | -0.04% |
+| Holdout, for the record | wide, 0.03 | 543 | +4.92% | | | | | |
+
+Gate (at least 300 bets, lower bound above zero, CLV above zero): primary fails on the lower bound; the secondary fails
+on the lower bound too. In wide books the profit is again the stale quote: backing at Betfair's recorded early price
+there loses (development -8.4%).
+
+What it does show:
+
+- **The forecast is real and holds out of sample on Betfair:** 64% the right way and +3.3% at the mid on 1,827 holdout
+  bets in takeable books, from a model that never saw a Betfair price.
+- **The cost is the whole problem.** Paying a tick to get in and a tick to get out turns +3.3% into -1.1%.
+
+What could still be tested (not pre-registered, ideas only):
+
+- **Resting orders:** offering at our own price one tick inside the spread before the move, instead of taking the
+  quote, could save a tick at each end. Only the recorder's books with sizes can show whether such orders fill and how
+  often they are picked off (`reports/football_quant_approach.md` s.6.4, rule 4).
+- **Holding to the result instead of greening:** the entry beats the fair close by +1.13% (CLV) after paying the tick
+  in, which commission on winnings roughly cancels. A test, not a finding.

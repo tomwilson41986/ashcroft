@@ -167,10 +167,19 @@ def holdout(f: pd.DataFrame, prereg: str, n_boot: int = 2000) -> dict:
     checks = {"bets": s.get("bets", 0) >= gt["min_bets"],
               "roi_lo90_above_0": (s.get("roi_lo90") if s.get("roi_lo90") == s.get("roi_lo90") else -1) > 0,
               "clv_above_0": (out.get("clv_mean_spread") or -1) > 0}
+    secondary = []
+    for sec in rule.get("secondary", []):
+        so = report(r, sec["threshold"], sec["book_width"], n_boot=n_boot)
+        ss = so["spread"]
+        sc = {"bets": ss.get("bets", 0) >= gt["min_bets"],
+              "roi_lo90_above_0": (ss.get("roi_lo90") if ss.get("roi_lo90") == ss.get("roi_lo90") else -1) > 0,
+              "clv_above_0": (so.get("clv_mean_spread") or -1) > 0}
+        secondary.append({"rule": sec, "result": so, "gate": {"checks": sc, "passed": bool(all(sc.values()))}})
     return {"prereg": prereg, "prereg_sha256": digest, "rule": rule, "seasons": seasons,
             "fit": {s: {"rows": v["rows"], "seasons": v["seasons"]} for s, v in fits.items()},
             "rows": int(len(r)), "matches": int(r["match_id"].nunique()), "result": out,
-            "gate": {"checks": checks, "passed": bool(all(checks.values()))},
+            "gate": {"checks": checks, "passed": bool(all(checks.values()))}, "secondary": secondary,
+            "width_rows": r["book_width"].value_counts().to_dict(),
             "sweep_for_the_record": sweep(r, rule["book_width"], n_boot=0)}
 
 
