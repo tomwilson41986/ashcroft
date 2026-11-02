@@ -512,6 +512,22 @@ class Trader:
                 "bets": self.bets, "turnover": round(self.turnover, 2)}
 
 
+def book_recorder(day: date, env=None):
+    """Every book the trader reads (every 5 seconds in a race's last 3 minutes, where the greyhound market's money is),
+    kept with BETFAIR_RECORD=1 (set on the UK runner) in its own day files, ``books_greyhound_trader.csv`` beside the
+    recorder's 60-second ``books_greyhound.csv`` (the owner, 2 Nov 2026: the trade-out research needs the books the
+    trader sees). Research data, never in the way of the trading: None when off or unavailable."""
+    env = os.environ if env is None else env
+    if str(env.get("BETFAIR_RECORD", "")).strip() != "1":
+        return None
+    try:
+        from betfair_recorder import DayRecorder
+        return DayRecorder(day, tag="greyhound_trader")
+    except Exception as exc:                                    # the trading goes on without a record
+        log.warning("greyhound book recorder unavailable (%s): trading without a record of the books", exc)
+        return None
+
+
 def kill_switch(store):
     state = {"at": None, "on": False}
 
@@ -738,7 +754,7 @@ def main(argv=None) -> int:
         live = a.live and live_switch_on()
         if a.live and not live:
             log.warning("GREYHOUND_LIVE is not 'yes': trading on paper")
-        data = BetfairData(source="greyhound")
+        data = BetfairData(source="greyhound", recorder=book_recorder(day))
         x = LiveExchange(data) if live else PaperExchange(data)
         x.login()
         mode = "live" if live else "paper"
@@ -747,8 +763,12 @@ def main(argv=None) -> int:
         start = uk_time_on(day, cfg["trade_from"])
         while datetime.now(timezone.utc) < start:
             time.sleep(30)
-        out["trade"] = Trader(store, x, cfg, day, mode, ledger, kill=kill_switch(store)).run(
-            uk_time_on(day, a.until), poll_seconds=cfg.get("poll_seconds", 60))
+        try:
+            out["trade"] = Trader(store, x, cfg, day, mode, ledger, kill=kill_switch(store)).run(
+                uk_time_on(day, a.until), poll_seconds=cfg.get("poll_seconds", 60))
+        finally:                                                # the day's books to S3 (copied every 15 min too)
+            if data.recorder is not None:
+                data.recorder.maybe_upload(force=True)
     if a.settle:
         out["settle"] = {}
         for mode in ("paper", "live"):

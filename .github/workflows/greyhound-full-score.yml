@@ -1,0 +1,93 @@
+name: Greyhound card-safe full model, scored for the trade-out study (read-only)
+
+# The owner (2 Nov 2026): score the card-safe full greyhound model and rerun the trade-out study with it
+# (research/greyhound/score_full.py; reports/greyhound_model.md section 14). The metrics on every GBGB run from 2018
+# with the parity, HorseRaceBase and library blocks, the weigh-in features left out, one fit on the race's softmax
+# to 5 Oct 2026, every race from 6 Oct predicted, and beside it the horse model's target (log BSP, L2) on the same
+# features; then the trade-out study three times on the same days, our price from the 5 Oct base model, the full win
+# model and the log-BSP model. Read-only: S3 in, the reports and the day files as the run's artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      date_to:
+        description: 'last day, YYYY-MM-DD (default yesterday, UK)'
+        required: false
+        type: string
+  push:
+    branches: ['claude/determined-fermi-*']
+    paths:
+      - 'research/greyhound/score_full.py'
+      - '.github/workflows/greyhound-full-score.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-full-score
+  cancel-in-progress: true
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    # the full history's feature build and one fit; GitHub's runners stop at 6 h
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          free -h
+      - name: Score the card-safe full model (6 Oct on, out of sample)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          TO: ${{ inputs.date_to }}
+        run: |
+          mkdir -p out
+          ARGS=(--pred-dir out/pred_full --out out/greyhound_full_score.json)
+          if [ -n "$TO" ]; then
+            if ! [[ "$TO" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
+            ARGS+=(--to "$TO")
+          fi
+          timeout 290m python -m research.greyhound.score_full "${ARGS[@]}"
+      - name: The trade-out study, our price from the 5 Oct base model, the full win model and the log-BSP model
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          TO: ${{ inputs.date_to }}
+        run: |
+          EXTRA=()
+          if [ -n "$TO" ]; then EXTRA+=(--to "$TO"); fi
+          python -m research.greyhound.tradeout_study "${EXTRA[@]}" --out out/study_base
+          python -m research.greyhound.tradeout_study "${EXTRA[@]}" --pred-dir out/pred_full/full --out out/study_full
+          if [ -d out/pred_full/logbsp ]; then
+            python -m research.greyhound.tradeout_study "${EXTRA[@]}" --pred-dir out/pred_full/logbsp --out out/study_logbsp
+          fi
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/greyhound_full_score.json ] && { echo '## The full model'; echo '```'; head -c 20000 out/greyhound_full_score.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          for f in out/study_full.md out/study_logbsp.md out/study_base.md; do
+            [ -f "$f" ] && { echo; echo "## $f"; head -c 25000 "$f"; } >> "$GITHUB_STEP_SUMMARY"
+          done
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-full-score-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90
