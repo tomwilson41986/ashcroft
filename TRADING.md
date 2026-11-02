@@ -1520,6 +1520,28 @@ day to date**.
   Tote: no gap. The last Racing TV night: 999 horses (9,279 left); At The Races added 555,760 rows; Racing TV off from
   1 Nov (the owner, PR #177).
 
+**The thirty-second full day** (1 Nov, a Sunday; ledger `live-day-1101`), the twentieth early session.
+- **The start.** Predictions run 41271883619 (04:08 UTC); the session created 05:16 UTC (run 41276321912), first back
+  06:15 UK; the settle at 22:30 UTC (run 41357434066; its email report failed again, the connection closed, the third
+  night).
+- **+GBP468.36 after commission** (Betfair's funds GBP7,153.03 at the session's end against GBP6,684.67; the ledger the
+  same) on 751 fills on 156 horses in 35 races, GBP4,000.00 matched (GBP110.04 void); CLV +7.99% at Betfair's settled
+  prices (the trader's horse-level +7.77%). The record: 23 days, +GBP5,000.29, 19 up.
+- **The funds after the day.** At the settle the account read GBP5,000.00 with nothing exposed: GBP2,153.03 left it
+  between 16:39 and 22:30 UTC, read as a withdrawal leaving GBP5,000 (put to the owner to confirm). The next day starts
+  from GBP5,000.00; the GBP4,000 day limit is inside it.
+- **First backs +13.3% (GBP852), top-ups +6.5% (GBP3,038)**; GBP2,000 by 07:18 UK, the limit bound at 10:56 UK;
+  06:15-07:59 +13.1% (GBP2,195), 08:00-09:59 -0.3% (GBP1,195), 10:00 on +5.1% (GBP500).
+- **The changes** (`changes-1101`): the ladder 37% of the money, its first backs +22.8% against +3.5% at the best back;
+  the cap: 86 of 156 horses at 6 fills, none over; the capped horses +8.6%, the rest +5.9%. Staking 19 Oct - 1 Nov
+  GBP51,164 at +6.29% against the old rule's +3.47%.
+- **The replay** (12-31 Oct, after the cuts; `replay-1101`): the rule now GBP5,624 over 20 days (+6.8%); at 0.80 about
+  GBP225 a day.
+- **The sectionals blend** (`model-quality-1101`): 31 Oct 0.411; 24-31 Oct 0.395 over 2,753 runners against 0.405 on
+  14-23 Oct, still slightly better.
+- **Data.** Final marks with a BSP for 1 Nov 765 of 807; price files to 31 Oct. The Tote: no gap. The first night with
+  Racing TV off: At The Races complete (426 pages), nothing new; sectional_runs 153,426 rows.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
