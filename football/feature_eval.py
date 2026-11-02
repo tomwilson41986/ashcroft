@@ -19,9 +19,13 @@ sides with at least ``MIN_PREV`` earlier matches, every baseline input present.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
+
+log = logging.getLogger(__name__)
 
 TRAIN_FROM, DEV_FROM, DEV_TO, HOLDOUT_FROM = 2013, 2016, 2024, 2025
 MIN_PREV = 5
@@ -86,11 +90,17 @@ class Stage2:
         lq, lp = d[["lq_h", "lq_d", "lq_a"]].to_numpy(), d[["lp_h", "lp_d", "lp_a"]].to_numpy()
         z, y = self._x(d), d["y"].to_numpy()
 
+        Y = np.eye(3)[y]
+
         def nll(th):
             p = self._probs(th, lq, lp, z)
-            return -np.mean(np.log(np.clip(p[np.arange(len(y)), y], 1e-12, None))) + 1e-4 * np.sum(th[4:] ** 2)
+            f = -np.mean(np.log(np.clip(p[np.arange(len(y)), y], 1e-12, None))) + 1e-4 * np.sum(th[4:] ** 2)
+            r = (p - Y) / len(y)                                   # d nll / d utility
+            g = np.r_[np.sum(r * lq), np.sum(r * lp) if self.use_model else 0.0, r[:, 0].sum(), r[:, 2].sum(),
+                      z.T @ (r[:, 0] - r[:, 2]) + 2e-4 * th[4:]]
+            return f, g
         th0 = np.r_[1.0, 0.0, 0.0, 0.0, np.zeros(z.shape[1])]
-        self.theta = minimize(nll, th0, method="L-BFGS-B").x
+        self.theta = minimize(nll, th0, jac=True, method="L-BFGS-B").x
         return self
 
     def predict(self, d: pd.DataFrame) -> np.ndarray:
@@ -133,6 +143,7 @@ def outcome_test(d: pd.DataFrame, families: dict = FAMILIES, scored: str = "dev"
     for _s, tr, te in plan:
         if len(tr) < 1000 or te.empty:
             continue
+        log.info("outcome test: scoring %s (%d rows) from %d training rows", _s, len(te), len(tr))
         test_rows.append(te[["date"]])
         for k, arm in arms.items():
             mod = type(arm)(arm.feats, arm.use_model).fit(tr)
@@ -158,6 +169,9 @@ def coefficients(d: pd.DataFrame, families: dict = FAMILIES, n_boot: int = 100, 
     out = {}
     for k, feats in {"open+model": [], **families}.items():
         point = Stage2(feats).fit(dev).coefs()
+        if n_boot <= 0:
+            out[k] = {c: {"coef": v} for c, v in point.items()}
+            continue
         draws = []
         for _ in range(n_boot):
             pick = pd.Series(rng.choice(uniq, size=len(uniq), replace=True))
@@ -232,6 +246,7 @@ def main(argv=None) -> int:
     ap.add_argument("--root", default=None, help="a local sources folder in place of S3 (the gold table)")
     ap.add_argument("--dc-cache", default=None, help="parquet of the Dixon-Coles walk-forward prices (kept)")
     ap.add_argument("--features-out", default=None, help="parquet of the match features (kept)")
+    ap.add_argument("--features-in", default=None, help="reuse a features parquet from --features-out")
     ap.add_argument("--holdout", action="store_true", help="also score the holdout seasons, once")
     ap.add_argument("--n-boot", type=int, default=100)
     ap.add_argument("--out", required=True)
@@ -244,8 +259,11 @@ def main(argv=None) -> int:
         dc = walk_forward(gold, "2012-07-01")[["match_id", "lam_h", "lam_a", "p_h", "p_d", "p_a", "p_o25"]]
         if a.dc_cache:
             dc.to_parquet(a.dc_cache, index=False)
-    f, t = build(gold, dc)
-    if a.features_out:
+    if a.features_in and Path(a.features_in).exists():
+        f = pd.read_parquet(a.features_in)
+    else:
+        f, _t = build(gold, dc)
+    if a.features_out and not a.features_in:
         f.to_parquet(a.features_out, index=False)
     d = prepare(f)
     res = {"rows": {"gold_finished": int((gold["status"] == "FINISHED").sum()), "feature_rows": int(len(f)),
