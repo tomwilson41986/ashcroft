@@ -1,0 +1,39 @@
+{
+ "rows": 60807,
+ "seasons": [
+  2016,
+  2017,
+  2018,
+  2019,
+  2020,
+  2021,
+  2022,
+  2023,
+  2024
+ ],
+ "p_ols": {
+  "r2_vs_mean": 0.040810237365243474,
+  "top_decile_caught": 0.0402661520124917,
+  "top_decile_right_way": 0.6553198487090939
+ },
+ "p_gbm": {
+  "r2_vs_mean": 0.031939770896678765,
+  "top_decile_caught": 0.034830693573927804,
+  "top_decile_right_way": 0.6178260154579839
+ },
+ "p_gbm_mkt": {
+  "r2_vs_mean": 0.04580669220728173,
+  "top_decile_caught": 0.04476006551084847,
+  "top_decile_right_way": 0.6456174971221839
+ },
+ "p_stack": {
+  "r2_vs_mean": 0.052360414666216215,
+  "top_decile_caught": 0.04914747429861505,
+  "top_decile_right_way": 0.6638710738365401
+ },
+ "p_perm": {
+  "r2_vs_mean": -0.008056889995534444,
+  "top_decile_caught": 0.0001481114448241435,
+  "top_decile_right_way": 0.4938332511100148
+ }
+}
