@@ -563,3 +563,54 @@ freeze (mid-November at the earliest, if the trader runs every day).
 **Next.** Once the trader's books exist, the study again on them (`greyhound-research.yml`, source `trader`): the
 same tables on books that are current, then the literature's order-flow tests (reports/greyhound_literature.md
 tests 10, 11, 14, 17), which only 5-second books can carry.
+
+## 14. The card-safe full model and the log-BSP model in the trade-out study (greyhound-full-score.yml run 41450988359)
+
+The owner (2 Nov 2026): score the card-safe full model, rerun the study, and add the horse model's log-BSP target.
+`research/greyhound/score_full.py`: every GBGB run to 1 Nov (2,624,775 runs), base, parity, HRB and library blocks
+(342 features built, 333 card-safe: the weigh-in features left out). One fit on every modelling race from 2019 to
+5 Oct (2,018,463 + 224,278 early-stopping rows): the win model on the race's softmax (1,859 rounds), and beside it the
+horse model's target, LightGBM L2 on log BSP (1,282,488 + 142,505 priced rows; it ran the full 3,000 rounds without
+stopping, so it is not yet converged). Every race from 6 Oct to 1 Nov predicted: 19,038 runners, 3,440 races, all
+out of sample. Then the trade-out study three times on the same days and books (the recorder's), our price from each.
+
+**1. Against the result** (log-loss, the same 18,240 runners in 3,295 races, 26 days; lower is better):
+
+| 5 Oct base model | Full win model | Log-BSP model | Betfair SP |
+|---|---|---|---|
+| 0.45140 | 0.44498 | 0.44458 | 0.42612 |
+
+Both new models beat the base by about 0.0065, a quarter of its gap to the SP; both are still 0.018 behind it. On
+the run's own SP comparison (GBGB's SP, 19,038 runners) the full win model's blend weight beside the SP is -0.172:
+on these four weeks it adds nothing to the SP. The log-BSP model's predicted SP misses the BSP by 0.456 in log terms
+(RMSE; 0.754 knowing only each race's average), a median 27.0%; the best back 1 minute out misses it by 11.6%
+(section 13). Top features of both: the Kalman rating's z-score in the race (`lb_cv_gsr_ewm_z`), the race-strength
+change, the dog's market history (`gp_mkt_w3`, and for the log-BSP model its BSP history `gp_bsp_mkt_w3`).
+
+**2. Forecasting the SP from the book** (holdout, cross-entropy gain over the market a race; our price from each model):
+
+| Mark | Model | Base | Full win | Log-BSP |
+|---|---|---|---|---|
+| 1 minute out | the horses' closing model | 0.00101 | 0.00147 | 0.00142 |
+| 1 minute out | microstructure + our price | 0.00435 | 0.00451 | 0.00446 |
+| 1 minute out | (microstructure alone: 0.00433) | | | |
+| 3 minutes out | microstructure + our price | 0.01698 | 0.02040 | 0.02080 |
+| 5 minutes out | microstructure + our price | 0.04191 | 0.05529 | 0.05645 |
+| first traded | LightGBM | 0.04116 | 0.04428 | 0.04442 |
+
+The full models forecast the SP better at every mark, most where the book is thinnest (5 minutes out, +32%). A minute
+out, where the money is, our price still adds almost nothing to the book: 0.00451 with the full model against 0.00433
+from the microstructure alone.
+
+**3. The trade still fails.** Holdout (26 Oct-1 Nov), each rule at its development bar: with the full win model, one
+rule of 44 has a positive point estimate, the first traded book, LightGBM, lay, bar 0.05: +2.06% (90% -1.77 to +5.45,
+79 trades, 11.3 a day), its interval across zero and one of 44 tried; with the log-BSP model none of 43. The
+pre-registered primary rule (1 minute out, the horses' closing model, back, 0.03) in development: base -0.70%
+(34 trades), full -3.38% (90% -5.55 to -1.55, 164 trades), log-BSP -3.05% (-5.46 to -0.94, 131 trades). A better
+price trades more often and loses more: its extra selections are dogs the market then lengthens.
+
+**Reading.** The full feature set and the log-BSP target are real improvements to the model and to the SP forecast,
+and they are what any greyhound trade should use from here. They do not make the trade-out pay on these books. The
+limit remains the books themselves (about 90 seconds stale, a minute apart, section 13); the next test is the same
+three models on the trader's live 5-second books once 10 days of them are held. The log-BSP model should be refitted
+with more rounds (or a higher learning rate) before it is frozen, since it stopped at the 3,000-round cap.
