@@ -512,3 +512,49 @@ curve, a leak test (SPs shuffled within the race), the data audit. Results: sect
 recorder keeps a book a minute in the last hour (delayed key). From this change the trader's books are kept with
 BETFAIR_RECORD=1 (`books_greyhound_trader.csv` beside the recorder's), for order-flow features the 60-second books
 cannot give (literature tests 10 and 11).
+
+## 13. The trade-out study: the first reading (greyhound-research.yml run 41447610128, 2 Nov 2026)
+
+Panel: 70,014 runner-marks, 3,212 GB races, 26 days with priced runners and books (6 Oct to 1 Nov). Walk-forward by
+day from the 8th day; development 14-25 Oct (12 days), holdout 26 Oct-1 Nov (7 days), read once. GBP2 a position,
+2% commission on each market's net. Figures from the run's report (its artifact greyhound-research-1).
+
+**1. The recorder's books are about a minute and a half old.** In a race's last 3 minutes the poll's time less the
+market's last match is 77-92 seconds at the median and 162-215 seconds at the 90th percentile, on every one of the 27
+days. Money matches every few seconds there (T-3 GBP380, T-1 GBP1,993 a market at the median; open_close data.md 4.2),
+so this is the delayed key's delay, not a quiet market: the book stamped "1 minute before the off" shows the market
+of about 2.5 minutes before it. The recorder polls a market every 60 seconds (5 polls in the last 5 minutes). The
+earlier reading that a price "may be a few seconds old" (section 5) understated it. Every paper result read off these
+books (the 5 Oct test's and this study's) prices a fill at a book that was already gone. No trader books exist yet
+(the 5-second, live-key books are kept from this PR on). The runners' matched money appears to be empty in these books
+(its features carried zero weight in every fit), so the horses' closing model runs here without its volume terms.
+
+**2. How far each price is from the SP** (median absolute % error, all panel days): 1 minute out, best back 11.59%,
+last traded 10.63%; 3 minutes out, best back 21.47%, last traded 14.16%; 5 minutes out, best back 41.43% (the book is
+still hollow: the SP sits a mean 0.69 in log terms above the best back).
+
+**3. Forecasting the SP.** Cross-entropy gain over the market's price, a race, holdout (Benter's measure, the SP book
+as the target): 1 minute out, market alone 0.00073, the horses' closing model 0.00101, the market's microstructure
+0.00433, with our price 0.00435, LightGBM 0.00544; 3 minutes out, LightGBM 0.02303; first traded, LightGBM 0.04116.
+The leak test (SPs shuffled within the race) loses everywhere (-0.08 to -0.18). Our form model adds almost nothing
+once the book is in: 1 minute out 0.00435 with it against 0.00433 without. The forecast's gain is in the spread and
+the last traded price against a stale, wide book, which is not a price anyone can take.
+
+**4. The trade closed at the SP fails.** Holdout, each rule at the bar its development days chose: all 52 rules
+negative. The nearest to level: 3 minutes out, market, back, -0.19% (90% -1.01 to +0.90, 24.6 a day); 1 minute out,
+market, back, -0.56% (-1.58 to +0.38, 40.6 a day). The three development rules whose interval cleared zero were
+lays 1 minute out on 15-16 trades (about 2 a day); in the holdout the best of them made -2.13% (-4.82 to +0.61). The
+old selection (edge to win over 0.2) closed at the SP: 1 minute out -10.17% (-11.63 to -8.75, 1,188 trades), first
+traded -14.10%. The pre-registered primary rule (1 minute out, the horses' closing model, back, 0.03) in development:
+34 trades, -0.70% (-5.55 to +3.62).
+
+**5. More of the same data will not help** (the learning curve): fitted on the last 3, 7, 14 days or all of them,
+the 1-minute microstructure model's gain is 0.00462, 0.00468, 0.00459, 0.00457 a race on the same scored days. The
+limit is the books' age and cadence, not their number.
+
+**What follows.**
+- The forward test of section 12, read off the recorder's books, would score fills at prices about 90 seconds stale.
+  It should not start on them. The fix is the trader's own books (live key, 5 seconds in the last 3 minutes, kept
+  from this PR): gather them, refit the closing models on them, then freeze and start the test.
+- Before that, the owner's call on reading the live key in paper mode (CLAUDE.md: no read-only use of live data).
+- The literature's order-flow tests (reports/greyhound_literature.md tests 10, 11, 14, 17) need the same books.
