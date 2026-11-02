@@ -644,3 +644,18 @@ files changed in between (the latest day's settled books); not every small diffe
 
 **Reading.** The refit is the better log-BSP model and the one to freeze when the live books allow (section 13). It
 does not change the trade-out's verdict on the recorder's books.
+
+## 16. QA of sections 12-15 and the roadmap (2 Nov 2026)
+
+A full QA and review (an independent read of the code, `reports/greyhound_roadmap.md` section 2) found no look-ahead
+in the models, and these that bear on the sections above:
+- **The forward test of section 12 cannot start as built**: since 2 Nov the greyhound trader runs in
+  `paper-models.yml` on the delayed key without `BETFAIR_RECORD`, so the trader books it waits for are never written
+  (and would be stale). The roadmap's Phase 0 replaces them.
+- **The holdout of sections 13-15 was not read once**: it was recomputed on every run, three price models each. The
+  verdicts stand, because every rule failed and selection on the holdout can only flatter.
+- **"Closed at the SP" assumed a perfect green-up**; a BSP lay is sized by liability, so the realisable return has the
+  same expectation only if the BSP is calibrated, and wider intervals than reported.
+- **Trades a day counted active days only**, so the bar filter "at least once a day" did nothing.
+The roadmap (`reports/greyhound_roadmap.md`) sets out the fixes, the feature and model work, and the gated path from
+here.
