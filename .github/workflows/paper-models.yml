@@ -5,7 +5,10 @@ name: Paper models (greyhounds, football), the football book record and the raci
 # trading step; they now run here, on their own runner, and can place no order:
 #   - no --live is ever passed, and GREYHOUND_LIVE / FOOTBALL_LIVE are pinned to 'no' (each trader stays on paper
 #     unless both its switch and --live are given: greyhound/live.py, football/live.py);
-#   - the delayed application key only (Betfair permits no read-only use of live data);
+#   - the delayed application key, except the greyhound processes: the owner, 2 Nov 2026, "use the live key, just
+#     don't execute bets yet": the greyhound paper trader (GREYHOUND_LIVE pinned 'no', never --live) and the greyhound
+#     book recorder (greyhound/book_record.py, read-only by construction) read on the live key; the football trader
+#     and every recorder of another sport keep the delayed key;
 #   - its own Python environment and certificate folder, so nothing here touches the live job's.
 # The runner: a second self-hosted runner on the UK server (Betfair refuses logins from GitHub's own runners: 403,
 # 1 Nov), labelled with vars.PAPER_MODELS_RUNNER (default 'paper-models'). It must not be the live trader's runner: the
@@ -89,16 +92,23 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
-          # the delayed key only; the live key is never given to this job
+          # the delayed key for everything but the greyhound processes (below)
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          # the greyhound paper trader and book recorder only (the owner, 2 Nov 2026): read-only, no bets
+          BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
           GREYHOUND_LIVE: 'no'
           FOOTBALL_LIVE: 'no'
         run: |
           set +e
           # the greyhound model (greyhound/live.py, greyhound/live_config.json): each GB greyhound runner backed once on
           # paper, at its first real price, where the edge clears 0.2. S3 greyhound/STOP or trading/STOP stops it.
-          python -m greyhound.live --trade --until 21:30 > "$RUNNER_TEMP/greyhound_trader.log" 2>&1 &
+          # the greyhound processes read on the live key when there is one (its value is never printed)
+          GHKEY="${BETFAIR_LIVE_APP_KEY:-$BETFAIR_APP_KEY}"
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.live --trade --until 21:30 > "$RUNNER_TEMP/greyhound_trader.log" 2>&1 &
           GHT=$!
+          # the greyhound books every 5 s near the off, with traded volume (reports/greyhound_roadmap.md 0.2)
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.book_record --until 21:30 > "$RUNNER_TEMP/greyhound_books.log" 2>&1 &
+          GBR=$!
           # the football model (football/live.py, football/live_config.json): MATCH_ODDS and OVER_UNDER_25, each
           # selection decided once in the 6 hours before kick-off, on paper. S3 football/STOP or trading/STOP stops it.
           timeout 15h python -m football.live --trade --until 21:30 > "$RUNNER_TEMP/football_trader.log" 2>&1 &
@@ -123,6 +133,8 @@ jobs:
           done
           wait "$GHT"; GC=$?; echo "greyhound paper trader exited $GC"
           tail -n 20 "$RUNNER_TEMP/greyhound_trader.log"
+          wait "$GBR"; echo "greyhound book record exited $?"
+          tail -n 5 "$RUNNER_TEMP/greyhound_books.log"
           wait "$FBT"; FC=$?; echo "football paper trader exited $FC"
           tail -n 20 "$RUNNER_TEMP/football_trader.log"
           for P in "${FBREC[@]}"; do wait "$P"; done

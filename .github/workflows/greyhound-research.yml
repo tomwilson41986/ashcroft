@@ -17,11 +17,11 @@ on:
         required: false
         type: string
       source:
-        description: "whose books at the entry marks: recorder (delayed, 60 s) or trader (live key, 5 s, from 2 Nov 2026)"
+        description: "the books at the entry marks: retimed (the recorder's delayed books at the market's last match), recorder (as polled) or live (greyhound/book_record.py, the live key, 5 s)"
         required: false
         type: choice
-        options: ['recorder', 'trader']
-        default: 'recorder'
+        options: ['retimed', 'recorder', 'live']
+        default: 'retimed'
   push:
     branches: ['claude/determined-fermi-*']
     paths:
@@ -56,7 +56,7 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           FROM: ${{ inputs.date_from }}
           TO: ${{ inputs.date_to }}
-          SOURCE: ${{ inputs.source || 'recorder' }}
+          SOURCE: ${{ inputs.source || 'retimed' }}
         run: |
           mkdir -p out
           ARGS=(--out out/greyhound_tradeout_study --source "$SOURCE")

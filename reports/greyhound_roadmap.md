@@ -222,3 +222,28 @@ books (0.1, 0.2); stacking and new learners are worth thousandths of log-loss, n
    nothing in the live horse system touched).
 3. **Phase 3, a micro-stake live pilot**, only if a rule passes Gates 1 and 2: the only legitimate way to see
    real-time prices and fills, because Betfair permits no read-only use of live data. Money: the owner's call.
+
+## 9. The owner's decisions (2 Nov 2026) and Phase 0 status
+
+The owner: "1. use the live key, just don't execute bets yet; 2. use any stake level, like the horse racing model,
+fixed to win a certain amount, review the approach like the horse model; 3. you can back multiple dogs per race,
+like the horse model."
+
+| Item | Status |
+|---|---|
+| 0.2 a greyhound book recorder of its own | **Built**: `greyhound/book_record.py`, the live key, read-only by construction (`trading.exchange.BetfairData` refuses any call but reads), GB/IE WIN and PLACE, every 60 s from 15 minutes out, every 5 s in the last 5 minutes, on past the scheduled off until the market closes, with each runner's traded volume (`EX_TRADED`) and the projected SP; `books_greyhound_live.csv`. Runs in `paper-models.yml` beside the greyhound paper trader, which now reads on the live key too (`GREYHOUND_LIVE` pinned `no`, never `--live`). The guard tests allow the live key there for these two greyhound processes only. |
+| C1 the forward test's books | **Fixed**: the test reads the live recorder's books and freezes after 10 days of them. |
+| C2 the settlement | **Fixed, as the horse trader**: each dog whose best price clears the bar is taken down the three best prices to win GBP100 (a stake of GBP2 to GBP50), no back whose winnings are under the GBP10 minimum lay at SP, several dogs a race allowed; each back's winnings laid at the SP (`MARKET_ON_CLOSE`, liability = stake x (price - 1)) and settled by the result: 0 if the dog wins, `stake x (price - BSP) / (BSP - 1)` if it loses; the lay side mirrored (closed by a back at SP); 2% commission on each market's net. The fill share against the target stake is reported. |
+| J1 the trader's book cadence | Superseded by 0.2. |
+| J2 trades a day | **Fixed**: over every scored day; the bootstrap includes the days without a trade; the bar choice also needs trades on half the days. |
+| J5 `--date` before the first test day | **Fixed**: refused; the summary reads test days only. |
+| J6 partial days | **Fixed**: each day's coverage written beside it; a day under 90% is settled again for up to 3 days. |
+| m1, m2, m3, m4, m5, m6, m7 | **Fixed**: the empty study; the shuffled check named a null-model check; in-play read numerically; most days failing fails the run; entry windows of +-0.5 minutes, no overlap; held-to-result commission on the market's net; no NaN in JSON. |
+| 0.1 re-timed recorder books | **Built** (`source="retimed"`: each delayed snapshot at the market's last match); the study now defaults to it (`greyhound-research.yml`). |
+| 0.3 the paper-models runner | **The owner**: until it is registered nothing in `paper-models.yml` runs, the live recorder included. |
+| 0.4 the forward test's win model | Open: the test still prices dogs with the 5 Oct model; the full and log-BSP models need a daily scoring job before they can be frozen in. |
+| J3 holdout and multiple comparisons, J4 late non-runners | Open. |
+
+Tests: `tests/test_greyhound_tradeout.py` 21 (the sizing, the ladder, settlement by the result both sides, several
+dogs a race with commission on the market's net, trades a day over every day, the `--date` guard, the blank in-play
+value, re-timing, the live recorder's schedule, the read-only client refusing a bet); the whole suite 1,674 passed.

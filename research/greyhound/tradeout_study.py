@@ -14,10 +14,12 @@ closed at the Betfair SP.
    microstructure (the last traded price, the move over two minutes, the queue imbalance, the spread); the horses'
    closing model unchanged (``race_book``: the market, our price, the money); the full microstructure model with our
    price (``greyhound.tradeout.MICRO``); LightGBM on the move from the mid to the SP's share (fixed settings, chosen
-   before the data); and the microstructure model fitted to SPs shuffled within each race (the leak test: it must
-   earn nothing).
-3. **The trade**, GBP2 a position, back at the best back or lay at the best lay with the stake offered, a price up to
-   20, closed at the SP, 2% commission on each market's net; bars on the expected CLV of 0, 0.02, 0.03, 0.05, 0.08.
+   before the data); and the microstructure model fitted to SPs shuffled within each race (a null-model check: it
+   must earn nothing; it is not a leak test, since a shuffle removes any leak too: QA m2).
+3. **The trade**, as the horse trader makes it (``greyhound.tradeout.positions``): each dog whose best price clears
+   the bar taken down the three best prices to win GBP100 (GBP2 to GBP50 a stake), several dogs a race allowed, each
+   back's winnings laid at the SP and settled by the result, 2% commission on each market's net; bars on the expected
+   CLV of 0, 0.02, 0.03, 0.05, 0.08; trades a day and the bootstrap over every scored day.
    The last seven scored days are the holdout, read once, each rule at the bar its development days chose (the best
    lower 90% bound among bars trading at least once a day).
 4. **The learning curve:** the same forecasts fitted on only the last 3, 7 or 14 days, on the same scored days: if
@@ -110,7 +112,7 @@ def audit_day(day: date, pred, books, markets, panel: pd.DataFrame, trader) -> d
     if trader is not None and len(trader):
         tp = to.pre_off_books(trader, markets)
         t3 = tp[tp.minutes_to_off <= 3].drop_duplicates(["market_id", "polled"])
-        out["trader_books"] = {"rows": int(len(trader)), "markets": int(tp.market_id.nunique()),
+        out["live_books"] = {"rows": int(len(trader)), "markets": int(tp.market_id.nunique()),
                                "polls_last3_per_market": _q(t3.groupby("market_id").polled.nunique()),
                                "feed_lag_last3_s": _q(to.feed_lag(tp))}
     return out
@@ -118,8 +120,9 @@ def audit_day(day: date, pred, books, markets, panel: pd.DataFrame, trader) -> d
 
 def load(store, first: date, last: date, source: str = "recorder",
          pred_dir: str | None = None) -> tuple[pd.DataFrame, list[dict]]:
-    """Every day's panel (entry books from ``source``: the recorder's 60-second delayed books, or the trader's live
-    5-second books; the SP from the recorder's settled books) and its audit row. Our price is the 5 Oct forward
+    """Every day's panel (entry books from ``source``: ``recorder``, the 60-second delayed books as polled;
+    ``retimed``, the same placed at the market's last match; ``live``, greyhound/book_record.py's live-key 5-second
+    books; the SP from the recorder's settled books) and its audit row. Our price is the 5 Oct forward
     test's model unless ``pred_dir`` holds another's days (``research.greyhound.score_full``)."""
     from betfair_recorder import _read_day_csv
     frames, audit, d = [], [], first
@@ -132,11 +135,12 @@ def load(store, first: date, last: date, source: str = "recorder",
                 pred = store.get_parquet(f"{to.TRACK_PRED}/{d:%Y-%m-%d}.parquet")
             books = _read_day_csv(d, "books_greyhound.csv")
             markets = _read_day_csv(d, "markets_greyhound.csv")
-            trader = _read_day_csv(d, "books_greyhound_trader.csv")
-            entry = books if source == "recorder" else trader
-            panel = (to.day_panel(pred, entry, markets, d, closing_books=books)
-                     if pred is not None and entry is not None and books is not None else pd.DataFrame())
-            audit.append(audit_day(d, pred, books, markets, panel, trader))
+            live = _read_day_csv(d, to.ENTRY_BOOKS["live"])
+            entry = books if source in ("recorder", "retimed") else live
+            panel = (to.day_panel(pred, entry, markets, d, closing_books=books, retimed=source == "retimed")
+                     if pred is not None and entry is not None and books is not None and markets is not None
+                     else pd.DataFrame())
+            audit.append(audit_day(d, pred, books, markets, panel, live))
             if len(panel):
                 frames.append(panel)
             _log(f"{d}: {len(panel)} panel rows")
@@ -257,6 +261,8 @@ def walk_forward(panel: pd.DataFrame, names=MODEL_NAMES, window=None, score_days
 
 
 def accuracy_table(acc: list, days=None) -> list[dict]:
+    if not acc:                                         # too few days to score (QA m1)
+        return []
     a = pd.DataFrame(acc)
     if days is not None:
         a = a[a.day.isin(days)]
@@ -293,9 +299,11 @@ def baselines(panel: pd.DataFrame) -> list[dict]:
 
 def choose_bars(dev_table: pd.DataFrame) -> dict:
     """Each (mark, model, side)'s bar on the development days: the best lower 90% bound among bars trading at least
-    once a day."""
+    once a day over every development day and on at least half of them (QA J2: trades a day used to count active
+    days only)."""
     out = {}
-    t = dev_table[(dev_table.per_day >= 1) & dev_table["roi_90%"].notna()].copy()
+    t = dev_table[(dev_table.per_day >= 1) & (dev_table.active_days >= dev_table.days / 2)
+                  & dev_table["roi_90%"].notna()].copy()
     if not len(t):
         return out
     t["lo"] = t["roi_90%"].map(lambda x: x[0])
@@ -304,11 +312,11 @@ def choose_bars(dev_table: pd.DataFrame) -> dict:
     return out
 
 
-def by_band(p: pd.DataFrame, keys=("mark", "model", "side")) -> list[dict]:
+def by_band(p: pd.DataFrame, keys=("mark", "model", "side"), days=None) -> list[dict]:
     if not len(p):
         return []
     p = p.assign(band=pd.cut(p.price, [1, 2, 3, 5, 8, 13, 21], labels=["1-2", "2-3", "3-5", "5-8", "8-13", "13-20"]))
-    t = to.rule_table(p.assign(bar=p.band.astype(str)), keys=tuple(keys) + ("bar",), n_boot=500)
+    t = to.rule_table(p.assign(bar=p.band.astype(str)), keys=tuple(keys) + ("bar",), days=days, n_boot=500)
     return t.rename(columns={"bar": "band"}).to_dict("records")
 
 
@@ -349,10 +357,10 @@ def report_md(res: dict) -> str:
                 (a.get("races_in_panel") or {}).get("off_1"), "polls last 5 min (p50)":
                 (a.get("polls_last5_per_market") or {}).get("p50"), "poll gap s (p50)":
                 (a.get("poll_gap_last5_s") or {}).get("p50"), "feed lag s (p50/p90)": a.get("feed_lag_last3_s"),
-                "trader books (lag p50)": ((a.get("trader_books") or {}).get("rows"),
-                                          ((a.get("trader_books") or {}).get("feed_lag_last3_s") or {}).get("p50")), "note": a.get("note") or a.get("error")}
+                "live books (lag p50)": ((a.get("live_books") or {}).get("rows"),
+                                        ((a.get("live_books") or {}).get("feed_lag_last3_s") or {}).get("p50")), "note": a.get("note") or a.get("error")}
                for a in res["audit"]], ["day", "races", "panel races (off_1)", "polls last 5 min (p50)",
-                                        "poll gap s (p50)", "feed lag s (p50/p90)", "trader books (lag p50)", "note"])
+                                        "poll gap s (p50)", "feed lag s (p50/p90)", "live books (lag p50)", "note"])
     L += ["### Each price at each mark against the SP (all panel days)", ""]
     L += _tbl(res.get("baselines", []), ["mark", "price", "rows", "mape%", "median_ape%", "mean_log_bsp_over_price"])
     L += ["## 2. Accuracy of the SP forecast, development days", "",
@@ -363,8 +371,8 @@ def report_md(res: dict) -> str:
     L += ["### Holdout", ""]
     L += _tbl(res["accuracy_holdout"], ["mark", "model", "days", "races", "xent_gain_per_race",
                                         "win_ll_gain_per_race", "r2_vs_no_change", "right_way%"])
-    cols = ["mark", "model", "side", "bar", "trades", "per_day", "roi%", "roi_90%", "roi_liability%", "held_roi%",
-            "clv_mean%", "clv_positive%", "price_median"]
+    cols = ["mark", "model", "side", "bar", "trades", "per_day", "active_days", "roi%", "roi_90%", "held_roi%",
+            "clv_mean%", "clv_positive%", "fill%", "price_median"]
     L += ["## 3. The trade closed at the SP, development days (every bar)", ""] + _tbl(res["dev_rules"], cols)
     L += ["## 4. Holdout, read once (each rule at its development bar)", ""] + _tbl(res["holdout_rules"], cols)
     L += ["## 5. Learning curve (development days scored by every window)", ""]
@@ -388,8 +396,9 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="out/greyhound_tradeout_study")
     ap.add_argument("--pred-dir", default=None,
                     help="our price from these day files (research.greyhound.score_full) instead of the 5 Oct model's")
-    ap.add_argument("--source", choices=["recorder", "trader"], default="recorder",
-                    help="whose books at the entry marks: the recorder's (delayed, 60 s) or the trader's (live, 5 s)")
+    ap.add_argument("--source", choices=["recorder", "retimed", "live"], default="recorder",
+                    help="the books at the entry marks: the recorder's (delayed, 60 s, as polled or retimed to the "
+                         "market's last match) or greyhound/book_record.py's (live key, 5 s)")
     a = ap.parse_args(argv)
     t0 = time.time()
     store = Store(root=a.store)
@@ -412,19 +421,19 @@ def main(argv=None) -> int:
         pos, acc = walk_forward(panel)
         res["accuracy_dev"] = accuracy_table(acc, dev)
         res["accuracy_holdout"] = accuracy_table(acc, hold)
-        dev_t = to.rule_table(pos[pos.race_date.isin(dev)])
+        dev_t = to.rule_table(pos[pos.race_date.isin(dev)], days=dev) if len(pos) else pd.DataFrame()
         res["dev_rules"] = dev_t.to_dict("records")
-        bars = choose_bars(dev_t)
+        bars = choose_bars(dev_t) if len(dev_t) else {}
         res["chosen_bars"] = {"|".join(k): v for k, v in bars.items()}
-        hp = pos[pos.race_date.isin(hold)]
+        hp = pos[pos.race_date.isin(hold)] if len(pos) else pos
         if len(hp):
             chosen = pd.Series([bars.get(k) for k in zip(hp["mark"], hp.model, hp.side)], index=hp.index)
             keep = (hp.model == "win_edge") | (chosen == hp.bar)
-            res["holdout_rules"] = to.rule_table(hp[keep]).to_dict("records")
+            res["holdout_rules"] = to.rule_table(hp[keep], days=hold).to_dict("records")
         else:
             res["holdout_rules"] = []
         res["dev_by_band"] = by_band(pos[pos.race_date.isin(dev) & (pos.bar == 0.03)
-                                         & pos.model.isin(["racebook", "micro", "gbm"])])
+                                         & pos.model.isin(["racebook", "micro", "gbm"])], days=dev) if len(pos) else []
         _log("learning curve")
         lc_days = dev[-max(1, len(dev) // 2):]                       # the later development days: every window fits
         sub = panel[panel["mark"].isin(["off_1", "off_3"])]
@@ -436,7 +445,7 @@ def main(argv=None) -> int:
                 lc_pos.append(p[p.bar == 0.03])
         res["learning_accuracy"] = accuracy_table(lc_acc)
         lp = pd.concat(lc_pos, ignore_index=True) if lc_pos else pd.DataFrame()
-        res["learning_rules"] = to.rule_table(lp, keys=("mark", "model", "window", "side", "bar"),
+        res["learning_rules"] = to.rule_table(lp, keys=("mark", "model", "window", "side", "bar"), days=lc_days,
                                               n_boot=500).to_dict("records") if len(lp) else []
         res["importance"] = importance(panel, dev)
     res["seconds"] = round(time.time() - t0)
