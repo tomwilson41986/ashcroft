@@ -473,3 +473,42 @@ model with the weigh-in, which the morning card does not have. The decisive chec
 model (no `CARD_UNSAFE` features) with the library and the race's loss, scored on the same Betfair test at T-1. Then
 the library's card check (`greyhound.live --check-card`), and only then a paper test of the near-the-off rule with its
 thresholds fixed in advance. Greyhound trading has been paper-only since 14:53 UTC on 7 Oct (the owner).
+
+## 12. The forward test of 5 Oct retired; the trade-out (the owner, 2 Nov 2026)
+
+**Why the 5 Oct test cannot pass.** Its primary rule (the first recorded price, edge > 0.2) placed no bet in 27 days
+(6 Oct to 1 Nov; track run 41439030252). The first recorded book is an empty placeholder book: on 1 Nov it stood a
+median 504.9 minutes before the off with a best back of 1.10 and the lay a median 533 times the back, no runner tight
+(track run 41358499330). At 1.10 no dog clears 0.2, so the gate (2,000 primary bets) is never reached. The rules that
+did fire chose by the chance to win and lost at the price taken: entry 1 minute before the off, edge > 0.1, 6,066 bets,
+-4.86% (90% -10.87 to +1.16), the price taken 6.85% under the SP on average; first traded price, edge > 0.1, 4,255 bets,
+-10.56% (-17.49 to -3.64), 12.21% under the SP. The model's log loss on 18,942 runners is 0.4513 against 0.4264 for the
+BSP and 0.4307 for the book a minute out (lower is better). The paper trader (`greyhound.live`, a separate rule):
+27 days, 5,091 bets, GBP24,740.31 staked, -GBP751.11 (-3.04%, 90% -10.05 to +3.98), CLV -1.15% (settle run
+41440971389). The 5 Oct test keeps running (its priced runners feed the new test) but is no longer judged.
+
+**The trade-out** (`greyhound/tradeout.py`). Take a price before the off and close it at the SP, as the horses' live
+rule does: a back at the best back is worth `back / BSP - 1` a unit closed out, a lay at the best lay `1 - lay / BSP`,
+whatever wins. The forecast of the SP is the horses' closing model (`model/race_book.py` ClosingModel, unchanged): a
+conditional logit on the SP book from the market's price now, our price and the money matched. This is Benter's (1994)
+second stage with the SP book, not the result, as the target (`reports/greyhound_literature.md` 3.3).
+
+**The new forward test, fixed before its first day** (`greyhound/tradeout.py` RULES; `greyhound-track.yml`, the
+daily run after the 5 Oct test's): frozen once on the recorded days from 6 Oct to the day before the freeze; first test
+day the later of 4 Nov 2026 and the day after the freeze; primary rule: entry at the book 1 minute before the off,
+the horses' closing model, back where the expected CLV clears 0.03, a price up to 20 with the stake offered, GBP2 paper,
+closed at the SP, 2% commission on each market's net. Reported, not judged: the first traded book and 3 and 5 minutes
+out, the lay side, bars 0 and 0.05, the microstructure closing model, and the old edge-to-win selection closed at the
+SP. Gate: after 30 test days and 1,000 primary trades, a pass only if the return per GBP staked has a 90% lower bound
+above 0 (bootstrap by day); a pass goes to the owner. The win model is the 5 Oct one, never refitted, so every price
+the closing model is fitted on is out of sample.
+
+**The study** (`research/greyhound/tradeout_study.py`, `greyhound-research.yml`, read-only): the same panel, every
+SP forecast walk-forward by day, the trade scored at every bar, the last 7 days a holdout read once, the learning
+curve, a leak test (SPs shuffled within the race), the data audit. Results: section 13, from its CI run.
+
+**The data.** The greyhound trader reads the books every 5 seconds in a race's last 3 minutes, where the money is
+(T-3 GBP380, T-1 GBP1,993 matched a market at the median; reports/open_close/data.md 4.2), but kept none of them; the
+recorder keeps a book a minute in the last hour (delayed key). From this change the trader's books are kept with
+BETFAIR_RECORD=1 (`books_greyhound_trader.csv` beside the recorder's), for order-flow features the 60-second books
+cannot give (literature tests 10 and 11).

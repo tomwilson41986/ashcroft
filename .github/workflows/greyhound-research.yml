@@ -1,0 +1,73 @@
+name: Greyhound trade-out research (read-only)
+
+# The greyhound trade-out study (research/greyhound/tradeout_study.py; the owner, 2 Nov 2026): the recorded greyhound
+# books since 6 Oct against the forward test's priced runners, the SP forecast walk-forward by day, the trade closed
+# at the SP, a holdout read once, the learning curve, the data audit. Read-only: S3 in, the report as the run's
+# summary and artifact out; nothing is written to the store and nothing can place an order.
+
+on:
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: 'first day, YYYY-MM-DD (default 2026-10-06, the first recorded books)'
+        required: false
+        type: string
+      date_to:
+        description: 'last day, YYYY-MM-DD (default yesterday, UK)'
+        required: false
+        type: string
+  push:
+    branches: ['claude/determined-fermi-*']
+    paths:
+      - 'research/greyhound/**'
+      - 'greyhound/tradeout.py'
+      - '.github/workflows/greyhound-research.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-research
+  cancel-in-progress: true
+
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: The study
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          FROM: ${{ inputs.date_from }}
+          TO: ${{ inputs.date_to }}
+        run: |
+          mkdir -p out
+          ARGS=(--out out/greyhound_tradeout_study)
+          for v in "$FROM" "$TO"; do
+            if [ -n "$v" ] && ! [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "dates must be YYYY-MM-DD"; exit 1; fi
+          done
+          if [ -n "$FROM" ]; then ARGS+=(--from "$FROM"); fi
+          if [ -n "$TO" ]; then ARGS+=(--to "$TO"); fi
+          python -m research.greyhound.tradeout_study "${ARGS[@]}"
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/greyhound_tradeout_study.md ] && head -c 60000 out/greyhound_tradeout_study.md >> "$GITHUB_STEP_SUMMARY"
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-research-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90

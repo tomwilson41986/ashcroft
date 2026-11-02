@@ -89,9 +89,32 @@ jobs:
             if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); else ARGS+=(--days "$DAYS"); fi
           fi
           python -m greyhound.track "${ARGS[@]}"
+      # The trade-out forward test (greyhound/tradeout.py; the owner, 2 Nov 2026): take a price before the off, close
+      # it at the SP. Reads the priced runners the step above has just written, so it runs after it, on the settled
+      # days only: freezes its closing models once (the first test day is the later of 4 Nov 2026 and the day after),
+      # then settles the days since.
+      - name: Trade-out forward test (freeze once, settle, summarise)
+        if: >-
+          (github.event_name == 'schedule' && github.event.schedule == '41 11 * * *')
+          || (github.event_name == 'workflow_dispatch' && !inputs.intraday)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          DAYS: ${{ inputs.days || '3' }}
+          DAY: ${{ inputs.date }}
+        run: |
+          if ! [[ "$DAYS" =~ ^[0-9]{1,2}$ ]]; then echo "days must be a number"; exit 1; fi
+          if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
+          mkdir -p out
+          ARGS=(--freeze --summary --out out/greyhound_tradeout.json)
+          if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); else ARGS+=(--days "$((DAYS + 1))"); fi
+          python -m greyhound.tradeout "${ARGS[@]}"
       - name: Summary
         if: always()
         run: |
+          [ -f out/greyhound_tradeout.md ] && cat out/greyhound_tradeout.md >> "$GITHUB_STEP_SUMMARY"
           [ -f out/greyhound_track.md ] && cat out/greyhound_track.md >> "$GITHUB_STEP_SUMMARY"
           [ -f out/greyhound_track.json ] && { echo; echo '```'; head -c 40000 out/greyhound_track.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           true
