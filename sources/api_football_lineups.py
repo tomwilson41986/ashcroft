@@ -69,6 +69,7 @@ FIXTURES_EVERY_MIN = 60.0
 INJURY_EVERY_H = 3.0
 BATCH = 20               # the most ids /fixtures?ids= takes
 QUOTA_STOP = 100
+MAX_FAILURES = 60        # failed loop steps (30 s apart) before the day's loop gives up
 NOT_STARTED = {"NS", "TBD"}
 
 Fetch = Callable[[str, dict], "tuple[dict | None, int | None]"]
@@ -132,6 +133,7 @@ class Collector:
     quota_left: int | None = None
     calls: int = 0
     stopped: str | None = None
+    rate_limited: int = 0
     _n: int = 0
 
     def _call(self, kind: str, path: str, params: dict) -> dict | None:
@@ -152,7 +154,12 @@ class Collector:
         self.store.put(f"{PREFIX}/raw/{kind}/{self.day}/{_stamp(t)}_{self._n}.json.gz",
                        gz(json.dumps(doc).encode()))
         if body.get("errors"):
-            self.stopped = f"API error: {str(body['errors'])[:200]}"
+            err = str(body["errors"])[:200]
+            if "rateLimit" in err:                       # the per-minute limit (another job on the key): skip a beat
+                self.rate_limited += 1
+                log.warning("api_football_lineups: rate limited (%d); carrying on", self.rate_limited)
+                return None
+            self.stopped = f"API error: {err}"
             log.warning("api_football_lineups: %s", self.stopped)
             return None
         return body
@@ -232,7 +239,7 @@ class Collector:
         ms = list(self.matches.values())
         return {"day": self.day, "matches": len(ms), "lineups_seen": sum(m.seen_at is not None for m in ms),
                 "confirmed": sum(m.confirmed for m in ms), "calls": self.calls, "quota_left": self.quota_left,
-                "stopped": self.stopped}
+                "stopped": self.stopped, "rate_limited": self.rate_limited}
 
 
 def collect(store: Store, fetch: Fetch, until: str, leagues: set[int] | None = None, tick_s: float = 30.0,
@@ -243,6 +250,7 @@ def collect(store: Store, fetch: Fetch, until: str, leagues: set[int] | None = N
     c = Collector(store, fetch, day, leagues or main_league_ids(), now=now)
     end_h, end_m = (int(x) for x in until.split(":"))
     last_fix = last_inj = None
+    failures = 0
     while c.stopped is None:
         t = now()
         uk = t.astimezone(UK)
@@ -260,7 +268,10 @@ def collect(store: Store, fetch: Fetch, until: str, leagues: set[int] | None = N
             if ids:
                 c.poll(ids)
         except Exception as exc:                    # a bad reply must not end the day's record
-            log.warning("api_football_lineups: step failed: %s", str(exc)[:300])
+            failures += 1
+            log.warning("api_football_lineups: step failed (%d): %s", failures, str(exc)[:300])
+            if failures >= MAX_FAILURES:                 # a fault that repeats all day (a 403, a bad key) is not a blip
+                c.stopped = f"{failures} failed steps; last: {str(exc)[:200]}"
         sleep(tick_s)
     out = c.summary()
     store.put(f"{PREFIX}/lineups_runs/{day}/{_stamp(now())}.json", json.dumps(out).encode())

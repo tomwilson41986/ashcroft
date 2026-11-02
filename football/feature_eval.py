@@ -274,8 +274,7 @@ def main(argv=None) -> int:
     from pathlib import Path
 
     from football.data import load_gold
-    from football.model import walk_forward
-    from football.team_features import build
+    from football.team_features import build, dc_collection_aligned
     from sources.common import Store
     ap = argparse.ArgumentParser(description="Team features against the market: the outcome and move tests")
     ap.add_argument("--root", default=None, help="a local sources folder in place of S3 (the gold table)")
@@ -291,7 +290,9 @@ def main(argv=None) -> int:
     if a.dc_cache and Path(a.dc_cache).exists():
         dc = pd.read_parquet(a.dc_cache)
     else:
-        dc = walk_forward(gold, "2012-07-01")[["match_id", "lam_h", "lam_a", "p_h", "p_d", "p_a", "p_o25"]]
+        # each match priced from the fit before its collection day (QA, 2 Nov 2026: the weekly walk-forward's blocks
+        # could let a Saturday result into a Sunday price opened on the Friday)
+        dc = dc_collection_aligned(gold, "2012-07-01")
         if a.dc_cache:
             dc.to_parquet(a.dc_cache, index=False)
     if a.features_in and Path(a.features_in).exists():

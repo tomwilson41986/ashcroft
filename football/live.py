@@ -470,13 +470,40 @@ def settle_rows(ledger: pd.DataFrame, closes: pd.DataFrame, gold: pd.DataFrame, 
     return b
 
 
+def _unsettled(allb: pd.DataFrame, gold: pd.DataFrame, today: date) -> list[dict]:
+    """The bets kicked off more than 3 days ago and still unsettled, each with what gold holds for its day and teams."""
+    if allb.empty or "settled" not in allb.columns:
+        return []
+    old = allb[(~allb["settled"].astype(bool)) & (allb["match_date"] < (today - timedelta(days=3)).isoformat())]
+    out = []
+    for r in old.drop_duplicates(["match_date", "home_team_id", "away_team_id"]).head(20).itertuples(index=False):
+        same_day = gold[gold["match_date"] == r.match_date]
+        both = same_day[(same_day["home_team_id"] == r.home_team_id) & (same_day["away_team_id"] == r.away_team_id)]
+        either = gold[((gold["home_team_id"] == r.home_team_id) & (gold["away_team_id"] == r.away_team_id))]
+        out.append({"match_date": r.match_date, "home_team_id": r.home_team_id, "away_team_id": r.away_team_id,
+                    "gold_rows_that_day": int(len(same_day)), "gold_status_that_day_and_teams":
+                    both["status"].tolist(), "gold_dates_for_these_teams": sorted(either["match_date"].tail(3).tolist())})
+    return out
+
+
 def settle(store, days: int, mode: str, cfg: dict | None = None, today: date | None = None) -> dict:
     from football.data import load_gold
     cfg = cfg or load_config()
     gold = load_gold(store)
     today = today or date.today()
-    for i in range(days, -1, -1):
-        day = (today - timedelta(days=i)).isoformat()
+    # the recent days, and every older day whose settled file still holds an unsettled bet (a result can reach the
+    # gold table after the window; QA, 2 Nov 2026: 15 paper bets sat unsettled while only 7 days were looked at)
+    todo = {(today - timedelta(days=i)).isoformat() for i in range(days, -1, -1)}
+    for k in store.listing(f"{PREFIX}/{mode}/"):
+        if k.endswith("/settled.csv"):
+            raw = store.get(k)
+            try:
+                old = pd.read_csv(io.BytesIO(raw)) if raw and raw.strip() else None
+            except pd.errors.EmptyDataError:
+                old = None
+            if old is not None and "settled" in old.columns and not old["settled"].astype(bool).all():
+                todo.add(k.split("/")[-2])
+    for day in sorted(todo):
         base = f"{PREFIX}/{mode}/{day}"
         raw = store.get(f"{base}/ledger.csv")
         if not raw:
@@ -506,6 +533,8 @@ def settle(store, days: int, mode: str, cfg: dict | None = None, today: date | N
             "by_market": {k: {"n": int(len(g)), "pnl": float(g.pnl.sum()),
                               "clv": float(g.clv.mean()) if g.clv.notna().any() else None}
                           for k, g in done.groupby("market_type")} if len(done) else {},
+            # why a bet older than 3 days has not settled: no finished gold match on that UK day with both team ids
+            "unsettled_old": _unsettled(allb, gold, today),
             "updated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     store.put(f"{PREFIX}/{mode}/summary.json", json.dumps(summ, indent=1).encode())
     return summ

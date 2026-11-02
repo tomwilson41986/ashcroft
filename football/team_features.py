@@ -28,7 +28,7 @@ points, goal difference, shots-on-target difference, ``pae_dc``, ``pae_mkt``, ``
 (strength of schedule); and the change in the side's market rating over its last 5 matches.
 
 Match features (``match_features``): home minus away of every window, both sides' ratings, and the disagreement
-between our model and the market at the open (``dis_open`` = the model's log supremacy - the open's).
+between our model and the market at the open (``dis_open`` = log(p_home / p_away) of the model less the open's).
 """
 
 from __future__ import annotations
@@ -148,30 +148,74 @@ def fit_market_ratings(d: pd.DataFrame, as_of: pd.Timestamp, xi: float = XI, win
     return {"att": dict(zip(teams, att)), "def": dict(zip(teams, dfn)), "mu": beta[0], "home": beta[1]}
 
 
-def market_ratings(mt: pd.DataFrame, refit_days: int = 7, start: str | None = None) -> pd.DataFrame:
-    """Each match's two sides' market-implied ratings from the pool's fit before the match's week (weekly refits
-    from the pool's first match date in scope)."""
+def collection_day(dates) -> pd.Series:
+    """football-data's collection of each match day's early prices (matches.php): Friday for Friday to Monday matches,
+    Tuesday for Tuesday to Thursday. A feature may use only what was known before this day."""
+    d = pd.to_datetime(pd.Series(dates)).dt.normalize()
+    dow = d.dt.dayofweek
+    back = np.where(dow.isin([1, 2, 3]), dow - 1, (dow - 4) % 7)
+    return d - pd.to_timedelta(back, unit="D")
+
+
+def market_ratings(mt: pd.DataFrame, start: str | None = None) -> pd.DataFrame:
+    """Each match's two sides' market-implied ratings from the pool's fit on the matches before its collection day
+    (Friday or Tuesday): never a close or result from after the early price was taken."""
     out = []
     for pool, d in mt.groupby("country"):
         todo = d if start is None else d[d["date"] >= pd.Timestamp(start)]
         if todo.empty:
             continue
-        dates = np.array(sorted(todo["date"].unique()))
-        i = 0
-        while i < len(dates):
-            as_of = pd.Timestamp(dates[i])
-            end = as_of + pd.Timedelta(days=refit_days)
-            block = todo[(todo["date"] >= as_of) & (todo["date"] < end)]
-            fit = fit_market_ratings(d, as_of)
-            if fit is not None:
-                for row in block.itertuples(index=False):
-                    ah, dh = fit["att"].get(row.home_team_id), fit["def"].get(row.home_team_id)
-                    aa, da = fit["att"].get(row.away_team_id), fit["def"].get(row.away_team_id)
-                    out.append({"match_id": row.match_id, "att_h": ah, "def_h": dh, "att_a": aa, "def_a": da})
-            i = int(np.searchsorted(dates, np.datetime64(end)))
+        cut = collection_day(todo["date"]).to_numpy()
+        for c in np.unique(cut):
+            block = todo[cut == c]
+            fit = fit_market_ratings(d, pd.Timestamp(c))
+            if fit is None:
+                continue
+            for row in block.itertuples(index=False):
+                ah, dh = fit["att"].get(row.home_team_id), fit["def"].get(row.home_team_id)
+                aa, da = fit["att"].get(row.away_team_id), fit["def"].get(row.away_team_id)
+                out.append({"match_id": row.match_id, "att_h": ah, "def_h": dh, "att_a": aa, "def_a": da})
     r = pd.DataFrame(out, columns=["match_id", "att_h", "def_h", "att_a", "def_a"])
     r["r_h"], r["r_a"] = r["att_h"] + r["def_h"], r["att_a"] + r["def_a"]
     return r
+
+
+def _dc_pool(args) -> list[dict]:
+    from football.model import DEFAULTS, _price_rows
+    from football.ratings import fit_pool
+    d, pool, start = args
+    p = DEFAULTS
+    todo = d[d["match_date"] >= start]
+    if todo.empty:
+        return []
+    cut = collection_day(todo["match_date"]).dt.strftime("%Y-%m-%d").to_numpy()
+    out = []
+    for c in np.unique(cut):
+        r, _ = fit_pool(d, pool, c, xi=p["xi"], l2=p["l2"], window_days=p["window_days"], sot_mix=p["sot_mix"])
+        if r is not None:
+            out += _price_rows(r, todo[cut == c])
+    return out
+
+
+def dc_collection_aligned(gold: pd.DataFrame, start: str = "2012-07-01", workers: int = 4) -> pd.DataFrame:
+    """Dixon-Coles prices for every match from ``start``, each from the pool's fit on the finished matches before its
+    collection day (the weekly walk-forward of football.model anchors its blocks to the first match day instead, which
+    can let a Saturday result into a Sunday price opened on Friday)."""
+    pools = sorted(gold["country"].unique())
+    jobs = [(gold[gold["country"] == c], c, start) for c in pools]
+    if workers > 1:
+        import multiprocessing as mp
+        import os
+        from concurrent.futures import ProcessPoolExecutor
+        for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+            os.environ[k] = "1"
+        with ProcessPoolExecutor(workers, mp_context=mp.get_context("spawn")) as ex:
+            parts = list(ex.map(_dc_pool, jobs))
+    else:
+        parts = [_dc_pool(j) for j in jobs]
+    cols = ["match_id", "lam_h", "lam_a", "p_h", "p_d", "p_a", "p_o25"]
+    rows = [x for part in parts for x in part]
+    return pd.DataFrame(rows)[cols] if rows else pd.DataFrame(columns=cols)
 
 
 # ---------------------------------------------------------------------------
@@ -209,13 +253,17 @@ def windows(t: pd.DataFrame) -> pd.DataFrame:
         for name, n in WINDOWS.items():
             out[f"{c}_{name}"] = grp.transform(lambda s, n=n: s.rolling(n, min_periods=max(2, n // 2)).mean())
         out[f"{c}_ewm"] = grp.transform(lambda s: s.ewm(halflife=EWM_HALFLIFE, min_periods=3).mean())
-        sea = prev.groupby([t["team"], t["season"]])
-        out[f"{c}_season"] = sea.transform(lambda s: s.expanding(min_periods=3).mean())
+        # the season to date: shifted within the season, so last season's final match never enters
+        prev_season = t.groupby(["team", "season"])[c].shift(1)
+        out[f"{c}_season"] = prev_season.groupby([t["team"], t["season"]]).transform(
+            lambda s: s.expanding(min_periods=3).mean())
     out["n_prev"] = g.cumcount()
-    # day-lagged: a side's matches on one day all take the windows of its first match that day, so nothing of the day
-    # enters (league sides never play twice a day; the rule holds whatever the data says)
+    # lagged to the collection day: a side's matches in one collection window (Friday-Monday or Tuesday-Thursday) all
+    # take the windows of its first match there, so nothing after the early price was taken enters
     wcols = [c for c in out.columns if c not in ("match_id", "team", "venue", "date", "own_r")]
-    out[wcols] = out.groupby(["team", "date"])[wcols].transform("first")
+    out["_cut"] = collection_day(t["date"]).to_numpy()
+    out[wcols] = out.groupby(["team", "_cut"])[wcols].transform("first")
+    out = out.drop(columns="_cut")
     # the market's view of the side, moving: its pre-match rating now against five matches ago (no result enters)
     out["own_r_d5"] = t["own_r"] - g["own_r"].shift(5)
     return out
@@ -232,7 +280,8 @@ def match_features(mt: pd.DataFrame, ratings: pd.DataFrame, w: pd.DataFrame) -> 
         f[f"d_{c}"] = hw[c].reindex(m.index) - aw[c].reindex(m.index)
     f["r_h"], f["r_a"] = m["r_h"], m["r_a"]
     f["n_prev_min"] = np.minimum(hw["n_prev"].reindex(m.index), aw["n_prev"].reindex(m.index))
-    f["dis_open"] = np.log(m["lam_h"] / m["lam_a"]) - np.log(m["molam_h"] / m["molam_a"])
+    # from the probabilities directly (the implied-rate grid's error would otherwise enter both this and the move)
+    f["dis_open"] = np.log(m["p_h"] / m["p_a"]) - np.log(m["qo_h"] / m["qo_a"])
     return f.reset_index()
 
 

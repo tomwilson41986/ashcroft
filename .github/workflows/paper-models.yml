@@ -31,6 +31,7 @@ jobs:
     timeout-minutes: 1000
     steps:
       - name: Not on the live trader's runner
+        id: runner_guard
         env:
           PAPER_RUNNER_LABEL: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
           LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
@@ -129,17 +130,38 @@ jobs:
           # against the football book record above (reports/football_model.md s.5). It places nothing.
           python -m sources.api_football_lineups --collect --until 21:30 > "$RUNNER_TEMP/football_lineups.log" 2>&1 &
           FBL=$!
+          # the books at football-data's collection moment for the matches the two records above cannot reach then
+          # (reports/football_review_and_roadmap.md 2.5): on Fridays from 16:55 UK the markets of Sunday and Monday,
+          # on Tuesdays from 12:55 UK those of Wednesday and Thursday, for 50 minutes, tag football_coll_<C>. The
+          # unmodified betfair_recorder.py (--date with --for-minutes).
+          coll_record() {
+            NOW=$(date +%s); START=$(TZ=Europe/London date -d "today $1" +%s)
+            [ "$START" -gt "$NOW" ] && sleep $((START - NOW))
+            for O in $2; do
+              D=$(TZ=Europe/London date -d "+$O day" +%F)
+              for C in GB ES IT DE FR NL BE PT TR GR; do
+                python betfair_recorder.py --record --date "$D" --for-minutes 50 --event-type 1 \
+                  --market-types MATCH_ODDS,OVER_UNDER_25 --countries "$C" --tag "football_coll_$C" --every 600 \
+                  > "$RUNNER_TEMP/football_coll_${O}_$C.log" 2>&1 &
+              done
+            done
+            wait
+          }
+          DOW=$(TZ=Europe/London date +%u)
+          if [ "$DOW" = 5 ]; then coll_record 16:55 "2 3" & FBREC+=($!); fi
+          if [ "$DOW" = 2 ]; then coll_record 12:55 "1 2" & FBREC+=($!); fi
           wait "$GHT"; GC=$?; echo "greyhound paper trader exited $GC"
           tail -n 20 "$RUNNER_TEMP/greyhound_trader.log"
           wait "$FBT"; FC=$?; echo "football paper trader exited $FC"
           tail -n 20 "$RUNNER_TEMP/football_trader.log"
           for P in "${FBREC[@]}"; do wait "$P"; done
           echo "football records exited"; tail -n 2 "$RUNNER_TEMP"/football_*.log
-          wait "$FBL"; echo "football line-ups exited $?"; tail -n 3 "$RUNNER_TEMP/football_lineups.log"
+          wait "$FBL"; LC=$?; echo "football line-ups exited $LC"; tail -n 3 "$RUNNER_TEMP/football_lineups.log"
+          [ "$LC" = 0 ] || echo "::warning::the football line-ups collector exited $LC (its log above)"
           [ "$GC" = 0 ] && [ "$FC" = 0 ]
       - name: Football line-up tables
         # rebuilt whole from the raw polls (safe to rerun); a failure here costs no data
-        if: always()
+        if: ${{ !cancelled() && steps.runner_guard.outcome == 'success' }}
         continue-on-error: true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

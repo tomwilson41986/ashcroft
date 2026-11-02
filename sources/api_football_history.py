@@ -31,6 +31,8 @@ import json
 import logging
 from datetime import date, datetime, timezone
 
+import pandas as pd
+
 from sources.api_football_lineups import BATCH, PREFIX, http_fetch, main_league_ids
 from sources.common import Budget, Store, env, gunzip, gz
 
@@ -40,6 +42,7 @@ FIRST_SEASON = 2020
 RATE_TRIES, RATE_WAIT_S = 5, 61.0   # API-Football's per-minute limit (Pro: 300 a minute, its reply of 2 Nov 2026)
 QUOTA_FLOOR = 1500          # the same reserve as the nightly fixtures backfill: the day's line-up polls need it
 FINISHED = {"FT", "AET", "PEN"}
+REFETCH_DAYS = 14         # the current season's last fortnight is fetched again (late line-ups, events, statistics)
 DONE_KEY = f"{PREFIX}/history/done_ids.json"
 
 
@@ -122,6 +125,17 @@ def fetch(store: Store, max_minutes: float | None = None, first_season: int = FI
             return None
         return body
 
+    try:
+        _seasons(store, cur, first_season, leagues, call, done, out, today, lambda: n)
+    finally:
+        store.put(DONE_KEY, json.dumps(sorted(done)).encode())
+    out["held_now"] = len(done)
+    log.info("api_football_history: %s", out)
+    return out
+
+
+def _seasons(store, cur, first_season, leagues, call, done, out, today, n_now):
+    """The fetch's loop over seasons and divisions (``fetch`` saves the done ids whatever happens here)."""
     for season in range(cur, first_season - 1, -1):
         for lg in leagues:
             if out["stopped"]:
@@ -138,28 +152,30 @@ def fetch(store: Store, max_minutes: float | None = None, first_season: int = FI
                 store.put(f"{prefix}{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.json.gz",
                           _wrap("fixtures", params, listing))
                 out["season_lists"] += 1
+            recent = (pd.Timestamp(today) - pd.Timedelta(days=REFETCH_DAYS)).timestamp()
             todo = [f["fixture"]["id"] for f in listing.get("response") or []
                     if (f.get("fixture") or {}).get("status", {}).get("short") in FINISHED
-                    and f["fixture"]["id"] not in done]
+                    and (f["fixture"]["id"] not in done
+                         or (season == cur and (f["fixture"].get("timestamp") or 0) >= recent))]
             for i in range(0, len(todo), BATCH):
                 chunk = todo[i:i + BATCH]
                 params = {"ids": "-".join(str(x) for x in chunk)}
                 body = call("fixtures", params)
                 if body is None:
                     break
-                store.put(f"{PREFIX}/raw/history/{season}/{lg}/{datetime.now(timezone.utc):%Y%m%dT%H%M%S%f}Z_{n}"
+                store.put(f"{PREFIX}/raw/history/{season}/{lg}/{datetime.now(timezone.utc):%Y%m%dT%H%M%S%f}Z_{n_now()}"
                           f".json.gz", _wrap("fixtures", params, body))
+                # a match is done once it came with both line-ups and its events (API-Football fills some in late)
                 got = {(f.get("fixture") or {}).get("id") for f in body.get("response") or []}
-                done |= {x for x in chunk if x in got}
+                complete = {(f.get("fixture") or {}).get("id") for f in body.get("response") or []
+                            if len(f.get("lineups") or []) == 2 and f.get("events")}
+                done |= {x for x in chunk if x in complete}
                 out["matches_fetched"] += len(got & set(chunk))
+                out["incomplete"] = out.get("incomplete", 0) + len((got - complete) & set(chunk))
                 if out["requests"] % 10 == 0:
                     store.put(DONE_KEY, json.dumps(sorted(done)).encode())
         if out["stopped"]:
             break
-    store.put(DONE_KEY, json.dumps(sorted(done)).encode())
-    out["held_now"] = len(done)
-    log.info("api_football_history: %s", out)
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +258,7 @@ def build(store: Store) -> dict:
                 for p in t.get("players") or []:
                     g = ((p.get("statistics") or [{}])[0] or {}).get("games") or {}
                     stat_min[(p.get("player") or {}).get("id")] = (g.get("minutes"), g.get("rating"))
-            ev_min, u = minutes_from_events(lu, ev)
+            ev_min, u = minutes_from_events(lu, ev) if ev else ({}, 0)
             unresolved += u
             for j, t in enumerate(lu):
                 tid = (t.get("team") or {}).get("id")
@@ -256,7 +272,8 @@ def build(store: Store) -> dict:
                                         "apif_season": lg.get("season"), "side": side, "apif_team_id": tid,
                                         "role": role, "apif_player_id": pid, "player": q.get("name"),
                                         "pos": q.get("pos"), "minutes_stats": sm,
-                                        "minutes_events": ev_min.get(pid, 0) if pid is not None else None,
+                                        "minutes_events": (ev_min.get(pid, 0) if pid is not None else None) if ev
+                                        else None,
                                         "rating": _num(rating)})
             for e in ev:
                 events.append({"apif_fixture_id": fid, "minute": _minute(e), "type": e.get("type"),

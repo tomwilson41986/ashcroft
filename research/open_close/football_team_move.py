@@ -104,14 +104,34 @@ def quoted_back(r: pd.DataFrame, threshold: float) -> pd.DataFrame:
     return t
 
 
+def quoted_trades(r: pd.DataFrame, threshold: float) -> pd.DataFrame:
+    """Both sides at the recorded quotes (QA, 2 Nov 2026: a tick off the fair price can sit above the real back in a
+    wide book): a back fills at the recorded early back price, a lay a tick over it (the nearest a best lay can be);
+    the close takes the opposite side the same way (a lay a tick over the closing back, a back at it)."""
+    from .backtest import tick_over
+    t = hedged_trades(r, "pred", threshold)
+    if t.empty:
+        return t
+    rows = t["row"].to_numpy()
+    ob, cb = r["open_raw"].to_numpy(float)[rows], r["close_raw"].to_numpy(float)[rows]
+    back = t["side"].to_numpy() > 0
+    o = np.where(back, ob, [tick_over(x) for x in ob])
+    c = np.where(back, [tick_over(x) for x in cb], cb)
+    t["fill_open"], t["fill_close"] = o, c
+    t["profit"] = np.where(back, o / c - 1.0, 1.0 - o / c)
+    return t
+
+
 def sweep(r: pd.DataFrame, widths=None, n_boot: int = 2000) -> list[dict]:
     rows = r if widths is None else r[r["book_width"].isin(widths)]
     out = []
     for th in THRESHOLDS:
         sp, mid = hedged_trades(rows, "pred", th, spread=True), hedged_trades(rows, "pred", th)
         q = quoted_back(rows, th)
+        qt = quoted_trades(rows, th)
         out.append({"threshold": th, "spread": summarise(sp, n_boot=n_boot), "mid": summarise(mid, n_boot=0),
-                    "quoted_back": summarise(q, n_boot=0) if len(q) else {"bets": 0}})
+                    "quoted_back": summarise(q, n_boot=0) if len(q) else {"bets": 0},
+                    "quoted": summarise(qt, n_boot=n_boot) if len(qt) else {"bets": 0}})
     return out
 
 
@@ -121,7 +141,12 @@ def report(r: pd.DataFrame, threshold: float, widths: list[str], n_boot: int = 2
     clv = (np.where(sp["side"] > 0, sp["fill_open"] / sp["close_price"] - 1, 1 - sp["fill_open"] / sp["close_price"])
            if len(sp) else np.array([]))
     q = quoted_back(rows, threshold)
-    return {"rows": int(len(rows)), "spread": summarise(sp, n_boot=n_boot), "mid": summarise(
+    qt = quoted_trades(rows, threshold)
+    clv_q = (np.where(qt["side"] > 0, qt["fill_open"] / qt["close_price"] - 1, 1 - qt["fill_open"] / qt["close_price"])
+             if len(qt) else np.array([]))
+    return {"rows": int(len(rows)), "quoted": summarise(qt, n_boot=n_boot) if len(qt) else {"bets": 0},
+            "clv_mean_quoted": float(clv_q.mean()) if len(clv_q) else None,
+            "spread": summarise(sp, n_boot=n_boot), "mid": summarise(
         hedged_trades(rows, "pred", threshold), n_boot=n_boot), "clv_mean_spread": float(clv.mean()) if len(clv) else None,
         "quoted_back": summarise(q, n_boot=n_boot) if len(q) else {"bets": 0},
         "by_band": by_group(rows, "pred", threshold, "band", spread=True, n_boot=0).to_dict("index"),
@@ -175,7 +200,13 @@ def holdout(f: pd.DataFrame, prereg: str, n_boot: int = 2000) -> dict:
               "roi_lo90_above_0": (ss.get("roi_lo90") if ss.get("roi_lo90") == ss.get("roi_lo90") else -1) > 0,
               "clv_above_0": (so.get("clv_mean_spread") or -1) > 0}
         secondary.append({"rule": sec, "result": so, "gate": {"checks": sc, "passed": bool(all(sc.values()))}})
+    q = out["quoted"]
+    corrected = {"bets": q.get("bets", 0) >= gt["min_bets"],
+                 "roi_lo90_above_0": (q.get("roi_lo90") if q.get("roi_lo90") == q.get("roi_lo90") else -1) > 0,
+                 "clv_above_0": (out.get("clv_mean_quoted") or -1) > 0}
     return {"prereg": prereg, "prereg_sha256": digest, "rule": rule, "seasons": seasons,
+            "gate_at_quoted_prices": {"checks": corrected, "passed": bool(all(corrected.values())),
+                                      "note": "QA correction of the cost model (2 Nov 2026), the registered rule unchanged"},
             "fit": {s: {"rows": v["rows"], "seasons": v["seasons"]} for s, v in fits.items()},
             "rows": int(len(r)), "matches": int(r["match_id"].nunique()), "result": out,
             "gate": {"checks": checks, "passed": bool(all(checks.values()))}, "secondary": secondary,

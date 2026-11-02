@@ -87,15 +87,18 @@ def stints(hp: pd.DataFrame, he: pd.DataFrame, full: int = 90) -> pd.DataFrame:
         on = set(xi[fid])
         t0, gh, ga = 0, 0, 0
         cuts = []
+        last = full
         for e in g.itertuples(index=False):
-            m = min(int(e.minute) if e.minute == e.minute else 0, full)
+            # real minutes, stoppage time included (a cap at 90 lost goals scored after a late substitution)
+            m = int(e.minute) if e.minute == e.minute else 0
+            last = max(last, m)
             if e.type == "Goal" and "missed" not in str(e.detail).lower():
-                own = "own goal" in str(e.detail).lower()
+                # API-Football lists every goal, an own goal too, under the side it counts for (checked on 2 Nov 2026:
+                # crediting the listed side reproduces the final score in 562 of 562 matches with an own goal)
                 s = team_side.get((fid, e.apif_team_id))
                 if s is None:
                     continue
-                scorer_home = (s == "home") != own
-                gh, ga = gh + scorer_home, ga + (not scorer_home)
+                gh, ga = gh + (s == "home"), ga + (s != "home")
                 continue
             change = None
             if e.type == "subst":
@@ -119,7 +122,7 @@ def stints(hp: pd.DataFrame, he: pd.DataFrame, full: int = 90) -> pd.DataFrame:
             on.discard(change[0])
             if change[1] is not None:
                 on.add(change[1])
-        cuts.append((t0, full, frozenset(on), gh, ga))
+        cuts.append((t0, max(last, t0 + 1) if (gh or ga) and last <= t0 else last, frozenset(on), gh, ga))
         for a, b, pl, h, w in cuts:
             if b <= a:
                 continue
@@ -199,8 +202,11 @@ def monthly(m: pd.DataFrame, fit_fn, start: str, **kw) -> dict:
 
 def surprise(m: pd.DataFrame, st: pd.DataFrame, ratings: dict, name: str, n_prev: int = EXPECTED_FROM) -> pd.DataFrame:
     """Each match's confirmed and expected eleven ratings, home and away, under its month's fit, and the surprise."""
+    from football.team_features import collection_day
     s = st.merge(m[["apif_fixture_id", "date"]], on="apif_fixture_id")
-    s["month"] = s["date"].dt.strftime("%Y-%m")
+    # the fit of the month the match's early price was collected in (a fit made on the 1st holds the 30th's and
+    # 31st's closes, after a Friday-30th collection for a Sunday-1st match: QA, 2 Nov 2026)
+    s["month"] = collection_day(s["date"]).dt.strftime("%Y-%m").to_numpy()
     s["r"] = [ratings.get(mo, {}).get(p, 0.0) for mo, p in zip(s["month"], s["apif_player_id"])]
     xi_r = s.groupby(["apif_fixture_id", "side"])["r"].sum().unstack()
     # the expected eleven: each player's share of his side's starts in its previous n matches (earlier days only)
@@ -215,7 +221,7 @@ def surprise(m: pd.DataFrame, st: pd.DataFrame, ratings: dict, name: str, n_prev
         if prev["apif_fixture_id"].nunique() < 3:
             continue
         share = prev.groupby("apif_player_id").size() / prev["apif_fixture_id"].nunique()
-        mo = tm.date.strftime("%Y-%m")
+        mo = collection_day([tm.date]).iloc[0].strftime("%Y-%m")
         rr = ratings.get(mo, {})
         exp_rows.append({"apif_fixture_id": tm.apif_fixture_id, "apif_team_id": tm.apif_team_id,
                          "expected": float(sum(rr.get(p, 0.0) * w for p, w in share.items()))})
@@ -266,11 +272,16 @@ def build_all(gold: pd.DataFrame, feats: pd.DataFrame, hm: pd.DataFrame, hp: pd.
     st = starters(hp)
     mpm = monthly(m, lambda as_of: fit_mpm(m, st, as_of), RATINGS_FROM)
     sti = stints(hp, he).merge(m[["apif_fixture_id", "date"]], on="apif_fixture_id")
+    rec = sti.groupby("apif_fixture_id")[["goals_home", "goals_away"]].sum().join(
+        hm.set_index("apif_fixture_id")[["ft_home", "ft_away"]])
+    reconciled = float(((rec["goals_home"] == rec["ft_home"]) & (rec["goals_away"] == rec["ft_away"])).mean())
+    log.info("stint goals reconcile with the final score in %.2f%% of %d matches", 100 * reconciled, len(rec))
     gpm = monthly(m, lambda as_of: fit_gpm(sti, as_of), RATINGS_FROM)
     sm, sg = surprise(m, st, mpm, "mpm"), surprise(m, st, gpm, "gpm")
     out = feats.merge(m[["match_id", "apif_fixture_id"]], on="match_id").merge(sm, on="apif_fixture_id", how="left") \
         .merge(sg, on="apif_fixture_id", how="left")
     out.attrs["stints"] = int(len(sti))
+    out.attrs["stint_goals_reconciled"] = reconciled
     out.attrs["linked"] = int(len(linked))
     return out, mpm, gpm
 
@@ -330,6 +341,7 @@ def main(argv=None) -> int:
             .to_parquet(a.table_out, index=False)
     last = max(k for k, v in mpm.items() if v)
     res = {"history_matches": int(len(hm)), "linked": f.attrs.get("linked"), "stints": f.attrs.get("stints"),
+           "stint_goals_reconciled": f.attrs.get("stint_goals_reconciled"),
            "points_per_goal": points_per_goal(gold), "ratings_month_shown": last,
            "players_rated": {"mpm": len(mpm[last]), "gpm": len(gpm.get(last, {}))},
            "top_mpm": top_players(mpm, hp, last), "top_gpm": top_players(gpm, hp, last),

@@ -57,11 +57,11 @@ def test_stints_cut_at_substitutions_and_red_cards():
          "apif_player_id": 3, "apif_assist_id": 50},
         {"apif_fixture_id": 1, "minute": 70, "type": "Card", "detail": "Red Card", "apif_team_id": 20,
          "apif_player_id": 105, "apif_assist_id": None},
-        {"apif_fixture_id": 1, "minute": 80, "type": "Goal", "detail": "Own Goal", "apif_team_id": 10,
-         "apif_player_id": 4, "apif_assist_id": None}])
+        {"apif_fixture_id": 1, "minute": 80, "type": "Goal", "detail": "Own Goal", "apif_team_id": 20,
+         "apif_player_id": 4, "apif_assist_id": None}])     # a home player's own goal, listed under the away side
     s = pr.stints(hp, he).sort_values("start").reset_index(drop=True)
     assert list(zip(s["start"], s["end"])) == [(0, 60), (60, 70), (70, 90)]
-    assert list(zip(s["goals_home"], s["goals_away"])) == [(1, 0), (0, 0), (0, 1)]   # the own goal counts for the away
+    assert list(zip(s["goals_home"], s["goals_away"])) == [(1, 0), (0, 0), (0, 1)]   # listed under the away side, it counts for the away
     assert 3 in s.loc[0, "home"] and 3 not in s.loc[1, "home"] and 50 in s.loc[1, "home"]
     assert len(s.loc[2, "away"]) == 10 and 105 not in s.loc[2, "away"]
 

@@ -18,7 +18,7 @@ def probs(lh, la, k=12):
     return j[d > 0].sum(), j[d == 0].sum(), j[d < 0].sum(), j[t >= 3].sum()
 
 
-def synthetic(n_teams=12, seasons=(2013, 2014, 2015, 2016, 2017), seed=0, open_sd=0.05, model_sd=0.15):
+def synthetic(n_teams=12, seasons=(2013, 2014, 2015, 2016, 2017), seed=0, open_sd=0.05, model_sd=0.15, split=False):
     """A pool of sides with true attack and defence; the close prices the truth, the open a noisy copy, the model
     a noisier one. Double round robin each season, one round a week."""
     rng = np.random.default_rng(seed)
@@ -29,14 +29,15 @@ def synthetic(n_teams=12, seasons=(2013, 2014, 2015, 2016, 2017), seed=0, open_s
         pairs = [(i, j) for i in range(n_teams) for j in range(n_teams) if i != j]
         rng.shuffle(pairs)
         for r in range(0, len(pairs), n_teams // 2):
-            for i, j in pairs[r:r + n_teams // 2]:
+            for k, (i, j) in enumerate(pairs[r:r + n_teams // 2]):
+                mday = day + pd.Timedelta(days=1) if split and k % 2 else day      # half the round on Sunday
                 lh, la = np.exp(0.3 + 0.2 + att[i] - dfn[j]), np.exp(0.3 + att[j] - dfn[i])
                 ph, pd_, pa, po = probs(lh, la)
                 noisy = lambda p, sd: p * np.exp(rng.normal(0, sd))         # noqa: E731
                 oh, od, oa = noisy(ph, open_sd), noisy(pd_, open_sd), noisy(pa, open_sd)
                 mh, md, ma = noisy(ph, model_sd), noisy(pd_, model_sd), noisy(pa, model_sd)
                 z = mh + md + ma
-                rows.append({"match_id": f"m{len(rows)}", "status": "FINISHED", "match_date": day.strftime("%Y-%m-%d"),
+                rows.append({"match_id": f"m{len(rows)}", "status": "FINISHED", "match_date": mday.strftime("%Y-%m-%d"),
                              "season": s, "country": "ENG", "competition_id": "ENG1",
                              "home_team_id": teams[i], "away_team_id": teams[j],
                              "ft_home": rng.poisson(lh), "ft_away": rng.poisson(la),
@@ -109,3 +110,33 @@ def test_the_outcome_test_finds_a_feature_that_carries_the_truth():
     assert res["gain_vs_open_model"]["oracle"][1] > 0                  # the truth adds, its interval above zero
     lo, hi = res["gain_vs_open_model"]["noise"][1:]
     assert lo < 0.002 and hi > -0.002                                    # a meaningless column does not
+
+
+def test_a_saturday_rewrite_leaves_sunday_features_alone():
+    """The collection-day rule: Sunday's early price was taken on Friday, so Saturday's results and closes must not
+    reach any Sunday feature (the weekly blocks anchored to the first match day let them in: QA, 2 Nov 2026)."""
+    g, dc, _ = synthetic(seasons=(2013, 2014), split=True)
+    sundays = sorted(d for d in g["match_date"].unique() if pd.Timestamp(d).dayofweek == 6)
+    sun = sundays[-1]
+    sat = (pd.Timestamp(sun) - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    a, _ = tf.build(g, dc, start="2013-07-01")
+    g2 = g.copy()
+    on = g2["match_date"] == sat
+    g2.loc[on, ["ft_home", "ft_away"]] = g2.loc[on, ["ft_away", "ft_home"]].to_numpy() + 3
+    g2.loc[on, ["close_h", "close_a"]] = g2.loc[on, ["close_a", "close_h"]].to_numpy()
+    b, _ = tf.build(g2, dc, start="2013-07-01")
+    feats = [c for c in a.columns if c.startswith("d_") or c in ("r_h", "r_a", "dis_open", "n_prev_min")]
+    x = a[a["match_date"] == sun].set_index("match_id")[feats].sort_index()
+    y = b[b["match_date"] == sun].set_index("match_id")[feats].sort_index()
+    pd.testing.assert_frame_equal(x, y)
+
+
+def test_the_season_window_starts_afresh():
+    t = pd.DataFrame({"team": "x", "season": [2013] * 4 + [2014] * 4, "match_id": [f"m{i}" for i in range(8)],
+                      "venue": "H", "date": pd.date_range("2013-08-02", periods=8, freq="7D"),
+                      "own_r": 0.0, "pts": [0.0] * 4 + [3.0] * 4})
+    for c in tf.MEASURES:
+        if c != "pts":
+            t[c] = 0.0
+    w = tf.windows(t)
+    assert w["pts_season"].iloc[4:7].isna().all() and w["pts_season"].iloc[7] == 3.0

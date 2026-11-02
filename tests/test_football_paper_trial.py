@@ -229,3 +229,29 @@ def test_score_trial_end_to_end(tmp_path):
         expect = x.fill_open / x.fill_close - 1 if x.side > 0 else 1 - x.fill_open / x.fill_close
         assert x.profit == pytest.approx(expect)
         assert x.early_utc.startswith("2025-11-07T17:05")
+
+
+def test_womens_and_youth_markets_never_map_to_the_senior_fixture():
+    fixtures = pd.DataFrame({"match_id": ["a"], "HomeTeam": ["Arsenal"], "AwayTeam": ["Chelsea"], "country": ["ENG"],
+                             "kickoff_utc": [pd.Timestamp("2026-11-07 15:00", tz="UTC")]})
+    rows = []
+    for mid, ev, start in (("1.9", "Arsenal Women v Chelsea Women", "2026-11-07T12:30:00Z"),
+                           ("1.8", "Arsenal U21 v Chelsea U21", "2026-11-07T15:00:00Z"),
+                           ("1.1", "Arsenal v Chelsea", "2026-11-07T15:00:00Z"),
+                           ("1.7", "Arsenal v Chelsea", "2026-11-08T20:00:00Z")):          # a day out: not this one
+        for sid, rn in ((1, "Over 2.5 Goals"), (2, "Under 2.5 Goals")):
+            rows.append({"market_id": mid, "market_type": "OVER_UNDER_25", "event_name": ev, "country": "GB",
+                         "selection_id": sid, "runner_name": rn, "market_start_utc": start})
+    m = pt.map_markets(pd.DataFrame(rows), fixtures)
+    assert set(m["market_id"]) == {"1.1"} and len(m) == 2
+
+
+def test_the_close_is_after_the_fill_and_near_the_off():
+    b = pt.clean_books(pd.DataFrame([
+        book("2026-11-06T21:00:00Z", 1, 1.80, 1.82),            # the evening before: never a close
+        book("2026-11-07T14:50:00Z", 1, 1.78, 1.80)]))
+    early = pd.Timestamp("2026-11-06 17:05", tz="UTC")
+    c = pt.close_book(b, after=early, start="2026-11-07T15:00:00Z")
+    assert c.loc["1", "back1"] == 1.78
+    c2 = pt.close_book(b[b["polled"] < pd.Timestamp("2026-11-07", tz="UTC")], after=early, start="2026-11-07T15:00:00Z")
+    assert c2.empty

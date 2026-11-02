@@ -112,3 +112,34 @@ def test_a_rate_limit_reply_waits_and_tries_again(tmp_path):
     out = h.fetch(Store(root=tmp_path), first_season=2025, fetcher=limited, today=date(2025, 11, 2), leagues={39},
                   sleep=slept.append)
     assert out["stopped"] is None and out["matches_fetched"] == 3 and out["rate_limited"] == 1 and slept == [61.0]
+
+
+def test_an_incomplete_match_is_fetched_again(tmp_path):
+    class NoLineups(Fake):
+        def __call__(self, path, params):
+            body, q = super().__call__(path, params)
+            if "ids" in params:
+                for f in body["response"]:
+                    f["lineups"] = []
+            return body, q
+    st = Store(root=tmp_path)
+    out = h.fetch(st, first_season=2025, fetcher=NoLineups(n=3), today=date(2025, 11, 2), leagues={39})
+    assert out["incomplete"] == 3 and out["held_now"] == 0
+    again = Fake(n=3)
+    out2 = h.fetch(st, first_season=2025, fetcher=again, today=date(2025, 11, 2), leagues={39})
+    assert out2["matches_fetched"] == 3 and out2["held_now"] == 3
+
+
+def test_the_current_seasons_last_fortnight_is_checked_again(tmp_path):
+    class Recent(Fake):
+        def __call__(self, path, params):
+            body, q = super().__call__(path, params)
+            if "league" in params:
+                for f in body["response"]:
+                    f["fixture"]["timestamp"] = int(pd.Timestamp("2025-10-30", tz="UTC").timestamp())
+            return body, q
+    st = Store(root=tmp_path)
+    h.fetch(st, first_season=2025, fetcher=Recent(n=3), today=date(2025, 11, 2), leagues={39})
+    again = Recent(n=3)
+    out = h.fetch(st, first_season=2025, fetcher=again, today=date(2025, 11, 2), leagues={39})
+    assert out["matches_fetched"] == 3                     # held, but within 14 days: fetched again

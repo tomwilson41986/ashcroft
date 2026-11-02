@@ -69,6 +69,7 @@ COLLECTION_TIME = {4: "17:00", 1: "13:00"}
 RECORDER_FROM = "2026-11-02"
 NOTIONAL_GBP = 10.0
 TOLERANCE_MIN = 60.0
+CLOSE_NEAR_MIN = 30.0      # a close must be recorded within this many minutes of the market's start
 CAP_DAYS = 365
 #: each market type's selections: football-data's leg -> how the recorder's runner is told apart
 SELECTIONS = {"MATCH_ODDS": ("H", "D", "A"), "OVER_UNDER_25": ("Over 2.5", "Under 2.5")}
@@ -159,7 +160,22 @@ def dc_probs(gold: pd.DataFrame, rows: pd.DataFrame, as_of: str, params: dict | 
     return pd.DataFrame(out)[cols] if out else pd.DataFrame(columns=cols)
 
 
-def trial_rows(fx_ids: pd.DataFrame, gold: pd.DataFrame, dc: pd.DataFrame | None, market_type: str) -> pd.DataFrame:
+def season_stage_at(gold: pd.DataFrame, d: pd.DataFrame, as_of: str) -> np.ndarray:
+    """The share of a competition-season played before ``as_of``, over the competition's previous season's match
+    count: what was known at the decision (gold's count of the current season grows as fixtures are published, so
+    the training panel's whole-season denominator would otherwise move with the scoring date)."""
+    g = gold[["competition_id", "season", "match_date", "status"]]
+    played = g[g["match_date"] < as_of].groupby(["competition_id", "season"]).size()
+    full = g[g["status"] == "FINISHED"].groupby(["competition_id", "season"]).size()
+    out = []
+    for c, s in zip(d["competition_id"], d["season"]):
+        prev = full.get((c, s - 1)) if s == s else None
+        out.append(float(played.get((c, s), 0)) / prev if prev else np.nan)
+    return np.asarray(out, float)
+
+
+def trial_rows(fx_ids: pd.DataFrame, gold: pd.DataFrame, dc: pd.DataFrame | None, market_type: str,
+               as_of: str | None = None) -> pd.DataFrame:
     """The registered model's input rows for one market type: football-data's Betfair early price (BFE*) as the
     open, the same moment's bookmakers' books, the Dixon-Coles chance; no close (it is not known yet). The open-side
     preparation is the panel's (features.prepare with normalise_book), the close left out."""
@@ -191,6 +207,8 @@ def trial_rows(fx_ids: pd.DataFrame, gold: pd.DataFrame, dc: pd.DataFrame | None
     if d.empty:
         return d
     d = fx.add_exchange_features(d, fx.book_frame(ids), gold, dc)
+    if as_of is not None:
+        d["season_stage"] = season_stage_at(gold, d, as_of)
     oo = (1.0 / d["open_price"]).groupby(d["market_id"]).transform("sum")
     d["overround_open_raw"] = oo
     d["open_price"] = d["open_price"] * oo
@@ -213,7 +231,7 @@ def recorded_day(read_day: ReadDay, day: date, stem: str) -> pd.DataFrame | None
     """Every football tag's file of one stem (books or markets) for the day's matches, as one frame."""
     parts = []
     for c in COUNTRIES:
-        for tag in (f"football_{c}", f"football_eve_{c}"):
+        for tag in (f"football_{c}", f"football_eve_{c}", f"football_coll_{c}"):
             f = read_day(day, f"{stem}_{tag}.csv")
             if f is not None and len(f):
                 parts.append(f.assign(_tag=tag))
@@ -250,9 +268,15 @@ def map_markets(markets: pd.DataFrame, fixtures: pd.DataFrame, aliases=None) -> 
     cols = ["market_id", "selection_id", "market_type", "match_id", "leg", "event_name", "market_start_utc"]
     if markets is None or markets.empty or fixtures.empty:
         return pd.DataFrame(columns=cols)
+    from football.live import EXCLUDE
     m = markets[markets["market_type"].isin(list(SELECTIONS))].copy()
     m["market_id"] = m["market_id"].astype(str)
     m["selection_id"] = _sid(m["selection_id"])
+    # women's, youth and reserve sides pair with the senior fixture by name (QA, 2 Nov 2026): never theirs
+    name = m["event_name"].astype(str).str.lower()
+    m = m[~name.apply(lambda n: any(x in n for x in EXCLUDE))]
+    ko = (pd.to_datetime(fixtures.set_index("match_id")["kickoff_utc"], utc=True, errors="coerce")
+          if "kickoff_utc" in fixtures.columns else None)
     out = []
     for mid, g in m.groupby("market_id", sort=False):
         first = g.iloc[0]
@@ -268,13 +292,20 @@ def map_markets(markets: pd.DataFrame, fixtures: pd.DataFrame, aliases=None) -> 
                 best, score = fl[i][0], sc
         if best is None:
             continue
+        start = pd.to_datetime(first.get("market_start_utc"), utc=True, errors="coerce")
+        if ko is not None and pd.notna(ko.get(best)) and pd.notna(start) and abs(start - ko[best]) > pd.Timedelta(hours=3):
+            continue                                       # not this fixture's kick-off
         for r in g.drop_duplicates("selection_id").itertuples(index=False):
             leg = selection_key(first["market_type"], r.runner_name, teams[0], teams[1])
             if leg is not None:
                 out.append({"market_id": mid, "selection_id": r.selection_id, "market_type": first["market_type"],
                             "match_id": best, "leg": leg, "event_name": first["event_name"],
                             "market_start_utc": first.get("market_start_utc")})
-    return pd.DataFrame(out, columns=cols)
+    res = pd.DataFrame(out, columns=cols)
+    if len(res):                                           # one market a match and type: the first catalogued
+        keep = res.drop_duplicates(["match_id", "market_type"])[["match_id", "market_type", "market_id"]]
+        res = res.merge(keep, on=["match_id", "market_type", "market_id"])
+    return res
 
 
 def _sid(s: pd.Series) -> pd.Series:
@@ -306,13 +337,19 @@ def early_book(b: pd.DataFrame, selections: list[str], moment: pd.Timestamp, tol
     return None, None
 
 
-def close_book(b: pd.DataFrame) -> pd.DataFrame:
+def close_book(b: pd.DataFrame, after=None, start=None, near_min: float = CLOSE_NEAR_MIN) -> pd.DataFrame:
     """Each selection's last recorded two-sided book (best back and best lay) while open and before the market
-    first shows in play."""
+    first shows in play; only books after the early fill (``after``) and within ``near_min`` minutes of the market's
+    start (``start``), so a missing day's record never turns an evening-before book into a close."""
     first_inplay = b.loc[b["inplay"], "polled"].min()
     pre = b[(b["status"] == "OPEN") & ~b["inplay"] & b["back1"].gt(1.0) & b["lay1"].gt(1.0)]
     if pd.notna(first_inplay):
         pre = pre[pre["polled"] < first_inplay]
+    if after is not None:
+        pre = pre[pre["polled"] > pd.Timestamp(after)]
+    st = pd.to_datetime(start, utc=True, errors="coerce") if start is not None else pd.NaT
+    if pd.notna(st):
+        pre = pre[pre["polled"] >= st - pd.Timedelta(minutes=near_min)]
     return pre.groupby("selection_id").tail(1).set_index("selection_id")
 
 
@@ -437,11 +474,14 @@ class Trial:
     dc_fn: Callable | None = None
     _fits: dict = field(default_factory=dict)
 
-    def model_for(self, market_type: str, month: str, model_name: str):
-        """The registered model fitted on the panel's months before ``month`` (cached a market and month)."""
-        key = (market_type, month, model_name)
+    def model_for(self, market_type: str, month: str, model_name: str, moment=None):
+        """The registered model fitted on the panel's months before ``month`` (the holdout's monthly refit), and of
+        those only the matches kicked off before the decision ``moment`` (no close after the early price enters)."""
+        key = (market_type, month, model_name, str(moment))
         if key not in self._fits:
             train = self.prep[(self.prep["market_type"] == market_type) & (self.prep["month"] < month)]
+            if moment is not None:
+                train = train[pd.to_datetime(train["off_time_utc"], utc=True) < pd.Timestamp(moment)]
             if train["month"].nunique() < fx.MIN_TRAIN_MONTHS:
                 self._fits[key] = (None, None)
             else:
@@ -481,10 +521,10 @@ def signals(t: Trial, market_types: list[str], model_name: str, threshold: float
         dc = (t.dc_fn or dc_probs)(t.gold, rows_g, coll.isoformat())
         _, moment = collection_of(days[0])
         for mt in market_types:
-            r = trial_rows(ids, t.gold, dc, mt)
+            r = trial_rows(ids, t.gold, dc, mt, as_of=coll.isoformat())
             funnel[f"{mt}:markets_with_bfe_book"] += int(r["market_id"].nunique()) if len(r) else 0
             for month, part in (r.groupby("month") if len(r) else []):
-                mod, fit_month = t.model_for(mt, month, model_name)
+                mod, fit_month = t.model_for(mt, month, model_name, moment)
                 if mod is None:
                     funnel[f"{mt}:markets_without_a_fit"] += int(part["market_id"].nunique())
                     continue
@@ -514,6 +554,7 @@ def trade_signals(t: Trial, sig: pd.DataFrame, widths: list[str]) -> tuple[pd.Da
         fix["HomeTeam"] = fix["match_id"].map(meta["home_team"]).astype(str)
         fix["AwayTeam"] = fix["match_id"].map(meta["away_team"]).astype(str)
         fix["country"] = fix["match_id"].map(meta["country"]).astype(str)
+        fix["kickoff_utc"] = fix["match_id"].map(meta["kickoff_utc"])
         mp = map_markets(markets, fix, t.aliases) if markets is not None else map_markets(None, fix)
         bk = clean_books(books) if books is not None and len(books) else None
         for (mid, mt), sel in part.groupby(["event_id", "market_type"]):
@@ -539,7 +580,7 @@ def trade_signals(t: Trial, sig: pd.DataFrame, widths: list[str]) -> tuple[pd.Da
                 continue
             over = float((1.0 / early["back1"]).sum())
             wl = width_label(over)
-            close = close_book(b)
+            close = close_book(b, after=t_early, start=legs["market_start_utc"].iloc[0])
             for r in todo.itertuples(index=False):
                 sid = leg_to_sel[r.selection_id]
                 row = {**base, "selection": r.selection_id, "side": int(r.side), "yhat": float(r.yhat),

@@ -158,3 +158,23 @@ def test_no_key_collects_nothing(monkeypatch, capsys):
     monkeypatch.delenv("API_FOOTBALL_KEY", raising=False)
     assert al.main(["--collect"]) == 0
     assert "no API_FOOTBALL_KEY" in capsys.readouterr().out
+
+
+def test_a_rate_limit_reply_does_not_end_the_day(tmp_path):
+    clock = Clock(KO - timedelta(minutes=70))
+    api = Api(clock)
+    c = collector(tmp_path, clock, api)
+    c.refresh_fixtures()
+    real = api.__call__
+    state = {"n": 0}
+
+    def limited(path, params):
+        state["n"] += 1
+        if state["n"] == 1:
+            return {"errors": {"rateLimit": "Too many requests."}, "response": []}, 7000
+        return real(path, params)
+    c.fetch = limited
+    c.poll(c.due())                                             # the limited reply: nothing seen, not stopped
+    assert c.stopped is None and c.rate_limited == 1
+    clock.t = KO - timedelta(minutes=58)
+    assert c.poll(c.due()) == 3                                 # and the next poll works
