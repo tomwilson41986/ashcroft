@@ -36,13 +36,13 @@ https://github.com/tomwilson41986/ashcroft/actions/runs/41461018554), at `s3://a
 
 - 5,154 archive files (20 Sep 2012 to 1 Nov 2026; 18 empty, 0 unreadable), 4,119,258 rows in, 2,326,223 out:
   1,792,381 harness, 460 duplicates, 116 with no meeting name, 78 New Zealand dropped; rows in = out + dropped.
-- 237,943 markets, 18 Sep 2012 to 31 Oct 2026, about 16,300-17,500 races a year from 2013; 237,446 with one winner,
+- 237,943 markets, 18 Sep 2012 to 31 Oct 2026, 16,263-17,517 races a year in 2013-2025; 237,446 with one winner,
   103 dead heats, 394 with none; 308 runners without a BSP, 696 without a result; 180 without a race number or
   distance.
 - Against Betfair's ANZ files, 2020 to Oct 2026: 1,130,747 runners matched (99.87% of ours found there, 99.99% of
   theirs found here); BSP, result, race number, distance, meeting date and track agree on 100%.
 - Betfair's short meeting names ('AUS / Flem') mapped to full names from the ANZ files: 178 learned, each at 99% or
-  more agreement; 12,180 rows (0.5%) keep a short name, courses not raced since 2019 (Mdra 4,069, Stcr 3,089, ...).
+  more agreement; 12,180 rows (0.5%) keep a short name, short names the ANZ files (2020 on) never carry (Mdra 4,069, Stcr 3,089, ...).
 - `off_uk` is UK local time: the ANZ clock runs 9, 10 or 11 hours ahead of it, with the two countries' clock changes.
 
 Waiting on the owner for stage 0: the Historic Data plan, Punting Form's consent and key, the `au-night` runner.
