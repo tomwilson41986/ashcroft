@@ -580,7 +580,7 @@ out of sample. Then the trade-out study three times on the same days and books (
 |---|---|---|---|
 | 0.45140 | 0.44498 | 0.44458 | 0.42612 |
 
-Both new models beat the base by about 0.0065, a quarter of its gap to the SP; both are still 0.018 behind it. On
+Both new models beat the base by about 0.0065, a quarter of its gap to the SP; both are still 0.018-0.019 behind it. On
 the run's own SP comparison (GBGB's SP, 19,038 runners) the full win model's blend weight beside the SP is -0.172:
 on these four weeks it adds nothing to the SP. The log-BSP model's predicted SP misses the BSP by 0.456 in log terms
 (RMSE; 0.754 knowing only each race's average), a median 27.0%; the best back 1 minute out misses it by 11.6%
