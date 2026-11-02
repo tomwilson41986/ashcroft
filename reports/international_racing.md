@@ -282,7 +282,7 @@ France and South Africa sit inside the UK trading day; the USA, Australia and Ne
 
 ## 6. The first concrete steps (Australia)
 
-1. **The market-only scan on the archive (a research query, no purchase).** Load `auswin` 2018-2026 from the S3
+1. **Done 2 Nov 2026: `reports/au_nz_market_scan.md`** (the archive holds AU from Sep 2012, NZ only in Betfair's ANZ files; no market-only edge; the price files' average prices unusable for AU; the early price is the gate). **The market-only scan on the archive (a research query, no purchase).** Load `auswin` 2018-2026 from the S3
    archive into its own table (the `betfair_prices.py` changes in 3.3) and repeat section 1.2 on it: the pre-play
    price to BSP by band and year, BSP returns, money by track and day, and the races a day split into thoroughbred
    and harness (the 81 against 47 question). The ANZ files cross-check it from 2020.
