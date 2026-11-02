@@ -62,14 +62,19 @@ def prepare(f: pd.DataFrame) -> pd.DataFrame:
 class Stage2:
     """The softmax of the outcome test. ``use_model``: the Dixon-Coles term; ``feats``: the family's columns."""
 
-    def __init__(self, feats: list[str] | None = None, use_model: bool = True):
-        self.feats, self.use_model = list(feats or []), use_model
+    def __init__(self, feats: list[str] | None = None, use_model: bool = True, clip: float | None = None,
+                 l2: float = 1e-4):
+        self.feats, self.use_model, self.clip, self.l2 = list(feats or []), use_model, clip, l2
 
     def _x(self, d: pd.DataFrame) -> np.ndarray:
         if not self.feats:
             return np.zeros((len(d), 0))
         z = (d[self.feats].to_numpy(float) - self.mu) / self.sd
-        return np.nan_to_num(z, nan=0.0)
+        z = np.nan_to_num(z, nan=0.0)
+        if self.clip is not None:                          # a near-constant training column must not explode later
+            z = np.clip(z, -self.clip, self.clip)
+            z[:, self.dead] = 0.0
+        return z
 
     def _probs(self, theta, lq, lp, z):
         a, b = theta[0], theta[1] if self.use_model else 0.0
@@ -85,6 +90,7 @@ class Stage2:
         if self.feats:
             v = d[self.feats].to_numpy(float)
             self.mu, self.sd = np.nanmean(v, axis=0), np.nanstd(v, axis=0)
+            self.dead = (np.mean(np.isfinite(v), axis=0) < 0.5) | ~np.isfinite(self.sd) | (self.sd == 0)
             self.sd[~np.isfinite(self.sd) | (self.sd == 0)] = 1.0
             self.mu[~np.isfinite(self.mu)] = 0.0
         lq, lp = d[["lq_h", "lq_d", "lq_a"]].to_numpy(), d[["lp_h", "lp_d", "lp_a"]].to_numpy()
@@ -94,10 +100,10 @@ class Stage2:
 
         def nll(th):
             p = self._probs(th, lq, lp, z)
-            f = -np.mean(np.log(np.clip(p[np.arange(len(y)), y], 1e-12, None))) + 1e-4 * np.sum(th[4:] ** 2)
+            f = -np.mean(np.log(np.clip(p[np.arange(len(y)), y], 1e-12, None))) + self.l2 * np.sum(th[4:] ** 2)
             r = (p - Y) / len(y)                                   # d nll / d utility
             g = np.r_[np.sum(r * lq), np.sum(r * lp) if self.use_model else 0.0, r[:, 0].sum(), r[:, 2].sum(),
-                      z.T @ (r[:, 0] - r[:, 2]) + 2e-4 * th[4:]]
+                      z.T @ (r[:, 0] - r[:, 2]) + 2 * self.l2 * th[4:]]
             return f, g
         th0 = np.r_[1.0, 0.0, 0.0, 0.0, np.zeros(z.shape[1])]
         self.theta = minimize(nll, th0, jac=True, method="L-BFGS-B").x
@@ -130,7 +136,8 @@ def boot_gain(base_ll: np.ndarray, arm_ll: np.ndarray, day: np.ndarray, n: int =
 
 
 def outcome_test(d: pd.DataFrame, families: dict = FAMILIES, scored: str = "dev", train_from: int = TRAIN_FROM,
-                 dev_from: int = DEV_FROM, dev_to: int = DEV_TO, holdout_from: int = HOLDOUT_FROM) -> dict:
+                 dev_from: int = DEV_FROM, dev_to: int = DEV_TO, holdout_from: int = HOLDOUT_FROM,
+                 clip: float | None = None, l2: float = 1e-4) -> dict:
     """Every arm's log-loss on the scored seasons (dev: walk-forward; holdout: once), gains against open + model."""
     if scored == "dev":
         plan = [(s, d[(d["season"] >= train_from) & (d["season"] < s)], d[d["season"] == s])
@@ -138,7 +145,7 @@ def outcome_test(d: pd.DataFrame, families: dict = FAMILIES, scored: str = "dev"
     else:
         plan = [("holdout", d[(d["season"] >= train_from) & (d["season"] <= dev_to)], d[d["season"] >= holdout_from])]
     arms = {"open": Stage2(use_model=False), "open+model": Stage2()}
-    arms.update({k: Stage2(v) for k, v in families.items()})
+    arms.update({k: Stage2(v, clip=clip, l2=l2) for k, v in families.items()})
     lls = {k: [] for k in arms}
     test_rows = []
     for _s, tr, te in plan:
@@ -147,7 +154,7 @@ def outcome_test(d: pd.DataFrame, families: dict = FAMILIES, scored: str = "dev"
         log.info("outcome test: scoring %s (%d rows) from %d training rows", _s, len(te), len(tr))
         test_rows.append(te[["date"]])
         for k, arm in arms.items():
-            mod = type(arm)(arm.feats, arm.use_model).fit(tr)
+            mod = type(arm)(arm.feats, arm.use_model, arm.clip, arm.l2).fit(tr)
             lls[k].append(_ll(mod.predict(te), te["y"].to_numpy()))
     if not test_rows:
         return {"rows": 0, "log_loss": {}, "gain_vs_open_model": {}, "gain_vs_open": {}}

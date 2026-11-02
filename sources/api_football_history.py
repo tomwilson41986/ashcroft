@@ -231,9 +231,45 @@ def _num(x) -> float | None:
     return v if v == v else None
 
 
+#: API-Football's team statistics (``fixtures?ids=`` ``statistics``) -> column names of history_stats
+STAT_COLUMNS = {"Shots on Goal": "shots_on", "Shots off Goal": "shots_off", "Total Shots": "shots",
+                "Blocked Shots": "shots_blocked", "Shots insidebox": "shots_inside", "Shots outsidebox": "shots_outside",
+                "Fouls": "fouls", "Corner Kicks": "corners", "Offsides": "offsides", "Ball Possession": "possession",
+                "Yellow Cards": "yellows", "Red Cards": "reds", "Goalkeeper Saves": "saves", "Total passes": "passes",
+                "Passes accurate": "passes_accurate", "Passes %": "pass_pct", "expected_goals": "xg",
+                "goals_prevented": "goals_prevented"}
+
+
+def stat_rows(f: dict) -> list[dict]:
+    """One row a side of a match: its team statistics as numbers (``55%`` -> 55; a blank -> None) and, from the
+    events, its penalties scored and missed, own goals conceded and red cards (for cleaning xG)."""
+    fx, tm = f.get("fixture") or {}, f.get("teams") or {}
+    home_id = (tm.get("home") or {}).get("id")
+    ev = f.get("events") or []
+    out = []
+    for t in f.get("statistics") or []:
+        tid = (t.get("team") or {}).get("id")
+        row = {"apif_fixture_id": fx.get("id"), "apif_team_id": tid,
+               "side": "home" if tid == home_id else "away"}
+        for s in t.get("statistics") or []:
+            col = STAT_COLUMNS.get(s.get("type"))
+            if col:
+                v = s.get("value")
+                row[col] = _num(str(v).rstrip("%")) if v not in (None, "") else None
+        mine = [e for e in ev if (e.get("team") or {}).get("id") == tid]
+        detail = [str(e.get("detail", "")).lower() for e in mine]
+        row["pens_scored"] = sum(1 for e, d in zip(mine, detail) if e.get("type") == "Goal" and d == "penalty")
+        row["pens_missed"] = sum(1 for e, d in zip(mine, detail) if e.get("type") == "Goal" and "missed" in d)
+        row["own_goals_for"] = sum(1 for e, d in zip(mine, detail) if e.get("type") == "Goal" and "own goal" in d)
+        row["red_cards"] = sum(1 for e, d in zip(mine, detail) if e.get("type") == "Card"
+                               and ("red" in d or "second yellow" in d))
+        out.append(row)
+    return out
+
+
 def build(store: Store) -> dict:
     import pandas as pd
-    matches, players, events = [], [], []
+    matches, players, events, stats = [], [], [], []
     unresolved = 0
     for k in sorted(store.listing(f"{PREFIX}/raw/history/")):
         if not k.endswith(".json.gz"):
@@ -245,6 +281,7 @@ def build(store: Store) -> dict:
             sc = (f.get("score") or {}).get("fulltime") or {}
             home_id = (tm.get("home") or {}).get("id")
             lu, ev, pl = f.get("lineups") or [], f.get("events") or [], f.get("players") or []
+            stats += stat_rows(f)
             matches.append({"apif_fixture_id": fid, "apif_league_id": lg.get("id"), "apif_season": lg.get("season"),
                             "kickoff_utc": pd.Timestamp(fx["timestamp"], unit="s", tz="UTC") if fx.get("timestamp")
                             else pd.NaT, "status_short": (fx.get("status") or {}).get("short"),
@@ -303,6 +340,12 @@ def build(store: Store) -> dict:
                     "substitutions_unresolved": unresolved})
     if len(e):
         store.put_parquet(f"{PREFIX}/history_events.parquet", e)
+    st = pd.DataFrame(stats)
+    if len(st):
+        st = st.drop_duplicates(["apif_fixture_id", "side"], keep="last")
+        store.put_parquet(f"{PREFIX}/history_stats.parquet", st)
+        rep.update({"stat_rows": int(len(st)), "stat_rows_with_xg": int(st["xg"].notna().sum()) if "xg" in st else 0,
+                    "stat_rows_with_shots": int(st["shots"].notna().sum()) if "shots" in st else 0})
         rep["event_rows"] = int(len(e))
     log.info("api_football_history build: %s", rep)
     return rep

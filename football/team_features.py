@@ -243,11 +243,12 @@ def team_rows(mt: pd.DataFrame, ratings: pd.DataFrame) -> pd.DataFrame:
     return t.sort_values(["team", "date", "match_id"]).reset_index(drop=True)
 
 
-def windows(t: pd.DataFrame) -> pd.DataFrame:
+def windows(t: pd.DataFrame, measures: list[str] | None = None) -> pd.DataFrame:
     """Each side's windows over its earlier matches only (shifted by one: a match never sees itself)."""
+    measures = MEASURES if measures is None else measures
     g = t.groupby("team", sort=False)
     out = t[["match_id", "team", "venue", "date", "own_r"]].copy()
-    for c in MEASURES:
+    for c in measures:
         prev = g[c].shift(1)
         grp = prev.groupby(t["team"])
         for name, n in WINDOWS.items():
