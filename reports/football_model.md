@@ -21,7 +21,7 @@ match priced only from the matches before it.
 | DQ | `football/dq/latest.json` | Duplicates, impossible scores, season match counts, overround, Pinnacle after 23/07/2025, freshness, scores against openfootball, API-Football and Betfair settlement |
 | Model | `football/ratings.py`, `football/model.py` | Pooled Dixon-Coles, weekly walk-forward, stage-2 pooling with the open, value rules scored by CLV |
 | Trader | `football/live.py`, `football/live_config.json` | Betfair MATCH_ODDS / OVER_UNDER_25; paper unless `FOOTBALL_LIVE=yes`; its own pre-play close for CLV; settles from gold |
-| Jobs | `football-model.yml`, `football-trade.yml`, `live-trade.yml` | Daily gold, fit and settle on GitHub's runners; the paper trader beside the horse session on the UK runner |
+| Jobs | `football-model.yml`, `paper-models.yml` | Daily gold, fit and settle on GitHub's runners; the paper trader in its own job on its own runner (from 2 Nov 2026; until then beside the horse session in `live-trade.yml`) |
 
 Departures from the design brief, deliberately:
 
@@ -136,8 +136,8 @@ on 1X2). No league is a candidate.
 
 ## 4. The trader and its switch
 
-`football/live.py --trade` runs beside the horse session on the UK runner (`live-trade.yml`, to 21:30 UK), or on its
-own by hand (`football-trade.yml`):
+`football/live.py --trade` runs on paper in its own job (`paper-models.yml`, to 21:30 UK, its own runner; from 2 Nov 2026,
+before which it ran beside the horse session in `live-trade.yml` or by hand in the retired `football-trade.yml`):
 
 - It reads Betfair's MATCH_ODDS and OVER_UNDER_25 markets of the next 14 hours in GB, DE, IT, ES, FR, NL, BE, PT, TR
   and GR.
