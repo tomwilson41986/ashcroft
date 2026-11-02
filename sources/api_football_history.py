@@ -340,12 +340,12 @@ def build(store: Store) -> dict:
                     "substitutions_unresolved": unresolved})
     if len(e):
         store.put_parquet(f"{PREFIX}/history_events.parquet", e)
+        rep["event_rows"] = int(len(e))
     st = pd.DataFrame(stats)
     if len(st):
         st = st.drop_duplicates(["apif_fixture_id", "side"], keep="last")
         store.put_parquet(f"{PREFIX}/history_stats.parquet", st)
         rep.update({"stat_rows": int(len(st)), "stat_rows_with_xg": int(st["xg"].notna().sum()) if "xg" in st else 0,
                     "stat_rows_with_shots": int(st["shots"].notna().sum()) if "shots" in st else 0})
-        rep["event_rows"] = int(len(e))
     log.info("api_football_history build: %s", rep)
     return rep
