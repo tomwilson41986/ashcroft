@@ -167,7 +167,8 @@ def test_only_the_trader_runs_on_the_live_key():
     # paper trader and greyhound book recorder only, read-only, checked in the paper-models test below
     named = {p.name for p in WORKFLOWS.glob("*.yml") if "BETFAIR_LIVE_APP_KEY" in p.read_text()}
     assert named <= {"live-trade.yml", "greyhound-trade.yml", "football-trade.yml", "paper-models.yml"}, named
-    traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade", "greyhound.book_record")
+    traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade", "greyhound.book_record",
+               "greyhound.early_lay --trade")
     for name in named:
         text = (WORKFLOWS / name).read_text()
         for ln in text.splitlines():
@@ -191,7 +192,9 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
     """The owner, 2 Nov 2026: the greyhound and football paper traders run in paper-models.yml, never in the live
     trader's job or on its runner, with no route to a real order; the delayed key for everything but the greyhound
     paper trader and the greyhound book recorder (the owner, 2 Nov 2026: "use the live key, just don't execute bets
-    yet"), which take it only through GHKEY."""
+    yet"), which take it only through GHKEY. One exception, the owner, 3 Nov 2026 ("lets go live now, i will monitor
+    and stop manually if any concerns"; "use early lay"): the greyhound early lay (greyhound/early_lay.py), the only
+    process here given --live, sending orders only with GREYHOUND_EARLY_LAY=live."""
     import yaml as _yaml
     live = (WORKFLOWS / "live-trade.yml").read_text()
     for t in ("greyhound.live --trade", "football.live --trade", "GREYHOUND_LIVE", "FOOTBALL_LIVE"):
@@ -204,8 +207,9 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
     assert any("Not on the live trader's runner" == s.get("name") for s in steps)
     runs = "\n".join(str(s.get("run", "")) for s in steps)
     # the live key: only in the trading step's env, only through GHKEY, only for the two greyhound processes
+    trade = "Trade (the greyhound early lay live, the rest on paper)"
     for s in steps:
-        if s.get("name") != "Trade on paper (read-only)":
+        if s.get("name") != trade:
             assert "LIVE_APP_KEY" not in str(s.get("env", {})) + str(s.get("run", "")), s.get("name")
     for ln in (x.strip() for x in runs.splitlines()):
         if ln.startswith("#") or not ln:
@@ -214,13 +218,20 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
             assert ln == 'GHKEY="${BETFAIR_LIVE_APP_KEY:-$BETFAIR_APP_KEY}"', ln
         if "GHKEY" in ln and "python" in ln:
             assert ln.startswith('BETFAIR_APP_KEY="$GHKEY" python -m greyhound.'), ln
-            assert "greyhound.live --trade" in ln or "greyhound.book_record" in ln, ln
+            assert any(t in ln for t in ("greyhound.live --trade", "greyhound.book_record",
+                                         "greyhound.early_lay --trade")), ln
+        if "--live" in ln:                          # the early lay alone, on the live key
+            assert ln.startswith('BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --live '), ln
         if "football" in ln or "betfair_recorder.py" in ln:
             assert "GHKEY" not in ln and "LIVE_APP_KEY" not in ln, ln
         assert not re.search(r"echo[^;]*\$\{?(BETFAIR_LIVE_APP_KEY|GHKEY)\b", ln), ln
-    assert "--live" not in runs and "greyhound.live --trade" in runs and "football.live --trade" in runs
-    env = next(s["env"] for s in steps if s.get("name") == "Trade on paper (read-only)")
+    assert "greyhound.live --trade" in runs and "football.live --trade" in runs
+    assert [ln for ln in runs.splitlines() if "--live" in ln and not ln.strip().startswith("#")] == \
+        [ln for ln in runs.splitlines() if "greyhound.early_lay --trade --live" in ln]
+    assert "greyhound.live --trade --live" not in runs and "football.live --trade --live" not in runs
+    env = next(s["env"] for s in steps if s.get("name") == trade)
     assert env["GREYHOUND_LIVE"] == "no" and env["FOOTBALL_LIVE"] == "no"
+    assert env["GREYHOUND_EARLY_LAY"] == "${{ inputs.early_lay || vars.GREYHOUND_EARLY_LAY || 'live' }}"
     assert env["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
     # no other workflow starts either trader
     for p in WORKFLOWS.glob("*.yml"):

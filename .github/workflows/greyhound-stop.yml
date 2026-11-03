@@ -1,0 +1,41 @@
+name: Greyhound early lay, stop or resume
+
+# The owner's switch for the live greyhound early lay (greyhound/early_lay.py; the owner, 3 Nov 2026: "i will monitor
+# and stop manually if any concerns"). 'stop' writes the S3 object greyhound/STOP: within a poll the trader lays
+# nothing new and cancels its resting lays, and still greens up the lays already matched. 'resume' removes it. The
+# horse trader's own switch, trading/STOP, stops the greyhound trader too, but this one never touches the horses.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'stop (no new greyhound lays) or resume'
+        required: true
+        type: choice
+        options: ['stop', 'resume']
+        default: 'stop'
+
+permissions:
+  contents: read
+
+jobs:
+  switch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set the switch
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          if [ "$ACTION" = "stop" ]; then
+            echo "stopped from GitHub Actions run $GITHUB_RUN_ID" | aws s3 cp - "s3://$BUCKET/greyhound/STOP"
+            echo "greyhound/STOP written: no new greyhound lays; the matched ones are still greened up"
+          else
+            aws s3 rm "s3://$BUCKET/greyhound/STOP"
+            echo "greyhound/STOP removed: the early lay lays again"
+          fi
+          aws s3 ls "s3://$BUCKET/greyhound/" | grep STOP || echo "no greyhound/STOP now"
