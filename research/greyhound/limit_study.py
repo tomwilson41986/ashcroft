@@ -133,11 +133,12 @@ def attach_future(panel: pd.DataFrame, fut: pd.DataFrame) -> pd.DataFrame:
     return out.sort_values("_i").drop(columns="_i").reset_index(drop=True)
 
 
-def load(store, first: date, last: date, source: str = "retimed", pred_dir: str | None = None) -> pd.DataFrame:
+def load(store, first: date, last: date, source: str = "retimed", pred_dir: str | None = None,
+         books_out: list | None = None) -> pd.DataFrame:
     """Every day's panel (``greyhound.tradeout.day_panel``, as the trade-out study builds it) with each row's later
-    books attached."""
+    books attached; the pre-off books themselves (the path, for the take-profit exits) appended to ``books_out``."""
     from betfair_recorder import _read_day_csv
-    frames, paths, d = [], [], first
+    frames, d = [], first
     while d <= last:
         try:
             if pred_dir:
@@ -156,16 +157,14 @@ def load(store, first: date, last: date, source: str = "retimed", pred_dir: str 
                     pre = to.pre_off_books(entry, markets, retimed=source == "retimed")
                     pre = pre[pre.market_id.isin(set(panel.market_id))]
                     frames.append(attach_future(panel, future_extremes(pre)))
-                    paths.append(pre[BOOK_PATH_COLS].assign(lay1=pre.lay1.where(pre.lay1 > 1),
-                                                            last_traded=to._num(pre.last_traded)))
+                    if books_out is not None:
+                        books_out.append(pre[BOOK_PATH_COLS].assign(lay1=pre.lay1.where(pre.lay1 > 1),
+                                                                last_traded=to._num(pre.last_traded)))
                 _log(f"{d}: {len(panel)} panel rows")
         except Exception as exc:                                    # one bad day: noted, the rest still read
             _log(f"{d}: failed ({exc})")
         d += timedelta(days=1)
-    out = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-    if paths:
-        out.attrs["books"] = pd.concat(paths, ignore_index=True)        # the path, for the take-profit exits
-    return out
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -529,8 +528,9 @@ def main(argv=None) -> int:
     t0 = time.time()
     store = Store(root=a.store)
     last = date.fromisoformat(a.last) if a.last else uk_today() - timedelta(days=1)
-    panel = load(store, date.fromisoformat(a.first), last, source=a.source, pred_dir=a.pred_dir)
-    books = panel.attrs.get("books")
+    paths: list[pd.DataFrame] = []
+    panel = load(store, date.fromisoformat(a.first), last, source=a.source, pred_dir=a.pred_dir, books_out=paths)
+    books = pd.concat(paths, ignore_index=True) if paths else None
     res = {"first_day": a.first, "last_day": f"{last}", "source": a.source,
            "model": a.pred_dir or "the 5 Oct forward test's base model", "panel_rows": int(len(panel))}
     out = Path(a.out)

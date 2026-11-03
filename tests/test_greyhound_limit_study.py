@@ -172,7 +172,15 @@ def test_behaviour_tables():
 
 def test_the_study_end_to_end(tmp_path, monkeypatch):
     panel = synthetic_panel(n_days=20)
-    monkeypatch.setattr(ls, "load", lambda *a, **k: panel)
+    books = panel[["market_id", "selection_id", "polled"]].drop_duplicates(["market_id", "selection_id"]).assign(
+        polled=lambda x: x.polled + pd.Timedelta(minutes=1), back1=panel.last_back1, lay1=panel.last_lay1,
+        last_traded=panel.bsp)                                   # one book after the marks: the path
+
+    def fake_load(*a, books_out=None, **k):
+        if books_out is not None:
+            books_out.append(books)
+        return panel
+    monkeypatch.setattr(ls, "load", fake_load)
     out = tmp_path / "limit"
     assert ls.main(["--store", str(tmp_path), "--from", "2026-10-06", "--to", "2026-10-25", "--out", str(out)]) == 0
     res = json.loads(out.with_suffix(".json").read_text())
@@ -180,6 +188,7 @@ def test_the_study_end_to_end(tmp_path, monkeypatch):
     assert res["dev_top"] and res["dev_chosen"] and res["holdout"]
     fam = {(r["mark"], r["order"], r["side"], r["fill"], r["exit"]) for r in res["holdout"]}
     assert len(fam) == len(res["holdout"])                    # one rule a family, fixed on the development days
+    assert {r["exit"] for r in res["dev_rules"]} == set(ls.EXITS)  # the take-profit exits, read off the path
     hc = res["holdout_count"]
     assert hc["rules"] == len(res["holdout"]) and hc["expected_by_chance"] == round(0.05 * hc["rules"], 1)
     md = out.with_suffix(".md").read_text()
