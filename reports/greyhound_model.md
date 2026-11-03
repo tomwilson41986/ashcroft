@@ -1024,3 +1024,41 @@ the same whether it is greened up before the off (lay to back) or at the SP. Mat
    - Fills: matched by the traded price, and separately by the book, recorded both ways.
    - Scored on each new day's recorded books, read only after 20 days.
 3. **The same grid on the best fast-loop model's prices** (batch 5's slow lane).
+
+## 24. The fast loop's fifth batch, and the early lays on a better price (greyhound-fastloop.yml run 41614579036, 3 Nov 2026)
+
+**The quick lane.** Fitted on January 2024 to May 2026; the measures as in section 21. Runs at 0.05 stopped by early
+stopping, under the 10,000-round cap.
+
+| Experiment | Rounds | Our price adds: first traded / 5 min / 3 min | vs logbsp (90%) | Log-loss | vs logbsp (90%) | Seconds |
+|---|---|---|---|---|---|---|
+| logbsp (baseline: card-safe, 0.08) | 2,675 | 0.00665 / 0.01304 / 0.00024 | | 0.44274 | | 531 |
+| **weighin_lr05** (+ the weigh-in, 0.05) | 7,515 | **0.00708 / 0.01393 / 0.00029** | **-0.00044 (-0.00054 to -0.00034)** | **0.44207** | -0.00067 (-0.00094 to -0.00039) | 1,193 |
+| weighin_fb_sd_lr05 (+ first_bend, style_draw) | 7,650 | 0.00703 / 0.01381 / 0.00029 | -0.00038 (-0.00049 to -0.00028) | 0.44207 | -0.00066 (-0.00094 to -0.00039) | 1,031 |
+| card_lr05 (card-safe, 0.05) | 8,917 | 0.00694 / 0.01360 / 0.00028 | -0.00029 (-0.00042 to -0.00017) | 0.44238 | -0.00035 (-0.00059 to -0.00012) | 1,604 |
+
+- **The best price yet** at calling the move to the SP is the weigh-in at 0.05. Its log-loss (0.44207) is the best of
+  any quick fit and within 0.0002 of section 20's slow best_confirm (0.44225), in a third of the time.
+- The first-bend and style-draw blocks add nothing on top of it.
+- The weigh-in is published live at 12 tracks only. The card-safe model at 0.05 is the one to serve elsewhere.
+
+**The slow lane: the weigh-in at 0.05 through both studies** (its prices on the same 27 days, re-timed books; this time
+2 November is scored too: 13 development days, 7 holdout):
+- **Trade-out study (taking the price):** no holdout rule of 52 has its 90% lower bound above zero.
+- **Limit-order study:** run on the section 22 version (exit at the SP; gates all, shorten, drift). 2 of 36 holdout
+  rules clear zero, against about 1.8 expected by chance. They are the same two as section 22, now on a better price:
+
+| Rule (first traded, forecast-drift runners, traded fill, closed at the SP) | Days | Trades a day | Return (90%) | Mean CLV | Held |
+|---|---|---|---|---|---|
+| Lay at 80% of the forecast SP: development | 13 | 169.6 | +1.90% (+1.09 to +2.69) | +6.83% | +1.37% |
+| Lay at 80% of the forecast SP: **holdout** | 7 | 158.7 | **+1.42% (+0.34 to +2.50)** | **+9.07%** | +0.80% |
+| Lay at the best back price (join): development | 13 | 115.8 | +1.06% (-0.10 to +2.91) | +0.97% | -0.71% |
+| Lay at the best back price (join): **holdout** | 7 | 119.9 | +0.76% (+0.19 to +1.40) | +3.29% | +0.32% |
+
+- Compared with section 22 on the 5 October model, the 80% lay's development return rises from +1.24% to +1.90%. Its
+  holdout CLV rises from +6.0% to +9.1%, and its holdout return falls from +1.92% to +1.42%, both intervals clear of
+  zero.
+- Better prices make the early lay's prices better. The study is still at chance overall, and the size matched is
+  still unknown (sections 22 and 23).
+- The live-key recorder started on the new server on 3 November at about 10:41 UTC (`ashcroft-paper`,
+  78.141.242.224). Its books, with each runner's traded volume, are what will measure the size.
