@@ -45,15 +45,15 @@ log = logging.getLogger(__name__)
 PREFIX = "greyhound/early_lay"
 REF = "el-"                                   # every order of this trader: el-<mmdd>-<market>-<selection>-<kind>
 CONFIG = {
-    "liability": 100.0,                       # each lay's liability (stake x (price - 1)); the owner, 3 Nov: "let's use
-    "min_stake": 2.0,                         # the papers £100", the forward test's size (greyhound.tradeout
-    "max_stake": 50.0,                        # .target_stake: TO_WIN, MIN_STAKE, MAX_STAKE)
+    "liability": 20.0,                        # each lay's liability (stake x (price - 1)). The owner, 3 Nov 14:20: cut to
+    "min_stake": 2.0,                         # GBP20 while the paper is rebuilt on the live feed (live and paper laid
+    "max_stake": 10.0,                        # different dogs); GBP100 again only once that shows an edge
     "margin": 0.2,                            # lay at the forecast SP less this share
     "max_price": 20.0,                        # no lay above this price (greyhound.tradeout.MAX_PRICE)
     "min_order": 1.0,                         # Betfair's smallest stake on a limit order
     "min_sp_back": 2.0,                       # the smallest back at the SP that closes a lay (greyhound.tradeout)
     "daily_loss_limit": None,                 # the owner, 3 Nov: no loss limit, watched and stopped by hand
-    "max_open_liability": 5000.0,             # a guard against a fault, not a limit on the trading
+    "max_open_liability": 1000.0,             # a guard against a fault, not a limit on the trading
     "watch_minutes": 60.0,                    # markets off within this are watched for their first trades
     "min_rest_seconds": 60.0,                 # no lay placed this close to the green-up
     "green_seconds": 5.0,                     # green up from this many seconds before the scheduled off (the
@@ -181,10 +181,10 @@ class Orders:
             return []
         return [o for o in self.x.orders([mid]) if str(o.get("customerOrderRef") or "").startswith(REF)]
 
-    def back(self, mid: str, sid: int, price: float, size: float, ref: str):
+    def back(self, mid: str, sid: int, price: float, size: float, ref: str, min_fill: float | None = None):
         if not self.live:
             return None
-        return self.x.back(mid, sid, price, size, ref, min_fill=size)
+        return self.x.back(mid, sid, price, size, ref, min_fill=size if min_fill is None else min_fill)
 
     def back_at_sp(self, mid: str, sid: int, stake: float, ref: str) -> dict:
         if not self.live:
@@ -201,23 +201,47 @@ class Orders:
 
 
 def positions(orders: list[dict]) -> dict:
-    """Per selection from Betfair's orders on one market: the lays matched (stake, average price) and whether a
-    green-up back (``-g``) or an SP back (``-s``) is already on."""
+    """Per selection from Betfair's orders on one market: the lays matched (stake, value = stake x price), the
+    green-up backs matched so far (``-g``: stake, value), and whether an SP back (``-s``) is on. A lay is greened once
+    the backs' value reaches the lays': ``to_cover`` is the value still open."""
     out: dict = {}
     for o in orders:
         sid = int(o.get("selectionId", 0))
-        p = out.setdefault(sid, {"lay_matched": 0.0, "lay_value": 0.0, "closed": False})
+        p = out.setdefault(sid, {"lay_matched": 0.0, "lay_value": 0.0, "back_matched": 0.0, "back_value": 0.0,
+                                 "closed": False})
         ref = str(o.get("customerOrderRef") or "")
+        m = float(o.get("sizeMatched") or 0)
         if o.get("side") == "LAY":
-            m = float(o.get("sizeMatched") or 0)
             p["lay_matched"] += m
             p["lay_value"] += m * float(o.get("averagePriceMatched") or 0)
-        elif o.get("side") == "BACK" and (ref.endswith("-g") or ref.endswith("-s")):
-            if float(o.get("sizeMatched") or 0) > 0 or ref.endswith("-s"):
-                p["closed"] = True
+        elif o.get("side") == "BACK" and ref.endswith("-g"):
+            p["back_matched"] += m
+            p["back_value"] += m * float(o.get("averagePriceMatched") or 0)
+        elif o.get("side") == "BACK" and ref.endswith("-s"):
+            p["closed"] = True
     for p in out.values():
         p["lay_price"] = p["lay_value"] / p["lay_matched"] if p["lay_matched"] > 0 else None
+        p["to_cover"] = p["lay_value"] - p["back_value"]
     return out
+
+
+def outcomes(p: dict) -> tuple[float, float]:
+    """A selection's P&L if it wins and if it loses, from its lays and green-up backs."""
+    win = -(p["lay_value"] - p["lay_matched"]) + (p["back_value"] - p["back_matched"])
+    lose = p["lay_matched"] - p["back_matched"]
+    return win, lose
+
+
+def ladder_limit(levels: list, value: float, depth: int = 3) -> float | None:
+    """The lowest back price to take, down the best ``depth`` prices, for backs worth ``value`` (stake x price):
+    the price where the offered value first covers it, else the last of the levels."""
+    cum, limit = 0.0, None
+    for price, size in levels[:depth]:
+        cum += price * size
+        limit = price
+        if cum + 1e-9 >= value:
+            break
+    return limit
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -429,33 +453,54 @@ class EarlyLay:
         rows, left = [], False
         base = {"time_utc": pd.Timestamp(self.now()).strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": self.mode,
                 "market_id": mid, "seconds_to_off": round(secs)}
+        mn = self.cfg["min_order"]
         for sid, p in pos.items():
             if p["lay_matched"] <= 0 or p["closed"]:
                 continue
-            S, m = _floor2(p["lay_matched"]), p["lay_price"]
+            m = p["lay_price"]
             q = b.runners.get(sid)
-            bb = q.best_back if q else None
-            if bb and secs > self.cfg["give_up_seconds"]:
-                B = bb[0]
-                stake = _floor2(S * m / B)
-                if stake >= self.cfg["min_order"]:
-                    fill = self.orders.back(mid, sid, B, stake, f"{REF}{self.day:%m%d}-{mid[-8:]}-{sid}-g")
-                    if fill is not None and fill.status == "SUCCESS" and fill.matched + 0.01 >= stake:
-                        B = float(fill.avg_price or B)
-                        locked = round(S * (1 - m / B), 2)          # the same whatever the result
-                        self.locked += locked
-                        p["closed"] = True
-                        rows.append({**base, "selection_id": sid, "action": "green", "price": B, "size": stake,
-                                     "lay_matched": S, "lay_price": round(m, 2),
-                                     "matched": fill.matched, "avg_price": fill.avg_price, "bet_id": fill.bet_id,
-                                     "status": fill.status, "locked_pnl": locked, "liability": round(S * (m - 1), 2)})
+            levels = list(q.back) if q else []
+            if p["to_cover"] > 0 and levels and secs > self.cfg["give_up_seconds"]:
+                # down the best three back prices; a part matched is kept and the rest tried next second
+                limit = ladder_limit(levels, p["to_cover"])
+                stake = _floor2(p["to_cover"] / limit)
+                if stake >= mn:
+                    ref = f"{REF}{self.day:%m%d}-{mid[-8:]}-{sid}-g"
+                    fill = self.orders.back(mid, sid, limit, stake, ref, min_fill=mn)
+                    if fill is not None and fill.status == "SUCCESS" and fill.matched > 0:
+                        p["back_matched"] += fill.matched
+                        p["back_value"] += fill.matched * float(fill.avg_price or limit)
+                        p["to_cover"] = p["lay_value"] - p["back_value"]
+                        done = p["to_cover"] / limit < mn
+                        win, lose = outcomes(p)
+                        row = {**base, "selection_id": sid, "action": "green" if done else "green_part",
+                               "price": limit, "size": stake, "matched": fill.matched, "avg_price": fill.avg_price,
+                               "bet_id": fill.bet_id, "status": fill.status, "lay_matched": round(p["lay_matched"], 2),
+                               "lay_price": round(m, 2), "liability": round(p["lay_value"] - p["lay_matched"], 2),
+                               "error": f"if it wins {win:+.2f}, if it loses {lose:+.2f}"}
+                        if done:
+                            row["locked_pnl"] = round(min(win, lose), 2)
+                            self.locked += row["locked_pnl"]
+                            p["closed"] = True
+                        else:
+                            left = True
+                        rows.append(row)
                         continue
-                    left = True                               # the price moved: tried again next poll
-                    rows.append({**base, "selection_id": sid, "action": "green_retry", "price": B, "size": stake,
+                    left = True                               # nothing matched: tried again next second
+                    rows.append({**base, "selection_id": sid, "action": "green_retry", "price": limit, "size": stake,
                                  "status": getattr(fill, "status", ""), "error": getattr(fill, "error", "")})
                     continue
-            if secs <= self.cfg["give_up_seconds"] or not bb or _floor2(S * m / (bb[0] if bb else m)) < self.cfg["min_order"]:
-                rows += self._close_at_sp(mid, sid, S, m, base)
+            if p["to_cover"] / (levels[0][0] if levels else m) < mn and p["back_matched"] > 0:
+                win, lose = outcomes(p)                       # what is left is under the smallest order: done
+                locked = round(min(win, lose), 2)
+                self.locked += locked
+                p["closed"] = True
+                rows.append({**base, "selection_id": sid, "action": "green", "lay_matched": round(p["lay_matched"], 2),
+                             "lay_price": round(m, 2), "locked_pnl": locked,
+                             "error": f"if it wins {win:+.2f}, if it loses {lose:+.2f}"})
+                continue
+            if secs <= self.cfg["give_up_seconds"] or not levels:
+                rows += self._close_at_sp(mid, sid, _floor2(p["to_cover"] / m), m, base)
                 p["closed"] = True
             else:
                 left = True
@@ -466,6 +511,7 @@ class EarlyLay:
             self.laid.pop(mid, None)
 
     def _close_at_sp(self, mid: str, sid: int, S: float, m: float, base: dict) -> list[dict]:
+        """The lay stake still open, ``S`` at ``m``, closed by a back at the SP of the same stake."""
         liab = round(S * (m - 1), 2)
         self.open_liability[mid] = self.open_liability.get(mid, 0.0) + liab
         if S + 1e-9 < self.cfg["min_sp_back"]:
@@ -561,6 +607,27 @@ def table(store, day: date, mode: str = "live") -> str:
         L.append(f"| {r['race']} | {r['track']} | {r['lays']} | {r['staked']} | {r['matched']} | {r['greened']} | "
                  f"{r['sp_or_held']} | {r['open_liability']} | {r['locked']} | {r['running']} | {r['retries']} | "
                  f"{r['closed']} | {r['errors']} |")
+    # dog by dog: every lay that matched, against its forecast and the price when laid
+    num = lambda v: pd.to_numeric(v, errors="coerce")
+    fin = led[led.action.isin(["green", "green_part", "sp_close", "hold"])].copy()
+    if len(fin):
+        fin["selection_id"] = num(fin.selection_id)
+        lg = lays.assign(selection_id=num(lays.selection_id))
+        L += ["", "#### Live lays that matched, dog by dog", "",
+              "| Race (UK) | Track | Trap | Forecast SP | Mid when laid | Lay price | Lay stake | Matched | Greened at "
+              "| How closed | P&L |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+        for (mid, sid), g in fin.groupby(["market_id", "selection_id"]):
+            lr = lg[(lg.market_id == mid) & (lg.selection_id == sid)]
+            if not len(lr):
+                continue
+            lr = lr.iloc[-1]
+            gr = g[g.action.isin(["green", "green_part"])]
+            bk = num(gr.matched).fillna(0)
+            green_at = round(float((num(gr.avg_price).fillna(0) * bk).sum() / bk.sum()), 2) if bk.sum() > 0 else ""
+            pnl = num(g.locked_pnl).dropna()
+            L.append(f"| {lr.race_time} | {lr.track} | {lr.trap} | {lr.f_bsp} | {lr.mid} | {lr.price} | {lr['size']} | "
+                     f"{num(g.lay_matched).max()} | {green_at} | {g.action.iloc[-1]} | "
+                     f"{round(float(pnl.sum()), 2) if len(pnl) else 'settles with the result'} |")
     return "\n".join(L) + "\n"
 
 
