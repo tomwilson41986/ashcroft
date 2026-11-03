@@ -200,3 +200,18 @@ def test_the_forecast_is_walk_forward():
     fc = ls.forecast(panel)
     days = sorted(panel.race_date.unique())
     assert sorted(fc.race_date.unique()) == days[ls.MIN_TRAIN_DAYS:] and (fc.f_bsp > 1).all()
+
+
+def test_the_exits_compared_on_the_same_entries():
+    base = {"mark": "first_traded", "order": "bid", "side": "lay", "param": 0.2, "gate": "drift", "fill": "traded",
+            "per_day": 5.0}
+    dev = pd.DataFrame([dict(base, exit="last", **{"roi%": 1.0}), dict(base, exit="sp", **{"roi%": 2.0}),
+                        dict(base, exit="tp2", **{"roi%": 0.5}), dict(base, gate="all", exit="last", **{"roi%": 0.0},
+                                                                     per_day=0.5)])
+    hold = dev.assign(**{"roi%": [3.0, 1.0, 4.0, 9.0]})
+    xc = ls.exit_compare(dev, hold)
+    assert xc["rules"] == 1                                   # the thin entry rule (half a trade a day) left out
+    s = {r["exit"]: r for r in xc["summary"]}
+    assert s["sp"]["dev_median_vs_last"] == 1.0 and s["sp"]["holdout_median_vs_last"] == -2.0
+    assert s["tp2"]["dev_better%"] == 0.0 and s["tp2"]["holdout_better%"] == 100.0
+    assert xc["rows"][0]["hold_tp2"] == 4.0

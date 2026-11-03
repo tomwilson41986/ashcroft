@@ -414,6 +414,38 @@ def rule_summary(o: pd.DataFrame, days: list[str]) -> pd.DataFrame:
     return res
 
 
+ENTRY = [k for k in KEYS if k != "exit"]
+
+
+def exit_compare(dev: pd.DataFrame, hold: pd.DataFrame | None) -> dict:
+    """The exits set side by side on the same entries: for every entry rule (all keys but the exit) with a trade a day
+    on the development days, each exit's return on the development days and the holdout, and for each exit against
+    'last' (greened up at the last book) the median difference and the share of entry rules where it did better. The
+    holdout here is read across every rule, so it describes; it does not select."""
+    def wide(t):
+        if t is None or not len(t) or "roi%" not in t:
+            return pd.DataFrame()
+        return t.pivot_table(index=ENTRY, columns="exit", values="roi%", aggfunc="first")
+    dv = dev[dev.per_day >= 1] if len(dev) and "per_day" in dev else dev
+    d, h = wide(dv), wide(hold)
+    if not len(d):
+        return {"rules": 0, "summary": [], "rows": []}
+    h = h.reindex(d.index) if len(h) else pd.DataFrame(index=d.index, columns=d.columns)
+    summary = []
+    for ex in d.columns:
+        if ex == "last" or "last" not in d.columns:
+            continue
+        row = {"exit": ex}
+        for name, t in (("dev", d), ("holdout", h)):
+            diff = (t[ex] - t["last"]).dropna() if ex in t and "last" in t else pd.Series(dtype=float)
+            row[f"{name}_rules"] = int(len(diff))
+            row[f"{name}_median_vs_last"] = round(float(diff.median()), 2) if len(diff) else None
+            row[f"{name}_better%"] = round(100 * float((diff > 0).mean()), 1) if len(diff) else None
+        summary.append(row)
+    rows = d.add_prefix("dev_").join(h.add_prefix("hold_")).reset_index()
+    return {"rules": int(len(d)), "summary": summary, "rows": _records(rows)}
+
+
 def choose(dev: pd.DataFrame) -> pd.DataFrame:
     """The best rule of each family (mark, order, side, fill, exit) on the development days: the highest return among rules
     with a trade a day on average and positions on at least half the days; its param and gate fixed for the holdout."""
@@ -500,6 +532,20 @@ def report_md(res: dict) -> str:
         L += [f"{hc['rules']} rules read; {hc['lower_bound_above_zero']} with the 90% interval's lower bound above zero "
               f"(about {hc['expected_by_chance']} expected by chance alone at that level).", ""]
     L += _tbl(res["holdout"], RULE_COLS) + [""]
+    xc = res.get("exit_compare") or {}
+    if xc.get("summary"):
+        L += ["## 2b. The exits on the same entries", "",
+              f"{xc['rules']} entry rules with a trade a day on the development days; each exit's return against "
+              "'last' (greened up at the last book) on those same entries. The holdout here is read across every "
+              "rule: a description, not a selection.", ""]
+        L += _tbl(xc["summary"], ["exit", "dev_rules", "dev_median_vs_last", "dev_better%", "holdout_rules",
+                                  "holdout_median_vs_last", "holdout_better%"]) + [""]
+        early = [r for r in xc["rows"] if r.get("mark") == "first_traded" and r.get("order") == "bid"
+                 and r.get("side") == "lay" and r.get("fill") == "traded"]
+        if early:
+            cols = list(ENTRY) + [f"{p}_{e}" for p in ("dev", "hold") for e in EXITS]
+            L += ["The early lay's entries (first traded, lay at the forecast less the margin, traded fill):", ""]
+            L += _tbl(early, [c for c in cols if c in early[0]]) + [""]
     L += ["## 3. The development days: the 40 best rules by return", ""]
     L += _tbl(res["dev_top"], RULE_COLS) + [""]
     L += ["## 4. Development days: each family's best rule", ""]
@@ -553,6 +599,8 @@ def main(argv=None) -> int:
         res["dev_top"] = _records(dev_t.sort_values("roi%", ascending=False).head(40)) if len(dev_t) else []
         res["dev_chosen"] = _records(chosen)
         res["dev_rules"] = _records(dev_t)
+        ht_all = rule_summary(o[o.race_date.isin(hold)], hold) if hold and len(o) else None
+        res["exit_compare"] = exit_compare(dev_t, ht_all)
         if hold and len(chosen):
             ho = o[o.race_date.isin(hold)]
             ht = rule_summary(ho, hold)
