@@ -388,3 +388,27 @@ def test_never_a_lay_at_or_above_the_mid(tmp_path, fit):
                      tmp_path / "ledger2.csv", fit, now=lambda: T0)
     t2.step()
     assert len([i for i in x2.sent if i["side"] == "LAY"]) >= len([i for i in x.sent if i["side"] == "LAY"])
+
+
+def test_the_blocked_lays_replayed():
+    t = pd.Timestamp("2026-11-03 15:00:00", tz="UTC")
+    rows = pd.DataFrame([
+        {"time_utc": t.strftime("%Y-%m-%dT%H:%M:%SZ"), "seconds_to_off": 300, "market_id": "1.1", "selection_id": 7,
+         "price": 5.0, "race_time": "15:05", "track": "Romford", "trap": 1, "f_bsp": 6.25, "mid": 4.9},
+        {"time_utc": t.strftime("%Y-%m-%dT%H:%M:%SZ"), "seconds_to_off": 300, "market_id": "1.1", "selection_id": 8,
+         "price": 5.0, "race_time": "15:05", "track": "Romford", "trap": 2, "f_bsp": 6.25, "mid": 5.2}])
+    books = pd.DataFrame([
+        {"market_id": "1.1", "selection_id": 7, "polled": t, "back1": 4.8, "lay1": 5.0, "last_traded": 4.9},
+        {"market_id": "1.1", "selection_id": 7, "polled": t + pd.Timedelta(seconds=290), "back1": 6.0, "lay1": 6.2,
+         "last_traded": 6.0},
+        {"market_id": "1.1", "selection_id": 8, "polled": t, "back1": 5.1, "lay1": 5.4, "last_traded": 5.2},
+        {"market_id": "1.1", "selection_id": 8, "polled": t + pd.Timedelta(seconds=290), "back1": 5.6, "lay1": 5.8,
+         "last_traded": 5.7}])
+    d = el.replay(rows, books)
+    a, b = d.iloc[0], d.iloc[1]
+    s = el.stake_for(5.0, el.CONFIG)
+    # trap 1: the best lay price 5.0 met our 5.0 at once; greened at 6.0
+    assert a.matched and a.matched_at == 5.0 and a.greened_at == 6.0 and a.pnl == round(s * (1 - 5.0 / 6.0), 2)
+    # trap 2: resting at 5.0, the price drifted away and never traded there: not matched
+    assert b.matched is False or b.matched == False                                  # noqa: E712
+    assert "never reached" in b.note

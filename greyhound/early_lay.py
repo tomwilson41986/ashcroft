@@ -576,6 +576,104 @@ class EarlyLay:
                 "open_liability": round(sum(self.open_liability.values()), 2)}
 
 
+def replay(rows: pd.DataFrame, books: pd.DataFrame, cfg: dict | None = None) -> pd.DataFrame:
+    """The lays the rest-only guard blocked (ledger rows ``no_lay`` 'at or above the mid'), replayed on the books after
+    them (the owner, 3 Nov: "how would the races post 14:31 have looked without the guard"): matched at once at the
+    best lay price where it was at or under our price, else resting at our price and matched once a later trade
+    reached it; greened up at the best back price of the last book at least ``green_seconds`` before the off, the stake
+    as the trader's (``stake_for``). ``books``: rows of market_id, selection_id, polled (UTC), back1, lay1,
+    last_traded, the pre-off books."""
+    cfg = cfg or CONFIG
+    out = []
+    b = books.assign(polled=pd.to_datetime(books.polled, utc=True), market_id=books.market_id.astype(str),
+                     selection_id=pd.to_numeric(books.selection_id, errors="coerce"))
+    for r in rows.itertuples(index=False):
+        t = pd.Timestamp(r.time_utc)
+        off = t + pd.Timedelta(seconds=float(r.seconds_to_off))
+        price = float(r.price)
+        stake = stake_for(price, cfg)
+        g = b[(b.market_id == str(r.market_id)) & (b.selection_id == float(r.selection_id))].sort_values("polled")
+        row = {"race_time": r.race_time, "track": r.track, "trap": r.trap, "lay_price": price,
+               "f_bsp": r.f_bsp, "mid": r.mid, "stake": stake, "matched": None, "matched_at": None, "greened_at": None,
+               "pnl": None, "note": ""}
+        before = g[g.polled <= t]
+        after = g[(g.polled > t) & (g.polled <= off)]
+        if not len(before) and not len(after):
+            out.append({**row, "note": "no books for this dog"})
+            continue
+        now = before.iloc[-1] if len(before) else after.iloc[0]
+        lay1 = float(now.lay1) if pd.notna(now.lay1) and now.lay1 > 1 else None
+        if lay1 is not None and lay1 <= price + 1e-9:
+            m, how = lay1, "taken at once"
+        else:
+            lt = pd.to_numeric(after.last_traded, errors="coerce")
+            hit = after[lt <= price + 1e-9]
+            if not len(hit):
+                out.append({**row, "matched": False, "note": "resting: never reached"})
+                continue
+            m, how = price, "rested, then traded at our price"
+        last = g[(g.polled <= off - pd.Timedelta(seconds=cfg["green_seconds"])) & (g.polled > t)]
+        last = last[pd.to_numeric(last.back1, errors="coerce") > 1]
+        if not len(last):
+            out.append({**row, "matched": True, "matched_at": m, "note": f"{how}; no book to green up in"})
+            continue
+        B = float(last.back1.iloc[-1])
+        out.append({**row, "matched": True, "matched_at": m, "greened_at": B, "pnl": round(stake * (1 - m / B), 2),
+                    "note": how})
+    return pd.DataFrame(out)
+
+
+def blocked_section(store, day: date, mode: str = "live", since: str | None = None) -> list[str]:
+    """The guard's blocked lays, replayed (``replay``), as a section of the table: the live-key books where they cover
+    the race, else the recorder's (about 90 seconds stale)."""
+    from betfair_recorder import _read_day_csv
+    from greyhound import tradeout as to
+    raw = store.get(f"{PREFIX}/{mode}/{day:%Y-%m-%d}/ledger.csv")
+    if not raw:
+        return []
+    led = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str})
+    blk = led[(led.action == "no_lay") & led.error.astype(str).str.contains("at or above the mid", na=False)
+              & pd.to_numeric(led.price, errors="coerce").gt(1)]
+    if since:
+        blk = blk[pd.to_datetime(blk.time_utc, utc=True) >= pd.Timestamp(since)]
+    if not len(blk):
+        return ["", "#### Lays the rest-only guard blocked, replayed", "", "none yet"]
+    parts = []
+    for name, retimed in (("books_greyhound_live.csv", False), ("books_greyhound.csv", True)):
+        bk = _read_day_csv(day, name)
+        mk = _read_day_csv(day, name.replace("books", "markets"))
+        if bk is None or mk is None or not len(bk):
+            continue
+        pre = to.pre_off_books(bk, mk, retimed=retimed)
+        if len(pre):
+            parts.append((name, pre[["market_id", "selection_id", "polled", "back1", "lay1", "last_traded"]]))
+    res = []
+    for _, r in blk.iterrows():
+        got = None
+        for name, pre in parts:                                  # the live-key books first, where they cover it
+            one = replay(pd.DataFrame([r]), pre)
+            if len(one) and one.note.iloc[0] != "no books for this dog":
+                got = one.assign(books="live key" if "live" in name else "recorder, ~90 s stale")
+                break
+        res.append(got if got is not None else replay(pd.DataFrame([r]), pd.DataFrame(
+            columns=["market_id", "selection_id", "polled", "back1", "lay1", "last_traded"])).assign(books="none"))
+    d = pd.concat(res, ignore_index=True)
+    m = d[d.matched == True]                                              # noqa: E712
+    tot = float(pd.to_numeric(m.pnl, errors="coerce").fillna(0).sum())
+    L = ["", "#### Lays the rest-only guard blocked, replayed (what would have happened without it)", "",
+         f"{len(d)} lays blocked; {len(m)} would have matched; greened up {int(m.pnl.notna().sum())}, "
+         f"**GBP{tot:+.2f}** locked at GBP{CONFIG['liability']:.0f} a lay. Matched at once where the best lay price was at "
+         "or under our price, else when a later trade reached it; greened up at the best back price of the last book "
+         f"{CONFIG['green_seconds']:.0f} s or more before the off.", "",
+         "| Race (UK) | Track | Trap | Forecast SP | Mid | Lay price | Stake | Matched at | Greened at | P&L | How | Books |",
+         "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for r in d.sort_values("race_time").itertuples(index=False):
+        L.append(f"| {r.race_time} | {r.track} | {r.trap} | {r.f_bsp} | {r.mid} | {r.lay_price} | {r.stake} | "
+                 f"{r.matched_at if r.matched_at is not None else ''} | {r.greened_at if r.greened_at is not None else ''} | "
+                 f"{r.pnl if r.pnl is not None else ''} | {r.note} | {r.books} |")
+    return L
+
+
 def table(store, day: date, mode: str = "live") -> str:
     """The day's live early lay so far, a row per race, from the trader's ledger in S3: the lays placed and their
     stake, what matched by the green-up, how each was closed, the P&L locked by the green-ups (the SP closes and the
@@ -646,6 +744,10 @@ def table(store, day: date, mode: str = "live") -> str:
             L.append(f"| {lr.race_time} | {lr.track} | {lr.trap} | {lr.f_bsp} | {lr.mid} | {lr.price} | {lr['size']} | "
                      f"{num(g.lay_matched).max()} | {green_at} | {g.action.iloc[-1]} | "
                      f"{round(float(pnl.sum()), 2) if len(pnl) else 'settles with the result'} |")
+    try:
+        L += blocked_section(store, day, mode)
+    except Exception as exc:                                     # the table stands without the replay
+        L += ["", f"(the blocked lays' replay failed: {str(exc)[:160]})"]
     return "\n".join(L) + "\n"
 
 

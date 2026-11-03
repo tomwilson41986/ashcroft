@@ -47,9 +47,10 @@ log = logging.getLogger(__name__)
 CACHE_PREFIX = "greyhound/feature_cache"
 #: the files whose code makes the features: a change to any of them is a new cache
 CODE_FILES = ("greyhound/metrics.py", "greyhound/parity.py", "greyhound/hrb.py", "greyhound/lib.py",
-              "greyhound/data.py", "greyhound/track.py", "greyhound/model.py", "sources/gbgb.py")
+              "greyhound/data.py", "greyhound/track.py", "greyhound/model.py", "sources/gbgb.py",
+              "greyhound/times.py", "greyhound/intent.py", "greyhound/ability.py", "greyhound/etime.py")
 KEEP_FROM = "2020-06-01"
-BLOCKS = ("parity", "hrb", "lib")
+BLOCKS = ("parity", "hrb", "lib", "times", "intent", "ability", "etime")   # F3, F5, F6 and the expected time
 PRICE_YEARS = "2018-2026"
 EXTRA_COLS = ("bsp", "bsp_p_norm")
 TEST_FROM = "2026-06-01"
@@ -135,12 +136,21 @@ def load_cache(store) -> tuple[pd.DataFrame, dict]:
 
 def feature_set(meta: dict, name: str) -> list[str]:
     """``all`` (every block, the weigh-in too), ``card_safe`` (what the morning card knows: the live model's view),
-    ``base``, ``base+parity``, ``base+parity+hrb``; each ``-card`` for card-safe."""
+    ``base``, ``base+parity``, ``base+parity+hrb``, ``core`` (every block but times, intent, ability, etime),
+    ``core+<block>[+<block>]`` (core and those blocks); each ``-card`` for card-safe."""
     blocks = meta["features"]
     card = name.endswith("-card") or name == "card_safe"
     key = name.removesuffix("-card")
     order = {"base": ["base"], "base+parity": ["base", "parity"], "base+parity+hrb": ["base", "parity", "hrb"],
-             "all": list(blocks), "card_safe": list(blocks)}
+             "all": list(blocks), "card_safe": list(blocks),
+             # the blocks before the roadmap's F3/F5/F6 (3 Nov 2026), to read what those add
+             "core": [b for b in blocks if b not in ("times", "intent", "ability", "etime")]}
+    if key.startswith("core+"):                      # core and named blocks: what each new block adds on its own
+        extra = key.split("+")[1:]
+        unknown = [b for b in extra if b not in blocks]
+        if unknown:
+            raise ValueError(f"unknown blocks {unknown} in feature set {name!r}")
+        order[key] = order["core"] + extra
     if key not in order:
         raise ValueError(f"unknown feature set {name!r}")
     feats = list(dict.fromkeys(f for b in order[key] for f in blocks.get(b, [])))
