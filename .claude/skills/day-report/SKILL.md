@@ -30,7 +30,9 @@ care about is an accurate P&L". Every report on the day's trading follows this, 
 ## Report it: three figures, then every race
 
 1. **Settled**: the races run and settled, as Betfair settled them, after commission. Once the day is closed, the
-   account's funds against the day before are the figure (they rule over the ledger).
+   account's funds against the day before are the figure (they rule over the ledger). The owner withdraws each
+   Sunday (2 Nov), so on a Sunday take the funds at the session's end, before the withdrawal, and measure the
+   Monday from what is left.
 2. **The mark on the races to run**, after the non-runners' cuts: at the mid (the fair mark) and at the lays (what
    Betfair's Cash Out pays now). Say the mark is noisy while the books are thin (the mid and the lays far apart) and
    that more non-runners usually cut it further before the off.
