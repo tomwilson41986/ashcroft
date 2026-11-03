@@ -63,7 +63,11 @@ ORDER_MARKS = ("first_traded", "off_5", "off_3")
 MARGINS = (0.0, 0.05, 0.10, 0.20)
 TICKS = (1, 3, 5)
 GATES = ("all", "shorten", "drift", "fav", "short", "long")
-FILLS = ("through", "traded")
+#: through / traded: matched once a later book offers, or a later trade is at, our price (no queue: the upper bounds);
+#: strict (the owner, 3 Nov 2026: "count a lay as matched only when the money traded at our price exceeds what was
+#: queued ahead of us"): matched only once a later trade is strictly beyond our price, which can happen only after
+#: every order at our price, ours too, is matched; with no volume by price in the recorded books, the lower bound
+FILLS = ("through", "traded", "strict")
 TP_TICKS = (2, 5, 10)                  # take profit: green up once the price moves this many ticks our way
 EXITS = ("sp", "last") + tuple(f"tp{k}" for k in TP_TICKS)
 BOOK_PATH_COLS = ["market_id", "selection_id", "polled", "back1", "lay1", "last_traded"]
@@ -217,11 +221,17 @@ def fills(d: pd.DataFrame, side: str, price: np.ndarray, rule: str) -> tuple[np.
     back1, lay1 = d.back1.to_numpy(float), d.lay1.where(d.lay1 > 1).to_numpy(float)
     if side == "back":
         now = back1 >= price
-        later = (d.fut_back_max if rule == "through" else d.fut_lt_max).to_numpy(float) >= price
+        if rule == "strict":
+            later = d.fut_lt_max.to_numpy(float) > price + 1e-9
+        else:
+            later = (d.fut_back_max if rule == "through" else d.fut_lt_max).to_numpy(float) >= price
         matched_at = np.where(now, back1, price)
     else:
         now = lay1 <= price
-        later = (d.fut_lay_min if rule == "through" else d.fut_lt_min).to_numpy(float) <= price
+        if rule == "strict":
+            later = d.fut_lt_min.to_numpy(float) < price - 1e-9
+        else:
+            later = (d.fut_lay_min if rule == "through" else d.fut_lt_min).to_numpy(float) <= price
         matched_at = np.where(now, lay1, price)
     ok = np.isfinite(price) & (price > 1.0) & (price <= to.MAX_PRICE)
     filled = ok & (now | later)                         # a NaN (no later book) compares False: not matched
@@ -250,7 +260,10 @@ def exit_paths(e: pd.DataFrame, books: pd.DataFrame) -> np.ndarray:
         back, thr = (j.side == "back").to_numpy(), (j.fill == "through").to_numpy()
         lt = j.last_traded.where(j.last_traded > 1).to_numpy(float)
         entry = np.where(back, np.where(thr, j.back1, lt), np.where(thr, j.lay1, lt))
-        hit = np.where(back, entry >= j.limit.to_numpy(float), entry <= j.limit.to_numpy(float))
+        lim = j.limit.to_numpy(float)
+        strict = (j.fill == "strict").to_numpy()
+        hit = np.where(back, np.where(strict, entry > lim + 1e-9, entry >= lim),
+                       np.where(strict, entry < lim - 1e-9, entry <= lim))
         first = j.polled_b.where(hit).groupby(j._e).min()
         t_fill = j.polled.where(j.taken, j._e.map(first))
         k = j[(j.polled_b > t_fill).to_numpy()]
@@ -541,10 +554,11 @@ def report_md(res: dict) -> str:
         L += _tbl(xc["summary"], ["exit", "dev_rules", "dev_median_vs_last", "dev_better%", "holdout_rules",
                                   "holdout_median_vs_last", "holdout_better%"]) + [""]
         early = [r for r in xc["rows"] if r.get("mark") == "first_traded" and r.get("order") == "bid"
-                 and r.get("side") == "lay" and r.get("fill") == "traded"]
+                 and r.get("side") == "lay" and r.get("fill") in ("traded", "strict")]
         if early:
             cols = list(ENTRY) + [f"{p}_{e}" for p in ("dev", "hold") for e in EXITS]
-            L += ["The early lay's entries (first traded, lay at the forecast less the margin, traded fill):", ""]
+            L += ["The early lay's entries (first traded, lay at the forecast less the margin), by the traded fill and "
+                  "by the strict one (a later trade beyond our price: the queue ahead certainly cleared):", ""]
             L += _tbl(early, [c for c in cols if c in early[0]]) + [""]
     L += ["## 3. The development days: the 40 best rules by return", ""]
     L += _tbl(res["dev_top"], RULE_COLS) + [""]
