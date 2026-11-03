@@ -609,6 +609,81 @@ def settle(store, day: date, mode: str, s3=None) -> dict:
     return out
 
 
+def running(store, day: date, mode: str = "paper", s3=None) -> dict:
+    """The day so far, a row per greyhound market the trader looked at (the owner, 3 Nov 2026: "keep a running table
+    throughout the day on how the paper trader would have performed on each greyhound market"): its bets, the money
+    staked, the average price taken, the BSP, the CLV, and, once the recorder has the market's settled book, the P&L
+    traded out at the SP and held to the result, with the running total. Read from the trader's ledger as it is copied
+    to S3 and the recorder's greyhound books (their settled reads, uploaded every 15 minutes)."""
+    from betfair_recorder import _read_day_csv
+    ds = f"{day:%Y-%m-%d}"
+    raw = store.get(f"{PREFIX}/{mode}/{ds}/ledger.csv")
+    if not raw:
+        return {"day": ds, "mode": mode, "note": "no ledger yet today", "markets": []}
+    ledger = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str})
+    books = _read_day_csv(day, "books_greyhound.csv", s3=s3)
+    final = books[books.source == "final"] if books is not None and "source" in books else pd.DataFrame(
+        columns=["market_id", "selection_id", "runner_status", "sp_actual", "polled_utc"])
+    s = settle_rows(ledger, final)
+    ledger["race_time"] = ledger.race_time.astype(str)
+    looked = ledger.groupby("market_id").agg(track=("track", "first"), race_time=("race_time", "first"),
+                                             runners=("selection_id", "nunique"))
+    rows = []
+    for mid, m in looked.sort_values("race_time").iterrows():
+        b = s[s.market_id == mid] if len(s) else s
+        bets = int(len(b))
+        row = {"race_time": m.race_time, "track": m.track, "market_id": mid, "runners_seen": int(m.runners),
+               "bets": bets}
+        if bets:
+            settled = b.pnl.notna().all()
+            row.update({"staked": round(float(b.matched.sum()), 2),
+                        "avg_price": round(float((b.avg_price * b.matched).sum() / b.matched.sum()), 2),
+                        "bsp": round(float((b.bsp * b.matched).sum() / b.matched.sum()), 2) if b.bsp.notna().all()
+                        else None,
+                        "clv%": round(100 * float(b.clv.mean()), 2) if b.clv.notna().all() else None,
+                        "result": ", ".join(sorted(set(b.result.dropna().astype(str)))) or "pending",
+                        "pnl": round(float(b.pnl.sum()), 2) if settled else None,
+                        "pnl_held": round(float(b.pnl_back.sum()), 2) if settled else None})
+        rows.append(row)
+    t = pd.DataFrame(rows)
+    out = {"day": ds, "mode": mode, "updated_utc": datetime.now(timezone.utc).isoformat(timespec="minutes"),
+           "markets_seen": int(len(t)), "markets_bet": int((t.bets > 0).sum()) if len(t) else 0,
+           "bets": int(t.bets.sum()) if len(t) else 0, "markets": rows}
+    if len(t) and "pnl" in t:
+        done = t[t.pnl.notna()]
+        out.update({"markets_settled": int(len(done)), "staked_settled": round(float(done.staked.sum()), 2),
+                    "pnl": round(float(done.pnl.sum()), 2), "pnl_held": round(float(done.pnl_held.sum()), 2),
+                    "roi%": round(100 * float(done.pnl.sum() / done.staked.sum()), 2) if len(done) else None,
+                    "clv%": round(100 * float(s.clv.mean()), 2) if s.clv.notna().any() else None,
+                    "pending": int(((t.bets > 0) & t.pnl.isna()).sum())})
+    return out
+
+
+def running_markdown(r: dict) -> str:
+    """The running table as markdown: the day's totals, then a row per market bet on (in race order) with the
+    running total of the P&L traded out; the markets looked at and not bet on, counted."""
+    lines = [f"## Greyhound {r['mode']} trader, {r['day']} (updated {r.get('updated_utc', '-')} UTC)", ""]
+    if not r.get("markets"):
+        return "\n".join(lines + [r.get("note", "no markets yet")]) + "\n"
+    lines += [f"Markets looked at {r['markets_seen']}, bet on {r['markets_bet']}, bets {r['bets']}; settled "
+              f"{r.get('markets_settled', 0)} (pending {r.get('pending', 0)}). Traded out at the SP: "
+              f"**GBP{r.get('pnl', 0):+,.2f}** on GBP{r.get('staked_settled', 0):,.2f} staked "
+              f"(ROI {r.get('roi%')}%); held to the result GBP{r.get('pnl_held', 0):+,.2f}; mean CLV {r.get('clv%')}%. "
+              "2% commission; paper only.", "",
+              "| Race (UK) | Track | Bets | Staked | Avg price | BSP | CLV% | Result | P&L traded out | Held | Running |",
+              "|---|---|---|---|---|---|---|---|---|---|---|"]
+    total = 0.0
+    for m in r["markets"]:
+        if not m.get("bets"):
+            continue
+        if m.get("pnl") is not None:
+            total += m["pnl"]
+        lines.append(f"| {m['race_time']} | {m['track']} | {m['bets']} | {m.get('staked')} | {m.get('avg_price')} | "
+                     f"{m.get('bsp')} | {m.get('clv%')} | {m.get('result')} | {m.get('pnl')} | {m.get('pnl_held')} | "
+                     f"{round(total, 2)} |")
+    return "\n".join(lines) + "\n"
+
+
 def summary(store, mode: str) -> dict:
     keys = sorted(k for k in store.listing(f"{PREFIX}/{mode}/") if k.endswith("/settled.csv"))
     parts = [pd.read_csv(io.BytesIO(store.get(k))) for k in keys]
@@ -733,6 +808,9 @@ def main(argv=None) -> int:
                     help="a past day (--date): the card's features against the results' features, feature by feature")
     ap.add_argument("--coverage", action="store_true",
                     help="the day's GB races against what was priced and what each mode's trader decided")
+    ap.add_argument("--running", action="store_true",
+                    help="the day so far, a row per market: bets, CLV and the P&L as each market settles")
+    ap.add_argument("--out", default=None, help="--running: write the table's markdown here")
     ap.add_argument("--days", type=int, default=1, help="settle: the last N days")
     ap.add_argument("--date", default=None)
     ap.add_argument("--config", default=str(CONFIG_PATH))
@@ -744,6 +822,14 @@ def main(argv=None) -> int:
         out["check_card"] = card_check(store, day)
     if a.coverage:
         out["coverage"] = coverage(store, day, load_config(Path(a.config)))
+    if a.running:
+        r = running(store, day, "paper")
+        store.put(f"{PREFIX}/paper/{day:%Y-%m-%d}/running.json", json.dumps(r, indent=1, default=str).encode())
+        md = running_markdown(r)
+        store.put(f"{PREFIX}/paper/{day:%Y-%m-%d}/running.md", md.encode())
+        if a.out:
+            Path(a.out).write_text(md)
+        out["running"] = {k: v for k, v in r.items() if k != "markets"}
     if a.train or (a.train_if_missing and load_model(store)[0] is None):
         out["train"] = train(store, day)
     if a.predict:

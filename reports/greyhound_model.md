@@ -772,3 +772,293 @@ from the baseline on the same runners, 90%, a bootstrap over days):
 - **Batch 3** (research/greyhound/experiments/current.json) asks where the confirm recipe's gain comes from (the
   slower rate on the quick window, or the longer window at the quick rate), tests two tree sizes, and runs the best
   features on the new confirm recipe with the study.
+
+## 20. The fast loop's third batch (greyhound-fastloop.yml run 41606065187, 3 Nov 2026)
+
+**The two lanes worked.** The quick lane's six experiments and its table were done at 08:56 UTC, 7 minutes after the
+push. The slow lane (best_confirm) was still fitting. In batch 2 the table waited 56 minutes on one slow job.
+
+**The quick lane** (fitted on January 2024 to May 2026 unless marked; tested on every race from 1 June to 2 November
+2026; log-loss against the result, lower is better; paired against the baseline, 90%, by day):
+
+| Experiment | What changes | Rounds | Log-loss | vs logbsp (90%) | On BSP races: model / BSP | Seconds |
+|---|---|---|---|---|---|---|
+| logbsp (baseline) | quick recipe (learning rate 0.15, 63 leaves) | 1,262 | 0.44343 | | 0.44400 / 0.42838 | 262 |
+| logbsp_weighin_fb_sd | + the weigh-in, first_bend, style_draw | 954 | 0.44286 | -0.00057 (-0.00096 to -0.00018) | 0.44341 / 0.42838 | 290 |
+| **logbsp_lr08** | learning rate 0.08 | 2,675 | **0.44274** | **-0.00069 (-0.00100 to -0.00038)** | 0.44332 / 0.42838 | 324 |
+| logbsp_from2021 | fitted from 2021 at 0.15 | 1,340 | 0.44323 | -0.00020 (-0.00055 to +0.00014) | 0.44381 / 0.42838 | 325 |
+| logbsp_leaves127 | 127 leaves, 100 a leaf | 685 | 0.44361 | +0.00018 (-0.00018 to +0.00054) | 0.44417 / 0.42838 | 198 |
+| logbsp_leaves31 | 31 leaves, 500 a leaf | 1,484 | 0.44318 | -0.00025 (-0.00055 to +0.00004) | 0.44376 / 0.42838 | 264 |
+
+**Reading.**
+- **Most of the confirm recipe's gain is the learning rate.** Batch 2's confirm recipe (2021 on, 0.05) gained 0.00096
+  in 51 minutes. The quick window at 0.08 gains 0.00069 (72% of it) in 324 seconds. The longer window at the quick
+  rate gains 0.00020, and its interval crosses zero.
+- **Tree size:** neither change is clear of zero. Larger trees lean worse and smaller ones lean better.
+- **The feature gain is repeatable.** The weigh-in plus first_bend and style_draw give the same 0.00057 as in batch 2,
+  and the interval is still clear of zero.
+- **No model adds to the BSP.** The Benter gain is between -0.00001 and +0.00002 in every row, and the model's weight
+  beside the BSP is between -0.020 and +0.006.
+
+**The slow lane: best_confirm** (the weigh-in, first_bend and style_draw on the new confirm recipe: fitted on 2022 to
+May 2026 at 0.08 with a 25-minute budget). The table came at 09:20 UTC, 31 minutes after the push. In batch 2 the slow
+job alone took 55 minutes.
+
+| Experiment | Rounds | Log-loss | vs logbsp (90%) | On BSP races: model / BSP | Seconds |
+|---|---|---|---|---|---|
+| best_confirm | 5,438 | **0.44225** | **-0.00119 (-0.00153 to -0.00086)** | 0.44283 / 0.42838 | 1,534 |
+
+- It is the best model so far.
+- It took 1,534 seconds against a 1,500-second fit budget and stopped under the 6,000-round cap, so the budget most
+  likely ended it. The result file records which.
+- Its study (the same 27 days and the same development/holdout split as section 19):
+  - Its price adds to the SP forecast much as batch 2's confirm price did: at first traded 0.0079 a race in
+    development and 0.0049 in the holdout; at 5 minutes out 0.0131 and 0.0146.
+  - No holdout rule of 52 has its 90% lower bound above zero.
+  - Section 19's lead (a lay at first traded) comes in at bar 0.02 here: +2.07% (-0.02 to +3.85) on 213 trades, with a
+    mean CLV of -1.69%. So it fades, as a result driven by the results rather than the prices would.
+
+**The measure changes from batch 4** (the owner, 3 Nov 2026: "we are just trying to trade an earlier price vs. Betfair
+SP ... get money on at higher prices that are expected to shorten at BFSP"):
+- The SP is the market's best price. Whether a model beats it, the Benter column of sections 18-20, is not the
+  trade-out's question, so the fast loop no longer ranks by it (the results JSON keeps it).
+- What the trade-out needs from our price is how much it adds to the forecast of the SP from the book on offer. At
+  each entry mark (first traded, 5 and 3 minutes out), the same conditional logit is fitted without and with our
+  price, walk-forward by day on the recorded books from 6 October (re-timed). The table leads with the difference, a
+  race, and its paired 90% interval against the baseline. Log-loss against the result comes second.
+- **What it showed in batch 2's study** (the confirm log-BSP prices; the SP book's cross-entropy a race; "our price
+  adds" is the conditional logit with our price less the same one without it):
+
+| Mark | Days | Our price adds | Gain over the market price |
+|---|---|---|---|
+| First traded, development | 13 | 0.0076 | 0.0391 |
+| First traded, holdout | 7 | 0.0048 | 0.0374 |
+| 5 minutes out, development | 13 | 0.0127 | 0.0288 |
+| 5 minutes out, holdout | 7 | 0.0141 | 0.0325 |
+| 3 minutes out, development | 13 | 0.0002 | 0.0041 |
+| 3 minutes out, holdout | 7 | 0.0003 | 0.0069 |
+| 1 minute out, development and holdout | 13 and 7 | -0.00001 and 0.00000 | 0.0001 (the book is the SP) |
+
+- So our price does help call which runners will shorten, at first traded and 5 minutes out. The trades have not yet
+  made it pay. Of the 40 holdout rules, 37 have a negative mean CLV. The other three are lays 1 minute out (+0.29% to
+  +0.62%), and all three still returned less than zero.
+- The books before 1 minute out are the recorder's, about 90 seconds stale. The live-key recorder's 5-second books
+  wait on the paper-models runner being registered.
+- **Why calling the move has not paid: the price on offer to back is usually shorter than the SP.** From the studies'
+  section 1 (all 27 panel days, re-timed books, best back price against the SP):
+
+| Mark | Runners | Mean log(SP / best back price) | Median gap |
+|---|---|---|---|
+| First traded | 18,360 | +0.363 | 21.6% |
+| 5 minutes out | 12,322 | +0.452 | 27.1% |
+| 3 minutes out | 12,744 | +0.141 | 13.0% |
+| 1 minute out | 12,290 | +0.045 | 8.6% |
+
+  - A greyhound book before the last minutes is thin: most of its money is matched in the last three minutes:
+    a median GBP380 matched at 3 minutes out and GBP1,993 at 1 minute out (reports/open_close/data.md 4.2). The best back price on offer is mostly well under the SP.
+  - Taking it gives away more than our forecast of the move gains. The backs taken 5 minutes out on the micro forecast
+    have a mean CLV of -6.18% in the holdout.
+  - The horse trader takes the price because horse books are deep by the morning. For greyhounds, the test this
+    points to is asking for the price: a back offered at our forecast SP plus a margin, left in the book to be
+    matched, or not. It can be simulated on the live recorder's 5-second books with traded volume, and only roughly
+    on the recorder's.
+
+## 21. The fast loop's fourth batch: ranked by calling the move (greyhound-fastloop.yml run 41610771793, 3 Nov 2026)
+
+**The first batch ranked by what the trade-out needs** (section 20's change of measure). Every experiment was fitted
+on January 2024 to May 2026 on the new quick recipe (learning rate 0.08). Columns:
+- **Our price adds:** how much the experiment's price adds to the forecast of the SP from the book at first traded,
+  5 and 3 minutes out. It is the SP book's cross-entropy a race: the conditional logit without our price less the same
+  with it. It is walk-forward by day on the recorded books from 6 October, re-timed. Higher is better.
+- **vs logbsp:** the paired difference from the baseline over those three marks, 90% by day. Negative is better.
+- **Log-loss:** against the result, every race from 1 June to 2 November 2026, paired the same way.
+
+| Experiment | Rounds | Our price adds: first traded / 5 min / 3 min | vs logbsp (90%) | Log-loss | vs logbsp (90%) | Seconds |
+|---|---|---|---|---|---|---|
+| logbsp (baseline: card-safe, 63 leaves) | 2,675 | 0.00665 / 0.01304 / 0.00024 | | 0.44274 | | 521 |
+| **logbsp_lr05** (learning rate 0.05) | 8,000 (the cap) | **0.00694 / 0.01363 / 0.00028** | **-0.00029 (-0.00040 to -0.00017)** | 0.44241 | -0.00032 (-0.00056 to -0.00009) | 1,241 |
+| **logbsp_weighin_fb_sd** (+ the weigh-in, first_bend, style_draw) | 3,432 | **0.00691 / 0.01354 / 0.00028** | **-0.00026 (-0.00037 to -0.00015)** | 0.44240 | -0.00034 (-0.00063 to -0.00006) | 736 |
+| logbsp_fb_sd_leaves31 | 5,270 | 0.00663 / 0.01332 / 0.00025 | -0.00008 (-0.00018 to +0.00002) | 0.44242 | -0.00032 (-0.00058 to -0.00005) | 878 |
+| logbsp_fb_sd (+ first_bend, style_draw) | 2,944 | 0.00660 / 0.01330 / 0.00024 | -0.00005 (-0.00018 to +0.00008) | 0.44284 | +0.00011 (-0.00015 to +0.00036) | 701 |
+| logbsp_ff05 (half the features a tree) | 4,080 | 0.00661 / 0.01324 / 0.00024 | -0.00003 (-0.00013 to +0.00006) | 0.44275 | +0.00002 (-0.00026 to +0.00030) | 514 |
+| logbsp_ff09 (more features and rows a tree) | 2,613 | 0.00658 / 0.01322 / 0.00023 | -0.00002 (-0.00013 to +0.00009) | 0.44285 | +0.00012 (-0.00012 to +0.00036) | 740 |
+| softmax_fb_sd (the win objective) | 170 | 0.00502 / 0.00981 / 0.00014 | +0.00163 (+0.00132 to +0.00192) | 0.44562 | +0.00289 (+0.00237 to +0.00338) | 137 |
+
+**Reading.**
+- **The two measures rank the experiments alike.** What forecasts the result better also calls the move better.
+- **The log-BSP target matters most for the move.** The softmax model's price adds a quarter less at first traded
+  (0.0050 against 0.0067) and the interval is well clear.
+- **A slower learning rate helps.** At 0.05 the fit ran to its 8,000-round cap, so more rounds may help further. The
+  weigh-in helps too.
+- **The first-bend and style-draw blocks no longer help on their own** at 0.08. They did at 0.15 in batches 2 and 3,
+  so their gain was partly making up for the fast rate.
+- **Neither tree size nor subsampling changes anything.**
+- **The run took 26 minutes.** The shortening score adds about 8 to 10 minutes a job (S3 reads and the walk-forward).
+  The longest job was 24 minutes against a 30-minute limit, so the limit goes to 60 (batch 5 fits at 0.05 to 10,000 rounds).
+
+## 22. The limit-order study (greyhound-limit-study.yml run 41613570934, 3 Nov 2026)
+
+The owner (3 Nov 2026): "build the limit-order study ... take prices based on the behaviour of the greyhound market.
+I am open to any strategy." (research/greyhound/limit_study.py)
+
+**The setup.**
+- **Orders:** at first traded, 5 and 3 minutes out, every runner gets each order. It rests in the book at its limit
+  and lapses at the off unless matched. The orders are:
+  - our forecast SP plus or minus 0/5/10/20% (`ask` backs above it, `bid` lays below it);
+  - the head of the queue (`join`);
+  - 1/3/5 ticks off the best price (`ticks`).
+- **Gates:** all runners, those forecast to shorten, or those forecast to drift.
+- **Closing:** at the SP, as the horse trader closes, with 2% commission on each market's net.
+- **Books:** the recorder's, re-timed; our price is the 5 October model's.
+- **Days:** 53,460 runner-marks. Scored days 14 October to 1 November: 12 development, 7 holdout. 2 November had no
+  model prices.
+- **Selection:** each family's best rule on the development days was read once on the holdout, 36 rules in all.
+- **Two match rules:**
+  - `through`: a later book offers the other side at the limit.
+  - `traded`: a later last-traded price reaches the limit.
+
+  For a lay resting at P, a trade at or below P means backers would have matched our offer first. So `traded` is
+  sound for the price, but it says nothing about the size. The full stake is assumed matched, and the books are 60
+  seconds apart.
+
+**1. The market's behaviour: greyhound prices drift from the first book to the SP.**
+
+| From | Runners drifting (SP above the mid then), by price band | The favourite | 6th and beyond |
+|---|---|---|---|
+| First traded | 66.3% to 93.9% (mean log SP/mid +0.24 to +0.80) | 81.7% | 76.2% |
+| 3 minutes out | 49.2% to 76.5% (+0.01 to +0.29) | 53.3% | 75.3% |
+
+- The shortest runners drift most from first traded: 93.9% of those under 2.0 drift, by a mean log of 0.80.
+- By 3 minutes out the favourites are near their SP. Outsiders still drift: the 6th and beyond go off about 35% longer
+  on average (mean log +0.30).
+- The 5-minute books look thin: 67% to 91% drift, and the best lay is 3 to 11 times the SP (mean log 1.06 to
+  2.36). They are often older than
+  their time says, so read them as early books.
+
+**2. Backing at higher prices loses. Every back rule is negative on the holdout.**
+- The resting backs are matched when the dog drifts. Matched backs had a mean CLV between -1.7% and -8.8%. The same
+  orders unmatched would have had +6% to +59% at their limit. That gap is the adverse selection.
+- Asking for a price above the market gets matched only by the runners that keep drifting.
+
+**3. Laying the early book: two rules hold their development result on the holdout.**
+
+| Rule (first traded, runners forecast to drift, matched by the traded price) | Days | Trades a day | Return (90%) | Mean CLV | Held to the result |
+|---|---|---|---|---|---|
+| Lay at 80% of our forecast SP: development | 12 | 160 | +1.24% (+0.44 to +1.93) | +4.59% | +1.20% |
+| Same: holdout | 7 | 150 | **+1.92% (+0.75 to +3.01)** | **+6.00%** | +1.20% |
+| Lay at the best back price now (`join`): development | 12 | 120 | +0.92% (-0.21 to +2.80) | +0.63% | -0.25% |
+| Same: holdout | 7 | 124 | +0.71% (+0.16 to +1.29) | +2.95% | +1.95% |
+
+- These are the first trade-out rules whose CLV is positive as well as their return. Earlier leads came from the
+  results, with a negative CLV.
+- They fit the behaviour in section 1. Early greyhound backers take prices shorter than the SP. A layer resting
+  slightly short of our forecast is matched by them and closes at a longer SP.
+- **Not yet a finding:**
+  - 2 of 36 holdout rules clear zero, and chance gives about 2. The development selection and the positive CLV make
+    them more than that, but not proof.
+  - Both rely on the `traded` match. With `through`, neither is in the development top 40.
+  - The size matched is unknown. The early books are thin, and a GBP2 trade at our price does not mean our GBP25 stake
+    (GBP100 liability) would have been matched.
+
+**What it needs next:**
+- **The traded volume at each price.** The live-key recorder (greyhound/book_record.py) asks Betfair for each
+  runner's traded volume, and can keep the volume by price in a file of its own. It waits on the paper-models runner.
+- **The best model's prices.** The study can run on them through the fast loop, as the trade-out study does.
+- **A forward test fixed before its first day.** The two lay rules, frozen as written above, scored on each new day's
+  recorded books, read only after enough days.
+
+## 23. Every strategy: the full grid (greyhound-limit-study.yml run 41617988279, 3 Nov 2026)
+
+The owner (3 Nov 2026): "I am also fine with a lay to back strategy. Evaluate all trading strategies, keep an open
+mind."
+
+**The setup.**
+- **Entries:** take the price now; ask/bid at our forecast SP plus or minus 0/5/10/20%; join the queue; 1/3/5 ticks
+  off the best price. Each as a back or a lay, at first traded, 5 or 3 minutes out.
+- **Exits:** close at the SP, or green up at the market in the runner's last book before the off (`last`: lay then
+  back, or back then lay).
+- **Gates:** all runners; forecast to shorten or to drift; the favourite now; short-priced (mid under 3.0);
+  long-priced (8.0 or more).
+- **Fills:** `through` or `traded`.
+- **Data:** the same 27 days, books, model (the 5 October one), development and holdout days as section 22.
+- **Selection:** the best rule of each of 96 families (mark x order x side x fill x exit) on the development days,
+  read once on the holdout.
+
+**The verdict on the grid as a whole: nothing beyond chance.**
+- 3 of the 96 holdout rules have their 90% lower bound above zero; chance alone gives about 4.8.
+- Every back strategy but one loses: 47 of the 48 back families are at or below zero on the holdout. Whatever way in, the backs
+  matched are the drifters.
+- Lays do better: 10 of 48 above zero.
+
+**One family is consistent: lay the short-priced runners in the first book, at 80% of our forecast SP.** It closes
+the same whether it is greened up before the off (lay to back) or at the SP. Matched by the traded price:
+
+| Rule (first traded, lay at 80% of forecast SP, traded fill) | Days | Trades a day | Return (90%) | Mean CLV | Held to the result |
+|---|---|---|---|---|---|
+| Short-priced, lay to back: development | 12 | 52.3 | +3.34% (+2.46 to +4.32) | +7.09% | +2.60% |
+| **Short-priced, lay to back: holdout** | 7 | 37.9 | **+3.31% (+1.75 to +4.85)** | **+7.62%** | +7.10% |
+| Short-priced, lay to SP: development | 12 | 52.3 | +2.76% (+1.61 to +3.81) | +7.09% | +2.60% |
+| The favourite, lay to SP: development | 12 | 33.0 | +3.31% (+1.45 to +5.30) | +6.83% | +4.89% |
+| The favourite, lay to SP: holdout | 7 | 28.7 | +2.19% (-1.43 to +7.13) | +5.56% | +8.21% |
+| All runners, lay to back: development | 12 | 162.4 | +1.12% (+0.85 to +1.38) | +4.68% | +1.39% |
+
+**Reading.**
+- **It matches the market's behaviour** (section 22). From the first book, 93.9% of runners priced under 2.0 drift to
+  the SP, by a mean log of 0.80. The shortest runners open shortest against their SP. A layer resting a little under
+  our forecast is matched by the early backers, and the price runs out by the off.
+- **Lay to back is as good as lay to SP, with less variance.** The greened-up return does not depend on the result,
+  so its interval is about a third as wide on all runners (+0.85 to +1.38 against +0.42 to +1.90).
+- **It still rests on the `traded` fill and on unknown size.**
+  - Under `through` (a later book offering the price) this family is not among the best.
+  - With most of a greyhound market's money arriving in its last three minutes, a trade at our price in the first
+    book may be a few pounds against our GBP25 stake (GBP100 liability) to win GBP100.
+  - The grid as a whole is at chance. This is a lead to test forward, not an edge.
+
+**What decides it:**
+1. **Size.** The live-key recorder's traded volume a runner, every 5 seconds from 15 minutes out, shows how much was
+   matched at or below our price after we would have posted it. It waits on the paper-models runner (the Vultr
+   server, being set up).
+2. **A forward test fixed before its first day.**
+   - The rule: at first traded, lay every runner priced under 3.0 at 80% of the forecast SP.
+   - Exits: green up in the last book, and separately close at the SP.
+   - Fills: matched by the traded price, and separately by the book, recorded both ways.
+   - Scored on each new day's recorded books, read only after 20 days.
+3. **The same grid on the best fast-loop model's prices** (batch 5's slow lane).
+
+## 24. The fast loop's fifth batch, and the early lays on a better price (greyhound-fastloop.yml run 41614579036, 3 Nov 2026)
+
+**The quick lane.** Fitted on January 2024 to May 2026; the measures as in section 21. Runs at 0.05 stopped by early
+stopping, under the 10,000-round cap.
+
+| Experiment | Rounds | Our price adds: first traded / 5 min / 3 min | vs logbsp (90%) | Log-loss | vs logbsp (90%) | Seconds |
+|---|---|---|---|---|---|---|
+| logbsp (baseline: card-safe, 0.08) | 2,675 | 0.00665 / 0.01304 / 0.00024 | | 0.44274 | | 531 |
+| **weighin_lr05** (+ the weigh-in, 0.05) | 7,515 | **0.00708 / 0.01393 / 0.00029** | **-0.00044 (-0.00054 to -0.00034)** | **0.44207** | -0.00067 (-0.00094 to -0.00039) | 1,193 |
+| weighin_fb_sd_lr05 (+ first_bend, style_draw) | 7,650 | 0.00703 / 0.01381 / 0.00029 | -0.00038 (-0.00049 to -0.00028) | 0.44207 | -0.00066 (-0.00094 to -0.00039) | 1,031 |
+| card_lr05 (card-safe, 0.05) | 8,917 | 0.00694 / 0.01360 / 0.00028 | -0.00029 (-0.00042 to -0.00017) | 0.44238 | -0.00035 (-0.00059 to -0.00012) | 1,604 |
+
+- **The best price yet** at calling the move to the SP is the weigh-in at 0.05. Its log-loss (0.44207) is the best of
+  any fit so far, 0.0002 better than section 20's slow best_confirm (0.44225), in about 20 minutes.
+- The first-bend and style-draw blocks add nothing on top of it.
+- The weigh-in is published live at 12 tracks only. The card-safe model at 0.05 is the one to serve elsewhere.
+
+**The slow lane: the weigh-in at 0.05 through both studies** (its prices on the same 27 days, re-timed books; this time
+2 November is scored too: 13 development days, 7 holdout):
+- **Trade-out study (taking the price):** no holdout rule of 52 has its 90% lower bound above zero.
+- **Limit-order study:** run on the section 22 version (exit at the SP; gates all, shorten, drift). 2 of 36 holdout
+  rules clear zero, against about 1.8 expected by chance. They are the same two as section 22, now on a better price:
+
+| Rule (first traded, forecast-drift runners, traded fill, closed at the SP) | Days | Trades a day | Return (90%) | Mean CLV | Held |
+|---|---|---|---|---|---|
+| Lay at 80% of the forecast SP: development | 13 | 169.6 | +1.90% (+1.09 to +2.69) | +6.83% | +1.37% |
+| Lay at 80% of the forecast SP: **holdout** | 7 | 158.7 | **+1.42% (+0.34 to +2.50)** | **+9.07%** | +0.80% |
+| Lay at the best back price (join): development | 13 | 115.8 | +1.06% (-0.10 to +2.91) | +0.97% | -0.71% |
+| Lay at the best back price (join): **holdout** | 7 | 119.9 | +0.76% (+0.19 to +1.40) | +3.29% | +0.32% |
+
+- Compared with section 22 on the 5 October model (whose development days stop a day earlier, 12 against 13), the 80% lay's development return rises from +1.24% to +1.90%. Its
+  holdout CLV rises from +6.0% to +9.1%, and its holdout return falls from +1.92% to +1.42%, both intervals clear of
+  zero.
+- Better prices make the early lay's prices better. The study is still at chance overall, and the size matched is
+  still unknown (sections 22 and 23).
+- The live-key recorder started on the new server on 3 November at about 10:41 UTC (`ashcroft-paper`,
+  78.141.242.224). Its books, with each runner's traded volume, are what will measure the size.

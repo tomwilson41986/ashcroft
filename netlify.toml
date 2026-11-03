@@ -2,6 +2,9 @@
   base = "frontend"
   publish = "."
   command = "npm install"
+  # Nothing is ever published to Netlify (the owner, 3 Nov 2026: "we dont need to publish to netlify ever"): every
+  # build, production included, is skipped before it starts.
+  ignore = "exit 0"
 
 # No Netlify deploy for pull requests or for any branch that is not the
 # production one. `ignore` is Netlify's "should I build this?" hook and an exit
@@ -14,8 +17,7 @@
 # edited frontend/ the previews would have come back. These two lines say it
 # outright instead of relying on which files a commit happens to touch.
 #
-# Production deploys of ashcroftequities still run, since that is the live
-# site. Add the same `ignore` to [build] above to stop those too.
+# Production deploys stopped too on 3 Nov 2026 (the `ignore` in [build] above).
 #
 # One thing this cannot do: the three neutral GitHub checks and the
 # "Deploy Preview ... canceled" bot comment are posted by the Netlify GitHub
