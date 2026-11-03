@@ -240,6 +240,8 @@ class EarlyLay:
         self.laid: dict = {}           # market -> liability of the lays placed and not yet closed
         self.preds: pd.DataFrame | None = None
         self._loaded_at = None
+        self._beat_at = None
+        self.last_error = ""
         self._resume()
 
     # the record ----------------------------------------------------------------------------------------------------
@@ -289,6 +291,24 @@ class EarlyLay:
                 "Europe/London").dt.tz_convert("UTC")
             self.preds = p
 
+    def heartbeat(self, force: bool = False, **extra) -> None:
+        """The trader's state each minute to S3 (``status.json``), read by the running table: the job's own log is
+        printed only when the day ends."""
+        t = self.now()
+        if not force and self._beat_at and (t - self._beat_at).total_seconds() < 60:
+            return
+        self._beat_at = t
+        st = {"time_utc": pd.Timestamp(t).strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": self.mode,
+              "markets_watched": len(self.first), "markets_priced": len(self.priced),
+              "markets_closed": len(self.greened), "locked_pnl": round(self.locked, 2),
+              "open_liability": round(sum(self.open_liability.values()), 2),
+              "laid_not_closed": round(sum(self.laid.values()), 2), "stopped": bool(self.kill()),
+              "prices_loaded": self.preds is not None, "last_error": self.last_error[:300], **extra}
+        try:
+            self.store.put(f"{PREFIX}/{self.mode}/{self.day:%Y-%m-%d}/status.json", json.dumps(st).encode())
+        except Exception as exc:
+            log.warning("status not written (%s)", exc)
+
     # one poll ------------------------------------------------------------------------------------------------------
     def step(self, near_only: bool = False) -> None:
         self.load_predictions()
@@ -321,6 +341,7 @@ class EarlyLay:
                         self.orders.cancel(mid)             # the resting lays come off; the matched are greened later
             except Exception as exc:                         # one market's failure never stops the others
                 log.warning("%s: %s", mid, exc)
+                self.last_error = f"{mid}: {exc}"
 
     def watch(self, mid: str, b, g: pd.DataFrame, secs: float, stopped: bool) -> None:
         if b.status != "OPEN" or b.inplay:
@@ -482,7 +503,10 @@ class EarlyLay:
                     self.step()
             except Exception as exc:                            # one failed poll: the next tries again
                 log.warning("poll failed (%s)", exc)
+                self.last_error = f"poll: {exc}"
+            self.heartbeat()
             sleep(self.cfg["near_poll_seconds"])
+        self.heartbeat(force=True, finished=True)
         return {"day": f"{self.day:%Y-%m-%d}", "mode": self.mode, "markets_priced": len(self.priced),
                 "markets_closed": len(self.greened), "locked_pnl": round(self.locked, 2),
                 "open_liability": round(sum(self.open_liability.values()), 2)}
@@ -494,6 +518,16 @@ def table(store, day: date, mode: str = "live") -> str:
     held lays settle with the result, shown as open liability)."""
     raw = store.get(f"{PREFIX}/{mode}/{day:%Y-%m-%d}/ledger.csv")
     head = f"### Early lay, {mode} orders on the owner's account ({day:%Y-%m-%d})"
+    st = store.get(f"{PREFIX}/{mode}/{day:%Y-%m-%d}/status.json")
+    if st:
+        s = json.loads(st)
+        head += (f"\n\nTrader: last seen {s.get('time_utc')} UTC; watching {s.get('markets_watched')} races, priced "
+                 f"{s.get('markets_priced')}, closed {s.get('markets_closed')}"
+                 + ("; **STOPPED** (S3 STOP)" if s.get("stopped") else "")
+                 + (f"; {s['state']}" if s.get("state") else "")
+                 + (f"; last error: {s['last_error']}" if s.get("last_error") else "") + ".")
+    else:
+        head += "\n\nTrader: no status yet (not started, or not running)."
     if not raw:
         return f"{head}\n\nno ledger yet\n"
     led = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str})
@@ -546,12 +580,17 @@ def main(argv=None) -> int:
         live = a.live and switch_on()
         if a.live and not live:
             log.warning("GREYHOUND_EARLY_LAY is not 'live': the decisions are logged, nothing is sent")
+        mode = "live" if live else "paper"
+        status_key = f"{PREFIX}/{mode}/{day:%Y-%m-%d}/status.json"
+        store.put(status_key, json.dumps({"time_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                          "mode": mode, "state": "starting: fitting the forecast"}).encode())
         fit = laytest.day_fit(store, day)
         if fit is None:
+            store.put(status_key, json.dumps({"time_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                              "mode": mode, "state": "stopped: no forecast fit for today"}).encode())
             raise SystemExit("no forecast fit for today: nothing traded")
         x = LiveExchange(BetfairData(source="greyhound"))
         x.login()
-        mode = "live" if live else "paper"
         ledger = Path(os.getenv("GREYHOUND_LEDGER_DIR") or (Path.home() / ".ashcroft" / "greyhound")) / \
             f"early_lay_{mode}" / f"{day:%Y-%m-%d}" / "ledger.csv"
         cfg = dict(CONFIG)
