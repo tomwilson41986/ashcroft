@@ -254,6 +254,41 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
 # The table
 # --------------------------------------------------------------------------------------------------------------------
 
+def _vs(r: dict, base: dict) -> str:
+    pr = r.get("paired")
+    if pr and r["name"] != base["name"]:
+        return f"{pr['diff']} {pr['ci90']}"
+    return str(round(r["logloss"] - base["logloss"], 5))
+
+
+def paired_vs_baseline(folder: Path, baseline: str | None, n_boot: int = 2000, seed: int = 0) -> dict:
+    """Each experiment's log-loss less the baseline's on the same runners, and its 90% interval from a bootstrap over
+    days (a day's races share their conditions, so the day is the unit). Negative: better than the baseline."""
+    files = {p.stem.removeprefix("pred_"): p for p in folder.rglob("pred_*.parquet")}
+    if not baseline or baseline not in files:
+        return {}
+    key = ["race_id", "dog_id"]
+
+    def ll(d):
+        p = d.p_model.clip(1e-12, 1 - 1e-12)
+        return -(d.won * np.log(p) + (1 - d.won) * np.log(1 - p))
+
+    base = pd.read_parquet(files[baseline]).assign(ll_b=lambda d: ll(d))[key + ["race_date", "ll_b"]]
+    rng = np.random.default_rng(seed)
+    out = {}
+    for name, f in files.items():
+        d = pd.read_parquet(f).assign(ll_e=lambda x: ll(x))[key + ["ll_e"]].merge(base, on=key, how="inner")
+        day = d.groupby("race_date").agg(e=("ll_e", "sum"), b=("ll_b", "sum"), n=("ll_e", "size"))
+        if len(day) < 2:
+            continue
+        idx = rng.integers(0, len(day), (n_boot, len(day)))
+        diff = (day.e.to_numpy()[idx].sum(1) - day.b.to_numpy()[idx].sum(1)) / day.n.to_numpy()[idx].sum(1)
+        out[name] = {"diff": round(float((day.e.sum() - day.b.sum()) / day.n.sum()), 5),
+                     "ci90": [round(float(np.percentile(diff, 5)), 5), round(float(np.percentile(diff, 95)), 5)],
+                     "runners": int(day.n.sum()), "days": int(len(day))}
+    return out
+
+
 def table(results: list[dict], baseline: str | None = None) -> str:
     if not results:
         return "(no results)"
@@ -261,15 +296,15 @@ def table(results: list[dict], baseline: str | None = None) -> str:
     lines = [f"Baseline: {base['name']}. Test {base['test_from']} to {base['test_to']}. Lower log-loss is better; "
              "the Benter gain is the blend's log-loss less the SP's alone on the second half of the test "
              "(negative: the model adds to the SP).", "",
-             "| Experiment | Features | Objective | Rounds | Log-loss | vs baseline | On BSP races: model / BSP | "
-             "Benter gain | Model weight | Seconds |", "|---|---|---|---|---|---|---|---|---|---|"]
+             "| Experiment | Features | Objective | Rounds | Log-loss | vs baseline (90%, paired, by day) | "
+             "On BSP races: model / BSP | Benter gain | Model weight | Seconds |", "|---|---|---|---|---|---|---|---|---|---|"]
     for r in results:
         b = r.get("benter_vs_bsp") or {}
         ll2 = b.get("logloss_second_half") or {}
         gain = round(ll2["blend"] - ll2["market"], 5) if ll2 else None
         ob = r.get("on_bsp_races") or {}
         lines.append(f"| {r['name']} | {r['features']} | {r['spec'].get('objective', 'softmax')} | {r['rounds']} | "
-                     f"{r['logloss']} | {round(r['logloss'] - base['logloss'], 5)} | {ob.get('model')} / {ob.get('bsp')} | "
+                     f"{r['logloss']} | {_vs(r, base)} | {ob.get('model')} / {ob.get('bsp')} | "
                      f"{gain} | {(b.get('weights') or {}).get('model')} | {r['seconds']} |")
     return "\n".join(lines)
 
@@ -294,6 +329,9 @@ def main(argv=None) -> int:
         spec = json.loads(Path(a.spec).read_text()) if a.spec else {}
         order = [e["name"] for e in spec.get("experiments", [])]
         rs.sort(key=lambda r: order.index(r["name"]) if r["name"] in order else len(order))
+        paired = paired_vs_baseline(Path(a.collect), spec.get("baseline") or (rs[0]["name"] if rs else None))
+        for r in rs:
+            r["paired"] = paired.get(r["name"])
         md = table(rs, spec.get("baseline"))
         Path(a.collect, "table.md").write_text(md + "\n")
         print(md)
@@ -328,6 +366,8 @@ def main(argv=None) -> int:
         if e.get("study"):
             res["study"] = run_study(store, pred, e["name"], out)
         (out / f"result_{e['name']}.json").write_text(json.dumps(res, indent=1, default=str))
+        # each runner's log-loss contribution, for the paired comparison against the baseline in --collect
+        pred[["race_id", "race_date", "dog_id", "won", "p_model"]].to_parquet(out / f"pred_{e['name']}.parquet", index=False)
         results.append(res)
         _log(json.dumps({k: res[k] for k in ("name", "logloss", "rounds", "seconds")}))
     print(table(results, spec.get("baseline")))

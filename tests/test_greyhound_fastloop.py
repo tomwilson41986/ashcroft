@@ -129,6 +129,8 @@ def test_spec_checks_and_the_cli(tmp_path, monkeypatch):
     assert fl.main(["--store", str(tmp_path), "--spec", str(p), "--collect", str(out)]) == 0
     t = (out / "table.md").read_text()
     assert "| a |" in t and "| b |" in t
+    paired = fl.paired_vs_baseline(out, "a")
+    assert paired["a"]["diff"] == 0.0 and paired["b"]["ci90"][0] <= paired["b"]["diff"] <= paired["b"]["ci90"][1]
 
 
 def test_code_hash_is_stable():

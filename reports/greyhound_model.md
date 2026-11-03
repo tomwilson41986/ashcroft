@@ -685,3 +685,38 @@ minute almost no dog's price clears 3% over the forecast SP.
 earlier, where a move is left to forecast, it does not pay after the spread and commission on these models. The
 live-key books (roadmap 0.2) will say the same or not with 5-second books and volume; the levers left are the late
 information (the weigh-in, roadmap L1) and the cross-market signals (M5).
+
+## 18. The fast loop's first batch (greyhound-fastloop.yml run 41595386223, 3 Nov 2026)
+
+**The loop's timings** (measured on the run): the feature cache built once in 20 minutes 24 seconds (every GBGB run to
+2 Nov, every block, the weigh-in features and the BSP, from June 2020); then ten experiments side by side, each fitted
+and scored in 46 to 167 seconds (the job, with the cache's download, 1 to 6 minutes); the whole batch from the cache to
+the table in about 7 minutes. A batch on a cache already built: about 7 minutes, against two to three hours before.
+
+**The batch** (quick recipe: fit January 2024 to May 2026 at a learning rate of 0.15; test every race from 1 June to
+2 November 2026, out of sample; log-loss against the result, lower is better):
+
+| Experiment | Features | Objective | Log-loss | vs baseline | On BSP races: model / BSP | Model's weight beside the BSP |
+|---|---|---|---|---|---|---|
+| base_card_safe (baseline) | 333 | softmax | 0.44687 | | 0.44749 / 0.42838 | -0.009 |
+| with_weighin | 342 | softmax | 0.44581 | -0.00106 | 0.44640 / 0.42838 | 0.062 |
+| plus_race_rel2 | 423 | softmax | 0.44736 | +0.00049 | 0.44803 / 0.42838 | -0.002 |
+| plus_first_bend | 339 | softmax | 0.44685 | -0.00002 | 0.44745 / 0.42838 | 0.010 |
+| plus_style_draw | 337 | softmax | 0.44692 | +0.00005 | 0.44752 / 0.42838 | 0.013 |
+| plus_all_blocks | 433 | softmax | 0.44650 | -0.00037 | 0.44709 / 0.42838 | -0.005 |
+| weighin_all_blocks | 442 | softmax | 0.44651 | -0.00036 | 0.44716 / 0.42838 | 0.024 |
+| objective_pl2 | 333 | Plackett-Luce | 0.44647 | -0.00040 | 0.44712 / 0.42838 | -0.006 |
+| objective_binary | 333 | binary | 0.44740 | +0.00053 | 0.44803 / 0.42838 | -0.008 |
+| **objective_logbsp** | 333 | log BSP | **0.44343** | **-0.00344** | 0.44400 / 0.42838 | -0.018 |
+
+**Reading.** The horse model's target, log BSP, is the best by a distance (0.0034, ten times the next). The weigh-in
+helps (0.0011). The three new blocks add little on their own; together 0.0004; race_rel2 alone is worse. The
+Plackett-Luce objective helps a little, the binary one hurts. No experiment adds to the BSP: every model's weight in a
+blend with it is about zero, and the blend's log-loss on the second half of the test is the BSP's within 0.0001. These
+differences were not yet given intervals; from the next batch the table carries a paired 90% interval against the
+baseline by day.
+
+**The trade-out study on three of them** (re-timed books, the horse model's settlement): on the log-BSP model's prices
+one rule of 44 in the holdout has a 90% lower bound above zero, a lay at the first traded book at bar 0.08, +9.78%
+(0.03 to 18.56) on 44 trades; one in 44 is about what chance gives at that level, so it is a lead to test on new days,
+not a finding.
