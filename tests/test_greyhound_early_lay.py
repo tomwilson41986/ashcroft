@@ -366,3 +366,25 @@ def test_the_table_lists_the_matched_lays_dog_by_dog(tmp_path, fit):
     n = sum(1 for i in x.sent if i["side"] == "LAY")
     rows = [ln for ln in md.split("dog by dog")[1].splitlines() if ln.startswith("| ") and "Romford" in ln]
     assert len(rows) == n and all("| green |" in r for r in rows)
+
+
+def test_never_a_lay_at_or_above_the_mid(tmp_path, fit):
+    """The owner, 3 Nov: lays only rest in the queue; one priced at or above the market's mid is not placed."""
+    from model.race_book import market_now
+    x = FakeX()
+    x.book = book()
+    t, _ = trader(tmp_path, x, fit)
+    t.step()
+    led = pd.read_csv(tmp_path / "ledger.csv")
+    for i in (i for i in x.sent if i["side"] == "LAY"):
+        q = x.book.runners[i["selectionId"]]
+        assert i["limitOrder"]["price"] < float(market_now([q.best_back[0]], [q.best_lay[0]])[0])
+    above = led[led.error.astype(str).str.contains("at or above the mid", na=False)]
+    assert (above.action == "no_lay").all()
+    # off, the old rule lays the same drifters whatever the mid
+    x2 = FakeX()
+    x2.book = book()
+    t2 = el.EarlyLay(Store(preds()), x2, dict(el.CONFIG, rest_only=False), date(2026, 11, 3), True,
+                     tmp_path / "ledger2.csv", fit, now=lambda: T0)
+    t2.step()
+    assert len([i for i in x2.sent if i["side"] == "LAY"]) >= len([i for i in x.sent if i["side"] == "LAY"])
