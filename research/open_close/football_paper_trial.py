@@ -2,7 +2,7 @@
 
 The rule, the gate and the window are the pre-registration's (reports/preregistration_football_exchange.md, its
 JSON block, read here and its SHA-256 kept beside the result). This module only scores: it places nothing, it
-changes nothing in the live record, and it reads the football book record that paper-models.yml writes
+changes nothing in the live record, and it reads the football book record that football-trade.yml writes
 (betfair_live/<day>/books_football_<C>.csv and books_football_eve_<C>.csv, with their markets_*.csv) through
 betfair_recorder's own day-file reader (the server's copy, else S3).
 
@@ -61,11 +61,12 @@ from .features import add_features, coerce_panel, price_band
 log = logging.getLogger(__name__)
 
 PREREG = "reports/preregistration_football_exchange.md"
-#: the countries paper-models.yml records (one recorder process each, tags football_<C> and football_eve_<C>)
+#: the countries football-trade.yml records (one recorder process each, tags football_<C> and football_eve_<C>)
 COUNTRIES = ("GB", "ES", "IT", "DE", "FR", "NL", "BE", "PT", "TR", "GR")
 #: football-data's collections (matches.php): weekday (Mon 0) -> UK clock time
 COLLECTION_TIME = {4: "17:00", 1: "13:00"}
-#: the earliest the recorder can be live (paper-models.yml's football book record, commit f16dcdc, 2 Nov 2026)
+#: the earliest the recorder can be live (the football book record, commit f16dcdc, 2 Nov 2026; in football-trade.yml
+#: from 3 Nov 2026)
 RECORDER_FROM = "2026-11-02"
 NOTIONAL_GBP = 10.0
 TOLERANCE_MIN = 60.0

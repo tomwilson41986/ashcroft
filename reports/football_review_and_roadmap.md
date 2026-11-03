@@ -8,7 +8,7 @@ about break-even (-0.17%) if books are symmetric, +2.2% if the lay sits one tick
 is: (1) measure the real spread and depth with the Betfair recorder (this alone decides the current rule); (2) raise the
 forecast by stacking models (a two-model stack already lifts the move caught from 4.0% to 5.1% in development) and with
 data we hold but do not use (xG, injuries); (3) cut the cost of execution (resting orders, the team-sheet window). All
-three wait on one thing: the paper-models runner, which has never run.**
+three wait on one thing: the football runner (`football-trade.yml`, which holds every football process from 3 Nov 2026), which has never run.**
 
 Every figure below names its source file. "Development" means seasons the model may be tuned on. "Holdout" means data
 read once against a rule written down beforehand.
@@ -183,7 +183,7 @@ Each phase has a gate. Nothing moves to money without passing the gate in the ph
 
 | Phase | When | Work | Gate to the next |
 |---|---|---|---|
-| **0. Unblock** | This week | Register the paper-models runner (owner); read-only S3 keys for research sessions (owner). Done in code (commit aa6f196): the QA fixes, settlement re-settles and explains, recorder snapshots at the Friday and Tuesday collection | The recorder, collector and paper traders write files every day |
+| **0. Unblock** | This week | Register the football runner (owner; `docs/RUNNERS.md`); read-only S3 keys for research sessions (owner). Done in code (commit aa6f196): the QA fixes, settlement re-settles and explains, recorder snapshots at the Friday and Tuesday collection | The recorder, collector and paper traders write files every day |
 | **1. Build the stack** | Weeks 1-4 | F2, F3, F5, F6, F8 into the team features; the stacked move model (4.1), the meta-label (4.2); all on development data to 2024/25 with season folds | Development: top-decile move caught at least 1.5x the measured round-trip cost at Betfair prices, interval above it |
 | **2. Measure costs and capacity** | Weeks 1-6, from the recorder (starts the day the runner does) | **First: the real early spread at the collection moment.** It decides whether the current rule is -1.1%, break-even or +2.2% (2.6). Then sizes at the best prices, queue fills, the resting-order simulator (4.5), and the team-sheet window (the collector's first-seen times against the 2-minute books) | Known cost per trade and money available per signal. If the median early spread in takeable books is over 2 ticks, or capacity is under about GBP 50 a signal, crossing the spread cannot pay: only resting orders remain |
 | **3. Pre-register and paper-trade** | From week 4 | **Stacked rule registered 3 Nov** (`reports/preregistration_football_stack.md`, models frozen in `models/football/stack_v1`); **resting-order variant registered 3 Nov** (`reports/preregistration_football_stack_resting.md`: same signals, post one tick inside, fill only when the recorded book proves it, cancel at T-90, 95% bar for two rules on one set of books); run on paper on the recorder's books with sizes | The pre-registered gate: at least 300 trades and 90 days, 90% lower bound of return at taken prices above zero, CLV above zero, both halves positive |
@@ -202,7 +202,7 @@ establish, because together they decide whether the rest is worth doing.
 
 ## 6. Owner's actions
 
-1. Register the paper-models self-hosted runner on the UK server (label `paper-models`, not the live trader's runner).
+1. Register the football self-hosted runner on the UK server (label `football`; `scripts/setup_runner.sh football`, `docs/RUNNERS.md`). Every football process runs there from 3 Nov 2026, apart from greyhounds (`paper-models`) and horse racing (the live runner).
 2. Add read-only AWS keys to the cloud environment for research sessions (S3 `ashcroft` bucket, read only).
 3. Request the free Betfair Historic Data BASIC plan for Soccer.
 4. Write to football-data.co.uk for permission before any money is staked on models trained on its data (I can draft

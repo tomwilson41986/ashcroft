@@ -5,7 +5,7 @@ test whether that is tradeable we need the confirmed elevens and the moment they
 Betfair books the football recorder keeps (betfair_live/<day>/books_football_*.csv). This module only collects; it
 places nothing and reads no Betfair data.
 
-Collect (one process for the UK day, paper-models.yml):
+Collect (one process for the UK day, football-trade.yml):
 
 - the day's fixtures (``/fixtures?date=<UK day>&timezone=Europe/London``), refreshed hourly, filtered to the 22
   divisions (football.reference COMPETITIONS, their API-Football league ids);

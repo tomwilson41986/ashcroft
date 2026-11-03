@@ -1,0 +1,88 @@
+name: Other sports' data from the UK server (tennis odds, Betfair Historic Data)
+
+# The nightly reads for the models outside horse racing that need the UK server, moved off the horse racing runner
+# on 3 Nov 2026 (the owner: nothing but horse racing on that runner; until then they ran in betfair-prices.yml):
+#   - every sport's markets and matched money (the census, betfair_recorder.py --census-sports);
+#   - tennis-data.co.uk's tennis results with closing odds (Pinnacle among them), which its Cloudflare refuses
+#     GitHub's runners: ten minutes at most;
+#   - Betfair's Historic Data service (the free BASIC plan: each sport's markets, the last traded price each minute and
+#     the result), for the models outside UK/IE racing: an hour at most. The tables are built off the UK server
+#     (source-data.yml). Nothing is fetched until the account holds a sport on the service.
+# Read-only: nothing here bets. The runner: its own on the UK server, labelled vars.DATA_RUNNER (default 'data'),
+# never the horse racing runner.
+
+on:
+  schedule:
+    - cron: '30 22 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: other-data
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ${{ vars.DATA_RUNNER || 'data' }}
+    timeout-minutes: 120
+    steps:
+      - name: Not on the horse racing runner
+        id: runner_guard
+        env:
+          RUNNER_LABEL: ${{ vars.DATA_RUNNER || 'data' }}
+          LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
+        run: |
+          if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
+            echo "DATA_RUNNER is the horse racing runner ($LIVE_RUNNER_LABEL): nothing but horse racing runs there"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - name: Python (its own environment)
+        run: |
+          VENV="$HOME/.venvs/ashcroft-data"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv-data"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
+      # Every sport's open markets of the next 24 hours, their types and the money matched on them so far, read once a
+      # day after the last race: which sport to model next (the owner's ask of 3 Oct). One read, about a minute;
+      # saved beside the day's record (betfair_live/<day>/census_sports.json). Moved from live-record.yml, 3 Nov 2026.
+      - name: Every sport's markets (census, read-only)
+        continue-on-error: true
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 180 python betfair_recorder.py --census-sports
+      - name: Tennis results with closing odds (ten minutes at most)
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: |
+          pip install -q openpyxl xlrd
+          timeout 900 python source_data.py --source tennis_odds --fetch --build --max-minutes 10
+      - name: Betfair Historic Data, other sports (an hour at most)
+        continue-on-error: true
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: timeout 3900 python betfair_historic.py --fetch --max-minutes 60

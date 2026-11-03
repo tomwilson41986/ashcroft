@@ -112,9 +112,9 @@ jobs:
         run: |
           Y="$(TZ=Europe/London date -d yesterday +%F)"
           timeout 600 python betfair_recorder.py --final --date "$Y"
-          # the records of their own (the owner's ask of 3 Oct: the other place markets and the greyhounds)
+          # the record of its own (the owner's ask of 3 Oct: the other place markets); the greyhound record settles
+          # on the greyhound runner (the owner, 3 Nov 2026: horse racing only on this runner)
           timeout 300 python betfair_recorder.py --final --tag other_place --date "$Y" || true
-          timeout 300 python betfair_recorder.py --final --event-type 4339 --tag greyhound --date "$Y" || true
 
       - name: Record the day's markets to the last race
         id: record
@@ -129,26 +129,23 @@ jobs:
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           UNTIL: ${{ steps.run.outputs.until }}
-        # Beside the win and place record, two of their own (books_other_place.csv, books_greyhound.csv; the nightly
-        # load reads neither): the 2/3/4 TBP and each-way markets for the place model, and the GB/IE greyhound win
-        # and place markets for the greyhound model. Either failing leaves the main record as it was.
+        # Beside the win and place record, one of its own (books_other_place.csv; the nightly load does not read it):
+        # the 2/3/4 TBP and each-way markets for the place model. Its failing leaves the main record as it was. The
+        # greyhound record runs on the greyhound runner (the owner, 3 Nov 2026).
         # The trader comes first: give_way.py looks every minute for a Live trading run waiting for the runner (the
-        # owner restarting the trader). When one waits, the three records stop cleanly (SIGTERM: their files go to
+        # owner restarting the trader). When one waits, the two records stop cleanly (SIGTERM: their files go to
         # S3, and the trader's job writes on to the same files), this run ends, and a fresh one queues behind the
         # trader for the evening's part. Should the watch itself fail, the records run on to the last race as before.
         run: |
           python betfair_recorder.py --record --final --until "$UNTIL" --market-types OTHER_PLACE,EACH_WAY \
             --tag other_place > other_place.log 2>&1 &
           OTHER=$!
-          python betfair_recorder.py --record --final --until "$UNTIL" --event-type 4339 --tag greyhound \
-            --market-types WIN,PLACE > greyhound.log 2>&1 &
-          DOGS=$!
           python betfair_recorder.py --record --final --until "$UNTIL" &
           REC=$!
-          if python scripts/give_way.py --watch --pids "$REC,$OTHER,$DOGS"; then
+          if python scripts/give_way.py --watch --pids "$REC,$OTHER"; then
             echo "GAVE_WAY=1" >> "$GITHUB_ENV"
-            wait "$REC" "$OTHER" "$DOGS" || true
-            tail -n 3 other_place.log greyhound.log || true
+            wait "$REC" "$OTHER" || true
+            tail -n 3 other_place.log || true
             python scripts/give_way.py --requeue --until "$UNTIL" \
               || echo "::warning::the recorder could not queue again; tonight's price files come with betfair-prices.yml"
             exit 0
@@ -156,8 +153,7 @@ jobs:
           rc=0
           wait "$REC" || rc=$?
           wait "$OTHER" || echo "::warning::the other place markets' record ended with an error"
-          wait "$DOGS" || echo "::warning::the greyhound record ended with an error"
-          tail -n 3 other_place.log greyhound.log || true
+          tail -n 3 other_place.log || true
           exit "$rc"
 
       # After the last race, so it never costs a snapshot: the UK and Irish files of the last days, for the night's
@@ -217,18 +213,3 @@ jobs:
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
         run: timeout 300 python betfair_recorder.py --antepost
-
-      # Every sport's open markets of the next 24 hours, their types and the money matched on them so far, read after
-      # the last race each day: which sport to model next (the owner's ask of 3 Oct). One read, about a minute.
-      - name: Every sport's markets (census, read-only)
-        if: ${{ !cancelled() && steps.run.outputs.go == 'true' && env.GAVE_WAY != '1' }}
-        continue-on-error: true
-        env:
-          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
-          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
-          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
-          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-        run: timeout 180 python betfair_recorder.py --census-sports

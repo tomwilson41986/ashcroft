@@ -616,7 +616,8 @@ def _fetch_listed(url: str, session, retries: int = 3, backoff: float = 10.0, sl
 
 def archive_published(s3=None, bucket: str | None = None, session=None, markets=None, date_from: date | None = None,
                       date_to: date | None = None, refresh_days: int = 7, max_minutes: float | None = None,
-                      pause: float = 1.5, clock=time.monotonic, sleep=time.sleep) -> dict:
+                      pause: float = 1.5, clock=time.monotonic, sleep=time.sleep, only_prefix=None,
+                      skip_prefix=None) -> dict:
     """Every price file Betfair publishes, all markets, into the S3 archive (betfair_prices_raw/<name>), slowly: one
     file at a time with a pause between, so the server never presses Betfair's site.
 
@@ -624,7 +625,10 @@ def archive_published(s3=None, bucket: str | None = None, session=None, markets=
     stored again only when it has changed. The recent days go first, then the UK and Irish racing files from 2018
     (what the nightly load reads), then the other markets from 2018, then everything older, each newest first, so a
     run that stops at `max_minutes` has the files that matter most and the next run takes up the rest. A 403 (the site refusing the host), the site asking again and again to slow down, or
-    S3 refusing five files running stops the run at once."""
+    S3 refusing five files running stops the run at once.
+
+    ``only_prefix`` / ``skip_prefix``: keep only, or leave out, the markets whose name starts with one of these
+    (e.g. "greyhound"), so each sport's files are archived from its own runner (the owner, 3 Nov 2026)."""
     if s3 is None or bucket is None:
         s3, bucket = _capture()
     s = session or make_session()
@@ -633,6 +637,12 @@ def archive_published(s3=None, bucket: str | None = None, session=None, markets=
     if markets:
         wanted = {str(m).strip().lower() for m in markets}
         listed = [f for f in listed if f["market"] in wanted]
+    if only_prefix:
+        keep = tuple(str(x).strip().lower() for x in only_prefix)
+        listed = [f for f in listed if f["market"].startswith(keep)]
+    if skip_prefix:
+        drop = tuple(str(x).strip().lower() for x in skip_prefix)
+        listed = [f for f in listed if not f["market"].startswith(drop)]
     if date_from:
         listed = [f for f in listed if f["day"] >= date_from]
     if date_to:
@@ -827,6 +837,10 @@ def main(argv=None):
                     help="every file Betfair lists, all markets, to s3://$CAPTURE_BUCKET/betfair_prices_raw/ (the UK "
                          "server): what the archive lacks and the last --refresh-days days, one file at a time")
     ap.add_argument("--market", default=None, help="--archive: only these markets, e.g. ukwin,ukplace (default all)")
+    ap.add_argument("--market-prefix", default=None,
+                    help="--archive: only the markets whose name starts with one of these, e.g. greyhound")
+    ap.add_argument("--skip-market-prefix", default=None,
+                    help="--archive: leave out the markets whose name starts with one of these, e.g. greyhound")
     ap.add_argument("--refresh-days", type=int, default=7,
                     help="--archive / --pull-s3: fetch the last N days again (Betfair rewrites recent files)")
     ap.add_argument("--max-minutes", type=float, default=None,
@@ -866,7 +880,10 @@ def main(argv=None):
         sess = make_session(args.proxy)
         print("archive:", archive_published(session=sess, markets=markets, date_from=day(args.date_from),
                                             date_to=day(args.date_to), refresh_days=args.refresh_days,
-                                            max_minutes=args.max_minutes, pause=args.pause))
+                                            max_minutes=args.max_minutes, pause=args.pause,
+                                            only_prefix=[x for x in (args.market_prefix or "").split(",") if x.strip()],
+                                            skip_prefix=[x for x in (args.skip_market_prefix or "").split(",")
+                                                         if x.strip()]))
 
     pulled = None
     if args.pull_s3:
