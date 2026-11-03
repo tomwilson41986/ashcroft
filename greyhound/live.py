@@ -846,6 +846,16 @@ def main(argv=None) -> int:
             log.warning("early lay not scored (%s)", exc)
             md += f"\n### Early lay\n\nnot scored this time ({str(exc)[:200]})\n"
             r["early_lay"] = {"error": str(exc)[:200]}
+        try:                                        # the live-key recorder's state (greyhound/book_record.py)
+            from betfair_recorder import PREFIX as BL, bucket, s3_client
+            st = json.loads(s3_client().get_object(Bucket=bucket(), Key=f"{BL}/{day:%Y-%m-%d}/status_greyhound_live.json")
+                            ["Body"].read())
+            md = (f"Live-key book recorder: last seen {st.get('time_utc')} UTC; {st.get('markets')} markets, "
+                  f"{st.get('polls')} polls, {st.get('rows')} book rows, {st.get('traded_rows')} traded-by-price rows, "
+                  f"{st.get('read_errors')} failed reads" + (f" (last: {st['last_error']})" if st.get("last_error")
+                                                            else "") + ".\n\n") + md
+        except Exception as exc:
+            md = f"Live-key book recorder: no status yet ({str(exc)[:80]}).\n\n" + md
         try:                                        # the live early lay's own orders (greyhound/early_lay.py)
             from greyhound import early_lay
             md = early_lay.table(store, day) + "\n" + md

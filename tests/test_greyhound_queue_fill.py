@@ -74,3 +74,18 @@ def test_the_recorder_keeps_the_traded_ladder(tmp_path):
     assert lad.write(raw, t) == 1
     d = pd.read_csv(tmp_path / "traded_greyhound_live.csv")
     assert d.traded.tolist() == [100.0, 20.0, 130.0] and set(d.columns) == set(TradedLadder.FIELDS)
+
+
+def test_the_recorder_reads_in_batches_under_the_weight_limit():
+    from greyhound import book_record as br
+
+    class Data:
+        def __init__(self):
+            self.calls = []
+
+        def _read(self, method, params):
+            self.calls.append(len(params["marketIds"]))
+            return [{"marketId": m} for m in params["marketIds"]]
+    d = Data()
+    out = br.read_books(d, [f"1.{i}" for i in range(10)])
+    assert len(out) == 10 and max(d.calls) <= br.BATCH and br.BATCH * 25 <= 100   # 25 a market (5 + 17 + 3)
