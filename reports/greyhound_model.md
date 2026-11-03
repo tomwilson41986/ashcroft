@@ -966,3 +966,61 @@ I am open to any strategy." (research/greyhound/limit_study.py)
 - **The best model's prices.** The study can run on them through the fast loop, as the trade-out study does.
 - **A forward test fixed before its first day.** The two lay rules, frozen as written above, scored on each new day's
   recorded books, read only after enough days.
+
+## 23. Every strategy: the full grid (greyhound-limit-study.yml run 41617988279, 3 Nov 2026)
+
+The owner (3 Nov 2026): "I am also fine with a lay to back strategy. Evaluate all trading strategies, keep an open
+mind."
+
+**The setup.**
+- **Entries:** take the price now; ask/bid at our forecast SP plus or minus 0/5/10/20%; join the queue; 1/3/5 ticks
+  off the best price. Each as a back or a lay, at first traded, 5 or 3 minutes out.
+- **Exits:** close at the SP, or green up at the market in the runner's last book before the off (`last`: lay then
+  back, or back then lay).
+- **Gates:** all runners; forecast to shorten or to drift; the favourite now; short-priced (mid under 3.0);
+  long-priced (8.0 or more).
+- **Fills:** `through` or `traded`.
+- **Data:** the same 27 days, books, model (the 5 October one), development and holdout days as section 22.
+- **Selection:** the best rule of each of 96 families (mark x order x side x fill x exit) on the development days,
+  read once on the holdout.
+
+**The verdict on the grid as a whole: nothing beyond chance.**
+- 3 of the 96 holdout rules have their 90% lower bound above zero; chance alone gives about 4.8.
+- Every back strategy loses: 47 of the 48 back families are below zero on the holdout. Whatever way in, the backs
+  matched are the drifters.
+- Lays do better: 10 of 48 above zero.
+
+**One family is consistent: lay the short-priced runners in the first book, at 80% of our forecast SP.** It closes
+the same whether it is greened up before the off (lay to back) or at the SP. Matched by the traded price:
+
+| Rule (first traded, lay at 80% of forecast SP, traded fill) | Days | Trades a day | Return (90%) | Mean CLV | Held to the result |
+|---|---|---|---|---|---|
+| Short-priced, lay to back: development | 12 | 52.3 | +3.34% (+2.46 to +4.32) | +7.09% | +2.60% |
+| **Short-priced, lay to back: holdout** | 7 | 37.9 | **+3.31% (+1.75 to +4.85)** | **+7.62%** | +7.10% |
+| Short-priced, lay to SP: development | 12 | 52.3 | +2.76% (+1.61 to +3.81) | +7.09% | +2.60% |
+| The favourite, lay to SP: development | 12 | 33.0 | +3.31% (+1.45 to +5.30) | +6.83% | +4.89% |
+| The favourite, lay to SP: holdout | 7 | 28.7 | +2.19% (-1.43 to +7.13) | +5.56% | +8.21% |
+| All runners, lay to back: development | 12 | 162.4 | +1.12% (+0.85 to +1.38) | +4.68% | +1.39% |
+
+**Reading.**
+- **It matches the market's behaviour** (section 22). From the first book, 93.9% of runners priced under 2.0 drift to
+  the SP, by a mean log of 0.80. The shortest runners open shortest against their SP. A layer resting a little under
+  our forecast is matched by the early backers, and the price runs out by the off.
+- **Lay to back is as good as lay to SP, with less variance.** The greened-up return does not depend on the result,
+  so its interval is about a third as wide on all runners (+0.85 to +1.38 against +0.42 to +1.90).
+- **It still rests on the `traded` fill and on unknown size.**
+  - Under `through` (a later book offering the price) this family is not among the best.
+  - With most of a greyhound market's money arriving in its last three minutes, a trade at our price in the first
+    book may be a few pounds against our GBP25 stake (GBP100 liability) to win GBP100.
+  - The grid as a whole is at chance. This is a lead to test forward, not an edge.
+
+**What decides it:**
+1. **Size.** The live-key recorder's traded volume a runner, every 5 seconds from 15 minutes out, shows how much was
+   matched at or below our price after we would have posted it. It waits on the paper-models runner (the Vultr
+   server, being set up).
+2. **A forward test fixed before its first day.**
+   - The rule: at first traded, lay every runner priced under 3.0 at 80% of the forecast SP.
+   - Exits: green up in the last book, and separately close at the SP.
+   - Fills: matched by the traded price, and separately by the book, recorded both ways.
+   - Scored on each new day's recorded books, read only after 20 days.
+3. **The same grid on the best fast-loop model's prices** (batch 5's slow lane).
