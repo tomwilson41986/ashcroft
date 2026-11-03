@@ -201,3 +201,30 @@ def test_the_closing_model_as_the_fair_value():
     assert np.isclose((1.0 / fv.f_bsp).sum(), 1.0)                 # rescaled to the SP book's total
     assert fv.loc[7, "f_bsp"] > fv.loc[8, "f_bsp"]                # the order of the mids kept
     assert ps.sigma_at(60, "closing") == 0.144 and ps.sigma_at(60) == 0.146
+
+
+def test_the_level_from_the_live_book_keeps_the_shares():
+    fv = pd.DataFrame({"selection_id": [1, 2, 3], "f_bsp": [2.0, 4.0, 8.0], "mid": [2.2, 3.8, 9.0]})
+    out = ps.live_level(fv)
+    book = (1 / fv["mid"]).sum()
+    assert np.isclose((1 / out.f_bsp).sum(), book)                          # the race's own overround
+    r = np.log(out.f_bsp) - np.log(fv.f_bsp)
+    assert np.allclose(r, r.iloc[0])                                        # every dog moved by the same amount
+
+
+def test_the_accuracy_table_scores_within_the_race(tmp_path, monkeypatch):
+    from datetime import date
+    d = day()
+    store = Store(root=tmp_path)
+    preds = pd.DataFrame({"market_id": [MID, MID], "selection_id": [7, 8], "p_model": [0.2, 0.8]})
+    store.put("greyhound/live/predictions/2026-11-03.csv", preds.to_csv(index=False).encode())
+
+    def fair(pre_m, t, preds_m, fit, cfg, closing=None, off=None):
+        k = 2.0 if closing is not None else 1.0                    # the closing one doubles every price: level only
+        return pd.DataFrame({"selection_id": [7, 8], "f_bsp": [5.2 * k, 1.9 * k], "mid": [4.1, 2.01]})
+    monkeypatch.setattr(ps, "fair_values", fair)
+    acc = pd.DataFrame(ps.fair_accuracy(store, date(2026, 11, 3), d, {}, {}, closing={"x": 1}))
+    r = acc.set_index("mark").loc["1 min"]
+    assert r.cl == 0.0 and r.closing > 0.5                                   # right, and wrong only in level
+    assert r.cl_within == 0.0 and r.closing_within == 0.0                   # within the race both exact
+    assert np.isclose(r.closing_live, r.cl_live)                            # the live level undoes the shift

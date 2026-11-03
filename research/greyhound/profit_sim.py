@@ -386,6 +386,33 @@ def closing_values(now: pd.DataFrame, prev: dict, preds_m: pd.DataFrame, closing
                          "mid": x["mid"].to_numpy(float)})
 
 
+def live_level(fv: pd.DataFrame) -> pd.DataFrame:
+    """A forecast's shares within the race kept and its level taken from the race's own book now: the prices scaled
+    so their chances sum to the mids' total (each race's own overround), not to a fixed SP book from past days."""
+    p = 1.0 / fv.f_bsp.to_numpy(float)
+    p = p / p.sum()
+    book = float(np.sum(1.0 / fv["mid"].to_numpy(float)))
+    return fv.assign(f_bsp=1.0 / (book * p))
+
+
+#: The fair values the simulator can quote around: the live trader's forecast (cl), the closing-price model
+#: (closing), each with its level from the race's live book (*_live), and the market mid itself (mid).
+FAIRS = ("cl", "closing", "cl_live", "closing_live", "mid")
+
+
+def fair_by(name: str, pre_m: pd.DataFrame, t, preds_m: pd.DataFrame, fit: dict, cfg: dict,
+            closing: dict | None, off) -> pd.DataFrame | None:
+    if name.startswith("closing"):
+        fv = fair_values(pre_m, t, preds_m, fit, cfg, closing=closing, off=off)
+    else:
+        fv = fair_values(pre_m, t, preds_m, fit, cfg)
+    if fv is None:
+        return None
+    if name == "mid":
+        return fv.assign(f_bsp=fv["mid"])
+    return live_level(fv) if name.endswith("_live") else fv
+
+
 #: The live trader's forecast error, RMSE of log(BSP), by seconds to the off: its conditional logit at the first traded
 #: book (taken here as 10 min out), 5, 3 and 1 min out (reports/greyhound_model.md section 26, read off the recorder's
 #: books), interpolated between and held beyond. A quote at ``k`` of these from the forecast sits outside most of its
@@ -397,7 +424,7 @@ SIGMA_RMSE_CLOSE = [0.144, 0.225, 0.370, 0.320]
 
 
 def sigma_at(secs: float, fair: str = "cl") -> float:
-    return float(np.interp(secs, SIGMA_SECS, SIGMA_RMSE_CLOSE if fair == "closing" else SIGMA_RMSE))
+    return float(np.interp(secs, SIGMA_SECS, SIGMA_RMSE_CLOSE if fair.startswith("closing") else SIGMA_RMSE))
 
 
 def quote_prices(f: float, q: dict, secs: float) -> tuple[float, float]:
@@ -443,8 +470,9 @@ def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict
         t = pd.Timestamp(t)
         if t > t_stop:
             break
-        fv = fair_values(pre_m, t, preds_m, fit, cfg, closing=closing, off=off) if q.get("fair") == "closing" \
-            else fair_values(pre_m, t, preds_m, fit, cfg)
+        fair = q.get("fair", "cl")
+        fv = fair_values(pre_m, t, preds_m, fit, cfg) if fair == "cl" else \
+            fair_by(fair, pre_m, t, preds_m, fit, cfg, closing, off)
         if fv is None:
             continue
         for r in fv.itertuples(index=False):
@@ -555,21 +583,32 @@ def fair_accuracy(store, day: date, data: dict, fit: dict, cfg: dict, closing: d
             if a is None or b is None:
                 continue
             m = a.merge(b, on="selection_id", suffixes=("_cl", "_close"))
+            m = m.assign(cl_live=live_level(a.rename(columns={"f_bsp": "f_bsp"})).set_index("selection_id").f_bsp
+                         .reindex(m.selection_id).to_numpy(),
+                         closing_live=live_level(b).set_index("selection_id").f_bsp.reindex(m.selection_id).to_numpy())
             for r in m.itertuples(index=False):
                 y = res.get((mid, float(r.selection_id)))
                 if y is None or not np.isfinite(y) or y <= 1:
                     continue
                 rows.append({"mark": name, "market_id": mid, "y": np.log(y), "cl": np.log(r.f_bsp_cl),
-                             "closing": np.log(r.f_bsp_close), "mid": np.log(r.mid_cl)})
+                             "closing": np.log(r.f_bsp_close), "mid": np.log(r.mid_cl),
+                             "cl_live": np.log(r.cl_live), "closing_live": np.log(r.closing_live)})
     if not rows:
         return []
     d = pd.DataFrame(rows).replace([np.inf, -np.inf], np.nan).dropna()
+    cols = ("mid", "cl", "closing", "cl_live", "closing_live")
     out = []
     for name in ACC_MARKS:
         g = d[d["mark"] == name]
-        if len(g):
-            out.append({"mark": name, "runners": int(len(g)), "races": int(g.market_id.nunique()),
-                        **{k: round(float(np.sqrt(np.mean((g[k] - g.y) ** 2))), 4) for k in ("mid", "cl", "closing")}})
+        if not len(g):
+            continue
+        # within the race: each log price less its race's mean, so a level wrong for the whole race does not count
+        rel = lambda c: g[c] - g.groupby("market_id")[c].transform("mean")
+        yr = rel("y")
+        out.append({"mark": name, "runners": int(len(g)), "races": int(g.market_id.nunique()),
+                    **{c: round(float(np.sqrt(np.mean((g[c] - g.y) ** 2))), 4) for c in cols},
+                    **{f"{c}_within": round(float(np.sqrt(np.mean((rel(c) - yr) ** 2))), 4)
+                       for c in ("mid", "cl", "closing")}})
     return out
 
 
@@ -587,6 +626,12 @@ QUOTES = {
     "close_m30": {"sides": ("back", "lay"), "margin": 0.30, "max_loss": 60.0, "fair": "closing"},
     "close_k10": {"sides": ("back", "lay"), "k": 1.0, "max_loss": 60.0, "fair": "closing"},
     "close_k15": {"sides": ("back", "lay"), "k": 1.5, "max_loss": 60.0, "fair": "closing"},
+    "close_live_m20": {"sides": ("back", "lay"), "margin": 0.20, "max_loss": 60.0, "fair": "closing_live"},
+    "close_live_k15": {"sides": ("back", "lay"), "k": 1.5, "max_loss": 60.0, "fair": "closing_live"},
+    "cl_live_m20": {"sides": ("back", "lay"), "margin": 0.20, "max_loss": 60.0, "fair": "cl_live"},
+    "cl_live_k15": {"sides": ("back", "lay"), "k": 1.5, "max_loss": 60.0, "fair": "cl_live"},
+    "mid_m10": {"sides": ("back", "lay"), "margin": 0.10, "max_loss": 60.0, "fair": "mid"},
+    "mid_m20": {"sides": ("back", "lay"), "margin": 0.20, "max_loss": 60.0, "fair": "mid"},
     "lay_m20": {"sides": ("lay",), "margin": 0.20, "max_loss": 60.0},
     "back_m20": {"sides": ("back",), "margin": 0.20, "max_loss": 60.0},
 }
@@ -653,16 +698,21 @@ def report_md(res: dict) -> str:
             L.append(f"| {k} | 0 | 0 | | | | | | |")
     if res.get("fair_accuracy"):
         L += ["", "## 2b. The fair values on today's live-key books", "",
-              "RMSE of log(BSP) on the day's settled races (lower is better), the same runners for each: the market "
-              "mid, the live trader's forecast (cl) and the closing-price model (closing, close_* variants below).", "",
-              "| Before the off | Runners | Races | Mid | Live trader's forecast | Closing model |", "|---|---|---|---|---|---|"]
+              "RMSE of log(BSP) on the day's settled races (lower is better), the same runners for each. Absolute: "
+              "the market mid, the live trader's forecast (cl), the closing-price model (closing), and each with its "
+              "level from the race's live book (*_live). Within the race: each log price less its race's mean, so "
+              "only the dogs' order and spacing count (a level wrong for the whole race does not).", "",
+              "| Before the off | Runners | Races | Mid | cl | closing | cl_live | closing_live | Mid within | cl within "
+              "| closing within |", "|---|---|---|---|---|---|---|---|---|---|---|"]
         for r in res["fair_accuracy"]:
-            L.append(f"| {r['mark']} | {r['runners']} | {r['races']} | {r['mid']} | {r['cl']} | {r['closing']} |")
+            L.append(f"| {r['mark']} | {r['runners']} | {r['races']} | {r['mid']} | {r['cl']} | {r['closing']} | "
+                     f"{r.get('cl_live')} | {r.get('closing_live')} | {r.get('mid_within')} | {r.get('cl_within')} | "
+                     f"{r.get('closing_within')} |")
     L += ["", "## 3. Both sides of every dog up to the off", "",
           "Each dog's forecast SP read at every live-key book (the live trader's forecast), a resting back above it and "
           "a resting lay below it (both_mNN: a fixed NN% either side; sigma_kNN: NN/10 of the forecast's error at that "
           "distance from the off, wide early and tighter near the off; close_*: the same around the closing-price "
-          "model's forecast), never across the mid, requoted as it moves; every position greened up 5 s before "
+          "model's forecast; *_live: the forecast's level from the race's live book; mid_*: around the market mid), never across the mid, requoted as it moves; every position greened up 5 s before "
           "the off. Our own orders do not move the simulated market, and two of our orders on one dog can count the "
           "same traded money: an upper bound on the fills.", "",
           "| Variant | Races | Orders | Dogs matched | Back matched | Lay matched | Net P&L | Per race | Races won / "
@@ -719,14 +769,14 @@ def main(argv=None) -> int:
                 _log(f"{name}: {res['strategies'][name]}")
             res["quotes"] = {}
             closing = None
-            if any(q.get("fair") == "closing" and (not only or n in only) for n, q in QUOTES.items()):
+            if any(q.get("fair", "cl").startswith("closing") and (not only or n in only) for n, q in QUOTES.items()):
                 closing = closing_fit(store, day)
                 res["fair_accuracy"] = fair_accuracy(store, day, data, fit, dict(el.CONFIG), closing)
                 _log(f"fair value accuracy: {res['fair_accuracy']}")
             for name, q in QUOTES.items():
                 if only and name not in only:
                     continue
-                if q.get("fair") == "closing" and closing is None:
+                if q.get("fair", "cl").startswith("closing") and closing is None:
                     continue
                 rows = two_sided(store, day, data, dict(el.CONFIG), fit, q, closing=closing)
                 res["quotes"][name] = summarise_quotes(rows)
