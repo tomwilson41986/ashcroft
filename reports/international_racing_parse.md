@@ -62,6 +62,17 @@ A first attempt from GitHub's own runners failed: Betfair refused the login (403
 that host. So the census runs only on the UK server, and there on the paper models' own runner. The first reading
 comes the morning after that runner is registered and the branch is merged.
 
+### The first attempt, 2 Nov: no reading, and why (research-query run 41602122552; live-record.yml run 41427469429)
+
+No census file exists for 1-9 Nov. The one step that ran (the live-record.yml evening step of 2 Nov, before PR #180
+moved the census out) logged in and then stopped at its first call: the read-only Betfair client
+(`trading/exchange.py BetfairData._read`) permits only listMarketCatalogue, listMarketBook, listClearedOrders,
+listEventTypes and listMarketTypes, and the census asked for listCountries. `sources/betfair_census.py` now uses
+listMarketCatalogue alone, a day of the window a call, grouped by each event's country, and its tests' client
+refuses any other call, as the live one does. So whether Hong Kong and Japan trade is still not known. The next
+reading comes from the paper-models job, once its runner is registered (its 3 Nov run has been queued since 05:46
+UTC, waiting for one).
+
 ## 4. The backfill (1 Nov 2026): a year of Japan and Hong Kong
 
 `sources/parse_racing.py` (2 tests): every race from 1 Nov 2025 to 31 Oct 2026, raw responses kept, tables in
