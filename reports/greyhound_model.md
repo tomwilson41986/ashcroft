@@ -862,3 +862,74 @@ SP ... get money on at higher prices that are expected to shorten at BFSP"):
     points to is asking for the price: a back offered at our forecast SP plus a margin, left in the book to be
     matched, or not. It can be simulated on the live recorder's 5-second books with traded volume, and only roughly
     on the recorder's.
+
+## 22. The limit-order study (greyhound-limit-study.yml run 41613570934, 3 Nov 2026)
+
+The owner (3 Nov 2026): "build the limit-order study ... take prices based on the behaviour of the greyhound market.
+I am open to any strategy." (research/greyhound/limit_study.py)
+
+**The setup.**
+- **Orders:** at first traded, 5 and 3 minutes out, every runner gets each order. It rests in the book at its limit
+  and lapses at the off unless matched. The orders are:
+  - our forecast SP plus or minus 0/5/10/20% (`ask` backs above it, `bid` lays below it);
+  - the head of the queue (`join`);
+  - 1/3/5 ticks off the best price (`ticks`).
+- **Gates:** all runners, those forecast to shorten, or those forecast to drift.
+- **Closing:** at the SP, as the horse trader closes, with 2% commission on each market's net.
+- **Books:** the recorder's, re-timed; our price is the 5 October model's.
+- **Days:** 53,460 runner-marks. Scored days 14 October to 1 November: 12 development, 7 holdout. 2 November had no
+  model prices.
+- **Selection:** each family's best rule on the development days was read once on the holdout, 36 rules in all.
+- **Two match rules:**
+  - `through`: a later book offers the other side at the limit.
+  - `traded`: a later last-traded price reaches the limit.
+
+  For a lay resting at P, a trade at or below P means backers would have matched our offer first. So `traded` is
+  sound for the price, but it says nothing about the size. The full stake is assumed matched, and the books are 60
+  seconds apart.
+
+**1. The market's behaviour: greyhound prices drift from the first book to the SP.**
+
+| From | Runners drifting (SP above the mid then), by price band | The favourite | 6th and beyond |
+|---|---|---|---|
+| First traded | 66.3% to 93.9% (mean log SP/mid +0.24 to +0.80) | 81.7% | 76.2% |
+| 3 minutes out | 49.2% to 76.5% (+0.01 to +0.29) | 53.3% | 75.3% |
+
+- The shortest runners drift most from first traded: 93.9% of those under 2.0 drift, by a mean log of 0.80.
+- By 3 minutes out the favourites are near their SP. Outsiders still drift: the 6th and beyond go off about 35% longer
+  on average (mean log +0.30).
+- The 5-minute books look thin: 67% to 91% drift, and the best lay is 3 to 11 times the SP (mean log 1.06 to
+  2.36). They are often older than
+  their time says, so read them as early books.
+
+**2. Backing at higher prices loses. Every back rule is negative on the holdout.**
+- The resting backs are matched when the dog drifts. Matched backs had a mean CLV between -1.7% and -8.8%. The same
+  orders unmatched would have had +6% to +59% at their limit. That gap is the adverse selection.
+- Asking for a price above the market gets matched only by the runners that keep drifting.
+
+**3. Laying the early book: two rules hold their development result on the holdout.**
+
+| Rule (first traded, runners forecast to drift, matched by the traded price) | Days | Trades a day | Return (90%) | Mean CLV | Held to the result |
+|---|---|---|---|---|---|
+| Lay at 80% of our forecast SP: development | 12 | 160 | +1.24% (+0.44 to +1.93) | +4.59% | +1.20% |
+| Same: holdout | 7 | 150 | **+1.92% (+0.75 to +3.01)** | **+6.00%** | +1.20% |
+| Lay at the best back price now (`join`): development | 12 | 120 | +0.92% (-0.21 to +2.80) | +0.63% | -0.25% |
+| Same: holdout | 7 | 124 | +0.71% (+0.16 to +1.29) | +2.95% | +1.95% |
+
+- These are the first trade-out rules whose CLV is positive as well as their return. Earlier leads came from the
+  results, with a negative CLV.
+- They fit the behaviour in section 1. Early greyhound backers take prices shorter than the SP. A layer resting
+  slightly short of our forecast is matched by them and closes at a longer SP.
+- **Not yet a finding:**
+  - 2 of 36 holdout rules clear zero, and chance gives about 2. The development selection and the positive CLV make
+    them more than that, but not proof.
+  - Both rely on the `traded` match. With `through`, neither is in the development top 40.
+  - The size matched is unknown. The early books are thin, and a GBP2 trade at our price does not mean our GBP25 stake
+    (GBP100 liability) would have been matched.
+
+**What it needs next:**
+- **The traded volume at each price.** The live-key recorder (greyhound/book_record.py) asks Betfair for each
+  runner's traded volume, and can keep the volume by price in a file of its own. It waits on the paper-models runner.
+- **The best model's prices.** The study can run on them through the fast loop, as the trade-out study does.
+- **A forward test fixed before its first day.** The two lay rules, frozen as written above, scored on each new day's
+  recorded books, read only after enough days.
