@@ -74,7 +74,7 @@ def test_orders_settle_as_the_horse_trader_closes():
     assert np.isclose(lost.pnl, -s + s * 3.8 / 3.0) and won.pnl == 0.0
     lay = o[(o.order == "bid") & (o.param == 0.1) & (o.fill == "through") & (o["exit"] == "sp")]
     assert np.allclose(lay.price, 3.6) and np.isclose(lay.iloc[1].pnl, to.target_stake(3.6) * (4.0 - 3.6))
-    assert set(o.fill) == set(ls.FILLS) and set(o["exit"]) == set(ls.EXITS)
+    assert set(o.fill) == set(ls.FILLS) and set(o["exit"]) == {"sp", "last"}     # no path: no take-profit exits
     assert o.g_fav.tolist().count(True) == o.g_fav.size // 2      # the favourite: the first runner only
     # lay to back: laid at 3.6, backed at the last book's best back price 5.0, greened up whatever the result
     lb = o[(o.order == "bid") & (o.param == 0.1) & (o.fill == "through") & (o["exit"] == "last")]
@@ -85,6 +85,47 @@ def test_orders_settle_as_the_horse_trader_closes():
     assert np.allclose(bl.pnl, to.target_stake(4.8) * (4.8 / 5.2 - 1))
     tk = o[(o.order == "take") & (o.side == "back") & (o.fill == "through") & (o["exit"] == "sp")]
     assert tk.taken.all() and np.allclose(tk.price, 4.0)
+
+
+def test_the_take_profit_reads_the_books_after_the_fill():
+    pre, t0 = _books()          # back/lay/traded: 4.0/4.4/4.2, 4.6/5.0/4.8, 4.2/4.5/4.3, 3.9/4.1/4.0 a minute apart
+    e = pd.DataFrame({"race_date": ["2026-10-20"] * 5, "market_id": ["1.1"] * 5, "selection_id": [7.0] * 5,
+                      "polled": [t0] * 5, "side": ["lay", "lay", "lay", "back", "back"],
+                      "fill": ["through", "through", "through", "through", "traded"],
+                      "limit": [4.4, 4.5, 4.1, 4.6, 4.8], "taken": [True, False, False, False, False],
+                      "filled": [True, True, True, True, True]})
+    best = ls.exit_paths(e, pre)
+    # taken at the mark: the highest back after it 4.6; a lay at 4.5 matched at 2 min, then backs of 3.9 only;
+    # a lay at 4.1 matched in the last book: nothing after; a back at 4.6 matched at 1 min, then the lowest lay 4.1;
+    # a back at 4.8 by the traded rule matched at 1 min, then the lowest traded 4.0
+    assert best[0] == 4.6 and best[1] == 3.9 and np.isnan(best[2]) and best[3] == 4.1 and best[4] == 4.0
+    assert np.isnan(ls.exit_paths(e.assign(filled=False), pre)).all()
+
+
+def test_take_profit_locks_the_move_else_greens_up_at_the_last_book():
+    o = pd.DataFrame({"side": ["lay", "lay", "back"], "price": [4.4, 4.4, 4.6], "bsp": [4.0, 4.0, 4.0],
+                      "won": [1, 0, 0], "exit": ["tp2", "tp5", "tp5"], "exit_best": [4.6, 4.6, 4.1],
+                      "last_back1": [4.2, 4.2, 4.2], "last_lay1": [4.3, 4.3, 4.3]})
+    r = ls.settle_orders(o)
+    s = to.target_stake(np.array([4.4, 4.4, 4.6]))
+    # a lay at 4.4: two ticks up is 4.6, reached: backed there, profit locked though the dog won
+    assert r.took_profit.tolist() == [True, False, True] and np.isclose(r.pnl[0], s[0] * (1 - 4.4 / 4.6))
+    # five ticks up (4.9) never came: greened up at the last back price, 4.2, a loss
+    assert np.isclose(r.pnl[1], s[1] * (1 - 4.4 / 4.2))
+    # a back at 4.6: five ticks down is 4.1, reached: laid there
+    assert np.isclose(r.pnl[2], s[2] * (4.6 / 4.1 - 1)) and r.closed_at_market.all()
+
+
+def test_the_orders_carry_the_take_profit_exits_with_the_path():
+    pre, t0 = _books()
+    d = pd.DataFrame({"race_date": ["2026-10-20"], "market_id": ["1.1"], "selection_id": [7.0], "polled": [t0],
+                      "mark": ["off_5"], "won": [0], "bsp": [4.0], "back1": [4.0], "lay1": [4.4], "mid": [4.2],
+                      "f_bsp": [4.0], "rank": [1.0], "fut_back_max": [4.6], "fut_lay_min": [4.1],
+                      "fut_lt_max": [4.8], "fut_lt_min": [4.0], "last_back1": [3.9], "last_lay1": [4.1]})
+    o = ls.orders(d, pre)
+    assert set(o["exit"]) == set(ls.EXITS)
+    lay = o[(o.order == "take") & (o.side == "lay") & (o.fill == "through") & (o["exit"] == "tp2")]
+    assert lay.took_profit.all() and np.isclose(lay.pnl.iloc[0], to.target_stake(4.4) * (1 - 4.4 / 4.6))
 
 
 def synthetic_panel(n_days=16, races=30, seed=0):
