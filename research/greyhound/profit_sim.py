@@ -429,6 +429,8 @@ def two_sided(store, day: date, data: dict, cfg: dict, fit: dict, q: dict) -> pd
 
 
 QUOTES = {
+    "both_m02": {"sides": ("back", "lay"), "margin": 0.02, "max_loss": 60.0},
+    "both_m05": {"sides": ("back", "lay"), "margin": 0.05, "max_loss": 60.0},
     "both_m10": {"sides": ("back", "lay"), "margin": 0.10, "max_loss": 60.0},
     "both_m20": {"sides": ("back", "lay"), "margin": 0.20, "max_loss": 60.0},
     "both_m30": {"sides": ("back", "lay"), "margin": 0.30, "max_loss": 60.0},
@@ -523,6 +525,7 @@ def main(argv=None) -> int:
     ap.add_argument("--date", default=None, help="UK racing day (default today)")
     ap.add_argument("--since", default=None, help="calibration: live orders from this UTC time (the ladder's start)")
     ap.add_argument("--out", default="out/greyhound_profit_sim")
+    ap.add_argument("--only", default=None, help="comma-separated strategy and quote variants to run (default all)")
     a = ap.parse_args(argv)
     t0 = time.time()
     store = Store(root=a.store)
@@ -545,12 +548,17 @@ def main(argv=None) -> int:
         fit = laytest.day_fit(store, day)
         res["strategies"] = {}
         if fit is not None:
+            only = set(a.only.split(",")) if a.only else None
             for name, over in VARIANTS.items():
+                if only and name not in only:
+                    continue
                 rows = early_lay(store, day, data, dict(el.CONFIG, **over), fit)
                 res["strategies"][name] = summarise(rows)
                 _log(f"{name}: {res['strategies'][name]}")
             res["quotes"] = {}
             for name, q in QUOTES.items():
+                if only and name not in only:
+                    continue
                 rows = two_sided(store, day, data, dict(el.CONFIG), fit, q)
                 res["quotes"][name] = summarise_quotes(rows)
                 if len(rows):
