@@ -331,6 +331,52 @@ def paired_vs_baseline(folder: Path, baseline: str | None, n_boot: int = 2000, s
     return out
 
 
+def paired_bsp_rmse(folder: Path, baseline: str | None, n_boot: int = 2000, seed: int = 0) -> dict:
+    """The accuracy of the BFSP forecast (the owner, 3 Nov 2026: "the final price / log of final price is key"): each
+    log-BSP experiment's RMSE of log(BSP) less the baseline's on the same runners, with its 90% interval from a
+    bootstrap over days. Negative: a more accurate SP forecast."""
+    files = {p.stem.removeprefix("pred_"): p for p in folder.rglob("pred_*.parquet")}
+    if not baseline or baseline not in files:
+        return {}
+    key = ["race_id", "dog_id"]
+
+    def se(d, col):
+        ok = (d.bsp > 1) & (d.pred_bsp > 1)
+        d = d[ok]
+        return d.assign(**{col: (np.log(d.pred_bsp) - np.log(d.bsp)) ** 2})
+
+    b0 = pd.read_parquet(files[baseline])
+    if "pred_bsp" not in b0:
+        return {}
+    base = se(b0, "se_b")[key + ["race_date", "se_b"]]
+    rng = np.random.default_rng(seed)
+    out = {}
+    for name, f in files.items():
+        e = pd.read_parquet(f)
+        if "pred_bsp" not in e:
+            continue
+        d = se(e, "se_e")[key + ["se_e"]].merge(base, on=key, how="inner")
+        day = d.groupby("race_date").agg(e=("se_e", "sum"), b=("se_b", "sum"), n=("se_e", "size"))
+        if len(day) < 2:
+            continue
+        idx = rng.integers(0, len(day), (n_boot, len(day)))
+        nn = day.n.to_numpy()[idx].sum(1)
+        diff = np.sqrt(day.e.to_numpy()[idx].sum(1) / nn) - np.sqrt(day.b.to_numpy()[idx].sum(1) / nn)
+        n = day.n.sum()
+        out[name] = {"rmse": round(float(np.sqrt(day.e.sum() / n)), 4),
+                     "diff": round(float(np.sqrt(day.e.sum() / n) - np.sqrt(day.b.sum() / n)), 4),
+                     "ci90": [round(float(np.percentile(diff, 5)), 4), round(float(np.percentile(diff, 95)), 4)],
+                     "runners": int(n), "days": int(len(day))}
+    return out
+
+
+def _bsp_cells(r: dict) -> tuple[str, str]:
+    p = r.get("paired_bsp")
+    if not p:
+        return (str(r.get("log_bsp_rmse", "")), "")
+    return (str(p["rmse"]), f"{p['diff']:+.4f} ({p['ci90'][0]:+.4f} to {p['ci90'][1]:+.4f})")
+
+
 def _short_cell(r: dict) -> str:
     sh = r.get("shortening") or {}
     if not sh or "skipped" in sh:
@@ -356,12 +402,15 @@ def table(results: list[dict], baseline: str | None = None) -> str:
     base = next((r for r in results if r["name"] == baseline), results[0])
     lines = [f"Baseline: {base['name']}. Test {base['test_from']} to {base['test_to']} (log-loss); the SP forecast on "
              f"the recorded books from {STUDY_FROM}, walk-forward by day.", "",
-             "| Experiment | Features | Objective | Rounds | Adds to the SP forecast a race: first traded / 5 min / "
-             "3 min | vs baseline (90%, by day) | Log-loss | vs baseline (90%, by day) | Seconds |",
-             "|---|---|---|---|---|---|---|---|---|"]
+             "| Experiment | Features | Objective | Rounds | RMSE log(BSP) | vs baseline (90%, by day) | Adds to the SP "
+             "forecast a race: first traded / 5 min / 3 min | vs baseline (90%, by day) | Log-loss | vs baseline (90%, "
+             "by day) | Seconds |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in results:
+        rmse, rmse_vs = _bsp_cells(r)
         lines.append(f"| {r['name']} | {r['features']} | {r['spec'].get('objective', 'softmax')} | {r['rounds']} | "
-                     f"{_short_cell(r)} | {_short_vs(r, base)} | {r['logloss']} | {_vs(r, base)} | {r['seconds']} |")
+                     f"{rmse} | {rmse_vs} | {_short_cell(r)} | {_short_vs(r, base)} | {r['logloss']} | "
+                     f"{_vs(r, base)} | {r['seconds']} |")
     return "\n".join(lines)
 
 
@@ -391,8 +440,10 @@ def main(argv=None) -> int:
         rs.sort(key=lambda r: order.index(r["name"]) if r["name"] in order else len(order))
         paired = paired_vs_baseline(Path(a.collect), spec.get("baseline") or (rs[0]["name"] if rs else None))
         short = paired_shortening(Path(a.collect), spec.get("baseline") or (rs[0]["name"] if rs else None))
+        bsp = paired_bsp_rmse(Path(a.collect), spec.get("baseline") or (rs[0]["name"] if rs else None))
         for r in rs:
             r["paired"] = paired.get(r["name"])
+            r["paired_bsp"] = bsp.get(r["name"])
             r["paired_short"] = short.get(r["name"])
         md = table(rs, spec.get("baseline"))
         Path(a.collect, "table.md").write_text(md + "\n")
