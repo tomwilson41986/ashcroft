@@ -128,3 +128,34 @@ def test_today_rows_fall_back_to_the_live_prices_with_the_winner_from_the_result
     p = seen["pred"]
     assert set(p.market_id) == {"1.1"}                          # only the settled race
     assert p.set_index("selection_id").won.to_dict() == {11: 0, 12: 1}
+
+
+def test_the_rule_revised_before_the_first_test_day_is_frozen_again(tmp_path, panel, monkeypatch):
+    import betfair_recorder
+    store = Store(root=str(tmp_path))
+    old = lt.freeze(store, date(2026, 11, 3))
+    old["primary"] = dict(lt.PRIMARY, exit="sp")                  # the first version, as frozen at 11:41
+    store.put(lt.FROZEN_KEY, json.dumps(old).encode())
+    monkeypatch.setattr(betfair_recorder, "uk_today", lambda: date(2026, 11, 3))
+    out = tmp_path / "rep.json"
+    assert lt.main(["--store", str(tmp_path), "--freeze", "--out", str(out)]) == 0
+    f = json.loads(store.get(lt.FROZEN_KEY))
+    assert f["primary"]["exit"] == "last" and f["revised_from"]["primary"]["exit"] == "sp"
+    assert f["first_test_day"] == "2026-11-04"
+    # from the first test day on, the frozen rule stays as it is
+    f["primary"] = dict(lt.PRIMARY, exit="sp")
+    store.put(lt.FROZEN_KEY, json.dumps(f).encode())
+    monkeypatch.setattr(betfair_recorder, "uk_today", lambda: date(2026, 11, 4))
+    assert lt.main(["--store", str(tmp_path), "--freeze", "--out", str(out)]) == 0
+    assert json.loads(store.get(lt.FROZEN_KEY))["primary"]["exit"] == "sp"
+
+
+def test_the_primary_greens_up(tmp_path, panel, monkeypatch):
+    store = Store(root=str(tmp_path))
+    rows = panel[(panel["mark"] == lt.MARK) & (panel.race_date == "2026-11-08")].assign(
+        race_time="12:00", track="Romford")
+    monkeypatch.setattr(lt, "today_rows", lambda store, day: (rows, "test books"))
+    r = lt.intraday(store, date(2026, 11, 8))
+    assert lt.PRIMARY["exit"] == "last"
+    assert any(m["greened_at"] is not None for m in r["markets"] if m["matched"])
+    assert "Greened at" in lt.intraday_markdown(r)
