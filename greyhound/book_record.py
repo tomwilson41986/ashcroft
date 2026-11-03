@@ -46,7 +46,8 @@ SETTLE_EVERY = 30.0
 SETTLE_MINUTES = 30.0
 #: Betfair's request weight: EX_BEST_OFFERS (depth 3) 5, EX_TRADED 17, SP_PROJECTED 3 a market, at most 200 a call
 PRICE_DATA = ["EX_BEST_OFFERS", "EX_TRADED", "SP_PROJECTED"]
-BATCH = 8
+BATCH = 4                                     # 25 a market: 100 a call, well under the limit (3 Nov: at 8, 200,
+                                              # the S3 day file held the settled reads and no book before the off)
 REFRESH_MINUTES = 30.0
 
 
@@ -180,6 +181,25 @@ def record(day: date, until: datetime, data, rec, countries=("GB", "IE"), market
     last_settle: dict[str, datetime] = {}
     bsp: dict[tuple, float] = {}
     polls = rows = 0
+    state = {"read_errors": 0, "last_error": "", "beat": None}
+
+    def heartbeat(force: bool = False) -> None:
+        """The recorder's state each minute to S3 (``status_greyhound_live.json`` beside its day files), read by the
+        running table: the job's own log is printed only when the day ends."""
+        t = now()
+        if not force and state["beat"] and (t - state["beat"]).total_seconds() < 60:
+            return
+        state["beat"] = t
+        try:
+            import json
+            from betfair_recorder import PREFIX, bucket, s3_client
+            body = {"time_utc": t.strftime("%Y-%m-%dT%H:%M:%SZ"), "markets": len(offs), "polls": polls,
+                    "rows": rows, "read_errors": state["read_errors"], "last_error": state["last_error"][:300],
+                    "settled": len(settled), "traded_rows": ladder.rows if ladder is not None else 0}
+            s3_client().put_object(Bucket=bucket(), Key=f"{PREFIX}/{day:%Y-%m-%d}/status_greyhound_live.json",
+                                   Body=json.dumps(body).encode())
+        except Exception as exc:
+            log.warning("recorder status not written (%s)", exc)
 
     def refresh() -> None:
         cat = read_catalogue(data, start, end, market_types, countries, event_type=GREYHOUNDS)
@@ -210,6 +230,8 @@ def record(day: date, until: datetime, data, rec, countries=("GB", "IE"), market
                 raw = read_books(data, due)
             except Exception as exc:                           # one failed read: the next poll tries again
                 log.warning("books not read (%s)", exc)
+                state["read_errors"] += 1
+                state["last_error"] = str(exc)
                 raw = []
             rows += rec.record_books(raw, source="live", polled_at=t)
             if ladder is not None:
@@ -241,7 +263,9 @@ def record(day: date, until: datetime, data, rec, countries=("GB", "IE"), market
         if offs and all(m in done for m in offs) and t >= max(offs.values()) and all(
                 m in settled or (t - off).total_seconds() > SETTLE_MINUTES * 60 for m, off in offs.items()):
             break
+        heartbeat()
         sleep(1.0)
+    heartbeat(force=True)
     rec.maybe_upload(force=True)
     if ladder is not None:
         ladder.maybe_upload(force=True)
