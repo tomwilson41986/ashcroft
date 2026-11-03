@@ -173,7 +173,7 @@ def test_the_recorder_gives_way_to_a_trader_waiting_for_the_runner():
         assert "env.GAVE_WAY != '1'" in str(s.get("if", "")), s.get("name")
     rec = _step(spec, "record", "Record the day's markets to the last race")
     assert rec["env"]["GH_TOKEN"] == "${{ github.token }}"
-    assert 'give_way.py --watch --pids "$REC,$OTHER,$DOGS"' in rec["run"]
+    assert 'give_way.py --watch --pids "$REC,$OTHER"' in rec["run"]
     # the trader's own workflow is untouched by the recorder: the recorder only reads it
     assert "give_way" not in (WORKFLOWS / "live-trade.yml").read_text().split("\njobs:", 1)[1]
 
@@ -217,7 +217,7 @@ def test_the_record_step_stops_and_queues_again_when_the_trader_waits(tmp_path):
     assert rc == 0 and "GAVE_WAY=1" in genv
     watch = next(line for line in calls.splitlines() if "--watch" in line)
     pids = watch.split("--pids ", 1)[1].split()[0].split(",")
-    assert len(pids) == 3 and all(p.isdigit() for p in pids)
+    assert len(pids) == 2 and all(p.isdigit() for p in pids)        # the main record and the other place markets
     assert "scripts/give_way.py --requeue --until 21:30" in calls
     # a failed requeue is a warning, not a failed step
     rc, calls, genv = _run_step(tmp_path, "Record the day's markets", env, WATCH_RC=0, REQUEUE_RC=1)
@@ -228,7 +228,7 @@ def test_the_record_step_stops_and_queues_again_when_the_trader_waits(tmp_path):
         assert rc == 0 and "GAVE_WAY" not in genv and "--requeue" not in calls
         rc, calls, genv = _run_step(tmp_path, "Record the day's markets", env, WATCH_RC=watch_rc, MAIN_RC=2)
         assert rc == 2 and "GAVE_WAY" not in genv
-    assert calls.count("betfair_recorder.py --record --final --until 21:30") == 3
+    assert calls.count("betfair_recorder.py --record --final --until 21:30") == 2   # greyhounds: their own runner
 
 
 def test_the_first_look_gives_way_before_anything_slow(tmp_path):

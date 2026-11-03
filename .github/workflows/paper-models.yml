@@ -10,7 +10,8 @@ name: Paper models (greyhounds) and the racing census
 #   - the delayed application key, except the greyhound processes: the owner, 2 Nov 2026, "use the live key, just
 #     don't execute bets yet": the greyhound paper trader (GREYHOUND_LIVE pinned 'no', never --live) and the greyhound
 #     book recorder (greyhound/book_record.py, read-only by construction) read on the live key; the racing census
-#     keeps the delayed key;
+#     and the greyhound market record (betfair_recorder.py, from the horse racing runner on 3 Nov 2026) keep the
+#     delayed key;
 #   - its own Python environment and certificate folder, so nothing here touches the live job's.
 # The one exception, the owner, 3 Nov 2026: "lets go live now, i will monitor and stop manually if any concerns";
 # "use early lay". The greyhound early lay (greyhound/early_lay.py, the forward test's primary rule) places real
@@ -127,10 +128,19 @@ jobs:
           # the greyhound early lay (greyhound/early_lay.py): real orders only when GREYHOUND_EARLY_LAY is 'live'
           BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --live --until 21:30 > "$RUNNER_TEMP/greyhound_early_lay.log" 2>&1 &
           GEL=$!
+          # the GB/IE greyhound win and place markets with the market recorder (read-only, the delayed key;
+          # betfair_live/<day>/books_greyhound.csv), moved here from the horse racing runner on 3 Nov 2026 (the owner:
+          # nothing but horse racing there): yesterday's settled books, then the day's record
+          Y="$(TZ=Europe/London date -d yesterday +%F)"
+          timeout 300 python betfair_recorder.py --final --event-type 4339 --tag greyhound --date "$Y" || true
+          python betfair_recorder.py --record --final --until 21:30 --event-type 4339 --tag greyhound \
+            --market-types WIN,PLACE > "$RUNNER_TEMP/greyhound.log" 2>&1 &
+          DOGS=$!
           wait "$GHT"; GC=$?; echo "greyhound paper trader exited $GC"
           tail -n 20 "$RUNNER_TEMP/greyhound_trader.log"
           wait "$GBR"; echo "greyhound book record exited $?"
           tail -n 5 "$RUNNER_TEMP/greyhound_books.log"
           wait "$GEL"; echo "greyhound early lay ($GREYHOUND_EARLY_LAY) exited $?"
           tail -n 40 "$RUNNER_TEMP/greyhound_early_lay.log"
+          wait "$DOGS"; echo "greyhound market record exited $?"; tail -n 3 "$RUNNER_TEMP/greyhound.log"
           [ "$GC" = 0 ]
