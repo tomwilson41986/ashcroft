@@ -25,7 +25,7 @@ import io
 import json
 import logging
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -303,9 +303,11 @@ def hedge(fills, book: dict | None, bsp: float | None, won: int) -> tuple[float,
     return lose + (win - lose) / G, how
 
 
-def fair_values(pre_m: pd.DataFrame, t, preds_m: pd.DataFrame, fit: dict, cfg: dict) -> pd.DataFrame | None:
-    """The forecast SP of every dog from the books as they stood at ``t`` (the live trader's forecast, read at any
-    book rather than only at the first traded one), with the mid. None until every dog has traded."""
+def fair_values(pre_m: pd.DataFrame, t, preds_m: pd.DataFrame, fit: dict, cfg: dict, closing: dict | None = None,
+                off=None) -> pd.DataFrame | None:
+    """The forecast SP of every dog from the books as they stood at ``t``, with the mid: the live trader's forecast
+    (read at any book rather than only at the first traded one), or with ``closing`` the closing-price model's. None
+    until every dog has traded."""
     from greyhound import early_lay as el
     now = pre_m[pre_m.polled <= t].groupby("selection_id").tail(1)
     if not len(now) or not (now.last_traded > 1).all() or set(now.selection_id) - set(preds_m.selection_id):
@@ -318,10 +320,70 @@ def fair_values(pre_m: pd.DataFrame, t, preds_m: pd.DataFrame, fit: dict, cfg: d
                       "traded": float(r.runner_total_matched or 0.0), "market_traded": float(r.market_total_matched or 0.0)}
         h = pre_m[(pre_m.selection_id == r.selection_id) & (pre_m.polled <= t - pd.Timedelta(seconds=90))]
         prev[sid] = (h.back1.iloc[-1], h.lay1.iloc[-1]) if len(h) else None
+    if closing is not None:
+        return closing_values(now, prev, preds_m, closing, t, off)
     with np.errstate(divide="ignore", invalid="ignore"):
         d = el.decide(el.first_rows(first, prev, preds_m[preds_m.selection_id.isin(list(first))]), fit,
                       dict(cfg, rest_only=False))
     return d[["selection_id", "f_bsp", "mid"]]
+
+
+def closing_fit(store, day: date) -> dict | None:
+    """The closing-price model (research/greyhound/bfsp_close.py ``gbm_pooled``, the most accurate of report section
+    26): boosted trees on log(BSP) less log(mid), one model over every mark, fitted on every recorded day before
+    ``day`` (the recorder's books, retimed). Inputs the training books never varied (the recorder's had no traded
+    volume) are held at their training value, so a live book's volume cannot move the forecast where the fit never
+    learnt it."""
+    import lightgbm as lgb
+    from greyhound import tradeout as to
+    from research.greyhound import bfsp_close as bc
+    panel = ls_load(store, to.FIRST_BOOK_DAY, day - timedelta(days=1))
+    if not len(panel):
+        return None
+    p = bc.book_features(panel[panel["mark"].isin(bc.MARKS) & (panel.bsp > 1) & (panel["mid"] > 1)])
+    if p.race_date.nunique() < 7:
+        return None
+    feats = [c for c in bc.GBM_FEATURES if c in p.columns]
+    resid = np.log(p.bsp.to_numpy(float)) - p["log_mid"].to_numpy(float)
+    m = lgb.train(bc.GBM_PARAMS, lgb.Dataset(p[feats].astype(float), resid), bc.GBM_ROUNDS)
+    const = {c: float(p[c].dropna().iloc[0]) if p[c].notna().any() else np.nan
+             for c in feats if p[c].nunique(dropna=True) <= 1}
+    _log(f"closing model: {len(p)} runner-marks over {p.race_date.nunique()} days; held at training value: "
+         f"{sorted(const)}")
+    return {"model": m, "feats": feats, "book": bc.sp_book(p), "const": const}
+
+
+def ls_load(store, first: date, last: date) -> pd.DataFrame:
+    from research.greyhound import limit_study as ls
+    return ls.load(store, first, last, source="retimed")
+
+
+def closing_values(now: pd.DataFrame, prev: dict, preds_m: pd.DataFrame, closing: dict, t, off) -> pd.DataFrame:
+    """The closing model's forecast SP of every dog from its book ``now`` (one row a dog), rescaled in the race to
+    the SP book's usual total, with the mid."""
+    from greyhound import tradeout as to
+    from research.greyhound import bfsp_close as bc
+    p = preds_m.drop_duplicates("selection_id").set_index("selection_id")
+    d = now.copy()
+    d["race_id"] = d.market_id.astype(str)
+    d["mark"] = "live"
+    d["p_model"] = d.selection_id.map(p.p_model).astype(float)
+    d["p_model"] = d.p_model / d.p_model.sum()
+    d["trap"] = d.selection_id.map(p.trap).astype(float) if "trap" in p else np.nan
+    d["field"] = float(len(d))
+    d["minutes_to_off"] = (off - t).total_seconds() / 60.0
+    d["back1_prev"] = d.selection_id.map(lambda s: (prev.get(int(s)) or (np.nan, np.nan))[0])
+    d["lay1_prev"] = d.selection_id.map(lambda s: (prev.get(int(s)) or (np.nan, np.nan))[1])
+    d["bsp"] = np.nan
+    d["won"] = 0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        x = bc.book_features(to.add_features(d.reset_index(drop=True)))
+        for c, v in closing["const"].items():
+            x[c] = v
+        raw = x["log_mid"].to_numpy(float) + closing["model"].predict(x[closing["feats"]].astype(float))
+        lp = bc.rescale(raw, x, closing["book"])
+    return pd.DataFrame({"selection_id": x.selection_id.astype(int).to_numpy(), "f_bsp": np.exp(lp),
+                         "mid": x["mid"].to_numpy(float)})
 
 
 #: The live trader's forecast error, RMSE of log(BSP), by seconds to the off: its conditional logit at the first traded
@@ -330,22 +392,25 @@ def fair_values(pre_m: pd.DataFrame, t, preds_m: pd.DataFrame, fit: dict, cfg: d
 #: error; one well inside it is filled mostly when the market knows better (the fixed 2% and 5% margins, 3 Nov).
 SIGMA_SECS = [60.0, 180.0, 300.0, 600.0]
 SIGMA_RMSE = [0.146, 0.244, 0.414, 0.356]
+#: the closing-price model's (trees pooled over marks, the same table)
+SIGMA_RMSE_CLOSE = [0.144, 0.225, 0.370, 0.320]
 
 
-def sigma_at(secs: float) -> float:
-    return float(np.interp(secs, SIGMA_SECS, SIGMA_RMSE))
+def sigma_at(secs: float, fair: str = "cl") -> float:
+    return float(np.interp(secs, SIGMA_SECS, SIGMA_RMSE_CLOSE if fair == "closing" else SIGMA_RMSE))
 
 
 def quote_prices(f: float, q: dict, secs: float) -> tuple[float, float]:
     """The lay and back quote around a forecast ``f``: a fixed share (``q['margin']``), or ``q['k']`` forecast errors
     at this distance from the off (log space: ``f x exp(-k sigma)`` and ``f x exp(k sigma)``)."""
     if q.get("k") is not None:
-        w = q["k"] * sigma_at(secs)
+        w = q["k"] * sigma_at(secs, q.get("fair", "cl"))
         return f * float(np.exp(-w)), f * float(np.exp(w))
     return f * (1 - q["margin"]), f * (1 + q["margin"])
 
 
-def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict, q: dict) -> list[dict]:
+def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict, q: dict,
+               closing: dict | None = None) -> list[dict]:
     """One race traded both ways: at every live-key book from the moment the whole field has traded until
     ``q['stop_seconds']`` before the off, each dog's fair value (the forecast SP) quoted with a resting back at
     ``fair x (1 + margin)`` (rounded up the ladder; only above the mid) and a resting lay at ``fair x (1 - margin)``
@@ -378,7 +443,8 @@ def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict
         t = pd.Timestamp(t)
         if t > t_stop:
             break
-        fv = fair_values(pre_m, t, preds_m, fit, cfg)
+        fv = fair_values(pre_m, t, preds_m, fit, cfg, closing=closing, off=off) if q.get("fair") == "closing" \
+            else fair_values(pre_m, t, preds_m, fit, cfg)
         if fv is None:
             continue
         for r in fv.itertuples(index=False):
@@ -430,7 +496,7 @@ def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict
     return out
 
 
-def two_sided(store, day: date, data: dict, cfg: dict, fit: dict, q: dict) -> pd.DataFrame:
+def two_sided(store, day: date, data: dict, cfg: dict, fit: dict, q: dict, closing: dict | None = None) -> pd.DataFrame:
     """Every settled race of the day traded both ways (``quote_race``)."""
     raw = store.get(f"greyhound/live/predictions/{day:%Y-%m-%d}.csv")
     if not raw:
@@ -444,10 +510,67 @@ def two_sided(store, day: date, data: dict, cfg: dict, fit: dict, q: dict) -> pd
         if pd.isna(data["off"].get(mid)):
             continue
         try:
-            out += quote_race(data, mid, preds[preds.market_id == mid], fit, cfg, q)
+            out += quote_race(data, mid, preds[preds.market_id == mid], fit, cfg, q, closing=closing)
         except Exception as exc:                                   # one race's fault never stops the day
             log.warning("two-sided %s: %s", mid, exc)
     return pd.DataFrame(out)
+
+
+ACC_MARKS = {"10 min": 600.0, "5 min": 300.0, "3 min": 180.0, "1 min": 60.0, "15 s": 15.0}
+
+
+def fair_accuracy(store, day: date, data: dict, fit: dict, cfg: dict, closing: dict | None) -> list[dict]:
+    """Each fair value's error on the day's settled races, read off the live-key books at the poll nearest each mark
+    (within 30 s, or 90 s for 10 min out where the books are a minute apart): RMSE of log(BSP) for the live
+    trader's forecast, the closing model's and the market mid, the same runners for each."""
+    raw = store.get(f"greyhound/live/predictions/{day:%Y-%m-%d}.csv")
+    if not raw or closing is None:
+        return []
+    preds = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str})
+    preds["selection_id"] = pd.to_numeric(preds.selection_id, errors="coerce")
+    preds = preds.dropna(subset=["selection_id"]).drop_duplicates(["market_id", "selection_id"], keep="last")
+    res = data["result"].set_index(["market_id", "selection_id"]).bsp
+    rows = []
+    for mid in sorted(set(data["pre"].market_id) & set(data["result"].market_id) & set(preds.market_id)):
+        off = data["off"].get(mid)
+        if off is None or pd.isna(off):
+            continue
+        pre_m = data["pre"][data["pre"].market_id == mid]
+        times = pd.Series(sorted(pre_m.polled.unique()))
+        pm = preds[preds.market_id == mid]
+        for name, secs in ACC_MARKS.items():
+            if not len(times):
+                continue
+            target = off - pd.Timedelta(seconds=secs)
+            i = (times - target).abs().idxmin()
+            t = pd.Timestamp(times[i])
+            if abs((t - target).total_seconds()) > (90 if secs >= 600 else 30):
+                continue
+            try:
+                a = fair_values(pre_m, t, pm, fit, cfg)
+                b = fair_values(pre_m, t, pm, fit, cfg, closing=closing, off=off)
+            except Exception as exc:
+                log.warning("accuracy %s %s: %s", mid, name, exc)
+                continue
+            if a is None or b is None:
+                continue
+            m = a.merge(b, on="selection_id", suffixes=("_cl", "_close"))
+            for r in m.itertuples(index=False):
+                y = res.get((mid, float(r.selection_id)))
+                if y is None or not np.isfinite(y) or y <= 1:
+                    continue
+                rows.append({"mark": name, "market_id": mid, "y": np.log(y), "cl": np.log(r.f_bsp_cl),
+                             "closing": np.log(r.f_bsp_close), "mid": np.log(r.mid_cl)})
+    if not rows:
+        return []
+    d = pd.DataFrame(rows).replace([np.inf, -np.inf], np.nan).dropna()
+    out = []
+    for name in ACC_MARKS:
+        g = d[d["mark"] == name]
+        if len(g):
+            out.append({"mark": name, "runners": int(len(g)), "races": int(g.market_id.nunique()),
+                        **{k: round(float(np.sqrt(np.mean((g[k] - g.y) ** 2))), 4) for k in ("mid", "cl", "closing")}})
+    return out
 
 
 QUOTES = {
@@ -459,6 +582,11 @@ QUOTES = {
     "sigma_k05": {"sides": ("back", "lay"), "k": 0.5, "max_loss": 60.0},
     "sigma_k10": {"sides": ("back", "lay"), "k": 1.0, "max_loss": 60.0},
     "sigma_k15": {"sides": ("back", "lay"), "k": 1.5, "max_loss": 60.0},
+    "close_m10": {"sides": ("back", "lay"), "margin": 0.10, "max_loss": 60.0, "fair": "closing"},
+    "close_m20": {"sides": ("back", "lay"), "margin": 0.20, "max_loss": 60.0, "fair": "closing"},
+    "close_m30": {"sides": ("back", "lay"), "margin": 0.30, "max_loss": 60.0, "fair": "closing"},
+    "close_k10": {"sides": ("back", "lay"), "k": 1.0, "max_loss": 60.0, "fair": "closing"},
+    "close_k15": {"sides": ("back", "lay"), "k": 1.5, "max_loss": 60.0, "fair": "closing"},
     "lay_m20": {"sides": ("lay",), "margin": 0.20, "max_loss": 60.0},
     "back_m20": {"sides": ("back",), "margin": 0.20, "max_loss": 60.0},
 }
@@ -523,10 +651,18 @@ def report_md(res: dict) -> str:
                      f"{s['greened']} | {s['net']:+.2f} | {s['races_won']} / {s['races_lost']} |")
         else:
             L.append(f"| {k} | 0 | 0 | | | | | | |")
+    if res.get("fair_accuracy"):
+        L += ["", "## 2b. The fair values on today's live-key books", "",
+              "RMSE of log(BSP) on the day's settled races (lower is better), the same runners for each: the market "
+              "mid, the live trader's forecast (cl) and the closing-price model (closing, close_* variants below).", "",
+              "| Before the off | Runners | Races | Mid | Live trader's forecast | Closing model |", "|---|---|---|---|---|---|"]
+        for r in res["fair_accuracy"]:
+            L.append(f"| {r['mark']} | {r['runners']} | {r['races']} | {r['mid']} | {r['cl']} | {r['closing']} |")
     L += ["", "## 3. Both sides of every dog up to the off", "",
           "Each dog's forecast SP read at every live-key book (the live trader's forecast), a resting back above it and "
           "a resting lay below it (both_mNN: a fixed NN% either side; sigma_kNN: NN/10 of the forecast's error at that "
-          "distance from the off, wide early and tighter near the off), never across the mid, requoted as it moves; every position greened up 5 s before "
+          "distance from the off, wide early and tighter near the off; close_*: the same around the closing-price "
+          "model's forecast), never across the mid, requoted as it moves; every position greened up 5 s before "
           "the off. Our own orders do not move the simulated market, and two of our orders on one dog can count the "
           "same traded money: an upper bound on the fills.", "",
           "| Variant | Races | Orders | Dogs matched | Back matched | Lay matched | Net P&L | Per race | Races won / "
@@ -582,10 +718,17 @@ def main(argv=None) -> int:
                 res["strategies"][name] = summarise(rows)
                 _log(f"{name}: {res['strategies'][name]}")
             res["quotes"] = {}
+            closing = None
+            if any(q.get("fair") == "closing" and (not only or n in only) for n, q in QUOTES.items()):
+                closing = closing_fit(store, day)
+                res["fair_accuracy"] = fair_accuracy(store, day, data, fit, dict(el.CONFIG), closing)
+                _log(f"fair value accuracy: {res['fair_accuracy']}")
             for name, q in QUOTES.items():
                 if only and name not in only:
                     continue
-                rows = two_sided(store, day, data, dict(el.CONFIG), fit, q)
+                if q.get("fair") == "closing" and closing is None:
+                    continue
+                rows = two_sided(store, day, data, dict(el.CONFIG), fit, q, closing=closing)
                 res["quotes"][name] = summarise_quotes(rows)
                 if len(rows):
                     rows.to_csv(Path(a.out).parent / f"{Path(a.out).name}_{name}.csv", index=False)

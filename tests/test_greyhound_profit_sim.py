@@ -184,3 +184,20 @@ def test_the_quote_widens_with_the_forecasts_error():
     assert lay_far < lay_near < 4.0 < back_near < back_far
     assert np.isclose(np.log(back_near / 4.0), 0.146) and np.isclose(np.log(4.0 / lay_near), 0.146)
     assert ps.quote_prices(4.0, {"margin": 0.2}, 60) == (4.0 * 0.8, 4.0 * 1.2)
+
+
+def test_the_closing_model_as_the_fair_value():
+    class Zero:                                                    # trees that add nothing to the mid
+        def predict(self, X):
+            assert list(X.columns) == ["log_mid", "wom1", "log_vol"]
+            assert (X.log_vol == 0.0).all()                        # held at its training value
+            return np.zeros(len(X))
+    d = day()
+    pre_m = d["pre"][d["pre"].market_id == MID]
+    preds = pd.DataFrame({"market_id": [MID, MID], "selection_id": [7, 8], "p_model": [0.2, 0.8], "trap": [1, 2]})
+    closing = {"model": Zero(), "feats": ["log_mid", "wom1", "log_vol"], "book": 1.0, "const": {"log_vol": 0.0}}
+    t = OFF - pd.Timedelta(seconds=100)
+    fv = ps.fair_values(pre_m, t, preds, {}, {}, closing=closing, off=OFF).set_index("selection_id")
+    assert np.isclose((1.0 / fv.f_bsp).sum(), 1.0)                 # rescaled to the SP book's total
+    assert fv.loc[7, "f_bsp"] > fv.loc[8, "f_bsp"]                # the order of the mids kept
+    assert ps.sigma_at(60, "closing") == 0.144 and ps.sigma_at(60) == 0.146
