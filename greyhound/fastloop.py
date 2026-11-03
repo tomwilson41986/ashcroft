@@ -152,7 +152,7 @@ def feature_set(meta: dict, name: str) -> list[str]:
 def lane(exp: dict, spec: dict) -> str:
     """``slow`` for an experiment off the quick recipe or with the study, ``quick`` otherwise: the CI runs the quick
     lane's table as soon as it is done, without waiting on the slow lane."""
-    slow = exp.get("recipe", spec.get("recipe", "quick")) != "quick" or exp.get("study")
+    slow = exp.get("recipe", spec.get("recipe", "quick")) != "quick" or exp.get("study") or exp.get("limit")
     return "slow" if slow else "quick"
 
 
@@ -420,6 +420,8 @@ def main(argv=None) -> int:
             res["shortening"] = shortening(store, pred, e["name"], out)
         if e.get("study"):
             res["study"] = run_study(store, pred, e["name"], out)
+        if e.get("limit"):
+            res["limit"] = run_limit(store, pred, e["name"], out)
         (out / f"result_{e['name']}.json").write_text(json.dumps(res, indent=1, default=str))
         # each runner's log-loss contribution, for the paired comparison against the baseline in --collect
         pred[["race_id", "race_date", "dog_id", "won", "p_model"]].to_parquet(out / f"pred_{e['name']}.parquet", index=False)
@@ -516,6 +518,22 @@ def run_study(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
     tradeout_study.main(["--from", STUDY_FROM, "--to", str(last), "--pred-dir", str(out / "pred" / name),
                          "--source", "retimed", "--out", str(out / f"study_{name}")])
     return {"head_to_head": joined.get("head_to_head"), "report": f"study_{name}.md"}
+
+
+def run_limit(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
+    """The limit-order study (``research.greyhound.limit_study``) on an experiment's prices, its days from STUDY_FROM
+    joined to the Betfair markets, on the re-timed books."""
+    from research.greyhound import limit_study, score_full
+    days = pred[pred.race_date.astype(str) >= STUDY_FROM]
+    if not len(days):
+        return {"skipped": f"no test days from {STUDY_FROM}"}
+    last = str(days.race_date.max())
+    if not (out / "pred" / name).exists():
+        score_full.score_days({name: days}, date.fromisoformat(STUDY_FROM), date.fromisoformat(last), store,
+                              out / "pred")
+    limit_study.main(["--from", STUDY_FROM, "--to", last, "--pred-dir", str(out / "pred" / name),
+                      "--source", "retimed", "--out", str(out / f"limit_{name}")])
+    return {"report": f"limit_{name}.md"}
 
 
 if __name__ == "__main__":

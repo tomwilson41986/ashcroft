@@ -863,6 +863,39 @@ SP ... get money on at higher prices that are expected to shorten at BFSP"):
     matched, or not. It can be simulated on the live recorder's 5-second books with traded volume, and only roughly
     on the recorder's.
 
+## 21. The fast loop's fourth batch: ranked by calling the move (greyhound-fastloop.yml run 41610771793, 3 Nov 2026)
+
+**The first batch ranked by what the trade-out needs** (section 20's change of measure). Every experiment was fitted
+on January 2024 to May 2026 on the new quick recipe (learning rate 0.08). Columns:
+- **Our price adds:** how much the experiment's price adds to the forecast of the SP from the book at first traded,
+  5 and 3 minutes out. It is the SP book's cross-entropy a race: the conditional logit without our price less the same
+  with it. It is walk-forward by day on the recorded books from 6 October, re-timed. Higher is better.
+- **vs logbsp:** the paired difference from the baseline over those three marks, 90% by day. Negative is better.
+- **Log-loss:** against the result, every race from 1 June to 2 November 2026, paired the same way.
+
+| Experiment | Rounds | Our price adds: first traded / 5 min / 3 min | vs logbsp (90%) | Log-loss | vs logbsp (90%) | Seconds |
+|---|---|---|---|---|---|---|
+| logbsp (baseline: card-safe, 63 leaves) | 2,675 | 0.00665 / 0.01304 / 0.00024 | | 0.44274 | | 521 |
+| **logbsp_lr05** (learning rate 0.05) | 8,000 (the cap) | **0.00694 / 0.01363 / 0.00028** | **-0.00029 (-0.00040 to -0.00017)** | 0.44241 | -0.00032 (-0.00056 to -0.00009) | 1,241 |
+| **logbsp_weighin_fb_sd** (+ the weigh-in, first_bend, style_draw) | 3,432 | **0.00691 / 0.01354 / 0.00028** | **-0.00026 (-0.00037 to -0.00015)** | 0.44240 | -0.00034 (-0.00063 to -0.00006) | 736 |
+| logbsp_fb_sd_leaves31 | 5,270 | 0.00663 / 0.01332 / 0.00025 | -0.00008 (-0.00018 to +0.00002) | 0.44242 | -0.00032 (-0.00058 to -0.00005) | 878 |
+| logbsp_fb_sd (+ first_bend, style_draw) | 2,944 | 0.00660 / 0.01330 / 0.00024 | -0.00005 (-0.00018 to +0.00008) | 0.44284 | +0.00011 (-0.00015 to +0.00036) | 701 |
+| logbsp_ff05 (half the features a tree) | 4,080 | 0.00661 / 0.01324 / 0.00024 | -0.00003 (-0.00013 to +0.00006) | 0.44275 | +0.00002 (-0.00026 to +0.00030) | 514 |
+| logbsp_ff09 (more features and rows a tree) | 2,613 | 0.00658 / 0.01322 / 0.00023 | -0.00002 (-0.00013 to +0.00009) | 0.44285 | +0.00012 (-0.00012 to +0.00036) | 740 |
+| softmax_fb_sd (the win objective) | 170 | 0.00502 / 0.00981 / 0.00014 | +0.00163 (+0.00132 to +0.00192) | 0.44562 | +0.00289 (+0.00237 to +0.00338) | 137 |
+
+**Reading.**
+- **The two measures rank the experiments alike.** What forecasts the result better also calls the move better.
+- **The log-BSP target matters most for the move.** The softmax model's price adds a quarter less at first traded
+  (0.0050 against 0.0067) and the interval is well clear.
+- **A slower learning rate helps.** At 0.05 the fit ran to its 8,000-round cap, so more rounds may help further. The
+  weigh-in helps too.
+- **The first-bend and style-draw blocks no longer help on their own** at 0.08. They did at 0.15 in batches 2 and 3,
+  so their gain was partly making up for the fast rate.
+- **Neither tree size nor subsampling changes anything.**
+- **The run took 26 minutes.** The shortening score adds about 8 to 10 minutes a job (S3 reads and the walk-forward).
+  The longest job was 24 minutes against a 30-minute limit, so the limit goes to 60 (batch 5 fits at 0.05 to 10,000 rounds).
+
 ## 22. The limit-order study (greyhound-limit-study.yml run 41613570934, 3 Nov 2026)
 
 The owner (3 Nov 2026): "build the limit-order study ... take prices based on the behaviour of the greyhound market.

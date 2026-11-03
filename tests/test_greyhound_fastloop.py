@@ -141,6 +141,7 @@ def test_lanes_split_the_quick_from_the_slow(tmp_path, capsys):
     spec = {"recipe": "quick", "baseline": "a", "experiments": [
         {"name": "a"}, {"name": "b", "recipe": "confirm"}, {"name": "c", "study": True}, {"name": "d"}]}
     assert [fl.lane(e, spec) for e in spec["experiments"]] == ["quick", "slow", "slow", "quick"]
+    assert fl.lane({"name": "e", "limit": True}, spec) == "slow"
     p = tmp_path / "spec.json"
     p.write_text(json.dumps(spec))
     for lane, want in (("quick", ["a", "d"]), ("slow", ["b", "c"]), (None, ["a", "b", "c", "d"])):
