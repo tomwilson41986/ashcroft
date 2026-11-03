@@ -147,7 +147,7 @@ def test_green_up_at_the_best_back_price(tmp_path, fit):
     t.step()
     lays = {i["selectionId"]: i["limitOrder"] for i in x.sent if i["side"] == "LAY"}
     assert lays
-    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=20)   # inside the green-up
+    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=4)   # inside the green-up
     t.step(near_only=True)
     assert x.cancels == [MID]
     backs = {i["selectionId"]: i["limitOrder"] for i in x.sent if i["side"] == "BACK"}
@@ -169,7 +169,7 @@ def test_near_the_off_the_lay_is_closed_at_the_sp(tmp_path, fit):
     x.book = book()
     t, clock = trader(tmp_path, x, fit)
     t.step()
-    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=5)    # past the give-up
+    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=1)    # past the give-up
     t.step(near_only=True)
     sp = [i for i in x.sent if i["orderType"] == "MARKET_ON_CLOSE"]
     lays = [i for i in x.sent if i["side"] == "LAY"]
@@ -182,7 +182,7 @@ def test_paper_sends_nothing(tmp_path, fit):
     x.book = book()
     t, clock = trader(tmp_path, x, fit, live=False)
     t.step()
-    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=20)
+    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=4)
     t.step(near_only=True)
     assert not x.sent and not x.cancels
     led = pd.read_csv(tmp_path / "ledger.csv")
@@ -242,7 +242,7 @@ def test_the_live_table_from_the_ledger(tmp_path, fit):
     t.load_predictions = lambda: None
     t.preds = preds().assign(off=pd.Timestamp(T0 + timedelta(minutes=10)))
     t.step()
-    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=20)
+    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=4)
     t.step(near_only=True)
     md = el.table(store, date(2026, 11, 3))
     assert "| Romford |" in md and "locked by green-ups" in md
@@ -272,3 +272,15 @@ def test_the_heartbeat_reaches_the_table(tmp_path, fit):
     t.heartbeat(force=True)
     md = el.table(store, date(2026, 11, 3))
     assert "Trader: last seen 2026-11-03T14:00:00Z" in md and "priced 1" in md
+
+
+def test_no_green_up_before_5_seconds_out(tmp_path, fit):
+    x = FakeX()
+    x.book = book()
+    t, clock = trader(tmp_path, x, fit)
+    t.step()
+    n = len(x.sent)
+    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=20)
+    t.step()
+    t.step(near_only=True)
+    assert len(x.sent) == n and not x.cancels and MID not in t.greened    # the lays still rest at 20 s out
