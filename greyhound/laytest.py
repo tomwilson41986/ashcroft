@@ -168,15 +168,33 @@ def today_rows(store, day: date) -> tuple[pd.DataFrame, str]:
     record (greyhound/book_record.py), whose settled reads carry the BSP and the result."""
     from betfair_recorder import _read_day_csv
     from research.greyhound import limit_study as ls
-    pred = store.get_parquet(f"{to.TRACK_PRED}/{day:%Y-%m-%d}.parquet")
-    if pred is None or not len(pred):
-        return pd.DataFrame(), "no prices for today yet (greyhound/track/pred)"
+    import io
     rec = _read_day_csv(day, "books_greyhound.csv")
     live = _read_day_csv(day, to.ENTRY_BOOKS["live"])
+    finals = [b[b.source == "final"] for b in (rec, live) if b is not None and "source" in b]
+    pred = store.get_parquet(f"{to.TRACK_PRED}/{day:%Y-%m-%d}.parquet")
+    priced_by = "the 5 Oct forward test's model"
+    if pred is None or not len(pred):
+        # During the day the tracker has not priced today yet: the paper trader's own prices (greyhound/live.py, the
+        # card-safe live model, refreshed hourly), with the winner from each settled race's book
+        raw = store.get(f"greyhound/live/predictions/{day:%Y-%m-%d}.csv")
+        if not raw:
+            return pd.DataFrame(), "no prices for today yet"
+        pred = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str})
+        fin = pd.concat(finals, ignore_index=True) if finals else pd.DataFrame(
+            columns=["market_id", "selection_id", "runner_status"])
+        win = fin.assign(market_id=fin.market_id.astype(str),
+                         selection_id=pd.to_numeric(fin.selection_id, errors="coerce"))
+        win = win[win.runner_status.astype(str) == "WINNER"][["market_id", "selection_id"]].drop_duplicates()
+        pred["selection_id"] = pd.to_numeric(pred.selection_id, errors="coerce")
+        pred = pred.merge(win.assign(won=1), on=["market_id", "selection_id"], how="left")
+        pred["won"] = pred.won.fillna(0).astype(int)
+        settled = set(fin.market_id.astype(str)) if len(fin) else set()
+        pred = pred[pred.market_id.astype(str).isin(settled)]     # a race counts once its result is in
+        priced_by = "the paper trader's live model (the tracker prices today only after racing)"
     markets = _read_day_csv(day, "markets_greyhound.csv")
     if markets is None:
         markets = _read_day_csv(day, "markets_greyhound_live.csv")
-    finals = [b[b.source == "final"] for b in (rec, live) if b is not None and "source" in b]
     for source, entry in (("recorder, re-timed", rec), ("live-key record", live)):
         if entry is None or markets is None or not len(entry):
             continue
@@ -186,7 +204,7 @@ def today_rows(store, day: date) -> tuple[pd.DataFrame, str]:
         if len(panel):
             pre = to.pre_off_books(entry, markets, retimed=source.startswith("recorder"))
             pre = pre[pre.market_id.isin(set(panel.market_id))]
-            return ls.attach_future(panel, ls.future_extremes(pre)), source
+            return ls.attach_future(panel, ls.future_extremes(pre)), f"{source}; prices: {priced_by}"
     return pd.DataFrame(), "no settled race with books at the first traded mark yet"
 
 

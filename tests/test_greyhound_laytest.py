@@ -96,3 +96,35 @@ def test_intraday_says_why_when_nothing_is_settled(tmp_path, panel, monkeypatch)
     r = lt.intraday(Store(root=str(tmp_path)), date(2026, 11, 8))
     assert r["markets"] == [] and r["note"] == "no settled race yet"
     assert "no settled race yet" in lt.intraday_markdown(r)
+
+
+def test_today_rows_fall_back_to_the_live_prices_with_the_winner_from_the_result(tmp_path, monkeypatch):
+    import io
+    import pandas as pd
+    import betfair_recorder
+    from greyhound import tradeout as to
+    store = Store(root=str(tmp_path))
+    preds = pd.DataFrame({"race_id": ["r1", "r1", "r2"], "race_date": ["2026-11-03"] * 3,
+                          "race_time": ["12:00", "12:00", "12:10"], "track": ["Hove"] * 3, "trap": [1, 2, 1],
+                          "field": [2, 2, 1], "p_model": [0.6, 0.4, 1.0], "market_id": ["1.1", "1.1", "1.2"],
+                          "selection_id": [11, 12, 21]})
+    buf = io.StringIO()
+    preds.to_csv(buf, index=False)
+    store.put("greyhound/live/predictions/2026-11-03.csv", buf.getvalue().encode())
+    final = pd.DataFrame({"source": ["final", "final"], "market_id": ["1.1", "1.1"], "selection_id": [11, 12],
+                          "runner_status": ["LOSER", "WINNER"]})
+    monkeypatch.setattr(betfair_recorder, "_read_day_csv",
+                        lambda day, name, s3=None: final if name == to.ENTRY_BOOKS["live"] else None)
+    seen = {}
+
+    def panel(pred, entry, markets, day, closing_books=None, retimed=False):
+        seen["pred"] = pred
+        return pd.DataFrame()
+    monkeypatch.setattr(to, "day_panel", panel)
+    monkeypatch.setattr(betfair_recorder, "_read_day_csv",
+                        lambda day, name, s3=None: final if name == to.ENTRY_BOOKS["live"] else (
+                            pd.DataFrame({"market_id": ["1.1"]}) if name.startswith("markets") else None))
+    rows, note = lt.today_rows(store, date(2026, 11, 3))
+    p = seen["pred"]
+    assert set(p.market_id) == {"1.1"}                          # only the settled race
+    assert p.set_index("selection_id").won.to_dict() == {11: 0, 12: 1}
