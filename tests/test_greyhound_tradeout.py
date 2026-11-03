@@ -413,7 +413,9 @@ def test_live_book_record_reads_densely_near_the_off_and_on_until_the_market_clo
     gaps_near = [(b - a).total_seconds() for a, b in zip(times, times[1:]) if a >= off - timedelta(minutes=5)]
     assert max(gaps_near) <= br.EVERY_NEAR + 1.0                            # every 5 s in the last 5 minutes
     assert max(times) >= off + timedelta(seconds=40) and out["done"] == 1  # on past the off until it closed
-    settles = [t for t, d in reads if "SP_AVAILABLE" in d]                 # the results: from the off until closed
+    # the results: from the off until closed (the settled reads alone ask for SP_TRADED; the book reads ask for
+    # SP_AVAILABLE too, for the projected SP)
+    settles = [t for t, d in reads if "SP_TRADED" in d]
     assert settles and min(settles) >= off and out["settled"] == 1
 
 

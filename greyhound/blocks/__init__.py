@@ -9,13 +9,17 @@ day's results (``tests/test_greyhound_fastloop.py`` rewrites the last day's resu
   each dog's chance of leading, its projected order, the crowding around it.
 - ``style_draw``: how dogs of this running style (railer, middle, wide) have done from this trap at this track and
   distance on earlier days, against the trap's own record.
+- ``sim``: a race simulator (roadmap F2): each race run 300 times from early pace, the checks at the first bend and the
+  run-in; the chance of winning, leading at the bend, finishing in the first two, the lengths lost to checks.
+- ``fcast``: Betfair's forecast price as a prior (roadmap L2), from the recorded catalogues (6 Oct 2026 on; NaN
+  before).
 """
 
 from __future__ import annotations
 
 import importlib
 
-NAMES = ("race_rel2", "first_bend", "style_draw")
+NAMES = ("race_rel2", "first_bend", "style_draw", "sim", "fcast")
 
 
 def attach(df, name: str) -> list[str]:
