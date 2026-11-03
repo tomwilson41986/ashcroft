@@ -846,6 +846,11 @@ def main(argv=None) -> int:
             log.warning("early lay not scored (%s)", exc)
             md += f"\n### Early lay\n\nnot scored this time ({str(exc)[:200]})\n"
             r["early_lay"] = {"error": str(exc)[:200]}
+        try:                                        # the live early lay's own orders (greyhound/early_lay.py)
+            from greyhound import early_lay
+            md = early_lay.table(store, day) + "\n" + md
+        except Exception as exc:
+            log.warning("live early lay not read (%s)", exc)
         store.put(f"{PREFIX}/paper/{day:%Y-%m-%d}/running.md", md.encode())
         if a.out:
             Path(a.out).write_text(md)

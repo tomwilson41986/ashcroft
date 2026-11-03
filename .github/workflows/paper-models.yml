@@ -10,6 +10,11 @@ name: Paper models (greyhounds, football), the football book record and the raci
 #     book recorder (greyhound/book_record.py, read-only by construction) read on the live key; the football trader
 #     and every recorder of another sport keep the delayed key;
 #   - its own Python environment and certificate folder, so nothing here touches the live job's.
+# The one exception, the owner, 3 Nov 2026: "lets go live now, i will monitor and stop manually if any concerns";
+# "use early lay". The greyhound early lay (greyhound/early_lay.py, the forward test's primary rule) places real
+# orders on the live key, with GREYHOUND_EARLY_LAY=live (the dispatch input, else the repository variable, else
+# live). Stop it: the S3 object greyhound/STOP (greyhound-stop.yml) stops new lays and greens up the matched ones;
+# the variable GREYHOUND_EARLY_LAY=paper keeps it off the next days. Every other trader here stays on paper.
 # The runner: a second self-hosted runner on the UK server (Betfair refuses logins from GitHub's own runners: 403,
 # 1 Nov), labelled with vars.PAPER_MODELS_RUNNER (default 'paper-models'). It must not be the live trader's runner: the
 # job stops if the two are the same, because a job there would hold the live trader's runner and could delay its
@@ -20,6 +25,13 @@ on:
   schedule:
     - cron: '45 5 * * *'      # both traders, to 21:30 UK
   workflow_dispatch:
+    inputs:
+      early_lay:
+        description: "the greyhound early lay: live (real orders on the owner's account) or paper (logged, nothing sent)"
+        required: false
+        type: choice
+        options: ['live', 'paper']
+        default: 'live'
 
 permissions:
   contents: read
@@ -82,7 +94,7 @@ jobs:
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
         run: timeout 300 python -m sources.betfair_census --hours 168
-      - name: Trade on paper (read-only)
+      - name: Trade (the greyhound early lay live, the rest on paper)
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -98,6 +110,7 @@ jobs:
           BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
           GREYHOUND_LIVE: 'no'
           FOOTBALL_LIVE: 'no'
+          GREYHOUND_EARLY_LAY: ${{ inputs.early_lay || vars.GREYHOUND_EARLY_LAY || 'live' }}
         run: |
           set +e
           # the greyhound model (greyhound/live.py, greyhound/live_config.json): each GB greyhound runner backed once on
@@ -109,6 +122,9 @@ jobs:
           # the greyhound books every 5 s near the off, with traded volume (reports/greyhound_roadmap.md 0.2)
           BETFAIR_APP_KEY="$GHKEY" python -m greyhound.book_record --until 21:30 > "$RUNNER_TEMP/greyhound_books.log" 2>&1 &
           GBR=$!
+          # the greyhound early lay (greyhound/early_lay.py): real orders only when GREYHOUND_EARLY_LAY is 'live'
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --live --until 21:30 > "$RUNNER_TEMP/greyhound_early_lay.log" 2>&1 &
+          GEL=$!
           # the football model (football/live.py, football/live_config.json): MATCH_ODDS and OVER_UNDER_25, each
           # selection decided once in the 6 hours before kick-off, on paper. S3 football/STOP or trading/STOP stops it.
           timeout 15h python -m football.live --trade --until 21:30 > "$RUNNER_TEMP/football_trader.log" 2>&1 &
@@ -135,6 +151,8 @@ jobs:
           tail -n 20 "$RUNNER_TEMP/greyhound_trader.log"
           wait "$GBR"; echo "greyhound book record exited $?"
           tail -n 5 "$RUNNER_TEMP/greyhound_books.log"
+          wait "$GEL"; echo "greyhound early lay ($GREYHOUND_EARLY_LAY) exited $?"
+          tail -n 40 "$RUNNER_TEMP/greyhound_early_lay.log"
           wait "$FBT"; FC=$?; echo "football paper trader exited $FC"
           tail -n 20 "$RUNNER_TEMP/football_trader.log"
           for P in "${FBREC[@]}"; do wait "$P"; done
