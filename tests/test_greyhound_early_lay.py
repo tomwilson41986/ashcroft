@@ -256,3 +256,18 @@ def test_a_race_off_late_is_still_closed(tmp_path, fit):
     clock["t"] = T0 + timedelta(minutes=10) + timedelta(seconds=20)    # past the scheduled off, the market still open
     t.step(near_only=True)
     assert [i for i in x.sent if i["orderType"] == "MARKET_ON_CLOSE"] and MID in t.greened
+
+
+def test_the_heartbeat_reaches_the_table(tmp_path, fit):
+    from sources.common import Store as S3Store
+    store = S3Store(root=str(tmp_path / "s3"))
+    x = FakeX()
+    x.book = book()
+    t = el.EarlyLay(store, x, dict(el.CONFIG), date(2026, 11, 3), True, tmp_path / "ledger.csv", fit,
+                    now=lambda: T0)
+    t.load_predictions = lambda: None
+    t.preds = preds().assign(off=pd.Timestamp(T0 + timedelta(minutes=10)))
+    t.step()
+    t.heartbeat(force=True)
+    md = el.table(store, date(2026, 11, 3))
+    assert "Trader: last seen 2026-11-03T14:00:00Z" in md and "priced 1" in md
