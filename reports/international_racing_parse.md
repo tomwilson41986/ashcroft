@@ -52,7 +52,8 @@ started, because the model needs an exchange to trade on first (the owner's rule
 ## 3. The deciding check: does Betfair trade these races?
 
 `sources/betfair_census.py` reads, for every country Betfair lists horse racing in: its win markets,
-venues and the money matched so far. It makes one read-only call per country, on the delayed key. It runs at
+venues and the money matched so far. It makes one read-only listMarketCatalogue call per day of the window, on the
+delayed key, and groups the markets by each event's country. It runs at
 the start of the paper-models job (`paper-models.yml`, 05:45 UTC, its own runner, never in the live horse jobs: the
 owner, 2 Nov 2026), with a 7-day window, so it lists every country's markets for the week, Hong Kong and Japan
 included, while Japan, Hong Kong and Australia race. Readings are saved to
