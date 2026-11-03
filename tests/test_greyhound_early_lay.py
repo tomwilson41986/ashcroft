@@ -284,3 +284,21 @@ def test_no_green_up_before_5_seconds_out(tmp_path, fit):
     t.step()
     t.step(near_only=True)
     assert len(x.sent) == n and not x.cancels and MID not in t.greened    # the lays still rest at 20 s out
+
+
+def test_the_table_says_why_a_lay_was_not_greened(tmp_path, fit):
+    from sources.common import Store as S3Store
+    store = S3Store(root=str(tmp_path / "s3"))
+    x = FakeX()
+    x.book = book()
+    clock = {"t": T0}
+    t = el.EarlyLay(store, x, dict(el.CONFIG), date(2026, 11, 3), True, tmp_path / "ledger.csv", fit,
+                    now=lambda: clock["t"])
+    t.load_predictions = lambda: None
+    t.preds = preds().assign(off=pd.Timestamp(T0 + timedelta(minutes=10)))
+    t.step()
+    x.book = book(status="SUSPENDED")                          # the market off before the green-up
+    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=4)
+    t.step(near_only=True)
+    md = el.table(store, date(2026, 11, 3))
+    assert "hold (the market closed before the green-up)" in md

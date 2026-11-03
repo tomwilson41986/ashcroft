@@ -546,16 +546,21 @@ def table(store, day: date, mode: str = "live") -> str:
                      "greened": int((cg.action == "green").sum()), "sp_or_held": len(opened),
                      "open_liability": round(float(pd.to_numeric(opened.liability, errors="coerce").fillna(0).sum()), 2),
                      "locked": round(locked, 2), "running": round(run, 2),
+                     "closed": "; ".join(f"{a}" + (f" ({e})" if isinstance(e, str) and e else "") + (f" {st}" if
+                                         isinstance(st, str) and st else "")
+                                         for a, e, st in zip(opened.action, opened.error, opened.status))[:120],
+                     "retries": int((led[(led.market_id == mid)].action == "green_retry").sum()),
                      "errors": "; ".join(sorted(set(lg.error.dropna().astype(str)) - {""}))[:80]})
     L = [head, "", f"Races laid {len(rows)}; lays {len(lays)}, GBP{lays['size'].sum():.2f} asked; matched "
          f"GBP{sum(r['matched'] for r in rows):.2f}; locked by green-ups **GBP{run:+.2f}**; still settling with the "
          f"result (closed at the SP or held) GBP{sum(r['open_liability'] for r in rows):.2f} liability."
          + (f" Skipped races: {len(skips)} ({'; '.join(sorted(set(skips.error.astype(str))))})." if len(skips) else ""),
          "", "| Race (UK) | Track | Lays | Stake asked | Matched | Greened | SP/held | Open liability | Locked | Running "
-         "| Errors |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+         "| Green-up retries | Not greened: how and why | Lay errors |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in sorted(rows, key=lambda r: r["race"]):
         L.append(f"| {r['race']} | {r['track']} | {r['lays']} | {r['staked']} | {r['matched']} | {r['greened']} | "
-                 f"{r['sp_or_held']} | {r['open_liability']} | {r['locked']} | {r['running']} | {r['errors']} |")
+                 f"{r['sp_or_held']} | {r['open_liability']} | {r['locked']} | {r['running']} | {r['retries']} | "
+                 f"{r['closed']} | {r['errors']} |")
     return "\n".join(L) + "\n"
 
 
