@@ -336,5 +336,18 @@ class GreyhoundMetricsEngine:
             self.block_features["lib"] = names
             feats += names
             self.timings["lib"] = round(time.monotonic() - clock, 1)
+        # the roadmap's F3, F5 and F6 (reports/greyhound_roadmap.md 3.1): track-normalised times with a mixed-model
+        # meeting variant, trainer intent, ability with its uncertainty; and the expected final time (the owner, 3 Nov);
+        # each its own block, earlier days only
+        for name in ("times", "intent", "ability", "etime"):
+            if name in self.blocks:
+                import importlib
+                mod = importlib.import_module(f"greyhound.{name}")
+                clock = time.monotonic()
+                cols, names = mod.calculate(df, DogDays)
+                df = df.join(cols)
+                self.block_features[name] = names
+                feats += names
+                self.timings[name] = round(time.monotonic() - clock, 1)
         self.features = list(dict.fromkeys(feats))
         return df
