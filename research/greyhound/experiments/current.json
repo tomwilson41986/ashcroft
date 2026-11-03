@@ -1,0 +1,14 @@
+{
+  "about": "Batch 5 (3 Nov 2026). Built on batch 4 (reports/greyhound_model.md section 21): a learning rate of 0.05 and the weigh-in each helped call the move to the SP; the first-bend and style-draw blocks did not on their own at 0.08. Here: the two together, with and without the blocks, the slower rate given more rounds; and the best of them through the limit-order study (section 22) in the slow lane, so the early-lay leads are read on a better price than the 5 Oct model's.",
+  "recipe": "quick",
+  "baseline": "logbsp",
+  "test_from": "2026-06-01",
+  "shortening": true,
+  "experiments": [
+    {"name": "logbsp", "features": "card_safe", "objective": "logbsp"},
+    {"name": "weighin_lr05", "features": "all", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
+    {"name": "weighin_fb_sd_lr05", "features": "all", "objective": "logbsp", "add_blocks": ["first_bend", "style_draw"], "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
+    {"name": "card_lr05", "features": "card_safe", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
+    {"name": "weighin_lr05_limit", "features": "all", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}, "limit": true, "study": true}
+  ]
+}

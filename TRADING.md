@@ -1528,8 +1528,10 @@ day to date**.
   same) on 751 fills on 156 horses in 35 races, GBP4,000.00 matched (GBP110.04 void); CLV +7.99% at Betfair's settled
   prices (the trader's horse-level +7.77%). The record: 23 days, +GBP5,000.29, 19 up.
 - **The funds after the day.** At the settle the account read GBP5,000.00 with nothing exposed: GBP2,153.03 left it
-  between 16:39 and 22:30 UTC, read as a withdrawal leaving GBP5,000 (put to the owner to confirm). The next day starts
-  from GBP5,000.00; the GBP4,000 day limit is inside it.
+  between 16:39 and 22:30 UTC, the owner's withdrawal leaving GBP5,000 (confirmed 2 Nov, `withdrawal-1101`). The next
+  day starts from GBP5,000.00; the GBP4,000 day limit is inside it. **The owner withdraws each Sunday** (2 Nov; 25 Oct
+  and 1 Nov were both Sundays, each leaving GBP5,000.00): a Sunday's result is the funds at the session's end against
+  the day before (the session's own funds_end, before the withdrawal), and the Monday is measured from what is left.
 - **First backs +13.3% (GBP852), top-ups +6.5% (GBP3,038)**; GBP2,000 by 07:18 UK, the limit bound at 10:56 UK;
   06:15-07:59 +13.1% (GBP2,195), 08:00-09:59 -0.3% (GBP1,195), 10:00 on +5.1% (GBP500).
 - **The changes** (`changes-1101`): the ladder 37% of the money, its first backs +22.8% against +3.5% at the best back;
@@ -1541,6 +1543,39 @@ day to date**.
   14-23 Oct, still slightly better.
 - **Data.** Final marks with a BSP for 1 Nov 765 of 807; price files to 31 Oct. The Tote: no gap. The first night with
   Racing TV off: At The Races complete (426 pages), nothing new; sectional_runs 153,426 rows.
+
+**The thirty-third full day** (2 Nov, a Monday; ledger `live-day-1102`), the twenty-first early session, the first
+measured from the GBP5,000.00 the owner left after the Sunday withdrawal (`withdrawal-1101`).
+- **The start.** Predictions run 41386794685 (04:08 UTC); the session created 05:18 UTC (run 41393205485), first back
+  06:15 UK; the settle at 22:29 UTC (run 41537729120; its email report failed again, the connection closed, the fourth
+  night).
+- **+GBP206.33 after commission** (Betfair's funds GBP5,206.33 against GBP5,000.00; the ledger the same) on 650 fills on
+  139 horses in 30 races, GBP3,999.99 matched (GBP146.76 void); CLV +4.69% at Betfair's settled prices (the trader's
+  horse-level +4.52%). A small Monday card (Plumpton, Southwell, Wolverhampton, Chelmsford): the limit reached only at
+  15:46 UK. The record: 24 days, +GBP5,206.62, 20 up.
+- **First backs +12.1% (GBP786), top-ups +2.8% (GBP3,067)**; GBP2,000 by 07:27 UK; 06:15-07:59 +11.2% (GBP2,152),
+  08:00-09:59 -11.2% (GBP689), 10:00 on +1.7% (GBP1,012).
+- **The changes** (`changes-1102`): the ladder 36% of the money, its first backs +20.7% against +4.9% at the best back,
+  its top-ups +16.6% against -3.8%; the cap: 78 of 139 horses at 6 fills, none over; the capped horses +4.2%, the rest
+  +5.6%. Staking 19 Oct - 2 Nov GBP55,017 at +6.18% against the old rule's +3.47%.
+- **The replay** (12 Oct - 1 Nov, after the cuts; `replay-1102`): the rule now GBP6,195 over 21 days (+6.9%); at 0.80
+  about GBP236 a day.
+- **The sectionals blend** (`model-quality-1102`): 1 Nov 0.430, its weakest card; 24 Oct - 1 Nov 0.399 over 3,136
+  runners against 0.405 on 14-23 Oct, the margin narrowing.
+- **Data.** Final marks with a BSP for 2 Nov 540 of 569; price files to 1 Nov. The Tote: no gap. Sectionals: At The
+  Races complete, nothing new.
+
+**The trading watchdog** (3 Nov; the owner: "We need to prevent this from happening ... Or alert me if it does
+happen"). On 3 Nov the UK runner received a shutdown signal at 06:09 UTC (run 41583026163), before the first back,
+as on 23 Oct at 06:53 UTC; nothing traded until the restart at 07:16 UTC (run 41595221448). Both times fall in
+Ubuntu's default window for the daily unattended upgrade (06:00 UTC plus up to an hour), after which needrestart can
+restart the runner's service: `runner-diagnose.yml` (read-only, dispatched after the racing) reads the server's own
+record to confirm it before anything on the server is changed. Meanwhile `trading-watchdog.yml` runs on GitHub's own
+runners every 10 minutes from 05:00 to 09:59 UTC and every 30 minutes to 20:30 (`scripts/session_watchdog.py`): a
+session that ended in failure, or none by 05:45 UTC, is restarted (mode trade, today; at most 3 times a day, never
+with trading/STOP set or unreadable, never after 20:30 UK, never one the owner cancelled), a session waiting 20
+minutes for the runner is reported, and each event goes to the owner in the day's GitHub issue "Live trading:
+<day>". live-trade.yml is not changed.
 
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,

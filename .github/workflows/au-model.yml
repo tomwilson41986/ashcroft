@@ -1,0 +1,66 @@
+name: Australian model (Betfair-only, walk-forward)
+
+# The Australian thoroughbred model built from Betfair's own history only (au/features.py, au/model.py; the owner,
+# 3 Nov 2026: no bought form). Reads the BSP targets from s3://$CAPTURE_BUCKET/sources/au/, proves the features
+# lag-safe, fits one model a test year on the years before it, and scores it against the BSP. Writes the report and
+# the out-of-sample prices to sources/au/. No Betfair key, nothing in horse_racing.db or the live UK/IE jobs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: 'Test years, e.g. 2015-2026'
+        required: false
+        type: string
+        default: '2015-2026'
+      rounds:
+        description: 'Boosting rounds a fit'
+        required: false
+        type: string
+        default: '600'
+  push:
+    branches: ['claude/bold-cori-*']
+    paths:
+      - 'au/features.py'
+      - 'au/model.py'
+      - '.github/workflows/au-model.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: au-model
+  cancel-in-progress: true
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Tests
+        run: python -m pytest -q tests/test_au_features.py tests/test_au_data.py
+      - name: Walk-forward fit and score
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          YEARS: ${{ inputs.years || '2015-2026' }}
+          ROUNDS: ${{ inputs.rounds || '600' }}
+        run: |
+          set -o pipefail
+          if ! [[ "$YEARS" =~ ^[0-9]{4}-[0-9]{4}$ ]]; then echo "years must be YYYY-YYYY"; exit 1; fi
+          if ! [[ "$ROUNDS" =~ ^[0-9]+$ ]] || [ "$ROUNDS" -gt 5000 ]; then echo "rounds must be a whole number, at most 5000"; exit 1; fi
+          python -m au.model --targets s3 --years "$YEARS" --rounds "$ROUNDS" --out-key au/model_report.json | tee au_model_report.json
+      - name: Summary
+        if: always()
+        run: |
+          [ -f au_model_report.json ] && { echo '## au_model_report.json'; echo '```'; cat au_model_report.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          true

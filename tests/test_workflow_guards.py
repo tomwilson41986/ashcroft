@@ -163,29 +163,38 @@ def test_only_the_trader_runs_on_the_live_key():
     # the workflows that place bets, and nothing else, name the live key; in each, only a trader's own process
     # takes it (the horse trader, the greyhound trader: greyhound-trade.yml, 6 Oct; the football trader, and only
     # with FOOTBALL_LIVE=yes: football-trade.yml and beside the horse trader, 7 Oct), never a record beside it
+    # paper-models.yml too, from 2 Nov 2026 (the owner: "use the live key, just don't execute bets yet"): its greyhound
+    # paper trader and greyhound book recorder only, read-only, checked in the paper-models test below
     named = {p.name for p in WORKFLOWS.glob("*.yml") if "BETFAIR_LIVE_APP_KEY" in p.read_text()}
-    assert named <= {"live-trade.yml", "greyhound-trade.yml", "football-trade.yml"}, named   # a new one: checked here
-    traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade")
+    assert named <= {"live-trade.yml", "greyhound-trade.yml", "football-trade.yml", "paper-models.yml"}, named
+    traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade", "greyhound.book_record",
+               "greyhound.early_lay --trade")
     for name in named:
         text = (WORKFLOWS / name).read_text()
         for ln in text.splitlines():
             ln = ln.strip()
             if ln.startswith("#"):
                 continue
-            if "python" in ln and any(k in ln for k in ("LIVE_APP_KEY", "TRADER_KEY", "FBKEY")):
+            if "python" in ln and any(k in ln for k in ("LIVE_APP_KEY", "TRADER_KEY", "FBKEY", "GHKEY")):
                 assert any(t in ln for t in traders), (name, ln)
             if "FBKEY=" in ln and ("LIVE_APP_KEY" in ln or "TRADER_KEY" in ln):
                 assert '"$FOOTBALL_LIVE" = yes' in ln, (name, ln)           # the live key only when switched on
             if "betfair_recorder.py" in ln or "tote_recorder.py" in ln:
-                assert not any(k in ln for k in ("LIVE_APP_KEY", "TRADER_KEY", "FBKEY")), (name, ln)
-        if "football.live --trade" in text:                                 # on paper: read-only, the delayed key
+                assert not any(k in ln for k in ("LIVE_APP_KEY", "TRADER_KEY", "FBKEY", "GHKEY")), (name, ln)
+        # on paper: read-only, the delayed key (paper-models.yml gives the football trader the delayed key by default,
+        # with no FBKEY at all: its own test below holds that)
+        if "football.live --trade" in text and name != "paper-models.yml":
             assert 'FBKEY="$BETFAIR_APP_KEY"' in text, name
             assert not re.search(r"echo[^;]*\$\{?(BETFAIR_LIVE_APP_KEY|TRADER_KEY)\b", ln), (name, ln)
 
 
 def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
     """The owner, 2 Nov 2026: the greyhound paper trader runs in paper-models.yml, never in the live trader's job or
-    on its runner, on the delayed key, with no route to a real order. The football trader left it on 3 Nov 2026 for
+    on its runner, with no route to a real order; the delayed key for everything but the greyhound paper trader and
+    the greyhound book recorder (the owner, 2 Nov 2026: "use the live key, just don't execute bets yet"), which take it
+    only through GHKEY. One exception, the owner, 3 Nov 2026 ("lets go live now, i will monitor and stop manually if
+    any concerns"; "use early lay"): the greyhound early lay (greyhound/early_lay.py), the only process here given
+    --live, sending orders only with GREYHOUND_EARLY_LAY=live. The football trader left this job on 3 Nov 2026 for
     football-trade.yml (test_the_football_trader_bets_small_and_only_when_switched_on)."""
     import yaml as _yaml
     live = (WORKFLOWS / "live-trade.yml").read_text()
@@ -197,11 +206,33 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
     assert "BETFAIR_RUNNER" not in str(job["runs-on"]), job["runs-on"]
     steps = job["steps"]
     assert any("Not on the live trader's runner" == s.get("name") for s in steps)
-    assert "LIVE_APP_KEY" not in text.replace("the live key is never given", "")
     runs = "\n".join(str(s.get("run", "")) for s in steps)
-    assert "--live" not in runs and "greyhound.live --trade" in runs and "football.live --trade" not in runs
-    env = next(s["env"] for s in steps if s.get("name") == "Trade on paper (read-only)")
+    # the live key: only in the trading step's env, only through GHKEY, only for the two greyhound processes
+    trade = "Trade (the greyhound early lay live, the rest on paper)"
+    for s in steps:
+        if s.get("name") != trade:
+            assert "LIVE_APP_KEY" not in str(s.get("env", {})) + str(s.get("run", "")), s.get("name")
+    for ln in (x.strip() for x in runs.splitlines()):
+        if ln.startswith("#") or not ln:
+            continue
+        if "LIVE_APP_KEY" in ln:
+            assert ln == 'GHKEY="${BETFAIR_LIVE_APP_KEY:-$BETFAIR_APP_KEY}"', ln
+        if "GHKEY" in ln and "python" in ln:
+            assert ln.startswith('BETFAIR_APP_KEY="$GHKEY" python -m greyhound.'), ln
+            assert any(t in ln for t in ("greyhound.live --trade", "greyhound.book_record",
+                                         "greyhound.early_lay --trade")), ln
+        if "--live" in ln:                          # the early lay alone, on the live key
+            assert ln.startswith('BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --live '), ln
+        if "football" in ln or "betfair_recorder.py" in ln:
+            assert "GHKEY" not in ln and "LIVE_APP_KEY" not in ln, ln
+        assert not re.search(r"echo[^;]*\$\{?(BETFAIR_LIVE_APP_KEY|GHKEY)\b", ln), ln
+    assert "greyhound.live --trade" in runs and "football.live --trade" not in runs
+    assert [ln for ln in runs.splitlines() if "--live" in ln and not ln.strip().startswith("#")] == \
+        [ln for ln in runs.splitlines() if "greyhound.early_lay --trade --live" in ln]
+    assert "greyhound.live --trade --live" not in runs and "football.live --trade --live" not in runs
+    env = next(s["env"] for s in steps if s.get("name") == trade)
     assert env["GREYHOUND_LIVE"] == "no" and "FOOTBALL_LIVE" not in env
+    assert env["GREYHOUND_EARLY_LAY"] == "${{ inputs.early_lay || vars.GREYHOUND_EARLY_LAY || 'live' }}"
     assert env["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
     # no other workflow starts the greyhound trader; the football trader only football-trade.yml
     for p in WORKFLOWS.glob("*.yml"):

@@ -4,20 +4,30 @@ from datetime import date, datetime, timezone
 
 import sources.betfair_census as bc
 
+ALLOWED = ("listMarketCatalogue", "listMarketBook", "listClearedOrders", "listEventTypes", "listMarketTypes")
+
 
 class Data:
+    """As trading/exchange.py BetfairData: a call outside the read-only list raises (listCountries did, 2 Nov)."""
+
+    def __init__(self, fail_day=None):
+        self.calls = []
+        self.fail_day = fail_day
+
     def _read(self, method, params):
-        if method == "listCountries":
-            assert params["filter"]["eventTypeIds"] == ["7"]
-            return [{"countryCode": "JP", "marketCount": 24}, {"countryCode": "HK", "marketCount": 20},
-                    {"countryCode": "XX", "marketCount": 1}]
-        cc = params["filter"]["marketCountries"][0]
-        assert params["filter"]["marketTypeCodes"] == ["WIN"]
-        if cc == "XX":
+        if method not in ALLOWED:
+            raise ValueError(f"{method}: this client only reads markets, prices and settled bets")
+        f = params["filter"]
+        assert f["eventTypeIds"] == ["7"] and f["marketTypeCodes"] == ["WIN"] and "marketCountries" not in f
+        self.calls.append(f["marketStartTime"]["from"])
+        if self.fail_day and f["marketStartTime"]["from"].startswith(self.fail_day):
             raise RuntimeError("unread")
-        m = 100.0 if cc == "JP" else 500.0
-        return [{"totalMatched": m, "event": {"venue": "V" + cc}, "marketStartTime": "2026-11-02T04:30:00Z"},
-                {"totalMatched": 2 * m, "event": {"venue": "V" + cc}, "marketStartTime": "2026-11-02T05:00:00Z"}]
+        return [{"totalMatched": 500.0, "event": {"countryCode": "HK", "venue": "Sha Tin"},
+                 "marketStartTime": "2026-11-02T05:00:00Z"},
+                {"totalMatched": 1000.0, "event": {"countryCode": "HK", "venue": "Sha Tin"},
+                 "marketStartTime": "2026-11-02T04:30:00Z"},
+                {"totalMatched": 100.0, "event": {"countryCode": "JP", "venue": "Tokyo"},
+                 "marketStartTime": "2026-11-02T03:00:00Z"}]
 
 
 class NoS3:
@@ -25,16 +35,24 @@ class NoS3:
         raise RuntimeError("no S3 here")
 
 
-def test_the_census_sorts_by_money_and_survives_a_bad_country(tmp_path):
-    got = bc.census_racing_countries(Data(), hours=168, now=datetime(2026, 11, 1, 5, 30, tzinfo=timezone.utc))
-    assert got["hours"] == 168 and [r["country"] for r in got["countries"]][:2] == ["HK", "JP"]
+def test_the_census_uses_only_the_read_only_calls_and_groups_by_country(tmp_path):
+    d = Data(fail_day="2026-11-03")
+    got = bc.census_racing_countries(d, hours=72, now=datetime(2026, 11, 1, 5, 30, tzinfo=timezone.utc))
+    assert len(d.calls) == 3 and got["calls"] == 3 and len(got["errors"]) == 1
+    assert [r["country"] for r in got["countries"]] == ["HK", "JP"]
     hk = got["countries"][0]
-    assert hk["win_markets"] == 2 and hk["win_matched_total"] == 1500.0 and hk["venues"] == ["VHK"]
-    assert hk["first_off_utc"] == "2026-11-02T04:30:00Z"
-    assert "error" in [r for r in got["countries"] if r["country"] == "XX"][0]
+    assert hk["win_markets"] == 4 and hk["win_matched_total"] == 3000.0 and hk["venues"] == ["Sha Tin"]
+    assert hk["first_off_utc"] == "2026-11-02T04:30:00Z" and got["capped_days"] == 0
     where = bc.save(got, date(2026, 11, 1), s3=NoS3(), root=tmp_path, name="census_racing_0530.json")
     assert where.endswith("census_racing_0530.json")
     assert json.loads((tmp_path / "2026-11-01" / "census_racing_0530.json").read_text())["countries"][0]["country"] == "HK"
+
+
+def test_the_census_names_only_calls_the_read_only_client_permits():
+    import inspect
+    src = inspect.getsource(bc)
+    for m in ("listCountries", "listEvents", "listCompetitions", "placeOrders"):
+        assert m not in src.replace("permits no listCountries", ""), m
 
 
 def test_the_live_recorder_is_untouched_by_the_census():
