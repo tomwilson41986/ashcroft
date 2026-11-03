@@ -313,7 +313,7 @@ def test_the_table_says_why_a_lay_was_not_greened(tmp_path, fit):
 
 
 def test_a_green_up_takes_the_ladder_and_keeps_a_part_filled(tmp_path, fit):
-    """The best back price holds GBP2: the back takes the next prices too, and what is not matched is tried again
+    """The best back price holds 20p: the back takes the next prices too, and what is not matched is tried again
     the next second for the value still open."""
     x = FakeX()
     x.book = book()
@@ -322,14 +322,14 @@ def test_a_green_up_takes_the_ladder_and_keeps_a_part_filled(tmp_path, fit):
     lays = {i["selectionId"]: i["limitOrder"] for i in x.sent if i["side"] == "LAY"}
     sid = next(iter(lays))
     q = x.book.runners[sid]
-    q.back = [(q.back[0][0], 2.0), (el.tick_down(q.back[0][0]) if hasattr(el, "tick_down") else q.back[0][0] - 0.1, 500.0)]
-    full = x._place                                            # the first green-up back matches GBP3 only
+    q.back = [(q.back[0][0], 0.2), (el.tick_down(q.back[0][0]) if hasattr(el, "tick_down") else q.back[0][0] - 0.1, 500.0)]
+    full = x._place                                            # the first green-up back matches GBP1 only
     calls = {"n": 0}
 
     def part(mid, ins, ref):
         if ins["side"] == "BACK" and ins["customerOrderRef"].endswith("-g") and calls["n"] == 0:
             calls["n"] += 1
-            ins = dict(ins, limitOrder=dict(ins["limitOrder"], size=3.0))
+            ins = dict(ins, limitOrder=dict(ins["limitOrder"], size=1.0))
         return full(mid, ins, ref)
     x._place = part
     clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=4)
@@ -343,7 +343,7 @@ def test_a_green_up_takes_the_ladder_and_keeps_a_part_filled(tmp_path, fit):
     g = [i for i in x.sent if i["side"] == "BACK" and i["selectionId"] == sid]
     assert len(g) == 2
     L = lays[sid]
-    rest = L["size"] * L["price"] - 3.0 * g[0]["limitOrder"]["price"]
+    rest = L["size"] * L["price"] - 1.0 * g[0]["limitOrder"]["price"]
     assert np.isclose(g[1]["limitOrder"]["size"], el._floor2(rest / g[1]["limitOrder"]["price"]))
     assert MID in t.greened
 
