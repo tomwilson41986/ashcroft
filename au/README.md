@@ -45,4 +45,25 @@ https://github.com/tomwilson41986/ashcroft/actions/runs/41461018554), at `s3://a
   more agreement; 12,180 rows (0.5%) keep a short name, short names the ANZ files (2020 on) never carry (Mdra 4,069, Stcr 3,089, ...).
 - `off_uk` is UK local time: the ANZ clock runs 9, 10 or 11 hours ahead of it, with the two countries' clock changes.
 
-Waiting on the owner for stage 0: the Historic Data plan, Punting Form's consent and key, the `au-night` runner.
+## The Betfair-only model (3 Nov 2026)
+
+The owner, 3 Nov: Punting Form is too expensive; racing.com and Racenet have no permission for automated use (Racenet's
+robots.txt prohibits it). So stage 3 is first tried on Betfair's own history only (`features.py`, `model.py`,
+workflow `au-model.yml`; run 41598199179, https://github.com/tomwilson41986/ashcroft/actions/runs/41598199179).
+
+- The horse is its name: Betfair's Australian selection ids change with the saddlecloth (546,099 ids for 81,348
+  names in Betfair's ANZ files, 2020-2026). 151,954 horses from Sep 2012; 36 rows where one name runs twice in a day.
+- Leak check (features rebuilt with the future cut away, 15 Jun 2019, 4 Mar 2023, 12 Sep 2026): nothing moved.
+- Walk-forward, test years 2015-2026, 1,949,381 runners priced out of sample:
+  - mean absolute log error against the BSP 0.725 (2015-2026; 0.691-0.764 by year), against 0.907 for the horse's
+    last market chance and 1.071 for equal chances; R^2 of the logit 0.51-0.53. The UK model, with form, scores
+    0.398-0.403 on its development window (reports/serving_note_2026-09-27.md);
+  - nothing beyond the BSP: the blend's weight on the model is -0.012 to -0.034 in every year, log-loss change
+    -0.036 per 1,000 races (90% -0.085 to +0.012), 183,541 races 2016-2026;
+  - value at the BSP: backing where the model's chance beats the BSP's loses 5.3-5.9% after commission, worse than
+    backing every runner (-3.8%): the model's prices are compressed, so its 'value' is long shots.
+- Verdict: the free model learns form (its error is 20% under the last-run baseline) but carries nothing the BSP
+  does not. Whether it forecasts the move from an early price to the BSP (the UK edge) needs early prices: Betfair
+  Historic Data, gate A. Its out-of-sample prices are stored at `s3://ashcroft/sources/au/model_report_oos.parquet`.
+
+Waiting on the owner: the Historic Data plan (free) and the `au-night` runner.
