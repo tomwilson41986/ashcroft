@@ -3,11 +3,18 @@
 Betfair refuses logins from GitHub's own runners, so every Betfair job runs on the UK server. Each job needs its own
 runner, because a runner takes one job at a time and these jobs run all day.
 
+Each sport is kept apart (the owner, 3 Nov 2026):
+- horse racing on the live runner;
+- all football on `football`;
+- greyhounds on `paper-models`.
+
+The guard tests fail if a football process appears outside `football-trade.yml`.
+
 | Runner label | Workflow | Runs | Key |
 |---|---|---|---|
 | `vars.BETFAIR_RUNNER` (exists) | `live-trade.yml`, `live-record.yml`, others | the live horse trader and its records | live (trader only) |
-| `football` | `football-trade.yml` | 05:40 UTC for 23.5 h: every Betfair football match recorded and paper-traded | live only with `FOOTBALL_LIVE=yes` |
-| `paper-models` | `paper-models.yml` | 05:45 UTC to 21:30 UK: greyhound paper trader, football book records, line-ups collector | delayed |
+| `football` | `football-trade.yml` | 05:40 UTC for 23.5 h: all football. The trader, every Betfair match recorded and paper-traded, the football book records, the line-ups collector | live for the trader only, with `FOOTBALL_LIVE=yes`; delayed for the rest |
+| `paper-models` | `paper-models.yml` | 05:45 UTC to 21:30 UK: greyhounds (paper trader, book recorder, early lay) and the racing census. No football | live for the greyhound processes; delayed for the census |
 
 ## Set up the two new runners (on the server, as the live runner's user)
 

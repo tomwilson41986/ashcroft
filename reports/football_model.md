@@ -21,7 +21,7 @@ match priced only from the matches before it.
 | DQ | `football/dq/latest.json` | Duplicates, impossible scores, season match counts, overround, Pinnacle after 23/07/2025, freshness, scores against openfootball, API-Football and Betfair settlement |
 | Model | `football/ratings.py`, `football/model.py` | Pooled Dixon-Coles, weekly walk-forward, stage-2 pooling with the open, value rules scored by CLV |
 | Trader | `football/live.py`, `football/live_config.json` | Betfair MATCH_ODDS / OVER_UNDER_25; paper unless `FOOTBALL_LIVE=yes`; its own pre-play close for CLV; settles from gold |
-| Jobs | `football-model.yml`, `paper-models.yml` | Daily gold, fit and settle on GitHub's runners; the paper trader in its own job on its own runner (from 2 Nov 2026; until then beside the horse session in `live-trade.yml`) |
+| Jobs | `football-model.yml`, `football-trade.yml` | Daily gold, fit and settle on GitHub's runners; the paper trader in its own job on its own runner (from 2 Nov 2026; until then beside the horse session in `live-trade.yml`) |
 
 Departures from the design brief, deliberately:
 
