@@ -343,3 +343,23 @@ def test_a_green_up_takes_the_ladder_and_keeps_a_part_filled(tmp_path, fit):
     rest = L["size"] * L["price"] - 3.0 * g[0]["limitOrder"]["price"]
     assert np.isclose(g[1]["limitOrder"]["size"], el._floor2(rest / g[1]["limitOrder"]["price"]))
     assert MID in t.greened
+
+
+def test_the_table_lists_the_matched_lays_dog_by_dog(tmp_path, fit):
+    from sources.common import Store as S3Store
+    store = S3Store(root=str(tmp_path / "s3"))
+    x = FakeX()
+    x.book = book()
+    clock = {"t": T0}
+    t = el.EarlyLay(store, x, dict(el.CONFIG), date(2026, 11, 3), True, tmp_path / "ledger.csv", fit,
+                    now=lambda: clock["t"])
+    t.load_predictions = lambda: None
+    t.preds = preds().assign(off=pd.Timestamp(T0 + timedelta(minutes=10)))
+    t.step()
+    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=4)
+    t.step(near_only=True)
+    md = el.table(store, date(2026, 11, 3))
+    assert "#### Live lays that matched, dog by dog" in md
+    n = sum(1 for i in x.sent if i["side"] == "LAY")
+    rows = [ln for ln in md.split("dog by dog")[1].splitlines() if ln.startswith("| ") and "Romford" in ln]
+    assert len(rows) == n and all("| green |" in r for r in rows)
