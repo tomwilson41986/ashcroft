@@ -252,3 +252,14 @@ def test_the_live_horse_jobs_carry_nothing_from_another_sport():
     import betfair_recorder
     assert not hasattr(betfair_recorder, "census_racing_countries")
     assert not hasattr(betfair_recorder, "SOCCER")
+
+
+def test_the_runner_setup_registers_only_its_own_label():
+    """scripts/setup_runner.sh: a new runner on the UK server carries only its own label (no 'self-hosted', which the
+    live horse trader's runner label may be), for the two jobs that need one, from a checked download."""
+    text = (Path(__file__).resolve().parents[1] / "scripts" / "setup_runner.sh").read_text()
+    assert "--no-default-labels" in text and '--labels "$LABEL"' in text
+    assert "football|paper-models) ;;" in text
+    assert "sha256sum -c -" in text and 'read -r -s -p "Registration token' in text
+    for name, label in (("football-trade.yml", "'football'"), ("paper-models.yml", "'paper-models'")):
+        assert label in (WORKFLOWS / name).read_text()
