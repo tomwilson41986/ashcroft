@@ -1,49 +1,49 @@
 """The greyhound trade-out (the owner, 2 Nov 2026): "focus on taking a price then trading out at the off, like the
 horse racing model". A paper forward test from a fresh date, and the panel the research reads.
 
-The trade. Back a dog at the best back price offered at an entry mark before the off, and close it at the off by
-laying the same money back at the Betfair SP (or the reverse: lay at the best lay, back at SP). Closed out, the
-position is worth ``stake * (back / BSP - 1)`` (a lay ``stake * (1 - lay / BSP)``) whatever wins
-(``model.race_book`` section 2), less commission on the market's net. It pays only where the price taken beats the
-SP, so the rule is a forecast of the SP, as the horses' live rule is (TRADING.md: never at a price under the model's
-predicted BFSP, each back laid at the SP).
+The trade, as the horse trader makes it (``trading/session.py``; the owner, 2 Nov 2026: "use any stake level, like
+the horse racing model, fixed to win a certain amount; back multiple dogs per race"):
+
+- **Back** a dog at the prices on offer at an entry mark, the stake sized to win ``TO_WIN`` (``TO_WIN / (price - 1)``,
+  between ``MIN_STAKE`` and ``MAX_STAKE``), taken down the three best backs while each price still clears the bar
+  (the horse trader's ladder), never a back whose winnings are under Betfair's GBP10 minimum for a lay at the SP.
+  Several dogs in a race can be backed: each is its own position.
+- **Close at the off** by laying the winnings at the Betfair SP (``MARKET_ON_CLOSE``, liability = stake x (price - 1)):
+  if the dog wins the back and the lay cancel; if it loses the back's stake is lost and the lay wins
+  ``liability / (BSP - 1)``. The position pays ``stake x (price - BSP) / (BSP - 1)`` when the dog loses and 0 when it
+  wins: in expectation ``stake x (price / BSP - 1)`` when the BSP is calibrated, but settled here by the result, as
+  the exchange settles it, with 2% commission on each market's net. (The first version booked the expectation as if
+  it were certain; reports/greyhound_roadmap.md QA C2.)
+- **Lay** the mirror image, reported only: lay at the best lays (stake sized so the liability is about ``TO_WIN``),
+  closed by backing the same stake at the SP: ``stake x (BSP - lay)`` if the dog wins, 0 if it loses.
 
 The forecast of the SP (``model.race_book.ClosingModel``, the horses' closing model, unchanged): a conditional logit
-on the SP book, from the market's price at the entry mark (``race_book.market_now``: the mid of a tight book, else the
-back), our price (the frozen greyhound model of 5 Oct, ``greyhound.track``, out of sample on every day from 6 Oct)
-and the runner's and market's matched money. A position's expected CLV is ``back * O * q_hat - 1`` backing and
-``1 - lay * O * q_hat`` laying, q_hat the forecast SP share and O the SP book's median sum of 1/BSP in training.
+on the SP book, from the market's price at the entry mark (``race_book.market_now``), our price (the frozen
+greyhound model of 5 Oct, ``greyhound.track``, out of sample on every day from 6 Oct) and the money matched. A
+position's expected CLV at price m is ``m x E[1/BSP] - 1`` backing, ``1 - m x E[1/BSP]`` laying,
+``E[1/BSP] = O x q_hat``.
 
-Why the old rules were retired (reports/greyhound_model.md section 12): the first recorded book is an empty
-placeholder book (back median 1.10, hours before the off), so the primary rule of 5 Oct never fired in 27 days; the
-rules that did fire chose by the chance to win and took prices 7-12% under the SP on average.
+The books (the owner, 2 Nov 2026: "use the live key, just don't execute bets yet"): ``greyhound/book_record.py``,
+the live key, read-only, every 5 seconds in a race's last 5 minutes and on until the market closes, with each
+runner's traded volume (``books_greyhound_live.csv``). The recorder's 60-second books are the delayed key's, about
+90 seconds old near the off (reports/greyhound_model.md section 13): ``source="retimed"`` places each of them at the
+market's last match instead of the poll, for research on the days before the live books.
 
-The forward test, fixed here before any test day (``RULES``):
+The forward test (``RULES``):
 
-- **The books:** the greyhound trader's own (``books_greyhound_trader.csv``: the live key, every 5 seconds in a
-  race's last 3 minutes, kept from 2 Nov 2026), not the recorder's. The recorder's are the delayed key's, about 90
-  seconds old at the median in the last 3 minutes (reports/greyhound_model.md section 13), so a fill read off them is
-  at a price already gone. The SP still comes from the recorder's settled books. (The owner, 2 Nov 2026: gather the
-  live books first; the paper trader keeps the live key.)
-- **Frozen once** (``--freeze``), when ``MIN_FREEZE_DAYS`` (10) days of the trader's books are held: the closing
-  models, fitted on those days at each entry mark; written with the rules to ``greyhound/tradeout/frozen.json``.
-  Until then ``--freeze`` reports how many days it has and writes nothing. The win model is the forward test's model
-  of 5 Oct, not refitted, so the closing model's training prices are out of sample too.
-- **Start:** the later of ``START`` (4 Nov 2026) and the day after the freeze. Paper only; nothing here can place an
-  order.
-- **Primary rule:** entry 1 minute before the off (the recorder's ``off_1`` mark), the horses' closing model, back
-  where the expected CLV clears 0.03, a price up to 20 with at least the stake offered, GBP2 a position, closed at the
-  SP; 2% commission on each market's net.
-- **Reported, not judged:** entry at the dog's first traded book (``first_traded``) and 3 and 5 minutes before the
-  off; the lay side; bars of 0 and 0.05; the microstructure closing model (``MICRO``: the market, our price, the last
-  traded price against the mid, the price's move over the last two minutes, the queue imbalance and the spread); and
-  the old selection (edge to win over 0.2) closed at the SP, for comparison.
-- **Gate:** judged after 30 test days and 1,000 primary trades, whichever is later: a pass only if the return per
-  GBP staked after commission has a 90% lower bound above 0 (a bootstrap by day). A pass goes to the owner, who
-  decides on small real stakes.
+- **Frozen once** (``--freeze``), when ``MIN_FREEZE_DAYS`` (10) days of the live books are held: the closing models
+  fitted on those days; until then ``--freeze`` reports the days held and writes nothing.
+- **Start:** the later of ``START`` and the day after the freeze. Paper only; nothing here can place an order.
+- **Primary rule:** entry 1 minute before the off, the horses' closing model, back where the expected CLV clears 0.03,
+  sized to win ``TO_WIN``, closed by the lay at the SP. Reported, not judged: the other marks, the lay side, the
+  other bars, the microstructure model, the old edge-to-win selection.
+- **Gate:** after 30 test days and 1,000 primary trades: a pass only if the return per GBP staked, settled by the
+  result after commission, has a 90% lower bound above 0 (bootstrap over every test day, the days without a trade
+  included) and the mean CLV against the SP is above 0. A pass goes to the owner.
 
-The limits: the fill is taken on trust when the book offered the stake (each day's feed lag is reported, so a day
-whose books turn out stale can be seen); the SP leg is assumed matched; the race's field is the one that ran (GBGB), so a late non-runner is not seen as the market saw it.
+The limits: a fill is taken on trust when the book offered the size at the price (the book at the moment of the
+decision, read on the live key; queue position and our own impact are not modelled); the SP leg is assumed matched
+once its liability reaches the minimum; a race with a late non-runner is dropped (no reduction factors applied).
 
     python -m greyhound.tradeout --freeze                # once: fit and freeze the closing models and the rules
     python -m greyhound.tradeout --days 4                # the nightly run (after greyhound.track's): settle, summarise
@@ -71,17 +71,27 @@ TRACK_PRED = "greyhound/track/pred"          # the forward test of 5 Oct's price
 FROZEN_KEY = f"{PREFIX}/frozen.json"
 FIRST_BOOK_DAY = date(2026, 10, 6)            # the first day with recorded greyhound books
 START = "2026-11-04"
-#: whose books the test reads at the entry marks; the SP is always the recorder's settled book
-ENTRY_BOOKS = {"trader": "books_greyhound_trader.csv", "recorder": "books_greyhound.csv"}
-SOURCE = "trader"
+#: whose books the test reads at the entry marks; the SP is always the recorder's settled book. "retimed": the
+#: recorder's delayed books placed at the market's last match (research on the days before the live books)
+ENTRY_BOOKS = {"live": "books_greyhound_live.csv", "recorder": "books_greyhound.csv",
+               "retimed": "books_greyhound.csv", "trader": "books_greyhound_trader.csv"}
+SOURCE = "live"
 MIN_FREEZE_DAYS = 10
-STAKE = 2.0
 COMMISSION = 0.02
+#: the stake, as the horse trader sizes it: to win TO_WIN at the price taken, between MIN_STAKE and MAX_STAKE; no
+#: back whose winnings are under MIN_SP_LIABILITY (Betfair takes no lay at SP under GBP10 of liability)
+TO_WIN = 100.0
+MIN_STAKE = 2.0
+MAX_STAKE = 50.0
+MIN_SP_LIABILITY = 10.0
+MIN_SP_BACK = 2.0                             # the smallest back at SP that closes a lay
+LADDER = 3                                    # the best prices taken, as the horse trader's ladder
 MAX_PRICE = 20.0
 WIN_EDGE = 0.2                                # the old selection: the chance to win at the back price
-#: the entry marks: minutes before the off, as betfair_recorder.marks reads them (within a quarter, at least a
-#: minute), and the dog's first book after its first matched bet
+#: the entry marks: minutes before the off, each a window of +-half a minute (no book serves two marks), and the
+#: dog's first book after its first matched bet
 OFF_ENTRY = (5, 3, 1)
+MARK_HALF_WIDTH = 0.5
 ENTRY_MARKS = ("first_traded", "off_5", "off_3", "off_1")
 BARS = (0.0, 0.03, 0.05)
 SIDES = ("back", "lay")
@@ -91,17 +101,25 @@ BOOK_COLS = ["back1", "back1_size", "back2", "back2_size", "back3", "back3_size"
 #: the microstructure closing model's columns (``micro_design``), each standardised on the training rows
 MICRO = ("lq_market", "lq_model", "last_vs_mid", "move", "imbalance", "log_spread", "lq_market_x_vol",
          "lq_model_x_vol")
+#: a day whose panel holds under this share of the day's priced races is settled again the next night (up to
+#: REDO_DAYS days back): its BSPs or books may still be arriving
+MIN_COVERAGE = 0.9
+REDO_DAYS = 3
 RULES = {
     "start": f"the later of {START} and the day after the freeze",
-    "books": "the greyhound trader's live-key books (books_greyhound_trader.csv); the SP from the recorder's settled "
-             f"books; frozen once {MIN_FREEZE_DAYS} days of the trader's books are held",
+    "books": "the live-key greyhound books (greyhound/book_record.py, books_greyhound_live.csv), read-only; the SP "
+             f"from the recorder's settled books; frozen once {MIN_FREEZE_DAYS} days of the live books are held",
     "primary": {"mark": "off_1", "model": "racebook", "side": "back", "bar": 0.03},
     "reported": {"marks": list(ENTRY_MARKS), "models": list(MODELS) + ["win_edge"], "sides": list(SIDES),
                  "bars": list(BARS)},
-    "stake": STAKE, "commission": COMMISSION, "max_price": MAX_PRICE, "fill": "the best price offered at least the stake",
-    "close": "the Betfair SP; commission on each market's net",
+    "stake": {"to_win": TO_WIN, "min": MIN_STAKE, "max": MAX_STAKE, "ladder": LADDER,
+              "min_sp_liability": MIN_SP_LIABILITY, "several_dogs_a_race": True},
+    "commission": COMMISSION, "max_price": MAX_PRICE,
+    "close": "each back's winnings laid at the Betfair SP (liability = stake x (price - 1)), settled by the result; "
+             "commission on each market's net",
     "gate": "judged after 30 test days and 1,000 primary trades, whichever is later: a pass only if the return per "
-            "GBP staked after commission has a 90% lower bound above 0 (bootstrap by day); a pass goes to the owner",
+            "GBP staked, settled by the result after commission, has a 90% lower bound above 0 (bootstrap over every "
+            "test day) and the mean CLV against the SP is above 0; a pass goes to the owner",
 }
 
 
@@ -113,39 +131,61 @@ def _num(s) -> pd.Series:
     return pd.to_numeric(s, errors="coerce")
 
 
-def pre_off_books(books: pd.DataFrame, markets: pd.DataFrame) -> pd.DataFrame:
-    """Every open, pre-play book of an active runner, with its minutes to the scheduled off."""
+def _inplay(x: pd.Series) -> pd.Series:
+    """True where the book says in play: "True"/"1"/1.0 (a blank in the column makes pandas read it as float, and
+    "0.0" is not "0": reports/greyhound_roadmap.md QA m3)."""
+    t = x.astype(str).str.strip().str.lower()
+    return t.isin(["true", "1", "1.0"])
+
+
+def retime(b: pd.DataFrame) -> pd.Series:
+    """Each delayed snapshot's estimated time in the market: the market's last match when it is within four minutes
+    of the poll (near the off money matches every few seconds, so the last match is the snapshot's own time),
+    otherwise the poll less the market's median lag over those snapshots, otherwise the poll."""
+    lm = pd.to_datetime(b.last_match_utc, utc=True, errors="coerce") if "last_match_utc" in b else \
+        pd.Series(pd.NaT, index=b.index, dtype="datetime64[ns, UTC]")
+    lag = (b.polled - lm).dt.total_seconds()
+    near = lag.where((lag >= 0) & (lag <= 240))
+    market_lag = near.groupby(b.market_id).transform("median")
+    est = b.polled - pd.to_timedelta(market_lag.fillna(0.0), unit="s")
+    return lm.where(near.notna(), est)
+
+
+def pre_off_books(books: pd.DataFrame, markets: pd.DataFrame, retimed: bool = False) -> pd.DataFrame:
+    """Every open, pre-play book of an active runner, with its minutes to the scheduled off. ``retimed``: each
+    snapshot at its estimated time in the market (``retime``), so a delayed snapshot polled after the scheduled off
+    that still shows the market open counts for the minute it shows."""
     offs = markets.drop_duplicates("market_id").set_index("market_id").market_start_utc
     b = books.copy()
     b["market_id"] = b.market_id.astype(str)
     b["selection_id"] = _num(b.selection_id)
     b["polled"] = pd.to_datetime(b.polled_utc, utc=True, errors="coerce")
+    b = b.dropna(subset=["polled", "selection_id"])
     b["off"] = pd.to_datetime(b.market_id.map(offs.set_axis(offs.index.astype(str))), utc=True, errors="coerce")
+    if retimed:
+        b["polled"] = retime(b)
     b["minutes_to_off"] = (b.off - b.polled).dt.total_seconds() / 60.0
-    ok = ((b.source.astype(str) != "final") & (b.status.astype(str) == "OPEN")
-          & b.inplay.astype(str).isin(["0", "False", "false"]) & (b.minutes_to_off > 0)
-          & (b.runner_status.fillna("ACTIVE").astype(str) == "ACTIVE"))
-    b = b[ok].dropna(subset=["polled", "selection_id"])
+    ok = ((b.source.astype(str) != "final") & (b.status.astype(str) == "OPEN") & ~_inplay(b.inplay)
+          & (b.minutes_to_off > 0) & (b.runner_status.fillna("ACTIVE").astype(str) == "ACTIVE"))
+    b = b[ok].dropna(subset=["polled"])
     for c in BOOK_COLS:
         b[c] = _num(b[c]) if c in b else np.nan
     return b
 
 
 def entry_books(pre: pd.DataFrame) -> pd.DataFrame:
-    """Each runner's book at each entry mark, and the book about two minutes before it (``*_prev``), for the price's
-    move into the mark."""
+    """Each runner's book at each entry mark (the book nearest the mark within +-``MARK_HALF_WIDTH`` minutes, so no
+    book serves two marks), and its book 90 seconds or more before (``*_prev``), for the price's move into the mark."""
     picks = []
     for m in OFF_ENTRY:
-        tol = max(1.0, 0.25 * m)
         d = pre.assign(gap=(pre.minutes_to_off - m).abs())
-        d = d[d.gap <= tol]
+        d = d[d.gap <= MARK_HALF_WIDTH]
         picks.append(d.sort_values("gap").drop_duplicates(["market_id", "selection_id"]).assign(mark=f"off_{m}"))
     traded = pre[pre.last_traded > 1]
     picks.append(traded.sort_values("polled").drop_duplicates(["market_id", "selection_id"]).assign(mark="first_traded"))
     e = pd.concat(picks, ignore_index=True)
     keep = ["market_id", "selection_id", "mark", "polled", "minutes_to_off"] + BOOK_COLS
     e = e[keep]
-    # the book at least 90 seconds before the mark's (the recorder polls a minute apart in the last hour)
     prev = pre[["market_id", "selection_id", "polled", "back1", "lay1"]].rename(
         columns={"polled": "polled_prev", "back1": "back1_prev", "lay1": "lay1_prev"}).sort_values("polled_prev")
     e = e.assign(_t=e.polled - pd.Timedelta(seconds=90)).sort_values("_t")
@@ -176,7 +216,7 @@ def feed_lag(pre: pd.DataFrame, minutes: float = 3.0) -> pd.Series:
 
 
 def day_panel(pred: pd.DataFrame, books: pd.DataFrame, markets: pd.DataFrame, day: date,
-              closing_books: pd.DataFrame | None = None) -> pd.DataFrame:
+              closing_books: pd.DataFrame | None = None, retimed: bool = False) -> pd.DataFrame:
     """One day's runners at each entry mark: our price, the book (``books``), the SP (from ``closing_books``, the
     recorder's settled books, when the entry books are another writer's), the result. A race is kept at a mark only
     when every runner that ran has a back price there and an SP."""
@@ -187,7 +227,7 @@ def day_panel(pred: pd.DataFrame, books: pd.DataFrame, markets: pd.DataFrame, da
     p["selection_id"] = _num(p.selection_id)
     p = p[["race_id", "race_date", "race_time", "track", "trap", "field", "won", "p_model", "market_id",
            "selection_id"]]
-    pre = pre_off_books(books, markets)
+    pre = pre_off_books(books, markets, retimed=retimed)
     if not len(pre):
         return pd.DataFrame()
     e = entry_books(pre)
@@ -306,10 +346,11 @@ def predict_share(d: pd.DataFrame, fitted: dict, name: str) -> tuple[np.ndarray,
 
 
 def expected_clv(d: pd.DataFrame, q_hat: np.ndarray, book: float) -> pd.DataFrame:
-    """Each position's expected value closed at the SP: backing at the best back, laying at the best lay."""
+    """E[1/BSP] for each runner (``inv``), and each position's expected CLV at the best price: ``m x inv - 1``
+    backing at the best back, ``1 - m x inv`` laying at the best lay."""
     inv = book * np.asarray(q_hat, float)
     lay = d.lay1.where(d.lay1 > 1)
-    return pd.DataFrame({"ev_back": d.back1.to_numpy(float) * inv - 1.0,
+    return pd.DataFrame({"inv": inv, "ev_back": d.back1.to_numpy(float) * inv - 1.0,
                          "ev_lay": 1.0 - lay.to_numpy(float) * inv}, index=d.index)
 
 
@@ -317,64 +358,116 @@ def expected_clv(d: pd.DataFrame, q_hat: np.ndarray, book: float) -> pd.DataFram
 # Positions and their settlement
 # --------------------------------------------------------------------------------------------------------------------
 
-def positions(d: pd.DataFrame, ev: pd.DataFrame, model: str, bars=BARS, stake: float = STAKE) -> pd.DataFrame:
-    """Every rule's paper positions: a side, a bar on the expected CLV, the fill test (at least the stake offered at
-    the price, a price up to MAX_PRICE). ``model`` 'win_edge' selects backs by the chance to win instead."""
+def target_stake(price, to_win: float = TO_WIN) -> np.ndarray:
+    """The stake that wins ``to_win`` at ``price`` (a lay: whose liability is ``to_win``), between MIN_STAKE and
+    MAX_STAKE."""
+    price = np.asarray(price, float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.clip(to_win / (price - 1.0), MIN_STAKE, MAX_STAKE)
+
+
+def ladder_fill(prices: np.ndarray, sizes: np.ndarray, ok: np.ndarray, target: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Take each runner's best ``LADDER`` prices in order while ``ok`` (the price still clears the bar and the cap),
+    up to the target stake: the matched stake and its average price (stake-weighted)."""
+    n, k = prices.shape
+    left = target.copy()
+    matched = np.zeros(n)
+    paid = np.zeros(n)
+    going = np.ones(n, bool)
+    for j in range(k):
+        going &= ok[:, j] & np.isfinite(prices[:, j]) & (prices[:, j] > 1)
+        take = np.where(going, np.minimum(left, np.nan_to_num(sizes[:, j]).clip(min=0)), 0.0)
+        matched += take
+        paid += take * np.nan_to_num(prices[:, j])
+        left -= take
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return matched, np.where(matched > 0, paid / np.where(matched > 0, matched, 1.0), np.nan)
+
+
+def positions(d: pd.DataFrame, ev: pd.DataFrame | None, model: str, bars=BARS, to_win: float = TO_WIN) -> pd.DataFrame:
+    """Every rule's paper positions, as the horse trader takes them: for each side and bar, each runner whose best
+    price clears the bar is taken down the ladder to win ``to_win`` (several dogs a race allowed), a back only when
+    its winnings reach the minimum lay at SP, a lay only when its stake reaches the minimum back at SP. ``model``
+    'win_edge' selects backs by the chance to win at each price instead."""
     rows = []
     for side in SIDES:
         if model == "win_edge" and side == "lay":
             continue
-        price = d.back1 if side == "back" else d.lay1
-        size = d.back1_size if side == "back" else d.lay1_size
-        ok = (price > 1) & (price <= MAX_PRICE) & (size.fillna(0) >= stake)
-        score = d.edge_win if model == "win_edge" else ev[f"ev_{side}"]
+        cols = [f"{side}{j}" for j in range(1, LADDER + 1)]
+        prices = np.column_stack([_num(d[c]).to_numpy(float) if c in d else np.full(len(d), np.nan) for c in cols])
+        sizes = np.column_stack([_num(d[f"{c}_size"]).to_numpy(float) if f"{c}_size" in d else np.full(len(d), np.nan)
+                                 for c in cols])
+        if model == "win_edge":
+            score = d.p_model.to_numpy(float)[:, None] * (1 + (prices - 1) * (1 - COMMISSION)) - 1
+        else:
+            inv = ev["inv"].to_numpy(float)[:, None]
+            score = prices * inv - 1.0 if side == "back" else 1.0 - prices * inv
+        target = target_stake(prices[:, 0], to_win)
         for bar in ([WIN_EDGE] if model == "win_edge" else bars):
-            sel = ok & (score > bar)
+            ok = (score > bar) & (prices <= MAX_PRICE)
+            matched, avg = ladder_fill(prices, sizes, ok, target)
+            if side == "back":
+                feasible = matched * (avg - 1.0) >= MIN_SP_LIABILITY - 1e-9
+            else:
+                feasible = matched >= MIN_SP_BACK - 1e-9
+            sel = (matched > 0) & feasible
             if sel.any():
-                rows.append(d.loc[sel].assign(model=model, side=side, bar=bar, price=price[sel], ev=score[sel]))
+                rows.append(d.loc[sel].assign(model=model, side=side, bar=bar, stake=matched[sel], price=avg[sel],
+                                              target=target[sel], ev=score[sel, 0]))
     if not rows:
         return pd.DataFrame()
     p = pd.concat(rows, ignore_index=True)
-    p["stake"] = stake
-    p["value"] = np.where(p.side == "back", p.price / p.bsp - 1.0, 1.0 - p.price / p.bsp) * stake
-    p["liability"] = np.where(p.side == "back", stake, (p.price - 1.0) * stake)
-    # held to the result instead (for reference): commission on the winnings
-    p["held"] = np.where(p.side == "back", np.where(p.won == 1, (p.price - 1) * (1 - COMMISSION), -1.0),
-                         np.where(p.won == 1, -(p.price - 1), 1 - COMMISSION)) * stake
+    s, m, bsp, won = p.stake.to_numpy(), p.price.to_numpy(), p.bsp.to_numpy(float), p.won.to_numpy() == 1
+    back = (p.side == "back").to_numpy()
+    # settled by the result, as the exchange settles the back and its lay at SP (liability = the winnings), or the
+    # lay and its back at SP (the same stake)
+    p["pnl"] = np.where(back, np.where(won, 0.0, -s + s * (m - 1.0) / (bsp - 1.0)),
+                        np.where(won, s * (bsp - m), 0.0))
+    p["risk"] = np.where(back, s, s * (m - 1.0))                       # the stake backed, the liability laid
+    p["clv"] = np.where(back, m / bsp - 1.0, 1.0 - m / bsp)            # the price taken against the SP
+    p["clv_value"] = p.clv * s                                         # the expectation, if the BSP is calibrated
+    # held to the result instead (for reference): no close
+    p["held"] = np.where(back, np.where(won, s * (m - 1.0), -s), np.where(won, -s * (m - 1.0), s))
     return p
 
 
 def settle(p: pd.DataFrame, keys=("mark", "model", "side", "bar")) -> pd.DataFrame:
-    """Each rule's net per market after commission on the market's net (the exchange charges a market once)."""
+    """Each rule's net per market after commission on the market's net (the exchange charges a market once), for the
+    close at SP and for holding to the result."""
     k = list(keys)
     m = p.groupby(k + ["race_date", "market_id"], dropna=False).agg(
-        value=("value", "sum"), stake=("stake", "sum"), liability=("liability", "sum"), held=("held", "sum"),
-        trades=("value", "size"))
-    m["net"] = m.value - COMMISSION * m.value.clip(lower=0)
+        pnl=("pnl", "sum"), risk=("risk", "sum"), stake=("stake", "sum"), held=("held", "sum"),
+        clv_value=("clv_value", "sum"), trades=("pnl", "size"))
+    m["net"] = m.pnl - COMMISSION * m.pnl.clip(lower=0)
+    m["held_net"] = m.held - COMMISSION * m.held.clip(lower=0)
     return m.reset_index()
 
 
-def rule_table(p: pd.DataFrame, keys=("mark", "model", "side", "bar"), n_boot: int = 2000) -> pd.DataFrame:
-    """Each rule's trades, trades a day, ROI on the stake closed at the SP (90% by day), on the liability, and held to
-    the result; the mean CLV of the price taken against the SP."""
+def rule_table(p: pd.DataFrame, keys=("mark", "model", "side", "bar"), days=None, n_boot: int = 2000) -> pd.DataFrame:
+    """Each rule's trades, trades a day over every scored day (``days``; the days with positions when not given), the
+    return on the money at risk settled by the result (90%: a bootstrap over every scored day, those without a trade
+    included), held to the result, and the CLV of the prices taken against the SP."""
     if p is None or not len(p):
         return pd.DataFrame()
+    all_days = sorted(set(days) if days is not None else set(p.race_date.astype(str)))
     m = settle(p, keys)
     out = []
     for key, g in m.groupby(list(keys), dropna=False):
-        day = g.groupby("race_date").agg(net=("net", "sum"), stake=("stake", "sum"), held=("held", "sum"))
-        lo, hi = race_book.ratio_interval(day.net.to_numpy(), day.stake.to_numpy(), n=n_boot)
+        day = g.groupby(g.race_date.astype(str)).agg(net=("net", "sum"), risk=("risk", "sum"))
+        day = day.reindex(all_days, fill_value=0.0)
+        lo, hi = race_book.ratio_interval(day.net.to_numpy(), day.risk.to_numpy(), n=n_boot)
         tr = p.loc[(p[list(keys)] == pd.Series(dict(zip(keys, key)))).all(axis=1)]
-        clv = np.where(tr.side == "back", tr.price / tr.bsp - 1, 1 - tr.price / tr.bsp)
-        out.append({**dict(zip(keys, key)), "trades": int(g.trades.sum()), "days": int(len(day)),
-                    "per_day": round(g.trades.sum() / max(1, len(day)), 1),
-                    "staked": round(float(g.stake.sum()), 2), "net": round(float(g.net.sum()), 2),
-                    "roi%": round(100 * float(g.net.sum() / g.stake.sum()), 2),
+        out.append({**dict(zip(keys, key)), "trades": int(g.trades.sum()), "days": len(all_days),
+                    "active_days": int((day.risk > 0).sum()),
+                    "per_day": round(g.trades.sum() / max(1, len(all_days)), 1),
+                    "staked": round(float(g.stake.sum()), 2), "risk": round(float(g.risk.sum()), 2),
+                    "net": round(float(g.net.sum()), 2),
+                    "roi%": round(100 * float(g.net.sum() / g.risk.sum()), 2),
                     "roi_90%": [round(100 * lo, 2), round(100 * hi, 2)] if np.isfinite(lo) else None,
-                    "roi_liability%": round(100 * float(g.net.sum() / g.liability.sum()), 2),
-                    "held_roi%": round(100 * float(g.held.sum() / g.stake.sum()), 2),
-                    "clv_mean%": round(100 * float(np.mean(clv)), 2),
-                    "clv_positive%": round(100 * float(np.mean(clv > 0)), 1),
+                    "held_roi%": round(100 * float(g.held_net.sum() / g.risk.sum()), 2),
+                    "clv_mean%": round(100 * float(tr.clv.mean()), 2),
+                    "clv_positive%": round(100 * float((tr.clv > 0).mean()), 1),
+                    "fill%": round(100 * float((tr.stake / tr.target).mean()), 1),
                     "price_median": round(float(tr.price.median()), 2)})
     return pd.DataFrame(out)
 
@@ -385,56 +478,75 @@ def rule_table(p: pd.DataFrame, keys=("mark", "model", "side", "bar"), n_boot: i
 
 def load_panel(store, day: date, s3=None, source: str = SOURCE) -> pd.DataFrame:
     """A day's panel from the forward test's priced runners and the greyhound books at the entry marks (``source``:
-    the trader's or the recorder's), the SP from the recorder's settled books."""
+    ``live``, the live-key recorder's; ``recorder``, the delayed 60-second books as polled; ``retimed``, the same placed
+    at the market's last match), the SP from the recorder's settled books."""
     from betfair_recorder import _read_day_csv
     pred = store.get_parquet(f"{TRACK_PRED}/{day:%Y-%m-%d}.parquet")
     if pred is None or not len(pred):
         return pd.DataFrame()
     recorder = _read_day_csv(day, ENTRY_BOOKS["recorder"], s3=s3)
-    books = recorder if source == "recorder" else _read_day_csv(day, ENTRY_BOOKS[source], s3=s3)
+    books = recorder if source in ("recorder", "retimed") else _read_day_csv(day, ENTRY_BOOKS[source], s3=s3)
     markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
-    if books is None or recorder is None:
+    if books is None or recorder is None or markets is None:
         return pd.DataFrame()
-    return day_panel(pred, books, markets, day, closing_books=recorder)
+    return day_panel(pred, books, markets, day, closing_books=recorder, retimed=source == "retimed")
 
 
 def load_panels(store, first: date, last: date, s3=None, source: str = SOURCE) -> pd.DataFrame:
-    frames, d = [], first
+    """Every day's panel; a day whose files fail to read is skipped, but if most days fail the run fails (a schema
+    change must not read as "no books yet": QA m4)."""
+    frames, failed, tried, d = [], [], 0, first
     while d <= last:
+        tried += 1
         try:
             f = load_panel(store, d, s3=s3, source=source)
-        except Exception as exc:                                  # one bad day file: the rest are still read
+        except Exception as exc:
             log.warning("%s: panel not built (%s)", d, exc)
+            failed.append(f"{d}: {exc}"[:200])
             f = pd.DataFrame()
         if len(f):
             frames.append(f)
         d += timedelta(days=1)
+    if tried >= 4 and len(failed) > tried / 2:
+        raise RuntimeError(f"{len(failed)} of {tried} days failed to build: " + "; ".join(failed[:3]))
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+def _clean(x):
+    """A float for JSON: None for NaN or infinity (QA m7)."""
+    return None if x is None or not np.isfinite(x) else x
+
+
 def freeze(store, today: date, s3=None) -> dict:
-    """Fit both closing models at every entry mark on every day of the trader's books before ``today`` and freeze them
+    """Fit both closing models at every entry mark on every day of the live books before ``today`` and freeze them
     with the rules, once ``MIN_FREEZE_DAYS`` such days are held (else nothing is written: ``waiting``); the forward
     test starts the later of START and the day after."""
     d = load_panels(store, FIRST_BOOK_DAY, today - timedelta(days=1), s3=s3)
     n_days = int(d.race_date.nunique()) if len(d) else 0
     if n_days < MIN_FREEZE_DAYS:
-        return {"waiting": f"{n_days} of {MIN_FREEZE_DAYS} days of the trader's books with priced runners held"}
+        return {"waiting": f"{n_days} of {MIN_FREEZE_DAYS} days of the live greyhound books with priced runners held"}
     fitted = {m: fit_models(g) for m, g in d.groupby("mark")}
     first = max(date.fromisoformat(START), today + timedelta(days=1))
+    lag = d.drop_duplicates("market_id").feed_lag_s
     out = {"frozen_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "fit_from": str(d.race_date.min()),
            "fit_to": str(d.race_date.max()), "fit_days": n_days,
-           "feed_lag_s_p50": round(float(d.drop_duplicates("market_id").feed_lag_s.median()), 1), "first_test_day": str(first), "rules": RULES, "models": fitted}
+           "feed_lag_s_p50": _clean(round(float(lag.median()), 1)) if lag.notna().any() else None,
+           "first_test_day": str(first), "rules": RULES, "models": fitted}
     store.put(FROZEN_KEY, json.dumps(out, indent=1).encode())
     return out
 
 
 def track_day(store, frozen: dict, day: date, s3=None) -> dict:
-    """One test day: every rule's positions, written to the ledger; None-final days are done again next night."""
+    """One test day: every rule's positions to the ledger, and the day's coverage (the share of its priced races in
+    the panel) beside it; a day under MIN_COVERAGE is settled again on the next nights (QA J6)."""
     ds = f"{day:%Y-%m-%d}"
+    if day < date.fromisoformat(frozen["first_test_day"]):
+        raise ValueError(f"{ds} is before the first test day {frozen['first_test_day']}: the frozen models saw it")
     d = load_panel(store, day, s3=s3)
+    pred = store.get_parquet(f"{TRACK_PRED}/{ds}.parquet")
+    priced = int(pred.dropna(subset=["market_id"]).race_id.nunique()) if pred is not None and len(pred) else 0
     if not len(d):
-        return {"day": ds, "note": "no panel yet (the forward test of 5 Oct has not priced the day, or no trader or "
+        return {"day": ds, "note": "no panel yet (the forward test of 5 Oct has not priced the day, or no live or "
                                    "settled books)"}
     parts = []
     for mark, g in d.groupby("mark"):
@@ -446,31 +558,53 @@ def track_day(store, frozen: dict, day: date, s3=None) -> dict:
         parts.append(positions(g, None, "win_edge"))
     p = pd.concat([x for x in parts if len(x)], ignore_index=True) if any(len(x) for x in parts) else pd.DataFrame()
     store.put_parquet(f"{PREFIX}/days/{ds}.parquet", p)
+    races = int(d[d["mark"] == RULES["primary"]["mark"]].race_id.nunique())
+    coverage = round(races / priced, 3) if priced else 0.0
+    store.put(f"{PREFIX}/days/{ds}.json", json.dumps({"day": ds, "races_priced": priced, "races_in_panel": races,
+                                                      "coverage": coverage}).encode())
     pr = RULES["primary"]
     prim = p[(p["mark"] == pr["mark"]) & (p.model == pr["model"]) & (p.side == pr["side"]) & (p.bar == pr["bar"])] \
         if len(p) else p
     lag = d.drop_duplicates("market_id").feed_lag_s
-    return {"day": ds, "races": int(d.race_id.nunique()), "positions": int(len(p)), "primary_trades": int(len(prim)),
-            "feed_lag_s_p50": round(float(lag.median()), 1) if lag.notna().any() else None,
+    return {"day": ds, "races": int(d.race_id.nunique()), "coverage": coverage, "positions": int(len(p)),
+            "primary_trades": int(len(prim)),
+            "feed_lag_s_p50": _clean(round(float(lag.median()), 1)) if lag.notna().any() else None,
             "primary_net": round(float(settle(prim).net.sum()), 2) if len(prim) else 0.0}
 
 
+def _settled(store, day: date, today: date) -> bool:
+    """A test day done for good: its ledger is written and either its coverage reached MIN_COVERAGE or it is more
+    than REDO_DAYS days old."""
+    ds = f"{day:%Y-%m-%d}"
+    if store.get_parquet(f"{PREFIX}/days/{ds}.parquet") is None:
+        return False
+    raw = store.get(f"{PREFIX}/days/{ds}.json")
+    cov = json.loads(raw).get("coverage", 0.0) if raw else 0.0
+    return cov >= MIN_COVERAGE or (today - day).days > REDO_DAYS
+
+
 def summary(store, frozen: dict) -> dict:
-    keys = sorted(k for k in store.listing(f"{PREFIX}/days/") if k.endswith(".parquet"))
+    """The test so far: only days on or after the first test day count (QA J5), trades a day and the bootstrap over
+    every one of them."""
+    first = frozen["first_test_day"]
+    keys = sorted(k for k in store.listing(f"{PREFIX}/days/") if k.endswith(".parquet") and k[-18:-8] >= first)
+    days = [k[-18:-8] for k in keys]
     p = [store.get_parquet(k) for k in keys]
     p = pd.concat([x for x in p if x is not None and len(x)], ignore_index=True) if p else pd.DataFrame()
-    out = {"first_test_day": frozen["first_test_day"], "days": len(keys), "rules": RULES}
+    out = {"first_test_day": first, "days": len(keys), "rules": RULES}
     if not len(p):
         return out
-    t = rule_table(p)
+    t = rule_table(p, days=days)
     out["rules_table"] = t.to_dict("records")
     pr = RULES["primary"]
     row = t[(t["mark"] == pr["mark"]) & (t.model == pr["model"]) & (t.side == pr["side"]) & (t.bar == pr["bar"])]
     out["primary"] = row.iloc[0].to_dict() if len(row) else None
     n_days, n_trades = len(keys), int(row.trades.iloc[0]) if len(row) else 0
     lo = row["roi_90%"].iloc[0][0] if len(row) and row["roi_90%"].iloc[0] else None
+    clv = float(row["clv_mean%"].iloc[0]) if len(row) else None
     out["gate"] = ("not yet judged: {} of 30 days, {} of 1,000 primary trades".format(n_days, n_trades)
-                   if n_days < 30 or n_trades < 1000 else ("PASS" if lo is not None and lo > 0 else "FAIL"))
+                   if n_days < 30 or n_trades < 1000
+                   else ("PASS" if lo is not None and lo > 0 and clv is not None and clv > 0 else "FAIL"))
     return out
 
 
@@ -478,11 +612,11 @@ def markdown(s: dict) -> str:
     lines = [f"## Greyhound trade-out forward test from {s.get('first_test_day')} ({s.get('days', 0)} days)", "",
              f"Gate: {s.get('gate', 'no days yet')}", ""]
     if s.get("rules_table"):
-        lines += ["| Mark | Model | Side | Bar | Trades (a day) | ROI closed at SP (90%) | Held to result | CLV |",
-                  "|---|---|---|---|---|---|---|---|"]
+        lines += ["| Mark | Model | Side | Bar | Trades (a day) | Return closed at SP, by result (90%) | Held to result |"
+                  " CLV | Filled |", "|---|---|---|---|---|---|---|---|---|"]
         for r in s["rules_table"]:
             lines.append(f"| {r['mark']} | {r['model']} | {r['side']} | {r['bar']} | {r['trades']} ({r['per_day']}) | "
-                         f"{r['roi%']}% {r['roi_90%']} | {r['held_roi%']}% | {r['clv_mean%']}% |")
+                         f"{r['roi%']}% {r['roi_90%']} | {r['held_roi%']}% | {r['clv_mean%']}% | {r['fill%']}% |")
     return "\n".join(lines)
 
 
@@ -526,12 +660,14 @@ def main(argv=None) -> int:
                 f"## Greyhound trade-out forward test: not started\n\n{(report.get('frozen') or {}).get('waiting', '')}\n")
         return 0
     days = []
+    first = date.fromisoformat(frozen["first_test_day"])
     if a.date:
         days = [date.fromisoformat(a.date)]
+        if days[0] < first:                               # the frozen models saw it: never a test day (QA J5)
+            ap.error(f"{a.date} is before the first test day {first}")
     elif a.days:
-        first = date.fromisoformat(frozen["first_test_day"])
         days = [d for d in (today - timedelta(days=i) for i in range(a.days, 0, -1)) if d >= first]
-        days = [d for d in days if store.get_parquet(f"{PREFIX}/days/{d:%Y-%m-%d}.parquet") is None]
+        days = [d for d in days if not _settled(store, d, today)]
     if days:
         report["days"] = [track_day(store, frozen, d) for d in days]
     if frozen and (a.summary or days or a.freeze):

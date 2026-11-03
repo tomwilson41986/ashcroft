@@ -644,3 +644,131 @@ files changed in between (the latest day's settled books); not every small diffe
 
 **Reading.** The refit is the better log-BSP model and the one to freeze when the live books allow (section 13). It
 does not change the trade-out's verdict on the recorder's books.
+
+## 16. QA of sections 12-15 and the roadmap (2 Nov 2026)
+
+A full QA and review (an independent read of the code, `reports/greyhound_roadmap.md` section 2) found no look-ahead
+in the models, and these that bear on the sections above:
+- **The forward test of section 12 cannot start as built**: since 2 Nov the greyhound trader runs in
+  `paper-models.yml` on the delayed key without `BETFAIR_RECORD`, so the trader books it waits for are never written
+  (and would be stale). The roadmap's Phase 0 replaces them.
+- **The holdout of sections 13-15 was not read once**: it was recomputed on every run, three price models each. The
+  verdicts stand, because every rule failed and selection on the holdout can only flatter.
+- **"Closed at the SP" assumed a perfect green-up**; a BSP lay is sized by liability, so the realisable return has the
+  same expectation only if the BSP is calibrated, and wider intervals than reported.
+- **Trades a day counted active days only**, so the bar filter "at least once a day" did nothing.
+The roadmap (`reports/greyhound_roadmap.md`) sets out the fixes, the feature and model work, and the gated path from
+here.
+
+## 17. Re-timed books and the horse model's settlement (greyhound-research.yml run 41508653282)
+
+The study on the recorder's books placed at each snapshot's last match (`source="retimed"`, roadmap 0.1) with
+positions taken and settled as the horse trader's (to win GBP100 down the three best prices, each back's winnings laid
+at the SP, settled by the result; roadmap section 9). Panel: 53,460 runner-marks, 3,205 races, 26 days (fewer marks
+than section 13's 70,014: a 60-second poll does not fall in every true one-minute window). Development 14-25 Oct,
+holdout 26 Oct-1 Nov.
+
+**At the true last minute the book is the SP.** One minute before the off the geometric mid of the best back and lay
+sits a mean 0.14% from the BSP in log terms (-0.0014; section 13's stale stamps: -0.104), the best back a median 8.58%
+from it (11.59% before). The forecast of the move to the SP gains nothing there: 0.0001 a race over the market for the
+microstructure models, -0.00001 for the horses' closing model. Three and five minutes out a move remains (gain 0.0078
+and 0.0308, LightGBM, holdout).
+
+**The trade, holdout, each rule at its development bar** (trades a day and the bootstrap over every scored day):
+3 of 44 rules positive, none with a 90% lower bound above zero. The nearest to level: the first traded book,
+LightGBM, lay, +0.67% (90% -1.02 to +2.03, 40.6 a day); 1 minute out, microstructure, back, +0.03% (-1.17 to +1.31,
+14.6 a day). The old selection (edge to win over 0.2) closed at the SP: 1 minute out -3.60% (-4.30 to -2.82),
+first traded -15.40%. The pre-registered primary rule took 4 positions in 12 development days: at the true last
+minute almost no dog's price clears 3% over the forecast SP.
+
+**Reading.** Read on books that are current, the market a minute before the off has already found the SP, and
+earlier, where a move is left to forecast, it does not pay after the spread and commission on these models. The
+live-key books (roadmap 0.2) will say the same or not with 5-second books and volume; the levers left are the late
+information (the weigh-in, roadmap L1) and the cross-market signals (M5).
+
+## 18. The fast loop's first batch (greyhound-fastloop.yml run 41595386223, 3 Nov 2026)
+
+**The loop's timings** (measured on the run): the feature cache built once in 20 minutes 24 seconds (every GBGB run to
+2 Nov, every block, the weigh-in features and the BSP, from June 2020); then ten experiments side by side, each fitted
+and scored in 46 to 167 seconds (the job, with the cache's download, 1 to 6 minutes); the whole batch from the cache to
+the table in about 7 minutes. A batch on a cache already built: about 7 minutes, against two to three hours before.
+
+**The batch** (quick recipe: fit January 2024 to May 2026 at a learning rate of 0.15; test every race from 1 June to
+2 November 2026, out of sample; log-loss against the result, lower is better):
+
+| Experiment | Features | Objective | Log-loss | vs baseline | On BSP races: model / BSP | Model's weight beside the BSP |
+|---|---|---|---|---|---|---|
+| base_card_safe (baseline) | 333 | softmax | 0.44687 | | 0.44749 / 0.42838 | -0.009 |
+| with_weighin | 342 | softmax | 0.44581 | -0.00106 | 0.44640 / 0.42838 | 0.062 |
+| plus_race_rel2 | 423 | softmax | 0.44736 | +0.00049 | 0.44803 / 0.42838 | -0.002 |
+| plus_first_bend | 339 | softmax | 0.44685 | -0.00002 | 0.44745 / 0.42838 | 0.010 |
+| plus_style_draw | 337 | softmax | 0.44692 | +0.00005 | 0.44752 / 0.42838 | 0.013 |
+| plus_all_blocks | 433 | softmax | 0.44650 | -0.00037 | 0.44709 / 0.42838 | -0.005 |
+| weighin_all_blocks | 442 | softmax | 0.44651 | -0.00036 | 0.44716 / 0.42838 | 0.024 |
+| objective_pl2 | 333 | Plackett-Luce | 0.44647 | -0.00040 | 0.44712 / 0.42838 | -0.006 |
+| objective_binary | 333 | binary | 0.44740 | +0.00053 | 0.44803 / 0.42838 | -0.008 |
+| **objective_logbsp** | 333 | log BSP | **0.44343** | **-0.00344** | 0.44400 / 0.42838 | -0.018 |
+
+**Reading.** The horse model's target, log BSP, is the best by a distance (0.0034, ten times the next). The weigh-in
+helps (0.0011). The three new blocks add little on their own; together 0.0004; race_rel2 alone is worse. The
+Plackett-Luce objective helps a little, the binary one hurts. No experiment adds to the BSP: every model's weight in a
+blend with it is about zero, and the blend's log-loss on the second half of the test is the BSP's within 0.0001. These
+differences were not yet given intervals; from the next batch the table carries a paired 90% interval against the
+baseline by day.
+
+**The trade-out study on three of them** (re-timed books, the horse model's settlement): on the log-BSP model's prices
+one rule of 44 in the holdout has a 90% lower bound above zero, a lay at the first traded book at bar 0.08, +9.78%
+(0.03 to 18.56) on 44 trades; one in 44 is about what chance gives at that level, so it is a lead to test on new days,
+not a finding.
+
+## 19. The fast loop's second batch (greyhound-fastloop.yml run 41598761809, 3 Nov 2026)
+
+**The batch** (the cache of section 18, reused in 2 seconds; quick recipe unless marked; every race 1 June to
+2 November 2026, out of sample; log-loss against the result, lower is better; the interval is the paired difference
+from the baseline on the same runners, 90%, a bootstrap over days):
+
+| Experiment | Features | Objective | Rounds | Log-loss | vs logbsp (90%) | On BSP races: model / BSP | Model's weight beside the BSP | Seconds |
+|---|---|---|---|---|---|---|---|---|
+| logbsp (baseline) | 333 | log BSP | 1,262 | 0.44343 | | 0.44400 / 0.42838 | -0.018 | 269 |
+| logbsp_weighin | 342 | log BSP | 897 | 0.44310 | -0.00033 (-0.00071 to +0.00005) | 0.44364 / 0.42838 | -0.010 | 207 |
+| logbsp_blocks (race_rel2, first_bend, style_draw) | 433 | log BSP | 1,336 | 0.44296 | -0.00047 (-0.00088 to -0.00007) | 0.44351 / 0.42838 | -0.000 | 431 |
+| logbsp_fb_sd (first_bend, style_draw) | 343 | log BSP | 945 | 0.44301 | -0.00042 (-0.00081 to -0.00007) | 0.44362 / 0.42838 | 0.009 | 161 |
+| **logbsp_weighin_fb_sd** | 352 | log BSP | 954 | **0.44286** | **-0.00057 (-0.00098 to -0.00020)** | 0.44341 / 0.42838 | 0.006 | 298 |
+| softmax_ref | 333 | softmax | 101 | 0.44687 | +0.00343 (+0.00289 to +0.00401) | 0.44749 / 0.42838 | -0.009 | 47 |
+| pl2_weighin | 342 | Plackett-Luce | 140 | 0.44553 | +0.00210 (+0.00150 to +0.00268) | 0.44610 / 0.42838 | 0.072 | 54 |
+| logbsp_confirm (2021 on, 0.05) | 333 | log BSP | 8,000 (the cap) | **0.44247** | **-0.00096 (-0.00127 to -0.00066)** | 0.44306 / 0.42838 | -0.005 | 3,064 |
+
+**Reading.**
+- The log-BSP target's lead over softmax holds with an interval: 0.0034 (0.0029 to 0.0040).
+- The first-bend and style-draw blocks help it (0.0004, the interval clear of zero). The weigh-in on its own is not
+  clear of zero (-0.0003). Together they give 0.0006 (0.0002 to 0.0010). The weigh-in is published live at only 12
+  tracks (greyhounds.today), so an experiment with it overstates what a live model would have elsewhere.
+- The confirm recipe beats the quick one by 0.0010 (0.0007 to 0.0013). It ran into its 8,000-round cap, so a longer
+  fit might gain more. It took 51 minutes and held the table back that long, which is fixed below.
+- No experiment adds to the BSP. The Benter gain is between 0 and +0.00009 in every row, and the model's weight beside
+  the BSP is between -0.018 and +0.072. The best model's log-loss on BSP races (0.44306) is 0.0147 behind the BSP's
+  (0.42838).
+
+**The trade-out study on the confirm model's prices** (re-timed books, the horse model's settlement; 27 panel days from
+6 October to 2 November 2026, 20 scored: 13 development, 7 holdout):
+- One minute before the off the book is the SP. Every closing model's cross-entropy gain over the market at off_1 is
+  0.00013 a race or less, on development and holdout days alike.
+- At the first traded book the forecast is strong: the GBM's gain is 0.044 a race on development and holdout days
+  alike (R² against no change 0.77 and 0.79). The shuffled null model is negative everywhere (-0.12 at the first
+  traded book), so the gain is not a leak.
+- Of 52 rules read once on the holdout (40 without the shuffled null and the win-edge rule), one has its 90% lower
+  bound above zero: a lay at the first traded book on the GBM's forecast at bar 0.03, +3.14% (+0.22 to +5.79) on 169
+  trades over 7 days.
+- Its mean CLV is negative (-1.37%) and its held return is -3.04%, so the profit came from the results, not from the
+  price moving. One rule in 40 at the 90% level is what chance gives.
+- Section 18's lead was the same kind of rule (a first traded lay, there at bar 0.08 on the quick log-BSP prices). Two
+  readings on overlapping days are not two tests. Neither is a finding; both go to the forward test on new days.
+
+**What changed in the loop** (greyhound/fastloop.py, greyhound-fastloop.yml):
+- **Two lanes.** The quick experiments' table is written as soon as they finish. The slow lane (the confirm recipe and
+  the study) gets its own table of every experiment after, so a slow job no longer holds up the quick answer.
+- **A cheaper confirm recipe.** It now fits from 2022 at 0.08 with a 6,000-round cap and a 25-minute budget, stopping
+  at the best round so far. Each result says what stopped it: early stopping, the cap or the time.
+- **Batch 3** (research/greyhound/experiments/current.json) asks where the confirm recipe's gain comes from (the
+  slower rate on the quick window, or the longer window at the quick rate), tests two tree sizes, and runs the best
+  features on the new confirm recipe with the study.
