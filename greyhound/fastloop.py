@@ -136,8 +136,8 @@ def load_cache(store) -> tuple[pd.DataFrame, dict]:
 
 def feature_set(meta: dict, name: str) -> list[str]:
     """``all`` (every block, the weigh-in too), ``card_safe`` (what the morning card knows: the live model's view),
-    ``base``, ``base+parity``, ``base+parity+hrb``, ``core`` (every block but times, intent, ability, etime); each
-    ``-card`` for card-safe."""
+    ``base``, ``base+parity``, ``base+parity+hrb``, ``core`` (every block but times, intent, ability, etime),
+    ``core+<block>[+<block>]`` (core and those blocks); each ``-card`` for card-safe."""
     blocks = meta["features"]
     card = name.endswith("-card") or name == "card_safe"
     key = name.removesuffix("-card")
@@ -145,6 +145,12 @@ def feature_set(meta: dict, name: str) -> list[str]:
              "all": list(blocks), "card_safe": list(blocks),
              # the blocks before the roadmap's F3/F5/F6 (3 Nov 2026), to read what those add
              "core": [b for b in blocks if b not in ("times", "intent", "ability", "etime")]}
+    if key.startswith("core+"):                      # core and named blocks: what each new block adds on its own
+        extra = key.split("+")[1:]
+        unknown = [b for b in extra if b not in blocks]
+        if unknown:
+            raise ValueError(f"unknown blocks {unknown} in feature set {name!r}")
+        order[key] = order["core"] + extra
     if key not in order:
         raise ValueError(f"unknown feature set {name!r}")
     feats = list(dict.fromkeys(f for b in order[key] for f in blocks.get(b, [])))
