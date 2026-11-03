@@ -16,12 +16,13 @@ on:
     - cron: '21 7-19 * * *'  # prices, hourly from the morning's catalogue (the recorder starts 06:50-06:55 UTC):
                              # a race listed late, or a reserve in, is priced within the hour (the trader reloads)
     - cron: '56 11 * * *'    # settle the last days (the settled books are read by 10:10 UTC)
+    - cron: '*/10 10-21 * * *'   # the paper trader's running table, a row per market, every 10 minutes of the racing
   workflow_dispatch:
     inputs:
       task:
-        description: 'predict, train, settle, check-card (a past day: the card against the results), or coverage (the day''s races against what was priced and decided)'
+        description: 'predict, train, settle, check-card (a past day: the card against the results), coverage (the day''s races against what was priced and decided), or running (the paper trader''s day so far, a row per market)'
         type: choice
-        options: [predict, train, settle, check-card, coverage]
+        options: [predict, train, settle, check-card, coverage, running]
         default: predict
       date:
         description: 'UK racing day, YYYY-MM-DD (default today)'
@@ -73,13 +74,14 @@ jobs:
             case "$SCHEDULE" in
               '41 4 * * 0') TASK=train ;;
               '56 11 * * *') TASK=settle ;;
+              '*/10 10-21 * * *') TASK=running ;;
               *) TASK=predict ;;
             esac
             DAY=""
           fi
           set -o pipefail                    # a failing step fails the run, through the tee
           TASK="${TASK:-predict}"
-          case "$TASK" in predict|train|settle|check-card|coverage) ;; *) echo "task must be predict, train, settle, check-card or coverage"; exit 1 ;; esac
+          case "$TASK" in predict|train|settle|check-card|coverage|running) ;; *) echo "task must be predict, train, settle, check-card, coverage or running"; exit 1 ;; esac
           if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
           mkdir -p out
           ARGS=()
@@ -90,9 +92,12 @@ jobs:
             settle)  python -m greyhound.live --settle --days 3 "${ARGS[@]}" | tee out/greyhound_live.json ;;
             check-card) python -m greyhound.live --check-card "${ARGS[@]}" | tee out/greyhound_live.json ;;
             coverage) python -m greyhound.live --coverage "${ARGS[@]}" | tee out/greyhound_live.json ;;
+            running) python -m greyhound.live --running --out out/greyhound_running.md "${ARGS[@]}" | tee out/greyhound_live.json
+                     cat out/greyhound_running.md ;;   # the table in the log as well as the summary
           esac
       - name: Summary
         if: always()
         run: |
+          [ -f out/greyhound_running.md ] && cat out/greyhound_running.md >> "$GITHUB_STEP_SUMMARY"
           [ -f out/greyhound_live.json ] && { echo '```'; head -c 30000 out/greyhound_live.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           true

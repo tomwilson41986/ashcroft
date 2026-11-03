@@ -258,7 +258,7 @@ the whole history at a slow learning rate (the log-BSP refit's 20,000 rounds too
 | The features | rebuilt every run | built once a change of the feature code, cached in S3 (`greyhound/feature_cache/<hash>/`); a run loads them |
 | A new feature | an edit to the engine, a rebuild | a file in `greyhound/blocks/` computed on the cached matrix (`race_rel2`, `first_bend`, `style_draw` so far), tested for lag safety by `tests/test_greyhound_fastloop.py` |
 | An experiment | a script and a workflow | a line of JSON in `research/greyhound/experiments/current.json`: feature set (`card_safe`, `all` with the weigh-in, ...), blocks, prefixes to drop, objective (`softmax`, `binary`, `pl2`, `logbsp`), recipe |
-| The fit | 2019 on, learning rate 0.03, thousands of rounds | `quick`: 2024 on, 0.15, coarse bins; `confirm`: 2022 on, 0.08, a 25-minute budget, for the winners (2021 on at 0.05 until batch 2) |
+| The fit | 2019 on, learning rate 0.03, thousands of rounds | `quick`: 2024 on, 0.08, coarse bins (0.15 until batch 3); `confirm`: 2022 on, 0.08, a 25-minute budget, for the winners (2021 on at 0.05 until batch 2) |
 | Several ideas | one after another | one job each, side by side, then one table (`greyhound-fastloop.yml`) |
 | What is reported | varied | the same for every experiment: log-loss out of sample from 1 Jun 2026, the BSP's on the same races, Benter's gain over the BSP, the top features; the trade-out study on request |
 
