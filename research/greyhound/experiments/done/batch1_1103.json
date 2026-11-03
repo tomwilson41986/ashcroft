@@ -1,0 +1,18 @@
+{
+  "about": "The first fast-loop batch (the owner, 3 Nov 2026: further feature development and model testing). Quick recipe: fit 2024-01 to May 2026, test every race from 1 Jun 2026 (out of sample). The three new blocks one at a time and together, the weigh-in lever, the objectives. The study runs on the trade-out for three of them.",
+  "recipe": "quick",
+  "baseline": "base_card_safe",
+  "test_from": "2026-06-01",
+  "experiments": [
+    {"name": "base_card_safe", "features": "card_safe", "objective": "softmax", "study": true},
+    {"name": "with_weighin", "features": "all", "objective": "softmax"},
+    {"name": "plus_race_rel2", "features": "card_safe", "add_blocks": ["race_rel2"]},
+    {"name": "plus_first_bend", "features": "card_safe", "add_blocks": ["first_bend"]},
+    {"name": "plus_style_draw", "features": "card_safe", "add_blocks": ["style_draw"]},
+    {"name": "plus_all_blocks", "features": "card_safe", "add_blocks": ["race_rel2", "first_bend", "style_draw"], "study": true},
+    {"name": "weighin_all_blocks", "features": "all", "add_blocks": ["race_rel2", "first_bend", "style_draw"]},
+    {"name": "objective_pl2", "features": "card_safe", "objective": "pl2"},
+    {"name": "objective_binary", "features": "card_safe", "objective": "binary"},
+    {"name": "objective_logbsp", "features": "card_safe", "objective": "logbsp", "study": true}
+  ]
+}

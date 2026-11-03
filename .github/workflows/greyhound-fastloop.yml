@@ -1,0 +1,218 @@
+name: Greyhound fast loop (read-only)
+
+# The greyhound fast experiment loop (greyhound/fastloop.py; the owner, 3 Nov 2026: "we can't have a 2-3 hour run each
+# time"). The feature matrix is built once a change of the feature code (greyhound/feature_cache/<hash>/ in S3; about
+# 15 minutes, the first run only); then every experiment of research/greyhound/experiments/current.json runs as its own
+# job on that cache, side by side, and a last job puts them in one table. Two lanes (greyhound.fastloop.lane): the quick
+# experiments' table as soon as they are done; the slow ones (the confirm recipe, the trade-out study) after, with a
+# table of everything of their own, so a slow job never holds up the quick answer (batch 2 waited 50 minutes on one).
+# Read-only on the data: the cache is the only thing written to S3, and nothing here can place an order.
+
+on:
+  workflow_dispatch:
+    inputs:
+      spec:
+        description: 'the experiments (JSON under research/greyhound/experiments/)'
+        required: false
+        type: string
+        default: 'research/greyhound/experiments/current.json'
+      refresh:
+        description: 'build the feature cache again even if one exists for this code'
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches: ['claude/determined-fermi-*']
+    paths:
+      - 'research/greyhound/experiments/**'
+      - 'greyhound/fastloop.py'
+      - 'greyhound/blocks/**'
+      - '.github/workflows/greyhound-fastloop.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-fastloop
+  cancel-in-progress: true
+
+env:
+  SPEC: ${{ inputs.spec || 'research/greyhound/experiments/current.json' }}
+
+jobs:
+  cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      quick: ${{ steps.list.outputs.quick }}
+      slow: ${{ steps.list.outputs.slow }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+      - name: The feature cache (built only when the feature code changed)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          REFRESH: ${{ inputs.refresh }}
+        run: |
+          ARGS=(--build-cache)
+          if [ "$REFRESH" = true ]; then ARGS+=(--refresh); fi
+          python -m greyhound.fastloop "${ARGS[@]}"
+      - name: The experiments
+        id: list
+        run: |
+          if ! [[ "$SPEC" =~ ^research/greyhound/experiments/[A-Za-z0-9_./-]+\.json$ ]]; then echo "spec must be a JSON file under research/greyhound/experiments/"; exit 1; fi
+          echo "quick=$(python -m greyhound.fastloop --spec "$SPEC" --list --lane quick | tail -n 1)" >> "$GITHUB_OUTPUT"
+          echo "slow=$(python -m greyhound.fastloop --spec "$SPEC" --list --lane slow | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+  experiment:
+    needs: cache
+    if: needs.cache.outputs.quick != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        name: ${{ fromJson(needs.cache.outputs.quick) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+      - name: Run ${{ matrix.name }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          NAME: ${{ matrix.name }}
+        run: |
+          if ! [[ "$NAME" =~ ^[a-z0-9_]{1,40}$ ]]; then echo "bad experiment name"; exit 1; fi
+          python -m greyhound.fastloop --spec "$SPEC" --only "$NAME" --out "out/$NAME"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fastloop-${{ matrix.name }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90
+
+  slow:
+    needs: cache
+    if: needs.cache.outputs.slow != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        name: ${{ fromJson(needs.cache.outputs.slow) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+      - name: Run ${{ matrix.name }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          NAME: ${{ matrix.name }}
+        run: |
+          if ! [[ "$NAME" =~ ^[a-z0-9_]{1,40}$ ]]; then echo "bad experiment name"; exit 1; fi
+          python -m greyhound.fastloop --spec "$SPEC" --only "$NAME" --out "out/$NAME"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fastloop-${{ matrix.name }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90
+
+  table:
+    needs: [cache, experiment]
+    if: always() && needs.cache.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fastloop-*
+          merge-multiple: true
+          path: out/
+      - name: The table
+        run: |
+          python -m greyhound.fastloop --spec "$SPEC" --collect out/ --lane quick | tee out/table.txt
+          { echo '## Greyhound fast loop: the quick lane'; cat out/table.md; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: table-quick
+          path: out/
+          retention-days: 90
+
+  table_all:
+    needs: [cache, experiment, slow]
+    if: always() && needs.cache.result == 'success' && needs.cache.outputs.slow != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fastloop-*
+          merge-multiple: true
+          path: out/
+      - name: The table
+        run: |
+          python -m greyhound.fastloop --spec "$SPEC" --collect out/ | tee out/table.txt
+          { echo '## Greyhound fast loop: every experiment'; cat out/table.md; for f in out/*/study_*.md; do [ -f "$f" ] && { echo; echo "### $f"; sed -n '1,60p' "$f"; }; done; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: table-all
+          path: out/
+          retention-days: 90

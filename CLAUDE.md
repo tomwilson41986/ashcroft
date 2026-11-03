@@ -40,7 +40,7 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 | `BETFAIR_PASSWORD` | Betfair Exchange password |
 | `BETFAIR_APP_KEY` | Betfair API application key (the delayed key: every read-only job, the market records) |
 | `API_FOOTBALL_KEY` | API-Football (optional: fixture status, kick-off, cups; the football model runs without it) |
-| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process only (live-trade.yml); Betfair permits no read-only use of live data |
+| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py) |
 
 ## Key Commands
 
@@ -159,10 +159,19 @@ python -m greyhound.model --years 2018-2026 --folds 2024-01,2025-01,2026-01 --fr
 python -m greyhound.track --freeze --cutoff 2026-10-05 --days 3 --summary --out out/greyhound_track.json
 # The greyhound trade-out (the owner, 2 Nov 2026; reports/greyhound_model.md 12): a price taken before the off, closed
 # at the SP, forecast by the horses' closing model; a forward test fixed before its first day, read off the greyhound
-# trader's live-key books (kept with BETFAIR_RECORD=1), frozen once 10 days of them are held (the recorder's are ~90 s
-# stale: report section 13), after the 5 Oct test's run in greyhound-track.yml; the read-only study (greyhound-research.yml)
+# live-key books (greyhound/book_record.py), frozen once 10 days of them are held (the recorder's are ~90 s stale:
+# report section 13), after the 5 Oct test's run in greyhound-track.yml; the read-only study (greyhound-research.yml)
+# (from 2 Nov, the owner: the live key read-only, stakes to win a fixed amount down the ladder, several dogs a race,
+# each back laid at the SP and settled by the result; reports/greyhound_roadmap.md)
+BETFAIR_APP_KEY=<live key> python -m greyhound.book_record --until 21:30      # paper-models.yml: 5 s near the off
 python -m greyhound.tradeout --freeze --days 4 --summary --out out/greyhound_tradeout.json
-python -m research.greyhound.tradeout_study --source trader --out out/greyhound_tradeout_study
+python -m research.greyhound.tradeout_study --source retimed --out out/greyhound_tradeout_study
+# The greyhound fast loop (the owner, 3 Nov 2026: no more 2-3 hour runs; reports/greyhound_roadmap.md 10): the features
+# cached once a change of the feature code (S3 greyhound/feature_cache/<hash>/), an experiment a line of JSON
+# (research/greyhound/experiments/current.json: feature set, greyhound/blocks/ to add, prefixes to drop, objective
+# softmax|binary|pl2|logbsp, recipe quick|confirm), each its own job side by side (greyhound-fastloop.yml)
+python -m greyhound.fastloop --build-cache
+python -m greyhound.fastloop --spec research/greyhound/experiments/current.json --only with_weighin --out out/fastloop
 
 # The football model (reports/football_model.md): football-data.co.uk + openfootball (+ API-Football once keyed, Betfair
 # Historic Data soccer once held) into gold tables with data-quality checks; Dixon-Coles ratings walk-forward, pooled

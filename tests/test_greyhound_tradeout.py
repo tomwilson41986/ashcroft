@@ -80,29 +80,108 @@ def synthetic_day(day=DAY, n_races=40, seed=0, beta_model=0.4):
     return pd.DataFrame(pred), pd.DataFrame(books), pd.DataFrame(markets)
 
 
-def test_close_out_value_is_the_price_against_the_sp():
-    d = pd.DataFrame({"race_id": [1, 1], "race_date": ["2026-11-04"] * 2, "market_id": ["1.1"] * 2,
-                      "mark": ["off_1"] * 2, "won": [1, 0], "back1": [5.0, 3.0], "back1_size": [10.0, 1.0],
-                      "lay1": [5.2, 3.1], "lay1_size": [10.0, 10.0], "bsp": [4.0, 3.5], "edge_win": [0.5, 0.5]})
-    ev = pd.DataFrame({"ev_back": [0.1, 0.1], "ev_lay": [-1.0, 0.1]})
+def _one(**kw):
+    base = {"race_id": 1, "race_date": "2026-11-04", "market_id": "1.1", "mark": "off_1", "won": 0, "p_model": 0.3,
+            "back1": 5.0, "back1_size": 100.0, "back2": 4.8, "back2_size": 100.0, "back3": 4.6, "back3_size": 100.0,
+            "lay1": 5.2, "lay1_size": 100.0, "lay2": 5.4, "lay2_size": 100.0, "lay3": 5.6, "lay3_size": 100.0,
+            "bsp": 4.0}
+    base.update(kw)
+    return pd.DataFrame([base])
+
+
+def test_back_sized_to_win_and_settled_by_the_result_as_the_lay_at_sp_pays():
+    d = _one(back1_size=10.0, back2_size=10.0, back3_size=100.0, won=0)
+    ev = pd.DataFrame({"inv": [1 / 4.0]})                    # every price from 4.6 to 5 clears the bar at 1/BSP = 0.25
     p = to.positions(d, ev, "racebook", bars=(0.03,))
-    back = p[p.side == "back"]
-    assert len(back) == 1                                  # the second offered GBP1, under the stake: not filled
-    assert back.value.iloc[0] == pytest.approx(2.0 * (5.0 / 4.0 - 1))
-    lay = p[p.side == "lay"]
-    assert lay.value.iloc[0] == pytest.approx(2.0 * (1 - 3.1 / 3.5))
-    m = to.settle(p)
-    # one market a rule: commission on that market's net, only when it is a gain
-    assert m.loc[m.side == "back", "net"].iloc[0] == pytest.approx(0.5 * 0.98)
+    back = p[p.side == "back"].iloc[0]
+    target = to.TO_WIN / (5.0 - 1.0)                          # GBP25 to win GBP100 at 5
+    assert back.target == pytest.approx(target)
+    assert back.stake == pytest.approx(25.0)                  # down the ladder: 10 at 5, 10 at 4.8, 5 at 4.6
+    m = (10 * 5.0 + 10 * 4.8 + 5 * 4.6) / 25.0
+    assert back.price == pytest.approx(m)
+    # the dog lost: the back's stake gone, the lay at SP (liability = winnings) wins liability / (BSP - 1)
+    assert back.pnl == pytest.approx(-25.0 + 25.0 * (m - 1) / (4.0 - 1))
+    won = to.positions(d.assign(won=1), ev, "racebook", bars=(0.03,))
+    assert won[won.side == "back"].pnl.iloc[0] == pytest.approx(0.0)  # the dog won: back and lay cancel
+    assert back.clv_value == pytest.approx(25.0 * (m / 4.0 - 1))      # the expectation, kept beside it
+
+
+def test_the_ladder_stops_where_the_price_no_longer_clears_the_bar():
+    d = _one(back1=5.0, back1_size=5.0, back2=4.0, back2_size=100.0)
+    ev = pd.DataFrame({"inv": [1 / 4.5]})                    # 5 clears (+11%), 4 does not (-11%)
+    p = to.positions(d, ev, "racebook", bars=(0.0,))
+    assert p[p.side == "back"].stake.iloc[0] == pytest.approx(5.0)
+    # no back whose winnings are under the GBP10 minimum lay at SP
+    tiny = to.positions(_one(back1_size=2.0, back2=4.0), ev, "racebook", bars=(0.0,))
+    assert tiny.empty or (tiny.side != "back").all()
+
+
+def test_lay_closed_by_a_back_at_sp():
+    d = _one(lay1=3.0, lay1_size=100.0, won=1, bsp=4.0)
+    ev = pd.DataFrame({"inv": [1 / 4.0]})                    # laying 3 against an SP of 4: 1 - 3/4 = +25%
+    p = to.positions(d, ev, "racebook", bars=(0.03,))
+    lay = p[p.side == "lay"].iloc[0]
+    assert lay.stake == pytest.approx(to.TO_WIN / 2.0)        # liability = TO_WIN
+    assert lay.pnl == pytest.approx(lay.stake * (4.0 - lay.price))     # won: the SP back pays more than the lay costs
+    lost = to.positions(d.assign(won=0), ev, "racebook", bars=(0.03,))
+    assert lost[lost.side == "lay"].pnl.iloc[0] == pytest.approx(0.0)
+
+
+def test_several_dogs_a_race_and_commission_on_the_market_net():
+    d = pd.concat([_one(selection_id=1, won=0, bsp=4.0), _one(selection_id=2, won=1, bsp=4.0)], ignore_index=True)
+    ev = pd.DataFrame({"inv": [0.25, 0.25]})
+    p = to.positions(d, ev, "racebook", bars=(0.03,))
+    backs = p[p.side == "back"]
+    assert len(backs) == 2                                    # both dogs in the race backed
+    m = to.settle(backs)
+    assert len(m) == 1                                        # one market
+    gross = backs.pnl.sum()
+    assert m.net.iloc[0] == pytest.approx(gross - to.COMMISSION * max(gross, 0.0))
 
 
 def test_no_position_over_the_price_cap():
-    d = pd.DataFrame({"race_id": [1], "race_date": ["d"], "market_id": ["1"], "mark": ["off_1"], "won": [0],
-                      "back1": [25.0], "back1_size": [100.0], "lay1": [26.0], "lay1_size": [100.0], "bsp": [20.0],
-                      "edge_win": [1.0]})
-    ev = pd.DataFrame({"ev_back": [0.5], "ev_lay": [0.5]})
+    d = _one(back1=25.0, back2=24.0, back3=23.0, lay1=26.0, lay2=27.0, lay3=28.0, bsp=20.0, p_model=0.9)
+    ev = pd.DataFrame({"inv": [0.5]})
     assert to.positions(d, ev, "racebook").empty
     assert to.positions(d, None, "win_edge").empty
+
+
+def test_trades_a_day_and_the_interval_count_every_scored_day():
+    d = _one(won=0)
+    ev = pd.DataFrame({"inv": [0.25]})
+    p = to.positions(d, ev, "racebook", bars=(0.03,))
+    p = p[p.side == "back"]
+    t = to.rule_table(p, days=["2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07"], n_boot=200)
+    r = t.iloc[0]
+    assert r.days == 4 and r.active_days == 1 and r.per_day == pytest.approx(0.2)   # 1 trade over 4 days, rounded
+
+
+def test_a_blank_in_play_value_does_not_empty_the_day():
+    pred, books, markets = synthetic_day(n_races=2)
+    # a CSV with one blank in the column: pandas reads it as float, so the rest read "0.0", not "0" or "False"
+    books["inplay"] = 0.0
+    books.loc[books.index[0], "inplay"] = np.nan
+    assert to._inplay(books.inplay).sum() == 0             # "0.0" and the blank both read as not in play
+    assert len(to.day_panel(pred, books, markets, DAY))
+
+
+def test_retimed_books_sit_at_the_market_last_match():
+    pred, books, markets = synthetic_day(n_races=2)
+    live = books[books.source == "recorder"].copy()
+    polled = pd.to_datetime(live.polled_utc, utc=True)
+    # a delayed feed: every snapshot shows the market 90 seconds earlier, the last match a few seconds before that
+    live["last_match_utc"] = (polled - pd.Timedelta(seconds=93)).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    pre = to.pre_off_books(live, markets, retimed=True)
+    shift = (pd.to_datetime(live.loc[pre.index, "polled_utc"], utc=True) - pre.polled).dt.total_seconds()
+    assert np.allclose(shift, 93)
+    # the snapshot polled 0.4 minutes before the off now sits 1.95 minutes before it, so off_1 has no book there
+    assert (pre.minutes_to_off > 0).all()
+
+
+def test_a_test_day_before_the_first_is_refused():
+    frozen = {"first_test_day": "2026-11-10", "models": {}}
+    with pytest.raises(ValueError):
+        to.track_day(MemStore(), frozen, date(2026, 11, 9))
 
 
 def test_panel_marks_and_whole_races():
@@ -298,3 +377,50 @@ def test_log_bsp_model_fits_before_the_cutoff_and_prices_after():
     assert info["fit_rows"] < len(df)
     assert info["cap"] == 200 and info["rounds"] <= 200 and info["es_rmse_by_round"]
     assert all(v > 0 for v in info["es_rmse_by_round"].values()) and info["hit_cap"] == (info["rounds_run"] >= 200)
+
+
+def test_live_book_record_reads_densely_near_the_off_and_on_until_the_market_closes(tmp_path, monkeypatch):
+    from greyhound import book_record as br
+    import betfair_recorder
+    off = datetime(2026, 11, 3, 14, 0, tzinfo=timezone.utc)
+    clock = {"t": off - timedelta(minutes=20)}
+    reads = []
+
+    class FakeData:
+        def _read(self, method, params):
+            if method == "listMarketCatalogue":
+                if params["filter"]["marketTypeCodes"] != ["WIN"]:
+                    return []
+                return [{"marketId": "1.9", "marketStartTime": off.strftime("%Y-%m-%dT%H:%M:%SZ"), "runners": []}]
+            reads.append((clock["t"], params["priceProjection"]["priceData"]))
+            closed = clock["t"] >= off + timedelta(seconds=40)        # the race went off 40 s late
+            return [{"marketId": "1.9", "status": "CLOSED" if closed else "OPEN", "inplay": False, "runners": []}]
+
+    class Rec:
+        rows = 0
+        def record_catalogue(self, cat): return len(cat)
+        def record_books(self, raw, source, polled_at): return len(raw)
+        def maybe_upload(self, force=False): return True
+
+    def sleep(s):
+        clock["t"] += timedelta(seconds=s)
+
+    out = br.record(off.date(), off + timedelta(hours=1), FakeData(), Rec(), market_types=("WIN",),
+                    now=lambda: clock["t"], sleep=sleep)
+    times = [t for t, _ in reads]
+    assert reads[0][1] == br.PRICE_DATA and "EX_TRADED" in br.PRICE_DATA
+    assert min(times) >= off - timedelta(minutes=br.START_MINUTES)          # nothing read before 15 minutes out
+    gaps_near = [(b - a).total_seconds() for a, b in zip(times, times[1:]) if a >= off - timedelta(minutes=5)]
+    assert max(gaps_near) <= br.EVERY_NEAR + 1.0                            # every 5 s in the last 5 minutes
+    assert max(times) >= off + timedelta(seconds=40) and out["done"] == 1  # on past the off until it closed
+
+
+def test_the_read_only_client_refuses_to_bet():
+    from trading.exchange import BetfairData
+
+    class Client:
+        def _api_call(self, method, params):
+            raise AssertionError("never reached")
+
+    with pytest.raises(ValueError):
+        BetfairData(client=Client())._read("placeOrders", {})
