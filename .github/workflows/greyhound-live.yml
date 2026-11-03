@@ -92,7 +92,8 @@ jobs:
             settle)  python -m greyhound.live --settle --days 3 "${ARGS[@]}" | tee out/greyhound_live.json ;;
             check-card) python -m greyhound.live --check-card "${ARGS[@]}" | tee out/greyhound_live.json ;;
             coverage) python -m greyhound.live --coverage "${ARGS[@]}" | tee out/greyhound_live.json ;;
-            running) python -m greyhound.live --running --out out/greyhound_running.md "${ARGS[@]}" | tee out/greyhound_live.json ;;
+            running) python -m greyhound.live --running --out out/greyhound_running.md "${ARGS[@]}" | tee out/greyhound_live.json
+                     cat out/greyhound_running.md ;;   # the table in the log as well as the summary
           esac
       - name: Summary
         if: always()
