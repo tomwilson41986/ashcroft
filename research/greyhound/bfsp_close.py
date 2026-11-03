@@ -39,7 +39,9 @@ from research.greyhound import limit_study as ls, tradeout_study as ts
 log = logging.getLogger(__name__)
 
 MARKS = ("first_traded", "off_5", "off_3", "off_1")
-MODELS = ("mid", "mid_book", "cl", "gbm")
+MODELS = ("mid", "mid_book", "cl", "gbm", "gbm_deep", "gbm_pooled", "blend")
+GBM_DEEP = dict(num_leaves=31, min_data_in_leaf=30, learning_rate=0.03)
+GBM_DEEP_ROUNDS = 900
 GBM_PARAMS = {"objective": "regression", "learning_rate": 0.05, "num_leaves": 15, "min_data_in_leaf": 50,
               "feature_fraction": 0.8, "bagging_fraction": 0.8, "bagging_freq": 1, "lambda_l2": 1.0, "verbose": -1,
               "seed": 0, "num_threads": 2}
@@ -95,8 +97,11 @@ def sp_book(d: pd.DataFrame) -> float:
     return float(np.median(np.bincount(g, weights=1.0 / d.bsp.to_numpy(float))))
 
 
-def forecast_day(train: pd.DataFrame, test: pd.DataFrame) -> pd.DataFrame:
-    """Every model's log(BSP) forecast for ``test`` from ``train`` (days before it only)."""
+def forecast_day(train: pd.DataFrame, test: pd.DataFrame, pooled: pd.DataFrame | None = None,
+                 importance: dict | None = None) -> pd.DataFrame:
+    """Every model's log(BSP) forecast for ``test`` from ``train`` (days before it only). ``pooled``: the rows of
+    every mark of those days (one model for all marks, minutes to the off among its inputs); ``gbm_deep``: larger
+    trees, more rounds; ``blend``: the mean of ``cl`` and ``gbm``. ``importance`` collects the trees' gain."""
     import lightgbm as lgb
     out = test[["race_id", "race_date", "market_id", "selection_id", "mark", "bsp", "won"]].copy()
     out["y"] = np.log(test.bsp.to_numpy(float))
@@ -111,6 +116,18 @@ def forecast_day(train: pd.DataFrame, test: pd.DataFrame) -> pd.DataFrame:
     m = lgb.train(GBM_PARAMS, lgb.Dataset(train[feats].astype(float), resid), GBM_ROUNDS)
     raw = test["log_mid"].to_numpy(float) + m.predict(test[feats].astype(float))
     out["gbm"] = rescale(raw, test, book)
+    if importance is not None:
+        for k, v in zip(feats, m.feature_importance("gain")):
+            importance[k] = importance.get(k, 0.0) + float(v)
+    deep = lgb.train(dict(GBM_PARAMS, **GBM_DEEP), lgb.Dataset(train[feats].astype(float), resid), GBM_DEEP_ROUNDS)
+    out["gbm_deep"] = rescale(test["log_mid"].to_numpy(float) + deep.predict(test[feats].astype(float)), test, book)
+    if pooled is not None and len(pooled):
+        pr = np.log(pooled.bsp.to_numpy(float)) - pooled["log_mid"].to_numpy(float)
+        pm = lgb.train(GBM_PARAMS, lgb.Dataset(pooled[feats].astype(float), pr), GBM_ROUNDS)
+        out["gbm_pooled"] = rescale(test["log_mid"].to_numpy(float) + pm.predict(test[feats].astype(float)), test, book)
+    else:
+        out["gbm_pooled"] = out["gbm"]
+    out["blend"] = 0.5 * (out["cl"] + out["gbm"])
     return out
 
 
@@ -168,6 +185,10 @@ def report_md(res: dict) -> str:
         L.append(f"| {r['mark']} | {r['model']} | {r['runners']} | {r['races']} | {r['rmse']} | {r['mae']} | "
                  f"{r['bias']} | {r['race_rel_rmse']} | {r['xent_a_race']} | {r['rmse_vs_mid']} | "
                  f"{r['rmse_vs_mid_90%']} |")
+    if res.get("importance"):
+        L += ["", "What the boosted model (gbm) leans on, its gain summed over every fit:", "",
+              "| Feature | Share of gain |", "|---|---|"]
+        L += [f"| {k} | {v} |" for k, v in res["importance"].items()]
     return "\n".join(L) + "\n"
 
 
@@ -195,15 +216,18 @@ def main(argv=None) -> int:
         days = sorted(panel.race_date.astype(str).unique())
         scored = days[a.min_train_days:]
         res["scored_days"] = f"{scored[0]} to {scored[-1]} ({len(scored)})" if scored else None
-        fc = []
+        fc, imp = [], {}
         for day in scored:
+            pooled = panel[panel.race_date.astype(str) < day]
             for mark, g in panel.groupby("mark"):
                 tr, te = g[g.race_date.astype(str) < day], g[g.race_date.astype(str) == day]
                 if len(tr) and len(te):
-                    fc.append(forecast_day(tr, te))
+                    fc.append(forecast_day(tr, te, pooled=pooled, importance=imp))
             _log(f"{day}: forecast")
         f = pd.concat(fc, ignore_index=True) if fc else pd.DataFrame()
         res["scores"] = scores(f, scored) if len(f) else []
+        tot = sum(imp.values()) or 1.0
+        res["importance"] = {k: round(v / tot, 4) for k, v in sorted(imp.items(), key=lambda kv: -kv[1])}
     res["seconds"] = round(time.time() - t0)
     out.with_suffix(".json").write_text(json.dumps(res, indent=1, default=str))
     md = report_md(res)
