@@ -162,7 +162,8 @@ def feature_set(meta: dict, name: str) -> list[str]:
 def lane(exp: dict, spec: dict) -> str:
     """``slow`` for an experiment off the quick recipe or with the study, ``quick`` otherwise: the CI runs the quick
     lane's table as soon as it is done, without waiting on the slow lane."""
-    slow = exp.get("recipe", spec.get("recipe", "quick")) != "quick" or exp.get("study") or exp.get("limit")
+    slow = (exp.get("recipe", spec.get("recipe", "quick")) != "quick" or exp.get("study") or exp.get("limit")
+            or exp.get("bfsp"))
     return "slow" if slow else "quick"
 
 
@@ -268,6 +269,12 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     elif obj == "logbsp":
         pred["pred_bsp"] = np.exp(raw)
         pred["p_model"] = race_norm(1.0 / pred.pred_bsp, pred.race_id).to_numpy()
+        if exp.get("rescale_book"):
+            # the SP book's usual total from the fit's races: each race's chances normalised and scaled to it, so the
+            # forecast's level is the SP's as well as its order (the closing study: the mid 0.635 -> 0.492 so)
+            fr = pd.DataFrame({"r": df.race_id.to_numpy()[fit_i], "b": df.bsp.to_numpy(float)[fit_i]})
+            book = float(np.median((1.0 / fr.b).groupby(fr.r).sum()))
+            pred["pred_bsp"] = 1.0 / (book * pred.p_model)
     else:
         pred["p_model"] = _race_softmax(raw.astype(float), _starts(race[test_i]))
     imp = pd.Series(m.feature_importance("gain"), index=feats)
@@ -331,6 +338,52 @@ def paired_vs_baseline(folder: Path, baseline: str | None, n_boot: int = 2000, s
     return out
 
 
+def paired_bsp_rmse(folder: Path, baseline: str | None, n_boot: int = 2000, seed: int = 0) -> dict:
+    """The accuracy of the BFSP forecast (the owner, 3 Nov 2026: "the final price / log of final price is key"): each
+    log-BSP experiment's RMSE of log(BSP) less the baseline's on the same runners, with its 90% interval from a
+    bootstrap over days. Negative: a more accurate SP forecast."""
+    files = {p.stem.removeprefix("pred_"): p for p in folder.rglob("pred_*.parquet")}
+    if not baseline or baseline not in files:
+        return {}
+    key = ["race_id", "dog_id"]
+
+    def se(d, col):
+        ok = (d.bsp > 1) & (d.pred_bsp > 1)
+        d = d[ok]
+        return d.assign(**{col: (np.log(d.pred_bsp) - np.log(d.bsp)) ** 2})
+
+    b0 = pd.read_parquet(files[baseline])
+    if "pred_bsp" not in b0:
+        return {}
+    base = se(b0, "se_b")[key + ["race_date", "se_b"]]
+    rng = np.random.default_rng(seed)
+    out = {}
+    for name, f in files.items():
+        e = pd.read_parquet(f)
+        if "pred_bsp" not in e:
+            continue
+        d = se(e, "se_e")[key + ["se_e"]].merge(base, on=key, how="inner")
+        day = d.groupby("race_date").agg(e=("se_e", "sum"), b=("se_b", "sum"), n=("se_e", "size"))
+        if len(day) < 2:
+            continue
+        idx = rng.integers(0, len(day), (n_boot, len(day)))
+        nn = day.n.to_numpy()[idx].sum(1)
+        diff = np.sqrt(day.e.to_numpy()[idx].sum(1) / nn) - np.sqrt(day.b.to_numpy()[idx].sum(1) / nn)
+        n = day.n.sum()
+        out[name] = {"rmse": round(float(np.sqrt(day.e.sum() / n)), 4),
+                     "diff": round(float(np.sqrt(day.e.sum() / n) - np.sqrt(day.b.sum() / n)), 4),
+                     "ci90": [round(float(np.percentile(diff, 5)), 4), round(float(np.percentile(diff, 95)), 4)],
+                     "runners": int(n), "days": int(len(day))}
+    return out
+
+
+def _bsp_cells(r: dict) -> tuple[str, str]:
+    p = r.get("paired_bsp")
+    if not p:
+        return (str(r.get("log_bsp_rmse", "")), "")
+    return (str(p["rmse"]), f"{p['diff']:+.4f} ({p['ci90'][0]:+.4f} to {p['ci90'][1]:+.4f})")
+
+
 def _short_cell(r: dict) -> str:
     sh = r.get("shortening") or {}
     if not sh or "skipped" in sh:
@@ -356,12 +409,15 @@ def table(results: list[dict], baseline: str | None = None) -> str:
     base = next((r for r in results if r["name"] == baseline), results[0])
     lines = [f"Baseline: {base['name']}. Test {base['test_from']} to {base['test_to']} (log-loss); the SP forecast on "
              f"the recorded books from {STUDY_FROM}, walk-forward by day.", "",
-             "| Experiment | Features | Objective | Rounds | Adds to the SP forecast a race: first traded / 5 min / "
-             "3 min | vs baseline (90%, by day) | Log-loss | vs baseline (90%, by day) | Seconds |",
-             "|---|---|---|---|---|---|---|---|---|"]
+             "| Experiment | Features | Objective | Rounds | RMSE log(BSP) | vs baseline (90%, by day) | Adds to the SP "
+             "forecast a race: first traded / 5 min / 3 min | vs baseline (90%, by day) | Log-loss | vs baseline (90%, "
+             "by day) | Seconds |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in results:
+        rmse, rmse_vs = _bsp_cells(r)
         lines.append(f"| {r['name']} | {r['features']} | {r['spec'].get('objective', 'softmax')} | {r['rounds']} | "
-                     f"{_short_cell(r)} | {_short_vs(r, base)} | {r['logloss']} | {_vs(r, base)} | {r['seconds']} |")
+                     f"{rmse} | {rmse_vs} | {_short_cell(r)} | {_short_vs(r, base)} | {r['logloss']} | "
+                     f"{_vs(r, base)} | {r['seconds']} |")
     return "\n".join(lines)
 
 
@@ -391,8 +447,10 @@ def main(argv=None) -> int:
         rs.sort(key=lambda r: order.index(r["name"]) if r["name"] in order else len(order))
         paired = paired_vs_baseline(Path(a.collect), spec.get("baseline") or (rs[0]["name"] if rs else None))
         short = paired_shortening(Path(a.collect), spec.get("baseline") or (rs[0]["name"] if rs else None))
+        bsp = paired_bsp_rmse(Path(a.collect), spec.get("baseline") or (rs[0]["name"] if rs else None))
         for r in rs:
             r["paired"] = paired.get(r["name"])
+            r["paired_bsp"] = bsp.get(r["name"])
             r["paired_short"] = short.get(r["name"])
         md = table(rs, spec.get("baseline"))
         Path(a.collect, "table.md").write_text(md + "\n")
@@ -432,9 +490,12 @@ def main(argv=None) -> int:
             res["study"] = run_study(store, pred, e["name"], out)
         if e.get("limit"):
             res["limit"] = run_limit(store, pred, e["name"], out)
+        if e.get("bfsp"):
+            res["bfsp"] = run_bfsp(store, pred, e["name"], out)
         (out / f"result_{e['name']}.json").write_text(json.dumps(res, indent=1, default=str))
         # each runner's log-loss contribution, for the paired comparison against the baseline in --collect
-        pred[["race_id", "race_date", "dog_id", "won", "p_model"]].to_parquet(out / f"pred_{e['name']}.parquet", index=False)
+        keep = ["race_id", "race_date", "dog_id", "won", "p_model"] + [c for c in ("bsp", "pred_bsp") if c in pred]
+        pred[keep].to_parquet(out / f"pred_{e['name']}.parquet", index=False)      # bsp, pred_bsp: the paired RMSE
         results.append(res)
         _log(json.dumps({k: res[k] for k in ("name", "logloss", "rounds", "seconds")}))
     print(table(results, spec.get("baseline")))
@@ -544,6 +605,23 @@ def run_limit(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
     limit_study.main(["--from", STUDY_FROM, "--to", last, "--pred-dir", str(out / "pred" / name),
                       "--source", "retimed", "--out", str(out / f"limit_{name}")])
     return {"report": f"limit_{name}.md"}
+
+
+def run_bfsp(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
+    """The closing-price study (``research.greyhound.bfsp_close``) with an experiment's prices as our price: how much
+    a better pre-race price sharpens the forecast of log(BSP) from the book (the owner, 3 Nov 2026: "the final price /
+    log of final price is key")."""
+    from research.greyhound import bfsp_close, score_full
+    days = pred[pred.race_date.astype(str) >= STUDY_FROM]
+    if not len(days):
+        return {"skipped": f"no test days from {STUDY_FROM}"}
+    last = str(days.race_date.max())
+    if not (out / "pred" / name).exists():
+        score_full.score_days({name: days}, date.fromisoformat(STUDY_FROM), date.fromisoformat(last), store,
+                              out / "pred")
+    bfsp_close.main(["--from", STUDY_FROM, "--to", last, "--pred-dir", str(out / "pred" / name),
+                     "--source", "retimed", "--out", str(out / f"bfsp_{name}")])
+    return {"report": f"bfsp_{name}.md"}
 
 
 if __name__ == "__main__":

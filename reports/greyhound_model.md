@@ -1116,3 +1116,92 @@ What this says:
   owner's way of trading), the SP close as `lay80_drift_sp`.
 - Overall the grid is still at chance on this holdout: 3 of 240 chosen rules had the 90% interval's lower bound above
   zero, where about 12 are expected by chance alone (run 41633779822).
+
+## 26. The BFSP model: the new features, the closing price, and the two together (3 Nov 2026)
+
+The owner, 3 Nov: "we need to focus on improving our BFSP model. The final price / log of final price is key. Once
+we can get the most accurate BFSP model then we can trade around it." Two models make the forecast of the SP:
+
+- **The pre-race model** (the fast loop's `logbsp` objective): log(BSP) from form alone, before the market forms.
+- **The closing model** (`research/greyhound/bfsp_close.py`): log(BSP) from the book at a mark, with the pre-race
+  price among its inputs.
+
+Accuracy is the RMSE of log(BSP): 0.30 is a typical miss of about 35% on the price.
+
+### 26.1 Batch 6: the new feature blocks (greyhound-fastloop.yml run 41659861848)
+
+Each block on its own on top of `core` (every block before 3 Nov, the weigh-in included), learning rate 0.05,
+log-BSP objective. Test window 1 Jun to 2 Nov 2026; differences against core with 90% intervals by day.
+
+| Experiment | Log-loss vs core | Adds to the SP forecast at first traded |
+|---|---|---|
+| core | 0 (0.44231) | 0.00704 |
+| + F3 times (track-normalised, meeting variant) | -0.00082 (-0.00107 to -0.00057) | 0.00771 |
+| + expected final time | -0.00048 (-0.00074 to -0.00022) | 0.00718 |
+| + F6 ability with uncertainty | -0.00019 (-0.00045 to +0.00006) | 0.00725 |
+| + F5 trainer intent | +0.00004 (-0.00021 to +0.00028) | 0.00711 |
+| all four | -0.00135 (-0.00167 to -0.00102) | 0.00784 |
+| all four + F2 race simulator | -0.00139 (-0.00171 to -0.00107) | 0.00812 |
+| all four + F2 + L2 forecast price | -0.00142 (-0.00172 to -0.00111) | 0.00806 |
+
+F3 and the expected time carry the gain. F5 adds nothing. L2 is almost absent from the 2024-on training window: it
+was first recorded on 6 Oct 2026.
+
+### 26.2 The closing price on the recorder's books (greyhound-bfsp.yml runs 41668293745, 41669591841)
+
+At each mark, walk-forward by day over 20 scored days, 14 Oct to 2 Nov 2026 (2,464 races at first traded). Our price
+is the 5 Oct forward test's model. RMSE of log(BSP):
+
+| Mark | Market mid | Mid scaled to the SP book | Live trader's logit | Trees, per mark | Trees, pooled over marks |
+|---|---|---|---|---|---|
+| First traded | 0.635 | 0.492 | 0.356 | 0.321 | 0.320 |
+| 5 min out | 0.709 | 0.529 | 0.414 | 0.369 | 0.370 |
+| 3 min out | 0.337 | 0.299 | 0.244 | 0.231 | 0.225 |
+| 1 min out | 0.158 | 0.157 | 0.146 | 0.149 | 0.144 |
+
+- **The mid is biased early:** it sits about 35% short of the BSP at first traded (bias -0.35), because the early book
+  carries a large overround and greyhound prices drift.
+- **The trees lean on:** the last trade against the mid (22% of gain), the micro-price (17%), our price (20% in two
+  forms) and the spread (10%).
+- **Traded volume scores 0%:** the recorder's books never had it. The live-key books do, from 3 Nov.
+
+### 26.3 Batch 7: the pre-race model's accuracy, and the closing model on its prices (run 41671443774)
+
+The pre-race model, RMSE of log(BSP) on the test window. The paired intervals were not saved for this batch; they
+are from batch 8.
+
+| Pre-race model | RMSE log(BSP) |
+|---|---|
+| core | 0.4418 |
+| best (all four new blocks and the simulator) | 0.4282 |
+| best, fewer features a tree (0.6) | 0.4280 |
+| best, 63 leaves | 0.4295 |
+| best, rescaled to the SP book in each race | **0.4086** |
+
+The closing model with each pre-race model as our price, trees pooled over marks, RMSE of log(BSP):
+
+| Mark | With the 5 Oct model | With core | With best |
+|---|---|---|---|
+| First traded | 0.320 | 0.292 | **0.287** |
+| 5 min out | 0.370 | 0.330 | **0.321** |
+| 3 min out | 0.225 | 0.217 | **0.215** |
+| 1 min out | 0.144 | 0.144 | 0.144 |
+
+What this says:
+
+- **The two models multiply.** A better pre-race price makes the closing forecast more accurate wherever the book
+  still has something to learn.
+- **The size of the gain:** at first traded, 0.320 with the old model's price, 0.287 with the best. The error is 55%
+  below the market mid's (0.635).
+- **At 1 minute out it makes no difference:** the market has found the SP.
+- **Rescaling the pre-race prices** to the SP book's usual total cuts their error by 0.020 (0.4282 to 0.4086).
+
+### 26.4 What comes next
+
+1. **The live pre-race model:** retrain it on the best features (all four new blocks and the simulator, log-BSP,
+   rescaled).
+2. **The closing model on the live-key books:** refit it as the days build up, with traded volume and the order-flow
+   features (M1 to M3) the dense books carry. This is the step that should close the gap between the recorded and
+   the live forecasts (section 25 and the live trades of 3 Nov).
+3. **Then put the pooled trees in the live trader,** in place of the logit, once the live-books evaluation confirms
+   them on live books.
