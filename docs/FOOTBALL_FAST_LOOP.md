@@ -57,6 +57,7 @@ Blocks so far:
 | `market_state` | margin, favourite, draw, implied total, Betfair's early gap |
 | `ah_consistency` | the handicap line against the 1X2 |
 | `book_gaps` | soft books against the sharp open, and dispersion |
+| `avg_anchor` | the market average's book against Betfair's, the maximum and Bet365 (Avg from 2019/20, Betbrain's average before) |
 
 ## 3. Run an experiment
 
@@ -141,3 +142,16 @@ the sheets, at the price then, measured on the recorder's books). The lab now re
 +0.83 to +2.36, 1,007 bets). That season was the one 29 screened configurations were read on. The same costing gave the
 earlier linear rule +0.88% on 2024/25 and -0.17% on the holdout. Read it as a reason to pre-register and paper-trade,
 not as an edge.
+
+## 7. From a screen to a registered rule (3 Nov 2026)
+
+The first rule through the protocol is `reports/preregistration_football_stack.md`. Code:
+`research/open_close/football_stack_trial.py`.
+
+- **Arm:** the stack arm with the best R2 on the 2024/25 fold. That is the one fold whose same-book rows are Betfair's,
+  the market traded. Team features alone: 4.18%. With the five blocks: 3.56%. Avg-anchored: 2.87%.
+- **Threshold:** chosen by `sweep`: 0.04.
+- **Models:** fitted once and frozen by `freeze`, with SHA-256 in the file. `score` refuses models whose hashes differ.
+
+The blocks win on the pooled Pinnacle seasons but not on Betfair's. A block that reads Pinnacle's open describes a book
+this rule does not trade, and Pinnacle's early prices are stale from July 2025.

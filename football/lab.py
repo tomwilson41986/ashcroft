@@ -165,9 +165,15 @@ def early_books(gs, gold: pd.DataFrame) -> pd.DataFrame:
             "MaxA": "bk_max_a", "B365H": "bk_b365_h", "B365D": "bk_b365_d", "B365A": "bk_b365_a",
             "PSH": "bk_ps_h", "PSD": "bk_ps_d", "PSA": "bk_ps_a", "Avg>2.5": "bk_avg_o", "Avg<2.5": "bk_avg_u",
             "Max>2.5": "bk_max_o", "Max<2.5": "bk_max_u"}
+    # before 2019/20 football-data published the average and best prices as Betbrain's (BbAv, BbMx): the same quantity
+    # under an older name, used where the newer column is empty (checked 3 Nov 2026: the two never overlap)
+    older = {"AvgH": "BbAvH", "AvgD": "BbAvD", "AvgA": "BbAvA", "MaxH": "BbMxH", "MaxD": "BbMxD", "MaxA": "BbMxA",
+             "Avg>2.5": "BbAv>2.5", "Avg<2.5": "BbAv<2.5", "Max>2.5": "BbMx>2.5", "Max<2.5": "BbMx<2.5"}
     out = pd.DataFrame({"match_id": ids["match_id"]})
     for src, dst in cols.items():
-        v = pd.to_numeric(ids[src], errors="coerce") if src in ids.columns else np.nan
+        v = pd.to_numeric(ids[src], errors="coerce") if src in ids.columns else pd.Series(np.nan, index=ids.index)
+        if src in older and older[src] in ids.columns:
+            v = v.where(v > 1.0, pd.to_numeric(ids[older[src]], errors="coerce"))
         out[dst] = np.where(np.asarray(v, float) > 1.0, v, np.nan)
     return out.drop_duplicates("match_id")
 
@@ -215,8 +221,12 @@ def add_blocks(m: pd.DataFrame, names: list[str] | None = None) -> tuple[pd.Data
 def resolve(spec: str, fam: dict, blocks: dict, columns) -> list[str]:
     """``team_all+xg_core+schedule+r_diff`` -> the column list (families, blocks or single columns)."""
     cols: list[str] = []
+    drop: list[str] = []
     for part in spec.split("+"):
         part = part.strip()
+        if "-" in part:                                   # family-col: a family without some of its columns
+            part, *minus = [x.strip() for x in part.split("-")]
+            drop += minus
         if part in fam and part in blocks:
             raise SystemExit(f"{part!r} names both a feature family and a block: rename the block")
         if part in fam:
@@ -227,7 +237,7 @@ def resolve(spec: str, fam: dict, blocks: dict, columns) -> list[str]:
             cols.append(part)
         else:
             raise SystemExit(f"unknown arm part {part!r}: not a family, block or column")
-    return list(dict.fromkeys(cols))
+    return [c for c in dict.fromkeys(cols) if c not in drop]
 
 
 # ---------------------------------------------------------------------------

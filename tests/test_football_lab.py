@@ -26,6 +26,8 @@ def matrix():
         m[f"bk_avg_{o}"] = m[f"open_{o}"] * 0.97
         m[f"bk_max_{o}"] = m[f"open_{o}"] * 1.02
         m[f"bk_b365_{o}"] = m[f"open_{o}"] * 0.96
+    m["bk_avg_o"], m["bk_avg_u"] = m["open_o25"] * 0.97, m["open_u25"] * 0.97
+    m["bk_max_o"], m["bk_max_u"] = m["open_o25"] * 1.02, m["open_u25"] * 1.02
     m["open_ah_line"] = -np.round((m["molam_h"] - m["molam_a"]) * 4) / 4
     m["open_ah_h"], m["open_ah_a"] = 1.95 + rng.normal(0, 0.03, len(m)), 1.95 + rng.normal(0, 0.03, len(m))
     m["fd_code"], m["open_1x2_src"], m["close_1x2_src"] = "E0", "PS", "PSC"
