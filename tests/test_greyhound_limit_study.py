@@ -215,3 +215,17 @@ def test_the_exits_compared_on_the_same_entries():
     assert s["sp"]["dev_median_vs_last"] == 1.0 and s["sp"]["holdout_median_vs_last"] == -2.0
     assert s["tp2"]["dev_better%"] == 0.0 and s["tp2"]["holdout_better%"] == 100.0
     assert xc["rows"][0]["hold_tp2"] == 4.0
+
+
+def test_the_strict_fill_needs_a_trade_beyond_our_price():
+    d = pd.DataFrame({"back1": [4.0, 4.0], "lay1": [4.4, 4.4], "fut_back_max": [4.6, 4.6],
+                      "fut_lay_min": [4.1, 4.1], "fut_lt_max": [4.8, 4.8], "fut_lt_min": [4.1, 4.0]})
+    # a lay at 4.1: the traded rule fills it at a trade at 4.1; strict only once a trade is under 4.1
+    f, _, _ = ls.fills(d, "lay", np.array([4.1, 4.1]), "traded")
+    assert f.tolist() == [True, True]
+    f, _, _ = ls.fills(d, "lay", np.array([4.1, 4.1]), "strict")
+    assert f.tolist() == [False, True]
+    f, _, _ = ls.fills(d, "back", np.array([4.8, 4.7]), "strict")
+    assert f.tolist() == [False, True]
+    f, _, taken = ls.fills(d, "lay", np.array([4.5, 4.5]), "strict")
+    assert f.all() and taken.all()                            # at or beyond the price on offer: taken at once

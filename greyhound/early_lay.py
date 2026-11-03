@@ -53,7 +53,8 @@ CONFIG = {
     "min_order": 1.0,                         # Betfair's smallest stake on a limit order
     "min_sp_back": 2.0,                       # the smallest back at the SP that closes a lay (greyhound.tradeout)
     "daily_loss_limit": None,                 # the owner, 3 Nov: no loss limit, watched and stopped by hand
-    "max_open_liability": 1000.0,             # a guard against a fault, not a limit on the trading
+    "max_open_liability": 1000.0,
+    "rest_only": True,                        # never lay at or above the mid: rest in the queue, never take             # a guard against a fault, not a limit on the trading
     "watch_minutes": 60.0,                    # markets off within this are watched for their first trades
     "min_rest_seconds": 60.0,                 # no lay placed this close to the green-up
     "green_seconds": 5.0,                     # green up from this many seconds before the scheduled off (the
@@ -130,7 +131,10 @@ def decide(d: pd.DataFrame, fit: dict, cfg: dict) -> pd.DataFrame:
     x["drift"] = ~(x.f_bsp.to_numpy(float) < x["mid"].to_numpy(float))       # limit_study.gate_flags' 'drift'
     x["lay_price"] = ls.ladder(x.f_bsp.to_numpy(float) * (1 - cfg["margin"]), up=False)
     ok = np.isfinite(x.lay_price) & (x.lay_price > 1.0) & (x.lay_price <= cfg["max_price"])
-    x["lay"] = x.drift & ok
+    # the owner, 3 Nov 2026: never at or above the market's mid, so a lay only ever rests in the queue and never takes
+    # the price on a forecast that overstates the drift (the first live lays: those above the mid lost GBP17.85 of 20.39)
+    x["below_mid"] = x.lay_price.to_numpy(float) < x["mid"].to_numpy(float) - 1e-9
+    x["lay"] = x.drift & ok & (x.below_mid if cfg.get("rest_only", True) else True)
     return x
 
 
@@ -417,9 +421,19 @@ class EarlyLay:
                    "trap": info.loc[sid, "trap"], "dog": info.loc[sid, "dog_name"] if "dog_name" in info else "",
                    "f_bsp": round(float(r.f_bsp), 3), "mid": round(float(r.mid), 3), "p_model": round(float(r.p_model), 4)}
             if not r.lay:
-                rows.append({**row, "action": "no_lay", "error": "forecast to shorten" if not r.drift else "price"})
+                why = "forecast to shorten" if not r.drift else ("at or above the mid" if not r.below_mid else "price")
+                rows.append({**row, "action": "no_lay", "price": float(r.lay_price) if np.isfinite(r.lay_price) else None,
+                             "error": why})
                 continue
             price = float(r.lay_price)
+            q = b.runners.get(sid)                           # the book now, as the order goes in
+            if self.cfg.get("rest_only", True) and q is not None and q.best_back:
+                from model.race_book import market_now
+                cur = float(market_now([q.best_back[0]], [q.best_lay[0] if q.best_lay else np.nan])[0])
+                if price >= cur - 1e-9:
+                    rows.append({**row, "action": "no_lay", "price": price,
+                                 "error": f"at or above the mid now ({cur:.2f})"})
+                    continue
             size = stake_for(price, self.cfg)
             ref = f"{REF}{self.day:%m%d}-{mid[-8:]}-{sid}-l"
             fill = self.orders.lay(mid, sid, price, size, ref)
