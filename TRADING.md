@@ -1577,6 +1577,54 @@ with trading/STOP set or unreadable, never after 20:30 UK, never one the owner c
 minutes for the runner is reported, and each event goes to the owner in the day's GitHub issue "Live trading:
 <day>". live-trade.yml is not changed.
 
+**The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
+`runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
+(six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
+SIGINT then SIGKILL), the listener gone at 06:09:50 and started again at 06:09:50 as a fresh service; the job it was
+running (the 05:17 session) was cancelled with it. 23 Oct is the same to the second: the upgrade at 06:53:48, the
+shutdown at 06:53:52 ("Runner will be shutdown for UserCancelled", the job cancelled). The upgrade timer is
+`apt-daily-upgrade.timer`, 06:00 UTC plus a random delay of up to an hour, so it fires inside the trading window every
+morning (next: 4 Nov 06:53 UTC); it only kills the session on the mornings a package lands that needrestart decides the
+runner's service depends on (22 and 28 Oct upgraded without a restart). The fix is the owner's to say yes to (nothing
+on the server is changed without it): a needrestart override that leaves the runner's service alone
+(`/etc/needrestart/conf.d/runner.conf`: `$nrconf{override_rc}{qr(^actions\.runner)} = 0;`), and the upgrade timer
+moved to after the racing (a systemd drop-in for `apt-daily-upgrade.timer`, `OnCalendar=*-*-* 22:45`,
+`RandomizedDelaySec=10m`). Until then the watchdog restarts a killed session within 10 minutes (it has done nothing
+yet: 36 runs on 3 Nov, all "ok", no issue opened).
+
+**The strategy arms** (the owner, 3 Nov: "Run; 1 2 3 4 5 6"; `research/arms/`, read-only; the full run
+41703469250, 113 minutes, 4 processes; ledger `arms-full-1103`; the probe `arms-probe-1103`). Six ways to earn more
+from the same model on the recorded books, each replayed through the live trader's own code on 12 Oct - 1 Nov (21
+days; 2 Nov had no price file yet), every back closed at the BSP, 2% on the winnings, after the non-runners' cuts
+("reduced"), at the replay's scale 1.0 (live is 0.80). The rule itself: GBP6,101 (GBP291 a day; CLV 11.2% at the fill,
+6.9% at the settled price). The arms:
+- **The rule's parameters** (1): a GBP30 stake floor at 21 and over GBP6,440 (+GBP339 over 21 days, +5.6%); GBP50
+  GBP6,504 (+GBP403, ahead on 13 of 21 days); GBP30 from 11 GBP6,448. A bar rising 1%/hour GBP5,766 and 2%/hour
+  GBP5,402 (higher CLV, 9.8% and 13.3%, on much less money); a stop at 09:00 GBP5,457; no top-ups GBP2,583; two
+  top-ups GBP4,999. The money is in the top-ups and the full window: nothing earns more by backing less.
+- **Lays** (2): the rule mirrored on the horses the model has shorter than the market (edge 3%, lay at 20 or under,
+  GBP400 at risk a horse, GBP4,000 a day, closed by a back at the BSP): +GBP827 over 21 days (GBP39 a day) on
+  GBP75,509 of liability (0.44% on the liability; 15 of 21 days up); at 10 or under +GBP772. A real but thin second
+  book.
+- **The race book** (3; `race_book.py`, Kelly at the close, theta and delta 3%, GBP600 a race, GBP4,000 a day,
+  re-planned every 5 minutes, filled at no worse than the planned price): backs only GBP3,779 (GBP180 a day) on
+  GBP78,153 of exposure, with lays GBP3,804, from 08:00 with lays GBP1,591; held to the result instead of the SP
+  GBP766, GBP1,467, GBP1,690. Less than the rule on the same money: the Kelly sizing spreads the stake over more horses
+  at thinner edges.
+- **Exits before the off** (6; the trader's own 13,065 fills, GBP77,917): every rule loses against the lay at the BSP
+  (GBP6,620 net): a lay at T-1 -GBP1,683, T-5 -GBP2,238, T-15 -GBP2,148; take-profit at 12% -GBP3,934, at 3% -GBP5,618;
+  stop-losses -GBP16,618 to -GBP18,777 (they fire on 76-96% of fills, a median 7.5 hours before the off, on drift the
+  SP then recovers). Hold to the SP.
+- **The place market** (4; Harville place chances from the win model, a place closing model fitted walk-forward on the
+  recorded place books): at a 3% bar -GBP3,204 (-GBP153 a day; CLV -5.7% at the settled price), at 6% -GBP4,082. The
+  win model's edge does not carry to the place book as priced.
+- **The evening before** (5; the win books from 17:00 UK, the rule's bar): +GBP600 over 21 days on GBP3,911 staked
+  (CLV 17.6%), fills on 13 of 21 days, GBP10-145 a day; the evening books carry a 25-226% spread and GBP18-330 matched
+  a market. Nothing to scale.
+Nothing here changes the live rule (the owner decides). The one candidate for a pre-registered test is the stake floor
+at the long prices (+5-7% on 21 days, ahead 13 of 21: not yet significant); the lays would be a second book of their
+own, GBP3,600 a day of liability for about GBP39.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
