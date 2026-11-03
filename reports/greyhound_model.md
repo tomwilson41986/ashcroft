@@ -1038,7 +1038,7 @@ stopping, under the 10,000-round cap.
 | card_lr05 (card-safe, 0.05) | 8,917 | 0.00694 / 0.01360 / 0.00028 | -0.00029 (-0.00042 to -0.00017) | 0.44238 | -0.00035 (-0.00059 to -0.00012) | 1,604 |
 
 - **The best price yet** at calling the move to the SP is the weigh-in at 0.05. Its log-loss (0.44207) is the best of
-  any quick fit and within 0.0002 of section 20's slow best_confirm (0.44225), in a third of the time.
+  any fit so far, 0.0002 better than section 20's slow best_confirm (0.44225), in about 20 minutes.
 - The first-bend and style-draw blocks add nothing on top of it.
 - The weigh-in is published live at 12 tracks only. The card-safe model at 0.05 is the one to serve elsewhere.
 
@@ -1055,7 +1055,7 @@ stopping, under the 10,000-round cap.
 | Lay at the best back price (join): development | 13 | 115.8 | +1.06% (-0.10 to +2.91) | +0.97% | -0.71% |
 | Lay at the best back price (join): **holdout** | 7 | 119.9 | +0.76% (+0.19 to +1.40) | +3.29% | +0.32% |
 
-- Compared with section 22 on the 5 October model, the 80% lay's development return rises from +1.24% to +1.90%. Its
+- Compared with section 22 on the 5 October model (whose development days stop a day earlier, 12 against 13), the 80% lay's development return rises from +1.24% to +1.90%. Its
   holdout CLV rises from +6.0% to +9.1%, and its holdout return falls from +1.92% to +1.42%, both intervals clear of
   zero.
 - Better prices make the early lay's prices better. The study is still at chance overall, and the size matched is
