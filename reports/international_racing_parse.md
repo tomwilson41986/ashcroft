@@ -52,7 +52,8 @@ started, because the model needs an exchange to trade on first (the owner's rule
 ## 3. The deciding check: does Betfair trade these races?
 
 `sources/betfair_census.py` reads, for every country Betfair lists horse racing in: its win markets,
-venues and the money matched so far. It makes one read-only call per country, on the delayed key. It runs at
+venues and the money matched so far. It makes one read-only listMarketCatalogue call per day of the window, on the
+delayed key, and groups the markets by each event's country. It runs at
 the start of the paper-models job (`paper-models.yml`, 05:45 UTC, its own runner, never in the live horse jobs: the
 owner, 2 Nov 2026), with a 7-day window, so it lists every country's markets for the week, Hong Kong and Japan
 included, while Japan, Hong Kong and Australia race. Readings are saved to
@@ -61,6 +62,17 @@ included, while Japan, Hong Kong and Australia race. Readings are saved to
 A first attempt from GitHub's own runners failed: Betfair refused the login (403 at identitysso.betfair.com) from
 that host. So the census runs only on the UK server, and there on the paper models' own runner. The first reading
 comes the morning after that runner is registered and the branch is merged.
+
+### The first attempt, 2 Nov: no reading, and why (research-query run 41602122552; live-record.yml run 41427469429)
+
+No census file exists for 1-9 Nov. The one step that ran (the live-record.yml evening step of 2 Nov, before PR #180
+moved the census out) logged in and then stopped at its first call: the read-only Betfair client
+(`trading/exchange.py BetfairData._read`) permits only listMarketCatalogue, listMarketBook, listClearedOrders,
+listEventTypes and listMarketTypes, and the census asked for listCountries. `sources/betfair_census.py` now uses
+listMarketCatalogue alone, a day of the window a call, grouped by each event's country, and its tests' client
+refuses any other call, as the live one does. So whether Hong Kong and Japan trade is still not known. The next
+reading comes from the paper-models job, once its runner is registered (its 3 Nov run has been queued since 05:46
+UTC, waiting for one).
 
 ## 4. The backfill (1 Nov 2026): a year of Japan and Hong Kong
 
