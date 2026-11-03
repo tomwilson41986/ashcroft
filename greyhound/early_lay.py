@@ -353,13 +353,17 @@ class EarlyLay:
         mids = sorted(watch.market_id.dropna().astype(str).unique())
         if not mids:
             return
+        # the races nearest their off first: a slow pass over the races still forming must never hold up a green-up
+        # (3 Nov, 14:49 Monmore: the 5-second window passed inside one poll and the lays went to the SP unattempted)
+        offs = watch.groupby(watch.market_id.astype(str)).off.min()
+        mids = sorted(mids, key=lambda m: offs.get(m, pd.Timestamp.max.tz_localize("UTC")))
         books = self.x.books(mids)
         for mid in mids:
             b = books.get(mid)
             if b is None:
                 continue
             g = watch[watch.market_id.astype(str) == mid]
-            secs = float((g.off.iloc[0] - t).total_seconds())
+            secs = float((pd.Timestamp(g.off.iloc[0]) - pd.Timestamp(self.now())).total_seconds())
             try:
                 if secs <= self.cfg["green_seconds"]:
                     self.green(mid, b, g, secs)

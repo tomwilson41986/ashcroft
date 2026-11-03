@@ -89,3 +89,9 @@ def test_the_recorder_reads_in_batches_under_the_weight_limit():
     d = Data()
     out = br.read_books(d, [f"1.{i}" for i in range(10)])
     assert len(out) == 10 and max(d.calls) <= br.BATCH and br.BATCH * 25 <= 100   # 25 a market (5 + 17 + 3)
+
+
+def test_the_recorder_asks_only_for_betfairs_price_data_types():
+    from greyhound import book_record as br
+    valid = {"SP_AVAILABLE", "SP_TRADED", "EX_BEST_OFFERS", "EX_ALL_OFFERS", "EX_TRADED"}   # Betfair's PriceData
+    assert set(br.PRICE_DATA) <= valid and "EX_TRADED" in br.PRICE_DATA
