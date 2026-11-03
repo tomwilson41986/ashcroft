@@ -67,3 +67,95 @@ def test_the_cli(tmp_path, panel, monkeypatch):
     r = json.loads(out.read_text())
     assert r["frozen"].startswith("already frozen") and [d["day"] for d in r["days"]] == ["2026-11-04", "2026-11-05",
                                                                                          "2026-11-06"]
+
+
+def test_the_day_fit_is_made_once_and_kept(tmp_path, panel, monkeypatch):
+    store = Store(root=str(tmp_path))
+    f = lt.day_fit(store, date(2026, 11, 8))
+    assert f is not None and f["fit_to"] == "2026-11-07" and len(f["beta"]) == len(f["cols"])
+    monkeypatch.setattr(ls, "load", lambda *a, **k: (_ for _ in ()).throw(AssertionError("refitted")))
+    g = lt.day_fit(store, date(2026, 11, 8))                 # from S3, not refitted
+    assert list(g["beta"]) == list(f["beta"])
+
+
+def test_intraday_scores_today_race_by_race(tmp_path, panel, monkeypatch):
+    store = Store(root=str(tmp_path))
+    rows = panel[(panel["mark"] == lt.MARK) & (panel.race_date == "2026-11-08")].assign(
+        race_time="12:00", track="Romford")
+    monkeypatch.setattr(lt, "today_rows", lambda store, day: (rows, "test books"))
+    r = lt.intraday(store, date(2026, 11, 8))
+    assert r["races"] > 0 and r["source"] == "test books" and r["lays_placed"] >= r["matched"]
+    assert abs(r["markets"][-1]["running"] - r["pnl"]) < 0.02
+    md = lt.intraday_markdown(r)
+    assert "### Early lay" in md and "| 12:00 | Romford |" in md
+
+
+def test_intraday_says_why_when_nothing_is_settled(tmp_path, panel, monkeypatch):
+    import pandas as pd
+    monkeypatch.setattr(lt, "today_rows", lambda store, day: (pd.DataFrame(), "no settled race yet"))
+    r = lt.intraday(Store(root=str(tmp_path)), date(2026, 11, 8))
+    assert r["markets"] == [] and r["note"] == "no settled race yet"
+    assert "no settled race yet" in lt.intraday_markdown(r)
+
+
+def test_today_rows_fall_back_to_the_live_prices_with_the_winner_from_the_result(tmp_path, monkeypatch):
+    import io
+    import pandas as pd
+    import betfair_recorder
+    from greyhound import tradeout as to
+    store = Store(root=str(tmp_path))
+    preds = pd.DataFrame({"race_id": ["r1", "r1", "r2"], "race_date": ["2026-11-03"] * 3,
+                          "race_time": ["12:00", "12:00", "12:10"], "track": ["Hove"] * 3, "trap": [1, 2, 1],
+                          "field": [2, 2, 1], "p_model": [0.6, 0.4, 1.0], "market_id": ["1.1", "1.1", "1.2"],
+                          "selection_id": [11, 12, 21]})
+    buf = io.StringIO()
+    preds.to_csv(buf, index=False)
+    store.put("greyhound/live/predictions/2026-11-03.csv", buf.getvalue().encode())
+    final = pd.DataFrame({"source": ["final", "final"], "market_id": ["1.1", "1.1"], "selection_id": [11, 12],
+                          "runner_status": ["LOSER", "WINNER"]})
+    monkeypatch.setattr(betfair_recorder, "_read_day_csv",
+                        lambda day, name, s3=None: final if name == to.ENTRY_BOOKS["live"] else None)
+    seen = {}
+
+    def panel(pred, entry, markets, day, closing_books=None, retimed=False):
+        seen["pred"] = pred
+        return pd.DataFrame()
+    monkeypatch.setattr(to, "day_panel", panel)
+    monkeypatch.setattr(betfair_recorder, "_read_day_csv",
+                        lambda day, name, s3=None: final if name == to.ENTRY_BOOKS["live"] else (
+                            pd.DataFrame({"market_id": ["1.1"]}) if name.startswith("markets") else None))
+    rows, note = lt.today_rows(store, date(2026, 11, 3))
+    p = seen["pred"]
+    assert set(p.market_id) == {"1.1"}                          # only the settled race
+    assert p.set_index("selection_id").won.to_dict() == {11: 0, 12: 1}
+
+
+def test_the_rule_revised_before_the_first_test_day_is_frozen_again(tmp_path, panel, monkeypatch):
+    import betfair_recorder
+    store = Store(root=str(tmp_path))
+    old = lt.freeze(store, date(2026, 11, 3))
+    old["primary"] = dict(lt.PRIMARY, exit="sp")                  # the first version, as frozen at 11:41
+    store.put(lt.FROZEN_KEY, json.dumps(old).encode())
+    monkeypatch.setattr(betfair_recorder, "uk_today", lambda: date(2026, 11, 3))
+    out = tmp_path / "rep.json"
+    assert lt.main(["--store", str(tmp_path), "--freeze", "--out", str(out)]) == 0
+    f = json.loads(store.get(lt.FROZEN_KEY))
+    assert f["primary"]["exit"] == "last" and f["revised_from"]["primary"]["exit"] == "sp"
+    assert f["first_test_day"] == "2026-11-04"
+    # from the first test day on, the frozen rule stays as it is
+    f["primary"] = dict(lt.PRIMARY, exit="sp")
+    store.put(lt.FROZEN_KEY, json.dumps(f).encode())
+    monkeypatch.setattr(betfair_recorder, "uk_today", lambda: date(2026, 11, 4))
+    assert lt.main(["--store", str(tmp_path), "--freeze", "--out", str(out)]) == 0
+    assert json.loads(store.get(lt.FROZEN_KEY))["primary"]["exit"] == "sp"
+
+
+def test_the_primary_greens_up(tmp_path, panel, monkeypatch):
+    store = Store(root=str(tmp_path))
+    rows = panel[(panel["mark"] == lt.MARK) & (panel.race_date == "2026-11-08")].assign(
+        race_time="12:00", track="Romford")
+    monkeypatch.setattr(lt, "today_rows", lambda store, day: (rows, "test books"))
+    r = lt.intraday(store, date(2026, 11, 8))
+    assert lt.PRIMARY["exit"] == "last"
+    assert any(m["greened_at"] is not None for m in r["markets"] if m["matched"])
+    assert "Greened at" in lt.intraday_markdown(r)

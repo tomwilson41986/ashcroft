@@ -836,6 +836,16 @@ def main(argv=None) -> int:
         r = running(store, day, "paper")
         store.put(f"{PREFIX}/paper/{day:%Y-%m-%d}/running.json", json.dumps(r, indent=1, default=str).encode())
         md = running_markdown(r)
+        try:                                        # the early lay beside it (greyhound/laytest.py); never breaks the table
+            from greyhound import laytest
+            lay = laytest.intraday(store, day)
+            store.put(f"{laytest.PREFIX}/intraday/{day:%Y-%m-%d}.json", json.dumps(lay, indent=1, default=str).encode())
+            md += "\n" + laytest.intraday_markdown(lay)
+            r["early_lay"] = {k: v for k, v in lay.items() if k != "markets"}
+        except Exception as exc:
+            log.warning("early lay not scored (%s)", exc)
+            md += f"\n### Early lay\n\nnot scored this time ({str(exc)[:200]})\n"
+            r["early_lay"] = {"error": str(exc)[:200]}
         store.put(f"{PREFIX}/paper/{day:%Y-%m-%d}/running.md", md.encode())
         if a.out:
             Path(a.out).write_text(md)

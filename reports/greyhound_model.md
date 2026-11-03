@@ -1062,3 +1062,57 @@ stopping, under the 10,000-round cap.
   still unknown (sections 22 and 23).
 - The live-key recorder started on the new server on 3 November at about 10:41 UTC (`ashcroft-paper`,
   78.141.242.224). Its books, with each runner's traded volume, are what will measure the size.
+
+## 25. Trading the move: green up, or take profit early (greyhound-limit-study.yml runs 41633779822 and 41635047467, 3 Nov 2026)
+
+The owner, 3 Nov: "we want to trade out and take profit whenever we get the movement correct. I dont care if the dog
+wins or not. We are trading the price move." The study now has three kinds of exit for every matched entry:
+
+- `sp`: closed at the SP as the horse trader closes, settled by the result. In expectation this is the CLV, but the
+  P&L of each race depends on the result.
+- `last`: greened up in the runner's last recorded book before the off (a lay backed at the best back price there, a
+  back laid at the best lay price). The P&L is the same whatever the result.
+- `tp2`, `tp5`, `tp10` (take profit): once the entry is matched, a closing order 2, 5 or 10 ticks better than the
+  entry price, matched where a later book reaches it by the same fill rule. Where the move never comes, it greens up
+  as `last`. Each entry's fill time is read from the books' path: at the mark if taken, else the first later book
+  that reaches the limit.
+
+Panel: 55,635 runner-marks, 6 Oct to 2 Nov; development days 14 to 26 Oct (13), holdout 27 Oct to 2 Nov (7). That
+holdout has now been read by several runs of this study, so it describes; it is no longer a clean test.
+
+**The exits on the same entries** (run 41635047467, section 2b): 643 entry rules with a trade a day on the development
+days, each exit's return against `last` on the same entries.
+
+| exit | dev: median vs last (points) | dev: better than last | holdout: median vs last | holdout: better than last |
+|---|---|---|---|---|
+| sp | +0.76 | 89.9% | +0.98 | 88.2% |
+| tp10 | -0.03 | 6.1% | -0.03 | 10.1% |
+| tp5 | -0.10 | 6.2% | -0.11 | 7.9% |
+| tp2 | -0.19 | 7.2% | -0.19 | 7.8% |
+
+The early lay (first traded, lay the forecast drifters at 80% of the forecast SP, traded fill), return on the money at
+risk:
+
+| exit | development | holdout |
+|---|---|---|
+| sp | +1.44% | +1.62% |
+| last | +1.06% | +1.25% |
+| tp10 | -0.56% | -0.19% |
+| tp5 | -1.12% | -0.82% |
+| tp2 | -1.53% | -1.26% |
+
+What this says:
+
+- **Taking profit early loses.** It cuts the winners short and leaves the losers as they were. A drift that reaches 2
+  ticks usually goes further, so closing there gives up the rest of the move, and the trades that go the wrong way
+  still green up at the last book for a loss. Take profit did worse than `last` on about 90% of entry rules, in both
+  halves, and the shorter the target the worse it did. It turned the early lay from a gain into a loss.
+- **Greening up at the last book costs about 0.4 points against closing at the SP** on the early lay, and about 0.8
+  to 1.0 points across all rules. Part of the move comes after the last book. One cause is the recorder's books, about
+  90 seconds stale (section 13): live, the green-up would be placed in the last seconds and capture more of the move.
+  The forward test's live-key books will show how much.
+- The trade-off is return against variance. The SP close keeps the higher expectation, but each race's P&L swings
+  with the result. The green-up locks the P&L at the off. The forward test runs both: green-up as the primary (the
+  owner's way of trading), the SP close as `lay80_drift_sp`.
+- Overall the grid is still at chance on this holdout: 3 of 240 chosen rules had the 90% interval's lower bound above
+  zero, where about 12 are expected by chance alone (run 41633779822).
