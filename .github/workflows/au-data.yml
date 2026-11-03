@@ -10,7 +10,8 @@ on:
   push:
     branches: ['claude/bold-cori-*']
     paths:
-      - 'au/**'
+      - 'au/data.py'
+      - 'au/config.py'
       - '.github/workflows/au-data.yml'
 
 permissions:
