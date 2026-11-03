@@ -174,3 +174,13 @@ def test_both_sides_quoted_requoted_and_greened(monkeypatch):
     # dog 7: the lay at 3.9 (4.9 x 0.8) fills (money traded at 3.8); the back at 5.9 (4.9 x 1.2) never does
     assert r.loc[7, "lay_matched"] > 0 and r.loc[7, "back_matched"] == 0 and r.loc[7, "how"] == "green"
     assert 8 not in r.index                                                     # quoted, never matched
+
+
+def test_the_quote_widens_with_the_forecasts_error():
+    assert ps.sigma_at(60) == 0.146 and ps.sigma_at(30) == 0.146 and ps.sigma_at(900) == 0.356
+    assert ps.sigma_at(120) == (0.146 + 0.244) / 2
+    lay_far, back_far = ps.quote_prices(4.0, {"k": 1.0}, 600)
+    lay_near, back_near = ps.quote_prices(4.0, {"k": 1.0}, 60)
+    assert lay_far < lay_near < 4.0 < back_near < back_far
+    assert np.isclose(np.log(back_near / 4.0), 0.146) and np.isclose(np.log(4.0 / lay_near), 0.146)
+    assert ps.quote_prices(4.0, {"margin": 0.2}, 60) == (4.0 * 0.8, 4.0 * 1.2)

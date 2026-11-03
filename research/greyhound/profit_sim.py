@@ -324,6 +324,27 @@ def fair_values(pre_m: pd.DataFrame, t, preds_m: pd.DataFrame, fit: dict, cfg: d
     return d[["selection_id", "f_bsp", "mid"]]
 
 
+#: The live trader's forecast error, RMSE of log(BSP), by seconds to the off: its conditional logit at the first traded
+#: book (taken here as 10 min out), 5, 3 and 1 min out (reports/greyhound_model.md section 26, read off the recorder's
+#: books), interpolated between and held beyond. A quote at ``k`` of these from the forecast sits outside most of its
+#: error; one well inside it is filled mostly when the market knows better (the fixed 2% and 5% margins, 3 Nov).
+SIGMA_SECS = [60.0, 180.0, 300.0, 600.0]
+SIGMA_RMSE = [0.146, 0.244, 0.414, 0.356]
+
+
+def sigma_at(secs: float) -> float:
+    return float(np.interp(secs, SIGMA_SECS, SIGMA_RMSE))
+
+
+def quote_prices(f: float, q: dict, secs: float) -> tuple[float, float]:
+    """The lay and back quote around a forecast ``f``: a fixed share (``q['margin']``), or ``q['k']`` forecast errors
+    at this distance from the off (log space: ``f x exp(-k sigma)`` and ``f x exp(k sigma)``)."""
+    if q.get("k") is not None:
+        w = q["k"] * sigma_at(secs)
+        return f * float(np.exp(-w)), f * float(np.exp(w))
+    return f * (1 - q["margin"]), f * (1 + q["margin"])
+
+
 def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict, q: dict) -> list[dict]:
     """One race traded both ways: at every live-key book from the moment the whole field has traded until
     ``q['stop_seconds']`` before the off, each dog's fair value (the forecast SP) quoted with a resting back at
@@ -371,13 +392,14 @@ def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict
                     if ff.matched > 0:
                         got.append((side, o["price"], ff.matched))
             win, lose = outcomes_of(got)
+            lay_at, back_at = quote_prices(f, q, (off - t).total_seconds())
             for side in q["sides"]:
                 if side == "lay":
-                    target = float(ls.ladder([f * (1 - q["margin"])], up=False)[0])
+                    target = float(ls.ladder([lay_at], up=False)[0])
                     ok = np.isfinite(target) and 1 < target < m - 1e-9 and target <= cfg["max_price"] \
                         and win > -q["max_loss"]                          # a lay loses if the dog wins
                 else:
-                    target = float(ls.ladder([f * (1 + q["margin"])], up=True)[0])
+                    target = float(ls.ladder([back_at], up=True)[0])
                     ok = np.isfinite(target) and target > m + 1e-9 and target <= cfg["max_price"] \
                         and lose > -q["max_loss"]                         # a back loses if it loses
                 key = (sid, side)
@@ -434,6 +456,9 @@ QUOTES = {
     "both_m10": {"sides": ("back", "lay"), "margin": 0.10, "max_loss": 60.0},
     "both_m20": {"sides": ("back", "lay"), "margin": 0.20, "max_loss": 60.0},
     "both_m30": {"sides": ("back", "lay"), "margin": 0.30, "max_loss": 60.0},
+    "sigma_k05": {"sides": ("back", "lay"), "k": 0.5, "max_loss": 60.0},
+    "sigma_k10": {"sides": ("back", "lay"), "k": 1.0, "max_loss": 60.0},
+    "sigma_k15": {"sides": ("back", "lay"), "k": 1.5, "max_loss": 60.0},
     "lay_m20": {"sides": ("lay",), "margin": 0.20, "max_loss": 60.0},
     "back_m20": {"sides": ("back",), "margin": 0.20, "max_loss": 60.0},
 }
@@ -500,7 +525,8 @@ def report_md(res: dict) -> str:
             L.append(f"| {k} | 0 | 0 | | | | | | |")
     L += ["", "## 3. Both sides of every dog up to the off", "",
           "Each dog's forecast SP read at every live-key book (the live trader's forecast), a resting back above it and "
-          "a resting lay below it (never across the mid), requoted as it moves; every position greened up 5 s before "
+          "a resting lay below it (both_mNN: a fixed NN% either side; sigma_kNN: NN/10 of the forecast's error at that "
+          "distance from the off, wide early and tighter near the off), never across the mid, requoted as it moves; every position greened up 5 s before "
           "the off. Our own orders do not move the simulated market, and two of our orders on one dog can count the "
           "same traded money: an upper bound on the fills.", "",
           "| Variant | Races | Orders | Dogs matched | Back matched | Lay matched | Net P&L | Per race | Races won / "
