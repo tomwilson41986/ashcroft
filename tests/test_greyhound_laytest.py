@@ -67,3 +67,32 @@ def test_the_cli(tmp_path, panel, monkeypatch):
     r = json.loads(out.read_text())
     assert r["frozen"].startswith("already frozen") and [d["day"] for d in r["days"]] == ["2026-11-04", "2026-11-05",
                                                                                          "2026-11-06"]
+
+
+def test_the_day_fit_is_made_once_and_kept(tmp_path, panel, monkeypatch):
+    store = Store(root=str(tmp_path))
+    f = lt.day_fit(store, date(2026, 11, 8))
+    assert f is not None and f["fit_to"] == "2026-11-07" and len(f["beta"]) == len(f["cols"])
+    monkeypatch.setattr(ls, "load", lambda *a, **k: (_ for _ in ()).throw(AssertionError("refitted")))
+    g = lt.day_fit(store, date(2026, 11, 8))                 # from S3, not refitted
+    assert list(g["beta"]) == list(f["beta"])
+
+
+def test_intraday_scores_today_race_by_race(tmp_path, panel, monkeypatch):
+    store = Store(root=str(tmp_path))
+    rows = panel[(panel["mark"] == lt.MARK) & (panel.race_date == "2026-11-08")].assign(
+        race_time="12:00", track="Romford")
+    monkeypatch.setattr(lt, "today_rows", lambda store, day: (rows, "test books"))
+    r = lt.intraday(store, date(2026, 11, 8))
+    assert r["races"] > 0 and r["source"] == "test books" and r["lays_placed"] >= r["matched"]
+    assert abs(r["markets"][-1]["running"] - r["pnl"]) < 0.02
+    md = lt.intraday_markdown(r)
+    assert "### Early lay" in md and "| 12:00 | Romford |" in md
+
+
+def test_intraday_says_why_when_nothing_is_settled(tmp_path, panel, monkeypatch):
+    import pandas as pd
+    monkeypatch.setattr(lt, "today_rows", lambda store, day: (pd.DataFrame(), "no settled race yet"))
+    r = lt.intraday(Store(root=str(tmp_path)), date(2026, 11, 8))
+    assert r["markets"] == [] and r["note"] == "no settled race yet"
+    assert "no settled race yet" in lt.intraday_markdown(r)
