@@ -407,12 +407,43 @@ def test_live_book_record_reads_densely_near_the_off_and_on_until_the_market_clo
 
     out = br.record(off.date(), off + timedelta(hours=1), FakeData(), Rec(), market_types=("WIN",),
                     now=lambda: clock["t"], sleep=sleep)
-    times = [t for t, _ in reads]
+    times = [t for t, d in reads if d == br.PRICE_DATA]                     # the books (the results apart)
     assert reads[0][1] == br.PRICE_DATA and "EX_TRADED" in br.PRICE_DATA
     assert min(times) >= off - timedelta(minutes=br.START_MINUTES)          # nothing read before 15 minutes out
     gaps_near = [(b - a).total_seconds() for a, b in zip(times, times[1:]) if a >= off - timedelta(minutes=5)]
     assert max(gaps_near) <= br.EVERY_NEAR + 1.0                            # every 5 s in the last 5 minutes
     assert max(times) >= off + timedelta(seconds=40) and out["done"] == 1  # on past the off until it closed
+    settles = [t for t, d in reads if "SP_AVAILABLE" in d]                 # the results: from the off until closed
+    assert settles and min(settles) >= off and out["settled"] == 1
+
+
+def test_the_results_carry_the_bsp_read_at_the_off():
+    from greyhound import book_record as br
+    calls = {"n": 0}
+
+    class FakeData:
+        def _read(self, method, params):
+            calls["n"] += 1
+            if calls["n"] == 1:                    # in play: the BSP is there, no result yet
+                return [{"marketId": "1.9", "status": "SUSPENDED", "runners": [
+                    {"selectionId": 7, "status": "ACTIVE", "sp": {"actualSP": 4.2}}]}]
+            return [{"marketId": "1.9", "status": "CLOSED", "runners": [   # closed: the winner, no BSP
+                {"selectionId": 7, "status": "WINNER", "sp": {}}]}]
+
+    written = []
+
+    class Rec:
+        def record_books(self, raw, source, polled_at):
+            written.append((source, raw))
+            return len(raw)
+        def maybe_upload(self, force=False): return True
+
+    bsp = {}
+    t = datetime(2026, 11, 3, 14, 1, tzinfo=timezone.utc)
+    assert br.settle_reads(FakeData(), Rec(), ["1.9"], bsp, t) == set() and not written
+    assert br.settle_reads(FakeData(), Rec(), ["1.9"], bsp, t) == {"1.9"}
+    source, raw = written[0]
+    assert source == "final" and raw[0]["runners"][0]["sp"]["actualSP"] == 4.2 and raw[0]["runners"][0]["status"] == "WINNER"
 
 
 def test_the_read_only_client_refuses_to_bet():
