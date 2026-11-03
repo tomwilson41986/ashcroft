@@ -8,7 +8,7 @@
 - every runner the forecast says will drift (forecast SP at or above the mid now) is laid at 80% of its forecast SP,
   on Betfair's ladder (rounded down), at a price up to ``max_price``: a resting LIMIT lay sized by its liability, persistence
   LAPSE (whatever is unmatched lapses at the off), matched at once where the book already offers it;
-- ``green_seconds`` before the scheduled off, the unmatched part is cancelled and each matched lay is greened up: a back
+- ``green_seconds`` (5) before the scheduled off, the unmatched part is cancelled and each matched lay is greened up: a back
   at the best back price for ``matched x lay price / back price`` (fill or kill), the profit or loss then the same
   whatever the result; tried again each poll while the price moves, and ``give_up_seconds`` before the off, a back at
   the Betfair SP for the lay's stake instead (the 'sp' close), or, under Betfair's smallest stake, held to the result.
@@ -56,8 +56,8 @@ CONFIG = {
     "max_open_liability": 5000.0,             # a guard against a fault, not a limit on the trading
     "watch_minutes": 60.0,                    # markets off within this are watched for their first trades
     "min_rest_seconds": 60.0,                 # no lay placed this close to the green-up
-    "green_seconds": 30.0,                    # green up from this many seconds before the scheduled off
-    "give_up_seconds": 8.0,                   # then a back at the SP instead
+    "green_seconds": 5.0,                     # green up from this many seconds before the scheduled off (the
+    "give_up_seconds": 2.0,                   # owner, 3 Nov: "green up 5s before the off"); then a back at the SP
     "poll_seconds": 5.0,                      # the owner, 3 Nov: "trade as frequently as the live feed enables"
     "near_poll_seconds": 1.0,                 # the markets near their green-up, every second
 }
