@@ -62,13 +62,32 @@ def live_panel(store, day: date) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     pred = pred[pred.market_id.astype(str).isin(set(fin.market_id.astype(str)))]   # settled races only
     panel = to.day_panel(pred, books, markets, day, closing_books=books, retimed=False)
     if not len(panel):
-        _log(f"{day}: no live-key panel rows")
+        diagnose(pred, books, markets, day)
         return pd.DataFrame(), None
     pre = to.pre_off_books(books, markets, retimed=False)
     pre = pre[pre.market_id.isin(set(panel.market_id))]
     path = pre[ls.BOOK_PATH_COLS].assign(lay1=pre.lay1.where(pre.lay1 > 1), last_traded=to._num(pre.last_traded))
     _log(f"{day}: {panel.race_id.nunique()} races, {len(panel)} runner-marks on the live-key books")
     return ls.attach_future(panel, ls.future_extremes(pre)), path
+
+
+def diagnose(pred: pd.DataFrame, books: pd.DataFrame, markets: pd.DataFrame, day: date) -> None:
+    """Where a day's live-key panel came out empty: the rows left at each step of greyhound.tradeout.day_panel."""
+    try:
+        _log(f"{day}: no live-key panel rows. books {len(books)} (sources {books.source.value_counts().to_dict()}), "
+             f"markets {len(markets)} (columns {list(markets.columns)[:12]}), prices {len(pred)} settled rows "
+             f"(columns {list(pred.columns)[:14]})")
+        pre = to.pre_off_books(books, markets, retimed=False)
+        _log(f"  pre-off books {len(pre)}; with a trade {int((pre.last_traded > 1).sum()) if len(pre) else 0}")
+        e = to.entry_books(pre) if len(pre) else pd.DataFrame()
+        _log(f"  entry rows {len(e)} by mark {e['mark'].value_counts().to_dict() if len(e) else {}}")
+        bsp = to.closing_prices(books, markets, day)
+        _log(f"  runners with a BSP {len(bsp)}")
+        p = pred.assign(market_id=pred.market_id.astype(str), selection_id=to._num(pred.selection_id))
+        m = p.merge(e, on=["market_id", "selection_id"], how="inner") if len(e) else p.iloc[0:0]
+        _log(f"  prices x entry books {len(m)}; x BSP {len(m.merge(bsp, on=['market_id', 'selection_id']))}")
+    except Exception as exc:
+        _log(f"  diagnosis failed: {exc}")
 
 
 def fits(store, first_scored: date, fit_from: date) -> dict:
