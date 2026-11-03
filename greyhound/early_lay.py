@@ -58,8 +58,8 @@ CONFIG = {
     "min_rest_seconds": 60.0,                 # no lay placed this close to the green-up
     "green_seconds": 30.0,                    # green up from this many seconds before the scheduled off
     "give_up_seconds": 8.0,                   # then a back at the SP instead
-    "poll_seconds": 15.0,
-    "near_poll_seconds": 4.0,                 # the markets near their green-up
+    "poll_seconds": 5.0,                      # the owner, 3 Nov: "trade as frequently as the live feed enables"
+    "near_poll_seconds": 1.0,                 # the markets near their green-up, every second
 }
 LEDGER_FIELDS = ["time_utc", "mode", "market_id", "selection_id", "track", "race_time", "trap", "dog", "action",
                  "price", "size", "matched", "avg_price", "f_bsp", "mid", "p_model", "bet_id", "status", "error",
