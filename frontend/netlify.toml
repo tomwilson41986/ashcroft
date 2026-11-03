@@ -1,5 +1,7 @@
 [build]
   publish = "."
+  # Nothing is ever published to Netlify (the owner, 3 Nov 2026): every build, production included, is skipped.
+  ignore = "exit 0"
 
 # Same rule as the repository-root netlify.toml, repeated because Netlify reads
 # the config in the base directory as well and which of the two wins is not
