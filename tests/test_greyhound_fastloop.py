@@ -157,3 +157,29 @@ def test_the_time_budget_stops_the_fit_at_its_best_round():
     res, _ = fl.run_experiment(df, meta, {"name": "c", "features": "card_safe", "objective": "logbsp"},
                                dict(QUICK, rounds=5, early_stop=100), test_from="2026-06-01")
     assert res["stopped_by"] == "cap"
+
+
+def _acc(seed, better=0.0):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for d in pd.date_range("2026-10-14", periods=10).strftime("%Y-%m-%d"):
+        for mark in fl.SHORT_MARKS:
+            base = 1.5 + rng.normal(0, 0.01)
+            for model, x in (("market_micro", base), ("micro", base - 0.01 - better)):
+                rows.append({"day": d, "mark": mark, "model": model, "races": 50, "rows": 300, "xent": x,
+                             "xent_market": base + 0.005, "sse": 10.0, "sse_nochange": 20.0, "right_way": 0.6})
+    return pd.DataFrame(rows)
+
+
+def test_the_shortening_score_and_its_paired_comparison(tmp_path):
+    s = fl.shortening_summary(_acc(0))
+    assert set(s) == set(fl.SHORT_MARKS)
+    assert abs(s["off_5"]["model_adds"] - 0.01) < 1e-9 and s["off_5"]["r2"] == 0.5 and s["off_5"]["days"] == 10
+    _acc(0).to_parquet(tmp_path / "short_a.parquet")
+    _acc(0, better=0.002).to_parquet(tmp_path / "short_b.parquet")
+    pr = fl.paired_shortening(tmp_path, "a")
+    assert pr["a"]["diff"] == 0.0 and abs(pr["b"]["diff"] + 0.002) < 1e-6 and pr["b"]["ci90"][1] < 0
+    r = {"name": "b", "features": 3, "spec": {"objective": "logbsp"}, "rounds": 9, "logloss": 0.44, "seconds": 1,
+         "test_from": "2026-06-01", "test_to": "2026-11-02", "shortening": s, "paired_short": pr["b"]}
+    t = fl.table([dict(r, name="a", paired_short=pr["a"]), r], "a")
+    assert "0.01 / 0.01 / 0.01" in t and "-0.002" in t

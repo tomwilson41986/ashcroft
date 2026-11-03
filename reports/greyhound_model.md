@@ -799,3 +799,66 @@ push. The slow lane (best_confirm) was still fitting. In batch 2 the table waite
   and the interval is still clear of zero.
 - **No model adds to the BSP.** The Benter gain is between -0.00001 and +0.00002 in every row, and the model's weight
   beside the BSP is between -0.020 and +0.006.
+
+**The slow lane: best_confirm** (the weigh-in, first_bend and style_draw on the new confirm recipe: fitted on 2022 to
+May 2026 at 0.08 with a 25-minute budget). The table came at 09:20 UTC, 31 minutes after the push. In batch 2 the slow
+job alone took 55 minutes.
+
+| Experiment | Rounds | Log-loss | vs logbsp (90%) | On BSP races: model / BSP | Seconds |
+|---|---|---|---|---|---|
+| best_confirm | 5,438 | **0.44225** | **-0.00119 (-0.00153 to -0.00086)** | 0.44283 / 0.42838 | 1,534 |
+
+- It is the best model so far.
+- It took 1,534 seconds against a 1,500-second fit budget and stopped under the 6,000-round cap, so the budget most
+  likely ended it. The result file records which.
+- Its study (the same 27 days and the same development/holdout split as section 19):
+  - Its price adds to the SP forecast much as batch 2's confirm price did: at first traded 0.0079 a race in
+    development and 0.0049 in the holdout; at 5 minutes out 0.0131 and 0.0146.
+  - No holdout rule of 52 has its 90% lower bound above zero.
+  - Section 19's lead (a lay at first traded) comes in at bar 0.02 here: +2.07% (-0.02 to +3.85) on 213 trades, with a
+    mean CLV of -1.69%. So it fades, as a result driven by the results rather than the prices would.
+
+**The measure changes from batch 4** (the owner, 3 Nov 2026: "we are just trying to trade an earlier price vs. Betfair
+SP ... get money on at higher prices that are expected to shorten at BFSP"):
+- The SP is the market's best price. Whether a model beats it, the Benter column of sections 18-20, is not the
+  trade-out's question, so the fast loop no longer ranks by it (the results JSON keeps it).
+- What the trade-out needs from our price is how much it adds to the forecast of the SP from the book on offer. At
+  each entry mark (first traded, 5 and 3 minutes out), the same conditional logit is fitted without and with our
+  price, walk-forward by day on the recorded books from 6 October (re-timed). The table leads with the difference, a
+  race, and its paired 90% interval against the baseline. Log-loss against the result comes second.
+- **What it showed in batch 2's study** (the confirm log-BSP prices; the SP book's cross-entropy a race; "our price
+  adds" is the conditional logit with our price less the same one without it):
+
+| Mark | Days | Our price adds | Gain over the market price |
+|---|---|---|---|
+| First traded, development | 13 | 0.0076 | 0.0391 |
+| First traded, holdout | 7 | 0.0048 | 0.0374 |
+| 5 minutes out, development | 13 | 0.0127 | 0.0288 |
+| 5 minutes out, holdout | 7 | 0.0141 | 0.0325 |
+| 3 minutes out, development | 13 | 0.0002 | 0.0041 |
+| 3 minutes out, holdout | 7 | 0.0003 | 0.0069 |
+| 1 minute out, development and holdout | 13 and 7 | -0.00001 and 0.00000 | 0.0001 (the book is the SP) |
+
+- So our price does help call which runners will shorten, at first traded and 5 minutes out. The trades have not yet
+  made it pay. Of the 40 holdout rules, 37 have a negative mean CLV. The other three are lays 1 minute out (+0.29% to
+  +0.62%), and all three still returned less than zero.
+- The books before 1 minute out are the recorder's, about 90 seconds stale. The live-key recorder's 5-second books
+  wait on the paper-models runner being registered.
+- **Why calling the move has not paid: the price on offer to back is usually shorter than the SP.** From the studies'
+  section 1 (all 27 panel days, re-timed books, best back price against the SP):
+
+| Mark | Runners | Mean log(SP / best back price) | Median gap |
+|---|---|---|---|
+| First traded | 18,360 | +0.363 | 21.6% |
+| 5 minutes out | 12,322 | +0.452 | 27.1% |
+| 3 minutes out | 12,744 | +0.141 | 13.0% |
+| 1 minute out | 12,290 | +0.045 | 8.6% |
+
+  - A greyhound book before the last minutes is thin: most of its money is matched in the last three minutes:
+    a median GBP380 matched at 3 minutes out and GBP1,993 at 1 minute out (reports/open_close/data.md 4.2). The best back price on offer is mostly well under the SP.
+  - Taking it gives away more than our forecast of the move gains. The backs taken 5 minutes out on the micro forecast
+    have a mean CLV of -6.18% in the holdout.
+  - The horse trader takes the price because horse books are deep by the morning. For greyhounds, the test this
+    points to is asking for the price: a back offered at our forecast SP plus a margin, left in the book to be
+    matched, or not. It can be simulated on the live recorder's 5-second books with traded volume, and only roughly
+    on the recorder's.

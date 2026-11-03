@@ -1,15 +1,81 @@
 {
-  "about": "Batch 4 (3 Nov 2026), on the new quick recipe (learning rate 0.08, from batch 3: reports/greyhound_model.md section 20). The baseline is re-fitted on it. Here: the card-safe blocks without the weigh-in (published live at 12 tracks only), with it, a slower rate still, smaller trees with the blocks, and two subsampling settings. No slow lane: the quick recipe is now within 0.0003 of the slow one.",
+  "about": "Batch 4 (3 Nov 2026). Ranked by what the trade-out needs (the owner: get on at prices expected to shorten at the SP): how much each price adds to the forecast of the SP from the book at first traded, 5 and 3 minutes out (the recorded books from 6 Oct, re-timed), then the log-loss. On the new quick recipe (learning rate 0.08: section 20); the baseline re-fitted on it. The card-safe blocks without the weigh-in (published live at 12 tracks only) and with it, a slower rate, smaller trees with the blocks, two subsampling settings, and a softmax model: the best by log-loss need not be the best at calling the move.",
   "recipe": "quick",
   "baseline": "logbsp",
   "test_from": "2026-06-01",
   "experiments": [
-    {"name": "logbsp", "features": "card_safe", "objective": "logbsp"},
-    {"name": "logbsp_fb_sd", "features": "card_safe", "objective": "logbsp", "add_blocks": ["first_bend", "style_draw"]},
-    {"name": "logbsp_weighin_fb_sd", "features": "all", "objective": "logbsp", "add_blocks": ["first_bend", "style_draw"]},
-    {"name": "logbsp_lr05", "features": "card_safe", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 8000}},
-    {"name": "logbsp_fb_sd_leaves31", "features": "card_safe", "objective": "logbsp", "add_blocks": ["first_bend", "style_draw"], "params": {"num_leaves": 31, "min_child_samples": 500}},
-    {"name": "logbsp_ff05", "features": "card_safe", "objective": "logbsp", "params": {"feature_fraction": 0.5}},
-    {"name": "logbsp_ff09", "features": "card_safe", "objective": "logbsp", "params": {"feature_fraction": 0.9, "bagging_fraction": 0.9}}
-  ]
+    {
+      "name": "logbsp",
+      "features": "card_safe",
+      "objective": "logbsp"
+    },
+    {
+      "name": "logbsp_fb_sd",
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "first_bend",
+        "style_draw"
+      ]
+    },
+    {
+      "name": "logbsp_weighin_fb_sd",
+      "features": "all",
+      "objective": "logbsp",
+      "add_blocks": [
+        "first_bend",
+        "style_draw"
+      ]
+    },
+    {
+      "name": "logbsp_lr05",
+      "features": "card_safe",
+      "objective": "logbsp",
+      "recipe_overrides": {
+        "learning_rate": 0.05,
+        "early_stop": 100,
+        "rounds": 8000
+      }
+    },
+    {
+      "name": "logbsp_fb_sd_leaves31",
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "first_bend",
+        "style_draw"
+      ],
+      "params": {
+        "num_leaves": 31,
+        "min_child_samples": 500
+      }
+    },
+    {
+      "name": "logbsp_ff05",
+      "features": "card_safe",
+      "objective": "logbsp",
+      "params": {
+        "feature_fraction": 0.5
+      }
+    },
+    {
+      "name": "logbsp_ff09",
+      "features": "card_safe",
+      "objective": "logbsp",
+      "params": {
+        "feature_fraction": 0.9,
+        "bagging_fraction": 0.9
+      }
+    },
+    {
+      "name": "softmax_fb_sd",
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "first_bend",
+        "style_draw"
+      ]
+    }
+  ],
+  "shortening": true
 }

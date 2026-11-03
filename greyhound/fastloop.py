@@ -321,23 +321,37 @@ def paired_vs_baseline(folder: Path, baseline: str | None, n_boot: int = 2000, s
     return out
 
 
+def _short_cell(r: dict) -> str:
+    sh = r.get("shortening") or {}
+    if not sh or "skipped" in sh:
+        return sh.get("skipped", "-") if sh else "-"
+    return " / ".join(str((sh.get(m) or {}).get("model_adds", "-")) for m in SHORT_MARKS[:3])
+
+
+def _short_vs(r: dict, base: dict) -> str:
+    pr = r.get("paired_short")
+    if not pr or r["name"] == base["name"]:
+        return "-" if not pr else "0.0"
+    return f"{pr['diff']} {pr['ci90']}"
+
+
 def table(results: list[dict], baseline: str | None = None) -> str:
+    """The trade-out's measure first (the owner, 3 Nov 2026: get on at prices expected to shorten at the SP): how much
+    each experiment's price adds to the forecast of the SP from the book at first traded, 5 and 3 minutes out
+    (higher is better) and the paired difference from the baseline (the SP book's cross-entropy a race, negative is
+    better); then the log-loss against the result. Whether a model beats the SP itself is not the question: the SP is
+    the market's best price; the results JSON keeps Benter's test for reference."""
     if not results:
         return "(no results)"
     base = next((r for r in results if r["name"] == baseline), results[0])
-    lines = [f"Baseline: {base['name']}. Test {base['test_from']} to {base['test_to']}. Lower log-loss is better; "
-             "the Benter gain is the blend's log-loss less the SP's alone on the second half of the test "
-             "(negative: the model adds to the SP).", "",
-             "| Experiment | Features | Objective | Rounds | Log-loss | vs baseline (90%, paired, by day) | "
-             "On BSP races: model / BSP | Benter gain | Model weight | Seconds |", "|---|---|---|---|---|---|---|---|---|---|"]
+    lines = [f"Baseline: {base['name']}. Test {base['test_from']} to {base['test_to']} (log-loss); the SP forecast on "
+             f"the recorded books from {STUDY_FROM}, walk-forward by day.", "",
+             "| Experiment | Features | Objective | Rounds | Adds to the SP forecast a race: first traded / 5 min / "
+             "3 min | vs baseline (90%, by day) | Log-loss | vs baseline (90%, by day) | Seconds |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for r in results:
-        b = r.get("benter_vs_bsp") or {}
-        ll2 = b.get("logloss_second_half") or {}
-        gain = round(ll2["blend"] - ll2["market"], 5) if ll2 else None
-        ob = r.get("on_bsp_races") or {}
         lines.append(f"| {r['name']} | {r['features']} | {r['spec'].get('objective', 'softmax')} | {r['rounds']} | "
-                     f"{r['logloss']} | {_vs(r, base)} | {ob.get('model')} / {ob.get('bsp')} | "
-                     f"{gain} | {(b.get('weights') or {}).get('model')} | {r['seconds']} |")
+                     f"{_short_cell(r)} | {_short_vs(r, base)} | {r['logloss']} | {_vs(r, base)} | {r['seconds']} |")
     return "\n".join(lines)
 
 
@@ -366,8 +380,10 @@ def main(argv=None) -> int:
         order = [e["name"] for e in spec.get("experiments", [])]
         rs.sort(key=lambda r: order.index(r["name"]) if r["name"] in order else len(order))
         paired = paired_vs_baseline(Path(a.collect), spec.get("baseline") or (rs[0]["name"] if rs else None))
+        short = paired_shortening(Path(a.collect), spec.get("baseline") or (rs[0]["name"] if rs else None))
         for r in rs:
             r["paired"] = paired.get(r["name"])
+            r["paired_short"] = short.get(r["name"])
         md = table(rs, spec.get("baseline"))
         Path(a.collect, "table.md").write_text(md + "\n")
         print(md)
@@ -399,6 +415,9 @@ def main(argv=None) -> int:
         _log(f"experiment {e['name']}")
         res, pred = run_experiment(df, meta, e, recipe, spec.get("test_from", TEST_FROM), spec.get("test_to"))
         res["cache"] = {k: meta[k] for k in ("hash", "last_day", "rows")}
+        if e.get("shortening", spec.get("shortening")):
+            _log(f"shortening {e['name']}")
+            res["shortening"] = shortening(store, pred, e["name"], out)
         if e.get("study"):
             res["study"] = run_study(store, pred, e["name"], out)
         (out / f"result_{e['name']}.json").write_text(json.dumps(res, indent=1, default=str))
@@ -408,6 +427,80 @@ def main(argv=None) -> int:
         _log(json.dumps({k: res[k] for k in ("name", "logloss", "rounds", "seconds")}))
     print(table(results, spec.get("baseline")))
     return 0
+
+
+SHORT_MARKS = ("first_traded", "off_5", "off_3", "off_1")
+
+
+def shortening_summary(acc: pd.DataFrame) -> dict:
+    """Per mark, over every scored day: how much our price adds to the forecast of the SP from the book at that mark
+    (the SP book's cross-entropy a race, market_micro less micro: the same conditional logit without and with our
+    price), with micro's R2 of log(SP / mid) against no change and how often it calls the move the right way."""
+    out = {}
+    for mark, g in acc.groupby("mark"):
+        mm, mi = g[g.model == "market_micro"], g[g.model == "micro"]
+        if not len(mm) or not len(mi):
+            continue
+        races = mi.races.sum()
+        out[mark] = {"days": int(mi.day.nunique()), "races": int(races),
+                     "model_adds": round(float((mm.xent * mm.races).sum() - (mi.xent * mi.races).sum()) / races, 5),
+                     "gain_over_market": round(float((mi.xent_market * mi.races).sum() - (mi.xent * mi.races).sum())
+                                               / races, 5),
+                     "r2": round(1 - float(mi.sse.sum() / mi.sse_nochange.sum()), 4),
+                     "right_way%": round(100 * float((mi.right_way * mi.rows).sum() / mi.rows.sum()), 1)}
+    return out
+
+
+def shortening(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
+    """The trade-out's question (the owner, 3 Nov 2026: "we are just trying to get money on at higher prices that are
+    expected to shorten at BFSP"): on the recorded books from STUDY_FROM (re-timed), how much this experiment's price
+    adds to the forecast of the SP from the book at each mark, walk-forward by day (research.greyhound.tradeout_study).
+    Each day's scores go to ``short_<name>.parquet`` for the paired comparison in ``--collect``."""
+    from research.greyhound import score_full, tradeout_study as ts
+    days = pred[pred.race_date.astype(str) >= STUDY_FROM]
+    if not len(days):
+        return {"skipped": f"no test days from {STUDY_FROM}"}
+    first = date.fromisoformat(STUDY_FROM)
+    last = date.fromisoformat(str(days.race_date.max()))
+    score_full.score_days({name: days}, first, last, store, out / "pred")
+    panel, _ = ts.load(store, first, last, source="retimed", pred_dir=str(out / "pred" / name))
+    if not len(panel):
+        return {"skipped": "no panel"}
+    _, acc = ts.walk_forward(panel, names=["market_micro", "micro"])
+    acc = pd.DataFrame(acc)
+    if not len(acc):
+        return {"skipped": "too few days"}
+    acc.assign(day=acc.day.astype(str)).to_parquet(out / f"short_{name}.parquet", index=False)
+    return shortening_summary(acc)
+
+
+def paired_shortening(folder: Path, baseline: str | None, n_boot: int = 2000, seed: int = 0) -> dict:
+    """Each experiment's micro cross-entropy less the baseline's on the same days and marks (first traded, 5 and 3
+    minutes out: the entry marks with something to forecast), a race, with its 90% interval from a bootstrap over days.
+    Negative: its price forecasts the SP better than the baseline's."""
+    files = {p.stem.removeprefix("short_"): p for p in folder.rglob("short_*.parquet")}
+    if not baseline or baseline not in files:
+        return {}
+
+    def day_sums(f):
+        a = pd.read_parquet(f)
+        a = a[(a.model == "micro") & a["mark"].isin(SHORT_MARKS[:3])]
+        return a.assign(x=a.xent * a.races)[["day", "mark", "x", "races"]]
+
+    base = day_sums(files[baseline])
+    rng = np.random.default_rng(seed)
+    out = {}
+    for name, f in files.items():
+        d = day_sums(f).merge(base, on=["day", "mark"], suffixes=("_e", "_b"))
+        day = d.groupby("day").agg(e=("x_e", "sum"), b=("x_b", "sum"), n=("races_b", "sum"))
+        if len(day) < 2:
+            continue
+        idx = rng.integers(0, len(day), (n_boot, len(day)))
+        diff = (day.e.to_numpy()[idx].sum(1) - day.b.to_numpy()[idx].sum(1)) / day.n.to_numpy()[idx].sum(1)
+        out[name] = {"diff": round(float((day.e.sum() - day.b.sum()) / day.n.sum()), 5),
+                     "ci90": [round(float(np.percentile(diff, 5)), 5), round(float(np.percentile(diff, 95)), 5)],
+                     "days": int(len(day))}
+    return out
 
 
 def run_study(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
