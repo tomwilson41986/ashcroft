@@ -45,15 +45,15 @@ log = logging.getLogger(__name__)
 PREFIX = "greyhound/early_lay"
 REF = "el-"                                   # every order of this trader: el-<mmdd>-<market>-<selection>-<kind>
 CONFIG = {
-    "liability": 20.0,                        # each lay's liability (stake x (price - 1)); the owner, 3 Nov: size
-    "min_stake": 2.0,                         # to get matched, not the paper's GBP100 (see stake_for)
-    "max_stake": 10.0,
+    "liability": 100.0,                       # each lay's liability (stake x (price - 1)); the owner, 3 Nov: "let's use
+    "min_stake": 2.0,                         # the papers £100", the forward test's size (greyhound.tradeout
+    "max_stake": 50.0,                        # .target_stake: TO_WIN, MIN_STAKE, MAX_STAKE)
     "margin": 0.2,                            # lay at the forecast SP less this share
     "max_price": 20.0,                        # no lay above this price (greyhound.tradeout.MAX_PRICE)
     "min_order": 1.0,                         # Betfair's smallest stake on a limit order
     "min_sp_back": 2.0,                       # the smallest back at the SP that closes a lay (greyhound.tradeout)
     "daily_loss_limit": None,                 # the owner, 3 Nov: no loss limit, watched and stopped by hand
-    "max_open_liability": 1000.0,             # a guard against a fault, not a limit on the trading
+    "max_open_liability": 5000.0,             # a guard against a fault, not a limit on the trading
     "watch_minutes": 60.0,                    # markets off within this are watched for their first trades
     "min_rest_seconds": 60.0,                 # no lay placed this close to the green-up
     "green_seconds": 30.0,                    # green up from this many seconds before the scheduled off
