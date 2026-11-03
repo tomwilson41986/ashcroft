@@ -166,6 +166,12 @@ python -m greyhound.track --freeze --cutoff 2026-10-05 --days 3 --summary --out 
 BETFAIR_APP_KEY=<live key> python -m greyhound.book_record --until 21:30      # paper-models.yml: 5 s near the off
 python -m greyhound.tradeout --freeze --days 4 --summary --out out/greyhound_tradeout.json
 python -m research.greyhound.tradeout_study --source retimed --out out/greyhound_tradeout_study
+# The greyhound fast loop (the owner, 3 Nov 2026: no more 2-3 hour runs; reports/greyhound_roadmap.md 10): the features
+# cached once a change of the feature code (S3 greyhound/feature_cache/<hash>/), an experiment a line of JSON
+# (research/greyhound/experiments/current.json: feature set, greyhound/blocks/ to add, prefixes to drop, objective
+# softmax|binary|pl2|logbsp, recipe quick|confirm), each its own job side by side (greyhound-fastloop.yml)
+python -m greyhound.fastloop --build-cache
+python -m greyhound.fastloop --spec research/greyhound/experiments/current.json --only with_weighin --out out/fastloop
 
 # The football model (reports/football_model.md): football-data.co.uk + openfootball (+ API-Football once keyed, Betfair
 # Historic Data soccer once held) into gold tables with data-quality checks; Dixon-Coles ratings walk-forward, pooled

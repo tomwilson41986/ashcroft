@@ -247,3 +247,19 @@ like the horse model."
 Tests: `tests/test_greyhound_tradeout.py` 21 (the sizing, the ladder, settlement by the result both sides, several
 dogs a race with commission on the market's net, trades a day over every day, the `--date` guard, the blank in-play
 value, re-timing, the live recorder's schedule, the read-only client refusing a bet); the whole suite 1,674 passed.
+
+## 10. The fast loop (the owner, 3 Nov 2026: "define a quicker way to test models")
+
+Where the hours went: every full run rebuilt the metrics on every GBGB run from 2018 (about 15 minutes) and fitted on
+the whole history at a slow learning rate (the log-BSP refit's 20,000 rounds took two hours: report section 15).
+
+| Step | Before | Now |
+|---|---|---|
+| The features | rebuilt every run | built once a change of the feature code, cached in S3 (`greyhound/feature_cache/<hash>/`); a run loads them |
+| A new feature | an edit to the engine, a rebuild | a file in `greyhound/blocks/` computed on the cached matrix (`race_rel2`, `first_bend`, `style_draw` so far), tested for lag safety by `tests/test_greyhound_fastloop.py` |
+| An experiment | a script and a workflow | a line of JSON in `research/greyhound/experiments/current.json`: feature set (`card_safe`, `all` with the weigh-in, ...), blocks, prefixes to drop, objective (`softmax`, `binary`, `pl2`, `logbsp`), recipe |
+| The fit | 2019 on, learning rate 0.03, thousands of rounds | `quick`: 2024 on, 0.15, coarse bins; `confirm`: 2021 on, 0.05, for the winners |
+| Several ideas | one after another | one job each, side by side, then one table (`greyhound-fastloop.yml`) |
+| What is reported | varied | the same for every experiment: log-loss out of sample from 1 Jun 2026, the BSP's on the same races, Benter's gain over the BSP, the top features; the trade-out study on request |
+
+The timings are measured on the first runs and written in the results, not estimated here.
