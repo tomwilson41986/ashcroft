@@ -607,6 +607,27 @@ def table(store, day: date, mode: str = "live") -> str:
         L.append(f"| {r['race']} | {r['track']} | {r['lays']} | {r['staked']} | {r['matched']} | {r['greened']} | "
                  f"{r['sp_or_held']} | {r['open_liability']} | {r['locked']} | {r['running']} | {r['retries']} | "
                  f"{r['closed']} | {r['errors']} |")
+    # dog by dog: every lay that matched, against its forecast and the price when laid
+    num = lambda v: pd.to_numeric(v, errors="coerce")
+    fin = led[led.action.isin(["green", "green_part", "sp_close", "hold"])].copy()
+    if len(fin):
+        fin["selection_id"] = num(fin.selection_id)
+        lg = lays.assign(selection_id=num(lays.selection_id))
+        L += ["", "#### Live lays that matched, dog by dog", "",
+              "| Race (UK) | Track | Trap | Forecast SP | Mid when laid | Lay price | Lay stake | Matched | Greened at "
+              "| How closed | P&L |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+        for (mid, sid), g in fin.groupby(["market_id", "selection_id"]):
+            lr = lg[(lg.market_id == mid) & (lg.selection_id == sid)]
+            if not len(lr):
+                continue
+            lr = lr.iloc[-1]
+            gr = g[g.action.isin(["green", "green_part"])]
+            bk = num(gr.matched).fillna(0)
+            green_at = round(float((num(gr.avg_price).fillna(0) * bk).sum() / bk.sum()), 2) if bk.sum() > 0 else ""
+            pnl = num(g.locked_pnl).dropna()
+            L.append(f"| {lr.race_time} | {lr.track} | {lr.trap} | {lr.f_bsp} | {lr.mid} | {lr.price} | {lr['size']} | "
+                     f"{num(g.lay_matched).max()} | {green_at} | {g.action.iloc[-1]} | "
+                     f"{round(float(pnl.sum()), 2) if len(pnl) else 'settles with the result'} |")
     return "\n".join(L) + "\n"
 
 
