@@ -772,3 +772,30 @@ from the baseline on the same runners, 90%, a bootstrap over days):
 - **Batch 3** (research/greyhound/experiments/current.json) asks where the confirm recipe's gain comes from (the
   slower rate on the quick window, or the longer window at the quick rate), tests two tree sizes, and runs the best
   features on the new confirm recipe with the study.
+
+## 20. The fast loop's third batch (greyhound-fastloop.yml run 41606065187, 3 Nov 2026)
+
+**The two lanes worked.** The quick lane's six experiments and its table were done at 08:56 UTC, 7 minutes after the
+push. The slow lane (best_confirm) was still fitting. In batch 2 the table waited 56 minutes on one slow job.
+
+**The quick lane** (fitted on January 2024 to May 2026 unless marked; tested on every race from 1 June to 2 November
+2026; log-loss against the result, lower is better; paired against the baseline, 90%, by day):
+
+| Experiment | What changes | Rounds | Log-loss | vs logbsp (90%) | On BSP races: model / BSP | Seconds |
+|---|---|---|---|---|---|---|
+| logbsp (baseline) | quick recipe (learning rate 0.15, 63 leaves) | 1,262 | 0.44343 | | 0.44400 / 0.42838 | 262 |
+| logbsp_weighin_fb_sd | + the weigh-in, first_bend, style_draw | 954 | 0.44286 | -0.00057 (-0.00096 to -0.00018) | 0.44341 / 0.42838 | 290 |
+| **logbsp_lr08** | learning rate 0.08 | 2,675 | **0.44274** | **-0.00069 (-0.00100 to -0.00038)** | 0.44332 / 0.42838 | 324 |
+| logbsp_from2021 | fitted from 2021 at 0.15 | 1,340 | 0.44323 | -0.00020 (-0.00055 to +0.00014) | 0.44381 / 0.42838 | 325 |
+| logbsp_leaves127 | 127 leaves, 100 a leaf | 685 | 0.44361 | +0.00018 (-0.00018 to +0.00054) | 0.44417 / 0.42838 | 198 |
+| logbsp_leaves31 | 31 leaves, 500 a leaf | 1,484 | 0.44318 | -0.00025 (-0.00055 to +0.00004) | 0.44376 / 0.42838 | 264 |
+
+**Reading.**
+- **Most of the confirm recipe's gain is the learning rate.** Batch 2's confirm recipe (2021 on, 0.05) gained 0.00096
+  in 51 minutes. The quick window at 0.08 gains 0.00069 (72% of it) in 324 seconds. The longer window at the quick
+  rate gains 0.00020, and its interval crosses zero.
+- **Tree size:** neither change is clear of zero. Larger trees lean worse and smaller ones lean better.
+- **The feature gain is repeatable.** The weigh-in plus first_bend and style_draw give the same 0.00057 as in batch 2,
+  and the interval is still clear of zero.
+- **No model adds to the BSP.** The Benter gain is between -0.00001 and +0.00002 in every row, and the model's weight
+  beside the BSP is between -0.020 and +0.006.

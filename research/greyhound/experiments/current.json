@@ -1,15 +1,15 @@
 {
-  "about": "Batch 3 (3 Nov 2026), built on batch 2 (reports/greyhound_model.md section 19): the confirm recipe beat the quick one by 0.00096 but ran into its round cap in 51 minutes; the weigh-in and the first-bend and style-draw blocks together gave 0.00057. Here: where the confirm recipe's gain comes from (a slower learning rate on the quick window, or the longer window at the quick rate), two tree sizes, and the best features on the new confirm recipe (2022 on at 0.08, a 25-minute budget) with the study, in the slow lane.",
+  "about": "Batch 4 (3 Nov 2026), on the new quick recipe (learning rate 0.08, from batch 3: reports/greyhound_model.md section 20). The baseline is re-fitted on it. Here: the card-safe blocks without the weigh-in (published live at 12 tracks only), with it, a slower rate still, smaller trees with the blocks, and two subsampling settings. No slow lane: the quick recipe is now within 0.0003 of the slow one.",
   "recipe": "quick",
   "baseline": "logbsp",
   "test_from": "2026-06-01",
   "experiments": [
     {"name": "logbsp", "features": "card_safe", "objective": "logbsp"},
+    {"name": "logbsp_fb_sd", "features": "card_safe", "objective": "logbsp", "add_blocks": ["first_bend", "style_draw"]},
     {"name": "logbsp_weighin_fb_sd", "features": "all", "objective": "logbsp", "add_blocks": ["first_bend", "style_draw"]},
-    {"name": "logbsp_lr08", "features": "card_safe", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.08, "early_stop": 60, "rounds": 6000}},
-    {"name": "logbsp_from2021", "features": "card_safe", "objective": "logbsp", "recipe_overrides": {"train_from": "2021-01-01"}},
-    {"name": "logbsp_leaves127", "features": "card_safe", "objective": "logbsp", "params": {"num_leaves": 127, "min_child_samples": 100}},
-    {"name": "logbsp_leaves31", "features": "card_safe", "objective": "logbsp", "params": {"num_leaves": 31, "min_child_samples": 500}},
-    {"name": "best_confirm", "features": "all", "objective": "logbsp", "add_blocks": ["first_bend", "style_draw"], "recipe": "confirm", "study": true}
+    {"name": "logbsp_lr05", "features": "card_safe", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 8000}},
+    {"name": "logbsp_fb_sd_leaves31", "features": "card_safe", "objective": "logbsp", "add_blocks": ["first_bend", "style_draw"], "params": {"num_leaves": 31, "min_child_samples": 500}},
+    {"name": "logbsp_ff05", "features": "card_safe", "objective": "logbsp", "params": {"feature_fraction": 0.5}},
+    {"name": "logbsp_ff09", "features": "card_safe", "objective": "logbsp", "params": {"feature_fraction": 0.9, "bagging_fraction": 0.9}}
   ]
 }

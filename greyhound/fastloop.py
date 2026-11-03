@@ -11,7 +11,7 @@ two hours: reports/greyhound_model.md section 15). Here:
 2. **An experiment is a line of JSON** (``research/greyhound/experiments/current.json``): a feature set, blocks to add
    (``greyhound/blocks/``: computed on the cached matrix, no rebuild), prefixes to drop, an objective (``softmax``,
    ``binary``, ``pl2`` or ``logbsp``, the horse model's target), and a recipe.
-3. **The quick recipe** fits on 2024 on with a learning rate of 0.15 and coarse bins (minutes a fit); ``confirm`` fits
+3. **The quick recipe** fits on 2024 on with a learning rate of 0.08 and coarse bins (minutes a fit; 0.15 until batch 3); ``confirm`` fits
    on 2022 on at 0.08 for the winners, within a time budget (``max_seconds``). Both test on every race from ``TEST_FROM`` (out of sample) and report the
    log-loss against the result, against the Betfair SP on the same races, and Benter's test: whether the model adds to
    the SP in a blend fitted on the first half of the test and scored on the second.
@@ -55,7 +55,8 @@ EXTRA_COLS = ("bsp", "bsp_p_norm")
 TEST_FROM = "2026-06-01"
 STUDY_FROM = "2026-10-06"
 RECIPES = {
-    "quick": {"train_from": "2024-01-01", "learning_rate": 0.15, "early_stop": 30, "max_bin": 63, "rounds": 3000},
+    # batch 3 (section 20): 0.08 on the quick window gave 72% of the slow recipe's gain at a quarter more time than 0.15
+    "quick": {"train_from": "2024-01-01", "learning_rate": 0.08, "early_stop": 60, "max_bin": 63, "rounds": 6000},
     # batch 2 (section 19): 2021 on at 0.05 ran into its 8,000-round cap in 51 minutes; now 2022 on at 0.08, stopped
     # by early stopping, the cap or a time budget, whichever comes first
     "confirm": {"train_from": "2022-01-01", "learning_rate": 0.08, "early_stop": 100, "max_bin": 255, "rounds": 6000,
