@@ -1,0 +1,80 @@
+{
+ "rows": 60805,
+ "mean_abs_move": 0.06364949929464249,
+ "sd_move": 0.08817590282334252,
+ "open_books": {
+  "PS": 60805
+ },
+ "by_decile": [
+  {
+   "decile": 1,
+   "rows": 6081,
+   "mean_abs_forecast": 0.0009524331472243495,
+   "mean_caught": 0.0004692128768977888,
+   "right_way": 0.4989310968590692
+  },
+  {
+   "decile": 2,
+   "rows": 6080,
+   "mean_abs_forecast": 0.002855540706246401,
+   "mean_caught": 0.003252826204104077,
+   "right_way": 0.5121710526315789
+  },
+  {
+   "decile": 3,
+   "rows": 6081,
+   "mean_abs_forecast": 0.004873002830063145,
+   "mean_caught": 0.004175434185610233,
+   "right_way": 0.5204736063147508
+  },
+  {
+   "decile": 4,
+   "rows": 6080,
+   "mean_abs_forecast": 0.006948611666262689,
+   "mean_caught": 0.009471647906537359,
+   "right_way": 0.5580592105263158
+  },
+  {
+   "decile": 5,
+   "rows": 6081,
+   "mean_abs_forecast": 0.009160221610535807,
+   "mean_caught": 0.011934902422816793,
+   "right_way": 0.558625226114126
+  },
+  {
+   "decile": 6,
+   "rows": 6080,
+   "mean_abs_forecast": 0.011640259234811398,
+   "mean_caught": 0.014407901978071003,
+   "right_way": 0.5738486842105263
+  },
+  {
+   "decile": 7,
+   "rows": 6080,
+   "mean_abs_forecast": 0.014555854724941605,
+   "mean_caught": 0.01725374018103337,
+   "right_way": 0.5824013157894737
+  },
+  {
+   "decile": 8,
+   "rows": 6081,
+   "mean_abs_forecast": 0.018142615553973777,
+   "mean_caught": 0.020812290357879796,
+   "right_way": 0.5959546127281697
+  },
+  {
+   "decile": 9,
+   "rows": 6080,
+   "mean_abs_forecast": 0.02326168564878833,
+   "mean_caught": 0.02533357408783493,
+   "right_way": 0.6131578947368421
+  },
+  {
+   "decile": 10,
+   "rows": 6081,
+   "mean_abs_forecast": 0.03665078920637395,
+   "mean_caught": 0.039759515239621686,
+   "right_way": 0.6591021213616182
+  }
+ ]
+}

@@ -42,3 +42,4 @@ data/blandford_raw/
 # which tests/test_workflow_guards.py does -- drops this in the working tree.
 results_report.log
 .sectionals_site/
+.football_cache/

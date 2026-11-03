@@ -1,0 +1,111 @@
+name: Football trading (every match on Betfair, the live feed, small real stakes)
+
+# The owner, 3 Nov 2026: paper-trade every football match on Betfair from the live feed (prices, depth, traded money),
+# keeping the live application key in betting use with small real stakes, because Betfair counts a live key read
+# without the intention to bet as read-only access and may deactivate it.
+#
+# One process, the football trader (football/live.py --trade --all-games):
+#   - the football model's own decisions (MATCH_ODDS and OVER_UNDER_25 in its ten countries). With FOOTBALL_LIVE=yes
+#     these are real bets at football/live_config.json's live_limits: GBP2 a bet, GBP2 a match, GBP20 a day.
+#     Otherwise they are paper;
+#   - every football market on Betfair recorded and paper-traded beside it (football/exchange_feed.py,
+#     football/paper_book.py): depth a side, the traded ladder, sized entries at each checkpoint before the off,
+#     resting orders against the recorded queue, the close, Betfair's result. It places nothing.
+#
+# The key: the live application key only when the repository variable FOOTBALL_LIVE is 'yes' (then the process bets
+# and reads on the key it bets with); otherwise the delayed key, on paper. The key reaches no other process.
+# The runner: its own self-hosted runner on the UK server (Betfair refuses GitHub's runners), labelled
+# vars.FOOTBALL_RUNNER (default 'football'). Not the live horse trader's runner, and not the paper models' runner
+# (one job a runner: a shared runner would hold one job behind the other all day).
+# To stop new bets within a minute: the S3 object football/STOP (or trading/STOP). To stop everything: cancel the run.
+# Ledgers: s3://$CAPTURE_BUCKET/sources/football/live/<paper|live>/<day>/; the record and the paper lines:
+# s3://$CAPTURE_BUCKET/sources/football/exchange/<match day>/. Settled by football-model.yml.
+
+on:
+  schedule:
+    - cron: '40 5 * * *'      # 23.5 hours from 05:40 UTC: every kick-off of the day, worldwide
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: football-trade
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    runs-on: ${{ vars.FOOTBALL_RUNNER || 'football' }}
+    timeout-minutes: 1440
+    steps:
+      - name: Not on another job's runner
+        id: runner_guard
+        env:
+          FOOTBALL_RUNNER_LABEL: ${{ vars.FOOTBALL_RUNNER || 'football' }}
+          LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
+          PAPER_RUNNER_LABEL: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+        run: |
+          if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$FOOTBALL_RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
+            echo "FOOTBALL_RUNNER is the live horse trader's runner ($LIVE_RUNNER_LABEL): football does not run there"
+            exit 1
+          fi
+          if [ "$FOOTBALL_RUNNER_LABEL" = "$PAPER_RUNNER_LABEL" ]; then
+            echo "FOOTBALL_RUNNER is the paper models' runner ($PAPER_RUNNER_LABEL): give football its own"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - name: Python (its own environment)
+        run: |
+          VENV="$HOME/.venvs/ashcroft-football"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv-football"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
+      - name: Write the Betfair certificate (its own folder)
+        env:
+          BETFAIR_CERT: ${{ secrets.BETFAIR_CERT }}
+          BETFAIR_KEY: ${{ secrets.BETFAIR_KEY }}
+        run: |
+          if [ -n "$BETFAIR_CERT" ] && [ -n "$BETFAIR_KEY" ]; then
+            D="$HOME/.betfair/certs-football"
+            mkdir -p "$D"
+            printf '%s\n' "$BETFAIR_CERT" > "$D/betfair.crt"
+            printf '%s\n' "$BETFAIR_KEY" > "$D/betfair.key"
+            chmod 600 "$D/betfair.key"
+            echo "BETFAIR_CERT_FILE=$D/betfair.crt" >> "$GITHUB_ENV"
+            echo "BETFAIR_KEY_FILE=$D/betfair.key" >> "$GITHUB_ENV"
+          fi
+      - name: Trade football (every match recorded and paper-traded)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
+          FOOTBALL_LIVE: ${{ vars.FOOTBALL_LIVE || 'no' }}
+        run: |
+          FBKEY="$BETFAIR_APP_KEY"
+          LIVEFLAG=""
+          if [ "$FOOTBALL_LIVE" = yes ] && [ -n "$BETFAIR_LIVE_APP_KEY" ]; then FBKEY="$BETFAIR_LIVE_APP_KEY"; LIVEFLAG="--live"; fi
+          if [ -n "$LIVEFLAG" ]; then echo "football: real stakes on, the live key's feed"; else echo "football: paper, the delayed key's feed"; fi
+          BETFAIR_APP_KEY="$FBKEY" timeout 1420m python -m football.live --trade --all-games --hours 23.5 $LIVEFLAG
+      - name: Keep the day's files
+        if: ${{ always() && steps.runner_guard.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: football-trade
+          path: |
+            ~/.ashcroft/football/paper/
+            ~/.ashcroft/football/live/
+          retention-days: 7
+          if-no-files-found: ignore
