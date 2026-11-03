@@ -37,7 +37,7 @@ A stage's key is a hash of its own code, its inputs (file contents) and the keys
 
 A block has:
 
-- `FEATURES`: the columns it adds, all with one prefix (e.g. `sch_`).
+- `FEATURES`: the columns it adds, all with one prefix (e.g. `rest_`).
 - `build(m) -> DataFrame`: `match_id` plus those columns, computed from the cached matrix `m`.
 
 The helpers in `football/blocks/_util.py` give the per-side table (`sides`) and windows of any per-match measure,
@@ -52,7 +52,7 @@ Blocks so far:
 
 | Block | What it adds |
 |---|---|
-| `schedule` | rest days and congestion |
+| `rest_days` | rest days and congestion |
 | `venue_form` | home form at home, away form away |
 | `market_state` | margin, favourite, draw, implied total, Betfair's early gap |
 | `ah_consistency` | the handicap line against the 1X2 |
@@ -62,8 +62,8 @@ Blocks so far:
 
 ```bash
 python -m football.lab run --cache .football_cache \
-  --arm base=team_all --arm sched=team_all+schedule --arm mkt=team_all+market_state+book_gaps \
-  --model ridge --model stack --note "schedule and market state"
+  --arm base=team_all --arm rest=team_all+rest_days --arm mkt=team_all+market_state+book_gaps \
+  --model ridge --model stack --note "rest days and market state"
 ```
 
 - **Arm:** `name=part+part`. A part is a feature family (`team_all`, `xg_core`, `players`, ...), a block name, or a
@@ -91,6 +91,53 @@ python -m football.lab run --cache .football_cache \
 4. **Ledger:** every screen lands in the ledger. Reading it before a new idea avoids re-testing what failed. Its
    length is the count of forks, which a final result should be read against.
 
-## 5. Measured timings
+## 5. Measured timings (3 Nov 2026, this session's 4-core container)
 
-_Filled in from the first runs (2 Nov 2026): see below._
+| Step | Time |
+|---|---|
+| Cold cache build, all five stages | 22 min 10 s (Dixon-Coles 225 s, team 305 s, books 8 s, xG 134 s, players 652 s) |
+| Warm cache check, nothing changed | 4 s |
+| One arm, ridge | 2-5 s |
+| One arm, LightGBM or stack | 14-25 s |
+| Load the matrix and build all blocks (once a run) | about 90 s |
+| 7 arms x 1 model | 1 min 46 s |
+| 7 arms x 3 models | 6 min 24 s (21 walk-forward fits over 9 seasons, with Betfair costing) |
+
+A change to one feature module rebuilds only its stage; a new block needs no rebuild at all.
+
+## 6. The first screens (3 Nov 2026, development; `reports/football_runs/lab_ledger.jsonl`)
+
+Early-to-close move of the home chance, walk-forward 2016/17-2024/25, 60,805 matches:
+
+| Arm | Ridge R2 | Stack R2 | Stack top tenth | Stack right way |
+|---|---|---|---|---|
+| Team features | 4.22% | 4.70% | 4.50% | 65.1% |
+| + rest days | 4.22% | 4.72% | 4.63% | 65.9% |
+| + venue form | 4.20% | 4.67% | 4.42% | 65.1% |
+| + market state | 4.34% | 5.06% | 4.80% | 65.7% |
+| + handicap vs 1X2 | 4.28% | 5.07% | 4.70% | 66.4% |
+| + book gaps | 4.49% | 5.13% | 4.74% | 66.0% |
+| **+ all five blocks** | **4.84%** | **5.57%** | **4.99%** | **66.9%** |
+
+Fold standard errors are about 0.3-0.4 points, so all five together (+0.87 on the stack) is about two to three
+standard errors; rest days and venue form add nothing. The stack beats ridge, and ridge beats LightGBM, in every arm.
+
+On the xG subset (6,377 matches, 2024/25-2026/27, including the spent seasons: development only), the stack goes:
+
+| Stack features | R2 | Top tenth |
+|---|---|---|
+| Team features | 3.72% | 3.85% |
+| + the five blocks | 5.36% | 4.54% |
+| + xG | 5.61% | 4.98% |
+
+**Line-up features are refused for an early-price entry.** Adding the player features (the line-up surprise and the
+eleven's rating) takes the R2 to 9.12% and the top tenth to 6.19%. But the eleven is public only at the team sheet,
+about an hour before kick-off and days after the early price, so a trade at the early price cannot use them. What it
+shows is that team news is a large part of the move, which is the case for the line-up-window strategy (entry after
+the sheets, at the price then, measured on the recorder's books). The lab now refuses these features unless
+`--entry lineup` is given.
+
+**On the Betfair costing:** the stacks show +1.5% to +1.9% on 2024/25 at a symmetric book (base stack +1.53%, 90%
++0.83 to +2.36, 1,007 bets). That season was the one 29 screened configurations were read on. The same costing gave the
+earlier linear rule +0.88% on 2024/25 and -0.17% on the holdout. Read it as a reason to pre-register and paper-trade,
+not as an edge.

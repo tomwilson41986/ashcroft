@@ -55,7 +55,7 @@ def test_the_runner_scores_arms_and_writes_the_ledger(matrix, tmp_path, monkeypa
     matrix.to_parquet(tmp_path / name, index=False)
     (tmp_path / "LATEST").write_text(name)
     monkeypatch.setattr(lab, "LEDGER", tmp_path / "ledger.jsonl")
-    res = lab.run(str(tmp_path), {"base": "team_all", "plus": "team_all+market_state+schedule"}, ["ridge"],
+    res = lab.run(str(tmp_path), {"base": "team_all", "plus": "team_all+market_state+rest_days"}, ["ridge"],
                   2015, 2017, 2013, None, None, False, False)
     assert set(res["arms"]) == {"base:ridge", "plus:ridge"}
     r = res["arms"]["plus:ridge"]
@@ -95,3 +95,17 @@ def test_the_lag_check_catches_a_leaky_block(matrix):
     b = Leaky.build(m2).set_index("match_id").loc[m.loc[last, "match_id"]]
     with pytest.raises(AssertionError):
         pd.testing.assert_frame_equal(a, b)
+
+
+def test_a_name_that_is_both_a_family_and_a_block_is_refused(matrix):
+    with pytest.raises(SystemExit):
+        lab.resolve("x", {"x": ["a"]}, {"x": ["b"]}, matrix.columns)
+
+
+def test_line_up_time_features_are_refused_at_the_early_price(matrix, tmp_path, monkeypatch):
+    name = "matrix_test.parquet"
+    matrix.to_parquet(tmp_path / name, index=False)
+    (tmp_path / "LATEST").write_text(name)
+    monkeypatch.setattr(lab, "LEDGER", tmp_path / "ledger.jsonl")
+    with pytest.raises(SystemExit, match="team sheets"):
+        lab.run(str(tmp_path), {"x": "team_all+players"}, ["ridge"], 2015, 2017, 2013, None, None, False, False)

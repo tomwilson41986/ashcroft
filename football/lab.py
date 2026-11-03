@@ -37,6 +37,10 @@ log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "reports" / "football_runs" / "lab_ledger.jsonl"
 SPENT_FROM = 2025
+#: families known only after the team sheets (about an hour before kick-off), days after the early price: valid for a
+#: trade entered at the line-up, never for one entered at the early price (screen of 3 Nov 2026: they lift the move R2
+#: from 5.6% to 9.1% precisely because they carry the team news the move is made of)
+LINEUP_TIME = {"players", "mpm_surprise", "gpm_surprise", "mpm_xi_diff", "gpm_xi_diff"}
 CLIP, RIDGE_ALPHA = 4.0, 50.0
 
 # ---------------------------------------------------------------------------
@@ -213,6 +217,8 @@ def resolve(spec: str, fam: dict, blocks: dict, columns) -> list[str]:
     cols: list[str] = []
     for part in spec.split("+"):
         part = part.strip()
+        if part in fam and part in blocks:
+            raise SystemExit(f"{part!r} names both a feature family and a block: rename the block")
         if part in fam:
             cols += fam[part]
         elif part in blocks:
@@ -357,7 +363,7 @@ def _brief(s: dict) -> dict:
 
 
 def run(cache: str, arms: dict, models: list[str], first: int, last: int, train_from: int, subset: str | None,
-        blocks: list[str] | None, include_spent: bool, costed: bool, note: str = "") -> dict:
+        blocks: list[str] | None, include_spent: bool, costed: bool, note: str = "", entry: str = "early") -> dict:
     t0 = time.time()
     m = latest(cache)
     m, bfeat = add_blocks(m, blocks)
@@ -369,13 +375,17 @@ def run(cache: str, arms: dict, models: list[str], first: int, last: int, train_
         last = min(last, SPENT_FROM - 1)
     res = {"utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "note": note,
            "matrix": (Path(cache) / "LATEST").read_text().strip(), "git": _git(), "folds": [first, last],
-           "train_from": train_from, "subset": subset, "include_spent": include_spent, "arms": {}}
+           "train_from": train_from, "subset": subset, "include_spent": include_spent, "entry": entry, "arms": {}}
     for name, spec in arms.items():
+        late = sorted(set(p.strip() for p in spec.split("+")) & LINEUP_TIME)
+        if late and entry == "early":
+            raise SystemExit(f"arm {name!r} uses {late}, known only after the team sheets: not available at the early "
+                             "price. Use --entry lineup to study the line-up window (no early-price costing then)")
         cols = resolve(spec, fam, bfeat, d.columns)
         for model in models:
             t1 = time.time()
             r = score_arm(d, cols, model, first, last, train_from)
-            if costed and first <= 2024 <= max(last, 2024):
+            if costed and entry == "early" and first <= 2024 <= max(last, 2024):
                 r["betfair_2024"] = betfair_costed(d, cols, model, 2024, train_from)
             r.update({"spec": spec, "n_features": len(cols), "seconds": round(time.time() - t1, 1)})
             res["arms"][f"{name}:{model}"] = r
@@ -437,6 +447,8 @@ def main(argv=None) -> int:
     r.add_argument("--include-spent", action="store_true", help="score the seasons from 2025/26 (read before)")
     r.add_argument("--no-cost", action="store_true", help="skip the Betfair 2024/25 costing")
     r.add_argument("--note", default="")
+    r.add_argument("--entry", choices=["early", "lineup"], default="early",
+                   help="when a trade would enter: the early price (default) or after the team sheets")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     if a.cmd == "cache":
@@ -444,7 +456,7 @@ def main(argv=None) -> int:
         return 0
     arms = dict(x.split("=", 1) for x in a.arm)
     res = run(a.cache, arms, a.model or ["ridge"], a.first, a.last, a.train_from, a.subset,
-              a.blocks.split(",") if a.blocks else None, a.include_spent, not a.no_cost, a.note)
+              a.blocks.split(",") if a.blocks else None, a.include_spent, not a.no_cost, a.note, a.entry)
     print(table(res))
     print(f"total {res['seconds']} s; ledger {LEDGER.relative_to(ROOT)}")
     return 0
