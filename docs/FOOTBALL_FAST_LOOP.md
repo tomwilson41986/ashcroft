@@ -155,3 +155,8 @@ The first rule through the protocol is `reports/preregistration_football_stack.m
 
 The blocks win on the pooled Pinnacle seasons but not on Betfair's. A block that reads Pinnacle's open describes a book
 this rule does not trade, and Pinnacle's early prices are stale from July 2025.
+
+The resting-order variant is a second registration on the same signals (`reports/preregistration_football_stack_resting.md`,
+`research/open_close/football_stack_resting.py`). It posts one tick inside the spread and is filled only when a later
+recorded book proves the order would have matched. No history holds the books between the early price and the
+close, so it has no development figure at all.
