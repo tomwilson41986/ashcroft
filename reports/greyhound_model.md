@@ -986,7 +986,7 @@ mind."
 
 **The verdict on the grid as a whole: nothing beyond chance.**
 - 3 of the 96 holdout rules have their 90% lower bound above zero; chance alone gives about 4.8.
-- Every back strategy loses: 47 of the 48 back families are below zero on the holdout. Whatever way in, the backs
+- Every back strategy but one loses: 47 of the 48 back families are at or below zero on the holdout. Whatever way in, the backs
   matched are the drifters.
 - Lays do better: 10 of 48 above zero.
 
