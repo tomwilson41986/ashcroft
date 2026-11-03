@@ -394,7 +394,14 @@ def kill_switch(store):
     return check
 
 
-def trade(until: str, live: bool, store, cfg: dict | None = None) -> dict:
+def live_limits(cfg: dict) -> dict:
+    """The config with the real-money limits laid over the paper ones (``live_limits``): the owner's small stakes that
+    keep the live key in betting use (3 Nov 2026: GBP2 a bet, GBP20 a day)."""
+    return {**cfg, "limits": {**cfg["limits"], **cfg.get("live_limits", {})}}
+
+
+def trade(until: str, live: bool, store, cfg: dict | None = None, all_games: bool = False,
+          hours: float | None = None, depth: int = 5) -> dict:
     from trading.exchange import BetfairData, LiveExchange, PaperExchange
     cfg = cfg or load_config()
     raw = store.get(MODEL_KEY)
@@ -406,17 +413,27 @@ def trade(until: str, live: bool, store, cfg: dict | None = None) -> dict:
     mode = "live" if live and live_switch_on() else "paper"
     if live and mode != "live":
         log.warning("--live without FOOTBALL_LIVE=yes: paper")
+    if mode == "live":
+        cfg = live_limits(cfg)
     ex = LiveExchange(data) if mode == "live" else PaperExchange(data)
     ex.login()
+    feed = None
+    if all_games:                                         # every match on Betfair, recorded and paper-traded
+        from football.exchange_feed import DayWriter, Feed
+        from football.paper_book import PaperBook
+        feed = Feed(data._read, DayWriter(store, depth=depth), hours=cfg.get("all_games_hours", 24.0), depth=depth,
+                    paper=PaperBook())
     trader = Trader(ex, Pricer(model, aliases, cfg["limits"].get("min_team_matches", 10)), cfg, mode, store,
                     kill_switch(store))
     day = _uk_now().date().isoformat()
     end_h, end_m = (int(x) for x in until.split(":"))
+    end_at = time.monotonic() + hours * 3600 if hours else None
     last_cat, last_save = 0.0, 0.0
     log.info("football %s trading to %s UK; model fitted %s", mode, until, model.get("fitted_utc"))
     while True:
         uk = _uk_now()
-        if (uk.hour, uk.minute) >= (end_h, end_m):
+        if (end_at is not None and time.monotonic() >= end_at) or (end_at is None and (uk.hour, uk.minute) >= (end_h,
+                                                                                                             end_m)):
             break
         try:
             if time.monotonic() - last_cat > cfg["catalogue_seconds"]:
@@ -426,13 +443,27 @@ def trade(until: str, live: bool, store, cfg: dict | None = None) -> dict:
             trader.step()
         except Exception as exc:                          # a bad read must not end the day
             log.warning("step failed: %s", str(exc)[:300])
+        if feed is not None:
+            try:
+                got = feed.step()
+                if got["new"]:
+                    log.info("all games: %s", got)
+            except Exception as exc:                      # the record must not stop the trader
+                log.warning("all-games step failed: %s", str(exc)[:300])
         if time.monotonic() - last_save > 600:
             save_day(trader, store, day)
+            if feed is not None:
+                feed.save()
             last_save = time.monotonic()
         time.sleep(cfg["poll_seconds"])
     save_day(trader, store, day)
+    if feed is not None:
+        feed.save()
     out = {"mode": mode, "day": day, "markets": len(trader.markets), "decisions": len(trader.rows),
            "bets": trader.bets, "turnover": round(trader.turnover, 2)}
+    if feed is not None:
+        out["all_games"] = {"markets": len(feed.markets), "reads": feed.reads, "rows": feed.rows,
+                            "paper_lines": len(feed.paper.lines)}
     log.info("football: %s", out)
     return out
 
@@ -470,13 +501,40 @@ def settle_rows(ledger: pd.DataFrame, closes: pd.DataFrame, gold: pd.DataFrame, 
     return b
 
 
+def _unsettled(allb: pd.DataFrame, gold: pd.DataFrame, today: date) -> list[dict]:
+    """The bets kicked off more than 3 days ago and still unsettled, each with what gold holds for its day and teams."""
+    if allb.empty or "settled" not in allb.columns:
+        return []
+    old = allb[(~allb["settled"].astype(bool)) & (allb["match_date"] < (today - timedelta(days=3)).isoformat())]
+    out = []
+    for r in old.drop_duplicates(["match_date", "home_team_id", "away_team_id"]).head(20).itertuples(index=False):
+        same_day = gold[gold["match_date"] == r.match_date]
+        both = same_day[(same_day["home_team_id"] == r.home_team_id) & (same_day["away_team_id"] == r.away_team_id)]
+        either = gold[((gold["home_team_id"] == r.home_team_id) & (gold["away_team_id"] == r.away_team_id))]
+        out.append({"match_date": r.match_date, "home_team_id": r.home_team_id, "away_team_id": r.away_team_id,
+                    "gold_rows_that_day": int(len(same_day)), "gold_status_that_day_and_teams":
+                    both["status"].tolist(), "gold_dates_for_these_teams": sorted(either["match_date"].tail(3).tolist())})
+    return out
+
+
 def settle(store, days: int, mode: str, cfg: dict | None = None, today: date | None = None) -> dict:
     from football.data import load_gold
     cfg = cfg or load_config()
     gold = load_gold(store)
     today = today or date.today()
-    for i in range(days, -1, -1):
-        day = (today - timedelta(days=i)).isoformat()
+    # the recent days, and every older day whose settled file still holds an unsettled bet (a result can reach the
+    # gold table after the window; QA, 2 Nov 2026: 15 paper bets sat unsettled while only 7 days were looked at)
+    todo = {(today - timedelta(days=i)).isoformat() for i in range(days, -1, -1)}
+    for k in store.listing(f"{PREFIX}/{mode}/"):
+        if k.endswith("/settled.csv"):
+            raw = store.get(k)
+            try:
+                old = pd.read_csv(io.BytesIO(raw)) if raw and raw.strip() else None
+            except pd.errors.EmptyDataError:
+                old = None
+            if old is not None and "settled" in old.columns and not old["settled"].astype(bool).all():
+                todo.add(k.split("/")[-2])
+    for day in sorted(todo):
         base = f"{PREFIX}/{mode}/{day}"
         raw = store.get(f"{base}/ledger.csv")
         if not raw:
@@ -506,6 +564,8 @@ def settle(store, days: int, mode: str, cfg: dict | None = None, today: date | N
             "by_market": {k: {"n": int(len(g)), "pnl": float(g.pnl.sum()),
                               "clv": float(g.clv.mean()) if g.clv.notna().any() else None}
                           for k, g in done.groupby("market_type")} if len(done) else {},
+            # why a bet older than 3 days has not settled: no finished gold match on that UK day with both team ids
+            "unsettled_old": _unsettled(allb, gold, today),
             "updated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     store.put(f"{PREFIX}/{mode}/summary.json", json.dumps(summ, indent=1).encode())
     return summ
@@ -520,6 +580,10 @@ def main(argv=None) -> int:
     ap.add_argument("--settle", action="store_true")
     ap.add_argument("--live", action="store_true", help="real orders (with FOOTBALL_LIVE=yes)")
     ap.add_argument("--until", default="21:30", help="last UK time to trade, HH:MM")
+    ap.add_argument("--hours", type=float, default=None, help="trade for this many hours (in place of --until)")
+    ap.add_argument("--all-games", action="store_true",
+                    help="also record and paper-trade every football market on Betfair (football.exchange_feed)")
+    ap.add_argument("--depth", type=int, default=5, help="--all-games: price levels a side (Betfair's limit 10)")
     ap.add_argument("--days", type=int, default=5)
     ap.add_argument("--mode", default="paper", help="settle: paper or live")
     ap.add_argument("--root", default=None, help="a local sources folder in place of S3")
@@ -534,7 +598,7 @@ def main(argv=None) -> int:
         out["fit"] = {"as_of": m["as_of"], "pools": len(m["ratings"]), "pooling": m["pooling"],
                       "teams": sum(len(r["teams"]) for r in m["ratings"].values())}
     if a.trade:
-        out["trade"] = trade(a.until, a.live, store)
+        out["trade"] = trade(a.until, a.live, store, all_games=a.all_games, hours=a.hours, depth=a.depth)
     if a.settle:
         out["settle"] = {mode: settle(store, a.days, mode) for mode in ("paper", "live")}
     print(json.dumps(out, indent=1, default=str))

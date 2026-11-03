@@ -1,8 +1,12 @@
-name: Betfair price files (every market, nightly)
+name: Betfair price files (horse racing, nightly)
 # Every price file Betfair publishes at promo.betfair.com/betfairsp/prices, all markets (the owner's ask, 1 Oct 2026:
 # "Pull in all betfair price files daily, for all markets"), archived on the owner's UK runner to
 # s3://$CAPTURE_BUCKET/betfair_prices_raw/<name>. promo.betfair.com refuses GitHub's own runners (HTTP 403 from
 # Azure US), which is why this runs on the UK server.
+#
+# Horse racing only (the owner, 3 Nov 2026: nothing but horse racing on the horse runner): the greyhound price files
+# are archived from the greyhound runner (greyhound-prices.yml); the tennis odds and Betfair's Historic Data for the
+# other sports, which ran here until then, run on the data runner (other-data.yml).
 #
 # Slowly (the owner's word): one file at a time with a pause between, never in parallel. Each night: the files the
 # archive lacks, and the last week again (Betfair rewrites recent files; a file is stored again only when it has
@@ -86,40 +90,6 @@ jobs:
       - name: Install dependencies
         run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
 
-      # tennis-data.co.uk's tennis results with closing odds (Pinnacle among them), which its Cloudflare refuses GitHub's
-      # runners: from here, ten minutes at most, nightly; nothing once every year is held but this year and last.
-      - name: Tennis results with closing odds (ten minutes at most)
-        continue-on-error: true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
-          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT" != schedule ]; then echo "Only on the nightly run"; exit 0; fi
-          pip install -q openpyxl xlrd
-          timeout 900 python source_data.py --source tennis_odds --fetch --build --max-minutes 10
-
-      # Betfair's Historic Data service (the free BASIC plan: each sport's markets, the last traded price each minute
-      # and the result), for the models outside UK/IE racing (the owner's ask of 3 Oct). Its share of the night comes
-      # first and is capped at an hour; the archive takes what is left. The tables are built off the UK server
-      # (source-data.yml). Nothing is fetched until the account holds a sport on the service.
-      - name: Betfair Historic Data, other sports (an hour at most)
-        continue-on-error: true
-        env:
-          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
-          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
-          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
-          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT" != schedule ]; then echo "Only on the nightly run"; exit 0; fi
-          timeout 3900 python betfair_historic.py --fetch --max-minutes 60
-
       - name: Archive the price files to S3, one file at a time
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -163,4 +133,6 @@ jobs:
           fi
           if [ "$MAX" -lt 1 ]; then echo "No time before the runner's next job: the next night takes it up"; exit 0; fi
           echo "Taking new files for up to $MAX minutes"
-          python betfair_prices.py --archive "${ARGS[@]}" --max-minutes "$MAX"
+          # horse racing only on this runner (the owner, 3 Nov 2026): the greyhound files are archived from the
+          # greyhound runner (greyhound-prices.yml)
+          python betfair_prices.py --archive "${ARGS[@]}" --skip-market-prefix greyhound --max-minutes "$MAX"

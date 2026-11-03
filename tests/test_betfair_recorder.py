@@ -689,6 +689,19 @@ def test_a_backfill_of_old_days_fetches_only_what_the_archive_lacks():
     assert only["listed"] == 1 and only["markets"] == 1 and only["unchanged"] == 0 and only["stored"] == 1
 
 
+def test_each_sport_archives_its_own_files_by_market_prefix():
+    """The owner, 3 Nov 2026: the horse runner archives no greyhound file; the greyhound runner archives only those."""
+    site, s3 = _site_and_archive()
+    horses = bp.archive_published(s3=s3, bucket="ashcroft", session=site, skip_prefix=["greyhound"],
+                                  sleep=lambda _: None)
+    fetched = [u.rsplit("/", 1)[-1] for u in site.gets[1:]]
+    assert horses["listed"] == 6 and not any("greyhound" in f for f in fetched)
+    dogs_site = FakeSite(site.files)
+    dogs = bp.archive_published(s3=s3, bucket="ashcroft", session=dogs_site, only_prefix=["greyhound"],
+                                sleep=lambda _: None)
+    assert dogs["listed"] == 1 and [u.rsplit("/", 1)[-1] for u in dogs_site.gets[1:]] == ["dwbfgreyhoundwin01102026.csv"]
+
+
 def test_the_archive_stops_at_its_time_and_the_next_run_takes_up_the_rest():
     site, s3 = _site_and_archive()
     t = {"now": 0.0}

@@ -372,3 +372,40 @@ def test_settle_writes_the_summary(tmp_path):
     from datetime import date
     s = live.settle(store, 3, "paper", today=date(2026, 10, 11))
     assert s["settled"] == 1 and s["pnl"] == -2.0
+
+
+def test_an_old_unsettled_day_settles_when_its_result_arrives(tmp_path):
+    """QA, 2 Nov 2026: a bet whose result reached gold after the 7-day window stayed unsettled for good."""
+    from datetime import date
+    store = Store(root=tmp_path)
+    ledger = pd.DataFrame([{"action": "back", "status": "SUCCESS", "market_id": "1.50", "selection_id": 1,
+                            "market_type": "MATCH_ODDS", "outcome": "H", "kickoff_utc": "2026-10-10T14:00:00+00:00",
+                            "home_team_id": "ENG:arsenal", "away_team_id": "ENG:fulham", "matched": 2.0,
+                            "avg_price": 2.0, "back": 2.0}])
+    store.put("football/live/paper/2026-10-10/ledger.csv", ledger.to_csv(index=False).encode())
+    gold = pd.DataFrame([{"match_date": "2026-10-03", "home_team_id": "ENG:everton", "away_team_id": "ENG:fulham",
+                          "ft_home": 1, "ft_away": 1, "match_id": "y", "status": "FINISHED"}])
+    store.put_parquet("football/gold/matches.parquet", gold)
+    s = live.settle(store, 3, "paper", today=date(2026, 10, 11))           # no result yet
+    assert s["settled"] == 0
+    store.put_parquet("football/gold/matches.parquet", pd.concat([gold, pd.DataFrame([{
+        "match_date": "2026-10-10", "home_team_id": "ENG:arsenal", "away_team_id": "ENG:fulham", "ft_home": 2,
+        "ft_away": 1, "match_id": "x", "status": "FINISHED"}])]))
+    s = live.settle(store, 3, "paper", today=date(2026, 10, 30))           # 20 days later, outside the window
+    assert s["settled"] == 1 and s["pnl"] > 0 and s["unsettled_old"] == []
+
+
+def test_settle_explains_an_old_unsettled_bet(tmp_path):
+    from datetime import date
+    store = Store(root=tmp_path)
+    store.put_parquet("football/gold/matches.parquet", pd.DataFrame([{
+        "match_date": "2026-10-11", "home_team_id": "ENG:arsenal", "away_team_id": "ENG:fulham", "ft_home": 2,
+        "ft_away": 1, "match_id": "x", "status": "FINISHED"}]))                # played a day later than the bet says
+    ledger = pd.DataFrame([{"action": "back", "status": "SUCCESS", "market_id": "1.50", "selection_id": 1,
+                            "market_type": "MATCH_ODDS", "outcome": "H", "kickoff_utc": "2026-10-10T14:00:00+00:00",
+                            "home_team_id": "ENG:arsenal", "away_team_id": "ENG:fulham", "matched": 2.0,
+                            "avg_price": 2.0, "back": 2.0}])
+    store.put("football/live/paper/2026-10-10/ledger.csv", ledger.to_csv(index=False).encode())
+    s = live.settle(store, 30, "paper", today=date(2026, 10, 20))
+    u = s["unsettled_old"]
+    assert s["settled"] == 0 and len(u) == 1 and u[0]["gold_dates_for_these_teams"] == ["2026-10-11"]

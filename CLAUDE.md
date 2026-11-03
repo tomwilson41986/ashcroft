@@ -40,7 +40,7 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 | `BETFAIR_PASSWORD` | Betfair Exchange password |
 | `BETFAIR_APP_KEY` | Betfair API application key (the delayed key: every read-only job, the market records) |
 | `API_FOOTBALL_KEY` | API-Football (optional: fixture status, kick-off, cups; the football model runs without it) |
-| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py) |
+| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); the football trader when `FOOTBALL_LIVE=yes` (football-trade.yml, small real stakes, 3 Nov 2026); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py) |
 
 ## Key Commands
 
@@ -125,9 +125,10 @@ python betfair_prices.py --fetch --days 3 --load --match --report
 # ... on the owner's UK server: every file Betfair lists, all markets (the owner's ask, 1 Oct), archived slowly to
 # s3://$CAPTURE_BUCKET/betfair_prices_raw/, one file at a time: what the archive lacks and the last week again, the last
 # week first, then UK/IE racing from 2018, then the other markets from 2018, then the older files, newest first
-# (betfair-prices.yml nightly from 22:30 UTC, stopping by 06:15; live-record.yml after the last race for the UK/IE
-# files); the nightly job loads UK/IE racing from 2018
-python betfair_prices.py --archive --max-minutes 10
+# (betfair-prices.yml nightly from 22:30 UTC, stopping by 06:15, horse racing only; live-record.yml after the last race
+# for the UK/IE files; the greyhound files from the greyhound runner, greyhound-prices.yml: the owner, 3 Nov 2026,
+# nothing but horse racing on the horse runner); the nightly job loads UK/IE racing from 2018
+python betfair_prices.py --archive --skip-market-prefix greyhound --max-minutes 10   # greyhound-prices.yml: --market-prefix greyhound
 python betfair_prices.py --archive --market ukwin,ukplace,irewin,ireplace --refresh-days 2 --max-minutes 5
 python betfair_prices.py --pull-s3 --load --match --dir data/betfair_raw --load-from 2018-01-01 --max-files 2500
 
@@ -176,14 +177,20 @@ python -m greyhound.fastloop --spec research/greyhound/experiments/current.json 
 # The football model (reports/football_model.md): football-data.co.uk + openfootball (+ API-Football once keyed, Betfair
 # Historic Data soccer once held) into gold tables with data-quality checks; Dixon-Coles ratings walk-forward, pooled
 # with the opening price, scored by CLV against the close; a Betfair trader, paper unless FOOTBALL_LIVE=yes
-# (football-model.yml daily on GitHub's runners; the paper trader, with the greyhound one, in paper-models.yml on its
-# own runner, never in the live job: the owner, 2 Nov 2026)
+# (football-model.yml daily on GitHub's runners; the trader in football-trade.yml on its own runner, never in the live
+# job: real stakes only with FOOTBALL_LIVE=yes, GBP2 a bet and GBP20 a day, the owner, 3 Nov 2026)
 python source_data.py --source football,openfootball,api_football --fetch --build
 python -m football.data --build
 python -m football.model --from 2012-07-01 --out out/football_report.json
 python -m football.live --fit
 python -m football.live --trade --until 21:30                      # paper; --live with FOOTBALL_LIVE=yes
+# every football market on Betfair recorded (depth, traded ladder) and paper-traded beside the trader (owner, 3 Nov):
+# sized entries at checkpoints, resting orders against the recorded queue, the close, Betfair's result
+python -m football.live --trade --all-games --hours 23.5            # football-trade.yml
+python -m football.exchange_feed --summary --days 3
 python -m football.live --settle --days 7
+# the pre-registered early-to-close rule scored at the recorded books (paper trial; gate 'running' until complete)
+python -m research.open_close.football_paper_trial --panel data/football_exchange_panel.parquet --out out/football_paper_trial.json
 
 # Race ABM: simulate a card, batch features for training, pattern-oriented calibration
 python research_lab.py abm --db horse_racing.db --date 2026-03-12

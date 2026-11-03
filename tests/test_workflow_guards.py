@@ -189,12 +189,13 @@ def test_only_the_trader_runs_on_the_live_key():
 
 
 def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
-    """The owner, 2 Nov 2026: the greyhound and football paper traders run in paper-models.yml, never in the live
-    trader's job or on its runner, with no route to a real order; the delayed key for everything but the greyhound
-    paper trader and the greyhound book recorder (the owner, 2 Nov 2026: "use the live key, just don't execute bets
-    yet"), which take it only through GHKEY. One exception, the owner, 3 Nov 2026 ("lets go live now, i will monitor
-    and stop manually if any concerns"; "use early lay"): the greyhound early lay (greyhound/early_lay.py), the only
-    process here given --live, sending orders only with GREYHOUND_EARLY_LAY=live."""
+    """The owner, 2 Nov 2026: the greyhound paper trader runs in paper-models.yml, never in the live trader's job or
+    on its runner, with no route to a real order; the delayed key for everything but the greyhound paper trader and
+    the greyhound book recorder (the owner, 2 Nov 2026: "use the live key, just don't execute bets yet"), which take it
+    only through GHKEY. One exception, the owner, 3 Nov 2026 ("lets go live now, i will monitor and stop manually if
+    any concerns"; "use early lay"): the greyhound early lay (greyhound/early_lay.py), the only process here given
+    --live, sending orders only with GREYHOUND_EARLY_LAY=live. The football trader left this job on 3 Nov 2026 for
+    football-trade.yml (test_the_football_trader_bets_small_and_only_when_switched_on)."""
     import yaml as _yaml
     live = (WORKFLOWS / "live-trade.yml").read_text()
     for t in ("greyhound.live --trade", "football.live --trade", "GREYHOUND_LIVE", "FOOTBALL_LIVE"):
@@ -225,19 +226,64 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
         if "football" in ln or "betfair_recorder.py" in ln:
             assert "GHKEY" not in ln and "LIVE_APP_KEY" not in ln, ln
         assert not re.search(r"echo[^;]*\$\{?(BETFAIR_LIVE_APP_KEY|GHKEY)\b", ln), ln
-    assert "greyhound.live --trade" in runs and "football.live --trade" in runs
+    assert "greyhound.live --trade" in runs and "football.live --trade" not in runs
     assert [ln for ln in runs.splitlines() if "--live" in ln and not ln.strip().startswith("#")] == \
         [ln for ln in runs.splitlines() if "greyhound.early_lay --trade --live" in ln]
     assert "greyhound.live --trade --live" not in runs and "football.live --trade --live" not in runs
     env = next(s["env"] for s in steps if s.get("name") == trade)
-    assert env["GREYHOUND_LIVE"] == "no" and env["FOOTBALL_LIVE"] == "no"
+    assert env["GREYHOUND_LIVE"] == "no" and "FOOTBALL_LIVE" not in env and "API_FOOTBALL_KEY" not in env
+    # no football here at all (the owner, 3 Nov 2026: football apart from greyhounds and racing, football-trade.yml)
+    code = "\n".join(ln for ln in runs.splitlines() if ln.strip() and not ln.strip().startswith("#"))
+    for t in ("football", "--event-type 1", "api_football"):
+        assert t not in code, f"paper-models.yml still runs {t!r}"
+    assert not any("football" in s.get("name", "").lower() for s in steps)
     assert env["GREYHOUND_EARLY_LAY"] == "${{ inputs.early_lay || vars.GREYHOUND_EARLY_LAY || 'live' }}"
     assert env["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
-    # no other workflow starts either trader
+    # no other workflow starts the greyhound trader; the football trader only football-trade.yml
     for p in WORKFLOWS.glob("*.yml"):
+        body = p.read_text()
         if p.name != "paper-models.yml":
-            body = p.read_text()
-            assert "greyhound.live --trade" not in body and "football.live --trade" not in body, p.name
+            assert "greyhound.live --trade" not in body, p.name
+        if p.name != "football-trade.yml":
+            assert "football.live --trade" not in body, p.name
+
+
+def test_the_football_trader_bets_small_and_only_when_switched_on():
+    """The owner, 3 Nov 2026: every football match on Betfair recorded and paper-traded from the live feed, the live
+    key kept in betting use by small real stakes. The live key and --live only with FOOTBALL_LIVE=yes; its own
+    runner, never the live horse trader's or the paper models'; the real stakes capped at GBP2 a bet and GBP20 a day."""
+    import json as _json
+
+    import yaml as _yaml
+    text = (WORKFLOWS / "football-trade.yml").read_text()
+    job = _yaml.safe_load(text)["jobs"]["trade"]
+    assert "BETFAIR_RUNNER" not in str(job["runs-on"]) and "PAPER_MODELS_RUNNER" not in str(job["runs-on"])
+    guard = next(s for s in job["steps"] if s.get("name") == "Not on another job's runner")["run"]
+    assert '"$FOOTBALL_RUNNER_LABEL" = "$LIVE_RUNNER_LABEL"' in guard and '"$FOOTBALL_RUNNER_LABEL" = "$PAPER_RUNNER_LABEL"' in guard
+    step = next(s for s in job["steps"] if s.get("name", "").startswith("Football (the trader"))
+    assert step["env"]["FOOTBALL_LIVE"] == "${{ vars.FOOTBALL_LIVE || 'no' }}"
+    assert step["env"]["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
+    lines = [ln.strip() for ln in step["run"].splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    assert lines[:3] == ["set +e", 'FBKEY="$BETFAIR_APP_KEY"', 'LIVEFLAG=""']
+    switch = [ln for ln in lines if "BETFAIR_LIVE_APP_KEY" in ln]
+    assert switch == ['if [ "$FOOTBALL_LIVE" = yes ] && [ -n "$BETFAIR_LIVE_APP_KEY" ]; then '
+                      'FBKEY="$BETFAIR_LIVE_APP_KEY"; LIVEFLAG="--live"; fi']
+    # the key the trader may hold reaches the trader alone; the records and the collector read on the delayed key
+    keyed = [ln for ln in lines if "FBKEY" in ln and "python" in ln]
+    assert len(keyed) == 1 and keyed[0].startswith('BETFAIR_APP_KEY="$FBKEY" ')
+    assert "football.live --trade --all-games" in keyed[0] and keyed[0].endswith("$LIVEFLAG")
+    others = [ln for ln in lines if "python" in ln and ln is not keyed[0]]
+    assert others and not any(k in ln for ln in others for k in ("FBKEY", "LIVE_APP_KEY", "LIVEFLAG", "--live"))
+    assert sum("betfair_recorder.py --record" in ln for ln in others) == 3       # the day, the evening, the collection
+    assert any("sources.api_football_lineups --collect" in ln for ln in others)
+    assert all("--event-type 1" in ln for ln in others if "betfair_recorder.py" in ln)
+    tables = next(s for s in job["steps"] if s.get("name") == "Football line-up tables")
+    assert "api_football_lineups --build" in tables["run"] and "LIVE" not in str(tables.get("env"))
+    for name in ("live-trade.yml", "live-record.yml", "paper-models.yml"):
+        assert "football-trade" not in (WORKFLOWS / name).read_text() or name == "paper-models.yml"
+    cfg = _json.loads((Path(__file__).resolve().parents[1] / "football" / "live_config.json").read_text())
+    lim = {**cfg["limits"], **cfg["live_limits"]}
+    assert lim["level_stake"] <= 2.0 and lim["max_match_stake"] <= 2.0 and lim["max_daily_turnover"] <= 20.0
 
 
 def test_the_live_horse_jobs_carry_nothing_from_another_sport():
@@ -251,3 +297,53 @@ def test_the_live_horse_jobs_carry_nothing_from_another_sport():
     import betfair_recorder
     assert not hasattr(betfair_recorder, "census_racing_countries")
     assert not hasattr(betfair_recorder, "SOCCER")
+
+
+def test_the_runner_setup_registers_only_its_own_label():
+    """scripts/setup_runner.sh: a new runner on the UK server carries only its own label (no 'self-hosted', which the
+    live horse trader's runner label may be), for the two jobs that need one, from a checked download."""
+    text = (Path(__file__).resolve().parents[1] / "scripts" / "setup_runner.sh").read_text()
+    assert "--no-default-labels" in text and '--labels "$LABEL"' in text
+    assert "football|paper-models|data) ;;" in text
+    assert "sha256sum -c -" in text and 'read -r -s -p "Registration token' in text
+    for name, label in (("football-trade.yml", "'football'"), ("paper-models.yml", "'paper-models'"),
+                        ("other-data.yml", "'data'")):
+        assert label in (WORKFLOWS / name).read_text()
+
+
+def test_the_horse_racing_runner_runs_horse_racing_alone():
+    """The owner, 3 Nov 2026: nothing but horse racing on the horse racing runner (vars.BETFAIR_RUNNER). Every workflow
+    there runs no greyhound, football, tennis or other-sport code; the price archive there leaves out the greyhound
+    files, which the greyhound runner archives; the other sports' fetches run on the data runner."""
+    import yaml as _yaml
+    on_horse = []
+    for p in WORKFLOWS.glob("*.yml"):
+        wf = _yaml.safe_load(p.read_text())
+        for job in (wf.get("jobs") or {}).values():
+            if "BETFAIR_RUNNER" in str(job.get("runs-on", "")):
+                on_horse.append((p.name, job))
+    assert {n for n, _ in on_horse} >= {"live-trade.yml", "live-record.yml", "betfair-prices.yml"}
+    banned = ("4339", "greyhound", "tennis", "betfair_historic", "football", "--event-type 1", "api_football",
+              "census-sports", "source_data.py")
+    for name, job in on_horse:
+        for step in job.get("steps", []):
+            code = "\n".join(ln for ln in str(step.get("run", "")).splitlines()
+                              if ln.strip() and not ln.strip().startswith("#"))
+            code = code.replace("--skip-market-prefix greyhound", "")      # the one mention: leaving them out
+            for t in banned:
+                assert t not in code.lower(), f"{name}: {step.get('name')!r} runs {t!r} on the horse racing runner"
+    prices = (WORKFLOWS / "betfair-prices.yml").read_text()
+    assert 'betfair_prices.py --archive "${ARGS[@]}" --skip-market-prefix greyhound' in prices
+    # where the moved work runs now: never the horse racing runner
+    dogs = _yaml.safe_load((WORKFLOWS / "greyhound-prices.yml").read_text())["jobs"]["archive"]
+    assert "PAPER_MODELS_RUNNER" in str(dogs["runs-on"]) and "BETFAIR_RUNNER" not in str(dogs["runs-on"])
+    assert "betfair_prices.py --archive --market-prefix greyhound" in str(dogs["steps"])
+    data = _yaml.safe_load((WORKFLOWS / "other-data.yml").read_text())["jobs"]["fetch"]
+    assert "DATA_RUNNER" in str(data["runs-on"]) and "BETFAIR_RUNNER" not in str(data["runs-on"])
+    runs = str(data["steps"])
+    assert "tennis_odds" in runs and "betfair_historic.py --fetch" in runs and "LIVE_APP_KEY" not in runs
+    paper = (WORKFLOWS / "paper-models.yml").read_text()
+    assert "betfair_recorder.py --record --final --until 21:30 --event-type 4339 --tag greyhound" in paper
+    for wf_name, job_name in (("greyhound-prices.yml", "archive"), ("other-data.yml", "fetch")):
+        guard = _yaml.safe_load((WORKFLOWS / wf_name).read_text())["jobs"][job_name]["steps"][0]
+        assert guard["name"] == "Not on the horse racing runner" and '"$LIVE_RUNNER_LABEL"' in guard["run"]

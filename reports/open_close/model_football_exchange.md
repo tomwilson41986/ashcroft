@@ -307,5 +307,25 @@ What a paper trial needs, if the owner wants the residual question closed (the p
   from the back). If wide books are nearly empty on the recorder, the question is closed without waiting for 300
   trades.
 
+**The scorer (written 2 Nov 2026, no trial figure yet):** `research/open_close/football_paper_trial.py` reads the
+pre-registration's JSON block (keeping its SHA-256) and scores the primary and secondary rules at the recorded books
+exactly as above: the first recorded snapshot at or after the collection moment (within 60 minutes), the fill only
+where the size shown covers GBP10, the close at the last two-sided pre-play book, the window and the gate. Until the
+window is complete its gate reads "running", never a pass or a fail. Tests: `tests/test_football_paper_trial.py`.
+
+    python -m research.open_close.football_paper_trial --panel data/football_exchange_panel.parquet \
+        --out out/football_paper_trial.json --trades-out out/football_paper_trial_trades.csv
+
+Two limits it reports rather than hides:
+
+- **The record's early moment.** paper-models.yml records each day's markets from 05:45 UTC and the next day's from
+  17:00 UK the evening before. That covers the collection moment for Friday and Saturday matches (Friday 17:00) and
+  Tuesday matches (Tuesday 13:00) only; Sunday, Monday, Wednesday and Thursday matches have no recorded book at their
+  collection, and are skipped as "no recorded book at the early moment" (counted by weekday). Closing that needs a
+  recorder pass on Friday afternoons for the matches to Monday and on Tuesdays for the matches to Thursday.
+- **The fixtures file.** source-data.yml fetches it at 03:20 UTC, so a collection's file sits in the next day's
+  folder; the scorer uses the first fetch after the collection day. A Friday-evening match the next morning's file
+  no longer lists has no features.
+
 Hyphens throughout; every figure names its source above. Run on 4 cores, locally, 2 Nov 2026 (the development step's
 model and scoring time 303 s, as its JSON records).

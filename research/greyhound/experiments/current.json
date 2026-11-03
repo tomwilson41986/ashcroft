@@ -1,17 +1,16 @@
 {
-  "about": "Batch 6 (3 Nov 2026, the owner: build F2, F3, F5, F6, L2 and the expected final time tonight). Each new engine block on its own on top of the best features so far (core: every block before tonight's, the weigh-in included; the learning rate of 0.05 that helped in batches 4 and 5), then all four together, then all with the race simulator (F2) and with Betfair's forecast price (L2: recorded only from 6 Oct 2026, so almost absent from the 2024-on training window; run for the record). Scored as before: log-loss against the baseline and the shortening score (calling the move to the SP).",
+  "about": "Batch 7 (3 Nov 2026, the owner: 'we need to focus on improving our BFSP model. The final price / log of final price is key'). Ranked first by RMSE of log(BSP) against the baseline. Batch 6's best (every new engine block and the race simulator, all_new_sim) against core; the same rescaled to the SP book's usual total (the closing study: the mid's RMSE 0.635 -> 0.492 so); larger trees; fewer features a tree. In the slow lane, the closing-price study (research/greyhound/bfsp_close.py) on core's and on the best's prices: how much a better pre-race price sharpens the forecast of log(BSP) from the book (our price is a fifth of the closing trees' gain).",
   "recipe": "quick",
   "baseline": "core_lr05",
   "test_from": "2026-06-01",
   "shortening": true,
   "experiments": [
     {"name": "core_lr05", "features": "core", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "times_lr05", "features": "core+times", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "intent_lr05", "features": "core+intent", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "ability_lr05", "features": "core+ability", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "etime_lr05", "features": "core+etime", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "all_new_lr05", "features": "all", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "all_new_sim_lr05", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "all_new_sim_fcast_lr05", "features": "all", "objective": "logbsp", "add_blocks": ["sim", "fcast"], "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}}
+    {"name": "best_lr05", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
+    {"name": "best_rescaled", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "rescale_book": true, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
+    {"name": "best_leaves63", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "params": {"num_leaves": 63, "min_data_in_leaf": 100}, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
+    {"name": "best_ff06", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "params": {"feature_fraction": 0.6}, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
+    {"name": "core_bfsp", "features": "core", "objective": "logbsp", "bfsp": true, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
+    {"name": "best_bfsp", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "bfsp": true, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}}
   ]
 }

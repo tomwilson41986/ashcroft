@@ -75,6 +75,8 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
         run: python -m football.live --fit | tee fit_report.json
       - name: Settle the paper and live ledgers
+        # settles even when an earlier step (the fit, the gold build) failed: the ledgers must not freeze
+        if: ${{ !cancelled() }}
         continue-on-error: true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
