@@ -1,0 +1,54 @@
+name: Trading watchdog (restart a dropped session, tell the owner)
+
+# The owner, 3 Nov 2026: "We need to prevent this from happening ... Or alert me if it does happen". The UK runner
+# received a shutdown signal at 06:09 UTC that morning (23 Oct: 06:53 UTC) and the trading session died before its
+# first bet. This job runs on GitHub's own runners, never the UK one, and only reads the Live trading runs: a session
+# that ended in failure, or none by 05:45 UTC, is restarted (live-trade.yml, mode trade, today; at most 3 times a
+# day, never with trading/STOP set, never after 20:30 UK), and the owner is told in a GitHub issue "Live trading:
+# <day>" (one a day, a comment for each event). A session waiting 20 minutes for the runner is reported, not
+# restarted. scripts/session_watchdog.py has the rules; live-trade.yml is not changed.
+
+on:
+  schedule:
+    - cron: '*/10 5-9 * * *'     # the morning, when the session starts and most of the money goes on
+    - cron: '*/30 10-20 * * *'   # the rest of the day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write      # read the Live trading runs and queue one
+  issues: write       # tell the owner
+
+concurrency:
+  group: trading-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - name: Is the kill switch set
+        id: stop
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+        run: |
+          # 1 set, 0 not set (S3 answered 404), unknown otherwise: an unknown kill switch never restarts
+          if aws s3api head-object --bucket "$BUCKET" --key trading/STOP >/dev/null 2>err.txt; then
+            echo "stop=1" >> "$GITHUB_OUTPUT"
+          elif grep -qE '404|Not Found' err.txt; then
+            echo "stop=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "stop=unknown" >> "$GITHUB_OUTPUT"; cat err.txt
+          fi
+      - name: Check the session
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOP: ${{ steps.stop.outputs.stop }}
+        run: python3 scripts/session_watchdog.py

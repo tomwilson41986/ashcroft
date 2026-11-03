@@ -1,0 +1,47 @@
+name: UK runner diagnosis (read-only)
+
+# Why the UK runner received a shutdown signal mid-session (3 Nov 2026 06:09 UTC; 23 Oct 06:53 UTC; the trading
+# session died both times). Both fall in Ubuntu's default window for the daily unattended upgrade (apt-daily-upgrade,
+# 06:00 plus up to an hour's random delay), after which needrestart may restart services, the runner's among them.
+# This job only reads: the boots, the timers, the apt and unattended-upgrade logs, needrestart's setting, the journal
+# and the runner's own diagnostic log around the two times. It changes nothing on the server. Dispatch by hand; it
+# waits for the runner like any job, so run it outside the trading hours.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: vars.BETFAIR_RUNNER != ''
+    runs-on: ${{ vars.BETFAIR_RUNNER }}
+    timeout-minutes: 10
+    steps:
+      - name: Read the server's record of the two shutdowns
+        run: |
+          set +e
+          echo "== now, uptime, the last boots"; date -u; uptime; who -b; last -x -n 20 2>/dev/null | head -25
+          echo "== the timers"; systemctl list-timers --all --no-pager 2>/dev/null | grep -Ei 'apt|unattended|needrestart|update|NEXT'
+          for t in apt-daily-upgrade.timer apt-daily.timer; do echo "-- $t"; systemctl cat "$t" --no-pager 2>/dev/null | grep -E 'OnCalendar|Randomized'; done
+          echo "== the runner's service"; systemctl list-units --all --no-pager 2>/dev/null | grep -i runner
+          echo "== apt history around the two times"
+          for f in /var/log/apt/history.log /var/log/apt/history.log.1 /var/log/apt/history.log.*.gz; do
+            [ -e "$f" ] && zgrep -hE '^(Start-Date|End-Date|Commandline|Requested-By)' "$f" 2>/dev/null | grep -E -A3 '2026-1(0-2[2-4]|1-0[2-3])'
+          done | head -60
+          echo "== unattended-upgrades"; ls -l /var/log/unattended-upgrades/ 2>&1 | head
+          zgrep -hE '2026-(10-23|11-03) 0[5-7]:' /var/log/unattended-upgrades/unattended-upgrades.log* 2>/dev/null | head -40
+          echo "== needrestart"; ls /etc/needrestart/ /etc/needrestart/conf.d/ 2>&1
+          grep -hE "restart'?\}? *=|override_rc" /etc/needrestart/needrestart.conf /etc/needrestart/conf.d/* 2>/dev/null | grep -v '^\s*#' | head
+          echo "== the journal, 3 Nov 06:00-06:15 UTC"
+          journalctl --no-pager -q --since "2026-11-03 06:00:00 UTC" --until "2026-11-03 06:15:00 UTC" 2>&1 \
+            | grep -Ei 'upgrade|needrestart|restart|stop|runner|shutdown|apt|reboot|systemd\[1\]' | head -60
+          echo "== the journal, 23 Oct 06:45-07:00 UTC"
+          journalctl --no-pager -q --since "2026-10-23 06:45:00 UTC" --until "2026-10-23 07:00:00 UTC" 2>&1 \
+            | grep -Ei 'upgrade|needrestart|restart|stop|runner|shutdown|apt|reboot|systemd\[1\]' | head -60
+          echo "== the runner's own log around the two times"
+          D="$(dirname "$RUNNER_WORKSPACE")/../_diag"; [ -d "$D" ] || D="$HOME/actions-runner/_diag"
+          ls -t "$D"/Runner_*.log 2>/dev/null | head -5
+          grep -hE '^\[2026-(11-03 0(5:5|6:0|6:1)|10-23 06:(4|5))' "$D"/Runner_*.log 2>/dev/null \
+            | grep -Ei 'shutdown|stop|signal|exit|cancel|update|restart' | head -40

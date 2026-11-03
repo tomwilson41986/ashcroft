@@ -1565,6 +1565,18 @@ measured from the GBP5,000.00 the owner left after the Sunday withdrawal (`withd
 - **Data.** Final marks with a BSP for 2 Nov 540 of 569; price files to 1 Nov. The Tote: no gap. Sectionals: At The
   Races complete, nothing new.
 
+**The trading watchdog** (3 Nov; the owner: "We need to prevent this from happening ... Or alert me if it does
+happen"). On 3 Nov the UK runner received a shutdown signal at 06:09 UTC (run 41583026163), before the first back,
+as on 23 Oct at 06:53 UTC; nothing traded until the restart at 07:16 UTC (run 41595221448). Both times fall in
+Ubuntu's default window for the daily unattended upgrade (06:00 UTC plus up to an hour), after which needrestart can
+restart the runner's service: `runner-diagnose.yml` (read-only, dispatched after the racing) reads the server's own
+record to confirm it before anything on the server is changed. Meanwhile `trading-watchdog.yml` runs on GitHub's own
+runners every 10 minutes from 05:00 to 09:59 UTC and every 30 minutes to 20:30 (`scripts/session_watchdog.py`): a
+session that ended in failure, or none by 05:45 UTC, is restarted (mode trade, today; at most 3 times a day, never
+with trading/STOP set or unreadable, never after 20:30 UK, never one the owner cancelled), a session waiting 20
+minutes for the runner is reported, and each event goes to the owner in the day's GitHub issue "Live trading:
+<day>". live-trade.yml is not changed.
+
 **Why the morning only.** Entered near the off (Betfair's pre-play average price) the same rule loses, because the
 closing model was fitted on morning prices and still trusts our price once the market is sharp. February-March 2026,
 walk-forward, at a backer's price, the +3% bar, staked to win GBP250 (ledger `late-entry-0930`):
