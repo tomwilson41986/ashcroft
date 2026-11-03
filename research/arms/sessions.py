@@ -242,10 +242,13 @@ class RaceBookSession(ArmSession):
         self.draws = int(p.get("draws", 4000))
         self.day_exposure = float(p.get("day_exposure", 4000.0))
         self.max_lay_price = float(p.get("max_lay_price", 20.0))
-        self.booked: set = set()
+        self.replan_minutes = int(p.get("replan_minutes", 5))
+        self.plans: dict = {}                                # market_id -> {sid: (side, target, planned price, ...)}
+        self.planned_at: dict = {}
         self.positions_book: dict = {}
         self.book_rows: list[dict] = []
         self.exposure_used = 0.0
+        self.race_exposure: dict = {}
 
     def execute(self, m, book, d, now):
         return                                               # the rule's single backs are off: the book only
@@ -254,7 +257,7 @@ class RaceBookSession(ArmSession):
         now = now or self.clock()
         if not self.in_window(now) or hours_uk(now, self.book_from) < 0:
             return
-        to_trade = [m for m in self.tradable_markets(now) if m.market_id not in self.booked]
+        to_trade = self.tradable_markets(now)
         if not to_trade:
             return
         books = self.x.books([m.market_id for m in to_trade])
@@ -264,42 +267,82 @@ class RaceBookSession(ArmSession):
                 continue
             self.book_race(m, b, now)
 
-    def book_race(self, m, book, now: datetime) -> None:
-        views = self.race_views(m, book)
+    def plan_race_book(self, m, book, views, now: datetime) -> dict | None:
+        """The race's target book on the prices now: {sid: [(side, target stake, planned price, edge, q_hat)]}."""
         c = self.closing(views, self.draws)
         if c is None:
-            return
+            return None
         market, model_price, q_hat, sigma, draws = c
         back = np.array([v.back if (v.back and v.back > 1) else np.nan for v in views], float)
         lay = np.array([v.lay if (v.lay and v.lay > 1) else np.nan for v in views], float)
-        bsize = np.array([v.back_size for v in views], float)
-        lsize = np.array([book.runners[v.selection_id].lay[0][1] if book.runners[v.selection_id].lay else 0.0
-                          for v in views], float)
-        allow_back = np.isfinite(back) & (bsize >= self.cfg.limits.min_stake) & (back <= self.cfg.limits.max_price)
-        allow_lay = (np.isfinite(lay) & (lsize >= self.cfg.limits.min_stake) & (lay <= self.max_lay_price)
-                     if self.with_lays else np.zeros(len(views), bool))
-        if allow_back.sum() + allow_lay.sum() == 0 or allow_back.sum() < 0.5 * len(views):
-            return                                            # a book that is mostly unpriced waits
-        self.booked.add(m.market_id)
-        room = self.day_exposure - self.exposure_used
+        allow_back = np.isfinite(back) & (back <= self.cfg.limits.max_price)
+        allow_lay = (np.isfinite(lay) & (lay <= self.max_lay_price) if self.with_lays
+                     else np.zeros(len(views), bool))
+        if allow_back.sum() < 0.5 * len(views):
+            return None                                       # a race mostly unpriced waits
+        room = self.day_exposure - self.exposure_used + self.race_exposure.get(m.market_id, 0.0)
         if room < self.cfg.limits.min_stake:
-            return
-        back_f, lay_f = np.nan_to_num(back, nan=1.0), np.nan_to_num(lay, nan=1.0)
+            return {}
+        back_f, lay_f = np.where(np.isfinite(back), back, 2.0), np.where(np.isfinite(lay), lay, 2.0)
         payoffs = rb.close_payoffs(draws, back_f, lay_f)
         w = np.full(len(draws), 1.0 / len(draws))
         bk = rb.build_book(payoffs, w, lay_f, delta=self.delta, theta=self.theta,
                            exposure_cap=min(self.exposure, room), stake_cap=self.stake_cap,
                            allow_back=allow_back, allow_lay=allow_lay, commission=self.cfg.commission)
+        plan = {}
         for i, v in enumerate(views):
-            sid = v.selection_id
             if bk.back[i] >= self.cfg.limits.min_stake and allow_back[i]:
-                stake = math.floor(min(bk.back[i], bsize[i]) * 100) / 100
-                f = self.x.back(m.market_id, sid, back[i], stake, ref="book", min_fill=self.cfg.limits.min_stake)
-                self._record(m, v, now, "back", f, bk.edges[i], q_hat[i])
+                plan.setdefault(v.selection_id, []).append(("back", float(bk.back[i]), float(back[i]),
+                                                           float(bk.edges[i]), float(q_hat[i])))
             if bk.lay[i] >= self.cfg.limits.min_stake and allow_lay[i]:
-                stake = math.floor(min(bk.lay[i], lsize[i]) * 100) / 100
-                f = self.x.lay(m.market_id, sid, lay[i], stake, ref="book", min_fill=self.cfg.limits.min_stake)
-                self._record(m, v, now, "lay", f, bk.edges[len(views) + i], q_hat[i])
+                plan.setdefault(v.selection_id, []).append(("lay", float(bk.lay[i]), float(lay[i]),
+                                                           float(bk.edges[len(views) + i]), float(q_hat[i])))
+        return plan
+
+    def book_race(self, m, book, now: datetime) -> None:
+        """The book's targets re-planned every replan_minutes on the prices then, and filled minute by minute
+        against what is offered (the rule's top-ups, for a book), never at a worse price than planned."""
+        views = self.race_views(m, book)
+        last = self.planned_at.get(m.market_id)
+        if last is None or now - last >= timedelta(minutes=self.replan_minutes):
+            plan = self.plan_race_book(m, book, views, now)
+            self.planned_at[m.market_id] = now
+            if plan is None:
+                return
+            self.plans[m.market_id] = plan
+        plan = self.plans.get(m.market_id) or {}
+        if not plan:
+            return
+        by_sid = {v.selection_id: v for v in views}
+        for sid, legs in plan.items():
+            v = by_sid.get(sid)
+            q = book.runners.get(sid)
+            if v is None or q is None or q.status != "ACTIVE":
+                continue
+            for side, target, planned, edge, qh in legs:
+                pos = self.positions_book.get((m.market_id, sid, side))
+                want = target - (pos["matched"] if pos else 0.0)
+                if want < self.cfg.limits.min_stake:
+                    continue
+                room = self.day_exposure - self.exposure_used
+                race_room = self.exposure - self.race_exposure.get(m.market_id, 0.0)
+                if side == "back":
+                    if not q.back or q.back[0][0] < planned * 0.99 - 1e-9:
+                        continue
+                    stake = math.floor(min(want, q.back[0][1], room, race_room) * 100) / 100
+                    if stake < self.cfg.limits.min_stake:
+                        continue
+                    f = self.x.back(m.market_id, sid, q.back[0][0], stake, ref="book",
+                                    min_fill=self.cfg.limits.min_stake)
+                else:
+                    if not q.lay or q.lay[0][0] > planned * 1.01 + 1e-9:
+                        continue
+                    L = q.lay[0][0]
+                    stake = math.floor(min(want, q.lay[0][1], room / (L - 1.0), race_room / (L - 1.0)) * 100) / 100
+                    if stake < self.cfg.limits.min_stake:
+                        continue
+                    f = self.x.lay(m.market_id, sid, L, stake, ref="book", min_fill=self.cfg.limits.min_stake)
+                self._record(m, v, now, side, f, edge, qh)
 
     def _record(self, m, v, now, side, f, edge, q_hat) -> None:
         self.book_rows.append({"ts": self._ts(now), "event": f"book_{side}", "market_id": m.market_id,
@@ -314,7 +357,9 @@ class RaceBookSession(ArmSession):
                                                        "first": self._ts(now)})
             pos["matched"] += f.matched
             pos["cost"] += f.matched * f.avg_price
-            self.exposure_used += f.matched if side == "back" else f.matched * (f.avg_price - 1.0)
+            risk = f.matched if side == "back" else f.matched * (f.avg_price - 1.0)
+            self.exposure_used += risk
+            self.race_exposure[m.market_id] = self.race_exposure.get(m.market_id, 0.0) + risk
 
     def settle_extra(self, now: datetime) -> None:
         D = self.policy.get("_D")
