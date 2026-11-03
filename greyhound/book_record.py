@@ -23,8 +23,10 @@ every 15 minutes and at the end (``betfair_recorder.DayRecorder``, tag ``greyhou
 from __future__ import annotations
 
 import argparse
+import csv
 import logging
 import time
+from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
 
 log = logging.getLogger(__name__)
@@ -46,6 +48,66 @@ SETTLE_MINUTES = 30.0
 PRICE_DATA = ["EX_BEST_OFFERS", "EX_TRADED", "SP_PROJECTED"]
 BATCH = 8
 REFRESH_MINUTES = 30.0
+
+
+class TradedLadder:
+    """The money traded at each price, runner by runner (Betfair's ``tradedVolume``, cumulative), for the queue-aware
+    fills (the owner, 3 Nov 2026: "count a lay as matched only when the money traded at our price exceeds what was
+    queued ahead of us"). The books' own file holds each runner's total only (``betfair_recorder.BOOK_FIELDS``, the
+    horse system's, not changed), so this is a file of its own, ``traded_greyhound_live.csv`` beside it: a row each
+    time a price's traded money changes (polled_utc, market_id, selection_id, price, traded), copied to S3 with the
+    books. Never raises into the recording."""
+
+    FIELDS = ["polled_utc", "market_id", "selection_id", "price", "traded"]
+
+    def __init__(self, rec, upload_every: float = 900.0, clock=time.monotonic):
+        self.rec, self.upload_every, self.clock = rec, upload_every, clock
+        self.path = Path(rec.dir) / "traded_greyhound_live.csv"
+        self.last: dict = {}
+        self._uploaded = None
+        self.rows = 0
+
+    def write(self, raw_books, polled_at: datetime) -> int:
+        try:
+            out = []
+            t = polled_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            for b in raw_books or []:
+                mid = str(b.get("marketId"))
+                for r in b.get("runners") or []:
+                    sid = r.get("selectionId")
+                    for lv in ((r.get("ex") or {}).get("tradedVolume") or []):
+                        k = (mid, sid, float(lv["price"]))
+                        v = round(float(lv["size"]), 2)
+                        if self.last.get(k) != v:
+                            self.last[k] = v
+                            out.append({"polled_utc": t, "market_id": mid, "selection_id": sid,
+                                        "price": k[2], "traded": v})
+            if out:
+                new = not self.path.exists()
+                with self.path.open("a", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=self.FIELDS, lineterminator="\n")
+                    if new:
+                        w.writeheader()
+                    w.writerows(out)
+                self.rows += len(out)
+            return len(out)
+        except Exception as exc:
+            log.warning("traded ladder not written (%s)", exc)
+            return 0
+
+    def maybe_upload(self, force: bool = False) -> None:
+        now = self.clock()
+        if not force and self._uploaded is not None and now - self._uploaded < self.upload_every:
+            return
+        self._uploaded = now
+        try:
+            import gzip
+            from betfair_recorder import PREFIX, bucket, s3_client
+            if self.path.exists() and self.path.stat().st_size:
+                s3_client().put_object(Bucket=bucket(), Key=f"{PREFIX}/{self.rec.day:%Y-%m-%d}/{self.path.name}.gz",
+                                       Body=gzip.compress(self.path.read_bytes()))
+        except Exception as exc:
+            log.warning("traded ladder not copied to S3 (%s)", exc)
 
 
 def read_books(data, market_ids: list[str]) -> list[dict]:
@@ -106,7 +168,7 @@ def _utc(s) -> datetime | None:
 
 
 def record(day: date, until: datetime, data, rec, countries=("GB", "IE"), market_types=("WIN", "PLACE"),
-           now=lambda: datetime.now(timezone.utc), sleep=time.sleep) -> dict:
+           now=lambda: datetime.now(timezone.utc), sleep=time.sleep, ladder=None) -> dict:
     """Read the day's greyhound markets until ``until`` (see the module's note); returns the counts."""
     from betfair_recorder import read_catalogue
     from trading.exchange import uk_day_window
@@ -150,6 +212,9 @@ def record(day: date, until: datetime, data, rec, countries=("GB", "IE"), market
                 log.warning("books not read (%s)", exc)
                 raw = []
             rows += rec.record_books(raw, source="live", polled_at=t)
+            if ladder is not None:
+                ladder.write(raw, t)
+                ladder.maybe_upload()
             polls += 1
             for b in raw:
                 mid = b.get("marketId")
@@ -178,7 +243,10 @@ def record(day: date, until: datetime, data, rec, countries=("GB", "IE"), market
             break
         sleep(1.0)
     rec.maybe_upload(force=True)
-    return {"markets": len(offs), "polls": polls, "rows": rows, "done": len(done), "settled": len(settled)}
+    if ladder is not None:
+        ladder.maybe_upload(force=True)
+    return {"markets": len(offs), "polls": polls, "rows": rows, "done": len(done), "settled": len(settled),
+            "traded_rows": ladder.rows if ladder is not None else 0}
 
 
 def main(argv=None) -> int:
@@ -195,7 +263,8 @@ def main(argv=None) -> int:
     data = BetfairData(source="greyhound_live")                # read-only by construction: no order call exists
     try:
         data.login()
-        print(record(day, uk_time_on(day, a.until), data, rec, tuple(a.countries.split(","))))
+        print(record(day, uk_time_on(day, a.until), data, rec, tuple(a.countries.split(",")),
+                     ladder=TradedLadder(rec)))
     finally:
         rec.maybe_upload(force=True)
     return 0 if rec.errors == 0 else 2
