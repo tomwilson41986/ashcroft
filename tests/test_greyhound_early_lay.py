@@ -95,10 +95,13 @@ def trader(tmp_path, x, fit, live=True, now=T0, kill=False, p=None):
 
 def test_the_stake_is_sized_by_liability():
     cfg = dict(el.CONFIG)
-    from greyhound import tradeout as to
-    for price in (1.5, 2.0, 3.3, 5.0, 11.0, 20.0, 60.0):          # the paper's stake, the forward test's size
-        assert np.isclose(el.stake_for(price, cfg), el._floor2(float(to.target_stake(price))))
-    assert el.stake_for(5.0, cfg) == 25.0 and el.stake_for(1.5, cfg) == 50.0
+    assert el.stake_for(5.0, cfg) == 5.0                       # GBP20 liability at 5.0
+    assert el.stake_for(11.0, cfg) == 2.0                      # GBP2 at the smallest
+    assert el.stake_for(1.5, cfg) == 10.0                      # GBP10 at the largest
+    from greyhound import tradeout as to                       # the paper's GBP100, by the same rule
+    big = dict(cfg, liability=to.TO_WIN, min_stake=to.MIN_STAKE, max_stake=to.MAX_STAKE)
+    for price in (1.5, 2.0, 3.3, 5.0, 11.0, 20.0, 60.0):
+        assert np.isclose(el.stake_for(price, big), el._floor2(float(to.target_stake(price))))
 
 
 def test_a_race_is_laid_once_every_runner_has_traded(tmp_path, fit):
