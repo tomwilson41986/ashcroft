@@ -494,7 +494,8 @@ def main(argv=None) -> int:
             res["bfsp"] = run_bfsp(store, pred, e["name"], out)
         (out / f"result_{e['name']}.json").write_text(json.dumps(res, indent=1, default=str))
         # each runner's log-loss contribution, for the paired comparison against the baseline in --collect
-        pred[["race_id", "race_date", "dog_id", "won", "p_model"]].to_parquet(out / f"pred_{e['name']}.parquet", index=False)
+        keep = ["race_id", "race_date", "dog_id", "won", "p_model"] + [c for c in ("bsp", "pred_bsp") if c in pred]
+        pred[keep].to_parquet(out / f"pred_{e['name']}.parquet", index=False)      # bsp, pred_bsp: the paired RMSE
         results.append(res)
         _log(json.dumps({k: res[k] for k in ("name", "logloss", "rounds", "seconds")}))
     print(table(results, spec.get("baseline")))
