@@ -209,7 +209,7 @@ jobs:
       - name: The table
         run: |
           python -m greyhound.fastloop --spec "$SPEC" --collect out/ | tee out/table.txt
-          { echo '## Greyhound fast loop: every experiment'; cat out/table.md; for f in out/*/study_*.md out/*/limit_*.md; do [ -f "$f" ] && { echo; echo "### $f"; sed -n '1,60p' "$f"; }; done; } >> "$GITHUB_STEP_SUMMARY"
+          { echo '## Greyhound fast loop: every experiment'; cat out/table.md; for f in out/*/study_*.md out/*/limit_*.md out/*/bfsp_*.md; do [ -f "$f" ] && { echo; echo "### $f"; sed -n '1,60p' "$f"; }; done; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

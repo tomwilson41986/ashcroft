@@ -162,7 +162,8 @@ def feature_set(meta: dict, name: str) -> list[str]:
 def lane(exp: dict, spec: dict) -> str:
     """``slow`` for an experiment off the quick recipe or with the study, ``quick`` otherwise: the CI runs the quick
     lane's table as soon as it is done, without waiting on the slow lane."""
-    slow = exp.get("recipe", spec.get("recipe", "quick")) != "quick" or exp.get("study") or exp.get("limit")
+    slow = (exp.get("recipe", spec.get("recipe", "quick")) != "quick" or exp.get("study") or exp.get("limit")
+            or exp.get("bfsp"))
     return "slow" if slow else "quick"
 
 
@@ -268,6 +269,12 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     elif obj == "logbsp":
         pred["pred_bsp"] = np.exp(raw)
         pred["p_model"] = race_norm(1.0 / pred.pred_bsp, pred.race_id).to_numpy()
+        if exp.get("rescale_book"):
+            # the SP book's usual total from the fit's races: each race's chances normalised and scaled to it, so the
+            # forecast's level is the SP's as well as its order (the closing study: the mid 0.635 -> 0.492 so)
+            fr = pd.DataFrame({"r": df.race_id.to_numpy()[fit_i], "b": df.bsp.to_numpy(float)[fit_i]})
+            book = float(np.median((1.0 / fr.b).groupby(fr.r).sum()))
+            pred["pred_bsp"] = 1.0 / (book * pred.p_model)
     else:
         pred["p_model"] = _race_softmax(raw.astype(float), _starts(race[test_i]))
     imp = pd.Series(m.feature_importance("gain"), index=feats)
@@ -483,6 +490,8 @@ def main(argv=None) -> int:
             res["study"] = run_study(store, pred, e["name"], out)
         if e.get("limit"):
             res["limit"] = run_limit(store, pred, e["name"], out)
+        if e.get("bfsp"):
+            res["bfsp"] = run_bfsp(store, pred, e["name"], out)
         (out / f"result_{e['name']}.json").write_text(json.dumps(res, indent=1, default=str))
         # each runner's log-loss contribution, for the paired comparison against the baseline in --collect
         pred[["race_id", "race_date", "dog_id", "won", "p_model"]].to_parquet(out / f"pred_{e['name']}.parquet", index=False)
@@ -595,6 +604,23 @@ def run_limit(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
     limit_study.main(["--from", STUDY_FROM, "--to", last, "--pred-dir", str(out / "pred" / name),
                       "--source", "retimed", "--out", str(out / f"limit_{name}")])
     return {"report": f"limit_{name}.md"}
+
+
+def run_bfsp(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
+    """The closing-price study (``research.greyhound.bfsp_close``) with an experiment's prices as our price: how much
+    a better pre-race price sharpens the forecast of log(BSP) from the book (the owner, 3 Nov 2026: "the final price /
+    log of final price is key")."""
+    from research.greyhound import bfsp_close, score_full
+    days = pred[pred.race_date.astype(str) >= STUDY_FROM]
+    if not len(days):
+        return {"skipped": f"no test days from {STUDY_FROM}"}
+    last = str(days.race_date.max())
+    if not (out / "pred" / name).exists():
+        score_full.score_days({name: days}, date.fromisoformat(STUDY_FROM), date.fromisoformat(last), store,
+                              out / "pred")
+    bfsp_close.main(["--from", STUDY_FROM, "--to", last, "--pred-dir", str(out / "pred" / name),
+                     "--source", "retimed", "--out", str(out / f"bfsp_{name}")])
+    return {"report": f"bfsp_{name}.md"}
 
 
 if __name__ == "__main__":

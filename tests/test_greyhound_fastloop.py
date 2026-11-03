@@ -206,3 +206,14 @@ def test_the_bsp_rmse_is_paired_with_the_baseline(tmp_path):
     r = {"name": "better", "spec": {"objective": "logbsp"}, "features": 1, "rounds": 1, "logloss": 0.4, "seconds": 1,
          "test_from": "2026-10-01", "test_to": "2026-10-10", "paired_bsp": b}
     assert "RMSE log(BSP)" in fl.table([r], "better") and str(b["rmse"]) in fl.table([r], "better")
+
+
+def test_the_bsp_forecast_rescaled_to_the_sp_book():
+    df, meta = synthetic_cache()
+    exp = {"name": "r", "features": "card_safe", "objective": "logbsp", "rescale_book": True}
+    res, pred = fl.run_experiment(df, meta, exp, QUICK, test_from="2026-06-01")
+    totals = (1.0 / pred.pred_bsp).groupby(pred.race_id).sum()
+    fit = df[(df.t < "2026-06-01") & (df.bsp > 1)]
+    book = float(np.median((1.0 / fit.bsp).groupby(fit.race_id).sum()))
+    assert np.allclose(totals, totals.iloc[0]) and abs(totals.iloc[0] - book) < 0.05   # every race at the SP book
+    assert res["log_bsp_rmse"] > 0

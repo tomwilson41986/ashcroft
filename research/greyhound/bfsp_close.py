@@ -175,7 +175,7 @@ def scores(f: pd.DataFrame, days: list[str], n_boot: int = 1000) -> list[dict]:
 
 def report_md(res: dict) -> str:
     L = [f"# The closing price: forecasting log(BSP) from the book ({res['first_day']} to {res['last_day']})", "",
-         f"Books: {res['source']}. Panel: {res.get('rows')} runner-marks; scored days {res.get('scored_days')} "
+         f"Books: {res['source']}. Our price: {res.get('model')}. Panel: {res.get('rows')} runner-marks; scored days {res.get('scored_days')} "
          f"(walk-forward: each day forecast from the days before it only). Lower is better throughout; rmse_vs_mid "
          "is each model's RMSE less the market mid's, with a 90% interval from a bootstrap over days.", "",
          "| Mark | Model | Runners | Races | RMSE log(BSP) | MAE | Bias | Race-relative RMSE | SP-book xent a race "
@@ -202,13 +202,15 @@ def main(argv=None) -> int:
     ap.add_argument("--to", dest="last", default=None, help="default: yesterday (UK)")
     ap.add_argument("--source", choices=["recorder", "retimed", "live"], default="retimed")
     ap.add_argument("--min-train-days", type=int, default=ls.MIN_TRAIN_DAYS)
+    ap.add_argument("--pred-dir", default=None, help="our price from these day files instead of the 5 Oct model's")
     ap.add_argument("--out", default="out/greyhound_bfsp_close")
     a = ap.parse_args(argv)
     t0 = time.time()
     store = Store(root=a.store)
     last = date.fromisoformat(a.last) if a.last else uk_today() - timedelta(days=1)
-    panel = ls.load(store, date.fromisoformat(a.first), last, source=a.source)
-    res = {"first_day": a.first, "last_day": f"{last}", "source": a.source, "rows": int(len(panel))}
+    panel = ls.load(store, date.fromisoformat(a.first), last, source=a.source, pred_dir=a.pred_dir)
+    res = {"first_day": a.first, "last_day": f"{last}", "source": a.source, "rows": int(len(panel)),
+           "model": a.pred_dir or "the 5 Oct forward test's base model"}
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     if len(panel):
