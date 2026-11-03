@@ -38,6 +38,7 @@ def test_the_later_books_are_strictly_after_each_row():
     # after the first book: back 4.6, 4.2, 3.9 (max 4.6); lay 5.0, 4.5, 4.1 (min 4.1)
     assert a.fut_back_max.tolist() == [4.6, 3.9] and a.fut_lay_min.tolist() == [4.1, 4.1]
     assert a.fut_lt_max.tolist() == [4.8, 4.0] and a.fut_lt_min.tolist() == [4.0, 4.0]
+    assert a.last_back1.tolist() == [3.9, 3.9] and a.last_lay1.tolist() == [4.1, 4.1]      # the last book before the off
     last = ls.attach_future(panel.assign(polled=t0 + pd.Timedelta(minutes=3)), fut)
     assert last.fut_back_max.isna().all()                     # no later book: nothing can be matched
 
@@ -62,17 +63,28 @@ def test_orders_settle_as_the_horse_trader_closes():
     d = pd.DataFrame({"race_date": ["2026-10-20"] * 2, "market_id": ["1.1"] * 2, "mark": ["off_5"] * 2,
                       "won": [0, 1], "bsp": [4.0, 4.0], "back1": [4.0, 4.0], "lay1": [4.4, 4.4], "mid": [4.2, 4.2],
                       "f_bsp": [4.0, 4.0], "rank": [1.0, 2.0], "fut_back_max": [5.0, 5.0], "fut_lay_min": [3.5, 3.5],
-                      "fut_lt_max": [5.0, 5.0], "fut_lt_min": [3.5, 3.5]})
+                      "fut_lt_max": [5.0, 5.0], "fut_lt_min": [3.5, 3.5], "last_back1": [5.0, 5.0],
+                      "last_lay1": [5.2, 5.2]})
     o = ls.orders(d)
-    b = o[(o.order == "ask") & (o.param == 0.2) & (o.fill == "through") & (o.gate == "all")]
+    b = o[(o.order == "ask") & (o.param == 0.2) & (o.fill == "through") & (o["exit"] == "sp")]
     # a back at 4.8 (4.0 x 1.2) matched as the price drifts to 5.0, closed at an SP of 4.0
     assert b.filled.all() and np.allclose(b.price, 4.8) and np.allclose(b.clv, 0.2)
     lost, won = b.iloc[0], b.iloc[1]
     s = to.target_stake(4.8)
     assert np.isclose(lost.pnl, -s + s * 3.8 / 3.0) and won.pnl == 0.0
-    lay = o[(o.order == "bid") & (o.param == 0.1) & (o.fill == "through") & (o.gate == "all")]
+    lay = o[(o.order == "bid") & (o.param == 0.1) & (o.fill == "through") & (o["exit"] == "sp")]
     assert np.allclose(lay.price, 3.6) and np.isclose(lay.iloc[1].pnl, to.target_stake(3.6) * (4.0 - 3.6))
-    assert set(o.gate) <= set(ls.GATES) and set(o.fill) == set(ls.FILLS)
+    assert set(o.fill) == set(ls.FILLS) and set(o["exit"]) == set(ls.EXITS)
+    assert o.g_fav.tolist().count(True) == o.g_fav.size // 2      # the favourite: the first runner only
+    # lay to back: laid at 3.6, backed at the last book's best back price 5.0, greened up whatever the result
+    lb = o[(o.order == "bid") & (o.param == 0.1) & (o.fill == "through") & (o["exit"] == "last")]
+    s = to.target_stake(3.6)
+    assert np.allclose(lb.pnl, s * (1 - 3.6 / 5.0)) and lb.closed_at_market.all()
+    # back to lay: backed at 4.8, laid at the last best lay price 5.2: a loss either way
+    bl = o[(o.order == "ask") & (o.param == 0.2) & (o.fill == "through") & (o["exit"] == "last")]
+    assert np.allclose(bl.pnl, to.target_stake(4.8) * (4.8 / 5.2 - 1))
+    tk = o[(o.order == "take") & (o.side == "back") & (o.fill == "through") & (o["exit"] == "sp")]
+    assert tk.taken.all() and np.allclose(tk.price, 4.0)
 
 
 def synthetic_panel(n_days=16, races=30, seed=0):
@@ -105,7 +117,8 @@ def synthetic_panel(n_days=16, races=30, seed=0):
                                  "market_total_matched": 600.0, "polled": t0 + pd.Timedelta(days=d),
                                  "fut_back_max": float(max(back1[j], bsp[j] * rng.uniform(0.9, 1.1))),
                                  "fut_lay_min": float(min(lay1[j], bsp[j] * rng.uniform(0.9, 1.1))),
-                                 "fut_lt_max": float(max(mid[j], bsp[j])), "fut_lt_min": float(min(mid[j], bsp[j]))})
+                                 "fut_lt_max": float(max(mid[j], bsp[j])), "fut_lt_min": float(min(mid[j], bsp[j])),
+                                 "last_back1": float(bsp[j] / 1.02), "last_lay1": float(bsp[j] * 1.02)})
     return to.add_features(pd.DataFrame(rows))
 
 
@@ -124,8 +137,10 @@ def test_the_study_end_to_end(tmp_path, monkeypatch):
     res = json.loads(out.with_suffix(".json").read_text())
     assert len(res["dev_days"]) == 20 - ls.MIN_TRAIN_DAYS - ls.HOLDOUT_DAYS and len(res["holdout_days"]) == 7
     assert res["dev_top"] and res["dev_chosen"] and res["holdout"]
-    fam = {(r["mark"], r["order"], r["side"], r["fill"]) for r in res["holdout"]}
+    fam = {(r["mark"], r["order"], r["side"], r["fill"], r["exit"]) for r in res["holdout"]}
     assert len(fam) == len(res["holdout"])                    # one rule a family, fixed on the development days
+    hc = res["holdout_count"]
+    assert hc["rules"] == len(res["holdout"]) and hc["expected_by_chance"] == round(0.05 * hc["rules"], 1)
     md = out.with_suffix(".md").read_text()
     assert "## 1. The market's behaviour" in md and "## 2. Holdout" in md
 

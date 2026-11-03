@@ -54,9 +54,12 @@ log = logging.getLogger(__name__)
 ORDER_MARKS = ("first_traded", "off_5", "off_3")
 MARGINS = (0.0, 0.05, 0.10, 0.20)
 TICKS = (1, 3, 5)
-GATES = ("all", "shorten", "drift")
+GATES = ("all", "shorten", "drift", "fav", "short", "long")
 FILLS = ("through", "traded")
-KEYS = ("mark", "order", "side", "param", "gate", "fill")
+EXITS = ("sp", "last")
+KEYS = ("mark", "order", "side", "param", "gate", "fill", "exit")
+SHORT_PRICE = 3.0                      # 'short': the mid now under 3.0; 'long': 8.0 or more
+LONG_PRICE = 8.0
 BANDS = (1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 20.0, 1000.0)
 MIN_TRAIN_DAYS = ts.MIN_TRAIN_DAYS
 HOLDOUT_DAYS = ts.HOLDOUT_DAYS
@@ -103,6 +106,9 @@ def future_extremes(pre: pd.DataFrame) -> pd.DataFrame:
     lt = b.last_traded.where(b.last_traded > 1)
     b["fut_lt_max"] = lt.groupby([b.market_id, b.selection_id], sort=False).cummax()
     b["fut_lt_min"] = lt.groupby([b.market_id, b.selection_id], sort=False).cummin()
+    last = b.drop_duplicates(["market_id", "selection_id"])           # sorted newest first: each runner's last book
+    b = b.merge(last[["market_id", "selection_id", "back1", "lay1"]].rename(
+        columns={"back1": "last_back1", "lay1": "last_lay1"}), on=["market_id", "selection_id"], how="left")
     return b.drop(columns=["back1", "lay1", "last_traded"]).sort_values("polled").reset_index(drop=True)
 
 
@@ -183,6 +189,8 @@ def order_prices(d: pd.DataFrame) -> list[tuple[str, str, float, np.ndarray]]:
         out.append(("bid", "lay", m, ladder(f * (1 - m), up=False)))
     out.append(("join", "back", 0.0, lay1))
     out.append(("join", "lay", 0.0, back1))
+    out.append(("take", "back", 0.0, back1))                  # the price on offer now, taken at once
+    out.append(("take", "lay", 0.0, lay1))
     for k in TICKS:
         out.append(("ticks", "back", float(k), ticks_from(back1, k, up=True)))
         out.append(("ticks", "lay", float(k), ticks_from(lay1, k, up=False)))
@@ -206,69 +214,142 @@ def fills(d: pd.DataFrame, side: str, price: np.ndarray, rule: str) -> tuple[np.
     return filled, matched_at, ok & now
 
 
-def orders(d: pd.DataFrame) -> pd.DataFrame:
-    """Every order of every rule for the rows ``d`` (which carry ``f_bsp`` and the later books): placed or not by its
-    gate, matched or not by each fill rule, and settled as the horse trader's positions are (to win ``TO_WIN``; a back's
-    winnings laid at the SP, a lay closed by a back at the SP with its stake)."""
-    shorten = d.f_bsp.to_numpy(float) < d["mid"].to_numpy(float)
-    gates = {"all": np.ones(len(d), bool), "shorten": shorten, "drift": ~shorten}
-    base = d[["race_date", "market_id", "mark", "won", "bsp"]].reset_index(drop=True)      # lean: rows x rules
-    rows = []
-    for order, side, param, price in order_prices(d):
-        for rule in FILLS:
-            filled, matched_at, taken = fills(d, side, price, rule)
-            for gate, gm in gates.items():
-                sel = gm & np.isfinite(price) & (price > 1.0) & (price <= to.MAX_PRICE)
-                if not sel.any():
-                    continue
-                rows.append(base[sel].assign(order=order, side=side, param=param, gate=gate, fill=rule,
-                                             limit=price[sel], filled=filled[sel], price=matched_at[sel],
-                                             taken=taken[sel]))
-    if not rows:
-        return pd.DataFrame()
-    o = pd.concat(rows, ignore_index=True)
+def gate_flags(d: pd.DataFrame) -> dict[str, np.ndarray]:
+    """Which runners each gate admits: all; our forecast says shorten (forecast SP under the mid now) or drift; the
+    market's favourite now; short-priced (mid under SHORT_PRICE); long-priced (LONG_PRICE or more)."""
+    mid = d["mid"].to_numpy(float)
+    shorten = d.f_bsp.to_numpy(float) < mid
+    return {"all": np.ones(len(d), bool), "shorten": shorten, "drift": ~shorten,
+            "fav": d["rank"].to_numpy(float) == 1, "short": mid < SHORT_PRICE, "long": mid >= LONG_PRICE}
+
+
+def settle_orders(o: pd.DataFrame) -> pd.DataFrame:
+    """Each matched order's position, staked as the horse trader stakes (to win ``TO_WIN``) and closed by its exit:
+    ``sp``, at the SP as the horse trader closes (a back's winnings laid at the SP; a lay closed by a back at the SP
+    with its stake), settled by the result; ``last``, at the market in the runner's last book before the off (a back
+    laid at the best lay price there, a lay backed at the best back price, both greened up: the same profit whatever
+    the result), or at the SP where that book has no price."""
     s = to.target_stake(o.price.to_numpy(float))
     m, bsp, won = o.price.to_numpy(float), o.bsp.to_numpy(float), o.won.to_numpy() == 1
     back = (o.side == "back").to_numpy()
+    out_back = np.where(back, o.last_lay1.to_numpy(float), o.last_back1.to_numpy(float))
+    at_market = (o["exit"] == "last").to_numpy() & np.isfinite(out_back) & (out_back > 1.0)
+    sp_pnl = np.where(back, np.where(won, 0.0, -s + s * (m - 1.0) / (bsp - 1.0)), np.where(won, s * (bsp - m), 0.0))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        mk_pnl = np.where(back, s * (m / out_back - 1.0), s * (1.0 - m / out_back))
+    o = o.copy()
     o["stake"], o["target"] = s, s
-    o["pnl"] = np.where(back, np.where(won, 0.0, -s + s * (m - 1.0) / (bsp - 1.0)), np.where(won, s * (bsp - m), 0.0))
+    o["pnl"] = np.where(at_market, mk_pnl, sp_pnl)
     o["risk"] = np.where(back, s, s * (m - 1.0))
     o["clv"] = np.where(back, m / bsp - 1.0, 1.0 - m / bsp)
     o["clv_value"] = o.clv * s
     o["held"] = np.where(back, np.where(won, s * (m - 1.0), -s), np.where(won, -s * (m - 1.0), s))
+    o["closed_at_market"] = at_market
     return o
+
+
+def orders(d: pd.DataFrame) -> pd.DataFrame:
+    """Every order of every rule for the rows ``d`` (which carry ``f_bsp`` and the later books): its limit, matched or
+    not by each fill rule, its gates as flags (``g_<gate>``), one row for each exit; settled by ``settle_orders``."""
+    gates = gate_flags(d)
+    base = d[["race_date", "market_id", "mark", "won", "bsp", "last_back1", "last_lay1"]].reset_index(drop=True)
+    for g, f in gates.items():
+        base[f"g_{g}"] = f
+    rows = []
+    for order, side, param, price in order_prices(d):
+        ok = np.isfinite(price) & (price > 1.0) & (price <= to.MAX_PRICE)
+        if not ok.any():
+            continue
+        for rule in FILLS:
+            filled, matched_at, taken = fills(d, side, price, rule)
+            for ex in EXITS:
+                rows.append(base[ok].assign(order=order, side=side, param=param, fill=rule, exit=ex, limit=price[ok],
+                                            filled=filled[ok], price=matched_at[ok], taken=taken[ok]))
+    if not rows:
+        return pd.DataFrame()
+    return settle_orders(pd.concat(rows, ignore_index=True))
+
+
+def rule_table(p: pd.DataFrame, keys=KEYS, days=None, n_boot: int = 2000) -> pd.DataFrame:
+    """``greyhound.tradeout.rule_table``'s measures, grouped in one pass (that one scans every position once a rule,
+    too slow for the thousand-odd rules here): each rule's trades, trades a day over every scored day, the return on
+    the money at risk after commission on each market's net with its 90% interval (a bootstrap over every scored day,
+    the days without a trade included), held to the result, the CLV of the prices against the SP."""
+    from model.race_book import ratio_interval
+    if p is None or not len(p):
+        return pd.DataFrame()
+    k = list(keys)
+    all_days = sorted(set(days) if days is not None else set(p.race_date.astype(str)))
+    m = to.settle(p, keys)
+    m["race_date"] = m.race_date.astype(str)
+    tot = m.groupby(k, dropna=False).agg(trades=("trades", "sum"), staked=("stake", "sum"), risk=("risk", "sum"),
+                                         net=("net", "sum"), held_net=("held_net", "sum")).reset_index()
+    tr = p.assign(_pos=(p.clv > 0).astype(float)).groupby(k, dropna=False).agg(
+        clv_mean=("clv", "mean"), clv_pos=("_pos", "mean"), price_median=("price", "median")).reset_index()
+    day = m.groupby(k + ["race_date"], dropna=False).agg(net=("net", "sum"), risk=("risk", "sum"))
+    lo_hi, active = {}, {}
+    for key, g in day.groupby(level=list(range(len(k))), dropna=False):
+        g = g.droplevel(list(range(len(k)))).reindex(all_days, fill_value=0.0)
+        lo, hi = ratio_interval(g.net.to_numpy(), g.risk.to_numpy(), n=n_boot)
+        key = key if isinstance(key, tuple) else (key,)
+        lo_hi[key] = [round(100 * lo, 2), round(100 * hi, 2)] if np.isfinite(lo) else None
+        active[key] = int((g.risk > 0).sum())
+    out = tot.merge(tr, on=k, how="left")
+    keys_t = list(map(tuple, out[k].itertuples(index=False, name=None)))
+    out["days"] = len(all_days)
+    out["active_days"] = [active.get(t, 0) for t in keys_t]
+    out["per_day"] = (out.trades / max(1, len(all_days))).round(1)
+    out["roi%"] = (100 * out.net / out.risk).round(2)
+    out["roi_90%"] = [lo_hi.get(t) for t in keys_t]
+    out["held_roi%"] = (100 * out.held_net / out.risk).round(2)
+    out["clv_mean%"] = (100 * out.pop("clv_mean")).round(2)
+    out["clv_positive%"] = (100 * out.pop("clv_pos")).round(1)
+    out["price_median"] = out.price_median.round(2)
+    for c in ("staked", "risk", "net"):
+        out[c] = out[c].round(2)
+    return out.drop(columns=["held_net"])
 
 
 def rule_summary(o: pd.DataFrame, days: list[str]) -> pd.DataFrame:
     """Each rule's orders placed, the share matched and taken at once, the CLV of those matched against the CLV the
-    unmatched would have had at their limit (the adverse selection), and the matched positions' return settled by the
-    result with its 90% interval over every scored day (``greyhound.tradeout.rule_table``)."""
+    unmatched would have had at their limit (the adverse selection), and the matched positions' return settled by
+    their exit with its 90% interval over every scored day (``greyhound.tradeout.rule_table``); one block a gate."""
     if not len(o):
         return pd.DataFrame()
-    placed = o.groupby(list(KEYS)).agg(orders=("filled", "size"), filled_pct=("filled", "mean"),
-                                       taken_pct=("taken", "mean")).reset_index()
-    unm = o[~o.filled].assign(clv_if=lambda x: np.where(x.side == "back", x.limit / x.bsp - 1, 1 - x.limit / x.bsp))
-    unm = unm.groupby(list(KEYS)).clv_if.mean().rename("clv_unmatched%").reset_index()
-    f = o[o.filled]
-    t = to.rule_table(f.assign(race_date=f.race_date.astype(str)), keys=KEYS, days=days) if len(f) else pd.DataFrame()
-    out = placed.merge(unm, on=list(KEYS), how="left")
-    if len(t):
-        out = out.merge(t.drop(columns=["fill%"], errors="ignore"), on=list(KEYS), how="left")
-    out["filled_pct"] = (100 * out.filled_pct).round(1)
-    out["taken_pct"] = (100 * out.taken_pct).round(1)
-    out["clv_unmatched%"] = (100 * out["clv_unmatched%"]).round(2)
-    return out
+    out = []
+    for gate in GATES:
+        col = f"g_{gate}"
+        sub = o[o[col]] if col in o else (o if gate == "all" else o.iloc[0:0])
+        if not len(sub):
+            continue
+        sub = sub.assign(gate=gate)
+        placed = sub.groupby(list(KEYS)).agg(orders=("filled", "size"), filled_pct=("filled", "mean"),
+                                             taken_pct=("taken", "mean")).reset_index()
+        unm = sub[~sub.filled]
+        unm = unm.assign(clv_if=np.where(unm.side == "back", unm.limit / unm.bsp - 1, 1 - unm.limit / unm.bsp))
+        unm = unm.groupby(list(KEYS)).clv_if.mean().rename("clv_unmatched%").reset_index()
+        f = sub[sub.filled]
+        t = rule_table(f.assign(race_date=f.race_date.astype(str)), keys=KEYS, days=days) if len(f) else pd.DataFrame()
+        blk = placed.merge(unm, on=list(KEYS), how="left")
+        if len(t):
+            blk = blk.merge(t.drop(columns=["fill%"], errors="ignore"), on=list(KEYS), how="left")
+        out.append(blk)
+    res = pd.concat(out, ignore_index=True)
+    res["filled_pct"] = (100 * res.filled_pct).round(1)
+    res["taken_pct"] = (100 * res.taken_pct).round(1)
+    res["clv_unmatched%"] = (100 * res["clv_unmatched%"]).round(2)
+    return res
 
 
 def choose(dev: pd.DataFrame) -> pd.DataFrame:
-    """The best rule of each family (mark, order, side, fill) on the development days: the highest return among rules
+    """The best rule of each family (mark, order, side, fill, exit) on the development days: the highest return among rules
     with a trade a day on average and positions on at least half the days; its param and gate fixed for the holdout."""
     if not len(dev) or "roi%" not in dev:
         return pd.DataFrame()
     d = dev[(dev.per_day >= 1) & (dev.active_days >= dev.days / 2)].dropna(subset=["roi%"])
     if not len(d):
         return pd.DataFrame()
-    return d.sort_values("roi%", ascending=False).drop_duplicates(["mark", "order", "side", "fill"])
+    return d.sort_values("roi%", ascending=False).drop_duplicates(["mark", "order", "side", "fill", "exit"])
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -315,7 +396,7 @@ def _tbl(rows: list[dict], cols: list[str]) -> list[str]:
     return out
 
 
-RULE_COLS = ["mark", "order", "side", "param", "gate", "fill", "orders", "filled_pct", "taken_pct", "trades", "per_day",
+RULE_COLS = ["mark", "order", "side", "param", "gate", "fill", "exit", "orders", "filled_pct", "taken_pct", "trades", "per_day",
              "roi%", "roi_90%", "clv_mean%", "clv_unmatched%", "held_roi%", "price_median"]
 
 
@@ -328,13 +409,20 @@ def report_md(res: dict) -> str:
          "book offers the other side at the limit (certain, late); 'traded': once a later traded price reaches it "
          "(the queue not modelled). clv_mean%: the matched orders' price against the SP; clv_unmatched%: what the "
          "unmatched would have had at their limit (the gap is the adverse selection). Returns settled by the result, "
-         "the back's winnings laid at the SP, 2% commission on each market's net.", ""]
+         "the back's winnings laid at the SP, 2% commission on each market's net. exit 'sp': closed at the SP; "
+         "'last': greened up at the market in the runner's last book before the off (lay to back, back to lay). "
+         "Gates: all, forecast to shorten / drift, the favourite now, short-priced (mid under 3), long (8 or more).",
+         ""]
     L += ["## 1. The market's behaviour (all panel days)", "", "### By price band (the mid now)", ""]
     bc = ["mark", "band", "runners", "mean_log_sp_over_mid", "drift%", "mean_log_sp_over_back", "mean_log_lay_over_sp",
           "back_reaches_sp%"]
     L += _tbl(res["behaviour"]["band"], bc) + ["", "### By the market's order (1: the favourite now)", ""]
     L += _tbl(res["behaviour"]["order_now"], ["order_now" if c == "band" else c for c in bc]) + [""]
     L += ["## 2. Holdout, read once (each family's best rule on the development days)", ""]
+    hc = res.get("holdout_count") or {}
+    if hc:
+        L += [f"{hc['rules']} rules read; {hc['lower_bound_above_zero']} with the 90% interval's lower bound above zero "
+              f"(about {hc['expected_by_chance']} expected by chance alone at that level).", ""]
     L += _tbl(res["holdout"], RULE_COLS) + [""]
     L += ["## 3. The development days: the 40 best rules by return", ""]
     L += _tbl(res["dev_top"], RULE_COLS) + [""]
@@ -389,8 +477,12 @@ def main(argv=None) -> int:
         res["dev_rules"] = _records(dev_t)
         if hold and len(chosen):
             ho = o[o.race_date.isin(hold)]
-            keep = ho.merge(chosen[list(KEYS)], on=list(KEYS), how="inner")
-            res["holdout"] = _records(rule_summary(keep, hold))
+            ht = rule_summary(ho, hold)
+            ht = ht.merge(chosen[list(KEYS)], on=list(KEYS), how="inner")
+            res["holdout"] = _records(ht)
+            lo = ht["roi_90%"].map(lambda v: v[0] if isinstance(v, (list, tuple)) and len(v) else np.nan)
+            res["holdout_count"] = {"rules": int(len(ht)), "lower_bound_above_zero": int((lo > 0).sum()),
+                                    "expected_by_chance": round(0.05 * len(ht), 1)}
         else:
             res["holdout"] = []
     else:
