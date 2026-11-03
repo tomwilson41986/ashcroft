@@ -1,0 +1,16 @@
+{
+  "about": "Batch 2 (3 Nov 2026), built on batch 1 (reports/greyhound_model.md section 18): the log-BSP target was the best by 0.0034; the weigh-in, the three blocks together and the Plackett-Luce objective helped a little, race_rel2 and the binary objective did not. Here: what adds to the log-BSP model, a softmax reference for the paired comparison, and the log-BSP model on the confirm recipe (fit from 2021 at 0.05) to check the quick recipe ranks as the slow one does; the study on it.",
+  "recipe": "quick",
+  "baseline": "logbsp",
+  "test_from": "2026-06-01",
+  "experiments": [
+    {"name": "logbsp", "features": "card_safe", "objective": "logbsp"},
+    {"name": "logbsp_weighin", "features": "all", "objective": "logbsp"},
+    {"name": "logbsp_blocks", "features": "card_safe", "objective": "logbsp", "add_blocks": ["race_rel2", "first_bend", "style_draw"]},
+    {"name": "logbsp_fb_sd", "features": "card_safe", "objective": "logbsp", "add_blocks": ["first_bend", "style_draw"]},
+    {"name": "logbsp_weighin_fb_sd", "features": "all", "objective": "logbsp", "add_blocks": ["first_bend", "style_draw"]},
+    {"name": "softmax_ref", "features": "card_safe", "objective": "softmax"},
+    {"name": "pl2_weighin", "features": "all", "objective": "pl2"},
+    {"name": "logbsp_confirm", "features": "card_safe", "objective": "logbsp", "recipe": "confirm", "study": true}
+  ]
+}

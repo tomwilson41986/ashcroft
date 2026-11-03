@@ -12,12 +12,13 @@ two hours: reports/greyhound_model.md section 15). Here:
    (``greyhound/blocks/``: computed on the cached matrix, no rebuild), prefixes to drop, an objective (``softmax``,
    ``binary``, ``pl2`` or ``logbsp``, the horse model's target), and a recipe.
 3. **The quick recipe** fits on 2024 on with a learning rate of 0.15 and coarse bins (minutes a fit); ``confirm`` fits
-   on 2021 on at 0.05 for the winners. Both test on every race from ``TEST_FROM`` (out of sample) and report the
+   on 2022 on at 0.08 for the winners, within a time budget (``max_seconds``). Both test on every race from ``TEST_FROM`` (out of sample) and report the
    log-loss against the result, against the Betfair SP on the same races, and Benter's test: whether the model adds to
    the SP in a blend fitted on the first half of the test and scored on the second.
 4. **Experiments run side by side** (``greyhound-fastloop.yml``: one job each on the same cache, then a table); an
    experiment with ``"study": true`` also runs the trade-out study on its prices (``research.greyhound.tradeout_study``,
-   the re-timed books).
+   the re-timed books). Two lanes (``lane``): the quick experiments' table comes as soon as they finish; the slow lane
+   (the confirm recipe, the study) has a table of its own after, so a slow job never holds up the quick answer.
 
     python -m greyhound.fastloop --build-cache                     # once a code change; skipped when the cache is current
     python -m greyhound.fastloop --spec research/greyhound/experiments/current.json --out out/fastloop
@@ -55,7 +56,10 @@ TEST_FROM = "2026-06-01"
 STUDY_FROM = "2026-10-06"
 RECIPES = {
     "quick": {"train_from": "2024-01-01", "learning_rate": 0.15, "early_stop": 30, "max_bin": 63, "rounds": 3000},
-    "confirm": {"train_from": "2021-01-01", "learning_rate": 0.05, "early_stop": 100, "max_bin": 255, "rounds": 8000},
+    # batch 2 (section 19): 2021 on at 0.05 ran into its 8,000-round cap in 51 minutes; now 2022 on at 0.08, stopped
+    # by early stopping, the cap or a time budget, whichever comes first
+    "confirm": {"train_from": "2022-01-01", "learning_rate": 0.08, "early_stop": 100, "max_bin": 255, "rounds": 6000,
+                "max_seconds": 1500},
 }
 BASE_PARAMS = {"num_leaves": 63, "min_child_samples": 300, "feature_fraction": 0.7, "bagging_fraction": 0.8,
                "bagging_freq": 1, "lambda_l2": 10.0, "verbose": -1, "seed": 0}
@@ -144,6 +148,28 @@ def feature_set(meta: dict, name: str) -> list[str]:
     return feats
 
 
+def lane(exp: dict, spec: dict) -> str:
+    """``slow`` for an experiment off the quick recipe or with the study, ``quick`` otherwise: the CI runs the quick
+    lane's table as soon as it is done, without waiting on the slow lane."""
+    slow = exp.get("recipe", spec.get("recipe", "quick")) != "quick" or exp.get("study")
+    return "slow" if slow else "quick"
+
+
+def time_budget(seconds: float | None, stopper):
+    """A LightGBM callback ending the fit once ``seconds`` have passed, at the early stopper's best round so far
+    (``stopper``: ``lgb.early_stopping``'s callback, which runs before this one)."""
+    import lightgbm as lgb
+    t0 = time.monotonic()
+
+    def cb(env) -> None:
+        if seconds and time.monotonic() - t0 > seconds:
+            if getattr(stopper, "best_iter", None):
+                raise lgb.callback.EarlyStopException(stopper.best_iter[0], stopper.best_score_list[0])
+            raise lgb.callback.EarlyStopException(env.iteration, env.evaluation_result_list)
+    cb.order = 40
+    return cb
+
+
 def check_spec(spec: dict) -> list[dict]:
     exps = spec.get("experiments") or []
     names = set()
@@ -204,7 +230,8 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     dtr = lgb.Dataset(matrix(tr_i), y[tr_i], feature_name=feats, free_raw_data=True,
                       params={"max_bin": recipe["max_bin"]})
     des = lgb.Dataset(matrix(es_i), y[es_i], reference=dtr, free_raw_data=True)
-    stop = [lgb.early_stopping(recipe["early_stop"], verbose=False)]
+    es = lgb.early_stopping(recipe["early_stop"], verbose=False)
+    stop = [es, time_budget(recipe.get("max_seconds"), es)]
     if obj == "binary":
         m = lgb.train(dict(params, objective="binary"), dtr, recipe["rounds"], valid_sets=[des], callbacks=stop)
     elif obj == "logbsp":
@@ -216,6 +243,9 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
         m = lgb.train(dict(params, objective=fobj, metric="None"), dtr, recipe["rounds"], valid_sets=[des],
                       feval=feval, callbacks=stop)
     fit_s = time.monotonic() - t0
+    budget = recipe.get("max_seconds")
+    stopped = ("cap" if m.current_iteration() >= recipe["rounds"] else
+               "time" if budget and fit_s > budget else "early_stop")
     del dtr, des
     gc.collect()
     raw = m.predict(matrix(test_i), num_iteration=m.best_iteration)
@@ -232,6 +262,7 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     imp = pd.Series(m.feature_importance("gain"), index=feats)
     whole = pred.bsp_p_norm.notna().groupby(pred.race_id).transform("all") if "bsp_p_norm" in pred else None
     res = {"name": exp["name"], "spec": exp, "recipe": recipe, "features": len(feats), "rounds": m.best_iteration,
+           "stopped_by": stopped,
            "fit_rows": int(len(fit_i)), "test_runners": int(len(pred)), "test_races": int(pred.race_id.nunique()),
            "test_from": test_from, "test_to": str(pred.race_date.max()),
            "logloss": round(logloss(pred.p_model, pred.won), 5),
@@ -319,6 +350,8 @@ def main(argv=None) -> int:
     ap.add_argument("--refresh", action="store_true", help="with --build-cache: build it again even so")
     ap.add_argument("--spec", default=None, help="the experiments (JSON)")
     ap.add_argument("--list", action="store_true", help="print the spec's experiment names as JSON (the CI matrix)")
+    ap.add_argument("--lane", choices=("quick", "slow"), default=None,
+                    help="with --list or --collect: the quick lane (the quick recipe, no study) or the slow one only")
     ap.add_argument("--only", default=None, help="run this experiment of the spec only")
     ap.add_argument("--collect", default=None, help="the table of every result JSON under this folder")
     ap.add_argument("--out", default="out/fastloop")
@@ -327,6 +360,8 @@ def main(argv=None) -> int:
     if a.collect:
         rs = [json.loads(p.read_text()) for p in sorted(Path(a.collect).rglob("result_*.json"))]
         spec = json.loads(Path(a.spec).read_text()) if a.spec else {}
+        if a.lane:
+            rs = [r for r in rs if lane(r.get("spec", {}), spec) == a.lane or r["name"] == spec.get("baseline")]
         order = [e["name"] for e in spec.get("experiments", [])]
         rs.sort(key=lambda r: order.index(r["name"]) if r["name"] in order else len(order))
         paired = paired_vs_baseline(Path(a.collect), spec.get("baseline") or (rs[0]["name"] if rs else None))
@@ -348,7 +383,7 @@ def main(argv=None) -> int:
     spec = json.loads(Path(a.spec).read_text())
     exps = check_spec(spec)
     if a.list:
-        print(json.dumps([e["name"] for e in exps]))
+        print(json.dumps([e["name"] for e in exps if a.lane is None or lane(e, spec) == a.lane]))
         return 0
     if a.only:
         exps = [e for e in exps if e["name"] == a.only]

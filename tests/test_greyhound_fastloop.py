@@ -135,3 +135,25 @@ def test_spec_checks_and_the_cli(tmp_path, monkeypatch):
 
 def test_code_hash_is_stable():
     assert fl.code_hash() == fl.code_hash() and len(fl.code_hash()) == 12
+
+
+def test_lanes_split_the_quick_from_the_slow(tmp_path, capsys):
+    spec = {"recipe": "quick", "baseline": "a", "experiments": [
+        {"name": "a"}, {"name": "b", "recipe": "confirm"}, {"name": "c", "study": True}, {"name": "d"}]}
+    assert [fl.lane(e, spec) for e in spec["experiments"]] == ["quick", "slow", "slow", "quick"]
+    p = tmp_path / "spec.json"
+    p.write_text(json.dumps(spec))
+    for lane, want in (("quick", ["a", "d"]), ("slow", ["b", "c"]), (None, ["a", "b", "c", "d"])):
+        capsys.readouterr()
+        assert fl.main(["--store", str(tmp_path), "--spec", str(p), "--list"] + (["--lane", lane] if lane else [])) == 0
+        assert json.loads(capsys.readouterr().out.strip().splitlines()[-1]) == want
+
+
+def test_the_time_budget_stops_the_fit_at_its_best_round():
+    df, meta = synthetic_cache()
+    res, _ = fl.run_experiment(df, meta, {"name": "t", "features": "card_safe", "objective": "logbsp"},
+                               dict(QUICK, rounds=100000, early_stop=100000, max_seconds=1e-9), test_from="2026-06-01")
+    assert res["stopped_by"] == "time" and res["rounds"] >= 1
+    res, _ = fl.run_experiment(df, meta, {"name": "c", "features": "card_safe", "objective": "logbsp"},
+                               dict(QUICK, rounds=5, early_stop=100), test_from="2026-06-01")
+    assert res["stopped_by"] == "cap"
