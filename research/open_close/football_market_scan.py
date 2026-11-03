@@ -1,4 +1,4 @@
-"""Where football makes money on the exchange, if anywhere: every strategy type, every market we hold prices for.
+"""Where football makes money on Betfair, if anywhere: every strategy type, every market we hold Betfair prices for.
 
 racing² football research, 3 Nov 2026 (the owner: "look at any strategies for making profit on a market: back to win,
 back to lay, lay outright, lay to back, over/under, handicaps"). Read-only over the lab matrix (football/lab.py), real
@@ -7,9 +7,10 @@ prices and real results only. Nothing is fitted on prices here; the one model is
 
 Markets and prices held (football-data.co.uk via the gold tables):
 
-- Match odds (home, draw, away), over/under 2.5 goals, Asian handicap (the main line).
-- Pinnacle open and close to 2023/24 (the sharpest book; no commission): the efficiency benchmark.
-- Betfair Exchange open and close from 2024/25 (our venue): 2% commission on each winning bet.
+- Betfair Exchange only (the owner, 3 Nov 2026: work on Betfair alone): football-data's Betfair early and closing
+  prices, from 2024/25, 2% commission on each winning bet.
+- Match odds (home, draw, away) and over/under 2.5 goals: Betfair's own early (BFE) and closing (BFEC) columns.
+  The Asian handicap's main line where its source is Betfair (early from 2024/25, close from 2025/26).
 - No in-play prices, no correct score, both-teams-to-score or corners prices: those strategies cannot be scored here.
 
 Strategy families, each scored as return on stake (a lay's stake is the backer's stake it lays), with a 90% bootstrap
@@ -18,13 +19,12 @@ interval by match day (2,000 draws):
 1. **Back to win** (hold to the result): every selection, by price band; and the model's value bets (expected return
    at the price above a threshold).
 2. **Lay outright** (hold): the same, laid. The lay price is not in the data: a lay is costed at a book symmetric
-   about the fair price (lay = fair^2 / back; on Betfair the next tick at or above), the lab's costing. On Pinnacle
-   (which cannot be laid) this stands for an exchange as tight as Pinnacle's margin.
+   about the fair price (lay = the next Betfair tick at or above fair^2 / back), the lab's costing.
 3. **Back to lay / lay to back** (trade the move, greened at the close): every selection by band, and the model's
    disagreement with the open (back what the model thinks too long, lay at the close; and the reverse). Each end
    costed at the quoted back price and the symmetric book's lay price.
-4. **Over/under 2.5** and **Asian handicap**: the same families on those markets (the handicap on Pinnacle's and
-   Betfair's main line; quarter lines settled as two half-stakes).
+4. **Over/under 2.5** and **Asian handicap**: the same families on those markets (quarter lines settled as two
+   half-stakes).
 
 Seasons from 2025/26 have been read by earlier pre-registered rules: they are shown apart, as development evidence.
 
@@ -73,8 +73,7 @@ def fair(prices: list[np.ndarray]) -> list[np.ndarray]:
 
 
 def sym_lay(back: np.ndarray, fair_p: np.ndarray, ticks: bool = True) -> np.ndarray:
-    """The lay price of a book symmetric about the fair price: fair^2 / back, on Betfair the next tick at or above.
-    A bookmaker cannot be laid: on Pinnacle this is what an exchange as tight as Pinnacle's margin would offer."""
+    """The lay price of a book symmetric about the fair price: fair^2 / back, on Betfair the next tick at or above."""
     raw = fair_p ** 2 / back
     return tick_up(raw - 1e-9) if ticks else raw
 
@@ -141,10 +140,8 @@ def by_band(ret, price, day) -> dict:
     return {str(b): summary(ret[band == b], day[band == b]) for b in BAND_LABELS if (band == b).sum()}
 
 
-def periods(d: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    return {"pinnacle_2012_2023": d[d["season"].between(2012, 2023)],
-            "betfair_2024": d[d["season"] == 2024],
-            "betfair_2025_on_spent": d[d["season"] >= 2025]}
+#: 2024 = 2024/25; the seasons from 2025/26 were read by earlier pre-registered rules (development evidence)
+PERIODS = {"2024": (2024, 2024), "2025_on_spent": (2025, 2099), "all": (2024, 2099)}
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -152,26 +149,30 @@ def periods(d: pd.DataFrame) -> dict[str, pd.DataFrame]:
 # --------------------------------------------------------------------------------------------------------------------
 
 def market_frames(m: pd.DataFrame) -> dict[str, dict]:
-    """Per market: for each selection, the open and close prices (Pinnacle where the source is Pinnacle, Betfair where
-    Betfair), the result (won, push), the model's probability, the source of each price."""
+    """Per market: for each selection, Betfair's early and closing prices, the result (won, push), the model's
+    probability, and where each price is Betfair's ("BFE"/"BFEC", else blank)."""
     d = m[m["ft_home"].notna() & m["ft_away"].notna()].copy()
     gd = (d["ft_home"] - d["ft_away"]).to_numpy(float)
     goals = (d["ft_home"] + d["ft_away"]).to_numpy(float)
     out = {}
     one = {"H": gd > 0, "D": gd == 0, "A": gd < 0}
-    out["match_odds"] = {"d": d, "sels": {k: {"open": d[f"open_{k.lower()}"].to_numpy(float),
-                                              "close": d[f"close_{k.lower()}"].to_numpy(float),
+    def tag(cols, label):
+        ok = np.all([np.isfinite(d[c].to_numpy(float)) for c in cols], axis=0)
+        return np.where(ok, label, "")
+    out["match_odds"] = {"d": d, "sels": {k: {"open": d[f"bfe_open_{k.lower()}"].to_numpy(float),
+                                              "close": d[f"bfe_close_{k.lower()}"].to_numpy(float),
                                               "won": one[k].astype(float), "push": np.zeros(len(d)),
                                               "p": d[f"p_{k.lower()}"].to_numpy(float)} for k in one},
-                         "open_src": d["open_1x2_src"].astype(str).to_numpy(),
-                         "close_src": d["close_1x2_src"].astype(str).to_numpy()}
+                         "open_src": tag(["bfe_open_h", "bfe_open_d", "bfe_open_a"], "BFE"),
+                         "close_src": tag(["bfe_close_h", "bfe_close_d", "bfe_close_a"], "BFEC")}
     po = d["p_o25"].to_numpy(float)
     out["over_under_25"] = {"d": d, "sels": {
-        "Over": {"open": d["open_o25"].to_numpy(float), "close": d["close_o25"].to_numpy(float),
+        "Over": {"open": d["bfe_open_o25"].to_numpy(float), "close": d["bfe_close_o25"].to_numpy(float),
                  "won": (goals > 2.5).astype(float), "push": np.zeros(len(d)), "p": po},
-        "Under": {"open": d["open_u25"].to_numpy(float), "close": d["close_u25"].to_numpy(float),
+        "Under": {"open": d["bfe_open_u25"].to_numpy(float), "close": d["bfe_close_u25"].to_numpy(float),
                   "won": (goals < 2.5).astype(float), "push": np.zeros(len(d)), "p": 1 - po}},
-        "open_src": d["open_ou_src"].astype(str).to_numpy(), "close_src": d["close_ou_src"].astype(str).to_numpy()}
+        "open_src": tag(["bfe_open_o25", "bfe_open_u25"], "BFE"),
+        "close_src": tag(["bfe_close_o25", "bfe_close_u25"], "BFEC")}
     # the handicap: open and close lines differ, so each moment settles on its own line
     ah = {}
     for when in ("open", "close"):
@@ -212,8 +213,8 @@ def ah_probability(lh: np.ndarray, la: np.ndarray, line: np.ndarray, max_goals: 
 
 
 def venue_of(src: np.ndarray) -> np.ndarray:
-    return np.where(pd.Series(src).str.startswith("BFE").to_numpy(), "betfair",
-                    np.where(pd.Series(src).str.match(r"^(PS|PSC|P|PC|PAH|PCAH)$").to_numpy(), "pinnacle", "other"))
+    """'betfair' where the price is Betfair's, else 'other' (never scored)."""
+    return np.where(pd.Series(src).astype(str).str.startswith("BFE").to_numpy(), "betfair", "other")
 
 
 def scan(m: pd.DataFrame, n_boot: int = N_BOOT) -> dict:
@@ -232,10 +233,9 @@ def scan(m: pd.DataFrame, n_boot: int = N_BOOT) -> dict:
             ven = venue_of(src)
             prices = [sels[s][when] for s in names]
             fairs = fair(prices)
-            for venue in ("pinnacle", "betfair"):
-                com = COMMISSION if venue == "betfair" else 0.0
-                for per, (lo_s, hi_s) in {"2012_2023": (2012, 2023), "2024": (2024, 2024),
-                                          "2025_on_spent": (2025, 2099)}.items():
+            for venue in ("betfair",):
+                com = COMMISSION
+                for per, (lo_s, hi_s) in PERIODS.items():
                     rows = (ven == venue) & (season >= lo_s) & (season <= hi_s)
                     if rows.sum() < 200:
                         continue
@@ -265,9 +265,8 @@ def scan(m: pd.DataFrame, n_boot: int = N_BOOT) -> dict:
         f_open = dict(zip(names, fair([sels[s]["open"] for s in names])))
         f_close = dict(zip(names, fair([sels[s]["close"] for s in names])))
         trade = {}
-        for venue in ("pinnacle", "betfair"):
-            for per, (lo_s, hi_s) in {"2012_2023": (2012, 2023), "2024": (2024, 2024),
-                                      "2025_on_spent": (2025, 2099)}.items():
+        for venue in ("betfair",):
+            for per, (lo_s, hi_s) in PERIODS.items():
                 rows = (vo == venue) & (vc == venue) & (season >= lo_s) & (season <= hi_s)
                 if rows.sum() < 200:
                     continue
@@ -312,10 +311,9 @@ def scan_ah(f: dict, n_boot: int) -> dict:
         res, pmod = a["res"], a["p_home"]
         h, aw = f["sels"]["Home"][when], f["sels"]["Away"][when]
         fh, fa = fair([h, aw])
-        for venue in ("pinnacle", "betfair"):
-            com = COMMISSION if venue == "betfair" else 0.0
-            for per, (lo_s, hi_s) in {"2012_2023": (2012, 2023), "2024": (2024, 2024),
-                                      "2025_on_spent": (2025, 2099)}.items():
+        for venue in ("betfair",):
+            com = COMMISSION
+            for per, (lo_s, hi_s) in PERIODS.items():
                 rows = (ven == venue) & (season >= lo_s) & (season <= hi_s) & np.isfinite(h) & np.isfinite(aw) \
                     & np.isfinite(res[:, 0])
                 if rows.sum() < 200:
@@ -341,28 +339,28 @@ def scan_ah(f: dict, n_boot: int) -> dict:
 
 
 def longshot_lay_sensitivity(m: pd.DataFrame, n_boot: int = N_BOOT) -> dict:
-    """The one pattern found in both eras (laying 10.0+ selections, the favourite-longshot bias), against the lay
-    price actually paid: the closing back price times 1.00 to 1.30. Also each lay's liability per unit stake, since
-    the return is per backer's stake and the capital at risk is the liability."""
+    """Laying 10.0+ selections at Betfair's close (the favourite-longshot bias), against the lay price actually paid:
+    the closing back price times 1.00 to 1.30. Also each lay's liability per unit stake, since the return is per
+    backer's stake and the capital at risk is the liability."""
     d = m[m["ft_home"].notna()]
     gd = (d["ft_home"] - d["ft_away"]).to_numpy(float)
     day_all = d["match_date"].astype(str).to_numpy()
+    season = d["season"].to_numpy()
     out = {}
-    for name, rows, com in (("pinnacle_close_2012_2023", (d["close_1x2_src"] == "PSC") & d["season"].between(2012, 2023),
-                             0.0),
-                            ("betfair_close_2025_on_spent", (d["close_1x2_src"] == "BFEC") & (d["season"] >= 2025),
-                             COMMISSION)):
-        rows = rows.to_numpy()
-        for sel, won, col in (("Away", gd < 0, "close_a"), ("Home", gd > 0, "close_h")):
-            px = d[col].to_numpy(float)
-            r = rows & (px >= 10)
+    for sel, won, col in (("Away", gd < 0, "bfe_close_a"), ("Home", gd > 0, "bfe_close_h"),
+                          ("Draw", gd == 0, "bfe_close_d")):
+        px = d[col].to_numpy(float)
+        for per, (lo_s, hi_s) in PERIODS.items():
+            r = np.isfinite(px) & (px >= 10) & (season >= lo_s) & (season <= hi_s)
+            if r.sum() < 30:
+                continue
             w = won[r].astype(float)
             rec = {"bets": int(r.sum()), "win_rate": round(float(w.mean()), 5),
                    "implied": round(float(np.mean(1 / px[r])), 5),
                    "liability_per_stake_at_x1.10": round(float((px[r] * 1.1 - 1).mean()), 2)}
             for mk in (1.00, 1.05, 1.10, 1.20, 1.30):
-                rec[f"lay_at_back_x{mk:.2f}"] = summary(lay_return(px[r] * mk, w, com), day_all[r], n_boot)
-            out[f"{name}_{sel}_10plus"] = rec
+                rec[f"lay_at_back_x{mk:.2f}"] = summary(lay_return(px[r] * mk, w, COMMISSION), day_all[r], n_boot)
+            out[f"betfair_close_{per}_{sel}_10plus"] = rec
     return out
 
 

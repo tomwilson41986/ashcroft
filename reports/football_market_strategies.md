@@ -1,126 +1,145 @@
-# racing² football: model performance and every strategy type, scored on real prices
+# racing² football on Betfair: model performance and every strategy type, scored on Betfair's prices
 
-3 Nov 2026. Figures from `reports/football_runs/market_scan.json` (`research/open_close/football_market_scan.py`, the lab
-matrix built from football-data.co.uk's gold tables) unless another source is named. Returns are per unit staked; for
-a lay, per unit of the backer's stake laid. Intervals are 90%, bootstrapped by match day.
+3 Nov 2026.
+
+**Scope.** Betfair only (the owner: "ignore pinnacle, we only want to work on betfair"). The prices are football-data's
+Betfair Exchange early (BFE) and closing (BFEC) prices, 2024/25 to 3 Nov 2026, with 2% commission on each winning bet.
+
+**Sources.** Figures come from `reports/football_runs/market_scan.json` (`research/open_close/football_market_scan.py`
+over the lab matrix) unless another source is named.
+
+**How returns are counted.**
+- Returns are per unit staked; for a lay, per unit of the backer's stake laid.
+- Intervals are 90%, bootstrapped by match day.
+- **"2024"** is 2024/25. **"2025+"** is 2025/26 to date; earlier pre-registered rules read those seasons, so they are
+  development evidence. **"All"** is both.
 
 ## Bottom line
 
-- **No strategy type makes money on the evidence we hold.** That covers back to win, lay outright, back to lay, lay to
-  back, over/under 2.5 and the Asian handicap, blind or model-led. Every cell with a real sample loses, or has an
-  interval that spans zero.
-- **The model is worse than the market.** Its value bets lose more than backing the same selections blind.
-- **One pattern holds in two separate eras:** laying away sides priced 10.0 or longer, the favourite-longshot bias.
-  - The return is about 1% of the money at risk.
-  - It survives only if the real lay spread is at most about 10% of the price.
-  - It was found by looking, so it needs a pre-registered forward test on recorded lay prices before any money goes on
-    it.
+- **No strategy type makes money on Betfair on the evidence held.** That covers back to win, lay outright, back to
+  lay, lay to back, over/under 2.5 and the Asian handicap, blind or model-led.
+- **The model's value bets lose more than backing the same selections blind.**
+- **The nearest to break-even:**
+  - backing Over 2.5 at the close: -0.9% [-2.2, +0.4];
+  - laying away sides at the close: -1.2% [-3.0, +0.7].
+- **One pattern stands out: laying away sides at 10.0+ at the close.**
+  - 1,361 matches.
+  - About +1% of the money at risk.
+  - It holds only if the real lay spread is at most about 5-10% of the price.
+  - It was found by looking, so it is a candidate for a pre-registered forward test on the recorder's real lay prices,
+    not an edge.
 
 ## 1. How the model is performing
 
 | What | Result | Source |
 |---|---|---|
-| Dixon-Coles team model against the open | Behind the open in every season, division and market; its pooled 1X2 weight is negative; value backing loses 4-7% | `reports/football_model.md` |
-| The model's value bets, this scan (Pinnacle close, 2012/13-2023/24) | Home -5.5% (n 60,849), Draw -5.4%, Away -7.4%. Backing every selection blind loses less: -2.9%, -3.5%, -5.1% | `market_scan.json` |
-| Team features | Nothing added to the result's price; they forecast the early-to-close move (R2 4.5%) | `reports/football_team_features.md` |
-| The pre-registered move rule, holdout (Jul 2025-Nov 2026, 1,926 trades) | **Failed**: -1.11% a tick off fair (-1.67 to -0.61). +3.29% at the mid; -0.17% at a symmetric book | `reports/football_runs/team_move_holdout.json` |
-| The stacked move rule | Pre-registered 3 Nov; development only (2024/25: +1.58% a tick off fair, 416 bets); never scored forward | `reports/preregistration_football_stack.md` |
-| The paper trader (pooled model, 10 countries) | 17 paper bets, 0 settled as of 3 Nov 05:42 UTC. Settlement was fixed in PR #184, merged today | football-model.yml run 41585231684, settle step |
+| The model's value bets at Betfair's close (5% edge, all) | Home -6.6% (n 9,375), Draw -3.0%, Away -9.5%. Blind: -2.3%, -2.2%, -4.2% | `market_scan.json` |
+| The model's value bets at Betfair's early price (5% edge) | Home -12.3%, Draw -5.1%, Away -11.9% | `market_scan.json` |
+| The pre-registered move rule on Betfair's prices, holdout (Jul 2025-Nov 2026, 1,926 trades) | **Failed**: -1.11% a tick off fair (-1.67 to -0.61). +3.29% at the mid; -0.17% at a symmetric book | `reports/football_runs/team_move_holdout.json` |
+| The stacked move rule | Pre-registered 3 Nov; Betfair 2024/25 development only: +1.58% a tick off fair, 416 bets. Never scored forward | `reports/preregistration_football_stack.md` |
+| The paper trader (pooled model, 10 countries, Betfair) | 17 paper bets, 0 settled as of 3 Nov 05:42 UTC. Settlement was fixed in PR #184, merged today | football-model.yml run 41585231684 |
 | Real money | None | - |
-
-**Read:** the result's price in football is efficient against everything we have built. The only forecastable thing
-is the price's path to the close, and the cost of trading it eats it.
 
 ## 2. Hold to the result: back to win, lay outright
 
-Every selection, blind (`back_all`, `lay_all`). Pinnacle has no commission. Betfair takes 2% of a winning bet.
+Every selection, blind, at Betfair's close (all).
 
-**Match odds:**
+**Match odds**, n 27,027:
 
-| Selection | Back, Pinnacle close 2012-23 | Back, Betfair close 2025+ | Lay, Pinnacle close 2012-23 | Lay, Betfair close 2025+ |
+| Selection | Back | Lay |
+|---|---|---|
+| Home | -2.3% [-3.7, -1.0] | -2.3% [-3.7, -1.0] |
+| Draw | -2.2% [-3.8, -0.5] | -3.5% [-5.2, -1.8] |
+| Away | -4.2% [-6.0, -2.5] | -1.2% [-3.0, +0.7] |
+
+**Over/under 2.5**, n 17,085:
+
+| Selection | Back | Lay |
+|---|---|---|
+| Over | -0.9% [-2.2, +0.4] | -3.4% [-4.8, -2.0] |
+| Under | -3.0% [-4.4, -1.5] | -1.4% [-2.9, +0.0] |
+
+**Asian handicap**, close, n 9,349 (2025+ only):
+
+| Selection | Back | Lay |
+|---|---|---|
+| Home | -1.7% [-3.1, -0.0] | -2.1% [-3.7, -0.5] |
+| Away | -1.6% [-3.3, -0.2] | -2.1% [-3.6, -0.4] |
+
+**At Betfair's early price everything is worse:** in match odds and over/under, backs -5% to -9% and lays -6% to -12%; in the handicap, -1.6% to -4.9%. The early books are wide, so a
+lay costed at the symmetric book there is expensive.
+
+**The model's value bets** lose at every threshold in every market. The best cells sit near zero on small samples:
+the Draw at 10% at the close is -0.7% [-6.4, +4.9], n 3,580; the Under lay at 10% is +0.0% [-3.8, +3.6], n 1,698.
+
+**How the lay is costed.** Betfair's lay price is not in football-data. A lay is costed at a book symmetric about the
+fair price (lay = the next tick at or above fair²/back). The recorder will replace this with real lay prices.
+
+## 3. Back to lay and lay to back (early price to close, greened)
+
+Each trade backs at the quoted back price and lays at the symmetric book's lay price at the other end. 2% commission
+is taken on a greened profit.
+
+| Market (all) | Back to lay | Lay to back | The model's direction, 10% gap | The close moves the model's way |
 |---|---|---|---|---|
-| Home | -2.9% [-3.5, -2.3] n 142,116 | -3.2% [-4.8, -1.5] n 16,356 | -2.9% | -1.4% [-3.2, +0.3] |
-| Draw | -3.5% [-4.2, -2.8] | -2.8% [-4.9, -0.7] | -2.3% | -2.9% [-5.1, -0.7] |
-| Away | -5.1% [-5.9, -4.3] | -3.4% [-5.7, -1.3] | -0.6% [-1.4, +0.2] | -2.0% [-4.3, +0.3] |
+| Match odds, home | -5.7% [-6.1, -5.4] | -12.3% | Back to lay -4.7% | 51% |
+| Match odds, draw | -6.5% | -9.3% | Back to lay -2.7% [-3.1, -2.3] | 55% |
+| Match odds, away | -7.6% | -8.7% | Back to lay -5.6% | 49% |
+| Over 2.5 | -6.3% | -8.0% | Back to lay -2.9% | **60%** |
+| Under 2.5 | -6.4% | -8.0% | Back to lay -3.5% | 56% |
 
-**Over/under 2.5:**
+What this shows:
+- **Crossing the spread twice costs 6-8%.**
+- **The model calls the move on the goals market 56-60% of the time**, which is real information, but it doesn't
+  cover the cost.
+- **Lay to back is worse than back to lay** because the early book is wide on the lay side.
+- **The team-feature move models do better** (64-66% the right way in the lab), but the registered rule still failed
+  once costed.
+- **What would change this:** a resting order earns the spread instead of paying it (the feed measures this), or the
+  real early spread proving tighter than the symmetric book.
 
-| Selection | Back, Pinnacle close 2012-23 | Back, Betfair close 2025+ | Lay, Pinnacle close 2012-23 | Lay, Betfair close 2025+ |
-|---|---|---|---|---|
-| Over | -3.3% [-4.2, -2.4] | -0.1% [-2.0, +1.7] | -3.7% | -4.2% |
-| Under | -4.1% [-5.0, -3.3] | -3.8% [-5.8, -1.8] | -2.8% | -0.6% [-2.8, +1.4] |
+## 4. The one pattern worth testing: laying away longshots at the close
 
-**Asian handicap (main line):**
+Away sides at 10.0+ at Betfair's close. Wins against the price's implied chance, and the return against the lay price
+actually paid (as a multiple of the closing back price):
 
-| Selection | Back, Pinnacle close 2012-23 | Back, Betfair close 2025+ | Lay, Pinnacle close 2012-23 | Lay, Betfair close 2025+ |
-|---|---|---|---|---|
-| Home | -3.2% | -1.7% [-3.1, -0.0] | -1.4% | -2.1% |
-| Away | -1.4% [-2.1, -0.6] | -1.6% [-3.3, -0.2] | -3.4% | -2.1% |
-
-**The model's value bets** (expected return above 0, 5% or 10% at the price) lose in all three markets, at the open
-and at the close, on both venues. They lose more than backing everything blind. The best cells sit near zero with
-small samples, for example Over 2.5 at Betfair's close 2025+ at 5% (+1.2% [-3.0, +5.3], n 1,762). Out of about 200
-cells, a few touch zero by chance alone.
-
-**How the lay is costed.** Betfair's lay price is not in the data, so a lay is costed at a book symmetric about the fair
-price: lay = fair²/back, on the next Betfair tick. Pinnacle cannot be laid; there the same costing stands for an
-exchange as tight as Pinnacle's margin.
-
-## 3. Back to lay and lay to back (traded open to close, greened)
-
-Each trade enters at the open and greens up at the close: back at the quoted back price and lay at the symmetric
-book's lay price, or the reverse.
-
-| Market, venue | Back to lay, all | Lay to back, all | The model's direction (gap 10%) |
-|---|---|---|---|
-| Match odds, Pinnacle 2012-23 | -5.6% to -5.8% | -6.1% to -6.3% | Back to lay -4.7% to -5.3%. The close moves toward the model 50% of the time: no information |
-| Match odds, Betfair 2025+ | -4.3% to -5.6% | -4.1% to -5.1% | -3.4% to -6.2% |
-| Over/under, Pinnacle 2012-23 | -6.7% to -7.4% | -7.0% to -7.8% | -5.8% to -6.7% |
-| Over/under, Betfair 2025+ | -4.5% to -5.2% | -4.9% to -5.6% | Back the Over -2.3% (n 538); the close moves toward the model 58% of the time on the Over |
-
-Crossing the spread twice costs about 5%. The Dixon-Coles model barely predicts the move. The team-feature models
-predict it better (64-66% the right way), but the registered rule still failed once costed (section 1).
-
-## 4. The one consistent pattern: the favourite-longshot bias
-
-Laying away sides priced 10.0 or longer at the close. Win rate against the price's implied chance:
-
-| Era | Bets | Wins | Implied | Lay at back x1.00 | x1.05 | x1.10 | x1.20 | x1.30 |
+| Period | Bets | Wins | Implied | Lay at x1.00 | x1.05 | x1.10 | x1.20 | x1.30 |
 |---|---|---|---|---|---|---|---|---|
-| Pinnacle close 2012-23 | 6,282 | 5.51% | 7.13% | +25.8% [+18.6, ...] | +22.1% | +18.4% [+10.5, ...] | +10.9% [+2.3, ...] | +3.5% [-5.8, ...] |
-| Betfair close 2025+ | 759 | 5.93% | 7.38% | +23.3% [+6.0, ...] | +19.6% [+1.4, ...] | +15.9% [-3.2, ...] | +8.4% | +0.9% |
+| 2024 | 602 | 4.65% | 7.00% | +25.1% [-3.1, +52.8] | +21.4% | +17.8% [-13.2, +48.3] | +10.5% | +3.2% |
+| 2025+ | 759 | 5.93% | 7.38% | +23.3% [+6.0, +39.3] | +19.6% [+1.4, +36.4] | +15.9% [-3.2, +33.4] | +8.4% | +0.9% |
+| All | 1,361 | 5.36% | 7.21% | +24.1% [+7.7, +38.8] | +20.4% [+3.2, +35.9] | +16.7% [-1.3, +32.9] | +9.3% | +1.9% |
 
 What this means in practice:
 
-- **Return on capital at risk.** The return is per backer's stake. The liability is about 16 times the stake, so
-  +18% a stake is about **+1.1% of the money at risk**, per bet, with long losing runs.
-- **The lay spread decides it.** At a lay price 20-30% above the back, the edge is gone. Spreads at 10.0+ are wide on
-  Betfair outside the big leagues.
-- **Home longshots** point the same way but are not significant (n 1,252 and 136).
-- **Draws at 5-10** were profitable to lay on Pinnacle's prices (+6.4% [+2.7, +9.9]) but not on Betfair's (-0.5%).
-- **Caveats.** It was found by scanning many cells. The Betfair seasons (2025+) were read by earlier rules, but not
-  for this question. It is a known effect in betting markets, so it is a reasonable prior, not a fresh find.
+- **Return on the money at risk.** The liability is about 16.5 times the backer's stake. So +16.7% a stake (at a 10%
+  lay spread) is about **+1.0% of the liability**, with long losing runs.
+- **The lay spread decides it.** The lower bound clears zero only at lay prices within 5% of the back price. Spreads
+  at 10.0+ are often wider.
+- **Home and draw longshots show nothing:**
+  - home at 10.0+: +1.2%, n 263;
+  - draw at 10.0+: +5.7%, n 185;
+  - both intervals are very wide.
+- **Caveats.** It was found by scanning many cells; it is a known betting-market effect, which is the reason to test
+  it, not to trust it.
 
-## 5. Strategies that cannot be scored yet
+## 5. What cannot be scored yet
 
-| Strategy | Why not | What would let us |
+| Strategy | Why not | What lets us |
 |---|---|---|
-| In-play trading (lay the draw, back after a goal, cash-out timing) | No in-play prices in football-data; the new feed stops at the off | Extend `football/exchange_feed.py` to keep reading in play |
-| Correct score, both teams to score, corners, cards | No prices held | Add the market types to the feed, or the Betfair Historic BASIC soccer plan |
-| Resting orders (earn the spread instead of paying it) | No books between the open and the close | The feed's resting-order lines (`football/paper_book.py`) measure fill rate and adverse selection from its first day |
-| Team-news window (after line-ups) | Line-ups collector built; no matching prices yet | The feed's 1-minute books in the last 15 minutes plus the collector's first-seen times |
+| In-play trading | No in-play prices; the feed stops at the off | Extend `football/exchange_feed.py` to keep reading in play |
+| Correct score, both teams to score, corners, cards, alternative totals | No prices held | Add the market types to the feed |
+| Resting orders | No books between the early price and the close | The feed's resting-order lines, from its first day |
+| Team-news window | No prices around the team sheets yet | The feed's 1-minute books and the line-ups collector |
+| The real lay spread on any of the above | football-data carries Betfair back prices only | The feed records both sides with depth |
 
 ## 6. What to do before the runner starts
 
-1. **Start the football runner on paper** (`FOOTBALL_LIVE` unset).
-   - It records the real back and lay prices, depth and traded money for every match. That is the missing number in
-     sections 2-4.
-   - Its paper lines price every entry: crossing and resting, at each checkpoint, sized.
-2. **Do not set `FOOTBALL_LIVE=yes` on the current model.** Section 1 shows no edge. The GBP2 stakes would only keep the
-   live key in use: an expected cost of about 4-7% of GBP20 a day (`reports/football_model.md`).
-3. **Pre-register the longshot lay before reading the feed:**
-   - lay away selections at 10.0+ at the last pre-play book, only where the recorded best lay is within 10% of the best
-     back;
-   - stake sized to a fixed liability;
+1. **Start the football runner on paper** (`FOOTBALL_LIVE` unset). It records Betfair's real back and lay prices,
+   depth and traded money for every match: the spread that decides sections 2-4.
+2. **Do not set `FOOTBALL_LIVE=yes` on the current model.** Section 1 shows no edge; the GBP2 stakes would only keep
+   the live key in use.
+3. **Pre-register the away-longshot lay before the first recorded book:**
+   - the last pre-play book;
+   - away 10.0+, only where the recorded best lay is within 5% of the best back;
+   - a fixed liability per bet;
    - gate on the 90% lower bound of the return on liability.
-   I can write it now, so it is fixed before the first recorded book.
