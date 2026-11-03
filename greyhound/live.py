@@ -621,9 +621,19 @@ def running(store, day: date, mode: str = "paper", s3=None) -> dict:
     if not raw:
         return {"day": ds, "mode": mode, "note": "no ledger yet today", "markets": []}
     ledger = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str})
-    books = _read_day_csv(day, "books_greyhound.csv", s3=s3)
-    final = books[books.source == "final"] if books is not None and "source" in books else pd.DataFrame(
+    finals = []
+    for name in ("books_greyhound.csv", "books_greyhound_live.csv"):      # the recorder's, and the live-key record's
+        books = _read_day_csv(day, name, s3=s3)                           # settled reads (greyhound/book_record.py)
+        if books is not None and "source" in books:
+            finals.append(books[books.source == "final"])
+    final = pd.concat(finals, ignore_index=True) if finals else pd.DataFrame(
         columns=["market_id", "selection_id", "runner_status", "sp_actual", "polled_utc"])
+    if len(final):                                  # one row a runner: one with a BSP over one without, then the latest
+        final = final.assign(_has=pd.to_numeric(final.sp_actual, errors="coerce").notna(),
+                             market_id=final.market_id.astype(str),
+                             selection_id=pd.to_numeric(final.selection_id, errors="coerce"))
+        final = final.sort_values(["_has", "polled_utc"]).drop_duplicates(
+            ["market_id", "selection_id"], keep="last").drop(columns="_has")
     s = settle_rows(ledger, final)
     ledger["race_time"] = ledger.race_time.astype(str)
     looked = ledger.groupby("market_id").agg(track=("track", "first"), race_time=("race_time", "first"),

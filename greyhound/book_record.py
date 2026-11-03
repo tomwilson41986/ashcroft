@@ -36,6 +36,12 @@ NEAR_MINUTES = 5.0
 EVERY_FAR = 60.0
 EVERY_NEAR = 5.0
 AFTER_MINUTES = 10.0
+#: the results (the owner, 3 Nov 2026: the running table settles each race within minutes): each market read again
+#: with its BSP once it is in play or past its off, and until it is CLOSED, every SETTLE_EVERY seconds for at most
+#: SETTLE_MINUTES past the off; the closed book (winner, losers) is written as ``source="final"`` with the BSP read
+#: at the off filled in (Betfair sends no BSP in a closed book), as betfair_recorder.final writes the horses'
+SETTLE_EVERY = 30.0
+SETTLE_MINUTES = 30.0
 #: Betfair's request weight: EX_BEST_OFFERS (depth 3) 5, EX_TRADED 17, SP_PROJECTED 3 a market, at most 200 a call
 PRICE_DATA = ["EX_BEST_OFFERS", "EX_TRADED", "SP_PROJECTED"]
 BATCH = 8
@@ -50,6 +56,39 @@ def read_books(data, market_ids: list[str]) -> list[dict]:
             "marketIds": market_ids[i:i + BATCH],
             "priceProjection": {"priceData": PRICE_DATA, "exBestOffersOverrides": {"bestPricesDepth": 3}}}) or []
     return out
+
+
+def settle_reads(data, rec, market_ids: list[str], bsp: dict, polled_at) -> set[str]:
+    """One settled read of the markets (the book with the BSP: betfair_recorder.read_books ``settled``): each runner's
+    BSP kept in ``bsp`` as it appears; each CLOSED market written as ``final`` with its BSP filled in. Returns the
+    markets closed."""
+    from betfair_recorder import read_books
+    raw = read_books(data, market_ids, settled=True)
+    closed, out = set(), []
+    for b in raw or []:
+        mid = str(b.get("marketId"))
+        for r in b.get("runners") or []:
+            sp = r.get("sp") if isinstance(r.get("sp"), dict) else {}
+            v = sp.get("actualSP")
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                v = None
+            if v is not None and v > 1:
+                bsp[(mid, str(r.get("selectionId")))] = v
+        if b.get("status") == "CLOSED":
+            for r in b.get("runners") or []:
+                if not isinstance(r.get("sp"), dict):
+                    r["sp"] = {}
+                k = (mid, str(r.get("selectionId")))
+                if r["sp"].get("actualSP") is None and k in bsp:
+                    r["sp"]["actualSP"] = bsp[k]
+            out.append(b)
+            closed.add(mid)
+    if out:
+        rec.record_books(out, source="final", polled_at=polled_at)
+        rec.maybe_upload(force=True)
+    return closed
 
 
 def interval(minutes_to_off: float) -> float | None:
@@ -75,6 +114,9 @@ def record(day: date, until: datetime, data, rec, countries=("GB", "IE"), market
     offs: dict[str, datetime] = {}
     last: dict[str, datetime] = {}
     done: set[str] = set()
+    settled: set[str] = set()
+    last_settle: dict[str, datetime] = {}
+    bsp: dict[tuple, float] = {}
     polls = rows = 0
 
     def refresh() -> None:
@@ -114,17 +156,29 @@ def record(day: date, until: datetime, data, rec, countries=("GB", "IE"), market
                 last[mid] = t
                 if b.get("inplay") or b.get("status") == "CLOSED":
                     done.add(mid)
+        due_settle = [mid for mid, off in offs.items()
+                      if mid not in settled and (mid in done or t >= off)
+                      and (t - off).total_seconds() <= SETTLE_MINUTES * 60
+                      and (mid not in last_settle or (t - last_settle[mid]).total_seconds() >= SETTLE_EVERY - 0.5)]
+        if due_settle:
+            try:
+                settled |= settle_reads(data, rec, due_settle, bsp, t)
+            except Exception as exc:                           # one failed read: the next tries again
+                log.warning("settled books not read (%s)", exc)
+            for mid in due_settle:
+                last_settle[mid] = t
         if t >= next_refresh:
             try:
                 refresh()
             except Exception as exc:
                 log.warning("catalogue not read again (%s)", exc)
             next_refresh = t + timedelta(minutes=REFRESH_MINUTES)
-        if offs and all(m in done for m in offs) and t >= max(offs.values()):
+        if offs and all(m in done for m in offs) and t >= max(offs.values()) and all(
+                m in settled or (t - off).total_seconds() > SETTLE_MINUTES * 60 for m, off in offs.items()):
             break
         sleep(1.0)
     rec.maybe_upload(force=True)
-    return {"markets": len(offs), "polls": polls, "rows": rows, "done": len(done)}
+    return {"markets": len(offs), "polls": polls, "rows": rows, "done": len(done), "settled": len(settled)}
 
 
 def main(argv=None) -> int:
