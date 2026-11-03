@@ -160,7 +160,11 @@ def test_green_up_at_the_best_back_price(tmp_path, fit):
     led = pd.read_csv(tmp_path / "ledger.csv")
     g = led[led.action == "green"]
     assert len(g) == len(lays) and MID in t.greened
-    exp = sum(round(lays[s]["size"] * (1 - lays[s]["price"] / x.book.runners[s].best_back[0]), 2) for s in lays)
+    exp = 0.0
+    for s in lays:                                               # the worse of the two outcomes, stakes in pennies
+        S, m, B = lays[s]["size"], lays[s]["price"], x.book.runners[s].best_back[0]
+        b = el._floor2(S * m / B)
+        exp += round(min(-S * (m - 1) + b * (B - 1), S - b), 2)
     assert np.isclose(g.locked_pnl.sum(), exp) and np.isclose(t.locked, exp)
 
 
@@ -216,7 +220,8 @@ def test_positions_from_betfairs_orders():
         {"selectionId": 2, "side": "LAY", "sizeMatched": 3.0, "averagePriceMatched": 4.0, "customerOrderRef": "el-b-l"},
         {"selectionId": 2, "side": "BACK", "sizeMatched": 2.5, "averagePriceMatched": 4.8, "customerOrderRef": "el-b-g"}])
     assert p[1]["lay_matched"] == 4.0 and p[1]["lay_price"] == 5.5 and not p[1]["closed"]
-    assert p[2]["closed"]
+    assert p[2]["to_cover"] == 0.0 and not p[2]["closed"]          # greened: nothing left to cover
+    assert el.outcomes(p[2]) == (pytest.approx(-9.0 + 9.5), pytest.approx(0.5))
 
 
 def test_the_switch():
@@ -302,3 +307,39 @@ def test_the_table_says_why_a_lay_was_not_greened(tmp_path, fit):
     t.step(near_only=True)
     md = el.table(store, date(2026, 11, 3))
     assert "hold (the market closed before the green-up)" in md
+
+
+def test_a_green_up_takes_the_ladder_and_keeps_a_part_filled(tmp_path, fit):
+    """The best back price holds GBP2: the back takes the next prices too, and what is not matched is tried again
+    the next second for the value still open."""
+    x = FakeX()
+    x.book = book()
+    t, clock = trader(tmp_path, x, fit)
+    t.step()
+    lays = {i["selectionId"]: i["limitOrder"] for i in x.sent if i["side"] == "LAY"}
+    sid = next(iter(lays))
+    q = x.book.runners[sid]
+    q.back = [(q.back[0][0], 2.0), (el.tick_down(q.back[0][0]) if hasattr(el, "tick_down") else q.back[0][0] - 0.1, 500.0)]
+    full = x._place                                            # the first green-up back matches GBP3 only
+    calls = {"n": 0}
+
+    def part(mid, ins, ref):
+        if ins["side"] == "BACK" and ins["customerOrderRef"].endswith("-g") and calls["n"] == 0:
+            calls["n"] += 1
+            ins = dict(ins, limitOrder=dict(ins["limitOrder"], size=3.0))
+        return full(mid, ins, ref)
+    x._place = part
+    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=4)
+    t.step(near_only=True)
+    g = [i for i in x.sent if i["side"] == "BACK" and i["selectionId"] == sid]
+    assert g[0]["limitOrder"]["price"] == q.back[1][0]          # down the ladder to where the value is covered
+    assert g[0]["limitOrder"]["minFillSize"] == el.CONFIG["min_order"]
+    assert MID not in t.greened                                  # a part matched: the rest next second
+    clock["t"] += timedelta(seconds=1)
+    t.step(near_only=True)
+    g = [i for i in x.sent if i["side"] == "BACK" and i["selectionId"] == sid]
+    assert len(g) == 2
+    L = lays[sid]
+    rest = L["size"] * L["price"] - 3.0 * g[0]["limitOrder"]["price"]
+    assert np.isclose(g[1]["limitOrder"]["size"], el._floor2(rest / g[1]["limitOrder"]["price"]))
+    assert MID in t.greened
