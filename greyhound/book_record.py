@@ -13,7 +13,7 @@ Each GB/IE greyhound WIN and PLACE market of the day: every ``EVERY_FAR`` second
 off, every ``EVERY_NEAR`` seconds in the last ``NEAR_MINUTES``, and on past the scheduled off until the market closes
 or turns in play (a race goes off late; the true last book is wanted), at most ``AFTER_MINUTES`` past it. Each read
 asks for the three best prices each side, each runner's traded volume (``EX_TRADED``: ``runner_total_matched``) and
-the projected SP (``SP_PROJECTED``: near and far). The rows are ``betfair_recorder.BOOK_FIELDS`` (source "live") in
+the projected SP (``SP_AVAILABLE``: near and far). The rows are ``betfair_recorder.BOOK_FIELDS`` (source "live") in
 ``betfair_live/<day>/books_greyhound_live.csv`` with its catalogue in ``markets_greyhound_live.csv``, copied to S3
 every 15 minutes and at the end (``betfair_recorder.DayRecorder``, tag ``greyhound_live``).
 
@@ -44,8 +44,10 @@ AFTER_MINUTES = 10.0
 #: at the off filled in (Betfair sends no BSP in a closed book), as betfair_recorder.final writes the horses'
 SETTLE_EVERY = 30.0
 SETTLE_MINUTES = 30.0
-#: Betfair's request weight: EX_BEST_OFFERS (depth 3) 5, EX_TRADED 17, SP_PROJECTED 3 a market, at most 200 a call
-PRICE_DATA = ["EX_BEST_OFFERS", "EX_TRADED", "SP_PROJECTED"]
+#: Betfair's request weight: EX_BEST_OFFERS (depth 3) 5, EX_TRADED 17, SP_AVAILABLE 3 a market, at most 200 a call.
+#: The projected SP (near and far) comes with SP_AVAILABLE: "SP_PROJECTED" is no Betfair price-data type, and asking
+#: for it had every read refused (DSC-0008) from the recorder's first day, 3 Nov 2026, to the fix that afternoon
+PRICE_DATA = ["EX_BEST_OFFERS", "EX_TRADED", "SP_AVAILABLE"]
 BATCH = 4                                     # 25 a market: 100 a call, well under the limit (3 Nov: at 8, 200,
                                               # the S3 day file held the settled reads and no book before the off)
 REFRESH_MINUTES = 30.0
