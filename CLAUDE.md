@@ -40,7 +40,7 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 | `BETFAIR_PASSWORD` | Betfair Exchange password |
 | `BETFAIR_APP_KEY` | Betfair API application key (the delayed key: every read-only job, the market records) |
 | `API_FOOTBALL_KEY` | API-Football (optional: fixture status, kick-off, cups; the football model runs without it) |
-| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process only (live-trade.yml); Betfair permits no read-only use of live data |
+| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): only a betting process takes it: the live trader (live-trade.yml), and the football trader when `FOOTBALL_LIVE=yes` (football-trade.yml, small real stakes, 3 Nov 2026); Betfair permits no read-only use of live data |
 
 ## Key Commands
 
@@ -161,13 +161,17 @@ python -m greyhound.track --freeze --cutoff 2026-10-05 --days 3 --summary --out 
 # The football model (reports/football_model.md): football-data.co.uk + openfootball (+ API-Football once keyed, Betfair
 # Historic Data soccer once held) into gold tables with data-quality checks; Dixon-Coles ratings walk-forward, pooled
 # with the opening price, scored by CLV against the close; a Betfair trader, paper unless FOOTBALL_LIVE=yes
-# (football-model.yml daily on GitHub's runners; the paper trader, with the greyhound one, in paper-models.yml on its
-# own runner, never in the live job: the owner, 2 Nov 2026)
+# (football-model.yml daily on GitHub's runners; the trader in football-trade.yml on its own runner, never in the live
+# job: real stakes only with FOOTBALL_LIVE=yes, GBP2 a bet and GBP20 a day, the owner, 3 Nov 2026)
 python source_data.py --source football,openfootball,api_football --fetch --build
 python -m football.data --build
 python -m football.model --from 2012-07-01 --out out/football_report.json
 python -m football.live --fit
 python -m football.live --trade --until 21:30                      # paper; --live with FOOTBALL_LIVE=yes
+# every football market on Betfair recorded (depth, traded ladder) and paper-traded beside the trader (owner, 3 Nov):
+# sized entries at checkpoints, resting orders against the recorded queue, the close, Betfair's result
+python -m football.live --trade --all-games --hours 23.5            # football-trade.yml
+python -m football.exchange_feed --summary --days 3
 python -m football.live --settle --days 7
 # the pre-registered early-to-close rule scored at the recorded books (paper trial; gate 'running' until complete)
 python -m research.open_close.football_paper_trial --panel data/football_exchange_panel.parquet --out out/football_paper_trial.json

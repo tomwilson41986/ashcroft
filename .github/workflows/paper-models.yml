@@ -3,15 +3,16 @@ name: Paper models (greyhounds, football), the football book record and the raci
 # The paper trials, apart from the live trader (the owner, 2 Nov 2026: keep UK/IE safe; every other model runs on its
 # own and has to prove itself). Until 2 Nov these two traders ran as background processes inside live-trade.yml's
 # trading step; they now run here, on their own runner, and can place no order:
-#   - no --live is ever passed, and GREYHOUND_LIVE / FOOTBALL_LIVE are pinned to 'no' (each trader stays on paper
-#     unless both its switch and --live are given: greyhound/live.py, football/live.py);
+#   - no --live is ever passed, and GREYHOUND_LIVE is pinned to 'no' (the trader stays on paper
+#     unless both its switch and --live are given: greyhound/live.py). The football trader runs in football-trade.yml
+#     from 3 Nov 2026;
 #   - the delayed application key only (Betfair permits no read-only use of live data);
 #   - its own Python environment and certificate folder, so nothing here touches the live job's.
 # The runner: a second self-hosted runner on the UK server (Betfair refuses logins from GitHub's own runners: 403,
 # 1 Nov), labelled with vars.PAPER_MODELS_RUNNER (default 'paper-models'). It must not be the live trader's runner: the
 # job stops if the two are the same, because a job there would hold the live trader's runner and could delay its
 # 05:15 UTC start. Until such a runner is registered, the scheduled runs wait in GitHub's queue and the trials pause.
-# Ledgers as before: s3://$CAPTURE_BUCKET/sources/greyhound/live/paper/<day>/, sources/football/live/paper/<day>/.
+# Ledger as before: s3://$CAPTURE_BUCKET/sources/greyhound/live/paper/<day>/.
 
 on:
   schedule:
@@ -93,7 +94,6 @@ jobs:
           # the delayed key only; the live key is never given to this job
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
           GREYHOUND_LIVE: 'no'
-          FOOTBALL_LIVE: 'no'
           # API-Football (read-only data, not a betting key): the football line-ups and injuries collector
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: |
@@ -102,10 +102,8 @@ jobs:
           # paper, at its first real price, where the edge clears 0.2. S3 greyhound/STOP or trading/STOP stops it.
           python -m greyhound.live --trade --until 21:30 > "$RUNNER_TEMP/greyhound_trader.log" 2>&1 &
           GHT=$!
-          # the football model (football/live.py, football/live_config.json): MATCH_ODDS and OVER_UNDER_25, each
-          # selection decided once in the 6 hours before kick-off, on paper. S3 football/STOP or trading/STOP stops it.
-          timeout 15h python -m football.live --trade --until 21:30 > "$RUNNER_TEMP/football_trader.log" 2>&1 &
-          FBT=$!
+          # the football trader moved to football-trade.yml on 3 Nov 2026 (the owner: every match on Betfair, on the
+          # live feed, with small real stakes that keep the live key in betting use); this job keeps its records
           # the Betfair football books with their sizes (read-only; the unmodified betfair_recorder.py, tag
           # football_<country>): today's MATCH_ODDS and OVER_UNDER_25 in the leagues football-data covers, every 15
           # minutes and every 2 in the hour before kick-off, and tomorrow's the evening before (the early price a trade
@@ -152,13 +150,11 @@ jobs:
           if [ "$DOW" = 2 ]; then coll_record 12:55 "1 2" & FBREC+=($!); fi
           wait "$GHT"; GC=$?; echo "greyhound paper trader exited $GC"
           tail -n 20 "$RUNNER_TEMP/greyhound_trader.log"
-          wait "$FBT"; FC=$?; echo "football paper trader exited $FC"
-          tail -n 20 "$RUNNER_TEMP/football_trader.log"
           for P in "${FBREC[@]}"; do wait "$P"; done
           echo "football records exited"; tail -n 2 "$RUNNER_TEMP"/football_*.log
           wait "$FBL"; LC=$?; echo "football line-ups exited $LC"; tail -n 3 "$RUNNER_TEMP/football_lineups.log"
           [ "$LC" = 0 ] || echo "::warning::the football line-ups collector exited $LC (its log above)"
-          [ "$GC" = 0 ] && [ "$FC" = 0 ]
+          [ "$GC" = 0 ]
       - name: Football line-up tables
         # rebuilt whole from the raw polls (safe to rerun); a failure here costs no data
         if: ${{ !cancelled() && steps.runner_guard.outcome == 'success' }}

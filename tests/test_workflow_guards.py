@@ -184,8 +184,9 @@ def test_only_the_trader_runs_on_the_live_key():
 
 
 def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
-    """The owner, 2 Nov 2026: the greyhound and football paper traders run in paper-models.yml, never in the live
-    trader's job or on its runner, on the delayed key, with no route to a real order."""
+    """The owner, 2 Nov 2026: the greyhound paper trader runs in paper-models.yml, never in the live trader's job or
+    on its runner, on the delayed key, with no route to a real order. The football trader left it on 3 Nov 2026 for
+    football-trade.yml (test_the_football_trader_bets_small_and_only_when_switched_on)."""
     import yaml as _yaml
     live = (WORKFLOWS / "live-trade.yml").read_text()
     for t in ("greyhound.live --trade", "football.live --trade", "GREYHOUND_LIVE", "FOOTBALL_LIVE"):
@@ -198,15 +199,46 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
     assert any("Not on the live trader's runner" == s.get("name") for s in steps)
     assert "LIVE_APP_KEY" not in text.replace("the live key is never given", "")
     runs = "\n".join(str(s.get("run", "")) for s in steps)
-    assert "--live" not in runs and "greyhound.live --trade" in runs and "football.live --trade" in runs
+    assert "--live" not in runs and "greyhound.live --trade" in runs and "football.live --trade" not in runs
     env = next(s["env"] for s in steps if s.get("name") == "Trade on paper (read-only)")
-    assert env["GREYHOUND_LIVE"] == "no" and env["FOOTBALL_LIVE"] == "no"
+    assert env["GREYHOUND_LIVE"] == "no" and "FOOTBALL_LIVE" not in env
     assert env["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
-    # no other workflow starts either trader
+    # no other workflow starts the greyhound trader; the football trader only football-trade.yml
     for p in WORKFLOWS.glob("*.yml"):
+        body = p.read_text()
         if p.name != "paper-models.yml":
-            body = p.read_text()
-            assert "greyhound.live --trade" not in body and "football.live --trade" not in body, p.name
+            assert "greyhound.live --trade" not in body, p.name
+        if p.name != "football-trade.yml":
+            assert "football.live --trade" not in body, p.name
+
+
+def test_the_football_trader_bets_small_and_only_when_switched_on():
+    """The owner, 3 Nov 2026: every football match on Betfair recorded and paper-traded from the live feed, the live
+    key kept in betting use by small real stakes. The live key and --live only with FOOTBALL_LIVE=yes; its own
+    runner, never the live horse trader's or the paper models'; the real stakes capped at GBP2 a bet and GBP20 a day."""
+    import json as _json
+
+    import yaml as _yaml
+    text = (WORKFLOWS / "football-trade.yml").read_text()
+    job = _yaml.safe_load(text)["jobs"]["trade"]
+    assert "BETFAIR_RUNNER" not in str(job["runs-on"]) and "PAPER_MODELS_RUNNER" not in str(job["runs-on"])
+    guard = next(s for s in job["steps"] if s.get("name") == "Not on another job's runner")["run"]
+    assert '"$FOOTBALL_RUNNER_LABEL" = "$LIVE_RUNNER_LABEL"' in guard and '"$FOOTBALL_RUNNER_LABEL" = "$PAPER_RUNNER_LABEL"' in guard
+    step = next(s for s in job["steps"] if s.get("name", "").startswith("Trade football"))
+    assert step["env"]["FOOTBALL_LIVE"] == "${{ vars.FOOTBALL_LIVE || 'no' }}"
+    lines = [ln.strip() for ln in step["run"].splitlines() if ln.strip()]
+    assert lines[0] == 'FBKEY="$BETFAIR_APP_KEY"' and lines[1] == 'LIVEFLAG=""'
+    switch = [ln for ln in lines if "BETFAIR_LIVE_APP_KEY" in ln]
+    assert switch == ['if [ "$FOOTBALL_LIVE" = yes ] && [ -n "$BETFAIR_LIVE_APP_KEY" ]; then '
+                      'FBKEY="$BETFAIR_LIVE_APP_KEY"; LIVEFLAG="--live"; fi']
+    runs = [ln for ln in lines if "python" in ln]
+    assert len(runs) == 1 and runs[0].startswith('BETFAIR_APP_KEY="$FBKEY" ')
+    assert "football.live --trade --all-games" in runs[0] and runs[0].endswith("$LIVEFLAG")
+    for name in ("live-trade.yml", "live-record.yml", "paper-models.yml"):
+        assert "football-trade" not in (WORKFLOWS / name).read_text() or name == "paper-models.yml"
+    cfg = _json.loads((Path(__file__).resolve().parents[1] / "football" / "live_config.json").read_text())
+    lim = {**cfg["limits"], **cfg["live_limits"]}
+    assert lim["level_stake"] <= 2.0 and lim["max_match_stake"] <= 2.0 and lim["max_daily_turnover"] <= 20.0
 
 
 def test_the_live_horse_jobs_carry_nothing_from_another_sport():
