@@ -5,8 +5,10 @@ stacked team-feature move model (football_stack_trial, arm team_all, ridge + Lig
 moves of the seasons before each test season and traded on Betfair's own prices (takeable books, back early and lay at
 the close or the reverse, greened, 2% commission on each market's net). Three ideas, each scored the same way:
 
-1. **Rank selection.** Take the strongest K forecasts a collection week, not every forecast past a fixed threshold, so
-   the number of bets does not swing with the model's scale. K is chosen on 2024/25 and read on 2025/26.
+1. **Rank selection.** Take the strongest K forecasts a collection week, or a match day (the owner, 4 Nov: "anything
+   daily? top 5, 10, 20, 50 per day"), not every forecast past a fixed threshold, so the number of bets does not swing
+   with the model's scale. Also by day: the K biggest gaps between the model's price and Betfair's early price,
+   traded toward the model. K is chosen on 2024/25 and read on 2025/26.
 2. **A cost filter (meta-label).** A second model, fitted on 2024/25's candidate trades, predicts whether a trade
    clears its cost from what is known at entry (the forecast's size and direction, the price, the book's margin, the
    league, home or away). Read on 2025/26.
@@ -37,6 +39,7 @@ COMMISSION = 0.02
 TEST_SEASONS = (2024, 2025)          # 2025 = 2025/26 to date (2026 rows join it)
 THRESHOLDS = (0.03, 0.04, 0.05)
 WEEKLY_K = (5, 10, 20, 40)
+DAILY_K = (5, 10, 20, 50)
 TAKEABLE = ("tight <1.02", "medium 1.02-1.05")
 
 
@@ -91,10 +94,12 @@ def candidates(te: pd.DataFrame, preds: dict[str, np.ndarray], market: str) -> p
     from research.open_close.football_exchange import width_label
     if market == "MO":
         legs = {"H": ("bfe_open_h", "bfe_close_h"), "A": ("bfe_open_a", "bfe_close_a")}
+        model_p = {"H": te["p_h"].to_numpy(float), "A": te["p_a"].to_numpy(float)}
         o_cols = ["bfe_open_h", "bfe_open_d", "bfe_open_a"]
         c_cols = ["bfe_close_h", "bfe_close_d", "bfe_close_a"]
     else:
         legs = {"O": ("bfe_open_o25", "bfe_close_o25"), "U": ("bfe_open_u25", "bfe_close_u25")}
+        model_p = {"O": te["p_o25"].to_numpy(float), "U": 1 - te["p_o25"].to_numpy(float)}
         o_cols, c_cols = ["bfe_open_o25", "bfe_open_u25"], ["bfe_close_o25", "bfe_close_u25"]
     ok = te[o_cols + c_cols].gt(1).all(axis=1).to_numpy()
     over_o = (1 / te[o_cols]).sum(axis=1).to_numpy(float)
@@ -105,18 +110,23 @@ def candidates(te: pd.DataFrame, preds: dict[str, np.ndarray], market: str) -> p
         ob, cb = te[oc].to_numpy(float), te[cc].to_numpy(float)
         of, cf = ob * over_o, cb * over_c                         # fair prices
         side = np.where(pred > 0, 1, -1)                          # chance up: price down: back first
-        o_sym = np.where(side > 0, ob, _sym(ob, of))
-        c_sym = np.where(side > 0, _sym(cb, cf), cb)
-        p_sym = np.where(side > 0, o_sym / c_sym - 1, 1 - o_sym / c_sym)
-        o_t, c_t = _with_spread(of, cf, side)
-        p_tick = np.where(side > 0, o_t / c_t - 1, 1 - o_t / c_t)
+        # each direction's profit, so any rule can pick its side: back first (b) or lay first (l)
+        sym_b = ob / _sym(cb, cf) - 1
+        sym_l = 1 - _sym(ob, of) / cb
+        ob_t, cb_t = _with_spread(of, cf, np.ones(len(of)))
+        ol_t, cl_t = _with_spread(of, cf, -np.ones(len(of)))
+        tick_b, tick_l = ob_t / cb_t - 1, 1 - ol_t / cl_t
+        p_sym = np.where(side > 0, sym_b, sym_l)
+        p_tick = np.where(side > 0, tick_b, tick_l)
+        gap = np.log(np.clip(model_p[leg], 1e-6, 1)) - np.log(1 / of)      # the model's chance against Betfair's fair
         rows.append(pd.DataFrame({
             "market_id": (te["match_id"] + ":" + market).to_numpy(), "match_id": te["match_id"].to_numpy(),
             "day": te["match_date"].astype(str).to_numpy(), "week": te["week"].to_numpy(),
             "season": te["test_season"].to_numpy(), "league": te["fd_code"].astype(str).to_numpy(),
             "leg": leg, "side": side, "pred": pred, "apred": np.abs(pred), "price": ob, "over": over_o,
             "width": width_label(over_o), "profit_sym": p_sym, "profit_tick": p_tick,
-            "right_way": np.sign(np.log(cf / of)) == -side, "ok": ok}))
+            "sym_b": sym_b, "sym_l": sym_l, "tick_b": tick_b, "tick_l": tick_l, "gap": gap,
+            "move_dir": np.sign(np.log(cf / of)), "right_way": np.sign(np.log(cf / of)) == -side, "ok": ok}))
     c = pd.concat(rows, ignore_index=True)
     return c[c["ok"] & np.isin(c["width"], TAKEABLE) & np.isfinite(c["profit_sym"])].drop(columns="ok")
 
@@ -147,6 +157,23 @@ def by_threshold(c: pd.DataFrame, th: float) -> pd.DataFrame:
 def by_rank(c: pd.DataFrame, k: int) -> pd.DataFrame:
     """The k strongest forecasts of each collection week."""
     return c.sort_values("apred", ascending=False).groupby("week", sort=False).head(k)
+
+
+def by_day(c: pd.DataFrame, k: int) -> pd.DataFrame:
+    """The k strongest forecast moves of each match day."""
+    return c.sort_values("apred", ascending=False).groupby("day", sort=False).head(k)
+
+
+def by_day_gap(c: pd.DataFrame, k: int) -> pd.DataFrame:
+    """The k biggest gaps of each match day between the model's price and Betfair's early price, traded toward
+    the model: back first where the model's chance is higher (the price should shorten), lay first where lower."""
+    g = c.assign(agap=c["gap"].abs()).sort_values("agap", ascending=False).groupby("day", sort=False).head(k).copy()
+    side = np.where(g["gap"] > 0, 1, -1)
+    g["side"] = side
+    g["profit_sym"] = np.where(side > 0, g["sym_b"], g["sym_l"])
+    g["profit_tick"] = np.where(side > 0, g["tick_b"], g["tick_l"])
+    g["right_way"] = g["move_dir"] == -side
+    return g
 
 
 META_FEATURES = ["apred", "side", "log_price", "over", "is_home_or_over", "league_code"]
@@ -198,7 +225,10 @@ def run(cache: str, n_boot: int = 1000) -> dict:
             c = cands[(mk, s)]
             res[str(s)] = {"candidates": int(len(c)),
                            "threshold": {str(t): scored(by_threshold(c, t), n_boot) for t in THRESHOLDS},
-                           "weekly_top_k": {str(k): scored(by_rank(c, k), n_boot) for k in WEEKLY_K}}
+                           "weekly_top_k": {str(k): scored(by_rank(c, k), n_boot) for k in WEEKLY_K},
+                           "daily_top_k_forecast": {str(k): scored(by_day(c, k), n_boot) for k in DAILY_K},
+                           "daily_top_k_model_gap": {str(k): scored(by_day_gap(c, k), n_boot) for k in DAILY_K},
+                           "match_days": int(c["day"].nunique())}
         out[mk] = res
     # the cost filter: fitted on 2024/25's candidates, read on 2025/26 at the bet counts of the threshold rule
     for mk in ("MO", "OU"):

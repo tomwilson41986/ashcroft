@@ -170,6 +170,42 @@ What this means in practice:
   its bet count holds steady from season to season (about 6 a week).
 - The gain over threshold 0.05 is within the noise. Its advantage is the steady volume.
 
+### Daily volume: top K a match day (the owner, 4 Nov: "anything daily?")
+
+**Rule A: forecast move.** The K biggest forecast price moves each match day, traded in the forecast's direction.
+
+| Match odds, 2025/26 (316 match days) | Bets (a day) | Tick | Sym | Right way |
+|---|---|---|---|---|
+| Top 5 a day | 1,466 (4.6) | -1.92% [-2.5, -1.3] | -0.45% [-1.0, +0.1] | 61% |
+| Top 10 a day | 2,718 (8.6) | -2.13% | -0.99% | 60% |
+| Top 20 a day | 4,660 (14.7) | -2.20% | -1.27% | 59% |
+| Top 50 a day | 8,928 (28.3) | -2.48% | -1.75% | 57% |
+| *For scale: top 5 a week* | *285 (0.9)* | *+1.20%* | *+3.64%* | *74%* |
+
+**Rule B: model-vs-market gap.** The K biggest gaps each day between the model's price and Betfair's early price,
+traded toward the model.
+
+| Top K a day, 2025/26 | Tick | Sym | Right way |
+|---|---|---|---|
+| 5 to 50 | -4.7% to -6.3% | -3.8% to -3.9% | 47% |
+
+Rule B is worse than a coin flip: the market moves away from our model more often than toward it.
+
+**Over/under, top 5 to 50 a day, forecast move:** -0.9% to -1.5% a tick off fair, -2.3% to -2.7% at a symmetric book.
+
+2024/25 shows the same pattern. Top 5 a day is the only daily rule above zero there: +0.91% at a symmetric book,
+-0.66% a tick off fair.
+
+**Read: the edge sits in the strongest 1-2% of signals.** Below that, the forecast is right 57-61% of the time, too
+little to beat the spread. More volume from this model means more losing trades.
+
+**Where daily volume can come from instead:**
+- more markets: every league on Betfair, which needs features that don't depend on football-data's 22 divisions;
+- more decision moments in each match (re-entry as the book moves);
+- order-book strategies on the feed.
+
+All three need the football runner's live record.
+
 ### A cost filter (meta-label, match odds)
 
 A small LightGBM model, fitted on 2024/25's candidate trades, predicts whether a trade clears its cost. Its inputs are
