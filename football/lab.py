@@ -200,6 +200,9 @@ def families(m: pd.DataFrame) -> dict:
     except Exception:                                    # no xG stage in this cache
         pass
     fam["players"] = [c for c in ("mpm_surprise", "gpm_surprise", "mpm_xi_diff", "gpm_xi_diff") if c in m.columns]
+    # known at the early price: the eleven as it stood after each side's matches before the collection day
+    # (football.player_ratings.team_news; not line-up time, so not in LINEUP_TIME)
+    fam["team_news"] = [c for c in m.columns if c.startswith("tn_")]
     return fam
 
 
