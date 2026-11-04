@@ -135,7 +135,7 @@ class QuoteSession(ArmSession):
             if side == "back" and hasattr(data, "agent_taken"):
                 data.agent_taken[(m.market_id, sid, round(p, 2))] += take
             elif side == "lay":
-                data.taken_lay[(m.market_id, sid, round(p, 2))] += take
+                getattr(data, "agent_taken_lay", data.taken_lay)[(m.market_id, sid, round(p, 2))] += take
             left -= take
 
     def _advance(self, now, m, sid, q) -> None:
