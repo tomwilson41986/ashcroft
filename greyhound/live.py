@@ -58,7 +58,12 @@ CONFIG_PATH = Path(__file__).with_name("live_config.json")
 CARD_UNSAFE = {"weight_change", "weight_vs_mean", "hb_weight_vs_max", "hb_weight_vs_min", "hb_win_going",
                "hb_plc_going", "hb_runs_going", "hb_prize_1st", "hb_handicap"}
 #: the feature blocks the live model is fitted with (``greyhound.metrics``; HorseRaceBase's from 6 Oct 2026, report §8.1)
-LIVE_BLOCKS = ("parity", "hrb")
+#: the owner, 4 Nov 2026 ("implement all recommendations in order"): the best pre-race model of report section 26.3
+#: (every engine block, the race simulator, log(BSP) rescaled to the SP book: RMSE 0.4086 against core's 0.4418)
+LIVE_BLOCKS = ("parity", "hrb", "lib", "times", "intent", "ability", "etime")
+LIVE_MATRIX_BLOCKS = ("sim",)                     # greyhound/blocks, computed on the engine's matrix (roadmap F2)
+LIVE_OBJECTIVE = "logbsp"                         # 'binary' was the live model to 4 Nov 2026
+LIVE_TRAIN_FROM = "2024-01-01"                    # the fast loop's quick recipe, the window section 26.3 was scored on
 LEDGER_FIELDS = ["time_utc", "mode", "market_id", "selection_id", "track", "race_time", "trap", "dog", "p_model",
                  "price", "size_offered", "edge", "action", "stake", "matched", "avg_price", "bet_id", "status",
                  "error", "lay_liability", "lay_status", "minutes_to_off"]
@@ -81,26 +86,58 @@ def card_safe(features: list[str]) -> list[str]:
     return [f for f in features if f not in CARD_UNSAFE]
 
 
-def fit(df: pd.DataFrame, features: list[str], before: str, date_from: str = "2019-01-01"):
-    """The live model: every modelling race in [date_from, before), early-stopped on the last tenth."""
+def fit(df: pd.DataFrame, features: list[str], before: str, date_from: str = "2019-01-01",
+        objective: str = "binary"):
+    """The live model: every modelling race in [date_from, before), early-stopped on the last tenth. ``objective``
+    'binary' on the winner, or 'logbsp': a regression on log(BSP) (the races with one), the fast loop's recipe
+    (greyhound.fastloop BASE_PARAMS, learning rate 0.05), with the SP book's usual total from the fit's races so the
+    prices can be rescaled to it (section 26.3's best_rescaled)."""
     import lightgbm as lgb
     d = modelling_rows(df[~df.is_card])
     d = d[(d.t >= date_from) & (d.t < before)]
+    meta = {"before": before, "date_from": date_from, "objective": objective}
+    if objective == "logbsp":
+        from greyhound.fastloop import BASE_PARAMS
+        d = d[pd.to_numeric(d.bsp, errors="coerce") > 1]
+        y = np.log(np.clip(d.bsp.to_numpy(float), 1.01, 1000.0))
+        params = dict(BASE_PARAMS, objective="regression", learning_rate=0.05)
+        rounds, patience = 10000, 100
+        race_sum = pd.Series(1.0 / d.bsp.to_numpy(float)).groupby(d.race_id.to_numpy()).sum()
+        meta["book"] = float(np.median(race_sum))                 # the SP book's usual total (sum of 1/BSP a race)
+    else:
+        y, params, rounds, patience = d.won.to_numpy(float), PARAMS, 3000, 100
     cut = d.t.quantile(0.9)
-    tr, es = d[d.t < cut], d[d.t >= cut]
-    m = lgb.train(PARAMS, lgb.Dataset(tr[features], tr.won), 3000, valid_sets=[lgb.Dataset(es[features], es.won)],
-                  callbacks=[lgb.early_stopping(100, verbose=False)])
-    return m, {"before": before, "date_from": date_from, "fit_rows": len(d), "rounds": m.best_iteration}
+    tr, es = d.t < cut, d.t >= cut
+    m = lgb.train(params, lgb.Dataset(d.loc[tr, features], y[tr.to_numpy()]), rounds,
+                  valid_sets=[lgb.Dataset(d.loc[es, features], y[es.to_numpy()])],
+                  callbacks=[lgb.early_stopping(patience, verbose=False)])
+    return m, {**meta, "fit_rows": int(len(d)), "rounds": m.best_iteration}
 
 
-def price_cards(df: pd.DataFrame, booster, features: list[str], key: pd.DataFrame) -> pd.DataFrame:
+def attach_blocks(df: pd.DataFrame, names) -> list[str]:
+    """The matrix blocks (greyhound/blocks) added to the engine's output, in place; their feature names."""
+    from greyhound import blocks as gblocks
+    out = []
+    for b in names or ():
+        out += [f for f in gblocks.attach(df, b) if f not in out]
+    return out
+
+
+def price_cards(df: pd.DataFrame, booster, features: list[str], key: pd.DataFrame,
+                meta: dict | None = None) -> pd.DataFrame:
     """The card rows of ``df`` priced and normalised within each race, with their Betfair market and selection
     (``key``: race_id, trap, market_id, selection_id, matched_history from ``greyhound.card.cards``)."""
     c = df[df.is_card]
     out = c[["race_id", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "race_class", "distance_m",
              "field"]].copy()
     out["p_raw"] = booster.predict(c[features]) if len(c) else []
-    out["p_model"] = race_norm(out.p_raw, out.race_id) if len(c) else []
+    if (meta or {}).get("objective") == "logbsp":
+        # the forecast SP: its chances normalised in the race, and the price rescaled to the SP book's usual total
+        out["p_model"] = race_norm(1.0 / np.exp(out.p_raw.astype(float)), out.race_id) if len(c) else []
+        book = float((meta or {}).get("book") or 1.0)
+        out["pred_bsp"] = (1.0 / (book * out.p_model.astype(float))).round(3) if len(c) else []
+    else:
+        out["p_model"] = race_norm(out.p_raw, out.race_id) if len(c) else []
     out = out.merge(key, on=["race_id", "trap"], how="left")
     return out
 
@@ -112,10 +149,11 @@ def train(store, today: date) -> dict:
     runs = runs_through(store, today - timedelta(days=1))
     eng = GreyhoundMetricsEngine(blocks=LIVE_BLOCKS)
     df = eng.calculate_all(runs, prices=load_prices(store, f"2014-{today.year}"))
-    feats = card_safe(eng.features)
-    m, meta = fit(df, feats, before=f"{today:%Y-%m-%d}")
+    feats = card_safe(eng.features + attach_blocks(df, LIVE_MATRIX_BLOCKS))
+    m, meta = fit(df, feats, before=f"{today:%Y-%m-%d}", date_from=LIVE_TRAIN_FROM, objective=LIVE_OBJECTIVE)
     imp = pd.Series(m.feature_importance("gain"), index=feats)
-    meta.update({"features": feats, "blocks": list(eng.blocks), "card_unsafe_left_out": sorted(CARD_UNSAFE),
+    meta.update({"features": feats, "blocks": list(eng.blocks), "matrix_blocks": list(LIVE_MATRIX_BLOCKS),
+                 "card_unsafe_left_out": sorted(CARD_UNSAFE),
                  "trained_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                  "top_features": {k: round(float(v), 4) for k, v in (imp / imp.sum()).sort_values(ascending=False)
                                   .head(20).items()}})
@@ -151,11 +189,12 @@ def predict(store, day: date, s3=None) -> dict:
     card = drop_removed(card, removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
     eng = GreyhoundMetricsEngine(blocks=tuple(meta.get("blocks", ["parity"])))
     df = eng.calculate_all(clean(with_cards(hist, card)), prices=load_prices(store, f"2014-{day.year}"))
+    attach_blocks(df, meta.get("matrix_blocks", []))
     missing = [f for f in meta["features"] if f not in df.columns]
     if missing:
         raise SystemExit(f"the live model reads features the engine no longer makes: {missing[:10]}")
     key = card[["race_id", "trap", "market_id", "selection_id", "matched_history"]].drop_duplicates(["race_id", "trap"])
-    pred = price_cards(df, booster, meta["features"], key)
+    pred = price_cards(df, booster, meta["features"], key, meta)
     pred["model_trained_utc"] = meta.get("trained_utc")
     buf = io.StringIO()
     pred.to_csv(buf, index=False)
@@ -185,7 +224,7 @@ def drop_removed(card: pd.DataFrame, removed: set) -> pd.DataFrame:
     return out
 
 
-def card_check(store, day: date, blocks=LIVE_BLOCKS, s3=None) -> dict:
+def card_check(store, day: date, blocks=LIVE_BLOCKS, s3=None, matrix_blocks=LIVE_MATRIX_BLOCKS) -> dict:
     """Are the card's features the results' features? A past day priced twice: from the morning's card (the
     recorder's catalogue, history to the day before) and from GBGB's results for it. Each feature's share of runners
     where the two agree (both missing, or within 1e-6); a card-safe feature should agree for every dog with a GBGB
@@ -211,13 +250,15 @@ def card_check(store, day: date, blocks=LIVE_BLOCKS, s3=None) -> dict:
     eng = GreyhoundMetricsEngine(blocks=tuple(blocks))
     a = eng.calculate_all(clean(with_cards(hist, card)), prices=prices)
     b = GreyhoundMetricsEngine(blocks=tuple(blocks)).calculate_all(clean(full), prices=prices)
+    checked = list(eng.features) + attach_blocks(a, matrix_blocks)
+    attach_blocks(b, matrix_blocks)
     k = ["track", "race_time", "trap"]
     a = a[a.is_card.fillna(False).astype(bool)].assign(race_time=lambda x: x.race_time.astype(str).str[:5])
     b = b[(b.race_date.astype(str) == ds)].assign(race_time=lambda x: x.race_time.astype(str).str[:5])
     j = a.merge(b, on=k, suffixes=("_card", "_res"))
     j = j[[(t, r, float(p)) in matched for t, r, p in zip(j.track, j.race_time, j.trap)]]
     agree = {}
-    for f in eng.features:
+    for f in checked:
         if f in k:                                           # a join key: equal by construction
             agree[f] = 1.0
             continue

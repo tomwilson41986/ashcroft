@@ -128,19 +128,20 @@ def test_a_race_is_laid_once_every_runner_has_traded(tmp_path, fit):
     assert set(led.action) <= {"lay", "no_lay"} and (led.action == "lay").sum() == len(lays)
 
 
-def test_the_drifters_only_at_80_percent_of_the_forecast(tmp_path, fit):
-    from greyhound import tradeout as to
+def test_the_drifters_only_at_the_margin_under_the_forecast(tmp_path, fit):
     from research.greyhound import limit_study as ls
     x = FakeX()
     x.book = book()
     t, _ = trader(tmp_path, x, fit)
     t.step()
     led = pd.read_csv(tmp_path / "ledger.csv")
+    m = 1 - el.CONFIG["margin"]                                   # 0.8 to 4 Nov 2026, 0.9 from then
     for r in led.itertuples():
         if r.action == "lay":
-            assert r.f_bsp >= r.mid and r.price == ls.ladder([r.f_bsp * 0.8], up=False)[0]
+            assert r.f_bsp >= r.mid and r.price == ls.ladder([r.f_bsp * m], up=False)[0]
         else:
-            assert r.f_bsp < r.mid or ls.ladder([r.f_bsp * 0.8], up=False)[0] > el.CONFIG["max_price"]
+            assert r.f_bsp < r.mid or ls.ladder([r.f_bsp * m], up=False)[0] > el.CONFIG["max_price"] \
+                or ls.ladder([r.f_bsp * m], up=False)[0] >= r.mid - 1e-9
 
 
 def test_green_up_at_the_best_back_price(tmp_path, fit):
