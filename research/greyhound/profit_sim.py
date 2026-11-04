@@ -24,6 +24,7 @@ import argparse
 import io
 import json
 import logging
+import math
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -400,8 +401,45 @@ def live_level(fv: pd.DataFrame) -> pd.DataFrame:
 FAIRS = ("cl", "closing", "cl_live", "closing_live", "mid")
 
 
+def stake_q(price: float, q: dict, cfg: dict, book: dict | None, side: str, secs: float) -> float:
+    """An order's stake by the variant's staking (``q['stake']``, the type and its size; default the live early lay's
+    GBP20 liability):
+
+    - ``liability``: each order risks ``size`` (a lay's liability, a back's winnings): ``size / (price - 1)``;
+    - ``stake``: ``size`` whatever the price;
+    - ``liquidity``: ``frac`` of the money shown at the best price on the order's own side of the book (the queue it
+      joins), at most ``size``;
+    - ``late``: ``liability`` sizing, ``x`` times as much in the last ``late_secs`` (where most of the money trades).
+
+    Each between ``min`` (GBP2) and ``max`` (none unless given)."""
+    st = q.get("stake") or {"type": "liability", "size": cfg["liability"], "min": cfg["min_stake"],
+                            "max": cfg["max_stake"]}
+    kind, size = st.get("type", "liability"), float(st.get("size", cfg["liability"]))
+    if kind == "stake":
+        s = size
+    elif kind == "liquidity":
+        lvl = (book or {}).get("back" if side == "lay" else "lay") or []
+        s = min(size, float(st.get("frac", 0.25)) * (lvl[0][1] if lvl else 0.0))
+    elif kind == "late":
+        s = size / max(price - 1.0, 1e-9) * (float(st.get("x", 2.5)) if secs <= float(st.get("late_secs", 120))
+                                              else 1.0)
+    else:
+        s = size / max(price - 1.0, 1e-9)
+    s = max(s, float(st.get("min", 2.0)))
+    if st.get("max") is not None:
+        s = min(s, float(st["max"]))
+    return math.floor(s * 100 + 1e-9) / 100
+
+
 def fair_by(name: str, pre_m: pd.DataFrame, t, preds_m: pd.DataFrame, fit: dict, cfg: dict,
             closing: dict | None, off) -> pd.DataFrame | None:
+    if name == "mid":                                   # the market's own price: no model to run
+        from model.race_book import market_now
+        now = pre_m[pre_m.polled <= t].groupby("selection_id").tail(1)
+        if not len(now) or not (now.last_traded > 1).all() or set(now.selection_id) - set(preds_m.selection_id):
+            return None
+        m = market_now(now.back1.to_numpy(float), now.lay1.where(now.lay1 > 1).to_numpy(float))
+        return pd.DataFrame({"selection_id": now.selection_id.astype(int).to_numpy(), "f_bsp": m, "mid": m})
     if name.startswith("closing"):
         fv = fair_values(pre_m, t, preds_m, fit, cfg, closing=closing, off=off)
     else:
@@ -514,7 +552,7 @@ def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict
                     close(key, t)
                     cur = None
                 if ok and cur is None:
-                    size = el.stake_for(target, cfg)
+                    size = stake_q(target, q, cfg, book_of(sid, t), side, (off - t).total_seconds())
                     # placed on the book read at ``t``; it rests from ``t + latency`` (fills count from then)
                     open_[key] = {"market_id": mid, "selection_id": sid, "side": side, "price": target, "size": size,
                                   "t0": t + lat, "book": book_of(sid, t), "f_bsp": round(f, 3), "mid": round(m, 3)}
@@ -531,10 +569,11 @@ def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict
                     "back_matched": round(sum(st for sd, p, st in fl if sd == "back"), 2),
                     "lay_matched": round(sum(st for sd, p, st in fl if sd == "lay"), 2),
                     "matched": round(sum(st for sd, p, st in fl), 2), "pnl": round(pnl, 2), "how": how,
-                    "matched_last_60s": round(late.get(sid, 0.0), 2)})
+                    "matched_last_60s": round(late.get(sid, 0.0), 2), "off": off})
     if not out:
         out.append({"market_id": mid, "selection_id": None, "orders": len(orders), "back_matched": 0.0,
-                    "lay_matched": 0.0, "matched": 0.0, "pnl": 0.0, "how": "unmatched", "matched_last_60s": 0.0})
+                    "lay_matched": 0.0, "matched": 0.0, "pnl": 0.0, "how": "unmatched", "matched_last_60s": 0.0,
+                    "off": off})
     return out
 
 
@@ -657,6 +696,18 @@ QUOTES = {
                       "through_min": "size"},
     "mid_m07_hard": {"sides": ("back", "lay"), "margin": 0.07, "max_loss": 60.0, "fair": "mid", "latency": 1.5,
                      "through_min": "size"},
+    # the staking (the owner, 4 Nov: "Evaluating best staking strategy; type and size"), at 5% around the mid with
+    # the hard fills: the size moves the fills (a bigger order waits behind more and fills less), so each is simulated
+    **{f"stk_liab{n}": {"sides": ("back", "lay"), "margin": 0.05, "fair": "mid", "latency": 1.5, "through_min": "size",
+                        "max_loss": 3.0 * n, "stake": {"type": "liability", "size": n, "min": 2.0}}
+       for n in (10, 20, 50, 100)},
+    **{f"stk_fixed{n}": {"sides": ("back", "lay"), "margin": 0.05, "fair": "mid", "latency": 1.5, "through_min": "size",
+                         "max_loss": 12.0 * n, "stake": {"type": "stake", "size": n, "min": 2.0}}
+       for n in (5, 10, 25)},
+    "stk_liq25": {"sides": ("back", "lay"), "margin": 0.05, "fair": "mid", "latency": 1.5, "through_min": "size",
+                  "max_loss": 150.0, "stake": {"type": "liquidity", "size": 50.0, "frac": 0.25, "min": 2.0}},
+    "stk_late20": {"sides": ("back", "lay"), "margin": 0.05, "fair": "mid", "latency": 1.5, "through_min": "size",
+                   "max_loss": 150.0, "stake": {"type": "late", "size": 20.0, "x": 2.5, "late_secs": 120, "min": 2.0}},
     "mid_m10_hard": {"sides": ("back", "lay"), "margin": 0.10, "max_loss": 60.0, "fair": "mid", "latency": 1.5,
                      "through_min": "size"},
     "mid_m10": {"sides": ("back", "lay"), "margin": 0.10, "max_loss": 60.0, "fair": "mid"},
@@ -671,12 +722,17 @@ def summarise_quotes(rows: pd.DataFrame) -> dict:
     if not len(rows):
         return {"races": 0}
     net = race_net(rows)
+    if "off" in rows:                                   # the day's races in the order they were run
+        net = net.assign(off=net.market_id.map(rows.groupby("market_id").off.first())).sort_values("off")
     return {"races": int(rows.market_id.nunique()), "orders": int(rows.orders.sum()),
             "dogs_matched": int((rows.matched > 0).sum()), "back_matched": round(float(rows.back_matched.sum()), 2),
             "lay_matched": round(float(rows.lay_matched.sum()), 2), "net": round(float(net.net.sum()), 2),
             "per_race": round(float(net.net.mean()), 3), "races_won": int((net.net > 0).sum()),
             "races_lost": int((net.net < 0).sum()), "worst_race": round(float(net.net.min()), 2),
             "best_race": round(float(net.net.max()), 2),
+            "roi_matched": round(float(net.net.sum() / rows.matched.sum()), 4) if rows.matched.sum() > 0 else None,
+            "max_drawdown": round(float((net.net.cumsum().cummax().clip(lower=0) - net.net.cumsum()).max()), 2),
+            "sd_race": round(float(net.net.std()), 3) if len(net) > 1 else None,
             # how much of the profit the five best races carry, and how much was matched in the last minute
             "best5_share": round(float(net.net.nlargest(5).sum() / net.net.sum()), 3) if net.net.sum() > 0 else None,
             "last_60s_share": round(float(rows.get("matched_last_60s", pd.Series(0.0)).sum() / rows.matched.sum()), 3)
@@ -750,14 +806,15 @@ def report_md(res: dict) -> str:
           "the off. Our own orders do not move the simulated market, and two of our orders on one dog can count the "
           "same traded money: an upper bound on the fills.", "",
           "| Variant | Races | Orders | Dogs matched | Back matched | Lay matched | Net P&L | Per race | Races won / "
-          "lost | Worst / best race | Best 5 races' share | Matched in the last 60 s |",
-          "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+          "lost | Worst / best race | Best 5 races' share | Matched in the last 60 s | ROI on matched | Max drawdown |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for k, s_ in (res.get("quotes") or {}).items():
         if s_.get("races"):
             L.append(f"| {k} | {s_['races']} | {s_['orders']} | {s_['dogs_matched']} | {s_['back_matched']} | "
                      f"{s_['lay_matched']} | {s_['net']:+.2f} | {s_['per_race']:+.3f} | {s_['races_won']} / "
                      f"{s_['races_lost']} | {s_['worst_race']:+.2f} / {s_['best_race']:+.2f} | "
-                     f"{s_.get('best5_share')} | {s_.get('last_60s_share')} |")
+                     f"{s_.get('best5_share')} | {s_.get('last_60s_share')} | {s_.get('roi_matched')} | "
+                     f"{s_.get('max_drawdown')} |")
         else:
             L.append(f"| {k} | 0 | | | | | | | | |")
     return "\n".join(L) + "\n"

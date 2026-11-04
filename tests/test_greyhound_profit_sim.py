@@ -246,3 +246,24 @@ def test_latency_and_a_strict_fill_never_add_fills(monkeypatch):
     assert base.matched.sum() > 0 and hard.matched.sum() <= base.matched.sum()
     s = ps.summarise_quotes(base)
     assert "best5_share" in s and "last_60s_share" in s
+
+
+def test_the_staking_types():
+    from greyhound import early_lay as el
+    cfg = dict(el.CONFIG)
+    assert ps.stake_q(5.0, {}, cfg, None, "lay", 300) == 5.0                     # the default: GBP20 liability
+    assert ps.stake_q(5.0, {"stake": {"type": "liability", "size": 100}}, cfg, None, "lay", 300) == 25.0
+    assert ps.stake_q(5.0, {"stake": {"type": "stake", "size": 10}}, cfg, None, "back", 300) == 10.0
+    book = {"back": [(4.0, 40.0)], "lay": [(4.2, 8.0)]}
+    assert ps.stake_q(4.0, {"stake": {"type": "liquidity", "size": 50, "frac": 0.25}}, cfg, book, "lay", 300) == 10.0
+    assert ps.stake_q(4.4, {"stake": {"type": "liquidity", "size": 50, "frac": 0.25}}, cfg, book, "back", 300) == 2.0
+    late = {"stake": {"type": "late", "size": 20, "x": 2.5, "late_secs": 120}}
+    assert ps.stake_q(5.0, late, cfg, None, "lay", 300) == 5.0 and ps.stake_q(5.0, late, cfg, None, "lay", 60) == 12.5
+
+
+def test_the_mid_fair_value_needs_no_model():
+    d = day()
+    pre_m = d["pre"][d["pre"].market_id == MID]
+    preds = pd.DataFrame({"market_id": [MID, MID], "selection_id": [7, 8], "p_model": [0.2, 0.8]})
+    fv = ps.fair_by("mid", pre_m, OFF - pd.Timedelta(seconds=100), preds, None, {}, None, OFF).set_index("selection_id")
+    assert (fv.f_bsp == fv["mid"]).all() and 4.0 < fv.loc[7, "mid"] < 4.2
