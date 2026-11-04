@@ -39,7 +39,7 @@ from research.greyhound import limit_study as ls, tradeout_study as ts
 log = logging.getLogger(__name__)
 
 MARKS = ("first_traded", "off_5", "off_3", "off_1")
-MODELS = ("mid", "mid_book", "cl", "gbm", "gbm_deep", "gbm_pooled", "blend")
+MODELS = ("mid", "mid_book", "sp_near", "cl", "gbm", "gbm_deep", "gbm_pooled", "blend")
 GBM_DEEP = dict(num_leaves=31, min_data_in_leaf=30, learning_rate=0.03)
 GBM_DEEP_ROUNDS = 900
 GBM_PARAMS = {"objective": "regression", "learning_rate": 0.05, "num_leaves": 15, "min_data_in_leaf": 50,
@@ -71,12 +71,21 @@ def book_features(d: pd.DataFrame) -> pd.DataFrame:
     x["log_last_vs_mid"] = np.log(num("last_traded").where(num("last_traded") > 1) / x["mid"])
     x["log_model_price"] = -np.log(x["p_model"].clip(lower=1e-6)) if "p_model" in x else np.nan
     x["log_model_vs_mid"] = x["log_model_price"] - x["log_mid"]
+    # Betfair's projected SP and the SP money (greyhound.tradeout.SP_COLS), where the books asked for them
+    for c in ("sp_near", "sp_far"):
+        v = num(c)
+        x[f"log_{c}_vs_mid"] = np.log(v.where((v > 1) & (v < 1000)) / x["mid"])
+    sb, sl = num("sp_back_taken").clip(lower=0), num("sp_lay_taken").clip(lower=0)
+    x["log_sp_back_taken"] = np.log1p(sb)
+    x["log_sp_lay_taken"] = np.log1p(sl)
+    x["sp_taken_imb"] = np.log1p(sl) - np.log1p(sb)
     return x
 
 
 GBM_FEATURES = ["log_mid", "lq_market", "lq_model", "log_model_vs_mid", "last_vs_mid", "log_last_vs_mid", "move",
                 "imbalance", "wom1", "wom3", "log_micro_vs_mid", "log_spread", "log_depth_back", "log_depth_lay",
-                "log_vol", "log_depth", "overround", "rank", "minutes_to_off", "trap", "field"]
+                "log_vol", "log_depth", "overround", "rank", "minutes_to_off", "trap", "field",
+                "log_sp_near_vs_mid", "log_sp_far_vs_mid", "log_sp_back_taken", "log_sp_lay_taken", "sp_taken_imb"]
 
 
 def _race(d: pd.DataFrame) -> np.ndarray:
@@ -108,6 +117,9 @@ def forecast_day(train: pd.DataFrame, test: pd.DataFrame, pooled: pd.DataFrame |
     book = sp_book(train)
     out["mid"] = test["log_mid"].to_numpy(float)
     out["mid_book"] = rescale(out["mid"].to_numpy(), test, book)
+    # Betfair's own projected SP (near) where the book carried one, else the mid
+    near = test["log_sp_near_vs_mid"].to_numpy(float) if "log_sp_near_vs_mid" in test else np.full(len(test), np.nan)
+    out["sp_near"] = out["mid"] + np.nan_to_num(near)
     f = ts.fit_cl(train, ts.CL_SETS["micro"])
     q, b = ts.predict(test, f)
     out["cl"] = -np.log(b * np.asarray(q, float))
@@ -216,6 +228,9 @@ def main(argv=None) -> int:
     if len(panel):
         panel = book_features(panel[panel["mark"].isin(MARKS) & (panel.bsp > 1) & (panel["mid"] > 1)])
         days = sorted(panel.race_date.astype(str).unique())
+        # how many entry books carried Betfair's projected SP, by mark (the books asked for it from 8 Oct 2026)
+        res["sp_near_coverage"] = {m: round(float(g["log_sp_near_vs_mid"].notna().mean()), 3)
+                                   for m, g in panel.groupby("mark")} if "log_sp_near_vs_mid" in panel else {}
         scored = days[a.min_train_days:]
         res["scored_days"] = f"{scored[0]} to {scored[-1]} ({len(scored)})" if scored else None
         fc, imp = [], {}

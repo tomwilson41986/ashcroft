@@ -124,12 +124,15 @@ def harville(q: np.ndarray, k: np.ndarray) -> np.ndarray:
     return np.clip(p1 + p2 + np.where(k[:, None] == 3, p3, 0.0), 0, 1)
 
 
-def features(j: pd.DataFrame, win_price: str = "ppwap") -> tuple[pd.DataFrame, list[str]]:
+def features(j: pd.DataFrame, win_price: str = "ppwap", noise: float = 0.0,
+             seed: int = 0) -> tuple[pd.DataFrame, list[str]]:
     j = j.sort_values(["race", "trap"]).copy()
     races = j.race.to_numpy()
     codes, idx = np.unique(races, return_inverse=True)
     pos = j.groupby("race").cumcount().to_numpy()
     price_w = j[f"{win_price}_w"]
+    if noise > 0:          # a sensitivity test: the win price known only to within this error of log price (normal)
+        price_w = price_w * np.exp(np.random.default_rng(seed).normal(0.0, noise, len(price_w)))
     inv = 1.0 / price_w.where(price_w > 1)
     j["q_w"] = inv / inv.groupby(j.race).transform("sum")
     Q = np.zeros((len(codes), MAXN))
@@ -231,8 +234,8 @@ def calibration(t: pd.DataFrame) -> pd.DataFrame:
     return out.round(4)
 
 
-def run(store, years: range, first_test: int, win_price: str = "auto") -> dict:
-    j = load(store, years)
+def run(store, years: range, first_test: int, win_price: str = "auto", noise: float = 0.0, j=None) -> dict:
+    j = load(store, years) if j is None else j
     cov = coverage(j)
     log.info("coverage by year:\n%s", cov.to_string())
     if win_price == "auto":                 # the pre-play average where the files carry it, else the morning's
@@ -244,11 +247,11 @@ def run(store, years: range, first_test: int, win_price: str = "auto") -> dict:
     if why["kept races"] < 1000:
         return {"coverage": cov.reset_index().to_dict("records"), "win_price": win_price, "data": why,
                 "stopped": "too few whole races"}
-    j, feats = features(j, win_price)
+    j, feats = features(j, win_price, noise)
     j = walk_forward(j, feats, first_test)
     t = j[j.p_gbm.notna()].copy()
     rep = {"data": why, "test_years": sorted(int(y) for y in t.year.unique()), "test_runners": len(t),
-           "test_races": int(t.race.nunique()), "win_price": win_price, "oracle": win_price == "bsp",
+           "test_races": int(t.race.nunique()), "win_price": win_price, "noise": noise, "oracle": win_price == "bsp",
            "coverage": cov.reset_index().to_dict("records"),
            "log_loss": {"place_sp": logloss(t.win_lose_p, np.clip(1 / t.bsp_p, 0, 1)),
                         "place_sp_normalised": logloss(t.win_lose_p, (1 / t.bsp_p) / (1 / t.bsp_p).groupby(t.race)
