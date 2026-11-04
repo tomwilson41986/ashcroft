@@ -14,8 +14,12 @@ Three strategies, frozen as written here. Each has its own paper account, ledger
 | `steam_am` | Steamer model, CLEAN features: predicted log(morning price / BSP) at or above the frozen threshold (the training set's top 5%) | Back WIN and back PLACE at the recorded morning book | 10:00 UK mark |
 | `tf_pb_bsp` | Timeform improver: Flat/AW runner whose last run was a career-best Timeform performance rating by 5lb or more | Back WIN and PLACE at BSP | at the off (SP) |
 
-Shadow variants, scored beside each but never gated: the same selections at the 08:00 and 11:00 marks, and at
-level stakes of GBP10. They tell us whether the timing is right, not whether to promote.
+**No order before 10:00 UK** (the owner, 4 Nov 2026: "Ensure it doesn't bet before 10:00 so it doesnt take prices
+from the live trader"). The session does nothing at any earlier minute (`ENTRY_UK` in `research/paper/morning_edges.py`,
+held by `tests/test_morning_edges.py`); a selection with no book at 10:00 is retried each minute to 10:15, then
+dropped. And **a horse the live trader has backed that day is left alone**, at any time and in both markets (its
+ledger, `trading/live/<day>/ledger.csv`), so the paper trader never competes with it for a price or a later top-up.
+Counted as `skipped_live`.
 
 Exclusions (all three): races of 4 runners or fewer (no place market); a runner with no back price in the book at the
 mark; a non-runner (void, as on the exchange: its stake is returned and the other bets take Betfair's reduction
@@ -68,26 +72,26 @@ days.
 
 ## 5. Daily run
 
-| UK time | Step | Source |
+| When | Step | Source |
 |---|---|---|
-| 06:00 | Card: runners, `days_since_lr`, jockeys, OR, headgear | the 06:00 HRB card (as `predict-now.yml`) |
-| 06:15 | Selections for `qr_am` and `steam_am`; written to the ledger before any price is read | card + horse_racing.db history + frozen model |
-| 06:15 | Timeform: yesterday's runs pulled from Railway `APIData_Table2` (`research/strat/fetch_timeform.py`, current month); `tf_pb_bsp` selections | Railway + horse_racing.db |
-| next day, after the price archive | Replay the 10:00 (and 08:00, 11:00) marks against the recorded books; settle win and place; BSP and place SP for `tf_pb_bsp` | `betfair_live/<day>/`, Betfair price file, results |
+| 06:40 UTC daily | Refresh the Timeform cache (current and previous month) | Railway `APIData_Table2` -> `s3://$PRED_BUCKET/paper/morning_edges/timeform/` |
+| same run, each pending day | Selections from the card view; replay 10:00-10:15 UK against the recorded WIN and PLACE books; settle; `tf_pb_bsp` at BSP | `horse_racing.db`, `betfair_live/<day>/`, Betfair price files, `trading/live/<day>/ledger.csv` |
 
-Writing the selections before reading any price is what makes the test honest: a selection list with a timestamp
-earlier than the first book it is filled against.
+What makes the test honest is that a selection reads nothing the 06:00 card did not have: the day's results and
+prices are blanked before the features are built, and the check runs on every job.
 
 ## 6. Ledger
 
-`s3://$PRED_BUCKET/paper/morning_edges/<strategy>/<day>/`:
+`s3://$PRED_BUCKET/paper/morning_edges/`:
 
-* `selections.csv`: written at 06:15, one row per runner, the rule's inputs and (steamer) the prediction;
-* `fills.csv`: per bet: market, mark, best back, filled price, filled size, unfilled size, price-file morning WAP,
-  BSP, SP reduction factor, result, P&L at 2% and 5%;
-* `day.json`: bets, staked, P&L, win A/E against filled prices, place A/E, fill ratio, WAP gap.
+* `model/booster.txt`, `model/meta.json`: the frozen steamer model and its threshold, cut-off and features;
+* `selections/<day>.csv`: one row per (strategy, runner), the rule's inputs and (steamer) the prediction;
+* `bets/<day>.csv`: per bet or skip: strategy, market, time, best back, size asked, filled price and size, the
+  price-file morning WAP, BSP, result, P&L before commission; `skipped_live` and `no_book` rows;
+* `days/<day>.json`: per strategy and market: selections, bets, skipped_live, no_book, staked, asked, wins, expected
+  (sum of 1/filled price), P&L at 2% and 5%, median gap to the morning WAP.
 
-Overlap: every row also records whether the live trader backed the same horse that day (`live_orders`), so the
+Overlap: every horse the live trader backed is counted as `skipped_live`, so the
 promotion decision can see how much is already being traded.
 
 ## 7. The gate (fixed now, read once per strategy, promotion only on the owner's word)
@@ -108,17 +112,21 @@ A strategy passes only if all hold, at 5% commission:
 Stop early (pause the strategy, tell the owner) if, after 300+ bets, win A/E against filled prices is under 0.90, or
 the paper drawdown passes GBP3,000.
 
-## 8. What to build
+## 8. What was built (4 Nov 2026)
 
 | Piece | Where | Notes |
 |---|---|---|
-| Selection module | `research/paper/morning_edges.py` | the three rules; reads the card and the DB; writes `selections.csv` |
-| Model trainer | `research/paper/train_steamer.py` | the CLEAN model above, trained once, frozen to S3 |
-| Agents | add `qr_am`, `steam_am` to `research/paper/horses.py agent_specs` | fill at the marks against the shared book; `tf_pb_bsp` settles at SP and needs no book |
-| Workflow | `paper-horses.yml` (GitHub runner, reads S3 only) for the replay; a 06:15 selection step | no Betfair login needed: everything replays recorded books |
+| Features and rules | `research/paper/morning_features.py` | the rules, the CLEAN features, `card_view` (the day's results and prices blanked), the trainer |
+| Trader | `research/paper/morning_edges.py` | selections, the 10:00 session on the shared replay book (`research/arms/core.run_agents`), settlement, ledger, gate; `--train` freezes the model |
+| Workflow | `.github/workflows/paper-morning-edges.yml` | daily 06:40 UTC on GitHub's runner; no Betfair key; dispatch inputs `days`, `backfill_from`, `train` |
+| Setup run | `research/queries/paper_morning_edges_setup_1104.py` | trains and freezes the model, fills the Timeform cache, replays 30 Sep onward (the fill check) |
 | Stop | `s3://$PRED_BUCKET/paper/morning_edges/STOP` | stops new selections |
 | Dashboard | the traders dashboard, one row per strategy | day P&L, running A/E vs fills, fill ratio, WAP gap |
-| Tests | `tests/test_morning_edges.py` | selection uses only earlier days; no order code reachable; stake and limit arithmetic; place exclusion under 5 runners |
+| Tests | `tests/test_morning_edges.py` | no order before 10:00 UK (and 10:00 UK is 09:00 UTC in summer); the live trader's horse skipped; to-win staking, the ladder walk and the GBP200 cap; settlement with reduction factors; card view; no order code; the workflow carries no Betfair key |
+
+Selections are computed when the day is replayed (after its price file is archived), from the card's facts and
+earlier days only: every result and price column of the day is blanked first (`card_view`), and each job checks that
+the predictions it bets on equal those from the blanked view.
 
 ## 9. Before day 1
 
