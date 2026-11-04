@@ -59,6 +59,8 @@ def test_blocks_read_no_result_of_their_own_day(name):
     last = b.race_date == b.race_date.max()
     b.loc[last, "won"] = 1 - b.loc[last, "won"]                  # the last day's results rewritten
     b.loc[last, "position"] = 7 - b.loc[last, "position"]
+    if "weight_kg" in b:
+        b.loc[last, "weight_kg"] += 3.0                           # and the last day's weigh-in
     blocks.attach(b, name)
     pd.testing.assert_frame_equal(a.loc[last, feats].reset_index(drop=True), b.loc[last, feats].reset_index(drop=True))
     assert blocks.attach(a, name) == feats                        # attached once
@@ -292,31 +294,48 @@ def test_track_groups_are_scored_apart():
     assert set(fl.split_groups(pred, "each_track")) == {"Hove", "Romford"}
 
 
-def test_the_predicted_weigh_in_reads_earlier_days_and_forecasts_the_change():
-    rng = np.random.default_rng(3)
+def _weighed_dogs(n_dogs=300, runs=20, seed=3):
+    """Dogs whose weight reverts to their own norm, a run a week from Oct 2024 into 2025, with a finishing position."""
+    rng = np.random.default_rng(seed)
     rows = []
-    for dog in range(300):                       # each dog's weight reverts to its own norm: a heavy run, then a drop
+    for dog in range(n_dogs):
         mu = 30 + rng.normal(0, 2)
         w, hist = mu + rng.normal(0, 0.5), []
-        for k in range(14):
-            day = pd.Timestamp("2025-01-01") + pd.Timedelta(days=7 * k + dog % 7)
+        for k in range(runs):
+            day = pd.Timestamp("2024-10-01") + pd.Timedelta(days=7 * k + dog % 7)
             w = mu + 0.4 * (w - mu) + rng.normal(0, 0.5) if hist else w
-            prev = hist[-1] if hist else np.nan
-            mean = np.mean(hist) if hist else np.nan
-            rows.append({"dog_id": dog, "t": day, "weight_change": w - prev, "weight_vs_mean": w - mean})
+            rows.append({"dog_id": dog, "t": day, "race_date": f"{day:%Y-%m-%d}", "weight_kg": w,
+                         "weight_change": w - hist[-1] if hist else np.nan,
+                         "weight_vs_mean": w - np.mean(hist) if hist else np.nan,
+                         "position": int(rng.integers(1, 7)), "won": 0})
             hist.append(w)
-    df = pd.DataFrame(rows)
+    return pd.DataFrame(rows)
+
+
+def test_the_predicted_weigh_in_from_weight_history_recency_and_form(monkeypatch):
+    from greyhound.blocks import wpred
+    monkeypatch.setattr(wpred, "MIN_FIT", 1000)
+    df = _weighed_dogs()
+    names = blocks.attach(df, "wpred")
+    assert {"wp_pred_weight", "wp_pred_change", "wp_pred_vs_mean", "wp_prev_weight", "wp_gap_days"} <= set(names)
+    late = df[df.t >= "2025-01-01"].dropna(subset=["wp_pred_change"])
+    assert len(late) > 1000 and df[df.t < "2025-01-01"].wp_pred_change.isna().all()   # 2025 from 2024 only
+    actual = late.weight_kg - late.wp_prev_weight
+    assert np.corrcoef(late.wp_pred_change, actual)[0, 1] > 0.3                 # the predictable part is found
+    assert np.abs(late.wp_pred_weight - late.weight_kg).mean() < np.abs(late.wp_prev_weight - late.weight_kg).mean()
+    last = df.t.dt.normalize() == df.t.dt.normalize().max()                     # nothing of the day's own weigh-in
+    df2 = _weighed_dogs()
+    df2.loc[last, "weight_kg"] += 5.0
+    blocks.attach(df2, "wpred")
+    assert np.allclose(df.loc[last, "wp_pred_weight"], df2.loc[last, "wp_pred_weight"], equal_nan=True)
+
+
+def test_the_predicted_weigh_in_without_raw_weights_falls_back_to_the_relative_model():
+    df = _weighed_dogs().drop(columns="weight_kg")
     names = blocks.attach(df, "wpred")
     assert set(names) == {"wp_pred_change", "wp_pred_vs_mean", "wp_prev_vs_mean", "wp_gap_days"}
-    late = df[df.t >= "2025-03-01"].dropna(subset=["wp_pred_change", "weight_change"])
-    assert len(late) > 1000
-    assert np.corrcoef(late.wp_pred_change, late.weight_change)[0, 1] > 0.3        # the predictable part is found
-    # nothing of a row's own weigh-in reaches its forecast: change the last day's weights, the last day's forecast stays
-    last = df.t.dt.normalize() == df.t.dt.normalize().max()
-    df2 = df[["dog_id", "t", "weight_change", "weight_vs_mean"]].copy()
-    df2.loc[last, ["weight_change", "weight_vs_mean"]] += 5.0
-    blocks.attach(df2, "wpred")
-    assert np.allclose(df.loc[last, "wp_pred_change"], df2.loc[last, "wp_pred_change"], equal_nan=True)
+    late = df[df.t >= "2024-12-01"].dropna(subset=["wp_pred_change", "weight_change"])
+    assert len(late) > 1000 and np.corrcoef(late.wp_pred_change, late.weight_change)[0, 1] > 0.3
 
 
 def test_add_features_names_cached_columns():
