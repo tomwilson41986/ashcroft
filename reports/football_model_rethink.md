@@ -131,3 +131,60 @@ development evidence). About 100 variants have now been read on 2025/26.
 - its strongest 5 forecasts a week outside the top five leagues;
 - back first where the chance is forecast up, lay first where down;
 - greened at the close.
+
+## Results: fatigue, short form, schedule-adjusted xG, territory (4 Nov 2026)
+
+**Sources.** `research/open_close/football_improve.py --fatigue`; figures from
+`reports/football_runs/rethink_fatigue.json`. The same harness, seasons and costing as above; each feature group is
+added on top of the candidate's features (team features + `home_adv` + `team_news`, "both"). The "both" row reproduces
+the figures above exactly.
+
+**What was built (every new feature lag-tested):**
+- `football/blocks/fatigue.py` (`fat_`): league matches in the last 7 and 10 days, turnarounds of 3 days or fewer,
+  days to the next match. With `rest_days` (days since the last match, matches in 14 and 28 days).
+- `team_news` minutes load (`ld_`): the expected eleven's league minutes in the 7 and 14 days before the early price.
+  61% of 2024/25 and 2025/26 matches.
+- `football/blocks/form_short.py` (`fs_`): the last 2 and 3 matches, and the last 5 and 10 weighted linearly by
+  recency, of points, goal difference, shots on target, points and goals against the closing market (form adjusted
+  for opponent and venue), the same against our Dixon-Coles prices, and the opponents' strength (schedule).
+- xG stage: xG against what each opponent usually concedes and makes (`x_sos`), short xG windows (`x_short`), and
+  territory proxies (`x_territory`: possession, pass completion, corner share, share of shots inside the box, shot
+  share). 28% (2024/25) and 38% (2025/26) of matches have the schedule-adjusted xG; 52% the territory measures.
+
+**No data found:**
+- **Player and squad age:** API-Football's history we hold has no birth dates. A players fetch would add them; it
+  costs API quota.
+- **xThreat and other location-based metrics:** no event locations. The territory measures are proxies.
+- **Cup and European congestion:** our fixture history is the 22 league competitions only.
+
+**Outside the top five leagues, a tick off fair / symmetric book [90% lower bound], right way:**
+
+| Features | 2024/25 top 5 a week | 2024/25 top 10 a week | 2025/26 top 5 a week | 2025/26 top 10 a week |
+|---|---|---|---|---|
+| Both (candidate) | +5.33% [+3.4] / +7.26% | +2.55% [+1.2] / +4.20% | +2.64% [+1.1] / +4.36%, 77% | +0.63% [-0.4] / +2.14% |
+| + fatigue | +5.08% / +6.95% | +2.56% / +4.22% | +2.34% [+0.7] / +4.20%, 78% | +0.90% [-0.3] / +2.32% |
+| **+ short form** | **+5.34% [+3.5] / +7.36%** | **+3.69% [+2.5] / +5.31%** | **+3.38% [+1.8] / +5.33%, 80%** | **+1.79% [+0.7] / +3.37%** |
+| + xG schedule + territory | +3.96% / +6.33% | +3.03% / +4.97% | +2.26% [+0.6] / +4.36%, 78% | +1.23% [+0.1] / +2.90% |
+| + all new | +5.54% [+3.6] / +7.71% | +3.60% [+2.3] / +5.20% | +3.49% [+2.0] / +5.32%, 80% | +1.60% [+0.6] / +3.25% |
+
+(285 bets a season at top 5 a week on 2025/26, 225 on 2024/25; double at top 10.)
+
+**Higher volume, short form, outside the top five:** top 20 a week +2.11% [+1.2] (2024/25) and +0.79% [+0.1]
+(2025/26) a tick off fair; the strongest 5 a day +0.69% and -0.06%: still not a daily rule.
+
+**Read:**
+- **Short and recency-weighted form is the one that adds.** It lifts every rule in both seasons, and the top 10 a week
+  now clears zero a tick off fair in both seasons with the lower bound above zero: about 570 bets a season, twice the
+  candidate's volume.
+- **Fatigue does not add** to the move forecast here. The market seems to price congestion it can see in the fixture
+  list; the minutes load needs line-ups the model does not yet weight well.
+- **Schedule-adjusted xG and territory are mixed:** better at top 10, worse at top 5, on a third to a half of the
+  matches. Not enough to keep alone.
+- **All new together** matches short form alone: the extra 38 columns add nothing reliable.
+- **Caveat.** About 120 variants have now been read on 2025/26. The gain from short form is consistent across both
+  seasons and every cut-off, which makes chance less likely, but the rule must still be pre-registered and judged
+  forward.
+
+**Updated candidate for pre-registration:** the stack on team features + `home_adv` + `team_news` + `form_short` +
+`x_short`; its strongest 10 forecasts a week outside the top five leagues (or 5, at higher return); back first where
+the chance is forecast up, lay first where down; greened at the close.
