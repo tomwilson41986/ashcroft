@@ -115,6 +115,12 @@ def score_by_age(j: pd.DataFrame, ages: pd.DataFrame) -> dict:
     s = left.merge(a, on=["market_id", "selection_id"], how="left", suffixes=("", "_age"))
     if "age_t_60_min" not in s.columns:
         raise RuntimeError(f"no age column after the join: left {list(left.columns)}, ages {list(a.columns)}")
+    log.info("join keys: left %s %s, ages %s %s; markets in common %d of %d",
+             left["market_id"].dtype, left[["market_id", "selection_id"]].head(3).values.tolist(),
+             a["market_id"].dtype, a[["market_id", "selection_id"]].head(3).values.tolist(),
+             len(set(left["market_id"]) & set(a["market_id"])), left["market_id"].nunique())
+    if s["age_t_60_min"].notna().sum() == 0:
+        raise RuntimeError("the ages join matched nothing: no reading is given on no data")
     rep = {"primary_bets": int(len(s)), "with_age": int(s["age_t_60_min"].notna().sum()),
            "price_agrees_with_table": round(float((s["ltp_t_60_seen"] - s["L"]).abs().lt(1e-9).mean()), 4),
            "age_quantiles_min": {str(q): round(float(s["age_t_60_min"].quantile(q)), 1)
