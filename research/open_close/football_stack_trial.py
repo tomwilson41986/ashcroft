@@ -2,10 +2,11 @@
 the recorded Betfair books (reports/preregistration_football_stack.md).
 
 The rule: the early-to-close move of each side's chance (home and away), forecast by the mean of a ridge regression and
-a LightGBM model on the team features, arm ``team_all`` (chosen on the Betfair 2024/25 fold among the arms whose
-features mean the same in training and live: reports/preregistration_football_stack.md). The models are fitted ONCE on every same-book
-move of 2013/14-2024/25 (Pinnacle to Pinnacle, and Betfair to Betfair in 2024/25) and frozen; their files and SHA-256 are
-in the pre-registration. Forward, each match is scored from the lab matrix rebuilt on the data as it then stands: every
+a LightGBM model on the team features, arm ``team_all`` (reports/preregistration_football_stack.md). The models are
+fitted ONCE on every same-book move of 2013/14-2024/25 and frozen; their files and SHA-256 are in the pre-registration.
+In the matrix those moves are Pinnacle's only: 2024/25's stored close is Pinnacle's, so its 488 same-book matches are
+Pinnacle to Pinnacle, and the "2024/25 fold" the arm was chosen on is those 488 matches, not Betfair's
+(reports/preregistration_football_stack_errata.md; the rule itself is unchanged). Forward, each match is scored from the lab matrix rebuilt on the data as it then stands: every
 feature is built from what was known before the match's collection day (tests/test_football_lab.py), so a
 retrospective score equals a live one.
 
