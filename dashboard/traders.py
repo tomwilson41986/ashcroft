@@ -351,10 +351,12 @@ class Trader:
     glyph: str                  # the avatar's sport glyph
     initials: str
     record_from: str | None = None      # the forecast's record starts here (a rule change)
+    start_from: str | None = None       # the first day counted at all: earlier days in its ledger (a replay) are left out
     refresh_days: int = 3       # days re-read every run; older settled days come from the cache
     notes: tuple = field(default_factory=tuple)
 
 
+AGENTS_FROM = "2026-11-04"    # the owner, 4 Nov 2026: the paper agents "only start from now"; their replayed days are not P&L
 AGENT_NOTES = ("A paper agent (research/paper/horses.py): no orders. It trades the recorded books with the other agents "
                "on one book: the live trader's fills are already out, and what one agent takes is gone for the others.",
                "A day is scored two days after the racing, once Betfair's price file is in: after the non-runners' "
@@ -370,22 +372,22 @@ TRADERS = [
            "pred", "trading/paper", horse_markets, "horse", "HP"),
     Trader("horse-agent-live-rule", "horse_racing", "Live rule, replay, paper agent", "paper",
            "The live rule replayed on the paper agents' shared book: the control they are judged by", "pred", "paper/horses/shared/agents/live_rule", paper_agent_markets, "horse", "LR",
-           refresh_days=4, notes=AGENT_NOTES),
+           refresh_days=4, start_from=AGENTS_FROM, notes=AGENT_NOTES),
     Trader("horse-agent-backs-floor50", "horse_racing", "Backs, GBP50 floor, paper agent", "paper",
            "The live rule with at least GBP50 on a horse at 21 or longer", "pred", "paper/horses/shared/agents/backs_floor50", paper_agent_markets, "horse", "F5",
-           refresh_days=4, notes=AGENT_NOTES),
+           refresh_days=4, start_from=AGENTS_FROM, notes=AGENT_NOTES),
     Trader("horse-agent-backs-win1000", "horse_racing", "Backs, to win GBP1,000, paper agent", "paper",
            "The live rule staking to win GBP1,000 a horse, GBP500 a bet at most", "pred", "paper/horses/shared/agents/backs_win1000", paper_agent_markets, "horse", "W1",
-           refresh_days=4, notes=AGENT_NOTES),
+           refresh_days=4, start_from=AGENTS_FROM, notes=AGENT_NOTES),
     Trader("horse-agent-lays", "horse_racing", "Lays, paper agent", "paper",
            "Lays a horse 3% or more under its expected SP, at 20 or under, GBP400 at risk, backed at the SP", "pred", "paper/horses/shared/agents/lays", paper_agent_markets, "horse", "LY",
-           refresh_days=4, notes=AGENT_NOTES),
+           refresh_days=4, start_from=AGENTS_FROM, notes=AGENT_NOTES),
     Trader("horse-agent-quotes-model3", "horse_racing", "Both sides, model, paper agent", "paper",
            "A resting back 3% above and a lay 3% below the model's expected SP, GBP10 a quote, closed at the SP", "pred", "paper/horses/shared/agents/quotes_model3", paper_agent_markets, "horse", "QM",
-           refresh_days=4, notes=AGENT_NOTES),
+           refresh_days=4, start_from=AGENTS_FROM, notes=AGENT_NOTES),
     Trader("horse-agent-quotes-mid2", "horse_racing", "Both sides, market, paper agent", "paper",
            "A resting back 2% above and a lay 2% below the market's mid, GBP10 a quote, closed at the SP", "pred", "paper/horses/shared/agents/quotes_mid2", paper_agent_markets, "horse", "QD",
-           refresh_days=4, notes=AGENT_NOTES),
+           refresh_days=4, start_from=AGENTS_FROM, notes=AGENT_NOTES),
     Trader("greyhound-early-lay", "greyhounds", "Early lay, live", "live",
            "Lays the forecast drifters at 80% of the forecast SP, greened up before the off (from 3 Nov 2026)",
            "capture", "sources/greyhound/early_lay/live", early_lay_markets, "greyhound", "EL",
@@ -419,7 +421,7 @@ def trader_days(src, t: Trader, today: date, cache: bool = True) -> tuple[dict[s
     """Every day's market table for the trader, and the time of its last ledger row today."""
     out, last = {}, None
     for day in src.days(t.kind, t.base + "/"):
-        if day > today.isoformat():
+        if day > today.isoformat() or (t.start_from and day < t.start_from):
             continue
         old = date.fromisoformat(day) < today - timedelta(days=t.refresh_days)
         key = f"{CACHE}/{t.id}/{day}.csv"

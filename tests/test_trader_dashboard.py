@@ -277,3 +277,24 @@ def test_an_early_lays_clv_is_the_bsp_over_the_price_laid(tmp_path):
     days, _ = trader_days(LocalSource(tmp_path), T("greyhound-early-lay"), TODAY, cache=False)
     e = summarise(T("greyhound-early-lay"), days, TODAY)["edge"]
     assert e["clv_today"] == pytest.approx(5.0 / 4.0 - 1) and e["ev_today"] is None
+
+
+def test_a_trader_counts_only_from_its_start_day(tmp_path):
+    """The owner, 4 Nov 2026: the paper agents only start from now. Days in a ledger before a trader's start_from
+    (a replay written before it went on) are not its P&L."""
+    from dataclasses import replace
+    from dashboard.traders import AGENTS_FROM
+    agents = [t for t in TRADERS if t.id.startswith("horse-agent-")]
+    assert len(agents) == 6 and all(t.start_from == AGENTS_FROM == "2026-11-04" for t in agents)
+    t = replace(T("horse-live"), start_from=TODAY.isoformat(), record_from=None)
+    for i, r in enumerate([100, -50, 25]):
+        d = (TODAY - timedelta(days=3 - i)).isoformat()
+        _put(tmp_path, "pred", f"trading/live/{d}/ledger.csv", horse_ledger(d, [("1.x", 100, 0.1, r, 0.1)]))
+    days, _ = trader_days(LocalSource(tmp_path), t, TODAY, cache=False)
+    s = summarise(t, days, TODAY)
+    assert days == {} and s["has_data"] is False and s["all_time"]["pnl"] is None and s["daily"] == []
+    d = TODAY.isoformat()
+    _put(tmp_path, "pred", f"trading/live/{d}/ledger.csv", horse_ledger(d, [("1.y", 10, 0.1, None, None)]))
+    days, _ = trader_days(LocalSource(tmp_path), t, TODAY, cache=False)
+    s = summarise(t, days, TODAY)
+    assert list(days) == [d] and s["has_data"] and s["all_time"]["pnl"] == 0.0 and s["month"]["forecast"] is None
