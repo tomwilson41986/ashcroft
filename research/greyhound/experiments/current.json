@@ -1,26 +1,27 @@
 {
-  "about": "Batch 9 (4 Nov 2026). The owner: 'use the weigh-in for the tracks we have it and then evaluate if we can cover other tracks with our model or just leave them alone'; 'define a predicted weight for each dog today based on historic patterns' from 'weight last run, historic weight patterns, recency, form'. No pre-race weigh-in source reaches us (greyhounds.today empty since 7 Oct; GBGB fills the weight in with the result), so: the live recipe (batch 8: RMSE of log(BSP) 0.4127, the per-track stretch 0.4053) scored per track (each track its own group: the gap to the BSP and the RMSE, for cover or leave); the same with the predicted weigh-in (greyhound/blocks/wpred.py, its yearly out-of-sample R2 in the log); the same with the real weigh-in (the ceiling no live source gives us today); and the live recipe through the trade-out study (does our price add to the market at first traded, 5 and 3 minutes out). The cache is rebuilt (refresh) to keep the raw weight the predicted weigh-in reads.",
+  "about": "Batch 10 (4 Nov 2026; the owner: 'evaluate if we can cover other tracks with our model or just leave them alone'). Batch 9 (run 41834002314): the weight block (greyhound/blocks/wpred.py: the last runs' weights, the weight history, recency, form) improved the live recipe, RMSE of log(BSP) 0.4127 -> 0.4095 (-0.0032, 90% -0.0038 to -0.0026), log-loss -0.00029 (-0.00052 to -0.00007); the forecast of the day's weight itself is no better than the last run's weight (query greyhound_wpred_fit_1104, run 41844418606), and impossible weights are now read as missing. Per track, every track is behind the BSP; the gap ran from 0.0084 (Romford) to 0.0204 (Star Pelaw). Here the trading test per group of tracks: the eight closest to the BSP in batch 9 and the eight furthest, each through the trade-out study (does our price add to the market's SP forecast at first traded, 5 and 3 minutes out) and the limit-order study (do the rules pay), on the recorded books from 6 Oct. The groups were chosen on batch 9's test window, which overlaps the books: a first read, not a pre-registered test.",
   "recipe": "quick",
-  "baseline": "live_ref",
+  "baseline": "wpred_tracks",
   "test_from": "2026-06-01",
   "experiments": [
     {
       "features": "card_safe",
       "objective": "logbsp",
       "add_blocks": [
-        "sim"
+        "sim",
+        "wpred"
       ],
       "rescale_book": true,
       "calibrate": [
         "stretch_track"
       ],
-      "groups": "each_track",
       "recipe_overrides": {
         "learning_rate": 0.05,
         "early_stop": 100,
         "rounds": 10000
       },
-      "name": "live_ref"
+      "name": "wpred_tracks",
+      "groups": "each_track"
     },
     {
       "features": "card_safe",
@@ -33,55 +34,36 @@
       "calibrate": [
         "stretch_track"
       ],
-      "groups": "each_track",
       "recipe_overrides": {
         "learning_rate": 0.05,
         "early_stop": 100,
         "rounds": 10000
       },
-      "name": "live_wpred"
-    },
-    {
-      "features": "card_safe",
-      "objective": "logbsp",
-      "add_blocks": [
-        "sim"
-      ],
-      "rescale_book": true,
-      "calibrate": [
-        "stretch_track"
-      ],
-      "groups": "each_track",
-      "recipe_overrides": {
-        "learning_rate": 0.05,
-        "early_stop": 100,
-        "rounds": 10000
+      "name": "wpred_groups",
+      "groups": {
+        "close": [
+          "Romford",
+          "Harlow",
+          "Kinsley",
+          "Newcastle",
+          "Hove",
+          "Sunderland",
+          "Valley",
+          "Towcester"
+        ],
+        "far": [
+          "Yarmouth",
+          "Central Park",
+          "Monmore",
+          "Nottingham",
+          "Sheffield",
+          "Doncaster",
+          "Dunstall Park",
+          "Star Pelaw"
+        ]
       },
-      "name": "live_actualw",
-      "add_features": [
-        "weight_change",
-        "weight_vs_mean",
-        "hb_weight_vs_max",
-        "hb_weight_vs_min"
-      ]
-    },
-    {
-      "features": "card_safe",
-      "objective": "logbsp",
-      "add_blocks": [
-        "sim"
-      ],
-      "rescale_book": true,
-      "calibrate": [
-        "stretch_track"
-      ],
-      "recipe_overrides": {
-        "learning_rate": 0.05,
-        "early_stop": 100,
-        "rounds": 10000
-      },
-      "name": "live_ref_short",
-      "shortening": true
+      "shortening": true,
+      "limit": true
     }
   ]
 }

@@ -54,7 +54,7 @@ def test_the_matrix_blocks_attach_once(monkeypatch):
     df = pd.DataFrame({"a": [1.0]})
     assert live.attach_blocks(df, ("sim",)) == ["sim_f1"] and calls == ["sim"]
     assert live.attach_blocks(df, ()) == []
-    assert live.LIVE_OBJECTIVE == "logbsp" and "times" in live.LIVE_BLOCKS and live.LIVE_MATRIX_BLOCKS == ("sim",)
+    assert live.LIVE_OBJECTIVE == "logbsp" and "times" in live.LIVE_BLOCKS and live.LIVE_MATRIX_BLOCKS == ("sim", "wpred")
 
 
 def test_the_calibrated_prices_stretch_within_the_race_and_stay_a_book():
