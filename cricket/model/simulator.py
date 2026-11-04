@@ -239,6 +239,9 @@ def _roll(booster, innings: int, st: np.ndarray, P: dict, queue: np.ndarray, tea
         strk[swap], non[swap] = non[swap], strk[swap].copy()
         eo = a[endo]
         bowl[eo] = team_bowl[st[eo]]
+        for k, arr in P.get("marks", {}).items():     # runs when a path first reaches k legal balls
+            hit = a[(lb[a] >= k) & np.isnan(arr[a])]
+            arr[hit] = runs[hit]
         over = (wk[a] >= 10) | (lb[a] >= maxb[a])
         if chase:
             won = runs[a] >= target[a]
@@ -248,6 +251,9 @@ def _roll(booster, innings: int, st: np.ndarray, P: dict, queue: np.ndarray, tea
             alive[a[won | lost]] = False
         else:
             alive[a[over]] = False
+    for arr in P.get("marks", {}).values():        # an innings over before the mark: its final score
+        gone = np.isnan(arr)
+        arr[gone] = runs[gone]
     if chase:   # a path that could not start (no balls or wickets left) and has not won
         undecided = np.isnan(result)
         result[undecided] = np.where(runs[undecided] == target[undecided] - 1, 0.5, 0.0)
@@ -281,6 +287,19 @@ def win_probability(booster, B: Batch, paths: int, ex_v: np.ndarray, ex_p: np.nd
     st, P = _paths(B, paths)
     res = _roll(booster, 2, st, P, B.queue, B.team_bowl, B.ctx, ex_v, ex_p, rng)
     return smooth(res.reshape(len(B), paths).sum(1), paths)
+
+
+def first_innings_runs(booster, B: Batch, paths: int, ex_v: np.ndarray, ex_p: np.ndarray, marks=(36,),
+                       seed: int = 0) -> dict:
+    """For first-innings states: each path's runs at each legal-ball mark (an innings ended before it: its final
+    score) and at the end, as {mark: (S, paths)} with key "total" for the end."""
+    rng = np.random.default_rng(seed)
+    st, P = _paths(B, paths)
+    P["marks"] = {k: np.full(len(st), np.nan) for k in marks}
+    _roll(booster, 1, st, P, B.queue, B.team_bowl, B.ctx, ex_v, ex_p, rng)
+    out = {k: v.reshape(len(B), paths) for k, v in P["marks"].items()}
+    out["total"] = P["runs"].reshape(len(B), paths)
+    return out
 
 
 def match_probability(booster, B: Batch, paths: int, ex_v: np.ndarray, ex_p: np.ndarray,

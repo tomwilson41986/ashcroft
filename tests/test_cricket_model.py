@@ -183,3 +183,15 @@ def test_calibration_layers_round_trip_through_plain_numbers():
         assert out.shape == p.shape and ((out > 0) & (out < 1)).all(), method
     iso = calib.fit_isotonic(p, y)
     assert np.allclose(calib.apply(calib.fit("isotonic", p, y), p), iso.predict(p))
+
+
+def test_first_innings_runs_records_the_mark_and_the_total():
+    ex_v, ex_p = np.array([1]), np.array([1.0])
+    ones = np.zeros(8)
+    ones[1] = 1.0                       # a single a ball: 36 at the 36th legal ball, 120 at the end
+    out = sim.first_innings_runs(FixedModel(ones), _prep(0, 0, 0, np.nan, innings=1), 5, ex_v, ex_p, marks=(36,))
+    assert (out[36] == 36).all() and (out["total"] == 120).all()
+    wk = np.zeros(8)
+    wk[W] = 1.0                         # all out in ten balls, before the mark: the mark takes the final score
+    out = sim.first_innings_runs(FixedModel(wk), _prep(20, 0, 10, np.nan, innings=1), 5, ex_v, ex_p, marks=(36,))
+    assert (out[36] == 20).all() and (out["total"] == 20).all()
