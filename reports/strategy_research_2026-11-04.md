@@ -102,8 +102,56 @@ GBP710. Median stake to win GBP100 at the morning price: GBP13.89.
   horse that ends up short has shortened since the morning by construction. Every price filter in the passing rules
   uses the morning price.
 
+## Discovery round (4 Nov 2026, second request): "run discovery to find other strategies. create hypotheses and test them"
+
+Three more studies, same gates.
+
+**G. 25 hypotheses written before the data was read** (166 tests across codes; `strat_g_hypotheses_1104.txt`):
+hard luck last time, finished strongly and up in trip, jockey upgrade, new trainer, well handicapped, falling mark,
+weight drop, fell/unseated, pulled up, C&D / going / course winners, trainer first-time-out and trainer-at-course
+records, trainer-jockey pairs, morning favourite and morning price bands, morning money, top and bottom weight,
+3yos in late-season handicaps, field size, beaten under a length, headgear off, fillies in mixed races, evening and
+Sunday racing, second career run. **None passes even the train half of the gate.** Nearest misses, positive in both
+periods and both markets: bottom of the weights in chase handicaps (test win A/E 1.07, p 0.02; place 1.04; at the
+morning price 1.12, p 0.0001) and headgear off (test A/E 1.05, p 0.01).
+
+**H. A data-driven profile scan** (`strat_h_profile_scan_1104.txt`): every course, trainer, jockey, sire, damsire,
+month, class, field size, trip, going, age, hour, weekday, course x trip x draw third, and trainer / jockey / sire x
+code. About 8,000 levels with 300+ runners; almost none is underbet at p < 0.001, and a level's A/E barely carries
+from 2010-21 to 2022-26 (Spearman: trainers 0.09, jockeys 0.16, sires -0.07, draw 0.11). Against the morning price,
+two names: jockey Marco Ghiani (test A/E_am 1.15, p 0.006, place 1.06) and sire New Bay (1.10, p 0.035). Watch-list.
+
+**I. The steamer model: passes, strongly** (`strat_i_steamers_1104.txt`, run 41842702056). The pattern behind every
+edge found so far is the morning market: the BSP is efficient, the morning price is not. So: a LightGBM model fitted
+on 2018-21 predicts log(morning price / BSP) for each runner, and the horses it rates highest are backed at the morning
+price in 2022-26 (out of sample). Two feature sets:
+
+* FULL, including the morning price and the horse's share of morning volume. These are measured over the same
+  window as the price backed, which risks flattering it, so it is not the one to trust;
+* CLEAN: racecard facts and earlier-day history only (last run's steam, days since the run, the jockey's and
+  trainer's earlier steam and strike rate, last run's price and finish, runs, age, OR...). Bettable from the open.
+
+| CLEAN model, TEST 2022-26 | runners | WAX vs morning | win A/E_am | place A/E_am | win ROI | win+place level | win+place to-win | years both > 1 |
+|---|---|---|---|---|---|---|---|---|
+| top 10% predicted steam | 35,809 | +574 | 1.103 (p < 1e-10) | 1.054 | +10.4% | +9.2% | +2.9% | 5/5 |
+| top 5% | 16,562 | +368 | 1.155 (p < 1e-10) | 1.076 | +13.4% | +12.8% | +5.8% | 5/5 |
+| top 2% | 6,091 | +145 | 1.190 | 1.101 | +14.9% | +15.1% | +7.9% | 4/5 |
+
+The deciles are monotone: the least-likely steamers read A/E_am 0.82, the most likely 1.10. At BSP the same top decile
+reads 1.02: the edge is the price, taken early. The top 5% is not just the quick return: only 12% of it is back within
+1-4 days, and without those it reads A/E_am 1.14 (+11.8% win+place). Every code passes at the top 10%. The "gamble
+yard" (trainer's earlier steam alone) and "steamed last time" alone do not pass: it is the combination.
+
+**What this does and does not establish.** The morning price here is Betfair's morning volume-weighted price (GBP50+
+matched; median GBP680-920 on these horses), not a guaranteed fill: a bettor spreading stakes across the morning gets
+close to it, one betting at a single moment may not. The live recorder's 08:00-12:00 books (`betfair_live_marks`,
+from 30 Sep 2026) are the way to test real fills. And this is the live trader's own territory (back now, ahead of the
+close): the overlap with what it already backs should be measured before either is sized up.
+
 ## Next
 
+0. The CLEAN steamer model (study I): replay it on the live recorder's real morning books (fills, not the WAP), measure
+   its overlap with the live trader's selections, then a frozen forward paper test beside the quick return.
 1. A forward paper test of the quick return at the morning price, win and place, rules frozen as above, on
    `paper-models.yml` (never the live job), with a pre-registered pass mark.
 2. Check overlap with the live trader: `days_since_lr_num` is already a model feature, so part of this may already be
@@ -115,7 +163,8 @@ GBP710. Median stake to win GBP100 at the morning price: GBP13.89.
 
 All numbers: `research/strat/results_2026-11-04/` (outputs as run). Code: `research/strat/strat_lib.py` (scoring and
 gates), `research/queries/done/strat_a_*`, `strat_b_*`, `strat_c_*`, `strat_e_*`, `research/queries/strat_f_*`,
-`research/strat/strat_d_timeform.py`, `research/strat/fetch_timeform.py`.
+`research/strat/strat_d_timeform.py`, `research/strat/fetch_timeform.py`; discovery: `research/queries/done/strat_g_*`, `strat_h_*`, `strat_i_*`
+(runs 41841425300 for G and H at c378881, 41842702056 for I at ad49b4c).
 
 * HRB `race_results` + Betfair `betfair_prices` (win and place, BSP and morning WAP): 2,019,700 rows, 1 Jan 2010 to
   2 Nov 2026; 1,895,591 priced in races with a winner (the rest: no BSP or no winner). Research query runs
