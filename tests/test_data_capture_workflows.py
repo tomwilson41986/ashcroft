@@ -241,3 +241,40 @@ def test_the_first_look_gives_way_before_anything_slow(tmp_path):
         rc, calls, genv = _run_step(tmp_path, "Give way to a Live trading run", env, CHECK_RC=check_rc)
         assert rc == 0 and genv == "" and "--requeue" not in calls
 
+
+
+def _overnight(start: str) -> str:
+    """The overnight record's start step at a chosen time (UTC), the recorder replaced by an echo."""
+    if not shutil.which("bash") or subprocess.run(["date", "-u", "-d", "@0"], capture_output=True).returncode:
+        pytest.skip("needs bash and GNU date")
+    run = _step(_spec("betfair-prices.yml"), "archive", "overnight record of tomorrow")["run"]
+    run = run.replace("now=$(date -u +%s)", 'now=$(date -u -d "$START" +%s)')
+    run = run.replace("setsid nohup python betfair_recorder.py", "echo python betfair_recorder.py")
+    run = run.replace("> overnight.log 2>&1 < /dev/null &", "")
+    run = run.replace("echo $! > overnight.pid", "")
+    out = subprocess.run(["bash", "-e", "-c", run], env={"PATH": "/usr/bin:/bin", "START": start},
+                         capture_output=True, text=True, check=True)
+    return out.stdout
+
+
+def test_the_overnight_record_is_read_only_and_ends_before_the_trader():
+    """The owner, 4 Nov 2026 (when to bet: "Night before? At 4am?"): tomorrow's win books through the night, beside
+    the price archive on the UK runner, read-only on the delayed key, done by 04:52 UTC (the trader at 05:15)."""
+    spec = _spec("betfair-prices.yml")
+    start = _step(spec, "archive", "overnight record of tomorrow")
+    wait = _step(spec, "archive", "Wait for the overnight record")
+    for s in (start, wait):
+        assert s.get("continue-on-error") is True and "github.event_name == 'schedule'" in s["if"]
+    assert "BETFAIR_LIVE_APP_KEY" not in str(start["env"]) and "BETFAIR_APP_KEY" in str(start["env"])
+    assert "--tag overnight --market-types WIN" in start["run"] and "--for-minutes" in start["run"]
+    names = [s.get("name", s.get("uses")) for s in spec["jobs"]["archive"]["steps"]]
+    assert names.index(start["name"]) < names.index(_step(spec, "archive", "Archive the price files")["name"])
+    assert names[-1] == wait["name"]
+    out = _overnight("2026-11-04 22:30")                     # GMT: 22:30 UK, the racing day 5 Nov
+    assert "--date 2026-11-05" in out and "--for-minutes 382" in out
+    out = _overnight("2026-10-20 22:30")                     # BST: 23:30 UK, the racing day still 21 Oct's tomorrow
+    assert "--date 2026-10-21" in out
+    out = _overnight("2026-10-21 00:40")                     # a late start after midnight UTC: the same racing day
+    assert "--date 2026-10-21" in out and "--for-minutes 252" in out
+    assert "no record" in _overnight("2026-11-05 04:45")      # too close to the trader
+    assert "no record" in _overnight("2026-11-05 12:00")      # never by day

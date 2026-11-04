@@ -74,8 +74,10 @@ jobs:
           if [ "$code" != "200" ]; then echo "::error::promo.betfair.com refused this runner (HTTP $code)"; exit 1; fi
 
       - uses: actions/checkout@v4
+        if: ${{ !cancelled() }}
 
       - name: Python on the UK server
+        if: ${{ !cancelled() }}
         # the same Python 3.12 environment the trader uses (live-trade.yml)
         run: |
           VENV="$HOME/.venvs/ashcroft"
@@ -88,7 +90,37 @@ jobs:
           echo "$VENV/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
+        if: ${{ !cancelled() }}
         run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
+
+      # The owner, 4 Nov 2026 ("when is the best time to bet ... Night before? At 4am?"): no book was kept between the
+      # evening record (to about 22:00 UK) and the trader's start (05:17 UTC), so 04:00 could not be measured.
+      # Tomorrow's GB/IE win markets, each snapshotted every ten minutes through the night beside the archive, to
+      # s3://$CAPTURE_BUCKET/betfair_live/<day>/books_overnight.csv.gz (the timing study, research/arms/timing.py,
+      # reads it; the nightly load reads only the day's writers). Read-only, the delayed key, no order API; it stops
+      # by 04:52 UTC, before the trader's 05:15, and the step below waits for it so the job ends with it.
+      - name: Start the overnight record of tomorrow's win markets (read-only)
+        if: ${{ !cancelled() && github.event_name == 'schedule' }}
+        continue-on-error: true
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: |
+          now=$(date -u +%s)
+          end=$(date -u -d "$(date -u -d "@$now" +%F) 04:52" +%s)
+          if [ "$now" -ge "$end" ]; then end=$(( end + 86400 )); fi
+          MIN=$(( (end - now) / 60 ))
+          if [ "$MIN" -gt 420 ] || [ "$MIN" -lt 15 ]; then echo "not the night ($MIN minutes to 04:52 UTC): no record"; exit 0; fi
+          DAY=$(TZ=Europe/London date -d "@$(( now + 21600 ))" +%F)     # the racing day the night leads to
+          echo "Recording $DAY's win markets every 10 minutes for $MIN minutes (to 04:52 UTC)"
+          setsid nohup python betfair_recorder.py --record --date "$DAY" --tag overnight --market-types WIN \
+            --every 600 --every-near 600 --for-minutes "$MIN" > overnight.log 2>&1 < /dev/null &
+          echo $! > overnight.pid
 
       - name: Archive the price files to S3, one file at a time
         env:
@@ -136,3 +168,15 @@ jobs:
           # horse racing only on this runner (the owner, 3 Nov 2026): the greyhound files are archived from the
           # greyhound runner (greyhound-prices.yml)
           python betfair_prices.py --archive "${ARGS[@]}" --skip-market-prefix greyhound --max-minutes "$MAX"
+
+      - name: Wait for the overnight record (it stops by 04:52 UTC)
+        if: ${{ !cancelled() && github.event_name == 'schedule' }}
+        continue-on-error: true
+        run: |
+          [ -f overnight.pid ] || { echo "no overnight record tonight"; exit 0; }
+          pid=$(cat overnight.pid)
+          stop=$(date -u -d "$(date -u +%F) 04:56" +%s)
+          [ "$(date -u +%s)" -ge "$stop" ] && [ "$(date -u +%H)" -ge 12 ] && stop=$(( stop + 86400 ))
+          while kill -0 "$pid" 2>/dev/null && [ "$(date -u +%s)" -lt "$stop" ]; do sleep 30; done
+          if kill -0 "$pid" 2>/dev/null; then echo "still running at 04:56 UTC: stopped"; kill -INT "$pid"; sleep 20; kill -9 "$pid" 2>/dev/null || true; fi
+          tail -n 15 overnight.log || true
