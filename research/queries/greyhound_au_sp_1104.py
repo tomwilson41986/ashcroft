@@ -10,11 +10,11 @@ from sources.common import Store                                    # noqa: E402
 from research.greyhound import drift_loc as dl, bsp_bias as bb     # noqa: E402
 
 store = Store()
-rep = dl.run(store, country="AU")
+rep = dl.run(store, country="AUS")
 print("==== AU morning drift ====")
 print(dl.summary(rep))
 print("PASSING:", json.dumps(rep["passing"]))
-b = bb.run(store, country="AU")
+b = bb.run(store, country="AUS")
 os.makedirs("out", exist_ok=True)
 open("out/au_bsp_bias.json", "w").write(json.dumps(b, indent=1, default=str))
 for m in ("win", "place"):
