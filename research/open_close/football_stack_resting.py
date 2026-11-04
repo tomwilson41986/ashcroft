@@ -233,9 +233,15 @@ def score(cache: str, models: str, root: str | None, live_root: str | None, star
         if first is None:
             return {"status": "no football book record found", "prereg_sha256": digest}
         start_d = pt.trial_start(first)
+    if start_d > as_of_d:                  # the record has begun, the trial's first collection has not
+        return {"status": "not started", "start": start_d.isoformat(), "as_of": as_of_d.isoformat(),
+                "prereg_sha256": digest, "rule": rule}
     d, _cols = st._matrix(cache)
     d = d[(d["match_date"] >= start_d.isoformat()) & (d["match_date"] <= as_of_d.isoformat())
           & d["fd_code"].isin(rule["leagues_fd"])]
+    if d.empty:
+        return {"status": "no matches in the window yet", "start": start_d.isoformat(), "as_of": as_of_d.isoformat(),
+                "prereg_sha256": digest, "rule": rule}
     sig = st.signals(d, st.predict(models, d), rule["threshold"])
     store = Store(root=root)
     t = SimpleNamespace(gold=load_gold(store), read_day=read_day, tolerance_min=pt.TOLERANCE_MIN,

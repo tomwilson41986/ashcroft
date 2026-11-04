@@ -53,3 +53,17 @@ def test_score_waits_for_the_football_book_record(tmp_path, monkeypatch):
     monkeypatch.setattr(pt, "first_recorded_day", lambda *a, **k: None)
     res = ev.score(str(tmp_path), ev.MODELS, None, str(tmp_path), None, "2026-11-04")
     assert res["status"] == "no football book record found" and res["rule"]["ev_margin"] == 0.02
+
+
+def test_scorers_wait_while_the_first_collection_is_after_as_of(tmp_path, monkeypatch):
+    """A record that began midweek opens the trial at the next Friday: before then each scorer says so (it must not
+    fit an empty table, which crashed the stacked rule's scorer in its first scheduled run)."""
+    from datetime import date
+    from research.open_close import football_paper_trial as pt
+    from research.open_close import football_stack_resting as rs
+    from research.open_close import football_stack_trial as st
+    monkeypatch.setattr(pt, "first_recorded_day", lambda *a, **k: date(2026, 11, 4))
+    for res in (ev.score(str(tmp_path), ev.MODELS, None, str(tmp_path), None, "2026-11-05"),
+                st.score(str(tmp_path), "models/football/stack_v1", None, str(tmp_path), None, "2026-11-05"),
+                rs.score(str(tmp_path), "models/football/stack_v1", None, str(tmp_path), None, "2026-11-05")):
+        assert res["status"] == "not started" and res["start"] == "2026-11-06"

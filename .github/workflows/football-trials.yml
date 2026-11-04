@@ -38,6 +38,15 @@ jobs:
           cache: 'pip'
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: API-Football history tables (rebuilt from the stored raw files when one is missing; no API calls)
+        run: |
+          for x in matches players events stats; do
+            if ! aws s3 ls "s3://$CAPTURE_BUCKET/sources/api_football/history_$x.parquet" > /dev/null; then
+              echo "history_$x.parquet missing: rebuilding the history tables from sources/api_football/raw/"
+              python source_data.py --source api_football_history --build | tail -40
+              break
+            fi
+          done
       - name: Inputs (gold, silver and API-Football history, read-only copies)
         run: |
           mkdir -p src/football src/api_football

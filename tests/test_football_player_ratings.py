@@ -116,3 +116,14 @@ def test_team_news_reads_only_matches_before_the_collection_day():
     hp2.loc[hp2["apif_fixture_id"] == 5, "apif_player_id"] = 555.0             # rewrite the Tuesday match entirely
     b = team_news(m, hp2, he, ratings, ratings).set_index("apif_fixture_id")
     assert a.loc[6].equals(b.loc[6])
+
+
+def test_player_columns_join_when_the_gold_table_already_carries_the_fixture_id():
+    """The S3 gold table (API-Football keyed) has its own apif_fixture_id: the join must not split the key."""
+    import pandas as pd
+    from football.player_ratings import join_player_columns
+    feats = pd.DataFrame({"match_id": ["a", "b"], "apif_fixture_id": [1.0, None], "x": [0.1, 0.2]})
+    m = pd.DataFrame({"match_id": ["a", "b"], "apif_fixture_id": [1, 2]})
+    tn = pd.DataFrame({"apif_fixture_id": [1, 2], "tn_rotation_diff": [0.5, -0.5]})
+    out = join_player_columns(feats, m, [tn]).set_index("match_id")
+    assert list(out.loc[["a", "b"], "tn_rotation_diff"]) == [0.5, -0.5] and "apif_fixture_id_x" not in out
