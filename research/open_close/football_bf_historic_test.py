@@ -225,7 +225,7 @@ def summary(t: pd.DataFrame, n_boot: int = 2000, seed: int = 0) -> dict:
             "right_way": float(t["right_way"].mean()), "weeks": int(t["week"].nunique())}
 
 
-def ev_sides(pred, cal: dict, entry, cost: str):
+def ev_sides(pred, cal: dict, entry, cost: str, margin: float = 0.0):
     """``football_improve.by_ev`` on LTPs: back first when exp(E[y]) - 1 after commission beats the round trip's cost
     at the entry price with no move, lay first in the mirror case; 0 for no trade."""
     from research.open_close.backtest import tick_over, tick_under
@@ -238,7 +238,8 @@ def ev_sides(pred, cal: dict, entry, cost: str):
         cb = cl = np.zeros(len(e))
     net = lambda g: np.where(g > 0, g * (1 - COMMISSION), g)          # noqa: E731
     evb, evl = net(np.expm1(ey)) - cb, net(np.expm1(-ey)) - cl
-    return np.where((evb > 0) & (evb >= evl), 1, np.where(evl > 0, -1, 0)), np.maximum(evb, evl)
+    return (np.where((evb > margin) & (evb >= evl), 1, np.where(evl > margin, -1, 0)),
+            np.maximum(evb, evl))
 
 
 def run(tar: str, cache: str, root: str, n_boot: int = 2000, mo_path: str | None = None) -> dict:
@@ -292,10 +293,12 @@ def run(tar: str, cache: str, root: str, n_boot: int = 2000, mo_path: str | None
         cal = fi.calibration(d, cols, 2025)                                  # the 2024 season's out-of-sample fit
         r = {"calibration": cal, "move_fit": _fit(pr, ph, pa)}
         for cost in ("tick", "ltp"):
-            sh, evh = ev_sides(ph, cal, pr["entry_h"], cost)
-            sa, eva = ev_sides(pa, cal, pr["entry_a"], cost)
-            t = trades(pr, ph, pa, sh, sa, cost)
-            r[f"ev_{cost}"] = {"all": summary(t, n_boot), "outside_top5": summary(t[~t["league"].isin(fi.TOP5)], n_boot)}
+            for mg in (0.0, 0.01, 0.02):
+                sh, _ = ev_sides(ph, cal, pr["entry_h"], "tick", mg)        # chosen at the tick cost, both scored
+                sa, _ = ev_sides(pa, cal, pr["entry_a"], "tick", mg)
+                t = trades(pr, ph, pa, sh, sa, cost)
+                key = f"ev_{cost}" if mg == 0 else f"ev{mg}_{cost}"
+                r[key] = {"all": summary(t, n_boot), "outside_top5": summary(t[~t["league"].isin(fi.TOP5)], n_boot)}
             for th in (0.03, 0.04, 0.05):
                 t = trades(pr, ph, pa, np.where(ph > th, 1, np.where(ph < -th, -1, 0)),
                            np.where(pa > th, 1, np.where(pa < -th, -1, 0)), cost)
