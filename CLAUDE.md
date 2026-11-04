@@ -189,6 +189,10 @@ python -m football.live --trade --until 21:30                      # paper; --li
 python -m football.live --trade --all-games --hours 23.5            # football-trade.yml
 python -m football.exchange_feed --summary --days 3
 python -m football.live --settle --days 7
+# the expected-value paper trader (the owner, 4 Nov 2026; reports/preregistration_football_ev.md): every home/away side
+# with expected value above 2%, resting orders, greened at the close, a GBP1,000 paper bank staked by expected value;
+# scored with the other football trials at the recorded books (football-trials.yml, Tue and Fri; nothing reaches Betfair)
+python -m research.open_close.football_ev_trial score --cache .football_cache --root src --out-json out/football_ev_trial.json
 # the pre-registered early-to-close rule scored at the recorded books (paper trial; gate 'running' until complete)
 python -m research.open_close.football_paper_trial --panel data/football_exchange_panel.parquet --out out/football_paper_trial.json
 
