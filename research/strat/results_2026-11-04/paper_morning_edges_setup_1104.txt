@@ -1,0 +1,1051 @@
+  paper/morning_edges/model/meta.json: NoSuchKey
+frozen: 815,890 training rows to 2026-10-31, threshold 0.0559
+  timeform GBR_2014-01.parquet: 2599 rows
+  timeform IRE_2014-01.parquet: 370 rows
+  timeform GBR_2014-02.parquet: 2214 rows
+  timeform IRE_2014-02.parquet: 271 rows
+  timeform GBR_2014-03.parquet: 2296 rows
+  timeform IRE_2014-03.parquet: 447 rows
+  timeform GBR_2014-04.parquet: 4622 rows
+  timeform IRE_2014-04.parquet: 1008 rows
+  timeform GBR_2014-05.parquet: 6342 rows
+  timeform IRE_2014-05.parquet: 1210 rows
+  timeform GBR_2014-06.parquet: 6979 rows
+  timeform IRE_2014-06.parquet: 1459 rows
+  timeform GBR_2014-07.parquet: 6824 rows
+  timeform IRE_2014-07.parquet: 1480 rows
+  timeform GBR_2014-08.parquet: 7222 rows
+  timeform IRE_2014-08.parquet: 1523 rows
+  timeform GBR_2014-09.parquet: 6442 rows
+  timeform IRE_2014-09.parquet: 1313 rows
+  timeform GBR_2014-10.parquet: 5590 rows
+  timeform IRE_2014-10.parquet: 1318 rows
+  timeform GBR_2014-11.parquet: 2634 rows
+  timeform IRE_2014-11.parquet: 510 rows
+  timeform GBR_2014-12.parquet: 2333 rows
+  timeform IRE_2014-12.parquet: 293 rows
+  timeform GBR_2015-01.parquet: 2369 rows
+  timeform IRE_2015-01.parquet: 372 rows
+  timeform GBR_2015-02.parquet: 2006 rows
+  timeform IRE_2015-02.parquet: 283 rows
+  timeform GBR_2015-03.parquet: 2135 rows
+  timeform IRE_2015-03.parquet: 397 rows
+  timeform GBR_2015-04.parquet: 4384 rows
+  timeform IRE_2015-04.parquet: 1099 rows
+  timeform GBR_2015-05.parquet: 6367 rows
+  timeform IRE_2015-05.parquet: 1309 rows
+  timeform GBR_2015-06.parquet: 7043 rows
+  timeform IRE_2015-06.parquet: 1328 rows
+  timeform GBR_2015-07.parquet: 7101 rows
+  timeform IRE_2015-07.parquet: 1486 rows
+  timeform GBR_2015-08.parquet: 7436 rows
+  timeform IRE_2015-08.parquet: 1467 rows
+  timeform GBR_2015-09.parquet: 6624 rows
+  timeform IRE_2015-09.parquet: 1589 rows
+  timeform GBR_2015-10.parquet: 5570 rows
+  timeform IRE_2015-10.parquet: 1407 rows
+  timeform GBR_2015-11.parquet: 2728 rows
+  timeform IRE_2015-11.parquet: 488 rows
+  timeform GBR_2015-12.parquet: 2505 rows
+  timeform IRE_2015-12.parquet: 301 rows
+  timeform GBR_2016-01.parquet: 2538 rows
+  timeform IRE_2016-01.parquet: 354 rows
+  timeform GBR_2016-02.parquet: 2027 rows
+  timeform IRE_2016-02.parquet: 316 rows
+  timeform GBR_2016-03.parquet: 2307 rows
+  timeform IRE_2016-03.parquet: 489 rows
+  timeform GBR_2016-04.parquet: 4577 rows
+  timeform IRE_2016-04.parquet: 1080 rows
+  timeform GBR_2016-05.parquet: 6361 rows
+  timeform IRE_2016-05.parquet: 1427 rows
+  timeform GBR_2016-06.parquet: 7222 rows
+  timeform IRE_2016-06.parquet: 1695 rows
+  timeform GBR_2016-07.parquet: 7652 rows
+  timeform IRE_2016-07.parquet: 1617 rows
+  timeform GBR_2016-08.parquet: 7020 rows
+  timeform IRE_2016-08.parquet: 1623 rows
+  timeform GBR_2016-09.parquet: 6451 rows
+  timeform IRE_2016-09.parquet: 1475 rows
+  timeform GBR_2016-10.parquet: 5649 rows
+  timeform IRE_2016-10.parquet: 1660 rows
+  timeform GBR_2016-11.parquet: 3020 rows
+  timeform IRE_2016-11.parquet: 501 rows
+  timeform GBR_2016-12.parquet: 2576 rows
+  timeform IRE_2016-12.parquet: 521 rows
+  timeform GBR_2017-01.parquet: 2833 rows
+  timeform IRE_2017-01.parquet: 390 rows
+  timeform GBR_2017-02.parquet: 2291 rows
+  timeform IRE_2017-02.parquet: 376 rows
+  timeform GBR_2017-03.parquet: 2500 rows
+  timeform IRE_2017-03.parquet: 512 rows
+  timeform GBR_2017-04.parquet: 4430 rows
+  timeform IRE_2017-04.parquet: 1226 rows
+  timeform GBR_2017-05.parquet: 6536 rows
+  timeform IRE_2017-05.parquet: 1326 rows
+  timeform GBR_2017-06.parquet: 7294 rows
+  timeform IRE_2017-06.parquet: 1692 rows
+  timeform GBR_2017-07.parquet: 7449 rows
+  timeform IRE_2017-07.parquet: 1774 rows
+  timeform GBR_2017-08.parquet: 7738 rows
+  timeform IRE_2017-08.parquet: 1820 rows
+  timeform GBR_2017-09.parquet: 6336 rows
+  timeform IRE_2017-09.parquet: 1485 rows
+  timeform GBR_2017-10.parquet: 5774 rows
+  timeform IRE_2017-10.parquet: 1540 rows
+  timeform GBR_2017-11.parquet: 3087 rows
+  timeform IRE_2017-11.parquet: 719 rows
+  timeform GBR_2017-12.parquet: 2563 rows
+  timeform IRE_2017-12.parquet: 622 rows
+  timeform GBR_2018-01.parquet: 2762 rows
+  timeform IRE_2018-01.parquet: 392 rows
+  timeform GBR_2018-02.parquet: 2243 rows
+  timeform IRE_2018-02.parquet: 342 rows
+  timeform GBR_2018-03.parquet: 2635 rows
+  timeform IRE_2018-03.parquet: 529 rows
+  timeform GBR_2018-04.parquet: 4020 rows
+  timeform IRE_2018-04.parquet: 842 rows
+  timeform GBR_2018-05.parquet: 6949 rows
+  timeform IRE_2018-05.parquet: 1788 rows
+  timeform GBR_2018-06.parquet: 7573 rows
+  timeform IRE_2018-06.parquet: 1698 rows
+  timeform GBR_2018-07.parquet: 6921 rows
+  timeform IRE_2018-07.parquet: 1569 rows
+  timeform GBR_2018-08.parquet: 7734 rows
+  timeform IRE_2018-08.parquet: 1874 rows
+  timeform GBR_2018-09.parquet: 7168 rows
+  timeform IRE_2018-09.parquet: 1849 rows
+  timeform GBR_2018-10.parquet: 6361 rows
+  timeform IRE_2018-10.parquet: 1882 rows
+  timeform GBR_2018-11.parquet: 3572 rows
+  timeform IRE_2018-11.parquet: 821 rows
+  timeform GBR_2018-12.parquet: 2556 rows
+  timeform IRE_2018-12.parquet: 390 rows
+  timeform GBR_2019-01.parquet: 2967 rows
+  timeform IRE_2019-01.parquet: 374 rows
+  timeform GBR_2019-02.parquet: 2052 rows
+  timeform IRE_2019-02.parquet: 360 rows
+  timeform GBR_2019-03.parquet: 2479 rows
+  timeform IRE_2019-03.parquet: 668 rows
+  timeform GBR_2019-04.parquet: 4981 rows
+  timeform IRE_2019-04.parquet: 1429 rows
+  timeform GBR_2019-05.parquet: 7042 rows
+  timeform IRE_2019-05.parquet: 1625 rows
+  timeform GBR_2019-06.parquet: 7277 rows
+  timeform IRE_2019-06.parquet: 1891 rows
+  timeform GBR_2019-07.parquet: 7367 rows
+  timeform IRE_2019-07.parquet: 1786 rows
+  timeform GBR_2019-08.parquet: 7948 rows
+  timeform IRE_2019-08.parquet: 1887 rows
+  timeform GBR_2019-09.parquet: 6481 rows
+  timeform IRE_2019-09.parquet: 1752 rows
+  timeform GBR_2019-10.parquet: 5528 rows
+  timeform IRE_2019-10.parquet: 1813 rows
+  timeform GBR_2019-11.parquet: 3137 rows
+  timeform IRE_2019-11.parquet: 869 rows
+  timeform GBR_2019-12.parquet: 2500 rows
+  timeform IRE_2019-12.parquet: 529 rows
+  timeform GBR_2020-01.parquet: 2993 rows
+  timeform IRE_2020-01.parquet: 507 rows
+  timeform GBR_2020-02.parquet: 2486 rows
+  timeform IRE_2020-02.parquet: 386 rows
+  timeform GBR_2020-03.parquet: 1155 rows
+  timeform IRE_2020-03.parquet: 351 rows
+  timeform GBR_2020-04.parquet: 0 rows
+  timeform IRE_2020-04.parquet: 0 rows
+  timeform GBR_2020-05.parquet: 0 rows
+  timeform IRE_2020-05.parquet: 0 rows
+  timeform GBR_2020-06.parquet: 7669 rows
+  timeform IRE_2020-06.parquet: 2294 rows
+  timeform GBR_2020-07.parquet: 7296 rows
+  timeform IRE_2020-07.parquet: 2625 rows
+  timeform GBR_2020-08.parquet: 6602 rows
+  timeform IRE_2020-08.parquet: 2269 rows
+  timeform GBR_2020-09.parquet: 7382 rows
+  timeform IRE_2020-09.parquet: 2249 rows
+  timeform GBR_2020-10.parquet: 6276 rows
+  timeform IRE_2020-10.parquet: 2238 rows
+  timeform GBR_2020-11.parquet: 3651 rows
+  timeform IRE_2020-11.parquet: 1592 rows
+  timeform GBR_2020-12.parquet: 3020 rows
+  timeform IRE_2020-12.parquet: 509 rows
+  timeform GBR_2021-01.parquet: 3163 rows
+  timeform IRE_2021-01.parquet: 606 rows
+  timeform GBR_2021-02.parquet: 2286 rows
+  timeform IRE_2021-02.parquet: 564 rows
+  timeform GBR_2021-03.parquet: 2604 rows
+  timeform IRE_2021-03.parquet: 862 rows
+  timeform GBR_2021-04.parquet: 5081 rows
+  timeform IRE_2021-04.parquet: 1450 rows
+  timeform GBR_2021-05.parquet: 6064 rows
+  timeform IRE_2021-05.parquet: 1924 rows
+  timeform GBR_2021-06.parquet: 7271 rows
+  timeform IRE_2021-06.parquet: 2195 rows
+  timeform GBR_2021-07.parquet: 7124 rows
+  timeform IRE_2021-07.parquet: 2040 rows
+  timeform GBR_2021-08.parquet: 7318 rows
+  timeform IRE_2021-08.parquet: 2048 rows
+  timeform GBR_2021-09.parquet: 6377 rows
+  timeform IRE_2021-09.parquet: 2076 rows
+  timeform GBR_2021-10.parquet: 5572 rows
+  timeform IRE_2021-10.parquet: 2312 rows
+  timeform GBR_2021-11.parquet: 2788 rows
+  timeform IRE_2021-11.parquet: 812 rows
+  timeform GBR_2021-12.parquet: 2580 rows
+  timeform IRE_2021-12.parquet: 561 rows
+  timeform GBR_2022-01.parquet: 3024 rows
+  timeform IRE_2022-01.parquet: 571 rows
+  timeform GBR_2022-02.parquet: 2094 rows
+  timeform IRE_2022-02.parquet: 525 rows
+  timeform GBR_2022-03.parquet: 2465 rows
+  timeform IRE_2022-03.parquet: 678 rows
+  timeform GBR_2022-04.parquet: 5019 rows
+  timeform IRE_2022-04.parquet: 1419 rows
+  timeform GBR_2022-05.parquet: 6383 rows
+  timeform IRE_2022-05.parquet: 2002 rows
+  timeform GBR_2022-06.parquet: 6912 rows
+  timeform IRE_2022-06.parquet: 1860 rows
+  timeform GBR_2022-07.parquet: 6503 rows
+  timeform IRE_2022-07.parquet: 1915 rows
+  timeform GBR_2022-08.parquet: 6922 rows
+  timeform IRE_2022-08.parquet: 1776 rows
+  timeform GBR_2022-09.parquet: 6224 rows
+  timeform IRE_2022-09.parquet: 2200 rows
+  timeform GBR_2022-10.parquet: 5556 rows
+  timeform IRE_2022-10.parquet: 1961 rows
+  timeform GBR_2022-11.parquet: 2736 rows
+  timeform IRE_2022-11.parquet: 1052 rows
+  timeform GBR_2022-12.parquet: 2441 rows
+  timeform IRE_2022-12.parquet: 596 rows
+  timeform GBR_2023-01.parquet: 3101 rows
+  timeform IRE_2023-01.parquet: 561 rows
+  timeform GBR_2023-02.parquet: 2305 rows
+  timeform IRE_2023-02.parquet: 545 rows
+  timeform GBR_2023-03.parquet: 2525 rows
+  timeform IRE_2023-03.parquet: 750 rows
+  timeform GBR_2023-04.parquet: 4382 rows
+  timeform IRE_2023-04.parquet: 1201 rows
+  timeform GBR_2023-05.parquet: 6619 rows
+  timeform IRE_2023-05.parquet: 1710 rows
+  timeform GBR_2023-06.parquet: 7135 rows
+  timeform IRE_2023-06.parquet: 1830 rows
+  timeform GBR_2023-07.parquet: 6487 rows
+  timeform IRE_2023-07.parquet: 2033 rows
+  timeform GBR_2023-08.parquet: 7278 rows
+  timeform IRE_2023-08.parquet: 1979 rows
+  timeform GBR_2023-09.parquet: 6623 rows
+  timeform IRE_2023-09.parquet: 2048 rows
+  timeform GBR_2023-10.parquet: 4943 rows
+  timeform IRE_2023-10.parquet: 1725 rows
+  timeform GBR_2023-11.parquet: 3370 rows
+  timeform IRE_2023-11.parquet: 1015 rows
+  timeform GBR_2023-12.parquet: 2707 rows
+  timeform IRE_2023-12.parquet: 716 rows
+  timeform GBR_2024-01.parquet: 3148 rows
+  timeform IRE_2024-01.parquet: 477 rows
+  timeform GBR_2024-02.parquet: 2594 rows
+  timeform IRE_2024-02.parquet: 452 rows
+  timeform GBR_2024-03.parquet: 3074 rows
+  timeform IRE_2024-03.parquet: 732 rows
+  timeform GBR_2024-04.parquet: 4470 rows
+  timeform IRE_2024-04.parquet: 1116 rows
+  timeform GBR_2024-05.parquet: 6268 rows
+  timeform IRE_2024-05.parquet: 1921 rows
+  timeform GBR_2024-06.parquet: 7149 rows
+  timeform IRE_2024-06.parquet: 1764 rows
+  timeform GBR_2024-07.parquet: 6904 rows
+  timeform IRE_2024-07.parquet: 1914 rows
+  timeform GBR_2024-08.parquet: 7096 rows
+  timeform IRE_2024-08.parquet: 1773 rows
+  timeform GBR_2024-09.parquet: 6346 rows
+  timeform IRE_2024-09.parquet: 2020 rows
+  timeform GBR_2024-10.parquet: 6055 rows
+  timeform IRE_2024-10.parquet: 2064 rows
+  timeform GBR_2024-11.parquet: 2948 rows
+  timeform IRE_2024-11.parquet: 962 rows
+  timeform GBR_2024-12.parquet: 2937 rows
+  timeform IRE_2024-12.parquet: 550 rows
+  timeform GBR_2025-01.parquet: 3096 rows
+  timeform IRE_2025-01.parquet: 451 rows
+  timeform GBR_2025-02.parquet: 2396 rows
+  timeform IRE_2025-02.parquet: 377 rows
+  timeform GBR_2025-03.parquet: 2568 rows
+  timeform IRE_2025-03.parquet: 651 rows
+  timeform GBR_2025-04.parquet: 4317 rows
+  timeform IRE_2025-04.parquet: 1222 rows
+  timeform GBR_2025-05.parquet: 5267 rows
+  timeform IRE_2025-05.parquet: 1531 rows
+  timeform GBR_2025-06.parquet: 6786 rows
+  timeform IRE_2025-06.parquet: 1802 rows
+  timeform GBR_2025-07.parquet: 6514 rows
+  timeform IRE_2025-07.parquet: 1910 rows
+  timeform GBR_2025-08.parquet: 6699 rows
+  timeform IRE_2025-08.parquet: 1725 rows
+  timeform GBR_2025-09.parquet: 6918 rows
+  timeform IRE_2025-09.parquet: 2132 rows
+  timeform GBR_2025-10.parquet: 5899 rows
+  timeform IRE_2025-10.parquet: 2035 rows
+  timeform GBR_2025-11.parquet: 2855 rows
+  timeform IRE_2025-11.parquet: 852 rows
+  timeform GBR_2025-12.parquet: 2865 rows
+  timeform IRE_2025-12.parquet: 541 rows
+  timeform GBR_2026-01.parquet: 4018 rows
+  timeform IRE_2026-01.parquet: 852 rows
+  timeform GBR_2026-02.parquet: 4814 rows
+  timeform IRE_2026-02.parquet: 1297 rows
+  timeform GBR_2026-03.parquet: 5940 rows
+  timeform IRE_2026-03.parquet: 1733 rows
+  timeform GBR_2026-04.parquet: 7009 rows
+  timeform IRE_2026-04.parquet: 2659 rows
+  timeform GBR_2026-05.parquet: 8200 rows
+  timeform IRE_2026-05.parquet: 3466 rows
+  timeform GBR_2026-06.parquet: 7994 rows
+  timeform IRE_2026-06.parquet: 2530 rows
+  timeform GBR_2026-07.parquet: 7370 rows
+  timeform IRE_2026-07.parquet: 3229 rows
+  timeform GBR_2026-08.parquet: 6855 rows
+  timeform IRE_2026-08.parquet: 3169 rows
+  timeform GBR_2026-09.parquet: 7741 rows
+  timeform IRE_2026-09.parquet: 3181 rows
+  timeform GBR_2026-10.parquet: 8001 rows
+  timeform IRE_2026-10.parquet: 3359 rows
+  timeform GBR_2026-11.parquet: 612 rows
+  timeform IRE_2026-11.parquet: 284 rows
+days to replay: ['2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03']
+  card-view check 2026-09-30: 335 runners, largest prediction difference 0.00e+00
+  selections: {'qr_am': 3, 'steam_am': 17}, tf_pb_bsp 25
+
+== 2026-09-30 (win): books from s3://ashcroft/betfair_live/2026-09-30/
+  betfair_live/2026-09-30/books_trader.csv.gz: NoSuchKey
+  betfair_live/2026-09-30/books.csv.gz: NoSuchKey
+  betfair_live/2026-09-30/markets_trader.csv.gz: NoSuchKey
+  betfair_live/2026-09-30/markets.csv.gz: NoSuchKey
+  no books or no catalogue recorded: the day is skipped
+
+== 2026-09-30 (place): books from s3://ashcroft/betfair_live/2026-09-30/
+  betfair_live/2026-09-30/books.csv.gz: NoSuchKey
+  betfair_live/2026-09-30/markets.csv.gz: NoSuchKey
+  no books or no catalogue recorded: the day is skipped
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 21, 'bets': 21, 'skipped_live': 0, 'no_book': 0, 'staked': 737.27, 'wanted': 737.27, 'wins': 4, 'expected': 4.7888, 'pnl_2pc': -258.77, 'pnl_5pc': -269.08, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 15, 'bets': 15, 'skipped_live': 0, 'no_book': 0, 'staked': 1693.15, 'wanted': 1693.15, 'wins': 9, 'expected': 7.7521, 'pnl_2pc': 254.05, 'pnl_5pc': 234.49, 'wap_gap_median': None}
+  selections: {'qr_am': 6, 'steam_am': 13}, tf_pb_bsp 29
+
+== 2026-10-01 (win): books from s3://ashcroft/betfair_live/2026-10-01/
+  241,532 book rows, 1,756 catalogue rows, 928 ledger rows, 0 prices
+  44 GB/IE WIN markets; 0 prices matched to them
+  price files: 401 runners, 401 matched to the exchange's markets
+  settled books for 44 of 44 markets
+  win: 19 selections matched to markets (of 19), 4 the live trader's, 19 ledger rows
+
+== 2026-10-01 (place): books from s3://ashcroft/betfair_live/2026-10-01/
+  151,917 book rows, 1,316 catalogue rows, 0 ledger rows, 0 prices
+  44 GB/IE PLACE markets; 0 prices matched to them
+  price files: 401 runners, 401 matched to the exchange's markets
+  settled books for 44 of 44 markets
+  place: 19 selections matched to markets (of 19), 4 the live trader's, 19 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 6, 'bets': 4, 'skipped_live': 2, 'no_book': 0, 'staked': 63.19, 'wanted': 118.09, 'wins': 1, 'expected': 0.8389, 'pnl_2pc': 37.22, 'pnl_5pc': 34.98, 'wap_gap_median': -0.1306}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 6, 'bets': 0, 'skipped_live': 2, 'no_book': 4, 'staked': 0.0, 'wanted': 0.0, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 13, 'bets': 10, 'skipped_live': 3, 'no_book': 0, 'staked': 161.06, 'wanted': 212.84, 'wins': 2, 'expected': 1.6425, 'pnl_2pc': -4.67, 'pnl_5pc': -8.72, 'wap_gap_median': -0.1136}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 13, 'bets': 0, 'skipped_live': 3, 'no_book': 10, 'staked': 0.0, 'wanted': 0.0, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 26, 'bets': 26, 'skipped_live': 0, 'no_book': 0, 'staked': 652.46, 'wanted': 652.46, 'wins': 4, 'expected': 3.7887, 'pnl_2pc': 171.47, 'pnl_5pc': 154.63, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 17, 'bets': 17, 'skipped_live': 0, 'no_book': 0, 'staked': 1594.99, 'wanted': 1594.99, 'wins': 4, 'expected': 6.3294, 'pnl_2pc': -337.17, 'pnl_5pc': -351.21, 'wap_gap_median': None}
+  selections: {'qr_am': 5, 'steam_am': 11}, tf_pb_bsp 24
+
+== 2026-10-02 (win): books from s3://ashcroft/betfair_live/2026-10-02/
+  400,515 book rows, 1,522 catalogue rows, 878 ledger rows, 0 prices
+  47 GB/IE WIN markets; 0 prices matched to them
+  price files: 455 runners, 455 matched to the exchange's markets
+  settled books for 47 of 47 markets
+  win: 16 selections matched to markets (of 16), 3 the live trader's, 16 ledger rows
+
+== 2026-10-02 (place): books from s3://ashcroft/betfair_live/2026-10-02/
+  158,141 book rows, 1,014 catalogue rows, 0 ledger rows, 0 prices
+  47 GB/IE PLACE markets; 0 prices matched to them
+  price files: 455 runners, 455 matched to the exchange's markets
+  settled books for 47 of 47 markets
+  place: 16 selections matched to markets (of 16), 3 the live trader's, 16 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 5, 'bets': 4, 'skipped_live': 1, 'no_book': 0, 'staked': 48.61, 'wanted': 55.44, 'wins': 1, 'expected': 0.4877, 'pnl_2pc': 49.23, 'pnl_5pc': 46.65, 'wap_gap_median': -0.0602}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 5, 'bets': 4, 'skipped_live': 1, 'no_book': 0, 'staked': 107.11, 'wanted': 617.31, 'wins': 2, 'expected': 2.7843, 'pnl_2pc': -43.41, 'pnl_5pc': -44.08, 'wap_gap_median': -0.4595}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 11, 'bets': 9, 'skipped_live': 2, 'no_book': 0, 'staked': 99.41, 'wanted': 104.43, 'wins': 3, 'expected': 0.92, 'pnl_2pc': 196.22, 'pnl_5pc': 188.53, 'wap_gap_median': -0.0799}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 11, 'bets': 9, 'skipped_live': 2, 'no_book': 0, 'staked': 279.1, 'wanted': 781.96, 'wins': 5, 'expected': 3.7984, 'pnl_2pc': 57.99, 'pnl_5pc': 53.56, 'wap_gap_median': -0.1758}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 21, 'bets': 21, 'skipped_live': 0, 'no_book': 0, 'staked': 763.39, 'wanted': 763.39, 'wins': 5, 'expected': 4.4947, 'pnl_2pc': 103.05, 'pnl_5pc': 90.4, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 13, 'bets': 13, 'skipped_live': 0, 'no_book': 0, 'staked': 1406.06, 'wanted': 1406.06, 'wins': 5, 'expected': 6.1439, 'pnl_2pc': -375.46, 'pnl_5pc': -383.7, 'wap_gap_median': None}
+  selections: {'qr_am': 4, 'steam_am': 14}, tf_pb_bsp 24
+
+== 2026-10-03 (win): books from s3://ashcroft/betfair_live/2026-10-03/
+  295,983 book rows, 1,199 catalogue rows, 886 ledger rows, 0 prices
+  44 GB/IE WIN markets; 0 prices matched to them
+  price files: 383 runners, 383 matched to the exchange's markets
+  settled books for 44 of 44 markets
+  win: 18 selections matched to markets (of 18), 2 the live trader's, 18 ledger rows
+
+== 2026-10-03 (place): books from s3://ashcroft/betfair_live/2026-10-03/
+  119,311 book rows, 798 catalogue rows, 0 ledger rows, 0 prices
+  43 GB/IE PLACE markets; 0 prices matched to them
+  price files: 380 runners, 380 matched to the exchange's markets
+  settled books for 43 of 43 markets
+  place: 18 selections matched to markets (of 18), 2 the live trader's, 18 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 4, 'bets': 3, 'skipped_live': 1, 'no_book': 0, 'staked': 37.26, 'wanted': 37.26, 'wins': 1, 'expected': 0.3061, 'pnl_2pc': 88.29, 'pnl_5pc': 85.35, 'wap_gap_median': -0.1522}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 4, 'bets': 3, 'skipped_live': 1, 'no_book': 0, 'staked': 47.68, 'wanted': 262.88, 'wins': 1, 'expected': 1.3123, 'pnl_2pc': -14.15, 'pnl_5pc': -14.26, 'wap_gap_median': -0.3135}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 14, 'bets': 12, 'skipped_live': 2, 'no_book': 0, 'staked': 177.65, 'wanted': 188.28, 'wins': 1, 'expected': 1.5888, 'pnl_2pc': -52.42, 'pnl_5pc': -55.38, 'wap_gap_median': -0.0112}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 14, 'bets': 12, 'skipped_live': 2, 'no_book': 0, 'staked': 341.99, 'wanted': 938.65, 'wins': 3, 'expected': 5.1374, 'pnl_2pc': -162.36, 'pnl_5pc': -164.85, 'wap_gap_median': -0.2664}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 23, 'bets': 23, 'skipped_live': 0, 'no_book': 0, 'staked': 664.44, 'wanted': 664.44, 'wins': 4, 'expected': 4.4019, 'pnl_2pc': -65.61, 'pnl_5pc': -72.13, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 19, 'bets': 19, 'skipped_live': 0, 'no_book': 0, 'staked': 1704.09, 'wanted': 1704.09, 'wins': 9, 'expected': 7.5394, 'pnl_2pc': 274.5, 'pnl_5pc': 250.96, 'wap_gap_median': None}
+  selections: {'qr_am': 4, 'steam_am': 21}, tf_pb_bsp 13
+
+== 2026-10-04 (win): books from s3://ashcroft/betfair_live/2026-10-04/
+  169,838 book rows, 877 catalogue rows, 632 ledger rows, 0 prices
+  29 GB/IE WIN markets; 0 prices matched to them
+  price files: 260 runners, 260 matched to the exchange's markets
+  settled books for 29 of 29 markets
+  win: 25 selections matched to markets (of 25), 6 the live trader's, 25 ledger rows
+
+== 2026-10-04 (place): books from s3://ashcroft/betfair_live/2026-10-04/
+  74,273 book rows, 582 catalogue rows, 0 ledger rows, 0 prices
+  27 GB/IE PLACE markets; 0 prices matched to them
+  price files: 254 runners, 254 matched to the exchange's markets
+  settled books for 27 of 27 markets
+  place: 25 selections matched to markets (of 25), 6 the live trader's, 25 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 4, 'bets': 4, 'skipped_live': 0, 'no_book': 0, 'staked': 30.75, 'wanted': 49.56, 'wins': 1, 'expected': 0.4369, 'pnl_2pc': 72.71, 'pnl_5pc': 70.04, 'wap_gap_median': -0.1409}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 4, 'bets': 4, 'skipped_live': 0, 'no_book': 0, 'staked': 84.29, 'wanted': 544.39, 'wins': 2, 'expected': 2.4847, 'pnl_2pc': 8.79, 'pnl_5pc': 7.36, 'wap_gap_median': -0.4078}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 21, 'bets': 15, 'skipped_live': 6, 'no_book': 0, 'staked': 144.01, 'wanted': 195.07, 'wins': 1, 'expected': 1.5878, 'pnl_2pc': -38.6, 'pnl_5pc': -41.38, 'wap_gap_median': -0.2015}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 21, 'bets': 15, 'skipped_live': 6, 'no_book': 0, 'staked': 481.67, 'wanted': 1290.6, 'wins': 3, 'expected': 6.7787, 'pnl_2pc': -262.82, 'pnl_5pc': -263.51, 'wap_gap_median': -0.3762}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 13, 'bets': 13, 'skipped_live': 0, 'no_book': 0, 'staked': 331.65, 'wanted': 331.65, 'wins': 2, 'expected': 1.9029, 'pnl_2pc': 43.83, 'pnl_5pc': 38.93, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 4, 'bets': 4, 'skipped_live': 0, 'no_book': 0, 'staked': 388.28, 'wanted': 388.28, 'wins': 3, 'expected': 1.9468, 'pnl_2pc': 177.22, 'pnl_5pc': 169.67, 'wap_gap_median': None}
+  selections: {'qr_am': 6, 'steam_am': 15}, tf_pb_bsp 37
+
+== 2026-10-05 (win): books from s3://ashcroft/betfair_live/2026-10-05/
+  428,852 book rows, 1,645 catalogue rows, 967 ledger rows, 0 prices
+  54 GB/IE WIN markets; 0 prices matched to them
+  price files: 498 runners, 498 matched to the exchange's markets
+  settled books for 54 of 54 markets
+  win: 21 selections matched to markets (of 21), 4 the live trader's, 21 ledger rows
+
+== 2026-10-05 (place): books from s3://ashcroft/betfair_live/2026-10-05/
+  171,181 book rows, 1,096 catalogue rows, 0 ledger rows, 0 prices
+  54 GB/IE PLACE markets; 0 prices matched to them
+  price files: 498 runners, 498 matched to the exchange's markets
+  settled books for 54 of 54 markets
+  place: 21 selections matched to markets (of 21), 4 the live trader's, 21 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 6, 'bets': 4, 'skipped_live': 2, 'no_book': 0, 'staked': 60.84, 'wanted': 83.43, 'wins': 1, 'expected': 0.6674, 'pnl_2pc': 43.0, 'pnl_5pc': 40.0, 'wap_gap_median': -0.216}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 6, 'bets': 4, 'skipped_live': 2, 'no_book': 0, 'staked': 106.92, 'wanted': 344.27, 'wins': 2, 'expected': 1.839, 'pnl_2pc': 9.2, 'pnl_5pc': 7.27, 'wap_gap_median': -0.3621}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 15, 'bets': 13, 'skipped_live': 2, 'no_book': 0, 'staked': 169.57, 'wanted': 188.25, 'wins': 1, 'expected': 1.5866, 'pnl_2pc': -86.52, 'pnl_5pc': -86.81, 'wap_gap_median': -0.3472}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 15, 'bets': 13, 'skipped_live': 2, 'no_book': 0, 'staked': 607.28, 'wanted': 1494.04, 'wins': 1, 'expected': 6.6212, 'pnl_2pc': -557.26, 'pnl_5pc': -557.26, 'wap_gap_median': -0.4802}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 32, 'bets': 32, 'skipped_live': 0, 'no_book': 0, 'staked': 826.77, 'wanted': 826.77, 'wins': 4, 'expected': 5.0262, 'pnl_2pc': -97.93, 'pnl_5pc': -106.19, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 19, 'bets': 19, 'skipped_live': 0, 'no_book': 0, 'staked': 1917.43, 'wanted': 1917.43, 'wins': 10, 'expected': 8.4163, 'pnl_2pc': 600.77, 'pnl_5pc': 564.14, 'wap_gap_median': None}
+  selections: {'qr_am': 7, 'steam_am': 21}, tf_pb_bsp 8
+
+== 2026-10-06 (win): books from s3://ashcroft/betfair_live/2026-10-06/
+  191,187 book rows, 1,011 catalogue rows, 880 ledger rows, 0 prices
+  35 GB/IE WIN markets; 0 prices matched to them
+  price files: 314 runners, 314 matched to the exchange's markets
+  settled books for 35 of 35 markets
+  win: 28 selections matched to markets (of 28), 9 the live trader's, 28 ledger rows
+
+== 2026-10-06 (place): books from s3://ashcroft/betfair_live/2026-10-06/
+  97,166 book rows, 672 catalogue rows, 0 ledger rows, 0 prices
+  35 GB/IE PLACE markets; 0 prices matched to them
+  price files: 314 runners, 314 matched to the exchange's markets
+  settled books for 35 of 35 markets
+  place: 28 selections matched to markets (of 28), 9 the live trader's, 28 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 7, 'bets': 3, 'skipped_live': 4, 'no_book': 0, 'staked': 37.67, 'wanted': 81.19, 'wins': 1, 'expected': 0.5237, 'pnl_2pc': 23.03, 'pnl_5pc': 21.93, 'wap_gap_median': -0.1373}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 7, 'bets': 3, 'skipped_live': 4, 'no_book': 0, 'staked': 247.73, 'wanted': 366.67, 'wins': 1, 'expected': 1.8804, 'pnl_2pc': -43.81, 'pnl_5pc': -43.93, 'wap_gap_median': -0.3132}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 21, 'bets': 14, 'skipped_live': 7, 'no_book': 0, 'staked': 244.42, 'wanted': 275.04, 'wins': 2, 'expected': 2.1497, 'pnl_2pc': -38.61, 'pnl_5pc': -41.83, 'wap_gap_median': -0.033}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 21, 'bets': 14, 'skipped_live': 7, 'no_book': 0, 'staked': 373.38, 'wanted': 1614.85, 'wins': 4, 'expected': 7.2797, 'pnl_2pc': -247.72, 'pnl_5pc': -247.88, 'wap_gap_median': -0.1284}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 7, 'bets': 7, 'skipped_live': 0, 'no_book': 0, 'staked': 89.46, 'wanted': 89.46, 'wins': 0, 'expected': 0.6649, 'pnl_2pc': -89.46, 'pnl_5pc': -89.46, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 5, 'bets': 5, 'skipped_live': 0, 'no_book': 0, 'staked': 323.18, 'wanted': 323.18, 'wins': 0, 'expected': 1.4984, 'pnl_2pc': -323.18, 'pnl_5pc': -323.18, 'wap_gap_median': None}
+  selections: {'qr_am': 3, 'steam_am': 6}, tf_pb_bsp 22
+
+== 2026-10-07 (win): books from s3://ashcroft/betfair_live/2026-10-07/
+  282,151 book rows, 1,217 catalogue rows, 2,833 ledger rows, 0 prices
+  38 GB/IE WIN markets; 0 prices matched to them
+  price files: 384 runners, 384 matched to the exchange's markets
+  settled books for 38 of 38 markets
+  win: 9 selections matched to markets (of 9), 3 the live trader's, 9 ledger rows
+
+== 2026-10-07 (place): books from s3://ashcroft/betfair_live/2026-10-07/
+  124,808 book rows, 811 catalogue rows, 0 ledger rows, 0 prices
+  38 GB/IE PLACE markets; 0 prices matched to them
+  price files: 384 runners, 384 matched to the exchange's markets
+  settled books for 38 of 38 markets
+  place: 9 selections matched to markets (of 9), 3 the live trader's, 9 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 3, 'bets': 2, 'skipped_live': 0, 'no_book': 0, 'staked': 19.3, 'wanted': 25.46, 'wins': 0, 'expected': 0.2255, 'pnl_2pc': -19.3, 'pnl_5pc': -19.3, 'wap_gap_median': 0.0166}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 3, 'bets': 3, 'skipped_live': 0, 'no_book': 0, 'staked': 108.69, 'wanted': 206.03, 'wins': 2, 'expected': 1.2085, 'pnl_2pc': 80.24, 'pnl_5pc': 76.67, 'wap_gap_median': -0.0242}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 6, 'bets': 3, 'skipped_live': 3, 'no_book': 0, 'staked': 66.71, 'wanted': 66.71, 'wins': 0, 'expected': 0.5276, 'pnl_2pc': -66.71, 'pnl_5pc': -66.71, 'wap_gap_median': 0.01}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 6, 'bets': 3, 'skipped_live': 3, 'no_book': 0, 'staked': 82.82, 'wanted': 198.98, 'wins': 2, 'expected': 1.1706, 'pnl_2pc': 77.66, 'pnl_5pc': 74.97, 'wap_gap_median': -0.0476}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 19, 'bets': 19, 'skipped_live': 0, 'no_book': 0, 'staked': 644.9, 'wanted': 644.9, 'wins': 5, 'expected': 4.0358, 'pnl_2pc': 168.94, 'pnl_5pc': 156.46, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 13, 'bets': 13, 'skipped_live': 0, 'no_book': 0, 'staked': 1168.52, 'wanted': 1168.52, 'wins': 7, 'expected': 6.7705, 'pnl_2pc': -85.86, 'pnl_5pc': -92.93, 'wap_gap_median': None}
+  selections: {'qr_am': 4, 'steam_am': 15}, tf_pb_bsp 22
+
+== 2026-10-08 (win): books from s3://ashcroft/betfair_live/2026-10-08/
+  343,764 book rows, 1,417 catalogue rows, 3,044 ledger rows, 0 prices
+  46 GB/IE WIN markets; 0 prices matched to them
+  price files: 432 runners, 432 matched to the exchange's markets
+  settled books for 46 of 46 markets
+  win: 19 selections matched to markets (of 19), 8 the live trader's, 19 ledger rows
+
+== 2026-10-08 (place): books from s3://ashcroft/betfair_live/2026-10-08/
+  142,612 book rows, 948 catalogue rows, 0 ledger rows, 0 prices
+  46 GB/IE PLACE markets; 0 prices matched to them
+  price files: 432 runners, 432 matched to the exchange's markets
+  settled books for 46 of 46 markets
+  place: 19 selections matched to markets (of 19), 8 the live trader's, 19 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 4, 'bets': 2, 'skipped_live': 2, 'no_book': 0, 'staked': 57.67, 'wanted': 77.19, 'wins': 0, 'expected': 0.5532, 'pnl_2pc': -57.67, 'pnl_5pc': -57.67, 'wap_gap_median': 0.0132}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 4, 'bets': 2, 'skipped_live': 2, 'no_book': 0, 'staked': 110.83, 'wanted': 238.64, 'wins': 1, 'expected': 1.0875, 'pnl_2pc': -73.38, 'pnl_5pc': -73.91, 'wap_gap_median': -0.0443}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 15, 'bets': 6, 'skipped_live': 8, 'no_book': 0, 'staked': 81.54, 'wanted': 159.34, 'wins': 2, 'expected': 1.1867, 'pnl_2pc': 124.32, 'pnl_5pc': 119.28, 'wap_gap_median': -0.0202}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 15, 'bets': 7, 'skipped_live': 8, 'no_book': 0, 'staked': 437.06, 'wanted': 853.09, 'wins': 4, 'expected': 3.9695, 'pnl_2pc': -83.18, 'pnl_5pc': -85.88, 'wap_gap_median': -0.21}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 18, 'bets': 18, 'skipped_live': 0, 'no_book': 0, 'staked': 312.86, 'wanted': 312.86, 'wins': 3, 'expected': 2.2292, 'pnl_2pc': 226.74, 'pnl_5pc': 215.2, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 12, 'bets': 12, 'skipped_live': 0, 'no_book': 0, 'staked': 1055.45, 'wanted': 1055.45, 'wins': 7, 'expected': 4.1777, 'pnl_2pc': 620.39, 'pnl_5pc': 595.14, 'wap_gap_median': None}
+  selections: {'qr_am': 6, 'steam_am': 17}, tf_pb_bsp 48
+
+== 2026-10-09 (win): books from s3://ashcroft/betfair_live/2026-10-09/
+  443,858 book rows, 1,697 catalogue rows, 1,857 ledger rows, 0 prices
+  47 GB/IE WIN markets; 0 prices matched to them
+  price files: 514 runners, 514 matched to the exchange's markets
+  settled books for 47 of 47 markets
+  win: 23 selections matched to markets (of 23), 9 the live trader's, 23 ledger rows
+
+== 2026-10-09 (place): books from s3://ashcroft/betfair_live/2026-10-09/
+  177,626 book rows, 1,130 catalogue rows, 0 ledger rows, 0 prices
+  47 GB/IE PLACE markets; 0 prices matched to them
+  price files: 514 runners, 514 matched to the exchange's markets
+  settled books for 47 of 47 markets
+  place: 23 selections matched to markets (of 23), 9 the live trader's, 23 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 6, 'bets': 4, 'skipped_live': 0, 'no_book': 0, 'staked': 20.08, 'wanted': 29.6, 'wins': 0, 'expected': 0.2592, 'pnl_2pc': -20.08, 'pnl_5pc': -20.08, 'wap_gap_median': -0.0355}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 6, 'bets': 6, 'skipped_live': 0, 'no_book': 0, 'staked': 154.78, 'wanted': 630.32, 'wins': 0, 'expected': 3.3662, 'pnl_2pc': -154.78, 'pnl_5pc': -154.78, 'wap_gap_median': -0.6017}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 17, 'bets': 7, 'skipped_live': 9, 'no_book': 0, 'staked': 53.5, 'wanted': 87.16, 'wins': 0, 'expected': 0.7135, 'pnl_2pc': -53.5, 'pnl_5pc': -53.5, 'wap_gap_median': 0.0053}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 17, 'bets': 8, 'skipped_live': 9, 'no_book': 0, 'staked': 204.85, 'wanted': 721.89, 'wins': 2, 'expected': 3.5477, 'pnl_2pc': -119.41, 'pnl_5pc': -119.41, 'wap_gap_median': -0.458}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 41, 'bets': 41, 'skipped_live': 0, 'no_book': 0, 'staked': 850.84, 'wanted': 850.84, 'wins': 5, 'expected': 5.8098, 'pnl_2pc': -174.48, 'pnl_5pc': -182.31, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 35, 'bets': 35, 'skipped_live': 0, 'no_book': 0, 'staked': 2492.0, 'wanted': 2492.0, 'wins': 13, 'expected': 12.4863, 'pnl_2pc': -58.42, 'pnl_5pc': -84.31, 'wap_gap_median': None}
+  selections: {'qr_am': 1, 'steam_am': 14}, tf_pb_bsp 33
+
+== 2026-10-10 (win): books from s3://ashcroft/betfair_live/2026-10-10/
+  401,990 book rows, 1,701 catalogue rows, 1,881 ledger rows, 0 prices
+  51 GB/IE WIN markets; 0 prices matched to them
+  price files: 528 runners, 528 matched to the exchange's markets
+  settled books for 51 of 51 markets
+  win: 15 selections matched to markets (of 15), 7 the live trader's, 15 ledger rows
+
+== 2026-10-10 (place): books from s3://ashcroft/betfair_live/2026-10-10/
+  170,774 book rows, 1,131 catalogue rows, 0 ledger rows, 0 prices
+  50 GB/IE PLACE markets; 0 prices matched to them
+  price files: 525 runners, 525 matched to the exchange's markets
+  settled books for 50 of 50 markets
+  place: 15 selections matched to markets (of 15), 7 the live trader's, 15 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 1, 'bets': 0, 'skipped_live': 0, 'no_book': 0, 'staked': 0.0, 'wanted': 1.35, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 1, 'bets': 1, 'skipped_live': 0, 'no_book': 0, 'staked': 56.47, 'wanted': 73.53, 'wins': 0, 'expected': 0.4237, 'pnl_2pc': -56.47, 'pnl_5pc': -56.47, 'wap_gap_median': 1.36}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 14, 'bets': 6, 'skipped_live': 7, 'no_book': 0, 'staked': 125.92, 'wanted': 153.75, 'wins': 2, 'expected': 1.1974, 'pnl_2pc': 139.62, 'pnl_5pc': 133.68, 'wap_gap_median': -0.0769}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 14, 'bets': 7, 'skipped_live': 7, 'no_book': 0, 'staked': 412.81, 'wanted': 946.69, 'wins': 3, 'expected': 4.0753, 'pnl_2pc': -118.22, 'pnl_5pc': -119.98, 'wap_gap_median': -0.3554}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 31, 'bets': 31, 'skipped_live': 0, 'no_book': 0, 'staked': 951.84, 'wanted': 951.84, 'wins': 7, 'expected': 5.6605, 'pnl_2pc': 187.82, 'pnl_5pc': 175.59, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 28, 'bets': 28, 'skipped_live': 0, 'no_book': 0, 'staked': 2234.3, 'wanted': 2234.3, 'wins': 8, 'expected': 10.4087, 'pnl_2pc': -450.43, 'pnl_5pc': -462.26, 'wap_gap_median': None}
+  selections: {'qr_am': 3, 'steam_am': 7}, tf_pb_bsp 24
+
+== 2026-10-11 (win): books from s3://ashcroft/betfair_live/2026-10-11/
+  218,037 book rows, 954 catalogue rows, 1,688 ledger rows, 0 prices
+  30 GB/IE WIN markets; 0 prices matched to them
+  price files: 297 runners, 297 matched to the exchange's markets
+  settled books for 30 of 30 markets
+  win: 10 selections matched to markets (of 10), 5 the live trader's, 10 ledger rows
+
+== 2026-10-11 (place): books from s3://ashcroft/betfair_live/2026-10-11/
+  90,240 book rows, 635 catalogue rows, 0 ledger rows, 0 prices
+  30 GB/IE PLACE markets; 0 prices matched to them
+  price files: 297 runners, 297 matched to the exchange's markets
+  settled books for 30 of 30 markets
+  place: 10 selections matched to markets (of 10), 5 the live trader's, 10 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 3, 'bets': 1, 'skipped_live': 1, 'no_book': 0, 'staked': 21.23, 'wanted': 29.49, 'wins': 0, 'expected': 0.2272, 'pnl_2pc': -21.23, 'pnl_5pc': -21.23, 'wap_gap_median': -0.089}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 3, 'bets': 2, 'skipped_live': 1, 'no_book': 0, 'staked': 49.21, 'wanted': 223.47, 'wins': 0, 'expected': 1.0554, 'pnl_2pc': -49.21, 'pnl_5pc': -49.21, 'wap_gap_median': -0.4177}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 7, 'bets': 2, 'skipped_live': 5, 'no_book': 0, 'staked': 28.17, 'wanted': 28.5, 'wins': 0, 'expected': 0.2319, 'pnl_2pc': -28.17, 'pnl_5pc': -28.17, 'wap_gap_median': -0.0082}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 7, 'bets': 2, 'skipped_live': 5, 'no_book': 0, 'staked': 33.2, 'wanted': 153.61, 'wins': 0, 'expected': 0.7714, 'pnl_2pc': -33.2, 'pnl_5pc': -33.2, 'wap_gap_median': -0.1963}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 24, 'bets': 24, 'skipped_live': 0, 'no_book': 0, 'staked': 453.31, 'wanted': 453.31, 'wins': 4, 'expected': 2.9106, 'pnl_2pc': 153.45, 'pnl_5pc': 144.07, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 14, 'bets': 14, 'skipped_live': 0, 'no_book': 0, 'staked': 940.06, 'wanted': 940.06, 'wins': 4, 'expected': 5.04, 'pnl_2pc': -220.72, 'pnl_5pc': -225.68, 'wap_gap_median': None}
+  selections: {'qr_am': 9, 'steam_am': 10}, tf_pb_bsp 31
+
+== 2026-10-12 (win): books from s3://ashcroft/betfair_live/2026-10-12/
+  376,833 book rows, 1,484 catalogue rows, 1,703 ledger rows, 0 prices
+  47 GB/IE WIN markets; 0 prices matched to them
+  price files: 462 runners, 462 matched to the exchange's markets
+  settled books for 47 of 47 markets
+  win: 19 selections matched to markets (of 19), 1 the live trader's, 19 ledger rows
+
+== 2026-10-12 (place): books from s3://ashcroft/betfair_live/2026-10-12/
+  152,476 book rows, 989 catalogue rows, 0 ledger rows, 0 prices
+  47 GB/IE PLACE markets; 0 prices matched to them
+  price files: 462 runners, 462 matched to the exchange's markets
+  settled books for 47 of 47 markets
+  place: 19 selections matched to markets (of 19), 1 the live trader's, 19 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 9, 'bets': 6, 'skipped_live': 0, 'no_book': 0, 'staked': 129.14, 'wanted': 243.48, 'wins': 0, 'expected': 1.3536, 'pnl_2pc': -129.14, 'pnl_5pc': -129.14, 'wap_gap_median': -0.0159}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 9, 'bets': 9, 'skipped_live': 0, 'no_book': 0, 'staked': 199.67, 'wanted': 1213.41, 'wins': 3, 'expected': 5.2693, 'pnl_2pc': -101.51, 'pnl_5pc': -102.69, 'wap_gap_median': -0.3045}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 10, 'bets': 8, 'skipped_live': 1, 'no_book': 0, 'staked': 103.4, 'wanted': 127.04, 'wins': 3, 'expected': 1.0683, 'pnl_2pc': 233.99, 'pnl_5pc': 225.68, 'wap_gap_median': -0.0313}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 10, 'bets': 9, 'skipped_live': 1, 'no_book': 0, 'staked': 223.18, 'wanted': 643.51, 'wins': 5, 'expected': 3.3788, 'pnl_2pc': 118.97, 'pnl_5pc': 113.3, 'wap_gap_median': -0.0435}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 26, 'bets': 26, 'skipped_live': 0, 'no_book': 0, 'staked': 1082.34, 'wanted': 1082.34, 'wins': 8, 'expected': 6.346, 'pnl_2pc': 214.97, 'pnl_5pc': 201.79, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 15, 'bets': 15, 'skipped_live': 0, 'no_book': 0, 'staked': 1801.87, 'wanted': 1801.87, 'wins': 8, 'expected': 8.2332, 'pnl_2pc': -60.82, 'pnl_5pc': -68.43, 'wap_gap_median': None}
+  selections: {'qr_am': 3, 'steam_am': 17}, tf_pb_bsp 7
+
+== 2026-10-13 (win): books from s3://ashcroft/betfair_live/2026-10-13/
+  339,885 book rows, 1,127 catalogue rows, 2,023 ledger rows, 0 prices
+  38 GB/IE WIN markets; 0 prices matched to them
+  price files: 352 runners, 352 matched to the exchange's markets
+  settled books for 38 of 38 markets
+  win: 20 selections matched to markets (of 20), 8 the live trader's, 20 ledger rows
+
+== 2026-10-13 (place): books from s3://ashcroft/betfair_live/2026-10-13/
+  131,317 book rows, 750 catalogue rows, 0 ledger rows, 0 prices
+  37 GB/IE PLACE markets; 0 prices matched to them
+  price files: 349 runners, 349 matched to the exchange's markets
+  settled books for 37 of 37 markets
+  place: 20 selections matched to markets (of 20), 8 the live trader's, 20 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 3, 'bets': 1, 'skipped_live': 2, 'no_book': 0, 'staked': 6.42, 'wanted': 7.69, 'wins': 0, 'expected': 0.0728, 'pnl_2pc': -6.42, 'pnl_5pc': -6.42, 'wap_gap_median': -0.1089}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 3, 'bets': 1, 'skipped_live': 2, 'no_book': 0, 'staked': 37.83, 'wanted': 100.0, 'wins': 0, 'expected': 0.5, 'pnl_2pc': -37.83, 'pnl_5pc': -37.83, 'wap_gap_median': -0.661}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 17, 'bets': 9, 'skipped_live': 7, 'no_book': 0, 'staked': 86.36, 'wanted': 137.55, 'wins': 0, 'expected': 1.0753, 'pnl_2pc': -86.36, 'pnl_5pc': -86.36, 'wap_gap_median': -0.0916}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 17, 'bets': 10, 'skipped_live': 7, 'no_book': 0, 'staked': 328.12, 'wanted': 851.28, 'wins': 2, 'expected': 4.242, 'pnl_2pc': -150.86, 'pnl_5pc': -151.0, 'wap_gap_median': -0.3527}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 6, 'bets': 6, 'skipped_live': 0, 'no_book': 0, 'staked': 55.73, 'wanted': 55.73, 'wins': 1, 'expected': 0.411, 'pnl_2pc': 79.23, 'pnl_5pc': 75.58, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 3, 'bets': 3, 'skipped_live': 0, 'no_book': 0, 'staked': 201.29, 'wanted': 201.29, 'wins': 2, 'expected': 1.069, 'pnl_2pc': 183.25, 'pnl_5pc': 175.2, 'wap_gap_median': None}
+  selections: {'qr_am': 2, 'steam_am': 13}, tf_pb_bsp 16
+
+== 2026-10-14 (win): books from s3://ashcroft/betfair_live/2026-10-14/
+  317,077 book rows, 1,047 catalogue rows, 1,842 ledger rows, 0 prices
+  39 GB/IE WIN markets; 0 prices matched to them
+  price files: 320 runners, 320 matched to the exchange's markets
+  settled books for 39 of 39 markets
+  win: 15 selections matched to markets (of 15), 10 the live trader's, 15 ledger rows
+
+== 2026-10-14 (place): books from s3://ashcroft/betfair_live/2026-10-14/
+  121,520 book rows, 696 catalogue rows, 0 ledger rows, 0 prices
+  38 GB/IE PLACE markets; 0 prices matched to them
+  price files: 318 runners, 318 matched to the exchange's markets
+  settled books for 38 of 38 markets
+  place: 15 selections matched to markets (of 15), 10 the live trader's, 15 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 2, 'bets': 0, 'skipped_live': 2, 'no_book': 0, 'staked': 0.0, 'wanted': 0.0, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 2, 'bets': 0, 'skipped_live': 2, 'no_book': 0, 'staked': 0.0, 'wanted': 0.0, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 13, 'bets': 3, 'skipped_live': 10, 'no_book': 0, 'staked': 28.85, 'wanted': 28.85, 'wins': 2, 'expected': 0.2582, 'pnl_2pc': 188.25, 'pnl_5pc': 182.37, 'wap_gap_median': -0.0447}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 13, 'bets': 3, 'skipped_live': 10, 'no_book': 0, 'staked': 56.11, 'wanted': 174.17, 'wins': 2, 'expected': 0.9325, 'pnl_2pc': 46.67, 'pnl_5pc': 45.08, 'wap_gap_median': -0.0861}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 14, 'bets': 14, 'skipped_live': 0, 'no_book': 0, 'staked': 318.4, 'wanted': 318.4, 'wins': 3, 'expected': 2.1583, 'pnl_2pc': 183.11, 'pnl_5pc': 174.86, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 8, 'bets': 8, 'skipped_live': 0, 'no_book': 0, 'staked': 730.33, 'wanted': 730.33, 'wins': 2, 'expected': 3.8016, 'pnl_2pc': -389.43, 'pnl_5pc': -392.51, 'wap_gap_median': None}
+  selections: {'qr_am': 5, 'steam_am': 15}, tf_pb_bsp 21
+
+== 2026-10-15 (win): books from s3://ashcroft/betfair_live/2026-10-15/
+  388,138 book rows, 1,314 catalogue rows, 1,554 ledger rows, 0 prices
+  40 GB/IE WIN markets; 0 prices matched to them
+  price files: 406 runners, 406 matched to the exchange's markets
+  settled books for 40 of 40 markets
+  win: 20 selections matched to markets (of 20), 6 the live trader's, 20 ledger rows
+
+== 2026-10-15 (place): books from s3://ashcroft/betfair_live/2026-10-15/
+  150,823 book rows, 876 catalogue rows, 0 ledger rows, 0 prices
+  40 GB/IE PLACE markets; 0 prices matched to them
+  price files: 406 runners, 406 matched to the exchange's markets
+  settled books for 40 of 40 markets
+  place: 20 selections matched to markets (of 20), 6 the live trader's, 20 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 5, 'bets': 4, 'skipped_live': 1, 'no_book': 0, 'staked': 30.81, 'wanted': 31.36, 'wins': 0, 'expected': 0.2853, 'pnl_2pc': -30.81, 'pnl_5pc': -30.81, 'wap_gap_median': -0.2306}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 5, 'bets': 4, 'skipped_live': 1, 'no_book': 0, 'staked': 89.2, 'wanted': 596.97, 'wins': 1, 'expected': 2.638, 'pnl_2pc': -42.44, 'pnl_5pc': -42.95, 'wap_gap_median': -0.5773}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 15, 'bets': 10, 'skipped_live': 5, 'no_book': 0, 'staked': 102.64, 'wanted': 113.33, 'wins': 1, 'expected': 0.9922, 'pnl_2pc': 3.05, 'pnl_5pc': 0.16, 'wap_gap_median': -0.0974}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 15, 'bets': 10, 'skipped_live': 5, 'no_book': 0, 'staked': 253.35, 'wanted': 659.41, 'wins': 1, 'expected': 3.673, 'pnl_2pc': -141.49, 'pnl_5pc': -143.77, 'wap_gap_median': -0.1737}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 19, 'bets': 19, 'skipped_live': 0, 'no_book': 0, 'staked': 463.11, 'wanted': 463.11, 'wins': 2, 'expected': 3.4199, 'pnl_2pc': -210.34, 'pnl_5pc': -213.74, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 12, 'bets': 12, 'skipped_live': 0, 'no_book': 0, 'staked': 1209.13, 'wanted': 1209.13, 'wins': 3, 'expected': 5.3687, 'pnl_2pc': -624.61, 'pnl_5pc': -627.55, 'wap_gap_median': None}
+  selections: {'qr_am': 9, 'steam_am': 7}, tf_pb_bsp 24
+
+== 2026-10-16 (win): books from s3://ashcroft/betfair_live/2026-10-16/
+  399,937 book rows, 1,248 catalogue rows, 1,741 ledger rows, 0 prices
+  40 GB/IE WIN markets; 0 prices matched to them
+  price files: 391 runners, 391 matched to the exchange's markets
+  settled books for 40 of 40 markets
+  win: 16 selections matched to markets (of 16), 6 the live trader's, 16 ledger rows
+
+== 2026-10-16 (place): books from s3://ashcroft/betfair_live/2026-10-16/
+  151,851 book rows, 831 catalogue rows, 0 ledger rows, 0 prices
+  40 GB/IE PLACE markets; 0 prices matched to them
+  price files: 391 runners, 391 matched to the exchange's markets
+  settled books for 40 of 40 markets
+  place: 16 selections matched to markets (of 16), 6 the live trader's, 16 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 9, 'bets': 3, 'skipped_live': 5, 'no_book': 0, 'staked': 55.14, 'wanted': 70.7, 'wins': 1, 'expected': 0.4839, 'pnl_2pc': 81.82, 'pnl_5pc': 78.99, 'wap_gap_median': -0.0769}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 9, 'bets': 4, 'skipped_live': 5, 'no_book': 0, 'staked': 231.1, 'wanted': 665.54, 'wins': 2, 'expected': 2.8042, 'pnl_2pc': 10.43, 'pnl_5pc': 7.89, 'wap_gap_median': -0.5245}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 7, 'bets': 6, 'skipped_live': 1, 'no_book': 0, 'staked': 95.42, 'wanted': 137.95, 'wins': 2, 'expected': 1.0281, 'pnl_2pc': 48.65, 'pnl_5pc': 44.8, 'wap_gap_median': -0.0562}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 7, 'bets': 6, 'skipped_live': 1, 'no_book': 0, 'staked': 205.86, 'wanted': 724.96, 'wins': 4, 'expected': 3.1822, 'pnl_2pc': 29.34, 'pnl_5pc': 26.57, 'wap_gap_median': -0.1421}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 19, 'bets': 19, 'skipped_live': 0, 'no_book': 0, 'staked': 532.56, 'wanted': 532.56, 'wins': 4, 'expected': 3.6711, 'pnl_2pc': -11.84, 'pnl_5pc': -23.79, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 14, 'bets': 14, 'skipped_live': 0, 'no_book': 0, 'staked': 1384.26, 'wanted': 1384.26, 'wins': 8, 'expected': 6.2812, 'pnl_2pc': 277.65, 'pnl_5pc': 263.81, 'wap_gap_median': None}
+  selections: {'qr_am': 2, 'steam_am': 15}, tf_pb_bsp 31
+
+== 2026-10-17 (win): books from s3://ashcroft/betfair_live/2026-10-17/
+  493,850 book rows, 1,731 catalogue rows, 1,572 ledger rows, 0 prices
+  60 GB/IE WIN markets; 0 prices matched to them
+  price files: 541 runners, 541 matched to the exchange's markets
+  settled books for 60 of 60 markets
+  win: 17 selections matched to markets (of 17), 6 the live trader's, 17 ledger rows
+
+== 2026-10-17 (place): books from s3://ashcroft/betfair_live/2026-10-17/
+  193,404 book rows, 1,152 catalogue rows, 0 ledger rows, 0 prices
+  60 GB/IE PLACE markets; 0 prices matched to them
+  price files: 541 runners, 541 matched to the exchange's markets
+  settled books for 60 of 60 markets
+  place: 17 selections matched to markets (of 17), 6 the live trader's, 17 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 2, 'bets': 1, 'skipped_live': 1, 'no_book': 0, 'staked': 10.86, 'wanted': 37.04, 'wins': 0, 'expected': 0.2742, 'pnl_2pc': -10.86, 'pnl_5pc': -10.86, 'wap_gap_median': 0.0546}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 2, 'bets': 1, 'skipped_live': 1, 'no_book': 0, 'staked': 65.94, 'wanted': 200.0, 'wins': 1, 'expected': 0.7234, 'pnl_2pc': 24.71, 'pnl_5pc': 23.95, 'wap_gap_median': -0.0202}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 15, 'bets': 8, 'skipped_live': 6, 'no_book': 0, 'staked': 56.2, 'wanted': 66.69, 'wins': 1, 'expected': 0.6035, 'pnl_2pc': 49.28, 'pnl_5pc': 46.61, 'wap_gap_median': -0.0466}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 15, 'bets': 9, 'skipped_live': 6, 'no_book': 0, 'staked': 332.14, 'wanted': 831.8, 'wins': 3, 'expected': 3.8507, 'pnl_2pc': -43.13, 'pnl_5pc': -44.67, 'wap_gap_median': -0.377}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 29, 'bets': 29, 'skipped_live': 0, 'no_book': 0, 'staked': 674.92, 'wanted': 674.92, 'wins': 5, 'expected': 4.5114, 'pnl_2pc': 20.59, 'pnl_5pc': 8.25, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 17, 'bets': 17, 'skipped_live': 0, 'no_book': 0, 'staked': 1169.61, 'wanted': 1169.61, 'wins': 5, 'expected': 6.3362, 'pnl_2pc': -204.7, 'pnl_5pc': -214.58, 'wap_gap_median': None}
+  selections: {'qr_am': 2, 'steam_am': 13}, tf_pb_bsp 5
+
+== 2026-10-18 (win): books from s3://ashcroft/betfair_live/2026-10-18/
+  205,289 book rows, 716 catalogue rows, 1,062 ledger rows, 0 prices
+  21 GB/IE WIN markets; 0 prices matched to them
+  price files: 201 runners, 201 matched to the exchange's markets
+  settled books for 21 of 21 markets
+  win: 15 selections matched to markets (of 15), 3 the live trader's, 15 ledger rows
+
+== 2026-10-18 (place): books from s3://ashcroft/betfair_live/2026-10-18/
+  79,429 book rows, 476 catalogue rows, 0 ledger rows, 0 prices
+  20 GB/IE PLACE markets; 0 prices matched to them
+  price files: 198 runners, 198 matched to the exchange's markets
+  settled books for 20 of 20 markets
+  place: 15 selections matched to markets (of 15), 3 the live trader's, 15 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 2, 'bets': 0, 'skipped_live': 1, 'no_book': 0, 'staked': 0.0, 'wanted': 5.26, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 2, 'bets': 1, 'skipped_live': 1, 'no_book': 0, 'staked': 8.0, 'wanted': 200.0, 'wins': 0, 'expected': 0.9804, 'pnl_2pc': -8.0, 'pnl_5pc': -8.0, 'wap_gap_median': -0.5487}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 13, 'bets': 10, 'skipped_live': 3, 'no_book': 0, 'staked': 80.56, 'wanted': 101.36, 'wins': 0, 'expected': 0.8602, 'pnl_2pc': -80.56, 'pnl_5pc': -80.56, 'wap_gap_median': 0.0578}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 13, 'bets': 10, 'skipped_live': 3, 'no_book': 0, 'staked': 352.35, 'wanted': 1010.04, 'wins': 3, 'expected': 4.7936, 'pnl_2pc': -99.03, 'pnl_5pc': -101.36, 'wap_gap_median': -0.3183}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 5, 'bets': 5, 'skipped_live': 0, 'no_book': 0, 'staked': 39.29, 'wanted': 39.29, 'wins': 0, 'expected': 0.3172, 'pnl_2pc': -39.29, 'pnl_5pc': -39.29, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 3, 'bets': 3, 'skipped_live': 0, 'no_book': 0, 'staked': 161.67, 'wanted': 161.67, 'wins': 2, 'expected': 0.7507, 'pnl_2pc': 271.9, 'pnl_5pc': 263.58, 'wap_gap_median': None}
+  selections: {'qr_am': 3, 'steam_am': 15}, tf_pb_bsp 37
+
+== 2026-10-19 (win): books from s3://ashcroft/betfair_live/2026-10-19/
+  459,852 book rows, 1,495 catalogue rows, 2,088 ledger rows, 0 prices
+  47 GB/IE WIN markets; 0 prices matched to them
+  price files: 472 runners, 472 matched to the exchange's markets
+  settled books for 47 of 47 markets
+  win: 18 selections matched to markets (of 18), 6 the live trader's, 18 ledger rows
+
+== 2026-10-19 (place): books from s3://ashcroft/betfair_live/2026-10-19/
+  177,692 book rows, 996 catalogue rows, 0 ledger rows, 0 prices
+  47 GB/IE PLACE markets; 0 prices matched to them
+  price files: 472 runners, 472 matched to the exchange's markets
+  settled books for 47 of 47 markets
+  place: 18 selections matched to markets (of 18), 6 the live trader's, 18 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 3, 'bets': 3, 'skipped_live': 0, 'no_book': 0, 'staked': 28.99, 'wanted': 51.98, 'wins': 2, 'expected': 0.4202, 'pnl_2pc': 95.11, 'pnl_5pc': 92.05, 'wap_gap_median': -0.2348}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 3, 'bets': 3, 'skipped_live': 0, 'no_book': 0, 'staked': 170.87, 'wanted': 466.67, 'wins': 2, 'expected': 2.0972, 'pnl_2pc': 15.66, 'pnl_5pc': 14.16, 'wap_gap_median': -0.709}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 15, 'bets': 9, 'skipped_live': 6, 'no_book': 0, 'staked': 93.18, 'wanted': 144.75, 'wins': 3, 'expected': 1.2214, 'pnl_2pc': 180.59, 'pnl_5pc': 173.27, 'wap_gap_median': -0.0717}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 15, 'bets': 9, 'skipped_live': 6, 'no_book': 0, 'staked': 434.59, 'wanted': 727.87, 'wins': 5, 'expected': 4.0395, 'pnl_2pc': 31.01, 'pnl_5pc': 26.63, 'wap_gap_median': -0.2902}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 28, 'bets': 28, 'skipped_live': 0, 'no_book': 0, 'staked': 881.12, 'wanted': 881.12, 'wins': 4, 'expected': 5.6954, 'pnl_2pc': -239.74, 'pnl_5pc': -251.53, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 13, 'bets': 13, 'skipped_live': 0, 'no_book': 0, 'staked': 1565.53, 'wanted': 1565.53, 'wins': 7, 'expected': 7.3583, 'pnl_2pc': -45.67, 'pnl_5pc': -56.87, 'wap_gap_median': None}
+  selections: {'qr_am': 11, 'steam_am': 19}, tf_pb_bsp 20
+
+== 2026-10-20 (win): books from s3://ashcroft/betfair_live/2026-10-20/
+  292,457 book rows, 958 catalogue rows, 1,700 ledger rows, 0 prices
+  30 GB/IE WIN markets; 0 prices matched to them
+  price files: 305 runners, 305 matched to the exchange's markets
+  settled books for 30 of 30 markets
+  win: 30 selections matched to markets (of 30), 10 the live trader's, 30 ledger rows
+
+== 2026-10-20 (place): books from s3://ashcroft/betfair_live/2026-10-20/
+  112,006 book rows, 636 catalogue rows, 0 ledger rows, 0 prices
+  28 GB/IE PLACE markets; 0 prices matched to them
+  price files: 299 runners, 299 matched to the exchange's markets
+  settled books for 28 of 28 markets
+  place: 30 selections matched to markets (of 30), 10 the live trader's, 30 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 11, 'bets': 4, 'skipped_live': 6, 'no_book': 0, 'staked': 95.45, 'wanted': 114.02, 'wins': 3, 'expected': 0.8584, 'pnl_2pc': 227.16, 'pnl_5pc': 219.4, 'wap_gap_median': -0.0498}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 11, 'bets': 5, 'skipped_live': 6, 'no_book': 0, 'staked': 355.52, 'wanted': 815.95, 'wins': 4, 'expected': 3.5495, 'pnl_2pc': -103.46, 'pnl_5pc': -106.42, 'wap_gap_median': -0.2107}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 19, 'bets': 8, 'skipped_live': 9, 'no_book': 0, 'staked': 93.67, 'wanted': 127.04, 'wins': 2, 'expected': 0.9949, 'pnl_2pc': 69.69, 'pnl_5pc': 65.79, 'wap_gap_median': -0.02}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 19, 'bets': 10, 'skipped_live': 9, 'no_book': 0, 'staked': 242.76, 'wanted': 758.2, 'wins': 5, 'expected': 4.0183, 'pnl_2pc': 3.76, 'pnl_5pc': -1.23, 'wap_gap_median': -0.1333}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 19, 'bets': 19, 'skipped_live': 0, 'no_book': 0, 'staked': 359.02, 'wanted': 359.02, 'wins': 2, 'expected': 2.3192, 'pnl_2pc': -92.76, 'pnl_5pc': -96.63, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 13, 'bets': 13, 'skipped_live': 0, 'no_book': 0, 'staked': 1216.74, 'wanted': 1216.74, 'wins': 7, 'expected': 5.5532, 'pnl_2pc': 171.04, 'pnl_5pc': 159.21, 'wap_gap_median': None}
+  selections: {'qr_am': 4, 'steam_am': 7}, tf_pb_bsp 22
+
+== 2026-10-21 (win): books from s3://ashcroft/betfair_live/2026-10-21/
+  339,871 book rows, 1,137 catalogue rows, 1,498 ledger rows, 0 prices
+  37 GB/IE WIN markets; 0 prices matched to them
+  price files: 352 runners, 352 matched to the exchange's markets
+  settled books for 37 of 37 markets
+  win: 11 selections matched to markets (of 11), 1 the live trader's, 11 ledger rows
+
+== 2026-10-21 (place): books from s3://ashcroft/betfair_live/2026-10-21/
+  131,207 book rows, 757 catalogue rows, 0 ledger rows, 0 prices
+  37 GB/IE PLACE markets; 0 prices matched to them
+  price files: 352 runners, 352 matched to the exchange's markets
+  settled books for 37 of 37 markets
+  place: 11 selections matched to markets (of 11), 1 the live trader's, 11 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 4, 'bets': 1, 'skipped_live': 0, 'no_book': 0, 'staked': 2.56, 'wanted': 56.74, 'wins': 0, 'expected': 0.026, 'pnl_2pc': -2.56, 'pnl_5pc': -2.56, 'wap_gap_median': 0.1039}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 4, 'bets': 4, 'skipped_live': 0, 'no_book': 0, 'staked': 316.1, 'wanted': 533.34, 'wins': 1, 'expected': 2.571, 'pnl_2pc': -262.14, 'pnl_5pc': -262.48, 'wap_gap_median': -0.8451}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 7, 'bets': 6, 'skipped_live': 1, 'no_book': 0, 'staked': 98.73, 'wanted': 178.93, 'wins': 2, 'expected': 1.2981, 'pnl_2pc': 69.41, 'pnl_5pc': 65.61, 'wap_gap_median': -0.0444}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 7, 'bets': 6, 'skipped_live': 1, 'no_book': 0, 'staked': 300.01, 'wanted': 843.01, 'wins': 4, 'expected': 3.6827, 'pnl_2pc': -91.52, 'pnl_5pc': -93.56, 'wap_gap_median': -0.1098}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 18, 'bets': 18, 'skipped_live': 0, 'no_book': 0, 'staked': 414.83, 'wanted': 414.83, 'wins': 2, 'expected': 2.8427, 'pnl_2pc': -127.05, 'pnl_5pc': -133.93, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 12, 'bets': 12, 'skipped_live': 0, 'no_book': 0, 'staked': 1296.53, 'wanted': 1296.53, 'wins': 7, 'expected': 5.5472, 'pnl_2pc': 381.71, 'pnl_5pc': 365.93, 'wap_gap_median': None}
+  selections: {'qr_am': 2, 'steam_am': 17}, tf_pb_bsp 5
+
+== 2026-10-22 (win): books from s3://ashcroft/betfair_live/2026-10-22/
+  378,193 book rows, 1,300 catalogue rows, 1,837 ledger rows, 0 prices
+  40 GB/IE WIN markets; 0 prices matched to them
+  price files: 390 runners, 390 matched to the exchange's markets
+  settled books for 40 of 40 markets
+  win: 19 selections matched to markets (of 19), 1 the live trader's, 19 ledger rows
+
+== 2026-10-22 (place): books from s3://ashcroft/betfair_live/2026-10-22/
+  147,160 book rows, 866 catalogue rows, 0 ledger rows, 0 prices
+  40 GB/IE PLACE markets; 0 prices matched to them
+  price files: 390 runners, 390 matched to the exchange's markets
+  settled books for 40 of 40 markets
+  place: 19 selections matched to markets (of 19), 1 the live trader's, 19 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 2, 'bets': 2, 'skipped_live': 0, 'no_book': 0, 'staked': 15.44, 'wanted': 16.96, 'wins': 0, 'expected': 0.1542, 'pnl_2pc': -15.44, 'pnl_5pc': -15.44, 'wap_gap_median': 0.0953}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 2, 'bets': 2, 'skipped_live': 0, 'no_book': 0, 'staked': 46.05, 'wanted': 172.47, 'wins': 1, 'expected': 0.926, 'pnl_2pc': 11.89, 'pnl_5pc': 11.03, 'wap_gap_median': -0.2683}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 17, 'bets': 16, 'skipped_live': 1, 'no_book': 0, 'staked': 156.94, 'wanted': 199.55, 'wins': 3, 'expected': 1.7146, 'pnl_2pc': 80.59, 'pnl_5pc': 74.31, 'wap_gap_median': -0.0339}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 17, 'bets': 16, 'skipped_live': 1, 'no_book': 0, 'staked': 435.99, 'wanted': 1268.05, 'wins': 9, 'expected': 6.4192, 'pnl_2pc': 112.91, 'pnl_5pc': 106.02, 'wap_gap_median': -0.1108}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 5, 'bets': 5, 'skipped_live': 0, 'no_book': 0, 'staked': 43.99, 'wanted': 43.99, 'wins': 1, 'expected': 0.4966, 'pnl_2pc': 58.66, 'pnl_5pc': 56.23, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 5, 'bets': 5, 'skipped_live': 0, 'no_book': 0, 'staked': 241.46, 'wanted': 241.46, 'wins': 2, 'expected': 1.5627, 'pnl_2pc': 117.58, 'pnl_5pc': 110.31, 'wap_gap_median': None}
+  selections: {'qr_am': 3, 'steam_am': 18}, tf_pb_bsp 24
+
+== 2026-10-23 (win): books from s3://ashcroft/betfair_live/2026-10-23/
+  320,680 book rows, 1,373 catalogue rows, 1,664 ledger rows, 0 prices
+  39 GB/IE WIN markets; 0 prices matched to them
+  price files: 406 runners, 406 matched to the exchange's markets
+  settled books for 39 of 39 markets
+  win: 21 selections matched to markets (of 21), 7 the live trader's, 21 ledger rows
+
+== 2026-10-23 (place): books from s3://ashcroft/betfair_live/2026-10-23/
+  131,601 book rows, 914 catalogue rows, 0 ledger rows, 0 prices
+  39 GB/IE PLACE markets; 0 prices matched to them
+  price files: 406 runners, 406 matched to the exchange's markets
+  settled books for 39 of 39 markets
+  place: 21 selections matched to markets (of 21), 7 the live trader's, 21 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 3, 'bets': 0, 'skipped_live': 1, 'no_book': 2, 'staked': 0.0, 'wanted': 0.0, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 3, 'bets': 0, 'skipped_live': 1, 'no_book': 2, 'staked': 0.0, 'wanted': 0.0, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 18, 'bets': 0, 'skipped_live': 7, 'no_book': 11, 'staked': 0.0, 'wanted': 0.0, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 18, 'bets': 0, 'skipped_live': 7, 'no_book': 11, 'staked': 0.0, 'wanted': 0.0, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 18, 'bets': 18, 'skipped_live': 0, 'no_book': 0, 'staked': 669.31, 'wanted': 669.31, 'wins': 2, 'expected': 4.5424, 'pnl_2pc': -380.61, 'pnl_5pc': -386.22, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 10, 'bets': 10, 'skipped_live': 0, 'no_book': 0, 'staked': 1320.77, 'wanted': 1320.77, 'wins': 5, 'expected': 5.9284, 'pnl_2pc': -218.74, 'pnl_5pc': -224.86, 'wap_gap_median': None}
+  selections: {'qr_am': 1, 'steam_am': 9}, tf_pb_bsp 21
+
+== 2026-10-24 (win): books from s3://ashcroft/betfair_live/2026-10-24/
+  276,340 book rows, 902 catalogue rows, 1,357 ledger rows, 0 prices
+  31 GB/IE WIN markets; 0 prices matched to them
+  price files: 277 runners, 277 matched to the exchange's markets
+  settled books for 31 of 31 markets
+  win: 10 selections matched to markets (of 10), 4 the live trader's, 10 ledger rows
+
+== 2026-10-24 (place): books from s3://ashcroft/betfair_live/2026-10-24/
+  105,709 book rows, 601 catalogue rows, 0 ledger rows, 0 prices
+  31 GB/IE PLACE markets; 0 prices matched to them
+  price files: 277 runners, 277 matched to the exchange's markets
+  settled books for 31 of 31 markets
+  place: 10 selections matched to markets (of 10), 4 the live trader's, 10 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 1, 'bets': 1, 'skipped_live': 0, 'no_book': 0, 'staked': 11.11, 'wanted': 11.11, 'wins': 0, 'expected': 0.1004, 'pnl_2pc': -11.11, 'pnl_5pc': -11.11, 'wap_gap_median': -0.1106}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 1, 'bets': 1, 'skipped_live': 0, 'no_book': 0, 'staked': 28.93, 'wanted': 48.78, 'wins': 0, 'expected': 0.3333, 'pnl_2pc': -28.93, 'pnl_5pc': -28.93, 'wap_gap_median': -0.1643}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 9, 'bets': 5, 'skipped_live': 4, 'no_book': 0, 'staked': 94.91, 'wanted': 94.91, 'wins': 1, 'expected': 0.7827, 'pnl_2pc': 36.41, 'pnl_5pc': 33.41, 'wap_gap_median': -0.0545}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 9, 'bets': 5, 'skipped_live': 4, 'no_book': 0, 'staked': 204.47, 'wanted': 415.15, 'wins': 3, 'expected': 2.18, 'pnl_2pc': 113.16, 'pnl_5pc': 108.66, 'wap_gap_median': -0.1373}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 18, 'bets': 18, 'skipped_live': 0, 'no_book': 0, 'staked': 662.16, 'wanted': 662.16, 'wins': 3, 'expected': 3.6772, 'pnl_2pc': -143.77, 'pnl_5pc': -152.11, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 14, 'bets': 14, 'skipped_live': 0, 'no_book': 0, 'staked': 1540.53, 'wanted': 1540.53, 'wins': 9, 'expected': 6.7509, 'pnl_2pc': 246.12, 'pnl_5pc': 224.07, 'wap_gap_median': None}
+  selections: {'steam_am': 10}, tf_pb_bsp 0
+
+== 2026-10-25 (win): books from s3://ashcroft/betfair_live/2026-10-25/
+  209,347 book rows, 853 catalogue rows, 1,390 ledger rows, 0 prices
+  30 GB/IE WIN markets; 0 prices matched to them
+  price files: 192 runners, 192 matched to the exchange's markets
+  settled books for 23 of 30 markets
+  win: 10 selections matched to markets (of 10), 3 the live trader's, 10 ledger rows
+
+== 2026-10-25 (place): books from s3://ashcroft/betfair_live/2026-10-25/
+  75,424 book rows, 568 catalogue rows, 0 ledger rows, 0 prices
+  30 GB/IE PLACE markets; 0 prices matched to them
+  price files: 173 runners, 173 matched to the exchange's markets
+  settled books for 21 of 30 markets
+  place: 10 selections matched to markets (of 10), 3 the live trader's, 10 ledger rows
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 10, 'bets': 6, 'skipped_live': 3, 'no_book': 0, 'staked': 70.2, 'wanted': 79.04, 'wins': 1, 'expected': 0.676, 'pnl_2pc': 40.85, 'pnl_5pc': 38.62, 'wap_gap_median': -0.0117}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 10, 'bets': 7, 'skipped_live': 3, 'no_book': 0, 'staked': 173.38, 'wanted': 749.29, 'wins': 2, 'expected': 3.8821, 'pnl_2pc': -103.52, 'pnl_5pc': -103.63, 'wap_gap_median': -0.0584}
+  selections: {'qr_am': 3, 'steam_am': 9}, tf_pb_bsp 35
+
+== 2026-10-26 (win): books from s3://ashcroft/betfair_live/2026-10-26/
+  515,804 book rows, 1,789 catalogue rows, 1,765 ledger rows, 0 prices
+  54 GB/IE WIN markets; 0 prices matched to them
+  price files: 485 runners, 485 matched to the exchange's markets
+  settled books for 47 of 54 markets
+  win: 12 selections matched to markets (of 12), 2 the live trader's, 12 ledger rows
+
+== 2026-10-26 (place): books from s3://ashcroft/betfair_live/2026-10-26/
+  197,108 book rows, 1,191 catalogue rows, 0 ledger rows, 0 prices
+  54 GB/IE PLACE markets; 0 prices matched to them
+  price files: 485 runners, 485 matched to the exchange's markets
+  settled books for 47 of 54 markets
+  place: 12 selections matched to markets (of 12), 2 the live trader's, 12 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 3, 'bets': 3, 'skipped_live': 0, 'no_book': 0, 'staked': 60.01, 'wanted': 60.01, 'wins': 1, 'expected': 0.4723, 'pnl_2pc': 59.22, 'pnl_5pc': 56.24, 'wap_gap_median': -0.0742}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 3, 'bets': 3, 'skipped_live': 0, 'no_book': 0, 'staked': 77.27, 'wanted': 367.77, 'wins': 2, 'expected': 1.5884, 'pnl_2pc': 17.66, 'pnl_5pc': 17.12, 'wap_gap_median': -0.5532}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 9, 'bets': 6, 'skipped_live': 2, 'no_book': 0, 'staked': 153.88, 'wanted': 267.7, 'wins': 1, 'expected': 1.2964, 'pnl_2pc': -17.14, 'pnl_5pc': -18.53, 'wap_gap_median': -0.057}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 9, 'bets': 7, 'skipped_live': 2, 'no_book': 0, 'staked': 192.38, 'wanted': 578.5, 'wins': 3, 'expected': 3.137, 'pnl_2pc': 43.63, 'pnl_5pc': 40.81, 'wap_gap_median': -0.0449}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 31, 'bets': 31, 'skipped_live': 0, 'no_book': 0, 'staked': 834.2, 'wanted': 834.2, 'wins': 7, 'expected': 5.6634, 'pnl_2pc': 165.15, 'pnl_5pc': 147.81, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 19, 'bets': 19, 'skipped_live': 0, 'no_book': 0, 'staked': 1852.44, 'wanted': 1852.44, 'wins': 11, 'expected': 8.8854, 'pnl_2pc': 385.58, 'pnl_5pc': 355.08, 'wap_gap_median': None}
+  selections: {'qr_am': 3, 'steam_am': 12}, tf_pb_bsp 7
+
+== 2026-10-27 (win): books from s3://ashcroft/betfair_live/2026-10-27/
+  297,690 book rows, 1,206 catalogue rows, 1,372 ledger rows, 0 prices
+  38 GB/IE WIN markets; 0 prices matched to them
+  price files: 278 runners, 278 matched to the exchange's markets
+  settled books for 30 of 38 markets
+  win: 9 selections matched to markets (of 15), 3 the live trader's, 9 ledger rows
+
+== 2026-10-27 (place): books from s3://ashcroft/betfair_live/2026-10-27/
+  116,186 book rows, 803 catalogue rows, 0 ledger rows, 0 prices
+  38 GB/IE PLACE markets; 0 prices matched to them
+  price files: 278 runners, 278 matched to the exchange's markets
+  settled books for 30 of 38 markets
+  place: 9 selections matched to markets (of 15), 3 the live trader's, 9 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 3, 'bets': 2, 'skipped_live': 1, 'no_book': 0, 'staked': 36.06, 'wanted': 44.07, 'wins': 1, 'expected': 0.3588, 'pnl_2pc': 4.42, 'pnl_5pc': 3.32, 'wap_gap_median': -0.0143}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 3, 'bets': 2, 'skipped_live': 1, 'no_book': 0, 'staked': 42.85, 'wanted': 251.02, 'wins': 1, 'expected': 1.1508, 'pnl_2pc': -5.32, 'pnl_5pc': -6.07, 'wap_gap_median': -0.1238}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 6, 'bets': 3, 'skipped_live': 3, 'no_book': 0, 'staked': 42.61, 'wanted': 43.17, 'wins': 0, 'expected': 0.3565, 'pnl_2pc': -42.61, 'pnl_5pc': -42.61, 'wap_gap_median': -0.024}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 6, 'bets': 3, 'skipped_live': 3, 'no_book': 0, 'staked': 67.65, 'wanted': 258.64, 'wins': 0, 'expected': 1.1741, 'pnl_2pc': -67.65, 'pnl_5pc': -67.65, 'wap_gap_median': -0.2284}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 5, 'bets': 5, 'skipped_live': 0, 'no_book': 0, 'staked': 160.03, 'wanted': 160.03, 'wins': 1, 'expected': 1.0527, 'pnl_2pc': 13.4, 'pnl_5pc': 11.33, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 5, 'bets': 5, 'skipped_live': 0, 'no_book': 0, 'staked': 660.68, 'wanted': 660.68, 'wins': 2, 'expected': 2.6513, 'pnl_2pc': -39.27, 'pnl_5pc': -43.62, 'wap_gap_median': None}
+  selections: {'qr_am': 4, 'steam_am': 13}, tf_pb_bsp 14
+
+== 2026-10-28 (win): books from s3://ashcroft/betfair_live/2026-10-28/
+  342,874 book rows, 1,124 catalogue rows, 1,961 ledger rows, 0 prices
+  38 GB/IE WIN markets; 0 prices matched to them
+  price files: 345 runners, 345 matched to the exchange's markets
+  settled books for 38 of 38 markets
+  win: 17 selections matched to markets (of 17), 9 the live trader's, 17 ledger rows
+
+== 2026-10-28 (place): books from s3://ashcroft/betfair_live/2026-10-28/
+  138,202 book rows, 748 catalogue rows, 0 ledger rows, 0 prices
+  38 GB/IE PLACE markets; 0 prices matched to them
+  price files: 345 runners, 345 matched to the exchange's markets
+  settled books for 38 of 38 markets
+  place: 17 selections matched to markets (of 17), 9 the live trader's, 17 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 4, 'bets': 1, 'skipped_live': 3, 'no_book': 0, 'staked': 7.14, 'wanted': 7.14, 'wins': 0, 'expected': 0.0667, 'pnl_2pc': -7.14, 'pnl_5pc': -7.14, 'wap_gap_median': -0.0558}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 4, 'bets': 1, 'skipped_live': 3, 'no_book': 0, 'staked': 10.68, 'wanted': 29.41, 'wins': 0, 'expected': 0.2273, 'pnl_2pc': -10.68, 'pnl_5pc': -10.68, 'wap_gap_median': -0.0435}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 13, 'bets': 4, 'skipped_live': 9, 'no_book': 0, 'staked': 73.38, 'wanted': 77.85, 'wins': 0, 'expected': 0.6449, 'pnl_2pc': -73.38, 'pnl_5pc': -73.38, 'wap_gap_median': -0.0428}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 13, 'bets': 4, 'skipped_live': 9, 'no_book': 0, 'staked': 90.47, 'wanted': 272.46, 'wins': 0, 'expected': 1.5902, 'pnl_2pc': -90.47, 'pnl_5pc': -90.47, 'wap_gap_median': -0.0991}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 12, 'bets': 12, 'skipped_live': 0, 'no_book': 0, 'staked': 456.14, 'wanted': 456.14, 'wins': 3, 'expected': 3.1695, 'pnl_2pc': -6.05, 'pnl_5pc': -15.32, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 8, 'bets': 8, 'skipped_live': 0, 'no_book': 0, 'staked': 889.73, 'wanted': 889.73, 'wins': 4, 'expected': 3.9613, 'pnl_2pc': -126.09, 'pnl_5pc': -133.64, 'wap_gap_median': None}
+  selections: {'qr_am': 2, 'steam_am': 11}, tf_pb_bsp 12
+
+== 2026-10-29 (win): books from s3://ashcroft/betfair_live/2026-10-29/
+  368,780 book rows, 1,241 catalogue rows, 1,825 ledger rows, 0 prices
+  38 GB/IE WIN markets; 0 prices matched to them
+  price files: 387 runners, 387 matched to the exchange's markets
+  settled books for 38 of 38 markets
+  win: 13 selections matched to markets (of 13), 10 the live trader's, 13 ledger rows
+
+== 2026-10-29 (place): books from s3://ashcroft/betfair_live/2026-10-29/
+  149,394 book rows, 826 catalogue rows, 0 ledger rows, 0 prices
+  38 GB/IE PLACE markets; 0 prices matched to them
+  price files: 387 runners, 387 matched to the exchange's markets
+  settled books for 38 of 38 markets
+  place: 13 selections matched to markets (of 13), 10 the live trader's, 13 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 2, 'bets': 0, 'skipped_live': 2, 'no_book': 0, 'staked': 0.0, 'wanted': 0.0, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 2, 'bets': 0, 'skipped_live': 2, 'no_book': 0, 'staked': 0.0, 'wanted': 0.0, 'wins': 0, 'expected': 0.0, 'pnl_2pc': 0.0, 'pnl_5pc': 0.0, 'wap_gap_median': None}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 11, 'bets': 2, 'skipped_live': 9, 'no_book': 0, 'staked': 32.41, 'wanted': 32.41, 'wins': 1, 'expected': 0.2783, 'pnl_2pc': 84.12, 'pnl_5pc': 81.12, 'wap_gap_median': -0.0957}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 11, 'bets': 2, 'skipped_live': 9, 'no_book': 0, 'staked': 54.39, 'wanted': 129.58, 'wins': 2, 'expected': 0.7941, 'pnl_2pc': 82.58, 'pnl_5pc': 80.05, 'wap_gap_median': -0.0842}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 8, 'bets': 8, 'skipped_live': 0, 'no_book': 0, 'staked': 310.19, 'wanted': 310.19, 'wins': 3, 'expected': 1.9523, 'pnl_2pc': 163.47, 'pnl_5pc': 156.21, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 3, 'bets': 3, 'skipped_live': 0, 'no_book': 0, 'staked': 513.4, 'wanted': 513.4, 'wins': 3, 'expected': 2.1848, 'pnl_2pc': 189.32, 'pnl_5pc': 183.53, 'wap_gap_median': None}
+  selections: {'qr_am': 6, 'steam_am': 11}, tf_pb_bsp 16
+
+== 2026-10-30 (win): books from s3://ashcroft/betfair_live/2026-10-30/
+  451,407 book rows, 1,462 catalogue rows, 1,740 ledger rows, 0 prices
+  45 GB/IE WIN markets; 0 prices matched to them
+  price files: 437 runners, 437 matched to the exchange's markets
+  settled books for 45 of 45 markets
+  win: 17 selections matched to markets (of 17), 7 the live trader's, 17 ledger rows
+
+== 2026-10-30 (place): books from s3://ashcroft/betfair_live/2026-10-30/
+  180,241 book rows, 972 catalogue rows, 0 ledger rows, 0 prices
+  43 GB/IE PLACE markets; 0 prices matched to them
+  price files: 432 runners, 432 matched to the exchange's markets
+  settled books for 43 of 43 markets
+  place: 17 selections matched to markets (of 17), 7 the live trader's, 17 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 6, 'bets': 4, 'skipped_live': 2, 'no_book': 0, 'staked': 37.9, 'wanted': 51.51, 'wins': 0, 'expected': 0.4518, 'pnl_2pc': -37.9, 'pnl_5pc': -37.9, 'wap_gap_median': 0.0032}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 6, 'bets': 4, 'skipped_live': 2, 'no_book': 0, 'staked': 108.33, 'wanted': 377.91, 'wins': 1, 'expected': 1.7805, 'pnl_2pc': -47.27, 'pnl_5pc': -47.8, 'wap_gap_median': -0.2799}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 11, 'bets': 6, 'skipped_live': 5, 'no_book': 0, 'staked': 44.31, 'wanted': 70.72, 'wins': 0, 'expected': 0.6141, 'pnl_2pc': -44.31, 'pnl_5pc': -44.31, 'wap_gap_median': 0.0389}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 11, 'bets': 6, 'skipped_live': 5, 'no_book': 0, 'staked': 190.22, 'wanted': 625.98, 'wins': 1, 'expected': 2.787, 'pnl_2pc': -105.68, 'pnl_5pc': -106.85, 'wap_gap_median': -0.1497}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 13, 'bets': 13, 'skipped_live': 0, 'no_book': 0, 'staked': 371.6, 'wanted': 371.6, 'wins': 3, 'expected': 2.5064, 'pnl_2pc': 169.54, 'pnl_5pc': 159.44, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 9, 'bets': 9, 'skipped_live': 0, 'no_book': 0, 'staked': 894.81, 'wanted': 894.81, 'wins': 3, 'expected': 4.1277, 'pnl_2pc': -70.29, 'pnl_5pc': -78.17, 'wap_gap_median': None}
+  selections: {'qr_am': 2, 'steam_am': 17}, tf_pb_bsp 19
+
+== 2026-10-31 (win): books from s3://ashcroft/betfair_live/2026-10-31/
+  374,898 book rows, 1,372 catalogue rows, 1,775 ledger rows, 0 prices
+  46 GB/IE WIN markets; 0 prices matched to them
+  price files: 369 runners, 369 matched to the exchange's markets
+  settled books for 40 of 46 markets
+  win: 19 selections matched to markets (of 19), 7 the live trader's, 19 ledger rows
+
+== 2026-10-31 (place): books from s3://ashcroft/betfair_live/2026-10-31/
+  154,567 book rows, 914 catalogue rows, 0 ledger rows, 0 prices
+  46 GB/IE PLACE markets; 0 prices matched to them
+  price files: 369 runners, 369 matched to the exchange's markets
+  settled books for 40 of 46 markets
+  place: 19 selections matched to markets (of 19), 7 the live trader's, 19 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 2, 'bets': 1, 'skipped_live': 1, 'no_book': 0, 'staked': 9.52, 'wanted': 9.52, 'wins': 0, 'expected': 0.0904, 'pnl_2pc': -9.52, 'pnl_5pc': -9.52, 'wap_gap_median': 0.1166}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 2, 'bets': 1, 'skipped_live': 1, 'no_book': 0, 'staked': 32.62, 'wanted': 111.11, 'wins': 0, 'expected': 0.5263, 'pnl_2pc': -32.62, 'pnl_5pc': -32.62, 'wap_gap_median': -0.4412}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 17, 'bets': 10, 'skipped_live': 6, 'no_book': 0, 'staked': 190.99, 'wanted': 333.62, 'wins': 2, 'expected': 2.0332, 'pnl_2pc': 80.29, 'pnl_5pc': 74.91, 'wap_gap_median': -0.0561}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 17, 'bets': 11, 'skipped_live': 6, 'no_book': 0, 'staked': 217.85, 'wanted': 1029.25, 'wins': 2, 'expected': 5.0895, 'pnl_2pc': -126.68, 'pnl_5pc': -127.83, 'wap_gap_median': -0.0987}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 19, 'bets': 19, 'skipped_live': 0, 'no_book': 0, 'staked': 351.47, 'wanted': 351.47, 'wins': 1, 'expected': 2.1959, 'pnl_2pc': -240.57, 'pnl_5pc': -242.99, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 12, 'bets': 12, 'skipped_live': 0, 'no_book': 0, 'staked': 598.18, 'wanted': 598.18, 'wins': 3, 'expected': 3.1911, 'pnl_2pc': 44.45, 'pnl_5pc': 33.95, 'wap_gap_median': None}
+  selections: {'qr_am': 10, 'steam_am': 19}, tf_pb_bsp 14
+
+== 2026-11-01 (win): books from s3://ashcroft/betfair_live/2026-11-01/
+  313,056 book rows, 1,213 catalogue rows, 1,850 ledger rows, 0 prices
+  36 GB/IE WIN markets; 0 prices matched to them
+  price files: 383 runners, 383 matched to the exchange's markets
+  settled books for 36 of 36 markets
+  win: 29 selections matched to markets (of 29), 8 the live trader's, 29 ledger rows
+
+== 2026-11-01 (place): books from s3://ashcroft/betfair_live/2026-11-01/
+  132,328 book rows, 807 catalogue rows, 0 ledger rows, 0 prices
+  35 GB/IE PLACE markets; 0 prices matched to them
+  price files: 380 runners, 380 matched to the exchange's markets
+  settled books for 35 of 35 markets
+  place: 29 selections matched to markets (of 29), 8 the live trader's, 29 ledger rows
+   {'strategy': 'qr_am', 'market': 'win', 'selections': 10, 'bets': 5, 'skipped_live': 2, 'no_book': 0, 'staked': 36.46, 'wanted': 66.42, 'wins': 0, 'expected': 0.5204, 'pnl_2pc': -36.46, 'pnl_5pc': -36.46, 'wap_gap_median': -0.1321}
+   {'strategy': 'qr_am', 'market': 'place', 'selections': 10, 'bets': 8, 'skipped_live': 2, 'no_book': 0, 'staked': 183.68, 'wanted': 1196.75, 'wins': 2, 'expected': 5.3848, 'pnl_2pc': -89.48, 'pnl_5pc': -89.48, 'wap_gap_median': -0.5425}
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 19, 'bets': 9, 'skipped_live': 8, 'no_book': 0, 'staked': 103.63, 'wanted': 136.86, 'wins': 1, 'expected': 1.1207, 'pnl_2pc': 27.69, 'pnl_5pc': 24.69, 'wap_gap_median': -0.0952}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 19, 'bets': 11, 'skipped_live': 8, 'no_book': 0, 'staked': 296.88, 'wanted': 993.27, 'wins': 4, 'expected': 4.832, 'pnl_2pc': -106.13, 'pnl_5pc': -108.07, 'wap_gap_median': -0.2247}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 11, 'bets': 11, 'skipped_live': 0, 'no_book': 0, 'staked': 143.83, 'wanted': 143.83, 'wins': 2, 'expected': 1.2984, 'pnl_2pc': 82.14, 'pnl_5pc': 77.52, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 3, 'bets': 3, 'skipped_live': 0, 'no_book': 0, 'staked': 274.5, 'wanted': 274.5, 'wins': 1, 'expected': 1.3721, 'pnl_2pc': 14.17, 'pnl_5pc': 9.91, 'wap_gap_median': None}
+  selections: {'steam_am': 7}, tf_pb_bsp 8
+
+== 2026-11-02 (win): books from s3://ashcroft/betfair_live/2026-11-02/
+  287,540 book rows, 854 catalogue rows, 1,589 ledger rows, 0 prices
+  30 GB/IE WIN markets; 0 prices matched to them
+  price files: 269 runners, 269 matched to the exchange's markets
+  settled books for 30 of 30 markets
+  win: 7 selections matched to markets (of 7), 5 the live trader's, 7 ledger rows
+
+== 2026-11-02 (place): books from s3://ashcroft/betfair_live/2026-11-02/
+  112,960 book rows, 569 catalogue rows, 0 ledger rows, 0 prices
+  30 GB/IE PLACE markets; 0 prices matched to them
+  price files: 269 runners, 269 matched to the exchange's markets
+  settled books for 30 of 30 markets
+  place: 7 selections matched to markets (of 7), 5 the live trader's, 7 ledger rows
+   {'strategy': 'steam_am', 'market': 'win', 'selections': 7, 'bets': 2, 'skipped_live': 5, 'no_book': 0, 'staked': 29.23, 'wanted': 29.23, 'wins': 0, 'expected': 0.2526, 'pnl_2pc': -29.23, 'pnl_5pc': -29.23, 'wap_gap_median': 0.0031}
+   {'strategy': 'steam_am', 'market': 'place', 'selections': 7, 'bets': 2, 'skipped_live': 5, 'no_book': 0, 'staked': 29.76, 'wanted': 112.32, 'wins': 1, 'expected': 0.7184, 'pnl_2pc': 10.46, 'pnl_5pc': 9.69, 'wap_gap_median': 0.0613}
+   {'strategy': 'tf_pb_bsp', 'market': 'win', 'selections': 7, 'bets': 7, 'skipped_live': 0, 'no_book': 0, 'staked': 204.05, 'wanted': 204.05, 'wins': 1, 'expected': 1.2044, 'pnl_2pc': -71.72, 'pnl_5pc': -74.34, 'wap_gap_median': None}
+   {'strategy': 'tf_pb_bsp', 'market': 'place', 'selections': 3, 'bets': 3, 'skipped_live': 0, 'no_book': 0, 'staked': 297.23, 'wanted': 297.23, 'wins': 1, 'expected': 1.1647, 'pnl_2pc': -35.75, 'pnl_5pc': -37.63, 'wap_gap_median': None}
+  selections: {}, tf_pb_bsp 0
+
+== 2026-11-03 (win): books from s3://ashcroft/betfair_live/2026-11-03/
+  betfair_prices_raw/dwbfpricesukwin04112026.csv: NoSuchKey
+  betfair_prices_raw/dwbfpricesirewin04112026.csv: NoSuchKey
+  Betfair's win price file for 2026-11-03's racing is not in the archive yet: the day waits
+
+== 2026-11-03 (place): books from s3://ashcroft/betfair_live/2026-11-03/
+  betfair_prices_raw/dwbfpricesukplace04112026.csv: NoSuchKey
+  betfair_prices_raw/dwbfpricesireplace04112026.csv: NoSuchKey
+  Betfair's place price file for 2026-11-03's racing is not in the archive yet: the day waits
+  2026-11-03: failed
+Traceback (most recent call last):
+  File "/home/runner/work/ashcroft/ashcroft/research/paper/morning_edges.py", line 616, in main
+    day_job(d, booster, thr, write=not a.no_write, check=(i == 0))
+  File "/home/runner/work/ashcroft/ashcroft/research/paper/morning_edges.py", line 448, in day_job
+    bets = pd.concat([b for b in allbets if b is not None and len(b)], ignore_index=True) if allbets else pd.DataFrame()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.18/x64/lib/python3.11/site-packages/pandas/core/reshape/concat.py", line 426, in concat
+    objs, keys, ndims = _clean_keys_and_objs(objs, keys)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.18/x64/lib/python3.11/site-packages/pandas/core/reshape/concat.py", line 842, in _clean_keys_and_objs
+    raise ValueError("No objects to concatenate")
+ValueError: No objects to concatenate
+
+
+== the morning edges, BACKFILL (before 5 Nov: the fill check, shown apart)
+                  days  bets  skipped_live    staked    wanted  wins  expected  pnl_2pc  pnl_5pc  wap_gap    A/E  fill_ratio  roi_5pc%
+strategy  market                                                                                                                      
+qr_am     place     31    86            43   3078.35  10854.61    32    50.492 -1026.31 -1047.14   -0.362  0.634       0.284   -34.016
+          win       31    73            43    969.61   1473.07    14    10.515   365.57   333.31   -0.067  1.331       0.658    34.376
+steam_am  place     33   246           165   7936.07  22651.10    88   111.547 -1982.19 -2046.72   -0.150  0.789       0.350   -25.790
+          win       33   243           165   3183.46   4187.92    40    32.503   910.23   815.36   -0.045  1.231       0.760    25.612
+tf_pb_bsp place     33   395             0  36738.20  36738.20   174   170.589   543.09   157.85      NaN  1.020       1.000     0.430
+          win       33   606             0  16307.48  16307.48   105   105.165   -44.43  -304.76      NaN  0.998       1.000    -1.869

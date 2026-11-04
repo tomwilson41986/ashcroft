@@ -444,8 +444,12 @@ def day_job(day_iso: str, booster, thr, write: bool, check: bool = False) -> lis
                          for o, lb in zip(st["off"], st["label"])]
         other = bets[bets["event"] != "back"] if len(bets) else pd.DataFrame()
         allbets += [st, other]
+    if not waps:                                   # no book or no price file yet: the day waits, nothing is written
+        print("  the day waits (no books or no price file yet)")
+        return [{"day": day_iso, "note": "waiting for books or the price file"}]
     allbets.append(settle_tf(day_iso, tfs))
-    bets = pd.concat([b for b in allbets if b is not None and len(b)], ignore_index=True) if allbets else pd.DataFrame()
+    parts = [b for b in allbets if b is not None and len(b)]
+    bets = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
     if bets.empty:
         print("  no bets")
         return [{"day": day_iso, "note": "no bets (no books, no price file, or no selections)"}]
