@@ -1631,6 +1631,13 @@ was kept between the evening record and the trader's start; the overnight record
 keeps one every 10 minutes from 22:30 to 04:52 UTC, and predictions the night before (predict-evening.yml, 21:50 UTC,
 predictions_evening/) are ready for a session then. Nothing in the live rule changes (the owner decides).
 
+**No new bets after 10:00 UK** (the owner, 4 Nov: "stop betting after 10am, save this for other strategies"; from 5
+Nov; ledger `live-by-hour-1104`). The live record by the time of the bet (10 Oct-4 Nov): before 10:00 UK GBP88,110
+staked at +5.5% CLV after the non-runners' cuts and GBP+4,831; from 10:00 GBP14,518 at about 0% and GBP+155. The rule's
+window is now 05:15-10:00 UK (`trading/config_live.json` trade_until), each race still to 15 minutes before its off at
+the latest; the scheduled session stays on to 21:35 (`live-trade.yml`) to send again any lay at the SP that did not
+go through and to settle every race. The money not staked by 10:00 is left for other strategies.
+
 **Trading from 05:15 UK, and the upgrades kept off the trader** (the owner, 4 Nov: "fix the update issue. Trade from
 05:15."). The window opens at 05:15 UK from 5 Nov (`trading/config_live.json` trade_from, 06:15 since 12 Oct): in GMT
 the 05:17 UTC session trades from its start; in summer time its start is 06:17 UK, so nothing changes until the

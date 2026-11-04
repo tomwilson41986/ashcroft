@@ -777,21 +777,40 @@ def test_the_summary_scores_the_bets_entered_by_11_apart_from_the_later_ones():
 
 def test_the_owners_window_runs_to_15_minutes_before_each_off():
     """The owner, 1 Oct, and again 7 Oct ("Let's not stop. We should just trade if we think the price is right"): every
-    race until 15 minutes before its off, however late the day; from 05:15 UK since 5 Nov ("Trade from 05:15", the
-    timing study timing-1104; 06:15 from 12 Oct, "predictions at 04:00 UTC, trading at 05:15 UTC"; 08:00 until then)."""
-    assert LIVE.trade_from == "05:15" and LIVE.trade_until == "21:30" and LIVE.stop_before_off == 15
+    race until 15 minutes before its off; from 05:15 UK since 5 Nov ("Trade from 05:15", the timing study timing-1104;
+    06:15 from 12 Oct, "predictions at 04:00 UTC, trading at 05:15 UTC"; 08:00 until then); and from 5 Nov no new bet
+    after 10:00 UK (the owner, 4 Nov: "stop betting after 10am"; ledger live-by-hour-1104)."""
+    assert LIVE.trade_from == "05:15" and LIVE.trade_until == "10:00" and LIVE.stop_before_off == 15
     race = [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300]
-    off = datetime(2026, 10, 1, 17, 30, tzinfo=UTC)                 # 18:30 UK
+    off = datetime(2026, 10, 1, 9, 30, tzinfo=UTC)                  # 10:30 UK
     c = _Client()
     s, clock = _session(c, [_race("1.7", off, *race)])
-    clock.t = datetime(2026, 10, 1, 17, 14, tzinfo=UTC)             # 16 minutes before: still on
+    clock.t = datetime(2026, 10, 1, 8, 14, tzinfo=UTC)              # 09:14 UK, 76 minutes before: on
     s.step(clock())
     assert [o["side"] for o in _orders(c)] == ["BACK", "LAY"]
     c2 = _Client()
     s2, clock2 = _session(c2, [_race("1.7", off, *race)])
-    clock2.t = datetime(2026, 10, 1, 17, 15, tzinfo=UTC)            # 15 minutes before: no more bets
+    clock2.t = datetime(2026, 10, 1, 9, 15, tzinfo=UTC)             # 15 minutes before: no more bets
     s2.step(clock2())
     assert not _orders(c2)
+
+
+def test_no_new_bet_after_10_but_the_session_stays_to_lay_and_settle():
+    """The owner, 4 Nov 2026: "stop betting after 10am, save this for other strategies" (ledger live-by-hour-1104: from
+    10:00 UK the backs closed at about 0% after the non-runners' cuts). A back at 09:59 UK, none at 10:01; the scheduled
+    session still runs to 21:35 so a lay at the SP that did not go through is sent again and every race settles."""
+    from pathlib import Path
+    race = [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300]
+    off = datetime(2026, 11, 5, 14, 0, tzinfo=UTC)                   # GMT: UK time is UTC
+    for t, want in ((datetime(2026, 11, 5, 9, 59, tzinfo=UTC), ["BACK", "LAY"]),
+                    (datetime(2026, 11, 5, 10, 1, tzinfo=UTC), [])):
+        c = _Client()
+        s, clock = _session(c, [_race("1.7", off, *race)])
+        clock.t = t
+        s.step(clock())
+        assert [o["side"] for o in _orders(c)] == want, t
+    wf = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "live-trade.yml").read_text()
+    assert "UNTIL=21:35" in wf
 
 
 def test_the_owners_morning_from_12_oct_predictions_at_0400_and_trading_at_0515_utc():
