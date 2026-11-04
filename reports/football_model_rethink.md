@@ -188,3 +188,56 @@ the figures above exactly.
 **Updated candidate for pre-registration:** the stack on team features + `home_adv` + `team_news` + `form_short` +
 `x_short`; its strongest 10 forecasts a week outside the top five leagues (or 5, at higher return); back first where
 the chance is forecast up, lay first where down; greened at the close.
+
+## Expected-value rule, trade types and staking (4 Nov 2026)
+
+**Sources.** `reports/football_runs/ev_rule.json`, `staking.json` (`research/open_close/football_staking.py`) and
+`bf_historic_test.json` (`research/open_close/football_bf_historic_test.py`). Features: the candidate's plus short
+form. 2024/25 and 2025/26 on football-data's two Betfair snapshots, a tick off fair at each end; Aug-Sep 2026 on Betfair's own
+traded prices from the owner's Historic Data bundle.
+
+**The rule.** Every selection whose expected value after costs clears a margin, not a fixed count:
+- the forecast calibrated into an expected move on the season before;
+- the expected CLV at fair, less commission;
+- less the round trip's cost at the early book.
+
+| Expected value above | 2024/25 | 2025/26 | Aug-Sep 2026, Betfair prices: a tick worse each end / at the traded price |
+|---|---|---|---|
+| 0 | +0.68% (46 a window) | -0.19% (68) | -0.40% / +1.83% |
+| 1% | +1.25% (22) | +0.51% (34) | +0.06% / +2.36% |
+| **2%** | **+2.30% (12)** | **+0.99% (17)** | **+0.74% [-0.3] / +3.19% [+2.1]** (454 bets, 62% right way) |
+
+(Returns at level stakes, all leagues, all selections; windows are collection windows, two a week.)
+
+**Trade types** (expected value above 2%):
+- **Greened at the close beats held to the result** in every season. Held, the same selections lost 50-99% of the
+  bank in the simulations: holding swaps a small, steady CLV for the result's variance and pays commission on the
+  whole win.
+- **Home and away carry the edge.** The draw's forecast move (implied by home and away) barely predicts: slope
+  0.2-0.3, almost never selected. Over/under 2.5 adds trades at lower return (+0.4% / +0.2% greened in 2025/26).
+- **Lay-to-back is most of the trades** (about 80%) and pays in both seasons; back-to-lay too.
+
+**Staking** (expected value above 2%, greened; the bank simulated window by window, capital tied up from the
+collection moment to the close: a back's stake, a lay's liability):
+
+| Stakes | Capital at work | 2024/25 bank, worst drawdown | 2025/26 bank, worst drawdown |
+|---|---|---|---|
+| Level | 25% of the bank | x1.23, 1.8% | x1.18, 4.1% |
+| **In proportion to expected value** | **25%** | **x1.27, 1.9%** | **x1.23, 4.0%** |
+| Kelly under the capital limit | 25% | x1.42, 4.1% | x1.39, 8.2% |
+| In proportion to expected value | 100% | x2.16, 3.7% | x1.87, 5.1% |
+
+- **Stakes in proportion to expected value** give the best return for the risk: the highest window Sharpe and the
+  shallowest drawdowns in both seasons.
+- Kelly under the capital limit makes more on the capital but doubles the drawdowns: its risk estimates are noisy.
+- **The binding limit is capital, not the edge.** Every trade of a window is open at once, and a lay ties up its
+  liability, so a lay at a long price costs far more capital for the same expected value.
+
+**Execution decides it.** On Betfair's own prices the rule makes +3.19% at the traded price and +0.74% paying a tick
+each end: the spread is worth more than the edge. Resting orders at the traded price, not crossing, is the
+difference. That is the resting-order pre-registration's question, answered on the recorder's books.
+
+**Caveats:**
+- 2025/26 and Aug-Sep 2026 were read before, on other prices: development evidence.
+- The bank figures assume fills at the stakes they imply. The early-price liquidity in lower leagues is unknown
+  until the recorder runs.
