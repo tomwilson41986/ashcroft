@@ -103,6 +103,22 @@ def main() -> int:
         s2 = BeautifulSoup(r2.text, "lxml")
         dates2 = sorted(set(m.group(0) for m in DATE_RX.finditer(s2.get_text(" "))))[:5]
         print(f"   the first race's page: HTTP {r2.status_code}, {len(r2.text):,} bytes; dates {dates2}")
+        # the innermost tables with a runner's row (a row of 8 or more cells, one naming a weight like 9-7 or 11-2)
+        inner = [t for t in s2.find_all("table") if not t.find("table")]
+        for t in inner:
+            rows = t.find_all("tr", recursive=False) or t.find_all("tr")
+            cells = [[c.get_text(" ", strip=True)[:22] for c in r.find_all(["td", "th"], recursive=False)] for r in rows]
+            if sum(1 for c in cells if len(c) >= 8 and any(re.fullmatch(r"\d{1,2}-\d{1,2}", x) for x in c)) >= 2:
+                print(f"   a runner table: {len(rows)} rows; the first 6 rows' cells:")
+                for c in cells[:6]:
+                    print("     ", c[:32])
+                classes = sorted(set(" ".join(td.get("class") or []) for td in t.find_all("td")))[:20]
+                print("      cell classes:", classes)
+                break
+        for sp in s2.find_all(["span", "h1", "h2", "h3", "b"])[:400]:
+            tx = sp.get_text(" ", strip=True)
+            if re.search(r"Class|Going|runners|\d+m|Win:", tx) and len(tx) < 160:
+                print("   race line:", tx)
         n = 0
         for table in s2.find_all("table"):
             rows = table.find_all("tr")
