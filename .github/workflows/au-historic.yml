@@ -1,0 +1,76 @@
+name: Australian model gate A (Betfair Historic Data)
+
+# Gate A of the Australian model (au/README.md; the owner, 4 Nov 2026): the owner's Betfair Historic Data bundle
+# (BASIC, Horse Racing, every country, from Jan 2024; shared from Drive) streamed once to WIN-market tables with each
+# runner's first traded price, the prices at T-24h, T-60, T-15 and T-1 min, the close and the BSP
+# (s3://$CAPTURE_BUCKET/sources/betfair_historic/horse_racing_win_<year>.parquet; the tar kept beside them), then the
+# gate: the early prices against the BSP, Australia beside GB/IE, and the Betfair-only model's picks against runners at
+# the same price (au/historic.py). Read-only on Betfair (no key, no login), nothing in the live UK/IE jobs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_url:
+        description: 'Direct download URL of the bundle (data.tar)'
+        required: false
+        type: string
+        default: 'https://drive.usercontent.google.com/download?id=1kLQm-04u90tnxUavdAlasmBX1xhW9idd&export=download&confirm=t'
+      gate_only:
+        description: 'Skip the import and only run the gate on the stored tables (yes/no)'
+        required: false
+        type: string
+        default: 'no'
+  push:
+    branches: ['claude/bold-cori-*']
+    paths:
+      - 'au/historic.py'
+      - '.github/workflows/au-historic.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: au-historic
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Tests
+        run: python -m pytest -q tests/test_au_historic.py tests/test_au_features.py
+      - name: Import the bundle and run gate A
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BUNDLE_URL: ${{ inputs.bundle_url || 'https://drive.usercontent.google.com/download?id=1kLQm-04u90tnxUavdAlasmBX1xhW9idd&export=download&confirm=t' }}
+          GATE_ONLY: ${{ inputs.gate_only || 'no' }}
+        run: |
+          set -o pipefail
+          if [ "$GATE_ONLY" = "yes" ]; then
+            python -m au.historic --gate | tee au_gate_a.json
+            exit 0
+          fi
+          if ! [[ "$BUNDLE_URL" =~ ^https://drive\.usercontent\.google\.com/download\?id=[A-Za-z0-9_-]+\&export=download\&confirm=t$ ]]; then
+            echo "bundle_url must be a drive.usercontent.google.com direct download link"; exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/bundle"
+          curl -sSL --retry 5 -C - -o "$RUNNER_TEMP/bundle/data.tar" "$BUNDLE_URL"
+          ls -l "$RUNNER_TEMP/bundle/data.tar"
+          head -c 512 "$RUNNER_TEMP/bundle/data.tar" | grep -q "BASIC" || { echo "not a Historic Data tar"; exit 1; }
+          python -m au.historic --tar "$RUNNER_TEMP/bundle/data.tar" --name horse_racing_basic_2024 --keep-bundle --gate | tee au_gate_a.json
+      - name: Summary
+        if: always()
+        run: |
+          [ -f au_gate_a.json ] && { echo '## au_gate_a.json'; echo '```'; head -c 900000 au_gate_a.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          true

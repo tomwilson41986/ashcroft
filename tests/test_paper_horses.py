@@ -262,3 +262,15 @@ def test_intraday_settles_the_races_run_on_the_recorder_s_bsps(monkeypatch):
     assert D.provisional is True
     assert D.settled == {("1.9", 1): (4.2, "WINNER"), ("1.9", 2): (1.9, "LOSER")}
     assert D.last_poll == datetime(2026, 11, 4, 13, 6, tzinfo=timezone.utc)
+
+
+def test_a_backs_variant_trades_its_own_book_in_the_live_trader_s_place():
+    """The first shared run (4 Nov): three copies of the rule on one book took each other's leftovers. A backs variant
+    is an alternative to the live rule: it trades a book of its own, standing in for the live trader."""
+    assert horses.WORLDS["live"] == ["live_rule", "lays", "quotes_model3", "quotes_mid2"]
+    for v in ("backs_floor50", "backs_win1000"):
+        assert horses.WORLDS[v] == [v] and v in horses.STANDS_IN
+    every = [n for ms in horses.WORLDS.values() for n in ms]
+    assert sorted(every) == sorted(horses.STRATEGIES) and len(every) == len(set(every))
+    specs = {sp[0]: sp for sp in horses.agent_specs(2000)}
+    assert specs["backs_win1000"][5] and specs["live_rule"][5] and not specs["lays"][5]
