@@ -361,6 +361,16 @@ DEV_FROM, DEV_TO, HOLDOUT_FROM, TRAIN_FROM = 2021, 2024, 2025, 2020
 RATINGS_FROM = "2021-07"
 
 
+def join_player_columns(feats: pd.DataFrame, m: pd.DataFrame, parts: list[pd.DataFrame]) -> pd.DataFrame:
+    """The team-feature table with each player table joined by the linked fixture id. A gold table built with
+    API-Football keyed carries its own ``apif_fixture_id``; the link's is used, so the join key is never split."""
+    out = feats.drop(columns=["apif_fixture_id"], errors="ignore").merge(m[["match_id", "apif_fixture_id"]],
+                                                                         on="match_id")
+    for part in parts:
+        out = out.merge(part, on="apif_fixture_id", how="left")
+    return out
+
+
 def build_all(gold: pd.DataFrame, feats: pd.DataFrame, hm: pd.DataFrame, hp: pd.DataFrame, he: pd.DataFrame,
               aliases=None) -> tuple[pd.DataFrame, dict, dict]:
     """(the team-feature table with the player columns joined, the MPM fits, the GPM fits)."""
@@ -382,8 +392,7 @@ def build_all(gold: pd.DataFrame, feats: pd.DataFrame, hm: pd.DataFrame, hp: pd.
     gpm = monthly(m, lambda as_of: fit_gpm(sti, as_of), RATINGS_FROM)
     sm, sg = surprise(m, st, mpm, "mpm"), surprise(m, st, gpm, "gpm")
     tn = team_news(m, hp, he, mpm, gpm)
-    out = feats.merge(m[["match_id", "apif_fixture_id"]], on="match_id").merge(sm, on="apif_fixture_id", how="left") \
-        .merge(sg, on="apif_fixture_id", how="left").merge(tn, on="apif_fixture_id", how="left")
+    out = join_player_columns(feats, m, [sm, sg, tn])
     out.attrs["stints"] = int(len(sti))
     out.attrs["stint_goals_reconciled"] = reconciled
     out.attrs["linked"] = int(len(linked))
