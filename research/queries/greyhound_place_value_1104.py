@@ -10,4 +10,4 @@ from research.greyhound import place_value as pv     # noqa: E402
 
 pv.main(["--years", "2016-2026", "--first-test", "2021", "--out", "out/greyhound_place_value.json"])
 print("\n==== ORACLE (win SP, look-ahead upper bound) ====")
-pv.main(["--years", "2019-2026", "--first-test", "2023", "--oracle", "--out", "out/greyhound_place_value_oracle.json"])
+pv.main(["--years", "2019-2026", "--first-test", "2023", "--win-price", "bsp", "--out", "out/greyhound_place_value_oracle.json"])

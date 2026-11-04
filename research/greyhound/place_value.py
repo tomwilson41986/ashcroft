@@ -15,8 +15,8 @@ The chance of placing, estimated at the off from what is known before it:
 - ``gbm``: LightGBM on the win and place markets' pre-play prices and volumes, Harville's chance, the field, the trap,
   the track, refitted each year on the years before only (walk-forward).
 The win and place PPWAPs include trades up to the off, which a bet struck a few seconds before it would not quite see:
-read the results as slightly optimistic on that count. ``--oracle`` adds the win market's SP in place of its PPWAP (a
-look-ahead upper bound, never a rule).
+read the results as slightly optimistic on that count. Where the files lack the PPWAP the morning WAP is read
+instead (``--win-price auto``); ``--win-price bsp`` reads the win market's SP (a look-ahead upper bound, never a rule).
 
 The rules, on the test years only: back at the place SP where p x (SP - 1) x (1 - c) - (1 - p) clears a threshold, lay
 where (1 - p) x (1 - c) - p x (SP - 1) does (per unit of stake; lays reported per unit of liability too); commission c
@@ -70,20 +70,31 @@ def load(store, years: range) -> pd.DataFrame:
     return j
 
 
-def clean(j: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """Races whose win and place markets are whole: one winner, two or three placed, every runner priced."""
+def coverage(j: pd.DataFrame) -> pd.DataFrame:
+    """Each year, the share of runners with each price (above 1) and volume (above 0)."""
+    y = pd.to_datetime(j.race_date).dt.year
+    cols = {c: (j[c] > 1) for c in ("bsp_w", "ppwap_w", "morningwap_w", "bsp_p", "ppwap_p", "morningwap_p")
+            if c in j}
+    cols.update({c: (j[c] > 0) for c in ("pp_vol_w", "morning_vol_w", "pp_vol_p") if c in j})
+    return pd.DataFrame(cols).groupby(y).mean().round(3).assign(runners=y.value_counts().sort_index())
+
+
+def clean(j: pd.DataFrame, win_price: str = "ppwap") -> tuple[pd.DataFrame, dict]:
+    """Races whose win and place markets are whole: one winner, two or three placed, every runner priced (its win
+    market's ``win_price`` and its place SP)."""
     j = j.copy()
     j["race"] = j.race_date + " " + j.race_time.astype(str) + " " + j.track
     g = j.groupby("race")
     j["n"] = g.trap.transform("size")
     j["winners"] = g.win_lose_w.transform("sum")
     j["places"] = g.win_lose_p.transform("sum")
-    j["priced"] = g.ppwap_w.transform(lambda s: s.gt(1).all()) & g.bsp_p.transform(lambda s: s.gt(1).all())
+    ok_price = (j[f"{win_price}_w"] > 1) & (j.bsp_p > 1)
+    j["priced"] = ok_price.groupby(j.race).transform("min").astype(bool)
     why = {"races": int(j.race.nunique()),
            "not one winner": int(j[j.winners != 1].race.nunique()),
            "not 2-3 placed": int(j[~j.places.isin([2, 3])].race.nunique()),
            "field outside 4-8": int(j[~j.n.between(4, MAXN)].race.nunique()),
-           "a runner without a win PPWAP or place SP": int(j[~j.priced].race.nunique())}
+           f"a runner without a win {win_price} or place SP": int(j[~j.priced].race.nunique())}
     ok = (j.winners == 1) & j.places.isin([2, 3]) & j.n.between(4, MAXN) & j.priced & (j.places < j.n)
     j = j[ok].copy()
     why["kept races"] = int(j.race.nunique())
@@ -113,12 +124,12 @@ def harville(q: np.ndarray, k: np.ndarray) -> np.ndarray:
     return np.clip(p1 + p2 + np.where(k[:, None] == 3, p3, 0.0), 0, 1)
 
 
-def features(j: pd.DataFrame, oracle: bool = False) -> tuple[pd.DataFrame, list[str]]:
+def features(j: pd.DataFrame, win_price: str = "ppwap") -> tuple[pd.DataFrame, list[str]]:
     j = j.sort_values(["race", "trap"]).copy()
     races = j.race.to_numpy()
     codes, idx = np.unique(races, return_inverse=True)
     pos = j.groupby("race").cumcount().to_numpy()
-    price_w = j.bsp_w if oracle else j.ppwap_w
+    price_w = j[f"{win_price}_w"]
     inv = 1.0 / price_w.where(price_w > 1)
     j["q_w"] = inv / inv.groupby(j.race).transform("sum")
     Q = np.zeros((len(codes), MAXN))
@@ -220,15 +231,25 @@ def calibration(t: pd.DataFrame) -> pd.DataFrame:
     return out.round(4)
 
 
-def run(store, years: range, first_test: int, oracle: bool = False) -> dict:
+def run(store, years: range, first_test: int, win_price: str = "auto") -> dict:
     j = load(store, years)
-    j, why = clean(j)
+    cov = coverage(j)
+    log.info("coverage by year:\n%s", cov.to_string())
+    if win_price == "auto":                 # the pre-play average where the files carry it, else the morning's
+        recent = cov[cov.index >= first_test]
+        win_price = "ppwap" if recent.get("ppwap_w", pd.Series([0])).min() > 0.9 else "morningwap"
+        log.info("win price: %s", win_price)
+    j, why = clean(j, win_price)
     log.info("clean: %s", why)
-    j, feats = features(j, oracle=oracle)
+    if why["kept races"] < 1000:
+        return {"coverage": cov.reset_index().to_dict("records"), "win_price": win_price, "data": why,
+                "stopped": "too few whole races"}
+    j, feats = features(j, win_price)
     j = walk_forward(j, feats, first_test)
     t = j[j.p_gbm.notna()].copy()
     rep = {"data": why, "test_years": sorted(int(y) for y in t.year.unique()), "test_runners": len(t),
-           "test_races": int(t.race.nunique()), "oracle": oracle,
+           "test_races": int(t.race.nunique()), "win_price": win_price, "oracle": win_price == "bsp",
+           "coverage": cov.reset_index().to_dict("records"),
            "log_loss": {"place_sp": logloss(t.win_lose_p, np.clip(1 / t.bsp_p, 0, 1)),
                         "place_sp_normalised": logloss(t.win_lose_p, (1 / t.bsp_p) / (1 / t.bsp_p).groupby(t.race)
                                                        .transform("sum") * t.places),
@@ -252,11 +273,12 @@ def main(argv=None) -> int:
     ap.add_argument("--store", default=None)
     ap.add_argument("--years", default="2016-2026")
     ap.add_argument("--first-test", type=int, default=2021)
-    ap.add_argument("--oracle", action="store_true")
+    ap.add_argument("--win-price", default="auto", choices=["auto", "ppwap", "morningwap", "bsp"],
+                    help="the win market's price the chance is read from; bsp is a look-ahead upper bound")
     ap.add_argument("--out", default=None)
     a = ap.parse_args(argv)
     lo, hi = (int(x) for x in a.years.split("-"))
-    rep = run(Store(root=a.store), range(lo, hi + 1), a.first_test, a.oracle)
+    rep = run(Store(root=a.store), range(lo, hi + 1), a.first_test, a.win_price)
     text = json.dumps(rep, indent=1, default=str)
     if a.out:
         open(a.out, "w").write(text)
