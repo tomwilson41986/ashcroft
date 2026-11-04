@@ -1,0 +1,50 @@
+name: Australian early lay, staleness check
+
+# The staleness check of the Australian early lay (reports/preregistration_au_early_lay.md addendum, committed in
+# 4bc6101 before this ran; the owner, 4 Nov 2026): how old each T-60 price was, and the pre-registered rule scored on
+# fresh prices only. Reads the bundle kept in S3 and the stored tables; writes sources/au/staleness_report.json.
+# No money, no Betfair key, nothing in the live UK/IE jobs.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/bold-cori-*']
+    paths:
+      - 'au/staleness.py'
+      - '.github/workflows/au-staleness.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: au-staleness
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Tests
+        run: python -m pytest -q tests/test_au_staleness.py tests/test_au_lay_test.py
+      - name: The age of each T-60 price, and the rule on fresh prices
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: |
+          set -o pipefail
+          python -m au.staleness --ages-from-store --dest "$RUNNER_TEMP/bundle.tar" | tee au_staleness.json
+      - name: Summary
+        if: always()
+        run: |
+          [ -f au_staleness.json ] && { echo '## au_staleness.json'; echo '```'; cat au_staleness.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          true

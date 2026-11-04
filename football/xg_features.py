@@ -14,9 +14,21 @@ Per side and match (``side_rows``), from ``api_football/history_stats`` (xG, goa
   ``npxgd_adj``, non-penalty xG projected onto a level score with eleven men (``state_factor``: score-state
   multipliers from Skripnikov et al. and the red-card rate change, time-weighted from the events).
 
+Territory (the owner, 4 Nov 2026: "xThreat - other X metrics"; API-Football has no event locations, so no
+expected threat: these are its proxies from the team statistics): ``poss`` (possession less 50, in points),
+``pass_pct_d`` (pass completion, for minus against), ``corner_share``, ``box_share`` (the side's share of the
+shots inside the box) and ``shot_share``.
+
+Strength of schedule (the owner, 4 Nov 2026: "xG adjusted by strength of schedule"): ``npxg_sos`` = npxg less the
+opponent's average npxg conceded over its previous ``SOS_N`` matches (before this one), ``npxga_sos`` = npxga less
+the opponent's average npxg made, ``npxgd_sos`` their difference: what the side did against what that opponent
+usually allows and makes.
+
 Windows over each side's earlier matches (``football.team_features.windows``: last 5 and 10, EWM, season to date),
 lagged to the collection day like every team feature; plus ``finish_shrunk``, finishing over the last 20 matches
 shrunk towards zero by shot volume (``SHRINK_SHOTS`` pseudo-shots), and ``n_xg_prev`` (earlier matches with xG).
+Short windows (``short_windows``): the last 2 and 3 matches and the last 5 and 10 weighted linearly by recency
+(the latest match weighs n, the oldest 1) of ``SHORT_MEASURES``, lagged the same way.
 
 xG ratings (``xg_ratings``): each side's attack and defence from a decayed ridge fit of the log non-penalty xG of its
 matches before the collection day (the market ratings' fit with xG as the target): ``r_xg`` = attack + defence, and its
@@ -40,8 +52,13 @@ PEN_XG = 0.79            # Opta's flat penalty xG (theanalyst.com); StatsBomb 0.
 SHRINK_SHOTS = 2000      # pseudo-shots: a team's 20-match finishing excess keeps about a tenth (persistence ~0.1)
 KEEPER_SHRINK_SOT = 400  # pseudo-shots on target faced: keeper goals prevented shrunk hard (year-to-year r ~0.2)
 FINISH_WINDOW, KEEPER_WINDOW = 20, 38
+TERRITORY = ["poss", "pass_pct_d", "corner_share", "box_share", "shot_share"]
+SOS = ["npxg_sos", "npxga_sos", "npxgd_sos"]
+SOS_N = 10
 XG_MEASURES = ["npxg", "npxga", "npxgd", "npxg_adj", "npxga_adj", "npxgd_adj", "xg_per_shot", "xga_per_shot",
-               "inside_share", "shots_d", "sot_d", "finishing", "keeper", "npxgd_vs_mkt", "trail_share"]
+               "inside_share", "shots_d", "sot_d", "finishing", "keeper", "npxgd_vs_mkt", "trail_share"] + TERRITORY + SOS
+SHORT_MEASURES = ["npxgd", "npxgd_adj", "npxgd_sos", "npxgd_vs_mkt", "sot_d", "box_share", "poss"]
+SHORT_EQUAL, SHORT_LINEAR = (2, 3), (5, 10)
 
 
 #: projecting a side's attacking output onto a level score (Skripnikov et al., arXiv 2508.04008: trailing x0.70-0.90,
@@ -101,7 +118,7 @@ def state_factor(lead1, lead2, trail1, trail2, level, down, up) -> pd.Series:
 def match_level(feats: pd.DataFrame, linked: pd.DataFrame, stats: pd.DataFrame, states: pd.DataFrame) -> pd.DataFrame:
     """One row a match with both sides' statistics (home ``_h``, away ``_a``), joined to the team-feature table."""
     keep = ["apif_fixture_id", "xg", "goals_prevented", "shots", "shots_on", "shots_inside", "pens_scored",
-            "pens_missed", "red_cards"]
+            "pens_missed", "red_cards", "possession", "pass_pct", "corners"]
     st = stats[[c for c in keep if c in stats.columns] + ["side"]]
     h = st[st["side"] == "home"].drop(columns="side").add_suffix("_h").rename(columns={"apif_fixture_id_h": "apif_fixture_id"})
     a = st[st["side"] == "away"].drop(columns="side").add_suffix("_a").rename(columns={"apif_fixture_id_a": "apif_fixture_id"})
@@ -149,11 +166,64 @@ def side_rows(m: pd.DataFrame) -> pd.DataFrame:
             "keeper": m[f"goals_prevented_{me}"],
             "npxgd_vs_mkt": (npxg - npxga) - (mkt_for - mkt_against),
             "trail_share": trail, "sot_against": m[f"shots_on_{op}"],
+            "poss": _col(m, f"possession_{me}") - 50, "pass_pct_d": _col(m, f"pass_pct_{me}") - _col(m, f"pass_pct_{op}"),
+            "corner_share": _share(_col(m, f"corners_{me}"), _col(m, f"corners_{op}")),
+            "box_share": _share(m[f"shots_inside_{me}"], m[f"shots_inside_{op}"]),
+            "shot_share": _share(m[f"shots_{me}"], m[f"shots_{op}"]),
             "goals": goals, "against": against, "own_r": 0.0})
         p.loc[m[f"xg_{me}"].isna(), ["npxg", "npxga", "npxgd", "npxg_adj", "npxga_adj", "npxgd_adj", "xg_per_shot",
                                      "xga_per_shot", "finishing", "np_goals_minus_xg", "npxgd_vs_mkt"]] = np.nan
         parts.append(p)
-    return pd.concat(parts, ignore_index=True).sort_values(["team", "date", "match_id"]).reset_index(drop=True)
+    t = pd.concat(parts, ignore_index=True).sort_values(["team", "date", "match_id"]).reset_index(drop=True)
+    return add_sos(t)
+
+
+def _col(m: pd.DataFrame, c: str) -> pd.Series:
+    return pd.to_numeric(m[c], errors="coerce") if c in m.columns else pd.Series(np.nan, index=m.index)
+
+
+def _share(a: pd.Series, b: pd.Series) -> pd.Series:
+    tot = a + b
+    return a / tot.where(tot > 0)
+
+
+def add_sos(t: pd.DataFrame, n: int = SOS_N) -> pd.DataFrame:
+    """npxg and npxga against what the opponent usually concedes and makes: its mean over its previous ``n`` matches
+    with xG, strictly before this one (a side plays once a day, so the shifted window never holds this match)."""
+    g = t.groupby("team", sort=False)
+    prior = pd.DataFrame({"match_id": t["match_id"], "opp": t["team"]})
+    for c in ("npxg", "npxga"):
+        prior[f"opp_{c}"] = g[c].transform(lambda x: x.shift(1).rolling(n, min_periods=3).mean())
+    t = t.merge(prior, on=["match_id", "opp"], how="left")
+    t["npxg_sos"] = t["npxg"] - t["opp_npxga"]
+    t["npxga_sos"] = t["npxga"] - t["opp_npxg"]
+    t["npxgd_sos"] = t["npxg_sos"] - t["npxga_sos"]
+    return t.drop(columns=["opp_npxg", "opp_npxga"]).sort_values(["team", "date", "match_id"]).reset_index(drop=True)
+
+
+def short_windows(t: pd.DataFrame, measures: list[str], equal=SHORT_EQUAL, linear=SHORT_LINEAR,
+                  key: str = "team") -> pd.DataFrame:
+    """Each side's last 2 and 3 matches (mean) and last 5 and 10 weighted linearly by recency, over its earlier
+    matches only, lagged to the collection day like ``windows``. ``t`` sorted by side and date. Missing values are
+    skipped (the weights renormalised); a window needs half its matches present."""
+    g = t.groupby(key, sort=False)
+    out = pd.DataFrame(index=t.index)
+    kmax = max(max(equal), max(linear))
+    for c in measures:
+        lags = np.column_stack([g[c].shift(k).to_numpy(float) for k in range(1, kmax + 1)])
+        ok = np.isfinite(lags)
+        x = np.where(ok, lags, 0.0)
+        for n in equal:
+            cnt = ok[:, :n].sum(1)
+            out[f"{c}_l{n}"] = np.where(cnt >= max(2, n // 2), x[:, :n].sum(1) / np.maximum(cnt, 1), np.nan)
+        for n in linear:
+            w = np.arange(n, 0, -1, dtype=float)                  # the latest match weighs n
+            cnt = ok[:, :n].sum(1)
+            den = (ok[:, :n] * w).sum(1)
+            out[f"{c}_lw{n}"] = np.where(cnt >= max(2, n // 2), (x[:, :n] * w).sum(1) / np.where(den > 0, den, 1),
+                                         np.nan)
+    cut = collection_day(t["date"]).to_numpy()
+    return out.groupby([t[key].to_numpy(), cut]).transform("first")
 
 
 def finishing_shrunk(t: pd.DataFrame) -> pd.Series:
@@ -229,6 +299,9 @@ def build(feats: pd.DataFrame, linked: pd.DataFrame, stats: pd.DataFrame, hm: pd
     t["finish_shrunk"] = finishing_shrunk(t)
     t["keeper_shrunk"] = keeper_shrunk(t)
     w = windows(t, XG_MEASURES)
+    sw = short_windows(t, SHORT_MEASURES)
+    for c in sw.columns:
+        w[c] = sw[c].to_numpy()
     # the shrunk finishing rate is already a window of earlier matches; day-lag it the same way
     w["finish_shrunk"] = t["finish_shrunk"].to_numpy()
     w["keeper_shrunk"] = t["keeper_shrunk"].to_numpy()
@@ -283,7 +356,12 @@ def families() -> dict:
         "xg_rating": ["r_xg_diff", "xg_gap_vs_market"],
         "game_state": [f"x_trail_share_{w}" for w in WINS],
     }
-    fam["xg_all"] = sorted({c for v in fam.values() for c in v})
+    fam["xg_all"] = sorted({c for v in fam.values() for c in v})     # as registered before 4 Nov 2026: kept fixed
+    # 4 Nov 2026 (the owner's fatigue, form and "other X metrics" ask): outside xg_all, so earlier arms keep meaning
+    fam["x_territory"] = [f"x_{c}_{w}" for c in TERRITORY for w in WINS]
+    fam["x_sos"] = [f"x_{c}_{w}" for c in SOS for w in CORE_WINS]
+    fam["x_short"] = [f"x_{c}_{w}" for c in SHORT_MEASURES
+                      for w in [f"l{n}" for n in SHORT_EQUAL] + [f"lw{n}" for n in SHORT_LINEAR]]
     fam["team_all"] = FAMILIES["all"]
     fam["team_all+xg_all"] = FAMILIES["all"] + fam["xg_all"]
     return fam

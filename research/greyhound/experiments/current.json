@@ -1,16 +1,69 @@
 {
-  "about": "Batch 7 (3 Nov 2026, the owner: 'we need to focus on improving our BFSP model. The final price / log of final price is key'). Ranked first by RMSE of log(BSP) against the baseline. Batch 6's best (every new engine block and the race simulator, all_new_sim) against core; the same rescaled to the SP book's usual total (the closing study: the mid's RMSE 0.635 -> 0.492 so); larger trees; fewer features a tree. In the slow lane, the closing-price study (research/greyhound/bfsp_close.py) on core's and on the best's prices: how much a better pre-race price sharpens the forecast of log(BSP) from the book (our price is a fifth of the closing trees' gain).",
+  "about": "Batch 10 (4 Nov 2026; the owner: 'evaluate if we can cover other tracks with our model or just leave them alone'). Batch 9 (run 41834002314): the weight block (greyhound/blocks/wpred.py: the last runs' weights, the weight history, recency, form) improved the live recipe, RMSE of log(BSP) 0.4127 -> 0.4095 (-0.0032, 90% -0.0038 to -0.0026), log-loss -0.00029 (-0.00052 to -0.00007); the forecast of the day's weight itself is no better than the last run's weight (query greyhound_wpred_fit_1104, run 41844418606), and impossible weights are now read as missing. Per track, every track is behind the BSP; the gap ran from 0.0084 (Romford) to 0.0204 (Star Pelaw). Here the trading test per group of tracks: the eight closest to the BSP in batch 9 and the eight furthest, each through the trade-out study (does our price add to the market's SP forecast at first traded, 5 and 3 minutes out) and the limit-order study (do the rules pay), on the recorded books from 6 Oct. The groups were chosen on batch 9's test window, which overlaps the books: a first read, not a pre-registered test.",
   "recipe": "quick",
-  "baseline": "core_lr05",
+  "baseline": "wpred_tracks",
   "test_from": "2026-06-01",
-  "shortening": true,
   "experiments": [
-    {"name": "core_lr05", "features": "core", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "best_lr05", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "best_rescaled", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "rescale_book": true, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "best_leaves63", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "params": {"num_leaves": 63, "min_data_in_leaf": 100}, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "best_ff06", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "params": {"feature_fraction": 0.6}, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "core_bfsp", "features": "core", "objective": "logbsp", "bfsp": true, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "best_bfsp", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "bfsp": true, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}}
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred"
+      ],
+      "rescale_book": true,
+      "calibrate": [
+        "stretch_track"
+      ],
+      "recipe_overrides": {
+        "learning_rate": 0.05,
+        "early_stop": 100,
+        "rounds": 10000
+      },
+      "name": "wpred_tracks",
+      "groups": "each_track"
+    },
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred"
+      ],
+      "rescale_book": true,
+      "calibrate": [
+        "stretch_track"
+      ],
+      "recipe_overrides": {
+        "learning_rate": 0.05,
+        "early_stop": 100,
+        "rounds": 10000
+      },
+      "name": "wpred_groups",
+      "groups": {
+        "close": [
+          "Romford",
+          "Harlow",
+          "Kinsley",
+          "Newcastle",
+          "Hove",
+          "Sunderland",
+          "Valley",
+          "Towcester"
+        ],
+        "far": [
+          "Yarmouth",
+          "Central Park",
+          "Monmore",
+          "Nottingham",
+          "Sheffield",
+          "Doncaster",
+          "Dunstall Park",
+          "Star Pelaw"
+        ]
+      },
+      "shortening": true,
+      "limit": true
+    }
   ]
 }

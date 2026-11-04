@@ -4,9 +4,9 @@ name: Horse paper desk (backs, lays, both sides of the line; no orders)
 # strategy on every new racing day's recorded books (S3 betfair_live/<day>/) through the live trader's code, once
 # Betfair's price file for the day is archived, and keeps the ledger in s3://$PRED_BUCKET/paper/horses/. Nothing here
 # reaches Betfair: it reads S3 only, on GitHub's runners, never the UK runner, and places no order.
+# RETIRED (the owner, 4 Nov 2026: "Keep the current live rule. Retire the others"): no schedule; a dispatch still replays
+# a day for the record (ledger paper-agents-retired-1104).
 on:
-  schedule:
-    - cron: '20 6 * * *'     # after the night's price archive (to 04:52 UTC) has the day before yesterday's file
   workflow_dispatch:
     inputs:
       days:

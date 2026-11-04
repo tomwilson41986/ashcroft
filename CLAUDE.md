@@ -40,7 +40,7 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 | `BETFAIR_PASSWORD` | Betfair Exchange password |
 | `BETFAIR_APP_KEY` | Betfair API application key (the delayed key: every read-only job, the market records) |
 | `API_FOOTBALL_KEY` | API-Football (optional: fixture status, kick-off, cups; the football model runs without it) |
-| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); the football trader when `FOOTBALL_LIVE=yes` (football-trade.yml, small real stakes, 3 Nov 2026); the morning models when `MORNING_LIVE=yes` (morning-models.yml, its own runner, 4 Nov 2026); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py) |
+| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); the football trader's process (football-trade.yml): reads every football market on it from 4 Nov 2026 (the owner: "use live key", "do not pass betfair thresholds": `football/exchange_feed.py Throttle`, at most 5 requests a second and 12,000 an hour, each under 200 weight points), bets only with `FOOTBALL_LIVE=yes` (small real stakes, 3 Nov 2026); the morning models when `MORNING_LIVE=yes` (morning-models.yml, its own runner, 4 Nov 2026); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py) |
 
 ## Key Commands
 
@@ -198,6 +198,10 @@ python -m football.live --trade --until 21:30                      # paper; --li
 python -m football.live --trade --all-games --hours 23.5            # football-trade.yml
 python -m football.exchange_feed --summary --days 3
 python -m football.live --settle --days 7
+# the expected-value paper trader (the owner, 4 Nov 2026; reports/preregistration_football_ev.md): every home/away side
+# with expected value above 2%, resting orders, greened at the close, a GBP1,000 paper bank staked by expected value;
+# scored with the other football trials at the recorded books (football-trials.yml, Tue and Fri; nothing reaches Betfair)
+python -m research.open_close.football_ev_trial score --cache .football_cache --root src --out-json out/football_ev_trial.json
 # the pre-registered early-to-close rule scored at the recorded books (paper trial; gate 'running' until complete)
 python -m research.open_close.football_paper_trial --panel data/football_exchange_panel.parquet --out out/football_paper_trial.json
 

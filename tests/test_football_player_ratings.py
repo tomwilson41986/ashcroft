@@ -80,3 +80,50 @@ def test_the_surprise_uses_earlier_matches_and_never_the_matchs_own_close():
     pd.testing.assert_frame_equal(x, y)
     first_week = m[m["date"] == m["date"].min()]["apif_fixture_id"]
     assert a[a["apif_fixture_id"].isin(first_week)]["mpm_exp_home"].isna().all()   # no earlier matches, no expectation
+
+
+def test_team_news_reads_only_matches_before_the_collection_day():
+    """A side's team news at a Thursday match is fixed by its matches before Tuesday's collection: a match it played
+    on the Tuesday evening (after the 13:00 early price) must not enter."""
+    import numpy as np
+    import pandas as pd
+    from football.player_ratings import team_news
+    days = pd.to_datetime(["2026-10-03", "2026-10-10", "2026-10-17", "2026-10-24", "2026-11-03", "2026-11-05"])
+    fixtures = list(range(1, 7))
+    m = pd.DataFrame({"apif_fixture_id": fixtures, "date": days})
+    rows = []
+    for f, d in zip(fixtures, days):
+        for p in range(1, 12):
+            pid = p if not (f == 4 and p == 1) else 99         # the regular player 1 misses fixture 4
+            rows.append({"apif_fixture_id": f, "apif_team_id": 7, "side": "home", "apif_player_id": float(pid),
+                         "role": "starter", "minutes_events": 90.0, "minutes_stats": 90.0})
+        for p in range(1, 12):
+            rows.append({"apif_fixture_id": f, "apif_team_id": 8, "side": "away", "apif_player_id": float(100 + p),
+                         "role": "starter", "minutes_events": 90.0, "minutes_stats": 90.0})
+    hp = pd.DataFrame(rows)
+    he = pd.DataFrame({"apif_fixture_id": [5], "type": ["Card"], "detail": ["Red Card"], "apif_team_id": [7],
+                       "apif_player_id": [2.0]})
+    ratings = {"2026-11": {1.0: 0.2, 2.0: 0.1}}
+    a = team_news(m, hp, he, ratings, ratings).set_index("apif_fixture_id")
+    # fixture 6 (Thursday 5 Nov): collection Tuesday 3 Nov 13:00; fixture 5 (Tuesday) is not yet known
+    # player 1 (started 3 of the 4 matches before: share 0.75, rating 0.2) missed fixture 4
+    assert a.loc[6, "tn_absent_n_diff"] == 1 and abs(a.loc[6, "tn_absent_mpm_diff"] - 0.15) < 1e-9
+    assert a.loc[6, "tn_red_mpm_diff"] == 0                                    # fixture 5's red card unseen
+    # minutes load: nothing in the 7 days before 3 Nov; fixture 4 (24 Oct) in the 14: home's expected eleven
+    # (ten players at share 1, player 99 at 0.25 played it) 10.25 matches of minutes, away's 11
+    assert a.loc[6, "ld_load7_diff"] == 0 and abs(a.loc[6, "ld_load14_diff"] - (-0.75)) < 1e-9
+    hp2 = hp.copy()
+    hp2.loc[hp2["apif_fixture_id"] == 5, "apif_player_id"] = 555.0             # rewrite the Tuesday match entirely
+    b = team_news(m, hp2, he, ratings, ratings).set_index("apif_fixture_id")
+    assert a.loc[6].equals(b.loc[6])
+
+
+def test_player_columns_join_when_the_gold_table_already_carries_the_fixture_id():
+    """The S3 gold table (API-Football keyed) has its own apif_fixture_id: the join must not split the key."""
+    import pandas as pd
+    from football.player_ratings import join_player_columns
+    feats = pd.DataFrame({"match_id": ["a", "b"], "apif_fixture_id": [1.0, None], "x": [0.1, 0.2]})
+    m = pd.DataFrame({"match_id": ["a", "b"], "apif_fixture_id": [1, 2]})
+    tn = pd.DataFrame({"apif_fixture_id": [1, 2], "tn_rotation_diff": [0.5, -0.5]})
+    out = join_player_columns(feats, m, [tn]).set_index("match_id")
+    assert list(out.loc[["a", "b"], "tn_rotation_diff"]) == [0.5, -0.5] and "apif_fixture_id_x" not in out

@@ -48,10 +48,14 @@ CONFIG = {
     "liability": 20.0,                        # each lay's liability (stake x (price - 1)). The owner, 3 Nov 14:20: cut to
     "min_stake": 2.0,                         # GBP20 while the paper is rebuilt on the live feed (live and paper laid
     "max_stake": 10.0,                        # different dogs); GBP100 again only once that shows an edge
-    "margin": 0.10,                           # lay at the forecast SP less this share. 0.2 to 4 Nov; the owner, 4 Nov
-                                              # ("the most profitable model"): on 3 Nov's live books in the corrected
-                                              # simulator 0.10 made +GBP3.82 (26 fills) against 0.2's -GBP3.93: within
-                                              # noise, the best measured
+    "margin": 0.20,                           # lay at the forecast SP less this share. 0.2 to 4 Nov, 0.10 on 4 Nov
+                                              # (3 Nov's live books in the corrected simulator: +GBP3.82 on 26 fills
+                                              # against 0.2's -GBP3.93, within noise); 0.2 again from 5 Nov, the owner,
+                                              # 4 Nov: "revert the early lay margin to 20%" (the limit study per track
+                                              # group, fast loop batch 10: 0.2 ahead of 0.1 in both groups); 0.10 kept
+                                              # on paper beside it (PAPER_VARIANTS)
+    "gate": "drift",                          # which dogs: 'drift' (forecast SP at or above the mid now) or 'short'
+                                              # (the mid now under SHORT_PRICE, the limit study's 'short' gate)
     "max_price": 20.0,                        # no lay above this price (greyhound.tradeout.MAX_PRICE)
     "min_order": 1.0,                         # Betfair's smallest stake on a limit order
     "min_sp_back": 2.0,                       # the smallest back at the SP that closes a lay (greyhound.tradeout)
@@ -64,6 +68,17 @@ CONFIG = {
     "give_up_seconds": 2.0,                   # owner, 3 Nov: "green up 5s before the off"); then a back at the SP
     "poll_seconds": 5.0,                      # the owner, 3 Nov: "trade as frequently as the live feed enables"
     "near_poll_seconds": 1.0,                 # the markets near their green-up, every second
+}
+SHORT_PRICE = 3.0                             # research.greyhound.limit_study.SHORT_PRICE
+# The paper variants (the owner, 4 Nov 2026: "revert the early lay margin to 20%, run this on paper. Keep running 10%
+# too"), traded beside the live rule on the same books, nothing sent: the live rule at 10% (live to 4 Nov), and the
+# short-priced lay (the mid under 3 at first traded; the limit study's lead: first traded, bid, lay 0.2, short, 1,891
+# dogs, +3.34% a trade at the last price, 90% 2.46 to 4.32, fast loop batch 9) at 20% and at 10%. Ledgers under
+# greyhound/early_lay/paper-<name>/<day>/; each scored on the live-key books (paper_table).
+PAPER_VARIANTS = {
+    "m10": {"margin": 0.10},
+    "short20": {"gate": "short", "margin": 0.20},
+    "short10": {"gate": "short", "margin": 0.10},
 }
 LEDGER_FIELDS = ["time_utc", "mode", "market_id", "selection_id", "track", "race_time", "trap", "dog", "action",
                  "price", "size", "matched", "avg_price", "f_bsp", "mid", "p_model", "bet_id", "status", "error",
@@ -123,6 +138,9 @@ def vol_in_fit(fit: dict) -> bool:
 def decide(d: pd.DataFrame, fit: dict, cfg: dict) -> pd.DataFrame:
     """The race's lays: the forecast SP for every runner, the drift gate, the lay price on the ladder (rounded down)
     and whether it is placed."""
+    gate = cfg.get("gate", "drift")
+    if gate not in ("drift", "short"):
+        raise ValueError(f"gate must be drift or short, not {gate!r}")
     from greyhound import tradeout as to
     from research.greyhound import limit_study as ls, tradeout_study as ts
     if not vol_in_fit(fit):
@@ -132,12 +150,13 @@ def decide(d: pd.DataFrame, fit: dict, cfg: dict) -> pd.DataFrame:
         q, book = ts.predict(x, fit)
     x = x.assign(f_bsp=1.0 / (book * np.asarray(q, float)))
     x["drift"] = ~(x.f_bsp.to_numpy(float) < x["mid"].to_numpy(float))       # limit_study.gate_flags' 'drift'
+    x["short"] = x["mid"].to_numpy(float) < SHORT_PRICE                       # limit_study.gate_flags' 'short'
     x["lay_price"] = ls.ladder(x.f_bsp.to_numpy(float) * (1 - cfg["margin"]), up=False)
     ok = np.isfinite(x.lay_price) & (x.lay_price > 1.0) & (x.lay_price <= cfg["max_price"])
     # the owner, 3 Nov 2026: never at or above the market's mid, so a lay only ever rests in the queue and never takes
     # the price on a forecast that overstates the drift (the first live lays: those above the mid lost GBP17.85 of 20.39)
     x["below_mid"] = x.lay_price.to_numpy(float) < x["mid"].to_numpy(float) - 1e-9
-    x["lay"] = x.drift & ok & (x.below_mid if cfg.get("rest_only", True) else True)
+    x["lay"] = x[gate] & ok & (x.below_mid if cfg.get("rest_only", True) else True)
     return x
 
 
@@ -257,9 +276,11 @@ def ladder_limit(levels: list, value: float, depth: int = 3) -> float | None:
 
 class EarlyLay:
     def __init__(self, store, x, cfg: dict, day: date, live: bool, ledger_path: Path, fit: dict,
-                 kill=lambda: False, now=lambda: datetime.now(timezone.utc)):
+                 kill=lambda: False, now=lambda: datetime.now(timezone.utc), book: str | None = None):
+        if book is not None and live:
+            raise ValueError("a named paper book never trades live")
         self.store, self.x, self.cfg, self.day, self.live = store, x, cfg, day, live
-        self.mode = "live" if live else "paper"
+        self.mode = book or ("live" if live else "paper")       # the S3 folder and the ledger's mode
         self.orders = Orders(x, live)
         self.ledger_path, self.fit, self.kill, self.now = ledger_path, fit, kill, now
         self.first: dict = {}          # market -> selection -> its first traded book
@@ -428,7 +449,10 @@ class EarlyLay:
                    "trap": info.loc[sid, "trap"], "dog": info.loc[sid, "dog_name"] if "dog_name" in info else "",
                    "f_bsp": round(float(r.f_bsp), 3), "mid": round(float(r.mid), 3), "p_model": round(float(r.p_model), 4)}
             if not r.lay:
-                why = "forecast to shorten" if not r.drift else ("at or above the mid" if not r.below_mid else "price")
+                gated = r.drift if self.cfg.get("gate", "drift") == "drift" else r.short
+                why = (("forecast to shorten" if self.cfg.get("gate", "drift") == "drift" else
+                        f"not short-priced (mid {SHORT_PRICE:g} or more)") if not gated else
+                       ("at or above the mid" if not r.below_mid else "price"))
                 rows.append({**row, "action": "no_lay", "price": float(r.lay_price) if np.isfinite(r.lay_price) else None,
                              "error": why})
                 continue
@@ -579,6 +603,53 @@ class EarlyLay:
                 "open_liability": round(sum(self.open_liability.values()), 2)}
 
 
+class SharedBooks:
+    """One poll's books shared by the paper books (``run_many``): a market read within ``ttl`` seconds is not read
+    again, so the paper variants add no requests beyond the first's. Everything else is the exchange's own."""
+
+    def __init__(self, x, ttl: float = 0.8, clock=time.monotonic):
+        self.x, self.ttl, self.clock, self._c = x, ttl, clock, {}
+
+    def books(self, mids, **kw):
+        t = self.clock()
+        need = [m for m in mids if m not in self._c or t - self._c[m][0] > self.ttl]
+        if need:
+            got = self.x.books(need, **kw)
+            for m in need:
+                if m in got:
+                    self._c[m] = (t, got[m])
+                else:
+                    self._c.pop(m, None)
+        return {m: self._c[m][1] for m in mids if m in self._c}
+
+    def __getattr__(self, k):
+        return getattr(self.x, k)
+
+
+def run_many(traders: list, until: datetime, sleep=time.sleep) -> list[dict]:
+    """The paper books together, poll by poll, as ``EarlyLay.run`` runs one (the live trader runs alone)."""
+    assert traders and not any(t.live for t in traders), "run_many is for the paper books only"
+    now, cfg, last_full = traders[0].now, traders[0].cfg, None
+    while now() < until:
+        full = last_full is None or (now() - last_full).total_seconds() >= cfg["poll_seconds"]
+        if full:
+            last_full = now()
+        for t in traders:
+            try:
+                t.step(near_only=not full)
+            except Exception as exc:                            # one failed poll: the next tries again
+                log.warning("%s: poll failed (%s)", t.mode, exc)
+                t.last_error = f"poll: {exc}"
+            t.heartbeat()
+        sleep(cfg["near_poll_seconds"])
+    out = []
+    for t in traders:
+        t.heartbeat(force=True, finished=True)
+        out.append({"day": f"{t.day:%Y-%m-%d}", "mode": t.mode, "markets_priced": len(t.priced),
+                    "markets_closed": len(t.greened)})
+    return out
+
+
 def replay(rows: pd.DataFrame, books: pd.DataFrame, cfg: dict | None = None) -> pd.DataFrame:
     """The lays the rest-only guard blocked (ledger rows ``no_lay`` 'at or above the mid'), replayed on the books after
     them (the owner, 3 Nov: "how would the races post 14:31 have looked without the guard"): matched at once at the
@@ -626,11 +697,41 @@ def replay(rows: pd.DataFrame, books: pd.DataFrame, cfg: dict | None = None) -> 
     return pd.DataFrame(out)
 
 
+def replay_books(day: date) -> list[tuple[str, pd.DataFrame]]:
+    """The day's pre-off books for ``replay``: the live-key recorder's (greyhound/book_record.py, every 5 s near the
+    off), then the market recorder's (about 90 seconds stale, re-timed)."""
+    from betfair_recorder import _read_day_csv
+    from greyhound import tradeout as to
+    parts = []
+    for name, retimed in (("books_greyhound_live.csv", False), ("books_greyhound.csv", True)):
+        bk = _read_day_csv(day, name)
+        mk = _read_day_csv(day, name.replace("books", "markets"))
+        if bk is None or mk is None or not len(bk):
+            continue
+        pre = to.pre_off_books(bk, mk, retimed=retimed)
+        if len(pre):
+            parts.append((name, pre[["market_id", "selection_id", "polled", "back1", "lay1", "last_traded"]]))
+    return parts
+
+
+def replay_on_books(rows: pd.DataFrame, parts: list, cfg: dict | None = None) -> pd.DataFrame:
+    """``replay`` row by row on the first books that cover the dog (the live key's, then the recorder's)."""
+    res = []
+    for _, r in rows.iterrows():
+        got = None
+        for name, pre in parts:                                  # the live-key books first, where they cover it
+            one = replay(pd.DataFrame([r]), pre, cfg)
+            if len(one) and one.note.iloc[0] != "no books for this dog":
+                got = one.assign(books="live key" if "live" in name else "recorder, ~90 s stale")
+                break
+        res.append(got if got is not None else replay(pd.DataFrame([r]), pd.DataFrame(
+            columns=["market_id", "selection_id", "polled", "back1", "lay1", "last_traded"]), cfg).assign(books="none"))
+    return pd.concat(res, ignore_index=True) if res else pd.DataFrame()
+
+
 def blocked_section(store, day: date, mode: str = "live", since: str | None = None) -> list[str]:
     """The guard's blocked lays, replayed (``replay``), as a section of the table: the live-key books where they cover
     the race, else the recorder's (about 90 seconds stale)."""
-    from betfair_recorder import _read_day_csv
-    from greyhound import tradeout as to
     raw = store.get(f"{PREFIX}/{mode}/{day:%Y-%m-%d}/ledger.csv")
     if not raw:
         return []
@@ -641,26 +742,7 @@ def blocked_section(store, day: date, mode: str = "live", since: str | None = No
         blk = blk[pd.to_datetime(blk.time_utc, utc=True) >= pd.Timestamp(since)]
     if not len(blk):
         return ["", "#### Lays the rest-only guard blocked, replayed", "", "none yet"]
-    parts = []
-    for name, retimed in (("books_greyhound_live.csv", False), ("books_greyhound.csv", True)):
-        bk = _read_day_csv(day, name)
-        mk = _read_day_csv(day, name.replace("books", "markets"))
-        if bk is None or mk is None or not len(bk):
-            continue
-        pre = to.pre_off_books(bk, mk, retimed=retimed)
-        if len(pre):
-            parts.append((name, pre[["market_id", "selection_id", "polled", "back1", "lay1", "last_traded"]]))
-    res = []
-    for _, r in blk.iterrows():
-        got = None
-        for name, pre in parts:                                  # the live-key books first, where they cover it
-            one = replay(pd.DataFrame([r]), pre)
-            if len(one) and one.note.iloc[0] != "no books for this dog":
-                got = one.assign(books="live key" if "live" in name else "recorder, ~90 s stale")
-                break
-        res.append(got if got is not None else replay(pd.DataFrame([r]), pd.DataFrame(
-            columns=["market_id", "selection_id", "polled", "back1", "lay1", "last_traded"])).assign(books="none"))
-    d = pd.concat(res, ignore_index=True)
+    d = replay_on_books(blk, replay_books(day))
     m = d[d.matched == True]                                              # noqa: E712
     tot = float(pd.to_numeric(m.pnl, errors="coerce").fillna(0).sum())
     L = ["", "#### Lays the rest-only guard blocked, replayed (what would have happened without it)", "",
@@ -754,6 +836,58 @@ def table(store, day: date, mode: str = "live") -> str:
     return "\n".join(L) + "\n"
 
 
+def paper_table(store, day: date, name: str, parts: list | None = None) -> str:
+    """A paper book's day (``PAPER_VARIANTS``): the lays it would have placed, replayed on the books (``replay``):
+    matched at once where the best lay price was at or under ours, else when a later trade reached it (no queue: a
+    paper fill is the best case), greened up at the best back price 5 s or more before the off."""
+    cfg = {**CONFIG, **PAPER_VARIANTS[name]}
+    book = f"paper-{name}"
+    desc = (f"{'short-priced (mid under ' + format(SHORT_PRICE, 'g') + ')' if cfg['gate'] == 'short' else 'drifters'}"
+            f", laid at {1 - cfg['margin']:.0%} of the forecast SP")
+    head = f"### Early lay on paper, {name}: {desc} ({day:%Y-%m-%d})"
+    st = store.get(f"{PREFIX}/{book}/{day:%Y-%m-%d}/status.json")
+    if st:
+        s = json.loads(st)
+        head += (f"\n\nPaper trader: last seen {s.get('time_utc')} UTC; priced {s.get('markets_priced')} races"
+                 + (f"; last error: {s['last_error']}" if s.get("last_error") else "") + ".")
+    raw = store.get(f"{PREFIX}/{book}/{day:%Y-%m-%d}/ledger.csv")
+    if not raw:
+        return f"{head}\n\nno ledger yet\n"
+    led = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str})
+    lays = led[(led.action == "lay") & pd.to_numeric(led.price, errors="coerce").gt(1)]
+    if not len(lays):
+        return f"{head}\n\nno lays yet ({int((led.action == 'no_lay').sum())} dogs looked at)\n"
+    d = replay_on_books(lays, replay_books(day) if parts is None else parts, cfg)
+    m = d[d.matched == True]                                              # noqa: E712
+    pnl = pd.to_numeric(m.pnl, errors="coerce")
+    tot = float(pnl.fillna(0).sum())
+    pending = int((d.note == "no books for this dog").sum())
+    L = [head, "", f"{len(d)} lays in {d.race_time.nunique()} races; {len(m)} would have matched; greened up "
+         f"{int(pnl.notna().sum())}, **GBP{tot:+.2f}** at GBP{cfg['liability']:.0f} a lay"
+         + (f" ({tot / max(float(m.stake.sum()), 1e-9):+.1%} of the matched stake)" if len(m) else "")
+         + (f"; {pending} not yet in the books" if pending else "") + ". A paper fill takes no place in the queue: "
+         "the best case.", "",
+         "| Race (UK) | Track | Trap | Forecast SP | Mid | Lay price | Stake | Matched at | Greened at | P&L | How | Books |",
+         "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for r in d.sort_values("race_time").itertuples(index=False):
+        L.append(f"| {r.race_time} | {r.track} | {r.trap} | {r.f_bsp} | {r.mid} | {r.lay_price} | {r.stake} | "
+                 f"{r.matched_at if r.matched_at is not None else ''} | {r.greened_at if r.greened_at is not None else ''} | "
+                 f"{r.pnl if r.pnl is not None else ''} | {r.note} | {r.books} |")
+    return "\n".join(L) + "\n"
+
+
+def paper_tables(store, day: date) -> str:
+    """Every paper book's table, the books read once."""
+    parts = replay_books(day)
+    out = []
+    for name in PAPER_VARIANTS:
+        try:
+            out.append(paper_table(store, day, name, parts))
+        except Exception as exc:                                  # one book's failure never hides the others
+            out.append(f"### Early lay on paper, {name}\n\nnot scored ({str(exc)[:160]})\n")
+    return "\n".join(out)
+
+
 def main(argv=None) -> int:
     from betfair_recorder import uk_time_on, uk_today
     from sources.common import Store
@@ -766,11 +900,41 @@ def main(argv=None) -> int:
     ap.add_argument("--live", action="store_true", help="real orders (only with GREYHOUND_EARLY_LAY=live)")
     ap.add_argument("--until", default="21:30")
     ap.add_argument("--date", default=None)
+    ap.add_argument("--paper-variants", default=None,
+                    help=f"comma-separated paper books ({', '.join(PAPER_VARIANTS)}), traded together on paper; never "
+                         "with --live")
     a = ap.parse_args(argv)
     store = Store(root=a.store)
     day = date.fromisoformat(a.date) if a.date else uk_today()
     out = {}
-    if a.trade:
+    if a.trade and a.paper_variants:
+        from trading.exchange import BetfairData, LiveExchange
+        if a.live:
+            raise SystemExit("--paper-variants is paper only: no --live")
+        names = [n.strip() for n in a.paper_variants.split(",") if n.strip()]
+        bad = [n for n in names if n not in PAPER_VARIANTS]
+        if bad or not names:
+            raise SystemExit(f"unknown paper variants {bad}; known: {', '.join(PAPER_VARIANTS)}")
+        fit = laytest.live_fit(store, day)
+        if fit is None:
+            for n in names:
+                store.put(f"{PREFIX}/paper-{n}/{day:%Y-%m-%d}/status.json", json.dumps(
+                    {"time_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": f"paper-{n}",
+                     "state": "stopped: no forecast fit for today"}).encode())
+            raise SystemExit("no forecast fit for today: nothing traded")
+        x = LiveExchange(BetfairData(source="greyhound"))
+        x.login()
+        shared = SharedBooks(x)
+        base = Path(os.getenv("GREYHOUND_LEDGER_DIR") or (Path.home() / ".ashcroft" / "greyhound"))
+        traders = []
+        for n in names:
+            cfg = {**CONFIG, **PAPER_VARIANTS[n]}
+            log.info("early lay paper-%s: gate %s, margin %.2f, GBP%.2f liability a lay", n, cfg["gate"],
+                     cfg["margin"], cfg["liability"])
+            traders.append(EarlyLay(store, shared, cfg, day, False, base / f"early_lay_paper-{n}" /
+                                    f"{day:%Y-%m-%d}" / "ledger.csv", fit, kill=kill_switch(store), book=f"paper-{n}"))
+        out["paper"] = run_many(traders, uk_time_on(day, a.until))
+    elif a.trade:
         from trading.exchange import BetfairData, LiveExchange
         live = a.live and switch_on()
         if a.live and not live:
@@ -789,8 +953,8 @@ def main(argv=None) -> int:
         ledger = Path(os.getenv("GREYHOUND_LEDGER_DIR") or (Path.home() / ".ashcroft" / "greyhound")) / \
             f"early_lay_{mode}" / f"{day:%Y-%m-%d}" / "ledger.csv"
         cfg = dict(CONFIG)
-        log.info("early lay %s: GBP%.2f liability a lay (stake GBP%.2f-%.2f), fit to %s", mode, cfg["liability"],
-                 cfg["min_stake"], cfg["max_stake"], fit.get("fit_to"))
+        log.info("early lay %s: margin %.2f, gate %s, GBP%.2f liability a lay (stake GBP%.2f-%.2f), fit to %s", mode,
+                 cfg["margin"], cfg["gate"], cfg["liability"], cfg["min_stake"], cfg["max_stake"], fit.get("fit_to"))
         out["trade"] = EarlyLay(store, x, cfg, day, live, ledger, fit, kill=kill_switch(store)).run(
             uk_time_on(day, a.until))
     print(json.dumps(out, indent=1, default=str))

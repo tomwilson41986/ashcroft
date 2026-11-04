@@ -179,7 +179,9 @@ def test_only_the_trader_runs_on_the_live_key():
             if "python" in ln and any(k in ln for k in ("LIVE_APP_KEY", "TRADER_KEY", "FBKEY", "GHKEY", "MKEY")):
                 assert any(t in ln for t in traders), (name, ln)
             if "FBKEY=" in ln and ("LIVE_APP_KEY" in ln or "TRADER_KEY" in ln):
-                assert '"$FOOTBALL_LIVE" = yes' in ln, (name, ln)           # the live key only when switched on
+                # the football trader reads on the live key (the owner, 4 Nov 2026: "use live key"); it bets only with
+                # FOOTBALL_LIVE=yes, held by test_the_football_trader_bets_small_and_only_when_switched_on
+                assert name == "football-trade.yml" and "LIVEFLAG" not in ln, (name, ln)
             if "MKEY=" in ln and ("LIVE_APP_KEY" in ln or "TRADER_KEY" in ln):
                 assert '"$MORNING_LIVE" = yes' in ln, (name, ln)
             if "betfair_recorder.py" in ln or "tote_recorder.py" in ln:
@@ -237,6 +239,9 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
         [ln for ln in runs.splitlines() if "greyhound.early_lay --trade --live" in ln
          or "greyhound.quote_mid --trade --live" in ln]
     assert "greyhound.live --trade --live" not in runs and "football.live --trade --live" not in runs
+    # the early lay's paper books (the owner, 4 Nov 2026: "run this on paper. Keep running 10% too"): never --live
+    paper = [ln for ln in runs.splitlines() if "--paper-variants" in ln]
+    assert len(paper) == 1 and "--live" not in paper[0] and "GREYHOUND_EARLY_LAY" not in paper[0], paper
     env = next(s["env"] for s in steps if s.get("name") == trade)
     assert env["GREYHOUND_LIVE"] == "no" and "FOOTBALL_LIVE" not in env and "API_FOOTBALL_KEY" not in env
     # no football here at all (the owner, 3 Nov 2026: football apart from greyhounds and racing, football-trade.yml)
@@ -259,8 +264,8 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
 
 
 def test_the_football_trader_bets_small_and_only_when_switched_on():
-    """The owner, 3 Nov 2026: every football match on Betfair recorded and paper-traded from the live feed, the live
-    key kept in betting use by small real stakes. The live key and --live only with FOOTBALL_LIVE=yes; its own
+    """The owner, 3 Nov 2026: every football match on Betfair recorded and paper-traded from the live feed; 4 Nov 2026:
+    the trader's process reads on the live key, under Betfair's limits. --live (real bets) only with FOOTBALL_LIVE=yes; its own
     runner, never the live horse trader's or the paper models'; the real stakes capped at GBP2 a bet and GBP20 a day."""
     import json as _json
 
@@ -276,8 +281,11 @@ def test_the_football_trader_bets_small_and_only_when_switched_on():
     lines = [ln.strip() for ln in step["run"].splitlines() if ln.strip() and not ln.strip().startswith("#")]
     assert lines[:3] == ["set +e", 'FBKEY="$BETFAIR_APP_KEY"', 'LIVEFLAG=""']
     switch = [ln for ln in lines if "BETFAIR_LIVE_APP_KEY" in ln]
-    assert switch == ['if [ "$FOOTBALL_LIVE" = yes ] && [ -n "$BETFAIR_LIVE_APP_KEY" ]; then '
-                      'FBKEY="$BETFAIR_LIVE_APP_KEY"; LIVEFLAG="--live"; fi']
+    # the owner, 4 Nov 2026 ("use live key", "do not pass betfair thresholds"): the trader's process reads on the live
+    # key, through the feed's throttle; --live (real bets) still only with FOOTBALL_LIVE=yes
+    assert switch == ['if [ -n "$BETFAIR_LIVE_APP_KEY" ]; then FBKEY="$BETFAIR_LIVE_APP_KEY"; fi',
+                      'if [ "$FOOTBALL_LIVE" = yes ] && [ -n "$BETFAIR_LIVE_APP_KEY" ]; then LIVEFLAG="--live"; fi']
+    assert sum('LIVEFLAG="--live"' in ln for ln in lines) == 1
     # the key the trader may hold reaches the trader alone; the records and the collector read on the delayed key
     keyed = [ln for ln in lines if "FBKEY" in ln and "python" in ln]
     assert len(keyed) == 1 and keyed[0].startswith('BETFAIR_APP_KEY="$FBKEY" ')

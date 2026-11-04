@@ -1,0 +1,35 @@
+name: Horse paper desk, the day so far (as if live; no orders)
+# The owner, 4 Nov 2026: "i want the paper agents to be trading as if they were betting live and i want to see
+# results". research/paper/horses.py --intraday trades today so far for every agent on the books the recorder copies to
+# S3 every 15 minutes, each race run scored on the recorder's BSPs (provisional), and writes each agent's day for the
+# traders dashboard. paper-horses.yml's 06:20 run scores each day for good on Betfair's price file. This job has its own
+# queue, so a long backfill there never holds up the hourly results (4 Nov: run 41836499198 held them over an hour); it
+# writes only today's files, the backfill only earlier days. Nothing here reaches Betfair: S3 only, on GitHub's
+# runners, never the UK runner, and no order is placed.
+# RETIRED (the owner, 4 Nov 2026: "Keep the current live rule. Retire the others"): no schedule, dispatch only.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: paper-horses-intraday
+  cancel-in-progress: false
+jobs:
+  desk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: The day so far, every agent
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          PRED_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          PRED_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: python -m research.paper.horses --intraday --jobs 1 --max-minutes 40

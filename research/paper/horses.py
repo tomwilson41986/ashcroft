@@ -1,13 +1,19 @@
 """The horse paper desk (the owner, 4 Nov 2026: "Keep the current proven profitable strategy as live. Let's paper trade
 any others that look promising; Backs, Lays, High Volume Trading each side of the line").
 
+RETIRED the same day (the owner, 4 Nov 2026: "Keep the current live rule. Retire the others"; ledger
+paper-agents-retired-1104): paper-horses.yml and paper-horses-intraday.yml run on dispatch only and the agents' tiles are
+off the traders dashboard. The code stays for the record and for a replay on request.
+
 Each strategy is an agent with its own paper account (GBP5,000, its own day limit) and its own ledger. Each racing
 day, once its books and Betfair's price file are in S3, all of them trade the day's recorded books together, through
 the live trader's code (research/arms), with no order placed anywhere: one shared book (the owner, 4 Nov: "We need to
 be careful that they dont conflict with each other e.g. taking the price for one, removes the price for others";
 research/arms/core.py run_agents). The live trader's own fills are already out of the books; the live rule's replay
-(the control) steps first each minute, as the live trader's orders came first; the agents then step in an order that
-turns each minute; whatever one takes is gone for the rest, and two quotes at one price queue one behind the other.
+(the control) steps first each minute, as the live trader's orders came first; the lays and the quotes then step in an
+order that turns each minute; whatever one takes is gone for the rest, and two quotes at one price queue one behind
+the other. Each backs variant is an alternative to the live rule, so it trades a copy of the book in the live
+trader's place (WORLDS): three copies of the rule on one book only took each other's leftovers.
 Every fill is scored the same way (research/arms/quotes.py fill_pnl): hedged at the SP when matched, after the
 non-runners' reduction factors, 2% on each market's net winnings, at the replay's scale (live has run at 0.80 of it).
 The ledger, s3://$PRED_BUCKET/paper/horses/shared/: each agent's day (agents/<agent>/<day>/markets.csv, the
@@ -102,13 +108,29 @@ def _keys(prefix: str) -> list[str]:
         token = r.get("NextContinuationToken")
 
 
-def agent_specs(draws: int) -> list[tuple]:
+# Which agents share a book (the first shared run, 4 Nov, run 41815919147: with the two backs variants on the live
+# rule's book the three copies of the rule chased the same horses, the live rule's replay fell from about GBP6,300 to
+# GBP3,965 over 22 days, the GBP50 floor made GBP871 and the GBP1,000 stake lost GBP155: each took the others'
+# leftovers). A backs variant is an alternative to the live rule, not an addition, so it trades a book of its own in
+# the live trader's place (it stands in for it: the live trader's fills net against its own, as the live rule's replay
+# does). The lays and the quotes are additions: they trade the live rule's book beside it, after it each minute.
+WORLDS = {
+    "live": ["live_rule", "lays", "quotes_model3", "quotes_mid2"],
+    "backs_floor50": ["backs_floor50"],
+    "backs_win1000": ["backs_win1000"],
+}
+STANDS_IN = {"live_rule", "backs_floor50", "backs_win1000"}     # trades in the live trader's place
+
+
+def agent_specs(draws: int, names: list[str] | None = None) -> list[tuple]:
     from research.arms import quotes, sessions
     out = []
     for name, (kind, policy, over) in STRATEGIES.items():
+        if names is not None and name not in names:
+            continue
         cfg = core.make_cfg(clv_draws=draws, **over)
         cls = {"rule": sessions.ArmSession, "lay": sessions.LaySession, "quote": quotes.QuoteSession}[kind]
-        out.append((name, cls, cfg, dict(policy), core.BALANCE, name == "live_rule"))
+        out.append((name, cls, cfg, dict(policy), core.BALANCE, name in STANDS_IN))
     return out
 
 
@@ -176,28 +198,37 @@ def markets_table(fp: pd.DataFrame) -> pd.DataFrame:
     return m.reset_index()[cols].round(4)
 
 
-def day_job(day_iso: str, names: list[str], draws: int, write: bool) -> dict:
+def day_job(day_iso: str, names: list[str], draws: int, write: bool, intraday: bool = False) -> dict:
+    """One racing day, every agent on one book. ``intraday``: the day so far on the books recorded to now, the races
+    run settled on the recorder's BSPs (provisional); each agent's markets.csv is written, the day's ledger row is
+    not (the night's run on Betfair's price file scores it for good)."""
     from research.arms import quotes
     day = date.fromisoformat(day_iso)
     res = {"day": day_iso, "rows": [], "errors": []}
     try:
-        D = core.load_day(day, "win")
+        D = core.load_day(day, "win", intraday=intraday)
     except Exception:
         res["errors"].append(traceback.format_exc())
         return res
     if D is None:
         res["rows"].append({"day": day_iso, "note": "no books or no price file yet"})
         return res
-    specs = [sp for sp in agent_specs(draws) if sp[0] in names or sp[0] == "live_rule"]
     core.set_plan_cfg(core.make_cfg(clv_draws=draws), reset=False)
-    for sp in specs:
-        sp[3]["_D"] = D
     tic = time.time()
-    try:
-        out = core.run_agents(D, specs, core.session_start(D, "win"))
-    except Exception:
-        res["errors"].append(traceback.format_exc())
-        return res
+    out = {}
+    for world, members in WORLDS.items():
+        want = [n for n in members if n in names or n == "live_rule" and world == "live"]
+        if not want:
+            continue
+        specs = agent_specs(draws, want)
+        for sp in specs:
+            sp[3]["_D"] = D
+        try:
+            out.update(core.run_agents(D, specs, core.session_start(D, "win"),
+                                       t_end=D.last_poll if intraday and D.provisional else None))
+        except Exception:
+            res["errors"].append(f"{world}: {traceback.format_exc()}")
+            return res
     secs = round(time.time() - tic)
     for name, (led, s, x) in out.items():
         fills = agent_fills(name, led, s, D)
@@ -213,7 +244,7 @@ def day_job(day_iso: str, names: list[str], draws: int, write: bool) -> dict:
             with gzip.GzipFile(fileobj=buf, mode="wb") as g:
                 g.write((fp if len(fp) else fills).to_csv(index=False).encode())
             _put(f"{base}/fills.csv.gz", buf.getvalue())
-    if write and res["rows"] and not res["errors"]:
+    if write and res["rows"] and not res["errors"] and not D.provisional:
         _put(f"{PREFIX}/days/{day_iso}.json", json.dumps(res["rows"], default=str, indent=1).encode())
     return res
 
@@ -318,13 +349,18 @@ def main(argv=None) -> int:
     ap.add_argument("--max-minutes", type=float, default=300.0)
     ap.add_argument("--no-write", action="store_true", help="print only, keep nothing in S3")
     ap.add_argument("--report-only", action="store_true")
+    ap.add_argument("--intraday", action="store_true",
+                    help="today so far, as if live: the recorder's books to now, the races run settled on its BSPs")
     a = ap.parse_args(argv)
     names = list(STRATEGIES) if a.strategies == "all" else [s for s in a.strategies.split(",") if s]
     bad = [s for s in names if s not in STRATEGIES]
     if bad:
         ap.error(f"unknown strategies {bad}; known {list(STRATEGIES)}")
     if not a.report_only:
-        if a.days == "pending":
+        if a.intraday:
+            from zoneinfo import ZoneInfo
+            days = [datetime.now(ZoneInfo("Europe/London")).date()]
+        elif a.days == "pending":
             bf = date.fromisoformat(a.backfill_from) if a.backfill_from else None
             days = pending_days(datetime.now(timezone.utc).date(), bf)
         elif ".." in a.days:
@@ -338,7 +374,7 @@ def main(argv=None) -> int:
         computed = []
         if days:
             with ProcessPoolExecutor(max_workers=a.jobs) as ex:
-                futs = {ex.submit(day_job, d.isoformat(), names, a.draws, not a.no_write): d for d in days}
+                futs = {ex.submit(day_job, d.isoformat(), names, a.draws, not a.no_write, a.intraday): d for d in days}
                 try:
                     for fut in as_completed(futs, timeout=max(60.0, deadline - time.time())):
                         r = fut.result()

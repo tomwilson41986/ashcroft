@@ -186,6 +186,19 @@ def test_the_live_rule_s_replay_goes_first_and_the_order_turns_for_the_rest():
     assert _alpha(out["agent"][0]) == pytest.approx(5.56, abs=0.02)
 
 
+def test_the_paper_agents_takes_never_cost_the_live_rule_s_replay():
+    D = _thin_day(50.0)
+    data = core.SharedReplayData(D)
+    data.now = datetime(2026, 11, 5, 6, 1, tzinfo=timezone.utc)
+    data.agent_taken[(MID, A, 10.0)] += 30.0                                  # an agent took GBP30 at 10.0
+    data.agent_taken_lay[(MID, A, 11.0)] += 60.0                              # and GBP60 of the lay side at 11.0
+    seen = data.books([MID])[MID].runners[A]
+    assert seen.back == [(10.0, 20.0)] and seen.lay == [(11.0, 40.0)]       # the other agents see what is left
+    data.real_view = True
+    real = data.books([MID])[MID].runners[A]
+    assert real.back == [(10.0, 50.0)] and real.lay == [(11.0, 100.0)]      # the control sees the book it met
+
+
 def test_two_quotes_at_one_price_queue_one_behind_the_other():
     from model import race_book as rb
     from trading.exchange import tick_up
@@ -219,7 +232,87 @@ def test_an_agent_s_day_reads_on_the_dashboard(tmp_path):
     p.mkdir(parents=True)
     (p / "markets.csv").write_text(m.to_csv(index=False))
     src = tr.LocalSource(tmp_path)
-    t = [x for x in tr.TRADERS if x.id == "horse-agent-quotes-mid2"][0]
-    got, _ = t.reader(src, t.kind, t.base, "2026-11-05")
+    got, _ = tr.paper_agent_markets(src, "pred", "paper/horses/shared/agents/quotes_mid2", "2026-11-05")
     assert got.pnl.sum() == pytest.approx(horses.summary("quotes_mid2", fp, D)["result_reduced"], abs=0.01)
-    assert {x.id for x in tr.TRADERS} >= {f"horse-agent-{k.replace('_', '-')}" for k in horses.AGENTS}
+
+
+def test_the_paper_agents_are_retired():
+    """The owner, 4 Nov 2026: "Keep the current live rule. Retire the others". The desk's jobs run on dispatch only,
+    and the agents are off the traders dashboard; the live trader's tile stays."""
+    import yaml
+    from pathlib import Path
+    from dashboard import traders as tr
+    root = Path(__file__).resolve().parent.parent / ".github/workflows"
+    for name in ("paper-horses.yml", "paper-horses-intraday.yml"):
+        on = yaml.safe_load((root / name).read_text())[True]
+        assert set(on) == {"workflow_dispatch"}, name
+    ids = {x.id for x in tr.TRADERS}
+    assert not any(i.startswith("horse-agent-") for i in ids) and "horse-live" in ids
+
+
+def test_intraday_settles_the_races_run_on_the_recorder_s_bsps(monkeypatch):
+    """The owner, 4 Nov 2026: the paper agents trading as if live, results the same day. With no price file yet,
+    load_day(intraday=True) settles the races run so far from the recorder's books (each runner's last BSP read and
+    its result where read), marks the day provisional and gives the last book's time as the run's end; without
+    intraday the day still waits for the price file."""
+    import pandas as pd
+    from research.arms import core
+    day = date(2026, 11, 4)
+    start = "2026-11-04T13:00:00Z"
+    cat = pd.DataFrame([{"market_id": "1.9", "selection_id": s, "market_type": "WIN", "country": "GB",
+                         "market_start_utc": start, "venue": "Kempton", "market_name": "1m Hcap", "runner_name": n}
+                        for s, n in ((1, "Alpha"), (2, "Bravo"))])
+    rows = []
+    for t, status, inplay, sp1, sp2, rs1 in (("2026-11-04T12:55:00Z", "OPEN", False, None, None, "ACTIVE"),
+                                             ("2026-11-04T13:02:00Z", "OPEN", True, 4.2, 1.9, "ACTIVE"),
+                                             ("2026-11-04T13:06:00Z", "CLOSED", False, 4.2, 1.9, "WINNER")):
+        rows += [{"polled_utc": t, "market_id": "1.9", "selection_id": 1, "status": status, "inplay": inplay,
+                  "runner_status": rs1, "sp_actual": sp1, "back1": 4.0, "back1_size": 50.0},
+                 {"polled_utc": t, "market_id": "1.9", "selection_id": 2, "status": status, "inplay": inplay,
+                  "runner_status": "LOSER" if rs1 == "WINNER" else "ACTIVE", "sp_actual": sp2, "back1": 2.0,
+                  "back1_size": 80.0}]
+    books = pd.DataFrame(rows)
+
+    def fake_csv(key, **kw):
+        if "/books_trader" in key:
+            return books
+        if "/markets_trader" in key:
+            return cat
+        return pd.DataFrame()
+    monkeypatch.setattr(core, "csv", fake_csv)
+    monkeypatch.setattr(core, "price_files", lambda d, m: pd.DataFrame())
+    preds = pd.DataFrame({"market_id": ["1.9", "1.9"], "selection_id": [1, 2], "predicted_bfsp": [4.0, 2.0]})
+    assert core.load_day(day, "win", preds=preds) is None                       # the nightly path still waits
+    D = core.load_day(day, "win", preds=preds, intraday=True)
+    assert D.provisional is True
+    assert D.settled == {("1.9", 1): (4.2, "WINNER"), ("1.9", 2): (1.9, "LOSER")}
+    assert D.last_poll == datetime(2026, 11, 4, 13, 6, tzinfo=timezone.utc)
+
+
+def test_a_backs_variant_trades_its_own_book_in_the_live_trader_s_place():
+    """The first shared run (4 Nov): three copies of the rule on one book took each other's leftovers. A backs variant
+    is an alternative to the live rule: it trades a book of its own, standing in for the live trader."""
+    assert horses.WORLDS["live"] == ["live_rule", "lays", "quotes_model3", "quotes_mid2"]
+    for v in ("backs_floor50", "backs_win1000"):
+        assert horses.WORLDS[v] == [v] and v in horses.STANDS_IN
+    every = [n for ms in horses.WORLDS.values() for n in ms]
+    assert sorted(every) == sorted(horses.STRATEGIES) and len(every) == len(set(every))
+    specs = {sp[0]: sp for sp in horses.agent_specs(2000)}
+    assert specs["backs_win1000"][5] and specs["live_rule"][5] and not specs["lays"][5]
+
+
+def test_the_day_so_far_runs_in_its_own_queue_on_github_s_runners_and_never_reaches_betfair():
+    """The owner, 4 Nov 2026: the paper agents as if live, results through the day. The intraday run has a workflow
+    and a queue of its own, so a long backfill in paper-horses.yml never holds the hourly results up; like the desk,
+    it reads S3 only on GitHub's runners and places no order."""
+    import yaml
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / ".github/workflows"
+    text = (root / "paper-horses-intraday.yml").read_text()
+    wf = yaml.safe_load(text)
+    job = wf["jobs"]["desk"]
+    assert job["runs-on"] == "ubuntu-latest"
+    assert wf["concurrency"]["group"] == "paper-horses-intraday"
+    assert yaml.safe_load((root / "paper-horses.yml").read_text())["concurrency"]["group"] != "paper-horses-intraday"
+    assert "--intraday" in str(job["steps"]) and "--intraday" not in (root / "paper-horses.yml").read_text()
+    assert "BETFAIR" not in text and "TRADING_LIVE" not in text and "auto_trade" not in text

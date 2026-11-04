@@ -71,3 +71,27 @@ def test_a_day_is_built_from_the_feeds_files(tmp_path):
     out = ff.build_day(None, "2026-11-07", every_min=30, root=tmp_path)
     assert len(out) >= 5 and {"spread_ticks", "traded_60m", "y_mid_logret_to_close"} <= set(out.columns)
     assert out["moment_utc"].is_monotonic_increasing
+
+
+def test_the_feed_throttle_holds_betfair_requests_under_its_ceilings():
+    """The owner, 4 Nov 2026 ("use live key ... do not pass betfair thresholds"): no more than the per-second and
+    per-hour ceilings, whatever the feed asks; it waits instead and counts every call."""
+    from football.exchange_feed import MAX_CALLS_PER_SECOND, Throttle, batch_size
+    t = {"now": 0.0}
+    slept = []
+
+    def sleep(s):
+        slept.append(s)
+        t["now"] += s
+    th = Throttle(lambda *a, **k: "ok", per_second=5.0, per_hour=20, clock=lambda: t["now"], sleep=sleep)
+    stamps = []
+    for _ in range(45):
+        assert th("listMarketBook", {}) == "ok"
+        stamps.append(t["now"])
+    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+    assert min(gaps) >= 0.2 - 1e-9                                  # never above 5 a second
+    for i, s in enumerate(stamps):                                   # never more than 20 in any rolling hour
+        assert sum(1 for x in stamps if s - 3600.0 < x <= s) <= 20
+    assert th.calls == 45 and th.report()["limit_per_hour"] == 20
+    assert MAX_CALLS_PER_SECOND <= 5.0
+    assert batch_size(5, True) * 20 * 5 / 3 <= 200                     # each request under Betfair's 200 points

@@ -16,9 +16,10 @@ name: Football (the trader, every match on Betfair, the book records, the line-u
 # Beside it, read-only on the delayed key: the Betfair football book records (betfair_recorder.py, tags football_<C>,
 # football_eve_<C>, football_coll_<C>: the books the pre-registered football paper trials are scored at) and the
 # API-Football line-ups and injuries collector, then its tables. All moved here from paper-models.yml on 3 Nov 2026.
-# The key: the live application key only when the repository variable FOOTBALL_LIVE is 'yes', and only to the trader
-# (then the process bets and reads on the key it bets with); otherwise the delayed key, on paper. The key reaches no
-# other process.
+# The key (the owner, 4 Nov 2026: "use live key", "do not pass betfair thresholds"): the live application key to the
+# trader's process alone, which reads every football market through a request throttle under Betfair's limits
+# (football/exchange_feed.py Throttle); it bets only when the repository variable FOOTBALL_LIVE is 'yes', otherwise
+# paper. The book records and the line-ups collector stay on the delayed key, so no market is read twice on the live key.
 # The runner: its own self-hosted runner on the UK server (Betfair refuses GitHub's runners), labelled
 # vars.FOOTBALL_RUNNER (default 'football'). Not the live horse trader's runner, and not the paper models' runner
 # (one job a runner: a shared runner would hold one job behind the other all day).
@@ -95,7 +96,7 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
-          # the delayed key: every process here but the trader, and the trader too unless FOOTBALL_LIVE=yes
+          # the delayed key: every process here but the trader (the live key, the owner, 4 Nov 2026)
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
           BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
           FOOTBALL_LIVE: ${{ vars.FOOTBALL_LIVE || 'no' }}
@@ -105,8 +106,11 @@ jobs:
           set +e
           FBKEY="$BETFAIR_APP_KEY"
           LIVEFLAG=""
-          if [ "$FOOTBALL_LIVE" = yes ] && [ -n "$BETFAIR_LIVE_APP_KEY" ]; then FBKEY="$BETFAIR_LIVE_APP_KEY"; LIVEFLAG="--live"; fi
-          if [ -n "$LIVEFLAG" ]; then echo "football: real stakes on, the live key's feed"; else echo "football: paper, the delayed key's feed"; fi
+          # the owner, 4 Nov 2026: "use live key" ("do not pass betfair thresholds": the feed's Throttle): the trader's
+          # process reads on the live key; it bets only with FOOTBALL_LIVE=yes
+          if [ -n "$BETFAIR_LIVE_APP_KEY" ]; then FBKEY="$BETFAIR_LIVE_APP_KEY"; fi
+          if [ "$FOOTBALL_LIVE" = yes ] && [ -n "$BETFAIR_LIVE_APP_KEY" ]; then LIVEFLAG="--live"; fi
+          if [ -n "$LIVEFLAG" ]; then echo "football: real stakes on, the live key's feed"; else echo "football: paper, the live key's feed"; fi
           # the Betfair football books with their sizes (read-only, the delayed key; the unmodified betfair_recorder.py,
           # tag football_<country>): today's MATCH_ODDS and OVER_UNDER_25 in the leagues football-data covers, every 15
           # minutes and every 2 in the hour before kick-off, and tomorrow's the evening before. The prices the

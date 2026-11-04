@@ -54,4 +54,27 @@ def test_the_matrix_blocks_attach_once(monkeypatch):
     df = pd.DataFrame({"a": [1.0]})
     assert live.attach_blocks(df, ("sim",)) == ["sim_f1"] and calls == ["sim"]
     assert live.attach_blocks(df, ()) == []
-    assert live.LIVE_OBJECTIVE == "logbsp" and "times" in live.LIVE_BLOCKS and live.LIVE_MATRIX_BLOCKS == ("sim",)
+    assert live.LIVE_OBJECTIVE == "logbsp" and "times" in live.LIVE_BLOCKS and live.LIVE_MATRIX_BLOCKS == ("sim", "wpred")
+
+
+def test_the_calibrated_prices_stretch_within_the_race_and_stay_a_book():
+    df = frame()
+    m, meta = live.fit(df, ["x1", "x2"], before="2024-04-01", date_from="2024-01-01", objective="logbsp",
+                       calibration="stretch_track")
+    st = meta["stretch"]
+    assert st["kind"] == "stretch_track" and st["b"] > 0 and st["rows"] > 0
+    card = df[df.t >= "2024-04-01"].head(12).assign(is_card=True)
+    key = card[["race_id", "trap"]].assign(market_id="1.1", selection_id=1, matched_history=True)
+    plain = live.price_cards(card, m, ["x1", "x2"], key, {k: v for k, v in meta.items() if k != "stretch"})
+    cal = live.price_cards(card, m, ["x1", "x2"], key, dict(meta, stretch=dict(st, b=2.0, by_track={})))
+    assert np.allclose(cal.groupby("race_id").p_model.sum(), 1.0)
+    assert np.allclose((1.0 / cal.pred_bsp).groupby(cal.race_id).sum(), meta["book"], atol=0.01)
+    # the win chance is left alone; b of 2 spreads the SP forecast: the favourite shorter, the outsider longer
+    assert np.allclose(cal.p_model, plain.p_model)
+    for rid, g in cal.groupby("race_id"):
+        q0 = plain[plain.race_id == rid].set_index("trap").pred_bsp
+        q1 = g.set_index("trap").pred_bsp
+        assert q1[q0.idxmin()] < q0.min() and q1[q0.idxmax()] > q0.max()
+        assert (q1.rank() == q0.rank()).all()
+    assert live.LIVE_CALIBRATION is None or live.LIVE_CALIBRATION in ("stretch", "stretch_track", "temper",
+                                                                      "temper_track")

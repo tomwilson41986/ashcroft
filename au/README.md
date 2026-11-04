@@ -66,4 +66,67 @@ workflow `au-model.yml`; run 41598199179, https://github.com/tomwilson41986/ashc
   does not. Whether it forecasts the move from an early price to the BSP (the UK edge) needs early prices: Betfair
   Historic Data, gate A. Its out-of-sample prices are stored at `s3://ashcroft/sources/au/model_report_oos.parquet`.
 
-Waiting on the owner: the Historic Data plan (free) and the `au-night` runner.
+## Gate A: the early prices (4 Nov 2026)
+
+The owner's Betfair Historic Data bundle (BASIC, Horse Racing, every country; `data.tar` from Drive, kept at
+`s3://ashcroft/sources/betfair_historic/bundles/horse_racing_basic_2024.tar`) streamed by `historic.py`
+(au-historic run 41818048958, https://github.com/tomwilson41986/ashcroft/actions/runs/41818048958).
+
+- The bundle is cut short: 4,404,215,808 bytes, ending inside a file after 904,002 files (last whole file
+  `BASIC/2026/Oct/4/...`); read to the cut. 6 files unreadable. WIN markets Jan 2024 to early Oct 2026: Australia
+  85,504 markets, GB 27,670, Ireland 7,922 (`betfair_historic/horse_racing_win_<year>.parquet`).
+- The market alone: an Australian price an hour out sits under the BSP far more than a British one. A back at the
+  last traded price at T-60 closed by a lay at the SP averages -2.31% (GB/IE -0.69%); at T-15 -2.17% (GB/IE -0.58%).
+  Australian books trade late: a traded price at T-60 for 45.8% of runners (GB/IE 99.9%), at T-15 73.2%.
+- The model (its out-of-sample prices, 2024-2026; 452,367 runners joined, 56% of the AU WIN runners: the rest are
+  harness, which the model does not price) does order the drift: within each price band its top fifth beat the
+  band by +6.2% CLV at T-60 and its bottom fifth fell short by 4.0%. Backing where the price is over the model's
+  expected BSP:
+  - T-60: excess CLV over runners at the same price +0.98% (90% +0.55 to +1.42), but CLV itself -2.87%
+    (-3.30 to -2.43): the edge is smaller than Australia's drift; to the result -7.5%;
+  - T-15: excess +0.12% (-0.11 to +0.37), CLV -3.00%;
+  - the first traded price: CLV +2.01% (+1.62 to +2.42), excess +2.25%; to the result -1.9%. A first trade can be a
+    few dollars at an odd price, and BASIC holds no book or volume, so this is not yet a price anyone could take;
+  - T-24h (5.5% of runners): CLV +6.36%, excess +3.65%, fading by year (2024 +8.1%, 2025 +1.3%, 2026 -0.2%).
+- Verdict: **gate A fails for the hour before the off**, where Australian books trade: the model's edge does not
+  cover the drift. What is left is at the first prices, where BASIC cannot show what was takeable. Only recorded
+  books at the market's opening (gate B) can test it; the trader is not built.
+
+## The early lay, pre-registered (4 Nov 2026)
+
+`reports/preregistration_au_early_lay.md` (committed in 0fdac24 before the run); `lay_test.py`, au-lay-test run
+41823377954 (https://github.com/tomwilson41986/ashcroft/actions/runs/41823377954). Lay at the last traded price 60
+minutes out where the price is under the model's expected BSP (1.5-21), back level at the BSP, 2% commission on each
+market's net profit; 452,367 AU thoroughbred runners, 46,743 markets, 1 Jan 2024 to 3 Oct 2026.
+
+- **The gate passed:** 134,992 bets in 45,304 markets, +2.42% a unit laid after commission (90% +2.31 to +2.53);
+  2024 +1.81%, 2025 +2.15%, 2026 +3.63%. Settled by the result instead: +2.12% (+1.21 to +2.99).
+- **But the model is not the reason:** laying every runner in the range made more, +2.83% (+2.73 to +2.91). The
+  margin is in the Australian T-60 traded prices themselves.
+- **And it is not robust in time:** at T-15 the same rule makes -0.17% (-0.25 to -0.09), every runner +0.94%. Prices
+  over 21 at T-60: +15.0%, too large to be a price anyone could lay in size.
+- What this says: a last traded price 60 minutes out in Australia sits short of the BSP, and those who laid it gained.
+  Only 45.8% of runners trade by then, and a last traded price may be hours old. Whether a lay offer at that price
+  would have been matched, and in what size, the BASIC data cannot say. Gate B (the recorded books) is the test.
+
+### The staleness check (pre-registered in 4bc6101): the margin was in stale prices
+
+au-staleness run 41826488927 (https://github.com/tomwilson41986/ashcroft/actions/runs/41826488927). For each lay, how
+long before the T-60 mark its price last changed; 133,868 of the 134,992 lays scored (the age is of the very price
+laid; 99.2% agree). The median price was 27 minutes old at the mark, a quarter over 96 minutes.
+
+| Price last changed before the mark | Lays | Profit a unit laid, after commission (90%) |
+|---|---|---|
+| within 5 minutes (the test) | 31,793 | -0.38% (-0.60 to -0.17) |
+| within 15 minutes | 50,233 | +0.09% (-0.10 to +0.25) |
+| 15 to 60 minutes | 41,286 | +1.34% (+1.14 to +1.56) |
+| over 60 minutes | 42,349 | +6.15% (+5.92 to +6.38) |
+
+The margin grows with the price's age: it lives in prices that had stood still, which no one was offering at the mark.
+On fresh prices it is gone. By the reading fixed before the run, **the early lay is dropped, without gate B.**
+
+(Two runs of this check were void and are not results: 41824321636 failed, and 41825727448 matched no lay to an age
+because the ages table had been saved under the yearly tables' prefix and read in with them. Fixed in 991655c.)
+
+Where Australia stands: the Betfair-only model learns form but holds nothing beyond the BSP (gate A), and the one
+pattern in the early prices was stale prices. Parked; nothing is traded.

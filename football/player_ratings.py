@@ -237,6 +237,109 @@ def surprise(m: pd.DataFrame, st: pd.DataFrame, ratings: dict, name: str, n_prev
     return out.reset_index().rename(columns={"index": "apif_fixture_id"})
 
 
+#: the columns the lab's players stage keeps (football/lab.py reads this, so a change here rebuilds that stage)
+STAGE_PREFIXES = ("mpm_", "gpm_", "tn_", "ld_")
+
+TEAM_NEWS = ["tn_mpm_exp_diff", "tn_gpm_exp_diff", "tn_absent_mpm_diff", "tn_absent_gpm_diff", "tn_red_mpm_diff",
+             "tn_absent_n_diff", "tn_rotation_diff", "tn_mpm_exp_home", "tn_mpm_exp_away"]
+#: the expected eleven's minutes load (the owner, 4 Nov 2026: tiredness and fatigue); its own prefix, so the
+#: ``team_news`` family keeps its meaning
+XI_LOAD = ["ld_load7_diff", "ld_load14_diff", "ld_load7_home", "ld_load7_away"]
+LOAD_DAYS = (7, 14)
+REGULAR_SHARE = 0.6
+
+
+def team_news(m: pd.DataFrame, hp: pd.DataFrame, he: pd.DataFrame, mpm: dict, gpm: dict,
+              n_prev: int = EXPECTED_FROM) -> pd.DataFrame:
+    """What was known of each side's eleven at the match's early price (Friday 17:00 / Tuesday 13:00 UK), from its
+    matches before the collection day only (the owner, 4 Nov 2026: team news and player-based strength; Ted Knutson
+    checks injuries, line-ups and suspensions before every bet):
+
+    - ``exp``: the expected eleven's rating (each player's share of the side's starts in its previous ``n_prev``
+      matches, times his rating under the collection month's fit), MPM and GPM;
+    - ``absent``: the regulars (started at least 60% of those matches) who did not play in the side's latest match
+      (injured, suspended or dropped), their share-weighted rating summed, and their count;
+    - ``red``: the rating of players sent off in the side's latest match (suspended next);
+    - ``rotation``: the share of the latest match's starters who did not start the one before;
+    - ``load``: the expected eleven's minutes in the 7 and 14 days before the collection day (each player's league
+      minutes there over 90, weighted by his share of starts; cup and European minutes are not in our history).
+
+    One row a fixture: home less away of each (``tn_*_diff``, ``ld_*_diff``), and the expected MPM eleven and its
+    7-day load home and away."""
+    from football.team_features import collection_day
+    st = hp[hp["apif_player_id"].notna()].drop_duplicates(["apif_fixture_id", "apif_player_id"])
+    st = st.merge(m[["apif_fixture_id", "date"]], on="apif_fixture_id")
+    st["mins"] = pd.to_numeric(st["minutes_events"].fillna(st["minutes_stats"]), errors="coerce").fillna(0).clip(0, 130)
+    st["played"] = (st["role"] == "starter") | (st["mins"] > 0)
+    reds = he[(he["type"] == "Card") & (he["detail"] == "Red Card") & he["apif_player_id"].notna()]
+    red_set = set(zip(reds["apif_fixture_id"], reds["apif_player_id"]))
+    fx = st[["apif_fixture_id", "apif_team_id", "side", "date"]].drop_duplicates(["apif_fixture_id", "apif_team_id"])
+    fx = fx.sort_values(["apif_team_id", "date"])
+    fx["coll"] = collection_day(fx["date"]).to_numpy()
+    by_team = {t: g for t, g in st.groupby("apif_team_id")}
+    rows = []
+    for t, tm in fx.groupby("apif_team_id"):
+        g = by_team[t]
+        dates_fx = g[["apif_fixture_id", "date"]].drop_duplicates().sort_values("date")
+        for r in tm.itertuples(index=False):
+            prev_fx = dates_fx[dates_fx["date"] < pd.Timestamp(r.coll)].tail(n_prev)
+            if len(prev_fx) < 3:
+                continue
+            prev = g[g["apif_fixture_id"].isin(prev_fx["apif_fixture_id"])]
+            starts = prev[prev["role"] == "starter"]
+            share = starts.groupby("apif_player_id").size() / len(prev_fx)
+            mo = pd.Timestamp(r.coll).strftime("%Y-%m")
+            rm, rg = mpm.get(mo, {}), gpm.get(mo, {})
+            last_id = prev_fx["apif_fixture_id"].iloc[-1]
+            last = prev[prev["apif_fixture_id"] == last_id]
+            played_last = set(last.loc[last["played"], "apif_player_id"])
+            regulars = share[share >= REGULAR_SHARE]
+            absent = [p for p in regulars.index if p not in played_last]
+            sent_off = [p for p in last["apif_player_id"] if (last_id, p) in red_set]
+            xi_last = set(last.loc[last["role"] == "starter", "apif_player_id"])
+            if len(prev_fx) >= 2:
+                before_id = prev_fx["apif_fixture_id"].iloc[-2]
+                xi_before = set(prev.loc[(prev["apif_fixture_id"] == before_id) & (prev["role"] == "starter"),
+                                         "apif_player_id"])
+                rotation = len(xi_last - xi_before) / max(len(xi_last), 1)
+            else:
+                rotation = np.nan
+            coll = pd.Timestamp(r.coll)
+            loads = {}
+            for n in LOAD_DAYS:
+                ids = dates_fx.loc[(dates_fx["date"] < coll) & (dates_fx["date"] >= coll - pd.Timedelta(days=n)),
+                                   "apif_fixture_id"]
+                rec = g[g["apif_fixture_id"].isin(ids)]
+                mins = rec.groupby("apif_player_id")["mins"].sum() / 90
+                loads[f"load{n}"] = float(sum(mins.get(p, 0.0) * w for p, w in share.items()))
+            rows.append({"apif_fixture_id": r.apif_fixture_id, "side": r.side, **loads,
+                         "mpm_exp": float(sum(rm.get(p, 0.0) * w for p, w in share.items())),
+                         "gpm_exp": float(sum(rg.get(p, 0.0) * w for p, w in share.items())),
+                         "absent_mpm": float(sum(rm.get(p, 0.0) * regulars[p] for p in absent)),
+                         "absent_gpm": float(sum(rg.get(p, 0.0) * regulars[p] for p in absent)),
+                         "absent_n": float(len(absent)),
+                         "red_mpm": float(sum(rm.get(p, 0.0) for p in sent_off)),
+                         "rotation": rotation})
+    e = pd.DataFrame(rows)
+    if e.empty:
+        return pd.DataFrame(columns=["apif_fixture_id"] + TEAM_NEWS + XI_LOAD)
+    w = e.pivot_table(index="apif_fixture_id", columns="side", aggfunc="first")
+    out = pd.DataFrame(index=w.index)
+    for k in ("mpm_exp", "gpm_exp", "absent_mpm", "absent_gpm", "red_mpm", "absent_n", "rotation"):
+        h = w[(k, "home")] if (k, "home") in w.columns else np.nan
+        a_ = w[(k, "away")] if (k, "away") in w.columns else np.nan
+        out[f"tn_{k}_diff"] = h - a_
+    out["tn_mpm_exp_home"] = w[("mpm_exp", "home")] if ("mpm_exp", "home") in w.columns else np.nan
+    out["tn_mpm_exp_away"] = w[("mpm_exp", "away")] if ("mpm_exp", "away") in w.columns else np.nan
+    for n in LOAD_DAYS:
+        h = w[(f"load{n}", "home")] if (f"load{n}", "home") in w.columns else np.nan
+        a_ = w[(f"load{n}", "away")] if (f"load{n}", "away") in w.columns else np.nan
+        out[f"ld_load{n}_diff"] = h - a_
+    out["ld_load7_home"] = w[("load7", "home")] if ("load7", "home") in w.columns else np.nan
+    out["ld_load7_away"] = w[("load7", "away")] if ("load7", "away") in w.columns else np.nan
+    return out.reset_index()[["apif_fixture_id"] + TEAM_NEWS + XI_LOAD]
+
+
 def points_per_goal(gold: pd.DataFrame) -> float:
     """The slope of a side's points a match on its goal difference a match, over its season (the 22 divisions)."""
     g = gold[(gold["status"] == "FINISHED") & gold["ft_home"].notna()]
@@ -256,6 +359,16 @@ def points_per_goal(gold: pd.DataFrame) -> float:
 
 DEV_FROM, DEV_TO, HOLDOUT_FROM, TRAIN_FROM = 2021, 2024, 2025, 2020
 RATINGS_FROM = "2021-07"
+
+
+def join_player_columns(feats: pd.DataFrame, m: pd.DataFrame, parts: list[pd.DataFrame]) -> pd.DataFrame:
+    """The team-feature table with each player table joined by the linked fixture id. A gold table built with
+    API-Football keyed carries its own ``apif_fixture_id``; the link's is used, so the join key is never split."""
+    out = feats.drop(columns=["apif_fixture_id"], errors="ignore").merge(m[["match_id", "apif_fixture_id"]],
+                                                                         on="match_id")
+    for part in parts:
+        out = out.merge(part, on="apif_fixture_id", how="left")
+    return out
 
 
 def build_all(gold: pd.DataFrame, feats: pd.DataFrame, hm: pd.DataFrame, hp: pd.DataFrame, he: pd.DataFrame,
@@ -278,8 +391,8 @@ def build_all(gold: pd.DataFrame, feats: pd.DataFrame, hm: pd.DataFrame, hp: pd.
     log.info("stint goals reconcile with the final score in %.2f%% of %d matches", 100 * reconciled, len(rec))
     gpm = monthly(m, lambda as_of: fit_gpm(sti, as_of), RATINGS_FROM)
     sm, sg = surprise(m, st, mpm, "mpm"), surprise(m, st, gpm, "gpm")
-    out = feats.merge(m[["match_id", "apif_fixture_id"]], on="match_id").merge(sm, on="apif_fixture_id", how="left") \
-        .merge(sg, on="apif_fixture_id", how="left")
+    tn = team_news(m, hp, he, mpm, gpm)
+    out = join_player_columns(feats, m, [sm, sg, tn])
     out.attrs["stints"] = int(len(sti))
     out.attrs["stint_goals_reconciled"] = reconciled
     out.attrs["linked"] = int(len(linked))

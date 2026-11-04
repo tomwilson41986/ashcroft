@@ -284,8 +284,8 @@ def test_a_trader_counts_only_from_its_start_day(tmp_path):
     (a replay written before it went on) are not its P&L."""
     from dataclasses import replace
     from dashboard.traders import AGENTS_FROM
-    agents = [t for t in TRADERS if t.id.startswith("horse-agent-")]
-    assert len(agents) == 6 and all(t.start_from == AGENTS_FROM == "2026-11-04" for t in agents)
+    assert AGENTS_FROM == "2026-11-04"
+    assert not [t for t in TRADERS if t.id.startswith("horse-agent-")]      # retired, the owner, 4 Nov 2026
     t = replace(T("horse-live"), start_from=TODAY.isoformat(), record_from=None)
     for i, r in enumerate([100, -50, 25]):
         d = (TODAY - timedelta(days=3 - i)).isoformat()

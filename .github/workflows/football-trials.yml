@@ -1,0 +1,105 @@
+name: Football paper trials (scored at the recorded Betfair books)
+
+# The pre-registered football paper trials, scored against the football recorder's books (football-trade.yml records
+# them on the football runner; s3://$CAPTURE_BUCKET/betfair_live/<day>/): the expected-value rule
+# (reports/preregistration_football_ev.md, the owner's paper trader, 4 Nov 2026), the stacked move rule and its
+# resting variant. S3 only, nothing here reaches Betfair: every trade is paper. Each scorer checks its frozen models'
+# SHA-256 against its pre-registration and reports "no football book record found" until the recorder has run.
+# On GitHub's runners (the horse runner holds horse racing alone).
+
+on:
+  schedule:
+    - cron: '20 6 * * 2'     # Tuesday, after the weekend's matches
+    - cron: '20 6 * * 5'     # Friday, after the midweek matches
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: football-trials
+  cancel-in-progress: false
+
+jobs:
+  trials:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+      CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+      CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: API-Football history tables (rebuilt from the stored raw files when one is missing; no API calls)
+        run: |
+          for x in matches players events stats; do
+            if ! aws s3 ls "s3://$CAPTURE_BUCKET/sources/api_football/history_$x.parquet" > /dev/null; then
+              echo "history_$x.parquet missing: rebuilding the history tables from sources/api_football/raw/"
+              python source_data.py --source api_football_history --build | tail -40
+              break
+            fi
+          done
+      - name: Inputs (gold, silver and API-Football history, read-only copies)
+        run: |
+          mkdir -p src/football src/api_football
+          aws s3 sync "s3://$CAPTURE_BUCKET/sources/football/gold/" src/football/gold/ --only-show-errors
+          aws s3 cp "s3://$CAPTURE_BUCKET/sources/football/matches.parquet" src/football/matches.parquet --only-show-errors
+          for x in matches players events stats; do
+            aws s3 cp "s3://$CAPTURE_BUCKET/sources/api_football/history_$x.parquet" "src/api_football/history_$x.parquet" --only-show-errors
+          done
+          ls -la src/football/gold src/api_football
+      - name: Restore the lab cache
+        uses: actions/cache@v4
+        with:
+          path: .football_cache
+          key: football-lab-${{ hashFiles('football/**') }}-${{ github.run_id }}
+          restore-keys: |
+            football-lab-${{ hashFiles('football/**') }}-
+            football-lab-
+      - name: The lab matrix (stages rebuilt only when their code or inputs change)
+        run: timeout 6000 python -m football.lab cache --root src --history-root src --cache .football_cache
+      - name: The expected-value rule (preregistration_football_ev.md)
+        continue-on-error: true
+        run: python -m research.open_close.football_ev_trial score --cache .football_cache --root src --out-json out/football_ev_trial.json
+      - name: The stacked move rule and its resting variant
+        continue-on-error: true
+        run: |
+          python -m research.open_close.football_stack_trial score --cache .football_cache --root src --out-json out/football_stack_trial.json
+          python -m research.open_close.football_stack_resting score --cache .football_cache --root src --out-json out/football_stack_resting.json
+      - name: Keep the scores (S3 and the run's artifact)
+        if: ${{ !cancelled() }}
+        run: |
+          day=$(date -u +%F)
+          for f in out/*.json; do
+            [ -f "$f" ] || continue
+            aws s3 cp "$f" "s3://$CAPTURE_BUCKET/sources/football/trials/$day/$(basename "$f")" --only-show-errors
+            aws s3 cp "$f" "s3://$CAPTURE_BUCKET/sources/football/trials/latest/$(basename "$f")" --only-show-errors
+          done
+          {
+            echo "## Football paper trials ($day)"
+            for f in out/*.json; do
+              [ -f "$f" ] || continue
+              echo "### $(basename "$f")"
+              python - "$f" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          keep = {k: r.get(k) for k in ("status", "start", "as_of", "signals", "headline", "bank", "crossing_variant",
+                                       "adverse_selection", "gate") if k in r}
+          print("```"); print(json.dumps(keep, indent=1, default=str)[:3000]); print("```")
+          PY
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: football-trials
+          path: out/
+          if-no-files-found: ignore

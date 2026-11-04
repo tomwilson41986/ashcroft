@@ -13,13 +13,15 @@ day's results (``tests/test_greyhound_fastloop.py`` rewrites the last day's resu
   run-in; the chance of winning, leading at the bend, finishing in the first two, the lengths lost to checks.
 - ``fcast``: Betfair's forecast price as a prior (roadmap L2), from the recorded catalogues (6 Oct 2026 on; NaN
   before).
+- ``wpred``: the day's weigh-in forecast from the dog's earlier runs (a linear model refitted each month on the months
+  before): the predicted weight change and weight against the dog's mean, for when the weigh-in is not to hand.
 """
 
 from __future__ import annotations
 
 import importlib
 
-NAMES = ("race_rel2", "first_bend", "style_draw", "sim", "fcast")
+NAMES = ("race_rel2", "first_bend", "style_draw", "sim", "fcast", "wpred")
 
 
 def attach(df, name: str) -> list[str]:

@@ -50,3 +50,54 @@ def test_daily_top_k_and_the_model_gap_trade_toward_the_model():
     assert sorted(g.index) == [-0.2, 0.3]
     assert g.loc[0.3, "side"] == 1 and g.loc[0.3, "profit_sym"] == 0.1 and bool(g.loc[0.3, "right_way"])
     assert g.loc[-0.2, "side"] == -1 and g.loc[-0.2, "profit_sym"] == -0.1 and bool(g.loc[-0.2, "right_way"])
+
+
+def _toy_matrix(n_seasons=4, per=400, seed=0):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for s in range(2021, 2021 + n_seasons):
+        for i in range(per):
+            x = rng.normal()
+            rows.append({"season": s, "test_season": s, "x": x, "y_h": 0.05 * x + rng.normal(0, 0.02),
+                         "same_book": True, "fd_code": "E0" if i % 3 == 0 else "E1",
+                         "league": "E0" if i % 3 == 0 else "E1"})
+    d = pd.DataFrame(rows)
+    d["league"] = pd.Categorical(d["league"])
+    return d
+
+
+def test_the_cost_classifier_signs_follow_the_move(monkeypatch):
+    from research.open_close import football_stack_trial as st
+    monkeypatch.setattr(st, "TRAIN_FROM", 2021)
+    d = _toy_matrix()
+    p = fi.walk_forward_clf(d, ["x"], "y_h", "same_book", 2024)
+    te = d[d["test_season"] == 2024]
+    assert len(p) == len(te) and np.corrcoef(p, te["x"])[0, 1] > 0.8 and (np.abs(p) <= 1).all()
+
+
+def test_per_tier_fits_cover_every_test_match_and_outside_top5_drops_them(monkeypatch):
+    from research.open_close import football_stack_trial as st
+    monkeypatch.setattr(st, "TRAIN_FROM", 2021)
+    d = _toy_matrix()
+    p = fi.walk_forward_tier(d, ["x"], "y_h", "same_book", 2024)
+    assert np.isfinite(p).all() and np.corrcoef(p, d[d["test_season"] == 2024]["x"])[0, 1] > 0.8
+    c = pd.DataFrame({"league": ["E0", "E1", "D1", "N1"]})
+    assert fi.outside_top5(c)["league"].tolist() == ["E1", "N1"]
+
+
+def test_the_ev_rule_takes_every_trade_whose_expected_move_beats_its_cost():
+    te = pd.DataFrame({"match_id": ["m1", "m2", "m3"], "match_date": ["2026-11-07"] * 3, "week": "w",
+                       "test_season": 2025, "fd_code": "SP2",
+                       "bfe_open_h": [2.0, 2.0, 2.0], "bfe_open_d": [3.6, 3.6, 3.6], "bfe_open_a": [4.4, 4.4, 4.4],
+                       "bfe_close_h": [1.8, 2.3, 2.0], "bfe_close_d": [3.7, 3.5, 3.6], "bfe_close_a": [5.0, 3.8, 4.4],
+                       "p_h": [0.55, 0.40, 0.5], "p_a": [0.20, 0.25, 0.25]})
+    c = fi.candidates(te, {"H": np.array([0.10, -0.10, 0.001]), "A": np.array([0.0, 0.0, 0.0])}, "MO")
+    assert (c["cost_tick_b"] > 0).all() and (c["cost_sym_l"] > 0).all()   # a round trip with no move loses
+    cal = {"a": 0.0, "b": 1.0}
+    got = fi.by_ev(c, cal, "tick").set_index(["match_id", "leg"])
+    assert ("m1", "H") in got.index and got.loc[("m1", "H"), "side"] == 1     # chance up 10%: back first
+    assert ("m2", "H") in got.index and got.loc[("m2", "H"), "side"] == -1    # down 10%: lay first
+    assert ("m3", "H") not in got.index and ("m1", "A") not in got.index     # no edge past the cost: no trade
+    assert (got["ev"] > 0).all()
+    # a calibration that halves the forecast keeps fewer trades, never more
+    assert len(fi.by_ev(c, {"a": 0.0, "b": 0.5}, "tick")) <= len(got)
