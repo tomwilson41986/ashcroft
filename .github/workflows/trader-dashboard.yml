@@ -1,0 +1,75 @@
+name: Traders dashboard (every trader's P&L, volume and forecast; read-only)
+
+# The owner, 4 Nov 2026: one live page for every trader, a tab a sport (horse racing, greyhounds, football, cricket),
+# each trader with its avatar, today's P&L, volume and forecast, the month's P&L and forecast, and the all-time P&L.
+# python -m dashboard reads each trader's ledger in S3 (read-only: no Betfair, no orders, no trader touched) and writes
+# dashboard/traders.json and dashboard/index.html. On the schedule and by hand both go to
+# s3://$PRED_BUCKET/dashboard/ (the page re-reads traders.json beside it every 60 s); every run keeps the page as its
+# artifact and the table in its summary. A push to the development branch builds and checks it without the upload.
+
+on:
+  schedule:
+    - cron: '*/10 5-22 * * *'   # the trading day, UTC: every 10 minutes from the first trader's start to the last settle
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'UK trading day (YYYY-MM-DD; blank: today)'
+        required: false
+        default: ''
+  push:
+    branches: ['claude/cool-johnson-*']
+    paths:
+      - 'dashboard/**'
+      - '.github/workflows/trader-dashboard.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trader-dashboard
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Build the dashboard
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          PRED_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          PRED_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          DAY: ${{ inputs.date }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          ARGS=(--out out/dashboard --summary "$GITHUB_STEP_SUMMARY")
+          if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); fi
+          if [ "$EVENT" != push ]; then ARGS+=(--upload); fi
+          python -m dashboard "${ARGS[@]}"
+      - name: Reconcile against the traders' own records (push runs)
+        if: github.event_name == 'push'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          PRED_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          PRED_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+        run: |
+          set -o pipefail
+          python -m dashboard.reconcile | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trader-dashboard-${{ github.run_number }}
+          path: out/dashboard/
+          retention-days: 7

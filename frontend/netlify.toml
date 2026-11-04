@@ -1,12 +1,13 @@
+# Netlify is not used (the owner, 4 Nov 2026: "block any netlify builds or connection, not needed").
+# The site is still linked on Netlify's side; this file only makes it build nothing. `ignore` exiting 0 means
+# "skip": every production deploy, Deploy Preview and branch deploy stops before it starts, and nothing is published.
+# Remove the link on Netlify (delete the site) or uninstall its GitHub App to end the connection itself.
 [build]
-  publish = "."
-  # Nothing is ever published to Netlify (the owner, 3 Nov 2026): every build, production included, is skipped.
   ignore = "exit 0"
 
-# Same rule as the repository-root netlify.toml, repeated because Netlify reads
-# the config in the base directory as well and which of the two wins is not
-# worth guessing at: no Deploy Preview, no branch deploy. `ignore` exiting 0
-# means "nothing to build here".
+[context.production]
+  ignore = "exit 0"
+
 [context.deploy-preview]
   ignore = "exit 0"
 

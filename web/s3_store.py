@@ -7,6 +7,7 @@ S3 keys:
     dashboard/bets.json         — array of all bet records
     dashboard/daily_pnl.json    — array of daily P&L summaries
     dashboard/odds/{date}.json  — odds snapshots per date
+    dashboard/traders.json      — every trader's figures (python -m dashboard, trader-dashboard.yml)
 """
 
 import io
@@ -55,6 +56,15 @@ def _read_json(key: str) -> list | dict | None:
     except Exception as e:
         log.warning(f"Failed to read s3://{S3_BUCKET}/{key}: {e}")
         return None
+
+
+TRADERS_KEY = "dashboard/traders.json"
+
+
+def get_traders() -> dict | None:
+    """The traders' dashboard figures as the last trader-dashboard.yml run wrote them; None when there are none."""
+    data = _read_json(TRADERS_KEY)
+    return data if isinstance(data, dict) and data.get("sports") else None
 
 
 def _write_json(key: str, data: list | dict) -> None:

@@ -1,3 +1,2 @@
-// API calls go to /api/* which Netlify redirects to the serverless function.
-// The function reads JSON from S3. No separate backend needed.
+// API calls go to /api/* on the same host: the FastAPI app (web/app.py), which reads the JSON from S3.
 const API_BASE = '';
