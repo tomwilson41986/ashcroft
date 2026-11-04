@@ -42,7 +42,7 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
         run: |
           set -o pipefail
-          python -m au.staleness --dest "$RUNNER_TEMP/bundle.tar" | tee au_staleness.json
+          python -m au.staleness --ages-from-store --dest "$RUNNER_TEMP/bundle.tar" | tee au_staleness.json
       - name: Summary
         if: always()
         run: |

@@ -23,6 +23,7 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 MARK_MIN = 60
+AGES_KEY = "betfair_historic/horse_racing_win_ages_au.parquet"
 
 
 def _ages(item: tuple[str, bytes]) -> list[dict] | None:
@@ -109,7 +110,11 @@ def score_by_age(j: pd.DataFrame, ages: pd.DataFrame) -> dict:
     a["market_id"] = a["market_id"].astype(str).str.replace(r"^1\.", "", regex=True).astype("int64")
     a["selection_id"] = a["selection_id"].astype("int64")
     p = PRIMARY
-    s = bets(j, p["mark"], p["model_filter"], p["lo"], p["hi"]).merge(a, on=["market_id", "selection_id"], how="left")
+    left = bets(j, p["mark"], p["model_filter"], p["lo"], p["hi"])
+    a = a[["market_id", "selection_id", "ltp_t_60_seen", "age_t_60_min", "changes_last_15min"]]
+    s = left.merge(a, on=["market_id", "selection_id"], how="left", suffixes=("", "_age"))
+    if "age_t_60_min" not in s.columns:
+        raise RuntimeError(f"no age column after the join: left {list(left.columns)}, ages {list(a.columns)}")
     rep = {"primary_bets": int(len(s)), "with_age": int(s["age_t_60_min"].notna().sum()),
            "price_agrees_with_table": round(float((s["ltp_t_60_seen"] - s["L"]).abs().lt(1e-9).mean()), 4),
            "age_quantiles_min": {str(q): round(float(s["age_t_60_min"].quantile(q)), 1)
@@ -131,14 +136,20 @@ def main(argv=None) -> int:
     ap.add_argument("--bundle-key", default="sources/betfair_historic/bundles/horse_racing_basic_2024.tar")
     ap.add_argument("--dest", default="bundle.tar")
     ap.add_argument("--out-key", default="au/staleness_report.json")
+    ap.add_argument("--ages-from-store", action="store_true", help="use the ages table already in S3, if held")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     from sources.common import Store
     from au.lay_test import joined
     store = Store()
-    store.s3.download_file(store.bucket, a.bundle_key, a.dest)
-    ages, srep = stream(a.dest)
-    store.put_parquet("betfair_historic/horse_racing_win_ages_au.parquet", ages)
+    held = store.get_parquet(AGES_KEY) if a.ages_from_store else None
+    if held is not None:
+        ages, srep = held, {"from_store": AGES_KEY, "rows": int(len(held))}
+    else:
+        store.s3.download_file(store.bucket, a.bundle_key, a.dest)
+        ages, srep = stream(a.dest)
+        store.put_parquet(AGES_KEY, ages)
+    log.info("ages: %d rows, columns %s", len(ages), list(ages.columns))
     rep = {"run_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
            "preregistration": "reports/preregistration_au_early_lay.md addendum (commit 4bc6101)", "stream": srep,
            **score_by_age(joined(store), ages)}
