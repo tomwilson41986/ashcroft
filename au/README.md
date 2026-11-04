@@ -92,5 +92,21 @@ The owner's Betfair Historic Data bundle (BASIC, Horse Racing, every country; `d
   cover the drift. What is left is at the first prices, where BASIC cannot show what was takeable. Only recorded
   books at the market's opening (gate B) can test it; the trader is not built.
 
-Waiting on the owner: whether to record the Australian books from their opening (the `au-night` runner), or park
-Australia.
+## The early lay, pre-registered (4 Nov 2026)
+
+`reports/preregistration_au_early_lay.md` (committed in 0fdac24 before the run); `lay_test.py`, au-lay-test run
+41823377954 (https://github.com/tomwilson41986/ashcroft/actions/runs/41823377954). Lay at the last traded price 60
+minutes out where the price is under the model's expected BSP (1.5-21), back level at the BSP, 2% commission on each
+market's net profit; 452,367 AU thoroughbred runners, 46,743 markets, 1 Jan 2024 to 3 Oct 2026.
+
+- **The gate passed:** 134,992 bets in 45,304 markets, +2.42% a unit laid after commission (90% +2.31 to +2.53);
+  2024 +1.81%, 2025 +2.15%, 2026 +3.63%. Settled by the result instead: +2.12% (+1.21 to +2.99).
+- **But the model is not the reason:** laying every runner in the range made more, +2.83% (+2.73 to +2.91). The
+  margin is in the Australian T-60 traded prices themselves.
+- **And it is not robust in time:** at T-15 the same rule makes -0.17% (-0.25 to -0.09), every runner +0.94%. Prices
+  over 21 at T-60: +15.0%, too large to be a price anyone could lay in size.
+- What this says: a last traded price 60 minutes out in Australia sits short of the BSP, and those who laid it gained.
+  Only 45.8% of runners trade by then, and a last traded price may be hours old. Whether a lay offer at that price
+  would have been matched, and in what size, the BASIC data cannot say. Gate B (the recorded books) is the test.
+
+Waiting on the owner: the `au-night` runner for gate B, or park Australia.
