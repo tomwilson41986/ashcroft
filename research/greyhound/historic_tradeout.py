@@ -60,6 +60,26 @@ def forecast(j: pd.DataFrame) -> pd.DataFrame:
     m = lgb.train(params, lgb.Dataset(x.loc[dev, feats], (x.y - x.l_t_1_w)[dev]), 600)
     x["f_bsp"] = np.exp(x.l_t_1_w + m.predict(x[feats]))
     x["dev"] = dev
+    x.attrs["model"], x.attrs["feats"] = m, feats
+    return x
+
+
+def features_from(x: pd.DataFrame) -> pd.DataFrame:
+    """The forecast's inputs from a frame carrying ``ltp_<mark>_<w|p>``, ``race``, ``n``, ``k``, ``country``
+    (the same transforms as ``forecast``)."""
+    x = x.copy()
+    for mk in ("w", "p"):
+        for m in ("t_60", "t_15", "t_1"):
+            c = f"ltp_{m}_{mk}"
+            x[f"l_{m}_{mk}"] = np.log(pd.to_numeric(x.get(c), errors="coerce").where(lambda v: v > 1))
+    inv = 1.0 / x.ltp_t_1_w
+    x["q1"] = inv / inv.groupby(x.race).transform("sum")
+    x["book1"] = inv.groupby(x.race).transform("sum")
+    invp = 1.0 / pd.to_numeric(x.get("ltp_t_1_p"), errors="coerce").where(lambda v: v > 1)
+    x["qp1"] = invp / invp.groupby(x.race).transform("sum") * x.k
+    x["move_15_1"] = x.l_t_1_w - x.l_t_15_w
+    x["place_vs_win"] = np.log(x.qp1.clip(1e-6)) - np.log(x.q1.clip(1e-6))
+    x["is_au"] = (x.country.astype(str) == "AU").astype(int)
     return x
 
 
