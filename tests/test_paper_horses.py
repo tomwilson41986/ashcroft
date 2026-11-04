@@ -232,10 +232,22 @@ def test_an_agent_s_day_reads_on_the_dashboard(tmp_path):
     p.mkdir(parents=True)
     (p / "markets.csv").write_text(m.to_csv(index=False))
     src = tr.LocalSource(tmp_path)
-    t = [x for x in tr.TRADERS if x.id == "horse-agent-quotes-mid2"][0]
-    got, _ = t.reader(src, t.kind, t.base, "2026-11-05")
+    got, _ = tr.paper_agent_markets(src, "pred", "paper/horses/shared/agents/quotes_mid2", "2026-11-05")
     assert got.pnl.sum() == pytest.approx(horses.summary("quotes_mid2", fp, D)["result_reduced"], abs=0.01)
-    assert {x.id for x in tr.TRADERS} >= {f"horse-agent-{k.replace('_', '-')}" for k in horses.AGENTS}
+
+
+def test_the_paper_agents_are_retired():
+    """The owner, 4 Nov 2026: "Keep the current live rule. Retire the others". The desk's jobs run on dispatch only,
+    and the agents are off the traders dashboard; the live trader's tile stays."""
+    import yaml
+    from pathlib import Path
+    from dashboard import traders as tr
+    root = Path(__file__).resolve().parent.parent / ".github/workflows"
+    for name in ("paper-horses.yml", "paper-horses-intraday.yml"):
+        on = yaml.safe_load((root / name).read_text())[True]
+        assert set(on) == {"workflow_dispatch"}, name
+    ids = {x.id for x in tr.TRADERS}
+    assert not any(i.startswith("horse-agent-") for i in ids) and "horse-live" in ids
 
 
 def test_intraday_settles_the_races_run_on_the_recorder_s_bsps(monkeypatch):
