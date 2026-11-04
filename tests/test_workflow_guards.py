@@ -210,7 +210,7 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
     assert any("Not on the live trader's runner" == s.get("name") for s in steps)
     runs = "\n".join(str(s.get("run", "")) for s in steps)
     # the live key: only in the trading step's env, only through GHKEY, only for the two greyhound processes
-    trade = "Trade (the greyhound early lay and quotes live, the rest on paper)"
+    trade = "Trade (the greyhound early lay live, the quotes and the rest on paper)"
     for s in steps:
         if s.get("name") != trade:
             assert "LIVE_APP_KEY" not in str(s.get("env", {})) + str(s.get("run", "")), s.get("name")
@@ -242,7 +242,9 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
         assert t not in code, f"paper-models.yml still runs {t!r}"
     assert not any("football" in s.get("name", "").lower() for s in steps)
     assert env["GREYHOUND_EARLY_LAY"] == "${{ inputs.early_lay || vars.GREYHOUND_EARLY_LAY || 'live' }}"
-    assert env["GREYHOUND_QUOTE_MID"] == "${{ inputs.quote_mid || vars.GREYHOUND_QUOTE_MID || 'live' }}"
+    # on paper unless switched on (4 Nov 2026: losing on the corrected simulator)
+    assert env["GREYHOUND_QUOTE_MID"] == "${{ inputs.quote_mid || vars.GREYHOUND_QUOTE_MID || 'paper' }}"
+    assert wf[True]["workflow_dispatch"]["inputs"]["quote_mid"]["default"] == "paper"
     assert env["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
     # no other workflow starts the greyhound trader; the football trader only football-trade.yml
     for p in WORKFLOWS.glob("*.yml"):

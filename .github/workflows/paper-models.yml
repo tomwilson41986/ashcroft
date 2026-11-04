@@ -19,8 +19,9 @@ name: Paper models (greyhounds) and the racing census
 # live). Stop it: the S3 object greyhound/STOP (greyhound-stop.yml) stops new lays and greens up the matched ones;
 # the variable GREYHOUND_EARLY_LAY=paper keeps it off the next days. The second, the owner, 4 Nov 2026: "go live with
 # live trading today": the greyhound quotes around the mid (greyhound/quote_mid.py, research/greyhound/profit_sim.py
-# mid_*), real orders with GREYHOUND_QUOTE_MID=live (the dispatch input, else the repository variable, else live); the
-# same S3 STOP stops it, and GREYHOUND_QUOTE_MID=paper keeps it off. Every other trader here stays on paper.
+# mid_*), real orders only with GREYHOUND_QUOTE_MID=live (the dispatch input, else the repository variable, else
+# paper: on 4 Nov the simulator, its look-ahead fixed, found every margin and stake losing on 3 Nov's live books, so it
+# stays on paper until a variant shows an edge); the same S3 STOP stops it. Every other trader here stays on paper.
 # The runner: a second self-hosted runner on the UK server (Betfair refuses logins from GitHub's own runners: 403,
 # 1 Nov), labelled with vars.PAPER_MODELS_RUNNER (default 'paper-models'). It must not be the live trader's runner: the
 # job stops if the two are the same, because a job there would hold the live trader's runner and could delay its
@@ -39,11 +40,11 @@ on:
         options: ['live', 'paper']
         default: 'live'
       quote_mid:
-        description: "the greyhound quotes around the mid: live (real orders on the owner's account) or paper"
+        description: "the greyhound quotes around the mid: paper (logged, nothing sent) or live (real orders)"
         required: false
         type: choice
-        options: ['live', 'paper']
-        default: 'live'
+        options: ['paper', 'live']
+        default: 'paper'
 
 permissions:
   contents: read
@@ -107,7 +108,7 @@ jobs:
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
         run: timeout 300 python -m sources.betfair_census --hours 168
-      - name: Trade (the greyhound early lay and quotes live, the rest on paper)
+      - name: Trade (the greyhound early lay live, the quotes and the rest on paper)
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -123,7 +124,7 @@ jobs:
           BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
           GREYHOUND_LIVE: 'no'
           GREYHOUND_EARLY_LAY: ${{ inputs.early_lay || vars.GREYHOUND_EARLY_LAY || 'live' }}
-          GREYHOUND_QUOTE_MID: ${{ inputs.quote_mid || vars.GREYHOUND_QUOTE_MID || 'live' }}
+          GREYHOUND_QUOTE_MID: ${{ inputs.quote_mid || vars.GREYHOUND_QUOTE_MID || 'paper' }}
         run: |
           set +e
           # the greyhound model (greyhound/live.py, greyhound/live_config.json): each GB greyhound runner backed once on
