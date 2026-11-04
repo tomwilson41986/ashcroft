@@ -120,6 +120,17 @@ while d <= LAST:
                          errors="coerce").dt.tz_localize("Europe/London", ambiguous="NaT", nonexistent="NaT")
     b["mins"] = (off - uk).dt.total_seconds() / 60
     b["clv_led_w"] = np.where(ok & (b.bsp_led > 1), b.matched * (b.P / b.bsp_led - 1), 0.0)
+    if day in ("2026-11-03", "2026-10-29"):
+        per = b.groupby(K).agg(fills=("matched", "size"), staked=("matched", "sum"), mine=("pnl", "sum"),
+                               B=("B", "first"), bsp_led=("bsp_led", "first"), bsp_paid=("bsp_paid", "first"),
+                               bsp_book=("bsp_book", "first"), res=("res", "first"),
+                               won=("P", lambda x: 0)).reset_index()
+        per = per.merge(st[K + ["pnl", "pnl_back", "pnl_lay", "hedge_liability", "matched", "avg_price"]], on=K, how="left")
+        per["wins_at_fill"] = per.selection_id.map(b.assign(w=b.matched * (b.P - 1)).groupby("selection_id").w.sum())
+        per["diff"] = per.mine - per.pnl
+        print(f"-- {day}: mine {per.mine.sum():+.2f} against the ledger {per.pnl.sum():+.2f}")
+        print(per.reindex(per["diff"].abs().sort_values(ascending=False).index).head(8).drop(columns="won")
+              .round(2).to_string(index=False))
     rows.append(b[["day", "hour", "mins", "market_id", "selection_id", "matched", "staked_live", "clv_fill_w",
                    "locked", "result", "void", "led_off", "clv_led_w"]])
     ledg = st.groupby("market_id").pnl.sum()
