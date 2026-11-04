@@ -1607,6 +1607,30 @@ day down since 27 Oct and the one the owner asked audited ("changed or broke som
   the money at risk); the model's flagged offers in the other markets negative at the BSP across the board.
   Sectionals: At The Races complete, nothing new (run 41554562159).
 
+**When to bet** (the owner, 4 Nov: "Evaluate when is the best time to bet; both on prices and market depth /
+liquidity. Night before? At 4am? ... Model the optimal timing for profit"; `research/arms/timing.py`, run 41789073541,
+22 days 12 Oct - 2 Nov, the live rule through the trader's own code, every back closed at the BSP, after the
+non-runners' cuts, scale 1.0, live has run at 0.80; ledger `timing-1104`). The edge is in the first two hours and the
+depth is not: priced at the hour each back was entered (no day limit), the CLV after the cuts runs 13.5% at 06 UK
+(GBP1,388 a day taken), 6.1% at 07 (GBP659), 5.3% at 08 (GBP583), 1.7% at 09, 2.2% at 10, under 1% from 11, -2.0% at
+13; by time to the off 18.4% at 12-18 hours, 9.3% at 8-12, 5.2% at 4-8, 1.2% at 2-4, -1.3% at 1-2. The books grow the
+other way: the best back's size a median GBP2.79 at 06, GBP3.30 at 08, GBP5.30 at 11, GBP12-13 from 15; the spread
+25% at 06, 12.5% at 08, 6% in the afternoon; a market's matched money GBP881 at 06, GBP10,180 at 13. So the day is
+won before 09:00 UK: a start at 07:00 makes GBP98 a day at 0.80 against the rule's GBP228, at 08:00 GBP59 (the lost
+hour of 3 Nov). Earlier than 06:15: from 05:15 (the GMT days only, 26 Oct - 2 Nov, when the trader's books exist
+then) +GBP11 a day at 1.0 (GBP2,753 against GBP2,668 over 8 days; the 05 hour's book a 160% spread, GBP113 a day
+taken at 15.7%); the evening before (17:00-21:30 UK, then the morning, one day limit) +GBP12 a day (GBP6,534 against
+GBP6,262; money in the evening on 15 of 22 days, GBP178 a day at 16-19% after the cuts; the evening's books after 20
+UK a median spread of 2,600-3,100% and GBP264-329 matched a market), read with the morning's predictions (a small
+look-ahead the night-before run now removes). The day limit: the rule's own capacity is about GBP5,000 a day; GBP3,000
+GBP248 a day, GBP4,000 GBP272, GBP5,000 GBP278, GBP6,000 GBP279 (1.0, 2% as an approximation): the limit is at the
+knee. The one larger lever: GBP1,000 to win a horse (GBP500 a bet at most) puts more into the first hour (GBP1,655
+against GBP1,388) and reaches GBP4,000 by 10:57 against 11:45: GBP298 a day at GBP4,000 against GBP272, GBP326 at
+GBP6,000, with wider days (2 Nov GBP108 against GBP161, 24 Oct GBP745 against GBP446). 04:00 cannot be read: no book
+was kept between the evening record and the trader's start; the overnight record (betfair-prices.yml, from 4 Nov)
+keeps one every 10 minutes from 22:30 to 04:52 UTC, and predictions the night before (predict-evening.yml, 21:50 UTC,
+predictions_evening/) are ready for a session then. Nothing in the live rule changes (the owner decides).
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
