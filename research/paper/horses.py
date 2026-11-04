@@ -6,8 +6,10 @@ day, once its books and Betfair's price file are in S3, all of them trade the da
 the live trader's code (research/arms), with no order placed anywhere: one shared book (the owner, 4 Nov: "We need to
 be careful that they dont conflict with each other e.g. taking the price for one, removes the price for others";
 research/arms/core.py run_agents). The live trader's own fills are already out of the books; the live rule's replay
-(the control) steps first each minute, as the live trader's orders came first; the agents then step in an order that
-turns each minute; whatever one takes is gone for the rest, and two quotes at one price queue one behind the other.
+(the control) steps first each minute, as the live trader's orders came first; the lays and the quotes then step in an
+order that turns each minute; whatever one takes is gone for the rest, and two quotes at one price queue one behind
+the other. Each backs variant is an alternative to the live rule, so it trades a copy of the book in the live
+trader's place (WORLDS): three copies of the rule on one book only took each other's leftovers.
 Every fill is scored the same way (research/arms/quotes.py fill_pnl): hedged at the SP when matched, after the
 non-runners' reduction factors, 2% on each market's net winnings, at the replay's scale (live has run at 0.80 of it).
 The ledger, s3://$PRED_BUCKET/paper/horses/shared/: each agent's day (agents/<agent>/<day>/markets.csv, the
@@ -102,13 +104,29 @@ def _keys(prefix: str) -> list[str]:
         token = r.get("NextContinuationToken")
 
 
-def agent_specs(draws: int) -> list[tuple]:
+# Which agents share a book (the first shared run, 4 Nov, run 41815919147: with the two backs variants on the live
+# rule's book the three copies of the rule chased the same horses, the live rule's replay fell from about GBP6,300 to
+# GBP3,965 over 22 days, the GBP50 floor made GBP871 and the GBP1,000 stake lost GBP155: each took the others'
+# leftovers). A backs variant is an alternative to the live rule, not an addition, so it trades a book of its own in
+# the live trader's place (it stands in for it: the live trader's fills net against its own, as the live rule's replay
+# does). The lays and the quotes are additions: they trade the live rule's book beside it, after it each minute.
+WORLDS = {
+    "live": ["live_rule", "lays", "quotes_model3", "quotes_mid2"],
+    "backs_floor50": ["backs_floor50"],
+    "backs_win1000": ["backs_win1000"],
+}
+STANDS_IN = {"live_rule", "backs_floor50", "backs_win1000"}     # trades in the live trader's place
+
+
+def agent_specs(draws: int, names: list[str] | None = None) -> list[tuple]:
     from research.arms import quotes, sessions
     out = []
     for name, (kind, policy, over) in STRATEGIES.items():
+        if names is not None and name not in names:
+            continue
         cfg = core.make_cfg(clv_draws=draws, **over)
         cls = {"rule": sessions.ArmSession, "lay": sessions.LaySession, "quote": quotes.QuoteSession}[kind]
-        out.append((name, cls, cfg, dict(policy), core.BALANCE, name == "live_rule"))
+        out.append((name, cls, cfg, dict(policy), core.BALANCE, name in STANDS_IN))
     return out
 
 
@@ -188,16 +206,21 @@ def day_job(day_iso: str, names: list[str], draws: int, write: bool) -> dict:
     if D is None:
         res["rows"].append({"day": day_iso, "note": "no books or no price file yet"})
         return res
-    specs = [sp for sp in agent_specs(draws) if sp[0] in names or sp[0] == "live_rule"]
     core.set_plan_cfg(core.make_cfg(clv_draws=draws), reset=False)
-    for sp in specs:
-        sp[3]["_D"] = D
     tic = time.time()
-    try:
-        out = core.run_agents(D, specs, core.session_start(D, "win"))
-    except Exception:
-        res["errors"].append(traceback.format_exc())
-        return res
+    out = {}
+    for world, members in WORLDS.items():
+        want = [n for n in members if n in names or n == "live_rule" and world == "live"]
+        if not want:
+            continue
+        specs = agent_specs(draws, want)
+        for sp in specs:
+            sp[3]["_D"] = D
+        try:
+            out.update(core.run_agents(D, specs, core.session_start(D, "win")))
+        except Exception:
+            res["errors"].append(f"{world}: {traceback.format_exc()}")
+            return res
     secs = round(time.time() - tic)
     for name, (led, s, x) in out.items():
         fills = agent_fills(name, led, s, D)
