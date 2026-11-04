@@ -216,6 +216,9 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     feats = feature_set(meta, exp.get("features", "card_safe"))
     for b in exp.get("add_blocks", []):
         feats += [f for f in gblocks.attach(df, b) if f not in feats]
+    for f in exp.get("add_features", []):             # named cached columns (e.g. the day's weigh-in features)
+        if f not in feats:
+            feats.append(f)
     for pre in exp.get("drop", []):
         feats = [f for f in feats if not f.startswith(pre)]
     feats = [f for f in feats if f in df.columns]
@@ -333,7 +336,10 @@ def in_group(pred: pd.DataFrame, tracks) -> pd.Series:
 
 
 def split_groups(pred: pd.DataFrame, groups: dict) -> dict:
-    """The spec's named groups of tracks and ``rest``: every other track in the test."""
+    """The spec's named groups of tracks and ``rest``: every other track in the test. ``"each_track"``: a group per
+    track (no rest)."""
+    if groups == "each_track":
+        return {str(t): [t] for t in sorted(pred.track.astype(str).unique())}
     named = {g: list(t) for g, t in groups.items()}
     taken = {_norm_track(t) for ts in named.values() for t in ts}
     named["rest"] = sorted({t for t in pred.track.astype(str).unique() if _norm_track(t) not in taken})

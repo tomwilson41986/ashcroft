@@ -289,3 +289,38 @@ def test_track_groups_are_scored_apart():
     assert "gap" in bg["weighin"]["on_bsp_races"] and bg["rest"]["log_bsp_rmse"] > 0
     assert fl.split_groups(pred, {"weighin": ["Hove"]})["rest"] == ["Romford"]
     assert "[weighin: 1 tracks" in fl.table([res], "g")
+    assert set(fl.split_groups(pred, "each_track")) == {"Hove", "Romford"}
+
+
+def test_the_predicted_weigh_in_reads_earlier_days_and_forecasts_the_change():
+    rng = np.random.default_rng(3)
+    rows = []
+    for dog in range(300):                       # each dog's weight reverts to its own norm: a heavy run, then a drop
+        mu = 30 + rng.normal(0, 2)
+        w, hist = mu + rng.normal(0, 0.5), []
+        for k in range(14):
+            day = pd.Timestamp("2025-01-01") + pd.Timedelta(days=7 * k + dog % 7)
+            w = mu + 0.4 * (w - mu) + rng.normal(0, 0.5) if hist else w
+            prev = hist[-1] if hist else np.nan
+            mean = np.mean(hist) if hist else np.nan
+            rows.append({"dog_id": dog, "t": day, "weight_change": w - prev, "weight_vs_mean": w - mean})
+            hist.append(w)
+    df = pd.DataFrame(rows)
+    names = blocks.attach(df, "wpred")
+    assert set(names) == {"wp_pred_change", "wp_pred_vs_mean", "wp_prev_vs_mean", "wp_gap_days"}
+    late = df[df.t >= "2025-03-01"].dropna(subset=["wp_pred_change", "weight_change"])
+    assert len(late) > 1000
+    assert np.corrcoef(late.wp_pred_change, late.weight_change)[0, 1] > 0.3        # the predictable part is found
+    # nothing of a row's own weigh-in reaches its forecast: change the last day's weights, the last day's forecast stays
+    last = df.t.dt.normalize() == df.t.dt.normalize().max()
+    df2 = df[["dog_id", "t", "weight_change", "weight_vs_mean"]].copy()
+    df2.loc[last, ["weight_change", "weight_vs_mean"]] += 5.0
+    blocks.attach(df2, "wpred")
+    assert np.allclose(df.loc[last, "wp_pred_change"], df2.loc[last, "wp_pred_change"], equal_nan=True)
+
+
+def test_add_features_names_cached_columns():
+    df, meta = synthetic_cache()
+    exp = {"name": "a", "features": "card_safe", "objective": "logbsp", "add_features": ["weight_change"]}
+    res, _ = fl.run_experiment(df, meta, exp, QUICK, test_from="2026-06-01")
+    assert res["features"] == len(fl.feature_set(meta, "card_safe")) + 1
