@@ -332,6 +332,8 @@ class ReplayExchange(PaperExchange):
     """Paper fills against the recorded books, and the account's money as Betfair holds it: a back larger than the
     funds is refused, and a race's stakes come back ten minutes after its off. Lays fill against the lay levels."""
 
+    _lay_store = "taken_lay"                       # where its lays' takes are held (an agent's: agent_taken_lay)
+
     def __init__(self, data: ReplayData, bank: float, balance=None):
         super().__init__(data, bank=bank)
         self.balance = balance
@@ -388,7 +390,7 @@ class ReplayExchange(PaperExchange):
             fill.matched, fill.avg_price, fill.status, fill.error = 0.0, 0.0, "FAILURE", "INSUFFICIENT_FUNDS"
             return fill
         for p, take in takes:                                   # each level taken stays taken
-            self.data.taken_lay[(market_id, int(selection_id), round(float(p), 2))] += take
+            getattr(self.data, self._lay_store)[(market_id, int(selection_id), round(float(p), 2))] += take
         self.fills.append((market_id, liability, self.data.now))
         self.peak = max(self.peak, self.open_stakes())
         return fill
@@ -402,33 +404,44 @@ class ReplayExchange(PaperExchange):
 class SharedReplayData(ReplayData):
     """The recorded books as several sessions see them together. The live trader's own fills are already out of the
     books (the trader read them after its orders; a replay of the live rule nets them, as ReplayData does); every
-    other agent's takes come out on top, for everyone after it: ``agent_taken`` on the backers' side (no netting:
-    the real trader never took them), the lay side's ``taken_lay`` as before. ``resting``: the agents' resting
-    quotes at each price, so a later quote at the same price queues behind an earlier one."""
+    other agent's takes come out on top, for every other agent after it: ``agent_taken`` on the backers' side (no
+    netting: the real trader never took them), ``agent_taken_lay`` on the layers'. ``resting``: the agents' resting
+    quotes at each price, so a later quote at the same price queues behind an earlier one.
+
+    ``real_view``: while the live rule's replay (the mirror) steps, it reads the books as the real trader met them,
+    without the paper agents' takes: the real trader never met the paper agents, so they cannot cost the control
+    (the rescore of 4 Nov: with the quotes' takes left in, the control fell from about GBP6,300 to GBP5,178)."""
 
     def __init__(self, D, stale: timedelta = STALE):
         super().__init__(D, stale=stale)
         self.agent_taken = defaultdict(float)
+        self.agent_taken_lay = defaultdict(float)
         self.resting = defaultdict(float)                  # (market, selection, side, price) -> GBP resting
+        self.real_view = False
 
     def books(self, ids, with_sp=False):
         out = super().books(ids, with_sp)
-        if not self.agent_taken:
+        if self.real_view or not (self.agent_taken or self.agent_taken_lay):
             return out
         for mid, b in out.items():
             for sid, q in b.runners.items():
-                back = []
-                for p, sz in q.back:
-                    left = sz - self.agent_taken.get((mid, sid, round(p, 2)), 0.0)
-                    if left > 0.01:
-                        back.append((p, round(left, 2)))
-                q.back = back
+                for side, store in (("back", self.agent_taken), ("lay", self.agent_taken_lay)):
+                    if not store:
+                        continue
+                    kept = []
+                    for p, sz in getattr(q, side):
+                        left = sz - store.get((mid, sid, round(p, 2)), 0.0)
+                        if left > 0.01:
+                            kept.append((p, round(left, 2)))
+                    setattr(q, side, kept)
         return out
 
 
 class AgentExchange(ReplayExchange):
     """An agent's own account on the shared book: what it takes from the backers' side comes out level by level
     for every agent after it (and never nets against the live trader's fills, which it did not make)."""
+
+    _lay_store = "agent_taken_lay"
 
     def back(self, market_id, selection_id, price, size, ref, min_fill: float = 2.0):
         if self.balance is not None and size > self.balance - self.open_stakes() + 0.005:
@@ -481,8 +494,10 @@ def run_agents(D, specs: list[tuple], t0: datetime, t_end: datetime | None = Non
         while t <= end:
             data.now = t
             order = first + (rest[k % len(rest):] + rest[:k % len(rest)] if rest else [])
-            for _, s, _, _ in order:
+            for _, s, _, mirror in order:
+                data.real_view = bool(mirror)
                 s.step(t)
+            data.real_view = False
             t += timedelta(minutes=step_minutes)
             clock_t[0] = t
             k += 1

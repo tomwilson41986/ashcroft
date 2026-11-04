@@ -186,6 +186,19 @@ def test_the_live_rule_s_replay_goes_first_and_the_order_turns_for_the_rest():
     assert _alpha(out["agent"][0]) == pytest.approx(5.56, abs=0.02)
 
 
+def test_the_paper_agents_takes_never_cost_the_live_rule_s_replay():
+    D = _thin_day(50.0)
+    data = core.SharedReplayData(D)
+    data.now = datetime(2026, 11, 5, 6, 1, tzinfo=timezone.utc)
+    data.agent_taken[(MID, A, 10.0)] += 30.0                                  # an agent took GBP30 at 10.0
+    data.agent_taken_lay[(MID, A, 11.0)] += 60.0                              # and GBP60 of the lay side at 11.0
+    seen = data.books([MID])[MID].runners[A]
+    assert seen.back == [(10.0, 20.0)] and seen.lay == [(11.0, 40.0)]       # the other agents see what is left
+    data.real_view = True
+    real = data.books([MID])[MID].runners[A]
+    assert real.back == [(10.0, 50.0)] and real.lay == [(11.0, 100.0)]      # the control sees the book it met
+
+
 def test_two_quotes_at_one_price_queue_one_behind_the_other():
     from model import race_book as rb
     from trading.exchange import tick_up
