@@ -362,3 +362,18 @@ def test_the_runner_fix_keeps_upgrades_off_the_trader_and_is_dispatched_by_hand(
     assert "$nrconf{override_rc}{qr(^actions\\.runner\\.)} = 0;" in run
     assert "OnCalendar=*-*-* 21:45" in run and "OnCalendar=\\n" in run
     assert "reboot" not in run.split("== unattended-upgrades")[0].lower().replace("a reboot would", "")
+
+
+def test_netlify_builds_nothing():
+    """The owner, 4 Nov 2026: "block any netlify builds or connection, not needed". The site is still linked on
+    Netlify's side, so both places Netlify reads its config from (the repository root and the frontend base
+    directory) skip every context, and nothing else in the repository points at Netlify."""
+    import tomllib
+    for p in (ROOT / "netlify.toml", ROOT / "frontend" / "netlify.toml"):
+        cfg = tomllib.loads(p.read_text())
+        assert cfg["build"]["ignore"] == "exit 0", p
+        for ctx in ("production", "deploy-preview", "branch-deploy"):
+            assert cfg["context"][ctx]["ignore"] == "exit 0", (p, ctx)
+        assert "functions" not in cfg and "redirects" not in cfg, p
+    assert not (ROOT / "frontend" / "netlify").exists()
+    assert not (ROOT / "frontend" / "_redirects").exists()

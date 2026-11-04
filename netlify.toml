@@ -1,0 +1,15 @@
+# Netlify is not used (the owner, 4 Nov 2026: "block any netlify builds or connection, not needed").
+# The site is still linked on Netlify's side; this file only makes it build nothing. `ignore` exiting 0 means
+# "skip": every production deploy, Deploy Preview and branch deploy stops before it starts, and nothing is published.
+# Remove the link on Netlify (delete the site) or uninstall its GitHub App to end the connection itself.
+[build]
+  ignore = "exit 0"
+
+[context.production]
+  ignore = "exit 0"
+
+[context.deploy-preview]
+  ignore = "exit 0"
+
+[context.branch-deploy]
+  ignore = "exit 0"
