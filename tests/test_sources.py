@@ -546,3 +546,19 @@ def test_a_price_betfair_writes_as_text_is_read_as_missing(tmp_path):
     store = Store(root=tmp_path)
     store.put_parquet("t.parquet", df)                                # the write that failed on 5 Oct
     assert len(store.get_parquet("t.parquet")) == 4
+
+
+def test_historic_coverage_reports_dates_countries_and_market_types(tmp_path):
+    import pandas as pd
+    import betfair_historic as bh
+    from sources.common import Store
+    (tmp_path / "betfair_historic").mkdir()
+    pd.DataFrame({"market_id": ["1.1", "1.1", "1.2"], "event_id": [9, 9, 8],
+                  "market_time": ["2025-09-03T18:00:00Z"] * 2 + ["2026-01-05T15:00:00Z"],
+                  "country": ["DK", "DK", "GB"], "market_type": ["MATCH_ODDS"] * 2 + ["OVER_UNDER_25"],
+                  "went_in_play_utc": ["x", "x", None], "ltp_close": [2.0, None, 1.9]}) \
+        .to_parquet(tmp_path / "betfair_historic/markets_soccer_2026.parquet")
+    c = bh.coverage(Store(root=tmp_path), ["Soccer"])["betfair_historic/markets_soccer_2026.parquet"]
+    assert c["markets"] == 2 and c["markets_by_month"] == {"2025-09": 1, "2026-01": 1}
+    assert c["top_countries"] == {"DK": 1, "GB": 1} and c["went_in_play_share"] == 0.5
+    assert abs(c["runner_share_with"]["ltp_close"] - 2 / 3) < 1e-12

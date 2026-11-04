@@ -1,0 +1,101 @@
+{
+ "gain_share_home_move": {
+  "league": 0.1953,
+  "dis_open": 0.1185,
+  "d_sotd_l5": 0.1028,
+  "r_diff": 0.0529,
+  "d_pae_mkt_ewm": 0.0466,
+  "d_pae_mkt_season": 0.0456,
+  "d_sotd_l10": 0.0342,
+  "d_gae_dc_l5": 0.0341,
+  "d_own_r_d5": 0.0308,
+  "d_gae_dc_ewm": 0.0308,
+  "d_gae_mkt_season": 0.0247,
+  "d_sotd_ewm": 0.0203,
+  "d_pts_ewm": 0.0196,
+  "d_gd_ewm": 0.0191,
+  "d_pts_season": 0.018
+ },
+ "corr_with_betfair_2025_home_move": {
+  "r_diff": 0.1758,
+  "d_gd_ewm": 0.1699,
+  "d_sotd_l5": 0.1628,
+  "d_gd_l5": 0.1556,
+  "d_gd_l10": 0.1555,
+  "d_sotd_ewm": 0.1539,
+  "d_sotd_l10": 0.151,
+  "d_sotd_season": 0.1491,
+  "d_pts_ewm": 0.1476,
+  "d_gd_season": 0.1424
+ },
+ "strong_signals_betfair_2025": {
+  "threshold": 0.03,
+  "bets": 1311,
+  "tier": {
+   "lower": {
+    "bets": 185.0,
+    "sym": -0.0023,
+    "tick": -0.002,
+    "right_way": 0.7027
+   },
+   "other top and second": {
+    "bets": 802.0,
+    "sym": 0.0107,
+    "tick": -0.0009,
+    "right_way": 0.6658
+   },
+   "top five": {
+    "bets": 324.0,
+    "sym": -0.0127,
+    "tick": -0.045,
+    "right_way": 0.5617
+   }
+  },
+  "band": {
+   "2-3": {
+    "bets": 300.0,
+    "sym": -0.0001,
+    "tick": 0.0074,
+    "right_way": 0.6267
+   },
+   "3-5": {
+    "bets": 438.0,
+    "sym": 0.004,
+    "tick": -0.0079,
+    "right_way": 0.6553
+   },
+   "5+": {
+    "bets": 424.0,
+    "sym": 0.0078,
+    "tick": -0.0355,
+    "right_way": 0.6509
+   },
+   "<2": {
+    "bets": 149.0,
+    "sym": -0.0069,
+    "tick": 0.0043,
+    "right_way": 0.6376
+   }
+  },
+  "direction": {
+   "back first": {
+    "bets": 341.0,
+    "sym": -0.0047,
+    "tick": -0.0242,
+    "right_way": 0.61
+   },
+   "lay first": {
+    "bets": 970.0,
+    "sym": 0.0058,
+    "tick": -0.0076,
+    "right_way": 0.6577
+   }
+  }
+ },
+ "candidates_by_tier": {
+  "lower": 3234,
+  "other top and second": 7510,
+  "top five": 4174
+ },
+ "note": "returns are unweighted means per trade before commission; 2025 = 2025/26 to date"
+}
