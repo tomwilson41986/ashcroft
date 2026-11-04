@@ -32,11 +32,11 @@ from cricket.model.baseline import PUBLISHED
 from cricket.model.calibration import METHODS, SELECT_ON, all_methods, by_band
 from cricket.model.data import IPL, load
 from cricket.model.features import build
+from cricket.model.gate import FIXED_BAR, gate_lines, model_gate
 from cricket.model.metrics import reliability, score
 from cricket.model.outcomes import CLASSES, extras_runs_distribution
 from sources.common import Store
 
-GATE = {"log_loss": PUBLISHED["log_loss"], "ece": 0.131}
 BASE_COLS = ["rrr", "wkts_in_hand", "balls_left"]
 
 
@@ -127,6 +127,17 @@ def run(store: Store, seasons: list[int], paths: int, work: Path, log=print) -> 
     return {"meta": meta, "preds": allp}
 
 
+def from_work(seasons: list[int], paths: int, work: Path) -> dict:
+    """The report's inputs from what a run kept under ``work`` (no tables loaded, nothing simulated)."""
+    sims = [_smoothed(pd.read_parquet(work / f"sim_{y}.parquet"), paths) for y in seasons]
+    allp, chosen = all_methods(pd.concat(sims, ignore_index=True))
+    r = json.loads((work / "rounds.json").read_text())
+    meta = {"rounds": r["rounds"], "valid_2022_mlogloss": r["valid_2022_mlogloss"], "paths": paths,
+            "params": nb.PARAMS, "calibration_chosen": chosen,
+            "next_ball": {y: json.loads((work / f"next_ball_{y}.json").read_text()) for y in seasons}}
+    return {"meta": meta, "preds": allp}
+
+
 def _smoothed(df: pd.DataFrame, paths: int) -> pd.DataFrame:
     """Output saved before the simulator smoothed its probabilities (cricket/model/simulator.py ``smooth``):
     the same transform applied to the saved share of wins."""
@@ -152,8 +163,7 @@ def report_md(res: dict, source: str) -> str:
     test = p[p.p_cal.notna()]
     yrs = sorted(test.year.unique())
     pooled = {c: score(test.bat_won, test[c]) for c in ("p_base", "p_sim", "p_cal")}
-    ok_ll = pooled["p_cal"]["log_loss"] < GATE["log_loss"]
-    ok_ece = pooled["p_cal"]["ece"] < GATE["ece"]
+    gate = model_gate(test)
     L = [
         "# Cricket model v1: next-ball XGBoost, Monte Carlo simulator, calibration",
         "",
@@ -176,19 +186,19 @@ def report_md(res: dict, source: str) -> str:
         f"{pooled['p_cal']['ece']:.4f} |",
         f"| published baseline (Mishra) | {PUBLISHED['log_loss']:.4f} | | {PUBLISHED['ece']:.4f} |",
         "",
-        f"- Log loss below {GATE['log_loss']}: **{'PASS' if ok_ll else 'FAIL'}**",
-        f"- ECE below {GATE['ece']}: **{'PASS' if ok_ece else 'FAIL'}**",
-        f"- Calibrated simulator beats the same-rows baseline: "
-        f"**{'yes' if pooled['p_cal']['log_loss'] < pooled['p_base']['log_loss'] else 'no'}** "
-        f"({pooled['p_cal']['log_loss'] - pooled['p_base']['log_loss']:+.4f} log loss)",
+        *gate_lines(gate, "chases"),
+        f"- For reference, the spec's fixed bar (log loss under {FIXED_BAR}): calibrated "
+        f"{'clears' if pooled['p_cal']['log_loss'] < FIXED_BAR else 'misses'} it, and so does the baseline "
+        f"({pooled['p_base']['log_loss']:.4f}): the bar is not a test of the model.",
         "",
         f"Calibration layer: **{meta.get('calibration_chosen')}**, chosen by the rule fixed before the results: the "
         f"lowest log loss on {SELECT_ON} (each layer fitted on the seasons before), confirmed on the later seasons.",
         "",
         *_layer_table(test, yrs),
         "",
-        "- Benter combination weight against the Betfair mid, and the strategy after 5% commission: no data found "
-        "(no Betfair cricket price history held; the Advanced data purchase waits on the owner's go).",
+        "- The market conditions (the model's Benter weight against Betfair's price, the strategy after 5% "
+        "commission): pre-match, cricket/model/benter.py once Betfair's free BASIC cricket file is held; in play, "
+        "no data found until a recorded season aligns prices to balls.",
         "",
         "## By season",
         "",
@@ -239,15 +249,20 @@ def main(argv=None) -> int:
     ap.add_argument("--paths", type=int, default=256)
     ap.add_argument("--work", default="data/cricket/eval")
     ap.add_argument("--out", default="reports/cricket")
+    ap.add_argument("--report-only", action="store_true", help="rebuild the report from --work, no simulation")
     a = ap.parse_args(argv)
     store = Store(root=a.root)
-    res = run(store, [int(x) for x in a.seasons.split(",")], a.paths, Path(a.work),
-              log=lambda m: print(m, flush=True))
+    seasons = [int(x) for x in a.seasons.split(",")]
+    if a.report_only:
+        res = from_work(seasons, a.paths, Path(a.work))
+    else:
+        res = run(store, seasons, a.paths, Path(a.work), log=lambda m: print(m, flush=True))
     md = report_md(res, store.where("cricket/tables/"))
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "model_v1.md").write_text(md)
-    (out / "model_v1.json").write_text(json.dumps(res["meta"], indent=1, default=str))
+    if not a.report_only:   # the full run's record (training rows a season, parameters) is kept as it was
+        (out / "model_v1.json").write_text(json.dumps(res["meta"], indent=1, default=str))
     store.put("cricket/reports/model_v1.md", md.encode())
     store.put_parquet("cricket/eval/model_v1_preds.parquet", res["preds"])
     print(md)

@@ -7,7 +7,8 @@ name: Cricket - Cricsheet ingest
 #   - the tables (matches, innings, deliveries, players, venues, people_register) to sources/cricket/tables/;
 #   - the ingest report (rows in vs out per format, duplicates, nulls, date range) to sources/cricket/reports/ and the
 #     run's artifact. The job fails when the report's check fails.
-# Aurora is not provisioned (it waits on the owner's go), so no database load here yet.
+# Aurora is not provisioned (it waits on the owner's go), so no database load here yet. Then the pre-match Benter test
+# against Betfair's close (cricket/model/benter.py), which says no data found until the BASIC cricket table is held.
 
 on:
   schedule:
@@ -48,9 +49,18 @@ jobs:
           WITH_CSV: ${{ inputs.with_csv && '--with-csv' || '' }}
         run: |
           python -m cricket.ingest.cricsheet --fetch $WITH_CSV --build --report --report-dir out | tee ingest.log
+      - name: Benter test against Betfair's close (reads S3; no data found until the BASIC cricket table is held)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: python -m cricket.model.benter --out out
       - name: Report to the run summary
         if: ${{ !cancelled() }}
-        run: cat out/ingest_*.md >> "$GITHUB_STEP_SUMMARY" || echo "no report written" >> "$GITHUB_STEP_SUMMARY"
+        run: cat out/*.md >> "$GITHUB_STEP_SUMMARY" || echo "no report written" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:

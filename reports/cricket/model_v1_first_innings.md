@@ -11,6 +11,12 @@ Rows: IPL first innings at the start of each over, decided non-D/L matches. Test
 | simulator, raw | 0.6093 | 0.2123 | 0.0339 |
 | simulator, calibrated | 0.6314 | 0.2203 | 0.1004 |
 
+Phase 0 model condition (first innings, P(batting first wins)): **NOT MET**
+
+- beats the same-rows baseline (95% interval of the difference below 0): **no**
+- ECE below 0.131: **yes**
+- Log loss, calibrated model minus baseline: -0.0075 (95% interval -0.0183 to +0.0039; 211 matches resampled, 4,180 rows)
+
 Calibration layer: **stack** (the lowest log loss on 2024, fitted on the seasons before; the rule of cricket/model/calibration.py).
 
 | layer | pooled LL | pooled ECE |

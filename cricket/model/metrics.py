@@ -48,3 +48,22 @@ def score(y, p) -> dict:
 def multiclass_log_loss(y_idx, P) -> float:
     P = np.clip(np.asarray(P, dtype=float), EPS, 1.0)
     return float(-np.mean(np.log(P[np.arange(len(y_idx)), np.asarray(y_idx)])))
+
+
+def ll_rows(y, p) -> np.ndarray:
+    y = np.asarray(y, dtype=float)
+    p = np.clip(np.asarray(p, dtype=float), EPS, 1 - EPS)
+    return -(y * np.log(p) + (1 - y) * np.log(1 - p))
+
+
+def paired_bootstrap(y, p_model, p_base, groups, n: int = 2000, seed: int = 0) -> dict:
+    """Log loss of ``p_model`` minus ``p_base`` on the same rows, with a 95% interval from resampling whole groups
+    (matches: balls within a match are not independent). Negative: the model is better."""
+    d = ll_rows(y, p_model) - ll_rows(y, p_base)
+    g = pd.Series(d).groupby(np.asarray(groups))
+    sums, counts = g.sum().to_numpy(), g.size().to_numpy()
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(sums), size=(n, len(sums)))
+    boot = sums[idx].sum(1) / counts[idx].sum(1)
+    lo, hi = np.quantile(boot, [0.025, 0.975])
+    return {"diff": float(d.mean()), "lo": float(lo), "hi": float(hi), "groups": int(len(sums)), "rows": int(len(d))}

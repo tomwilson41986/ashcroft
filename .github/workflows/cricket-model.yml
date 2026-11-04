@@ -71,6 +71,21 @@ jobs:
           SEASONS: ${{ inputs.seasons }}
           PATHS: ${{ inputs.paths }}
         run: python -m cricket.model.evaluate_first --seasons "$SEASONS" --paths "$PATHS" --work work --out out
+      - name: Pre-match probabilities, walk-forward from 2016 (the model side of the Benter test)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          PATHS: ${{ inputs.paths }}
+        run: python -m cricket.model.prematch --years 2016-2026 --paths "$PATHS" --work work
+      - name: Benter test against Betfair's close (no data found until the free BASIC cricket table is held)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: python -m cricket.model.benter --out out
       - name: Production bundle (paper trading's model)
         if: inputs.production
         env:

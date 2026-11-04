@@ -199,6 +199,10 @@ python -m research.open_close.football_paper_trial --panel data/football_exchang
 python -m cricket.ingest.cricsheet --fetch --build --report
 python -m cricket.model.baseline --test-from 2022
 python -m cricket.model.evaluate --seasons 2023,2024,2025,2026 --paths 256
+# the Phase 0 market test, pre-match: walk-forward pre-match probabilities from 2016, then the Benter regression
+# against Betfair's free BASIC cricket close (betfair_historic.py; no data found until the account holds the plan)
+python -m cricket.model.prematch --years 2016-2026 --paths 256
+python -m cricket.model.benter
 
 # Race ABM: simulate a card, batch features for training, pattern-oriented calibration
 python research_lab.py abm --db horse_racing.db --date 2026-03-12

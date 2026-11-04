@@ -18,6 +18,7 @@ decided non-D/L matches) and then the chase of each path's own total. Scored aga
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -31,6 +32,7 @@ from cricket.model.calibration import METHODS, SELECT_ON, all_methods
 from cricket.model.data import IPL, load
 from cricket.model.evaluate import choose_rounds, load_or_fit
 from cricket.model.features import build
+from cricket.model.gate import gate_lines, model_gate
 from cricket.model.metrics import reliability, score
 from cricket.model.outcomes import extras_runs_distribution
 from sources.common import Store
@@ -136,6 +138,7 @@ def report_md(res: dict, source: str) -> str:
     for c, name in (("p_base", "baseline: logistic on runs, wickets, legal balls"), ("p_sim", "simulator, raw"),
                     ("p_cal", "simulator, calibrated")):
         L.append(f"| {name} | {pooled[c]['log_loss']:.4f} | {pooled[c]['brier']:.4f} | {pooled[c]['ece']:.4f} |")
+    L += ["", *gate_lines(model_gate(test), "first innings, P(batting first wins)")]
     L += ["", f"Calibration layer: **{res['chosen']}** (the lowest log loss on {SELECT_ON}, fitted on the seasons "
           "before; the rule of cricket/model/calibration.py).", "",
           "| layer | pooled LL | pooled ECE |", "|---|---:|---:|"]
@@ -176,10 +179,18 @@ def main(argv=None) -> int:
     ap.add_argument("--paths", type=int, default=256)
     ap.add_argument("--work", default="data/cricket/eval")
     ap.add_argument("--out", default="reports/cricket")
+    ap.add_argument("--report-only", action="store_true", help="rebuild the report from --work, no simulation")
     a = ap.parse_args(argv)
     store = Store(root=a.root)
-    res = run(store, [int(x) for x in a.seasons.split(",")], a.paths, Path(a.work),
-              log=lambda m: print(m, flush=True))
+    seasons = [int(x) for x in a.seasons.split(",")]
+    if a.report_only:
+        work = Path(a.work)
+        allp, chosen = all_methods(pd.concat([pd.read_parquet(work / f"first_{y}.parquet") for y in seasons],
+                                             ignore_index=True))
+        res = {"preds": allp, "rounds": json.loads((work / "rounds.json").read_text())["rounds"],
+               "paths": a.paths, "chosen": chosen}
+    else:
+        res = run(store, seasons, a.paths, Path(a.work), log=lambda m: print(m, flush=True))
     md = report_md(res, store.where("cricket/tables/"))
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)

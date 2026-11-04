@@ -8,7 +8,7 @@ which says how it was produced. Nothing here has placed a bet or read the live B
 
 | Phase | State |
 |---|---|
-| 0 Research and backtest | Model condition met on held-out IPL chases. The two market conditions are untested: no data found (no Betfair cricket price history held). |
+| 0 Research and backtest | Model condition (the owner's decision, 4 Nov 2026: beat the same-rows baseline, 95% interval below zero): **met for chases, not met for the first innings**. Market conditions, pre-match: built (`cricket/model/benter.py`), waiting on Betfair's free BASIC cricket file. In play: no data found until a recorded season aligns prices to balls. |
 | 1 Paper trading | Code built and tested end to end on replays. Not running: needs a ball-feed vendor and a UK/Irish host (asks below). |
 | 2-3 Live | Not started. Needs the owner's go at the Phase 1 gate. |
 
@@ -26,14 +26,23 @@ which says how it was produced. Nothing here has placed a bet or read the live B
 | Production bundle v1-2026-11-03 | 2,258,238 deliveries from 9,688 matches to 2026-11-03; stack calibration in both innings | `model_card_v1-2026-11-03.md` |
 | Live path, IPL 2026 final replayed (in the bundle's training data: a speed and path test, not an evaluation) | 233 quotes at 1,000 paths; median 0.62 s a quote, first innings up to 1.5 s | `python -m cricket.live.replay --match 1535465` |
 
+The Phase 0 model condition (`cricket/model/gate.py`, the owner's decision of 4 Nov 2026): the calibrated model's
+log loss below the same-rows baseline's, with the 95% interval of the difference (resampling whole matches) wholly
+below zero; and ECE under 0.131.
+
+| Innings | Calibrated minus baseline log loss | 95% interval | Condition | Source |
+|---|---:|---|---|---|
+| Chase, 24,271 balls, 211 matches | -0.0200 | -0.0367 to -0.0027 | met | `model_v1.md` |
+| First innings, 4,180 over starts, 211 matches | -0.0075 | -0.0183 to +0.0039 | not met | `model_v1_first_innings.md` |
+
 How to read the chase result:
 
 - The gain is almost all 2026. That season's chases were very different, and the baseline, fitted on earlier
   seasons, is badly calibrated there (ECE 0.165). 2024 and 2025 are roughly ties.
 - The calibration layer was chosen by a rule fixed before the results (lowest 2024 log loss). It picked the stack,
   which made 2026 worse than the raw simulator (0.3426 vs 0.3004). The pre-registered choice stands.
-- The spec's absolute gate (0.4379) is cleared by the same-rows baseline as well. Recommendation: gate on beating
-  the same-rows baseline, not on a fixed number.
+- The spec's fixed bar (0.4379) is cleared by the same-rows baseline as well, so it is no longer the test (the
+  owner agreed, 4 Nov 2026); it is still reported for reference.
 - The same thing shows in both innings: the raw simulator beats every calibration layer fitted on earlier seasons.
   Scoring rose faster than those layers follow, while the simulator adapts through its competition scoring rate.
   Recommended for v2: add "no calibration" as a candidate layer, with the rule fixed before the next IPL season.
@@ -73,8 +82,13 @@ What still stands between this build and a running paper trader:
    mapped by `PlayerMap`.
 2. **A UK or Irish host for Betfair (paid; the owner's go).** GitHub's runners are refused by Betfair.
    `cricket-record.yml` waits for a runner labelled `cricket`.
-3. **Betfair cricket price history (the owner's go).** The free BASIC plan through `betfair_historic.py`, or Advanced
-   (£499). Needed for the two untested Phase 0 conditions.
+3. **Betfair cricket price history: the free BASIC plan first (the owner, 4 Nov 2026).** One step is the owner's:
+   at historicdata.betfair.com, signed in with the trading account, add the free Basic plan for Cricket, every
+   date offered. Then it runs by itself: `other-data.yml` (the UK data runner, nightly 22:30 UTC) fetches the
+   Match Odds files, `source-data.yml` builds `betfair_historic/markets_cricket_<year>.parquet`, and
+   `cricket-ingest.yml` runs the Benter test each night (`benter_prematch.md`). BASIC carries the last traded price
+   a minute and no ladder, so it tests the pre-match close only. Advanced (£499) is the next step if the pre-match
+   test shows the model adds something.
 
 ## Runbook
 
@@ -83,6 +97,8 @@ python -m cricket.ingest.cricsheet --fetch --build --report
 python -m cricket.model.baseline --test-from 2022
 python -m cricket.model.evaluate --seasons 2023,2024,2025,2026 --paths 256
 python -m cricket.model.evaluate_first --seasons 2023,2024,2025,2026 --paths 256
+python -m cricket.model.prematch --years 2016-2026 --paths 256
+python -m cricket.model.benter
 python -m cricket.model.production
 python -m cricket.live.replay --match <cricsheet id>
 python -m cricket.market.recorder --hours 6

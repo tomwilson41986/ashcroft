@@ -13,9 +13,12 @@ Test seasons 2024-2026 (each calibrated on earlier seasons only; 2023 is calibra
 | simulator, calibrated | 0.3814 | 0.1207 | 0.0681 |
 | published baseline (Mishra) | 0.4379 | | 0.0773 |
 
-- Log loss below 0.4379: **PASS**
-- ECE below 0.131: **PASS**
-- Calibrated simulator beats the same-rows baseline: **yes** (-0.0200 log loss)
+Phase 0 model condition (chases): **PASS**
+
+- beats the same-rows baseline (95% interval of the difference below 0): **yes**
+- ECE below 0.131: **yes**
+- Log loss, calibrated model minus baseline: -0.0200 (95% interval -0.0367 to -0.0027; 211 matches resampled, 24,271 rows)
+- For reference, the spec's fixed bar (log loss under 0.4379): calibrated clears it, and so does the baseline (0.4014): the bar is not a test of the model.
 
 Calibration layer: **stack**, chosen by the rule fixed before the results: the lowest log loss on 2024 (each layer fitted on the seasons before), confirmed on the later seasons.
 
@@ -26,7 +29,7 @@ Calibration layer: **stack**, chosen by the rule fixed before the results: the l
 | stack | 0.4013 | 0.4008 | 0.3426 | 0.3814 | 0.0681 |
 | baseline | 0.4005 | 0.4029 | 0.4007 | 0.4014 | 0.0866 |
 
-- Benter combination weight against the Betfair mid, and the strategy after 5% commission: no data found (no Betfair cricket price history held; the Advanced data purchase waits on the owner's go).
+- The market conditions (the model's Benter weight against Betfair's price, the strategy after 5% commission): pre-match, cricket/model/benter.py once Betfair's free BASIC cricket file is held; in play, no data found until a recorded season aligns prices to balls.
 
 ## By season
 
