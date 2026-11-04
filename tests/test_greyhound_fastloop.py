@@ -316,7 +316,9 @@ def test_the_predicted_weigh_in_from_weight_history_recency_and_form(monkeypatch
     from greyhound.blocks import wpred
     monkeypatch.setattr(wpred, "MIN_FIT", 1000)
     df = _weighed_dogs()
+    df.loc[df.index[5], "weight_kg"] = 2855.0                  # an impossible weight is read as missing
     names = blocks.attach(df, "wpred")
+    assert df.wp_prev_weight.max() < 50 and df.wp_pred_weight.max() < 50
     assert {"wp_pred_weight", "wp_pred_change", "wp_pred_vs_mean", "wp_prev_weight", "wp_gap_days"} <= set(names)
     late = df[df.t >= "2025-01-01"].dropna(subset=["wp_pred_change"])
     assert len(late) > 1000 and df[df.t < "2025-01-01"].wp_pred_change.isna().all()   # 2025 from 2024 only
@@ -325,6 +327,7 @@ def test_the_predicted_weigh_in_from_weight_history_recency_and_form(monkeypatch
     assert np.abs(late.wp_pred_weight - late.weight_kg).mean() < np.abs(late.wp_prev_weight - late.weight_kg).mean()
     last = df.t.dt.normalize() == df.t.dt.normalize().max()                     # nothing of the day's own weigh-in
     df2 = _weighed_dogs()
+    df2.loc[df2.index[5], "weight_kg"] = 2855.0
     df2.loc[last, "weight_kg"] += 5.0
     blocks.attach(df2, "wpred")
     assert np.allclose(df.loc[last, "wp_pred_weight"], df2.loc[last, "wp_pred_weight"], equal_nan=True)

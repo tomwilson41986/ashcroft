@@ -7,10 +7,8 @@ name: Horse paper desk (backs, lays, both sides of the line; no orders)
 on:
   schedule:
     - cron: '20 6 * * *'     # after the night's price archive (to 04:52 UTC) has the day before yesterday's file
-    # the day so far, as if live (the owner, 4 Nov 2026: "i want the paper agents to be trading as if they were betting
-    # live and i want to see results"): hourly through the racing, on the books the recorder copies to S3 every 15
-    # minutes, each race run scored on the recorder's BSPs (provisional); the 06:20 run scores the day for good
-    - cron: '37 11-21 * * *'
+    # the day so far, as if live, runs in paper-horses-intraday.yml: its own queue, so a long backfill here never holds
+    # up the hourly results (4 Nov 2026: run 41836499198 held them over an hour)
   workflow_dispatch:
     inputs:
       days:
@@ -18,11 +16,6 @@ on:
         required: false
         default: pending
         type: string
-      intraday:
-        description: 'Today so far, as if live (the recorded books to now, races run scored on the recorder BSPs)'
-        required: false
-        default: false
-        type: boolean
       backfill_from:
         description: 'With pending: also the days from this one (YYYY-MM-DD), shown apart from the forward test'
         required: false
@@ -51,14 +44,11 @@ jobs:
           PRED_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           PRED_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           DAYS: ${{ inputs.days || 'pending' }}
-          SCHEDULE: ${{ github.event.schedule }}
-          INTRADAY: ${{ inputs.intraday }}
           BACKFILL: ${{ inputs.backfill_from }}
         run: |
           if ! [[ "$DAYS" =~ ^(pending|[0-9]{4}-[0-9]{2}-[0-9]{2}(\.\.[0-9]{4}-[0-9]{2}-[0-9]{2}|(,[0-9]{4}-[0-9]{2}-[0-9]{2})*))$ ]]; then
             echo "days must be pending, a..b or a list"; exit 1; fi
           ARGS=(--days "$DAYS" --jobs 4 --max-minutes 300)
-          if [ "$SCHEDULE" = '37 11-21 * * *' ] || [ "$INTRADAY" = true ]; then ARGS=(--intraday --jobs 1 --max-minutes 40); fi
           if [ -n "$BACKFILL" ]; then
             if ! [[ "$BACKFILL" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "backfill_from must be YYYY-MM-DD"; exit 1; fi
             ARGS+=(--backfill-from "$BACKFILL")

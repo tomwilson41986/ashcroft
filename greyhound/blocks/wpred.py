@@ -38,6 +38,7 @@ LGB = {"objective": "regression", "learning_rate": 0.05, "num_leaves": 31, "min_
        "feature_fraction": 0.9, "bagging_fraction": 0.8, "bagging_freq": 1, "lambda_l2": 10.0, "verbose": -1,
        "seed": 0, "num_threads": 4}
 ROUNDS = 300
+WMIN, WMAX = 15.0, 50.0                         # a plausible greyhound weight, kg
 MIN_FIT = 50_000                                  # a year's fit needs this many earlier runs
 
 
@@ -65,6 +66,8 @@ def _full(df: pd.DataFrame) -> list[str]:
     import lightgbm as lgb
     cols = ["weight_kg"] + [c for c in ("position", "won") if c in df]
     days, label = _days(df, cols)
+    # impossible weights (the cache holds 61 outside 15-50 kg, 0 to 2,855: query greyhound_wpred_fit_1104) are missing
+    days["weight_kg"] = days.weight_kg.where(days.weight_kg.between(WMIN, WMAX))
     g = days.groupby("dog", sort=False)
     w = days.weight_kg
     prev = g.weight_kg.shift(1)

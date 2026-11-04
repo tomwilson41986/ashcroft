@@ -274,3 +274,20 @@ def test_a_backs_variant_trades_its_own_book_in_the_live_trader_s_place():
     assert sorted(every) == sorted(horses.STRATEGIES) and len(every) == len(set(every))
     specs = {sp[0]: sp for sp in horses.agent_specs(2000)}
     assert specs["backs_win1000"][5] and specs["live_rule"][5] and not specs["lays"][5]
+
+
+def test_the_day_so_far_runs_in_its_own_queue_on_github_s_runners_and_never_reaches_betfair():
+    """The owner, 4 Nov 2026: the paper agents as if live, results through the day. The intraday run has a workflow
+    and a queue of its own, so a long backfill in paper-horses.yml never holds the hourly results up; like the desk,
+    it reads S3 only on GitHub's runners and places no order."""
+    import yaml
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / ".github/workflows"
+    text = (root / "paper-horses-intraday.yml").read_text()
+    wf = yaml.safe_load(text)
+    job = wf["jobs"]["desk"]
+    assert job["runs-on"] == "ubuntu-latest"
+    assert wf["concurrency"]["group"] == "paper-horses-intraday"
+    assert yaml.safe_load((root / "paper-horses.yml").read_text())["concurrency"]["group"] != "paper-horses-intraday"
+    assert "--intraday" in str(job["steps"]) and "--intraday" not in (root / "paper-horses.yml").read_text()
+    assert "BETFAIR" not in text and "TRADING_LIVE" not in text and "auto_trade" not in text

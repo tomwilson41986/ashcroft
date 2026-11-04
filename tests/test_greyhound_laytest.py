@@ -204,3 +204,21 @@ def test_the_panel_reads_prices_from_the_store(tmp_path):
     assert got is not None and len(got) == 1
     # with no books for the day the loader notes it and moves on: the S3 branch is taken without error
     assert ls.load(Store(root=tmp_path), date(2026, 10, 6), date(2026, 10, 6), pred_dir="s3:greyhound/x").empty
+
+
+def test_the_forecast_reads_the_prices_the_model_names_once_they_are_published(tmp_path):
+    """A model that names its own out-of-sample prices (greyhound.live LIVE_OOS_PRICES) has its forecast fitted on them
+    once they are in the store; until then the log-BSP model's stand in, so the early lay always has a forecast."""
+    import pandas as pd
+    from datetime import date
+    from greyhound import laytest as lt, live
+    from sources.common import Store
+    store = Store(root=tmp_path)
+    day = date(2026, 11, 5)
+    store.put(f"greyhound/live/predictions/{day}.csv", pd.DataFrame(
+        {"market_id": ["1.1"], "p_model": [0.2], "model_objective": ["logbsp"],
+         "oos_prices": [live.LIVE_OOS_PRICES]}).to_csv(index=False).encode())
+    assert lt.live_prices(store, day) == lt.LOGBSP_PRICES                     # not published yet
+    store.put(f"{live.LIVE_OOS_PRICES}/2026-10-06.parquet", b"x")
+    assert lt.live_prices(store, day) == live.LIVE_OOS_PRICES
+    assert "wpred" in live.LIVE_MATRIX_BLOCKS

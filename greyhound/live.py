@@ -61,7 +61,13 @@ CARD_UNSAFE = {"weight_change", "weight_vs_mean", "hb_weight_vs_max", "hb_weight
 #: the owner, 4 Nov 2026 ("implement all recommendations in order"): the best pre-race model of report section 26.3
 #: (every engine block, the race simulator, log(BSP) rescaled to the SP book: RMSE 0.4086 against core's 0.4418)
 LIVE_BLOCKS = ("parity", "hrb", "lib", "times", "intent", "ability", "etime")
-LIVE_MATRIX_BLOCKS = ("sim",)                     # greyhound/blocks, computed on the engine's matrix (roadmap F2)
+#: greyhound/blocks computed on the engine's matrix: the race simulator (roadmap F2) and, from 4 Nov 2026 (the owner: "add
+#: the weight history to the live model"), the weight block (the last runs' weights, the weight history, recency, form;
+#: batch 9, run 41834002314: RMSE of log(BSP) -0.0032, 90% -0.0038 to -0.0026, log-loss -0.00029)
+LIVE_MATRIX_BLOCKS = ("sim", "wpred")
+#: the out-of-sample prices of this recipe for the recorded days (greyhound.fastloop publish_pred,
+#: research/greyhound/experiments/live_oos_wpred.json): the early lay's forecast is fitted on them (laytest.live_prices)
+LIVE_OOS_PRICES = "greyhound/live/oos_prices_logbsp_wpred"
 LIVE_OBJECTIVE = "logbsp"                         # 'binary' was the live model to 4 Nov 2026
 LIVE_TRAIN_FROM = "2024-01-01"                    # the fast loop's quick recipe, the window section 26.3 was scored on
 #: the stretch of the SP forecast within each race (greyhound.fastloop CALIBRATIONS), fitted on the fit's early-stopping
@@ -177,6 +183,7 @@ def train(store, today: date) -> dict:
                   calibration=LIVE_CALIBRATION)
     imp = pd.Series(m.feature_importance("gain"), index=feats)
     meta.update({"features": feats, "blocks": list(eng.blocks), "matrix_blocks": list(LIVE_MATRIX_BLOCKS),
+                 "oos_prices": LIVE_OOS_PRICES,
                  "card_unsafe_left_out": sorted(CARD_UNSAFE),
                  "trained_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                  "top_features": {k: round(float(v), 4) for k, v in (imp / imp.sum()).sort_values(ascending=False)
@@ -221,6 +228,7 @@ def predict(store, day: date, s3=None) -> dict:
     pred = price_cards(df, booster, meta["features"], key, meta)
     pred["model_trained_utc"] = meta.get("trained_utc")
     pred["model_objective"] = meta.get("objective", "binary")     # the early lay's forecast fit matches it
+    pred["oos_prices"] = meta.get("oos_prices") or ""               # the prices that forecast is fitted on
     buf = io.StringIO()
     pred.to_csv(buf, index=False)
     store.put(f"{PREFIX}/predictions/{day:%Y-%m-%d}.csv", buf.getvalue().encode())
