@@ -136,7 +136,9 @@ def model_card(b: dict, store: Store) -> str:
     for k, v in b["calibration_source"].items():
         L.append(f"- {k}: {v}")
     L += ["", "The calibrators were fitted on the walk-forward per-season models' out-of-sample output, not on this "
-          "model's own: a model trained on more data may need less (or other) correction.", "",
+          "model's own: a model trained on more data may need less (or other) correction. In the evaluation the "
+          "raw simulator scored better than the calibrated one in both innings (scoring rose faster than layers "
+          "fitted on earlier seasons follow); every quote carries both (`p_raw`, `p`).", "",
           "## Held-out scores (walk-forward evaluation)", ""]
     for name, fname in (("chase", "model_v1_preds.parquet"), ("first innings", "model_v1_first_innings_preds.parquet")):
         p = store.get_parquet(f"cricket/eval/{fname}")
@@ -144,10 +146,10 @@ def model_card(b: dict, store: Store) -> str:
             L.append(f"- {name}: no data found")
             continue
         t = p[p.p_cal.notna()]
-        s, sb = score(t.bat_won, t.p_cal), score(t.bat_won, t.p_base)
+        s, sr, sb = score(t.bat_won, t.p_cal), score(t.bat_won, t.p_sim), score(t.bat_won, t.p_base)
         L.append(f"- {name}: {len(t):,} rows, seasons {int(t.year.min())}-{int(t.year.max())}: calibrated log loss "
-                 f"{s['log_loss']:.4f}, ECE {s['ece']:.4f}; baseline log loss {sb['log_loss']:.4f}, ECE "
-                 f"{sb['ece']:.4f} (`{store.where('cricket/eval/' + fname)}`)")
+                 f"{s['log_loss']:.4f}, ECE {s['ece']:.4f}; raw simulator {sr['log_loss']:.4f}, ECE {sr['ece']:.4f}; "
+                 f"baseline {sb['log_loss']:.4f}, ECE {sb['ece']:.4f} (`{store.where('cricket/eval/' + fname)}`)")
     L += ["", "## Leaves out", "",
           "- Batting order beyond the crease is the listed XI order; future bowlers are the XI average.",
           "- No free hits, no runs on wicket balls, no wickets on wides or no-balls.",

@@ -21,7 +21,10 @@ which says how it was produced. Nothing here has placed a bet or read the live B
 | Next-ball model, held out by season | log loss 1.541-1.559 vs base rate 1.586-1.602, all men's T20, 2023-2026 | `model_v1.md` |
 | Chase win probability, IPL 2024-2026, 24,271 balls, calibrated (stack) | log loss 0.3814, ECE 0.0681. Same-rows baseline: 0.4014, 0.0866 | `model_v1.md` |
 | By season, calibrated vs baseline log loss | 2024: 0.4013 vs 0.4005; 2025: 0.4008 vs 0.4029; 2026: 0.3426 vs 0.4007 | `model_v1.md` |
-| First innings: match winner and the runs line | see the report | `model_v1_first_innings.md` |
+| First innings, P(batting first wins), IPL 2024-2026, 4,180 over starts | raw simulator log loss 0.6093, ECE 0.0339; calibrated (stack) 0.6314, 0.1004; baseline 0.6389, 0.0976 | `model_v1_first_innings.md` |
+| First-innings runs line, all over starts 2023-2026 | median error 17.5 runs (baseline 20.1); 52% of totals inside the 50% range, 82% inside the 80% range (baseline 44%, 72%) | `model_v1_first_innings.md` |
+| Production bundle v1-2026-11-03 | 2,258,238 deliveries from 9,688 matches to 2026-11-03; stack calibration in both innings | `model_card_v1-2026-11-03.md` |
+| Live path, IPL 2026 final replayed (in the bundle's training data: a speed and path test, not an evaluation) | 233 quotes at 1,000 paths; median 0.62 s a quote, first innings up to 1.5 s | `python -m cricket.live.replay --match 1535465` |
 
 How to read the chase result:
 
@@ -31,6 +34,10 @@ How to read the chase result:
   which made 2026 worse than the raw simulator (0.3426 vs 0.3004). The pre-registered choice stands.
 - The spec's absolute gate (0.4379) is cleared by the same-rows baseline as well. Recommendation: gate on beating
   the same-rows baseline, not on a fixed number.
+- The same thing shows in both innings: the raw simulator beats every calibration layer fitted on earlier seasons.
+  Scoring rose faster than those layers follow, while the simulator adapts through its competition scoring rate.
+  Recommended for v2: add "no calibration" as a candidate layer, with the rule fixed before the next IPL season.
+  Until then every quote carries both `p_raw` and the calibrated `p`; the paper trader trades `p`.
 
 ## What is built
 
