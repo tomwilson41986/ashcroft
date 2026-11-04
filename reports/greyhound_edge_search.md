@@ -18,10 +18,15 @@ zero and its development return above zero. Every rule tried is counted here: ab
 | 3 | Limit-on-close against the morning WAP (back drifts, lay steamers), win and place | price files, dev 2016-21, holdout 2022-26 | 72 | 0 | no edge | research-query 41888602917 |
 | 4 | Limit-on-close against our fair price (win and place, raw and tempered), log-BSP and softmax models | fast-loop 41888253783 (fitted on 2021-23, 784,294 runners priced 2024 - 3 Nov 2026); dev 2024, holdout 2025-26 | 160 | 0 | no edge: every win rule's holdout return negative; the SP is efficient against our pre-race price | research-query 41891640383 |
 | 5 | The SP's bias by segment (track, trap, field, session) as limit-on-close thresholds | price files, dev 2016-21, holdout 2022-26 as one portfolio | pending | | | research-query 41889297892 |
-| 6 | Place against win from Betfair's historic data at 1 and 15 minutes out (last traded prices), bet at the place SP; GB and AU | BASIC Jan-Sep 2026; dev Jan-Apr, holdout May-Sep | pending | | | |
+| 6 | Place against win from Betfair's historic data at 1 and 15 minutes out (last traded prices), bet at the place SP; GB and AU | BASIC Jan-Sep 2026 (70,125 races paired: GB 34,174, AU 33,068); dev Jan-Apr, holdout May-Sep | 32 | 0 | no edge in GB (backs lose in both halves; lays +0.8 to +3.9% in dev, -1.9 to -4.1% in holdout). AU lays at 1 min: holdout +1.7 to +3.7% (best +3.70%, 90% 0.15 to 7.58, 11,148 bets) but dev -1.04 to +0.93%: a lead for a forward test, not a pass. 15 min out: too few place trades | research-query 41892329688 |
 
 ## The closing price (the objective)
 
 RMSE of log(BSP), recorder books re-timed, 14 Oct - 2 Nov (closing-price run 41884995327): first traded 0.319 (mid
 0.635), 5 min 0.368 (0.709), 3 min 0.225 (0.337), 1 min 0.144 (0.158). The recorder's greyhound books carry no
 projected SP; the live key's do (from 2 Nov), to be scored as their days accrue.
+
+Betfair's historic data, Jan-Sep 2026, GB, 1 minute out (research-query 41892329688): the win SP from the win market's
+last traded price RMSE 0.1759; a LightGBM reading both markets' prices at 60, 15 and 1 minute out and the race's book
+0.1718 (90% of the gain in mean squared error -0.00169 to -0.00077, by day; 102,144 runners May-Sep, fitted on
+Jan-Apr). The place market and the book's total carry information on the win SP the win market's last price lacks.
