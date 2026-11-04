@@ -1,11 +1,10 @@
 {
-  "about": "Batch 8 (4 Nov 2026, the owner: 'we need to make our prices more accurate'). The live model's own recipe (greyhound/live.py: every engine block card-safe, the race simulator, log(BSP), learning rate 0.05, from 2024, rescaled to the SP book) with its prices stretched within each race: on 4 Nov's 17 settled races the prices looked compressed (the 1.59 favourite priced 2.27, the 14.0 outsider 9.25). One fit; each calibration fitted on the fit's early-stopping tenth (rows the trees never trained on), scored on the test window against the uncalibrated prices on the same runners, paired by day: stretch (one b by least squares on the race-centred log(BSP)), temper (one b maximising the winners' likelihood), and each per track, shrunk to the overall b (Harlow was the weak track on 4 Nov). Beside it, the same with the weigh-in (card-unsafe in the morning; on the day's cards at 12 tracks since 7 Oct) and the first_bend and style_draw blocks, the best additions of batches 2-5, calibrated the same way: how much of the gap is information rather than scale.",
+  "about": "Batch 9 (4 Nov 2026). The owner: 'use the weigh-in for the tracks we have it and then evaluate if we can cover other tracks with our model or just leave them alone'; 'define a predicted weight for each dog today based on historic patterns' from 'weight last run, historic weight patterns, recency, form'. No pre-race weigh-in source reaches us (greyhounds.today empty since 7 Oct; GBGB fills the weight in with the result), so: the live recipe (batch 8: RMSE of log(BSP) 0.4127, the per-track stretch 0.4053) scored per track (each track its own group: the gap to the BSP and the RMSE, for cover or leave); the same with the predicted weigh-in (greyhound/blocks/wpred.py, its yearly out-of-sample R2 in the log); the same with the real weigh-in (the ceiling no live source gives us today); and the live recipe through the trade-out study (does our price add to the market at first traded, 5 and 3 minutes out). The cache is rebuilt (refresh) to keep the raw weight the predicted weigh-in reads.",
   "recipe": "quick",
-  "baseline": "live_cal",
+  "baseline": "live_ref",
   "test_from": "2026-06-01",
   "experiments": [
     {
-      "name": "live_cal",
       "features": "card_safe",
       "objective": "logbsp",
       "add_blocks": [
@@ -13,36 +12,76 @@
       ],
       "rescale_book": true,
       "calibrate": [
-        "stretch",
-        "stretch_track",
-        "temper",
-        "temper_track"
+        "stretch_track"
       ],
+      "groups": "each_track",
       "recipe_overrides": {
         "learning_rate": 0.05,
         "early_stop": 100,
         "rounds": 10000
-      }
+      },
+      "name": "live_ref"
     },
     {
-      "name": "weighin_fbsd_cal",
-      "features": "all",
+      "features": "card_safe",
       "objective": "logbsp",
       "add_blocks": [
         "sim",
-        "first_bend",
-        "style_draw"
+        "wpred"
       ],
       "rescale_book": true,
       "calibrate": [
-        "stretch",
-        "temper_track"
+        "stretch_track"
+      ],
+      "groups": "each_track",
+      "recipe_overrides": {
+        "learning_rate": 0.05,
+        "early_stop": 100,
+        "rounds": 10000
+      },
+      "name": "live_wpred"
+    },
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim"
+      ],
+      "rescale_book": true,
+      "calibrate": [
+        "stretch_track"
+      ],
+      "groups": "each_track",
+      "recipe_overrides": {
+        "learning_rate": 0.05,
+        "early_stop": 100,
+        "rounds": 10000
+      },
+      "name": "live_actualw",
+      "add_features": [
+        "weight_change",
+        "weight_vs_mean",
+        "hb_weight_vs_max",
+        "hb_weight_vs_min"
+      ]
+    },
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim"
+      ],
+      "rescale_book": true,
+      "calibrate": [
+        "stretch_track"
       ],
       "recipe_overrides": {
         "learning_rate": 0.05,
         "early_stop": 100,
         "rounds": 10000
-      }
+      },
+      "name": "live_ref_short",
+      "shortening": true
     }
   ]
 }

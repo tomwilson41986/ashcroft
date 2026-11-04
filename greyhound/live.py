@@ -64,9 +64,10 @@ LIVE_BLOCKS = ("parity", "hrb", "lib", "times", "intent", "ability", "etime")
 LIVE_MATRIX_BLOCKS = ("sim",)                     # greyhound/blocks, computed on the engine's matrix (roadmap F2)
 LIVE_OBJECTIVE = "logbsp"                         # 'binary' was the live model to 4 Nov 2026
 LIVE_TRAIN_FROM = "2024-01-01"                    # the fast loop's quick recipe, the window section 26.3 was scored on
-#: the stretch of the log-BSP price within each race (greyhound.fastloop CALIBRATIONS), fitted on the fit's early-stopping
-#: tenth; None leaves the prices as the trees give them (batch 8 decides, 4 Nov 2026)
-LIVE_CALIBRATION: str | None = None
+#: the stretch of the SP forecast within each race (greyhound.fastloop CALIBRATIONS), fitted on the fit's early-stopping
+#: tenth, applied to pred_bsp only (the win chance is left alone). Batch 8 (run 41827648070, 1 Jun - 2 Nov 2026): per
+#: track, RMSE of log(BSP) 0.4127 -> 0.4053 (-0.0074, 90% -0.0080 to -0.0067); it takes effect at the next retrain
+LIVE_CALIBRATION: str | None = "stretch_track"
 LEDGER_FIELDS = ["time_utc", "mode", "market_id", "selection_id", "track", "race_time", "trap", "dog", "p_model",
                  "price", "size_offered", "edge", "action", "stake", "matched", "avg_price", "bet_id", "status",
                  "error", "lay_liability", "lay_status", "minutes_to_off"]
@@ -144,16 +145,20 @@ def price_cards(df: pd.DataFrame, booster, features: list[str], key: pd.DataFram
     if (meta or {}).get("objective") == "logbsp":
         # the forecast SP: its chances normalised in the race, and the price rescaled to the SP book's usual total
         raw = out.p_raw.astype(float)
+        out["p_model"] = race_norm(1.0 / np.exp(raw), out.race_id) if len(c) else []
+        book = float((meta or {}).get("book") or 1.0)
         st = (meta or {}).get("stretch")
         if st and len(c):
-            # the stretch of section 28 (chance proportional to pred_bsp^-b in each race, b by track)
+            # batch 8 (4 Nov 2026): the BSP is more spread than the winners' chances, so the stretch (a share
+            # proportional to pred_bsp^-b in each race, b by track) makes the SP forecast more accurate (RMSE of
+            # log(BSP) 0.4127 -> 0.4053) and the win chance worse; it is applied to the SP forecast only, the chance
+            # (what the early lay's forecast reads) left as the trees give it
             b = out.track.astype(str).map(st.get("by_track") or {}).fillna(st["b"]).to_numpy(float)
             centred = raw - raw.groupby(out.race_id).transform("mean")
-            out["p_model"] = race_norm(pd.Series(np.exp(-b * centred.to_numpy()), index=out.index), out.race_id)
+            share = race_norm(pd.Series(np.exp(-b * centred.to_numpy()), index=out.index), out.race_id)
+            out["pred_bsp"] = (1.0 / (book * share.astype(float))).round(3)
         else:
-            out["p_model"] = race_norm(1.0 / np.exp(raw), out.race_id) if len(c) else []
-        book = float((meta or {}).get("book") or 1.0)
-        out["pred_bsp"] = (1.0 / (book * out.p_model.astype(float))).round(3) if len(c) else []
+            out["pred_bsp"] = (1.0 / (book * out.p_model.astype(float))).round(3) if len(c) else []
     else:
         out["p_model"] = race_norm(out.p_raw, out.race_id) if len(c) else []
     out = out.merge(key, on=["race_id", "trap"], how="left")

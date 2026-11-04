@@ -69,11 +69,12 @@ def test_the_calibrated_prices_stretch_within_the_race_and_stay_a_book():
     cal = live.price_cards(card, m, ["x1", "x2"], key, dict(meta, stretch=dict(st, b=2.0, by_track={})))
     assert np.allclose(cal.groupby("race_id").p_model.sum(), 1.0)
     assert np.allclose((1.0 / cal.pred_bsp).groupby(cal.race_id).sum(), meta["book"], atol=0.01)
-    # b of 2 spreads the book: the favourite's chance up, the outsider's down, the order kept
+    # the win chance is left alone; b of 2 spreads the SP forecast: the favourite shorter, the outsider longer
+    assert np.allclose(cal.p_model, plain.p_model)
     for rid, g in cal.groupby("race_id"):
-        p0 = plain[plain.race_id == rid].set_index("trap").p_model
-        p1 = g.set_index("trap").p_model
-        assert p1[p0.idxmax()] > p0.max() and p1[p0.idxmin()] < p0.min()
-        assert (p1.rank() == p0.rank()).all()
+        q0 = plain[plain.race_id == rid].set_index("trap").pred_bsp
+        q1 = g.set_index("trap").pred_bsp
+        assert q1[q0.idxmin()] < q0.min() and q1[q0.idxmax()] > q0.max()
+        assert (q1.rank() == q0.rank()).all()
     assert live.LIVE_CALIBRATION is None or live.LIVE_CALIBRATION in ("stretch", "stretch_track", "temper",
                                                                       "temper_track")
