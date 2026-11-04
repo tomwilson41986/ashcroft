@@ -40,11 +40,19 @@ for d in [date(2026, 10, 27) + timedelta(i) for i in range(9)]:
                        x[(x.pred >= thr) & (x.field >= 5)].assign(model="steamer")])
     else:
         r = pd.DataFrame(columns=a.columns)
-    ka, kr = key(a), key(r)
+    # only the horses that ran (a card runner the table does not hold was withdrawn after 06:00: no book at 10:00)
+    ran = set(zip(hist[hist.race_date == day].track.map(bp.normalise_track),
+                  hist[hist.race_date == day].race_time.astype(str).map(bp.race_time_to_24h),
+                  hist[hist.race_date == day].horse_name.map(bp.normalise_horse)))
+    ka_all = key(a)
+    ka = {k for k in ka_all if k[1:] in ran}
+    kr = key(r)
+    nr = len(ka_all) - len(ka)
     for m in ("quick_return", "steamer"):
         A = {k for k in ka if k[0] == m}; R = {k for k in kr if k[0] == m}
         rows.append({"day": day, "model": m, "live": len(A), "research": len(R), "both": len(A & R),
-                     "live_only": len(A - R), "research_only": len(R - A)})
+                     "live_only": len(A - R), "research_only": len(R - A),
+                     "withdrawn": len({k for k in ka_all - ka if k[0] == m})})
     # diagnostics on the matched runners: code and the features
     cd = S.card_rows(card, day, hist)
     tab = hist[hist.race_date == day]
@@ -58,14 +66,24 @@ for d in [date(2026, 10, 27) + timedelta(i) for i in range(9)]:
               f"dslr {np.mean(m.days_since_lr_c.astype(float) == m.days_since_lr_t.astype(float)):.3f}; ({time.time()-t1:.0f}s)")
         bad = m[m.code_c != m.code_t][["race_name_c", "going_description_c", "code_c", "code_t"]].drop_duplicates().head(8)
         if len(bad): print(bad.to_string())
-        badj = m[m.jockey_name_c != m.jockey_name_t][["jockey_name_c", "jockey_name_t"]].drop_duplicates().head(5)
-        if len(badj): print(badj.to_string())
+        bd = m[m.days_since_lr_c.astype(float) != m.days_since_lr_t.astype(float)][["horse_name_c", "days_since_lr_c", "days_since_lr_t"]].head(5)
+        if len(bd): print(bd.to_string())
     # where a selection differs, why
     for mdl in ("quick_return", "steamer"):
         lo = [k for k in ka - kr if k[0] == mdl][:3]; ro = [k for k in kr - ka if k[0] == mdl][:3]
         if lo or ro: print(f"  {mdl} live-only {lo} research-only {ro}")
+    if len(r) and len(a):
+        pa = dict(zip(zip(a.track.map(bp.normalise_track), a.horse_name.map(bp.normalise_horse)), a.pred))
+        xa = S.select(fr, day, booster, -9)        # every runner's live prediction
+        pl = dict(zip(zip(xa.track.map(bp.normalise_track), xa.horse_name.map(bp.normalise_horse)), xa.pred))
+        pr = dict(zip(zip(x.track.map(bp.normalise_track), x.horse_name.map(bp.normalise_horse)), x.pred))
+        both = [k for k in pr if k in pl]
+        d = np.array([pl[k] - pr[k] for k in both])
+        print(f"  steamer prediction live vs research on {len(both)} runners: median abs diff {np.median(np.abs(d)):.4f}, "
+              f"share within 0.005 {np.mean(np.abs(d) < 0.005):.3f}")
 print(pd.DataFrame(rows).to_string())
-t = pd.DataFrame(rows).groupby("model")[["live", "research", "both"]].sum(); t["agree"] = t.both / t[["live", "research"]].max(axis=1)
+R = pd.DataFrame(rows); R = R[R.research > 0]
+t = R.groupby("model")[["live", "research", "both", "withdrawn"]].sum(); t["recall"] = t.both / t.research; t["precision"] = t.both / t.live
 print(t.to_string())
 day = "2026-11-04"; card = S.read_card(get, day)
 if card is not None:

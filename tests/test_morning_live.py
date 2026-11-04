@@ -173,9 +173,18 @@ def test_the_card_maps_to_the_tables_shape():
     assert S.split_claim("Hart, Jason") == ("Hart, Jason", 0.0)
     assert S.time12("14:05") == "2:05" and S.time12("12:05") == "12:05" and S.time12("1:30") == "1:30"
     names = pd.Series(["Racing TV Handicap Hurdle", "Novices' Chase", "Open NH Flat Race", "Maiden Stakes",
-                       "Classified Stakes", "Bumper"])
-    going = pd.Series(["Soft", "Good", "Heavy", "Good To Firm", "Standard To Slow", "Soft"])
-    assert S.card_code(names, going).tolist() == ["hurdle", "chase", "nhflat", "flat", "aw", "nhflat"]
+                       "Classified Stakes", "Bumper", "WTW Willis Flat Race", "Fri 30th Oct 2026"])
+    going = pd.Series(["Soft", "Good", "Heavy", "Good To Firm", "Standard To Slow", "Soft", "Yielding", "Good"])
+    assert S.card_code(names, going).tolist() == ["hurdle", "chase", "nhflat", "flat", "aw", "nhflat", "nhflat",
+                                                  "unknown"]
+    rows = pd.DataFrame({"horse_name": ["X", "Y", "Z", "W"], "rk": ["r1", "r1", "r1", "r2"],
+                         "code": ["unknown", "unknown", "unknown", "unknown"]})
+    hist = pd.DataFrame({"horse_name": ["X", "Y", "Z", "X"], "code": ["chase", "chase", "flat", "hurdle"],
+                         "date": pd.to_datetime(["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-09"])})
+    # last runs: X hurdle (its later run), Y chase, Z flat: an even split stays unknown; W has no history
+    assert S.settle_unknown_codes(rows, hist).tolist() == ["unknown", "unknown", "unknown", "unknown"]
+    hist.loc[3, "code"] = "chase"
+    assert S.settle_unknown_codes(rows, hist).tolist() == ["chase", "chase", "chase", "unknown"]
 
 
 def test_the_card_joins_the_history_in_the_tables_shape_and_order():

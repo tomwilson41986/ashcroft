@@ -1,0 +1,140 @@
+name: Morning models (steamer, quick return; WIN at 10:00 UK, half stakes; real only with MORNING_LIVE=yes)
+
+# The owner, 4 Nov 2026: "Create two live models; Steamers, Quick Returners", WIN only (the place leg at the place SP
+# has no edge in the research), "Live now, half stakes", "leave the live trader horses out", and no order before
+# 10:00 UK. morning/live.py; spec docs/morning_models_live.md.
+#
+#   select  06:45 UTC, GitHub's runner: the day's selections from the 06:00 card and the HRB database, to
+#           s3://$BUCKET/morning/selections/<day>.csv (no Betfair key: nothing here can bet)
+#   trade   08:05 UTC on the morning runner (08:05 UK in winter, 09:05 in summer): waits for 10:00 UK, then one order
+#           a selection, each minute to 10:15 for a horse with no book; the live trader's horses (its ledger) left out
+#   settle  22:50 UTC on the morning runner: Betfair's record of the settled bets (live), or the closed books (paper)
+#
+# The key: the live application key and --live only when the repository variable MORNING_LIVE is 'yes'; otherwise the
+# delayed key and paper orders against the live books. Its own runner (vars.MORNING_RUNNER || 'morning';
+# scripts/setup_runner.sh morning), never the live horse trader's or the paper models'. To stop new orders within a
+# minute: the S3 object morning/STOP (or trading/STOP). To stop at once: cancel the run.
+
+on:
+  schedule:
+    - cron: '45 6 * * *'     # select
+    - cron: '5 8 * * *'      # trade (waits for 10:00 UK)
+    - cron: '50 22 * * *'    # settle
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'select, trade or settle'
+        required: true
+        default: select
+        type: choice
+        options: [select, trade, settle]
+      date:
+        description: 'UK racing day YYYY-MM-DD (default today)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: morning-models-${{ github.event.schedule || inputs.step }}
+  cancel-in-progress: false
+
+jobs:
+  select:
+    if: ${{ github.event.schedule == '45 6 * * *' || inputs.step == 'select' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download historic database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
+      - name: The day's selections
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          DAY: ${{ inputs.date }}
+        run: |
+          if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
+          python -m morning.live --select ${DAY:+--date "$DAY"} | tee selections.txt
+          { echo '```'; tail -80 selections.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  trade:
+    if: ${{ github.event.schedule == '5 8 * * *' || github.event.schedule == '50 22 * * *' || inputs.step == 'trade' || inputs.step == 'settle' }}
+    runs-on: ${{ vars.MORNING_RUNNER || 'morning' }}
+    timeout-minutes: 200
+    steps:
+      - name: Not on another job's runner
+        env:
+          MORNING_RUNNER_LABEL: ${{ vars.MORNING_RUNNER || 'morning' }}
+          LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
+          PAPER_RUNNER_LABEL: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+          FOOTBALL_RUNNER_LABEL: ${{ vars.FOOTBALL_RUNNER || 'football' }}
+        run: |
+          if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$MORNING_RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
+            echo "MORNING_RUNNER is the live horse trader's runner ($LIVE_RUNNER_LABEL): the morning models do not run there"
+            exit 1
+          fi
+          if [ "$MORNING_RUNNER_LABEL" = "$PAPER_RUNNER_LABEL" ] || [ "$MORNING_RUNNER_LABEL" = "$FOOTBALL_RUNNER_LABEL" ]; then
+            echo "MORNING_RUNNER is another job's runner ($MORNING_RUNNER_LABEL): give the morning models their own"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - name: Python (its own environment)
+        run: |
+          VENV="$HOME/.venvs/ashcroft-morning"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv-morning"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
+      - name: Write the Betfair certificate (its own folder)
+        env:
+          BETFAIR_CERT: ${{ secrets.BETFAIR_CERT }}
+          BETFAIR_KEY: ${{ secrets.BETFAIR_KEY }}
+        run: |
+          if [ -n "$BETFAIR_CERT" ] && [ -n "$BETFAIR_KEY" ]; then
+            D="$HOME/.betfair/certs-morning"
+            mkdir -p "$D"
+            printf '%s\n' "$BETFAIR_CERT" > "$D/betfair.crt"
+            printf '%s\n' "$BETFAIR_KEY" > "$D/betfair.key"
+            chmod 600 "$D/betfair.key"
+            echo "BETFAIR_CERT_FILE=$D/betfair.crt" >> "$GITHUB_ENV"
+            echo "BETFAIR_KEY_FILE=$D/betfair.key" >> "$GITHUB_ENV"
+          fi
+      - name: Trade or settle (real orders only with MORNING_LIVE=yes)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
+          MORNING_LIVE: ${{ vars.MORNING_LIVE || 'no' }}
+          STEP: ${{ (github.event.schedule == '50 22 * * *' || inputs.step == 'settle') && 'settle' || 'trade' }}
+          DAY: ${{ inputs.date }}
+        run: |
+          if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
+          MKEY="$BETFAIR_APP_KEY"
+          LIVEFLAG=""
+          if [ "$MORNING_LIVE" = yes ] && [ -n "$BETFAIR_LIVE_APP_KEY" ]; then MKEY="$BETFAIR_LIVE_APP_KEY"; LIVEFLAG="--live"; fi
+          if [ -n "$LIVEFLAG" ]; then echo "morning models: real orders on"; else echo "morning models: paper"; fi
+          BETFAIR_APP_KEY="$MKEY" python -m morning.live --"$STEP" ${DAY:+--date "$DAY"} $LIVEFLAG

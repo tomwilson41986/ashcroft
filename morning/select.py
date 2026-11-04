@@ -31,14 +31,38 @@ def split_claim(name) -> tuple[str, float]:
     return (s[:m.start()].strip(), float(m.group(1))) if m else (s.strip(), 0.0)
 
 
+_DATE_NAME = r"^\s*(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s+\d"
+
+
 def card_code(race_name: pd.Series, going: pd.Series) -> pd.Series:
-    """chase / hurdle / nhflat from the race name, aw for a Flat race on Standard going, else flat."""
+    """chase / hurdle / nhflat from the race name, aw for a Flat race on Standard going, else flat; 'unknown' where
+    the card carries the date in place of a race name ("Fri 30th Oct 2026": some Irish and Northern Irish cards),
+    settled by ``settle_unknown_codes``. An Irish bumper is named "... Flat Race" (the table files it nhflat)."""
     n = race_name.fillna("").str.lower()
     g = going.fillna("").str.lower()
-    return pd.Series(np.select([n.str.contains("chase"), n.str.contains("hurdle"),
-                                n.str.contains(r"nh flat|n\.h\. flat|bumper|national hunt flat"),
+    return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+                                n.str.contains("chase"), n.str.contains("hurdle"),
+                                n.str.contains(r"nh flat|n\.h\. flat|bumper|national hunt flat|\bflat race\b"),
                                 g.str.contains("standard")],
-                               ["chase", "hurdle", "nhflat", "aw"], default="flat"), index=race_name.index)
+                               ["unknown", "chase", "hurdle", "nhflat", "aw"], default="flat"),
+                     index=race_name.index)
+
+
+def settle_unknown_codes(rows: pd.DataFrame, hist: pd.DataFrame) -> pd.Series:
+    """A race the card does not name takes the code most of its runners last ran under (earlier days only); a race
+    whose runners have no history, or split evenly, stays 'unknown' and is not traded (build() keeps the four codes
+    only)."""
+    code = rows["code"].copy()
+    unk = code == "unknown"
+    if not unk.any():
+        return code
+    last = (hist.sort_values("date").groupby("horse_name")["code"].last())
+    prev = rows.loc[unk, "horse_name"].map(last)
+    for rk, grp in prev.groupby(rows.loc[unk, "rk"]):
+        vc = grp.dropna().value_counts()
+        if len(vc) and (len(vc) == 1 or vc.iloc[0] > vc.iloc[1]):
+            code.loc[grp.index] = vc.index[0]
+    return code
 
 
 def time12(t) -> str:
@@ -89,6 +113,7 @@ def history_with_card(hist: pd.DataFrame, card: pd.DataFrame, day: str) -> pd.Da
     """Earlier days of the history and the day's card, in the table's order."""
     h = hist[hist["race_date"] < day]
     rows = card_rows(card, day, hist)
+    rows["code"] = settle_unknown_codes(rows, h)
     for k in hist.columns:                                   # the table's numeric and boolean columns keep their kind
         if k not in rows or k == "date":
             continue
