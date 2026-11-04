@@ -88,3 +88,31 @@ def test_gate_needs_the_whole_interval_below_zero():
     assert not sharp_but_off["pass"]                                   # ECE 0.2: over the 0.131 limit
     same = model_gate(t.assign(p_cal=0.5, p_base=0.5))
     assert not same["pass"]
+
+
+def test_innings_break_is_the_first_innings_suspension_and_the_price_five_minutes_on():
+    """Hand-written stream lines in Betfair's shape drive the break rules; no market data."""
+    import bz2
+    import json
+
+    from cricket.model.innings_break import break_price, read_event
+
+    def line(minute, mid, mtype=None, status=None, inplay=None, ltp=None):
+        mc = {"id": mid}
+        if mtype:
+            mc["marketDefinition"] = {"marketType": mtype, "status": status, "inPlay": inplay}
+        if ltp:
+            mc["rc"] = [{"id": s, "ltp": p} for s, p in ltp.items()]
+        return json.dumps({"pt": 1_780_000_000_000 + minute * 60_000, "mc": [mc]})
+    lines = [line(0, "1.1", "MATCH_ODDS", "OPEN", True, {1: 1.9, 2: 2.0}),
+             line(0, "1.2", "1ST_INNINGS_RUNS", "OPEN", True),
+             line(80, "1.2", "1ST_INNINGS_RUNS", "SUSPENDED", True),        # the first innings ends at 80
+             line(82, "1.1", ltp={1: 1.5, 2: 2.9}),                          # the market absorbs the total
+             line(90, "1.1", ltp={1: 1.4, 2: 3.4}),                          # after the price time: not used
+             line(124, "1.3", "2_INNING_6_OVR_LINE", "SUSPENDED", True)]
+    bp = break_price(read_event([bz2.compress("\n".join(lines).encode())]), "1.1")
+    assert bp[1] == 1.5 and bp[2] == 2.9
+    assert bp["to_chase_6_min"] == 44.0
+    stale = [line(0, "1.1", "MATCH_ODDS", "OPEN", True, {1: 1.9, 2: 2.0}),
+             line(80, "1.2", "1ST_INNINGS_RUNS", "SUSPENDED", True)]
+    assert "why" in break_price(read_event([bz2.compress("\n".join(stale).encode())]), "1.1")   # 85 min old

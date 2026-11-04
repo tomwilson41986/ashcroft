@@ -203,6 +203,8 @@ python -m cricket.model.evaluate --seasons 2023,2024,2025,2026 --paths 256
 # against Betfair's free BASIC cricket close (betfair_historic.py; no data found until the account holds the plan)
 python -m cricket.model.prematch --years 2016-2026 --paths 256
 python -m cricket.model.benter
+# the innings-break probe: the chase model against Betfair's price 5 minutes after the first-innings markets suspend
+python -m cricket.model.innings_break --root data/cricket/store --work data/cricket/eval
 
 # Race ABM: simulate a card, batch features for training, pattern-oriented calibration
 python research_lab.py abm --db horse_racing.db --date 2026-03-12
