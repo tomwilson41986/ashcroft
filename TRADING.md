@@ -1642,6 +1642,22 @@ upgrade runs at 21:45 UTC plus up to 10 minutes, after the trading and before th
 (`/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf`); it needs passwordless sudo for the runner's user and
 changes nothing without it (the run says what to run as root instead). The watchdog stays as the second line.
 
+**The horse paper desk** (the owner, 4 Nov: "Keep the current proven profitable strategy as live. Let's paper trade
+any others that look promising; Backs, Lays, High Volume Trading each side of the line"; `research/paper/horses.py`,
+`paper-horses.yml` daily at 06:20 UTC; ledger `paper-desk-1104`). The live rule stays as it is. Five strategies are
+paper traded beside a replay of the live rule (the control), each frozen on 4 Nov, on every racing day's recorded
+books through the trader's own code once the day's price file is in (two days after), no order placed anywhere: the
+rule with a GBP50 floor at 21 and over; the rule to win GBP1,000 (GBP500 a bet); the lays (3% under the expected
+close, at 20 or under, GBP400 at risk a horse); and both sides of the line (`research/arms/quotes.py`), a resting back
+above and a resting lay below a fair price on every runner, GBP10 a quote, GBP100 a runner a side, GBP4,000 a day,
+around the closing model's expected BSP at 3% (quotes_model3) and around the market's mid at 2% (quotes_mid2), each
+fill hedged at the SP. The horse books carry no traded ladder, so a resting order is matched only when the market
+trades through its price or offers across it, or by half the money traded at its price beyond the queue shown ahead
+of it. The gate, set before the first forward day (5 Nov) and read after 20 forward racing days: a backs variant's
+day minus the control's, a paired bootstrap 90% interval wholly above zero and ahead on 12 of 20; the lays and the
+quotes, the day at 0.80 with its interval wholly above zero, up on 12 of 20, no day worse than GBP-200. Promotion only
+on the owner's word. The days before 5 Nov are scored apart (the backs and lays were chosen on them).
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
