@@ -1,5 +1,9 @@
 # Paper trader: the morning edges (spec, 4 Nov 2026)
 
+> 4 Nov 2026, later: the owner put the steamer and quick-return models live, WIN only, at half stakes, before this
+> gate (`docs/morning_models_live.md`). The paper trader keeps running as the record of the place leg and the
+> Timeform improvers.
+
 racing². Paper only: no order reaches Betfair. Built from `reports/strategy_research_2026-11-04.md` (PR #231).
 Follows the house rule (CLAUDE.md, 2 Nov 2026): nothing here touches the live UK/IE model, `live-trade.yml`,
 `auto_trade.py` or `trading/`; it runs beside them and must pass a gate fixed before the first forward day.

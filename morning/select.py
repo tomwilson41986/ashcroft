@@ -31,7 +31,7 @@ def split_claim(name) -> tuple[str, float]:
     return (s[:m.start()].strip(), float(m.group(1))) if m else (s.strip(), 0.0)
 
 
-_DATE_NAME = r"^\s*(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s+\d"
+_DATE_NAME = r"^\s*(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s+\d"
 
 
 def card_code(race_name: pd.Series, going: pd.Series) -> pd.Series:

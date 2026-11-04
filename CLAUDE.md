@@ -40,7 +40,7 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 | `BETFAIR_PASSWORD` | Betfair Exchange password |
 | `BETFAIR_APP_KEY` | Betfair API application key (the delayed key: every read-only job, the market records) |
 | `API_FOOTBALL_KEY` | API-Football (optional: fixture status, kick-off, cups; the football model runs without it) |
-| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); the football trader when `FOOTBALL_LIVE=yes` (football-trade.yml, small real stakes, 3 Nov 2026); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py) |
+| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); the football trader when `FOOTBALL_LIVE=yes` (football-trade.yml, small real stakes, 3 Nov 2026); the morning models when `MORNING_LIVE=yes` (morning-models.yml, its own runner, 4 Nov 2026); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py) |
 
 ## Key Commands
 
@@ -97,6 +97,15 @@ python betfair_sync.py --live --csv live_odds.csv
 # orders only with TRADING_LIVE=yes, and only on the UK runner (live-trade.yml); the S3 object trading/STOP stops new bets
 TRADING_LIVE=yes python auto_trade.py --live --until 21:35   # 05:15 UK to 15 min before each off (owner, 1, 7, 12 Oct, 4 Nov)
 python auto_trade.py --live --settle
+
+# The morning models (the owner, 4 Nov 2026: "Create two live models; Steamers, Quick Returners"; docs/morning_models_live.md):
+# the CLEAN steamer model's top 5% and the horses back within 1-4 days, backed WIN only at 10:00 UK (never earlier),
+# half the research's stakes (GBP50 to win, GBP100 a bet at most, GBP2,000 a day a model), the live trader's horses
+# left out; selections from the 06:00 card (GitHub's runner), orders on their own runner (morning-models.yml), real only
+# with MORNING_LIVE=yes; the S3 object morning/STOP (or trading/STOP) stops new orders
+python -m morning.live --select
+MORNING_LIVE=yes python -m morning.live --trade --live
+python -m morning.live --settle --live
 
 # --- Research toolkit (see RESEARCH_FRAMEWORK.md) ---
 # Model-vs-market scoring (Murphy decomposition, skill vs BSP, concordance, drift)
