@@ -23,7 +23,9 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 MARK_MIN = 60
-AGES_KEY = "betfair_historic/horse_racing_win_ages_au.parquet"
+AGES_KEY = "betfair_historic/ages/au_t60_ages.parquet"
+#: where the first run put it (its name matched the yearly tables' prefix and was read in with them: fixed 4 Nov)
+OLD_AGES_KEY = "betfair_historic/horse_racing_win_ages_au.parquet"
 
 
 def _ages(item: tuple[str, bytes]) -> list[dict] | None:
@@ -148,7 +150,13 @@ def main(argv=None) -> int:
     from sources.common import Store
     from au.lay_test import joined
     store = Store()
-    held = store.get_parquet(AGES_KEY) if a.ages_from_store else None
+    held = None
+    if a.ages_from_store:
+        held = store.get_parquet(AGES_KEY)
+        if held is None:
+            held = store.get_parquet(OLD_AGES_KEY)
+            if held is not None:
+                store.put_parquet(AGES_KEY, held)
     if held is not None:
         ages, srep = held, {"from_store": AGES_KEY, "rows": int(len(held))}
     else:

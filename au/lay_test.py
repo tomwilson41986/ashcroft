@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -25,7 +26,7 @@ GATE_MIN_BETS = 5000
 
 
 def joined(store) -> pd.DataFrame:
-    tables = sorted(k for k in store.listing("betfair_historic/") if k.startswith("betfair_historic/horse_racing_win_"))
+    tables = sorted(k for k in store.listing("betfair_historic/") if re.fullmatch(r"betfair_historic/horse_racing_win_\d{4}\.parquet", k))
     h = runners_ran(pd.concat([store.get_parquet(k) for k in tables], ignore_index=True))
     h = h[h["country"] == "AU"].copy()
     h["market_id"] = h["market_id"].astype(str).str.replace(r"^1\.", "", regex=True).astype("int64")

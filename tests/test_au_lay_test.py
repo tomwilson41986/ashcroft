@@ -29,3 +29,10 @@ def test_commission_is_taken_from_each_markets_net_profit():
     # market 1: +0.1 -> 0.098; market 2: +0.2 -> 0.196; 0.294 over 2 units
     assert r["per_unit_pct"] == pytest.approx(14.7, abs=1e-3)
     assert r["by_year_pct"] == {2024: pytest.approx(9.8, abs=1e-3), 2025: pytest.approx(19.6, abs=1e-3)}
+
+
+def test_only_the_yearly_tables_are_read():
+    import re
+    keys = ["betfair_historic/horse_racing_win_2024.parquet", "betfair_historic/horse_racing_win_ages_au.parquet",
+            "betfair_historic/ages/au_t60_ages.parquet"]
+    assert [k for k in keys if re.fullmatch(r"betfair_historic/horse_racing_win_\d{4}\.parquet", k)] == keys[:1]

@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import bz2
 import json
+import re
 import logging
 import sys
 import tarfile
@@ -204,7 +205,7 @@ def model_clv(d: pd.DataFrame, oos: pd.DataFrame) -> dict:
 
 
 def gate(store) -> dict:
-    tables = sorted(k for k in store.listing("betfair_historic/") if k.startswith("betfair_historic/horse_racing_win_"))
+    tables = sorted(k for k in store.listing("betfair_historic/") if re.fullmatch(r"betfair_historic/horse_racing_win_\d{4}\.parquet", k))
     if not tables:
         raise SystemExit("no horse_racing_win tables: run --tar first")
     df = pd.concat([store.get_parquet(k) for k in tables], ignore_index=True)
