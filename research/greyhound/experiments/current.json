@@ -1,16 +1,11 @@
 {
-  "about": "Batch 7 (3 Nov 2026, the owner: 'we need to focus on improving our BFSP model. The final price / log of final price is key'). Ranked first by RMSE of log(BSP) against the baseline. Batch 6's best (every new engine block and the race simulator, all_new_sim) against core; the same rescaled to the SP book's usual total (the closing study: the mid's RMSE 0.635 -> 0.492 so); larger trees; fewer features a tree. In the slow lane, the closing-price study (research/greyhound/bfsp_close.py) on core's and on the best's prices: how much a better pre-race price sharpens the forecast of log(BSP) from the book (our price is a fifth of the closing trees' gain).",
+  "about": "Batch 8 (4 Nov 2026, the owner: 'we need to make our prices more accurate'). The live model's own recipe (greyhound/live.py: every engine block card-safe, the race simulator, log(BSP), learning rate 0.05, from 2024, rescaled to the SP book) with its prices stretched within each race: on 4 Nov's 17 settled races the prices looked compressed (the 1.59 favourite priced 2.27, the 14.0 outsider 9.25). One fit; each calibration fitted on the fit's early-stopping tenth (rows the trees never trained on), scored on the test window against the uncalibrated prices on the same runners, paired by day: stretch (one b by least squares on the race-centred log(BSP)), temper (one b maximising the winners' likelihood), and each per track, shrunk to the overall b (Harlow was the weak track on 4 Nov).",
   "recipe": "quick",
-  "baseline": "core_lr05",
+  "baseline": "live_cal",
   "test_from": "2026-06-01",
-  "shortening": true,
   "experiments": [
-    {"name": "core_lr05", "features": "core", "objective": "logbsp", "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "best_lr05", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "best_rescaled", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "rescale_book": true, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "best_leaves63", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "params": {"num_leaves": 63, "min_data_in_leaf": 100}, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "best_ff06", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "params": {"feature_fraction": 0.6}, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "core_bfsp", "features": "core", "objective": "logbsp", "bfsp": true, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}},
-    {"name": "best_bfsp", "features": "all", "objective": "logbsp", "add_blocks": ["sim"], "bfsp": true, "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}}
+    {"name": "live_cal", "features": "card_safe", "objective": "logbsp", "add_blocks": ["sim"], "rescale_book": true,
+     "calibrate": ["stretch", "stretch_track", "temper", "temper_track"],
+     "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}}
   ]
 }

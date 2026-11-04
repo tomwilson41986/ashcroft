@@ -217,3 +217,61 @@ def test_the_bsp_forecast_rescaled_to_the_sp_book():
     book = float(np.median((1.0 / fit.bsp).groupby(fit.race_id).sum()))
     assert np.allclose(totals, totals.iloc[0]) and abs(totals.iloc[0] - book) < 0.05   # every race at the SP book
     assert res["log_bsp_rmse"] > 0
+
+
+def _compressed_races(n_races=400, b_true=1.6, seed=1):
+    """Races whose log(BSP) is b_true times the model's race-centred log price, and winners drawn from the BSP."""
+    rng = np.random.default_rng(seed)
+    race = np.repeat(np.arange(n_races), 6)
+    log_pred = rng.normal(1.6, 0.4, len(race))
+    c = fl._centre(log_pred, race)
+    p = pd.Series(np.exp(-b_true * c)).groupby(race).transform(lambda s: s / s.sum()).to_numpy()
+    log_bsp = -np.log(p) + rng.normal(0, 0.05, len(race))          # a book of 1.0 with a little noise
+    won = np.zeros(len(race))
+    for r in range(n_races):
+        i = np.flatnonzero(race == r)
+        won[rng.choice(i, p=p[i] / p[i].sum())] = 1
+    track = np.where(race % 2, "Romford", "Hove")
+    return log_pred, log_bsp, won, race, track
+
+
+def test_the_stretch_recovers_a_compressed_price():
+    log_pred, log_bsp, won, race, track = _compressed_races()
+    s = fl.fit_stretch(log_pred, log_bsp, won, race, track, "stretch")
+    assert abs(s["b"] - 1.6) < 0.05
+    t = fl.fit_stretch(log_pred, log_bsp, won, race, track, "temper")
+    assert t["b"] > 1.0                                            # the winners also say: spread the prices
+    st = fl.fit_stretch(log_pred, log_bsp, won, race, track, "stretch_track", shrink=0.0)
+    assert set(st["by_track"]) == {"Hove", "Romford"} and all(abs(v - 1.6) < 0.1 for v in st["by_track"].values())
+    with pytest.raises(ValueError):
+        fl.fit_stretch(log_pred, log_bsp, won, race, track, "isotonic")
+
+
+def test_the_stretched_prices_beat_the_compressed_ones_and_stay_a_book():
+    log_pred, log_bsp, won, race, track = _compressed_races(seed=2)
+    pred = pd.DataFrame({"race_id": race, "race_date": [f"2026-10-{1 + r % 20:02d}" for r in race], "dog_id":
+                         np.arange(len(race)), "track": track, "won": won, "bsp": np.exp(log_bsp)})
+    book = 1.0
+    p0 = pd.Series(np.exp(-log_pred)).groupby(race).transform(lambda s: s / s.sum())
+    pred["p_model"], pred["pred_bsp"] = p0.to_numpy(), 1.0 / (book * p0.to_numpy())
+    fit = fl.fit_stretch(log_pred, log_bsp, won, race, track, "stretch")
+    cal = fl.apply_stretch(pred, log_pred, fit, book)
+    assert np.allclose(cal.groupby("race_id").p_model.sum(), 1.0)
+    assert np.allclose((1.0 / cal.pred_bsp).groupby(cal.race_id).sum(), book)
+    sc = fl.score_pair(pred, cal)
+    assert sc["rmse_vs_uncalibrated"] < 0 and sc["rmse_ci90"][1] < 0
+    assert sc["logloss_vs_uncalibrated"] < 0
+
+
+def test_calibration_in_an_experiment_and_its_spec_check():
+    df, meta = synthetic_cache()
+    exp = {"name": "c", "features": "card_safe", "objective": "logbsp", "rescale_book": True,
+           "calibrate": ["stretch", "temper_track"]}
+    res, _ = fl.run_experiment(df, meta, exp, QUICK, test_from="2026-06-01")
+    assert set(res["calibrated"]) == {"stretch", "temper_track"}
+    assert "rmse_ci90" in res["calibrated"]["stretch"] and res["calibrated"]["stretch"]["fit"]["b"] > 0
+    assert "+ stretch" in fl.table([res], "c")
+    with pytest.raises(ValueError):
+        fl.check_spec({"experiments": [{"name": "x", "objective": "softmax", "calibrate": ["stretch"]}]})
+    with pytest.raises(ValueError):
+        fl.check_spec({"experiments": [{"name": "x", "objective": "logbsp", "calibrate": ["isotonic"]}]})
