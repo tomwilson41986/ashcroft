@@ -55,3 +55,9 @@ CREATE TABLE IF NOT EXISTS people_register (
     key_cricketarchive_2 TEXT, key_cricketworld TEXT, key_nvplay TEXT, key_nvplay_2 TEXT, key_opta TEXT,
     key_opta_2 TEXT, key_pulse TEXT, key_pulse_2 TEXT
 );
+
+-- Cricsheet's other names for each person (full names, other spellings): how a vendor feed's names are joined
+CREATE TABLE IF NOT EXISTS people_names (
+    identifier TEXT NOT NULL, name TEXT NOT NULL,
+    PRIMARY KEY (identifier, name)
+);

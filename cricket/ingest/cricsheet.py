@@ -21,6 +21,7 @@ import io
 import json
 import logging
 import sys
+import time
 import zipfile
 from collections import Counter
 from pathlib import Path
@@ -49,7 +50,18 @@ NOT_TEAM_WICKETS = {"retired hurt", "retired not out"}
 # fetch
 # ---------------------------------------------------------------------------------------------------------------
 
-def fetch(store: Store, day: str | None = None, names: list[str] | None = None) -> dict[str, str]:
+def looks_valid(name: str, data: bytes) -> bool:
+    """A zip starts with its local-file signature; a register CSV starts with its header. Cricsheet now and then
+    answers a file's URL with an HTML page (seen 4 Nov 2026 for both register CSVs): that is never stored as raw."""
+    if name.endswith(".zip"):
+        return data[:4] == b"PK\x03\x04"
+    if name.endswith(".csv"):
+        return data.lstrip()[:11] == b"identifier,"
+    return True
+
+
+def fetch(store: Store, day: str | None = None, names: list[str] | None = None, tries: int = 3,
+          pause: float = 10.0) -> dict[str, str]:
     """Download each raw file to ``cricket/raw/cricsheet/<day>/``, untouched. A file identical (sha256) to the last
     copy held is not stored again: ``latest.json`` names the day each file was last stored and its hash."""
     day = day or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
@@ -62,9 +74,19 @@ def fetch(store: Store, day: str | None = None, names: list[str] | None = None) 
         if key in have:
             out[name] = "kept"
             continue
-        r = get(s, RAW_FILES[name], timeout=600)
+        r = None
+        for attempt in range(tries):
+            r = get(s, RAW_FILES[name], timeout=600)
+            if r is None or looks_valid(name, r.content):
+                break
+            log.warning("%s: not a valid %s (attempt %d); again in %.0f s", name, name.rsplit(".", 1)[-1],
+                        attempt + 1, pause)
+            time.sleep(pause)
         if r is None:
             out[name] = "no data found (404)"
+            continue
+        if not looks_valid(name, r.content):
+            out[name] = f"not stored: the reply was not a valid file after {tries} tries"
             continue
         digest = hashlib.sha256(r.content).hexdigest()
         if latest.get(name, {}).get("sha256") == digest:
@@ -83,10 +105,10 @@ def latest_raw_day(store: Store) -> str | None:
     return latest.get("all_json.zip", {}).get("day")
 
 
-def _latest_people(store: Store, day: str) -> bytes | None:
+def _latest(store: Store, name: str, day: str) -> bytes | None:
     latest = json.loads(store.get(f"{RAW_PREFIX}/latest.json") or b"{}")
-    d = latest.get("people.csv", {}).get("day", day)
-    return store.get(f"{RAW_PREFIX}/{d}/people.csv")
+    d = latest.get(name, {}).get("day", day)
+    return store.get(f"{RAW_PREFIX}/{d}/{name}")
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -220,7 +242,8 @@ def _frame(rows: list[dict]) -> pd.DataFrame:
     return df
 
 
-def build_tables(zip_bytes: bytes, people_csv: bytes | None = None, chunk: int = 1000) -> dict[str, pd.DataFrame]:
+def build_tables(zip_bytes: bytes, people_csv: bytes | None = None, chunk: int = 1000,
+                 names_csv: bytes | None = None) -> dict[str, pd.DataFrame]:
     """The tables, built a chunk of matches at a time so 12M deliveries fit a 16 GB runner."""
     keys = ("matches", "innings", "deliveries", "players")
     acc: dict[str, list[dict]] = {k: [] for k in keys}
@@ -262,6 +285,8 @@ def build_tables(zip_bytes: bytes, people_csv: bytes | None = None, chunk: int =
     t["venues"]["city"] = t["venues"]["city"].fillna("")
     if people_csv is not None:
         t["people_register"] = pd.read_csv(io.BytesIO(people_csv), dtype=str)
+    if names_csv is not None:   # each person's other names (full names, other spellings): the vendor feeds' join
+        t["people_names"] = pd.read_csv(io.BytesIO(names_csv), dtype=str).drop_duplicates()
     return t
 
 
@@ -358,6 +383,7 @@ def main(argv=None) -> int:
     ap.add_argument("--day", help="raw day folder to build from (default: the latest held)")
     ap.add_argument("--zip", help="build from this local all_json.zip instead of the store")
     ap.add_argument("--people", help="with --zip: the local people.csv")
+    ap.add_argument("--names", help="with --zip: the local names.csv")
     ap.add_argument("--db", help="also upsert into this database (sqlite:///path or a postgresql:// URL)")
     ap.add_argument("--report-dir", default="reports/cricket")
     a = ap.parse_args(argv)
@@ -371,6 +397,7 @@ def main(argv=None) -> int:
     if a.zip:
         zb = Path(a.zip).read_bytes()
         pb = Path(a.people).read_bytes() if a.people else None
+        nb = Path(a.names).read_bytes() if a.names else None
         source, day = a.zip, a.day or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
     else:
         day = a.day or latest_raw_day(store)
@@ -378,9 +405,10 @@ def main(argv=None) -> int:
             print("no data found: no raw Cricsheet zip in the store", file=sys.stderr)
             return 1
         zb = store.get(f"{RAW_PREFIX}/{day}/all_json.zip")
-        pb = _latest_people(store, day)
+        pb = _latest(store, "people.csv", day)
+        nb = _latest(store, "names.csv", day)
         source = store.where(f"{RAW_PREFIX}/{day}/all_json.zip")
-    t = build_tables(zb, pb)
+    t = build_tables(zb, pb, names_csv=nb)
     for name, df in t.items():
         store.put_parquet(f"{TABLE_PREFIX}/{name}.parquet", df)
     db_counts, db_note = None, "Not loaded (no `--db` given). Aurora is not provisioned: it waits on the owner's go."

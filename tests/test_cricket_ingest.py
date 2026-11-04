@@ -61,3 +61,40 @@ def test_fetch_stores_a_file_once_and_skips_an_unchanged_copy(tmp_path, monkeypa
     assert cs.latest_raw_day(store) == "2026-11-03"
     # the build reads the newest copy held; the raw file is byte-identical to what was downloaded
     assert store.get(f"{cs.RAW_PREFIX}/2026-11-03/all_json.zip") == body["all_json.zip"]
+
+
+def test_an_html_page_in_place_of_a_file_is_never_stored(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import cricket.ingest.cricsheet as cs
+    from sources.common import Store
+
+    html = b"<!DOCTYPE html><html><head>"
+    monkeypatch.setattr(cs, "get", lambda s, url, timeout=0: SimpleNamespace(content=html))
+    out = cs.fetch(Store(root=tmp_path), "2026-11-04", ["people.csv", "all_json.zip"], tries=2, pause=0)
+    assert all(v.startswith("not stored") for v in out.values())
+    assert not (tmp_path / cs.RAW_PREFIX / "2026-11-04").exists()
+    assert cs.looks_valid("people.csv", b"identifier,name\n") and cs.looks_valid("all_json.zip", _zip())
+
+
+def test_player_map_full_names_initials_and_ambiguity():
+    import pandas as pd
+
+    from cricket.ingest.player_map import PlayerMap
+
+    # real Cricsheet register rows (people.csv, names.csv of 2026-11-04)
+    register = pd.DataFrame({"identifier": ["ba607b88", "0a476045", "3a04b1c0"],
+                             "name": ["V Kohli", "S Dhawan", "S Kohli"],
+                             "unique_name": ["V Kohli", "S Dhawan", "S Kohli"]})
+    names = pd.DataFrame({"identifier": ["ba607b88", "0a476045"], "name": ["Virat Kohli", "Shikhar Dhawan"]})
+    players = pd.DataFrame({"match_id": ["m1"] * 3, "team": ["India"] * 3,
+                            "player_id": ["ba607b88", "0a476045", "3a04b1c0"]})
+    matches = pd.DataFrame({"match_id": ["m1"], "start_date": ["2024-01-01"]})
+    pm = PlayerMap(register, names, players, matches)
+    assert pm.find("Virat Kohli", "India") == "ba607b88"          # Cricsheet's full name
+    assert pm.find("VIRAT KOHLI", "India") == "ba607b88"
+    assert pm.find("Shikhar  Dhawan", "India") == "0a476045"
+    assert pm.find("Sahil Kohli", "India") == "3a04b1c0"          # first initial and surname, one candidate
+    assert pm.find("Virat Kohli", "Australia") is None             # never played for the side
+    ids, missing = pm.xi(["Virat Kohli", "Nobody Here"], "India")
+    assert ids == ["ba607b88", None] and missing == ["Nobody Here"]

@@ -14,6 +14,7 @@ import pytest
 
 from cricket.ingest.cricsheet import parse_match
 from cricket.model import simulator as sim
+from cricket.model.simulator import smooth
 from cricket.model.features import BAT, BOWL, CONTEXT, FEATURES, add_state_features
 from cricket.model.metrics import ece, log_loss
 from cricket.model.outcomes import CLASSES, EXTRA, W, classify
@@ -91,13 +92,13 @@ def test_roll_out_bookkeeping():
     ones = np.zeros(8)
     ones[1] = 1.0                       # every ball a single
     # 10 needed, 12 balls left: always won
-    assert sim.win_probability(FixedModel(ones), _prep(100, 0, 108, 110), 50, ex_v, ex_p)[0] == 1.0
+    assert sim.win_probability(FixedModel(ones), _prep(100, 0, 108, 110), 50, ex_v, ex_p)[0] == smooth(50, 50)
     # 14 needed off 12 singles: always lost; 13 needed ends level on 109: a tie scores one half
-    assert sim.win_probability(FixedModel(ones), _prep(96, 0, 108, 110), 50, ex_v, ex_p)[0] == 0.0
+    assert sim.win_probability(FixedModel(ones), _prep(96, 0, 108, 110), 50, ex_v, ex_p)[0] == smooth(0, 50)
     assert sim.win_probability(FixedModel(ones), _prep(97, 0, 108, 110), 50, ex_v, ex_p)[0] == 0.5
     wk = np.zeros(8)
     wk[W] = 1.0                         # every ball a wicket: nine down, all out next ball, short of the target
-    assert sim.win_probability(FixedModel(wk), _prep(100, 9, 60, 105), 20, ex_v, ex_p)[0] == 0.0
+    assert sim.win_probability(FixedModel(wk), _prep(100, 9, 60, 105), 20, ex_v, ex_p)[0] == smooth(0, 20)
     assert sim.win_probability(FixedModel(wk), _prep(100, 9, 60, 101), 20, ex_v, ex_p)[0] == 0.5   # all out level
     ex = np.zeros(8)
     ex[EXTRA], ex[0] = 0.5, 0.5         # wides use no legal ball: half of all deliveries add a run
@@ -133,7 +134,7 @@ def test_first_innings_rolls_into_the_chase():
     # 100 off 70 balls: 50 singles more make 150; the chase of 151, 120 singles, falls short: batting first wins
     p, totals = sim.match_probability(FixedModel(ones), _prep(100, 2, 70, np.nan, innings=1), 30, ex_v, ex_p)
     assert (totals == 150).all()
-    assert p[0] == 1.0
+    assert p[0] == smooth(30, 30) and smooth(30, 30) < 1.0
     four = np.zeros(8)
     four[4] = 1.0                       # every ball a four: 480 each, level at the end, a tie scores one half
     p, totals = sim.match_probability(FixedModel(four), _prep(0, 0, 0, np.nan, innings=1), 10, ex_v, ex_p)
@@ -166,3 +167,19 @@ def test_crps_matches_brute_force():
     y = np.array([150.0, 90.0, 230.0, 180.0])
     brute = np.abs(x - y[:, None]).mean(1) - 0.5 * np.abs(x[:, :, None] - x[:, None, :]).mean((1, 2))
     assert np.allclose(crps_samples(x, y), brute)
+
+
+def test_calibration_layers_round_trip_through_plain_numbers():
+    from cricket.model import calibration as calib
+    t = _tables()
+    m = t["matches"]
+    # outcomes from the fixtures' own results; inputs spread over (0, 1) to fit each layer's shape
+    y = (m.winner == m.team1).astype(int).to_numpy()
+    p = np.linspace(0.05, 0.95, len(y))
+    pb = np.linspace(0.2, 0.8, len(y))
+    for method in calib.METHODS:
+        cal = calib.fit(method, p, y, pb)
+        out = calib.apply(cal, p, pb)
+        assert out.shape == p.shape and ((out > 0) & (out < 1)).all(), method
+    iso = calib.fit_isotonic(p, y)
+    assert np.allclose(calib.apply(calib.fit("isotonic", p, y), p), iso.predict(p))

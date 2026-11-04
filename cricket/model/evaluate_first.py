@@ -27,7 +27,7 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression, LogisticRegression
 
 from cricket.model import simulator as sim
-from cricket.model.calibration import walk_forward_calibrate
+from cricket.model.calibration import METHODS, SELECT_ON, all_methods
 from cricket.model.data import IPL, load
 from cricket.model.evaluate import choose_rounds, load_or_fit
 from cricket.model.features import build
@@ -101,8 +101,8 @@ def run(store: Store, seasons: list[int], paths: int, work: Path, log=print) -> 
         ry.to_parquet(out, index=False)
         parts.append(ry)
         log(f"{y}: {ry.match_id.nunique()} first innings, {len(ry)} over starts, {time.time() - t0:.0f}s")
-    allp = walk_forward_calibrate(pd.concat(parts, ignore_index=True))
-    return {"preds": allp, "rounds": rounds, "paths": paths}
+    allp, chosen = all_methods(pd.concat(parts, ignore_index=True))
+    return {"preds": allp, "rounds": rounds, "paths": paths, "chosen": chosen}
 
 
 def runs_line(g: pd.DataFrame) -> dict:
@@ -136,6 +136,12 @@ def report_md(res: dict, source: str) -> str:
     for c, name in (("p_base", "baseline: logistic on runs, wickets, legal balls"), ("p_sim", "simulator, raw"),
                     ("p_cal", "simulator, calibrated")):
         L.append(f"| {name} | {pooled[c]['log_loss']:.4f} | {pooled[c]['brier']:.4f} | {pooled[c]['ece']:.4f} |")
+    L += ["", f"Calibration layer: **{res['chosen']}** (the lowest log loss on {SELECT_ON}, fitted on the seasons "
+          "before; the rule of cricket/model/calibration.py).", "",
+          "| layer | pooled LL | pooled ECE |", "|---|---:|---:|"]
+    for m in METHODS:
+        s_ = score(test.bat_won, test[f"p_{m}"])
+        L.append(f"| {m} | {s_['log_loss']:.4f} | {s_['ece']:.4f} |")
     L += ["", "| season | over starts | baseline LL | raw LL | calibrated LL |", "|---|---:|---:|---:|---:|"]
     for y, g in p.groupby("year"):
         cal = f"{score(g.bat_won, g.p_cal)['log_loss']:.4f}" if g.p_cal.notna().all() else "calibration only"

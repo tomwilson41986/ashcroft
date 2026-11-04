@@ -254,6 +254,13 @@ def _roll(booster, innings: int, st: np.ndarray, P: dict, queue: np.ndarray, tea
     return result
 
 
+def smooth(wins: np.ndarray, paths: int) -> np.ndarray:
+    """The posterior mean under a Jeffreys prior, (wins + 1/2) / (paths + 1): never exactly 0 or 1. When every path
+    agrees the raw share says certain, and one such call that is wrong costs log loss without limit (seen in the
+    2025 evaluation: 10 rows took the season's log loss from 0.417 to 0.445)."""
+    return (np.asarray(wins, dtype=float) + 0.5) / (paths + 1.0)
+
+
 def _paths(B: Batch, paths: int) -> tuple[np.ndarray, dict]:
     st = np.repeat(np.arange(len(B)), paths)
 
@@ -273,7 +280,7 @@ def win_probability(booster, B: Batch, paths: int, ex_v: np.ndarray, ex_p: np.nd
     rng = np.random.default_rng(seed)
     st, P = _paths(B, paths)
     res = _roll(booster, 2, st, P, B.queue, B.team_bowl, B.ctx, ex_v, ex_p, rng)
-    return res.reshape(len(B), paths).mean(1)
+    return smooth(res.reshape(len(B), paths).sum(1), paths)
 
 
 def match_probability(booster, B: Batch, paths: int, ex_v: np.ndarray, ex_p: np.ndarray,
@@ -290,4 +297,4 @@ def match_probability(booster, B: Batch, paths: int, ex_v: np.ndarray, ex_p: np.
           "lag_r": np.zeros((N, 6)), "lag_w": np.zeros((N, 6)), "strk": o[:, 0].copy(), "non": o[:, 1].copy(),
           "bowl": B.team_bowl2[st].copy(), "ptr": np.zeros(N, np.int32)}
     chase = _roll(booster, 2, st, P2, B.queue2, B.team_bowl2, B.ctx, ex_v, ex_p, rng)
-    return (1.0 - chase).reshape(len(B), paths).mean(1), total1.reshape(len(B), paths)
+    return smooth((1.0 - chase).reshape(len(B), paths).sum(1), paths), total1.reshape(len(B), paths)

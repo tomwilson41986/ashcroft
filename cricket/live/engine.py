@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from cricket.model import simulator as sim
-from cricket.model.production import apply_iso
+from cricket.model import calibration as calib
+from cricket.model.production import baseline_p
 from cricket.state.match_state import State, overs_to_balls, step
 
 
@@ -160,14 +161,14 @@ class Engine:
         i, s = self.inn, self.inn.state
         self.n_priced += 1
         seed = self.seed + self.n_priced
-        cal = self.b.get("calibration") or {}
         out = {"innings": i.number, "batting": i.team, "runs": s.runs, "wickets": s.wickets, "legal": s.legal_balls,
                "target": s.target, "paths": self.paths, "model": self.b["version"]}
         B = self.batch()
         if i.number == 1:
             p, totals = sim.match_probability(self.booster, B, self.paths, self.ex_v, self.ex_p, seed)
             p_bat = float(p[0])
-            p_cal = float(apply_iso(cal["first_innings"], p)[0]) if cal.get("first_innings") else None
+            p_cal = self._calibrate("first_innings", p, {"runs_before": s.runs, "wickets_before": s.wickets,
+                                                          "legal_before": s.legal_balls})
             q = np.quantile(totals[0], [0.1, 0.25, 0.5, 0.75, 0.9])
             out["innings_total"] = {"q10": q[0], "q25": q[1], "q50": q[2], "q75": q[3], "q90": q[4],
                                     "mean": float(totals[0].mean())}
@@ -175,7 +176,9 @@ class Engine:
             bat_first = i.team
         else:
             p = sim.win_probability(self.booster, B, self.paths, self.ex_v, self.ex_p, seed)
-            p_chase_cal = float(apply_iso(cal["chase"], p)[0]) if cal.get("chase") else None
+            bl = s.max_balls - s.legal_balls
+            p_chase_cal = self._calibrate("chase", p, {"rrr": min(max(6.0 * (s.target - s.runs) / max(bl, 1), 0), 36),
+                                                       "wkts_in_hand": 10 - s.wickets, "balls_left": bl})
             p_bat = 1.0 - float(p[0])
             p_cal = None if p_chase_cal is None else 1.0 - p_chase_cal
             bat_first = self._other(i.team)
@@ -183,6 +186,17 @@ class Engine:
         out["p_raw"] = {bat_first: p_bat, other: 1.0 - p_bat}
         out["p"] = None if p_cal is None else {bat_first: p_cal, other: 1.0 - p_cal}
         return out
+
+    def _calibrate(self, name: str, p: np.ndarray, state: dict) -> float | None:
+        """The bundle's calibration layer for ``name``; None when the bundle has none (the quote is then raw only)."""
+        cal = (self.b.get("calibration") or {}).get(name)
+        if not cal:
+            return None
+        base = (self.b.get("baselines") or {}).get(name)
+        p_base = np.array([baseline_p(base, state)]) if base else None
+        if cal["method"] == "stack" and p_base is None:
+            return None
+        return float(calib.apply(cal, p, p_base)[0])
 
     def p_over_line(self, quote: dict, line: float) -> float | None:
         """P(the first-innings total is over ``line``) from a first-innings quote's paths (the runs-line market)."""

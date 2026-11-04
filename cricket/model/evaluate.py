@@ -29,7 +29,7 @@ from sklearn.linear_model import LogisticRegression
 from cricket.model import next_ball as nb
 from cricket.model import simulator as sim
 from cricket.model.baseline import PUBLISHED
-from cricket.model.calibration import by_band, walk_forward_calibrate
+from cricket.model.calibration import METHODS, SELECT_ON, all_methods, by_band
 from cricket.model.data import IPL, load
 from cricket.model.features import build
 from cricket.model.metrics import reliability, score
@@ -89,7 +89,7 @@ def run(store: Store, seasons: list[int], paths: int, work: Path, log=print) -> 
         out = work / f"sim_{y}.parquet"
         nb_out = work / f"next_ball_{y}.json"
         if out.exists() and nb_out.exists():
-            sims.append(pd.read_parquet(out))
+            sims.append(_smoothed(pd.read_parquet(out), paths))
             meta["next_ball"][y] = json.loads(nb_out.read_text())
             log(f"{y}: resumed from {out}")
             continue
@@ -112,7 +112,7 @@ def run(store: Store, seasons: list[int], paths: int, work: Path, log=print) -> 
             p = sim.win_probability(b, prep, paths, ex_v, ex_p, seed=hash((y, i)) % 2**32)
             parts.append(s[["match_id", "innings", "over", "ball", "repeat", "year", "phase", "rrr", "wkts_in_hand",
                             "balls_left", "legal_before", "bat_won"]].assign(p_sim=p))
-        sy = pd.concat(parts, ignore_index=True)
+        sy = pd.concat(parts, ignore_index=True).assign(p_smoothed=True)
         # the baseline on the same rows: IPL chases of earlier seasons
         base_tr = f[(f.event_name == IPL) & (f.innings == 2) & (f.balls_left > 0) & (f.year < y)]
         lr = LogisticRegression(C=1e6, max_iter=1000).fit(base_tr[BASE_COLS], base_tr.bat_won)
@@ -122,8 +122,29 @@ def run(store: Store, seasons: list[int], paths: int, work: Path, log=print) -> 
         nb_out.write_text(json.dumps(ev))
         sims.append(sy)
         log(f"{y}: {sy.match_id.nunique()} chases, {len(sy)} states, {time.time() - t0:.0f}s")
-    allp = walk_forward_calibrate(pd.concat(sims, ignore_index=True))
+    allp, chosen = all_methods(pd.concat(sims, ignore_index=True))
+    meta["calibration_chosen"] = chosen
     return {"meta": meta, "preds": allp}
+
+
+def _smoothed(df: pd.DataFrame, paths: int) -> pd.DataFrame:
+    """Output saved before the simulator smoothed its probabilities (cricket/model/simulator.py ``smooth``):
+    the same transform applied to the saved share of wins."""
+    if "p_smoothed" in df and df.p_smoothed.all():
+        return df
+    from cricket.model.simulator import smooth
+    return df.assign(p_sim=smooth(df.p_sim.to_numpy() * paths, paths), p_smoothed=True)
+
+
+def _layer_table(test: pd.DataFrame, yrs: list) -> list[str]:
+    def ll(g, c):
+        return score(g.bat_won, g[c])["log_loss"]
+    out = ["| layer | " + " | ".join(f"{y} LL" for y in yrs) + " | pooled LL | pooled ECE |",
+           "|---|" + "---:|" * (len(yrs) + 2)]
+    for name, c in [(m, f"p_{m}") for m in METHODS] + [("baseline", "p_base")]:
+        per = " | ".join(f"{ll(test[test.year == y], c):.4f}" for y in yrs)
+        out.append(f"| {name} | {per} | {ll(test, c):.4f} | {score(test.bat_won, test[c])['ece']:.4f} |")
+    return out
 
 
 def report_md(res: dict, source: str) -> str:
@@ -134,7 +155,7 @@ def report_md(res: dict, source: str) -> str:
     ok_ll = pooled["p_cal"]["log_loss"] < GATE["log_loss"]
     ok_ece = pooled["p_cal"]["ece"] < GATE["ece"]
     L = [
-        "# Cricket model v1: next-ball XGBoost, Monte Carlo simulator, isotonic calibration",
+        "# Cricket model v1: next-ball XGBoost, Monte Carlo simulator, calibration",
         "",
         f"Source tables: `{source}` (Cricsheet). Built by `python -m cricket.model.evaluate`. Paths per state: "
         f"{meta['paths']}. Next-ball rounds: {meta['rounds']} (early stopping on 2022, fit on 2012-2021).",
@@ -160,6 +181,12 @@ def report_md(res: dict, source: str) -> str:
         f"- Calibrated simulator beats the same-rows baseline: "
         f"**{'yes' if pooled['p_cal']['log_loss'] < pooled['p_base']['log_loss'] else 'no'}** "
         f"({pooled['p_cal']['log_loss'] - pooled['p_base']['log_loss']:+.4f} log loss)",
+        "",
+        f"Calibration layer: **{meta.get('calibration_chosen')}**, chosen by the rule fixed before the results: the "
+        f"lowest log loss on {SELECT_ON} (each layer fitted on the seasons before), confirmed on the later seasons.",
+        "",
+        *_layer_table(test, yrs),
+        "",
         "- Benter combination weight against the Betfair mid, and the strategy after 5% commission: no data found "
         "(no Betfair cricket price history held; the Advanced data purchase waits on the owner's go).",
         "",
@@ -199,7 +226,8 @@ def report_md(res: dict, source: str) -> str:
           "- No runs on wicket balls, no wickets on wides or no-balls, no free-hit flag.",
           "- Ratings v1 have no phase x innings prior, no bowler type (no data found in Cricsheet), no matchups.",
           "- First-innings win probability and the first-innings runs line are not scored yet.",
-          f"- Monte Carlo noise: {meta['paths']} paths a state adds roughly 1/(2 x paths) to log loss near p = 0.5.",
+          f"- Monte Carlo noise: {meta['paths']} paths a state adds roughly 1/(2 x paths) to log loss near p = 0.5; "
+          "the share of winning paths is smoothed to (wins + 1/2) / (paths + 1), never exactly 0 or 1.",
           ""]
     return "\n".join(L)
 

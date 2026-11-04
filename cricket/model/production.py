@@ -30,7 +30,8 @@ import numpy as np
 import pandas as pd
 
 from cricket.model import next_ball as nb
-from cricket.model.calibration import fit_isotonic
+from cricket.model import calibration as calib
+from cricket.model.calibration import METHODS, SELECT_ON
 from cricket.model.data import load
 from cricket.model.evaluate import choose_rounds
 from cricket.model.features import FEATURES, build, t20_matches
@@ -43,13 +44,35 @@ from sources.common import Store
 PREFIX = "cricket/models"
 
 
-def _iso_json(iso) -> dict:
-    return {"x": iso.X_thresholds_.tolist(), "y": iso.y_thresholds_.tolist()}
+CHASE_BASE = ["rrr", "wkts_in_hand", "balls_left"]
+FIRST_BASE = ["runs_before", "wickets_before", "legal_before"]
 
 
-def apply_iso(cal: dict, p: np.ndarray) -> np.ndarray:
-    """An isotonic calibrator kept as thresholds: linear between them, clipped at the ends (sklearn's own rule)."""
-    return np.interp(p, cal["x"], cal["y"])
+def starts_with_total(t: dict, f: pd.DataFrame) -> pd.DataFrame:
+    from cricket.model.evaluate_first import over_starts
+    totals = t["innings"][t["innings"].innings == 1].set_index("match_id")["runs"]
+    s = over_starts(f)
+    return s.assign(total=s.match_id.map(totals).to_numpy())
+
+
+def fit_baselines(f: pd.DataFrame, starts: pd.DataFrame) -> dict:
+    """The state-only logistics the stack layer combines with the simulator, fitted on every IPL season held: the
+    chase on RRR, wickets in hand and balls left; the first innings on runs, wickets and legal balls at over starts."""
+    from sklearn.linear_model import LogisticRegression
+    from cricket.model.data import IPL
+    ch = f[(f.event_name == IPL) & (f.innings == 2) & (f.balls_left > 0)]
+    ch = ch.assign(wkts_in_hand=10 - ch.wickets_before)
+    out = {}
+    for name, rows, cols in (("chase", ch, CHASE_BASE), ("first_innings", starts, FIRST_BASE)):
+        lr = LogisticRegression(C=1e6, max_iter=1000).fit(rows[cols], rows.bat_won)
+        out[name] = {"features": cols, "coef": lr.coef_[0].tolist(), "intercept": float(lr.intercept_[0]),
+                     "rows": int(len(rows))}
+    return out
+
+
+def baseline_p(base: dict, values: dict) -> float:
+    z = base["intercept"] + sum(c * float(values[k]) for k, c in zip(base["features"], base["coef"]))
+    return 1.0 / (1.0 + np.exp(-z))
 
 
 def fit_bundle(store: Store, work: Path, log=print) -> dict:
@@ -70,6 +93,7 @@ def fit_bundle(store: Store, work: Path, log=print) -> dict:
     bowl = ratings_now(full, t["players"], m, "bowl", prior)
     asof = (pd.Timestamp(data_end) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
     ctx = rates_now(full, m, asof, pop_before="2023-01-01")
+    baselines = fit_baselines(f, starts_with_total(t, f))
     cal = {}
     sources = {}
     for name, fname in (("chase", "model_v1_preds.parquet"), ("first_innings", "model_v1_first_innings_preds.parquet")):
@@ -78,9 +102,11 @@ def fit_bundle(store: Store, work: Path, log=print) -> dict:
             cal[name] = None
             sources[name] = f"no data found: {store.where('cricket/eval/' + fname)}"
             continue
-        iso = fit_isotonic(preds.p_sim.to_numpy(), preds.bat_won.to_numpy())
-        cal[name] = _iso_json(iso)
-        sources[name] = (f"{store.where('cricket/eval/' + fname)}: {len(preds):,} rows, seasons "
+        # the layer the evaluation's fixed rule chose, refitted on every evaluated season's out-of-sample output
+        sel = preds[preds.year == SELECT_ON]
+        method = min(METHODS, key=lambda m: score(sel.bat_won, sel[f"p_{m}"])["log_loss"]) if len(sel) else "isotonic"
+        cal[name] = calib.fit(method, preds.p_sim.to_numpy(), preds.bat_won.to_numpy(), preds.p_base.to_numpy())
+        sources[name] = (f"{method}, fitted on {store.where('cricket/eval/' + fname)}: {len(preds):,} rows, seasons "
                          f"{int(preds.year.min())}-{int(preds.year.max())}")
     version = f"v1-{data_end}"
     bundle = {
@@ -90,7 +116,7 @@ def fit_bundle(store: Store, work: Path, log=print) -> dict:
         "rounds": rounds, "params": nb.PARAMS, "features": FEATURES, "classes": CLASSES,
         "prior": prior.tolist(), "extras_runs": {"values": ex_v.tolist(), "p": ex_p.tolist()},
         "rating_recipe": {"c": C_PRIOR, "r": DECAY}, "population": ctx["population"],
-        "calibration": cal, "calibration_source": sources,
+        "calibration": cal, "calibration_source": sources, "baselines": baselines,
         "scope": "men's 20-over six-ball T20 (match types T20, IT20), decided, no D/L, from 2012",
     }
     return {"bundle": bundle, "booster": booster, "bat": bat, "bowl": bowl, "venues": ctx["venues"],

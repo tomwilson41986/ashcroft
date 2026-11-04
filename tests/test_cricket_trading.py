@@ -146,8 +146,8 @@ def test_paper_session_end_to_end_on_a_replayed_match():
     mid, raw = T20[0]
     teams = raw["info"]["teams"]
     bundle = _bundle()
-    bundle["bundle"]["calibration"] = {"chase": {"x": [0.0, 1.0], "y": [0.0, 1.0]},
-                                       "first_innings": {"x": [0.0, 1.0], "y": [0.0, 1.0]}}
+    bundle["bundle"]["calibration"] = {"chase": {"method": "isotonic", "x": [0.0, 1.0], "y": [0.0, 1.0]},
+                                       "first_innings": {"method": "isotonic", "x": [0.0, 1.0], "y": [0.0, 1.0]}}
     events = [replace(e, receipt_utc=(T0 + dt.timedelta(seconds=30 * i)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
               for i, e in enumerate(CricsheetReplay(mid, raw).events())]
     n = len(events)

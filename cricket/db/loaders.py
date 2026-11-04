@@ -21,6 +21,7 @@ KEYS = {
     "players": ["match_id", "team", "player"],
     "venues": ["venue", "city"],
     "people_register": ["identifier"],
+    "people_names": ["identifier", "name"],
 }
 
 
