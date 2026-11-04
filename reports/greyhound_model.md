@@ -1205,3 +1205,45 @@ What this says:
    the live forecasts (section 25 and the live trades of 3 Nov).
 3. **Then put the pooled trees in the live trader,** in place of the logit, once the live-books evaluation confirms
    them on live books.
+
+## 27. The corrected simulator, the staking grid, the retrain path and the PLACE book (4 Nov 2026)
+
+The owner, 4 Nov: "implement all recommendations in order" (the closing model on the live-key books and a bookmaker
+feed dropped), "I want to live trade today so let's get to the most profitable model", "Evaluating best staking
+strategy; type and size".
+
+**A look-ahead in the queue fills, fixed** (`greyhound/queue_fill.py`). The live-key recorder stamps a read's books
+to the second and its traded ladder to the microsecond. An order priced on a book at second t read that read's
+ladder row (t.xxx) as traded after it, so money matched before the order existed was credited to it. Found when a
+1.5 s order latency turned quotes 5% around the mid on 3 Nov from +GBP154 to -GBP74; the ladder times are now floored
+to the second. Every two-sided figure of 3 Nov's report (section 26 of the running day) was inflated by it.
+
+**3 Nov's live-key books, corrected** (greyhound-profit-sim.yml runs 41791725404, 41801730008; 71 races):
+
+| Strategy | Net after 2% | Races won / lost |
+|---|---|---|
+| Early lay as live (rest at 80% of the forecast, first traded) | -3.93 | 12 / 16 |
+| Early lay, 10% margin | +3.82 (26 fills) | 16 / 8 |
+| Early lay, 5%, 15%, 25%, 30% | 0.00, -1.50, -0.82, -1.85 | |
+| Early lay decided 5 min out, resting or taking | 3-8 races only: the fields have not all traded by then | |
+| Taking at the first traded books, lays / lays and backs | -7.08 / -9.51 | |
+| Quotes around the mid 5% / 10% / 20% | -76.20 / -31.67 / -9.48 | |
+| Quotes around the closing model 10% / 20% / 30% | -101.69 / -37.78 / -1.23 | |
+
+The calibration against the live ledger holds (159 lays: simulated -GBP5.08 against -GBP3.59 live, matched or not the
+same in 147). **The staking grid** (run 41788897608, quotes 5% around the mid, hard fills): every type and size loses
+1.5% to 2.4% of matched money, GBP10 to GBP100 liability, fixed stakes, a share of the money shown, raised late; the
+loss scales with size. Sizing follows a measured edge; none is measured.
+
+**Today's live rule:** the early lay at a 10% margin, GBP20 liability a lay, the guard on: the best measured, within
+noise. The quotes around the mid (`greyhound/quote_mid.py`, built for the owner's "go live") run on paper.
+
+**The retrain path** (`greyhound/live.py`): the live model's train and serve path now fits every engine block plus
+the race simulator on log(BSP) from 2024, rescaled to the SP book (section 26.3's best_rescaled). Gated on the card
+check of a past day, and on refitting the early-lay forecast on the new model's prices.
+
+**The WIN book against the PLACE book** (roadmap M5; `research/greyhound/cross_market.py`, greyhound-cross-market.yml
+run 41803082690; 50,886 runner-marks over 28 days, walk-forward): the dislocation between the PLACE book's chance and
+the Harville place chance from the WIN book correlates -0.03 to +0.05 with the move to the BSP; beside the last trade
+it cuts the RMSE of log(BSP) by at most 0.001 (first traded, interval -0.0011 to -0.0001) and nothing at 3 or 1 minute;
+the result's log-loss is not improved at any mark. **Nothing to trade: the two books agree.**

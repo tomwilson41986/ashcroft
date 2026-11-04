@@ -146,24 +146,24 @@ def track(store, frozen: dict, days: list[date]) -> list[dict]:
 # Today, race by race (the owner, 3 Nov 2026: "add the early lay to the running table")
 # --------------------------------------------------------------------------------------------------------------------
 
-def day_fit(store, day: date) -> dict | None:
-    """The forecast for ``day``: the conditional logit at the first traded book fitted on every recorded day before it
-    (the forward test's procedure), fitted once a day and kept in S3."""
+def day_fit(store, day: date, mark: str = MARK) -> dict | None:
+    """The forecast for ``day``: the conditional logit at the first traded book (or at ``mark``: off_5, off_3, off_1)
+    fitted on every recorded day before it (the forward test's procedure), fitted once a day and kept in S3."""
     import numpy as np
     from research.greyhound import limit_study as ls, tradeout_study as ts
-    key = f"{PREFIX}/fit/{day:%Y-%m-%d}.json"
+    key = f"{PREFIX}/fit/{day:%Y-%m-%d}.json" if mark == MARK else f"{PREFIX}/fit_{mark}/{day:%Y-%m-%d}.json"
     raw = store.get(key)
     if raw:
         f = json.loads(raw)
         return {**f, **{k: np.asarray(f[k], float) for k in ("beta", "mu", "sd")}}
     panel = ls.load(store, to.FIRST_BOOK_DAY, day - timedelta(days=1), source="retimed")
-    p = panel[(panel["mark"] == MARK) & (panel.race_date.astype(str) < f"{day:%Y-%m-%d}")] if len(panel) else panel
+    p = panel[(panel["mark"] == mark) & (panel.race_date.astype(str) < f"{day:%Y-%m-%d}")] if len(panel) else panel
     if not len(p) or p.race_date.nunique() < ls.MIN_TRAIN_DAYS:
         return None
     f = ts.fit_cl(p, ts.CL_SETS["micro"])
     out = {"kind": f["kind"], "cols": list(f["cols"]), "beta": f["beta"].tolist(), "mu": f["mu"].tolist(),
            "sd": f["sd"].tolist(), "book": float(f["book"]), "fit_days": int(p.race_date.nunique()),
-           "fit_to": str(p.race_date.max())}
+           "fit_to": str(p.race_date.max()), "mark": mark}
     store.put(key, json.dumps(out).encode())
     return {**out, **{k: np.asarray(out[k], float) for k in ("beta", "mu", "sd")}}
 

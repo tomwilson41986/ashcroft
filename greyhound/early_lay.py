@@ -48,7 +48,10 @@ CONFIG = {
     "liability": 20.0,                        # each lay's liability (stake x (price - 1)). The owner, 3 Nov 14:20: cut to
     "min_stake": 2.0,                         # GBP20 while the paper is rebuilt on the live feed (live and paper laid
     "max_stake": 10.0,                        # different dogs); GBP100 again only once that shows an edge
-    "margin": 0.2,                            # lay at the forecast SP less this share
+    "margin": 0.10,                           # lay at the forecast SP less this share. 0.2 to 4 Nov; the owner, 4 Nov
+                                              # ("the most profitable model"): on 3 Nov's live books in the corrected
+                                              # simulator 0.10 made +GBP3.82 (26 fills) against 0.2's -GBP3.93: within
+                                              # noise, the best measured
     "max_price": 20.0,                        # no lay above this price (greyhound.tradeout.MAX_PRICE)
     "min_order": 1.0,                         # Betfair's smallest stake on a limit order
     "min_sp_back": 2.0,                       # the smallest back at the SP that closes a lay (greyhound.tradeout)

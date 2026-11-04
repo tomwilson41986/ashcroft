@@ -95,3 +95,22 @@ def test_the_recorder_asks_only_for_betfairs_price_data_types():
     from greyhound import book_record as br
     valid = {"SP_AVAILABLE", "SP_TRADED", "EX_BEST_OFFERS", "EX_ALL_OFFERS", "EX_TRADED"}   # Betfair's PriceData
     assert set(br.PRICE_DATA) <= valid and "EX_TRADED" in br.PRICE_DATA
+
+
+def test_a_small_trade_beyond_does_not_fill_a_strict_order():
+    book = {"back": [(4.0, 30.0)], "lay": [(4.2, 20.0)]}
+    tr = ladder([(-60, 3.5, 10.0), (15, 3.5, 12.0), (25, 3.5, 30.0)])      # GBP2, then GBP20 traded beyond 3.6
+    assert qf.fill("lay", 3.6, 10.0, T0, book, tr).full_at == T0 + pd.Timedelta(seconds=15)
+    f = qf.fill("lay", 3.6, 10.0, T0, book, tr, through_min=10.0)
+    assert f.matched == 10.0 and f.full_at == T0 + pd.Timedelta(seconds=25)  # only once our stake has traded there
+    assert qf.fill("lay", 3.6, 10.0, T0, book, tr, until=T0 + pd.Timedelta(seconds=20), through_min=10.0).matched == 0
+
+
+def test_the_money_of_the_read_an_order_was_priced_on_is_not_credited_to_it():
+    """The recorder's books are stamped to the second, its traded ladder to the microsecond, from the same read: the
+    ladder row of that read holds money traded before the order existed."""
+    book = {"back": [(4.0, 30.0)], "lay": [(4.2, 20.0)]}
+    same_read = (T0 + pd.Timedelta(milliseconds=400)).isoformat()
+    tr = pd.DataFrame([{"polled_utc": (T0 - pd.Timedelta(seconds=5)).isoformat(), "price": 3.5, "traded": 10.0},
+                       {"polled_utc": same_read, "price": 3.5, "traded": 40.0}])
+    assert qf.fill("lay", 3.6, 10.0, T0, book, tr).matched == 0.0          # traded before we were there

@@ -228,3 +228,66 @@ def test_the_accuracy_table_scores_within_the_race(tmp_path, monkeypatch):
     assert r.cl == 0.0 and r.closing > 0.5                                   # right, and wrong only in level
     assert r.cl_within == 0.0 and r.closing_within == 0.0                   # within the race both exact
     assert np.isclose(r.closing_live, r.cl_live)                            # the live level undoes the shift
+
+
+def test_latency_and_a_strict_fill_never_add_fills(monkeypatch):
+    d = day()
+    d["ladder"] = pd.concat([d["ladder"], pd.DataFrame([{"polled_utc": at(-50), "market_id": MID, "selection_id": 7.0,
+                                                         "price": 3.8, "traded": 15.0}])])
+
+    def fair(pre_m, t, preds_m, fit, cfg, closing=None, off=None):
+        return pd.DataFrame({"selection_id": [7, 8], "f_bsp": [4.9, 2.0], "mid": [4.1, 2.01]})
+    monkeypatch.setattr(ps, "fair_values", fair)
+    from greyhound import early_lay as el
+    preds = pd.DataFrame({"market_id": [MID, MID], "selection_id": [7, 8], "p_model": [0.2, 0.8]})
+    q = {"sides": ("back", "lay"), "margin": 0.2, "max_loss": 60.0}
+    base = pd.DataFrame(ps.quote_race(d, MID, preds, {}, dict(el.CONFIG), q))
+    hard = pd.DataFrame(ps.quote_race(d, MID, preds, {}, dict(el.CONFIG), dict(q, latency=1.5, through_min="size")))
+    assert base.matched.sum() > 0 and hard.matched.sum() <= base.matched.sum()
+    s = ps.summarise_quotes(base)
+    assert "best5_share" in s and "last_60s_share" in s
+
+
+def test_the_staking_types():
+    from greyhound import early_lay as el
+    cfg = dict(el.CONFIG)
+    assert ps.stake_q(5.0, {}, cfg, None, "lay", 300) == 5.0                     # the default: GBP20 liability
+    assert ps.stake_q(5.0, {"stake": {"type": "liability", "size": 100}}, cfg, None, "lay", 300) == 25.0
+    assert ps.stake_q(5.0, {"stake": {"type": "stake", "size": 10}}, cfg, None, "back", 300) == 10.0
+    book = {"back": [(4.0, 40.0)], "lay": [(4.2, 8.0)]}
+    assert ps.stake_q(4.0, {"stake": {"type": "liquidity", "size": 50, "frac": 0.25}}, cfg, book, "lay", 300) == 10.0
+    assert ps.stake_q(4.4, {"stake": {"type": "liquidity", "size": 50, "frac": 0.25}}, cfg, book, "back", 300) == 2.0
+    late = {"stake": {"type": "late", "size": 20, "x": 2.5, "late_secs": 120}}
+    assert ps.stake_q(5.0, late, cfg, None, "lay", 300) == 5.0 and ps.stake_q(5.0, late, cfg, None, "lay", 60) == 12.5
+
+
+def test_the_mid_fair_value_needs_no_model():
+    d = day()
+    pre_m = d["pre"][d["pre"].market_id == MID]
+    preds = pd.DataFrame({"market_id": [MID, MID], "selection_id": [7, 8], "p_model": [0.2, 0.8]})
+    fv = ps.fair_by("mid", pre_m, OFF - pd.Timedelta(seconds=100), preds, None, {}, None, OFF).set_index("selection_id")
+    assert (fv.f_bsp == fv["mid"]).all() and 4.0 < fv.loc[7, "mid"] < 4.2
+
+
+def test_a_back_taken_and_greened_and_the_take_variants(tmp_path, monkeypatch):
+    from datetime import date
+    from greyhound import early_lay as el
+    d = day()
+    # dog 7 is backed at 4.0 (taken: the book offers it), then greened up by a lay at the 5 s book (lay 5.1):
+    # a back that drifted loses
+    s = ps.simulate_back(d, MID, 7, OFF - pd.Timedelta(seconds=110), 4.0, 5.0)
+    assert s["matched"] == 5.0 and s["taken"] == 5.0 and s["how"] == "green"
+    assert np.isclose(s["pnl"], round(5 * (4.0 / 5.1 - 1), 2))
+    store = Store(root=tmp_path)
+    preds = pd.DataFrame({"market_id": [MID, MID], "selection_id": [7, 8], "p_model": [0.2, 0.8]})
+    store.put("greyhound/live/predictions/2026-11-03.csv", preds.to_csv(index=False).encode())
+
+    def decide(rows, fit, cfg):                                   # dog 7 forecast to drift, dog 8 to shorten
+        return rows.assign(f_bsp=np.where(rows.selection_id == 7, 6.0, 1.5), mid=np.where(rows.selection_id == 7,
+                                                                                            4.1, 2.02))
+    monkeypatch.setattr(el, "decide", decide)
+    cfg = dict(el.CONFIG, decide_secs=100, margin=0.2, take=True, sides=("lay", "back"))
+    out = ps.early_lay(store, date(2026, 11, 3), d, cfg, fit={})
+    got = out.set_index("selection_id")
+    assert got.loc[7, "side"] == "lay" and got.loc[7, "price"] == 4.2        # the best lay offered, under 6.0 x 0.8
+    assert got.loc[8, "side"] == "back" and got.loc[8, "price"] == 2.0       # the best back, over 1.5 x 1.2

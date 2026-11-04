@@ -28,7 +28,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: greyhound-profit-sim
+  # one run per set of variants: different sets run side by side, the same set again replaces the one running
+  group: greyhound-profit-sim-${{ inputs.date || 'today' }}-${{ inputs.only || 'all' }}
   cancel-in-progress: true
 
 jobs:
