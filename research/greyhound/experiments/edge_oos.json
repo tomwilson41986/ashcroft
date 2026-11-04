@@ -1,0 +1,25 @@
+{
+  "about": "Out-of-sample prices over years for strategy tests at the SP (the owner, 4 Nov 2026: 'keep working continuously' until five profitable strategies; 'fundamental is always just to get the most accurate closing price'). The live model's recipe (every engine block card-safe, the race simulator, the weight block, log(BSP), rescaled to the SP book) and the same features on the softmax win objective, each fitted once on 2021-2023 and pricing every race from 1 Jan 2024: rules at the SP with a price limit (Betfair's limit-on-close, matched at the SP or not at all) are scored on these, chosen on 2024 and confirmed on 2025-26.",
+  "recipe": "quick",
+  "test_from": "2024-01-01",
+  "baseline": "edge_logbsp",
+  "experiments": [
+    {
+      "name": "edge_logbsp",
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": ["sim", "wpred"],
+      "rescale_book": true,
+      "recipe": "confirm",
+      "recipe_overrides": {"train_from": "2021-01-01", "learning_rate": 0.08, "early_stop": 100, "rounds": 8000, "max_seconds": 2700}
+    },
+    {
+      "name": "edge_softmax",
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": ["sim", "wpred"],
+      "recipe": "confirm",
+      "recipe_overrides": {"train_from": "2021-01-01", "learning_rate": 0.08, "early_stop": 100, "rounds": 8000, "max_seconds": 2700}
+    }
+  ]
+}

@@ -712,6 +712,8 @@ def main(argv=None) -> int:
         (out / f"result_{e['name']}.json").write_text(json.dumps(res, indent=1, default=str))
         # each runner's log-loss contribution, for the paired comparison against the baseline in --collect
         keep = ["race_id", "race_date", "dog_id", "won", "p_model"] + [c for c in ("bsp", "pred_bsp") if c in pred]
+        # the race's identity too, for strategies scored on these prices (place markets joined by day, time, track, trap)
+        keep += [c for c in ("race_time", "track", "trap", "dog_name", "field") if c in pred]
         pred[keep].to_parquet(out / f"pred_{e['name']}.parquet", index=False)      # bsp, pred_bsp: the paired RMSE
         results.append(res)
         _log(json.dumps({k: res[k] for k in ("name", "logloss", "rounds", "seconds")}))
