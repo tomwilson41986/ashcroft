@@ -12,7 +12,7 @@ TEMPLATE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>racing² Traders</title>
+<title>Ashcroft Traders</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -114,6 +114,9 @@ dl.stats { display: flex; flex-wrap: wrap; gap: var(--s-4) var(--s-6); margin: 0
 .notes { grid-column: 1 / -1; font-size: 12px; color: var(--ink-3); padding-left: 64px; overflow-wrap: anywhere; min-width: 0; }
 .notes p { margin: 2px 0 0; }
 .err { color: var(--neg); }
+.flag { font: 600 10px/1 var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 6px; border-radius: 2px;
+  border: 1px solid currentColor; }
+.flag.green { color: var(--pos); } .flag.red { color: var(--neg); } .flag.amber { color: var(--accent-ink); } .flag.grey { color: var(--ink-3); }
 
 .empty { padding: var(--s-7) 0; border-bottom: 1px solid var(--rule); }
 .empty h2 { margin: 0; font: 600 18px/1.3 var(--font-ui); }
@@ -156,7 +159,7 @@ footer.status .stale { color: var(--accent-ink); }
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="brand">racing<sup>2</sup><span>Traders</span></div>
+    <div class="brand">Ashcroft<span>Traders</span></div>
     <div class="clock"><span id="when"></span><button class="theme" id="theme" type="button" aria-label="Switch colour theme">Theme</button></div>
   </header>
   <nav class="sports" role="tablist" aria-label="Sport" id="tabs"></nav>
@@ -262,13 +265,22 @@ footer.status .stale { color: var(--accent-ink); }
       money(value, signed) + '</span>' + (sub || "") + '</div>';
   }
 
+  function edgeLine(t) {
+    var e = t.edge;
+    if (!e || !t.has_data) return "";
+    var pct = function (v) { return v === null || v === undefined ? DASH : (v > 0 ? "+" : v < 0 ? MINUS : "") + Math.abs(v * 100).toFixed(1) + "%"; };
+    return '<div class="seen"><span class="flag ' + esc(e.flag) + '" title="' + esc(e.flag_reason) + '">' + esc(e.flag_label) +
+      '</span> CLV 7 days <span class="mono">' + pct(e.clv_7d) + '</span> \u00b7 record <span class="mono">' + pct(e.clv_record) +
+      '</span>' + (e.ev_today !== null ? ' \u00b7 EV today <span class="mono">' + esc(gbp(e.ev_today, true)) + '</span>' : "") + '</div>';
+  }
+
   function seat(t) {
     var d = t.today, m = t.month, a = t.all_time;
     var seen = ukTime(d.last_order_utc), fresh = d.last_order_utc &&
       (Date.now() - new Date(d.last_order_utc).getTime()) < 20 * 60000;
     var who = '<div class="who">' + avatar(t) + '<div><div class="name">' + esc(t.name) +
       '<span class="mode ' + (t.mode === "live" ? "live" : "") + '">' + (t.mode === "live" ? "Real money" : "Paper") +
-      '</span></div><div class="what">' + esc(t.what) + '</div>' +
+      '</span></div><div class="what">' + esc(t.what) + '</div>' + edgeLine(t) +
       '<div class="seen"><span class="dot' + (fresh ? " on" : "") + '"></span>' +
       (seen ? "last ledger row " + seen + " UK" : (d.traded ? "ledger today" : "no ledger today")) +
       (d.traded ? " · " + d.settled + " of " + d.markets + " markets settled" : "") + '</div></div></div>';

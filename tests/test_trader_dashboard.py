@@ -169,7 +169,7 @@ def test_the_cache_holds_settled_days_and_rereads_open_ones(tmp_path):
     _put(tmp_path, "pred", f"trading/live/{old}/ledger.csv", horse_ledger(old, [("1.x", 100, 0.1, 5, 0.1)]))
     src = LocalSource(tmp_path)
     trader_days(src, T("horse-live"), TODAY)
-    assert (tmp_path / "pred" / f"dashboard/cache/horse-live/{old}.csv").exists()
+    assert (tmp_path / "pred" / f"dashboard/cache/v2/horse-live/{old}.csv").exists()
     # the ledger goes; the settled day still comes from the cache
     (tmp_path / "pred" / f"trading/live/{old}/ledger.csv").unlink()
     days, _ = trader_days(src, T("horse-live"), TODAY)
@@ -185,7 +185,7 @@ def test_every_sport_is_on_the_page_and_cricket_says_no_data_found(tmp_path):
     md = summary_md(data)
     assert "No data found: no trader for this sport." in md and "no data found" in md
     html = render(data)
-    assert "<title>racing² Traders</title>" in html and "No data found" in html
+    assert "<title>Ashcroft Traders</title>" in html and "No data found" in html
     assert "—" not in html                                       # hyphens, never em dashes
     # the JSON cannot close its own script tag
     data["sports"][0]["label"] = "</script><b>"
@@ -209,3 +209,71 @@ def test_the_cli_writes_both_files(tmp_path):
     j = json.loads((out / "traders.json").read_text())
     assert j["sports"][0]["traders"][0]["today"]["pnl"] == pytest.approx(4.9)
     assert (out / "index.html").read_text().startswith("<!doctype html>")
+
+
+def test_clv_and_the_edge_flag(tmp_path):
+    """CLV is the stake-weighted mean of each settled position's CLV; the flag reads the last 7 days against the
+    record: too few bets grey, at or under zero red, a fading or uncertain edge amber, else green."""
+    from dashboard.traders import MIN_FLAG_BETS
+
+    def ledger(day, clvs, stake=10):
+        rows = []
+        for i, c in enumerate(clvs):
+            mid = f"1.{i}"
+            rows.append({"ts": f"{day}T09:00:00Z", "event": "back", "market_id": mid, "venue": "Ascot",
+                         "off": f"{day} 14:00", "selection_id": 1, "matched": stake, "edge": 0.05})
+            rows.append({"ts": f"{day}T15:00:00Z", "event": "settle", "market_id": mid, "selection_id": 1,
+                         "pnl": -stake, "matched": stake, "clv": c})
+        return pd.DataFrame(rows)
+
+    t = T("horse-live")
+    # 40 bets a day at +10% CLV for 7 days: green
+    for i in range(7):
+        d = (TODAY - timedelta(days=i)).isoformat()
+        _put(tmp_path, "pred", f"trading/live/{d}/ledger.csv", ledger(d, [0.10 + 0.01 * (j % 3 - 1) for j in range(40)]))
+    days, last = trader_days(LocalSource(tmp_path), t, TODAY, cache=False)
+    e = summarise(t, days, TODAY, last)["edge"]
+    assert e["clv_today"] == pytest.approx(0.10, abs=0.002) and e["clv_7d_n"] == 280
+    assert e["flag"] == "green" and e["clv_7d_lo"] > 0
+
+    # the last 7 days at -2%: red
+    neg = tmp_path / "neg"
+    for i in range(7):
+        d = (TODAY - timedelta(days=i)).isoformat()
+        _put(neg, "pred", f"trading/live/{d}/ledger.csv", ledger(d, [-0.02] * 40))
+    days, _ = trader_days(LocalSource(neg), t, TODAY, cache=False)
+    assert summarise(t, days, TODAY)["edge"]["flag"] == "red"
+
+    # an edge at a third of the record's: amber
+    fade = tmp_path / "fade"
+    for i in range(20):
+        d = (TODAY - timedelta(days=i)).isoformat()
+        _put(fade, "pred", f"trading/live/{d}/ledger.csv", ledger(d, [0.02 if i < 7 else 0.30] * 40))
+    days, _ = trader_days(LocalSource(fade), t, TODAY, cache=False)
+    e = summarise(t, days, TODAY)["edge"]
+    assert e["flag"] == "amber" and e["clv_record"] > e["clv_7d"] > 0
+
+    # too few bets: grey
+    few = tmp_path / "few"
+    _put(few, "pred", f"trading/live/{TODAY.isoformat()}/ledger.csv", ledger(TODAY.isoformat(), [0.1] * (MIN_FLAG_BETS - 1)))
+    days, _ = trader_days(LocalSource(few), t, TODAY, cache=False)
+    e = summarise(t, days, TODAY)["edge"]
+    assert e["flag"] == "grey" and e["ev_today"] == pytest.approx(0.05 * 10 * (MIN_FLAG_BETS - 1))
+    assert e["ev_today_pct"] == pytest.approx(0.05)
+
+
+def test_an_early_lays_clv_is_the_bsp_over_the_price_laid(tmp_path):
+    d = TODAY.isoformat()
+    rows = [{"time_utc": f"{d}T12:00:00Z", "market_id": "1.a", "selection_id": 1, "track": "Hove", "race_time": "12:00",
+             "action": "lay", "price": 4.0, "size": 5, "matched": 5},
+            {"time_utc": f"{d}T12:01:00Z", "market_id": "1.a", "selection_id": 1, "action": "green", "lay_matched": 5,
+             "lay_price": 4.0, "locked_pnl": 0.5}]
+    _put(tmp_path, "capture", f"sources/greyhound/early_lay/live/{d}/ledger.csv", pd.DataFrame(rows))
+    books = pd.DataFrame([{"polled_utc": f"{d}T12:10:00Z", "source": "final", "market_id": "1.a", "selection_id": 1,
+                           "runner_status": "LOSER", "sp_actual": 5.0}])
+    p = tmp_path / "capture" / f"betfair_live/{d}/books_greyhound.csv.gz"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    books.to_csv(p, index=False, compression="gzip")
+    days, _ = trader_days(LocalSource(tmp_path), T("greyhound-early-lay"), TODAY, cache=False)
+    e = summarise(T("greyhound-early-lay"), days, TODAY)["edge"]
+    assert e["clv_today"] == pytest.approx(5.0 / 4.0 - 1) and e["ev_today"] is None

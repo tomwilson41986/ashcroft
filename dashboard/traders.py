@@ -39,7 +39,9 @@ RATE = 0.02                       # Betfair's commission where a ledger holds no
 MIN_RECORD = 3                    # settled days before a forecast is made
 MIN_RANGE = 5                     # settled days before a range is given
 K = ["market_id", "selection_id"]
-MARKET_COLS = ["market_id", "label", "off", "staked", "ev", "pnl", "settled", "open_liability"]
+CLV_COLS = ["clv_ws", "clv_s", "clv_n", "clv_sum", "clv_sumsq"]
+MARKET_COLS = ["market_id", "label", "off", "staked", "ev", "pnl", "settled", "open_liability"] + CLV_COLS
+MIN_FLAG_BETS = 30                # bets with a CLV in the last 7 days before the edge flag judges
 
 SPORTS = [("horse_racing", "Horse Racing"), ("greyhounds", "Greyhounds"), ("football", "Football"),
           ("cricket", "Cricket")]
@@ -146,6 +148,28 @@ def _empty() -> pd.DataFrame:
     return pd.DataFrame(columns=MARKET_COLS)
 
 
+def _clv_by_market(rows: pd.DataFrame, clv: str = "clv", stake: str = "matched") -> pd.DataFrame:
+    """Each market's CLV sums over its positions with a CLV: stake-weighted (``clv_ws`` / ``clv_s``) and per bet
+    (``clv_n``, ``clv_sum``, ``clv_sumsq``) for the spread."""
+    if rows is None or not len(rows) or clv not in rows.columns:
+        return pd.DataFrame(columns=CLV_COLS)
+    r = rows.assign(_c=_num(rows[clv]), _w=_num(rows[stake]) if stake in rows.columns else np.nan)
+    r = r[np.isfinite(r._c) & (r._w > 0)]
+    if not len(r):
+        return pd.DataFrame(columns=CLV_COLS)
+    r = r.assign(_cw=r._c * r._w, _c2=r._c ** 2)
+    return r.groupby("market_id").agg(clv_ws=("_cw", "sum"), clv_s=("_w", "sum"), clv_n=("_c", "size"),
+                                      clv_sum=("_c", "sum"), clv_sumsq=("_c2", "sum"))
+
+
+def _with_clv(m: pd.DataFrame, rows: pd.DataFrame, clv: str = "clv", stake: str = "matched") -> pd.DataFrame:
+    c = _clv_by_market(rows, clv, stake)
+    m = m.join(c, how="left") if len(m) else m.reindex(columns=list(m.columns) + CLV_COLS)
+    for k in CLV_COLS:
+        m[k] = _num(m[k]).fillna(0.0) if k in m.columns else 0.0
+    return m
+
+
 def _last_ts(led: pd.DataFrame, col: str) -> str | None:
     if led is None or col not in led.columns:
         return None
@@ -176,6 +200,7 @@ def horse_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame | N
     c = c.where(c > 0, RATE * gross.clip(lower=0).fillna(0.0))
     m["pnl"] = np.where(m.settled, gross - c, np.nan)
     m["open_liability"] = 0.0
+    m = _with_clv(m, st)                                   # the session's own CLV: average price / BSP - 1
     return m.reset_index()[MARKET_COLS], _last_ts(led, "ts")
 
 
@@ -220,6 +245,7 @@ def greyhound_paper_markets(src, kind: str, base: str, day: str) -> tuple[pd.Dat
                                    settled=("pnl", lambda x: bool(x.notna().any())))
     m["pnl"] = m.pnl.where(m.settled)
     m["open_liability"] = 0.0
+    m = _with_clv(m, s)                                    # settle_rows' CLV: average price / BSP - 1
     return m.reset_index()[MARKET_COLS], _last_ts(led, "time_utc")
 
 
@@ -227,7 +253,7 @@ def early_lay_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame
     led = _csv(src.get(kind, f"{base}/{day}/ledger.csv"))
     if led is None or "action" not in led.columns:
         return None, None
-    for c in ("matched", "lay_matched", "locked_pnl", "liability", "avg_price", "size", "selection_id"):
+    for c in ("matched", "lay_matched", "locked_pnl", "liability", "avg_price", "size", "selection_id", "lay_price"):
         led[c] = _num(led[c]) if c in led.columns else np.nan
     lays = led[led.action == "lay"]
     closes = led[led.action.isin(["green", "green_part", "sp_close", "hold"])].copy()
@@ -236,8 +262,13 @@ def early_lay_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame
     # the lays closed at the SP or held settle with the result: read it from the settled books when they are in
     opened = closes[closes.action.isin(["sp_close", "hold"])].copy()
     opened["pnl_res"] = np.nan
+    final = _greyhound_final(src, day) if len(closes) else None
+    lay_clv = pd.DataFrame(columns=["market_id", "clv", "lay_matched"])
+    if final is not None:      # a lay's CLV: the BSP over the price laid, less 1 (laid under the SP is to the good)
+        lc = closes.merge(final[K + ["sp_actual"]], on=K, how="left")
+        lc["clv"] = _num(lc.sp_actual) / lc.lay_price - 1
+        lay_clv = lc[lc.lay_price > 1]
     if len(opened):
-        final = _greyhound_final(src, day)
         if final is not None:
             opened = opened.merge(final[K + ["runner_status", "sp_actual"]], on=K, how="left")
             won = opened.runner_status == "WINNER"
@@ -261,7 +292,8 @@ def early_lay_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame
             settled, pnl = True, 0.0                               # nothing matched: nothing to settle
         rows.append({"market_id": mid, "label": lg.track.iloc[0], "off": lg.race_time.iloc[0], "staked": staked,
                      "ev": np.nan, "pnl": pnl, "settled": settled, "open_liability": open_liab})
-    return pd.DataFrame(rows, columns=MARKET_COLS), _last_ts(led, "time_utc")
+    out = _with_clv(pd.DataFrame(rows).set_index("market_id"), lay_clv, "clv", "lay_matched")
+    return out.reset_index()[MARKET_COLS], _last_ts(led, "time_utc")
 
 
 def football_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame | None, str | None]:
@@ -283,6 +315,7 @@ def football_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame 
                                    pnl=("pnl", lambda x: x.sum(min_count=1)))
     m["pnl"] = m.pnl.where(m.settled)
     m["open_liability"] = 0.0
+    m = _with_clv(m, s)                                    # the settle step's CLV: price x the close's chance - 1
     return m.reset_index()[MARKET_COLS], _last_ts(led, "time_utc")
 
 
@@ -341,7 +374,7 @@ TRADERS = [
 # Reading the days, with a cache of the settled ones
 # --------------------------------------------------------------------------------------------------------------------
 
-CACHE = "dashboard/cache"
+CACHE = "dashboard/cache/v2"           # v2: the tables carry CLV (4 Nov 2026)
 
 
 def trader_days(src, t: Trader, today: date, cache: bool = True) -> tuple[dict[str, pd.DataFrame], str | None]:
@@ -474,12 +507,71 @@ def summarise(t: Trader, days: dict[str, pd.DataFrame], today: date, last_ts: st
                "days_up": int((traded.result > 0).sum()),
                "open_days": unsettled.day.tolist()}
     spark = hist[hist.day >= (today - timedelta(days=29)).isoformat()][["day", "result", "staked"]]
+    edge_out = edge(t, days, today, tm, rec_full)
     return {"id": t.id, "sport": t.sport, "name": t.name, "mode": t.mode, "what": t.what, "glyph": t.glyph,
             "initials": t.initials, "has_data": bool(len(hist)), "today": today_out, "month": month_out,
             "all_time": all_out,
             "record": {"days": int(len(rec_full)), "mean_day": _f(mean_day), "from": t.record_from},
             "daily": [{"day": r.day, "pnl": _f(r.result), "volume": _f(r.staked)} for r in spark.itertuples()],
+            "edge": edge_out,
             "notes": list(t.notes)}
+
+
+def _clv_of(frames: list[pd.DataFrame]) -> dict:
+    """Stake-weighted CLV over the frames' markets, with the per-bet spread for a 95% interval."""
+    if not frames:
+        return {"clv": None, "lo": None, "hi": None, "n": 0}
+    m = pd.concat(frames, ignore_index=True)
+    tot = {k: float(_num(m[k]).fillna(0).sum()) if k in m.columns else 0.0 for k in CLV_COLS}
+    n = int(tot["clv_n"])
+    if n == 0 or tot["clv_s"] <= 0:
+        return {"clv": None, "lo": None, "hi": None, "n": n}
+    w = tot["clv_ws"] / tot["clv_s"]
+    mean = tot["clv_sum"] / n
+    var = max(tot["clv_sumsq"] / n - mean ** 2, 0.0)
+    se = math.sqrt(var / n) if n > 1 else None
+    r = lambda x: None if x is None else round(x, 4)  # noqa: E731
+    return {"clv": r(w), "lo": r(w - 1.96 * se) if se is not None else None,
+            "hi": r(w + 1.96 * se) if se is not None else None, "n": n}
+
+
+FLAG_LABEL = {"green": "Beating the market", "amber": "Edge may be fading", "red": "Not beating the market",
+              "grey": "Too few bets to judge"}
+
+
+def edge(t: Trader, days: dict[str, pd.DataFrame], today: date, tm: pd.DataFrame | None,
+         rec_full: pd.DataFrame) -> dict:
+    """CLV (today, the last 7 days with its 95% interval, the record), the expected value at the fill (today, and
+    the record's settled result over it), and the edge flag. The flag reads the last 7 days' CLV against the
+    record's: under MIN_FLAG_BETS bets, grey; at or under zero, red; above zero but its interval reaching zero, or
+    under half the record's, amber; else green."""
+    ds = today.isoformat()
+    week0 = (today - timedelta(days=6)).isoformat()
+    rec_from = t.record_from or "0000-00-00"
+    c_today = _clv_of([tm]) if tm is not None else {"clv": None, "lo": None, "hi": None, "n": 0}
+    c_7 = _clv_of([m for d, m in days.items() if week0 <= d <= ds and len(m)])
+    c_rec = _clv_of([m for d, m in days.items() if rec_from <= d <= ds and len(m)])
+    ev_today = float(_num(tm.ev).sum(min_count=1)) if tm is not None and len(tm) and _num(tm.ev).notna().any() else None
+    vol = float(_num(tm.staked).fillna(0).sum()) if tm is not None else 0.0
+    has_ev = len(rec_full) and rec_full.ev_settled.notna().any() and rec_full.ev_settled.fillna(0).sum() > 0
+    k_all = float(rec_full.result.sum() / rec_full.ev_settled.sum()) if has_ev else None
+    l7 = rec_full.tail(7)
+    k_7 = float(l7.result.sum() / l7.ev_settled.sum()) if has_ev and l7.ev_settled.fillna(0).sum() > 0 else None
+    if c_7["n"] < MIN_FLAG_BETS or c_7["clv"] is None:
+        flag, why = "grey", f"{c_7['n']} bets with a closing price in the last 7 days; it needs {MIN_FLAG_BETS}"
+    elif c_7["clv"] <= 0:
+        flag, why = "red", f"the last 7 days' CLV is {c_7['clv']:+.1%}: its prices are no better than the close"
+    elif (c_7["lo"] is not None and c_7["lo"] <= 0) or (c_rec["clv"] and c_rec["clv"] > 0 and c_7["clv"] < 0.5 * c_rec["clv"]):
+        flag, why = "amber", (f"the last 7 days' CLV is {c_7['clv']:+.1%} against {c_rec['clv']:+.1%} on the record"
+                              + (f"; its interval reaches {c_7['lo']:+.1%}" if c_7["lo"] is not None and c_7["lo"] <= 0 else ""))
+    else:
+        flag, why = "green", f"the last 7 days' CLV is {c_7['clv']:+.1%}, {c_7['lo']:+.1%} to {c_7['hi']:+.1%}"
+    return {"clv_today": c_today["clv"], "clv_today_n": c_today["n"], "clv_7d": c_7["clv"], "clv_7d_lo": c_7["lo"],
+            "clv_7d_hi": c_7["hi"], "clv_7d_n": c_7["n"], "clv_record": c_rec["clv"], "clv_record_n": c_rec["n"],
+            "ev_today": _f(ev_today), "ev_today_pct": round(ev_today / vol, 4) if ev_today is not None and vol > 0 else None,
+            "realised_vs_ev": round(k_all, 3) if k_all is not None else None,
+            "realised_vs_ev_7d": round(k_7, 3) if k_7 is not None else None,
+            "flag": flag, "flag_label": FLAG_LABEL[flag], "flag_reason": why}
 
 
 def build(src, today: date | None = None, cache: bool = True, traders=TRADERS, source_label=None) -> dict:
