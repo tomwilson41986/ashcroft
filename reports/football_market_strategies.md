@@ -143,3 +143,85 @@ What this means in practice:
    - away 10.0+, only where the recorded best lay is within 5% of the best back;
    - a fixed liability per bet;
    - gate on the 90% lower bound of the return on liability.
+
+## 7. Improvements tried (4 Nov 2026)
+
+**Sources.** `research/open_close/football_improve.py`; figures from `reports/football_runs/improve.json`.
+
+**Setup.**
+- The stacked move model is fitted walk-forward on the moves of the seasons before each test season.
+- It is traded on Betfair's own prices, in takeable books, greened, with 2% commission.
+- **Selection is tuned on 2024/25 and read on 2025/26 to date.** That season was read by earlier rules, so the reads
+  are development evidence.
+- About 30 variants were read on 2025/26. Read every result against that count.
+
+### Picking trades: weekly top-K instead of a fixed threshold (match odds)
+
+| Rule | 2024/25 (tuned) | 2025/26 (read) |
+|---|---|---|
+| Threshold 0.04 (registered) | 416 bets: +1.58% tick, +3.82% sym | 531 bets: -0.53% tick [-1.8, +0.7], +1.59% sym [+0.4, +2.7] |
+| Threshold 0.05 | 190 bets: +4.17% tick, +7.01% sym | 235 bets: +0.36% tick [-1.7, +2.5], +3.07% sym [+1.1, +5.2] |
+| **Top 5 a week** | 225 bets: +4.35% tick, +6.88% sym | **285 bets: +1.20% tick [-0.3, +2.8], +3.64% sym [+2.1, +5.2]; 74% right way** |
+| Top 10 a week | 450 bets: +2.21% tick, +4.13% sym | 570 bets: -0.88% tick, +1.20% sym |
+
+("tick" = a tick off fair at each end; "sym" = a book symmetric about fair.)
+
+- **Weekly top 5 is the best read on 2025/26.** It is the only rule within reach of break-even a tick off fair, and
+  its bet count holds steady from season to season (about 6 a week).
+- The gain over threshold 0.05 is within the noise. Its advantage is the steady volume.
+
+### A cost filter (meta-label, match odds)
+
+A small LightGBM model, fitted on 2024/25's candidate trades, predicts whether a trade clears its cost. Its inputs are
+the forecast's size and direction, the price, the book's margin, the league, and home or away.
+
+| On 2025/26 | Bets | Tick | Sym |
+|---|---|---|---|
+| Threshold 0.04 alone | 531 | -0.53% | +1.59% |
+| Threshold 0.04 and filter > 0.5 | 300 | +0.26% [-1.7, +2.2] | +2.93% [+1.2, +4.7] |
+| The filter's top 531 (same count as the threshold) | 531 | -0.65% | +1.73% |
+
+**Read:** the filter adds about 1 point when combined with the threshold. At equal bet counts it adds little. Its
+main inputs are league, book margin, forecast size and price. It's worth keeping, but it hasn't been shown to matter.
+
+### An over/under 2.5 move model
+
+The same stack, plus a goals block: the Dixon-Coles over chance against the early price, and the market's and the
+model's goal rates.
+
+| On 2025/26 | Bets | Tick | Sym |
+|---|---|---|---|
+| Top 5 a week, with the goals block | 285 | -0.69% | -2.76% |
+| Top 5 a week, without it | 285 | -1.75% | -3.59% |
+| Threshold 0.03, with the block | 384 | -0.34% | -2.26% |
+
+**Read:** the goals block helps, by about a point. The over/under move still doesn't pay at Betfair's spreads.
+
+### Built for the feed: order-book features (`football/feed_features.py`)
+
+From the feed's record, at any decision moment, using reads at or before it only (tested):
+
+| Group | Features |
+|---|---|
+| The book now | Best back and lay, spread in ticks, depth and imbalance on each side, the microprice, the book's overround |
+| The flow | Money traded in the last 15 and 60 minutes, and the share of it at or above the mid |
+| The path | The mid's change over 15, 60 and 240 minutes, its 60-minute volatility, minutes to the off |
+| The label (fitting only) | The move to the last pre-play read, and the back-now, lay-at-close return |
+
+This feeds the next stage:
+- order-book move models;
+- entry timing (enter when the book is tight);
+- resting-order fills;
+- high-volume strategies such as market making and short-horizon mean reversion.
+
+None of these can be backtested from football-data, which holds two snapshots and no depth.
+
+### What this leaves
+
+- **Best rule so far on Betfair:** the stacked match-odds move model, its strongest 5 forecasts a week, back first
+  where the chance is forecast up (lay first where it is forecast down), greened at the close. Optionally with the
+  cost filter.
+- **On 2025/26:** about break-even a tick off fair (+1.2%) and +3.6% at a symmetric book.
+- **It is not registered.** The registered stack rule (threshold 0.04) is fixed. Weekly top 5 would need its own
+  pre-registration, before the feed's first books, to be judged forward.
+- **The deciding number is still the real early spread,** which only the feed records.
