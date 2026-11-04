@@ -225,6 +225,45 @@ def test_an_agent_s_day_reads_on_the_dashboard(tmp_path):
     assert {x.id for x in tr.TRADERS} >= {f"horse-agent-{k.replace('_', '-')}" for k in horses.AGENTS}
 
 
+def test_intraday_settles_the_races_run_on_the_recorder_s_bsps(monkeypatch):
+    """The owner, 4 Nov 2026: the paper agents trading as if live, results the same day. With no price file yet,
+    load_day(intraday=True) settles the races run so far from the recorder's books (each runner's last BSP read and
+    its result where read), marks the day provisional and gives the last book's time as the run's end; without
+    intraday the day still waits for the price file."""
+    import pandas as pd
+    from research.arms import core
+    day = date(2026, 11, 4)
+    start = "2026-11-04T13:00:00Z"
+    cat = pd.DataFrame([{"market_id": "1.9", "selection_id": s, "market_type": "WIN", "country": "GB",
+                         "market_start_utc": start, "venue": "Kempton", "market_name": "1m Hcap", "runner_name": n}
+                        for s, n in ((1, "Alpha"), (2, "Bravo"))])
+    rows = []
+    for t, status, inplay, sp1, sp2, rs1 in (("2026-11-04T12:55:00Z", "OPEN", False, None, None, "ACTIVE"),
+                                             ("2026-11-04T13:02:00Z", "OPEN", True, 4.2, 1.9, "ACTIVE"),
+                                             ("2026-11-04T13:06:00Z", "CLOSED", False, 4.2, 1.9, "WINNER")):
+        rows += [{"polled_utc": t, "market_id": "1.9", "selection_id": 1, "status": status, "inplay": inplay,
+                  "runner_status": rs1, "sp_actual": sp1, "back1": 4.0, "back1_size": 50.0},
+                 {"polled_utc": t, "market_id": "1.9", "selection_id": 2, "status": status, "inplay": inplay,
+                  "runner_status": "LOSER" if rs1 == "WINNER" else "ACTIVE", "sp_actual": sp2, "back1": 2.0,
+                  "back1_size": 80.0}]
+    books = pd.DataFrame(rows)
+
+    def fake_csv(key, **kw):
+        if "/books_trader" in key:
+            return books
+        if "/markets_trader" in key:
+            return cat
+        return pd.DataFrame()
+    monkeypatch.setattr(core, "csv", fake_csv)
+    monkeypatch.setattr(core, "price_files", lambda d, m: pd.DataFrame())
+    preds = pd.DataFrame({"market_id": ["1.9", "1.9"], "selection_id": [1, 2], "predicted_bfsp": [4.0, 2.0]})
+    assert core.load_day(day, "win", preds=preds) is None                       # the nightly path still waits
+    D = core.load_day(day, "win", preds=preds, intraday=True)
+    assert D.provisional is True
+    assert D.settled == {("1.9", 1): (4.2, "WINNER"), ("1.9", 2): (1.9, "LOSER")}
+    assert D.last_poll == datetime(2026, 11, 4, 13, 6, tzinfo=timezone.utc)
+
+
 def test_a_backs_variant_trades_its_own_book_in_the_live_trader_s_place():
     """The first shared run (4 Nov): three copies of the rule on one book took each other's leftovers. A backs variant
     is an alternative to the live rule: it trades a book of its own, standing in for the live trader."""

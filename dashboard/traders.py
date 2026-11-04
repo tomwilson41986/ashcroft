@@ -360,7 +360,8 @@ class Trader:
 AGENTS_FROM = "2026-11-04"    # the owner, 4 Nov 2026: the paper agents "only start from now"; their replayed days are not P&L
 AGENT_NOTES = ("A paper agent (research/paper/horses.py): no orders. It trades the recorded books with the other agents "
                "on one book: the live trader's fills are already out, and what one agent takes is gone for the others.",
-               "A day is scored two days after the racing, once Betfair's price file is in: after the non-runners' "
+               "Scored through the day as if live: hourly on the recorded books, each race run settled on the "
+               "recorder's BSP (provisional), then for good once Betfair's price file is in; after the non-runners' "
                "cuts and 2%, at the replay's scale (live has run at 0.80 of it).")
 
 TRADERS = [

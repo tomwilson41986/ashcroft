@@ -118,14 +118,17 @@ def predictions(day: date) -> pd.DataFrame:
     return pd.read_csv(io.BytesIO(raw), dtype={"race_time": str}, low_memory=False)
 
 
-def load_day(day: date, kind: str = "win", preds: pd.DataFrame | None = None, preds_fn=None):
+def load_day(day: date, kind: str = "win", preds: pd.DataFrame | None = None, preds_fn=None, intraday: bool = False):
     """The day's books, markets, prices, the real trader's fills, every runner's BSP and result; None while the
     price file is not published or nothing matched. ``preds`` replaces the model's prices; ``preds_fn(markets,
-    places)`` makes them from the day's markets (the place arm: market_id, selection_id, predicted_bfsp)."""
+    places)`` makes them from the day's markets (the place arm: market_id, selection_id, predicted_bfsp).
+    ``intraday`` (the owner, 4 Nov 2026: the paper agents trading as if live, results the same day): with no price
+    file yet, the races run so far are settled from the recorder's own books (each runner's BSP as read after the off
+    and, where read, its result): provisional, replaced when the price file is in."""
     k = KINDS[kind]
     print(f"\n== {day} ({kind}): books from s3://{bucket()}/betfair_live/{day}/")
     spf = price_files(day, k["files"])
-    if spf.empty:
+    if spf.empty and not intraday:
         print(f"  Betfair's {k['files']} price file for {day}'s racing is not in the archive yet: the day waits")
         return None
     books = pd.concat([csv(f"betfair_live/{day}/{n}.csv.gz") for n in k["books"]], ignore_index=True)
@@ -185,44 +188,59 @@ def load_day(day: date, kind: str = "win", preds: pd.DataFrame | None = None, pr
                                                         float(tm) if tm is not None and pd.notna(tm) else None,
                                                         runners, bsp_reconciled=bool(first.get("bsp_reconciled")))))
 
-    # the files matched to the exchange's markets by course, UK off time and horse, then by time and horse
-    day_tracks = {bp.normalise_track(m.venue): m.venue for m in markets}
-    spf = spf.copy()
-    spf["venue"] = spf["menu_hint"].map(lambda h: bp.course_from_hint(h, day_tracks))
-    spf["runner_name"] = spf["selection_name"]
-    spf = spf.rename(columns={"event_id": "file_event_id", "selection_id": "file_selection_id"})
-    spm = attach_ids(spf[["venue", "race_time", "runner_name", "bsp", "win_lose", "file_event_id",
-                          "file_selection_id"]], markets)
-    ex = pd.DataFrame([{"_t": bp.utc_iso_to_uk_hhmm(m.start.strftime("%Y-%m-%dT%H:%M:%S.000Z")),
-                        "_h": bp.normalise_horse(n), "market_id": m.market_id, "selection_id": int(s)}
-                       for m in markets for s, n in m.runners.items()]).drop_duplicates(["_t", "_h"], keep=False)
-    miss = spm["market_id"].isna()
-    spm["market_id"], spm["selection_id"] = spm["market_id"].astype(object), spm["selection_id"].astype(object)
-    by_time = spm.loc[miss, ["race_time", "runner_name"]].assign(
-        _t=lambda d: d["race_time"].astype(str).map(bp.race_time_to_24h),
-        _h=lambda d: d["runner_name"].map(bp.normalise_horse)).merge(ex, on=["_t", "_h"], how="left")
-    spm.loc[miss, "market_id"] = by_time["market_id"].to_numpy()
-    spm.loc[miss, "selection_id"] = by_time["selection_id"].to_numpy()
-    spm = spm[spm["market_id"].notna()].copy()
-    print(f"  price files: {len(spf):,} runners, {len(spm):,} matched to the exchange's markets")
-    if spm.empty:
-        print("  no runner matched: the day is skipped")
-        return None
-    settled_at = datetime(day.year, day.month, day.day, 23, 0, tzinfo=timezone.utc)
-    settled = {}
-    n_settled = 0
-    for m in markets:
-        g = spm[spm["market_id"] == m.market_id]
-        runners = {}
-        for r in g.itertuples():
-            if pd.notna(r.bsp) and r.bsp > 1:
-                st = "WINNER" if r.win_lose == 1 else "LOSER"
-                runners[int(r.selection_id)] = Quote(int(r.selection_id), status=st, bsp=float(r.bsp))
-                settled[(m.market_id, int(r.selection_id))] = (float(r.bsp), st)
-        n_settled += bool(runners)
-        polls[m.market_id] = [p for p in polls.get(m.market_id, []) if p[1].status != "CLOSED"]
-        polls[m.market_id].append((settled_at, Book(m.market_id, "CLOSED", False, None, runners, True)))
-    print(f"  settled books for {n_settled} of {len(markets)} markets")
+    if spf.empty:      # intraday: the recorder's BSPs (read after the off) and results, the races run so far
+        spv = pd.to_numeric(books["sp_actual"], errors="coerce") if "sp_actual" in books.columns \
+            else pd.Series(np.nan, index=books.index)
+        last = books.assign(spv=spv)[spv > 1].sort_values("t").drop_duplicates(["market_id", "selection_id"],
+                                                                              keep="last")
+        settled = {}
+        n_settled = 0
+        for m in markets:
+            g = last[last["market_id"] == m.market_id]
+            for r in g.itertuples(index=False):
+                st = "WINNER" if str(getattr(r, "runner_status", "")).upper() == "WINNER" else "LOSER"
+                settled[(m.market_id, int(r.selection_id))] = (float(r.spv), st)
+            n_settled += bool(len(g))
+        print(f"  intraday: the recorder's BSPs for {n_settled} of {len(markets)} markets (provisional)")
+    else:
+        # the files matched to the exchange's markets by course, UK off time and horse, then by time and horse
+        day_tracks = {bp.normalise_track(m.venue): m.venue for m in markets}
+        spf = spf.copy()
+        spf["venue"] = spf["menu_hint"].map(lambda h: bp.course_from_hint(h, day_tracks))
+        spf["runner_name"] = spf["selection_name"]
+        spf = spf.rename(columns={"event_id": "file_event_id", "selection_id": "file_selection_id"})
+        spm = attach_ids(spf[["venue", "race_time", "runner_name", "bsp", "win_lose", "file_event_id",
+                              "file_selection_id"]], markets)
+        ex = pd.DataFrame([{"_t": bp.utc_iso_to_uk_hhmm(m.start.strftime("%Y-%m-%dT%H:%M:%S.000Z")),
+                            "_h": bp.normalise_horse(n), "market_id": m.market_id, "selection_id": int(s)}
+                           for m in markets for s, n in m.runners.items()]).drop_duplicates(["_t", "_h"], keep=False)
+        miss = spm["market_id"].isna()
+        spm["market_id"], spm["selection_id"] = spm["market_id"].astype(object), spm["selection_id"].astype(object)
+        by_time = spm.loc[miss, ["race_time", "runner_name"]].assign(
+            _t=lambda d: d["race_time"].astype(str).map(bp.race_time_to_24h),
+            _h=lambda d: d["runner_name"].map(bp.normalise_horse)).merge(ex, on=["_t", "_h"], how="left")
+        spm.loc[miss, "market_id"] = by_time["market_id"].to_numpy()
+        spm.loc[miss, "selection_id"] = by_time["selection_id"].to_numpy()
+        spm = spm[spm["market_id"].notna()].copy()
+        print(f"  price files: {len(spf):,} runners, {len(spm):,} matched to the exchange's markets")
+        if spm.empty:
+            print("  no runner matched: the day is skipped")
+            return None
+        settled_at = datetime(day.year, day.month, day.day, 23, 0, tzinfo=timezone.utc)
+        settled = {}
+        n_settled = 0
+        for m in markets:
+            g = spm[spm["market_id"] == m.market_id]
+            runners = {}
+            for r in g.itertuples():
+                if pd.notna(r.bsp) and r.bsp > 1:
+                    st = "WINNER" if r.win_lose == 1 else "LOSER"
+                    runners[int(r.selection_id)] = Quote(int(r.selection_id), status=st, bsp=float(r.bsp))
+                    settled[(m.market_id, int(r.selection_id))] = (float(r.bsp), st)
+            n_settled += bool(runners)
+            polls[m.market_id] = [p for p in polls.get(m.market_id, []) if p[1].status != "CLOSED"]
+            polls[m.market_id].append((settled_at, Book(m.market_id, "CLOSED", False, None, runners, True)))
+        print(f"  settled books for {n_settled} of {len(markets)} markets")
 
     real_fills = defaultdict(list)                     # (mid, sid, price) -> [(t, matched)]
     if len(ledger):
@@ -242,7 +260,9 @@ def load_day(day: date, kind: str = "win", preds: pd.DataFrame | None = None, pr
     return SimpleNamespace(day=day, kind=kind, markets=markets, polls=dict(polls),
                            poll_times={k_: [t for t, _ in v] for k_, v in polls.items()},
                            starts={m.market_id: m.start for m in markets}, real_fills=real_fills, preds=preds,
-                           settled=settled, removed=removed, places=places, ledger=ledger)
+                           settled=settled, removed=removed, places=places, ledger=ledger,
+                           last_poll=books["t"].max().to_pydatetime() if len(books) else None,
+                           provisional=bool(spf.empty))
 
 
 # ---------------------------------------------------------------------------------------------------------------
