@@ -930,6 +930,11 @@ def main(argv=None) -> int:
                                                             else "") + ".\n\n") + md
         except Exception as exc:
             md = f"Live-key book recorder: no status yet ({str(exc)[:80]}).\n\n" + md
+        try:                                        # the early lay's paper books, replayed on the books
+            from greyhound import early_lay
+            md = early_lay.paper_tables(store, day) + "\n" + md
+        except Exception as exc:
+            log.warning("paper early lays not read (%s)", exc)
         try:                                        # the live early lay's own orders (greyhound/early_lay.py)
             from greyhound import early_lay
             md = early_lay.table(store, day) + "\n" + md

@@ -234,6 +234,9 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
         [ln for ln in runs.splitlines() if "greyhound.early_lay --trade --live" in ln
          or "greyhound.quote_mid --trade --live" in ln]
     assert "greyhound.live --trade --live" not in runs and "football.live --trade --live" not in runs
+    # the early lay's paper books (the owner, 4 Nov 2026: "run this on paper. Keep running 10% too"): never --live
+    paper = [ln for ln in runs.splitlines() if "--paper-variants" in ln]
+    assert len(paper) == 1 and "--live" not in paper[0] and "GREYHOUND_EARLY_LAY" not in paper[0], paper
     env = next(s["env"] for s in steps if s.get("name") == trade)
     assert env["GREYHOUND_LIVE"] == "no" and "FOOTBALL_LIVE" not in env and "API_FOOTBALL_KEY" not in env
     # no football here at all (the owner, 3 Nov 2026: football apart from greyhounds and racing, football-trade.yml)
