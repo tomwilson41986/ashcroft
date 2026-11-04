@@ -98,19 +98,62 @@ def run_year(t: dict, y: int, paths: int, work: Path, chunk: int = 250, log=prin
     return r
 
 
+def bat_first_rate_before(t: dict, y: int) -> float:
+    """Share of in-scope matches before 1 January of ``y`` won by the side batting first: the constant to beat."""
+    from cricket.model.features import t20_matches
+    m = t20_matches(t["matches"])
+    m = m[m.start_date < f"{y}-01-01"]
+    first = t["innings"][(t["innings"].innings == 1) & t["innings"].match_id.isin(m.match_id)]
+    j = m.merge(first[["match_id", "team"]], on="match_id")
+    return float((j.winner == j.team).mean())
+
+
+def report_md(allp: pd.DataFrame, rates: dict[int, float], source: str) -> str:
+    from cricket.model.metrics import paired_bootstrap, score
+    L = ["# Cricket - pre-match probabilities, walk-forward (the model side of the Benter test)", "",
+         f"Source: `{source}`. Built by `python -m cricket.model.prematch`. The state before the first ball, after "
+         "the toss; each year from a model, rounds and prior from before it. The constant is the share of matches "
+         "won by the side batting first in every in-scope match before that year.", "",
+         "| year | matches | rounds | model log loss | constant log loss | constant | model ECE |",
+         "|---|---:|---:|---:|---:|---:|---:|"]
+    allp = allp.assign(p_const=allp.year.map(rates))
+    for y, g in allp.groupby("year"):
+        sm, sc = score(g.bat_won, g.p_bat_first), score(g.bat_won, g.p_const)
+        L.append(f"| {y} | {len(g):,} | {int(g.rounds.iloc[0])} | {sm['log_loss']:.4f} | {sc['log_loss']:.4f} | "
+                 f"{rates[y]:.3f} | {sm['ece']:.4f} |")
+    sm, sc = score(allp.bat_won, allp.p_bat_first), score(allp.bat_won, allp.p_const)
+    b = paired_bootstrap(allp.bat_won, allp.p_bat_first, allp.p_const, allp.match_id)
+    L += [f"| all | {len(allp):,} | | {sm['log_loss']:.4f} | {sc['log_loss']:.4f} | | {sm['ece']:.4f} |", "",
+          f"Model minus constant: {b['diff']:+.4f} (95% interval {b['lo']:+.4f} to {b['hi']:+.4f}, one row a match).",
+          "The test that matters is against Betfair's close (cricket/model/benter.py): the constant only shows the "
+          "model knows something before the first ball.", ""]
+    return "\n".join(L)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root")
     ap.add_argument("--years", default="2016-2026")
     ap.add_argument("--paths", type=int, default=256)
     ap.add_argument("--work", default="data/cricket/eval")
+    ap.add_argument("--out", default="reports/cricket")
+    ap.add_argument("--report-only", action="store_true", help="the report from the years kept under --work")
     a = ap.parse_args(argv)
     lo, hi = (int(x) for x in a.years.split("-"))
     store = Store(root=a.root)
     t = load(store)
-    allp = pd.concat([run_year(t, y, a.paths, Path(a.work), log=lambda m: print(m, flush=True))
-                      for y in range(lo, hi + 1)], ignore_index=True)
+    years = range(lo, hi + 1)
+    if a.report_only:
+        allp = pd.concat([pd.read_parquet(Path(a.work) / f"prematch_{y}.parquet") for y in years], ignore_index=True)
+    else:
+        allp = pd.concat([run_year(t, y, a.paths, Path(a.work), log=lambda m: print(m, flush=True))
+                          for y in years], ignore_index=True)
     store.put_parquet("cricket/eval/prematch.parquet", allp)
+    md = report_md(allp, {y: bat_first_rate_before(t, y) for y in years}, store.where("cricket/tables/"))
+    Path(a.out).mkdir(parents=True, exist_ok=True)
+    (Path(a.out) / "prematch.md").write_text(md)
+    store.put("cricket/reports/prematch.md", md.encode())
+    print(md)
     print(json.dumps({"matches": len(allp), "years": f"{lo}-{hi}",
                       "saved": store.where("cricket/eval/prematch.parquet")}))
     return 0
