@@ -225,7 +225,7 @@ def report_md(res: dict, source: str) -> str:
           "- Future overs are bowled by the bowling XI's experience-weighted average rating.",
           "- No runs on wicket balls, no wickets on wides or no-balls, no free-hit flag.",
           "- Ratings v1 have no phase x innings prior, no bowler type (no data found in Cricsheet), no matchups.",
-          "- First-innings win probability and the first-innings runs line are not scored yet.",
+          "- First-innings win probability and the runs line: reports/cricket/model_v1_first_innings.md.",
           f"- Monte Carlo noise: {meta['paths']} paths a state adds roughly 1/(2 x paths) to log loss near p = 0.5; "
           "the share of winning paths is smoothed to (wins + 1/2) / (paths + 1), never exactly 0 or 1.",
           ""]
