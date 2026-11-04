@@ -1,0 +1,79 @@
+racecards: [('racecards/2026-11-04_0410.csv', datetime.datetime(2026, 11, 4, 4, 10, 37, tzinfo=tzlocal()), 112107)]
+racecards/2026-11-04_0410.csv (521, 22)
+['race_date', 'race_time', 'track', 'going_description', 'race_class', 'race_distance', 'prize_money', 'race_name', 'stall', 'horse_name', 'card_stallion', 'card_dam', 'card_sex', 'horse_age', 'pounds', 'jockey_name', 'trainer', 'official_rating', 'headgear', 'days_since_lr', 'odds', 'number_of_runners']
+race_code MISSING
+jockeys_claim MISSING
+race_type MISSING
+race_name {'Floyds Turfcare & Weed Solutions Handicap Hurdle': 18, 'Free Tips On attheraces.com Maiden Hurdle (GBB Race)': 15, 'Watch Racing TV Now Handicap': 15, 'racingtv.com Handicap': 15, 'Dunraven Open NH Flat Race (GBB Race)': 15, 'Racing TV Free Trial For A Month Maiden Hurdle': 14, 'Start Your Free Trial On Racing TV Now Maiden Hurdle': 14, 'Jim Ryan Racecourse Services Handicap Hurdle (0-100)': 14}
+surface_type MISSING
+days_since_lr {nan: 70, '23.0': 24, '21.0': 19, '28.0': 18, '12.0': 17, '13.0': 15, '7.0': 15, '16.0': 15}
+headgear {nan: 328, 'CkPc': 59, 'TT': 47, 'Hood': 23, 'Blnk': 21, 'CkPcTT': 17, 'Vsor': 11, 'BlnkTT': 5}
+race_class {nan: 147, 'Class 5': 107, 'Class 4': 106, 'Class 6': 76, 'Class 3': 67, 'Class 2': 18}
+number_of_runners {'14': 112, '12': 72, '15': 60, '11': 55, '13': 52, '10': 50, '9': 45, '7': 21}
+official_rating {'0': 165, '64': 17, '62': 15, '70': 15, '75': 14, '72': 14, '63': 12, '60': 11}
+                                                               0                                              1                                              2
+race_date                                             2026-11-04                                     2026-11-04                                     2026-11-04
+race_time                                                  12:05                                          12:05                                          12:05
+track                                                Musselburgh                                    Musselburgh                                    Musselburgh
+going_description                                   Good To Soft                                   Good To Soft                                   Good To Soft
+race_class                                               Class 5                                        Class 5                                        Class 5
+race_distance                                                 5f                                             5f                                             5f
+prize_money                                                 4187                                           4187                                           4187
+race_name          Veronika Walker: Moments That Matter Handicap  Veronika Walker: Moments That Matter Handicap  Veronika Walker: Moments That Matter Handicap
+stall                                                         12                                              3                                              9
+horse_name                                    Thunderstorm Katie                                           Harb                                 Wen Moon (IRE)
+card_stallion                                           Muhaarar                                       Muhaarar                                   Mehmas (IRE)
+card_dam                                                 Firenze                         Maid For Winning (USA)                                  Luminous Gold
+card_sex                                                  Female                                           Male                                           Male
+horse_age                                                      5                                              7                                              6
+pounds                                                       135                                            134                                            134
+jockey_name                                     Young, Lauren(5)                                    Hart, Jason                                 Mullen, Andrew
+trainer                                              Goldie, J S                              Davidson, Tristan                                  Haslam, B M R
+official_rating                                               68                                             67                                             67
+headgear                                                     NaN                                            NaN                                            NaN
+days_since_lr                                               35.0                                           23.0                                           35.0
+odds                                                        11.0                                           15.0                                            8.0
+number_of_runners                                             12                                             12                                             12
+predictions (521, 18) ['date', 'venue', 'race_time', 'market_id', 'selection_id', 'runner_name', 'predicted_bfsp', 'predicted_win_prob', 'predicted_at', 'prediction_id', 'racecard_odds', 'bf_best_back', 'bf_best_lay', 'bf_sp_near', 'bf_sp_far', 'bf_last_traded', 'bf_total_matched', 'price_snapshot_at']
+model: ('paper/morning_edges/model/booster.txt', datetime.datetime(2026, 11, 4, 14, 18, 2, tzinfo=tzlocal()), 3707679)
+model: ('paper/morning_edges/model/meta.json', datetime.datetime(2026, 11, 4, 14, 18, 3, tzinfo=tzlocal()), 589)
+{'threshold': 0.05589473955958607, 'rows': 815890, 'cutoff': '2026-10-31', 'start': '2018-01-01', 'features': ['code_i', 'hcap', 'cls', 'field', 'horse_age', 'official_rating', 'or_rank', 'jockeys_claim', 'dslr', 'prev_fin', 'prev_rank', 'prev_bsp', 'prev_steam', 'runs_held', 'trainer_change', 'jockey_change', 'hg_on', 'hg_off', 'month', 'hour', 'tr_n', 'tr_sr', 'tr_ae', 'tr_steam', 'jk_n', 'jk_sr', 'jk_ae', 'jk_steam'], 'trained_utc': '2026-11-04T14:18:01.830455+00:00', 'spec': 'docs/paper_trader_morning_edges.md'}
+live ledger (1907, 35) ['ts', 'mode', 'event', 'market_id', 'venue', 'off', 'minutes_to_off', 'selection_id', 'runner', 'strategy', 'staking', 'reason', 'p_model', 'p_market', 'p_pool', 'edge', 'move', 'best_back', 'back_size', 'target', 'asked', 'matched', 'avg_price', 'bet_id', 'status', 'error', 'hedged', 'hedge_liability', 'result', 'bsp', 'clv', 'pnl_back', 'pnl_lay', 'pnl', 'commission']
+{'back': 774, 'trade_out': 754, 'skip': 184, 'settle': 157, 'commission': 38}
+                                                          0                                           2                                           4
+ts                                     2026-11-04T06:15:30Z                        2026-11-04T06:15:30Z                        2026-11-04T06:15:30Z
+mode                                                   live                                        live                                        live
+event                                                  back                                        back                                        back
+market_id                                       1.264941018                                 1.264941018                                 1.264941151
+venue                                              Chepstow                                    Chepstow                                 Musselburgh
+off                                                   15:40                                       15:40                                       12:05
+minutes_to_off                                        564.5                                       564.5                                       349.5
+selection_id                                       39013326                                    92688776                                      409843
+runner                                        Midnight Pass                              Isabella Islay                                  Royal Duke
+strategy                                        closing_clv                                 closing_clv                                 closing_clv
+staking                                              to_win                                      to_win                                      to_win
+reason           closing CLV, no-volume model, ladder to 17  closing CLV, no-volume model, ladder to 42  closing CLV, no-volume model, ladder to 55
+p_model                                 0.14911938774559425                        0.062268806273501405                        0.042630933296754825
+p_market                                0.05244941887892079                        0.021093788027392053                        0.016437574735652955
+p_pool                                  0.07096349542310386                        0.028060415500601066                        0.020404512375136595
+edge                                    0.31282466532742137                          0.2907791130276489                          0.2242707425081958
+move                                     1.0147626982476938                          1.0523467160373645                          0.9391694067343864
+best_back                                              18.5                                        46.0                                        60.0
+back_size                                              3.34                                        1.66                                        3.83
+target                                   22.857142857142858                                        15.0                                        15.0
+asked                                                 10.18                                        4.58                                        5.73
+matched                                               10.18                                        4.58                                        5.73
+avg_price                                17.725933202357563                           44.60262008733625                           58.42059336823735
+bet_id                                         450183564193                                450183564472                                450183565026
+status                                              SUCCESS                                     SUCCESS                                     SUCCESS
+error                                                   NaN                                         NaN                                         NaN
+hedged                                                  NaN                                         NaN                                         NaN
+hedge_liability                                         NaN                                         NaN                                         NaN
+result                                                  NaN                                         NaN                                         NaN
+bsp                                                     NaN                                         NaN                                         NaN
+clv                                                     NaN                                         NaN                                         NaN
+pnl_back                                                NaN                                         NaN                                         NaN
+pnl_lay                                                 NaN                                         NaN                                         NaN
+pnl                                                     NaN                                         NaN                                         NaN
+commission                                              NaN                                         NaN                                         NaN
+time of first live back: 2026-11-04T06:15:30Z
