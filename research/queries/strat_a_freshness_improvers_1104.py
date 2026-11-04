@@ -179,4 +179,12 @@ t.insert(1, "gate", [L.gate(r) for r in ALL])
 t = t[t["gate"] != "-"].sort_values(["gate", "t_WAX"], ascending=[True, False])
 with pd.option_context("display.max_colwidth", 90):
     print(L._fmt(t).to_string(index=False) if len(t) else "(no rule passed TRAIN)")
-pd.DataFrame(ALL).assign(gate=[L.gate(r) for r in ALL]).to_csv("out/strat_screen_rules.csv", index=False)
+print(f"\n=== THE SCREEN AT THE MORNING PRICES (2018+): {len(ALL)} rules ===")
+print(L.gate_am.__doc__)
+t = pd.DataFrame(ALL)
+t.insert(1, "gate_am", [L.gate_am(r) for r in ALL])
+t = t[t["gate_am"] != "-"].sort_values(["gate_am", "t_A/E_am"], ascending=[True, False])
+with pd.option_context("display.max_colwidth", 90):
+    print(L._fmt(t).to_string(index=False) if len(t) else "(no rule passed TRAIN)")
+pd.DataFrame(ALL).assign(gate=[L.gate(r) for r in ALL], gate_am=[L.gate_am(r) for r in ALL]).to_csv(
+    "out/strat_screen_rules.csv", index=False)

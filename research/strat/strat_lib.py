@@ -31,6 +31,7 @@ from scipy.stats import chi2 as _chi2
 COMMISSION = 0.05
 TO_WIN = 100.0
 TRAIN_END = "2021-12-31"
+MIN_AM_VOL = 50.0   # GBP matched in the morning before a morning price is believed (place market: a fifth of it)
 
 
 def load(db: str = "horse_racing.db") -> pd.DataFrame:
@@ -122,16 +123,29 @@ def score(d: pd.DataFrame, to_win: float = TO_WIN) -> dict:
                     "roi_pl%": 100 * plvl / len(q),
                     "roi_both%": 100 * (wl + plvl) / (2 * len(q)),
                     "tw_both_pnl": wtw + ptw, "tw_both_roi%": 100 * (wtw + ptw) / (wtws + ptws)})
-    m = d[(d.get("morningwap", pd.Series(np.nan, index=d.index)) > 1) & (d.get("morning_vol", 0) >= 50)]
+    m = d[(d.get("morningwap", pd.Series(np.nan, index=d.index)) > 1) & (d.get("morning_vol", 0) >= MIN_AM_VOL)]
     if len(m) >= 30:
         ml, mtw, mts = _pnl(m["won"], m["morningwap"], to_win)
-        out.update({"n_am": len(m), "roi_am%": 100 * ml / len(m), "tw_roi_am%": 100 * mtw / mts,
-                    "clv%": 100 * (m["morningwap"] / m["bsp"] - 1).mean()})
+        Wm, Em = float(m["won"].sum()), float((1 / m["morningwap"]).sum())
+        xm, pm = _gof(Wm, Em, len(m))
+        out.update({"n_am": len(m), "WAX_am": Wm - Em, "A/E_am": Wm / Em, "p_am": pm,
+                    "roi_am%": 100 * ml / len(m), "tw_roi_am%": 100 * mtw / mts,
+                    "clv%": 100 * (m["morningwap"] / m["bsp"] - 1).mean(),
+                    "med_am_vol": float(m["morning_vol"].median())})
+        mp = m[(m.get("p_morningwap", pd.Series(np.nan, index=m.index)) > 1) & (m.get("p_morning_vol", 0) >= MIN_AM_VOL / 5)]
+        if len(mp) >= 30:
+            Pm, Epm = float(mp["placed"].sum()), float((1 / mp["p_morningwap"]).sum())
+            xpm, ppm = _gof(Pm, Epm, len(mp))
+            pl_l, pl_tw, pl_ts = _pnl(mp["placed"], mp["p_morningwap"], to_win)
+            w_l, w_tw, w_ts = _pnl(mp["won"], mp["morningwap"], to_win)
+            out.update({"n_am_pl": len(mp), "A/E_pl_am": Pm / Epm, "p_pl_am": ppm,
+                        "roi_pl_am%": 100 * pl_l / len(mp), "roi_both_am%": 100 * (w_l + pl_l) / (2 * len(mp)),
+                        "tw_both_am_roi%": 100 * (w_tw + pl_tw) / (w_ts + pl_ts)})
     return out
 
 
-KEEP = ["n", "WAX", "A/E", "p", "A/E_pl", "p_pl", "roi_bsp%", "roi_pl%", "roi_both%", "tw_both_roi%", "roi_am%", "clv%"]
-PCOLS = {"p", "p_pl", "t_p", "t_p_pl"}
+KEEP = ["n", "WAX", "A/E", "p", "A/E_pl", "p_pl", "roi_both%", "n_am", "A/E_am", "p_am", "A/E_pl_am", "roi_both_am%", "clv%"]
+PCOLS = {"p", "p_pl", "t_p", "t_p_pl", "p_am", "t_p_am", "p_pl_am", "t_p_pl_am"}
 
 
 def table(d: pd.DataFrame, by, min_n: int = 100) -> pd.DataFrame:
@@ -183,7 +197,8 @@ def rule(name: str, d: pd.DataFrame, mask) -> dict:
     out = {"rule": name}
     for pre, sc in (("", sa), ("t_", sb)):
         for k in ("n", "WAX", "A/E", "p", "A/E_pl", "p_pl", "roi_bsp%", "roi_pl%", "roi_both%", "tw_both_roi%",
-                  "tw_both_pnl", "roi_am%"):
+                  "tw_both_pnl", "n_am", "WAX_am", "A/E_am", "p_am", "A/E_pl_am", "p_pl_am", "roi_am%", "roi_both_am%",
+                  "tw_both_am_roi%", "med_am_vol"):
             out[pre + k] = sc.get(k, np.nan)
     yrs = []
     for y, g in b.groupby("year"):
@@ -191,6 +206,8 @@ def rule(name: str, d: pd.DataFrame, mask) -> dict:
             s_ = score(g)
             yrs.append((int(y), s_.get("A/E", np.nan), s_.get("A/E_pl", np.nan)))
     out["t_years_both>1"] = f"{sum(1 for _, w, p in yrs if w > 1 and p > 1)}/{len(yrs)}"
+    am = [(int(y), score(g).get("A/E_am", np.nan), score(g).get("A/E_pl_am", np.nan)) for y, g in b.groupby("year") if len(g) >= 50]
+    out["t_years_am_both>1"] = f"{sum(1 for _, w, p in am if w > 1 and p > 1)}/{len(am)}"
     out["t_years"] = " ".join(f"{y % 100}:{w:.2f}/{p:.2f}" for y, w, p in yrs)
     return out
 
@@ -214,9 +231,28 @@ def gate(r: dict) -> str:
         return "-"
 
 
+def gate_am(r: dict) -> str:
+    """The same bar against the MORNING prices (2018+): what a bettor could actually take before the off.
+
+    TRAIN (2018-21): n_am >= 1,000; win A/E vs the morning price > 1 with chi2 p < 0.001; place A/E vs the morning place
+    price > 1 with p < 0.01.  TEST (2022-26): n_am >= 500; win A/E_am > 1 with p < 0.01; place A/E_am > 1; win+place
+    level ROI at the morning prices > 0 after 5% commission; win and place A/E_am both above 1 in 3+ test years.
+    """
+    try:
+        if not (r["n_am"] >= 1000 and r["A/E_am"] > 1 and r["p_am"] < 0.001 and r["A/E_pl_am"] > 1 and r["p_pl_am"] < 0.01):
+            return "-"
+        yb, _ = (int(x) for x in r["t_years_am_both>1"].split("/"))
+        ok = (r["t_n_am"] >= 500 and r["t_A/E_am"] > 1 and r["t_p_am"] < 0.01 and r["t_A/E_pl_am"] > 1
+              and r["t_roi_both_am%"] > 0 and yb >= 3)
+        return "PASS" if ok else "train only"
+    except (TypeError, KeyError, ValueError):
+        return "-"
+
+
 def rules_table(rows: list[dict], sort: str | None = None) -> pd.DataFrame:
     t = pd.DataFrame(rows)
     t.insert(1, "gate", [gate(r) for r in rows])
+    t.insert(2, "gate_am", [gate_am(r) for r in rows])
     if sort:
         t = t.sort_values(sort, ascending=False)
     with pd.option_context("display.max_colwidth", 90):
