@@ -36,14 +36,19 @@ care about is an accurate P&L". Every report on the day's trading follows this, 
 2. **The mark on the races to run**, after the non-runners' cuts: at the mid (the fair mark) and at the lays (what
    Betfair's Cash Out pays now). Say the mark is noisy while the books are thin (the mid and the lays far apart) and
    that more non-runners usually cut it further before the off.
-3. **The forecast for the day**, with its range: on the whole record and on the last 7 days (both, plainly: the last
-   7 days are the cautious guide while they run below the record), the 10th-90th range, and the record itself (days,
-   total, mean a day, days up).
+3. **The forecast on today's markets** (the owner, 4 Nov: "always forecast on today's markets, not on historic days
+   results"): each race to run is today's mark plus the drift a pound staked from that mark to the settled result on
+   the past live days' races marked the same way at the same time before the off (the later cuts and voids, the move
+   to the BSP, the commission). Quote the races to run and the day, from the mid, with the 10th-90th range, and the
+   Cash Out reading beside it; say how the check (the same forecast on every past day at today's clock time, that day
+   left out) did: its total against the settled total and how many days the range held. The record (days, total,
+   mean a day, days up) is context only, never a ratio in the forecast.
 
 Then the table of every race: off, course, horses, staked, the mark at the mid, Cash Out, the forecast, the result.
 
 ## Never
 
+- Never scale the forecast by the past days' results against the expected value (the owner, 4 Nov).
 - Never quote the trader's raw expected value (edge x stake), the CLV at the fill, or the mark at the best back as a
   figure to expect: on 10-21 Oct the expected value ran at 0.61 of the settled result over the record and about 0
   over the last 7 days (ledger `forecast-1022`), and the CLV at the fill halves after the cuts (`execution-audit-1021`).
