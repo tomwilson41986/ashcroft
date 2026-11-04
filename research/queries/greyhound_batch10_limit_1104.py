@@ -20,8 +20,7 @@ print("limit reports in the artifact:", names or "no data found")
 for n in names:
     text = z.read(n).decode("utf-8", "replace").splitlines()
     print(f"\n==== {n} ({len(text)} lines)")
-    table_at = next((i for i, line in enumerate(text) if line.startswith("|")), None)
-    head = text[:table_at] if table_at is not None else text[:40]
-    print("\n".join(head[:40]))
-    if table_at is not None:
-        print("\n".join(text[table_at:table_at + 17]))           # the header, the rule and the best 15
+    print("\n".join(text[:4]))
+    at = next((i for i, line in enumerate(text) if line.startswith("## 2. Holdout")), None)
+    end = next((i for i, line in enumerate(text) if line.startswith("## 3.")), len(text))
+    print("\n".join(text[at:end]) if at is not None else "no data found: no holdout section")
