@@ -177,7 +177,9 @@ jobs:
           else
             if [ -z "$TRADE_UNTIL" ]; then                      # the config's window
               TRADE_UNTIL=$(python -c "import json; print(json.load(open('trading/config_live.json'))['trade_until'])")
-              UNTIL=$(date -u -d "2000-01-01 $TRADE_UNTIL UTC + 5 minutes" +%H:%M)
+              # no new bets after the window (10:00 UK from 5 Nov, the owner: "stop betting after 10am"), but the session
+              # stays on to the last race: it re-sends a lay at the SP that did not go through and settles each race
+              UNTIL=21:35
             fi
             # the day's market record (read-only) beside the trader: one runner serves both
             python betfair_recorder.py --record --final --until 21:30 > "$RUNNER_TEMP/recorder.log" 2>&1 &
