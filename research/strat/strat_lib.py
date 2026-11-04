@@ -41,7 +41,8 @@ def load(db: str = "horse_racing.db") -> pd.DataFrame:
             "number_of_runners", "horse_name", "trainer", "jockey_name", "jockeys_claim", "horse_age", "horse_sex",
             "official_rating", "placing_numerical", "place", "bfsp", "bfsp_place", "bf_plcs_paid", "odds",
             "days_since_lr", "career_runs", "stallion", "dam_stallion", "headgear", "dist_furlongs", "pounds",
-            "major", "race_code"]
+            "major", "race_code", "comment", "total_dst_bt", "going_description", "stall", "rail_move",
+            "max_or_in_race", "median_or", "track_direction", "prize_money", "distbt"]
     sel = ", ".join(c_ for c_ in want if c_ in cols)
     df = pd.read_sql_query(f"SELECT {sel} FROM race_results", c)
     tabs = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -56,7 +57,8 @@ def load(db: str = "horse_racing.db") -> pd.DataFrame:
     c.close()
     for k in ("official_rating", "placing_numerical", "bfsp", "bfsp_place", "bf_plcs_paid", "odds", "days_since_lr",
               "career_runs", "horse_age", "jockeys_claim", "number_of_runners", "dist_furlongs", "bf_bsp",
-              "morningwap", "morning_vol", "bf_pbsp", "p_morningwap", "p_morning_vol"):
+              "morningwap", "morning_vol", "bf_pbsp", "p_morningwap", "p_morning_vol", "total_dst_bt", "stall",
+              "max_or_in_race", "median_or", "prize_money", "pounds"):
         if k in df:
             df[k] = pd.to_numeric(df[k], errors="coerce")
     df["date"] = pd.to_datetime(df["race_date"], errors="coerce")
