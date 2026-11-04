@@ -49,9 +49,17 @@ PREFIX = "greyhound/quote_mid"
 REF = "qm-"
 CONFIG = {
     "margin": 0.05,                 # the simulator's mid_m05 (the hardened run decides the live value)
-    "liability": 20.0,              # each order's risk: a lay's liability, a back's winnings (the simulator's)
+    # the staking (research/greyhound/profit_sim.py stake_q): 'liability' (each order risks ``liability``: a lay's
+    # liability, a back's winnings), 'stake' (``liability`` as the stake itself), 'liquidity' (``liq_frac`` of the
+    # money shown at the order's price on its side, at most ``max_stake``) or 'late' (liability, ``late_x`` times as
+    # much in the last ``late_secs``)
+    "stake_type": "liability",
+    "liability": 20.0,
     "min_stake": 2.0,
     "max_stake": 10.0,
+    "liq_frac": 0.25,
+    "late_x": 2.5,
+    "late_secs": 120.0,
     "max_price": 20.0,
     "max_loss": 60.0,               # a dog's worst outcome at which that side takes no new order
     "start_minutes": 15.0,          # quoted from this long before the off (the live-key books' first reads)
@@ -79,8 +87,18 @@ def _floor2(x: float) -> float:
     return math.floor(float(x) * 100 + 1e-9) / 100
 
 
-def stake_for(price: float, cfg: dict) -> float:
-    s = cfg["liability"] / max(price - 1.0, 1e-9)
+def stake_for(price: float, cfg: dict, side: str = "LAY", quote=None, secs: float = 600.0) -> float:
+    """A quote's stake by ``stake_type`` (the simulator's ``stake_q``), between ``min_stake`` and ``max_stake``."""
+    kind = cfg.get("stake_type", "liability")
+    if kind == "stake":
+        s = cfg["liability"]
+    elif kind == "liquidity":
+        lvl = [] if quote is None else list(quote.back if side == "LAY" else quote.lay)
+        s = cfg["liq_frac"] * (lvl[0][1] if lvl else 0.0)
+    else:
+        s = cfg["liability"] / max(price - 1.0, 1e-9)
+        if kind == "late" and secs <= cfg["late_secs"]:
+            s *= cfg["late_x"]
     return _floor2(min(max(s, cfg["min_stake"]), cfg["max_stake"]))
 
 
@@ -407,7 +425,7 @@ class QuoteMid:
                 if price is not None and cur is None:
                     if self.orders_last_hour() >= self.cfg["max_orders_hour"]:
                         continue
-                    size = stake_for(price, self.cfg)
+                    size = stake_for(price, self.cfg, side, q, secs)
                     ref = f"{tag}-{str(sid)[-7:]}-q{self.orders.n % 1000}"
                     r = self.orders.place(mid, sid, side, price, size, ref)
                     self.placed.append(self.now())

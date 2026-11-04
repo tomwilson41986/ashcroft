@@ -190,3 +190,18 @@ def test_switch_and_table(tmp_path):
     t._write([], force=True)
     out = qm.table(Store(root=tmp_path), DAY)
     assert "Races quoted 1; quotes placed 2" in out
+
+
+def test_the_live_staking_matches_the_simulators():
+    from research.greyhound import profit_sim as ps
+    q = Quote(selection_id=7, back=[(4.0, 40.0)], lay=[(4.2, 8.0)], last_traded=4.0)
+    for kind, sim in (("liability", {"type": "liability", "size": 20.0, "min": 2.0, "max": 10.0}),
+                      ("stake", {"type": "stake", "size": 20.0, "min": 2.0, "max": 10.0}),
+                      ("liquidity", {"type": "liquidity", "size": 10.0, "frac": 0.25, "min": 2.0, "max": 10.0}),
+                      ("late", {"type": "late", "size": 20.0, "x": 2.5, "late_secs": 120, "min": 2.0, "max": 10.0})):
+        cfg = dict(qm.CONFIG, stake_type=kind)
+        for side, price in (("LAY", 3.85), ("BACK", 4.4)):
+            for secs in (300.0, 60.0):
+                book = {"back": q.back, "lay": q.lay}
+                assert qm.stake_for(price, cfg, side, q, secs) == \
+                    ps.stake_q(price, {"stake": sim}, cfg, book, side.lower(), secs), (kind, side, secs)
