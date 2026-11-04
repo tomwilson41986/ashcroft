@@ -31,6 +31,9 @@ df["prev_code"] = g["code"].shift(1)
 df["prev_won"] = g["won"].shift(1)
 df["dslr"] = df["days_since_lr"].where(df["days_since_lr"] > 0, (df["date"] - df["prev_date"]).dt.days)
 d = L.priced(df).copy()
+# a price filter may only use a price known before the off: the MORNING price (a BSP filter is hindsight -- a horse
+# that ends up short has shortened since the morning by construction, so it "beats" the morning price by definition)
+am = d["morningwap"].where(d["morning_vol"] >= L.MIN_AM_VOL)
 
 L.show("1. CONTROL: every runner by code", L.tt(d, ["code"], 1000))
 L.show("1b. CONTROL: every runner, DSLR 1-4 against the rest", L.tt(d.assign(q=d["dslr"] <= 4), ["q"], 1000))
@@ -43,15 +46,22 @@ rows = [
     L.rule("ALL codes: DSLR 1-4, same code as last time", d, q & main & (d["prev_code"] == d["code"])),
     L.rule("ALL codes: DSLR 1-4, placed last time", d, q & main & (d["prev_fin"] <= 3)),
     L.rule("ALL codes: DSLR 1-4, handicap", d, q & main & d["hcap"]),
-    L.rule("ALL codes: DSLR 1-4, BSP under 11", d, q & main & (d["bsp"] < 11)),
+    L.rule("ALL codes: DSLR 1-4, morning price under 11", d, q & main & (am < 11)),
     L.rule("flat+AW: DSLR 1-4", d, q & d["code"].isin(["flat", "aw"])),
-    L.rule("flat+AW: DSLR 1-4, BSP under 11", d, q & d["code"].isin(["flat", "aw"]) & (d["bsp"] < 11)),
+    L.rule("flat+AW: DSLR 1-4, morning price under 11", d, q & d["code"].isin(["flat", "aw"]) & (am < 11)),
     L.rule("jumps: DSLR 1-4", d, q & d["code"].isin(["hurdle", "chase"])),
-    L.rule("jumps: DSLR 1-4, BSP under 11", d, q & d["code"].isin(["hurdle", "chase"]) & (d["bsp"] < 11)),
-] + [L.rule(f"{c}: DSLR 1-4", d, q & (d["code"] == c)) for c in ("flat", "aw", "hurdle", "chase")]
+    L.rule("jumps: DSLR 1-4, morning price under 11", d, q & d["code"].isin(["hurdle", "chase"]) & (am < 11)),
+] + [L.rule(f"{c}: DSLR 1-4", d, q & (d["code"] == c)) for c in ("flat", "aw", "hurdle", "chase")] + [
+    L.rule(f"ALL codes: DSLR 1-4, morning price {lo}-{hi}", d, q & main & (am >= lo) & (am < hi))
+    for lo, hi in ((1, 3), (3, 6), (6, 11), (11, 21), (21, 1001))] + [
+    L.rule("ALL codes: DSLR 1-4, won last time", d, q & main & (d["prev_won"] == 1)),
+    L.rule("ALL codes: DSLR 1-4, did not win last time", d, q & main & (d["prev_won"] == 0)),
+    L.rule("ALL codes: DSLR 5-7", d, d["dslr"].between(5, 7) & main),
+    L.rule("ALL codes: DSLR 8-14", d, d["dslr"].between(8, 14) & main)]
 print("\n=== 2. THE QUICK RETURN (train 2010-21 | t_ test 2022-26) ===")
 print(L.gate.__doc__); print(L.gate_am.__doc__)
-L.rules_table(rows)
+t = L.rules_table(rows)
+t.to_csv("out/strat_quick_return_rules.csv", index=False)
 
 # ---- 3. capacity --------------------------------------------------------------------------------------------------
 s = d[q & main & (d["date"] >= "2018-01-01")]
@@ -104,8 +114,10 @@ def report(name: str, x: pd.DataFrame) -> None:
 print("\n=== 4. STAKING: to win GBP100 in the win market AND GBP100 in the place market, each selection ===")
 for nm, m in (("ALL codes DSLR 1-4", q & main), ("flat+AW DSLR 1-4", q & d["code"].isin(["flat", "aw"])),
               ("jumps DSLR 1-4", q & d["code"].isin(["hurdle", "chase"])),
-              ("ALL codes DSLR 1-4, BSP under 11", q & main & (d["bsp"] < 11))):
+              ("ALL codes DSLR 1-4, morning price under 11", q & main & (am < 11)), ("hurdle DSLR 1-4", q & (d["code"] == "hurdle")), ("flat DSLR 1-4", q & (d["code"] == "flat"))):
     for period, lo, hi in (("TEST 2022-26", "2022-01-01", "2099"), ("TRAIN 2018-21 (morning prices held)", "2018-01-01", "2021-12-31")):
         x = d[m & (d["race_date"] >= lo) & (d["race_date"] <= hi)]
         report(f"{nm} | {period} | morning price where GBP50+ matched, else BSP", stake_book(x, "am"))
         report(f"{nm} | {period} | BSP only", stake_book(x, "bsp"))
+        xm = x[(x["morningwap"] > 1) & (x["morning_vol"] >= L.MIN_AM_VOL)]
+        report(f"{nm} | {period} | ONLY where a morning price is held (skip the rest)", stake_book(xm, "am"))

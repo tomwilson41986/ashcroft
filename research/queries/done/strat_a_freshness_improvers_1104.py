@@ -150,8 +150,8 @@ for code in ("flat", "aw", "hurdle", "chase"):
         L.rule(f"{code}: placed last time, handicap, back within 14 days", d,
                c & (d["prev_fin"] <= 3) & d["hcap"] & (d["dslr"] <= 14)),
         L.rule(f"{code}: course winner, placed last time", d, c & d["course_winner"] & (d["prev_fin"] <= 3)),
-        L.rule(f"{code}: BSP favourite", d, c & (d["bsp_rank"] == 1)),
-        L.rule(f"{code}: BSP under 2.0", d, c & (d["bsp"] < 2)),
+        L.rule(f"{code}: BSP favourite [HINDSIGHT: a BSP filter, control only]", d, c & (d["bsp_rank"] == 1)),
+        L.rule(f"{code}: BSP under 2.0 [HINDSIGHT: a BSP filter, control only]", d, c & (d["bsp"] < 2)),
         L.rule(f"{code}: jockey hot (14d A/E>1.5, 10+ rides)", d, c & (d["j14_n"] >= 10) & (d["j14_ae"] > 1.5)),
         L.rule(f"{code}: trainer AND jockey hot", d, c & (d["j14_n"] >= 10) & (d["j14_ae"] > 1.3)
                & (d["t14_n"] >= 10) & (d["t14_ae"] > 1.3)),

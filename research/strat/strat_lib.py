@@ -238,6 +238,8 @@ def gate_am(r: dict) -> str:
     price > 1 with p < 0.01.  TEST (2022-26): n_am >= 500; win A/E_am > 1 with p < 0.01; place A/E_am > 1; win+place
     level ROI at the morning prices > 0 after 5% commission; win and place A/E_am both above 1 in 3+ test years.
     """
+    if "HINDSIGHT" in str(r.get("rule", "")):
+        return "-"
     try:
         if not (r["n_am"] >= 1000 and r["A/E_am"] > 1 and r["p_am"] < 0.001 and r["A/E_pl_am"] > 1 and r["p_pl_am"] < 0.01):
             return "-"
