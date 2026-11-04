@@ -132,7 +132,13 @@ the predictions it bets on equal those from the blanked view.
 
 - [ ] Replay `qr_am` and `steam_am` on the books already recorded (30 Sep 2026 onward): fill ratio and WAP gap. If
       the median fill is more than 3% under the WAP, stop and report before running forward.
-- [ ] Measure overlap with the live trader on the same days.
+- [x] Measure overlap with the live trader on the same days (30 Sep to 2 Nov, 33 days;
+      `research/strat/results_2026-11-04/paper_overlap_study_1104.txt`). Steamer WIN, P&L at 5%: the live trader's
+      horses left out 243 bets, A/E 1.231 vs fills, +GBP815 (ROI +25.6%); the live trader's horses re-backed 148 bets,
+      A/E 1.091 (chi2 p 0.64), +GBP181 (+7.0%); re-backed only with predicted steam still to come 116 bets, A/E 1.101,
+      +GBP196 (+9.2%). PLACE loses on every variant. On those horses the live trader had already backed at an average
+      10.44 against our 8.55 at 10:00, and came back after 10:00 109 times (GBP1,093 matched). Decision: the live
+      trader's horses stay out of the gated strategies (the default, `skipped_live`).
 - [ ] Freeze the model and write this document's version (commit SHA) into the ledger.
 - [ ] Confirm the price files' morning WAP window (the research used it as "the morning price"; its exact cut-off
       time is not recorded in this repository).
