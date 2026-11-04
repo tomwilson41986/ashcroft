@@ -223,3 +223,15 @@ def test_an_agent_s_day_reads_on_the_dashboard(tmp_path):
     got, _ = t.reader(src, t.kind, t.base, "2026-11-05")
     assert got.pnl.sum() == pytest.approx(horses.summary("quotes_mid2", fp, D)["result_reduced"], abs=0.01)
     assert {x.id for x in tr.TRADERS} >= {f"horse-agent-{k.replace('_', '-')}" for k in horses.AGENTS}
+
+
+def test_a_backs_variant_trades_its_own_book_in_the_live_trader_s_place():
+    """The first shared run (4 Nov): three copies of the rule on one book took each other's leftovers. A backs variant
+    is an alternative to the live rule: it trades a book of its own, standing in for the live trader."""
+    assert horses.WORLDS["live"] == ["live_rule", "lays", "quotes_model3", "quotes_mid2"]
+    for v in ("backs_floor50", "backs_win1000"):
+        assert horses.WORLDS[v] == [v] and v in horses.STANDS_IN
+    every = [n for ms in horses.WORLDS.values() for n in ms]
+    assert sorted(every) == sorted(horses.STRATEGIES) and len(every) == len(set(every))
+    specs = {sp[0]: sp for sp in horses.agent_specs(2000)}
+    assert specs["backs_win1000"][5] and specs["live_rule"][5] and not specs["lays"][5]
