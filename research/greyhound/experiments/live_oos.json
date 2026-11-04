@@ -1,0 +1,10 @@
+{
+  "about": "The live log-BSP model's out-of-sample prices for the recorded days (the owner, 4 Nov 2026: 'refit anything required just to bring our solution up to date'). The live model's own recipe (greyhound/live.py: every engine block card-safe, the race simulator, log(BSP), learning rate 0.05, from 2024, rescaled to the SP book), fitted before the first recorded day (6 Oct) and every day from it priced, published to S3 (greyhound.laytest.LOGBSP_PRICES) for the early lay's forecast fit to read once this model is live. The closing study on these prices is the gate: the conditional logit's RMSE of log(BSP) against the 5 Oct model's (report section 26.2: 0.356 at first traded).",
+  "recipe": "quick",
+  "test_from": "2026-10-06",
+  "experiments": [
+    {"name": "live_logbsp", "features": "card_safe", "objective": "logbsp", "add_blocks": ["sim"], "rescale_book": true,
+     "publish_pred": "greyhound/live/oos_prices_logbsp", "bfsp": true,
+     "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}}
+  ]
+}

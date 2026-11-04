@@ -196,6 +196,7 @@ def predict(store, day: date, s3=None) -> dict:
     key = card[["race_id", "trap", "market_id", "selection_id", "matched_history"]].drop_duplicates(["race_id", "trap"])
     pred = price_cards(df, booster, meta["features"], key, meta)
     pred["model_trained_utc"] = meta.get("trained_utc")
+    pred["model_objective"] = meta.get("objective", "binary")     # the early lay's forecast fit matches it
     buf = io.StringIO()
     pred.to_csv(buf, index=False)
     store.put(f"{PREFIX}/predictions/{day:%Y-%m-%d}.csv", buf.getvalue().encode())
