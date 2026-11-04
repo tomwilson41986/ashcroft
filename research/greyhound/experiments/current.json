@@ -1,11 +1,48 @@
 {
-  "about": "Batch 8 (4 Nov 2026, the owner: 'we need to make our prices more accurate'). The live model's own recipe (greyhound/live.py: every engine block card-safe, the race simulator, log(BSP), learning rate 0.05, from 2024, rescaled to the SP book) with its prices stretched within each race: on 4 Nov's 17 settled races the prices looked compressed (the 1.59 favourite priced 2.27, the 14.0 outsider 9.25). One fit; each calibration fitted on the fit's early-stopping tenth (rows the trees never trained on), scored on the test window against the uncalibrated prices on the same runners, paired by day: stretch (one b by least squares on the race-centred log(BSP)), temper (one b maximising the winners' likelihood), and each per track, shrunk to the overall b (Harlow was the weak track on 4 Nov).",
+  "about": "Batch 8 (4 Nov 2026, the owner: 'we need to make our prices more accurate'). The live model's own recipe (greyhound/live.py: every engine block card-safe, the race simulator, log(BSP), learning rate 0.05, from 2024, rescaled to the SP book) with its prices stretched within each race: on 4 Nov's 17 settled races the prices looked compressed (the 1.59 favourite priced 2.27, the 14.0 outsider 9.25). One fit; each calibration fitted on the fit's early-stopping tenth (rows the trees never trained on), scored on the test window against the uncalibrated prices on the same runners, paired by day: stretch (one b by least squares on the race-centred log(BSP)), temper (one b maximising the winners' likelihood), and each per track, shrunk to the overall b (Harlow was the weak track on 4 Nov). Beside it, the same with the weigh-in (card-unsafe in the morning; on the day's cards at 12 tracks since 7 Oct) and the first_bend and style_draw blocks, the best additions of batches 2-5, calibrated the same way: how much of the gap is information rather than scale.",
   "recipe": "quick",
   "baseline": "live_cal",
   "test_from": "2026-06-01",
   "experiments": [
-    {"name": "live_cal", "features": "card_safe", "objective": "logbsp", "add_blocks": ["sim"], "rescale_book": true,
-     "calibrate": ["stretch", "stretch_track", "temper", "temper_track"],
-     "recipe_overrides": {"learning_rate": 0.05, "early_stop": 100, "rounds": 10000}}
+    {
+      "name": "live_cal",
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim"
+      ],
+      "rescale_book": true,
+      "calibrate": [
+        "stretch",
+        "stretch_track",
+        "temper",
+        "temper_track"
+      ],
+      "recipe_overrides": {
+        "learning_rate": 0.05,
+        "early_stop": 100,
+        "rounds": 10000
+      }
+    },
+    {
+      "name": "weighin_fbsd_cal",
+      "features": "all",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "first_bend",
+        "style_draw"
+      ],
+      "rescale_book": true,
+      "calibrate": [
+        "stretch",
+        "temper_track"
+      ],
+      "recipe_overrides": {
+        "learning_rate": 0.05,
+        "early_stop": 100,
+        "rounds": 10000
+      }
+    }
   ]
 }
