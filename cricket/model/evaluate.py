@@ -1,0 +1,204 @@
+"""Phase 0 model evaluation v1: next-ball model, simulator, calibration, against the RRR baseline (build spec 6, 8).
+
+    python -m cricket.model.evaluate --root data/cricket/store --seasons 2023,2024,2025,2026 --paths 256
+
+Walk-forward by season Y:
+1. the next-ball model is fitted on men's 20-over T20 deliveries (all competitions, 2012 onwards) dated before
+   1 January of Y; its rounds are chosen once by early stopping on 2022 with a fit on 2012-2021;
+2. it is scored on every men's T20 delivery of Y (and the IPL's) against the base rate;
+3. the simulator rolls out every IPL chase state of Y (the state before each delivery of the second innings of
+   decided, non-D/L matches): raw win probability;
+4. the raw output of Y is calibrated by isotonic regression fitted on the earlier evaluated seasons only, so the
+   first season is calibration-only;
+5. the baseline (logistic on RRR, wickets in hand, balls left; IPL seasons before Y) is scored on the same rows.
+
+Per-season simulator output is kept under ``--work`` so an interrupted run resumes where it stopped.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+
+from cricket.model import next_ball as nb
+from cricket.model import simulator as sim
+from cricket.model.baseline import PUBLISHED
+from cricket.model.calibration import by_band, walk_forward_calibrate
+from cricket.model.data import IPL, load
+from cricket.model.features import build
+from cricket.model.metrics import reliability, score
+from cricket.model.outcomes import CLASSES, extras_runs_distribution
+from sources.common import Store
+
+GATE = {"log_loss": PUBLISHED["log_loss"], "ece": 0.131}
+BASE_COLS = ["rrr", "wkts_in_hand", "balls_left"]
+
+
+def _date(f):
+    return pd.to_datetime(f.start_date)
+
+
+def run(store: Store, seasons: list[int], paths: int, work: Path, log=print) -> dict:
+    t = load(store)
+    f, br, bw, prior = build(t)
+    d = _date(f)
+    tr0, va0 = f[d < "2022-01-01"], f[(d >= "2022-01-01") & (d < "2023-01-01")]
+    rounds, vloss = nb.choose_rounds(tr0, va0)
+    log(f"rounds {rounds} (valid 2022 mlogloss {vloss:.4f})")
+    f["wkts_in_hand"] = 10 - f.wickets_before
+    meta = {"rounds": rounds, "valid_2022_mlogloss": vloss, "params": nb.PARAMS, "paths": paths,
+            "train_rows_by_season": {}, "next_ball": {}}
+    sims = []
+    for y in seasons:
+        cut = f"{y}-01-01"
+        train = f[d < cut]
+        meta["train_rows_by_season"][y] = int(len(train))
+        test_all = f[f.year == y]
+        out = work / f"sim_{y}.parquet"
+        nb_out = work / f"next_ball_{y}.json"
+        if out.exists() and nb_out.exists():
+            sims.append(pd.read_parquet(out))
+            meta["next_ball"][y] = json.loads(nb_out.read_text())
+            log(f"{y}: resumed from {out}")
+            continue
+        t0 = time.time()
+        b = nb.fit(train, rounds)
+        ev = {"all_t20": nb.evaluate(b, train, test_all),
+              "ipl": nb.evaluate(b, train, test_all[test_all.event_name == IPL])}
+        meta["next_ball"][y] = ev
+        log(f"{y}: fit {time.time() - t0:.0f}s, next-ball {ev['all_t20']['log_loss']:.4f} vs base "
+            f"{ev['all_t20']['base_rate_log_loss']:.4f}")
+        ex_v, ex_p = extras_runs_distribution(train)
+        chase = test_all[(test_all.event_name == IPL) & (test_all.innings == 2) & (test_all.balls_left > 0)]
+        ids = set(chase.match_id)
+        dsub = t["deliveries"][t["deliveries"].match_id.isin(ids)]
+        psub = t["players"][t["players"].match_id.isin(ids)]
+        parts = []
+        for i, mid in enumerate(chase.match_id.unique()):
+            s = chase[chase.match_id == mid]
+            prep = sim.prepare(s, dsub[dsub.match_id == mid], psub[psub.match_id == mid], br, bw, prior)
+            p = sim.win_probability(b, prep, paths, ex_v, ex_p, seed=hash((y, i)) % 2**32)
+            parts.append(s[["match_id", "innings", "over", "ball", "repeat", "year", "phase", "rrr", "wkts_in_hand",
+                            "balls_left", "legal_before", "bat_won"]].assign(p_sim=p))
+        sy = pd.concat(parts, ignore_index=True)
+        # the baseline on the same rows: IPL chases of earlier seasons
+        base_tr = f[(f.event_name == IPL) & (f.innings == 2) & (f.balls_left > 0) & (f.year < y)]
+        lr = LogisticRegression(C=1e6, max_iter=1000).fit(base_tr[BASE_COLS], base_tr.bat_won)
+        sy["p_base"] = lr.predict_proba(sy[BASE_COLS])[:, 1]
+        work.mkdir(parents=True, exist_ok=True)
+        sy.to_parquet(out, index=False)
+        nb_out.write_text(json.dumps(ev))
+        sims.append(sy)
+        log(f"{y}: {sy.match_id.nunique()} chases, {len(sy)} states, {time.time() - t0:.0f}s")
+    allp = walk_forward_calibrate(pd.concat(sims, ignore_index=True))
+    return {"meta": meta, "preds": allp}
+
+
+def report_md(res: dict, source: str) -> str:
+    meta, p = res["meta"], res["preds"]
+    test = p[p.p_cal.notna()]
+    yrs = sorted(test.year.unique())
+    pooled = {c: score(test.bat_won, test[c]) for c in ("p_base", "p_sim", "p_cal")}
+    ok_ll = pooled["p_cal"]["log_loss"] < GATE["log_loss"]
+    ok_ece = pooled["p_cal"]["ece"] < GATE["ece"]
+    L = [
+        "# Cricket model v1: next-ball XGBoost, Monte Carlo simulator, isotonic calibration",
+        "",
+        f"Source tables: `{source}` (Cricsheet). Built by `python -m cricket.model.evaluate`. Paths per state: "
+        f"{meta['paths']}. Next-ball rounds: {meta['rounds']} (early stopping on 2022, fit on 2012-2021).",
+        "",
+        "## Phase 0 gate, first condition: per-ball win probability on held-out IPL chases",
+        "",
+        f"Test seasons {yrs[0]}-{yrs[-1]} (each calibrated on earlier seasons only; {p.year.min()} is "
+        f"calibration-only). Rows: the state before every delivery of the chase, {len(test):,} rows from "
+        f"{test.match_id.nunique()} matches.",
+        "",
+        "| model | log loss | Brier | ECE |",
+        "|---|---:|---:|---:|",
+        f"| baseline: logistic on RRR, wickets, balls left | {pooled['p_base']['log_loss']:.4f} | "
+        f"{pooled['p_base']['brier']:.4f} | {pooled['p_base']['ece']:.4f} |",
+        f"| simulator, raw | {pooled['p_sim']['log_loss']:.4f} | {pooled['p_sim']['brier']:.4f} | "
+        f"{pooled['p_sim']['ece']:.4f} |",
+        f"| simulator, calibrated | {pooled['p_cal']['log_loss']:.4f} | {pooled['p_cal']['brier']:.4f} | "
+        f"{pooled['p_cal']['ece']:.4f} |",
+        f"| published baseline (Mishra) | {PUBLISHED['log_loss']:.4f} | | {PUBLISHED['ece']:.4f} |",
+        "",
+        f"- Log loss below {GATE['log_loss']}: **{'PASS' if ok_ll else 'FAIL'}**",
+        f"- ECE below {GATE['ece']}: **{'PASS' if ok_ece else 'FAIL'}**",
+        f"- Calibrated simulator beats the same-rows baseline: "
+        f"**{'yes' if pooled['p_cal']['log_loss'] < pooled['p_base']['log_loss'] else 'no'}** "
+        f"({pooled['p_cal']['log_loss'] - pooled['p_base']['log_loss']:+.4f} log loss)",
+        "- Benter combination weight against the Betfair mid, and the strategy after 5% commission: no data found "
+        "(no Betfair cricket price history held; the Advanced data purchase waits on the owner's go).",
+        "",
+        "## By season",
+        "",
+        "| season | rows | baseline LL | raw LL | calibrated LL | baseline ECE | raw ECE | calibrated ECE |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for y, g in p.groupby("year"):
+        b, r = score(g.bat_won, g.p_base), score(g.bat_won, g.p_sim)
+        c = score(g.bat_won, g.p_cal) if g.p_cal.notna().all() else None
+        L.append(f"| {y} | {len(g):,} | {b['log_loss']:.4f} | {r['log_loss']:.4f} | "
+                 f"{c['log_loss']:.4f} | {b['ece']:.4f} | {r['ece']:.4f} | {c['ece']:.4f} |" if c else
+                 f"| {y} (calibration only) | {len(g):,} | {b['log_loss']:.4f} | {r['log_loss']:.4f} | | "
+                 f"{b['ece']:.4f} | {r['ece']:.4f} | |")
+    L += ["", "## By phase and required-run-rate band (test seasons)", "",
+          "| split | group | rows | baseline LL | calibrated LL | baseline ECE | calibrated ECE |",
+          "|---|---|---:|---:|---:|---:|---:|"]
+    for r in by_band(test, ["p_base", "p_cal"]).itertuples():
+        L.append(f"| {r.split} | {r.group} | {r.n:,} | {r.p_base_log_loss:.4f} | {r.p_cal_log_loss:.4f} | "
+                 f"{r.p_base_ece:.4f} | {r.p_cal_ece:.4f} |")
+    L += ["", "## Reliability, calibrated simulator (test seasons)", "",
+          "| p from | rows | mean p | chase won |", "|---|---:|---:|---:|"]
+    for r in reliability(test.bat_won, test.p_cal).itertuples():
+        L.append(f"| {r.lo:.1f} | {r.n:,} | {r.mean_p:.3f} | {r.win_rate:.3f} |")
+    L += ["", "## Next-ball model, held out by season", "",
+          "| season | scope | deliveries | log loss | base-rate log loss | accuracy |", "|---|---|---:|---:|---:|---:|"]
+    for y, ev in sorted(meta["next_ball"].items()):
+        for scope, e in ev.items():
+            L.append(f"| {y} | {scope} | {e['n']:,} | {e['log_loss']:.4f} | {e['base_rate_log_loss']:.4f} | "
+                     f"{e['accuracy']:.3f} |")
+    L += ["", f"Outcome classes: {', '.join(CLASSES)}. Accuracy above 0.90 would stop the run as leakage.",
+          "", "## What v1 leaves out (stated, not filled)", "",
+          "- Who bats next is the next listed player of the XI not yet in; Cricsheet's list order is not guaranteed "
+          "to be the batting order.",
+          "- Future overs are bowled by the bowling XI's experience-weighted average rating.",
+          "- No runs on wicket balls, no wickets on wides or no-balls, no free-hit flag.",
+          "- Ratings v1 have no phase x innings prior, no bowler type (no data found in Cricsheet), no matchups.",
+          "- First-innings win probability and the first-innings runs line are not scored yet.",
+          f"- Monte Carlo noise: {meta['paths']} paths a state adds roughly 1/(2 x paths) to log loss near p = 0.5.",
+          ""]
+    return "\n".join(L)
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--root")
+    ap.add_argument("--seasons", default="2023,2024,2025,2026")
+    ap.add_argument("--paths", type=int, default=256)
+    ap.add_argument("--work", default="data/cricket/eval")
+    ap.add_argument("--out", default="reports/cricket")
+    a = ap.parse_args(argv)
+    store = Store(root=a.root)
+    res = run(store, [int(x) for x in a.seasons.split(",")], a.paths, Path(a.work),
+              log=lambda m: print(m, flush=True))
+    md = report_md(res, store.where("cricket/tables/"))
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "model_v1.md").write_text(md)
+    (out / "model_v1.json").write_text(json.dumps(res["meta"], indent=1, default=str))
+    store.put("cricket/reports/model_v1.md", md.encode())
+    store.put_parquet("cricket/eval/model_v1_preds.parquet", res["preds"])
+    print(md)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

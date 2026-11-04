@@ -192,6 +192,14 @@ python -m football.live --settle --days 7
 # the pre-registered early-to-close rule scored at the recorded books (paper trial; gate 'running' until complete)
 python -m research.open_close.football_paper_trial --panel data/football_exchange_panel.parquet --out out/football_paper_trial.json
 
+# The cricket trader, Phase 0 (reports/cricket/README.md; the owner's build spec, 4 Nov 2026): research and backtest
+# only, nothing reaches Betfair (tests/test_cricket_guards.py). Cricsheet raw zips and tables to
+# s3://$CAPTURE_BUCKET/sources/cricket/ (cricket-ingest.yml nightly); the baseline and model v1 on demand
+# (cricket-model.yml). --root <folder> runs either against a local store instead of S3
+python -m cricket.ingest.cricsheet --fetch --build --report
+python -m cricket.model.baseline --test-from 2022
+python -m cricket.model.evaluate --seasons 2023,2024,2025,2026 --paths 256
+
 # Race ABM: simulate a card, batch features for training, pattern-oriented calibration
 python research_lab.py abm --db horse_racing.db --date 2026-03-12
 python research_lab.py abm-features --db horse_racing.db --from 2024-01-01 --jobs 8 --out data/abm_features.parquet
@@ -226,6 +234,10 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
 - `model/diagnostics.py`, `effects.py`, `causal.py`, `selection.py`, `uncertainty.py`, `spatial.py`, `interpret.py`, `perf_figures.py`, `market_features.py` — research toolkit (RESEARCH_FRAMEWORK.md)
 - `betfair_prices.py` — Betfair historic SP/price-movement files, every market Betfair lists, archived in S3 from the UK server (`--archive`); UK/IE racing → `betfair_prices` table, each day file noted in `betfair_prices_files` (loaded by daily-results.yml)
 - `betfair_recorder.py` — the live market record (read-only): the trader's books (hook in `trading/exchange.py BetfairData`) and the recorder job's snapshots (live-record.yml), day files on the UK server and in S3, loaded nightly into `betfair_live_markets`, `betfair_live_marks`, `live_orders`
+- `cricket/` — the cricket trader (Phase 0): `ingest/cricsheet.py` (raw zips, tables, ingest report), `db/` (schema
+  for SQLite and Aurora, upsert loaders), `state/match_state.py` (state before each delivery), `ratings/` (shrunk
+  player, venue and competition ratings as of each match), `model/` (RRR baseline, next-ball XGBoost, Monte Carlo
+  chase simulator, isotonic calibration, walk-forward evaluation); its own pinned `cricket/requirements.txt`
 - `football/` — the football model: `reference.py` (competitions, canonical team ids, name matching across sources),
   `data.py` (gold tables: canonical matches with stable `match_id` and versions, odds long, benchmark open/close,
   data-quality checks, the Betfair market map), `ratings.py` (pooled Dixon-Coles, score-matrix prices incl. Asian

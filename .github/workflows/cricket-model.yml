@@ -1,0 +1,66 @@
+name: Cricket - baseline and model v1 evaluation
+
+# The racing² cricket trader, Phase 0 (reports/cricket/README.md; build spec 6, 8). Read-only, on demand: reads the
+# tables cricket-ingest.yml writes (s3://$CAPTURE_BUCKET/sources/cricket/tables/), scores the required-run-rate
+# baseline and the next-ball model, simulator and calibration walk-forward by season on IPL chases, and writes the
+# reports to sources/cricket/reports/ and the run's artifact. Nothing here reaches Betfair (tests/test_cricket_guards.py).
+
+on:
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: 'seasons, comma-separated (the first is calibration-only)'
+        required: false
+        type: string
+        default: '2023,2024,2025,2026'
+      paths:
+        description: 'Monte Carlo paths per state'
+        required: false
+        type: string
+        default: '256'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cricket-model
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+      - name: Install dependencies (pinned)
+        run: pip install -r cricket/requirements.txt
+      - name: Tests
+        run: python -m pytest tests/test_cricket_state.py tests/test_cricket_ingest.py tests/test_cricket_model.py tests/test_cricket_guards.py -q
+      - name: Baseline (logistic on required run rate, IPL chases)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: python -m cricket.model.baseline --out out
+      - name: Model v1 (next ball, simulator, calibration)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          SEASONS: ${{ inputs.seasons }}
+          PATHS: ${{ inputs.paths }}
+        run: python -m cricket.model.evaluate --seasons "$SEASONS" --paths "$PATHS" --work work --out out
+      - name: Reports to the run summary
+        if: ${{ !cancelled() }}
+        run: cat out/*.md >> "$GITHUB_STEP_SUMMARY" || echo "no report written" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: cricket-model-reports
+          path: out/
