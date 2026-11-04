@@ -76,41 +76,47 @@ d["hcap"] = d["hcap"].astype(int)
 m = d[d["steam"].notna()].copy()
 tr, te = L.split(m)
 print(f"rows with a morning price: train 2018-21 {len(tr)}, test 2022-26 {len(te)}")
-model = lgb.LGBMRegressor(n_estimators=600, learning_rate=0.03, num_leaves=63, min_child_samples=400,
-                          subsample=0.8, subsample_freq=1, colsample_bytree=0.8, verbose=-1, random_state=0)
-# fit on 2018-20, check on 2021, then refit on 2018-21 for the test
-early, late = tr[tr["race_date"] < "2021-01-01"], tr[tr["race_date"] >= "2021-01-01"]
-model.fit(early[F], early["steam"])
-r_late = np.corrcoef(model.predict(late[F]), late["steam"])[0, 1]
-model.fit(tr[F], tr["steam"])
-te = te.assign(pred=model.predict(te[F]))
-tr = tr.assign(pred=model.predict(tr[F]))  # in-sample, for the thresholds only
-print(f"correlation of predicted with actual steam: 2021 (fit 2018-20) {r_late:.3f} | test 2022-26 "
-      f"{np.corrcoef(te['pred'], te['steam'])[0, 1]:.3f}")
-imp = pd.Series(model.booster_.feature_importance("gain"), index=F).sort_values(ascending=False)
-print("feature gain (top 15):", (imp / imp.sum()).round(3).head(15).to_dict())
-
-te["dec"] = pd.qcut(te["pred"], 10, labels=False, duplicates="drop")
-rows = []
-for k_, g in te.groupby("dec"):
-    s = L.score(g)
-    rows.append({"decile (0 = least steam)": k_, "n": s["n"], "pred": g["pred"].mean(), "actual_steam": g["steam"].mean(),
-                 "A/E_am": s.get("A/E_am"), "p_am": s.get("p_am"), "A/E_pl_am": s.get("A/E_pl_am"),
-                 "roi_am%": s.get("roi_am%"), "roi_both_am%": s.get("roi_both_am%"), "tw_both_am_roi%": s.get("tw_both_am_roi%"),
-                 "A/E (bsp)": s.get("A/E"), "roi_both% (bsp)": s.get("roi_both%")})
-L.show("TEST 2022-26 by decile of predicted steam (backed at the morning price unless marked bsp)", pd.DataFrame(rows))
-
-# rules: thresholds fixed from the TRAIN distribution of predictions
-d2 = pd.concat([tr, te])
+CLEAN = [f for f in F if f not in ("log_am", "am_rank", "log_vol", "vol_share", "am_over")]
+print("\nCLEAN feature set (racecard facts and earlier-day history only, no morning price or volume):", CLEAN)
 R = []
-for q in (0.90, 0.95, 0.98):
-    thr = tr["pred"].quantile(q)
-    R.append(L.rule(f"H26 predicted steam in the top {100 * (1 - q):.0f}% (train threshold {thr:.3f})", d2, d2["pred"] >= thr))
-    for c in ("flat", "aw", "hurdle", "chase"):
-        R.append(L.rule(f"   ... {c}", d2, (d2["pred"] >= thr) & (d2["code"] == c)))
+tr0, te0 = tr, te
+for tag, FS in (("FULL", F), ("CLEAN", CLEAN)):
+    print(f"\n################ {tag} ################")
+    tr, te = tr0.copy(), te0.copy()
+    model = lgb.LGBMRegressor(n_estimators=600, learning_rate=0.03, num_leaves=63, min_child_samples=400,
+                              subsample=0.8, subsample_freq=1, colsample_bytree=0.8, verbose=-1, random_state=0)
+    early, late = tr[tr["race_date"] < "2021-01-01"], tr[tr["race_date"] >= "2021-01-01"]
+    model.fit(early[FS], early["steam"])
+    r_late = np.corrcoef(model.predict(late[FS]), late["steam"])[0, 1]
+    model.fit(tr[FS], tr["steam"])
+    te = te.assign(pred=model.predict(te[FS]))
+    tr = tr.assign(pred=model.predict(tr[FS]))
+    print(f"correlation of predicted with actual steam: 2021 (fit 2018-20) {r_late:.3f} | test 2022-26 "
+          f"{np.corrcoef(te['pred'], te['steam'])[0, 1]:.3f}")
+    imp = pd.Series(model.booster_.feature_importance("gain"), index=FS).sort_values(ascending=False)
+    print("feature gain (top 15):", (imp / imp.sum()).round(3).head(15).to_dict())
+    te["dec"] = pd.qcut(te["pred"], 10, labels=False, duplicates="drop")
+    rows = []
+    for k_, g in te.groupby("dec"):
+        s_ = L.score(g)
+        rows.append({"decile (0 = least steam)": k_, "n": s_["n"], "pred": g["pred"].mean(), "actual_steam": g["steam"].mean(),
+                     "A/E_am": s_.get("A/E_am"), "p_am": s_.get("p_am"), "A/E_pl_am": s_.get("A/E_pl_am"),
+                     "roi_am%": s_.get("roi_am%"), "roi_both_am%": s_.get("roi_both_am%"),
+                     "tw_both_am_roi%": s_.get("tw_both_am_roi%"), "A/E (bsp)": s_.get("A/E"), "roi_both% (bsp)": s_.get("roi_both%")})
+    L.show(f"{tag}: TEST 2022-26 by decile of predicted steam (at the morning price unless marked bsp)", pd.DataFrame(rows))
+    d2 = pd.concat([tr, te])
+    for q in (0.90, 0.95, 0.98):
+        thr = tr["pred"].quantile(q)
+        R.append(L.rule(f"H26 {tag}: predicted steam top {100 * (1 - q):.0f}% (train thr {thr:.3f})", d2, d2["pred"] >= thr))
+        for c in ("flat", "aw", "hurdle", "chase"):
+            R.append(L.rule(f"   ... {tag} {c}", d2, (d2["pred"] >= thr) & (d2["code"] == c)))
+    if tag == "CLEAN":
+        sel = te[te["pred"] >= tr["pred"].quantile(0.95)]
+        print("CLEAN top 5% on TEST: share that are back within 1-4 days", round(float((sel["dslr"] <= 4).mean()), 3),
+              "| without them:", {k: round(v, 3) if isinstance(v, float) else v for k, v in L.score(sel[sel["dslr"] > 4]).items()
+                                   if k in ("n_am", "A/E_am", "p_am", "A/E_pl_am", "roi_both_am%", "tw_both_am_roi%")})
 R.append(L.rule("H27 gamble yard: trainer mean steam > +0.05 on 100+ earlier runners", d2,
                 (d2["tr_steam"] > 0.05) & (d2["tr_steam_n"] >= 100)))
-R.append(L.rule("H27b gamble yard > +0.08", d2, (d2["tr_steam"] > 0.08) & (d2["tr_steam_n"] >= 100)))
 R.append(L.rule("H27c horse steamed 15%+ last time", d2, d2["prev_steam"] > np.log(1.15)))
 print("\nNB: TRAIN columns here are in-sample for the model (fitted on 2018-21); only TEST is out of sample.")
 print(L.gate_am.__doc__)
