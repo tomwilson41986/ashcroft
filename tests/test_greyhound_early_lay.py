@@ -135,7 +135,7 @@ def test_the_drifters_only_at_the_margin_under_the_forecast(tmp_path, fit):
     t, _ = trader(tmp_path, x, fit)
     t.step()
     led = pd.read_csv(tmp_path / "ledger.csv")
-    m = 1 - el.CONFIG["margin"]                                   # 0.8 to 4 Nov 2026, 0.9 from then
+    m = 1 - el.CONFIG["margin"]                                   # 0.8 (0.9 on 4 Nov 2026 only)
     for r in led.itertuples():
         if r.action == "lay":
             assert r.f_bsp >= r.mid and r.price == ls.ladder([r.f_bsp * m], up=False)[0]
@@ -413,3 +413,98 @@ def test_the_blocked_lays_replayed():
     # trap 2: resting at 5.0, the price drifted away and never traded there: not matched
     assert b.matched is False or b.matched == False                                  # noqa: E712
     assert "never reached" in b.note
+
+
+def test_the_live_rule_lays_at_80_percent_of_the_forecast():
+    """The owner, 4 Nov 2026: "revert the early lay margin to 20%"; the 10% rule kept on paper."""
+    assert el.CONFIG["margin"] == 0.20 and el.CONFIG["gate"] == "drift"
+    assert el.PAPER_VARIANTS["m10"] == {"margin": 0.10}
+    assert el.PAPER_VARIANTS["short20"] == {"gate": "short", "margin": 0.20}
+    assert el.PAPER_VARIANTS["short10"] == {"gate": "short", "margin": 0.10}
+
+
+def test_the_short_gate_lays_only_dogs_under_3(tmp_path, fit):
+    x = FakeX()
+    x.book = book(back=(1.9, 6.0, 9.0), lay=(2.0, 6.4, 9.6))
+    cfg = {**el.CONFIG, **el.PAPER_VARIANTS["short20"]}
+    t = el.EarlyLay(Store(preds()), x, cfg, date(2026, 11, 3), False, tmp_path / "ledger.csv", fit,
+                    now=lambda: T0, book="paper-short20")
+    t.step()
+    assert not x.sent
+    led = pd.read_csv(tmp_path / "ledger.csv")
+    assert set(led["mode"]) == {"paper-short20"} and len(led) == 3
+    assert (led[led.action == "lay"].mid < el.SHORT_PRICE).all()
+    longs = led[led.mid >= el.SHORT_PRICE]
+    assert len(longs) == 2 and (longs.action == "no_lay").all() and longs.error.str.contains("not short-priced").all()
+    with pytest.raises(ValueError):
+        el.decide(pd.DataFrame(), fit, {**cfg, "gate": "fav"})
+
+
+def test_a_paper_book_never_trades_live(tmp_path, fit):
+    with pytest.raises(ValueError):
+        el.EarlyLay(Store(preds()), FakeX(), dict(el.CONFIG), date(2026, 11, 3), True, tmp_path / "l.csv", fit,
+                    book="paper-m10")
+    with pytest.raises(SystemExit):
+        el.main(["--trade", "--live", "--paper-variants", "m10"])
+    with pytest.raises(SystemExit):
+        el.main(["--trade", "--paper-variants", "nope"])
+
+
+def test_the_paper_books_share_one_read_of_the_books(tmp_path, fit):
+    class Counting(FakeX):
+        reads = 0
+
+        def books(self, mids, with_sp=False):
+            Counting.reads += 1
+            return super().books(mids)
+
+    x = Counting()
+    x.book = book()
+    clock = {"t": T0, "mono": 0.0}
+    shared = el.SharedBooks(x, clock=lambda: clock["mono"])
+    traders = [el.EarlyLay(Store(preds()), shared, {**el.CONFIG, **el.PAPER_VARIANTS[n]}, date(2026, 11, 3), False,
+                           tmp_path / n / "ledger.csv", fit, now=lambda: clock["t"], book=f"paper-{n}")
+               for n in el.PAPER_VARIANTS]
+
+    def sleep(s):
+        clock["t"] += timedelta(seconds=s)
+        clock["mono"] += s
+
+    out = el.run_many(traders, T0 + timedelta(seconds=0.5), sleep=sleep)          # one full poll
+    assert [o["mode"] for o in out] == [f"paper-{n}" for n in el.PAPER_VARIANTS]
+    assert Counting.reads == 1                                 # one read a poll, whatever the number of books
+    assert not x.sent and not x.cancels
+    for n in el.PAPER_VARIANTS:
+        assert (tmp_path / n / "ledger.csv").exists()
+    with pytest.raises(AssertionError):
+        el.run_many([el.EarlyLay(Store(preds()), x, dict(el.CONFIG), date(2026, 11, 3), True, tmp_path / "l.csv",
+                                 fit)], T0)
+
+
+def test_a_paper_book_is_scored_on_the_books():
+    t = pd.Timestamp("2026-11-03 15:00:00", tz="UTC")
+    led = pd.DataFrame([
+        {"time_utc": t.strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": "paper-short20", "action": "lay", "seconds_to_off": 300,
+         "market_id": "1.1", "selection_id": 7, "price": 2.0, "race_time": "15:05", "track": "Romford", "trap": 1,
+         "f_bsp": 2.5, "mid": 2.1, "status": "PAPER"},
+        {"time_utc": t.strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": "paper-short20", "action": "no_lay",
+         "seconds_to_off": 300, "market_id": "1.1", "selection_id": 8, "price": 5.0, "race_time": "15:05",
+         "track": "Romford", "trap": 2, "f_bsp": 6.0, "mid": 5.2, "error": "not short-priced (mid 3 or more)"}])
+    books = pd.DataFrame([
+        {"market_id": "1.1", "selection_id": 7, "polled": t, "back1": 2.08, "lay1": 2.12, "last_traded": 2.1},
+        {"market_id": "1.1", "selection_id": 7, "polled": t + pd.Timedelta(seconds=120), "back1": 1.98, "lay1": 2.0,
+         "last_traded": 2.0},
+        {"market_id": "1.1", "selection_id": 7, "polled": t + pd.Timedelta(seconds=290), "back1": 2.2, "lay1": 2.24,
+         "last_traded": 2.2}])
+
+    class S:
+        def get(self, key):
+            if key.endswith("paper-short20/2026-11-03/ledger.csv"):
+                return led.to_csv(index=False).encode()
+            return None
+
+    md = el.paper_table(S(), date(2026, 11, 3), "short20", [("books_greyhound_live.csv", books)])
+    stake = el.stake_for(2.0, {**el.CONFIG, **el.PAPER_VARIANTS["short20"]})
+    assert "1 lays in 1 races; 1 would have matched; greened up 1" in md
+    assert f"GBP{round(stake * (1 - 2.0 / 2.2), 2):+.2f}" in md and "live key" in md
+    assert "no ledger yet" in el.paper_table(S(), date(2026, 11, 3), "m10", [])
