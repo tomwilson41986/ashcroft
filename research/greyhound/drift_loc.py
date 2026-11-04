@@ -67,8 +67,8 @@ def score(x: pd.DataFrame, market: str) -> list[dict]:
     return out
 
 
-def run(store, years=range(2016, 2027)) -> dict:
-    j = pv.load(store, years)
+def run(store, years=range(2016, 2027), country: str = "GB") -> dict:
+    j = pv.load(store, years, country)
     j["year"] = pd.to_datetime(j.race_date).dt.year
     rep = {"runners": len(j), "win_with_morning": int((j.morningwap_w > 1).sum()),
            "place_with_morning": int((j.morningwap_p > 1).sum()), "rules": []}

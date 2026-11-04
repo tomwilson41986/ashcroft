@@ -33,8 +33,8 @@ MIN_BETS = 300
 Z90 = 1.2816
 
 
-def frame(store, years=range(2016, 2027)) -> pd.DataFrame:
-    j = pv.load(store, years)
+def frame(store, years=range(2016, 2027), country: str = "GB") -> pd.DataFrame:
+    j = pv.load(store, years, country)
     j["year"] = pd.to_datetime(j.race_date).dt.year
     j["race"] = j.race_date + " " + j.race_time.astype(str) + " " + j.track
     j["field"] = j.groupby("race").trap.transform("size")
@@ -116,8 +116,8 @@ def portfolio(j: pd.DataFrame, picks: pd.DataFrame, market: str) -> dict:
     return out
 
 
-def run(store) -> dict:
-    j = frame(store)
+def run(store, country: str = "GB") -> dict:
+    j = frame(store, country=country)
     rep = {"runners": len(j), "years": sorted(int(y) for y in j.year.unique())}
     for market in ("win", "place"):
         c = candidates(j, market)

@@ -48,17 +48,17 @@ GBM = {"objective": "binary", "learning_rate": 0.05, "num_leaves": 63, "min_chil
 ROUNDS = 400
 
 
-def load(store, years: range) -> pd.DataFrame:
-    """GB win and place runners, a row a runner with both markets' prices (``_w`` and ``_p``)."""
+def load(store, years: range, country: str = "GB") -> pd.DataFrame:
+    """One country's (GB by default) win and place runners, a row a runner with both markets' prices (``_w``, ``_p``)."""
     parts = []
     for y in years:
         t = store.get_parquet(f"greyhound_prices/prices_{y}.parquet")
         if t is None or not len(t):
             log.info("%d: no table", y)
             continue
-        t = t[t.country == "GB"][[c for c in COLS if c in t.columns]]
+        t = t[t.country == country][[c for c in COLS if c in t.columns]]
         parts.append(t)
-        log.info("%d: %d GB runner rows (win %d, place %d)", y, len(t), int((t.market == "win").sum()),
+        log.info("%d: %d %s runner rows (win %d, place %d)", y, len(t), country, int((t.market == "win").sum()),
                  int((t.market == "place").sum()))
     d = pd.concat(parts, ignore_index=True)
     d = d.dropna(subset=["trap"]).drop_duplicates(["market"] + KEY, keep="last")
