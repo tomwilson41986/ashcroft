@@ -170,6 +170,34 @@ def simulate_lay(day: dict, mid: str, sid: float, t_place, price: float, size: f
     return {**out, "green_at": B, "pnl": round(pnl, 2), "how": how}
 
 
+def simulate_back(day: dict, mid: str, sid: float, t_place, price: float, size: float,
+                  green_seconds: float = GREEN_SECONDS) -> dict:
+    """One back order through the simulator: its fill (taken where the book offers the price, else queue-aware) to
+    the green-up, then greened up by a lay down the best three lay prices (``hedge``), the same whatever wins."""
+    pre, lad = day["pre"], day["ladder"]
+    off = day["off"].get(mid)
+    t_place = pd.Timestamp(t_place)
+    out = {"market_id": mid, "selection_id": sid, "placed": t_place, "price": price, "size": size, "side": "back"}
+    if off is None or pd.isna(off):
+        return {**out, "note": "no off time"}
+    t_exit = off - pd.Timedelta(seconds=green_seconds)
+    book = _book_at(pre, mid, sid, t_place)
+    if book is None:
+        return {**out, "note": "no book when placed"}
+    tr = lad[(lad.market_id == mid) & (lad.selection_id == sid)] if lad is not None else None
+    f = qf.fill("back", price, size, t_place, book, tr, until=t_exit)
+    res = day["result"]
+    rr = res[(res.market_id == mid) & (res.selection_id == sid)]
+    bsp = float(rr.bsp.iloc[0]) if len(rr) and pd.notna(rr.bsp.iloc[0]) else None
+    won = int(rr.won.iloc[0]) if len(rr) else 0
+    out.update({"matched": f.matched, "taken": f.taken, "queue_ahead": f.queue_ahead, "bsp": bsp, "won": won,
+                "ladder": tr is not None and len(tr) > 0})
+    if f.matched <= 0:
+        return {**out, "pnl": 0.0, "how": "unmatched"}
+    pnl, how = hedge([("back", price, f.matched)], _book_at(pre, mid, sid, t_exit), bsp, won)
+    return {**out, "pnl": round(pnl, 2), "how": how}
+
+
 def race_net(rows: pd.DataFrame) -> pd.DataFrame:
     """Each race's P&L after 2% commission on its net win."""
     g = rows.groupby("market_id").pnl.sum().rename("gross").reset_index()
@@ -222,9 +250,58 @@ def first_traded_books(pre: pd.DataFrame) -> pd.DataFrame:
     return t.sort_values("polled").drop_duplicates(["market_id", "selection_id"])
 
 
+def _decide_take(data: dict, mid: str, first: dict, prev: dict, p: pd.DataFrame, fit: dict, cfg: dict, t_dec) -> list:
+    """The forecast at the decision books, then on each side wanted: a lay taken at the best lay price where that
+    price is under ``(1 - margin) x forecast``, else resting at the margin from the forecast (the rule); a back taken
+    at the best back price where that is over ``(1 + margin) x forecast``, else resting there."""
+    from greyhound import early_lay as el
+    from research.greyhound import limit_study as ls
+    with np.errstate(divide="ignore", invalid="ignore"):
+        d = el.decide(el.first_rows(first, prev, p[p.selection_id.isin(list(first))]), fit, dict(cfg, rest_only=False))
+    out = []
+    m_ = cfg["margin"]
+    for r in d.itertuples(index=False):
+        sid = int(r.selection_id)
+        f, mid_now = float(r.f_bsp), float(r.mid)
+        if not np.isfinite(f):
+            continue
+        b = _book_at(data["pre"], mid, sid, t_dec)
+        if not b:
+            continue
+        lay1 = b["lay"][0][0] if b["lay"] else None
+        back1 = b["back"][0][0] if b["back"] else None
+        if "lay" in cfg.get("sides", ("lay",)) and f >= mid_now:                 # forecast to drift: lay
+            if cfg.get("take"):
+                price = lay1 if lay1 and lay1 <= f * (1 - m_) and lay1 <= cfg["max_price"] else None
+            else:
+                price = float(ls.ladder([f * (1 - m_)], up=False)[0])
+                price = price if np.isfinite(price) and 1 < price < mid_now - 1e-9 and price <= cfg["max_price"] \
+                    else None
+            if price:
+                s = simulate_lay(data, mid, sid, t_dec, float(price), el.stake_for(float(price), cfg),
+                                 cfg["green_seconds"])
+                out.append({**s, "side": "lay", "f_bsp": round(f, 3), "mid": round(mid_now, 3)})
+        if "back" in cfg.get("sides", ()) and f < mid_now:                      # forecast to shorten: back
+            if cfg.get("take"):
+                price = back1 if back1 and back1 >= f * (1 + m_) and back1 <= cfg["max_price"] else None
+            else:
+                price = float(ls.ladder([f * (1 + m_)], up=True)[0])
+                price = price if np.isfinite(price) and price > mid_now + 1e-9 and price <= cfg["max_price"] else None
+            if price:
+                # a back sized to win the same liability a lay risks
+                size = el.stake_for(float(price), cfg)
+                s = simulate_back(data, mid, sid, t_dec, float(price), size, cfg["green_seconds"])
+                out.append({**s, "f_bsp": round(f, 3), "mid": round(mid_now, 3)})
+    return out
+
+
 def early_lay(store, day: date, data: dict, cfg: dict, fit: dict) -> pd.DataFrame:
-    """The live early-lay rule at each race's first traded books (every runner priced from its own), its lays
-    simulated to the green-up. The race is decided once its whole field has traded, as the live trader does."""
+    """The live early-lay rule and its variants, each lay (or back) simulated to the green-up. The race is decided
+    once its whole field has traded, as the live trader does: at the first traded books (the live rule), or, with
+    ``cfg['decide_secs']``, at the books ``decide_secs`` before the off (``fit`` then the forecast fitted at that
+    mark). ``cfg['take']``: the order takes the price on offer (a lay at the best lay price where that is under the
+    forecast by the margin; a back at the best back price where that is over it) instead of resting at the margin
+    from the forecast. ``cfg['sides']``: ('lay',) or ('lay', 'back') (a back where the forecast says shorten)."""
     from greyhound import early_lay as el
     raw = store.get(f"greyhound/live/predictions/{day:%Y-%m-%d}.csv")
     if not raw:
@@ -233,7 +310,20 @@ def early_lay(store, day: date, data: dict, cfg: dict, fit: dict) -> pd.DataFram
     preds["selection_id"] = pd.to_numeric(preds.selection_id, errors="coerce")
     preds = preds.dropna(subset=["selection_id"]).drop_duplicates(["market_id", "selection_id"], keep="last")
     pre, res = data["pre"], data["result"]
-    ft = first_traded_books(pre)
+    secs = cfg.get("decide_secs")
+    if secs:
+        # each runner's latest book at or before the mark, kept only where it has traded
+        rows = []
+        for mid, off in data["off"].items():
+            if pd.isna(off):
+                continue
+            g = pre[(pre.market_id == mid) & (pre.polled <= off - pd.Timedelta(seconds=secs))]
+            if len(g):
+                rows.append(g.sort_values("polled").groupby("selection_id").tail(1))
+        ft = pd.concat(rows) if rows else pre.iloc[:0]
+        ft = ft[ft.last_traded > 1]
+    else:
+        ft = first_traded_books(pre)
     out = []
     for mid, g in ft.groupby("market_id"):
         if mid not in set(res.market_id):
@@ -256,6 +346,9 @@ def early_lay(store, day: date, data: dict, cfg: dict, fit: dict) -> pd.DataFram
         for sid, fb in first.items():
             h = hist[(hist.selection_id == sid) & (hist.polled <= fb["polled"] - pd.Timedelta(seconds=90))]
             prev[sid] = (h.back1.iloc[-1], h.lay1.iloc[-1]) if len(h) else None
+        if cfg.get("take") or "back" in cfg.get("sides", ("lay",)):
+            out += _decide_take(data, mid, first, prev, p, fit, cfg, t_dec)
+            continue
         d = el.decide(el.first_rows(first, prev, p[p.selection_id.isin(list(first))]), fit, cfg)
         now = {int(sid): _book_at(pre, mid, sid, t_dec) for sid in first}
         for r in d.itertuples(index=False):
@@ -742,8 +835,22 @@ def summarise_quotes(rows: pd.DataFrame) -> dict:
 VARIANTS = {
     "live_rule": {},                                             # rest-only, 80% of the forecast, GBP20 a lay
     "no_guard": {"rest_only": False},
+    "margin_05": {"margin": 0.05},
     "margin_10": {"margin": 0.10},
+    "margin_15": {"margin": 0.15},
+    "margin_25": {"margin": 0.25},
     "margin_30": {"margin": 0.30},
+    # decided 5 minutes out (the forecast beat the mid there on 3 Nov, not later): resting, or taking the price on offer
+    "rest5_m10": {"decide_secs": 300, "margin": 0.10},
+    "rest5_m20": {"decide_secs": 300, "margin": 0.20},
+    "take5_m10": {"decide_secs": 300, "margin": 0.10, "take": True},
+    "take5_m20": {"decide_secs": 300, "margin": 0.20, "take": True},
+    "take5_m30": {"decide_secs": 300, "margin": 0.30, "take": True},
+    "take5_both_m10": {"decide_secs": 300, "margin": 0.10, "take": True, "sides": ("lay", "back")},
+    "take5_both_m20": {"decide_secs": 300, "margin": 0.20, "take": True, "sides": ("lay", "back")},
+    "rest5_both_m20": {"decide_secs": 300, "margin": 0.20, "sides": ("lay", "back")},
+    "takeft_m20": {"margin": 0.20, "take": True},                 # taken at the first traded books
+    "takeft_both_m20": {"margin": 0.20, "take": True, "sides": ("lay", "back")},
 }
 
 
@@ -854,10 +961,17 @@ def main(argv=None) -> int:
         res["strategies"] = {}
         if fit is not None:
             only = set(a.only.split(",")) if a.only else None
+            fits = {None: fit}
             for name, over in VARIANTS.items():
                 if only and name not in only:
                     continue
-                rows = early_lay(store, day, data, dict(el.CONFIG, **over), fit)
+                secs = over.get("decide_secs")
+                if secs not in fits:
+                    fits[secs] = laytest.day_fit(store, day, mark=f"off_{int(secs // 60)}")
+                if fits[secs] is None:
+                    _log(f"{name}: no forecast fit at {secs} s")
+                    continue
+                rows = early_lay(store, day, data, dict(el.CONFIG, **over), fits[secs])
                 res["strategies"][name] = summarise(rows)
                 _log(f"{name}: {res['strategies'][name]}")
             res["quotes"] = {}

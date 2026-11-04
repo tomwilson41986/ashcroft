@@ -267,3 +267,27 @@ def test_the_mid_fair_value_needs_no_model():
     preds = pd.DataFrame({"market_id": [MID, MID], "selection_id": [7, 8], "p_model": [0.2, 0.8]})
     fv = ps.fair_by("mid", pre_m, OFF - pd.Timedelta(seconds=100), preds, None, {}, None, OFF).set_index("selection_id")
     assert (fv.f_bsp == fv["mid"]).all() and 4.0 < fv.loc[7, "mid"] < 4.2
+
+
+def test_a_back_taken_and_greened_and_the_take_variants(tmp_path, monkeypatch):
+    from datetime import date
+    from greyhound import early_lay as el
+    d = day()
+    # dog 7 is backed at 4.0 (taken: the book offers it), then greened up by a lay at the 5 s book (lay 5.1):
+    # a back that drifted loses
+    s = ps.simulate_back(d, MID, 7, OFF - pd.Timedelta(seconds=110), 4.0, 5.0)
+    assert s["matched"] == 5.0 and s["taken"] == 5.0 and s["how"] == "green"
+    assert np.isclose(s["pnl"], round(5 * (4.0 / 5.1 - 1), 2))
+    store = Store(root=tmp_path)
+    preds = pd.DataFrame({"market_id": [MID, MID], "selection_id": [7, 8], "p_model": [0.2, 0.8]})
+    store.put("greyhound/live/predictions/2026-11-03.csv", preds.to_csv(index=False).encode())
+
+    def decide(rows, fit, cfg):                                   # dog 7 forecast to drift, dog 8 to shorten
+        return rows.assign(f_bsp=np.where(rows.selection_id == 7, 6.0, 1.5), mid=np.where(rows.selection_id == 7,
+                                                                                            4.1, 2.02))
+    monkeypatch.setattr(el, "decide", decide)
+    cfg = dict(el.CONFIG, decide_secs=100, margin=0.2, take=True, sides=("lay", "back"))
+    out = ps.early_lay(store, date(2026, 11, 3), d, cfg, fit={})
+    got = out.set_index("selection_id")
+    assert got.loc[7, "side"] == "lay" and got.loc[7, "price"] == 4.2        # the best lay offered, under 6.0 x 0.8
+    assert got.loc[8, "side"] == "back" and got.loc[8, "price"] == 2.0       # the best back, over 1.5 x 1.2
