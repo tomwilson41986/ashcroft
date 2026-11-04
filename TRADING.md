@@ -1642,6 +1642,15 @@ upgrade runs at 21:45 UTC plus up to 10 minutes, after the trading and before th
 (`/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf`); it needs passwordless sudo for the runner's user and
 changes nothing without it (the run says what to run as root instead). The watchdog stays as the second line.
 
+**The horse paper agents, retired** (the owner, 4 Nov: "Keep the current live rule. Retire the others"; ledger
+`paper-agents-retired-1104`). The live rule stays live as it is. The five paper agents (backs_floor50, backs_win1000,
+lays, quotes_model3, quotes_mid2) and the control's replay are retired before their forward test began:
+`paper-horses.yml` and `paper-horses-intraday.yml` run on dispatch only, and their tiles are off the traders
+dashboard. Their last reading (12 Oct-2 Nov at 0.80, after the cuts, ledger `paper-agents-rescore-1104b`): the control
+GBP+4,694 (21 of 22 days up), floor50 GBP+4,924 (ahead on 12), win1000 GBP+5,150 (ahead on 11; held by the depth, 38%
+of its GBP1,000 winnings a horse against the live 68% of GBP400), lays GBP+579 (GBP+195 of it at the SP, all laid
+before 07:00), quotes_model3 GBP-236, quotes_mid2 GBP-14,043. The code stays for the record.
+
 **The paper agents on one book** (the owner, 4 Nov: "make these individual agents with the strategy attached, paper
 trade them and track it in detail in the trading dashboard. We need to be careful that they dont conflict with each
 other e.g. taking the price for one, removes the price for others"). Each strategy on the desk is an agent with its own

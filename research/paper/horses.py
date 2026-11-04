@@ -1,6 +1,10 @@
 """The horse paper desk (the owner, 4 Nov 2026: "Keep the current proven profitable strategy as live. Let's paper trade
 any others that look promising; Backs, Lays, High Volume Trading each side of the line").
 
+RETIRED the same day (the owner, 4 Nov 2026: "Keep the current live rule. Retire the others"; ledger
+paper-agents-retired-1104): paper-horses.yml and paper-horses-intraday.yml run on dispatch only and the agents' tiles are
+off the traders dashboard. The code stays for the record and for a replay on request.
+
 Each strategy is an agent with its own paper account (GBP5,000, its own day limit) and its own ledger. Each racing
 day, once its books and Betfair's price file are in S3, all of them trade the day's recorded books together, through
 the live trader's code (research/arms), with no order placed anywhere: one shared book (the owner, 4 Nov: "We need to
