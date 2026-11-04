@@ -109,4 +109,24 @@ market's net profit; 452,367 AU thoroughbred runners, 46,743 markets, 1 Jan 2024
   Only 45.8% of runners trade by then, and a last traded price may be hours old. Whether a lay offer at that price
   would have been matched, and in what size, the BASIC data cannot say. Gate B (the recorded books) is the test.
 
-Waiting on the owner: the `au-night` runner for gate B, or park Australia.
+### The staleness check (pre-registered in 4bc6101): the margin was in stale prices
+
+au-staleness run 41826488927 (https://github.com/tomwilson41986/ashcroft/actions/runs/41826488927). For each lay, how
+long before the T-60 mark its price last changed; 133,868 of the 134,992 lays scored (the age is of the very price
+laid; 99.2% agree). The median price was 27 minutes old at the mark, a quarter over 96 minutes.
+
+| Price last changed before the mark | Lays | Profit a unit laid, after commission (90%) |
+|---|---|---|
+| within 5 minutes (the test) | 31,793 | -0.38% (-0.60 to -0.17) |
+| within 15 minutes | 50,233 | +0.09% (-0.10 to +0.25) |
+| 15 to 60 minutes | 41,286 | +1.34% (+1.14 to +1.56) |
+| over 60 minutes | 42,349 | +6.15% (+5.92 to +6.38) |
+
+The margin grows with the price's age: it lives in prices that had stood still, which no one was offering at the mark.
+On fresh prices it is gone. By the reading fixed before the run, **the early lay is dropped, without gate B.**
+
+(Two runs of this check were void and are not results: 41824321636 failed, and 41825727448 matched no lay to an age
+because the ages table had been saved under the yearly tables' prefix and read in with them. Fixed in 991655c.)
+
+Where Australia stands: the Betfair-only model learns form but holds nothing beyond the BSP (gate A), and the one
+pattern in the early prices was stale prices. Parked; nothing is traded.
