@@ -454,16 +454,27 @@ def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict
     lad_m = {sid: g for sid, g in lad[lad.market_id == mid].groupby("selection_id")} if lad is not None else {}
     open_: dict = {}
     fills: dict = {}
+    late: dict = {}
     orders = []
 
     def book_of(sid, t):
         return _book_at(pre_m, mid, sid, t)
 
+    lat = pd.Timedelta(seconds=float(q.get("latency", 0.0)))
+
+    def thr(o):
+        tm = q.get("through_min", 0.0)
+        return float(o["size"]) if tm == "size" else float(tm)
+
     def close(key, t1):
+        # a cancel reaches the exchange ``latency`` after it is sent: the order can still fill until then
         o = open_.pop(key)
-        f = qf.fill(o["side"], o["price"], o["size"], o["t0"], o["book"], lad_m.get(key[0]), until=t1)
+        f = qf.fill(o["side"], o["price"], o["size"], o["t0"], o["book"], lad_m.get(key[0]), until=t1 + lat,
+                    through_min=thr(o))
         if f.matched > 0:
             fills.setdefault(key[0], []).append((o["side"], o["price"], f.matched))
+            if o["t0"] >= off - pd.Timedelta(seconds=60):
+                late[key[0]] = late.get(key[0], 0.0) + f.matched
         orders.append({**o, "t1": t1, "matched": f.matched})
 
     for t in sorted(pre_m.polled.unique()):
@@ -482,7 +493,8 @@ def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict
             got = list(fills.get(sid, []))
             for (s2, side), o in open_.items():
                 if s2 == sid:
-                    ff = qf.fill(side, o["price"], o["size"], o["t0"], o["book"], lad_m.get(sid), until=t)
+                    ff = qf.fill(side, o["price"], o["size"], o["t0"], o["book"], lad_m.get(sid), until=t,
+                                 through_min=thr(o))
                     if ff.matched > 0:
                         got.append((side, o["price"], ff.matched))
             win, lose = outcomes_of(got)
@@ -503,8 +515,9 @@ def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict
                     cur = None
                 if ok and cur is None:
                     size = el.stake_for(target, cfg)
+                    # placed on the book read at ``t``; it rests from ``t + latency`` (fills count from then)
                     open_[key] = {"market_id": mid, "selection_id": sid, "side": side, "price": target, "size": size,
-                                  "t0": t, "book": book_of(sid, t), "f_bsp": round(f, 3), "mid": round(m, 3)}
+                                  "t0": t + lat, "book": book_of(sid, t), "f_bsp": round(f, 3), "mid": round(m, 3)}
     for key in list(open_):
         close(key, t_exit)
     res = data["result"]
@@ -517,10 +530,11 @@ def quote_race(data: dict, mid: str, preds_m: pd.DataFrame, fit: dict, cfg: dict
         out.append({"market_id": mid, "selection_id": sid, "orders": sum(o["selection_id"] == sid for o in orders),
                     "back_matched": round(sum(st for sd, p, st in fl if sd == "back"), 2),
                     "lay_matched": round(sum(st for sd, p, st in fl if sd == "lay"), 2),
-                    "matched": round(sum(st for sd, p, st in fl), 2), "pnl": round(pnl, 2), "how": how})
+                    "matched": round(sum(st for sd, p, st in fl), 2), "pnl": round(pnl, 2), "how": how,
+                    "matched_last_60s": round(late.get(sid, 0.0), 2)})
     if not out:
         out.append({"market_id": mid, "selection_id": None, "orders": len(orders), "back_matched": 0.0,
-                    "lay_matched": 0.0, "matched": 0.0, "pnl": 0.0, "how": "unmatched"})
+                    "lay_matched": 0.0, "matched": 0.0, "pnl": 0.0, "how": "unmatched", "matched_last_60s": 0.0})
     return out
 
 
@@ -631,6 +645,20 @@ QUOTES = {
     "cl_live_m20": {"sides": ("back", "lay"), "margin": 0.20, "max_loss": 60.0, "fair": "cl_live"},
     "cl_live_k15": {"sides": ("back", "lay"), "k": 1.5, "max_loss": 60.0, "fair": "cl_live"},
     "mid_m05": {"sides": ("back", "lay"), "margin": 0.05, "max_loss": 60.0, "fair": "mid"},
+    # the same, harder on the fills: orders rest 1.5 s (or 3 s) after the book they were priced on; a trade beyond
+    # our price fills us only once at least our own stake has traded there
+    "mid_m05_lat": {"sides": ("back", "lay"), "margin": 0.05, "max_loss": 60.0, "fair": "mid", "latency": 1.5},
+    "mid_m05_thru": {"sides": ("back", "lay"), "margin": 0.05, "max_loss": 60.0, "fair": "mid", "through_min": "size"},
+    "mid_m03_hard": {"sides": ("back", "lay"), "margin": 0.03, "max_loss": 60.0, "fair": "mid", "latency": 1.5,
+                     "through_min": "size"},
+    "mid_m05_hard": {"sides": ("back", "lay"), "margin": 0.05, "max_loss": 60.0, "fair": "mid", "latency": 1.5,
+                     "through_min": "size"},
+    "mid_m05_hard3": {"sides": ("back", "lay"), "margin": 0.05, "max_loss": 60.0, "fair": "mid", "latency": 3.0,
+                      "through_min": "size"},
+    "mid_m07_hard": {"sides": ("back", "lay"), "margin": 0.07, "max_loss": 60.0, "fair": "mid", "latency": 1.5,
+                     "through_min": "size"},
+    "mid_m10_hard": {"sides": ("back", "lay"), "margin": 0.10, "max_loss": 60.0, "fair": "mid", "latency": 1.5,
+                     "through_min": "size"},
     "mid_m10": {"sides": ("back", "lay"), "margin": 0.10, "max_loss": 60.0, "fair": "mid"},
     "mid_m15": {"sides": ("back", "lay"), "margin": 0.15, "max_loss": 60.0, "fair": "mid"},
     "mid_m20": {"sides": ("back", "lay"), "margin": 0.20, "max_loss": 60.0, "fair": "mid"},
@@ -648,7 +676,11 @@ def summarise_quotes(rows: pd.DataFrame) -> dict:
             "lay_matched": round(float(rows.lay_matched.sum()), 2), "net": round(float(net.net.sum()), 2),
             "per_race": round(float(net.net.mean()), 3), "races_won": int((net.net > 0).sum()),
             "races_lost": int((net.net < 0).sum()), "worst_race": round(float(net.net.min()), 2),
-            "best_race": round(float(net.net.max()), 2)}
+            "best_race": round(float(net.net.max()), 2),
+            # how much of the profit the five best races carry, and how much was matched in the last minute
+            "best5_share": round(float(net.net.nlargest(5).sum() / net.net.sum()), 3) if net.net.sum() > 0 else None,
+            "last_60s_share": round(float(rows.get("matched_last_60s", pd.Series(0.0)).sum() / rows.matched.sum()), 3)
+            if rows.matched.sum() > 0 else None}
 
 
 VARIANTS = {
@@ -718,12 +750,14 @@ def report_md(res: dict) -> str:
           "the off. Our own orders do not move the simulated market, and two of our orders on one dog can count the "
           "same traded money: an upper bound on the fills.", "",
           "| Variant | Races | Orders | Dogs matched | Back matched | Lay matched | Net P&L | Per race | Races won / "
-          "lost | Worst / best race |", "|---|---|---|---|---|---|---|---|---|---|"]
+          "lost | Worst / best race | Best 5 races' share | Matched in the last 60 s |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for k, s_ in (res.get("quotes") or {}).items():
         if s_.get("races"):
             L.append(f"| {k} | {s_['races']} | {s_['orders']} | {s_['dogs_matched']} | {s_['back_matched']} | "
                      f"{s_['lay_matched']} | {s_['net']:+.2f} | {s_['per_race']:+.3f} | {s_['races_won']} / "
-                     f"{s_['races_lost']} | {s_['worst_race']:+.2f} / {s_['best_race']:+.2f} |")
+                     f"{s_['races_lost']} | {s_['worst_race']:+.2f} / {s_['best_race']:+.2f} | "
+                     f"{s_.get('best5_share')} | {s_.get('last_60s_share')} |")
         else:
             L.append(f"| {k} | 0 | | | | | | | | |")
     return "\n".join(L) + "\n"

@@ -46,12 +46,13 @@ def queue_ahead(side: str, price: float, offers: list[tuple[float, float]]) -> f
 
 
 def fill(side: str, price: float, size: float, placed_at, book: dict, traded: pd.DataFrame,
-         until=None) -> Fill:
+         until=None, through_min: float = 0.0) -> Fill:
     """What an order of ``size`` at ``price`` placed at ``placed_at`` had matched by ``until``.
 
     ``book``: the runner's book when placed: ``back`` and ``lay`` as [(price, size)], best first (``back``: the prices
     a backer can take, the layers' offers; ``lay``: the prices a layer can take). ``traded``: the runner's rows of the
-    traded ladder (polled_utc, price, traded: cumulative), any span covering the order's life."""
+    traded ladder (polled_utc, price, traded: cumulative), any span covering the order's life. ``through_min``: the
+    money that must trade beyond our price, at one price, before it counts as having gone through us (0: any)."""
     placed_at = pd.Timestamp(placed_at)
     until = pd.Timestamp(until) if until is not None else None
     take_side = book.get("lay" if side == "lay" else "back") or []      # what this order can take at once
@@ -85,7 +86,7 @@ def fill(side: str, price: float, size: float, placed_at, book: dict, traded: pd
     # through: money traded strictly beyond our price after we joined: the queue at our price, ours too, cleared
     beyond = after[after.price < price - 1e-9] if side == "lay" else after[after.price > price + 1e-9]
     if len(beyond):
-        grew = beyond.traded.to_numpy() > beyond.price.map(base).fillna(0.0).to_numpy() + 1e-9
+        grew = beyond.traded.to_numpy() > beyond.price.map(base).fillna(0.0).to_numpy() + max(through_min, 1e-9)
         if grew.any():
             out.matched = round(size, 2)
             out.full_at = beyond.polled[grew].iloc[0]

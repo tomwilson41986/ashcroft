@@ -228,3 +228,21 @@ def test_the_accuracy_table_scores_within_the_race(tmp_path, monkeypatch):
     assert r.cl == 0.0 and r.closing > 0.5                                   # right, and wrong only in level
     assert r.cl_within == 0.0 and r.closing_within == 0.0                   # within the race both exact
     assert np.isclose(r.closing_live, r.cl_live)                            # the live level undoes the shift
+
+
+def test_latency_and_a_strict_fill_never_add_fills(monkeypatch):
+    d = day()
+    d["ladder"] = pd.concat([d["ladder"], pd.DataFrame([{"polled_utc": at(-50), "market_id": MID, "selection_id": 7.0,
+                                                         "price": 3.8, "traded": 15.0}])])
+
+    def fair(pre_m, t, preds_m, fit, cfg, closing=None, off=None):
+        return pd.DataFrame({"selection_id": [7, 8], "f_bsp": [4.9, 2.0], "mid": [4.1, 2.01]})
+    monkeypatch.setattr(ps, "fair_values", fair)
+    from greyhound import early_lay as el
+    preds = pd.DataFrame({"market_id": [MID, MID], "selection_id": [7, 8], "p_model": [0.2, 0.8]})
+    q = {"sides": ("back", "lay"), "margin": 0.2, "max_loss": 60.0}
+    base = pd.DataFrame(ps.quote_race(d, MID, preds, {}, dict(el.CONFIG), q))
+    hard = pd.DataFrame(ps.quote_race(d, MID, preds, {}, dict(el.CONFIG), dict(q, latency=1.5, through_min="size")))
+    assert base.matched.sum() > 0 and hard.matched.sum() <= base.matched.sum()
+    s = ps.summarise_quotes(base)
+    assert "best5_share" in s and "last_60s_share" in s

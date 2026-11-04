@@ -95,3 +95,12 @@ def test_the_recorder_asks_only_for_betfairs_price_data_types():
     from greyhound import book_record as br
     valid = {"SP_AVAILABLE", "SP_TRADED", "EX_BEST_OFFERS", "EX_ALL_OFFERS", "EX_TRADED"}   # Betfair's PriceData
     assert set(br.PRICE_DATA) <= valid and "EX_TRADED" in br.PRICE_DATA
+
+
+def test_a_small_trade_beyond_does_not_fill_a_strict_order():
+    book = {"back": [(4.0, 30.0)], "lay": [(4.2, 20.0)]}
+    tr = ladder([(-60, 3.5, 10.0), (15, 3.5, 12.0), (25, 3.5, 30.0)])      # GBP2, then GBP20 traded beyond 3.6
+    assert qf.fill("lay", 3.6, 10.0, T0, book, tr).full_at == T0 + pd.Timedelta(seconds=15)
+    f = qf.fill("lay", 3.6, 10.0, T0, book, tr, through_min=10.0)
+    assert f.matched == 10.0 and f.full_at == T0 + pd.Timedelta(seconds=25)  # only once our stake has traded there
+    assert qf.fill("lay", 3.6, 10.0, T0, book, tr, until=T0 + pd.Timedelta(seconds=20), through_min=10.0).matched == 0
