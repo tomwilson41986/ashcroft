@@ -157,33 +157,51 @@ def uk_date(t: datetime) -> str:
 # Catalogue
 # --------------------------------------------------------------------------------------------------------------------
 
+#: Betfair's listMarketCatalogue weights (Market Data Request Limits): sum(weight) x maxResults must stay within 200
+#: points a request. MARKET_DESCRIPTION (1) at 1,000 results was 1,000 points: every call refused TOO_MUCH_DATA (the
+#: first run on the football runner, 4 Nov 2026). The type comes from asking one type a call instead.
+CATALOGUE_WEIGHTS = {"EVENT": 0, "COMPETITION": 0, "MARKET_START_TIME": 0, "RUNNER_DESCRIPTION": 0,
+                     "EVENT_TYPE": 0, "MARKET_DESCRIPTION": 1, "RUNNER_METADATA": 1}
+CATALOGUE_PROJECTION = ["EVENT", "COMPETITION", "MARKET_START_TIME", "RUNNER_DESCRIPTION"]
+
+
+def catalogue_limit(projection=CATALOGUE_PROJECTION, wanted: int = CATALOGUE_MAX,
+                    limit: float = WEIGHT_LIMIT) -> int:
+    """The most results a catalogue call may ask for under Betfair's 200 points (and its 1,000 cap)."""
+    w = sum(CATALOGUE_WEIGHTS.get(p, 1) for p in projection)
+    return min(wanted, CATALOGUE_MAX) if w == 0 else max(1, min(wanted, CATALOGUE_MAX, int(limit // w)))
+
+
 def catalogue_all(read, start: datetime, end: datetime, types=DEFAULT_TYPES, max_results: int = CATALOGUE_MAX,
                   min_window: timedelta = timedelta(minutes=10)) -> list[dict]:
-    """Every soccer market of ``types`` starting in [start, end): windows answered with ``max_results`` markets are
-    split in two (Betfair answers at most 1,000 a call), down to ``min_window``. ``read(method, params)``."""
+    """Every soccer market of ``types`` starting in [start, end), one type a call (each market carries its
+    ``marketType``): windows answered with ``max_results`` markets are split in two (Betfair answers at most 1,000 a
+    call), down to ``min_window``. Each call is held under Betfair's 200 points. ``read(method, params)``."""
     out, seen = [], set()
+    max_results = catalogue_limit(CATALOGUE_PROJECTION, max_results)
 
-    def window(a: datetime, b: datetime) -> None:
+    def window(a: datetime, b: datetime, mtype: str) -> None:
         raw = read("listMarketCatalogue", {
-            "filter": {"eventTypeIds": [SOCCER], "marketTypeCodes": list(types), "inPlayOnly": False,
+            "filter": {"eventTypeIds": [SOCCER], "marketTypeCodes": [mtype], "inPlayOnly": False,
                        "marketStartTime": {"from": _iso(a), "to": _iso(b)}},
-            "marketProjection": ["EVENT", "COMPETITION", "MARKET_START_TIME", "MARKET_DESCRIPTION",
-                                 "RUNNER_DESCRIPTION"],
+            "marketProjection": list(CATALOGUE_PROJECTION),
             "maxResults": max_results, "sort": "FIRST_TO_START"}) or []
         if len(raw) >= max_results and b - a > min_window:
             mid = a + (b - a) / 2
-            window(a, mid)
-            window(mid, b)
+            window(a, mid, mtype)
+            window(mid, b, mtype)
             return
         if len(raw) >= max_results:
-            log.warning("catalogue: %d markets in %s-%s, the most Betfair answers; some may be missing",
-                        len(raw), _iso(a), _iso(b))
+            log.warning("catalogue: %d %s markets in %s-%s, the most Betfair answers; some may be missing",
+                        len(raw), mtype, _iso(a), _iso(b))
         for m in raw:
             if m.get("marketId") not in seen:
                 seen.add(m.get("marketId"))
+                m.setdefault("marketType", mtype)
                 out.append(m)
 
-    window(start, end)
+    for mtype in types:
+        window(start, end, mtype)
     return out
 
 
