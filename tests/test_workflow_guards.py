@@ -347,3 +347,18 @@ def test_the_horse_racing_runner_runs_horse_racing_alone():
     for wf_name, job_name in (("greyhound-prices.yml", "archive"), ("other-data.yml", "fetch")):
         guard = _yaml.safe_load((WORKFLOWS / wf_name).read_text())["jobs"][job_name]["steps"][0]
         assert guard["name"] == "Not on the horse racing runner" and '"$LIVE_RUNNER_LABEL"' in guard["run"]
+
+
+def test_the_runner_fix_keeps_upgrades_off_the_trader_and_is_dispatched_by_hand():
+    """The owner, 4 Nov 2026 ("fix the update issue"): needrestart never restarts the runner's service, and the
+    upgrade timer runs after the trading day; a dispatch only, never a schedule, and it changes nothing without sudo."""
+    import yaml as _yaml
+    wf = _yaml.safe_load((WORKFLOWS / "runner-fix-upgrades.yml").read_text())
+    assert set(wf.get("on", wf.get(True))) == {"workflow_dispatch"}
+    job = wf["jobs"]["fix"]
+    assert job["runs-on"] == "${{ vars.BETFAIR_RUNNER }}"
+    run = job["steps"][0]["run"]
+    assert "sudo -n true" in run and run.index("sudo -n true") < run.index("sudo tee")
+    assert "$nrconf{override_rc}{qr(^actions\\.runner\\.)} = 0;" in run
+    assert "OnCalendar=*-*-* 21:45" in run and "OnCalendar=\\n" in run
+    assert "reboot" not in run.split("== unattended-upgrades")[0].lower().replace("a reboot would", "")

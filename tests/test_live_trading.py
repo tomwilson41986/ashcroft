@@ -777,9 +777,9 @@ def test_the_summary_scores_the_bets_entered_by_11_apart_from_the_later_ones():
 
 def test_the_owners_window_runs_to_15_minutes_before_each_off():
     """The owner, 1 Oct, and again 7 Oct ("Let's not stop. We should just trade if we think the price is right"): every
-    race until 15 minutes before its off, however late the day; from 06:15 UK since 12 Oct ("predictions at 04:00 UTC,
-    trading at 05:15 UTC"; 08:00 UK until then)."""
-    assert LIVE.trade_from == "06:15" and LIVE.trade_until == "21:30" and LIVE.stop_before_off == 15
+    race until 15 minutes before its off, however late the day; from 05:15 UK since 5 Nov ("Trade from 05:15", the
+    timing study timing-1104; 06:15 from 12 Oct, "predictions at 04:00 UTC, trading at 05:15 UTC"; 08:00 until then)."""
+    assert LIVE.trade_from == "05:15" and LIVE.trade_until == "21:30" and LIVE.stop_before_off == 15
     race = [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300]
     off = datetime(2026, 10, 1, 17, 30, tzinfo=UTC)                 # 18:30 UK
     c = _Client()
@@ -795,8 +795,9 @@ def test_the_owners_window_runs_to_15_minutes_before_each_off():
 
 
 def test_the_owners_morning_from_12_oct_predictions_at_0400_and_trading_at_0515_utc():
-    """The owner, 12 Oct: "predictions at 04:00 UTC, trading at 05:15 UTC". The session opens its window at 06:15 UK
-    (05:15 UTC in summer time); the predictions run first, and the night's price archive leaves the UK runner free."""
+    """The owner, 12 Oct: "predictions at 04:00 UTC, trading at 05:15 UTC". The session opens its window at 05:15 UK
+    from 5 Nov (the owner: "Trade from 05:15"; 06:15 until then): from the session's start in GMT, at 06:17 UK (the
+    05:17 UTC start) in summer time; the predictions run first, and the night's price archive leaves the runner free."""
     from pathlib import Path
 
     import yaml
@@ -804,7 +805,23 @@ def test_the_owners_morning_from_12_oct_predictions_at_0400_and_trading_at_0515_
     on = lambda name: (lambda s: s.get("on", s.get(True)))(yaml.safe_load((wf / name).read_text()))
     assert [c["cron"] for c in on("predict.yml")["schedule"]] == ["0 4 * * *"]
     assert [c["cron"] for c in on("live-trade.yml")["schedule"]] == ["15 5 * * *", "25 22 * * *"]   # settle 22:25 from 25 Oct
-    assert LIVE.trade_from == "06:15"
+    assert LIVE.trade_from == "05:15"
+
+
+def test_the_owners_window_from_5_nov_opens_at_0515_uk():
+    """The owner, 4 Nov ("Trade from 05:15"; the timing study, ledger timing-1104: the books before 06:15 closed at
+    15.7% after the cuts on the GMT days): a back at 05:16 UK, none at 05:14."""
+    assert LIVE.trade_from == "05:15"
+    race = [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300]
+    off = datetime(2026, 11, 5, 13, 0, tzinfo=UTC)                   # GMT: UK time is UTC
+    c = _Client()
+    s, clock = _session(c, [_race("1.8", off, *race)])
+    clock.t = datetime(2026, 11, 5, 5, 14, tzinfo=UTC)
+    s.step(clock())
+    assert not _orders(c)
+    clock.t = datetime(2026, 11, 5, 5, 16, tzinfo=UTC)
+    s.step(clock())
+    assert [o["side"] for o in _orders(c)] == ["BACK", "LAY"]
 
 
 def test_the_owners_staking_from_17_oct_a_floor_and_a_lower_cap():

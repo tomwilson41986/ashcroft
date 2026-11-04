@@ -1631,6 +1631,17 @@ was kept between the evening record and the trader's start; the overnight record
 keeps one every 10 minutes from 22:30 to 04:52 UTC, and predictions the night before (predict-evening.yml, 21:50 UTC,
 predictions_evening/) are ready for a session then. Nothing in the live rule changes (the owner decides).
 
+**Trading from 05:15 UK, and the upgrades kept off the trader** (the owner, 4 Nov: "fix the update issue. Trade from
+05:15."). The window opens at 05:15 UK from 5 Nov (`trading/config_live.json` trade_from, 06:15 since 12 Oct): in GMT
+the 05:17 UTC session trades from its start; in summer time its start is 06:17 UK, so nothing changes until the
+clocks go back. The timing study put the books before 06:15 at 15.7% CLV after the cuts on the GMT days, GBP113 a day
+taken, about GBP9 a day at the live scale (`timing-1104`). Nothing else in the rule changes. The update fix
+(`runner-fix-upgrades.yml`, dispatched once, queued behind the day's session so it interrupts nothing): needrestart
+never restarts the runner's service (`/etc/needrestart/conf.d/50-actions-runner.conf`), and the daily unattended
+upgrade runs at 21:45 UTC plus up to 10 minutes, after the trading and before the 22:25 settle
+(`/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf`); it needs passwordless sudo for the runner's user and
+changes nothing without it (the run says what to run as root instead). The watchdog stays as the second line.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
