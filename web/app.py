@@ -115,7 +115,7 @@ async def traders_page():
     data = get_traders()
     if data is None:
         from web.s3_store import S3_BUCKET
-        return HTMLResponse(f"<!doctype html><title>racing² Traders</title><p>{_NO_TRADERS.format(bucket=S3_BUCKET)}</p>",
+        return HTMLResponse(f"<!doctype html><title>Ashcroft Traders</title><p>{_NO_TRADERS.format(bucket=S3_BUCKET)}</p>",
                             status_code=503, headers=_NO_STORE)
     return HTMLResponse(render_traders(data), headers=_NO_STORE)
 

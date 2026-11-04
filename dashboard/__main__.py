@@ -23,22 +23,24 @@ def summary_md(data: dict) -> str:
     """A plain table for the job summary: every trader, the six figures."""
     def g(v):
         return "–" if v is None else f"{v:+,.2f}"
-    L = [f"### Traders, {data['today']} (built {data['generated_utc']})", ""]
+    L = [f"### Ashcroft Traders, {data['today']} (built {data['generated_utc']})", ""]
     for s in data["sports"]:
         L += [f"#### {s['label']}", ""]
         if not s["traders"]:
             L += ["No data found: no trader for this sport.", ""]
             continue
-        L += ["| Trader | Mode | Today P&L | Volume | Forecast today | Month P&L | Forecast month | All time |",
-              "|---|---|---:|---:|---:|---:|---:|---:|"]
+        L += ["| Trader | Mode | Today P&L | Volume | Forecast today | Month P&L | Forecast month | All time | CLV 7 days "
+              "| Edge |", "|---|---|---:|---:|---:|---:|---:|---:|---:|---|"]
         for t in s["traders"]:
             if not t["has_data"]:
-                L.append(f"| {t['name']} | {t['mode']} | no data found | | | | | |")
+                L.append(f"| {t['name']} | {t['mode']} | no data found | | | | | | | |")
                 continue
             d, m, a = t["today"], t["month"], t["all_time"]
             vol = "–" if d["volume"] is None else f"{d['volume']:,.2f}"
+            e = t.get("edge") or {}
+            clv = "–" if e.get("clv_7d") is None else f"{e['clv_7d']:+.1%} (n {e.get('clv_7d_n')})"
             L.append(f"| {t['name']} | {t['mode']} | {g(d['pnl'])} | {vol} | {g(d['forecast'])} | {g(m['pnl'])} | "
-                     f"{g(m['forecast'])} | {g(a['pnl'])} |")
+                     f"{g(m['forecast'])} | {g(a['pnl'])} | {clv} | {e.get('flag_label', '–')} |")
         L.append("")
     if data["errors"]:
         L += ["Not read: " + "; ".join(f"{e['trader']}: {e['error']}" for e in data["errors"]), ""]

@@ -22,7 +22,7 @@ def test_the_page_and_its_json_come_from_the_latest_build(monkeypatch, data):
     c = TestClient(webapp.app)
     r = c.get("/traders")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
-    assert "<title>racing² Traders</title>" in r.text and r.headers["cache-control"] == "no-store"
+    assert "<title>Ashcroft Traders</title>" in r.text and r.headers["cache-control"] == "no-store"
     # the page re-reads traders.json relative to itself: /traders -> /traders.json
     assert 'fetch("traders.json' in r.text
     j = c.get("/traders.json")
