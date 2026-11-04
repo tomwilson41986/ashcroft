@@ -162,7 +162,7 @@ jobs:
   table:
     needs: [cache, experiment]
     # only when the spec has quick experiments: a slow-only spec has nothing for this table (it failed on an empty out/)
-    if: always() && needs.cache.result == 'success' && needs.cache.outputs.quick != '[]'
+    if: ${{ !cancelled() && needs.cache.result == 'success' && needs.cache.outputs.quick != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -191,7 +191,7 @@ jobs:
 
   table_all:
     needs: [cache, experiment, slow]
-    if: always() && needs.cache.result == 'success' && needs.cache.outputs.slow != '[]'
+    if: ${{ !cancelled() && needs.cache.result == 'success' && needs.cache.outputs.slow != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

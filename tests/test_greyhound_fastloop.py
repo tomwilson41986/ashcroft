@@ -59,6 +59,8 @@ def test_blocks_read_no_result_of_their_own_day(name):
     last = b.race_date == b.race_date.max()
     b.loc[last, "won"] = 1 - b.loc[last, "won"]                  # the last day's results rewritten
     b.loc[last, "position"] = 7 - b.loc[last, "position"]
+    if "weight_kg" in b:
+        b.loc[last, "weight_kg"] += 3.0                           # and the last day's weigh-in
     blocks.attach(b, name)
     pd.testing.assert_frame_equal(a.loc[last, feats].reset_index(drop=True), b.loc[last, feats].reset_index(drop=True))
     assert blocks.attach(a, name) == feats                        # attached once
@@ -217,3 +219,127 @@ def test_the_bsp_forecast_rescaled_to_the_sp_book():
     book = float(np.median((1.0 / fit.bsp).groupby(fit.race_id).sum()))
     assert np.allclose(totals, totals.iloc[0]) and abs(totals.iloc[0] - book) < 0.05   # every race at the SP book
     assert res["log_bsp_rmse"] > 0
+
+
+def _compressed_races(n_races=400, b_true=1.6, seed=1):
+    """Races whose log(BSP) is b_true times the model's race-centred log price, and winners drawn from the BSP."""
+    rng = np.random.default_rng(seed)
+    race = np.repeat(np.arange(n_races), 6)
+    log_pred = rng.normal(1.6, 0.4, len(race))
+    c = fl._centre(log_pred, race)
+    p = pd.Series(np.exp(-b_true * c)).groupby(race).transform(lambda s: s / s.sum()).to_numpy()
+    log_bsp = -np.log(p) + rng.normal(0, 0.05, len(race))          # a book of 1.0 with a little noise
+    won = np.zeros(len(race))
+    for r in range(n_races):
+        i = np.flatnonzero(race == r)
+        won[rng.choice(i, p=p[i] / p[i].sum())] = 1
+    track = np.where(race % 2, "Romford", "Hove")
+    return log_pred, log_bsp, won, race, track
+
+
+def test_the_stretch_recovers_a_compressed_price():
+    log_pred, log_bsp, won, race, track = _compressed_races()
+    s = fl.fit_stretch(log_pred, log_bsp, won, race, track, "stretch")
+    assert abs(s["b"] - 1.6) < 0.05
+    t = fl.fit_stretch(log_pred, log_bsp, won, race, track, "temper")
+    assert t["b"] > 1.0                                            # the winners also say: spread the prices
+    st = fl.fit_stretch(log_pred, log_bsp, won, race, track, "stretch_track", shrink=0.0)
+    assert set(st["by_track"]) == {"Hove", "Romford"} and all(abs(v - 1.6) < 0.1 for v in st["by_track"].values())
+    with pytest.raises(ValueError):
+        fl.fit_stretch(log_pred, log_bsp, won, race, track, "isotonic")
+
+
+def test_the_stretched_prices_beat_the_compressed_ones_and_stay_a_book():
+    log_pred, log_bsp, won, race, track = _compressed_races(seed=2)
+    pred = pd.DataFrame({"race_id": race, "race_date": [f"2026-10-{1 + r % 20:02d}" for r in race], "dog_id":
+                         np.arange(len(race)), "track": track, "won": won, "bsp": np.exp(log_bsp)})
+    book = 1.0
+    p0 = pd.Series(np.exp(-log_pred)).groupby(race).transform(lambda s: s / s.sum())
+    pred["p_model"], pred["pred_bsp"] = p0.to_numpy(), 1.0 / (book * p0.to_numpy())
+    fit = fl.fit_stretch(log_pred, log_bsp, won, race, track, "stretch")
+    cal = fl.apply_stretch(pred, log_pred, fit, book)
+    assert np.allclose(cal.groupby("race_id").p_model.sum(), 1.0)
+    assert np.allclose((1.0 / cal.pred_bsp).groupby(cal.race_id).sum(), book)
+    sc = fl.score_pair(pred, cal)
+    assert sc["rmse_vs_uncalibrated"] < 0 and sc["rmse_ci90"][1] < 0
+    assert sc["logloss_vs_uncalibrated"] < 0
+
+
+def test_calibration_in_an_experiment_and_its_spec_check():
+    df, meta = synthetic_cache()
+    exp = {"name": "c", "features": "card_safe", "objective": "logbsp", "rescale_book": True,
+           "calibrate": ["stretch", "temper_track"]}
+    res, _ = fl.run_experiment(df, meta, exp, QUICK, test_from="2026-06-01")
+    assert set(res["calibrated"]) == {"stretch", "temper_track"}
+    assert "rmse_ci90" in res["calibrated"]["stretch"] and res["calibrated"]["stretch"]["fit"]["b"] > 0
+    assert "+ stretch" in fl.table([res], "c")
+    with pytest.raises(ValueError):
+        fl.check_spec({"experiments": [{"name": "x", "objective": "softmax", "calibrate": ["stretch"]}]})
+    with pytest.raises(ValueError):
+        fl.check_spec({"experiments": [{"name": "x", "objective": "logbsp", "calibrate": ["isotonic"]}]})
+
+
+def test_track_groups_are_scored_apart():
+    df, meta = synthetic_cache()
+    exp = {"name": "g", "features": "card_safe", "objective": "logbsp", "rescale_book": True,
+           "groups": {"weighin": ["hove"]}}
+    res, pred = fl.run_experiment(df, meta, exp, QUICK, test_from="2026-06-01")
+    bg = res["by_group"]
+    assert set(bg) == {"weighin", "rest"}
+    assert bg["weighin"]["runners"] + bg["rest"]["runners"] == len(pred)
+    assert bg["weighin"]["tracks"] == 1 and bg["rest"]["tracks"] == 1          # "hove" matches "Hove"
+    assert "gap" in bg["weighin"]["on_bsp_races"] and bg["rest"]["log_bsp_rmse"] > 0
+    assert fl.split_groups(pred, {"weighin": ["Hove"]})["rest"] == ["Romford"]
+    assert "[weighin: 1 tracks" in fl.table([res], "g")
+    assert set(fl.split_groups(pred, "each_track")) == {"Hove", "Romford"}
+
+
+def _weighed_dogs(n_dogs=300, runs=20, seed=3):
+    """Dogs whose weight reverts to their own norm, a run a week from Oct 2024 into 2025, with a finishing position."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for dog in range(n_dogs):
+        mu = 30 + rng.normal(0, 2)
+        w, hist = mu + rng.normal(0, 0.5), []
+        for k in range(runs):
+            day = pd.Timestamp("2024-10-01") + pd.Timedelta(days=7 * k + dog % 7)
+            w = mu + 0.4 * (w - mu) + rng.normal(0, 0.5) if hist else w
+            rows.append({"dog_id": dog, "t": day, "race_date": f"{day:%Y-%m-%d}", "weight_kg": w,
+                         "weight_change": w - hist[-1] if hist else np.nan,
+                         "weight_vs_mean": w - np.mean(hist) if hist else np.nan,
+                         "position": int(rng.integers(1, 7)), "won": 0})
+            hist.append(w)
+    return pd.DataFrame(rows)
+
+
+def test_the_predicted_weigh_in_from_weight_history_recency_and_form(monkeypatch):
+    from greyhound.blocks import wpred
+    monkeypatch.setattr(wpred, "MIN_FIT", 1000)
+    df = _weighed_dogs()
+    names = blocks.attach(df, "wpred")
+    assert {"wp_pred_weight", "wp_pred_change", "wp_pred_vs_mean", "wp_prev_weight", "wp_gap_days"} <= set(names)
+    late = df[df.t >= "2025-01-01"].dropna(subset=["wp_pred_change"])
+    assert len(late) > 1000 and df[df.t < "2025-01-01"].wp_pred_change.isna().all()   # 2025 from 2024 only
+    actual = late.weight_kg - late.wp_prev_weight
+    assert np.corrcoef(late.wp_pred_change, actual)[0, 1] > 0.3                 # the predictable part is found
+    assert np.abs(late.wp_pred_weight - late.weight_kg).mean() < np.abs(late.wp_prev_weight - late.weight_kg).mean()
+    last = df.t.dt.normalize() == df.t.dt.normalize().max()                     # nothing of the day's own weigh-in
+    df2 = _weighed_dogs()
+    df2.loc[last, "weight_kg"] += 5.0
+    blocks.attach(df2, "wpred")
+    assert np.allclose(df.loc[last, "wp_pred_weight"], df2.loc[last, "wp_pred_weight"], equal_nan=True)
+
+
+def test_the_predicted_weigh_in_without_raw_weights_falls_back_to_the_relative_model():
+    df = _weighed_dogs().drop(columns="weight_kg")
+    names = blocks.attach(df, "wpred")
+    assert set(names) == {"wp_pred_change", "wp_pred_vs_mean", "wp_prev_vs_mean", "wp_gap_days"}
+    late = df[df.t >= "2024-12-01"].dropna(subset=["wp_pred_change", "weight_change"])
+    assert len(late) > 1000 and np.corrcoef(late.wp_pred_change, late.weight_change)[0, 1] > 0.3
+
+
+def test_add_features_names_cached_columns():
+    df, meta = synthetic_cache()
+    exp = {"name": "a", "features": "card_safe", "objective": "logbsp", "add_features": ["weight_change"]}
+    res, _ = fl.run_experiment(df, meta, exp, QUICK, test_from="2026-06-01")
+    assert res["features"] == len(fl.feature_set(meta, "card_safe")) + 1

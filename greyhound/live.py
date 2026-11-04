@@ -64,6 +64,10 @@ LIVE_BLOCKS = ("parity", "hrb", "lib", "times", "intent", "ability", "etime")
 LIVE_MATRIX_BLOCKS = ("sim",)                     # greyhound/blocks, computed on the engine's matrix (roadmap F2)
 LIVE_OBJECTIVE = "logbsp"                         # 'binary' was the live model to 4 Nov 2026
 LIVE_TRAIN_FROM = "2024-01-01"                    # the fast loop's quick recipe, the window section 26.3 was scored on
+#: the stretch of the SP forecast within each race (greyhound.fastloop CALIBRATIONS), fitted on the fit's early-stopping
+#: tenth, applied to pred_bsp only (the win chance is left alone). Batch 8 (run 41827648070, 1 Jun - 2 Nov 2026): per
+#: track, RMSE of log(BSP) 0.4127 -> 0.4053 (-0.0074, 90% -0.0080 to -0.0067); it takes effect at the next retrain
+LIVE_CALIBRATION: str | None = "stretch_track"
 LEDGER_FIELDS = ["time_utc", "mode", "market_id", "selection_id", "track", "race_time", "trap", "dog", "p_model",
                  "price", "size_offered", "edge", "action", "stake", "matched", "avg_price", "bet_id", "status",
                  "error", "lay_liability", "lay_status", "minutes_to_off"]
@@ -87,7 +91,7 @@ def card_safe(features: list[str]) -> list[str]:
 
 
 def fit(df: pd.DataFrame, features: list[str], before: str, date_from: str = "2019-01-01",
-        objective: str = "binary"):
+        objective: str = "binary", calibration: str | None = None):
     """The live model: every modelling race in [date_from, before), early-stopped on the last tenth. ``objective``
     'binary' on the winner, or 'logbsp': a regression on log(BSP) (the races with one), the fast loop's recipe
     (greyhound.fastloop BASE_PARAMS, learning rate 0.05), with the SP book's usual total from the fit's races so the
@@ -111,6 +115,13 @@ def fit(df: pd.DataFrame, features: list[str], before: str, date_from: str = "20
     m = lgb.train(params, lgb.Dataset(d.loc[tr, features], y[tr.to_numpy()]), rounds,
                   valid_sets=[lgb.Dataset(d.loc[es, features], y[es.to_numpy()])],
                   callbacks=[lgb.early_stopping(patience, verbose=False)])
+    if objective == "logbsp" and calibration:
+        # the stretch fitted on the early-stopping rows (the trees never trained on them), as the fast loop scores it
+        from greyhound.fastloop import fit_stretch
+        e = d[es]
+        raw_es = m.predict(e[features], num_iteration=m.best_iteration)
+        meta["stretch"] = fit_stretch(raw_es, y[es.to_numpy()], e.won.to_numpy(float),
+                                      pd.factorize(e.race_id)[0], e.track.to_numpy(), calibration)
     return m, {**meta, "fit_rows": int(len(d)), "rounds": m.best_iteration}
 
 
@@ -133,9 +144,21 @@ def price_cards(df: pd.DataFrame, booster, features: list[str], key: pd.DataFram
     out["p_raw"] = booster.predict(c[features]) if len(c) else []
     if (meta or {}).get("objective") == "logbsp":
         # the forecast SP: its chances normalised in the race, and the price rescaled to the SP book's usual total
-        out["p_model"] = race_norm(1.0 / np.exp(out.p_raw.astype(float)), out.race_id) if len(c) else []
+        raw = out.p_raw.astype(float)
+        out["p_model"] = race_norm(1.0 / np.exp(raw), out.race_id) if len(c) else []
         book = float((meta or {}).get("book") or 1.0)
-        out["pred_bsp"] = (1.0 / (book * out.p_model.astype(float))).round(3) if len(c) else []
+        st = (meta or {}).get("stretch")
+        if st and len(c):
+            # batch 8 (4 Nov 2026): the BSP is more spread than the winners' chances, so the stretch (a share
+            # proportional to pred_bsp^-b in each race, b by track) makes the SP forecast more accurate (RMSE of
+            # log(BSP) 0.4127 -> 0.4053) and the win chance worse; it is applied to the SP forecast only, the chance
+            # (what the early lay's forecast reads) left as the trees give it
+            b = out.track.astype(str).map(st.get("by_track") or {}).fillna(st["b"]).to_numpy(float)
+            centred = raw - raw.groupby(out.race_id).transform("mean")
+            share = race_norm(pd.Series(np.exp(-b * centred.to_numpy()), index=out.index), out.race_id)
+            out["pred_bsp"] = (1.0 / (book * share.astype(float))).round(3)
+        else:
+            out["pred_bsp"] = (1.0 / (book * out.p_model.astype(float))).round(3) if len(c) else []
     else:
         out["p_model"] = race_norm(out.p_raw, out.race_id) if len(c) else []
     out = out.merge(key, on=["race_id", "trap"], how="left")
@@ -150,7 +173,8 @@ def train(store, today: date) -> dict:
     eng = GreyhoundMetricsEngine(blocks=LIVE_BLOCKS)
     df = eng.calculate_all(runs, prices=load_prices(store, f"2014-{today.year}"))
     feats = card_safe(eng.features + attach_blocks(df, LIVE_MATRIX_BLOCKS))
-    m, meta = fit(df, feats, before=f"{today:%Y-%m-%d}", date_from=LIVE_TRAIN_FROM, objective=LIVE_OBJECTIVE)
+    m, meta = fit(df, feats, before=f"{today:%Y-%m-%d}", date_from=LIVE_TRAIN_FROM, objective=LIVE_OBJECTIVE,
+                  calibration=LIVE_CALIBRATION)
     imp = pd.Series(m.feature_importance("gain"), index=feats)
     meta.update({"features": feats, "blocks": list(eng.blocks), "matrix_blocks": list(LIVE_MATRIX_BLOCKS),
                  "card_unsafe_left_out": sorted(CARD_UNSAFE),
