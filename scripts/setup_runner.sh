@@ -4,6 +4,7 @@
 #   bash scripts/setup_runner.sh football        # football-trade.yml  (runs-on: vars.FOOTBALL_RUNNER || 'football')
 #   bash scripts/setup_runner.sh paper-models    # paper-models.yml, greyhound-prices.yml (vars.PAPER_MODELS_RUNNER || 'paper-models')
 #   bash scripts/setup_runner.sh data            # other-data.yml      (runs-on: vars.DATA_RUNNER || 'data')
+#   bash scripts/setup_runner.sh morning         # morning-models.yml  (runs-on: vars.MORNING_RUNNER || 'morning')
 #
 # Run it on the server as the user the live runner runs as (not root). It asks for a registration token: GitHub, the
 # repository, Settings > Actions > Runners > New self-hosted runner, the token in the "Configure" step (valid one hour).
@@ -20,8 +21,8 @@ set -euo pipefail
 
 LABEL="${1:-}"
 case "$LABEL" in
-  football|paper-models|data) ;;
-  *) echo "usage: bash scripts/setup_runner.sh football|paper-models|data" >&2; exit 2 ;;
+  football|paper-models|data|morning) ;;
+  *) echo "usage: bash scripts/setup_runner.sh football|paper-models|data|morning" >&2; exit 2 ;;
 esac
 
 REPO_URL="https://github.com/tomwilson41986/ashcroft"

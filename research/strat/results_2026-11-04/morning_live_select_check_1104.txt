@@ -1,0 +1,161 @@
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+/home/runner/work/ashcroft/ashcroft/morning/select.py:43: UserWarning: This pattern is interpreted as a regular expression, and has match groups. To actually get the groups, use str.extract.
+  return pd.Series(np.select([n.str.contains(_DATE_NAME) | (n.str.strip() == ""),
+history 2,019,700 rows (25s)
+table last day: 2026-11-02 race_time sample: ['1.00.', '1.15.', '1.30.', '1.45.', '2.00.', '2.15.', '2.30.', '2.45.', '3.00.', '3.15.', '3.30.', '3.45.']
+table jockeys with a bracket: 3047 ['Coen, Ben M', 'Carroll, G F', 'Cleary, R P', 'Crosse, Nathan', 'Holohan, Reese'] claim {0: 1458227, 7: 183513, 3: 180462, 5: 168451}
+threshold 0.05589473955958607
+full build 33s
+2026-10-27: card 395 runners, 278 matched to the table; code agrees 0.971; claim agrees 0.993; jockey agrees 0.975; trainer 1.000; dslr 0.953; (9s)
+           race_name_c going_description_c   code_c code_t
+261  Tue 27th Oct 2026            Standard  unknown     aw
+                 horse_name_c  days_since_lr_c  days_since_lr_t
+65          Back To Sea (IRE)              NaN              NaN
+66           Get Busy Jumping              NaN              NaN
+72   Sittin Ona Fortune (IRE)              NaN              NaN
+74         Hes A Terror (IRE)              NaN              NaN
+159      Absence Of Ego (IRE)              NaN              NaN
+  steamer live-only [] research-only [('steamer', 'wolverhampton', '19:00', 'itsamugsgame')]
+  steamer prediction live vs research on 269 runners: median abs diff 0.0000, share within 0.005 0.721
+2026-10-28: card 365 runners, 345 matched to the table; code agrees 1.000; claim agrees 1.000; jockey agrees 0.994; trainer 1.000; dslr 0.910; (9s)
+        horse_name_c  days_since_lr_c  days_since_lr_t
+32        Bantry Bay              NaN              NaN
+35  Leo Phelps (IRE)              NaN              NaN
+96   Flash Of Colour              NaN              NaN
+97   Gerty Macdowell              NaN              NaN
+98     Golden Chimes              NaN              NaN
+  steamer prediction live vs research on 325 runners: median abs diff 0.0000, share within 0.005 0.803
+2026-10-29: card 412 runners, 387 matched to the table; code agrees 1.000; claim agrees 0.995; jockey agrees 0.992; trainer 1.000; dslr 0.899; (8s)
+               horse_name_c  days_since_lr_c  days_since_lr_t
+0         Buxted Flyer (FR)              NaN              NaN
+1                   Civilon              NaN              NaN
+2          Dont Tempt Harry              NaN              NaN
+4  Roos Racing Rocket (IRE)              NaN              NaN
+9            Zulu Chieftain              NaN              NaN
+  steamer prediction live vs research on 372 runners: median abs diff 0.0002, share within 0.005 0.728
+2026-10-30: card 475 runners, 436 matched to the table; code agrees 0.984; claim agrees 1.000; jockey agrees 0.993; trainer 1.000; dslr 0.908; (9s)
+           race_name_c going_description_c   code_c  code_t
+110  Fri 30th Oct 2026            Yielding  unknown  hurdle
+      horse_name_c  days_since_lr_c  days_since_lr_t
+7    Alfonso (IRE)              NaN              NaN
+8      Arkat (IRE)              NaN              NaN
+9       Big Effort              NaN              NaN
+12        Medvedev              NaN              NaN
+15  Reign Over All              NaN              NaN
+  steamer live-only [] research-only [('steamer', 'downroyal', '14:00', 'brosnaqueen'), ('steamer', 'downroyal', '15:10', 'costacurta'), ('steamer', 'newcastle', '18:45', 'regaldesire')]
+  steamer prediction live vs research on 411 runners: median abs diff 0.0000, share within 0.005 0.706
+2026-10-31: card 442 runners, 354 matched to the table; code agrees 0.946; claim agrees 0.997; jockey agrees 0.992; trainer 1.000; dslr 0.924; (9s)
+           race_name_c going_description_c   code_c  code_t
+157  Sat 31st Oct 2026                Good  unknown  hurdle
+201  Sat 31st Oct 2026                Good  unknown   chase
+          horse_name_c  days_since_lr_c  days_since_lr_t
+20   Astral Mist (IRE)              NaN              NaN
+21          Gorgonzola              NaN              NaN
+22   Heather Way (IRE)              NaN              NaN
+24  La Conquista (IRE)              NaN              NaN
+25   Mischievous Angel              NaN              NaN
+  steamer live-only [('steamer', 'downroyal', '13:30', 'skerryhill'), ('steamer', 'wetherby', '13:45', 'stirene')] research-only [('steamer', 'downroyal', '14:38', 'shantoushow')]
+  steamer prediction live vs research on 320 runners: median abs diff 0.0000, share within 0.005 0.637
+2026-11-01: card 401 runners, 383 matched to the table; code agrees 0.974; claim agrees 0.997; jockey agrees 0.992; trainer 1.000; dslr 0.906; (9s)
+          race_name_c going_description_c   code_c code_t
+53   Sun 1st Nov 2026                Good  unknown  chase
+237  Sun 1st Nov 2026            Yielding  unknown  chase
+             horse_name_c  days_since_lr_c  days_since_lr_t
+7          Keep Star (FR)              NaN              NaN
+17    Book Of Kells (IRE)              NaN              NaN
+18     Bright Dream (IRE)              NaN              NaN
+22  Eastern Passage (USA)              NaN              NaN
+23            Erico (GER)              NaN              NaN
+  steamer live-only [('steamer', 'carlisle', '12:38', 'joltinnjiving')] research-only [('steamer', 'worcester', '14:30', 'songofthestars'), ('steamer', 'cork', '13:40', 'buddyholly')]
+  steamer prediction live vs research on 361 runners: median abs diff 0.0000, share within 0.005 0.765
+2026-11-02: card 285 runners, 269 matched to the table; code agrees 0.952; claim agrees 0.996; jockey agrees 0.985; trainer 1.000; dslr 0.914; (10s)
+          race_name_c going_description_c   code_c code_t
+0    Mon 2nd Nov 2026                Good  unknown  chase
+201  Mon 2nd Nov 2026            Standard  unknown     aw
+              horse_name_c  days_since_lr_c  days_since_lr_t
+18  Silverhill Freya (IRE)              NaN              NaN
+33         Backwaters (FR)              NaN              NaN
+34            Chasing Dawn              NaN              NaN
+36      Join The Kew (IRE)              NaN              NaN
+38  Magellan Dirlande (FR)              NaN              NaN
+  steamer live-only [] research-only [('steamer', 'southwell', '13:45', 'kalkaroo'), ('steamer', 'wolverhampton', '20:30', 'sarafinamshairi')]
+  steamer prediction live vs research on 253 runners: median abs diff 0.0000, share within 0.005 0.688
+           day         model  live  research  both  live_only  research_only  withdrawn
+0   2026-10-27  quick_return     3         3     3          0              0          1
+1   2026-10-27       steamer    11        12    11          0              1          5
+2   2026-10-28  quick_return     4         4     4          0              0          1
+3   2026-10-28       steamer    13        13    13          0              0          0
+4   2026-10-29  quick_return     2         2     2          0              0          5
+5   2026-10-29       steamer    11        11    11          0              0          2
+6   2026-10-30  quick_return     6         6     6          0              0          0
+7   2026-10-30       steamer     7        11     7          0              4          1
+8   2026-10-31  quick_return     2         2     2          0              0          1
+9   2026-10-31       steamer    18        17    16          2              1          2
+10  2026-11-01  quick_return    10        10    10          0              0          1
+11  2026-11-01       steamer    18        19    17          1              2          1
+12  2026-11-02  quick_return     0         0     0          0              0          2
+13  2026-11-02       steamer     5         7     5          0              2          2
+14  2026-11-03  quick_return     0         0     0          0              0          3
+15  2026-11-03       steamer     0         0     0          0              0         17
+16  2026-11-04  quick_return     0         0     0          0              0          4
+17  2026-11-04       steamer     0         0     0          0              0         11
+              live  research  both  withdrawn    recall  precision
+model                                                             
+quick_return    27        27    27          9  1.000000   1.000000
+steamer         83        90    80         13  0.888889   0.963855
+
+2026-11-04: 15 selections
+model
+quick_return     4
+steamer         11
+           model   race_date race_time        track             horse_name    code  field   dslr      pred          jockey_name              trainer
+0   quick_return  2026-11-04     12:05  Musselburgh               Alnofoor    flat     12    3.0 -0.078135            Gray, S A  OConnell, Ms Claire
+4        steamer  2026-11-04     12:20     Chepstow        Emailandy (IRE)   chase      5   19.0  0.095824    Keighley, Freddie          Keighley, M
+5        steamer  2026-11-04      1:33      Wexford  The Besty Woman (IRE)  hurdle      9   41.0  0.065784     OKeeffe, Darragh   Bromhead, Henry De
+6        steamer  2026-11-04      2:05      Wexford          Walking Saint  hurdle     14  246.0  0.066266        Staples, Eoin          Nolan, Paul
+7        steamer  2026-11-04      2:45  Musselburgh           Barley (IRE)    flat     10    5.0  0.110404         Allan, David        Easterby, T D
+1   quick_return  2026-11-04      3:05     Chepstow          Bahtiyar (FR)   chase     11    1.0  0.107814  Brewitt, Miss Clara       Young, Maxwell
+8        steamer  2026-11-04      3:05     Chepstow          Bahtiyar (FR)   chase     11    1.0  0.107814  Brewitt, Miss Clara       Young, Maxwell
+2   quick_return  2026-11-04      3:23   Nottingham               Tex (FR)    flat     15    4.0  0.039161     Shepherd, Callum        Baker, George
+3   quick_return  2026-11-04      3:50  Musselburgh             Bay Breeze    flat     12    4.0 -0.027311      Fentiman, Duran        Easterby, T D
+9        steamer  2026-11-04      3:50  Musselburgh      Black Storm (IRE)    flat     12    8.0  0.081397          Hart, Jason    Scott, Miss Katie
+10       steamer  2026-11-04      3:55   Nottingham           Born A Rebel    flat     15    5.0  0.101882        Lee, Clifford       Owens, Patrick
+11       steamer  2026-11-04      3:55   Nottingham           Rogers Dream    flat     15    7.0  0.142922    Clutterbuck, Rhys       Arnolda, Gihan
+12       steamer  2026-11-04      5:45      Dundalk    Sron Na Caise (IRE)      aw      9   30.0  0.087041          Ryan, Gavin          Condon, K J
+13       steamer  2026-11-04      6:00      Kempton    Freddies Star (IRE)      aw     11   13.0  0.103596        Ghiani, Marco            Teal, R A
+14       steamer  2026-11-04      6:15      Dundalk       Annie Tips (IRE)      aw      7   37.0  0.063838         McAteer, L T       Dowling, James
