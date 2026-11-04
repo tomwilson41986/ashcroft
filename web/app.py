@@ -28,11 +28,10 @@ from web.performance import compute_performance_metrics, compute_performance_sum
 
 app = FastAPI(title="Ashcroft", docs_url="/docs")
 
-# CORS — allow Netlify frontend and local dev
+# CORS — local dev only
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5500", "http://127.0.0.1:5500"],
-    allow_origin_regex=r"https://.*\.netlify\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

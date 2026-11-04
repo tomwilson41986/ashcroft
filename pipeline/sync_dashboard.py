@@ -1,7 +1,7 @@
 """Sync pipeline data to the web dashboard S3 keys.
 
 Reads settlements and daily P&L from the pipeline's S3 paths and writes
-them to the dashboard keys that the Netlify frontend reads:
+them to the dashboard keys that the web dashboard (web/app.py) reads:
 
     dashboard/bets.json      — all settled + pending bets
     dashboard/daily_pnl.json — daily P&L summaries
