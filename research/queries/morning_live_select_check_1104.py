@@ -16,7 +16,7 @@ class G:
 get = G()
 t0 = time.time()
 hist = MF.L.load(); print(f"history {len(hist):,} rows ({time.time()-t0:.0f}s)")
-print("table race_time sample:", hist[hist.race_date == "2026-11-03"].race_time.unique()[:12].tolist())
+print("table last day:", hist.race_date.max(), "race_time sample:", hist[hist.race_date == hist.race_date.max()].race_time.unique()[:12].tolist())
 print("table jockeys with a bracket:", int(hist.jockey_name.fillna("").str.contains(r"\(").sum()),
       hist[hist.race_date >= "2026-10-01"].jockey_name.head(5).tolist(), "claim", hist.jockeys_claim.value_counts().head(4).to_dict())
 booster, thr, meta = ME.load_model(); print("threshold", thr)

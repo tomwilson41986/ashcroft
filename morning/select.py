@@ -80,7 +80,7 @@ def card_rows(card: pd.DataFrame, day: str, like: pd.DataFrame) -> pd.DataFrame:
     out["race_has_winner"] = False
     out["field"] = out.groupby("rk")["horse_name"].transform("size")
     for k in like.columns:                                  # the table's dtypes where the card leaves a column empty
-        if like[k].dtype == bool and out[k].isna().all():
+        if pd.api.types.is_bool_dtype(like[k]) and out[k].isna().all():
             out[k] = False
     return out
 
@@ -89,9 +89,14 @@ def history_with_card(hist: pd.DataFrame, card: pd.DataFrame, day: str) -> pd.Da
     """Earlier days of the history and the day's card, in the table's order."""
     h = hist[hist["race_date"] < day]
     rows = card_rows(card, day, hist)
-    for k in hist.columns:
-        if hist[k].dtype != object and k in rows:
-            rows[k] = pd.to_numeric(rows[k], errors="coerce") if hist[k].dtype != bool else rows[k].astype(bool)
+    for k in hist.columns:                                   # the table's numeric and boolean columns keep their kind
+        if k not in rows or k == "date":
+            continue
+        if pd.api.types.is_bool_dtype(hist[k]):
+            rows[k] = rows[k].fillna(False).astype(bool)
+        elif pd.api.types.is_numeric_dtype(hist[k]):
+            rows[k] = pd.to_numeric(rows[k], errors="coerce")
+    rows["date"] = pd.Timestamp(day)
     out = pd.concat([h, rows], ignore_index=True)
     return out.sort_values(["date", "race_time", "track"], kind="stable").reset_index(drop=True)
 
