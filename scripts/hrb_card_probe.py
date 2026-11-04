@@ -130,6 +130,63 @@ def main() -> int:
                 n += 1
             if n >= 4:
                 break
+    # the formats side by side: the one-day page's (what the morning reads) and the 48-hour race pages'
+    one = BeautifulSoup(s.get(f"{base}/onedayracecards.php", timeout=60).text, "lxml")
+    shown = 0
+    hg = set()
+    for table in one.find_all("table"):
+        rows = table.find_all("tr")
+        head = [c.get_text(strip=True) for c in rows[0].find_all(["td", "th"])] if rows else []
+        if not head or head[0] != "No." or len(head) < 8:
+            continue
+        ix = {h: i for i, h in enumerate(head)}
+        for r in rows[1:]:
+            cs = r.find_all(["td", "th"])
+            if len(cs) > ix.get("Headgear", 99) and cs[ix["Headgear"]].get_text(strip=True):
+                hg.add(cs[ix["Headgear"]].get_text(strip=True))
+        if shown < 2:
+            spans, prev = [], table.find_previous_sibling()
+            while prev is not None and prev.name != "table" and len(spans) < 4:
+                if prev.name == "span":
+                    spans.insert(0, prev.get_text(strip=True))
+                prev = prev.find_previous_sibling()
+            print(f"\none-day race: spans {spans}\n   columns {head}")
+            for r in rows[1:4]:
+                cs = r.find_all(["td", "th"])
+                print("     ", [c.get_text(strip=True)[:22] for c in cs][:16])
+                if len(cs) > ix.get("Horse", 99):
+                    print("      horse title:", (cs[ix["Horse"]].get("title") or "")[:120])
+            shown += 1
+    print("one-day headgear values:", sorted(hg)[:40])
+    vals = {"A/S": set(), "W/HG": set(), "D": set(), "Miles": set()}
+    lines = []
+    for h, _ in race_links[::2][:8]:
+        pg = BeautifulSoup(s.get(urljoin(url, h), timeout=60).text, "lxml")
+        for sp in pg.find_all("span"):
+            tx = sp.get_text(" ", strip=True)
+            if re.search(r"Class|runners|Win:", tx) and len(tx) < 200:
+                lines.append(tx)
+        for t in [t for t in pg.find_all("table") if not t.find("table")]:
+            rows = t.find_all("tr")
+            cells = [[c for c in r.find_all(["td", "th"], recursive=False)] for r in rows]
+            head = [c.get_text(strip=True) for c in cells[0]] if cells else []
+            if "No." not in head or "Horse" not in head:
+                continue
+            ix = {x: i for i, x in enumerate(head)}
+            for c in cells[1:]:
+                if len(c) < len(head) - 1:
+                    continue
+                for k in vals:
+                    if k in ix and len(c) > ix[k]:
+                        vals[k].add(c[ix[k]].get_text(" ", strip=True))
+            first = [c for c in cells[1:] if len(c) >= len(head) - 1][:2]
+            for c in first:
+                print("   early horse title:", (c[ix["Horse"]].get("title") or "")[:120],
+                      "| link:", re.sub(r"\d{5,}", "N", (c[ix["Horse"]].find("a") or {}).get("href", "") if c[ix["Horse"]].find("a") else ""))
+            break
+    for k, v in vals.items():
+        print(f"early {k} values ({len(v)}):", sorted(v)[:40])
+    print("early race lines:", lines[:10])
     today_page = races(s.get(f"{base}/onedayracecards.php", timeout=60).text)
     print(f"\nonedayracecards.php now ({datetime.now(timezone.utc):%H:%M} UTC): "
           f"{sorted(set(x.split(' ', 1)[1] for x in today_page if ' ' in x))}; the 48-hour page's {courses}")
