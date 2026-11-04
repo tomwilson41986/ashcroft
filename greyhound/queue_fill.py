@@ -72,7 +72,11 @@ def fill(side: str, price: float, size: float, placed_at, book: dict, traded: pd
     out.queue_ahead = q
     if traded is None or not len(traded):
         return out
-    t = traded.assign(polled=pd.to_datetime(traded.polled_utc, utc=True)).sort_values("polled")
+    # the recorder stamps a read's books to the whole second and its traded money with the fraction too: floored, the
+    # money of the read an order was priced on counts as already traded when it was placed (unfloored, it read as
+    # traded after: money matched before the order existed credited to it, 4 Nov 2026)
+    t = traded.assign(polled=pd.to_datetime(traded.polled_utc, utc=True, format="ISO8601").dt.floor("s")).sort_values(
+        "polled")
     if placed_at.tzinfo is None:
         placed_at = placed_at.tz_localize("UTC")
     before = t[t.polled <= placed_at]
