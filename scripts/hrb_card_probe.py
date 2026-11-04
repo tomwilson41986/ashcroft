@@ -6,7 +6,7 @@ prints no page text beyond those, and masks long numbers (user ids) in the links
 
 import re
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -86,6 +86,37 @@ def main() -> int:
             print("links naming a card, a date or a day:")
             for ln in links(r.text, url):
                 print("   ", ln)
+    # the 48-hour declarations (the menu's "48hr Decs Cards & Analysis"): which races, and the card's columns
+    url = f"{base}/horse-racing-today.php?showearly=1"
+    r = s.get(url, timeout=60)
+    soup = BeautifulSoup(r.text, "lxml")
+    race_links = [(a.get("href"), a.get_text(" ", strip=True)) for a in soup.find_all("a")
+                  if "raceid=" in (a.get("href") or "")]
+    dates = sorted(set(m.group(0) for m in DATE_RX.finditer(soup.get_text(" "))))[:8]
+    courses = sorted(set(t.split(" ", 1)[1] for _, t in race_links if " " in t))
+    print(f"\n== horse-racing-today.php?showearly=1: HTTP {r.status_code}, {len(r.text):,} bytes, {len(race_links)} race "
+          f"links; courses {courses}; dates on the page {dates}")
+    for h, t in race_links[:3]:
+        print("   ", re.sub(r"\d{5,}", "N", h), f"[{t}]")
+    if race_links:
+        r2 = s.get(urljoin(url, race_links[0][0]), timeout=60)
+        s2 = BeautifulSoup(r2.text, "lxml")
+        dates2 = sorted(set(m.group(0) for m in DATE_RX.finditer(s2.get_text(" "))))[:5]
+        print(f"   the first race's page: HTTP {r2.status_code}, {len(r2.text):,} bytes; dates {dates2}")
+        n = 0
+        for table in s2.find_all("table"):
+            rows = table.find_all("tr")
+            if len(rows) < 3:
+                continue
+            head = [c.get_text(" ", strip=True)[:18] for c in rows[0].find_all(["td", "th"])]
+            if len(head) >= 6:
+                print(f"   a table of {len(rows)} rows, its columns: {head[:30]}")
+                n += 1
+            if n >= 4:
+                break
+    today_page = races(s.get(f"{base}/onedayracecards.php", timeout=60).text)
+    print(f"\nonedayracecards.php now ({datetime.now(timezone.utc):%H:%M} UTC): "
+          f"{sorted(set(x.split(' ', 1)[1] for x in today_page if ' ' in x))}; the 48-hour page's {courses}")
     return 0
 
 
