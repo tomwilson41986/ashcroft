@@ -80,3 +80,54 @@ select (where the market is softer, only when the edge is clear).
 - **Two owner actions** unlock the rest, 1 and 7:
   - request Betfair Historic Data BASIC for soccer;
   - register the football runner.
+
+## Results: items 2-6 (4 Nov 2026)
+
+**Sources.** `research/open_close/football_improve.py --rethink`; figures from `reports/football_runs/rethink.json`.
+
+**What was built (every new feature lag-tested):**
+- **Item 3.** `football/blocks/home_adv.py`: the competition's rolling home advantage and its drift, promoted and
+  relegated sides, the early season.
+- **Items 2 and 4.** `team_news` in `football/player_ratings.py`. From each side's matches before the early price:
+  - the expected eleven's rating;
+  - rating-weighted regulars missing from the latest match;
+  - players sent off;
+  - rotation.
+  It covers 61% of matches from 2020, wherever API-Football's line-ups link.
+- **Item 5.** Cost-aware direction classifiers (P(the move clears the cost) up minus down), and stacks fitted apart for
+  the top five leagues and the rest.
+- **Item 6.** The candidates outside the top five leagues.
+
+**How it was scored.** Betfair match odds, tuned on 2024/25 and read on 2025/26 to date (read by earlier rules:
+development evidence). About 100 variants have now been read on 2025/26.
+
+**The strongest 5 forecasts a week on 2025/26** (285 bets each):
+
+| Features | Model | All leagues: tick / sym | Outside the top five: tick / sym | Right way (outside) |
+|---|---|---|---|---|
+| Team features (base) | Stack | +1.20% [-0.3] / +3.64% [+2.1] | +1.53% [+0.1] / +3.35% [+1.9] | 75% |
+| + home advantage | Stack | +1.11% / +3.51% | +2.10% [+0.6] / +3.88% [+2.4] | 76% |
+| + team news | Stack | +1.42% [-0.0] / +3.86% [+2.5] | +1.91% [+0.4] / +3.85% [+2.4] | 77% |
+| **+ both** | **Stack** | **+1.97% [+0.5] / +4.24% [+2.8]** | **+2.64% [+1.1] / +4.36% [+2.8]** | **77%** |
+| + both | Cost classifiers | +1.23% / +2.02% | +0.93% / +1.57% | 73% |
+| + both | Stack per tier | +1.70% [+0.0] / +4.00% | +2.37% [+0.7] / +4.34% | 78% |
+
+(Brackets: the 90% lower bound. "tick" = a tick off fair at each end; "sym" = a book symmetric about fair.)
+
+**The same rule on 2024/25** (both blocks, stack, outside the top five, top 5 a week): +5.33% a tick off fair
+[+3.4], +7.26% at a symmetric book [+5.2], 75% right way. At top 10 a week on 2025/26 it is +0.63% / +2.14%.
+
+**Read:**
+- **Each block helps a little, and the two together most.** The rule is now above zero a tick off fair in both
+  seasons, with the lower bound above zero. The base model was not.
+- **The softer leagues help, as Knutson's record suggests.**
+- **Training for the decision as built here does not help.** The cost classifiers fall short of the stack, and per-tier
+  fits match it without beating it. A learning-to-rank objective is untried.
+- **Caveat.** With about 100 variants read on 2025/26, part of the edge over the base is selection. The rule
+  must be pre-registered and judged forward on the recorder's books before any money goes on it.
+
+**Candidate for pre-registration:**
+- the stack on team features plus `home_adv` plus `team_news`;
+- its strongest 5 forecasts a week outside the top five leagues;
+- back first where the chance is forecast up, lay first where down;
+- greened at the close.
