@@ -275,3 +275,17 @@ def test_calibration_in_an_experiment_and_its_spec_check():
         fl.check_spec({"experiments": [{"name": "x", "objective": "softmax", "calibrate": ["stretch"]}]})
     with pytest.raises(ValueError):
         fl.check_spec({"experiments": [{"name": "x", "objective": "logbsp", "calibrate": ["isotonic"]}]})
+
+
+def test_track_groups_are_scored_apart():
+    df, meta = synthetic_cache()
+    exp = {"name": "g", "features": "card_safe", "objective": "logbsp", "rescale_book": True,
+           "groups": {"weighin": ["hove"]}}
+    res, pred = fl.run_experiment(df, meta, exp, QUICK, test_from="2026-06-01")
+    bg = res["by_group"]
+    assert set(bg) == {"weighin", "rest"}
+    assert bg["weighin"]["runners"] + bg["rest"]["runners"] == len(pred)
+    assert bg["weighin"]["tracks"] == 1 and bg["rest"]["tracks"] == 1          # "hove" matches "Hove"
+    assert "gap" in bg["weighin"]["on_bsp_races"] and bg["rest"]["log_bsp_rmse"] > 0
+    assert fl.split_groups(pred, {"weighin": ["Hove"]})["rest"] == ["Romford"]
+    assert "[weighin: 1 tracks" in fl.table([res], "g")

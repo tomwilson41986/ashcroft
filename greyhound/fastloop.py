@@ -310,8 +310,57 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
         res["log_bsp_rmse"] = round(float(np.sqrt(np.mean(e ** 2))), 4)
     if calibrated:
         res["calibrated"] = calibrated
+    if exp.get("groups"):
+        res["by_group"] = {g: group_scores(pred[in_group(pred, tracks)], obj) for g, tracks in
+                           split_groups(pred, exp["groups"]).items()}
     res["seconds"] = round(time.monotonic() - t0)
     return res, pred
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# Track groups (the owner, 4 Nov 2026: "use the weigh-in for the tracks we have it and then evaluate if we can cover
+# other tracks with our model or just leave them alone")
+# --------------------------------------------------------------------------------------------------------------------
+
+def _norm_track(x) -> str:
+    return "".join(c for c in str(x).lower() if c.isalnum())
+
+
+def in_group(pred: pd.DataFrame, tracks) -> pd.Series:
+    """The runners at these tracks (names matched without case, spaces or punctuation)."""
+    names = {_norm_track(t) for t in tracks}
+    return pred.track.map(_norm_track).isin(names)
+
+
+def split_groups(pred: pd.DataFrame, groups: dict) -> dict:
+    """The spec's named groups of tracks and ``rest``: every other track in the test."""
+    named = {g: list(t) for g, t in groups.items()}
+    taken = {_norm_track(t) for ts in named.values() for t in ts}
+    named["rest"] = sorted({t for t in pred.track.astype(str).unique() if _norm_track(t) not in taken})
+    return named
+
+
+def group_scores(p: pd.DataFrame, obj: str) -> dict:
+    """A group's runners and races, the model's log-loss and the BSP's on the same races (the gap: how far behind the
+    market's final price), and the RMSE of log(BSP) for a log-BSP model."""
+    from greyhound.model import logloss
+    if not len(p):
+        return {"runners": 0}
+    out = {"runners": int(len(p)), "races": int(p.race_id.nunique()), "tracks": int(p.track.nunique()),
+           "logloss": round(logloss(p.p_model, p.won), 5)}
+    if "bsp_p_norm" in p:
+        whole = p.bsp_p_norm.notna().groupby(p.race_id).transform("all")
+        b = p[whole]
+        if len(b):
+            out["on_bsp_races"] = {"runners": int(len(b)), "model": round(logloss(b.p_model, b.won), 5),
+                                   "bsp": round(logloss(b.bsp_p_norm, b.won), 5),
+                                   "gap": round(logloss(b.p_model, b.won) - logloss(b.bsp_p_norm, b.won), 5)}
+    if obj == "logbsp" and "pred_bsp" in p:
+        ok = p.bsp > 1
+        if ok.any():
+            e = np.log(p.pred_bsp[ok]) - np.log(p.bsp[ok])
+            out["log_bsp_rmse"] = round(float(np.sqrt(np.mean(e ** 2))), 4)
+    return out
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -547,6 +596,15 @@ def table(results: list[dict], baseline: str | None = None) -> str:
         lines.append(f"| {r['name']} | {r['features']} | {r['spec'].get('objective', 'softmax')} | {r['rounds']} | "
                      f"{rmse} | {rmse_vs} | {_short_cell(r)} | {_short_vs(r, base)} | {r['logloss']} | "
                      f"{_vs(r, base)} | {r['seconds']} |")
+        for g, gs in (r.get("by_group") or {}).items():
+            if not gs.get("runners"):
+                continue
+            ob = gs.get("on_bsp_races") or {}
+            st = ((r.get("groups_study") or {}).get(g) or {}).get("shortening")
+            short = _short_cell({"shortening": st}) if st else ""
+            lines.append(f"| {r['name']} [{g}: {gs['tracks']} tracks, {gs['races']} races] | | | | "
+                         f"{gs.get('log_bsp_rmse', '')} | | {short} | | {gs['logloss']} | "
+                         f"vs the BSP {ob.get('gap', '')} | |")
         for kind, c in (r.get("calibrated") or {}).items():
             ci = c.get("rmse_ci90") or ["", ""]
             lci = c.get("logloss_ci90") or ["", ""]
@@ -615,6 +673,8 @@ def main(argv=None) -> int:
     results = []
     for e in exps:
         recipe = dict(RECIPES[e.get("recipe", spec.get("recipe", "quick"))], **e.get("recipe_overrides", {}))
+        if spec.get("groups") and "groups" not in e:
+            e = dict(e, groups=spec["groups"])
         _log(f"experiment {e['name']}")
         res, pred = run_experiment(df, meta, e, recipe, spec.get("test_from", TEST_FROM), spec.get("test_to"))
         res["cache"] = {k: meta[k] for k in ("hash", "last_day", "rows")}
@@ -630,6 +690,19 @@ def main(argv=None) -> int:
             _log(f"published {e['name']}: {res['published']}")
         if e.get("bfsp"):
             res["bfsp"] = run_bfsp(store, pred, e["name"], out)
+        if e.get("groups") and (e.get("shortening", spec.get("shortening")) or e.get("limit")):
+            # each group's races on their own: does our price add to the market there, and do the rules pay there
+            res["groups_study"] = {}
+            for g, tracks in split_groups(pred, e["groups"]).items():
+                sub = pred[in_group(pred, tracks)]
+                gname = f"{e['name']}__{g}"
+                _log(f"group {g}: {len(sub)} runners")
+                gs = {}
+                if e.get("shortening", spec.get("shortening")):
+                    gs["shortening"] = shortening(store, sub, gname, out)
+                if e.get("limit"):
+                    gs["limit"] = run_limit(store, sub, gname, out)
+                res["groups_study"][g] = gs
         (out / f"result_{e['name']}.json").write_text(json.dumps(res, indent=1, default=str))
         # each runner's log-loss contribution, for the paired comparison against the baseline in --collect
         keep = ["race_id", "race_date", "dog_id", "won", "p_model"] + [c for c in ("bsp", "pred_bsp") if c in pred]
