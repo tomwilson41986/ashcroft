@@ -23,6 +23,7 @@ which says how it was produced. Nothing here has placed a bet or read the live B
 | By season, calibrated vs baseline log loss | 2024: 0.4013 vs 0.4005; 2025: 0.4008 vs 0.4029; 2026: 0.3426 vs 0.4007 | `model_v1.md` |
 | First innings, P(batting first wins), IPL 2024-2026, 4,180 over starts | raw simulator log loss 0.6093, ECE 0.0339; calibrated (stack) 0.6314, 0.1004; baseline 0.6389, 0.0976 | `model_v1_first_innings.md` |
 | First-innings runs line, all over starts 2023-2026 | median error 17.5 runs (baseline 20.1); 52% of totals inside the 50% range, 82% inside the 80% range (baseline 44%, 72%) | `model_v1_first_innings.md` |
+| Pre-match P(batting first wins), walk-forward 2016-2026, 8,519 men's T20 matches | log loss 0.6569 vs 0.6920 for the batting-first rate of earlier years (difference -0.0351, 95% interval -0.0396 to -0.0309); better in 10 of 11 years (not 2017); ECE 0.0204. Against Betfair's close: no data found yet | `prematch.md`, `benter_prematch.md` |
 | Production bundle v1-2026-11-03 | 2,258,238 deliveries from 9,688 matches to 2026-11-03; stack calibration in both innings | `model_card_v1-2026-11-03.md` |
 | Live path, IPL 2026 final replayed (in the bundle's training data: a speed and path test, not an evaluation) | 233 quotes at 1,000 paths; median 0.62 s a quote, first innings up to 1.5 s | `python -m cricket.live.replay --match 1535465` |
 
