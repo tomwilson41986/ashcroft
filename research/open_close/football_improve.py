@@ -107,7 +107,9 @@ def candidates(te: pd.DataFrame, preds: dict[str, np.ndarray], market: str) -> p
     from research.open_close.football_exchange import width_label
     if market == "MO":
         legs = {"H": ("bfe_open_h", "bfe_close_h"), "A": ("bfe_open_a", "bfe_close_a")}
-        model_p = {"H": te["p_h"].to_numpy(float), "A": te["p_a"].to_numpy(float)}
+        if "D" in preds:                                          # the draw, when a forecast for it is given
+            legs["D"] = ("bfe_open_d", "bfe_close_d")
+        model_p = {"H": te["p_h"].to_numpy(float), "A": te["p_a"].to_numpy(float), "D": te["p_d"].to_numpy(float) if "p_d" in te else np.full(len(te), np.nan)}
         o_cols = ["bfe_open_h", "bfe_open_d", "bfe_open_a"]
         c_cols = ["bfe_close_h", "bfe_close_d", "bfe_close_a"]
     else:
@@ -117,6 +119,10 @@ def candidates(te: pd.DataFrame, preds: dict[str, np.ndarray], market: str) -> p
     ok = te[o_cols + c_cols].gt(1).all(axis=1).to_numpy()
     over_o = (1 / te[o_cols]).sum(axis=1).to_numpy(float)
     over_c = (1 / te[c_cols]).sum(axis=1).to_numpy(float)
+    ft = te.reindex(columns=["ft_home", "ft_away"])
+    gd = (ft["ft_home"] - ft["ft_away"]).to_numpy(float)
+    goals = (ft["ft_home"] + ft["ft_away"]).to_numpy(float)
+    won = {"H": gd > 0, "A": gd < 0, "D": gd == 0, "O": goals > 2.5, "U": goals < 2.5}
     rows = []
     for leg, (oc, cc) in legs.items():
         pred = preds[leg]
@@ -146,7 +152,7 @@ def candidates(te: pd.DataFrame, preds: dict[str, np.ndarray], market: str) -> p
             "width": width_label(over_o), "profit_sym": p_sym, "profit_tick": p_tick,
             "sym_b": sym_b, "sym_l": sym_l, "tick_b": tick_b, "tick_l": tick_l, "gap": gap,
             "move_dir": np.sign(np.log(cf / of)), "right_way": np.sign(np.log(cf / of)) == -side, "ok": ok,
-            **cost}))
+            "fair_open": of, "won": np.where(np.isfinite(gd), won[leg], np.nan), **cost}))
     c = pd.concat(rows, ignore_index=True)
     return c[c["ok"] & np.isin(c["width"], TAKEABLE) & np.isfinite(c["profit_sym"])].drop(columns="ok")
 
