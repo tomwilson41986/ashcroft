@@ -1,0 +1,50 @@
+name: Cricket - Betfair market recorder (read-only, delayed key)
+
+# The racing² cricket trader (reports/cricket/README.md; build spec 5.3): every cricket Match Odds book, in play
+# every 5 s, read-only through cricket/market/betfair_read.py (a whitelist of read methods: no order can be sent) on
+# the DELAYED application key. Records each market's betDelay and Betfair's cricket market types (the census).
+# Books to s3://$CAPTURE_BUCKET/sources/cricket/books/<UTC day>/.
+#
+# Betfair refuses US hosts, so this runs on its own self-hosted runner in the UK or Ireland (label
+# vars.CRICKET_RUNNER, default 'cricket'; build spec 3: the Dublin host). No such runner exists yet: the owner's go
+# on the host comes first, so this is by hand only and waits in the queue until a runner with the label is online.
+# Never on the horse runner (CLAUDE.md Rules; tests/test_cricket_guards.py).
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: 'hours to record'
+        required: false
+        type: string
+        default: '5.5'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cricket-record
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ${{ vars.CRICKET_RUNNER || 'cricket' }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies (pinned)
+        run: pip install -r cricket/requirements.txt
+      - name: Record
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          HOURS: ${{ inputs.hours }}
+        run: python -m cricket.market.recorder --hours "$HOURS" --inplay-seconds 5

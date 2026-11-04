@@ -43,3 +43,6 @@ data/blandford_raw/
 results_report.log
 .sectionals_site/
 .football_cache/
+
+# Cricket trader local scratch (raw Cricsheet zips, local store, sqlite)
+data/cricket/

@@ -1,0 +1,16 @@
+# racing² cricket trader, Phase 0. Exact versions from `pip freeze` on the build host (Python 3.13), 4 Nov 2026.
+# betfairlightweight, flumine and psycopg are not pinned yet: nothing in Phase 0 code uses them (the Betfair price
+# history and Aurora wait on the owner's go); pin them from pip freeze when they are first installed.
+boto3==1.43.123
+botocore==1.43.123
+numpy==2.5.3
+pandas==3.0.5
+pyarrow==26.0.1
+pytest==9.2.0
+PyYAML==6.0.3
+requests==2.34.2
+ruff==0.17.3
+s3transfer==0.19.3
+scikit-learn==1.9.1
+scipy==1.18.1
+xgboost==3.4.1
