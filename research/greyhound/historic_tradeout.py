@@ -26,7 +26,11 @@ from research.greyhound import historic_place as hp, limit_study as ls, place_va
 log = logging.getLogger(__name__)
 
 MARGINS = (0.0, 0.02, 0.05, 0.10)
-TICKS_THROUGH = 1
+TICKS_THROUGH = (1, 2)
+#: the last traded price of a long shot can be minutes old near the off and its book many ticks wide, so a fill a tick
+#: through it is not credible there (run 41895217384: the 'passes' came from entries averaging 89-390): the rules are
+#: read with the entry price capped
+MAX_ENTRY = (5.0, 10.0, 20.0)
 COMM = 0.02
 
 
@@ -60,9 +64,17 @@ def forecast(j: pd.DataFrame) -> pd.DataFrame:
 
 
 def rules(x: pd.DataFrame) -> list[dict]:
+    out = []
+    for ticks in TICKS_THROUGH:
+        for cap in MAX_ENTRY:
+            out += _rules(x, ticks, cap)
+    return out
+
+
+def _rules(x: pd.DataFrame, ticks: int, cap: float) -> list[dict]:
     ltp = x.ltp_t_1_w.to_numpy(float)
-    back_at = ls.ticks_from(ltp, TICKS_THROUGH, up=False)       # a back taken a tick worse than the last trade
-    lay_at = ls.ticks_from(ltp, TICKS_THROUGH, up=True)
+    back_at = ls.ticks_from(ltp, ticks, up=False)               # a back taken ticks worse than the last trade
+    lay_at = ls.ticks_from(ltp, ticks, up=True)
     sp, f = x.bsp_w.to_numpy(float), x.f_bsp.to_numpy(float)
     dev = x.dev.to_numpy()
     out = []
@@ -77,8 +89,9 @@ def rules(x: pd.DataFrame) -> list[dict]:
                 raw = 1 - lay_at / sp
             pnl = np.where(raw > 0, raw * (1 - COMM), raw)
             for m in MARGINS:
-                sel = cm & np.isfinite(edge) & (edge > m)
-                row = {"country": country, "side": side, "margin": m}
+                entry = back_at if side == "back" else lay_at
+                sel = cm & np.isfinite(edge) & (edge > m) & (entry <= cap)
+                row = {"country": country, "side": side, "margin": m, "ticks": ticks, "max_entry": cap}
                 for part, mask in (("dev", dev), ("holdout", ~dev)):
                     s = sel & mask
                     if s.sum() < 50:

@@ -14,5 +14,5 @@ os.makedirs("out", exist_ok=True)
 open("out/historic_tradeout.json", "w").write(json.dumps(rep, indent=1, default=str))
 print({k: rep[k] for k in rep if k.startswith("rmse") or k in ("runners", "rules_tried")})
 for r in rep["rules"]:
-    print(r["country"], r["side"], r["margin"], "dev", r.get("dev"), "holdout", r.get("holdout"), r["passes"])
+    print(r["country"], r["side"], r["margin"], "ticks", r["ticks"], "max", r["max_entry"], "dev", r.get("dev"), "holdout", r.get("holdout"), r["passes"])
 print("PASSING:", json.dumps(rep["passing"]))
