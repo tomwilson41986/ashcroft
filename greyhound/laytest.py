@@ -183,8 +183,17 @@ def live_prices(store, day: date) -> str | None:
     raw = store.get(f"greyhound/live/predictions/{day:%Y-%m-%d}.csv")
     if not raw:
         return None
-    head = pd.read_csv(io.BytesIO(raw), nrows=5)
-    return LOGBSP_PRICES if "model_objective" in head and str(head.model_objective.iloc[0]) == "logbsp" else None
+    head = pd.read_csv(io.BytesIO(raw), nrows=5, keep_default_na=False)
+    if "model_objective" not in head or str(head.model_objective.iloc[0]) != "logbsp":
+        return None
+    named = str(head.oos_prices.iloc[0]).strip() if "oos_prices" in head else ""
+    if named and named != LOGBSP_PRICES:
+        # the model names its own out-of-sample prices; until they are published the log-BSP model's are the nearest
+        # (an empty prefix would leave the early lay without a forecast)
+        if store.listing(f"{named.rstrip('/')}/"):
+            return named
+        log.warning("%s has no out-of-sample prices yet: the forecast is fitted on %s", named, LOGBSP_PRICES)
+    return LOGBSP_PRICES
 
 
 def live_fit(store, day: date, mark: str = MARK) -> dict | None:
