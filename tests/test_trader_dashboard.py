@@ -298,3 +298,21 @@ def test_a_trader_counts_only_from_its_start_day(tmp_path):
     days, _ = trader_days(LocalSource(tmp_path), t, TODAY, cache=False)
     s = summarise(t, days, TODAY)
     assert list(days) == [d] and s["has_data"] and s["all_time"]["pnl"] == 0.0 and s["month"]["forecast"] is None
+
+
+def test_the_latest_days_race_by_race(tmp_path):
+    """The owner, 4 Nov 2026: score the paper models race by race. Each trader gives its latest RACE_DAYS traded days
+    as a row a race: course, off, staked, P&L once settled, CLV."""
+    from dashboard.traders import RACE_DAYS
+    t = T("horse-live")
+    for i in range(RACE_DAYS + 1):
+        d = (TODAY - timedelta(days=RACE_DAYS - i)).isoformat()
+        _put(tmp_path, "pred", f"trading/live/{d}/ledger.csv",
+             horse_ledger(d, [("1.a", 100, 0.1, 20, 0.4), ("1.b", 50, 0.1, None, None)]))
+    days, _ = trader_days(LocalSource(tmp_path), t, TODAY, cache=False)
+    rs = summarise(t, days, TODAY)["races"]
+    assert sorted({r["day"] for r in rs}) == sorted(days)[-RACE_DAYS:]
+    a = next(r for r in rs if r["market_id"] == "1.a" and r["day"] == TODAY.isoformat())
+    b = next(r for r in rs if r["market_id"] == "1.b" and r["day"] == TODAY.isoformat())
+    assert a["course"] == "Kempton" and a["staked"] == 100 and a["pnl"] == pytest.approx(19.6)
+    assert b["pnl"] is None and b["staked"] == 50          # still to run: no P&L yet

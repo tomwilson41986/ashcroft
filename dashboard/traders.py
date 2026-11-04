@@ -42,6 +42,7 @@ K = ["market_id", "selection_id"]
 CLV_COLS = ["clv_ws", "clv_s", "clv_n", "clv_sum", "clv_sumsq"]
 MARKET_COLS = ["market_id", "label", "off", "staked", "ev", "pnl", "settled", "open_liability"] + CLV_COLS
 MIN_FLAG_BETS = 30                # bets with a CLV in the last 7 days before the edge flag judges
+RACE_DAYS = 3                     # the latest traded days given race by race (the owner, 4 Nov: score them race by race)
 
 SPORTS = [("horse_racing", "Horse Racing"), ("greyhounds", "Greyhounds"), ("football", "Football"),
           ("cricket", "Cricket")]
@@ -548,13 +549,37 @@ def summarise(t: Trader, days: dict[str, pd.DataFrame], today: date, last_ts: st
                "open_days": unsettled.day.tolist()}
     spark = hist[hist.day >= (today - timedelta(days=29)).isoformat()][["day", "result", "staked"]]
     edge_out = edge(t, days, today, tm, rec_full)
+    races_out = races(days)
     return {"id": t.id, "sport": t.sport, "name": t.name, "mode": t.mode, "what": t.what, "glyph": t.glyph,
             "initials": t.initials, "has_data": bool(len(hist)), "today": today_out, "month": month_out,
             "all_time": all_out,
             "record": {"days": int(len(rec_full)), "mean_day": _f(mean_day), "from": t.record_from},
             "daily": [{"day": r.day, "pnl": _f(r.result), "volume": _f(r.staked)} for r in spark.itertuples()],
             "edge": edge_out,
+            "races": races_out,
             "notes": list(t.notes)}
+
+
+def races(days: dict[str, pd.DataFrame], n: int = RACE_DAYS) -> list[dict]:
+    """The latest ``n`` traded days race by race: each market the trader staked on, its P&L once settled (else None)
+    and its stake-weighted CLV."""
+    out = []
+    traded = [d for d in sorted(days) if len(days[d]) and _num(days[d].staked).fillna(0).sum() > 0]
+    for d in traded[-n:]:
+        m = days[d]
+        for r in m.itertuples(index=False):
+            staked = float(_num(pd.Series([r.staked])).fillna(0).iloc[0])
+            settled = bool(r.settled) if not isinstance(r.settled, str) else r.settled.lower() in ("true", "1", "1.0")
+            pnl = float(_num(pd.Series([r.pnl])).iloc[0]) if settled else np.nan
+            if staked <= 0 and not math.isfinite(pnl):
+                continue
+            cs = float(_num(pd.Series([getattr(r, "clv_s", 0)])).fillna(0).iloc[0])
+            cw = float(_num(pd.Series([getattr(r, "clv_ws", 0)])).fillna(0).iloc[0])
+            out.append({"day": d, "market_id": str(r.market_id), "course": None if pd.isna(r.label) else str(r.label),
+                        "off": None if pd.isna(r.off) else str(r.off), "staked": _f(staked),
+                        "pnl": _f(pnl) if math.isfinite(pnl) else None,
+                        "clv": round(cw / cs, 4) if cs > 0 else None})
+    return out
 
 
 def _clv_of(frames: list[pd.DataFrame]) -> dict:
