@@ -176,12 +176,15 @@ def markets_table(fp: pd.DataFrame) -> pd.DataFrame:
     return m.reset_index()[cols].round(4)
 
 
-def day_job(day_iso: str, names: list[str], draws: int, write: bool) -> dict:
+def day_job(day_iso: str, names: list[str], draws: int, write: bool, intraday: bool = False) -> dict:
+    """One racing day, every agent on one book. ``intraday``: the day so far on the books recorded to now, the races
+    run settled on the recorder's BSPs (provisional); each agent's markets.csv is written, the day's ledger row is
+    not (the night's run on Betfair's price file scores it for good)."""
     from research.arms import quotes
     day = date.fromisoformat(day_iso)
     res = {"day": day_iso, "rows": [], "errors": []}
     try:
-        D = core.load_day(day, "win")
+        D = core.load_day(day, "win", intraday=intraday)
     except Exception:
         res["errors"].append(traceback.format_exc())
         return res
@@ -194,7 +197,8 @@ def day_job(day_iso: str, names: list[str], draws: int, write: bool) -> dict:
         sp[3]["_D"] = D
     tic = time.time()
     try:
-        out = core.run_agents(D, specs, core.session_start(D, "win"))
+        out = core.run_agents(D, specs, core.session_start(D, "win"),
+                              t_end=D.last_poll if intraday and D.provisional else None)
     except Exception:
         res["errors"].append(traceback.format_exc())
         return res
@@ -213,7 +217,7 @@ def day_job(day_iso: str, names: list[str], draws: int, write: bool) -> dict:
             with gzip.GzipFile(fileobj=buf, mode="wb") as g:
                 g.write((fp if len(fp) else fills).to_csv(index=False).encode())
             _put(f"{base}/fills.csv.gz", buf.getvalue())
-    if write and res["rows"] and not res["errors"]:
+    if write and res["rows"] and not res["errors"] and not D.provisional:
         _put(f"{PREFIX}/days/{day_iso}.json", json.dumps(res["rows"], default=str, indent=1).encode())
     return res
 
@@ -318,13 +322,18 @@ def main(argv=None) -> int:
     ap.add_argument("--max-minutes", type=float, default=300.0)
     ap.add_argument("--no-write", action="store_true", help="print only, keep nothing in S3")
     ap.add_argument("--report-only", action="store_true")
+    ap.add_argument("--intraday", action="store_true",
+                    help="today so far, as if live: the recorder's books to now, the races run settled on its BSPs")
     a = ap.parse_args(argv)
     names = list(STRATEGIES) if a.strategies == "all" else [s for s in a.strategies.split(",") if s]
     bad = [s for s in names if s not in STRATEGIES]
     if bad:
         ap.error(f"unknown strategies {bad}; known {list(STRATEGIES)}")
     if not a.report_only:
-        if a.days == "pending":
+        if a.intraday:
+            from zoneinfo import ZoneInfo
+            days = [datetime.now(ZoneInfo("Europe/London")).date()]
+        elif a.days == "pending":
             bf = date.fromisoformat(a.backfill_from) if a.backfill_from else None
             days = pending_days(datetime.now(timezone.utc).date(), bf)
         elif ".." in a.days:
@@ -338,7 +347,7 @@ def main(argv=None) -> int:
         computed = []
         if days:
             with ProcessPoolExecutor(max_workers=a.jobs) as ex:
-                futs = {ex.submit(day_job, d.isoformat(), names, a.draws, not a.no_write): d for d in days}
+                futs = {ex.submit(day_job, d.isoformat(), names, a.draws, not a.no_write, a.intraday): d for d in days}
                 try:
                     for fut in as_completed(futs, timeout=max(60.0, deadline - time.time())):
                         r = fut.result()
