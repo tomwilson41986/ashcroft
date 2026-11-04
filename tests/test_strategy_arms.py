@@ -154,3 +154,23 @@ def test_importing_the_arms_leaves_the_traders_plan_alone(day):
     assert trading_session.plan_race is strategy.plan_race
     _run(day, sessions.ArmSession)
     assert trading_session.plan_race is strategy.plan_race
+
+
+def test_the_timing_study_scores_each_fill_and_cuts_at_any_day_limit(day, tmp_path, capsys):
+    """research/arms/timing.py (the owner, 4 Nov: when to bet): each back's locked value at the BSP, and the result
+    at a day limit read off the uncapped session."""
+    from research.arms import timing
+    led, s = _run(day, sessions.ArmSession)
+    f = timing.fills(led, day, "uncapped")
+    assert len(f) and set(f.selection_id) == set(_backs(led))
+    for r in f.itertuples():
+        assert r.locked == pytest.approx(r.matched * (r.avg_price / r.bsp - 1))
+        assert r.locked_red == pytest.approx(r.locked)                     # nobody taken out: no cut
+        assert not r.evening and r.mins_to_off > 0
+    rows = pd.DataFrame([core.score(led, day, "uncapped", s.state.settled_pnl, False)])
+    fs = f.assign(uk=f.uk.astype(str), t=f.t.astype(str))
+    timing.report(rows, fs, {}, tmp_path)
+    out = capsys.readouterr().out
+    assert "the result at each day limit" in out and "by UK hour" in out
+    assert (tmp_path / "fills.csv.gz").exists()
+    assert timing._start(day, "evening_morning", "06:15").astimezone(core.UK).hour == 17

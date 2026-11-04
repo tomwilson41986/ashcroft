@@ -564,10 +564,185 @@ def parse_racecard_csv(csv_text: str) -> pd.DataFrame:
     return df
 
 
+# ------------------------------------------------------------------
+# The night before: tomorrow's card from the 48-hour declarations
+# ------------------------------------------------------------------
+# The owner, 4 Nov 2026: "Run predictions by night before so we are ready to act then if needed". The one-day card
+# page (onedayracecards.php) is always today's, whatever it is asked (scripts/hrb_card_probe.py, 4 Nov). Tomorrow's
+# card is on the 48-hour declarations page (horse-racing-today.php?showearly=1, dated "5th November 2026" at 07:05
+# UTC on 4 Nov), one page a race (?earlyraceid=N), with the same runners' columns written a little differently:
+# A/S "3yo G" for the one-day page's Age "3", W/HG "9-4 CkPc 1 TT" for Weight "9-4" and Headgear "CkPcTT", D for
+# Days, the info line "1m2f  (2200 yards) Class 6, Standard, 3yo+, Win: £3140 Avg OR ..." for "Class 6, 1m2f ,
+# Standard, 3yo+, Win: £3140", and the tooltip with ", Owner - ..., Foal Date - ..." after the dam. Each race page
+# is rewritten into the one-day page's layout and read by the one-day page's own parser, so the night-before card is
+# read by the same code as the morning's.
+EARLY_INDEX = "horse-racing-today.php?showearly=1"
+_ONE_DAY_HEAD = ["No.", "Form", "Days", "Horse", "Age", "Weight", "Headgear", "Jockey", "Trainer", "Stall", "Miles",
+                 "OR", "Odds", "HRB Total", "CD", "S"]
+_EARLY_FOR = {"No.": "No.", "Form": "Form", "Days": "D", "Horse": "Horse", "Jockey": "Jockey", "Trainer": "Trainer",
+              "Stall": "Stall", "Miles": "Miles", "OR": "OR", "Odds": "Odds", "HRB Total": "HRB", "CD": "CD", "S": "S"}
+_ORDINAL_DATE = re.compile(r"(\d{1,2})(?:st|nd|rd|th)\s+([A-Z][a-z]+)\s+(\d{4})")
+
+
+def uk_today() -> date:
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Europe/London")).date()
+
+
+def early_headgear(tokens: list[str]) -> str:
+    """The 48-hour page's headgear words ('CkPc 1 TT': the 1 marks a first time) as the one-day page writes
+    them ('CkPcTT'; a hood with blinkers 'H+B')."""
+    gear = [t for t in tokens if not t.isdigit()]
+    if "Hood" in gear and "Blnk" in gear:
+        gear = ["H+B"] + [g for g in gear if g not in ("Hood", "Blnk")]
+    return "".join(gear)
+
+
+def early_info_line(text: str) -> str:
+    """'1m2f  (2200 yards) Class 6, Standard, 3yo+, Win: £3140 Avg OR : 51 ...' -> 'Class 6, 1m2f , Standard,
+    3yo+, Win: £3140' (the one-day page's order, which its parser reads)."""
+    t = re.sub(r"\s+", " ", text).strip()
+    m = re.match(r"(?P<dist>\S+)\s*(?:\(\d+\s*yards\))?\s*(?P<rest>.*)$", t)
+    if not m:
+        return t
+    rest = re.split(r"\s+Avg OR\b|\s+Left Handed|\s+Right Handed|\s+Stall Positioning", m["rest"])[0].strip()
+    cls = re.match(r"((?:Class|Grade)\s*\d[^,]*),\s*(.*)$", rest)
+    if cls:
+        return f"{cls.group(1)}, {m['dist']} , {cls.group(2)}"
+    return f"{m['dist']} , {rest}"
+
+
+def early_race_to_one_day(page_html: str, race_name: str = "") -> str:
+    """One 48-hour race page as the one-day page writes a race: its spans (time and course, the name, the info
+    line) and its runners' table in the one-day columns. '' when the page has no runners' table."""
+    from html import escape
+    soup = BeautifulSoup(page_html, "lxml")
+    head_line = info = ""
+    for sp in soup.find_all("span"):
+        tx = sp.get_text(" ", strip=True)
+        if not head_line and re.match(r"\d{1,2}\.\d{2}\s+.+\(\d+\s*runners?\)\s*$", tx):
+            head_line = re.sub(r"\s*\((\d+)\s*runners?\)\s*$", r"(\1 runners)", tx)
+        elif not info and re.search(r"(Class|Grade)\s*\d|Win:", tx) and re.match(r"\S*\d+[mf]", tx):
+            info = early_info_line(tx)
+    table = None
+    for t in soup.find_all("table"):
+        if t.find("table"):
+            continue
+        first = t.find("tr")
+        head = [c.get_text(strip=True) for c in first.find_all(["td", "th"], recursive=False)] if first else []
+        if "No." in head and "Horse" in head and "W/HG" in head:
+            table = t
+            break
+    if table is None or not head_line:
+        return ""
+    rows = table.find_all("tr")
+    head = [c.get_text(strip=True) for c in rows[0].find_all(["td", "th"], recursive=False)]
+    ix = {h: i for i, h in enumerate(head)}
+    out = ["<tr>" + "".join(f"<td>{h}</td>" for h in _ONE_DAY_HEAD) + "</tr>"]
+    for r in rows[1:]:
+        cells = r.find_all(["td", "th"], recursive=False)
+        if len(cells) < len(head) - 1 or not cells[ix["No."]].get_text(strip=True).isdigit():
+            continue
+        txt = lambda k: cells[ix[k]].get_text(" ", strip=True) if k in ix and ix[k] < len(cells) else ""
+        age = re.match(r"(\d+)", txt("A/S"))
+        wh = txt("W/HG").split()
+        weight = wh[0] if wh and re.fullmatch(r"\d{1,2}-\d{1,2}", wh[0]) else ""
+        tds = []
+        for h in _ONE_DAY_HEAD:
+            if h == "Horse" and "Horse" in ix:
+                td = cells[ix["Horse"]]
+                title = (td.get("title") or "").split(", Owner - ")[0]
+                inner = td.decode_contents()
+                tds.append(f'<td title="{escape(title)}">{inner}</td>')
+            elif h == "Jockey" and "Jockey" in ix:
+                tds.append(f"<td>{cells[ix['Jockey']].decode_contents()}</td>")
+            elif h == "Age":
+                tds.append(f"<td>{age.group(1) if age else ''}</td>")
+            elif h == "Weight":
+                tds.append(f"<td>{weight}</td>")
+            elif h == "Headgear":
+                tds.append(f"<td>{early_headgear(wh[1:])}</td>")
+            else:
+                tds.append(f"<td>{escape(txt(_EARLY_FOR[h]))}</td>")
+        out.append("<tr>" + "".join(tds) + "</tr>")
+    name = f"<span>{escape(race_name)}</span>" if race_name else ""
+    return f"<span>{escape(head_line)}</span>{name}<span>{escape(info)}</span><table>{''.join(out)}</table>"
+
+
+def early_card_date(index_html: str) -> date | None:
+    m = _ORDINAL_DATE.search(BeautifulSoup(index_html, "lxml").get_text(" "))
+    if not m:
+        return None
+    try:
+        return datetime.strptime(f"{m.group(1)} {m.group(2)} {m.group(3)}", "%d %B %Y").date()
+    except ValueError:
+        return None
+
+
+def scrape_early_racecards(session, target_date: date, keep_withdrawn: bool = False, pause: float = 0.5):
+    """Tomorrow's card the evening before, from the 48-hour declarations, read by the one-day page's parser.
+    None when the page is for another day or holds no race."""
+    from urllib.parse import urljoin
+    log.info(f"Attempting the 48-hour declarations for {target_date} ({EARLY_INDEX})...")
+    url = f"{BASE_URL}/{EARLY_INDEX}"
+    resp = session.get(url)
+    resp.raise_for_status()
+    on = early_card_date(resp.text)
+    if on != target_date:
+        log.error(f"The 48-hour declarations are for {on}, not {target_date}")
+        return None
+    races, seen = [], set()
+    for a in BeautifulSoup(resp.text, "lxml").find_all("a"):
+        h = a.get("href") or ""
+        m = re.search(r"earlyraceid=(\d+)", h)
+        if not m:
+            continue
+        text = a.get_text(" ", strip=True)
+        if m.group(1) not in seen:
+            seen.add(m.group(1))
+            races.append([urljoin(url, h), ""])
+        if text and not re.fullmatch(r"\d{1,2}\.\d{2}", text):
+            races[-1][1] = races[-1][1] or text
+    parts = []
+    for href, name in races:
+        r = session.get(href)
+        r.raise_for_status()
+        part = early_race_to_one_day(r.text, name)
+        if part:
+            parts.append(part)
+        if pause:
+            time.sleep(pause)
+    log.info(f"The 48-hour declarations: {len(parts)} of {len(races)} race pages read")
+    if not parts:
+        return None
+    html = "<html><body>" + "".join(parts) + "</body></html>"
+
+    class _Page:
+        text = html
+
+        def raise_for_status(self):
+            return None
+
+    class _Saved:
+        def get(self, _url):
+            return _Page()
+
+    return scrape_racecard_html(_Saved(), target_date, keep_withdrawn=keep_withdrawn)
+
+
 def get_todays_runners(
     session: requests.Session, user_id: str, target_date: date
 ) -> pd.DataFrame:
-    """Get today's declared runners from HRB, trying CSV first then HTML."""
+    """Get today's declared runners from HRB, trying CSV first then HTML. A day after today (UK) is read from the
+    48-hour declarations: the one-day page is always today's."""
+
+    if target_date > uk_today():
+        df = scrape_early_racecards(session, target_date)
+        if df is not None and len(df) > 0:
+            save_racecard_csv(df.to_csv(index=False), target_date)
+            return df
+        log.error(f"Could not get the night-before card for {target_date}")
+        return pd.DataFrame()
 
     # Attempt 1: CSV download via the export endpoint
     csv_text = download_racecard_csv(session, user_id, target_date)

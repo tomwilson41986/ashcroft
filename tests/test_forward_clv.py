@@ -215,7 +215,8 @@ def test_the_predictions_are_written_before_the_price_snapshot():
     from pipeline import predict as mod
 
     src = inspect.getsource(mod.main)
-    first_write = src.index('write_csv("predictions"')
+    first_write = src.index("write_csv(out_prefix")             # predictions/ in the morning (out_prefix's default)
+    assert 'or "predictions"' in src
     snapshot = src.index("attach_exchange_prices(")
     assert first_write < snapshot, (
         "attach_exchange_prices runs before the predictions are written; a hung "
@@ -272,8 +273,8 @@ def test_the_morning_card_is_written_under_its_fetch_time():
     from pipeline import predict as mod
 
     src = inspect.getsource(mod.main)
-    assert 'write_csv("racecards", f"{target_date}_{fetched_at}"' in src
-    assert src.index("card_sink=") < src.index('write_csv("predictions"')
+    assert 'write_csv(card_prefix, f"{target_date}_{fetched_at}"' in src and 'or "racecards"' in src
+    assert src.index("card_sink=") < src.index("write_csv(out_prefix")
 
 
 # --- the early-price diagnostics -------------------------------------------------

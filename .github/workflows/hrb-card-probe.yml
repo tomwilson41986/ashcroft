@@ -1,0 +1,32 @@
+name: HRB card probe (tomorrow's racecards, read-only)
+# The owner, 4 Nov 2026: "Run predictions by night before so we are ready to act then if needed". Before a night-
+# before predictions run is built: does horseracebase.com serve tomorrow's racecards in the evening, and at what
+# address (scripts/hrb_card_probe.py). Read-only; it prints race times, courses and dates, no page text.
+on:
+  # through the evening and the night (UTC): when onedayracecards.php turns to the next day, and what the 48-hour
+  # declarations hold; removed once the night-before predictions are built
+  schedule:
+    - cron: '0 19,21,23 * * *'
+    - cron: '30 0,1,2,3 * * *'
+  workflow_dispatch:
+  push:
+    branches: [claude/happy-ritchie-0cp8eq]
+    paths: [.github/workflows/hrb-card-probe.yml, scripts/hrb_card_probe.py]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pip install -q -r requirements.txt
+      - name: Read HRB's card pages
+        env:
+          HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
+          HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
+        run: python scripts/hrb_card_probe.py

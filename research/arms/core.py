@@ -48,6 +48,10 @@ KINDS = {
     "place": {"books": ("books",), "cats": ("markets",), "mtype": "PLACE", "files": "place"},
     "evening": {"books": ("books_evening",), "cats": ("markets_evening", "markets_trader", "markets"),
                 "mtype": "WIN", "files": "win"},
+    # the evening before and the day itself as one session (the timing study, the owner 4 Nov): the evening's books,
+    # then the overnight record once it is kept (books_overnight), then the trader's and the recorder's
+    "evening_morning": {"books": ("books_evening", "books_overnight", "books_trader", "books"),
+                        "cats": ("markets_evening", "markets_trader", "markets"), "mtype": "WIN", "files": "win"},
 }
 _S3 = None
 
@@ -125,11 +129,13 @@ def load_day(day: date, kind: str = "win", preds: pd.DataFrame | None = None, pr
         print(f"  Betfair's {k['files']} price file for {day}'s racing is not in the archive yet: the day waits")
         return None
     books = pd.concat([csv(f"betfair_live/{day}/{n}.csv.gz") for n in k["books"]], ignore_index=True)
+    if "polled_utc" not in books.columns:
+        books = pd.DataFrame(columns=["polled_utc", "market_id"])
     cat = pd.concat([csv(f"betfair_live/{day}/{n}.csv.gz") for n in k["cats"]], ignore_index=True)
     if books.empty or cat.empty:
         print("  no books or no catalogue recorded: the day is skipped")
         return None
-    ledger = csv(f"trading/live/{day}/ledger.csv") if kind == "win" else pd.DataFrame()
+    ledger = csv(f"trading/live/{day}/ledger.csv") if kind in ("win", "evening_morning") else pd.DataFrame()
     if preds is None:
         preds = predictions(day)
     print(f"  {len(books):,} book rows, {len(cat):,} catalogue rows, {len(ledger):,} ledger rows, {len(preds)} prices")

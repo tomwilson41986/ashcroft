@@ -150,8 +150,17 @@ def _pos(v):
 
 
 def main():
-    target_date = date.today()
-    log.info(f"=== PREDICT JOB — {target_date} ===")
+    # The night before (the owner, 4 Nov 2026: "Run predictions by night before so we are ready to act then"): a
+    # later day's card from HRB's 48-hour declarations, written under its own prefix (predictions_evening/<day>.csv,
+    # racecards_evening/), so the morning's predictions/<day>.csv, the file the trader reads, is never touched.
+    # Unset, the job is the morning's as it was: today, predictions/ and racecards/.
+    import os
+    target_date = date.fromisoformat(os.environ["PREDICT_DATE"]) if os.environ.get("PREDICT_DATE") else date.today()
+    out_prefix = os.environ.get("PREDICTIONS_PREFIX") or "predictions"
+    card_prefix = os.environ.get("RACECARDS_PREFIX") or "racecards"
+    if out_prefix == "predictions" and target_date != date.today():
+        raise SystemExit("a day other than today is written under its own PREDICTIONS_PREFIX, never predictions/")
+    log.info(f"=== PREDICT JOB — {target_date} ({out_prefix}/) ===")
 
     # Step 1: Ensure database
     ensure_database()
@@ -165,7 +174,7 @@ def main():
     fetched_at = datetime.now(timezone.utc).strftime("%H%M")
     predictions = run_predictions(
         target_date=target_date,
-        card_sink=lambda card: write_csv("racecards", f"{target_date}_{fetched_at}", card),
+        card_sink=lambda card: write_csv(card_prefix, f"{target_date}_{fetched_at}", card),
     )
 
     if not predictions:
@@ -187,12 +196,12 @@ def main():
     # and the predictions are worth more, so they go out first and the file is
     # rewritten once the prices are in. A failure past this point costs eight
     # columns, not the card.
-    write_csv("predictions", target_date, predictions_to_dataframe(predictions))
+    write_csv(out_prefix, target_date, predictions_to_dataframe(predictions))
 
     # Step 5: Snapshot the prices that exist right now, for forward CLV
     predictions = attach_exchange_prices(predictions, target_date)
     if any(p.price_snapshot_at for p in predictions):
-        write_csv("predictions", target_date, predictions_to_dataframe(predictions))
+        write_csv(out_prefix, target_date, predictions_to_dataframe(predictions))
 
     log.info(f"=== PREDICT JOB COMPLETE — {len(predictions)} predictions written ===")
 
