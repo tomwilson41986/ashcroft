@@ -98,7 +98,10 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-        run: timeout 1800 python betfair_historic.py --build | tee betfair_historic_report.json
+        run: |
+          timeout 1800 python betfair_historic.py --build | tee betfair_historic_report.json
+          # the football tables' coverage (dates, countries, market types); the greyhound tables are not read here
+          timeout 900 python betfair_historic.py --coverage --sport Soccer | tee -a betfair_historic_report.json
 
       - name: Summary
         if: always()

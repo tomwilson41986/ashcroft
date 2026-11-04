@@ -456,6 +456,37 @@ def import_queue(store: Store, queue: str = IMPORT_QUEUE, dest: str = ".") -> di
     return out
 
 
+def coverage(store: Store, sports: list[str] | None = None) -> dict:
+    """What each built table holds: rows, markets, events, the market-time range, markets by month, the countries and
+    market types with the most markets, and the share of runners with each price mark (read-only)."""
+    import pandas as pd
+    out = {}
+    for sport in sports or list(PLAN_SCOPE):
+        pre = f"betfair_historic/markets_{sport_dir(sport)}_"
+        tables = [x for x in store.listing("betfair_historic/") if x.startswith(pre) and x.endswith(".parquet")]
+        for k in sorted(tables):
+            df = store.get_parquet(k)
+            if df is None or not len(df):
+                out[k] = "no data found"
+                continue
+            t = pd.to_datetime(df["market_time"], utc=True, errors="coerce")
+            mk = df.drop_duplicates("market_id")
+            mt = pd.to_datetime(mk["market_time"], utc=True, errors="coerce")
+            marks = [c for c in df.columns if c.startswith("ltp_")]
+            out[k] = {"rows": int(len(df)), "markets": int(mk["market_id"].nunique()),
+                      "events": int(mk["event_id"].nunique()),
+                      "market_time_utc": [str(t.min()), str(t.max())],
+                      "markets_by_month": {str(p): int(n) for p, n in
+                                           mt.dt.tz_localize(None).dt.to_period("M").value_counts().sort_index().items()},
+                      "countries": int(mk["country"].nunique()),
+                      "top_countries": {str(c): int(n) for c, n in mk["country"].value_counts().head(25).items()},
+                      "market_types": int(mk["market_type"].nunique()),
+                      "top_market_types": {str(c): int(n) for c, n in mk["market_type"].value_counts().head(30).items()},
+                      "went_in_play_share": float(mk["went_in_play_utc"].notna().mean()),
+                      "runner_share_with": {c: float(df[c].notna().mean()) for c in marks}}
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--my-data", action="store_true", help="what the account holds on the service")
@@ -470,6 +501,7 @@ def main(argv=None) -> int:
     ap.add_argument("--import-queue", nargs="?", const=IMPORT_QUEUE, default=None,
                     help=f"import each bundle the queue file lists, once (default {IMPORT_QUEUE})")
     ap.add_argument("--force", action="store_true", help="--build: rebuild every table, changed or not")
+    ap.add_argument("--coverage", action="store_true", help="what each built table holds (dates, countries, markets)")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     store = Store(root=a.root)
@@ -492,6 +524,8 @@ def main(argv=None) -> int:
         out["import_queue"] = import_queue(store, a.import_queue)
     if a.build:
         out["build"] = build(store, sports, force=a.force)
+    if a.coverage:
+        out["coverage"] = coverage(store, sports)
     if not out:
         ap.print_help()
         return 1

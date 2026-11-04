@@ -1,0 +1,1640 @@
+{
+ "note": "every trade with expected value after costs above the margin; calibration from the season before; Betfair match odds, 2025/26 read before (development evidence)",
+ "arms": {
+  "both": "team_all+home_adv+team_news",
+  "form_short": "team_all+home_adv+team_news+form_short+x_short",
+  "all_new": "team_all+home_adv+team_news+rest_days+fatigue+xi_load+form_short+x_short+x_sos+x_territory"
+ },
+ "both": {
+  "2024": {
+   "calibration": {
+    "season": 2023,
+    "rows": 15440,
+    "a": -0.0016734635615417287,
+    "b": 1.3568363867801336,
+    "r2": 0.06661781488514806
+   },
+   "candidates": 11724,
+   "weeks": 45,
+   "ev_tick": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.00289,
+       "roi_lo90": -0.00116,
+       "roi_hi90": 0.00683
+      },
+      "sym": {
+       "roi": 0.0002,
+       "roi_lo90": -0.00379,
+       "roi_hi90": 0.00413
+      },
+      "bets": 2069,
+      "right_way": 0.6206,
+      "bets_per_week": 46.0
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00756,
+       "roi_lo90": 0.00262,
+       "roi_hi90": 0.01275
+      },
+      "sym": {
+       "roi": 0.00067,
+       "roi_lo90": -0.00418,
+       "roi_hi90": 0.00561
+      },
+      "bets": 1483,
+      "right_way": 0.6426,
+      "bets_per_week": 33.0
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.00641,
+       "roi_lo90": 0.00169,
+       "roi_hi90": 0.01138
+      },
+      "sym": {
+       "roi": 0.00392,
+       "roi_lo90": -0.0008,
+       "roi_hi90": 0.0089
+      },
+      "bets": 1382,
+      "right_way": 0.6288,
+      "bets_per_week": 30.7
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.01201,
+       "roi_lo90": 0.00518,
+       "roi_hi90": 0.01893
+      },
+      "sym": {
+       "roi": 0.00534,
+       "roi_lo90": -0.00143,
+       "roi_hi90": 0.01227
+      },
+      "bets": 976,
+      "right_way": 0.6537,
+      "bets_per_week": 21.7
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.01083,
+       "roi_lo90": 0.00485,
+       "roi_hi90": 0.01711
+      },
+      "sym": {
+       "roi": 0.00844,
+       "roi_lo90": 0.00215,
+       "roi_hi90": 0.01483
+      },
+      "bets": 938,
+      "right_way": 0.6343,
+      "bets_per_week": 20.8
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.0179,
+       "roi_lo90": 0.00829,
+       "roi_hi90": 0.02659
+      },
+      "sym": {
+       "roi": 0.01171,
+       "roi_lo90": 0.00221,
+       "roi_hi90": 0.0204
+      },
+      "bets": 684,
+      "right_way": 0.6623,
+      "bets_per_week": 15.2
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.02338,
+       "roi_lo90": 0.01234,
+       "roi_hi90": 0.03347
+      },
+      "sym": {
+       "roi": 0.02094,
+       "roi_lo90": 0.01009,
+       "roi_hi90": 0.03109
+      },
+      "bets": 403,
+      "right_way": 0.66,
+      "bets_per_week": 9.0
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.03108,
+       "roi_lo90": 0.0179,
+       "roi_hi90": 0.04503
+      },
+      "sym": {
+       "roi": 0.02528,
+       "roi_lo90": 0.01199,
+       "roi_hi90": 0.03931
+      },
+      "bets": 309,
+      "right_way": 0.6796,
+      "bets_per_week": 6.9
+     }
+    }
+   },
+   "ev_sym": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.01564,
+       "roi_lo90": -0.01988,
+       "roi_hi90": -0.01113
+      },
+      "sym": {
+       "roi": 0.005,
+       "roi_lo90": 0.00073,
+       "roi_hi90": 0.00954
+      },
+      "bets": 2470,
+      "right_way": 0.5927,
+      "bets_per_week": 54.9
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00797,
+       "roi_lo90": -0.01499,
+       "roi_hi90": -0.00116
+      },
+      "sym": {
+       "roi": 0.01177,
+       "roi_lo90": 0.00462,
+       "roi_hi90": 0.01835
+      },
+      "bets": 1192,
+      "right_way": 0.6216,
+      "bets_per_week": 26.5
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.0128,
+       "roi_lo90": -0.01829,
+       "roi_hi90": -0.00742
+      },
+      "sym": {
+       "roi": 0.00924,
+       "roi_lo90": 0.00383,
+       "roi_hi90": 0.01463
+      },
+      "bets": 1808,
+      "right_way": 0.6079,
+      "bets_per_week": 40.2
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00201,
+       "roi_lo90": -0.01152,
+       "roi_hi90": 0.00751
+      },
+      "sym": {
+       "roi": 0.01965,
+       "roi_lo90": 0.01018,
+       "roi_hi90": 0.02904
+      },
+      "bets": 875,
+      "right_way": 0.6354,
+      "bets_per_week": 19.4
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00905,
+       "roi_lo90": -0.0153,
+       "roi_hi90": -0.00308
+      },
+      "sym": {
+       "roi": 0.01433,
+       "roi_lo90": 0.00806,
+       "roi_hi90": 0.01989
+      },
+      "bets": 1290,
+      "right_way": 0.614,
+      "bets_per_week": 28.7
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00185,
+       "roi_lo90": -0.00889,
+       "roi_hi90": 0.01261
+      },
+      "sym": {
+       "roi": 0.0253,
+       "roi_lo90": 0.01428,
+       "roi_hi90": 0.03618
+      },
+      "bets": 642,
+      "right_way": 0.6511,
+      "bets_per_week": 14.3
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00493,
+       "roi_lo90": -0.01544,
+       "roi_hi90": 0.00484
+      },
+      "sym": {
+       "roi": 0.02192,
+       "roi_lo90": 0.01142,
+       "roi_hi90": 0.03153
+      },
+      "bets": 630,
+      "right_way": 0.6111,
+      "bets_per_week": 14.0
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00857,
+       "roi_lo90": -0.0087,
+       "roi_hi90": 0.02646
+      },
+      "sym": {
+       "roi": 0.03569,
+       "roi_lo90": 0.0182,
+       "roi_hi90": 0.05383
+      },
+      "bets": 322,
+      "right_way": 0.6553,
+      "bets_per_week": 7.2
+     }
+    }
+   }
+  },
+  "2025": {
+   "calibration": {
+    "season": 2024,
+    "rows": 976,
+    "a": -0.005050059031253688,
+    "b": 1.3786762332043359,
+    "r2": 0.06054870390772371
+   },
+   "candidates": 14918,
+   "weeks": 57,
+   "ev_tick": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00539,
+       "roi_lo90": -0.00868,
+       "roi_hi90": -0.00245
+      },
+      "sym": {
+       "roi": -0.01,
+       "roi_lo90": -0.0132,
+       "roi_hi90": -0.0071
+      },
+      "bets": 3059,
+      "right_way": 0.609,
+      "bets_per_week": 53.7
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00258,
+       "roi_lo90": -0.00648,
+       "roi_hi90": 0.0012
+      },
+      "sym": {
+       "roi": -0.01164,
+       "roi_lo90": -0.01524,
+       "roi_hi90": -0.00793
+      },
+      "bets": 2243,
+      "right_way": 0.6255,
+      "bets_per_week": 39.4
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00269,
+       "roi_lo90": -0.00669,
+       "roi_hi90": 0.00085
+      },
+      "sym": {
+       "roi": -0.00729,
+       "roi_lo90": -0.01119,
+       "roi_hi90": -0.00385
+      },
+      "bets": 2174,
+      "right_way": 0.6164,
+      "bets_per_week": 38.1
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00083,
+       "roi_lo90": -0.00379,
+       "roi_hi90": 0.00579
+      },
+      "sym": {
+       "roi": -0.00803,
+       "roi_lo90": -0.01248,
+       "roi_hi90": -0.00299
+      },
+      "bets": 1607,
+      "right_way": 0.6366,
+      "bets_per_week": 28.2
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": -7e-05,
+       "roi_lo90": -0.00493,
+       "roi_hi90": 0.00463
+      },
+      "sym": {
+       "roi": -0.00439,
+       "roi_lo90": -0.00896,
+       "roi_hi90": 0.0003
+      },
+      "bets": 1533,
+      "right_way": 0.6301,
+      "bets_per_week": 26.9
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00457,
+       "roi_lo90": -0.00127,
+       "roi_hi90": 0.01033
+      },
+      "sym": {
+       "roi": -0.00408,
+       "roi_lo90": -0.00979,
+       "roi_hi90": 0.00157
+      },
+      "bets": 1128,
+      "right_way": 0.6534,
+      "bets_per_week": 19.8
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.0054,
+       "roi_lo90": -0.00194,
+       "roi_hi90": 0.01331
+      },
+      "sym": {
+       "roi": 0.00142,
+       "roi_lo90": -0.00609,
+       "roi_hi90": 0.00883
+      },
+      "bets": 712,
+      "right_way": 0.6573,
+      "bets_per_week": 12.5
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00668,
+       "roi_lo90": -0.00256,
+       "roi_hi90": 0.0162
+      },
+      "sym": {
+       "roi": -0.0014,
+       "roi_lo90": -0.01047,
+       "roi_hi90": 0.00789
+      },
+      "bets": 528,
+      "right_way": 0.6648,
+      "bets_per_week": 9.3
+     }
+    }
+   },
+   "ev_sym": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.02028,
+       "roi_lo90": -0.02407,
+       "roi_hi90": -0.01668
+      },
+      "sym": {
+       "roi": -0.00074,
+       "roi_lo90": -0.00423,
+       "roi_hi90": 0.00261
+      },
+      "bets": 3094,
+      "right_way": 0.5931,
+      "bets_per_week": 54.3
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.01222,
+       "roi_lo90": -0.01795,
+       "roi_hi90": -0.0069
+      },
+      "sym": {
+       "roi": 0.0053,
+       "roi_lo90": -0.0001,
+       "roi_hi90": 0.01058
+      },
+      "bets": 1510,
+      "right_way": 0.6232,
+      "bets_per_week": 26.5
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.01988,
+       "roi_lo90": -0.02389,
+       "roi_hi90": -0.01576
+      },
+      "sym": {
+       "roi": 0.00095,
+       "roi_lo90": -0.00307,
+       "roi_hi90": 0.00509
+      },
+      "bets": 2329,
+      "right_way": 0.599,
+      "bets_per_week": 40.9
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00984,
+       "roi_lo90": -0.01628,
+       "roi_hi90": -0.00318
+      },
+      "sym": {
+       "roi": 0.00902,
+       "roi_lo90": 0.00299,
+       "roi_hi90": 0.01553
+      },
+      "bets": 1125,
+      "right_way": 0.6347,
+      "bets_per_week": 19.7
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.01952,
+       "roi_lo90": -0.02504,
+       "roi_hi90": -0.01464
+      },
+      "sym": {
+       "roi": 0.00285,
+       "roi_lo90": -0.00248,
+       "roi_hi90": 0.00756
+      },
+      "bets": 1724,
+      "right_way": 0.6108,
+      "bets_per_week": 30.2
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00812,
+       "roi_lo90": -0.01618,
+       "roi_hi90": -0.00033
+      },
+      "sym": {
+       "roi": 0.01223,
+       "roi_lo90": 0.00466,
+       "roi_hi90": 0.01976
+      },
+      "bets": 803,
+      "right_way": 0.6501,
+      "bets_per_week": 14.1
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.02122,
+       "roi_lo90": -0.02864,
+       "roi_hi90": -0.01421
+      },
+      "sym": {
+       "roi": 0.00446,
+       "roi_lo90": -0.00276,
+       "roi_hi90": 0.01119
+      },
+      "bets": 868,
+      "right_way": 0.6302,
+      "bets_per_week": 15.2
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00774,
+       "roi_lo90": -0.02055,
+       "roi_hi90": 0.00458
+      },
+      "sym": {
+       "roi": 0.01623,
+       "roi_lo90": 0.00429,
+       "roi_hi90": 0.02813
+      },
+      "bets": 417,
+      "right_way": 0.6811,
+      "bets_per_week": 7.3
+     }
+    }
+   }
+  }
+ },
+ "form_short": {
+  "2024": {
+   "calibration": {
+    "season": 2023,
+    "rows": 15440,
+    "a": -0.0008451586071954706,
+    "b": 1.4416228592370728,
+    "r2": 0.09603055859758503
+   },
+   "candidates": 11724,
+   "weeks": 45,
+   "ev_tick": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.00757,
+       "roi_lo90": 0.00417,
+       "roi_hi90": 0.01126
+      },
+      "sym": {
+       "roi": 0.00618,
+       "roi_lo90": 0.00264,
+       "roi_hi90": 0.00998
+      },
+      "bets": 2944,
+      "right_way": 0.6603,
+      "bets_per_week": 65.4
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.01175,
+       "roi_lo90": 0.00706,
+       "roi_hi90": 0.01623
+      },
+      "sym": {
+       "roi": 0.00565,
+       "roi_lo90": 0.00092,
+       "roi_hi90": 0.01014
+      },
+      "bets": 2074,
+      "right_way": 0.6731,
+      "bets_per_week": 46.1
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.01026,
+       "roi_lo90": 0.00586,
+       "roi_hi90": 0.01431
+      },
+      "sym": {
+       "roi": 0.0091,
+       "roi_lo90": 0.00479,
+       "roi_hi90": 0.01321
+      },
+      "bets": 2213,
+      "right_way": 0.6656,
+      "bets_per_week": 49.2
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.01563,
+       "roi_lo90": 0.01052,
+       "roi_hi90": 0.02119
+      },
+      "sym": {
+       "roi": 0.00985,
+       "roi_lo90": 0.00475,
+       "roi_hi90": 0.01541
+      },
+      "bets": 1558,
+      "right_way": 0.6849,
+      "bets_per_week": 34.6
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.01253,
+       "roi_lo90": 0.00763,
+       "roi_hi90": 0.01755
+      },
+      "sym": {
+       "roi": 0.01166,
+       "roi_lo90": 0.0067,
+       "roi_hi90": 0.01673
+      },
+      "bets": 1619,
+      "right_way": 0.6726,
+      "bets_per_week": 36.0
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.01859,
+       "roi_lo90": 0.01227,
+       "roi_hi90": 0.02503
+      },
+      "sym": {
+       "roi": 0.01297,
+       "roi_lo90": 0.00661,
+       "roi_hi90": 0.01948
+      },
+      "bets": 1140,
+      "right_way": 0.6939,
+      "bets_per_week": 25.3
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.02222,
+       "roi_lo90": 0.01579,
+       "roi_hi90": 0.0288
+      },
+      "sym": {
+       "roi": 0.02293,
+       "roi_lo90": 0.01636,
+       "roi_hi90": 0.02959
+      },
+      "bets": 855,
+      "right_way": 0.6749,
+      "bets_per_week": 19.0
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.03172,
+       "roi_lo90": 0.02277,
+       "roi_hi90": 0.04103
+      },
+      "sym": {
+       "roi": 0.0276,
+       "roi_lo90": 0.01826,
+       "roi_hi90": 0.03713
+      },
+      "bets": 605,
+      "right_way": 0.7074,
+      "bets_per_week": 13.4
+     }
+    }
+   },
+   "ev_sym": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00773,
+       "roi_lo90": -0.01155,
+       "roi_hi90": -0.00381
+      },
+      "sym": {
+       "roi": 0.01226,
+       "roi_lo90": 0.00828,
+       "roi_hi90": 0.01618
+      },
+      "bets": 3227,
+      "right_way": 0.6381,
+      "bets_per_week": 71.7
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00011,
+       "roi_lo90": -0.00601,
+       "roi_hi90": 0.00615
+      },
+      "sym": {
+       "roi": 0.01802,
+       "roi_lo90": 0.01169,
+       "roi_hi90": 0.0241
+      },
+      "bets": 1596,
+      "right_way": 0.666,
+      "bets_per_week": 35.5
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00513,
+       "roi_lo90": -0.00957,
+       "roi_hi90": -0.0009
+      },
+      "sym": {
+       "roi": 0.01614,
+       "roi_lo90": 0.01168,
+       "roi_hi90": 0.02025
+      },
+      "bets": 2507,
+      "right_way": 0.647,
+      "bets_per_week": 55.7
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00452,
+       "roi_lo90": -0.00336,
+       "roi_hi90": 0.01118
+      },
+      "sym": {
+       "roi": 0.02417,
+       "roi_lo90": 0.01618,
+       "roi_hi90": 0.03106
+      },
+      "bets": 1215,
+      "right_way": 0.6724,
+      "bets_per_week": 27.0
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00305,
+       "roi_lo90": -0.00828,
+       "roi_hi90": 0.00193
+      },
+      "sym": {
+       "roi": 0.01948,
+       "roi_lo90": 0.01416,
+       "roi_hi90": 0.02454
+      },
+      "bets": 1940,
+      "right_way": 0.6546,
+      "bets_per_week": 43.1
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00833,
+       "roi_lo90": 0.00014,
+       "roi_hi90": 0.01667
+      },
+      "sym": {
+       "roi": 0.02925,
+       "roi_lo90": 0.02118,
+       "roi_hi90": 0.03785
+      },
+      "bets": 952,
+      "right_way": 0.6807,
+      "bets_per_week": 21.2
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.00116,
+       "roi_lo90": -0.00581,
+       "roi_hi90": 0.00764
+      },
+      "sym": {
+       "roi": 0.02639,
+       "roi_lo90": 0.01964,
+       "roi_hi90": 0.03287
+      },
+      "bets": 1134,
+      "right_way": 0.6614,
+      "bets_per_week": 25.2
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.01511,
+       "roi_lo90": 0.00336,
+       "roi_hi90": 0.02709
+      },
+      "sym": {
+       "roi": 0.03865,
+       "roi_lo90": 0.02693,
+       "roi_hi90": 0.0505
+      },
+      "bets": 563,
+      "right_way": 0.6856,
+      "bets_per_week": 12.5
+     }
+    }
+   }
+  },
+  "2025": {
+   "calibration": {
+    "season": 2024,
+    "rows": 976,
+    "a": -0.004768590789676654,
+    "b": 1.3897432878208247,
+    "r2": 0.07553228923120203
+   },
+   "candidates": 14918,
+   "weeks": 57,
+   "ev_tick": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00024,
+       "roi_lo90": -0.00333,
+       "roi_hi90": 0.00246
+      },
+      "sym": {
+       "roi": -0.0034,
+       "roi_lo90": -0.00633,
+       "roi_hi90": -0.00077
+      },
+      "bets": 3884,
+      "right_way": 0.6359,
+      "bets_per_week": 68.1
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00323,
+       "roi_lo90": -4e-05,
+       "roi_hi90": 0.0066
+      },
+      "sym": {
+       "roi": -0.00427,
+       "roi_lo90": -0.00739,
+       "roi_hi90": -0.00102
+      },
+      "bets": 2883,
+      "right_way": 0.6441,
+      "bets_per_week": 50.6
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.00256,
+       "roi_lo90": -0.00089,
+       "roi_hi90": 0.00591
+      },
+      "sym": {
+       "roi": -0.00029,
+       "roi_lo90": -0.00354,
+       "roi_hi90": 0.00286
+      },
+      "bets": 2900,
+      "right_way": 0.6545,
+      "bets_per_week": 50.9
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.0067,
+       "roi_lo90": 0.00286,
+       "roi_hi90": 0.01063
+      },
+      "sym": {
+       "roi": -0.00058,
+       "roi_lo90": -0.00411,
+       "roi_hi90": 0.00315
+      },
+      "bets": 2147,
+      "right_way": 0.6623,
+      "bets_per_week": 37.7
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.0065,
+       "roi_lo90": 0.00254,
+       "roi_hi90": 0.01019
+      },
+      "sym": {
+       "roi": 0.00412,
+       "roi_lo90": 0.00053,
+       "roi_hi90": 0.00768
+      },
+      "bets": 2147,
+      "right_way": 0.6763,
+      "bets_per_week": 37.7
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.0116,
+       "roi_lo90": 0.00732,
+       "roi_hi90": 0.0162
+      },
+      "sym": {
+       "roi": 0.00484,
+       "roi_lo90": 0.0006,
+       "roi_hi90": 0.00938
+      },
+      "bets": 1593,
+      "right_way": 0.693,
+      "bets_per_week": 27.9
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.01235,
+       "roi_lo90": 0.00698,
+       "roi_hi90": 0.01768
+      },
+      "sym": {
+       "roi": 0.01163,
+       "roi_lo90": 0.00639,
+       "roi_hi90": 0.01671
+      },
+      "bets": 1142,
+      "right_way": 0.7023,
+      "bets_per_week": 20.0
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.01776,
+       "roi_lo90": 0.01078,
+       "roi_hi90": 0.02359
+      },
+      "sym": {
+       "roi": 0.01286,
+       "roi_lo90": 0.00628,
+       "roi_hi90": 0.01854
+      },
+      "bets": 840,
+      "right_way": 0.725,
+      "bets_per_week": 14.7
+     }
+    }
+   },
+   "ev_sym": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.01522,
+       "roi_lo90": -0.01847,
+       "roi_hi90": -0.01201
+      },
+      "sym": {
+       "roi": 0.00417,
+       "roi_lo90": 0.00107,
+       "roi_hi90": 0.00726
+      },
+      "bets": 3813,
+      "right_way": 0.6244,
+      "bets_per_week": 66.9
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.0052,
+       "roi_lo90": -0.00986,
+       "roi_hi90": -0.00079
+      },
+      "sym": {
+       "roi": 0.01143,
+       "roi_lo90": 0.00688,
+       "roi_hi90": 0.01558
+      },
+      "bets": 1971,
+      "right_way": 0.658,
+      "bets_per_week": 34.6
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.01459,
+       "roi_lo90": -0.01832,
+       "roi_hi90": -0.01115
+      },
+      "sym": {
+       "roi": 0.00608,
+       "roi_lo90": 0.00244,
+       "roi_hi90": 0.00933
+      },
+      "bets": 3021,
+      "right_way": 0.6362,
+      "bets_per_week": 53.0
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00269,
+       "roi_lo90": -0.00797,
+       "roi_hi90": 0.00253
+      },
+      "sym": {
+       "roi": 0.01523,
+       "roi_lo90": 0.01015,
+       "roi_hi90": 0.02028
+      },
+      "bets": 1571,
+      "right_way": 0.6754,
+      "bets_per_week": 27.6
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.013,
+       "roi_lo90": -0.01721,
+       "roi_hi90": -0.00864
+      },
+      "sym": {
+       "roi": 0.00914,
+       "roi_lo90": 0.00508,
+       "roi_hi90": 0.01323
+      },
+      "bets": 2324,
+      "right_way": 0.6476,
+      "bets_per_week": 40.8
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00196,
+       "roi_lo90": -0.00838,
+       "roi_hi90": 0.00473
+      },
+      "sym": {
+       "roi": 0.01756,
+       "roi_lo90": 0.01154,
+       "roi_hi90": 0.02366
+      },
+      "bets": 1194,
+      "right_way": 0.6851,
+      "bets_per_week": 20.9
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00841,
+       "roi_lo90": -0.01406,
+       "roi_hi90": -0.00267
+      },
+      "sym": {
+       "roi": 0.01626,
+       "roi_lo90": 0.0108,
+       "roi_hi90": 0.02167
+      },
+      "bets": 1381,
+      "right_way": 0.6741,
+      "bets_per_week": 24.2
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00427,
+       "roi_lo90": -0.00378,
+       "roi_hi90": 0.01339
+      },
+      "sym": {
+       "roi": 0.02651,
+       "roi_lo90": 0.01886,
+       "roi_hi90": 0.03504
+      },
+      "bets": 690,
+      "right_way": 0.7116,
+      "bets_per_week": 12.1
+     }
+    }
+   }
+  }
+ },
+ "all_new": {
+  "2024": {
+   "calibration": {
+    "season": 2023,
+    "rows": 15440,
+    "a": -0.0011036709425191677,
+    "b": 1.4208230166341258,
+    "r2": 0.09458395186683188
+   },
+   "candidates": 11724,
+   "weeks": 45,
+   "ev_tick": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.00761,
+       "roi_lo90": 0.00398,
+       "roi_hi90": 0.01125
+      },
+      "sym": {
+       "roi": 0.00632,
+       "roi_lo90": 0.00274,
+       "roi_hi90": 0.00987
+      },
+      "bets": 2927,
+      "right_way": 0.6618,
+      "bets_per_week": 65.0
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.01173,
+       "roi_lo90": 0.00727,
+       "roi_hi90": 0.01587
+      },
+      "sym": {
+       "roi": 0.00573,
+       "roi_lo90": 0.00137,
+       "roi_hi90": 0.01
+      },
+      "bets": 2058,
+      "right_way": 0.673,
+      "bets_per_week": 45.7
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.01116,
+       "roi_lo90": 0.00704,
+       "roi_hi90": 0.01574
+      },
+      "sym": {
+       "roi": 0.01,
+       "roi_lo90": 0.00575,
+       "roi_hi90": 0.01439
+      },
+      "bets": 2147,
+      "right_way": 0.6688,
+      "bets_per_week": 47.7
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.01713,
+       "roi_lo90": 0.01182,
+       "roi_hi90": 0.02268
+      },
+      "sym": {
+       "roi": 0.01139,
+       "roi_lo90": 0.006,
+       "roi_hi90": 0.01693
+      },
+      "bets": 1510,
+      "right_way": 0.6907,
+      "bets_per_week": 33.6
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.01462,
+       "roi_lo90": 0.00958,
+       "roi_hi90": 0.01931
+      },
+      "sym": {
+       "roi": 0.01381,
+       "roi_lo90": 0.00887,
+       "roi_hi90": 0.01849
+      },
+      "bets": 1569,
+      "right_way": 0.6756,
+      "bets_per_week": 34.9
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.02224,
+       "roi_lo90": 0.01581,
+       "roi_hi90": 0.02842
+      },
+      "sym": {
+       "roi": 0.01661,
+       "roi_lo90": 0.01026,
+       "roi_hi90": 0.02265
+      },
+      "bets": 1099,
+      "right_way": 0.7006,
+      "bets_per_week": 24.4
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.02184,
+       "roi_lo90": 0.01454,
+       "roi_hi90": 0.02879
+      },
+      "sym": {
+       "roi": 0.0221,
+       "roi_lo90": 0.01495,
+       "roi_hi90": 0.02928
+      },
+      "bets": 803,
+      "right_way": 0.6737,
+      "bets_per_week": 17.8
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.03043,
+       "roi_lo90": 0.02055,
+       "roi_hi90": 0.03975
+      },
+      "sym": {
+       "roi": 0.02597,
+       "roi_lo90": 0.01605,
+       "roi_hi90": 0.03555
+      },
+      "bets": 572,
+      "right_way": 0.7028,
+      "bets_per_week": 12.7
+     }
+    }
+   },
+   "ev_sym": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00832,
+       "roi_lo90": -0.01196,
+       "roi_hi90": -0.00446
+      },
+      "sym": {
+       "roi": 0.01221,
+       "roi_lo90": 0.00851,
+       "roi_hi90": 0.01586
+      },
+      "bets": 3201,
+      "right_way": 0.6357,
+      "bets_per_week": 71.1
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00029,
+       "roi_lo90": -0.00734,
+       "roi_hi90": 0.00597
+      },
+      "sym": {
+       "roi": 0.01843,
+       "roi_lo90": 0.01146,
+       "roi_hi90": 0.02476
+      },
+      "bets": 1570,
+      "right_way": 0.6611,
+      "bets_per_week": 34.9
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00619,
+       "roi_lo90": -0.01077,
+       "roi_hi90": -0.0019
+      },
+      "sym": {
+       "roi": 0.01562,
+       "roi_lo90": 0.01109,
+       "roi_hi90": 0.01977
+      },
+      "bets": 2516,
+      "right_way": 0.6459,
+      "bets_per_week": 55.9
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00288,
+       "roi_lo90": -0.00433,
+       "roi_hi90": 0.00978
+      },
+      "sym": {
+       "roi": 0.02356,
+       "roi_lo90": 0.01625,
+       "roi_hi90": 0.03054
+      },
+      "bets": 1227,
+      "right_way": 0.6724,
+      "bets_per_week": 27.3
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00345,
+       "roi_lo90": -0.00856,
+       "roi_hi90": 0.00187
+      },
+      "sym": {
+       "roi": 0.01952,
+       "roi_lo90": 0.01446,
+       "roi_hi90": 0.02483
+      },
+      "bets": 1945,
+      "right_way": 0.6555,
+      "bets_per_week": 43.2
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00686,
+       "roi_lo90": -0.00251,
+       "roi_hi90": 0.01532
+      },
+      "sym": {
+       "roi": 0.02848,
+       "roi_lo90": 0.01888,
+       "roi_hi90": 0.03693
+      },
+      "bets": 942,
+      "right_way": 0.6741,
+      "bets_per_week": 20.9
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.00128,
+       "roi_lo90": -0.00581,
+       "roi_hi90": 0.00863
+      },
+      "sym": {
+       "roi": 0.02717,
+       "roi_lo90": 0.02024,
+       "roi_hi90": 0.0344
+      },
+      "bets": 1109,
+      "right_way": 0.6664,
+      "bets_per_week": 24.6
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.01559,
+       "roi_lo90": 0.00235,
+       "roi_hi90": 0.02727
+      },
+      "sym": {
+       "roi": 0.03998,
+       "roi_lo90": 0.02735,
+       "roi_hi90": 0.05175
+      },
+      "bets": 544,
+      "right_way": 0.6893,
+      "bets_per_week": 12.1
+     }
+    }
+   }
+  },
+  "2025": {
+   "calibration": {
+    "season": 2024,
+    "rows": 976,
+    "a": -0.004151846488064479,
+    "b": 1.4140896661085498,
+    "r2": 0.08057573480013436
+   },
+   "candidates": 14918,
+   "weeks": 57,
+   "ev_tick": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.00031,
+       "roi_lo90": -0.00249,
+       "roi_hi90": 0.00279
+      },
+      "sym": {
+       "roi": -0.00263,
+       "roi_lo90": -0.00532,
+       "roi_hi90": -0.00015
+      },
+      "bets": 3973,
+      "right_way": 0.6388,
+      "bets_per_week": 69.7
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00427,
+       "roi_lo90": 0.00111,
+       "roi_hi90": 0.0078
+      },
+      "sym": {
+       "roi": -0.00306,
+       "roi_lo90": -0.00626,
+       "roi_hi90": 0.00027
+      },
+      "bets": 2952,
+      "right_way": 0.648,
+      "bets_per_week": 51.8
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.00395,
+       "roi_lo90": 0.0006,
+       "roi_hi90": 0.00696
+      },
+      "sym": {
+       "roi": 0.00115,
+       "roi_lo90": -0.00193,
+       "roi_hi90": 0.00405
+      },
+      "bets": 2977,
+      "right_way": 0.658,
+      "bets_per_week": 52.2
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00845,
+       "roi_lo90": 0.00479,
+       "roi_hi90": 0.01224
+      },
+      "sym": {
+       "roi": 0.00132,
+       "roi_lo90": -0.00222,
+       "roi_hi90": 0.00496
+      },
+      "bets": 2220,
+      "right_way": 0.6685,
+      "bets_per_week": 38.9
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.00734,
+       "roi_lo90": 0.00349,
+       "roi_hi90": 0.01125
+      },
+      "sym": {
+       "roi": 0.00511,
+       "roi_lo90": 0.00147,
+       "roi_hi90": 0.00878
+      },
+      "bets": 2173,
+      "right_way": 0.6792,
+      "bets_per_week": 38.1
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.01225,
+       "roi_lo90": 0.00796,
+       "roi_hi90": 0.01641
+      },
+      "sym": {
+       "roi": 0.0057,
+       "roi_lo90": 0.0015,
+       "roi_hi90": 0.00998
+      },
+      "bets": 1620,
+      "right_way": 0.6944,
+      "bets_per_week": 28.4
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": 0.01398,
+       "roi_lo90": 0.00859,
+       "roi_hi90": 0.01905
+      },
+      "sym": {
+       "roi": 0.01265,
+       "roi_lo90": 0.00721,
+       "roi_hi90": 0.01746
+      },
+      "bets": 1167,
+      "right_way": 0.7104,
+      "bets_per_week": 20.5
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.0192,
+       "roi_lo90": 0.01274,
+       "roi_hi90": 0.02531
+      },
+      "sym": {
+       "roi": 0.01381,
+       "roi_lo90": 0.00738,
+       "roi_hi90": 0.01976
+      },
+      "bets": 875,
+      "right_way": 0.7326,
+      "bets_per_week": 15.4
+     }
+    }
+   },
+   "ev_sym": {
+    "0.0": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.01497,
+       "roi_lo90": -0.01825,
+       "roi_hi90": -0.01182
+      },
+      "sym": {
+       "roi": 0.0044,
+       "roi_lo90": 0.00125,
+       "roi_hi90": 0.00742
+      },
+      "bets": 3825,
+      "right_way": 0.6261,
+      "bets_per_week": 67.1
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00498,
+       "roi_lo90": -0.00965,
+       "roi_hi90": -0.00021
+      },
+      "sym": {
+       "roi": 0.01169,
+       "roi_lo90": 0.00703,
+       "roi_hi90": 0.01603
+      },
+      "bets": 1988,
+      "right_way": 0.6579,
+      "bets_per_week": 34.9
+     }
+    },
+    "0.005": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.01437,
+       "roi_lo90": -0.01797,
+       "roi_hi90": -0.01081
+      },
+      "sym": {
+       "roi": 0.00646,
+       "roi_lo90": 0.00295,
+       "roi_hi90": 0.00988
+      },
+      "bets": 3023,
+      "right_way": 0.6365,
+      "bets_per_week": 53.0
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00427,
+       "roi_lo90": -0.00948,
+       "roi_hi90": 0.00111
+      },
+      "sym": {
+       "roi": 0.01409,
+       "roi_lo90": 0.00896,
+       "roi_hi90": 0.0193
+      },
+      "bets": 1571,
+      "right_way": 0.6703,
+      "bets_per_week": 27.6
+     }
+    },
+    "0.01": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.01189,
+       "roi_lo90": -0.01595,
+       "roi_hi90": -0.00796
+      },
+      "sym": {
+       "roi": 0.01037,
+       "roi_lo90": 0.0064,
+       "roi_hi90": 0.01409
+      },
+      "bets": 2397,
+      "right_way": 0.6542,
+      "bets_per_week": 42.1
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": -0.00197,
+       "roi_lo90": -0.008,
+       "roi_hi90": 0.00378
+      },
+      "sym": {
+       "roi": 0.01801,
+       "roi_lo90": 0.01232,
+       "roi_hi90": 0.02357
+      },
+      "bets": 1242,
+      "right_way": 0.686,
+      "bets_per_week": 21.8
+     }
+    },
+    "0.02": {
+     "all_leagues": {
+      "tick": {
+       "roi": -0.00755,
+       "roi_lo90": -0.0137,
+       "roi_hi90": -0.00156
+      },
+      "sym": {
+       "roi": 0.01746,
+       "roi_lo90": 0.01145,
+       "roi_hi90": 0.02334
+      },
+      "bets": 1414,
+      "right_way": 0.6726,
+      "bets_per_week": 24.8
+     },
+     "outside_top5": {
+      "tick": {
+       "roi": 0.00536,
+       "roi_lo90": -0.00277,
+       "roi_hi90": 0.01465
+      },
+      "sym": {
+       "roi": 0.028,
+       "roi_lo90": 0.02026,
+       "roi_hi90": 0.03679
+      },
+      "bets": 721,
+      "right_way": 0.7115,
+      "bets_per_week": 12.6
+     }
+    }
+   }
+  }
+ }
+}

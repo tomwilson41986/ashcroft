@@ -71,7 +71,9 @@ def test_a_saturday_xg_rewrite_leaves_sunday_windows_and_ratings_alone():
 
     def feats(frame):
         t = xf.side_rows(frame)
-        w = windows(t, xf.XG_MEASURES).set_index(["match_id", "venue"]).sort_index()
+        w = windows(t, xf.XG_MEASURES)
+        sw = xf.short_windows(t, xf.SHORT_MEASURES)
+        w = pd.concat([w, sw], axis=1).set_index(["match_id", "venue"]).sort_index()
         mm = frame.assign(npxg_h=frame["xg_h"], npxg_a=frame["xg_a"])
         r = xf.xg_ratings(mm).set_index("match_id").sort_index()
         return w, r
@@ -85,3 +87,27 @@ def test_a_saturday_xg_rewrite_leaves_sunday_windows_and_ratings_alone():
     pd.testing.assert_frame_equal(wa.loc[wa.index.get_level_values(0).isin(sunday), cols],
                                   wb.loc[wb.index.get_level_values(0).isin(sunday), cols])
     pd.testing.assert_frame_equal(ra.loc[ra.index.isin(sunday)], rb.loc[rb.index.isin(sunday)])
+
+
+def test_short_windows_weight_the_latest_match_most_and_never_see_the_match_itself():
+    t = pd.DataFrame({"team": ["a"] * 6, "date": pd.date_range("2024-08-03", periods=6, freq="7D"),
+                      "v": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+    w = xf.short_windows(t, ["v"], equal=(2, 3), linear=(5,))
+    last = w.iloc[-1]
+    assert last["v_l2"] == 4.5 and last["v_l3"] == 4.0                  # matches 4 and 5; 3, 4 and 5
+    assert abs(last["v_lw5"] - (5 * 5 + 4 * 4 + 3 * 3 + 2 * 2 + 1 * 1) / 15) < 1e-12
+    assert np.isnan(w.iloc[0]["v_l2"])
+
+
+def test_sos_xg_is_measured_against_the_opponents_earlier_matches():
+    # b concedes 2 npxg a match before meeting a; a makes 3 against b: +1 above what b usually allows
+    rows = []
+    for i, d in enumerate(pd.date_range("2024-08-03", periods=4, freq="7D")):
+        rows.append({"match_id": f"m{i}", "date": d, "team": "b", "opp": f"x{i}", "npxg": 1.0, "npxga": 2.0})
+        rows.append({"match_id": f"m{i}", "date": d, "team": f"x{i}", "opp": "b", "npxg": 2.0, "npxga": 1.0})
+    d = pd.Timestamp("2024-09-07")
+    rows += [{"match_id": "z", "date": d, "team": "a", "opp": "b", "npxg": 3.0, "npxga": 0.5},
+             {"match_id": "z", "date": d, "team": "b", "opp": "a", "npxg": 0.5, "npxga": 3.0}]
+    t = xf.add_sos(pd.DataFrame(rows).sort_values(["team", "date"]))
+    a = t[(t["match_id"] == "z") & (t["team"] == "a")].iloc[0]
+    assert a["npxg_sos"] == 1.0 and a["npxga_sos"] == -0.5 and a["npxgd_sos"] == 1.5
