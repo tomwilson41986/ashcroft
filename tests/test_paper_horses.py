@@ -18,10 +18,10 @@ START = datetime(2026, 11, 5, 13, 0, tzinfo=timezone.utc)
 A, B = 21, 22
 
 
-def _book(b_lt=2.0, b_traded=1000.0, a_lt=4.0, a_traded=500.0):
+def _book(b_lt=2.0, b_traded=1000.0, a_lt=4.0, a_traded=500.0, b_lay=2.02):
     return Book(MID, "OPEN", False, 9000.0, {
         A: Quote(A, back=[(4.0, 50.0)], lay=[(4.2, 50.0)], last_traded=a_lt, traded=a_traded),
-        B: Quote(B, back=[(2.0, 300.0)], lay=[(2.02, 300.0)], last_traded=b_lt, traded=b_traded)})
+        B: Quote(B, back=[(2.0, 300.0)], lay=[(b_lay, 300.0)], last_traded=b_lt, traded=b_traded)})
 
 
 def _day(polls_spec):
@@ -128,3 +128,98 @@ def test_the_desk_runs_on_github_s_runners_and_never_reaches_betfair():
     src = (Path(__file__).resolve().parent.parent / "research/paper/horses.py").read_text()
     src += (Path(__file__).resolve().parent.parent / "research/arms/quotes.py").read_text()
     assert "placeOrders" not in src and "LiveExchange" not in src and "TRADING_LIVE" not in src
+
+
+# --- the agents on one book: a price one takes is gone for the others (the owner, 4 Nov 2026) ----------------------
+
+def _thin_day(size=50.0):
+    """One race, Alpha long in the market with GBP``size`` offered at 10.0; the rule wants it (to win GBP400:
+    GBP44.44 at 10)."""
+    m = Market(MID, "Kempton", "GB", START, name="1m Hcap", runners={A: "Alpha", B: "Bravo", 23: "Charlie"})
+    t0 = datetime(2026, 11, 5, 6, 0, tzinfo=timezone.utc)
+    book = lambda: Book(MID, "OPEN", False, 9000.0, {
+        A: Quote(A, back=[(10.0, size)], lay=[(11.0, 100.0)], last_traded=10.0, traded=500.0),
+        B: Quote(B, back=[(2.0, 300.0)], lay=[(2.02, 300.0)], last_traded=2.0, traded=1000.0),
+        23: Quote(23, back=[(2.4, 300.0)], lay=[(2.46, 300.0)], last_traded=2.4, traded=1000.0)})
+    polls = [(t0 + timedelta(minutes=i), book()) for i in range(3)]
+    settled = {A: (8.0, "LOSER"), B: (2.5, "WINNER"), 23: (2.4, "LOSER")}
+    polls.append((datetime(2026, 11, 5, 23, 0, tzinfo=timezone.utc),
+                  Book(MID, "CLOSED", False, None, {s: Quote(s, status=st, bsp=b) for s, (b, st) in settled.items()},
+                       True)))
+    preds = pd.DataFrame({"market_id": [MID] * 3, "selection_id": [A, B, 23], "predicted_bfsp": [5.0, 2.4, 2.6]})
+    return SimpleNamespace(day=date(2026, 11, 5), kind="win", markets=[m], polls={MID: polls},
+                           poll_times={MID: [t for t, _ in polls]}, starts={MID: START}, real_fills={}, preds=preds,
+                           settled={(MID, s): v for s, v in settled.items()},
+                           removed=pd.DataFrame(columns=["market_id", "selection_id", "af", "rt"]), places={},
+                           ledger=pd.DataFrame())
+
+
+def _alpha(led):
+    b = led[(led.event == "back") & (pd.to_numeric(led.matched, errors="coerce") > 0)] if len(led) else led
+    return float(pd.to_numeric(b[b.selection_id == A].matched).sum()) if len(b) else 0.0
+
+
+def test_two_agents_on_one_book_cannot_both_take_the_same_price():
+    from research.arms import sessions
+    D = _thin_day(50.0)
+    cfg = lambda: core.make_cfg(clv_draws=2000)
+    core.set_plan_cfg(cfg(), reset=True)
+    t0 = datetime(2026, 11, 5, 5, 58, tzinfo=timezone.utc)
+    alone, _, _ = core.run_session(D, sessions.ArmSession, cfg(), {"_D": D}, t0)
+    assert _alpha(alone) == pytest.approx(44.44, abs=0.01)                   # alone, each would take GBP44.44
+    out = core.run_agents(D, [("one", sessions.ArmSession, cfg(), {"_D": D}, core.BALANCE, False),
+                              ("two", sessions.ArmSession, cfg(), {"_D": D}, core.BALANCE, False)], t0)
+    got = sorted([_alpha(out["one"][0]), _alpha(out["two"][0])])
+    assert sum(got) == pytest.approx(50.0, abs=0.02)                         # together, no more than the GBP50 shown
+    assert got[1] == pytest.approx(44.44, abs=0.01) and got[0] == pytest.approx(5.56, abs=0.02)
+
+
+def test_the_live_rule_s_replay_goes_first_and_the_order_turns_for_the_rest():
+    from research.arms import sessions
+    D = _thin_day(50.0)
+    cfg = lambda: core.make_cfg(clv_draws=2000)
+    core.set_plan_cfg(cfg(), reset=True)
+    t0 = datetime(2026, 11, 5, 5, 58, tzinfo=timezone.utc)
+    out = core.run_agents(D, [("agent", sessions.ArmSession, cfg(), {"_D": D}, core.BALANCE, False),
+                              ("live_rule", sessions.ArmSession, cfg(), {"_D": D}, core.BALANCE, True)], t0)
+    assert _alpha(out["live_rule"][0]) == pytest.approx(44.44, abs=0.01)    # the control's pick comes first
+    assert _alpha(out["agent"][0]) == pytest.approx(5.56, abs=0.02)
+
+
+def test_two_quotes_at_one_price_queue_one_behind_the_other():
+    from model import race_book as rb
+    from trading.exchange import tick_up
+    mid = float(rb.market_now(np.array([2.0]), np.array([2.2]))[0])
+    P = tick_up(mid * 1.02)
+    assert P < 2.2                                                           # the back improves the best offer to layers
+    D = _day([{"b_lay": 2.2}, {"b_lay": 2.2, "b_lt": P, "b_traded": 1012.0}, {"b_lay": 2.2}])
+    cfg = lambda: core.make_cfg(clv_draws=2000)
+    core.set_plan_cfg(cfg(), reset=True)
+    t0 = datetime(2026, 11, 5, 5, 58, tzinfo=timezone.utc)
+    pol = {"fair": "mid", "margin": 0.02}
+    out = core.run_agents(D, [("q1", quotes.QuoteSession, cfg(), {**pol, "_D": D}, core.BALANCE, False),
+                              ("q2", quotes.QuoteSession, cfg(), {**pol, "_D": D}, core.BALANCE, False)], t0)
+    # both rest a back at P: the first is first in line, the second queues behind its GBP10
+    f1, f2 = (out[n][1].fills_frame() for n in ("q1", "q2"))
+    m1 = float(f1[f1.selection_id == B].matched.sum()) if len(f1) else 0.0
+    m2 = float(f2[f2.selection_id == B].matched.sum()) if len(f2) else 0.0
+    assert m1 + m2 == pytest.approx(6.0, abs=0.01)                           # half the GBP12 traded at P, once
+    assert sorted([m1, m2]) == [0.0, 6.0]                                    # all of it the first quote's
+
+
+def test_an_agent_s_day_reads_on_the_dashboard(tmp_path):
+    from dashboard import traders as tr
+    D = _day([{}, {"b_lt": 2.08, "b_traded": 1400.0}, {}])
+    s, f = _quote(D)
+    fills = f.assign(venue="Kempton", off="13:00")
+    fp = quotes.fill_pnl(fills, D)
+    m = horses.markets_table(fp)
+    assert list(m.columns) == tr.MARKET_COLS and m.settled.all()
+    p = tmp_path / "pred" / "paper/horses/shared/agents/quotes_mid2" / "2026-11-05"
+    p.mkdir(parents=True)
+    (p / "markets.csv").write_text(m.to_csv(index=False))
+    src = tr.LocalSource(tmp_path)
+    t = [x for x in tr.TRADERS if x.id == "horse-agent-quotes-mid2"][0]
+    got, _ = t.reader(src, t.kind, t.base, "2026-11-05")
+    assert got.pnl.sum() == pytest.approx(horses.summary("quotes_mid2", fp, D)["result_reduced"], abs=0.01)
+    assert {x.id for x in tr.TRADERS} >= {f"horse-agent-{k.replace('_', '-')}" for k in horses.AGENTS}

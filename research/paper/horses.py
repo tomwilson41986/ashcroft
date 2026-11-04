@@ -1,11 +1,17 @@
 """The horse paper desk (the owner, 4 Nov 2026: "Keep the current proven profitable strategy as live. Let's paper trade
 any others that look promising; Backs, Lays, High Volume Trading each side of the line").
 
-Each racing day, once its books and Betfair's price file are in S3, every strategy below is run on the day's recorded
-books (the trader's own minute-by-minute reads and the recorder's) through the live trader's code (research/arms),
-with no order placed anywhere. Each is scored as the arms are: backs and lays closed at the SP, after the non-runners'
-reduction factors, 2% on the winnings, at the replay's scale (live has run at 0.80 of it). The ledger is kept in
-s3://$PRED_BUCKET/paper/horses/: a day's rows (days/<day>.json) and fills (fills/<day>/<strategy>.csv.gz).
+Each strategy is an agent with its own paper account (GBP5,000, its own day limit) and its own ledger. Each racing
+day, once its books and Betfair's price file are in S3, all of them trade the day's recorded books together, through
+the live trader's code (research/arms), with no order placed anywhere: one shared book (the owner, 4 Nov: "We need to
+be careful that they dont conflict with each other e.g. taking the price for one, removes the price for others";
+research/arms/core.py run_agents). The live trader's own fills are already out of the books; the live rule's replay
+(the control) steps first each minute, as the live trader's orders came first; the agents then step in an order that
+turns each minute; whatever one takes is gone for the rest, and two quotes at one price queue one behind the other.
+Every fill is scored the same way (research/arms/quotes.py fill_pnl): hedged at the SP when matched, after the
+non-runners' reduction factors, 2% on each market's net winnings, at the replay's scale (live has run at 0.80 of it).
+The ledger, s3://$PRED_BUCKET/paper/horses/shared/: each agent's day (agents/<agent>/<day>/markets.csv, the
+dashboard's table, and fills.csv.gz) and the day's rows for all of them (days/<day>.json).
 
 The strategies, frozen on 4 Nov 2026 before the first forward day (5 Nov), from the arms' and the timing study's
 reads (ledger arms-full-1103, timing-1104):
@@ -50,7 +56,7 @@ from research.arms import core  # noqa: E402
 
 FORWARD_FROM = date(2026, 11, 5)
 GATE_DAYS = 20
-PREFIX = "paper/horses"
+PREFIX = "paper/horses/shared"     # the agents on one book (4 Nov); the first, standalone run is not used
 STRATEGIES = {
     #  name:          (session, policy, cfg overrides)
     "live_rule": ("rule", {}, {}),
@@ -62,6 +68,19 @@ STRATEGIES = {
     "quotes_mid2": ("quote", {"fair": "mid", "margin": 0.02, "stake": 10.0, "max_side": 100.0,
                               "day_matched": 4000.0}, {}),
 }
+AGENTS = {
+    #  name:          (title on the dashboard, what it does)
+    "live_rule": ("Live rule, replay", "The live rule replayed on the same book: the control the others are judged by"),
+    "backs_floor50": ("Backs, GBP50 floor", "The live rule with at least GBP50 on a horse at 21 or longer"),
+    "backs_win1000": ("Backs, to win GBP1,000", "The live rule staking to win GBP1,000 a horse, GBP500 a bet at most"),
+    "lays": ("Lays", "Lays a horse 3% or more under its expected SP, at 20 or under, GBP400 at risk; backed at the SP"),
+    "quotes_model3": ("Both sides, model", "A resting back 3% above and a lay 3% below the model's expected SP, every "
+                      "runner, GBP10 a quote; each fill closed at the SP"),
+    "quotes_mid2": ("Both sides, market", "A resting back 2% above and a lay 2% below the market's mid, every runner, "
+                    "GBP10 a quote; each fill closed at the SP"),
+}
+INITIALS = {"live_rule": "LR", "backs_floor50": "F5", "backs_win1000": "W1", "lays": "LY", "quotes_model3": "QM",
+            "quotes_mid2": "QD"}
 KIND = {"backs_floor50": "backs", "backs_win1000": "backs", "lays": "lays", "quotes_model3": "quotes",
         "quotes_mid2": "quotes", "live_rule": "control"}
 
@@ -83,28 +102,82 @@ def _keys(prefix: str) -> list[str]:
         token = r.get("NextContinuationToken")
 
 
-def run_strategy(D, name: str, draws: int) -> tuple[dict, pd.DataFrame]:
+def agent_specs(draws: int) -> list[tuple]:
     from research.arms import quotes, sessions
-    kind, policy, over = STRATEGIES[name]
-    cfg = core.make_cfg(clv_draws=draws, **over)
-    core.set_plan_cfg(core.make_cfg(clv_draws=draws), reset=False)
-    pol = {**policy, "_D": D}
-    t0 = core.session_start(D, "win")
-    cls = {"rule": sessions.ArmSession, "lay": sessions.LaySession, "quote": quotes.QuoteSession}[kind]
-    led, s, x = core.run_session(D, cls, cfg, pol, t0)
+    out = []
+    for name, (kind, policy, over) in STRATEGIES.items():
+        cfg = core.make_cfg(clv_draws=draws, **over)
+        cls = {"rule": sessions.ArmSession, "lay": sessions.LaySession, "quote": quotes.QuoteSession}[kind]
+        out.append((name, cls, cfg, dict(policy), core.BALANCE, name == "live_rule"))
+    return out
+
+
+def agent_fills(name: str, led: pd.DataFrame, s, D) -> pd.DataFrame:
+    """An agent's fills as one table: ts, market_id, selection_id, side, price, matched, venue, off."""
+    kind = STRATEGIES[name][0]
+    cols = ["ts", "market_id", "selection_id", "side", "price", "matched", "venue", "off"]
     if kind == "rule":
-        r = core.score(led, D, name, s.state.settled_pnl, s.state.turnover >= cfg.limits.max_daily_turnover - 2)
-        fills = led[(led.get("event") == "back")] if len(led) and "event" in led else pd.DataFrame()
+        if led is None or led.empty or "event" not in led:
+            return pd.DataFrame(columns=cols)
+        b = led[(led.event == "back") & (pd.to_numeric(led.matched, errors="coerce") > 0)].copy()
+        b["side"], b["price"] = "back", pd.to_numeric(b.avg_price, errors="coerce")
     elif kind == "lay":
-        r = core.score_side(s.lay_positions_frame(), D, name, side="lay")
-        fills = pd.DataFrame(s.lay_rows)
+        b = pd.DataFrame([r for r in s.lay_rows if r["event"] == "lay" and r["matched"] > 0])
+        if b.empty:
+            return pd.DataFrame(columns=cols)
+        b["side"], b["price"] = "lay", b.avg_price
     else:
-        fills = s.fills_frame()
-        r = quotes.score_quotes(fills, D, name)
-    return r, fills
+        b = s.fills_frame()
+        if b.empty:
+            return pd.DataFrame(columns=cols)
+    b["matched"] = pd.to_numeric(b.matched, errors="coerce")
+    starts = {m.market_id: m for m in D.markets}
+    if "venue" not in b:
+        b["venue"] = b.market_id.map(lambda m: starts[m].venue if m in starts else "")
+    if "off" not in b:
+        b["off"] = b.market_id.map(lambda m: starts[m].start.astimezone(core.UK).strftime("%H:%M") if m in starts else "")
+    return b[cols].reset_index(drop=True)
+
+
+def summary(name: str, fp: pd.DataFrame, D) -> dict:
+    from research.arms.quotes import net_of_commission
+    r = {"day": str(D.day), "arm": name, "kind": KIND[name], "forward": D.day >= FORWARD_FROM, "fills": 0,
+         "horses": 0, "staked": 0.0, "back_staked": 0.0, "lay_staked": 0.0, "lay_liability": 0.0, "locked": 0.0,
+         "clv": None, "result": 0.0, "result_reduced": 0.0}
+    if fp is None or fp.empty:
+        return r
+    back = fp.side.eq("back")
+    net = fp.groupby("market_id")[["pnl", "pnl_red"]].sum()
+    r.update({"fills": int(len(fp)), "horses": int(fp.groupby(["market_id", "selection_id"]).ngroups),
+              "staked": round(float(fp.matched.sum()), 2), "back_staked": round(float(fp.matched[back].sum()), 2),
+              "lay_staked": round(float(fp.matched[~back].sum()), 2),
+              "lay_liability": round(float((fp.matched[~back] * (fp.price[~back] - 1)).sum()), 2),
+              "locked": round(float(fp.locked.sum()), 2),
+              "result": round(float(net_of_commission(net.pnl).sum()), 2),
+              "result_reduced": round(float(net_of_commission(net.pnl_red).sum()), 2)})
+    r["clv"] = round(r["locked"] / r["staked"], 4) if r["staked"] else None
+    return r
+
+
+def markets_table(fp: pd.DataFrame) -> pd.DataFrame:
+    """The dashboard's table for one agent's day (dashboard/traders.py MARKET_COLS): a row a market, settled, its
+    P&L after the cuts and 2% on its net winnings, the value locked at the SP as its expected value, the CLV sums."""
+    from research.arms.quotes import net_of_commission
+    cols = ["market_id", "label", "off", "staked", "ev", "pnl", "settled", "open_liability",
+            "clv_ws", "clv_s", "clv_n", "clv_sum", "clv_sumsq"]
+    if fp is None or fp.empty:
+        return pd.DataFrame(columns=cols)
+    g = fp.assign(_cw=fp.clv * fp.matched, _c2=fp.clv ** 2).groupby("market_id")
+    m = g.agg(label=("venue", "first"), off=("off", "first"), staked=("matched", "sum"), ev=("locked", "sum"),
+              pnl_red=("pnl_red", "sum"), clv_ws=("_cw", "sum"), clv_s=("matched", "sum"), clv_n=("clv", "size"),
+              clv_sum=("clv", "sum"), clv_sumsq=("_c2", "sum"))
+    m["pnl"] = net_of_commission(m.pop("pnl_red"))
+    m["settled"], m["open_liability"] = True, 0.0
+    return m.reset_index()[cols].round(4)
 
 
 def day_job(day_iso: str, names: list[str], draws: int, write: bool) -> dict:
+    from research.arms import quotes
     day = date.fromisoformat(day_iso)
     res = {"day": day_iso, "rows": [], "errors": []}
     try:
@@ -115,23 +188,31 @@ def day_job(day_iso: str, names: list[str], draws: int, write: bool) -> dict:
     if D is None:
         res["rows"].append({"day": day_iso, "note": "no books or no price file yet"})
         return res
-    for name in names:
-        tic = time.time()
-        try:
-            r, fills = run_strategy(D, name, draws)
-        except Exception:
-            res["errors"].append(f"{name}: {traceback.format_exc()}")
-            continue
-        r = {k: (None if isinstance(v, float) and not np.isfinite(v) else v) for k, v in r.items()}
-        r.update({"arm": name, "kind": KIND[name], "forward": day >= FORWARD_FROM,
-                  "seconds": round(time.time() - tic)})
+    specs = [sp for sp in agent_specs(draws) if sp[0] in names or sp[0] == "live_rule"]
+    core.set_plan_cfg(core.make_cfg(clv_draws=draws), reset=False)
+    for sp in specs:
+        sp[3]["_D"] = D
+    tic = time.time()
+    try:
+        out = core.run_agents(D, specs, core.session_start(D, "win"))
+    except Exception:
+        res["errors"].append(traceback.format_exc())
+        return res
+    secs = round(time.time() - tic)
+    for name, (led, s, x) in out.items():
+        fills = agent_fills(name, led, s, D)
+        fp = quotes.fill_pnl(fills, D)
+        r = summary(name, fp, D)
+        r["seconds_all"] = secs
         res["rows"].append(r)
         print({k: v for k, v in r.items() if k != "day"}, flush=True)
-        if write and len(fills):
+        if write:
+            base = f"{PREFIX}/agents/{name}/{day_iso}"
+            _put(f"{base}/markets.csv", markets_table(fp).to_csv(index=False).encode())
             buf = io.BytesIO()
             with gzip.GzipFile(fileobj=buf, mode="wb") as g:
-                g.write(fills.to_csv(index=False).encode())
-            _put(f"{PREFIX}/fills/{day_iso}/{name}.csv.gz", buf.getvalue())
+                g.write((fp if len(fp) else fills).to_csv(index=False).encode())
+            _put(f"{base}/fills.csv.gz", buf.getvalue())
     if write and res["rows"] and not res["errors"]:
         _put(f"{PREFIX}/days/{day_iso}.json", json.dumps(res["rows"], default=str, indent=1).encode())
     return res

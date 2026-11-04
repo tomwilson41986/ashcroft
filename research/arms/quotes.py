@@ -55,6 +55,7 @@ class QuoteSession(ArmSession):
         self.quote_rows: list[dict] = []
         self.total = 0.0
         self._fair_cache: dict = {}
+        self._mid = None
 
     def execute(self, m, book, d, now):          # the rule's own backs are off: quotes only
         return
@@ -94,15 +95,48 @@ class QuoteSession(ArmSession):
         """The money ahead of a new resting order: a back rests among the offers to layers (q.lay), a lay among
         the offers to backers (q.back)."""
         offers = q.lay if side == "back" else q.back
+        ahead = self._others_resting(side, price, q)            # other agents' quotes at this price came first
         if not offers:
-            return 0.0
+            return ahead
         best = offers[0][0]
         if (side == "back" and price < best - 1e-9) or (side == "lay" and price > best + 1e-9):
-            return 0.0                                          # it improves the best offer: first in line
+            return ahead                                        # it improves the best offer shown: behind the agents'
         for p, s in offers:
             if abs(p - price) < 1e-9:
-                return float(s)
+                return float(s) + ahead
         return math.inf                                         # deeper than the book shows
+
+    # -- the shared book: other agents' resting quotes and takes (research/arms/core.py SharedReplayData) -----------
+    def _shared(self):
+        return getattr(self.x.data, "resting", None)
+
+    def _others_resting(self, side, price, q) -> float:
+        r = self._shared()
+        return float(r.get((self._mid, q.selection_id, side, round(price, 2)), 0.0)) if r is not None else 0.0
+
+    def _rest(self, key, o, sign: float) -> None:
+        r = self._shared()
+        if r is not None:
+            r[(key[0], key[1], key[2], round(o["price"], 2))] += sign * o["left"]
+
+    def _drop(self, key) -> None:
+        o = self.resting.pop(key, None)
+        if o is not None:
+            self._rest(key, o, -1.0)
+
+    def _take_shown(self, m, sid, side, P, levels, amount) -> None:
+        """A resting quote matched by an offer across it takes that offer from the shared book."""
+        data = self.x.data
+        left = amount
+        for p, s in levels:
+            if left <= 1e-9:
+                break
+            take = min(s, left)
+            if side == "back" and hasattr(data, "agent_taken"):
+                data.agent_taken[(m.market_id, sid, round(p, 2))] += take
+            elif side == "lay":
+                data.taken_lay[(m.market_id, sid, round(p, 2))] += take
+            left -= take
 
     def _advance(self, now, m, sid, q) -> None:
         """What each resting order on this runner matched since the last read."""
@@ -113,22 +147,24 @@ class QuoteSession(ArmSession):
                 continue
             want = min(o["left"], self._room(key))
             if want <= 0:
-                self.resting.pop(key, None)
+                self._drop(key)
                 continue
             lt = q.last_traded
             delta = max(0.0, (q.traded or 0.0) - o["traded"])
             P = o["price"]
             got, how = 0.0, ""
             if side == "back":
-                cross = sum(s for p, s in q.back if p >= P - 1e-9)        # someone now offers to lay at P or more
+                crossing = [(p, s) for p, s in q.back if p >= P - 1e-9]   # someone now offers to lay at P or more
                 through = lt is not None and lt > P + 1e-9 and delta > 0
             else:
-                cross = sum(s for p, s in q.lay if p <= P + 1e-9)         # someone now offers to back at P or less
+                crossing = [(p, s) for p, s in q.lay if p <= P + 1e-9]    # someone now offers to back at P or less
                 through = lt is not None and lt < P - 1e-9 and delta > 0
+            cross = sum(s for _, s in crossing)
             if through:
                 got, how = want, "traded through"
             elif cross > 0:
                 got, how = min(want, cross), "crossed"
+                self._take_shown(m, sid, side, P, crossing, got)
             elif lt is not None and abs(lt - P) < 1e-9 and delta > 0:
                 ours = self.queue_share * delta
                 got = min(want, max(0.0, ours - o["queue"]))
@@ -138,16 +174,19 @@ class QuoteSession(ArmSession):
             if got >= 0.01:
                 got = math.floor(got * 100) / 100
                 self._record(now, m, sid, side, P, got, how)
+                r = self._shared()
+                if r is not None:
+                    r[(key[0], key[1], key[2], round(P, 2))] -= got
                 o["left"] -= got
             if o["left"] < self.cfg.limits.min_stake:
-                self.resting.pop(key, None)
+                self._drop(key)
 
     def _place(self, now, m, sid, side, price, q) -> None:
         key = (m.market_id, sid, side)
         o = self.resting.get(key)
         if o is not None and abs(o["price"] - price) < 1e-9:
             return                                              # the same price: keep the place in the queue
-        self.resting.pop(key, None)
+        self._drop(key)
         size = min(self.stake, self._room(key))
         if size < self.cfg.limits.min_stake:
             return
@@ -162,15 +201,17 @@ class QuoteSession(ArmSession):
             if f.matched > 0:
                 self._record(now, m, sid, "lay", f.avg_price, f.matched, "taken")
             return
+        self._mid = m.market_id
         self.resting[key] = {"price": price, "left": size, "queue": self._queue(side, price, q),
                              "traded": q.traded or 0.0, "placed": now}
+        self._rest(key, self.resting[key], +1.0)
 
     def step(self, now=None):
         now = now or self.clock()
         super().step(now)
         live = {m.market_id for m in self.tradable_markets(now)} if self.in_window(now) else set()
         for key in [k for k in self.resting if k[0] not in live]:
-            self.resting.pop(key, None)                         # 15 minutes before the off: the quotes come off
+            self._drop(key)                                     # 15 minutes before the off: the quotes come off
         if not live:
             return
         books = self.x.books(sorted(live))
@@ -197,20 +238,21 @@ class QuoteSession(ArmSession):
         return pd.DataFrame(self.quote_rows)
 
 
-def score_quotes(fills: pd.DataFrame, D, name: str) -> dict:
-    """Every fill hedged at the SP, after the reductions of the runners taken out after it, 2% on each market's net
-    winnings. A runner that did not run (no BSP) is void."""
-    out = {"day": str(D.day), "arm": name, "fills": 0, "runners": 0, "back_staked": 0.0, "lay_staked": 0.0,
-           "lay_liability": 0.0, "locked": 0.0, "result": 0.0, "result_reduced": 0.0, "two_sided": 0}
+def fill_pnl(fills: pd.DataFrame, D) -> pd.DataFrame:
+    """Each fill (ts, market_id, selection_id, side 'back' | 'lay', price, matched) hedged at the SP when matched:
+    its BSP and result, the CLV (a back's price / BSP - 1, a lay's 1 - price / BSP), the P&L by the result, and the
+    same after the reductions of the runners taken out after it (Betfair's rule: a winner's matched price is cut).
+    A runner that did not run (no BSP) is left out: void."""
     if fills is None or fills.empty:
-        return out
+        return pd.DataFrame()
     f = fills.copy()
+    f["selection_id"] = f.selection_id.astype(int)
     f["bsp"] = [D.settled.get((m, int(s)), (np.nan, "REMOVED"))[0] for m, s in zip(f.market_id, f.selection_id)]
     f["res"] = [D.settled.get((m, int(s)), (np.nan, "REMOVED"))[1] for m, s in zip(f.market_id, f.selection_id)]
-    f = f[np.isfinite(f.bsp.astype(float)) & (f.bsp.astype(float) > 1)].copy()
+    f["bsp"] = pd.to_numeric(f.bsp, errors="coerce")
+    f = f[np.isfinite(f.bsp) & (f.bsp > 1)].copy()
     if f.empty:
-        return out
-    f["bsp"] = f.bsp.astype(float)
+        return f
     t = pd.to_datetime(f.ts, utc=True)
     rem = D.removed
     fac = []
@@ -218,27 +260,43 @@ def score_quotes(fills: pd.DataFrame, D, name: str) -> dict:
         x = rem[(rem.market_id == r.market_id) & (rem.selection_id != r.selection_id) & (rem.rt > tt)] \
             if len(rem) else rem
         fac.append(float(np.prod(1 - x.af.to_numpy() / 100.0)) if len(x) else 1.0)
-    P, s, B = f.price.to_numpy(float), f.matched.to_numpy(float), f.bsp.to_numpy()
+    P, s, B = f.price.to_numpy(float), f.matched.to_numpy(float), f.bsp.to_numpy(float)
     Pr = np.maximum(1.01, P * np.array(fac))
     won = f.res.eq("WINNER").to_numpy()
     h = s * P / B                                               # the hedge's stake at the SP
     back = f.side.eq("back").to_numpy()
-    win_b = s * (P - 1) - h * (B - 1)
-    lose_b = -s + h
-    win_l = -s * (P - 1) + h * (B - 1)
-    lose_l = s - h
-    f["pnl"] = np.where(back, np.where(won, win_b, lose_b), np.where(won, win_l, lose_l))
+    f["pnl"] = np.where(back, np.where(won, s * (P - 1) - h * (B - 1), -s + h),
+                        np.where(won, -s * (P - 1) + h * (B - 1), s - h))
     f["pnl_red"] = f["pnl"] + np.where(won, np.where(back, -s * (P - Pr), s * (P - Pr)), 0.0)
-    f["locked"] = np.where(back, s * (P / B - 1), s * (1 - P / B))
+    f["clv"] = np.where(back, P / B - 1, 1 - P / B)
+    f["locked"] = s * f["clv"]
+    return f
+
+
+def net_of_commission(v: pd.Series) -> pd.Series:
+    """2% on each market's net winnings (Betfair's commission), a loss untouched."""
+    return v - 0.02 * v.clip(lower=0)
+
+
+def score_quotes(fills: pd.DataFrame, D, name: str) -> dict:
+    """Every fill hedged at the SP, after the reductions of the runners taken out after it, 2% on each market's net
+    winnings. A runner that did not run (no BSP) is void."""
+    out = {"day": str(D.day), "arm": name, "fills": 0, "runners": 0, "back_staked": 0.0, "lay_staked": 0.0,
+           "lay_liability": 0.0, "locked": 0.0, "result": 0.0, "result_reduced": 0.0, "two_sided": 0}
+    f = fill_pnl(fills, D)
+    if f.empty:
+        return out
+    back = f.side.eq("back").to_numpy()
     net = f.groupby("market_id")[["pnl", "pnl_red"]].sum()
-    comm = lambda v: float((v - 0.02 * v.clip(lower=0)).sum())
     sides = f.groupby(["market_id", "selection_id"]).side.nunique()
     out.update({"fills": int(len(f)), "runners": int(f.groupby(["market_id", "selection_id"]).ngroups),
                 "back_staked": round(float(f.loc[back, "matched"].sum()), 2),
                 "lay_staked": round(float(f.loc[~back, "matched"].sum()), 2),
                 "lay_liability": round(float((f.loc[~back, "matched"] * (f.loc[~back, "price"] - 1)).sum()), 2),
-                "locked": round(float(f.locked.sum()), 2), "result": round(comm(net.pnl), 2),
-                "result_reduced": round(comm(net.pnl_red), 2), "two_sided": int((sides > 1).sum())})
+                "locked": round(float(f.locked.sum()), 2),
+                "result": round(float(net_of_commission(net.pnl).sum()), 2),
+                "result_reduced": round(float(net_of_commission(net.pnl_red).sum()), 2),
+                "two_sided": int((sides > 1).sum())})
     staked = out["back_staked"] + out["lay_staked"]
     out["clv"] = round(out["locked"] / staked, 4) if staked else None
     return out

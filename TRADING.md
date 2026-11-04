@@ -1642,6 +1642,17 @@ upgrade runs at 21:45 UTC plus up to 10 minutes, after the trading and before th
 (`/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf`); it needs passwordless sudo for the runner's user and
 changes nothing without it (the run says what to run as root instead). The watchdog stays as the second line.
 
+**The paper agents on one book** (the owner, 4 Nov: "make these individual agents with the strategy attached, paper
+trade them and track it in detail in the trading dashboard. We need to be careful that they dont conflict with each
+other e.g. taking the price for one, removes the price for others"). Each strategy on the desk is an agent with its own
+paper account and ledger, and its own tile on the traders dashboard (`dashboard/traders.py`, the horse-agent-* paper
+traders, read from `paper/horses/shared/agents/<agent>/<day>/markets.csv`). All of them trade each day together on one
+shared book (`research/arms/core.py` run_agents, SharedReplayData): the live trader's real fills are already out of
+the recorded books; the live rule's replay steps first each minute, then the agents in an order that turns each
+minute; whatever one takes from the backers' or the layers' side is gone for the rest, and two quotes at one price
+queue one behind the other. So no two agents are credited with the same money, and none with what the live trader
+took. The first, standalone run of the desk (each strategy alone on the book) is not used.
+
 **The horse paper desk** (the owner, 4 Nov: "Keep the current proven profitable strategy as live. Let's paper trade
 any others that look promising; Backs, Lays, High Volume Trading each side of the line"; `research/paper/horses.py`,
 `paper-horses.yml` daily at 06:20 UTC; ledger `paper-desk-1104`). The live rule stays as it is. Five strategies are
