@@ -32,6 +32,9 @@ df["p"] = np.where(df["bsp"] > 1, 1 / df["bsp"], np.nan)
 df["has"] = (df["bsp"] > 1).astype(float)
 df["pw"] = df["won"] * df["has"]
 df["pp"] = df["p"].fillna(0)
+df["hasp"] = (df["pbsp"] > 1).astype(float)
+df["plw"] = df["placed"] * df["hasp"]
+df["plp"] = np.where(df["pbsp"] > 1, 1 / df["pbsp"], 0.0)
 pri = L.prior_cumsum(df, "jockey_name", ["has", "pw", "pp"])
 df["j_rides"], df["j_w"], df["j_e"] = pri["has"], pri["pw"], pri["pp"]
 df["j_ae"] = (df["j_w"] + K) / (df["j_e"] + K)
@@ -111,7 +114,7 @@ L.rules_table(rows)
 # ---- 5. who fits now ------------------------------------------------------------------------------------------
 last = df["date"].max()
 now = df[df["j_first"] >= "2023-01-01"].groupby("jockey_name").agg(
-    first=("date", "min"), last=("date", "max"), rides=("has", "sum"), wins=("pw", "sum"), exp=("pp", "sum"),
+    first=("date", "min"), last=("date", "max"), rides=("has", "sum"), wins=("pw", "sum"), exp=("pp", "sum"), places=("plw", "sum"), pexp=("plp", "sum"),
     claim_now=("claim", "last"), med_bsp=("bsp", "median"),
     jumps=("code", lambda s: s.isin(["hurdle", "chase", "nhflat"]).mean()))
 recent = df[df["date"] > last - pd.Timedelta(days=60)].groupby("jockey_name").size()
@@ -119,12 +122,14 @@ now["rides_60d"] = recent.reindex(now.index).fillna(0).astype(int)
 now = now[now["rides"] >= 75]
 now["ae"] = now["wins"] / now["exp"]
 now["ae_shrunk"] = (now["wins"] + K) / (now["exp"] + K)
+now["WAX"] = now["wins"] - now["exp"]
+now["ae_place"] = now["places"] / now["pexp"]
 now["sr%"] = 100 * now["wins"] / now["rides"]
 # level-stakes P&L at BSP across his career
 pl = df[df["j_first"] >= "2023-01-01"].assign(
     pnl=lambda x: np.where(x["won"] == 1, (x["bsp"] - 1) * (1 - L.COMMISSION), -1.0) * x["has"])
 now["pl_bsp"] = pl.groupby("jockey_name")["pnl"].sum().reindex(now.index)
-now["fits"] = (now["ae_shrunk"] > 1.2) & (now["rides"] >= 100)
+now["fits"] = (now["ae_shrunk"] > 1.2) & (now["ae_place"] > 1) & (now["rides"] >= 100)
 print(f"\n=== New jockeys since 2023 with 75+ rides (as at {last.date()}), by shrunk A/E ===")
 print(now.sort_values("ae_shrunk", ascending=False).round(3).head(40).to_string())
 now.sort_values("ae_shrunk", ascending=False).round(4).to_csv("out/strat_new_jockeys_now.csv")

@@ -18,7 +18,7 @@ URL = "https://horseracesbackend-production.up.railway.app/api/APIData_Table2"
 KEEP = ["meetingDate", "courseName", "countryCode", "scheduledTimeOfRaceLocal", "raceNumber", "raceType",
         "raceSurfaceName", "distance", "going", "numberOfRunners", "raceClass", "raceTitle", "prizeFund",
         "horseCode", "horseName", "horseAge", "horseGender", "sireName", "damName", "jockeyFullName",
-        "trainerFullName", "positionOfficial", "Win", "betfairWinSP", "ispDecimal", "performanceRating",
+        "trainerFullName", "positionOfficial", "Win", "betfairWinSP", "betfairPlaceSP", "ispDecimal", "performanceRating",
         "preRaceAdjustedRating", "preRaceMasterRating", "timefigure", "distanceBeaten", "performanceSymbol",
         "draw", "officialRating"]
 

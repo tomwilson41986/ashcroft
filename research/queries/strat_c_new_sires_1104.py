@@ -37,6 +37,9 @@ df["p"] = np.where(df["bsp"] > 1, 1 / df["bsp"], np.nan)
 df["has"] = (df["bsp"] > 1).astype(float)
 df["pw"] = df["won"] * df["has"]
 df["pp"] = df["p"].fillna(0)
+df["hasp"] = (df["pbsp"] > 1).astype(float)
+df["plw"] = df["placed"] * df["hasp"]
+df["plp"] = np.where(df["pbsp"] > 1, 1 / df["pbsp"], 0.0)
 hg = df.groupby("horse_name", sort=False)
 df["debut"] = (hg.cumcount() == 0) & (df["race_date"] >= "2011-01-01")  # first run held, after the first year
 df["first_run_flag"] = (hg.cumcount() == 0).astype(float)
@@ -125,7 +128,7 @@ L.rules_table(rows)
 # ---- 5. who fits now ------------------------------------------------------------------------------------------
 last = df["date"].max()
 cur = df[df["s_first"] >= "2023-01-01"].assign(wname=lambda x: x["horse_name"].where(x["won"] == 1))
-now = cur.groupby("sire").agg(first=("date", "min"), runs=("has", "sum"), wins=("pw", "sum"), exp=("pp", "sum"),
+now = cur.groupby("sire").agg(first=("date", "min"), runs=("has", "sum"), wins=("pw", "sum"), exp=("pp", "sum"), places=("plw", "sum"), pexp=("plp", "sum"),
                               runners=("horse_name", "nunique"),
                               winners=("wname", "nunique"),
                               two_runs=("age", lambda s: int((s == 2).sum())),
@@ -133,10 +136,12 @@ now = cur.groupby("sire").agg(first=("date", "min"), runs=("has", "sum"), wins=(
 now = now[now["runs"] >= 40]
 now["ae"] = now["wins"] / now["exp"]
 now["ae_shrunk"] = (now["wins"] + K) / (now["exp"] + K)
+now["WAX"] = now["wins"] - now["exp"]
+now["ae_place"] = now["places"] / now["pexp"]
 now["w/r"] = now["winners"] / now["runners"]
 pl = cur.assign(pnl=lambda x: np.where(x["won"] == 1, (x["bsp"] - 1) * (1 - L.COMMISSION), -1.0) * x["has"])
 now["pl_bsp"] = pl.groupby("sire")["pnl"].sum().reindex(now.index)
-now["fits"] = (now["ae_shrunk"] > 1.2) & (now["runs"] >= 50)
+now["fits"] = (now["ae_shrunk"] > 1.2) & (now["ae_place"] > 1) & (now["runs"] >= 50)
 print(f"\n=== New sires (first runner 2023+) with 40+ progeny runs (as at {last.date()}), by shrunk A/E ===")
 print(now.sort_values("ae_shrunk", ascending=False).round(3).head(40).to_string())
 now.sort_values("ae_shrunk", ascending=False).to_csv("out/strat_new_sires_now.csv")

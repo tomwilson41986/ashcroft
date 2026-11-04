@@ -27,7 +27,7 @@ g = df.groupby("horse_name", sort=False)
 for k, src in (("prev_fin", "fin"), ("prev_won", "won"), ("prev_bsp", "bsp"), ("prev_rank", "bsp_rank"),
                ("prev_or", "official_rating"), ("prev_code", "code"), ("prev_track", "track"),
                ("prev_class", "race_class"), ("prev_hg", "headgear"), ("prev_hcap", "hcap"), ("prev_date", "date"),
-               ("prev_field", "field")):
+               ("prev_field", "field"), ("prev_dist", "dist_furlongs")):
     df[k] = g[src].shift(1)
 for k, src in (("prev2_fin", "fin"), ("prev2_rank", "bsp_rank"), ("prev2_or", "official_rating")):
     df[k] = g[src].shift(2)
@@ -84,6 +84,7 @@ for code in ("flat", "aw", "hurdle", "chase"):
     ]
 print("\n=== IMPROVERS (train | t_ test) ===")
 L.rules_table(rows)
+ALL = list(rows)
 
 # ============================================================================================================
 # 3. OTHER SYSTEMS
@@ -121,5 +122,60 @@ rows = [
 ]
 print("\n=== OTHER SYSTEMS (train | t_ test) ===")
 L.rules_table(rows)
+ALL += rows
 L.show("trainer 14-day A/E bands", L.tt(d[d["t14_n"] >= 10].assign(
     b=pd.cut(d["t14_ae"], [0, .6, .8, 1, 1.2, 1.5, 2, 9])), ["b"], 500))
+
+# ============================================================================================================
+# 4. MORE SYSTEMS, written for the place market as much as the win (the owner, 4 Nov: back both)
+dd = d["dist_furlongs"] - d["prev_dist"]
+jd = df[df["bsp"] > 1].assign(p=lambda x: 1 / x["bsp"]).groupby(["jockey_name", "date"])[["won", "p"]].sum()
+jd["runs"] = df[df["bsp"] > 1].groupby(["jockey_name", "date"]).size()
+jr = (jd.reset_index().sort_values(["jockey_name", "date"]).set_index("date").groupby("jockey_name")[["won", "p", "runs"]]
+        .rolling("14D", closed="left").sum().reset_index())
+jr.columns = ["jockey_name", "date", "j14_w", "j14_e", "j14_n"]
+d = d.merge(jr, on=["jockey_name", "date"], how="left")
+d["j14_ae"] = (d["j14_w"] + 2) / (d["j14_e"] + 2)
+claim = d["jockeys_claim"].fillna(0)
+jumps = d["code"].isin(["hurdle", "chase"])
+fl = d["code"].isin(["flat", "aw"])
+rows = []
+for code in ("flat", "aw", "hurdle", "chase"):
+    c = d["code"] == code
+    rows += [
+        L.rule(f"{code}: DSLR 1-4", d, c & (d["dslr"] <= 4)),
+        L.rule(f"{code}: DSLR 1-4, placed last time", d, c & (d["dslr"] <= 4) & (d["prev_fin"] <= 3)),
+        L.rule(f"{code}: DSLR 5-7", d, c & d["dslr"].between(5, 7)),
+        L.rule(f"{code}: placed last time, handicap, back within 14 days", d,
+               c & (d["prev_fin"] <= 3) & d["hcap"] & (d["dslr"] <= 14)),
+        L.rule(f"{code}: course winner, placed last time", d, c & d["course_winner"] & (d["prev_fin"] <= 3)),
+        L.rule(f"{code}: BSP favourite", d, c & (d["bsp_rank"] == 1)),
+        L.rule(f"{code}: BSP under 2.0", d, c & (d["bsp"] < 2)),
+        L.rule(f"{code}: jockey hot (14d A/E>1.5, 10+ rides)", d, c & (d["j14_n"] >= 10) & (d["j14_ae"] > 1.5)),
+        L.rule(f"{code}: trainer AND jockey hot", d, c & (d["j14_n"] >= 10) & (d["j14_ae"] > 1.3)
+               & (d["t14_n"] >= 10) & (d["t14_ae"] > 1.3)),
+    ]
+rows += [
+    L.rule("jumps: up 4f+ in trip", d, jumps & (dd >= 4)),
+    L.rule("jumps: down 4f+ in trip", d, jumps & (dd <= -4)),
+    L.rule("flat/AW: up 2f+ in trip", d, fl & (dd >= 2)),
+    L.rule("flat/AW: down 2f+ in trip", d, fl & (dd <= -2)),
+    L.rule("flat/AW handicap: 7lb claimer", d, fl & d["hcap"] & (claim == 7)),
+    L.rule("jumps handicap: 7lb+ conditional/amateur", d, jumps & d["hcap"] & (claim >= 7)),
+    L.rule("chase: first run over fences after hurdling", d, (d["code"] == "chase") & (d["prev_code"] == "hurdle")),
+    L.rule("hurdle: back to hurdles from chasing", d, (d["code"] == "hurdle") & (d["prev_code"] == "chase")),
+    L.rule("AW: from turf flat", d, (d["code"] == "aw") & (d["prev_code"] == "flat")),
+    L.rule("flat: from AW", d, (d["code"] == "flat") & (d["prev_code"] == "aw")),
+]
+print("\n=== MORE SYSTEMS (train | t_ test) ===")
+L.rules_table(rows)
+ALL += rows
+
+print(f"\n=== THE SCREEN: {len(ALL)} rules through the owner's gate (PASS, then train-only, by test WAX) ===")
+print(L.gate.__doc__)
+t = pd.DataFrame(ALL)
+t.insert(1, "gate", [L.gate(r) for r in ALL])
+t = t[t["gate"] != "-"].sort_values(["gate", "t_WAX"], ascending=[True, False])
+with pd.option_context("display.max_colwidth", 90):
+    print(L._fmt(t).to_string(index=False) if len(t) else "(no rule passed TRAIN)")
+pd.DataFrame(ALL).assign(gate=[L.gate(r) for r in ALL]).to_csv("out/strat_screen_rules.csv", index=False)
