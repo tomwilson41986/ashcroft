@@ -42,3 +42,18 @@ If any fails, the rule fails, and no variant below can pass it in its place.
 A pass says the traded prices of 2024-2026 left a margin for an early layer who closed at the BSP. It does not say a lay
 offer would have been matched: last traded prices are not a book, and the data hold no volume. A pass leads to gate B,
 recording the Australian books from their opening for 2-4 weeks, then a paper trial. No money is staked on this test.
+
+## Addendum, 4 Nov 2026: the staleness check (written before it runs)
+
+The primary rule passed its gate (au-lay-test run 41823377954: +2.42% a unit laid after commission). Three signs say
+the margin may sit in prices no one could lay: laying every runner made more than the model's filter, the margin is
+gone by T-15, and prices over 21 show +15%. This check asks whether the margin survives on fresh prices.
+
+- **Measure:** for each runner, how long before the T-60 mark its last traded price last changed (the BASIC files
+  record a price when it changes, so this is the longest the price can have stood; a trade at the same price later is
+  not seen).
+- **Test:** the primary rule, unchanged, restricted to runners whose T-60 price changed within the 5 minutes before the
+  mark. Reported beside it: within 15 minutes, 15-60 minutes, over 60 minutes.
+- **Reading, fixed now:** if the fresh-price subset (within 5 minutes) makes above zero after commission with its 90%
+  interval above zero, the stale-price explanation is weakened and gate B is worth running. If it is at or below zero,
+  the margin was in stale prices, and the strategy is dropped without gate B.
