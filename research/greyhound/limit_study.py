@@ -145,7 +145,9 @@ def load(store, first: date, last: date, source: str = "retimed", pred_dir: str 
     frames, d = [], first
     while d <= last:
         try:
-            if pred_dir:
+            if pred_dir and str(pred_dir).startswith("s3:"):          # prices published to the store
+                pred = store.get_parquet(f"{str(pred_dir)[3:]}/{d:%Y-%m-%d}.parquet")
+            elif pred_dir:
                 f = Path(pred_dir) / f"{d:%Y-%m-%d}.parquet"
                 pred = pd.read_parquet(f) if f.exists() else None
             else:

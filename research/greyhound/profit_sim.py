@@ -957,7 +957,7 @@ def main(argv=None) -> int:
                 "agree": int(((rp.matched.fillna(0) > 0) == (rp.real_matched > 0)).sum()),
                 "sim_pnl": float(both.pnl.sum()), "real_pnl": float(both.real_pnl.sum()),
                 "rows": json.loads(rp.drop(columns=["placed"], errors="ignore").to_json(orient="records"))}
-        fit = laytest.day_fit(store, day)
+        fit = laytest.live_fit(store, day)
         res["strategies"] = {}
         if fit is not None:
             only = set(a.only.split(",")) if a.only else None
@@ -967,7 +967,8 @@ def main(argv=None) -> int:
                     continue
                 secs = over.get("decide_secs")
                 if secs not in fits:
-                    fits[secs] = laytest.day_fit(store, day, mark=f"off_{int(secs // 60)}")
+                    fits[secs] = laytest.day_fit(store, day, mark=f"off_{int(secs // 60)}",
+                                                 prices=laytest.live_prices(store, day))
                 if fits[secs] is None:
                     _log(f"{name}: no forecast fit at {secs} s")
                     continue

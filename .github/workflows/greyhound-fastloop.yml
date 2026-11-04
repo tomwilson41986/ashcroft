@@ -161,7 +161,8 @@ jobs:
 
   table:
     needs: [cache, experiment]
-    if: always() && needs.cache.result == 'success'
+    # only when the spec has quick experiments: a slow-only spec has nothing for this table (it failed on an empty out/)
+    if: always() && needs.cache.result == 'success' && needs.cache.outputs.quick != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

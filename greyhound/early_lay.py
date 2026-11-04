@@ -779,7 +779,7 @@ def main(argv=None) -> int:
         status_key = f"{PREFIX}/{mode}/{day:%Y-%m-%d}/status.json"
         store.put(status_key, json.dumps({"time_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                                           "mode": mode, "state": "starting: fitting the forecast"}).encode())
-        fit = laytest.day_fit(store, day)
+        fit = laytest.live_fit(store, day)                    # fitted on the prices of the model that is live
         if fit is None:
             store.put(status_key, json.dumps({"time_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                                               "mode": mode, "state": "stopped: no forecast fit for today"}).encode())

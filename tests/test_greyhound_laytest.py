@@ -159,3 +159,48 @@ def test_the_primary_greens_up(tmp_path, panel, monkeypatch):
     assert lt.PRIMARY["exit"] == "last"
     assert any(m["greened_at"] is not None for m in r["markets"] if m["matched"])
     assert "Greened at" in lt.intraday_markdown(r)
+
+
+def test_the_forecast_fit_matches_the_live_model(tmp_path, monkeypatch):
+    """The early lay's forecast is fitted on the prices of the model that made today's predictions: the log-BSP
+    model's out-of-sample prices when it is live, else the 5 Oct model's; each fit kept under its own key."""
+    import pandas as pd
+    from datetime import date
+    from greyhound import laytest as lt
+    from sources.common import Store
+    store = Store(root=tmp_path)
+    day = date(2026, 11, 4)
+    assert lt.live_prices(store, day) is None                                   # no predictions yet
+    store.put(f"greyhound/live/predictions/{day}.csv", pd.DataFrame({"market_id": ["1.1"], "p_model": [0.2]})
+              .to_csv(index=False).encode())
+    assert lt.live_prices(store, day) is None                                   # an older file: the 5 Oct model
+    store.put(f"greyhound/live/predictions/{day}.csv", pd.DataFrame({"market_id": ["1.1"], "p_model": [0.2],
+                                                                    "model_objective": ["logbsp"]})
+              .to_csv(index=False).encode())
+    assert lt.live_prices(store, day) == lt.LOGBSP_PRICES
+    seen = {}
+
+    def fake_load(store_, first, last, source="retimed", pred_dir=None, books_out=None):
+        seen["pred_dir"] = pred_dir
+        return pd.DataFrame()
+    from research.greyhound import limit_study as ls
+    monkeypatch.setattr(ls, "load", fake_load)
+    assert lt.live_fit(store, day) is None and seen["pred_dir"] == f"s3:{lt.LOGBSP_PRICES}"
+
+
+def test_the_panel_reads_prices_from_the_store(tmp_path):
+    import pandas as pd
+    from datetime import date
+    from research.greyhound import limit_study as ls
+    from sources.common import Store
+    store = Store(root=tmp_path)
+    p = pd.DataFrame({"race_id": ["r"], "p_model": [0.5]})
+    store.put_parquet = None
+    import io
+    buf = io.BytesIO()
+    p.to_parquet(buf, index=False)
+    store.put("greyhound/x/2026-10-06.parquet", buf.getvalue())
+    got = Store(root=tmp_path).get_parquet("greyhound/x/2026-10-06.parquet")
+    assert got is not None and len(got) == 1
+    # with no books for the day the loader notes it and moves on: the S3 branch is taken without error
+    assert ls.load(Store(root=tmp_path), date(2026, 10, 6), date(2026, 10, 6), pred_dir="s3:greyhound/x").empty

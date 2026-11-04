@@ -146,26 +146,50 @@ def track(store, frozen: dict, days: list[date]) -> list[dict]:
 # Today, race by race (the owner, 3 Nov 2026: "add the early lay to the running table")
 # --------------------------------------------------------------------------------------------------------------------
 
-def day_fit(store, day: date, mark: str = MARK) -> dict | None:
+#: the out-of-sample prices of the log-BSP live model (4 Nov 2026): a model fitted before the first recorded day,
+#: every recorded day priced (greyhound.fastloop ``publish_pred``), for the forecast fit to read when that model is live
+LOGBSP_PRICES = "greyhound/live/oos_prices_logbsp"
+
+
+def day_fit(store, day: date, mark: str = MARK, prices: str | None = None) -> dict | None:
     """The forecast for ``day``: the conditional logit at the first traded book (or at ``mark``: off_5, off_3, off_1)
-    fitted on every recorded day before it (the forward test's procedure), fitted once a day and kept in S3."""
+    fitted on every recorded day before it (the forward test's procedure), fitted once a day and kept in S3. ``prices``:
+    our price from that S3 prefix (a model's out-of-sample day files) instead of the 5 Oct model's."""
     import numpy as np
     from research.greyhound import limit_study as ls, tradeout_study as ts
-    key = f"{PREFIX}/fit/{day:%Y-%m-%d}.json" if mark == MARK else f"{PREFIX}/fit_{mark}/{day:%Y-%m-%d}.json"
+    tag = "" if not prices else "_" + prices.rstrip("/").split("/")[-1]
+    key = f"{PREFIX}/fit{tag}/{day:%Y-%m-%d}.json" if mark == MARK else f"{PREFIX}/fit{tag}_{mark}/{day:%Y-%m-%d}.json"
     raw = store.get(key)
     if raw:
         f = json.loads(raw)
         return {**f, **{k: np.asarray(f[k], float) for k in ("beta", "mu", "sd")}}
-    panel = ls.load(store, to.FIRST_BOOK_DAY, day - timedelta(days=1), source="retimed")
+    panel = ls.load(store, to.FIRST_BOOK_DAY, day - timedelta(days=1), source="retimed",
+                    pred_dir=f"s3:{prices}" if prices else None)
     p = panel[(panel["mark"] == mark) & (panel.race_date.astype(str) < f"{day:%Y-%m-%d}")] if len(panel) else panel
     if not len(p) or p.race_date.nunique() < ls.MIN_TRAIN_DAYS:
         return None
     f = ts.fit_cl(p, ts.CL_SETS["micro"])
     out = {"kind": f["kind"], "cols": list(f["cols"]), "beta": f["beta"].tolist(), "mu": f["mu"].tolist(),
            "sd": f["sd"].tolist(), "book": float(f["book"]), "fit_days": int(p.race_date.nunique()),
-           "fit_to": str(p.race_date.max()), "mark": mark}
+           "fit_to": str(p.race_date.max()), "mark": mark, "prices": prices or "the 5 Oct model"}
     store.put(key, json.dumps(out).encode())
     return {**out, **{k: np.asarray(out[k], float) for k in ("beta", "mu", "sd")}}
+
+
+def live_prices(store, day: date) -> str | None:
+    """The prices the forecast must be fitted on to read today's live predictions: the log-BSP model's out-of-sample
+    prices when the day's predictions came from that model, else the 5 Oct model's (None)."""
+    import io
+    raw = store.get(f"greyhound/live/predictions/{day:%Y-%m-%d}.csv")
+    if not raw:
+        return None
+    head = pd.read_csv(io.BytesIO(raw), nrows=5)
+    return LOGBSP_PRICES if "model_objective" in head and str(head.model_objective.iloc[0]) == "logbsp" else None
+
+
+def live_fit(store, day: date, mark: str = MARK) -> dict | None:
+    """The forecast that matches today's live model (``live_prices``)."""
+    return day_fit(store, day, mark=mark, prices=live_prices(store, day))
 
 
 def today_rows(store, day: date) -> tuple[pd.DataFrame, str]:

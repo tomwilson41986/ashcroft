@@ -163,7 +163,7 @@ def lane(exp: dict, spec: dict) -> str:
     """``slow`` for an experiment off the quick recipe or with the study, ``quick`` otherwise: the CI runs the quick
     lane's table as soon as it is done, without waiting on the slow lane."""
     slow = (exp.get("recipe", spec.get("recipe", "quick")) != "quick" or exp.get("study") or exp.get("limit")
-            or exp.get("bfsp"))
+            or exp.get("bfsp") or exp.get("publish_pred"))
     return "slow" if slow else "quick"
 
 
@@ -490,6 +490,9 @@ def main(argv=None) -> int:
             res["study"] = run_study(store, pred, e["name"], out)
         if e.get("limit"):
             res["limit"] = run_limit(store, pred, e["name"], out)
+        if e.get("publish_pred"):
+            res["published"] = publish_pred(store, pred, e["name"], out, e["publish_pred"])
+            _log(f"published {e['name']}: {res['published']}")
         if e.get("bfsp"):
             res["bfsp"] = run_bfsp(store, pred, e["name"], out)
         (out / f"result_{e['name']}.json").write_text(json.dumps(res, indent=1, default=str))
@@ -605,6 +608,25 @@ def run_limit(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
     limit_study.main(["--from", STUDY_FROM, "--to", last, "--pred-dir", str(out / "pred" / name),
                       "--source", "retimed", "--out", str(out / f"limit_{name}")])
     return {"report": f"limit_{name}.md"}
+
+
+def publish_pred(store, pred: pd.DataFrame, name: str, out: Path, prefix: str) -> dict:
+    """An experiment's priced days from STUDY_FROM, joined to the Betfair markets (``score_days``), written to S3 as
+    ``<prefix>/<day>.parquet``: out-of-sample prices of the recorded days for a forecast fit to read
+    (greyhound.laytest ``day_fit(prices=)``)."""
+    from research.greyhound import score_full
+    days = pred[pred.race_date.astype(str) >= STUDY_FROM]
+    if not len(days):
+        return {"skipped": f"no test days from {STUDY_FROM}"}
+    last = str(days.race_date.max())
+    if not (out / "pred" / name).exists():
+        score_full.score_days({name: days}, date.fromisoformat(STUDY_FROM), date.fromisoformat(last), store,
+                              out / "pred")
+    n = 0
+    for f in sorted((out / "pred" / name).glob("*.parquet")):
+        store.put(f"{prefix.rstrip('/')}/{f.name}", f.read_bytes())
+        n += 1
+    return {"prefix": prefix, "days": n, "first": STUDY_FROM, "last": last}
 
 
 def run_bfsp(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
