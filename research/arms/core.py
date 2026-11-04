@@ -13,6 +13,7 @@ markets from 17:00 UK).
 from __future__ import annotations
 
 import bisect
+from contextlib import contextmanager
 import gzip
 import io
 import math
@@ -402,7 +403,18 @@ def cached_plan(views, cfg, bank):
 
 
 import trading.session as _ts  # noqa: E402
-_ts.plan_race = cached_plan
+
+
+@contextmanager
+def shared_plans():
+    """The live Session planning through the arms' cache, for the span of one replay only: the trader's own
+    plan_race is put back after, so importing this package (the tests collect it) leaves trading.session as it was."""
+    before = _ts.plan_race
+    _ts.plan_race = cached_plan
+    try:
+        yield
+    finally:
+        _ts.plan_race = before
 
 
 def make_cfg(**over):
@@ -434,21 +446,22 @@ def run_session(D, session_cls, cfg, policy: dict | None, t0: datetime, t_end: d
     x = ReplayExchange(data, bank=cfg.limits.bank, balance=balance)
     s = session_cls(x, D.preds[["market_id", "selection_id", "predicted_bfsp"]], cfg, D.day,
                     clock=lambda: clock_t[0], sleep=lambda _: None, **({"policy": policy} if policy is not None else {}))
-    s.load_markets()
-    if not s.markets:
-        return pd.DataFrame(), s, x
-    last_off = max(m.start for m in s.markets.values())
-    end = t_end if t_end is not None else last_off + timedelta(minutes=40)
-    t = t0
-    while t <= end:
-        data.now = t
-        s.step(t)
-        t += timedelta(minutes=step_minutes)
-        clock_t[0] = t
-    data.now = datetime(D.day.year, D.day.month, D.day.day, 23, 30, tzinfo=timezone.utc)
-    s.settle_all(data.now)
-    if hasattr(s, "settle_extra"):
-        s.settle_extra(data.now)
+    with shared_plans():
+        s.load_markets()
+        if not s.markets:
+            return pd.DataFrame(), s, x
+        last_off = max(m.start for m in s.markets.values())
+        end = t_end if t_end is not None else last_off + timedelta(minutes=40)
+        t = t0
+        while t <= end:
+            data.now = t
+            s.step(t)
+            t += timedelta(minutes=step_minutes)
+            clock_t[0] = t
+        data.now = datetime(D.day.year, D.day.month, D.day.day, 23, 30, tzinfo=timezone.utc)
+        s.settle_all(data.now)
+        if hasattr(s, "settle_extra"):
+            s.settle_extra(data.now)
     return pd.DataFrame(s.ledger), s, x
 
 

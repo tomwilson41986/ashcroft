@@ -1577,6 +1577,36 @@ with trading/STOP set or unreadable, never after 20:30 UK, never one the owner c
 minutes for the runner is reported, and each event goes to the owner in the day's GitHub issue "Live trading:
 <day>". live-trade.yml is not changed.
 
+**The thirty-fourth full day** (3 Nov, a Tuesday; ledger `live-day-1103`), the twenty-second early session, the first
+day down since 27 Oct and the one the owner asked audited ("changed or broke something ... or just natural variance?").
+- **The start.** Predictions run 41576320042 (04:08 UTC); the session created 05:17 UTC (run 41583026163) and killed at
+  06:09 UTC by the server's unattended upgrade (below) before any back; restarted by hand at 07:16 UTC (run 41595221448),
+  first back 07:16 UK; the settle at 22:30 UTC (run 41731346063; its email report failed again, the fifth night).
+- **-GBP74.30 after commission** (Betfair's funds GBP5,132.03 against GBP5,206.33; the trader's own count -GBP60.44) on
+  570 fills on 123 horses in 36 markets, GBP3,999.99 matched (GBP47.52 void; 28 prices cut by other non-runners, 13 of
+  them in one Fairyhouse race); CLV +1.21% at Betfair's settled prices (the trader's horse-level +0.83%), the weakest
+  day on the rule of 19 Oct (the record since: +3.7% to +10.4%). The limit reached 11:52 UK. One race made the day:
+  Fairyhouse 13:45 -GBP49.12 on five horses. The record: 25 days, +GBP5,132.32, 20 up.
+- **The audit's answer: nothing changed or broke.** The trader's code, model and predictions path are those of 27 Oct;
+  the same config line as 1 and 2 Nov; the watchdog ran 36 times and acted on nothing (no issue opened). The one real
+  difference is the lost 06:15-07:16 hour, the window where the record's +11% CLV sits: today's 06:15-07:59 window
+  (from 07:16) made +5.1% on GBP2,075, 08:00-09:59 -4.2% (GBP1,052), 10:00 on -1.8% (GBP792); first backs +4.8%
+  (GBP940), top-ups +0.1% (GBP2,979). Within one standard deviation of the record's day (GBP189 on a GBP241 mean from
+  19 Oct). The edge was thin, not absent.
+- **The changes** (`changes-1103`): the ladder 48% of the money (125 fills, GBP1,902), its first backs +5.2% against
+  +4.2% at the best back, its top-ups +1.6% against -1.2%; the cap: 67 of 123 horses at 6 fills, none over; the capped
+  horses -0.2%, the rest +4.8%; two ladder fills landed at 201.64 with the best back at 200.00 (the cap reads the best
+  back). Staking 19 Oct - 3 Nov GBP58,936 at +5.85% against the old rule's +3.47%.
+- **The replay** (12 Oct - 2 Nov, after the cuts; `replay-1103`): the rule now GBP6,311 over 22 days (+6.7%); at 0.80
+  about GBP229 a day; 2 Nov GBP116; 3 Nov waits for its price file.
+- **The sectionals blend** (`model-quality-1103`): 2 Nov 0.381; 24 Oct - 2 Nov 0.398 over 3,405 runners against 0.405
+  on 14-23 Oct.
+- **Data.** Final marks with a BSP for 3 Nov 629 of 682; price files to 2 Nov. The Tote (3 Nov): no gap, the pool's
+  dividend under the BSP on all 36 winners (median 0.78 of it), the 5% pairs losing at every mark. The scan of 2 Nov:
+  73 horse-polls of arbitrage across win, place, each-way and the TBP books (median GBP0.49, largest GBP10.76, 0.4% on
+  the money at risk); the model's flagged offers in the other markets negative at the BSP across the board.
+  Sectionals: At The Races complete, nothing new (run 41554562159).
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",

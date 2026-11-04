@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from research.arms import core, exits, place, sessions  # noqa: E402
+from trading import session as trading_session  # noqa: E402
 from trading.exchange import Book, Market, Quote  # noqa: E402
 
 DAY = date(2026, 11, 2)
@@ -144,3 +145,12 @@ def test_the_lay_fill_takes_the_levels_and_keeps_them_taken(day):
     assert book.runners[B].lay == [(2.04, 100.0)]                     # 300 at 2.02 and 100 at 2.04 are gone
     g = x.lay(MID, B, 2.02, 50.0, ref="t")
     assert g.status == "FAILURE"
+
+
+def test_importing_the_arms_leaves_the_traders_plan_alone(day):
+    """The package patches trading.session.plan_race only for the span of a replay (the full suite collects these
+    tests before the live trader's: 3 Nov)."""
+    from trading import strategy
+    assert trading_session.plan_race is strategy.plan_race
+    _run(day, sessions.ArmSession)
+    assert trading_session.plan_race is strategy.plan_race
