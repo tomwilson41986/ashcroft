@@ -152,3 +152,17 @@ def test_the_workflow_has_no_betfair_key_and_no_live_switch():
     for word in ("BETFAIR", "TRADING_LIVE", "--live", "self-hosted", "PAPER_RUNNER", "LIVE_RUNNER"):
         assert word not in wf
     assert "runs-on: ubuntu-latest" in wf
+
+
+def test_rebacking_needs_some_of_the_predicted_move_still_to_come():
+    # predicted shortening 0.05 (about 5%); the price at 08:00 was 6.5 and is 6.0 at 10:00: log(6.5/6.0) = 0.080 has
+    # already happened, so nothing is left -> no bet. From 6.1 at 08:00 (0.016 gone) there is -> a bet.
+    def run(p08):
+        sel = pd.DataFrame({"market_id": [MID], "selection_id": [A], "label": ["Alpha"], "race_time": ["1.30"],
+                            "pred": [0.05], "p08": [p08]})
+        spec = [("v", ME.MorningEdgeSession, core.make_cfg(), {"selections": sel, "rem_filter": True}, ME.BANK, False)]
+        return core.run_agents(_day(), spec, datetime(2026, 11, 5, 9, 55, tzinfo=timezone.utc),
+                               t_end=datetime(2026, 11, 5, 10, 20, tzinfo=timezone.utc))["v"][0].set_index("selection_id")
+    assert run(6.5).loc[A, "event"] == "no_edge_left"
+    assert run(6.1).loc[A, "event"] == "back"
+    assert run(np.nan).loc[A, "event"] == "back"                   # no 08:00 book: the whole prediction stands

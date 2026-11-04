@@ -143,6 +143,17 @@ class MorningEdgeSession:
                     self.ledger.append(row)
                 continue                                     # retried next minute until 10:15
             best = float(q.back[0][0])
+            if self.policy.get("rem_filter"):
+                # the steamer model's predicted shortening (morning -> off) less what the horse has already shortened
+                # since 08:00: back only while some of the predicted move is still to come
+                pred, p08 = getattr(r, "pred", np.nan), getattr(r, "p08", np.nan)
+                rem = float(pred) - (np.log(float(p08) / best) if pd.notna(p08) and p08 > 1 else 0.0)
+                row["rem"] = rem
+                if not (rem > 0):
+                    row["event"] = "no_edge_left"
+                    self.done.add((mid, sid))
+                    self.ledger.append(row)
+                    continue
             size = min(TO_WIN / (best - 1.0), MAX_STAKE, DAY_LIMIT - self.staked)
             row["best_back"], row["size"] = best, round(size, 2)
             self.done.add((mid, sid))
@@ -485,6 +496,133 @@ def day_job(day_iso: str, booster, thr, write: bool, check: bool = False) -> lis
 # the ledger and the gate
 # ---------------------------------------------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------------------------------------------
+# the overlap study (the owner, 4 Nov 2026: "We can back the horses we've already backed by the live trader ... we can
+# just back them again if the steamer model still thinks the price is relevant")
+# ---------------------------------------------------------------------------------------------------------------
+
+def price_at(D, mid: str, sid: int, t: datetime, within: timedelta = timedelta(minutes=10)) -> float:
+    """The best back price in the recorded book at or just before ``t`` (NaN if none within ``within``)."""
+    times = D.poll_times.get(mid) or []
+    import bisect
+    i = bisect.bisect_right(times, t) - 1
+    if i < 0 or t - times[i] > within:
+        return np.nan
+    q = D.polls[mid][i][1].runners.get(int(sid))
+    return float(q.back[0][0]) if q is not None and q.back else np.nan
+
+
+VARIANTS = {                     # name: (rule, which horses, re-check the model's remaining move)
+    "qr_not_live": ("qr_am", "not_live", False),
+    "qr_live": ("qr_am", "live", False),
+    "steam_not_live": ("steam_am", "not_live", False),
+    "steam_live": ("steam_am", "live", False),
+    "steam_not_live_rem": ("steam_am", "not_live", True),
+    "steam_live_rem": ("steam_am", "live", True),
+}
+
+
+def overlap_day(day_iso: str, booster, thr) -> list[dict]:
+    """Each variant on its own book (after the live trader's fills), win and place, held to the result; for the live
+    trader's horses, how much it backed again after 10:00 (the money a paper back would compete with)."""
+    day = date.fromisoformat(day_iso)
+    sel = selections(day_iso, booster, thr)
+    if sel.empty:
+        return []
+    rows, live = [], None
+    t8 = datetime.combine(day, dtime(8, 0), tzinfo=core.UK).astimezone(timezone.utc)
+    for kind in ("win", "place"):
+        D = core.load_day(day, kind, preds=NO_PREDS.copy())
+        if D is None:
+            return rows
+        if live is None:
+            live = live_keys(D)
+            led = D.ledger if D.ledger is not None and len(D.ledger) and "event" in D.ledger else pd.DataFrame()
+        m = attach_ids(sel.rename(columns={"track": "venue", "horse_name": "runner_name"}), D.markets)
+        m = m[m["market_id"].notna()].copy()
+        m["selection_id"] = m["selection_id"].astype(int)
+        m["label"] = m["runner_name"]
+        starts = {mm.market_id: mm for mm in D.markets}
+        m["is_live"] = [(_off(starts[str(a)]), bp.normalise_horse(n)) in live for a, n in zip(m.market_id, m.runner_name)]
+        m["p08"] = [price_at(D, str(a), int(b), t8) for a, b in zip(m.market_id, m.selection_id)]
+        waps = wap_lookup(day, kind)
+        for vname, (strat, who, rem) in VARIANTS.items():
+            s_ = m[(m["strategy"] == strat) & (m["is_live"] == (who == "live"))].sort_values("race_time")
+            if s_.empty:
+                continue
+            spec = [(vname, MorningEdgeSession, core.make_cfg(), {"selections": s_, "rem_filter": rem}, BANK, False)]
+            out = core.run_agents(D, spec, entry_utc(day) - timedelta(minutes=5), t_end=retry_utc(day) + timedelta(minutes=1))
+            ledg = out[vname][0]
+            if ledg is None or ledg.empty:
+                continue
+            st = settle(ledg[ledg["event"] == "back"], D)
+            if len(st):
+                st["off"] = st["market_id"].map(lambda x: _off(starts[x]) if x in starts else None)
+                st["wap"] = [waps.get((o, bp.normalise_horse(lb)), (np.nan, np.nan))[0] for o, lb in zip(st["off"], st["label"])]
+            r = {"day": day_iso, "variant": vname, "market": kind, "selections": int(len(s_)),
+                 "no_edge_left": int((ledg["event"] == "no_edge_left").sum()), "bets": int(len(st)),
+                 "asked": float(ledg["size"].sum()), "staked": float(st["matched"].sum()) if len(st) else 0.0,
+                 "wins": int(st["result"].eq("WINNER").sum()) if len(st) else 0,
+                 "expected": float((1 / st["price"]).sum()) if len(st) else 0.0,
+                 "pnl_5pc": commission(st.groupby("market_id")["pnl"].sum(), 0.05) if len(st) else 0.0,
+                 "wap_gap": float((st["price"] / st["wap"] - 1).median()) if len(st) and st["wap"].notna().any() else np.nan}
+            if who == "live" and kind == "win" and len(led) and len(st):
+                lb = led[(led["event"] == "back") & (pd.to_numeric(led["matched"], errors="coerce") > 0)].copy()
+                lb["t"] = pd.to_datetime(lb["ts"], utc=True)
+                lb["key"] = list(zip(lb["market_id"].astype(str), lb["selection_id"].astype(int)))
+                ours = set(zip(st["market_id"].astype(str), st["selection_id"].astype(int)))
+                mine = lb[lb["key"].isin(ours)]
+                after = mine[mine["t"] >= entry_utc(day)]
+                r["live_backs_before_10"] = int((mine["t"] < entry_utc(day)).sum())
+                r["live_backs_after_10"] = int(len(after))
+                r["live_matched_after_10"] = round(float(pd.to_numeric(after["matched"], errors="coerce").sum()), 2)
+                before = mine[mine["t"] < entry_utc(day)]
+                lp = pd.to_numeric(before.get("avg_price"), errors="coerce")
+                lv = pd.to_numeric(before["matched"], errors="coerce")
+                r["live_avg_price_before"] = float((lp * lv).sum() / lv.sum()) if lv.sum() else np.nan
+                r["our_avg_price"] = float((st["price"] * st["matched"]).sum() / st["matched"].sum())
+            rows.append(r)
+    return rows
+
+
+def overlap_study(days: list[str]) -> pd.DataFrame:
+    booster, thr, _ = load_model()
+    rows = []
+    for d in days:
+        try:
+            rows += overlap_day(d, booster, thr)
+        except Exception:
+            print(f"  {d}: failed\n{traceback.format_exc()}")
+    f = pd.DataFrame(rows)
+    if f.empty:
+        print("no rows")
+        return f
+    agg = {"days": ("day", "nunique"), "selections": ("selections", "sum"), "no_edge_left": ("no_edge_left", "sum"),
+           "bets": ("bets", "sum"), "asked": ("asked", "sum"), "staked": ("staked", "sum"), "wins": ("wins", "sum"),
+           "expected": ("expected", "sum"), "pnl_5pc": ("pnl_5pc", "sum"), "wap_gap": ("wap_gap", "median")}
+    g = f.groupby(["variant", "market"]).agg(**agg)
+    g["A/E"] = g["wins"] / g["expected"]
+    n = g["bets"].replace(0, np.nan)
+    x2 = (g["wins"] - g["expected"]) ** 2 / g["expected"] + (g["wins"] - g["expected"]) ** 2 / (n - g["expected"])
+    g["chi2_p"] = C2.sf(x2, 1)
+    g["fill_ratio"] = g["staked"] / g["asked"]
+    g["roi_5pc%"] = 100 * g["pnl_5pc"] / g["staked"]
+    pd.set_option("display.width", 250)
+    pd.set_option("display.max_columns", 30)
+    print("\n== the overlap study: each variant alone on the book, after the live trader's fills (P&L at 5%)")
+    print(g.reindex(list(VARIANTS), level=0).round(3).to_string())
+    lv = f[f["variant"].isin(["steam_live", "qr_live", "steam_live_rem"]) & (f["market"] == "win")]
+    if "live_backs_after_10" in lv:
+        h = lv.groupby("variant").agg(our_bets=("bets", "sum"), live_backs_before_10=("live_backs_before_10", "sum"),
+                                      live_backs_after_10=("live_backs_after_10", "sum"),
+                                      live_matched_after_10=("live_matched_after_10", "sum"),
+                                      live_avg_price_before=("live_avg_price_before", "mean"),
+                                      our_avg_price=("our_avg_price", "mean"))
+        print("\n== the live trader on the same horses (win): its backs before and after our 10:00 bet")
+        print(h.round(3).to_string())
+    return f
+
+
 def ledger() -> pd.DataFrame:
     rows = []
     for k in _keys(f"{PREFIX}/days/"):
@@ -597,9 +735,16 @@ def main(argv=None) -> int:
     ap.add_argument("--backfill-from", default=None)
     ap.add_argument("--no-write", action="store_true")
     ap.add_argument("--report-only", action="store_true")
+    ap.add_argument("--overlap-study", default=None, help="a..b: the live trader's horses backed too (prints only)")
     a = ap.parse_args(argv)
     if a.train:
         train(a.cutoff, a.force)
+        return 0
+    if a.overlap_study:
+        x, y = (date.fromisoformat(v) for v in a.overlap_study.split(".."))
+        f = overlap_study([(x + timedelta(n)).isoformat() for n in range((y - x).days + 1)])
+        if len(f):
+            f.to_csv("out/morning_edges_overlap_study.csv", index=False)
         return 0
     if not a.report_only:
         booster, thr, meta = load_model()
