@@ -169,3 +169,20 @@ def test_real_stakes_take_the_live_limits():
     assert live["limits"]["level_stake"] == 2.0 and live["limits"]["max_daily_turnover"] == 20.0
     assert live["limits"]["max_match_stake"] == 2.0 and live["limits"]["min_price"] == cfg["limits"]["min_price"]
     assert cfg["limits"]["max_daily_turnover"] == 100.0                     # paper keeps its own
+
+
+def test_every_catalogue_call_stays_under_betfairs_200_points_and_names_its_market_type():
+    """4 Nov 2026: MARKET_DESCRIPTION (weight 1) at 1,000 results was refused TOO_MUCH_DATA on every call."""
+    seen = []
+
+    def read(method, params):
+        w = sum(ef.CATALOGUE_WEIGHTS.get(p, 1) for p in params["marketProjection"])
+        assert w * params["maxResults"] <= 200 and params["maxResults"] <= 1000
+        assert len(params["filter"]["marketTypeCodes"]) == 1
+        t = params["filter"]["marketTypeCodes"][0]
+        seen.append(t)
+        return [{"marketId": f"{t}-1", "runners": []}]
+    got = ef.catalogue_all(read, T0, T0 + timedelta(hours=2))
+    assert sorted(seen) == sorted(ef.DEFAULT_TYPES)
+    assert {m["marketType"] for m in got} == set(ef.DEFAULT_TYPES)
+    assert ef.catalogue_limit(["EVENT", "MARKET_DESCRIPTION"]) == 200        # a weighted projection is capped
