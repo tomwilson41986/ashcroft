@@ -52,7 +52,7 @@ CODE_FILES = ("greyhound/metrics.py", "greyhound/parity.py", "greyhound/hrb.py",
 KEEP_FROM = "2020-06-01"
 BLOCKS = ("parity", "hrb", "lib", "times", "intent", "ability", "etime")   # F3, F5, F6 and the expected time
 PRICE_YEARS = "2018-2026"
-EXTRA_COLS = ("bsp", "bsp_p_norm")
+EXTRA_COLS = ("bsp", "bsp_p_norm", "weight_kg")     # the raw weight: the predicted weigh-in block (wpred)
 TEST_FROM = "2026-06-01"
 STUDY_FROM = "2026-10-06"
 RECIPES = {
@@ -195,6 +195,9 @@ def check_spec(spec: dict) -> list[dict]:
             raise ValueError(f"{e['name']}: objective must be one of {OBJECTIVES}")
         if e.get("recipe", spec.get("recipe", "quick")) not in RECIPES:
             raise ValueError(f"{e['name']}: recipe must be one of {tuple(RECIPES)}")
+        bad = [k for k in e.get("calibrate", []) if k not in CALIBRATIONS]
+        if bad or (e.get("calibrate") and e.get("objective", "softmax") != "logbsp"):
+            raise ValueError(f"{e['name']}: calibrate takes {CALIBRATIONS} on the logbsp objective only")
     return exps
 
 
@@ -213,6 +216,9 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     feats = feature_set(meta, exp.get("features", "card_safe"))
     for b in exp.get("add_blocks", []):
         feats += [f for f in gblocks.attach(df, b) if f not in feats]
+    for f in exp.get("add_features", []):             # named cached columns (e.g. the day's weigh-in features)
+        if f not in feats:
+            feats.append(f)
     for pre in exp.get("drop", []):
         feats = [f for f in feats if not f.startswith(pre)]
     feats = [f for f in feats if f in df.columns]
@@ -277,6 +283,16 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
             pred["pred_bsp"] = 1.0 / (book * pred.p_model)
     else:
         pred["p_model"] = _race_softmax(raw.astype(float), _starts(race[test_i]))
+    calibrated = {}
+    if obj == "logbsp" and exp.get("calibrate"):
+        # fitted on the early-stopping rows (the trees never trained on them), scored on the test, paired by day
+        raw_es = m.predict(matrix(es_i), num_iteration=m.best_iteration)
+        book = (float(np.median((1.0 / pd.Series(df.bsp.to_numpy(float)[fit_i])).groupby(race[fit_i]).sum()))
+                if exp.get("rescale_book") else None)
+        for kind in exp["calibrate"]:
+            fit = fit_stretch(raw_es, y[es_i], won[es_i], race[es_i], df.track.to_numpy()[es_i], kind)
+            cal = apply_stretch(pred, raw, fit, book)
+            calibrated[kind] = {"fit": fit, **score_pair(pred, cal)}
     imp = pd.Series(m.feature_importance("gain"), index=feats)
     whole = pred.bsp_p_norm.notna().groupby(pred.race_id).transform("all") if "bsp_p_norm" in pred else None
     res = {"name": exp["name"], "spec": exp, "recipe": recipe, "features": len(feats), "rounds": m.best_iteration,
@@ -295,8 +311,176 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
         ok = pred.bsp > 1
         e = np.log(pred.pred_bsp[ok]) - np.log(pred.bsp[ok])
         res["log_bsp_rmse"] = round(float(np.sqrt(np.mean(e ** 2))), 4)
+    if calibrated:
+        res["calibrated"] = calibrated
+    if exp.get("groups"):
+        res["by_group"] = {g: group_scores(pred[in_group(pred, tracks)], obj) for g, tracks in
+                           split_groups(pred, exp["groups"]).items()}
     res["seconds"] = round(time.monotonic() - t0)
     return res, pred
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# Track groups (the owner, 4 Nov 2026: "use the weigh-in for the tracks we have it and then evaluate if we can cover
+# other tracks with our model or just leave them alone")
+# --------------------------------------------------------------------------------------------------------------------
+
+def _norm_track(x) -> str:
+    return "".join(c for c in str(x).lower() if c.isalnum())
+
+
+def in_group(pred: pd.DataFrame, tracks) -> pd.Series:
+    """The runners at these tracks (names matched without case, spaces or punctuation)."""
+    names = {_norm_track(t) for t in tracks}
+    return pred.track.map(_norm_track).isin(names)
+
+
+def split_groups(pred: pd.DataFrame, groups: dict) -> dict:
+    """The spec's named groups of tracks and ``rest``: every other track in the test. ``"each_track"``: a group per
+    track (no rest)."""
+    if groups == "each_track":
+        return {str(t): [t] for t in sorted(pred.track.astype(str).unique())}
+    named = {g: list(t) for g, t in groups.items()}
+    taken = {_norm_track(t) for ts in named.values() for t in ts}
+    named["rest"] = sorted({t for t in pred.track.astype(str).unique() if _norm_track(t) not in taken})
+    return named
+
+
+def group_scores(p: pd.DataFrame, obj: str) -> dict:
+    """A group's runners and races, the model's log-loss and the BSP's on the same races (the gap: how far behind the
+    market's final price), and the RMSE of log(BSP) for a log-BSP model."""
+    from greyhound.model import logloss
+    if not len(p):
+        return {"runners": 0}
+    out = {"runners": int(len(p)), "races": int(p.race_id.nunique()), "tracks": int(p.track.nunique()),
+           "logloss": round(logloss(p.p_model, p.won), 5)}
+    if "bsp_p_norm" in p:
+        whole = p.bsp_p_norm.notna().groupby(p.race_id).transform("all")
+        b = p[whole]
+        if len(b):
+            out["on_bsp_races"] = {"runners": int(len(b)), "model": round(logloss(b.p_model, b.won), 5),
+                                   "bsp": round(logloss(b.bsp_p_norm, b.won), 5),
+                                   "gap": round(logloss(b.p_model, b.won) - logloss(b.bsp_p_norm, b.won), 5)}
+    if obj == "logbsp" and "pred_bsp" in p:
+        ok = p.bsp > 1
+        if ok.any():
+            e = np.log(p.pred_bsp[ok]) - np.log(p.bsp[ok])
+            out["log_bsp_rmse"] = round(float(np.sqrt(np.mean(e ** 2))), 4)
+    return out
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# Calibration of the log-BSP price (the owner, 4 Nov 2026: "we need to make our prices more accurate"; roadmap 4.3)
+# --------------------------------------------------------------------------------------------------------------------
+
+CALIBRATIONS = ("stretch", "stretch_track", "temper", "temper_track")
+
+
+def _centre(x: np.ndarray, race: np.ndarray) -> np.ndarray:
+    s = pd.Series(np.asarray(x, float))
+    return (s - s.groupby(np.asarray(race)).transform("mean")).to_numpy()
+
+
+def _race_nll(z: np.ndarray, won: np.ndarray, race: np.ndarray) -> float:
+    """The mean over races of minus the log of the winner's softmax chance, the scores ``z`` within each race."""
+    s = pd.Series(z)
+    mx = s.groupby(race).transform("max")
+    lse = np.log(np.exp(s - mx).groupby(race).transform("sum")) + mx
+    races = len(np.unique(race[won > 0]))
+    return float(-(won * (s - lse)).sum() / max(races, 1))
+
+
+def fit_stretch(log_pred: np.ndarray, log_bsp: np.ndarray, won: np.ndarray, race: np.ndarray, track: np.ndarray,
+                kind: str, shrink: float = 2000.0) -> dict:
+    """How far to stretch the model's prices within each race: the chance becomes proportional to pred_bsp^-b (b above
+    1 spreads a compressed price: favourites shorter, outsiders longer). ``stretch``: b by least squares of the
+    race-centred log(BSP) on the race-centred log price; ``temper``: b that maximises the winners' likelihood. The
+    ``_track`` forms fit a b per track, shrunk to the overall b by ``shrink`` runners."""
+    if kind not in CALIBRATIONS:
+        raise ValueError(f"calibrate must be among {CALIBRATIONS}: {kind!r}")
+    c = _centre(log_pred, race)
+    by_runner = kind.startswith("stretch")
+    if by_runner:
+        yc = _centre(log_bsp, race)
+
+        def b_of(mask):
+            return float((c[mask] * yc[mask]).sum() / max((c[mask] ** 2).sum(), 1e-12))
+    else:
+        from scipy.optimize import minimize_scalar
+
+        def b_of(mask):
+            r = minimize_scalar(lambda b: _race_nll(-b * c[mask], won[mask], race[mask]), bounds=(0.2, 4.0),
+                                method="bounded")
+            return float(r.x)
+    every = np.ones(len(c), bool)
+    out = {"kind": kind, "b": round(b_of(every), 4), "rows": int(len(c)), "races": int(len(np.unique(race)))}
+    if kind.endswith("_track"):
+        tr = pd.Series(track).astype(str).to_numpy()
+        out["by_track"] = {}
+        for t in sorted(set(tr)):
+            mask = tr == t
+            n = int(mask.sum())
+            if n < 50 or len(np.unique(race[mask])) < 10:
+                continue
+            w = n / (n + shrink)
+            out["by_track"][t] = round(w * b_of(mask) + (1 - w) * out["b"], 4)
+    return out
+
+
+def apply_stretch(pred: pd.DataFrame, log_pred: np.ndarray, fit: dict, book: float | None) -> pd.DataFrame:
+    """The test prices stretched by ``fit`` (``fit_stretch``): the chance normalised in each race, the price at the
+    SP book's usual total when ``book`` is given (``rescale_book``), else around the race's mean log price."""
+    from greyhound.model import race_norm
+    b = pred.track.astype(str).map(fit.get("by_track") or {}).fillna(fit["b"]).to_numpy(float)
+    c = _centre(log_pred, pred.race_id.to_numpy())
+    out = pred[["race_id", "race_date", "dog_id", "track", "won"] + [c_ for c_ in ("bsp",) if c_ in pred]].copy()
+    out["p_model"] = race_norm(pd.Series(np.exp(-b * c)), out.race_id).to_numpy()
+    if book:
+        out["pred_bsp"] = 1.0 / (book * out.p_model)
+    else:
+        mean = pd.Series(np.asarray(log_pred, float)).groupby(pred.race_id.to_numpy()).transform("mean").to_numpy()
+        out["pred_bsp"] = np.exp(mean + b * c)
+    return out
+
+
+def _boot_days(day: pd.DataFrame, n_boot: int = 2000, seed: int = 0, root: bool = False) -> list[float]:
+    """The 90% interval of (sum e - sum b) / n over days resampled (the square roots' difference when ``root``)."""
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(day), (n_boot, len(day)))
+    e, b, n = (day[k].to_numpy()[idx].sum(1) for k in ("e", "b", "n"))
+    diff = np.sqrt(e / n) - np.sqrt(b / n) if root else (e - b) / n
+    return [round(float(np.percentile(diff, 5)), 5), round(float(np.percentile(diff, 95)), 5)]
+
+
+def score_pair(base: pd.DataFrame, cal: pd.DataFrame) -> dict:
+    """The calibrated prices against the uncalibrated on the same runners: RMSE of log(BSP) and log-loss, each with the
+    difference and its 90% interval from a bootstrap over days (negative: the calibration is better)."""
+    out = {}
+    ok = (base.bsp > 1).to_numpy() if "bsp" in base else np.zeros(len(base), bool)
+    if ok.any():
+        se_b = (np.log(base.pred_bsp.to_numpy(float)) - np.log(base.bsp.to_numpy(float))) ** 2
+        se_e = (np.log(cal.pred_bsp.to_numpy(float)) - np.log(cal.bsp.to_numpy(float))) ** 2
+        day = pd.DataFrame({"d": base.race_date.astype(str), "e": se_e, "b": se_b})[ok].groupby("d").agg(
+            e=("e", "sum"), b=("b", "sum"), n=("e", "size"))
+        rmse_e, rmse_b = np.sqrt(day.e.sum() / day.n.sum()), np.sqrt(day.b.sum() / day.n.sum())
+        out["log_bsp_rmse"] = round(float(rmse_e), 4)
+        out["rmse_vs_uncalibrated"] = round(float(rmse_e - rmse_b), 4)
+        out["rmse_ci90"] = _boot_days(day, root=True) if len(day) > 1 else None
+
+    def ll(p, w):
+        p = np.clip(np.asarray(p, float), 1e-12, 1 - 1e-12)
+        return -(w * np.log(p) + (1 - w) * np.log(1 - p))
+
+    w = base.won.to_numpy(float)
+    day = pd.DataFrame({"d": base.race_date.astype(str), "e": ll(cal.p_model, w), "b": ll(base.p_model, w)}).groupby(
+        "d").agg(e=("e", "sum"), b=("b", "sum"), n=("e", "size"))
+    out["logloss"] = round(float(day.e.sum() / day.n.sum()), 5)
+    out["logloss_vs_uncalibrated"] = round(float((day.e.sum() - day.b.sum()) / day.n.sum()), 5)
+    out["logloss_ci90"] = _boot_days(day) if len(day) > 1 else None
+    by = pd.DataFrame({"t": base.track.astype(str), "e": ll(cal.p_model, w), "b": ll(base.p_model, w)}).groupby("t")
+    out["logloss_vs_uncalibrated_by_track"] = {t: round(float((g.e.sum() - g.b.sum()) / len(g)), 5)
+                                               for t, g in by if len(g) >= 500}
+    return out
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -418,6 +602,21 @@ def table(results: list[dict], baseline: str | None = None) -> str:
         lines.append(f"| {r['name']} | {r['features']} | {r['spec'].get('objective', 'softmax')} | {r['rounds']} | "
                      f"{rmse} | {rmse_vs} | {_short_cell(r)} | {_short_vs(r, base)} | {r['logloss']} | "
                      f"{_vs(r, base)} | {r['seconds']} |")
+        for g, gs in (r.get("by_group") or {}).items():
+            if not gs.get("runners"):
+                continue
+            ob = gs.get("on_bsp_races") or {}
+            st = ((r.get("groups_study") or {}).get(g) or {}).get("shortening")
+            short = _short_cell({"shortening": st}) if st else ""
+            lines.append(f"| {r['name']} [{g}: {gs['tracks']} tracks, {gs['races']} races] | | | | "
+                         f"{gs.get('log_bsp_rmse', '')} | | {short} | | {gs['logloss']} | "
+                         f"vs the BSP {ob.get('gap', '')} | |")
+        for kind, c in (r.get("calibrated") or {}).items():
+            ci = c.get("rmse_ci90") or ["", ""]
+            lci = c.get("logloss_ci90") or ["", ""]
+            lines.append(f"| {r['name']} + {kind} (b {c['fit']['b']}) | | | | {c.get('log_bsp_rmse', '')} | "
+                         f"{c.get('rmse_vs_uncalibrated', '')} ({ci[0]} to {ci[1]}) vs uncalibrated | | | "
+                         f"{c['logloss']} | {c['logloss_vs_uncalibrated']} ({lci[0]} to {lci[1]}) vs uncalibrated | |")
     return "\n".join(lines)
 
 
@@ -480,6 +679,8 @@ def main(argv=None) -> int:
     results = []
     for e in exps:
         recipe = dict(RECIPES[e.get("recipe", spec.get("recipe", "quick"))], **e.get("recipe_overrides", {}))
+        if spec.get("groups") and "groups" not in e:
+            e = dict(e, groups=spec["groups"])
         _log(f"experiment {e['name']}")
         res, pred = run_experiment(df, meta, e, recipe, spec.get("test_from", TEST_FROM), spec.get("test_to"))
         res["cache"] = {k: meta[k] for k in ("hash", "last_day", "rows")}
@@ -495,6 +696,19 @@ def main(argv=None) -> int:
             _log(f"published {e['name']}: {res['published']}")
         if e.get("bfsp"):
             res["bfsp"] = run_bfsp(store, pred, e["name"], out)
+        if e.get("groups") and (e.get("shortening", spec.get("shortening")) or e.get("limit")):
+            # each group's races on their own: does our price add to the market there, and do the rules pay there
+            res["groups_study"] = {}
+            for g, tracks in split_groups(pred, e["groups"]).items():
+                sub = pred[in_group(pred, tracks)]
+                gname = f"{e['name']}__{g}"
+                _log(f"group {g}: {len(sub)} runners")
+                gs = {}
+                if e.get("shortening", spec.get("shortening")):
+                    gs["shortening"] = shortening(store, sub, gname, out)
+                if e.get("limit"):
+                    gs["limit"] = run_limit(store, sub, gname, out)
+                res["groups_study"][g] = gs
         (out / f"result_{e['name']}.json").write_text(json.dumps(res, indent=1, default=str))
         # each runner's log-loss contribution, for the paired comparison against the baseline in --collect
         keep = ["race_id", "race_date", "dog_id", "won", "p_model"] + [c for c in ("bsp", "pred_bsp") if c in pred]
