@@ -89,9 +89,17 @@ while d <= LAST:
     lf = np.log(np.clip(1 - cut.adjustment_factor.fillna(0) / 100.0, 1e-9, None)).groupby(cut.row).sum()
     b["P"] = b.avg_price
     b["P_cut"] = np.maximum(1.01, b.P * np.exp(b.row.map(lf).fillna(0.0)))
-    b = b.merge(st[K + ["result", "bsp"]].rename(columns={"result": "res", "bsp": "bsp_led"}), on=K, how="left")
+    for c in ("pnl_lay", "hedge_liability"):
+        st[c] = pd.to_numeric(st[c], errors="coerce")
+    st["bsp_paid"] = np.where((st.result == "LOSER") & (st.pnl_lay > 0) & (st.hedge_liability > 0),
+                              1 + st.hedge_liability / st.pnl_lay, np.nan)
+    b = b.merge(st[K + ["result", "bsp", "bsp_paid"]].rename(columns={"result": "res", "bsp": "bsp_led"}), on=K,
+                how="left")
     b = b.merge(sp, on=K, how="left")
-    b["B"] = b.bsp_led.where(b.bsp_led > 1, b.bsp_book)
+    # the BSP: what Betfair settled our SP lay at (a loser), else the recorded books' SP, else the ledger's read (which
+    # is wrong on some horses: 4 Nov, live_by_hour_check_1104)
+    b["B"] = b.bsp_paid.where(b.bsp_paid > 1, b.bsp_book.where(b.bsp_book > 1, b.bsp_led))
+    b["led_off"] = (b.bsp_led > 1) & (b.B > 1) & ((b.bsp_led / b.B - 1).abs() > 0.02)
     b["void"] = b.res.astype(str).str.upper().eq("REMOVED")
     win = b.res.astype(str).str.upper().eq("WINNER")
     ok = ~b.void & (b.B > 1)
@@ -111,8 +119,9 @@ while d <= LAST:
     off = pd.to_datetime(day + " " + pd.to_datetime(b.off, format="mixed", errors="coerce").dt.strftime("%H:%M"),
                          errors="coerce").dt.tz_localize("Europe/London", ambiguous="NaT", nonexistent="NaT")
     b["mins"] = (off - uk).dt.total_seconds() / 60
+    b["clv_led_w"] = np.where(ok & (b.bsp_led > 1), b.matched * (b.P / b.bsp_led - 1), 0.0)
     rows.append(b[["day", "hour", "mins", "market_id", "selection_id", "matched", "staked_live", "clv_fill_w",
-                   "locked", "result", "void"]])
+                   "locked", "result", "void", "led_off", "clv_led_w"]])
     ledg = st.groupby("market_id").pnl.sum()
     c = led[led.event == "commission"].groupby("market_id").commission.sum()
     ledg = (ledg - c.reindex(ledg.index).fillna(0.02 * ledg.clip(lower=0))).sum()
@@ -121,6 +130,9 @@ f = pd.concat(rows, ignore_index=True)
 ck = pd.DataFrame(checks)
 print(f"== the live record by the time of the bet, {f.day.nunique()} days {f.day.min()} to {f.day.max()}, "
       f"{len(f)} fills, GBP{f.matched.sum():,.0f} staked")
+print(f"   the ledger's own BSP read is off by more than 2% on {f.led_off.mean():.1%} of the fills; the CLV at the fill "
+      f"on it {f.clv_led_w.sum() / f.staked_live.sum():+.2%} against {f.clv_fill_w.sum() / f.staked_live.sum():+.2%} on the "
+      f"BSP Betfair settled at")
 print(f"   the check: fills' results GBP{ck.ours.sum():+,.2f} against the ledger's settled GBP{ck.ledger.sum():+,.2f}; "
       f"days off by more than GBP5: {int(((ck.ours - ck.ledger).abs() > 5).sum())}")
 
@@ -157,4 +169,4 @@ w = f.assign(band=np.where(f.hour >= 10, "10:00 on", "before 10")).pivot_table(
 s = f.assign(band=np.where(f.hour >= 10, "10:00 on", "before 10")).pivot_table(
     index="day", columns="band", values="matched", aggfunc="sum").round(0)
 print("\n-- day by day: the result (and the stake) before 10:00 and from 10:00")
-print(w.join(s, rsuffix="_staked").to_string())
+print(w.join(s.add_suffix("_staked")).to_string())
