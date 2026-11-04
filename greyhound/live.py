@@ -861,6 +861,11 @@ def main(argv=None) -> int:
             md = early_lay.table(store, day) + "\n" + md
         except Exception as exc:
             log.warning("live early lay not read (%s)", exc)
+        try:                                        # the live quotes around the mid (greyhound/quote_mid.py)
+            from greyhound import quote_mid
+            md = quote_mid.table(store, day) + "\n" + md
+        except Exception as exc:
+            log.warning("live quotes around the mid not read (%s)", exc)
         store.put(f"{PREFIX}/paper/{day:%Y-%m-%d}/running.md", md.encode())
         if a.out:
             Path(a.out).write_text(md)

@@ -17,7 +17,10 @@ name: Paper models (greyhounds) and the racing census
 # "use early lay". The greyhound early lay (greyhound/early_lay.py, the forward test's primary rule) places real
 # orders on the live key, with GREYHOUND_EARLY_LAY=live (the dispatch input, else the repository variable, else
 # live). Stop it: the S3 object greyhound/STOP (greyhound-stop.yml) stops new lays and greens up the matched ones;
-# the variable GREYHOUND_EARLY_LAY=paper keeps it off the next days. Every other trader here stays on paper.
+# the variable GREYHOUND_EARLY_LAY=paper keeps it off the next days. The second, the owner, 4 Nov 2026: "go live with
+# live trading today": the greyhound quotes around the mid (greyhound/quote_mid.py, research/greyhound/profit_sim.py
+# mid_*), real orders with GREYHOUND_QUOTE_MID=live (the dispatch input, else the repository variable, else live); the
+# same S3 STOP stops it, and GREYHOUND_QUOTE_MID=paper keeps it off. Every other trader here stays on paper.
 # The runner: a second self-hosted runner on the UK server (Betfair refuses logins from GitHub's own runners: 403,
 # 1 Nov), labelled with vars.PAPER_MODELS_RUNNER (default 'paper-models'). It must not be the live trader's runner: the
 # job stops if the two are the same, because a job there would hold the live trader's runner and could delay its
@@ -31,6 +34,12 @@ on:
     inputs:
       early_lay:
         description: "the greyhound early lay: live (real orders on the owner's account) or paper (logged, nothing sent)"
+        required: false
+        type: choice
+        options: ['live', 'paper']
+        default: 'live'
+      quote_mid:
+        description: "the greyhound quotes around the mid: live (real orders on the owner's account) or paper"
         required: false
         type: choice
         options: ['live', 'paper']
@@ -98,7 +107,7 @@ jobs:
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
         run: timeout 300 python -m sources.betfair_census --hours 168
-      - name: Trade (the greyhound early lay live, the rest on paper)
+      - name: Trade (the greyhound early lay and quotes live, the rest on paper)
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -114,6 +123,7 @@ jobs:
           BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
           GREYHOUND_LIVE: 'no'
           GREYHOUND_EARLY_LAY: ${{ inputs.early_lay || vars.GREYHOUND_EARLY_LAY || 'live' }}
+          GREYHOUND_QUOTE_MID: ${{ inputs.quote_mid || vars.GREYHOUND_QUOTE_MID || 'live' }}
         run: |
           set +e
           # the greyhound model (greyhound/live.py, greyhound/live_config.json): each GB greyhound runner backed once on
@@ -128,6 +138,9 @@ jobs:
           # the greyhound early lay (greyhound/early_lay.py): real orders only when GREYHOUND_EARLY_LAY is 'live'
           BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --live --until 21:30 > "$RUNNER_TEMP/greyhound_early_lay.log" 2>&1 &
           GEL=$!
+          # the greyhound quotes around the mid (greyhound/quote_mid.py): real orders only when GREYHOUND_QUOTE_MID is 'live'
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.quote_mid --trade --live --until 21:30 > "$RUNNER_TEMP/greyhound_quote_mid.log" 2>&1 &
+          GQM=$!
           # the GB/IE greyhound win and place markets with the market recorder (read-only, the delayed key;
           # betfair_live/<day>/books_greyhound.csv), moved here from the horse racing runner on 3 Nov 2026 (the owner:
           # nothing but horse racing there): yesterday's settled books, then the day's record
@@ -142,5 +155,7 @@ jobs:
           tail -n 5 "$RUNNER_TEMP/greyhound_books.log"
           wait "$GEL"; echo "greyhound early lay ($GREYHOUND_EARLY_LAY) exited $?"
           tail -n 40 "$RUNNER_TEMP/greyhound_early_lay.log"
+          wait "$GQM"; echo "greyhound quotes around the mid ($GREYHOUND_QUOTE_MID) exited $?"
+          tail -n 40 "$RUNNER_TEMP/greyhound_quote_mid.log"
           wait "$DOGS"; echo "greyhound market record exited $?"; tail -n 3 "$RUNNER_TEMP/greyhound.log"
           [ "$GC" = 0 ]
