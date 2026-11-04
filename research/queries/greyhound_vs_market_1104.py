@@ -75,11 +75,16 @@ def mid_at(minutes: int) -> pd.Series:
 
 mid5, mid1 = mid_at(5), mid_at(1)
 
-rows, runners = [], []
+rows, runners, dropped = [], [], {}
 for mid, f in fin[fin.market_id.isin(settled)].groupby("market_id"):
     ran = f[f.runner_status.astype(str).isin(["WINNER", "LOSER", "PLACED"])]
     p = pred[pred.market_id == mid].merge(ran[["selection_id", "runner_status", "sp_actual"]], on="selection_id")
-    if len(p) < 2 or p.sp_actual.isna().any() or not (p.runner_status == "WINNER").any():
+    why = ("not priced by our model" if not (pred.market_id == mid).any() else
+           "fewer than 2 of our runners matched the runners" if len(p) < 2 else
+           "the winner not among our priced runners" if not (p.runner_status == "WINNER").any() else
+           "a runner without a BSP yet" if p.sp_actual.isna().any() else None)
+    if why:
+        dropped.setdefault(why, []).append(mid)
         continue
     p["ours"] = p.p_model / p.p_model.sum()
     p["bsp_p"] = (1 / p.sp_actual) / (1 / p.sp_actual).sum()
@@ -106,6 +111,11 @@ for mid, f in fin[fin.market_id.isin(settled)].groupby("market_id"):
         "ours_beat_bsp": int(w.ours > w.bsp_p)})
     runners.append(p.assign(market_id=mid))
 
+print("races dropped:", {k: len(v) for k, v in dropped.items()} or "none")
+for k, v in dropped.items():
+    if k == "not priced by our model":
+        names = mk[mk.market_id.isin(v)].drop_duplicates("market_id")
+        print("   not priced:", "; ".join(f"{a} {b}" for a, b in zip(names.venue, names.market_start_utc)))
 r = pd.DataFrame(rows)
 if not len(r):
     raise SystemExit("no data found: no settled race with our price, a BSP for every runner and a winner")
