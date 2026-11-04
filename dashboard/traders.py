@@ -323,6 +323,21 @@ def football_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame 
 # The traders
 # --------------------------------------------------------------------------------------------------------------------
 
+def paper_agent_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame | None, str | None]:
+    """A horse paper agent's day (research/paper/horses.py): the table it wrote, a row a market, every market settled
+    (the desk scores a day once Betfair's price file is in), the P&L after the non-runners' cuts and 2%."""
+    m = _csv(src.get(kind, f"{base}/{day}/markets.csv"))
+    if m is None:
+        return None, None
+    for c in MARKET_COLS:
+        if c not in m.columns:
+            m[c] = np.nan if c not in ("settled",) else True
+    m["settled"] = m.settled.astype(str).str.lower().isin(["true", "1", "1.0"])
+    for c in ["staked", "ev", "pnl", "open_liability"] + CLV_COLS:
+        m[c] = _num(m[c]).fillna(0.0) if c != "pnl" else _num(m[c])
+    return m[MARKET_COLS], None
+
+
 @dataclass(frozen=True)
 class Trader:
     id: str
@@ -340,6 +355,11 @@ class Trader:
     notes: tuple = field(default_factory=tuple)
 
 
+AGENT_NOTES = ("A paper agent (research/paper/horses.py): no orders. It trades the recorded books with the other agents "
+               "on one book: the live trader's fills are already out, and what one agent takes is gone for the others.",
+               "A day is scored two days after the racing, once Betfair's price file is in: after the non-runners' "
+               "cuts and 2%, at the replay's scale (live has run at 0.80 of it).")
+
 TRADERS = [
     Trader("horse-live", "horse_racing", "Win backs, live", "live",
            "UK and Irish win markets on the owner's account: backs at the price now, each laid at the SP",
@@ -348,6 +368,24 @@ TRADERS = [
     Trader("horse-paper", "horse_racing", "Win backs, paper", "paper",
            "The paper trader: the same markets simulated against the book, nothing placed",
            "pred", "trading/paper", horse_markets, "horse", "HP"),
+    Trader("horse-agent-live-rule", "horse_racing", "Live rule, replay, paper agent", "paper",
+           "The live rule replayed on the paper agents' shared book: the control they are judged by", "pred", "paper/horses/shared/agents/live_rule", paper_agent_markets, "horse", "LR",
+           refresh_days=4, notes=AGENT_NOTES),
+    Trader("horse-agent-backs-floor50", "horse_racing", "Backs, GBP50 floor, paper agent", "paper",
+           "The live rule with at least GBP50 on a horse at 21 or longer", "pred", "paper/horses/shared/agents/backs_floor50", paper_agent_markets, "horse", "F5",
+           refresh_days=4, notes=AGENT_NOTES),
+    Trader("horse-agent-backs-win1000", "horse_racing", "Backs, to win GBP1,000, paper agent", "paper",
+           "The live rule staking to win GBP1,000 a horse, GBP500 a bet at most", "pred", "paper/horses/shared/agents/backs_win1000", paper_agent_markets, "horse", "W1",
+           refresh_days=4, notes=AGENT_NOTES),
+    Trader("horse-agent-lays", "horse_racing", "Lays, paper agent", "paper",
+           "Lays a horse 3% or more under its expected SP, at 20 or under, GBP400 at risk, backed at the SP", "pred", "paper/horses/shared/agents/lays", paper_agent_markets, "horse", "LY",
+           refresh_days=4, notes=AGENT_NOTES),
+    Trader("horse-agent-quotes-model3", "horse_racing", "Both sides, model, paper agent", "paper",
+           "A resting back 3% above and a lay 3% below the model's expected SP, GBP10 a quote, closed at the SP", "pred", "paper/horses/shared/agents/quotes_model3", paper_agent_markets, "horse", "QM",
+           refresh_days=4, notes=AGENT_NOTES),
+    Trader("horse-agent-quotes-mid2", "horse_racing", "Both sides, market, paper agent", "paper",
+           "A resting back 2% above and a lay 2% below the market's mid, GBP10 a quote, closed at the SP", "pred", "paper/horses/shared/agents/quotes_mid2", paper_agent_markets, "horse", "QD",
+           refresh_days=4, notes=AGENT_NOTES),
     Trader("greyhound-early-lay", "greyhounds", "Early lay, live", "live",
            "Lays the forecast drifters at 80% of the forecast SP, greened up before the off (from 3 Nov 2026)",
            "capture", "sources/greyhound/early_lay/live", early_lay_markets, "greyhound", "EL",

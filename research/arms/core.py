@@ -375,6 +375,107 @@ class ReplayExchange(PaperExchange):
 
 
 # ---------------------------------------------------------------------------------------------------------------
+# one book for several agents (the owner, 4 Nov 2026: "We need to be careful that they dont conflict with each other
+# e.g. taking the price for one, removes the price for others")
+# ---------------------------------------------------------------------------------------------------------------
+
+class SharedReplayData(ReplayData):
+    """The recorded books as several sessions see them together. The live trader's own fills are already out of the
+    books (the trader read them after its orders; a replay of the live rule nets them, as ReplayData does); every
+    other agent's takes come out on top, for everyone after it: ``agent_taken`` on the backers' side (no netting:
+    the real trader never took them), the lay side's ``taken_lay`` as before. ``resting``: the agents' resting
+    quotes at each price, so a later quote at the same price queues behind an earlier one."""
+
+    def __init__(self, D, stale: timedelta = STALE):
+        super().__init__(D, stale=stale)
+        self.agent_taken = defaultdict(float)
+        self.resting = defaultdict(float)                  # (market, selection, side, price) -> GBP resting
+
+    def books(self, ids, with_sp=False):
+        out = super().books(ids, with_sp)
+        if not self.agent_taken:
+            return out
+        for mid, b in out.items():
+            for sid, q in b.runners.items():
+                back = []
+                for p, sz in q.back:
+                    left = sz - self.agent_taken.get((mid, sid, round(p, 2)), 0.0)
+                    if left > 0.01:
+                        back.append((p, round(left, 2)))
+                q.back = back
+        return out
+
+
+class AgentExchange(ReplayExchange):
+    """An agent's own account on the shared book: what it takes from the backers' side comes out level by level
+    for every agent after it (and never nets against the live trader's fills, which it did not make)."""
+
+    def back(self, market_id, selection_id, price, size, ref, min_fill: float = 2.0):
+        if self.balance is not None and size > self.balance - self.open_stakes() + 0.005:
+            return Fill(market_id=market_id, selection_id=int(selection_id), side="BACK", order_type="LIMIT",
+                        price=float(price), size=round(float(size), 2), status="FAILURE",
+                        error="INSUFFICIENT_FUNDS (ERROR_IN_ORDER)")
+        book = self._books.get(market_id)
+        q = book.runners.get(int(selection_id)) if book else None
+        levels = list(q.back) if q is not None else []
+        f = PaperExchange.back(self, market_id, selection_id, price, size, ref, min_fill)
+        if f.status == "SUCCESS":
+            left = f.matched
+            for p, s in levels:                                 # best (highest) first, as the fill took them
+                if p + 1e-9 < price or left <= 1e-9:
+                    break
+                take = min(s, left)
+                self.data.agent_taken[(market_id, int(selection_id), round(float(p), 2))] += take
+                left -= take
+            self.fills.append((market_id, f.matched, self.data.now))
+            self.peak = max(self.peak, self.open_stakes())
+        return f
+
+
+def run_agents(D, specs: list[tuple], t0: datetime, t_end: datetime | None = None, stale: timedelta = STALE,
+               step_minutes: int = 1) -> dict:
+    """Several sessions on one book, a minute at a time: ``specs`` [(name, session class, cfg, policy, balance,
+    mirror)]; the ``mirror`` session (the live rule's replay) steps first each minute, as the live trader's own fills
+    came first, then the others in an order that turns each minute, so none always has the first pick. Returns
+    {name: (ledger, session, exchange)}."""
+    data = SharedReplayData(D, stale=stale)
+    clock_t = [t0]
+    runs = []
+    for name, cls, cfg, policy, balance, mirror in specs:
+        xc = ReplayExchange if mirror else AgentExchange
+        x = xc(data, bank=cfg.limits.bank, balance=balance)
+        s = cls(x, D.preds[["market_id", "selection_id", "predicted_bfsp"]], cfg, D.day,
+                clock=lambda: clock_t[0], sleep=lambda _: None, **({"policy": policy} if policy is not None else {}))
+        runs.append((name, s, x, mirror))
+    out = {}
+    with shared_plans():
+        for _, s, _, _ in runs:
+            s.load_markets()
+        if not any(s.markets for _, s, _, _ in runs):
+            return {name: (pd.DataFrame(), s, x) for name, s, x, _ in runs}
+        last_off = max(m.start for _, s, _, _ in runs for m in s.markets.values())
+        end = t_end if t_end is not None else last_off + timedelta(minutes=40)
+        first = [r for r in runs if r[3]]
+        rest = [r for r in runs if not r[3]]
+        t, k = t0, 0
+        while t <= end:
+            data.now = t
+            order = first + (rest[k % len(rest):] + rest[:k % len(rest)] if rest else [])
+            for _, s, _, _ in order:
+                s.step(t)
+            t += timedelta(minutes=step_minutes)
+            clock_t[0] = t
+            k += 1
+        data.now = datetime(D.day.year, D.day.month, D.day.day, 23, 30, tzinfo=timezone.utc)
+        for name, s, x, _ in runs:
+            s.settle_all(data.now)
+            if hasattr(s, "settle_extra"):
+                s.settle_extra(data.now)
+            out[name] = (pd.DataFrame(s.ledger), s, x)
+    return out
+
+
+# ---------------------------------------------------------------------------------------------------------------
 # the plan, cached: the rule's choices rest on the prices, not on the sizes or the target
 # ---------------------------------------------------------------------------------------------------------------
 
