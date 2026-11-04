@@ -1,9 +1,9 @@
 """Every football match on Betfair, recorded and paper-traded from the feed the football trader reads.
 
 The football trader's own process (``python -m football.live --trade --all-games``) runs this beside its decisions,
-on the key the trader holds. With ``FOOTBALL_LIVE=yes`` that is the live application key, kept in genuine betting
-use by the trader's small real stakes (the owner, 3 Nov 2026; Betfair counts a live key read without the intention
-to bet as read-only access). This module itself places nothing.
+on the live application key (the owner, 4 Nov 2026: "use live key"; until then the delayed key unless
+``FOOTBALL_LIVE=yes``). Every data request goes through ``Throttle``, under Betfair's limits (the owner: "do not pass
+betfair thresholds"). This module itself places nothing; real bets stay with ``FOOTBALL_LIVE=yes``.
 
 What it does, every loop:
 
@@ -45,6 +45,8 @@ import io
 import logging
 import math
 import os
+import time
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -61,6 +63,53 @@ RESULT_EVERY_S = 1800.0
 RESULT_GIVE_UP_H = 6.0
 WEIGHT_LIMIT = 200.0
 CATALOGUE_MAX = 1000
+
+
+#: our own ceiling on the feed's Betfair data requests (the owner, 4 Nov 2026: "use live key ... do not pass betfair
+#: thresholds"). Betfair's published data limits are 200 weight points a request (batch_size keeps under them) and at
+#: most 5 listMarketBook calls a second to one market (the cadence reads a market at most once a minute); it publishes
+#: no account-wide data rate, so the feed holds itself to MAX_CALLS_PER_SECOND overall and MAX_CALLS_PER_HOUR.
+MAX_CALLS_PER_SECOND = 5.0
+MAX_CALLS_PER_HOUR = 12000
+
+
+class Throttle:
+    """A data-request wrapper that never lets the feed exceed ``per_second`` calls a second or ``per_hour`` in any
+    rolling hour (it waits instead), and counts the calls (``hourly``: {UTC hour: calls}) for the run's report."""
+
+    def __init__(self, read, per_second: float = MAX_CALLS_PER_SECOND, per_hour: int = MAX_CALLS_PER_HOUR,
+                 clock=time.monotonic, sleep=time.sleep, wall=lambda: datetime.now(timezone.utc)):
+        self.read, self.gap, self.per_hour = read, 1.0 / per_second, per_hour
+        self.clock, self.sleep, self.wall = clock, sleep, wall
+        self.last = None
+        self.window: deque = deque()
+        self.calls, self.waited_s, self.hourly = 0, 0.0, {}
+
+    def __call__(self, *args, **kwargs):
+        while True:
+            now = self.clock()
+            while self.window and self.window[0] <= now - 3600.0:
+                self.window.popleft()
+            wait = 0.0
+            if self.last is not None:
+                wait = max(wait, self.last + self.gap - now)
+            if len(self.window) >= self.per_hour:
+                wait = max(wait, self.window[0] + 3600.0 - now)
+            if wait <= 0:
+                break
+            wait += 1e-3                     # past the edge, so the oldest call has left the hour when we look again
+            self.sleep(wait)
+            self.waited_s += wait
+        self.last = now
+        self.window.append(now)
+        self.calls += 1
+        h = self.wall().strftime("%Y-%m-%dT%H")
+        self.hourly[h] = self.hourly.get(h, 0) + 1
+        return self.read(*args, **kwargs)
+
+    def report(self) -> dict:
+        return {"calls": self.calls, "waited_s": round(self.waited_s, 1), "max_per_hour": max(self.hourly.values(), default=0),
+                "limit_per_second": round(1.0 / self.gap, 2), "limit_per_hour": self.per_hour}
 
 
 def cadence_seconds(minutes_to_off: float, cadence=CADENCE) -> float:
