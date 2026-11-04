@@ -44,13 +44,39 @@ def _date(f):
     return pd.to_datetime(f.start_date)
 
 
+def load_or_fit(work: Path, y: int, train: pd.DataFrame, rounds: int):
+    """The season's next-ball model (fitted on deliveries before 1 January of ``y``), kept under ``work``."""
+    import xgboost as xgb
+    path = work / f"next_ball_{y}.ubj"
+    if path.exists():
+        b = xgb.Booster()
+        b.load_model(path)
+        return b
+    b = nb.fit(train, rounds)
+    work.mkdir(parents=True, exist_ok=True)
+    b.save_model(path)
+    return b
+
+
+def choose_rounds(f: pd.DataFrame, work: Path, log=print) -> int:
+    """Rounds by early stopping on 2022 (a fit on 2012-2021), kept under ``work``."""
+    path = work / "rounds.json"
+    if path.exists():
+        return json.loads(path.read_text())["rounds"]
+    d = _date(f)
+    rounds, vloss = nb.choose_rounds(f[d < "2022-01-01"], f[(d >= "2022-01-01") & (d < "2023-01-01")])
+    log(f"rounds {rounds} (valid 2022 mlogloss {vloss:.4f})")
+    work.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"rounds": rounds, "valid_2022_mlogloss": vloss}))
+    return rounds
+
+
 def run(store: Store, seasons: list[int], paths: int, work: Path, log=print) -> dict:
     t = load(store)
     f, br, bw, prior = build(t)
     d = _date(f)
-    tr0, va0 = f[d < "2022-01-01"], f[(d >= "2022-01-01") & (d < "2023-01-01")]
-    rounds, vloss = nb.choose_rounds(tr0, va0)
-    log(f"rounds {rounds} (valid 2022 mlogloss {vloss:.4f})")
+    rounds = choose_rounds(f, work, log)
+    vloss = json.loads((work / "rounds.json").read_text())["valid_2022_mlogloss"]
     f["wkts_in_hand"] = 10 - f.wickets_before
     meta = {"rounds": rounds, "valid_2022_mlogloss": vloss, "params": nb.PARAMS, "paths": paths,
             "train_rows_by_season": {}, "next_ball": {}}
@@ -68,7 +94,7 @@ def run(store: Store, seasons: list[int], paths: int, work: Path, log=print) -> 
             log(f"{y}: resumed from {out}")
             continue
         t0 = time.time()
-        b = nb.fit(train, rounds)
+        b = load_or_fit(work, y, train, rounds)
         ev = {"all_t20": nb.evaluate(b, train, test_all),
               "ipl": nb.evaluate(b, train, test_all[test_all.event_name == IPL])}
         meta["next_ball"][y] = ev

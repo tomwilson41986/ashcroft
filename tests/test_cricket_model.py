@@ -73,14 +73,17 @@ class FixedModel:
         return np.tile(self.p, (len(x), 1))
 
 
-def _prep(runs_before, wickets_before, legal_before, target, max_balls=120):
-    s = pd.DataFrame({"match_id": ["m"], "innings": [2], "runs_before": [runs_before],
-                      "wickets_before": [wickets_before], "legal_before": [legal_before], "max_balls": [max_balls],
-                      "target": [target], "balls_since_wicket": [0]})
-    zero9 = np.r_[np.full(8, 1 / 8), 0.0][None, :]
-    return {"s": s, "striker": zero9.copy(), "non": zero9.copy(), "bowler": zero9.copy(),
-            "queue": np.tile(zero9, (1, 10, 1)), "team_bowl": zero9.copy(), "lag_r": np.zeros((1, 6)),
-            "lag_w": np.zeros((1, 6)), "context": np.zeros((1, len(CONTEXT)))}
+def _prep(runs_before, wickets_before, legal_before, target, max_balls=120, innings=2):
+    flat = np.r_[np.full(8, 1 / 8), 0.0]
+    one = np.array
+
+    def rows(x):
+        return np.tile(flat, (1, 1)) if x == 1 else np.tile(flat, (1, x, 1))
+    return sim.Batch(innings=one([innings]), runs=one([runs_before]), wickets=one([wickets_before]),
+                     legal=one([legal_before]), max_balls=one([max_balls]), target=one([float(target)]),
+                     bsw=one([0]), lag_r=np.zeros((1, 6)), lag_w=np.zeros((1, 6)), striker=rows(1), non=rows(1),
+                     bowler=rows(1), queue=rows(10), team_bowl=rows(1), ctx=np.zeros((1, len(CONTEXT))),
+                     open2=rows(2), queue2=rows(10), team_bowl2=rows(1), max_balls2=one([120]))
 
 
 def test_roll_out_bookkeeping():
@@ -121,3 +124,45 @@ def test_metrics():
     assert log_loss(y, p) == pytest.approx(np.log(2))
     assert ece(y, p) == pytest.approx(0.0)
     assert ece(np.array([1, 1]), np.array([0.25, 0.25])) == pytest.approx(0.75)
+
+
+def test_first_innings_rolls_into_the_chase():
+    ex_v, ex_p = np.array([1]), np.array([1.0])
+    ones = np.zeros(8)
+    ones[1] = 1.0                       # every ball a single, both innings
+    # 100 off 70 balls: 50 singles more make 150; the chase of 151, 120 singles, falls short: batting first wins
+    p, totals = sim.match_probability(FixedModel(ones), _prep(100, 2, 70, np.nan, innings=1), 30, ex_v, ex_p)
+    assert (totals == 150).all()
+    assert p[0] == 1.0
+    four = np.zeros(8)
+    four[4] = 1.0                       # every ball a four: 480 each, level at the end, a tie scores one half
+    p, totals = sim.match_probability(FixedModel(four), _prep(0, 0, 0, np.nan, innings=1), 10, ex_v, ex_p)
+    assert (totals == 480).all() and p[0] == 0.5
+
+
+def test_current_rating_is_the_next_match_rating():
+    """ratings_now on matches up to M equals the as-of rating a further match would carry."""
+    from cricket.ratings.player_ratings import ratings_now
+    t = _tables()
+    f = states_frame(t["deliveries"], t["innings"], t["matches"])
+    f["cls"] = classify(f)
+    prior = np.full(8, 1 / 8)
+    pid = f.groupby("batter_id").match_id.nunique().idxmax()
+    mids = t["matches"][t["matches"].match_id.isin(f[f.batter_id == pid].match_id)].sort_values("start_date")
+    last = mids.match_id.iloc[-1]
+    asof = ratings(f, t["players"], t["matches"], "bat", prior)
+    want = asof[(asof.player_id == pid) & (asof.match_id == last)]
+    earlier = t["matches"][t["matches"].start_date < mids.start_date.iloc[-1]]
+    now = ratings_now(f[f.match_id.isin(earlier.match_id)], t["players"], earlier, "bat", prior)
+    got = now[now.player_id == pid]
+    assert got.n_eff.iloc[0] == pytest.approx(want.n_eff.iloc[0])
+    assert np.allclose(got[[f"p{k}" for k in range(8)]].to_numpy(), want[[f"p{k}" for k in range(8)]].to_numpy())
+
+
+def test_crps_matches_brute_force():
+    from cricket.model.evaluate_first import crps_samples
+    rng = np.random.default_rng(3)
+    x = rng.integers(100, 220, size=(4, 40))
+    y = np.array([150.0, 90.0, 230.0, 180.0])
+    brute = np.abs(x - y[:, None]).mean(1) - 0.5 * np.abs(x[:, :, None] - x[:, None, :]).mean((1, 2))
+    assert np.allclose(crps_samples(x, y), brute)

@@ -31,6 +31,15 @@ def _counts(d: pd.DataFrame, who: str) -> pd.DataFrame:
     return oh.groupby([who, "match_id"], sort=False)[COLS].sum().reset_index()
 
 
+def _rows(d: pd.DataFrame, players: pd.DataFrame, matches: pd.DataFrame, role: str) -> pd.DataFrame:
+    """One row per (player, match) the player was listed for or took part in, with the role's outcome counts."""
+    who = "batter_id" if role == "bat" else "bowler_id"
+    cnt = _counts(d, who).rename(columns={who: "player_id"})
+    lst = players[players.match_id.isin(matches.match_id)][["player_id", "match_id"]].dropna().drop_duplicates()
+    rows = lst.merge(cnt, on=["player_id", "match_id"], how="outer").fillna({c_: 0 for c_ in COLS})
+    return rows.merge(matches[["match_id", "start_date"]], on="match_id", how="left").reset_index(drop=True)
+
+
 def ratings(d: pd.DataFrame, players: pd.DataFrame, matches: pd.DataFrame, role: str,
             prior: np.ndarray | None = None, c: float = C_PRIOR, r: float = DECAY) -> pd.DataFrame:
     """As-of ratings for ``role`` in {"bat", "bowl"}: columns player_id, match_id, n_eff, p0..p7.
@@ -38,11 +47,7 @@ def ratings(d: pd.DataFrame, players: pd.DataFrame, matches: pd.DataFrame, role:
     ``d`` carries a ``cls`` column; ``players`` the match lists (so non-batting listed players get a rating);
     ``matches`` gives each match's start date for the order. ``prior`` defaults to the population of ``d``.
     """
-    who = "batter_id" if role == "bat" else "bowler_id"
-    cnt = _counts(d, who).rename(columns={who: "player_id"})
-    lst = players[players.match_id.isin(matches.match_id)][["player_id", "match_id"]].dropna().drop_duplicates()
-    rows = lst.merge(cnt, on=["player_id", "match_id"], how="outer").fillna({c_: 0 for c_ in COLS})
-    rows = rows.merge(matches[["match_id", "start_date"]], on="match_id", how="left").reset_index(drop=True)
+    rows = _rows(d, players, matches, role)
     if prior is None:
         tot = d["cls"].value_counts().reindex(range(K), fill_value=0).to_numpy(dtype=float)
         prior = tot / tot.sum()
@@ -50,6 +55,25 @@ def ratings(d: pd.DataFrame, players: pd.DataFrame, matches: pd.DataFrame, role:
     p = dirichlet(s, prior, c)
     out = rows[["player_id", "match_id"]].copy()
     out["n_eff"] = s.sum(axis=1)
+    for k in range(K):
+        out[f"p{k}"] = p[:, k]
+    return out
+
+
+def ratings_now(d: pd.DataFrame, players: pd.DataFrame, matches: pd.DataFrame, role: str, prior: np.ndarray,
+                c: float = C_PRIOR, r: float = DECAY) -> pd.DataFrame:
+    """Each player's rating after their latest listed match: the live engine's ratings, the same recipe as
+    ``ratings`` one match on. Columns player_id, last_date, matches, n_eff, p0..p7."""
+    cnt = _rows(d, players, matches, role).sort_values(["player_id", "start_date", "match_id"],
+                                                       kind="stable").reset_index(drop=True)
+    before = decayed_asof(cnt, "player_id", ["start_date", "match_id"], COLS, r)
+    after = r * before + cnt[COLS].to_numpy(dtype=float)
+    last = cnt.groupby("player_id").tail(1).index
+    p = dirichlet(after[last], prior, c)
+    out = pd.DataFrame({"player_id": cnt.loc[last, "player_id"].to_numpy(),
+                        "last_date": cnt.loc[last, "start_date"].to_numpy(),
+                        "matches": cnt.groupby("player_id").size().reindex(cnt.loc[last, "player_id"]).to_numpy(),
+                        "n_eff": after[last].sum(1)})
     for k in range(K):
         out[f"p{k}"] = p[:, k]
     return out

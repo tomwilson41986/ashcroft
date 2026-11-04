@@ -52,3 +52,27 @@ def rates(d: pd.DataFrame, matches: pd.DataFrame, pop_before: str | None = None)
         out["venue_wpb"] = n_over_n_plus_k(out.wkts / out.balls, out.balls, pop_w, K_BALLS)
         out["comp_rpb"] = n_over_n_plus_k(out.c_runs / out.c_balls, out.c_balls, pop_r, K_BALLS)
     return out[["match_id", "venue_rpb", "venue_wpb", "comp_rpb"]]
+
+
+def rates_now(d: pd.DataFrame, matches: pd.DataFrame, asof: str, pop_before: str | None = None) -> dict:
+    """Venue and competition rates as of ``asof`` (every match before that day): the live engine's context.
+    Returns {"venues": frame(venue_id, venue_rpb, venue_wpb, balls), "comps": frame(event_name, comp_rpb, balls),
+    "population": {"rpb", "wpb"}}."""
+    lg = d[d["legal"].astype(bool)]
+    per = lg.groupby("match_id").agg(runs=("runs_total", "sum"), wkts=("team_wickets", "sum"),
+                                     balls=("runs_total", "size")).reset_index()
+    mm = matches[["match_id", "start_date", "venue_id", "event_name"]].copy()
+    mm["date"] = pd.to_datetime(mm.start_date)
+    per = per.merge(mm, on="match_id")
+    at = pd.Timestamp(asof)
+    base = per if pop_before is None else per[per.date < pd.Timestamp(pop_before)]
+    pop_r, pop_w = base.runs.sum() / base.balls.sum(), base.wkts.sum() / base.balls.sum()
+    v = per[(per.date < at) & (per.date >= at - pd.Timedelta(days=1095))].groupby("venue_id")[
+        ["runs", "wkts", "balls"]].sum().reset_index()
+    v["venue_rpb"] = n_over_n_plus_k(v.runs / v.balls, v.balls, pop_r, K_BALLS)
+    v["venue_wpb"] = n_over_n_plus_k(v.wkts / v.balls, v.balls, pop_w, K_BALLS)
+    c = per[(per.date < at) & (per.date >= at - pd.Timedelta(days=365))].groupby("event_name")[
+        ["runs", "balls"]].sum().reset_index()
+    c["comp_rpb"] = n_over_n_plus_k(c.runs / c.balls, c.balls, pop_r, K_BALLS)
+    return {"venues": v[["venue_id", "venue_rpb", "venue_wpb", "balls"]],
+            "comps": c[["event_name", "comp_rpb", "balls"]], "population": {"rpb": float(pop_r), "wpb": float(pop_w)}}
