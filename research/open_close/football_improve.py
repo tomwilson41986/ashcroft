@@ -20,6 +20,7 @@ was read by earlier pre-registered rules: development evidence. Every variant tr
 against the count of forks.
 
     python -m research.open_close.football_improve --cache <lab cache> --out-json reports/football_runs/improve.json
+    python -m research.open_close.football_improve --cache <lab cache> --fatigue --out-json reports/football_runs/rethink_fatigue.json
 """
 
 from __future__ import annotations
@@ -316,19 +317,28 @@ def read_variant(c: pd.DataFrame, n_boot: int, thresholds: bool = True) -> dict:
 
 ARMS = {"base": None, "home_adv": "team_all+home_adv", "team_news": "team_all+team_news",
         "both": "team_all+home_adv+team_news"}
+#: 4 Nov 2026, the owner: fatigue, short and recency-weighted form, xG adjusted by schedule, the other "X" metrics.
+#: Each on top of ``both`` (the candidate), so the read is what each adds to it
+BOTH = "team_all+home_adv+team_news"
+FATIGUE_ARMS = {"both": BOTH,
+                "fatigue": BOTH + "+rest_days+fatigue+xi_load",
+                "form_short": BOTH + "+form_short+x_short",
+                "x_metrics": BOTH + "+x_sos+x_territory",
+                "all_new": BOTH + "+rest_days+fatigue+xi_load+form_short+x_short+x_sos+x_territory"}
 
 
-def run_rethink(cache: str, n_boot: int = 1000) -> dict:
+def run_rethink(cache: str, n_boot: int = 1000, arms: dict | None = None) -> dict:
+    arms = ARMS if arms is None else arms
     out = {"note": "Betfair match odds; tuned on 2024/25, read on 2025/26 to date (development evidence)",
-           "arms": {k: v or "team_all" for k, v in ARMS.items()}}
-    for arm, spec in ARMS.items():
+           "arms": {k: v or "team_all" for k, v in arms.items()}}
+    for arm, spec in arms.items():
         d, cols = load(cache, spec)
         res = {"n_features": len(cols)}
         for s in TEST_SEASONS:
             te = d[d["test_season"] == s]
             preds = {"stack": (walk_forward(d, cols, "y_h", "same_book", s),
                                walk_forward(d, cols, "y_a", "same_book", s))}
-            if arm in ("base", "both"):
+            if arm in ("base", "both") and arms is ARMS:
                 preds["cost_classifier"] = (walk_forward_clf(d, cols, "y_h", "same_book", s),
                                             walk_forward_clf(d, cols, "y_a", "same_book", s))
                 preds["per_tier"] = (walk_forward_tier(d, cols, "y_h", "same_book", s),
@@ -349,9 +359,13 @@ def main(argv=None) -> int:
     ap.add_argument("--out-json", required=True)
     ap.add_argument("--boot", type=int, default=1000)
     ap.add_argument("--rethink", action="store_true", help="items 2-6: new features, the decision objective, tiers")
+    ap.add_argument("--fatigue", action="store_true", help="fatigue, short form, schedule-adjusted xG, territory")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    res = run_rethink(a.cache, a.boot) if a.rethink else run(a.cache, a.boot)
+    if a.fatigue:
+        res = run_rethink(a.cache, a.boot, FATIGUE_ARMS)
+    else:
+        res = run_rethink(a.cache, a.boot) if a.rethink else run(a.cache, a.boot)
     Path(a.out_json).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out_json).write_text(json.dumps(res, indent=1, default=float) + "\n")
     log.info("written %s", a.out_json)

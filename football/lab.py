@@ -203,6 +203,8 @@ def families(m: pd.DataFrame) -> dict:
     # known at the early price: the eleven as it stood after each side's matches before the collection day
     # (football.player_ratings.team_news; not line-up time, so not in LINEUP_TIME)
     fam["team_news"] = [c for c in m.columns if c.startswith("tn_")]
+    # the expected eleven's minutes in the 7 and 14 days before the collection day (fatigue)
+    fam["xi_load"] = [c for c in m.columns if c.startswith("ld_")]
     return fam
 
 

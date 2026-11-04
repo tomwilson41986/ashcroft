@@ -109,6 +109,9 @@ def test_team_news_reads_only_matches_before_the_collection_day():
     # player 1 (started 3 of the 4 matches before: share 0.75, rating 0.2) missed fixture 4
     assert a.loc[6, "tn_absent_n_diff"] == 1 and abs(a.loc[6, "tn_absent_mpm_diff"] - 0.15) < 1e-9
     assert a.loc[6, "tn_red_mpm_diff"] == 0                                    # fixture 5's red card unseen
+    # minutes load: nothing in the 7 days before 3 Nov; fixture 4 (24 Oct) in the 14: home's expected eleven
+    # (ten players at share 1, player 99 at 0.25 played it) 10.25 matches of minutes, away's 11
+    assert a.loc[6, "ld_load7_diff"] == 0 and abs(a.loc[6, "ld_load14_diff"] - (-0.75)) < 1e-9
     hp2 = hp.copy()
     hp2.loc[hp2["apif_fixture_id"] == 5, "apif_player_id"] = 555.0             # rewrite the Tuesday match entirely
     b = team_news(m, hp2, he, ratings, ratings).set_index("apif_fixture_id")
