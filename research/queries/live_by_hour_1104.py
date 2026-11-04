@@ -96,15 +96,14 @@ while d <= LAST:
     b = b.merge(st[K + ["result", "bsp", "bsp_paid"]].rename(columns={"result": "res", "bsp": "bsp_led"}), on=K,
                 how="left")
     b = b.merge(sp, on=K, how="left")
-    # the BSP: what Betfair settled our SP lay at (a loser), else the recorded books' SP, else the ledger's read (which
-    # is wrong on some horses: 4 Nov, live_by_hour_check_1104)
-    b["B"] = b.bsp_paid.where(b.bsp_paid > 1, b.bsp_book.where(b.bsp_book > 1, b.bsp_led))
+    # the BSP: the recorded books' SP, else the ledger's read. A non-runner's reduction cuts the SP lay's liability with
+    # the back's price, so the lay still covers the cut winnings (live_by_hour_check_1104 and the check below)
+    b["B"] = b.bsp_book.where(b.bsp_book > 1, b.bsp_led)
     b["led_off"] = (b.bsp_led > 1) & (b.B > 1) & ((b.bsp_led / b.B - 1).abs() > 0.02)
     b["void"] = b.res.astype(str).str.upper().eq("REMOVED")
     win = b.res.astype(str).str.upper().eq("WINNER")
     ok = ~b.void & (b.B > 1)
-    b["pnl"] = np.where(b.void, 0.0, np.where(win, b.matched * (b.P_cut - b.P),
-                                              b.matched * ((b.P - 1) / (b.B - 1) - 1)))
+    b["pnl"] = np.where(b.void, 0.0, np.where(win, 0.0, b.matched * ((b.P_cut - 1) / (b.B - 1) - 1)))
     b.loc[~ok & ~b.void, "pnl"] = np.nan
     net = b.groupby("market_id").pnl.transform("sum")
     pos = b.groupby("market_id").pnl.transform(lambda s: s.clip(lower=0).sum())
@@ -141,9 +140,7 @@ f = pd.concat(rows, ignore_index=True)
 ck = pd.DataFrame(checks)
 print(f"== the live record by the time of the bet, {f.day.nunique()} days {f.day.min()} to {f.day.max()}, "
       f"{len(f)} fills, GBP{f.matched.sum():,.0f} staked")
-print(f"   the ledger's own BSP read is off by more than 2% on {f.led_off.mean():.1%} of the fills; the CLV at the fill "
-      f"on it {f.clv_led_w.sum() / f.staked_live.sum():+.2%} against {f.clv_fill_w.sum() / f.staked_live.sum():+.2%} on the "
-      f"BSP Betfair settled at")
+print(f"   the books' BSP and the ledger's differ by more than 2% on {f.led_off.mean():.1%} of the fills")
 print(f"   the check: fills' results GBP{ck.ours.sum():+,.2f} against the ledger's settled GBP{ck.ledger.sum():+,.2f}; "
       f"days off by more than GBP5: {int(((ck.ours - ck.ledger).abs() > 5).sum())}")
 
