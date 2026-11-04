@@ -1,0 +1,48 @@
+name: UK runner - keep upgrades away from the trader (the owner's yes, 4 Nov)
+# The owner, 4 Nov 2026: "fix the update issue". runner-diagnose.yml (run 41733018025) found both lost mornings
+# (23 Oct 06:53 UTC, 3 Nov 06:09 UTC) were Ubuntu's unattended upgrade: apt-daily-upgrade.timer fires at 06:00 UTC
+# plus up to an hour, inside the trading day, and needrestart then restarted the GitHub runner's service, which
+# cancelled the trading session. Two changes, both reversible (delete the two files and daemon-reload):
+#   1. needrestart never restarts the runner's service (actions.runner.*): /etc/needrestart/conf.d/50-actions-runner.conf
+#   2. the upgrade timer at 21:45 UTC (+ up to 10 min), after the trading, before the 22:25 settle:
+#      /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf
+# It needs passwordless sudo for the runner's user; without it it changes nothing and says what to run as root.
+# Dispatched by hand; it queues behind any job on the runner (the trader), so it never interrupts one.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fix:
+    if: vars.BETFAIR_RUNNER != ''
+    runs-on: ${{ vars.BETFAIR_RUNNER }}
+    timeout-minutes: 10
+    steps:
+      - name: Keep the upgrades away from the trading day
+        run: |
+          set -u
+          NR=/etc/needrestart/conf.d/50-actions-runner.conf
+          TD=/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf
+          if ! sudo -n true 2>/dev/null; then
+            echo "::error::the runner's user has no passwordless sudo, so nothing was changed. As root on the server:"
+            echo "  printf '%s\n' '\$nrconf{override_rc}{qr(^actions\\.runner\\.)} = 0;' > $NR"
+            echo "  mkdir -p $(dirname $TD) && printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* 21:45\nRandomizedDelaySec=10m\n' > $TD"
+            echo "  systemctl daemon-reload && systemctl restart apt-daily-upgrade.timer"
+            exit 1
+          fi
+          set -e
+          # 1. needrestart leaves the runner's service alone (the documented override_rc pattern; 0 = never restart)
+          sudo install -d -m 755 /etc/needrestart/conf.d
+          printf '%s\n' '# The GitHub Actions runner runs the live trader: an upgrade never restarts it (the owner, 4 Nov 2026).' \
+            '$nrconf{override_rc}{qr(^actions\.runner\.)} = 0;' | sudo tee "$NR" > /dev/null
+          sudo perl -e 'our %nrconf; do "/etc/needrestart/needrestart.conf"; do $ARGV[0]; die "override not read\n" unless grep { /actions/ } keys %{$nrconf{override_rc}}; print "needrestart: the runner override is in\n"' "$NR"
+          # 2. the upgrade timer after the trading day
+          sudo install -d -m 755 "$(dirname "$TD")"
+          printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* 21:45\nRandomizedDelaySec=10m\n' | sudo tee "$TD" > /dev/null
+          sudo systemctl daemon-reload
+          sudo systemctl restart apt-daily-upgrade.timer
+          echo "== the files"; sudo cat "$NR" "$TD"
+          echo "== the timers"; systemctl list-timers --all --no-pager | grep -E 'NEXT|apt-daily'
+          systemctl cat apt-daily-upgrade.timer --no-pager | grep -E 'OnCalendar|Randomized'
+          echo "== unattended-upgrades reboots (a reboot would stop the trader too)"
+          grep -hE '^\s*Unattended-Upgrade::Automatic-Reboot' /etc/apt/apt.conf.d/* 2>/dev/null || echo "Automatic-Reboot not set (the default: no reboot)"
