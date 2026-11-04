@@ -47,9 +47,20 @@ TAKEABLE = ("tight <1.02", "medium 1.02-1.05")
 # data
 # --------------------------------------------------------------------------------------------------------------------
 
-def load(cache: str) -> tuple[pd.DataFrame, list[str]]:
+def load(cache: str, spec: str | None = None) -> tuple[pd.DataFrame, list[str]]:
+    """The prepared lab matrix and the arm's columns: the registered team features, or ``spec`` (families, blocks and
+    columns joined by + and -, as in football.lab)."""
     from research.open_close import football_stack_trial as st
-    d, cols = st._matrix(cache)
+    if spec is None:
+        d, cols = st._matrix(cache)
+    else:
+        from football import lab
+        from football.blocks import available
+        m = lab.latest(cache)
+        names = [p for p in spec.replace("-", "+").split("+") if p in available()]
+        m, bfeat = lab.add_blocks(m, names)
+        d = lab.prepared(m)
+        cols = lab.resolve(spec, lab.families(m), bfeat, d.columns)
     d = d.copy()
     d["test_season"] = np.where(d["season"] >= 2025, 2025, d["season"])
     d["week"] = pd.to_datetime(d["date"]).dt.to_period("W-THU").astype(str)      # a Friday-to-Thursday week
@@ -247,14 +258,100 @@ def run(cache: str, n_boot: int = 1000) -> dict:
     return out
 
 
+# --------------------------------------------------------------------------------------------------------------------
+# the rethink (the owner, 4 Nov 2026: items 2-6 of reports/football_model_rethink.md)
+# --------------------------------------------------------------------------------------------------------------------
+
+TOP5 = ("E0", "D1", "I1", "SP1", "F1")
+COST_C = 0.03                       # the move a trade must clear, in log chance (about the round-trip cost)
+
+
+def walk_forward_clf(d: pd.DataFrame, cols: list[str], target: str, same: str, season: int,
+                     c: float = COST_C) -> np.ndarray:
+    """Item 5, trained for the decision: two LightGBM classifiers on the seasons before, one for a move up by more than
+    ``c`` (a back first clears its cost), one for a move down by more than ``c`` (a lay first clears it). The signal is
+    P(up) - P(down): its size ranks the trades, its sign picks the direction."""
+    import lightgbm as lgb
+    from research.open_close.football_stack_trial import TRAIN_FROM
+    tr = d[d[same] & (d["season"] >= TRAIN_FROM) & (d["season"] < season) & d[target].notna()]
+    te = d[d["test_season"] == season]
+    use = cols + ["league"]
+    out = []
+    for y in ((tr[target] > c).astype(int), (tr[target] < -c).astype(int)):
+        g = lgb.LGBMClassifier(n_estimators=300, learning_rate=0.03, num_leaves=15, min_child_samples=100,
+                               subsample=0.8, subsample_freq=1, colsample_bytree=0.8, verbose=-1, random_state=0)
+        g.fit(tr[use], y)
+        out.append(g.predict_proba(te[use])[:, 1])
+    return out[0] - out[1]
+
+
+def walk_forward_tier(d: pd.DataFrame, cols: list[str], target: str, same: str, season: int) -> np.ndarray:
+    """The stack fitted apart for the top five leagues and for the rest, each forecasting its own matches."""
+    from football import lab
+    from research.open_close.football_stack_trial import TRAIN_FROM
+    te = d[d["test_season"] == season]
+    pred = np.full(len(te), np.nan)
+    for top in (True, False):
+        trm = d[same] & (d["season"] >= TRAIN_FROM) & (d["season"] < season) & d[target].notna() & \
+            (d["fd_code"].isin(TOP5) == top)
+        rows = (te["fd_code"].isin(TOP5) == top).to_numpy()
+        if rows.any():
+            tr = d[trm]
+            pred[rows] = lab.MODELS["stack"](tr, te[rows], cols, tr[target].to_numpy(float))
+    return pred
+
+
+def outside_top5(c: pd.DataFrame) -> pd.DataFrame:
+    """Item 6: the candidates outside the top five leagues."""
+    return c[~c["league"].isin(TOP5)]
+
+
+def read_variant(c: pd.DataFrame, n_boot: int, thresholds: bool = True) -> dict:
+    out = {"weekly_top_k": {str(k): scored(by_rank(c, k), n_boot) for k in (5, 10, 20)},
+           "daily_top_5": scored(by_day(c, 5), n_boot)}
+    if thresholds:
+        out["threshold"] = {str(t): scored(by_threshold(c, t), n_boot) for t in (0.04, 0.05)}
+    return out
+
+
+ARMS = {"base": None, "home_adv": "team_all+home_adv", "team_news": "team_all+team_news",
+        "both": "team_all+home_adv+team_news"}
+
+
+def run_rethink(cache: str, n_boot: int = 1000) -> dict:
+    out = {"note": "Betfair match odds; tuned on 2024/25, read on 2025/26 to date (development evidence)",
+           "arms": {k: v or "team_all" for k, v in ARMS.items()}}
+    for arm, spec in ARMS.items():
+        d, cols = load(cache, spec)
+        res = {"n_features": len(cols)}
+        for s in TEST_SEASONS:
+            te = d[d["test_season"] == s]
+            preds = {"stack": (walk_forward(d, cols, "y_h", "same_book", s),
+                               walk_forward(d, cols, "y_a", "same_book", s))}
+            if arm in ("base", "both"):
+                preds["cost_classifier"] = (walk_forward_clf(d, cols, "y_h", "same_book", s),
+                                            walk_forward_clf(d, cols, "y_a", "same_book", s))
+                preds["per_tier"] = (walk_forward_tier(d, cols, "y_h", "same_book", s),
+                                     walk_forward_tier(d, cols, "y_a", "same_book", s))
+            for model, (ph, pa) in preds.items():
+                c = candidates(te, {"H": ph, "A": pa}, "MO")
+                thr = model != "cost_classifier"                     # its scale is a probability gap
+                res.setdefault(model, {})[str(s)] = {"all_leagues": read_variant(c, n_boot, thr),
+                                                     "outside_top5": read_variant(outside_top5(c), n_boot, thr)}
+            log.info("%s %d done", arm, s)
+        out[arm] = res
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--cache", required=True)
     ap.add_argument("--out-json", required=True)
     ap.add_argument("--boot", type=int, default=1000)
+    ap.add_argument("--rethink", action="store_true", help="items 2-6: new features, the decision objective, tiers")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    res = run(a.cache, a.boot)
+    res = run_rethink(a.cache, a.boot) if a.rethink else run(a.cache, a.boot)
     Path(a.out_json).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out_json).write_text(json.dumps(res, indent=1, default=float) + "\n")
     log.info("written %s", a.out_json)

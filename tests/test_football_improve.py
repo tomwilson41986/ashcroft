@@ -50,3 +50,36 @@ def test_daily_top_k_and_the_model_gap_trade_toward_the_model():
     assert sorted(g.index) == [-0.2, 0.3]
     assert g.loc[0.3, "side"] == 1 and g.loc[0.3, "profit_sym"] == 0.1 and bool(g.loc[0.3, "right_way"])
     assert g.loc[-0.2, "side"] == -1 and g.loc[-0.2, "profit_sym"] == -0.1 and bool(g.loc[-0.2, "right_way"])
+
+
+def _toy_matrix(n_seasons=4, per=400, seed=0):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for s in range(2021, 2021 + n_seasons):
+        for i in range(per):
+            x = rng.normal()
+            rows.append({"season": s, "test_season": s, "x": x, "y_h": 0.05 * x + rng.normal(0, 0.02),
+                         "same_book": True, "fd_code": "E0" if i % 3 == 0 else "E1",
+                         "league": "E0" if i % 3 == 0 else "E1"})
+    d = pd.DataFrame(rows)
+    d["league"] = pd.Categorical(d["league"])
+    return d
+
+
+def test_the_cost_classifier_signs_follow_the_move(monkeypatch):
+    from research.open_close import football_stack_trial as st
+    monkeypatch.setattr(st, "TRAIN_FROM", 2021)
+    d = _toy_matrix()
+    p = fi.walk_forward_clf(d, ["x"], "y_h", "same_book", 2024)
+    te = d[d["test_season"] == 2024]
+    assert len(p) == len(te) and np.corrcoef(p, te["x"])[0, 1] > 0.8 and (np.abs(p) <= 1).all()
+
+
+def test_per_tier_fits_cover_every_test_match_and_outside_top5_drops_them(monkeypatch):
+    from research.open_close import football_stack_trial as st
+    monkeypatch.setattr(st, "TRAIN_FROM", 2021)
+    d = _toy_matrix()
+    p = fi.walk_forward_tier(d, ["x"], "y_h", "same_book", 2024)
+    assert np.isfinite(p).all() and np.corrcoef(p, d[d["test_season"] == 2024]["x"])[0, 1] > 0.8
+    c = pd.DataFrame({"league": ["E0", "E1", "D1", "N1"]})
+    assert fi.outside_top5(c)["league"].tolist() == ["E1", "N1"]
