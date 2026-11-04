@@ -67,10 +67,18 @@ def stream_tar(path: str, chunk: int = 4000) -> tuple[dict[int, pd.DataFrame], d
     by_year: dict[int, list[pd.DataFrame]] = {}
 
     def members():
-        with tarfile.open(path, mode="r|*") as t:
-            for m in t:
-                if m.isfile() and m.name.endswith(".bz2") and "PaxHeaders" not in m.name:
-                    yield m.name, t.extractfile(m).read()
+        # a bundle cut short (the owner's 4 Nov copy ends inside a file) is read up to the cut, and the cut reported
+        last = None
+        try:
+            with tarfile.open(path, mode="r|*") as t:
+                for m in t:
+                    if m.isfile() and m.name.endswith(".bz2") and "PaxHeaders" not in m.name:
+                        data = t.extractfile(m).read()
+                        last = m.name
+                        yield m.name, data
+        except (tarfile.ReadError, EOFError) as exc:
+            rep["truncated"] = {"error": str(exc), "files_read": rep["files"], "last_whole_file": last}
+            log.warning("the bundle ends early after %d files (last whole file %s): %s", rep["files"], last, exc)
 
     batch = []
     with ProcessPoolExecutor() as pool:
@@ -223,9 +231,16 @@ def main(argv=None) -> int:
     rep = {"run_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     if a.tar:
         if a.keep_bundle:
+            import os
             key = f"{PREFIX}/betfair_historic/bundles/{a.name}.tar"
-            store.s3.upload_file(a.tar, store.bucket, key)
+            try:
+                held = store.s3.head_object(Bucket=store.bucket, Key=key)["ContentLength"]
+            except Exception:
+                held = None
+            if held != os.path.getsize(a.tar):                  # the same bundle already kept: not sent again
+                store.s3.upload_file(a.tar, store.bucket, key)
             rep["bundle"] = f"s3://{store.bucket}/{key}"
+            rep["bundle_bytes"] = os.path.getsize(a.tar)
         tables, rep["stream"] = stream_tar(a.tar)
         for y, df in tables.items():
             store.put_parquet(TABLE.format(year=y), df)
