@@ -237,6 +237,9 @@ def surprise(m: pd.DataFrame, st: pd.DataFrame, ratings: dict, name: str, n_prev
     return out.reset_index().rename(columns={"index": "apif_fixture_id"})
 
 
+#: the columns the lab's players stage keeps (football/lab.py reads this, so a change here rebuilds that stage)
+STAGE_PREFIXES = ("mpm_", "gpm_", "tn_")
+
 TEAM_NEWS = ["tn_mpm_exp_diff", "tn_gpm_exp_diff", "tn_absent_mpm_diff", "tn_absent_gpm_diff", "tn_red_mpm_diff",
              "tn_absent_n_diff", "tn_rotation_diff", "tn_mpm_exp_home", "tn_mpm_exp_away"]
 REGULAR_SHARE = 0.6

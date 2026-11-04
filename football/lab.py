@@ -126,7 +126,7 @@ class Cache:
             hs = self._store(self.history_root)
             hm, hp, he, st = (hs.get_parquet(f"api_football/history_{x}.parquet")
                               for x in ("matches", "players", "events", "stats"))
-            from football.player_ratings import build_all, link_matches
+            from football.player_ratings import STAGE_PREFIXES, build_all, link_matches
             from football.reference import load_aliases
             from football.xg_features import build as xg_build
             aliases = load_aliases(extra=gs.get_parquet("football/gold/team_aliases.parquet"))
@@ -138,7 +138,7 @@ class Cache:
 
             def players():
                 f, _m, _g = build_all(gold, team, hm, hp, he, aliases)
-                return f[["match_id"] + [c for c in f.columns if c.startswith(("mpm_", "gpm_"))]]
+                return f[["match_id"] + [c for c in f.columns if c.startswith(STAGE_PREFIXES)]]
             parts += [self.stage("xg", ["team"], ["gold", "history"], xg),
                       self.stage("players", ["team"], ["gold", "history"], players)]
         key = hashlib.sha256("|".join(self.keys[s] for s in self.keys).encode()).hexdigest()[:16]
