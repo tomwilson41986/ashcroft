@@ -42,6 +42,7 @@ trk = df.groupby(["horse_name", "track"], sort=False)["_tw"].cumsum() - df["_tw"
 df["course_winner"] = trk > 0
 d = L.priced(df).copy()
 print("priced rows", len(d))
+L.show("CONTROL: every runner by code (win and place A/E should sit near 1.00)", L.tt(d, ["code"], 100))
 
 # ============================================================================================================
 # 1. DAYS SINCE THE LAST RUN, by code

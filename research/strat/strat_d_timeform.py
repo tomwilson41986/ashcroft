@@ -29,6 +29,7 @@ print("rows in", len(tf), "files", len(files))
 num = ["raceNumber", "numberOfRunners", "raceClass", "horseCode", "horseAge", "positionOfficial", "Win",
        "betfairWinSP", "ispDecimal", "performanceRating", "preRaceAdjustedRating", "preRaceMasterRating",
        "timefigure", "distanceBeaten", "distance", "officialRating", "prizeFund"]
+num += ["betfairPlaceSP"]
 for c in num:
     tf[c] = pd.to_numeric(tf[c], errors="coerce")
 tf["date"] = pd.to_datetime(tf["meetingDate"].str[:10], errors="coerce")
@@ -41,10 +42,18 @@ tf = tf[~dup & tf["horseCode"].notna() & tf["date"].notna()].copy()
 tf["bsp"] = tf["betfairWinSP"]
 tf["won"] = (tf["positionOfficial"] == 1).astype(float)
 tf["won"] = tf["Win"].fillna(tf["won"]).clip(0, 1)
+# the place market: Betfair's place SP. The Timeform row does not say how many places that market paid, but the
+# prices do: in a place market the implied probabilities sum to the number of places (2.01, 3.01, 4.01 by field
+# size, measured on 2014), so places paid = the race's sum of 1/place SP, rounded. No place price, no place bet.
+ps = tf["betfairPlaceSP"].where(tf["betfairPlaceSP"] > 1)
+tf["places_paid"] = (1 / ps).groupby(tf["rk"]).transform("sum").round().fillna(0)
+tf["pbsp"] = tf["betfairPlaceSP"]
+tf["fin"] = tf["positionOfficial"]
 # the Railway table holds Flat racing only (raceType is "Flat" on every row): turf or all-weather
 tf = tf[tf["raceType"].fillna("Flat") == "Flat"].copy()
 tf["code"] = np.where(tf["raceSurfaceName"].fillna("").str.contains("Weather", case=False), "aw", "flat")
 tf["hcap"] = tf["raceTitle"].fillna("").str.contains("handicap", case=False)
+tf["placed"] = ((tf["fin"] <= tf["places_paid"]) & (tf["places_paid"] > 0)).astype(float)
 print("by code", tf["code"].value_counts().to_dict())
 print("BSP held", round(float((tf["bsp"] > 1).mean()), 3), "| TFR held", round(float(tf["performanceRating"].notna().mean()), 3),
       "| pre-race adjusted held", round(float(tf["preRaceAdjustedRating"].notna().mean()), 3),
@@ -70,8 +79,10 @@ tf["adj_rank"] = tf.groupby("rk")["preRaceAdjustedRating"].rank(ascending=False,
 tf["bsp_rank"] = tf.groupby("rk")["bsp"].rank(method="min")
 second = tf.groupby("rk")["preRaceAdjustedRating"].transform(lambda s: s.nlargest(2).iloc[-1] if s.notna().sum() > 1 else np.nan)
 tf["adj_gap"] = tf["preRaceAdjustedRating"] - second
-d = tf[(tf["bsp"] > 1) & tf["positionOfficial"].notna()].copy()
+tf["race_has_winner"] = tf.groupby("rk")["won"].transform("sum") >= 1
+d = tf[(tf["bsp"] > 1) & tf["race_has_winner"]].copy()   # a non-finisher stays in, as a loser
 print("priced runs", len(d))
+L.show("CONTROL: every runner (win and place A/E should sit near 1.00)", L.tt(d, ["code"], 100))
 
 # ---- 1. Timeform's top-rated against the market -----------------------------------------------------------------
 top = d[d["adj_rank"] == 1].copy()
@@ -103,6 +114,7 @@ for code in ("flat", "aw"):
                c & d["pb_lto"] & (d["adj_rank"] == 1) & (d["bsp_rank"] > 1)),
     ]
 print("\n=== TIMEFORM IMPROVERS (train 2014-21 | t_ test 2022-26) ===")
+print(L.gate.__doc__)
 L.rules_table(rows)
 
 # ---- 3. the rating trajectory against the market, finer --------------------------------------------------------------
