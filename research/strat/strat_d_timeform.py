@@ -113,6 +113,17 @@ for code in ("flat", "aw"):
         L.rule(f"{code}: career-best LTO AND Timeform top-rated today, not BSP fav", d,
                c & d["pb_lto"] & (d["adj_rank"] == 1) & (d["bsp_rank"] > 1)),
     ]
+qr = d["dslr"].between(1, 4)
+prev_won = g["won"].shift(1).reindex(d.index)
+rows += [
+    L.rule("flat+AW: back within 1-4 days (Timeform horse id)", d, qr),
+    L.rule("flat+AW: back within 1-4 days, did not win last time", d, qr & (prev_won == 0)),
+    L.rule("flat+AW: back within 1-4 days, TFR last time at or above its master rating", d, qr & (d["above_master"] >= 0)),
+    L.rule("flat+AW: back within 1-4 days, TFR last time below its master rating", d, qr & (d["above_master"] < 0)),
+    L.rule("flat+AW: back within 1-4 days, career-best TFR last time", d, qr & d["pb_lto"]),
+    L.rule("flat+AW: back within 1-4 days, Timeform top-rated today", d, qr & (d["adj_rank"] == 1)),
+    L.rule("flat+AW: back within 1-4 days, Timeform top-3 today", d, qr & (d["adj_rank"] <= 3)),
+]
 print("\n=== TIMEFORM IMPROVERS (train 2014-21 | t_ test 2022-26) ===")
 print(L.gate.__doc__)
 L.rules_table(rows)
