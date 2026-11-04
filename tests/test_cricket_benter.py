@@ -29,7 +29,9 @@ def _pre(mid, day, bat, bowl, bat_won, p=0.5, year=2024):
 def test_names():
     assert same_side("Royal Challengers Bengaluru", "Royal Challengers Bengaluru")
     assert same_side("Chennai Super Kings", "chennai super kings")
-    assert same_side("Sunrisers Hyderabad", "Sunrisers Hyderabad Women") is True   # contained: gender is filtered
+    assert not same_side("India W", "India")                  # Betfair's women's sides: never the men's
+    assert not same_side("India Legends", "India")
+    assert not same_side("Pakistan A", "Pakistan")
     assert not same_side("Mumbai Indians", "Delhi Capitals")
 
 

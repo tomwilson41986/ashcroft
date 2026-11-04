@@ -1,6 +1,14 @@
 [
- {"name": "greyhound_basic_2026_01_09",
+ {
+  "name": "greyhound_basic_2026_01_09",
   "sport": "Greyhound Racing",
   "url": "https://drive.usercontent.google.com/download?id=1ujpWftraGRQ0dEmhTbtIo37qGFjlD3rc&export=download&confirm=t",
-  "note": "the owner's download from historicdata.betfair.com (5 Oct 2026): BASIC, Jan-Sep 2026, GB/AU/NZ, every market type; 261,008 files"}
+  "note": "the owner's download from historicdata.betfair.com (5 Oct 2026): BASIC, Jan-Sep 2026, GB/AU/NZ, every market type; 261,008 files"
+ },
+ {
+  "name": "cricket_basic_2026_07_10",
+  "sport": "Cricket",
+  "url": "https://drive.usercontent.google.com/download?id=1hsUT7lzDaMxUe27EQ02v_LBvymDIq68N&export=download&confirm=t",
+  "note": "the owner's download from historicdata.betfair.com (4 Nov 2026): BASIC, cricket, file folders Jul-Oct 2026, every market type; 11,595 files, 1,296 MATCH_ODDS markets"
+ }
 ]

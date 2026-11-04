@@ -8,7 +8,7 @@ which says how it was produced. Nothing here has placed a bet or read the live B
 
 | Phase | State |
 |---|---|
-| 0 Research and backtest | Model condition (the owner's decision, 4 Nov 2026: beat the same-rows baseline, 95% interval below zero): **met for chases, not met for the first innings**. Market conditions, pre-match: built (`cricket/model/benter.py`), waiting on Betfair's free BASIC cricket file. In play: no data found until a recorded season aligns prices to balls. |
+| 0 Research and backtest | Model condition (the owner's decision, 4 Nov 2026: beat the same-rows baseline, 95% interval below zero): **met for chases, not met for the first innings**. Market condition, pre-match, on the owner's BASIC bundle (Jul-Oct 2026, 218 matches): **not met**, the model adds nothing to Betfair's close. In play: no data found until a recorded season aligns prices to balls. |
 | 1 Paper trading | Code built and tested end to end on replays. Not running: needs a ball-feed vendor and a UK/Irish host (asks below). |
 | 2-3 Live | Not started. Needs the owner's go at the Phase 1 gate. |
 
@@ -23,7 +23,8 @@ which says how it was produced. Nothing here has placed a bet or read the live B
 | By season, calibrated vs baseline log loss | 2024: 0.4013 vs 0.4005; 2025: 0.4008 vs 0.4029; 2026: 0.3426 vs 0.4007 | `model_v1.md` |
 | First innings, P(batting first wins), IPL 2024-2026, 4,180 over starts | raw simulator log loss 0.6093, ECE 0.0339; calibrated (stack) 0.6314, 0.1004; baseline 0.6389, 0.0976 | `model_v1_first_innings.md` |
 | First-innings runs line, all over starts 2023-2026 | median error 17.5 runs (baseline 20.1); 52% of totals inside the 50% range, 82% inside the 80% range (baseline 44%, 72%) | `model_v1_first_innings.md` |
-| Pre-match P(batting first wins), walk-forward 2016-2026, 8,519 men's T20 matches | log loss 0.6569 vs 0.6920 for the batting-first rate of earlier years (difference -0.0351, 95% interval -0.0396 to -0.0309); better in 10 of 11 years (not 2017); ECE 0.0204. Against Betfair's close: no data found yet | `prematch.md`, `benter_prematch.md` |
+| Pre-match P(batting first wins), walk-forward 2016-2026, 8,519 men's T20 matches | log loss 0.6569 vs 0.6920 for the batting-first rate of earlier years (difference -0.0351, 95% interval -0.0396 to -0.0309); better in 10 of 11 years (not 2017); ECE 0.0204. | `prematch.md` |
+| Pre-match model against Betfair's close (the owner's BASIC bundle, Jul-Oct 2026; 218 matched matches) | market 0.5226, model 0.6106 log loss (model minus market +0.0880, 95% interval +0.0508 to +0.1240); Benter weight on the model -0.08 (s.e. 0.45, z -0.18): the model adds nothing to the close pre-match | `benter_prematch.md` |
 | Production bundle v1-2026-11-03 | 2,258,238 deliveries from 9,688 matches to 2026-11-03; stack calibration in both innings | `model_card_v1-2026-11-03.md` |
 | Live path, IPL 2026 final replayed (in the bundle's training data: a speed and path test, not an evaluation) | 233 quotes at 1,000 paths; median 0.62 s a quote, first innings up to 1.5 s | `python -m cricket.live.replay --match 1535465` |
 

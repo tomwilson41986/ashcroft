@@ -49,9 +49,15 @@ def norm(name: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", str(name).lower()).strip()
 
 
+# words that make a different side of the same name: women's, legends, A and age-group teams
+MARKERS = {"w", "women", "womens", "legends", "a", "u19", "u23", "xi", "emerging", "masters", "champions"}
+
+
 def same_side(a: str, b: str) -> bool:
     a, b = norm(a), norm(b)
     if not a or not b:
+        return False
+    if (set(a.split()) & MARKERS) != (set(b.split()) & MARKERS):
         return False
     if a == b or a in b or b in a:
         return True
@@ -111,8 +117,10 @@ def match_markets(markets: pd.DataFrame, pre: pd.DataFrame) -> tuple[pd.DataFram
                     "bat_won": int(c.bat_won), "p_model": c.p_bat_first, "o_bat": o_bat, "o_bowl": o_bowl,
                     "overround": q_bat + q_bowl, "p_market": q_bat / (q_bat + q_bowl)})
     j = pd.DataFrame(out).drop_duplicates("match_id", keep=False) if out else pd.DataFrame(out)
+    why = pd.Series([_why(u) if u.get("why") else ("no Cricsheet match in scope that day" if u["candidates"] == 0
+                     else "more than one candidate (a series)") for u in unmatched]).value_counts().to_dict()
     counts = {"markets": int(len(markets)), "matched": int(len(j)), "unmatched": len(unmatched),
-              "unmatched_sample": unmatched[:20]}
+              "unmatched_why": why, "unmatched_sample": unmatched[:20]}
     return j, counts
 
 
@@ -145,7 +153,11 @@ def benter(j: pd.DataFrame, threshold: float = 0.02) -> dict:
     y = j.bat_won.to_numpy(dtype=float)
     Xc = np.c_[logit(j.p_model), logit(j.p_market)]
     b, se = logistic(Xc, y)
-    res = {"rows": int(len(j)), "years": sorted(int(x) for x in j.year.unique()),
+    head = {"model": log_loss(y, j.p_model), "market": log_loss(y, j.p_market),
+            "model_minus_market": paired_bootstrap(y, j.p_model, j.p_market, j.match_id),
+            "corr_logit": float(np.corrcoef(Xc[:, 0], Xc[:, 1])[0, 1]),
+            "by_event": j.event_name.value_counts().head(12).to_dict()}
+    res = {"rows": int(len(j)), "years": sorted(int(x) for x in j.year.unique()), "head_to_head": head,
            "in_sample": {"intercept": b[0], "w_model": b[1], "se_model": se[1], "z_model": b[1] / se[1],
                          "w_market": b[2], "se_market": se[2], "z_market": b[2] / se[2]}}
     # walk-forward: each year from a fit on the years before
@@ -221,13 +233,27 @@ def report_md(res: dict | None, counts: dict | None, keys: list[str], store: Sto
     L += [f"Betfair: {', '.join(f'`{k}`' for k in keys)} (BASIC: last traded prices, no ladder). Model: "
           "walk-forward pre-match probabilities (`cricket/eval/prematch.parquet`).", "",
           f"Markets {counts['markets']:,}; matched to Cricsheet {counts['matched']:,}; "
-          f"unmatched {counts['unmatched']:,}.",
+          f"unmatched {counts['unmatched']:,} ("
+          + "; ".join(f"{k}: {v:,}" for k, v in counts.get("unmatched_why", {}).items()) + "). In scope are men's "
+          "20-over T20s decided without D/L that Cricsheet holds: most unmatched markets are women's, legends and "
+          "domestic leagues it does not cover.",
           "", "## Benter regression (all matched matches)", "",
           "| term | weight | s.e. | z |", "|---|---:|---:|---:|",
           f"| logit(model p) | {i['w_model']:.3f} | {i['se_model']:.3f} | {i['z_model']:.2f} |",
           f"| logit(market p) | {i['w_market']:.3f} | {i['se_market']:.3f} | {i['z_market']:.2f} |", "",
           f"Model weight significantly positive (z above 1.96): **{'yes' if i['z_model'] > 1.96 else 'no'}**", ""]
+    h = res["head_to_head"]
+    b = h["model_minus_market"]
+    L += ["## Model against the close, same matches", "",
+          "| probability | log loss |", "|---|---:|", f"| market close (overround removed) | {h['market']:.4f} |",
+          f"| model (walk-forward, pre-match) | {h['model']:.4f} |", "",
+          f"Model minus market: {b['diff']:+.4f} (95% interval {b['lo']:+.4f} to {b['hi']:+.4f}, {b['groups']:,} "
+          f"matches). Correlation of the two logits: {h['corr_logit']:.2f}.", "",
+          "Matched matches by competition: " + "; ".join(f"{k} {v}" for k, v in h["by_event"].items()) + ".", ""]
     wf = res.get("walk_forward")
+    if not wf:
+        L += [f"Walk-forward and strategy: not run. They fit on earlier years, and the matched markets cover "
+              f"{', '.join(map(str, res['years']))} only.", ""]
     if wf:
         b = wf["combined_minus_market"]
         L += ["## Walk-forward (each year from a fit on the years before)", "",
