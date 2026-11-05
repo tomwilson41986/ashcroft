@@ -34,7 +34,7 @@ import logging
 import math
 import os
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -59,7 +59,10 @@ CONFIG = {
     "max_price": 20.0,                        # no lay above this price (greyhound.tradeout.MAX_PRICE)
     "min_order": 1.0,                         # Betfair's smallest stake on a limit order
     "min_sp_back": 2.0,                       # the smallest back at the SP that closes a lay (greyhound.tradeout)
-    "daily_loss_limit": None,                 # the owner, 3 Nov: no loss limit, watched and stopped by hand
+    "daily_loss_limit": None,                 # GBP; live trading needs one (the owner, 5 Nov 2026, the audit: "set a
+                                              # daily loss limit"): GREYHOUND_EARLY_LAY_DAILY_LOSS, else no live orders
+    "close_margin_seconds": 120.0,            # no lay on a race off later than this before the trader stops
+    "overrun_minutes": 15.0,                  # past --until, the trader stays to close what it laid, then cancels
     "max_open_liability": 1000.0,
     "rest_only": True,                        # never lay at or above the mid: rest in the queue, never take             # a guard against a fault, not a limit on the trading
     "watch_minutes": 60.0,                    # markets off within this are watched for their first trades
@@ -83,6 +86,21 @@ PAPER_VARIANTS = {
 LEDGER_FIELDS = ["time_utc", "mode", "market_id", "selection_id", "track", "race_time", "trap", "dog", "action",
                  "price", "size", "matched", "avg_price", "f_bsp", "mid", "p_model", "bet_id", "status", "error",
                  "locked_pnl", "liability", "lay_matched", "lay_price", "seconds_to_off"]
+
+
+def daily_loss_limit(env=None) -> float | None:
+    """The live trader's daily loss limit in GBP (GREYHOUND_EARLY_LAY_DAILY_LOSS, a positive number), else None: and
+    without one main() sends no order (the owner, 5 Nov 2026: "set a daily loss limit")."""
+    env = os.environ if env is None else env
+    try:
+        v = float(str(env.get("GREYHOUND_EARLY_LAY_DAILY_LOSS", "")).strip())
+    except ValueError:
+        return None
+    return v if math.isfinite(v) and v > 0 else None
+
+
+def _terminate(signum, frame):
+    raise SystemExit(f"signal {signum}")
 
 
 def switch_on(env=None) -> bool:
@@ -291,6 +309,8 @@ class EarlyLay:
         self.open_liability: dict = {}  # market -> liability not yet closed at a known P&L
         self.laid: dict = {}           # market -> liability of the lays placed and not yet closed
         self.preds: pd.DataFrame | None = None
+        self.until: datetime | None = None            # set by run(): the time the trader stops laying
+        self._stop_cancelled: set = set()              # markets whose resting lays the STOP switch has cancelled
         self._loaded_at = None
         self._beat_at = None
         self.last_error = ""
@@ -368,6 +388,8 @@ class EarlyLay:
             return
         t = pd.Timestamp(self.now())
         stopped = self.kill()
+        if stopped:
+            self.cancel_open("stopped (S3 STOP)", once=True)
         to_off = (self.preds.off - t).dt.total_seconds()
         horizon = self.cfg["green_seconds"] + 2 * self.cfg["near_poll_seconds"] + 5 if near_only \
             else self.cfg["watch_minutes"] * 60
@@ -402,6 +424,9 @@ class EarlyLay:
     def watch(self, mid: str, b, g: pd.DataFrame, secs: float, stopped: bool) -> None:
         if b.status != "OPEN" or b.inplay:
             return
+        if mid not in self.priced and self.until is not None and pd.Timestamp(g.off.iloc[0]) > \
+                pd.Timestamp(self.until) - pd.Timedelta(seconds=self.cfg.get("close_margin_seconds", 120.0)):
+            return                                       # never lay a race the trader would not be here to close
         t = self.now()
         active = {sid: q for sid, q in b.runners.items() if q.status == "ACTIVE"}
         first = self.first.setdefault(mid, {})
@@ -583,21 +608,47 @@ class EarlyLay:
         if rows:
             self._write(rows)
 
-    def run(self, until: datetime, sleep=time.sleep) -> dict:
-        last_full = None
-        while self.now() < until:
+    def open_markets(self) -> list[str]:
+        """The markets laid and not yet closed."""
+        return sorted(self.priced - self.greened)
+
+    def cancel_open(self, why: str, once: bool = False) -> None:
+        """Cancel the resting lays of every market laid and not yet closed (the matched part is closed by green(), or
+        held to the result if the trader is gone). ``once``: each market once (the STOP switch's repeated calls)."""
+        for mid in self.open_markets():
+            if once and mid in self._stop_cancelled:
+                continue
             try:
-                if last_full is not None and (self.now() - last_full).total_seconds() < self.cfg["poll_seconds"]:
-                    self.step(near_only=True)
-                else:
-                    last_full = self.now()
-                    self.step()
-            except Exception as exc:                            # one failed poll: the next tries again
-                log.warning("poll failed (%s)", exc)
-                self.last_error = f"poll: {exc}"
-            self.heartbeat()
-            sleep(self.cfg["near_poll_seconds"])
-        self.heartbeat(force=True, finished=True)
+                status = self.orders.cancel(mid)
+            except Exception as exc:                            # one market's failure never stops the others
+                status = f"FAILURE: {exc}"[:200]
+            self._stop_cancelled.add(mid)
+            self._write([{"time_utc": pd.Timestamp(self.now()).strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": self.mode,
+                          "market_id": mid, "action": "cancel", "status": status, "error": why}])
+
+    def run(self, until: datetime, sleep=time.sleep) -> dict:
+        """Lay until ``until`` (no race off later than ``close_margin_seconds`` before it), then stay up to
+        ``overrun_minutes`` past it while a laid market is not closed; on the way out, by the clock, an error or a
+        signal, cancel every resting lay (the owner, 5 Nov 2026: the audit's end-of-run fix)."""
+        self.until = until
+        last_full = None
+        hard_stop = until + timedelta(minutes=self.cfg.get("overrun_minutes", 15.0))
+        try:
+            while self.now() < until or (self.open_markets() and self.now() < hard_stop):
+                try:
+                    if last_full is not None and (self.now() - last_full).total_seconds() < self.cfg["poll_seconds"]:
+                        self.step(near_only=True)
+                    else:
+                        last_full = self.now()
+                        self.step()
+                except Exception as exc:                        # one failed poll: the next tries again
+                    log.warning("poll failed (%s)", exc)
+                    self.last_error = f"poll: {exc}"
+                self.heartbeat()
+                sleep(self.cfg["near_poll_seconds"])
+        finally:
+            self.cancel_open("trader stopped")
+        self.heartbeat(force=True, finished=True, still_open=self.open_markets())
         return {"day": f"{self.day:%Y-%m-%d}", "mode": self.mode, "markets_priced": len(self.priced),
                 "markets_closed": len(self.greened), "locked_pnl": round(self.locked, 2),
                 "open_liability": round(sum(self.open_liability.values()), 2)}
@@ -630,6 +681,8 @@ def run_many(traders: list, until: datetime, sleep=time.sleep) -> list[dict]:
     """The paper books together, poll by poll, as ``EarlyLay.run`` runs one (the live trader runs alone)."""
     assert traders and not any(t.live for t in traders), "run_many is for the paper books only"
     now, cfg, last_full = traders[0].now, traders[0].cfg, None
+    for t in traders:
+        t.until = until
     while now() < until:
         full = last_full is None or (now() - last_full).total_seconds() >= cfg["poll_seconds"]
         if full:
@@ -939,6 +992,10 @@ def main(argv=None) -> int:
         live = a.live and switch_on()
         if a.live and not live:
             log.warning("GREYHOUND_EARLY_LAY is not 'live': the decisions are logged, nothing is sent")
+        limit = daily_loss_limit()
+        if live and limit is None:
+            live = False
+            log.warning("no daily loss limit (GREYHOUND_EARLY_LAY_DAILY_LOSS): no live orders, the decisions are logged")
         mode = "live" if live else "paper"
         status_key = f"{PREFIX}/{mode}/{day:%Y-%m-%d}/status.json"
         store.put(status_key, json.dumps({"time_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -952,7 +1009,10 @@ def main(argv=None) -> int:
         x.login()
         ledger = Path(os.getenv("GREYHOUND_LEDGER_DIR") or (Path.home() / ".ashcroft" / "greyhound")) / \
             f"early_lay_{mode}" / f"{day:%Y-%m-%d}" / "ledger.csv"
-        cfg = dict(CONFIG)
+        cfg = dict(CONFIG, daily_loss_limit=limit)
+        import signal
+        signal.signal(signal.SIGTERM, _terminate)            # a cancelled job: run()'s finally cancels the resting lays
+        log.info("early lay %s: daily loss limit %s", mode, f"GBP{limit:.2f}" if limit is not None else "none")
         log.info("early lay %s: margin %.2f, gate %s, GBP%.2f liability a lay (stake GBP%.2f-%.2f), fit to %s", mode,
                  cfg["margin"], cfg["gate"], cfg["liability"], cfg["min_stake"], cfg["max_stake"], fit.get("fit_to"))
         out["trade"] = EarlyLay(store, x, cfg, day, live, ledger, fit, kill=kill_switch(store)).run(

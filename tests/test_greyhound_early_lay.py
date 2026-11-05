@@ -466,11 +466,11 @@ def test_the_paper_books_share_one_read_of_the_books(tmp_path, fit):
                            tmp_path / n / "ledger.csv", fit, now=lambda: clock["t"], book=f"paper-{n}")
                for n in el.PAPER_VARIANTS]
 
-    def sleep(s):
-        clock["t"] += timedelta(seconds=s)
-        clock["mono"] += s
+    def sleep(s):                     # one full poll, then past the race (a stop time after it, so it is laid)
+        clock["t"] += timedelta(minutes=25)
+        clock["mono"] += 25 * 60
 
-    out = el.run_many(traders, T0 + timedelta(seconds=0.5), sleep=sleep)          # one full poll
+    out = el.run_many(traders, T0 + timedelta(minutes=30), sleep=sleep)
     assert [o["mode"] for o in out] == [f"paper-{n}" for n in el.PAPER_VARIANTS]
     assert Counting.reads == 1                                 # one read a poll, whatever the number of books
     assert not x.sent and not x.cancels
@@ -508,3 +508,96 @@ def test_a_paper_book_is_scored_on_the_books():
     assert "1 lays in 1 races; 1 would have matched; greened up 1" in md
     assert f"GBP{round(stake * (1 - 2.0 / 2.2), 2):+.2f}" in md and "live key" in md
     assert "no ledger yet" in el.paper_table(S(), date(2026, 11, 3), "m10", [])
+
+
+# --- the audit's safety fixes (the owner, 5 Nov 2026: "Yes do these") -------------------------------------------------
+
+def test_live_needs_a_daily_loss_limit():
+    assert el.daily_loss_limit({}) is None
+    assert el.daily_loss_limit({"GREYHOUND_EARLY_LAY_DAILY_LOSS": ""}) is None
+    assert el.daily_loss_limit({"GREYHOUND_EARLY_LAY_DAILY_LOSS": "abc"}) is None
+    assert el.daily_loss_limit({"GREYHOUND_EARLY_LAY_DAILY_LOSS": "-5"}) is None
+    assert el.daily_loss_limit({"GREYHOUND_EARLY_LAY_DAILY_LOSS": "50"}) == 50.0
+
+
+def test_no_lay_on_a_race_after_the_trader_stops(tmp_path, fit):
+    x = FakeX()
+    x.book = book()
+    t, _ = trader(tmp_path, x, fit)
+    t.until = T0 + timedelta(minutes=10)                       # the race goes off at T0 + 10 min: too late to close
+    t.step()
+    assert not x.sent and MID not in t.priced
+    t.until = T0 + timedelta(minutes=30)
+    t.step()
+    assert any(i["side"] == "LAY" for i in x.sent)
+
+
+def _cancels(x):
+    return [m for m in x.cancels if m == MID]
+
+
+def test_resting_lays_are_cancelled_when_the_run_ends_or_is_killed(tmp_path, fit):
+    x = FakeX(lay_fill=0.0)                                   # nothing matches: every lay rests
+    x.book = book()
+    t, clock = trader(tmp_path, x, fit)
+
+    def sleep(s):                                             # the job is cancelled after the first poll
+        raise SystemExit("signal 15")
+
+    with pytest.raises(SystemExit):
+        t.run(T0 + timedelta(minutes=30), sleep=sleep)
+    assert any(i["side"] == "LAY" for i in x.sent) and _cancels(x)
+    led = pd.read_csv(tmp_path / "ledger.csv")
+    assert (led.action == "cancel").any() and set(led[led.action == "cancel"].error) == {"trader stopped"}
+
+
+def test_the_stop_switch_cancels_every_resting_lay_once(tmp_path, fit):
+    x = FakeX(lay_fill=0.0)
+    x.book = book()
+    state = {"stop": False}
+    clock = {"t": T0}
+    t = el.EarlyLay(Store(preds()), x, dict(el.CONFIG), date(2026, 11, 3), True, tmp_path / "ledger.csv", fit,
+                    kill=lambda: state["stop"], now=lambda: clock["t"])
+    t.step()
+    assert any(i["side"] == "LAY" for i in x.sent) and not x.cancels
+    state["stop"] = True
+    clock["t"] += timedelta(seconds=15)
+    t.step()
+    n = len(_cancels(x))
+    assert n >= 1
+    led = pd.read_csv(tmp_path / "ledger.csv")
+    assert (led[led.action == "cancel"].error == "stopped (S3 STOP)").sum() == 1
+    clock["t"] += timedelta(seconds=15)
+    t.step()
+    assert (pd.read_csv(tmp_path / "ledger.csv").query("action == 'cancel'").shape[0]) == 1   # once a market
+
+
+def test_the_kill_switch_fails_safe():
+    from greyhound import live as gl
+
+    class Err(Exception):
+        def __init__(self, code):
+            super().__init__(code)
+            self.response = {"Error": {"Code": code}}
+
+    class S3:
+        def __init__(self, exc):
+            self.exc = exc
+
+        def head_object(self, **kw):
+            if self.exc:
+                raise self.exc
+            return {}
+
+    class St:
+        root, bucket = None, "b"
+
+        def __init__(self, exc):
+            self.s3 = S3(exc)
+
+    assert gl._exists(St(None), "greyhound/STOP") is True
+    assert gl._exists(St(Err("404")), "greyhound/STOP") is False
+    assert gl._exists(St(Err("NoSuchKey")), "greyhound/STOP") is False
+    assert gl._exists(St(Err("AccessDenied")), "greyhound/STOP") is True      # unreadable: stop
+    assert gl._exists(St(Exception("timeout")), "greyhound/STOP") is True
+    assert gl.KILL_CHECK_SECONDS <= 5

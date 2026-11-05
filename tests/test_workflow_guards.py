@@ -249,7 +249,10 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
     for t in ("football", "--event-type 1", "api_football"):
         assert t not in code, f"paper-models.yml still runs {t!r}"
     assert not any("football" in s.get("name", "").lower() for s in steps)
-    assert env["GREYHOUND_EARLY_LAY"] == "${{ inputs.early_lay || vars.GREYHOUND_EARLY_LAY || 'live' }}"
+    # paper unless switched on, and live only with a daily loss limit (the owner, 5 Nov 2026, the audit)
+    assert env["GREYHOUND_EARLY_LAY"] == "${{ inputs.early_lay || vars.GREYHOUND_EARLY_LAY || 'paper' }}"
+    assert wf[True]["workflow_dispatch"]["inputs"]["early_lay"]["default"] == "paper"
+    assert env["GREYHOUND_EARLY_LAY_DAILY_LOSS"] == "${{ vars.GREYHOUND_EARLY_LAY_DAILY_LOSS }}"
     # on paper unless switched on (4 Nov 2026: losing on the corrected simulator)
     assert env["GREYHOUND_QUOTE_MID"] == "${{ inputs.quote_mid || vars.GREYHOUND_QUOTE_MID || 'paper' }}"
     assert wf[True]["workflow_dispatch"]["inputs"]["quote_mid"]["default"] == "paper"

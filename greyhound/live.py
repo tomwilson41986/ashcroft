@@ -602,12 +602,17 @@ def book_recorder(day: date, env=None):
         return None
 
 
-def kill_switch(store):
+KILL_CHECK_SECONDS = 5.0      # how often the S3 STOP objects are read (the owner, 5 Nov 2026, the audit: was 60 s)
+
+
+def kill_switch(store, every: float = KILL_CHECK_SECONDS):
+    """True while S3 holds greyhound/STOP or trading/STOP. Fails safe: an S3 read that errors (anything but 'no such
+    object') counts as STOP, so a trader that cannot see the switch stops laying."""
     state = {"at": None, "on": False}
 
     def check() -> bool:
         now = datetime.now(timezone.utc)
-        if state["at"] and (now - state["at"]).total_seconds() < 60:
+        if state["at"] and (now - state["at"]).total_seconds() < every:
             return state["on"]
         state["at"] = now
         state["on"] = any(store.s3_exists(k) if hasattr(store, "s3_exists") else _exists(store, k)
@@ -623,8 +628,12 @@ def _exists(store, key: str) -> bool:
     try:
         store.s3.head_object(Bucket=store.bucket, Key=key)
         return True
-    except Exception:
-        return False
+    except Exception as exc:
+        code = str(getattr(exc, "response", {}).get("Error", {}).get("Code", ""))
+        if code in ("404", "NoSuchKey", "NotFound"):
+            return False
+        log.warning("kill switch %s unreadable (%s): treated as STOP", key, str(exc)[:200])
+        return True
 
 
 # --------------------------------------------------------------------------------------------------------------------
