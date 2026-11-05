@@ -59,3 +59,40 @@ def table(name):
 
 table("books_overnight")
 day = table("books")
+
+
+# ---- the 48-hour run's prices (predictions_evening/2026-11-05.csv, the trial of 07:28 UTC on 4 Nov) against the
+# morning's (predictions/2026-11-05.csv, 04:08 UTC on 5 Nov)
+def preds(k):
+    raw = get(k)
+    return None if raw is None else pd.read_csv(io.BytesIO(raw), low_memory=False)
+
+
+ev, mo = preds(f"predictions_evening/{DAY}.csv"), preds(f"predictions/{DAY}.csv")
+if ev is not None and mo is not None:
+    print("\ncolumns:", list(mo.columns)[:30])
+    def pick(df, *names):
+        for n in names:
+            if n in df.columns:
+                return n
+        raise KeyError(names)
+    keys = []
+    for df in (ev, mo):
+        h, t, c = pick(df, "horse_name", "horse", "runner"), pick(df, "race_time", "time", "off"), \
+            pick(df, "track", "course", "venue")
+        df["_k"] = (df[t].astype(str).str.strip() + "|" + df[c].astype(str).str.lower().str.strip() + "|"
+                    + df[h].astype(str).str.lower().str.replace(r"\s*\(.*\)", "", regex=True).str.strip())
+        df["_race"] = df[t].astype(str).str.strip() + "|" + df[c].astype(str).str.lower().str.strip()
+        keys.append(set(df["_k"]))
+    both = keys[0] & keys[1]
+    print(f"\n== the 48-hour run against the morning: runners {len(keys[0])} (48-hour) and {len(keys[1])} (morning), "
+          f"in both {len(both)}; in the 48-hour run only (the non-runners and changes since) {len(keys[0] - keys[1])}; "
+          f"in the morning's only {len(keys[1] - keys[0])}")
+    m = ev[["_k", "_race", "predicted_bfsp"]].merge(mo[["_k", "predicted_bfsp"]], on="_k", suffixes=("_ev", "_mo"))
+    m = m[(m.predicted_bfsp_ev > 1) & (m.predicted_bfsp_mo > 1)]
+    d = np.log(m.predicted_bfsp_ev / m.predicted_bfsp_mo)
+    rc = m.groupby("_race").apply(lambda g: g.predicted_bfsp_ev.rank().corr(g.predicted_bfsp_mo.rank())
+                                  if len(g) > 2 else np.nan)
+    print(f"   predicted BFSP: mean absolute log difference {d.abs().mean():.3f} (median {d.abs().median():.3f}); "
+          f"moved more than 3% on {(d.abs() > np.log(1.03)).mean():.0%}; the 48-hour price higher on "
+          f"{(d > 0).mean():.0%}; rank correlation within races, median {rc.median():.3f} over {rc.notna().sum()} races")
