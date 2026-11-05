@@ -78,7 +78,7 @@ if ev is not None and mo is not None:
         raise KeyError(names)
     keys = []
     for df in (ev, mo):
-        h, t, c = pick(df, "horse_name", "horse", "runner"), pick(df, "race_time", "time", "off"), \
+        h, t, c = pick(df, "runner_name", "horse_name", "horse", "runner"), pick(df, "race_time", "time", "off"), \
             pick(df, "track", "course", "venue")
         df["_k"] = (df[t].astype(str).str.strip() + "|" + df[c].astype(str).str.lower().str.strip() + "|"
                     + df[h].astype(str).str.lower().str.replace(r"\s*\(.*\)", "", regex=True).str.strip())
