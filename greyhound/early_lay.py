@@ -63,8 +63,14 @@ CONFIG = {
                                               # daily loss limit"): GREYHOUND_EARLY_LAY_DAILY_LOSS, else no live orders
     "close_margin_seconds": 120.0,            # no lay on a race off later than this before the trader stops
     "overrun_minutes": 15.0,                  # past --until, the trader stays to close what it laid, then cancels
-    "max_open_liability": 1000.0,
-    "rest_only": True,                        # never lay at or above the mid: rest in the queue, never take             # a guard against a fault, not a limit on the trading
+    "max_open_liability": 1000.0,             # a guard against a fault, not a limit on the trading
+    "rest_only": True,                        # never lay at or above the mid: rest in the queue, never take
+    # the pre-trade gate (the owner, 5 Nov 2026, the audit A5: "Work on the next items"); guards derived from the
+    # settings above, for the owner to set: a race's whole field at the lay liability, an order a runner a race at a
+    # race a minute, the paper's commission (the account's own rate is not held: GREYHOUND_COMMISSION overrides)
+    "max_market_liability": 160.0,            # 8 runners x GBP20
+    "max_orders_per_minute": 30,
+    "commission": 0.02,
     "watch_minutes": 60.0,                    # markets off within this are watched for their first trades
     "min_rest_seconds": 60.0,                 # no lay placed this close to the green-up
     "green_seconds": 5.0,                     # green up from this many seconds before the scheduled off (the
@@ -211,11 +217,17 @@ class Orders:
                 "error": "" if ok else self.x._reason(reply, rep, "FAILURE")}
 
     def cancel(self, mid: str) -> str:
-        """Every unmatched order of ours on the market (only this trader bets on greyhound markets)."""
+        """Every unmatched order of ours (``el-``) on the market, by bet id: never another trader's orders (the
+        quotes around the mid trade the same markets; the audit A5)."""
         if not self.live:
             return "PAPER"
         try:
-            reply = self.x._call("cancelOrders", {"marketId": mid}) or {}
+            ids = [str(o.get("betId")) for o in self.mine(mid)
+                   if o.get("betId") and str(o.get("status") or "") != "EXECUTION_COMPLETE"]
+            if not ids:
+                return "NONE"
+            reply = self.x._call("cancelOrders", {"marketId": mid,
+                                                  "instructions": [{"betId": b} for b in ids]}) or {}
             return str(reply.get("status") or "")
         except Exception as exc:
             return f"FAILURE: {exc}"[:200]
@@ -310,6 +322,8 @@ class EarlyLay:
         self.laid: dict = {}           # market -> liability of the lays placed and not yet closed
         self.preds: pd.DataFrame | None = None
         self.until: datetime | None = None            # set by run(): the time the trader stops laying
+        self._sent: list = []                          # the times of the lays sent (the gate's order rate)
+        self._funds: tuple | None = None               # (read at, available to bet) for the gate
         self._stop_cancelled: set = set()              # markets whose resting lays the STOP switch has cancelled
         self._loaded_at = None
         self._beat_at = None
@@ -491,7 +505,12 @@ class EarlyLay:
                                  "error": f"at or above the mid now ({cur:.2f})"})
                     continue
             size = stake_for(price, self.cfg)
+            why = self.gate(mid, price, size, stopped)
+            if why:
+                rows.append({**row, "action": "no_lay", "price": price, "error": f"risk gate: {why}"})
+                continue
             ref = f"{REF}{self.day:%m%d}-{mid[-8:]}-{sid}-l"
+            self._sent.append(pd.Timestamp(self.now()))
             fill = self.orders.lay(mid, sid, price, size, ref)
             self.laid[mid] = self.laid.get(mid, 0.0) + size * (price - 1)
             rows.append({**row, "action": "lay", "price": price, "size": size, "matched": fill.get("matched"),
@@ -608,6 +627,75 @@ class EarlyLay:
         if rows:
             self._write(rows)
 
+    def gate(self, mid: str, price: float, size: float, stopped: bool = False) -> str:
+        """The pre-trade risk gate (the audit A5): every lay passes it or is not sent. The reason it fails, else ''."""
+        c = self.cfg
+        if stopped or self.kill():
+            return "stopped (S3 STOP)"
+        if not (np.isfinite(price) and 1.01 <= price <= c["max_price"]):
+            return f"price {price} outside 1.01-{c['max_price']}"
+        if not (np.isfinite(size) and c["min_order"] <= size <= c["max_stake"] + 1e-9):
+            return f"stake {size} outside {c['min_order']}-{c['max_stake']}"
+        liab = size * (price - 1)
+        if self.laid.get(mid, 0.0) + liab > c.get("max_market_liability", float("inf")) + 1e-9:
+            return f"the race's liability would pass GBP{c['max_market_liability']:.0f}"
+        if sum(self.laid.values()) + liab > c["max_open_liability"] + 1e-9:
+            return f"open liability would pass GBP{c['max_open_liability']:.0f}"
+        limit = c.get("daily_loss_limit")
+        if limit is not None and self.day_loss() - liab <= -limit:
+            return f"the day's loss limit (GBP{limit:.0f}) with this lay's liability"
+        t = pd.Timestamp(self.now())
+        self._sent = [s for s in self._sent if (t - s).total_seconds() < 60]
+        if len(self._sent) >= c.get("max_orders_per_minute", 10 ** 9):
+            return f"order rate ({c['max_orders_per_minute']} a minute)"
+        if self.live:
+            if self._funds is None or (t - self._funds[0]).total_seconds() > 60:
+                try:
+                    f = self.x.funds()
+                    self._funds = (t, float(f["available"]) if f and f.get("available") is not None else None)
+                except Exception:
+                    self._funds = (t, None)
+            avail = self._funds[1]
+            if avail is None:
+                return "the account's funds could not be read"
+            if avail < liab:
+                return f"funds GBP{avail:.2f} under the liability GBP{liab:.2f}"
+        return ""
+
+    def recover(self) -> dict:
+        """Rebuild the day's state from Betfair's own orders (the audit A4): every market with an ``el-`` order of
+        today's is laid (``priced``); its liability counted; closed (``greened``) where every lay is covered or
+        closed at the SP. Run on start, live only, beside the local ledger's ``_resume``."""
+        if not self.live or self.preds is None:
+            return {}
+        mids = sorted(self.preds.market_id.dropna().astype(str).unique())
+        tag = f"{REF}{self.day:%m%d}-"
+        got = []
+        for i in range(0, len(mids), 50):
+            got += [o for o in self.x.orders(mids[i:i + 50]) if str(o.get("customerOrderRef") or "").startswith(tag)]
+        by = {}
+        for o in got:
+            by.setdefault(str(o.get("marketId")), []).append(o)
+        rows = []
+        for mid, orders in by.items():
+            self.priced.add(mid)
+            liab = sum(float(o.get("sizeMatched") or 0) * (float(o.get("averagePriceMatched") or 0) - 1)
+                       + float(o.get("sizeRemaining") or 0) * (float(o.get("priceSize", {}).get("price") or 1) - 1)
+                       for o in orders if o.get("side") == "LAY")
+            pos = positions(orders)
+            closed = all(p["closed"] or p["lay_matched"] <= 0 or p["to_cover"] <= 1e-6 for p in pos.values())
+            unmatched = any(float(o.get("sizeRemaining") or 0) > 0 for o in orders)
+            if closed and not unmatched:
+                self.greened.add(mid)
+            else:
+                self.laid[mid] = max(self.laid.get(mid, 0.0), liab)
+            rows.append({"time_utc": pd.Timestamp(self.now()).strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": self.mode,
+                         "market_id": mid, "action": "recovered", "liability": round(liab, 2),
+                         "status": "closed" if mid in self.greened else "open"})
+        if rows:
+            self._write(rows)
+        return {"markets": len(by), "open": len([m for m in by if m not in self.greened])}
+
     def open_markets(self) -> list[str]:
         """The markets laid and not yet closed."""
         return sorted(self.priced - self.greened)
@@ -631,6 +719,13 @@ class EarlyLay:
         ``overrun_minutes`` past it while a laid market is not closed; on the way out, by the clock, an error or a
         signal, cancel every resting lay (the owner, 5 Nov 2026: the audit's end-of-run fix)."""
         self.until = until
+        if self.live:
+            try:
+                self.load_predictions()
+                log.info("recovered from Betfair's orders: %s", self.recover())
+            except Exception as exc:                            # the local ledger's resume stands without it
+                log.warning("recovery from Betfair's orders failed (%s)", exc)
+                self.last_error = f"recover: {exc}"
         last_full = None
         hard_stop = until + timedelta(minutes=self.cfg.get("overrun_minutes", 15.0))
         try:
@@ -851,8 +946,17 @@ def table(store, day: date, mode: str = "live") -> str:
                                          for a, e, st in zip(opened.action, opened.error, opened.status))[:120],
                      "retries": int((led[(led.market_id == mid)].action == "green_retry").sum()),
                      "errors": "; ".join(sorted(set(lg.error.dropna().astype(str)) - {""}))[:80]})
+    comm = commission()
+    net = sum(r["locked"] - comm * max(r["locked"], 0.0) for r in rows)
+    rec = store.get(f"{PREFIX}/{mode}/{day:%Y-%m-%d}/reconcile.json")
+    if rec:
+        r = json.loads(rec)
+        head += (f"\n\nBetfair's settled bets: {r.get('settled')} of {r.get('markets_laid')} markets, "
+                 f"GBP{r.get('betfair_profit_gross', 0):+.2f} before commission, GBP{r.get('betfair_profit_net', 0):+.2f} "
+                 f"after; against the ledger GBP{r.get('difference', 0):+.2f}.")
     L = [head, "", f"Races laid {len(rows)}; lays {len(lays)}, GBP{lays['size'].sum():.2f} asked; matched "
-         f"GBP{sum(r['matched'] for r in rows):.2f}; locked by green-ups **GBP{run:+.2f}**; still settling with the "
+         f"GBP{sum(r['matched'] for r in rows):.2f}; locked by green-ups **GBP{run:+.2f}** (GBP{net:+.2f} after "
+         f"{comm:.0%} commission); still settling with the "
          f"result (closed at the SP or held) GBP{sum(r['open_liability'] for r in rows):.2f} liability."
          + (f" Skipped races: {len(skips)} ({'; '.join(sorted(set(skips.error.astype(str))))})." if len(skips) else ""),
          "", "| Race (UK) | Track | Lays | Stake asked | Matched | Greened | SP/held | Open liability | Locked | Running "
@@ -887,6 +991,53 @@ def table(store, day: date, mode: str = "live") -> str:
     except Exception as exc:                                     # the table stands without the replay
         L += ["", f"(the blocked lays' replay failed: {str(exc)[:160]})"]
     return "\n".join(L) + "\n"
+
+
+def commission(env=None) -> float:
+    """The commission rate on a market's net winnings: GREYHOUND_COMMISSION, else CONFIG's (the paper's 2%; the
+    account's own rate is not held in the code)."""
+    env = os.environ if env is None else env
+    try:
+        v = float(str(env.get("GREYHOUND_COMMISSION", "")).strip())
+        return v if 0 <= v < 1 else CONFIG["commission"]
+    except ValueError:
+        return CONFIG["commission"]
+
+
+def reconcile(store, x, day: date, comm: float | None = None) -> dict:
+    """The live ledger against Betfair's settled bets (the audit A6): per market, what Betfair paid on our ``el-``
+    bets (listClearedOrders' profit, before commission) beside what the ledger locked by green-ups; the markets not
+    yet settled; the day's net after commission on each market's winnings. Written to S3 beside the ledger."""
+    comm = commission() if comm is None else comm
+    raw = store.get(f"{PREFIX}/live/{day:%Y-%m-%d}/ledger.csv")
+    if not raw:
+        return {"day": f"{day}", "note": "no data found: no live ledger"}
+    led = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str})
+    mids = sorted(set(led[led.action == "lay"].market_id.dropna().astype(str)))
+    if not mids:
+        return {"day": f"{day}", "note": "no lays"}
+    tag = f"{REF}{day:%m%d}-"
+    ours = [c for c in x.cleared(mids) if str(c.get("customerOrderRef") or "").startswith(tag)]
+    paid: dict = {}
+    for c in ours:
+        paid[str(c.get("marketId"))] = paid.get(str(c.get("marketId")), 0.0) + float(c.get("profit") or 0)
+    locked = pd.to_numeric(led[led.action == "green"].set_index("market_id").locked_pnl, errors="coerce")
+    locked = locked.groupby(level=0).sum()
+    rows = [{"market_id": m, "betfair_profit": round(paid[m], 2) if m in paid else None,
+             "ledger_locked": round(float(locked.get(m, 0.0)), 2),
+             "difference": round(paid[m] - float(locked.get(m, 0.0)), 2) if m in paid else None} for m in mids]
+    gross = sum(paid.values())
+    net = sum(v - comm * max(v, 0.0) for v in paid.values())
+    out = {"day": f"{day}", "markets_laid": len(mids), "settled": len(paid),
+           "unsettled": [m for m in mids if m not in paid], "betfair_profit_gross": round(gross, 2),
+           "betfair_profit_net": round(net, 2), "commission": comm,
+           "ledger_locked": round(float(locked.sum()), 2), "difference": round(gross - float(locked.reindex(
+               list(paid)).fillna(0).sum()), 2), "by_market": rows}
+    try:
+        store.put(f"{PREFIX}/live/{day:%Y-%m-%d}/reconcile.json", json.dumps(out, indent=1).encode())
+    except Exception as exc:
+        log.warning("reconciliation not written (%s)", exc)
+    return out
 
 
 def paper_table(store, day: date, name: str, parts: list | None = None) -> str:
@@ -953,6 +1104,8 @@ def main(argv=None) -> int:
     ap.add_argument("--live", action="store_true", help="real orders (only with GREYHOUND_EARLY_LAY=live)")
     ap.add_argument("--until", default="21:30")
     ap.add_argument("--date", default=None)
+    ap.add_argument("--reconcile", action="store_true",
+                    help="the live ledger against Betfair's settled bets for --date (default yesterday, UK)")
     ap.add_argument("--paper-variants", default=None,
                     help=f"comma-separated paper books ({', '.join(PAPER_VARIANTS)}), traded together on paper; never "
                          "with --live")
@@ -960,6 +1113,12 @@ def main(argv=None) -> int:
     store = Store(root=a.store)
     day = date.fromisoformat(a.date) if a.date else uk_today()
     out = {}
+    if a.reconcile:
+        from trading.exchange import BetfairData, LiveExchange
+        rd = date.fromisoformat(a.date) if a.date else uk_today() - timedelta(days=1)
+        x = LiveExchange(BetfairData(source="greyhound"))
+        x.login()
+        out["reconcile"] = reconcile(store, x, rd)
     if a.trade and a.paper_variants:
         from trading.exchange import BetfairData, LiveExchange
         if a.live:
@@ -1007,9 +1166,14 @@ def main(argv=None) -> int:
             raise SystemExit("no forecast fit for today: nothing traded")
         x = LiveExchange(BetfairData(source="greyhound"))
         x.login()
+        if live:                                         # yesterday's live day against Betfair's settled bets
+            try:
+                out["reconcile_yesterday"] = reconcile(store, x, day - timedelta(days=1))
+            except Exception as exc:
+                log.warning("yesterday not reconciled (%s)", exc)
         ledger = Path(os.getenv("GREYHOUND_LEDGER_DIR") or (Path.home() / ".ashcroft" / "greyhound")) / \
             f"early_lay_{mode}" / f"{day:%Y-%m-%d}" / "ledger.csv"
-        cfg = dict(CONFIG, daily_loss_limit=limit)
+        cfg = dict(CONFIG, daily_loss_limit=limit, commission=commission())
         import signal
         signal.signal(signal.SIGTERM, _terminate)            # a cancelled job: run()'s finally cancels the resting lays
         log.info("early lay %s: daily loss limit %s", mode, f"GBP{limit:.2f}" if limit is not None else "none")

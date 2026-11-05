@@ -42,11 +42,15 @@ class FakeX(LiveExchange):
     def _call(self, method, params):
         if method == "cancelOrders":
             self.cancels.append(params["marketId"])
+            self.cancel_params = getattr(self, "cancel_params", []) + [params]
             return {"status": "SUCCESS"}
         raise AssertionError(method)
 
     def orders(self, market_ids, refs=None):
         return list(self.current)
+
+    def funds(self):                                          # the gate reads the account's funds on live orders
+        return {"available": 10_000.0}
 
 
 def book(traded=True, back=(4.0, 6.0, 9.0), lay=(4.2, 6.4, 9.6), status="OPEN"):
@@ -601,3 +605,112 @@ def test_the_kill_switch_fails_safe():
     assert gl._exists(St(Err("AccessDenied")), "greyhound/STOP") is True      # unreadable: stop
     assert gl._exists(St(Exception("timeout")), "greyhound/STOP") is True
     assert gl.KILL_CHECK_SECONDS <= 5
+
+
+
+# --- the audit's next items (the owner, 5 Nov 2026: "Work on the next items") ------------------------------------------
+
+def test_the_gate_refuses_what_breaks_a_limit(tmp_path, fit):
+    x = FakeX()
+    x.book = book()
+    t, _ = trader(tmp_path, x, fit)
+    assert t.gate(MID, 5.0, el.stake_for(5.0, t.cfg)) == ""
+    assert "price" in t.gate(MID, 25.0, 2.0)                  # over max_price
+    assert "stake" in t.gate(MID, 5.0, 50.0)                  # over max_stake
+    assert "stopped" in t.gate(MID, 5.0, 2.0, stopped=True)
+    t.laid[MID] = t.cfg["max_market_liability"]
+    assert "race's liability" in t.gate(MID, 5.0, 2.0)
+    t.laid = {"a": t.cfg["max_open_liability"]}
+    assert "open liability" in t.gate(MID, 5.0, 2.0)
+    t.laid = {}
+    t.cfg["daily_loss_limit"] = 10.0
+    t.locked = -5.0
+    assert "loss limit" in t.gate(MID, 5.0, 2.0)            # -5 less this lay's GBP8 passes -10
+    t.cfg["daily_loss_limit"], t.locked = None, 0.0
+    t._sent = [pd.Timestamp(T0)] * t.cfg["max_orders_per_minute"]
+    assert "order rate" in t.gate(MID, 5.0, 2.0)
+    t._sent = []
+    x.funds = lambda: None                                    # funds unreadable: no live order
+    t._funds = None
+    assert "funds" in t.gate(MID, 5.0, 2.0)
+    x.funds = lambda: {"available": 3.0}
+    t._funds = None
+    assert "funds GBP3.00" in t.gate(MID, 5.0, 2.0)
+
+
+def test_a_lay_the_gate_refuses_is_logged_not_sent(tmp_path, fit):
+    x = FakeX()
+    x.book = book()
+    x.funds = lambda: None
+    t, _ = trader(tmp_path, x, fit)
+    t.step()
+    assert not [i for i in x.sent if i["side"] == "LAY"]
+    led = pd.read_csv(tmp_path / "ledger.csv")
+    assert led.error.astype(str).str.contains("risk gate").any()
+
+
+def test_cancel_touches_only_our_orders():
+    x = FakeX()
+    x.current = [{"betId": "1", "customerOrderRef": "el-1103-x-1-l", "side": "LAY", "status": "EXECUTABLE"},
+                 {"betId": "2", "customerOrderRef": "qm-1103-x-1-b", "side": "BACK", "status": "EXECUTABLE"},
+                 {"betId": "3", "customerOrderRef": "el-1103-x-2-l", "side": "LAY", "status": "EXECUTION_COMPLETE"}]
+    o = el.Orders(x, live=True)
+    o.cancel(MID)
+    assert [i["betId"] for i in x.cancel_params[-1]["instructions"]] == ["1"]
+    x.current = [x.current[1]]
+    assert o.cancel(MID) == "NONE"                          # nothing of ours: no call
+
+
+def test_state_rebuilt_from_betfairs_orders(tmp_path, fit):
+    x = FakeX()
+    x.book = book()
+    t, _ = trader(tmp_path, x, fit)
+    t.load_predictions()
+    x.current = [  # an open lay on MID, matched and not greened; nothing on another market of ours
+        {"marketId": MID, "selectionId": 3, "side": "LAY", "sizeMatched": 2.0, "averagePriceMatched": 9.0,
+         "sizeRemaining": 0.0, "customerOrderRef": "el-1103-50000001-3-l", "betId": "9"},
+        {"marketId": MID, "selectionId": 1, "side": "BACK", "sizeMatched": 5.0, "averagePriceMatched": 4.0,
+         "customerOrderRef": "qm-1103-x", "betId": "8"}]
+    r = t.recover()
+    assert r == {"markets": 1, "open": 1} and MID in t.priced and MID not in t.greened
+    assert np.isclose(t.laid[MID], 16.0)                     # 2 x (9 - 1)
+    x.current.append({"marketId": MID, "selectionId": 3, "side": "BACK", "sizeMatched": 2.0,
+                      "averagePriceMatched": 9.0, "customerOrderRef": "el-1103-50000001-3-g", "betId": "10"})
+    t2, _ = trader(tmp_path / "b", x, fit)
+    t2.load_predictions()
+    assert t2.recover() == {"markets": 1, "open": 0} and MID in t2.greened
+
+
+def test_reconcile_against_betfairs_settled_bets():
+    led = pd.DataFrame([
+        {"market_id": MID, "action": "lay", "locked_pnl": None},
+        {"market_id": MID, "action": "green", "locked_pnl": 1.50},
+        {"market_id": "1.2", "action": "lay", "locked_pnl": None}])
+
+    class S:
+        def __init__(self):
+            self.put_keys = []
+
+        def get(self, key):
+            return led.to_csv(index=False).encode() if key.endswith("ledger.csv") else None
+
+        def put(self, key, data):
+            self.put_keys.append(key)
+
+    class X:
+        def cleared(self, mids):
+            return [{"marketId": MID, "customerOrderRef": "el-1103-a-1-l", "profit": -4.0},
+                    {"marketId": MID, "customerOrderRef": "el-1103-a-1-g", "profit": 6.0},
+                    {"marketId": MID, "customerOrderRef": "qm-1103-a", "profit": 100.0}]
+
+    st = S()
+    r = el.reconcile(st, X(), date(2026, 11, 3), comm=0.02)
+    assert r["settled"] == 1 and r["unsettled"] == ["1.2"] and r["betfair_profit_gross"] == 2.0
+    assert r["betfair_profit_net"] == round(2.0 - 0.02 * 2.0, 2) and r["difference"] == 0.5
+    assert any(k.endswith("reconcile.json") for k in st.put_keys)
+
+
+def test_commission_rate():
+    assert el.commission({}) == el.CONFIG["commission"]
+    assert el.commission({"GREYHOUND_COMMISSION": "0.05"}) == 0.05
+    assert el.commission({"GREYHOUND_COMMISSION": "x"}) == el.CONFIG["commission"]

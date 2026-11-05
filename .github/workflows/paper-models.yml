@@ -139,6 +139,10 @@ jobs:
           # the greyhound books every 5 s near the off, with traded volume (reports/greyhound_roadmap.md 0.2)
           BETFAIR_APP_KEY="$GHKEY" python -m greyhound.book_record --until 21:30 > "$RUNNER_TEMP/greyhound_books.log" 2>&1 &
           GBR=$!
+          # Betfair's Exchange Stream for the greyhound markets, raw (the owner, 5 Nov 2026, the audit C1): the full ladder,
+          # the volume traded at each price and every change, read-only (no order subscription), to s3 betfair_stream/
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.stream_record --until 21:30 > "$RUNNER_TEMP/greyhound_stream.log" 2>&1 &
+          GSR=$!
           # the greyhound early lay (greyhound/early_lay.py): real orders only when GREYHOUND_EARLY_LAY is 'live'
           BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --live --until 21:30 > "$RUNNER_TEMP/greyhound_early_lay.log" 2>&1 &
           GEL=$!
@@ -160,12 +164,15 @@ jobs:
           wait "$GHT"; GC=$?; echo "greyhound paper trader exited $GC"
           tail -n 20 "$RUNNER_TEMP/greyhound_trader.log"
           wait "$GBR"; echo "greyhound book record exited $?"
+          wait "$GSR"; echo "greyhound stream record exited $?"; tail -n 10 "$RUNNER_TEMP/greyhound_stream.log"
           tail -n 5 "$RUNNER_TEMP/greyhound_books.log"
-          wait "$GEL"; echo "greyhound early lay ($GREYHOUND_EARLY_LAY) exited $?"
+          wait "$GEL"; ELC=$?; echo "greyhound early lay ($GREYHOUND_EARLY_LAY) exited $ELC"
           tail -n 40 "$RUNNER_TEMP/greyhound_early_lay.log"
-          wait "$GELP"; echo "greyhound early lay paper books exited $?"
+          wait "$GELP"; ELP=$?; echo "greyhound early lay paper books exited $ELP"
           tail -n 20 "$RUNNER_TEMP/greyhound_early_lay_paper.log"
           wait "$GQM"; echo "greyhound quotes around the mid ($GREYHOUND_QUOTE_MID) exited $?"
           tail -n 40 "$RUNNER_TEMP/greyhound_quote_mid.log"
           wait "$DOGS"; echo "greyhound market record exited $?"; tail -n 3 "$RUNNER_TEMP/greyhound.log"
-          [ "$GC" = 0 ]
+          # a trader that crashed fails the job, so GitHub's failure notice reaches the owner (the audit A6); before,
+          # only the paper trader's exit counted
+          [ "$GC" = 0 ] && [ "$ELC" = 0 ] && [ "$ELP" = 0 ]

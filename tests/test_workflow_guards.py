@@ -168,7 +168,9 @@ def test_only_the_trader_runs_on_the_live_key():
     named = {p.name for p in WORKFLOWS.glob("*.yml") if "BETFAIR_LIVE_APP_KEY" in p.read_text()}
     assert named <= {"live-trade.yml", "greyhound-trade.yml", "football-trade.yml", "paper-models.yml",
                      "morning-models.yml"}, named
+    # the greyhound stream recorder too (the owner, 5 Nov 2026, the audit C1): read-only, no order subscription
     traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade", "greyhound.book_record",
+               "greyhound.stream_record",
                "greyhound.early_lay --trade", "greyhound.quote_mid --trade", "morning.live")
     for name in named:
         text = (WORKFLOWS / name).read_text()
@@ -226,7 +228,7 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
             assert ln == 'GHKEY="${BETFAIR_LIVE_APP_KEY:-$BETFAIR_APP_KEY}"', ln
         if "GHKEY" in ln and "python" in ln:
             assert ln.startswith('BETFAIR_APP_KEY="$GHKEY" python -m greyhound.'), ln
-            assert any(t in ln for t in ("greyhound.live --trade", "greyhound.book_record",
+            assert any(t in ln for t in ("greyhound.live --trade", "greyhound.book_record", "greyhound.stream_record",
                                          "greyhound.early_lay --trade", "greyhound.quote_mid --trade")), ln
         if "--live" in ln:                          # the early lay and the quotes alone, on the live key
             assert ln.startswith(('BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --live ',
