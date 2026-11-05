@@ -15,9 +15,9 @@ name: Paper models (greyhounds) and the racing census
 #   - its own Python environment and certificate folder, so nothing here touches the live job's.
 # The one exception, the owner, 3 Nov 2026: "lets go live now, i will monitor and stop manually if any concerns";
 # "use early lay". The greyhound early lay (greyhound/early_lay.py, the forward test's primary rule) places real
-# orders on the live key, with GREYHOUND_EARLY_LAY=live (the dispatch input, else the repository variable, else
-# live). Stop it: the S3 object greyhound/STOP (greyhound-stop.yml) stops new lays and greens up the matched ones;
-# the variable GREYHOUND_EARLY_LAY=paper keeps it off the next days. The second, the owner, 4 Nov 2026: "go live with
+# orders on the live key only with GREYHOUND_EARLY_LAY=live (the dispatch input, else the repository variable, else
+# paper: the owner, 5 Nov 2026, the audit) and a daily loss limit (vars.GREYHOUND_EARLY_LAY_DAILY_LOSS, GBP). Stop it:
+# the S3 object greyhound/STOP (greyhound-stop.yml) stops new lays, cancels the resting ones and greens up the matched. The second, the owner, 4 Nov 2026: "go live with
 # live trading today": the greyhound quotes around the mid (greyhound/quote_mid.py, research/greyhound/profit_sim.py
 # mid_*), real orders only with GREYHOUND_QUOTE_MID=live (the dispatch input, else the repository variable, else
 # paper: on 4 Nov the simulator, its look-ahead fixed, found every margin and stake losing on 3 Nov's live books, so it
@@ -37,8 +37,8 @@ on:
         description: "the greyhound early lay: live (real orders on the owner's account) or paper (logged, nothing sent)"
         required: false
         type: choice
-        options: ['live', 'paper']
-        default: 'live'
+        options: ['paper', 'live']
+        default: 'paper'
       quote_mid:
         description: "the greyhound quotes around the mid: paper (logged, nothing sent) or live (real orders)"
         required: false
@@ -123,7 +123,10 @@ jobs:
           # the greyhound paper trader and book recorder only (the owner, 2 Nov 2026): read-only, no bets
           BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
           GREYHOUND_LIVE: 'no'
-          GREYHOUND_EARLY_LAY: ${{ inputs.early_lay || vars.GREYHOUND_EARLY_LAY || 'live' }}
+          # paper unless switched on (the owner, 5 Nov 2026, the audit: "Yes do these"); live also needs a daily
+          # loss limit in GBP (vars.GREYHOUND_EARLY_LAY_DAILY_LOSS), else greyhound/early_lay.py sends no order
+          GREYHOUND_EARLY_LAY: ${{ inputs.early_lay || vars.GREYHOUND_EARLY_LAY || 'paper' }}
+          GREYHOUND_EARLY_LAY_DAILY_LOSS: ${{ vars.GREYHOUND_EARLY_LAY_DAILY_LOSS }}
           GREYHOUND_QUOTE_MID: ${{ inputs.quote_mid || vars.GREYHOUND_QUOTE_MID || 'paper' }}
         run: |
           set +e

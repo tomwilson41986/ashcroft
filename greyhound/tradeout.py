@@ -98,6 +98,10 @@ SIDES = ("back", "lay")
 MODELS = ("racebook", "micro")
 BOOK_COLS = ["back1", "back1_size", "back2", "back2_size", "back3", "back3_size", "lay1", "lay1_size", "lay2",
              "lay2_size", "lay3", "lay3_size", "last_traded", "runner_total_matched", "market_total_matched"]
+#: Betfair's projected SP (near: the SP bets and the exchange; far: the SP bets only) and the money placed at the SP,
+#: carried to the entry marks for the closing-price research (the owner, 4 Nov 2026: "fundamental is always just to get
+#: the most accurate closing price"); NaN where a book did not ask for them
+SP_COLS = ["sp_near", "sp_far", "sp_back_taken", "sp_lay_taken"]
 #: the microstructure closing model's columns (``micro_design``), each standardised on the training rows
 MICRO = ("lq_market", "lq_model", "last_vs_mid", "move", "imbalance", "log_spread", "lq_market_x_vol",
          "lq_model_x_vol")
@@ -168,7 +172,7 @@ def pre_off_books(books: pd.DataFrame, markets: pd.DataFrame, retimed: bool = Fa
     ok = ((b.source.astype(str) != "final") & (b.status.astype(str) == "OPEN") & ~_inplay(b.inplay)
           & (b.minutes_to_off > 0) & (b.runner_status.fillna("ACTIVE").astype(str) == "ACTIVE"))
     b = b[ok].dropna(subset=["polled"])
-    for c in BOOK_COLS:
+    for c in BOOK_COLS + SP_COLS:
         b[c] = _num(b[c]) if c in b else np.nan
     return b
 
@@ -185,7 +189,7 @@ def entry_books(pre: pd.DataFrame) -> pd.DataFrame:
     picks.append(traded.sort_values("polled").drop_duplicates(["market_id", "selection_id"]).assign(mark="first_traded"))
     e = pd.concat(picks, ignore_index=True)
     keep = ["market_id", "selection_id", "mark", "polled", "minutes_to_off"] + BOOK_COLS
-    e = e[keep]
+    e = e[keep + [c for c in SP_COLS if c in e]]
     prev = pre[["market_id", "selection_id", "polled", "back1", "lay1"]].rename(
         columns={"polled": "polled_prev", "back1": "back1_prev", "lay1": "lay1_prev"}).sort_values("polled_prev")
     e = e.assign(_t=e.polled - pd.Timedelta(seconds=90)).sort_values("_t")
