@@ -310,6 +310,17 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
             m = markets.get(o.market)
             finish(o, m)
             rows[-1]["note"] = "no close in the record" if o.placed else "never placed (no book)"
+    # the SP: Betfair writes it into the market definition only once the market is settled, after the close above,
+    # so it is read from the last definition the record holds
+    for row in rows:
+        if row["pnl_sp"] is None and row["matched"] and row["avg"]:
+            m = markets.get(row["market"])
+            sp = m.bsp(row["sid"]) if m else None
+            if sp and sp > 1:
+                L, S = row["avg"], row["matched"]
+                v = S * (1 - L / sp) if row["side"] == "LAY" else S * (L / sp - 1)
+                row["pnl_sp"] = round(v * (1 - comm) if v > 0 else v, 4)
+                row["sp"] = sp
     return pd.DataFrame(rows)
 
 

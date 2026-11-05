@@ -93,3 +93,15 @@ def test_a_back_rests_among_the_lay_offers():
     df = sr.replay(lines, [o])
     assert o.queue_at_place == 7 and o.matched == 3
     assert df.iloc[0].close_price == 4.6 and df.iloc[0].pnl == pytest.approx(3 * (5.0 / 4.6 - 1), abs=1e-4)
+
+
+
+def test_the_sp_close_reads_the_settled_definition():
+    lines = [image(T, [[5.0, 10]], [[5.2, 8]], [[5.0, 0]]),
+             delta(T + timedelta(seconds=5), trd=[[4.9, 2]]),                       # through: filled in full at 5.0
+             line(OFF - timedelta(seconds=4), {"id": MID, "rc": [{"id": 7, "atb": [[5.4, 9]]}]}),
+             line(OFF + timedelta(minutes=3), {"id": MID, "marketDefinition": {**defn(inplay=False, bsp=6.0),
+                                                                                "status": "CLOSED"}})]
+    df = sr.replay(lines, [sr.SimOrder(MID, 7, "LAY", 5.0, 4.0, T + timedelta(seconds=1))])
+    row = df.iloc[0]
+    assert row.matched == 4 and row.sp == 6.0 and row.pnl_sp == pytest.approx(4 * (1 - 5.0 / 6.0), abs=1e-4)
