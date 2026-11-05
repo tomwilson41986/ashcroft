@@ -15,8 +15,9 @@ on a gain. The families (``RULES``):
 - ``rev``: against it: back the drifters, lay the shorteners;
 - ``fav_lay``: lay the favourite at 10 s (a control: it should lose about the spread).
 Scored by day and pooled over days, with a 90% interval from a bootstrap over races; a rule is a candidate only after
-``MIN_DAYS`` days with its pooled lower bound above zero, and the count of rules is in every report (about one in
-twenty clears a one-sided 90% bound by chance).
+``MIN_DAYS`` days with its pooled lower bound above zero and its deflated Sharpe by race at or above 0.95 against
+every rule the lab has scored (research.overfit, the ledger at s3 stream_lab/trials.json; about one in twenty clears a
+one-sided 90% bound by chance, and the DSR allows for the count).
 """
 
 from __future__ import annotations
@@ -143,17 +144,30 @@ def _boot(pnl_by_race: pd.Series, n: int = 2000, seed: int = 0):
     return float(np.percentile(m, 5)), float(np.percentile(m, 95))
 
 
-def score(tr: pd.DataFrame) -> pd.DataFrame:
-    """Each rule: trades, races, days, mean P&L a unit staked, its 90% interval by race (pooled over days)."""
-    rows = []
+def score(tr: pd.DataFrame, ledger=None) -> pd.DataFrame:
+    """Each rule: trades, races, days, mean P&L a unit staked, its 90% interval by race (pooled over days), and its
+    deflated Sharpe by race against every rule scored (research.overfit: the rules here, and with a ``ledger`` every
+    rule the lab has ever scored). A candidate needs ``MIN_DAYS`` days, the lower bound above zero and the DSR at or
+    above research.overfit.DSR_THRESHOLD: with 43 rules about two clear the bound by luck, and the DSR is the bar
+    that allows for the count."""
+    from research.overfit import deflate_table
+    rows, series = [], {}
     for rule, g in tr.groupby("rule"):
         by_race = g.groupby(["day", "market"]).pnl.mean()
+        series[rule] = by_race.to_numpy()
         lo, hi = _boot(by_race)
         rows.append({"rule": rule, "trades": len(g), "races": len(by_race), "days": g.day.nunique(),
                      "mean_pnl%": round(100 * float(g.pnl.mean()), 3),
                      "ci90%": [round(100 * lo, 3), round(100 * hi, 3)] if lo is not None else None,
-                     "candidate": bool(lo is not None and lo > 0 and g.day.nunique() >= MIN_DAYS)})
-    return pd.DataFrame(rows).sort_values("mean_pnl%", ascending=False) if rows else pd.DataFrame()
+                     "bound": bool(lo is not None and lo > 0 and g.day.nunique() >= MIN_DAYS)})
+    if not rows:
+        return pd.DataFrame()
+    dsr = deflate_table(series, ledger=ledger)
+    for r in rows:
+        d = dsr[r["rule"]]
+        r.update({"sharpe": d["sharpe"], "dsr": d["dsr"], "n_trials": d["n_trials"],
+                  "candidate": bool(r.pop("bound") and d["passed"])})
+    return pd.DataFrame(rows).sort_values("mean_pnl%", ascending=False)
 
 
 def run_day(lines, day: date) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -199,7 +213,9 @@ def main(argv=None) -> int:
     for k in sorted(x for x in listing("stream_lab/trades/") if x.endswith(".parquet")):
         days.append(pd.read_parquet(io.BytesIO(s3.get_object(Bucket=bk, Key=k)["Body"].read())))
     pooled = pd.concat(days, ignore_index=True) if days else pd.DataFrame()
-    sc = score(pooled) if len(pooled) else pd.DataFrame()
+    from research.overfit import TrialLedger
+    ledger = TrialLedger(f"s3://{bk}/stream_lab/trials.json", programme="greyhound stream lab")
+    sc = score(pooled, ledger=ledger) if len(pooled) else pd.DataFrame()
     rep = {"day": f"{day}", "lines": len(lines), "markets": int(snap.market.nunique()) if len(snap) else 0,
            "trades_today": len(tr), "days_pooled": int(pooled.day.nunique()) if len(pooled) else 0,
            "rules": int(len(sc)), "registered": REGISTERED, "candidates": sc[sc.candidate].rule.tolist() if len(sc) else [],
@@ -210,12 +226,14 @@ def main(argv=None) -> int:
     md = [f"## Greyhound stream lab, {day}", "",
           f"{rep['lines']} stream lines, {rep['markets']} markets, {rep['trades_today']} trades today; "
           f"{rep['days_pooled']} days pooled; {rep['rules']} rules (registered {REGISTERED}; a candidate needs "
-          f"{MIN_DAYS} days and its pooled 90% lower bound above zero; about one rule in twenty clears that bound by "
-          f"chance). Candidates: {', '.join(rep['candidates']) or 'none'}.", "",
-          "| Rule | Trades | Races | Days | Mean P&L % a unit | 90% | Candidate |", "|---|---|---|---|---|---|---|"]
+          f"{MIN_DAYS} days, its pooled 90% lower bound above zero and its deflated Sharpe by race at least 0.95 against "
+          f"every rule scored; about one rule in twenty clears the bound alone by chance). Candidates: "
+          f"{', '.join(rep['candidates']) or 'none'}.", "",
+          "| Rule | Trades | Races | Days | Mean P&L % a unit | 90% | Sharpe by race | DSR (rules) | Candidate |",
+          "|---|---|---|---|---|---|---|---|---|"]
     for r in rep["scores"]:
         md.append(f"| {r['rule']} | {r['trades']} | {r['races']} | {r['days']} | {r['mean_pnl%']} | {r['ci90%']} | "
-                  f"{r['candidate']} |")
+                  f"{r['sharpe']} | {r['dsr']} ({r['n_trials']}) | {r['candidate']} |")
     Path(a.out, "report.md").write_text("\n".join(md) + "\n")
     print("\n".join(md))
     return 0
