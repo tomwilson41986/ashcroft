@@ -114,6 +114,10 @@ def test_the_night_before_run_never_writes_the_trader_s_file(monkeypatch):
     step = [s for s in wf["jobs"]["predict-evening"]["steps"] if s.get("name") == "Run predictions"][0]
     assert step["env"]["PREDICTIONS_PREFIX"] == "predictions_evening"
     assert step["env"]["RACECARDS_PREFIX"] == "racecards_evening"
-    assert "PREDICT_DATE=$(TZ=Europe/London date -d tomorrow +%F)" in step["run"]
-    assert [c["cron"] for c in wf[True]["schedule"]] == ["50 21 * * *"]
+    # 00:10 UK, the one-day card just turned over (hrb-card-probe, 4-5 Nov: no full card for tomorrow in the evening)
+    assert "PREDICT_DATE=$(TZ=Europe/London date +%F)" in step["run"]
+    assert [c["cron"] for c in wf[True]["schedule"]] == ["10 0 * * *", "10 23 * * *"]
+    gate = wf["jobs"]["when"]["steps"][0]["run"]
+    assert 'TZ=Europe/London date +%H' in gate and '"$H" = 00' in gate
+    assert wf["jobs"]["predict-evening"]["if"] == "needs.when.outputs.go == 'true'"
     assert "sync_dashboard" not in str(wf)
