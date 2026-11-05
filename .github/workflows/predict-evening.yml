@@ -1,16 +1,24 @@
 name: Predictions the night before (tomorrow's card, its own S3 key)
-# The owner, 4 Nov 2026: "Run predictions by night before so we are ready to act then if needed". Tomorrow's card from
-# HRB's 48-hour declarations (daily_predictions.scrape_early_racecards: the one-day card page is always today's),
-# priced by the same model and the same code as the morning's, after the nightly results load (daily-results.yml,
-# 21:30 UTC, done by about 21:37), to s3://$BUCKET/predictions_evening/<day>.csv with the card kept in
-# racecards_evening/. The morning's run (predict.yml, 04:00 UTC) and its predictions/<day>.csv, the file the trader
-# reads, are untouched: the trader does not read this file. What it is for: a session the evening before, or one
-# before 05:15, if the timing study (research/arms/timing.py) says the prices then are worth it; and a check of how
-# far the night-before prices move from the morning's.
+# The owner, 4 Nov 2026: "Run predictions by night before so we are ready to act then if needed". HRB serves no full
+# card for tomorrow in the evening (hrb-card-probe.yml, 4-5 Nov): its 48-hour declarations page turns to the day after
+# tomorrow during the day (5 Nov's card at 07:28 UTC on 4 Nov, 6 Nov's by 19:08), and the one-day card page holds
+# today's card until UK midnight, turning over between 23:10 and 00:45 UTC (00:00 UK). So the night-before run is at
+# 00:10 UK, on the one-day card as it stands then: the complete card, priced by the same model and the same code as
+# the morning's, to s3://$BUCKET/predictions_evening/<day>.csv with the card kept in racecards_evening/ (the 21:50 UTC
+# run of 4 Nov found 6 Nov's declarations and wrote nothing). The morning's run (predict.yml, 04:00 UTC) and its
+# predictions/<day>.csv, the file the trader reads, are untouched: the trader does not read this file. What it is for:
+# a session before 05:15, if the timing study (research/arms/timing.py) says the overnight prices are worth it, and a
+# check of how far the prices move between 00:10 and the morning.
 on:
   schedule:
-    - cron: '50 21 * * *'
+    - cron: '10 0 * * *'     # 00:10 UK in GMT
+    - cron: '10 23 * * *'    # 00:10 UK in BST
   workflow_dispatch:
+    inputs:
+      date:
+        description: 'The racing day (YYYY-MM-DD); default: today in the UK'
+        required: false
+        type: string
 
 concurrency:
   group: predict-evening
@@ -20,7 +28,23 @@ permissions:
   contents: read
 
 jobs:
+  when:
+    # each schedule fires all year; only the one at 00:10 UK runs (the other is an hour off)
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.uk.outputs.go }}
+    steps:
+      - id: uk
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          H=$(TZ=Europe/London date +%H)
+          if [ "$EVENT" != schedule ] || [ "$H" = 00 ]; then echo "go=true" >> "$GITHUB_OUTPUT"
+          else echo "go=false" >> "$GITHUB_OUTPUT"; echo "UK hour $H: not 00:10 UK, nothing to do"; fi
+
   predict-evening:
+    needs: when
+    if: needs.when.outputs.go == 'true'
     runs-on: ubuntu-latest
     # The job makes live Betfair calls and the client sets no socket timeout,
     # so bound the whole thing rather than let a hung connection sit until
@@ -87,8 +111,14 @@ jobs:
           ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           PREDICTIONS_PREFIX: predictions_evening
           RACECARDS_PREFIX: racecards_evening
+          DAY_IN: ${{ inputs.date }}
         run: |
-          # the racing day the evening leads to: tomorrow in the UK (21:50 UTC is before UK midnight all year)
-          export PREDICT_DATE=$(TZ=Europe/London date -d tomorrow +%F)
-          echo "Predicting $PREDICT_DATE the evening before, to predictions_evening/"
+          # the racing day just begun: today in the UK at 00:10 UK (the one-day card has turned over at midnight)
+          if [ -n "$DAY_IN" ]; then
+            if ! [[ "$DAY_IN" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
+            export PREDICT_DATE="$DAY_IN"
+          else
+            export PREDICT_DATE=$(TZ=Europe/London date +%F)
+          fi
+          echo "Predicting $PREDICT_DATE at $(TZ=Europe/London date +%H:%M) UK, to predictions_evening/"
           python -m pipeline.predict

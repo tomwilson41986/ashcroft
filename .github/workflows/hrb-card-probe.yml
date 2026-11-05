@@ -3,11 +3,8 @@ name: HRB card probe (tomorrow's racecards, read-only)
 # before predictions run is built: does horseracebase.com serve tomorrow's racecards in the evening, and at what
 # address (scripts/hrb_card_probe.py). Read-only; it prints race times, courses and dates, no page text.
 on:
-  # through the evening and the night (UTC): when onedayracecards.php turns to the next day, and what the 48-hour
-  # declarations hold; removed once the night-before predictions are built
-  schedule:
-    - cron: '0 19,21,23 * * *'
-    - cron: '30 0,1,2,3 * * *'
+  # it ran through the night of 4-5 Nov and answered it: the one-day card turns over at UK midnight; the 48-hour
+  # declarations hold the day after tomorrow from the day (predict-evening.yml now runs at 00:10 UK); dispatch only
   workflow_dispatch:
   push:
     branches: [claude/happy-ritchie-0cp8eq]
