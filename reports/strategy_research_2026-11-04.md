@@ -176,3 +176,39 @@ gates), `research/queries/done/strat_a_*`, `strat_b_*`, `strat_c_*`, `strat_e_*`
 * Unverified: whether Timeform's `preRaceAdjustedRating` / `preRaceMasterRating` as stored are exactly the figures
   published before the off (they are named pre-race; the passing Timeform rule uses the last run's performance
   rating, which is published after that run, so it does not depend on this).
+
+## Strategy J: back the projected early leader (5 Nov 2026)
+
+The owner: "How about if we just backed our predicted front runners / leader based on historic run style / early
+position + sectionals. Try and model early leader. And see how our projected early leader would do if we bet it."
+
+**Result: the model finds the leader well, and backing it has no edge at BSP or the morning price.**
+
+| | Runners (TEST 2022-26) | Win A/E vs BSP | p | Place A/E | Win A/E vs morning price |
+|---|---|---|---|---|---|
+| Projected leader, the leader model | 60,887 | 1.006 | 0.55 | 0.998 | 1.010 (p 0.28) |
+| Projected leader, run-style projection alone (ties at random) | 60,893 | 0.99 | 0.47 | 0.99 | - |
+| HINDSIGHT: the horses that actually led | 64,620 | 1.276 | <1e-200 | 1.171 | 1.290 |
+
+- **How:** the early position of every past run is parsed from its comment (`model/race_shape.py`; led = made all, led,
+  soon led, or a lead taken in the first furlong or two: 11.5% of runs; 88% of comments carry a position). A
+  LightGBM classifier on pre-race facts predicts who leads: the horse's projected style from earlier runs, its last
+  run, how often it has led, the field's projected styles, draw, trip, code, the jockey's and trainer's earlier lead
+  rates, the horse's earlier sectional early position (Flat/AW, Jun 2024-Jun 2025 and from Apr 2026) and the race's
+  ratings. Fitted on 2010-15 to score 2016-21 and on 2010-21 to score 2022 on, so every scored race is out of sample.
+- **Finding the leader:** the projected leader led in 41.5% of 2022-26 races (42.0% led or disputed), against 38.0%
+  for the plain run-style projection; AUC 0.795 against 0.719; calibrated decile by decile (top decile predicted
+  0.422, actual 0.419).
+- **Betting it:** no cut passes the gate. By code, trip, field size, predicted chance (0.3 to 0.6+), lone speed,
+  contested lead, sprints, low draw, handicaps or not, and the morning price band, TEST win A/E sits 0.95-1.04 with
+  no p under 0.03 and place A/E 0.94-1.02. Every runner banded by its chance of leading reads A/E 0.97-1.01 at BSP.
+  The market prices a predictable lead.
+- **The prize is real but in hindsight:** horses that led returned A/E 1.27 at BSP. It belongs to the races the
+  forecast cannot call: a projected leader leads only 4 times in 10.
+- **A leak caught and removed:** the plain projection's pick first read TEST A/E 1.06 (p 8e-10) and passed. The
+  results table stores each race's runners in finishing order, and 5.8% of races had a tie at the top of p_lead
+  (debutants share the population prior), which `rank(method="first")` broke to the first row: the winner. Ties
+  broken at random: A/E 0.99. Nothing else in these studies or the morning models ranks with a first-row tie-break.
+
+Sources: `research/strat/results_2026-11-04/strat_j_early_leader_1105.txt`, `strat_j_early_leader_rules.csv`,
+`strat_j_tie_check_1105.txt`; queries in `research/queries/done/`.
