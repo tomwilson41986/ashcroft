@@ -714,3 +714,19 @@ def test_commission_rate():
     assert el.commission({}) == el.CONFIG["commission"]
     assert el.commission({"GREYHOUND_COMMISSION": "0.05"}) == 0.05
     assert el.commission({"GREYHOUND_COMMISSION": "x"}) == el.CONFIG["commission"]
+
+
+def test_the_running_page_shows_the_rule_on_paper(tmp_path):
+    class S:
+        def __init__(self, keys):
+            self.keys = keys
+
+        def get(self, key):
+            return b"time_utc,action\n" if key in self.keys else None
+
+    day = date(2026, 11, 5)
+    assert el.modes_to_show(S(set()), day) == ["live"]
+    assert el.modes_to_show(S({f"{el.PREFIX}/paper/2026-11-05/ledger.csv"}), day) == ["paper"]
+    both = {f"{el.PREFIX}/{m}/2026-11-05/ledger.csv" for m in ("live", "paper")}
+    assert el.modes_to_show(S(both), day) == ["live", "paper"]
+    assert "nothing sent" in el.table(S(set()), day, "paper")
