@@ -1,0 +1,403 @@
+
+=== 1. CONTROL: every runner by code ===
+  code      n    WAX  A/E     p  A/E_pl  p_pl  roi_both%   n_am  A/E_am  p_am  A/E_pl_am  roi_both_am%  clv%    t_n  t_WAX  t_A/E   t_p  t_A/E_pl t_p_pl  t_roi_both%  t_n_am  t_A/E_am t_p_am  t_A/E_pl_am  t_roi_both_am%  t_clv%
+    aw 306613 -21.27  1.0 0.901     1.0 0.284      -6.26  88870    0.97 0.002       0.96         -7.19 -4.37 137500   1.28    1.0 0.991       1.0  0.563        -6.15  110292      0.98  0.015         0.97           -7.75   -4.83
+ chase 179968 -19.58  1.0 0.888     1.0 0.870      -4.52  48302    0.98 0.031       0.96         -4.87 -1.41  64330  -9.05    1.0 0.916       1.0  0.494        -4.74   56590      0.98  0.092         0.96           -5.49   -1.20
+  flat 544335 -78.27  1.0 0.728     1.0 0.526      -4.54 143567    0.98 4e-04       0.97         -6.05 -3.30 224841 -15.62    1.0 0.915       1.0  0.453        -4.25  186267      0.98  0.001         0.97           -5.99   -2.92
+hurdle 342395  -1.44  1.0 0.993     1.0 0.877      -7.79  81767    0.98 0.013       0.98         -5.25 -4.87 139308  -1.06    1.0 0.992       1.0  0.350        -6.79  100745      0.98  0.002         0.98           -5.97   -3.72
+nhflat  60590   0.94  1.0 0.990     1.0 0.858      -1.35  11200    0.98 0.415       0.97         -1.51 -1.97  19366   1.81    1.0 0.966       1.0  0.938        -2.68   11601      0.98  0.351         0.97           -6.34   -0.80
+
+=== 1b. CONTROL: every runner, DSLR 1-4 against the rest ===
+    q       n     WAX  A/E     p  A/E_pl  p_pl  roi_both%   n_am  A/E_am  p_am  A/E_pl_am  roi_both_am%  clv%    t_n  t_WAX  t_A/E   t_p  t_A/E_pl t_p_pl  t_roi_both%  t_n_am  t_A/E_am t_p_am  t_A/E_pl_am  t_roi_both_am%  t_clv%
+False 1412892 -349.43 1.00 0.335    1.00 0.092      -5.63 368634    0.97 7e-11       0.97         -6.10 -3.83 579189 -79.54   1.00 0.735      1.00  0.123        -5.33  460140      0.98  2e-09         0.97           -6.47   -3.43
+ True   21009  229.81 1.08 7e-06    1.04 2e-06       0.26   5072    1.17 2e-07       1.09         11.07 12.20   6156  56.91   1.05 0.053      1.01  0.399        -2.52    5355      1.15  7e-07         1.06            8.20    9.39
+
+=== 2. THE QUICK RETURN (train 2010-21 | t_ test 2022-26) ===
+The owner's bar, fixed before the TEST figures are read.
+
+    TRAIN: n >= 2,000; win A/E > 1 with chi2 p < 0.001; place A/E > 1 with chi2 p < 0.01.
+    TEST : n >= 500; WAX > 0 with chi2 p < 0.05; place A/E > 1; win+place level ROI at BSP > 0 after 5% commission;
+           win and place A/E both above 1 in at least 3 of the test years.
+    
+The same bar against the MORNING prices (2018+): what a bettor could actually take before the off.
+
+    TRAIN (2018-21): n_am >= 1,000; win A/E vs the morning price > 1 with chi2 p < 0.001; place A/E vs the morning place
+    price > 1 with p < 0.01.  TEST (2022-26): n_am >= 500; win A/E_am > 1 with p < 0.01; place A/E_am > 1; win+place
+    level ROI at the morning prices > 0 after 5% commission; win and place A/E_am both above 1 in 3+ test years.
+    
+                                       rule       gate    gate_am      n     WAX  A/E     p  A/E_pl  p_pl  roi_bsp%  roi_pl%  roi_both%  tw_both_roi%  tw_both_pnl  n_am  WAX_am  A/E_am  p_am  A/E_pl_am p_pl_am  roi_am%  roi_both_am%  tw_both_am_roi%  med_am_vol   t_n   t_WAX  t_A/E   t_p  t_A/E_pl t_p_pl  t_roi_bsp%  t_roi_pl%  t_roi_both%  t_tw_both_roi%  t_tw_both_pnl  t_n_am  t_WAX_am  t_A/E_am t_p_am  t_A/E_pl_am t_p_pl_am  t_roi_am%  t_roi_both_am%  t_tw_both_am_roi%  t_med_am_vol t_years_both>1 t_years_am_both>1                                                          t_years
+                        ALL codes: DSLR 1-4 train only       PASS  20894  226.34 1.07 9e-06    1.04 2e-06      2.06    -1.24       0.41          2.51     58453.64  5059  135.12    1.17 2e-07       1.09   6e-07    15.70         11.13             6.98     1120.44  6147   57.39   1.06 0.051      1.01  0.400       -4.43      -0.60        -2.45           -0.12        -997.66    5353    138.39      1.15  6e-07         1.06     0.002      12.30            8.23               4.32        831.40            3/5               4/5 22:0.96/0.92 23:0.98/1.00 24:1.13/1.07 25:1.09/1.01 26:1.14/1.06
+                        ALL codes: DSLR 1-3          -       PASS  12474   79.05 1.04 0.045    1.04 0.002      0.72    -1.66      -0.43          1.54     21286.54  2995   83.62    1.18 3e-05       1.10   7e-05    17.56         11.13             7.62     1072.24  3683   18.88   1.03 0.406      1.01  0.669       -5.00      -3.20        -4.00           -0.25       -1228.77    3213     73.01      1.13  6e-04         1.08     0.001      13.25           11.62               6.34        807.78            4/5               4/5 22:0.89/0.91 23:1.00/1.01 24:1.12/1.05 25:1.09/1.03 26:1.06/1.06
+ALL codes: DSLR 1-4, same code as last time train only       PASS  17296  178.49 1.07 1e-04    1.05 2e-06      2.14    -0.40       0.86          2.67     53867.52  4246  123.16    1.18 4e-07       1.10   1e-06    15.27         10.87             7.87     1189.59  5160   48.68   1.05 0.073      1.01  0.393       -3.31      -1.19        -2.19           -0.05        -389.13    4530    119.11      1.15  4e-06         1.06     0.004      12.51            9.01               4.28        873.14            3/5               4/5 22:0.92/0.91 23:0.96/1.00 24:1.14/1.08 25:1.11/1.02 26:1.16/1.07
+      ALL codes: DSLR 1-4, placed last time train only       PASS   8088  151.06 1.08 7e-05    1.04 4e-04      2.74     1.43       2.12          2.51     38400.92  2222   79.56    1.15 7e-05       1.07   0.003    13.28          9.52             5.98     2420.41  2523   10.68   1.02 0.628      0.99  0.500       -2.84      -4.58        -3.61           -1.41       -7880.81    2484     60.35      1.10  0.005         1.02     0.277       4.64            1.64               1.79       1518.30            3/5               4/5 22:0.91/0.90 23:0.92/0.96 24:1.06/1.05 25:1.05/1.01 26:1.16/1.03
+              ALL codes: DSLR 1-4, handicap train only       PASS  16357  167.90 1.07 3e-04    1.04 2e-05      4.96     1.49       3.21          2.06     37707.58  4208  115.29    1.17 1e-06       1.09   4e-06    18.45         13.28             6.87     1189.18  4953   49.92   1.06 0.063      1.00  0.777        0.29       0.28         0.32           -1.05       -7153.93    4479    114.77      1.15  7e-06         1.05     0.018      13.01            7.39               3.62        871.26            2/5               4/5 22:0.96/0.92 23:0.98/0.98 24:1.14/1.08 25:1.07/0.99 26:1.14/1.06
+ALL codes: DSLR 1-4, morning price under 11          -       PASS   3303   36.61 1.05 0.134    1.02 0.228      0.04    -1.16      -0.56          1.27      8041.82  3303   94.54    1.13 7e-05       1.07   2e-04     9.49          8.45             5.75     2046.66  3759   49.71   1.05 0.059      1.01  0.624        0.77      -1.50        -0.29           -0.14       -1036.51    3759    118.16      1.14  4e-06         1.06     0.003       9.49            8.04               4.34       1275.22            2/5               4/5 22:0.93/0.91 23:0.96/1.02 24:1.13/1.06 25:1.08/0.99 26:1.17/1.05
+                          flat+AW: DSLR 1-4 train only       PASS  16206  177.97 1.08 7e-05    1.04 1e-04     -0.83    -1.24      -1.05          2.15     38051.52  4147  111.75    1.17 2e-06       1.08   5e-05    15.42         10.66             5.95     1186.82  5045   44.29   1.05 0.097      1.00  0.906       -3.98      -0.28        -2.10           -1.20       -8169.32    4507    107.60      1.14  2e-05         1.04     0.070      11.44            5.87               2.53        861.40            3/5               3/5 22:0.93/0.89 23:0.97/0.99 24:1.15/1.08 25:1.05/1.00 26:1.18/1.06
+  flat+AW: DSLR 1-4, morning price under 11          -       PASS   2734   38.52 1.06 0.079    1.02 0.356      1.42    -1.23       0.10          0.70      3467.20  2734   80.30    1.14 2e-04       1.06   0.003    10.58          8.47             4.77     2091.57  3206   38.33   1.05 0.112      0.99  0.617        0.54      -2.91        -1.14           -1.42       -8796.35    3206     92.98      1.13  8e-05         1.03     0.098       9.35            6.95               2.57       1276.89            2/5               3/5 22:0.91/0.88 23:0.98/1.01 24:1.14/1.06 25:1.03/0.96 26:1.20/1.05
+                            jumps: DSLR 1-4          -          -   4688   48.37 1.07 0.048    1.06 0.003     12.02    -1.24       5.44          3.62     20402.11   912   23.38    1.15 0.041       1.14   0.002    16.97         13.43            10.97      800.82  1102   13.10   1.07 0.284      1.07  0.079       -6.51      -2.08        -4.05            4.86        7171.66     846     30.79      1.20  0.006         1.18     2e-04      16.86           21.00              12.28        673.36            4/5               4/5 22:1.09/1.08 23:1.00/1.09 24:1.01/1.04 25:1.32/1.06 26:0.95/1.07
+    jumps: DSLR 1-4, morning price under 11          -          -    569   -1.91 0.99 0.858    1.03 0.374     -6.59    -0.81      -3.76          3.37      4574.61   569   14.24    1.10 0.168       1.10   0.014     4.27          8.36             9.53     1795.38   553   11.38   1.08 0.277      1.09  0.012        2.12       6.70         4.67            6.03        7759.84     553     25.18      1.18  0.013         1.18     1e-04      10.34           14.26              12.22       1247.80            4/5               5/5 22:1.02/1.09 23:0.89/1.09 24:1.08/1.07 25:1.39/1.17 26:1.02/1.06
+                             flat: DSLR 1-4 train only       PASS  10231  130.75 1.09 2e-04    1.04 0.001     -1.19    -0.95      -1.11          2.54     26778.69  2487   71.97    1.19 5e-05       1.09   0.001    16.09         12.03             7.57     1021.00  2938   31.01   1.07 0.120      1.01  0.681        4.33      -0.55         1.92           -0.79       -2908.96    2567     69.09      1.16  2e-04         1.05     0.095      22.67            8.76               3.25        828.12            4/5               3/5 22:0.91/0.89 23:1.03/1.04 24:1.06/1.06 25:1.13/1.02 26:1.21/1.03
+                               aw: DSLR 1-4          -          -   5975   47.23 1.05 0.091    1.04 0.029     -0.21    -1.73      -0.93          1.59     11272.84  1660   39.77    1.14 0.010       1.07   0.017    14.41          8.69             3.89     1542.40  2107   13.28   1.03 0.455      0.99  0.766      -15.57       0.10        -7.69           -1.68       -5260.36    1940     38.51      1.11  0.024         1.03     0.403      -3.41            1.77               1.67        908.02            2/5               2/5 22:0.95/0.88 23:0.90/0.91 24:1.26/1.10 25:0.95/0.99 26:1.13/1.11
+                           hurdle: DSLR 1-4          -          -   3151   42.38 1.09 0.032    1.04 0.068     17.40    -5.77       5.85          3.89     14895.45   587   21.01    1.20 0.023       1.13   0.017    12.76         10.52            11.99      812.58   705   10.89   1.11 0.244      1.06  0.224       -9.09      -4.28        -6.62            4.81        4368.10     503     20.40      1.24  0.016         1.18     0.005      24.71           31.12              12.43        568.22            3/5               4/5 22:1.24/1.07 23:1.03/1.07 24:0.95/1.04 25:1.54/1.05 26:0.80/1.09
+                            chase: DSLR 1-4          -          -   1537    5.99 1.02 0.679    1.09 0.010      0.99     8.07       4.60          3.04      5506.66   325    2.36    1.04 0.726       1.16   0.034    24.56         19.06             8.65      783.24   397    2.21   1.03 0.778      1.08  0.192       -1.92       1.88         0.58            4.96        2803.56     343     10.39      1.16  0.156         1.18     0.012       5.35            6.39              12.08        802.79            3/5               4/5 22:0.92/1.10 23:0.93/1.13 24:1.11/1.04 25:1.08/1.06 26:1.10/1.05
+     ALL codes: DSLR 1-4, morning price 1-3          -          -    488   13.88 1.06 0.208    1.04 0.154      3.60     2.52       3.22          2.84      6916.54   488   25.74    1.12 0.019       1.08   0.008     8.47         10.19             6.67     6051.55   632   21.23   1.07 0.090      1.04  0.078        6.22       2.96         5.18            2.37        7381.84     632     37.15      1.13  0.003         1.07     0.010      10.83            8.44               5.70       3496.16            3/5               4/5 22:0.99/1.01 23:0.93/1.01 24:1.12/1.04 25:1.06/1.01 26:1.24/1.12
+     ALL codes: DSLR 1-4, morning price 3-6          -          -   1431   11.42 1.03 0.486    1.02 0.408      0.39    -1.17      -0.44          0.82      2165.41  1431   36.26    1.11 0.023       1.06   0.023     5.44          5.98             4.89     2542.40  1640   26.22   1.06 0.135      1.00  0.853        5.02      -1.30         1.79           -1.08       -3243.35    1640     56.13      1.15  0.001         1.04     0.111      10.92            6.20               2.61       1552.63            4/5               4/5 22:0.98/0.95 23:1.04/1.03 24:1.07/1.03 25:1.08/1.01 26:1.16/1.00
+    ALL codes: DSLR 1-4, morning price 6-11          -          -   1384   11.31 1.06 0.384    1.01 0.760     -1.56    -2.41      -1.99         -0.81     -1040.14  1384   32.54    1.19 0.009       1.08   0.043    14.04         10.55             5.77     1126.23  1487    2.27   1.01 0.866      0.99  0.686       -6.23      -3.59        -4.88           -3.74       -5175.00    1487     24.88      1.13  0.052         1.07     0.093       7.35           10.01               5.13        691.58            2/5               2/5 22:0.77/0.79 23:0.85/1.01 24:1.27/1.13 25:1.13/0.96 26:1.09/1.06
+   ALL codes: DSLR 1-4, morning price 11-21          - train only   1013   18.66 1.22 0.034    1.11 0.034     18.38     7.45      12.97          8.12      4271.94  1013   33.36    1.48 3e-05       1.28   1e-05    42.37         29.69            26.18      404.80   990    8.37   1.11 0.322      0.99  0.920        1.80      -3.67        -0.89           -2.41       -1200.12     990     17.19      1.25  0.032         1.06     0.360      18.96           10.69               3.01        319.29            1/5               3/5 22:1.21/0.90 23:0.97/0.91 24:1.27/1.11 25:1.29/1.00 26:0.73/1.10
+ ALL codes: DSLR 1-4, morning price 21-1001          -          -    743    4.21 1.17 0.389    1.06 0.484      6.14    -4.09       1.03          3.93       647.79   743    7.23    1.33 0.116       1.11   0.306     6.94         -0.79             8.09      153.32   604    1.83   1.10 0.672      1.14  0.147        8.56      11.31        10.11            8.80        1136.28     604      3.04      1.17  0.467         1.13     0.308      18.86            5.59               7.48        167.90            3/5               3/5 22:1.20/1.25 23:1.15/1.16 24:0.38/0.79 25:1.00/1.08 26:1.50/1.32
+         ALL codes: DSLR 1-4, won last time          -          -   2944   90.53 1.11 2e-04    1.03 0.077      5.30    -0.17       2.57          2.63     19616.41   825   34.60    1.14 0.009       0.99   0.661     6.97          1.41             2.63     3786.10   945    3.68   1.01 0.796      0.99  0.615       -6.17      -4.42        -5.16           -1.72       -4714.74     937     17.56      1.06  0.211         0.99     0.796      -2.02           -3.32              -0.32       2192.64            2/5               2/5 22:0.97/0.93 23:0.89/0.94 24:0.98/1.01 25:1.10/1.02 26:1.12/1.05
+ ALL codes: DSLR 1-4, did not win last time          -       PASS  17916  133.60 1.06 0.002    1.05 6e-06      1.47    -1.40       0.03          2.43     38365.50  4234  100.52    1.18 6e-06       1.13   7e-09    17.40         13.24             9.56      861.91  5202   53.70   1.07 0.033      1.02  0.251       -4.12       0.09        -1.95            0.67        3717.08    4416    120.83      1.19  3e-07         1.08     2e-04      15.34           10.89               6.95        680.36            4/5               4/5 22:0.95/0.92 23:1.01/1.02 24:1.18/1.09 25:1.08/1.01 26:1.15/1.07
+                        ALL codes: DSLR 5-7          -          -  58165  143.69 1.02 0.075    1.02 0.001     -4.46    -2.86      -3.72         -0.72    -41959.67 13726   67.88    1.03 0.105       1.03   0.012    -4.18          1.19             0.62      861.93 17673  -53.85   0.98 0.239      1.00  0.765       -9.65      -5.51        -7.62           -2.40      -44847.88   14232      8.85      1.00  0.840         1.02     0.112      -5.16           -1.00              -1.32        636.05            2/5               3/5 22:0.98/0.99 23:1.01/1.00 24:0.92/0.99 25:1.04/1.02 26:0.94/1.02
+                       ALL codes: DSLR 8-14          -          - 245274 -774.09 0.97 5e-07    1.00 0.345    -10.34    -6.24      -8.28         -3.04   -627131.26 61352 -444.10    0.94 1e-07       0.97   2e-06   -11.62         -7.08            -5.31      657.58 86951 -113.81   0.99 0.213      1.01  0.043       -9.25      -4.87        -7.05           -1.74     -124003.75   69388   -471.79      0.95  1e-07         0.99     0.015     -13.64           -8.80              -3.84        525.45            1/5               0/5 22:0.99/1.01 23:0.99/1.01 24:0.97/0.99 25:1.00/1.02 26:1.01/1.01
+
+=== 3. CAPACITY: GBP matched in the morning on DSLR 1-4 selections, 2018+ ===
+selections 12042 | with a morning price 11820 | morning volume quantiles {0.1: 29.0, 0.25: 169.0, 0.5: 710.0, 0.75: 2009.0, 0.9: 4351.0}
+  share with GBP50+ matched in the morning: 0.865
+  share with GBP100+ matched in the morning: 0.810
+  share with GBP250+ matched in the morning: 0.695
+  share with GBP500+ matched in the morning: 0.572
+  stake to win GBP100 at the morning price, median 13.89
+
+=== 4. STAKING: to win GBP100 in the win market AND GBP100 in the place market, each selection ===
+
+--- ALL codes DSLR 1-4 | TEST 2022-26 | morning price where GBP50+ matched, else BSP ---
+bets 6147 | at the morning price 0.87 | staked GBP736,232 | P&L GBP24,555 (win 12,490, place 12,065) | ROI 3.34% | worst drawdown GBP-7,219 | longest run of losing days 10 | days 1524, winning days 0.51
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2022  1335  138166.8   1000.3    -2298.4  -1298.1  -0.9
+2023  1321  151737.6    796.9     3972.0   4769.0   3.1
+2024  1252  154817.5   4678.8     6732.9  11411.7   7.4
+2025  1204  155248.8   1930.4    -1018.2    912.2   0.6
+2026  1035  136261.4   4083.4     4676.9   8760.3   6.4
+
+--- ALL codes DSLR 1-4 | TEST 2022-26 | BSP only ---
+bets 6147 | at the morning price 0.00 | staked GBP831,488 | P&L GBP-2,453 (win 1,539, place -3,992) | ROI -0.30% | worst drawdown GBP-17,427 | longest run of losing days 10 | days 1524, winning days 0.49
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2022  1335  173408.6  -2673.4   -10832.7 -13506.1  -7.8
+2023  1321  180214.4  -2575.8     -111.9  -2687.7  -1.5
+2024  1252  170146.1   2991.3     5287.2   8278.6   4.9
+2025  1204  160947.6    753.7    -2330.3  -1576.6  -1.0
+2026  1035  146771.8   3043.3     3995.3   7038.6   4.8
+
+--- ALL codes DSLR 1-4 | TEST 2022-26 | ONLY where a morning price is held (skip the rest) ---
+bets 5353 | at the morning price 1.00 | staked GBP718,396 | P&L GBP24,457 (win 12,915, place 11,541) | ROI 3.40% | worst drawdown GBP-7,761 | longest run of losing days 9 | days 1490, winning days 0.51
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2022  1122  133671.4   1109.1    -1676.5   -567.4  -0.4
+2023  1144  147957.5    638.0     4350.9   4988.9   3.4
+2024  1102  151493.2   4780.4     6027.8  10808.2   7.1
+2025  1043  150228.8   2125.2    -1954.8    170.5   0.1
+2026   942  135045.3   4262.7     4793.7   9056.4   6.7
+
+--- ALL codes DSLR 1-4 | TRAIN 2018-21 (morning prices held) | morning price where GBP50+ matched, else BSP ---
+bets 5895 | at the morning price 0.86 | staked GBP645,026 | P&L GBP35,665 (win 12,848, place 22,817) | ROI 5.53% | worst drawdown GBP-4,221 | longest run of losing days 7 | days 1244, winning days 0.54
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2018  1625  174099.9   5210.1     9963.3  15173.4   8.7
+2019  1554  167219.1   4924.0     9215.2  14139.2   8.5
+2020  1231  137577.8   1680.8      111.2   1792.0   1.3
+2021  1485  166129.0   1033.0     3526.9   4559.9   2.7
+
+--- ALL codes DSLR 1-4 | TRAIN 2018-21 (morning prices held) | BSP only ---
+bets 5895 | at the morning price 0.00 | staked GBP726,789 | P&L GBP13,328 (win 3,165, place 10,163) | ROI 1.83% | worst drawdown GBP-11,710 | longest run of losing days 7 | days 1244, winning days 0.52
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2018  1625  196226.3   2545.3     8023.7  10569.0   5.4
+2019  1554  187323.9   2643.0     6590.6   9233.6   4.9
+2020  1231  150242.0    250.6    -1803.6  -1553.0  -1.0
+2021  1485  192996.9  -2274.4    -2647.3  -4921.6  -2.6
+
+--- ALL codes DSLR 1-4 | TRAIN 2018-21 (morning prices held) | ONLY where a morning price is held (skip the rest) ---
+bets 5059 | at the morning price 1.00 | staked GBP624,248 | P&L GBP35,432 (win 13,631, place 21,801) | ROI 5.68% | worst drawdown GBP-4,086 | longest run of losing days 9 | days 1220, winning days 0.54
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2018  1364  163375.6   5167.6     8833.7  14001.3   8.6
+2019  1369  164449.7   5166.5     9868.4  15034.9   9.1
+2020  1081  135490.2   1484.4     -887.1    597.3   0.4
+2021  1245  160933.0   1812.7     3985.6   5798.3   3.6
+
+--- flat+AW DSLR 1-4 | TEST 2022-26 | morning price where GBP50+ matched, else BSP ---
+bets 5045 | at the morning price 0.89 | staked GBP606,058 | P&L GBP11,129 (win 8,419, place 2,709) | ROI 1.84% | worst drawdown GBP-8,490 | longest run of losing days 8 | days 1398, winning days 0.49
+      bets    staked  win_pnl  place_pnl     pnl  roi%
+year                                                  
+2022  1076  109433.3    185.8    -4436.7 -4250.9  -3.9
+2023  1078  125264.7    114.2     1037.0  1151.2   0.9
+2024  1015  125458.8   3860.8     5686.7  9547.5   7.6
+2025  1003  130524.5    427.7    -3105.0 -2677.3  -2.1
+2026   873  115377.1   3830.9     3527.2  7358.1   6.4
+
+--- flat+AW DSLR 1-4 | TEST 2022-26 | BSP only ---
+bets 5045 | at the morning price 0.00 | staked GBP683,440 | P&L GBP-9,591 (win 73, place -9,664) | ROI -1.40% | worst drawdown GBP-20,445 | longest run of losing days 8 | days 1398, winning days 0.48
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2022  1076  138487.4  -2530.2   -11823.0 -14353.2 -10.4
+2023  1078  147041.7  -2503.6    -1757.2  -4260.8  -2.9
+2024  1015  136793.5   2694.3     4617.0   7311.3   5.3
+2025  1003  135962.4   -541.4    -3996.6  -4538.0  -3.3
+2026   873  125154.6   2954.2     3295.7   6249.9   5.0
+
+--- flat+AW DSLR 1-4 | TEST 2022-26 | ONLY where a morning price is held (skip the rest) ---
+bets 4507 | at the morning price 1.00 | staked GBP593,335 | P&L GBP11,153 (win 8,930, place 2,223) | ROI 1.88% | worst drawdown GBP-7,836 | longest run of losing days 8 | days 1367, winning days 0.50
+      bets    staked  win_pnl  place_pnl     pnl  roi%
+year                                                  
+2022   932  106317.4    318.3    -4026.7 -3708.4  -3.5
+2023   966  122847.7    156.6     1532.3  1689.0   1.4
+2024   923  123230.7   3793.2     5125.3  8918.5   7.2
+2025   892  126645.4    669.1    -4169.4 -3500.3  -2.8
+2026   794  114293.6   3992.5     3761.8  7754.3   6.8
+
+--- flat+AW DSLR 1-4 | TRAIN 2018-21 (morning prices held) | morning price where GBP50+ matched, else BSP ---
+bets 4758 | at the morning price 0.87 | staked GBP506,342 | P&L GBP24,495 (win 10,379, place 14,117) | ROI 4.84% | worst drawdown GBP-5,982 | longest run of losing days 9 | days 1124, winning days 0.53
+      bets    staked  win_pnl  place_pnl     pnl  roi%
+year                                                  
+2018  1279  134809.4   4409.7     4612.0  9021.7   6.7
+2019  1231  121726.5   3913.0     6020.4  9933.4   8.2
+2020  1036  114700.3   1714.5    -1342.9   371.6   0.3
+2021  1212  135106.0    341.6     4827.1  5168.7   3.8
+
+--- flat+AW DSLR 1-4 | TRAIN 2018-21 (morning prices held) | BSP only ---
+bets 4758 | at the morning price 0.00 | staked GBP570,800 | P&L GBP7,912 (win 3,613, place 4,299) | ROI 1.39% | worst drawdown GBP-8,145 | longest run of losing days 9 | days 1124, winning days 0.50
+      bets    staked  win_pnl  place_pnl     pnl  roi%
+year                                                  
+2018  1279  152219.0   2625.2     3259.5  5884.7   3.9
+2019  1231  135841.0   2390.3     3897.9  6288.2   4.6
+2020  1036  126071.6    623.7    -2989.5 -2365.7  -1.9
+2021  1212  156668.5  -2025.7      130.6 -1895.2  -1.2
+
+--- flat+AW DSLR 1-4 | TRAIN 2018-21 (morning prices held) | ONLY where a morning price is held (skip the rest) ---
+bets 4147 | at the morning price 1.00 | staked GBP490,334 | P&L GBP24,621 (win 11,049, place 13,571) | ROI 5.02% | worst drawdown GBP-5,542 | longest run of losing days 9 | days 1097, winning days 0.53
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2018  1091  126079.7   4371.7     3969.7   8341.4   6.6
+2019  1094  119737.3   4130.6     6546.7  10677.2   8.9
+2020   920  113065.9   1550.8    -1952.4   -401.5  -0.4
+2021  1042  131451.2    996.2     5007.3   6003.4   4.6
+
+--- jumps DSLR 1-4 | TEST 2022-26 | morning price where GBP50+ matched, else BSP ---
+bets 1102 | at the morning price 0.77 | staked GBP130,174 | P&L GBP13,426 (win 4,070, place 9,356) | ROI 10.31% | worst drawdown GBP-1,938 | longest run of losing days 9 | days 604, winning days 0.48
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2022   259  28733.5    814.5     2138.4  2952.8  10.3
+2023   243  26472.9    682.7     2935.0  3617.7  13.7
+2024   237  29358.7    818.0     1046.2  1864.1   6.3
+2025   201  24724.3   1502.7     2086.8  3589.5  14.5
+2026   162  20884.3    252.5     1149.7  1402.2   6.7
+
+--- jumps DSLR 1-4 | TEST 2022-26 | BSP only ---
+bets 1102 | at the morning price 0.00 | staked GBP148,049 | P&L GBP7,138 (win 1,466, place 5,672) | ROI 4.82% | worst drawdown GBP-2,592 | longest run of losing days 9 | days 604, winning days 0.47
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2022   259  34921.2   -143.2      990.3   847.1   2.4
+2023   243  33172.7    -72.2     1645.3  1573.1   4.7
+2024   237  33352.5    297.0      670.3   967.3   2.9
+2025   201  24985.1   1295.2     1666.3  2961.4  11.9
+2026   162  21617.2     89.2      699.5   788.7   3.6
+
+--- jumps DSLR 1-4 | TEST 2022-26 | ONLY where a morning price is held (skip the rest) ---
+bets 846 | at the morning price 1.00 | staked GBP125,061 | P&L GBP13,304 (win 3,986, place 9,318) | ROI 10.64% | worst drawdown GBP-1,801 | longest run of losing days 7 | days 516, winning days 0.54
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2022   190  27354.0    790.8     2350.2  3141.0  11.5
+2023   178  25109.8    481.4     2818.6  3299.9  13.1
+2024   179  28262.5    987.2      902.6  1889.8   6.7
+2025   151  23583.4   1456.2     2214.6  3670.7  15.6
+2026   148  20751.8    270.2     1031.9  1302.1   6.3
+
+--- jumps DSLR 1-4 | TRAIN 2018-21 (morning prices held) | morning price where GBP50+ matched, else BSP ---
+bets 1137 | at the morning price 0.80 | staked GBP138,684 | P&L GBP11,169 (win 2,469, place 8,700) | ROI 8.05% | worst drawdown GBP-2,282 | longest run of losing days 7 | days 615, winning days 0.47
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2018   346  39290.4    800.4     5351.3  6151.7  15.7
+2019   323  45492.6   1011.0     3194.7  4205.7   9.2
+2020   195  22877.5    -33.6     1454.1  1420.5   6.2
+2021   273  31023.0    691.5    -1300.2  -608.8  -2.0
+
+--- jumps DSLR 1-4 | TRAIN 2018-21 (morning prices held) | BSP only ---
+bets 1137 | at the morning price 0.00 | staked GBP155,989 | P&L GBP5,416 (win -449, place 5,865) | ROI 3.47% | worst drawdown GBP-4,426 | longest run of losing days 7 | days 615, winning days 0.46
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2018   346  44007.3    -79.9     4764.2  4684.3  10.6
+2019   323  51482.9    252.7     2692.7  2945.4   5.7
+2020   195  24170.4   -373.2     1185.8   812.7   3.4
+2021   273  36328.4   -248.7    -2777.8 -3026.5  -8.3
+
+--- jumps DSLR 1-4 | TRAIN 2018-21 (morning prices held) | ONLY where a morning price is held (skip the rest) ---
+bets 912 | at the morning price 1.00 | staked GBP133,914 | P&L GBP10,811 (win 2,582, place 8,229) | ROI 8.07% | worst drawdown GBP-2,003 | longest run of losing days 8 | days 548, winning days 0.50
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2018   273  37295.9    795.9     4864.0  5659.9  15.2
+2019   275  44712.4   1035.9     3321.7  4357.6   9.7
+2020   161  22424.3    -66.5     1065.3   998.8   4.5
+2021   203  29481.8    816.5    -1021.7  -205.2  -0.7
+
+--- ALL codes DSLR 1-4, morning price under 11 | TEST 2022-26 | morning price where GBP50+ matched, else BSP ---
+bets 3759 | at the morning price 1.00 | staked GBP661,052 | P&L GBP21,683 (win 11,284, place 10,400) | ROI 3.28% | worst drawdown GBP-6,660 | longest run of losing days 9 | days 1367, winning days 0.55
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2022   757  121214.2    383.2    -1863.1  -1479.9  -1.2
+2023   772  134418.4    262.8     3843.4   4106.2   3.1
+2024   800  139733.5   4439.9     6243.8  10683.7   7.6
+2025   757  139839.1   1765.8    -1878.3   -112.5  -0.1
+2026   673  125846.9   4432.0     4053.9   8485.9   6.7
+
+--- ALL codes DSLR 1-4, morning price under 11 | TEST 2022-26 | BSP only ---
+bets 3759 | at the morning price 0.00 | staked GBP750,917 | P&L GBP-2,479 (win 1,383, place -3,862) | ROI -0.33% | worst drawdown GBP-16,527 | longest run of losing days 9 | days 1367, winning days 0.54
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2022   757  154551.3  -2954.0    -9703.4 -12657.4  -8.2
+2023   772  160356.7  -2629.8      809.9  -1819.9  -1.1
+2024   800  154621.1   2938.5     4633.5   7572.0   4.9
+2025   757  145172.3    598.7    -2990.3  -2391.6  -1.6
+2026   673  136216.0   3429.5     3388.3   6817.7   5.0
+
+--- ALL codes DSLR 1-4, morning price under 11 | TEST 2022-26 | ONLY where a morning price is held (skip the rest) ---
+bets 3759 | at the morning price 1.00 | staked GBP661,052 | P&L GBP21,683 (win 11,284, place 10,400) | ROI 3.28% | worst drawdown GBP-6,660 | longest run of losing days 9 | days 1367, winning days 0.55
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2022   757  121214.2    383.2    -1863.1  -1479.9  -1.2
+2023   772  134418.4    262.8     3843.4   4106.2   3.1
+2024   800  139733.5   4439.9     6243.8  10683.7   7.6
+2025   757  139839.1   1765.8    -1878.3   -112.5  -0.1
+2026   673  125846.9   4432.0     4053.9   8485.9   6.7
+
+--- ALL codes DSLR 1-4, morning price under 11 | TRAIN 2018-21 (morning prices held) | morning price where GBP50+ matched, else BSP ---
+bets 3303 | at the morning price 1.00 | staked GBP563,706 | P&L GBP25,388 (win 9,950, place 15,438) | ROI 4.50% | worst drawdown GBP-4,676 | longest run of losing days 7 | days 1112, winning days 0.55
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2018   843  145485.0   3593.6     6958.8  10552.3   7.3
+2019   898  148032.3   4427.2     8006.3  12433.5   8.4
+2020   735  123944.6    984.0    -2134.4  -1150.4  -0.9
+2021   827  146244.3    944.9     2607.4   3552.3   2.4
+
+--- ALL codes DSLR 1-4, morning price under 11 | TRAIN 2018-21 (morning prices held) | BSP only ---
+bets 3303 | at the morning price 0.00 | staked GBP636,896 | P&L GBP8,182 (win 2,110, place 6,072) | ROI 1.28% | worst drawdown GBP-9,973 | longest run of losing days 7 | days 1112, winning days 0.53
+      bets    staked  win_pnl  place_pnl     pnl  roi%
+year                                                  
+2018   843  165878.8   1402.4     5224.2  6626.7   4.0
+2019   898  166111.3   2542.0     6022.1  8564.1   5.2
+2020   735  134805.6    -56.4    -2989.9 -3046.3  -2.3
+2021   827  170100.7  -1778.5    -2184.4 -3962.8  -2.3
+
+--- ALL codes DSLR 1-4, morning price under 11 | TRAIN 2018-21 (morning prices held) | ONLY where a morning price is held (skip the rest) ---
+bets 3303 | at the morning price 1.00 | staked GBP563,706 | P&L GBP25,388 (win 9,950, place 15,438) | ROI 4.50% | worst drawdown GBP-4,676 | longest run of losing days 7 | days 1112, winning days 0.55
+      bets    staked  win_pnl  place_pnl      pnl  roi%
+year                                                   
+2018   843  145485.0   3593.6     6958.8  10552.3   7.3
+2019   898  148032.3   4427.2     8006.3  12433.5   8.4
+2020   735  123944.6    984.0    -2134.4  -1150.4  -0.9
+2021   827  146244.3    944.9     2607.4   3552.3   2.4
+
+--- hurdle DSLR 1-4 | TEST 2022-26 | morning price where GBP50+ matched, else BSP ---
+bets 705 | at the morning price 0.71 | staked GBP77,259 | P&L GBP8,612 (win 2,851, place 5,761) | ROI 11.15% | worst drawdown GBP-1,310 | longest run of losing days 11 | days 468, winning days 0.45
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2022   148  15742.1    881.8      937.8  1819.5  11.6
+2023   176  20137.0    509.2     1955.1  2464.3  12.2
+2024   157  18538.3    470.5     1146.3  1616.8   8.7
+2025   120  12234.4   1269.5     1119.4  2388.9  19.5
+2026   104  10606.8   -279.4      602.0   322.5   3.0
+
+--- hurdle DSLR 1-4 | TEST 2022-26 | BSP only ---
+bets 705 | at the morning price 0.00 | staked GBP90,878 | P&L GBP4,366 (win 1,287, place 3,079) | ROI 4.80% | worst drawdown GBP-2,090 | longest run of losing days 11 | days 468, winning days 0.44
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2022   148  18828.5    397.8      236.6   634.4   3.4
+2023   176  25813.7    -32.1      796.6   764.5   3.0
+2024   157  21848.9    167.4     1099.5  1266.9   5.8
+2025   120  13132.4   1181.7      625.5  1807.1  13.8
+2026   104  11254.3   -427.5      321.0  -106.4  -0.9
+
+--- hurdle DSLR 1-4 | TEST 2022-26 | ONLY where a morning price is held (skip the rest) ---
+bets 503 | at the morning price 1.00 | staked GBP73,624 | P&L GBP8,520 (win 2,644, place 5,876) | ROI 11.57% | worst drawdown GBP-1,318 | longest run of losing days 10 | days 372, winning days 0.53
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2022    98  14798.3    796.5     1196.6  1993.1  13.5
+2023   120  19068.6    260.8     1700.0  1960.8  10.3
+2024   112  17757.0    584.4     1110.8  1695.2   9.5
+2025    82  11523.7   1263.9     1386.5  2650.4  23.0
+2026    91  10476.4   -261.9      482.3   220.4   2.1
+
+--- hurdle DSLR 1-4 | TRAIN 2018-21 (morning prices held) | morning price where GBP50+ matched, else BSP ---
+bets 765 | at the morning price 0.77 | staked GBP96,524 | P&L GBP8,370 (win 2,691, place 5,679) | ROI 8.67% | worst drawdown GBP-1,536 | longest run of losing days 7 | days 469, winning days 0.44
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2018   219  25891.9    353.1     4092.7  4445.8  17.2
+2019   215  30897.4   1399.6     2492.1  3891.8  12.6
+2020   136  16523.9    208.6      457.6   666.1   4.0
+2021   195  23211.2    729.8    -1363.1  -633.3  -2.7
+
+--- hurdle DSLR 1-4 | TRAIN 2018-21 (morning prices held) | BSP only ---
+bets 765 | at the morning price 0.00 | staked GBP109,607 | P&L GBP4,408 (win 681, place 3,727) | ROI 4.02% | worst drawdown GBP-2,858 | longest run of losing days 7 | days 469, winning days 0.43
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2018   219  29255.1   -357.2     3595.9  3238.7  11.1
+2019   215  36079.5    803.6     1866.9  2670.5   7.4
+2020   136  17565.6     40.5      359.2   399.7   2.3
+2021   195  26706.5    193.9    -2095.3 -1901.4  -7.1
+
+--- hurdle DSLR 1-4 | TRAIN 2018-21 (morning prices held) | ONLY where a morning price is held (skip the rest) ---
+bets 587 | at the morning price 1.00 | staked GBP93,109 | P&L GBP8,512 (win 2,790, place 5,722) | ROI 9.14% | worst drawdown GBP-1,395 | longest run of losing days 7 | days 404, winning days 0.49
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2018   165  24397.0    376.1     3756.3  4132.5  16.9
+2019   179  30336.3   1489.5     2752.6  4242.1  14.0
+2020   105  16164.3    160.5      242.2   402.7   2.5
+2021   138  22211.7    764.3    -1029.4  -265.1  -1.2
+
+--- flat DSLR 1-4 | TEST 2022-26 | morning price where GBP50+ matched, else BSP ---
+bets 2938 | at the morning price 0.87 | staked GBP324,426 | P&L GBP8,332 (win 5,203, place 3,128) | ROI 2.57% | worst drawdown GBP-2,925 | longest run of losing days 10 | days 852, winning days 0.48
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2022   641  59459.3   -121.6    -2138.5 -2260.2  -3.8
+2023   644  67401.5   1105.4     3400.2  4505.6   6.7
+2024   566  66597.4    862.6     2018.4  2881.0   4.3
+2025   553  67131.0   1228.3      -91.1  1137.2   1.7
+2026   534  63836.6   2128.7      -60.8  2068.0   3.2
+
+--- flat DSLR 1-4 | TEST 2022-26 | BSP only ---
+bets 2938 | at the morning price 0.00 | staked GBP370,419 | P&L GBP-4,261 (win 144, place -4,405) | ROI -1.15% | worst drawdown GBP-9,729 | longest run of losing days 10 | days 852, winning days 0.47
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2022   641  75744.5  -1542.7    -6053.1 -7595.8 -10.0
+2023   644  82780.3   -625.3     1069.2   443.9   0.5
+2024   566  72456.4    219.6     1300.2  1519.8   2.1
+2025   553  70276.9    697.7     -811.6  -113.9  -0.2
+2026   534  69161.0   1395.2       90.0  1485.2   2.1
+
+--- flat DSLR 1-4 | TEST 2022-26 | ONLY where a morning price is held (skip the rest) ---
+bets 2567 | at the morning price 1.00 | staked GBP314,754 | P&L GBP8,487 (win 5,503, place 2,984) | ROI 2.70% | worst drawdown GBP-2,998 | longest run of losing days 10 | days 822, winning days 0.50
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2022   542  57301.9    -62.2    -1621.9 -1684.1  -2.9
+2023   561  65371.5   1190.9     3826.8  5017.8   7.7
+2024   507  64904.7    706.0     1405.1  2111.1   3.3
+2025   479  64181.1   1412.6     -706.7   705.9   1.1
+2026   478  62995.0   2255.8       80.7  2336.5   3.7
+
+--- flat DSLR 1-4 | TRAIN 2018-21 (morning prices held) | morning price where GBP50+ matched, else BSP ---
+bets 2878 | at the morning price 0.86 | staked GBP285,271 | P&L GBP14,948 (win 6,513, place 8,435) | ROI 5.24% | worst drawdown GBP-3,181 | longest run of losing days 9 | days 669, winning days 0.51
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2018   826  80680.2   3242.2     3193.3  6435.5   8.0
+2019   793  77993.4   2660.4     4000.5  6660.9   8.5
+2020   544  54211.9   1161.8      694.2  1856.1   3.4
+2021   715  72385.3   -551.2      546.9    -4.4  -0.0
+
+--- flat DSLR 1-4 | TRAIN 2018-21 (morning prices held) | BSP only ---
+bets 2878 | at the morning price 0.00 | staked GBP319,284 | P&L GBP3,900 (win 2,204, place 1,696) | ROI 1.22% | worst drawdown GBP-6,272 | longest run of losing days 9 | days 669, winning days 0.48
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2018   826  89886.6   2241.7     2210.8  4452.6   5.0
+2019   793  87373.9   1572.7     2490.6  4063.3   4.7
+2020   544  57894.1    487.9     -399.2    88.7   0.2
+2021   715  84129.6  -2098.5    -2605.9 -4704.4  -5.6
+
+--- flat DSLR 1-4 | TRAIN 2018-21 (morning prices held) | ONLY where a morning price is held (skip the rest) ---
+bets 2487 | at the morning price 1.00 | staked GBP277,634 | P&L GBP15,708 (win 6,907, place 8,801) | ROI 5.66% | worst drawdown GBP-3,020 | longest run of losing days 9 | days 652, winning days 0.51
+      bets   staked  win_pnl  place_pnl     pnl  roi%
+year                                                 
+2018   718  78253.8   3178.2     3126.4  6304.5   8.1
+2019   699  76645.0   2772.3     4327.7  7100.0   9.3
+2020   473  53164.7   1000.2      360.0  1360.2   2.6
+2021   597  69570.8    -44.0      987.2   943.1   1.4

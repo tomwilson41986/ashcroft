@@ -1,0 +1,426 @@
+
+== 2026-09-30 (win): books from s3://ashcroft/betfair_live/2026-09-30/
+  betfair_live/2026-09-30/books_trader.csv.gz: NoSuchKey
+  betfair_live/2026-09-30/books.csv.gz: NoSuchKey
+  betfair_live/2026-09-30/markets_trader.csv.gz: NoSuchKey
+  betfair_live/2026-09-30/markets.csv.gz: NoSuchKey
+  no books or no catalogue recorded: the day is skipped
+
+== 2026-10-01 (win): books from s3://ashcroft/betfair_live/2026-10-01/
+  241,532 book rows, 1,756 catalogue rows, 928 ledger rows, 0 prices
+  44 GB/IE WIN markets; 0 prices matched to them
+  price files: 401 runners, 401 matched to the exchange's markets
+  settled books for 44 of 44 markets
+
+== 2026-10-01 (place): books from s3://ashcroft/betfair_live/2026-10-01/
+  151,917 book rows, 1,316 catalogue rows, 0 ledger rows, 0 prices
+  44 GB/IE PLACE markets; 0 prices matched to them
+  price files: 401 runners, 401 matched to the exchange's markets
+  settled books for 44 of 44 markets
+
+== 2026-10-02 (win): books from s3://ashcroft/betfair_live/2026-10-02/
+  400,515 book rows, 1,522 catalogue rows, 878 ledger rows, 0 prices
+  47 GB/IE WIN markets; 0 prices matched to them
+  price files: 455 runners, 455 matched to the exchange's markets
+  settled books for 47 of 47 markets
+
+== 2026-10-02 (place): books from s3://ashcroft/betfair_live/2026-10-02/
+  158,141 book rows, 1,014 catalogue rows, 0 ledger rows, 0 prices
+  47 GB/IE PLACE markets; 0 prices matched to them
+  price files: 455 runners, 455 matched to the exchange's markets
+  settled books for 47 of 47 markets
+
+== 2026-10-03 (win): books from s3://ashcroft/betfair_live/2026-10-03/
+  295,983 book rows, 1,199 catalogue rows, 886 ledger rows, 0 prices
+  44 GB/IE WIN markets; 0 prices matched to them
+  price files: 383 runners, 383 matched to the exchange's markets
+  settled books for 44 of 44 markets
+
+== 2026-10-03 (place): books from s3://ashcroft/betfair_live/2026-10-03/
+  119,311 book rows, 798 catalogue rows, 0 ledger rows, 0 prices
+  43 GB/IE PLACE markets; 0 prices matched to them
+  price files: 380 runners, 380 matched to the exchange's markets
+  settled books for 43 of 43 markets
+
+== 2026-10-04 (win): books from s3://ashcroft/betfair_live/2026-10-04/
+  169,838 book rows, 877 catalogue rows, 632 ledger rows, 0 prices
+  29 GB/IE WIN markets; 0 prices matched to them
+  price files: 260 runners, 260 matched to the exchange's markets
+  settled books for 29 of 29 markets
+
+== 2026-10-04 (place): books from s3://ashcroft/betfair_live/2026-10-04/
+  74,273 book rows, 582 catalogue rows, 0 ledger rows, 0 prices
+  27 GB/IE PLACE markets; 0 prices matched to them
+  price files: 254 runners, 254 matched to the exchange's markets
+  settled books for 27 of 27 markets
+
+== 2026-10-05 (win): books from s3://ashcroft/betfair_live/2026-10-05/
+  428,852 book rows, 1,645 catalogue rows, 967 ledger rows, 0 prices
+  54 GB/IE WIN markets; 0 prices matched to them
+  price files: 498 runners, 498 matched to the exchange's markets
+  settled books for 54 of 54 markets
+
+== 2026-10-05 (place): books from s3://ashcroft/betfair_live/2026-10-05/
+  171,181 book rows, 1,096 catalogue rows, 0 ledger rows, 0 prices
+  54 GB/IE PLACE markets; 0 prices matched to them
+  price files: 498 runners, 498 matched to the exchange's markets
+  settled books for 54 of 54 markets
+
+== 2026-10-06 (win): books from s3://ashcroft/betfair_live/2026-10-06/
+  191,187 book rows, 1,011 catalogue rows, 880 ledger rows, 0 prices
+  35 GB/IE WIN markets; 0 prices matched to them
+  price files: 314 runners, 314 matched to the exchange's markets
+  settled books for 35 of 35 markets
+
+== 2026-10-06 (place): books from s3://ashcroft/betfair_live/2026-10-06/
+  97,166 book rows, 672 catalogue rows, 0 ledger rows, 0 prices
+  35 GB/IE PLACE markets; 0 prices matched to them
+  price files: 314 runners, 314 matched to the exchange's markets
+  settled books for 35 of 35 markets
+
+== 2026-10-07 (win): books from s3://ashcroft/betfair_live/2026-10-07/
+  282,151 book rows, 1,217 catalogue rows, 2,833 ledger rows, 0 prices
+  38 GB/IE WIN markets; 0 prices matched to them
+  price files: 384 runners, 384 matched to the exchange's markets
+  settled books for 38 of 38 markets
+
+== 2026-10-07 (place): books from s3://ashcroft/betfair_live/2026-10-07/
+  124,808 book rows, 811 catalogue rows, 0 ledger rows, 0 prices
+  38 GB/IE PLACE markets; 0 prices matched to them
+  price files: 384 runners, 384 matched to the exchange's markets
+  settled books for 38 of 38 markets
+
+== 2026-10-08 (win): books from s3://ashcroft/betfair_live/2026-10-08/
+  343,764 book rows, 1,417 catalogue rows, 3,044 ledger rows, 0 prices
+  46 GB/IE WIN markets; 0 prices matched to them
+  price files: 432 runners, 432 matched to the exchange's markets
+  settled books for 46 of 46 markets
+
+== 2026-10-08 (place): books from s3://ashcroft/betfair_live/2026-10-08/
+  142,612 book rows, 948 catalogue rows, 0 ledger rows, 0 prices
+  46 GB/IE PLACE markets; 0 prices matched to them
+  price files: 432 runners, 432 matched to the exchange's markets
+  settled books for 46 of 46 markets
+
+== 2026-10-09 (win): books from s3://ashcroft/betfair_live/2026-10-09/
+  443,858 book rows, 1,697 catalogue rows, 1,857 ledger rows, 0 prices
+  47 GB/IE WIN markets; 0 prices matched to them
+  price files: 514 runners, 514 matched to the exchange's markets
+  settled books for 47 of 47 markets
+
+== 2026-10-09 (place): books from s3://ashcroft/betfair_live/2026-10-09/
+  177,626 book rows, 1,130 catalogue rows, 0 ledger rows, 0 prices
+  47 GB/IE PLACE markets; 0 prices matched to them
+  price files: 514 runners, 514 matched to the exchange's markets
+  settled books for 47 of 47 markets
+
+== 2026-10-10 (win): books from s3://ashcroft/betfair_live/2026-10-10/
+  401,990 book rows, 1,701 catalogue rows, 1,881 ledger rows, 0 prices
+  51 GB/IE WIN markets; 0 prices matched to them
+  price files: 528 runners, 528 matched to the exchange's markets
+  settled books for 51 of 51 markets
+
+== 2026-10-10 (place): books from s3://ashcroft/betfair_live/2026-10-10/
+  170,774 book rows, 1,131 catalogue rows, 0 ledger rows, 0 prices
+  50 GB/IE PLACE markets; 0 prices matched to them
+  price files: 525 runners, 525 matched to the exchange's markets
+  settled books for 50 of 50 markets
+
+== 2026-10-11 (win): books from s3://ashcroft/betfair_live/2026-10-11/
+  218,037 book rows, 954 catalogue rows, 1,688 ledger rows, 0 prices
+  30 GB/IE WIN markets; 0 prices matched to them
+  price files: 297 runners, 297 matched to the exchange's markets
+  settled books for 30 of 30 markets
+
+== 2026-10-11 (place): books from s3://ashcroft/betfair_live/2026-10-11/
+  90,240 book rows, 635 catalogue rows, 0 ledger rows, 0 prices
+  30 GB/IE PLACE markets; 0 prices matched to them
+  price files: 297 runners, 297 matched to the exchange's markets
+  settled books for 30 of 30 markets
+
+== 2026-10-12 (win): books from s3://ashcroft/betfair_live/2026-10-12/
+  376,833 book rows, 1,484 catalogue rows, 1,703 ledger rows, 0 prices
+  47 GB/IE WIN markets; 0 prices matched to them
+  price files: 462 runners, 462 matched to the exchange's markets
+  settled books for 47 of 47 markets
+
+== 2026-10-12 (place): books from s3://ashcroft/betfair_live/2026-10-12/
+  152,476 book rows, 989 catalogue rows, 0 ledger rows, 0 prices
+  47 GB/IE PLACE markets; 0 prices matched to them
+  price files: 462 runners, 462 matched to the exchange's markets
+  settled books for 47 of 47 markets
+
+== 2026-10-13 (win): books from s3://ashcroft/betfair_live/2026-10-13/
+  339,885 book rows, 1,127 catalogue rows, 2,023 ledger rows, 0 prices
+  38 GB/IE WIN markets; 0 prices matched to them
+  price files: 352 runners, 352 matched to the exchange's markets
+  settled books for 38 of 38 markets
+
+== 2026-10-13 (place): books from s3://ashcroft/betfair_live/2026-10-13/
+  131,317 book rows, 750 catalogue rows, 0 ledger rows, 0 prices
+  37 GB/IE PLACE markets; 0 prices matched to them
+  price files: 349 runners, 349 matched to the exchange's markets
+  settled books for 37 of 37 markets
+
+== 2026-10-14 (win): books from s3://ashcroft/betfair_live/2026-10-14/
+  317,077 book rows, 1,047 catalogue rows, 1,842 ledger rows, 0 prices
+  39 GB/IE WIN markets; 0 prices matched to them
+  price files: 320 runners, 320 matched to the exchange's markets
+  settled books for 39 of 39 markets
+
+== 2026-10-14 (place): books from s3://ashcroft/betfair_live/2026-10-14/
+  121,520 book rows, 696 catalogue rows, 0 ledger rows, 0 prices
+  38 GB/IE PLACE markets; 0 prices matched to them
+  price files: 318 runners, 318 matched to the exchange's markets
+  settled books for 38 of 38 markets
+
+== 2026-10-15 (win): books from s3://ashcroft/betfair_live/2026-10-15/
+  388,138 book rows, 1,314 catalogue rows, 1,554 ledger rows, 0 prices
+  40 GB/IE WIN markets; 0 prices matched to them
+  price files: 406 runners, 406 matched to the exchange's markets
+  settled books for 40 of 40 markets
+
+== 2026-10-15 (place): books from s3://ashcroft/betfair_live/2026-10-15/
+  150,823 book rows, 876 catalogue rows, 0 ledger rows, 0 prices
+  40 GB/IE PLACE markets; 0 prices matched to them
+  price files: 406 runners, 406 matched to the exchange's markets
+  settled books for 40 of 40 markets
+
+== 2026-10-16 (win): books from s3://ashcroft/betfair_live/2026-10-16/
+  399,937 book rows, 1,248 catalogue rows, 1,741 ledger rows, 0 prices
+  40 GB/IE WIN markets; 0 prices matched to them
+  price files: 391 runners, 391 matched to the exchange's markets
+  settled books for 40 of 40 markets
+
+== 2026-10-16 (place): books from s3://ashcroft/betfair_live/2026-10-16/
+  151,851 book rows, 831 catalogue rows, 0 ledger rows, 0 prices
+  40 GB/IE PLACE markets; 0 prices matched to them
+  price files: 391 runners, 391 matched to the exchange's markets
+  settled books for 40 of 40 markets
+
+== 2026-10-17 (win): books from s3://ashcroft/betfair_live/2026-10-17/
+  493,850 book rows, 1,731 catalogue rows, 1,572 ledger rows, 0 prices
+  60 GB/IE WIN markets; 0 prices matched to them
+  price files: 541 runners, 541 matched to the exchange's markets
+  settled books for 60 of 60 markets
+
+== 2026-10-17 (place): books from s3://ashcroft/betfair_live/2026-10-17/
+  193,404 book rows, 1,152 catalogue rows, 0 ledger rows, 0 prices
+  60 GB/IE PLACE markets; 0 prices matched to them
+  price files: 541 runners, 541 matched to the exchange's markets
+  settled books for 60 of 60 markets
+
+== 2026-10-18 (win): books from s3://ashcroft/betfair_live/2026-10-18/
+  205,289 book rows, 716 catalogue rows, 1,062 ledger rows, 0 prices
+  21 GB/IE WIN markets; 0 prices matched to them
+  price files: 201 runners, 201 matched to the exchange's markets
+  settled books for 21 of 21 markets
+
+== 2026-10-18 (place): books from s3://ashcroft/betfair_live/2026-10-18/
+  79,429 book rows, 476 catalogue rows, 0 ledger rows, 0 prices
+  20 GB/IE PLACE markets; 0 prices matched to them
+  price files: 198 runners, 198 matched to the exchange's markets
+  settled books for 20 of 20 markets
+
+== 2026-10-19 (win): books from s3://ashcroft/betfair_live/2026-10-19/
+  459,852 book rows, 1,495 catalogue rows, 2,088 ledger rows, 0 prices
+  47 GB/IE WIN markets; 0 prices matched to them
+  price files: 472 runners, 472 matched to the exchange's markets
+  settled books for 47 of 47 markets
+
+== 2026-10-19 (place): books from s3://ashcroft/betfair_live/2026-10-19/
+  177,692 book rows, 996 catalogue rows, 0 ledger rows, 0 prices
+  47 GB/IE PLACE markets; 0 prices matched to them
+  price files: 472 runners, 472 matched to the exchange's markets
+  settled books for 47 of 47 markets
+
+== 2026-10-20 (win): books from s3://ashcroft/betfair_live/2026-10-20/
+  292,457 book rows, 958 catalogue rows, 1,700 ledger rows, 0 prices
+  30 GB/IE WIN markets; 0 prices matched to them
+  price files: 305 runners, 305 matched to the exchange's markets
+  settled books for 30 of 30 markets
+
+== 2026-10-20 (place): books from s3://ashcroft/betfair_live/2026-10-20/
+  112,006 book rows, 636 catalogue rows, 0 ledger rows, 0 prices
+  28 GB/IE PLACE markets; 0 prices matched to them
+  price files: 299 runners, 299 matched to the exchange's markets
+  settled books for 28 of 28 markets
+
+== 2026-10-21 (win): books from s3://ashcroft/betfair_live/2026-10-21/
+  339,871 book rows, 1,137 catalogue rows, 1,498 ledger rows, 0 prices
+  37 GB/IE WIN markets; 0 prices matched to them
+  price files: 352 runners, 352 matched to the exchange's markets
+  settled books for 37 of 37 markets
+
+== 2026-10-21 (place): books from s3://ashcroft/betfair_live/2026-10-21/
+  131,207 book rows, 757 catalogue rows, 0 ledger rows, 0 prices
+  37 GB/IE PLACE markets; 0 prices matched to them
+  price files: 352 runners, 352 matched to the exchange's markets
+  settled books for 37 of 37 markets
+
+== 2026-10-22 (win): books from s3://ashcroft/betfair_live/2026-10-22/
+  378,193 book rows, 1,300 catalogue rows, 1,837 ledger rows, 0 prices
+  40 GB/IE WIN markets; 0 prices matched to them
+  price files: 390 runners, 390 matched to the exchange's markets
+  settled books for 40 of 40 markets
+
+== 2026-10-22 (place): books from s3://ashcroft/betfair_live/2026-10-22/
+  147,160 book rows, 866 catalogue rows, 0 ledger rows, 0 prices
+  40 GB/IE PLACE markets; 0 prices matched to them
+  price files: 390 runners, 390 matched to the exchange's markets
+  settled books for 40 of 40 markets
+
+== 2026-10-23 (win): books from s3://ashcroft/betfair_live/2026-10-23/
+  320,680 book rows, 1,373 catalogue rows, 1,664 ledger rows, 0 prices
+  39 GB/IE WIN markets; 0 prices matched to them
+  price files: 406 runners, 406 matched to the exchange's markets
+  settled books for 39 of 39 markets
+
+== 2026-10-23 (place): books from s3://ashcroft/betfair_live/2026-10-23/
+  131,601 book rows, 914 catalogue rows, 0 ledger rows, 0 prices
+  39 GB/IE PLACE markets; 0 prices matched to them
+  price files: 406 runners, 406 matched to the exchange's markets
+  settled books for 39 of 39 markets
+
+== 2026-10-24 (win): books from s3://ashcroft/betfair_live/2026-10-24/
+  276,340 book rows, 902 catalogue rows, 1,357 ledger rows, 0 prices
+  31 GB/IE WIN markets; 0 prices matched to them
+  price files: 277 runners, 277 matched to the exchange's markets
+  settled books for 31 of 31 markets
+
+== 2026-10-24 (place): books from s3://ashcroft/betfair_live/2026-10-24/
+  105,709 book rows, 601 catalogue rows, 0 ledger rows, 0 prices
+  31 GB/IE PLACE markets; 0 prices matched to them
+  price files: 277 runners, 277 matched to the exchange's markets
+  settled books for 31 of 31 markets
+
+== 2026-10-25 (win): books from s3://ashcroft/betfair_live/2026-10-25/
+  209,347 book rows, 853 catalogue rows, 1,390 ledger rows, 0 prices
+  30 GB/IE WIN markets; 0 prices matched to them
+  price files: 192 runners, 192 matched to the exchange's markets
+  settled books for 23 of 30 markets
+
+== 2026-10-25 (place): books from s3://ashcroft/betfair_live/2026-10-25/
+  75,424 book rows, 568 catalogue rows, 0 ledger rows, 0 prices
+  30 GB/IE PLACE markets; 0 prices matched to them
+  price files: 173 runners, 173 matched to the exchange's markets
+  settled books for 21 of 30 markets
+
+== 2026-10-26 (win): books from s3://ashcroft/betfair_live/2026-10-26/
+  515,804 book rows, 1,789 catalogue rows, 1,765 ledger rows, 0 prices
+  54 GB/IE WIN markets; 0 prices matched to them
+  price files: 485 runners, 485 matched to the exchange's markets
+  settled books for 47 of 54 markets
+
+== 2026-10-26 (place): books from s3://ashcroft/betfair_live/2026-10-26/
+  197,108 book rows, 1,191 catalogue rows, 0 ledger rows, 0 prices
+  54 GB/IE PLACE markets; 0 prices matched to them
+  price files: 485 runners, 485 matched to the exchange's markets
+  settled books for 47 of 54 markets
+
+== 2026-10-27 (win): books from s3://ashcroft/betfair_live/2026-10-27/
+  297,690 book rows, 1,206 catalogue rows, 1,372 ledger rows, 0 prices
+  38 GB/IE WIN markets; 0 prices matched to them
+  price files: 278 runners, 278 matched to the exchange's markets
+  settled books for 30 of 38 markets
+
+== 2026-10-27 (place): books from s3://ashcroft/betfair_live/2026-10-27/
+  116,186 book rows, 803 catalogue rows, 0 ledger rows, 0 prices
+  38 GB/IE PLACE markets; 0 prices matched to them
+  price files: 278 runners, 278 matched to the exchange's markets
+  settled books for 30 of 38 markets
+
+== 2026-10-28 (win): books from s3://ashcroft/betfair_live/2026-10-28/
+  342,874 book rows, 1,124 catalogue rows, 1,961 ledger rows, 0 prices
+  38 GB/IE WIN markets; 0 prices matched to them
+  price files: 345 runners, 345 matched to the exchange's markets
+  settled books for 38 of 38 markets
+
+== 2026-10-28 (place): books from s3://ashcroft/betfair_live/2026-10-28/
+  138,202 book rows, 748 catalogue rows, 0 ledger rows, 0 prices
+  38 GB/IE PLACE markets; 0 prices matched to them
+  price files: 345 runners, 345 matched to the exchange's markets
+  settled books for 38 of 38 markets
+
+== 2026-10-29 (win): books from s3://ashcroft/betfair_live/2026-10-29/
+  368,780 book rows, 1,241 catalogue rows, 1,825 ledger rows, 0 prices
+  38 GB/IE WIN markets; 0 prices matched to them
+  price files: 387 runners, 387 matched to the exchange's markets
+  settled books for 38 of 38 markets
+
+== 2026-10-29 (place): books from s3://ashcroft/betfair_live/2026-10-29/
+  149,394 book rows, 826 catalogue rows, 0 ledger rows, 0 prices
+  38 GB/IE PLACE markets; 0 prices matched to them
+  price files: 387 runners, 387 matched to the exchange's markets
+  settled books for 38 of 38 markets
+
+== 2026-10-30 (win): books from s3://ashcroft/betfair_live/2026-10-30/
+  451,407 book rows, 1,462 catalogue rows, 1,740 ledger rows, 0 prices
+  45 GB/IE WIN markets; 0 prices matched to them
+  price files: 437 runners, 437 matched to the exchange's markets
+  settled books for 45 of 45 markets
+
+== 2026-10-30 (place): books from s3://ashcroft/betfair_live/2026-10-30/
+  180,241 book rows, 972 catalogue rows, 0 ledger rows, 0 prices
+  43 GB/IE PLACE markets; 0 prices matched to them
+  price files: 432 runners, 432 matched to the exchange's markets
+  settled books for 43 of 43 markets
+
+== 2026-10-31 (win): books from s3://ashcroft/betfair_live/2026-10-31/
+  374,898 book rows, 1,372 catalogue rows, 1,775 ledger rows, 0 prices
+  46 GB/IE WIN markets; 0 prices matched to them
+  price files: 369 runners, 369 matched to the exchange's markets
+  settled books for 40 of 46 markets
+
+== 2026-10-31 (place): books from s3://ashcroft/betfair_live/2026-10-31/
+  154,567 book rows, 914 catalogue rows, 0 ledger rows, 0 prices
+  46 GB/IE PLACE markets; 0 prices matched to them
+  price files: 369 runners, 369 matched to the exchange's markets
+  settled books for 40 of 46 markets
+
+== 2026-11-01 (win): books from s3://ashcroft/betfair_live/2026-11-01/
+  313,056 book rows, 1,213 catalogue rows, 1,850 ledger rows, 0 prices
+  36 GB/IE WIN markets; 0 prices matched to them
+  price files: 383 runners, 383 matched to the exchange's markets
+  settled books for 36 of 36 markets
+
+== 2026-11-01 (place): books from s3://ashcroft/betfair_live/2026-11-01/
+  132,328 book rows, 807 catalogue rows, 0 ledger rows, 0 prices
+  35 GB/IE PLACE markets; 0 prices matched to them
+  price files: 380 runners, 380 matched to the exchange's markets
+  settled books for 35 of 35 markets
+
+== 2026-11-02 (win): books from s3://ashcroft/betfair_live/2026-11-02/
+  287,540 book rows, 854 catalogue rows, 1,589 ledger rows, 0 prices
+  30 GB/IE WIN markets; 0 prices matched to them
+  price files: 269 runners, 269 matched to the exchange's markets
+  settled books for 30 of 30 markets
+
+== 2026-11-02 (place): books from s3://ashcroft/betfair_live/2026-11-02/
+  112,960 book rows, 569 catalogue rows, 0 ledger rows, 0 prices
+  30 GB/IE PLACE markets; 0 prices matched to them
+  price files: 269 runners, 269 matched to the exchange's markets
+  settled books for 30 of 30 markets
+
+== the overlap study: each variant alone on the book, after the live trader's fills (P&L at 5%)
+                           days  selections  no_edge_left  bets     asked   staked  wins  expected   pnl_5pc  wap_gap    A/E  chi2_p  fill_ratio  roi_5pc%
+variant            market                                                                                                                                 
+qr_not_live        place     29          92             0    86   8779.23  2851.09    32    41.390  -752.639   -0.164  0.773   0.043       0.325   -26.398
+                   win       29          92             0    77   1450.63  1022.22    15    11.103   441.337   -0.052  1.351   0.206       0.705    43.174
+qr_live            place     21          43             0    40   4090.09  1170.51    15    19.092  -290.908   -0.077  0.786   0.195       0.286   -24.853
+                   win       21          43             0    39   1129.14   848.44     8     7.486   100.868   -0.045  1.069   0.835       0.751    11.889
+steam_not_live     place     33         267             0   246  22651.10  7936.07    88   111.547 -2046.722   -0.150  0.789   0.003       0.350   -25.790
+                   win       33         267             0   243   4187.92  3183.46    40    32.503   815.360   -0.045  1.231   0.158       0.760    25.612
+steam_live         place     33         165             0   155  14169.99  4882.77    64    69.446  -660.159   -0.163  0.922   0.379       0.345   -13.520
+                   win       33         165             0   148   3356.44  2580.66    25    22.924   180.960   -0.060  1.091   0.637       0.769     7.012
+steam_not_live_rem place     33         267            40   206  18653.52  6280.82    74    92.031 -1605.579   -0.128  0.804   0.012       0.337   -25.563
+                   win       33         267            61   184   3138.83  2405.05    31    24.189   671.168   -0.024  1.282   0.137       0.766    27.907
+steam_live_rem     place     33         165            24   131  11878.09  4129.93    57    58.224  -314.742   -0.114  0.979   0.830       0.348    -7.621
+                   win       33         165            33   116   2646.12  2124.45    20    18.159   196.105   -0.041  1.101   0.638       0.803     9.231
+
+== the live trader on the same horses (win): its backs before and after our 10:00 bet
+                our_bets  live_backs_before_10  live_backs_after_10  live_matched_after_10  live_avg_price_before  our_avg_price
+variant                                                                                                                         
+qr_live               39                 174.0                 34.0                 343.30                  7.441          6.829
+steam_live           148                 611.0                109.0                1093.26                 10.436          8.545
+steam_live_rem       116                 476.0                102.0                1053.60                 10.132          8.805

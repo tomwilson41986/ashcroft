@@ -1631,6 +1631,13 @@ was kept between the evening record and the trader's start; the overnight record
 keeps one every 10 minutes from 22:30 to 04:52 UTC, and predictions the night before (predict-evening.yml, 21:50 UTC,
 predictions_evening/) are ready for a session then. Nothing in the live rule changes (the owner decides).
 
+**No new bets after 10:00 UK** (the owner, 4 Nov: "stop betting after 10am, save this for other strategies"; from 5
+Nov; ledger `live-by-hour-1104`). The live record by the time of the bet (10 Oct-4 Nov): before 10:00 UK GBP88,110
+staked at +5.5% CLV after the non-runners' cuts and GBP+4,831; from 10:00 GBP14,518 at about 0% and GBP+155. The rule's
+window is now 05:15-10:00 UK (`trading/config_live.json` trade_until), each race still to 15 minutes before its off at
+the latest; the scheduled session stays on to 21:35 (`live-trade.yml`) to send again any lay at the SP that did not
+go through and to settle every race. The money not staked by 10:00 is left for other strategies.
+
 **Trading from 05:15 UK, and the upgrades kept off the trader** (the owner, 4 Nov: "fix the update issue. Trade from
 05:15."). The window opens at 05:15 UK from 5 Nov (`trading/config_live.json` trade_from, 06:15 since 12 Oct): in GMT
 the 05:17 UTC session trades from its start; in summer time its start is 06:17 UK, so nothing changes until the
@@ -1677,6 +1684,19 @@ of it. The gate, set before the first forward day (5 Nov) and read after 20 forw
 day minus the control's, a paired bootstrap 90% interval wholly above zero and ahead on 12 of 20; the lays and the
 quotes, the day at 0.80 with its interval wholly above zero, up on 12 of 20, no day worse than GBP-200. Promotion only
 on the owner's word. The days before 5 Nov are scored apart (the backs and lays were chosen on them).
+
+**The thirty-fifth full day** (4 Nov, a Wednesday; ledger `live-day-1104`), the twenty-third early session, the last
+on the 06:15-21:30 window (from 5 Nov 05:15-10:00 UK, `window-1000`).
+- **The start.** Predictions run 41771340924 (04:08 UTC); the session 05:17-19:15 UTC (run 41778286959), first back
+  06:15 UK; it ran through the 06:53 upgrade timer; the watchdog green all day, no restart; the settle at 22:29 UTC in
+  settle mode (run 41925718863; its email report failed again, "Connection unexpectedly closed", the sixth night).
+- **+GBP74.86 after commission** (Betfair's funds GBP5,206.89 against GBP5,132.03; the ledger's settled +GBP81.01
+  before commission) on 754 fills on 170 horses in 41 races, GBP3,999.99 matched; CLV +1.82% at Betfair's settled
+  prices; 48 horses' prices cut by later non-runners. 06:15-07:59 +4.0% (GBP2,135), 08:00-09:59 +1.3% (GBP1,138),
+  10:00 on -6.2% (GBP497). The record: 26 days, +GBP5,207.18, 21 up.
+- **The replay** (`replay-1104`), 12 Oct - 3 Nov after the cuts: the rule +GBP6,000 over 23 days (about +GBP4,800 at
+  the live scale). The runner fix failed for want of passwordless sudo (`runner-fix-1104`): nothing changed, the root
+  commands are with the owner.
 
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC

@@ -1,0 +1,151 @@
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:33: Pandas4Warning: Series.dt.dayofweek is deprecated and will be removed in a future version. Use Series.dt.day_of_week instead.
+  d["dow"] = d["date"].dt.dayofweek
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:96: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  top = sel.sort_values("p").head(15).join(b, rsuffix="_t")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:96: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  top = sel.sort_values("p").head(15).join(b, rsuffix="_t")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:96: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  top = sel.sort_values("p").head(15).join(b, rsuffix="_t")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:96: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  top = sel.sort_values("p").head(15).join(b, rsuffix="_t")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:96: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  top = sel.sort_values("p").head(15).join(b, rsuffix="_t")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:96: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  top = sel.sort_values("p").head(15).join(b, rsuffix="_t")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+/home/runner/work/ashcroft/ashcroft/research/queries/strat_h_profile_scan_1104.py:76: Pandas4Warning: The 'lsuffix' and 'rsuffix' keywords in DataFrame.join are deprecated and will be removed in a future version. Use the 'suffixes' keyword instead.
+  both = a[a["n"] >= 300].join(b[b["n"] >= 300], rsuffix="_t", how="inner")
+
+--- BSP (train 2010-21 -> test 2022-26) | sire: selected on TRAIN, as they read on TEST (top 15 by train p) ---
+                    n      ae       p   ae_pl   n_t    ae_t     p_t  ae_pl_t
+sire                                                                        
+Midnight Legend  5997  1.1178  0.0004  1.0608  1014  1.0276  0.7248   1.0072
+
+--- BSP (train 2010-21 -> test 2022-26) | dam_stallion: selected on TRAIN, as they read on TEST (top 15 by train p) ---
+                           n      ae       p   ae_pl  n_t    ae_t     p_t  ae_pl_t
+dam_stallion                                                                      
+Lafontaine (USA)         929  1.3727  0.0004  1.1908   47  1.1962  0.5838   0.8063
+Marchand De Sable (USA)  481  1.4002  0.0007  1.1681  204  1.0312  0.8293   1.0804
+
+--- BSP (train 2010-21 -> test 2022-26) | k_jockey_code: selected on TRAIN, as they read on TEST (top 15 by train p) ---
+                          n      ae       p   ae_pl  n_t    ae_t    p_t  ae_pl_t
+k_jockey_code                                                                   
+Brouder, Mr K J|hurdle  583  1.4775  0.0009  1.2742    7  3.3962  0.184   1.8851
+
+--- BSP (train 2010-21 -> test 2022-26) | k_sire_code: selected on TRAIN, as they read on TEST (top 15 by train p) ---
+                     n      ae       p   ae_pl  n_t    ae_t     p_t  ae_pl_t
+k_sire_code                                                                 
+Cape Cross|aw     2906  1.1851  0.0001  1.0332   70  0.2543  0.0265   0.7503
+Dr Massini|chase  1711  1.2542  0.0003  1.0595  133  1.2130  0.2928   1.1163
+
+--- MORNING (train 2018-21 -> test 2022-26) | jockey_name: selected on TRAIN, as they read on TEST (top 15 by train p) ---
+                 n      ae       p   n_t    ae_t     p_t
+jockey_name                                             
+Ghiani, Marco  848  1.3057  0.0007  2467  1.1465  0.0056
+
+--- MORNING (train 2018-21 -> test 2022-26) | sire: selected on TRAIN, as they read on TEST (top 15 by train p) ---
+           n      ae       p   n_t    ae_t     p_t
+sire                                              
+New Bay  327  1.4529  0.0004  2849  1.0977  0.0349
+
+=== THE SCAN: per dimension, the persistence of A/E and the TEST score of the TRAIN-selected portfolio ===
+                                   scan         dimension  levels_300+  persistence_rho  selected  overbet  sel_test_n  sel_test_A/E  sel_test_p  sel_test_A/E_pl  sel_test_roi_both%  bad_test_n  bad_test_A/E  bad_test_p  bad_test_A/E_pl  bad_test_roi_both%                              sel_examples
+    BSP (train 2010-21 -> test 2022-26)             track           88           0.5706         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26)           trainer          790           0.0849         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26)       jockey_name          725           0.1546         0        2           0           NaN         NaN              NaN                 NaN        5641        0.9295      0.0711           1.0287            -11.2846                                          
+    BSP (train 2010-21 -> test 2022-26)              sire          651          -0.0697         1        1        1014        1.0276      0.7248           1.0072            -10.0884           0           NaN         NaN              NaN                 NaN                           Midnight Legend
+    BSP (train 2010-21 -> test 2022-26)      dam_stallion          739          -0.0420         2        0         251        1.0554      0.6795           1.0342              4.2063           0           NaN         NaN              NaN                 NaN Marchand De Sable (USA), Lafontaine (USA)
+    BSP (train 2010-21 -> test 2022-26)             month           12          -0.2797         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26)        race_class            8              NaN         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26)           field_b            6              NaN         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26)            dist_b            7              NaN         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26) going_description           14           0.3566         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26)         horse_age           13          -0.3636         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26)              hour           11           0.1727         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26)               dow            7              NaN         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26)            k_draw          507           0.1058         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26)    k_trainer_code         1022          -0.0079         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+    BSP (train 2010-21 -> test 2022-26)     k_jockey_code          943           0.1033         1        2           7        3.3962      0.1840              NaN                 NaN        1696        0.8826      0.0866           0.9750            -16.6853                    Brouder, Mr K J|hurdle
+    BSP (train 2010-21 -> test 2022-26)       k_sire_code          974           0.0639         2        0         203        0.9482      0.7658           1.0010            -10.2062           0           NaN         NaN              NaN                 NaN           Dr Massini|chase, Cape Cross|aw
+MORNING (train 2018-21 -> test 2022-26)             track           85           0.1645         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+MORNING (train 2018-21 -> test 2022-26)           trainer          300           0.1240         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+MORNING (train 2018-21 -> test 2022-26)       jockey_name          308           0.2217         1        2        2467        1.1465      0.0056           1.0605              8.3210        7123        0.8737      0.0001           0.9352            -20.2549                             Ghiani, Marco
+MORNING (train 2018-21 -> test 2022-26)              sire          266           0.1112         1        1        2849        1.0977      0.0349           0.9936             -1.3271        1649        0.8607      0.0244           0.9523            -17.5003                                   New Bay
+MORNING (train 2018-21 -> test 2022-26)      dam_stallion          262           0.0363         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+MORNING (train 2018-21 -> test 2022-26)             month           12           0.1049         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+MORNING (train 2018-21 -> test 2022-26)        race_class            8              NaN         0        1           0           NaN         NaN              NaN                 NaN       85840        0.9689      0.0004           0.9734             -5.1807                                          
+MORNING (train 2018-21 -> test 2022-26)           field_b            6              NaN         0        1           0           NaN         NaN              NaN                 NaN      110835        0.9726      0.0018           0.9722             -6.1453                                          
+MORNING (train 2018-21 -> test 2022-26)            dist_b            7              NaN         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+MORNING (train 2018-21 -> test 2022-26) going_description           12           0.5315         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+MORNING (train 2018-21 -> test 2022-26)         horse_age           12           0.1399         0        1           0           NaN         NaN              NaN                 NaN       10053        0.9925      0.8019           0.9568             -6.9510                                          
+MORNING (train 2018-21 -> test 2022-26)              hour           11           0.5636         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+MORNING (train 2018-21 -> test 2022-26)               dow            7              NaN         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+MORNING (train 2018-21 -> test 2022-26)            k_draw          201           0.2595         0        1           0           NaN         NaN              NaN                 NaN         650        0.8329      0.1094           0.9456            -12.9049                                          
+MORNING (train 2018-21 -> test 2022-26)    k_trainer_code          316           0.1984         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          
+MORNING (train 2018-21 -> test 2022-26)     k_jockey_code          363           0.1784         0        3           0           NaN         NaN              NaN                 NaN        6555        0.9314      0.0184           0.9619            -16.4654                                          
+MORNING (train 2018-21 -> test 2022-26)       k_sire_code          326           0.2656         0        0           0           NaN         NaN              NaN                 NaN           0           NaN         NaN              NaN                 NaN                                          

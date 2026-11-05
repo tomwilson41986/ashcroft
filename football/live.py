@@ -419,9 +419,10 @@ def trade(until: str, live: bool, store, cfg: dict | None = None, all_games: boo
     ex.login()
     feed = None
     if all_games:                                         # every match on Betfair, recorded and paper-traded
-        from football.exchange_feed import DayWriter, Feed
+        from football.exchange_feed import DayWriter, Feed, Throttle
         from football.paper_book import PaperBook
-        feed = Feed(data._read, DayWriter(store, depth=depth), hours=cfg.get("all_games_hours", 24.0), depth=depth,
+        throttle = Throttle(data._read)                   # under Betfair's limits whatever the key (the owner, 4 Nov)
+        feed = Feed(throttle, DayWriter(store, depth=depth), hours=cfg.get("all_games_hours", 24.0), depth=depth,
                     paper=PaperBook())
     trader = Trader(ex, Pricer(model, aliases, cfg["limits"].get("min_team_matches", 10)), cfg, mode, store,
                     kill_switch(store))
@@ -463,7 +464,7 @@ def trade(until: str, live: bool, store, cfg: dict | None = None, all_games: boo
            "bets": trader.bets, "turnover": round(trader.turnover, 2)}
     if feed is not None:
         out["all_games"] = {"markets": len(feed.markets), "reads": feed.reads, "rows": feed.rows,
-                            "paper_lines": len(feed.paper.lines)}
+                            "paper_lines": len(feed.paper.lines), "betfair_requests": throttle.report()}
     log.info("football: %s", out)
     return out
 

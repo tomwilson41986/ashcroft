@@ -166,19 +166,24 @@ def test_only_the_trader_runs_on_the_live_key():
     # paper-models.yml too, from 2 Nov 2026 (the owner: "use the live key, just don't execute bets yet"): its greyhound
     # paper trader and greyhound book recorder only, read-only, checked in the paper-models test below
     named = {p.name for p in WORKFLOWS.glob("*.yml") if "BETFAIR_LIVE_APP_KEY" in p.read_text()}
-    assert named <= {"live-trade.yml", "greyhound-trade.yml", "football-trade.yml", "paper-models.yml"}, named
+    assert named <= {"live-trade.yml", "greyhound-trade.yml", "football-trade.yml", "paper-models.yml",
+                     "morning-models.yml"}, named
     traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade", "greyhound.book_record",
-               "greyhound.early_lay --trade", "greyhound.quote_mid --trade")
+               "greyhound.early_lay --trade", "greyhound.quote_mid --trade", "morning.live")
     for name in named:
         text = (WORKFLOWS / name).read_text()
         for ln in text.splitlines():
             ln = ln.strip()
             if ln.startswith("#"):
                 continue
-            if "python" in ln and any(k in ln for k in ("LIVE_APP_KEY", "TRADER_KEY", "FBKEY", "GHKEY")):
+            if "python" in ln and any(k in ln for k in ("LIVE_APP_KEY", "TRADER_KEY", "FBKEY", "GHKEY", "MKEY")):
                 assert any(t in ln for t in traders), (name, ln)
             if "FBKEY=" in ln and ("LIVE_APP_KEY" in ln or "TRADER_KEY" in ln):
-                assert '"$FOOTBALL_LIVE" = yes' in ln, (name, ln)           # the live key only when switched on
+                # the football trader reads on the live key (the owner, 4 Nov 2026: "use live key"); it bets only with
+                # FOOTBALL_LIVE=yes, held by test_the_football_trader_bets_small_and_only_when_switched_on
+                assert name == "football-trade.yml" and "LIVEFLAG" not in ln, (name, ln)
+            if "MKEY=" in ln and ("LIVE_APP_KEY" in ln or "TRADER_KEY" in ln):
+                assert '"$MORNING_LIVE" = yes' in ln, (name, ln)
             if "betfair_recorder.py" in ln or "tote_recorder.py" in ln:
                 assert not any(k in ln for k in ("LIVE_APP_KEY", "TRADER_KEY", "FBKEY", "GHKEY")), (name, ln)
         # on paper: read-only, the delayed key (paper-models.yml gives the football trader the delayed key by default,
@@ -259,8 +264,8 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
 
 
 def test_the_football_trader_bets_small_and_only_when_switched_on():
-    """The owner, 3 Nov 2026: every football match on Betfair recorded and paper-traded from the live feed, the live
-    key kept in betting use by small real stakes. The live key and --live only with FOOTBALL_LIVE=yes; its own
+    """The owner, 3 Nov 2026: every football match on Betfair recorded and paper-traded from the live feed; 4 Nov 2026:
+    the trader's process reads on the live key, under Betfair's limits. --live (real bets) only with FOOTBALL_LIVE=yes; its own
     runner, never the live horse trader's or the paper models'; the real stakes capped at GBP2 a bet and GBP20 a day."""
     import json as _json
 
@@ -276,8 +281,11 @@ def test_the_football_trader_bets_small_and_only_when_switched_on():
     lines = [ln.strip() for ln in step["run"].splitlines() if ln.strip() and not ln.strip().startswith("#")]
     assert lines[:3] == ["set +e", 'FBKEY="$BETFAIR_APP_KEY"', 'LIVEFLAG=""']
     switch = [ln for ln in lines if "BETFAIR_LIVE_APP_KEY" in ln]
-    assert switch == ['if [ "$FOOTBALL_LIVE" = yes ] && [ -n "$BETFAIR_LIVE_APP_KEY" ]; then '
-                      'FBKEY="$BETFAIR_LIVE_APP_KEY"; LIVEFLAG="--live"; fi']
+    # the owner, 4 Nov 2026 ("use live key", "do not pass betfair thresholds"): the trader's process reads on the live
+    # key, through the feed's throttle; --live (real bets) still only with FOOTBALL_LIVE=yes
+    assert switch == ['if [ -n "$BETFAIR_LIVE_APP_KEY" ]; then FBKEY="$BETFAIR_LIVE_APP_KEY"; fi',
+                      'if [ "$FOOTBALL_LIVE" = yes ] && [ -n "$BETFAIR_LIVE_APP_KEY" ]; then LIVEFLAG="--live"; fi']
+    assert sum('LIVEFLAG="--live"' in ln for ln in lines) == 1
     # the key the trader may hold reaches the trader alone; the records and the collector read on the delayed key
     keyed = [ln for ln in lines if "FBKEY" in ln and "python" in ln]
     assert len(keyed) == 1 and keyed[0].startswith('BETFAIR_APP_KEY="$FBKEY" ')
@@ -314,10 +322,10 @@ def test_the_runner_setup_registers_only_its_own_label():
     live horse trader's runner label may be), for the two jobs that need one, from a checked download."""
     text = (Path(__file__).resolve().parents[1] / "scripts" / "setup_runner.sh").read_text()
     assert "--no-default-labels" in text and '--labels "$LABEL"' in text
-    assert "football|paper-models|data) ;;" in text
+    assert "football|paper-models|data|morning) ;;" in text
     assert "sha256sum -c -" in text and 'read -r -s -p "Registration token' in text
     for name, label in (("football-trade.yml", "'football'"), ("paper-models.yml", "'paper-models'"),
-                        ("other-data.yml", "'data'")):
+                        ("other-data.yml", "'data'"), ("morning-models.yml", "'morning'")):
         assert label in (WORKFLOWS / name).read_text()
 
 
@@ -387,3 +395,33 @@ def test_netlify_builds_nothing():
         assert "functions" not in cfg and "redirects" not in cfg, p
     assert not (ROOT / "frontend" / "netlify").exists()
     assert not (ROOT / "frontend" / "_redirects").exists()
+
+
+def test_the_morning_models_bet_only_when_switched_on_and_never_beside_the_live_trader():
+    """The owner, 4 Nov 2026: the steamer and quick-return models live, WIN at 10:00 UK, half stakes. The live key and
+    --live only with MORNING_LIVE=yes, to morning.live alone; the trade on its own runner, never the live horse
+    trader's, the paper models' or football's; the selection on GitHub's runner with no Betfair key at all."""
+    import yaml as _yaml
+    text = (WORKFLOWS / "morning-models.yml").read_text()
+    wf = _yaml.safe_load(text)
+    sel, trade = wf["jobs"]["select"], wf["jobs"]["trade"]
+    assert sel["runs-on"] == "ubuntu-latest" and "BETFAIR" not in str(sel["steps"])
+    assert trade["runs-on"] == "${{ vars.MORNING_RUNNER || 'morning' }}"
+    guard = next(s for s in trade["steps"] if s.get("name") == "Not on another job's runner")["run"]
+    for lab in ("$LIVE_RUNNER_LABEL", "$PAPER_RUNNER_LABEL", "$FOOTBALL_RUNNER_LABEL"):
+        assert f'"$MORNING_RUNNER_LABEL" = "{lab}"' in guard
+    step = next(s for s in trade["steps"] if s.get("name", "").startswith("Trade or settle"))
+    assert step["env"]["MORNING_LIVE"] == "${{ vars.MORNING_LIVE || 'no' }}"
+    lines = [ln.strip() for ln in step["run"].splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    assert 'MKEY="$BETFAIR_APP_KEY"' in lines and 'LIVEFLAG=""' in lines
+    assert [ln for ln in lines if "BETFAIR_LIVE_APP_KEY" in ln] == [
+        'if [ "$MORNING_LIVE" = yes ] && [ -n "$BETFAIR_LIVE_APP_KEY" ]; then MKEY="$BETFAIR_LIVE_APP_KEY"; '
+        'LIVEFLAG="--live"; fi']
+    py = [ln for ln in lines if "python" in ln]
+    assert py == ['BETFAIR_APP_KEY="$MKEY" python -m morning.live --"$STEP" ${DAY:+--date "$DAY"} $LIVEFLAG']
+    assert not re.search(r"echo[^;]*\$\{?(BETFAIR_LIVE_APP_KEY|MKEY)\b", step["run"])
+    for name in ("live-trade.yml", "live-record.yml", "paper-models.yml", "football-trade.yml"):
+        assert "morning.live" not in (WORKFLOWS / name).read_text()
+    import morning.live as ML
+    assert ML.TO_WIN == 50.0 and ML.MAX_STAKE == 100.0 and ML.DAY_LIMIT == 2000.0
+    assert not any(p.startswith(ML.LIVE_TRADER_PREFIX) for p in ML.MODELS.values())
