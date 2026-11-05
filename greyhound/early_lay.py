@@ -907,12 +907,20 @@ def blocked_section(store, day: date, mode: str = "live", since: str | None = No
     return L
 
 
+def modes_to_show(store, day: date) -> list[str]:
+    """The early lay's tables for the running page: each mode with a ledger today (live, paper), else the live one
+    (its status says whether it started) (the owner, 5 Nov 2026: the rule on paper was missing from the page)."""
+    have = [m for m in ("live", "paper") if store.get(f"{PREFIX}/{m}/{day:%Y-%m-%d}/ledger.csv")]
+    return have or ["live"]
+
+
 def table(store, day: date, mode: str = "live") -> str:
     """The day's live early lay so far, a row per race, from the trader's ledger in S3: the lays placed and their
     stake, what matched by the green-up, how each was closed, the P&L locked by the green-ups (the SP closes and the
     held lays settle with the result, shown as open liability)."""
     raw = store.get(f"{PREFIX}/{mode}/{day:%Y-%m-%d}/ledger.csv")
-    head = f"### Early lay, {mode} orders on the owner's account ({day:%Y-%m-%d})"
+    head = (f"### Early lay, {mode} orders on the owner's account ({day:%Y-%m-%d})" if mode == "live" else
+            f"### Early lay, the live rule on paper: nothing sent ({day:%Y-%m-%d})")
     st = store.get(f"{PREFIX}/{mode}/{day:%Y-%m-%d}/status.json")
     if st:
         s = json.loads(st)

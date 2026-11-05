@@ -946,7 +946,7 @@ def main(argv=None) -> int:
             log.warning("paper early lays not read (%s)", exc)
         try:                                        # the live early lay's own orders (greyhound/early_lay.py)
             from greyhound import early_lay
-            md = early_lay.table(store, day) + "\n" + md
+            md = "\n".join(early_lay.table(store, day, m) for m in early_lay.modes_to_show(store, day)) + "\n" + md
         except Exception as exc:
             log.warning("live early lay not read (%s)", exc)
         try:                                        # the live quotes around the mid (greyhound/quote_mid.py)
