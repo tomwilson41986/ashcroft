@@ -211,7 +211,18 @@ def rule(name: str, d: pd.DataFrame, mask) -> dict:
     am = [(int(y), score(g).get("A/E_am", np.nan), score(g).get("A/E_pl_am", np.nan)) for y, g in b.groupby("year") if len(g) >= 50]
     out["t_years_am_both>1"] = f"{sum(1 for _, w, p in am if w > 1 and p > 1)}/{len(am)}"
     out["t_years"] = " ".join(f"{y % 100}:{w:.2f}/{p:.2f}" for y, w, p in yrs)
+    out["_t_ret"], out["_t_ret_am"] = test_returns(b)
     return out
+
+
+def test_returns(b: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Each TEST bet's return on a level unit stake after commission: the win bet at BSP, and the win bet at the
+    morning price (GBP50+ matched). The series the deflated Sharpe reads (``rules_table``)."""
+    w = b[b["bsp"] > 1]
+    at_bsp = np.where(w["won"] == 1, (w["bsp"] - 1) * (1 - COMMISSION), -1.0)
+    m = b[(b.get("morningwap", pd.Series(np.nan, index=b.index)) > 1) & (b.get("morning_vol", 0) >= MIN_AM_VOL)]
+    at_am = np.where(m["won"] == 1, (m["morningwap"] - 1) * (1 - COMMISSION), -1.0) if len(m) else np.array([])
+    return np.asarray(at_bsp, float), np.asarray(at_am, float)
 
 
 def gate(r: dict) -> str:
@@ -228,7 +239,9 @@ def gate(r: dict) -> str:
         yb, _ = (int(x) for x in r["t_years_both>1"].split("/"))
         ok_test = (r["t_n"] >= 500 and r["t_WAX"] > 0 and r["t_p"] < 0.05 and r["t_A/E_pl"] > 1
                    and r["t_roi_both%"] > 0 and yb >= 3)
-        return "PASS" if ok_test else "train only"
+        if not ok_test:
+            return "train only"
+        return "PASS" if r.get("t_dsr_ok") else "not deflated"
     except (TypeError, KeyError):
         return "-"
 
@@ -248,12 +261,42 @@ def gate_am(r: dict) -> str:
         yb, _ = (int(x) for x in r["t_years_am_both>1"].split("/"))
         ok = (r["t_n_am"] >= 500 and r["t_A/E_am"] > 1 and r["t_p_am"] < 0.01 and r["t_A/E_pl_am"] > 1
               and r["t_roi_both_am%"] > 0 and yb >= 3)
-        return "PASS" if ok else "train only"
+        if not ok:
+            return "train only"
+        return "PASS" if r.get("t_dsr_am_ok") else "not deflated"
     except (TypeError, KeyError, ValueError):
         return "-"
 
 
-def rules_table(rows: list[dict], sort: str | None = None) -> pd.DataFrame:
+def ledger_path() -> str | None:
+    """Where the strategy studies' trial ledger lives: $STRAT_TRIAL_LEDGER, else s3://$PRED_BUCKET/research/trials/
+    strat.json when the job has the bucket, else none (the table's own rules are the count)."""
+    import os
+    if os.environ.get("STRAT_TRIAL_LEDGER"):
+        return os.environ["STRAT_TRIAL_LEDGER"]
+    return f"s3://{os.environ['PRED_BUCKET']}/research/trials/strat.json" if os.environ.get("PRED_BUCKET") else None
+
+
+def deflate(rows: list[dict], ledger=None) -> None:
+    """Each rule's deflated Sharpe on its TEST bets (research.overfit), deflated by every rule in the table and, with a
+    ``ledger``, every rule the strategy studies have ever scored: ``t_dsr`` and ``t_dsr_ok`` at BSP, ``t_dsr_am`` and
+    ``t_dsr_am_ok`` at the morning price. The gates read the ``_ok`` flags (wired in 5 Nov 2026, the owner: "wire
+    in"): a rule that clears every other bar but not this one is "not deflated", not a PASS."""
+    from research.overfit import TrialLedger, deflate_table
+    for key, col, lg in (("_t_ret", "t_dsr", "bsp"), ("_t_ret_am", "t_dsr_am", "am")):
+        series = {r["rule"]: r.get(key, np.array([])) for r in rows}
+        led = TrialLedger(ledger if lg == "bsp" else ledger.replace(".json", "_am.json"), programme=f"strategy studies ({lg})") if ledger else None
+        res = deflate_table(series, ledger=led)
+        for r in rows:
+            d = res[r["rule"]]
+            r[col], r[col + "_ok"], r[col + "_trials"] = d["dsr"], d["passed"], d["n_trials"]
+
+
+def rules_table(rows: list[dict], sort: str | None = None, ledger: str | None = "") -> pd.DataFrame:
+    """The table of rules with both gates; each rule deflated first (``deflate``; ``ledger`` "" means
+    ``ledger_path()``, None means the table's rules only)."""
+    deflate(rows, ledger_path() if ledger == "" else ledger)
+    rows = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
     t = pd.DataFrame(rows)
     t.insert(1, "gate", [gate(r) for r in rows])
     t.insert(2, "gate_am", [gate_am(r) for r in rows])
