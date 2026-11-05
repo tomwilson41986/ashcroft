@@ -290,6 +290,57 @@ def _r(fit: dict, team) -> float | None:
     return None if a is None or d is None else a + d
 
 
+MASSEY_XG_WEIGHT = 0.75          # the owner, 5 Nov 2026 (markstats.club's Massey: 75% xG, 25% goals, opponent-adjusted)
+MASSEY_FROM = "2012-07-01"
+
+
+def fit_massey(d: pd.DataFrame, as_of: pd.Timestamp, ridge: float = 2.0) -> dict | None:
+    """One pool's Massey ratings from its matches before ``as_of``: weighted least squares of each match's margin
+    (0.75 x non-penalty xG difference + 0.25 x goal difference; the goal difference alone where the match has no xG)
+    on home advantage + the home side's rating - the away side's, decayed by exp(-XI days) over WINDOW_DAYS,
+    ridge-shrunk to zero (so ratings sum near zero and a side with few matches stays near average)."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.linalg import lsqr
+    w = d[(d["date"] < as_of) & (d["date"] >= as_of - pd.Timedelta(days=WINDOW_DAYS)) & d["margin"].notna()]
+    if len(w) < 50:
+        return None
+    teams = pd.Index(pd.unique(pd.concat([w["home_team_id"], w["away_team_id"]])))
+    n, t = len(w), len(teams)
+    hi, ai = teams.get_indexer(w["home_team_id"]), teams.get_indexer(w["away_team_id"])
+    wt = np.sqrt(np.exp(-XI * (as_of - w["date"]).dt.days.to_numpy(float)))
+    rows = np.concatenate([np.arange(n)] * 3)
+    cols = np.concatenate([np.zeros(n), 1 + hi, 1 + ai])
+    vals = np.concatenate([np.ones(n), np.ones(n), -np.ones(n)])
+    X = coo_matrix((vals * wt[rows], (rows, cols)), shape=(n, 1 + t)).tocsr()
+    beta = lsqr(X, w["margin"].to_numpy(float) * wt, damp=np.sqrt(ridge / max(n, 1)))[0]
+    return {"home": float(beta[0]), "r": dict(zip(teams, beta[1:]))}
+
+
+def massey_ratings(m: pd.DataFrame) -> pd.DataFrame:
+    """Each match's two sides' Massey ratings from the pool's fit on matches before its collection day (point in
+    time: a match never sees its own result or any later one). ``m``: one row a match with date, country, the sides,
+    the score and npxg_h / npxg_a (blank where API-Football has no xG)."""
+    d = m[pd.to_datetime(m["date"]) >= MASSEY_FROM].copy()
+    d["date"] = pd.to_datetime(d["date"])
+    gd = d["ft_home"] - d["ft_away"]
+    xgd = d["npxg_h"] - d["npxg_a"]
+    d["margin"] = np.where(xgd.notna(), MASSEY_XG_WEIGHT * xgd + (1 - MASSEY_XG_WEIGHT) * gd, gd)
+    out = []
+    for _, g in d.groupby("country"):
+        cut = collection_day(g["date"]).to_numpy()
+        for c in np.unique(cut):
+            fit = fit_massey(g, pd.Timestamp(c))
+            if fit is None:
+                continue
+            sel = g[cut == c]
+            out.append(pd.DataFrame({"match_id": sel["match_id"].to_numpy(),
+                                     "massey_h": sel["home_team_id"].map(fit["r"]).to_numpy(float),
+                                     "massey_a": sel["away_team_id"].map(fit["r"]).to_numpy(float),
+                                     "massey_home": fit["home"]}))
+    return (pd.concat(out, ignore_index=True) if out
+            else pd.DataFrame(columns=["match_id", "massey_h", "massey_a", "massey_home"]))
+
+
 def build(feats: pd.DataFrame, linked: pd.DataFrame, stats: pd.DataFrame, hm: pd.DataFrame,
           he: pd.DataFrame) -> pd.DataFrame:
     """The team-feature table with the xG features joined (one row a match)."""
@@ -329,6 +380,16 @@ def build(feats: pd.DataFrame, linked: pd.DataFrame, stats: pd.DataFrame, hm: pd
     f["r_xg_diff"] = r["rxg_h"].reindex(f.index) - r["rxg_a"].reindex(f.index)
     out = feats.merge(f.reset_index().rename(columns={"index": "match_id"}), on="match_id", how="left")
     out["xg_gap_vs_market"] = out["r_xg_diff"] - (out["r_h"] - out["r_a"])
+    # the Massey rating on every match (goals alone where there is no xG), point in time
+    base = feats[["match_id", "date", "country", "home_team_id", "away_team_id", "ft_home", "ft_away"]].merge(
+        mm[["match_id", "npxg_h", "npxg_a"]].drop_duplicates("match_id"), on="match_id", how="left")
+    ms = massey_ratings(base)
+    out = out.merge(ms, on="match_id", how="left")
+    out["x_massey_diff"] = out["massey_h"] - out["massey_a"]
+    out["x_massey_h"], out["x_massey_a"] = out["massey_h"], out["massey_a"]
+    out["x_massey_vs_open"] = out["x_massey_diff"] + out["massey_home"] - (out["molam_h"] - out["molam_a"]) \
+        if "molam_h" in out else np.nan
+    out = out.drop(columns=["massey_h", "massey_a", "massey_home"])
     log.info("xg features: %d matches with xG windows", int(out["n_xg_prev_min"].ge(3).sum()))
     return out
 
@@ -360,6 +421,10 @@ def families() -> dict:
     # 4 Nov 2026 (the owner's fatigue, form and "other X metrics" ask): outside xg_all, so earlier arms keep meaning
     fam["x_territory"] = [f"x_{c}_{w}" for c in TERRITORY for w in WINS]
     fam["x_sos"] = [f"x_{c}_{w}" for c in SOS for w in CORE_WINS]
+    # the owner, 5 Nov 2026: a Massey power rating, 75% xG and 25% goals, opponent-adjusted (markstats.club's
+    # construction, fitted point in time on our own data); x_massey_vs_open: its expected margin less the opening
+    # price's expected goal difference
+    fam["x_massey"] = ["x_massey_diff", "x_massey_h", "x_massey_a", "x_massey_vs_open"]
     fam["x_short"] = [f"x_{c}_{w}" for c in SHORT_MEASURES
                       for w in [f"l{n}" for n in SHORT_EQUAL] + [f"lw{n}" for n in SHORT_LINEAR]]
     fam["team_all"] = FAMILIES["all"]

@@ -111,3 +111,31 @@ def test_sos_xg_is_measured_against_the_opponents_earlier_matches():
     t = xf.add_sos(pd.DataFrame(rows).sort_values(["team", "date"]))
     a = t[(t["match_id"] == "z") & (t["team"] == "a")].iloc[0]
     assert a["npxg_sos"] == 1.0 and a["npxga_sos"] == -0.5 and a["npxgd_sos"] == 1.5
+
+
+def test_massey_ratings_are_point_in_time_and_follow_the_margin():
+    """A Saturday rewrite never moves that weekend's Massey ratings (fixed at Friday's collection); a side that keeps
+    winning on xG rates above one that keeps losing."""
+    rng = np.random.default_rng(1)
+    rows = []
+    teams = [f"t{i}" for i in range(8)]
+    for w in range(30):
+        day = pd.Timestamp("2024-08-03") + pd.Timedelta(days=7 * w)
+        order = rng.permutation(teams)
+        for k in range(0, 8, 2):
+            h, a = order[k], order[k + 1]
+            strong = (h == "t0") - (a == "t0")
+            rows.append({"match_id": f"{w}-{k}", "date": day, "country": "GB", "home_team_id": h, "away_team_id": a,
+                         "ft_home": 1 + max(strong, 0), "ft_away": 1 + max(-strong, 0),
+                         "npxg_h": 1.2 + strong, "npxg_a": 1.2 - strong if k else np.nan})
+    m = pd.DataFrame(rows)
+    a = xf.massey_ratings(m).set_index("match_id").sort_index()
+    last = m["date"] == m["date"].max()
+    b_in = m.copy()
+    b_in.loc[last, ["ft_home", "ft_away", "npxg_h", "npxg_a"]] = [9, 0, 5.0, 0.1]
+    b = xf.massey_ratings(b_in).set_index("match_id").sort_index()
+    ids = m.loc[last, "match_id"]
+    pd.testing.assert_frame_equal(a.loc[ids], b.loc[ids])
+    r0 = pd.concat([a.loc[m.loc[last & (m["home_team_id"] == "t0"), "match_id"], "massey_h"],
+                    a.loc[m.loc[last & (m["away_team_id"] == "t0"), "match_id"], "massey_a"]])
+    assert (r0 > 0.5).all()
