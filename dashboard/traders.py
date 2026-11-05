@@ -540,9 +540,22 @@ def summarise(t: Trader, days: dict[str, pd.DataFrame], today: date, last_ts: st
             "all_time": all_out,
             "record": {"days": int(len(rec_full)), "mean_day": _f(mean_day), "from": t.record_from},
             "daily": [{"day": r.day, "pnl": _f(r.result), "volume": _f(r.staked)} for r in spark.itertuples()],
+            "clv_daily": clv_daily(days, hist),
             "edge": edge_out,
             "races": races_out,
             "notes": list(t.notes)}
+
+
+def clv_daily(days: dict[str, pd.DataFrame], hist: pd.DataFrame) -> list[dict]:
+    """Every traded day since the first (the owner, 5 Nov 2026: "show the CLV per day since we started"): the day's
+    stake-weighted CLV against the closing price over its bets with one, the bets it counts, the stake, the P&L
+    settled so far."""
+    out = []
+    for r in hist[hist.staked > 0].itertuples():
+        c = _clv_of([days[r.day]]) if len(days.get(r.day, ())) else {"clv": None, "n": 0}
+        out.append({"day": r.day, "clv": c["clv"], "bets": c["n"], "staked": _f(r.staked), "pnl": _f(r.result),
+                    "complete": bool(r.complete)})
+    return out
 
 
 def races(days: dict[str, pd.DataFrame], n: int = RACE_DAYS) -> list[dict]:

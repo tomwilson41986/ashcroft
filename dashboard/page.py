@@ -113,6 +113,11 @@ dl.stats { display: flex; flex-wrap: wrap; gap: var(--s-4) var(--s-6); margin: 0
 .seat.nodata .who { opacity: 0.75; }
 .notes { grid-column: 1 / -1; font-size: 12px; color: var(--ink-3); padding-left: 64px; overflow-wrap: anywhere; min-width: 0; }
 .notes p { margin: 2px 0 0; }
+.clvdays { margin-top: 6px; }
+.clvdays summary { cursor: pointer; color: var(--ink-2); }
+.clvdays table { border-collapse: collapse; margin-top: 4px; font-size: 12px; }
+.clvdays th, .clvdays td { text-align: right; padding: 1px 10px 1px 0; }
+.clvdays th:first-child, .clvdays td:first-child { text-align: left; }
 .err { color: var(--neg); }
 .flag { font: 600 10px/1 var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 6px; border-radius: 2px;
   border: 1px solid currentColor; }
@@ -308,7 +313,22 @@ footer.status .stale { color: var(--accent-ink); }
       cell("mf", "Month forecast", m.forecast, true, msub) +
       cell("ap", "All time P&amp;L", a.pnl, true, asub) +
       '<div class="sparkbox">' + spark(t.daily) + '</div>' +
-      '<div class="notes">' + notes + '</div></div>';
+      '<div class="notes">' + notes + clvDays(t) + '</div></div>';
+  }
+
+  // ---- CLV by day since the trader started (the owner, 5 Nov 2026), newest first, folded away ----
+  function clvDays(t) {
+    var rows = (t.clv_daily || []).slice().reverse();
+    if (!rows.length) return "";
+    var pct = function (v) { return v === null || v === undefined ? DASH : (v > 0 ? "+" : v < 0 ? MINUS : "") + Math.abs(v * 100).toFixed(1) + "%"; };
+    var body = rows.map(function (r) {
+      return '<tr><td>' + esc(dm(r.day)) + '</td><td class="mono ' + cls(r.clv) + '">' + pct(r.clv) + '</td><td class="mono">' +
+        (r.bets || 0) + '</td><td class="mono">' + money(r.staked, false) + '</td><td class="mono ' + cls(r.pnl) + '">' +
+        money(r.pnl, true) + (r.complete ? "" : " *") + '</td></tr>';
+    }).join("");
+    return '<details class="clvdays"><summary>CLV by day since ' + esc(dm(rows[rows.length - 1].day)) + ' (' + rows.length +
+      ' days)</summary><table><thead><tr><th>Day</th><th>CLV</th><th>Bets</th><th>Staked</th><th>P&amp;L</th></tr></thead><tbody>' +
+      body + '</tbody></table><p>CLV: stake-weighted, the price taken against the closing price. * not yet fully settled.</p></details>';
   }
 
   function sportPnl(s) { return s.live_totals ? s.live_totals.today_pnl : null; }
