@@ -212,3 +212,32 @@ position + sectionals. Try and model early leader. And see how our projected ear
 
 Sources: `research/strat/results_2026-11-04/strat_j_early_leader_1105.txt`, `strat_j_early_leader_rules.csv`,
 `strat_j_tie_check_1105.txt`; queries in `research/queries/done/`.
+
+### Round 2: recency-weighted run style (5 Nov 2026)
+
+The owner: "try and improve the modelling here. recency weighting, run style last time out, decayed over 1 run, 3
+runs, 5 runs, 10 runs, career. Normalised by field size."
+
+Each run's early position on one scale normalised by field size (rs_epf: 0 led, 1 last), and each horse's earlier runs
+summarised for early position, led and led-or-disputed: last time out, recency-weighted means with half-lives of 1, 3,
+5 and 10 runs, plain means of the last 3, 5 and 10, career, runs since it last led; each also against today's field
+(rank over the field size, gap to the race's most forward). 30 features plus 33 race-relative ones
+(`research/queries/done/strat_j2_leader_recency_1105.py`).
+
+| Model (2022-26, out of sample) | AUC | Log loss | Projected leader led | Win A/E vs BSP (p) | Place A/E |
+|---|---|---|---|---|---|
+| A: strategy J | 0.7953 | 0.2927 | 41.6% | 1.006 (0.52) | 0.999 |
+| B: A + the recency set | 0.7960 | 0.2923 | 41.7% | 1.004 (0.64) | 0.994 |
+| C: the recency set alone, with draw, trip, code | 0.7931 | 0.2938 | 41.3% | 1.001 (0.88) | 0.995 |
+
+- **Leader prediction barely moves.** The recency set adds 0.0007 AUC and 0.1 points of hit rate. On its own it does
+  almost as well as the full model (the last run's and last three runs' position against the field carry the most
+  gain), because `model/race_shape.py` already weights a horse's style by recency (a half-life of 4 runs).
+- **Betting the pick is unchanged:** win A/E 1.00-1.01 at BSP, no cut passing (flat/AW, jumps, chance >= 0.5, lone
+  speed). Ties are broken at random.
+- **One pattern for later:** horses with a high chance of leading shorten from the morning to the off (mean morning
+  price over BSP +2.7% for a chance of 0.6+, against -6.1% for under 0.05), but backed at the morning price they still
+  return only A/E 1.00-1.02. Capturing it would mean backing in the morning and laying at the SP, which is the
+  live trader's own trade.
+
+Sources: `research/strat/results_2026-11-04/strat_j2_leader_recency_1105.txt`, `strat_j2_leader_recency_rules.csv`.
