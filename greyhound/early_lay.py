@@ -1004,19 +1004,20 @@ def commission(env=None) -> float:
         return CONFIG["commission"]
 
 
-def reconcile(store, x, day: date, comm: float | None = None) -> dict:
+def reconcile(store, x, day: date, comm: float | None = None, prefix: str = PREFIX, ref: str = REF,
+              laid_action: str = "lay") -> dict:
     """The live ledger against Betfair's settled bets (the audit A6): per market, what Betfair paid on our ``el-``
     bets (listClearedOrders' profit, before commission) beside what the ledger locked by green-ups; the markets not
     yet settled; the day's net after commission on each market's winnings. Written to S3 beside the ledger."""
     comm = commission() if comm is None else comm
-    raw = store.get(f"{PREFIX}/live/{day:%Y-%m-%d}/ledger.csv")
+    raw = store.get(f"{prefix}/live/{day:%Y-%m-%d}/ledger.csv")
     if not raw:
         return {"day": f"{day}", "note": "no data found: no live ledger"}
     led = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str})
-    mids = sorted(set(led[led.action == "lay"].market_id.dropna().astype(str)))
+    mids = sorted(set(led[led.action == laid_action].market_id.dropna().astype(str)))
     if not mids:
         return {"day": f"{day}", "note": "no lays"}
-    tag = f"{REF}{day:%m%d}-"
+    tag = f"{ref}{day:%m%d}-"
     ours = [c for c in x.cleared(mids) if str(c.get("customerOrderRef") or "").startswith(tag)]
     paid: dict = {}
     for c in ours:
@@ -1034,7 +1035,7 @@ def reconcile(store, x, day: date, comm: float | None = None) -> dict:
            "ledger_locked": round(float(locked.sum()), 2), "difference": round(gross - float(locked.reindex(
                list(paid)).fillna(0).sum()), 2), "by_market": rows}
     try:
-        store.put(f"{PREFIX}/live/{day:%Y-%m-%d}/reconcile.json", json.dumps(out, indent=1).encode())
+        store.put(f"{prefix}/live/{day:%Y-%m-%d}/reconcile.json", json.dumps(out, indent=1).encode())
     except Exception as exc:
         log.warning("reconciliation not written (%s)", exc)
     return out

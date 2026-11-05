@@ -37,7 +37,7 @@ import math
 import os
 import time
 from collections import deque
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -71,11 +71,31 @@ CONFIG = {
     "give_up_seconds": 2.0,
     "min_order": 1.0,               # Betfair's smallest limit stake
     "min_sp_back": 2.0,
-    "day_loss_limit": 100.0,        # the day stops once the locked P&L reaches minus this
+    "day_loss_limit": 100.0,        # the day stops once the locked P&L reaches minus this; live orders need the
+                                    # owner's figure (GREYHOUND_QUOTE_MID_DAILY_LOSS, GBP; the owner, 5 Nov 2026:
+                                    # "fix the quote_mid trader the same way"), else none is sent
+    "close_margin_seconds": 120.0,  # no quote on a race off later than this before the trader stops
+    "overrun_minutes": 15.0,        # past --until, the trader stays to close what it quoted, then cancels
     "max_orders_hour": 4000,        # under Betfair's 5,000 an hour, above which each is charged
+    "max_orders_per_minute": 120,   # a guard against a runaway loop (a full race quoted both sides is 16 orders)
 }
 LEDGER_FIELDS = ["time_utc", "mode", "market_id", "selection_id", "action", "side", "price", "size", "matched",
                  "avg_price", "bet_id", "status", "error", "mid", "win", "lose", "locked_pnl", "seconds_to_off"]
+
+
+def daily_loss_limit(env=None) -> float | None:
+    """The live quoter's daily loss limit in GBP (GREYHOUND_QUOTE_MID_DAILY_LOSS, a positive number), else None: and
+    without one main() sends no order."""
+    env = os.environ if env is None else env
+    try:
+        v = float(str(env.get("GREYHOUND_QUOTE_MID_DAILY_LOSS", "")).strip())
+    except ValueError:
+        return None
+    return v if math.isfinite(v) and v > 0 else None
+
+
+def _terminate(signum, frame):
+    raise SystemExit(f"signal {signum}")
 
 
 def switch_on(env=None) -> bool:
@@ -273,6 +293,10 @@ class QuoteMid:
         self._copied_at = None
         self.last_error = ""
         self.stopped_for = ""
+        self.until: datetime | None = None            # set by run(): no quote on a race off after it
+        self._stop_cancelled: set = set()
+        self._sent_min: list = []                      # the times of the quotes sent, for the per-minute rate
+        self._funds: tuple | None = None
         self._resume()
 
     # the record ----------------------------------------------------------------------------------------------------
@@ -364,6 +388,8 @@ class QuoteMid:
         stopped = bool(self.kill())
         if not stopped and self.locked <= -self.cfg["day_loss_limit"]:
             stopped, self.stopped_for = True, f"the day's loss limit (locked {self.locked:.2f})"
+        if stopped:
+            self.cancel_open("stopped" + (f" ({self.stopped_for})" if self.stopped_for else " (S3 STOP)"), once=True)
         busy = self.orders_last_hour() >= self.cfg["max_orders_hour"]
         books = self.x.books(mids)
         for mid in mids:
@@ -399,6 +425,11 @@ class QuoteMid:
     def quote(self, mid: str, b, secs: float) -> None:
         if b.status != "OPEN" or b.inplay:
             return
+        if self.until is not None and mid not in self.quoted and self.preds is not None:
+            off = self.preds.loc[self.preds.market_id.astype(str) == mid, "off"]
+            if len(off) and pd.Timestamp(off.iloc[0]) > pd.Timestamp(self.until) - pd.Timedelta(
+                    seconds=self.cfg.get("close_margin_seconds", 120.0)):
+                return                                  # never quote a race the trader would not be here to close
         active = {sid: q for sid, q in b.runners.items() if q.status == "ACTIVE"}
         if not active or any(not (q.last_traded and q.last_traded > 1 and q.best_back) for q in active.values()):
             return                                              # every dog must have traded (the simulator's start)
@@ -426,7 +457,13 @@ class QuoteMid:
                     if self.orders_last_hour() >= self.cfg["max_orders_hour"]:
                         continue
                     size = stake_for(price, self.cfg, side, q, secs)
+                    why = self.gate(side, price, size, win, lose)
+                    if why:
+                        rows.append(self._row(mid, secs, selection_id=sid, action="no_quote", side=side, price=price,
+                                              size=size, error=f"risk gate: {why}"))
+                        continue
                     ref = f"{tag}-{str(sid)[-7:]}-q{self.orders.n % 1000}"
+                    self._sent_min.append(pd.Timestamp(self.now()))
                     r = self.orders.place(mid, sid, side, price, size, ref)
                     self.placed.append(self.now())
                     self.quoted.add(mid)
@@ -498,17 +535,105 @@ class QuoteMid:
             rows.append(self._row(mid, secs, action="closed"))
         self._write(rows, force=mid in self.greened)
 
-    def run(self, until: datetime, sleep=time.sleep) -> dict:
-        while self.now() < until:
+    def gate(self, side: str, price: float, size: float, win: float = 0.0, lose: float = 0.0) -> str:
+        """The pre-trade risk gate before every quote (the audit A5; the hedges that close a position pass by): the
+        reason it fails, else ''."""
+        c = self.cfg
+        if self.kill():
+            return "stopped (S3 STOP)"
+        if not (np.isfinite(price) and 1.01 <= price <= c["max_price"]):
+            return f"price {price} outside 1.01-{c['max_price']}"
+        if not (np.isfinite(size) and c["min_order"] <= size <= c["max_stake"] + 1e-9):
+            return f"stake {size} outside {c['min_order']}-{c['max_stake']}"
+        risk = size * (price - 1) if side == "LAY" else size
+        worst = (win if side == "LAY" else lose) - risk
+        if worst < -c["max_loss"] - 1e-9:
+            return f"the dog's worst outcome would pass -GBP{c['max_loss']:.0f}"
+        if self.locked - risk <= -c["day_loss_limit"]:
+            return f"the day's loss limit (GBP{c['day_loss_limit']:.0f}) with this quote's risk"
+        if self.orders_last_hour() >= c["max_orders_hour"]:
+            return f"order rate ({c['max_orders_hour']} an hour)"
+        t = pd.Timestamp(self.now())
+        self._sent_min = [x for x in self._sent_min if (t - x).total_seconds() < 60]
+        if len(self._sent_min) >= c.get("max_orders_per_minute", 10 ** 9):
+            return f"order rate ({c['max_orders_per_minute']} a minute)"
+        if self.live:
+            if self._funds is None or (t - self._funds[0]).total_seconds() > 60:
+                try:
+                    f = self.x.funds()
+                    self._funds = (t, float(f["available"]) if f and f.get("available") is not None else None)
+                except Exception:
+                    self._funds = (t, None)
+            if self._funds[1] is None:
+                return "the account's funds could not be read"
+            if self._funds[1] < risk:
+                return f"funds GBP{self._funds[1]:.2f} under the risk GBP{risk:.2f}"
+        return ""
+
+    def open_markets(self) -> list[str]:
+        return sorted(self.quoted - self.greened)
+
+    def cancel_open(self, why: str, once: bool = False) -> None:
+        """Pull the resting quotes of every market quoted and not yet closed (each once with ``once``)."""
+        for mid in self.open_markets():
+            if once and mid in self._stop_cancelled:
+                continue
+            self._stop_cancelled.add(mid)
             try:
-                self.step()
-            except Exception as exc:                            # one failed poll: the next tries again
-                log.warning("poll failed (%s)", exc)
-                self.last_error = f"poll: {exc}"
-            self.heartbeat()
-            sleep(self.cfg["near_poll_seconds"])
-        self._write([], force=True)
-        self.heartbeat(force=True, finished=True)
+                ids = [str(o.get("betId")) for o in self.orders.mine(mid) if o.get("status") == "EXECUTABLE"
+                       and float(o.get("sizeRemaining") or 0) > 0]
+                st = self.orders.cancel(mid, ids)
+            except Exception as exc:
+                ids, st = [], f"FAILURE: {exc}"[:200]
+            self.pulled.add(mid)
+            self._write([{"time_utc": pd.Timestamp(self.now()).strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": self.mode,
+                          "market_id": mid, "action": "cancel", "size": len(ids), "status": st, "error": why}])
+
+    def recover(self) -> dict:
+        """Rebuild the day's quoted markets from Betfair's own orders (the audit A4): every market with a ``qm-``
+        order of today's is quoted, so its position is greened up at the off (positions are read from Betfair's
+        orders there)."""
+        if not self.live or self.preds is None:
+            return {}
+        mids = sorted(self.preds.market_id.dropna().astype(str).unique())
+        tag = f"{REF}{self.day:%m%d}-"
+        found = set()
+        for i in range(0, len(mids), 50):
+            for o in self.x.orders(mids[i:i + 50]):
+                if str(o.get("customerOrderRef") or "").startswith(tag):
+                    found.add(str(o.get("marketId")))
+        new = found - self.quoted
+        self.quoted |= found
+        if new:
+            self._write([{"time_utc": pd.Timestamp(self.now()).strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": self.mode,
+                          "market_id": m, "action": "recovered"} for m in sorted(new)])
+        return {"markets": len(found), "new": len(new)}
+
+    def run(self, until: datetime, sleep=time.sleep) -> dict:
+        """Quote until ``until`` (no race off later than ``close_margin_seconds`` before it), stay up to
+        ``overrun_minutes`` past it while a quoted market is open, and on any exit pull every resting quote."""
+        self.until = until
+        if self.live:
+            try:
+                self.load_predictions()
+                log.info("recovered from Betfair's orders: %s", self.recover())
+            except Exception as exc:
+                log.warning("recovery from Betfair's orders failed (%s)", exc)
+                self.last_error = f"recover: {exc}"
+        hard_stop = until + timedelta(minutes=self.cfg.get("overrun_minutes", 15.0))
+        try:
+            while self.now() < until or (self.open_markets() and self.now() < hard_stop):
+                try:
+                    self.step()
+                except Exception as exc:                        # one failed poll: the next tries again
+                    log.warning("poll failed (%s)", exc)
+                    self.last_error = f"poll: {exc}"
+                self.heartbeat()
+                sleep(self.cfg["near_poll_seconds"])
+        finally:
+            self.cancel_open("trader stopped")
+            self._write([], force=True)
+        self.heartbeat(force=True, finished=True, still_open=self.open_markets())
         return {"day": f"{self.day:%Y-%m-%d}", "mode": self.mode, "margin": self.cfg["margin"],
                 "markets_quoted": len(self.quoted), "markets_closed": len(self.greened),
                 "locked_pnl": round(self.locked, 2)}
@@ -565,6 +690,8 @@ def main(argv=None) -> int:
     ap.add_argument("--date", default=None)
     ap.add_argument("--margin", type=float, default=None)
     ap.add_argument("--table", action="store_true")
+    ap.add_argument("--reconcile", action="store_true",
+                    help="the live ledger against Betfair's settled bets for --date (default yesterday, UK)")
     a = ap.parse_args(argv)
     store = Store(root=a.store)
     day = date.fromisoformat(a.date) if a.date else uk_today()
@@ -574,17 +701,39 @@ def main(argv=None) -> int:
         live = a.live and switch_on()
         if a.live and not live:
             log.warning("GREYHOUND_QUOTE_MID is not 'live': the decisions are logged, nothing is sent")
+        limit = daily_loss_limit()
+        if live and limit is None:
+            live = False
+            log.warning("no daily loss limit (GREYHOUND_QUOTE_MID_DAILY_LOSS): no live orders, the decisions are logged")
         mode = "live" if live else "paper"
         cfg = dict(CONFIG)
+        if limit is not None:
+            cfg["day_loss_limit"] = limit
         if a.margin is not None:
             cfg["margin"] = float(a.margin)
         x = LiveExchange(BetfairData(source="greyhound"))
         x.login()
+        if live:                                         # yesterday's live day against Betfair's settled bets
+            try:
+                from greyhound.early_lay import reconcile
+                out["reconcile_yesterday"] = reconcile(store, x, day - timedelta(days=1), prefix=PREFIX, ref=REF,
+                                                       laid_action="quote")
+            except Exception as exc:
+                log.warning("yesterday not reconciled (%s)", exc)
+        import signal
+        signal.signal(signal.SIGTERM, _terminate)        # a cancelled job: run()'s finally pulls the resting quotes
         ledger = Path(os.getenv("GREYHOUND_LEDGER_DIR") or (Path.home() / ".ashcroft" / "greyhound")) / \
             f"quote_mid_{mode}" / f"{day:%Y-%m-%d}" / "ledger.csv"
         log.info("quotes around the mid %s: margin %.2f, GBP%.2f a quote (stake GBP%.2f-%.2f), day stop GBP%.2f",
                  mode, cfg["margin"], cfg["liability"], cfg["min_stake"], cfg["max_stake"], cfg["day_loss_limit"])
         out["trade"] = QuoteMid(store, x, cfg, day, live, ledger, kill=kill_switch(store)).run(uk_time_on(day, a.until))
+    if a.reconcile:
+        from trading.exchange import BetfairData, LiveExchange
+        from greyhound.early_lay import reconcile
+        x = LiveExchange(BetfairData(source="greyhound"))
+        x.login()
+        rd = date.fromisoformat(a.date) if a.date else uk_today() - timedelta(days=1)
+        out["reconcile"] = reconcile(store, x, rd, prefix=PREFIX, ref=REF, laid_action="quote")
     if a.table:
         print(table(store, day))
     print(json.dumps(out, indent=1, default=str))

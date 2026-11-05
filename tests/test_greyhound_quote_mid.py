@@ -38,6 +38,9 @@ class FakeX:
     def orders(self, mids, refs=None):
         return [o for o in self.ords if o["marketId"] in mids]
 
+    def funds(self):                                           # the gate reads the account's funds on live quotes
+        return {"available": 10_000.0}
+
     def _place(self, mid, ins, ref):
         self.placed.append(ins)
         bid = str(len(self.placed))
@@ -205,3 +208,119 @@ def test_the_live_staking_matches_the_simulators():
                 book = {"back": q.back, "lay": q.lay}
                 assert qm.stake_for(price, cfg, side, q, secs) == \
                     ps.stake_q(price, {"stake": sim}, cfg, book, side.lower(), secs), (kind, side, secs)
+
+
+
+# --- the audit's fixes, as the early lay's (the owner, 5 Nov 2026: "fix the quote_mid trader the same way") ---------
+
+def test_live_needs_a_daily_loss_limit():
+    assert qm.daily_loss_limit({}) is None
+    assert qm.daily_loss_limit({"GREYHOUND_QUOTE_MID_DAILY_LOSS": "0"}) is None
+    assert qm.daily_loss_limit({"GREYHOUND_QUOTE_MID_DAILY_LOSS": "40"}) == 40.0
+
+
+def test_no_quote_on_a_race_after_the_trader_stops(tmp_path):
+    x = FakeX(book({7: (4.0, 4.2)}))
+    t = trader(tmp_path, x)
+    t.until = OFF - timedelta(minutes=1)                       # the race goes off after the trader stops
+    t.step()
+    assert x.placed == []
+    t.until = OFF + timedelta(minutes=30)
+    t.step()
+    assert len(x.placed) == 2
+
+
+def test_resting_quotes_are_pulled_when_the_run_ends_or_is_killed(tmp_path):
+    x = FakeX(book({7: (4.0, 4.2)}))
+    t = trader(tmp_path, x)
+
+    def sleep(s):                                              # the job is cancelled after the first poll
+        raise SystemExit("signal 15")
+
+    with pytest.raises(SystemExit):
+        t.run(OFF + timedelta(minutes=30), sleep=sleep)
+    assert len(x.placed) == 2 and sorted(x.cancelled) == ["1", "2"]
+    led = pd.read_csv(tmp_path / "ledger.csv")
+    assert (led[led.action == "cancel"].error == "trader stopped").all() and (led.action == "cancel").any()
+
+
+def test_the_stop_switch_pulls_every_resting_quote_once(tmp_path):
+    clock = Clock(OFF - timedelta(minutes=4))
+    x = FakeX(book({7: (4.0, 4.2)}))
+    t = trader(tmp_path, x, clock=clock)
+    t.step()
+    state = {"stop": True}
+    t.kill = lambda: state["stop"]
+    clock.t += timedelta(seconds=5)
+    t.step()
+    clock.t += timedelta(seconds=5)
+    t.step()
+    assert sorted(x.cancelled) == ["1", "2"] and len(x.placed) == 2
+    led = pd.read_csv(tmp_path / "ledger.csv")
+    assert (led.action == "cancel").sum() == 1
+
+
+def test_the_gate_refuses_what_breaks_a_limit(tmp_path):
+    x = FakeX(book({7: (4.0, 4.2)}))
+    t = trader(tmp_path, x)
+    assert t.gate("LAY", 4.0, 5.0) == ""
+    assert "price" in t.gate("LAY", 25.0, 2.0)
+    assert "stake" in t.gate("BACK", 4.0, 50.0)
+    assert "worst outcome" in t.gate("LAY", 4.0, 5.0, win=-50.0)       # -50 less a GBP15 liability
+    t.locked = -95.0
+    assert "loss limit" in t.gate("BACK", 4.0, 6.0)
+    t.locked = 0.0
+    t._sent_min = [pd.Timestamp(OFF)] * t.cfg["max_orders_per_minute"]
+    t.now = lambda: OFF
+    assert "a minute" in t.gate("LAY", 4.0, 5.0)
+    t._sent_min = []
+    x.funds = lambda: None
+    t._funds = None
+    assert "funds" in t.gate("LAY", 4.0, 5.0)
+    t.kill = lambda: True
+    assert "STOP" in t.gate("LAY", 4.0, 5.0)
+
+
+def test_a_refused_quote_is_logged_not_sent(tmp_path):
+    x = FakeX(book({7: (4.0, 4.2)}))
+    x.funds = lambda: None
+    t = trader(tmp_path, x)
+    t.step()
+    assert x.placed == []
+    led = pd.read_csv(tmp_path / "ledger.csv")
+    assert led.error.astype(str).str.contains("risk gate").all() and (led.action == "no_quote").sum() == 2
+
+
+def test_quoted_markets_rebuilt_from_betfairs_orders(tmp_path):
+    x = FakeX(book({7: (4.0, 4.2)}))
+    x.ords = [{"betId": "9", "marketId": MID, "selectionId": 7, "side": "LAY", "status": "EXECUTION_COMPLETE",
+               "sizeMatched": 5.0, "averagePriceMatched": 4.0, "sizeRemaining": 0.0,
+               "customerOrderRef": f"qm-{DAY:%m%d}-x-7-q1", "priceSize": {"price": 4.0, "size": 5.0}},
+              {"betId": "8", "marketId": MID, "selectionId": 7, "side": "BACK", "status": "EXECUTABLE",
+               "customerOrderRef": "el-1104-x-7-l"}]
+    t = trader(tmp_path, x)
+    t.load_predictions()
+    assert t.recover() == {"markets": 1, "new": 1} and MID in t.quoted
+    assert trader(tmp_path / "b", x, live=False).recover() == {}
+
+
+def test_reconcile_reads_the_quoters_ledger(tmp_path):
+    from greyhound import early_lay as el
+    led = pd.DataFrame([{"market_id": MID, "action": "quote", "locked_pnl": None},
+                        {"market_id": MID, "action": "green", "locked_pnl": 2.0}])
+
+    class S:
+        def get(self, key):
+            return led.to_csv(index=False).encode() if key == f"{qm.PREFIX}/live/{DAY}/ledger.csv" else None
+
+        def put(self, key, data):
+            self.key = key
+
+    class X:
+        def cleared(self, mids):
+            return [{"marketId": MID, "customerOrderRef": f"qm-{DAY:%m%d}-x-7-q1", "profit": 2.5},
+                    {"marketId": MID, "customerOrderRef": "el-1104-x-7-l", "profit": -9.0}]
+
+    st = S()
+    r = el.reconcile(st, X(), DAY, comm=0.02, prefix=qm.PREFIX, ref=qm.REF, laid_action="quote")
+    assert r["betfair_profit_gross"] == 2.5 and r["difference"] == 0.5 and st.key.startswith(qm.PREFIX)

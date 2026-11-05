@@ -257,6 +257,7 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
     assert env["GREYHOUND_EARLY_LAY_DAILY_LOSS"] == "${{ vars.GREYHOUND_EARLY_LAY_DAILY_LOSS }}"
     # on paper unless switched on (4 Nov 2026: losing on the corrected simulator)
     assert env["GREYHOUND_QUOTE_MID"] == "${{ inputs.quote_mid || vars.GREYHOUND_QUOTE_MID || 'paper' }}"
+    assert env["GREYHOUND_QUOTE_MID_DAILY_LOSS"] == "${{ vars.GREYHOUND_QUOTE_MID_DAILY_LOSS }}"
     assert wf[True]["workflow_dispatch"]["inputs"]["quote_mid"]["default"] == "paper"
     assert env["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
     # no other workflow starts the greyhound trader; the football trader only football-trade.yml
