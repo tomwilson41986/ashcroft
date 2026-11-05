@@ -241,3 +241,32 @@ difference. That is the resting-order pre-registration's question, answered on t
 - 2025/26 and Aug-Sep 2026 were read before, on other prices: development evidence.
 - The bank figures assume fills at the stakes they imply. The early-price liquidity in lower leagues is unknown
   until the recorder runs.
+
+## The Massey power rating (5 Nov 2026)
+
+**Source:** the owner pointed to markstats.club's Massey rating (75% xG, 25% goals, opponent-adjusted).
+- The site shows only today's table, for the top five leagues and the Champions League, so it cannot be tested
+  without look-ahead.
+- The same construction is fitted on our data instead, point in time, in every league we hold, with goals alone
+  where there is no xG (`football/xg_features.py massey_ratings`, family `x_massey`).
+
+**Does it predict results better than raw xG difference?** Yes. Out of sample 2023-2026, on 12,387 matches, its R2 on
+the goal difference is 0.177 against 0.154; early in the season it is 0.201 against 0.130
+(`reports/football_runs/massey_check.json`). It does not beat the opening price, at 0.203 (early season 0.229).
+
+**Does it add to the price-path model?** Not reliably (`reports/football_runs/massey.json`). Added to the paper
+trader's features, outside the top five leagues, a tick off fair:
+
+| Rule | Without | With |
+|---|---|---|
+| Top 5 a week, 2024/25 | +5.34% | +5.45% |
+| Top 5 a week, 2025/26 | +3.38% | +4.10% |
+| Top 10 a week, 2024/25 | +3.69% | +3.64% |
+| Top 10 a week, 2025/26 | +1.79% | +1.90% |
+| Top 20 a week, 2024/25 | +2.11% | +2.26% |
+| Top 20 a week, 2025/26 | +0.79% | +0.42% |
+
+Across all leagues it is worse at top 5 a week in 2024/25 (+4.43% against +4.87%).
+
+**Read:** a better result rating, but the market already prices what it knows. It is kept in the lab for later
+reads. The frozen paper trader stays as registered.
