@@ -262,6 +262,31 @@ def test_clv_and_the_edge_flag(tmp_path):
     assert e["ev_today_pct"] == pytest.approx(0.05)
 
 
+def test_the_clv_by_day_since_the_first_day(tmp_path):
+    """The owner, 5 Nov 2026: "show the CLV per day since we started". Each traded day's stake-weighted CLV, its bets
+    and stake, oldest first; the page folds it into the trader's details."""
+    from dashboard.page import render
+    t = T("horse-live")
+    for i, c in enumerate([0.12, -0.03, 0.05]):
+        d = (TODAY - timedelta(days=2 - i)).isoformat()
+        rows = [{"ts": f"{d}T09:00:00Z", "event": "back", "market_id": "1.1", "venue": "Ascot", "off": f"{d} 14:00",
+                 "selection_id": 1, "matched": 20, "edge": 0.05},
+                {"ts": f"{d}T09:01:00Z", "event": "back", "market_id": "1.2", "venue": "Ascot", "off": f"{d} 15:00",
+                 "selection_id": 2, "matched": 10, "edge": 0.05},
+                {"ts": f"{d}T15:00:00Z", "event": "settle", "market_id": "1.1", "selection_id": 1, "pnl": 3,
+                 "matched": 20, "clv": c},
+                {"ts": f"{d}T16:00:00Z", "event": "settle", "market_id": "1.2", "selection_id": 2, "pnl": -1,
+                 "matched": 10, "clv": c + 0.03}]
+        _put(tmp_path, "pred", f"trading/live/{d}/ledger.csv", pd.DataFrame(rows))
+    days, last = trader_days(LocalSource(tmp_path), t, TODAY, cache=False)
+    cd = summarise(t, days, TODAY, last)["clv_daily"]
+    assert [r["day"] for r in cd] == [(TODAY - timedelta(days=k)).isoformat() for k in (2, 1, 0)]
+    for r, c in zip(cd, [0.12, -0.03, 0.05]):
+        assert r["clv"] == pytest.approx((20 * c + 10 * (c + 0.03)) / 30, abs=1e-4) and r["bets"] == 2
+        assert r["staked"] == pytest.approx(30)
+    assert "function clvDays" in render({"sports": [], "today": TODAY.isoformat(), "generated_utc": "x"})
+
+
 def test_an_early_lays_clv_is_the_bsp_over_the_price_laid(tmp_path):
     d = TODAY.isoformat()
     rows = [{"time_utc": f"{d}T12:00:00Z", "market_id": "1.a", "selection_id": 1, "track": "Hove", "race_time": "12:00",
