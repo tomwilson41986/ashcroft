@@ -236,7 +236,7 @@ summarised for early position, led and led-or-disputed: last time out, recency-w
 - **Betting the pick is unchanged:** win A/E 1.00-1.01 at BSP, no cut passing (flat/AW, jumps, chance >= 0.5, lone
   speed). Ties are broken at random.
 - **One pattern for later:** horses with a high chance of leading shorten from the morning to the off (mean morning
-  price over BSP +2.7% for a chance of 0.6+, against -6.1% for under 0.05), but backed at the morning price they still
+  price over BSP +2.9% for a chance of 0.6+, against -4.9% for under 0.05, 2022-26), but backed at the morning price they still
   return only A/E 1.00-1.02. Capturing it would mean backing in the morning and laying at the SP, which is the
   live trader's own trade.
 
