@@ -177,6 +177,7 @@ class SimOrder:
     first_fill: datetime | None = None
     last_trd: float = 0.0
     last_through: float = 0.0
+    via_through: bool = False    # filled because the market traded beyond the price (the dog moved through it)
 
     @property
     def remaining(self) -> float:
@@ -225,7 +226,8 @@ class SimOrder:
             self.queue_ahead -= clear
             self._fill(d - clear, self.price, t)
         through = self._through(r)
-        if through > self.last_through + 1e-9:              # the market traded beyond our price: we went first
+        if through > self.last_through + 1e-9 and self.remaining > 0:   # traded beyond our price: we went first
+            self.via_through = True
             self._fill(self.remaining, self.price, t)
         self.last_through = through
         shown = (r.atb if self.side == "LAY" else r.atl).get(self.price, 0.0)
@@ -273,6 +275,7 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
                      "taken": round(o.taken, 2), "matched": round(o.matched, 2),
                      "filled_share": round(o.matched / o.size, 4) if o.size else None,
                      "avg": round(o.avg, 3) if o.avg else None, "first_fill": o.first_fill,
+                     "via_through": o.via_through,
                      **close_pnl(o, r, m.bsp(o.sid) if m else None, comm)})
 
     for t, mc in events(lines):
@@ -344,4 +347,6 @@ def summary(df: pd.DataFrame) -> dict:
             "taken_at_once": round(float(placed.taken.sum()), 2),
             "pnl_green": round(float(pd.to_numeric(m.pnl, errors="coerce").fillna(0).sum()), 2),
             "pnl_sp": round(float(pd.to_numeric(m.pnl_sp, errors="coerce").fillna(0).sum()), 2),
+            "sp_known": int(pd.to_numeric(m.pnl_sp, errors="coerce").notna().sum()),
+            "filled_through": int(m.via_through.sum()) if "via_through" in m else 0,
             "no_book": int((~df.placed).sum())}
