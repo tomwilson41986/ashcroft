@@ -18,6 +18,7 @@ on:
           - price_discovery
           - cross_market
           - feed_coverage
+          - cup_form_check
       days:
         description: 'days of the live record to read'
         required: false
@@ -72,6 +73,9 @@ jobs:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           DAYS: ${{ inputs.days }}
         run: python -m research.open_close.football_feed_coverage --days "$DAYS" --out out/feed_coverage.json
+      - name: Cup and European ties with each club's form from the feed (closing price and winning the bet)
+        if: inputs.job == 'cup_form_check'
+        run: python -m research.open_close.football_cup_form_check --out out/cup_form_check.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
