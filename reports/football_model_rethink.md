@@ -390,3 +390,62 @@ last trade 24 h before the off.
   live record holds enough cup rounds; it records TO_QUALIFY and cup match odds from 5 Nov.
 - A larger cup sample from more Historic Data months. 480 ties is one window.
 - Pre-register a cup-tie paper trial only after both. The frozen EV trader is unchanged.
+
+## Price discovery and a model-free rule scan (6 Nov 2026)
+
+The owner: "keep an open mind, we are looking at price discovery and discovery of profitable trading strategies."
+
+**Source:** `football-research.yml` job `price_discovery`, run 42208953721 (commit 00aa580,
+`research/open_close/football_price_discovery.py`). Betfair's own prices only, no model. The Historic Data soccer
+tables in S3 hold 263,468 markets (684,807 runners with a result), kicking off 30 Jul to 30 Sep 2026.
+
+**A data bug found first:**
+- The first run (42207392243) showed rules returning above +29,000%.
+- The cause: in Asian handicap and alternative-totals markets, the tables gave every handicap line of a runner one
+  line's prices, against its own result.
+- Those markets are now left out of the scan.
+- `betfair_historic.py` is fixed to key prices by runner and line. The S3 tables need a rebuild
+  (`--build --force`) to pick the fix up: the owner's call, since it overwrites them.
+
+**Where the price is found** (mean absolute move in log price, all market types; how often a mark has a price in
+brackets):
+
+| Window | Mean move |
+|---|---|
+| first trade to 24 h before (9% of runners priced at 24 h) | 0.028 |
+| 24 h to 60 min (66% priced at 60 min) | 0.074 |
+| 60 to 15 min (84%) | 0.038 |
+| 15 to 1 min (96%) | 0.027 |
+| last minute to the close | 0.012 |
+
+- The price moves most in the last day before the hour before the off.
+- Correct score and half-time markets move most (0.12 to 0.15 in that window).
+- Double chance moves least (0.035).
+- Moves reverse slightly in the next window (correlation -0.07 to -0.11). With last traded prices that is mostly the
+  price flipping between the back and lay sides, not tradable reversal.
+
+**The rule scan:**
+- 656 rules tried: momentum and fade on four windows at three thresholds, and back or lay held to the result in eight
+  price bands at three marks, across the 12 largest market types and all of them together.
+- Each rule was charged a tick worse each end plus 2% commission.
+- **One rule passed on the first half:** lay first-half over 0.5 goals at 5.0-10.0 at the close, +20.0% on 539 bets.
+- **On the second half it did not hold:** +7.9% on 629 bets, 95% interval -7.7% to +23.8%.
+- **No rule is confirmed.**
+
+**Read:**
+- At Betfair's traded prices, after paying a tick each way, no simple model-free rule pays in this window. That
+  covers buying or selling price bands, following steam and fading drift.
+- One month a half is short, so a small edge would not show. But nothing large and simple is there.
+- An edge has to come from one of two places:
+  - **information** the price does not yet hold: a model, as in the cup-tie signal, where the rating's gap to the
+    early price points the way the price moves;
+  - **execution**: resting orders that earn the spread instead of paying it.
+- Both need the recorded books (depth and queue), not the BASIC last-traded-price files.
+
+**Next leads:**
+1. **Spread capture on the recorded books.** Resting orders at the best back and lay through the last 24 h: how
+   often they fill, and whether they were run over by the move.
+2. **Cross-market consistency.** At the same moment, compare the chances implied by related markets: match odds
+   against double chance and draw no bet, over/under against correct score. Do gaps close, and which market moves
+   to close them? Which market leads price discovery?
+3. The cup-tie signal with resting orders.
