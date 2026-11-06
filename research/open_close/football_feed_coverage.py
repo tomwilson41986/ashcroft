@@ -179,6 +179,32 @@ def summarise(j: pd.DataFrame, cov: pd.DataFrame | None, xg: dict[int, bool] | N
     return out
 
 
+def leagues_to_hold(joined: list[pd.DataFrame], cov: pd.DataFrame | None, fx: pd.DataFrame) -> list[dict]:
+    """Every league our Betfair matches were linked into whose latest season the feed covers with team statistics or
+    line-ups: id, name, country, our markets and money, the flags, and its finished fixtures a season (the quota a
+    season's backfill needs is about that / 20 + 1 requests)."""
+    j = pd.concat(joined, ignore_index=True)
+    j = j[j["apif_league_id"].notna()]
+    if j.empty:
+        return []
+    j["apif_league_id"] = j["apif_league_id"].astype(int)
+    w = j["matched"].fillna(0) if "matched" in j else pd.Series(0.0, index=j.index)
+    g = j.assign(w=w).groupby("apif_league_id").agg(markets=("market_id", "size"), matched=("w", "sum"),
+                                                    league=("league", "first"), country=("league_country", "first"))
+    out = []
+    latest = cov.sort_values("apif_season").groupby("apif_league_id").last() if cov is not None and len(cov) else None
+    fin = fx[fx["status"] == "FINISHED"].groupby(["apif_league_id", "apif_season"]).size()
+    for lg, r in g.sort_values(["matched", "markets"], ascending=False).iterrows():
+        flags = latest.loc[lg, FLAGS].to_dict() if latest is not None and lg in latest.index else {}
+        if not (flags.get("statistics_fixtures") or flags.get("lineups")):
+            continue
+        per = fin.loc[lg] if lg in fin.index.get_level_values(0) else pd.Series(dtype=float)
+        out.append({"apif_league_id": int(lg), "league": r.league, "country": r.country, "markets": int(r.markets),
+                    "matched_gbp": round(float(r.matched), 0), **{k: bool(v) for k, v in flags.items()},
+                    "finished_per_season": {int(k): int(v) for k, v in per.tail(3).items()}})
+    return out
+
+
 def run(store, days: int, key: str | None) -> dict:
     from sources.api_football_lineups import main_league_ids
     fx = store.get_parquet("api_football/fixtures.parquet")
@@ -187,11 +213,13 @@ def run(store, days: int, key: str | None) -> dict:
     cov = league_coverage(key) if key else None
     held = main_league_ids()
     out = {"api_football_key": bool(key), "leagues_held_today": len(held)}
+    joined = []
     for name, m in (("live_record", live_markets(store, days)), ("historic_bundle", bundle_markets(store))):
         if m.empty:
             out[name] = {"status": "no data found"}
             continue
         j = link(m, fx)
+        joined.append(j)
         xg = None
         if key and name == "live_record":
             fin = fx[fx["status"] == "FINISHED"].sort_values("kickoff_utc")
@@ -202,6 +230,14 @@ def run(store, days: int, key: str | None) -> dict:
             xg = xg_sample(key, pick)
         out[name] = summarise(j, cov, xg, held) | {"days": sorted(m["day"].unique()) if "day" in m else
                                                      [str(m["kickoff"].min()), str(m["kickoff"].max())]}
+    if joined:
+        lt = leagues_to_hold(joined, cov, fx)
+        out["leagues_to_hold"] = {"count": len(lt), "beyond_the_22": sum(1 for x in lt if x["apif_league_id"]
+                                                                          not in held),
+                                  "requests_per_season_estimate": int(sum(
+                                      (max(x["finished_per_season"].values()) if x["finished_per_season"] else 0) / 20
+                                      + 1 for x in lt)),
+                                  "leagues": lt}
     return out
 
 

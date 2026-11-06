@@ -23,3 +23,13 @@ def test_link_and_summary_shares():
     assert s["linked_to_api_football"] == {"matches": 0.5, "matched_money": 0.9}
     assert s["feed_offers"]["lineups"]["matched_money"] == 0.9
     assert s["expected_goals_in_team_statistics"]["matches"] == 0.5
+
+
+def test_leagues_to_hold_keeps_covered_leagues_only():
+    j = pd.DataFrame({"market_id": ["1", "2"], "apif_league_id": [39.0, 99.0], "league": ["PL", "X"],
+                      "league_country": ["England", "Y"], "matched": [10.0, 5.0]})
+    cov = pd.DataFrame({"apif_league_id": [39, 99], "apif_season": [2026, 2026],
+                        **{f: [True, False] for f in fc.FLAGS}})
+    fx = pd.DataFrame({"apif_league_id": [39] * 3, "apif_season": [2026] * 3, "status": ["FINISHED"] * 3})
+    out = fc.leagues_to_hold([j], cov, fx)
+    assert [x["apif_league_id"] for x in out] == [39] and out[0]["finished_per_season"] == {2026: 3}
