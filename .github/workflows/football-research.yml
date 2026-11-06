@@ -16,6 +16,7 @@ on:
           - cross_league_check
           - cross_league_price
           - price_discovery
+          - cross_market
       days:
         description: 'days of the live record to read'
         required: false
@@ -61,6 +62,9 @@ jobs:
       - name: Price discovery and the rule scan (Betfair's own prices, model-free)
         if: inputs.job == 'price_discovery'
         run: python -m research.open_close.football_price_discovery --out out/price_discovery.json
+      - name: Cross-market consistency and who moves (Betfair's own prices, model-free)
+        if: inputs.job == 'cross_market'
+        run: python -m research.open_close.football_cross_market --out out/cross_market.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
