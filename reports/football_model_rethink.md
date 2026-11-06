@@ -270,3 +270,14 @@ Across all leagues it is worse at top 5 a week in 2024/25 (+4.43% against +4.87%
 
 **Read:** a better result rating, but the market already prices what it knows. It is kept in the lab for later
 reads. The frozen paper trader stays as registered.
+
+## Evaluation standard (the owner, 6 Nov 2026)
+
+Every football test is scored against two targets, side by side:
+
+1. **The closing price** (the football counterpart of the horses' BFSP): Betfair's last price before the off, and
+   its SP where Betfair offers one. Asks whether the call beats the close (CLV, and the greened return).
+2. **Winning the bet**: the same selection held to the result. Asks whether it makes money on the outcome.
+
+The staking study already reports both (greened against held). Cross-league strength, the next piece of work, is
+judged the same way.
