@@ -587,3 +587,9 @@ def test_api_football_history_leagues_main_first_then_the_list_in_order():
     listed = [x["apif_league_id"] for x in _j.loads(h.EXTRA_LEAGUES_FILE.read_text())["leagues"]]
     rest = [x for x in listed if x not in main]
     assert ids[len(main):] == rest and 3 in ids and 2 in ids          # the Europa and Champions Leagues
+
+
+def test_lineup_leagues_add_only_the_high_money_covered_leagues():
+    from sources.api_football_lineups import lineup_league_ids, main_league_ids
+    extra = lineup_league_ids() - main_league_ids()
+    assert {2, 3}.issubset(extra) and len(extra) <= 10
