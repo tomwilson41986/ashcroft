@@ -390,3 +390,127 @@ last trade 24 h before the off.
   live record holds enough cup rounds; it records TO_QUALIFY and cup match odds from 5 Nov.
 - A larger cup sample from more Historic Data months. 480 ties is one window.
 - Pre-register a cup-tie paper trial only after both. The frozen EV trader is unchanged.
+
+## Price discovery and a model-free rule scan (6 Nov 2026)
+
+The owner: "keep an open mind, we are looking at price discovery and discovery of profitable trading strategies."
+
+**Source:** `football-research.yml` job `price_discovery`, run 42208953721 (commit 00aa580,
+`research/open_close/football_price_discovery.py`). Betfair's own prices only, no model. The Historic Data soccer
+tables in S3 hold 263,468 markets (684,807 runners with a result), kicking off 30 Jul to 30 Sep 2026.
+
+**A data bug found first:**
+- The first run (42207392243) showed rules returning above +29,000%.
+- The cause: in Asian handicap and alternative-totals markets, the tables gave every handicap line of a runner one
+  line's prices, against its own result.
+- Those markets are now left out of the scan.
+- `betfair_historic.py` is fixed to key prices by runner and line. The S3 tables need a rebuild
+  (`--build --force`) to pick the fix up: the owner's call, since it overwrites them.
+
+**Where the price is found** (mean absolute move in log price, all market types; how often a mark has a price in
+brackets):
+
+| Window | Mean move |
+|---|---|
+| first trade to 24 h before (9% of runners priced at 24 h) | 0.028 |
+| 24 h to 60 min (66% priced at 60 min) | 0.074 |
+| 60 to 15 min (84%) | 0.038 |
+| 15 to 1 min (96%) | 0.027 |
+| last minute to the close | 0.012 |
+
+- The price moves most in the last day before the hour before the off.
+- Correct score and half-time markets move most (0.12 to 0.15 in that window).
+- Double chance moves least (0.035).
+- Moves reverse slightly in the next window (correlation -0.07 to -0.11). With last traded prices that is mostly the
+  price flipping between the back and lay sides, not tradable reversal.
+
+**The rule scan:**
+- 656 rules tried: momentum and fade on four windows at three thresholds, and back or lay held to the result in eight
+  price bands at three marks, across the 12 largest market types and all of them together.
+- Each rule was charged a tick worse each end plus 2% commission.
+- **One rule passed on the first half:** lay first-half over 0.5 goals at 5.0-10.0 at the close, +20.0% on 539 bets.
+- **On the second half it did not hold:** +7.9% on 629 bets, 95% interval -7.7% to +23.8%.
+- **No rule is confirmed.**
+
+**Read:**
+- At Betfair's traded prices, after paying a tick each way, no simple model-free rule pays in this window. That
+  covers buying or selling price bands, following steam and fading drift.
+- One month a half is short, so a small edge would not show. But nothing large and simple is there.
+- An edge has to come from one of two places:
+  - **information** the price does not yet hold: a model, as in the cup-tie signal, where the rating's gap to the
+    early price points the way the price moves;
+  - **execution**: resting orders that earn the spread instead of paying it.
+- Both need the recorded books (depth and queue), not the BASIC last-traded-price files.
+
+**Next leads:**
+1. **Spread capture on the recorded books.** Resting orders at the best back and lay through the last 24 h: how
+   often they fill, and whether they were run over by the move.
+2. **Cross-market consistency.** At the same moment, compare the chances implied by related markets: match odds
+   against double chance and draw no bet, over/under against correct score. Do gaps close, and which market moves
+   to close them? Which market leads price discovery?
+3. The cup-tie signal with resting orders.
+
+## Cross-market consistency: who leads, and a lag to test on the books (6 Nov 2026)
+
+**Source:** `football-research.yml` job `cross_market`, run 42210625430 (commit 08e94bb,
+`research/open_close/football_cross_market.py`). Last traded prices from the Historic Data tables: 12,233 events,
+30 Jul to 30 Sep 2026.
+
+**Method:** the chances in one market are compared with the same chances worked out from a related market of the
+same event, at 60, 15 and 1 minute before the off:
+- match odds against double chance (home or draw = home + draw, and so on);
+- match odds against draw no bet;
+- correct score summed into over/under 2.5, against over/under 2.5.
+
+A market's chances count at a mark only when every runner of it has a price there. The first run (42210118169) did
+not check this, and showed gaps of about 30 points: those came from part of a book normalised over itself.
+
+**Agreement:** the related markets disagree by about one point of chance on average.
+- Double chance: 0.8-1.3 points.
+- Draw no bet: 1.5-1.6 points.
+- Over/under 2.5 against correct score: 0.6 points.
+
+**Who leads:**
+- **Match odds leads.** When double chance or draw no bet disagrees with it 60 minutes out, the smaller market makes
+  up 46-62% of the gap by the close, while match odds barely moves (-8% to -12%). At 15 minutes the follower makes up
+  27-41%; in the last minute, 5-14%.
+- **Over/under 2.5 leads correct score, weakly.** Correct score makes up 6-13% of the gap; over/under 2.5 moves 4-7%.
+
+**The rule scan:**
+- Rule: trade the follower towards the leader when the gap is over 1, 2 or 4 points.
+- 126 rules tried; 18 passed on the first half; 9 held on the second half with the 95% interval above zero.
+- Every confirmed rule closes at the close (the closing-price target). None of the held-to-result versions held:
+  target 2 (winning the bet) shows nothing.
+- The strongest:
+
+| Rule (closed at the close, a tick worse each end) | First half | Second half |
+|---|---|---|
+| Draw no bet, away, 60 min, gap over 2 points | +4.3% on 407 | **+3.3%** on 515 (+2.3 to +4.4) |
+| Draw no bet, away, 60 min, gap over 1 point | +2.6% on 840 | +2.1% on 975 (+1.3 to +2.8) |
+| Draw no bet, home, 60 min, gap over 2 points | +1.4% on 407 | +1.6% on 515 (+0.6 to +2.7) |
+| Double chance, draw or away, 60 min, gap over 1 point | +1.8% on 414 | +1.6% on 629 (+1.0 to +2.2) |
+| Double chance, home or draw, 60 min, gap over 1 point | +0.9% on 373 | +1.3% on 575 (+0.7 to +2.0) |
+| Double chance, draw or away, 15 min, gap over 2 points | +1.8% on 349 | +1.1% on 454 (+0.7 to +1.6) |
+| Double chance, home or draw, 15 min, gap over 1 point | +0.8% on 645 | +0.7% on 799 (+0.4 to +1.1) |
+| Draw no bet, home, 15 min, gap over 2 points | +1.4% on 647 | +0.6% on 747 (+0.1 to +1.1) |
+| Double chance, draw or away, 15 min, gap over 1 point | +0.9% on 750 | +0.4% on 903 (+0.1 to +0.6) |
+
+**Why this is not yet an edge:**
+- Double chance and draw no bet trade far less than match odds, so their last traded price at a mark can be hours
+  old.
+- A gap to match odds then partly measures how long ago the small market last traded. The book itself may already
+  have been in line with match odds, with no stale price left to take.
+- The pattern fits that: it pays at the closing price, decays from 60 to 15 minutes, and has no edge held to the
+  result. That is what a recording lag would look like, and also what a real lag would look like.
+- Last traded prices cannot tell the two apart. The books can.
+
+**The test:** the live feed now records double chance and draw no bet books beside match odds
+(`football/exchange_feed.py DEFAULT_TYPES`), read-only, under the same Throttle. The paper book then gives every
+selection in those markets executable prices, depth and resting-order fills at 60 and 15 minutes.
+
+The rule, fixed now for that test:
+1. At 60 and 15 minutes, take the gap between match odds' mid chances and the follower's mid chances.
+2. Over 1 or 2 points, take the follower's best offered price towards match odds.
+3. Close at the close, crossing the spread.
+
+It is scored once 30 match days of these books are held.
