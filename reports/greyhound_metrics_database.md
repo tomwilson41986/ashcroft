@@ -27,6 +27,12 @@ Supporting work:
 - A sourced reference table of the 33 GBGB track names since 2014 (`research/greyhound/reference/`).
 - Weather comes from NOAA's public-domain station data, chosen over Open-Meteo, whose free tier is non-commercial.
 
+The rebuild with the backfill (run 42259737365, 6 Nov 17:38 UTC) read 3,963,786 GBGB runs from 2014 to 2026 (the
+first build read 2,627,460 from 2018). The trouble prices now start in 2015 (fitted on 320,236 earlier runs; 1,329
+codes by 2026), the ability fits use the years before 2018 as designed, and 624,056 of 683,978 races (91%) have a
+weather reading (2014 to August 2025). Across the whole history, 435,476 of 756,305 dated seasons (58%) fall after
+their own race.
+
 ## What the data revealed
 
 - **GBGB serves the CURRENT trainer, owner and season on every past result.**
