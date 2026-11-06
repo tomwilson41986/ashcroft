@@ -6,16 +6,24 @@ The data: every 10 s over the last ``WINDOW`` seconds before each scheduled off,
 (rebuilt from the stream by research.greyhound.stream_replay): three levels each side and their money, the money
 offered in all, the last traded price, Betfair's projected SPs (near, far), the money traded so far and in the last
 30 and 60 s; the race's overround and money; the same dog's place market; our pre-race price
-(greyhound/live/predictions/<day>.csv). The target: log of the SP in the settled definition.
+(greyhound/live/predictions/<day>.csv).
+
+Two targets, always (the owner, 6 Nov 2026: "let's always test against two targets; 1. BFSP 2. Win - winning the
+bet"): every spec and baseline is scored on both.
+- ``bfsp``: the RMSE of log(SP), the SP from the settled definition;
+- ``win``: the result. Each forecast is read as win chances (1 / price, normalised within the race at each
+  checkpoint) and scored by the winner's log loss (-log of the chance it gave the winner), over races with one winner.
+A spec says which target it is fitted to (``"target": "win"`` learns the result, starting from the market's chances;
+the default learns log(SP)), and is scored on both all the same.
 
 The loop that keeps it honest:
 - every experiment is a line in ``research/greyhound/close_specs.json`` (a name, its features, its model, the date it
   was registered); the night's job (greyhound-close-lab.yml) builds the new day's snapshots, fits every spec on the
   days before each test day only, scores every day, and appends each spec's score on each day to the trial registry
   (s3 close_lab/registry.csv, with the code's commit);
-- a spec counts only on days after the day it was registered (``fresh`` days): the champion is the spec with the
-  lowest RMSE of log(SP) over its fresh days, and replaces the incumbent only when its paired gain over the incumbent
-  on the days both were fresh has a 90% interval (bootstrap over races) above zero;
+- a spec counts only on days after the day it was registered (``fresh`` days): each target has its own champion,
+  the spec with the lowest score on that target over its fresh days, replacing the incumbent only when its paired gain
+  over the incumbent on the days both were fresh has a 90% interval (bootstrap over races) above zero;
 - the baselines are always scored: the market mid, the last traded price and Betfair's own projected SP.
 """
 
@@ -41,6 +49,7 @@ CHECKS = tuple(range(WINDOW, 0, -STEP))
 SPECS = Path(__file__).with_name("close_specs.json")
 PREFIX = "close_lab"
 BASELINES = ("mid", "ltp", "spn")
+TARGETS = {"bfsp": ("rmse", "e_"), "win": ("win_ll", "w_")}        # target: (its score, its error columns' prefix)
 
 
 def _mid(b, bs, l, ls):
@@ -161,15 +170,44 @@ FEATURES = {
 def load_specs(path: Path = SPECS) -> list[dict]:
     specs = json.loads(path.read_text())["specs"]
     for s in specs:
-        s["hash"] = hashlib.sha1(json.dumps({k: s[k] for k in ("features", "model")}, sort_keys=True)
-                                 .encode()).hexdigest()[:10]
+        s["hash"] = hashlib.sha1(json.dumps({k: s[k] for k in ("features", "model", "target") if k in s},
+                                            sort_keys=True).encode()).hexdigest()[:10]
     return specs
 
 
+def won(d: pd.DataFrame) -> np.ndarray:
+    return (d.won if "won" in d else (d.status.astype(str) == "WINNER")).astype(int).to_numpy()
+
+
+def win_chances(d: pd.DataFrame, f: np.ndarray) -> np.ndarray:
+    """A log-price forecast read as win chances: 1 / price, normalised within each race at each checkpoint."""
+    raw = pd.Series(np.exp(-np.asarray(f, float)), index=d.index)
+    return (raw / raw.groupby([d.market, d.check]).transform("sum")).to_numpy()
+
+
 def fit_predict(train: pd.DataFrame, test: pd.DataFrame, spec: dict) -> np.ndarray:
-    """log(SP) forecast for ``test``: the residual on log(mid) learnt from ``train`` (days before only)."""
+    """log(SP) forecast for ``test``, learnt from ``train`` (days before only): the residual on log(mid); or, for a
+    spec with ``"target": "win"``, the result learnt from the market's chances, returned as -log of the chances."""
     feats = [f for fam in spec["features"] for f in FEATURES[fam]]
     m = spec["model"]
+    if spec.get("target") == "win":
+        if m["kind"] != "gbm":
+            raise ValueError("a win spec is a gbm")
+        import lightgbm as lgb
+
+        def base(d):                                         # the market's chances (the mid), as log-odds
+            q = win_chances(d, d.l_mid.to_numpy()).clip(1e-4, 1 - 1e-4)
+            return np.log(q / (1 - q))
+        params = {"objective": "binary", "learning_rate": m.get("lr", 0.03), "num_leaves": m.get("leaves", 15),
+                  "min_data_in_leaf": m.get("min_leaf", 300), "feature_fraction": m.get("ff", 0.9),
+                  "bagging_fraction": 0.8, "bagging_freq": 1, "lambda_l2": m.get("l2", 5.0), "verbose": -1,
+                  "seed": 0, "num_threads": 4}
+        ds = lgb.Dataset(train[feats].astype(float), won(train), init_score=base(train))
+        model = lgb.train(params, ds, m.get("rounds", 200))
+        z = base(test) + model.predict(test[feats].astype(float), raw_score=True)
+        p = pd.Series(1 / (1 + np.exp(-z)), index=test.index)
+        p = p / p.groupby([test.market, test.check]).transform("sum")
+        return -np.log(p.clip(1e-9).to_numpy())
     if m["kind"] == "gbm":
         import lightgbm as lgb
         params = {"objective": "regression", "learning_rate": m.get("lr", 0.05), "num_leaves": m.get("leaves", 31),
@@ -195,9 +233,13 @@ def baseline(test: pd.DataFrame, name: str) -> np.ndarray:
     return test[col].fillna(test.l_mid).to_numpy()
 
 
+WINDOWS = (("le60", 0, 60), ("70_180", 61, 180), ("gt180", 181, 10 ** 6))
+
+
 def evaluate(days: dict, specs: list[dict], min_train_days: int = 1) -> pd.DataFrame:
-    """Each spec and baseline on each day it can be fitted for (trained on the days before only): RMSE of log(SP)
-    over every runner-checkpoint, and by window (<= 60 s, 70-180 s, > 180 s out)."""
+    """Each spec and baseline on each day it can be fitted for (trained on the days before only), on both targets:
+    RMSE of log(SP) over every runner-checkpoint, and the winner's log loss over every race-checkpoint with one
+    winner; each overall and by window (<= 60 s, 70-180 s, > 180 s out)."""
     rows = []
     order = sorted(days)
     for i, d in enumerate(order):
@@ -210,28 +252,36 @@ def evaluate(days: dict, specs: list[dict], min_train_days: int = 1) -> pd.DataF
                     preds[s["name"]] = fit_predict(train, test, s)
                 except Exception as exc:                        # a broken spec never stops the others
                     log.warning("%s on %s: %s", s["name"], d, exc)
+        w = won(test)
+        one = pd.Series(w, index=test.index).groupby([test.market, test.check]).transform("sum").to_numpy() == 1
+        is_w = (w == 1) & one                                  # the winner's row of each race-checkpoint with one
         for name, f in preds.items():
             e = test.y.to_numpy() - f
+            ll = np.where(is_w, -np.log(np.clip(win_chances(test, f), 1e-9, None)), np.nan)
             row = {"day": d, "spec": name, "runners": len(test), "races": int(test.market.nunique()),
-                   "rmse": float(np.sqrt(np.nanmean(e ** 2)))}
-            for lab, lo, hi in (("rmse_le60", 0, 60), ("rmse_70_180", 61, 180), ("rmse_gt180", 181, 10 ** 6)):
+                   "rmse": float(np.sqrt(np.nanmean(e ** 2))),
+                   "win_ll": float(np.nanmean(ll)) if is_w.any() else np.nan, "win_races": int(is_w.sum())}
+            for lab, lo, hi in WINDOWS:
                 k = test.secs.between(lo, hi).to_numpy()
-                row[lab] = float(np.sqrt(np.nanmean(e[k] ** 2))) if k.any() else np.nan
+                row[f"rmse_{lab}"] = float(np.sqrt(np.nanmean(e[k] ** 2))) if k.any() else np.nan
+                row[f"win_ll_{lab}"] = float(np.nanmean(ll[k & is_w])) if (k & is_w).any() else np.nan
             rows.append(row)
-            test = test.assign(**{f"e_{name}": e})
+            test = test.assign(**{f"e_{name}": e, f"w_{name}": ll})
         days[d] = test
     return pd.DataFrame(rows)
 
 
-def paired_gain(days: dict, a: str, b: str, use_days: list, n: int = 2000, seed: int = 0):
-    """Mean squared error of ``b`` less ``a`` (positive: ``a`` better) over the days given, with a 90% interval by a
-    bootstrap over races."""
-    parts = [days[d][["market", f"e_{a}", f"e_{b}"]].dropna() for d in use_days
-             if f"e_{a}" in days[d] and f"e_{b}" in days[d]]
+def paired_gain(days: dict, a: str, b: str, use_days: list, n: int = 2000, seed: int = 0, target: str = "bfsp"):
+    """The loss of ``b`` less that of ``a`` (positive: ``a`` better) over the days given, with a 90% interval by a
+    bootstrap over races: squared error of log(SP) (``bfsp``) or the winner's log loss (``win``)."""
+    pre = TARGETS[target][1]
+    parts = [days[d][["market", f"{pre}{a}", f"{pre}{b}"]].dropna() for d in use_days
+             if f"{pre}{a}" in days[d] and f"{pre}{b}" in days[d]]
     if not parts:
         return None
     x = pd.concat(parts)
-    by_race = (x[f"e_{b}"] ** 2 - x[f"e_{a}"] ** 2).groupby(x.market).mean().to_numpy()
+    sq = 2 if target == "bfsp" else 1
+    by_race = (x[f"{pre}{b}"] ** sq - x[f"{pre}{a}"] ** sq).groupby(x.market).mean().to_numpy()
     if len(by_race) < 20:
         return None
     rng = np.random.default_rng(seed)
@@ -240,9 +290,12 @@ def paired_gain(days: dict, a: str, b: str, use_days: list, n: int = 2000, seed:
             "races": int(len(by_race))}
 
 
-def champion(results: pd.DataFrame, specs: list[dict], days: dict, incumbent: str | None) -> dict:
-    """The best spec over its fresh days (after its registration); it takes over only when its paired gain over the
-    incumbent on the days both were fresh clears zero at the 90% lower bound."""
+def champion(results: pd.DataFrame, specs: list[dict], days: dict, incumbent: str | None,
+             target: str = "bfsp") -> dict:
+    """The best spec on ``target`` over its fresh days (after its registration); it takes over only when its paired
+    gain over the incumbent on the days both were fresh clears zero at the 90% lower bound."""
+    col = TARGETS[target][0]
+    results = results.assign(rmse=results[col]) if col != "rmse" else results
     reg = {s["name"]: s["registered"] for s in specs}
     # the bar a spec must clear: the incumbent spec, else the best baseline over the days scored (the baselines are
     # read off the book, never fitted, so choosing among the three needs no fresh days)
@@ -255,9 +308,9 @@ def champion(results: pd.DataFrame, specs: list[dict], days: dict, incumbent: st
     best = score.index[0]
     both = sorted(set(fresh[fresh.spec == best].day) & ({d for d in days} if inc in BASELINES
                                                           else set(fresh[fresh.spec == inc].day)))
-    g = paired_gain(days, best, inc, both) if best != inc else None
+    g = paired_gain(days, best, inc, both, target=target) if best != inc else None
     take = bool(g and g["lo90"] > 0)
-    return {"champion": best if take else inc, "challenger": best, "incumbent": inc, "paired": g,
+    return {"champion": best if take else inc, "challenger": best, "incumbent": inc, "paired": g, "metric": col,
             "fresh_scores": score.reset_index().to_dict("records")}
 
 
@@ -318,27 +371,37 @@ def main(argv=None) -> int:
                                                      text=True).stdout.strip()
     night = date.today().isoformat()
     inc_raw = get(f"{PREFIX}/champion.json")
-    incumbent = json.loads(inc_raw).get("champion") if inc_raw else None
-    champ = champion(res, specs, days, incumbent) if len(res) else {"note": "no days"}
+    prev = json.loads(inc_raw) if inc_raw else {}
+    champs = {}
+    for t in TARGETS:                                   # each target its own champion (a file before 6 Nov held one)
+        inc = (prev.get(t) or {}).get("champion") if t in prev else (prev.get("champion") if t == "bfsp" else None)
+        champs[t] = champion(res, specs, days, inc, target=t) if len(res) else {"note": "no days"}
     if len(res):
         res = res.assign(night=night, commit=sha, spec_hash=res.spec.map({s["name"]: s["hash"] for s in specs}))
         old = get(f"{PREFIX}/registry.csv")
         reg = pd.concat([pd.read_csv(io.BytesIO(old)), res], ignore_index=True) if old else res
         s3.put_object(Bucket=bk, Key=f"{PREFIX}/registry.csv", Body=reg.to_csv(index=False).encode())
         s3.put_object(Bucket=bk, Key=f"{PREFIX}/champion.json",
-                      Body=json.dumps({**champ, "night": night, "commit": sha}, default=str).encode())
+                      Body=json.dumps({**champs, "night": night, "commit": sha}, default=str).encode())
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     md = [f"## Greyhound closing-price lab, night of {night}", "",
-          f"Days recorded: {', '.join(sorted(days)) or 'none'}. Specs: {len(specs)}. A spec counts only on days after "
-          "it was registered; the champion changes only on a paired gain with its 90% lower bound above zero.", "",
-          f"Champion: **{champ.get('champion')}** (incumbent {champ.get('incumbent')}, best fresh challenger "
-          f"{champ.get('challenger')}; paired: {json.dumps(champ.get('paired'))}). {champ.get('note', '')}", "",
-          "| Day | Spec | Runner-checkpoints | Races | RMSE log(SP) | <= 60 s | 70-180 s | > 180 s |",
-          "|---|---|---|---|---|---|---|---|"]
-    for r in res.sort_values(["day", "rmse"]).itertuples(index=False) if len(res) else []:
-        md.append(f"| {r.day} | {r.spec} | {r.runners} | {r.races} | {r.rmse:.4f} | {r.rmse_le60:.4f} | "
-                  f"{r.rmse_70_180:.4f} | {r.rmse_gt180:.4f} |")
+          f"Days recorded: {', '.join(sorted(days)) or 'none'}. Specs: {len(specs)}, each scored on two targets: "
+          "1. BFSP (RMSE of log(SP)) and 2. Win (the winner's log loss, the forecast read as chances normalised within "
+          "the race). A spec counts only on days after it was registered; a champion changes only on a paired gain "
+          "with its 90% lower bound above zero.", ""]
+    for t, lab in (("bfsp", "1. BFSP"), ("win", "2. Win")):
+        c = champs[t]
+        md.append(f"Champion, {lab}: **{c.get('champion')}** (incumbent {c.get('incumbent')}, best fresh challenger "
+                  f"{c.get('challenger')}; paired: {json.dumps(c.get('paired'))}). {c.get('note', '')}")
+    md += ["", "| Day | Spec | Runner-checkpoints | Races | BFSP: RMSE log(SP) | <= 60 s | 70-180 s | > 180 s | "
+           "Win: log loss | <= 60 s | 70-180 s | > 180 s | Race-checkpoints |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    f4 = lambda v: "" if pd.isna(v) else f"{v:.4f}"
+    for r in res.sort_values(["day", "rmse"]).to_dict("records") if len(res) else []:
+        md.append(f"| {r['day']} | {r['spec']} | {r['runners']} | {r['races']} | {f4(r['rmse'])} | "
+                  f"{f4(r['rmse_le60'])} | {f4(r['rmse_70_180'])} | {f4(r['rmse_gt180'])} | {f4(r['win_ll'])} | "
+                  f"{f4(r['win_ll_le60'])} | {f4(r['win_ll_70_180'])} | {f4(r['win_ll_gt180'])} | {r['win_races']} |")
     (out / "report.md").write_text("\n".join(md) + "\n")
     print("\n".join(md))
     return 0
