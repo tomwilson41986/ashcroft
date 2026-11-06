@@ -2,6 +2,12 @@
 public domain: free for any use, commercial included; https://www.ncei.noaa.gov/products/land-based-station/
 integrated-surface-database). Chosen over Open-Meteo, whose free tier is for non-commercial use only.
 
+Coverage (checked 6 Nov 2026): NOAA's public buckets stopped updating in 2025 - ISD-Lite and ISD at the end of August
+(noaa-isd-pds, last written 30 Aug 2025), Global Hourly in early October (noaa-global-hourly-pds, 4 Oct 2025), with no
+2026 files at all. So this source covers 2014 to about August 2025; later races have no reading (NaN). A source for
+2026 on, usable commercially, needs an account: Copernicus ERA5 (free, its licence allows commercial use) or the Met
+Office DataHub - the owner's decision.
+
 For each track in the reference table (research/greyhound/reference/gb_tracks.csv: coordinates with their sources)
 the nearest stations within ``MAX_KM`` that report in the years wanted (from NOAA's station list, isd-history.csv);
 each station-year file is fetched once (the current year again each run) and kept raw in the sources store
@@ -32,7 +38,8 @@ from sources.common import Store, get, session
 log = logging.getLogger(__name__)
 
 HISTORY = "https://www.ncei.noaa.gov/pub/data/noaa/isd-history.csv"
-LITE = "https://www.ncei.noaa.gov/pub/data/noaa/isd-lite/{y}/{s}-{y}.gz"
+#: the ISD-Lite files on NOAA's AWS Open Data bucket (NCEI's own isd-lite path redirects to the bucket's index page)
+LITE = "https://noaa-isd-pds.s3.amazonaws.com/isd-lite/data/{y}/{s}-{y}.gz"
 TRACKS = Path(__file__).resolve().parent.parent / "research" / "greyhound" / "reference" / "gb_tracks.csv"
 MAX_KM = 60.0
 PER_TRACK = 3
@@ -76,6 +83,8 @@ def assign(track_rows: list[dict], st: pd.DataFrame, first_year: int) -> dict:
 
 
 def parse(raw: bytes, sid: str) -> pd.DataFrame:
+    if not raw or not raw.startswith(b"\x1f\x8b"):                      # not a station-year file (an error page)
+        return pd.DataFrame()
     text = gzip.decompress(raw).decode("ascii", "replace")
     rows = [line.split() for line in text.splitlines() if line.strip()]
     df = pd.DataFrame([r[:12] for r in rows if len(r) >= 12], columns=COLS).apply(pd.to_numeric, errors="coerce")
@@ -106,7 +115,7 @@ def fetch(store: Store, first_year: int = 2014, s=None) -> dict:
                 continue
             try:
                 r = s.get(LITE.format(y=y, s=sid), timeout=60)
-                if r.status_code == 404:
+                if r.status_code == 404 or not r.content.startswith(b"\x1f\x8b"):   # NOAA answers some misses with HTML
                     missing.append(f"{sid}/{y}")
                     continue
                 r.raise_for_status()

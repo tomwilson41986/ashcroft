@@ -55,7 +55,12 @@ def main(argv=None) -> int:
     for n, m in metas.items():
         nn = ", ".join(f"{c} {v:.0%}" for c, v in list(m["non_null"].items())[:6])
         md.append(f"| {n} | {m['rows']:,} | {m['from']} | {m['to']} | {m['seconds']} | {nn} |")
-    md += ["", "Notes:", "```", json.dumps({n: m["notes"] for n, m in metas.items()}, indent=1, default=str)[:6000], "```"]
+    def brief(x):                                     # the notes without the fitting grids (kept in the meta)
+        if isinstance(x, dict):
+            return {k: brief(v) for k, v in x.items() if k not in ("grid", "race_noise_grid", "top_costs")}
+        return x
+    md += ["", "Notes (the full fits are in each table's meta):", "```",
+           json.dumps({n: brief(m["notes"]) for n, m in metas.items()}, indent=1, default=str)[:8000], "```"]
     (out / "report.md").write_text("\n".join(md) + "\n")
     print("\n".join(md))
     return 0

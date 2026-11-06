@@ -8,7 +8,8 @@ regression of the meeting's variant (the engine's: how much faster or slower tha
 seconds) on the wind components, their squares and the temperature, fitted on the years before the run's year only,
 gives ``wx_pred_variant``: how fast tonight's weather should make the track run, in lengths.
 
-The readings are observed at the off. Live, a forecast stands in for them; the card-safety note says so.
+The readings are observed at the off. Live, a forecast stands in for them; the card-safety note says so. NOAA's
+public archive ends in 2025 (sources/noaa_isd.py): races after it have no reading until a 2026 source is chosen.
 """
 
 from __future__ import annotations
