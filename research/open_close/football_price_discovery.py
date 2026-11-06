@@ -247,7 +247,7 @@ def main(argv=None) -> int:
     res = run(load(Store(root=a.root), a.local))
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text(json.dumps(res, indent=1, default=str) + "\n")
-    print(json.dumps(res, indent=1, default=str)[:60000])
+    print(json.dumps(res, indent=1, default=str)[:600000])
     return 0
 
 
