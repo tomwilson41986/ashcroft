@@ -3,8 +3,10 @@ name: Greyhound commission check (read-only)
 # What Betfair charges this account on greyhound markets (research/greyhound/commission_check.py; the owner, 6 Nov
 # 2026: "check betfair to see what commission we pay on greyhounds"): the account's discount, the market base rate on
 # the next day's greyhound markets, and the commission actually taken on the settled greyhound markets of the last
-# 90 days. The delayed key; no order method is called. On the UK server's data runner (vars.DATA_RUNNER, read-only,
-# never the horse racing runner): Betfair refuses the login from GitHub's runners (403, 6 Nov).
+# 90 days. The delayed key; no order method is called. On the UK server's greyhound runner (vars.PAPER_MODELS_RUNNER,
+# never the horse racing runner): Betfair refuses the login from GitHub's runners (403, 6 Nov), and the data runner
+# has picked up no job since it was set up (other-data.yml queued and cancelled 3-5 Nov). A job there waits for the
+# day's paper-models run to end.
 
 on:
   workflow_dispatch:
@@ -14,25 +16,25 @@ permissions:
 
 jobs:
   check:
-    runs-on: ${{ vars.DATA_RUNNER || 'data' }}
+    runs-on: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
     timeout-minutes: 15
     steps:
-      - name: Not on the horse racing runner
+      - name: Not on the live trader's runner
         id: runner_guard
         env:
-          RUNNER_LABEL: ${{ vars.DATA_RUNNER || 'data' }}
+          PAPER_RUNNER_LABEL: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
           LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
         run: |
-          if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
-            echo "DATA_RUNNER is the horse racing runner ($LIVE_RUNNER_LABEL): nothing but horse racing runs there"
+          if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$PAPER_RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
+            echo "PAPER_MODELS_RUNNER is the live trader's runner ($LIVE_RUNNER_LABEL): the paper models do not run there"
             exit 1
           fi
       - uses: actions/checkout@v4
       - name: Python (its own environment)
         run: |
-          VENV="$HOME/.venvs/ashcroft-data"
+          VENV="$HOME/.venvs/ashcroft-paper"
           if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
-            UV="$HOME/.venvs/uv-data"
+            UV="$HOME/.venvs/uv-paper"
             [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
             rm -rf "$VENV"
             "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
