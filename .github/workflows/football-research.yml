@@ -1,0 +1,72 @@
+name: Football research (read-only, S3)
+
+# Football research that needs the S3 store (the sources, the gold tables, the live feed's record), run by hand on
+# GitHub's runners and printed to the run's summary and artifact. Read-only: nothing is written to S3 and nothing
+# reaches Betfair. Each job is one research module, chosen from the list.
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'research job'
+        required: true
+        type: choice
+        options:
+          - cross_league_data
+          - cross_league_check
+          - cross_league_price
+      days:
+        description: 'days of the live record to read'
+        required: false
+        type: string
+        default: '3'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: football-research
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+      CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+      CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Cup and European data, and the live record of them
+        if: inputs.job == 'cross_league_data'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_cross_league_data --days "$DAYS" --out out/cross_league_data.json
+      - name: Cross-league strength on cup and continental results
+        if: inputs.job == 'cross_league_check'
+        run: python -m research.open_close.football_cross_league_check --out out/cross_league_check.json
+      - name: Cross-league strength against Betfair's prices (closing price and winning the bet)
+        if: inputs.job == 'cross_league_price'
+        run: python -m research.open_close.football_cross_league_price --out out/cross_league_price.json
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          for f in out/*.json; do
+            [ -f "$f" ] || continue
+            { echo "## $(basename "$f")"; echo '```'; head -c 60000 "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: football-research
+          path: out/
+          if-no-files-found: ignore

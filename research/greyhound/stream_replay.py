@@ -85,6 +85,28 @@ class Market:
                     return None
         return None
 
+    def won(self, sid: int) -> int | None:
+        """1 if the runner won, 0 if it lost (the settled definition's status), None before the result or if
+        removed."""
+        for r in self.defn.get("runners", []) or []:
+            if int(r.get("id", -1)) == sid:
+                st = str(r.get("status"))
+                return 1 if st == "WINNER" else 0 if st in ("LOSER", "PLACED") else None
+        return None
+
+
+def result_pnl(side: str, price: float, stake: float, won: int | None, comm: float = 0.0) -> float | None:
+    """The bet left to run to the result (target 2, the owner, 6 Nov 2026: "Win - winning the bet"): a back at B for S
+    wins S (B - 1) or loses S; a lay at L for a backer's stake S loses S (L - 1) or wins S; commission on a gain (per
+    bet: Betfair charges on the market's net, so this is a slight overstatement of the cost where bets net off)."""
+    if won is None or not price or price <= 1 or not stake:
+        return None
+    if side == "BACK":
+        v = stake * (price - 1) if won else -stake
+    else:
+        v = -stake * (price - 1) if won else stake
+    return round(v * (1 - comm) if v > 0 else v, 4)
+
 
 def _ladder(d: dict, pairs) -> None:
     for pr in pairs or []:
@@ -316,14 +338,19 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
     # the SP: Betfair writes it into the market definition only once the market is settled, after the close above,
     # so it is read from the last definition the record holds
     for row in rows:
+        m = markets.get(row["market"])
+        row["sp"] = sp = m.bsp(row["sid"]) if m else None
         if row["pnl_sp"] is None and row["matched"] and row["avg"]:
-            m = markets.get(row["market"])
-            sp = m.bsp(row["sid"]) if m else None
             if sp and sp > 1:
                 L, S = row["avg"], row["matched"]
                 v = S * (1 - L / sp) if row["side"] == "LAY" else S * (L / sp - 1)
                 row["pnl_sp"] = round(v * (1 - comm) if v > 0 else v, 4)
-                row["sp"] = sp
+    # target 2: the matched part left to run to the result, read from the same settled definition
+    for row in rows:
+        m = markets.get(row["market"])
+        row["won"] = m.won(row["sid"]) if m else None
+        row["pnl_result"] = (result_pnl(row["side"], row["avg"], row["matched"], row["won"], comm)
+                             if row["matched"] and row["avg"] else None)
     return pd.DataFrame(rows)
 
 
@@ -348,5 +375,8 @@ def summary(df: pd.DataFrame) -> dict:
             "pnl_green": round(float(pd.to_numeric(m.pnl, errors="coerce").fillna(0).sum()), 2),
             "pnl_sp": round(float(pd.to_numeric(m.pnl_sp, errors="coerce").fillna(0).sum()), 2),
             "sp_known": int(pd.to_numeric(m.pnl_sp, errors="coerce").notna().sum()),
+            "pnl_result": round(float(pd.to_numeric(m.get("pnl_result"), errors="coerce").fillna(0).sum()), 2)
+            if "pnl_result" in m else None,
+            "result_known": int(pd.to_numeric(m.pnl_result, errors="coerce").notna().sum()) if "pnl_result" in m else 0,
             "filled_through": int(m.via_through.sum()) if "via_through" in m else 0,
             "no_book": int((~df.placed).sum())}
