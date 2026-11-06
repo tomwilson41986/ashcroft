@@ -29,6 +29,11 @@ on:
         required: false
         type: string
         default: '280'
+      historic_rebuild:
+        description: 'Rebuild every Betfair Historic Data table of these sports from the raw files (e.g. Soccer), changed or not; empty for none'
+        required: false
+        type: string
+        default: ''
   push:
     branches: ['claude/dreamy-dirac-*']
     paths:
@@ -59,6 +64,7 @@ jobs:
         run: pip install -r requirements.txt openpyxl xlrd
 
       - name: Fetch and build
+        if: ${{ !inputs.historic_rebuild }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -84,6 +90,7 @@ jobs:
       # Bundles the owner downloads from the Historic Data website (sources/betfair_imports.json), each imported once
       # into the same raw store the UK runner's API fetch fills, with its tables.
       - name: Betfair Historic Data bundles (each once)
+        if: ${{ !inputs.historic_rebuild }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -98,8 +105,14 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          REBUILD: ${{ inputs.historic_rebuild }}
         run: |
-          timeout 1800 python betfair_historic.py --build | tee betfair_historic_report.json
+          if [ -n "$REBUILD" ]; then
+            # a forced rebuild of the named sports' tables (6 Nov 2026: prices keyed by selection and handicap line)
+            timeout 7200 python betfair_historic.py --build --force --sport "$REBUILD" | tee betfair_historic_report.json
+          else
+            timeout 1800 python betfair_historic.py --build | tee betfair_historic_report.json
+          fi
           # the football tables' coverage (dates, countries, market types); the greyhound tables are not read here
           timeout 900 python betfair_historic.py --coverage --sport Soccer | tee -a betfair_historic_report.json
 
