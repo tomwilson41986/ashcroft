@@ -2,9 +2,10 @@
 study (the owner, 6 Nov 2026: "check betfair to see what commission we pay on greyhounds. Then set this as
 standard").
 
-Betfair charges commission on a market's net winnings, never on a loss. ``COMMISSION`` is the rate as read from
-Betfair by research/greyhound/commission_check.py (greyhound-commission.yml); ``SOURCE`` says where it came from. The
-environment variable GREYHOUND_COMMISSION overrides it for a run (a rate between 0 and 1).
+Betfair charges commission on a market's net winnings, never on a loss. ``COMMISSION`` is the owner's figure for the
+account (6 Nov 2026: "it's 2%"); research/greyhound/commission_check.py (greyhound-commission.yml) reads what Betfair
+charges, as a cross-check. ``SOURCE`` says where the figure came from. The environment variable GREYHOUND_COMMISSION
+overrides it for a run (a rate between 0 and 1).
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from __future__ import annotations
 import os
 
 COMMISSION = 0.02
-SOURCE = "assumption (the paper's 2%), pending the account's rate from greyhound-commission.yml"
+SOURCE = "the owner, 6 Nov 2026: \"it's 2%\" (the account's commission on greyhounds)"
 
 
 def commission(env=None) -> float:
