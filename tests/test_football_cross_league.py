@@ -39,3 +39,19 @@ def test_friendlies_youth_and_womens_matches_are_left_out():
             ("UEFA Youth League", "World", 1, 2, 5, 0), ("FA Cup", "England", 1, 2, 1, 0)]
     f = cl.senior_club_matches(_fx(rows))
     assert list(f["league"]) == ["FA Cup"]
+
+
+def test_v2_league_level_moves_on_cross_border_results_and_promotion_keeps_the_total():
+    rows = [("Premier League", "England", 1, 2, 0, 0), ("Premier League", "England", 7, 8, 0, 0),
+            ("Premier League", "England", 9, 10, 0, 0), ("La Liga", "Spain", 3, 4, 0, 0),
+            ("La Liga", "Spain", 11, 12, 0, 0), ("La Liga", "Spain", 13, 14, 0, 0),
+            ("UEFA Champions League", "World", 1, 3, 4, 0)]
+    before = cl.elo_hier(cl.senior_club_matches(_fx(rows)))
+    rows += [("La Liga", "Spain", 12, 11, 0, 0), ("Premier League", "England", 8, 7, 0, 0)]
+    r = cl.elo_hier(cl.senior_club_matches(_fx(rows)))
+    # clubs 11, 12 (Spain) and 7, 8 (England) never played abroad: their leagues' levels moved them
+    assert r.iloc[7]["r_home"] < before.iloc[4]["r_away"] and r.iloc[8]["r_home"] > before.iloc[1]["r_away"]
+    # promotion: a club's total carries into its new league
+    rows2 = [("Championship", "England", 5, 6, 3, 0), ("Premier League", "England", 5, 1, 0, 0)]
+    r2 = cl.elo_hier(cl.senior_club_matches(_fx(rows2)))
+    assert r2.iloc[1]["r_home"] > 1500

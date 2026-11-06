@@ -85,3 +85,80 @@ def league_strength(r: pd.DataFrame) -> pd.DataFrame:
     s = pd.concat([lg[["competition", "apif_season", "r_home"]].rename(columns={"r_home": "r"}),
                    lg[["competition", "apif_season", "r_away"]].rename(columns={"r_away": "r"})])
     return s.groupby(["competition", "apif_season"])["r"].agg(["mean", "count"]).reset_index()
+
+
+K_CROSS_CLUB, K_CROSS_LEAGUE = 10.0, 5.0      # fixed before any result was read (v2, 6 Nov 2026)
+
+
+def elo_hier(f: pd.DataFrame, k: float = K, k_club_cross: float = K_CROSS_CLUB,
+             k_league: float = K_CROSS_LEAGUE, home: float = HOME) -> pd.DataFrame:
+    """v2: a club's rating = its domestic league's level + its place within the league (places centred on zero in
+    each league). League matches move places only; matches between clubs of different leagues (cups across
+    divisions, continental ties) move both leagues' levels (``k_league``) and, less, the two places
+    (``k_club_cross``). A club's league is the domestic league it last played in; a promoted or relegated club keeps
+    its total rating (its place is re-set against the new league). A club seen only in a cup or a continental
+    competition so far is placed in that competition's pool. Pre-match totals recorded before each update."""
+    level: dict = {}                     # league -> level
+    place: dict = {}                     # club -> raw place
+    league_of: dict = {}                 # club -> league
+    sums: dict = {}                      # league -> [sum of raw places, count]
+
+    def mean_place(lg):
+        s = sums.get(lg)
+        return s[0] / s[1] if s and s[1] else 0.0
+
+    def total(c):
+        lg = league_of[c]
+        return level.get(lg, START) + place[c] - mean_place(lg)
+
+    def join(c, lg):
+        """Put club c in league lg, keeping its total rating if it had one."""
+        tot = total(c) if c in league_of else None
+        if c in league_of:
+            s = sums[league_of[c]]
+            s[0] -= place[c]
+            s[1] -= 1
+        if lg not in level:
+            level[lg] = START if tot is None else tot
+        league_of[c] = lg
+        m = mean_place(lg)
+        place[c] = m if tot is None else tot - level[lg] + m
+        s = sums.setdefault(lg, [0.0, 0])
+        s[0] += place[c]
+        s[1] += 1
+
+    def bump(c, d):
+        place[c] += d
+        sums[league_of[c]][0] += d
+
+    rh, ra = np.empty(len(f)), np.empty(len(f))
+    comp, kind_ = f["competition"].to_numpy(), f["kind"].to_numpy()
+    hid, aid = f["apif_home_id"].to_numpy(), f["apif_away_id"].to_numpy()
+    gh, ga = f["ft_home"].to_numpy(float), f["ft_away"].to_numpy(float)
+    for i in range(len(f)):
+        h, a, c = hid[i], aid[i], comp[i]
+        for club in (h, a):
+            if kind_[i] == "league":
+                if league_of.get(club) != c:
+                    join(club, c)
+            elif club not in league_of:
+                join(club, c)
+        th, ta = total(h), total(a)
+        rh[i], ra[i] = th, ta
+        e = 1.0 / (1.0 + 10 ** (-(th + home - ta) / 400.0))
+        d = gh[i] - ga[i]
+        w = 1.0 if d > 0 else (0.5 if d == 0 else 0.0)
+        g = 1.0 + math.log1p(abs(d))
+        lh, la = league_of[h], league_of[a]
+        if lh == la:
+            bump(h, k * g * (w - e))
+            bump(a, -k * g * (w - e))
+        else:
+            level[lh] += k_league * g * (w - e)
+            level[la] -= k_league * g * (w - e)
+            bump(h, k_club_cross * g * (w - e))
+            bump(a, -k_club_cross * g * (w - e))
+    out = f[["apif_fixture_id", "kickoff", "competition", "kind", "apif_season", "apif_home_id", "apif_away_id",
+             "ft_home", "ft_away"]].copy()
+    out["r_home"], out["r_away"] = rh, ra
+    return out

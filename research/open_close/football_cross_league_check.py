@@ -35,8 +35,9 @@ def outcome(gd: np.ndarray) -> np.ndarray:
     return np.where(gd > 0, 0, np.where(gd == 0, 1, 2))
 
 
-def score(d: pd.DataFrame, col: str | None) -> dict:
-    """Walk-forward by season: multinomial logistic of the result on ``col`` (None: the shares alone)."""
+def score(d: pd.DataFrame, col) -> dict:
+    """Walk-forward by season: multinomial logistic of the result on ``col`` (a column, a list of columns, or None:
+    the shares alone)."""
     from sklearn.linear_model import LogisticRegression
     ll, right, n = 0.0, 0, 0
     for s in sorted(d["apif_season"].unique()):
@@ -49,9 +50,10 @@ def score(d: pd.DataFrame, col: str | None) -> dict:
         if col is None:
             p = np.tile(np.bincount(ytr, minlength=3) / len(ytr), (len(te), 1))
         else:
-            m = LogisticRegression(max_iter=500).fit(tr[[col]].to_numpy(float) / 100, ytr)
+            cols = [col] if isinstance(col, str) else list(col)
+            m = LogisticRegression(max_iter=500).fit(tr[cols].to_numpy(float) / 100, ytr)
             p = np.zeros((len(te), 3))
-            p[:, m.classes_] = m.predict_proba(te[[col]].to_numpy(float) / 100)
+            p[:, m.classes_] = m.predict_proba(te[cols].to_numpy(float) / 100)
         p = np.clip(p, 1e-9, 1)
         ll += float(-np.log(p[np.arange(len(te)), yte]).sum())
         right += int((p.argmax(1) == yte).sum())
@@ -64,10 +66,12 @@ def run(fx: pd.DataFrame) -> dict:
     f = cl.senior_club_matches(fx)
     a = cl.elo(f, cross=True)
     b = cl.elo(f, cross=False)
+    v2 = cl.elo_hier(f)
     d = a.copy()
     d["gd"] = d["ft_home"] - d["ft_away"]
     d["diff_cross"] = d["r_home"] - d["r_away"]
     d["diff_league_only"] = b["r_home"].to_numpy() - b["r_away"].to_numpy()
+    d["diff_v2"] = v2["r_home"].to_numpy() - v2["r_away"].to_numpy()
     # which ties cross a division or a country: each club's main domestic league that season
     lg = d[d["kind"] == "league"]
     sides = pd.concat([lg[["apif_season", "apif_home_id", "competition"]].rename(columns={"apif_home_id": "team"}),
@@ -87,9 +91,11 @@ def run(fx: pd.DataFrame) -> dict:
     out = {"matches_rated": int(len(d)), "first_test_season": FIRST_TEST, "groups": {}}
     for name, g in groups.items():
         out["groups"][name] = {"cross_league_elo": score(g, "diff_cross"),
+                               "v2_league_level_plus_place": score(g, "diff_v2"),
+                               "v2_plus_competition_record": score(g, ["diff_v2", "diff_league_only"]),
                                "league_only_elo": score(g, "diff_league_only"),
                                "no_information": score(g, None)}
-    ls = cl.league_strength(a)
+    ls = cl.league_strength(v2)
     top = ls[ls["apif_season"] == ls["apif_season"].max() - 1].sort_values("mean", ascending=False)
     out["strongest_leagues_last_full_season"] = {r.competition: round(r.mean, 1) for r in top.head(25).itertuples()
                                                  if r.count >= 100}
