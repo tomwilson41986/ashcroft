@@ -25,7 +25,7 @@ import hashlib
 import io
 import json
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -288,7 +288,9 @@ def main(argv=None) -> int:
         except Exception:
             return None
 
-    stream_days = sorted({k.split("/")[2] for k in listing(f"{sr.PREFIX}/") if k.count("/") >= 3})
+    # complete days only (before today, UTC): a day still being recorded would be cached half-built and never rebuilt
+    stream_days = sorted(d for d in {k.split("/")[2] for k in listing(f"{sr.PREFIX}/") if k.count("/") >= 3}
+                         if d < datetime.now(timezone.utc).date().isoformat())
     days = {}
     for d in stream_days:
         key = f"{PREFIX}/frames/{d}.parquet"

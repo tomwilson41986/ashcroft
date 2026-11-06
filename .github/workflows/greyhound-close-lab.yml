@@ -1,7 +1,7 @@
 name: Greyhound closing-price lab (read-only)
 
 # The closing-price lab (research/greyhound/close_lab.py; the owner, 6 Nov 2026: "let's review and optimise our model
-# ... now we have the market data? Let's start recursive self improvement"): each night after racing, the day's
+# ... now we have the market data? Let's start recursive self improvement"): each night, every complete day's
 # recorded Exchange Stream read every 10 s over the last 5 minutes before each off, every spec in
 # research/greyhound/close_specs.json fitted on the days before each day and scored on it, the scores appended to the
 # trial registry (s3 close_lab/registry.csv) and the champion picked on fresh days only. Read-only: no Betfair login.
