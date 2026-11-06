@@ -17,6 +17,7 @@ on:
           - cross_league_price
           - price_discovery
           - cross_market
+          - feed_coverage
       days:
         description: 'days of the live record to read'
         required: false
@@ -65,6 +66,12 @@ jobs:
       - name: Cross-market consistency and who moves (Betfair's own prices, model-free)
         if: inputs.job == 'cross_market'
         run: python -m research.open_close.football_cross_market --out out/cross_market.json
+      - name: API-Football's coverage of our Betfair matches (about 25 API requests of the 7,500 a day)
+        if: inputs.job == 'feed_coverage'
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_feed_coverage --days "$DAYS" --out out/feed_coverage.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
