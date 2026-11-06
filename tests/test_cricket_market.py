@@ -72,8 +72,34 @@ def test_recorder_reads_in_batches_on_the_in_play_cadence(tmp_path):
     assert rec.due(clock.t) == []
     clock.t += dt.timedelta(seconds=5)
     assert len(rec.due(clock.t)) == 12          # in play: due again five seconds on
+    assert rec.poll() == 0                      # an unchanged book is read but not kept again
+    assert rec.polled_rows == 24
     rec.save()
     f = next(tmp_path.glob("2026-11-04/books_12_*.csv.gz"))
     df = pd.read_csv(io.BytesIO(gzip.decompress(f.read_bytes())))
     assert len(df) == 12 and set(df.bet_delay) == {5}
     assert df.back1_p.iloc[0] == 1.79 and df.traded.iloc[0] == "1.8:900.0"
+
+
+def test_every_market_type_and_a_full_window_is_split(tmp_path):
+    clock = Clock()
+
+    class Full(FakeClient):
+        def _api_call(self, method, params):
+            if method == "listMarketCatalogue":
+                self.calls.append((method, params))
+                f = params["filter"]
+                assert "marketTypeCodes" not in f                 # ALL: no type filter
+                span = f["marketStartTime"]
+                n = 1000 if span["from"] < "2026-11-04T06" else 3   # the earliest half is full
+                return [{"marketId": f"1.{span['from']}.{i}", "marketName": "m", "marketStartTime": span["to"],
+                         "description": {"marketType": "X"}, "event": {"id": "e", "name": "A v B"}, "runners": []}
+                        for i in range(n)]
+            return super()._api_call(method, params)
+
+    api = ReadOnly(Full(clock))
+    rec = Recorder(api, store=None, root=tmp_path, clock=clock, market_types=["ALL"], lookahead_h=24)
+    rec.catalogue()
+    windows = [p["filter"]["marketStartTime"] for m, p in api.client.calls if m == "listMarketCatalogue"]
+    assert len(windows) > 1                                      # the capped window was split
+    assert rec.market_types is None
