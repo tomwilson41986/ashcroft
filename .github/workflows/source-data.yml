@@ -87,6 +87,22 @@ jobs:
           fi
           python source_data.py "${ARGS[@]}" | tee source_report.json
 
+      # API-Football's finished matches (line-ups, events, team and player statistics, xG) for the 22 divisions and
+      # the leagues in sources/api_football_leagues.json, every night: this season and last, newest first, within the
+      # plan's quota (the fetch stops 1,500 requests short of the day's 7,500 for the line-up collector)
+      - name: API-Football history (this season and last, nightly)
+        if: ${{ !inputs.historic_rebuild && (github.event_name == 'schedule' || inputs.source == 'all') }}
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: |
+          timeout 2900 python source_data.py --source api_football_history --fetch --build \
+            --from "$(date -u -d '-1 year' +%Y)" --max-minutes 45 | tee api_football_history_report.json
+
       # Bundles the owner downloads from the Historic Data website (sources/betfair_imports.json), each imported once
       # into the same raw store the UK runner's API fetch fills, with its tables.
       - name: Betfair Historic Data bundles (each once)
@@ -119,7 +135,7 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          for f in source_report.json betfair_import_report.json betfair_historic_report.json; do
+          for f in source_report.json api_football_history_report.json betfair_import_report.json betfair_historic_report.json; do
             [ -f "$f" ] && { echo "## $f"; echo '```'; cat "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           done
           true
