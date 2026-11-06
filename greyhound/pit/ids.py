@@ -3,8 +3,10 @@
 
 A GBGB run and a Betfair runner are the same when they share the day, the off time, the track and the trap, and the
 names agree (letters and digits only; a near match, ``difflib`` ratio ``NEAR`` or more, is kept and flagged). Each
-GBGB dog's selection ids, and each selection id's dogs, are counted in the meta: a dog should have one, and an id
-one dog. This table is a key, not a feature: no block reads it into a model.
+GBGB dog's selection ids, and each selection id's dogs, are counted in the meta. Betfair's greyhound selection ids
+are NOT one a dog (the first full build, 6 Nov 2026: 37,106 of 40,421 matched dogs carry more than one; 97 ids carry
+more than one dog), so this table is the key a run at a time: a market and selection to a GBGB race and dog. It is a
+key, not a feature: no block reads it into a model.
 """
 
 from __future__ import annotations
