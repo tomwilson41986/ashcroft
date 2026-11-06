@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-COM = 0.02
+from greyhound.costs import COMMISSION as COM   # the account's rate on greyhounds (greyhound/costs.py)
 PARAMS = dict(objective="binary", learning_rate=0.03, num_leaves=63, min_child_samples=300, feature_fraction=0.7,
               bagging_fraction=0.8, bagging_freq=1, lambda_l2=10.0, verbose=-1)
 

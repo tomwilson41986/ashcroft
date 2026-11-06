@@ -40,6 +40,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from greyhound import costs
+
 log = logging.getLogger(__name__)
 
 PREFIX = "greyhound/early_lay"
@@ -67,10 +69,11 @@ CONFIG = {
     "rest_only": True,                        # never lay at or above the mid: rest in the queue, never take
     # the pre-trade gate (the owner, 5 Nov 2026, the audit A5: "Work on the next items"); guards derived from the
     # settings above, for the owner to set: a race's whole field at the lay liability, an order a runner a race at a
-    # race a minute, the paper's commission (the account's own rate is not held: GREYHOUND_COMMISSION overrides)
+    # race a minute; the commission is the account's rate on greyhounds (greyhound/costs.py; GREYHOUND_COMMISSION
+    # overrides it for a run)
     "max_market_liability": 160.0,            # 8 runners x GBP20
     "max_orders_per_minute": 30,
-    "commission": 0.02,
+    "commission": costs.COMMISSION,
     "watch_minutes": 60.0,                    # markets off within this are watched for their first trades
     "min_rest_seconds": 60.0,                 # no lay placed this close to the green-up
     "green_seconds": 5.0,                     # green up from this many seconds before the scheduled off (the
@@ -1002,14 +1005,9 @@ def table(store, day: date, mode: str = "live") -> str:
 
 
 def commission(env=None) -> float:
-    """The commission rate on a market's net winnings: GREYHOUND_COMMISSION, else CONFIG's (the paper's 2%; the
-    account's own rate is not held in the code)."""
-    env = os.environ if env is None else env
-    try:
-        v = float(str(env.get("GREYHOUND_COMMISSION", "")).strip())
-        return v if 0 <= v < 1 else CONFIG["commission"]
-    except ValueError:
-        return CONFIG["commission"]
+    """The commission rate on a market's net winnings: the account's rate on greyhounds (greyhound/costs.py),
+    GREYHOUND_COMMISSION overriding it for a run."""
+    return costs.commission(env)
 
 
 def reconcile(store, x, day: date, comm: float | None = None, prefix: str = PREFIX, ref: str = REF,

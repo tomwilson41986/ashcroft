@@ -36,7 +36,7 @@ from greyhound import queue_fill as qf
 
 log = logging.getLogger(__name__)
 
-COMMISSION = 0.02
+from greyhound.costs import COMMISSION          # the account's rate (greyhound/costs.py)
 GREEN_SECONDS = 5.0
 DEPTH = 3
 

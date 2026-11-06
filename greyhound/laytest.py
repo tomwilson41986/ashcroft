@@ -250,7 +250,7 @@ def today_rows(store, day: date) -> tuple[pd.DataFrame, str]:
 def intraday(store, day: date) -> dict:
     """The primary rule on today's settled races, a row per race: the lays it would have left in the first book, those
     matched, their average price and the BSP, the CLV, how many of the dogs laid won, and the P&L greened up after
-    2% commission on the race's net, with the running total. Paper only: no order is placed."""
+    the account's commission (greyhound/costs.py) on the race's net, with the running total. Paper only: no order is placed."""
     import numpy as np
     from research.greyhound import limit_study as ls, tradeout_study as ts
     out = {"day": f"{day:%Y-%m-%d}", "rule": PRIMARY, "markets": []}
