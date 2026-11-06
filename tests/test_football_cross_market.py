@@ -56,3 +56,13 @@ def test_run_end_to_end_on_a_small_book():
         rows += _rows(f"e{i}", f"2026-09-{1 + i // 4:02d}T15:00:00Z", [h, 4.0, 3.4], [1.3, 1.9, 1.35])
     out = cm.run(pd.DataFrame(rows))
     assert out["events"] == 80 and out["rule_scan"]["rules_tried"] > 0
+
+
+def test_a_market_with_an_unpriced_runner_gives_no_chances_at_that_mark():
+    rows = _rows("e1", "2026-09-01T15:00:00Z", [2.0, 4.0, 4.0], [1.25, 2.2, 1.3])
+    rows[4]["ltp_t_60"] = None                                     # 'Draw or Away' untraded at 60 minutes
+    w = cm.events(pd.DataFrame(rows))
+    _, own = cm.derived(w, "ltp_t_60")["DOUBLE_CHANCE:HD"]
+    assert own.isna().all()
+    _, own15 = cm.derived(w, "ltp_t_15")["DOUBLE_CHANCE:HD"]
+    assert own15.notna().all()

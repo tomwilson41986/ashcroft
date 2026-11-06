@@ -85,13 +85,18 @@ def events(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["lab"].notna() & df["won"].isin([0, 1])]
     out = []
     cols = [c for c in MARKS + ["ltp_close"] if c in df.columns]
+    n_run = df.groupby("market_id")["lab"].transform("size")
     for c in cols:
+        # a market's chances at a mark only when every runner of it has a price there: a missing runner would
+        # leave the rest normalised over part of the book (the first run's 0.3 gaps)
+        full = df.groupby("market_id")[c].transform("count") == n_run
+        df.loc[~full, c] = np.nan
         df[f"inv_{c}"] = 1 / df[c]
         # double chance has two winners: its chances sum to two
         k = np.where(df["market_type"] == "DOUBLE_CHANCE", 2.0, 1.0)
         df[f"q_{c}"] = k * df[f"inv_{c}"] / df.groupby("market_id")[f"inv_{c}"].transform("sum")
     # correct score: sum the chances into over/under (its own 'market' of two labels)
-    agg = {f"q_{c}": "sum" for c in cols} | {"won": "max"}
+    agg = {f"q_{c}": (lambda x: x.sum(min_count=len(x))) for c in cols} | {"won": "max"}
     cs = df[df["market_type"] == "CORRECT_SCORE"].groupby(["event_id", "market_id", "lab"]).agg(agg).reset_index()
     cs["market_type"] = "CS_OU"
     rest = df[df["market_type"] != "CORRECT_SCORE"][["event_id", "market_id", "market_type", "lab", "won"]
@@ -189,7 +194,8 @@ def trades(w: pd.DataFrame, k: str, c: str, t: float, exit_: str, mask: np.ndarr
     pb, pl = _tick(pe, False), _tick(pe, True)
     back = np.where(wn == 1, pb - 1, -1.0)
     lay = np.where(wn == 1, -(pl - 1), 1.0)
-    return _summ(np.where(side > 0, back, lay))
+    prof = np.where(side > 0, back, lay)
+    return _summ(prof) | {"backs": _summ(prof[side > 0]), "lays": _summ(prof[side < 0])}
 
 
 def scan(w: pd.DataFrame) -> dict:
