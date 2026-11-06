@@ -1,0 +1,40 @@
+name: Greyhound commission check (read-only)
+
+# What Betfair charges this account on greyhound markets (research/greyhound/commission_check.py; the owner, 6 Nov
+# 2026: "check betfair to see what commission we pay on greyhounds"): the account's discount, the market base rate on
+# the next day's greyhound markets, and the commission actually taken on the settled greyhound markets of the last
+# 90 days. The delayed key; no order method is called.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Read the commission
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+        run: |
+          python -m research.greyhound.commission_check
+          cat out/commission/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-commission-${{ github.run_number }}
+          path: out/commission/
+          if-no-files-found: ignore
+          retention-days: 30
