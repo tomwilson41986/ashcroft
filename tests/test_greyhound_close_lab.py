@@ -69,6 +69,9 @@ def test_specs_are_fitted_on_earlier_days_and_the_champion_needs_fresh_days():
     ch = cl.champion(res, specs, days, incumbent=None)
     assert ch["challenger"] == "ridge_sp" and ch["champion"] == "ridge_sp"   # 'late' has no fresh day yet
     assert ch["paired"]["lo90"] > 0
+    only_first = cl.champion(first, specs, days, incumbent="spn")            # a stored baseline is re-picked
+    best_base = first.set_index("spec").rmse.idxmin()
+    assert only_first["champion"] == only_first["incumbent"] == best_base
 
 
 def test_the_registered_specs_load_with_a_hash():

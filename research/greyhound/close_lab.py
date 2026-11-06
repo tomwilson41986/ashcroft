@@ -244,12 +244,15 @@ def champion(results: pd.DataFrame, specs: list[dict], days: dict, incumbent: st
     """The best spec over its fresh days (after its registration); it takes over only when its paired gain over the
     incumbent on the days both were fresh clears zero at the 90% lower bound."""
     reg = {s["name"]: s["registered"] for s in specs}
+    # the bar a spec must clear: the incumbent spec, else the best baseline over the days scored (the baselines are
+    # read off the book, never fitted, so choosing among the three needs no fresh days)
+    base = results[results.spec.isin(BASELINES)].groupby("spec").rmse.mean()
+    inc = incumbent if incumbent and incumbent not in BASELINES else (base.idxmin() if len(base) else "mid")
     fresh = results[results.spec.map(lambda n: n in reg) & (results.day > results.spec.map(reg))]
     if not len(fresh):
-        return {"champion": incumbent or "spn", "note": "no spec has a fresh day yet"}
+        return {"champion": inc, "incumbent": inc, "note": "no spec has a fresh day yet"}
     score = fresh.groupby("spec").agg(days=("day", "nunique"), rmse=("rmse", "mean")).sort_values("rmse")
     best = score.index[0]
-    inc = incumbent or "spn"
     both = sorted(set(fresh[fresh.spec == best].day) & ({d for d in days} if inc in BASELINES
                                                           else set(fresh[fresh.spec == inc].day)))
     g = paired_gain(days, best, inc, both) if best != inc else None
