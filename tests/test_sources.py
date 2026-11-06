@@ -562,3 +562,16 @@ def test_historic_coverage_reports_dates_countries_and_market_types(tmp_path):
     assert c["markets"] == 2 and c["markets_by_month"] == {"2025-09": 1, "2026-01": 1}
     assert c["top_countries"] == {"DK": 1, "GB": 1} and c["went_in_play_share"] == 0.5
     assert abs(c["runner_share_with"]["ltp_close"] - 2 / 3) < 1e-12
+
+
+def test_historic_prices_are_kept_apart_for_each_handicap_line():
+    import json as _j
+    import betfair_historic as bh
+    d = {"marketType": "ASIAN_HANDICAP", "eventId": "1", "marketTime": "2026-09-01T15:00:00.000Z", "inPlay": False,
+         "runners": [{"id": 7, "hc": -0.5, "status": "WINNER"}, {"id": 7, "hc": 0.5, "status": "LOSER"}]}
+    msgs = [{"pt": 1, "mc": [{"id": "1.9", "marketDefinition": d}]},
+            {"pt": 2, "mc": [{"id": "1.9", "rc": [{"id": 7, "hc": -0.5, "ltp": 2.4}, {"id": 7, "hc": 0.5, "ltp": 1.6}]}]}]
+    rows = bh.parse_market("\n".join(_j.dumps(m) for m in msgs).encode())
+    by = {r["handicap"]: r for r in rows}
+    assert by[-0.5]["ltp_close"] == 2.4 and by[-0.5]["won"] == 1
+    assert by[0.5]["ltp_close"] == 1.6 and by[0.5]["won"] == 0
