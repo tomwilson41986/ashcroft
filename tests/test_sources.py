@@ -575,3 +575,15 @@ def test_historic_prices_are_kept_apart_for_each_handicap_line():
     by = {r["handicap"]: r for r in rows}
     assert by[-0.5]["ltp_close"] == 2.4 and by[-0.5]["won"] == 1
     assert by[0.5]["ltp_close"] == 1.6 and by[0.5]["won"] == 0
+
+
+def test_api_football_history_leagues_main_first_then_the_list_in_order():
+    import json as _j
+    from sources import api_football_history as h
+    from sources.api_football_lineups import main_league_ids
+    ids = h.history_league_ids()
+    main = sorted(main_league_ids())
+    assert ids[:len(main)] == main and len(ids) == len(set(ids))
+    listed = [x["apif_league_id"] for x in _j.loads(h.EXTRA_LEAGUES_FILE.read_text())["leagues"]]
+    rest = [x for x in listed if x not in main]
+    assert ids[len(main):] == rest and 3 in ids and 2 in ids          # the Europa and Champions Leagues

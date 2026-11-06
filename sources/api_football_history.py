@@ -51,11 +51,14 @@ DONE_KEY = f"{PREFIX}/history/done_ids.json"
 EXTRA_LEAGUES_FILE = Path(__file__).with_name("api_football_leagues.json")
 
 
-def history_league_ids() -> set[int]:
-    """The 22 main divisions and the extra leagues listed in ``EXTRA_LEAGUES_FILE``."""
-    ids = set(main_league_ids())
+def history_league_ids() -> list[int]:
+    """The 22 main divisions first, then the extra leagues of ``EXTRA_LEAGUES_FILE`` in its order (the money matched on
+    our recorded markets, most first): the order the fetch takes them in."""
+    ids = sorted(main_league_ids())
     if EXTRA_LEAGUES_FILE.exists():
-        ids |= {int(x["apif_league_id"]) for x in json.loads(EXTRA_LEAGUES_FILE.read_text()).get("leagues", [])}
+        for x in json.loads(EXTRA_LEAGUES_FILE.read_text()).get("leagues", []):
+            if int(x["apif_league_id"]) not in ids:
+                ids.append(int(x["apif_league_id"]))
     return ids
 
 
@@ -107,7 +110,7 @@ def fetch(store: Store, max_minutes: float | None = None, first_season: int = FI
     sleep = sleep or time.sleep
     today = today or date.today()
     cur = current_season(today)
-    leagues = sorted(leagues or history_league_ids(), key=lambda lg: (lg not in main_league_ids(), lg))
+    leagues = sorted(leagues) if leagues else history_league_ids()
     budget = Budget(max_minutes)
     done = done_ids(store)
     out["already_held"] = len(done)

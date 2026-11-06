@@ -514,3 +514,70 @@ The rule, fixed now for that test:
 3. Close at the close, crossing the spread.
 
 It is scored once 30 match days of these books are held.
+
+## Data: a regular feed with broad coverage of our matches (6 Nov 2026)
+
+The owner wants the most advanced set of football metrics, but only from data that is a regular, updated feed with
+broad coverage of the matches we trade.
+
+**API-Football's coverage of our Betfair matches**
+
+**Source:** `football-research.yml` job `feed_coverage`, runs 42238710317 and 42239864493
+(`research/open_close/football_feed_coverage.py`). The live record covered 4-6 Nov 2026: 301 match-odds markets,
+GBP 28.2m matched.
+
+| | Share of markets | Share of money matched |
+|---|---|---|
+| Linked to an API-Football fixture | 83.7% | 98.7% |
+| The feed has events | 82.1% | 98.7% |
+| The feed has line-ups | 72.4% | 98.1% |
+| The feed has team statistics | 44.5% | 95.7% |
+| The feed has player statistics | 41.9% | 95.6% |
+| The feed has injuries | 14.6% | 85.9% |
+| Expected goals in its team statistics (one finished fixture read a league, 103 leagues) | 35.9% | 93.5% |
+| **History we held: the 22 main divisions** | **7.6%** | **3.6%** |
+
+- On the Historic Data bundle (12,730 markets, 30 Jul - 30 Sep 2026), 87.6% link and 38.2% have team statistics.
+- The Europa League and Champions League carried GBP 21.4m of the GBP 28.2m. Neither is among the 22.
+
+**Done:**
+- `sources/api_football_leagues.json` lists 361 leagues (339 beyond the 22): every league our markets linked into
+  that the feed covers with team statistics or line-ups. They are ordered by money matched.
+- `sources/api_football_history.py` fetches the 22 first, then the list in its order.
+- `source-data.yml` now fetches this history every night (this season and last), within the plan's quota. It leaves
+  1,500 of the day's 7,500 requests for the line-up collector. Before this, history was fetched only by hand.
+- The estimate is about 4,400 requests a season, so a two-season backfill takes about two nights.
+
+**Location-based metrics: our own models as a benchmark, not a feed**
+
+**Source:** `reports/football_runs/event_models.json` (`football/event_models.py`).
+- The data is the Wyscout public match events (Pappalardo et al. 2019, CC BY 4.0, which allows commercial use with
+  attribution): 3,251,294 events from 1,941 matches, 2017/18 and 2018.
+- It is one fixed release, not a feed, so it serves only as a yardstick for judging any paid feed with pitch
+  positions.
+- StatsBomb's open data is not used: its agreement forbids commercial use.
+
+**xG,** each competition predicted by a model fitted on the other six (45,287 non-penalty shots):
+
+| Model | Log loss | AUC |
+|---|---|---|
+| Base rate | 0.330 | - |
+| Distance and angle | 0.287 | 0.756 |
+| Our features (logistic regression) | 0.278 | 0.779 |
+| Our features (gradient-boosted model) | 0.278 | 0.779 |
+
+- Our features add body part, direct free kick, counter-attack, cross, through ball, set piece and rebound.
+- The model is calibrated across deciles: predicted 0.381 against 0.378 scored in the top tenth.
+- Penalties are scored at their own rate, 72.5% (of 658).
+
+**At match level:**
+- Our xG summed per side has a correlation of 0.51 with goals; shots alone have 0.32.
+- xG difference has a correlation of 0.58 with goal difference.
+- Expected threat (16 x 12 grid, value iteration) added per side has a correlation of 0.19 with goals.
+
+**Next:**
+1. The two-night backfill, then the lab rebuilt with the held history for every covered league.
+2. Re-score the cup-tie signal and the EV rule with team and player features now available for cups and UEFA
+   matches (the leagues with the money).
+3. A paid feed with pitch positions only if its coverage of our matches matches API-Football's, and its metrics beat
+   ours on the two targets.
