@@ -309,3 +309,32 @@ in that competition, an informative baseline.)
 - a club's rating split into its league's level plus its place within the league, the league level learned from
   cross-border results with a larger step;
 - the European-competition record kept as its own feature beside it.
+
+## Cross-league strength v2 (6 Nov 2026)
+
+**Source:** `football-research.yml` job `cross_league_check`, run 42203212585 (commit 97d9f9b). Same matches, same
+walk-forward from 2018, the result target. v2 = a league level (moved only by matches between clubs of different
+leagues) plus a place within the league (centred on zero). Its step sizes were fixed before any result was read.
+
+| Ties (log loss, share right) | v1 cross-league | v2 level + place | v2 + competition record | Competition-only | No information |
+|---|---|---|---|---|---|
+| Cup ties across divisions (25,321) | 0.960, 55.1% | 0.950, 56.2% | **0.945, 56.5%** | 0.998, 50.6% | 1.057, 40.0% |
+| Continental ties across countries (9,641) | 1.025, 49.6% | 0.993, 53.0% | **0.982, 53.2%** | 1.009, 50.9% | 1.049, 48.0% |
+| League matches (918,434) | 1.012, 50.2% | 1.018, 49.8% | **1.010, 50.4%** | 1.011, 50.3% | 1.069, 44.2% |
+
+**Read:**
+- **v2 fixes Europe.** Across countries it now beats the club's own European record: 0.993 against 1.009 log loss,
+  53.0% right against 50.9%. With that record beside it, the best is 0.982 and 53.2%.
+- **Across divisions it improves again,** to 56.5% right against 50.6% without the cross information.
+- **Within leagues** v2 alone is slightly worse than a plain league Elo (1.018 against 1.011), as expected: a place
+  in the league moves only on league results, at the same step. With both, it is level or better (1.010).
+- **The league ranking is now sane:** Premier League (2,199), Ligue 1, Bundesliga, La Liga, Serie A, then Belgium,
+  Denmark, Czechia, Sweden, Austria. Two oddities remain: Denmark seventh, and the Eredivisie nineteenth below Slovakia.
+
+**What this is and is not:**
+- It is a result-target gain, out of sample.
+- It is not yet a betting edge. The market prices cup and European ties with far more information than a rating. The
+  closing-price target, and the betting return held to the result, need Betfair prices for these matches.
+- Those come from two places: the Aug-Sep 2026 Historic bundle (cup and UEFA markets in it) and the live record
+  (UEFA and cup markets recorded from 5 Nov). That test comes next. Until it passes, nothing here goes near the
+  frozen paper trader.
