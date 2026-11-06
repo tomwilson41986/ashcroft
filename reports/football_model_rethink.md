@@ -449,3 +449,68 @@ brackets):
    against double chance and draw no bet, over/under against correct score. Do gaps close, and which market moves
    to close them? Which market leads price discovery?
 3. The cup-tie signal with resting orders.
+
+## Cross-market consistency: who leads, and a lag to test on the books (6 Nov 2026)
+
+**Source:** `football-research.yml` job `cross_market`, run 42210625430 (commit 08e94bb,
+`research/open_close/football_cross_market.py`). Last traded prices from the Historic Data tables: 12,233 events,
+30 Jul to 30 Sep 2026.
+
+**Method:** the chances in one market are compared with the same chances worked out from a related market of the
+same event, at 60, 15 and 1 minute before the off:
+- match odds against double chance (home or draw = home + draw, and so on);
+- match odds against draw no bet;
+- correct score summed into over/under 2.5, against over/under 2.5.
+
+A market's chances count at a mark only when every runner of it has a price there. The first run (42210118169) did
+not check this, and showed gaps of about 30 points: those came from part of a book normalised over itself.
+
+**Agreement:** the related markets disagree by about one point of chance on average.
+- Double chance: 0.8-1.3 points.
+- Draw no bet: 1.5-1.6 points.
+- Over/under 2.5 against correct score: 0.6 points.
+
+**Who leads:**
+- **Match odds leads.** When double chance or draw no bet disagrees with it 60 minutes out, the smaller market makes
+  up 46-62% of the gap by the close, while match odds barely moves (-8% to -12%). At 15 minutes the follower makes up
+  27-41%; in the last minute, 5-14%.
+- **Over/under 2.5 leads correct score, weakly.** Correct score makes up 6-13% of the gap; over/under 2.5 moves 4-7%.
+
+**The rule scan:**
+- Rule: trade the follower towards the leader when the gap is over 1, 2 or 4 points.
+- 126 rules tried; 18 passed on the first half; 9 held on the second half with the 95% interval above zero.
+- Every confirmed rule closes at the close (the closing-price target). None of the held-to-result versions held:
+  target 2 (winning the bet) shows nothing.
+- The strongest:
+
+| Rule (closed at the close, a tick worse each end) | First half | Second half |
+|---|---|---|
+| Draw no bet, away, 60 min, gap over 2 points | +4.3% on 407 | **+3.3%** on 515 (+2.3 to +4.4) |
+| Draw no bet, away, 60 min, gap over 1 point | +2.6% on 840 | +2.1% on 975 (+1.3 to +2.8) |
+| Draw no bet, home, 60 min, gap over 2 points | +1.4% on 407 | +1.6% on 515 (+0.6 to +2.7) |
+| Double chance, draw or away, 60 min, gap over 1 point | +1.8% on 414 | +1.6% on 629 (+1.0 to +2.2) |
+| Double chance, home or draw, 60 min, gap over 1 point | +0.9% on 373 | +1.3% on 575 (+0.7 to +2.0) |
+| Double chance, draw or away, 15 min, gap over 2 points | +1.8% on 349 | +1.1% on 454 (+0.7 to +1.6) |
+| Double chance, home or draw, 15 min, gap over 1 point | +0.8% on 645 | +0.7% on 799 (+0.4 to +1.1) |
+| Draw no bet, home, 15 min, gap over 2 points | +1.4% on 647 | +0.6% on 747 (+0.1 to +1.1) |
+| Double chance, draw or away, 15 min, gap over 1 point | +0.9% on 750 | +0.4% on 903 (+0.1 to +0.6) |
+
+**Why this is not yet an edge:**
+- Double chance and draw no bet trade far less than match odds, so their last traded price at a mark can be hours
+  old.
+- A gap to match odds then partly measures how long ago the small market last traded. The book itself may already
+  have been in line with match odds, with no stale price left to take.
+- The pattern fits that: it pays at the closing price, decays from 60 to 15 minutes, and has no edge held to the
+  result. That is what a recording lag would look like, and also what a real lag would look like.
+- Last traded prices cannot tell the two apart. The books can.
+
+**The test:** the live feed now records double chance and draw no bet books beside match odds
+(`football/exchange_feed.py DEFAULT_TYPES`), read-only, under the same Throttle. The paper book then gives every
+selection in those markets executable prices, depth and resting-order fills at 60 and 15 minutes.
+
+The rule, fixed now for that test:
+1. At 60 and 15 minutes, take the gap between match odds' mid chances and the follower's mid chances.
+2. Over 1 or 2 points, take the follower's best offered price towards match odds.
+3. Close at the close, crossing the spread.
+
+It is scored once 30 match days of these books are held.
