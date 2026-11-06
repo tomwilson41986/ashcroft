@@ -13,6 +13,7 @@ on:
         type: choice
         options:
           - cross_league_data
+          - cross_league_check
       days:
         description: 'days of the live record to read'
         required: false
@@ -49,6 +50,9 @@ jobs:
         env:
           DAYS: ${{ inputs.days }}
         run: python -m research.open_close.football_cross_league_data --days "$DAYS" --out out/cross_league_data.json
+      - name: Cross-league strength on cup and continental results
+        if: inputs.job == 'cross_league_check'
+        run: python -m research.open_close.football_cross_league_check --out out/cross_league_check.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
