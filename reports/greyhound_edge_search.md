@@ -34,3 +34,18 @@ Betfair's historic data, Jan-Sep 2026, GB, 1 minute out (research-query 41892329
 last traded price RMSE 0.1759; a LightGBM reading both markets' prices at 60, 15 and 1 minute out and the race's book
 0.1718 (90% of the gain in mean squared error -0.00169 to -0.00077, by day; 102,144 runners May-Sep, fitted on
 Jan-Apr). The place market and the book's total carry information on the win SP the win market's last price lacks.
+
+**The closing-price lab** (research/greyhound/close_lab.py, greyhound-close-lab.yml nightly; the owner, 6 Nov: "Let's
+start recursive self improvement"): every 10 s over the last 5 minutes, from the recorded Exchange Stream, six specs
+registered 6 Nov, scored walk-forward by day, and counted only on days after registration. Day one, 5 Nov (73 races,
+12,240 runner-checkpoints; run 42192362661), baselines only, RMSE of log(SP):
+
+| Baseline | All | <= 60 s | 70-180 s | > 180 s |
+|---|---|---|---|---|
+| mid | 0.3000 | 0.1180 | 0.1938 | 0.4248 |
+| last traded | 0.3216 | 0.1185 | 0.2218 | 0.4499 |
+| Betfair's projected SP | 0.4454 | 0.1401 | 0.2645 | 0.6452 |
+
+Betfair's projected SP is the worst of the three in every window on this day, so the bar a spec must clear is the best
+baseline (the mid here), not the projected SP. The first fresh day for the six specs is 7 Nov, scored the night of 8
+Nov.

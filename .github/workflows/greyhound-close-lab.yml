@@ -1,0 +1,49 @@
+name: Greyhound closing-price lab (read-only)
+
+# The closing-price lab (research/greyhound/close_lab.py; the owner, 6 Nov 2026: "let's review and optimise our model
+# ... now we have the market data? Let's start recursive self improvement"): each night, every complete day's
+# recorded Exchange Stream read every 10 s over the last 5 minutes before each off, every spec in
+# research/greyhound/close_specs.json fitted on the days before each day and scored on it, the scores appended to the
+# trial registry (s3 close_lab/registry.csv) and the champion picked on fresh days only. Read-only: no Betfair login.
+
+on:
+  schedule:
+    - cron: '5 23 * * *'       # after the stream lab (22:35 UTC)
+  workflow_dispatch:
+    inputs:
+      rebuild:
+        description: "rebuild every day's snapshots (yes/no)"
+        required: false
+        default: 'no'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-close-lab
+  cancel-in-progress: false
+
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Snapshots, specs, registry, champion
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          REBUILD: ${{ inputs.rebuild }}
+        run: |
+          ARGS=(--out out/close_lab)
+          if [ "$REBUILD" = "yes" ]; then ARGS+=(--rebuild); fi
+          python -m research.greyhound.close_lab "${ARGS[@]}"
+          cat out/close_lab/report.md >> "$GITHUB_STEP_SUMMARY"

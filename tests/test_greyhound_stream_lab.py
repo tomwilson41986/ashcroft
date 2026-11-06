@@ -61,3 +61,30 @@ def test_the_score_pools_days_and_needs_ten_for_a_candidate():
     assert sc.trades == 40 and sc.days == 3 and sc["mean_pnl%"] == 5.0 and not sc.candidate
     tr["day"] = [f"2026-11-{5 + i % 10:02d}" for i in range(40)]
     assert lab.score(tr).iloc[0].candidate
+
+
+def test_the_forward_tests_lays_are_replayed_and_scored(monkeypatch):
+    """The forward test's lays, built as its own table builds them, replayed through the stream."""
+    from greyhound import laytest as lt
+    from research.greyhound import limit_study as ls, tradeout_study as ts
+    t0 = OFF - timedelta(minutes=5)
+    rows = pd.DataFrame({"market_id": ["1.1"], "selection_id": [2], "polled": [t0 + timedelta(seconds=1)]})
+    monkeypatch.setattr(lt, "day_fit", lambda store, day: {"fit": 1})
+    monkeypatch.setattr(lt, "today_rows", lambda store, day: (rows, "test"))
+    monkeypatch.setattr(ts, "predict", lambda r, f: ([0.2], 1.0))
+    monkeypatch.setattr(ls, "orders", lambda r: r.assign(limit=5.0))
+    monkeypatch.setattr(lt, "_select", lambda o, rule: o)
+    monkeypatch.setattr(lt, "intraday", lambda store, day: {"races": 1, "lays_placed": 1, "matched": 1,
+                                                            "liability": 20.0, "pnl": 1.0, "roi%": 5.0})
+    lines = [book(t0, (1.5, 1.52, 1.5), (5.0, 5.2, 5.0)),
+             line(t0 + timedelta(seconds=5), {"id": "1.1", "rc": [{"id": 2, "trd": [[4.9, 3]]}]}),   # through: filled
+             line(OFF - timedelta(seconds=4), {"id": "1.1", "rc": [{"id": 2, "atb": [[5.5, 9]]}]}),
+             line(OFF + timedelta(minutes=3), {"id": "1.1", "marketDefinition": defn(
+                 "CLOSED", bsp={1: 1.5, 2: 6.0}, result={1: "WINNER", 2: "LOSER"})})]
+    r = lab.forward_check(lines, None, date(2026, 11, 5))
+    x = r["stream_x1.0"]
+    assert r["forward_test_own"]["roi%"] == 5.0 and x["matched"] == 1 and x["filled_through"] == 1
+    stake = 20.0 / 4.0                                                  # GBP20 liability at 5.0
+    assert x["matched_liability"] == pytest.approx(20.0)
+    assert x["roi_green%"] == pytest.approx(100 * stake * (1 - 5.0 / 5.5) * (1 - lab.COMM) / 20.0, abs=0.01)
+    assert x["roi_sp%"] == pytest.approx(100 * stake * (1 - 5.0 / 6.0) * (1 - lab.COMM) / 20.0, abs=0.01)

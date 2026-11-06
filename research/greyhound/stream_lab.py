@@ -166,6 +166,59 @@ def run_day(lines, day: date) -> tuple[pd.DataFrame, pd.DataFrame]:
     return s, tr
 
 
+def forward_test_orders(store, day: date) -> list:
+    """The early-lay forward test's lays for the day (greyhound/laytest.py, its primary rule, as its intraday table
+    builds them: the day's forecast fit on the first traded books), as simulated LAY orders at the time of each book,
+    at the rule's limit price, staked as the early lay stakes (GBP20 liability)."""
+    from greyhound import early_lay as el, laytest as lt
+    from research.greyhound import limit_study as ls, tradeout_study as ts
+    f = lt.day_fit(store, day)
+    if f is None:
+        return []
+    rows, _ = lt.today_rows(store, day)
+    if not len(rows):
+        return []
+    q, book = ts.predict(rows, f)
+    rows = rows.assign(f_bsp=1.0 / (book * np.asarray(q, float)))
+    o = lt._select(ls.orders(rows), lt.PRIMARY).drop_duplicates(["market_id", "selection_id"])
+    out = []
+    for r in o.itertuples(index=False):
+        price = float(r.limit)
+        out.append(sr.SimOrder(market=str(r.market_id), sid=int(float(r.selection_id)), side="LAY", price=price,
+                               size=el.stake_for(price, el.CONFIG), t=pd.Timestamp(r.polled).to_pydatetime(),
+                               tag="forward_test"))
+    return out
+
+
+def forward_check(lines, store, day: date) -> dict:
+    """The forward test's lays replayed through the stream with queue-aware fills (x1 and x0.5 volume), closed 5 s
+    before the off and at the SP, each as a return on the matched liability; beside the forward test's own figure
+    (its optimistic fill on the recorder's books)."""
+    from greyhound import laytest as lt
+    out = {"day": f"{day}"}
+    try:
+        own = lt.intraday(store, day)
+        out["forward_test_own"] = {k: own.get(k) for k in ("races", "lays_placed", "matched", "liability", "pnl", "roi%")}
+    except Exception as exc:
+        out["forward_test_own"] = {"error": str(exc)[:200]}
+    for vf in (1.0, 0.5):
+        orders = forward_test_orders(store, day)
+        if not orders:
+            out["note"] = "no data found: no forward-test lays for the day"
+            return out
+        df = sr.replay(lines, orders, vol_factor=vf, comm=COMM)
+        m = df[df.matched > 0]
+        liab = float((m.matched * (m.avg - 1)).sum()) if len(m) else 0.0
+        green = float(pd.to_numeric(m.pnl, errors="coerce").fillna(0).sum()) if len(m) else 0.0
+        msp = m[pd.to_numeric(m.pnl_sp, errors="coerce").notna()] if len(m) else m
+        liab_sp = float((msp.matched * (msp.avg - 1)).sum()) if len(msp) else 0.0
+        at_sp = float(pd.to_numeric(msp.pnl_sp, errors="coerce").sum()) if len(msp) else 0.0
+        out[f"stream_x{vf}"] = {**sr.summary(df), "matched_liability": round(liab, 2),
+                                "roi_green%": round(100 * green / liab, 2) if liab > 0 else None,
+                                "roi_sp%": round(100 * at_sp / liab_sp, 2) if liab_sp > 0 else None}
+    return out
+
+
 def main(argv=None) -> int:
     """Score a day's stream into its trades (s3 stream_lab/trades/<day>.parquet), then pool every day scored."""
     import argparse
@@ -204,6 +257,11 @@ def main(argv=None) -> int:
            "trades_today": len(tr), "days_pooled": int(pooled.day.nunique()) if len(pooled) else 0,
            "rules": int(len(sc)), "registered": REGISTERED, "candidates": sc[sc.candidate].rule.tolist() if len(sc) else [],
            "scores": sc.to_dict("records") if len(sc) else []}
+    try:                                       # the forward test checked with the stream's fills (the owner, 5 Nov)
+        from sources.common import Store
+        rep["forward_test"] = forward_check(lines, Store(), day)
+    except Exception as exc:
+        rep["forward_test"] = {"error": str(exc)[:300]}
     s3.put_object(Bucket=bk, Key=f"stream_lab/report_{day}.json", Body=json.dumps(rep, indent=1, default=str).encode())
     from pathlib import Path
     Path(a.out).mkdir(parents=True, exist_ok=True)
@@ -216,6 +274,14 @@ def main(argv=None) -> int:
     for r in rep["scores"]:
         md.append(f"| {r['rule']} | {r['trades']} | {r['races']} | {r['days']} | {r['mean_pnl%']} | {r['ci90%']} | "
                   f"{r['candidate']} |")
+    ft = rep.get("forward_test", {})
+    md += ["", "### The early-lay forward test, its lays replayed through the stream", "",
+           f"Its own figure (optimistic fill, the recorder's books): {json.dumps(ft.get('forward_test_own'))}", ""]
+    for k in ("stream_x1.0", "stream_x0.5"):
+        if k in ft:
+            md.append(f"- queue-aware, traded volume {k[-4:]}: {json.dumps(ft[k])}")
+    if ft.get("note") or ft.get("error"):
+        md.append(f"- {ft.get('note') or ft.get('error')}")
     Path(a.out, "report.md").write_text("\n".join(md) + "\n")
     print("\n".join(md))
     return 0
