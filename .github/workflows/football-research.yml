@@ -13,6 +13,8 @@ on:
         type: choice
         options:
           - cross_league_data
+          - cross_league_check
+          - cross_league_price
       days:
         description: 'days of the live record to read'
         required: false
@@ -49,6 +51,12 @@ jobs:
         env:
           DAYS: ${{ inputs.days }}
         run: python -m research.open_close.football_cross_league_data --days "$DAYS" --out out/cross_league_data.json
+      - name: Cross-league strength on cup and continental results
+        if: inputs.job == 'cross_league_check'
+        run: python -m research.open_close.football_cross_league_check --out out/cross_league_check.json
+      - name: Cross-league strength against Betfair's prices (closing price and winning the bet)
+        if: inputs.job == 'cross_league_price'
+        run: python -m research.open_close.football_cross_league_price --out out/cross_league_price.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |

@@ -281,3 +281,112 @@ Every football test is scored against two targets, side by side:
 
 The staking study already reports both (greened against held). Cross-league strength, the next piece of work, is
 judged the same way.
+
+## Cross-league strength, first read (6 Nov 2026)
+
+**Source:** `football-research.yml` job `cross_league_check`, run 42202323657.
+
+**What was built:** `football/cross_league.py`, a goal-weighted Elo run through 1,140,887 senior club matches (leagues,
+cups, continental competitions), point in time. It is scored out of sample from 2018 on the result target (winning
+the bet); the price target follows once the live record holds these markets.
+
+| Ties | Cross-league Elo | Competition-only Elo | No information |
+|---|---|---|---|
+| Cup ties across divisions (25,321) | **0.960 log loss, 55.1% right** | 0.998, 50.6% | 1.057, 40.0% |
+| Continental ties across countries (9,641) | 1.025, 49.6% | **1.009, 50.9%** | 1.049, 48.0% |
+| League matches (918,434; a sanity check) | 1.012, 50.2% | 1.011, 50.3% | 1.069, 44.2% |
+
+(The competition-only baseline rates each club inside each competition apart. In Europe that is a club's own record
+in that competition, an informative baseline.)
+
+**Read:**
+- **Across divisions it works.** Cup ties are called right 55% of the time, against 51% without the cross information.
+- **Across countries it does not yet.** It falls short of a club's own European record. The league ranking shows why:
+  Denmark is second and Slovakia sixth, and Albania and Kosovo sit above Switzerland. Champions of small leagues bank
+  rating in early qualifiers against minnows, and their leagues inherit it.
+
+**Next (v2):**
+- a club's rating split into its league's level plus its place within the league, the league level learned from
+  cross-border results with a larger step;
+- the European-competition record kept as its own feature beside it.
+
+## Cross-league strength v2 (6 Nov 2026)
+
+**Source:** `football-research.yml` job `cross_league_check`, run 42203212585 (commit 97d9f9b). Same matches, same
+walk-forward from 2018, the result target. v2 = a league level (moved only by matches between clubs of different
+leagues) plus a place within the league (centred on zero). Its step sizes were fixed before any result was read.
+
+| Ties (log loss, share right) | v1 cross-league | v2 level + place | v2 + competition record | Competition-only | No information |
+|---|---|---|---|---|---|
+| Cup ties across divisions (25,321) | 0.960, 55.1% | 0.950, 56.2% | **0.945, 56.5%** | 0.998, 50.6% | 1.057, 40.0% |
+| Continental ties across countries (9,641) | 1.025, 49.6% | 0.993, 53.0% | **0.982, 53.2%** | 1.009, 50.9% | 1.049, 48.0% |
+| League matches (918,434) | 1.012, 50.2% | 1.018, 49.8% | **1.010, 50.4%** | 1.011, 50.3% | 1.069, 44.2% |
+
+**Read:**
+- **v2 fixes Europe.** Across countries it now beats the club's own European record: 0.993 against 1.009 log loss,
+  53.0% right against 50.9%. With that record beside it, the best is 0.982 and 53.2%.
+- **Across divisions it improves again,** to 56.5% right against 50.6% without the cross information.
+- **Within leagues** v2 alone is slightly worse than a plain league Elo (1.018 against 1.011), as expected: a place
+  in the league moves only on league results, at the same step. With both, it is level or better (1.010).
+- **The league ranking is now sane:** Premier League (2,199), Ligue 1, Bundesliga, La Liga, Serie A, then Belgium,
+  Denmark, Czechia, Sweden, Austria. Two oddities remain: Denmark seventh, and the Eredivisie nineteenth below Slovakia.
+
+**What this is and is not:**
+- It is a result-target gain, out of sample.
+- It is not yet a betting edge. The market prices cup and European ties with far more information than a rating. The
+  closing-price target, and the betting return held to the result, need Betfair prices for these matches.
+- Those come from two places: the Aug-Sep 2026 Historic bundle (cup and UEFA markets in it) and the live record
+  (UEFA and cup markets recorded from 5 Nov). That test comes next. Until it passes, nothing here goes near the
+  frozen paper trader.
+
+## Cross-league strength against Betfair's prices (6 Nov 2026)
+
+**Source:** `football-research.yml` job `cross_league_price`, run 42204367947 (commit dde63b4,
+`research/open_close/football_cross_league_price.py`). The rules were committed before the run.
+
+**Data:**
+- 11,565 Betfair MATCH_ODDS markets from the owner's Historic Data bundle in S3, kicking off 30 Jul to 30 Sep 2026.
+- 9,279 of them linked to an API-Football fixture. 2 were dropped where the two sources disagreed on the result.
+- Linked by group: 480 cup ties across divisions, 226 continental ties across countries, 7,793 league matches.
+- The rating's chances come from v2 plus the competition record, fitted on matches before 1 Aug 2025, so every one
+  of these matches is out of sample.
+
+**Rule:** back a home or away side when the rating's expected value at the price is above 2%. The early price is the
+last trade 24 h before the off.
+
+| Group | Rating gap vs the move (corr) | Closing price: at the last traded prices | Closing price: a tick worse each end | Held to the result, early price | Held to the result, chosen at the close |
+|---|---|---|---|---|---|
+| Cup ties across divisions (480 bets) | **0.24** | **+3.5%** (+0.7 to +6.6) | -0.2% (-2.9 to +2.7) | +9.8% (-18.7 to +51.6) | +18.2% (-21.5 to +70.0) |
+| Continental ties (231 bets) | 0.09 | +1.5% (-0.9 to +3.9) | -2.4% (-4.7 to -0.1) | -14.4% (-37.4 to +10.3) | -15.6% (-37.3 to +9.3) |
+| League matches, the control (7,268 bets) | 0.12 | +1.3% (+0.5 to +2.2) | -1.6% (-2.3 to -0.7) | -2.6% (-6.4 to +1.4) | -4.4% (-8.0 to -0.4) |
+
+(Return on a GBP1 stake after 2% commission; 95% intervals by market in brackets.)
+
+**Log loss of the result** (lower is better):
+
+| Group | The close | The early price | The rating |
+|---|---|---|---|
+| Cup ties across divisions | 0.813 | 0.840 | 0.876 |
+| Continental ties | 0.939 | 0.950 | 0.996 |
+| League matches | 0.986 | 0.994 | 1.016 |
+
+**Read:**
+- **Cup ties across divisions are where the market is slowest.** There the rating's gap to the early price points the
+  way the price moves twice as strongly as in league matches (0.24 against 0.12). On target 1 (the closing price),
+  the 2% rule earns +3.5% at the traded prices, with the interval above zero.
+- **Nothing survives paying the spread.** A tick worse at each end takes the cup edge to -0.2%. Continental and
+  league trades lose (-2.4% and -1.6%). Captured at all, the edge needs resting orders at the early price, as the EV
+  paper trader already uses, not crossing the spread.
+- **Target 2 (winning the bet) is too noisy at this size.** Cup backs held to the result return +9.8% and +18.2%, but
+  the intervals run from about -20% to above +50%. The control is clean: rating-only backs chosen against the close
+  lose 4.4% in league matches. The close is the better price.
+- **The rating is no price.** It is worse than the early price on log loss in every group. Its use is as a pointer
+  to where the early market is wrong, mainly in domestic cups.
+- **Draws are not read.** The draw's early last trade is often stale and far from fair, so its returns (+14% in
+  leagues, on 44% right-way moves) are artefacts of that, not edge.
+
+**Next:**
+- The cup signal with resting orders. Score the cup-tie rule at the recorded books (queue position, fills) once the
+  live record holds enough cup rounds; it records TO_QUALIFY and cup match odds from 5 Nov.
+- A larger cup sample from more Historic Data months. 480 ties is one window.
+- Pre-register a cup-tie paper trial only after both. The frozen EV trader is unchanged.
