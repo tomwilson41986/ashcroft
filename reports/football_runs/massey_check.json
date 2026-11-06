@@ -1,0 +1,110 @@
+{
+ "rows": 12387,
+ "early_rows": 2299,
+ "seasons": [
+  2023,
+  2026
+ ],
+ "by_predictor": {
+  "massey (75% xG + 25% goals, opponent-adjusted)": {
+   "all": {
+    "rows": 11692,
+    "r2": 0.1766,
+    "result_right": 0.4471,
+    "corr": 0.4218
+   },
+   "early_season": {
+    "rows": 2299,
+    "r2": 0.2014,
+    "result_right": 0.4641,
+    "corr": 0.454
+   },
+   "rest_of_season": {
+    "rows": 9393,
+    "r2": 0.1701,
+    "result_right": 0.4429,
+    "corr": 0.4133
+   }
+  },
+  "raw xG difference, season to date": {
+   "all": {
+    "rows": 11692,
+    "r2": 0.1539,
+    "result_right": 0.443,
+    "corr": 0.3927
+   },
+   "early_season": {
+    "rows": 2299,
+    "r2": 0.1296,
+    "result_right": 0.4502,
+    "corr": 0.3766
+   },
+   "rest_of_season": {
+    "rows": 9393,
+    "r2": 0.1602,
+    "result_right": 0.4413,
+    "corr": 0.4001
+   }
+  },
+  "raw xG difference, last 10": {
+   "all": {
+    "rows": 11692,
+    "r2": 0.1361,
+    "result_right": 0.4327,
+    "corr": 0.369
+   },
+   "early_season": {
+    "rows": 2299,
+    "r2": 0.1464,
+    "result_right": 0.4354,
+    "corr": 0.3828
+   },
+   "rest_of_season": {
+    "rows": 9393,
+    "r2": 0.1334,
+    "result_right": 0.432,
+    "corr": 0.3656
+   }
+  },
+  "goal difference, season to date": {
+   "all": {
+    "rows": 11692,
+    "r2": 0.1394,
+    "result_right": 0.4365,
+    "corr": 0.3746
+   },
+   "early_season": {
+    "rows": 2299,
+    "r2": 0.095,
+    "result_right": 0.4554,
+    "corr": 0.3486
+   },
+   "rest_of_season": {
+    "rows": 9393,
+    "r2": 0.151,
+    "result_right": 0.4319,
+    "corr": 0.3883
+   }
+  },
+  "market opening expected goal difference": {
+   "all": {
+    "rows": 11692,
+    "r2": 0.2031,
+    "result_right": 0.4634,
+    "corr": 0.4504
+   },
+   "early_season": {
+    "rows": 2299,
+    "r2": 0.2285,
+    "result_right": 0.4763,
+    "corr": 0.4797
+   },
+   "rest_of_season": {
+    "rows": 9393,
+    "r2": 0.1964,
+    "result_right": 0.4602,
+    "corr": 0.4428
+   }
+  }
+ }
+}

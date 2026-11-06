@@ -22,6 +22,7 @@ against the count of forks.
     python -m research.open_close.football_improve --cache <lab cache> --out-json reports/football_runs/improve.json
     python -m research.open_close.football_improve --cache <lab cache> --fatigue --out-json reports/football_runs/rethink_fatigue.json
     python -m research.open_close.football_improve --cache <lab cache> --ev --out-json reports/football_runs/ev_rule.json
+    python -m research.open_close.football_improve --cache <lab cache> --massey --out-json reports/football_runs/massey.json
 """
 
 from __future__ import annotations
@@ -410,6 +411,12 @@ FATIGUE_ARMS = {"both": BOTH,
                 "all_new": BOTH + "+rest_days+fatigue+xi_load+form_short+x_short+x_sos+x_territory"}
 
 
+#: 5 Nov 2026, the owner: a Massey power rating (75% xG, 25% goals, opponent-adjusted; markstats.club's construction,
+#: fitted point in time on our data). On top of the candidate and of the paper trader's features
+MASSEY_ARMS = {"both": BOTH, "both+massey": BOTH + "+x_massey",
+               "form_short": BOTH + "+form_short+x_short", "form_short+massey": BOTH + "+form_short+x_short+x_massey"}
+
+
 def run_rethink(cache: str, n_boot: int = 1000, arms: dict | None = None) -> dict:
     arms = ARMS if arms is None else arms
     out = {"note": "Betfair match odds; tuned on 2024/25, read on 2025/26 to date (development evidence)",
@@ -444,9 +451,12 @@ def main(argv=None) -> int:
     ap.add_argument("--rethink", action="store_true", help="items 2-6: new features, the decision objective, tiers")
     ap.add_argument("--fatigue", action="store_true", help="fatigue, short form, schedule-adjusted xG, territory")
     ap.add_argument("--ev", action="store_true", help="every trade with positive expected value after costs")
+    ap.add_argument("--massey", action="store_true", help="the Massey power rating on top of the candidate")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    if a.ev:
+    if a.massey:
+        res = run_rethink(a.cache, a.boot, MASSEY_ARMS)
+    elif a.ev:
         res = run_ev(a.cache, a.boot)
     elif a.fatigue:
         res = run_rethink(a.cache, a.boot, FATIGUE_ARMS)
