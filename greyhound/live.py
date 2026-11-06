@@ -80,7 +80,9 @@ LEDGER_FIELDS = ["time_utc", "mode", "market_id", "selection_id", "track", "race
 
 
 def load_config(path: Path = CONFIG_PATH) -> dict:
-    return json.loads(Path(path).read_text())
+    """The tested rule's settings; the commission is always the account's rate on greyhounds (greyhound/costs.py)."""
+    from greyhound import costs
+    return {**json.loads(Path(path).read_text()), "commission": costs.commission()}
 
 
 def live_switch_on(env=None) -> bool:
@@ -762,7 +764,7 @@ def running_markdown(r: dict) -> str:
               f"{r.get('markets_settled', 0)} (pending {r.get('pending', 0)}). Traded out at the SP: "
               f"**GBP{r.get('pnl', 0):+,.2f}** on GBP{r.get('staked_settled', 0):,.2f} staked "
               f"(ROI {r.get('roi%')}%); held to the result GBP{r.get('pnl_held', 0):+,.2f}; mean CLV {r.get('clv%')}%. "
-              "2% commission; paper only.", "",
+              f"{100 * COM:g}% commission; paper only.", "",
               "| Race (UK) | Track | Bets | Staked | Avg price | BSP | CLV% | Result | P&L traded out | Held | Running |",
               "|---|---|---|---|---|---|---|---|---|---|---|"]
     total = 0.0

@@ -39,7 +39,7 @@ DECIDE = (60, 30, 10)
 GAPS = (0.03, 0.06, 0.10)
 MOVES = (0.05, 0.10)
 MIN_SIZE = 2.0
-COMM = 0.02
+from greyhound.costs import COMMISSION as COMM   # the account's rate (greyhound/costs.py)
 MIN_DAYS = 10
 REGISTERED = "2026-11-05"
 

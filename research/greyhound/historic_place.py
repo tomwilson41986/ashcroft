@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 
 DEV_MONTHS = (1, 2, 3, 4)
 THRESHOLDS = (0.0, 0.05, 0.10, 0.20)
-COMM = 0.02
+from greyhound.costs import COMMISSION as COMM   # the account's rate (greyhound/costs.py)
 COLS = ["market_id", "event_id", "market_type", "country", "venue", "market_time", "number_of_winners",
         "selection_id", "runner_name", "runner_status", "won", "bsp", "ltp_t_60", "ltp_t_15", "ltp_t_1", "ltp_close"]
 

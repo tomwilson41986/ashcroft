@@ -31,7 +31,7 @@ TICKS_THROUGH = (1, 2)
 #: through it is not credible there (run 41895217384: the 'passes' came from entries averaging 89-390): the rules are
 #: read with the entry price capped
 MAX_ENTRY = (5.0, 10.0, 20.0)
-COMM = 0.02
+from greyhound.costs import COMMISSION as COMM   # the account's rate (greyhound/costs.py)
 
 
 def forecast(j: pd.DataFrame) -> pd.DataFrame:
