@@ -205,10 +205,11 @@ class _MarketState:
 
     def __init__(self):
         self.defn: dict = {}
-        self.first: dict[int, float] = {}
-        self.last_pre: dict[int, float] = {}
-        self.ltp_now: dict[int, float] = {}
-        self.marks: dict[str, dict[int, float]] = {k: {} for k in MARKS_MIN}
+        # prices keyed by (selection id, handicap): an Asian handicap or alternative-totals runner trades on each line
+        self.first: dict[tuple, float] = {}
+        self.last_pre: dict[tuple, float] = {}
+        self.ltp_now: dict[tuple, float] = {}
+        self.marks: dict[str, dict[tuple, float]] = {k: {} for k in MARKS_MIN}
         self.pending = sorted(MARKS_MIN.items(), key=lambda kv: -kv[1])
         self.off = None
         self.inplay_at = None
@@ -228,7 +229,7 @@ class _MarketState:
         for rc in mc.get("rc") or []:
             if "ltp" not in rc:
                 continue
-            sid, p = int(rc["id"]), float(rc["ltp"])
+            sid, p = (int(rc["id"]), float(rc.get("hc") or 0.0)), float(rc["ltp"])
             self.ltp_now[sid] = p
             self.first.setdefault(sid, p)
             if self.inplay_at is None:
@@ -238,6 +239,7 @@ class _MarketState:
         defn, out = self.defn, []
         for r in defn.get("runners") or []:
             sid = int(r.get("id"))
+            key = (sid, float(r.get("hc") or 0.0))
             row = {
                 "market_id": market_id, "event_id": defn.get("eventId"), "event_name": defn.get("eventName"),
                 "event_type_id": defn.get("eventTypeId"), "market_type": defn.get("marketType"),
@@ -250,10 +252,10 @@ class _MarketState:
                 "selection_id": sid, "runner_name": r.get("name"), "handicap": r.get("hc"),
                 "sort_priority": r.get("sortPriority"), "runner_status": r.get("status"),
                 "won": {"WINNER": 1, "LOSER": 0, "PLACED": 1}.get(r.get("status")),
-                "bsp": r.get("bsp"), "ltp_first": self.first.get(sid), "ltp_close": self.last_pre.get(sid),
+                "bsp": r.get("bsp"), "ltp_first": self.first.get(key), "ltp_close": self.last_pre.get(key),
             }
             for k in MARKS_MIN:
-                row[f"ltp_{k}"] = self.marks[k].get(sid)
+                row[f"ltp_{k}"] = self.marks[k].get(key)
             out.append(row)
         return out
 
