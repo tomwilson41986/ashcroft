@@ -7,7 +7,10 @@ strategies".
 **What counts.** A rule fixed before its test (chosen on a development period, read on a later holdout it never saw),
 filled as it really would be (at the Betfair SP or a limit-on-close; resting orders only through the queue-aware
 replay, `research/greyhound/queue_fill.py`), with its holdout return's 90% lower bound (a bootstrap over days) above
-zero and its development return above zero. Every rule tried is counted here: about one in twenty clears a one-sided
+zero and its development return above zero. **Two targets, always** (the owner, 6 Nov 2026: "let's always test
+against two targets; 1. BFSP 2. Win - winning the bet"): every forecast is scored on the SP (RMSE of log(BFSP)) and on
+the result (the winner's log loss, its chances normalised within the race); every rule is scored closed at the SP and
+left to run to the result, a pass on either counted as a test of its own. Every rule tried is counted here: about one in twenty clears a one-sided
 90% bound by chance.
 
 | # | Family | Data, test | Rules tried | Passing | Verdict | Source |

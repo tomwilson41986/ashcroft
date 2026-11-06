@@ -51,6 +51,12 @@ def test_the_checkpoints_and_the_trades_closed_at_the_sp():
     assert m.price == 1.8 and m.pnl == pytest.approx((1.8 / 1.7 - 1) * (1 - lab.COMM))
     rl = tr[(tr.rule == "rev_lay_60_0.05") & (tr.sid == 1)].iloc[0]          # laid at 1.82, SP 1.7: a loss
     assert rl.pnl == pytest.approx(1 - 1.82 / 1.7)
+    # target 2, the result: runner 1 won, runner 2 lost
+    assert g.won == 0 and g.pnl_win == -1.0                                   # the back on the loser loses its stake
+    assert m.won == 1 and m.pnl_win == pytest.approx(0.8 * (1 - lab.COMM))      # the back on the winner wins 0.8
+    assert rl.pnl_win == pytest.approx(-0.82)                                  # the lay on the winner pays 0.82
+    sc = lab.score(tr.assign(day="2026-11-05")).set_index("rule")
+    assert {"mean_pnl%", "ci90%", "mean_win%", "ci90_win%", "candidate_sp", "candidate_win"} <= set(sc.columns)
     assert set(tr[tr.rule == "fav_lay_10"].sid) == {1}
 
 

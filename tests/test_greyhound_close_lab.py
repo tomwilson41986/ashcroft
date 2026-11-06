@@ -41,19 +41,26 @@ def test_snapshots_and_the_frame():
     assert np.isclose(r.spn_vs_mid, np.log(2.0) - r.l_mid)
 
 
-def synth(day_seed, n=600):
-    """A day where log(SP) = log(mid) + 0.5 x spn_vs_mid + noise: a model reading spn_vs_mid should beat the mid."""
+def synth(day_seed, n=600, sd=0.1):
+    """A day of 6-runner races, each read at one checkpoint, where log(SP) = log(mid) + 0.5 x spn_vs_mid + noise and
+    the winner is drawn from the SP's chances: a model reading spn_vs_mid should beat the mid on both targets."""
     rng = np.random.default_rng(day_seed)
     mid = np.exp(rng.uniform(0.3, 2.5, n))
-    gap = rng.normal(0, 0.1, n)
+    gap = rng.normal(0, sd, n)
+    races = n // 6
+    secs = np.repeat(rng.choice([10, 60, 120, 200], races), 6)
     d = pd.DataFrame({"market": [f"m{day_seed}_{i // 6}" for i in range(n)], "sid": np.arange(n) % 6,
-                      "secs": rng.choice([10, 60, 120, 200], n), "l_mid": np.log(mid), "l_ltp": np.log(mid),
+                      "secs": secs, "check": secs, "l_mid": np.log(mid), "l_ltp": np.log(mid),
                       "l_spn": np.log(mid) + gap, "spn_vs_mid": gap})
     for fam in cl.FEATURES.values():
         for c in fam:
             if c not in d:
                 d[c] = 0.0
     d["y"] = d.l_mid + 0.5 * gap + rng.normal(0, 0.02, n)
+    p = np.exp(-d.y.to_numpy()).reshape(races, 6)
+    p = p / p.sum(1, keepdims=True)
+    win = np.array([rng.choice(6, p=r) for r in p])
+    d["won"] = (np.tile(np.arange(6), races) == np.repeat(win, 6)).astype(int)
     return d
 
 
@@ -70,8 +77,8 @@ def test_specs_are_fitted_on_earlier_days_and_the_champion_needs_fresh_days():
     assert ch["challenger"] == "ridge_sp" and ch["champion"] == "ridge_sp"   # 'late' has no fresh day yet
     assert ch["paired"]["lo90"] > 0
     only_first = cl.champion(first, specs, days, incumbent="spn")            # a stored baseline is re-picked
-    best_base = first.set_index("spec").rmse.idxmin()
-    assert only_first["champion"] == only_first["incumbent"] == best_base
+    sc = first.set_index("spec").rmse
+    assert only_first["champion"] == only_first["incumbent"] and sc[only_first["champion"]] == sc.min()
 
 
 def test_the_registered_specs_load_with_a_hash():
@@ -79,3 +86,23 @@ def test_the_registered_specs_load_with_a_hash():
     assert len({s["name"] for s in specs}) == len(specs) and all(len(s["hash"]) == 10 for s in specs)
     feats = {f for fam in cl.FEATURES.values() for f in fam}
     assert all(set(s["features"]) <= set(cl.FEATURES) for s in specs) and feats
+
+
+def test_both_targets_are_scored_and_each_has_its_champion():
+    days = {f"2026-11-0{i}": synth(10 + i, n=3000, sd=0.6) for i in (5, 6, 7, 8)}
+    specs = [{"name": "ridge_sp", "registered": "2026-11-05", "features": ["sp"], "model": {"kind": "ridge", "lam": 1.0}},
+             {"name": "win_sp", "registered": "2026-11-05", "target": "win", "features": ["sp"],
+              "model": {"kind": "gbm", "rounds": 60, "min_leaf": 50}}]
+    res = cl.evaluate(days, specs)
+    assert res.win_ll.notna().all() and (res.win_races == 500).all()          # every race has one winner
+    last = res[res.day == "2026-11-08"].set_index("spec")
+    assert last.loc["ridge_sp", "win_ll"] < last.loc["mid", "win_ll"]          # the SP forecast also picks winners
+    assert last.loc["win_sp", "win_ll"] < last.loc["mid", "win_ll"]            # the result learnt from the market on
+    assert np.isfinite(last.loc["win_sp", "rmse"])                              # a win spec is scored on the SP too
+    q = cl.win_chances(days["2026-11-08"], days["2026-11-08"].l_mid.to_numpy())
+    assert np.allclose(pd.Series(q).groupby(days["2026-11-08"].market.to_numpy()).sum(), 1.0)
+    chw = cl.champion(res, specs, days, incumbent=None, target="win")
+    assert chw["metric"] == "win_ll" and chw["challenger"] in ("ridge_sp", "win_sp")
+    assert chw["paired"] is not None and chw["paired"]["races"] >= 20
+    reg = {s["name"]: s for s in cl.load_specs()}
+    assert reg["gbm_win_book"]["target"] == "win" and reg["gbm_win_book"]["hash"] != reg["gbm_book"]["hash"]
