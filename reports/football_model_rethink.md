@@ -338,3 +338,55 @@ leagues) plus a place within the league (centred on zero). Its step sizes were f
 - Those come from two places: the Aug-Sep 2026 Historic bundle (cup and UEFA markets in it) and the live record
   (UEFA and cup markets recorded from 5 Nov). That test comes next. Until it passes, nothing here goes near the
   frozen paper trader.
+
+## Cross-league strength against Betfair's prices (6 Nov 2026)
+
+**Source:** `football-research.yml` job `cross_league_price`, run 42204367947 (commit dde63b4,
+`research/open_close/football_cross_league_price.py`). The rules were committed before the run.
+
+**Data:**
+- 11,565 Betfair MATCH_ODDS markets from the owner's Historic Data bundle in S3, kicking off 30 Jul to 30 Sep 2026.
+- 9,279 of them linked to an API-Football fixture. 2 were dropped where the two sources disagreed on the result.
+- Linked by group: 480 cup ties across divisions, 226 continental ties across countries, 7,793 league matches.
+- The rating's chances come from v2 plus the competition record, fitted on matches before 1 Aug 2025, so every one
+  of these matches is out of sample.
+
+**Rule:** back a home or away side when the rating's expected value at the price is above 2%. The early price is the
+last trade 24 h before the off.
+
+| Group | Rating gap vs the move (corr) | Closing price: at the last traded prices | Closing price: a tick worse each end | Held to the result, early price | Held to the result, chosen at the close |
+|---|---|---|---|---|---|
+| Cup ties across divisions (480 bets) | **0.24** | **+3.5%** (+0.7 to +6.6) | -0.2% (-2.9 to +2.7) | +9.8% (-18.7 to +51.6) | +18.2% (-21.5 to +70.0) |
+| Continental ties (231 bets) | 0.09 | +1.5% (-0.9 to +3.9) | -2.4% (-4.7 to -0.1) | -14.4% (-37.4 to +10.3) | -15.6% (-37.3 to +9.3) |
+| League matches, the control (7,268 bets) | 0.12 | +1.3% (+0.5 to +2.2) | -1.6% (-2.3 to -0.7) | -2.6% (-6.4 to +1.4) | -4.4% (-8.0 to -0.4) |
+
+(Return on a GBP1 stake after 2% commission; 95% intervals by market in brackets.)
+
+**Log loss of the result** (lower is better):
+
+| Group | The close | The early price | The rating |
+|---|---|---|---|
+| Cup ties across divisions | 0.813 | 0.840 | 0.876 |
+| Continental ties | 0.939 | 0.950 | 0.996 |
+| League matches | 0.986 | 0.994 | 1.016 |
+
+**Read:**
+- **Cup ties across divisions are where the market is slowest.** There the rating's gap to the early price points the
+  way the price moves twice as strongly as in league matches (0.24 against 0.12). On target 1 (the closing price),
+  the 2% rule earns +3.5% at the traded prices, with the interval above zero.
+- **Nothing survives paying the spread.** A tick worse at each end takes the cup edge to -0.2%. Continental and
+  league trades lose (-2.4% and -1.6%). Captured at all, the edge needs resting orders at the early price, as the EV
+  paper trader already uses, not crossing the spread.
+- **Target 2 (winning the bet) is too noisy at this size.** Cup backs held to the result return +9.8% and +18.2%, but
+  the intervals run from about -20% to above +50%. The control is clean: rating-only backs chosen against the close
+  lose 4.4% in league matches. The close is the better price.
+- **The rating is no price.** It is worse than the early price on log loss in every group. Its use is as a pointer
+  to where the early market is wrong, mainly in domestic cups.
+- **Draws are not read.** The draw's early last trade is often stale and far from fair, so its returns (+14% in
+  leagues, on 44% right-way moves) are artefacts of that, not edge.
+
+**Next:**
+- The cup signal with resting orders. Score the cup-tie rule at the recorded books (queue position, fills) once the
+  live record holds enough cup rounds; it records TO_QUALIFY and cup match odds from 5 Nov.
+- A larger cup sample from more Historic Data months. 480 ties is one window.
+- Pre-register a cup-tie paper trial only after both. The frozen EV trader is unchanged.
