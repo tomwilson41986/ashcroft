@@ -61,7 +61,12 @@ def score(d: pd.DataFrame, col) -> dict:
     return {"matches": n, "log_loss": round(ll / n, 4) if n else None, "right": round(right / n, 4) if n else None}
 
 
-def run(fx: pd.DataFrame) -> dict:
+GROUP_NAMES = ("cup_ties_across_divisions", "continental_ties_across_countries", "league_matches")
+
+
+def rated_matches(fx: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Every senior club match with its pre-match rating differences (v1 cross-league, competition-only, v2) and its
+    group: a cup tie across divisions of one country, a continental tie across countries, a league match, or other."""
     from football import cross_league as cl
     f = cl.senior_club_matches(fx)
     a = cl.elo(f, cross=True)
@@ -82,12 +87,22 @@ def run(fx: pd.DataFrame) -> dict:
     d["lg_h"], d["lg_a"] = home.reindex(key_h).to_numpy(), home.reindex(key_a).to_numpy()
     placed = d["lg_h"].notna() & d["lg_a"].notna()
     cty = lambda s: s.astype(str).str.split(" | ", regex=False).str[0]        # noqa: E731
-    groups = {
-        "cup_ties_across_divisions": d[(d["kind"] == "cup") & placed & (d["lg_h"] != d["lg_a"])
-                                       & (cty(d["lg_h"]) == cty(d["lg_a"]))],
-        "continental_ties_across_countries": d[(d["kind"] == "uefa") & placed & (cty(d["lg_h"]) != cty(d["lg_a"]))],
-        "league_matches": d[d["kind"] == "league"],
-    }
+    d["group"] = "other"
+    d.loc[d["kind"] == "league", "group"] = "league_matches"
+    d.loc[(d["kind"] == "cup") & placed & (d["lg_h"] != d["lg_a"]) & (cty(d["lg_h"]) == cty(d["lg_a"])),
+          "group"] = "cup_ties_across_divisions"
+    d.loc[(d["kind"] == "uefa") & placed & (cty(d["lg_h"]) != cty(d["lg_a"])),
+          "group"] = "continental_ties_across_countries"
+    for c in ("home", "away", "kickoff_utc"):
+        if c in f.columns:
+            d[c] = f[c].to_numpy()
+    return d, v2
+
+
+def run(fx: pd.DataFrame) -> dict:
+    from football import cross_league as cl
+    d, v2 = rated_matches(fx)
+    groups = {g: d[d["group"] == g] for g in GROUP_NAMES}
     out = {"matches_rated": int(len(d)), "first_test_season": FIRST_TEST, "groups": {}}
     for name, g in groups.items():
         out["groups"][name] = {"cross_league_elo": score(g, "diff_cross"),
