@@ -281,3 +281,31 @@ Every football test is scored against two targets, side by side:
 
 The staking study already reports both (greened against held). Cross-league strength, the next piece of work, is
 judged the same way.
+
+## Cross-league strength, first read (6 Nov 2026)
+
+**Source:** `football-research.yml` job `cross_league_check`, run 42202323657.
+
+**What was built:** `football/cross_league.py`, a goal-weighted Elo run through 1,140,887 senior club matches (leagues,
+cups, continental competitions), point in time. It is scored out of sample from 2018 on the result target (winning
+the bet); the price target follows once the live record holds these markets.
+
+| Ties | Cross-league Elo | Competition-only Elo | No information |
+|---|---|---|---|
+| Cup ties across divisions (25,321) | **0.960 log loss, 55.1% right** | 0.998, 50.6% | 1.057, 40.0% |
+| Continental ties across countries (9,641) | 1.025, 49.6% | **1.009, 50.9%** | 1.049, 48.0% |
+| League matches (918,434; a sanity check) | 1.012, 50.2% | 1.011, 50.3% | 1.069, 44.2% |
+
+(The competition-only baseline rates each club inside each competition apart. In Europe that is a club's own record
+in that competition, an informative baseline.)
+
+**Read:**
+- **Across divisions it works.** Cup ties are called right 55% of the time, against 51% without the cross information.
+- **Across countries it does not yet.** It falls short of a club's own European record. The league ranking shows why:
+  Denmark is second and Slovakia sixth, and Albania and Kosovo sit above Switzerland. Champions of small leagues bank
+  rating in early qualifiers against minnows, and their leagues inherit it.
+
+**Next (v2):**
+- a club's rating split into its league's level plus its place within the league, the league level learned from
+  cross-border results with a larger step;
+- the European-competition record kept as its own feature beside it.
