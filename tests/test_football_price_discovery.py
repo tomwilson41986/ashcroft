@@ -35,3 +35,10 @@ def test_fair_prices_with_no_moves_yield_no_confirmed_rule():
 def test_the_summary_charges_commission_on_wins_only():
     s = pd_._summ(np.array([1.0, -1.0]))
     assert abs(s["roi"] - (0.98 - 1) / 2) < 1e-9
+
+
+def test_markets_with_handicap_lines_are_left_out():
+    df = pd.DataFrame({"market_id": ["a", "a", "b", "c"], "market_type": ["MATCH_ODDS", "MATCH_ODDS",
+                                                                          "ASIAN_HANDICAP", "OVER_UNDER_25"],
+                       "handicap": [None, None, -0.5, 0.0]})
+    assert sorted(pd_.drop_line_markets(df)["market_id"].unique()) == ["a", "c"]

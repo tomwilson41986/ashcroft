@@ -22,6 +22,11 @@ in play).
   market's net win for a trade closed at the close).
 - The last traded price is a trade that happened, not a quote that could be hit: a rule that pays only at it is noted
   as such and not taken further without the recorded books.
+- Markets with several handicap lines a runner (Asian handicap, alternative totals) are left out: the tables give
+  every line of a runner one line's prices (``drop_line_markets``).
+- The last traded price bounces between the back and the lay side, so a window's move and the next one's are
+  negatively correlated by construction: momentum and fade rules here are leads for the recorded books, never
+  evidence on their own.
 
     python -m research.open_close.football_price_discovery --out out/price_discovery.json
 """
@@ -56,8 +61,9 @@ def load(store, local: str | None = None) -> pd.DataFrame:
             return pd.DataFrame()
         df = pd.concat(frames, ignore_index=True)
     marks = [m for m in MARKS if m in df.columns]
-    keep = ["market_id", "market_type", "country", "market_time", "won"] + marks
+    keep = ["market_id", "market_type", "country", "market_time", "won", "handicap"] + marks
     df = df[[c for c in keep if c in df.columns]].copy()
+    df = drop_line_markets(df)
     for m in marks:
         df[m] = pd.to_numeric(df[m], errors="coerce")
         df.loc[(df[m] < 1.01) | (df[m] > 1000), m] = np.nan
@@ -65,6 +71,20 @@ def load(store, local: str | None = None) -> pd.DataFrame:
     df = df[df["won"].isin([0, 1]) & df["ltp_close"].notna()]
     df["kickoff"] = pd.to_datetime(df["market_time"], utc=True, errors="coerce")
     return df.dropna(subset=["kickoff"])
+
+
+LINE_TYPES = ("ASIAN_HANDICAP", "ALT_TOTAL_GOALS")
+
+
+def drop_line_markets(df: pd.DataFrame) -> pd.DataFrame:
+    """Leave out markets with several handicap lines a runner (Asian handicap, alternative totals): the tables key a
+    runner's prices by its selection id alone, so every line of it carries one line's prices against its own result
+    (found 6 Nov 2026: returns of +29,000% in the first scan). Any market with a non-zero handicap goes too."""
+    bad = df["market_type"].isin(LINE_TYPES)
+    if "handicap" in df.columns:
+        hc = pd.to_numeric(df["handicap"], errors="coerce").fillna(0)
+        bad |= df["market_id"].isin(df.loc[hc != 0, "market_id"])
+    return df[~bad].drop(columns=[c for c in ("handicap",) if c in df.columns])
 
 
 def _ticks(p: np.ndarray, up: bool) -> np.ndarray:
