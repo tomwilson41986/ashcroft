@@ -107,8 +107,9 @@ def link(w: pd.DataFrame, d: pd.DataFrame) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     lk = pd.DataFrame(rows).drop_duplicates("row", keep=False)
-    out = w.merge(lk, on="market_id").join(d[["group", "diff_v2", "diff_league_only", "gd", "competition"]],
-                                           on="row")
+    keep = ["group", "diff_v2", "diff_league_only", "gd", "competition"] + [
+        c for c in ("apif_fixture_id",) if c in d.columns]
+    out = w.merge(lk, on="market_id").join(d[keep], on="row")
     # the fixture's result must agree with Betfair's settled result
     res = np.where(out["gd"] > 0, "h", np.where(out["gd"] == 0, "d", "a"))
     bf = np.select([out["won_h"] == 1, out["won_d"] == 1], ["h", "d"], "a")

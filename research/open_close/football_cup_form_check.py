@@ -99,8 +99,9 @@ def run(fx: pd.DataFrame, stats: pd.DataFrame, m: pd.DataFrame) -> dict:
         return {"status": "no Betfair match-odds prices found"}
     lk = cp.link(w, d)
     lk = lk[lk["result_agrees"]]
-    extra = d.set_index(d.index)[FORM + ["has_form"]]
-    lk = lk.join(extra, on="row")
+    # the link's "row" indexes its own sorted copy of the matches: join the form on the fixture id instead
+    extra = d.drop_duplicates("apif_fixture_id").set_index("apif_fixture_id")[FORM + ["has_form"]]
+    lk = lk.join(extra, on="apif_fixture_id")
     lk = lk[lk["kickoff"] >= FIT_END]
     kick = pd.to_datetime(d["kickoff"], utc=True)
     fit = d[(kick >= FIT_FROM) & (kick < FIT_END)]
