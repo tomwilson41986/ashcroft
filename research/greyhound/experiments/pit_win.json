@@ -1,0 +1,108 @@
+{
+  "about": "Target 2, Win (the result): softmax on the winner, scored by log-loss. Registered 6 Nov 2026, before any result (the owner: 'work on all steps that are possible now' for the metrics database, greyhound/pit). Each family of the database added alone to the live recipe's card-safe features (sim and wpred blocks), then all together; the weigh-in columns of the life table are dropped (card-unsafe); the weather table is scored apart, observed at the off (live needs a forecast). The rule fixed now: a family is kept when its paired gain over the baseline on the test (every race from 2026-06-01) has its 90% lower bound above zero on BOTH targets' specs (pit_win.json: the result; pit_bfsp.json: the Betfair SP). The test window has been read by earlier batches: a pass here goes to the forward test on later days before it counts.",
+  "recipe": "quick",
+  "baseline": "base_softmax",
+  "test_from": "2026-06-01",
+  "experiments": [
+    {
+      "name": "base_softmax",
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred"
+      ]
+    },
+    {
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_ability"
+      ],
+      "name": "pit_ability_softmax"
+    },
+    {
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_trouble"
+      ],
+      "name": "pit_trouble_softmax"
+    },
+    {
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_connections"
+      ],
+      "name": "pit_connections_softmax"
+    },
+    {
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_market"
+      ],
+      "name": "pit_market_softmax"
+    },
+    {
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_breeding"
+      ],
+      "name": "pit_breeding_softmax"
+    },
+    {
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_life"
+      ],
+      "name": "pit_life_softmax",
+      "drop": [
+        "lf_wt_"
+      ]
+    },
+    {
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_ability",
+        "pit_trouble",
+        "pit_connections",
+        "pit_market",
+        "pit_breeding",
+        "pit_life"
+      ],
+      "name": "pit_all_softmax",
+      "drop": [
+        "lf_wt_"
+      ]
+    },
+    {
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_weather"
+      ],
+      "name": "pit_weather_softmax"
+    }
+  ]
+}

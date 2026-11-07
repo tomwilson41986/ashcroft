@@ -1,0 +1,30 @@
+{
+  "about": "Registered 6 Nov 2026: does the live recipe's trainer data help on days where the trainer is the trainer at the time? GBGB serves each dog's CURRENT trainer on past results (greyhound/pit/core.py FRESH_DAYS), so the history the model trains on attributes a moved dog's old runs to its new yard; the days the nightly fetch read at the time (from about 3 Oct 2026) carry the trainer of the day. The test is those days only (from 2026-10-06). Experiments: the live recipe, and the same without every trainer feature (trainer_win and its race-relative forms, trainer_ae, the intent block ti_). Decision fixed now: if the version without trainer features is no worse on both targets (its paired loss not above the baseline's at the 90% bound), the owner is advised to drop them until the trainer history is rebuilt point-in-time.",
+  "recipe": "quick",
+  "baseline": "live_softmax",
+  "test_from": "2026-10-06",
+  "experiments": [
+    {
+      "name": "live_softmax",
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred"
+      ]
+    },
+    {
+      "name": "no_trainer_softmax",
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred"
+      ],
+      "drop": [
+        "trainer_",
+        "ti_"
+      ]
+    }
+  ]
+}

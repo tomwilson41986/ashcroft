@@ -13,6 +13,8 @@ day's results (``tests/test_greyhound_fastloop.py`` rewrites the last day's resu
   run-in; the chance of winning, leading at the bend, finishing in the first two, the lengths lost to checks.
 - ``fcast``: Betfair's forecast price as a prior (roadmap L2), from the recorded catalogues (6 Oct 2026 on; NaN
   before).
+- ``pit_<table>``: a table of the metrics database (greyhound/pit: ability, trouble, connections, market, breeding,
+  life, weather), built from every GBGB run from 2014 and joined by race and dog.
 - ``wpred``: the day's weigh-in forecast from the dog's earlier runs (a linear model refitted each month on the months
   before): the predicted weight change and weight against the dog's mean, for when the weigh-in is not to hand.
 """
@@ -25,7 +27,13 @@ NAMES = ("race_rel2", "first_bend", "style_draw", "sim", "fcast", "wpred")
 
 
 def attach(df, name: str) -> list[str]:
-    """Add block ``name``'s columns to ``df`` (once) and return their names."""
+    """Add block ``name``'s columns to ``df`` (once) and return their names. ``pit_<table>`` joins a table of the
+    metrics database (greyhound/pit) by race and dog."""
+    if name.startswith("pit_"):
+        from greyhound import pit
+        mod = pit.module(name[4:])
+        have = [c for c in df.columns if c.startswith(mod.PREFIX)]
+        return have if have else pit.attach(df, name[4:])
     if name not in NAMES:
         raise ValueError(f"unknown block {name!r}; known: {NAMES}")
     mod = importlib.import_module(f"greyhound.blocks.{name}")
