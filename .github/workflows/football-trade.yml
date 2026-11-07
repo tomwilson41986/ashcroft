@@ -148,7 +148,8 @@ jobs:
           if [ "$DOW" = 5 ]; then coll_record 16:55 "2 3" & FBREC+=($!); fi
           if [ "$DOW" = 2 ]; then coll_record 12:55 "1 2" & FBREC+=($!); fi
           # the line-ups and injuries (sources/api_football_lineups.py, API-Football, read-only): each match of the 22
-          # divisions polled from 75 minutes before kick-off until both elevens are out, once more at T-10; the day's
+          # divisions and the high-money leagues (lineup_league_ids: the UEFA club competitions, Brazil's Serie A, the
+          # AFC Champions League Two) polled from 75 minutes before kick-off until both elevens are out, once more at T-10; the day's
           # injuries every 3 hours. It places nothing.
           python -m sources.api_football_lineups --collect --until 21:30 > "$RUNNER_TEMP/football_lineups.log" 2>&1 &
           FBL=$!

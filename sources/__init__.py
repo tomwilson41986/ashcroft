@@ -18,6 +18,7 @@ One module a source, each with the same two halves:
 | ``tennis`` | Jeff Sackmann's ATP/WTA files (the archive mirror) and TML's ATP (match stats) | tennis | nothing |
 | ``tennis_odds`` | tennis-data.co.uk (results with closing odds; its Cloudflare refuses GitHub's runners) | tennis | the UK server |
 | ``puntingform`` | api.puntingform.com.au (Australian form and results) | Australian racing | ``PUNTINGFORM_API_KEY`` |
+| ``wyscout_public`` | the Wyscout public match events (Pappalardo et al. 2019, CC BY 4.0): every event with pitch positions, 1,941 matches | football (location-based metrics) | nothing |
 | ``greyhound_prices`` | Betfair's greyhound price files in the S3 archive (BSP, morning/pre-play WAP and volume) | greyhounds | the UK server's archive |
 
 Betfair's own historic prices for these sports are ``betfair_historic.py`` (Betfair's Historic Data service), and its
@@ -30,4 +31,5 @@ live books ``betfair_recorder.py``: both need a Betfair login, so they run on th
 SOURCES = ("football", "openfootball", "api_football", "tennis", "puntingform", "greyhound_prices", "gbgb")
 #: named on their own, not in "all": tennis_odds runs from the UK server
 #: api_football_history: the line-up/event/player backfill, run by name with --from (source-data.yml dispatch)
-OTHER_SOURCES = ("tennis_odds", "api_football_history")
+#: wyscout_public: the CC BY 4.0 Wyscout match events (2017/18, one fixed release), fetched once by name
+OTHER_SOURCES = ("tennis_odds", "api_football_history", "wyscout_public")

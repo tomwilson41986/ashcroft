@@ -1,0 +1,3616 @@
+{
+ "note": "Leagues whose API-Football history is held beyond the 22 main divisions: every league our Betfair match-odds markets linked into (the live record 4-6 Nov 2026 and the Historic Data bundle 30 Jul - 30 Sep 2026) whose latest season the feed covers with team statistics or line-ups. Ordered by money matched on our recorded markets (fetched in this order). Source: football-research.yml feed_coverage run 42239864493 (research/open_close/football_feed_coverage.py), 6 Nov 2026.",
+ "requests_per_season_estimate": 4409,
+ "leagues": [
+  {
+   "apif_league_id": 3,
+   "league": "UEFA Europa League",
+   "country": "World",
+   "markets": 81,
+   "matched_gbp": 11234468.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 2,
+   "league": "UEFA Champions League",
+   "country": "World",
+   "markets": 39,
+   "matched_gbp": 10148114.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 71,
+   "league": "Serie A",
+   "country": "Brazil",
+   "markets": 79,
+   "matched_gbp": 1830216.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 848,
+   "league": "UEFA Europa Conference League",
+   "country": "World",
+   "markets": 119,
+   "matched_gbp": 1656986.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 40,
+   "league": "Championship",
+   "country": "England",
+   "markets": 98,
+   "matched_gbp": 555877.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 18,
+   "league": "AFC Champions League Two",
+   "country": "World",
+   "markets": 18,
+   "matched_gbp": 508490.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 39,
+   "league": "Premier League",
+   "country": "England",
+   "markets": 53,
+   "matched_gbp": 156082.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 239,
+   "league": "Primera A",
+   "country": "Colombia",
+   "markets": 100,
+   "matched_gbp": 133682.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 140,
+   "league": "La Liga",
+   "country": "Spain",
+   "markets": 70,
+   "matched_gbp": 104237.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 274,
+   "league": "Liga 1",
+   "country": "Indonesia",
+   "markets": 27,
+   "matched_gbp": 81624.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 252,
+   "league": "Division Profesional - Clausura",
+   "country": "Paraguay",
+   "markets": 62,
+   "matched_gbp": 79404.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 964,
+   "league": "Copa de la División Profesional",
+   "country": "Bolivia",
+   "markets": 39,
+   "matched_gbp": 78643.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 917,
+   "league": "Copa Ecuador",
+   "country": "Ecuador",
+   "markets": 5,
+   "matched_gbp": 74624.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 135,
+   "league": "Serie A",
+   "country": "Italy",
+   "markets": 41,
+   "matched_gbp": 72235.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 267,
+   "league": "Copa Chile",
+   "country": "Chile",
+   "markets": 23,
+   "matched_gbp": 69091.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 128,
+   "league": "Liga Profesional Argentina",
+   "country": "Argentina",
+   "markets": 134,
+   "matched_gbp": 66356.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 162,
+   "league": "Primera División",
+   "country": "Costa-Rica",
+   "markets": 35,
+   "matched_gbp": 65251.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 323,
+   "league": "Indian Super League",
+   "country": "India",
+   "markets": 2,
+   "matched_gbp": 59697.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 764,
+   "league": "Premier League",
+   "country": "Mongolia",
+   "markets": 9,
+   "matched_gbp": 53914.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 63,
+   "league": "Ligue 3",
+   "country": "France",
+   "markets": 35,
+   "matched_gbp": 47475.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 263,
+   "league": "Liga de Expansión MX",
+   "country": "Mexico",
+   "markets": 31,
+   "matched_gbp": 45879.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 234,
+   "league": "Liga Nacional",
+   "country": "Honduras",
+   "markets": 37,
+   "matched_gbp": 43015.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 61,
+   "league": "Ligue 1",
+   "country": "France",
+   "markets": 47,
+   "matched_gbp": 41932.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 78,
+   "league": "Bundesliga",
+   "country": "Germany",
+   "markets": 37,
+   "matched_gbp": 40317.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 383,
+   "league": "Ligat Ha'al",
+   "country": "Israel",
+   "markets": 36,
+   "matched_gbp": 36678.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 281,
+   "league": "Primera División",
+   "country": "Peru",
+   "markets": 66,
+   "matched_gbp": 33041.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 188,
+   "league": "A-League",
+   "country": "Australia",
+   "markets": 1,
+   "matched_gbp": 24083.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 240,
+   "league": "Primera B",
+   "country": "Colombia",
+   "markets": 50,
+   "matched_gbp": 21584.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 702,
+   "league": "Premier League 2 Division One",
+   "country": "England",
+   "markets": 62,
+   "matched_gbp": 17506.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 284,
+   "league": "Liga II",
+   "country": "Romania",
+   "markets": 77,
+   "matched_gbp": 17127.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 296,
+   "league": "Thai League 1",
+   "country": "Thailand",
+   "markets": 22,
+   "matched_gbp": 15520.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 45,
+   "league": "FA Cup",
+   "country": "England",
+   "markets": 2,
+   "matched_gbp": 15431.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 79,
+   "league": "2. Bundesliga",
+   "country": "Germany",
+   "markets": 56,
+   "matched_gbp": 14867.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 342,
+   "league": "Premier League",
+   "country": "Armenia",
+   "markets": 41,
+   "matched_gbp": 13056.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 585,
+   "league": "Premier League",
+   "country": "Uganda",
+   "markets": 14,
+   "matched_gbp": 12641.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 299,
+   "league": "Primera División",
+   "country": "Venezuela",
+   "markets": 66,
+   "matched_gbp": 12632.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 62,
+   "league": "Ligue 2",
+   "country": "France",
+   "markets": 69,
+   "matched_gbp": 11995.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 94,
+   "league": "Primeira Liga",
+   "country": "Portugal",
+   "markets": 56,
+   "matched_gbp": 11918.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 190,
+   "league": "A-League Women",
+   "country": "Australia",
+   "markets": 1,
+   "matched_gbp": 11202.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 172,
+   "league": "First League",
+   "country": "Bulgaria",
+   "markets": 55,
+   "matched_gbp": 10720.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 418,
+   "league": "Birinci Dasta",
+   "country": "Azerbaijan",
+   "markets": 12,
+   "matched_gbp": 9979.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 89,
+   "league": "Eerste Divisie",
+   "country": "Netherlands",
+   "markets": 89,
+   "matched_gbp": 9920.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 369,
+   "league": "Super League",
+   "country": "Uzbekistan",
+   "markets": 60,
+   "matched_gbp": 9700.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 88,
+   "league": "Eredivisie",
+   "country": "Netherlands",
+   "markets": 63,
+   "matched_gbp": 8184.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 203,
+   "league": "Süper Lig",
+   "country": "Turkey",
+   "markets": 55,
+   "matched_gbp": 7719.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 136,
+   "league": "Serie B",
+   "country": "Italy",
+   "markets": 51,
+   "matched_gbp": 7330.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 371,
+   "league": "First League",
+   "country": "Macedonia",
+   "markets": 21,
+   "matched_gbp": 6875.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 144,
+   "league": "Jupiler Pro League",
+   "country": "Belgium",
+   "markets": 64,
+   "matched_gbp": 6497.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 200,
+   "league": "Botola Pro",
+   "country": "Morocco",
+   "markets": 8,
+   "matched_gbp": 6444.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 211,
+   "league": "First NL",
+   "country": "Croatia",
+   "markets": 39,
+   "matched_gbp": 5825.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 419,
+   "league": "Premyer Liqa",
+   "country": "Azerbaijan",
+   "markets": 35,
+   "matched_gbp": 5367.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 219,
+   "league": "2. Liga",
+   "country": "Austria",
+   "markets": 35,
+   "matched_gbp": 4514.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 283,
+   "league": "Liga I",
+   "country": "Romania",
+   "markets": 54,
+   "matched_gbp": 4353.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 703,
+   "league": "Professional Development League",
+   "country": "England",
+   "markets": 41,
+   "matched_gbp": 3293.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 210,
+   "league": "HNL",
+   "country": "Croatia",
+   "markets": 39,
+   "matched_gbp": 3221.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 305,
+   "league": "Stars League",
+   "country": "Qatar",
+   "markets": 26,
+   "matched_gbp": 3205.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 187,
+   "league": "Ligue 2",
+   "country": "Algeria",
+   "markets": 21,
+   "matched_gbp": 3062.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 119,
+   "league": "Superliga",
+   "country": "Denmark",
+   "markets": 34,
+   "matched_gbp": 2823.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 95,
+   "league": "Segunda Liga",
+   "country": "Portugal",
+   "markets": 54,
+   "matched_gbp": 2473.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 120,
+   "league": "1. Division",
+   "country": "Denmark",
+   "markets": 40,
+   "matched_gbp": 2468.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 113,
+   "league": "Allsvenskan",
+   "country": "Sweden",
+   "markets": 56,
+   "matched_gbp": 2309.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 106,
+   "league": "Ekstraklasa",
+   "country": "Poland",
+   "markets": 69,
+   "matched_gbp": 2264.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 72,
+   "league": "Serie B",
+   "country": "Brazil",
+   "markets": 101,
+   "matched_gbp": 2250.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 80,
+   "league": "3. Liga",
+   "country": "Germany",
+   "markets": 71,
+   "matched_gbp": 2125.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 340,
+   "league": "V.League 1",
+   "country": "Vietnam",
+   "markets": 9,
+   "matched_gbp": 1648.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 122,
+   "league": "2. Division",
+   "country": "Denmark",
+   "markets": 26,
+   "matched_gbp": 1619.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 318,
+   "league": "1. Division",
+   "country": "Cyprus",
+   "markets": 26,
+   "matched_gbp": 1570.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 143,
+   "league": "Copa del Rey",
+   "country": "Spain",
+   "markets": 5,
+   "matched_gbp": 1241.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 180,
+   "league": "Championship",
+   "country": "Scotland",
+   "markets": 42,
+   "matched_gbp": 970.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 344,
+   "league": "Primera División",
+   "country": "Bolivia",
+   "markets": 61,
+   "matched_gbp": 784.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 208,
+   "league": "Challenge League",
+   "country": "Switzerland",
+   "markets": 37,
+   "matched_gbp": 669.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 308,
+   "league": "Division 1",
+   "country": "Saudi-Arabia",
+   "markets": 48,
+   "matched_gbp": 593.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 107,
+   "league": "I Liga",
+   "country": "Poland",
+   "markets": 70,
+   "matched_gbp": 575.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 141,
+   "league": "Segunda División",
+   "country": "Spain",
+   "markets": 78,
+   "matched_gbp": 553.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 346,
+   "league": "FNL",
+   "country": "Czech-Republic",
+   "markets": 55,
+   "matched_gbp": 441.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 138,
+   "league": "Serie C - Girone A",
+   "country": "Italy",
+   "markets": 70,
+   "matched_gbp": 418.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 204,
+   "league": "1. Lig",
+   "country": "Turkey",
+   "markets": 60,
+   "matched_gbp": 307.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 109,
+   "league": "II Liga - East",
+   "country": "Poland",
+   "markets": 33,
+   "matched_gbp": 262.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 435,
+   "league": "Primera División RFEF - Group 1",
+   "country": "Spain",
+   "markets": 2,
+   "matched_gbp": 163.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 393,
+   "league": "Premier League",
+   "country": "Malta",
+   "markets": 18,
+   "matched_gbp": 161.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 399,
+   "league": "NPFL",
+   "country": "Nigeria",
+   "markets": 12,
+   "matched_gbp": 127.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 373,
+   "league": "1. SNL",
+   "country": "Slovenia",
+   "markets": 40,
+   "matched_gbp": 97.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 349,
+   "league": "3. liga - MSFL",
+   "country": "Czech-Republic",
+   "markets": 19,
+   "matched_gbp": 83.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 355,
+   "league": "First League",
+   "country": "Montenegro",
+   "markets": 27,
+   "matched_gbp": 24.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 570,
+   "league": "Premier League",
+   "country": "Ghana",
+   "markets": 6,
+   "matched_gbp": 7.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 667,
+   "league": "Friendlies Clubs",
+   "country": "World",
+   "markets": 221,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 129,
+   "league": "Primera Nacional",
+   "country": "Argentina",
+   "markets": 158,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 253,
+   "league": "Major League Soccer",
+   "country": "USA",
+   "markets": 143,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 43,
+   "league": "National League",
+   "country": "England",
+   "markets": 132,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 42,
+   "league": "League Two",
+   "country": "England",
+   "markets": 94,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 41,
+   "league": "League One",
+   "country": "England",
+   "markets": 87,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 98,
+   "league": "J1 League",
+   "country": "Japan",
+   "markets": 81,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 99,
+   "league": "J2 League",
+   "country": "Japan",
+   "markets": 80,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 48,
+   "league": "League Cup",
+   "country": "England",
+   "markets": 77,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 242,
+   "league": "Liga Pro",
+   "country": "Ecuador",
+   "markets": 72,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 100,
+   "league": "J3 League",
+   "country": "Japan",
+   "markets": 70,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 114,
+   "league": "Superettan",
+   "country": "Sweden",
+   "markets": 69,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 262,
+   "league": "Liga MX",
+   "country": "Mexico",
+   "markets": 69,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 104,
+   "league": "1. Division",
+   "country": "Norway",
+   "markets": 67,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 942,
+   "league": "Serie C - Girone B",
+   "country": "Italy",
+   "markets": 67,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 307,
+   "league": "Pro League",
+   "country": "Saudi-Arabia",
+   "markets": 63,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 943,
+   "league": "Serie C - Girone C",
+   "country": "Italy",
+   "markets": 63,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 268,
+   "league": "Primera División",
+   "country": "Uruguay",
+   "markets": 62,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 345,
+   "league": "Czech Liga",
+   "country": "Czech-Republic",
+   "markets": 62,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 563,
+   "league": "Ettan - Norra",
+   "country": "Sweden",
+   "markets": 62,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 772,
+   "league": "Leagues Cup",
+   "country": "World",
+   "markets": 61,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 292,
+   "league": "K League 1",
+   "country": "South-Korea",
+   "markets": 60,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 347,
+   "league": "Cup",
+   "country": "Czech-Republic",
+   "markets": 59,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 286,
+   "league": "Super Liga",
+   "country": "Serbia",
+   "markets": 57,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 10,
+   "league": "Friendlies",
+   "country": "World",
+   "markets": 56,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 293,
+   "league": "K League 2",
+   "country": "South-Korea",
+   "markets": 56,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 110,
+   "league": "Premier League",
+   "country": "Wales",
+   "markets": 55,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 265,
+   "league": "Primera División",
+   "country": "Chile",
+   "markets": 55,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 75,
+   "league": "Serie C",
+   "country": "Brazil",
+   "markets": 54,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 5,
+   "league": "UEFA Nations League",
+   "country": "World",
+   "markets": 52,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 103,
+   "league": "Eliteserien",
+   "country": "Norway",
+   "markets": 52,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 564,
+   "league": "Ettan - Södra",
+   "country": "Sweden",
+   "markets": 52,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 266,
+   "league": "Primera B",
+   "country": "Chile",
+   "markets": 51,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 525,
+   "league": "UEFA Champions League Women",
+   "country": "World",
+   "markets": 51,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 887,
+   "league": "Second League",
+   "country": "Egypt",
+   "markets": 51,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 285,
+   "league": "Cupa României",
+   "country": "Romania",
+   "markets": 50,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 173,
+   "league": "Second League",
+   "country": "Bulgaria",
+   "markets": 49,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 245,
+   "league": "Ykkönen",
+   "country": "Finland",
+   "markets": 49,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 339,
+   "league": "Liga Nacional",
+   "country": "Guatemala",
+   "markets": 49,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 164,
+   "league": "Úrvalsdeild",
+   "country": "Iceland",
+   "markets": 48,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 207,
+   "league": "Super League",
+   "country": "Switzerland",
+   "markets": 48,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 288,
+   "league": "Premier Soccer League",
+   "country": "South-Africa",
+   "markets": 47,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1020,
+   "league": "Calcutta Premier Division",
+   "country": "India",
+   "markets": 47,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 170,
+   "league": "League One",
+   "country": "China",
+   "markets": 46,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 329,
+   "league": "Meistriliiga",
+   "country": "Estonia",
+   "markets": 46,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 332,
+   "league": "Super Liga",
+   "country": "Slovakia",
+   "markets": 46,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 891,
+   "league": "Coppa Italia Serie C",
+   "country": "Italy",
+   "markets": 45,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 36,
+   "league": "Africa Cup of Nations - Qualification",
+   "country": "World",
+   "markets": 43,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 102,
+   "league": "Emperor Cup",
+   "country": "Japan",
+   "markets": 43,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 165,
+   "league": "1. Deild",
+   "country": "Iceland",
+   "markets": 43,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 287,
+   "league": "Prva Liga",
+   "country": "Serbia",
+   "markets": 43,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 304,
+   "league": "Liga Panameña de Fútbol",
+   "country": "Panama",
+   "markets": 43,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 389,
+   "league": "Premier League",
+   "country": "Kazakhstan",
+   "markets": 42,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 929,
+   "league": "League Two",
+   "country": "China",
+   "markets": 42,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 179,
+   "league": "Premiership",
+   "country": "Scotland",
+   "markets": 41,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 184,
+   "league": "League Two",
+   "country": "Scotland",
+   "markets": 40,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 244,
+   "league": "Veikkausliiga",
+   "country": "Finland",
+   "markets": 40,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 358,
+   "league": "First Division",
+   "country": "Ireland",
+   "markets": 40,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 101,
+   "league": "J-League Cup",
+   "country": "Japan",
+   "markets": 39,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 183,
+   "league": "League One",
+   "country": "Scotland",
+   "markets": 39,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 233,
+   "league": "Premier League",
+   "country": "Egypt",
+   "markets": 39,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 271,
+   "league": "NB I",
+   "country": "Hungary",
+   "markets": 39,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 315,
+   "league": "Premijer Liga",
+   "country": "Bosnia",
+   "markets": 39,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 46,
+   "league": "EFL Trophy",
+   "country": "England",
+   "markets": 38,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 920,
+   "league": "World Cup - U20 - Women",
+   "country": "World",
+   "markets": 38,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1191,
+   "league": "UEFA Europa Cup - Women",
+   "country": "World",
+   "markets": 38,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 328,
+   "league": "Esiliiga A",
+   "country": "Estonia",
+   "markets": 37,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1028,
+   "league": "CONCACAF Central American Cup",
+   "country": "World",
+   "markets": 37,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 333,
+   "league": "Premier League",
+   "country": "Ukraine",
+   "markets": 36,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 197,
+   "league": "Super League 1",
+   "country": "Greece",
+   "markets": 35,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 506,
+   "league": "2. liga",
+   "country": "Slovakia",
+   "markets": 35,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 108,
+   "league": "Cup",
+   "country": "Poland",
+   "markets": 34,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 218,
+   "league": "Bundesliga",
+   "country": "Austria",
+   "markets": 34,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 121,
+   "league": "DBU Pokalen",
+   "country": "Denmark",
+   "markets": 33,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 269,
+   "league": "Segunda División",
+   "country": "Uruguay",
+   "markets": 33,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 357,
+   "league": "Premier Division",
+   "country": "Ireland",
+   "markets": 33,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 81,
+   "league": "DFB Pokal",
+   "country": "Germany",
+   "markets": 32,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 254,
+   "league": "NWSL Women",
+   "country": "USA",
+   "markets": 32,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 850,
+   "league": "UEFA U21 Championship - Qualification",
+   "country": "World",
+   "markets": 32,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 536,
+   "league": "CONCACAF Nations League",
+   "country": "World",
+   "markets": 31,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 301,
+   "league": "Pro League",
+   "country": "United-Arab-Emirates",
+   "markets": 30,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 365,
+   "league": "Virsliga",
+   "country": "Latvia",
+   "markets": 30,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 685,
+   "league": "3. liga - CFL B",
+   "country": "Czech-Republic",
+   "markets": 30,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 327,
+   "league": "Erovnuli Liga",
+   "country": "Georgia",
+   "markets": 29,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 479,
+   "league": "Canadian Premier League",
+   "country": "Canada",
+   "markets": 29,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 871,
+   "league": "Premier League Cup",
+   "country": "England",
+   "markets": 29,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 137,
+   "league": "Coppa Italia",
+   "country": "Italy",
+   "markets": 28,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 145,
+   "league": "Challenger Pro League",
+   "country": "Belgium",
+   "markets": 28,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 243,
+   "league": "Liga Pro Serie B",
+   "country": "Ecuador",
+   "markets": 28,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 567,
+   "league": "Ligi kuu Bara",
+   "country": "Tanzania",
+   "markets": 28,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 44,
+   "league": "FA WSL",
+   "country": "England",
+   "markets": 27,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 163,
+   "league": "Liga de Ascenso",
+   "country": "Costa-Rica",
+   "markets": 27,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 348,
+   "league": "3. liga - CFL A",
+   "country": "Czech-Republic",
+   "markets": 27,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 362,
+   "league": "A Lyga",
+   "country": "Lithuania",
+   "markets": 27,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 680,
+   "league": "Cup",
+   "country": "Slovakia",
+   "markets": 27,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 131,
+   "league": "Primera B Metropolitana",
+   "country": "Argentina",
+   "markets": 26,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 13,
+   "league": "CONMEBOL Libertadores",
+   "country": "World",
+   "markets": 24,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 73,
+   "league": "Copa Do Brasil",
+   "country": "Brazil",
+   "markets": 24,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 169,
+   "league": "Super League",
+   "country": "China",
+   "markets": 24,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1087,
+   "league": "Ykkösliiga",
+   "country": "Finland",
+   "markets": 24,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 11,
+   "league": "CONMEBOL Sudamericana",
+   "country": "World",
+   "markets": 23,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 199,
+   "league": "Cup",
+   "country": "Greece",
+   "markets": 23,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 295,
+   "league": "K3 League",
+   "country": "South-Korea",
+   "markets": 23,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 510,
+   "league": "1. Liga Promotion",
+   "country": "Switzerland",
+   "markets": 22,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 922,
+   "league": "Africa Cup of Nations - Women",
+   "country": "World",
+   "markets": 22,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1075,
+   "league": "Pro League A",
+   "country": "Uzbekistan",
+   "markets": 22,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 186,
+   "league": "Ligue 1",
+   "country": "Algeria",
+   "markets": 21,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 380,
+   "league": "Premier League",
+   "country": "Hong-Kong",
+   "markets": 21,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 388,
+   "league": "1. Division",
+   "country": "Kazakhstan",
+   "markets": 21,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 803,
+   "league": "Asian Games",
+   "country": "World",
+   "markets": 21,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1104,
+   "league": "Liga 3",
+   "country": "Georgia",
+   "markets": 21,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1245,
+   "league": "Asian Games Women",
+   "country": "World",
+   "markets": 21,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 105,
+   "league": "NM Cupen",
+   "country": "Norway",
+   "markets": 20,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 310,
+   "league": "Superliga",
+   "country": "Albania",
+   "markets": 20,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 367,
+   "league": "Meistaradeildin",
+   "country": "Faroe-Islands",
+   "markets": 20,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 374,
+   "league": "2. SNL",
+   "country": "Slovenia",
+   "markets": 20,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 474,
+   "league": "2. Division - Group 2",
+   "country": "Norway",
+   "markets": 20,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 596,
+   "league": "Division 2 - Västra Götaland",
+   "country": "Sweden",
+   "markets": 20,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1113,
+   "league": "Copa Venezuela",
+   "country": "Venezuela",
+   "markets": 20,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 248,
+   "league": "Kakkonen - Lohko B",
+   "country": "Finland",
+   "markets": 19,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1156,
+   "league": "National League Cup",
+   "country": "England",
+   "markets": 19,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 17,
+   "league": "AFC Champions League Elite",
+   "country": "World",
+   "markets": 18,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 90,
+   "league": "KNVB Beker",
+   "country": "Netherlands",
+   "markets": 18,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 275,
+   "league": "Liga 2",
+   "country": "Indonesia",
+   "markets": 18,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 501,
+   "league": "Copa Paraguay",
+   "country": "Paraguay",
+   "markets": 18,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 865,
+   "league": "Liga 3",
+   "country": "Portugal",
+   "markets": 18,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 14,
+   "league": "UEFA Youth League",
+   "country": "World",
+   "markets": 17,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 247,
+   "league": "Kakkonen - Lohko A",
+   "country": "Finland",
+   "markets": 17,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 60,
+   "league": "Non League Premier - Southern South",
+   "country": "England",
+   "markets": 16,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 82,
+   "league": "Frauen Bundesliga",
+   "country": "Germany",
+   "markets": 16,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 385,
+   "league": "Toto Cup Ligat Al",
+   "country": "Israel",
+   "markets": 16,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 592,
+   "league": "Division 2 - Norra Götaland",
+   "country": "Sweden",
+   "markets": 16,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 597,
+   "league": "Division 2 - Södra Götaland",
+   "country": "Sweden",
+   "markets": 16,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 24,
+   "league": "ASEAN Championship",
+   "country": "World",
+   "markets": 15,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 134,
+   "league": "Torneo Federal A",
+   "country": "Argentina",
+   "markets": 15,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 255,
+   "league": "USL Championship",
+   "country": "USA",
+   "markets": 15,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 335,
+   "league": "Cup",
+   "country": "Ukraine",
+   "markets": 15,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 473,
+   "league": "2. Division - Group 1",
+   "country": "Norway",
+   "markets": 15,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 494,
+   "league": "Super League 2",
+   "country": "Greece",
+   "markets": 15,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 504,
+   "league": "King's Cup",
+   "country": "Saudi-Arabia",
+   "markets": 15,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 697,
+   "league": "WSL Cup",
+   "country": "England",
+   "markets": 15,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 132,
+   "league": "Primera C",
+   "country": "Argentina",
+   "markets": 14,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 212,
+   "league": "Cup",
+   "country": "Croatia",
+   "markets": 14,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 278,
+   "league": "Super League",
+   "country": "Malaysia",
+   "markets": 14,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 856,
+   "league": "CONCACAF Caribbean Club Championship",
+   "country": "World",
+   "markets": 14,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 673,
+   "league": "Liga MX Femenil",
+   "country": "Mexico",
+   "markets": 13,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 185,
+   "league": "League Cup",
+   "country": "Scotland",
+   "markets": 12,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 334,
+   "league": "Persha Liga",
+   "country": "Ukraine",
+   "markets": 12,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 359,
+   "league": "FAI Cup",
+   "country": "Ireland",
+   "markets": 12,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 594,
+   "league": "Division 2 - Norrland",
+   "country": "Sweden",
+   "markets": 12,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 672,
+   "league": "David Kipiani Cup",
+   "country": "Georgia",
+   "markets": 12,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 909,
+   "league": "MLS Next Pro",
+   "country": "USA",
+   "markets": 12,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 130,
+   "league": "Copa Argentina",
+   "country": "Argentina",
+   "markets": 11,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 142,
+   "league": "Primera División Femenina",
+   "country": "Spain",
+   "markets": 11,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 220,
+   "league": "Cup",
+   "country": "Austria",
+   "markets": 11,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 560,
+   "league": "Presidents Cup",
+   "country": "United-Arab-Emirates",
+   "markets": 11,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 775,
+   "league": "3. Division - Girone 2",
+   "country": "Norway",
+   "markets": 11,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1126,
+   "league": "Esiliiga B",
+   "country": "Estonia",
+   "markets": 11,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 249,
+   "league": "Kakkonen - Lohko C",
+   "country": "Finland",
+   "markets": 10,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 272,
+   "league": "NB II",
+   "country": "Hungary",
+   "markets": 10,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 364,
+   "league": "1. Liga",
+   "country": "Latvia",
+   "markets": 10,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 396,
+   "league": "Primera Division",
+   "country": "Nicaragua",
+   "markets": 10,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 593,
+   "league": "Division 2 - Norra Svealand",
+   "country": "Sweden",
+   "markets": 10,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 595,
+   "league": "Division 2 - Södra Svealand",
+   "country": "Sweden",
+   "markets": 10,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 777,
+   "league": "3. Division - Girone 4",
+   "country": "Norway",
+   "markets": 10,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1197,
+   "league": "FA Cup",
+   "country": "Oman",
+   "markets": 10,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 25,
+   "league": "Gulf Cup of Nations",
+   "country": "World",
+   "markets": 9,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 202,
+   "league": "Ligue 1",
+   "country": "Tunisia",
+   "markets": 9,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 273,
+   "league": "Magyar Kupa",
+   "country": "Hungary",
+   "markets": 9,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 282,
+   "league": "Segunda División",
+   "country": "Peru",
+   "markets": 9,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 874,
+   "league": "Australia Cup",
+   "country": "Australia",
+   "markets": 9,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 12,
+   "league": "CAF Champions League",
+   "country": "World",
+   "markets": 8,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 241,
+   "league": "Copa Colombia",
+   "country": "Colombia",
+   "markets": 8,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 294,
+   "league": "FA Cup",
+   "country": "South-Korea",
+   "markets": 8,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 394,
+   "league": "Super Liga",
+   "country": "Moldova",
+   "markets": 8,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 699,
+   "league": "Women's Championship",
+   "country": "England",
+   "markets": 8,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 711,
+   "league": "Segunda División",
+   "country": "Chile",
+   "markets": 8,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 779,
+   "league": "3. Division - Girone 6",
+   "country": "Norway",
+   "markets": 8,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 890,
+   "league": "U20 Elite League",
+   "country": "World",
+   "markets": 8,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 96,
+   "league": "Taça de Portugal",
+   "country": "Portugal",
+   "markets": 7,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 302,
+   "league": "League Cup",
+   "country": "United-Arab-Emirates",
+   "markets": 7,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 500,
+   "league": "FA Cup",
+   "country": "Malaysia",
+   "markets": 7,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 638,
+   "league": "Kvindeliga",
+   "country": "Denmark",
+   "markets": 7,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 705,
+   "league": "Campionato Primavera - 1",
+   "country": "Italy",
+   "markets": 7,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 742,
+   "league": "Copa Paulista",
+   "country": "Brazil",
+   "markets": 7,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 778,
+   "league": "3. Division - Girone 5",
+   "country": "Norway",
+   "markets": 7,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 300,
+   "league": "Segunda División",
+   "country": "Venezuela",
+   "markets": 6,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 326,
+   "league": "Erovnuli Liga 2",
+   "country": "Georgia",
+   "markets": 6,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 537,
+   "league": "CONCACAF U20",
+   "country": "World",
+   "markets": 6,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 776,
+   "league": "3. Division - Girone 3",
+   "country": "Norway",
+   "markets": 6,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1095,
+   "league": "USL League One Cup",
+   "country": "USA",
+   "markets": 6,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1237,
+   "league": "Central American and Caribbean Games",
+   "country": "World",
+   "markets": 6,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 20,
+   "league": "CAF Confederation Cup",
+   "country": "World",
+   "markets": 5,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 356,
+   "league": "Second League",
+   "country": "Montenegro",
+   "markets": 5,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 509,
+   "league": "8 Cup",
+   "country": "South-Africa",
+   "markets": 5,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 660,
+   "league": "WK-League",
+   "country": "South-Korea",
+   "markets": 5,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 823,
+   "league": "Nasjonal U19 Champions League",
+   "country": "Norway",
+   "markets": 5,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1140,
+   "league": "AFC Women's Champions League",
+   "country": "World",
+   "markets": 5,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 58,
+   "league": "Non League Premier - Isthmian",
+   "country": "England",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 64,
+   "league": "Feminine Division 1",
+   "country": "France",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 312,
+   "league": "1a Divisió",
+   "country": "Andorra",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 317,
+   "league": "1st League - RS",
+   "country": "Bosnia",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 368,
+   "league": "Premier League",
+   "country": "Singapore",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 398,
+   "league": "Premier League",
+   "country": "Bangladesh",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 410,
+   "league": "C-League",
+   "country": "Cambodia",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 657,
+   "league": "Cup",
+   "country": "Estonia",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 712,
+   "league": "Liga Femenina",
+   "country": "Colombia",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 780,
+   "league": "III Liga - Group 1",
+   "country": "Poland",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 802,
+   "league": "Cup",
+   "country": "Uzbekistan",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1232,
+   "league": "Copa De La Liga",
+   "country": "Peru",
+   "markets": 4,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 74,
+   "league": "Brasileiro Women",
+   "country": "Brazil",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 171,
+   "league": "FA Cup",
+   "country": "China",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 209,
+   "league": "Schweizer Cup",
+   "country": "Switzerland",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 408,
+   "league": "Premiership",
+   "country": "Northern-Ireland",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 489,
+   "league": "USL League One",
+   "country": "USA",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 549,
+   "league": "Damallsvenskan",
+   "country": "Sweden",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 569,
+   "league": "Premier League",
+   "country": "Kyrgyzstan",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 666,
+   "league": "Friendlies Women",
+   "country": "World",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 671,
+   "league": "Úrvalsdeild Women",
+   "country": "Iceland",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": false
+  },
+  {
+   "apif_league_id": 716,
+   "league": "Senior Shield",
+   "country": "Hong-Kong",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 735,
+   "league": "Copa Federacion",
+   "country": "Spain",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 756,
+   "league": "Cup",
+   "country": "Macedonia",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 815,
+   "league": "Fotbolti.net Cup A",
+   "country": "Iceland",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 924,
+   "league": "Piala Presiden",
+   "country": "Indonesia",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1016,
+   "league": "CAC Games",
+   "country": "World",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1247,
+   "league": "FIFA Asean Cup",
+   "country": "World",
+   "markets": 3,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 139,
+   "league": "Serie A Women",
+   "country": "Italy",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 257,
+   "league": "US Open Cup",
+   "country": "USA",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 401,
+   "league": "Premier Soccer League",
+   "country": "Zimbabwe",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 487,
+   "league": "First Amateur Division",
+   "country": "Belgium",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 498,
+   "league": "Cup",
+   "country": "Kazakhstan",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 633,
+   "league": "NB III - Northeast",
+   "country": "Hungary",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 658,
+   "league": "Cup",
+   "country": "Latvia",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 661,
+   "league": "Cup",
+   "country": "Lithuania",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 781,
+   "league": "III Liga - Group 2",
+   "country": "Poland",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 783,
+   "league": "III Liga - Group 4",
+   "country": "Poland",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 825,
+   "league": "Qatar Cup",
+   "country": "Qatar",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 838,
+   "league": "Super Cup",
+   "country": "Jordan",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 862,
+   "league": "3. Division",
+   "country": "Denmark",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1022,
+   "league": "Premier League - Summer Series",
+   "country": "England",
+   "markets": 2,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 147,
+   "league": "Cup",
+   "country": "Belgium",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 167,
+   "league": "Cup",
+   "country": "Iceland",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 246,
+   "league": "Suomen Cup",
+   "country": "Finland",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 276,
+   "league": "FKF Premier League",
+   "country": "Kenya",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 390,
+   "league": "Premier League",
+   "country": "Lebanon",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 436,
+   "league": "Primera División RFEF - Group 2",
+   "country": "Spain",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 526,
+   "league": "Trophée des Champions",
+   "country": "France",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 528,
+   "league": "Community Shield",
+   "country": "England",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 529,
+   "league": "Super Cup",
+   "country": "Germany",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 531,
+   "league": "UEFA Super Cup",
+   "country": "World",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 543,
+   "league": "Super Cup",
+   "country": "Netherlands",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 550,
+   "league": "Super Cup",
+   "country": "Portugal",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 619,
+   "league": "Mineiro - 2",
+   "country": "Brazil",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 635,
+   "league": "NB III - Northwest",
+   "country": "Hungary",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 656,
+   "league": "Super Cup",
+   "country": "Bulgaria",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 669,
+   "league": "1. Liga Women",
+   "country": "Czech-Republic",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 676,
+   "league": "Central Youth League",
+   "country": "Poland",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 725,
+   "league": "Toppserien",
+   "country": "Norway",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 728,
+   "league": "Liga 1 Feminin",
+   "country": "Romania",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 782,
+   "league": "III Liga - Group 3",
+   "country": "Poland",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 794,
+   "league": "3. SNL - East",
+   "country": "Slovenia",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 852,
+   "league": "Super Cup",
+   "country": "Cyprus",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 885,
+   "league": "Campeones Cup",
+   "country": "World",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 937,
+   "league": "Emirates Cup",
+   "country": "World",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 948,
+   "league": "1a Divisão - Women",
+   "country": "Portugal",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1030,
+   "league": "Goiano - 2",
+   "country": "Brazil",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1035,
+   "league": "Copa Rio",
+   "country": "Brazil",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": false,
+   "lineups": false
+  },
+  {
+   "apif_league_id": 1107,
+   "league": "Mineiro U20",
+   "country": "Brazil",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1129,
+   "league": "ASEAN Club Championship",
+   "country": "World",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1132,
+   "league": "AFC Challenge League",
+   "country": "World",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1134,
+   "league": "Amazonense - 2",
+   "country": "Brazil",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1168,
+   "league": "FIFA Intercontinental Cup",
+   "country": "World",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": true,
+   "statistics_players": true,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1178,
+   "league": "Super Copa International",
+   "country": "Argentina",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1199,
+   "league": "League Cup",
+   "country": "Hong-Kong",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1210,
+   "league": "Super Cup",
+   "country": "Greece",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  },
+  {
+   "apif_league_id": 1236,
+   "league": "Como Cup",
+   "country": "World",
+   "markets": 1,
+   "matched_gbp": 0.0,
+   "statistics_fixtures": false,
+   "statistics_players": false,
+   "lineups": true
+  }
+ ]
+}

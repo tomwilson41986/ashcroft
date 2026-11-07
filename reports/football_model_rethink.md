@@ -514,3 +514,112 @@ The rule, fixed now for that test:
 3. Close at the close, crossing the spread.
 
 It is scored once 30 match days of these books are held.
+
+## Data: a regular feed with broad coverage of our matches (6 Nov 2026)
+
+The owner wants the most advanced set of football metrics, but only from data that is a regular, updated feed with
+broad coverage of the matches we trade.
+
+**API-Football's coverage of our Betfair matches**
+
+**Source:** `football-research.yml` job `feed_coverage`, runs 42238710317 and 42239864493
+(`research/open_close/football_feed_coverage.py`). The live record covered 4-6 Nov 2026: 301 match-odds markets,
+GBP 28.2m matched.
+
+| | Share of markets | Share of money matched |
+|---|---|---|
+| Linked to an API-Football fixture | 83.7% | 98.7% |
+| The feed has events | 82.1% | 98.7% |
+| The feed has line-ups | 72.4% | 98.1% |
+| The feed has team statistics | 44.5% | 95.7% |
+| The feed has player statistics | 41.9% | 95.6% |
+| The feed has injuries | 14.6% | 85.9% |
+| Expected goals in its team statistics (one finished fixture read a league, 103 leagues) | 35.9% | 93.5% |
+| **History we held: the 22 main divisions** | **7.6%** | **3.6%** |
+
+- On the Historic Data bundle (12,730 markets, 30 Jul - 30 Sep 2026), 87.6% link and 38.2% have team statistics.
+- The Europa League and Champions League carried GBP 21.4m of the GBP 28.2m. Neither is among the 22.
+
+**Done:**
+- `sources/api_football_leagues.json` lists 361 leagues (339 beyond the 22): every league our markets linked into
+  that the feed covers with team statistics or line-ups. They are ordered by money matched.
+- `sources/api_football_history.py` fetches the 22 first, then the list in its order.
+- `source-data.yml` now fetches this history every night (this season and last), within the plan's quota. It leaves
+  1,500 of the day's 7,500 requests for the line-up collector. Before this, history was fetched only by hand.
+- The estimate is about 4,400 requests a season, so a two-season backfill takes about two nights.
+
+**Location-based metrics: our own models as a benchmark, not a feed**
+
+**Source:** `reports/football_runs/event_models.json` (`football/event_models.py`).
+- The data is the Wyscout public match events (Pappalardo et al. 2019, CC BY 4.0, which allows commercial use with
+  attribution): 3,251,294 events from 1,941 matches, 2017/18 and 2018.
+- It is one fixed release, not a feed, so it serves only as a yardstick for judging any paid feed with pitch
+  positions.
+- StatsBomb's open data is not used: its agreement forbids commercial use.
+
+**xG,** each competition predicted by a model fitted on the other six (45,287 non-penalty shots):
+
+| Model | Log loss | AUC |
+|---|---|---|
+| Base rate | 0.330 | - |
+| Distance and angle | 0.287 | 0.756 |
+| Our features (logistic regression) | 0.278 | 0.779 |
+| Our features (gradient-boosted model) | 0.278 | 0.779 |
+
+- Our features add body part, direct free kick, counter-attack, cross, through ball, set piece and rebound.
+- The model is calibrated across deciles: predicted 0.381 against 0.378 scored in the top tenth.
+- Penalties are scored at their own rate, 72.5% (of 658).
+
+**At match level:**
+- Our xG summed per side has a correlation of 0.51 with goals; shots alone have 0.32.
+- xG difference has a correlation of 0.58 with goal difference.
+- Expected threat (16 x 12 grid, value iteration) added per side has a correlation of 0.19 with goals.
+
+**Next:**
+1. The two-night backfill, then the lab rebuilt with the held history for every covered league.
+2. Re-score the cup-tie signal and the EV rule with team and player features now available for cups and UEFA
+   matches (the leagues with the money).
+3. A paid feed with pitch positions only if its coverage of our matches matches API-Football's, and its metrics beat
+   ours on the two targets.
+
+## The history backfill, and cup ties with each club's form from the feed (6 Nov 2026)
+
+**The backfill** (`source-data.yml` run 42241092940, API-Football history for the 22 divisions and the 361-league
+list, the 2025 and 2026 seasons):
+- 5,928 requests; 101,301 matches fetched.
+- It stopped at the quota floor as designed, with 1,481 requests left for the line-up collector.
+- 594 of 722 league-seasons done; the nightly fetch takes the rest.
+- Held now: 127,107 matches complete (line-ups and events); 141,046 team-statistics rows, 56,206 of them with xG.
+
+**The check** (`football-research.yml` job `cup_form_check`, run 42273275138,
+`research/open_close/football_cup_form_check.py`; rules fixed before the run):
+- Each club's mean over its last 10 matches (any competition) of shots-on-target difference, shots difference and
+  xG difference, before the match.
+- Added to the v2 rating and competition record.
+- Fitted on 2025/26 (1 Aug 2025 - 31 Jul 2026), tested on the Historic Data bundle's matches from 1 Aug 2026.
+- The first run (42271884840) was invalid: the form was joined to the wrong rows, and no test match had any. It is
+  fixed and covered by a test.
+
+| Group (test matches, share with form) | Rating-only: log loss / gap-move corr / closed at close (LTP) / a tick worse | Rating plus form: the same |
+|---|---|---|
+| Cup ties across divisions (480, 20%) | 0.885 / 0.224 / +3.8% (+0.6 to +7.1) / +0.1% | 0.897 / 0.219 / +3.5% (+0.3 to +7.0) / -0.1% |
+| Continental ties (226, 85%) | 0.999 / 0.098 / +1.3% / -2.6% | 1.000 / 0.102 / +1.5% / -2.4% |
+| League matches (7,790, 42%) | 1.016 / 0.114 / +1.3% (+0.6 to +2.2) / -1.7% | 1.014 / 0.134 / +1.6% (+0.9 to +2.6) / -1.3% |
+
+(Held to the result, every group's interval spans zero for both models.)
+
+**Read:**
+- **Form from the feed adds nothing to the cup and continental signal.**
+  - Cup ties: only 20% of the test ties (7.5% of the fitting ones) have form for both sides. The lower-division
+    clubs that make a cup tie cross divisions are the ones the feed's statistics miss, so the feature is mostly
+    empty where it matters.
+  - Continental ties: 85% have form, and still no gain. The v2 rating already holds what recent shots and xG say
+    about these clubs.
+- **In league matches it helps a little.** The rating's gap to the early price points the way the price moves more
+  strongly (0.114 to 0.134). At the traded prices the closing-price rule goes from +1.3% to +1.6%. A tick worse each
+  end it still loses (-1.3%).
+- **Nothing here clears the spread when crossing.** The leads stay as they were:
+  - the cup-tie signal, and the double chance / draw no bet lag, both with resting orders on the recorded books;
+  - the frozen EV paper trader (first scored run Tue 10 Nov).
+- **The data work stands on its own.** The feed's history now covers the leagues that carry our money, and is kept
+  current nightly once PR 268 is merged. Every later model on these matches can use it.

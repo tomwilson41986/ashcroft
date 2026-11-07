@@ -1,0 +1,156 @@
+{
+ "source": "Wyscout public match events (Pappalardo et al. 2019, CC BY 4.0)",
+ "events": 3251294,
+ "matches": 1941,
+ "xg": {
+  "shots_non_penalty": 45287,
+  "goals_non_penalty": 4629,
+  "penalties": 658,
+  "penalty_rate": 0.7249,
+  "leave_one_competition_out": {
+   "base_rate": {
+    "log_loss": 0.33,
+    "brier": 0.0918,
+    "auc": 0.4844
+   },
+   "logistic_distance_angle": {
+    "log_loss": 0.2868,
+    "brier": 0.0816,
+    "auc": 0.7558
+   },
+   "logistic_all": {
+    "log_loss": 0.2783,
+    "brier": 0.0794,
+    "auc": 0.7788
+   },
+   "gbm_all": {
+    "log_loss": 0.2777,
+    "brier": 0.0793,
+    "auc": 0.7791
+   }
+  },
+  "by_competition_gbm": {
+   "England": {
+    "log_loss": 0.2848,
+    "brier": 0.0819,
+    "auc": 0.7807
+   },
+   "European_Championship": {
+    "log_loss": 0.2333,
+    "brier": 0.0641,
+    "auc": 0.774
+   },
+   "France": {
+    "log_loss": 0.279,
+    "brier": 0.0794,
+    "auc": 0.7734
+   },
+   "Germany": {
+    "log_loss": 0.2841,
+    "brier": 0.0812,
+    "auc": 0.7769
+   },
+   "Italy": {
+    "log_loss": 0.2641,
+    "brier": 0.075,
+    "auc": 0.7882
+   },
+   "Spain": {
+    "log_loss": 0.2893,
+    "brier": 0.0836,
+    "auc": 0.7774
+   },
+   "World_Cup": {
+    "log_loss": 0.2544,
+    "brier": 0.0705,
+    "auc": 0.7739
+   }
+  },
+  "gbm_calibration_deciles": [
+   {
+    "pred": 0.0138,
+    "scored": 0.019,
+    "shots": 4529
+   },
+   {
+    "pred": 0.0215,
+    "scored": 0.0216,
+    "shots": 4529
+   },
+   {
+    "pred": 0.0283,
+    "scored": 0.0282,
+    "shots": 4535
+   },
+   {
+    "pred": 0.0387,
+    "scored": 0.0364,
+    "shots": 4527
+   },
+   {
+    "pred": 0.0524,
+    "scored": 0.0581,
+    "shots": 4525
+   },
+   {
+    "pred": 0.0713,
+    "scored": 0.0737,
+    "shots": 4529
+   },
+   {
+    "pred": 0.0972,
+    "scored": 0.0995,
+    "shots": 4532
+   },
+   {
+    "pred": 0.134,
+    "scored": 0.1335,
+    "shots": 4526
+   },
+   {
+    "pred": 0.1851,
+    "scored": 0.1743,
+    "shots": 4527
+   },
+   {
+    "pred": 0.3807,
+    "scored": 0.3779,
+    "shots": 4528
+   }
+  ],
+  "logistic_all_final": {
+   "intercept": 2.9371886867700696,
+   "coef": {
+    "dist": -1.9870545117304437,
+    "angle": 0.7488495966287995,
+    "header": -0.8280211773543431,
+    "free_kick": 0.8143000521931275,
+    "counter": 0.621372883332018,
+    "from_cross": 0.04507339522047231,
+    "from_through": 0.5385736052517337,
+    "from_set_piece": -0.4168141680834285,
+    "rebound": 0.6229345284803277
+   },
+   "note": "dist enters as log(1 + metres)"
+  }
+ },
+ "xt": {
+  "iterations": 38,
+  "shots": 45287,
+  "moves": 1691394,
+  "successful_moves": 1405847,
+  "max_cell": 0.4047,
+  "own_half_mean": 0.0113,
+  "final_third_mean": 0.0536
+ },
+ "match_level": {
+  "team_matches": 3882,
+  "goals_per_side": 1.344,
+  "xg_per_side": 1.316,
+  "corr_goals_xg": 0.5135,
+  "corr_goals_shots": 0.3187,
+  "corr_goals_xt": 0.1917,
+  "corr_gd_xgd": 0.5823,
+  "corr_gd_xtd": 0.2259
+ }
+}
