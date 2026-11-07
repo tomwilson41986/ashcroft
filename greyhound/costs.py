@@ -13,7 +13,14 @@ from __future__ import annotations
 import os
 
 COMMISSION = 0.02
-SOURCE = "the owner, 6 Nov 2026: \"it's 2%\" (the account's commission on greyhounds)"
+SOURCE = ("the owner, 6 Nov 2026: \"it's 2%\" (the account's commission on greyhounds); confirmed by Betfair, "
+          "greyhound-commission.yml run 42353884684 (7 Nov 2026): GB greyhound WIN and PLACE markets' base rate 2.0% "
+          "(no discount allowed), 2.008% of net winnings actually charged on 148 settled greyhound markets (7 Oct - "
+          "4 Nov 2026)")
+#: Australian greyhound markets (the same run): base rate 8.0%, discount allowed; the account's discount rate is 6%, so
+#: about 8% x (1 - 0.06) = 7.5% on AU winnings. Not the standard: a study or trader of AU markets must use this instead.
+AU_BASE_RATE = 0.08
+ACCOUNT_DISCOUNT = 0.06
 
 
 def commission(env=None) -> float:
