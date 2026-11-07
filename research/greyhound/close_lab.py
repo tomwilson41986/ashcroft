@@ -217,8 +217,9 @@ def fit_predict(train: pd.DataFrame, test: pd.DataFrame, spec: dict) -> np.ndarr
         model = lgb.train(params, lgb.Dataset(train[feats].astype(float), train.y - train.l_mid), m.get("rounds", 400))
         return test.l_mid.to_numpy() + model.predict(test[feats].astype(float))
     if m["kind"] == "ridge":
-        X = train[feats].astype(float).fillna(0).to_numpy()
-        Xt = test[feats].astype(float).fillna(0).to_numpy()
+        # an infinite feature (a log of a zero) left the standardisation NaN, and every forecast with it (6 Nov)
+        X = train[feats].astype(float).replace([np.inf, -np.inf], np.nan).fillna(0).to_numpy()
+        Xt = test[feats].astype(float).replace([np.inf, -np.inf], np.nan).fillna(0).to_numpy()
         mu, sd = X.mean(0), X.std(0) + 1e-9
         X, Xt = (X - mu) / sd, (Xt - mu) / sd
         X1 = np.column_stack([np.ones(len(X)), X])
