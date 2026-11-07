@@ -106,3 +106,11 @@ def test_both_targets_are_scored_and_each_has_its_champion():
     assert chw["paired"] is not None and chw["paired"]["races"] >= 20
     reg = {s["name"]: s for s in cl.load_specs()}
     assert reg["gbm_win_book"]["target"] == "win" and reg["gbm_win_book"]["hash"] != reg["gbm_book"]["hash"]
+
+
+def test_the_ridge_survives_an_infinite_feature():
+    days = {"2026-11-05": synth(1), "2026-11-06": synth(2)}
+    days["2026-11-05"].loc[0, "spn_vs_mid"] = np.inf
+    spec = {"name": "r", "registered": "2026-11-05", "features": ["sp"], "model": {"kind": "ridge", "lam": 1.0}}
+    f = cl.fit_predict(days["2026-11-05"], days["2026-11-06"], spec)
+    assert np.isfinite(f).all()

@@ -53,3 +53,33 @@ registered 6 Nov, scored walk-forward by day, and counted only on days after reg
 Betfair's projected SP is the worst of the three in every window on this day, so the bar a spec must clear is the best
 baseline (the mid here), not the projected SP. The first fresh day for the six specs is 7 Nov, scored the night of 8
 Nov.
+
+## The nightly record (both targets: 1. BFSP, 2. Win)
+
+**6 Nov** (117 races recorded, 19,800 runner-checkpoints; close lab run 42353917019, stream lab run 42353918865).
+Practice only: no result counts yet. The close-lab specs were registered on 6 Nov, so their first fresh day is 7 Nov.
+The stream-lab rules need 10 days.
+
+Close lab, fitted on 5 Nov and scored on 6 Nov:
+
+| | BFSP: RMSE log(SP), all | 60 s or less | over 180 s | Win: log loss |
+|---|---|---|---|---|
+| mid (baseline) | 0.2884 | 0.1340 | 0.4019 | 1.4904 |
+| gbm_all_small | 0.2222 | 0.1402 | 0.2847 | 1.4751 |
+| gbm_all | 0.2263 | 0.1484 | 0.2878 | 1.4719 |
+| gbm_book | 0.2568 | 0.1387 | 0.3480 | 1.4842 |
+
+- The specs gain far from the off. In the last minute the mid is already better than any spec.
+- The win-trained specs, fitted on one day, did worse than the mid on both targets.
+- ridge_all scored nothing: an infinite feature broke its standardisation. That is fixed; the spec itself is unchanged.
+
+Stream lab, 2 days pooled: no candidate on either target among 86 tests.
+
+The early-lay forward test's lays, replayed queue-aware through the stream, as a share of matched liability:
+
+| Day | Closed at the SP | Held to the result (x1 / x0.5 volume) |
+|---|---|---|
+| 5 Nov | +1.78% | -1.65% / -0.37% |
+| 6 Nov | +1.43% | +1.04% / +0.88% |
+
+The forward test's own figure on the recorder's books for 6 Nov was +1.25%.
