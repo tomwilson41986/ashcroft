@@ -39,13 +39,17 @@ def _account(client, method: str, params: dict) -> dict:
     return r.json()
 
 
-def base_rates(client) -> pd.DataFrame:
+def base_rates(client, per_call: int = 100) -> pd.DataFrame:
+    """The next 24 hours' greyhound WIN and PLACE markets with their descriptions, a country at a time and at most
+    ``per_call`` markets a call: Betfair refused 1,000 descriptions in one call (TOO_MUCH_DATA, run 42207915048)."""
     now = datetime.now(timezone.utc)
-    raw = client._api_call("listMarketCatalogue", {
-        "filter": {"eventTypeIds": [GREYHOUNDS], "marketCountries": COUNTRIES, "marketTypeCodes": ["WIN", "PLACE"],
-                   "marketStartTime": {"from": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                                       "to": (now + timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")}},
-        "marketProjection": ["EVENT", "MARKET_DESCRIPTION"], "maxResults": 1000}) or []
+    raw = []
+    for country in COUNTRIES:
+        raw += client._api_call("listMarketCatalogue", {
+            "filter": {"eventTypeIds": [GREYHOUNDS], "marketCountries": [country], "marketTypeCodes": ["WIN", "PLACE"],
+                       "marketStartTime": {"from": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                           "to": (now + timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")}},
+            "marketProjection": ["EVENT", "MARKET_DESCRIPTION"], "maxResults": per_call}) or []
     rows = []
     for m in raw:
         d, ev = m.get("description", {}) or {}, m.get("event", {}) or {}
@@ -119,10 +123,22 @@ def main(argv=None) -> int:
     from betfair_client import BetfairClient
     c = BetfairClient()
     c.login()
-    acct = _account(c, "getAccountDetails", {})
-    rates = base_rates(c)
-    cleared = cleared_markets(c)
+    errors = {}
+
+    def attempt(name, fn, empty):
+        """Each reading on its own: one Betfair refusal leaves the others standing (and is reported)."""
+        try:
+            return fn()
+        except Exception as exc:
+            errors[name] = str(exc)[:300]
+            log.warning("%s not read (%s)", name, errors[name])
+            return empty
+    acct = attempt("account", lambda: _account(c, "getAccountDetails", {}), {})
+    rates = attempt("market_base_rates", lambda: base_rates(c), pd.DataFrame())
+    cleared = attempt("settled_markets", lambda: cleared_markets(c), pd.DataFrame())
     rep = summarise(acct, rates, cleared)
+    if errors:
+        rep["errors"] = errors
     out = Path("out/commission")
     out.mkdir(parents=True, exist_ok=True)
     (out / "report.json").write_text(json.dumps(rep, indent=1, default=str))
