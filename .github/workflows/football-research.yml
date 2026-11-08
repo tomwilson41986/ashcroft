@@ -22,6 +22,7 @@ on:
           - paper_lines_scan
           - lineup_late_move
           - lineup_release
+          - close_model_books
       days:
         description: 'days of the live record to read'
         required: false
@@ -92,6 +93,11 @@ jobs:
         env:
           DAYS: ${{ inputs.days }}
         run: python -m research.open_close.football_lineup_release --days "$DAYS" --out out/lineup_release.json
+      - name: The closing-line model on the recorded books, and the spread-aware gate
+        if: inputs.job == 'close_model_books'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_close_model_books --days "$DAYS" --out out/close_model_books.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
