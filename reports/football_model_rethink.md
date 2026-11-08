@@ -623,3 +623,60 @@ list, the 2025 and 2026 seasons):
   - the frozen EV paper trader (first scored run Tue 10 Nov).
 - **The data work stands on its own.** The feed's history now covers the leagues that carry our money, and is kept
   current nightly once PR 268 is merged. Every later model on these matches can use it.
+
+## Every strategy so far, and the bar a closing-line model must clear (8 Nov 2026)
+
+The owner: "Evaluate all possible strategies. Any profitable so far? Any edge." Then: "improving our closing line
+model ... a profitable, automated, trading solution".
+
+**The real cost, measured at the recorded books** (`football-research.yml` job `paper_lines_scan`, run 42462237480,
+`research/open_close/football_paper_lines_scan.py`):
+- The paper book, 4-8 Nov 2026: 2,517 markets, 39,138 lines.
+- Only tradable lines are counted: entry spread at most 3 ticks, a two-sided close (lay within 5% of back), price at
+  most 20. Untradable books at the close (a 1.01 back against a 1,000 lay) otherwise turn a GBP1 lay into thousands
+  of per cent: the unfiltered first run, 42462017662, is not usable.
+
+**How much of the record a trader can use:**
+
+| Market | Tradable share | Median spread | Median back depth |
+|---|---|---|---|
+| Match odds | 38% | 3 ticks | GBP 219 |
+| Over/under 2.5 | 31% | 4 ticks | GBP 236 |
+| Double chance | 6% | 7 ticks | GBP 80 |
+| Draw no bet | 6% | 8 ticks | GBP 71 |
+
+**The unconditional cost of a trade closed at the close (tradable lines, after 2% commission):**
+
+| Entry | Back | Lay |
+|---|---|---|
+| Crossing the spread (2,939 lines each side) | -2.26% (-2.38 to -2.15) | -2.58% (-2.73 to -2.44) |
+| Resting one tick inside (85-89% filled) | -1.54% (-1.89 to -1.20) | -2.32% (-2.73 to -1.95) |
+
+- Every match day sits in the same range (-1.9% to -2.9% crossing).
+- Resting saves under a point: its fills are adversely selected. They come mostly when the price is about to move
+  through the order.
+- **The bar:** a selection is worth trading only when its forecast move to the close beats about 2.3% crossing, or
+  1.5-2.3% resting.
+
+**Every strategy tested to date:**
+
+| Strategy | Target 1: closing price | Target 2: held to the result | Verdict |
+|---|---|---|---|
+| EV rule (model move > 2% after costs), football-data snapshots | +2.3% (2024/25), +1.0% (2025/26), a tick off fair | loses (the bank fell 50-99% in simulation) | best lead; forward test from Tue 10 Nov |
+| EV rule on Betfair's Aug-Sep 2026 traded prices | +3.2% at the traded price; +0.7% a tick worse each end (interval below zero) | - | edge about the size of the spread |
+| Stacked move rule (strongest 5 a week, outside the top five) | +2.0% / +2.6% a tick off fair (2025/26, about 100 variants read) | - | in forward trial |
+| Cup ties, cross-league rating | +3.8% at LTP; +0.1% a tick worse | +11%, interval -21% to +55% | lead, not tradable crossing |
+| Continental ties, cross-league rating | +1.3%; -2.6% a tick worse | -13% | no |
+| League matches, cross-league rating | +1.3%; -1.7% | -4% | no |
+| Club form from the feed added (cups, UEFA, leagues) | no gain in cups or UEFA; +0.3 points in leagues | no gain | no |
+| Massey rating | no gain on the price path | - | no |
+| 656 model-free price rules (momentum, fade, price bands) | none confirmed on the second half | none | no |
+| Double chance / draw no bet lag (match odds leads) | +3.3% on last traded prices; **-2.2% to -2.7% at the real books** | no | dead: stale prices |
+| Every paper-book cell (46 tradable cells) | all below zero greened | one cell above zero held (over/under lay at 60 min, 92 lines), noise at 46 cells | no |
+
+**Read:**
+- **No strategy is profitable yet.**
+- **The EV rule is the only lead whose edge is larger than zero after a realistic cost on two seasons.** Its forward
+  test starts with the recorded books (first scored run Tue 10 Nov).
+- **The binding constraint is cost, not signal.** The round trip is about 2.3%, and our best forecasts are worth 2-4%
+  of price before it.
