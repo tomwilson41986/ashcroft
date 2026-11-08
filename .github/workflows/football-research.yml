@@ -19,6 +19,7 @@ on:
           - cross_market
           - feed_coverage
           - cup_form_check
+          - paper_lines_scan
       days:
         description: 'days of the live record to read'
         required: false
@@ -76,6 +77,11 @@ jobs:
       - name: Cup and European ties with each club's form from the feed (closing price and winning the bet)
         if: inputs.job == 'cup_form_check'
         run: python -m research.open_close.football_cup_form_check --out out/cup_form_check.json
+      - name: Every strategy the paper book scores at the recorded books (crossing, resting, both targets)
+        if: inputs.job == 'paper_lines_scan'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_paper_lines_scan --days "$DAYS" --out out/paper_lines_scan.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
