@@ -756,3 +756,45 @@ The first scored run is Tuesday 10 Nov.
   trade it.** A line-up trader needs the team sheets at release (about an hour before kick-off), from a faster
   source than API-Football.
 - Until then, line-up news stays where the move model already has it: the expected eleven, known at the early price.
+
+## Closing-line model on the recorded books, first read (8 Nov 2026)
+
+**Source:** `football-research.yml` job `close_model_books`, run 42481445610
+(`research/open_close/football_close_model_books.py`).
+
+**Data and method:**
+- 1,574 rows: every tradable match-odds and over/under 2.5 checkpoint (24 h, 6 h, 2 h, 60 min, 15 min) of 515
+  markets, 4-8 Nov.
+- Features: book only (spread, depth, imbalance, overround, drift so far).
+- Target: the move of the mid chance to the close.
+- LightGBM, walk-forward by match day: 937 rows scored, on 7-8 Nov.
+
+**Results:**
+- The forecast does not yet track the move: correlation 0.009, out-of-sample R2 -0.15. By checkpoint it ranges
+  from 0.20 at 60 minutes to -0.25 at 6 hours, on a few hundred rows each.
+- Trades closed at the close crossing, after commission:
+
+| Entry rule | Trades | Return |
+|---|---|---|
+| Spread-aware gate (forecast beats the book's own round trip) | 109 | -2.35% (-3.35 to -1.42) |
+| The older flat-tick gate | 472 | -2.70% (-3.18 to -2.23) |
+| Every tradable line in those days | 1,874 | -2.59% (-2.70 to -2.48) |
+
+**Read:**
+- The spread-aware gate already does what it is for: it trades a quarter as often as the flat-tick gate and loses
+  less.
+- With five days and book features alone there is no forecast skill: these returns are the cost of the round trip,
+  not an edge. That is expected. The book's own path carried nothing in the 656-rule scan either.
+- The skill has to come from the fundamentals: our fair price, team news, the cross-league rating.
+- **Next for the model:** join each recorded checkpoint to our model's fair price (the EV model's forecast, the lab
+  features for the 22 divisions) and train on both.
+- The scorer runs with every trials job (Tuesday and Friday, `football-trials.yml`), so the training set grows
+  every week.
+
+**Faster line-ups:**
+- Sportmonks says its line-ups arrive 60-75 minutes before kick-off, with a confirmed-or-predicted flag; API-Football
+  says 20-40 minutes, and we measured 28.
+- These are vendor claims, with no independent timing test found.
+- Sportmonks' free plan reportedly covers the Danish Superliga and the Scottish Premiership, both of which we
+  record. That is enough to measure its real release times against the Betfair price move, at no cost, once the
+  owner opens an account and adds its key as a repository secret.
