@@ -735,3 +735,24 @@ The first scored run is Tuesday 10 Nov.
    that moment), not a flat tick.
 4. **The recorded books as training data:** retrain the move model on recorded checkpoints, with book features
    (spread, depth imbalance, drift so far), as weeks of records build up.
+
+**Line-up release at the recorded books** (`football-research.yml` job `lineup_release`, run 42464673010,
+`research/open_close/football_lineup_release.py`):
+- The stored line-up tables are only rebuilt at the end of a full football-trade.yml day, and the cancelled days had
+  left them behind. They were rebuilt here from the collector's raw replies, in memory: 2,815 polls, 105 matches,
+  90 with both elevens, 3-8 Nov.
+- **API-Football has the elevens about 28 minutes before kick-off,** every match (10th-90th percentile 27.7-28.7
+  minutes).
+- That is half an hour after the official team sheets (about 60-75 minutes before kick-off), and after the market has
+  priced them. The Historic Data read above shows the line-up move is spent by 15 minutes.
+- At the books, 86 matches:
+  - the surprise's correlation with the move from release to close is -0.03 (after entry: -0.01);
+  - backing the favoured side at the release (median 2.9 minutes after it) and closing at the close: -2.5% (49 bets,
+    12% right way) and -3.6% (13 bets);
+  - small numbers, but no sign of a move left to take.
+
+**Read:**
+- The line-up signal is real (60 minutes to the close, both months), but **our feed brings the elevens too late to
+  trade it.** A line-up trader needs the team sheets at release (about an hour before kick-off), from a faster
+  source than API-Football.
+- Until then, line-up news stays where the move model already has it: the expected eleven, known at the early price.
