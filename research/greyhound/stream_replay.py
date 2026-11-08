@@ -237,7 +237,10 @@ class SimOrder:
         self.last_trd = r.trd.get(self.price, 0.0)
         self.last_through = self._through(r)
 
-    def update(self, r: Runner, t: datetime, vol_factor: float = 1.0) -> None:
+    def update(self, r: Runner, t: datetime, vol_factor: float = 1.0, through_cap: bool = False) -> None:
+        """Trades at our price clear the queue, then fill us; a trade beyond our price fills the rest at once
+        (``through_cap`` False), or only up to the money traded beyond it (True: the conservative reading for large
+        orders, whose remainder may exceed what crossed)."""
         if self.done or not self.placed or self.remaining <= 0:
             return
         now_trd = r.trd.get(self.price, 0.0)
@@ -250,7 +253,8 @@ class SimOrder:
         through = self._through(r)
         if through > self.last_through + 1e-9 and self.remaining > 0:   # traded beyond our price: we went first
             self.via_through = True
-            self._fill(self.remaining, self.price, t)
+            crossed = (through - self.last_through) * vol_factor
+            self._fill(min(self.remaining, crossed) if through_cap else self.remaining, self.price, t)
         self.last_through = through
         shown = (r.atb if self.side == "LAY" else r.atl).get(self.price, 0.0)
         self.queue_ahead = min(self.queue_ahead, shown)
@@ -280,7 +284,7 @@ def close_pnl(o: SimOrder, r: Runner | None, sp: float | None, comm: float = 0.0
 
 
 def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: float = 1.0,
-           comm: float = 0.0) -> pd.DataFrame:
+           comm: float = 0.0, through_cap: bool = False) -> pd.DataFrame:
     """Run the orders through the recorded stream; one row an order with its fill and its close."""
     markets: dict = {}
     pending = sorted(orders, key=lambda o: o.t)
@@ -329,7 +333,7 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
                     o.place(r, t)
                 continue
             if o.sid in changed:
-                o.update(r, t, vol_factor)
+                o.update(r, t, vol_factor, through_cap)
     for o in pending:                                       # never reached its close in the recorded stream
         if not o.done:
             m = markets.get(o.market)
