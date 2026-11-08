@@ -20,6 +20,7 @@ on:
           - feed_coverage
           - cup_form_check
           - paper_lines_scan
+          - lineup_late_move
       days:
         description: 'days of the live record to read'
         required: false
@@ -82,6 +83,9 @@ jobs:
         env:
           DAYS: ${{ inputs.days }}
         run: python -m research.open_close.football_paper_lines_scan --days "$DAYS" --out out/paper_lines_scan.json
+      - name: Line-up news and Betfair's late move (the closing-line model's team-news input)
+        if: inputs.job == 'lineup_late_move'
+        run: python -m research.open_close.football_lineup_late_move --out out/lineup_late_move.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
