@@ -76,7 +76,7 @@ jobs:
           python -m research.open_close.football_stack_resting score --cache .football_cache --root src --out-json out/football_stack_resting.json
       - name: The closing-line model on the recorded books (walk-forward by day, spread-aware gate; grows weekly)
         continue-on-error: true
-        run: python -m research.open_close.football_close_model_books --days 60 --out out/football_close_model_books.json
+        run: python -m research.open_close.football_close_model_books --days 60 --root src --cache .football_cache --models models/football/ev_v1 --out out/football_close_model_books.json
       - name: Keep the scores (S3 and the run's artifact)
         if: ${{ !cancelled() }}
         run: |

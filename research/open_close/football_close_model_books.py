@@ -40,8 +40,14 @@ CHECKPOINTS = (1440.0, 360.0, 120.0, 60.0, 15.0)
 TYPES = ("MATCH_ODDS", "OVER_UNDER_25")
 COMMISSION = 0.02
 MIN_TRAIN_DAYS = 2
-FEATURES = ["checkpoint_min", "minutes_to_off", "q_mid", "spread_ticks", "spread_rel", "book_over", "log_depth_back",
-            "log_depth_lay", "imbalance", "drift_since_first", "drift_since_prev", "is_match_odds", "leg_code"]
+BOOK_FEATURES = ["checkpoint_min", "minutes_to_off", "q_mid", "spread_ticks", "spread_rel", "book_over",
+                 "log_depth_back", "log_depth_lay", "imbalance", "drift_since_first", "drift_since_prev",
+                 "is_match_odds", "leg_code"]
+#: our model's view of the match (the frozen EV model's forecast move of the leg's chance from the early collection
+#: to the close; match odds home and away of the 22 divisions, else missing), and how much of it the book has
+#: already made since its first recorded checkpoint
+MODEL_FEATURES = ["model_move", "model_move_left"]
+FEATURES = BOOK_FEATURES
 
 
 def _leg(market_type: str, runner: str, event: str) -> int:
@@ -78,7 +84,42 @@ def build(df: pd.DataFrame) -> pd.DataFrame:
     return c.dropna(subset=["y"])
 
 
-def walk_forward(rows: pd.DataFrame) -> pd.DataFrame:
+def add_model(rows: pd.DataFrame, cache: str, models: str, store) -> tuple[pd.DataFrame, dict]:
+    """Each match-odds row of the 22 divisions joined to the frozen EV model's forecast for its leg."""
+    from football.data import load_gold
+    from football.reference import load_aliases
+    from research.open_close import football_ev_trial as ev
+    from research.open_close import football_improve as fi
+    from research.open_close.football_paper_trial import map_markets
+    d, _ = fi.load(cache, ev.SPEC)
+    days = sorted(rows["day"].unique())
+    d = d[(d["match_date"] >= min(days)) & (d["match_date"] <= max(days))]
+    info = {"lab_matches_in_window": int(len(d))}
+    if d.empty:
+        return rows.assign(model_move=np.nan, model_move_left=np.nan), info
+    pred = ev.predict(models, d)
+    gold = load_gold(store).drop_duplicates("match_id").set_index("match_id")
+    fix = pd.DataFrame({"match_id": d["match_id"].unique()})
+    for col, src in (("HomeTeam", "home_team"), ("AwayTeam", "away_team"), ("country", "country"),
+                     ("kickoff_utc", "kickoff_utc")):
+        fix[col] = fix["match_id"].map(gold[src])
+    mk = rows[rows["market_type"] == "MATCH_ODDS"].drop_duplicates(["market_id", "selection_id"]).rename(
+        columns={"event": "event_name", "runner": "runner_name", "kickoff_utc": "market_start_utc"})
+    aliases = load_aliases(extra=store.get_parquet("football/gold/team_aliases.parquet"))
+    mp = map_markets(mk[["market_id", "selection_id", "market_type", "event_name", "runner_name", "country",
+                         "market_start_utc"]], fix, aliases)
+    mp = mp.merge(pred, on="match_id")
+    mp["model_move"] = np.where(mp["leg"] == "H", mp["chance_h"], np.where(mp["leg"] == "A", mp["chance_a"], np.nan))
+    rows = rows.copy()
+    rows["selection_id"] = rows["selection_id"].astype(str)
+    mp["selection_id"] = mp["selection_id"].astype(str)
+    rows = rows.merge(mp[["market_id", "selection_id", "model_move"]], on=["market_id", "selection_id"], how="left")
+    rows["model_move_left"] = rows["model_move"] - rows["drift_since_first"]
+    info["rows_with_model"] = int(rows["model_move"].notna().sum())
+    return rows, info
+
+
+def walk_forward(rows: pd.DataFrame, features: list[str] = FEATURES) -> pd.DataFrame:
     from lightgbm import LGBMRegressor
     days = sorted(rows["day"].unique())
     out = []
@@ -90,8 +131,8 @@ def walk_forward(rows: pd.DataFrame) -> pd.DataFrame:
             continue
         m = LGBMRegressor(n_estimators=300, learning_rate=0.03, num_leaves=15, min_child_samples=40, subsample=0.8,
                           subsample_freq=1, colsample_bytree=0.9, verbose=-1)
-        m.fit(tr[FEATURES], tr["y"])
-        out.append(te.assign(y_hat=m.predict(te[FEATURES])))
+        m.fit(tr[features], tr["y"])
+        out.append(te.assign(y_hat=m.predict(te[features])))
     return pd.concat(out) if out else pd.DataFrame()
 
 
@@ -129,13 +170,23 @@ def gate(p: pd.DataFrame, lines: pd.DataFrame, cost: str) -> dict:
     return out
 
 
-def run(df: pd.DataFrame) -> dict:
+def run(df: pd.DataFrame, cache: str | None = None, models: str | None = None, store=None) -> dict:
     if df.empty:
         return {"status": "no paper lines found"}
     rows = build(df)
     out = {"rows": int(len(rows)), "days": sorted(rows["day"].unique()) if len(rows) else [],
            "markets": int(rows["market_id"].nunique()) if len(rows) else 0}
-    p = walk_forward(rows)
+    features = BOOK_FEATURES
+    if cache and models and len(rows):
+        rows, info = add_model(rows, cache, models, store)
+        out["model_join"] = info
+        features = BOOK_FEATURES + MODEL_FEATURES
+        mm = rows.dropna(subset=["model_move"])
+        if len(mm) > 30:
+            out["corr_model_move_with_move_to_close"] = round(float(np.corrcoef(mm["model_move_left"], mm["y"])[0, 1]),
+                                                              4)
+    out["features"] = features
+    p = walk_forward(rows, features)
     if p.empty:
         out["status"] = f"too few days to walk forward (needs {MIN_TRAIN_DAYS} to train)"
         return out
@@ -161,10 +212,13 @@ def main(argv=None) -> int:
     from sources.common import Store
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--days", type=int, default=30)
-    ap.add_argument("--root", default=None)
+    ap.add_argument("--root", default=None, help="where the gold table is read (the paper lines always from S3)")
+    ap.add_argument("--cache", default=None, help="the lab cache: joins the frozen EV model's forecast (with --models)")
+    ap.add_argument("--models", default=None)
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
-    res = run(load(Store(root=a.root), a.days))
+    # the paper lines live with the feed's record in S3; the gold table may be a local copy (--root)
+    res = run(load(Store(), a.days), a.cache, a.models, Store(root=a.root))
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text(json.dumps(res, indent=1, default=str) + "\n")
     print(json.dumps(res, indent=1, default=str))
