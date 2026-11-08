@@ -21,6 +21,7 @@ on:
           - cup_form_check
           - paper_lines_scan
           - lineup_late_move
+          - lineup_release
       days:
         description: 'days of the live record to read'
         required: false
@@ -86,6 +87,11 @@ jobs:
       - name: Line-up news and Betfair's late move (the closing-line model's team-news input)
         if: inputs.job == 'lineup_late_move'
         run: python -m research.open_close.football_lineup_late_move --out out/lineup_late_move.json
+      - name: Line-up release at the recorded books (the move from the elevens' release, at real spreads)
+        if: inputs.job == 'lineup_release'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_lineup_release --days "$DAYS" --out out/lineup_release.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
