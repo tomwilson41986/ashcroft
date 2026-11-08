@@ -38,6 +38,42 @@ COMMISSION = 0.02
 N_PREV = 5
 
 
+class Overlay:
+    """Reads the store; keeps writes in memory (the line-up tables rebuilt here never touch S3)."""
+
+    def __init__(self, store):
+        self.store, self.mem = store, {}
+
+    def listing(self, prefix):
+        return self.store.listing(prefix)
+
+    def get(self, key):
+        return self.mem[key] if key in self.mem else self.store.get(key)
+
+    def put(self, key, data):
+        self.mem[key] = data
+
+    def put_parquet(self, key, df):
+        import io
+        buf = io.BytesIO()
+        df.to_parquet(buf, index=False)
+        self.mem[key] = buf.getvalue()
+
+    def get_parquet(self, key):
+        import io
+        raw = self.get(key)
+        return None if raw is None else pd.read_parquet(io.BytesIO(raw))
+
+
+def lineup_tables(store) -> tuple[pd.DataFrame | None, pd.DataFrame | None, dict]:
+    """The line-up tables rebuilt from the collector's raw replies (the stored tables are only rebuilt at the end of
+    a full football-trade.yml day, so a cancelled day leaves them behind)."""
+    from sources.api_football_lineups import build
+    ov = Overlay(store)
+    rep = build(ov)
+    return ov.get_parquet("api_football/lineup_times.parquet"), ov.get_parquet("api_football/lineups.parquet"), rep
+
+
 def gpm_ratings(store, as_of: pd.Timestamp) -> dict:
     from football import player_ratings as pr
     hp = store.get_parquet("api_football/history_players.parquet")
@@ -122,8 +158,7 @@ def price_series(m: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
 def run(store, days: int, today: date | None = None) -> dict:
     from research.open_close.football_feed_coverage import link
     today = today or date.today()
-    times = store.get_parquet("api_football/lineup_times.parquet")
-    lineups = store.get_parquet("api_football/lineups.parquet")
+    times, lineups, rebuild = lineup_tables(store)
     if times is None or lineups is None or times.empty:
         return {"status": "no data found (api_football line-up tables)"}
     dlist = [(today - timedelta(days=i)).isoformat() for i in range(days)]
@@ -133,7 +168,7 @@ def run(store, days: int, today: date | None = None) -> dict:
     ratings, hp, hdates = gpm_ratings(store, pd.Timestamp(min(dlist)).replace(day=1))
     s = surprise_now(lineups, times, hp, hdates, ratings)
     m, b = books_for(store, dlist)
-    out = {"days": dlist[::-1], "lineups_collected": int(times["first_seen_utc"].notna().sum()),
+    out = {"rebuild": rebuild, "days": dlist[::-1], "lineups_collected": int(times["first_seen_utc"].notna().sum()),
            "with_surprise": int(len(s)), "players_rated": len(ratings),
            "release_minutes_before_off": {q: round(float(times["minutes_before_ko"].dropna().quantile(q)), 1)
                                           for q in (0.1, 0.5, 0.9)} if times["minutes_before_ko"].notna().any()
