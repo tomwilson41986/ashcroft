@@ -680,3 +680,58 @@ model ... a profitable, automated, trading solution".
   test starts with the recorded books (first scored run Tue 10 Nov).
 - **The binding constraint is cost, not signal.** The round trip is about 2.3%, and our best forecasts are worth 2-4%
   of price before it.
+
+## Closing-line model: line-up news and the late move (8 Nov 2026)
+
+**Source:** `football-research.yml` job `lineup_late_move`, run 42463318516
+(`research/open_close/football_lineup_late_move.py`; rules fixed before the run).
+- The first run (42462495893) stopped on fixtures whose line-ups tag both teams with one side; those are left out.
+
+**Data:**
+- Betfair match odds from the Historic Data bundle (12,437 markets, 30 Jul - 30 Sep 2026), at 24 h, 60 and 15 minutes
+  before the off and at the close.
+- 8,473 linked to an API-Football fixture; 3,190 have a line-up surprise and a full price path.
+- The surprise: the confirmed eleven's goals plus-minus less the expected eleven's, home less away.
+- Ratings were refitted monthly on earlier matches only: 813,148 stints, about 120,000 players rated.
+
+**Does the surprise point the way the price moves?** (the price is the home side's log chance ratio)
+
+| Move | Correlation with the surprise | Slope (95% interval) |
+|---|---|---|
+| Early: 24 h to 60 min | 0.069 | 0.094 (0.043 to 0.147) |
+| **Late: 60 min to the close** | **0.099** | **0.100 (0.065 to 0.134)**; 0.103 given the early move |
+| Last: 15 min to the close | 0.026 | - |
+
+**Trades** (back the side the surprise favours, closed at the close):
+
+| At | Surprise above | Bets | At the last traded prices | A tick worse each end |
+|---|---|---|---|---|
+| 60 min | 0.1 | 1,464 | +0.5% (0.0 to +0.9) | -2.2% |
+| **60 min** | **0.2** | **557** | **+1.4% (+0.6 to +2.2); Aug +1.6%, Sep +1.2%** | -1.4% |
+| 15 min | 0.1 | 1,464 | -0.4% | -3.0% |
+| 15 min | 0.2 | 557 | -0.3% | -3.0% |
+
+**Read:**
+- **Line-up news is real signal the market prices late.** The surprise predicts the move from 60 minutes to the
+  close, in both months, and beyond the early move. Part of it is already in the price by 60 minutes (the early
+  slope), and it is gone by 15 minutes: the market absorbs the line-ups within the hour.
+- **At the 60-minute mark it is too small for the spread.** +1.4% at traded prices, -1.4% paying a tick each way.
+  The bar measured at the recorded books is about 2.3%.
+- **The timing is the opportunity.** The line-ups come out about 60-75 minutes before the off. The 60-minute mark is
+  already after part of the reaction. A trader acting within a minute or two of the release catches more of the move.
+  The line-up collector records when each eleven is confirmed, and the feed records the books every minute near the
+  off, so that move can be measured from now on.
+
+**The forward trials:** the scheduled run of 8 Nov (42461905728) reports "no matches in the window yet" for all
+three. The window opened Friday 6 Nov, and the lab only holds those matches once their football-data rows arrive.
+The first scored run is Tuesday 10 Nov.
+
+**The closing-line model, next:**
+1. **Line-up timing:** measure the move from each confirmed eleven to the close at the recorded books, and the price
+   available within 1-2 minutes of the release. Pre-register a line-up trader if the move clears the bar.
+2. **Surprise as a feature:** add the expected-eleven and surprise features to the move model's late horizon (60
+   minutes and nearer). The early horizon already has the expected eleven (team news).
+3. **A spread-aware gate:** trade only where expected value beats each book's own round trip (spread and depth at
+   that moment), not a flat tick.
+4. **The recorded books as training data:** retrain the move model on recorded checkpoints, with book features
+   (spread, depth imbalance, drift so far), as weeks of records build up.
