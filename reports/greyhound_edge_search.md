@@ -83,3 +83,33 @@ The early-lay forward test's lays, replayed queue-aware through the stream, as a
 | 6 Nov | +1.43% | +1.04% / +0.88% |
 
 The forward test's own figure on the recorder's books for 6 Nov was +1.25%.
+
+**7 Nov.** 121 races and 20,190 runner-checkpoints in the close lab (run 42428569854). The stream lab read 514,487 stream lines and 250 markets (run 42428572199). This was the close-lab specs' first fresh day.
+
+- **The BFSP champion changed (the pre-registered bar cleared).** gbm_all_small replaces the mid.
+  - Paired gain in squared error of log(SP): 0.0415 (90% interval 0.032 to 0.051), over 121 races.
+  - RMSE: 0.2247 against the mid's 0.3030 overall, and 0.1365 against 0.1404 at 60 s or less.
+  - This is one fresh day, and the champion is re-tested every night.
+- **Win: the mid stays champion.** The best challenger, gbm_book, gained -0.0015 (90% interval -0.0072 to +0.0042).
+- **Close lab, 7 Nov (fitted on 5-6 Nov):**
+
+  | | BFSP: RMSE log(SP), all | 60 s or less | over 180 s | Win: log loss |
+  |---|---|---|---|---|
+  | gbm_all_small | 0.2247 | 0.1365 | 0.2945 | 1.5120 |
+  | gbm_all | 0.2295 | 0.1407 | 0.2993 | 1.5122 |
+  | mid | 0.3030 | 0.1404 | 0.4280 | 1.5095 |
+  | ltp | 0.3200 | 0.1405 | 0.4554 | 1.5180 |
+
+- **Stream lab, 3 days pooled:** no candidate among 86 tests.
+- **The forward test's lays, 7 Nov** (queue-aware, as a share of matched liability):
+  - closed at the SP: +0.71% (x1) and +0.64% (x0.5);
+  - held to the result: -1.50% (x1) and -2.11% (x0.5).
+  - Its own figure was +0.96%.
+
+**Registered 8 Nov: the trade test on the champion's forecast** (research/greyhound/close_lab.py, `trade_rules`).
+Does the price on offer lag gbm_all_small's forecast of the SP? The rules are fixed:
+- At 60, 30 and 10 s out, back at the best back price when it is more than m above the forecast SP, and lay at the best lay price when it is more than m below. GBP2 or more must be shown.
+- m is 3%, 6% or 10%.
+- Each trade is scored closed at the SP and also held to the result, with 2% commission on a gain.
+
+That makes 18 rules and 36 tests. Only days after 8 Nov count. A rule is a candidate on a target after 10 days with its 90% lower bound (bootstrap over races) above zero.

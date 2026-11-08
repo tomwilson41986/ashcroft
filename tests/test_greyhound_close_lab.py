@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
+import pytest
 import pandas as pd
 
 from research.greyhound import close_lab as cl
@@ -114,3 +115,17 @@ def test_the_ridge_survives_an_infinite_feature():
     spec = {"name": "r", "registered": "2026-11-05", "features": ["sp"], "model": {"kind": "ridge", "lam": 1.0}}
     f = cl.fit_predict(days["2026-11-05"], days["2026-11-06"], spec)
     assert np.isfinite(f).all()
+
+
+def test_the_trade_rules_read_the_forecast_and_count_only_fresh_days():
+    d = pd.DataFrame({"market": ["m1", "m1", "m2"], "secs": [60, 60, 30], "y": np.log([5.0, 2.0, 4.0]),
+                      "b1": [6.0, 2.0, 4.0], "bs1": [10.0, 10.0, 10.0], "l1": [6.2, 2.02, 3.0], "ls1": [10.0, 10.0, 10.0],
+                      "won": [0, 1, 1]})
+    d["e_gbm_all_small"] = 0.0                                           # forecast = the SP itself
+    tr = cl.trade_rules({"2026-11-09": d}, comm=0.0)
+    back = tr[tr.rule == "back_60_0.03"]                                 # 6.0 offered against a forecast of 5.0
+    assert len(back) == 1 and back.pnl_sp.iloc[0] == pytest.approx(6.0 / 5.0 - 1) and back.pnl_win.iloc[0] == -1.0
+    lay = tr[tr.rule == "lay_30_0.1"]                                    # 3.0 to lay against a forecast of 4.0
+    assert len(lay) == 1 and lay.pnl_sp.iloc[0] == pytest.approx(1 - 3.0 / 4.0) and lay.pnl_win.iloc[0] == -2.0
+    assert cl.trade_scores(tr.assign(day="2026-11-08")).empty                 # the registration day itself never counts
+    assert set(cl.trade_scores(tr).rule) >= {"back_60_0.03", "lay_30_0.1"}
