@@ -798,3 +798,13 @@ The first scored run is Tuesday 10 Nov.
 - Sportmonks' free plan reportedly covers the Danish Superliga and the Scottish Premiership, both of which we
   record. That is enough to measure its real release times against the Betfair price move, at no cost, once the
   owner opens an account and adds its key as a repository secret.
+
+**With our model's forecast joined** (`football-trials.yml` run 42483643138; the first try, 42481887157, stopped on a
+selection-id type mismatch, now fixed with a test):
+- The join runs, but has nothing to join yet: the lab holds 5 matches in 4-8 Nov, and none link to a recorded
+  market.
+- The lab takes its matches from football-data.co.uk's rows. The weekend's rows arrive after the matches (usually by
+  Monday), so the Tuesday trials run is the first that can join them.
+- Until then the model is the book-only one: 1,588 rows, correlation 0.010, the spread-aware gate -2.35% on 109
+  trades, every line -2.59%.
+- From Tuesday on, each trials run (Tuesday and Friday) adds the week's matches with the model's forecast.
