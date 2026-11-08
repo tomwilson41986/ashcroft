@@ -623,3 +623,188 @@ list, the 2025 and 2026 seasons):
   - the frozen EV paper trader (first scored run Tue 10 Nov).
 - **The data work stands on its own.** The feed's history now covers the leagues that carry our money, and is kept
   current nightly once PR 268 is merged. Every later model on these matches can use it.
+
+## Every strategy so far, and the bar a closing-line model must clear (8 Nov 2026)
+
+The owner: "Evaluate all possible strategies. Any profitable so far? Any edge." Then: "improving our closing line
+model ... a profitable, automated, trading solution".
+
+**The real cost, measured at the recorded books** (`football-research.yml` job `paper_lines_scan`, run 42462237480,
+`research/open_close/football_paper_lines_scan.py`):
+- The paper book, 4-8 Nov 2026: 2,517 markets, 39,138 lines.
+- Only tradable lines are counted: entry spread at most 3 ticks, a two-sided close (lay within 5% of back), price at
+  most 20. Untradable books at the close (a 1.01 back against a 1,000 lay) otherwise turn a GBP1 lay into thousands
+  of per cent: the unfiltered first run, 42462017662, is not usable.
+
+**How much of the record a trader can use:**
+
+| Market | Tradable share | Median spread | Median back depth |
+|---|---|---|---|
+| Match odds | 38% | 3 ticks | GBP 219 |
+| Over/under 2.5 | 31% | 4 ticks | GBP 236 |
+| Double chance | 6% | 7 ticks | GBP 80 |
+| Draw no bet | 6% | 8 ticks | GBP 71 |
+
+**The unconditional cost of a trade closed at the close (tradable lines, after 2% commission):**
+
+| Entry | Back | Lay |
+|---|---|---|
+| Crossing the spread (2,939 lines each side) | -2.26% (-2.38 to -2.15) | -2.58% (-2.73 to -2.44) |
+| Resting one tick inside (85-89% filled) | -1.54% (-1.89 to -1.20) | -2.32% (-2.73 to -1.95) |
+
+- Every match day sits in the same range (-1.9% to -2.9% crossing).
+- Resting saves under a point: its fills are adversely selected. They come mostly when the price is about to move
+  through the order.
+- **The bar:** a selection is worth trading only when its forecast move to the close beats about 2.3% crossing, or
+  1.5-2.3% resting.
+
+**Every strategy tested to date:**
+
+| Strategy | Target 1: closing price | Target 2: held to the result | Verdict |
+|---|---|---|---|
+| EV rule (model move > 2% after costs), football-data snapshots | +2.3% (2024/25), +1.0% (2025/26), a tick off fair | loses (the bank fell 50-99% in simulation) | best lead; forward test from Tue 10 Nov |
+| EV rule on Betfair's Aug-Sep 2026 traded prices | +3.2% at the traded price; +0.7% a tick worse each end (interval below zero) | - | edge about the size of the spread |
+| Stacked move rule (strongest 5 a week, outside the top five) | +2.0% / +2.6% a tick off fair (2025/26, about 100 variants read) | - | in forward trial |
+| Cup ties, cross-league rating | +3.8% at LTP; +0.1% a tick worse | +11%, interval -21% to +55% | lead, not tradable crossing |
+| Continental ties, cross-league rating | +1.3%; -2.6% a tick worse | -13% | no |
+| League matches, cross-league rating | +1.3%; -1.7% | -4% | no |
+| Club form from the feed added (cups, UEFA, leagues) | no gain in cups or UEFA; +0.3 points in leagues | no gain | no |
+| Massey rating | no gain on the price path | - | no |
+| 656 model-free price rules (momentum, fade, price bands) | none confirmed on the second half | none | no |
+| Double chance / draw no bet lag (match odds leads) | +3.3% on last traded prices; **-2.2% to -2.7% at the real books** | no | dead: stale prices |
+| Every paper-book cell (46 tradable cells) | all below zero greened | one cell above zero held (over/under lay at 60 min, 92 lines), noise at 46 cells | no |
+
+**Read:**
+- **No strategy is profitable yet.**
+- **The EV rule is the only lead whose edge is larger than zero after a realistic cost on two seasons.** Its forward
+  test starts with the recorded books (first scored run Tue 10 Nov).
+- **The binding constraint is cost, not signal.** The round trip is about 2.3%, and our best forecasts are worth 2-4%
+  of price before it.
+
+## Closing-line model: line-up news and the late move (8 Nov 2026)
+
+**Source:** `football-research.yml` job `lineup_late_move`, run 42463318516
+(`research/open_close/football_lineup_late_move.py`; rules fixed before the run).
+- The first run (42462495893) stopped on fixtures whose line-ups tag both teams with one side; those are left out.
+
+**Data:**
+- Betfair match odds from the Historic Data bundle (12,437 markets, 30 Jul - 30 Sep 2026), at 24 h, 60 and 15 minutes
+  before the off and at the close.
+- 8,473 linked to an API-Football fixture; 3,190 have a line-up surprise and a full price path.
+- The surprise: the confirmed eleven's goals plus-minus less the expected eleven's, home less away.
+- Ratings were refitted monthly on earlier matches only: 813,148 stints, about 120,000 players rated.
+
+**Does the surprise point the way the price moves?** (the price is the home side's log chance ratio)
+
+| Move | Correlation with the surprise | Slope (95% interval) |
+|---|---|---|
+| Early: 24 h to 60 min | 0.069 | 0.094 (0.043 to 0.147) |
+| **Late: 60 min to the close** | **0.099** | **0.100 (0.065 to 0.134)**; 0.103 given the early move |
+| Last: 15 min to the close | 0.026 | - |
+
+**Trades** (back the side the surprise favours, closed at the close):
+
+| At | Surprise above | Bets | At the last traded prices | A tick worse each end |
+|---|---|---|---|---|
+| 60 min | 0.1 | 1,464 | +0.5% (0.0 to +0.9) | -2.2% |
+| **60 min** | **0.2** | **557** | **+1.4% (+0.6 to +2.2); Aug +1.6%, Sep +1.2%** | -1.4% |
+| 15 min | 0.1 | 1,464 | -0.4% | -3.0% |
+| 15 min | 0.2 | 557 | -0.3% | -3.0% |
+
+**Read:**
+- **Line-up news is real signal the market prices late.** The surprise predicts the move from 60 minutes to the
+  close, in both months, and beyond the early move. Part of it is already in the price by 60 minutes (the early
+  slope), and it is gone by 15 minutes: the market absorbs the line-ups within the hour.
+- **At the 60-minute mark it is too small for the spread.** +1.4% at traded prices, -1.4% paying a tick each way.
+  The bar measured at the recorded books is about 2.3%.
+- **The timing is the opportunity.** The line-ups come out about 60-75 minutes before the off. The 60-minute mark is
+  already after part of the reaction. A trader acting within a minute or two of the release catches more of the move.
+  The line-up collector records when each eleven is confirmed, and the feed records the books every minute near the
+  off, so that move can be measured from now on.
+
+**The forward trials:** the scheduled run of 8 Nov (42461905728) reports "no matches in the window yet" for all
+three. The window opened Friday 6 Nov, and the lab only holds those matches once their football-data rows arrive.
+The first scored run is Tuesday 10 Nov.
+
+**The closing-line model, next:**
+1. **Line-up timing:** measure the move from each confirmed eleven to the close at the recorded books, and the price
+   available within 1-2 minutes of the release. Pre-register a line-up trader if the move clears the bar.
+2. **Surprise as a feature:** add the expected-eleven and surprise features to the move model's late horizon (60
+   minutes and nearer). The early horizon already has the expected eleven (team news).
+3. **A spread-aware gate:** trade only where expected value beats each book's own round trip (spread and depth at
+   that moment), not a flat tick.
+4. **The recorded books as training data:** retrain the move model on recorded checkpoints, with book features
+   (spread, depth imbalance, drift so far), as weeks of records build up.
+
+**Line-up release at the recorded books** (`football-research.yml` job `lineup_release`, run 42464673010,
+`research/open_close/football_lineup_release.py`):
+- The stored line-up tables are only rebuilt at the end of a full football-trade.yml day, and the cancelled days had
+  left them behind. They were rebuilt here from the collector's raw replies, in memory: 2,815 polls, 105 matches,
+  90 with both elevens, 3-8 Nov.
+- **API-Football has the elevens about 28 minutes before kick-off,** every match (10th-90th percentile 27.7-28.7
+  minutes).
+- That is half an hour after the official team sheets (about 60-75 minutes before kick-off), and after the market has
+  priced them. The Historic Data read above shows the line-up move is spent by 15 minutes.
+- At the books, 86 matches:
+  - the surprise's correlation with the move from release to close is -0.03 (after entry: -0.01);
+  - backing the favoured side at the release (median 2.9 minutes after it) and closing at the close: -2.5% (49 bets,
+    12% right way) and -3.6% (13 bets);
+  - small numbers, but no sign of a move left to take.
+
+**Read:**
+- The line-up signal is real (60 minutes to the close, both months), but **our feed brings the elevens too late to
+  trade it.** A line-up trader needs the team sheets at release (about an hour before kick-off), from a faster
+  source than API-Football.
+- Until then, line-up news stays where the move model already has it: the expected eleven, known at the early price.
+
+## Closing-line model on the recorded books, first read (8 Nov 2026)
+
+**Source:** `football-research.yml` job `close_model_books`, run 42481445610
+(`research/open_close/football_close_model_books.py`).
+
+**Data and method:**
+- 1,574 rows: every tradable match-odds and over/under 2.5 checkpoint (24 h, 6 h, 2 h, 60 min, 15 min) of 515
+  markets, 4-8 Nov.
+- Features: book only (spread, depth, imbalance, overround, drift so far).
+- Target: the move of the mid chance to the close.
+- LightGBM, walk-forward by match day: 937 rows scored, on 7-8 Nov.
+
+**Results:**
+- The forecast does not yet track the move: correlation 0.009, out-of-sample R2 -0.15. By checkpoint it ranges
+  from 0.20 at 60 minutes to -0.25 at 6 hours, on a few hundred rows each.
+- Trades closed at the close crossing, after commission:
+
+| Entry rule | Trades | Return |
+|---|---|---|
+| Spread-aware gate (forecast beats the book's own round trip) | 109 | -2.35% (-3.35 to -1.42) |
+| The older flat-tick gate | 472 | -2.70% (-3.18 to -2.23) |
+| Every tradable line in those days | 1,874 | -2.59% (-2.70 to -2.48) |
+
+**Read:**
+- The spread-aware gate already does what it is for: it trades a quarter as often as the flat-tick gate and loses
+  less.
+- With five days and book features alone there is no forecast skill: these returns are the cost of the round trip,
+  not an edge. That is expected. The book's own path carried nothing in the 656-rule scan either.
+- The skill has to come from the fundamentals: our fair price, team news, the cross-league rating.
+- **Next for the model:** join each recorded checkpoint to our model's fair price (the EV model's forecast, the lab
+  features for the 22 divisions) and train on both.
+- The scorer runs with every trials job (Tuesday and Friday, `football-trials.yml`), so the training set grows
+  every week.
+
+**Faster line-ups:**
+- Sportmonks says its line-ups arrive 60-75 minutes before kick-off, with a confirmed-or-predicted flag; API-Football
+  says 20-40 minutes, and we measured 28.
+- These are vendor claims, with no independent timing test found.
+- Sportmonks' free plan reportedly covers the Danish Superliga and the Scottish Premiership, both of which we
+  record. That is enough to measure its real release times against the Betfair price move, at no cost, once the
+  owner opens an account and adds its key as a repository secret.
+
+**With our model's forecast joined** (`football-trials.yml` run 42483643138; the first try, 42481887157, stopped on a
+selection-id type mismatch, now fixed with a test):
+- The join runs, but has nothing to join yet: the lab holds 5 matches in 4-8 Nov, and none link to a recorded
+  market.
+- The lab takes its matches from football-data.co.uk's rows. The weekend's rows arrive after the matches (usually by
+  Monday), so the Tuesday trials run is the first that can join them.
+- Until then the model is the book-only one: 1,588 rows, correlation 0.010, the spread-aware gate -2.35% on 109
+  trades, every line -2.59%.
+- From Tuesday on, each trials run (Tuesday and Friday) adds the week's matches with the model's forecast.

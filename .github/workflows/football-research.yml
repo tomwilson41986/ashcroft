@@ -19,6 +19,10 @@ on:
           - cross_market
           - feed_coverage
           - cup_form_check
+          - paper_lines_scan
+          - lineup_late_move
+          - lineup_release
+          - close_model_books
       days:
         description: 'days of the live record to read'
         required: false
@@ -76,6 +80,24 @@ jobs:
       - name: Cup and European ties with each club's form from the feed (closing price and winning the bet)
         if: inputs.job == 'cup_form_check'
         run: python -m research.open_close.football_cup_form_check --out out/cup_form_check.json
+      - name: Every strategy the paper book scores at the recorded books (crossing, resting, both targets)
+        if: inputs.job == 'paper_lines_scan'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_paper_lines_scan --days "$DAYS" --out out/paper_lines_scan.json
+      - name: Line-up news and Betfair's late move (the closing-line model's team-news input)
+        if: inputs.job == 'lineup_late_move'
+        run: python -m research.open_close.football_lineup_late_move --out out/lineup_late_move.json
+      - name: Line-up release at the recorded books (the move from the elevens' release, at real spreads)
+        if: inputs.job == 'lineup_release'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_lineup_release --days "$DAYS" --out out/lineup_release.json
+      - name: The closing-line model on the recorded books, and the spread-aware gate
+        if: inputs.job == 'close_model_books'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_close_model_books --days "$DAYS" --out out/close_model_books.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
