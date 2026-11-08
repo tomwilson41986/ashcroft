@@ -315,6 +315,76 @@ def champion(results: pd.DataFrame, specs: list[dict], days: dict, incumbent: st
             "fresh_scores": score.reset_index().to_dict("records")}
 
 
+# --------------------------------------------------------------------------------------------------------------------
+# The trade test on the forecast (registered 8 Nov 2026, before its first day): does the price on offer lag the
+# forecast? The first fresh day (7 Nov) made gbm_all_small the BFSP champion (paired gain 0.041, 90% 0.032 to 0.051,
+# 121 races; run 42428569854). Fixed now: that spec only; at 60, 30 and 10 s out, back at the best back price when it
+# is more than m above the forecast SP, lay at the best lay price when it is more than m below (GBP2 or more shown);
+# m in 3, 6, 10%; each scored closed at the SP and left to run to the result (2% commission on a gain). Counted on days
+# after TRADE_REGISTERED only; a rule is a candidate on a target after TRADE_MIN_DAYS days with its 90% lower bound
+# (bootstrap over races) above zero: 18 rules, 36 tests, about one in twenty passing by chance.
+# --------------------------------------------------------------------------------------------------------------------
+
+TRADE_SPEC = "gbm_all_small"
+TRADE_REGISTERED = "2026-11-08"
+TRADE_MIN_DAYS = 10
+TRADE_CHECKS = (60, 30, 10)
+TRADE_MARGINS = (0.03, 0.06, 0.10)
+
+
+def trade_rules(days: dict, spec: str = TRADE_SPEC, comm: float | None = None) -> pd.DataFrame:
+    """Every rule's unit trades on every day the spec was forecast (``e_<spec>`` set by ``evaluate``)."""
+    from greyhound.costs import commission
+    c = commission() if comm is None else comm
+    rows = []
+    for d, f in days.items():
+        if f"e_{spec}" not in f:
+            continue
+        x = f[f.secs.isin(TRADE_CHECKS)].copy()
+        x["fc"] = np.exp(x.y - x[f"e_{spec}"])
+        x["sp"] = np.exp(x.y)
+        x["won"] = won(x)
+        for m in TRADE_MARGINS:
+            b = x[(x.b1 > 1) & (x.bs1 >= 2) & (x.b1 / x.fc - 1 > m)]
+            raw_sp = b.b1 / b.sp - 1
+            raw_w = np.where(b.won == 1, b.b1 - 1, -1.0)
+            rows.append(pd.DataFrame({"day": d, "market": b.market, "rule": [f"back_{int(s)}_{m}" for s in b.secs],
+                                      "pnl_sp": np.where(raw_sp > 0, raw_sp * (1 - c), raw_sp),
+                                      "pnl_win": np.where(raw_w > 0, raw_w * (1 - c), raw_w)}))
+            l = x[(x.l1 > 1) & (x.ls1 >= 2) & (1 - x.l1 / x.fc > m)]
+            raw_sp = 1 - l.l1 / l.sp
+            raw_w = np.where(l.won == 1, -(l.l1 - 1), 1.0)
+            rows.append(pd.DataFrame({"day": d, "market": l.market, "rule": [f"lay_{int(s)}_{m}" for s in l.secs],
+                                      "pnl_sp": np.where(raw_sp > 0, raw_sp * (1 - c), raw_sp),
+                                      "pnl_win": np.where(raw_w > 0, raw_w * (1 - c), raw_w)}))
+    return pd.concat([r for r in rows if len(r)], ignore_index=True) if rows else pd.DataFrame()
+
+
+def trade_scores(tr: pd.DataFrame, registered: str = TRADE_REGISTERED, n: int = 2000, seed: int = 0) -> pd.DataFrame:
+    """Each rule on its fresh days: trades, races, days, mean P&L a unit on each target, its 90% interval by race."""
+    if not len(tr):
+        return pd.DataFrame()
+    tr = tr[tr.day > registered]
+    if not len(tr):
+        return pd.DataFrame()
+    rng = np.random.default_rng(seed)
+    out = []
+    for rule, g in tr.groupby("rule"):
+        row = {"rule": rule, "trades": len(g), "days": int(g.day.nunique())}
+        for col in ("pnl_sp", "pnl_win"):
+            by_race = g.groupby(["day", "market"])[col].mean().to_numpy()
+            row[f"{col}%"] = round(100 * float(g[col].mean()), 3)
+            if len(by_race) >= 10:
+                bs = by_race[rng.integers(0, len(by_race), size=(n, len(by_race)))].mean(1)
+                lo, hi = np.percentile(bs, [5, 95])
+                row[f"{col}_ci90%"] = [round(100 * lo, 3), round(100 * hi, 3)]
+                row[f"{col}_candidate"] = bool(lo > 0 and row["days"] >= TRADE_MIN_DAYS)
+            else:
+                row[f"{col}_ci90%"], row[f"{col}_candidate"] = None, False
+        out.append(row)
+    return pd.DataFrame(out).sort_values("pnl_sp%", ascending=False)
+
+
 def main(argv=None) -> int:
     """Build the snapshots of any recorded day not yet built, score every spec on every day, append the night's
     scores to the trial registry, pick the champion and write the report."""
@@ -403,6 +473,18 @@ def main(argv=None) -> int:
         md.append(f"| {r['day']} | {r['spec']} | {r['runners']} | {r['races']} | {f4(r['rmse'])} | "
                   f"{f4(r['rmse_le60'])} | {f4(r['rmse_70_180'])} | {f4(r['rmse_gt180'])} | {f4(r['win_ll'])} | "
                   f"{f4(r['win_ll_le60'])} | {f4(r['win_ll_70_180'])} | {f4(r['win_ll_gt180'])} | {r['win_races']} |")
+    tr = trade_rules(days) if len(res) else pd.DataFrame()
+    ts = trade_scores(tr)
+    md += ["", f"### The trade test on {TRADE_SPEC}'s forecast (registered {TRADE_REGISTERED}; counted on later days, a "
+           f"candidate after {TRADE_MIN_DAYS} days; 36 tests)", ""]
+    if len(ts):
+        md += ["| Rule | Trades | Days | At the SP: % a unit | 90% | To the result: % a unit | 90% | Candidate (SP / Win) |",
+               "|---|---|---|---|---|---|---|---|"]
+        for r in ts.to_dict("records"):
+            md.append(f"| {r['rule']} | {r['trades']} | {r['days']} | {r['pnl_sp%']} | {r['pnl_sp_ci90%']} | "
+                      f"{r['pnl_win%']} | {r['pnl_win_ci90%']} | {r['pnl_sp_candidate']} / {r['pnl_win_candidate']} |")
+    else:
+        md.append("No fresh day yet.")
     (out / "report.md").write_text("\n".join(md) + "\n")
     print("\n".join(md))
     return 0
