@@ -118,3 +118,13 @@ def test_the_result_target_reads_the_settled_status():
         assert row.won == (status == "WINNER") and row.pnl_result == pytest.approx(want)   # lay 4 at 5.0
     assert sr.result_pnl("BACK", 3.0, 2.0, 1, comm=0.02) == pytest.approx(2 * 2 * 0.98)
     assert sr.result_pnl("BACK", 3.0, 2.0, None) is None                                  # no result: not scored
+
+
+def test_a_capped_trade_through_fills_only_what_crossed():
+    lines = [image(T, [[5.0, 0]], [[5.2, 8]], [[5.0, 0]]),
+             delta(T + timedelta(seconds=7), trd=[[4.9, 4]])]                        # 4 traded under our 5.0
+    full = sr.SimOrder(MID, 7, "LAY", 5.0, 50.0, T + timedelta(seconds=1))
+    capped = sr.SimOrder(MID, 7, "LAY", 5.0, 50.0, T + timedelta(seconds=1))
+    sr.replay(lines, [full])
+    sr.replay(lines, [capped], through_cap=True)
+    assert full.matched == 50.0 and capped.matched == 4.0
