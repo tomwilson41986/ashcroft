@@ -12,7 +12,8 @@ def _line(mid, mt, runner, side="back", kind="cross", bb=2.0, bl=2.02, gc=0.01, 
     return {"day": "2026-11-07", "market_id": mid, "market_type": mt, "event": event, "runner": runner,
             "selection_id": hash((mid, runner)) % 10_000, "kickoff_utc": "2026-11-07T15:00:00Z", "checkpoint_min": cp,
             "kind": kind, "side": side, "best_back": bb, "best_lay": bl, "green_close": gc, "pnl": pnl,
-            "stake": stake, "filled": filled}
+            "stake": stake, "filled": filled, "spread_ticks": 1, "close_back": bb, "close_lay": bl,
+            "depth_back_gbp": 100.0}
 
 
 def test_cell_commission_and_fill_share():
@@ -36,3 +37,9 @@ def test_cross_market_rule_backs_the_long_follower():
     out = ps.cross_market(pd.DataFrame(rows))
     assert out["events_with_both_books"] == 1
     assert out["gap_over_1pt_at_60min"]["lines"] >= 1
+
+
+def test_tradable_drops_empty_closing_books():
+    ok = pd.DataFrame([_line("1", "MATCH_ODDS", "A"), dict(_line("2", "MATCH_ODDS", "A"), close_back=1.01,
+                                                           close_lay=1000.0)])
+    assert ps.tradable(ok).tolist() == [True, False]

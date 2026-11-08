@@ -55,7 +55,8 @@ def load(store, days: int, today: date | None = None) -> pd.DataFrame:
         return pd.DataFrame()
     df = pd.concat(frames, ignore_index=True)
     for c in ["checkpoint_min", "best_back", "best_lay", "green_close", "clv_mid", "pnl", "stake", "filled",
-              "won", "px_10", "post_price", "close_mid", "spread_ticks"]:
+              "won", "px_10", "post_price", "close_mid", "close_back", "close_lay", "spread_ticks", "depth_back_gbp",
+              "depth_lay_gbp"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     return df
@@ -167,13 +168,45 @@ def cross_market(df: pd.DataFrame) -> dict:
     return out
 
 
+MAX_SPREAD_TICKS = 3
+MAX_CLOSE_RATIO = 1.05
+MAX_PRICE = 20.0
+
+
+def tradable(df: pd.DataFrame) -> pd.Series:
+    """A line a trader could act on and close: entry spread at most MAX_SPREAD_TICKS, a two-sided close whose lay is
+    within MAX_CLOSE_RATIO of its back, and a price at most MAX_PRICE. Without it, empty books at the close (a 1.01
+    back against a 1000 lay) turn a GBP1 lay into thousands of per cent."""
+    ok = (df["spread_ticks"] <= MAX_SPREAD_TICKS) & (df["best_back"] <= MAX_PRICE)
+    ok &= df["close_back"].notna() & df["close_lay"].notna() & (df["close_lay"] / df["close_back"] <= MAX_CLOSE_RATIO)
+    return ok
+
+
+def liquidity(df: pd.DataFrame) -> dict:
+    """How much of the record a trader can use, by market type."""
+    one = df[(df["kind"] == "cross") & (df["side"] == "back")]
+    out = {}
+    for mt, g in one.groupby("market_type"):
+        out[mt] = {"lines": int(len(g)), "tradable_share": round(float(tradable(g).mean()), 4),
+                   "median_spread_ticks": float(g["spread_ticks"].median()),
+                   "median_depth_back_gbp": float(g["depth_back_gbp"].median()) if "depth_back_gbp" in g else None}
+    return out
+
+
 def run(df: pd.DataFrame) -> dict:
     if df.empty:
         return {"status": "no paper lines found"}
+    liq = liquidity(df)
+    df = df[tradable(df)].copy()
+    if df.empty:
+        return {"status": "no tradable paper lines", "liquidity": liq}
     g = grid(df)
     pos = [r for r in g if r.get("greened_at_close", {}).get("lo95", -1) > 0
            or r.get("held_to_result", {}).get("lo95", -1) > 0]
-    return {"lines": int(len(df)), "markets": int(df["market_id"].nunique()), "days": sorted(df["day"].unique()),
+    return {"filter": {"max_spread_ticks": MAX_SPREAD_TICKS, "max_close_lay_over_back": MAX_CLOSE_RATIO,
+                       "max_price": MAX_PRICE},
+            "liquidity_before_filter": liq,
+            "lines": int(len(df)), "markets": int(df["market_id"].nunique()), "days": sorted(df["day"].unique()),
             "by_market_type": df.drop_duplicates("market_id")["market_type"].value_counts().to_dict(),
             "overall": {f"{k}_{s}": cell(x) for (k, s), x in df.groupby(["kind", "side"])},
             "cells_scored": len(g),
