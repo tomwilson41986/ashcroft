@@ -111,8 +111,9 @@ def add_model(rows: pd.DataFrame, cache: str, models: str, store) -> tuple[pd.Da
     mp = mp.merge(pred, on="match_id")
     mp["model_move"] = np.where(mp["leg"] == "H", mp["chance_h"], np.where(mp["leg"] == "A", mp["chance_a"], np.nan))
     rows = rows.copy()
-    rows["selection_id"] = rows["selection_id"].astype(str)
-    mp["selection_id"] = mp["selection_id"].astype(str)
+    # one key type both sides (the paper lines hold numbers, the market map may hold text)
+    mp["selection_id"] = pd.to_numeric(mp["selection_id"], errors="coerce")
+    rows["selection_id"] = pd.to_numeric(rows["selection_id"], errors="coerce")
     rows = rows.merge(mp[["market_id", "selection_id", "model_move"]], on=["market_id", "selection_id"], how="left")
     rows["model_move_left"] = rows["model_move"] - rows["drift_since_first"]
     info["rows_with_model"] = int(rows["model_move"].notna().sum())
@@ -161,6 +162,8 @@ def gate(p: pd.DataFrame, lines: pd.DataFrame, cost: str) -> dict:
     net_lay = np.where(-gain > 0, -gain * (1 - COMMISSION), -gain) - c
     side = np.where(net_back > 0, "back", np.where(net_lay > 0, "lay", None))
     pick = p.assign(side=side)[["market_id", "selection_id", "checkpoint_min", "side", "day"]].dropna(subset=["side"])
+    lines = lines.assign(selection_id=pd.to_numeric(lines["selection_id"], errors="coerce"))
+    pick = pick.assign(selection_id=pd.to_numeric(pick["selection_id"], errors="coerce"))
     got = lines.merge(pick, on=["market_id", "selection_id", "checkpoint_min", "side"], suffixes=("", "_p"))
     got = got.dropna(subset=["green_close"])
     out = _summ(got["green_close"], got["market_id"])
@@ -200,7 +203,9 @@ def run(df: pd.DataFrame, cache: str | None = None, models: str | None = None, s
     lines = lines[tradable(lines)]
     out["gate_own_cost"] = gate(p, lines, "own")
     out["gate_flat_tick"] = gate(p, lines, "tick")
-    every = lines.merge(p[["market_id", "selection_id", "checkpoint_min"]], on=["market_id", "selection_id",
+    lines = lines.assign(selection_id=pd.to_numeric(lines["selection_id"], errors="coerce"))
+    every = lines.merge(p[["market_id", "selection_id", "checkpoint_min"]].assign(
+        selection_id=lambda x: pd.to_numeric(x["selection_id"], errors="coerce")), on=["market_id", "selection_id",
                                                                                 "checkpoint_min"])
     out["every_line_in_the_scored_days"] = _summ(every["green_close"].dropna(), every.dropna(
         subset=["green_close"])["market_id"])

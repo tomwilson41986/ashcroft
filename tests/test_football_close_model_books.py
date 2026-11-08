@@ -28,3 +28,12 @@ def test_build_drift_and_target():
 def test_run_reports_too_few_days():
     df = pd.DataFrame([_rows("d1", "1", 60.0, 2.0, 2.02, 1.9)])
     assert "too few days" in cm.run(df)["status"]
+
+
+def test_gate_merges_numeric_and_text_selection_ids():
+    p = pd.DataFrame({"market_id": ["1"], "selection_id": [5], "checkpoint_min": [60.0], "day": ["d3"],
+                      "y_hat": [0.2], "spread_rel": [0.01], "close_half_spread": [0.005]})
+    lines = pd.DataFrame({"market_id": ["1"], "selection_id": ["5"], "checkpoint_min": [60.0], "side": ["back"],
+                          "green_close": [0.03], "day": ["d3"]})
+    g = cm.gate(p, lines, "own")
+    assert g["trades"] == 1 and g["backs"] == 1
