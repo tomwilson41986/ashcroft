@@ -75,6 +75,16 @@ def match_odds_paths(store) -> pd.DataFrame:
     return w.dropna(subset=["kickoff"])
 
 
+def clean_sides(st: pd.DataFrame) -> pd.DataFrame:
+    """Starters of fixtures whose line-ups name exactly two teams, one home and one away (a few fixtures in the wider
+    leagues tag both teams with one side, which ``surprise``'s pivot cannot hold)."""
+    pairs = st.drop_duplicates(["apif_fixture_id", "apif_team_id", "side"])
+    g = pairs.groupby("apif_fixture_id").agg(teams=("apif_team_id", "nunique"), sides=("side", "nunique"),
+                                             rows=("side", "size"))
+    ok = g[(g["teams"] == 2) & (g["sides"] == 2) & (g["rows"] == 2)].index
+    return st[st["apif_fixture_id"].isin(ok)]
+
+
 def surprises(hm: pd.DataFrame, hp: pd.DataFrame, he: pd.DataFrame, months_from: str) -> pd.DataFrame:
     from football import player_ratings as pr
     m = hm[["apif_fixture_id", "kickoff_utc"]].copy()
@@ -86,8 +96,10 @@ def surprises(hm: pd.DataFrame, hp: pd.DataFrame, he: pd.DataFrame, months_from:
     for mo in pd.period_range(months_from, m["date"].max(), freq="M"):
         gpm[str(mo)] = pr.fit_gpm(sti, as_of=mo.start_time)
     recent = m[m["date"] >= pd.Timestamp(FROM)]
-    s = pr.surprise(recent, st[st["apif_fixture_id"].isin(recent["apif_fixture_id"])], gpm, "gpm")
+    st_r = clean_sides(st[st["apif_fixture_id"].isin(recent["apif_fixture_id"])])
+    s = pr.surprise(recent[recent["apif_fixture_id"].isin(st_r["apif_fixture_id"])], st_r, gpm, "gpm")
     s.attrs["players_rated"] = {k: len(v) for k, v in gpm.items()}
+    s.attrs["fixtures_kept"] = int(st_r["apif_fixture_id"].nunique())
     s.attrs["stints"] = int(len(sti))
     return s
 
@@ -155,6 +167,7 @@ def run(store) -> dict:
     out = {"markets": int(len(w)), "linked": int(j["apif_fixture_id"].notna().sum()) if len(j) else 0,
            "with_surprise_and_path": int(len(p)), "stints": s.attrs.get("stints"),
            "players_rated_by_month": s.attrs.get("players_rated"),
+           "fixtures_with_clean_lineups": s.attrs.get("fixtures_kept"),
            "first_kickoff": str(w["kickoff"].min()), "last_kickoff": str(w["kickoff"].max())}
     if len(p) < 200:
         out["status"] = "too few matches with a surprise and a full price path"

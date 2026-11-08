@@ -23,3 +23,9 @@ def test_boot_slope_recovers_a_slope():
     y = 0.5 * x + rng.normal(scale=0.1, size=400)
     b, lo, hi = lm._boot_slope(x, y, None)
     assert lo < 0.5 < hi and abs(b - 0.5) < 0.05
+
+
+def test_clean_sides_drops_fixtures_with_one_side_twice():
+    st = pd.DataFrame({"apif_fixture_id": [1, 1, 2, 2], "apif_team_id": [10, 11, 20, 21],
+                       "side": ["home", "away", "home", "home"], "apif_player_id": [1, 2, 3, 4]})
+    assert lm.clean_sides(st)["apif_fixture_id"].unique().tolist() == [1]
