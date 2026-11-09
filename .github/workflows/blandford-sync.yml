@@ -18,6 +18,15 @@ on:
         required: false
         type: string
 
+# One writer of horse_racing.db at a time: this job downloads the database, changes it and uploads the whole file, so
+# two runs that overlap lose the first one's rows (the last upload wins). The group is shared with every workflow
+# that uploads the database (betfair-prices-import, blandford-sectionals, blandford-sync, daily-results,
+# backfill-results). A run waits for the one in front; GitHub keeps one waiting run a group, so a third started
+# while one runs and one waits replaces the waiting one: start it again.
+concurrency:
+  group: horse-racing-db
+  cancel-in-progress: false
+
 env:
   PYTHON_VERSION: '3.11'
   S3_BUCKET: horseracingresults
