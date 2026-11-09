@@ -113,3 +113,18 @@ Does the price on offer lag gbm_all_small's forecast of the SP? The rules are fi
 - Each trade is scored closed at the SP and also held to the result, with 2% commission on a gain.
 
 That makes 18 rules and 36 tests. Only days after 8 Nov count. A rule is a candidate on a target after 10 days with its 90% lower bound (bootstrap over races) above zero.
+
+**8 Nov.** 109 races and 17,820 runner-checkpoints (close lab run 42538888173). The stream lab read 444,811 lines across 218 markets (run 42538890940). Collection is healthy.
+
+- **BFSP:** gbm_all_small holds the championship. RMSE log(SP) 0.1895 against the mid's 0.2381 overall, and 0.1253 against 0.1230 at 60 s or less.
+- **Win:** the mid holds. The best fresh challenger, gbm_all_small, gained 0.0037 (90% interval -0.0012 to +0.0087, 230 races), which does not clear the bar.
+- **The trade test on gbm_all_small's forecast:** no counted day yet. Its first is 9 Nov.
+- **Stream lab:** 4 days pooled, no candidate among 86 tests. Momentum lays still lose 2.9% to 5.6% at the SP.
+- **The forward test's lays, 8 Nov** (queue-aware, share of matched liability): +1.42% at the SP and +4.28% to the result (x1); +1.41% and +4.19% (x0.5). Its own figure was +0.47%.
+
+Four days so far:
+
+| | 5 Nov | 6 Nov | 7 Nov | 8 Nov |
+|---|---|---|---|---|
+| At the SP | +1.78% | +1.43% | +0.71% | +1.42% |
+| To the result | -1.65% | +1.04% | -1.50% | +4.28% |
