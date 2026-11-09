@@ -105,3 +105,26 @@ def test_the_sp_close_reads_the_settled_definition():
     df = sr.replay(lines, [sr.SimOrder(MID, 7, "LAY", 5.0, 4.0, T + timedelta(seconds=1))])
     row = df.iloc[0]
     assert row.matched == 4 and row.sp == 6.0 and row.pnl_sp == pytest.approx(4 * (1 - 5.0 / 6.0), abs=1e-4)
+
+
+def test_the_result_target_reads_the_settled_status():
+    settled = {**defn(inplay=False, bsp=6.0), "status": "CLOSED"}
+    for status, want in (("LOSER", 4.0), ("WINNER", -16.0)):
+        d = {**settled, "runners": [{"id": 7, "status": status, "bsp": 6.0}]}
+        lines = [image(T, [[5.0, 10]], [[5.2, 8]], [[5.0, 0]]),
+                 delta(T + timedelta(seconds=5), trd=[[4.9, 2]]),
+                 line(OFF + timedelta(minutes=3), {"id": MID, "marketDefinition": d})]
+        row = sr.replay(lines, [sr.SimOrder(MID, 7, "LAY", 5.0, 4.0, T + timedelta(seconds=1))]).iloc[0]
+        assert row.won == (status == "WINNER") and row.pnl_result == pytest.approx(want)   # lay 4 at 5.0
+    assert sr.result_pnl("BACK", 3.0, 2.0, 1, comm=0.02) == pytest.approx(2 * 2 * 0.98)
+    assert sr.result_pnl("BACK", 3.0, 2.0, None) is None                                  # no result: not scored
+
+
+def test_a_capped_trade_through_fills_only_what_crossed():
+    lines = [image(T, [[5.0, 0]], [[5.2, 8]], [[5.0, 0]]),
+             delta(T + timedelta(seconds=7), trd=[[4.9, 4]])]                        # 4 traded under our 5.0
+    full = sr.SimOrder(MID, 7, "LAY", 5.0, 50.0, T + timedelta(seconds=1))
+    capped = sr.SimOrder(MID, 7, "LAY", 5.0, 50.0, T + timedelta(seconds=1))
+    sr.replay(lines, [full])
+    sr.replay(lines, [capped], through_cap=True)
+    assert full.matched == 50.0 and capped.matched == 4.0

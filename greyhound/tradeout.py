@@ -12,7 +12,7 @@ the horse racing model, fixed to win a certain amount; back multiple dogs per ra
   if the dog wins the back and the lay cancel; if it loses the back's stake is lost and the lay wins
   ``liability / (BSP - 1)``. The position pays ``stake x (price - BSP) / (BSP - 1)`` when the dog loses and 0 when it
   wins: in expectation ``stake x (price / BSP - 1)`` when the BSP is calibrated, but settled here by the result, as
-  the exchange settles it, with 2% commission on each market's net. (The first version booked the expectation as if
+  the exchange settles it, with the account's commission (greyhound/costs.py) on each market's net. (The first version booked the expectation as if
   it were certain; reports/greyhound_roadmap.md QA C2.)
 - **Lay** the mirror image, reported only: lay at the best lays (stake sized so the liability is about ``TO_WIN``),
   closed by backing the same stake at the SP: ``stake x (BSP - lay)`` if the dog wins, 0 if it loses.
@@ -77,7 +77,7 @@ ENTRY_BOOKS = {"live": "books_greyhound_live.csv", "recorder": "books_greyhound.
                "retimed": "books_greyhound.csv", "trader": "books_greyhound_trader.csv"}
 SOURCE = "live"
 MIN_FREEZE_DAYS = 10
-COMMISSION = 0.02
+from greyhound.costs import COMMISSION          # the account's rate on greyhounds (greyhound/costs.py)
 #: the stake, as the horse trader sizes it: to win TO_WIN at the price taken, between MIN_STAKE and MAX_STAKE; no
 #: back whose winnings are under MIN_SP_LIABILITY (Betfair takes no lay at SP under GBP10 of liability)
 TO_WIN = 100.0

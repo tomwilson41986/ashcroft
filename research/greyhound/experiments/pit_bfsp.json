@@ -1,0 +1,117 @@
+{
+  "about": "Target 1, BFSP: log of the Betfair SP, scored by its RMSE (and log-loss of its chances). Registered 6 Nov 2026, before any result (the owner: 'work on all steps that are possible now' for the metrics database, greyhound/pit). Each family of the database added alone to the live recipe's card-safe features (sim and wpred blocks), then all together; the weigh-in columns of the life table are dropped (card-unsafe); the weather table is scored apart, observed at the off (live needs a forecast). The rule fixed now: a family is kept when its paired gain over the baseline on the test (every race from 2026-06-01) has its 90% lower bound above zero on BOTH targets' specs (pit_win.json: the result; pit_bfsp.json: the Betfair SP). The test window has been read by earlier batches: a pass here goes to the forward test on later days before it counts.",
+  "recipe": "quick",
+  "baseline": "base_logbsp",
+  "test_from": "2026-06-01",
+  "experiments": [
+    {
+      "name": "base_logbsp",
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred"
+      ],
+      "rescale_book": true
+    },
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_ability"
+      ],
+      "rescale_book": true,
+      "name": "pit_ability_logbsp"
+    },
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_trouble"
+      ],
+      "rescale_book": true,
+      "name": "pit_trouble_logbsp"
+    },
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_connections"
+      ],
+      "rescale_book": true,
+      "name": "pit_connections_logbsp"
+    },
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_market"
+      ],
+      "rescale_book": true,
+      "name": "pit_market_logbsp"
+    },
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_breeding"
+      ],
+      "rescale_book": true,
+      "name": "pit_breeding_logbsp"
+    },
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_life"
+      ],
+      "rescale_book": true,
+      "name": "pit_life_logbsp",
+      "drop": [
+        "lf_wt_"
+      ]
+    },
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_ability",
+        "pit_trouble",
+        "pit_connections",
+        "pit_market",
+        "pit_breeding",
+        "pit_life"
+      ],
+      "rescale_book": true,
+      "name": "pit_all_logbsp",
+      "drop": [
+        "lf_wt_"
+      ]
+    },
+    {
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_weather"
+      ],
+      "rescale_book": true,
+      "name": "pit_weather_logbsp"
+    }
+  ]
+}

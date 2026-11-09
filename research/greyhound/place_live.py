@@ -32,7 +32,7 @@ log = logging.getLogger(__name__)
 
 SECONDS = (120, 60, 30, 10)
 THRESHOLDS = (0.0, 0.05, 0.10, 0.20)
-COMM = 0.02
+from greyhound.costs import COMMISSION as COMM   # the account's rate (greyhound/costs.py)
 FEEDS = (("books_greyhound_live.csv", "markets_greyhound_live.csv", "live key"),
          ("books_greyhound.csv", "markets_greyhound.csv", "recorder"))
 

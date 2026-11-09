@@ -85,6 +85,28 @@ class Market:
                     return None
         return None
 
+    def won(self, sid: int) -> int | None:
+        """1 if the runner won, 0 if it lost (the settled definition's status), None before the result or if
+        removed."""
+        for r in self.defn.get("runners", []) or []:
+            if int(r.get("id", -1)) == sid:
+                st = str(r.get("status"))
+                return 1 if st == "WINNER" else 0 if st in ("LOSER", "PLACED") else None
+        return None
+
+
+def result_pnl(side: str, price: float, stake: float, won: int | None, comm: float = 0.0) -> float | None:
+    """The bet left to run to the result (target 2, the owner, 6 Nov 2026: "Win - winning the bet"): a back at B for S
+    wins S (B - 1) or loses S; a lay at L for a backer's stake S loses S (L - 1) or wins S; commission on a gain (per
+    bet: Betfair charges on the market's net, so this is a slight overstatement of the cost where bets net off)."""
+    if won is None or not price or price <= 1 or not stake:
+        return None
+    if side == "BACK":
+        v = stake * (price - 1) if won else -stake
+    else:
+        v = -stake * (price - 1) if won else stake
+    return round(v * (1 - comm) if v > 0 else v, 4)
+
 
 def _ladder(d: dict, pairs) -> None:
     for pr in pairs or []:
@@ -177,6 +199,7 @@ class SimOrder:
     first_fill: datetime | None = None
     last_trd: float = 0.0
     last_through: float = 0.0
+    via_through: bool = False    # filled because the market traded beyond the price (the dog moved through it)
 
     @property
     def remaining(self) -> float:
@@ -214,7 +237,10 @@ class SimOrder:
         self.last_trd = r.trd.get(self.price, 0.0)
         self.last_through = self._through(r)
 
-    def update(self, r: Runner, t: datetime, vol_factor: float = 1.0) -> None:
+    def update(self, r: Runner, t: datetime, vol_factor: float = 1.0, through_cap: bool = False) -> None:
+        """Trades at our price clear the queue, then fill us; a trade beyond our price fills the rest at once
+        (``through_cap`` False), or only up to the money traded beyond it (True: the conservative reading for large
+        orders, whose remainder may exceed what crossed)."""
         if self.done or not self.placed or self.remaining <= 0:
             return
         now_trd = r.trd.get(self.price, 0.0)
@@ -225,8 +251,10 @@ class SimOrder:
             self.queue_ahead -= clear
             self._fill(d - clear, self.price, t)
         through = self._through(r)
-        if through > self.last_through + 1e-9:              # the market traded beyond our price: we went first
-            self._fill(self.remaining, self.price, t)
+        if through > self.last_through + 1e-9 and self.remaining > 0:   # traded beyond our price: we went first
+            self.via_through = True
+            crossed = (through - self.last_through) * vol_factor
+            self._fill(min(self.remaining, crossed) if through_cap else self.remaining, self.price, t)
         self.last_through = through
         shown = (r.atb if self.side == "LAY" else r.atl).get(self.price, 0.0)
         self.queue_ahead = min(self.queue_ahead, shown)
@@ -256,7 +284,7 @@ def close_pnl(o: SimOrder, r: Runner | None, sp: float | None, comm: float = 0.0
 
 
 def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: float = 1.0,
-           comm: float = 0.0) -> pd.DataFrame:
+           comm: float = 0.0, through_cap: bool = False) -> pd.DataFrame:
     """Run the orders through the recorded stream; one row an order with its fill and its close."""
     markets: dict = {}
     pending = sorted(orders, key=lambda o: o.t)
@@ -273,6 +301,7 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
                      "taken": round(o.taken, 2), "matched": round(o.matched, 2),
                      "filled_share": round(o.matched / o.size, 4) if o.size else None,
                      "avg": round(o.avg, 3) if o.avg else None, "first_fill": o.first_fill,
+                     "via_through": o.via_through,
                      **close_pnl(o, r, m.bsp(o.sid) if m else None, comm)})
 
     for t, mc in events(lines):
@@ -304,7 +333,7 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
                     o.place(r, t)
                 continue
             if o.sid in changed:
-                o.update(r, t, vol_factor)
+                o.update(r, t, vol_factor, through_cap)
     for o in pending:                                       # never reached its close in the recorded stream
         if not o.done:
             m = markets.get(o.market)
@@ -313,14 +342,19 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
     # the SP: Betfair writes it into the market definition only once the market is settled, after the close above,
     # so it is read from the last definition the record holds
     for row in rows:
+        m = markets.get(row["market"])
+        row["sp"] = sp = m.bsp(row["sid"]) if m else None
         if row["pnl_sp"] is None and row["matched"] and row["avg"]:
-            m = markets.get(row["market"])
-            sp = m.bsp(row["sid"]) if m else None
             if sp and sp > 1:
                 L, S = row["avg"], row["matched"]
                 v = S * (1 - L / sp) if row["side"] == "LAY" else S * (L / sp - 1)
                 row["pnl_sp"] = round(v * (1 - comm) if v > 0 else v, 4)
-                row["sp"] = sp
+    # target 2: the matched part left to run to the result, read from the same settled definition
+    for row in rows:
+        m = markets.get(row["market"])
+        row["won"] = m.won(row["sid"]) if m else None
+        row["pnl_result"] = (result_pnl(row["side"], row["avg"], row["matched"], row["won"], comm)
+                             if row["matched"] and row["avg"] else None)
     return pd.DataFrame(rows)
 
 
@@ -344,4 +378,9 @@ def summary(df: pd.DataFrame) -> dict:
             "taken_at_once": round(float(placed.taken.sum()), 2),
             "pnl_green": round(float(pd.to_numeric(m.pnl, errors="coerce").fillna(0).sum()), 2),
             "pnl_sp": round(float(pd.to_numeric(m.pnl_sp, errors="coerce").fillna(0).sum()), 2),
+            "sp_known": int(pd.to_numeric(m.pnl_sp, errors="coerce").notna().sum()),
+            "pnl_result": round(float(pd.to_numeric(m.get("pnl_result"), errors="coerce").fillna(0).sum()), 2)
+            if "pnl_result" in m else None,
+            "result_known": int(pd.to_numeric(m.pnl_result, errors="coerce").notna().sum()) if "pnl_result" in m else 0,
+            "filled_through": int(m.via_through.sum()) if "via_through" in m else 0,
             "no_book": int((~df.placed).sum())}

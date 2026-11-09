@@ -1,0 +1,47 @@
+name: Greyhound stake ladder (read-only)
+
+# The early lay's lays replayed through the recorded Exchange Stream at GBP20, 50, 100 and 250 liability a lay, the
+# usual fill and a capped one (research/greyhound/capacity.py; the owner, 8 Nov 2026: "yes run the stake ladder").
+# Read-only: no Betfair login, nothing bets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'days, comma-separated (empty: every complete recorded day)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  ladder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: The ladder
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          DAYS: ${{ inputs.days }}
+        run: |
+          if [ -n "$DAYS" ] && ! [[ "$DAYS" =~ ^[0-9,-]+$ ]]; then echo "days must be YYYY-MM-DD,..."; exit 1; fi
+          python -m research.greyhound.capacity --out out/capacity --days "$DAYS"
+          cat out/capacity/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-capacity-${{ github.run_number }}
+          path: out/capacity/
+          if-no-files-found: ignore
+          retention-days: 30

@@ -7,7 +7,10 @@ strategies".
 **What counts.** A rule fixed before its test (chosen on a development period, read on a later holdout it never saw),
 filled as it really would be (at the Betfair SP or a limit-on-close; resting orders only through the queue-aware
 replay, `research/greyhound/queue_fill.py`), with its holdout return's 90% lower bound (a bootstrap over days) above
-zero and its development return above zero. Every rule tried is counted here: about one in twenty clears a one-sided
+zero and its development return above zero. **Two targets, always** (the owner, 6 Nov 2026: "let's always test
+against two targets; 1. BFSP 2. Win - winning the bet"): every forecast is scored on the SP (RMSE of log(BFSP)) and on
+the result (the winner's log loss, its chances normalised within the race); every rule is scored closed at the SP and
+left to run to the result, a pass on either counted as a test of its own. **Commission: 2%** on each market's net winnings, the account's rate (the owner, 6 Nov 2026: "it's 2%"), the standard for every greyhound test and trader (greyhound/costs.py). Every rule tried is counted here: about one in twenty clears a one-sided
 90% bound by chance.
 
 | # | Family | Data, test | Rules tried | Passing | Verdict | Source |
@@ -23,6 +26,7 @@ zero and its development return above zero. Every rule tried is counted here: ab
 | 8 | Trade to the SP on the closing forecast at 1 minute out (Betfair's historic data, last traded prices only) | BASIC Jan-Sep 2026, GB and AU; forecast and rules chosen Jan-Apr, read May-Sep | 16 uncapped; 96 capped (entry <= 5/10/20, fills 1 and 2 ticks through the last trade) | uncapped: passes from entries averaging 89-390, not credible (stale last prices of long shots); capped: lays where the forecast close is 5-10% above the price pass in GB and AU at both fills (e.g. GB lay, margin 0.10, entry <= 10, 1 tick: +10.72%, 90% 8.90 to 12.58, 541 trades) | not counted until checked against real books: the forecast may be reading stale last prices no one would fill | research-query 41895217384, 41896084511 |
 | 8b | The trade-to-SP lays against the recorded books' real prices (the forecast fitted on Jan-Apr; GB books 60 s before the off, entered at the best price with GBP2 on offer, closed at the SP) | recorded books 7 Oct - 3 Nov, 3,477 races (mostly the recorder's) | 18 + 18 | 0 | **the edge was the fill assumption**: at the book's price every lay loses (margin 0.10: entry <= 5 -1.02%, 90% -2.73 to 0.64; <= 10 -3.28%; <= 20 -4.28%) while on the same rows a tick through the last trade 'makes' +9.5 to +16.5%; backs lose 13-24%. The forecast reads stale last prices no one offers | research-query 41897170252 |
 | 9 | The stream lab: 43 taker rules at the price on offer 60/30/10 s out, closed at the SP (projected-SP gap, momentum, reversal, a control) | the recorded Exchange Stream from 5 Nov, scored nightly, pooled | 43 | pending: 10 days | registered 5 Nov (reports/greyhound_stream_lab.md); no result before then counts | greyhound-stream-lab.yml |
+| 10 | The metrics database (greyhound/pit): every family added to the live recipe | fast loop, test 2026-06-01 to 2026-11-05 (read by earlier batches), both targets | 9 + 9 | 0 on both | all families together: RMSE log(BSP) 0.4130 -> 0.4101 (-0.0029, 90% -0.0038 to -0.0020); result log-loss +0.00024 (-0.00022 to +0.0007): the closing price improves, the result does not; forward test registered (pit_forward.json, from 7 Dec 2026) | fast-loop 42255735836, 42253527161; reports/greyhound_metrics_database.md |
 
 ## The closing price (the objective)
 
@@ -34,3 +38,93 @@ Betfair's historic data, Jan-Sep 2026, GB, 1 minute out (research-query 41892329
 last traded price RMSE 0.1759; a LightGBM reading both markets' prices at 60, 15 and 1 minute out and the race's book
 0.1718 (90% of the gain in mean squared error -0.00169 to -0.00077, by day; 102,144 runners May-Sep, fitted on
 Jan-Apr). The place market and the book's total carry information on the win SP the win market's last price lacks.
+
+**The closing-price lab** (research/greyhound/close_lab.py, greyhound-close-lab.yml nightly; the owner, 6 Nov: "Let's
+start recursive self improvement"): every 10 s over the last 5 minutes, from the recorded Exchange Stream, six specs
+registered 6 Nov, scored walk-forward by day, and counted only on days after registration. Day one, 5 Nov (73 races,
+12,240 runner-checkpoints; run 42192362661), baselines only, RMSE of log(SP):
+
+| Baseline | All | <= 60 s | 70-180 s | > 180 s |
+|---|---|---|---|---|
+| mid | 0.3000 | 0.1180 | 0.1938 | 0.4248 |
+| last traded | 0.3216 | 0.1185 | 0.2218 | 0.4499 |
+| Betfair's projected SP | 0.4454 | 0.1401 | 0.2645 | 0.6452 |
+
+Betfair's projected SP is the worst of the three in every window on this day, so the bar a spec must clear is the best
+baseline (the mid here), not the projected SP. The first fresh day for the six specs is 7 Nov, scored the night of 8
+Nov.
+
+## The nightly record (both targets: 1. BFSP, 2. Win)
+
+**6 Nov** (117 races recorded, 19,800 runner-checkpoints; close lab run 42353917019, stream lab run 42353918865).
+Practice only: no result counts yet. The close-lab specs were registered on 6 Nov, so their first fresh day is 7 Nov.
+The stream-lab rules need 10 days.
+
+Close lab, fitted on 5 Nov and scored on 6 Nov:
+
+| | BFSP: RMSE log(SP), all | 60 s or less | over 180 s | Win: log loss |
+|---|---|---|---|---|
+| mid (baseline) | 0.2884 | 0.1340 | 0.4019 | 1.4904 |
+| gbm_all_small | 0.2222 | 0.1402 | 0.2847 | 1.4751 |
+| gbm_all | 0.2263 | 0.1484 | 0.2878 | 1.4719 |
+| gbm_book | 0.2568 | 0.1387 | 0.3480 | 1.4842 |
+
+- The specs gain far from the off. In the last minute the mid is already better than any spec.
+- The win-trained specs, fitted on one day, did worse than the mid on both targets.
+- ridge_all scored nothing: an infinite feature broke its standardisation. That is fixed; the spec itself is unchanged.
+
+Stream lab, 2 days pooled: no candidate on either target among 86 tests.
+
+The early-lay forward test's lays, replayed queue-aware through the stream, as a share of matched liability:
+
+| Day | Closed at the SP | Held to the result (x1 / x0.5 volume) |
+|---|---|---|
+| 5 Nov | +1.78% | -1.65% / -0.37% |
+| 6 Nov | +1.43% | +1.04% / +0.88% |
+
+The forward test's own figure on the recorder's books for 6 Nov was +1.25%.
+
+**7 Nov.** 121 races and 20,190 runner-checkpoints in the close lab (run 42428569854). The stream lab read 514,487 stream lines and 250 markets (run 42428572199). This was the close-lab specs' first fresh day.
+
+- **The BFSP champion changed (the pre-registered bar cleared).** gbm_all_small replaces the mid.
+  - Paired gain in squared error of log(SP): 0.0415 (90% interval 0.032 to 0.051), over 121 races.
+  - RMSE: 0.2247 against the mid's 0.3030 overall, and 0.1365 against 0.1404 at 60 s or less.
+  - This is one fresh day, and the champion is re-tested every night.
+- **Win: the mid stays champion.** The best challenger, gbm_book, gained -0.0015 (90% interval -0.0072 to +0.0042).
+- **Close lab, 7 Nov (fitted on 5-6 Nov):**
+
+  | | BFSP: RMSE log(SP), all | 60 s or less | over 180 s | Win: log loss |
+  |---|---|---|---|---|
+  | gbm_all_small | 0.2247 | 0.1365 | 0.2945 | 1.5120 |
+  | gbm_all | 0.2295 | 0.1407 | 0.2993 | 1.5122 |
+  | mid | 0.3030 | 0.1404 | 0.4280 | 1.5095 |
+  | ltp | 0.3200 | 0.1405 | 0.4554 | 1.5180 |
+
+- **Stream lab, 3 days pooled:** no candidate among 86 tests.
+- **The forward test's lays, 7 Nov** (queue-aware, as a share of matched liability):
+  - closed at the SP: +0.71% (x1) and +0.64% (x0.5);
+  - held to the result: -1.50% (x1) and -2.11% (x0.5).
+  - Its own figure was +0.96%.
+
+**Registered 8 Nov: the trade test on the champion's forecast** (research/greyhound/close_lab.py, `trade_rules`).
+Does the price on offer lag gbm_all_small's forecast of the SP? The rules are fixed:
+- At 60, 30 and 10 s out, back at the best back price when it is more than m above the forecast SP, and lay at the best lay price when it is more than m below. GBP2 or more must be shown.
+- m is 3%, 6% or 10%.
+- Each trade is scored closed at the SP and also held to the result, with 2% commission on a gain.
+
+That makes 18 rules and 36 tests. Only days after 8 Nov count. A rule is a candidate on a target after 10 days with its 90% lower bound (bootstrap over races) above zero.
+
+**8 Nov.** 109 races and 17,820 runner-checkpoints (close lab run 42538888173). The stream lab read 444,811 lines across 218 markets (run 42538890940). Collection is healthy.
+
+- **BFSP:** gbm_all_small holds the championship. RMSE log(SP) 0.1895 against the mid's 0.2381 overall, and 0.1253 against 0.1230 at 60 s or less.
+- **Win:** the mid holds. The best fresh challenger, gbm_all_small, gained 0.0037 (90% interval -0.0012 to +0.0087, 230 races), which does not clear the bar.
+- **The trade test on gbm_all_small's forecast:** no counted day yet. Its first is 9 Nov.
+- **Stream lab:** 4 days pooled, no candidate among 86 tests. Momentum lays still lose 2.9% to 5.6% at the SP.
+- **The forward test's lays, 8 Nov** (queue-aware, share of matched liability): +1.42% at the SP and +4.28% to the result (x1); +1.41% and +4.19% (x0.5). Its own figure was +0.47%.
+
+Four days so far:
+
+| | 5 Nov | 6 Nov | 7 Nov | 8 Nov |
+|---|---|---|---|---|
+| At the SP | +1.78% | +1.43% | +0.71% | +1.42% |
+| To the result | -1.65% | +1.04% | -1.50% | +4.28% |

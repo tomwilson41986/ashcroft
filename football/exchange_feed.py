@@ -7,8 +7,8 @@ betfair thresholds"). This module itself places nothing; real bets stay with ``F
 
 What it does, every loop:
 
-1. **Catalogue** (every 15 minutes): every soccer market of the chosen types (MATCH_ODDS and OVER_UNDER_25 by
-   default) starting in the next ``hours`` hours, every country and competition. Windows that hit Betfair's 1,000
+1. **Catalogue** (every 15 minutes): every soccer market of the chosen types (MATCH_ODDS, OVER_UNDER_25 and
+   TO_QUALIFY, DOUBLE_CHANCE, DRAW_NO_BET by default) starting in the next ``hours`` hours, every country and competition. Windows that hit Betfair's 1,000
    results are split in two until none does.
 2. **Books**, each market on its own cadence, tighter towards the off:
 
@@ -55,7 +55,12 @@ log = logging.getLogger(__name__)
 PREFIX = "football/exchange"
 LOCAL = Path(os.path.expanduser("~/.ashcroft/football/exchange"))
 SOCCER = "1"
-DEFAULT_TYPES = ("MATCH_ODDS", "OVER_UNDER_25")
+#: TO_QUALIFY: cup ties and two-legged European ties (the owner, 6 Nov 2026: "record cup markets, and games in Europe").
+#: Cups and UEFA matches' MATCH_ODDS and OVER_UNDER_25 were already in: the catalogue filters on soccer alone, every
+#: country and competition
+#: DOUBLE_CHANCE and DRAW_NO_BET: the cross-market read (6 Nov 2026, reports/football_model_rethink.md) found them
+#: following match odds on the last traded prices; their books (quotes and depth) say whether that lag can be traded
+DEFAULT_TYPES = ("MATCH_ODDS", "OVER_UNDER_25", "TO_QUALIFY", "DOUBLE_CHANCE", "DRAW_NO_BET")
 #: (minutes to the off at or above which, seconds between reads)
 CADENCE = ((360.0, 1800.0), (120.0, 600.0), (60.0, 300.0), (15.0, 120.0), (0.0, 60.0))
 RESULT_FROM_MIN = 100.0          # minutes after the start before the result is asked for

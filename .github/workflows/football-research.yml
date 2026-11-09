@@ -1,0 +1,113 @@
+name: Football research (read-only, S3)
+
+# Football research that needs the S3 store (the sources, the gold tables, the live feed's record), run by hand on
+# GitHub's runners and printed to the run's summary and artifact. Read-only: nothing is written to S3 and nothing
+# reaches Betfair. Each job is one research module, chosen from the list.
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'research job'
+        required: true
+        type: choice
+        options:
+          - cross_league_data
+          - cross_league_check
+          - cross_league_price
+          - price_discovery
+          - cross_market
+          - feed_coverage
+          - cup_form_check
+          - paper_lines_scan
+          - lineup_late_move
+          - lineup_release
+          - close_model_books
+      days:
+        description: 'days of the live record to read'
+        required: false
+        type: string
+        default: '3'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: football-research
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+      CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+      CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Cup and European data, and the live record of them
+        if: inputs.job == 'cross_league_data'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_cross_league_data --days "$DAYS" --out out/cross_league_data.json
+      - name: Cross-league strength on cup and continental results
+        if: inputs.job == 'cross_league_check'
+        run: python -m research.open_close.football_cross_league_check --out out/cross_league_check.json
+      - name: Cross-league strength against Betfair's prices (closing price and winning the bet)
+        if: inputs.job == 'cross_league_price'
+        run: python -m research.open_close.football_cross_league_price --out out/cross_league_price.json
+      - name: Price discovery and the rule scan (Betfair's own prices, model-free)
+        if: inputs.job == 'price_discovery'
+        run: python -m research.open_close.football_price_discovery --out out/price_discovery.json
+      - name: Cross-market consistency and who moves (Betfair's own prices, model-free)
+        if: inputs.job == 'cross_market'
+        run: python -m research.open_close.football_cross_market --out out/cross_market.json
+      - name: API-Football's coverage of our Betfair matches (about 25 API requests of the 7,500 a day)
+        if: inputs.job == 'feed_coverage'
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_feed_coverage --days "$DAYS" --out out/feed_coverage.json
+      - name: Cup and European ties with each club's form from the feed (closing price and winning the bet)
+        if: inputs.job == 'cup_form_check'
+        run: python -m research.open_close.football_cup_form_check --out out/cup_form_check.json
+      - name: Every strategy the paper book scores at the recorded books (crossing, resting, both targets)
+        if: inputs.job == 'paper_lines_scan'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_paper_lines_scan --days "$DAYS" --out out/paper_lines_scan.json
+      - name: Line-up news and Betfair's late move (the closing-line model's team-news input)
+        if: inputs.job == 'lineup_late_move'
+        run: python -m research.open_close.football_lineup_late_move --out out/lineup_late_move.json
+      - name: Line-up release at the recorded books (the move from the elevens' release, at real spreads)
+        if: inputs.job == 'lineup_release'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_lineup_release --days "$DAYS" --out out/lineup_release.json
+      - name: The closing-line model on the recorded books, and the spread-aware gate
+        if: inputs.job == 'close_model_books'
+        env:
+          DAYS: ${{ inputs.days }}
+        run: python -m research.open_close.football_close_model_books --days "$DAYS" --out out/close_model_books.json
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          for f in out/*.json; do
+            [ -f "$f" ] || continue
+            { echo "## $(basename "$f")"; echo '```'; head -c 60000 "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: football-research
+          path: out/
+          if-no-files-found: ignore

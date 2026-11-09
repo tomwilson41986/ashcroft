@@ -1698,6 +1698,56 @@ on the 06:15-21:30 window (from 5 Nov 05:15-10:00 UK, `window-1000`).
   the live scale). The runner fix failed for want of passwordless sudo (`runner-fix-1104`): nothing changed, the root
   commands are with the owner.
 
+**The thirty-sixth full day** (5 Nov, a Thursday; ledger `live-day-1105`), the twenty-fourth early session and the
+first on the 05:15-10:00 UK window (`window-1000`).
+- **The start.** Predictions run 41965929557 (04:08 UTC); the 05:16 session (run 41973013527) first backed at 05:17 UK
+  and was cancelled at 06:58:35 UTC by the upgrade timer again; the watchdog restarted it at 07:09:41 (run 41985245343,
+  to 21:30 UTC), about 11 minutes without a read. The settle at 22:29 UTC in settle mode (run 42121936903; its email
+  failed again, this time "421 server busy").
+- **+GBP179.47 after commission** (Betfair's funds GBP5,386.36 against GBP5,206.89; the ledger's settled +GBP179.48) on
+  681 fills on 155 horses in 44 races, GBP3,934.82 matched; CLV +4.62% at Betfair's settled prices; 31 horses' prices
+  cut by later non-runners. 05:15-07:59 +5.1% (GBP2,874), 08:00-09:59 +3.3% (GBP1,004); one GBP2.44 top-up at 10:00:02
+  (the window takes the whole 10:00 minute), nothing after. In line with the record before 10:00 (+5.5% after the
+  cuts, `live-by-hour-1104`). The record: 27 days, +GBP5,386.65, 22 up.
+- **The replay** (`replay-1105`), 12 Oct - 4 Nov after the cuts: the rule +GBP6,292 over 24 days (about +GBP5,030 at
+  the live scale). The runner fix's root commands are still with the owner.
+
+**The thirty-seventh full day** (6 Nov, a Friday; ledger `live-day-1106`), the twenty-fifth early session and the
+second on the 05:15-10:00 UK window.
+- **The start.** Predictions run 42160727669 (04:08 UTC); the session 05:16-21:30 UTC (run 42167481329) with no
+  restart, first back 05:17 UK, last 09:57 UK; the settle at 22:29 UTC in settle mode (run 42305111106; its email failed
+  again). The night-before run at 00:10 UK (42137966974, started 00:35 UTC) gave the same 332 prices as the 04:08 run
+  (`night-before-1106`).
+- **+GBP327.21 after commission** (Betfair's funds GBP5,713.57 against GBP5,386.36) on 462 fills on 103 horses in 33
+  races, GBP2,942.70 matched; CLV +12.59% at Betfair's settled prices; 20 horses' prices cut by later non-runners.
+  05:15-07:59 +14.3% (GBP2,364), 08:00-09:59 +4.2% (GBP490), nothing after 10:00. The record: 28 days, +GBP5,713.86,
+  23 up.
+- **The replay** (`replay-1106`), 12 Oct - 5 Nov after the cuts: the rule +GBP6,129 over 25 days (5 Nov -GBP163 in the
+  replay against +GBP179 live). The runner fix's root commands are still with the owner.
+
+**The thirty-eighth full day** (7 Nov, a Saturday; ledger `live-day-1107`), the twenty-sixth early session and the
+third on the 05:15-10:00 UK window.
+- **The start.** Predictions run 42337070938 (04:07 UTC); the session 05:16-21:30 UTC (run 42341990868) with no
+  restart, first back 05:16 UK, the GBP4,000 day limit reached at 09:30 UK; the settle at 22:29 UTC in settle mode (run
+  42420871486; its email failed again). The night-before run (42319060480, started 00:34 UTC) again gave the morning's
+  prices exactly (`night-before-1107`).
+- **+GBP282.19 after commission** (Betfair's funds GBP5,995.76 against GBP5,713.57) on 692 fills on 161 horses in 43
+  races, GBP3,999.99 matched; CLV +4.52% at Betfair's settled prices; first backs +12.7%, top-ups +1.6%; 19 horses'
+  prices cut by later non-runners. The record: 29 days, +GBP5,996.05, 24 up.
+- **The replay** (`replay-1107`), 12 Oct - 6 Nov after the cuts: the rule +GBP6,441 over 26 days (6 Nov +GBP312 in the
+  replay against +GBP327 live). The runner fix's root commands are still with the owner.
+
+**The thirty-ninth full day** (8 Nov, a Sunday; ledger `live-day-1108`), the twenty-seventh early session and the
+fourth on the 05:15-10:00 UK window.
+- **The start.** Predictions run 42445547236 (04:07 UTC); the session 05:16-21:30 UTC (run 42450113187) with no
+  restart, first back 05:16 UK; the settle at 22:29 UTC in settle mode (run 42530479876; its email failed again). The
+  night-before run (42430730042, started 00:39 UTC) gave the morning's prices exactly for the third night.
+- **+GBP270.38 after commission** (the session's funds GBP5,995.76 -> GBP6,266.14) on 353 fills on 82 horses in 21
+  races, GBP2,474.27 matched; CLV +7.23% at Betfair's settled prices. After the session the owner withdrew GBP1,266.14
+  (funds GBP5,000.00 at the settle), as on earlier Sundays. The record: 30 days, +GBP6,266.43, 25 up.
+- **The replay** (`replay-1108`), 12 Oct - 7 Nov after the cuts: the rule +GBP6,540 over 27 days (7 Nov +GBP100 in the
+  replay against +GBP282 live). The runner fix's root commands are still with the owner.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
