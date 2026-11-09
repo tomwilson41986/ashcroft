@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 DEV = range(2016, 2022)
 BACK_MIN = (1.5, 2.0, 3.0, 4.0, 6.0, 10.0, 20.0)
 LAY_MAX = (1.5, 2.0, 3.0, 4.0, 6.0, 10.0)
-COMM = 0.02
+from greyhound.costs import COMMISSION as COMM   # the account's rate (greyhound/costs.py)
 MIN_BETS = 300
 Z90 = 1.2816
 

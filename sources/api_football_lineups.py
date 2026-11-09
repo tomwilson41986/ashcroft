@@ -82,6 +82,24 @@ def main_league_ids() -> set[int]:
     return {c.apif_league_id for c in COMPETITIONS if c.fd_code in MAIN and c.apif_league_id}
 
 
+#: the leagues beyond the 22 whose line-ups are collected before kick-off: those of sources/api_football_leagues.json
+#: with at least this much money matched on our recorded markets (6 Nov 2026: the Europa, Champions and Conference
+#: Leagues, Brazil's Serie A, the AFC Champions League Two). The day's polls share the plan's quota with the nightly
+#: history fetch, so the list stays short.
+LINEUP_MIN_MATCHED_GBP = 250_000.0
+
+
+def lineup_league_ids() -> set[int]:
+    """The 22 main divisions and the high-money leagues of the coverage list."""
+    from pathlib import Path
+    ids = set(main_league_ids())
+    f = Path(__file__).with_name("api_football_leagues.json")
+    if f.exists():
+        ids |= {int(x["apif_league_id"]) for x in json.loads(f.read_text()).get("leagues", [])
+                if float(x.get("matched_gbp") or 0) >= LINEUP_MIN_MATCHED_GBP and x.get("lineups")}
+    return ids
+
+
 def http_fetch(key: str) -> Fetch:
     """GET API-Football with the key in its header -> (body, remaining daily requests)."""
     s = session()
@@ -247,7 +265,7 @@ def collect(store: Store, fetch: Fetch, until: str, leagues: set[int] | None = N
     """The day's loop to ``until`` (UK clock)."""
     now = now or (lambda: datetime.now(timezone.utc))
     day = now().astimezone(UK).date().isoformat()
-    c = Collector(store, fetch, day, leagues or main_league_ids(), now=now)
+    c = Collector(store, fetch, day, leagues or lineup_league_ids(), now=now)
     end_h, end_m = (int(x) for x in until.split(":"))
     last_fix = last_inj = None
     failures = 0
@@ -299,7 +317,7 @@ def _xi(team: dict) -> tuple[int, ...]:
 
 def build(store: Store, leagues: set[int] | None = None) -> dict:
     import pandas as pd
-    leagues = leagues or main_league_ids()
+    leagues = leagues or lineup_league_ids()
     polls = []                                      # (fetched, fixture) for every match in every line-up poll
     for doc in _docs(store, "lineups"):
         t = pd.Timestamp(doc["fetched_utc"])
@@ -410,7 +428,7 @@ def main(argv=None) -> int:
         fetch = http_fetch(key)
         if a.ids:
             day = datetime.now(timezone.utc).astimezone(UK).date().isoformat()
-            c = Collector(store, fetch, day, main_league_ids())
+            c = Collector(store, fetch, day, lineup_league_ids())
             ids = [int(x) for x in a.ids.split("-") if x.strip()]
             for i in ids:
                 c.matches[i] = Match(i, datetime.max.replace(tzinfo=timezone.utc), "NS", 0)

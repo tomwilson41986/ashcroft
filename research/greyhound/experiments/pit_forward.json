@@ -1,0 +1,64 @@
+{
+  "about": "Registered 6 Nov 2026, before any of its days exist: the forward test of the metrics database (greyhound/pit). On the first test (2026-06-01 to 2026-11-05; fast-loop runs 42253527161 and 42255735836) every family together cut the RMSE of log(BSP) from 0.4130 to 0.4101 (-0.0029, 90% -0.0038 to -0.0020) but added nothing to the result's log-loss (softmax, +0.00024, -0.00022 to +0.0007); that window had been read by earlier batches. This spec is scored on days after 6 Nov only, once at least 30 of them exist (from 7 Dec 2026). Kept, on the BFSP target, if pit_all_logbsp's paired RMSE gain over base_logbsp has its 90% lower bound above zero; on the Win target, the same for pit_all_softmax's log-loss. Life's weigh-in columns are dropped (card-unsafe); weather is left out (no 2026 source).",
+  "recipe": "quick",
+  "baseline": "base_logbsp",
+  "test_from": "2026-11-07",
+  "experiments": [
+    {
+      "name": "base_logbsp",
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred"
+      ],
+      "rescale_book": true
+    },
+    {
+      "name": "pit_all_logbsp",
+      "features": "card_safe",
+      "objective": "logbsp",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_ability",
+        "pit_trouble",
+        "pit_connections",
+        "pit_market",
+        "pit_breeding",
+        "pit_life"
+      ],
+      "rescale_book": true,
+      "drop": [
+        "lf_wt_"
+      ]
+    },
+    {
+      "name": "base_softmax",
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred"
+      ]
+    },
+    {
+      "name": "pit_all_softmax",
+      "features": "card_safe",
+      "objective": "softmax",
+      "add_blocks": [
+        "sim",
+        "wpred",
+        "pit_ability",
+        "pit_trouble",
+        "pit_connections",
+        "pit_market",
+        "pit_breeding",
+        "pit_life"
+      ],
+      "drop": [
+        "lf_wt_"
+      ]
+    }
+  ]
+}

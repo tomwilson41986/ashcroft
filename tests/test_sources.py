@@ -562,3 +562,34 @@ def test_historic_coverage_reports_dates_countries_and_market_types(tmp_path):
     assert c["markets"] == 2 and c["markets_by_month"] == {"2025-09": 1, "2026-01": 1}
     assert c["top_countries"] == {"DK": 1, "GB": 1} and c["went_in_play_share"] == 0.5
     assert abs(c["runner_share_with"]["ltp_close"] - 2 / 3) < 1e-12
+
+
+def test_historic_prices_are_kept_apart_for_each_handicap_line():
+    import json as _j
+    import betfair_historic as bh
+    d = {"marketType": "ASIAN_HANDICAP", "eventId": "1", "marketTime": "2026-09-01T15:00:00.000Z", "inPlay": False,
+         "runners": [{"id": 7, "hc": -0.5, "status": "WINNER"}, {"id": 7, "hc": 0.5, "status": "LOSER"}]}
+    msgs = [{"pt": 1, "mc": [{"id": "1.9", "marketDefinition": d}]},
+            {"pt": 2, "mc": [{"id": "1.9", "rc": [{"id": 7, "hc": -0.5, "ltp": 2.4}, {"id": 7, "hc": 0.5, "ltp": 1.6}]}]}]
+    rows = bh.parse_market("\n".join(_j.dumps(m) for m in msgs).encode())
+    by = {r["handicap"]: r for r in rows}
+    assert by[-0.5]["ltp_close"] == 2.4 and by[-0.5]["won"] == 1
+    assert by[0.5]["ltp_close"] == 1.6 and by[0.5]["won"] == 0
+
+
+def test_api_football_history_leagues_main_first_then_the_list_in_order():
+    import json as _j
+    from sources import api_football_history as h
+    from sources.api_football_lineups import main_league_ids
+    ids = h.history_league_ids()
+    main = sorted(main_league_ids())
+    assert ids[:len(main)] == main and len(ids) == len(set(ids))
+    listed = [x["apif_league_id"] for x in _j.loads(h.EXTRA_LEAGUES_FILE.read_text())["leagues"]]
+    rest = [x for x in listed if x not in main]
+    assert ids[len(main):] == rest and 3 in ids and 2 in ids          # the Europa and Champions Leagues
+
+
+def test_lineup_leagues_add_only_the_high_money_covered_leagues():
+    from sources.api_football_lineups import lineup_league_ids, main_league_ids
+    extra = lineup_league_ids() - main_league_ids()
+    assert {2, 3}.issubset(extra) and len(extra) <= 10

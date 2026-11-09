@@ -1,0 +1,13 @@
+{
+  "about": "The closing-price lab's experiments (research/greyhound/close_lab.py): each a feature set and a model, scored every night on every recorded day it can be fitted for, and counted only on days after the day it was registered. Add a spec to try an idea; never edit a registered one (a changed spec gets a new name and date). Every spec is scored on both targets (1. BFSP, 2. Win, the result); a target of 'win' fits it to the result, the default to log(SP).",
+  "specs": [
+    {"name": "gbm_book", "registered": "2026-11-06", "features": ["book"], "model": {"kind": "gbm"}},
+    {"name": "gbm_book_flow", "registered": "2026-11-06", "features": ["book", "flow"], "model": {"kind": "gbm"}},
+    {"name": "gbm_book_flow_sp", "registered": "2026-11-06", "features": ["book", "flow", "sp"], "model": {"kind": "gbm"}},
+    {"name": "gbm_all", "registered": "2026-11-06", "features": ["book", "flow", "sp", "place", "model"], "model": {"kind": "gbm"}},
+    {"name": "gbm_all_small", "registered": "2026-11-06", "features": ["book", "flow", "sp", "place", "model"], "model": {"kind": "gbm", "leaves": 15, "min_leaf": 300, "rounds": 300}},
+    {"name": "ridge_all", "registered": "2026-11-06", "features": ["book", "flow", "sp", "place", "model"], "model": {"kind": "ridge", "lam": 10.0}},
+    {"name": "gbm_win_book", "registered": "2026-11-06", "target": "win", "features": ["book"], "model": {"kind": "gbm"}},
+    {"name": "gbm_win_all", "registered": "2026-11-06", "target": "win", "features": ["book", "flow", "sp", "place", "model"], "model": {"kind": "gbm"}}
+  ]
+}

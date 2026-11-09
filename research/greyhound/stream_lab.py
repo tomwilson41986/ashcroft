@@ -9,15 +9,16 @@ Betfair's projected SP (near). The settled definition gives the SP and the resul
 Every rule takes the price on offer at a checkpoint (a back at the best back price, a lay at the best lay price,
 GBP2 or more shown there), so the fill is the book's own: no queue is assumed. Each closes at the SP: a back at B
 greened by a lay at the SP gives B / SP - 1 a unit staked, a lay at L 1 - L / SP, whatever the result; commission
-on a gain. The families (``RULES``):
+on a gain. Every rule is scored on two targets (the owner, 6 Nov 2026: "let's always test against two targets; 1.
+BFSP 2. Win - winning the bet"): closed at the SP as above, and the same bet left to run to the result (a back wins
+B - 1 or loses 1, a lay loses L - 1 or wins 1). The families (``RULES``):
 - ``gap``: Betfair's projected SP against the price on offer: back where B / spn - 1 > m, lay where 1 - L / spn > m;
 - ``mom``: follow the move since 180 s out: back what has shortened by x or more (mid), lay what has drifted;
 - ``rev``: against it: back the drifters, lay the shorteners;
 - ``fav_lay``: lay the favourite at 10 s (a control: it should lose about the spread).
 Scored by day and pooled over days, with a 90% interval from a bootstrap over races; a rule is a candidate only after
-``MIN_DAYS`` days with its pooled lower bound above zero and its deflated Sharpe by race at or above 0.95 against
-every rule the lab has scored (research.overfit, the ledger at s3 stream_lab/trials.json; about one in twenty clears a
-one-sided 90% bound by chance, and the DSR allows for the count).
+``MIN_DAYS`` days with its pooled lower bound above zero, and the count of rules is in every report (about one in
+twenty clears a one-sided 90% bound by chance).
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ DECIDE = (60, 30, 10)
 GAPS = (0.03, 0.06, 0.10)
 MOVES = (0.05, 0.10)
 MIN_SIZE = 2.0
-COMM = 0.02
+from greyhound.costs import COMMISSION as COMM   # the account's rate (greyhound/costs.py)
 MIN_DAYS = 10
 REGISTERED = "2026-11-05"
 
@@ -110,8 +111,12 @@ def trades(s: pd.DataFrame) -> pd.DataFrame:
             raw = 1 - x.lay1 / x.bsp
             price = x.lay1
         x = x.assign(price=price, raw=raw)[ok]
-        x = x.assign(pnl=np.where(x.raw > 0, x.raw * (1 - COMM), x.raw), rule=rule, side=side)
-        out.append(x[["rule", "side", "market", "sid", "check", "price", "bsp", "pnl"]])
+        won = (x.status.astype(str) == "WINNER").astype(int)
+        # target 2 (the owner, 6 Nov 2026: "Win - winning the bet"): the same bet left to run to the result
+        res = np.where(won == 1, x.price - 1, -1.0) if side == "BACK" else np.where(won == 1, -(x.price - 1), 1.0)
+        x = x.assign(pnl=np.where(x.raw > 0, x.raw * (1 - COMM), x.raw), won=won,
+                     pnl_win=np.where(res > 0, res * (1 - COMM), res), rule=rule, side=side)
+        out.append(x[["rule", "side", "market", "sid", "check", "price", "bsp", "won", "pnl", "pnl_win"]])
 
     for c in DECIDE:
         x = s[s.check == c]
@@ -145,28 +150,39 @@ def _boot(pnl_by_race: pd.Series, n: int = 2000, seed: int = 0):
 
 
 def score(tr: pd.DataFrame, ledger=None) -> pd.DataFrame:
-    """Each rule: trades, races, days, mean P&L a unit staked, its 90% interval by race (pooled over days), and its
-    deflated Sharpe by race against every rule scored (research.overfit: the rules here, and with a ``ledger`` every
-    rule the lab has ever scored). A candidate needs ``MIN_DAYS`` days, the lower bound above zero and the DSR at or
-    above research.overfit.DSR_THRESHOLD: with 43 rules about two clear the bound by luck, and the DSR is the bar
-    that allows for the count."""
+    """Each rule on both targets: closed at the SP (``pnl``) and left to run to the result (``pnl_win``); trades,
+    races, days, the mean P&L a unit staked, its 90% interval by race (pooled over days) and its deflated Sharpe by
+    race against every test scored (research.overfit: both targets of every rule here, and with a ``ledger`` every
+    test the lab has ever scored). A rule is a candidate on a target on its own: ``MIN_DAYS`` days, the lower bound
+    above zero and the DSR at or above research.overfit.DSR_THRESHOLD. With 43 rules on two targets about four tests
+    clear the bound by luck; the DSR is the bar that allows for the count."""
     from research.overfit import deflate_table
     rows, series = [], {}
     for rule, g in tr.groupby("rule"):
-        by_race = g.groupby(["day", "market"]).pnl.mean()
-        series[rule] = by_race.to_numpy()
-        lo, hi = _boot(by_race)
-        rows.append({"rule": rule, "trades": len(g), "races": len(by_race), "days": g.day.nunique(),
-                     "mean_pnl%": round(100 * float(g.pnl.mean()), 3),
-                     "ci90%": [round(100 * lo, 3), round(100 * hi, 3)] if lo is not None else None,
-                     "bound": bool(lo is not None and lo > 0 and g.day.nunique() >= MIN_DAYS)})
+        row = {"rule": rule, "trades": len(g), "races": int(g.groupby(["day", "market"]).ngroups),
+               "days": g.day.nunique()}
+        for col, sfx in (("pnl", ""), ("pnl_win", "_win")):
+            v = g[g[col].notna()] if col in g else g.iloc[:0]
+            by_race = v.groupby(["day", "market"])[col].mean() if len(v) else pd.Series(dtype=float)
+            if len(by_race):
+                series[f"{rule}{sfx}"] = by_race.to_numpy()
+            lo, hi = _boot(by_race)
+            row[f"mean{sfx}%"] = round(100 * float(v[col].mean()), 3) if len(v) else None
+            row[f"ci90{sfx}%"] = [round(100 * lo, 3), round(100 * hi, 3)] if lo is not None else None
+            row[f"bound{sfx}"] = bool(lo is not None and lo > 0 and v.day.nunique() >= MIN_DAYS)
+        rows.append(row)
     if not rows:
         return pd.DataFrame()
-    dsr = deflate_table(series, ledger=ledger)
-    for r in rows:
-        d = dsr[r["rule"]]
-        r.update({"sharpe": d["sharpe"], "dsr": d["dsr"], "n_trials": d["n_trials"],
-                  "candidate": bool(r.pop("bound") and d["passed"])})
+    dsr = deflate_table(series, ledger=ledger) if series else {}
+    for row in rows:
+        for sfx in ("", "_win"):
+            d = dsr.get(f"{row['rule']}{sfx}", {})
+            row[f"sharpe{sfx}"], row[f"dsr{sfx}"] = d.get("sharpe"), d.get("dsr")
+            row[f"candidate{sfx}"] = bool(row.pop(f"bound{sfx}") and d.get("passed", False))
+        row["n_trials"] = max((d.get("n_trials", 0) for d in dsr.values()), default=0)
+        row["mean_pnl%"] = row.pop("mean%")
+        row["candidate_sp"] = row.pop("candidate")
+        row["candidate"] = row["candidate_sp"] or row["candidate_win"]
     return pd.DataFrame(rows).sort_values("mean_pnl%", ascending=False)
 
 
@@ -178,6 +194,63 @@ def run_day(lines, day: date) -> tuple[pd.DataFrame, pd.DataFrame]:
     if len(tr):
         tr["day"] = f"{day}"
     return s, tr
+
+
+def forward_test_orders(store, day: date) -> list:
+    """The early-lay forward test's lays for the day (greyhound/laytest.py, its primary rule, as its intraday table
+    builds them: the day's forecast fit on the first traded books), as simulated LAY orders at the time of each book,
+    at the rule's limit price, staked as the early lay stakes (GBP20 liability)."""
+    from greyhound import early_lay as el, laytest as lt
+    from research.greyhound import limit_study as ls, tradeout_study as ts
+    f = lt.day_fit(store, day)
+    if f is None:
+        return []
+    rows, _ = lt.today_rows(store, day)
+    if not len(rows):
+        return []
+    q, book = ts.predict(rows, f)
+    rows = rows.assign(f_bsp=1.0 / (book * np.asarray(q, float)))
+    o = lt._select(ls.orders(rows), lt.PRIMARY).drop_duplicates(["market_id", "selection_id"])
+    out = []
+    for r in o.itertuples(index=False):
+        price = float(r.limit)
+        out.append(sr.SimOrder(market=str(r.market_id), sid=int(float(r.selection_id)), side="LAY", price=price,
+                               size=el.stake_for(price, el.CONFIG), t=pd.Timestamp(r.polled).to_pydatetime(),
+                               tag="forward_test"))
+    return out
+
+
+def forward_check(lines, store, day: date) -> dict:
+    """The forward test's lays replayed through the stream with queue-aware fills (x1 and x0.5 volume), closed 5 s
+    before the off, at the SP and left to run to the result, each as a return on the matched liability; beside the forward test's own figure
+    (its optimistic fill on the recorder's books)."""
+    from greyhound import laytest as lt
+    out = {"day": f"{day}"}
+    try:
+        own = lt.intraday(store, day)
+        out["forward_test_own"] = {k: own.get(k) for k in ("races", "lays_placed", "matched", "liability", "pnl", "roi%")}
+    except Exception as exc:
+        out["forward_test_own"] = {"error": str(exc)[:200]}
+    for vf in (1.0, 0.5):
+        orders = forward_test_orders(store, day)
+        if not orders:
+            out["note"] = "no data found: no forward-test lays for the day"
+            return out
+        df = sr.replay(lines, orders, vol_factor=vf, comm=COMM)
+        m = df[df.matched > 0]
+        liab = float((m.matched * (m.avg - 1)).sum()) if len(m) else 0.0
+        green = float(pd.to_numeric(m.pnl, errors="coerce").fillna(0).sum()) if len(m) else 0.0
+        msp = m[pd.to_numeric(m.pnl_sp, errors="coerce").notna()] if len(m) else m
+        liab_sp = float((msp.matched * (msp.avg - 1)).sum()) if len(msp) else 0.0
+        at_sp = float(pd.to_numeric(msp.pnl_sp, errors="coerce").sum()) if len(msp) else 0.0
+        mres = m[pd.to_numeric(m.get("pnl_result"), errors="coerce").notna()] if len(m) and "pnl_result" in m else m.iloc[:0]
+        liab_res = float((mres.matched * (mres.avg - 1)).sum()) if len(mres) else 0.0
+        at_res = float(pd.to_numeric(mres.pnl_result, errors="coerce").sum()) if len(mres) else 0.0
+        out[f"stream_x{vf}"] = {**sr.summary(df), "matched_liability": round(liab, 2),
+                                "roi_green%": round(100 * green / liab, 2) if liab > 0 else None,
+                                "roi_sp%": round(100 * at_sp / liab_sp, 2) if liab_sp > 0 else None,
+                                "roi_result%": round(100 * at_res / liab_res, 2) if liab_res > 0 else None}
+    return out
 
 
 def main(argv=None) -> int:
@@ -211,7 +284,16 @@ def main(argv=None) -> int:
         s3.put_object(Bucket=bk, Key=f"stream_lab/trades/{day}.parquet", Body=buf.getvalue())
     days = []
     for k in sorted(x for x in listing("stream_lab/trades/") if x.endswith(".parquet")):
-        days.append(pd.read_parquet(io.BytesIO(s3.get_object(Bucket=bk, Key=k)["Body"].read())))
+        t = pd.read_parquet(io.BytesIO(s3.get_object(Bucket=bk, Key=k)["Body"].read()))
+        if "pnl_win" not in t:                  # a day scored before the result target (6 Nov): score it again
+            d0 = date.fromisoformat(k.rsplit("/", 1)[1][:10])
+            _, t = run_day(sr.load_lines(lambda kk: s3.get_object(Bucket=bk, Key=kk)["Body"].read(), listing, d0), d0)
+            if len(t):
+                buf = io.BytesIO()
+                t.to_parquet(buf, index=False)
+                s3.put_object(Bucket=bk, Key=k, Body=buf.getvalue())
+                log.info("%s scored again with the result target: %d trades", d0, len(t))
+        days.append(t)
     pooled = pd.concat(days, ignore_index=True) if days else pd.DataFrame()
     from research.overfit import TrialLedger
     ledger = TrialLedger(f"s3://{bk}/stream_lab/trials.json", programme="greyhound stream lab")
@@ -220,20 +302,35 @@ def main(argv=None) -> int:
            "trades_today": len(tr), "days_pooled": int(pooled.day.nunique()) if len(pooled) else 0,
            "rules": int(len(sc)), "registered": REGISTERED, "candidates": sc[sc.candidate].rule.tolist() if len(sc) else [],
            "scores": sc.to_dict("records") if len(sc) else []}
+    try:                                       # the forward test checked with the stream's fills (the owner, 5 Nov)
+        from sources.common import Store
+        rep["forward_test"] = forward_check(lines, Store(), day)
+    except Exception as exc:
+        rep["forward_test"] = {"error": str(exc)[:300]}
     s3.put_object(Bucket=bk, Key=f"stream_lab/report_{day}.json", Body=json.dumps(rep, indent=1, default=str).encode())
     from pathlib import Path
     Path(a.out).mkdir(parents=True, exist_ok=True)
     md = [f"## Greyhound stream lab, {day}", "",
           f"{rep['lines']} stream lines, {rep['markets']} markets, {rep['trades_today']} trades today; "
-          f"{rep['days_pooled']} days pooled; {rep['rules']} rules (registered {REGISTERED}; a candidate needs "
-          f"{MIN_DAYS} days, its pooled 90% lower bound above zero and its deflated Sharpe by race at least 0.95 against "
-          f"every rule scored; about one rule in twenty clears the bound alone by chance). Candidates: "
-          f"{', '.join(rep['candidates']) or 'none'}.", "",
-          "| Rule | Trades | Races | Days | Mean P&L % a unit | 90% | Sharpe by race | DSR (rules) | Candidate |",
-          "|---|---|---|---|---|---|---|---|---|"]
+          f"{rep['days_pooled']} days pooled; {rep['rules']} rules on two targets, {2 * rep['rules']} tests (registered "
+          f"{REGISTERED}; a candidate needs {MIN_DAYS} days, its pooled 90% lower bound above zero on a target and its "
+          f"deflated Sharpe by race at least 0.95 against every test scored; about one test in twenty clears the bound "
+          f"alone by chance). Candidates: {', '.join(rep['candidates']) or 'none'}.",
+          "", "Target 1, closed at the SP (BFSP); target 2, left to run to the result (Win).", "",
+          "| Rule | Trades | Races | Days | At the SP: mean % a unit | 90% | To the result: mean % a unit | 90% | "
+          "DSR (SP / Win; tests) | Candidate (SP / Win) |", "|---|---|---|---|---|---|---|---|---|---|"]
     for r in rep["scores"]:
         md.append(f"| {r['rule']} | {r['trades']} | {r['races']} | {r['days']} | {r['mean_pnl%']} | {r['ci90%']} | "
-                  f"{r['sharpe']} | {r['dsr']} ({r['n_trials']}) | {r['candidate']} |")
+                  f"{r.get('mean_win%')} | {r.get('ci90_win%')} | {r.get('dsr')} / {r.get('dsr_win')} ({r.get('n_trials')}) | "
+                  f"{r.get('candidate_sp')} / {r.get('candidate_win')} |")
+    ft = rep.get("forward_test", {})
+    md += ["", "### The early-lay forward test, its lays replayed through the stream", "",
+           f"Its own figure (optimistic fill, the recorder's books): {json.dumps(ft.get('forward_test_own'))}", ""]
+    for k in ("stream_x1.0", "stream_x0.5"):
+        if k in ft:
+            md.append(f"- queue-aware, traded volume {k[-4:]}: {json.dumps(ft[k])}")
+    if ft.get("note") or ft.get("error"):
+        md.append(f"- {ft.get('note') or ft.get('error')}")
     Path(a.out, "report.md").write_text("\n".join(md) + "\n")
     print("\n".join(md))
     return 0

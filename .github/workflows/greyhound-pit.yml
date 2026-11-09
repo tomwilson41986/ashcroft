@@ -1,0 +1,80 @@
+name: Greyhound metrics database (read-only)
+
+# The greyhound metrics database (greyhound/pit; the owner, 6 Nov 2026: "how could we build a database with the most
+# advanced set of greyhound metrics in the world? ... work on all steps that are possible now"): every GBGB run from
+# 2014, each family of metrics a point-in-time table in the sources store (greyhound/pit/<table>.parquet with its
+# meta), the weather from NOAA's public-domain ISD-Lite files, and the registry of every column. Nightly after the
+# GBGB fetch (source-data.yml, 03:20 UTC); the fast loop scores the tables as blocks (pit_<table>). Read-only: no
+# Betfair login, nothing bets.
+
+on:
+  schedule:
+    - cron: '40 6 * * *'
+  workflow_dispatch:
+    inputs:
+      tables:
+        description: "tables, comma-separated, or 'all'"
+        required: false
+        default: 'all'
+      first_year:
+        description: 'the first GBGB year read'
+        required: false
+        default: '2014'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-pit
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+      CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+      TABLES: ${{ inputs.tables || 'all' }}
+      FIRST_YEAR: ${{ inputs.first_year || '2014' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          free -h
+      - name: Weather (NOAA ISD-Lite, public domain)
+        continue-on-error: true
+        run: |
+          if [ -f research/greyhound/reference/gb_tracks.csv ]; then
+            python -m sources.noaa_isd --fetch --build --from "$FIRST_YEAR"
+          else
+            echo "no track reference table yet: the weather table is empty"
+          fi
+      - name: Build the tables
+        run: |
+          if ! [[ "$TABLES" =~ ^[a-z_,]+$ ]]; then echo "tables must be names like ability,trouble or all"; exit 1; fi
+          if ! [[ "$FIRST_YEAR" =~ ^20[0-9]{2}$ ]]; then echo "first_year must be a year"; exit 1; fi
+          python -m greyhound.pit --build "$TABLES" --first-year "$FIRST_YEAR" --out out/pit
+          python -m greyhound.pit --registry
+          cat out/pit/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-pit-${{ github.run_number }}
+          path: |
+            out/pit/
+            reports/greyhound_metrics_registry.md
+          if-no-files-found: ignore
+          retention-days: 30
