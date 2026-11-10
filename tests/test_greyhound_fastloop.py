@@ -455,3 +455,16 @@ def test_the_neural_set_model_and_the_stack_price_a_coherent_book(objective, mon
     assert res["log_bsp_rmse"] < blind["log_bsp_rmse"] and res["nn"]["epochs"] >= 1
     if objective == "stack_share":
         assert set(res["stack"]) == {"a_trees", "b_network"}
+
+
+def test_several_networks_are_averaged(monkeypatch):
+    pytest.importorskip("torch")
+    from greyhound import nn
+    monkeypatch.setattr(nn, "MAX_EPOCHS", 4)
+    df, meta = synthetic_cache()
+    res, pred = fl.run_experiment(df, meta, {"name": "n2", "features": "card_safe", "objective": "stack_share",
+                                             "nn_seeds": 2, "nn_seconds": 120}, QUICK, test_from="2026-06-01")
+    assert res["nn"]["seeds"] == 2 and len(res["nn"]["best_by_seed"]) == 2
+    assert np.allclose(pred.groupby("race_id").p_model.sum(), 1.0)
+    with pytest.raises(ValueError):
+        fl.check_spec({"experiments": [{"name": "x", "objective": "nn_share", "nn_seeds": 11}]})

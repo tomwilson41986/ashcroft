@@ -1,0 +1,170 @@
+{
+ "about": "Batch 18 (10 Nov 2026), registered after batch 17 (run 42847906843) and before its own scores: the winners confirmed together at three seeds with the per-track stretch, on the rebuilt form and draw tables (run 42848089525: the grids widened past the first build's edges). Baseline best3 is share08_best exactly (the recipe in bfsp_forward.json). best3_all3 adds the form, draw and bend tables (batch 17: -0.0023, z -5.4, log-loss z -2.2). stack3 blends best3's trees with three averaged neural set models (batch 17, one seed each: -0.0113, z -28.5, log-loss z -3.7); stack3_all3 is the stack on the three tables too; nn3 is the three networks alone, read for the record. The bar: 3 bootstrap standard errors on the RMSE of log(BSP) against best3, the log-loss no worse beyond 1; each is read uncalibrated and with the per-track stretch. The best that passes goes into a new forward spec.",
+ "recipe": "quick",
+ "baseline": "best3",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life"
+   ],
+   "seeds": 3,
+   "name": "best3"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend"
+   ],
+   "seeds": 3,
+   "importance": true,
+   "name": "best3_all3"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "stack3"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "stack3_all3"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "nn_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life"
+   ],
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "nn3"
+  }
+ ]
+}

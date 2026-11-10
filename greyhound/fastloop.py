@@ -206,6 +206,8 @@ def check_spec(spec: dict) -> list[dict]:
             raise ValueError(f"{e['name']}: recipe must be one of {tuple(RECIPES)}")
         if e.get("seeds") is not None and not (1 <= int(e["seeds"]) <= 10):
             raise ValueError(f"{e['name']}: seeds must be 1 to 10")
+        if e.get("nn_seeds") is not None and not (1 <= int(e["nn_seeds"]) <= 10):
+            raise ValueError(f"{e['name']}: nn_seeds must be 1 to 10")
         if e.get("halflife_days") is not None and float(e["halflife_days"]) <= 0:
             raise ValueError(f"{e['name']}: halflife_days must be above 0")
         walk = e.get("walk", spec.get("walk"))
@@ -463,13 +465,19 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
         models.append(m)
     del dtr, des
     m = models[0] if models else None
-    netm, stack = None, None
+    netm, nets, stack = None, [], None
     if obj in ("nn_share", "stack_share"):
         from greyhound import nn
-        _log(f"{exp['name']}: the neural set model")
-        netm = nn.fit(matrix(tr_i), race[tr_i], soft[tr_i], matrix(es_i), race[es_i], soft[es_i],
-                      seconds=float(exp.get("nn_seconds", 2400)), seed=int(params.get("seed", 0)))
-        _log(f"{exp['name']}: {netm['epochs']} epochs, es cross-entropy {netm['es_xent']}")
+        # nn_seeds: several networks from different seeds, their scores averaged (as the trees' seeds are)
+        X_tr, X_es0 = matrix(tr_i), matrix(es_i)
+        for k in range(int(exp.get("nn_seeds", 1))):
+            _log(f"{exp['name']}: the neural set model, seed {k}")
+            nets.append(nn.fit(X_tr, race[tr_i], soft[tr_i], X_es0, race[es_i], soft[es_i],
+                               seconds=float(exp.get("nn_seconds", 2400)) / int(exp.get("nn_seeds", 1)),
+                               seed=int(params.get("seed", 0)) + k))
+            _log(f"{exp['name']}: {nets[-1]['epochs']} epochs, es cross-entropy {nets[-1]['es_xent']}")
+        del X_tr, X_es0
+        netm = nets[0]
     fit_s = time.monotonic() - t0
     budget = recipe.get("max_seconds")
     stopped = ("nn" if m is None else "cap" if m.current_iteration() >= recipe["rounds"] else
@@ -479,12 +487,15 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     def gbm_of(X):
         return np.mean([mm.predict(X, num_iteration=mm.best_iteration) for mm in models], axis=0)
 
+    def net_of(X, rc):
+        return np.mean([nn.predict(nm, X, rc) for nm in nets], axis=0)
+
     if obj == "stack_share":
         # the blend: the race softmax of a x trees + b x network, a and b fitted to the SP book's shares on the
         # early-stopping rows (neither part trained on them)
         from scipy.optimize import minimize
         X_es = matrix(es_i)
-        sg, sn, st_es = gbm_of(X_es), nn.predict(netm, X_es, race[es_i]), _starts(race[es_i])
+        sg, sn, st_es = gbm_of(X_es), net_of(X_es, race[es_i]), _starts(race[es_i])
         t_es = np.nan_to_num(soft[es_i])
 
         def xent(w):
@@ -496,9 +507,9 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
 
     def raw_of(X, rc):
         if obj == "nn_share":
-            return nn.predict(netm, X, rc)
+            return net_of(X, rc)
         if obj == "stack_share":
-            return stack["a_trees"] * gbm_of(X) + stack["b_network"] * nn.predict(netm, X, rc)
+            return stack["a_trees"] * gbm_of(X) + stack["b_network"] * net_of(X, rc)
         return gbm_of(X)
 
     X_test = matrix(test_i)
@@ -551,6 +562,8 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
                                                          .head(15).items()}}
     if netm is not None:
         res["nn"] = {k: netm[k] for k in ("epochs", "best", "seconds", "es_xent")}
+        res["nn"]["seeds"] = len(nets)
+        res["nn"]["best_by_seed"] = [nm["best"] for nm in nets]
     if stack is not None:
         res["stack"] = stack
     if whole is not None and whole.any():
