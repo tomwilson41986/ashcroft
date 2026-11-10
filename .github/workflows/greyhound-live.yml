@@ -2,8 +2,9 @@ name: Greyhound live (model, prices, settlement)
 
 # The greyhound trading model (the owner's ask, 6 Oct 2026: "bring the real money trades live", "focus on the
 # trading model"; greyhound/live.py). This workflow is the half on GitHub's runners (S3, no Betfair):
-#   - the live model: every GBGB race to yesterday, without the features built on the day's weigh-in (unknown in the
-#     morning); weekly, and once now if none is stored;
+#   - the live model: from 10 Nov 2026 the stack (greyhound/stack_model.py, the owner: "move the live greyhound pricing
+#     to the new model"), fitted on the 29 months to yesterday, without the features built on the day's weigh-in
+#     (unknown in the morning); weekly (about two hours), and once now if no model is stored;
 #   - today's prices: the cards from the recorder's greyhound catalogue (S3), priced from the dogs' earlier days, to
 #     sources/greyhound/live/predictions/<day>.csv, hourly as the day's markets are listed;
 #   - yesterday's settlement from the recorder's settled books (the BSP and the winner).
@@ -39,7 +40,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: greyhound-live
+  # a group per task: from 10 Nov 2026 the hourly prices build the metrics tables with the card (about 50 minutes),
+  # and must not hold up the running table every 10 minutes, nor the Sunday refit
+  group: greyhound-live-${{ github.event.schedule || inputs.task || 'predict' }}
   cancel-in-progress: false
 
 jobs:
@@ -84,6 +87,8 @@ jobs:
           case "$TASK" in predict|train|settle|check-card|coverage|running) ;; *) echo "task must be predict, train, settle, check-card, coverage or running"; exit 1 ;; esac
           if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
           mkdir -p out
+          # the live model from 10 Nov 2026 (greyhound/stack_model.py) has neural models: PyTorch on the CPU, pinned
+          case "$TASK" in train|predict) pip install -q torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu ;; esac
           ARGS=()
           if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); fi
           case "$TASK" in

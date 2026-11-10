@@ -293,3 +293,42 @@ def test_the_bend_model_ranks_a_planted_fast_starter_first(monkeypatch):
     assert np.allclose(d.groupby("race_id").bd_p_lead.sum(), 1.0, atol=1e-6)
     first = d.loc[d.groupby("race_id").sectional.idxmin()]
     assert first.bd_p_lead.mean() > 1 / 6 + 0.05                       # the dog that led got more than a fair chance
+
+
+def cardify_last_day(runs):
+    """The last day as the live path sees it before racing (greyhound/card.py ``cards``, ``with_cards``, ``clean``):
+    no position, time, sectional, weight, SP or comment; ``is_card`` set."""
+    r = runs.copy()
+    last = r.race_date == r.race_date.max()
+    for col in ("position", "beaten_lengths", "sectional", "run_time", "adjusted_time", "weight_kg", "sp_decimal",
+                "going", "market_pos"):
+        if col in r:
+            r.loc[last, col] = np.nan
+    r.loc[last, "comment"] = ""
+    r["is_card"] = last
+    return clean(r.drop(columns=[c for c in ("won", "placed2", "sp_p", "sp_p_norm", "t", "field") if c in r]))
+
+
+SERVED_TABLES = ("ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend")
+
+
+@pytest.mark.parametrize("name", SERVED_TABLES)
+def test_a_card_gets_the_features_its_run_had(name, monkeypatch):
+    """The live model builds the tables with today's card as the last day (greyhound/live.py ``card_tables``): a card
+    row, with no result yet, must get exactly the features the nightly build gives the run once it is in."""
+    monkeypatch.setattr(trouble, "MIN_FIT", 100)
+    monkeypatch.setattr(ability, "FIT_BEFORE", "2025-01-15")
+    runs = synth()
+    last = runs.race_date.max()
+    keys = runs.loc[runs.race_date == last, ["race_id", "dog_id"]]
+    ctx = {"fetch_lag": pd.Series(0, index=sorted(runs.race_date.unique()))}
+    names = [t for t in pit.TABLES if t in SERVED_TABLES and pit.TABLES.index(t) <= pit.TABLES.index(name)]
+    full = pit.build_tables(names, runs, None, dict(ctx), keep=True)[name]
+    card = pit.build_tables(names, cardify_last_day(runs), None, dict(ctx), keep=True)[name]
+    mod = pit.module(name)
+    cols = [c for c in full.columns if c.startswith(mod.PREFIX) and c not in getattr(mod, "CARD_UNSAFE", ())]
+    x = keys.merge(full, on=["race_id", "dog_id"]).sort_values(["race_id", "dog_id"])[cols].to_numpy(float)
+    y = keys.merge(card, on=["race_id", "dog_id"]).sort_values(["race_id", "dog_id"])[cols].to_numpy(float)
+    assert len(y) == len(keys)
+    bad = [c for j, c in enumerate(cols) if not np.allclose(x[:, j], y[:, j], equal_nan=True, atol=1e-5)]
+    assert not bad, f"{name}: {bad}"

@@ -72,8 +72,9 @@ def coverage(tab: pd.DataFrame, runs: pd.DataFrame) -> dict:
                                  for c in cols[:3]}}
 
 
-def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None) -> dict:
-    """Build ``names`` in ``TABLES`` order; write each to ``store`` (when given); return each table's meta."""
+def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None, keep: bool = False) -> dict:
+    """Build ``names`` in ``TABLES`` order; write each to ``store`` (when given); return each table's meta, or with
+    ``keep`` the tables themselves (the live model's card build: greyhound/live.py)."""
     from greyhound.pit import core
     ctx = dict(ctx or {})
     figs = core.per_run_figures(runs)
@@ -91,7 +92,7 @@ def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None)
             store.put_parquet(f"{STORE_PREFIX}/{name}.parquet", tab)
             store.put(f"{STORE_PREFIX}/{name}.meta.json", json.dumps(meta, indent=1, default=str).encode())
         metas[name] = meta
-    return metas
+    return {n: ctx[n] for n in metas} if keep else metas
 
 
 def load(name: str, store=None) -> pd.DataFrame | None:
