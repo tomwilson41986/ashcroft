@@ -1,5 +1,5 @@
 {
-  "about": "The closing-price lab's experiments (research/greyhound/close_lab.py): each a feature set and a model, scored every night on every recorded day it can be fitted for, and counted only on days after the day it was registered. Add a spec to try an idea; never edit a registered one (a changed spec gets a new name and date). Every spec is scored on both targets (1. BFSP, 2. Win, the result); a target of 'win' fits it to the result, the default to log(SP).",
+  "about": "The closing-price lab's experiments (research/greyhound/close_lab.py): each a feature set and a model, scored every night on every recorded day it can be fitted for, and counted only on days after the day it was registered. Add a spec to try an idea; never edit a registered one (a changed spec gets a new name and date). Every spec is scored on both targets (1. BFSP, 2. Win, the result); a target of 'win' fits it to the result, the default to log(SP). From 10 Nov 2026 (reports/greyhound_model_review.md): 'late': true lets a spec learn from the checkpoints after the scheduled off; feature families race, path, sppool; model options norm, loss huber, by_window, kind clogit (win).",
   "specs": [
     {"name": "gbm_book", "registered": "2026-11-06", "features": ["book"], "model": {"kind": "gbm"}},
     {"name": "gbm_book_flow", "registered": "2026-11-06", "features": ["book", "flow"], "model": {"kind": "gbm"}},
@@ -8,6 +8,16 @@
     {"name": "gbm_all_small", "registered": "2026-11-06", "features": ["book", "flow", "sp", "place", "model"], "model": {"kind": "gbm", "leaves": 15, "min_leaf": 300, "rounds": 300}},
     {"name": "ridge_all", "registered": "2026-11-06", "features": ["book", "flow", "sp", "place", "model"], "model": {"kind": "ridge", "lam": 10.0}},
     {"name": "gbm_win_book", "registered": "2026-11-06", "target": "win", "features": ["book"], "model": {"kind": "gbm"}},
-    {"name": "gbm_win_all", "registered": "2026-11-06", "target": "win", "features": ["book", "flow", "sp", "place", "model"], "model": {"kind": "gbm"}}
+    {"name": "gbm_win_all", "registered": "2026-11-06", "target": "win", "features": ["book", "flow", "sp", "place", "model"], "model": {"kind": "gbm"}},
+    {"name": "gbm_small_late", "registered": "2026-11-10", "late": true, "features": ["book", "flow", "sp", "place", "model"], "model": {"kind": "gbm", "leaves": 15, "min_leaf": 300, "rounds": 300}},
+    {"name": "gbm_small_race", "registered": "2026-11-10", "late": true, "features": ["book", "flow", "sp", "place", "model", "race"], "model": {"kind": "gbm", "leaves": 15, "min_leaf": 300, "rounds": 300}},
+    {"name": "gbm_small_path", "registered": "2026-11-10", "late": true, "features": ["book", "flow", "sp", "place", "model", "path"], "model": {"kind": "gbm", "leaves": 15, "min_leaf": 300, "rounds": 300}},
+    {"name": "gbm_small_pool", "registered": "2026-11-10", "late": true, "features": ["book", "flow", "sp", "place", "model", "sppool"], "model": {"kind": "gbm", "leaves": 15, "min_leaf": 300, "rounds": 300}},
+    {"name": "gbm_small_plus", "registered": "2026-11-10", "late": true, "features": ["book", "flow", "sp", "place", "model", "race", "path", "sppool"], "model": {"kind": "gbm", "leaves": 15, "min_leaf": 300, "rounds": 300}},
+    {"name": "gbm_small_plus_norm", "registered": "2026-11-10", "late": true, "features": ["book", "flow", "sp", "place", "model", "race", "path", "sppool"], "model": {"kind": "gbm", "leaves": 15, "min_leaf": 300, "rounds": 300, "norm": true}},
+    {"name": "gbm_small_plus_huber", "registered": "2026-11-10", "late": true, "features": ["book", "flow", "sp", "place", "model", "race", "path", "sppool"], "model": {"kind": "gbm", "leaves": 15, "min_leaf": 300, "rounds": 300, "loss": "huber"}},
+    {"name": "gbm_small_plus_bw", "registered": "2026-11-10", "late": true, "features": ["book", "flow", "sp", "place", "model", "race", "path", "sppool"], "model": {"kind": "gbm", "leaves": 15, "min_leaf": 300, "rounds": 300, "by_window": true}},
+    {"name": "clogit_win", "registered": "2026-11-10", "late": true, "target": "win", "features": ["flow", "sp", "place", "model"], "model": {"kind": "clogit", "lam": 5.0}},
+    {"name": "clogit_win_plus", "registered": "2026-11-10", "late": true, "target": "win", "features": ["flow", "sp", "place", "model", "race", "path", "sppool"], "model": {"kind": "clogit", "lam": 20.0}}
   ]
 }

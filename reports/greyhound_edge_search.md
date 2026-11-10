@@ -152,3 +152,19 @@ Five days so far:
 |---|---|---|---|---|---|
 | At the SP | +1.78% | +1.43% | +0.71% | +1.42% | +1.85% |
 | To the result | -1.65% | +1.04% | -1.50% | +4.28% | +2.62% |
+
+**10 Nov: the review of the statistics, features and modelling** (reports/greyhound_model_review.md; dry runs
+42768177695 and 42769218285, nothing written to the registry). What changes from tonight:
+
+- **The champion bar is stricter (version 2).** A crown needs a paired gain 3 standard errors above zero over at
+  least 3 fresh days and 300 races, and a spec keeps a crown only while it clears that against the best baseline.
+  - BFSP: gbm_all_small holds (gain 0.0355 over the mid, 10.3 standard errors, 366 races).
+  - Win: the crown of 9 Nov returns to the mid (gain 0.0046, 1.67 standard errors, 365 races). It was chance-sized.
+- **The lab reads on after the scheduled off.** Races go off a median 22 s late (17 to 23 s by day), so a
+  checkpoint is taken every 10 s until the market closes. The headline scores stay on the first five minutes.
+- **Ten specs registered 10 Nov**, fresh from 11 Nov: three new feature families (the SP pool, the trade path, the
+  race around the runner), by-window fits, Huber loss, a normalised book, and a conditional logit for the result.
+- **q-values** beside every test in the stream lab and the trade test; a z-score needs 100 races.
+- **Read every night now:** the SP as the Win ceiling (it beats the mid by 0.0085 a race at 60 s out, p 0.002, 548
+  races) and what our forecast adds to the mid on the result (0.00045, p 0.57).
+

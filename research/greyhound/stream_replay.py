@@ -43,6 +43,8 @@ class Runner:
     atb: dict = field(default_factory=dict)
     atl: dict = field(default_factory=dict)
     trd: dict = field(default_factory=dict)
+    spb: dict = field(default_factory=dict)      # SP backs (the stream's ``spb``, field SP_TRADED): price limit -> stake
+    spl: dict = field(default_factory=dict)      # SP lays (``spl``): price limit -> liability
     ltp: float | None = None
     tv: float | None = None
     spn: float | None = None
@@ -134,6 +136,8 @@ def apply(markets: dict, mc: dict) -> tuple[str, set]:
         r = m.runners.setdefault(sid, Runner())
         _ladder(r.atb, rc.get("atb"))
         _ladder(r.atl, rc.get("atl"))
+        _ladder(r.spb, rc.get("spb"))
+        _ladder(r.spl, rc.get("spl"))
         for pr in rc.get("trd") or []:                      # cumulative volume at each price: replaced, not added
             if len(pr) >= 2:
                 if float(pr[1]) <= 0:
