@@ -19,6 +19,10 @@ on:
         description: "score and report only: no registry or champion written (yes/no)"
         required: false
         default: 'no'
+      practice:
+        description: "also show the band and resting tests on this many days before their registration (never counted)"
+        required: false
+        default: '0'
 
 permissions:
   contents: read
@@ -47,9 +51,11 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           REBUILD: ${{ inputs.rebuild }}
           DRY_RUN: ${{ inputs.dry_run }}
+          PRACTICE: ${{ inputs.practice }}
         run: |
           ARGS=(--out out/close_lab)
           if [ "$REBUILD" = "yes" ]; then ARGS+=(--rebuild); fi
           if [ "$DRY_RUN" = "yes" ]; then ARGS+=(--dry-run); fi
+          if [[ "$PRACTICE" =~ ^[1-9][0-9]?$ ]]; then ARGS+=(--practice "$PRACTICE"); fi
           python -m research.greyhound.close_lab "${ARGS[@]}"
           cat out/close_lab/report.md >> "$GITHUB_STEP_SUMMARY"

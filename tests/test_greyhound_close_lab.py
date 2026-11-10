@@ -204,3 +204,68 @@ def test_the_family_of_tests_is_read_as_one():
     assert mt.z_by_race(np.r_[np.ones(20), -np.ones(20)]) is None            # too few races to mean anything
     assert mt.z_by_race(np.full(200, 0.98)) is None                          # every lay won: no spread, no evidence
     assert mt.z_by_race(np.r_[np.ones(50), -np.ones(50)]) == 0.0
+
+
+def test_the_quantiles_are_ordered_and_roughly_calibrated():
+    days = {f"2026-11-0{i}": synth(60 + i, n=3000, sd=0.3) for i in (5, 6)}
+    spec = {"name": cl.TRADE2_SPEC, "late": True, "features": ["sp"],
+            "model": {"kind": "gbm", "leaves": 7, "min_leaf": 50, "rounds": 80}}
+    cl.bands(days, [spec])
+    te = days["2026-11-06"]
+    assert "q80" not in days["2026-11-05"] and {"q10", "q20", "q80", "q90"} <= set(te.columns)   # earlier days only
+    assert (te.q10 <= te.q20).all() and (te.q20 <= te.q80).all() and (te.q80 <= te.q90).all()
+    cov = cl.band_coverage(days, after="")
+    assert abs(cov["q20"] - 0.2) < 0.08 and abs(cov["q80"] - 0.8) < 0.08 and cov["q10"] < cov["q90"]
+    assert cl.band_coverage(days, after="2026-11-06") == {}                                       # nothing counted yet
+
+
+def test_the_band_rules_trade_only_outside_the_band():
+    d = pd.DataFrame({"market": ["m1", "m1", "m2", "m2"], "secs": [10.0, 10.0, -10.0, 60.0],
+                      "y": np.log([4.0, 6.0, 3.0, 5.0]), "won": [1, 0, 0, 0],
+                      "b1": [5.0, 6.0, 3.0, 5.0], "bs1": [10.0] * 4, "l1": [5.2, 6.2, 3.1, 4.0], "ls1": [10.0] * 4,
+                      "q10": np.log([3.6, 5.0, 3.3, 4.2]), "q20": np.log([3.8, 5.5, 3.2, 4.4]),
+                      "q80": np.log([4.4, 6.5, 3.6, 5.6]), "q90": np.log([4.8, 7.0, 3.8, 6.0])})
+    tr = cl.band_rules({"2026-11-11": d}, comm=0.0)
+    got = tr.groupby("rule").size().to_dict()
+    # runner 1: 5.0 to back is above its 90% quantile (4.8): both levels; won at 5.0, SP 4.0
+    b = tr[tr.rule == "band_back_10_p90"].iloc[0]
+    assert got["band_back_10_p80"] == 1 and b.pnl_sp == pytest.approx(5.0 / 4.0 - 1) and b.pnl_win == 4.0
+    # after the scheduled off: 3.1 to lay is under the 20% quantile (3.2) and the 10% (3.3): laid, SP 3.0, it lost
+    l = tr[tr.rule == "band_lay_late10_p90"].iloc[0]
+    assert got["band_lay_late10_p80"] == 1 and l.pnl_sp == pytest.approx(1 - 3.1 / 3.0) and l.pnl_win == 1.0
+    # 60 s out: 4.0 to lay is under both lower quantiles (4.4, 4.2); nothing inside the band trades (runner 2)
+    assert got["band_lay_60_p80"] == 1 and got["band_lay_60_p90"] == 1 and len(tr) == 6
+    assert cl.trade_scores(tr, registered=cl.TRADE2_REGISTERED).rule.nunique() == 6
+    assert cl.trade_scores(tr.assign(day=cl.TRADE2_REGISTERED), registered=cl.TRADE2_REGISTERED).empty
+
+
+def test_the_resting_orders_join_the_queue_and_rest_to_the_real_off():
+    f = pd.DataFrame({"market": ["1.1", "1.1"], "sid": [1, 2], "secs": [60.0, 60.0], "off": [pd.Timestamp(OFF)] * 2,
+                      "b1": [4.0, 30.0], "l1": [4.2, 32.0], "mid": [4.1, 31.0], "l_mid": np.log([4.1, 31.0]),
+                      "y": np.log([5.0, 30.0])})
+    f[f"e_{cl.TRADE2_SPEC}"] = f.y - np.log([4.5, 31.0])                    # forecast SP 4.5: a drift of about 9%
+    orders = cl.rest_orders(f)
+    tags = sorted(o.tag for o in orders)
+    assert tags == ["rest_back_60_all", "rest_lay_60_all", "rest_lay_60_m0", "rest_lay_60_m3"]   # the 31.0 shot: too long
+    lay = next(o for o in orders if o.tag == "rest_lay_60_m3")
+    assert lay.side == "LAY" and lay.price == 4.0 and lay.size == pytest.approx(6.67) and lay.t == OFF - timedelta(seconds=60)
+    t0 = OFF - timedelta(seconds=300)
+    win = lambda status, bsp=None: dict(defn("WIN", status, bsp=bsp), runners=[
+        {"id": 1, "status": "LOSER" if bsp else "ACTIVE", **({"bsp": bsp[1]} if bsp else {})},
+        {"id": 2, "status": "WINNER" if bsp else "ACTIVE", **({"bsp": bsp[2]} if bsp else {})}])
+    lines = [line(t0, {"id": "1.1", "img": True, "marketDefinition": win("OPEN"), "rc": [
+                 {"id": 1, "atb": [[4.0, 10]], "atl": [[4.2, 8]], "trd": [[4.0, 100]]},
+                 {"id": 2, "atb": [[30.0, 5]], "atl": [[32.0, 5]]}]}),
+             # 12 s after the scheduled off, 30 trades at 4.0: the 10 ahead of us clear, then our 6.67
+             line(OFF + timedelta(seconds=12), {"id": "1.1", "rc": [{"id": 1, "trd": [[4.0, 130]], "atb": [[4.0, 1]]}]}),
+             line(OFF + timedelta(seconds=20), {"id": "1.1", "marketDefinition": win("SUSPENDED")}),
+             line(OFF + timedelta(minutes=2), {"id": "1.1", "marketDefinition": win("CLOSED", bsp={1: 5.0, 2: 30.0})})]
+    r = cl.rest_day(lines, f, "2026-11-11", comm=0.0).set_index("rule")
+    assert r.loc["rest_lay_60_m3", "matched"] == pytest.approx(6.67)
+    assert r.loc["rest_lay_60_m3", "pnl_sp"] == pytest.approx(1 - 4.0 / 5.0, abs=1e-3)      # laid at 4.0, the SP 5.0
+    assert r.loc["rest_lay_60_m3", "pnl_win"] == pytest.approx(1.0, abs=1e-3)               # it lost: the stake is won
+    assert r.loc["rest_back_60_all", "matched"] == 0 and pd.isna(r.loc["rest_back_60_all", "pnl_sp"])
+    sc = cl.rest_scores(r.reset_index())
+    sc = sc.set_index("rule")
+    assert sc.orders.eq(1).all() and sc.loc["rest_lay_60_m3", "matched_share"] == 1.0
+    assert sc.loc["rest_back_60_all", "matched_share"] == 0.0 and pd.isna(sc.loc["rest_back_60_all", "trades"])
