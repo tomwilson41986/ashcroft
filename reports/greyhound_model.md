@@ -1381,3 +1381,26 @@ On share with the figs table, rebuilt with the market rating's wider drift grid 
   tables life (+0.010) and ability (+0.006) matter most.
 
 The forward test (bfsp_forward.json) gains `share08_full`, these together, before any of its days exist.
+
+## 31. The BFSP plan, batch 14: the Betfair-SP rating and the known-wrong fields (greyhound-fastloop.yml run 42818559765, 10 Nov 2026)
+
+On share with the figs table (the figs table rebuilt with the rating read on the Betfair SP as well, run 42816936434:
+259,857 races rated on the BSP). Paired against share08_figs:
+
+| Experiment | RMSE log(BSP) | vs share08_figs | z | Log-loss | vs share08_figs | z |
+|---|---|---|---|---|---|---|
+| share08_figs | 0.3593 | - | - | 0.43806 | - | - |
+| + the Betfair-SP rating (fg_bmr) | 0.3570 | -0.0023 (-0.0028 to -0.0017) | -6.5 | 0.43786 | -0.00020 | -1.4 |
+| without hb_days_since_season | 0.3589 | -0.0004 | -1.1 | 0.43830 | +0.00025 | +1.6 |
+| without ti_new_trainer | 0.3596 | +0.0003 | +1.0 | 0.43834 | +0.00028 | +2.2 |
+| without every trainer column | 0.3625 | +0.0032 (+0.0025 to +0.0039) | +7.4 | 0.43840 | +0.00034 | +1.9 |
+
+- The Betfair-SP rating adds a little beside the SP one.
+- The two fields shown wrong in the review carry nothing; they are dropped from batch 15 on.
+- The trainer columns stay: removing all of them (the 6 Nov test missed some) costs 0.0032, as the earlier test found.
+  The trainer is the current one on every past run, so this is the yard's identity, not its form at the time.
+
+**Run-to-run noise.** The same recipe scored 0.3593 here and in batch 12 (3,163 rounds) but 0.3579 in batch 13 (4,372
+rounds): GitHub's runners differ and LightGBM's multithreaded fits were not deterministic. The day-level bootstrap does
+not see that, so gains near 0.001-0.002 (the BSP rating, seeds, the other tables) are replicated in batch 15 with every
+fit deterministic on four threads. The large gains (the race as a book, 0.024; the figs table, 0.029) are far beyond it.

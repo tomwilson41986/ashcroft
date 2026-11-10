@@ -64,7 +64,11 @@ RECIPES = {
                 "max_seconds": 1500},
 }
 BASE_PARAMS = {"num_leaves": 63, "min_child_samples": 300, "feature_fraction": 0.7, "bagging_fraction": 0.8,
-               "bagging_freq": 1, "lambda_l2": 10.0, "verbose": -1, "seed": 0}
+               "bagging_freq": 1, "lambda_l2": 10.0, "verbose": -1, "seed": 0,
+               # the same recipe on the same cache scored 0.3593 (batches 12 and 14) and 0.3579 (batch 13), stopping at
+               # 3,163 and 4,372 rounds: GitHub's runners differ, and so did the fits. From 10 Nov 2026 every fit is
+               # deterministic on a fixed thread count, so a difference between experiments is the experiment's
+               "num_threads": 4, "deterministic": True, "force_col_wise": True}
 OBJECTIVES = ("softmax", "binary", "pl2", "logbsp", "share", "mix")
 #: the objectives whose forecast is a price (pred_bsp), scored by the RMSE of log(BSP)
 PRICE_OBJECTIVES = ("logbsp", "share", "mix")
