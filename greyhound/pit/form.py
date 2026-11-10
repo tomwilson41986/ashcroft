@@ -32,7 +32,8 @@ from greyhound.pit import core, figs as fg
 
 PREFIX = "fm_"
 FIT_BEFORE = "2018-01-01"
-HALF_LIVES = (30.0, 60.0, 90.0, 180.0, 365.0)
+# the first build (run 42842889301) chose 30 days, the grid's edge, for two figures: the grid reaches lower now
+HALF_LIVES = (7.0, 14.0, 21.0, 30.0, 60.0, 90.0, 180.0, 365.0)
 PRIORS = (0.5, 1.0, 2.0, 4.0, 8.0)
 INNOV_HALF_LIFE = 60.0
 HUBER = 3.0
@@ -170,7 +171,7 @@ def fit_trend(df, f, noisy, curve, early) -> dict:
     tot = float(e._f.var()) if len(e) > 1 else 25.0
     grid, best = [], None
     for ql in (0.01, 0.05, 0.2):
-        for qs in (1e-6, 1e-5, 1e-4):
+        for qs in (1e-8, 1e-7, 1e-6, 1e-5):         # the first build chose 1e-6, the old edge
             for share in (0.4, 0.6, 0.8):
                 prm = {"ql": ql, "qs": qs, "r": max(tot * share, 0.5), "m0": m0, "p0": p0, "s0": 1e-4}
                 _, ll = trend_filter(df, f, noisy, curve, prm, upto=cut)

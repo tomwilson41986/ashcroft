@@ -21,7 +21,8 @@ from greyhound.pit import core
 
 PREFIX = "dr_"
 FIT_BEFORE = "2018-01-01"
-QS = (1e-6, 1e-5, 1e-4, 1e-3)
+# the first build (run 42842889301) chose 1e-6, the grid's edge, for both readings: a nearly static state
+QS = (0.0, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4)
 SOURCE = "GBGB results (sources/gbgb.py): trap, position, sectional, field, SP"
 
 
