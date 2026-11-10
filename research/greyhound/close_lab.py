@@ -377,7 +377,7 @@ def trade_scores(tr: pd.DataFrame, registered: str = TRADE_REGISTERED, n: int = 
             if len(by_race) >= 10:
                 bs = by_race[rng.integers(0, len(by_race), size=(n, len(by_race)))].mean(1)
                 lo, hi = np.percentile(bs, [5, 95])
-                row[f"{col}_ci90%"] = [round(100 * lo, 3), round(100 * hi, 3)]
+                row[f"{col}_ci90%"] = [round(100 * float(lo), 3), round(100 * float(hi), 3)]
                 row[f"{col}_candidate"] = bool(lo > 0 and row["days"] >= TRADE_MIN_DAYS)
             else:
                 row[f"{col}_ci90%"], row[f"{col}_candidate"] = None, False
