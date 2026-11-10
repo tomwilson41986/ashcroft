@@ -110,7 +110,8 @@ rows = []
 for c in cols:
     dff = differs(m[f"{c}_card"], m[f"{c}_res"])
     race_any = dff.groupby(m.race).transform("any")
-    ex = m.loc[dff, [f"{c}_card", f"{c}_res"]].head(3).astype(str).agg(" -> ".join, axis=1).tolist()
+    sel = m.loc[dff, [f"{c}_card", f"{c}_res"]].head(3)
+    ex = [f"{x} -> {y}" for x, y in zip(sel.iloc[:, 0].astype(str), sel.iloc[:, 1].astype(str))]
     rows.append({"column": c, "runners_differ": float(dff.mean()), "races_any": float(race_any.mean()),
                  "err_races_differ": m.err[race_any].mean() if race_any.any() else np.nan,
                  "err_races_same": m.err[~race_any].mean() if (~race_any).any() else np.nan,
