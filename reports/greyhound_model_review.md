@@ -192,7 +192,9 @@ Computed from the RMSE columns of run 42768177695 as 1 - (spec / mid) squared.
 - On the headline RMSE the new specs are level with the champion (0.1833 against 0.1837 on 9 Nov). The gain, if it
   holds, is where trades happen.
 
-## 4. Ideas not built yet, in the order I would do them
+## 4. The ideas, in the order I would do them
+
+The first three were built and registered the same day: see section 5.
 
 1. **Trade on the forecast's uncertainty, not a fixed margin.** The forecast's error is about 0.12 in the last
    minute and 0.23 beyond three minutes, so a 3% margin is a quarter of a standard error. Fit the 20% and 80%
@@ -219,13 +221,66 @@ Computed from the RMSE columns of run 42768177695 as 1 - (spec / mid) squared.
     any family holds an edge at all.
 12. **Score capacity in pounds, not percent:** edge times the size that would have matched.
 
-## 5. Checks
+## 5. The first three ideas, built and registered (10 Nov)
+
+The owner, 10 Nov: "work on these and fix. then merge." All three were fixed in code before any of their output was
+read (commit b128b03), count from 11 Nov, need 10 counted days, and place no bets.
+
+| Test | What it does | Size |
+|---|---|---|
+| The late family (stream lab) | The lab's projected-SP, momentum and reversal rules decided 0, 10 and 20 s after the scheduled off, while the market is open | 42 rules, 84 tests |
+| The band test (closing-price lab) | Fits the 10%, 20%, 80% and 90% quantiles of the SP. Backs at the best back price when it is above the upper quantile, lays at the best lay price when it is below the lower one. 60 and 10 s before the scheduled off and 0, 10, 20 s after | 20 rules, 40 tests |
+| The resting test (closing-price lab) | Leaves a lay at the best back price, or a back at the best lay price, 60 s before the scheduled off and at it. The order rests until the market really closes. Fills are replayed through the recorded queue. Three variants: every runner (no forecast), and only where the forecast agrees by 0 or 3% | 12 rules, 24 tests |
+| The early lay to the real off | The forward test's lays left in the book until the market closes, not lapsed 5 s before the scheduled off | A second reading; the gate's figure is unchanged |
+
+Both closing-price tests read gbm_small_plus's forecast, fitted on earlier days only.
+
+### What re-timing did to the early lay (9 Nov, stream lab run 42787435666)
+
+| | Lays matched | Matched liability | At the SP | To the result |
+|---|---|---|---|---|
+| Lapsed 5 s before the scheduled off (as before) | 296 | GBP5,812 | +1.85% | +2.62% |
+| Resting until the market closes | 306 | GBP6,019 | +1.78% | +1.58% |
+
+The clock barely matters for this rule: ten more lays matched and the SP return is level. Its orders go in at the
+first traded book, so nearly all their fills come long before the off.
+
+### Practice readings, 7 to 9 Nov (never counted; run 42786681970)
+
+**Resting orders, closed at the SP, a unit of matched stake:**
+
+| | Every runner (no forecast) | Forecast agrees | Forecast agrees by 3% |
+|---|---|---|---|
+| Back, 60 s before the scheduled off | +0.87% (0.43 to 1.09; 1,585 matched) | +1.94% (1.30 to 2.70; 843) | +3.64% (2.40 to 5.44; 251) |
+| Lay, 60 s before | -0.26% (1,604) | +0.34% (-0.38 to 0.71; 729) | -0.53% (-2.75 to 1.11; 124) |
+| Back, at the scheduled off | +0.14% (1,371) | +0.36% (813) | +0.20% (161) |
+| Lay, at the scheduled off | -0.05% (1,418) | +0.10% (606) | -1.82% (53) |
+
+- The backs resting 60 s out are the one clear pattern: the return grows with the forecast's margin, 1.1 and 2.8
+  points above the no-forecast control.
+- Nothing shows at the scheduled off, and nothing shows to the result (every interval there is wide).
+- 75% to 90% of the orders matched at least in part.
+
+**The band test:** lays 60 s out made +7.1% (3.7 to 10.6) on 26 trades at the 90% level and +3.9% (0.8 to 6.7) on 50
+at the 80% level. Every other rule is inside its noise, with 5 to 50 trades each. The bands are a little too narrow:
+the SP fell at or below the four quantiles 13.5%, 22.4%, 77.2% and 86.8% of the time, against 10, 20, 80 and 90.
+
+**How far to trust this:**
+- These are three practice days. By the rules fixed beforehand they count for nothing.
+- The fills are replayed, not real. A high share of orders matching is exactly where a fill model flatters, and the
+  ledger's row 8b is a rule whose whole edge was its fill assumption.
+- The two no-forecast controls are not symmetric (backs +0.87%, lays -0.26%). A back closed at the SP gains more from
+  a shortening than it loses from an equal drift, so read each forecast variant against its own control.
+- Stakes are small (a lay risks GBP20), and what size would match is not tested here.
+
+## 6. Checks
 
 | Check | Result |
 |---|---|
 | Old specs reproduce exactly on the rebuilt frames | Pass: gbm_all_small on 9 Nov scores 0.1837 (last 60 s 0.1218, Win 1.5625) in runs 42726462862 (before) and 42768177695 (after); 7 and 8 Nov also match |
 | Rows in against rows out | Pass: 22,980 runner-checkpoints and 136 races on 9 Nov in both runs; the late checkpoints are extra rows in their own window |
-| Unit tests | Pass: 14 in `tests/test_greyhound_close_lab.py` and `tests/test_greyhound_stream_lab.py`, 9 in `tests/test_greyhound_stream_replay.py` |
+| Unit tests | Pass: 46 across the close lab, stream lab, stream replay, capacity and workflow guards |
+| The three new tests run on real data | Pass: close-lab run 42786681970 (dry run, practice on 7-9 Nov) and stream-lab run 42787435666 (9 Nov) |
 | Leakage: every new column read at or before its checkpoint | Pass by construction: books, traded ladders and SP pools as they stood; a late checkpoint exists only while the market was open then. The closing time and the SP itself are in the frame but in no feature family. The SP "ceiling" is look-ahead by design and is never a spec |
 | Nothing written by the dry runs | Pass: `--dry-run` skips the registry and the champion file. The rebuilt frames are cached under a new prefix (`close_lab/frames_v2/`); the old cache is untouched |
 

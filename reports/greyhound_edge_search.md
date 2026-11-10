@@ -27,6 +27,9 @@ left to run to the result, a pass on either counted as a test of its own. **Comm
 | 8b | The trade-to-SP lays against the recorded books' real prices (the forecast fitted on Jan-Apr; GB books 60 s before the off, entered at the best price with GBP2 on offer, closed at the SP) | recorded books 7 Oct - 3 Nov, 3,477 races (mostly the recorder's) | 18 + 18 | 0 | **the edge was the fill assumption**: at the book's price every lay loses (margin 0.10: entry <= 5 -1.02%, 90% -2.73 to 0.64; <= 10 -3.28%; <= 20 -4.28%) while on the same rows a tick through the last trade 'makes' +9.5 to +16.5%; backs lose 13-24%. The forecast reads stale last prices no one offers | research-query 41897170252 |
 | 9 | The stream lab: 43 taker rules at the price on offer 60/30/10 s out, closed at the SP (projected-SP gap, momentum, reversal, a control) | the recorded Exchange Stream from 5 Nov, scored nightly, pooled | 43 | pending: 10 days | registered 5 Nov (reports/greyhound_stream_lab.md); no result before then counts | greyhound-stream-lab.yml |
 | 10 | The metrics database (greyhound/pit): every family added to the live recipe | fast loop, test 2026-06-01 to 2026-11-05 (read by earlier batches), both targets | 9 + 9 | 0 on both | all families together: RMSE log(BSP) 0.4130 -> 0.4101 (-0.0029, 90% -0.0038 to -0.0020); result log-loss +0.00024 (-0.00022 to +0.0007): the closing price improves, the result does not; forward test registered (pit_forward.json, from 7 Dec 2026) | fast-loop 42255735836, 42253527161; reports/greyhound_metrics_database.md |
+| 11 | The stream lab's late family: its projected-SP, momentum and reversal rules decided 0, 10 and 20 s after the scheduled off | the recorded Exchange Stream, counted from 11 Nov | 42 | pending: 10 days | registered 10 Nov (reports/greyhound_model_review.md section 5) | greyhound-stream-lab.yml |
+| 12 | The band test: back or lay at the price on offer when it is outside the forecast's 80% or 90% band of the SP (gbm_small_plus), 60 and 10 s before the scheduled off and 0, 10, 20 s after | the recorded Exchange Stream, counted from 11 Nov | 20 | pending: 10 days | registered 10 Nov. Practice 7-9 Nov, not counted: lays 60 s out +7.1% (26 trades) and +3.9% (50); the rest inside their noise | greyhound-close-lab.yml; practice run 42786681970 |
+| 13 | The resting test: a lay at the best back price or a back at the best lay price, resting to the real off, queue-aware fills, closed at the SP; every runner, or where the forecast agrees by 0 or 3% | the recorded Exchange Stream, counted from 11 Nov | 12 | pending: 10 days | registered 10 Nov. Practice 7-9 Nov, not counted: backs resting 60 s out +0.87% with no forecast, +1.94% and +3.64% where the forecast agrees; nothing at the scheduled off; replayed fills | greyhound-close-lab.yml; practice run 42786681970 |
 
 ## The closing price (the objective)
 
@@ -167,4 +170,8 @@ Five days so far:
 - **q-values** beside every test in the stream lab and the trade test; a z-score needs 100 races.
 - **Read every night now:** the SP as the Win ceiling (it beats the mid by 0.0085 a race at 60 s out, p 0.002, 548
   races) and what our forecast adds to the mid on the result (0.00045, p 0.57).
-
+- **Three more tests registered 10 Nov** (ledger rows 11 to 13; the owner: "work on these and fix. then merge"),
+  counted from 11 Nov: the stream lab's late family, the band test and the resting test.
+- **The early lay left to rest to the real off**, read beside the gate's figure from now on. On 9 Nov it matched 306
+  lays against 296 and made +1.78% at the SP against +1.85% (stream-lab run 42787435666): the clock barely matters
+  for this rule.
