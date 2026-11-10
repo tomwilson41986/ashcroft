@@ -906,3 +906,43 @@ What this says:
     four goals above average), but the fix adds nothing measurable to this model.
 - Nothing here changes the frozen models or the paper trials. Any new model is frozen and pre-registered before it is
   scored on the forward data.
+
+### Move memory split, and the leading arms at Betfair's prices (run 42814920136)
+
+**Move memory, split into its two parts.**
+
+| Arm | Betfair vs current | 95% interval | Pinnacle 2016-24 vs current |
+|---|---|---|---|
+| Move memory, both parts | +1.49 | +1.14 to +1.85 | +1.24 |
+| The side's own record (`mm_team_*`) | +0.85 | +0.52 to +1.20 | +1.21 |
+| The price band's record (`mm_band_*`) | +0.83 | +0.68 to +0.96 | +0.05 |
+
+- **The side's own record holds on both books:** a side whose price kept shortening (or drifting) late keeps doing so.
+- **The price band's record helps on Betfair only, not on Pinnacle.** That points to something particular to Betfair's
+  snapshot prices, such as how their margin sits in the normalised chance, rather than to the price discovery the model
+  is for. It stays out until it is tested at the recorded books.
+
+**Costed on Betfair 2025/26.** Back early and lay at the close (or the reverse), takeable books only, 2% commission.
+
+| Arm | Threshold | Bets | A tick off fair | 90% interval | Symmetric book | Right way |
+|---|---|---|---|---|---|---|
+| Current model | 0.03 | 2,496 | -0.46% | -0.95% to +0.04% | +1.07% | 68.7% |
+| Current model | 0.05 | 544 | +1.59% | +0.44% to +2.69% | +4.03% | 76.3% |
+| Move memory | 0.03 | 3,404 | -0.93% | -1.36% to -0.52% | +0.59% | 67.4% |
+| Move memory | 0.05 | 1,026 | +0.25% | -0.57% to +1.08% | +2.48% | 72.6% |
+| Side's record only | 0.05 | 847 | +0.34% | -0.62% to +1.22% | +2.46% | 72.7% |
+| Band's record only | 0.05 | 778 | +0.54% | -0.39% to +1.48% | +3.13% | 73.9% |
+| All changes | 0.03 | 3,562 | -0.74% | -1.15% to -0.33% | +0.76% | 68.1% |
+| All changes | 0.05 | 1,105 | +0.35% | -0.46% to +1.15% | +3.56% | 73.4% |
+
+What it says:
+
+- **More skill has not yet bought a better return per bet.** The new arms forecast larger moves, so more matches clear
+  a fixed threshold (1,105 bets against 544 at 0.05), and the extra bets are weaker. A fixed threshold is therefore not
+  a fair comparison between arms. The next read ranks each arm's forecasts and costs the same number of bets for every
+  arm.
+- **Treat these returns as an upper bound.** They come from football-data's two Betfair snapshots, and those were
+  kinder than the recorded books: the round trip measured at the recorded books is about 2.3%, and the forward EV rule
+  is -2.9% so far on 11 fills.
+- **Kept for the candidate model:** the side's own move record, the league effects with the label kept, and the Kalman
+  form in place of the raw window ladder. The price band's record waits for the recorded books.
