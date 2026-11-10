@@ -1324,3 +1324,39 @@ the leaders are the same family: `lb_cv_gsr_ewm_z` 0.119, `tn_var_last` 0.104, `
 - The forecast is still compressed (favourites priced too long, outsiders too short), less than live_ref's (+0.303 and
   -0.506). Batch 12 tests the per-track stretch on top of share.
 - Debutants (1,934 runners) carry an RMSE of 0.715 against 0.371 for dogs with 20 or more runs.
+
+## 29. The BFSP plan, batch 12: the market-implied rating and the corrected figures (greyhound-fastloop.yml run 42802035088, 10 Nov 2026)
+
+Registered after batch 11, before its own scores (`research/greyhound/experiments/batch12_figs.json`). The same test
+(1 June to 5 November 2026, 106,719 runners), the race fitted as a book (`share`) at a learning rate of 0.08, and the
+new figs table of the metrics database (`greyhound/pit/figs.py`, built over 3,966,248 GBGB runs from 2014: run
+42794389155): corrected figures on their own standards and shrunk meeting variants, levels decayed in days and shrunk
+by evidence, class in lengths, and a market-implied rating (each dog's race-relative log SP share, opponent-adjusted,
+through a Kalman filter fitted on 2014-17).
+
+| Experiment | RMSE log(BSP) | vs share08 | z | Log-loss | vs share08 | z | Within-race R2 |
+|---|---|---|---|---|---|---|---|
+| live08 (the live recipe at 0.08) | 0.4127 | +0.0244 | +32.4 | 0.44155 | +0.00164 | +6.4 | 74.7% |
+| live08 + per-track stretch | 0.4062 | | | 0.44168 | | | |
+| share08 | 0.3883 | - | - | 0.43990 | - | - | 77.4% |
+| share08 + per-track stretch | 0.3815 | -0.0067 (calibration, same fit) | | 0.44021 | +0.00031 | | |
+| share08 refitted on 1 Sep (two segments) | 0.3865 | -0.0018 | -5.0 | 0.43968 | -0.00022 | -1.6 | 77.6% |
+| share08 + figs, figures only (no rating) | 0.3819 | -0.0064 | -13.4 | 0.43938 | -0.00052 | -2.8 | 78.1% |
+| share08 + figs, the market rating only | 0.3612 | -0.0270 | -34.7 | 0.43839 | -0.00151 | -6.0 | 80.3% |
+| **share08 + the whole figs table** | **0.3593** | **-0.0290 (90% -0.0302 to -0.0278)** | **-40.1** | **0.43806** | **-0.00184 (-0.00225 to -0.00147)** | **-7.8** | **80.6%** |
+
+- **Every figs variant clears the bar on both targets.** The market-implied rating carries most of it; the corrected
+  figures add 0.0064 on their own and a little more beside the rating.
+- **The race as a book is confirmed at the faster learning rate:** share beats the live recipe by 0.0244 (z 32.4).
+- **The gain survives a refit:** refitting on 1 September improves the score slightly (-0.0018, z -5.0).
+- From the live price as served (0.4017 at 0.05, batch 11; 0.4062 at 0.08 here) to share with the figs table (0.3593)
+  the error falls by about 11% at the same learning rate. The stretch on top of share and figs is not yet scored.
+- With the figs table the model leans on the rating first: shuffled within the race, the figs family raises the RMSE
+  by 0.347 (base 0.109, parity 0.082, library 0.046, the old market-history columns 0.043). Top features by mean
+  absolute SHAP value: `fg_mr_vs_field` 0.159, `tn_var_last` 0.092, `fg_mr_share` 0.085, `fg_mr_lshare` 0.079,
+  `gp_mkt_w10` 0.071, `lb_cv_gsr_ewm_z` 0.065.
+- The compression is smaller still (short prices +0.21 in log, outsiders -0.40, against +0.30 and -0.51 for the live
+  recipe). Debutants are no better (RMSE 0.72): they have no rating and no figures.
+
+**Not adopted yet.** The test window has been read by earlier batches. The forward test, registered now
+(`research/greyhound/experiments/bfsp_forward.json`), scores the same recipes on days after 10 November only.
