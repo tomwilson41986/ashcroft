@@ -1360,3 +1360,24 @@ through a Kalman filter fitted on 2014-17).
 
 **Not adopted yet.** The test window has been read by earlier batches. The forward test, registered now
 (`research/greyhound/experiments/bfsp_forward.json`), scores the same recipes on days after 10 November only.
+
+## 30. The BFSP plan, batch 13: what adds on top (greyhound-fastloop.yml run 42808526186, 10 Nov 2026)
+
+On share with the figs table, rebuilt with the market rating's wider drift grid (run 42794389155): RMSE of log(BSP)
+0.3579 (batch 12's build: 0.3593). Paired against it:
+
+| Experiment | RMSE log(BSP) | vs share08_figs | z | Log-loss | vs share08_figs | z |
+|---|---|---|---|---|---|---|
+| share08_figs | 0.3579 | - | - | 0.43789 | - | - |
+| + per-track stretch (same fit) | 0.3533 | -0.0047 (-0.0053 to -0.0041) | | 0.43805 | +0.00017 | |
+| three seeds averaged | 0.3542 | -0.0037 (-0.0042 to -0.0033) | -14.1 | 0.43770 | -0.00019 | -2.0 |
+| refitted on 1 September | 0.3576 | -0.0003 | -0.9 | 0.43796 | +0.00007 | +0.8 |
+| + every other metric table (ability, trouble, connections, market, breeding, life) | 0.3542 | -0.0038 (-0.0044 to -0.0032) | -9.8 | 0.43769 | -0.00019 | -1.2 |
+
+- Seeds and the other metric tables each clear the bar; the stretch improves the price again at a small cost to the
+  win chance (as on the live recipe), so it belongs on the BFSP forecast only.
+- The refit changes nothing: the single fit at 1 June holds through November.
+- With every table, the figs family still carries the model (shuffled within the race: +0.347 RMSE); of the other
+  tables life (+0.010) and ability (+0.006) matter most.
+
+The forward test (bfsp_forward.json) gains `share08_full`, these together, before any of its days exist.

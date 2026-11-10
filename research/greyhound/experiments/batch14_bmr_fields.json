@@ -1,0 +1,104 @@
+{
+ "about": "Batch 14 (10 Nov 2026), registered before its scores. On share with the figs table: the market-implied rating read on the Betfair SP (fg_bmr, added to the figs table after batch 12) beside the SP one; and the BFSP plan's step 0.4 checks on fields known to be wrong: hb_days_since_season (a season date that postdates the race 58% of the time), ti_new_trainer (GBGB serves the current trainer on every past run, so it cannot fire), and every trainer column at once (the 6 Nov test missed gp_trainer30_ and the hb_ trainer columns). The bar: 3 bootstrap standard errors on the RMSE of log(BSP) against share08_figs, the log-loss no worse beyond 1. Dropping a wrong field is kept unless it costs 3 standard errors.",
+ "recipe": "quick",
+ "baseline": "share08_figs",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "drop": [
+    "fg_bmr"
+   ],
+   "name": "share08_figs"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "name": "share08_figs_bmr"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "drop": [
+    "fg_bmr",
+    "hb_days_since_season"
+   ],
+   "name": "share08_figs_no_season"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "drop": [
+    "fg_bmr",
+    "ti_new_trainer"
+   ],
+   "name": "share08_figs_no_newtrainer"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "drop": [
+    "fg_bmr",
+    "trainer_",
+    "ti_",
+    "gp_trainer30_",
+    "hb_trainer",
+    "hb_win_trainer",
+    "hb_plc_trainer",
+    "hb_runs_trainer"
+   ],
+   "name": "share08_figs_no_trainer"
+  }
+ ]
+}
