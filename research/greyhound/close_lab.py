@@ -490,6 +490,8 @@ def champion(results: pd.DataFrame, specs: list[dict], days: dict, incumbent: st
         held = paired_gain(days, incumbent, best_base, fresh_days(incumbent), target=target)
         if clears(held, len(fresh_days(incumbent)), bar):
             inc = incumbent
+            note = (f"{incumbent} holds the crown against {best_base}: gain {held['gain']:.5f}, z {held['z']:.2f}, "
+                    f"{held['races']} races over {len(fresh_days(incumbent))} days")
         else:
             note = (f"{incumbent} no longer clears the bar against {best_base} "
                     f"(z {held['z']:.2f} over {held['races']} races)" if held else
