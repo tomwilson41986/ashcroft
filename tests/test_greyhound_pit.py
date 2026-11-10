@@ -62,7 +62,7 @@ def perturb_last_day(runs):
     return r
 
 
-@pytest.mark.parametrize("name", ["ability", "trouble", "connections", "market", "breeding", "life", "figs"])
+@pytest.mark.parametrize("name", ["ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend"])
 def test_no_table_reads_the_days_own_results(name, monkeypatch):
     monkeypatch.setattr(trouble, "MIN_FIT", 100)
     monkeypatch.setattr(ability, "FIT_BEFORE", "2025-01-15")
@@ -228,3 +228,68 @@ def test_the_bsp_rating_reads_the_betfair_sp_where_the_race_has_it():
     assert {"fg_bmr", "fg_bmr_share"} <= set(tab.columns) and notes["bsp_rating"]["races_on_bsp"] > 0
     d = runs[["race_id", "dog_id"]].merge(tab, on=["race_id", "dog_id"])
     assert np.allclose(d.groupby("race_id").fg_bmr_share.sum(), 1.0, atol=1e-4)
+
+
+
+def test_the_trend_filter_finds_a_rising_dog_and_ignores_a_wild_run():
+    from greyhound.pit import form
+    rows = []
+    for d in range(60):
+        day = (pd.Timestamp("2025-01-01") + pd.Timedelta(days=7 * d)).strftime("%Y-%m-%d")
+        for dog, (base, rise) in enumerate(((0.0, 0.0), (0.0, 0.15))):        # dog 1 improves 0.15 lengths a week
+            fig = base + rise * d + (25.0 if (dog == 0 and d == 30) else 0.0)  # dog 0: one wild run
+            rows.append({"dog_id": dog, "race_id": d * 10 + dog, "race_date": day, "t": pd.Timestamp(day),
+                         "born": "Jan-2023", "sex": "d"})
+            rows[-1]["_f"] = fig
+    df = pd.DataFrame(rows)
+    curve = {0: {float(a): 0.0 for a in range(12, 73)}, 1: {float(a): 0.0 for a in range(12, 73)}}
+    prm = {"ql": 0.01, "qs": 1e-4, "r": 1.0, "m0": 0.0, "p0": 4.0, "s0": 1e-3}
+    st, ll = form.trend_filter(df, df._f, np.zeros(len(df), bool), curve, prm)
+    last = df.race_date == df.race_date.max()
+    rise = st[last & (df.dog_id == 1)].iloc[0]
+    flat = st[last & (df.dog_id == 0)].iloc[0]
+    assert rise.slope > 0.3 and abs(flat.slope) < 0.2                          # lengths a month
+    assert abs(rise.level - 0.15 * 59) < 1.5                                   # it carries the level forward
+    after = st[(df.dog_id == 0) & (df.race_date == sorted(df.race_date.unique())[31])].iloc[0]
+    assert abs(after.level) < 2.0 and np.isfinite(ll)                          # the wild run barely moved it
+
+
+def test_the_form_table_fits_its_levels_and_reads_the_market():
+    from greyhound.pit import form
+    runs = synth(days=50, seed=6)
+    tab, notes = form.build(runs, core.per_run_figures(runs))
+    assert {"fm_tot", "fm_level", "fm_slope", "fm_mr_innov"} <= set(tab.columns)
+    assert notes["levels"]["tot"]["half_life"] in form.HALF_LIVES and notes["levels"]["tot"]["k"] in form.PRIORS
+    d = runs[["race_id", "dog_id", "race_date"]].merge(tab, on=["race_id", "dog_id"])
+    skill = np.random.default_rng(6).normal(0, 1.5, 81)
+    late = d[d.race_date >= sorted(d.race_date.unique())[35]].dropna(subset=["fm_level"])
+    assert np.corrcoef(late.fm_level, skill[late.dog_id.to_numpy()])[0, 1] > 0.5
+
+
+
+def test_the_trap_state_follows_a_planted_bias():
+    from greyhound.pit import draw
+    runs = synth(days=120, seed=7)
+    # trap 1 at Romford wins far more than its SP says from day 40 on
+    late = (runs.race_date >= "2025-02-10") & (runs.track == "Romford")
+    r = runs.copy()
+    r.loc[late, "won"] = (r.loc[late, "trap"] == 1).astype(float)
+    tab, notes = draw.build(r, core.per_run_figures(r))
+    d = r[["race_id", "dog_id", "trap", "track", "race_date"]].merge(tab, on=["race_id", "dog_id"])
+    end = d[(d.race_date == d.race_date.max()) & (d.track == "Romford")]
+    assert end[end.trap == 1].dr_win_vs_sp.mean() > end[end.trap != 1].dr_win_vs_sp.mean() + 0.1
+    assert notes["win"]["q"] in draw.QS
+
+
+def test_the_bend_model_ranks_a_planted_fast_starter_first(monkeypatch):
+    from greyhound.pit import bend
+    monkeypatch.setattr(bend, "MIN_FIT", 500)
+    monkeypatch.setattr(bend, "SIMS", 20)
+    runs = synth(days=400, seed=8)            # 2025 and into 2026: 2026 is priced by a model fitted on 2025
+    tab, notes = bend.build(runs, core.per_run_figures(runs))
+    assert 2026 in notes["years"] and notes["years"][2026]["lead_beta"]["esr_vs_field"] > 0
+    d = runs[["race_id", "dog_id", "race_date", "sectional"]].merge(tab, on=["race_id", "dog_id"])
+    d = d[d.race_date >= "2026-01-01"].dropna(subset=["bd_p_lead"])
+    assert np.allclose(d.groupby("race_id").bd_p_lead.sum(), 1.0, atol=1e-6)
+    first = d.loc[d.groupby("race_id").sectional.idxmin()]
+    assert first.bd_p_lead.mean() > 1 / 6 + 0.05                       # the dog that led got more than a fair chance

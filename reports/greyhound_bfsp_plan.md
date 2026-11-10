@@ -2,16 +2,30 @@
 
 racing² - greyhound research, 10 Nov 2026. Greyhounds only; the horse model and its jobs are not touched.
 
-## Status (10 Nov 2026, end of the first day)
+## Status (10 Nov 2026, every step run)
 
-Steps 0 and 1 are done, and the first of step 2 (the figs table: corrected figures, evidence-aware levels, class in
-lengths, the market-implied rating on the SP and the Betfair SP). On the same test (1 June to 5 November 2026) the
-RMSE of log(BSP) went from 0.4017 (the live recipe as served) to 0.3448, 14% less, with the winner's log-loss better
-too. Results: reports/greyhound_model.md sections 28 to 32. Not adopted: the forward test on days after 10 November
-(research/greyhound/experiments/bfsp_forward.json) runs from 25 November; adoption into the live pricing is the
-owner's decision. Still to do: steps 2.2 to 2.6 (age and trend in the rating, moving trap bias, a fitted first bend,
-the market's memory, fitted shrinkage), step 4 (a neural challenger) and step 5 (carry the gain into the first-book
-and closing forecasts).
+Every step of the plan has been run and recorded (reports/greyhound_model.md sections 28 to 36). On the same test
+(1 June to 5 November 2026, 106,719 runners) the RMSE of log(BSP):
+
+| Recipe | RMSE log(BSP) | With the per-track stretch | Source |
+|---|---|---|---|
+| The live recipe as served | 0.4017 | - | section 29 |
+| share08_best (share objective, figs and the metric tables, 3 seeds) | 0.3510 | 0.3448 | batch 18, run 42853398485 |
+| stack3_all3 (+ form, draw, bend tables; trees stacked with 3 neural set models) | **0.3396** | **0.3366** | same |
+
+0.3366 is 16% less error than the live recipe; the winner's log-loss is better too (0.43732 against 0.43777, z -3.5).
+- Step 5: the better price carries into the first-book forecast (0.2852 to 0.2648) and to 3 minutes out, not to the
+  last minute (section 33).
+- Steps 2.2-2.6: the form, draw and bend tables add 0.0013 at three seeds (z -5.5; section 34-36). Fitted
+  constants replace guessed ones: form's half-life is 21 days, not 90; the trap bias the market misses is static.
+- Step 4: the neural set model alone matches the trees; stacked with them it is the largest step since the share
+  objective (-0.0090 at three seeds without the new tables, -0.0114 with them).
+- Still open: the debutants (RMSE about 0.70, unchanged), the compression (outsiders still -0.34 in log), the trend
+  filter's noise on its grid's edge, the market's memory against our own forecasts (needs out-of-fold forecasts).
+
+Not adopted. Two forward tests on days from 11 November, both run from 25 November: bfsp_forward.json (share08_best)
+and bfsp_forward_stack.json (stack3_all3), each against the live recipe with the bar fixed before its days.
+Adoption into the live pricing (greyhound/live.py) is the owner's decision.
 
 ## Context
 
