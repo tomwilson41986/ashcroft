@@ -1475,3 +1475,66 @@ forecast refitted on each price, development days (15):
 better: the lays beat the SP by 10.0% against 7.3%. The live early lay and its forward-test gate are unchanged; this
 is a reading for the owner, who decides whether the early lay should move to the new price once the BFSP forward
 test (`bfsp_forward.json`) has run.
+
+## 34. The BFSP plan, steps 2.2-2.6: the form, draw and bend tables (greyhound-pit.yml runs 42842889301, 42848089525)
+
+Three new point-in-time tables in the metrics database (`greyhound/pit/`), each passing the leak test (the last day's
+results rewritten move no row: `tests/test_greyhound_pit.py`) and a mechanics test on planted data. 3,966,248 runs,
+6 Jan 2014 to 9 Nov 2026. Every constant is fitted on the days before 2018 only.
+
+**form (`fm_`, `greyhound/pit/form.py`)**:
+- *Fitted decay and shrinkage (2.6)*: each figure's level (`fm_tot`, `fm_sec`, `fm_run`) on the half-life and prior
+  weight that best predict the next figure (mean squared error, before 2018), in place of figs' guessed 90 days and
+  2 runs. The first build chose 30 days for the whole-race and run-in figures, the grid's edge; the grid was widened
+  (7-365 days x 0.5-8 runs) and rebuilt. Rebuilt: whole race 21 days / 1 run (MSE 14.23 against 14.56 at figs'
+  90 days / 2 runs), sectional 60 / 1, run-in 21 / 1. Form is much shorter-lived than the old constants assumed.
+- *Trend and age (2.2)*: a local-linear-trend Kalman filter on the whole-race figure (level and slope), the age curve
+  as the slope's prior, readings beyond 3 standard deviations Huber-weighted, trials and troubled runs at double noise.
+  Fitted: level drift 0.05 a day, slope drift 1e-7 (the first build's 1e-6 was the old edge; now inside), noise 12.06
+  (the lowest of the three noise shares tried: an edge, left for the backlog). The age curve (figure lengths a month,
+  dogs): +3.0 at 12 months, +1.7 at 18, -0.3 at 24, -0.6 at 36, -1.1 at 72; bitches +2.8, +1.6, +0.1, -0.5, -0.7.
+  Columns `fm_level`, `fm_slope`, `fm_sd`, `fm_age_drift` and the two against the field; 97.7% covered.
+- *The market's memory (2.5)*: each race's innovation of the market rating (`fg_mr`: the observed log share less
+  the rating before it), decayed over 60 days: `fm_mr_innov`, `fm_mr_innov_n` (95.5% covered).
+
+**draw (`dr_`, `greyhound/pit/draw.py`, step 2.3)**: each trap's bias at each track and distance (1,184 of them) as a
+Kalman state over meeting days, on two readings: its winners less the SP's chances, and its first-bend leads less
+1 / field. Rebuilt on a grid from 0 to 1e-4: the winners' state is static (q 0, the best one-step likelihood; the
+market has no drifting trap bias to miss) and the leads' state drifts slowly (q 1e-6). Plus the dog's early pace
+against its field and the product with the trap's lead bias (`dr_x_pace`, 85.6% covered).
+
+**bend (`bd_`, `greyhound/pit/bend.py`, step 2.4)**: in place of the simulator's guessed settings, a conditional logit
+on who leads at the first bend (early pace against the field and its spread, lead and break rates, trap, the
+neighbours' pace) and a second on the winner given the bend utility and the finishing figures, both refitted each year
+on earlier years (at most 50,000 races). The leading coefficients are stable from year to year (early pace against the
+field about 0.21, lead rate 0.28, break rate 0.25, pace rank -0.28 on standardised inputs). The expected bend position
+is Plackett-Luce on the bend utilities (100 draws). 92% covered.
+
+## 35. The BFSP plan, batch 17: the new tables and the neural challenger (greyhound-fastloop.yml run 42847906843)
+
+Registered before its scores (`research/greyhound/experiments/batch17_tables_nn.json`); baseline `best1`, share08_best
+at one seed, deterministic fits; test 1 Jun to 5 Nov 2026 (106,719 runners); paired by day, the bar 3 standard errors.
+
+| Experiment | RMSE log(BSP) | vs best1 (90%) | z | Log-loss vs best1 | z | Passes |
+|---|---|---|---|---|---|---|
+| best1 | 0.3555 | - | - | 0.43819 | - | - |
+| + form | 0.3546 | -0.0009 (-0.0016 to -0.0002) | -2.0 | -0.00012 | -0.8 | no |
+| + form without the innovations | 0.3543 | -0.0012 (-0.0018 to -0.0006) | -3.2 | -0.00020 | -1.3 | yes |
+| + draw | 0.3542 | -0.0013 (-0.0020 to -0.0006) | -3.1 | -0.00024 | -1.4 | yes |
+| + bend | 0.3562 | +0.0007 (+0.0001 to +0.0014) | +1.9 | -0.00037 | -2.6 | no (log-loss better) |
+| + all three | 0.3532 | -0.0023 (-0.0029 to -0.0016) | -5.4 | -0.00033 | -2.2 | yes |
+| neural set model alone (`nn_share`) | 0.3570 | +0.0015 (+0.0004 to +0.0026) | +2.3 | +0.00014 | +0.6 | no |
+| trees + network stacked (`stack_share`) | **0.3442** | **-0.0113 (-0.0119 to -0.0106)** | **-28.5** | -0.00041 | -3.7 | **yes** |
+
+- The three tables each add a little and more together (-0.0023). The market's memory alone does not pay its way
+  (form with it -0.0009, without -0.0012), and the fitted bend improves the win probabilities (log-loss z -2.6) but
+  not the price. The form and draw tables in this batch may be the first build or the rebuild: the rebuild finished
+  while the batch's jobs were loading. Batch 18 reads the rebuild only.
+- **The neural model (step 4)**: a DeepSets network over the field (`greyhound/nn.py`: each runner's 520 features
+  rank-gauss transformed through a 128-64 MLP, the field's mean and maximum joined back, the race softmax fitted to the
+  SP book's shares) trains in 74 seconds (17 epochs, early-stopped) and alone is nearly as good as 4,065 boosted
+  rounds (0.3570 against 0.3555). Blended with the trees (weights fitted on the early-stopping rows: trees 0.50,
+  network 0.54), the error falls by 0.0113, five times the three tables' gain: the two models are wrong in different
+  places. It is the largest single step since the share objective (batch 11).
+- Batch 18 confirms the passes together at three seeds, with three averaged networks (`nn_seeds`, new) and the
+  per-track stretch.
