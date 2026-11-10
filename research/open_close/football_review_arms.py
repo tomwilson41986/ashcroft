@@ -20,7 +20,12 @@ Arms:
 - ``move_memory``, ``kalman_form``: the new blocks added;
 - ``kalman_for_windows``: the Kalman block in place of the raw window ladder's points and goal-difference columns (A6);
 - ``shrunk_ratings``: the xG and Massey ratings with the estimated penalty added (A1);
+- ``mm_team`` / ``mm_band``: move memory split into the side's own record and the price band's record;
 - ``all``.
+
+``COSTED`` arms are also traded on Betfair's 2025/26 prices (``football_stack_betfair_read.costed``: back early and lay
+at the close or the reverse, takeable books only, 2% commission, a tick off fair and at a book symmetric about fair),
+so a gain in skill can be checked against what it is worth at real prices.
 
     python -m research.open_close.football_review_arms --cache <lab cache> --out-json out/football_review_arms.json
 """
@@ -41,7 +46,9 @@ log = logging.getLogger(__name__)
 BASE = "team_all+home_adv+team_news+form_short+x_short"
 BLOCKS = ["home_adv", "form_short", "league_fx", "move_memory", "kalman_form"]
 TRAIN_FROM, DEV = 2013, (2016, 2024)
-RAW_LADDER = ("pts", "gd")                 # the unadjusted measures the Kalman block stands in for
+RAW_LADDER = ("pts", "gd")
+COSTED = ("base", "move_memory", "mm_team", "mm_band", "all")
+THRESHOLDS = (0.03, 0.05)                 # the unadjusted measures the Kalman block stands in for
 
 ARMS = {
     "base": {},
@@ -52,6 +59,8 @@ ARMS = {
     "league_fx": {"add": "league_fx", "league": False},
     "league_fx+league": {"add": "league_fx"},
     "move_memory": {"add": "move_memory"},
+    "mm_team": {"add": ["mm_team_diff", "mm_team_h", "mm_team_a"]},
+    "mm_band": {"add": ["mm_band_h", "mm_band_a"]},
     "kalman_form": {"add": "kalman_form"},
     "kalman_for_windows": {"add": "kalman_form", "drop_raw": True},
     "shrunk_ratings": {"add": ["r_xgs_diff", "xgs_gap_vs_market", "x_masseys_diff", "x_masseys_vs_open"]},
@@ -144,7 +153,8 @@ def run(cache: str, only: list[str] | None = None) -> dict:
             days.append(te["match_date"].astype(str).to_numpy()), se.append((y - p) ** 2), zero.append(y ** 2)
         pin = tuple(np.concatenate(x) for x in (days, se, zero))
         # Betfair's own moves, both sides
-        bse = {s: (bf_y[s] - fit_predict(bf_tr, bf, cols, s, arm, bf_q[s])) ** 2 for s in ("h", "a")}
+        bp = {s: fit_predict(bf_tr, bf, cols, s, arm, bf_q[s]) for s in ("h", "a")}
+        bse = {s: (bf_y[s] - bp[s]) ** 2 for s in ("h", "a")}
         bfd = bf["match_date"].astype(str).to_numpy()
         store[name] = (pin, bse)
         b_pin, b_bf = store["base"]
@@ -155,6 +165,9 @@ def run(cache: str, only: list[str] | None = None) -> dict:
              "betfair_home_skill": float(1 - bse["h"].sum() / (bf_y["h"] ** 2).sum()),
              "betfair_away_skill": float(1 - bse["a"].sum() / (bf_y["a"] ** 2).sum())}
         r["keeps_its_place"] = bool(name != "base" and r["betfair"]["lo95"] > 0)
+        if name in COSTED:
+            from research.open_close.football_stack_betfair_read import costed
+            r["costed"] = {str(th): costed(bf, bp["h"], bp["a"], th) for th in THRESHOLDS}
         res["arms"][name] = r
         res["pinnacle"]["rows"] = int(len(pin[0]))
         log.info("%-20s feats %3d  pinnacle %.2f%% (%+.2f)  betfair %.2f%% (%+.2f, %+.2f to %+.2f)", name, len(cols),
