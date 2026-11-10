@@ -69,9 +69,12 @@ BASE_PARAMS = {"num_leaves": 63, "min_child_samples": 300, "feature_fraction": 0
                # 3,163 and 4,372 rounds: GitHub's runners differ, and so did the fits. From 10 Nov 2026 every fit is
                # deterministic on a fixed thread count, so a difference between experiments is the experiment's
                "num_threads": 4, "deterministic": True, "force_col_wise": True}
-OBJECTIVES = ("softmax", "binary", "pl2", "logbsp", "share", "mix")
+OBJECTIVES = ("softmax", "binary", "pl2", "logbsp", "share", "mix", "nn_share", "stack_share")
 #: the objectives whose forecast is a price (pred_bsp), scored by the RMSE of log(BSP)
-PRICE_OBJECTIVES = ("logbsp", "share", "mix")
+PRICE_OBJECTIVES = ("logbsp", "share", "mix", "nn_share", "stack_share")
+#: the race objectives: a softmax over the race fitted to the SP book's shares (nn_share: the neural set model,
+#: greyhound/nn.py; stack_share: the trees and the network blended on the early-stopping rows; the BFSP plan, step 4)
+RACE_OBJECTIVES = ("share", "mix", "nn_share", "stack_share")
 NAME = re.compile(r"^[a-z0-9_]{1,40}$")
 
 
@@ -410,7 +413,7 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     test_i = np.flatnonzero((t >= edge) & ((t < hi) if hi is not None else True))
     if obj == "logbsp":
         fit_i = fit_i[df.bsp.to_numpy(float)[fit_i] > 1]
-    elif obj in ("share", "mix"):                     # races wholly priced by the Betfair SP: the book's shares exist
+    elif obj in RACE_OBJECTIVES:                     # races wholly priced by the Betfair SP: the book's shares exist
         fit_i = fit_i[df.bsp_p_norm.notna().to_numpy()[fit_i]]
     cut = np.quantile(t[fit_i].astype("int64"), 0.9).astype("datetime64[ns]")
     tr_i, es_i = fit_i[t[fit_i] < cut], fit_i[t[fit_i] >= cut]
@@ -424,7 +427,8 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     won = df.won.to_numpy(float)
     race = pd.factorize(df.race_id)[0]
     y = np.log(np.clip(df.bsp.to_numpy(float), 1.01, 1000.0)) if obj == "logbsp" else won
-    soft = soft_target(df, obj, exp.get("mix_win", 0.3)) if obj in ("share", "mix") else None
+    soft = (soft_target(df, "share" if obj in ("nn_share", "stack_share") else obj, exp.get("mix_win", 0.3))
+            if obj in RACE_OBJECTIVES else None)
     params = dict(BASE_PARAMS, learning_rate=recipe["learning_rate"], max_bin=recipe["max_bin"])
     params.update(exp.get("params", {}))
     # recency weights (step 1.4): a fit row weighs 0.5 ** (its age at the test's start / the half-life)
@@ -436,7 +440,7 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
                       free_raw_data=True, params={"max_bin": recipe["max_bin"]})
     des = lgb.Dataset(matrix(es_i), y[es_i], reference=dtr, free_raw_data=True)
     models = []
-    for k in range(int(exp.get("seeds", 1))):           # step 1.5: several seeds, their raw scores averaged
+    for k in range(0 if obj == "nn_share" else int(exp.get("seeds", 1))):   # step 1.5: seeds, raw scores averaged
         p_k = dict(params, seed=int(params.get("seed", 0)) + k)
         es = lgb.early_stopping(recipe["early_stop"], verbose=False)
         stop = [es, time_budget(recipe.get("max_seconds"), es)]
@@ -445,7 +449,7 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
         elif obj == "logbsp":
             m = lgb.train(dict(p_k, objective="huber", alpha=float(exp["huber"])) if exp.get("huber") else
                           dict(p_k, objective="regression"), dtr, recipe["rounds"], valid_sets=[des], callbacks=stop)
-        elif obj in ("share", "mix"):
+        elif obj in ("share", "mix", "stack_share"):
             fobj, _ = race_soft_objective(race[tr_i], soft[tr_i], wts)
             _, feval = race_soft_objective(race[es_i], soft[es_i])
             m = lgb.train(dict(p_k, objective=fobj, metric="None"), dtr, recipe["rounds"], valid_sets=[des],
@@ -458,18 +462,47 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
                           feval=feval, callbacks=stop)
         models.append(m)
     del dtr, des
-    m = models[0]
+    m = models[0] if models else None
+    netm, stack = None, None
+    if obj in ("nn_share", "stack_share"):
+        from greyhound import nn
+        _log(f"{exp['name']}: the neural set model")
+        netm = nn.fit(matrix(tr_i), race[tr_i], soft[tr_i], matrix(es_i), race[es_i], soft[es_i],
+                      seconds=float(exp.get("nn_seconds", 2400)), seed=int(params.get("seed", 0)))
+        _log(f"{exp['name']}: {netm['epochs']} epochs, es cross-entropy {netm['es_xent']}")
     fit_s = time.monotonic() - t0
     budget = recipe.get("max_seconds")
-    stopped = ("cap" if m.current_iteration() >= recipe["rounds"] else
+    stopped = ("nn" if m is None else "cap" if m.current_iteration() >= recipe["rounds"] else
                "time" if budget and fit_s > budget else "early_stop")
     gc.collect()
 
-    def raw_of(X):
+    def gbm_of(X):
         return np.mean([mm.predict(X, num_iteration=mm.best_iteration) for mm in models], axis=0)
 
+    if obj == "stack_share":
+        # the blend: the race softmax of a x trees + b x network, a and b fitted to the SP book's shares on the
+        # early-stopping rows (neither part trained on them)
+        from scipy.optimize import minimize
+        X_es = matrix(es_i)
+        sg, sn, st_es = gbm_of(X_es), nn.predict(netm, X_es, race[es_i]), _starts(race[es_i])
+        t_es = np.nan_to_num(soft[es_i])
+
+        def xent(w):
+            p = _race_softmax(w[0] * sg + w[1] * sn, st_es)
+            return float(-(t_es * np.log(np.clip(p, 1e-12, None))).sum())
+        w = minimize(xent, np.array([0.5, 0.5]), method="Nelder-Mead").x
+        stack = {"a_trees": round(float(w[0]), 4), "b_network": round(float(w[1]), 4)}
+        del X_es
+
+    def raw_of(X, rc):
+        if obj == "nn_share":
+            return nn.predict(netm, X, rc)
+        if obj == "stack_share":
+            return stack["a_trees"] * gbm_of(X) + stack["b_network"] * nn.predict(netm, X, rc)
+        return gbm_of(X)
+
     X_test = matrix(test_i)
-    raw = raw_of(X_test)
+    raw = raw_of(X_test, race[test_i])
     keep = ["race_id", "t", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "field", "won",
             "sp_decimal", "sp_p_norm", "bsp", "bsp_p_norm", "runs_before"]
     pred = df.iloc[test_i][[c for c in keep if c in df.columns]].reset_index(drop=True)
@@ -484,7 +517,7 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
             fr = pd.DataFrame({"r": df.race_id.to_numpy()[fit_i], "b": df.bsp.to_numpy(float)[fit_i]})
             book = float(np.median((1.0 / fr.b).groupby(fr.r).sum()))
             pred["pred_bsp"] = 1.0 / (book * pred.p_model)
-    elif obj in ("share", "mix"):
+    elif obj in RACE_OBJECTIVES:
         # the race's softmax is the forecast book's shares; the price is 1 / (the SP book's usual total x share)
         pred["p_model"] = _race_softmax(raw.astype(float), _starts(race[test_i]))
         fr = pd.DataFrame({"r": df.race_id.to_numpy()[fit_i], "b": df.bsp.to_numpy(float)[fit_i]})
@@ -496,7 +529,7 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     if obj in PRICE_OBJECTIVES and exp.get("calibrate"):
         # fitted on the early-stopping rows (the trees never trained on them), scored on the test, paired by day. A race
         # objective's log price is minus its score plus a race constant, which the stretch centres away
-        raw_es = raw_of(matrix(es_i))
+        raw_es = raw_of(matrix(es_i), race[es_i])
         lbsp = np.log(np.clip(df.bsp.to_numpy(float), 1.01, 1000.0))
         sign = 1.0 if obj == "logbsp" else -1.0
         book = (float(np.median((1.0 / pd.Series(df.bsp.to_numpy(float)[fit_i])).groupby(race[fit_i]).sum()))
@@ -505,15 +538,21 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
             fit = fit_stretch(sign * raw_es, lbsp[es_i], won[es_i], race[es_i], df.track.to_numpy()[es_i], kind)
             cal = apply_stretch(pred, sign * raw, fit, book)
             calibrated[kind] = {"fit": fit, **score_pair(pred, cal)}
-    imp = pd.Series(m.feature_importance("gain"), index=feats)
+    imp = pd.Series(m.feature_importance("gain") if m is not None else np.zeros(len(feats)), index=feats)
     whole = pred.bsp_p_norm.notna().groupby(pred.race_id).transform("all") if "bsp_p_norm" in pred else None
-    res = {"name": exp["name"], "spec": exp, "recipe": recipe, "features": len(feats), "rounds": m.best_iteration,
+    res = {"name": exp["name"], "spec": exp, "recipe": recipe, "features": len(feats),
+           "rounds": m.best_iteration if m is not None else netm["epochs"],
            "stopped_by": stopped,
            "fit_rows": int(len(fit_i)), "test_runners": int(len(pred)), "test_races": int(pred.race_id.nunique()),
            "test_from": test_from, "test_to": str(pred.race_date.max()),
            "logloss": round(logloss(pred.p_model, pred.won), 5),
            "seconds_fit": round(fit_s), "top_features": {k: round(float(v), 4) for k, v in
-                                                         (imp / imp.sum()).sort_values(ascending=False).head(15).items()}}
+                                                         (imp / max(imp.sum(), 1e-12)).sort_values(ascending=False)
+                                                         .head(15).items()}}
+    if netm is not None:
+        res["nn"] = {k: netm[k] for k in ("epochs", "best", "seconds", "es_xent")}
+    if stack is not None:
+        res["stack"] = stack
     if whole is not None and whole.any():
         b = pred[whole]
         res["on_bsp_races"] = {"runners": int(len(b)), "model": round(logloss(b.p_model, b.won), 5),
@@ -533,13 +572,13 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
                                                                                             4000))), replace=False))
         Xs, rs = X_test[pick], rt[pick]
         sub = pred[pick].reset_index(drop=True)
-        rescale = exp.get("rescale_book") or obj in ("share", "mix")
+        rescale = exp.get("rescale_book") or obj in RACE_OBJECTIVES
         fr = pd.DataFrame({"r": df.race_id.to_numpy()[fit_i], "b": df.bsp.to_numpy(float)[fit_i]})
         book_i = float(np.median((1.0 / fr.b).groupby(fr.r).sum()))
         st = _starts(rs)
 
         def predict(Xa):
-            r = raw_of(Xa)
+            r = raw_of(Xa, rs)
             if obj == "logbsp":
                 p = race_norm(pd.Series(1.0 / np.exp(r)), pd.Series(rs)).to_numpy()
                 pb = 1.0 / (book_i * p) if rescale else np.exp(r)
@@ -549,7 +588,8 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
             return pb, p
 
         n_shap = min(len(Xs), int(exp.get("shap_rows", 8000)))
-        contrib = m.predict(Xs[:n_shap], num_iteration=m.best_iteration, pred_contrib=True)
+        contrib = (m.predict(Xs[:n_shap], num_iteration=m.best_iteration, pred_contrib=True)
+                   if obj not in ("nn_share", "stack_share") else None)
         lb = np.log(sub.bsp.where(sub.bsp > 1).to_numpy(float))
         res["importance"] = importance(predict, Xs, feats, families(feats, meta, added), rs, lb,
                                        sub.won.to_numpy(float), contrib)
