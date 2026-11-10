@@ -75,7 +75,7 @@ Under the new bar (run 42769218285):
 - **BFSP: gbm_all_small keeps the crown.** Its paired gain over the mid is 0.0355 in squared error, 10.3 standard
   errors, over 366 races on 3 fresh days.
 - **Win: the crown returns to the mid.** gbm_all_small's gain is 0.0046 (90% interval 0.00004 to 0.0089), only 1.67
-  standard errors, over 365 races. A gain that size needs about 1,129 races to clear the bar, roughly 9 more days.
+  standard errors, over 365 races. A gain that size needs about 1,129 races to clear the bar, about a week more at 120 races a day.
 
 ### 2.3 The champion's gain is on wide books, far from the off
 
