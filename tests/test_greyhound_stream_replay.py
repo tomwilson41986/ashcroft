@@ -128,3 +128,20 @@ def test_a_capped_trade_through_fills_only_what_crossed():
     sr.replay(lines, [full])
     sr.replay(lines, [capped], through_cap=True)
     assert full.matched == 50.0 and capped.matched == 4.0
+
+
+def test_an_order_can_rest_until_the_market_really_closes():
+    # the race goes off 20 s after its scheduled time; the money that fills us trades 10 s after the scheduled time
+    late = OFF + timedelta(seconds=10)
+    lines = [image(T, [[5.0, 10]], [[5.2, 8]], [[5.0, 100]]),
+             delta(late, trd=[[5.0, 130]], atb=[[5.0, 2]]),                   # 30 traded at 5.0: 10 ahead, then us
+             line(OFF + timedelta(seconds=20), {"id": MID, "marketDefinition": dict(defn(), status="SUSPENDED")}),
+             line(OFF + timedelta(minutes=2), {"id": MID, "marketDefinition": dict(defn(bsp=6.0), status="CLOSED")})]
+    mk = lambda: sr.SimOrder(MID, 7, "LAY", 5.0, 5.0, T + timedelta(seconds=1))
+    old = sr.replay(lines, [mk()]).iloc[0]
+    assert old.matched == 0                                                   # lapsed 5 s before the scheduled off
+    new = sr.replay(lines, [mk()], to_close=True).iloc[0]
+    assert new.matched == 5 and new.pnl_sp == pytest.approx(5 * (1 - 5.0 / 6.0), abs=1e-4)
+    after = sr.SimOrder(MID, 7, "LAY", 5.0, 5.0, OFF + timedelta(seconds=30))  # due once the market has closed
+    assert not sr.replay(lines, [after], to_close=True).iloc[0].placed
+
