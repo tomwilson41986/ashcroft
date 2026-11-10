@@ -1,5 +1,5 @@
 {
- "about": "The forward test of the BFSP plan's first results (registered 10 Nov 2026, before any of its days exist). Batches 11 and 12 (runs 42792051707, 42802035088) found the race fitted as a book (share) and the figs table (greyhound/pit/figs.py) far ahead of the live recipe on a window earlier batches had read. Here the same recipes are fitted on everything before 11 Nov 2026 and scored only on the days from 11 Nov, with the feature cache refreshed (refresh: true). Run once 14 days exist (from 25 Nov 2026). The rule, fixed now: share08_figs is adopted for the BFSP forecast if its paired gain in RMSE of log(BSP) over live08 is 3 bootstrap standard errors (by day) or more and its log-loss is no worse beyond 1 standard error; the per-track stretch on each is read beside it. (10 Nov, the same day, before any of its days: the figs table gained Betfair-SP rating columns, fg_bmr; share08_figs drops them so it stays the recipe batch 12 scored.) (10 Nov, after batch 13 (run 42808526186) and before any of its days: share08_full added, the figs table with every other metric table, three seeds and the per-track stretch, each of which cleared the bar on batch 13's window; it is read beside share08_figs under the same rule.)",
+ "about": "The forward test of the BFSP plan's first results (registered 10 Nov 2026, before any of its days exist). Batches 11 and 12 (runs 42792051707, 42802035088) found the race fitted as a book (share) and the figs table (greyhound/pit/figs.py) far ahead of the live recipe on a window earlier batches had read. Here the same recipes are fitted on everything before 11 Nov 2026 and scored only on the days from 11 Nov, with the feature cache refreshed (refresh: true). Run once 14 days exist (from 25 Nov 2026). The rule, fixed now: share08_figs is adopted for the BFSP forecast if its paired gain in RMSE of log(BSP) over live08 is 3 bootstrap standard errors (by day) or more and its log-loss is no worse beyond 1 standard error; the per-track stretch on each is read beside it. (10 Nov, the same day, before any of its days: the figs table gained Betfair-SP rating columns, fg_bmr; share08_figs drops them so it stays the recipe batch 12 scored.) (10 Nov, after batch 13 (run 42808526186) and before any of its days: share08_full added, the figs table with every other metric table, three seeds and the per-track stretch, each of which cleared the bar on batch 13's window; it is read beside share08_figs under the same rule.) (10 Nov, after batch 15 (run 42824328816) and before any of its days: share08_full is replaced by share08_best, batch 15's recipe exactly: the Betfair-SP rating in, the two wrong fields out, every fit deterministic; read beside share08_figs under the same rule.)",
  "recipe": "quick",
  "baseline": "live08",
  "test_from": "2026-11-11",
@@ -76,8 +76,9 @@
     "pit_life"
    ],
    "drop": [
-    "fg_bmr",
-    "lf_wt_"
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
    ],
    "seeds": 3,
    "calibrate": [
@@ -88,7 +89,7 @@
     "early_stop": 100,
     "rounds": 10000
    },
-   "name": "share08_full"
+   "name": "share08_best"
   }
  ]
 }
