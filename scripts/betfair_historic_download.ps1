@@ -97,7 +97,8 @@ while ($month -ge $start) {
         marketTypesCollection = $MarketTypes; countriesCollection = $Countries; fileTypeCollection = @("M")
     }
     try {
-        $files = @(Invoke-Historic "DownloadListOfFiles" $body)
+        # piped so the list is unrolled: Windows PowerShell 5.1 returns a JSON array as one object
+        $files = @((Invoke-Historic "DownloadListOfFiles" $body) | ForEach-Object { $_ } | ForEach-Object { [string]$_ })
     } catch {
         Write-Host "${key}: the file list was refused ($($_.Exception.Message)); skipped"
         $month = $month.AddMonths(-1)
