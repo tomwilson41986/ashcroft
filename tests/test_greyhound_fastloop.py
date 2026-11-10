@@ -468,3 +468,32 @@ def test_several_networks_are_averaged(monkeypatch):
     assert np.allclose(pred.groupby("race_id").p_model.sum(), 1.0)
     with pytest.raises(ValueError):
         fl.check_spec({"experiments": [{"name": "x", "objective": "nn_share", "nn_seeds": 11}]})
+
+
+def test_saved_prices_are_reused_and_the_served_price_is_the_stretched_one(tmp_path, monkeypatch):
+    df, meta = synthetic_cache()
+    monkeypatch.setattr(fl, "load_cache", lambda store: (df, meta))
+    monkeypatch.setitem(fl.RECIPES, "quick", QUICK)
+    spec = {"recipe": "quick", "test_from": "2026-06-01", "experiments": [
+        {"name": "s", "objective": "share", "calibrate": ["stretch_track"], "serve_calibrated": "stretch_track",
+         "save_pred": "greyhound/research/pred", "test_from": "2026-06-10"}]}
+    p = tmp_path / "spec.json"
+    p.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+    assert fl.main(["--store", str(tmp_path), "--spec", str(p), "--out", str(out)]) == 0
+    from sources.common import Store
+    saved = Store(root=tmp_path).get_parquet("greyhound/research/pred/s.parquet")
+    assert str(saved.race_date.min()) >= "2026-06-10"                    # the experiment's own test start
+    assert {"pred_bsp", "pred_bsp_raw", "p_model"} <= set(saved.columns)
+    assert not np.allclose(saved.pred_bsp, saved.pred_bsp_raw)          # the stretch moved the price
+    r = json.loads((out / "result_s.json").read_text())
+    spec2 = {"experiments": [{"name": "s", "pred_from": "greyhound/research/pred"}]}
+    p.write_text(json.dumps(spec2))
+    out2 = tmp_path / "out2"
+    assert fl.main(["--store", str(tmp_path), "--spec", str(p), "--out", str(out2)]) == 0
+    r2 = json.loads((out2 / "result_s.json").read_text())
+    assert r2["stopped_by"] == "saved" and r2["logloss"] == r["logloss"] and r2["test_runners"] == r["test_runners"]
+    with pytest.raises(ValueError):
+        fl.check_spec({"experiments": [{"name": "x", "serve_calibrated": "stretch"}]})
+    with pytest.raises(ValueError):
+        fl.check_spec({"experiments": [{"name": "x", "save_pred": "../etc"}]})
