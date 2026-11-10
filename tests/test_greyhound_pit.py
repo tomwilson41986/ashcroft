@@ -62,7 +62,7 @@ def perturb_last_day(runs):
     return r
 
 
-@pytest.mark.parametrize("name", ["ability", "trouble", "connections", "market", "breeding", "life"])
+@pytest.mark.parametrize("name", ["ability", "trouble", "connections", "market", "breeding", "life", "figs"])
 def test_no_table_reads_the_days_own_results(name, monkeypatch):
     monkeypatch.setattr(trouble, "MIN_FIT", 100)
     monkeypatch.setattr(ability, "FIT_BEFORE", "2025-01-15")
@@ -151,3 +151,67 @@ def test_the_registry_lists_every_column_with_a_source():
     reg = pit.registry()
     assert len(reg) > 60 and all(r["source"] and r["definition"] for r in reg)
     assert {r["table"] for r in reg} == set(pit.TABLES)
+
+
+# ---- the figs table (the BFSP plan of 10 Nov 2026: corrected figures, evidence-aware levels, the market rating)
+
+def test_the_figs_table_reads_ability_and_the_market_reads_it_better():
+    from greyhound.pit import figs
+    runs = synth(days=60, seed=1)
+    tab, notes = figs.build(runs, core.per_run_figures(runs))
+    d = runs[["race_id", "dog_id", "race_date"]].merge(tab, on=["race_id", "dog_id"])
+    rng = np.random.default_rng(1)
+    skill = rng.normal(0, 1.5, 81)                                   # synth's abilities (same seed, same draw)
+    late = d[d.race_date >= sorted(d.race_date.unique())[40]]
+    s = skill[late.dog_id.to_numpy()]
+    assert np.corrcoef(late.fg_tot, s)[0, 1] > 0.6                    # the speed level finds the abilities
+    assert np.corrcoef(late.fg_mr, s)[0, 1] > np.corrcoef(late.fg_tot, s)[0, 1]   # the market's rating, more so
+    shares = late.groupby("race_id")[["fg_mr_share", "fg_tot_share"]].sum()
+    assert np.allclose(shares, 1.0, atol=1e-4)
+    assert notes["tau"] in figs.TAUS and set(notes["market_rating"]) >= {"r", "q", "v0"}
+
+
+def test_a_debutant_reads_the_grade_par_and_evidence_moves_it():
+    from greyhound.pit import figs
+    runs = synth(days=40, seed=2)
+    tab, _ = figs.build(runs, core.per_run_figures(runs))
+    d = runs[["race_id", "dog_id", "t"]].merge(tab, on=["race_id", "dog_id"]).sort_values("t")
+    first = d.groupby("dog_id").head(1)
+    assert (first.fg_tot_n == 0).all()                               # no evidence on a dog's first day
+    later = d[d.fg_tot_n > 3]
+    assert later.fg_tot.std() > first.fg_tot.std()                   # with evidence the levels spread apart
+
+
+def test_the_variant_is_measured_against_the_figures_own_standard():
+    # a track whose times fall 0.5 s over a year: a winner running to the recent standard scores near 0 on the
+    # corrected figure (the engine's track-normalised times counted the drift twice)
+    from greyhound.pit import figs
+    rows, rid = [], 0
+    for d in range(500):
+        day = (pd.Timestamp("2024-01-01") + pd.Timedelta(days=d)).strftime("%Y-%m-%d")
+        base = 29.0 - 0.5 * d / 365
+        for r in range(6):
+            rid += 1
+            for k in range(6):
+                t = base + 0.08 * k + (0.0 if k else 0.0)
+                rows.append({"race_date": day, "race_time": f"19:{10 * r:02d}", "meeting_id": d, "track": "Hove",
+                             "race_id": rid, "race_class": "A3", "distance_m": 480.0, "trap": k + 1,
+                             "dog_id": rid * 10 + k, "won": float(k == 0), "adjusted_time": t, "run_time": t,
+                             "sectional": 4.8 + 0.01 * k, "comment": "", "is_trial": False})
+    df = pd.DataFrame(rows)
+    f = figs.figures(df)
+    last = df.race_date >= "2025-03-01"
+    assert f.f_tot[last & (df.won == 1)].abs().mean() < 0.5          # within half a length of 0
+    assert (f.rel_tot.dropna() <= 1).all()
+
+
+def test_the_market_rating_ranks_the_field_like_the_sp():
+    from greyhound.pit import figs
+    runs = synth(days=50, seed=3)
+    prm = {"r": 0.3, "q": 0.002, "v0": 1.0}
+    mr, ce = figs.market_rating(runs.sort_values(["t", "race_id", "trap"]).reset_index(drop=True), prm)
+    assert np.isfinite(ce) and ce > 0
+    d = runs.sort_values(["t", "race_id", "trap"]).reset_index(drop=True).assign(m=mr.m.to_numpy())
+    late = d[d.race_date >= sorted(d.race_date.unique())[30]].dropna(subset=["m"])
+    rho = late.groupby("race_id").apply(lambda g: g.m.rank().corr(g.sp_p_norm.rank()) if len(g) > 2 else np.nan)
+    assert rho.mean() > 0.5                                           # before each race it orders the field as the SP does
