@@ -168,9 +168,10 @@ def test_only_the_trader_runs_on_the_live_key():
     named = {p.name for p in WORKFLOWS.glob("*.yml") if "BETFAIR_LIVE_APP_KEY" in p.read_text()}
     assert named <= {"live-trade.yml", "greyhound-trade.yml", "football-trade.yml", "paper-models.yml",
                      "morning-models.yml"}, named
-    # the greyhound stream recorder too (the owner, 5 Nov 2026, the audit C1): read-only, no order subscription
+    # the greyhound stream recorder too (the owner, 5 Nov 2026, the audit C1): read-only, no order subscription; and
+    # the horse WIN markets' stream beside the horse trader (the owner, 10 Nov 2026): read-only, no delayed key opens it
     traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade", "greyhound.book_record",
-               "greyhound.stream_record",
+               "greyhound.stream_record", "research.horse_stream_record",
                "greyhound.early_lay --trade", "greyhound.quote_mid --trade", "morning.live")
     for name in named:
         text = (WORKFLOWS / name).read_text()

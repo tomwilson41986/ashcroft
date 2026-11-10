@@ -40,7 +40,7 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 | `BETFAIR_PASSWORD` | Betfair Exchange password |
 | `BETFAIR_APP_KEY` | Betfair API application key (the delayed key: every read-only job, the market records) |
 | `API_FOOTBALL_KEY` | API-Football (optional: fixture status, kick-off, cups; the football model runs without it) |
-| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); the football trader's process (football-trade.yml): reads every football market on it from 4 Nov 2026 (the owner: "use live key", "do not pass betfair thresholds": `football/exchange_feed.py Throttle`, at most 5 requests a second and 12,000 an hour, each under 200 weight points), bets only with `FOOTBALL_LIVE=yes` (small real stakes, 3 Nov 2026); the morning models when `MORNING_LIVE=yes` (morning-models.yml, its own runner, 4 Nov 2026); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py) |
+| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); the football trader's process (football-trade.yml): reads every football market on it from 4 Nov 2026 (the owner: "use live key", "do not pass betfair thresholds": `football/exchange_feed.py Throttle`, at most 5 requests a second and 12,000 an hour, each under 200 weight points), bets only with `FOOTBALL_LIVE=yes` (small real stakes, 3 Nov 2026); the morning models when `MORNING_LIVE=yes` (morning-models.yml, its own runner, 4 Nov 2026); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py); and the horse WIN markets' Exchange Stream beside the trader in live-trade.yml to 10:30 UK, read-only (the owner, 10 Nov 2026) |
 
 ## Key Commands
 
@@ -111,7 +111,8 @@ python -m morning.live --settle --live
 # readings of the open point; arithmetic, not a forecast; a fee on profit does not move the trader's bar)
 python research/queries/done/expert_fee_projection_1109.py
 # The Exchange Stream for the horse WIN markets, raw (the whole ladder and the traded volume, for a resting-order test);
-# read-only, and started by no workflow: it runs on the live key beside the live trader only on the owner's word
+# read-only, beside the trader in live-trade.yml to 10:30 UK on the live key (the owner, 10 Nov 2026: no delayed key
+# opens the stream), to s3://$CAPTURE_BUCKET/betfair_stream/horse/<day>/
 BETFAIR_APP_KEY=<live key> python -m research.horse_stream_record --until 10:30
 
 # --- Research toolkit (see RESEARCH_FRAMEWORK.md) ---
