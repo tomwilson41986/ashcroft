@@ -808,3 +808,38 @@ selection-id type mismatch, now fixed with a test):
 - Until then the model is the book-only one: 1,588 rows, correlation 0.010, the spread-aware gate -2.35% on 109
   trades, every line -2.59%.
 - From Tuesday on, each trials run (Tuesday and Friday) adds the week's matches with the model's forecast.
+
+## First forward scores at the recorded books (Tuesday 10 Nov 2026)
+
+**Source:** `football-trials.yml` scheduled run 42769049818, matches of 6-9 Nov (the first window).
+
+| Trial | Bets | Return | Notes |
+|---|---|---|---|
+| **EV rule** (pre-registered: resting entry, greened at the close) | 11 filled of 22 signals posted | **-2.9%** (95% -5.6% to +0.9%) | CLV -1.7%; paper bank GBP 1,000 to GBP 997.30; 45% right way |
+| EV rule, crossing variant | 21 | -1.2% | CLV +0.1%; 52% right way |
+| Stacked move rule | 8 | -3.7% | 50% right way |
+| Stacked rule, resting | 6 | -7.0% | 33% right way |
+
+- 314 forecasts, 29 signals; skipped: 11 unfilled by the deadline, 3 books too wide.
+- **Adverse selection again:** of the EV rule's resting orders, the filled ones went the right way 45% of the time and
+  the unfilled ones 60%. A resting order is filled mostly when the market is about to move through it.
+- Eleven bets is noise. The gate needs 300 bets over 90 days, and nothing is decided before it.
+
+**The closing-line model on the books, with our forecast joined:**
+- 2,155 rows, 4-10 Nov; 321 rows carry the EV model's forecast (162 lab matches in the window).
+- What is left of the model's forecast move does not yet track the move to the close: correlation -0.02 (321 rows).
+- The walk-forward model: correlation 0.06 overall (0.10 at 60 minutes), out-of-sample R2 -0.10.
+
+| Entry rule | Trades | Return |
+|---|---|---|
+| Spread-aware gate | 212 | -1.9% (-2.6 to -1.2) |
+| Flat-tick gate | 680 | -2.5% |
+| Every tradable line | 3,036 | -2.5% |
+
+**Read:**
+- No trial makes money in its first window. Nothing is decided at 6-21 bets.
+- Two patterns repeat from the research:
+  - **resting fills are adversely selected:** the crossing variant beat resting here;
+  - **the spread-aware gate loses about a quarter less** than trading every line.
+- The model's forecast and the recorded books are joined now. That link needs weeks of matches before it can say
+  whether the forecast holds at real prices.
