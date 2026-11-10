@@ -172,7 +172,7 @@ def lane(exp: dict, spec: dict) -> str:
     """``slow`` for an experiment off the quick recipe or with the study, ``quick`` otherwise: the CI runs the quick
     lane's table as soon as it is done, without waiting on the slow lane."""
     slow = (exp.get("recipe", spec.get("recipe", "quick")) != "quick" or exp.get("study") or exp.get("limit")
-            or exp.get("bfsp") or exp.get("publish_pred") or exp.get("review"))
+            or exp.get("bfsp") or exp.get("publish_pred") or exp.get("review") or exp.get("back"))
     return "slow" if slow else "quick"
 
 
@@ -1112,6 +1112,8 @@ def main(argv=None) -> int:
             _log(f"published {e['name']}: {res['published']}")
         if e.get("bfsp"):
             res["bfsp"] = run_bfsp(store, pred, e["name"], out)
+        if e.get("back"):
+            res["back"] = run_back(store, pred, e["name"], out)
         if e.get("review"):
             # every strategy family on Betfair's price files (research/greyhound/strategy_review.py; the owner, 10 Nov
             # 2026: "Do a full review, open minded, on profitable trading and win betting or lay betting strategies")
@@ -1246,6 +1248,22 @@ def run_limit(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
     limit_study.main(["--from", STUDY_FROM, "--to", last, "--pred-dir", str(out / "pred" / name),
                       "--source", "retimed", "--out", str(out / f"limit_{name}")])
     return {"report": f"limit_{name}.md"}
+
+
+def run_back(store, pred: pd.DataFrame, name: str, out: Path) -> dict:
+    """The back study (``research.greyhound.back_study``; the owner, 10 Nov 2026: "I want to back. Either back and
+    trade out at BFSP, or back just to win") on an experiment's prices, its days from STUDY_FROM, on the re-timed
+    books."""
+    from research.greyhound import back_study, score_full
+    days = pred[pred.race_date.astype(str) >= STUDY_FROM]
+    if not len(days):
+        return {"skipped": f"no test days from {STUDY_FROM}"}
+    last = str(days.race_date.max())
+    if not (out / "pred" / name).exists():
+        score_full.score_days({name: days}, date.fromisoformat(STUDY_FROM), date.fromisoformat(last), store,
+                              out / "pred")
+    return back_study.run(store, date.fromisoformat(STUDY_FROM), date.fromisoformat(last), str(out / "pred" / name),
+                          out / f"back_{name}")
 
 
 def publish_pred(store, pred: pd.DataFrame, name: str, out: Path, prefix: str) -> dict:
