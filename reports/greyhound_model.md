@@ -1247,3 +1247,80 @@ run 41803082690; 50,886 runner-marks over 28 days, walk-forward): the dislocatio
 the Harville place chance from the WIN book correlates -0.03 to +0.05 with the move to the BSP; beside the last trade
 it cuts the RMSE of log(BSP) by at most 0.001 (first traded, interval -0.0011 to -0.0001) and nothing at 3 or 1 minute;
 the result's log-loss is not improved at any mark. **Nothing to trade: the two books agree.**
+
+## 28. The BFSP plan, batch 11: the race fitted as a book (greyhound-fastloop.yml run 42792051707, 10 Nov 2026)
+
+The plan of 10 Nov (reports/greyhound_bfsp_plan.md; the owner: "Fundamental is to improve our model to predict BFSP /
+Closing Prices"), steps 0 and 1, registered before any result (`research/greyhound/experiments/done/batch11_bfsp.json`).
+Test: every race from 1 June to 5 November 2026 (106,719 runners with a BSP), one fit on the data before 1 June, the
+live recipe's card-safe features (425). Paired differences by day; z is the difference over its bootstrap standard
+error; the bar is 3.
+
+**The result: fitting the race as a book beats fitting each runner's price.** The `share` objective (a softmax over the
+race fitted to each runner's share of the Betfair SP book) against the live recipe (squared error on log(BSP)):
+
+| Experiment | RMSE log(BSP) | vs live_ref | z | Log-loss | vs live_ref | z |
+|---|---|---|---|---|---|---|
+| live_ref (the live recipe, learning rate 0.05) | 0.4090 | - | - | 0.44112 | - | - |
+| live_ref + per-track stretch (what the live model serves) | 0.4017 | -0.0072 | - | 0.44124 | +0.00012 | - |
+| **share** | **0.3849** | **-0.0241 (90% -0.0252 to -0.0229)** | **-33.8** | **0.43956** | **-0.00156 (-0.00197 to -0.00116)** | **-6.3** |
+| mix (70% the SP shares, 30% the result) | 0.4092 | +0.0002 | +0.3 | 0.44084 | -0.00028 | -1.1 |
+| history_hl365 (every year from June 2020, one-year half-life) | 0.4123 | +0.0034 | +8.1 | 0.44119 | +0.00007 | +0.5 |
+| huber | 0.4096 | +0.0007 | +1.8 | 0.44113 | +0.00001 | 0.0 |
+
+- `share` clears the bar on both targets, by far the largest single gain the greyhound model has had (earlier blocks
+  moved the RMSE by 0.001 to 0.007). Against the stretched live price it is still 0.0168 better, unpaired.
+- More old history hurts: the market of 2020-23 is not today's.
+- The mixed target and the Huber loss add nothing.
+- Not finished: three seeds, and the live and share models refitted through the window (each ran into the job's
+  60-minute limit at this learning rate). Batch 12 refits share and runs at 0.08.
+
+**Baselines** (the same test; each fitted on named features only):
+
+| Knows only | RMSE log(BSP) | Share of the within-race spread explained |
+|---|---|---|
+| each race's average log(BSP) (no model) | 0.7649 | 0% |
+| field size (base_field) | 0.8311 | 0% |
+| the dog's past market (SP and BSP history, 42 columns) | 0.7089 | 26.9% |
+| speed figures (118 columns) | 0.5491 | 55.1% |
+| everything (live_ref) | 0.4090 | 75.1% |
+| everything, the race as a book (share) | 0.3849 | 77.8% |
+
+The race's level alone (whether a race's prices sit short or long overall) carries 0.1358 of share's error; the rest
+is the order within the race.
+
+**What the model relies on** (live_ref; each family shuffled within the race on 4,000 test races, the rise in RMSE):
+
+| Family | Features | RMSE rise | SHAP (sum) |
+|---|---|---|---|
+| Library (Elo, Kalman rating, class-adjusted figure) | 26 | +0.178 | 0.46 |
+| Base engine | 133 | +0.138 | 1.16 |
+| Parity windows | 132 | +0.138 | 0.97 |
+| Past market (a theme across families) | 55 | +0.076 | 0.39 |
+| Record by condition | 42 | +0.075 | 0.45 |
+| Expected time | 21 | +0.044 | 0.26 |
+| Track-normalised times | 20 | +0.038 | 0.21 |
+| Simulator | 6 | +0.015 | 0.08 |
+| Ability with uncertainty | 13 | +0.012 | 0.12 |
+| Weight forecast | 7 | +0.006 | 0.05 |
+| Trainer intent | 25 | +0.006 | 0.06 |
+
+Top features by mean absolute SHAP value: `lb_cv_gsr_ewm_z` 0.200 (the class-adjusted speed figure against the
+field), `et_p_fastest` 0.072, `hb_age_vs_oldest` 0.065, `gp_rs_vs_past` 0.058, `hb_age_vs_youngest` 0.057,
+`open_race` 0.056, `gsr_ewm_z` 0.053, `tn_var_last` 0.053, `gp_bsp_mkt_w3` 0.049, `gp_bsp_ae_w10_z` 0.047. For share
+the leaders are the same family: `lb_cv_gsr_ewm_z` 0.119, `tn_var_last` 0.104, `gp_rs_vs_past` 0.102.
+
+**Where the error sits** (share; bias is the mean of log forecast less log BSP, below 0 priced too short):
+
+| BSP | Runners | RMSE | Bias |
+|---|---|---|---|
+| under 2 | 2,357 | 0.335 | +0.232 |
+| 2 to 3 | 9,403 | 0.306 | +0.181 |
+| 3 to 5 | 27,369 | 0.274 | +0.087 |
+| 5 to 8 | 27,234 | 0.289 | -0.017 |
+| 8 to 15 | 23,581 | 0.364 | -0.160 |
+| 15 and over | 16,775 | 0.656 | -0.473 |
+
+- The forecast is still compressed (favourites priced too long, outsiders too short), less than live_ref's (+0.303 and
+  -0.506). Batch 12 tests the per-track stretch on top of share.
+- Debutants (1,934 runners) carry an RMSE of 0.715 against 0.371 for dogs with 20 or more runs.
