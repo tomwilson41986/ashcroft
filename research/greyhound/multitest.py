@@ -31,10 +31,14 @@ def bh(p) -> np.ndarray:
     return q
 
 
-def z_by_race(by_race) -> float | None:
-    """The mean of the race-level returns over its standard error (None under 10 races or with no spread)."""
+MIN_RACES = 100      # under this a z-score of betting returns means little: a lay wins small and often, loses big and rarely
+
+
+def z_by_race(by_race, min_races: int = MIN_RACES) -> float | None:
+    """The mean of the race-level returns over its standard error (None under ``min_races`` races or with no spread:
+    18 lays that all won have no spread, and no evidence either)."""
     v = np.asarray(by_race, float)
     v = v[np.isfinite(v)]
-    if len(v) < 10 or v.std(ddof=1) <= 0:
+    if len(v) < min_races or v.std(ddof=1) <= 1e-9 * max(1.0, abs(v.mean())):
         return None
     return float(v.mean() / (v.std(ddof=1) / math.sqrt(len(v))))

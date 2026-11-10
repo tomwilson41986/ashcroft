@@ -750,6 +750,7 @@ def main(argv=None) -> int:
           "the race), over the first five minutes' checkpoints. A spec counts only on days after it was registered; a "
           f"crown changes only on a paired gain {BAR_Z:g} standard errors above zero over at least {BAR_DAYS} fresh days "
           f"and {BAR_RACES} races (the bar from 10 Nov 2026)." + (" DRY RUN: nothing written." if a.dry_run else ""), ""]
+    crowns = []
     for t, lab in (("bfsp", "1. BFSP"), ("win", "2. Win")):
         c = champs[t]
         g = c.get("paired")
@@ -758,6 +759,7 @@ def main(argv=None) -> int:
                                                     if g.get("races_for_bar") else "")) if g else "none"
         md.append(f"Champion, {lab}: **{c.get('champion')}** (incumbent {c.get('incumbent')}, strongest fresh "
                   f"challenger {c.get('challenger')}; paired: {paired}). {c.get('note', '')}")
+        crowns.append(md[-1])
     md += ["", "The last three days (every day is in the registry). 'Tight': the spread within 5%. 'By chance': each "
            "runner weighted by its chance. 'Late': after the scheduled off, the market still open.", "",
            "| Day | Spec | Runner-checkpoints | Races | BFSP: RMSE log(SP) | <= 60 s | 70-180 s | > 180 s | Tight | "
@@ -787,6 +789,7 @@ def main(argv=None) -> int:
     else:
         md.append("No fresh day yet.")
     md += diagnostics(days, specs, champs)
+    md += ["", "### The champions again (for the foot of the log)", ""] + crowns
     (out / "report.md").write_text("\n".join(md) + "\n")
     print("\n".join(md))
     return 0

@@ -201,4 +201,6 @@ def test_the_family_of_tests_is_read_as_one():
     from research.greyhound import multitest as mt
     assert np.allclose(mt.bh([0.01, 0.02, 0.03, 0.5, np.nan])[:4], [0.04, 0.04, 0.04, 0.5])
     assert np.isclose(mt.p_one_sided([0.0])[0], 0.5) and mt.p_one_sided([3.0])[0] < 0.0014
-    assert mt.z_by_race(np.ones(5)) is None and mt.z_by_race(np.r_[np.ones(50), -np.ones(50)]) == 0.0
+    assert mt.z_by_race(np.r_[np.ones(20), -np.ones(20)]) is None            # too few races to mean anything
+    assert mt.z_by_race(np.full(200, 0.98)) is None                          # every lay won: no spread, no evidence
+    assert mt.z_by_race(np.r_[np.ones(50), -np.ones(50)]) == 0.0
