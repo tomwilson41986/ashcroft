@@ -65,7 +65,7 @@ function Invoke-Historic([string]$Method, $Body) {
 # what the account holds (a GET: the service refuses a POST here with 405)
 $mine = Invoke-RestMethod -Method Get -Uri "$Api/GetMyData" -Headers @{ ssoid = $script:token } -TimeoutSec 300
 Write-Host "The account holds:"
-$mine | Format-Table -AutoSize | Out-String | Write-Host
+$mine | Group-Object sport, plan | ForEach-Object { Write-Host ("  {0}: {1} months" -f $_.Name, $_.Count) }
 $held = @($mine | Where-Object { $_.sport -eq $Sport -and $_.plan -eq $Plan })
 if (-not $held) {
     throw "The account does not hold '$Sport' on '$Plan'. Get it (free) on historicdata.betfair.com first."
