@@ -66,12 +66,34 @@ def test_the_checkpoints_and_the_trades_closed_at_the_sp():
 
 
 def test_the_score_pools_days_and_needs_ten_for_a_candidate():
-    tr = pd.DataFrame({"rule": "r", "market": [f"m{i}" for i in range(40)], "pnl": 0.05,
+    pnl = [0.04, 0.06] * 20                                   # a steady 5% a race, with a little spread
+    tr = pd.DataFrame({"rule": "r", "market": [f"m{i}" for i in range(40)], "pnl": pnl,
                        "day": [f"2026-11-{5 + i % 3:02d}" for i in range(40)]})
     sc = lab.score(tr).iloc[0]
     assert sc.trades == 40 and sc.days == 3 and sc["mean_pnl%"] == 5.0 and not sc.candidate
     tr["day"] = [f"2026-11-{5 + i % 10:02d}" for i in range(40)]
-    assert lab.score(tr).iloc[0].candidate
+    sc = lab.score(tr).iloc[0]
+    assert sc.candidate and sc.candidate_sp and sc.dsr >= 0.95 and sc.n_trials == 1
+
+
+def test_a_candidate_must_clear_the_deflated_sharpe_against_every_test_scored():
+    """The lower bound alone lets about one test in twenty through by luck; the DSR against all the tests (both
+    targets of every rule) is the bar."""
+    import numpy as np
+    from research.overfit import TrialLedger
+    rng = np.random.default_rng(7)
+    days = [f"2026-11-{5 + i % 10:02d}" for i in range(60)]
+    rows = []
+    for k in range(43):                                       # 43 rules on two targets, none with an edge
+        rows.append(pd.DataFrame({"rule": f"r{k}", "market": [f"m{i}" for i in range(60)], "day": days,
+                                  "pnl": rng.normal(0.0, 0.3, 60), "pnl_win": rng.normal(0.0, 0.9, 60)}))
+    sc = lab.score(pd.concat(rows, ignore_index=True))
+    assert (sc.n_trials == 86).all() and not sc.candidate.any()
+    led = TrialLedger(None)
+    for k in range(100):                                      # a ledger that has seen more tests raises the count
+        led.record(f"old{k}", sharpe=float(rng.normal(0, 0.1)))
+    sc = lab.score(rows[0], ledger=led)
+    assert sc.iloc[0].n_trials == 102
 
 
 def test_the_forward_tests_lays_are_replayed_and_scored(monkeypatch):

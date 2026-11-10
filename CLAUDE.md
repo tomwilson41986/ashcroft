@@ -107,6 +107,13 @@ python -m morning.live --select
 MORNING_LIVE=yes python -m morning.live --trade --live
 python -m morning.live --settle --live
 
+# Betfair's Expert Fee on the account's own record (research/expert_fee.py: the repository's reading of the terms, both
+# readings of the open point; arithmetic, not a forecast; a fee on profit does not move the trader's bar)
+python research/queries/done/expert_fee_projection_1109.py
+# The Exchange Stream for the horse WIN markets, raw (the whole ladder and the traded volume, for a resting-order test);
+# read-only, and started by no workflow: it runs on the live key beside the live trader only on the owner's word
+BETFAIR_APP_KEY=<live key> python -m research.horse_stream_record --until 10:30
+
 # --- Research toolkit (see RESEARCH_FRAMEWORK.md) ---
 # Model-vs-market scoring (Murphy decomposition, skill vs BSP, concordance, drift)
 python research_lab.py score --predictions data/oos_predictions.csv
@@ -260,6 +267,16 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
   `live-record.yml`, `auto_trade.py`, `trading/`, `betfair_recorder.py`, `model/`, the BFSP training and prediction path. Every other
   model reuses their features and setup from its own modules and jobs (`paper-models.yml`, `sources/`, `research/`) and runs on
   paper until it passes a pre-registered gate; `tests/test_workflow_guards.py` holds the line.
+
+- **No new greyhound or football variant search until a registered trial passes its gate** (the owner, 9 Nov 2026, on
+  the consultant review's list: "Work on these"). The trials already registered run to their end and are read once, at
+  their registered reading (the greyhound stream lab and the early lay's forward test; the football EV, stack and paper
+  trials). No new rule grid, feature batch or model variant is opened for those two sports meanwhile; the recording and
+  the nightly records carry on, and the research time goes to the horses' morning edge. Neither sport's model has
+  beaten its closing price (`reports/greyhound_audit_1105.md`, `reports/football_model_rethink.md`).
+- **A new rule is read against every rule tried** (the owner, 5 and 9 Nov 2026): each test is written in
+  `reports/research_ledger.jsonl` before its run with its reading, and a pass needs the deflated Sharpe
+  (`research/overfit.py`, at least 0.95 with every trial counted) as well as its interval above zero.
 
 ## Git Conventions
 
