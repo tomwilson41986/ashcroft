@@ -172,7 +172,7 @@ def lane(exp: dict, spec: dict) -> str:
     """``slow`` for an experiment off the quick recipe or with the study, ``quick`` otherwise: the CI runs the quick
     lane's table as soon as it is done, without waiting on the slow lane."""
     slow = (exp.get("recipe", spec.get("recipe", "quick")) != "quick" or exp.get("study") or exp.get("limit")
-            or exp.get("bfsp") or exp.get("publish_pred"))
+            or exp.get("bfsp") or exp.get("publish_pred") or exp.get("review"))
     return "slow" if slow else "quick"
 
 
@@ -207,7 +207,7 @@ def check_spec(spec: dict) -> list[dict]:
         if e.get("seeds") is not None and not (1 <= int(e["seeds"]) <= 10):
             raise ValueError(f"{e['name']}: seeds must be 1 to 10")
         for k in ("save_pred", "pred_from", "publish_pred"):
-            if e.get(k) is not None and not re.fullmatch(r"[a-z0-9_/\-]{3,120}", str(e[k])):
+            if e.get(k) is not None and not re.fullmatch(r"[a-z0-9_/\-]{3,120}(\.parquet)?", str(e[k])):
                 raise ValueError(f"{e['name']}: {k} must be an S3 prefix of [a-z0-9_/-]")
         if e.get("serve_calibrated") and e["serve_calibrated"] not in e.get("calibrate", []):
             raise ValueError(f"{e['name']}: serve_calibrated must be one of its calibrate kinds")
@@ -1076,7 +1076,8 @@ def main(argv=None) -> int:
         exps = [e for e in exps if e["name"] == a.only]
         if not exps:
             ap.error(f"no experiment {a.only!r} in {a.spec}")
-    df, meta = load_cache(store)
+    # saved prices only (``pred_from``): no feature cache to load
+    df, meta = (None, None) if all(e.get("pred_from") for e in exps) else load_cache(store)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     results = []
@@ -1098,7 +1099,7 @@ def main(argv=None) -> int:
             store.put_parquet(f"{e['save_pred'].rstrip('/')}/{e['name']}.parquet", pred)
             res["saved_pred"] = f"{e['save_pred'].rstrip('/')}/{e['name']}.parquet"
             _log(f"saved {e['name']}'s prices: {res['saved_pred']} ({len(pred):,} runners)")
-        res["cache"] = {k: meta[k] for k in ("hash", "last_day", "rows")}
+        res["cache"] = {k: meta[k] for k in ("hash", "last_day", "rows")} if meta else None
         if e.get("shortening", spec.get("shortening")):
             _log(f"shortening {e['name']}")
             res["shortening"] = shortening(store, pred, e["name"], out)
@@ -1111,6 +1112,12 @@ def main(argv=None) -> int:
             _log(f"published {e['name']}: {res['published']}")
         if e.get("bfsp"):
             res["bfsp"] = run_bfsp(store, pred, e["name"], out)
+        if e.get("review"):
+            # every strategy family on Betfair's price files (research/greyhound/strategy_review.py; the owner, 10 Nov
+            # 2026: "Do a full review, open minded, on profitable trading and win betting or lay betting strategies")
+            from research.greyhound import strategy_review
+            _log(f"strategy review {e['name']}")
+            res["review"] = strategy_review.run(store, pred, e["name"], out)
         if e.get("groups") and (e.get("shortening", spec.get("shortening")) or e.get("limit")):
             # each group's races on their own: does our price add to the market there, and do the rules pay there
             res["groups_study"] = {}

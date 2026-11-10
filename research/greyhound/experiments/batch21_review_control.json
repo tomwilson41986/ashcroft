@@ -1,0 +1,16 @@
+{
+ "about": "Batch 21 (10 Nov 2026), registered after batch 20 (run 42888391928) and before its own scores. Batch 20's strategy review passed 48 of 238 rules on the price files, every one a morning lay, almost the same for the new and the old model: the sign of the market drifting from its morning price on its own, not of the model. The review now carries a no-model control (lay or back every runner with a morning price, greened at the SP) and, for each morning rule, the model's lift over that control on the holdout days (the day's mean difference, a bootstrap over days); a pass that does not beat the control is the market's drift, not an edge of ours. Same saved prices, same rules, same periods.",
+ "recipe": "quick",
+ "experiments": [
+  {
+   "name": "stack_rev2",
+   "pred_from": "greyhound/research/pred/stack_review.parquet",
+   "review": true
+  },
+  {
+   "name": "live_rev2",
+   "pred_from": "greyhound/research/pred/live_review.parquet",
+   "review": true
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+{
+ "about": "Batch 20 (10 Nov 2026), registered before its scores: the strategy review the owner asked for ('Do a full review, open minded, on profitable trading and win betting or lay betting strategies. Based on the new model.'), on batch 19's saved out-of-sample prices, no model fitted. stack_rev and live_rev: every rule family of research/greyhound/strategy_review.py on Betfair's price files (SP backs and lays on the model and on a BSP + model blend, the morning and pre-play moves closed at the SP or held, the place market), development 1 Jun to 31 Aug, holdout 1 Sep to 5 Nov 2026, the new model (stack3_all3) beside the current live recipe (live08). stack_lim and live_lim: the limit-order study's grid (research/greyhound/limit_study.py, the early lay's primary rule among it) on the recorded books from 6 Oct on each price. stack_out: the trade-out study on the new price. stackoos_lim: the limit-order grid on the prices of the model fitted before 6 Oct (the early lay's live inputs from now). The bar for every rule as each module fixes it; every rule counted.",
+ "recipe": "quick",
+ "experiments": [
+  {
+   "name": "stack_rev",
+   "pred_from": "greyhound/research/pred/stack_review.parquet",
+   "review": true
+  },
+  {
+   "name": "live_rev",
+   "pred_from": "greyhound/research/pred/live_review.parquet",
+   "review": true
+  },
+  {
+   "name": "stack_lim",
+   "pred_from": "greyhound/research/pred/stack_review.parquet",
+   "limit": true
+  },
+  {
+   "name": "live_lim",
+   "pred_from": "greyhound/research/pred/live_review.parquet",
+   "limit": true
+  },
+  {
+   "name": "stack_out",
+   "pred_from": "greyhound/research/pred/stack_review.parquet",
+   "study": true
+  },
+  {
+   "name": "stackoos_lim",
+   "pred_from": "greyhound/research/pred/stack_live_oos.parquet",
+   "limit": true
+  }
+ ]
+}
