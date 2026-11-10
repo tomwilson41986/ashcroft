@@ -122,7 +122,7 @@ jobs:
     needs: cache
     if: needs.cache.outputs.slow != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 100   # a race-objective fit and a study (batch 16, 10 Nov 2026)
     strategy:
       fail-fast: false
       max-parallel: 10
