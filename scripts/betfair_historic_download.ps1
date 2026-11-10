@@ -42,7 +42,8 @@ function Wait-Retry([int]$Try, [string]$What, $Err) {
 
 function Test-AuthError($Err) {
     $resp = $Err.Exception.Response
-    return ($null -ne $resp) -and ([int]$resp.StatusCode -in 401, 403)
+    # 400 too: after a few hours the service answers an expired session with 400 Bad Request (the owner's run, 10 Nov)
+    return ($null -ne $resp) -and ([int]$resp.StatusCode -in 400, 401, 403)
 }
 
 function Get-Token {
