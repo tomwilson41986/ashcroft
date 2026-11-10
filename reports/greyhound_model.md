@@ -1486,7 +1486,7 @@ results rewritten move no row: `tests/test_greyhound_pit.py`) and a mechanics te
 - *Fitted decay and shrinkage (2.6)*: each figure's level (`fm_tot`, `fm_sec`, `fm_run`) on the half-life and prior
   weight that best predict the next figure (mean squared error, before 2018), in place of figs' guessed 90 days and
   2 runs. The first build chose 30 days for the whole-race and run-in figures, the grid's edge; the grid was widened
-  (7-365 days x 0.5-8 runs) and rebuilt. Rebuilt: whole race 21 days / 1 run (MSE 14.23 against 14.56 at figs'
+  (7-365 days x 0.5-8 runs) and rebuilt. Rebuilt: whole race 21 days / 1 run (MSE 14.23 against 14.63 at figs'
   90 days / 2 runs), sectional 60 / 1, run-in 21 / 1. Form is much shorter-lived than the old constants assumed.
 - *Trend and age (2.2)*: a local-linear-trend Kalman filter on the whole-race figure (level and slope), the age curve
   as the slope's prior, readings beyond 3 standard deviations Huber-weighted, trials and troubled runs at double noise.
