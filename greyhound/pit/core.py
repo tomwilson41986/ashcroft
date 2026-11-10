@@ -146,3 +146,30 @@ def trainer_at_the_time(runs: pd.DataFrame, lag: pd.Series | None) -> pd.Series:
         return pd.Series(np.nan, index=runs.index, dtype=object)
     ok = runs.race_date.map(lag).le(FRESH_DAYS)
     return runs.trainer.where(ok)
+
+
+def clogit_fit(X: np.ndarray, gi: np.ndarray, y: np.ndarray, lam: float = 1.0, w: np.ndarray | None = None) -> np.ndarray:
+    """A conditional logit: each group's chances a softmax of X beta; beta minimising the winners' (``y`` 1) log loss,
+    weighted by ``w`` a row, plus ``lam`` x |beta|^2 (scipy L-BFGS, analytic gradient). ``gi``: group codes 0..G-1."""
+    from scipy.optimize import minimize
+    n = int(gi.max()) + 1
+    w = np.ones(len(y)) if w is None else w
+
+    def nll(b):
+        u = X @ b
+        mx = np.full(n, -np.inf)
+        np.maximum.at(mx, gi, u)
+        e = np.exp(u - mx[gi])
+        p = e / np.bincount(gi, weights=e, minlength=n)[gi]
+        return (-(w * y * np.log(np.clip(p, 1e-12, None))).sum() + lam * (b ** 2).sum(),
+                X.T @ (w * (p - y)) + 2 * lam * b)
+
+    return minimize(nll, np.zeros(X.shape[1]), jac=True, method="L-BFGS-B").x
+
+
+def group_softmax(u: np.ndarray, gi: np.ndarray) -> np.ndarray:
+    n = int(gi.max()) + 1
+    mx = np.full(n, -np.inf)
+    np.maximum.at(mx, gi, u)
+    e = np.exp(u - mx[gi])
+    return e / np.bincount(gi, weights=e, minlength=n)[gi]

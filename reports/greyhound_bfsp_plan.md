@@ -2,6 +2,31 @@
 
 racing² - greyhound research, 10 Nov 2026. Greyhounds only; the horse model and its jobs are not touched.
 
+## Status (10 Nov 2026, every step run)
+
+Every step of the plan has been run and recorded (reports/greyhound_model.md sections 28 to 36). On the same test
+(1 June to 5 November 2026, 106,719 runners) the RMSE of log(BSP):
+
+| Recipe | RMSE log(BSP) | With the per-track stretch | Source |
+|---|---|---|---|
+| The live recipe as served | 0.4017 | - | section 29 |
+| share08_best (share objective, figs and the metric tables, 3 seeds) | 0.3510 | 0.3448 | batch 18, run 42853398485 |
+| stack3_all3 (+ form, draw, bend tables; trees stacked with 3 neural set models) | **0.3396** | **0.3366** | same |
+
+0.3366 is 16% less error than the live recipe; the winner's log-loss is better too (0.43732 against 0.43777, z -3.5).
+- Step 5: the better price carries into the first-book forecast (0.2852 to 0.2648) and to 3 minutes out, not to the
+  last minute (section 33).
+- Steps 2.2-2.6: the form, draw and bend tables add 0.0013 at three seeds (z -5.5; section 34-36). Fitted
+  constants replace guessed ones: form's half-life is 21 days, not 90; the trap bias the market misses is static.
+- Step 4: the neural set model alone matches the trees; stacked with them it is the largest step since the share
+  objective (-0.0090 at three seeds without the new tables, -0.0114 with them).
+- Still open: the debutants (RMSE about 0.70, unchanged), the compression (outsiders still -0.34 in log), the trend
+  filter's noise on its grid's edge, the market's memory against our own forecasts (needs out-of-fold forecasts).
+
+Not adopted. Two forward tests on days from 11 November, both run from 25 November: bfsp_forward.json (share08_best)
+and bfsp_forward_stack.json (stack3_all3), each against the live recipe with the bar fixed before its days.
+Adoption into the live pricing (greyhound/live.py) is the owner's decision.
+
 ## Context
 
 The owner: "Fundamental is to improve our model to predict BFSP / Closing Prices." The ask is a step back from

@@ -1360,3 +1360,211 @@ through a Kalman filter fitted on 2014-17).
 
 **Not adopted yet.** The test window has been read by earlier batches. The forward test, registered now
 (`research/greyhound/experiments/bfsp_forward.json`), scores the same recipes on days after 10 November only.
+
+## 30. The BFSP plan, batch 13: what adds on top (greyhound-fastloop.yml run 42808526186, 10 Nov 2026)
+
+On share with the figs table, rebuilt with the market rating's wider drift grid (run 42794389155): RMSE of log(BSP)
+0.3579 (batch 12's build: 0.3593). Paired against it:
+
+| Experiment | RMSE log(BSP) | vs share08_figs | z | Log-loss | vs share08_figs | z |
+|---|---|---|---|---|---|---|
+| share08_figs | 0.3579 | - | - | 0.43789 | - | - |
+| + per-track stretch (same fit) | 0.3533 | -0.0047 (-0.0053 to -0.0041) | | 0.43805 | +0.00017 | |
+| three seeds averaged | 0.3542 | -0.0037 (-0.0042 to -0.0033) | -14.1 | 0.43770 | -0.00019 | -2.0 |
+| refitted on 1 September | 0.3576 | -0.0003 | -0.9 | 0.43796 | +0.00007 | +0.8 |
+| + every other metric table (ability, trouble, connections, market, breeding, life) | 0.3542 | -0.0038 (-0.0044 to -0.0032) | -9.8 | 0.43769 | -0.00019 | -1.2 |
+
+- Seeds and the other metric tables each clear the bar; the stretch improves the price again at a small cost to the
+  win chance (as on the live recipe), so it belongs on the BFSP forecast only.
+- The refit changes nothing: the single fit at 1 June holds through November.
+- With every table, the figs family still carries the model (shuffled within the race: +0.347 RMSE); of the other
+  tables life (+0.010) and ability (+0.006) matter most.
+
+The forward test (bfsp_forward.json) gains `share08_full`, these together, before any of its days exist.
+
+## 31. The BFSP plan, batch 14: the Betfair-SP rating and the known-wrong fields (greyhound-fastloop.yml run 42818559765, 10 Nov 2026)
+
+On share with the figs table (the figs table rebuilt with the rating read on the Betfair SP as well, run 42816936434:
+259,857 races rated on the BSP). Paired against share08_figs:
+
+| Experiment | RMSE log(BSP) | vs share08_figs | z | Log-loss | vs share08_figs | z |
+|---|---|---|---|---|---|---|
+| share08_figs | 0.3593 | - | - | 0.43806 | - | - |
+| + the Betfair-SP rating (fg_bmr) | 0.3570 | -0.0023 (-0.0028 to -0.0017) | -6.5 | 0.43786 | -0.00020 | -1.4 |
+| without hb_days_since_season | 0.3589 | -0.0004 | -1.1 | 0.43830 | +0.00025 | +1.6 |
+| without ti_new_trainer | 0.3596 | +0.0003 | +1.0 | 0.43834 | +0.00028 | +2.2 |
+| without every trainer column | 0.3625 | +0.0032 (+0.0025 to +0.0039) | +7.4 | 0.43840 | +0.00034 | +1.9 |
+
+- The Betfair-SP rating adds a little beside the SP one.
+- The two fields shown wrong in the review carry nothing; they are dropped from batch 15 on.
+- The trainer columns stay: removing all of them (the 6 Nov test missed some) costs 0.0032, as the earlier test found.
+  The trainer is the current one on every past run, so this is the yard's identity, not its form at the time.
+
+**Run-to-run noise.** The same recipe scored 0.3593 here and in batch 12 (3,163 rounds) but 0.3579 in batch 13 (4,372
+rounds): GitHub's runners differ and LightGBM's multithreaded fits were not deterministic. The day-level bootstrap does
+not see that, so gains near 0.001-0.002 (the BSP rating, seeds, the other tables) are replicated in batch 15 with every
+fit deterministic on four threads. The large gains (the race as a book, 0.024; the figs table, 0.029) are far beyond it.
+
+## 32. The BFSP plan, batch 15: the replication and the best recipe (greyhound-fastloop.yml run 42824328816, 10 Nov 2026)
+
+Every fit deterministic on four threads; the two wrong fields dropped. Paired against share08_figs (0.3598 here):
+
+| Experiment | RMSE log(BSP) | vs share08_figs | z | Log-loss | vs share08_figs | z |
+|---|---|---|---|---|---|---|
+| share08_figs | 0.3598 | - | - | 0.43836 | - | - |
+| + the Betfair-SP rating | 0.3586 | -0.0013 (-0.0019 to -0.0007) | -3.4 | 0.43816 | -0.00020 | -1.4 |
+| three seeds | 0.3553 | -0.0045 (-0.0049 to -0.0041) | -19.2 | 0.43800 | -0.00036 | -4.3 |
+| + every other metric table | 0.3561 | -0.0037 (-0.0044 to -0.0031) | -9.2 | 0.43809 | -0.00027 | -1.6 |
+| **share08_best: all of these together** | **0.3510** | **-0.0088 (-0.0094 to -0.0083)** | **-25.6** | **0.43777** | **-0.00059 (-0.00084 to -0.00034)** | **-3.9** |
+| share08_best + per-track stretch (same fit) | 0.3448 | -0.0061 more | | 0.43795 | +0.00017 | |
+
+All three small gains replicate (the BSP rating only just). Together they add up.
+
+**Where the plan's first day leaves the BFSP forecast** (the same test throughout, 106,719 runners):
+
+| Step | RMSE log(BSP) | Within-race spread explained |
+|---|---|---|
+| Knowing only each race's average | 0.7649 | 0% |
+| The live recipe as served (per-track stretch; batch 11) | 0.4017 | 75.1% before the stretch |
+| The race fitted as a book (batch 11) | 0.3849 | 77.8% |
+| + the figs table (batch 12) | 0.3593 | 80.6% |
+| + the BSP rating, every other table, three seeds (batch 15) | 0.3510 | 81.5% |
+| + per-track stretch (batch 15) | **0.3448** | |
+
+From 0.4017 to 0.3448: 14% less error in log(BSP), and a better winner's log-loss at every step bar the stretch.
+
+What the best recipe relies on (shuffled within the race): the figs table +0.339 (31 columns), base +0.094, parity
++0.078, library +0.046, track-normalised times +0.043. Top features by mean absolute SHAP value: `fg_bmr_vs_field`
+0.186 (the Betfair-SP rating against the field), `tn_var_last` 0.092, `lb_cv_gsr_ewm_z` 0.068, `fg_mr_vs_field` 0.053.
+
+Still compressed: short prices +0.20 in log, outsiders -0.40. Debutants unchanged (0.70).
+
+The forward test (`bfsp_forward.json`, from 25 Nov 2026) now carries `share08_best` exactly as here, beside the live
+recipe and share08_figs, on days after 10 November only. Adoption into the live pricing waits on it and on the owner.
+
+## 33. The BFSP plan, batch 16: the better price down the clock (greyhound-fastloop.yml run 42842099498, 10 Nov 2026)
+
+Step 5 of the plan: does share08_best's pre-race price (one seed here: 0.3555 against the live recipe's 0.4120 on the
+June-November test, z -54.1; log-loss -0.00332, z -10.7) sharpen the forecasts nearer the off? Each price fed into the
+closing-price study (`research/greyhound/bfsp_close.py`, recorded books re-timed, 22 scored days 14 Oct to 5 Nov,
+walk-forward) and the limit-order study (`research/greyhound/limit_study.py`). share08_best's out-of-sample prices are
+published to `greyhound/research/oos_prices_share_best`.
+
+**The closing forecast, RMSE of log(BSP)** (the best model at each mark, pooled trees; the market mid beside it):
+
+| Mark | Races | The mid | With the live price | With share08_best's price | Change |
+|---|---|---|---|---|---|
+| First traded | 2,685 | 0.6286 | 0.2852 | 0.2648 | -0.0204 |
+| 5 minutes out | 1,792 | 0.7048 | 0.3214 | 0.2926 | -0.0288 |
+| 3 minutes out | 1,869 | 0.3388 | 0.2155 | 0.2092 | -0.0063 |
+| 1 minute out | 1,807 | 0.1566 | 0.1435 | 0.1434 | -0.0001 |
+
+The better pre-race price carries through to 3 minutes out and is gone by the last minute, where the book knows what
+we know. Our price is the model's largest input at first traded (59% of the boosted model's gain, `log_model_vs_mid`).
+The two runs are not paired here, so no interval is given for the change.
+
+**The early lay's rule** (lay the runners forecast to drift at 80% of the forecast SP, first traded book): the
+forecast refitted on each price, development days (15):
+
+| Exit | With the live price | With share08_best's price |
+|---|---|---|
+| Greened up at the last book | +1.49% a unit (90% 1.24 to 1.77), CLV +7.32% | +1.86% (1.63 to 2.11), CLV +10.03% |
+| Closed at the SP | +1.88% (1.14 to 2.64) | +2.31% (1.62 to 3.03) |
+
+2,536 and 2,453 matched lays, on paper with the study's fill rule. The better price makes the early lay's forecast
+better: the lays beat the SP by 10.0% against 7.3%. The live early lay and its forward-test gate are unchanged; this
+is a reading for the owner, who decides whether the early lay should move to the new price once the BFSP forward
+test (`bfsp_forward.json`) has run.
+
+## 34. The BFSP plan, steps 2.2-2.6: the form, draw and bend tables (greyhound-pit.yml runs 42842889301, 42848089525)
+
+Three new point-in-time tables in the metrics database (`greyhound/pit/`), each passing the leak test (the last day's
+results rewritten move no row: `tests/test_greyhound_pit.py`) and a mechanics test on planted data. 3,966,248 runs,
+6 Jan 2014 to 9 Nov 2026. Every constant is fitted on the days before 2018 only.
+
+**form (`fm_`, `greyhound/pit/form.py`)**:
+- *Fitted decay and shrinkage (2.6)*: each figure's level (`fm_tot`, `fm_sec`, `fm_run`) on the half-life and prior
+  weight that best predict the next figure (mean squared error, before 2018), in place of figs' guessed 90 days and
+  2 runs. The first build chose 30 days for the whole-race and run-in figures, the grid's edge; the grid was widened
+  (7-365 days x 0.5-8 runs) and rebuilt. Rebuilt: whole race 21 days / 1 run (MSE 14.23 against 14.63 at figs'
+  90 days / 2 runs), sectional 60 / 1, run-in 21 / 1. Form is much shorter-lived than the old constants assumed.
+- *Trend and age (2.2)*: a local-linear-trend Kalman filter on the whole-race figure (level and slope), the age curve
+  as the slope's prior, readings beyond 3 standard deviations Huber-weighted, trials and troubled runs at double noise.
+  Fitted: level drift 0.05 a day, slope drift 1e-7 (the first build's 1e-6 was the old edge; now inside), noise 12.06
+  (the lowest of the three noise shares tried: an edge, left for the backlog). The age curve (figure lengths a month,
+  dogs): +3.0 at 12 months, +1.7 at 18, -0.3 at 24, -0.6 at 36, -1.1 at 72; bitches +2.8, +1.6, +0.1, -0.5, -0.7.
+  Columns `fm_level`, `fm_slope`, `fm_sd`, `fm_age_drift` and the two against the field; 97.7% covered.
+- *The market's memory (2.5)*: each race's innovation of the market rating (`fg_mr`: the observed log share less
+  the rating before it), decayed over 60 days: `fm_mr_innov`, `fm_mr_innov_n` (95.5% covered).
+
+**draw (`dr_`, `greyhound/pit/draw.py`, step 2.3)**: each trap's bias at each track and distance (1,184 of them) as a
+Kalman state over meeting days, on two readings: its winners less the SP's chances, and its first-bend leads less
+1 / field. Rebuilt on a grid from 0 to 1e-4: the winners' state is static (q 0, the best one-step likelihood; the
+market has no drifting trap bias to miss) and the leads' state drifts slowly (q 1e-6). Plus the dog's early pace
+against its field and the product with the trap's lead bias (`dr_x_pace`, 85.6% covered).
+
+**bend (`bd_`, `greyhound/pit/bend.py`, step 2.4)**: in place of the simulator's guessed settings, a conditional logit
+on who leads at the first bend (early pace against the field and its spread, lead and break rates, trap, the
+neighbours' pace) and a second on the winner given the bend utility and the finishing figures, both refitted each year
+on earlier years (at most 50,000 races). The leading coefficients are stable from year to year (early pace against the
+field about 0.21, lead rate 0.28, break rate 0.25, pace rank -0.28 on standardised inputs). The expected bend position
+is Plackett-Luce on the bend utilities (100 draws). 92% covered.
+
+## 35. The BFSP plan, batch 17: the new tables and the neural challenger (greyhound-fastloop.yml run 42847906843)
+
+Registered before its scores (`research/greyhound/experiments/batch17_tables_nn.json`); baseline `best1`, share08_best
+at one seed, deterministic fits; test 1 Jun to 5 Nov 2026 (106,719 runners); paired by day, the bar 3 standard errors.
+
+| Experiment | RMSE log(BSP) | vs best1 (90%) | z | Log-loss vs best1 | z | Passes |
+|---|---|---|---|---|---|---|
+| best1 | 0.3555 | - | - | 0.43819 | - | - |
+| + form | 0.3546 | -0.0009 (-0.0016 to -0.0002) | -2.0 | -0.00012 | -0.8 | no |
+| + form without the innovations | 0.3543 | -0.0012 (-0.0018 to -0.0006) | -3.2 | -0.00020 | -1.3 | yes |
+| + draw | 0.3542 | -0.0013 (-0.0020 to -0.0006) | -3.1 | -0.00024 | -1.4 | yes |
+| + bend | 0.3562 | +0.0007 (+0.0001 to +0.0014) | +1.9 | -0.00037 | -2.6 | no (log-loss better) |
+| + all three | 0.3532 | -0.0023 (-0.0029 to -0.0016) | -5.4 | -0.00033 | -2.2 | yes |
+| neural set model alone (`nn_share`) | 0.3570 | +0.0015 (+0.0004 to +0.0026) | +2.3 | +0.00014 | +0.6 | no |
+| trees + network stacked (`stack_share`) | **0.3442** | **-0.0113 (-0.0119 to -0.0106)** | **-28.5** | -0.00041 | -3.7 | **yes** |
+
+- The three tables each add a little and more together (-0.0023). The market's memory alone does not pay its way
+  (form with it -0.0009, without -0.0012), and the fitted bend improves the win probabilities (log-loss z -2.6) but
+  not the price. The form and draw tables in this batch may be the first build or the rebuild: the rebuild finished
+  while the batch's jobs were loading. Batch 18 reads the rebuild only.
+- **The neural model (step 4)**: a DeepSets network over the field (`greyhound/nn.py`: each runner's 520 features
+  rank-gauss transformed through a 128-64 MLP, the field's mean and maximum joined back, the race softmax fitted to the
+  SP book's shares) trains in 74 seconds (17 epochs, early-stopped) and alone is nearly as good as 4,065 boosted
+  rounds (0.3570 against 0.3555). Blended with the trees (weights fitted on the early-stopping rows: trees 0.50,
+  network 0.54), the error falls by 0.0113, five times the three tables' gain: the two models are wrong in different
+  places. It is the largest single step since the share objective (batch 11).
+- Batch 18 confirms the passes together at three seeds, with three averaged networks (`nn_seeds`, new) and the
+  per-track stretch.
+
+## 36. The BFSP plan, batch 18: the winners confirmed at three seeds (greyhound-fastloop.yml run 42853398485)
+
+Registered after batch 17 and before its own scores (`research/greyhound/experiments/batch18_confirm.json`), on the
+rebuilt form and draw tables. Baseline `best3`: share08_best exactly (three seeds). Test 1 Jun to 5 Nov 2026,
+106,719 runners, paired by day.
+
+| Experiment | RMSE log(BSP) | vs best3 (90%) | z | Log-loss | vs best3 | z | + per-track stretch |
+|---|---|---|---|---|---|---|---|
+| best3 | 0.3510 | - | - | 0.43777 | - | - | 0.3448 |
+| best3 + form, draw, bend | 0.3497 | -0.0013 (-0.0017 to -0.0009) | -5.5 | 0.43754 | -0.00024 | -2.3 | 0.3435 |
+| three neural set models alone (nn3) | 0.3514 | +0.0004 (-0.0006 to +0.0014) | +0.6 | 0.43803 | +0.00026 | +1.4 | 0.3463 |
+| trees + three networks (stack3) | 0.3420 | -0.0090 (-0.0096 to -0.0084) | -25.0 | 0.43759 | -0.00018 | -1.9 | 0.3389 |
+| **stack + form, draw, bend (stack3_all3)** | **0.3396** | **-0.0114 (-0.0121 to -0.0107)** | **-26.8** | **0.43732** | **-0.00045** | **-3.5** | **0.3366** |
+
+- Every addition passes and they add up: the tables -0.0013, the stack -0.0090, both -0.0114. The best, with the
+  per-track stretch, is 0.3366 against the live recipe's 0.4017 as served (section 29): 16% less error.
+- Three networks averaged (8 minutes in all) are as good as three seeds of 4,000 boosted rounds (43 minutes): 0.3514
+  against 0.3510. The stack's weights stay near even (trees 0.49, networks 0.54).
+- The stretch still lowers the RMSE (by 0.0030 on the stack, half what it does for the trees alone: the stack is
+  less compressed) and still costs a little log-loss (+0.00011): it is for the price, not the win probability.
+- **Where the error moved** (best3 -> stack3_all3): favourites under 2.0 0.3036 -> 0.2877 (bias +0.203 -> +0.186);
+  outsiders 15.0 and over 0.5889 -> 0.5564 (bias -0.399 -> -0.342); seasoned dogs (20+ runs) 0.3367 -> 0.3240;
+  debutants 0.6995 -> 0.7042, no better. The compression is smaller but not gone; the debutants are untouched by
+  every step and are the clearest next target.
+- **The forward test** (`research/greyhound/experiments/bfsp_forward_stack.json`, registered 10 Nov before any of its
+  days): stack3_all3 fitted on the days before 11 Nov and scored on the days from 11 Nov, against live08 and beside
+  share08_best, from 25 Nov. Its fit window rolls forward at the confirmed 29 months (from 11 Jun 2024) because
+  batch 18's fit took 90 minutes and the forward fit on the default window would pass the job's 100-minute limit; a
+  1,650-second cap on each tree seed is a safety stop, recorded if it binds.
