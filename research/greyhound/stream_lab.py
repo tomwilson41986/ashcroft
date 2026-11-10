@@ -30,7 +30,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-from research.greyhound import stream_replay as sr
+from research.greyhound import multitest as mt, stream_replay as sr
 
 log = logging.getLogger(__name__)
 
@@ -164,11 +164,19 @@ def score(tr: pd.DataFrame) -> pd.DataFrame:
             row[f"mean{sfx}%"] = round(100 * float(v[col].mean()), 3) if len(v) else None
             row[f"ci90{sfx}%"] = [round(100 * lo, 3), round(100 * hi, 3)] if lo is not None else None
             row[f"candidate{sfx}"] = bool(lo is not None and lo > 0 and v.day.nunique() >= MIN_DAYS)
+            row[f"z{sfx}"] = mt.z_by_race(by_race)
         row["mean_pnl%"] = row.pop("mean%")
         row["candidate_sp"] = row.pop("candidate")
         row["candidate"] = row["candidate_sp"] or row["candidate_win"]
         rows.append(row)
-    return pd.DataFrame(rows).sort_values("mean_pnl%", ascending=False) if rows else pd.DataFrame()
+    if not rows:
+        return pd.DataFrame()
+    res = pd.DataFrame(rows).sort_values("mean_pnl%", ascending=False).reset_index(drop=True)
+    # the family read as one (research/greyhound/multitest.py; the review of 10 Nov 2026): every rule on both targets,
+    # each test's q the share of false discoveries expected among the tests at least as strong
+    q = mt.bh(mt.p_one_sided(np.r_[res.z.to_numpy(float), res.z_win.to_numpy(float)]))
+    res["q"], res["q_win"] = q[:len(res)], q[len(res):]
+    return res
 
 
 def run_day(lines, day: date) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -298,12 +306,15 @@ def main(argv=None) -> int:
           f"{rep['days_pooled']} days pooled; {rep['rules']} rules on two targets, {2 * rep['rules']} tests (registered "
           f"{REGISTERED}; a candidate needs {MIN_DAYS} days and its pooled 90% lower bound above zero on a target; "
           f"about one test in twenty clears that bound by chance). Candidates: {', '.join(rep['candidates']) or 'none'}.",
-          "", "Target 1, closed at the SP (BFSP); target 2, left to run to the result (Win).", "",
-          "| Rule | Trades | Races | Days | At the SP: mean % a unit | 90% | To the result: mean % a unit | 90% | "
-          "Candidate (SP / Win) |", "|---|---|---|---|---|---|---|---|---|"]
+          "", "Target 1, closed at the SP (BFSP); target 2, left to run to the result (Win). q: the share of false "
+          "discoveries expected among every test at least as strong (under 0.10: the family as a whole supports it).", "",
+          "| Rule | Trades | Races | Days | At the SP: mean % a unit | 90% | q | To the result: mean % a unit | 90% | q | "
+          "Candidate (SP / Win) |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+    q2 = lambda v: "" if v is None or pd.isna(v) else f"{v:.2f}"
     for r in rep["scores"]:
         md.append(f"| {r['rule']} | {r['trades']} | {r['races']} | {r['days']} | {r['mean_pnl%']} | {r['ci90%']} | "
-                  f"{r.get('mean_win%')} | {r.get('ci90_win%')} | {r.get('candidate_sp')} / {r.get('candidate_win')} |")
+                  f"{q2(r.get('q'))} | {r.get('mean_win%')} | {r.get('ci90_win%')} | {q2(r.get('q_win'))} | "
+                  f"{r.get('candidate_sp')} / {r.get('candidate_win')} |")
     ft = rep.get("forward_test", {})
     md += ["", "### The early-lay forward test, its lays replayed through the stream", "",
            f"Its own figure (optimistic fill, the recorder's books): {json.dumps(ft.get('forward_test_own'))}", ""]
