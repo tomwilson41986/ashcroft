@@ -2,6 +2,17 @@
 
 racing² - greyhound research, 10 Nov 2026. Greyhounds only; the horse model and its jobs are not touched.
 
+## Status (10 Nov 2026, end of the first day)
+
+Steps 0 and 1 are done, and the first of step 2 (the figs table: corrected figures, evidence-aware levels, class in
+lengths, the market-implied rating on the SP and the Betfair SP). On the same test (1 June to 5 November 2026) the
+RMSE of log(BSP) went from 0.4017 (the live recipe as served) to 0.3448, 14% less, with the winner's log-loss better
+too. Results: reports/greyhound_model.md sections 28 to 32. Not adopted: the forward test on days after 10 November
+(research/greyhound/experiments/bfsp_forward.json) runs from 25 November; adoption into the live pricing is the
+owner's decision. Still to do: steps 2.2 to 2.6 (age and trend in the rating, moving trap bias, a fitted first bend,
+the market's memory, fitted shrinkage), step 4 (a neural challenger) and step 5 (carry the gain into the first-book
+and closing forecasts).
+
 ## Context
 
 The owner: "Fundamental is to improve our model to predict BFSP / Closing Prices." The ask is a step back from

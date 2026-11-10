@@ -37,7 +37,7 @@ def main(argv=None) -> int:
     if "ids" in names:
         from greyhound.pit.ids import load_runners
         ctx["runners"] = load_runners(store, f"{a.first_year}-{last.year}")
-    if "market" in names:
+    if "market" in names or "figs" in names:                 # figs: the market rating on the Betfair SP too
         from greyhound.model import load_prices
         ctx["prices"] = load_prices(store, f"{a.first_year}-{last.year}")
     if "weather" in names:

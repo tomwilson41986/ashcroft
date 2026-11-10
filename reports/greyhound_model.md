@@ -1360,3 +1360,84 @@ through a Kalman filter fitted on 2014-17).
 
 **Not adopted yet.** The test window has been read by earlier batches. The forward test, registered now
 (`research/greyhound/experiments/bfsp_forward.json`), scores the same recipes on days after 10 November only.
+
+## 30. The BFSP plan, batch 13: what adds on top (greyhound-fastloop.yml run 42808526186, 10 Nov 2026)
+
+On share with the figs table, rebuilt with the market rating's wider drift grid (run 42794389155): RMSE of log(BSP)
+0.3579 (batch 12's build: 0.3593). Paired against it:
+
+| Experiment | RMSE log(BSP) | vs share08_figs | z | Log-loss | vs share08_figs | z |
+|---|---|---|---|---|---|---|
+| share08_figs | 0.3579 | - | - | 0.43789 | - | - |
+| + per-track stretch (same fit) | 0.3533 | -0.0047 (-0.0053 to -0.0041) | | 0.43805 | +0.00017 | |
+| three seeds averaged | 0.3542 | -0.0037 (-0.0042 to -0.0033) | -14.1 | 0.43770 | -0.00019 | -2.0 |
+| refitted on 1 September | 0.3576 | -0.0003 | -0.9 | 0.43796 | +0.00007 | +0.8 |
+| + every other metric table (ability, trouble, connections, market, breeding, life) | 0.3542 | -0.0038 (-0.0044 to -0.0032) | -9.8 | 0.43769 | -0.00019 | -1.2 |
+
+- Seeds and the other metric tables each clear the bar; the stretch improves the price again at a small cost to the
+  win chance (as on the live recipe), so it belongs on the BFSP forecast only.
+- The refit changes nothing: the single fit at 1 June holds through November.
+- With every table, the figs family still carries the model (shuffled within the race: +0.347 RMSE); of the other
+  tables life (+0.010) and ability (+0.006) matter most.
+
+The forward test (bfsp_forward.json) gains `share08_full`, these together, before any of its days exist.
+
+## 31. The BFSP plan, batch 14: the Betfair-SP rating and the known-wrong fields (greyhound-fastloop.yml run 42818559765, 10 Nov 2026)
+
+On share with the figs table (the figs table rebuilt with the rating read on the Betfair SP as well, run 42816936434:
+259,857 races rated on the BSP). Paired against share08_figs:
+
+| Experiment | RMSE log(BSP) | vs share08_figs | z | Log-loss | vs share08_figs | z |
+|---|---|---|---|---|---|---|
+| share08_figs | 0.3593 | - | - | 0.43806 | - | - |
+| + the Betfair-SP rating (fg_bmr) | 0.3570 | -0.0023 (-0.0028 to -0.0017) | -6.5 | 0.43786 | -0.00020 | -1.4 |
+| without hb_days_since_season | 0.3589 | -0.0004 | -1.1 | 0.43830 | +0.00025 | +1.6 |
+| without ti_new_trainer | 0.3596 | +0.0003 | +1.0 | 0.43834 | +0.00028 | +2.2 |
+| without every trainer column | 0.3625 | +0.0032 (+0.0025 to +0.0039) | +7.4 | 0.43840 | +0.00034 | +1.9 |
+
+- The Betfair-SP rating adds a little beside the SP one.
+- The two fields shown wrong in the review carry nothing; they are dropped from batch 15 on.
+- The trainer columns stay: removing all of them (the 6 Nov test missed some) costs 0.0032, as the earlier test found.
+  The trainer is the current one on every past run, so this is the yard's identity, not its form at the time.
+
+**Run-to-run noise.** The same recipe scored 0.3593 here and in batch 12 (3,163 rounds) but 0.3579 in batch 13 (4,372
+rounds): GitHub's runners differ and LightGBM's multithreaded fits were not deterministic. The day-level bootstrap does
+not see that, so gains near 0.001-0.002 (the BSP rating, seeds, the other tables) are replicated in batch 15 with every
+fit deterministic on four threads. The large gains (the race as a book, 0.024; the figs table, 0.029) are far beyond it.
+
+## 32. The BFSP plan, batch 15: the replication and the best recipe (greyhound-fastloop.yml run 42824328816, 10 Nov 2026)
+
+Every fit deterministic on four threads; the two wrong fields dropped. Paired against share08_figs (0.3598 here):
+
+| Experiment | RMSE log(BSP) | vs share08_figs | z | Log-loss | vs share08_figs | z |
+|---|---|---|---|---|---|---|
+| share08_figs | 0.3598 | - | - | 0.43836 | - | - |
+| + the Betfair-SP rating | 0.3586 | -0.0013 (-0.0019 to -0.0007) | -3.4 | 0.43816 | -0.00020 | -1.4 |
+| three seeds | 0.3553 | -0.0045 (-0.0049 to -0.0041) | -19.2 | 0.43800 | -0.00036 | -4.3 |
+| + every other metric table | 0.3561 | -0.0037 (-0.0044 to -0.0031) | -9.2 | 0.43809 | -0.00027 | -1.6 |
+| **share08_best: all of these together** | **0.3510** | **-0.0088 (-0.0094 to -0.0083)** | **-25.6** | **0.43777** | **-0.00059 (-0.00084 to -0.00034)** | **-3.9** |
+| share08_best + per-track stretch (same fit) | 0.3448 | -0.0061 more | | 0.43795 | +0.00017 | |
+
+All three small gains replicate (the BSP rating only just). Together they add up.
+
+**Where the plan's first day leaves the BFSP forecast** (the same test throughout, 106,719 runners):
+
+| Step | RMSE log(BSP) | Within-race spread explained |
+|---|---|---|
+| Knowing only each race's average | 0.7649 | 0% |
+| The live recipe as served (per-track stretch; batch 11) | 0.4017 | 75.1% before the stretch |
+| The race fitted as a book (batch 11) | 0.3849 | 77.8% |
+| + the figs table (batch 12) | 0.3593 | 80.6% |
+| + the BSP rating, every other table, three seeds (batch 15) | 0.3510 | 81.5% |
+| + per-track stretch (batch 15) | **0.3448** | |
+
+From 0.4017 to 0.3448: 14% less error in log(BSP), and a better winner's log-loss at every step bar the stretch.
+
+What the best recipe relies on (shuffled within the race): the figs table +0.339 (31 columns), base +0.094, parity
++0.078, library +0.046, track-normalised times +0.043. Top features by mean absolute SHAP value: `fg_bmr_vs_field`
+0.186 (the Betfair-SP rating against the field), `tn_var_last` 0.092, `lb_cv_gsr_ewm_z` 0.068, `fg_mr_vs_field` 0.053.
+
+Still compressed: short prices +0.20 in log, outsiders -0.40. Debutants unchanged (0.70).
+
+The forward test (`bfsp_forward.json`, from 25 Nov 2026) now carries `share08_best` exactly as here, beside the live
+recipe and share08_figs, on days after 10 November only. Adoption into the live pricing waits on it and on the owner.
