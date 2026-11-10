@@ -347,6 +347,10 @@ def main(argv=None) -> int:
     for k in ("stream_x1.0", "stream_x0.5"):
         if k in ft:
             md.append(f"- queue-aware, traded volume {k[-4:]}: {json.dumps(ft[k])}")
+    for k in ("stream_x1.0_to_close", "stream_x0.5_to_close"):
+        if k in ft:
+            md.append(f"- the same lays resting until the market really closes (from 10 Nov 2026; not the gate's "
+                      f"figure), traded volume {k[7:11]}: {json.dumps(ft[k])}")
     if ft.get("note") or ft.get("error"):
         md.append(f"- {ft.get('note') or ft.get('error')}")
     Path(a.out, "report.md").write_text("\n".join(md) + "\n")
