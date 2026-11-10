@@ -68,4 +68,18 @@ def test_a_planted_move_is_found_and_the_rest_is_not(tmp_path):
     # the model's chance is the SP's own: no value at the SP beyond the commission
     sp = [r for r in rows if r["family"].startswith("SP back (the model") and r["holdout"]["bets"] >= 100]
     assert not any(r["passes"] for r in sp)
-    assert out["rules_tried"] == len(rows) and (tmp_path / "out" / "review_syn.md").exists()
+    assert out["rules_tried"] == len([r for r in rows if not r.get("control")]) and (tmp_path / "out" / "review_syn.md").exists()
+
+
+def test_the_control_and_the_models_lift(tmp_path):
+    pred, prices = synthetic()
+    store = Store(root=tmp_path)
+    store.put_parquet("greyhound_prices/prices_2026.parquet", prices)
+    sr.run(store, pred, "syn", tmp_path / "out")
+    out = pd.read_json(tmp_path / "out" / "review_syn.json", typ="series")
+    rows = {(r["family"], r["rule"]): r for r in out["rules"]}
+    ctrl = rows[("morning control: lay every runner, closed at the SP", "no model, morning volume >= 0, 0 ticks")]
+    assert ctrl["control"] and abs(ctrl["holdout"]["return%"]) < 3          # no drift on average: no free money
+    lay = rows[("morning move: lay, closed at the SP", "forecast above the morning price by 0.10 (log), morning volume "
+                                                        ">= 0, 0 ticks")]
+    assert lay["lift_holdout"]["ci90%"][0] > 0 and out["passes_beating_the_control"] >= 1

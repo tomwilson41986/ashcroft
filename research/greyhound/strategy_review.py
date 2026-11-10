@@ -212,6 +212,22 @@ def sp_rules(m: pd.DataFrame, chance: pd.Series, tag: str) -> list[dict]:
     return rows
 
 
+def lift(sel: pd.DataFrame, pnl: np.ndarray, ctrl: pd.DataFrame, cpnl: np.ndarray, seed: int = 0) -> dict:
+    """The selected bets' mean return less the control's, on the holdout days: the mean of each day's difference
+    (days with both), its 90% interval from a bootstrap over those days."""
+    a = pd.DataFrame({"d": sel.race_date.to_numpy(), "p": pnl, "h": (sel.period == "holdout").to_numpy()})
+    b = pd.DataFrame({"d": ctrl.race_date.to_numpy(), "p": cpnl, "h": (ctrl.period == "holdout").to_numpy()})
+    da, db = a[a.h].groupby("d").p.mean(), b[b.h].groupby("d").p.mean()
+    j = pd.concat([da.rename("a"), db.rename("b")], axis=1).dropna()
+    if len(j) < 5:
+        return {"days": int(len(j))}
+    x = (j.a - j.b).to_numpy()
+    rng = np.random.default_rng(seed)
+    bs = x[rng.integers(0, len(x), size=(N_BOOT, len(x)))].mean(1)
+    return {"days": int(len(j)), "lift%": round(100 * float(x.mean()), 2),
+            "ci90%": [round(100 * float(np.quantile(bs, 0.05)), 2), round(100 * float(np.quantile(bs, 0.95)), 2)]}
+
+
 def move_rules(m: pd.DataFrame, entry_col: str, label: str, vol_col: str | None) -> list[dict]:
     """Lay where the forecast SP is above the entry price by a margin, back where it is below; greened at the SP or
     held to the result; at the entry price and 1, 2 ticks worse."""
@@ -222,6 +238,17 @@ def move_rules(m: pd.DataFrame, entry_col: str, label: str, vol_col: str | None)
     ok = (e0 > 1) & (e0 <= MOVE_CAP) & np.isfinite(f)
     r = np.log(np.where(ok, f, np.nan) / np.where(ok, e0, np.nan))
     for v in (MOVE_VOLS if vol_col else (0.0,)):
+        # the control: every runner with the price, no model (does the market move on its own, whatever we think?)
+        for side in ("lay", "back"):
+            k = ok & (vol >= v)
+            for h in HAIRCUTS:
+                e = ticks(e0[k], h, up=(side == "lay"))
+                good = np.isfinite(e) & (e > 1)
+                sub, e, sk = m[k][good], e[good], s[k][good]
+                vtag = f", {label} volume >= {v:g}" if vol_col else ""
+                green = lay_green(e, sk) if side == "lay" else back_green(e, sk)
+                rows.append({"family": f"{label} control: {side} every runner, closed at the SP",
+                             "rule": f"no model{vtag}, {h} ticks", "control": True, **score(sub, green)})
         for th in MOVE_MARGINS:
             for side in ("lay", "back"):
                 k = ok & (vol >= v) & ((r > th) if side == "lay" else (r < -th))
@@ -234,8 +261,15 @@ def move_rules(m: pd.DataFrame, entry_col: str, label: str, vol_col: str | None)
                     base = f"forecast {'above' if side == 'lay' else 'below'} the {label} price by {th:.2f} (log){vtag}"
                     green = lay_green(e, sk) if side == "lay" else back_green(e, sk)
                     hold = lay_hold(e, wk) if side == "lay" else back_hold(e, wk)
-                    rows.append({"family": f"{label} move: {side}, closed at the SP", "rule": f"{base}, {h} ticks",
-                                 **score(sub, green)})
+                    row = {"family": f"{label} move: {side}, closed at the SP", "rule": f"{base}, {h} ticks",
+                           **score(sub, green)}
+                    if h == 0:
+                        # the model's lift: its chosen runners against the control's (every runner with the price),
+                        # the day's mean difference, holdout days, a bootstrap over days
+                        kc = ok & (vol >= v)
+                        ctrl = lay_green(e0[kc], s[kc]) if side == "lay" else back_green(e0[kc], s[kc])
+                        row["lift_holdout"] = lift(sub, green, m[kc], ctrl)
+                    rows.append(row)
                     rows.append({"family": f"{label} move: {side}, held", "rule": f"{base}, {h} ticks",
                                  **score(sub, hold)})
     return rows
@@ -273,11 +307,15 @@ def forecast_quality(m: pd.DataFrame) -> dict:
     """What the model knows before the market moves: its forecast of the SP against the morning and pre-play prices
     as forecasts of the SP (RMSE of log(SP), runners priced by all three), and the win chance against the BSP's."""
     from greyhound.model import logloss, race_norm
-    k = (m.morningwap > 1) & (m.ppwap > 1)
+    k = m.morningwap > 1                     # the 2026 files carry no pre-play WAP: the morning price only
     ls = np.log(m.bsp[k])
     out = {"runners_all_three": int(k.sum())}
-    for name, col in (("model", "pred_bsp"), ("morning WAP", "morningwap"), ("pre-play WAP", "ppwap")):
+    for name, col in (("model", "pred_bsp"), ("morning WAP", "morningwap")):
         out[f"rmse_log_sp_{name}"] = round(float(np.sqrt(np.mean((np.log(m[col][k]) - ls) ** 2))), 4)
+    out["mean_log_sp_over_morning"] = round(float(np.mean(ls - np.log(m.morningwap[k]))), 4)
+    out["share_drifting_from_morning"] = round(float(np.mean(ls > np.log(m.morningwap[k]))), 4)
+    out["morning_vol_median"] = round(float(m.morning_vol[k].median()), 1)
+    out["rmse_log_sp_pre-play WAP"] = None
     # does the model add to the morning price? the SP regressed on both (development fit, holdout read)
     dev = k & (m.period == "dev")
     hold = k & (m.period == "holdout")
@@ -303,9 +341,11 @@ def review(m: pd.DataFrame) -> dict:
     rows += move_rules(m, "morningwap", "morning", "morning_vol")
     rows += move_rules(m, "ppwap", "pre-play", "pp_vol")
     rows += place_rules(m)
-    passes = [r for r in rows if r["passes"]]
-    return {"rules": rows, "rules_tried": len(rows), "passes": len(passes),
-            "expected_by_chance": round(0.05 * len(rows), 1), "blend_weights": b.attrs.get("weights"),
+    tried = [r for r in rows if not r.get("control")]
+    passes = [r for r in tried if r["passes"]]
+    beat = [r for r in tried if r["passes"] and (r.get("lift_holdout") or {}).get("ci90%", [0])[0] > 0]
+    return {"rules": rows, "rules_tried": len(tried), "passes": len(passes), "passes_beating_the_control": len(beat),
+            "expected_by_chance": round(0.05 * len(tried), 1), "blend_weights": b.attrs.get("weights"),
             "forecast": forecast_quality(m)}
 
 
@@ -316,20 +356,26 @@ def markdown(name: str, why: dict, out: dict) -> str:
              f"priced; a race kept only when every runner joined the price files and the result agrees). Morning WAP "
              f"on {why['morning_priced']:.0%} of runners, pre-play WAP {why['preplay_priced']:.0%}, place SP "
              f"{why['place_priced']:.0%}. Development to {DEV_END}, holdout after; commission {COM:.0%}.", "",
-             f"Forecast of the SP (RMSE of log(SP), {f['runners_all_three']:,} runners with every price): the model "
-             f"{f['rmse_log_sp_model']}, the morning WAP {f['rmse_log_sp_morning WAP']}, the pre-play WAP "
-             f"{f['rmse_log_sp_pre-play WAP']}. Holdout, the morning WAP alone {f['holdout_rmse_log_sp_morning_only']}, "
+             f"Forecast of the SP (RMSE of log(SP), {f['runners_all_three']:,} runners with a morning price): the "
+             f"model {f['rmse_log_sp_model']}, the morning WAP {f['rmse_log_sp_morning WAP']}; the SP is above the "
+             f"morning WAP for {f['share_drifting_from_morning']:.0%} of them (mean log(SP / morning) "
+             f"{f['mean_log_sp_over_morning']}); median morning volume a runner GBP {f['morning_vol_median']}. "
+             f"Holdout, the morning WAP alone {f['holdout_rmse_log_sp_morning_only']}, "
              f"with the model {f['holdout_rmse_log_sp_morning_and_model']} (weights {f['weights_morning_model']}). "
              f"Win log-loss: the model {f['logloss_model']}, the BSP {f['logloss_bsp']}; the blend's weights "
              f"{out['blend_weights']}.", "",
-             f"**{out['rules_tried']} rules, {out['passes']} pass** (about {out['expected_by_chance']} by chance).", "",
-             "| Family | Rule | Dev bets | Dev return | Holdout bets | Holdout return (90%) | Pass |",
-             "|---|---|---|---|---|---|---|"]
+             f"**{out['rules_tried']} rules, {out['passes']} pass** (about {out['expected_by_chance']} by chance); "
+             f"**{out['passes_beating_the_control']}** of the passes also beat the no-model control on the holdout "
+             "(the model's lift's 90% interval above zero). Controls are listed but not counted as rules.", "",
+             "| Family | Rule | Dev bets | Dev return | Holdout bets | Holdout return (90%) | Pass | Lift over the control, holdout (90%) |",
+             "|---|---|---|---|---|---|---|---|"]
     for r in sorted(out["rules"], key=lambda r: -(r["holdout"]["ci90%"] or [-1e9])[0]):
         d, h = r["dev"], r["holdout"]
         ci = h["ci90%"] or ["", ""]
+        lf = r.get("lift_holdout") or {}
+        lft = f"{lf['lift%']}% ({lf['ci90%'][0]} to {lf['ci90%'][1]})" if "lift%" in lf else ""
         lines.append(f"| {r['family']} | {r['rule']} | {d['bets']} | {d['return%']}% | {h['bets']} | "
-                     f"{h['return%']}% ({ci[0]} to {ci[1]}) | {'yes' if r['passes'] else ''} |")
+                     f"{h['return%']}% ({ci[0]} to {ci[1]}) | {'yes' if r['passes'] else ''} | {lft} |")
     return "\n".join(lines) + "\n"
 
 
