@@ -1580,7 +1580,7 @@ old prices until its gate, the owner chose "switch everything now". Merged in PR
   last day. Every one of the ten tables gives a card row exactly the features its run gets once the result is in
   (`tests/test_greyhound_pit.py::test_a_card_gets_the_features_its_run_had`), and the card's price equals the price
   the nightly tables give (`tests/test_greyhound_live_stack.py`). Races under four runners are not priced (the model
-  never fits them). An hourly price now takes about 50 minutes; the running table has its own concurrency group.
+  never fits them). The running table has its own concurrency group. **The first live price** (greyhound-live.yml run 42892339309, 10 Nov 20:08 UTC): 638 runners in 115 markets, every race priced, 98.6% of the dogs matched to their history; it took 70 minutes, 34 of them building the tables with the card, so the hourly price runs back to back (a run every 70 minutes or so, the first of the day ready about 08:30 UTC). Next: keep the history's table states from the nightly build and add only the card's day, which should bring a price back under 30 minutes.
 - **The first fit** (greyhound-live.yml run 42875615352, 10 Nov, 91 minutes): 640,935 runners in 116,251 races from
   10 Jun 2024 to 9 Nov 2026; tree seeds stopped early at 4,512, 3,515 and 4,063 rounds; networks 15, 19 and 15
   epochs; stack weights trees 0.56, networks 0.46; SP book 1.0015; stretch b 1.037.
