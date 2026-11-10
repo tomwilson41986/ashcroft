@@ -62,8 +62,8 @@ function Invoke-Historic([string]$Method, $Body) {
     }
 }
 
-# what the account holds
-$mine = Invoke-Historic "GetMyData" @{}
+# what the account holds (a GET: the service refuses a POST here with 405)
+$mine = Invoke-RestMethod -Method Get -Uri "$Api/GetMyData" -Headers @{ ssoid = $script:token } -TimeoutSec 300
 Write-Host "The account holds:"
 $mine | Format-Table -AutoSize | Out-String | Write-Host
 $held = @($mine | Where-Object { $_.sport -eq $Sport -and $_.plan -eq $Plan })
