@@ -1,0 +1,44 @@
+{
+  "id": "football-match-odds",
+  "sport": "football",
+  "name": "Match odds and over/under 2.5",
+  "stage": "legacy",
+  "hypothesis": "The football model's prices against the match odds and over/under 2.5 books.",
+  "markets": [
+    "MATCH_ODDS",
+    "OVER_UNDER_25"
+  ],
+  "entry_point": "python -m football.live --trade --all-games",
+  "workflow": "football-trade.yml",
+  "live_switch": "FOOTBALL_LIVE",
+  "order_ref_prefix": "fb-",
+  "bucket": "capture",
+  "stop_keys": [
+    "football/STOP",
+    "trading/STOP"
+  ],
+  "kill_switch_fails": "safe",
+  "dashboard_ids": [
+    "football-live",
+    "football-paper"
+  ],
+  "evidence": [
+    {
+      "claim": "real stakes only with FOOTBALL_LIVE=yes, GBP2 a bet, GBP2 a match, GBP20 a day",
+      "source": "tests/test_workflow_guards.py:285,308-310"
+    },
+    {
+      "claim": "No strategy is profitable yet",
+      "source": "reports/football_model_rethink.md:678"
+    },
+    {
+      "claim": "kill switch through greyhound.live._exists: an unreadable STOP counts as STOP",
+      "source": "football/live.py:383-393; greyhound/live.py:626-638"
+    }
+  ],
+  "approved": {
+    "by": "owner",
+    "on": "2026-11-03",
+    "source": "CLAUDE.md (the football model: GBP2 a bet and GBP20 a day, the owner, 3 Nov 2026)"
+  }
+}

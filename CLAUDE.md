@@ -212,6 +212,12 @@ python -m research.open_close.football_ev_trial score --cache .football_cache --
 # the pre-registered early-to-close rule scored at the recorded books (paper trial; gate 'running' until complete)
 python -m research.open_close.football_paper_trial --panel data/football_exchange_panel.parquet --out out/football_paper_trial.json
 
+# The agent desk (the owner, 10 Nov 2026; docs/agent_desk.md): the strategy registry, the research ledger kept
+# append-only, the account-level warden (read-only; --enforce writes the STOP objects; desk-warden.yml never passes it)
+python -m desk.registry --check
+python -m desk.trials --check --base origin/claude/scrape-horse-racing-results-vaHKc
+python -m desk.warden --out out/warden.json
+
 # Race ABM: simulate a card, batch features for training, pattern-oriented calibration
 python research_lab.py abm --db horse_racing.db --date 2026-03-12
 python research_lab.py abm-features --db horse_racing.db --from 2024-01-01 --jobs 8 --out data/abm_features.parquet
@@ -251,6 +257,11 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
   data-quality checks, the Betfair market map), `ratings.py` (pooled Dixon-Coles, score-matrix prices incl. Asian
   handicap), `model.py` (walk-forward, market pooling, CLV scoring), `live.py` (fit, trade, settle)
 - `sources/` (`source_data.py`) — the historic data for the models beyond UK/IE racing, one module a source (GBGB, football-data, tennis, Punting Form); `betfair_historic.py` — Betfair's Historic Data service (BASIC plan, every sport) to opening/closing-price tables
+- `desk/` — the agent desk's control layer (`docs/agent_desk.md`): `registry.py` + `strategies/<sport>/<id>.json`
+  (the algorithm inventory, gates hash-pinned), `envelope.py` (the owner's `DESK_*` limits), `risk.py` (the one path
+  from an intent to an order), `account.py` (Betfair's record by strategy, worst case a market), `warden.py` (the
+  account against the envelope, read-only, alert only in desk-warden.yml), `trials.py` (the ledger append-only),
+  `backlog/<sport>.jsonl` (the agents' sourced idea queue)
 - S3 bucket: `horseracingresults`, key: `horse_racing.db`
 
 ## Data
@@ -274,6 +285,15 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
   trials). No new rule grid, feature batch or model variant is opened for those two sports meanwhile; the recording and
   the nightly records carry on, and the research time goes to the horses' morning edge. Neither sport's model has
   beaten its closing price (`reports/greyhound_audit_1105.md`, `reports/football_model_rethink.md`).
+  **Lifted for the agent desk** (the owner, 10 Nov 2026, planning the agent team: "Lift it for agents"): the desk's
+  agents may open new search in every sport, each test registered in the ledger before its run (the rule below);
+  the trials already registered still run to their end and are read once.
+- **The agent desk** (the owner, 10 Nov 2026; `docs/agent_desk.md`): autonomous inside one bankroll and day loss the
+  owner sets (the `DESK_*` repository variables; unset means paper only); agents run as Claude Code scheduled tasks
+  and write hypotheses, registry entries and strategy code, never orders, limits or stages. Every trader that can
+  place an order is in `desk/strategies/` with its own order-reference prefix (never `ash` for a new one).
+  `desk/risk.py` is the only path from a desk strategy to an order. Nothing in the live horse trader imports `desk`
+  (`tests/test_desk.py`). Nothing autonomous places a bet before the lock-down in `docs/agent_desk.md` is done.
 - **A new rule is read against every rule tried** (the owner, 5 and 9 Nov 2026): each test is written in
   `reports/research_ledger.jsonl` before its run with its reading, and a pass needs the deflated Sharpe
   (`research/overfit.py`, at least 0.95 with every trial counted) as well as its interval above zero.

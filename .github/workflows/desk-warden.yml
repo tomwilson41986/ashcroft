@@ -1,0 +1,82 @@
+name: Desk warden (the account, every trader at once; alert only)
+
+# desk/warden.py: the account's open orders, today's settled bets and the funds, read on the delayed key, checked
+# against the strategy registry (desk/strategies/) and the owner's envelope (the DESK_* repository variables; unset,
+# it checks the registry alone). A breach or a read error opens or comments on the day's issue "Desk warden: <day>".
+# Alert only: it is never given --enforce or an AWS key here, so it writes no STOP object; enforcing is the owner's
+# switch, a later change. It never places or cancels an order.
+#
+# The runner: Betfair refuses logins from GitHub's US runners, so it runs on the UK server under vars.DESK_RUNNER
+# (an existing label, e.g. 'data'), never the horse racing runner; with no DESK_RUNNER it does not run.
+
+on:
+  schedule:
+    - cron: '7,37 6-21 * * *'      # UTC: every half hour through the trading day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: desk-warden
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    if: vars.DESK_RUNNER != ''
+    runs-on: ${{ vars.DESK_RUNNER }}
+    timeout-minutes: 10
+    steps:
+      - name: Not on the horse racing runner
+        env:
+          RUNNER_LABEL: ${{ vars.DESK_RUNNER }}
+          LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
+        run: |
+          if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
+            echo "DESK_RUNNER is the horse racing runner ($LIVE_RUNNER_LABEL): nothing but horse racing runs there"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install requests==2.32.3 python-dotenv==1.0.1
+      - name: Write the Betfair certificate
+        env:
+          BETFAIR_CERT: ${{ secrets.BETFAIR_CERT }}
+          BETFAIR_KEY: ${{ secrets.BETFAIR_KEY }}
+        run: |
+          if [ -n "$BETFAIR_CERT" ] && [ -n "$BETFAIR_KEY" ]; then
+            mkdir -p "$RUNNER_TEMP/betfair"
+            printf '%s\n' "$BETFAIR_CERT" > "$RUNNER_TEMP/betfair/betfair.crt"
+            printf '%s\n' "$BETFAIR_KEY" > "$RUNNER_TEMP/betfair/betfair.key"
+            chmod 600 "$RUNNER_TEMP/betfair/betfair.key"
+            echo "BETFAIR_CERT_FILE=$RUNNER_TEMP/betfair/betfair.crt" >> "$GITHUB_ENV"
+            echo "BETFAIR_KEY_FILE=$RUNNER_TEMP/betfair/betfair.key" >> "$GITHUB_ENV"
+          fi
+      - name: Watch the account
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          DESK_BANKROLL: ${{ vars.DESK_BANKROLL }}
+          DESK_DAILY_LOSS: ${{ vars.DESK_DAILY_LOSS }}
+          DESK_SPORT_SHARE: ${{ vars.DESK_SPORT_SHARE }}
+          DESK_RESERVE: ${{ vars.DESK_RESERVE }}
+          DESK_PILOT_BUDGET: ${{ vars.DESK_PILOT_BUDGET }}
+          DESK_MAX_MARKET_EXPOSURE: ${{ vars.DESK_MAX_MARKET_EXPOSURE }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m desk.warden --issue --out out/warden.json
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desk-warden-${{ github.run_number }}
+          path: out/warden.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Clear the certificate
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/betfair"

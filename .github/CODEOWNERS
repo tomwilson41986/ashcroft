@@ -1,0 +1,24 @@
+# The control paths of the agent desk (docs/agent_desk.md): a change here needs the owner's review once branch
+# protection requires code-owner review on the default branch (the owner's setting; until then this file only
+# requests the review). Agents may change strategy code, registry entries, the ledger and research freely; they may
+# not change what scores, limits, stops or deploys them.
+
+/desk/envelope.py           @tomwilson41986
+/desk/risk.py               @tomwilson41986
+/desk/account.py            @tomwilson41986
+/desk/warden.py             @tomwilson41986
+/desk/registry.py           @tomwilson41986
+/desk/trials.py             @tomwilson41986
+/research/overfit.py        @tomwilson41986
+/model/uncertainty.py       @tomwilson41986
+/research/arms/core.py      @tomwilson41986
+/trading/                   @tomwilson41986
+/auto_trade.py              @tomwilson41986
+/morning/live.py            @tomwilson41986
+/tests/test_workflow_guards.py @tomwilson41986
+/tests/test_desk.py         @tomwilson41986
+/.github/                   @tomwilson41986
+/.claude/                   @tomwilson41986
+/CLAUDE.md                  @tomwilson41986
+/requirements.txt           @tomwilson41986
+/pyproject.toml             @tomwilson41986

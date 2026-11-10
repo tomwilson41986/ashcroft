@@ -1,0 +1,42 @@
+{
+  "id": "horse-morning-clv",
+  "sport": "horse_racing",
+  "name": "Morning win backs, each laid at the SP",
+  "stage": "legacy",
+  "hypothesis": "The closing model expects the morning price to shorten to the SP; back where the expected CLV clears the bar, lay at the SP so the CLV is the profit.",
+  "mechanism": "Morning books are thin and slow to take in what the model knows; the SP lay closes the position at the market's own close.",
+  "markets": [
+    "GB/IE WIN"
+  ],
+  "entry_point": "auto_trade.py --live",
+  "workflow": "live-trade.yml",
+  "live_switch": "TRADING_LIVE",
+  "order_ref_prefix": "ash",
+  "bucket": "pred",
+  "stop_keys": [
+    "trading/STOP"
+  ],
+  "kill_switch_fails": "open",
+  "dashboard_ids": [
+    "horse-live"
+  ],
+  "evidence": [
+    {
+      "claim": "pre-registered out-of-sample +3.54% net CLV (90% +2.86% to +4.19%) on 12,389 trades",
+      "source": "reports/preregistration_clv_oos.md:32"
+    },
+    {
+      "claim": "kill switch: an S3 error reads as not stopped (fails open), checked at most once a minute",
+      "source": "auto_trade.py:131-146"
+    },
+    {
+      "claim": "limits: GBP400 to win, GBP15-200 a horse, GBP4,000 a day, max price 200",
+      "source": "trading/config_live.json"
+    }
+  ],
+  "approved": {
+    "by": "owner",
+    "on": "2026-09-30",
+    "source": "CLAUDE.md (live trading, the owner's decision, 30 Sep 2026); TRADING.md"
+  }
+}
