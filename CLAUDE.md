@@ -1,5 +1,7 @@
 # Ashcroft — Horse Racing BFSP Prediction System
 
+This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it.
+
 ## Session Setup
 
 At the start of every session that needs the historic database or live race cards, run:
