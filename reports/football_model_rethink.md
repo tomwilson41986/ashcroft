@@ -843,3 +843,66 @@ selection-id type mismatch, now fixed with a test):
   - **the spread-aware gate loses about a quarter less** than trading every line.
 - The model's forecast and the recorded books are joined now. That link needs weeks of matches before it can say
   whether the forecast holds at real prices.
+
+## Model review: feature importance and the first repairs (10 Nov 2026)
+
+The owner's ask (10 Nov): improve the model that predicts the closing price; review every feature, its calculation
+and its statistics. The full review and plan are in the PR description of this change. Two runs on this branch, both
+read on Betfair's own early-to-close moves of 2025/26. Those seasons were read by earlier rules, so this is
+**development evidence, not a holdout**; the holdout is the matches from 10 Nov 2026, which nothing here reads.
+
+### What the features are worth (`football_feature_report`, run 42792047861)
+
+- Expected-value model's arm (115 features), refitted on 82,735 same-book moves 2013/14-2024/25; tested on 9,436
+  Betfair matches.
+- Skill against "no move": home 5.2%, away 6.9%.
+
+| Family | Gain share | Skill lost, shuffled (points) | Skill change, left out and refitted |
+|---|---|---|---|
+| Short form `fs_` (32) | 21.3% | 7.2 | -0.49 |
+| Team windows `d_` (33) | 26.0% | 2.2 | -0.04 |
+| `dis_open` (model vs opening price) | 10.1% | 2.1 (8.2 in the top five) | -1.39 |
+| xG `x_` (28) | 12.6% | 1.7 (0.5 in lower leagues) | -0.49 |
+| League label | 15.0% | 0.7 | - |
+| `r_diff` (market rating) | 3.9% | 0.5 | +0.00 |
+| Team news `tn_` (9) | 6.7% | 0.3 | -0.31 |
+| Home advantage `ha_` (11) | 4.3% | 0.0 | +0.13 |
+
+- `dis_open` is the most valuable single feature.
+- The team windows are redundant once short form is in; the home-advantage columns add nothing.
+- The margin's removal (review finding A4) is not a problem. Under the three methods, the mean drift of the chance by
+  early-price band is smallest for the proportional split we use (bias score 0.00042; Shin 0.00052; power 0.00063).
+
+### Each change against the current model (`football_review_arms`, run 42793342988)
+
+- Paired by match day; the 95% interval is from 1,000 resamples of days.
+- A change keeps its place only if its interval on Betfair excludes zero.
+
+| Change | Features | Betfair skill | vs current | 95% interval | Pinnacle 2016-24 vs current | Keeps its place |
+|---|---|---|---|---|---|---|
+| Current model | 115 | 6.28% | - | - | - | - |
+| All changes together | 137 | 8.29% | +2.01 | +1.57 to +2.45 | +1.54 | yes |
+| Move memory (`mm_`) | 120 | 7.77% | +1.49 | +1.14 to +1.85 | +1.24 | yes |
+| League effects, label kept (`lf_`) | 120 | 6.61% | +0.32 | +0.18 to +0.48 | +0.32 | yes |
+| Kalman form replacing raw points/goal windows (`kf_`) | 105 | 6.44% | +0.16 | +0.05 to +0.25 | +0.03 | yes |
+| Kalman form added | 121 | 6.43% | +0.15 | +0.04 to +0.25 | +0.05 | yes |
+| League effects, label removed | 120 | 6.43% | +0.15 | -0.04 to +0.36 | +0.23 | no |
+| Early price added | 117 | 6.37% | +0.09 | -0.03 to +0.21 | +0.04 | no |
+| Shrunk xG and Massey ratings | 119 | 6.35% | +0.07 | -0.04 to +0.17 | -0.06 | no |
+| Early price + logit target | 117 | 6.29% | +0.00 | -0.16 to +0.18 | +0.22 | no |
+| Logit target | 115 | 6.25% | -0.03 | -0.15 to +0.09 | +0.19 | no |
+| League label removed | 115 | 5.89% | -0.39 | -0.54 to -0.25 | -0.21 | no (worse) |
+
+What this says:
+
+- **Move memory is the large gain.** Next check before it is trusted: split the side's own record from the
+  price-band record, and cost the trades at real prices. The band part could be reading how the margin sits in the
+  normalised chance rather than a move that can be traded.
+- **The Kalman form can replace the raw window ladder.** It does so with 10 fewer columns and no loss.
+- **Three of the review's findings are not supported on Betfair moves:**
+  - A4: margin removal;
+  - A5: a logit target or the price level as a feature;
+  - A1: shrinking the xG and Massey ratings. The fault is real in the code (a test shows a side with two matches rated
+    four goals above average), but the fix adds nothing measurable to this model.
+- Nothing here changes the frozen models or the paper trials. Any new model is frozen and pre-registered before it is
+  scored on the forward data.
