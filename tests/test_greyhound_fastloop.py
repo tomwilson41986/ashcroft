@@ -430,3 +430,11 @@ def test_the_paired_comparison_carries_a_z_score(tmp_path):
     pb = fl.paired_bsp_rmse(tmp_path, "blind")
     assert pb["good"]["diff"] < 0 and pb["good"]["z"] < -3 and pb["blind"]["z"] is None
     assert "z" in fl.paired_vs_baseline(tmp_path, "blind")["good"]
+
+
+def test_the_stretch_calibrates_the_race_objective_too():
+    df, meta = synthetic_cache()
+    res, pred = fl.run_experiment(df, meta, {"name": "sc", "features": "card_safe", "objective": "share",
+                                             "calibrate": ["stretch", "stretch_track"]}, QUICK, test_from="2026-06-01")
+    c = res["calibrated"]["stretch"]
+    assert c["fit"]["b"] > 0 and np.isfinite(c["log_bsp_rmse"]) and "rmse_vs_uncalibrated" in c

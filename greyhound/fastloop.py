@@ -205,8 +205,8 @@ def check_spec(spec: dict) -> list[dict]:
         if walk and sorted(walk) != list(walk):
             raise ValueError(f"{e['name']}: walk dates must be in order")
         bad = [k for k in e.get("calibrate", []) if k not in CALIBRATIONS]
-        if bad or (e.get("calibrate") and e.get("objective", "softmax") != "logbsp"):
-            raise ValueError(f"{e['name']}: calibrate takes {CALIBRATIONS} on the logbsp objective only")
+        if bad or (e.get("calibrate") and e.get("objective", "softmax") not in PRICE_OBJECTIVES):
+            raise ValueError(f"{e['name']}: calibrate takes {CALIBRATIONS} on the price objectives only")
     return exps
 
 
@@ -489,14 +489,17 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     else:
         pred["p_model"] = _race_softmax(raw.astype(float), _starts(race[test_i]))
     calibrated = {}
-    if obj == "logbsp" and exp.get("calibrate"):
-        # fitted on the early-stopping rows (the trees never trained on them), scored on the test, paired by day
-        raw_es = m.predict(matrix(es_i), num_iteration=m.best_iteration)
+    if obj in PRICE_OBJECTIVES and exp.get("calibrate"):
+        # fitted on the early-stopping rows (the trees never trained on them), scored on the test, paired by day. A race
+        # objective's log price is minus its score plus a race constant, which the stretch centres away
+        raw_es = raw_of(matrix(es_i))
+        lbsp = np.log(np.clip(df.bsp.to_numpy(float), 1.01, 1000.0))
+        sign = 1.0 if obj == "logbsp" else -1.0
         book = (float(np.median((1.0 / pd.Series(df.bsp.to_numpy(float)[fit_i])).groupby(race[fit_i]).sum()))
-                if exp.get("rescale_book") else None)
+                if exp.get("rescale_book") or obj != "logbsp" else None)
         for kind in exp["calibrate"]:
-            fit = fit_stretch(raw_es, y[es_i], won[es_i], race[es_i], df.track.to_numpy()[es_i], kind)
-            cal = apply_stretch(pred, raw, fit, book)
+            fit = fit_stretch(sign * raw_es, lbsp[es_i], won[es_i], race[es_i], df.track.to_numpy()[es_i], kind)
+            cal = apply_stretch(pred, sign * raw, fit, book)
             calibrated[kind] = {"fit": fit, **score_pair(pred, cal)}
     imp = pd.Series(m.feature_importance("gain"), index=feats)
     whole = pred.bsp_p_norm.notna().groupby(pred.race_id).transform("all") if "bsp_p_norm" in pred else None
