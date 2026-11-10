@@ -1568,3 +1568,81 @@ rebuilt form and draw tables. Baseline `best3`: share08_best exactly (three seed
   share08_best, from 25 Nov. Its fit window rolls forward at the confirmed 29 months (from 11 Jun 2024) because
   batch 18's fit took 90 minutes and the forward fit on the default window would pass the job's 100-minute limit; a
   1,650-second cap on each tree seed is a safety stop, recorded if it binds.
+
+## 37. The live greyhound price moves to the new model (10 Nov 2026)
+
+The owner, 10 Nov 2026: "move the live greyhound pricing to the new model"; asked whether the early lay should keep the
+old prices until its gate, the owner chose "switch everything now". Merged in PR 298.
+
+- **The model** (`greyhound/stack_model.py`): batch 18's stack3_all3 (section 36). It prices the rows the fast loop
+  scored the same (`tests/test_greyhound_stack_model.py`).
+- **The card** (`greyhound/live.py card_tables`): the metrics tables are built from 2014 with the day's card as their
+  last day. Every one of the ten tables gives a card row exactly the features its run gets once the result is in
+  (`tests/test_greyhound_pit.py::test_a_card_gets_the_features_its_run_had`), and the card's price equals the price
+  the nightly tables give (`tests/test_greyhound_live_stack.py`). Races under four runners are not priced (the model
+  never fits them). An hourly price now takes about 50 minutes; the running table has its own concurrency group.
+- **The first fit** (greyhound-live.yml run 42875615352, 10 Nov, 91 minutes): 640,935 runners in 116,251 races from
+  10 Jun 2024 to 9 Nov 2026; tree seeds stopped early at 4,512, 3,515 and 4,063 rounds; networks 15, 19 and 15
+  epochs; stack weights trees 0.56, networks 0.46; SP book 1.0015; stretch b 1.037.
+- **The early lay** reads the new prices and its forecast is fitted on the new model's out-of-sample prices of the
+  recorded days (fast-loop batch 19, run 42872734443: the stack fitted on the 29 months before 6 Oct, 6 Oct to 5 Nov
+  priced, RMSE of log(BSP) 0.3351, published to `greyhound/live/oos_prices_stack_all3`, 31 days).
+- **Not moved:** the 5 Oct forward test's frozen model and the registered BFSP forward tests (`bfsp_forward.json`,
+  `bfsp_forward_stack.json`) keep their own fits. The early lay's forward test was registered on the old prices; from
+  11 Nov its days are priced by the new model, so its gate reads a mix (the owner's choice).
+
+## 38. The strategy review on the new model (fast-loop batches 20 and 21, runs 42888391928 and 42892318999)
+
+The owner, 10 Nov 2026: "Do a full review, open minded, on profitable trading and win betting or lay betting
+strategies. Based on the new model." Every rule fixed before its scores (`research/greyhound/strategy_review.py`,
+`research/greyhound/experiments/batch20_strategy_review.json`, `batch21_review_control.json`). The prices: batch 19's
+saved out-of-sample prices, fitted before 1 Jun 2026 (the new model, and the old live recipe beside it). **Price
+files** (Betfair's greyhound files: BSP, morning WAP and volume, place SP): 106,999 runners in 19,543 races joined,
+development 1 Jun to 31 Aug, holdout 1 Sep to 5 Nov 2026. **Recorded books** (6 Oct to 5 Nov, development 15 days,
+holdout 7): the limit-order and trade-out studies. A pass: development above zero and the holdout's 90% interval
+(bootstrap over days) above zero; commission 2%.
+
+**What the new model knows.** Its win chance adds nothing to the Betfair SP: Benter's blend weights the model 0.035
+against the BSP's 0.95, and its log-loss is 0.43791 against the BSP's 0.42853. It does forecast the SP: on the 12,288
+runners with a morning price, the model's RMSE of log(SP) is 0.3184 against the morning WAP's 0.4183, and on the
+holdout the two together reach 0.2304 against the morning price alone's 0.2811.
+
+| Family | Rules | Passing | What it says | Source |
+|---|---|---|---|---|
+| Back at the SP on the model's value (limit-on-close) | 10 | 0 | every holdout return negative (-2.9% to -7.6%) | batch 20, stack_rev |
+| Lay at the SP on the model's value | 10 | 0 | -1.1% to +2.5%, no lower bound above zero | same |
+| Back or lay at the SP on a BSP + model blend | 20 | 0 | too few bets: the blend is the BSP | same |
+| Place SP, the model through Harville | 6 | 0 | -2.2% to -5.1% on the holdout | same |
+| Morning move: back where the forecast is below the morning WAP | 48 | 0 | holdout -21.8% to +14.7%, none passing (a back early pays the drift) | same |
+| **Morning move: lay where the forecast is above the morning WAP** | 48 | 48 | +6% to +13% greened at the SP; **but the no-model control (lay every runner with a morning price) makes +7.7% (90% 6.2 to 9.5) on its own**: 92% of those runners' SPs end above their morning WAP (mean log(SP / morning) 0.267). Over the control the model adds +1.3% to +5.8% a unit on the holdout (the old model +1.0% to +6.0%), 8 rules with the lift's lower bound above zero | batch 21 |
+| Pre-play move | 96 | 0 | no pre-play WAP in the 2026 files: no bets | batch 20 |
+| Limit orders on the recorded books (the 360-rule grid) | 360 | 11 | about 18 expected by chance; the early lay's own rule below | batch 20, stack_lim |
+| Trade-out (take the price on offer, close at the SP) | 52 read on the holdout | 2 | one back rule of 61 trades (+5.3%, 1.4 to 8.9) and one lay at +0.6%: chance-level | batch 20, stack_out |
+
+**The early lay's rule** (first traded, lay at 80% of the forecast SP where the forecast drifts, traded fill):
+
+| Price | Development, greened at the last book | Development, at the SP | Holdout, last book | Holdout, at the SP | CLV (dev) |
+|---|---|---|---|---|---|
+| The old live recipe | +1.49% | +1.88% | +1.49% | +1.42% | +7.32% |
+| The new model, fitted before 1 Jun | +1.96% (1.71 to 2.24) | +2.78% (2.05 to 3.55) | +1.60% | +1.82% | +10.75% |
+| The new model, fitted before 6 Oct (the live inputs now) | +1.94% (1.68 to 2.24) | +2.74% (1.99 to 3.52) | +1.67% | +2.00% | +10.81% |
+
+**The verdict.**
+1. There is no win-betting edge at the SP and no place edge: the SP is efficient against our pre-race price, as
+   in the edge search's families 4 and 5, with a better model.
+2. The money in greyhound prices is the **drift from the early market to the SP**: early prices (the morning WAP,
+   the first traded book) are shorter than the SP for 66% to 94% of runners (limit study section 1; batch 21). Laying
+   early and closing at the SP earns that drift whatever the model says; the model adds a few per cent on top by
+   choosing the runners that drift most. Backing early loses for the same reason.
+3. That edge is a **fill question**, not a forecasting one: the morning WAP is a price that traded, and a lay there
+   is a maker's order that has to be in the queue when a backer takes it. At 1 and 2 ticks worse the control still
+   makes +6.8% and +6.2%, and with a GBP20 morning-volume floor +5.6% (5.3 to 5.8); the edge search's family 8b showed
+   how far a fill assumption can mislead. Only a forward test on the live-key books, with our own orders' fills, can
+   say how much of it we can take.
+4. The early lay is the executable form of this drift on the recorded books; the new price lifts its CLV from 7.3% to
+   10.8% and its returns by about 0.2 to 0.6 points a unit. It stays in its forward test (gate from about 24 Nov).
+
+**Recommended (the owner's decision; nothing here bets):** a paper forward test of the morning lay on the live-key
+books (`greyhound/book_record.py`): rest a lay at the morning book's best back price for runners whose forecast SP is
+at least 10% above the morning price, close at the SP, fills read from Betfair's own traded volume at our price. Its
+rule and gate fixed before its first day, as the early lay's were.
