@@ -1538,3 +1538,33 @@ at one seed, deterministic fits; test 1 Jun to 5 Nov 2026 (106,719 runners); pai
   places. It is the largest single step since the share objective (batch 11).
 - Batch 18 confirms the passes together at three seeds, with three averaged networks (`nn_seeds`, new) and the
   per-track stretch.
+
+## 36. The BFSP plan, batch 18: the winners confirmed at three seeds (greyhound-fastloop.yml run 42853398485)
+
+Registered after batch 17 and before its own scores (`research/greyhound/experiments/batch18_confirm.json`), on the
+rebuilt form and draw tables. Baseline `best3`: share08_best exactly (three seeds). Test 1 Jun to 5 Nov 2026,
+106,719 runners, paired by day.
+
+| Experiment | RMSE log(BSP) | vs best3 (90%) | z | Log-loss | vs best3 | z | + per-track stretch |
+|---|---|---|---|---|---|---|---|
+| best3 | 0.3510 | - | - | 0.43777 | - | - | 0.3448 |
+| best3 + form, draw, bend | 0.3497 | -0.0013 (-0.0017 to -0.0009) | -5.5 | 0.43754 | -0.00024 | -2.3 | 0.3435 |
+| three neural set models alone (nn3) | 0.3514 | +0.0004 (-0.0006 to +0.0014) | +0.6 | 0.43803 | +0.00026 | +1.4 | 0.3463 |
+| trees + three networks (stack3) | 0.3420 | -0.0090 (-0.0096 to -0.0084) | -25.0 | 0.43759 | -0.00018 | -1.9 | 0.3389 |
+| **stack + form, draw, bend (stack3_all3)** | **0.3396** | **-0.0114 (-0.0121 to -0.0107)** | **-26.8** | **0.43732** | **-0.00045** | **-3.5** | **0.3366** |
+
+- Every addition passes and they add up: the tables -0.0013, the stack -0.0090, both -0.0114. The best, with the
+  per-track stretch, is 0.3366 against the live recipe's 0.4017 as served (section 29): 16% less error.
+- Three networks averaged (8 minutes in all) are as good as three seeds of 4,000 boosted rounds (43 minutes): 0.3514
+  against 0.3510. The stack's weights stay near even (trees 0.49, networks 0.54).
+- The stretch still lowers the RMSE (by 0.0030 on the stack, half what it does for the trees alone: the stack is
+  less compressed) and still costs a little log-loss (+0.00011): it is for the price, not the win probability.
+- **Where the error moved** (best3 -> stack3_all3): favourites under 2.0 0.3036 -> 0.2877 (bias +0.203 -> +0.186);
+  outsiders 15.0 and over 0.5889 -> 0.5564 (bias -0.399 -> -0.342); seasoned dogs (20+ runs) 0.3367 -> 0.3240;
+  debutants 0.6995 -> 0.7042, no better. The compression is smaller but not gone; the debutants are untouched by
+  every step and are the clearest next target.
+- **The forward test** (`research/greyhound/experiments/bfsp_forward_stack.json`, registered 10 Nov before any of its
+  days): stack3_all3 fitted on the days before 11 Nov and scored on the days from 11 Nov, against live08 and beside
+  share08_best, from 25 Nov. Its fit window rolls forward at the confirmed 29 months (from 11 Jun 2024) because
+  batch 18's fit took 90 minutes and the forward fit on the default window would pass the job's 100-minute limit; a
+  1,650-second cap on each tree seed is a safety stop, recorded if it binds.
