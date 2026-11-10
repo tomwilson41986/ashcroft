@@ -66,9 +66,14 @@ function Invoke-Historic([string]$Method, $Body) {
 $mine = Invoke-Historic "GetMyData" @{}
 Write-Host "The account holds:"
 $mine | Format-Table -AutoSize | Out-String | Write-Host
-if (-not ($mine | Where-Object { $_.sport -eq $Sport -and $_.plan -eq $Plan })) {
+$held = @($mine | Where-Object { $_.sport -eq $Sport -and $_.plan -eq $Plan })
+if (-not $held) {
     throw "The account does not hold '$Sport' on '$Plan'. Get it (free) on historicdata.betfair.com first."
 }
+# the months held (each purchase is one month: forDate is its first day); months not held are skipped, not failed
+$heldMonths = @{}
+foreach ($h in $held) { if ($h.forDate) { $heldMonths[([datetime]$h.forDate).ToString("yyyy-MM")] = $true } }
+if ($heldMonths.Count) { Write-Host ("Months held for {0}: {1}" -f $Sport, (($heldMonths.Keys | Sort-Object) -join ", ")) }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $start = [datetime]::ParseExact($From, "yyyy-MM", $null)
@@ -78,6 +83,12 @@ $years = @{}
 
 while ($month -ge $start) {
     $last = $month.AddMonths(1).AddDays(-1)
+    $key = $month.ToString("yyyy-MM")
+    if ($heldMonths.Count -and -not $heldMonths.ContainsKey($key)) {
+        Write-Host "${key}: not held by the account (buy it on the website to include it); skipped"
+        $month = $month.AddMonths(-1)
+        continue
+    }
     $body = @{
         sport = $Sport; plan = $Plan
         fromDay = 1; fromMonth = $month.Month; fromYear = $month.Year
@@ -85,9 +96,18 @@ while ($month -ge $start) {
         eventId = $null; eventName = $null
         marketTypesCollection = $MarketTypes; countriesCollection = $Countries; fileTypeCollection = @("M")
     }
-    $files = @(Invoke-Historic "DownloadListOfFiles" $body)
-    $new = 0
+    try {
+        $files = @(Invoke-Historic "DownloadListOfFiles" $body)
+    } catch {
+        Write-Host "${key}: the file list was refused ($($_.Exception.Message)); skipped"
+        $month = $month.AddMonths(-1)
+        continue
+    }
+    Write-Host "${key}: $($files.Count) files listed, downloading..."
+    $new = 0; $seen = 0
     foreach ($p in $files) {
+        $seen++
+        if ($seen % 500 -eq 0) { Write-Host "  ${key}: $seen of $($files.Count) done" }
         # keep the path from the plan on (BASIC/2024/Mar/2/...): the pipeline names a file by it
         $i = $p.IndexOf("BASIC/")
         $rel = if ($i -ge 0) { $p.Substring($i) } else { $p.TrimStart("/") }
