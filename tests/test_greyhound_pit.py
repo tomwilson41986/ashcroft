@@ -215,3 +215,16 @@ def test_the_market_rating_ranks_the_field_like_the_sp():
     late = d[d.race_date >= sorted(d.race_date.unique())[30]].dropna(subset=["m"])
     rho = late.groupby("race_id").apply(lambda g: g.m.rank().corr(g.sp_p_norm.rank()) if len(g) > 2 else np.nan)
     assert rho.mean() > 0.5                                           # before each race it orders the field as the SP does
+
+
+
+def test_the_bsp_rating_reads_the_betfair_sp_where_the_race_has_it():
+    from greyhound.pit import figs
+    runs = synth(days=40, seed=5)
+    prices = runs[["race_date", "race_time", "track", "trap"]].assign(
+        market="win", country="GB", bsp=runs.sp_decimal.to_numpy() * 1.05)
+    prices = prices[runs.race_date < "2025-01-30"]                    # the price files stop: the SP after
+    tab, notes = figs.build(runs, core.per_run_figures(runs), {"prices": prices})
+    assert {"fg_bmr", "fg_bmr_share"} <= set(tab.columns) and notes["bsp_rating"]["races_on_bsp"] > 0
+    d = runs[["race_id", "dog_id"]].merge(tab, on=["race_id", "dog_id"])
+    assert np.allclose(d.groupby("race_id").fg_bmr_share.sum(), 1.0, atol=1e-4)

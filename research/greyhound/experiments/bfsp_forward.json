@@ -1,5 +1,5 @@
 {
- "about": "The forward test of the BFSP plan's first results (registered 10 Nov 2026, before any of its days exist). Batches 11 and 12 (runs 42792051707, 42802035088) found the race fitted as a book (share) and the figs table (greyhound/pit/figs.py) far ahead of the live recipe on a window earlier batches had read. Here the same recipes are fitted on everything before 11 Nov 2026 and scored only on the days from 11 Nov, with the feature cache refreshed (refresh: true). Run once 14 days exist (from 25 Nov 2026). The rule, fixed now: share08_figs is adopted for the BFSP forecast if its paired gain in RMSE of log(BSP) over live08 is 3 bootstrap standard errors (by day) or more and its log-loss is no worse beyond 1 standard error; the per-track stretch on each is read beside it.",
+ "about": "The forward test of the BFSP plan's first results (registered 10 Nov 2026, before any of its days exist). Batches 11 and 12 (runs 42792051707, 42802035088) found the race fitted as a book (share) and the figs table (greyhound/pit/figs.py) far ahead of the live recipe on a window earlier batches had read. Here the same recipes are fitted on everything before 11 Nov 2026 and scored only on the days from 11 Nov, with the feature cache refreshed (refresh: true). Run once 14 days exist (from 25 Nov 2026). The rule, fixed now: share08_figs is adopted for the BFSP forecast if its paired gain in RMSE of log(BSP) over live08 is 3 bootstrap standard errors (by day) or more and its log-loss is no worse beyond 1 standard error; the per-track stretch on each is read beside it. (10 Nov, the same day, before any of its days: the figs table gained Betfair-SP rating columns, fg_bmr; share08_figs drops them so it stays the recipe batch 12 scored.)",
  "recipe": "quick",
  "baseline": "live08",
  "test_from": "2026-11-11",
@@ -56,7 +56,10 @@
     "stretch_track"
    ],
    "importance": true,
-   "name": "share08_figs"
+   "name": "share08_figs",
+   "drop": [
+    "fg_bmr"
+   ]
   }
  ]
 }
