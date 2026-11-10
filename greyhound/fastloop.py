@@ -206,6 +206,13 @@ def check_spec(spec: dict) -> list[dict]:
             raise ValueError(f"{e['name']}: recipe must be one of {tuple(RECIPES)}")
         if e.get("seeds") is not None and not (1 <= int(e["seeds"]) <= 10):
             raise ValueError(f"{e['name']}: seeds must be 1 to 10")
+        for k in ("save_pred", "pred_from", "publish_pred"):
+            if e.get(k) is not None and not re.fullmatch(r"[a-z0-9_/\-]{3,120}", str(e[k])):
+                raise ValueError(f"{e['name']}: {k} must be an S3 prefix of [a-z0-9_/-]")
+        if e.get("serve_calibrated") and e["serve_calibrated"] not in e.get("calibrate", []):
+            raise ValueError(f"{e['name']}: serve_calibrated must be one of its calibrate kinds")
+        if e.get("test_from") is not None:
+            pd.Timestamp(e["test_from"])
         if e.get("nn_seeds") is not None and not (1 <= int(e["nn_seeds"]) <= 10):
             raise ValueError(f"{e['name']}: nn_seeds must be 1 to 10")
         if e.get("halflife_days") is not None and float(e["halflife_days"]) <= 0:
@@ -536,7 +543,7 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
         pred["pred_bsp"] = 1.0 / (book * pred.p_model)
     else:
         pred["p_model"] = _race_softmax(raw.astype(float), _starts(race[test_i]))
-    calibrated = {}
+    calibrated, served = {}, None
     if obj in PRICE_OBJECTIVES and exp.get("calibrate"):
         # fitted on the early-stopping rows (the trees never trained on them), scored on the test, paired by day. A race
         # objective's log price is minus its score plus a race constant, which the stretch centres away
@@ -549,6 +556,13 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
             fit = fit_stretch(sign * raw_es, lbsp[es_i], won[es_i], race[es_i], df.track.to_numpy()[es_i], kind)
             cal = apply_stretch(pred, sign * raw, fit, book)
             calibrated[kind] = {"fit": fit, **score_pair(pred, cal)}
+            if exp.get("serve_calibrated") == kind:
+                served = cal
+        if exp.get("serve_calibrated"):
+            # the price as the live model serves it (greyhound/live.py): the stretched SP forecast, the chance left as
+            # the model gives it; the unstretched price kept beside it
+            pred["pred_bsp_raw"] = pred.pred_bsp
+            pred["pred_bsp"] = served.pred_bsp.to_numpy()
     imp = pd.Series(m.feature_importance("gain") if m is not None else np.zeros(len(feats)), index=feats)
     whole = pred.bsp_p_norm.notna().groupby(pred.race_id).transform("all") if "bsp_p_norm" in pred else None
     res = {"name": exp["name"], "spec": exp, "recipe": recipe, "features": len(feats),
@@ -612,6 +626,27 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     if exp.get("groups"):
         res["by_group"] = {g: group_scores(pred[in_group(pred, tracks)], obj) for g, tracks in
                            split_groups(pred, exp["groups"]).items()}
+    res["seconds"] = round(time.monotonic() - t0)
+    return res, pred
+
+
+def saved_prices(store, exp: dict) -> tuple[dict, pd.DataFrame]:
+    """An experiment's prices saved by an earlier run (``save_pred``: ``<prefix>/<name>.parquet``), scored as a fit's
+    would be, for the studies to read without fitting again."""
+    from greyhound.model import logloss
+    t0 = time.monotonic()
+    key = exp["pred_from"] if exp["pred_from"].endswith(".parquet") else f"{exp['pred_from'].rstrip('/')}/{exp['name']}.parquet"
+    pred = store.get_parquet(key)
+    if pred is None or not len(pred):
+        raise SystemExit(f"{exp['name']}: no saved prices at {key}")
+    res = {"name": exp["name"], "spec": exp, "pred_from": key, "features": 0, "rounds": 0, "stopped_by": "saved",
+           "test_runners": int(len(pred)), "test_races": int(pred.race_id.nunique()),
+           "test_from": str(pred.race_date.min()), "test_to": str(pred.race_date.max()),
+           "logloss": round(logloss(pred.p_model, pred.won), 5)}
+    if "pred_bsp" in pred and "bsp" in pred:
+        ok = pred.bsp > 1
+        e = np.log(pred.pred_bsp[ok]) - np.log(pred.bsp[ok])
+        res["log_bsp_rmse"] = round(float(np.sqrt(np.mean(e ** 2))), 4)
     res["seconds"] = round(time.monotonic() - t0)
     return res, pred
 
@@ -1051,10 +1086,18 @@ def main(argv=None) -> int:
             e = dict(e, groups=spec["groups"])
         _log(f"experiment {e['name']}")
         walk = e.get("walk", spec.get("walk"))
-        if walk:
+        if e.get("pred_from"):
+            # an earlier experiment's saved prices (``save_pred``): the studies without the fit
+            res, pred = saved_prices(store, e)
+        elif walk:
             res, pred = run_walk(df, meta, e, recipe, walk, spec.get("test_to"))
         else:
-            res, pred = run_experiment(df, meta, e, recipe, spec.get("test_from", TEST_FROM), spec.get("test_to"))
+            res, pred = run_experiment(df, meta, e, recipe, e.get("test_from", spec.get("test_from", TEST_FROM)),
+                                       spec.get("test_to"))
+        if e.get("save_pred"):
+            store.put_parquet(f"{e['save_pred'].rstrip('/')}/{e['name']}.parquet", pred)
+            res["saved_pred"] = f"{e['save_pred'].rstrip('/')}/{e['name']}.parquet"
+            _log(f"saved {e['name']}'s prices: {res['saved_pred']} ({len(pred):,} runners)")
         res["cache"] = {k: meta[k] for k in ("hash", "last_day", "rows")}
         if e.get("shortening", spec.get("shortening")):
             _log(f"shortening {e['name']}")

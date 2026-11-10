@@ -1,0 +1,107 @@
+{
+ "about": "Batch 19 (10 Nov 2026), the owner: 'move the live greyhound pricing to the new model' and 'do a full review ... on profitable trading and win betting or lay betting strategies, based on the new model'. Not a model comparison: prices for what follows. stack_live_oos: the new live recipe (stack3_all3, batch 18) fitted on the 29 months before 6 Oct 2026 and every day from 6 Oct priced, the stretched SP forecast served as the live model serves it, published to greyhound/live/oos_prices_stack_all3 for the early lay's forecast fit (greyhound.laytest live_prices); a 1,500-second cap on each tree seed keeps the job inside its 100 minutes (recorded as stopped_by 'time' if it binds). stack_review: batch 18's stack3_all3 exactly (1 Jun to 5 Nov 2026), and live_review: the current live recipe (live08 of bfsp_forward.json), each saved to greyhound/research/pred for the strategy review.",
+ "recipe": "quick",
+ "test_from": "2026-06-01",
+ "baseline": "live_review",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "name": "live_review",
+   "rescale_book": true,
+   "serve_calibrated": "stretch_track",
+   "save_pred": "greyhound/research/pred"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000,
+    "max_seconds": 1750
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "stack_review",
+   "serve_calibrated": "stretch_track",
+   "save_pred": "greyhound/research/pred"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000,
+    "train_from": "2024-05-06",
+    "max_seconds": 1500
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "stack_live_oos",
+   "test_from": "2026-10-06",
+   "serve_calibrated": "stretch_track",
+   "publish_pred": "greyhound/live/oos_prices_stack_all3",
+   "save_pred": "greyhound/research/pred"
+  }
+ ]
+}
