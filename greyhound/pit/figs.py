@@ -199,6 +199,7 @@ def market_rating(df: pd.DataFrame, prm: dict, upto: int | None = None,
     nd = dog.max() + 1
     R, V, N, LAST = np.zeros(nd), np.full(nd, prm["v0"]), np.zeros(nd), np.full(nd, -1)
     m_out, sd_out, n_out = np.full(len(df), np.nan), np.full(len(df), np.nan), np.zeros(len(df))
+    innov = np.full(len(df), np.nan)                     # each reading less the rating before it (the market's news)
     order = np.argsort(dn, kind="stable")
     bounds = np.flatnonzero(np.diff(dn[order])) + 1
     ce_sum, ce_n = 0.0, 0
@@ -231,6 +232,7 @@ def market_rating(df: pd.DataFrame, prm: dict, upto: int | None = None,
         ce_n += len(u)
         x = lq - mean_lq[inv] + mean_r[inv]                  # its log share against the field, on the field's scale
         dgf = dog[f]
+        innov[f] = np.where(N[dgf] > 0, x - R[dgf], np.nan)
         # a dog twice in a day: its readings averaged
         ud, inv2 = np.unique(dgf, return_inverse=True)
         xm = np.bincount(inv2, weights=x) / np.bincount(inv2)
@@ -240,7 +242,8 @@ def market_rating(df: pd.DataFrame, prm: dict, upto: int | None = None,
         V[ud] = (1 - k) * vpu
         N[ud] += 1
         LAST[ud] = dn[f][0]
-    return pd.DataFrame({"m": m_out, "sd": sd_out, "n": n_out}, index=df.index), (ce_sum / ce_n if ce_n else np.nan)
+    return (pd.DataFrame({"m": m_out, "sd": sd_out, "n": n_out, "innov": innov}, index=df.index),
+            (ce_sum / ce_n if ce_n else np.nan))
 
 
 def fit_market_rating(df: pd.DataFrame, before: str = FIT_BEFORE) -> dict:

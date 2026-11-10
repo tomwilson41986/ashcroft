@@ -15,6 +15,9 @@ earlier one):
 | breeding | br_ | the sire's and dam's progeny: speed, pace, finishing, A/E, stamina by distance band |
 | life | lf_ | age, season, weight, trials, the grade path, track and distance experience |
 | weather | wx_ | the weather at the off (NOAA ISD-Lite, the nearest station) and its learnt effect on the run-in |
+| draw | dr_ | each trap's bias as a drifting state: winners against the SP, first-bend leads (step 2.3) |
+| bend | bd_ | a fitted first bend: the chance of leading, the expected bend position, the win given the bend (step 2.4) |
+| form | fm_ | fitted decay and shrinkage, a trend-and-age rating, the market's memory (the BFSP plan's steps 2.2, 2.5, 2.6) |
 | figs | fg_ | corrected figures (own standards and shrunk variants), decayed levels shrunk by evidence, class in lengths, a market-implied rating (the BFSP plan of 10 Nov 2026) |
 
 Each table is written to the sources store as ``greyhound/pit/<table>.parquet`` with ``<table>.meta.json``: the code
@@ -39,7 +42,7 @@ from pathlib import Path
 
 import pandas as pd
 
-TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather", "figs")
+TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather", "figs", "form", "draw", "bend")
 KEY = ["race_id", "dog_id"]
 STORE_PREFIX = "greyhound/pit"
 
