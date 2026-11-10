@@ -122,9 +122,33 @@ That makes 18 rules and 36 tests. Only days after 8 Nov count. A rule is a candi
 - **Stream lab:** 4 days pooled, no candidate among 86 tests. Momentum lays still lose 2.9% to 5.6% at the SP.
 - **The forward test's lays, 8 Nov** (queue-aware, share of matched liability): +1.42% at the SP and +4.28% to the result (x1); +1.41% and +4.19% (x0.5). Its own figure was +0.47%.
 
-Four days so far:
+**9 Nov.** 136 races and 22,980 runner-checkpoints (close lab run 42726462862). Stream lab run 42726467717. Collection is healthy.
 
-| | 5 Nov | 6 Nov | 7 Nov | 8 Nov |
-|---|---|---|---|---|
-| At the SP | +1.78% | +1.43% | +0.71% | +1.42% |
-| To the result | -1.65% | +1.04% | -1.50% | +4.28% |
+- **Win: the champion changed (the pre-registered bar cleared, only just).** gbm_all_small replaces the mid.
+  - Paired gain in the winner's log loss: 0.0046 (90% interval 0.00004 to 0.0089), over 365 races.
+  - The lower bound is barely above zero, and the champion is re-tested every night.
+  - gbm_all_small now holds both targets.
+- **BFSP:** gbm_all_small holds. RMSE log(SP) 0.1837 against the mid's 0.2760 overall, 0.1218 against 0.1235 at 60 s or less, and 0.2321 against 0.3885 over 180 s.
+- **Close lab, 9 Nov (fitted on 5-8 Nov):**
+
+  | | BFSP: RMSE log(SP), all | 60 s or less | over 180 s | Win: log loss |
+  |---|---|---|---|---|
+  | gbm_all_small | 0.1837 | 0.1218 | 0.2321 | 1.5625 |
+  | gbm_all | 0.1857 | 0.1216 | 0.2350 | 1.5617 |
+  | mid | 0.2760 | 0.1235 | 0.3885 | 1.5685 |
+  | ltp | 0.2838 | 0.1255 | 0.3994 | 1.5685 |
+
+- **The trade test on gbm_all_small's forecast: its first counted day.** 14 of the 18 rules traded, 1 to 18 trades each, so nothing is readable yet. The busiest:
+  - lay_60_0.03: 18 trades, +0.78% a unit at the SP (90% -6.5% to +7.7%);
+  - lay_30_0.03: 18 trades, +0.60% (-7.3% to +8.3%);
+  - back_60_0.03: 10 trades, -6.64% (-12.2% to -1.1%).
+  - The rule needs 10 days.
+- **Stream lab:** 5 days pooled, no candidate among 86 tests. Momentum lays still lose 3% to 5% at the SP.
+- **The forward test's lays, 9 Nov** (queue-aware, share of matched liability, GBP5,752 matched over 293 lays): +1.85% at the SP and +2.62% to the result (x1); +1.80% and +2.48% (x0.5). Its own figure was +1.72%.
+
+Five days so far:
+
+| | 5 Nov | 6 Nov | 7 Nov | 8 Nov | 9 Nov |
+|---|---|---|---|---|---|
+| At the SP | +1.78% | +1.43% | +0.71% | +1.42% | +1.85% |
+| To the result | -1.65% | +1.04% | -1.50% | +4.28% | +2.62% |
