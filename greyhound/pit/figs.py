@@ -250,8 +250,10 @@ def fit_market_rating(df: pd.DataFrame, before: str = FIT_BEFORE) -> dict:
     if (dn < cut).sum() < 50_000:
         cut = int(np.sort(dn)[int(len(dn) * 0.2)]) if len(dn) else cut
     grid, best = [], None
-    for r in (0.05, 0.1, 0.2, 0.4, 0.8):
-        for q in (0.0001, 0.0005, 0.002, 0.008):
+    # the first full build (10 Nov 2026, run 42792867097) chose r 0.4, q 0.008, v0 1.0 with q at the grid's edge:
+    # the grid reaches further now
+    for r in (0.1, 0.2, 0.4, 0.8):
+        for q in (0.0005, 0.002, 0.008, 0.02, 0.05):
             for v0 in (0.3, 1.0, 2.0):
                 prm = {"r": r, "q": q, "v0": v0}
                 _, ce = market_rating(df, prm, upto=cut)
