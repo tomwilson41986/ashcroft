@@ -184,7 +184,9 @@ def live_prices(store, day: date) -> str | None:
     if not raw:
         return None
     head = pd.read_csv(io.BytesIO(raw), nrows=5, keep_default_na=False)
-    if "model_objective" not in head or str(head.model_objective.iloc[0]) != "logbsp":
+    # the log-BSP model (4 Nov 2026) and the stack (10 Nov 2026, greyhound/stack_model.py) each name their own
+    # out-of-sample prices; the 5 Oct model's are read otherwise
+    if "model_objective" not in head or str(head.model_objective.iloc[0]) not in ("logbsp", "stack_share"):
         return None
     named = str(head.oos_prices.iloc[0]).strip() if "oos_prices" in head else ""
     if named and named != LOGBSP_PRICES:

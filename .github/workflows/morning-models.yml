@@ -58,7 +58,14 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
-        run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
+        # the nightly job can be re-uploading the database at this hour (7 and 9 Nov 2026: "did not match expected
+        # ETag"): try again a few minutes later rather than lose the day's selections
+        run: |
+          for i in 1 2 3 4; do
+            python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db && exit 0
+            echo "download failed (attempt $i); trying again in 3 minutes"; sleep 180
+          done
+          exit 1
       - name: The day's selections
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

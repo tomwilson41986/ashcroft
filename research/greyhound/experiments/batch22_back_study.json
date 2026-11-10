@@ -1,0 +1,21 @@
+{
+ "about": "Batch 22 (10 Nov 2026), registered before its scores. The owner: 'I want to back. Either back and trade out at BFSP, or back just to win. Research strategies'. The back study (research/greyhound/back_study.py) on the recorded books from 6 Oct: every back rule (take, join, ticks, ask at the forecast SP plus a margin; first traded, 5 and 3 minutes out; ten gates, the model's among them; traded and strict fills), each ended both ways the owner named (traded out at the SP; held to win) and greened in the last book or at a take-profit for reference; every rule read on the development days and the holdout alike, counted, with a 10% false discovery rate and the no-model controls. On the prices the early lay now reads (the new model fitted before 6 Oct: stack_back), the new model fitted before 1 Jun (stackjun_back), and the old live recipe (live_back). The back side of the price files (SP and morning backs) is in batches 20 and 21.",
+ "recipe": "quick",
+ "experiments": [
+  {
+   "name": "stack_back",
+   "pred_from": "greyhound/research/pred/stack_live_oos.parquet",
+   "back": true
+  },
+  {
+   "name": "stackjun_back",
+   "pred_from": "greyhound/research/pred/stack_review.parquet",
+   "back": true
+  },
+  {
+   "name": "live_back",
+   "pred_from": "greyhound/research/pred/live_review.parquet",
+   "back": true
+  }
+ ]
+}

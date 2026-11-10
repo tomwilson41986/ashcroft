@@ -26,3 +26,10 @@ That is 18 gap rules, 24 momentum and reversal rules and 1 control: 43 rules.
 **What counts.** A rule is a candidate only after 10 recorded days, with its pooled mean P&L's 90% lower bound (a
 bootstrap over races) above zero. With 43 rules, about two clear that bound by chance, so a candidate then goes to a
 fresh forward run of its own before any money. Nothing here places an order.
+
+**Amendment, 5 Nov 2026, before any rule has 10 days** (the owner: "wire in" the overfitting checks). A candidate
+also needs its deflated Sharpe by race (Bailey and Lopez de Prado 2014; `research/overfit.py`) at or above 0.95,
+deflated by every rule the lab has scored: the 43 here and any added later, kept in `s3://$CAPTURE_BUCKET/
+stream_lab/trials.json`. The 90% bound alone lets about two of 43 through by luck; the deflated Sharpe allows for
+the count. The rules, fills and the 10-day bar are unchanged.
+

@@ -275,6 +275,7 @@ def score(cache: str, models: str, root: str | None, live_root: str | None, star
                      else {"first": {"bets": 0}, "second": {"bets": 0}})
     for key in ("book_width", "band", "tier", "fd_code", "month"):
         res[f"by_{key}"] = pt.by_key(inw, key, rule["commission"])
+    res["overfit"] = pt.overfit(inw, rule["commission"], pt.trials_considered(rule, GATE))
     res["gate"] = rs.gate(res, GATE)
     return res
 

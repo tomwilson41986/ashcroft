@@ -160,11 +160,15 @@ def _boot(pnl_by_race: pd.Series, n: int = 2000, seed: int = 0):
     return float(np.percentile(m, 5)), float(np.percentile(m, 95))
 
 
-def score(tr: pd.DataFrame) -> pd.DataFrame:
+def score(tr: pd.DataFrame, ledger=None) -> pd.DataFrame:
     """Each rule on both targets: closed at the SP (``pnl``) and left to run to the result (``pnl_win``); trades,
-    races, days, the mean P&L a unit staked and its 90% interval by race (pooled over days). A rule is a candidate on
-    a target on its own; the report counts both targets' tests."""
-    rows = []
+    races, days, the mean P&L a unit staked, its 90% interval by race (pooled over days) and its deflated Sharpe by
+    race against every test scored (research.overfit: both targets of every rule here, and with a ``ledger`` every
+    test the lab has ever scored). A rule is a candidate on a target on its own: ``MIN_DAYS`` days, the lower bound
+    above zero and the DSR at or above research.overfit.DSR_THRESHOLD. About one test in twenty clears the bound by
+    luck; the DSR is the bar that allows for the count, and q reads the family as one."""
+    from research.overfit import deflate_table
+    rows, series = [], {}
     # the late family counts only on days after its registration; a day scored before it has no late trades anyway
     tr = tr[~tr.rule.str.contains("_late") | (tr.day.astype(str) > REGISTERED_LATE)]
     for rule, g in tr.groupby("rule"):
@@ -173,17 +177,26 @@ def score(tr: pd.DataFrame) -> pd.DataFrame:
         for col, sfx in (("pnl", ""), ("pnl_win", "_win")):
             v = g[g[col].notna()] if col in g else g.iloc[:0]
             by_race = v.groupby(["day", "market"])[col].mean() if len(v) else pd.Series(dtype=float)
+            if len(by_race):
+                series[f"{rule}{sfx}"] = by_race.to_numpy()
             lo, hi = _boot(by_race)
             row[f"mean{sfx}%"] = round(100 * float(v[col].mean()), 3) if len(v) else None
             row[f"ci90{sfx}%"] = [round(100 * lo, 3), round(100 * hi, 3)] if lo is not None else None
-            row[f"candidate{sfx}"] = bool(lo is not None and lo > 0 and v.day.nunique() >= MIN_DAYS)
+            row[f"bound{sfx}"] = bool(lo is not None and lo > 0 and v.day.nunique() >= MIN_DAYS)
             row[f"z{sfx}"] = mt.z_by_race(by_race)
-        row["mean_pnl%"] = row.pop("mean%")
-        row["candidate_sp"] = row.pop("candidate")
-        row["candidate"] = row["candidate_sp"] or row["candidate_win"]
         rows.append(row)
     if not rows:
         return pd.DataFrame()
+    dsr = deflate_table(series, ledger=ledger) if series else {}
+    for row in rows:
+        for sfx in ("", "_win"):
+            d = dsr.get(f"{row['rule']}{sfx}", {})
+            row[f"sharpe{sfx}"], row[f"dsr{sfx}"] = d.get("sharpe"), d.get("dsr")
+            row[f"candidate{sfx}"] = bool(row.pop(f"bound{sfx}") and d.get("passed", False))
+        row["n_trials"] = max((d.get("n_trials", 0) for d in dsr.values()), default=0)
+        row["mean_pnl%"] = row.pop("mean%")
+        row["candidate_sp"] = row.pop("candidate")
+        row["candidate"] = row["candidate_sp"] or row["candidate_win"]
     res = pd.DataFrame(rows).sort_values("mean_pnl%", ascending=False).reset_index(drop=True)
     # the family read as one (research/greyhound/multitest.py; the review of 10 Nov 2026): every rule on both targets,
     # each test's q the share of false discoveries expected among the tests at least as strong
@@ -313,7 +326,9 @@ def main(argv=None) -> int:
                 log.info("%s scored again with the result target: %d trades", d0, len(t))
         days.append(t)
     pooled = pd.concat(days, ignore_index=True) if days else pd.DataFrame()
-    sc = score(pooled) if len(pooled) else pd.DataFrame()
+    from research.overfit import TrialLedger
+    ledger = TrialLedger(f"s3://{bk}/stream_lab/trials.json", programme="greyhound stream lab")
+    sc = score(pooled, ledger=ledger) if len(pooled) else pd.DataFrame()
     rep = {"day": f"{day}", "lines": len(lines), "markets": int(snap.market.nunique()) if len(snap) else 0,
            "trades_today": len(tr), "days_pooled": int(pooled.day.nunique()) if len(pooled) else 0,
            "rules": int(len(sc)), "registered": REGISTERED, "candidates": sc[sc.candidate].rule.tolist() if len(sc) else [],
@@ -330,16 +345,18 @@ def main(argv=None) -> int:
           f"{rep['lines']} stream lines, {rep['markets']} markets, {rep['trades_today']} trades today; "
           f"{rep['days_pooled']} days pooled; {rep['rules']} rules on two targets, {2 * rep['rules']} tests (registered "
           f"{REGISTERED}, and the late family, decided 0, 10 and 20 s after the scheduled off, {REGISTERED_LATE}, "
-          f"counted on later days; a candidate needs {MIN_DAYS} days and its pooled 90% lower bound above zero on a target; "
-          f"about one test in twenty clears that bound by chance). Candidates: {', '.join(rep['candidates']) or 'none'}.",
+          f"counted on later days; a candidate needs {MIN_DAYS} days, its pooled 90% lower bound above zero on a target "
+          f"and its deflated Sharpe by race at least 0.95 against every test scored; about one test in twenty clears "
+          f"the bound alone by chance). Candidates: {', '.join(rep['candidates']) or 'none'}.",
           "", "Target 1, closed at the SP (BFSP); target 2, left to run to the result (Win). q: the share of false "
           "discoveries expected among every test at least as strong (under 0.10: the family as a whole supports it).", "",
           "| Rule | Trades | Races | Days | At the SP: mean % a unit | 90% | q | To the result: mean % a unit | 90% | q | "
-          "Candidate (SP / Win) |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+          "DSR (SP / Win; tests) | Candidate (SP / Win) |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     q2 = lambda v: "" if v is None or pd.isna(v) else f"{v:.2f}"
     for r in rep["scores"]:
         md.append(f"| {r['rule']} | {r['trades']} | {r['races']} | {r['days']} | {r['mean_pnl%']} | {r['ci90%']} | "
                   f"{q2(r.get('q'))} | {r.get('mean_win%')} | {r.get('ci90_win%')} | {q2(r.get('q_win'))} | "
+                  f"{r.get('dsr')} / {r.get('dsr_win')} ({r.get('n_trials')}) | "
                   f"{r.get('candidate_sp')} / {r.get('candidate_win')} |")
     ft = rep.get("forward_test", {})
     md += ["", "### The early-lay forward test, its lays replayed through the stream", "",

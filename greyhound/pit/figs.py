@@ -183,14 +183,15 @@ def fit_tau(level: pd.Series, race: pd.Series, won: pd.Series, early: pd.Series)
 
 # ---- the market-implied rating -------------------------------------------------------------------------------------
 
-def market_rating(df: pd.DataFrame, prm: dict, upto: int | None = None) -> tuple[pd.DataFrame, float]:
+def market_rating(df: pd.DataFrame, prm: dict, upto: int | None = None,
+                  share_col: str = "sp_p_norm") -> tuple[pd.DataFrame, float]:
     """The ratings before each row's day (mean, sd, races behind it) and the mean cross-entropy of the observed SP
     shares under the softmax of the ratings before each race (the fit's score; races with a full SP only). Days in
     order; each day's rows read the state after the dog's EARLIER days, then the day's races update it."""
     dog = pd.factorize(df.dog_id)[0]
     dn = _dayn(df)
     race = pd.factorize(df.race_id)[0]
-    q = pd.to_numeric(df.sp_p_norm, errors="coerce").to_numpy(float)
+    q = pd.to_numeric(df[share_col], errors="coerce").to_numpy(float)
     ok_race = np.isfinite(q) & (q > 0)
     trial = df.is_trial.fillna(False).to_numpy(bool) if "is_trial" in df else np.zeros(len(df), bool)
     use = ok_race & ~trial
@@ -198,6 +199,7 @@ def market_rating(df: pd.DataFrame, prm: dict, upto: int | None = None) -> tuple
     nd = dog.max() + 1
     R, V, N, LAST = np.zeros(nd), np.full(nd, prm["v0"]), np.zeros(nd), np.full(nd, -1)
     m_out, sd_out, n_out = np.full(len(df), np.nan), np.full(len(df), np.nan), np.zeros(len(df))
+    innov = np.full(len(df), np.nan)                     # each reading less the rating before it (the market's news)
     order = np.argsort(dn, kind="stable")
     bounds = np.flatnonzero(np.diff(dn[order])) + 1
     ce_sum, ce_n = 0.0, 0
@@ -230,6 +232,7 @@ def market_rating(df: pd.DataFrame, prm: dict, upto: int | None = None) -> tuple
         ce_n += len(u)
         x = lq - mean_lq[inv] + mean_r[inv]                  # its log share against the field, on the field's scale
         dgf = dog[f]
+        innov[f] = np.where(N[dgf] > 0, x - R[dgf], np.nan)
         # a dog twice in a day: its readings averaged
         ud, inv2 = np.unique(dgf, return_inverse=True)
         xm = np.bincount(inv2, weights=x) / np.bincount(inv2)
@@ -239,7 +242,8 @@ def market_rating(df: pd.DataFrame, prm: dict, upto: int | None = None) -> tuple
         V[ud] = (1 - k) * vpu
         N[ud] += 1
         LAST[ud] = dn[f][0]
-    return pd.DataFrame({"m": m_out, "sd": sd_out, "n": n_out}, index=df.index), (ce_sum / ce_n if ce_n else np.nan)
+    return (pd.DataFrame({"m": m_out, "sd": sd_out, "n": n_out, "innov": innov}, index=df.index),
+            (ce_sum / ce_n if ce_n else np.nan))
 
 
 def fit_market_rating(df: pd.DataFrame, before: str = FIT_BEFORE) -> dict:
@@ -332,6 +336,29 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     out[f"{PREFIX}mr_share"] = msh
     out[f"{PREFIX}mr_lshare"] = np.log(msh.clip(1e-9))
     notes["market_rating"] = {**prm, "ce_all": round(ce, 5) if np.isfinite(ce) else None}
+    # the same rating read on the Betfair SP where the race is wholly priced by it (the forecast's own target), the
+    # bookmakers' SP elsewhere (batch 12, 10 Nov 2026: the SP rating carried most of the figs table's gain)
+    prices = (ctx or {}).get("prices")
+    if prices is not None and len(prices) and "bsp_p_norm" not in df:
+        from greyhound.parity import attach_bsp
+        b = attach_bsp(df[["race_date", "race_time", "track", "trap", "race_id"]], prices)
+        df = df.assign(bsp_p_norm=b.bsp_p_norm.to_numpy())
+    if "bsp_p_norm" in df:
+        bq = pd.to_numeric(df.bsp_p_norm, errors="coerce")
+        whole = bq.notna().groupby(race).transform("all")
+        dfb = df.assign(_q=bq.where(whole, pd.to_numeric(df.sp_p_norm, errors="coerce")))
+        br, bce = market_rating(dfb, prm, share_col="_q")
+        bf = br.m.fillna(br.m.groupby(race).transform("mean")).fillna(0.0)
+        gb = bf.groupby(race)
+        out[f"{PREFIX}bmr"] = br.m
+        out[f"{PREFIX}bmr_sd"] = br.sd
+        out[f"{PREFIX}bmr_vs_field"] = (bf - (gb.transform("sum") - bf) /
+                                        (gb.transform("size") - 1).replace(0, np.nan)).where(br.m.notna())
+        bsh = race_softmax(bf, race, 1.0)
+        out[f"{PREFIX}bmr_share"] = bsh
+        out[f"{PREFIX}bmr_lshare"] = np.log(bsh.clip(1e-9))
+        notes["bsp_rating"] = {"races_on_bsp": int(whole.groupby(race).first().sum()),
+                               "ce_all": round(bce, 5) if np.isfinite(bce) else None}
     cols = [c for c in out.columns if c.startswith(PREFIX)]
     out[cols] = out[cols].astype(np.float32)
     return out.sort_index().reset_index(drop=True), notes
@@ -357,4 +384,10 @@ COLUMNS = {
     f"{PREFIX}mr_vs_field": "the rating against the mean of the race's other runners",
     f"{PREFIX}mr_share": "its share of the race from a softmax of the field's ratings (the rating's forecast SP share)",
     f"{PREFIX}mr_lshare": "the log of that share",
+    f"{PREFIX}bmr": "the market-implied rating read on the Betfair SP where the race is wholly priced by it, the SP "
+                    "elsewhere (the same filter and constants)",
+    f"{PREFIX}bmr_sd": "its spread",
+    f"{PREFIX}bmr_vs_field": "it against the mean of the race's other runners",
+    f"{PREFIX}bmr_share": "its share of the race from a softmax of the field's ratings",
+    f"{PREFIX}bmr_lshare": "the log of that share",
 }
