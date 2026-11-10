@@ -316,8 +316,10 @@ def test_the_ledger_passes_against_itself_and_a_good_line_can_be_added():
     (lambda t: t.replace(t.splitlines()[0], t.splitlines()[0].replace('"verdict"', '"verdikt"'), 1), "append-only"),
     (lambda t: "\n".join(t.splitlines()[1:]), "append-only"),
     (lambda t: t + json.dumps({**LINE, "when": "10 Nov"}) + "\n", "UTC"),
-    (lambda t: t + json.dumps({**LINE, "tag": json.loads(t.splitlines()[0])["tag"]}) + "\n", "tag already used"),
+    (lambda t: t + json.dumps({**LINE, "kind": "preregistration", "question": "q", "design": "d",
+                               "tag": json.loads(t.splitlines()[0])["tag"]}) + "\n", "tag already used"),
     (lambda t: t + json.dumps({**LINE, "kind": "preregistration"}) + "\n", "needs question"),
+    (lambda t: t + json.dumps({**LINE, "kind": "preregistration", "question": "q"}) + "\n", "needs design"),
     (lambda t: t + json.dumps({**LINE, "kind": "trial", "question": "q", "design": "d", "reading": "r"}) + "\n",
      "needs strategy"),
     (lambda t: t + "{not json\n", "not JSON"),
@@ -326,6 +328,16 @@ def test_the_ledger_refuses(edit, err):
     text = trials.LEDGER.read_text()
     errs = trials.check(edit(text), text)
     assert any(err in e for e in errs), errs
+
+
+def test_the_ledgers_house_form_passes():
+    """Follow-up lines reuse their test's tag (ledger lines 32, 40, 41: clv-forward-live registered, amended,
+    deployed); a preregistration carries its question and design, the reading inside the design (lines 642, 645)."""
+    text = trials.LEDGER.read_text()
+    tag = json.loads(text.splitlines()[0])["tag"]
+    follow = {**LINE, "tag": tag, "kind": "preregistration-amendment"}
+    prereg = {**LINE, "tag": "prereg-1110", "kind": "preregistration", "question": "q", "design": "d, read as r"}
+    assert trials.check(text + json.dumps(follow) + "\n" + json.dumps(prereg) + "\n", text) == []
 
 
 def test_trials_are_counted_conservatively():

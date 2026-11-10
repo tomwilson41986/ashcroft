@@ -2,9 +2,11 @@
 
 - Append-only: every line on the base branch is still there, unchanged and in order. A result cannot be rewritten
   and a registration cannot be loosened after its run (an amendment is a new line).
-- New lines are checked: ``when`` (UTC, minutes), ``kind``, a ``tag`` no earlier line used, and what each kind needs.
-  A preregistration carries its question, its design and its reading before the result; a desk trial carries its
-  strategy, its sport and the hash of the gate it was registered with (desk/registry.py gate_hash).
+- New lines are checked: ``when`` (UTC, minutes), ``kind``, ``tag`` and what each kind needs. A follow-up line (a
+  confirmation, an amendment, a deployment) reuses its test's tag, as the ledger always has; a registration
+  (``preregistration`` or ``trial``) may not reuse one. A preregistration carries its question and its design (the
+  reading written in it) before the result; a desk trial also carries its reading, strategy, sport and the hash of
+  the gate it was registered with (desk/registry.py gate_hash).
 - Trials are counted for the deflated Sharpe (research/overfit.py): a sport's count is its own trial lines plus every
   earlier line with no sport, so more search raises the bar and none is forgotten.
 
@@ -28,10 +30,10 @@ WHEN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?Z$")
 TRIAL_KINDS = {"research", "replay", "scan", "model", "dev", "preregistration", "preregistered_test", "query",
                "gate", "trial"}
 NEEDS = {
-    "preregistration": ("question", "design", "reading"),
-    "trial": ("question", "design", "reading", "strategy", "sport", "gate_sha256"),
-    "result": ("of", "run", "result", "verdict"),
+    "preregistration": ("question", "design"),          # the house form: the reading is written inside the design
+    "trial": ("question", "design", "reading", "strategy", "sport", "gate_sha256"),     # the desk's own registrations
 }
+REGISTRATIONS = ("preregistration", "trial")             # a test is registered once; follow-ups reuse its tag
 
 
 def parse(text: str) -> tuple[list[dict], list[str]]:
@@ -71,8 +73,8 @@ def check(new_text: str, base_text: str | None) -> list[str]:
                 errs.append(f"{where}: missing {k}")
         if d.get("when") and not WHEN.match(str(d["when"])):
             errs.append(f"{where}: when {d['when']!r} is not UTC as 2026-11-10T09:30Z")
-        if d.get("tag") and str(d["tag"]) in seen:
-            errs.append(f"{where}: tag already used")
+        if d.get("tag") and str(d["tag"]) in seen and str(d.get("kind")) in REGISTRATIONS:
+            errs.append(f"{where}: tag already used: a test is registered once (an amendment is its own kind)")
         seen.add(str(d.get("tag")))
         for k in NEEDS.get(str(d.get("kind")), ()):
             if d.get(k) in (None, ""):
