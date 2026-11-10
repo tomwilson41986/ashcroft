@@ -1646,3 +1646,51 @@ holdout the two together reach 0.2304 against the morning price alone's 0.2811.
 books (`greyhound/book_record.py`): rest a lay at the morning book's best back price for runners whose forecast SP is
 at least 10% above the morning price, close at the SP, fills read from Betfair's own traded volume at our price. Its
 rule and gate fixed before its first day, as the early lay's were.
+
+## 39. Back strategies: back and trade out at the SP, or back to win (fast-loop batch 22, run 42906178212)
+
+The owner, 10 Nov 2026: "I want to back. Either back and trade out at BFSP, or back just to win. Research
+strategies". The back study (`research/greyhound/back_study.py`, `batch22_back_study.json`, registered before its
+scores) reads every back rule on the recorded books (6 Oct to 5 Nov; scored 14 Oct to 5 Nov: development 15 days,
+holdout 7) on both periods alike. The orders are: take the best back price; join the backers' queue; rest 1, 3 or 5
+ticks above the best back price; or rest at the forecast SP plus 0, 5, 10 or 20%. They are placed at the first traded
+book, 5 and 3 minutes out, through ten gates (the model's favourite and the model's value among them), filled
+'traded' or 'strict', and ended both ways the owner named: **traded out at the SP** and **held to win**. 3,054 rules
+on each price; about 153 would pass by chance.
+
+**Backing on its own loses, and loses a lot.** With no model, taking the best back price at the first traded book
+and holding it loses 22% on the holdout (90% -23.2 to -20.9; traded out at the SP: -22.2%); 5 minutes out, -27%;
+3 minutes out, -9.5% held. Joining the queue loses 4 to 6% traded out. The early book is short (section 38): a back
+there buys a price the market will not pay at the off.
+
+**Back to win: no rule.** 509 hold-to-result rules on the new model's prices: 4 pass (fewer than chance), none
+survives a 10% false discovery rate; the passes are long-priced dogs with intervals from +1% to +93%. With section
+38's finding that backing at the SP on the model's value loses (-2.9% to -7.6%), there is no back-to-win strategy
+here.
+
+**Back and trade out at the SP: one family, consistent.** Rest a back at the first traded book on the favourite
+(the market's or the model's) at the forecast SP plus 20%; if a later trade goes through it (strict fill), close it at
+the SP (the back's winnings laid at the SP: the profit P/SP - 1 a unit whatever wins).
+
+| Price (our forecast's input) | Gate | Development (90%) | Holdout (90%) | Holdout trades (a day) | Survives FDR 10% |
+|---|---|---|---|---|---|
+| New model, fitted before 6 Oct (the live inputs) | market favourite | +6.30% (3.14 to 9.40) | **+10.50% (5.38 to 14.37)** | 157 (22) | yes |
+| same | model's favourite | +8.34% (6.59 to 9.92) | +9.20% (3.95 to 14.11) | 169 (24) | yes |
+| New model, fitted before 1 Jun | market favourite | +6.65% | +10.81% (5.77 to 14.82) | 165 (24) | yes |
+| Old live recipe | market favourite | +2.99% | +7.51% (1.40 to 12.07) | 165 (24) | no |
+
+- 27% of the orders were filled on the development days and 19% on the holdout. The matched backs beat the SP by
+  3.5% and 4.8%; the unmatched would have beaten it by 28% and 25% (they never got there: the adverse selection
+  is real but the matched still pay). Median price 4.2-4.3.
+- The same entries greened in the last book make +4.7% / +6.2%; held to the result +2.5% / +17.5% (90% +0.9 to
+  +36.3: positive, too noisy to rely on). Take-profit exits lose: the move to the SP is what pays, not a quick tick.
+- The 10% margin version (+3.0% holdout, 1.8 to 4.1, 317 trades) and short-priced dogs (+9.2%) say the same thing
+  more weakly. The new model's price is what makes it survive the false discovery rate; on the old price it does not.
+
+**Caveats:** 22 scored days, 7 in the holdout; the recorded books are about 80 s stale (re-timed); the strict fill
+needs a trade beyond our price but does not model the queue; stakes are to win GBP100 a dog. It is a candidate, not a
+proven edge.
+
+**Registered today, before any of its days** (`reports/preregistration_greyhound_fav_back.md`): the favourite back at
+the forecast plus 20%, closed at the SP, scored on the days from 11 Nov 2026 with its gate fixed; on paper. Nothing
+bets until the owner decides.
