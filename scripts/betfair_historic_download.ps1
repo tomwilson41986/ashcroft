@@ -32,7 +32,10 @@ $ProgressPreference = "SilentlyContinue"   # Invoke-WebRequest is many times slo
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $Api = "https://historicdata.betfair.com/api"
 
-$cred = Get-Credential -Message "Betfair login (username and password)"
+Write-Host "Betfair Historic Data download: $Sport, $From to $To, into $OutDir"
+$user = Read-Host "Betfair username"
+$pass = Read-Host "Betfair password" -AsSecureString
+$cred = New-Object System.Management.Automation.PSCredential($user, $pass)
 $keySecure = Read-Host "Betfair application key" -AsSecureString
 $appKey = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($keySecure))
 
