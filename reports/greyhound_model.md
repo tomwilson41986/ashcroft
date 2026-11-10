@@ -1441,3 +1441,37 @@ Still compressed: short prices +0.20 in log, outsiders -0.40. Debutants unchange
 
 The forward test (`bfsp_forward.json`, from 25 Nov 2026) now carries `share08_best` exactly as here, beside the live
 recipe and share08_figs, on days after 10 November only. Adoption into the live pricing waits on it and on the owner.
+
+## 33. The BFSP plan, batch 16: the better price down the clock (greyhound-fastloop.yml run 42842099498, 10 Nov 2026)
+
+Step 5 of the plan: does share08_best's pre-race price (one seed here: 0.3555 against the live recipe's 0.4120 on the
+June-November test, z -54.1; log-loss -0.00332, z -10.7) sharpen the forecasts nearer the off? Each price fed into the
+closing-price study (`research/greyhound/bfsp_close.py`, recorded books re-timed, 22 scored days 14 Oct to 5 Nov,
+walk-forward) and the limit-order study (`research/greyhound/limit_study.py`). share08_best's out-of-sample prices are
+published to `greyhound/research/oos_prices_share_best`.
+
+**The closing forecast, RMSE of log(BSP)** (the best model at each mark, pooled trees; the market mid beside it):
+
+| Mark | Races | The mid | With the live price | With share08_best's price | Change |
+|---|---|---|---|---|---|
+| First traded | 2,685 | 0.6286 | 0.2852 | 0.2648 | -0.0204 |
+| 5 minutes out | 1,792 | 0.7048 | 0.3214 | 0.2926 | -0.0288 |
+| 3 minutes out | 1,869 | 0.3388 | 0.2155 | 0.2092 | -0.0063 |
+| 1 minute out | 1,807 | 0.1566 | 0.1435 | 0.1434 | -0.0001 |
+
+The better pre-race price carries through to 3 minutes out and is gone by the last minute, where the book knows what
+we know. Our price is the model's largest input at first traded (59% of the boosted model's gain, `log_model_vs_mid`).
+The two runs are not paired here, so no interval is given for the change.
+
+**The early lay's rule** (lay the runners forecast to drift at 80% of the forecast SP, first traded book): the
+forecast refitted on each price, development days (15):
+
+| Exit | With the live price | With share08_best's price |
+|---|---|---|
+| Greened up at the last book | +1.49% a unit (90% 1.24 to 1.77), CLV +7.32% | +1.86% (1.63 to 2.11), CLV +10.03% |
+| Closed at the SP | +1.88% (1.14 to 2.64) | +2.31% (1.62 to 3.03) |
+
+2,536 and 2,453 matched lays, on paper with the study's fill rule. The better price makes the early lay's forecast
+better: the lays beat the SP by 10.0% against 7.3%. The live early lay and its forward-test gate are unchanged; this
+is a reading for the owner, who decides whether the early lay should move to the new price once the BFSP forward
+test (`bfsp_forward.json`) has run.
