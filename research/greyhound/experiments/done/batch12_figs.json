@@ -1,0 +1,118 @@
+{
+ "about": "Batch 12 (10 Nov 2026), registered after batch 11 and before any of its own scores. Batch 11 (fast-loop run 42792051707): the race fitted as a book (share) cut the RMSE of log(BSP) from 0.4090 to 0.3849 (-0.0241, z -33.8) and the log-loss by 0.00156 (z -6.3); mix, Huber, all history from 2020 and the baselines did not. Here, on share at a learning rate of 0.08 (batch 11's 0.05 fits took 45-52 minutes): the per-track stretch on top of it (the compression is smaller but still there: short prices +0.23, long -0.47 in log); the figs table of the metrics database (greyhound/pit/figs.py: corrected figures, evidence-aware levels, class in lengths, the market-implied rating), whole, figures only, rating only; the live recipe at the same rate for the like-for-like gap; and share refitted on 1 Sep (two segments) to check the gain survives a refit. The bar, fixed now: a change counts when its paired gain in RMSE of log(BSP) over share08 is 3 bootstrap standard errors (by day) or more and its log-loss is no worse beyond 1 standard error; the window has been read by earlier batches, so a pass goes to a forward test on later days before it is adopted.",
+ "recipe": "quick",
+ "baseline": "share08",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch",
+    "stretch_track"
+   ],
+   "importance": true,
+   "name": "share08"
+  },
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "name": "live08",
+   "rescale_book": true
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "importance": true,
+   "name": "share08_figs"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "drop": [
+    "fg_mr"
+   ],
+   "name": "share08_figs_levels"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "drop": [
+    "fg_tot",
+    "fg_sec",
+    "fg_run",
+    "fg_class"
+   ],
+   "name": "share08_figs_mr"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "walk": [
+    "2026-06-01",
+    "2026-09-01"
+   ],
+   "name": "share08_walk"
+  }
+ ]
+}

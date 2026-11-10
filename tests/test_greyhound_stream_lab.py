@@ -41,7 +41,7 @@ def test_the_checkpoints_and_the_trades_closed_at_the_sp():
              line(OFF + timedelta(minutes=3), {"id": "1.1", "marketDefinition": defn(
                  "CLOSED", bsp={1: 1.7, 2: 5.2}, result={1: "WINNER", 2: "LOSER"})})]
     s = lab.snapshots(lines)
-    assert set(s.check) == {180, 120, 60, 30, 10}
+    assert set(s.check) == {180, 120, 60, 30, 10, 0, -10, -20}                # open for 3 minutes after its time
     r180 = s[(s.check == 180) & (s.sid == 1)].iloc[0]
     assert r180.back1 == 2.0 and r180.bsp == 1.7 and r180.status == "WINNER"
     tr = lab.trades(s)
@@ -58,6 +58,11 @@ def test_the_checkpoints_and_the_trades_closed_at_the_sp():
     sc = lab.score(tr.assign(day="2026-11-05")).set_index("rule")
     assert {"mean_pnl%", "ci90%", "mean_win%", "ci90_win%", "candidate_sp", "candidate_win"} <= set(sc.columns)
     assert set(tr[tr.rule == "fav_lay_10"].sid) == {1}
+    # the late family: the same rules decided after the scheduled off, counted only after its own registration
+    late = tr[(tr.rule == "mom_back_late10_0.05") & (tr.sid == 1)].iloc[0]
+    assert late.check == -10 and late.pnl == pytest.approx((1.8 / 1.7 - 1) * (1 - lab.COMM))
+    assert not lab.score(tr.assign(day=lab.REGISTERED_LATE)).rule.str.contains("_late").any()
+    assert lab.score(tr.assign(day="2026-11-11")).rule.str.contains("_late").any()
 
 
 def test_the_score_pools_days_and_needs_ten_for_a_candidate():

@@ -15,6 +15,7 @@ earlier one):
 | breeding | br_ | the sire's and dam's progeny: speed, pace, finishing, A/E, stamina by distance band |
 | life | lf_ | age, season, weight, trials, the grade path, track and distance experience |
 | weather | wx_ | the weather at the off (NOAA ISD-Lite, the nearest station) and its learnt effect on the run-in |
+| figs | fg_ | corrected figures (own standards and shrunk variants), decayed levels shrunk by evidence, class in lengths, a market-implied rating (the BFSP plan of 10 Nov 2026) |
 
 Each table is written to the sources store as ``greyhound/pit/<table>.parquet`` with ``<table>.meta.json``: the code
 hash, when built, the rows, the date range, each column's coverage, and the table's own fit notes. The registry
@@ -38,7 +39,7 @@ from pathlib import Path
 
 import pandas as pd
 
-TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather")
+TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather", "figs")
 KEY = ["race_id", "dog_id"]
 STORE_PREFIX = "greyhound/pit"
 

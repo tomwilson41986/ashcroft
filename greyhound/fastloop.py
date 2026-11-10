@@ -65,7 +65,9 @@ RECIPES = {
 }
 BASE_PARAMS = {"num_leaves": 63, "min_child_samples": 300, "feature_fraction": 0.7, "bagging_fraction": 0.8,
                "bagging_freq": 1, "lambda_l2": 10.0, "verbose": -1, "seed": 0}
-OBJECTIVES = ("softmax", "binary", "pl2", "logbsp")
+OBJECTIVES = ("softmax", "binary", "pl2", "logbsp", "share", "mix")
+#: the objectives whose forecast is a price (pred_bsp), scored by the RMSE of log(BSP)
+PRICE_OBJECTIVES = ("logbsp", "share", "mix")
 NAME = re.compile(r"^[a-z0-9_]{1,40}$")
 
 
@@ -195,14 +197,180 @@ def check_spec(spec: dict) -> list[dict]:
             raise ValueError(f"{e['name']}: objective must be one of {OBJECTIVES}")
         if e.get("recipe", spec.get("recipe", "quick")) not in RECIPES:
             raise ValueError(f"{e['name']}: recipe must be one of {tuple(RECIPES)}")
+        if e.get("seeds") is not None and not (1 <= int(e["seeds"]) <= 10):
+            raise ValueError(f"{e['name']}: seeds must be 1 to 10")
+        if e.get("halflife_days") is not None and float(e["halflife_days"]) <= 0:
+            raise ValueError(f"{e['name']}: halflife_days must be above 0")
+        walk = e.get("walk", spec.get("walk"))
+        if walk and sorted(walk) != list(walk):
+            raise ValueError(f"{e['name']}: walk dates must be in order")
         bad = [k for k in e.get("calibrate", []) if k not in CALIBRATIONS]
-        if bad or (e.get("calibrate") and e.get("objective", "softmax") != "logbsp"):
-            raise ValueError(f"{e['name']}: calibrate takes {CALIBRATIONS} on the logbsp objective only")
+        if bad or (e.get("calibrate") and e.get("objective", "softmax") not in PRICE_OBJECTIVES):
+            raise ValueError(f"{e['name']}: calibrate takes {CALIBRATIONS} on the price objectives only")
     return exps
 
 
 def _starts(race: np.ndarray) -> np.ndarray:
     return np.r_[0, np.flatnonzero(race[1:] != race[:-1]) + 1]
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# The plan of 10 Nov 2026 (the owner: "Fundamental is to improve our model to predict BFSP / Closing Prices"; the plan
+# in reports/greyhound_bfsp_plan.md). Step 1: fit the race, not the runner. Step 0: measure (importance by family,
+# where the error sits, naive baselines, refits through the test window).
+# --------------------------------------------------------------------------------------------------------------------
+
+def race_soft_objective(race: np.ndarray, target: np.ndarray, weight: np.ndarray | None = None):
+    """A conditional logit fitted to soft labels: the race's runners compete in a softmax and ``target`` is each
+    runner's share of the race (summing to 1 in each race): its share of the Betfair SP book (``share``), or that
+    share mixed with the result (``mix``). The loss is the race's cross-entropy, -sum(target x log p), so the scores
+    are the race's log-odds of the shares and the forecast is a coherent book by construction, not a runner-by-runner
+    regression patched afterwards (the compression of batch 8). A race whose target does not sum to 1 is left out.
+    ``weight``: a weight a row (the same for a race's runners), e.g. by recency. Rows grouped by race."""
+    from greyhound.model import _race_softmax
+    starts = _starts(race)
+    sizes = np.diff(np.r_[starts, len(race)])
+    tgt = np.asarray(target, float)
+    ok_race = np.abs(np.add.reduceat(np.nan_to_num(tgt, nan=0.0), starts) - 1.0) < 1e-6
+    ok = np.repeat(ok_race, sizes) & np.isfinite(tgt)
+    y = np.where(ok, tgt, 0.0)
+    w = np.ones(len(race)) if weight is None else np.asarray(weight, float)
+
+    def fobj(score, data):
+        p = _race_softmax(score, starts)
+        return np.where(ok, w * (p - y), 0.0), np.maximum(np.where(ok, w * p * (1 - p), 0.0), 1e-6)
+
+    def feval(score, data):
+        p = _race_softmax(score, starts)
+        return "race_xent", float(-(y * np.log(np.clip(p, 1e-12, 1))).sum() / max(ok_race.sum(), 1)), False
+    return fobj, feval
+
+
+def soft_target(df: pd.DataFrame, obj: str, mix_win: float = 0.3) -> np.ndarray:
+    """``share``: each runner's share of its race's Betfair SP book (NaN where the race is not wholly priced).
+    ``mix``: (1 - mix_win) x that share + mix_win x the result (the winner's share of the race's wins)."""
+    share = df.bsp_p_norm.to_numpy(float)
+    if obj == "share":
+        return share
+    won = df.won.to_numpy(float)
+    wins = pd.Series(won).groupby(df.race_id.to_numpy()).transform("sum").to_numpy()
+    res = np.where(wins > 0, won / np.where(wins > 0, wins, 1), np.nan)
+    return (1 - mix_win) * share + mix_win * res
+
+
+#: families for the importance table: each block, the metrics database's tables, and one theme across blocks
+MARKET_HISTORY = re.compile(r"^(sp_p_mean3|dog_ae6|trainer_ae|gp_(mkt|ae|nres|bsp_ae|bsp_mkt)_|gp_trainer30_ae|"
+                            r"ti_.*_(ae|lift)$|mk_)")
+
+
+def families(feats: list[str], meta: dict, added: dict) -> dict[str, list[str]]:
+    """Each feature's family: its engine block (``meta['features']``), the block it was added by, or ``other``."""
+    of = {}
+    for b, names in meta["features"].items():
+        for f in names:
+            of.setdefault(f, b)
+    for b, names in added.items():
+        for f in names:
+            of[f] = b
+    fam: dict[str, list[str]] = {}
+    for f in feats:
+        fam.setdefault(of.get(f, "other"), []).append(f)
+    return fam
+
+
+def _within_race_perm(race: np.ndarray, rng) -> tuple[np.ndarray, np.ndarray]:
+    """Two orderings of the rows, both grouped by race: ``base`` in row order, ``shuffled`` at random within each
+    race. Rows ``base[i]`` take the values of rows ``shuffled[i]``: a permutation within each race."""
+    n = len(race)
+    return np.lexsort((np.arange(n), race)), np.lexsort((rng.random(n), race))
+
+
+def importance(predict, X: np.ndarray, feats: list[str], fams: dict, race: np.ndarray, log_bsp: np.ndarray,
+               won: np.ndarray, contrib=None, seed: int = 0) -> dict:
+    """The model's reliance on each family, on test rows only:
+    - ``perm``: each family's columns shuffled together WITHIN each race (the race's level kept, what tells its
+      runners apart destroyed), the rise in RMSE of log(BSP) and in log-loss (positive: the model needs the family);
+      the market-history theme the same way;
+    - ``shap``: the mean absolute SHAP value (log-price scale) of each feature and each family, where ``contrib``
+      gives LightGBM's ``pred_contrib`` for these rows.
+    ``predict(X) -> (pred_bsp, p_model)``."""
+    from greyhound.model import logloss
+    rng = np.random.default_rng(seed)
+    ok = np.isfinite(log_bsp)
+
+    def score(Xa):
+        pb, pm = predict(Xa)
+        e = np.log(pb[ok]) - log_bsp[ok]
+        return float(np.sqrt(np.mean(e ** 2))), logloss(pm, won)
+
+    r0, l0 = score(X)
+    out = {"rows": int(len(X)), "races": int(len(np.unique(race))), "rmse": round(r0, 5), "logloss": round(l0, 5),
+           "perm": {}}
+    base, shuf = _within_race_perm(race, rng)
+    groups = dict(fams)
+    groups["theme: market history"] = [f for f in feats if MARKET_HISTORY.match(f)]
+    idx = {f: i for i, f in enumerate(feats)}
+    for name, cols in groups.items():
+        js = [idx[c] for c in cols if c in idx]
+        if not js:
+            continue
+        Xp = X.copy()
+        Xp[np.ix_(base, js)] = X[np.ix_(shuf, js)]
+        r, ll = score(Xp)
+        out["perm"][name] = {"features": len(js), "rmse_rise": round(r - r0, 5), "logloss_rise": round(ll - l0, 6)}
+    if contrib is not None:
+        a = np.abs(contrib[:, :-1]).mean(0)
+        by_f = pd.Series(a, index=feats).sort_values(ascending=False)
+        out["shap_top"] = {k: round(float(v), 5) for k, v in by_f.head(40).items()}
+        out["shap_family"] = {name: round(float(by_f.reindex(cols).sum()), 5) for name, cols in groups.items()}
+    return out
+
+
+BSP_BANDS = (1.0, 2.0, 3.0, 5.0, 8.0, 15.0, 1001.0)
+
+
+def breakdown(pred: pd.DataFrame) -> dict:
+    """Where the error in log(BSP) sits: overall and within the race (the share of each race's spread of log(BSP)
+    the forecast explains: R2 within), and the RMSE and the bias (mean of log forecast less log BSP: above 0, priced
+    too long) by BSP band, by runs before, by field and by track."""
+    d = pred[(pred.bsp > 1) & (pred.pred_bsp > 1)].copy()
+    if not len(d):
+        return {}
+    d["e"] = np.log(d.pred_bsp) - np.log(d.bsp)
+    y = np.log(d.bsp)
+    within = y - y.groupby(d.race_id).transform("mean")
+    ew = d.e - d.e.groupby(d.race_id).transform("mean")
+    out = {"runners": int(len(d)), "rmse": round(float(np.sqrt((d.e ** 2).mean())), 4),
+           "bias": round(float(d.e.mean()), 4),
+           # knowing only each race's mean log(BSP): the "race average" baseline of section 14 (0.754)
+           "rmse_race_mean_only": round(float(np.sqrt((within ** 2).mean())), 4),
+           "r2_within_race": round(float(1 - (ew ** 2).sum() / (within ** 2).sum()), 4),
+           "rmse_of_race_level": round(float(np.sqrt((d.e.groupby(d.race_id).transform("mean") ** 2).mean())), 4)}
+
+    def by(col, bins=None, labels=None, top=None):
+        k = pd.cut(d[col], bins, right=False, labels=labels) if bins is not None else d[col]
+        g = d.groupby(k, observed=True).e
+        t = pd.DataFrame({"n": g.size(), "rmse": np.sqrt(g.apply(lambda v: (v ** 2).mean())), "bias": g.mean()})
+        if top:
+            t = t.sort_values("n", ascending=False).head(top)
+        return {str(i): {"n": int(r.n), "rmse": round(float(r.rmse), 4), "bias": round(float(r.bias), 4)}
+                for i, r in t.iterrows()}
+
+    out["by_bsp"] = by("bsp", BSP_BANDS)
+    if "runs_before" in d:
+        out["by_runs_before"] = by("runs_before", (-0.5, 0.5, 2.5, 5.5, 19.5, 1e6), ("0", "1-2", "3-5", "6-19", "20+"))
+    out["by_field"] = by("field")
+    out["by_track"] = by("track", top=15)
+    return out
+
+
+def _block_prefix(name: str) -> str:
+    """The column prefix of block ``name`` (``greyhound/blocks``, or a ``pit_`` table)."""
+    import importlib
+    if name.startswith("pit_"):
+        from greyhound import pit
+        return pit.module(name[4:]).PREFIX
+    return importlib.import_module(f"greyhound.blocks.{name}").PREFIX
 
 
 def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_from: str = TEST_FROM,
@@ -219,9 +387,16 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     for f in exp.get("add_features", []):             # named cached columns (e.g. the day's weigh-in features)
         if f not in feats:
             feats.append(f)
+    added = {}
+    for b in exp.get("add_blocks", []):
+        added[b] = [c for c in df.columns if c in feats and c.startswith(_block_prefix(b))]
     for pre in exp.get("drop", []):
         feats = [f for f in feats if not f.startswith(pre)]
+    if exp.get("keep"):                                # a baseline on named features only (exact names or prefixes)
+        feats = [f for f in feats if any(f == k or f.startswith(k) for k in exp["keep"])]
     feats = [f for f in feats if f in df.columns]
+    if not feats:
+        raise ValueError(f"{exp['name']}: no features left")
     obj = exp.get("objective", "softmax")
     t = df.t.to_numpy().astype("datetime64[ns]")
     lo = np.datetime64(pd.Timestamp(recipe["train_from"]), "ns")
@@ -231,6 +406,8 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     test_i = np.flatnonzero((t >= edge) & ((t < hi) if hi is not None else True))
     if obj == "logbsp":
         fit_i = fit_i[df.bsp.to_numpy(float)[fit_i] > 1]
+    elif obj in ("share", "mix"):                     # races wholly priced by the Betfair SP: the book's shares exist
+        fit_i = fit_i[df.bsp_p_norm.notna().to_numpy()[fit_i]]
     cut = np.quantile(t[fit_i].astype("int64"), 0.9).astype("datetime64[ns]")
     tr_i, es_i = fit_i[t[fit_i] < cut], fit_i[t[fit_i] >= cut]
 
@@ -243,32 +420,54 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     won = df.won.to_numpy(float)
     race = pd.factorize(df.race_id)[0]
     y = np.log(np.clip(df.bsp.to_numpy(float), 1.01, 1000.0)) if obj == "logbsp" else won
+    soft = soft_target(df, obj, exp.get("mix_win", 0.3)) if obj in ("share", "mix") else None
     params = dict(BASE_PARAMS, learning_rate=recipe["learning_rate"], max_bin=recipe["max_bin"])
     params.update(exp.get("params", {}))
-    dtr = lgb.Dataset(matrix(tr_i), y[tr_i], feature_name=feats, free_raw_data=True,
-                      params={"max_bin": recipe["max_bin"]})
+    # recency weights (step 1.4): a fit row weighs 0.5 ** (its age at the test's start / the half-life)
+    wts = None
+    if exp.get("halflife_days"):
+        age = (edge - t[tr_i]).astype("timedelta64[s]").astype(float) / 86400.0
+        wts = 0.5 ** (age / float(exp["halflife_days"]))
+    dtr = lgb.Dataset(matrix(tr_i), y[tr_i], weight=wts if obj in ("logbsp", "binary") else None, feature_name=feats,
+                      free_raw_data=True, params={"max_bin": recipe["max_bin"]})
     des = lgb.Dataset(matrix(es_i), y[es_i], reference=dtr, free_raw_data=True)
-    es = lgb.early_stopping(recipe["early_stop"], verbose=False)
-    stop = [es, time_budget(recipe.get("max_seconds"), es)]
-    if obj == "binary":
-        m = lgb.train(dict(params, objective="binary"), dtr, recipe["rounds"], valid_sets=[des], callbacks=stop)
-    elif obj == "logbsp":
-        m = lgb.train(dict(params, objective="regression"), dtr, recipe["rounds"], valid_sets=[des], callbacks=stop)
-    else:
-        second = (df.position.to_numpy(float) == 2).astype(float) if obj == "pl2" else None
-        fobj, _ = race_objective(race[tr_i], won[tr_i], None if second is None else second[tr_i])
-        _, feval = race_objective(race[es_i], won[es_i])
-        m = lgb.train(dict(params, objective=fobj, metric="None"), dtr, recipe["rounds"], valid_sets=[des],
-                      feval=feval, callbacks=stop)
+    models = []
+    for k in range(int(exp.get("seeds", 1))):           # step 1.5: several seeds, their raw scores averaged
+        p_k = dict(params, seed=int(params.get("seed", 0)) + k)
+        es = lgb.early_stopping(recipe["early_stop"], verbose=False)
+        stop = [es, time_budget(recipe.get("max_seconds"), es)]
+        if obj == "binary":
+            m = lgb.train(dict(p_k, objective="binary"), dtr, recipe["rounds"], valid_sets=[des], callbacks=stop)
+        elif obj == "logbsp":
+            m = lgb.train(dict(p_k, objective="huber", alpha=float(exp["huber"])) if exp.get("huber") else
+                          dict(p_k, objective="regression"), dtr, recipe["rounds"], valid_sets=[des], callbacks=stop)
+        elif obj in ("share", "mix"):
+            fobj, _ = race_soft_objective(race[tr_i], soft[tr_i], wts)
+            _, feval = race_soft_objective(race[es_i], soft[es_i])
+            m = lgb.train(dict(p_k, objective=fobj, metric="None"), dtr, recipe["rounds"], valid_sets=[des],
+                          feval=feval, callbacks=stop)
+        else:
+            second = (df.position.to_numpy(float) == 2).astype(float) if obj == "pl2" else None
+            fobj, _ = race_objective(race[tr_i], won[tr_i], None if second is None else second[tr_i])
+            _, feval = race_objective(race[es_i], won[es_i])
+            m = lgb.train(dict(p_k, objective=fobj, metric="None"), dtr, recipe["rounds"], valid_sets=[des],
+                          feval=feval, callbacks=stop)
+        models.append(m)
+    del dtr, des
+    m = models[0]
     fit_s = time.monotonic() - t0
     budget = recipe.get("max_seconds")
     stopped = ("cap" if m.current_iteration() >= recipe["rounds"] else
                "time" if budget and fit_s > budget else "early_stop")
-    del dtr, des
     gc.collect()
-    raw = m.predict(matrix(test_i), num_iteration=m.best_iteration)
+
+    def raw_of(X):
+        return np.mean([mm.predict(X, num_iteration=mm.best_iteration) for mm in models], axis=0)
+
+    X_test = matrix(test_i)
+    raw = raw_of(X_test)
     keep = ["race_id", "t", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "field", "won",
-            "sp_decimal", "sp_p_norm", "bsp", "bsp_p_norm"]
+            "sp_decimal", "sp_p_norm", "bsp", "bsp_p_norm", "runs_before"]
     pred = df.iloc[test_i][[c for c in keep if c in df.columns]].reset_index(drop=True)
     if obj == "binary":
         pred["p_model"] = race_norm(pd.Series(raw), pred.race_id).to_numpy()
@@ -281,17 +480,26 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
             fr = pd.DataFrame({"r": df.race_id.to_numpy()[fit_i], "b": df.bsp.to_numpy(float)[fit_i]})
             book = float(np.median((1.0 / fr.b).groupby(fr.r).sum()))
             pred["pred_bsp"] = 1.0 / (book * pred.p_model)
+    elif obj in ("share", "mix"):
+        # the race's softmax is the forecast book's shares; the price is 1 / (the SP book's usual total x share)
+        pred["p_model"] = _race_softmax(raw.astype(float), _starts(race[test_i]))
+        fr = pd.DataFrame({"r": df.race_id.to_numpy()[fit_i], "b": df.bsp.to_numpy(float)[fit_i]})
+        book = float(np.median((1.0 / fr.b).groupby(fr.r).sum()))
+        pred["pred_bsp"] = 1.0 / (book * pred.p_model)
     else:
         pred["p_model"] = _race_softmax(raw.astype(float), _starts(race[test_i]))
     calibrated = {}
-    if obj == "logbsp" and exp.get("calibrate"):
-        # fitted on the early-stopping rows (the trees never trained on them), scored on the test, paired by day
-        raw_es = m.predict(matrix(es_i), num_iteration=m.best_iteration)
+    if obj in PRICE_OBJECTIVES and exp.get("calibrate"):
+        # fitted on the early-stopping rows (the trees never trained on them), scored on the test, paired by day. A race
+        # objective's log price is minus its score plus a race constant, which the stretch centres away
+        raw_es = raw_of(matrix(es_i))
+        lbsp = np.log(np.clip(df.bsp.to_numpy(float), 1.01, 1000.0))
+        sign = 1.0 if obj == "logbsp" else -1.0
         book = (float(np.median((1.0 / pd.Series(df.bsp.to_numpy(float)[fit_i])).groupby(race[fit_i]).sum()))
-                if exp.get("rescale_book") else None)
+                if exp.get("rescale_book") or obj != "logbsp" else None)
         for kind in exp["calibrate"]:
-            fit = fit_stretch(raw_es, y[es_i], won[es_i], race[es_i], df.track.to_numpy()[es_i], kind)
-            cal = apply_stretch(pred, raw, fit, book)
+            fit = fit_stretch(sign * raw_es, lbsp[es_i], won[es_i], race[es_i], df.track.to_numpy()[es_i], kind)
+            cal = apply_stretch(pred, sign * raw, fit, book)
             calibrated[kind] = {"fit": fit, **score_pair(pred, cal)}
     imp = pd.Series(m.feature_importance("gain"), index=feats)
     whole = pred.bsp_p_norm.notna().groupby(pred.race_id).transform("all") if "bsp_p_norm" in pred else None
@@ -307,10 +515,41 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
         res["on_bsp_races"] = {"runners": int(len(b)), "model": round(logloss(b.p_model, b.won), 5),
                                "bsp": round(logloss(b.bsp_p_norm, b.won), 5)}
         res["benter_vs_bsp"] = blend_test(b, "bsp_p_norm")
-    if obj == "logbsp":
+    if obj in PRICE_OBJECTIVES:
         ok = pred.bsp > 1
         e = np.log(pred.pred_bsp[ok]) - np.log(pred.bsp[ok])
         res["log_bsp_rmse"] = round(float(np.sqrt(np.mean(e ** 2))), 4)
+        res["breakdown"] = breakdown(pred)
+    res["seeds"] = len(models)
+    if exp.get("importance") and obj in PRICE_OBJECTIVES:
+        # on a sample of the test's races (the same races for every experiment: chosen by race id)
+        rt = race[test_i]
+        races = np.unique(rt)
+        pick = np.isin(rt, np.random.default_rng(0).choice(races, min(len(races), int(exp.get("importance_races",
+                                                                                            4000))), replace=False))
+        Xs, rs = X_test[pick], rt[pick]
+        sub = pred[pick].reset_index(drop=True)
+        rescale = exp.get("rescale_book") or obj in ("share", "mix")
+        fr = pd.DataFrame({"r": df.race_id.to_numpy()[fit_i], "b": df.bsp.to_numpy(float)[fit_i]})
+        book_i = float(np.median((1.0 / fr.b).groupby(fr.r).sum()))
+        st = _starts(rs)
+
+        def predict(Xa):
+            r = raw_of(Xa)
+            if obj == "logbsp":
+                p = race_norm(pd.Series(1.0 / np.exp(r)), pd.Series(rs)).to_numpy()
+                pb = 1.0 / (book_i * p) if rescale else np.exp(r)
+            else:
+                p = _race_softmax(r.astype(float), st)
+                pb = 1.0 / (book_i * p)
+            return pb, p
+
+        n_shap = min(len(Xs), int(exp.get("shap_rows", 8000)))
+        contrib = m.predict(Xs[:n_shap], num_iteration=m.best_iteration, pred_contrib=True)
+        lb = np.log(sub.bsp.where(sub.bsp > 1).to_numpy(float))
+        res["importance"] = importance(predict, Xs, feats, families(feats, meta, added), rs, lb,
+                                       sub.won.to_numpy(float), contrib)
+        _log(f"importance: {json.dumps(res['importance']['perm'])[:2000]}")
     if calibrated:
         res["calibrated"] = calibrated
     if exp.get("groups"):
@@ -318,6 +557,73 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
                            split_groups(pred, exp["groups"]).items()}
     res["seconds"] = round(time.monotonic() - t0)
     return res, pred
+
+
+def run_walk(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, walk: list[str],
+             test_to: str | None = None) -> tuple[dict, pd.DataFrame]:
+    """The test window priced in segments, the model refitted at the start of each on everything before it (step 0.3
+    of the plan of 10 Nov 2026: one fit at 1 June priced five months on a model that never saw them); the segments'
+    prices pooled and scored as one. The importance table, when asked, is read on the last segment only."""
+    from greyhound.model import logloss
+    preds, parts, res = [], [], {}
+    for i, start in enumerate(walk):
+        end = (pd.Timestamp(walk[i + 1]) - pd.Timedelta(days=1)).strftime("%Y-%m-%d") if i + 1 < len(walk) else test_to
+        ex = exp if i == len(walk) - 1 else {k: v for k, v in exp.items() if k not in ("importance", "calibrate")}
+        _log(f"{exp['name']}: segment {start} to {end or 'the last day'}")
+        res, pred = run_experiment(df, meta, ex, recipe, start, end)
+        parts.append({k: res.get(k) for k in ("test_from", "test_to", "rounds", "stopped_by", "test_runners",
+                                              "logloss", "log_bsp_rmse")})
+        preds.append(pred)
+    pred = pd.concat(preds, ignore_index=True)
+    res = dict(res, walk=parts, test_from=walk[0], test_to=str(pred.race_date.max()),
+               test_runners=int(len(pred)), test_races=int(pred.race_id.nunique()),
+               logloss=round(logloss(pred.p_model, pred.won), 5))
+    res.pop("calibrated", None)
+    if "pred_bsp" in pred:
+        ok = pred.bsp > 1
+        res["log_bsp_rmse"] = round(float(np.sqrt(np.mean((np.log(pred.pred_bsp[ok]) - np.log(pred.bsp[ok])) ** 2))), 4)
+        res["breakdown"] = breakdown(pred)
+    whole = pred.bsp_p_norm.notna().groupby(pred.race_id).transform("all")
+    if whole.any():
+        b = pred[whole]
+        res["on_bsp_races"] = {"runners": int(len(b)), "model": round(logloss(b.p_model, b.won), 5),
+                               "bsp": round(logloss(b.bsp_p_norm, b.won), 5)}
+    return res, pred
+
+
+def details(results: list[dict]) -> str:
+    """Under the table: the importance tables and where the error sits, for each experiment that has them."""
+    md = []
+    for r in results:
+        imp = r.get("importance")
+        if imp:
+            md += ["", f"### What {r['name']} relies on ({imp['races']} test races, {imp['rows']} runners; RMSE "
+                   f"{imp['rmse']}, log-loss {imp['logloss']})", "",
+                   "Each family's columns shuffled together within each race: the rise in RMSE of log(BSP) and in "
+                   "log-loss (higher: the model needs it more); and the mean absolute SHAP value (log-price scale).", "",
+                   "| Family | Features | RMSE rise | Log-loss rise | SHAP (sum) |", "|---|---|---|---|---|"]
+            for name, v in sorted(imp["perm"].items(), key=lambda kv: -kv[1]["rmse_rise"]):
+                md.append(f"| {name} | {v['features']} | {v['rmse_rise']:+.5f} | {v['logloss_rise']:+.6f} | "
+                          f"{(imp.get('shap_family') or {}).get(name, '')} |")
+            if imp.get("shap_top"):
+                md += ["", "Top features by mean absolute SHAP value: " + ", ".join(
+                    f"{k} {v}" for k, v in list(imp["shap_top"].items())[:25]) + "."]
+        bd = r.get("breakdown")
+        if bd:
+            md += ["", f"### Where {r['name']}'s error sits ({bd['runners']} runners)", "",
+                   f"RMSE {bd['rmse']}, bias {bd['bias']:+.4f} (above 0: priced too long). Knowing only each race's "
+                   f"average log(BSP): {bd['rmse_race_mean_only']}. Share of the within-race spread explained: "
+                   f"{bd['r2_within_race']:.1%}. Error in the race's level alone: {bd['rmse_of_race_level']}.", "",
+                   "| By | Group | Runners | RMSE | Bias |", "|---|---|---|---|---|"]
+            for key, lab in (("by_bsp", "BSP from"), ("by_runs_before", "Runs before"), ("by_field", "Field"),
+                             ("by_track", "Track")):
+                for g, v in (bd.get(key) or {}).items():
+                    md.append(f"| {lab} | {g} | {v['n']} | {v['rmse']} | {v['bias']:+.4f} |")
+        if r.get("walk"):
+            md += ["", f"{r['name']}, segment by segment: " + "; ".join(
+                f"{w['test_from']} to {w['test_to']}: RMSE {w.get('log_bsp_rmse')}, log-loss {w['logloss']}, "
+                f"{w['rounds']} rounds" for w in r["walk"]) + "."]
+    return "\n".join(md)
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -490,7 +796,7 @@ def score_pair(base: pd.DataFrame, cal: pd.DataFrame) -> dict:
 def _vs(r: dict, base: dict) -> str:
     pr = r.get("paired")
     if pr and r["name"] != base["name"]:
-        return f"{pr['diff']} {pr['ci90']}"
+        return f"{pr['diff']} {pr['ci90']}" + (f" z {pr['z']:+.1f}" if pr.get("z") is not None else "")
     return str(round(r["logloss"] - base["logloss"], 5))
 
 
@@ -516,8 +822,10 @@ def paired_vs_baseline(folder: Path, baseline: str | None, n_boot: int = 2000, s
             continue
         idx = rng.integers(0, len(day), (n_boot, len(day)))
         diff = (day.e.to_numpy()[idx].sum(1) - day.b.to_numpy()[idx].sum(1)) / day.n.to_numpy()[idx].sum(1)
-        out[name] = {"diff": round(float((day.e.sum() - day.b.sum()) / day.n.sum()), 5),
+        d0 = float((day.e.sum() - day.b.sum()) / day.n.sum())
+        out[name] = {"diff": round(d0, 5),
                      "ci90": [round(float(np.percentile(diff, 5)), 5), round(float(np.percentile(diff, 95)), 5)],
+                     "z": round(d0 / float(diff.std()), 2) if diff.std() > 0 else None,
                      "runners": int(day.n.sum()), "days": int(len(day))}
     return out
 
@@ -554,8 +862,9 @@ def paired_bsp_rmse(folder: Path, baseline: str | None, n_boot: int = 2000, seed
         nn = day.n.to_numpy()[idx].sum(1)
         diff = np.sqrt(day.e.to_numpy()[idx].sum(1) / nn) - np.sqrt(day.b.to_numpy()[idx].sum(1) / nn)
         n = day.n.sum()
+        d0 = float(np.sqrt(day.e.sum() / n) - np.sqrt(day.b.sum() / n))
         out[name] = {"rmse": round(float(np.sqrt(day.e.sum() / n)), 4),
-                     "diff": round(float(np.sqrt(day.e.sum() / n) - np.sqrt(day.b.sum() / n)), 4),
+                     "diff": round(d0, 4), "z": round(d0 / float(diff.std()), 2) if diff.std() > 0 else None,
                      "ci90": [round(float(np.percentile(diff, 5)), 4), round(float(np.percentile(diff, 95)), 4)],
                      "runners": int(n), "days": int(len(day))}
     return out
@@ -565,7 +874,8 @@ def _bsp_cells(r: dict) -> tuple[str, str]:
     p = r.get("paired_bsp")
     if not p:
         return (str(r.get("log_bsp_rmse", "")), "")
-    return (str(p["rmse"]), f"{p['diff']:+.4f} ({p['ci90'][0]:+.4f} to {p['ci90'][1]:+.4f})")
+    z = f", z {p['z']:+.1f}" if p.get("z") is not None and p["diff"] != 0 else ""
+    return (str(p["rmse"]), f"{p['diff']:+.4f} ({p['ci90'][0]:+.4f} to {p['ci90'][1]:+.4f}{z})")
 
 
 def _short_cell(r: dict) -> str:
@@ -592,7 +902,8 @@ def table(results: list[dict], baseline: str | None = None) -> str:
         return "(no results)"
     base = next((r for r in results if r["name"] == baseline), results[0])
     lines = [f"Baseline: {base['name']}. Test {base['test_from']} to {base['test_to']} (log-loss); the SP forecast on "
-             f"the recorded books from {STUDY_FROM}, walk-forward by day.", "",
+             f"the recorded books from {STUDY_FROM}, walk-forward by day. z: the paired difference over its bootstrap "
+             "standard error (by day); the bar from 10 Nov 2026 is 3 (reports/greyhound_bfsp_plan.md).", "",
              "| Experiment | Features | Objective | Rounds | RMSE log(BSP) | vs baseline (90%, by day) | Adds to the SP "
              "forecast a race: first traded / 5 min / 3 min | vs baseline (90%, by day) | Log-loss | vs baseline (90%, "
              "by day) | Seconds |",
@@ -651,7 +962,7 @@ def main(argv=None) -> int:
             r["paired"] = paired.get(r["name"])
             r["paired_bsp"] = bsp.get(r["name"])
             r["paired_short"] = short.get(r["name"])
-        md = table(rs, spec.get("baseline"))
+        md = table(rs, spec.get("baseline")) + "\n" + details(rs)
         Path(a.collect, "table.md").write_text(md + "\n")
         print(md)
         return 0
@@ -682,7 +993,11 @@ def main(argv=None) -> int:
         if spec.get("groups") and "groups" not in e:
             e = dict(e, groups=spec["groups"])
         _log(f"experiment {e['name']}")
-        res, pred = run_experiment(df, meta, e, recipe, spec.get("test_from", TEST_FROM), spec.get("test_to"))
+        walk = e.get("walk", spec.get("walk"))
+        if walk:
+            res, pred = run_walk(df, meta, e, recipe, walk, spec.get("test_to"))
+        else:
+            res, pred = run_experiment(df, meta, e, recipe, spec.get("test_from", TEST_FROM), spec.get("test_to"))
         res["cache"] = {k: meta[k] for k in ("hash", "last_day", "rows")}
         if e.get("shortening", spec.get("shortening")):
             _log(f"shortening {e['name']}")
@@ -713,7 +1028,7 @@ def main(argv=None) -> int:
         # each runner's log-loss contribution, for the paired comparison against the baseline in --collect
         keep = ["race_id", "race_date", "dog_id", "won", "p_model"] + [c for c in ("bsp", "pred_bsp") if c in pred]
         # the race's identity too, for strategies scored on these prices (place markets joined by day, time, track, trap)
-        keep += [c for c in ("race_time", "track", "trap", "dog_name", "field") if c in pred]
+        keep += [c for c in ("race_time", "track", "trap", "dog_name", "field", "runs_before") if c in pred]
         pred[keep].to_parquet(out / f"pred_{e['name']}.parquet", index=False)      # bsp, pred_bsp: the paired RMSE
         results.append(res)
         _log(json.dumps({k: res[k] for k in ("name", "logloss", "rounds", "seconds")}))

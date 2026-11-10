@@ -19,6 +19,12 @@ B - 1 or loses 1, a lay loses L - 1 or wins 1). The families (``RULES``):
 Scored by day and pooled over days, with a 90% interval from a bootstrap over races; a rule is a candidate only after
 ``MIN_DAYS`` days with its pooled lower bound above zero, and the count of rules is in every report (about one in
 twenty clears a one-sided 90% bound by chance).
+
+The late family (registered 10 Nov 2026; reports/greyhound_model_review.md): races go off a median 22 s after the
+scheduled time, so the rules above act earlier than their names say and never in the last stretch. The same gap,
+momentum and reversal rules are also decided at ``LATE_DECIDE``: 0, 10 and 20 s AFTER the scheduled off, wherever the
+market is still open then (rule names ``..._late0_``, ``_late10_``, ``_late20_``). They are their own registration:
+counted only on days after ``REGISTERED_LATE``, and the first family's rules and counts are untouched.
 """
 
 from __future__ import annotations
@@ -30,12 +36,16 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-from research.greyhound import stream_replay as sr
+from research.greyhound import multitest as mt, stream_replay as sr
 
 log = logging.getLogger(__name__)
 
 CHECKS = (180, 120, 60, 30, 10)
 DECIDE = (60, 30, 10)
+LATE_DECIDE = (0, -10, -20)                 # seconds before the scheduled off: 0, 10 and 20 s after it
+ALL_CHECKS = CHECKS + LATE_DECIDE
+REGISTERED_LATE = "2026-11-10"
+late_name = lambda c: c if c > 0 else f"late{-c}"
 GAPS = (0.03, 0.06, 0.10)
 MOVES = (0.05, 0.10)
 MIN_SIZE = 2.0
@@ -70,14 +80,14 @@ def snapshots(lines) -> pd.DataFrame:
         m = markets.get(mid)
         if m is not None and m.off is not None:
             i = nxt.get(mid, 0)
-            while i < len(CHECKS) and t >= m.off - timedelta(seconds=CHECKS[i]):
-                take(m, CHECKS[i])                         # the state before this message: the book at the mark
+            while i < len(ALL_CHECKS) and t >= m.off - timedelta(seconds=ALL_CHECKS[i]):
+                take(m, ALL_CHECKS[i])                     # the state before this message: the book at the mark
                 i += 1
             nxt[mid] = i
         sr.apply(markets, mc)
         m = markets[mid]
         if mid not in nxt and m.off is not None:           # skip the marks already past when the market is first seen
-            nxt[mid] = sum(1 for c in CHECKS if t >= m.off - timedelta(seconds=c))
+            nxt[mid] = sum(1 for c in ALL_CHECKS if t >= m.off - timedelta(seconds=c))
     snap = pd.DataFrame(rows)
     if not len(snap):
         return snap
@@ -118,20 +128,21 @@ def trades(s: pd.DataFrame) -> pd.DataFrame:
                      pnl_win=np.where(res > 0, res * (1 - COMM), res), rule=rule, side=side)
         out.append(x[["rule", "side", "market", "sid", "check", "price", "bsp", "won", "pnl", "pnl_win"]])
 
-    for c in DECIDE:
+    for c in DECIDE + LATE_DECIDE:
         x = s[s.check == c]
+        n = late_name(c)
         for g in GAPS:
-            add(f"gap_back_{c}_{g}", x[(x.spn > 1) & (x.back1 / x.spn - 1 > g)], "BACK")
-            add(f"gap_lay_{c}_{g}", x[(x.spn > 1) & (1 - x.lay1 / x.spn > g)], "LAY")
+            add(f"gap_back_{n}_{g}", x[(x.spn > 1) & (x.back1 / x.spn - 1 > g)], "BACK")
+            add(f"gap_lay_{n}_{g}", x[(x.spn > 1) & (1 - x.lay1 / x.spn > g)], "LAY")
         if 180 in w.columns and c in w.columns:
             mv = (w[c] / w[180] - 1).rename("move").reset_index()
             xm = x.merge(mv, on=["market", "sid"])
             for mvx in MOVES:
                 short, drift = xm[xm.move <= -mvx], xm[xm.move >= mvx]
-                add(f"mom_back_{c}_{mvx}", short, "BACK")
-                add(f"mom_lay_{c}_{mvx}", drift, "LAY")
-                add(f"rev_back_{c}_{mvx}", drift, "BACK")
-                add(f"rev_lay_{c}_{mvx}", short, "LAY")
+                add(f"mom_back_{n}_{mvx}", short, "BACK")
+                add(f"mom_lay_{n}_{mvx}", drift, "LAY")
+                add(f"rev_back_{n}_{mvx}", drift, "BACK")
+                add(f"rev_lay_{n}_{mvx}", short, "LAY")
     x10 = s[s.check == 10]
     if len(x10):
         fav = x10.loc[x10.groupby("market").mid.idxmin()]
@@ -154,10 +165,12 @@ def score(tr: pd.DataFrame, ledger=None) -> pd.DataFrame:
     races, days, the mean P&L a unit staked, its 90% interval by race (pooled over days) and its deflated Sharpe by
     race against every test scored (research.overfit: both targets of every rule here, and with a ``ledger`` every
     test the lab has ever scored). A rule is a candidate on a target on its own: ``MIN_DAYS`` days, the lower bound
-    above zero and the DSR at or above research.overfit.DSR_THRESHOLD. With 43 rules on two targets about four tests
-    clear the bound by luck; the DSR is the bar that allows for the count."""
+    above zero and the DSR at or above research.overfit.DSR_THRESHOLD. About one test in twenty clears the bound by
+    luck; the DSR is the bar that allows for the count, and q reads the family as one."""
     from research.overfit import deflate_table
     rows, series = [], {}
+    # the late family counts only on days after its registration; a day scored before it has no late trades anyway
+    tr = tr[~tr.rule.str.contains("_late") | (tr.day.astype(str) > REGISTERED_LATE)]
     for rule, g in tr.groupby("rule"):
         row = {"rule": rule, "trades": len(g), "races": int(g.groupby(["day", "market"]).ngroups),
                "days": g.day.nunique()}
@@ -170,6 +183,7 @@ def score(tr: pd.DataFrame, ledger=None) -> pd.DataFrame:
             row[f"mean{sfx}%"] = round(100 * float(v[col].mean()), 3) if len(v) else None
             row[f"ci90{sfx}%"] = [round(100 * lo, 3), round(100 * hi, 3)] if lo is not None else None
             row[f"bound{sfx}"] = bool(lo is not None and lo > 0 and v.day.nunique() >= MIN_DAYS)
+            row[f"z{sfx}"] = mt.z_by_race(by_race)
         rows.append(row)
     if not rows:
         return pd.DataFrame()
@@ -183,7 +197,12 @@ def score(tr: pd.DataFrame, ledger=None) -> pd.DataFrame:
         row["mean_pnl%"] = row.pop("mean%")
         row["candidate_sp"] = row.pop("candidate")
         row["candidate"] = row["candidate_sp"] or row["candidate_win"]
-    return pd.DataFrame(rows).sort_values("mean_pnl%", ascending=False)
+    res = pd.DataFrame(rows).sort_values("mean_pnl%", ascending=False).reset_index(drop=True)
+    # the family read as one (research/greyhound/multitest.py; the review of 10 Nov 2026): every rule on both targets,
+    # each test's q the share of false discoveries expected among the tests at least as strong
+    q = mt.bh(mt.p_one_sided(np.r_[res.z.to_numpy(float), res.z_win.to_numpy(float)]))
+    res["q"], res["q_win"] = q[:len(res)], q[len(res):]
+    return res
 
 
 def run_day(lines, day: date) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -250,6 +269,18 @@ def forward_check(lines, store, day: date) -> dict:
                                 "roi_green%": round(100 * green / liab, 2) if liab > 0 else None,
                                 "roi_sp%": round(100 * at_sp / liab_sp, 2) if liab_sp > 0 else None,
                                 "roi_result%": round(100 * at_res / liab_res, 2) if liab_res > 0 else None}
+        # beside it from 10 Nov 2026 (the review): the same lays left in the book until the market really closes,
+        # not lapsed 5 s before the scheduled off. A second reading of the same rule; the gate's figure is unchanged
+        dc = sr.replay(lines, forward_test_orders(store, day), vol_factor=vf, comm=COMM, to_close=True)
+        mc = dc[dc.matched > 0]
+        ok = mc[pd.to_numeric(mc.pnl_sp, errors="coerce").notna()] if len(mc) else mc
+        lc = float((ok.matched * (ok.avg - 1)).sum()) if len(ok) else 0.0
+        okr = mc[pd.to_numeric(mc.pnl_result, errors="coerce").notna()] if len(mc) else mc
+        lr = float((okr.matched * (okr.avg - 1)).sum()) if len(okr) else 0.0
+        out[f"stream_x{vf}_to_close"] = {
+            "matched": int(len(mc)), "matched_liability": round(float((mc.matched * (mc.avg - 1)).sum()), 2) if len(mc) else 0.0,
+            "roi_sp%": round(100 * float(pd.to_numeric(ok.pnl_sp, errors="coerce").sum()) / lc, 2) if lc > 0 else None,
+            "roi_result%": round(100 * float(pd.to_numeric(okr.pnl_result, errors="coerce").sum()) / lr, 2) if lr > 0 else None}
     return out
 
 
@@ -313,15 +344,19 @@ def main(argv=None) -> int:
     md = [f"## Greyhound stream lab, {day}", "",
           f"{rep['lines']} stream lines, {rep['markets']} markets, {rep['trades_today']} trades today; "
           f"{rep['days_pooled']} days pooled; {rep['rules']} rules on two targets, {2 * rep['rules']} tests (registered "
-          f"{REGISTERED}; a candidate needs {MIN_DAYS} days, its pooled 90% lower bound above zero on a target and its "
-          f"deflated Sharpe by race at least 0.95 against every test scored; about one test in twenty clears the bound "
-          f"alone by chance). Candidates: {', '.join(rep['candidates']) or 'none'}.",
-          "", "Target 1, closed at the SP (BFSP); target 2, left to run to the result (Win).", "",
-          "| Rule | Trades | Races | Days | At the SP: mean % a unit | 90% | To the result: mean % a unit | 90% | "
-          "DSR (SP / Win; tests) | Candidate (SP / Win) |", "|---|---|---|---|---|---|---|---|---|---|"]
+          f"{REGISTERED}, and the late family, decided 0, 10 and 20 s after the scheduled off, {REGISTERED_LATE}, "
+          f"counted on later days; a candidate needs {MIN_DAYS} days, its pooled 90% lower bound above zero on a target "
+          f"and its deflated Sharpe by race at least 0.95 against every test scored; about one test in twenty clears "
+          f"the bound alone by chance). Candidates: {', '.join(rep['candidates']) or 'none'}.",
+          "", "Target 1, closed at the SP (BFSP); target 2, left to run to the result (Win). q: the share of false "
+          "discoveries expected among every test at least as strong (under 0.10: the family as a whole supports it).", "",
+          "| Rule | Trades | Races | Days | At the SP: mean % a unit | 90% | q | To the result: mean % a unit | 90% | q | "
+          "DSR (SP / Win; tests) | Candidate (SP / Win) |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    q2 = lambda v: "" if v is None or pd.isna(v) else f"{v:.2f}"
     for r in rep["scores"]:
         md.append(f"| {r['rule']} | {r['trades']} | {r['races']} | {r['days']} | {r['mean_pnl%']} | {r['ci90%']} | "
-                  f"{r.get('mean_win%')} | {r.get('ci90_win%')} | {r.get('dsr')} / {r.get('dsr_win')} ({r.get('n_trials')}) | "
+                  f"{q2(r.get('q'))} | {r.get('mean_win%')} | {r.get('ci90_win%')} | {q2(r.get('q_win'))} | "
+                  f"{r.get('dsr')} / {r.get('dsr_win')} ({r.get('n_trials')}) | "
                   f"{r.get('candidate_sp')} / {r.get('candidate_win')} |")
     ft = rep.get("forward_test", {})
     md += ["", "### The early-lay forward test, its lays replayed through the stream", "",
@@ -329,6 +364,10 @@ def main(argv=None) -> int:
     for k in ("stream_x1.0", "stream_x0.5"):
         if k in ft:
             md.append(f"- queue-aware, traded volume {k[-4:]}: {json.dumps(ft[k])}")
+    for k in ("stream_x1.0_to_close", "stream_x0.5_to_close"):
+        if k in ft:
+            md.append(f"- the same lays resting until the market really closes (from 10 Nov 2026; not the gate's "
+                      f"figure), traded volume {k[7:11]}: {json.dumps(ft[k])}")
     if ft.get("note") or ft.get("error"):
         md.append(f"- {ft.get('note') or ft.get('error')}")
     Path(a.out, "report.md").write_text("\n".join(md) + "\n")

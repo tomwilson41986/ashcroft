@@ -1,0 +1,216 @@
+{
+ "about": "Batch 11 (10 Nov 2026): steps 0 and 1 of the BFSP plan (reports/greyhound_bfsp_plan.md; the owner: 'Fundamental is to improve our model to predict BFSP / Closing Prices'). Registered before any result. Step 0: the live recipe's importance by family (shuffled within the race) and by SHAP, where its error sits, three naive baselines (field size only, past market only, speed figures only), and the live recipe refitted through the window (1 Jun, 1 Aug, 1 Oct). Step 1: the race fitted as a book (share: the softmax fitted to the SP book's shares; mix: 70% the shares, 30% the result), 3 seeds averaged, all history from June 2020 weighted by a one-year half-life, a Huber loss. The bar, fixed now: a change counts when its paired gain in RMSE of log(BSP) over live_ref is 3 bootstrap standard errors (by day) or more, its log-loss no worse beyond 1 standard error; the window has been read by earlier batches, so a pass goes to a forward test on later days before it is adopted.",
+ "recipe": "quick",
+ "baseline": "live_ref",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "rescale_book": true,
+   "recipe_overrides": {
+    "learning_rate": 0.05,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "importance": true,
+   "calibrate": [
+    "stretch_track"
+   ],
+   "name": "live_ref"
+  },
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "rescale_book": true,
+   "recipe_overrides": {
+    "learning_rate": 0.05,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "keep": [
+    "field"
+   ],
+   "name": "base_field"
+  },
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "rescale_book": true,
+   "recipe_overrides": {
+    "learning_rate": 0.05,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "keep": [
+    "field",
+    "sp_p_mean3",
+    "dog_ae6",
+    "gp_mkt_",
+    "gp_bsp_mkt_",
+    "gp_ae_",
+    "gp_bsp_ae_",
+    "gp_nres_"
+   ],
+   "name": "base_market"
+  },
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "rescale_book": true,
+   "recipe_overrides": {
+    "learning_rate": 0.05,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "keep": [
+    "field",
+    "gsr_",
+    "esr_",
+    "fsr_",
+    "lb_cv_",
+    "lb_kr",
+    "tn_",
+    "et_",
+    "ab_",
+    "rating_vs_par"
+   ],
+   "name": "base_speed"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.05,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "importance": true,
+   "name": "share"
+  },
+  {
+   "features": "card_safe",
+   "objective": "mix",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.05,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "mix_win": 0.3,
+   "name": "mix"
+  },
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "rescale_book": true,
+   "recipe_overrides": {
+    "learning_rate": 0.05,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "seeds": 3,
+   "name": "seeds3"
+  },
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "rescale_book": true,
+   "recipe_overrides": {
+    "train_from": "2020-06-01",
+    "learning_rate": 0.05,
+    "early_stop": 100,
+    "rounds": 10000,
+    "max_seconds": 2400
+   },
+   "halflife_days": 365,
+   "name": "history_hl365"
+  },
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "rescale_book": true,
+   "recipe_overrides": {
+    "learning_rate": 0.05,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "huber": 0.5,
+   "name": "huber"
+  },
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "rescale_book": true,
+   "recipe_overrides": {
+    "learning_rate": 0.05,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "walk": [
+    "2026-06-01",
+    "2026-08-01",
+    "2026-10-01"
+   ],
+   "name": "live_walk"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.05,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "walk": [
+    "2026-06-01",
+    "2026-08-01",
+    "2026-10-01"
+   ],
+   "name": "share_walk"
+  }
+ ]
+}
