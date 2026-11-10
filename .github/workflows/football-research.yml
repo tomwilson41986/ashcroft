@@ -23,6 +23,7 @@ on:
           - lineup_late_move
           - lineup_release
           - close_model_books
+          - feature_report
       days:
         description: 'days of the live record to read'
         required: false
@@ -39,7 +40,7 @@ concurrency:
 jobs:
   research:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -98,6 +99,31 @@ jobs:
         env:
           DAYS: ${{ inputs.days }}
         run: python -m research.open_close.football_close_model_books --days "$DAYS" --out out/close_model_books.json
+      # the lab-matrix jobs: the inputs and the cache as football-trials.yml builds them (read-only copies)
+      - name: Lab inputs (gold, silver and API-Football history)
+        if: inputs.job == 'feature_report'
+        run: |
+          mkdir -p src/football src/api_football
+          aws s3 sync "s3://$CAPTURE_BUCKET/sources/football/gold/" src/football/gold/ --only-show-errors
+          aws s3 cp "s3://$CAPTURE_BUCKET/sources/football/matches.parquet" src/football/matches.parquet --only-show-errors
+          for x in matches players events stats; do
+            aws s3 cp "s3://$CAPTURE_BUCKET/sources/api_football/history_$x.parquet" "src/api_football/history_$x.parquet" --only-show-errors
+          done
+      - name: Restore the lab cache
+        if: inputs.job == 'feature_report'
+        uses: actions/cache@v4
+        with:
+          path: .football_cache
+          key: football-lab-${{ hashFiles('football/**') }}-${{ github.run_id }}
+          restore-keys: |
+            football-lab-${{ hashFiles('football/**') }}-
+            football-lab-
+      - name: The lab matrix (stages rebuilt only when their code or inputs change)
+        if: inputs.job == 'feature_report'
+        run: timeout 4200 python -m football.lab cache --root src --history-root src --cache .football_cache
+      - name: Feature report (importance on Betfair's moves, leave a family out, the target's checks)
+        if: inputs.job == 'feature_report'
+        run: python -m research.open_close.football_feature_report --cache .football_cache --out-json out/football_feature_report.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
