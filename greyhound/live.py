@@ -70,7 +70,13 @@ CARD_UNSAFE = {"weight_change", "weight_vs_mean", "hb_weight_vs_max", "hb_weight
 #: their race), and a trainer change the card cannot see. Until 11 Nov 2026 these lived only in the stack's own drop
 #: list, so every other card-safe feature set and the fallback model still read them (the audit of 11 Nov 2026,
 #: findings 18 and 27)
-CARD_UNSAFE_PREFIXES = ("lf_wt_", "hb_days_since_season", "ti_new_trainer")
+CARD_UNSAFE_PREFIXES = ("lf_wt_", "hb_days_since_season", "ti_new_trainer",
+                        # the trainer-at-the-time columns of the connections and market tables: empty on the morning
+                        # card until another job writes the day's GBGB file, and known in training only for the weeks
+                        # since the nightly fetch began (the audit of 11 Nov 2026, findings 23 and 36). Batch 26
+                        # (run 43102842816): the trees without them give the same price on every runner (t1_notr
+                        # against t1, 109,933 runners: no difference), so nothing is lost
+                        "cx_tr_", "cx_new_trainer", "mk_tr_")
 
 
 def is_card_unsafe(feature: str) -> bool:

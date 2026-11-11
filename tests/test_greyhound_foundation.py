@@ -192,7 +192,8 @@ def test_the_card_numbers_a_second_meeting_from_one():
 
 def test_one_list_of_card_unsafe_columns():
     from greyhound import fastloop as fl, live, stack_model as sm
-    assert all(live.is_card_unsafe(f) for f in ("lf_wt_change", "hb_days_since_season", "ti_new_trainer_ae", "weight_change"))
+    assert all(live.is_card_unsafe(f) for f in ("lf_wt_change", "hb_days_since_season", "ti_new_trainer_ae", "weight_change",
+                                                "cx_tr_ae365", "cx_new_trainer", "mk_tr_bsp_ae365"))
     assert not live.is_card_unsafe("gsr_mean3") and sm.DROP is live.CARD_UNSAFE_PREFIXES
     assert live.card_safe(["gsr_mean3", "lf_wt_vs_mean", "ti_new_trainer"]) == ["gsr_mean3"]
     meta = {"features": {"base": ["gsr_mean3", "weight_change"], "intent": ["ti_new_trainer", "ti_class_up"]},
