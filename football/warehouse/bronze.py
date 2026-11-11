@@ -186,6 +186,35 @@ def ingest_bundle(store, path, source: str) -> dict:
     return ingest(store, iter_bundle(path), source)
 
 
+def ingest_queue(store, queue: str | None = None, dest: str = ".") -> dict:
+    """Every bundle listed in ``football/warehouse/bundles.json`` ([{name, url, sport, note}]) into bronze, each
+    once: a bundle the store notes as ingested (``bronze/bundles/<name>.json``) is not downloaded again. The
+    download is curl's (resumed and retried); the file is removed after it is read."""
+    import json
+    import subprocess
+    from pathlib import Path
+
+    from football.warehouse import ROOT
+    path = Path(queue) if queue else Path(__file__).with_name("bundles.json")
+    items = json.loads(path.read_text()) if path.exists() else []
+    out = {}
+    for it in items:
+        name = it["name"]
+        marker = f"{ROOT}/bronze/bundles/{name}.json"
+        if store.get(marker) is not None:
+            out[name] = "already ingested"
+            continue
+        local = Path(dest) / f"{name}.bundle"
+        subprocess.run(["curl", "-sSL", "--retry", "5", "-C", "-", "-o", str(local), it["url"]], check=True)
+        rep = ingest_bundle(store, str(local), name)
+        rep["bytes"] = local.stat().st_size
+        store.put(marker, (json.dumps({**it, **rep, "ingested_utc": utc_now()}, indent=1) + "\n").encode())
+        local.unlink(missing_ok=True)
+        out[name] = {k: rep[k] for k in ("members", "market_files", "not_market_files", "duplicates_in_bundle",
+                                         "new", "same", "replaced", "bytes")}
+    return out
+
+
 def index(store, parts: list[tuple[int, int]] | None = None) -> pa.Table | None:
     """bronze/index for the partitions asked (all by default), with year and month."""
     from football.warehouse.store_io import read_table

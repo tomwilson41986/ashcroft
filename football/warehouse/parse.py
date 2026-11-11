@@ -8,6 +8,8 @@ traded price only, about once a minute a runner, before the off and in play.
 ``Batch`` reads files one after another and holds the rows of the five silver tables (football.warehouse.schema);
 ``Batch.tables()`` gives them as Arrow tables. A price is stamped with the market's state when it was published: a
 definition in the same message applies first (Betfair sends the suspension and the price that caused it together).
+A "price" outside Betfair's range (1.01 to 1000) is not a trade: a void market is closed with 1.0 on every runner.
+Such updates are counted on the market (``n_ltp_invalid``) and kept out of silver/tick.
 """
 
 from __future__ import annotations
@@ -21,8 +23,9 @@ import pyarrow as pa
 
 from football.warehouse.schema import SILVER, SILVER_DEFINITION, SILVER_MARKET, SILVER_RUNNER, SILVER_SPELL, SILVER_TICK
 
-PARSER_VERSION = 1
+PARSER_VERSION = 2          # 2: a price outside Betfair's range is not a price (kept out of silver/tick, counted)
 DRAW = "The Draw"
+LTP_MIN, LTP_MAX = 1.01, 1000.0
 
 
 @lru_cache(maxsize=8192)
@@ -103,7 +106,8 @@ class _Market:
     """One market's reading of a file."""
 
     __slots__ = ("market_id", "defn", "defs", "sel", "hc", "pt", "seq", "ltp", "ip", "st", "in_play", "status",
-                 "in_play_pt", "closed_pt", "first_pt", "last_pt", "n_messages", "mt_first", "mt_last", "mt_changes")
+                 "in_play_pt", "closed_pt", "first_pt", "last_pt", "n_messages", "mt_first", "mt_last", "mt_changes",
+                 "n_invalid")
 
     def __init__(self, market_id: str):
         self.market_id = market_id
@@ -115,6 +119,7 @@ class _Market:
         self.n_messages = 0
         self.mt_first = self.mt_last = None
         self.mt_changes = 0
+        self.n_invalid = 0
 
     def read(self, seq: int, pt: int, mc: dict) -> None:
         self.n_messages += 1
@@ -140,7 +145,10 @@ class _Market:
                               iso_ms(d.get("settledTime"))))
         for rc in mc.get("rc") or ():
             p = rc.get("ltp")
-            if p is None or p <= 0:
+            if p is None:
+                continue
+            if not LTP_MIN <= p <= LTP_MAX:        # e.g. 1.0 on every runner as a void market is closed: not a trade
+                self.n_invalid += 1
                 continue
             self.sel.append(int(rc["id"]))
             self.hc.append(float(rc.get("hc") or 0.0))
@@ -251,6 +259,7 @@ class Batch:
             "last_trade_pt": m.pt[-1] if m.pt else None, "status_final": d.get("status"),
             "in_play_final": bool(d.get("inPlay")), "n_messages": m.n_messages, "n_definitions": len(m.defs),
             "n_ticks": n_ticks, "n_ticks_pre": n_pre, "n_ticks_inplay": n_ticks - n_pre,
+            "n_ltp_invalid": m.n_invalid,
             "n_runners": len(runners), "n_winners": sum(1 for s in statuses if s == "WINNER"),
             "n_removed": sum(1 for s in statuses if s == "REMOVED"),
             "n_susp_inplay": sum(1 for _, _, (ip, st) in spells if ip and st == "SUSPENDED"),

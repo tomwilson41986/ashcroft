@@ -1,0 +1,83 @@
+name: Football data warehouse (Betfair price history to analysis tables, S3)
+
+# The racing² football data warehouse (docs/football_data_platform.md). Every bundle of Betfair Historic Data listed
+# in football/warehouse/bundles.json is ingested once into bronze (the raw files as a table); silver (market, runner,
+# definition, spell, tick) and gold (event, checkpoint grid, implied goals, price-path features, inferred goals, the
+# move panel, market-implied ratings, club marts) are built for the partitions that changed; the events are linked to
+# API-Football fixtures; and the data-quality report decides the run (a failed hard check fails the job).
+# S3 only: nothing here logs in to Betfair, reads a live price or bets. On GitHub's runners.
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'rebuild every partition, silver and gold'
+        required: false
+        type: boolean
+        default: false
+      models:
+        description: 'score the closing-price model on the built tables'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: football-warehouse
+  cancel-in-progress: false
+
+jobs:
+  warehouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+      CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+      CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Bundles into bronze (each once; a bundle already ingested is not downloaded again)
+        run: |
+          mkdir -p out
+          python -m football.warehouse ingest-queue | tee out/ingest.json
+      - name: Silver and gold (the partitions whose inputs or code changed)
+        env:
+          FORCE: ${{ inputs.force && '--force' || '' }}
+        run: python -m football.warehouse build $FORCE | tee out/build.json
+      - name: Link events to API-Football fixtures; check inferred goals against real goal minutes
+        continue-on-error: true
+        run: python -m football.warehouse.link run | tee out/link.json
+      - name: Data-quality report (a failed hard check fails the run)
+        id: quality
+        run: python -m football.warehouse check --markdown out/quality.md > out/quality.json
+      - name: Closing-price model on the move panel (development read; nothing is traded)
+        if: ${{ !cancelled() && inputs.models }}
+        continue-on-error: true
+        run: python -m research.open_close.football_bf_close_model --out-json out/bf_close_model.json
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "## Football data warehouse"
+            [ -f out/quality.md ] && cat out/quality.md
+            for f in out/ingest.json out/build.json out/link.json out/bf_close_model.json; do
+              [ -f "$f" ] || continue
+              echo "### $(basename "$f")"; echo '```'; head -c 20000 "$f"; echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: football-warehouse
+          path: out/
+          if-no-files-found: ignore

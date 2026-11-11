@@ -107,6 +107,7 @@ def checks(tables: dict[str, pa.Table]) -> dict:
         out["market_time_min"], out["market_time_max"] = str(pc.min(mt).as_py()), str(pc.max(mt).as_py())
         out["markets_never_in_play"] = int(pc.sum(pc.is_null(market.column("in_play_pt"))).as_py())
         out["markets_without_trade"] = int(pc.sum(pc.equal(market.column("n_ticks"), 0)).as_py())
+        out["ltp_invalid_left_out"] = int(pc.sum(market.column("n_ltp_invalid")).as_py() or 0)
         out["markets_by_type"] = {r["market_type"]: r["market_type_count"] for r in
                                   market.group_by("market_type").aggregate([("market_type", "count")]).to_pylist()}
     return out

@@ -135,6 +135,19 @@ def test_a_file_that_cannot_be_read_adds_nothing():
     assert all(v.num_rows == 0 for v in b.tables().values())
 
 
+def test_a_price_outside_betfairs_range_is_counted_and_left_out():
+    raw = _file([_msg(KO_MS - 3_600_000, defn=_defn(), rc=[{"id": 71085, "ltp": 2.5}]),
+                 _msg(KO_MS - 60_000, defn=_defn("SUSPENDED"), rc=[{"id": 71085, "ltp": 1.0}, {"id": 31317, "ltp": 1.0},
+                                                                   {"id": 58805, "ltp": 1.0}])])   # a void close
+    b = Batch()
+    b.add_file(raw, "BASIC/2026/Jan/29/35155405/1.252787713.bz2", "abc")
+    t = {k: v.to_pandas() for k, v in b.tables().items()}
+    assert t["silver/tick"]["ltp"].tolist() == [2.5]
+    m = t["silver/market"].iloc[0]
+    assert (m["n_ticks"], m["n_ltp_invalid"]) == (1, 3)
+    assert t["silver/runner"].set_index("role").loc["home", "ltp_last_pre"] == 2.5
+
+
 def test_a_required_column_may_not_hold_a_null():
     bad = pa.table({c.name: pa.array([None], type=c.type) for c in SILVER_TICK.columns})
     with pytest.raises(ValueError):

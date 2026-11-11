@@ -115,6 +115,8 @@ SILVER_MARKET = TableSpec(
         _c("n_ticks", pa.int32(), "Traded-price updates in the file (rows of silver/tick).", False),
         _c("n_ticks_pre", pa.int32(), "Of those, before the market went in play.", False),
         _c("n_ticks_inplay", pa.int32(), "Of those, in play.", False),
+        _c("n_ltp_invalid", pa.int32(), "Price updates outside Betfair's range (1.01 to 1000), left out of "
+           "silver/tick: a void market is closed with 1.0 on every runner.", False),
         _c("n_runners", pa.int16(), "Runners in the last definition (an Asian handicap line counts once a side).",
            False),
         _c("n_winners", pa.int16(), "Runners settled WINNER.", False),

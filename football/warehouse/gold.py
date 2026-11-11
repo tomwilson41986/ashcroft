@@ -110,14 +110,15 @@ def build(store, parts: list[tuple[int, int]] | None = None, force: bool = False
           only: list[str] | None = None) -> dict:
     """Every gold module, in order, for the partitions whose inputs changed; the report. ``only``: module names
     (their last part, e.g. 'gold_event') to run, the rest left as they are."""
-    mods = order(load(modules))
+    names = modules or MODULES
+    if only:                                     # only the modules asked are imported: the rest are left as built
+        names = [n for n in names if n.rsplit(".", 1)[-1] in only]
+    mods = order(load(names))
     all_parts = bronze.partitions(store)
     todo_parts = parts if parts is not None else all_parts
     report = {"modules": {}, "failed": []}
     for m in mods:
         short = m.__name__.rsplit(".", 1)[-1]
-        if only and short not in only:
-            continue
         cache: dict = {}
         rep = {"built": [], "skipped": 0, "rows": {}}
         columns = getattr(m, "COLUMNS", {})
