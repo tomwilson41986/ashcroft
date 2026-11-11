@@ -355,8 +355,10 @@ class Trader:
     start_from: str | None = None       # the first day counted at all: earlier days in its ledger (a replay) are left out
     refresh_days: int = 3       # days re-read every run; older settled days come from the cache
     notes: tuple = field(default_factory=tuple)
+    switch: str | None = None   # the repository variable that turns its real orders on (shown on the tile)
 
 
+EARLY_LAY_FROM = "2026-11-11"  # the owner, 11 Nov 2026: the live early lay tracked from fresh
 AGENTS_FROM = "2026-11-04"    # the owner, 4 Nov 2026: the paper agents "only start from now"; their replayed days are not P&L
 AGENT_NOTES = ("A paper agent (research/paper/horses.py): no orders. It trades the recorded books with the other agents "
                "on one book: the live trader's fills are already out, and what one agent takes is gone for the others.",
@@ -374,10 +376,14 @@ TRADERS = [
            "pred", "trading/paper", horse_markets, "horse", "HP"),
     # the six horse paper agents (horse-agent-*) are retired (the owner, 4 Nov 2026: "Keep the current live rule. Retire
     # the others"); paper_agent_markets still reads their replayed days
+    # the owner, 11 Nov 2026: "Show it. Start tracking from fresh": the switch on its tile, and a record from 11 Nov
+    # (the 3-4 Nov live days before the audit put it on paper are left out of its figures and the live totals)
     Trader("greyhound-early-lay", "greyhounds", "Early lay, live", "live",
-           "Lays the forecast drifters at 80% of the forecast SP, greened up before the off (from 3 Nov 2026)",
+           "Lays the forecast drifters at 80% of the forecast SP, greened up before the off",
            "capture", "sources/greyhound/early_lay/live", early_lay_markets, "greyhound", "EL",
-           notes=("No expected value is logged: the forecast is the record's mean day.",
+           start_from=EARLY_LAY_FROM, switch="GREYHOUND_EARLY_LAY",
+           notes=("Tracked afresh from 11 Nov 2026 (the owner): its live days of 3-4 Nov are not counted.",
+                  "No expected value is logged: the forecast is the record's mean day.",
                   "A lay closed at the SP or held settles when the recorder's settled books are in.")),
     Trader("greyhound-early-lay-paper", "greyhounds", "Early lay, paper", "paper",
            "The early lay's decisions logged, nothing sent", "capture", "sources/greyhound/early_lay/paper",
@@ -637,6 +643,52 @@ def edge(t: Trader, days: dict[str, pd.DataFrame], today: date, tm: pd.DataFrame
             "flag": flag, "flag_label": FLAG_LABEL[flag], "flag_reason": why}
 
 
+STOP_KEYS = ("greyhound/STOP", "trading/STOP")     # the greyhound traders' kill switches (greyhound/live.py)
+
+
+def switch_state(src, t: Trader, env=None) -> dict | None:
+    """Whether the trader can send real orders now, as the trader itself decides it (greyhound/early_lay.py
+    switch_on, daily_loss_limit; greyhound/live.py kill_switch). Read-only: the repository variables reach this job
+    as its environment (trader-dashboard.yml), the STOP objects are read from the capture bucket. ``state`` is
+    'live' or 'paper' (None when the variable is not in this process's environment: a run by hand); the paper-models
+    job's dispatch input can override the variable for one run, which no variable shows."""
+    if not t.switch:
+        return None
+    env = os.environ if env is None else env
+    name, lname = t.switch, f"{t.switch}_DAILY_LOSS"
+    raw = env.get(name)
+    state = None if raw is None else ("live" if str(raw).strip().lower() == "live" else "paper")
+    try:
+        limit = float(str(env.get(lname, "")).strip())
+        limit = limit if np.isfinite(limit) and limit > 0 else None
+    except ValueError:
+        limit = None
+    stop, stop_err = False, None
+    for k in STOP_KEYS:
+        try:
+            if src.get("capture", k) is not None:
+                stop = True
+        except Exception as exc:  # noqa: BLE001  unreadable: the trader treats it as STOP, the page says unread
+            stop_err = f"{k} unread ({type(exc).__name__})"
+    if stop_err and not stop:
+        stop = None
+    armed = state == "live" and limit is not None and stop is False
+    if state is None:
+        label = f"{name} not read in this run"
+    elif stop:
+        label = "Stopped: an S3 STOP object is set; no new lays"
+    elif state != "live":
+        label = f"Paper: {name} is '{raw}'; no real orders"
+    elif limit is None:
+        label = f"Switch live, but no daily loss limit ({lname}): no real orders"
+    elif stop is None:
+        label = f"Switch live, loss limit GBP{limit:,.0f} a day; STOP not read ({stop_err})"
+    else:
+        label = f"Live: real orders, daily loss limit GBP{limit:,.0f}"
+    return {"name": name, "state": state, "loss_limit": limit, "stop": stop, "armed": armed, "label": label,
+            "from": t.start_from}
+
+
 def build(src, today: date | None = None, cache: bool = True, traders=TRADERS, source_label=None) -> dict:
     from zoneinfo import ZoneInfo
     today = today or datetime.now(ZoneInfo("Europe/London")).date()
@@ -650,6 +702,11 @@ def build(src, today: date | None = None, cache: bool = True, traders=TRADERS, s
             s = summarise(t, {}, today)
             s["error"] = errors[-1]["error"]
         s["source"] = src.where(t.kind, f"{t.base}/<day>/ledger.csv")
+        if t.switch:
+            try:
+                s["switch"] = switch_state(src, t)
+            except Exception as exc:  # noqa: BLE001
+                s["switch"] = {"name": t.switch, "state": None, "armed": False, "label": f"not read: {type(exc).__name__}"}
         out_t.append(s)
     sports = []
     for sid, label in SPORTS:
