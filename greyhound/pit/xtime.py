@@ -76,7 +76,12 @@ GRID = [(r, q, p0) for r in (0.8, 1.6, 3.2, 6.4) for q in (0.0003, 0.001, 0.003)
 #: build on the real data (run 43055884883, 11 Nov 2026) priced every code: "always led" came out at -3.9% of the time
 #: and the model's error grew each year, because leading is what running fast looks like, not luck. Only interference
 #: is taken out of a past run, it can only have cost time, and never more than ``COST_CAP`` percent
-TROUBLE = re.compile(r"crd|crowd|bmp|bump|blk|baulk|hmp|hamp|imped|stumb|fcdtock|^ck|checked")
+#: Until 11 Nov 2026 the pattern read "FcdToCk" but not GBGB's commonest spellings of forced to check ("FcdTCk",
+#: "FcdCk", "ForcedToCheck", "FcdToBCk"), nor "Stb" (stumbled), "HitRls", "StruckInto": 19,662 of 198,439
+#: interference tokens in 1 Jul 2025 to 5 Nov 2026 and 13,504 runs whose only interference went unread (the review
+#: of the fear table, 11 Nov 2026)
+TROUBLE = re.compile(r"crd|crowd|bmp|bump|blk|baulk|balk|hmp|hamp|imped|^imp\d|stumb|stb|fcd-?t?o?-?b?-?c(hec)?k"
+                     r"|forcedt?o?b?c(hec)?k|^ck|checked|brtdn|broughtdown|knockedover|hitrls|struckinto")
 COST_CAP = 1.5
 BANDS = (350.0, 550.0, 750.0)
 OFF_EDGES = (5, 8, 11, 15, 22, 36, 61, 101, 181)

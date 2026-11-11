@@ -30,7 +30,7 @@ LAMBDA = 50.0
 #: "always led" or "ran on" describes how the race went for the dog, not what another dog did to it, and pricing it
 #: took the credit for leading out of the dog's clean figure. Until 11 Nov 2026 every code seen 200 times was priced
 #: (the audit of 11 Nov 2026, finding 37). A price is a cost (never a gain), and a run's cost is capped
-INTERFERENCE = re.compile(r"crd|crowd|bmp|bump|blk|baulk|hmp|hamp|imped|stumb|fcdtock|^ck|checked")
+from greyhound.pit.xtime import TROUBLE as INTERFERENCE  # noqa: E402  (one pattern for every table)
 COST_CAP = 6.0                      # lengths a run
 SOURCE = "GBGB race comments and times (sources/gbgb.py); the ability table's levels"
 

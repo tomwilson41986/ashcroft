@@ -398,6 +398,17 @@ def _block_prefix(name: str) -> str:
     return importlib.import_module(f"greyhound.blocks.{name}").PREFIX
 
 
+def _table_card_unsafe(blocks) -> set[str]:
+    """The columns the metrics tables among ``blocks`` mark as unknown on the morning card (each table's
+    ``CARD_UNSAFE``): a card-safe feature set leaves them out (the audit of 11 Nov 2026, finding 27)."""
+    from greyhound import pit
+    out: set[str] = set()
+    for b in blocks:
+        if b.startswith("pit_"):
+            out |= set(getattr(pit.module(b[4:]), "CARD_UNSAFE", ()))
+    return out
+
+
 def _stale_tables(blocks) -> list[str]:
     """The metrics tables among ``blocks`` that were built by other engine code than this (greyhound/pit ``stale``):
     a table read beside the cache must be the table of the engine that made the cache."""
@@ -434,8 +445,9 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     if stale_tables:
         log.warning("%s: tables built by other engine code than this: %s", exp["name"], stale_tables)
     set_name = exp.get("features", "card_safe")
-    if set_name == "card_safe" or set_name.endswith("-card"):      # an added block's card-unsafe columns go too
-        feats = [f for f in feats if not f.startswith(tuple(meta.get("card_unsafe_prefixes", ())))]
+    if set_name == "card_safe" or set_name.endswith("-card"):      # an added block's card-unsafe columns go too:
+        unsafe = _table_card_unsafe(exp.get("add_blocks", []))      # the list's prefixes and each table's own
+        feats = [f for f in feats if f not in unsafe and not f.startswith(tuple(meta.get("card_unsafe_prefixes", ())))]
     for pre in exp.get("drop", []):
         feats = [f for f in feats if not f.startswith(pre)]
     if exp.get("keep"):                                # a baseline on named features only (exact names or prefixes)
