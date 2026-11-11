@@ -163,16 +163,25 @@ class GreyhoundMetricsEngine:
         df["lbw"] = step.groupby(o.race_id).cumsum().reindex(df.index)
         by_time = (df.run_time - df.groupby("race_id").run_time.transform("min")) / LENGTH_S
         df["lbw"] = df.lbw.where(df.lbw.notna() & (df.lbw < 40), by_time).clip(upper=40)
-        # standards from earlier days: the track and distance's mean winning calculated time, sectional, run-in
+        # standards from earlier days: the track and distance's mean winning calculated time, sectional, run-in, of
+        # GRADED races only. Until 11 Nov 2026 a trial's first dog (often running alone) counted as a winner in the
+        # standard and in the meeting's variant, and a fall or a hand-slipped start counted in the sectional and
+        # run-in standards (the review of 11 Nov, reports/greyhound_model.md section 41.1; the owner: "fix this")
+        trial = df.is_trial.fillna(False).astype(bool) if "is_trial" in df else pd.Series(False, index=df.index)
+        bad = df.comment.fillna("").str.contains(r"\(Handslip\)|Fell|Fll|BrkLine", case=False)
+        fair = ~trial & ~bad
         df["_win_time"] = df.adjusted_time.where(df.won == 1)
         df["runin"] = df.adjusted_time - df.sectional
+        df["_std_win"] = df._win_time.where(fair)
+        df["_std_sec"] = df.sectional.where(fair)
+        df["_std_runin"] = df.runin.where(fair)
         key = ["track", "distance_m"]
-        df["std_time"] = race_lagged_expanding_mean(df, key, "_win_time")
-        df["std_sec"] = race_lagged_expanding_mean(df, key, "sectional")
-        df["std_runin"] = race_lagged_expanding_mean(df, key, "runin")
-        # the meeting's own variant: what the going allowance missed, from its winners (the run is in the past when
-        # a later race reads it, so the whole meeting is known)
-        dev = (df._win_time - df.std_time)
+        df["std_time"] = race_lagged_expanding_mean(df, key, "_std_win")
+        df["std_sec"] = race_lagged_expanding_mean(df, key, "_std_sec")
+        df["std_runin"] = race_lagged_expanding_mean(df, key, "_std_runin")
+        # the meeting's own variant: what the going allowance missed, from its graded winners (the run is in the
+        # past when a later race reads it, so the whole meeting is known); a meeting of trials alone has none
+        dev = (df._std_win - df.std_time)
         df["variant"] = dev.groupby(df.meeting_id).transform("median").fillna(0.0)
         df["gsr"] = (df.std_time - (df.adjusted_time - df.variant)) / LENGTH_S
         df["esr"] = (df.std_sec - df.sectional) / LENGTH_S
@@ -180,10 +189,12 @@ class GreyhoundMetricsEngine:
         # a figure more than 40 lengths from the standard is a bad time or a wrong distance in the source, not a run
         for c in ("gsr", "esr", "fsr"):
             df[c] = df[c].where(df[c].abs() <= 40)
-        # a run spoiled at the start (hand-slipped, fell) or a trial is not a fair rating
-        bad = df.comment.fillna("").str.contains(r"\(Handslip\)|Fell|Fll|BrkLine", case=False)
+        # a run spoiled at the start (hand-slipped, fell) is not a fair rating. A trial keeps its figure (it is the
+        # only form a debutant or a dog back from a break has; the model is told it was a trial), read against the
+        # graded standard
         for c in ("gsr", "esr", "fsr"):
             df[c] = df[c].where(~bad)
+        df = df.drop(columns=["_std_win", "_std_sec", "_std_runin"])
         df["gsr_clean"] = df.gsr.where(df.trouble == 0)              # rating from a clear run only
         df["gsr_trouble_adj"] = df.gsr + 1.5 * df.trouble             # a troubled run, credited ~1.5 lengths a bump
         return df
