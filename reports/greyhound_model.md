@@ -1854,4 +1854,31 @@ about 3.7 lengths; below 0 is faster than the dog's level says):
 The bitches' figures match the form writers' account of the season (slower on return, right by the fourth or fifth
 run) without the season's date; the age curve puts the improving phase earlier than the practitioners' "peak at 30
 to 36 months", because it is measured against the dog's own level, which is still catching up at 18 to 24 months.
-Batch 23's scores: pending.
+
+### 41.6 Batch 23: the table on the live model's trees (greyhound-fastloop.yml run 43061572707)
+
+Test 1 Jun to 5 Nov 2026, 106,719 runners, one seed, each against all1 (the live model's trees); z is the paired
+difference over its bootstrap standard error by day; the registered bar is 3, with the log-loss no worse beyond 1.
+
+| Experiment | Features | RMSE log(BSP) | With the per-track stretch | Against all1 (90%) | z | Log-loss | z |
+|---|---|---|---|---|---|---|---|
+| all1 (the live trees) | 541 | 0.3543 | 0.3490 | - | - | 0.43806 | - |
+| all1_xtime (the table added) | 574 | 0.3465 | 0.3418 | -0.0078 (-0.0086 to -0.0070) | -16.4 | 0.43727 | -4.0 |
+| all1_xtime_lean (et_, tn_, kf_ dropped) | 522 | 0.3519 | 0.3468 | -0.0024 (-0.0033 to -0.0016) | -4.6 | 0.43749 | -2.8 |
+| all1_xtime_only (fg and fm time figures dropped too) | 494 | 0.3553 | 0.3506 | +0.0010 (+0.0001 to +0.0019) | +1.8 | 0.43799 | -0.3 |
+
+**The table passes, added to what is there** (z -16.4). For scale, the form, draw and bend tables together were
+worth -0.0023 on the same trees (batch 17). In all1_xtime the table is the second family the model leans on (the
+RMSE rises 0.0742 when its columns are shuffled; the figs table, with the market ratings, 0.2879), and
+`xt_tot_vs_field` (the expected whole-race time against the field) is the third feature by SHAP value, the expected
+sectional against the dog drawn inside (`xt_sec_vs_in`) the seventh, today's adjustments (`xt_tot_adj`) and the last
+run's surprise in the top 20. The gain is in every band of experience (dogs with 20 or more runs 0.3399 to 0.3314,
+debutants 0.7056 to 0.6954) and at every track listed.
+
+**It does not replace the older time features.** Dropping the engine's expected time, the track-normalised times and
+the Kalman levels gives back two thirds of the gain; dropping the figs and form time figures as well loses all of
+it. The faulty old figures still carry something the new one does not (the meeting variant of the last run,
+`tn_var_last`, stays the second feature), so they stay until a later test says otherwise.
+
+**Next (registered, `batch24_expected_time_stack.json`):** the same comparison in the live model itself, the stack
+at three seeds. Nothing live has changed.
