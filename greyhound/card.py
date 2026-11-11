@@ -45,9 +45,11 @@ def _race_id(market_id: str) -> int:
     return -int(zlib.crc32(str(market_id).encode()))
 
 
-def cards(markets: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
-    """The day's GB WIN markets (the recorder's catalogue rows) as card rows matched to ``history`` (the GBGB runs,
-    before ``data.clean``)."""
+def cards(markets: pd.DataFrame, history: pd.DataFrame, trials: pd.DataFrame | None = None) -> pd.DataFrame:
+    """The day's GB WIN markets (the recorder's catalogue rows) as card rows matched to ``history`` (the GBGB runs)
+    and, when given, to ``trials`` (the trial rows ``data.clean`` drops: greyhound/pit/trials.py ``select``), so a dog
+    that has only trialled gets its GBGB id, sire, dam, birth month, sex and trainer (the audit of 11 Nov 2026,
+    finding 2: a debutant on the card had none of them, though every training row has)."""
     w = markets[(markets.market_type.fillna("WIN") == "WIN") & (markets.country.fillna("GB") == "GB")].copy()
     w = w.drop_duplicates(["market_id", "selection_id"], keep="last")
     uk = pd.to_datetime(w.market_start_utc, utc=True, errors="coerce").dt.tz_convert("Europe/London")
@@ -68,7 +70,12 @@ def cards(markets: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
     # the race's number at its meeting, as GBGB numbers a card: its order by the off
     out["race_number"] = out.groupby(["track", "race_date"]).race_time.rank(method="dense").astype(float)
     # each dog's GBGB history by name: the most recent dog of the name, with its static fields from its last run
-    h = history.dropna(subset=["dog_id"]).sort_values(["race_date", "race_time"], kind="stable")
+    if trials is not None and len(trials):
+        both = [c for c in ("dog_id", "dog_name", "race_date", "race_time", "sire", "dam", "trainer", "born", "sex",
+                            "season") if c in history and c in trials]
+        history = pd.concat([history[both], trials[both]], ignore_index=True)
+    h = history.dropna(subset=["dog_id"]).assign(race_time=lambda x: x.race_time.astype(str)).sort_values(
+        ["race_date", "race_time"], kind="stable")
     last = h.assign(_n=h.dog_name.map(norm_name)).drop_duplicates("_n", keep="last").set_index("_n")
     key = out.dog_name.map(norm_name)
     found = key.isin(last.index)

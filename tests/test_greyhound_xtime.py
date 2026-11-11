@@ -144,3 +144,13 @@ def test_a_relaid_track_is_learnt_by_the_standard(small):
     assert abs((late.xt_tot_time - late.adjusted_time).mean()) < 0.06
     y = notes["tot"]["by_year"][2025]
     assert y["rmse_within_race"] < 0.8 * y["rmse_within_race_no_dog"]
+
+
+def test_the_trouble_price_is_the_same_at_every_refit(built):
+    """The audit of 11 Nov 2026 (finding 29): the old cost was added to the refit's target, so a code's price grew at
+    each refit (0.82, 1.23, 1.50, 1.71, 1.83 for a true 0.82). It must sit at the planted cost from the first fit."""
+    _, _, _, notes = built
+    by_fit = list(notes["tot"]["top_code_by_fit"].values())
+    assert len(by_fit) >= 3 and max(by_fit) < 1.25 * min(by_fit)
+    # 0.25 s on about 27 s: 0.84% to 1.02% by track; capped at 1.5
+    assert 0.6 < by_fit[-1] < 1.2

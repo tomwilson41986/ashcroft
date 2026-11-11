@@ -270,10 +270,12 @@ def card_tables(store, day: date, card: pd.DataFrame) -> dict[str, pd.DataFrame]
     from greyhound.model import load_prices
     from greyhound.pit import core
     from greyhound.track import runs_through
-    hist = runs_through(store, day - timedelta(days=1), first_year=PIT_FIRST_YEAR)
+    trial_rows: list = []
+    hist = runs_through(store, day - timedelta(days=1), first_year=PIT_FIRST_YEAR, trials_out=trial_rows)
     runs = clean(with_cards(hist, card))
     del hist
-    ctx = {"fetch_lag": core.raw_fetch_lag(store), "prices": load_prices(store, f"{PIT_FIRST_YEAR}-{day.year}")}
+    ctx = {"fetch_lag": core.raw_fetch_lag(store), "prices": load_prices(store, f"{PIT_FIRST_YEAR}-{day.year}"),
+           "trial_runs": trial_rows[0] if trial_rows else None}          # the trials table (greyhound/pit/trials.py)
     tabs = pit.build_tables(list(sm.PIT_TABLES), runs, None, ctx, keep=True)
     keys = runs.loc[runs.is_card, pit.KEY].drop_duplicates()
     return {n: t.merge(keys, on=pit.KEY) for n, t in tabs.items()}
@@ -292,8 +294,9 @@ def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
     markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
     if markets is None or not len(markets):
         return {"day": f"{day:%Y-%m-%d}", "note": "no greyhound catalogue recorded yet"}
-    hist = runs_through(store, day - timedelta(days=1))
-    card = cards(markets, hist)
+    trial_rows: list = []                                         # a dog that has only trialled is matched to them
+    hist = runs_through(store, day - timedelta(days=1), trials_out=trial_rows)
+    card = cards(markets, hist, trials=trial_rows[0] if trial_rows else None)
     card = card[card.race_date == f"{day:%Y-%m-%d}"]
     card = drop_removed(card, removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
     if not len(card):
@@ -364,8 +367,9 @@ def predict(store, day: date, s3=None) -> dict:
     markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
     if markets is None or not len(markets):
         return {"day": f"{day:%Y-%m-%d}", "note": "no greyhound catalogue recorded yet"}
-    hist = runs_through(store, day - timedelta(days=1))
-    card = cards(markets, hist)
+    trial_rows: list = []                                         # a dog that has only trialled is matched to them
+    hist = runs_through(store, day - timedelta(days=1), trials_out=trial_rows)
+    card = cards(markets, hist, trials=trial_rows[0] if trial_rows else None)
     card = card[card.race_date == f"{day:%Y-%m-%d}"]
     card = drop_removed(card, removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
     eng = GreyhoundMetricsEngine(blocks=tuple(meta.get("blocks", ["parity"])))
@@ -422,9 +426,11 @@ def card_check(store, day: date, blocks=LIVE_BLOCKS, s3=None, matrix_blocks=LIVE
     markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
     if markets is None or not len(markets):
         return {"day": ds, "note": "no greyhound catalogue recorded"}
-    full = runs_through(store, day)
+    trial_rows: list = []
+    full = runs_through(store, day, trials_out=trial_rows)
     hist = full[full.race_date.astype(str) < ds]
-    card = cards(markets, hist)
+    trials_before = trial_rows[0][trial_rows[0].race_date.astype(str) < ds] if trial_rows else None
+    card = cards(markets, hist, trials=trials_before)
     card = drop_removed(card[card.race_date == ds], removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
     # every runner is priced (a dog with no history still counts in its field); only the matched are compared
     m = card[card.matched_history]

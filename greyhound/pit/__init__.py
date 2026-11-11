@@ -42,7 +42,7 @@ from pathlib import Path
 
 import pandas as pd
 
-TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather", "figs", "form", "draw", "bend", "xtime", "dyad", "cycle")
+TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather", "figs", "form", "draw", "bend", "xtime", "dyad", "cycle", "trials")
 KEY = ["race_id", "dog_id"]
 STORE_PREFIX = "greyhound/pit"
 

@@ -244,7 +244,10 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
             break
         if fit and period[i[0]] != cur:
             cur = period[i[0]]
-            pr = o["e1"] + xb + cost
+            # the target of the refit: the residual after the variant with the adjustments put back. The trouble is
+            # still in e1 (only e2 has the cost taken out), so the cost is NOT added: until 11 Nov 2026 it was, and
+            # each yearly refit priced a code at its true cost plus the cost already applied (the audit, finding 29)
+            pr = o["e1"] + xb
             rows = np.flatnonzero((period < cur) & np.isfinite(pr))
             if len(rows) >= MIN_FIT:
                 b0, beta, gamma, mean_cost = ridge(P["X"], P["C"], np.clip(pr[rows], -CLIP - 2, CLIP + 2), rows)
@@ -442,6 +445,10 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
             price = sorted(((inv[j], round(float(g), 3)) for j, g in enumerate(last["gamma"]) if g != 0.0),
                            key=lambda kv: -kv[1])
             notes[name]["effects_pct"] = {nm: round(float(b), 3) for nm, b in zip(P["names"], last["beta"])}
+            if price:                                                # the dearest code's price at every refit: steady
+                j_top = P["vocab"][price[0][0]]
+                notes[name]["top_code_by_fit"] = {int(p_): round(float(v["gamma"][j_top]), 3)
+                                                  for p_, v in sorted(o["fits"].items())}
             notes[name]["code_cost_pct_top"] = dict(price[:15])
             notes[name]["code_cost_pct_bottom"] = dict(price[-10:])
     tau, grid = figs_mod.fit_tau(out[f"{PREFIX}tot"], race, pd.to_numeric(df.won, errors="coerce"), early)
