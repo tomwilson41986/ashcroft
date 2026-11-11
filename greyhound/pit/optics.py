@@ -65,7 +65,7 @@ SOURCE = ("GBGB results (calculated time, position, distance beaten: sources/gbg
           "days, against the expected-time table (xt_tot)")
 N_CARD = 6                   # the lines a card prints
 MIN_POS = 3                  # form figures need this many lines
-PHOTO = 0.1                  # lengths: a head or less (sources/gbgb.py reads Hd 0.1, Nk and SH 0.05, DH 0)
+PHOTO = 0.25                 # lengths: a head or less (sources/gbgb.py reads Hd 0.25, SH 0.125, DH 0; a neck 0.375)
 PACE = (0.050, 0.080)        # seconds a metre a greyhound's calculated time lies in (20 to 12.5 m/s); the store of
 #                              1 Jul 2025 to 5 Nov 2026 has 16 times outside (3 races, keying errors) of 346,695, the
 #                              rest 0.0559 to 0.0754

@@ -228,17 +228,37 @@ def since_break(df: pd.DataFrame, gap_days: int = 42) -> pd.DataFrame:
 
 
 def class_variant_gsr(df: pd.DataFrame) -> pd.Series:
-    """A speed figure on a class-adjusted meeting variant. The engine's variant is the night's median winner against
-    the track standard, so a night of top grades reads as fast going. Here each winner's deviation is first measured
-    against what its grade usually runs at the track and trip (from earlier days), then the night's median taken."""
+    """A speed figure on a class-adjusted meeting variant: each winner's deviation is first measured against what its
+    grade usually runs at the track and trip (from earlier days), then the night's median taken. (From 11 Nov 2026 the
+    engine's own variant carries a class term too, shrunk: greyhound/metrics.py.) The figure wears the engine's masks:
+    it is no figure where the engine's is none - a time 40 lengths from the standard, a fall, a hand-slipped start -
+    and a winner 40 lengths out does not move the night's median. Until 11 Nov 2026 it wore none, and one mis-typed
+    time sat in a dog's windows for six runs (the audit of 11 Nov 2026, finding 14)."""
     from model.lagsafe import race_lagged_expanding_mean
     from greyhound.metrics import LENGTH_S
     dev = df.adjusted_time.where(df.won == 1) - df.std_time
+    dev = dev.where(dev.abs() <= 40 * LENGTH_S)
+    if "gsr" in df:
+        dev = dev.where(df.gsr.notna())
     tmp = df.assign(_dev=dev)
     grade_dev = race_lagged_expanding_mean(tmp, ["track", "distance_m", "race_class"], "_dev")
     adj = (dev - grade_dev.fillna(0.0))
     variant = adj.groupby(df.meeting_id).transform("median").fillna(0.0)
-    return (df.std_time - (df.adjusted_time - variant)) / LENGTH_S
+    out = (df.std_time - (df.adjusted_time - variant)) / LENGTH_S
+    out = out.where(out.abs() <= 40)
+    return out.where(df.gsr.notna()) if "gsr" in df else out
+
+
+def debut_prior(df: pd.DataFrame) -> pd.Series | None:
+    """Where a dog's rating starts: the mean figure of the RUNNERS of its first race's class at the track, on earlier
+    days, else of every earlier runner. Until 11 Nov 2026 it started at the class's WINNERS' par (``grade_par``), and
+    with no par at 0, the winners' time standard itself (the audit of 11 Nov 2026, finding 20)."""
+    if "gsr" not in df or "race_class" not in df:
+        return df.grade_par if "grade_par" in df else None
+    from model.lagsafe import race_lagged_expanding_mean
+    by_class = race_lagged_expanding_mean(df, ["track", "race_class"], "gsr")
+    everyone = race_lagged_expanding_mean(df.assign(_pop=0), "_pop", "gsr")
+    return by_class.fillna(everyone)
 
 
 def calculate(df: pd.DataFrame, dog_days=None) -> tuple[pd.DataFrame, list[str]]:
@@ -249,7 +269,7 @@ def calculate(df: pd.DataFrame, dog_days=None) -> tuple[pd.DataFrame, list[str]]
     cols[f"{PREFIX}elo"] = e.r.astype(np.float32)
     cols[f"{PREFIX}elo_n"] = e.n.astype(np.float32)
     cols.update(_race_stats(e.r, g, f"{PREFIX}elo"))
-    k = kalman(df, df.grade_par if "grade_par" in df else None)
+    k = kalman(df, debut_prior(df))
     cols[f"{PREFIX}kr"] = k.m.astype(np.float32)
     cols[f"{PREFIX}kr_sd"] = k.sd.astype(np.float32)
     cols[f"{PREFIX}kr_n"] = k.n.astype(np.float32)

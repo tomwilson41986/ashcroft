@@ -9,7 +9,8 @@ track on the time. This table is one model of the time itself, read before the r
     100 x ln(time) = standard(track, distance, hurdles) + variant(meeting)
                      + the dog's level + its preference (this track and trip; this distance band)
                      + trap(track, distance, trap) + grade(track, distance, grade)
-                     + x'b (trial, field size, age by sex, days off by sex, runs since a layoff by sex, experience,
+                     + x'b (trial, handicap and its start, field size, age by sex, days off by sex, runs since a
+                            layoff by sex, experience,
                             first run at the track or trip, a change of track, a change of trip, last weight against
                             the dog's own mean)
                      + trouble(the run's comment codes) + noise
@@ -36,8 +37,10 @@ with its own trial and field-size adjustments, so a debutant comes to its first 
 trial moves no standard, no trap or grade effect, and is never a row of the table.
 
 Three times are modelled the same way, each with its own states: the whole race (GBGB's calculated time), the
-sectional (to the line the first time: early pace) and the run home (run time less sectional). Handicap races
-(staggered starts) and a fall are read by none; hurdles have their own standard.
+sectional (to the line the first time: early pace) and the run home (run time less sectional). A fall is read by
+none; hurdles have their own standard. A handicap (staggered starts) is read for the whole-race time only, like a
+trial: GBGB's calculated time there is "as from scratch" (the run plus 0.08 s a metre of start), so it moves the
+dog's level with the handicap and its metres as fitted adjustments, and moves no standard, trap or grade effect.
 
 The experts' view (Timeform's expected time against the field, early pace first, the trap against the neighbours'
 pace: section 41) is the race-relative columns: lengths against the field on each time, the expected sectional
@@ -76,7 +79,7 @@ GRID = [(r, q, p0) for r in (0.8, 1.6, 3.2, 6.4) for q in (0.0003, 0.001, 0.003)
 #: build on the real data (run 43055884883, 11 Nov 2026) priced every code: "always led" came out at -3.9% of the time
 #: and the model's error grew each year, because leading is what running fast looks like, not luck. Only interference
 #: is taken out of a past run, it can only have cost time, and never more than ``COST_CAP`` percent
-TROUBLE = re.compile(r"crd|crowd|bmp|bump|blk|baulk|hmp|hamp|imped|stumb|fcdtock|^ck|checked")
+TROUBLE = core.INTERFERENCE
 COST_CAP = 1.5
 BANDS = (350.0, 550.0, 750.0)
 OFF_EDGES = (5, 8, 11, 15, 22, 36, 61, 101, 181)
@@ -97,7 +100,12 @@ def prepare(df: pd.DataFrame) -> dict:
     n = len(df)
     dn = (core.day(df) - pd.Timestamp("2000-01-01")).dt.days.to_numpy()
     dist = pd.to_numeric(df.distance_m, errors="coerce")
-    hurdle = df.grade_family.isin(["H", "HP"]) if "grade_family" in df else pd.Series(False, index=df.index)
+    # hurdles: GBGB's race type, or the class H. Until 11 Nov 2026 the key read the class HP - the handicap, whose
+    # times are not read at all (``targets``) - and the real hurdle races, classed OR, shared the flat standard. A
+    # card does not know the race type: a hurdle race on the card is read as flat (22 races in 16 months)
+    hurdle = df.hurdles.fillna(False).astype(bool) if "hurdles" in df else pd.Series(False, index=df.index)
+    if "grade_family" in df:
+        hurdle = hurdle | (df.grade_family == "H")
     track = df.track.astype(str)
     key_s = track + "|" + dist.round().astype("Int64").astype(str) + "|" + hurdle.astype(int).astype(str)
     trap = pd.to_numeric(df.trap, errors="coerce").fillna(0).astype(int).astype(str)
@@ -127,8 +135,13 @@ def prepare(df: pd.DataFrame) -> dict:
     field = pd.to_numeric(df.field, errors="coerce").fillna(6).clip(1, 6).to_numpy(int) if "field" in df else \
         np.full(n, 6)
     debut = career == 0
+    hcp = df.handicap.fillna(False).to_numpy(bool) if "handicap" in df else np.zeros(n, bool)
+    start = pd.to_numeric(df.hcp_start, errors="coerce") if "hcp_start" in df else pd.Series(np.nan, index=df.index)
+    d3 = d.assign(_s=start.fillna(0.0), _sn=start.notna().astype(float), _trap=trap)
+    usual = core.prior_window(d3, ["track", "_trap"], ["_s", "_sn"], None)
+    start_m = np.where(start.notna(), start.to_numpy(float), (usual._s / usual._sn.replace(0, np.nan)).to_numpy(float))
     # the design: one indicator a level (the ridge and the intercept settle the baseline)
-    rows, cols, names = [], [], []
+    rows, cols, vals, names = [], [], [], []
 
     def add(name: str, code: np.ndarray, labels: list[str], skip: int | None = None):
         for lv, lab in enumerate(labels):
@@ -137,9 +150,23 @@ def prepare(df: pd.DataFrame) -> dict:
             r = np.flatnonzero(code == lv)
             rows.append(r)
             cols.append(np.full(len(r), len(names)))
+            vals.append(np.ones(len(r)))
             names.append(f"{name}:{lab}")
 
+    def add_number(name: str, value: np.ndarray):
+        r = np.flatnonzero(np.isfinite(value) & (value != 0))
+        rows.append(r)
+        cols.append(np.full(len(r), len(names)))
+        vals.append(value[r].astype(float))
+        names.append(name)
+
     add("trial", trial.astype(int), ["no", "yes"], skip=0)
+    # a handicap: GBGB's calculated time is the run time plus the allowance plus 0.08 s a metre of start, a time "as
+    # from scratch" by a fixed convention. The run is read (it is the only form a handicap dog has there) with the
+    # handicap and its start as adjustments, so the fit says what the convention is worth; on a card the start is
+    # the trap's usual one at the track (the trap is the handicap's order: greyhound/metrics.py)
+    add("hcp", hcp.astype(int), ["no", "yes"], skip=0)
+    add_number("hcp:10m", np.where(hcp, np.nan_to_num(start_m, nan=0.0) / 10.0, 0.0))
     add("field", field - 1, [str(k) for k in range(1, 7)], skip=5)
     a = np.where(np.isfinite(age), np.clip(np.floor((age - 12) / 3), 0, 18), 19).astype(int)
     add("age", a * 2 + bitch, [f"{12 + 3 * k if k < 19 else 'unknown'}m {'bitch' if b else 'dog'}"
@@ -163,8 +190,7 @@ def prepare(df: pd.DataFrame) -> dict:
     add("weight", np.where(np.isfinite(wdiff), np.digitize(wdiff, (-1.0, -0.4, 0.4, 1.0)), 5),
         ["<-1kg", "-1..-0.4kg", "level", "0.4..1kg", ">1kg", "unknown"], skip=2)
     from scipy import sparse
-    X = sparse.csr_matrix((np.ones(sum(len(r) for r in rows)), (np.concatenate(rows), np.concatenate(cols))),
-                          shape=(n, len(names)))
+    X = sparse.csr_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))), shape=(n, len(names)))
     # the comment codes (the run's own result: they price a past run, never today's)
     toks = [trouble.codes(c) for c in df.comment.fillna("").to_numpy()] if "comment" in df else [[] for _ in range(n)]
     vocab = {}
@@ -184,19 +210,25 @@ def prepare(df: pd.DataFrame) -> dict:
             "kt": _codes(key_s, trap), "kc": _codes(key_s, cls), "pk": _codes(df.dog_id, key_s),
             "pb": _codes(df.dog_id, band), "race": pd.factorize(df.race_id)[0],
             "meeting": pd.factorize(df.meeting_id)[0] if "meeting_id" in df else _codes(track, pd.Series(dn)),
-            "trial": trial, "X": X, "names": names, "C": C, "vocab": vocab, "period": period, "order": order,
-            "bounds": bounds}
+            "trial": trial, "soft": trial | hcp, "X": X, "names": names, "C": C, "vocab": vocab, "period": period,
+            "order": order, "bounds": bounds}
 
 
 def targets(df: pd.DataFrame) -> dict:
-    """100 x ln(seconds) of the three times; NaN for a fall, a handicap race, a card row or a missing clock."""
+    """100 x ln(seconds) of the three times; NaN for a fall, a card row or a missing clock. A handicap's calculated
+    time is read (``prepare``: the handicap and its start are adjustments); its sectional and run-in are not: each
+    dog starts from its own mark, so they are over other ground. Until 11 Nov 2026 no handicap run was read at all,
+    and a dog with handicap form was priced worse in its flat races (stack3_all4, 1 Jun - 5 Nov 2026, experienced
+    runners in flat races: RMSE of log(BSP) 0.313 with no handicap in the last 10 runs, 0.353 with a fifth to a
+    half of them, 0.400 with more)."""
     bad = df.comment.fillna("").str.contains(r"\(Handslip\)|Fell|Fll|BrkLine", case=False) if "comment" in df else \
         pd.Series(False, index=df.index)
     hcp = df.handicap.fillna(False).astype(bool) if "handicap" in df else pd.Series(False, index=df.index)
     sec = pd.to_numeric(df.sectional, errors="coerce")
     t = {"tot": pd.to_numeric(df.adjusted_time, errors="coerce"), "sec": sec,
          "run": pd.to_numeric(df.run_time, errors="coerce") - sec}
-    return {k: (100.0 * np.log(v.where((v > 0) & ~bad & ~hcp))).to_numpy(float) for k, v in t.items()}
+    return {k: (100.0 * np.log(v.where((v > 0) & ~bad & (~hcp if k != "tot" else True)))).to_numpy(float)
+            for k, v in t.items()}
 
 
 # ---- the fits --------------------------------------------------------------------------------------------------------
@@ -223,7 +255,8 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
     ``upto``: stop after that day number. ``fit``: refit the covariates' effects and the codes' prices each period
     (off for the grid over the filter's constants)."""
     n, dn, dog, key, kt, kc, pk, pb = P["n"], P["dn"], P["dog"], P["key"], P["kt"], P["kc"], P["pk"], P["pb"]
-    race, meeting, trial, period = P["race"], P["meeting"], P["trial"], P["period"]
+    race, meeting, period = P["race"], P["meeting"], P["period"]
+    trial = P.get("soft", P["trial"])               # a trial or a handicap: read for the dog's level, nothing else
     r_, q_, P0 = prm["r"], prm["q"], prm["p0"]
 
     def state(codes):
@@ -366,7 +399,7 @@ def fit_constants(P: dict, y: np.ndarray, early_to: int) -> tuple[dict, list]:
     if not len(seen):
         return {"r": 0.3, "q": 0.001, "p0": 0.3}, []
     half = int(np.median(seen))
-    score = (dn > half) & (dn <= early_to) & ~P["trial"]
+    score = (dn > half) & (dn <= early_to) & ~P.get("soft", P["trial"])
     grid, best = [], None
     for r, q, p0 in GRID:
         o = run_filter(P, y, {"r": r, "q": q, "p0": p0}, upto=early_to, fit=False)
@@ -415,6 +448,7 @@ def with_trials(df: pd.DataFrame, trial_runs: pd.DataFrame | None) -> pd.DataFra
         "born": tr.born.to_numpy() if "born" in tr else np.nan, "sex": tr.sex.to_numpy() if "sex" in tr else np.nan,
         "position": pd.to_numeric(tr.position, errors="coerce").to_numpy(), "won": np.nan, "is_trial": True,
         "is_card": False, "grade_family": "T", "handicap": False,
+        "hurdles": (tr.race_type.astype(str).str.strip().str.lower() == "hurdles").to_numpy() if "race_type" in tr else False,
         "field": tr.groupby("race_id").dog_id.transform("size").to_numpy(float)})
     # a trial session is its own meeting (never a race meeting's variant): negative ids clear of the cards'
     key = tr.track.astype(str) + "|" + tr.race_date.astype(str)
@@ -469,7 +503,7 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
         # how well the forecast read the time (out of sample by construction): graded runs, a run or more behind
         e_l = pd.Series(o["e"], index=df.index) * per_pct
         flat = pd.Series(o["e"] + o["level"] + o["pref"], index=df.index) * per_pct
-        k = np.isfinite(o["e"]) & ~P["trial"] & (o["n"] >= 1) & (np.abs(o["e"]) <= OUT)
+        k = np.isfinite(o["e"]) & ~P.get("soft", P["trial"]) & (o["n"] >= 1) & (np.abs(o["e"]) <= OUT)
         acc = {}
         for yv in sorted(set(year[k])):
             m = k & (year == yv)

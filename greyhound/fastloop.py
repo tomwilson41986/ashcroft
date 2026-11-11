@@ -48,7 +48,14 @@ CACHE_PREFIX = "greyhound/feature_cache"
 #: the files whose code makes the features: a change to any of them is a new cache
 CODE_FILES = ("greyhound/metrics.py", "greyhound/parity.py", "greyhound/hrb.py", "greyhound/lib.py",
               "greyhound/data.py", "greyhound/track.py", "greyhound/model.py", "sources/gbgb.py",
-              "greyhound/times.py", "greyhound/intent.py", "greyhound/ability.py", "greyhound/etime.py")
+              "greyhound/times.py", "greyhound/intent.py", "greyhound/ability.py", "greyhound/etime.py",
+              # the lagged windows every block is built with (read here, never changed: it is the horse model's)
+              "model/lagsafe.py")
+#: columns that are a race's result or its price: never a feature, whatever a spec names (the audit of 11 Nov 2026,
+#: finding 33: nothing stopped one being named in add_features or keep)
+LABELS = ("won", "placed2", "position", "lbw", "beaten_lengths", "run_time", "adjusted_time", "sectional", "runin",
+          "gsr", "esr", "fsr", "gsr_clean", "gsr_trouble_adj", "variant", "sp_decimal", "sp_p", "sp_p_norm", "bsp",
+          "bsp_p_norm", "market_pos", "comment", "brk", "epace", "led", "trouble", "path", "fin", "dnf")
 KEEP_FROM = "2020-06-01"
 BLOCKS = ("parity", "hrb", "lib", "times", "intent", "ability", "etime")   # F3, F5, F6 and the expected time
 PRICE_YEARS = "2018-2026"
@@ -99,7 +106,7 @@ def code_hash(root: Path | None = None) -> str:
 
 def build_cache(store, last: date, keep_from: str = KEEP_FROM) -> dict:
     """Every feature of every block on every GBGB run to ``last``, the modelling rows from ``keep_from``, to S3."""
-    from greyhound.live import CARD_UNSAFE
+    from greyhound.live import CARD_UNSAFE, CARD_UNSAFE_PREFIXES
     from greyhound.metrics import GreyhoundMetricsEngine
     from greyhound.model import load_prices, modelling_rows, slim
     from greyhound.track import runs_through
@@ -119,6 +126,7 @@ def build_cache(store, last: date, keep_from: str = KEEP_FROM) -> dict:
     meta = {"hash": h, "built_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "last_day": str(last),
             "keep_from": keep_from, "rows": int(len(df)), "races": int(df.race_id.nunique()),
             "features": {b: f for b, f in eng.block_features.items()}, "card_unsafe": sorted(CARD_UNSAFE),
+            "card_unsafe_prefixes": list(CARD_UNSAFE_PREFIXES),
             "timings": eng.timings, "seconds": round(time.monotonic() - t0), "bytes": len(buf.getvalue())}
     store.put(f"{CACHE_PREFIX}/{h}/meta.json", json.dumps(meta, indent=1).encode())
     return meta
@@ -164,7 +172,8 @@ def feature_set(meta: dict, name: str) -> list[str]:
         raise ValueError(f"unknown feature set {name!r}")
     feats = list(dict.fromkeys(f for b in order[key] for f in blocks.get(b, [])))
     if card:
-        feats = [f for f in feats if f not in set(meta["card_unsafe"])]
+        feats = [f for f in feats if f not in set(meta["card_unsafe"])
+                 and not f.startswith(tuple(meta.get("card_unsafe_prefixes", ())))]
     return feats
 
 
@@ -389,6 +398,32 @@ def _block_prefix(name: str) -> str:
     return importlib.import_module(f"greyhound.blocks.{name}").PREFIX
 
 
+def _table_card_unsafe(blocks) -> set[str]:
+    """The columns the metrics tables among ``blocks`` mark as unknown on the morning card (each table's
+    ``CARD_UNSAFE``): a card-safe feature set leaves them out (the audit of 11 Nov 2026, finding 27)."""
+    from greyhound import pit
+    out: set[str] = set()
+    for b in blocks:
+        if b.startswith("pit_"):
+            out |= set(getattr(pit.module(b[4:]), "CARD_UNSAFE", ()))
+    return out
+
+
+def _stale_tables(blocks) -> list[str]:
+    """The metrics tables among ``blocks`` that were built by other engine code than this (greyhound/pit ``stale``):
+    a table read beside the cache must be the table of the engine that made the cache."""
+    from greyhound import pit
+    out = []
+    for b in blocks:
+        if b.startswith("pit_"):
+            try:
+                if pit.stale(b[4:]):
+                    out.append(b[4:])
+            except Exception:                              # no store here (a test): nothing to tell
+                pass
+    return out
+
+
 def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_from: str = TEST_FROM,
                    test_to: str | None = None) -> tuple[dict, pd.DataFrame]:
     """One experiment: its features (the set, the blocks added, the prefixes dropped), one fit on the recipe's window
@@ -406,11 +441,21 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     added = {}
     for b in exp.get("add_blocks", []):
         added[b] = [c for c in df.columns if c in feats and c.startswith(_block_prefix(b))]
+    stale_tables = _stale_tables(exp.get("add_blocks", []))
+    if stale_tables:
+        log.warning("%s: tables built by other engine code than this: %s", exp["name"], stale_tables)
+    set_name = exp.get("features", "card_safe")
+    if set_name == "card_safe" or set_name.endswith("-card"):      # an added block's card-unsafe columns go too:
+        unsafe = _table_card_unsafe(exp.get("add_blocks", []))      # the list's prefixes and each table's own
+        feats = [f for f in feats if f not in unsafe and not f.startswith(tuple(meta.get("card_unsafe_prefixes", ())))]
     for pre in exp.get("drop", []):
         feats = [f for f in feats if not f.startswith(pre)]
     if exp.get("keep"):                                # a baseline on named features only (exact names or prefixes)
         feats = [f for f in feats if any(f == k or f.startswith(k) for k in exp["keep"])]
     feats = [f for f in feats if f in df.columns]
+    named = [f for f in feats if f in LABELS]
+    if named:
+        raise ValueError(f"{exp['name']}: a result or price column named as a feature: {named}")
     if not feats:
         raise ValueError(f"{exp['name']}: no features left")
     obj = exp.get("objective", "softmax")
@@ -573,7 +618,8 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
            "logloss": round(logloss(pred.p_model, pred.won), 5),
            "seconds_fit": round(fit_s), "top_features": {k: round(float(v), 4) for k, v in
                                                          (imp / max(imp.sum(), 1e-12)).sort_values(ascending=False)
-                                                         .head(15).items()}}
+                                                         .head(15).items()},
+           "stale_tables": stale_tables}
     if netm is not None:
         res["nn"] = {k: netm[k] for k in ("epochs", "best", "seconds", "es_xent")}
         res["nn"]["seeds"] = len(nets)

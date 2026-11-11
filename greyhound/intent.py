@@ -27,34 +27,39 @@ from model.lagsafe import race_lagged_expanding_count, race_lagged_expanding_sum
 PREFIX = "ti_"
 BREAK_DAYS = 28
 PRIOR = 5.0
-SITUATIONS = ("class_down", "class_up", "dist_up", "dist_down", "trial_return", "new_trainer")
+#: the situations. Until 11 Nov 2026 there was a fifth, "trial_return" (the dog's last outing a trial after a break):
+#: no trial reaches the engine's frame (data.clean), so it fired only after an intertrack race, which is a race. A
+#: dog's trials are read on their own channel (greyhound/pit/trials.py)
+SITUATIONS = ("class_down", "class_up", "dist_up", "dist_down", "new_trainer")
 
 
 def flags(df: pd.DataFrame, dog_days) -> pd.DataFrame:
     """Each run's situations against the dog's last day (NaN for a dog's first day)."""
     tmp = df[["dog_id", "race_date"]].copy()
-    tmp["_trial"] = df.is_trial.astype(float).to_numpy()
     tmp["_grade"] = pd.to_numeric(df.grade, errors="coerce").to_numpy()
+    # the ladder the grade is a rung of (data.GRADE_SCALE): a class move is read on one ladder only
+    scale = df.grade_scale if "grade_scale" in df else df.grade_family if "grade_family" in df else pd.Series("A", index=df.index)
+    tmp["_scale"] = pd.factorize(scale.astype(object).where(scale.notna()))[0].astype(float)
+    tmp.loc[tmp._scale < 0, "_scale"] = np.nan
     tmp["_dist"] = pd.to_numeric(df.distance_m, errors="coerce").to_numpy()
     tmp["_trainer"] = pd.factorize(df.trainer.astype(str))[0].astype(float)
-    dd = dog_days(tmp, ["_trial"], ["_grade", "_dist", "_trainer"])
+    dd = dog_days(tmp, [], ["_grade", "_scale", "_dist", "_trainer"])
     prev_grade = dd.back(dd.prev("_grade"))
+    prev_scale = dd.back(dd.prev("_scale"))
     prev_dist = dd.back(dd.prev("_dist"))
     prev_trainer = dd.back(dd.prev("_trainer"))
-    last_trial = dd.back(dd.prev("_trial"))
-    gap_before_last = dd.back((dd.prev("_d") - dd.prev("_d", 2)).dt.days.astype(float))
     first_ever = dd.back(dd.prev("_d").isna().astype(float)) == 1
     grade, dist, trainer = tmp._grade.to_numpy(), tmp._dist.to_numpy(), tmp._trainer.to_numpy()
     out = pd.DataFrame(index=df.index)
     with np.errstate(invalid="ignore"):
+        prev_grade = np.where(tmp._scale.to_numpy() == prev_scale, prev_grade, np.nan)
         out["class_down"] = (grade > prev_grade).astype(float)
         out["class_up"] = (grade < prev_grade).astype(float)
         out["dist_up"] = (dist > prev_dist + 1).astype(float)
         out["dist_down"] = (dist < prev_dist - 1).astype(float)
-        out["trial_return"] = ((last_trial == 1) & ~(gap_before_last < BREAK_DAYS)).astype(float)
         out["new_trainer"] = (trainer != prev_trainer).astype(float)
-    known = {"class_down": prev_grade, "class_up": prev_grade, "dist_up": prev_dist, "dist_down": prev_dist,
-             "trial_return": last_trial, "new_trainer": prev_trainer}
+    known = {"class_down": prev_grade + grade, "class_up": prev_grade + grade, "dist_up": prev_dist,
+             "dist_down": prev_dist, "new_trainer": prev_trainer}
     for s, base in known.items():
         out[s] = out[s].where(~np.isnan(base) & ~first_ever)
     return out

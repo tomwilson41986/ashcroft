@@ -40,22 +40,37 @@ import pandas as pd
 from model.lagsafe import race_lagged_expanding_count, race_lagged_expanding_mean, race_lagged_expanding_sum
 
 LENGTH_S = 0.08                     # GBGB's time a length
+LBW_CAP = 15.0                      # lengths behind the winner: the margin's cap (its 99th percentile)
+K_CLASS = 10.0                      # winners of prior on a class's par at a track and trip (meeting variant)
+K_MEET = 2.0                        # races of prior on a meeting's variant
 
 # ----- the comment codes (GBGB's race comments, e.g. "QAw,Rls,Led1,ALd"), as regexes on each comma-separated token
-_BREAK = [(r"^v(ery)?q(uick)?aw|^vqaw", 2.0), (r"^q(uick)?aw|^quickaway|^qaway|^quickaw", 1.0),
-          (r"^e(arly)?p(ace)?$|^epace|^earlyp|^ep$", 1.0), (r"^modaway|^moderatelyaway", 0.0),
-          (r"^lck|^lacked", -1.0), (r"^s(low)?aw|^slowaway|^saway|^slowaw", -1.0),
-          (r"^vs(low)?aw|^vsaw|^veryslow", -2.0), (r"^m(i)?s(se)?d ?br|^missedbr|^msdbrk", -2.0)]
-_LED = r"^(led|ld|a ?led|ald|alwaysled|snld|snled|soonled)( ?1|to1|runup|rnup|$)|^ledto[1-9]|^led1|^ld1|^ald$|^aled$"
-_TROUBLE = r"^(b?crd|crowded|b?bmp|bumped|blk|baulked|fcd|forced|ck|checked|stb|stumbled|fell|fll|imp|hmp|ran ?wide)"
-_SLIGHT = r"^slt"
-_RAILS = r"^(rls|rails|railed)$"
-_MID = r"^(mid|middle)$"
-_WIDE = r"^(w|wide|vw|verywide)$"
-_TO = r"(rls|rails|mid|middle|w|wide)[- ]?t(o)?[- ]?(rls|rails|mid|middle|w|wide)$|^(rls|rails|mid|middle)[- ]?(mid|w|wide|rls)$"
-_FIN_UP = r"^(ranon|rnon|finwell|ranonlate|ranonwell|chl|chal|ldrnin|ledrunin|ledrnin|ldnrln|lednrln|heldon)"
-_FIN_DOWN = r"^(fdd|faded|tired|wkn|weakened|outpaced|stayedon ?slowly)"
-_PATH = {"rls": 1.0, "rails": 1.0, "mid": 2.0, "middle": 2.0, "w": 3.0, "wide": 3.0}
+# with its spaces removed, and on each "&"-joined part of it ("Crd&Led1": crowded, and led at the first bend). Read
+# against the tokens GBGB wrote between 1 Jul 2025 and 5 Nov 2026 (18,229 distinct, 901,364 in all; the audit of
+# 11 Nov 2026, finding 9, found the forms the first parser misread):
+#   the break is the exit from the traps (QAw, SAw, MsdBrk); early pace (EP, LckEP) is the speed to the bend and is
+#   its own measure - "SAw,EP" (a slow start, then pace) was read as a fast break;
+#   led is the lead at the first bend: "Led1", "Ld-1", "LedFr1", "LdT1", always or soon led, led on the run-up, and
+#   "LedTo3" (led until the third bend, so from the start) - but not "Led 1/2" (led at halfway), "Led2", "LedRnIn";
+#   trouble is interference from another dog: crowded, bumped, baulked, forced to check, hampered, impeded, brought
+#   down, a stumble; "badly" counts 2, "slightly" a half, and each place named counts ("Crd1&2" is two). The dog's
+#   own line ("RanWide") is not trouble
+_BREAK = [(r"^v(ery)?q(uick)?aw", 2.0), (r"^q(uick)?aw", 1.0), (r"^mod(erately)?aw", 0.0), (r"^s(low)?aw", -1.0),
+          (r"^v(ery)?s(low)?aw", -2.0), (r"^m(i)?s(se)?dbr", -2.0), (r"^(stb|stumbled)(stt|start|st$)", -2.0)]
+_EP = [(r"^e(arly)?p(ace)?$|^earlyp$", 1.0), (r"^(lck|lacked)(e(arly)?p(ace)?)?$", -1.0)]
+_LED = (r"^(a(lways)?le?d$|s(oo)?nle?d|le?d(rn|run)up|le?d-?to|le?dt-?1(?![/\d])|le?d-?(fr|from)?-?1(?![/\d]))")
+_TROUBLE = (r"^(v?b(adly)?|slt|slightly)?(crd|crowded|bmp|bumped|blk|baulked|balked|hmp|hampered|imp|impeded|stb|stumbled"
+            r"|(fcd|forced)-?(to|t)?-?(b|badly)?-?(c(hec)?k|w(ide)?(\d|$))|ck|checked|brtdn|broughtdown"
+            r"|knockedover|fell|fll)")
+_BADLY = r"^(v?b|v?badly)(crd|crowded|bmp|bumped|blk|baulked|balked|hmp|hampered)"
+_SLIGHT = r"^(slt|slightly)"
+_PLACE = r"^(\d(/\d)?|rnup|runup|rnin|runin|stt|start|nrln|nearline)$"
+_PATHS = r"(vw|vwide|verywide|wide|w|rls|rails|railed|middle|mid)"
+_PATH_RE = rf"^{_PATHS}(?:-|to|t)?{_PATHS}?$"
+_FIN_UP = r"^(ranon|rnon|fin(ished)?well|strfin|chl|chal|ldrnin|ledrunin|ledrnin|ldrunin|ldnrln|lednrln|lednear|heldon|hldon)"
+_FIN_DOWN = r"^(fdd|faded|tired|wkn|weakened|outpaced|stayedonslowly)"
+_PATH = {"rls": 1.0, "rails": 1.0, "railed": 1.0, "mid": 2.0, "middle": 2.0, "w": 3.0, "wide": 3.0, "vw": 3.0,
+         "vwide": 3.0, "verywide": 3.0}
 
 
 def _tokens(comment) -> list[str]:
@@ -63,38 +78,39 @@ def _tokens(comment) -> list[str]:
 
 
 def parse_comment(comment) -> dict:
-    """One run's comment -> break, led, trouble, path, finish."""
-    brk, led, trouble, fin, paths = [], 0.0, 0.0, 0.0, []
+    """One run's comment -> break, early pace, led, trouble, path, finish."""
+    brk, epace, led, trouble, fin, paths = [], [], 0.0, 0.0, 0.0, []
     for t in _tokens(comment):
-        t2 = t.replace(" ", "")
-        for pat, v in _BREAK:
-            if re.search(pat, t2):
-                brk.append(v)
-                break
-        if re.search(_LED, t2):
-            led = 1.0
-        if re.search(_TROUBLE, t2):
-            trouble += 0.5 if re.search(_SLIGHT, t2) else 1.0
-        elif re.search(_SLIGHT, t2) and re.search(r"crd|bmp|blk|ck", t2):
-            trouble += 0.5
-        if re.search(_FIN_UP, t2):
-            fin = max(fin, 1.0)
-        if re.search(_FIN_DOWN, t2):
-            fin = min(fin, -1.0)
-        if re.search(_RAILS, t2):
-            paths.append(1.0)
-        elif re.search(_MID, t2):
-            paths.append(2.0)
-        elif re.search(_WIDE, t2):
-            paths.append(3.0)
-        else:
-            m = re.search(_TO, t2.replace("-", ""))
+        weight = None                                     # the weight of the token's last interference, for "&2"
+        for part in t.replace(" ", "").split("&"):
+            if not part:
+                continue
+            for pat, v in _BREAK:
+                if re.search(pat, part):
+                    brk.append(v)
+                    break
+            for pat, v in _EP:
+                if re.search(pat, part):
+                    epace.append(v)
+                    break
+            if re.search(_LED, part):
+                led = 1.0
+            if re.search(_TROUBLE, part):
+                weight = 0.5 if re.search(_SLIGHT, part) else 2.0 if re.search(_BADLY, part) else 1.0
+                trouble += weight
+            elif weight is not None and re.search(_PLACE, part):
+                trouble += weight                         # "Crd1&2": the same again at the second bend
+            else:
+                weight = None
+            if re.search(_FIN_UP, part):
+                fin = max(fin, 1.0)
+            if re.search(_FIN_DOWN, part):
+                fin = min(fin, -1.0)
+            m = re.match(_PATH_RE, part)
             if m:
-                ends = [v for k, v in _PATH.items() if k in t2]
-                if ends:
-                    paths.append(float(np.mean(ends[:2])))
-    return {"brk": max(brk) if brk else np.nan, "led": led, "trouble": trouble, "fin": fin,
-            "path": float(np.mean(paths)) if paths else np.nan}
+                paths.append(float(np.mean([_PATH[g] for g in m.groups() if g])))
+    mean = lambda v: float(np.mean(v)) if v else np.nan
+    return {"brk": mean(brk), "epace": mean(epace), "led": led, "trouble": trouble, "fin": fin, "path": mean(paths)}
 
 
 # ----- per-dog windows over earlier DAYS: one row a dog a day (a dog runs twice in a day only rarely: a trial and a race,
@@ -157,12 +173,21 @@ class GreyhoundMetricsEngine:
         uniq = {c: parse_comment(c) for c in pd.unique(df.comment.fillna(""))}       # far fewer comments than runs
         parsed = pd.DataFrame([uniq[c] for c in df.comment.fillna("").values], index=df.index)
         df = df.join(parsed)
-        # lengths behind the winner: the GBGB distances are to the dog in front, summed down the finishing order
+        # lengths behind the winner: the GBGB distances are to the dog in front, summed down the finishing order. A
+        # distance GBGB did not give as a number ("Dis", "DNF") is unknown for that dog and for every dog behind it:
+        # those are read from the times, and with no time they stay unknown. The margin is capped at LBW_CAP: past
+        # the 99th percentile of the margins (15.5 lengths in 1 Jul 2025 to 5 Nov 2026) it measures the incident,
+        # not the dog. Until 11 Nov 2026 a missing distance was summed as 0, so a dog beaten a distance took the
+        # lengths of the dog in front of it (4,210 runs in those months, engine lbw a median 7.5 lengths; the 121
+        # with a time were a median 32 behind: the audit of 11 Nov 2026, findings 8 and 54). Read on the same
+        # runs, the 6-run mean of the margin lines up with the SP at -0.198 under the old rule, -0.176 if the
+        # unknown are given the old 40-length cap (one such dog moves its whole race's mean), -0.204 as here
         o = df.sort_values(["race_id", "position"])
-        step = o.beaten_lengths.where(o.position > 1, 0.0).fillna(0.0)
-        df["lbw"] = step.groupby(o.race_id).cumsum().reindex(df.index)
+        step = o.beaten_lengths.where(o.position > 1, 0.0).where(o.position.notna())
+        unknown = step.isna().groupby(o.race_id).cummax()
+        df["lbw"] = step.fillna(0.0).groupby(o.race_id).cumsum().where(~unknown).reindex(df.index)
         by_time = (df.run_time - df.groupby("race_id").run_time.transform("min")) / LENGTH_S
-        df["lbw"] = df.lbw.where(df.lbw.notna() & (df.lbw < 40), by_time).clip(upper=40)
+        df["lbw"] = df.lbw.where(df.lbw.notna() & (df.lbw < LBW_CAP), by_time).clip(lower=0.0, upper=LBW_CAP)
         # standards from earlier days: the track and distance's mean winning calculated time, sectional, run-in, of
         # GRADED races only. Until 11 Nov 2026 a trial's first dog (often running alone) counted as a winner in the
         # standard and in the meeting's variant, and a fall or a hand-slipped start counted in the sectional and
@@ -180,9 +205,21 @@ class GreyhoundMetricsEngine:
         df["std_sec"] = race_lagged_expanding_mean(df, key, "_std_sec")
         df["std_runin"] = race_lagged_expanding_mean(df, key, "_std_runin")
         # the meeting's own variant: what the going allowance missed, from its graded winners (the run is in the
-        # past when a later race reads it, so the whole meeting is known); a meeting of trials alone has none
+        # past when a later race reads it, so the whole meeting is known); a meeting of trials alone has none.
+        # Each winner is read against the standard PLUS its class's par (the class's earlier winners against the
+        # standard at the track and trip, shrunk by K_CLASS winners), and the median is shrunk by K_MEET races.
+        # Until 11 Nov 2026 the winners were read against the all-class standard alone, so a card of low grades
+        # had slow winners and a positive variant that was then credited to every dog on it: over 3,429 meetings
+        # the variant's correlation with the card's mean grade was 0.41 and the best and worst quarters of cards
+        # were 1.9 lengths apart (the audit of 11 Nov 2026, finding 2)
         dev = (df._std_win - df.std_time)
-        df["variant"] = dev.groupby(df.meeting_id).transform("median").fillna(0.0)
+        df["_dev"] = dev.where(dev.abs() <= 40 * LENGTH_S)            # a winner 40 lengths out is a bad time
+        ck = key + ["race_class"]
+        cn = race_lagged_expanding_count(df, ck, "_dev")
+        df["class_par_s"] = race_lagged_expanding_mean(df, ck, "_dev").fillna(0.0) * cn / (cn + K_CLASS)
+        resid = (df._dev - df.class_par_s).groupby(df.meeting_id)
+        n = resid.transform("count")
+        df["variant"] = (resid.transform("median") * n / (n + K_MEET)).fillna(0.0)
         df["gsr"] = (df.std_time - (df.adjusted_time - df.variant)) / LENGTH_S
         df["esr"] = (df.std_sec - df.sectional) / LENGTH_S
         df["fsr"] = (df.std_runin - (df.runin - df.variant)) / LENGTH_S
@@ -194,27 +231,34 @@ class GreyhoundMetricsEngine:
         # graded standard
         for c in ("gsr", "esr", "fsr"):
             df[c] = df[c].where(~bad)
-        df = df.drop(columns=["_std_win", "_std_sec", "_std_runin"])
+        df = df.drop(columns=["_std_win", "_std_sec", "_std_runin", "_dev"])
         df["gsr_clean"] = df.gsr.where(df.trouble == 0)              # rating from a clear run only
-        df["gsr_trouble_adj"] = df.gsr + 1.5 * df.trouble             # a troubled run, credited ~1.5 lengths a bump
+        # a troubled run, credited ~1.5 lengths a bump, two bumps at most (a judgement, not a fit: the fitted price
+        # of trouble is the expected-time table's, greyhound/pit/xtime.py)
+        df["gsr_trouble_adj"] = df.gsr + 1.5 * df.trouble.clip(upper=2.0)
         return df
 
     # ----------------------------------------------------------------------------------------------- the dog's form
     def _dog_form(self, df: pd.DataFrame, feats: list[str]) -> pd.DataFrame:
         df["_ae"] = df.won - df.sp_p_norm
-        df["_trial"] = df.is_trial.astype(float)
-        means = ["gsr", "gsr_clean", "gsr_trouble_adj", "esr", "fsr", "position", "lbw", "won", "placed2", "brk", "led",
-                 "trouble", "path", "fin", "sp_p_norm", "_ae", "_trial"]
-        dd = DogDays(df, means, ["grade", "distance_m", "weight_kg", "track", "trap"])
+        # no trial reaches this frame (GBGB serves trials with no off time: data.clean), so the engine keeps no trial
+        # counts: until 11 Nov 2026 trials_before and last_was_trial counted the intertrack races, which are races.
+        # A dog's trials are read on their own channel (greyhound/pit/trials.py)
+        means = ["gsr", "gsr_clean", "gsr_trouble_adj", "esr", "fsr", "position", "lbw", "won", "placed2", "brk", "epace",
+                 "led", "trouble", "path", "fin", "sp_p_norm", "_ae"]
+        if "grade_scale" not in df:                       # a frame not made by data.clean (a test's)
+            df["grade_scale"] = df.grade_family if "grade_family" in df else "A"
+        if "hcp_start" not in df:
+            df["hcp_start"] = np.nan
+        dd = DogDays(df, means, ["grade", "grade_scale", "distance_m", "weight_kg", "track", "trap", "hcp_start"])
         day = {}
         day["runs_before"] = dd.g._runs.cumsum() - dd.dd._runs
-        day["trials_before"] = (dd.g._trial.cumsum() - dd.dd._trial).astype(float)
         day["days_since"] = (dd.dd._d - dd.prev("_d")).dt.days.astype(float)
         day["days_since2"] = (dd.dd._d - dd.prev("_d", 2)).dt.days.astype(float)
-        day["last_was_trial"] = dd.prev("_trial")
         for col, hows in (("gsr", ("mean", "max")), ("gsr_clean", ("mean",)), ("gsr_trouble_adj", ("mean", "max")),
                           ("esr", ("mean", "max")), ("fsr", ("mean",)), ("position", ("mean",)), ("lbw", ("mean",)),
-                          ("won", ("mean",)), ("placed2", ("mean",)), ("brk", ("mean",)), ("led", ("mean",)),
+                          ("won", ("mean",)), ("placed2", ("mean",)), ("brk", ("mean",)), ("epace", ("mean",)),
+                          ("led", ("mean",)),
                           ("trouble", ("mean",)), ("path", ("mean",)), ("fin", ("mean",))):
             for how in hows:
                 for n in self.windows:
@@ -224,10 +268,16 @@ class GreyhoundMetricsEngine:
         day["gsr_trend"] = day["gsr_mean1"] - day["gsr_mean6"]
         day["gsr_std6"] = dd.window("gsr", 6, "std")
         day["prev_grade"] = dd.prev("grade")
+        day["prev_scale"] = dd.prev("grade_scale")
+        # the dog's start (metres) at its last handicap before today: today's start is not on a card, and the last one
+        # says most of it (their correlation is 0.81 over 5,736 handicap runs of 2026). Read only in a handicap
+        # (``_race_relative``: hcp_last_start, hcp_last_vs_field)
+        day["_hcp_last"] = dd.g["hcp_start"].ffill().groupby(dd.dd.dog_id, sort=False).shift(1)
         day["prev_distance"] = dd.prev("distance_m")
         day["prev_weight"] = dd.prev("weight_kg")
         day["sp_p_mean3"] = dd.window("sp_p_norm", 3)
         day["dog_ae6"] = dd.window("_ae", 6)
+        prev_scale = dd.back(day.pop("prev_scale"))
         cols = {k: dd.back(v) for k, v in day.items()}
         # the same track, the same track and distance, today's trap: the dog's earlier days there (model.lagsafe)
         for key, name in ((["dog_id", "track"], "trk"), (["dog_id", "track", "distance_m"], "cd"),
@@ -238,7 +288,9 @@ class GreyhoundMetricsEngine:
                 cols[f"{name}_win"] = race_lagged_expanding_mean(df, key, "won").values
         cols["trap_gsr_vs_all"] = cols.pop("trap_gsr") - race_lagged_expanding_mean(df, "dog_id", "gsr").values
         # class and condition against the last day the dog ran
-        cols["grade_change"] = df.grade.values - cols.pop("prev_grade")
+        # ... on one ladder only: an A3 after a D2 is a change of trip, not of class (data.GRADE_SCALE)
+        same = pd.Series(prev_scale, index=df.index).eq(df.grade_scale) & df.grade_scale.notna()
+        cols["grade_change"] = np.where(same, df.grade.values - cols.pop("prev_grade"), np.nan)
         cols["dist_change"] = df.distance_m.values - cols.pop("prev_distance")
         cols["weight_change"] = df.weight_kg.values - cols.pop("prev_weight")
         cols["weight_vs_mean"] = df.weight_kg.values - race_lagged_expanding_mean(df, "dog_id", "weight_kg").values
@@ -246,7 +298,7 @@ class GreyhoundMetricsEngine:
         cols["age_months"] = ((df.t - born).dt.days / 30.44).values
         cols["bitch"] = (df.sex.astype(str).str.lower() == "b").astype(float).values
         out = pd.DataFrame(cols, index=df.index)
-        feats += list(out.columns)
+        feats += [c for c in out.columns if not c.startswith("_")]      # _hcp_last is read by _race_relative only
         return out
 
     # ------------------------------------------------------------------------------------------ groups, earlier days
@@ -264,12 +316,18 @@ class GreyhoundMetricsEngine:
         # trainer and sire, shrunk; the trainer's A/E against the SP
         cols["trainer_win"] = _shrunk(df, "trainer", "won")
         df["_spp"] = df.sp_p_norm
-        aw = race_lagged_expanding_sum(df, "trainer", "won")
+        df["_won_sp"] = df.won.where(df.sp_p_norm.notna())            # wins the SP priced: the same runs as the SP's
+        aw = race_lagged_expanding_sum(df, "trainer", "_won_sp")
         ae = race_lagged_expanding_sum(df, "trainer", "_spp")
         cols["trainer_ae"] = (aw.fillna(0) + 20.0) / (ae.fillna(0) + 20.0)
         cols["sire_win"] = _shrunk(df, "sire", "won", k=50.0)
+        # the start a trap carries in a handicap at this track: the trap IS the handicap's order (trap 1 the biggest
+        # start, trap 6 scratch: in 99.1% of 2,030 handicaps between 1 Jul 2025 and 5 Nov 2026 the start never rises
+        # with the trap number; mean 12.4 m in trap 1, 9.8, 7.2, 4.8, 2.3, 0.0 in trap 6), and a card gives the trap
+        # though not the start. From the track's earlier handicaps; read only in a handicap (``_race_relative``)
+        cols["_hcp_trap"] = race_lagged_expanding_mean(df, ["track", "trap"], "hcp_start") if "hcp_start" in df else np.nan
         out = pd.DataFrame(cols, index=df.index)
-        feats += list(out.columns)
+        feats += [c for c in out.columns if not c.startswith("_")]
         return out
 
     # ------------------------------------------------------------------------------------------- against the field
@@ -284,24 +342,42 @@ class GreyhoundMetricsEngine:
             cols[f"{col}_rank"] = grp.rank(ascending=False, method="average")
             cols[f"{col}_gap"] = x - grp.transform("max")
             cols[f"{col}_z"] = (x - grp.transform("mean")) / grp.transform("std").replace(0, np.nan)
-        # the pace map: early speed order across the traps; a dog with faster dogs drawn either side is squeezed
-        esr = df.esr_mean3.fillna(df.esr_mean3.median())
+        # the pace map: early speed order across the traps; a dog with a faster dog in the box beside it is squeezed.
+        # A dog with no sectional behind it has no early speed to compare (NaN, not the frame's median: 27.6% of
+        # runners were given one, and the median read later days), and the boxes beside are trap - 1 and trap + 1:
+        # an empty box is room, not the next dog along (28.9% of races have one between two runners; the audit of
+        # 11 Nov 2026, finding 5)
+        esr = df.esr_mean3
+        mine = esr.to_numpy(float)
         cols["early_rank"] = esr.groupby(df.race_id).rank(ascending=False)
-        o = df.assign(_e=esr).sort_values(["race_id", "trap"])
-        left = o.groupby("race_id")._e.shift(1)
-        right = o.groupby("race_id")._e.shift(-1)
-        squeeze = ((left > o._e).astype(float) + (right > o._e).astype(float))
-        cols["squeeze"] = squeeze.reindex(df.index)
-        inside_best = o.groupby("race_id")._e.transform(lambda s: s.shift(1).cummax())
-        cols["faster_inside"] = (inside_best > o._e).astype(float).reindex(df.index)
-        # running line against the trap: a railer drawn wide, a wide runner drawn on the inside
+        box = esr.groupby([df.race_id, df.trap]).first()
+        beside = lambda step: box.reindex(pd.MultiIndex.from_arrays([df.race_id, df.trap + step])).to_numpy(float)
+        with np.errstate(invalid="ignore"):
+            squeeze = (beside(-1) > mine).astype(float) + (beside(1) > mine).astype(float)
+        cols["squeeze"] = np.where(np.isfinite(mine), squeeze, np.nan)
+        o = df.assign(_e=esr.fillna(-np.inf)).sort_values(["race_id", "trap"])
+        inside_best = o.groupby("race_id")._e.transform(lambda x: x.shift(1, fill_value=-np.inf).cummax()).reindex(df.index)
+        cols["faster_inside"] = np.where(np.isfinite(mine), (inside_best.to_numpy(float) > mine).astype(float), np.nan)
+        # running line against the trap: a railer drawn wide (-), a wide runner drawn on the inside (+); 0 when the
+        # line fits the box (rails in 1, wide in 6). Until 11 Nov 2026 the trap term ran -2..2 against the path's
+        # -1..1, so a railer in trap 1 scored +1 (finding 10)
         path = df.path_mean6
-        cols["path_vs_trap"] = (path - 2.0) - (df.trap - 3.5) / 1.25
+        cols["path_vs_trap"] = (path - 2.0) - (df.trap - 3.5) / 2.5
         cols["path_conflict"] = (path - 2.0) * (df.trap - 3.5) * -1.0
         cols["open_race"] = (df.grade_family == "OR").astype(float)
         cols["sprint"] = (df.grade_family == "D").astype(float)
         cols["stayer"] = df.grade_family.isin(["S"]).astype(float)
-        cols["hurdle"] = df.grade_family.isin(["H", "HP"]).astype(float)
+        # a handicap (class HP): until 11 Nov 2026 this column was named "hurdle" - HP was read as hurdles, and the
+        # real hurdle races (race_type, 22 of them in 1 Jul 2025 to 5 Nov 2026, classed OR) were not flagged
+        cols["is_handicap"] = (df.grade_family == "HP").astype(float)
+        last = df._hcp_last.where(df.grade_family == "HP") if "_hcp_last" in df else pd.Series(np.nan, index=df.index)
+        grp = last.groupby(df.race_id)
+        cols["hcp_last_start"] = last
+        cols["hcp_last_vs_field"] = last - (grp.transform("sum") - last.fillna(0.0)) / \
+            (grp.transform("count") - last.notna()).replace(0, np.nan)
+        est = df._hcp_trap.where(df.grade_family == "HP") if "_hcp_trap" in df else pd.Series(np.nan, index=df.index)
+        cols["hcp_trap_start"] = est                                    # the start its trap usually carries here
+        cols["hcp_trap_vs_field"] = est - est.groupby(df.race_id).transform("mean")
         out = pd.DataFrame(cols, index=df.index)
         feats += list(out.columns) + ["trap", "field", "distance_m", "grade"]      # today's race, as it is
         return out

@@ -92,8 +92,10 @@ def test_gbgb_fetches_only_what_the_store_lacks_and_the_last_days_again(tmp_path
 
 
 def test_gbgb_distances_beaten():
-    assert gbgb.lengths("5 1/2") == 5.5 and gbgb.lengths("3/4") == 0.75 and gbgb.lengths("Hd") == 0.1
+    assert gbgb.lengths("5 1/2") == 5.5 and gbgb.lengths("3/4") == 0.75 and gbgb.lengths("Hd") == 0.25
     assert gbgb.lengths("") == 0.0 and gbgb.lengths("Dis") is None and gbgb.lengths("abc") is None
+    # the short margins in GBGB's own order and size: a short head 0.01 s, a head 0.02 s, a neck 0.03 s (a length 0.08 s)
+    assert gbgb.lengths("SH") == 0.125 < gbgb.lengths("Hd") < gbgb.lengths("Nk") == 0.375 < gbgb.lengths("1/2")
 
 
 def test_a_budget_runs_out_after_its_minutes():
