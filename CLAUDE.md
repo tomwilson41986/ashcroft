@@ -222,6 +222,10 @@ python -m greyhound.track --freeze --cutoff 2026-10-05 --days 3 --summary --out 
 BETFAIR_APP_KEY=<live key> python -m greyhound.book_record --until 21:30      # paper-models.yml: 5 s near the off
 python -m greyhound.tradeout --freeze --days 4 --summary --out out/greyhound_tradeout.json
 python -m research.greyhound.tradeout_study --source retimed --out out/greyhound_tradeout_study
+# the favourite back on paper (the owner, 10 Nov 2026: "back and trade out at BFSP"; reports/preregistration_greyhound_fav_back.md):
+# the favourite at its first traded book backed at the forecast SP x 1.20, closed at the SP; no order call (paper-models.yml)
+python -m greyhound.fav_back --trade --until 21:30
+python -m greyhound.fav_back --settle --days 3
 # The greyhound fast loop (the owner, 3 Nov 2026: no more 2-3 hour runs; reports/greyhound_roadmap.md 10): the features
 # cached once a change of the feature code (S3 greyhound/feature_cache/<hash>/), an experiment a line of JSON
 # (research/greyhound/experiments/current.json: feature set, greyhound/blocks/ to add, prefixes to drop, objective

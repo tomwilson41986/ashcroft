@@ -28,3 +28,5 @@ the matched backs' mean CLV against the SP is above zero. FAIL otherwise. Nothin
 
 **Beside it, not gated:** the model's favourite instead of the market's; the 10% margin; the same entries greened in
 the last book and held to the result (the owner's 'back to win').
+
+**The paper trader beside it** (added 11 Nov 2026, before the first test day's racing): greyhound/fav_back.py runs the same rule live on the live-key books and logs its decisions and fills (reports/greyhound_model.md section 40). It is read beside the gate, not instead of it: the gate is the study's procedure above.
