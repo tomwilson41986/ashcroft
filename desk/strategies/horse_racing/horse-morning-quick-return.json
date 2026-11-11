@@ -1,0 +1,36 @@
+{
+  "id": "horse-morning-quick-return",
+  "sport": "horse_racing",
+  "name": "Quick returners, win backs at 10:00",
+  "stage": "legacy",
+  "hypothesis": "Horses back within 1-4 days win more than their price says.",
+  "markets": [
+    "GB/IE WIN"
+  ],
+  "entry_point": "python -m morning.live --trade --live",
+  "workflow": "morning-models.yml",
+  "live_switch": "MORNING_LIVE",
+  "order_ref_prefix": "meq",
+  "bucket": "pred",
+  "stop_keys": [
+    "morning/STOP",
+    "trading/STOP"
+  ],
+  "kill_switch_fails": "open",
+  "dashboard_ids": [],
+  "evidence": [
+    {
+      "claim": "research win A/E 1.148 at the morning price, 1.055 at the BSP; not significant on 33 days (p 0.21)",
+      "source": "docs/morning_models_live.md"
+    },
+    {
+      "claim": "GBP50 to win, GBP100 a bet, GBP2,000 a day a model",
+      "source": "morning/live.py:60-63"
+    }
+  ],
+  "approved": {
+    "by": "owner",
+    "on": "2026-11-04",
+    "source": "docs/morning_models_live.md; CLAUDE.md (the morning models)"
+  }
+}

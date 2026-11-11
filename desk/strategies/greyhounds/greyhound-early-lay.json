@@ -1,0 +1,43 @@
+{
+  "id": "greyhound-early-lay",
+  "sport": "greyhounds",
+  "name": "Early lay, greened up before the off",
+  "stage": "legacy",
+  "hypothesis": "Forecast drifters laid early at 80% of the forecast SP, greened up before the off.",
+  "markets": [
+    "GB greyhound WIN"
+  ],
+  "entry_point": "python -m greyhound.early_lay --trade --live",
+  "workflow": "paper-models.yml",
+  "live_switch": "GREYHOUND_EARLY_LAY",
+  "order_ref_prefix": "el-",
+  "bucket": "capture",
+  "stop_keys": [
+    "greyhound/STOP",
+    "trading/STOP"
+  ],
+  "kill_switch_fails": "safe",
+  "dashboard_ids": [
+    "greyhound-early-lay",
+    "greyhound-early-lay-paper"
+  ],
+  "evidence": [
+    {
+      "claim": "real orders only with GREYHOUND_EARLY_LAY=live and a daily loss limit; paper by default",
+      "source": "tests/test_workflow_guards.py:254-257"
+    },
+    {
+      "claim": "its forward-test gate (20 days, 1,000 trades) had not passed at the audit",
+      "source": "reports/greyhound_audit_1105.md:28"
+    },
+    {
+      "claim": "kill switch: an unreadable STOP counts as STOP",
+      "source": "greyhound/live.py:626-638"
+    }
+  ],
+  "approved": {
+    "by": "owner",
+    "on": "2026-11-03",
+    "source": "tests/test_workflow_guards.py:202-205 (\"lets go live now\", \"use early lay\")"
+  }
+}
