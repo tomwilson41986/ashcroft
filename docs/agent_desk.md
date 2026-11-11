@@ -168,3 +168,26 @@ Stages, each gated on the last:
    Fee and the transaction charge.
 3. **A penny fill probe** (the owner's approval and budget): the simulator's fills checked against real ones.
 4. **Build**: a stream-fed trader with the order stream, batched orders, a dead-man cancel, on a supervised host.
+
+### Results, 11 Nov 2026
+
+- **Lay book, third run** (`desk-lay-book-1113`, research-query 43009125741). The port matches the arm on all 29
+  days. Registered verdict: not yet read, because 29 days is under the 30 the deflated Sharpe needs (10 Nov's price
+  file was not in yet).
+  - Under its registered limits: GBP+1,124.11 over 29 days on GBP107,427 of liability.
+  - Mean GBP+38.76 a day (90% +24.46 to +52.73), up on 23 days.
+  - It reruns unchanged once the 30th day is in.
+- **Next move, Stage 1** (`micro-next-move-1111`, research-query 43050471729). Data: 6 greyhound days, 685 markets,
+  4.29m book rows, 4 test days walk-forward. Every pair beat the baseline on every test day:
+
+  | Model | Next-change gain (mnats a row) | Accuracy when the mid moved |
+  |---|---|---|
+  | LightGBM | +72.8 | 65.2% |
+  | Queue imbalance alone | +42.9 | 62.2% |
+  | Markov chain | +42.4 | 61.6% |
+  | Kalman fair price | +36.6 | 61.2% |
+
+  Baseline accuracy: 52.4%. Not yet counted: the sealed days 12-18 Nov decide
+  (`micro-next-move-1111-sealed`, run on 19 Nov). A forecast is not a profit: a mid move is usually half a tick, and
+  a taker pays a whole tick plus costs. Stage 2 asks whether quoting only where the model expects no adverse move
+  pays after queue position, latency and costs.
