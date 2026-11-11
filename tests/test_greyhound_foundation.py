@@ -224,3 +224,27 @@ def test_one_name_a_track():
                            "track": "Pelaw Grange", "trap": [1, 2, 3, 4, 5, 6], "bsp": [3.0, 4.0, 5.0, 6.0, 8.0, 10.0]})
     with_bsp = attach_bsp(runs, prices)
     assert with_bsp[with_bsp.race_id == 2].bsp.notna().all() and with_bsp[with_bsp.race_id == 1].bsp.isna().all()
+
+
+def test_the_last_handicap_start_is_read_in_a_handicap_only():
+    """A dog's start at its last handicap, known before the race, as today's (which no card gives)."""
+    frames = []
+    for k, (day, cls) in enumerate([("2026-01-01", "HP"), ("2026-01-05", "A5"), ("2026-01-09", "HP"), ("2026-01-13", "A5")]):
+        r = _race(k + 1, day, "18:00:00", cls=cls)
+        r["dog_id"] = np.arange(6) + 100                       # the same six dogs each time
+        r["trap_handicap"] = ["Scr", "R2", "R4", "R6", "R8", "R10"] if cls == "HP" else None
+        if cls == "HP":
+            r["adjusted_time"] = r.run_time + 0.08 * np.array([0, 2, 4, 6, 8, 10])
+        frames.append(r)
+    eng = GreyhoundMetricsEngine(blocks=())
+    out = eng.calculate_all(clean(pd.concat(frames, ignore_index=True)))
+    by = lambda rid: out[out.race_id == rid].sort_values("trap")
+    assert by(1).hcp_last_start.isna().all()                   # the first handicap: no start behind any dog
+    assert by(3).hcp_last_start.tolist() == [0, 2, 4, 6, 8, 10]            # the second: the first one's, past the A5 between
+    assert by(3).hcp_last_vs_field.round(2).tolist() == [-6.0, -3.6, -1.2, 1.2, 3.6, 6.0]
+    assert by(2).hcp_last_start.isna().all() and by(4).hcp_last_vs_field.isna().all()     # not read outside a handicap
+    assert {"hcp_last_start", "hcp_last_vs_field", "is_handicap"} <= set(eng.features) and "_hcp_last" not in eng.features
+    # and the start its trap usually carries at the track, from the earlier handicaps there (the trap is the order)
+    assert by(1).hcp_trap_start.isna().all() and by(3).hcp_trap_start.tolist() == [0, 2, 4, 6, 8, 10]
+    assert by(3).hcp_trap_vs_field.tolist() == [-5, -3, -1, 1, 3, 5] and by(4).hcp_trap_start.isna().all()
+    assert "_hcp_trap" not in eng.features and "hcp_trap_start" in eng.features

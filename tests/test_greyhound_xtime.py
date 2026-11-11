@@ -193,3 +193,51 @@ def test_the_days_own_results_move_nothing_with_the_trials(small, change):
     x = keys.merge(a, on=["race_id", "dog_id"]).sort_values(["race_id", "dog_id"])[cols].to_numpy(float)
     z = keys.merge(b, on=["race_id", "dog_id"]).sort_values(["race_id", "dog_id"])[cols].to_numpy(float)
     assert np.allclose(x, z, atol=1e-5, equal_nan=True)
+
+
+def _with_handicaps(runs, planted=0.0):
+    """Every second Romford race from day 30 made a handicap: trap 1 off 10 m down to trap 6 off scratch, the run
+    0.06 s a metre quicker for the start (less ground), GBGB's calculated time 0.08 s a metre on top of the run - so
+    it sits 0.02 s a metre above the dog's time from scratch. ``planted``: seconds dogs 1 to 10 improve by in their
+    handicap runs from day 70, and nowhere else."""
+    r = runs.copy()
+    d = (pd.to_datetime(r.race_date) - pd.Timestamp("2025-01-01")).dt.days
+    h = (r.track == "Romford") & (d >= 30) & (r.race_id % 2 == 0)
+    start = (12.0 - 2.0 * r.trap).where(h)
+    true = r.adjusted_time - np.where(h & (d >= 70) & (r.dog_id <= 10), planted, 0.0)
+    r["race_class"] = r.race_class.where(~h, "HP")
+    r["handicap"] = h
+    r["trap_handicap"] = start.map(lambda m: None if pd.isna(m) else ("Scr" if m == 0 else f"R{int(m)}"))
+    r["run_time"] = np.where(h, true - 0.06 * start.fillna(0), r.run_time)
+    r["adjusted_time"] = np.where(h, r.run_time + 0.08 * start.fillna(0), r.adjusted_time)
+    return clean(r.drop(columns=["hcp_start", "grade", "grade_family", "grade_scale"], errors="ignore"))
+
+
+def test_a_handicap_run_is_read_for_the_dog_and_its_start_is_priced(small):
+    """Until 11 Nov 2026 no handicap run was read. Now its calculated time moves the dog's level (and nothing else:
+    no standard, trap or grade effect), with the handicap and the metres of start as fitted adjustments."""
+    runs, _ = synth(days=120, seed=3)
+    hc = _with_handicaps(runs, planted=0.30)
+    assert hc.handicap.sum() > 1000 and hc[hc.handicap].hcp_start.between(0, 10).all()
+    tab, notes = xtime.build(hc, core.per_run_figures(hc))
+    # the start's price: 0.02 s a metre on a 24.5 s trip is 100 ln(1 + 0.2 / 24.5) = 0.81 a 10 m
+    eff = notes["tot"]["effects_pct"]
+    assert 0.5 < eff["hcp:10m"] < 1.1, eff["hcp:10m"]
+    # the dogs that improved only in their handicaps: their level follows, against the dogs that did not
+    m = hc.merge(tab, on=["race_id", "dog_id"])
+    late = m[pd.to_datetime(m.race_date) >= pd.Timestamp("2025-01-01") + pd.Timedelta(days=105)]
+    shift = late[late.dog_id <= 10].xt_tot_level.mean() - late[late.dog_id.between(11, 40)].xt_tot_level.mean()
+    unread = hc.copy()
+    unread.loc[unread.handicap, "adjusted_time"] = np.nan                  # the same frame with its handicaps unread
+    tab0, _ = xtime.build(unread, core.per_run_figures(unread))
+    m0 = unread.merge(tab0, on=["race_id", "dog_id"])
+    late0 = m0[pd.to_datetime(m0.race_date) >= pd.Timestamp("2025-01-01") + pd.Timedelta(days=105)]
+    shift0 = late0[late0.dog_id <= 10].xt_tot_level.mean() - late0[late0.dog_id.between(11, 40)].xt_tot_level.mean()
+    # (a quarter of their runs are handicaps and a soft run counts for less: about a quarter of a length shows)
+    assert shift - shift0 > 0.15 and abs(shift0) < 0.1, (shift, shift0)   # lengths
+    # a handicap moves no trap effect itself (only the dogs' levels, and through them the flat runs' errors a little):
+    # the flat rows' trap effects with the handicaps read and unread are the same to a twentieth of a length
+    flat = ~hc.handicap.to_numpy()
+    a = m[flat].set_index(["race_id", "dog_id"]).xt_trap
+    b = m0[flat].set_index(["race_id", "dog_id"]).xt_trap
+    assert np.nanmax(np.abs(a - b.reindex(a.index))) < 0.05

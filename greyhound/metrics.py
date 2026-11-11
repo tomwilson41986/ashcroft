@@ -248,7 +248,9 @@ class GreyhoundMetricsEngine:
                  "led", "trouble", "path", "fin", "sp_p_norm", "_ae"]
         if "grade_scale" not in df:                       # a frame not made by data.clean (a test's)
             df["grade_scale"] = df.grade_family if "grade_family" in df else "A"
-        dd = DogDays(df, means, ["grade", "grade_scale", "distance_m", "weight_kg", "track", "trap"])
+        if "hcp_start" not in df:
+            df["hcp_start"] = np.nan
+        dd = DogDays(df, means, ["grade", "grade_scale", "distance_m", "weight_kg", "track", "trap", "hcp_start"])
         day = {}
         day["runs_before"] = dd.g._runs.cumsum() - dd.dd._runs
         day["days_since"] = (dd.dd._d - dd.prev("_d")).dt.days.astype(float)
@@ -267,6 +269,10 @@ class GreyhoundMetricsEngine:
         day["gsr_std6"] = dd.window("gsr", 6, "std")
         day["prev_grade"] = dd.prev("grade")
         day["prev_scale"] = dd.prev("grade_scale")
+        # the dog's start (metres) at its last handicap before today: today's start is not on a card, and the last one
+        # says most of it (their correlation is 0.81 over 5,736 handicap runs of 2026). Read only in a handicap
+        # (``_race_relative``: hcp_last_start, hcp_last_vs_field)
+        day["_hcp_last"] = dd.g["hcp_start"].ffill().groupby(dd.dd.dog_id, sort=False).shift(1)
         day["prev_distance"] = dd.prev("distance_m")
         day["prev_weight"] = dd.prev("weight_kg")
         day["sp_p_mean3"] = dd.window("sp_p_norm", 3)
@@ -292,7 +298,7 @@ class GreyhoundMetricsEngine:
         cols["age_months"] = ((df.t - born).dt.days / 30.44).values
         cols["bitch"] = (df.sex.astype(str).str.lower() == "b").astype(float).values
         out = pd.DataFrame(cols, index=df.index)
-        feats += list(out.columns)
+        feats += [c for c in out.columns if not c.startswith("_")]      # _hcp_last is read by _race_relative only
         return out
 
     # ------------------------------------------------------------------------------------------ groups, earlier days
@@ -315,8 +321,13 @@ class GreyhoundMetricsEngine:
         ae = race_lagged_expanding_sum(df, "trainer", "_spp")
         cols["trainer_ae"] = (aw.fillna(0) + 20.0) / (ae.fillna(0) + 20.0)
         cols["sire_win"] = _shrunk(df, "sire", "won", k=50.0)
+        # the start a trap carries in a handicap at this track: the trap IS the handicap's order (trap 1 the biggest
+        # start, trap 6 scratch: in 99.1% of 2,030 handicaps between 1 Jul 2025 and 5 Nov 2026 the start never rises
+        # with the trap number; mean 12.4 m in trap 1, 9.8, 7.2, 4.8, 2.3, 0.0 in trap 6), and a card gives the trap
+        # though not the start. From the track's earlier handicaps; read only in a handicap (``_race_relative``)
+        cols["_hcp_trap"] = race_lagged_expanding_mean(df, ["track", "trap"], "hcp_start") if "hcp_start" in df else np.nan
         out = pd.DataFrame(cols, index=df.index)
-        feats += list(out.columns)
+        feats += [c for c in out.columns if not c.startswith("_")]
         return out
 
     # ------------------------------------------------------------------------------------------- against the field
@@ -359,6 +370,14 @@ class GreyhoundMetricsEngine:
         # a handicap (class HP): until 11 Nov 2026 this column was named "hurdle" - HP was read as hurdles, and the
         # real hurdle races (race_type, 22 of them in 1 Jul 2025 to 5 Nov 2026, classed OR) were not flagged
         cols["is_handicap"] = (df.grade_family == "HP").astype(float)
+        last = df._hcp_last.where(df.grade_family == "HP") if "_hcp_last" in df else pd.Series(np.nan, index=df.index)
+        grp = last.groupby(df.race_id)
+        cols["hcp_last_start"] = last
+        cols["hcp_last_vs_field"] = last - (grp.transform("sum") - last.fillna(0.0)) / \
+            (grp.transform("count") - last.notna()).replace(0, np.nan)
+        est = df._hcp_trap.where(df.grade_family == "HP") if "_hcp_trap" in df else pd.Series(np.nan, index=df.index)
+        cols["hcp_trap_start"] = est                                    # the start its trap usually carries here
+        cols["hcp_trap_vs_field"] = est - est.groupby(df.race_id).transform("mean")
         out = pd.DataFrame(cols, index=df.index)
         feats += list(out.columns) + ["trap", "field", "distance_m", "grade"]      # today's race, as it is
         return out
