@@ -19,6 +19,16 @@ earlier one):
 | bend | bd_ | a fitted first bend: the chance of leading, the expected bend position, the win given the bend (step 2.4) |
 | form | fm_ | fitted decay and shrinkage, a trend-and-age rating, the market's memory (the BFSP plan's steps 2.2, 2.5, 2.6) |
 | figs | fg_ | corrected figures (own standards and shrunk variants), decayed levels shrunk by evidence, class in lengths, a market-implied rating (the BFSP plan of 10 Nov 2026) |
+| xtime | xt_ | the expected time of each dog in each race: standard, meeting variant, the dog's level, its preferences, age, days off, trouble |
+| dyad | dy_ | pair memory: what each rival has done to this dog beyond the ratings, and the curl of the margins |
+| cycle | oc_ | a bitch's season cycle inferred from her absences (dogs as the control) |
+| trials | tl_ | the trials data.clean drops: the trial figure, days since, solo or in company, a level from the trials |
+| ext | nx_ | what the dogs drawn beside it do to a dog's time (a plus-minus on the neighbours' residuals), collision momentum |
+| fitness | ff_ | fitness and fatigue: an impulse response over the dog's whole load history, trials included |
+| fear | fr_ | the fear trace: interference tied to a place on the track, extinguished by clean passes, renewed at a new track |
+| clock | ck_ | the wait in the racing kennels, the dog's habitual hour, the session, daylight, the fireworks calendar |
+| optics | op_ | how much better the printed card looks than the dog ran: the look, the substance, the surplus |
+| litter | lt_ | the litter as a live sensor: the littermates' current form, their level, the runt |
 
 Each table is written to the sources store as ``<STORE_PREFIX>/<table>.parquet`` with ``<table>.meta.json``: the code
 hash, the engine's code hash, when built, the rows, the date range, each column's coverage, and the table's own fit notes. The registry
@@ -42,7 +52,10 @@ from pathlib import Path
 
 import pandas as pd
 
-TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather", "figs", "form", "draw", "bend", "xtime", "dyad", "cycle", "trials")
+TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather", "figs", "form", "draw",
+          "bend", "xtime", "dyad", "cycle", "trials",
+          # the discovery tables of 11 Nov 2026 (each reads the expected-time table)
+          "ext", "fitness", "fear", "clock", "optics", "litter")
 KEY = ["race_id", "dog_id"]
 #: where the tables are stored. "pit2": the tables of the engine as fixed on 11 Nov 2026 (the audit's foundation
 #: faults: greyhound/data.py, greyhound/metrics.py). The tables built from the engine before it stay at
