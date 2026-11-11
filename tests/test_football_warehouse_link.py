@@ -394,6 +394,31 @@ def test_the_goal_check_lines_the_wall_clock_up_with_the_match_clock_across_half
     assert bare["n_within_tol"].tolist() == per_event["n_within_tol"].tolist() and bare["match_min_mae"].isna().all()
 
 
+def test_the_goal_check_counts_a_pair_by_the_football_minute_and_does_not_pair_a_goal_with_no_minute():
+    goals, links, apif = _goal_inputs()
+    # The wall clock forgives any half-time lag in its band, goal by goal, though the lag is one number a match:
+    # match 1's third goal four minutes late (a lag of 22 where the match's is 18) is no error on it. gold/goal's
+    # football minute says 54.5 against a real goal in minute 50: outside the two minutes.
+    late = goals.copy()
+    third = (late["event_id"] == 1) & (late["goal_no"] == 3)
+    late.loc[third, "pt"] = pd.Timestamp("2026-03-01 16:12:30", tz="UTC")
+    late.loc[third, "match_min"] = 54.5
+    per_event, per_goal = link.goal_check(late, links, apif)
+    e = per_event.set_index("event_id").loc[1]
+    assert per_goal[(per_goal["event_id"] == 1) & (per_goal["goal_no"] == 3)]["minute_err"].tolist() == [0.0]
+    assert (e["n_matched"], e["n_within_tol"]) == (4, 3)
+    # The fourth goal is one the prices cannot time (the settlement says it was scored; its moment is a placeholder
+    # after the last price): it is in the count and the score, and is not paired with a goal event.
+    untimed = goals.assign(timed=[True, True, True, False, True, True, True])
+    per_event, per_goal = link.goal_check(untimed, links, apif)
+    a = per_event.set_index("event_id").loc[1]
+    assert (a["n_inferred"], a["n_untimed"], a["n_matched"], a["n_within_tol"]) == (4, 1, 3, 3)
+    assert a["count_agrees"] and a["score_agrees"]
+    s = link.goal_summary(per_event, per_goal)
+    assert (s["goals_inferred"], s["goals_untimed"], s["goals_within_tol"]) == (7, 1, 6)
+    assert (s["recall_within_tol"], s["precision_within_tol"]) == (0.75, 1.0)     # 6 of 8 real; 6 of the 6 timed
+
+
 def test_the_goal_check_keeps_to_the_matches_the_timeline_holds_and_carries_usable():
     goals, links, apif = _goal_inputs()
     timeline = pd.DataFrame({"event_id": [1, 2, 3, 99], "usable": [True, False, True, True]})

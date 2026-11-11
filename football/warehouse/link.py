@@ -75,7 +75,7 @@ from football.warehouse.schema import TS, Column, TableSpec
 
 log = logging.getLogger(__name__)
 
-VERSION = 1
+VERSION = 2
 TOL_MIN = 30.0            # kick-off tolerance where the names are not proof (fuzzy, one mapped side)
 EXACT_TOL_MIN = 180.0     # ... where they are (both names equal, or both team ids mapped)
 FUZZY_MIN = 0.85          # the weaker side's similarity a fuzzy link needs
@@ -179,6 +179,9 @@ GOAL_CHECK = TableSpec(
                "play from the kick-off): judge the inference on these. Blank without gold/timeline."),
         Column("has_events", pa.bool_(), "Whether API-Football's events are held for the fixture.", False),
         Column("n_inferred", pa.int16(), "Goals inferred from prices.", False),
+        Column("n_untimed", pa.int16(), "Of those, goals the prices cannot time (gold/goal.timed false: the "
+               "settlement says they were scored, their moment is a placeholder): in the count and the score, "
+               "left out of the pairing with goal events.", False),
         Column("n_apif", pa.int16(), "API-Football's goal events (normal, penalty, own goal; not a missed "
                "penalty) within the 90 minutes; blank without events."),
         Column("n_ft", pa.int16(), "Goals in API-Football's 90-minute score; blank without one."),
@@ -189,7 +192,9 @@ GOAL_CHECK = TableSpec(
                "agrees and an inferred goal, or a goal event, names no side."),
         Column("n_matched", pa.int16(), "Inferred goals paired with a goal event (in order, within "
                f"{2 * GAP_COST:.0f} minutes).", False),
-        Column("n_within_tol", pa.int16(), f"Of those, pairs whose minute agrees within {MINUTE_TOL:.0f}.", False),
+        Column("n_within_tol", pa.int16(), f"Of those, pairs whose football minute agrees within "
+               f"{MINUTE_TOL:.0f}: gold/goal's match_min against the middle of the real goal's minute (the wall "
+               "clock's error where a goal has no match_min).", False),
         Column("n_side_known", pa.int16(), "Pairs where both sources name the scoring side (API-Football lists an "
                "own goal under the side it counts for).", False),
         Column("n_side_agree", pa.int16(), "Of those, pairs that name the same side.", False),
@@ -971,7 +976,11 @@ def goal_check(goals: pd.DataFrame, events_links: pd.DataFrame, apif_events: pd.
         if n_ft == n_ft and len(minutes) > n_ft:        # extra time and shoot-outs come after the 90 minutes
             minutes, teams = minutes[:int(n_ft)], teams[:int(n_ft)]
         msides = ["home" if t == home_ids[i] else "away" if t == away_ids[i] else "" for t in teams]
-        usable_k = [k for k, w in enumerate(walls) if w == w]
+        # a goal the prices cannot time has a placeholder moment after the last price: it counts as a goal, and
+        # is not paired with a goal event
+        clocked = mine["timed"].fillna(True).astype(bool).tolist() if mine is not None and "timed" in mine.columns \
+            else [True] * len(walls)
+        usable_k = [k for k, w in enumerate(walls) if w == w and clocked[k]]
         pairs = _align([walls[k] for k in usable_k], [sides[k] for k in usable_k], minutes.tolist(), msides, slack) \
             if has_events else []
         errs = [abs(p[2]) for p in pairs]
@@ -987,13 +996,16 @@ def goal_check(goals: pd.DataFrame, events_links: pd.DataFrame, apif_events: pd.
             score_agrees = None                         # the count agrees; a side is not known
         else:
             score_agrees = (sides.count("home"), sides.count("away")) == real
-        mm_errs = []
+        # a pair is within tolerance by the football minute: the wall clock's error forgives any half-time lag
+        # in its band goal by goal, though the lag is one number a match
+        mm_errs, tol_errs = [], []
         for a, b, err, lag, half in pairs:
             k = usable_k[a]
             mm = mms[k]
             mm_err = mm - (min(minutes[b], 45.0 if half == 1 else 90.0) - 0.5) if mm == mm else np.nan
             if mm_err == mm_err:
                 mm_errs.append(abs(mm_err))
+            tol_errs.append(abs(mm_err) if mm_err == mm_err else abs(err))
             matched.append({"event_id": eid, "goal_no": nos[k], "apif_minute": minutes[b], "wall_min": walls[k],
                             "half": half, "lag_min": lag, "minute_err": err,
                             "side_agrees": (sides[k] == msides[b]) if sides[k] and msides[b] else None,
@@ -1001,10 +1013,11 @@ def goal_check(goals: pd.DataFrame, events_links: pd.DataFrame, apif_events: pd.
         rows.append({
             "event_id": eid, "apif_fixture_id": int(fid[i]), "clock": "actual" if actual else "fixture",
             "usable": usable.get(eid), "has_events": has_events, "n_inferred": len(walls),
+            "n_untimed": len(walls) - sum(clocked),
             "n_apif": len(minutes) if has_events else None,
             "n_ft": n_ft if n_ft == n_ft else None, "count_diff": int(len(walls) - truth),
             "count_agrees": len(walls) == truth, "score_agrees": score_agrees, "n_matched": len(pairs),
-            "n_within_tol": sum(e <= MINUTE_TOL for e in errs), "n_side_known": len(known),
+            "n_within_tol": sum(e <= MINUTE_TOL for e in tol_errs), "n_side_known": len(known),
             "n_side_agree": sum(x == y for x, y in known), "minute_mae": float(np.mean(errs)) if errs else np.nan,
             "minute_err_max": max(errs) if errs else np.nan,
             "match_min_mae": float(np.mean(mm_errs)) if mm_errs else np.nan,
@@ -1024,6 +1037,7 @@ def _goal_numbers(per_event: pd.DataFrame, per_goal: pd.DataFrame) -> dict:
     mm = pg["match_min_err"].abs().dropna() if len(pg) else pd.Series(dtype=float)
     ev = per_event[per_event["has_events"]]
     apif, inferred = int(ev["n_apif"].fillna(0).sum()), int(ev["n_inferred"].sum())
+    untimed = int(ev["n_untimed"].sum())
     within = int(ev["n_within_tol"].sum())
     lag = per_event["ht_lag_min"].dropna()
     known, agree = int(per_event["n_side_known"].sum()), int(per_event["n_side_agree"].sum())
@@ -1041,8 +1055,9 @@ def _goal_numbers(per_event: pd.DataFrame, per_goal: pd.DataFrame) -> dict:
         "count_diff": {str(k): int(v) for k, v in per_event["count_diff"].clip(-3, 3).value_counts().sort_index()
                        .items()},
         "goal_events": apif, "goals_inferred": inferred, "goals_matched": int(len(pg)),
+        "goals_untimed": untimed,
         "goals_within_tol": within, "recall_within_tol": _share(within, apif),
-        "precision_within_tol": _share(within, inferred),
+        "precision_within_tol": _share(within, inferred - untimed),
         "minute_abs_err_median": q(err, 0.5), "minute_abs_err_p90": q(err, 0.9),
         "match_min_within_tol_share": round(float((mm <= MINUTE_TOL).mean()), 4) if len(mm) else None,
         "match_min_abs_err_median": q(mm, 0.5), "match_min_abs_err_p90": q(mm, 0.9),
@@ -1054,9 +1069,12 @@ def _goal_numbers(per_event: pd.DataFrame, per_goal: pd.DataFrame) -> dict:
 def goal_summary(per_event: pd.DataFrame, per_goal: pd.DataFrame) -> dict:
     """The goal check in a few numbers. Matches: how many were checked, how often the goal count and the exact
     score agree. Goals, over the matches whose goal events are held: recall (real goals an inferred goal pairs
-    with inside ``MINUTE_TOL`` minutes on the wall clock, of all real goals) and precision (the same pairs, of
-    all inferred goals); the minute error of the pairs on the wall clock and of gold/goal's ``match_min``; how
-    often the scoring side agrees; the half-time lag. ``usable``: the same over gold/timeline's usable matches."""
+    with inside ``MINUTE_TOL`` football minutes, of all real goals) and precision (the same pairs, of the
+    inferred goals the prices can time); the minute error of the pairs on the wall clock and of gold/goal's
+    ``match_min``; how often the scoring side agrees; the half-time lag. ``usable``: the same over
+    gold/timeline's usable matches. (The second review round: counted on the wall clock, where any half-time
+    lag in its band is forgiven goal by goal, and with the untimed goals paired, recall and precision on usable
+    matches read 0.89 and 0.92 against 0.81 and 0.86 here.)"""
     if not len(per_event):
         return {"matches_checked": 0}
     out = _goal_numbers(per_event, per_goal)
@@ -1305,7 +1323,7 @@ def run(store, write: bool = True) -> dict:
         if timeline is None:
             missing(single_key("gold/timeline").rsplit("/", 1)[0])
         el = links.merge(events[["event_id", "kickoff_actual", "went_in_play"]], on="event_id")
-        keep = [c for c in ("event_id", "goal_no", "pt", "elapsed_min", "side", "match_min")
+        keep = [c for c in ("event_id", "goal_no", "pt", "elapsed_min", "side", "match_min", "timed")
                 if c in goals.column_names]
         per_event, per_goal = goal_check(goals.select(keep).to_pandas(), el, he,
                                          None if timeline is None else timeline.to_pandas())

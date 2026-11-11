@@ -841,13 +841,14 @@ Key: `event_id`. Stored as a single file, sorted by `event_id`.
 | `usable` | bool |  | gold/timeline's data rule for the match (enough price rows, no long gap, in play from the kick-off): judge the inference on these. Blank without gold/timeline. |
 | `has_events` | bool | yes | Whether API-Football's events are held for the fixture. |
 | `n_inferred` | int16 | yes | Goals inferred from prices. |
+| `n_untimed` | int16 | yes | Of those, goals the prices cannot time (gold/goal.timed false: the settlement says they were scored, their moment is a placeholder): in the count and the score, left out of the pairing with goal events. |
 | `n_apif` | int16 |  | API-Football's goal events (normal, penalty, own goal; not a missed penalty) within the 90 minutes; blank without events. |
 | `n_ft` | int16 |  | Goals in API-Football's 90-minute score; blank without one. |
 | `count_diff` | int16 | yes | n_inferred less the true count (n_ft, else n_apif). |
 | `count_agrees` | bool | yes | count_diff is 0. |
 | `score_agrees` | bool |  | Whether the inferred goals give the true score, side by side (the 90-minute score, else the goal events'). False when the count differs; blank when the count agrees and an inferred goal, or a goal event, names no side. |
 | `n_matched` | int16 | yes | Inferred goals paired with a goal event (in order, within 16 minutes). |
-| `n_within_tol` | int16 | yes | Of those, pairs whose minute agrees within 2. |
+| `n_within_tol` | int16 | yes | Of those, pairs whose football minute agrees within 2: gold/goal's match_min against the middle of the real goal's minute (the wall clock's error where a goal has no match_min). |
 | `n_side_known` | int16 | yes | Pairs where both sources name the scoring side (API-Football lists an own goal under the side it counts for). |
 | `n_side_agree` | int16 | yes | Of those, pairs that name the same side. |
 | `minute_mae` | double |  | Mean absolute minute error of the pairs on the wall clock (in the second half only what lies outside a lag of 15 to 25 minutes). |
