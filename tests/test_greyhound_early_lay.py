@@ -373,12 +373,22 @@ def test_the_table_lists_the_matched_lays_dog_by_dog(tmp_path, fit):
     assert len(rows) == n and all("| green |" in r for r in rows)
 
 
+def test_the_guard_is_off_by_default_as_the_tested_rule():
+    """The owner, 11 Nov 2026: "lose the guard. I want to be exactly like the rule that was profitable in test": the
+    forward test's rule (greyhound/laytest.py PRIMARY) lays every forecast drifter at 80% of the forecast SP."""
+    from greyhound import laytest
+    assert el.CONFIG["rest_only"] is False
+    assert el.CONFIG["margin"] == laytest.PRIMARY["param"] and el.CONFIG["gate"] == laytest.PRIMARY["gate"]
+
+
 def test_never_a_lay_at_or_above_the_mid(tmp_path, fit):
-    """The owner, 3 Nov: lays only rest in the queue; one priced at or above the market's mid is not placed."""
+    """With the guard on (rest_only, the owner's rule of 3 Nov to 11 Nov): a lay priced at or above the market's mid
+    is not placed."""
     from model.race_book import market_now
     x = FakeX()
     x.book = book()
-    t, _ = trader(tmp_path, x, fit)
+    t = el.EarlyLay(Store(preds()), x, dict(el.CONFIG, rest_only=True), date(2026, 11, 3), True,
+                    tmp_path / "ledger.csv", fit, now=lambda: T0)
     t.step()
     led = pd.read_csv(tmp_path / "ledger.csv")
     for i in (i for i in x.sent if i["side"] == "LAY"):
