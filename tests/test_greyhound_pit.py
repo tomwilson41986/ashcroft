@@ -62,7 +62,7 @@ def perturb_last_day(runs):
     return r
 
 
-@pytest.mark.parametrize("name", ["ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend"])
+@pytest.mark.parametrize("name", ["ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend", "xtime"])
 def test_no_table_reads_the_days_own_results(name, monkeypatch):
     monkeypatch.setattr(trouble, "MIN_FIT", 100)
     monkeypatch.setattr(ability, "FIT_BEFORE", "2025-01-15")
@@ -309,7 +309,7 @@ def cardify_last_day(runs):
     return clean(r.drop(columns=[c for c in ("won", "placed2", "sp_p", "sp_p_norm", "t", "field") if c in r]))
 
 
-SERVED_TABLES = ("ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend")
+SERVED_TABLES = ("ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend", "xtime")
 
 
 @pytest.mark.parametrize("name", SERVED_TABLES)
