@@ -2,9 +2,10 @@
 
 One row a runner a checkpoint (never the close itself) where the runner's book is complete at the checkpoint and
 at the close: the log and logit change of its normalised chance, the raw price ratio, and what says how far to
-trust both ends (the books' stalest prices, the activity before and after the checkpoint). ``usable`` is the
-default screen: the checkpoint's book no staler than a quarter of the time left to the off (15 minutes at least)
-and the closing book no staler than 15 minutes. ``tier`` is the match's liquidity by its pre-off match-odds
+trust both ends (the books' stalest prices, the activity before and after the checkpoint). ``cp_fresh`` is the
+screen on the checkpoint's side: its book no staler than a quarter of the time left to the off (15 minutes at
+least); it is known at the checkpoint. ``usable`` adds a closing book no staler than 15 minutes: a reliable label,
+for choosing training and scoring rows, not trades (the close's freshness is not known in advance). ``tier`` is the match's liquidity by its pre-off match-odds
 price updates (BASIC has no volume): A 300 or more, B 120 to 299, C 40 to 119, D under 40.
 
 Match odds and over/under: every runner. Asian handicap: every line complete at both ends, with ``is_main`` on the
@@ -19,10 +20,11 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 1
+VERSION = 2
 SCOPE = "part"
 INPUTS = ("gold/checkpoint", "gold/event")
-COLUMNS = {"gold/event": ["event_id", "kickoff", "mo_ticks_pre", "country_code", "result", "over25"]}
+COLUMNS = {"gold/event": ["event_id", "kickoff", "kickoff_shift_s", "mo_ticks_pre", "country_code", "category",
+                          "result", "over25"]}
 
 TIER_CUTS = (300, 120, 40)            # pre-off match-odds price updates: A, B, C, else D
 MIN_AGE_S = 900.0                     # a checkpoint book may always be this stale
@@ -59,10 +61,20 @@ SPEC = TableSpec(
         Column("close_book_age_s", pa.float64(), "The stalest price of its book at the close, seconds.", False),
         Column("n_ticks_before", pa.int32(), "The runner's price updates up to the checkpoint.", False),
         Column("n_ticks_after", pa.int32(), "Its price updates between the checkpoint and the close.", False),
-        Column("usable", pa.bool_(), "The default screen on staleness at both ends (see the module).", False),
-        Column("mo_ticks_pre", pa.int32(), "The match's pre-off match-odds price updates."),
-        Column("tier", pa.string(), "The match's liquidity tier: A, B, C or D.", False),
+        Column("cp_fresh", pa.bool_(), "The checkpoint's book is fresh enough (the screen's checkpoint side only): "
+               "known at the checkpoint, so a trading rule may select on it.", False),
+        Column("usable", pa.bool_(), "cp_fresh and a fresh closing book: a reliable label. The close's freshness "
+               "is not known at the checkpoint: use it to choose training and scoring rows, never to choose "
+               "trades.", False),
+        Column("mo_ticks_pre", pa.int32(), "The match's pre-off match-odds price updates, the whole pre-off "
+               "period (not known at the checkpoint: for reporting, not for selecting trades)."),
+        Column("tier", pa.string(), "The match's liquidity tier from mo_ticks_pre: A, B, C or D (for reporting; "
+               "use n_ticks_before to select at the checkpoint).", False),
+        Column("kickoff_shift_s", pa.int32(), "The scheduled kick-off's change over the market's life, seconds: "
+               "checkpoints are measured from the last schedule, so a large shift means they were not known "
+               "in advance."),
         Column("country_code", pa.string(), "Betfair's country code."),
+        Column("category", pa.string(), "senior, women, youth or reserves."),
         Column("won", pa.int8(), "Whether the runner won, where the role says so from the event's result (match "
                "odds and over/under); blank otherwise."),
     ),
@@ -87,12 +99,13 @@ SELECT c.market_id, c.selection_id, c.handicap, c.cp_min, c.event_id, c.market_t
        c.book_sum AS cp_book_sum, c.age_s AS cp_age_s, c.book_max_age_s AS cp_book_age_s,
        z.book_max_age_s AS close_book_age_s,
        c.n_ticks_before, z.n_ticks_before - c.n_ticks_before AS n_ticks_after,
+       c.book_max_age_s <= greatest({min_age}, {share} * c.cp_min * 60.0) AS cp_fresh,
        c.book_max_age_s <= greatest({min_age}, {share} * c.cp_min * 60.0)
            AND z.book_max_age_s <= {close_age} AS usable,
        e.mo_ticks_pre,
        CASE WHEN e.mo_ticks_pre >= {a} THEN 'A' WHEN e.mo_ticks_pre >= {b} THEN 'B'
             WHEN e.mo_ticks_pre >= {c} THEN 'C' ELSE 'D' END AS tier,
-       e.country_code,
+       e.kickoff_shift_s, e.country_code, e.category,
        CAST(CASE c.role WHEN 'home' THEN CASE WHEN c.market_type = 'MATCH_ODDS' THEN (e.result = 'H')::INT END
                         WHEN 'draw' THEN (e.result = 'D')::INT
                         WHEN 'away' THEN CASE WHEN c.market_type = 'MATCH_ODDS' THEN (e.result = 'A')::INT END

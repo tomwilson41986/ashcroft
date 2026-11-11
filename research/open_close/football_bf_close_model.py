@@ -75,7 +75,8 @@ def load(store) -> tuple[pd.DataFrame, dict]:
     d = d[(d["market_type"] == "MATCH_ODDS") & d["cp_min"].isin(HORIZONS) & d["role"].isin(ROLES)].copy()
     ev = read_table(store, "gold/event", ["event_id", "home_id", "away_id"]).to_pandas()
     d = d.merge(ev, on="event_id", how="left")
-    d["cp_fresh"] = d["cp_book_age_s"] <= np.maximum(MIN_AGE_S, AGE_SHARE * d["cp_min"] * 60.0)
+    if "cp_fresh" not in d.columns:                  # an older gold/move: the same screen, the checkpoint's side
+        d["cp_fresh"] = d["cp_book_age_s"] <= np.maximum(MIN_AGE_S, AGE_SHARE * d["cp_min"] * 60.0)
     d["x_cp"] = np.log(d["p_cp"] / (1 - d["p_cp"]))
     d["log_ticks_before"] = np.log1p(d["n_ticks_before"])
     d["ko_hour"] = d["kickoff"].dt.hour + d["kickoff"].dt.minute / 60.0

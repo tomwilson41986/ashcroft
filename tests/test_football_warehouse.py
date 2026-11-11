@@ -286,7 +286,8 @@ def test_the_move_is_from_a_complete_book_to_the_close_and_says_how_stale_each_e
     assert sorted(mo["cp_min"].unique().tolist()) == [1]            # the only checkpoint with a full 1X2 book
     home = mo[mo["role"] == "home"].iloc[0]
     assert home["y_log"] == 0 and home["price_ratio"] == 1 and home["won"] == 1 and home["tier"] == "D"
-    assert not home["usable"] and home["cp_book_age_s"] == 3540     # the away price is an hour old
+    assert not home["usable"] and not home["cp_fresh"] and home["cp_book_age_s"] == 3540   # the away price: an hour old
+    assert home["category"] == "senior" and home["kickoff_shift_s"] == 0
     ou = m[(m["market_type"] == "OVER_UNDER_25") & (m["role"] == "over")].set_index("cp_min")
     assert abs(ou.loc[120, "y_log"] - __import__("math").log((1 / 1.8) / (1 / 1.8 + 1 / 2.0) / 0.5)) < 1e-12
     assert ou.loc[120, "price_ratio"] == 2.0 / 1.8 and ou.loc[120, "won"] == 1 and ou.loc[120, "n_ticks_after"] == 1
