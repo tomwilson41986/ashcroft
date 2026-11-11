@@ -83,10 +83,14 @@ def test_out_of_range_prices_give_blanks_not_numbers():
 
 
 def _checkpoint(rows) -> pa.Table:
+    """Checkpoint rows; a twelfth value is the price's own moment (the checkpoint's less the book's age if left
+    out)."""
     cols = ["market_id", "event_id", "market_type", "role", "cp_min", "line", "cp_time", "p_norm", "book_complete",
             "book_sum", "book_max_age_s"]
     data = {c: [r[i] for r in rows] for i, c in enumerate(cols)}
-    data["cp_time"] = pa.array(data["cp_time"], pa.int64()).cast(pa.timestamp("ms", tz="UTC"))
+    data["trade_pt"] = [r[11] if len(r) > 11 else int(r[6] - 1000 * r[10]) for r in rows]
+    for c in ("cp_time", "trade_pt"):
+        data[c] = pa.array(data[c], pa.int64()).cast(pa.timestamp("ms", tz="UTC"))
     return pa.table(data)
 
 
@@ -135,6 +139,46 @@ def test_the_main_handicap_line_is_a_freshly_traded_one():
     # no line is fresh: the nearest evens of what there is
     old = _one_event(m, [(-0.75, near, 5_000.0), (-1.5, far, 4_000.0)])
     assert old["ah_line"] == -0.75 and old["ah_lines"] == 2
+
+
+def test_a_draw_price_a_tick_outside_the_band_keeps_the_bands_edge_and_one_far_outside_is_blank():
+    """At a total of six goals a Dixon-Coles market's draw chance can vary by under two points: a draw price that
+    is a tick of noise outside says nothing against the book (the strict rule dropped a third of such closes)."""
+    lh, la = np.array([4.2]), np.array([1.8])
+    lo, hi = gi.rho_band(lh, la)
+    assert (lo[0], hi[0]) == (pytest.approx(-1 / 4.2), pytest.approx(1 / (4.2 * 1.8)))
+    d0 = gi.draw_independent(lh + la, lh - la)
+    size = 2 * lh * la * np.exp(-(lh + la))
+    inside = gi.rho_from_draw(lh, la, d0 - 0.05 * size)                    # rho 0.05: inside the band
+    assert inside[0] == pytest.approx(0.05)
+    near = gi.rho_from_draw(lh, la, d0 - hi * size - 0.01)                 # a point of chance beyond the upper edge
+    assert near[0] == pytest.approx(hi[0]) and gi.rho_valid(lh, la, near)[0]
+    low = gi.rho_from_draw(lh, la, d0 - lo * size + 0.015)                 # ... and beyond the lower one
+    assert low[0] == pytest.approx(lo[0])
+    far = gi.rho_from_draw(lh, la, d0 - hi * size - 0.03)                  # three points: not one market's prices
+    assert np.isnan(far[0]) and np.isnan(gi.rho_from_draw(np.array([np.nan]), la, d0)[0])
+
+
+def test_a_book_priced_after_the_match_odds_moment_is_left_out_of_the_row():
+    """Each market has its own schedule. An over/under market listed for a later kick-off has its T-60 later than
+    the match-odds T-60: its book then holds a price from after the moment the row is for, and must not be read."""
+    m = markets(score_matrix(1.7, 1.0, -0.1, n=25))
+    t = 1_769_716_800_000
+    mo = [("mo", 1, "MATCH_ODDS", r, 60, 0.0, t, m[k], True, 1.0, 30.0) for r, k in (("home", "p_h"), ("draw", "p_d"),
+                                                                                      ("away", "p_a"))]
+    def ou(cp_time, made):                                     # the over price made at ``made``, the under before
+        return [("ou", 1, "OVER_UNDER_25", "over", 60, 0.0, cp_time, m["p_o25"], True, 1.0, 60.0, made),
+                ("ou", 1, "OVER_UNDER_25", "under", 60, 0.0, cp_time, 1 - m["p_o25"], True, 1.0, 60.0, made - 5000)]
+    event = pa.table({"event_id": [1], "mo_market_id": ["mo"], "ou_market_id": ["ou"], "ah_market_id": ["ah"]})
+    build = lambda rows: gi.build({"gold/checkpoint": _checkpoint(rows), "gold/event": event})["gold/implied"] \
+        .to_pandas().iloc[0]                                                                        # noqa: E731
+    same = build(mo + ou(t, t - 60_000))                       # priced a minute before the moment: read
+    assert abs(same["total"] - 2.7) < 1e-9 and abs(same["rho"] + 0.1) < 1e-9
+    later = build(mo + ou(t + 300_000, t - 60_000))            # a later checkpoint, the price still from before
+    assert abs(later["total"] - 2.7) < 1e-9
+    after = build(mo + ou(t + 300_000, t + 120_000))           # the over price was made two minutes after it
+    assert np.isnan(after["p_over"]) and np.isnan(after["total"]) and np.isnan(after["rho"])
+    assert abs(after["p_home"] - m["p_h"]) < 1e-12             # the 1X2 stands
 
 
 def test_books_that_are_not_one_markets_prices_give_no_rho():

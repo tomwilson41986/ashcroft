@@ -641,6 +641,14 @@ def test_the_bundle_queue_reads_only_the_bundle_it_was_promised(tmp_path, monkey
     # the list holds no link (the repository is public): without one in the environment the bundle waits
     monkeypatch.delenv(bronze.URLS_ENV, raising=False)
     assert "waiting" in bronze.ingest_queue(store, str(queue), str(tmp_path), fetch=None)["b1"]
+    # a secret that is not the map it should be (a bare link pasted in), or a map with no link under this bundle's
+    # name, is a failure to put right, not a bundle to wait for; neither message quotes the link
+    for wrong, why in (("https://example.invalid/secret-link", "not a JSON object"),
+                       (json.dumps(["https://example.invalid/secret-link"]), "not a JSON object"),
+                       (json.dumps({"another": "https://example.invalid/secret-link"}), "none under this bundle")):
+        monkeypatch.setenv(bronze.URLS_ENV, wrong)
+        out = bronze.ingest_queue(store, str(queue), str(tmp_path), fetch=None)
+        assert why in out["b1"]["failed"] and "secret-link" not in str(out) and store.get(marker) is None
     monkeypatch.setenv(bronze.URLS_ENV, json.dumps({"b1": "https://example.invalid/secret-link", "b2": "y"}))
 
     def page(url, path):                                  # a share link that serves a web page

@@ -38,8 +38,10 @@ match days; correlation, slope, and the share of the strongest tenth of forecast
 Each feature family is also scored added to the level features (paired by day against the level arm).
 
 **Trades** (an upper bound: last traded prices, not quotes): where the forecast's size clears a threshold, back at
-the checkpoint and lay at the close (or the reverse), per unit staked in log price, less the round trip measured
-at our recorded books (2.3 per cent, reports/football_model_rethink.md) and 2 per cent commission on a win.
+the checkpoint and lay at the close (or the reverse), less the round trip measured at our recorded books (2.3 per
+cent, reports/football_model_rethink.md) and 2 per cent commission on a win. Two measures: the move captured, in
+log price; and the hedged trades' cash over the money they put at risk (a back's stake; a lay's liability). Most
+of the trades are lays at long prices, so the second is a fraction of the first and is the one to quote.
 Selected on what was known at the checkpoint only (a fresh checkpoint book, a fixed kick-off): the close's
 freshness is not known in advance, so the rows with a stale close are in (``selected_at_checkpoint``); the reliable
 rows alone are shown beside them as the reading with clean exit prices.
@@ -52,6 +54,7 @@ years once the owner's download of 2016-2025 is ingested.
 
 from __future__ import annotations
 
+import os
 import argparse
 import json
 import logging
@@ -67,6 +70,9 @@ HORIZONS = (360, 120, 60, 15)
 ROLES = ("home", "draw", "away")
 MIN_AGE_S, AGE_SHARE = 900.0, 0.25           # gold/move's screen, the checkpoint's side
 ROUND_TRIP, COMMISSION = 0.023, 0.02
+# LightGBM's threads, said out loud: left to the wrapper it takes every core, and on a machine that is shared a
+# fit is then tens of times slower (FOOTBALL_MODEL_THREADS to change it)
+THREADS = int(os.environ.get("FOOTBALL_MODEL_THREADS") or min(4, os.cpu_count() or 1))
 THRESHOLDS = (0.03, 0.05, 0.08)
 MEMORY_N, MEMORY_K = 10, 5.0
 LIQUID_TICKS = 60                            # price updates by the checkpoint that make a row "busy"
@@ -255,7 +261,8 @@ def ridge_fit_predict(tr: pd.DataFrame, te: pd.DataFrame, cols: list[str], y: np
 def gbm_fit(tr: pd.DataFrame, cols: list[str], y: np.ndarray):
     import lightgbm as lgb
     g = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.03, num_leaves=15, min_child_samples=200, subsample=0.8,
-                          subsample_freq=1, colsample_bytree=0.8, verbose=-1, random_state=0, importance_type="gain")
+                          subsample_freq=1, colsample_bytree=0.8, verbose=-1, random_state=0, importance_type="gain",
+                          n_jobs=THREADS)
     g.fit(tr[cols], y)
     return g
 
@@ -317,19 +324,42 @@ def describe(y: np.ndarray, p: np.ndarray) -> dict:
 
 def trades(t: pd.DataFrame, threshold: float, n_boot: int = 1000, seed: int = 0) -> dict:
     """Back at the checkpoint and lay at the close where the forecast says the chance rises (the reverse where it
-    falls), in log price a unit staked, at last traded prices; net of the measured round trip and commission."""
+    falls), at last traded prices; net of the measured round trip and commission. Two measures. ``net`` is in log
+    price: the move captured. ``cash`` is the hedged trade's cash result with a unit staked a bet (the layer's
+    unit is the backer's stake): ``per_unit_staked``, and ``on_money_at_risk``, the cash won over the money put at
+    risk (the stake of a back; the liability of a lay, price - 1 a unit). A lay at a long price risks several
+    units to win a fraction of one, so the two measures part widely where most trades are lays."""
     s = t[np.abs(t["pred"]) >= threshold]
     if len(s) < 30:
         return {"bets": int(len(s))}
-    gross = np.sign(s["pred"].to_numpy()) * np.log(s["price_ratio"].to_numpy(float))
+    up = s["pred"].to_numpy() > 0
+    ratio = s["price_ratio"].to_numpy(float)
+    gross = np.where(up, 1.0, -1.0) * np.log(ratio)
     net = gross - ROUND_TRIP
     net = np.where(net > 0, net * (1 - COMMISSION), net)
-    f = pd.DataFrame({"day": s["day"].to_numpy(), "net": net, "n": 1.0}).groupby("day").sum()
+    f = pd.DataFrame({"day": s["day"].to_numpy(), "net": net, "n": 1.0})
+    have_price = "ltp_cp" in s.columns
+    if have_price:
+        price = s["ltp_cp"].to_numpy(float)
+        cost = np.exp(ROUND_TRIP)                         # half paid going in, half coming out
+        cash = np.where(up, ratio / cost - 1.0, 1.0 - ratio * cost)
+        f["cash"] = np.where(cash > 0, cash * (1 - COMMISSION), cash)
+        f["risk"] = np.where(up, 1.0, price * np.sqrt(cost) - 1.0)
+    f = f.groupby("day").sum()
     idx = np.random.default_rng(seed).integers(0, len(f), size=(n_boot, len(f)))
     boot = f["net"].to_numpy()[idx].sum(1) / f["n"].to_numpy()[idx].sum(1)
-    return {"bets": int(len(s)), "days": int(len(f)), "gross": float(gross.mean()), "net": float(net.mean()),
-            "net_lo90": float(np.quantile(boot, 0.05)), "net_hi90": float(np.quantile(boot, 0.95)),
-            "right_way": float((gross > 0).mean())}
+    out = {"bets": int(len(s)), "days": int(len(f)), "gross": float(gross.mean()), "net": float(net.mean()),
+           "net_lo90": float(np.quantile(boot, 0.05)), "net_hi90": float(np.quantile(boot, 0.95)),
+           "right_way": float((gross > 0).mean())}
+    if have_price:
+        on_risk = f["cash"].to_numpy()[idx].sum(1) / f["risk"].to_numpy()[idx].sum(1)
+        out["cash"] = {"backs": int(up.sum()), "lays": int((~up).sum()),
+                       "median_price_laid": float(np.median(price[~up])) if (~up).any() else None,
+                       "per_unit_staked": float(f["cash"].sum() / f["n"].sum()),
+                       "on_money_at_risk": float(f["cash"].sum() / f["risk"].sum()),
+                       "on_money_at_risk_lo90": float(np.quantile(on_risk, 0.05)),
+                       "on_money_at_risk_hi90": float(np.quantile(on_risk, 0.95))}
+    return out
 
 
 def liquid_arm(d: pd.DataFrame, cols: list[str], level: list[str]) -> dict:

@@ -43,10 +43,10 @@ def inputs(events=None, implied=None, inplay=None, timeline=None, rating=None, t
     inplay = inplay if inplay is not None else [
         dict(event_id=10, filled=True, xpts_inplay_home=2.4, xpts_inplay_away=0.4, ht_p_home=0.8, ht_p_draw=0.15,
              ht_p_away=0.05, max_p_home=0.99, min_p_home=0.45, max_p_away=0.3, min_p_away=0.0, travel=1.2,
-             decided_min=80),
+             decided_match_min=64.0),
         dict(event_id=11, filled=False, xpts_inplay_home=2.9, xpts_inplay_away=0.1, ht_p_home=0.9, ht_p_draw=0.08,
              ht_p_away=0.02, max_p_home=0.95, min_p_home=0.2, max_p_away=0.3, min_p_away=0.01, travel=2.0,
-             decided_min=None)]
+             decided_match_min=None)]
     timeline = timeline if timeline is not None else [
         dict(event_id=10, usable=True, consistent=True, reconciled=False, reliability=0.99, n_unplaced=0,
              home_goals=2, away_goals=0, min_home_leading=70.0, min_level=25.0, min_home_trailing=0.0),
@@ -72,10 +72,13 @@ def inputs(events=None, implied=None, inplay=None, timeline=None, rating=None, t
                                             lam_away=f, total=f)),
         "gold/inplay": table(inplay, dict(event_id=i, filled=b, xpts_inplay_home=f, xpts_inplay_away=f, ht_p_home=f,
                                           ht_p_draw=f, ht_p_away=f, max_p_home=f, min_p_home=f, max_p_away=f,
-                                          min_p_away=f, travel=f, decided_min=pa.int16())),
-        "gold/timeline": table(timeline, dict(event_id=i, usable=b, consistent=b, reconciled=b, reliability=f,
-                                              n_unplaced=pa.int16(), home_goals=pa.int16(), away_goals=pa.int16(),
-                                              min_home_leading=f, min_level=f, min_home_trailing=f)),
+                                          min_p_away=f, travel=f, decided_match_min=f)),
+        # every goal sided and nothing against the third goal's moment, unless a row says otherwise
+        "gold/timeline": table([dict({"n_side_unknown": 0, "agrees_third": None}, **r) for r in timeline],
+                               dict(event_id=i, usable=b, consistent=b, reconciled=b, reliability=f,
+                                    n_unplaced=pa.int16(), n_side_unknown=pa.int16(), agrees_third=b,
+                                    home_goals=pa.int16(), away_goals=pa.int16(),
+                                    min_home_leading=f, min_level=f, min_home_trailing=f)),
         "gold/team_rating": table([dict({"rated": True}, **r) for r in rating],          # rated unless a row says not
                                   dict(team_id=i, event_id=i, n_prior=pa.int32(), strength=f, strength_sd=f,
                                        pool_teams=pa.int32(), rated=b, n_after=pa.int32(), strength_after=f)),
@@ -126,7 +129,7 @@ def test_a_result_splits_into_performance_and_luck(built):
     assert lean(0.3) > 0 > lean(2.5)                          # raw, an outsider reads high and a favourite low
     assert (h["ht_p_win"], h["max_p_win"], h["min_p_win"], a["ht_p_win"], a["max_p_win"]) == (0.8, 0.99, 0.45, 0.05,
                                                                                                0.3)
-    assert (h["travel"], h["decided_min"], a["decided_min"]) == (1.2, 80, 80)
+    assert (h["travel"], h["decided_min"], a["decided_min"]) == (1.2, 64.0, 64.0)     # the football minute
     # a match that traded too little in play keeps its expectation and result, not its in-play record
     thin = row(tm, 2, 11)
     assert np.isnan(thin["xpts_inplay"]) and np.isnan(thin["perf"]) and np.isnan(thin["luck"])
@@ -153,6 +156,14 @@ def test_a_score_put_right_by_the_settlement_counts_and_a_goal_without_a_minute_
     h = row(tm, 1, 10)
     assert (h["goals_for"], h["goals_against"], h["score_reliability"]) == (2, 0, 0.75)
     assert np.isnan(h["min_leading"]) and np.isnan(h["min_level"]) and np.isnan(h["min_trailing"])
+    # no score from a list with a goal of no side, or whose third goal is not where the over/under market stopped
+    for flaw in (dict(n_side_unknown=1), dict(agrees_third=False)):
+        bad = [dict(event_id=10, usable=True, consistent=True, reconciled=False, reliability=None, n_unplaced=0,
+                    home_goals=2, away_goals=0, min_home_leading=70.0, min_level=25.0, min_home_trailing=0.0, **flaw)]
+        tm = conform(club.TEAM_MATCH, club.build(inputs(timeline=bad))["club/team_match"]).to_pandas()
+        h = row(tm, 1, 10)
+        assert np.isnan(h["goals_for"]) and np.isnan(h["goals_against"]) and np.isnan(h["min_leading"])
+        assert h["points"] == 3 and h["pts_vs_xpts"] == pytest.approx(1.25)       # the result needs no score
 
 
 def test_ratings_are_the_ones_going_into_the_match_and_only_once_a_side_is_rated(built):
@@ -234,6 +245,23 @@ def test_the_rating_change_is_net_of_the_drift_of_the_scale(monkeypatch):
     monkeypatch.setattr(club, "DRIFT_MIN", 4)
     out = club.build(inputs(events=ev, implied=[], inplay=[], timeline=[], rating=rt, teams=teams))
     assert conform(club.TEAM_SUMMARY, out["club/team_summary"]).to_pandas()["strength_change"].isna().all()
+
+
+def test_a_thin_month_starts_a_new_run_of_the_scales_drift_and_does_not_blank_the_later_ones(monkeypatch):
+    """Three sides, all rated in January, March and April and one of them in February: the steps into and out of
+    February cannot be read, the step from March to April can. Before, every level after January was blank, and
+    with it the rating change of every side of a small pool."""
+    monkeypatch.setattr(club, "DRIFT_MIN", 3)
+    monkeypatch.setattr(club, "MIN_MATCHES", 1)
+    rows = []
+    for month, sides, shift in ((1, (1, 2, 3), 0.0), (2, (1,), 0.1), (3, (1, 2, 3), 0.3), (4, (1, 2, 3), 0.7)):
+        rows += [dict(team_id=k, kickoff=pd.Timestamp(2026, month, 10, tz="UTC"), strength=float(k) + shift,
+                      n_prior=5) for k in sides]
+    pool = pd.DataFrame({"team_id": [1, 2, 3], "pool_id": [1, 1, 1]})
+    got = club.scale_drift(pd.DataFrame(rows), pool).set_index("ym")
+    jan = 2026 * 12
+    assert got["run"].to_dict() == {jan: 0, jan + 1: 1, jan + 2: 2, jan + 3: 2}
+    assert got["level"].tolist() == pytest.approx([0.0, 0.0, 0.0, 0.4])       # March to April: every side up 0.4
 
 
 def test_ranking_within_a_country_and_overall(monkeypatch):

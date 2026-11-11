@@ -219,10 +219,15 @@ def ingest_queue(store, queue: str | None = None, dest: str = ".", fetch=None) -
     from football.warehouse import ROOT
     path = Path(queue) if queue else Path(__file__).with_name("bundles.json")
     items = json.loads(path.read_text()) if path.exists() else []
+    # the secret must be what it is meant to be: a bare link pasted in, or a map under another bundle's name, would
+    # otherwise read as "no link yet" and pass for ever
+    given = os.environ.get(URLS_ENV) or ""
     try:
-        links = json.loads(os.environ.get(URLS_ENV) or "{}")
+        links = json.loads(given or "{}")
     except ValueError:
-        links = {}
+        links = None
+    broken = not isinstance(links, dict)
+    links = {} if broken else links
     out = {}
     for it in items:
         name = it["name"]
@@ -230,7 +235,13 @@ def ingest_queue(store, queue: str | None = None, dest: str = ".", fetch=None) -
         if store.get(marker) is not None:
             out[name] = "already ingested"
             continue
-        url = (links.get(name) if isinstance(links, dict) else None) or it.get("url")
+        url = links.get(name) or it.get("url")
+        if not url and broken:
+            out[name] = {"failed": f"{URLS_ENV} is set and is not a JSON object of bundle name to link"}
+            continue
+        if not url and links:
+            out[name] = {"failed": f"{URLS_ENV} has links, none under this bundle's name"}
+            continue
         if not url:
             out[name] = f"waiting for its link ({URLS_ENV})"
             continue

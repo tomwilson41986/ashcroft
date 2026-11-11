@@ -317,7 +317,7 @@ Key: `event_id`, `cp_min`. Stored as one file a (year, month) partition, sorted 
 | `supremacy` | double |  | Expected goal difference (home - away rate), from the 1X2 at that total. |
 | `lam_home` | double |  | The home side's goal expectancy. |
 | `lam_away` | double |  | The away side's goal expectancy. |
-| `rho` | double |  | The Dixon-Coles low-score correction the market's draw price implies at those rates (negative: more draws than independent Poisson). Blank where the value is one no such market could have: the books are not prices of one moment, and the row is one to distrust. |
+| `rho` | double |  | The Dixon-Coles low-score correction the market's draw price implies at those rates (negative: more draws than independent Poisson). Blank where the draw chance is more than 0.02 from any such a market could show: the books are not prices of one moment, and the row is one to distrust. Within 0.02 of the band, its edge. |
 | `sup_ah` | double |  | The supremacy the handicap's main line implies at the same total and rho (the usual rho, -0.08, where the row has none). |
 | `sup_gap` | double |  | sup_ah less supremacy: the handicap market against the 1X2, in goals. |
 
@@ -396,7 +396,7 @@ Key: `event_id`, `goal_no`. Stored as one file a (year, month) partition, sorted
 | `side` | string | yes | home or away: the scorer; blank where the moves do not say. |
 | `confidence` | double | yes | How far to trust the goal, 0 to 1: the share of goals with this evidence, reached this way (the price reading agreed with the settlement, kept through a reconciliation, added by one), that matched a real goal on 2026's odd-numbered months. |
 | `evidence` | string | yes | What says it is a goal. ou+ah: Under out, match odds, and the handicap margin stepped; ou: Under out and match odds, no handicap reading; ou-ah: Under out and match odds but the handicap margin did not step; ah+mo: the margin stepped and match odds moved, the over/under silent; mo: match odds alone; mo-ou: a very large match-odds move against a flat over/under; third: the over/under market stopped for good (the third goal); ah: a handicap step with no match-odds or over/under move; settle: no price move, the settlement alone. |
-| `by_settlement` | bool | yes | The goal is in the list, or on this side, because the settlement asks for it: a sub-threshold move promoted, a side turned, or a goal with no move at all (evidence 'settle'). |
+| `by_settlement` | bool | yes | The goal is in the list, or on this side, because the settlement asks for it: a sub-threshold move promoted, a side turned, a side given to a goal whose moves did not say, or a goal with no move at all (evidence 'settle'). |
 | `home_score` | int16 |  | Home goals after this goal; blank from the first goal with no side. |
 | `away_score` | int16 |  | Away goals after this goal; blank from the first goal with no side. |
 | `mo_jump` | double |  | The match-odds move: the home price's logit move less the away price's (logit of 1 / price); positive towards the home side. |
@@ -424,9 +424,9 @@ Key: `event_id`. Stored as one file a (year, month) partition, sorted by `event_
 |---|---|---|---|
 | `event_id` | int64 | yes | Betfair's event id. |
 | `usable` | bool | yes | The data rule: at least 60 price rows in play, no gap between two rows over 12 minutes, 100 to 140 minutes from the turn in play to the close, a settled result, and first in-play prices near the closing ones (a market that went in play late has lost its first goals). |
-| `consistent` | bool |  | The price reading alone (before any reconciliation) passed every check the settlement allows: agrees_result, agrees_over25 and agrees_margin, those that are not blank. Blank when none can be made. |
+| `consistent` | bool |  | The price reading alone (before any reconciliation) passed every check the settlement allows: agrees_result, agrees_over25 and agrees_margin, those that are not blank, and (where a result or a margin is settled) every goal has a side. Blank when none can be made. |
 | `reconciled` | bool | yes | The price reading disagreed with the settlement and the list was edited at least cost to agree with it (n_edits says how much). False with consistent false: no edit within reach agrees, the list is the price reading. |
-| `reliability` | double |  | The share of matches like this one whose final score was exactly the real one on 2026's odd-numbered months (football-data.co.uk scores): by how the list was reached (price reading agreed; one edit; several; a goal with no price move) and its goals (0 to 2, 3, 4, 5 or more). Blank where usable is false or no agreement with the settlement was reached: not measured there. |
+| `reliability` | double |  | The share of matches like this one whose final score was exactly the real one on 2026's odd-numbered months (football-data.co.uk scores): by how the list was reached (price reading agreed; one edit; several; a goal with no price move) and its goals (0 to 2, 3, 4, 5 or more). Blank where usable is false, no agreement with the settlement was reached, a goal still has no side, or the third goal is not where the over/under market stopped (agrees_third false): not measured there, and such lists are right far less often. |
 | `n_goals` | int16 | yes | Inferred goals, after reconciliation. |
 | `home_goals` | int16 | yes | Inferred home goals. |
 | `away_goals` | int16 | yes | Inferred away goals. |
@@ -438,12 +438,13 @@ Key: `event_id`. Stored as one file a (year, month) partition, sorted by `event_
 | `agrees_over25` | bool |  | The price reading's three or more goals is the settled Over 2.5; blank without one. |
 | `final_margin` | int16 |  | The settled goal difference, home less away, read off the Asian handicap lines that won (the lines stop at four: 4 and -4 stand for four or more); blank without a settled handicap market. |
 | `agrees_margin` | bool |  | The price reading's goal difference is final_margin; blank without one. |
+| `agrees_third` | bool |  | The list's third goal is within three minutes of the moment the over/under market stopped for good (ou_closed_min: the real third goal is, on 94 per cent of matches). False: a goal before it is missing or false, and the score is right less than half the time (second review round: 48 of 110 such matches with a real score). Blank where the market did not stop early, the list has under three goals or its third has no minute. |
 | `n_stoppages` | int16 | yes | In-play suspensions of the match's markets before the final one (overlapping suspensions of its markets count once). |
 | `n_goal_stoppages` | int16 | yes | Of those, the ones that mark an inferred goal. |
 | `n_other_stoppages` | int16 | yes | The rest: a penalty not scored, a red card, a review, an injury, a goal disallowed. |
 | `n_disallowed` | int16 | yes | Goals undone by a later move back (Under sharply in again). |
-| `first_goal_min` | double |  | match_min of the first goal. |
-| `last_goal_min` | double |  | match_min of the last goal. |
+| `first_goal_min` | double |  | match_min of the first goal the data can time (a goal with no minute has only a placeholder); blank where there is none. |
+| `last_goal_min` | double |  | match_min of the last goal the data can time. |
 | `min_home_leading` | double |  | Minutes of play the home side led (half time left out); blank where a goal has no side. A goal with timed false counts from the last price on. |
 | `min_level` | double |  | Minutes of play the score was level. |
 | `min_home_trailing` | double |  | Minutes of play the home side trailed. |
@@ -454,7 +455,7 @@ Key: `event_id`. Stored as one file a (year, month) partition, sorted by `event_
 | `n_rows` | int32 | yes | Price rows in play (messages with a match-odds or over/under price). |
 | `max_gap_min` | double |  | The longest gap between two price rows (or the turn in play and the first, or the last and the close), minutes. |
 | `start_jump` | double |  | The summed absolute change of the three 1X2 chances from the close to the first in-play row: large when the market went in play after a goal. |
-| `ou_closed_min` | double |  | Elapsed minute the over/under market stopped for good, where that was before full time: the third goal as Betfair settled it. |
+| `ou_closed_min` | double |  | Elapsed minute the over/under market stopped for good, where that was in play and before full time and Over won: the third goal as Betfair settled it. |
 
 ## `gold/inplay_minute`
 
@@ -475,13 +476,13 @@ Key: `event_id`, `minute`. Stored as one file a (year, month) partition, sorted 
 | `mo_legs` | int8 | yes | Match-odds legs with a price as of the minute. |
 | `mo_book_sum` | double |  | Sum of 1 / price over the legs priced. |
 | `mo_max_age_s` | double |  | The stalest leg's age at the minute, seconds. |
-| `mo_stale_mass` | double |  | The share of the book's sum carried by legs older than five minutes. |
-| `ok` | bool | yes | All three legs priced, the book's sum between 0.90 and 1.15, and no more than a tenth of it in legs older than five minutes: a reading to trust. |
+| `mo_stale_mass` | double |  | The share of the book's sum carried by stale legs: priced over five minutes ago, or before the latest goal the data can time. |
+| `ok` | bool | yes | All three legs priced, the book's sum between 0.90 and 1.15, and no more than a tenth of it in stale legs: a reading to trust. |
 | `p_over` | double |  | The chance of over 2.5 goals as of the minute, normalised to its book; blank once that market has stopped trading (ou_open false) or where a leg is missing or stale. |
 | `ou_open` | bool | yes | Whether the over/under 2.5 market was still trading at the minute: before the suspension that ran into its close (the third goal, or full time), or its close where no suspension did. Its last prices are from before the goal that settled it. |
 | `home_score` | int16 |  | Home goals so far as gold/goal infers them; blank where the match has no usable timeline, and from the first goal whose scorer the prices do not say. A goal the data cannot time (gold/goal.timed false) counts from the last price on. |
 | `away_score` | int16 |  | Away goals so far, likewise. |
-| `score_ok` | bool | yes | The score columns can be relied on minute by minute: the timeline is usable, its final score agrees with the settlement (as read, or after reconciliation), every goal has a minute and every goal has a side. The flag is made with the match's result: a table cut down to score_ok matches is not a fair sample for testing the prices against results. |
+| `score_ok` | bool | yes | The score columns can be relied on minute by minute: the timeline is usable, its final score agrees with the settlement (as read, or after reconciliation), every goal has a minute and a side, and the third goal is where the over/under market stopped (gold/timeline.agrees_third not false). The flag is made with the match's result: a table cut down to score_ok matches is not a fair sample for testing the prices against results. |
 
 ## `gold/inplay`
 
@@ -513,7 +514,8 @@ Key: `event_id`. Stored as one file a (year, month) partition, sorted by `event_
 | `min_p_away` | double |  | Its lowest. |
 | `travel` | double |  | How far the chances moved: the sum over consecutive ok minutes of half the absolute change of the three chances (an eventful match travels far). |
 | `fav_changes` | int16 |  | Times the most likely result changed between consecutive ok minutes. |
-| `decided_min` | int16 |  | The first minute from which the eventual result's chance stayed at or above 0.90 to the end; blank where it never did or the match has no result. |
+| `decided_min` | int16 |  | The first grid minute (whole minutes since the turn in play: wall clock, half time included) from which the eventual result's chance stayed at or above 0.90 to the end; blank where it never did or the match has no result. |
+| `decided_match_min` | double |  | The football minute of decided_min (gold/inplay_minute's match_min: 45 through half time, 90 at most): the one to quote. |
 | `result_min_p` | double |  | The lowest chance the eventual result had in play: how unlikely it once looked. |
 
 ## `gold/move`
@@ -680,13 +682,13 @@ Key: `team_id`, `event_id`. Stored as a single file, sorted by `team_id`, `kicko
 | `move_60m` | double |  | The same from 60 minutes before (team news is out by then). |
 | `result` | string |  | W, D or L; blank if the match has no result. |
 | `points` | int8 |  | 3, 1 or 0. |
-| `goals_for` | int16 |  | Goals scored as gold/timeline infers them; blank unless the timeline is usable and its final score agrees with the settlement (as read, or after reconciliation). |
+| `goals_for` | int16 |  | Goals scored as gold/timeline infers them; blank unless the timeline is usable, its final score agrees with the settlement (as read, or after reconciliation), every goal has a side and the third goal is where the over/under market stopped. |
 | `goals_against` | int16 |  | Goals conceded, likewise. |
 | `score_reliability` | double |  | How often a timeline like this one had exactly the real score (gold/timeline.reliability): filter on it where exact scores matter. The goal difference is far safer than the two counts: the usual error is a goal each side missed late in a high-scoring match. |
 | `pts_vs_xpts` | double |  | points less xpts_pre: the result against the expectation. |
 | `gd_vs_exp` | double |  | Goal difference less the expected one (lam_for - lam_against). |
 | `xpts_inplay` | double |  | Expected points averaged over every minute of the match (gold/inplay); blank where the match traded too little in play. |
-| `perf` | double |  | How the match went against the expectation: xpts_inplay less xpts_pre, less what sides of that pre-match expectation average on it (0.0557 - 0.0413 xpts_pre: the reading leans against strong sides; fitted on 2026's odd months). |
+| `perf` | double |  | How the match went against the expectation: xpts_inplay less xpts_pre, less what sides of that pre-match expectation average on it (0.0591 - 0.0440 xpts_pre: the reading leans against strong sides; fitted on 2026's odd months). |
 | `luck` | double |  | pts_vs_xpts less perf: what the result gave beyond the run of the match. |
 | `ht_p_win` | double |  | The team's win chance at half time. |
 | `max_p_win` | double |  | Its highest win chance in play. |
@@ -695,7 +697,7 @@ Key: `team_id`, `event_id`. Stored as a single file, sorted by `team_id`, `kicko
 | `min_level` | double |  | Minutes level. |
 | `min_trailing` | double |  | Minutes behind. |
 | `travel` | double |  | How far the match's chances moved in play (gold/inplay): an eventful match. |
-| `decided_min` | int16 |  | The minute from which the result was settled in the market's eyes. |
+| `decided_min` | double |  | The football minute from which the result was settled in the market's eyes (gold/inplay.decided_match_min: its chance stayed at or above 0.90 to the end). |
 | `strength` | double |  | The team's market-implied strength going into the match (gold/team_rating); blank until it has a match behind it. |
 | `strength_sd` | double |  | That rating's standard deviation. |
 | `n_prior` | int32 |  | Earlier matches behind the rating. |
@@ -726,7 +728,7 @@ Key: `team_id`. Stored as a single file, sorted by `team_id`.
 | `pts_vs_xpts_pm` | double |  | Points a match beyond the expectation. |
 | `pts_vs_xpts_se` | double |  | Its standard error: read the figure against this. |
 | `n_inplay` | int32 | yes | Matches with an in-play record. |
-| `perf_pm` | double |  | In-play performance a match (club/team_match.perf): the part of the over-performance that the run of the matches supports. |
+| `perf_pm` | double |  | In-play performance a match (club/team_match.perf): the part of the over-performance that the run of the matches supports. Over the n_inplay matches with an in-play record: with luck_pm it adds up to the points against expectation of those matches, which is not pts_vs_xpts_pm where some matches have no record. |
 | `perf_se` | double |  | Its standard error. |
 | `luck_pm` | double |  | Luck a match (pts_vs_xpts less perf): results beyond the run of play. |
 | `luck_se` | double |  | Its standard error. |
@@ -737,9 +739,9 @@ Key: `team_id`. Stored as a single file, sorted by `team_id`.
 | `opp_strength_pm` | double |  | Its opponents' mean strength: the difficulty of its matches. |
 | `strength` | double |  | Its market-implied strength after its last match. |
 | `strength_first` | double |  | Its strength going into the first match that had ten matches behind the rating (before that a rating is still finding its level). |
-| `strength_change` | double |  | How the market has re-rated it since then, against the median established side of its pool: strength less strength_first, less the drift of the scale between the two months (the scale's centre is the average listed team and moves as teams join; the median side rated in both of two consecutive months is held still). Blank where the pool has too few sides to read the drift. |
+| `strength_change` | double |  | How the market has re-rated it since then, against the median established side of its pool: strength less strength_first, less the drift of the scale between the two months (the scale's centre is the average listed team and moves as teams join; the median side rated in both of two consecutive months is held still). Blank where a month between the two has too few sides to read the drift from. |
 | `country_change` | double |  | The median strength_change of its country's ranked sides (same category and pool, five or more of them): how the rating of the country's football as a whole moved, which in the first seasons of data is mostly the scale between leagues being learned from cup and continental matches. |
-| `rerating` | double |  | strength_change less country_change: how the market has re-rated the side against the other sides of its country. The figure to read for a club; with only a season of data some of a promoted side's rise is still the level between divisions being learned. |
+| `rerating` | double |  | strength_change less country_change: how the market has re-rated the side against the other sides of its country. With one year of data most of it is not the club: the level between divisions is still being learned, and whole divisions move together (every side of the Premier League and of Serie A is up; across twelve divisions checked, half the variance is the division's own mean). Compare sides within one division until the re-rating is made against the division. |
 | `ppm_last5` | double |  | Points a match over its last five matches. |
 | `perf_last5` | double |  | In-play performance a match over its last five with a record. |
 | `ppm_last10` | double |  | Points a match over its last ten. |

@@ -101,7 +101,7 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 3
+VERSION = 4
 SCOPE = "part"
 INPUTS = ("gold/event", "silver/market", "silver/runner", "silver/spell", "silver/tick")
 COLUMNS = {
@@ -153,6 +153,7 @@ PLAY_MIN = 97.0               # minutes of play in a match, added time included
 HT_START_MIN = 48.0           # half time where nothing in the match says: the first half's end and the restart
 HT_END_MIN = 64.0             # as the real second-half goals of 2026's odd-numbered months place them
 THIRD_EARLY_MS = 180_000      # an over/under market closed this long before full time closed on the third goal
+THIRD_TOL_MIN = 3.0           # the third inferred goal is at the market's stop if within this many minutes of it
 BIG = 1 << 42
 
 #: the usable rule
@@ -235,8 +236,8 @@ GOAL = TableSpec(
                "over/under; third: the over/under market stopped for good (the third goal); ah: a handicap step "
                "with no match-odds or over/under move; settle: no price move, the settlement alone.", False),
         Column("by_settlement", pa.bool_(), "The goal is in the list, or on this side, because the settlement "
-               "asks for it: a sub-threshold move promoted, a side turned, or a goal with no move at all "
-               "(evidence 'settle').", False),
+               "asks for it: a sub-threshold move promoted, a side turned, a side given to a goal whose moves "
+               "did not say, or a goal with no move at all (evidence 'settle').", False),
         Column("home_score", pa.int16(), "Home goals after this goal; blank from the first goal with no side."),
         Column("away_score", pa.int16(), "Away goals after this goal; blank from the first goal with no side."),
         Column("mo_jump", pa.float64(), "The match-odds move: the home price's logit move less the away price's "
@@ -272,16 +273,17 @@ TIMELINE = TableSpec(
                "in-play prices near the closing ones (a market that went in play late has lost its first goals).",
                False),
         Column("consistent", pa.bool_(), "The price reading alone (before any reconciliation) passed every check "
-               "the settlement allows: agrees_result, agrees_over25 and agrees_margin, those that are not blank. "
-               "Blank when none can be made."),
+               "the settlement allows: agrees_result, agrees_over25 and agrees_margin, those that are not blank, "
+               "and (where a result or a margin is settled) every goal has a side. Blank when none can be made."),
         Column("reconciled", pa.bool_(), "The price reading disagreed with the settlement and the list was "
                "edited at least cost to agree with it (n_edits says how much). False with consistent false: no "
                "edit within reach agrees, the list is the price reading.", False),
         Column("reliability", pa.float64(), "The share of matches like this one whose final score was exactly "
                "the real one on 2026's odd-numbered months (football-data.co.uk scores): by how the list was "
                "reached (price reading agreed; one edit; several; a goal with no price move) and its goals (0 to "
-               "2, 3, 4, 5 or more). Blank where usable is false or no agreement with the settlement was reached: "
-               "not measured there."),
+               "2, 3, 4, 5 or more). Blank where usable is false, no agreement with the settlement was reached, "
+               "a goal still has no side, or the third goal is not where the over/under market stopped "
+               "(agrees_third false): not measured there, and such lists are right far less often."),
         Column("n_goals", pa.int16(), "Inferred goals, after reconciliation.", False),
         Column("home_goals", pa.int16(), "Inferred home goals.", False),
         Column("away_goals", pa.int16(), "Inferred away goals.", False),
@@ -300,14 +302,20 @@ TIMELINE = TableSpec(
                "a settled handicap market."),
         Column("agrees_margin", pa.bool_(), "The price reading's goal difference is final_margin; blank without "
                "one."),
+        Column("agrees_third", pa.bool_(), "The list's third goal is within three minutes of the moment the "
+               "over/under market stopped for good (ou_closed_min: the real third goal is, on 94 per cent of "
+               "matches). False: a goal before it is missing or false, and the score is right less than half "
+               "the time (second review round: 48 of 110 such matches with a real score). Blank where the market "
+               "did not stop early, the list has under three goals or its third has no minute."),
         Column("n_stoppages", pa.int16(), "In-play suspensions of the match's markets before the final one "
                "(overlapping suspensions of its markets count once).", False),
         Column("n_goal_stoppages", pa.int16(), "Of those, the ones that mark an inferred goal.", False),
         Column("n_other_stoppages", pa.int16(), "The rest: a penalty not scored, a red card, a review, an "
                "injury, a goal disallowed.", False),
         Column("n_disallowed", pa.int16(), "Goals undone by a later move back (Under sharply in again).", False),
-        Column("first_goal_min", pa.float64(), "match_min of the first goal."),
-        Column("last_goal_min", pa.float64(), "match_min of the last goal."),
+        Column("first_goal_min", pa.float64(), "match_min of the first goal the data can time (a goal with no "
+               "minute has only a placeholder); blank where there is none."),
+        Column("last_goal_min", pa.float64(), "match_min of the last goal the data can time."),
         Column("min_home_leading", pa.float64(), "Minutes of play the home side led (half time left out); "
                "blank where a goal has no side. A goal with timed false counts from the last price on."),
         Column("min_level", pa.float64(), "Minutes of play the score was level."),
@@ -324,7 +332,7 @@ TIMELINE = TableSpec(
         Column("start_jump", pa.float64(), "The summed absolute change of the three 1X2 chances from the close "
                "to the first in-play row: large when the market went in play after a goal."),
         Column("ou_closed_min", pa.float64(), "Elapsed minute the over/under market stopped for good, where "
-               "that was before full time: the third goal as Betfair settled it."),
+               "that was in play and before full time and Over won: the third goal as Betfair settled it."),
     ),
     key=("event_id",), sort=("event_id",),
 )
@@ -490,7 +498,8 @@ def _windows(pn: dict, ev, stops) -> dict:
 
     m = ev.set_index("e")
     dead = m["ou_dead_ms"].reindex(e).to_numpy()
-    early = m["ou_close_ms"].reindex(e).to_numpy() <= m["ft_ms"].reindex(e).to_numpy() - THIRD_EARLY_MS
+    early = (m["ou_close_ms"].reindex(e).to_numpy() <= m["ft_ms"].reindex(e).to_numpy() - THIRD_EARLY_MS) \
+        & (m["over25"].reindex(e).to_numpy(dtype="float64", na_value=np.nan) == 1)
     t_prev, t_next = np.where(has_prev, t[ip], t), t[ix]
     third = early & (t_prev - 90_000 <= dead) & (dead <= t_next + 90_000)
     ou_alive = ~(t_next >= dead - 1)                # NaN dead (no over/under market): not alive
@@ -841,6 +850,7 @@ def _reconcile(goals, cands, ev, need: np.ndarray, t_end: np.ndarray):
     result = ev["result"].map({"H": 1, "D": 0, "A": -1}).to_numpy(dtype="float64", na_value=np.nan)
     over = ev["over25"].to_numpy(dtype="float64", na_value=np.nan)
     drop, turned, add = np.zeros(len(goals), bool), np.zeros(len(goals), bool), np.zeros(len(cands), bool)
+    sided = np.zeros(len(goals), bool)                    # a goal with no side that the settlement gives one
     extra_e, extra_side = [], []
     for i in np.flatnonzero(need):
         k = g_hi[i] - g_lo[i]
@@ -854,6 +864,7 @@ def _reconcile(goals, cands, ev, need: np.ndarray, t_end: np.ndarray):
         for j, s in zip(range(g_lo[i], g_hi[i]), picks[:k]):
             drop[j] = s == 0
             turned[j] = s != 0 and side[j] != 0 and s != side[j]
+            sided[j] = s != 0 and side[j] == 0
             side[j] = s if s != 0 else side[j]
         for j, s in zip(range(c_lo[i], c_hi[i]), picks[k:]):
             add[j] = s != 0
@@ -864,7 +875,8 @@ def _reconcile(goals, cands, ev, need: np.ndarray, t_end: np.ndarray):
         unplaced[i] = home + away
         edits[i] = int(drop[g_lo[i]:g_hi[i]].sum() + turned[g_lo[i]:g_hi[i]].sum() + add[c_lo[i]:c_hi[i]].sum()) \
             + home + away
-    kept = goals.assign(side=side.astype("float64"), edit=np.where(turned, "turned", ""))[~drop]
+    kept = goals.assign(side=side.astype("float64"),
+                        edit=np.where(turned, "turned", np.where(sided, "sided", "")))[~drop]
     added = cands.assign(side=c_side.astype("float64"), edit="added")[add].drop(columns=["chance"])
     xe = np.array(extra_e, "int64")
     at = t_end[xe].astype("int64") + (np.arange(len(xe)) - np.searchsorted(xe, xe, "left")) if len(xe) \
@@ -873,6 +885,8 @@ def _reconcile(goals, cands, ev, need: np.ndarray, t_end: np.ndarray):
                            "kind": "settle", "stop_lo": 0, "stop_hi": 0, "edit": "unseen"})
     out = pd.concat([f for f in (kept, added, unseen) if len(f)], ignore_index=True) if len(kept) + len(added) \
         + len(unseen) else kept
+    # every column of the price reading stays, also where the only goals left are ones no price shows
+    out = out.reindex(columns=list(dict.fromkeys([*kept.columns, *out.columns])))
     return out, done, edits, unplaced
 
 
@@ -990,6 +1004,9 @@ def finish(st: dict, par: dict) -> dict:
     m["agrees_margin"] = _maybe(ok_fm, ~np.isnan(fm))
     checked = ~np.isnan(res) | ~np.isnan(over) | ~np.isnan(fm)
     need = (~np.isnan(res) & ~ok_res) | (~np.isnan(over) & ~ok_over) | (~np.isnan(fm) & ~ok_fm)
+    # a goal with no side is in the count and not in the difference: such a list can pass every check and still
+    # be impossible (three goals and a level score). Where a result or a margin is settled it has not agreed.
+    need |= (total - home - away > 0) & (~np.isnan(res) | ~np.isnan(fm))
     m["consistent"] = _maybe(~need, checked)
 
     # where it disagrees, the cheapest edit that agrees; a goal no price shows goes after the last price
@@ -1009,6 +1026,9 @@ def finish(st: dict, par: dict) -> dict:
     first_stop = stops["start"].to_numpy()[np.minimum(goals["stop_lo"].to_numpy(), max(len(stops) - 1, 0))] \
         if len(stops) else np.zeros(len(goals))
     pt = np.where(marked, first_stop, goals["t"].to_numpy()).astype("int64")
+    # goals are numbered by their window; a stoppage that began before the previous goal's moment must not put a
+    # later goal before an earlier one (the running score is read by pt)
+    pt = pd.Series(pt).groupby(ge).cummax().to_numpy() if len(pt) else pt
     el = (pt - ip[ge]) / 60_000.0
     half, minute, played = _match_min(el, ht_start[ge], ht_end[ge])
     kind = goals["kind"].to_numpy().astype(object)
@@ -1027,8 +1047,9 @@ def finish(st: dict, par: dict) -> dict:
     m["n_goals"], m["home_goals"], m["away_goals"] = total, home, away
     m["n_side_unknown"] = total - home - away
     m["min_confidence"] = by["confidence"].min().reindex(m["e"]).to_numpy()
-    m["first_goal_min"] = by["match_min"].min().reindex(m["e"]).to_numpy()
-    m["last_goal_min"] = by["match_min"].max().reindex(m["e"]).to_numpy()
+    seen = goals[goals["timed"]].groupby("e")["match_min"]           # a goal with no minute has only a placeholder
+    m["first_goal_min"] = seen.min().reindex(m["e"]).to_numpy()
+    m["last_goal_min"] = seen.max().reindex(m["e"]).to_numpy()
     m["reconciled"], m["n_edits"], m["n_unplaced"] = done, edits, unplaced
 
     # stoppages
@@ -1087,15 +1108,26 @@ def finish(st: dict, par: dict) -> dict:
         fst = fst.div(fst.sum(axis=1, skipna=False), axis=0).reindex(np.arange(n)).to_numpy()
         start_jump = np.abs(fst - close).sum(axis=1)
     m["max_gap_min"], m["start_jump"] = gap, start_jump
-    early = m["ou_close_ms"].to_numpy() <= ft - THIRD_EARLY_MS
+    early = (m["ou_close_ms"].to_numpy() <= ft - THIRD_EARLY_MS) & (over == 1) & (m["ou_dead_ms"].to_numpy() > ip)
     m["ou_closed_min"] = np.where(early, (m["ou_dead_ms"].to_numpy() - ip) / 60_000.0, np.nan)
+    # the list against that moment: its third goal should be there (the real one is, within three minutes, on 94
+    # per cent of matches). A third goal with no minute cannot be checked.
+    third = goals[goals["goal_no"] == 3].set_index("e")
+    el3 = third["elapsed_min"].reindex(m["e"]).to_numpy(dtype="float64")
+    seen3 = third["timed"].reindex(m["e"]).fillna(False).to_numpy(dtype=bool)
+    stop = m["ou_closed_min"].to_numpy(dtype="float64")
+    with np.errstate(invalid="ignore"):
+        m["agrees_third"] = _maybe(np.abs(el3 - stop) <= THIRD_TOL_MIN, ~np.isnan(stop) & ~np.isnan(el3) & seen3)
     m["usable"] = (m["n_rows"].to_numpy() >= USABLE_ROWS) & (np.nan_to_num(gap, nan=1e9) <= USABLE_GAP_MIN) \
         & (span >= USABLE_SPAN_MIN[0]) & (span <= USABLE_SPAN_MIN[1]) & ~np.isnan(res) \
         & ~(np.nan_to_num(start_jump, nan=0.0) > USABLE_START)
     path = np.where(~checked | (need & ~done), "", np.where(~need, "agreed", np.where(
         unplaced > 0, "unplaced", np.where(edits == 1, "edit1", "edits"))))
     table = np.array([RELIABILITY.get(k, (np.nan,) * 4) for k in path], dtype="float64").reshape(n, 4)
-    m["reliability"] = np.where(m["usable"].to_numpy(), table[np.arange(n), np.clip(total, 2, 5) - 2], np.nan)
+    # no figure for a list that still has a goal with no side, or whose third goal is not where the market stopped:
+    # the table was not measured on those, and they are right far less often
+    sound = (m["n_side_unknown"].to_numpy() == 0) & ~m["agrees_third"].eq(False).to_numpy()
+    m["reliability"] = np.where(m["usable"].to_numpy() & sound, table[np.arange(n), np.clip(total, 2, 5) - 2], np.nan)
     return {"goals": goals, "matches": m}
 
 

@@ -184,7 +184,22 @@ def test_the_third_goal_closes_the_over_under_market_and_is_read_from_that():
     assert (third["home_score"], third["away_score"]) == (2, 1) and third["half"] == 2
     m = t.iloc[0]
     assert abs(m["ou_closed_min"] - 70) < 1.0 and m["agrees_over25"] and m["consistent"]
+    assert m["agrees_third"]                                                # the list's third goal is at the stop
     assert m["reliability"] == gg.RELIABILITY["agreed"][1]                  # agreed, three goals
+
+
+def test_a_list_whose_third_goal_is_not_where_the_over_under_stopped_is_flagged_and_given_no_reliability():
+    """The market went in play after the first goal: the prices show goals at 40, 70 and 85 and the settlement
+    adds the fourth. The over/under market stopped at 70 (the real third goal), the list's third is at 85: a goal
+    before the stop is missing, and such lists are right less than half the time."""
+    g, t = run(match(goals=[(10, +1), (40, +1), (70, -1), (85, +1)], first_price=20, lh=1.6, la=1.0))
+    m = t.iloc[0]
+    assert wall(g)[:3] == [40, 70, 85] and (m["home_goals"], m["away_goals"], m["n_unplaced"]) == (3, 1, 1)
+    assert abs(m["ou_closed_min"] - 70) < 1.0 and np.isnan(m["reliability"])
+    assert m["agrees_third"] is False or m["agrees_third"] == False                              # noqa: E712
+    # a list with fewer than three goals, or one whose market never stopped early, has nothing to check
+    _, two = run(match(goals=[(30, +1), (60, -1)]))
+    assert two.iloc[0]["agrees_third"] is None and np.isnan(two.iloc[0]["ou_closed_min"])
 
 
 def test_a_red_card_moves_match_odds_and_not_under_so_it_is_not_a_goal():
@@ -287,6 +302,29 @@ def test_a_goal_after_the_last_price_is_placed_by_the_settlement_and_flagged():
     assert not m["consistent"] and not m["agrees_result"] and m["agrees_over25"] and not m["agrees_margin"]
     assert m["reconciled"] and (m["n_edits"], m["n_unplaced"], m["n_goals"]) == (1, 1, 2)
     assert m["reliability"] == gg.RELIABILITY["unplaced"][0]
+
+
+def test_the_first_and_last_goal_minutes_are_of_goals_the_data_can_time():
+    """A goal the settlement adds with no price move has only a placeholder minute (after the last price): it must
+    not be the match's last goal minute, and a match whose only goal is such a goal has none."""
+    g, t = run(match(goals=[(30, +1)], settle=(2, 0)))
+    assert g["timed"].tolist() == [True, False] and g.iloc[1]["match_min"] == 90.0
+    assert (t.iloc[0]["first_goal_min"], t.iloc[0]["last_goal_min"], t.iloc[0]["n_unplaced"]) == (30.0, 30.0, 1)
+    g, t = run(match(goals=[], settle=(1, 0)))                 # the only goal is one no price shows
+    assert g["timed"].tolist() == [False] and g["evidence"].tolist() == ["settle"] and np.isnan(g.iloc[0]["mo_jump"])
+    assert np.isnan(t.iloc[0]["first_goal_min"]) and np.isnan(t.iloc[0]["last_goal_min"])
+
+
+def test_a_goal_with_no_side_is_given_one_by_the_settlement_and_says_so():
+    import pandas as pd
+    goals = pd.DataFrame({"e": [0, 0], "t": [1000, 2000], "side": [1.0, 0.0], "kind": ["ou+ah", "ou"], "edit": ""})
+    cands = pd.DataFrame({"e": np.zeros(0, "int64"), "t": np.zeros(0, "int64"), "side": np.zeros(0),
+                          "kind": np.array([], object), "chance": np.zeros(0)})
+    ev = pd.DataFrame({"final_margin": [0.0], "result": ["D"], "over25": [0]})
+    out, done, edits, unplaced = gg._reconcile(goals, cands, ev, np.array([True]), np.full(1, 9000.0))
+    # settled 1-1: the goal the prices could not side was the away side's, and the row says the settlement said so
+    assert out["side"].tolist() == [1.0, -1.0] and out["edit"].tolist() == ["", "sided"]
+    assert done.tolist() == [True] and unplaced.tolist() == [0]
 
 
 def test_the_cheapest_edit_the_settlement_allows():

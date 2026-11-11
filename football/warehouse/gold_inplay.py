@@ -10,11 +10,13 @@ in until the first in-play trade; normalised to their sum), how far to trust the
 the stalest leg's age), the over 2.5 chance while that market is open, the phase and the football minute (from the
 match's half-time estimate in gold/timeline), and the score as gold/goal infers it.
 
-A minute's reading is ``ok`` when all three legs have a price, the book's sum is inside ``BOOK_SUM`` and the legs
-older than ``MAX_AGE_S`` carry no more than ``STALE_MASS`` of it: after a goal the legs re-price one at a time, and
-for a minute or two the last traded prices of a thin market belong to two different scores. Staleness is weighed by
-the chance a leg carries because a side three goals down stops trading at 200 and its stale price harms nothing; a
-rule on age alone would keep only the minutes when the result is open, and bias every average toward the draw.
+A minute's reading is ``ok`` when all three legs have a price, the book's sum is inside ``BOOK_SUM`` and the
+stale legs carry no more than ``STALE_MASS`` of it. A leg is stale when its price is older than ``MAX_AGE_S`` or
+was made before the match's latest goal (the latest one gold/goal can time): after a goal the legs re-price one
+at a time, and for a minute or two the last traded prices belong to two different scores (a book of them can
+sum to 1.03 and look sound). Staleness is weighed by the chance a leg carries because a side three goals down
+stops trading at 200 and its stale price harms nothing; a rule on age alone would keep only the minutes when
+the result is open, and bias every average toward the draw.
 
 **gold/inplay**, one row a match: what the path adds to the result.
 - the time-averaged chances and the points they are worth (3 for a win, 1 for a draw): ``xpts_inplay``. Every
@@ -46,15 +48,15 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec, from_frame
 
-VERSION = 2
+VERSION = 3
 SCOPE = "part"
 INPUTS = ("gold/event", "gold/goal", "gold/timeline", "silver/market", "silver/runner", "silver/spell", "silver/tick")
 COLUMNS = {
     "gold/event": ["event_id", "mo_market_id", "ou_market_id", "went_in_play", "kickoff_actual", "ft_pt", "result",
                    "p_home", "p_draw", "p_away"],
-    "gold/goal": ["event_id", "goal_no", "pt", "home_score", "away_score"],
+    "gold/goal": ["event_id", "goal_no", "pt", "timed", "home_score", "away_score"],
     "gold/timeline": ["event_id", "usable", "consistent", "reconciled", "n_unplaced", "n_side_unknown",
-                      "ht_start_min", "ht_end_min"],
+                      "agrees_third", "ht_start_min", "ht_end_min"],
     "silver/market": ["market_id", "closed_pt"],
     "silver/runner": ["market_id", "market_type", "selection_id", "handicap", "role"],
     "silver/spell": ["market_id", "start_pt", "end_pt", "status"],
@@ -88,10 +90,10 @@ MINUTE = TableSpec(
         Column("mo_legs", pa.int8(), "Match-odds legs with a price as of the minute.", False),
         Column("mo_book_sum", pa.float64(), "Sum of 1 / price over the legs priced."),
         Column("mo_max_age_s", pa.float64(), "The stalest leg's age at the minute, seconds."),
-        Column("mo_stale_mass", pa.float64(), "The share of the book's sum carried by legs older than five "
-               "minutes."),
+        Column("mo_stale_mass", pa.float64(), "The share of the book's sum carried by stale legs: priced over "
+               "five minutes ago, or before the latest goal the data can time."),
         Column("ok", pa.bool_(), "All three legs priced, the book's sum between 0.90 and 1.15, and no more than a "
-               "tenth of it in legs older than five minutes: a reading to trust.", False),
+               "tenth of it in stale legs: a reading to trust.", False),
         Column("p_over", pa.float64(), "The chance of over 2.5 goals as of the minute, normalised to its book; "
                "blank once that market has stopped trading (ou_open false) or where a leg is missing or stale."),
         Column("ou_open", pa.bool_(), "Whether the over/under 2.5 market was still trading at the minute: before "
@@ -103,7 +105,8 @@ MINUTE = TableSpec(
         Column("away_score", pa.int16(), "Away goals so far, likewise."),
         Column("score_ok", pa.bool_(), "The score columns can be relied on minute by minute: the timeline is "
                "usable, its final score agrees with the settlement (as read, or after reconciliation), every "
-               "goal has a minute and every goal has a side. The flag is made with the match's result: a table "
+               "goal has a minute and a side, and the third goal is where the over/under market stopped "
+               "(gold/timeline.agrees_third not false). The flag is made with the match's result: a table "
                "cut down to score_ok matches is not a fair sample for testing the prices against results.", False),
     ),
     key=("event_id", "minute"), sort=("event_id", "minute"),
@@ -142,8 +145,11 @@ MATCH = TableSpec(
         Column("travel", pa.float64(), "How far the chances moved: the sum over consecutive ok minutes of half the "
                "absolute change of the three chances (an eventful match travels far)."),
         Column("fav_changes", pa.int16(), "Times the most likely result changed between consecutive ok minutes."),
-        Column("decided_min", pa.int16(), "The first minute from which the eventual result's chance stayed at or "
-               "above 0.90 to the end; blank where it never did or the match has no result."),
+        Column("decided_min", pa.int16(), "The first grid minute (whole minutes since the turn in play: wall "
+               "clock, half time included) from which the eventual result's chance stayed at or above 0.90 to "
+               "the end; blank where it never did or the match has no result."),
+        Column("decided_match_min", pa.float64(), "The football minute of decided_min (gold/inplay_minute's "
+               "match_min: 45 through half time, 90 at most): the one to quote."),
         Column("result_min_p", pa.float64(), "The lowest chance the eventual result had in play: how unlikely it "
                "once looked."),
     ),
@@ -217,6 +223,17 @@ def minute_frame(inputs: dict):
                           direction="backward", allow_exact_matches=True)
     g = g.sort_values(["eid", "minute"], kind="stable").reset_index(drop=True)
 
+    # the latest goal the data can time at or before the minute: a leg last priced before it is of another score
+    goals = _ms(inputs["gold/goal"].select(COLUMNS["gold/goal"]), ["pt"]).to_pandas()
+    goals = goals.rename(columns={"pt": "goal_pt"}).sort_values(["goal_pt", "goal_no"], kind="stable")
+    seen = goals.loc[goals["timed"].eq(True), ["event_id", "goal_pt"]].merge(ev[["event_id", "eid"]], on="event_id")
+    g["row"] = np.arange(len(g))
+    lg = pd.merge_asof(g[["row", "eid", "pt"]].sort_values("pt", kind="stable"), seen[["eid", "goal_pt"]],
+                       left_on="pt", right_on="goal_pt", by="eid", direction="backward",
+                       allow_exact_matches=True).sort_values("row")
+    last_goal = lg["goal_pt"].to_numpy(float)                     # blank: no goal yet
+    g = g.drop(columns="row")
+
     raw = {leg: 1.0 / g[f"ltp_{leg}"].to_numpy(float) for leg in LEGS}
     age = {leg: (g["pt"].to_numpy(float) - g[f"pt_{leg}"].to_numpy(float)) / 1000.0 for leg in LEGS}
     mo = np.c_[raw["home"], raw["draw"], raw["away"]]
@@ -227,9 +244,11 @@ def minute_frame(inputs: dict):
     max_age = np.where(legs > 0, np.max(np.where(np.isfinite(mo), np.c_[age["home"], age["draw"], age["away"]],
                                                  -np.inf), axis=1), np.nan)
     ages = np.c_[age["home"], age["draw"], age["away"]]
+    made = np.c_[tuple(g[f"pt_{leg}"].to_numpy(float) for leg in ("home", "draw", "away"))]
     with np.errstate(invalid="ignore", divide="ignore"):
         p = np.where(full[:, None], mo / book[:, None], np.nan)
-        stale = np.where(full, np.where(ages > MAX_AGE_S, mo, 0.0).sum(1) / book, np.nan)
+        old = (ages > MAX_AGE_S) | (made < last_goal[:, None])
+        stale = np.where(full, np.where(old, mo, 0.0).sum(1) / book, np.nan)
     ok = full & (stale <= STALE_MASS) & (book >= BOOK_SUM[0]) & (book <= BOOK_SUM[1])
 
     e = ev.iloc[g["eid"].to_numpy()]
@@ -259,9 +278,8 @@ def minute_frame(inputs: dict):
         "p_over": p_over,
         "ou_open": ou_open,
         "score_ok": usable & (e["consistent"].eq(True) | e["reconciled"].eq(True)).to_numpy()
-        & e["n_unplaced"].eq(0).to_numpy() & e["n_side_unknown"].eq(0).to_numpy()})
-    goals = _ms(inputs["gold/goal"].select(COLUMNS["gold/goal"]), ["pt"]).to_pandas()
-    goals = goals.rename(columns={"pt": "goal_pt"}).sort_values(["goal_pt", "goal_no"], kind="stable")
+        & e["n_unplaced"].eq(0).to_numpy() & e["n_side_unknown"].eq(0).to_numpy()
+        & ~e["agrees_third"].eq(False).to_numpy()})
     out["row"] = np.arange(len(out))
     sc = pd.merge_asof(out[["row", "event_id", "pt"]].sort_values("pt", kind="stable"),
                        goals[["event_id", "goal_pt", "home_score", "away_score"]], left_on="pt", right_on="goal_pt",
@@ -326,7 +344,10 @@ def summary_frame(minute, ev):
     after = has & (m["minute"].to_numpy() > last_below[grp])
     decided = np.full(n, np.iinfo(np.int64).max)
     np.minimum.at(decided, grp[after], m["minute"].to_numpy()[after])
-    decided = np.where(decided == np.iinfo(np.int64).max, np.nan, decided.astype(float))
+    never = decided == np.iinfo(np.int64).max
+    at = np.flatnonzero(first) + np.where(never, 0, decided)      # the grid's rows are its minutes, from 0
+    decided_match = np.where(never, np.nan, m["match_min"].to_numpy(float)[np.minimum(at, len(m) - 1)])
+    decided = np.where(never, np.nan, decided.astype(float))
 
     # half time: the ok reading nearest the middle of the break, within three minutes
     mids = minute.loc[minute["phase"] == "half_time"].groupby("event_id")["minute"].agg(["min", "max"])
@@ -352,8 +373,8 @@ def summary_frame(minute, ev):
         "ht_p_home": blank(ht[:, 0]), "ht_p_draw": blank(ht[:, 1]), "ht_p_away": blank(ht[:, 2]),
         "max_p_home": blank(ext(0, "max", -np.inf)), "min_p_home": blank(ext(0, "min", np.inf)),
         "max_p_away": blank(ext(2, "max", -np.inf)), "min_p_away": blank(ext(2, "min", np.inf)),
-        "travel": blank(travel), "fav_changes": np.where(filled, fav_changes, 0),
-        "decided_min": np.where(filled, decided, np.nan),
+        "travel": blank(travel), "fav_changes": blank(fav_changes),
+        "decided_min": blank(decided), "decided_match_min": blank(decided_match),
         "result_min_p": blank(np.where(np.isfinite(rmin), rmin, np.nan)),
     })
 

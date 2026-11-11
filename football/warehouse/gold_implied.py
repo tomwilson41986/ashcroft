@@ -10,9 +10,13 @@ One row an event a checkpoint, from the checkpoint books of the event's three ma
   the 1X2 exactly, with no grid and no assumption about rho (the earlier ``implied_rates`` searched a 0.02 grid
   of independent Poisson rates: the model review's finding A3);
 - ``rho``: the low-score correction the market's draw price then implies (the draw chance against the
-  independent-Poisson draw at those rates): the market's draw premium, match by match. Blank where the value is
-  one no Dixon-Coles market could have (``rho_valid``): the three books are then not prices of one moment (a stale
-  leg, or in-running prices where Betfair turned the market in play late), and the row is one to distrust;
+  independent-Poisson draw at those rates): the market's draw premium, match by match. Blank where the draw
+  chance is more than ``DRAW_TOL`` from any a Dixon-Coles market could show at those rates (``rho_band``): the
+  three books are then not prices of one moment (a stale leg, or in-running prices where Betfair turned the
+  market in play late), and the row is one to distrust. Within the tolerance the value is taken to the band's
+  edge: at high totals the band is narrow (0.02 of draw chance at five goals) and a tick of noise in a price
+  leaves it, which says nothing against the book (second review round: the strict rule dropped 31 per cent of
+  closes with a total over five);
 - ``sup_ah``: the supremacy the Asian handicap main line implies at the same total and the same rho, and
   ``sup_gap`` = sup_ah less the 1X2's: the disagreement between the two markets (in goals), a lead-lag signal.
 
@@ -34,18 +38,19 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 2          # 2: the handicap is read with the row's rho; a fresh main line; an impossible rho is blank
+VERSION = 4          # 2: the handicap is read with the row's rho; a fresh main line; an impossible rho is blank
 SCOPE = "part"
 INPUTS = ("gold/checkpoint", "gold/event")
 COLUMNS = {
     "gold/checkpoint": ["market_id", "event_id", "market_type", "role", "cp_min", "line", "cp_time", "p_norm",
-                        "book_complete", "book_sum", "book_max_age_s"],
+                        "book_complete", "book_sum", "book_max_age_s", "trade_pt"],
     "gold/event": ["event_id", "mo_market_id", "ou_market_id", "ah_market_id"],
 }
 
 T_LO, T_HI = 0.05, 12.0
 AH_FRESH_S = 900.0                # a handicap line whose stalest price is older than this is not the main line
 RHO_DEFAULT = -0.08               # the market's usual low-score correction (the median of the 2026 closes)
+DRAW_TOL = 0.02                   # a draw chance this far outside the Dixon-Coles band is noise, not a broken book
 
 SPEC = TableSpec(
     "gold/implied",
@@ -74,8 +79,9 @@ SPEC = TableSpec(
         Column("lam_home", pa.float64(), "The home side's goal expectancy."),
         Column("lam_away", pa.float64(), "The away side's goal expectancy."),
         Column("rho", pa.float64(), "The Dixon-Coles low-score correction the market's draw price implies at "
-               "those rates (negative: more draws than independent Poisson). Blank where the value is one no such "
-               "market could have: the books are not prices of one moment, and the row is one to distrust."),
+               "those rates (negative: more draws than independent Poisson). Blank where the draw chance is more "
+               "than 0.02 from any such a market could show: the books are not prices of one moment, and the row "
+               "is one to distrust. Within 0.02 of the band, its edge."),
         Column("sup_ah", pa.float64(), "The supremacy the handicap's main line implies at the same total and rho "
                "(the usual rho, -0.08, where the row has none)."),
         Column("sup_gap", pa.float64(), "sup_ah less supremacy: the handicap market against the 1X2, in goals."),
@@ -143,13 +149,37 @@ def supremacy_from_1x2(p_home, p_away, total) -> np.ndarray:
     return _solve_sup(home_minus_away, np.asarray(p_home, float) - np.asarray(p_away, float), total)
 
 
-def rho_valid(lam_home, lam_away, rho) -> np.ndarray:
-    """Whether ``rho`` is one a Dixon-Coles model allows at these rates: every corrected score chance stays
-    non-negative (max(-1/lam_home, -1/lam_away) <= rho <= min(1, 1/(lam_home lam_away)))."""
-    lh, la, r = (np.asarray(x, float) for x in (lam_home, lam_away, rho))
+def rho_band(lam_home, lam_away) -> tuple[np.ndarray, np.ndarray]:
+    """The (lowest, highest) rho a Dixon-Coles model allows at these rates: every corrected score chance stays
+    non-negative (max(-1/lam_home, -1/lam_away) <= rho <= min(1, 1/(lam_home lam_away))); blank without rates."""
+    lh, la = np.asarray(lam_home, float), np.asarray(lam_away, float)
     with np.errstate(invalid="ignore", divide="ignore"):
-        return (np.isfinite(r) & (lh > 0) & (la > 0) & (r >= np.maximum(-1.0 / lh, -1.0 / la))
-                & (r <= np.minimum(1.0, 1.0 / (lh * la))))
+        ok = (lh > 0) & (la > 0)
+        return (np.where(ok, np.maximum(-1.0 / lh, -1.0 / la), np.nan),
+                np.where(ok, np.minimum(1.0, 1.0 / (lh * la)), np.nan))
+
+
+def rho_valid(lam_home, lam_away, rho) -> np.ndarray:
+    """Whether ``rho`` is inside the band a Dixon-Coles model allows at these rates."""
+    lo, hi = rho_band(lam_home, lam_away)
+    r = np.asarray(rho, float)
+    with np.errstate(invalid="ignore"):
+        return np.isfinite(r) & (r >= lo) & (r <= hi)
+
+
+def rho_from_draw(lam_home, lam_away, p_draw, tol: float = DRAW_TOL) -> np.ndarray:
+    """The low-score correction the draw chance implies at these rates. A draw chance outside the band a
+    Dixon-Coles market could show by no more than ``tol`` gives the band's edge; one further out, a blank."""
+    lh, la, pd_ = (np.asarray(x, float) for x in (lam_home, lam_away, p_draw))
+    total, sup = lh + la, lh - la
+    with np.errstate(invalid="ignore", divide="ignore"):
+        d0 = np.where(np.isfinite(sup) & np.isfinite(total), draw_independent(
+            np.where(np.isfinite(total), total, 2.5), np.where(np.isfinite(sup), sup, 0.0)), np.nan)
+        size = 2.0 * lh * la * np.exp(-total)                 # the draw chance a unit of rho takes away
+        raw = np.where(size > 1e-6, (d0 - pd_) / size, np.nan)
+        lo, hi = rho_band(lh, la)
+        edge = np.clip(raw, lo, hi)
+        return np.where(np.abs(raw - edge) * size <= tol, edge, np.nan)
 
 
 def _win_loss(sk, lh, la, line, c):
@@ -199,6 +229,8 @@ def build(inputs: dict) -> dict:
         return {SPEC.name: SPEC.schema.empty_table()}
     key = ["event_id", "cp_min"]
 
+    # the newest price in each book (a market's two or three runners at a checkpoint and line)
+    cp["newest"] = cp.groupby(["market_id", "cp_min", "line"])["trade_pt"].transform("max")
     mo = cp[cp["market_id"].isin(ev["mo_market_id"].dropna())]
     wide = mo.pivot_table(index=key, columns="role", values="p_norm", aggfunc="first")
     for c in ("home", "draw", "away"):
@@ -211,7 +243,8 @@ def build(inputs: dict) -> dict:
 
     ou = cp[cp["market_id"].isin(ev["ou_market_id"].dropna()) & (cp["role"] == "over")]
     ou = ou.groupby(key).agg(p_over=("p_norm", "first"), ou_book_sum=("book_sum", "first"),
-                             ou_age_s=("book_max_age_s", "first"), ou_time=("cp_time", "first"))
+                             ou_age_s=("book_max_age_s", "first"), ou_time=("cp_time", "first"),
+                             ou_newest=("newest", "first"))
 
     ah = cp[cp["market_id"].isin(ev["ah_market_id"].dropna()) & (cp["role"] == "home")].copy()
     ah["dist"] = (ah["p_norm"] - 0.5).abs()
@@ -219,21 +252,23 @@ def build(inputs: dict) -> dict:
     n_lines = ah.groupby(key).size().rename("ah_lines")
     ah = ah.sort_values(key + ["old", "dist", "line"]).groupby(key).agg(
         ah_line=("line", "first"), ah_p_home=("p_norm", "first"), ah_age_s=("book_max_age_s", "first"),
-        ah_time=("cp_time", "first")).join(n_lines)
+        ah_time=("cp_time", "first"), ah_newest=("newest", "first")).join(n_lines)
 
     out = out.join(ou, how="outer").join(ah, how="outer")
+    # each market has its own schedule: where another market's checkpoint is later than the match-odds one, its
+    # book can hold a price from after the row's moment. Such a book is left out of the row.
+    for name, cols in (("ou", ["p_over", "ou_book_sum", "ou_age_s"]),
+                       ("ah", ["ah_line", "ah_p_home", "ah_age_s", "ah_lines"])):
+        late = out["cp_time"].notna() & out[f"{name}_newest"].notna() & (out[f"{name}_newest"] > out["cp_time"])
+        out.loc[late, cols] = np.nan
     out["cp_time"] = out["cp_time"].fillna(out["ou_time"]).fillna(out["ah_time"])
     out = out.reset_index()
 
     total = total_from_over(out["p_over"].to_numpy(float))
     sup = supremacy_from_1x2(out["p_home"].to_numpy(float), out["p_away"].to_numpy(float), total)
     lam_h, lam_a = 0.5 * (total + sup), 0.5 * (total - sup)
+    rho = rho_from_draw(lam_h, lam_a, out["p_draw"].to_numpy(float))
     with np.errstate(invalid="ignore", divide="ignore"):
-        d0 = np.where(np.isfinite(sup), draw_independent(np.where(np.isfinite(total), total, 2.5),
-                                                         np.where(np.isfinite(sup), sup, 0.0)), np.nan)
-        denom = 2.0 * lam_h * lam_a * np.exp(-total)
-        rho = np.where(denom > 1e-6, (d0 - out["p_draw"].to_numpy(float)) / denom, np.nan)
-        rho = np.where(rho_valid(lam_h, lam_a, rho), rho, np.nan)
         # the handicap is read with the row's own rho; the usual one where the row has none
         sup_ah = supremacy_from_handicap(out["ah_line"].to_numpy(float), out["ah_p_home"].to_numpy(float), total,
                                          np.where(np.isfinite(rho), rho, RHO_DEFAULT))

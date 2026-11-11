@@ -18,7 +18,11 @@ Three measures of a result, in order of noise:
   that pre-match expectation record on that difference on average. A side that led for an hour and conceded twice
   late did well on this and took one point;
 - ``luck`` = pts_vs_xpts - perf: what the final whistle gave beyond the run of the match.
-They sum: pts_vs_xpts = perf + luck. Over a season perf is the part that says something about the team.
+They sum: pts_vs_xpts = perf + luck. perf describes how a side's matches went with less noise than its points
+(a standard deviation of 0.54 points a match against 1.18), but it is measured against a price that already
+knew the side: on 2026 a team's perf does not persist (the first half of its matches against the second:
+correlation 0.01; the variance of perf_pm across 2,067 teams is its sampling variance). It says what happened
+in a run of matches. It is not a rating and sides should not be ranked on it; a side's level is its strength.
 
 Why perf is measured from a line and not from zero. A fair price's average over the match would have the
 pre-match price as its expectation, but the reading is not quite fair: late in a match the last traded prices
@@ -26,7 +30,7 @@ read a side that is ahead about a point of chance low (legs that have stopped tr
 the lead was safe), and a one-sided match that stops trading has no in-play record at all. Both lean against
 strong sides: raw, a side with a win chance over 0.7 averaged -0.04 points a match and one under 0.1 +0.03
 (second review round, 2026). ``PERF_LINE`` is the raw difference's mean as a line in xpts_pre, fitted on the
-odd months of 2026 (48,128 team-matches); on the even months what is left shows no trend with the expectation
+odd months of 2026 (47,892 team-matches); on the even months what is left shows no trend with the expectation
 (``python -m football.warehouse facts``: club.performance_by_expected_points_even_months).
 
 **club/team_summary**, one row a team: its matches in the warehouse added up (results, expectation, performance,
@@ -55,7 +59,7 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec, from_frame
 
-VERSION = 3
+VERSION = 6
 SCOPE = "all"
 INPUTS = ("gold/event", "gold/implied", "gold/inplay", "gold/timeline", "gold/team_rating", "gold/team")
 COLUMNS = {
@@ -63,8 +67,10 @@ COLUMNS = {
                    "result", "over25", "went_in_play"],
     "gold/implied": ["event_id", "cp_min", "p_home", "p_draw", "p_away", "lam_home", "lam_away", "total"],
     "gold/inplay": ["event_id", "filled", "xpts_inplay_home", "xpts_inplay_away", "ht_p_home", "ht_p_draw",
-                    "ht_p_away", "max_p_home", "min_p_home", "max_p_away", "min_p_away", "travel", "decided_min"],
-    "gold/timeline": ["event_id", "usable", "consistent", "reconciled", "reliability", "n_unplaced", "home_goals",
+                    "ht_p_away", "max_p_home", "min_p_home", "max_p_away", "min_p_away", "travel",
+                    "decided_match_min"],
+    "gold/timeline": ["event_id", "usable", "consistent", "reconciled", "reliability", "n_unplaced",
+                      "n_side_unknown", "agrees_third", "home_goals",
                       "away_goals", "min_home_leading", "min_level", "min_home_trailing"],
     "gold/team_rating": ["team_id", "event_id", "n_prior", "strength", "strength_sd", "pool_teams", "rated",
                          "n_after", "strength_after"],
@@ -79,7 +85,7 @@ ACTIVE_DAYS = 120                 # a ranked side played within this long of the
 DRIFT_MIN = 20                    # sides rated in two consecutive months that a month's scale drift is read from
 COUNTRY_MIN = 5                   # ranked sides with a rating change that a country's own change is read from
 FORM = (5, 10)
-PERF_LINE = (0.0557, -0.0413)     # raw xpts_inplay - xpts_pre averages a + b * xpts_pre (odd months of 2026)
+PERF_LINE = (0.0591, -0.0440)     # raw xpts_inplay - xpts_pre averages a + b * xpts_pre (odd months of 2026)
 
 TEAM_MATCH = TableSpec(
     "club/team_match",
@@ -107,7 +113,8 @@ TEAM_MATCH = TableSpec(
         Column("result", pa.string(), "W, D or L; blank if the match has no result."),
         Column("points", pa.int8(), "3, 1 or 0."),
         Column("goals_for", pa.int16(), "Goals scored as gold/timeline infers them; blank unless the timeline is "
-               "usable and its final score agrees with the settlement (as read, or after reconciliation)."),
+               "usable, its final score agrees with the settlement (as read, or after reconciliation), every goal "
+               "has a side and the third goal is where the over/under market stopped."),
         Column("goals_against", pa.int16(), "Goals conceded, likewise."),
         Column("score_reliability", pa.float64(), "How often a timeline like this one had exactly the real score "
                "(gold/timeline.reliability): filter on it where exact scores matter. The goal difference is far "
@@ -117,7 +124,7 @@ TEAM_MATCH = TableSpec(
         Column("xpts_inplay", pa.float64(), "Expected points averaged over every minute of the match "
                "(gold/inplay); blank where the match traded too little in play."),
         Column("perf", pa.float64(), "How the match went against the expectation: xpts_inplay less xpts_pre, less "
-               "what sides of that pre-match expectation average on it (0.0557 - 0.0413 xpts_pre: the reading "
+               "what sides of that pre-match expectation average on it (0.0591 - 0.0440 xpts_pre: the reading "
                "leans against strong sides; fitted on 2026's odd months)."),
         Column("luck", pa.float64(), "pts_vs_xpts less perf: what the result gave beyond the run of the match."),
         Column("ht_p_win", pa.float64(), "The team's win chance at half time."),
@@ -128,7 +135,8 @@ TEAM_MATCH = TableSpec(
         Column("min_level", pa.float64(), "Minutes level."),
         Column("min_trailing", pa.float64(), "Minutes behind."),
         Column("travel", pa.float64(), "How far the match's chances moved in play (gold/inplay): an eventful match."),
-        Column("decided_min", pa.int16(), "The minute from which the result was settled in the market's eyes."),
+        Column("decided_min", pa.float64(), "The football minute from which the result was settled in the "
+               "market's eyes (gold/inplay.decided_match_min: its chance stayed at or above 0.90 to the end)."),
         Column("strength", pa.float64(), "The team's market-implied strength going into the match "
                "(gold/team_rating); blank until it has a match behind it."),
         Column("strength_sd", pa.float64(), "That rating's standard deviation."),
@@ -161,7 +169,9 @@ TEAM_SUMMARY = TableSpec(
         Column("pts_vs_xpts_se", pa.float64(), "Its standard error: read the figure against this."),
         Column("n_inplay", pa.int32(), "Matches with an in-play record.", False),
         Column("perf_pm", pa.float64(), "In-play performance a match (club/team_match.perf): the part of the "
-               "over-performance that the run of the matches supports."),
+               "over-performance that the run of the matches supports. Over the n_inplay matches with an in-play "
+               "record: with luck_pm it adds up to the points against expectation of those matches, which is "
+               "not pts_vs_xpts_pm where some matches have no record."),
         Column("perf_se", pa.float64(), "Its standard error."),
         Column("luck_pm", pa.float64(), "Luck a match (pts_vs_xpts less perf): results beyond the run of play."),
         Column("luck_se", pa.float64(), "Its standard error."),
@@ -177,15 +187,18 @@ TEAM_SUMMARY = TableSpec(
         Column("strength_change", pa.float64(), "How the market has re-rated it since then, against the median "
                "established side of its pool: strength less strength_first, less the drift of the scale between "
                "the two months (the scale's centre is the average listed team and moves as teams join; the "
-               "median side rated in both of two consecutive months is held still). Blank where the pool has "
-               "too few sides to read the drift."),
+               "median side rated in both of two consecutive months is held still). Blank where a month "
+               "between the two has too few sides to read the drift from."),
         Column("country_change", pa.float64(), "The median strength_change of its country's ranked sides (same "
                "category and pool, five or more of them): how the rating of the country's football as a whole "
                "moved, which in the first seasons of data is mostly the scale between leagues being learned "
                "from cup and continental matches."),
         Column("rerating", pa.float64(), "strength_change less country_change: how the market has re-rated the "
-               "side against the other sides of its country. The figure to read for a club; with only a season "
-               "of data some of a promoted side's rise is still the level between divisions being learned."),
+               "side against the other sides of its country. With one year of data most of it is not the club: "
+               "the level between divisions is still being learned, and whole divisions move together (every "
+               "side of the Premier League and of Serie A is up; across twelve divisions checked, half the "
+               "variance is the division's own mean). Compare sides within one division until the re-rating "
+               "is made against the division."),
         Column("ppm_last5", pa.float64(), "Points a match over its last five matches."),
         Column("perf_last5", pa.float64(), "In-play performance a match over its last five with a record."),
         Column("ppm_last10", pa.float64(), "Points a match over its last ten."),
@@ -254,7 +267,10 @@ def team_match_frame(inputs: dict):
     ev = ev.merge(inputs["gold/timeline"].select(COLUMNS["gold/timeline"]).to_pandas().drop_duplicates("event_id"),
                   on="event_id", how="left")
     filled = ev["filled"].eq(True).to_numpy()                     # a blank (no in-play record) is not filled
-    scored = (ev["usable"].eq(True) & (ev["consistent"].eq(True) | ev["reconciled"].eq(True))).to_numpy()
+    # a score only from a list that agrees with the settlement, gives every goal a side and has its third goal
+    # where the over/under market stopped (a list that fails the last is right less than half the time)
+    scored = (ev["usable"].eq(True) & (ev["consistent"].eq(True) | ev["reconciled"].eq(True))
+              & ev["n_side_unknown"].eq(0) & ~ev["agrees_third"].eq(False)).to_numpy()
     timed = scored & ev["n_unplaced"].eq(0).to_numpy()            # every goal has a minute
 
     def side(home: bool) -> pd.DataFrame:
@@ -280,7 +296,7 @@ def team_match_frame(inputs: dict):
             "min_level": np.where(timed, ev["min_level"].to_numpy(float), np.nan),
             "min_trailing": np.where(timed, ev["min_home_trailing" if home else "min_home_leading"].to_numpy(float),
                                      np.nan),
-            "travel": ev["travel"], "decided_min": ev["decided_min"],
+            "travel": ev["travel"], "decided_min": ev["decided_match_min"],
         })
         own = "h" if home else "a"
         for cp, name in zip(MOVES, ("move_24h", "move_6h", "move_60m")):
@@ -356,9 +372,11 @@ def team_summary_frame(tm, teams):
     last = d[d["strength_after"].notna()].groupby("team_id")["kickoff"].last()
     when = pd.DataFrame({"m0": month(settled), "m1": month(last)}).reset_index().merge(
         out[["team_id", "pool_id"]], on="team_id", how="right")
-    c0 = when.merge(drift.rename(columns={"ym": "m0", "level": "c0"}), on=["pool_id", "m0"], how="left")["c0"]
-    c1 = when.merge(drift.rename(columns={"ym": "m1", "level": "c1"}), on=["pool_id", "m1"], how="left")["c1"]
-    out["strength_change"] = (out["strength"] - out["strength_first"]) - (c1.to_numpy() - c0.to_numpy())
+    c0 = when.merge(drift.rename(columns={"ym": "m0", "level": "c0", "run": "r0"}), on=["pool_id", "m0"], how="left")
+    c1 = when.merge(drift.rename(columns={"ym": "m1", "level": "c1", "run": "r1"}), on=["pool_id", "m1"], how="left")
+    # the drift between two months is known where every step between them could be read (one run of months)
+    step = (c1["c1"] - c0["c0"]).where(c0["r0"] == c1["r1"]).to_numpy()
+    out["strength_change"] = (out["strength"] - out["strength_first"]) - step
     end = d["kickoff"].max()
     out["ranked"] = ((out["matches"] >= MIN_MATCHES) & out["strength"].notna() & (out["pool_size"] >= POOL_MIN)
                      & (out["last_kickoff"] >= end - pd.Timedelta(days=ACTIVE_DAYS)))
@@ -378,17 +396,17 @@ def team_summary_frame(tm, teams):
 
 
 def scale_drift(d, pool):
-    """(pool_id, ym, level): the level of each pool's rating scale by calendar month (year x 12 + month - 1),
-    zero in the pool's first month. A month's step is the median, over the sides with a settled rating in both
-    months, of the change in their mean strength: the median established side is taken not to have changed. A
-    step that fewer than ``DRIFT_MIN`` sides can give is not read: the level is blank from there on."""
-    import numpy as np
+    """(pool_id, ym, level, run): the level of each pool's rating scale by calendar month (year x 12 + month - 1).
+    A month's step is the median, over the sides with a settled rating in both months, of the change in their
+    mean strength: the median established side is taken not to have changed. A step that fewer than ``DRIFT_MIN``
+    sides can give is not read: the months after it are a new ``run``, with a level of their own from zero, and
+    the drift between two months is known only inside one run (a thin month must not blank every later one)."""
     import pandas as pd
 
     r = d[d["strength"].notna() & (d["n_prior"] >= MIN_MATCHES)].merge(pool[["team_id", "pool_id"]], on="team_id")
     if r.empty:
         return pd.DataFrame({"pool_id": pd.Series(dtype="int64"), "ym": pd.Series(dtype="int64"),
-                             "level": pd.Series(dtype="float64")})
+                             "level": pd.Series(dtype="float64"), "run": pd.Series(dtype="int64")})
     r = r.assign(ym=r["kickoff"].dt.year * 12 + r["kickoff"].dt.month - 1)
     m = r.groupby(["pool_id", "team_id", "ym"], as_index=False)["strength"].mean()
     nxt = m.assign(ym=m["ym"] - 1).rename(columns={"strength": "next"})
@@ -398,11 +416,14 @@ def scale_drift(d, pool):
     rows = []
     for pid, months in m.groupby("pool_id")["ym"]:
         s = step[step["pool_id"] == pid].set_index("ym")["median"]
-        level = 0.0
+        level, run = 0.0, 0
         for ym in range(int(months.min()), int(months.max()) + 1):
-            rows.append((pid, ym, level))
-            level = level + s[ym] if ym in s.index else np.nan     # the step from this month to the next
-    return pd.DataFrame(rows, columns=["pool_id", "ym", "level"])
+            rows.append((pid, ym, level, run))
+            if ym in s.index:
+                level += float(s[ym])                              # the step from this month to the next
+            else:
+                level, run = 0.0, run + 1                          # not read: the next month starts a new run
+    return pd.DataFrame(rows, columns=["pool_id", "ym", "level", "run"])
 
 
 def pools(d):

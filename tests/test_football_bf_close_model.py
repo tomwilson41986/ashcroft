@@ -91,8 +91,25 @@ def test_trades_take_the_forecasts_side_and_pay_the_round_trip():
     assert abs(r["gross"] - (np.log(1.10) - np.log(0.90)) / 2) < 1e-12
     want = np.mean([(gross - cm.ROUND_TRIP) * (1 - cm.COMMISSION),
                     (-np.log(0.90) - cm.ROUND_TRIP) * (1 - cm.COMMISSION)])
-    assert abs(r["net"] - want) < 1e-12
+    assert abs(r["net"] - want) < 1e-12 and "cash" not in r      # no checkpoint price given: log price only
     assert cm.trades(t, 0.5) == {"bets": 0}
+
+
+def test_trades_in_cash_are_measured_on_the_money_at_risk():
+    """A back risks its stake; a lay risks price - 1 a unit: a long-priced lay that goes the right way wins a
+    fraction of what it risks, which the log-price measure does not show."""
+    t = pd.DataFrame({"pred": [0.10, -0.10] * 20, "price_ratio": [1.10, 0.90] * 20, "ltp_cp": [2.2, 4.5] * 20,
+                      "day": [f"d{i // 2}" for i in range(40)]})
+    c = cm.trades(t, 0.05)["cash"]
+    cost = np.exp(cm.ROUND_TRIP)
+    back = (1.10 / cost - 1) * (1 - cm.COMMISSION)             # backed at 2.2, laid off at 2.0
+    lay = (1 - 0.90 * cost) * (1 - cm.COMMISSION)              # laid at 4.5, backed back at 5.0
+    risk = 4.5 * np.sqrt(cost) - 1                             # the lay's liability a unit laid
+    assert (c["backs"], c["lays"], c["median_price_laid"]) == (20, 20, 4.5)
+    assert abs(c["per_unit_staked"] - (back + lay) / 2) < 1e-12
+    assert abs(c["on_money_at_risk"] - (back + lay) / (1 + risk)) < 1e-12
+    assert c["on_money_at_risk"] < c["per_unit_staked"] / 2    # most of the money at risk is the lay's liability
+    assert c["on_money_at_risk_lo90"] <= c["on_money_at_risk"] <= c["on_money_at_risk_hi90"]
 
 
 def test_liquid_arm_says_no_data_when_too_few_busy_rows():

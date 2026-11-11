@@ -52,24 +52,27 @@ def over_under_file(suspended_at=None) -> bytes:
 
 
 def goals(rows) -> pa.Table:
-    """A hand-written gold/goal: (goal_no, ms, home_score, away_score)."""
+    """A hand-written gold/goal: (goal_no, ms, home_score, away_score[, timed])."""
+    rows = [tuple(r) + (True,)[len(r) - 4:] for r in rows]
     return pa.table({"event_id": pa.array([EVENT] * len(rows), pa.int64()),
                      "goal_no": pa.array([r[0] for r in rows], pa.int16()),
                      "pt": pa.array([r[1] for r in rows], pa.int64()).cast(TS),
+                     "timed": pa.array([r[4] for r in rows], pa.bool_()),
                      "home_score": pa.array([r[2] for r in rows], pa.int16()),
                      "away_score": pa.array([r[3] for r in rows], pa.int16())})
 
 
 def timeline(rows) -> pa.Table:
     """A hand-written gold/timeline: (usable, consistent, ht_start_min, ht_end_min[, reconciled, n_unplaced,
-    n_side_unknown])."""
-    rows = [tuple(r) + (False, 0, 0)[len(r) - 4:] for r in rows]
+    n_side_unknown, agrees_third])."""
+    rows = [tuple(r) + (False, 0, 0, None)[len(r) - 4:] for r in rows]
     return pa.table({"event_id": pa.array([EVENT] * len(rows), pa.int64()),
                      "usable": pa.array([r[0] for r in rows], pa.bool_()),
                      "consistent": pa.array([r[1] for r in rows], pa.bool_()),
                      "reconciled": pa.array([r[4] for r in rows], pa.bool_()),
                      "n_unplaced": pa.array([r[5] for r in rows], pa.int16()),
                      "n_side_unknown": pa.array([r[6] for r in rows], pa.int16()),
+                     "agrees_third": pa.array([r[7] for r in rows], pa.bool_()),
                      "ht_start_min": pa.array([r[2] for r in rows], pa.float64()),
                      "ht_end_min": pa.array([r[3] for r in rows], pa.float64())})
 
@@ -152,6 +155,33 @@ def test_the_over_chance_stops_at_the_suspension_that_ran_into_the_markets_close
     assert not m.loc[12, "ou_open"] and np.isnan(m.loc[12, "p_over"]) and np.isnan(m.loc[14, "p_over"])
 
 
+def test_a_leg_last_priced_before_the_latest_goal_is_stale_whatever_its_age(tmp_path, built):
+    """The base match's home side scores at 9:10 and all three legs re-price at 9:30: minute 10 is a sound book.
+    Had only the home leg re-priced, the draw and away prices would be 2 minutes old, under the five-minute rule,
+    and of the score before the goal: a book of two scores, which the reading must not trust."""
+    assert built["minute"].set_index("minute").loc[10, "ok"]
+    rc = lambda **p: [{"id": {"h": HOME, "d": DRAW, "a": AWAY}[k], "ltp": v} for k, v in p.items()]   # noqa: E731
+    settled = [dict(r, status=s) for r, s in zip(MO_RUNNERS, ("WINNER", "LOSER", "LOSER"))]
+    mo = _file([_msg(KO_MS - 40 * 60 * M, MO, defn=_defn()),
+                _msg(KO_MS - M, MO, rc=rc(h=2.0, d=4.0, a=4.0)),
+                _msg(START, MO, defn=_defn(in_play=True, betDelay=5)),
+                _msg(START + 8 * M, MO, rc=rc(h=2.0, d=4.0, a=4.2)),            # all three fresh before the goal
+                _msg(START + 9 * M + 30_000, MO, rc=rc(h=1.6)),                 # the goal: only the home leg moves
+                _msg(START + 13 * M + 30_000, MO, rc=rc(d=4.6, a=7.5)),         # the others four minutes later
+                _msg(START + 55 * M, MO, defn=_defn("CLOSED", True, runners=settled, numberOfActiveRunners=0))])
+    out = gold_inplay.build(inputs_of(tmp_path, "g", mo=mo, goal_rows=[(1, START + 9 * M + 10_000, 1, 0)]))
+    m = out["gold/inplay_minute"].to_pandas().set_index("minute")
+    assert m.loc[9, "ok"] and m.loc[9, "mo_stale_mass"] == 0.0
+    # minutes 10 to 13: the book sums to 1.11 (inside the band), no leg is five minutes old, and it is not ok
+    book = 1 / 1.6 + 1 / 4.0 + 1 / 4.2
+    assert m.loc[10, "mo_book_sum"] == pytest.approx(book) and m.loc[10, "mo_max_age_s"] < 300
+    assert not m.loc[10:13, "ok"].any() and m.loc[10, "mo_stale_mass"] == pytest.approx((1 / 4.0 + 1 / 4.2) / book)
+    assert m.loc[14, "ok"] and m.loc[14, "mo_stale_mass"] == 0.0                # every leg is of the new score
+    # a goal the data cannot time (after the last price) makes nothing stale
+    late = gold_inplay.build(inputs_of(tmp_path, "l", mo=mo, goal_rows=[(1, START + 9 * M + 10_000, 1, 0, False)]))
+    assert late["gold/inplay_minute"].to_pandas().set_index("minute").loc[10, "ok"]
+
+
 def test_the_phase_and_the_football_minute_follow_the_matchs_half_time(tmp_path, built):
     m = built["minute"].set_index("minute")
     assert m.loc[23, "phase"] == "first_half" and m.loc[24, "phase"] == "half_time"
@@ -181,6 +211,9 @@ def test_the_score_is_the_inferred_one_as_of_the_minute(tmp_path, built):
     assert not n["score_ok"].any() and n["home_score"].notna().all()
     wrong = gold_inplay.build(inputs_of(tmp_path, "w", timeline_rows=[(True, False, 24.0, 34.0, False, 0)]))
     assert not wrong["gold/inplay_minute"].to_pandas()["score_ok"].any()
+    # ... nor has one whose third goal is not where the over/under market stopped
+    third = gold_inplay.build(inputs_of(tmp_path, "t", timeline_rows=[(True, True, 24.0, 34.0, False, 0, 0, False)]))
+    assert not third["gold/inplay_minute"].to_pandas()["score_ok"].any()
 
 
 def test_a_goal_with_no_side_leaves_the_score_blank_from_there_on(tmp_path):
@@ -245,23 +278,28 @@ def test_the_summary_counts_every_minute_and_reads_the_path(tmp_path, monkeypatc
 def test_decided_is_the_first_minute_from_which_the_result_stayed_likely():
     n = 40
     p_home = np.r_[np.full(10, 0.5), np.full(5, 0.95), np.full(5, 0.6), np.full(20, 0.97)]      # dips at 15-19
+    # half time from grid minute 12 to 17: the football clock stands at 12 through it
+    match_min = np.r_[np.arange(12.0), np.full(6, 12.0), 12.0 + np.arange(22.0)]
     minute = pd.DataFrame({"event_id": 1, "minute": np.arange(n), "phase": "first_half", "ok": True,
+                           "match_min": match_min,
                            "p_home": p_home, "p_draw": (1 - p_home) * 0.6, "p_away": (1 - p_home) * 0.4})
     ev = pd.DataFrame({"event_id": [1], "result": ["H"], "p_home": [0.5], "p_draw": [0.3], "p_away": [0.2]})
     s = gold_inplay.summary_frame(minute, ev).iloc[0]
     assert s["decided_min"] == 20 and s["result_min_p"] == 0.5 and s["fav_changes"] == 0
+    assert s["decided_match_min"] == 14.0                    # grid minute 20 is the 14th minute of play
     assert s["travel"] == pytest.approx(0.45 + 0.35 + 0.37)
     # no result (a void match): nothing to decide, the rest stands
     ev["result"] = None
     v = gold_inplay.summary_frame(minute, ev).iloc[0]
-    assert np.isnan(v["decided_min"]) and np.isnan(v["result_min_p"])
+    assert np.isnan(v["decided_min"]) and np.isnan(v["decided_match_min"]) and np.isnan(v["result_min_p"])
     assert v["avg_p_home"] == pytest.approx(p_home.mean())
 
 
 def test_a_thin_match_keeps_its_minutes_and_leaves_the_summary_blank(built):
     s = built["match"].iloc[0]                                       # 22 ok minutes: under the thirty needed
     assert not s["filled"] and s["n_ok"] == 22 and s["minutes"] == 56
-    assert np.isnan(s["avg_p_home"]) and np.isnan(s["perf_home"]) and np.isnan(s["travel"]) and s["fav_changes"] == 0
+    assert np.isnan(s["avg_p_home"]) and np.isnan(s["perf_home"]) and np.isnan(s["travel"])
+    assert np.isnan(s["fav_changes"]) and np.isnan(s["decided_match_min"])      # not known is a blank, not a zero
     assert s["xpts_pre_home"] == 1.75                                # the pre-match expectation needs no path
 
 
