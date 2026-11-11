@@ -61,7 +61,7 @@ The market's back book is 1.017-1.020 and lay book 0.983-0.984, so about 1.7% is
 - The edge the live trader takes is in the morning, when our forecast still knows something the market does not.
   By T-5 that information is in the price.
 - A late book would need a late signal of its own (the ladder, money flow, non-runner news), not the 06:00 forecast.
-  The stream recorder now running beside the trader (from 10 Nov) could supply one; that is a new study.
+  The stream recorder wired beside the trader (first run 12 Nov, to 10:30 UK) could supply one if run to the off.
 
 ## Limits
 
