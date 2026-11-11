@@ -309,3 +309,53 @@ def test_gold_modules_run_after_the_modules_they_read():
     names = [m.__name__.rsplit(".", 1)[-1] for m in mods]
     assert names.index("gold_checkpoint") < names.index("gold_move")
     assert names.index("gold_event") < names.index("gold_move") and names.index("gold_event") < names.index("gold_team")
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# the quality report, the catalog, the dictionary
+# ---------------------------------------------------------------------------------------------------------------
+
+def test_the_quality_report_passes_a_sound_warehouse_and_fails_a_broken_one(warehouse):
+    from football.warehouse import quality
+    from football.warehouse.gold_event import SPEC as EVENT
+    from football.warehouse.store_io import write_part
+    rep = quality.report(warehouse)
+    assert rep["ok"] and rep["hard_failed"] == [] and rep["rows"]["gold/event"] == 1
+    assert "PASS" in quality.markdown(rep)
+    # the same event written into a second partition: event ids are no longer unique across partitions
+    write_part(warehouse, EVENT, 2026, 2, read_part(warehouse, "gold/event", 2026, 1))
+    bad = quality.report(warehouse)
+    assert not bad["ok"] and "gold/event: event_id unique across partitions" in bad["hard_failed"]
+
+
+def test_a_stale_silver_partition_is_a_hard_failure(warehouse, tmp_path):
+    from football.warehouse import quality
+    newer = _file([_msg(KO_MS - 86_400_000, "1.252787799", _defn())])
+    bronze.ingest_bundle(warehouse, _bundle(tmp_path, {"2026/Jan/29/35155405/1.252787799.bz2": newer}), "more")
+    rep = quality.report(warehouse)                      # bronze moved on; silver was not rebuilt
+    assert not rep["ok"] and "silver built from the current bronze" in rep["hard_failed"]
+    silver.build(warehouse, workers=1)
+    assert "silver built from the current bronze" not in quality.report(warehouse)["hard_failed"]
+
+
+def test_the_catalog_gives_views_and_macros_over_the_tables(warehouse):
+    from football.warehouse import catalog
+    con = catalog.connect(warehouse)
+    assert con.sql("SELECT count(*) FROM tick").fetchone()[0] == 9          # 6 match-odds prices, 3 over/under
+    assert con.sql("SELECT result FROM event").fetchone()[0] == "H"
+    kick = "(SELECT kickoff FROM event)"
+    assert con.sql(f"SELECT price_asof('1.252787713', 71085, 0.0, {kick} - INTERVAL 30 MINUTE)").fetchone()[0] == 2.5
+    assert con.sql(f"SELECT price_asof('1.252787713', 71085, 0.0, {kick})").fetchone()[0] == 2.4
+    rows = con.sql("SELECT role, ltp FROM match_ticks(35155405) WHERE status = 'SUSPENDED'").fetchall()
+    assert rows == [("home", 1.5)]
+    assert "bronze_raw" not in catalog.tables(warehouse)                    # the raw bytes are not a view
+
+
+def test_the_dictionary_documents_every_table_and_column():
+    from football.warehouse import dictionary
+    md = dictionary.markdown()
+    for spec in dictionary.specs():
+        assert f"## `{spec.name}`" in md
+        for c in spec.columns:
+            assert f"| `{c.name}` |" in md and c.doc.strip(), (spec.name, c.name)
+    assert "—" not in md

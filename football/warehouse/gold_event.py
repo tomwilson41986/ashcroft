@@ -15,7 +15,7 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 1
+VERSION = 2
 SCOPE = "part"
 INPUTS = ("silver/market", "silver/runner")
 
@@ -30,6 +30,9 @@ SPEC = TableSpec(
         Column("home_id", pa.int64(), "The home side's Betfair selection id: the team's id across matches."),
         Column("away_id", pa.int64(), "The away side's Betfair selection id."),
         Column("country_code", pa.string(), "Betfair's country code; blank on many cups and internationals."),
+        Column("category", pa.string(), "senior, women, youth or reserves, read from the sides' names ('(W)', "
+               "'U21', '(Res)', a name ending ' II' or ' B', 'Jong'): approximate; the kind of football, for "
+               "filters and for club work.", False),
         Column("kickoff", TS, "The scheduled kick-off (the match-odds market's market_time; else the earliest of "
                "the event's markets)."),
         Column("kickoff_actual", TS, "When the match-odds market went in play."),
@@ -64,7 +67,7 @@ SPEC = TableSpec(
 )
 SPECS = (SPEC,)
 
-QUERY = """
+QUERY = r"""
 WITH pick AS (                      -- the event's market of each type: the one that traded more
     SELECT * FROM market
     QUALIFY row_number() OVER (PARTITION BY event_id, market_type ORDER BY n_ticks DESC, market_id DESC) = 1),
@@ -99,6 +102,13 @@ ahr AS (
 SELECT ev.event_id, ev.event_name, ev.home_name, ev.away_name,
        coalesce(mor.home_id, ahr.home_id) AS home_id, coalesce(mor.away_id, ahr.away_id) AS away_id,
        ev.country_code,
+       CASE WHEN regexp_matches(ev.event_name, '\(W\)|\bWomen\b|\bLadies\b|\bFem\b') THEN 'women'
+            WHEN regexp_matches(ev.event_name, '\bU-?(1[5-9]|2[0-3])\b') THEN 'youth'
+            WHEN regexp_matches(ev.event_name, '\(Res\)|\bReserves?\b|\bJong ')
+                 OR (regexp_matches(coalesce(ev.home_name, ''), '( II| B)$') AND ev.home_name <> 'Willem II')
+                 OR (regexp_matches(coalesce(ev.away_name, ''), '( II| B)$') AND ev.away_name <> 'Willem II')
+                 THEN 'reserves'
+            ELSE 'senior' END AS category,
        coalesce(mo.market_time, ev.first_time) AS kickoff,
        mo.in_play_pt AS kickoff_actual,
        mo.kickoff_delay_s,

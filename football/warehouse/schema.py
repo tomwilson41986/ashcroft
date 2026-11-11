@@ -148,6 +148,8 @@ SILVER_RUNNER = TableSpec(
            "resolved)."),
         _c("status_final", pa.string(), "ACTIVE, WINNER, LOSER, REMOVED ... in the last definition."),
         _c("won", pa.int8(), "1 if settled WINNER, 0 if LOSER, blank otherwise (void, removed, unsettled)."),
+        _c("bsp", pa.float64(), "The Betfair starting price, on the few football markets that have one "
+           "(bsp_market on silver/market); blank otherwise."),
         _c("ltp_first", pa.float64(), "The first traded price."),
         _c("ltp_last_pre", pa.float64(), "The last traded price before the market went in play: the close."),
         _c("ltp_last", pa.float64(), "The last traded price in the file."),

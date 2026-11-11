@@ -42,6 +42,15 @@ def iso_ms(text: str | None) -> int | None:
     return int(round(dt.timestamp() * 1000))
 
 
+def _price(v) -> float | None:
+    """A price as a float; None for a blank, a non-number ('NaN', 'Infinity') or a value outside Betfair's range."""
+    try:
+        p = float(v)
+    except (TypeError, ValueError):
+        return None
+    return p if LTP_MIN <= p <= LTP_MAX else None
+
+
 def split_event_name(name: str | None) -> tuple[str | None, str | None]:
     """('Home', 'Away') from 'Home v Away'; (None, None) when the name is not one match of two sides."""
     if not name:
@@ -320,7 +329,7 @@ class Batch:
         row = {
             "market_id": mid, "event_id": event_id, "market_type": mtype or "UNKNOWN", "selection_id": key[0],
             "handicap": key[1], "runner_name": r.get("name"), "sort_priority": r.get("sortPriority"), "role": role,
-            "status_final": status, "won": {"WINNER": 1, "LOSER": 0}.get(status),
+            "status_final": status, "won": {"WINNER": 1, "LOSER": 0}.get(status), "bsp": _price(r.get("bsp")),
             "ltp_first": s[0] if s else None, "ltp_last_pre": s[1] if s else None, "ltp_last": s[2] if s else None,
             "n_ticks": s[3] if s else 0, "n_ticks_pre": s[4] if s else 0,
             "first_trade_pt": s[5] if s else None, "last_pre_trade_pt": s[6] if s else None,
