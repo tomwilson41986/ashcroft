@@ -68,8 +68,11 @@ def day_marks(books: pd.DataFrame, markets: pd.DataFrame, close: pd.DataFrame, p
     b["polled"] = pd.to_datetime(b.polled_utc, utc=True, errors="coerce")
     b["secs"] = (b.market_id.map(start) - b.polled).dt.total_seconds()
     inplay = b.inplay.astype(str).str.lower().isin(["true", "1"]) if "inplay" in b else False
-    went = b[inplay].groupby("market_id").polled.min()
+    live = b[b.source.astype(str) != "final"]
+    gone = inplay | (b.status.astype(str) != "OPEN")            # a greyhound market suspends at the off
+    went = live[gone.reindex(live.index)].groupby("market_id").polled.min()
     pre = b[(~inplay) & (b.status.astype(str) == "OPEN") & (b.source.astype(str) != "final")]
+    pre = pre[pre.polled < pre.market_id.map(went).fillna(pd.Timestamp.max.tz_localize("UTC"))]
     for c in ("back1", "back1_size", "back2", "back2_size", "lay1", "lay1_size", "lay2", "lay2_size", "last_traded",
               "runner_total_matched", "market_total_matched", "sp_near", "sp_far"):
         pre[c] = num(pre[c]) if c in pre else np.nan
@@ -251,6 +254,33 @@ def book_qa(d: pd.DataFrame) -> pd.DataFrame:
                                                                 .mean()))}).reset_index()
 
 
+def information(d: pd.DataFrame, dev: list[str], hold: list[str]) -> pd.DataFrame:
+    """At each mark: the error of our price, of the book's mid and of the best blend of the two (log scale, the
+    weight on our price fitted on the development days, the error read on the holdout), on the runners whose book is
+    two-sided and under 15% wide, and the share of runners that have such a book. Where the weight is near 1 we know
+    more than the book; near 0 the book knows more than we do."""
+    x = d[d.bsp.notna() & (d.bsp > 1) & d.pred_bsp.notna() & (num(d.pred_bsp) > 1)].copy()
+    x["a"], x["y"] = np.log(num(x.pred_bsp)), np.log(x.bsp)
+    tight = (x.back1 > 1) & (x.lay1 >= x.back1) & (x.spread <= 0.15)
+    x["m"] = np.log(x.mid.where(tight))
+    rows = []
+    for mark, g in x.groupby("mark"):
+        t = g[g.m.notna()]
+        dv, ho = t[t.day.isin(dev)], t[t.day.isin(hold)]
+        row = {"mark": mark, "runners": int(len(g)), "book_under_15%_wide%": round(100 * len(t) / max(len(g), 1), 1),
+               "model_rmse_all": float(np.sqrt(((g.a - g.y) ** 2).mean()))}
+        if len(dv) >= 200 and len(ho) >= 200:
+            den = float(((dv.a - dv.m) ** 2).sum())
+            w = float(np.clip(((dv.y - dv.m) * (dv.a - dv.m)).sum() / den, 0, 1)) if den > 0 else 0.0
+            blend = w * ho.a + (1 - w) * ho.m
+            row.update({"holdout_runners": int(len(ho)), "weight_on_model": round(w, 3),
+                        "model_rmse": float(np.sqrt(((ho.a - ho.y) ** 2).mean())),
+                        "mid_rmse": float(np.sqrt(((ho.m - ho.y) ** 2).mean())),
+                        "blend_rmse": float(np.sqrt(((blend - ho.y) ** 2).mean()))})
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def live_orders(store, days: list[date], s3=None) -> pd.DataFrame:
     """Every lay the live early lay sent, against the book it was sent into (the last read at or before it, at most
     15 s old): crossing (at or above lay1), inside the spread, at back1, or behind it."""
@@ -265,10 +295,12 @@ def live_orders(store, days: list[date], s3=None) -> pd.DataFrame:
         books = _read_day_csv(day, "books_greyhound_live.csv", s3=s3)
         if books is None or not len(lays):
             continue
-        b = books.assign(market_id=books.market_id.astype(str), selection_id=num(books.selection_id),
+        b = books.assign(market_id=books.market_id.astype(str), selection_id=num(books.selection_id).astype(float),
                          polled=pd.to_datetime(books.polled_utc, utc=True, errors="coerce"))
         b = b[b.market_id.isin(set(lays.market_id))].dropna(subset=["polled"]).sort_values("polled")
-        lays = lays.assign(placed=pd.to_datetime(lays.time_utc, utc=True, errors="coerce")).dropna(subset=["placed"])
+        lays = lays.assign(placed=pd.to_datetime(lays.time_utc, utc=True, errors="coerce"),
+                           selection_id=num(lays.selection_id).astype(float)).dropna(subset=["placed"])
+        b = b.dropna(subset=["selection_id"])
         j = pd.merge_asof(lays.sort_values("placed"), b[["polled", "market_id", "selection_id", "back1", "back1_size",
                                                          "lay1", "lay1_size", "sp_near"]],
                           left_on="placed", right_on="polled", by=["market_id", "selection_id"],
@@ -326,6 +358,12 @@ def run(store, first: date, last: date, out: Path, holdout_days: int = 3, s3=Non
     hold = days[-holdout_days:] if len(days) > holdout_days + 1 else []
     dev = [x for x in days if x not in hold]
     res["development_days"], res["holdout_days"] = dev, hold
+    try:
+        L += ["", "## 3b. Who knows more, and when: our price against the forming book", "",
+              "The weight on our price is fitted on the development days; the errors are the holdout's.", ""] + \
+            dd._md(information(d, dev, hold), 3)
+    except Exception as exc:
+        L += ["", f"## 3b. failed ({str(exc)[:200]})"]
     g_dev = grid(e, dev)
     g_all = grid(e, days, seed=1)
     k = ["side", "mark", "band", "signal", "thr"]
