@@ -151,6 +151,15 @@ def facts(store) -> dict:
             "team_matches": r[0], "mean": _round(r[1]), "se": _round(r[2]), "sd": _round(r[3], 3),
             "sd_performance": _round(r[4], 3), "sd_luck": _round(r[5], 3)}
         out["club"]["what_forecasts_a_teams_later_points"] = _points_forecast(con)
+        # the performance measure by the pre-match expectation, on the months its line was not fitted on: raw is
+        # xpts_inplay - xpts_pre, which leans against strong sides; perf is measured from the fitted line
+        out["club"]["performance_by_expected_points_even_months"] = {
+            f"{lo:g} to {lo + 0.5:g}": {"team_matches": n, "raw": _round(raw), "perf": _round(perf),
+                                       "perf_se": _round(se)}
+            for lo, n, raw, perf, se in rows(
+                """SELECT floor(xpts_pre / 0.5) * 0.5, count(*), avg(xpts_inplay - xpts_pre), avg(perf),
+                          stddev(perf) / sqrt(count(*))
+                   FROM team_match WHERE perf IS NOT NULL AND month(kickoff) % 2 = 0 GROUP BY 1 ORDER BY 1""")}
     if "link" in have:
         r = one("SELECT count(*), sum(linked::INT) FROM link")
         out["link"] = {"events": r[0], "linked": r[1], "by_method": dict(rows(

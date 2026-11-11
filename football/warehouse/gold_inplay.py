@@ -24,9 +24,13 @@ rule on age alone would keep only the minutes when the result is open, and bias 
   the average in-play chance has the pre-match chance as its expectation: ``perf`` = xpts_inplay - xpts_pre is
   zero on average and says how the match went for a side beyond what was expected of it, with every minute
   counting, not only the final whistle. It is a performance measure a result cannot give: a side that led for an
-  hour and conceded twice late scores well on it and takes no points. (Measured on 48,760 matches of 2026: -0.008
-  points for home sides and +0.005 for away sides on average, against a standard deviation of 0.55: last traded
-  prices late in a match price the outsider a little too high.)
+  hour and conceded twice late scores well on it and takes no points. (Measured on 48,767 matches of 2026: -0.008
+  points for home sides and +0.005 for away sides on average, against a standard deviation of 0.55. The reading
+  is not quite a fair price: late in a match the last traded prices read the side ahead about a point of chance
+  low (0.95 read, 0.96 won), because the legs that have stopped trading carry prices from before the lead was
+  safe; and a one-sided match that stops trading has no summary. Both lean against strong sides: -0.04 a match
+  for a side with a win chance over 0.7, +0.03 for one under 0.1. ``perf`` here is the raw difference;
+  club/team_match measures performance from that lean's fitted line.)
 - the half-time chances, each side's best and worst moment, how far the chances travelled (an eventful match),
   how often the favourite changed, when the result was settled in the market's eyes (``decided_min``: the first
   minute from which the eventual result stayed at or above ``DECIDED``), and how unlikely the result once looked
@@ -42,16 +46,18 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec, from_frame
 
-VERSION = 1
+VERSION = 2
 SCOPE = "part"
-INPUTS = ("gold/event", "gold/goal", "gold/timeline", "silver/market", "silver/runner", "silver/tick")
+INPUTS = ("gold/event", "gold/goal", "gold/timeline", "silver/market", "silver/runner", "silver/spell", "silver/tick")
 COLUMNS = {
     "gold/event": ["event_id", "mo_market_id", "ou_market_id", "went_in_play", "kickoff_actual", "ft_pt", "result",
                    "p_home", "p_draw", "p_away"],
     "gold/goal": ["event_id", "goal_no", "pt", "home_score", "away_score"],
-    "gold/timeline": ["event_id", "usable", "consistent", "reconciled", "n_unplaced", "ht_start_min", "ht_end_min"],
+    "gold/timeline": ["event_id", "usable", "consistent", "reconciled", "n_unplaced", "n_side_unknown",
+                      "ht_start_min", "ht_end_min"],
     "silver/market": ["market_id", "closed_pt"],
     "silver/runner": ["market_id", "market_type", "selection_id", "handicap", "role"],
+    "silver/spell": ["market_id", "start_pt", "end_pt", "status"],
     "silver/tick": ["market_id", "selection_id", "handicap", "pt", "seq", "ltp"],
 }
 
@@ -87,16 +93,18 @@ MINUTE = TableSpec(
         Column("ok", pa.bool_(), "All three legs priced, the book's sum between 0.90 and 1.15, and no more than a "
                "tenth of it in legs older than five minutes: a reading to trust.", False),
         Column("p_over", pa.float64(), "The chance of over 2.5 goals as of the minute, normalised to its book; "
-               "blank once that market has closed (the third goal) or where a leg is missing or stale."),
-        Column("ou_open", pa.bool_(), "Whether the over/under 2.5 market was still open at the minute.", False),
+               "blank once that market has stopped trading (ou_open false) or where a leg is missing or stale."),
+        Column("ou_open", pa.bool_(), "Whether the over/under 2.5 market was still trading at the minute: before "
+               "the suspension that ran into its close (the third goal, or full time), or its close where no "
+               "suspension did. Its last prices are from before the goal that settled it.", False),
         Column("home_score", pa.int16(), "Home goals so far as gold/goal infers them; blank where the match has "
-               "no usable timeline. A goal the data cannot time (gold/goal.timed false) counts from the last "
-               "price on."),
+               "no usable timeline, and from the first goal whose scorer the prices do not say. A goal the data "
+               "cannot time (gold/goal.timed false) counts from the last price on."),
         Column("away_score", pa.int16(), "Away goals so far, likewise."),
         Column("score_ok", pa.bool_(), "The score columns can be relied on minute by minute: the timeline is "
-               "usable, its final score agrees with the settlement (as read, or after reconciliation) and every "
-               "goal has a minute. The flag is made with the match's result: a table cut down to score_ok "
-               "matches is not a fair sample for testing the prices against results.", False),
+               "usable, its final score agrees with the settlement (as read, or after reconciliation), every "
+               "goal has a minute and every goal has a side. The flag is made with the match's result: a table "
+               "cut down to score_ok matches is not a fair sample for testing the prices against results.", False),
     ),
     key=("event_id", "minute"), sort=("event_id", "minute"),
 )
@@ -171,6 +179,15 @@ def minute_frame(inputs: dict):
     mk = _ms(inputs["silver/market"].select(COLUMNS["silver/market"]), ["closed_pt"]).to_pandas()
     ev = ev.merge(mk.rename(columns={"market_id": "ou_market_id", "closed_pt": "ou_closed"}), on="ou_market_id",
                   how="left")
+    # the over/under market stops trading at the suspension that runs into its close (the third goal, full time):
+    # a price as of a later minute is from before the goal that settled it
+    sp = inputs["silver/spell"].select(COLUMNS["silver/spell"])
+    sp = sp.filter(pc.and_(pc.equal(sp.column("status"), "SUSPENDED"),
+                           pc.is_in(sp.column("market_id"), value_set=pa.array(ev["ou_market_id"].dropna().unique(),
+                                                                               pa.string()))))
+    sp = _ms(sp, ["start_pt", "end_pt"]).to_pandas().merge(mk, on="market_id")
+    dead = sp[sp["end_pt"] >= sp["closed_pt"] - 1000].groupby("market_id")["start_pt"].min()
+    ev["ou_closed"] = np.fmin(ev["ou_closed"].to_numpy(float), ev["ou_market_id"].map(dead).to_numpy(float))
     ev["start"] = ev["kickoff_actual"].astype("int64")
     ev["n_min"] = np.minimum((ev["ft_pt"].astype("int64") - ev["start"]) // 60_000, MAX_MINUTES).astype("int64") + 1
     ev["eid"] = np.arange(len(ev))
@@ -242,16 +259,17 @@ def minute_frame(inputs: dict):
         "p_over": p_over,
         "ou_open": ou_open,
         "score_ok": usable & (e["consistent"].eq(True) | e["reconciled"].eq(True)).to_numpy()
-        & e["n_unplaced"].eq(0).to_numpy()})
+        & e["n_unplaced"].eq(0).to_numpy() & e["n_side_unknown"].eq(0).to_numpy()})
     goals = _ms(inputs["gold/goal"].select(COLUMNS["gold/goal"]), ["pt"]).to_pandas()
     goals = goals.rename(columns={"pt": "goal_pt"}).sort_values(["goal_pt", "goal_no"], kind="stable")
     out["row"] = np.arange(len(out))
     sc = pd.merge_asof(out[["row", "event_id", "pt"]].sort_values("pt", kind="stable"),
                        goals[["event_id", "goal_pt", "home_score", "away_score"]], left_on="pt", right_on="goal_pt",
                        by="event_id", direction="backward", allow_exact_matches=True).sort_values("row")
-    for c in ("home_score", "away_score"):
+    scored = sc["goal_pt"].notna().to_numpy()                      # nil-nil until the first goal; after a goal
+    for c in ("home_score", "away_score"):                         # with no side the score is not known
         v = sc[c].to_numpy(float)
-        out[c] = np.where(usable, np.where(np.isfinite(v), v, 0.0), np.nan)
+        out[c] = np.where(usable, np.where(scored, v, 0.0), np.nan)
     return out.drop(columns="row"), ev
 
 

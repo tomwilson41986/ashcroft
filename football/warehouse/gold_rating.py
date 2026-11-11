@@ -71,7 +71,7 @@ import pyarrow.compute as pc
 from football.warehouse.gold_implied import draw_independent, home_minus_away, p_over25
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 2          # 2: a close whose books are not one market's prices (no valid rho) rates nobody
+VERSION = 3          # 2: a close whose books are not one market's prices (no valid rho) rates nobody
 SCOPE = "all"
 INPUTS = ("gold/event", "gold/implied")
 COLUMNS = {
@@ -109,9 +109,11 @@ TEAM_RATING = TableSpec(
                "internationals."),
         Column("as_of", TS, "The moment the rating before the match is as of: the start of the UTC day of the "
                "kick-off. Only matches that went in play before it are in the rating.", False),
-        Column("n_prior", pa.int32(), "Matches behind the rating before this one: the team's earlier matches "
-               "whose close was fixed before as_of. 0: the team has no rating of its own yet.", False),
-        Column("days_since", pa.float64(), "Days from the last of those matches to this kick-off; blank if none."),
+        Column("n_prior", pa.int32(), "Matches behind the rating before this one: the team's matches of the 400 "
+               "days before as_of whose close was fixed before it. 0: the team has no rating of its own (it is "
+               "new, or back after more than 400 days).", False),
+        Column("days_since", pa.float64(), "Days from the team's last rated match, however old, to this kick-off; "
+               "blank if it has none."),
         Column("att", pa.float64(), "Attack before the match: (strength + tempo) / 2, in log goals.", False),
         Column("def", pa.float64(), "Defence before the match: (strength - tempo) / 2, in log goals (higher "
                "concedes less).", False),
@@ -245,7 +247,8 @@ def rate(home, away, t_obs, observed, ratio, product, country, when, n_teams: in
     it has one; ``ratio`` and ``product``: the close's log(lam_home / lam_away) and log(lam_home * lam_away). A
     moment's ratings are solved from the observed matches with t_obs before the start of its UTC day. Returns
     arrays of shape slots x matches x 2 (home, away): ``strength``, ``tempo``, ``mass_s`` and ``mass_t`` (the
-    decayed weight behind each), ``n`` (matches behind), ``last`` (the last of them, ms; -1 none), ``pool`` (the
+    decayed weight behind each), ``n`` (the matches behind: those of the last ``window_days``, which the rating is
+    solved from), ``last`` (the side's last observed match, ms, however old; -1 none), ``pool`` (the
     teams joined to the side by chains of the matches solved from, itself included), and slots x matches:
     ``home_adv``, ``level`` (the constant of the product equation), ``linked`` (the two sides are in one pool:
     their strengths are on one scale).
@@ -264,22 +267,24 @@ def rate(home, away, t_obs, observed, ratio, product, country, when, n_teams: in
            "mass_t": np.zeros(shape), "n": np.zeros(shape, np.int64), "last": np.full(shape, -1, np.int64),
            "pool": np.ones(shape, np.int64), "home_adv": np.zeros((n_slots, n_ev)),
            "level": np.zeros((n_slots, n_ev)), "linked": np.zeros((n_slots, n_ev), bool)}
-    count, last = np.zeros(n_teams, np.int64), np.full(n_teams, -1, np.int64)
+    none, last = np.zeros(n_teams, np.int64), np.full(n_teams, -1, np.int64)
     zeros, alone = np.zeros(n_teams), np.arange(n_teams)
     x_s, x_t, mass_s, mass_t, label, pool = zeros, zeros, zeros, zeros, alone, np.ones(n_teams, np.int64)
-    adv, level, done = np.zeros(n_countries), 0.0, 0
+    adv, level, done, count = np.zeros(n_countries), 0.0, 0, none
     for d, a, b in zip(days.tolist(), start.tolist(), stop.tolist()):
         hi = int(np.searchsorted(t_sorted, d * DAY_MS, "left"))          # closes fixed before the day began
         if hi > done:
             new = obs[done:hi]
             for side in (home[new], away[new]):
-                np.add.at(count, side, 1)
                 np.maximum.at(last, side, t_obs[new])
             done = hi
         lo = int(np.searchsorted(t_sorted, (d - window_days) * DAY_MS, "left"))
         idx = obs[lo:hi]
         if len(idx):
             i, j, c = home[idx], away[idx], country[idx]
+            # the matches behind a rating are the ones it is solved from: a side back after more than the window
+            # has none, and is new again (it is given its opponent's rating below)
+            count = np.bincount(i, minlength=n_teams) + np.bincount(j, minlength=n_teams)
             age = (d * DAY_MS - t_obs[idx]) / DAY_MS
             w = 0.5 ** (age / half_life_s)
             adv = home_advantage(ratio[idx] - x_s[i] + x_s[j], w, c, n_countries, ridge_home)
@@ -295,6 +300,7 @@ def rate(home, away, t_obs, observed, ratio, product, country, when, n_teams: in
             pool = np.bincount(label, minlength=n_teams)[label]
         else:
             x_s, x_t, mass_s, mass_t, label, pool = zeros, zeros, zeros, zeros, alone, np.ones(n_teams, np.int64)
+            count = none
         slot, ev = np.divmod(order[a:b], n_ev)
         for side, team in ((0, home[ev]), (1, away[ev])):
             out["strength"][slot, ev, side] = x_s[team]

@@ -171,6 +171,22 @@ def test_a_side_with_no_match_behind_it_is_given_its_opponents_rating(world):
     assert g["rt_log_ratio"] == pytest.approx(g["rt_home_adv"], abs=1e-12)
 
 
+def test_a_side_back_after_more_than_the_window_is_new_again():
+    """Its old matches are no longer in the solve: it has no rating of its own, and the row must say so (a count
+    of every match it ever played would present its opponent's rating as its own)."""
+    late = D0 + (gr.WINDOW_DAYS + 100) * DAY + 15 * HOUR
+    matches = _world() + [_match(960, 3, 4, late - 50 * DAY, cc="GB"), _match(961, 1, 3, late, cc="GB")]
+    team, gap = _build(matches)
+    back, opp = (team[(team["event_id"] == 961) & (team["team_id"] == t)].iloc[0] for t in (1, 3))
+    assert (back["n_prior"], opp["n_prior"]) == (0, 1)
+    assert (back["strength"], back["tempo"], back["pool_teams"]) == (opp["strength"], opp["tempo"], 1)
+    assert back["days_since"] == pytest.approx(gr.WINDOW_DAYS + 100 - 11, abs=1.0)    # its last match is a fact still
+    g = gap[(gap["event_id"] == 961) & (gap["cp_min"] == 60)].iloc[0]
+    assert (g["n_home"], g["n_away"], bool(g["linked"])) == (0, 1, False)
+    assert g["rt_log_ratio"] == pytest.approx(g["rt_home_adv"], abs=1e-12)
+    assert back["n_after"] == 1 and np.isfinite(back["strength_after"])               # ... and rated again after it
+
+
 def test_a_noiseless_market_is_recovered_on_one_scale_across_the_two_leagues(world):
     _, team, gap = world
     last = team.groupby("team_id").last()

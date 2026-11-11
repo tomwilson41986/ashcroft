@@ -38,13 +38,17 @@ def match_odds_file(in_play=True) -> bytes:
     return _file(msgs)
 
 
-def over_under_file() -> bytes:
+def over_under_file(suspended_at=None) -> bytes:
+    """Closed 20 minutes in (the third goal); ``suspended_at``: the minute the suspension that ran into that close
+    began (none: the files show no suspension, as when it is shorter than the gap between two messages)."""
     kw = {"market_type": "OVER_UNDER_25", "name": "Over/Under 2.5 Goals", "runners": OU_RUNNERS}
-    return _file([_msg(KO_MS - 40 * 60 * M, OU, _defn(**kw)),
-                  _msg(KO_MS - M, OU, rc=[{"id": UNDER, "ltp": 2.0}, {"id": OVER, "ltp": 2.0}]),
-                  _msg(START, OU, _defn(in_play=True, **kw)),
-                  _msg(START + 9 * M + 30_000, OU, rc=[{"id": UNDER, "ltp": 2.5}, {"id": OVER, "ltp": 1.6}]),
-                  _msg(START + 20 * M, OU, _defn("CLOSED", True, **kw))])          # closed early: the third goal
+    msgs = [_msg(KO_MS - 40 * 60 * M, OU, _defn(**kw)),
+            _msg(KO_MS - M, OU, rc=[{"id": UNDER, "ltp": 2.0}, {"id": OVER, "ltp": 2.0}]),
+            _msg(START, OU, _defn(in_play=True, **kw)),
+            _msg(START + 9 * M + 30_000, OU, rc=[{"id": UNDER, "ltp": 2.5}, {"id": OVER, "ltp": 1.6}])]
+    if suspended_at is not None:
+        msgs.append(_msg(START + suspended_at * M, OU, _defn("SUSPENDED", True, **kw)))
+    return _file(msgs + [_msg(START + 20 * M, OU, _defn("CLOSED", True, **kw))])
 
 
 def goals(rows) -> pa.Table:
@@ -57,13 +61,15 @@ def goals(rows) -> pa.Table:
 
 
 def timeline(rows) -> pa.Table:
-    """A hand-written gold/timeline: (usable, consistent, ht_start_min, ht_end_min[, reconciled, n_unplaced])."""
-    rows = [tuple(r) + (False, 0)[len(r) - 4:] for r in rows]
+    """A hand-written gold/timeline: (usable, consistent, ht_start_min, ht_end_min[, reconciled, n_unplaced,
+    n_side_unknown])."""
+    rows = [tuple(r) + (False, 0, 0)[len(r) - 4:] for r in rows]
     return pa.table({"event_id": pa.array([EVENT] * len(rows), pa.int64()),
                      "usable": pa.array([r[0] for r in rows], pa.bool_()),
                      "consistent": pa.array([r[1] for r in rows], pa.bool_()),
                      "reconciled": pa.array([r[4] for r in rows], pa.bool_()),
                      "n_unplaced": pa.array([r[5] for r in rows], pa.int16()),
+                     "n_side_unknown": pa.array([r[6] for r in rows], pa.int16()),
                      "ht_start_min": pa.array([r[2] for r in rows], pa.float64()),
                      "ht_end_min": pa.array([r[3] for r in rows], pa.float64())})
 
@@ -72,14 +78,14 @@ GOALS = [(1, START + 9 * M + 10_000, 1, 0), (2, START + 49 * M, 1, 1)]
 TIMELINE = [(True, True, 24.0, 34.0)]
 
 
-def inputs_of(tmp_path, name="base", mo=None, goal_rows=GOALS, timeline_rows=TIMELINE) -> dict:
+def inputs_of(tmp_path, name="base", mo=None, goal_rows=GOALS, timeline_rows=TIMELINE, ou=None) -> dict:
     """The module's inputs for a one-match warehouse: silver and gold/event through the real parser and build, the
     inferred goals and timeline written by hand."""
     root = tmp_path / name
     root.mkdir()
     store = Store(root=root / "wh")
     bronze.ingest_bundle(store, _bundle(root, {f"2026/Jan/29/{EVENT}/{MO}.bz2": mo or match_odds_file(),
-                                               f"2026/Jan/29/{EVENT}/{OU}.bz2": over_under_file()}), "b")
+                                               f"2026/Jan/29/{EVENT}/{OU}.bz2": ou or over_under_file()}), "b")
     silver.build(store, workers=1)
     assert gold.build(store, only=["gold_event"])["failed"] == []
     inp = {t: read_part(store, t, 2026, 1, gold_inplay.COLUMNS.get(t))
@@ -137,6 +143,15 @@ def test_the_over_chance_stands_while_its_market_is_open_and_fresh(built):
     assert m.loc[19, "ou_open"] and not m.loc[20, "ou_open"] and np.isnan(m.loc[30, "p_over"])     # closed at 20:00
 
 
+def test_the_over_chance_stops_at_the_suspension_that_ran_into_the_markets_close(tmp_path):
+    """The third goal suspends the market and it never trades again: its last prices are from before that goal, and
+    a minute after the suspension began must not show them as the chance of a third goal."""
+    out = gold_inplay.build(inputs_of(tmp_path, "s", ou=over_under_file(suspended_at=12)))
+    m = out["gold/inplay_minute"].to_pandas().set_index("minute")
+    assert m.loc[11, "ou_open"] and m.loc[11, "p_over"] == pytest.approx(0.625 / 1.025)
+    assert not m.loc[12, "ou_open"] and np.isnan(m.loc[12, "p_over"]) and np.isnan(m.loc[14, "p_over"])
+
+
 def test_the_phase_and_the_football_minute_follow_the_matchs_half_time(tmp_path, built):
     m = built["minute"].set_index("minute")
     assert m.loc[23, "phase"] == "first_half" and m.loc[24, "phase"] == "half_time"
@@ -166,6 +181,18 @@ def test_the_score_is_the_inferred_one_as_of_the_minute(tmp_path, built):
     assert not n["score_ok"].any() and n["home_score"].notna().all()
     wrong = gold_inplay.build(inputs_of(tmp_path, "w", timeline_rows=[(True, False, 24.0, 34.0, False, 0)]))
     assert not wrong["gold/inplay_minute"].to_pandas()["score_ok"].any()
+
+
+def test_a_goal_with_no_side_leaves_the_score_blank_from_there_on(tmp_path):
+    """gold/goal blanks the running score from the first goal whose scorer the prices do not say: the minute table
+    must not show that as nil-nil, nor call the match's score reliable."""
+    rows = [(1, START + 9 * M + 10_000, 1, 0), (2, START + 30 * M, None, None), (3, START + 49 * M, None, None)]
+    out = gold_inplay.build(inputs_of(tmp_path, "x", goal_rows=rows,
+                                      timeline_rows=[(True, True, 24.0, 34.0, False, 0, 1)]))
+    m = out["gold/inplay_minute"].to_pandas().set_index("minute")
+    assert (m.loc[9, "home_score"], m.loc[10, "home_score"], m.loc[29, "home_score"]) == (0, 1, 1)
+    assert m.loc[30:, ["home_score", "away_score"]].isna().all().all() and m.loc[:29, "away_score"].eq(0).all()
+    assert not m["score_ok"].any()
 
 
 def reference(minute: pd.DataFrame, close, result: str) -> dict:

@@ -14,10 +14,20 @@ the half-time position), and the team's and the opponent's market-implied rating
 
 Three measures of a result, in order of noise:
 - ``pts_vs_xpts`` = points - xpts_pre: the result against the pre-match expectation. Mostly luck in one match;
-- ``perf`` = xpts_inplay - xpts_pre: how the match went, every minute counting (gold/inplay). A side that led for
-  an hour and conceded twice late did well on this and took one point;
-- ``luck`` = points - xpts_inplay: what the final whistle gave beyond the run of the match.
+- ``perf``: how the match went, every minute counting: xpts_inplay - xpts_pre (gold/inplay), less what sides of
+  that pre-match expectation record on that difference on average. A side that led for an hour and conceded twice
+  late did well on this and took one point;
+- ``luck`` = pts_vs_xpts - perf: what the final whistle gave beyond the run of the match.
 They sum: pts_vs_xpts = perf + luck. Over a season perf is the part that says something about the team.
+
+Why perf is measured from a line and not from zero. A fair price's average over the match would have the
+pre-match price as its expectation, but the reading is not quite fair: late in a match the last traded prices
+read a side that is ahead about a point of chance low (legs that have stopped trading carry prices from before
+the lead was safe), and a one-sided match that stops trading has no in-play record at all. Both lean against
+strong sides: raw, a side with a win chance over 0.7 averaged -0.04 points a match and one under 0.1 +0.03
+(second review round, 2026). ``PERF_LINE`` is the raw difference's mean as a line in xpts_pre, fitted on the
+odd months of 2026 (48,128 team-matches); on the even months what is left shows no trend with the expectation
+(``python -m football.warehouse facts``: club.performance_by_expected_points_even_months).
 
 **club/team_summary**, one row a team: its matches in the warehouse added up (results, expectation, performance,
 luck with their standard errors, the goals the market expected, the rating now and how the market has re-rated
@@ -45,7 +55,7 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec, from_frame
 
-VERSION = 1
+VERSION = 3
 SCOPE = "all"
 INPUTS = ("gold/event", "gold/implied", "gold/inplay", "gold/timeline", "gold/team_rating", "gold/team")
 COLUMNS = {
@@ -56,8 +66,8 @@ COLUMNS = {
                     "ht_p_away", "max_p_home", "min_p_home", "max_p_away", "min_p_away", "travel", "decided_min"],
     "gold/timeline": ["event_id", "usable", "consistent", "reconciled", "reliability", "n_unplaced", "home_goals",
                       "away_goals", "min_home_leading", "min_level", "min_home_trailing"],
-    "gold/team_rating": ["team_id", "event_id", "n_prior", "strength", "strength_sd", "pool_teams", "n_after",
-                         "strength_after"],
+    "gold/team_rating": ["team_id", "event_id", "n_prior", "strength", "strength_sd", "pool_teams", "rated",
+                         "n_after", "strength_after"],
     "gold/team": ["team_id", "team_name", "country_code"],
 }
 
@@ -69,6 +79,7 @@ ACTIVE_DAYS = 120                 # a ranked side played within this long of the
 DRIFT_MIN = 20                    # sides rated in two consecutive months that a month's scale drift is read from
 COUNTRY_MIN = 5                   # ranked sides with a rating change that a country's own change is read from
 FORM = (5, 10)
+PERF_LINE = (0.0557, -0.0413)     # raw xpts_inplay - xpts_pre averages a + b * xpts_pre (odd months of 2026)
 
 TEAM_MATCH = TableSpec(
     "club/team_match",
@@ -105,8 +116,10 @@ TEAM_MATCH = TableSpec(
         Column("gd_vs_exp", pa.float64(), "Goal difference less the expected one (lam_for - lam_against)."),
         Column("xpts_inplay", pa.float64(), "Expected points averaged over every minute of the match "
                "(gold/inplay); blank where the match traded too little in play."),
-        Column("perf", pa.float64(), "xpts_inplay less xpts_pre: how the match went against the expectation."),
-        Column("luck", pa.float64(), "points less xpts_inplay: what the result gave beyond the run of the match."),
+        Column("perf", pa.float64(), "How the match went against the expectation: xpts_inplay less xpts_pre, less "
+               "what sides of that pre-match expectation average on it (0.0557 - 0.0413 xpts_pre: the reading "
+               "leans against strong sides; fitted on 2026's odd months)."),
+        Column("luck", pa.float64(), "pts_vs_xpts less perf: what the result gave beyond the run of the match."),
         Column("ht_p_win", pa.float64(), "The team's win chance at half time."),
         Column("max_p_win", pa.float64(), "Its highest win chance in play."),
         Column("min_p_win", pa.float64(), "Its lowest."),
@@ -147,10 +160,10 @@ TEAM_SUMMARY = TableSpec(
         Column("pts_vs_xpts_pm", pa.float64(), "Points a match beyond the expectation."),
         Column("pts_vs_xpts_se", pa.float64(), "Its standard error: read the figure against this."),
         Column("n_inplay", pa.int32(), "Matches with an in-play record.", False),
-        Column("perf_pm", pa.float64(), "In-play performance a match (xpts_inplay less xpts_pre): the part of the "
+        Column("perf_pm", pa.float64(), "In-play performance a match (club/team_match.perf): the part of the "
                "over-performance that the run of the matches supports."),
         Column("perf_se", pa.float64(), "Its standard error."),
-        Column("luck_pm", pa.float64(), "Luck a match (points less xpts_inplay): results beyond the run of play."),
+        Column("luck_pm", pa.float64(), "Luck a match (pts_vs_xpts less perf): results beyond the run of play."),
         Column("luck_se", pa.float64(), "Its standard error."),
         Column("xgf_pm", pa.float64(), "Goals the market expected it to score a match (all matches with rates)."),
         Column("xga_pm", pa.float64(), "Goals the market expected it to concede a match."),
@@ -278,8 +291,8 @@ def team_match_frame(inputs: dict):
     d["xpts_pre"] = 3.0 * d["p_win"] + d["p_draw"]
     d["pts_vs_xpts"] = d["points"] - d["xpts_pre"]
     d["gd_vs_exp"] = (d["goals_for"] - d["goals_against"]) - (d["lam_for"] - d["lam_against"])
-    d["perf"] = d["xpts_inplay"] - d["xpts_pre"]
-    d["luck"] = d["points"] - d["xpts_inplay"]
+    d["perf"] = d["xpts_inplay"] - d["xpts_pre"] - (PERF_LINE[0] + PERF_LINE[1] * d["xpts_pre"])
+    d["luck"] = d["pts_vs_xpts"] - d["perf"]
 
     rt = inputs["gold/team_rating"].select(COLUMNS["gold/team_rating"]).to_pandas()
     rt = rt.drop_duplicates(["team_id", "event_id"])
@@ -287,8 +300,8 @@ def team_match_frame(inputs: dict):
     for c in ("strength", "strength_sd", "pool_teams"):
         rt[c] = np.where(own, rt[c].to_numpy(float), np.nan)
     rt["strength_after"] = np.where((rt["n_after"] >= 1).to_numpy(), rt["strength_after"], np.nan)
-    d = d.merge(rt[["team_id", "event_id", "strength", "strength_sd", "n_prior", "pool_teams", "strength_after"]],
-                on=["team_id", "event_id"], how="left")
+    d = d.merge(rt[["team_id", "event_id", "strength", "strength_sd", "n_prior", "pool_teams", "strength_after",
+                    "rated"]], on=["team_id", "event_id"], how="left")
     d = d.merge(rt[["team_id", "event_id", "strength"]].rename(columns={"team_id": "opponent_id",
                                                                         "strength": "opp_strength"}),
                 on=["opponent_id", "event_id"], how="left")
@@ -334,7 +347,7 @@ def team_summary_frame(tm, teams):
     names = teams[["team_id", "team_name", "country_code"]].drop_duplicates("team_id")
     out = out.merge(names, on="team_id", how="left")
 
-    pool = pools(d)
+    pool = pools(tm)
     out = out.merge(pool, on="team_id", how="left")
     # the re-rating, net of the scale's drift between the month the rating settled and the month of the last match
     drift = scale_drift(d, pool)
@@ -393,15 +406,17 @@ def scale_drift(d, pool):
 
 
 def pools(d):
-    """(team_id, pool_id, pool_size): the teams the matches of the last ``POOL_DAYS`` join, as connected
-    components of the graph whose edges are those matches; a pool is named by its smallest team id."""
+    """(team_id, pool_id, pool_size): the teams the rated matches of the last ``POOL_DAYS`` join, as connected
+    components of the graph whose edges are those matches; a pool is named by its smallest team id. Only a match
+    whose close rates its sides (gold/team_rating.rated) ties their ratings to one scale: a fixture that never
+    went in play, or closed on books no one market could make, joins nobody."""
     import numpy as np
     import pandas as pd
     from scipy.sparse import coo_matrix
     from scipy.sparse.csgraph import connected_components
 
-    recent = d[d["kickoff"] >= d["kickoff"].max() - pd.Timedelta(days=POOL_DAYS)]
-    recent = recent[recent["opponent_id"].notna()]
+    rated = d[d["opponent_id"].notna() & d["rated"].eq(True)]
+    recent = rated[rated["kickoff"] >= rated["kickoff"].max() - pd.Timedelta(days=POOL_DAYS)]
     ids = np.unique(np.r_[recent["team_id"].to_numpy(np.int64), recent["opponent_id"].to_numpy(np.int64)])
     if not len(ids):
         return pd.DataFrame({"team_id": pd.Series(dtype="int64"), "pool_id": pd.Series(dtype="int64"),

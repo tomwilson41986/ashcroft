@@ -14,6 +14,7 @@ from football.warehouse.schema import TS, conform
 
 T0 = pd.Timestamp("2026-01-03 15:00", tz="UTC")
 logit = lambda p: math.log(p / (1 - p))                             # noqa: E731
+lean = lambda xpts: club.PERF_LINE[0] + club.PERF_LINE[1] * xpts    # noqa: E731  the reading's lean at an expectation
 
 
 def ts(days: float):
@@ -75,8 +76,9 @@ def inputs(events=None, implied=None, inplay=None, timeline=None, rating=None, t
         "gold/timeline": table(timeline, dict(event_id=i, usable=b, consistent=b, reconciled=b, reliability=f,
                                               n_unplaced=pa.int16(), home_goals=pa.int16(), away_goals=pa.int16(),
                                               min_home_leading=f, min_level=f, min_home_trailing=f)),
-        "gold/team_rating": table(rating, dict(team_id=i, event_id=i, n_prior=pa.int32(), strength=f, strength_sd=f,
-                                               pool_teams=pa.int32(), n_after=pa.int32(), strength_after=f)),
+        "gold/team_rating": table([dict({"rated": True}, **r) for r in rating],          # rated unless a row says not
+                                  dict(team_id=i, event_id=i, n_prior=pa.int32(), strength=f, strength_sd=f,
+                                       pool_teams=pa.int32(), rated=b, n_after=pa.int32(), strength_after=f)),
         "gold/team": table(teams, dict(team_id=i, team_name=s, country_code=s)),
     }
 
@@ -116,9 +118,12 @@ def test_the_markets_move_on_a_team_is_in_its_own_win_chance(built):
 def test_a_result_splits_into_performance_and_luck(built):
     tm = built["team_match"]
     h, a = row(tm, 1, 10), row(tm, 2, 10)
-    assert h["pts_vs_xpts"] == pytest.approx(1.25) and h["perf"] == pytest.approx(0.65)
-    assert h["luck"] == pytest.approx(0.6) and h["perf"] + h["luck"] == pytest.approx(h["pts_vs_xpts"])
-    assert a["perf"] == pytest.approx(0.4 - 1.0) and a["luck"] == pytest.approx(0 - 0.4)
+    # performance is measured from what sides of that expectation average on the raw difference (the reading leans
+    # against strong sides); luck is the rest of the result's surprise, so the two always add up to it
+    assert h["pts_vs_xpts"] == pytest.approx(1.25) and h["perf"] == pytest.approx(0.65 - lean(1.75))
+    assert h["luck"] == pytest.approx(0.6 + lean(1.75)) and h["perf"] + h["luck"] == pytest.approx(h["pts_vs_xpts"])
+    assert a["perf"] == pytest.approx(0.4 - 1.0 - lean(1.0)) and a["luck"] == pytest.approx(0 - 0.4 + lean(1.0))
+    assert lean(0.3) > 0 > lean(2.5)                          # raw, an outsider reads high and a favourite low
     assert (h["ht_p_win"], h["max_p_win"], h["min_p_win"], a["ht_p_win"], a["max_p_win"]) == (0.8, 0.99, 0.45, 0.05,
                                                                                                0.3)
     assert (h["travel"], h["decided_min"], a["decided_min"]) == (1.2, 80, 80)
@@ -174,14 +179,15 @@ def test_the_summary_adds_up_a_teams_matches_with_a_result(built):
     over = [3 - 1.75, 1 - 0.8]
     assert u["pts_vs_xpts_pm"] == pytest.approx(np.mean(over))
     assert u["pts_vs_xpts_se"] == pytest.approx(np.std(over, ddof=1) / math.sqrt(2))
-    assert (u["n_inplay"], u["perf_pm"], u["luck_pm"]) == (1, pytest.approx(0.65), pytest.approx(0.6))
+    assert (u["n_inplay"], u["perf_pm"], u["luck_pm"]) == (1, pytest.approx(0.65 - lean(1.75)),
+                                                           pytest.approx(0.6 + lean(1.75)))
     assert np.isnan(u["perf_se"])                                     # one match: no standard error
     assert u["xgf_pm"] == pytest.approx((1.6 + 0.9) / 2) and u["xga_pm"] == pytest.approx((1.0 + 1.8) / 2)
     assert u["fav_share"] == 0.5 and u["move_24h_pm"] == pytest.approx(logit(0.5) - logit(0.4))
     assert u["opp_strength_pm"] == pytest.approx((0.1 + 0.05) / 2)
     # the rating now; its first settled value needs ten matches behind it, which neither row has
     assert u["strength"] == 0.2 and np.isnan(u["strength_first"]) and np.isnan(u["strength_change"])
-    assert (u["ppm_last5"], u["ppm_last10"], u["perf_last5"]) == (2.0, 2.0, pytest.approx(0.65))
+    assert (u["ppm_last5"], u["ppm_last10"], u["perf_last5"]) == (2.0, 2.0, pytest.approx(0.65 - lean(1.75)))
     assert (u["pool_id"], u["pool_size"]) == (1, 2)                   # United and City have met: one pool of two
     assert not u["ranked"] and np.isnan(u["country_rank"])            # two matches: under the ten a ranking needs
 
@@ -271,6 +277,16 @@ def test_pools_are_the_teams_recent_matches_join_and_rankings_stay_inside_one(mo
     assert s["pct_overall"].to_dict() == {1: 1.0, 2: 0.0, 4: 0.0, 5: 1.0}
     c = conform(club.COUNTRY, out["club/country_strength"]).to_pandas().iloc[0]
     assert (c["teams"], c["matches"]) == (2, 3) and c["strength_top"] in (0.2, 0.9)       # one pool's sides only
+    # a tie between the pools that rates nobody (settled, but it never went in play) leaves them two scales; one
+    # that does rate its sides makes them one
+    tie = dict(event_id=21, home_id=1, away_id=4, home_name="United", away_name="Rovers", country_code="GB",
+               category="senior", kickoff=ts(5), result="H", over25=1, went_in_play=False)
+    row_of = lambda team, rated: dict(team_id=team, event_id=21, n_prior=3, strength=0.5, strength_sd=0.3,  # noqa: E731
+                                      pool_teams=2, n_after=3, strength_after=0.5, rated=rated)
+    for rated, want in ((False, {1: 1, 2: 1, 4: 4, 5: 4}), (True, {1: 1, 2: 1, 4: 1, 5: 1})):
+        joined = club.build(inputs(events=ev + [tie], rating=rt + [row_of(1, rated), row_of(4, rated)], teams=teams))
+        got = conform(club.TEAM_SUMMARY, joined["club/team_summary"]).to_pandas().set_index("team_id")
+        assert got["pool_id"].to_dict() == want
     # a side that has not played for too long drops out of the ranking, and a pool too small ranks nobody
     monkeypatch.setattr(club, "ACTIVE_DAYS", 3)                # the last match held is on day 7, theirs on day 3
     stale = conform(club.TEAM_SUMMARY, club.build(inputs(events=ev, rating=rt, teams=teams))["club/team_summary"])
