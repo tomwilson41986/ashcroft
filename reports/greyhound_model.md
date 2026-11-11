@@ -1922,7 +1922,12 @@ ledger has no gap over 12.6 minutes from 10:46 to 18:05 UTC and no last error.
 | Winners' log-loss: ours against the SP's | 1.567 against 1.513 | the SP better (section 38) |
 
 - the ends of the book: dogs the SP put at 15 or more were priced 33% too short (bias -0.331, 80 runners, RMSE
-  0.505), dogs under 3.0 about 15% too long (48 runners); between 3 and 8 the bias is under 6%;
+  0.505), dogs under 3.0 about 15% too long (48 runners); between 3 and 8 the bias is under 6%.
+  **Correction, 11 Nov evening:** that reading sorts the runners by the SP, the thing being forecast, and any
+  forecast with error looks too flat when sorted by its target. Sorted by OUR price the bias is -0.035 (our price
+  2 to 3, 47 runners), -0.037 (3 to 5), -0.040 (5 to 8), -0.013 (8 to 15) and -0.095 (15 or more, 72 runners), and
+  the slope of log(SP) on log(our price) within the race is 1.019: the book is about 4% too short all over (its
+  level), not flat at the ends. The ends are not a fault of the model's shape;
 - Nottingham: RMSE 0.426 and bias -0.124 on 72 runners, 9 of the day's 20 worst misses; every other track between
   0.22 and 0.35. One day: to be read again on the nights that follow before it is called a fault.
 
