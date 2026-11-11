@@ -205,6 +205,20 @@ python -m research.open_close.football_ev_trial score --cache .football_cache --
 # the pre-registered early-to-close rule scored at the recorded books (paper trial; gate 'running' until complete)
 python -m research.open_close.football_paper_trial --panel data/football_exchange_panel.parquet --out out/football_paper_trial.json
 
+# The football data warehouse (the owner, 11 Nov 2026; docs/football_data_platform.md, docs/football_data_dictionary.md):
+# Betfair's Historic Data stream files as tables. Bronze (the raw files as rows), silver (market, runner, definition,
+# spell, tick: every traded price with the market's state), gold (event, checkpoint grid, implied goals, price-path
+# features, inferred goals, the move panel, market-implied team ratings, club marts). Parquet under
+# s3://$CAPTURE_BUCKET/sources/football/warehouse/ (or --root <folder>), DuckDB over it; idempotent builds
+# (football-warehouse.yml on GitHub's runners; S3 only, nothing reaches Betfair)
+python -m football.warehouse ingest-queue          # every bundle in football/warehouse/bundles.json, each once
+python -m football.warehouse build                 # silver, then gold, for the partitions that changed
+python -m football.warehouse check                 # the data-quality report; exit 1 on a failed hard check
+python -m football.warehouse.link run              # events to API-Football fixtures, teams to teams, goals checked
+python -m football.warehouse dictionary --out docs/football_data_dictionary.md
+# the closing-price model trained on Betfair's own prices (the move from a checkpoint to the close; development read)
+python -m research.open_close.football_bf_close_model --out-json out/bf_close_model.json
+
 # Race ABM: simulate a card, batch features for training, pattern-oriented calibration
 python research_lab.py abm --db horse_racing.db --date 2026-03-12
 python research_lab.py abm-features --db horse_racing.db --from 2024-01-01 --jobs 8 --out data/abm_features.parquet
@@ -243,6 +257,9 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
   `data.py` (gold tables: canonical matches with stable `match_id` and versions, odds long, benchmark open/close,
   data-quality checks, the Betfair market map), `ratings.py` (pooled Dixon-Coles, score-matrix prices incl. Asian
   handicap), `model.py` (walk-forward, market pooling, CLV scoring), `live.py` (fit, trade, settle)
+- `football/warehouse/` — the football data warehouse: `schema.py` (table contracts), `parse.py` (stream files to
+  rows), `bronze.py`, `silver.py`, `gold.py` (orchestrator) and one `gold_*.py` a table family (a pure function of
+  Arrow tables: `SPECS`, `INPUTS`, `VERSION`, `build`), `link.py`, `club.py`, `quality.py`, `catalog.py` (DuckDB views)
 - `sources/` (`source_data.py`) — the historic data for the models beyond UK/IE racing, one module a source (GBGB, football-data, tennis, Punting Form); `betfair_historic.py` — Betfair's Historic Data service (BASIC plan, every sport) to opening/closing-price tables
 - S3 bucket: `horseracingresults`, key: `horse_racing.db`
 

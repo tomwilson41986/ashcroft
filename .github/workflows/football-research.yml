@@ -25,6 +25,8 @@ on:
           - close_model_books
           - feature_report
           - review_arms
+          - warehouse
+          - warehouse_models
       days:
         description: 'days of the live record to read'
         required: false
@@ -41,7 +43,7 @@ concurrency:
 jobs:
   research:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -128,9 +130,30 @@ jobs:
       - name: Review arms (each repair and new block against the base, paired by match day)
         if: inputs.job == 'review_arms'
         run: python -m research.open_close.football_review_arms --cache .football_cache --out-json out/football_review_arms.json
+      # the football data warehouse (docs/football_data_platform.md; football-warehouse.yml is its own workflow once
+      # merged: a new workflow file cannot be dispatched from a branch). S3 only; nothing reaches Betfair.
+      - name: Football data warehouse (ingest the listed bundles, build silver and gold, link, check)
+        if: inputs.job == 'warehouse'
+        run: |
+          mkdir -p out
+          python -m football.warehouse ingest-queue | tee out/warehouse_ingest.json
+          python -m football.warehouse build | tee out/warehouse_build.json
+          python -m football.warehouse.link run | tee out/warehouse_link.json || echo "link stage failed (reported, not fatal)"
+          python -m football.warehouse check --markdown out/warehouse_quality.md > out/warehouse_quality.json
+      - name: Closing-price efficiency and the Betfair-native closing-price model, on the warehouse
+        if: inputs.job == 'warehouse' || inputs.job == 'warehouse_models'
+        continue-on-error: true
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_bf_efficiency --out-json out/bf_efficiency.json > /dev/null
+          python -m research.open_close.football_bf_close_model --out-json out/bf_close_model.json > /dev/null
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
+          for f in out/*.md; do
+            [ -f "$f" ] || continue
+            { echo "## $(basename "$f")"; cat "$f"; } >> "$GITHUB_STEP_SUMMARY"
+          done
           for f in out/*.json; do
             [ -f "$f" ] || continue
             { echo "## $(basename "$f")"; echo '```'; head -c 60000 "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
