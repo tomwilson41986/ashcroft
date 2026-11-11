@@ -28,7 +28,7 @@ name: Live trading (the owner's book)
 # The keys: the secret BETFAIR_LIVE_APP_KEY (the owner's live application key, 6 Oct) goes to the trader's own
 # process only; the market records beside it, read-only, keep BETFAIR_APP_KEY (the delayed key), as do all the other
 # workflows, because Betfair permits no read-only use of live data. The one exception (the owner, 10 Nov 2026): the
-# horse WIN markets' Exchange Stream to 10:30 UK (research/horse_stream_record.py, read-only), which no delayed key
+# horse WIN markets' Exchange Stream to 21:30 UK (research/horse_stream_record.py, read-only), which no delayed key
 # can open.
 # To stop at once: cancel the running "Live trading" run (the ledger is written, the lays at SP that hedge the
 # backs stay), or create the S3 object trading/STOP (no new bets within a minute). The evening run settles the day
@@ -197,15 +197,16 @@ jobs:
             # race's win and place dividends near the off, every pool's total, the declared dividends
             timeout 14h python tote_recorder.py --record --until 21:30 > "$RUNNER_TEMP/tote.log" 2>&1 &
             TOTE=$!
-            # the horse WIN markets' Exchange Stream to 10:30 UK, the morning the rule trades (the owner, 10 Nov 2026:
-            # "wire the horse ladder recorder"; research/horse_stream_record.py, read-only: the whole ladder and the
+            # the horse WIN markets' Exchange Stream to 21:30 UK, through the last race (the owner, 10 Nov 2026:
+            # "wire the horse ladder recorder"; to the last race for a late-signal test, the owner, 11 Nov 2026:
+            # "Extend in live job"; research/horse_stream_record.py, read-only: the whole ladder and the
             # traded volume at each change, raw to S3, for a resting-order test; it never subscribes to orders). The
             # stream needs the live key (Betfair offers it on no delayed key, which carries no full ladder or traded
             # volume either): the one read-only process beside the trader on the live key, by the owner's decision of
             # 10 Nov. Without the secret it does not run; its failing never touches the trader.
             STREAM=""
             if [ -n "$BETFAIR_LIVE_APP_KEY" ]; then
-              BETFAIR_APP_KEY="$BETFAIR_LIVE_APP_KEY" timeout 6h python -m research.horse_stream_record --until 10:30 > "$RUNNER_TEMP/horse_stream.log" 2>&1 &
+              BETFAIR_APP_KEY="$BETFAIR_LIVE_APP_KEY" timeout 17h python -m research.horse_stream_record --until 21:30 > "$RUNNER_TEMP/horse_stream.log" 2>&1 &
               STREAM=$!
             fi
             # tomorrow's win markets the evening before, 17:00-21:30 UK (read-only, to their own files; the owner's
