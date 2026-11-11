@@ -1,6 +1,6 @@
 """research/horse_stream_record.py: the greyhounds' stream recorder pointed at the horse WIN markets: every market not
 yet off, conflated, the parts under their own prefix and off the server once uploaded, never the order stream, and
-started only beside the horse trader, to 10:30 UK (the owner, 10 Nov 2026)."""
+started only beside the horse trader, to 21:30 UK (the owner, 10 Nov 2026; to the last race, 11 Nov 2026)."""
 import json
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -86,7 +86,7 @@ def test_only_the_trading_job_starts_it_beside_the_trader_to_10_30():
     line = [ln for ln in code if "research.horse_stream_record" in ln]
     assert len(line) == 1
     ln = line[0]
-    assert ln.startswith('BETFAIR_APP_KEY="$BETFAIR_LIVE_APP_KEY" timeout ') and "--until 10:30" in ln
+    assert ln.startswith('BETFAIR_APP_KEY="$BETFAIR_LIVE_APP_KEY" timeout ') and "--until 21:30" in ln
     assert ln.endswith("&") and "auto_trade" not in ln and "echo" not in ln
     i = code.index(ln)
     assert code[i - 1] == 'if [ -n "$BETFAIR_LIVE_APP_KEY" ]; then' and code[i + 1] == "STREAM=$!"
