@@ -301,7 +301,9 @@ class LiveExchange:
     a dropped connection) the order may still have been placed, so the exchange asks Betfair for the orders under
     that reference before reporting a failure: a bet is never placed twice for want of an answer. Every back of a
     horse on a day shares one reference, and every lay another, so only an order not seen before (not reported by
-    this exchange, not on Betfair's record when the session started) can be the one just sent (11 Nov 2026).
+    this exchange, not on Betfair's record when the session started) can be the one just sent (11 Nov 2026). A
+    trader that never gives the exchange that record (note_orders) keeps the rule from before for its backs: of
+    several matched orders it did not report, the newest.
     """
 
     mode = "live"
@@ -325,6 +327,7 @@ class LiveExchange:
     def note_orders(self, orders) -> None:
         """Orders already on Betfair's record (the session's sync when it starts): when a later reply is lost,
         none of these is the order that was being placed."""
+        self.__dict__["_told"] = True
         self._known().update(str(o.get("betId")) for o in orders or [] if o.get("betId"))
 
     def markets(self, start, end, countries=("GB", "IE")) -> list[Market]:
@@ -433,6 +436,11 @@ class LiveExchange:
         # every back of a horse on a day shares the reference, so its earlier fills are in this list too. The order
         # just sent is one not seen before: not reported by this exchange, not in the session's sync at the start
         new = [o for o in got if str(o.get("betId") or "") not in self._known() and float(o.get("sizeMatched") or 0) > 0]
+        if len(new) > 1 and not self.__dict__.get("_told"):
+            # a trader that never tells this exchange what Betfair held when it started (the morning models, the
+            # football trader: only the horse trader's session does) can meet the orders of its own earlier run of
+            # the day here. They cannot be told from this one, so as before 11 Nov the newest is taken
+            new = [max(new, key=lambda o: str(o.get("placedDate", "")))]
         if len(new) == 1:
             o = new[0]
             fill.bet_id, fill.status = str(o.get("betId") or ""), "SUCCESS"

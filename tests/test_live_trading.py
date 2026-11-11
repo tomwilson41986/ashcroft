@@ -222,11 +222,21 @@ def test_a_lost_reply_on_a_top_up_is_never_settled_by_the_horses_earlier_fill():
     x = LiveExchange(_Data(c))
     x.note_orders(x.orders(["1.5"]))
     assert x.back("1.5", 7, 4.8, 30.0, "ash10017").status == "FAILURE"
-    # two matched orders nobody here placed: which is this one cannot be told, and the day stops
-    c = _Book(drop={1})
-    c.current = [{"betId": b, "marketId": "1.5", "selectionId": 7, "side": "BACK", "orderType": "LIMIT",
-                  "sizeMatched": 30.0, "averagePriceMatched": 4.8, "customerOrderRef": "ash10017"} for b in ("B8", "B9")]
-    assert LiveExchange(_Data(c)).back("1.5", 7, 4.8, 30.0, "ash10017").status == "UNKNOWN"
+    # two matched orders nobody here placed, after the session's sync: which is this one cannot be told, and the
+    # day stops
+    def two():
+        c = _Book(drop={1})
+        c.current = [{"betId": b, "marketId": "1.5", "selectionId": 7, "side": "BACK", "orderType": "LIMIT",
+                      "sizeMatched": 30.0, "averagePriceMatched": p, "customerOrderRef": "ash10017",
+                      "placedDate": f"2026-10-01T08:0{i}:00.000Z"} for i, (b, p) in enumerate((("B9", 4.8), ("B8", 4.6)))]
+        return LiveExchange(_Data(c))
+    x = two()
+    x.note_orders([])                                              # the horse trader's session: nothing held at the start
+    assert x.back("1.5", 7, 4.8, 30.0, "ash10017").status == "UNKNOWN"
+    # a trader that never gives the exchange Betfair's record at its start (the morning models, football) can meet
+    # its own earlier run's orders this way: for it the rule is as it was, the newest matched order
+    late = two().back("1.5", 7, 4.8, 30.0, "ash10017")
+    assert (late.status, late.bet_id, late.avg_price) == ("SUCCESS", "B8", 4.6)
 
 
 def test_a_lost_reply_on_a_top_ups_lay_is_never_settled_by_the_horses_earlier_lay():
