@@ -111,10 +111,17 @@ def normalise_horse(name) -> str:
     return re.sub(r"[^a-z0-9]", "", s)
 
 
+#: one course under two names: Betfair's venue against the card's and the results table's track
+TRACK_ALIASES = {
+    "bangorondee": "bangor",         # Betfair: "Bangor-on-Dee"; HRB: "Bangor" (no Bangor runner was matched, so
+}                                    # none was traded, until 11 Nov 2026)
+
+
 def normalise_track(name) -> str:
     s = str(name or "").lower()
     s = re.sub(r"\(.*?\)", "", s)  # "newmarket (july)" -> "newmarket"
-    return re.sub(r"[^a-z]", "", s)
+    s = re.sub(r"[^a-z]", "", s)
+    return TRACK_ALIASES.get(s, s)
 
 
 def course_from_hint(menu_hint: str, db_tracks_norm: dict[str, str] | None = None) -> str | None:

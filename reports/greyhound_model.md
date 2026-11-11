@@ -1694,3 +1694,24 @@ proven edge.
 **Registered today, before any of its days** (`reports/preregistration_greyhound_fav_back.md`): the favourite back at
 the forecast plus 20%, closed at the SP, scored on the days from 11 Nov 2026 with its gate fixed; on paper. Nothing
 bets until the owner decides.
+
+## 40. The favourite back on paper (11 Nov 2026)
+
+The owner, 10 Nov 2026: "Yes build it". `greyhound/fav_back.py` runs section 39's rule live on paper in
+paper-models.yml, beside the early lay, from the next run (05:45 UTC, 11 Nov). At each race's first traded book
+(every runner traded, our prices on the field) it backs the market favourite at the forecast SP x 1.20 on the
+ladder, staked to win GBP100. The forecast is the early lay's own: `laytest.live_fit` on the stack's prices. On the
+live-key books it logs:
+
+- **taken:** the best back price already reaches the limit;
+- **strict** (the registered fill): a later trade beyond the limit;
+- **through:** the best back price reaches the limit.
+
+At the off a filled back is closed at the SP on paper, and an unfilled one lapses. `--settle` (each morning in the same job, the last 3 days)
+reads the BSP and the winner from the settled books and writes the SP close and the back to win, net of 2%, to
+`sources/greyhound/fav_back/paper/<day>/settled.csv` with a summary; the running table carries its section.
+
+**Paper by construction:** the module has no call that sends or cancels an order. `tests/test_greyhound_fav_back.py`
+and `tests/test_workflow_guards.py` fail if one is added, or if the job ever gives it `--live`. The registered gate
+is unchanged: it is the study's procedure on the recorded books (the 2 Dec check-in). This trader is its execution
+shadow on the live-key books, read beside it.

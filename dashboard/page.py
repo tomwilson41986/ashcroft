@@ -121,6 +121,8 @@ dl.stats { display: flex; flex-wrap: wrap; gap: var(--s-4) var(--s-6); margin: 0
 .err { color: var(--neg); }
 .flag { font: 600 10px/1 var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 6px; border-radius: 2px;
   border: 1px solid currentColor; }
+.sw { font: 600 10px/1 var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 6px; border-radius: 2px; border: 1px solid currentColor; margin-right: 6px; }
+.sw.armed { color: var(--neg); } .sw.off { color: var(--ink-3); }
 .flag.green { color: var(--pos); } .flag.red { color: var(--neg); } .flag.amber { color: var(--accent-ink); } .flag.grey { color: var(--ink-3); }
 
 .empty { padding: var(--s-7) 0; border-bottom: 1px solid var(--rule); }
@@ -279,13 +281,23 @@ footer.status .stale { color: var(--accent-ink); }
       '</span>' + (e.ev_today !== null ? ' \u00b7 EV today <span class="mono">' + esc(gbp(e.ev_today, true)) + '</span>' : "") + '</div>';
   }
 
+  // ---- the trader's real-money switch (the owner, 11 Nov 2026: "Show it") ----
+  function switchLine(t) {
+    var w = t.switch;
+    if (!w) return "";
+    var tag = w.armed ? "Live orders on" : (w.stop ? "Stopped" : (w.state === "live" ? "Switch live" : (w.state ? "Paper" : "Switch unread")));
+    return '<div class="seen"><span class="sw ' + (w.armed ? "armed" : "off") + '" title="' + esc(w.label) + '">' + esc(tag) +
+      '</span><span class="mono">' + esc(w.name) + '</span> \u00b7 ' + esc(w.label) +
+      (w.from ? ' \u00b7 tracked from <b>' + esc(dm(w.from)) + '</b>' : "") + '</div>';
+  }
+
   function seat(t) {
     var d = t.today, m = t.month, a = t.all_time;
     var seen = ukTime(d.last_order_utc), fresh = d.last_order_utc &&
       (Date.now() - new Date(d.last_order_utc).getTime()) < 20 * 60000;
     var who = '<div class="who">' + avatar(t) + '<div><div class="name">' + esc(t.name) +
       '<span class="mode ' + (t.mode === "live" ? "live" : "") + '">' + (t.mode === "live" ? "Real money" : "Paper") +
-      '</span></div><div class="what">' + esc(t.what) + '</div>' + edgeLine(t) +
+      '</span></div><div class="what">' + esc(t.what) + '</div>' + switchLine(t) + edgeLine(t) +
       '<div class="seen"><span class="dot' + (fresh ? " on" : "") + '"></span>' +
       (seen ? "last ledger row " + seen + " UK" : (d.traded ? "ledger today" : "no ledger today")) +
       (d.traded ? " · " + d.settled + " of " + d.markets + " markets settled" : "") + '</div></div></div>';

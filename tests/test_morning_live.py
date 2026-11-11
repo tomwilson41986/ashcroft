@@ -216,3 +216,44 @@ def test_the_card_joins_the_history_in_the_tables_shape_and_order():
     today = x[x["race_date"] == "2026-11-04"].iloc[0]
     assert today["dslr"] == 3 and today["prev_fin"] == 1.0 and today["prev_bsp"] == 5.0 and today["runs_held"] == 1
     assert bool(MF.rule_qr(x[x["race_date"] == "2026-11-04"]).iloc[0]) is True
+
+
+def test_settle_writes_the_bsp_and_the_clv_beside_betfairs_pnl(monkeypatch):
+    """Live settle: P&L from Betfair's cleared orders under our references only; the BSP from the closed books and the
+    CLV (average price / BSP - 1) on each back, for the dashboard."""
+    import io
+    import trading.exchange as TX
+    store = {}
+    led = pd.DataFrame([
+        {"ts": "t", "mode": "live", "model": "steamer", "event": "back", "market_id": MID, "selection_id": A,
+         "matched": 10.0, "avg_price": 6.0},
+        {"ts": "t", "mode": "live", "model": "quick_return", "event": "back", "market_id": MID, "selection_id": B,
+         "matched": 50.0, "avg_price": 2.0}])
+    store[ML._key("live", DAY, "ledger.csv")] = ML._ledger_bytes(led.to_dict("records"))
+
+    class X:
+        def __init__(self, data):
+            pass
+
+        def login(self):
+            pass
+
+        def cleared(self, mids):
+            return [{"marketId": MID, "selectionId": A, "customerOrderRef": f"mes{DAY:%m%d}{A}", "profit": 50.0},
+                    {"marketId": MID, "selectionId": B, "customerOrderRef": f"meq{DAY:%m%d}{B}", "profit": -50.0},
+                    {"marketId": MID, "selectionId": C, "customerOrderRef": f"ash{DAY:%m%d}{C}", "profit": 9.0}]
+
+        def books(self, ids, with_sp=False):
+            assert with_sp
+            return {MID: Book(MID, "CLOSED", False, 1e5, {A: Quote(A, bsp=5.0), B: Quote(B, bsp=2.5)})}
+
+    monkeypatch.setattr(TX, "BetfairData", lambda: None)
+    monkeypatch.setattr(TX, "LiveExchange", X)
+    monkeypatch.setattr(ML, "s3_get", lambda k: store.get(k))
+    monkeypatch.setattr(ML, "s3_put", lambda k, b, *a, **kw: store.__setitem__(k, b))
+    s = ML.settle(DAY, live=True)
+    out = pd.read_csv(io.BytesIO(store[ML._key("live", DAY, "ledger.csv")]))
+    a, b = out.set_index("selection_id").loc[A], out.set_index("selection_id").loc[B]
+    assert (a.result, a.pnl, a.bsp, a.clv) == ("WINNER", 50.0, 5.0, 0.2)
+    assert (b.result, b.pnl, b.bsp, b.clv) == ("LOSER", -50.0, 2.5, -0.2)
+    assert s["steamer"]["pnl_2pc"] == 49.0 and s["quick_return"]["pnl_2pc"] == -50.0

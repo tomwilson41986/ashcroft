@@ -79,7 +79,7 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 | `BETFAIR_PASSWORD` | Betfair Exchange password |
 | `BETFAIR_APP_KEY` | Betfair API application key (the delayed key: every read-only job, the market records) |
 | `API_FOOTBALL_KEY` | API-Football (optional: fixture status, kick-off, cups; the football model runs without it) |
-| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); the football trader's process (football-trade.yml): reads every football market on it from 4 Nov 2026 (the owner: "use live key", "do not pass betfair thresholds": `football/exchange_feed.py Throttle`, at most 5 requests a second and 12,000 an hour, each under 200 weight points), bets only with `FOOTBALL_LIVE=yes` (small real stakes, 3 Nov 2026); the morning models when `MORNING_LIVE=yes` (morning-models.yml, its own runner, 4 Nov 2026); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py) |
+| `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); the football trader's process (football-trade.yml): reads every football market on it from 4 Nov 2026 (the owner: "use live key", "do not pass betfair thresholds": `football/exchange_feed.py Throttle`, at most 5 requests a second and 12,000 an hour, each under 200 weight points), bets only with `FOOTBALL_LIVE=yes` (small real stakes, 3 Nov 2026); the morning models when `MORNING_LIVE=yes` (morning-models.yml, its own runner, 4 Nov 2026); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py); and the horse WIN markets' Exchange Stream beside the trader in live-trade.yml to 21:30 UK, read-only (the owner, 10 Nov 2026; to the last race, 11 Nov 2026) |
 
 ## Key Commands
 
@@ -150,8 +150,9 @@ python -m morning.live --settle --live
 # readings of the open point; arithmetic, not a forecast; a fee on profit does not move the trader's bar)
 python research/queries/done/expert_fee_projection_1109.py
 # The Exchange Stream for the horse WIN markets, raw (the whole ladder and the traded volume, for a resting-order test);
-# read-only, and started by no workflow: it runs on the live key beside the live trader only on the owner's word
-BETFAIR_APP_KEY=<live key> python -m research.horse_stream_record --until 10:30
+# read-only, beside the trader in live-trade.yml to 21:30 UK (the last race, the owner, 11 Nov) on the live key (the owner, 10 Nov 2026: no delayed key
+# opens the stream), to s3://$CAPTURE_BUCKET/betfair_stream/horse/<day>/
+BETFAIR_APP_KEY=<live key> python -m research.horse_stream_record --until 21:30
 
 # --- Research toolkit (see RESEARCH_FRAMEWORK.md) ---
 # Model-vs-market scoring (Murphy decomposition, skill vs BSP, concordance, drift)
@@ -222,6 +223,10 @@ python -m greyhound.track --freeze --cutoff 2026-10-05 --days 3 --summary --out 
 BETFAIR_APP_KEY=<live key> python -m greyhound.book_record --until 21:30      # paper-models.yml: 5 s near the off
 python -m greyhound.tradeout --freeze --days 4 --summary --out out/greyhound_tradeout.json
 python -m research.greyhound.tradeout_study --source retimed --out out/greyhound_tradeout_study
+# the favourite back on paper (the owner, 10 Nov 2026: "back and trade out at BFSP"; reports/preregistration_greyhound_fav_back.md):
+# the favourite at its first traded book backed at the forecast SP x 1.20, closed at the SP; no order call (paper-models.yml)
+python -m greyhound.fav_back --trade --until 21:30
+python -m greyhound.fav_back --settle --days 3
 # The greyhound fast loop (the owner, 3 Nov 2026: no more 2-3 hour runs; reports/greyhound_roadmap.md 10): the features
 # cached once a change of the feature code (S3 greyhound/feature_cache/<hash>/), an experiment a line of JSON
 # (research/greyhound/experiments/current.json: feature set, greyhound/blocks/ to add, prefixes to drop, objective

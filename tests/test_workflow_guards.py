@@ -168,10 +168,12 @@ def test_only_the_trader_runs_on_the_live_key():
     named = {p.name for p in WORKFLOWS.glob("*.yml") if "BETFAIR_LIVE_APP_KEY" in p.read_text()}
     assert named <= {"live-trade.yml", "greyhound-trade.yml", "football-trade.yml", "paper-models.yml",
                      "morning-models.yml"}, named
-    # the greyhound stream recorder too (the owner, 5 Nov 2026, the audit C1): read-only, no order subscription
+    # the greyhound stream recorder too (the owner, 5 Nov 2026, the audit C1): read-only, no order subscription; and
+    # the horse WIN markets' stream beside the horse trader (the owner, 10 Nov 2026): read-only, no delayed key opens it
     traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade", "greyhound.book_record",
-               "greyhound.stream_record",
-               "greyhound.early_lay --trade", "greyhound.quote_mid --trade", "morning.live")
+               "greyhound.stream_record", "research.horse_stream_record",
+               "greyhound.early_lay --trade", "greyhound.quote_mid --trade", "greyhound.fav_back --trade",
+               "morning.live")
     for name in named:
         text = (WORKFLOWS / name).read_text()
         for ln in text.splitlines():
@@ -229,7 +231,8 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
         if "GHKEY" in ln and "python" in ln:
             assert ln.startswith('BETFAIR_APP_KEY="$GHKEY" python -m greyhound.'), ln
             assert any(t in ln for t in ("greyhound.live --trade", "greyhound.book_record", "greyhound.stream_record",
-                                         "greyhound.early_lay --trade", "greyhound.quote_mid --trade")), ln
+                                         "greyhound.early_lay --trade", "greyhound.quote_mid --trade",
+                                         "greyhound.fav_back --trade")), ln
         if "--live" in ln:                          # the early lay and the quotes alone, on the live key
             assert ln.startswith(('BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --live ',
                                   'BETFAIR_APP_KEY="$GHKEY" python -m greyhound.quote_mid --trade --live ')), ln
@@ -241,6 +244,13 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
         [ln for ln in runs.splitlines() if "greyhound.early_lay --trade --live" in ln
          or "greyhound.quote_mid --trade --live" in ln]
     assert "greyhound.live --trade --live" not in runs and "football.live --trade --live" not in runs
+    # the favourite back (the owner, 10 Nov 2026: "Yes build it"): paper only, never --live, and its module has no
+    # call that could send an order
+    fav = [ln for ln in runs.splitlines() if "greyhound.fav_back --trade" in ln]
+    assert len(fav) == 1 and "--live" not in fav[0], fav
+    src = (WORKFLOWS.parent.parent / "greyhound" / "fav_back.py").read_text()
+    for call in ("_place(", "placeOrders", "back_at_sp(", "lay_at_bsp(", "cancelOrders", "._call("):
+        assert call not in src, call
     # the early lay's paper books (the owner, 4 Nov 2026: "run this on paper. Keep running 10% too"): never --live
     paper = [ln for ln in runs.splitlines() if "--paper-variants" in ln]
     assert len(paper) == 1 and "--live" not in paper[0] and "GREYHOUND_EARLY_LAY" not in paper[0], paper

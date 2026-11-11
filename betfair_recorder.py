@@ -755,6 +755,37 @@ def match_markets(markets, conn: sqlite3.Connection, day: date):
     return m[LIVE_MARKET_FIELDS]
 
 
+REMATCH_DAYS = 60
+
+
+def rematch_unmatched(conn: sqlite3.Connection, day_to: date, days: int = REMATCH_DAYS) -> int:
+    """Catalogue runners left without a race_results row are matched again once the results are in the table.
+
+    A day is matched as it is loaded (the last three days each night); results scraped later than that (a scrape that
+    fell behind) left the day's runners unmatched for good: on 11 Nov 2026 Haydock, Perth, Leopardstown and Limerick
+    stood at 0% matched and many courses at 60-70%, with the trader's bets on them. Only rows with no id are touched."""
+    import pandas as pd
+    lo = f"{day_to - timedelta(days=days):%Y-%m-%d}"
+    try:
+        todo = pd.read_sql_query(
+            "SELECT * FROM betfair_live_markets WHERE race_results_id IS NULL AND race_date >= ? AND race_date <= ?",
+            conn, params=[lo, f"{day_to:%Y-%m-%d}"])
+    except Exception:                                   # no table yet
+        return 0
+    n = 0
+    for d, part in todo.groupby("race_date"):
+        m = match_markets(part.drop(columns=["race_results_id"]), conn, date.fromisoformat(str(d)[:10]))
+        got = m[m["race_results_id"].notna()]
+        if len(got):
+            conn.executemany("UPDATE betfair_live_markets SET race_results_id = ? WHERE market_id = ? AND "
+                             "selection_id = ? AND race_results_id IS NULL",
+                             [(int(r), str(mk), int(sel)) for r, mk, sel in
+                              zip(got["race_results_id"], got["market_id"], got["selection_id"])])
+            n += len(got)
+    conn.commit()
+    return n
+
+
 def _upsert(conn: sqlite3.Connection, table: str, df) -> int:
     if df is None or len(df) == 0:
         return 0
@@ -828,6 +859,9 @@ def load_db(db_path: str, days: int = 3, day_to: date | None = None, s3=None, ro
             log.info("live record %s: %d catalogue rows, %d marks, %d orders", r["day"], r["markets"], r["marks"],
                      r["orders"])
             done.append(r)
+        n = rematch_unmatched(conn, day_to)
+        if n:
+            log.info("live record: %d catalogue runners matched to results that arrived after their day's load", n)
         return done
     finally:
         conn.close()

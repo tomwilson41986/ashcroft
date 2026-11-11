@@ -1099,6 +1099,11 @@ def main(argv=None) -> int:
             md = "\n".join(early_lay.table(store, day, m) for m in early_lay.modes_to_show(store, day)) + "\n" + md
         except Exception as exc:
             log.warning("live early lay not read (%s)", exc)
+        try:                                        # the favourite back on paper (greyhound/fav_back.py)
+            from greyhound import fav_back
+            md = fav_back.table(store, day) + "\n" + md
+        except Exception as exc:
+            log.warning("favourite back not read (%s)", exc)
         try:                                        # the live quotes around the mid (greyhound/quote_mid.py)
             from greyhound import quote_mid
             md = quote_mid.table(store, day) + "\n" + md

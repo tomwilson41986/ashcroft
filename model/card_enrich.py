@@ -48,6 +48,7 @@ half of all the difference between the live path and training.
 from __future__ import annotations
 
 import logging
+import os
 import re
 
 import numpy as np
@@ -293,11 +294,18 @@ def _fill_from_card_pedigree(card: pd.DataFrame, hist: pd.DataFrame) -> dict:
     return n
 
 
-def enrich_card(card: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
+def enrich_card(card: pd.DataFrame, history: pd.DataFrame, as_table: bool | None = None) -> pd.DataFrame:
     """The card with every field in CARD_FILLED present, filled only where missing.
 
     `history` is the result rows before the card's date (the frame the live path
-    already loads); nothing from the card's own races is read from it."""
+    already loads); nothing from the card's own races is read from it.
+
+    `as_table` (default: the environment's CARD_AS_TABLE == "1", off unless set) also makes the card's own fields
+    read as the results table records them, the table the model was trained on (card_as_table): no stall over jumps
+    and the weight after the jockey's claim."""
+    if as_table is None:
+        as_table = os.environ.get("CARD_AS_TABLE", "") == "1"
+    printed_claim = None
     card = card.copy()
     hist = history.copy()
     order = [c for c in ("race_date", "race_time") if c in hist.columns]
@@ -370,6 +378,7 @@ def enrich_card(card: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
     if "jockey_name" in card.columns:
         text = card["jockey_name"].astype(str)
         printed = pd.to_numeric(text.str.extract(r"\((\d{1,2})\)\s*$", expand=False), errors="coerce")
+        printed_claim = printed
         card["jockey_name"] = card["jockey_name"].where(printed.isna(),
                                                         text.str.replace(r"\s*\(\d{1,2}\)\s*$", "", regex=True))
         jk_hist = _per_value(hist["jockey_name"], _norm) if "jockey_name" in hist.columns else None
@@ -389,4 +398,30 @@ def enrich_card(card: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
         # on a gap there and the card gives it one
         med = card["official_rating"].groupby(race).transform("median")
         _fill(card, "median_or", med.where(med % 1 == 0))
+    if as_table:
+        card = card_as_table(card, printed_claim)
     return card
+
+
+#: race_shape.race_code's jumps codes: the results table records no stall for these races
+JUMPS_CODES = ("hurdle", "chase", "nhflat")
+
+
+def card_as_table(card: pd.DataFrame, printed_claim: pd.Series | None = None) -> pd.DataFrame:
+    """The card's own fields as the results table records them (card-inputs-swap-1110, 10 Nov 2026).
+
+    - stall: the card scrape fills it from the saddlecloth number when the card has no Stall column, so every jumps
+      runner has one; the table has 0 there. Over jumps races (race_shape.race_code) the stall is 0.
+    - pounds: the card prints the weight before the jockey's claim ("10-0" with "J Smith (5)"); the table records it
+      after (the difference equals the claim for 21.3% of runners, otherwise 0.5%). The printed claim is taken off.
+
+    `printed_claim` is the claim read from the jockey's name before enrich_card strips it (NaN where none)."""
+    from model.race_shape import race_code
+    out = card.copy()
+    if "stall" in out.columns and ({"race_type", "surface_type"} & set(out.columns)):
+        jumps = race_code(out).isin(JUMPS_CODES).to_numpy()
+        out.loc[jumps, "stall"] = 0
+    if printed_claim is not None and "pounds" in out.columns:
+        claim = pd.to_numeric(printed_claim, errors="coerce").reindex(out.index).fillna(0.0)
+        out["pounds"] = pd.to_numeric(out["pounds"], errors="coerce") - claim
+    return out
