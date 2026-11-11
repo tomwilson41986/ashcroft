@@ -1,6 +1,6 @@
 """research/horse_stream_record.py: the greyhounds' stream recorder pointed at the horse WIN markets: every market not
 yet off, conflated, the parts under their own prefix and off the server once uploaded, never the order stream, and
-started by no workflow."""
+started only beside the horse trader, to 10:30 UK (the owner, 10 Nov 2026)."""
 import json
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -74,7 +74,32 @@ def test_the_greyhounds_recorder_is_unchanged_by_default(tmp_path):
     assert w.prefix == sr.PREFIX and w.keep_local
 
 
-def test_no_workflow_starts_it():
-    """It runs on the live key beside the live trader: wiring it in is the owner's decision, not a merge's."""
-    for p in (Path(__file__).resolve().parents[1] / ".github" / "workflows").glob("*.yml"):
-        assert "horse_stream_record" not in p.read_text(), p.name
+def test_only_the_trading_job_starts_it_beside_the_trader_to_10_30():
+    """The owner, 10 Nov 2026: beside the horse trader in live-trade.yml, the morning the rule trades, on the live key
+    (no delayed key opens the stream), backgrounded under a timeout so it can never hold up or stop the trader, and
+    only when the live key's secret exists. No other workflow starts it."""
+    wf = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+    starts = {p.name for p in wf.glob("*.yml") if "horse_stream_record" in p.read_text()}
+    assert starts == {"live-trade.yml"}, starts
+    text = (wf / "live-trade.yml").read_text()
+    code = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    line = [ln for ln in code if "research.horse_stream_record" in ln]
+    assert len(line) == 1
+    ln = line[0]
+    assert ln.startswith('BETFAIR_APP_KEY="$BETFAIR_LIVE_APP_KEY" timeout ') and "--until 10:30" in ln
+    assert ln.endswith("&") and "auto_trade" not in ln and "echo" not in ln
+    i = code.index(ln)
+    assert code[i - 1] == 'if [ -n "$BETFAIR_LIVE_APP_KEY" ]; then' and code[i + 1] == "STREAM=$!"
+    # in the trade branch, started before the trader and waited on after it
+    assert code.index(ln) < next(k for k, c in enumerate(code) if "--trade-until" in c and "auto_trade.py" in c)
+    assert 'wait "$STREAM"; echo "horse stream record exited $?"' in code
+
+
+def test_the_recorder_has_no_route_to_an_order():
+    """Read-only: neither module names an order call, and the stream is never asked for the order subscription."""
+    root = Path(__file__).resolve().parents[1]
+    for rel in ("research/horse_stream_record.py", "greyhound/stream_record.py"):
+        src = (root / rel).read_text()
+        for word in ("placeOrders", "cancelOrders", "replaceOrders", "updateOrders", "auto_trade", "LiveExchange"):
+            assert word not in src, (rel, word)
+        assert '"orderSubscription"' not in src and "'orderSubscription'" not in src, rel

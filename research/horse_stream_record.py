@@ -1,15 +1,8 @@
 """Betfair's Exchange Stream for the GB/IE horse racing WIN markets, recorded raw (the consultant review, 9 Nov 2026).
 
 Read-only: it logs in, subscribes to market data and writes what arrives. Nothing here can place or cancel an order
-(the stream's order subscription is never sent), and nothing here is started by any workflow: it runs only when the
-owner starts it (see "Not wired in" below).
-
-Why: the live rule takes the price on offer. The level it takes is thin (a median GBP2.72 at the best back, taken
-whole in 83% of fills, ledger depth-refill-1020) and the morning spread is wide, so the one execution question never
-tested for the horses is a resting order inside the spread. An honest test of a resting order needs the whole ladder,
-the volume traded at each price and each change as it happened: the polled recorder (betfair_recorder.py) holds the
-best 3 prices a minute and no traded ladder. This is greyhound/stream_record.py's recorder (the same connection,
-writer and loop) pointed at the horses.
+(the stream's order subscription is never sent). It runs beside the horse trader in live-trade.yml from the session's
+start to 10:30 UK, on the live key (the owner, 10 Nov 2026: "wire the horse ladder recorder"; see "Where it runs").
 
 What differs from the greyhounds' recorder:
 - the markets: horse racing (event type 7), WIN, GB and IE. A day's WIN markets fit one subscription (at most 190),
@@ -20,9 +13,11 @@ What differs from the greyhounds' recorder:
 - to ``s3://$CAPTURE_BUCKET/betfair_stream/horse/<day>/part-NNN.jsonl.gz``; the state each minute to
   ``betfair_live/<day>/status_horse_stream.json``.
 
-Not wired in: the horse runner takes one job at a time and the live trader and its records hold it all day, so this
-would run as a background process of ``live-record.yml`` or on a runner of its own, with the live application key.
-Both are the owner's decision (a live job, the live key); until then:
+Where it runs: live-trade.yml, a background process beside the trader, under a timeout, to 10:30 UK, the morning the
+rule trades (the recorder's own job, live-record.yml, waits all day for the runner while the trader is live). The
+stream needs the live key: Betfair offers it on no delayed key, which carries no full ladder or traded volume either,
+so this is the one read-only process beside the trader on the live key (the owner's decision of 10 Nov 2026). Without
+the secret it does not run; its failing never touches the trader. By hand:
 
     BETFAIR_APP_KEY=<the live key> python -m research.horse_stream_record --until 10:30
 """

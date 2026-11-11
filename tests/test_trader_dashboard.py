@@ -4,6 +4,7 @@ the traders write them; nothing is shown as a real figure."""
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import date, timedelta
 
 import pandas as pd
@@ -38,6 +39,11 @@ def horse_ledger(day, races):
 
 def T(tid):
     return next(t for t in TRADERS if t.id == tid)
+
+
+def EL():
+    """The early lay's reader without its fresh start (11 Nov 2026): the ledger tests below are dated 4 Nov."""
+    return replace(T("greyhound-early-lay"), start_from=None)
 
 
 def test_horse_settled_pnl_is_the_day_reports(tmp_path):
@@ -131,7 +137,7 @@ def test_early_lay_counts_the_locked_pnl_and_settles_the_held_lays_with_the_resu
     ]
     _put(tmp_path, "capture", f"{base}/ledger.csv", pd.DataFrame(rows))
     src = LocalSource(tmp_path)
-    days, _ = trader_days(src, T("greyhound-early-lay"), TODAY, cache=False)
+    days, _ = trader_days(src, EL(), TODAY, cache=False)
     m = days[d].set_index("market_id")
     assert m.loc["1.a", "pnl"] == pytest.approx(0.8) and m.loc["1.a", "settled"]
     assert not m.loc["1.b", "settled"] and m.loc["1.b", "open_liability"] == pytest.approx(8.0)
@@ -141,10 +147,10 @@ def test_early_lay_counts_the_locked_pnl_and_settles_the_held_lays_with_the_resu
     p = tmp_path / "capture" / f"betfair_live/{d}/books_greyhound.csv.gz"
     p.parent.mkdir(parents=True, exist_ok=True)
     books.to_csv(p, index=False, compression="gzip")
-    days, _ = trader_days(src, T("greyhound-early-lay"), TODAY, cache=False)
+    days, _ = trader_days(src, EL(), TODAY, cache=False)
     m = days[d].set_index("market_id")
     assert m.loc["1.b", "settled"] and m.loc["1.b", "pnl"] == pytest.approx(2 * 0.98)
-    s = summarise(T("greyhound-early-lay"), days, TODAY)
+    s = summarise(EL(), days, TODAY)
     assert s["today"]["pnl"] == pytest.approx(0.8 + 1.96) and s["today"]["volume"] == pytest.approx(6.0)
 
 
@@ -299,8 +305,8 @@ def test_an_early_lays_clv_is_the_bsp_over_the_price_laid(tmp_path):
     p = tmp_path / "capture" / f"betfair_live/{d}/books_greyhound.csv.gz"
     p.parent.mkdir(parents=True, exist_ok=True)
     books.to_csv(p, index=False, compression="gzip")
-    days, _ = trader_days(LocalSource(tmp_path), T("greyhound-early-lay"), TODAY, cache=False)
-    e = summarise(T("greyhound-early-lay"), days, TODAY)["edge"]
+    days, _ = trader_days(LocalSource(tmp_path), EL(), TODAY, cache=False)
+    e = summarise(EL(), days, TODAY)["edge"]
     assert e["clv_today"] == pytest.approx(5.0 / 4.0 - 1) and e["ev_today"] is None
 
 
@@ -392,3 +398,74 @@ def test_the_morning_paper_forward_test_is_read_a_file_a_day(tmp_path):
     assert list(m.index) == ["1.x"] and m.loc["1.x", "pnl"] == pytest.approx(98.0)
     q, _ = trader_days(src, T("horse-morning-quick-return-paper"), date(2026, 11, 6), cache=False)
     assert q["2026-11-05"].pnl.sum() == pytest.approx(-25.0)
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# The early lay's switch on its tile, and its record from 11 Nov (the owner, 11 Nov 2026: "Show it. Start tracking
+# from fresh")
+# --------------------------------------------------------------------------------------------------------------------
+
+def test_the_live_early_lay_is_tracked_from_11_nov_and_its_earlier_days_are_left_out(tmp_path):
+    from dashboard.traders import EARLY_LAY_FROM
+    assert EARLY_LAY_FROM == "2026-11-11" and T("greyhound-early-lay").start_from == EARLY_LAY_FROM
+    assert T("greyhound-early-lay-paper").start_from is None          # the paper record is not reset
+    led = pd.DataFrame([{"time_utc": "2026-11-04T12:00:00Z", "market_id": "1.1", "selection_id": 1, "track": "Romford",
+                         "race_time": "12:05", "action": "lay", "matched": 0.0}])
+    for day in ("2026-11-04", "2026-11-11"):
+        _put(tmp_path, "capture", f"sources/greyhound/early_lay/live/{day}/ledger.csv", led)
+    days, _ = trader_days(LocalSource(tmp_path), T("greyhound-early-lay"), date(2026, 11, 11), cache=False)
+    assert sorted(days) == ["2026-11-11"]
+
+
+def test_the_switch_is_read_as_the_early_lay_itself_reads_it(tmp_path):
+    from dashboard.traders import switch_state
+    from greyhound import early_lay as el
+    t, src = T("greyhound-early-lay"), LocalSource(tmp_path)
+    assert t.switch == "GREYHOUND_EARLY_LAY"
+    for env in ({}, {"GREYHOUND_EARLY_LAY": "paper"}, {"GREYHOUND_EARLY_LAY": "live"},
+                {"GREYHOUND_EARLY_LAY": " LIVE ", "GREYHOUND_EARLY_LAY_DAILY_LOSS": "50"},
+                {"GREYHOUND_EARLY_LAY": "live", "GREYHOUND_EARLY_LAY_DAILY_LOSS": "-5"},
+                {"GREYHOUND_EARLY_LAY": "live", "GREYHOUND_EARLY_LAY_DAILY_LOSS": "abc"}):
+        w = switch_state(src, t, env)
+        assert w["loss_limit"] == el.daily_loss_limit(env)
+        if env:
+            assert (w["state"] == "live") == el.switch_on(env)
+        # real orders exactly when the trader would send them: the switch, a loss limit and no STOP
+        assert w["armed"] == (el.switch_on(env) and el.daily_loss_limit(env) is not None)
+    assert switch_state(src, t, {})["state"] is None                     # not in this run's environment: unread
+    assert switch_state(src, t, {"GREYHOUND_EARLY_LAY": "paper"})["label"].startswith("Paper")
+    assert switch_state(src, T("greyhound-early-lay-paper"), {"GREYHOUND_EARLY_LAY": "live"}) is None
+
+
+def test_a_stop_object_disarms_the_switch(tmp_path):
+    from dashboard.traders import switch_state
+    env = {"GREYHOUND_EARLY_LAY": "live", "GREYHOUND_EARLY_LAY_DAILY_LOSS": "50"}
+    t = T("greyhound-early-lay")
+    assert switch_state(LocalSource(tmp_path), t, env)["armed"] is True
+    for key in ("greyhound/STOP", "trading/STOP"):
+        p = tmp_path / "capture" / key
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("stop")
+        w = switch_state(LocalSource(tmp_path), t, env)
+        assert w["stop"] is True and w["armed"] is False and w["label"].startswith("Stopped")
+        p.unlink()
+
+
+def test_the_switch_reaches_the_page_and_the_job_reads_the_variables_as_paper_models_does(tmp_path, monkeypatch):
+    from pathlib import Path
+    monkeypatch.setenv("GREYHOUND_EARLY_LAY", "paper")
+    monkeypatch.delenv("GREYHOUND_EARLY_LAY_DAILY_LOSS", raising=False)
+    d = build(LocalSource(tmp_path), today=date(2026, 11, 11), cache=False)
+    el = next(t for s in d["sports"] for t in s["traders"] if t["id"] == "greyhound-early-lay")
+    assert el["switch"]["state"] == "paper" and el["switch"]["armed"] is False and el["switch"]["from"] == "2026-11-11"
+    others = [t for s in d["sports"] for t in s["traders"] if t["id"] != "greyhound-early-lay"]
+    assert all("switch" not in t for t in others)
+    html = render(d)
+    assert "function switchLine" in html and "switchLine(t) + edgeLine(t)" in html
+    wf = (Path(__file__).resolve().parents[1] / ".github/workflows/trader-dashboard.yml").read_text()
+    pm = (Path(__file__).resolve().parents[1] / ".github/workflows/paper-models.yml").read_text()
+    for ln in ("GREYHOUND_EARLY_LAY: ${{ vars.GREYHOUND_EARLY_LAY || 'paper' }}",
+               "GREYHOUND_EARLY_LAY_DAILY_LOSS: ${{ vars.GREYHOUND_EARLY_LAY_DAILY_LOSS }}"):
+        assert ln in wf
+    assert "vars.GREYHOUND_EARLY_LAY || 'paper'" in pm                   # the same default as the trader's job
+    assert "BETFAIR" not in wf and "--live" not in wf                   # the dashboard never trades
