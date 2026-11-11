@@ -2,8 +2,8 @@
 what the dog would have run clear (the engine credits a flat 1.5 lengths a bump: greyhound/metrics.py gsr_trouble_adj).
 
 Each run's surprise is its speed rating (gsr) less the dog's level before the run (the ability table's Kalman mean).
-A ridge regression of the surprise on the run's comment codes (each comma-separated code, lower case: "crd1", "bmp",
-"ldnrin", ...; the codes seen 200 times or more in the fit window), refitted for each year on the years before it
+A ridge regression of the surprise on the run's interference codes (each comma-separated code, lower case: "crd1",
+"bmp1", "fcdtock2", ...; the codes seen 200 times or more in the fit window; ``INTERFERENCE``), refitted for each year on the years before it
 only, gives each code's lengths. A year with fewer than ``MIN_FIT`` earlier runs has no prices (NaN): nothing is
 priced on its own year.
 
@@ -26,11 +26,19 @@ PREFIX = "tr_"
 MIN_COUNT = 200
 MIN_FIT = 100_000
 LAMBDA = 50.0
+#: only interference is priced (the expected-time table's rule, greyhound/pit/xtime.py TROUBLE): a code such as
+#: "always led" or "ran on" describes how the race went for the dog, not what another dog did to it, and pricing it
+#: took the credit for leading out of the dog's clean figure. Until 11 Nov 2026 every code seen 200 times was priced
+#: (the audit of 11 Nov 2026, finding 37). A price is a cost (never a gain), and a run's cost is capped
+INTERFERENCE = re.compile(r"crd|crowd|bmp|bump|blk|baulk|hmp|hamp|imped|stumb|fcdtock|^ck|checked")
+COST_CAP = 6.0                      # lengths a run
 SOURCE = "GBGB race comments and times (sources/gbgb.py); the ability table's levels"
 
 
 def codes(comment) -> list[str]:
-    return [re.sub(r"\s+", "", t.lower()) for t in str(comment or "").split(",") if t.strip()]
+    """The run's interference codes (lower case, no spaces)."""
+    out = [re.sub(r"\s+", "", t.lower()) for t in str(comment or "").split(",") if t.strip()]
+    return [c for c in out if INTERFERENCE.search(c)]
 
 
 def fit_costs(tokens: list[list[str]], y: np.ndarray, min_count: int = MIN_COUNT, lam: float = LAMBDA) -> dict:
@@ -82,7 +90,7 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
         fits[int(y)] = {"codes": len(costs), "fit_runs": int(len(prior)),
                         "top_costs": dict(sorted(costs.items(), key=lambda kv: kv[1])[:10])}
         rows = np.flatnonzero(year == y)
-        cost[rows] = [-sum(costs.get(c, 0.0) for c in set(toks[i])) for i in rows]
+        cost[rows] = [min(-sum(min(costs.get(c, 0.0), 0.0) for c in set(toks[i])), COST_CAP) for i in rows]
     df["_cost"] = cost
     df["_clean"] = df.gsr + df._cost
     df["_costly"] = (df._cost > 1.0).astype(float).where(df._cost.notna())

@@ -20,8 +20,8 @@ earlier one):
 | form | fm_ | fitted decay and shrinkage, a trend-and-age rating, the market's memory (the BFSP plan's steps 2.2, 2.5, 2.6) |
 | figs | fg_ | corrected figures (own standards and shrunk variants), decayed levels shrunk by evidence, class in lengths, a market-implied rating (the BFSP plan of 10 Nov 2026) |
 
-Each table is written to the sources store as ``greyhound/pit/<table>.parquet`` with ``<table>.meta.json``: the code
-hash, when built, the rows, the date range, each column's coverage, and the table's own fit notes. The registry
+Each table is written to the sources store as ``<STORE_PREFIX>/<table>.parquet`` with ``<table>.meta.json``: the code
+hash, the engine's code hash, when built, the rows, the date range, each column's coverage, and the table's own fit notes. The registry
 (``registry()``, written to reports/greyhound_metrics_registry.md by ``--registry``) lists every column with its
 definition and source. A fast-loop block ``pit_<table>`` (greyhound/blocks) joins a table onto the cached matrix by
 race and dog, so each family is scored like any other block, on both targets.
@@ -44,7 +44,13 @@ import pandas as pd
 
 TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather", "figs", "form", "draw", "bend", "xtime", "dyad", "cycle", "trials")
 KEY = ["race_id", "dog_id"]
-STORE_PREFIX = "greyhound/pit"
+#: where the tables are stored. "pit2": the tables of the engine as fixed on 11 Nov 2026 (the audit's foundation
+#: faults: greyhound/data.py, greyhound/metrics.py). The tables built from the engine before it stay at
+#: "greyhound/pit", for the model that was trained on them: a table read by a model must be the table of the engine
+#: the model was fitted on (the audit of 11 Nov 2026, finding 34: nothing tied a stored table to the engine code that
+#: built it). Each table's meta now carries the engine's code hash (``engine``), and ``stale`` says when a stored
+#: table was built by other engine code than the code reading it
+STORE_PREFIX = "greyhound/pit2"
 
 
 def module(name: str):
@@ -60,6 +66,24 @@ def code_hash(name: str) -> str:
         p = root / f
         h.update(p.read_bytes() if p.exists() else b"")
     return h.hexdigest()[:12]
+
+
+def engine_hash() -> str:
+    """The hash of the code that makes the engine's per-run figures (the fast loop's cache key)."""
+    from greyhound.fastloop import code_hash as engine
+    return engine()
+
+
+def stale(name: str, store=None) -> bool | None:
+    """True when the stored table was built by other engine code than this; None when it cannot be told (no meta, or
+    a table from before the hash was recorded)."""
+    from sources.common import Store
+    store = store or Store()
+    try:
+        meta = json.loads(store.get(f"{STORE_PREFIX}/{name}.meta.json"))
+    except Exception:
+        return None
+    return None if "engine" not in meta else meta["engine"] != engine_hash()
 
 
 def coverage(tab: pd.DataFrame, runs: pd.DataFrame) -> dict:
@@ -84,7 +108,8 @@ def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None,
         t0 = datetime.now(timezone.utc)
         tab, notes = mod.build(runs, figs, ctx)
         ctx[name] = tab
-        meta = {"table": name, "hash": code_hash(name), "built_utc": t0.isoformat(timespec="seconds"),
+        meta = {"table": name, "hash": code_hash(name), "engine": engine_hash(),
+                "built_utc": t0.isoformat(timespec="seconds"),
                 "seconds": round((datetime.now(timezone.utc) - t0).total_seconds()), "source": mod.SOURCE,
                 "feature": getattr(mod, "FEATURE", True), "card_unsafe": list(getattr(mod, "CARD_UNSAFE", ())),
                 "notes": notes, **coverage(tab, runs)}

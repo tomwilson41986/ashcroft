@@ -65,6 +65,16 @@ CONFIG_PATH = Path(__file__).with_name("live_config.json")
 #: meeting), the prize money and the handicap marks (GBGB's result, not Betfair's catalogue)
 CARD_UNSAFE = {"weight_change", "weight_vs_mean", "hb_weight_vs_max", "hb_weight_vs_min", "hb_win_going",
                "hb_plc_going", "hb_runs_going", "hb_prize_1st", "hb_handicap"}
+#: and by prefix, the columns batch 14 (run 42818559765) found wrong for the card: the weigh-in's own columns in the
+#: life table, a season count GBGB fills in after the day (2,648 of 16,313 dated seasons in a 2026 fetch fell after
+#: their race), and a trainer change the card cannot see. Until 11 Nov 2026 these lived only in the stack's own drop
+#: list, so every other card-safe feature set and the fallback model still read them (the audit of 11 Nov 2026,
+#: findings 18 and 27)
+CARD_UNSAFE_PREFIXES = ("lf_wt_", "hb_days_since_season", "ti_new_trainer")
+
+
+def is_card_unsafe(feature: str) -> bool:
+    return feature in CARD_UNSAFE or feature.startswith(CARD_UNSAFE_PREFIXES)
 #: the feature blocks the live model is fitted with (``greyhound.metrics``; HorseRaceBase's from 6 Oct 2026, report §8.1)
 #: the owner, 4 Nov 2026 ("implement all recommendations in order"): the best pre-race model of report section 26.3
 #: (every engine block, the race simulator, log(BSP) rescaled to the SP book: RMSE 0.4086 against core's 0.4418)
@@ -112,7 +122,7 @@ def live_switch_on(env=None) -> bool:
 # --------------------------------------------------------------------------------------------------------------------
 
 def card_safe(features: list[str]) -> list[str]:
-    return [f for f in features if f not in CARD_UNSAFE]
+    return [f for f in features if not is_card_unsafe(f)]
 
 
 def fit(df: pd.DataFrame, features: list[str], before: str, date_from: str = "2019-01-01",

@@ -34,8 +34,8 @@ import pandas as pd
 PIT_TABLES = ("ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend")
 MATRIX_BLOCKS = ("sim", "wpred") + tuple(f"pit_{t}" for t in PIT_TABLES)
 #: batch 14 (run 42818559765): the weigh-in's own columns, a season count GBGB fills after the day, a trainer change
-#: the card cannot see
-DROP = ("lf_wt_", "hb_days_since_season", "ti_new_trainer")
+#: the card cannot see - the one list every card-safe feature set drops (greyhound/live.py)
+from greyhound.live import CARD_UNSAFE_PREFIXES as DROP  # noqa: E402
 RECIPE = {"name": "stack3_all3", "learning_rate": 0.08, "early_stop": 100, "rounds": 10000, "max_bin": 63,
           "seeds": 3, "nn_seeds": 3, "nn_seconds": 1800.0, "window_months": 29, "max_seconds": None,
           "calibration": "stretch_track"}

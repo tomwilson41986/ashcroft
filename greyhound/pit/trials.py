@@ -34,9 +34,9 @@ TRIAL_RE = r"^T\d*$"
 HALF_LIFE = 60.0
 OUTLIER = 40.0
 BIG = 1_000_000                       # day numbers are below this: a dog's block of the sorted (dog, day) key
-KEEP = ["race_date", "race_time", "meeting_id", "track", "distance_m", "race_id", "race_class", "trap", "dog_id", "dog_name",
-        "sire", "dam", "born", "sex", "season", "trainer", "position", "sectional", "run_time", "adjusted_time",
-        "weight_kg", "comment"]
+KEEP = ["race_date", "race_time", "meeting_id", "track", "distance_m", "race_id", "race_class", "race_type", "going",
+        "trap", "dog_id", "dog_name", "sire", "dam", "born", "sex", "season", "trainer", "position", "sectional",
+        "run_time", "adjusted_time", "weight_kg", "comment"]
 
 
 def is_trial_class(race_class: pd.Series) -> pd.Series:
@@ -51,6 +51,16 @@ def select(raw: pd.DataFrame) -> pd.DataFrame:
     ok = is_trial_class(raw.race_class) & raw.dog_id.notna() & (num("position") >= 1) & (num("run_time") > 0)
     t = raw.loc[ok, [c for c in KEEP if c in raw]].copy()
     t["dog_id"] = t.dog_id.astype("int64")
+    if "track" in t:
+        from greyhound.data import canonical_track
+        t["track"] = canonical_track(t.track)                          # one name a track, as data.clean names the runs
+    # a calculated time whose allowance does not add up is no time (data.clean's rule for the races: 43 trial rows
+    # in 1 Jul 2025 to 5 Nov 2026)
+    if {"adjusted_time", "run_time", "going"} <= set(t.columns):
+        from greyhound.data import ALLOWANCE_TOL, GOING_MAX
+        adj, run, going = (pd.to_numeric(t[c], errors="coerce") for c in ("adjusted_time", "run_time", "going"))
+        wrong = ((adj - (run + going / 100.0)).abs() > ALLOWANCE_TOL) | (going.abs() > GOING_MAX)
+        t.loc[wrong.fillna(False), "adjusted_time"] = np.nan
     return t.drop_duplicates(["race_id", "dog_id"], keep="last").reset_index(drop=True)
 
 

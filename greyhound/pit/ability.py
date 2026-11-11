@@ -161,17 +161,21 @@ def race_noise(tab: pd.DataFrame, runs: pd.DataFrame, r: float, before: str = FI
 def p_best(race: np.ndarray, mean: np.ndarray, sd: np.ndarray, r: float, sims: int = 2000, seed: int = 0) -> np.ndarray:
     """Each dog's chance of the highest figure in its race: level ~ N(mean, sd^2 + r) (the day's run noise too); the
     count smoothed by half a win a dog, so no dog's chance is 0."""
-    rng = np.random.default_rng(seed)
     order = np.argsort(race, kind="stable")
     rs = race[order]
     starts = np.r_[0, np.flatnonzero(rs[1:] != rs[:-1]) + 1, len(rs)]
     out = np.full(len(race), np.nan)
+    # the same draws for every race (a dog's are those of its place in the race's rows), so a race's chances are its
+    # own inputs' and nothing else's: one stream down the frame gave a card race other numbers than its result row
+    # (the audit of 11 Nov 2026, findings 17 and 42)
+    width = int(np.diff(starts).max()) if len(starts) > 1 else 1
+    Z = np.random.default_rng(seed).standard_normal((width, sims)).T
     for a, b in zip(starts[:-1], starts[1:]):
         idx = order[a:b]
         mu, s = mean[idx], np.sqrt(sd[idx] ** 2 + r)
         if not np.all(np.isfinite(mu)):
             continue
-        draw = mu[None, :] + s[None, :] * rng.standard_normal((sims, len(idx)))
+        draw = mu[None, :] + s[None, :] * Z[:, :len(idx)]
         win = np.bincount(draw.argmax(1), minlength=len(idx)) + 0.5
         out[idx] = win / win.sum()
     return out

@@ -64,6 +64,8 @@ def attach_bsp(runs: pd.DataFrame, prices: pd.DataFrame | None) -> pd.DataFrame:
         df["bsp_p_norm"] = np.nan
         return df
     w = prices[(prices.market == "win") & (prices.country == "GB")][["race_date", "race_time", "track", "trap", "bsp"]]
+    from greyhound.data import canonical_track
+    w = w.assign(track=canonical_track(w.track))                  # one name a track, as data.clean names the runs
     w = w.dropna(subset=["trap"]).drop_duplicates(["race_date", "race_time", "track", "trap"], keep="last")
     w = w.assign(trap=w.trap.astype("int64"))
     df = df.drop(columns="bsp").merge(w, on=["race_date", "race_time", "track", "trap"], how="left")

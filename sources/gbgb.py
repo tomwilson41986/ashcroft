@@ -112,7 +112,11 @@ def _i(x):
     return None if v is None else int(v)
 
 
-_FRAC = {"": 0.0, "nk": 0.05, "hd": 0.1, "shd": 0.05, "sh": 0.05, "dh": 0.0, "dis": None, "dist": None}
+#: the short margins in lengths, as GBGB's own times give them: over 1 Jul 2025 to 5 Nov 2026 the second dog's run
+#: time is 0.01 s behind the winner's for a short head (4,638 races), 0.02 s for a head (3,208) and 0.03 s for a neck
+#: (2,989), a length being 0.08 s; until 11 Nov 2026 a neck was coded shorter than a head (0.05 against 0.1) and all
+#: three below GBGB's times (the audit of 11 Nov 2026, finding 55)
+_FRAC = {"": 0.0, "nk": 0.375, "hd": 0.25, "shd": 0.125, "sh": 0.125, "dh": 0.0, "dis": None, "dist": None}
 
 
 def lengths(text) -> float | None:

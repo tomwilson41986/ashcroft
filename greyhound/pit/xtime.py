@@ -97,7 +97,12 @@ def prepare(df: pd.DataFrame) -> dict:
     n = len(df)
     dn = (core.day(df) - pd.Timestamp("2000-01-01")).dt.days.to_numpy()
     dist = pd.to_numeric(df.distance_m, errors="coerce")
-    hurdle = df.grade_family.isin(["H", "HP"]) if "grade_family" in df else pd.Series(False, index=df.index)
+    # hurdles: GBGB's race type, or the class H. Until 11 Nov 2026 the key read the class HP - the handicap, whose
+    # times are not read at all (``targets``) - and the real hurdle races, classed OR, shared the flat standard. A
+    # card does not know the race type: a hurdle race on the card is read as flat (22 races in 16 months)
+    hurdle = df.hurdles.fillna(False).astype(bool) if "hurdles" in df else pd.Series(False, index=df.index)
+    if "grade_family" in df:
+        hurdle = hurdle | (df.grade_family == "H")
     track = df.track.astype(str)
     key_s = track + "|" + dist.round().astype("Int64").astype(str) + "|" + hurdle.astype(int).astype(str)
     trap = pd.to_numeric(df.trap, errors="coerce").fillna(0).astype(int).astype(str)
@@ -415,6 +420,7 @@ def with_trials(df: pd.DataFrame, trial_runs: pd.DataFrame | None) -> pd.DataFra
         "born": tr.born.to_numpy() if "born" in tr else np.nan, "sex": tr.sex.to_numpy() if "sex" in tr else np.nan,
         "position": pd.to_numeric(tr.position, errors="coerce").to_numpy(), "won": np.nan, "is_trial": True,
         "is_card": False, "grade_family": "T", "handicap": False,
+        "hurdles": (tr.race_type.astype(str).str.strip().str.lower() == "hurdles").to_numpy() if "race_type" in tr else False,
         "field": tr.groupby("race_id").dog_id.transform("size").to_numpy(float)})
     # a trial session is its own meeting (never a race meeting's variant): negative ids clear of the cards'
     key = tr.track.astype(str) + "|" + tr.race_date.astype(str)
