@@ -144,3 +144,27 @@ The warden reads only `listCurrentOrders` and `listClearedOrders` (both already 
 the first time without market ids) and `getAccountFunds`. Betfair's account statement (`getAccountStatement`) is not
 read yet: its fields could not be checked against Betfair's documentation on 10 Nov 2026 (the reference pages refused
 the fetch), so it waits for phase 2.
+
+## The high-frequency track (the owner, 11 Nov 2026)
+
+"What about if we were to execute hundreds or thousands of trades per market? Both sides of the line. Developing a
+model to predict the next price move ... Kalman, Markov chain ... particularly <5 minutes to the off."
+
+What the repo already shows, before any of it is built:
+- Quoting both sides around the mid lost in both sports (horses -GBP17,554 over 22 days, research ledger line 590;
+  greyhounds every margin, `reports/greyhound_model.md:1230-1236`): resting orders fill when the price runs through them.
+- Short-term taker rules lost (greyhound stream lab 0 of 86, `reports/greyhound_edge_search.md:213`; horse small book
+  near the off 0 of 54, ledger 663).
+- Betfair's transaction charge for high order counts is unverified (`reports/open_close/markets_sources.md:16`): it must
+  be read off the account's charges page before any money moves.
+
+Stages, each gated on the last:
+1. **Prediction** (`research/micro/`): can the next mid move be predicted from the order book in the last 300 s?
+   Baseline, queue-imbalance logistic, Markov chain, Kalman fair price, LightGBM; walk-forward by day; sealed days.
+   First test: `research/queries/micro_next_move_1111.py` (ledger `micro-next-move-1111`), greyhounds; horses once 10
+   days of horse stream are held (from 12 Nov).
+2. **Simulation**: a queue-aware, latency-aware simulator built on `research/greyhound/stream_replay.py`, counting every
+   order and cancel; model-skewed market making, one-sided passive, and a taker control; after commission, the Expert
+   Fee and the transaction charge.
+3. **A penny fill probe** (the owner's approval and budget): the simulator's fills checked against real ones.
+4. **Build**: a stream-fed trader with the order stream, batched orders, a dead-man cancel, on a supervised host.
