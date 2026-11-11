@@ -64,7 +64,9 @@ STD_CAP = 800.0              # the standard's memory, runs
 K_TRAP, K_GRADE, K_PREF, K_VAR0 = 50.0, 30.0, 5.0, 5.0
 NOISY = 1.5
 TARGETS = ("tot", "sec", "run")
-GRID = [(r, q, p0) for r in (0.2, 0.4, 0.8, 1.6) for q in (0.001, 0.003, 0.01) for p0 in (0.3, 1.0, 3.0)]
+# the second build (run 43058158856) chose r 1.6 (the grid's top) and q 0.001 (its bottom) on all three times: the
+# grid reaches further
+GRID = [(r, q, p0) for r in (0.8, 1.6, 3.2, 6.4) for q in (0.0003, 0.001, 0.003) for p0 in (0.1, 0.3, 1.0)]
 #: the comment codes that are interference (crowded, bumped, baulked, checked, hampered, impeded, stumbled). The first
 #: build on the real data (run 43055884883, 11 Nov 2026) priced every code: "always led" came out at -3.9% of the time
 #: and the model's error grew each year, because leading is what running fast looks like, not luck. Only interference
