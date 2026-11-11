@@ -66,7 +66,11 @@ CONFIG = {
     "close_margin_seconds": 120.0,            # no lay on a race off later than this before the trader stops
     "overrun_minutes": 15.0,                  # past --until, the trader stays to close what it laid, then cancels
     "max_open_liability": 1000.0,             # a guard against a fault, not a limit on the trading
-    "rest_only": True,                        # never lay at or above the mid: rest in the queue, never take
+    "rest_only": False,                       # the owner, 11 Nov 2026: "lose the guard. I want to be exactly like the
+                                              # rule that was profitable in test" (the forward test's rule lays at 80%
+                                              # of the forecast SP whatever the mid: on 11 Nov the guard blocked 76
+                                              # lays, the strongest forecast drifts). True: never at or above the mid
+                                              # (the owner, 3 Nov, after the first live lays above the mid lost)
     # the pre-trade gate (the owner, 5 Nov 2026, the audit A5: "Work on the next items"); guards derived from the
     # settings above, for the owner to set: a race's whole field at the lay liability, an order a runner a race at a
     # race a minute; the commission is the account's rate on greyhounds (greyhound/costs.py; GREYHOUND_COMMISSION
