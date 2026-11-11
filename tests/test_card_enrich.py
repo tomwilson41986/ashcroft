@@ -306,3 +306,22 @@ def test_card_as_table_is_off_unless_asked(monkeypatch):
     on = enrich_card(_mixed_card(), _history())
     assert on["stall"].tolist() == [3, 1, 0, 0]
     assert on["pounds"].tolist() == [127.0, 126.0, 130.0, 150.0]
+
+
+def test_card_as_table_stall_only_leaves_the_weight_as_printed(monkeypatch):
+    """Served from 12 Nov 2026 (the owner, 11 Nov): the jumps stall as the table has it, the weight untouched."""
+    monkeypatch.setenv("CARD_AS_TABLE", "stall")
+    out = enrich_card(_mixed_card(), _history())
+    assert out["stall"].tolist() == [3, 1, 0, 0]
+    assert pd.to_numeric(out["pounds"]).tolist() == [130, 126, 135, 150]
+    monkeypatch.setenv("CARD_AS_TABLE", "weight")
+    out = enrich_card(_mixed_card(), _history())
+    assert out["stall"].tolist() == [3, 1, 1, 2]
+    assert out["pounds"].tolist() == [127.0, 126.0, 130.0, 150.0]
+
+
+def test_the_morning_jobs_serve_the_stall_fix():
+    from pathlib import Path
+    for wf in ("predict.yml", "predict-now.yml"):
+        text = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / wf).read_text()
+        assert "CARD_AS_TABLE: stall" in text, wf

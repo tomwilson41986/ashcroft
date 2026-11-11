@@ -70,6 +70,10 @@ jobs:
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
           ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          # the card's jumps stall read as the results table records it (0; the card scrape fills it from the
+          # saddlecloth number): the owner's yes of 11 Nov 2026 on card-as-table-check-1111 (jumps -0.0118, se
+          # 0.0047, six days of six). The weight after the claim stays off (Flat +0.0013): model/card_enrich.py
+          CARD_AS_TABLE: stall
         run: python -m pipeline.predict
 
       - name: Sync dashboard

@@ -294,17 +294,29 @@ def _fill_from_card_pedigree(card: pd.DataFrame, hist: pd.DataFrame) -> dict:
     return n
 
 
-def enrich_card(card: pd.DataFrame, history: pd.DataFrame, as_table: bool | None = None) -> pd.DataFrame:
+def _as_table_parts(as_table) -> tuple[bool, bool]:
+    """(stall, weight) from as_table: True or "1"/"all" is both, "stall" or "weight" one, anything else neither;
+    None reads the environment's CARD_AS_TABLE."""
+    if as_table is None:
+        as_table = os.environ.get("CARD_AS_TABLE", "")
+    if as_table is True:
+        return True, True
+    v = str(as_table).strip().lower() if as_table else ""
+    return v in ("1", "all", "stall"), v in ("1", "all", "weight")
+
+
+def enrich_card(card: pd.DataFrame, history: pd.DataFrame, as_table: bool | str | None = None) -> pd.DataFrame:
     """The card with every field in CARD_FILLED present, filled only where missing.
 
     `history` is the result rows before the card's date (the frame the live path
     already loads); nothing from the card's own races is read from it.
 
-    `as_table` (default: the environment's CARD_AS_TABLE == "1", off unless set) also makes the card's own fields
-    read as the results table records them, the table the model was trained on (card_as_table): no stall over jumps
-    and the weight after the jockey's claim."""
-    if as_table is None:
-        as_table = os.environ.get("CARD_AS_TABLE", "") == "1"
+    `as_table` (default: the environment's CARD_AS_TABLE, off unless set) also makes the card's own fields read as
+    the results table records them, the table the model was trained on (card_as_table): "stall" for no stall over
+    jumps, "weight" for the weight after the jockey's claim, "1" or True for both. Served from 12 Nov 2026 with
+    "stall" (the owner's yes, 11 Nov: card-as-table-check-1111 put jumps at -0.0118, se 0.0047, and the Flat, where
+    only the weight changes, at +0.0013, se 0.0008, so the weight part stays off)."""
+    as_stall, as_weight = _as_table_parts(as_table)
     printed_claim = None
     card = card.copy()
     hist = history.copy()
@@ -398,8 +410,8 @@ def enrich_card(card: pd.DataFrame, history: pd.DataFrame, as_table: bool | None
         # on a gap there and the card gives it one
         med = card["official_rating"].groupby(race).transform("median")
         _fill(card, "median_or", med.where(med % 1 == 0))
-    if as_table:
-        card = card_as_table(card, printed_claim)
+    if as_stall or as_weight:
+        card = card_as_table(card, printed_claim, stall=as_stall, weight=as_weight)
     return card
 
 
@@ -407,7 +419,8 @@ def enrich_card(card: pd.DataFrame, history: pd.DataFrame, as_table: bool | None
 JUMPS_CODES = ("hurdle", "chase", "nhflat")
 
 
-def card_as_table(card: pd.DataFrame, printed_claim: pd.Series | None = None) -> pd.DataFrame:
+def card_as_table(card: pd.DataFrame, printed_claim: pd.Series | None = None, stall: bool = True,
+                  weight: bool = True) -> pd.DataFrame:
     """The card's own fields as the results table records them (card-inputs-swap-1110, 10 Nov 2026).
 
     - stall: the card scrape fills it from the saddlecloth number when the card has no Stall column, so every jumps
@@ -418,10 +431,10 @@ def card_as_table(card: pd.DataFrame, printed_claim: pd.Series | None = None) ->
     `printed_claim` is the claim read from the jockey's name before enrich_card strips it (NaN where none)."""
     from model.race_shape import race_code
     out = card.copy()
-    if "stall" in out.columns and ({"race_type", "surface_type"} & set(out.columns)):
+    if stall and "stall" in out.columns and ({"race_type", "surface_type"} & set(out.columns)):
         jumps = race_code(out).isin(JUMPS_CODES).to_numpy()
         out.loc[jumps, "stall"] = 0
-    if printed_claim is not None and "pounds" in out.columns:
+    if weight and printed_claim is not None and "pounds" in out.columns:
         claim = pd.to_numeric(printed_claim, errors="coerce").reindex(out.index).fillna(0.0)
         out["pounds"] = pd.to_numeric(out["pounds"], errors="coerce") - claim
     return out
