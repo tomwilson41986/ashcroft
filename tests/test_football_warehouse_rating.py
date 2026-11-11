@@ -32,11 +32,12 @@ def _rates(home: int, away: int) -> tuple[float, float]:
     return float(np.exp(0.5 * (product + ratio))), float(np.exp(0.5 * (product - ratio)))
 
 
-def _match(event_id, home, away, kickoff, lam=None, delay=MIN, in_play=True, cc=None, early=None):
+def _match(event_id, home, away, kickoff, lam=None, delay=MIN, in_play=True, cc=None, early=None, rho=-0.08):
     """A match: ``lam`` its closing rates (the true ones by default), ``early`` the rates at every early
-    checkpoint (the close's by default), ``delay`` how long after the scheduled kick-off it went in play."""
+    checkpoint (the close's by default), ``delay`` how long after the scheduled kick-off it went in play, ``rho``
+    the closing books' low-score correction (None: books that are not one market's prices)."""
     return {"event_id": event_id, "home": home, "away": away, "kickoff": kickoff, "lam": lam or _rates(home, away),
-            "began": kickoff + delay if in_play else None, "in_play": in_play, "early": early,
+            "began": kickoff + delay if in_play else None, "in_play": in_play, "early": early, "rho": rho,
             "cc": cc if cc is not None else _country(home, away)}
 
 
@@ -76,13 +77,14 @@ def _inputs(matches) -> dict:
                    "cp_time": m["began"] if cp == 0 else m["kickoff"] - cp * MIN,
                    "p_home": float(p["p_home"]), "p_draw": float(p["p_draw"]), "p_away": float(p["p_away"]),
                    "p_over": float(p["p_over"]), "total": lh + la, "supremacy": lh - la, "lam_home": lh,
-                   "lam_away": la}
+                   "lam_away": la, "rho": m["rho"] if cp == 0 else -0.08}
             for k, v in row.items():
                 im[k].append(v)
     for t, cols in ((ev, ("kickoff", "kickoff_actual")), (im, ("cp_time",))):
         for c in cols:
             t[c] = pa.array(t[c], pa.int64()).cast(TS)
     im["cp_min"] = pa.array(im["cp_min"], pa.int32())
+    im["rho"] = pa.array(im["rho"], pa.float64())
     return {"gold/event": pa.table(ev), "gold/implied": pa.table(im)}
 
 
@@ -290,6 +292,18 @@ def test_a_match_that_never_went_in_play_is_listed_but_rates_nobody(world):
     assert team2.loc[keep, cols].reset_index(drop=True).equals(team[cols])
     assert len(gap2[gap2["event_id"] == 960]) == 5                        # its early checkpoints; it has no close
     assert gap2[gap2["event_id"] != 960].reset_index(drop=True).equals(gap)
+
+
+def test_a_close_whose_books_are_not_one_markets_prices_rates_nobody(world):
+    # in-running prices taken for a close (the turn in play came late): absurd rates, and no rho gold/implied can give
+    matches, team, gap = world
+    wild = _match(961, 2, 3, D0 + 9 * DAY + 12 * HOUR, lam=(9.0, 2.2), rho=None)
+    team2, _ = _build(matches + [wild])
+    rows = team2[team2["event_id"] == 961]
+    assert len(rows) == 2 and not rows["rated"].any() and (rows["n_after"] == rows["n_prior"]).all()
+    keep = team2["event_id"] != 961
+    cols = ["strength", "tempo", "n_prior", "strength_after", "tempo_after", "n_after"]
+    assert team2.loc[keep, cols].reset_index(drop=True).equals(team[cols])
 
 
 def test_the_build_does_not_depend_on_row_order_and_empty_inputs_give_empty_tables(world):

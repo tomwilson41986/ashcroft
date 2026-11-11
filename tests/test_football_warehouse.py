@@ -8,6 +8,7 @@ import io
 import json
 import zipfile
 
+import pandas as pd
 import pyarrow as pa
 import pytest
 
@@ -154,6 +155,23 @@ def test_a_required_column_may_not_hold_a_null():
         conform(SILVER_TICK, bad)
 
 
+def test_a_value_its_column_cannot_hold_is_an_error_not_a_quiet_change():
+    import numpy as np
+    from football.warehouse.schema import Column, TableSpec, from_frame
+    spec = TableSpec("x/y", "a test table", (Column("k", pa.int64(), "the key", False),
+                                             Column("n", pa.int16(), "a small whole number")), key=("k",), sort=("k",))
+    assert conform(spec, pa.table({"k": [1], "n": pa.array([7.0])})).column("n").to_pylist() == [7]
+    for bad in (pa.array([70000]), pa.array([1.9]), pa.array([5e9])):       # would wrap, truncate, overflow
+        with pytest.raises(ValueError, match="does not fit"):
+            conform(spec, pa.table({"k": [1], "n": bad}))
+    ok = from_frame(spec, pd.DataFrame({"k": [1, 2], "n": [3.0, np.nan]}))
+    assert ok.column("n").to_pylist() == [3, None]
+    with pytest.raises(ValueError, match="fraction"):
+        from_frame(spec, pd.DataFrame({"k": [1], "n": [1.9]}))
+    with pytest.raises(ValueError, match="fraction"):
+        from_frame(spec, pd.DataFrame({"k": [1], "n": [np.inf]}))
+
+
 def _bundle(tmp_path, files: dict, nested: dict | None = None):
     path = tmp_path / "bundle.zip"
     with zipfile.ZipFile(path, "w") as z:
@@ -254,6 +272,25 @@ def test_the_event_row_carries_sides_result_and_the_closing_book(warehouse):
     assert e["close_age_s"] == 3690.0                       # the away price last traded at T-60; the off 90 s late
 
 
+@pytest.mark.parametrize("home, away, want", [
+    ("Sturm Graz", "Brann", "senior"), ("Willem II", "Ajax", "senior"), ("Boca Juniors", "River Plate", "senior"),
+    ("Club 2 de Mayo", "Olimpia", "senior"), ("Schalke 04", "Mainz 05", "senior"),
+    ("Leones FC", "Racing Club", "senior"),
+    ("Arsenal (W)", "Chelsea (W)", "women"), ("England U21", "Spain U21", "youth"),
+    ("Aberdeen Youth", "Hearts Youth", "youth"), ("Jong Ajax", "Jong PSV", "reserves"),
+    ("Bayern Munich II", "Unterhaching", "reserves"), ("Ludogorets II Razgrad", "CSKA", "reserves"),
+    ("Hamburg III", "Altona 93", "reserves"), ("Zenit 2", "Dynamo", "reserves"),
+    ("Barcelona B", "Real Madrid C", "reserves"),
+    ("Sochaux (Am)", "Dijon", "reserves"), ("Buxton Res", "Leek", "reserves"),
+    ("Libertad Asuncion (Res)", "Club 2 de Mayo (Res", "reserves"),          # Betfair cut the name at 50 characters
+])
+def test_the_kind_of_football_is_read_from_the_sides_names(home, away, want):
+    from football.warehouse.gold import sql
+    from football.warehouse.gold_event import CATEGORY
+    ev = pa.table({"event_name": [f"{home} v {away}"], "home_name": [home], "away_name": [away]})
+    assert sql(f"SELECT {CATEGORY} AS category FROM ev", ev=ev).column("category").to_pylist() == [want]
+
+
 def test_a_checkpoint_price_is_the_last_one_at_or_before_it_never_a_later_one(warehouse):
     c = read_part(warehouse, "gold/checkpoint", 2026, 1).to_pandas()
     mo = c[c["market_id"] == "1.252787713"].set_index(["cp_min", "role"])
@@ -292,6 +329,214 @@ def test_the_move_is_from_a_complete_book_to_the_close_and_says_how_stale_each_e
     assert abs(ou.loc[120, "y_log"] - __import__("math").log((1 / 1.8) / (1 / 1.8 + 1 / 2.0) / 0.5)) < 1e-12
     assert ou.loc[120, "price_ratio"] == 2.0 / 1.8 and ou.loc[120, "won"] == 1 and ou.loc[120, "n_ticks_after"] == 1
     assert bool(ou.loc[120, "is_main"])
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# the market's clock: what Betfair's files do that must not be taken at face value
+# ---------------------------------------------------------------------------------------------------------------
+
+MIN = 60_000
+SETTLED = [dict(r, status=s) for r, s in zip(MO_RUNNERS, ("WINNER", "LOSER", "LOSER"))]
+
+
+def _iso(ms: int) -> str:
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _all(h, d, a):
+    return [{"id": 71085, "ltp": h}, {"id": 58805, "ltp": d}, {"id": 31317, "ltp": a}]
+
+
+def _silver_of(raw: bytes) -> dict:
+    b = Batch()
+    assert b.add_file(raw, "BASIC/2026/Jan/29/35155405/1.252787713.bz2", "abc") == 1, b.failed
+    return {k.split("/")[1]: v.to_pandas() for k, v in b.tables().items()}
+
+
+def _gold_of(tmp_path, raw: bytes) -> dict:
+    """The gold tables of a one-market warehouse built from a stream file."""
+    from football.warehouse import gold
+    store = Store(root=tmp_path / "wh")
+    bronze.ingest_bundle(store, _bundle(tmp_path, {"2026/Jan/29/35155405/1.252787713.bz2": raw}), "b")
+    silver.build(store, workers=1)
+    assert gold.build(store, only=["gold_event", "gold_checkpoint", "gold_move"])["failed"] == []
+    return {n: read_part(store, f"gold/{n}", 2026, 1).to_pandas() for n in ("event", "checkpoint", "move")}
+
+
+def _ms_of(v) -> int:
+    return v.value // 10**6
+
+
+def rewritten_file() -> bytes:
+    """The kick-off time is 20:00:00 until the message that turns the market in play, 203 s late, which rewrites
+    it to 20:02:23 (as Betfair does on about one market in eleven)."""
+    late = KO_MS + 143_000
+    return _file([
+        _msg(KO_MS - 26 * 60 * MIN, defn=_defn()),
+        _msg(KO_MS - 10 * MIN, rc=_all(2.5, 3.4, 3.0)),
+        _msg(KO_MS - 30_000, rc=_all(2.4, 3.4, 3.1)),
+        _msg(KO_MS + 60_000, rc=_all(2.3, 3.5, 3.2)),                      # the match is late: still before the off
+        _msg(KO_MS + 203_000, defn=_defn(in_play=True, market_time=_iso(late))),
+        _msg(KO_MS + 20 * MIN, rc=_all(1.5, 4.0, 8.0)),
+        _msg(KO_MS + 115 * MIN, defn=_defn("CLOSED", True, runners=SETTLED, market_time=_iso(late))),
+    ])
+
+
+def test_the_schedule_is_the_one_that_stood_before_the_off_not_betfairs_rewrite(tmp_path):
+    m = _silver_of(rewritten_file())["market"].iloc[0]
+    assert _ms_of(m["market_time"]) == KO_MS + 143_000 and _ms_of(m["market_time_pre"]) == KO_MS
+    assert _ms_of(m["schedule_set_pt"]) == KO_MS - 26 * 60 * MIN            # never moved before the off
+    assert _ms_of(m["in_play_pt"]) == _ms_of(m["off_pt"]) == KO_MS + 203_000
+    assert m["kickoff_delay_s"] == 203 and m["n_inplay_turns"] == 1 and m["n_market_time_changes"] == 1
+    g = _gold_of(tmp_path, rewritten_file())
+    e = g["event"].iloc[0]
+    assert _ms_of(e["kickoff"]) == KO_MS and e["kickoff_delay_s"] == 203 and e["kickoff_shift_s"] == 0
+    home = g["checkpoint"][g["checkpoint"]["role"] == "home"].set_index("cp_min")
+    # T-1 is a minute before 20:00, not a minute before the rewritten 20:02:23: it must not hold the 2.3 that was
+    # published at 20:01, nor the 2.4 of 19:59:30
+    assert _ms_of(home.loc[1, "cp_time"]) == KO_MS - MIN and home.loc[1, "ltp"] == 2.5
+    assert home.loc[5, "ltp"] == 2.5 and home.loc[0, "ltp"] == 2.3 and home["schedule_known"].all()
+    assert _ms_of(home.loc[0, "cp_time"]) == KO_MS + 203_000 and home.loc[0, "age_s"] == 143.0
+    tick = _silver_of(rewritten_file())["tick"]
+    assert tick.loc[tick["ltp"] == 2.4, "t_off_s"].iloc[0] == 30
+    assert tick.loc[tick["ltp"] == 2.3, "t_off_s"].iloc[0] == -60
+
+
+def test_a_checkpoint_before_a_reschedule_was_not_known_at_the_time(tmp_path):
+    early = _iso(KO_MS - 2 * 60 * MIN)                                    # first listed for two hours earlier
+    raw = _file([
+        _msg(KO_MS - 30 * 60 * MIN, defn=_defn(market_time=early)),
+        _msg(KO_MS - 8 * 60 * MIN, rc=_all(2.5, 3.4, 3.0)),
+        _msg(KO_MS - 3 * 60 * MIN, defn=_defn()),                          # moved to 20:00 three hours before it
+        _msg(KO_MS - 10 * MIN, rc=_all(2.4, 3.4, 3.1)),
+        _msg(KO_MS + 60_000, defn=_defn(in_play=True)),
+        _msg(KO_MS + 115 * MIN, defn=_defn("CLOSED", True, runners=SETTLED)),
+    ])
+    m = _silver_of(raw)["market"].iloc[0]
+    assert _ms_of(m["market_time_pre"]) == KO_MS and _ms_of(m["schedule_set_pt"]) == KO_MS - 3 * 60 * MIN
+    g = _gold_of(tmp_path, raw)
+    assert g["event"].iloc[0]["kickoff_shift_s"] == 7200 and _ms_of(g["event"].iloc[0]["schedule_set"]) == \
+        KO_MS - 3 * 60 * MIN
+    known = g["checkpoint"][g["checkpoint"]["role"] == "home"].set_index("cp_min")["schedule_known"]
+    assert not known[360] and known[180] and known[120] and known[0]      # T-360 was 14:00: the match was then at 18:00
+    mv = g["move"][g["move"]["role"] == "home"].set_index("cp_min")
+    assert not mv.loc[360, "schedule_known"] and mv.loc[60, "schedule_known"]
+
+
+def test_a_turn_in_play_made_by_mistake_is_not_the_kick_off(tmp_path):
+    day = 24 * 60 * MIN
+    raw = _file([
+        _msg(KO_MS - 2 * day, defn=_defn()),
+        _msg(KO_MS - day - 10 * MIN, rc=_all(2.6, 3.4, 2.9)),
+        _msg(KO_MS - day, defn=_defn(in_play=True)),                       # turned in play a day early ...
+        _msg(KO_MS - day + 2 * MIN, rc=_all(2.5, 3.4, 3.0)),
+        _msg(KO_MS - day + 5 * MIN, defn=_defn()),                         # ... and turned back
+        _msg(KO_MS - 10 * MIN, rc=_all(2.4, 3.4, 3.1)),
+        _msg(KO_MS + 60_000, defn=_defn(in_play=True)),                    # the kick-off
+        _msg(KO_MS + 20 * MIN, rc=_all(1.5, 4.0, 8.0)),
+        _msg(KO_MS + 115 * MIN, defn=_defn("CLOSED", True, runners=SETTLED)),
+    ])
+    sv = _silver_of(raw)
+    m = sv["market"].iloc[0]
+    assert _ms_of(m["in_play_pt"]) == KO_MS + 60_000 and m["n_inplay_turns"] == 2 and m["kickoff_delay_s"] == 60
+    assert (m["n_ticks_pre"], m["n_ticks_inplay"]) == (9, 3)
+    k = sv["tick"]
+    assert not k.loc[k["ltp"] == 2.5, "in_play"].iloc[0] and k.loc[k["ltp"] == 2.5, "pre_off"].iloc[0]
+    assert sv["runner"].set_index("role").loc["home", "ltp_last_pre"] == 2.4
+    g = _gold_of(tmp_path, raw)
+    home = g["checkpoint"][g["checkpoint"]["role"] == "home"].set_index("cp_min")
+    assert home.loc[0, "ltp"] == 2.4 and _ms_of(home.loc[0, "cp_time"]) == KO_MS + 60_000
+    assert home.loc[60, "ltp"] == 2.5 and g["event"].iloc[0]["inplay_turns"] == 2
+    assert abs(g["event"].iloc[0]["p_home"] - (1 / 2.4) / (1 / 2.4 + 1 / 3.4 + 1 / 3.1)) < 1e-12
+
+
+def test_a_drop_out_of_play_in_mid_match_does_not_make_in_running_prices_a_close():
+    raw = _file([
+        _msg(KO_MS - 26 * 60 * MIN, defn=_defn()),
+        _msg(KO_MS - 10 * MIN, rc=_all(1.4, 5.9, 9.4)),
+        _msg(KO_MS + 60_000, defn=_defn(in_play=True)),                    # the kick-off
+        _msg(KO_MS + 55 * MIN, defn=_defn()),                              # out of play for nine minutes
+        _msg(KO_MS + 58 * MIN, rc=_all(1.74, 4.0, 5.8)),                   # in running, whatever the flag says
+        _msg(KO_MS + 64 * MIN, defn=_defn(in_play=True)),
+        _msg(KO_MS + 115 * MIN, defn=_defn("CLOSED", True, runners=SETTLED)),
+    ])
+    sv = _silver_of(raw)
+    m = sv["market"].iloc[0]
+    assert _ms_of(m["in_play_pt"]) == KO_MS + 60_000 and m["n_inplay_turns"] == 2
+    k = sv["tick"]
+    assert k.loc[k["ltp"] == 1.74, "in_play"].iloc[0] and not k.loc[k["ltp"] == 1.74, "pre_off"].iloc[0]
+    assert k.loc[k["ltp"] == 1.74, "t_inplay_s"].iloc[0] == 57 * 60
+    assert sv["runner"].set_index("role").loc["home", "ltp_last_pre"] == 1.4   # the close, not 1.74
+
+
+def test_a_market_that_never_turns_in_play_ends_its_pre_off_life_at_the_scheduled_kick_off(tmp_path):
+    raw = _file([
+        _msg(KO_MS - 26 * 60 * MIN, defn=_defn(turnInPlayEnabled=False)),
+        _msg(KO_MS - 10 * MIN, rc=_all(2.0, 3.5, 4.0)),
+        _msg(KO_MS + 40 * MIN, rc=_all(1.2, 6.0, 20.0)),                   # traded while the match was played
+        _msg(KO_MS + 170 * MIN, defn=_defn("CLOSED", runners=SETTLED, turnInPlayEnabled=False)),
+    ])
+    sv = _silver_of(raw)
+    m = sv["market"].iloc[0]
+    assert pd_isna(m["in_play_pt"]) and _ms_of(m["off_pt"]) == KO_MS and pd_isna(m["kickoff_delay_s"])
+    assert (m["n_ticks"], m["n_ticks_pre"], m["n_ticks_inplay"]) == (6, 3, 0)
+    late = sv["tick"][sv["tick"]["ltp"] == 1.2].iloc[0]
+    assert not late["pre_off"] and not late["in_play"] and late["t_off_s"] == -2400
+    assert sv["runner"].set_index("role").loc["home", "ltp_last_pre"] == 2.0
+    g = _gold_of(tmp_path, raw)
+    e = g["event"].iloc[0]
+    assert not e["went_in_play"] and e["result"] == "H" and e["close_age_s"] == 600.0
+    assert abs(e["p_home"] - 0.5 / (0.5 + 1 / 3.5 + 0.25)) < 1e-12        # the 2.0 of before the off, not the 1.2
+    close = g["checkpoint"][(g["checkpoint"]["role"] == "home") & (g["checkpoint"]["cp_min"] == 0)].iloc[0]
+    assert close["ltp"] == 2.0 and _ms_of(close["cp_time"]) == KO_MS and close["age_s"] == 600.0
+
+
+def test_a_match_called_off_before_its_kick_off_has_no_close_and_no_checkpoint_after_it_closed(tmp_path):
+    raw = _file([
+        _msg(KO_MS - 26 * 60 * MIN, defn=_defn()),
+        _msg(KO_MS - 8 * 60 * MIN, rc=_all(2.0, 3.5, 4.0)),
+        _msg(KO_MS - 3 * 60 * MIN, defn=_defn("CLOSED", runners=[dict(r, status="REMOVED") for r in MO_RUNNERS])),
+    ])
+    g = _gold_of(tmp_path, raw)
+    assert sorted(g["checkpoint"]["cp_min"].unique().tolist()) == [180, 360]       # up to the moment it closed
+    assert len(g["move"]) == 0 and g["event"].iloc[0]["void"]
+
+
+def test_a_field_of_the_wrong_kind_is_a_blank_and_a_broken_file_fails_alone():
+    odd_runners = [dict(MO_RUNNERS[0], sortPriority=40000, name=12)] + MO_RUNNERS[1:]
+    odd = _file([_msg(KO_MS - 3_600_000, defn=_defn(betDelay=70000, version="12a", runners=odd_runners,
+                                                     numberOfWinners="one", marketBaseRate="five", eventTypeId="1")),
+                 _msg(KO_MS - 60_000, rc=[{"id": 71085, "ltp": 2.5}, {"id": 31317, "ltp": "3.0"}])])
+    no_time = _file([_msg(10 ** 19, defn=_defn(), rc=[{"id": 71085, "ltp": 2.5}])])
+    orphan = _file([{"op": "mcm", "pt": KO_MS - 60_000, "mc": [
+        {"id": "1.252787713", "marketDefinition": _defn(), "rc": [{"id": 71085, "ltp": 2.5}]},
+        {"id": "1.999", "rc": [{"id": 5, "ltp": 2.0}]}]}])
+    b = Batch()
+    assert b.add_file(match_odds_file(), "BASIC/2026/Jan/29/35155405/1.252787713.bz2", "a") == 1
+    assert b.add_file(no_time, "BASIC/2026/Jan/29/1/1.1.bz2", "b") == 0
+    assert b.add_file(orphan, "BASIC/2026/Jan/29/1/1.2.bz2", "c") == 0
+    assert b.add_file(odd, "BASIC/2026/Jan/29/35155406/1.3.bz2", "d") == 1
+    assert [p for p, _ in b.failed] == ["BASIC/2026/Jan/29/1/1.1.bz2", "BASIC/2026/Jan/29/1/1.2.bz2"]
+    assert "not a time" in b.failed[0][1] and "no definition" in b.failed[1][1]
+    t = {k.split("/")[1]: v.to_pandas() for k, v in b.tables().items()}      # the batch still makes its tables
+    assert len(t["market"]) == 2
+    m = t["market"].set_index("plan_path").loc["BASIC/2026/Jan/29/35155406/1.3.bz2"]
+    assert m["event_type_id"] == 1 and pd_isna(m["number_of_winners"]) and m["n_ltp_invalid"] == 1
+    assert pd_isna(m["market_base_rate"]) and m["n_ticks"] == 1               # '3.0' in text is not a price
+    odd_defn = t["definition"][t["definition"]["pt"] == pd.Timestamp(KO_MS - 3_600_000, unit="ms", tz="UTC")]
+    assert pd_isna(odd_defn["bet_delay"].iloc[-1]) and pd_isna(odd_defn["version"].iloc[-1])
+    r = t["runner"][(t["runner"]["market_id"] == "1.252787713") & (t["runner"]["selection_id"] == 71085)]
+    assert len(r) == 2 and set(r["runner_name"]) == {"Sturm Graz", "12"}     # the same market id, read from two files
+
+
+def test_the_kick_off_is_the_turn_nearest_its_own_schedule():
+    from football.warehouse.parse import kick_off_turn
+    assert kick_off_turn([]) is None and kick_off_turn([(3, 1000, None)]) == (3, 1000, None)
+    # a day early against on time; on time against an hour into the match; a tie goes to the first
+    assert kick_off_turn([(3, 0, 86_400_000), (9, 86_460_000, 86_400_000)])[0] == 9
+    assert kick_off_turn([(3, 60_000, 0), (9, 3_800_000, 0)])[0] == 3
+    assert kick_off_turn([(3, 50_000, 0), (9, 950_000, 1_000_000)])[0] == 3
 
 
 def test_the_team_dimension_and_the_build_is_idempotent(warehouse):
@@ -333,10 +578,96 @@ def test_a_stale_silver_partition_is_a_hard_failure(warehouse, tmp_path):
     from football.warehouse import quality
     newer = _file([_msg(KO_MS - 86_400_000, "1.252787799", _defn())])
     bronze.ingest_bundle(warehouse, _bundle(tmp_path, {"2026/Jan/29/35155405/1.252787799.bz2": newer}), "more")
+    from football.warehouse import gold
+    stale_silver, stale_gold = "silver built from the current bronze by the current parser", \
+        "gold built from its current inputs"
     rep = quality.report(warehouse)                      # bronze moved on; silver was not rebuilt
-    assert not rep["ok"] and "silver built from the current bronze" in rep["hard_failed"]
+    assert not rep["ok"] and stale_silver in rep["hard_failed"]
     silver.build(warehouse, workers=1)
-    assert "silver built from the current bronze" not in quality.report(warehouse)["hard_failed"]
+    rep = quality.report(warehouse)                      # silver caught up; gold is now the one left behind
+    assert stale_silver not in rep["hard_failed"] and stale_gold in rep["hard_failed"] and not rep["ok"]
+    assert "gold/event 2026-01" in gold.stale(warehouse)
+    assert gold.build(warehouse, only=["gold_event", "gold_checkpoint", "gold_move", "gold_team"])["failed"] == []
+    assert quality.report(warehouse)["ok"] and gold.stale(warehouse) == []
+
+
+def test_a_silver_partition_is_rebuilt_when_another_month_comes_to_hold_a_longer_copy_of_its_market(tmp_path):
+    store = Store(root=tmp_path / "wh")
+    stub = _file([_msg(KO_MS - 86_400_000, defn=_defn()), _msg(KO_MS - 3_600_000, rc=[{"id": 71085, "ltp": 2.5}])])
+    one, two = tmp_path / "a", tmp_path / "b"
+    one.mkdir(), two.mkdir()
+    bronze.ingest_bundle(store, _bundle(one, {"2026/Jan/29/35155405/1.252787713.bz2": stub}), "a")
+    assert len(silver.build(store, workers=1)["built"]) == 1
+    # the match is played in February: Betfair files the whole market again under its new day
+    bronze.ingest_bundle(store, _bundle(two, {"2026/Feb/2/35155405/1.252787713.bz2": match_odds_file()}), "b")
+    rep = silver.build(store, workers=1)
+    assert [b["part"] for b in rep["built"]] == ["2026-01", "2026-02"]       # January leaves its stub out now
+    jan, feb = read_part(store, "silver/market", 2026, 1), read_part(store, "silver/market", 2026, 2)
+    assert jan.num_rows == 0 and feb.num_rows == 1
+    assert read_manifest(store, "silver")["parts"]["2026-01"]["superseded"] == 1
+    assert silver.build(store, workers=1)["built"] == []
+
+
+def test_a_bronze_write_that_died_half_way_is_put_right_by_the_next_ingest(tmp_path):
+    from football.warehouse.store_io import manifest_key, part_key
+    store = Store(root=tmp_path / "wh")
+    files = {"2026/Jan/29/35155405/1.252787713.bz2": match_odds_file()}
+    bronze.ingest_bundle(store, _bundle(tmp_path, files), "a")
+    good = store.get(manifest_key("bronze/raw"))
+    more = dict(files, **{"2026/Jan/29/35155405/1.252787714.bz2": over_under_file()})
+    other = tmp_path / "second"
+    other.mkdir()
+    bronze.ingest_bundle(store, _bundle(other, more), "b")
+    store.put(manifest_key("bronze/raw"), good)          # as if the run had died before the manifest was written
+    assert read_manifest(store, "bronze/raw")["parts"]["2026-01"]["rows"] == 1
+    again = bronze.ingest_bundle(store, _bundle(other, more), "b")
+    assert again["same"] == 2 and again["new"] == 0
+    assert read_manifest(store, "bronze/raw")["parts"]["2026-01"]["rows"] == 2
+    assert read_part(store, "bronze/index", 2026, 1).num_rows == 2 and store.get(part_key("bronze/raw", 2026, 1))
+
+
+def test_the_bundle_queue_reads_only_the_bundle_it_was_promised(tmp_path, monkeypatch):
+    import hashlib
+    import json
+    import shutil
+    from pathlib import Path
+    from football.warehouse import ROOT
+    store = Store(root=tmp_path / "wh")
+    good = _bundle(tmp_path, {"2026/Jan/29/35155405/1.252787713.bz2": match_odds_file()})
+    raw = good.read_bytes()
+    queue = tmp_path / "bundles.json"
+    queue.write_text(json.dumps([{"name": "b1", "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}]))
+    marker = f"{ROOT}/bronze/bundles/b1.json"
+    # the list holds no link (the repository is public): without one in the environment the bundle waits
+    monkeypatch.delenv(bronze.URLS_ENV, raising=False)
+    assert "waiting" in bronze.ingest_queue(store, str(queue), str(tmp_path), fetch=None)["b1"]
+    monkeypatch.setenv(bronze.URLS_ENV, json.dumps({"b1": "https://example.invalid/secret-link", "b2": "y"}))
+
+    def page(url, path):                                  # a share link that serves a web page
+        Path(path).write_bytes(b"<html>quota exceeded</html>")
+
+    def cut(url, path):                                   # a download cut short
+        Path(path).write_bytes(raw[:len(raw) // 2])
+
+    def other(url, path):                                 # the right size, other bytes
+        Path(path).write_bytes(bytes(len(raw)))
+
+    for fetch, why in ((page, "bytes"), (cut, "bytes"), (other, "SHA-256")):
+        out = bronze.ingest_queue(store, str(queue), str(tmp_path), fetch=fetch)
+        assert why in out["b1"]["failed"] and store.get(marker) is None and "secret-link" not in str(out)
+        assert not (tmp_path / "b1.bundle").exists() and bronze.partitions(store) == []
+    out = bronze.ingest_queue(store, str(queue), str(tmp_path), fetch=lambda url, path: shutil.copy(good, path))
+    assert out["b1"]["market_files"] == 1 and store.get(marker) is not None
+    assert b"secret-link" not in store.get(marker)             # what is stored does not carry the link either
+    assert bronze.ingest_queue(store, str(queue), str(tmp_path), fetch=page) == {"b1": "already ingested"}
+    # an entry without a size or a hash: a download with no market file in it is still not a bundle
+    queue.write_text(json.dumps([{"name": "b2", "url": "https://example.invalid/listed-link"}]))    # a listed link
+    empty = _bundle(tmp_path / "wh", {"readme.txt": b"nothing here"})
+    out = bronze.ingest_queue(store, str(queue), str(tmp_path), fetch=lambda url, path: shutil.copy(empty, path))
+    assert "no market file" in out["b2"]["failed"] and store.get(f"{ROOT}/bronze/bundles/b2.json") is None
+    monkeypatch.delenv(bronze.URLS_ENV)                          # the entry's own link is enough
+    out = bronze.ingest_queue(store, str(queue), str(tmp_path), fetch=lambda url, path: shutil.copy(good, path))
+    assert out["b2"]["market_files"] == 1 and b"listed-link" not in store.get(f"{ROOT}/bronze/bundles/b2.json")
 
 
 def test_the_catalog_gives_views_and_macros_over_the_tables(warehouse):
@@ -350,6 +681,17 @@ def test_the_catalog_gives_views_and_macros_over_the_tables(warehouse):
     rows = con.sql("SELECT role, ltp FROM match_ticks(35155405) WHERE status = 'SUSPENDED'").fetchall()
     assert rows == [("home", 1.5)]
     assert "bronze_raw" not in catalog.tables(warehouse)                    # the raw bytes are not a view
+
+
+def test_the_facts_are_queries_over_what_is_built_and_skip_what_is_not(warehouse):
+    from football.warehouse import facts
+    f = facts.facts(warehouse)
+    assert f["rows"]["event"] == 1 and f["rows"]["market"] == 2 and f["rows"]["tick"] == 9
+    assert f["ticks"] == {"all": 9, "pre_off": 7, "in_play": 2, "after_the_off_not_in_play": 0}
+    assert f["markets"]["turned_in_play"] == 2 and f["markets"]["kickoff_time_rewritten_at_or_after_the_off"] == 0
+    assert f["events"]["with_a_result"] == 1 and f["events"]["kickoff_delay_s"]["median"] == 90
+    assert f["match_odds_home_by_checkpoint"][1] == {"rows": 1, "book_complete": 1.0, "schedule_known": 1.0}
+    assert "club" not in f and "ratings" not in f and "in_play" not in f      # not built here: left out, not guessed
 
 
 def test_the_dictionary_documents_every_table_and_column():

@@ -15,7 +15,7 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 2
+VERSION = 3          # 3: the kick-off is the schedule as known before the off; the close is before the off
 SCOPE = "part"
 INPUTS = ("silver/market", "silver/runner")
 
@@ -31,14 +31,19 @@ SPEC = TableSpec(
         Column("away_id", pa.int64(), "The away side's Betfair selection id."),
         Column("country_code", pa.string(), "Betfair's country code; blank on many cups and internationals."),
         Column("category", pa.string(), "senior, women, youth or reserves, read from the sides' names ('(W)', "
-               "'U21', '(Res)', a name ending ' II' or ' B', 'Jong'): approximate; the kind of football, for "
-               "filters and for club work.", False),
-        Column("kickoff", TS, "The scheduled kick-off (the match-odds market's market_time; else the earliest of "
-               "the event's markets)."),
-        Column("kickoff_actual", TS, "When the match-odds market went in play."),
+               "'U21', 'Youth', '(Res)', '(Am)', 'Jong', a name with 'II' or ending ' B', ' 2', ' Res'; Betfair "
+               "cuts a long name off, so '(Res' at the end counts): approximate. A match is not senior when "
+               "either side is not: a cup tie between a first team and a reserve side is 'reserves'.", False),
+        Column("kickoff", TS, "The scheduled kick-off as it stood before the off (the match-odds market's "
+               "market_time_pre; else the earliest of the event's markets)."),
+        Column("kickoff_actual", TS, "When the match-odds market turned in play (silver/market.in_play_pt)."),
         Column("kickoff_delay_s", pa.int32(), "kickoff_actual less kickoff, seconds."),
-        Column("kickoff_shift_s", pa.int32(), "The scheduled kick-off's change over the market's life, seconds "
-               "(last less first definition): a reschedule when large."),
+        Column("kickoff_shift_s", pa.int32(), "The scheduled kick-off's change before the off, seconds (kickoff "
+               "less the first definition's): a reschedule when large."),
+        Column("schedule_set", TS, "When the scheduled kick-off was last set (silver/market.schedule_set_pt): a "
+               "moment before it did not know this schedule."),
+        Column("inplay_turns", pa.int16(), "Times the match-odds market turned in play: more than one marks a "
+               "match to read with care (a turn made by mistake, a drop out of play, an abandonment)."),
         Column("mo_market_id", pa.string(), "The match-odds market."),
         Column("ou_market_id", pa.string(), "The over/under 2.5 goals market."),
         Column("ah_market_id", pa.string(), "The Asian handicap market."),
@@ -56,7 +61,8 @@ SPEC = TableSpec(
         Column("ah_ticks_pre", pa.int32(), "Asian handicap price updates before the off."),
         Column("ah_ticks_inplay", pa.int32(), "Asian handicap price updates in play."),
         Column("mo_susp_inplay", pa.int16(), "In-play suspensions of the match-odds market."),
-        Column("close_legs", pa.int8(), "Match-odds runners with a price before the off (3: a full closing book)."),
+        Column("close_legs", pa.int8(), "Match-odds runners with a price before the off (3: a full closing book). "
+               "The off is the turn in play, or the scheduled kick-off of a market that never turned."),
         Column("close_book_sum", pa.float64(), "Sum of 1 / closing price over the match-odds runners priced."),
         Column("close_age_s", pa.float64(), "Age at the off of the stalest closing price, seconds."),
         Column("p_home", pa.float64(), "The closing chance of a home win, normalised to the book (full books only)."),
@@ -67,12 +73,22 @@ SPEC = TableSpec(
 )
 SPECS = (SPEC,)
 
+CATEGORY = r"""CASE WHEN regexp_matches(ev.event_name, '\(W\)|\(W$|\bWomen\b|\bLadies\b|\bFem\b') THEN 'women'
+            WHEN regexp_matches(ev.event_name, '\bU-?(1[5-9]|2[0-3])\b|\bYouth\b') THEN 'youth'
+            WHEN regexp_matches(ev.event_name, '\(Res\)|\(Res?$|\(Am\)|\bReserves?\b|\bJong ')
+                 OR (regexp_matches(coalesce(ev.home_name, ''), '\b(II|III)\b|( B| C| 2| 3| Res)$')
+                     AND ev.home_name <> 'Willem II')
+                 OR (regexp_matches(coalesce(ev.away_name, ''), '\b(II|III)\b|( B| C| 2| 3| Res)$')
+                     AND ev.away_name <> 'Willem II')
+                 THEN 'reserves'
+            ELSE 'senior' END"""
+
 QUERY = r"""
 WITH pick AS (                      -- the event's market of each type: the one that traded more
     SELECT * FROM market
     QUALIFY row_number() OVER (PARTITION BY event_id, market_type ORDER BY n_ticks DESC, market_id DESC) = 1),
 ev AS (
-    SELECT event_id, count(*) AS n_markets, min(market_time) AS first_time,
+    SELECT event_id, count(*) AS n_markets, min(market_time_pre) AS first_time,
            arg_max(event_name, n_ticks) AS event_name, arg_max(home_name, n_ticks) AS home_name,
            arg_max(away_name, n_ticks) AS away_name, max(country_code) AS country_code
     FROM market GROUP BY event_id),
@@ -102,17 +118,12 @@ ahr AS (
 SELECT ev.event_id, ev.event_name, ev.home_name, ev.away_name,
        coalesce(mor.home_id, ahr.home_id) AS home_id, coalesce(mor.away_id, ahr.away_id) AS away_id,
        ev.country_code,
-       CASE WHEN regexp_matches(ev.event_name, '\(W\)|\bWomen\b|\bLadies\b|\bFem\b') THEN 'women'
-            WHEN regexp_matches(ev.event_name, '\bU-?(1[5-9]|2[0-3])\b') THEN 'youth'
-            WHEN regexp_matches(ev.event_name, '\(Res\)|\bReserves?\b|\bJong ')
-                 OR (regexp_matches(coalesce(ev.home_name, ''), '( II| B)$') AND ev.home_name <> 'Willem II')
-                 OR (regexp_matches(coalesce(ev.away_name, ''), '( II| B)$') AND ev.away_name <> 'Willem II')
-                 THEN 'reserves'
-            ELSE 'senior' END AS category,
-       coalesce(mo.market_time, ev.first_time) AS kickoff,
+       @CATEGORY@ AS category,
+       coalesce(mo.market_time_pre, ev.first_time) AS kickoff,
        mo.in_play_pt AS kickoff_actual,
        mo.kickoff_delay_s,
-       CAST(epoch(mo.market_time - mo.market_time_first) AS INTEGER) AS kickoff_shift_s,
+       CAST(epoch(mo.market_time_pre - mo.market_time_first) AS INTEGER) AS kickoff_shift_s,
+       mo.schedule_set_pt AS schedule_set, mo.n_inplay_turns AS inplay_turns,
        mo.market_id AS mo_market_id, ou.market_id AS ou_market_id, ah.market_id AS ah_market_id,
        ev.n_markets,
        coalesce(mo.in_play_pt IS NOT NULL, FALSE) AS went_in_play,
@@ -126,7 +137,7 @@ SELECT ev.event_id, ev.event_name, ev.home_name, ev.away_name,
        ah.n_ticks_pre AS ah_ticks_pre, ah.n_ticks_inplay AS ah_ticks_inplay,
        mo.n_susp_inplay AS mo_susp_inplay,
        mor.close_legs, mor.close_book_sum,
-       epoch(coalesce(mo.in_play_pt, mo.closed_pt, mo.last_pt) - mor.stalest_pt) AS close_age_s,
+       epoch(mo.off_pt - mor.stalest_pt) AS close_age_s,
        CASE WHEN mor.close_legs = 3 THEN (1.0 / mor.c_home) / mor.close_book_sum END AS p_home,
        CASE WHEN mor.close_legs = 3 THEN (1.0 / mor.c_draw) / mor.close_book_sum END AS p_draw,
        CASE WHEN mor.close_legs = 3 THEN (1.0 / mor.c_away) / mor.close_book_sum END AS p_away
@@ -142,5 +153,6 @@ LEFT JOIN ahr ON ahr.market_id = ah.market_id
 
 def build(inputs: dict) -> dict:
     from football.warehouse.gold import sql
-    out = sql(QUERY, market=inputs["silver/market"], runner=inputs["silver/runner"])
+    out = sql(QUERY.replace("@CATEGORY@", CATEGORY), market=inputs["silver/market"],
+              runner=inputs["silver/runner"])
     return {SPEC.name: out}

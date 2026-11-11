@@ -10,13 +10,21 @@ One row an event a checkpoint, from the checkpoint books of the event's three ma
   the 1X2 exactly, with no grid and no assumption about rho (the earlier ``implied_rates`` searched a 0.02 grid
   of independent Poisson rates: the model review's finding A3);
 - ``rho``: the low-score correction the market's draw price then implies (the draw chance against the
-  independent-Poisson draw at those rates): the market's draw premium, match by match;
-- ``sup_ah``: the supremacy the Asian handicap main line implies at the same total, and ``sup_gap`` = sup_ah less
-  the 1X2's: the disagreement between the two markets (in goals), a lead-lag signal.
+  independent-Poisson draw at those rates): the market's draw premium, match by match. Blank where the value is
+  one no Dixon-Coles market could have (``rho_valid``): the three books are then not prices of one moment (a stale
+  leg, or in-running prices where Betfair turned the market in play late), and the row is one to distrust;
+- ``sup_ah``: the supremacy the Asian handicap main line implies at the same total and the same rho, and
+  ``sup_gap`` = sup_ah less the 1X2's: the disagreement between the two markets (in goals), a lead-lag signal.
+
+The handicap's main line is the complete line nearest evens among those whose two prices are no older than
+``AH_FRESH_S`` (a line that last traded hours ago is not where the market is; all lines if none is fresh).
 
 A fair Asian handicap price on a line with a push pays on win against loss only, and a quarter line is half a stake
 on each neighbour, so the home side's normalised chance on line L is W / (W + Lo) with W and Lo the win and loss
-chances summed over the line's halves; ``_cover`` computes it from the goal-difference (Skellam) distribution.
+chances summed over the line's halves; ``_cover`` computes it from the goal-difference distribution: Skellam,
+with the low-score correction's three terms (it moves chance between a draw and a one-goal win either way, so a
+half-goal line reads differently with and without it: leaving it out biased ``sup_gap`` by about 0.05 goals with
+the line's sign, the review's finding).
 """
 
 from __future__ import annotations
@@ -26,7 +34,7 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 1
+VERSION = 2          # 2: the handicap is read with the row's rho; a fresh main line; an impossible rho is blank
 SCOPE = "part"
 INPUTS = ("gold/checkpoint", "gold/event")
 COLUMNS = {
@@ -36,6 +44,8 @@ COLUMNS = {
 }
 
 T_LO, T_HI = 0.05, 12.0
+AH_FRESH_S = 900.0                # a handicap line whose stalest price is older than this is not the main line
+RHO_DEFAULT = -0.08               # the market's usual low-score correction (the median of the 2026 closes)
 
 SPEC = TableSpec(
     "gold/implied",
@@ -64,8 +74,10 @@ SPEC = TableSpec(
         Column("lam_home", pa.float64(), "The home side's goal expectancy."),
         Column("lam_away", pa.float64(), "The away side's goal expectancy."),
         Column("rho", pa.float64(), "The Dixon-Coles low-score correction the market's draw price implies at "
-               "those rates (negative: more draws than independent Poisson)."),
-        Column("sup_ah", pa.float64(), "The supremacy the handicap's main line implies at the same total."),
+               "those rates (negative: more draws than independent Poisson). Blank where the value is one no such "
+               "market could have: the books are not prices of one moment, and the row is one to distrust."),
+        Column("sup_ah", pa.float64(), "The supremacy the handicap's main line implies at the same total and rho "
+               "(the usual rho, -0.08, where the row has none)."),
         Column("sup_gap", pa.float64(), "sup_ah less supremacy: the handicap market against the 1X2, in goals."),
     ),
     key=("event_id", "cp_min"), sort=("event_id", "cp_min"),
@@ -131,31 +143,48 @@ def supremacy_from_1x2(p_home, p_away, total) -> np.ndarray:
     return _solve_sup(home_minus_away, np.asarray(p_home, float) - np.asarray(p_away, float), total)
 
 
-def _win_loss(sk, lh, la, line):
-    """(win, loss) chances of the home side with ``line`` goals start on a half or whole line."""
+def rho_valid(lam_home, lam_away, rho) -> np.ndarray:
+    """Whether ``rho`` is one a Dixon-Coles model allows at these rates: every corrected score chance stays
+    non-negative (max(-1/lam_home, -1/lam_away) <= rho <= min(1, 1/(lam_home lam_away)))."""
+    lh, la, r = (np.asarray(x, float) for x in (lam_home, lam_away, rho))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return (np.isfinite(r) & (lh > 0) & (la > 0) & (r >= np.maximum(-1.0 / lh, -1.0 / la))
+                & (r <= np.minimum(1.0, 1.0 / (lh * la))))
+
+
+def _win_loss(sk, lh, la, line, c):
+    """(win, loss) chances of the home side with ``line`` goals start on a half or whole line. ``c`` is the
+    low-score correction's size, lam_home lam_away rho exp(-total): it takes 2c from the draw and gives c to each
+    one-goal result, so the chance of a margin above k changes by +c at k = 0 and -c at k = -1, and the chance of
+    one at or below k by the opposite."""
     k = np.floor(-line)                       # D + line > 0  <=>  D > -line
     whole = np.isclose(line, np.round(line))
-    win = sk.sf(np.where(whole, -line, k), lh, la)
-    loss = sk.cdf(np.where(whole, -line - 1, k), lh, la)
+    kw, kl = np.where(whole, -line, k), np.where(whole, -line - 1, k)
+    win = sk.sf(kw, lh, la) + c * (np.isclose(kw, 0).astype(float) - np.isclose(kw, -1))
+    loss = sk.cdf(kl, lh, la) + c * (np.isclose(kl, -1).astype(float) - np.isclose(kl, 0))
     return win, loss
 
 
-def _cover(total, sup, line) -> np.ndarray:
-    """The home side's fair normalised chance on Asian handicap ``line`` (its handicap): win over win plus loss,
-    a quarter line being half a stake on each neighbouring line."""
+def _cover(total, sup, line, rho=0.0) -> np.ndarray:
+    """The home side's fair normalised chance on Asian handicap ``line`` (its handicap) in a Dixon-Coles market
+    with low-score correction ``rho``: win over win plus loss, a quarter line being half a stake on each
+    neighbouring line."""
     sk, lh, la = _skellam(total, sup)
     line = np.asarray(line, float)
+    c = lh * la * np.asarray(rho, float) * np.exp(-(lh + la))
     quarter = np.isclose(np.abs(line * 4) % 2, 1)            # x.25 or x.75
     l1, l2 = np.where(quarter, line - 0.25, line), np.where(quarter, line + 0.25, line)
-    w1, x1 = _win_loss(sk, lh, la, l1)
-    w2, x2 = _win_loss(sk, lh, la, l2)
+    w1, x1 = _win_loss(sk, lh, la, l1, c)
+    w2, x2 = _win_loss(sk, lh, la, l2, c)
     w, x = w1 + w2, x1 + x2
     return w / np.where(w + x > 0, w + x, np.nan)
 
 
-def supremacy_from_handicap(line, p_home, total) -> np.ndarray:
+def supremacy_from_handicap(line, p_home, total, rho=0.0) -> np.ndarray:
+    """The supremacy at which the handicap line's fair chance is ``p_home``, at this total and this rho."""
     line = np.asarray(line, float)
-    return _solve_sup(lambda t, s: _cover(t, s, np.where(np.isfinite(line), line, 0.0)), p_home, total)
+    rho = np.broadcast_to(np.asarray(rho, float), np.shape(np.asarray(total, float)))
+    return _solve_sup(lambda t, s: _cover(t, s, np.where(np.isfinite(line), line, 0.0), rho), p_home, total)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -186,8 +215,9 @@ def build(inputs: dict) -> dict:
 
     ah = cp[cp["market_id"].isin(ev["ah_market_id"].dropna()) & (cp["role"] == "home")].copy()
     ah["dist"] = (ah["p_norm"] - 0.5).abs()
+    ah["old"] = ah["book_max_age_s"] > AH_FRESH_S               # a fresh line first, then the nearest evens
     n_lines = ah.groupby(key).size().rename("ah_lines")
-    ah = ah.sort_values(key + ["dist", "line"]).groupby(key).agg(
+    ah = ah.sort_values(key + ["old", "dist", "line"]).groupby(key).agg(
         ah_line=("line", "first"), ah_p_home=("p_norm", "first"), ah_age_s=("book_max_age_s", "first"),
         ah_time=("cp_time", "first")).join(n_lines)
 
@@ -203,7 +233,10 @@ def build(inputs: dict) -> dict:
                                                          np.where(np.isfinite(sup), sup, 0.0)), np.nan)
         denom = 2.0 * lam_h * lam_a * np.exp(-total)
         rho = np.where(denom > 1e-6, (d0 - out["p_draw"].to_numpy(float)) / denom, np.nan)
-        sup_ah = supremacy_from_handicap(out["ah_line"].to_numpy(float), out["ah_p_home"].to_numpy(float), total)
+        rho = np.where(rho_valid(lam_h, lam_a, rho), rho, np.nan)
+        # the handicap is read with the row's own rho; the usual one where the row has none
+        sup_ah = supremacy_from_handicap(out["ah_line"].to_numpy(float), out["ah_p_home"].to_numpy(float), total,
+                                         np.where(np.isfinite(rho), rho, RHO_DEFAULT))
 
     table = pa.table({
         "event_id": pa.array(out["event_id"], pa.int64()),

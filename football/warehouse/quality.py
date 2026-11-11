@@ -4,12 +4,15 @@
 every check with its value; ``ok`` is false if a hard check fails, and ``python -m football.warehouse check`` exits 1
 then. Hard checks are what the layers promise each other:
 
-- bronze -> silver: every bronze partition is built from its current fingerprint; files in = files read + files
-  that could not be read + files superseded by a longer copy; each partition's own reconciliation passed; no
-  traded price outside Betfair's range (1.01 to 1000);
+- bronze -> silver: every bronze partition is built from its current fingerprint, by the current parser, leaving
+  out the files a longer copy supersedes; files in = files read + files that could not be read + files
+  superseded; each partition's own reconciliation passed; no traded price outside Betfair's range (1.01 to 1000);
+- silver -> gold: every gold table is built from its current inputs by its module's current version (a gold table
+  left behind by a rebuilt silver is a hard failure, not a quiet one);
 - keys: every table's key is unique (market ids and event ids across partitions too) and every gold table's rows
   refer to a market or an event that exists;
-- point in time: no checkpoint carries a price published after its moment;
+- point in time: no checkpoint carries a price published after its moment, every checkpoint sits on its grid
+  (the scheduled kick-off less its minutes), and the closing book of a match is made of pre-off prices;
 - arithmetic: a complete book's normalised chances sum to one; implied totals and supremacies are in range.
 
 Soft checks are reported, not enforced: the share of files that could not be read, result coverage, and the closing
@@ -22,9 +25,13 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from football.warehouse import bronze, gold
+from football.warehouse.parse import PARSER_VERSION
 from football.warehouse.schema import BRONZE_RAW, SILVER, SILVER_MARKET
 from football.warehouse.silver import MANIFEST as SILVER_MANIFEST
-from football.warehouse.store_io import list_parts, part_name, read_manifest, read_part, read_single, read_table
+from football.warehouse.silver import _dropped as silver_dropped
+from football.warehouse.silver import superseded as silver_superseded
+from football.warehouse.store_io import (fingerprint, list_parts, part_name, read_manifest, read_part, read_single,
+                                         read_table)
 
 
 def _unique(t: pa.Table, key: list[str]) -> bool:
@@ -42,13 +49,16 @@ def report(store) -> dict:
     sman = read_manifest(store, SILVER_MANIFEST)
 
     # -- bronze -> silver ---------------------------------------------------------------------------------------
+    drop = silver_superseded(bronze.index(store))
     stale, unrec, failed_checks = [], [], []
     files_in = files_failed = superseded = 0
     outside = invalid = 0
     for y, m in parts:
         name = part_name(y, m)
         b, s = bman["parts"].get(name) or {}, sman["parts"].get(name) or {}
-        if not s or s.get("bronze_fingerprint") != b.get("fingerprint"):
+        if (not s or s.get("bronze_fingerprint") != b.get("fingerprint")
+                or s.get("parser_version") != PARSER_VERSION
+                or s.get("superseded_fingerprint") != fingerprint(silver_dropped(drop, y, m))):
             stale.append(name)
             continue
         files_in += s.get("files_in", 0)
@@ -61,7 +71,7 @@ def report(store) -> dict:
         outside += (s.get("checks") or {}).get("ticks_outside_1.01_1000", 0)
         invalid += (s.get("checks") or {}).get("ltp_invalid_left_out", 0)
     _check(checks, "bronze partitions held", bool(parts), len(parts))
-    _check(checks, "silver built from the current bronze", not stale, stale or "all")
+    _check(checks, "silver built from the current bronze by the current parser", not stale, stale or "all")
     _check(checks, "files in = read + unreadable + superseded", not unrec, unrec or "all")
     _check(checks, "each silver partition's reconciliation", not failed_checks, failed_checks or "all")
     _check(checks, "traded prices within 1.01 to 1000", outside == 0, outside)
@@ -93,6 +103,8 @@ def report(store) -> dict:
                 "kickoff_max": str(pc.max(market.column("market_time")).as_py())}, hard=False)
 
     # -- gold ---------------------------------------------------------------------------------------------------
+    old = gold.stale(store) if not stale else ["silver is stale"]
+    _check(checks, "gold built from its current inputs", not old, old[:20] or "all")
     events = None
     rows: dict[str, int] = {}
     for mod in gold.order(gold.load()):
@@ -137,9 +149,9 @@ def report(store) -> dict:
             _check(checks, "gold/event: one row for every event in silver/market",
                    n_ev == len(pc.unique(market.column("event_id"))), n_ev)
         e = events.to_pandas()
-        played = e[e["went_in_play"] & ~e["void"]]
+        played = e[e["went_in_play"]]                    # a void match is a match without a result: it counts
         cov = float(played["result"].notna().mean()) if len(played) else None
-        _check(checks, "gold/event: matches played that have a result", cov is None or cov >= 0.995,
+        _check(checks, "gold/event: matches that went in play and have a result", cov is None or cov >= 0.98,
                None if cov is None else round(cov, 5), hard=False)
         fresh = e[(e["close_legs"] == 3) & e["result"].notna() & (e["close_age_s"] < 600)]
         if len(fresh) >= 1000:
@@ -149,13 +161,23 @@ def report(store) -> dict:
             _check(checks, "closing 1X2 chances against results (mean chance, rate)", gap < 0.01,
                    {"matches": int(len(fresh)), **cal}, hard=False)
 
-    cp_bad_time, cp_bad_sum, cp_rows = [], [], 0
+    cp_bad_time, cp_bad_sum, cp_bad_grid, cp_rows = [], [], [], 0
     for y, m in list_parts(store, "gold/checkpoint"):
         t = read_part(store, "gold/checkpoint", y, m, ["market_id", "cp_min", "line", "age_s", "p_norm",
-                                                         "book_complete"])
+                                                         "book_complete", "cp_time"])
         cp_rows += t.num_rows
         if t.num_rows and pc.min(t.column("age_s")).as_py() < 0:
             cp_bad_time.append(part_name(y, m))
+        mk = read_part(store, SILVER_MARKET.name, y, m, ["market_id", "market_time_pre", "off_pt"])
+        if t.num_rows and mk is not None:
+            # each row on its grid: the scheduled kick-off less its minutes; the close at the off
+            j = t.select(["market_id", "cp_min", "cp_time"]).join(mk, "market_id")
+            due = pc.if_else(pc.equal(j.column("cp_min"), 0), j.column("off_pt").cast(pa.int64()),
+                             pc.subtract(j.column("market_time_pre").cast(pa.int64()),
+                                         pc.multiply(j.column("cp_min").cast(pa.int64()), 60_000)))
+            off = pc.sum(pc.fill_null(pc.not_equal(j.column("cp_time").cast(pa.int64()), due), True)).as_py() or 0
+            if off or j.num_rows != t.num_rows:
+                cp_bad_grid.append(part_name(y, m))
         full = t.filter(t.column("book_complete"))
         if full.num_rows:
             s = full.group_by(["market_id", "cp_min", "line"]).aggregate([("p_norm", "sum")]).column("p_norm_sum")
@@ -165,6 +187,25 @@ def report(store) -> dict:
         _check(checks, "gold/checkpoint: no price published after its checkpoint", not cp_bad_time,
                cp_bad_time or "all")
         _check(checks, "gold/checkpoint: a complete book's chances sum to one", not cp_bad_sum, cp_bad_sum or "all")
+        _check(checks, "gold/checkpoint: every row on its grid (the schedule before the off; the close at the off)",
+               not cp_bad_grid, cp_bad_grid or "all")
+
+    # the closing book of an event is the checkpoint table's close: two routes to one number
+    if events is not None and cp_rows:
+        bad_close, n_close = [], 0
+        for y, m in list_parts(store, "gold/checkpoint"):
+            ev = read_part(store, "gold/event", y, m, ["mo_market_id", "p_home", "close_legs"])
+            cp = read_part(store, "gold/checkpoint", y, m, ["market_id", "cp_min", "role", "p_norm"])
+            if ev is None or cp is None or not cp.num_rows:
+                continue
+            cp = cp.filter(pc.and_(pc.equal(cp.column("cp_min"), 0), pc.equal(cp.column("role"), "home")))
+            j = ev.filter(pc.equal(ev.column("close_legs"), 3)).join(cp, "mo_market_id", "market_id", "inner")
+            j = j.filter(pc.and_(pc.is_valid(j.column("p_norm")), pc.is_valid(j.column("p_home"))))
+            n_close += j.num_rows
+            if j.num_rows and pc.max(pc.abs(pc.subtract(j.column("p_home"), j.column("p_norm")))).as_py() > 1e-9:
+                bad_close.append(part_name(y, m))
+        _check(checks, "gold/event: the closing 1X2 is the checkpoint table's close", not bad_close,
+               bad_close or n_close)
 
     implied = read_table(store, "gold/implied", ["total", "supremacy", "p_home", "p_draw", "p_away"])
     if implied is not None and implied.num_rows:

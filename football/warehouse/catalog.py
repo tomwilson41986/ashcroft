@@ -29,7 +29,8 @@ MACROS = [
            WHERE t.market_id = (SELECT mo_market_id FROM event WHERE event_id = eid) ORDER BY t.pt, t.seq""",
 ]
 RATING_MACRO = """CREATE OR REPLACE MACRO latest_rating() AS TABLE
-           SELECT * FROM team_rating QUALIFY row_number() OVER (PARTITION BY team_id ORDER BY kickoff DESC) = 1"""
+           SELECT * FROM team_rating
+           QUALIFY row_number() OVER (PARTITION BY team_id ORDER BY kickoff DESC, event_id DESC) = 1"""
 
 
 def tables(store) -> dict[str, tuple[str, bool]]:

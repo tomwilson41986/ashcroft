@@ -303,8 +303,8 @@ def random_inputs(seed: int, n_markets: int = 60):
                 series.append((ko + int(s) * 5 * M, LADDER[level]))
             books.setdefault((market_id, market_type), {})[100 + r] = series
             for seq, (pt, price) in enumerate(series):
-                tick.append((market_id, market_type, 100 + r, 0.0, pt, seq, price, False))
-            tick.append((market_id, market_type, 100 + r, 0.0, ko + 30 * M, 999, 1.01, True))      # in play
+                tick.append((market_id, market_type, 100 + r, 0.0, pt, seq, price, True))       # before the off
+            tick.append((market_id, market_type, 100 + r, 0.0, ko + 30 * M, 999, 1.01, False))     # in play
             for c in CHECKPOINTS:
                 when = ko - c * M
                 if c and any(pt <= when for pt, _ in series):
@@ -315,7 +315,7 @@ def random_inputs(seed: int, n_markets: int = 60):
     tick_table = pa.table({"market_id": t["market_id"], "market_type": t["market_type"],
                            "selection_id": pa.array(t["selection_id"], pa.int64()), "handicap": t["handicap"],
                            "pt": pa.array(t["pt"], pa.int64()).cast(TS), "seq": pa.array(t["seq"], pa.int32()),
-                           "ltp": t["ltp"], "in_play": t["in_play"]})
+                           "ltp": t["ltp"], "pre_off": t["pre_off"]})
     cp_table = pa.table({"market_id": c["market_id"], "selection_id": pa.array(c["selection_id"], pa.int64()),
                          "handicap": c["handicap"], "cp_min": pa.array(c["cp_min"], pa.int32()),
                          "event_id": pa.array(c["event_id"], pa.int64()), "market_type": c["market_type"],

@@ -11,7 +11,7 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 1
+VERSION = 2          # 2: a tie for the commonest name or country goes to the first in order
 SCOPE = "all"
 INPUTS = ("gold/event",)
 COLUMNS = {"gold/event": ["event_id", "home_id", "away_id", "home_name", "away_name", "country_code", "kickoff",
@@ -41,8 +41,9 @@ WITH side AS (
     WHERE home_id IS NOT NULL
     UNION ALL
     SELECT away_id, away_name, NULL, kickoff, went_in_play, 0 FROM event WHERE away_id IS NOT NULL)
-SELECT team_id, mode(name) AS team_name, count(DISTINCT name) AS n_names, count(*) AS n_events,
-       sum(home) AS n_home, sum(went_in_play::INT) AS n_played, mode(country_code) AS country_code,
+SELECT team_id, mode(name ORDER BY name) AS team_name, count(DISTINCT name) AS n_names, count(*) AS n_events,
+       sum(home) AS n_home, sum(went_in_play::INT) AS n_played,
+       mode(country_code ORDER BY country_code) AS country_code,
        min(kickoff) AS first_kickoff, max(kickoff) AS last_kickoff
 FROM side GROUP BY team_id
 """

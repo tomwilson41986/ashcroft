@@ -95,26 +95,40 @@ SILVER_MARKET = TableSpec(
         _c("persistence_enabled", pa.bool_(), "Whether bets could persist in play."),
         _c("bsp_market", pa.bool_(), "Whether Betfair SP was offered (not on football)."),
         _c("regulators", pa.string(), "Regulator codes, comma-joined."),
-        _c("market_time", TS, "The scheduled kick-off in the last definition."),
+        _c("market_time", TS, "The kick-off time in the last definition. Betfair often rewrites it to the actual "
+           "kick-off as the market turns in play: use market_time_pre for the schedule."),
         _c("market_time_first", TS, "The scheduled kick-off in the first definition."),
-        _c("n_market_time_changes", pa.int16(), "Times the scheduled kick-off changed in the file (a reschedule)."),
+        _c("market_time_pre", TS, "The scheduled kick-off as it stood before the off: the kick-off time in force "
+           "in the last definition before the market turned in play (before it closed, where it never did). The "
+           "schedule a trader knew; every 'minutes before the off' is measured from it."),
+        _c("schedule_set_pt", TS, "When market_time_pre was last set: the message from which the schedule stood "
+           "unchanged to the off. A moment before it did not know this schedule."),
+        _c("n_market_time_changes", pa.int16(), "Times the kick-off time changed in the file (a reschedule, or "
+           "Betfair's rewrite at the kick-off)."),
         _c("open_date", TS, "The event's open date in the last definition."),
         _c("suspend_time", TS, "The scheduled suspend time in the last definition."),
         _c("settled_time", TS, "When Betfair settled the market (the last definition's settledTime)."),
         _c("first_pt", TS, "The file's first message.", False),
         _c("last_pt", TS, "The file's last message.", False),
-        _c("in_play_pt", TS, "The first message with the market in play: the actual kick-off, to the minute."),
+        _c("in_play_pt", TS, "The market's turn in play: the actual kick-off, to the minute. Where the file has "
+           "more than one turn (a turn made by mistake and undone, a drop out of play in mid-match) it is the one "
+           "nearest the kick-off time in force when it was made."),
+        _c("n_inplay_turns", pa.int16(), "Times the market turned in play in the file: more than one marks a "
+           "file to read with care.", False),
+        _c("off_pt", TS, "The off: in_play_pt, or market_time_pre for a market that never turned in play (some "
+           "trade on through the match). A price before it is a pre-off price."),
         _c("closed_pt", TS, "The first message with the market CLOSED."),
         _c("first_trade_pt", TS, "The first traded price in the file."),
-        _c("last_pre_trade_pt", TS, "The last traded price before the market went in play: the close's time."),
+        _c("last_pre_trade_pt", TS, "The last traded price before the off: the close's time."),
         _c("last_trade_pt", TS, "The last traded price in the file."),
         _c("status_final", pa.string(), "The last definition's status (CLOSED once settled)."),
         _c("in_play_final", pa.bool_(), "Whether the last definition had the market in play."),
         _c("n_messages", pa.int32(), "Messages in the file.", False),
         _c("n_definitions", pa.int32(), "Messages that carried a market definition.", False),
         _c("n_ticks", pa.int32(), "Traded-price updates in the file (rows of silver/tick).", False),
-        _c("n_ticks_pre", pa.int32(), "Of those, before the market went in play.", False),
-        _c("n_ticks_inplay", pa.int32(), "Of those, in play.", False),
+        _c("n_ticks_pre", pa.int32(), "Of those, before the off.", False),
+        _c("n_ticks_inplay", pa.int32(), "Of those, in play (the rest, if any, came after the scheduled kick-off "
+           "of a market that never turned in play).", False),
         _c("n_ltp_invalid", pa.int32(), "Price updates outside Betfair's range (1.01 to 1000), left out of "
            "silver/tick: a void market is closed with 1.0 on every runner.", False),
         _c("n_runners", pa.int16(), "Runners in the last definition (an Asian handicap line counts once a side).",
@@ -123,7 +137,7 @@ SILVER_MARKET = TableSpec(
         _c("n_removed", pa.int16(), "Runners settled REMOVED.", False),
         _c("n_susp_inplay", pa.int16(), "Suspended spells while in play (a goal, a penalty, a review, half time).",
            False),
-        _c("kickoff_delay_s", pa.int32(), "in_play_pt less market_time, seconds (blank if never in play)."),
+        _c("kickoff_delay_s", pa.int32(), "in_play_pt less market_time_pre, seconds (blank if never in play)."),
         _c("plan_path", pa.string(), "The bronze file the row was read from.", False),
         _c("file_sha256", pa.string(), "That file's SHA-256.", False),
         _c("parser_version", pa.int16(), "football.warehouse.parse.PARSER_VERSION that read it.", False),
@@ -147,16 +161,17 @@ SILVER_RUNNER = TableSpec(
         _c("role", pa.string(), "home, away, draw, over or under: what the runner is in the match (blank if not "
            "resolved)."),
         _c("status_final", pa.string(), "ACTIVE, WINNER, LOSER, REMOVED ... in the last definition."),
-        _c("won", pa.int8(), "1 if settled WINNER, 0 if LOSER, blank otherwise (void, removed, unsettled)."),
+        _c("won", pa.int8(), "1 if settled WINNER, 0 if LOSER, blank otherwise (void, removed, unsettled). On an "
+           "Asian handicap line a push (stakes returned) is settled LOSER on both sides."),
         _c("bsp", pa.float64(), "The Betfair starting price, on the few football markets that have one "
            "(bsp_market on silver/market); blank otherwise."),
         _c("ltp_first", pa.float64(), "The first traded price."),
-        _c("ltp_last_pre", pa.float64(), "The last traded price before the market went in play: the close."),
+        _c("ltp_last_pre", pa.float64(), "The last traded price before the off (silver/market.off_pt): the close."),
         _c("ltp_last", pa.float64(), "The last traded price in the file."),
         _c("n_ticks", pa.int32(), "Traded-price updates on the runner.", False),
-        _c("n_ticks_pre", pa.int32(), "Of those, before the market went in play.", False),
+        _c("n_ticks_pre", pa.int32(), "Of those, before the off.", False),
         _c("first_trade_pt", TS, "The runner's first traded price."),
-        _c("last_pre_trade_pt", TS, "The runner's last traded price before the market went in play."),
+        _c("last_pre_trade_pt", TS, "The runner's last traded price before the off."),
         _c("last_trade_pt", TS, "The runner's last traded price."),
         _c("in_definition", pa.bool_(), "False for a (selection, handicap) that traded but is not in the last "
            "definition's runners.", False),
@@ -217,12 +232,16 @@ SILVER_TICK = TableSpec(
         _c("seq", pa.int32(), "The message's position in the file: orders prices published at the same instant.",
            False),
         _c("ltp", pa.float64(), "The last traded price.", False),
-        _c("in_play", pa.bool_(), "Whether the market was in play when the price was published.", False),
+        _c("in_play", pa.bool_(), "Whether the price was published in play: from the message of the market's "
+           "turn in play (silver/market.in_play_pt) on.", False),
+        _c("pre_off", pa.bool_(), "Whether the price was published before the off (silver/market.off_pt). Not in "
+           "play and not pre-off: a market that never turned in play, trading after its scheduled kick-off.",
+           False),
         _c("status", pa.string(), "The market's status then (OPEN or SUSPENDED; a price can be published with "
            "the suspension it caused)."),
-        _c("t_off_s", pa.int32(), "Seconds from pt to the scheduled kick-off (market_time in the last "
-           "definition); negative after it."),
-        _c("t_inplay_s", pa.int32(), "Seconds since the market went in play; blank before."),
+        _c("t_off_s", pa.int32(), "Seconds from pt to the scheduled kick-off (silver/market.market_time_pre); "
+           "negative after it."),
+        _c("t_inplay_s", pa.int32(), "Seconds since the market turned in play; blank before."),
     ),
     key=("market_id", "selection_id", "handicap", "pt", "seq"),
     sort=("market_id", "selection_id", "handicap", "pt", "seq"),
@@ -258,7 +277,9 @@ def from_frame(spec: TableSpec, frame) -> pa.Table:
                 cols[c.name] = pa.array(np.where(blank, 0, a).astype("int64"), pa.int64(), mask=blank).cast(c.type)
         elif pa.types.is_integer(c.type) and v.dtype.kind == "f":
             a = v.to_numpy(float)
-            blank = ~np.isfinite(a)
+            blank = np.isnan(a)
+            if not np.all(np.isfinite(a[~blank]) & (a[~blank] == np.round(a[~blank]))):     # 1.9, or infinity
+                raise ValueError(f"{spec.name}.{c.name}: a whole-number column was given a fraction")
             cols[c.name] = pa.array(np.where(blank, 0, a).astype("int64"), c.type, mask=blank)
         elif pa.types.is_boolean(c.type) and v.dtype == object:
             cols[c.name] = pa.array([None if x is None or x != x else bool(x) for x in v], c.type)
@@ -271,11 +292,15 @@ def from_frame(spec: TableSpec, frame) -> pa.Table:
 
 def conform(spec: TableSpec, table: pa.Table) -> pa.Table:
     """``table`` with exactly the spec's columns, in order, cast to its types; a key or required column holding a
-    null is an error (the contract a reader relies on)."""
+    null is an error (the contract a reader relies on), and so is a value its type cannot hold (a number too
+    large, a fraction in a whole-number column: a cast that changed it quietly would be a wrong number)."""
     missing = [n for n in spec.names if n not in table.column_names]
     if missing:
         raise ValueError(f"{spec.name}: missing columns {missing}")
-    out = table.select(spec.names).cast(spec.schema, safe=False) if table.num_rows else empty(spec)
+    try:
+        out = table.select(spec.names).cast(spec.schema, safe=True) if table.num_rows else empty(spec)
+    except pa.ArrowInvalid as exc:
+        raise ValueError(f"{spec.name}: a value does not fit its column's type: {exc}") from exc
     for c in spec.columns:
         if not c.nullable and out.column(c.name).null_count:
             raise ValueError(f"{spec.name}: {out.column(c.name).null_count} nulls in required column {c.name}")

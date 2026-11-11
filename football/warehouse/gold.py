@@ -107,6 +107,36 @@ def _one(entry: dict) -> str:
     return str(entry.get("fingerprint") or f"{entry.get('bronze_fingerprint')}:{entry.get('parser_version')}")
 
 
+def want(store, m, name: str | None, cache: dict) -> str | None:
+    """The fingerprint a module's output must carry to be current: its VERSION and the fingerprints of its inputs
+    for the partition ``name`` ('YYYY-MM'; None: the whole tables, a SCOPE 'all' module). None while an input is
+    not built."""
+    fps = [_input_fp(store, t, name, cache) for t in m.INPUTS]
+    if any(f is None for f in fps):
+        return None
+    return fingerprint([f"v{m.VERSION}"] + [f"{t}:{f}" for t, f in zip(m.INPUTS, fps)])
+
+
+def stale(store, modules: list[str] | None = None) -> list[str]:
+    """Every gold output that is not built from its current inputs ('gold/event 2026-03', 'gold/team'): what the
+    next ``build`` would write over, or add to, a table already built. A table never built, or whose inputs are
+    not built yet, is not stale: it is missing."""
+    out = []
+    parts = bronze.partitions(store)
+    for m in order(load(modules or MODULES)):
+        cache: dict = {}
+        mans = {s.name: read_manifest(store, s.name) for s in m.SPECS}
+        for name in ([part_name(y, mo) for y, mo in parts] if m.SCOPE == "part" else [None]):
+            fp = want(store, m, name, cache)
+            if fp is None:
+                continue
+            for s in m.SPECS:
+                held = mans[s.name]["parts"]
+                if held and (held.get(name or "all") or {}).get("fingerprint") != fp:
+                    out.append(f"{s.name} {name}" if name else s.name)
+    return out
+
+
 def build(store, parts: list[tuple[int, int]] | None = None, force: bool = False, modules: list[str] | None = None,
           only: list[str] | None = None) -> dict:
     """Every gold module, in order, for the partitions whose inputs changed; the report. ``only``: module names
@@ -127,10 +157,9 @@ def build(store, parts: list[tuple[int, int]] | None = None, force: bool = False
             if m.SCOPE == "part":
                 for y, mo in todo_parts:
                     name = part_name(y, mo)
-                    fps = [_input_fp(store, t, name, cache) for t in m.INPUTS]
-                    if any(f is None for f in fps):
+                    fp = want(store, m, name, cache)
+                    if fp is None:
                         continue
-                    fp = fingerprint([f"v{m.VERSION}"] + [f"{t}:{f}" for t, f in zip(m.INPUTS, fps)])
                     mans = {s.name: read_manifest(store, s.name) for s in m.SPECS}
                     if not force and all((mans[s.name]["parts"].get(name) or {}).get("fingerprint") == fp
                                          for s in m.SPECS):
@@ -155,11 +184,12 @@ def build(store, parts: list[tuple[int, int]] | None = None, force: bool = False
                     rep["built"].append(name)
                     log.info("%s %s: %s", short, name, {s.name: mans[s.name]["parts"][name]["rows"] for s in m.SPECS})
             else:
-                fps = [_input_fp(store, t, None, cache) for t in m.INPUTS]
-                fp = fingerprint([f"v{m.VERSION}"] + [f"{t}:{f}" for t, f in zip(m.INPUTS, fps)])
+                fp = want(store, m, None, cache)
                 mans = {s.name: read_manifest(store, s.name) for s in m.SPECS}
-                if not force and all((mans[s.name]["parts"].get("all") or {}).get("fingerprint") == fp
-                                     for s in m.SPECS):
+                if fp is None:
+                    pass                                # an input is not built yet: nothing to build from
+                elif not force and all((mans[s.name]["parts"].get("all") or {}).get("fingerprint") == fp
+                                       for s in m.SPECS):
                     rep["skipped"] += 1
                 else:
                     inputs = {}

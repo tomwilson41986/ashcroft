@@ -26,3 +26,17 @@ def test_a_cell_reports_the_gap_and_the_return_to_backing_at_the_close():
     assert c["n"] == n and c["mean_chance"] == 0.5 and c["rate"] == 0.55 and c["gap"] == 0.05
     assert abs(c["back_return"] - 0.10) < 1e-9                         # 0.55 / 0.5 - 1
     assert ef.cell(d.head(50)) == {"n": 50}
+
+
+def test_the_slopes_standard_error_counts_a_match_once_not_once_a_selection():
+    # each match's row three times over: no more information, so the clustered error must not shrink
+    rng = np.random.default_rng(2)
+    p = rng.uniform(0.1, 0.9, 6_000)
+    won = (rng.uniform(size=p.size) < p).astype(float)
+    match = np.arange(p.size)
+    once = ef.logistic_slope(p, won, match)
+    naive = ef.logistic_slope(np.tile(p, 3), np.tile(won, 3))
+    clustered = ef.logistic_slope(np.tile(p, 3), np.tile(won, 3), np.tile(match, 3))
+    assert clustered["slope"] == once["slope"] == naive["slope"]
+    assert abs(clustered["slope_se"] - once["slope_se"]) < 0.1 * once["slope_se"]
+    assert naive["slope_se"] < 0.65 * once["slope_se"]                 # 1 / sqrt(3): what clustering puts right

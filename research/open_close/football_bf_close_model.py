@@ -5,12 +5,12 @@ review's step 1: a Betfair-native, multi-horizon target). The warehouse's ``gold
 runner at every checkpoint, the move of its normalised chance to the close (``y_logit``, in log odds) with the
 quality of both ends. This fits that move from what was known at the checkpoint and scores it out of sample.
 
-**Rows.** Match odds, checkpoints 360, 120, 60 and 15 minutes before the scheduled kick-off, where the checkpoint's
-book is fresh (``cp_fresh``: the gold/move screen on the checkpoint's side only: known at the time) and the
-kick-off was never moved (``kickoff_shift_s`` 0: a checkpoint is measured from the last schedule, so a moved
-kick-off means the checkpoint was not known in advance; about one match in seven in 2026). The headline is scored
-where the closing book is fresh too (``usable``: a stale close is not a close); the wider sets (stale closes; moved
-kick-offs) are reported beside it. One model a role (home, draw, away), the checkpoint as a feature.
+**Rows.** Match odds (the event's own market), checkpoints 360, 120, 60 and 15 minutes before the scheduled
+kick-off, where the checkpoint's book is fresh (``cp_fresh``: the gold/move screen on the checkpoint's side only:
+known at the time) and the schedule the checkpoint is measured from had been set by then (``schedule_known``: a
+match rescheduled after a checkpoint's moment could not have been decided at it). The headline is scored where
+the closing book is fresh too (``usable``: a stale close is not a close); the wider sets (stale closes; schedules
+not yet known) are reported beside it. One model a role (home, draw, away), the checkpoint as a feature.
 
 **What a last traded price can fake.** BASIC files hold the last traded price, not the quotes. A leg that has
 not traded for a while is stale, and its "move to the close" is partly the price catching up with a market that
@@ -70,6 +70,7 @@ ROUND_TRIP, COMMISSION = 0.023, 0.02
 THRESHOLDS = (0.03, 0.05, 0.08)
 MEMORY_N, MEMORY_K = 10, 5.0
 LIQUID_TICKS = 60                            # price updates by the checkpoint that make a row "busy"
+LABEL_TAIL = 1.0                             # a move this large in log odds is news or a bad price: reported apart
 ACTIVITY = ([0, 20, 60, 150, 10**9], ["under 20", "20-59", "60-149", "150+"])
 COUNTRY_N, COUNTRY_K = 500, 100.0
 RIDGE_ALPHA, CLIP = 50.0, 4.0
@@ -111,11 +112,14 @@ def load(store) -> tuple[pd.DataFrame, dict]:
         return pd.DataFrame(), {}
     d = mv.to_pandas()
     d = d[d["role"].isin(ROLES)].copy()
-    ev = read_rows(store, "gold/event", ["event_id", "home_id", "away_id", "kickoff_actual"]).to_pandas()
+    ev = read_rows(store, "gold/event", ["event_id", "home_id", "away_id", "kickoff_actual",
+                                         "mo_market_id"]).to_pandas()
     d = d.merge(ev, on="event_id", how="left")
-    if "kickoff_shift_s" not in d.columns:
-        d["kickoff_shift_s"] = 0
-    d["schedule_fixed"] = d["kickoff_shift_s"].fillna(1).to_numpy() == 0
+    d = d[d["market_id"] == d["mo_market_id"]].drop(columns="mo_market_id")       # one match-odds market a match
+    if "schedule_known" in d.columns:
+        d["schedule_fixed"] = d["schedule_known"].to_numpy(bool)
+    else:                                            # an older gold/move: the kick-off never moved at all
+        d["schedule_fixed"] = d["kickoff_shift_s"].fillna(1).to_numpy() == 0
     if "cp_fresh" not in d.columns:                  # an older gold/move: the same screen, the checkpoint's side
         d["cp_fresh"] = d["cp_book_age_s"] <= np.maximum(MIN_AGE_S, AGE_SHARE * d["cp_min"] * 60.0)
     d["x_cp"] = np.log(d["p_cp"] / (1 - d["p_cp"]))
@@ -131,6 +135,7 @@ def load(store) -> tuple[pd.DataFrame, dict]:
         p = path.to_pandas()
         cols = [c for c in p.columns if c not in KEY + ["event_id", "market_type", "role", "cp_time", "year", "month"]
                 and pd.api.types.is_numeric_dtype(p[c])]
+        p[cols] = p[cols].astype("float32")          # features in single precision: ten years must fit a runner
         d = d.merge(p[KEY + cols].rename(columns={c: f"path_{c}" for c in cols}), on=KEY, how="left")
         fam["path"] = [f"path_{c}" for c in cols]
 
@@ -139,6 +144,7 @@ def load(store) -> tuple[pd.DataFrame, dict]:
     if imp is not None:
         i = imp.to_pandas()
         cols = [c for c in i.columns if c not in ("event_id", "cp_min")]
+        i[cols] = i[cols].astype("float32")
         d = d.merge(i.rename(columns={c: f"imp_{c}" for c in cols}), on=["event_id", "cp_min"], how="left")
         fam["implied"] = [f"imp_{c}" for c in cols]
 
@@ -147,6 +153,7 @@ def load(store) -> tuple[pd.DataFrame, dict]:
         g = gap.to_pandas()
         cols = [c for c in g.columns if c not in ("event_id", "cp_min", "cp_time", "kickoff", "year", "month")
                 and pd.api.types.is_numeric_dtype(g[c]) and not c.endswith("_id")]
+        g[cols] = g[cols].astype("float32")
         d = d.merge(g[["event_id", "cp_min"] + cols].rename(columns={c: f"rate_{c}" for c in cols}),
                     on=["event_id", "cp_min"], how="left")
         fam["rating"] = [f"rate_{c}" for c in cols]
@@ -155,7 +162,7 @@ def load(store) -> tuple[pd.DataFrame, dict]:
     fam["memory"] = ["mm_own", "mm_own_n", "mm_opp", "mm_opp_n", "mm_country", "mm_country_n"]
     for c in (c for cols in fam.values() for c in cols):          # a flag left blank by a join is a float, not text
         if d[c].dtype == object or d[c].dtype == bool:
-            d[c] = d[c].astype(float)
+            d[c] = d[c].astype("float32")
     return d.reset_index(drop=True), fam
 
 
@@ -355,7 +362,7 @@ def run(store) -> dict:
     d = d[d["cp_fresh"]].reset_index(drop=True)
     all_cols = [c for cols in fam.values() for c in cols]
     res = {"rows": int(len(d)), "rows_usable": int(d["usable"].sum()),
-           "rows_kickoff_moved": int((~d["schedule_fixed"]).sum()), "months": sorted(d["month"].unique()),
+           "rows_schedule_not_known": int((~d["schedule_fixed"]).sum()), "months": sorted(d["month"].unique()),
            "families": {k: len(v) for k, v in fam.items()},
            "families_missing": [k for k in ("path", "implied", "rating") if k not in fam],
            "note": "development evidence: one year of data; last traded prices; nothing is traded"}
@@ -379,8 +386,13 @@ def run(store) -> dict:
                                                       wide["pred"].to_numpy(float))
     moved = every[~every["schedule_fixed"] & every["usable"]]
     if len(moved) >= 500:
-        res["kickoff_moved_rows_not_in_the_headline"] = skill_ci(
+        res["schedule_not_known_rows_not_in_the_headline"] = skill_ci(
             moved["day"].to_numpy(), moved["y_logit"].to_numpy(float), moved["pred"].to_numpy(float))
+    # a few very large moves carry much of the sum of squares: the same score without them
+    big = np.abs(y) > LABEL_TAIL
+    res["label_tail"] = {"abs_move_over": LABEL_TAIL, "rows": int(big.sum()),
+                         "share_of_sse_of_no_move": float((y[big] ** 2).sum() / (y ** 2).sum()),
+                         "headline_without_them": skill_ci(rel["day"].to_numpy()[~big], y[~big], p[~big])}
     # the stale-price test: skill by the age of the checkpoint book's stalest leg
     ages = pd.cut(rel["cp_book_age_s"], [-1, 60, 300, 900, 10**9], labels=["60s or less", "1-5 min", "5-15 min",
                                                                              "over 15 min"])

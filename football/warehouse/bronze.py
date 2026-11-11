@@ -40,6 +40,7 @@ BRONZE_INDEX = TableSpec(
     tuple(c for c in BRONZE_RAW.columns if c.name != "data"), key=("plan_path",), sort=("plan_path",))
 
 FLUSH_BYTES = 1_500_000_000        # buffered file bytes before the largest partition is written out
+URLS_ENV = "FOOTBALL_BUNDLE_URLS"   # {"<bundle name>": "<download link>"} as JSON: never in the repository
 
 
 def plan_path(member: str, container: str | None = None, plan: str = "BASIC") -> dict | None:
@@ -145,16 +146,19 @@ class Ingest:
             else:
                 counts["kept_longer_existing"] += 1
         name = part_name(year, month)
-        if counts["new"] or counts["replaced"] or held is None:
+        fp = fingerprint(f"{r['plan_path']}:{r['sha256']}" for r in merged.values())
+        man = read_manifest(self.store, BRONZE_RAW.name)
+        # the partition, its index and its manifest entry are three writes: one that died between them is put
+        # right here (the manifest does not describe what is held), whether or not this flush adds a file
+        stale = (man["parts"].get(name) or {}).get("fingerprint") != fp
+        if counts["new"] or counts["replaced"] or held is None or stale:
             table = pa.Table.from_pylist(list(merged.values()), schema=BRONZE_RAW.schema)
             wrote = write_part(self.store, BRONZE_RAW, year, month, table)
             write_part(self.store, BRONZE_INDEX, year, month, table.drop_columns(["data"]))
             man = read_manifest(self.store, BRONZE_RAW.name)
             sources = sorted(set(r["source"] for r in merged.values()))
             man["parts"][name] = {"rows": wrote["rows"], "bytes": wrote["bytes"], "sources": sources,
-                                  "fingerprint": fingerprint(f"{r['plan_path']}:{r['sha256']}"
-                                                             for r in merged.values()),
-                                  "written_utc": utc_now()}
+                                  "fingerprint": fp, "written_utc": utc_now()}
             write_manifest(self.store, BRONZE_RAW.name, man)
         for k, v in counts.items():
             self.report[k] += v
@@ -186,17 +190,39 @@ def ingest_bundle(store, path, source: str) -> dict:
     return ingest(store, iter_bundle(path), source)
 
 
-def ingest_queue(store, queue: str | None = None, dest: str = ".") -> dict:
-    """Every bundle listed in ``football/warehouse/bundles.json`` ([{name, url, sport, note}]) into bronze, each
-    once: a bundle the store notes as ingested (``bronze/bundles/<name>.json``) is not downloaded again. The
-    download is curl's (resumed and retried); the file is removed after it is read."""
+def file_sha256(path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 22), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def ingest_queue(store, queue: str | None = None, dest: str = ".", fetch=None) -> dict:
+    """Every bundle listed in ``football/warehouse/bundles.json`` ([{name, bytes, sha256, sport, note}]) into
+    bronze, each once: a bundle the store notes as ingested (``bronze/bundles/<name>.json``) is not downloaded
+    again. A bundle's link comes from the environment, ``FOOTBALL_BUNDLE_URLS`` = {"<name>": "<url>"} as JSON (a
+    repository secret in the workflows): the data is licensed to its buyer and the repository is public, so the
+    list need not carry it. An entry may still give a ``url`` itself (as sources/betfair_imports.json does); a
+    bundle with no link in either place is reported as waiting, not as failed.
+
+    The download is curl's (retried; ``fetch(url, path)`` in its place for tests). A download is only read if it
+    is the bundle: its size and SHA-256 must be the entry's where the entry gives them (a share link can serve a
+    web page, or a file cut short, with no error), and it must hold at least one market file. A bundle that fails
+    is reported and not noted as ingested, so the next run tries again; the downloaded file is removed either
+    way, and nothing stored or printed carries the link."""
     import json
+    import os
     import subprocess
     from pathlib import Path
 
     from football.warehouse import ROOT
     path = Path(queue) if queue else Path(__file__).with_name("bundles.json")
     items = json.loads(path.read_text()) if path.exists() else []
+    try:
+        links = json.loads(os.environ.get(URLS_ENV) or "{}")
+    except ValueError:
+        links = {}
     out = {}
     for it in items:
         name = it["name"]
@@ -204,14 +230,37 @@ def ingest_queue(store, queue: str | None = None, dest: str = ".") -> dict:
         if store.get(marker) is not None:
             out[name] = "already ingested"
             continue
+        url = (links.get(name) if isinstance(links, dict) else None) or it.get("url")
+        if not url:
+            out[name] = f"waiting for its link ({URLS_ENV})"
+            continue
         local = Path(dest) / f"{name}.bundle"
-        subprocess.run(["curl", "-sSL", "--retry", "5", "-C", "-", "-o", str(local), it["url"]], check=True)
-        rep = ingest_bundle(store, str(local), name)
-        rep["bytes"] = local.stat().st_size
-        store.put(marker, (json.dumps({**it, **rep, "ingested_utc": utc_now()}, indent=1) + "\n").encode())
-        local.unlink(missing_ok=True)
-        out[name] = {k: rep[k] for k in ("members", "market_files", "not_market_files", "duplicates_in_bundle",
-                                         "new", "same", "replaced", "bytes")}
+        try:
+            local.unlink(missing_ok=True)            # never resume onto what an earlier run left behind
+            if fetch is not None:
+                fetch(url, str(local))
+            else:
+                subprocess.run(["curl", "-sSLf", "--retry", "5", "-o", str(local), url], check=True,
+                               stderr=subprocess.DEVNULL)        # curl's errors can quote the link
+            size = local.stat().st_size
+            if it.get("bytes") is not None and size != int(it["bytes"]):
+                raise ValueError(f"the download is {size} bytes, the bundle is {it['bytes']}")
+            if it.get("sha256") and file_sha256(local) != it["sha256"]:
+                raise ValueError("the download's SHA-256 is not the bundle's")
+            rep = ingest_bundle(store, str(local), name)
+            if not rep["market_files"]:
+                raise ValueError("no market file in the download")
+            rep["bytes"] = size
+            noted = {k: v for k, v in it.items() if k != "url"}
+            store.put(marker, (json.dumps({**noted, **rep, "ingested_utc": utc_now()}, indent=1) + "\n").encode())
+            out[name] = {k: rep[k] for k in ("members", "market_files", "not_market_files", "duplicates_in_bundle",
+                                             "new", "same", "replaced", "bytes")}
+        except Exception as exc:                     # noqa: BLE001 - one bundle's failure must not hide the others'
+            why = "the download failed" if isinstance(exc, subprocess.CalledProcessError) else str(exc)
+            log.error("bundle %s failed: %s: %s", name, type(exc).__name__, why.replace(url, "<link>"))
+            out[name] = {"failed": f"{type(exc).__name__}: {why}".replace(url, "<link>")[:300]}
+        finally:
+            local.unlink(missing_ok=True)
     return out
 
 

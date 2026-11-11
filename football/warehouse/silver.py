@@ -24,7 +24,8 @@ import pyarrow.compute as pc
 from football.warehouse import bronze
 from football.warehouse.parse import PARSER_VERSION, parse_files
 from football.warehouse.schema import BRONZE_RAW, SILVER, SILVER_MARKET, SILVER_TICK
-from football.warehouse.store_io import (part_name, read_manifest, read_part, utc_now, write_manifest, write_part)
+from football.warehouse.store_io import (fingerprint, part_name, read_manifest, read_part, utc_now, write_manifest,
+                                         write_part)
 
 log = logging.getLogger(__name__)
 
@@ -34,17 +35,26 @@ CHUNK = 400                      # files a worker task
 
 def superseded(index: pa.Table | None) -> dict[str, str]:
     """{plan path: the path that supersedes it} for every bronze file whose market is held in a longer file (ties:
-    the later path)."""
+    the file of the later day)."""
     if index is None or index.num_rows == 0:
         return {}
-    best: dict[str, tuple[int, str]] = {}
+
+    def rank(size: int, path: str) -> tuple:
+        ident = bronze.plan_path(path) or {}
+        return size, ident.get("year", 0), ident.get("month", 0), ident.get("day", 0), path
+
+    best: dict[str, tuple] = {}
     rows = list(zip(index.column("market_id").to_pylist(), index.column("size").to_pylist(),
                     index.column("plan_path").to_pylist()))
     for mid, size, path in rows:
         cur = best.get(mid)
-        if cur is None or (size, path) > cur:
-            best[mid] = (size, path)
-    return {path: best[mid][1] for mid, _size, path in rows if best[mid][1] != path}
+        if cur is None or rank(size, path) > cur:
+            best[mid] = rank(size, path)
+    return {path: best[mid][-1] for mid, _size, path in rows if best[mid][-1] != path}
+
+
+def _dropped(drop: dict[str, str], year: int, month: int) -> list[str]:
+    return sorted(p for p in drop if _in_part(p, year, month))
 
 
 def _chunks(items: list, n: int):
@@ -95,15 +105,25 @@ def checks(tables: dict[str, pa.Table]) -> dict:
             continue
         n_keys = t.group_by(list(spec.key)).aggregate([]).num_rows
         out[f"{spec.name}:key_unique_ok"] = bool(n_keys == t.num_rows)
-    ticks_counted = (pc.sum(market.column("n_ticks")).as_py() or 0) if market.num_rows else 0
-    out["ticks_match_market_counts_ok"] = bool(ticks_counted == tick.num_rows)
+    def total(col: str) -> int:
+        return int(pc.sum(market.column(col)).as_py() or 0) if market.num_rows else 0
+
+    out["ticks_match_market_counts_ok"] = bool(total("n_ticks") == tick.num_rows)
     if tick.num_rows:
         ltp = tick.column("ltp")
         out["ltp_min"], out["ltp_max"] = pc.min(ltp).as_py(), pc.max(ltp).as_py()
         out["ticks_outside_1.01_1000"] = int(pc.sum(pc.or_(pc.less(ltp, 1.01), pc.greater(ltp, 1000.0))).as_py())
-        out["ticks_in_play"] = int(pc.sum(tick.column("in_play")).as_py())
+        in_play, pre = tick.column("in_play"), tick.column("pre_off")
+        out["ticks_in_play"], out["ticks_pre_off"] = int(pc.sum(in_play).as_py()), int(pc.sum(pre).as_py())
+        out["ticks_after_the_off_not_in_play"] = tick.num_rows - out["ticks_in_play"] - out["ticks_pre_off"]
+        # a price is before the off or in play or neither (a market never in play, after its kick-off): never both
+        out["tick_flags_ok"] = bool(not pc.any(pc.and_(in_play, pre)).as_py()
+                                    and out["ticks_in_play"] == total("n_ticks_inplay")
+                                    and out["ticks_pre_off"] == total("n_ticks_pre"))
     if market.num_rows:
-        mt = market.column("market_time")
+        out["markets_turned_in_play_more_than_once"] = int(pc.sum(pc.greater(market.column("n_inplay_turns"),
+                                                                             1)).as_py() or 0)
+        mt = market.column("market_time_pre")
         out["market_time_min"], out["market_time_max"] = str(pc.min(mt).as_py()), str(pc.max(mt).as_py())
         out["markets_never_in_play"] = int(pc.sum(pc.is_null(market.column("in_play_pt"))).as_py())
         out["markets_without_trade"] = int(pc.sum(pc.equal(market.column("n_ticks"), 0)).as_py())
@@ -118,17 +138,20 @@ def build(store, parts: list[tuple[int, int]] | None = None, force: bool = False
     bman = read_manifest(store, BRONZE_RAW.name)
     sman = read_manifest(store, MANIFEST)
     todo = []
+    # a file is left out when another month holds a longer copy of its market: what a partition leaves out is part
+    # of what it was built from
+    drop = superseded(bronze.index(store))
     for y, m in (parts if parts is not None else bronze.partitions(store)):
         name = part_name(y, m)
         fp = (bman["parts"].get(name) or {}).get("fingerprint")
         done = sman["parts"].get(name) or {}
-        if force or done.get("bronze_fingerprint") != fp or done.get("parser_version") != PARSER_VERSION:
+        if (force or done.get("bronze_fingerprint") != fp or done.get("parser_version") != PARSER_VERSION
+                or done.get("superseded_fingerprint") != fingerprint(_dropped(drop, y, m))):
             todo.append((y, m, fp))
     report = {"built": [], "skipped": len((parts if parts is not None else bronze.partitions(store))) - len(todo),
               "failed_checks": []}
     if not todo:
         return report
-    drop = superseded(bronze.index(store))
     workers = workers or max(1, min(8, (os.cpu_count() or 2) - 1))
     pool = ProcessPoolExecutor(workers, mp_context=mp.get_context("spawn")) if workers > 1 else None
     try:
@@ -136,7 +159,8 @@ def build(store, parts: list[tuple[int, int]] | None = None, force: bool = False
             name = part_name(y, m)
             entry = build_part(store, y, m, drop, workers, pool)
             entry["bronze_fingerprint"] = fp
-            entry["superseded_files"] = sorted(p for p in drop if _in_part(p, y, m))[:200]
+            entry["superseded_fingerprint"] = fingerprint(_dropped(drop, y, m))
+            entry["superseded_files"] = _dropped(drop, y, m)[:200]
             sman["parts"][name] = entry
             write_manifest(store, MANIFEST, sman)
             bad = [k for k, v in (entry.get("checks") or {}).items() if k.endswith("_ok") and not v]

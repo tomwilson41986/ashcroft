@@ -5,7 +5,8 @@ name: Football data warehouse (Betfair price history to analysis tables, S3)
 # definition, spell, tick) and gold (event, checkpoint grid, implied goals, price-path features, inferred goals, the
 # move panel, market-implied ratings, club marts) are built for the partitions that changed; the events are linked to
 # API-Football fixtures; and the data-quality report decides the run (a failed hard check fails the job).
-# S3 only: nothing here logs in to Betfair, reads a live price or bets. On GitHub's runners.
+# S3 only: nothing here logs in to Betfair, reads a live price or bets. On GitHub's runners. A bundle's download
+# link is read from the FOOTBALL_BUNDLE_URLS secret ({"<bundle name>": "<link>"}), not from the repository.
 
 on:
   workflow_dispatch:
@@ -32,7 +33,11 @@ jobs:
   warehouse:
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    defaults:
+      run:
+        shell: bash                # -eo pipefail: a step that pipes to tee fails when its command does
     env:
+      FOOTBALL_BUNDLE_URLS: ${{ secrets.FOOTBALL_BUNDLE_URLS }}    # {"<bundle name>": "<link>"}; never printed
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
@@ -45,7 +50,7 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -r football/warehouse/requirements.txt
       - name: Bundles into bronze (each once; a bundle already ingested is not downloaded again)
         run: |
           mkdir -p out
@@ -60,6 +65,10 @@ jobs:
       - name: Data-quality report (a failed hard check fails the run)
         id: quality
         run: python -m football.warehouse check --markdown out/quality.md > out/quality.json
+      - name: Headline numbers (each one query over the tables)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: python -m football.warehouse facts --out out/facts.json > /dev/null
       - name: Closing-price model on the move panel (development read; nothing is traded)
         if: ${{ !cancelled() && inputs.models }}
         continue-on-error: true
@@ -70,7 +79,7 @@ jobs:
           {
             echo "## Football data warehouse"
             [ -f out/quality.md ] && cat out/quality.md
-            for f in out/ingest.json out/build.json out/link.json out/bf_close_model.json; do
+            for f in out/ingest.json out/facts.json out/link.json out/bf_close_model.json out/build.json; do
               [ -f "$f" ] || continue
               echo "### $(basename "$f")"; echo '```'; head -c 20000 "$f"; echo '```'
             done

@@ -2,9 +2,13 @@
 
 A checkpoint is a number of minutes before the SCHEDULED kick-off (the time everyone knew in advance, so a model
 deciding at T-60 can be trained on exactly what it would have seen); checkpoint 0 is the close: the last price
-traded before the market went in play. The price at a checkpoint is the last one published at or before it (an
-as-of join of the pre-off ticks, pandas.merge_asof), never a later one. A checkpoint that falls after the actual
-kick-off (a match that started early) is left out.
+traded before the off. The schedule is the one that stood before the off (silver/market.market_time_pre: Betfair
+often rewrites the kick-off time to the actual one as the market turns in play, and a grid measured from that
+would put prices from after a checkpoint into it), and ``schedule_known`` says whether that schedule had already
+been set at the checkpoint's moment (false: the match was rescheduled later, and nobody could have stood at that
+checkpoint). The price at a checkpoint is the last one published at or before it (an as-of join of the pre-off
+ticks, pandas.merge_asof), never a later one. A checkpoint that falls after the off (a match that started early)
+or after the market closed (a match called off) is left out, and a market that closed before its off has no close.
 
 Only what traded is there: a runner has a row at a checkpoint once it has a price by then (most Asian handicap
 lines never trade and never appear). Beside the price: when it traded and how old it is, the ticks so far and
@@ -23,13 +27,13 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 1
+VERSION = 2          # 2: the grid from the schedule as known before the off; the off of a market never in play
 SCOPE = "part"
 INPUTS = ("silver/market", "silver/runner", "silver/tick")
 COLUMNS = {
-    "silver/market": ["market_id", "market_time", "in_play_pt", "closed_pt", "last_pt"],
+    "silver/market": ["market_id", "market_time_pre", "schedule_set_pt", "off_pt", "closed_pt"],
     "silver/runner": ["market_id", "event_id", "market_type", "selection_id", "handicap", "role", "n_ticks_pre"],
-    "silver/tick": ["market_id", "selection_id", "handicap", "pt", "seq", "ltp", "in_play"],
+    "silver/tick": ["market_id", "selection_id", "handicap", "pt", "seq", "ltp", "pre_off"],
 }
 
 #: minutes before the scheduled kick-off; 0 is the close
@@ -49,7 +53,11 @@ SPEC = TableSpec(
         Column("role", pa.string(), "home, away, draw, over or under."),
         Column("line", pa.float64(), "The book the runner belongs to: 0.0 for match odds and over/under; for an "
                "Asian handicap the home side's line (home at h and away at -h are one book).", False),
-        Column("cp_time", TS, "The checkpoint's moment (for the close: when the market went in play).", False),
+        Column("cp_time", TS, "The checkpoint's moment (for the close: the off, silver/market.off_pt).", False),
+        Column("schedule_known", pa.bool_(), "Whether the schedule the checkpoint is measured from had been set "
+               "by its moment (always true at the close). False: the kick-off was moved later on, so the "
+               "checkpoint could not have been known then; keep such rows out of anything that claims to "
+               "decide at the checkpoint.", False),
         Column("ltp", pa.float64(), "The last traded price as of the checkpoint.", False),
         Column("trade_pt", TS, "When that price was published.", False),
         Column("age_s", pa.float64(), "cp_time less trade_pt, seconds: how stale the price is.", False),
@@ -82,18 +90,16 @@ def _ms(table: pa.Table, cols: list[str]) -> pa.Table:
 def build(inputs: dict) -> dict:
     import numpy as np
     import pandas as pd
-    import pyarrow.compute as pc
 
     m = _ms(inputs["silver/market"].select(COLUMNS["silver/market"]),
-            ["market_time", "in_play_pt", "closed_pt", "last_pt"]).to_pandas()
+            ["market_time_pre", "schedule_set_pt", "off_pt", "closed_pt"]).to_pandas()
     r = inputs["silver/runner"].select(COLUMNS["silver/runner"]).to_pandas()
     tick = inputs["silver/tick"]
-    t = _ms(tick.filter(pc.invert(tick.column("in_play"))).select(["market_id", "selection_id", "handicap", "pt",
-                                                                    "seq", "ltp"]), ["pt"]).to_pandas()
+    t = _ms(tick.filter(tick.column("pre_off")).select(["market_id", "selection_id", "handicap", "pt", "seq", "ltp"]),
+            ["pt"]).to_pandas()
 
-    m["close_ms"] = m["in_play_pt"].fillna(m["closed_pt"]).fillna(m["last_pt"])
-    r = r[r["n_ticks_pre"] > 0].merge(m[["market_id", "market_time", "in_play_pt", "close_ms"]], on="market_id")
-    r = r[r["market_time"].notna() & r["close_ms"].notna()].reset_index(drop=True)
+    r = r[r["n_ticks_pre"] > 0].merge(m, on="market_id")
+    r = r[r["market_time_pre"].notna() & r["off_pt"].notna()].reset_index(drop=True)
     if r.empty or t.empty:
         return {SPEC.name: SPEC.schema.empty_table()}
     r["gid"] = np.arange(len(r))
@@ -107,10 +113,11 @@ def build(inputs: dict) -> dict:
     for cp in CHECKPOINTS:
         g = r[["gid"]].copy()
         g["cp_min"] = cp
-        g["cp_ms"] = (r["close_ms"] if cp == 0 else r["market_time"] - cp * 60_000.0).to_numpy()
-        if cp:                                   # a checkpoint after the actual kick-off never happened
-            g = g[(r["in_play_pt"].isna() | (g["cp_ms"] <= r["in_play_pt"])).to_numpy()]
-        grids.append(g)
+        g["cp_ms"] = (r["off_pt"] if cp == 0 else r["market_time_pre"] - cp * 60_000.0).to_numpy()
+        # a checkpoint after the off never happened, nor one after the market had closed (a match called off)
+        open_then = (g["cp_ms"] <= r["off_pt"]) & (r["closed_pt"].isna() | (g["cp_ms"] <= r["closed_pt"]))
+        g["schedule_known"] = True if cp == 0 else (g["cp_ms"] >= r["schedule_set_pt"]).to_numpy()
+        grids.append(g[open_then.to_numpy()])
     g = pd.concat(grids, ignore_index=True)
     g["cp_ms"] = g["cp_ms"].astype("int64")
     a = pd.merge_asof(g.sort_values("cp_ms", kind="stable"), t, left_on="cp_ms", right_on="pt", by="gid",
@@ -144,6 +151,7 @@ def build(inputs: dict) -> dict:
         "role": pa.array(a["role"].where(a["role"].notna(), None), pa.string()),
         "line": pa.array(a["line"], pa.float64()),
         "cp_time": pa.array(a["cp_ms"], pa.int64()).cast(TS),
+        "schedule_known": pa.array(a["schedule_known"].to_numpy(bool), pa.bool_()),
         "ltp": pa.array(a["ltp"], pa.float64()),
         "trade_pt": pa.array(a["pt"].astype("int64"), pa.int64()).cast(TS),
         "age_s": pa.array(a["age_s"], pa.float64()),

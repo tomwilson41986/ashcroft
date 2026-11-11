@@ -60,11 +60,11 @@ import pyarrow as pa
 from football.warehouse.gold_checkpoint import CHECKPOINTS
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 1
+VERSION = 2          # 2: pre-off prices are those before the off (silver/tick.pre_off)
 SCOPE = "part"
 INPUTS = ("silver/tick", "gold/checkpoint")
 COLUMNS = {
-    "silver/tick": ["market_id", "market_type", "selection_id", "handicap", "pt", "seq", "ltp", "in_play"],
+    "silver/tick": ["market_id", "market_type", "selection_id", "handicap", "pt", "seq", "ltp", "pre_off"],
     "gold/checkpoint": ["market_id", "selection_id", "handicap", "cp_min", "event_id", "market_type", "role",
                         "cp_time"],
 }
@@ -213,8 +213,7 @@ def build(inputs: dict) -> dict:
     cp = cp.filter(pc.and_(pc.is_in(cp.column("market_type"), value_set=types),
                            pc.is_in(cp.column("cp_min").cast(pa.int32()),
                                     value_set=pa.array(PATH_CHECKPOINTS, pa.int32()))))
-    tick = tick.filter(pc.and_(pc.invert(tick.column("in_play")),
-                               pc.is_in(tick.column("market_type"), value_set=types)))
+    tick = tick.filter(pc.and_(tick.column("pre_off"), pc.is_in(tick.column("market_type"), value_set=types)))
     if not cp.num_rows or not tick.num_rows:
         return {SPEC.name: SPEC.schema.empty_table()}
 

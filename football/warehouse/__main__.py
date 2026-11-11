@@ -4,6 +4,7 @@
     python -m football.warehouse ingest-queue          # every bundle in football/warehouse/bundles.json, each once
     python -m football.warehouse build [--force] [--part 2026-01 ...] [--layer silver|gold|all]
     python -m football.warehouse check
+    python -m football.warehouse facts --out facts.json    # the headline numbers, each one query
     python -m football.warehouse dictionary --out docs/football_data_dictionary.md
     python -m football.warehouse catalog --out warehouse.sql
 """
@@ -43,6 +44,8 @@ def main(argv=None) -> int:
     b.add_argument("--only", action="append", help="a gold module to run (e.g. gold_event; repeatable)")
     k = sub.add_parser("check", help="the data-quality report; exit 1 on a failed check")
     k.add_argument("--markdown", default=None, help="also write the report as a markdown table here")
+    f = sub.add_parser("facts", help="the warehouse's headline numbers, each one query over the tables")
+    f.add_argument("--out", default=None, help="also write them here as JSON")
     d = sub.add_parser("dictionary", help="the data dictionary, generated from the schema")
     d.add_argument("--out", default="docs/football_data_dictionary.md")
     c = sub.add_parser("catalog", help="the DuckDB views and macros as a script for the DuckDB shell")
@@ -56,6 +59,8 @@ def main(argv=None) -> int:
     elif a.cmd == "ingest-queue":
         from football.warehouse import bronze
         out = bronze.ingest_queue(store)
+        print(json.dumps(out, indent=1, default=str))
+        return 1 if any(isinstance(v, dict) and v.get("failed") for v in out.values()) else 0
     elif a.cmd == "build":
         out = {}
         if a.layer in ("silver", "all"):
@@ -75,6 +80,13 @@ def main(argv=None) -> int:
             from pathlib import Path
             Path(a.markdown).write_text(quality.markdown(out))
         return 0 if out.get("ok") else 1
+    elif a.cmd == "facts":
+        from football.warehouse import facts
+        out = facts.facts(store)
+        if a.out:
+            from pathlib import Path
+            Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(a.out).write_text(json.dumps(out, indent=1, default=str) + "\n")
     elif a.cmd == "catalog":
         from football.warehouse import catalog
         out = {"written": catalog.write_sql(store, a.out)}

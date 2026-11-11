@@ -10,7 +10,7 @@ the match's liquidity by its pre-off match-odds price updates (BASIC has no volu
 C 40 to 119, D under 40.
 
 Match odds and over/under: every runner. Asian handicap: every line complete at both ends, with ``is_main`` on the
-line nearest evens at the checkpoint (a market's main line).
+market's main line at the checkpoint (gold/implied's: the line nearest evens among those freshly traded).
 
 A move is in the chance: positive means the runner shortened (its chance rose) between the checkpoint and the off.
 """
@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import pyarrow as pa
 
+from football.warehouse.gold_implied import AH_FRESH_S
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 2
+VERSION = 3          # 3: schedule_known from the checkpoint
 SCOPE = "part"
 INPUTS = ("gold/checkpoint", "gold/event")
 COLUMNS = {"gold/event": ["event_id", "kickoff", "kickoff_shift_s", "mo_ticks_pre", "country_code", "category",
@@ -45,8 +46,8 @@ SPEC = TableSpec(
         Column("market_type", pa.string(), "The market's type.", False),
         Column("role", pa.string(), "home, away, draw, over or under."),
         Column("line", pa.float64(), "The book: 0.0, or the home side's handicap line.", False),
-        Column("is_main", pa.bool_(), "Asian handicap: the line nearest evens at the checkpoint. True for match "
-               "odds and over/under.", False),
+        Column("is_main", pa.bool_(), "Asian handicap: the market's main line at the checkpoint (nearest evens "
+               "among the lines freshly traded). True for match odds and over/under.", False),
         Column("kickoff", TS, "The scheduled kick-off."),
         Column("cp_time", TS, "The checkpoint's moment.", False),
         Column("ltp_cp", pa.float64(), "The price at the checkpoint.", False),
@@ -71,9 +72,10 @@ SPEC = TableSpec(
                "period (not known at the checkpoint: for reporting, not for selecting trades)."),
         Column("tier", pa.string(), "The match's liquidity tier from mo_ticks_pre: A, B, C or D (for reporting; "
                "use n_ticks_before to select at the checkpoint).", False),
-        Column("kickoff_shift_s", pa.int32(), "The scheduled kick-off's change over the market's life, seconds: "
-               "checkpoints are measured from the last schedule, so a large shift means they were not known "
-               "in advance."),
+        Column("schedule_known", pa.bool_(), "Whether the schedule the checkpoint is measured from had been set "
+               "by its moment (gold/checkpoint): false rows could not have been decided at the checkpoint.", False),
+        Column("kickoff_shift_s", pa.int32(), "The scheduled kick-off's change before the off, seconds (a "
+               "reschedule when large); schedule_known is the row-level test."),
         Column("country_code", pa.string(), "Betfair's country code."),
         Column("category", pa.string(), "senior, women, youth or reserves."),
         Column("won", pa.int8(), "Whether the runner won, where the role says so from the event's result (match "
@@ -87,8 +89,9 @@ SPECS = (SPEC,)
 QUERY = """
 WITH c AS (SELECT * FROM cp WHERE cp_min > 0 AND book_complete),
 z AS (SELECT * FROM cp WHERE cp_min = 0 AND book_complete),
-main AS (                                   -- an Asian handicap market's main line at a checkpoint: nearest evens
-    SELECT market_id, cp_min, arg_min(line, abs(p_norm - 0.5)) AS main_line
+main AS (                 -- an Asian handicap market's main line at a checkpoint: a fresh line, nearest evens
+    SELECT market_id, cp_min,
+           first(line ORDER BY (book_max_age_s > {ah_fresh}), abs(p_norm - 0.5), line) AS main_line
     FROM c WHERE market_type = 'ASIAN_HANDICAP' AND role = 'home' GROUP BY 1, 2)
 SELECT c.market_id, c.selection_id, c.handicap, c.cp_min, c.event_id, c.market_type, c.role, c.line,
        CASE WHEN c.market_type = 'ASIAN_HANDICAP' THEN coalesce(c.line = main.main_line, FALSE) ELSE TRUE END
@@ -106,7 +109,7 @@ SELECT c.market_id, c.selection_id, c.handicap, c.cp_min, c.event_id, c.market_t
        e.mo_ticks_pre,
        CASE WHEN e.mo_ticks_pre >= {a} THEN 'A' WHEN e.mo_ticks_pre >= {b} THEN 'B'
             WHEN e.mo_ticks_pre >= {c} THEN 'C' ELSE 'D' END AS tier,
-       e.kickoff_shift_s, e.country_code, e.category,
+       c.schedule_known, e.kickoff_shift_s, e.country_code, e.category,
        CAST(CASE c.role WHEN 'home' THEN CASE WHEN c.market_type = 'MATCH_ODDS' THEN (e.result = 'H')::INT END
                         WHEN 'draw' THEN (e.result = 'D')::INT
                         WHEN 'away' THEN CASE WHEN c.market_type = 'MATCH_ODDS' THEN (e.result = 'A')::INT END
@@ -123,6 +126,7 @@ WHERE c.p_norm > 0 AND c.p_norm < 1 AND z.p_norm > 0 AND z.p_norm < 1
 def build(inputs: dict) -> dict:
     from football.warehouse.gold import sql
     a, b, c = TIER_CUTS
-    out = sql(QUERY.format(min_age=MIN_AGE_S, share=AGE_SHARE, close_age=CLOSE_AGE_S, a=a, b=b, c=c),
+    out = sql(QUERY.format(min_age=MIN_AGE_S, share=AGE_SHARE, close_age=CLOSE_AGE_S, a=a, b=b, c=c,
+                           ah_fresh=AH_FRESH_S),
               cp=inputs["gold/checkpoint"], event=inputs["gold/event"])
     return {SPEC.name: out}

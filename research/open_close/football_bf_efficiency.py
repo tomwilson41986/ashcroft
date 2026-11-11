@@ -87,8 +87,10 @@ def cell(d: pd.DataFrame, n_boot: int = 500, seed: int = 0) -> dict:
             "back_return_se": round(float(ret.std(ddof=1)), 5)}
 
 
-def logistic_slope(p: np.ndarray, won: np.ndarray) -> dict:
-    """won ~ a + b * logit(p) by maximum likelihood (Newton): b above one means the close is too timid."""
+def logistic_slope(p: np.ndarray, won: np.ndarray, match: np.ndarray | None = None) -> dict:
+    """won ~ a + b * logit(p) by maximum likelihood (Newton): b above one means the close is too timid. The
+    standard error is clustered by ``match`` where given: a match's selections are one draw, not three (their
+    results sum to one), and a plain standard error counts them as independent."""
     x = np.log(np.clip(p, 1e-6, 1 - 1e-6) / (1 - np.clip(p, 1e-6, 1 - 1e-6)))
     X = np.c_[np.ones_like(x), x]
     beta = np.array([0.0, 1.0])
@@ -100,7 +102,12 @@ def logistic_slope(p: np.ndarray, won: np.ndarray) -> dict:
         if np.abs(step).max() < 1e-10:
             break
     mu = 1 / (1 + np.exp(-(X @ beta)))
-    cov = np.linalg.inv(X.T @ (X * (mu * (1 - mu))[:, None]))
+    bread = np.linalg.inv(X.T @ (X * (mu * (1 - mu))[:, None]))
+    cov = bread
+    if match is not None:
+        score = X * (won - mu)[:, None]
+        g = pd.DataFrame(score).groupby(np.asarray(match)).sum().to_numpy()
+        cov = bread @ (g.T @ g) @ bread * (len(g) / max(len(g) - 1, 1))
     return {"intercept": round(float(beta[0]), 5), "slope": round(float(beta[1]), 5),
             "slope_se": round(float(np.sqrt(cov[1, 1])), 5)}
 
@@ -113,11 +120,13 @@ def run(store, max_age_s: float = MAX_AGE_S) -> dict:
     pc = np.clip(p, 1e-9, 1 - 1e-9)
     out = {"selections": int(len(d)), "matches": int(d["event_id"].nunique()), "max_close_age_s": max_age_s,
            "days": int(d["day"].nunique()),
-           "note": "closing last traded prices normalised to the book; development evidence on one year",
+           "note": "closing last traded prices normalised to the book; development evidence on one year. The "
+                   "'all' cell's gap is zero by construction (a book's chances and results both sum to one): read "
+                   "its back return, and the slope with its match-clustered standard error",
            "all": cell(d),
            "log_loss": round(float(-(w * np.log(pc) + (1 - w) * np.log(1 - pc)).mean()), 6),
            "brier": round(float(((p - w) ** 2).mean()), 6),
-           "logistic": {"all": logistic_slope(p, w)},
+           "logistic": {"all": logistic_slope(p, w, d["event_id"].to_numpy())},
            "by_selection": {k: cell(g) for k, g in d.groupby("selection")}}
     # a match's selections sum to one in chance and in wins, so a cell of whole matches is calibrated by
     # construction: cells of matches are read on the match-odds favourite (one selection a match) and by the slope
@@ -125,7 +134,8 @@ def run(store, max_age_s: float = MAX_AGE_S) -> dict:
     fav = mo_all.loc[mo_all.groupby("event_id")["p"].idxmax()]
     for name, col in (("by_tier", "tier"), ("by_category", "category")):
         out[name + "_favourite"] = {k: {**cell(g), "slope_all_match_odds": logistic_slope(
-            mo_all[mo_all[col] == k]["p"].to_numpy(float), mo_all[mo_all[col] == k]["won"].to_numpy(float))}
+            mo_all[mo_all[col] == k]["p"].to_numpy(float), mo_all[mo_all[col] == k]["won"].to_numpy(float),
+            mo_all[mo_all[col] == k]["event_id"].to_numpy())}
             for k, g in fav.groupby(col)}
     for k, g in d.groupby("selection"):
         out["logistic"][k] = logistic_slope(g["p"].to_numpy(float), g["won"].to_numpy(float))

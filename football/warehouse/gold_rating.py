@@ -71,13 +71,13 @@ import pyarrow.compute as pc
 from football.warehouse.gold_implied import draw_independent, home_minus_away, p_over25
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 1
+VERSION = 2          # 2: a close whose books are not one market's prices (no valid rho) rates nobody
 SCOPE = "all"
 INPUTS = ("gold/event", "gold/implied")
 COLUMNS = {
     "gold/event": ["event_id", "home_id", "away_id", "kickoff", "kickoff_actual", "went_in_play", "country_code"],
     "gold/implied": ["event_id", "cp_min", "cp_time", "p_home", "p_draw", "p_away", "p_over", "total", "supremacy",
-                     "lam_home", "lam_away"],
+                     "lam_home", "lam_away", "rho"],
 }
 
 DAY_MS = 86_400_000
@@ -132,7 +132,8 @@ TEAM_RATING = TableSpec(
                "within a pool only: women's football, many youth leagues and unlinked lower leagues are pools "
                "of their own, each centred on its own average.", False),
         Column("rated", pa.bool_(), "Whether this match's close enters later ratings: it went in play with a "
-               "complete closing 1X2 and over/under book.", False),
+               "complete closing 1X2 and over/under book that one market could have made (gold/implied gives it "
+               "a rho).", False),
         Column("after_as_of", TS, "The moment the rating after the match is as of: the start of the UTC day "
                "after the kick-off.", False),
         Column("n_after", pa.int32(), "Matches behind the rating after the match.", False),
@@ -350,8 +351,10 @@ def _f(a) -> pa.Array:
 def observations(event, implied) -> dict:
     """The matches as arrays, in event order: the two sides (``home``, ``away``: indices into ``teams``), the
     country group, the scheduled kick-off and the moment the match began (ms), whether its close is an observation
-    (it went in play with both closing goal expectancies), when that close is known (``t_obs``: the later of the
-    scheduled and the actual kick-off) and the close's log rate ratio and log rate product."""
+    (it went in play with both closing goal expectancies and a rho a Dixon-Coles market can have: gold/implied
+    blanks the rho of books that are not one moment's prices, such as in-running prices where the turn in play
+    came late, and a least-squares fit has no defence against those), when that close is known (``t_obs``: the
+    later of the scheduled and the actual kick-off) and the close's log rate ratio and log rate product."""
     ev = event[event["home_id"].notna() & event["away_id"].notna() & event["kickoff"].notna()
                & (event["home_id"] != event["away_id"])].drop_duplicates("event_id") \
         .sort_values("event_id", kind="stable").reset_index(drop=True)
@@ -366,8 +369,9 @@ def observations(event, implied) -> dict:
     close = implied[implied["cp_min"] == 0].drop_duplicates("event_id").set_index("event_id")
     lam_h = close["lam_home"].reindex(ev["event_id"]).to_numpy(float)
     lam_a = close["lam_away"].reindex(ev["event_id"]).to_numpy(float)
+    sound = np.isfinite(close["rho"].reindex(ev["event_id"]).to_numpy(float)) if "rho" in close.columns else True
     with np.errstate(invalid="ignore"):
-        observed = ev["went_in_play"].fillna(False).to_numpy(bool) & (lam_h > 0) & (lam_a > 0)
+        observed = ev["went_in_play"].fillna(False).to_numpy(bool) & (lam_h > 0) & (lam_a > 0) & sound
     lam_h, lam_a = np.where(observed, lam_h, 1.0), np.where(observed, lam_a, 1.0)
     return {"event_id": ev["event_id"].to_numpy("int64"), "home_id": home_id, "away_id": away_id, "teams": teams,
             "home": idx[:n_ev], "away": idx[n_ev:], "cc": cc, "countries": countries, "country": country,

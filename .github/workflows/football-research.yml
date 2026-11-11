@@ -1,7 +1,8 @@
 name: Football research (read-only, S3)
 
 # Football research that needs the S3 store (the sources, the gold tables, the live feed's record), run by hand on
-# GitHub's runners and printed to the run's summary and artifact. Read-only: nothing is written to S3 and nothing
+# GitHub's runners and printed to the run's summary and artifact. Read-only (nothing is written to S3) but for the
+# warehouse job, which writes the football data warehouse's own tables under sources/football/warehouse/. Nothing
 # reaches Betfair. Each job is one research module, chosen from the list.
 
 on:
@@ -57,7 +58,7 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -r football/warehouse/requirements.txt
       - name: Cup and European data, and the live record of them
         if: inputs.job == 'cross_league_data'
         env:
@@ -134,12 +135,16 @@ jobs:
       # merged: a new workflow file cannot be dispatched from a branch). S3 only; nothing reaches Betfair.
       - name: Football data warehouse (ingest the listed bundles, build silver and gold, link, check)
         if: inputs.job == 'warehouse'
+        shell: bash                  # -eo pipefail: a command that fails behind "| tee" fails the step
+        env:
+          FOOTBALL_BUNDLE_URLS: ${{ secrets.FOOTBALL_BUNDLE_URLS }}    # {"<bundle name>": "<link>"}; never printed
         run: |
           mkdir -p out
           python -m football.warehouse ingest-queue | tee out/warehouse_ingest.json
           python -m football.warehouse build | tee out/warehouse_build.json
           python -m football.warehouse.link run | tee out/warehouse_link.json || echo "link stage failed (reported, not fatal)"
           python -m football.warehouse check --markdown out/warehouse_quality.md > out/warehouse_quality.json
+          python -m football.warehouse facts --out out/warehouse_facts.json > /dev/null || echo "facts failed (reported)"
       - name: Closing-price efficiency and the Betfair-native closing-price model, on the warehouse
         if: inputs.job == 'warehouse' || inputs.job == 'warehouse_models'
         continue-on-error: true

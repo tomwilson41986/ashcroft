@@ -40,6 +40,7 @@ bash scripts/setup_session.sh --db   # Just re-download latest DB from S3
 | `BETFAIR_PASSWORD` | Betfair Exchange password |
 | `BETFAIR_APP_KEY` | Betfair API application key (the delayed key: every read-only job, the market records) |
 | `API_FOOTBALL_KEY` | API-Football (optional: fixture status, kick-off, cups; the football model runs without it) |
+| `FOOTBALL_BUNDLE_URLS` | Optional: `{"<bundle name>": "<download link>"}` as JSON, the links of the Betfair Historic Data bundles in `football/warehouse/bundles.json` (the football warehouse's ingest; the repository is public, so the links are not in it) |
 | `BETFAIR_LIVE_APP_KEY` | Betfair's live application key (6 Oct 2026): the live trader's own process (live-trade.yml); the football trader's process (football-trade.yml): reads every football market on it from 4 Nov 2026 (the owner: "use live key", "do not pass betfair thresholds": `football/exchange_feed.py Throttle`, at most 5 requests a second and 12,000 an hour, each under 200 weight points), bets only with `FOOTBALL_LIVE=yes` (small real stakes, 3 Nov 2026); the morning models when `MORNING_LIVE=yes` (morning-models.yml, its own runner, 4 Nov 2026); Betfair permits no read-only use of live data. Also the greyhound paper trader and greyhound book recorder in paper-models.yml, read-only, no bets (the owner's decision, 2 Nov 2026: "use the live key, just don't execute bets yet"; tests/test_workflow_guards.py) |
 
 ## Key Commands
@@ -207,16 +208,23 @@ python -m research.open_close.football_paper_trial --panel data/football_exchang
 
 # The football data warehouse (the owner, 11 Nov 2026; docs/football_data_platform.md, docs/football_data_dictionary.md):
 # Betfair's Historic Data stream files as tables. Bronze (the raw files as rows), silver (market, runner, definition,
-# spell, tick: every traded price with the market's state), gold (event, checkpoint grid, implied goals, price-path
-# features, inferred goals, the move panel, market-implied team ratings, club marts). Parquet under
+# spell, tick: every traded price with the market's state and clock), gold (event, checkpoint grid, implied goals,
+# price-path features, inferred goals and timelines, the in-play minute table, the move panel, market-implied team
+# ratings), club marts (team-match, team summary, country strength). Parquet under
 # s3://$CAPTURE_BUCKET/sources/football/warehouse/ (or --root <folder>), DuckDB over it; idempotent builds
-# (football-warehouse.yml on GitHub's runners; S3 only, nothing reaches Betfair)
+# (football-warehouse.yml on GitHub's runners; S3 only, nothing reaches Betfair). Its own pins are in
+# football/warehouse/requirements.txt (never in requirements.txt, which the live horse jobs install); a bundle's
+# download link comes from the FOOTBALL_BUNDLE_URLS secret ({"<bundle name>": "<link>"}), not from the repository
+pip install -r requirements.txt -r football/warehouse/requirements.txt
 python -m football.warehouse ingest-queue          # every bundle in football/warehouse/bundles.json, each once
 python -m football.warehouse build                 # silver, then gold, for the partitions that changed
 python -m football.warehouse check                 # the data-quality report; exit 1 on a failed hard check
+python -m football.warehouse facts --out out/facts.json   # the headline numbers the platform document cites
 python -m football.warehouse.link run              # events to API-Football fixtures, teams to teams, goals checked
 python -m football.warehouse dictionary --out docs/football_data_dictionary.md
-# the closing-price model trained on Betfair's own prices (the move from a checkpoint to the close; development read)
+# the closing price's calibration against results, and the closing-price model trained on Betfair's own prices (the
+# move from a checkpoint to the close; development reads, nothing is traded)
+python -m research.open_close.football_bf_efficiency --out-json out/bf_efficiency.json
 python -m research.open_close.football_bf_close_model --out-json out/bf_close_model.json
 
 # Race ABM: simulate a card, batch features for training, pattern-oriented calibration
@@ -258,8 +266,11 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
   data-quality checks, the Betfair market map), `ratings.py` (pooled Dixon-Coles, score-matrix prices incl. Asian
   handicap), `model.py` (walk-forward, market pooling, CLV scoring), `live.py` (fit, trade, settle)
 - `football/warehouse/` — the football data warehouse: `schema.py` (table contracts), `parse.py` (stream files to
-  rows), `bronze.py`, `silver.py`, `gold.py` (orchestrator) and one `gold_*.py` a table family (a pure function of
-  Arrow tables: `SPECS`, `INPUTS`, `VERSION`, `build`), `link.py`, `club.py`, `quality.py`, `catalog.py` (DuckDB views)
+  rows; the market's clock: the schedule as known before the off, the turn in play that is the kick-off, the off),
+  `bronze.py`, `silver.py`, `gold.py` (orchestrator) and one `gold_*.py` a table family (a pure function of Arrow
+  tables: `SPECS`, `INPUTS`, `VERSION`, `build`: event, checkpoint, implied, path, goal, inplay, move, team, rating),
+  `club.py` (club marts), `link.py` (API-Football and canonical matches), `quality.py`, `facts.py`, `catalog.py`
+  (DuckDB views), `dictionary.py`
 - `sources/` (`source_data.py`) — the historic data for the models beyond UK/IE racing, one module a source (GBGB, football-data, tennis, Punting Form); `betfair_historic.py` — Betfair's Historic Data service (BASIC plan, every sport) to opening/closing-price tables
 - S3 bucket: `horseracingresults`, key: `horse_racing.db`
 

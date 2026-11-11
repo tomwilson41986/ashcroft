@@ -1,5 +1,5 @@
 [
- {"name": "owner_drive_2026_11_11", "sport": "Soccer",
-  "url": "https://drive.usercontent.google.com/download?id=1uSNQfZCjlxT-wxwC8UejKBtz8Onxhal7&export=download&confirm=t",
+ {"name": "owner_drive_2026_11_11", "sport": "Soccer", "bytes": 659773172,
+  "sha256": "e2ce65fba8b9c900bc86da6210f0872c7a6a20410af27792dc1a8c5f622e8585",
   "note": "the owner's download with scripts/betfair_historic_download.ps1 (shared 11 Nov 2026): BASIC, Soccer, MATCH_ODDS / OVER_UNDER_25 / ASIAN_HANDICAP, every country; 2026.zip, 659,773,172 bytes; 165,734 market files, Jan to early Nov 2026 (the last days of Aug 2026 refused by Betfair's service); two nested month zips repeat Oct and Nov"}
 ]
