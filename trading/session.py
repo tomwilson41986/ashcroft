@@ -298,6 +298,9 @@ class Session:
             pos.matched += fill.matched
             pos.fills += 1
             pos.cost += fill.matched * fill.avg_price
+            # a horse laid already is open again by this fill's winnings: if its lay fails, the next poll sends it
+            # again (until 11 Nov the flag stayed up from the earlier lay, and a top-up's failed lay never was)
+            pos.hedged = pos.hedge_liability >= round(pos.matched * (pos.avg_price - 1.0), 2) - 0.01
             self.state.record(m.market_id, fill.matched)
             if self.available is not None:
                 self.available = max(0.0, self.available - fill.matched)

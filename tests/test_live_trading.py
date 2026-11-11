@@ -369,6 +369,57 @@ def test_a_top_up_that_never_reached_betfair_adds_nothing_and_lays_nothing():
     assert not s.state.stopped                                     # Betfair's record was read: the day goes on
 
 
+def test_a_top_ups_lay_that_fails_is_sent_again_at_the_next_poll():
+    """A horse laid already kept its 'hedged' flag when a top-up filled, so a top-up's lay that failed (never
+    reached Betfair, or refused) was not sent again and the top-up's stake was left to the result (found by the
+    review of the 11 Nov fix). The flag now follows the fill; the rule is the first back's: five tries, never twice."""
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    race = lambda: [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])]  # noqa: E731
+    sides = lambda c: [p["instructions"][0]["side"] for m, p in c.calls if m == "placeOrders"]             # noqa: E731
+    laid = lambda c: sum(o["bspLiability"] for o in c.current if o["side"] == "LAY")                      # noqa: E731
+    c = _Book(part={1: 0.5}, drop={4})        # 1 the back (half matched), 2 its lay, 3 the top-up, 4 its lay: never placed
+    s, clock = _session(c, race())
+    s.step(clock())
+    clock.t += timedelta(minutes=1)
+    s.step(clock())                                                # the top-up fills; its lay never reaches Betfair
+    pos = s.positions[("1.7", 1)]
+    assert pos.matched == pytest.approx(41.66) and pos.fills == 2
+    assert not pos.hedged and pos.hedge_failures == 1 and pos.hedge_liability == pytest.approx(124.98)
+    assert laid(c) == pytest.approx(124.98)                        # Betfair holds half the winnings laid
+    clock.t += timedelta(minutes=1)
+    s.step(clock())                                                # the next poll sends it again
+    assert sides(c) == ["BACK", "LAY", "BACK", "LAY", "LAY"]
+    assert pos.hedged and pos.hedge_liability == pytest.approx(249.96) and laid(c) == pytest.approx(249.96)
+    clock.t += timedelta(minutes=1)
+    s.step(clock())
+    assert len(sides(c)) == 5 and not s.state.stopped              # and never a second time
+    # the lay did land and only its reply was lost: Betfair's record settles it, and it is not sent again
+    c = _Book(part={1: 0.5}, lose={4})
+    s, clock = _session(c, race())
+    for _ in range(4):
+        s.step(clock())
+        clock.t += timedelta(minutes=1)
+    assert sides(c) == ["BACK", "LAY", "BACK", "LAY"] and s.positions[("1.7", 1)].hedged
+    assert laid(c) == pytest.approx(249.96)
+
+    class Refuse(_Book):                                           # Betfair refuses the top-up's lay, with a reply
+        def _api_call(self, method, params):
+            if method == "placeOrders" and self.n >= 3 and params["instructions"][0]["side"] == "LAY":
+                self.calls.append((method, params))
+                self.n += 1
+                return {"status": "FAILURE", "errorCode": "BET_ACTION_ERROR",
+                        "instructionReports": [{"status": "FAILURE", "errorCode": "MARKET_SUSPENDED"}]}
+            return super()._api_call(method, params)
+    c = Refuse(part={1: 0.5})
+    s, clock = _session(c, race())
+    for _ in range(10):
+        s.step(clock())
+        clock.t += timedelta(minutes=1)
+    assert sides(c) == ["BACK", "LAY", "BACK"] + ["LAY"] * 5       # five tries, then left to the result
+    pos = s.positions[("1.7", 1)]
+    assert not pos.hedged and pos.hedge_liability == pytest.approx(124.98) and laid(c) == pytest.approx(124.98)
+
+
 def test_a_lay_past_its_tries_is_not_sent_again_because_another_horse_in_the_race_is_laid():
     """close_out lays every open position in the race. A horse whose lay was refused five times, or whose lay's
     state is unknown ("never lay it twice"), was laid again as soon as a stablemate in the race needed its own."""
