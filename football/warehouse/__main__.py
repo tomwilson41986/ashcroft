@@ -40,6 +40,7 @@ def main(argv=None) -> int:
     b.add_argument("--part", action="append", help="YYYY-MM (repeatable); default: every partition")
     b.add_argument("--layer", choices=["silver", "gold", "all"], default="all")
     b.add_argument("--workers", type=int, default=None)
+    b.add_argument("--only", action="append", help="a gold module to run (e.g. gold_event; repeatable)")
     k = sub.add_parser("check", help="the data-quality report; exit 1 on a failed check")
     k.add_argument("--markdown", default=None, help="also write the report as a markdown table here")
     d = sub.add_parser("dictionary", help="the data dictionary, generated from the schema")
@@ -62,7 +63,10 @@ def main(argv=None) -> int:
             out["silver"] = silver.build(store, _parts(a.part), a.force, a.workers)
         if a.layer in ("gold", "all"):
             from football.warehouse import gold
-            out["gold"] = gold.build(store, _parts(a.part), a.force)
+            out["gold"] = gold.build(store, _parts(a.part), a.force, only=a.only)
+        print(json.dumps(out, indent=1, default=str))
+        failed = bool((out.get("silver") or {}).get("failed_checks")) or bool((out.get("gold") or {}).get("failed"))
+        return 1 if failed else 0                      # a failed partition check or gold module fails the build
     elif a.cmd == "check":
         from football.warehouse import quality
         out = quality.report(store)
