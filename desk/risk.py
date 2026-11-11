@@ -20,6 +20,10 @@ The order of the checks (the first that refuses wins):
 Losses here are the day's settled P&L plus the worst case of the desk's open positions: conservative, so a strategy
 cannot run past its day loss on positions not yet settled. The legacy traders keep their own limits; the warden
 watches the account as a whole.
+
+Paper (``paper=True``: replays and the paper stage) applies the same checks to orders that are never sent to
+Betfair, so a strategy's paper record is the record it would have had under its limits: the stage and the envelope
+do not hold it back (paper is how a strategy earns its stage), and the envelope's caps apply when there is one.
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ from __future__ import annotations
 import math
 import time
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from desk.account import Position, worst_case
 from desk.envelope import Envelope
@@ -80,12 +84,19 @@ class DeskState:
     funds_available: float | None = None
     stopped: str = ""
 
-    def record(self, intent: Intent, size: float, now: float | None = None) -> None:
-        self.turnover[intent.strategy_id] += size
-        self.positions[intent.strategy_id].append(intent.position(size))
+    def note_sent(self, intent: Intent, now: float | None = None) -> None:
+        """An order sent (matched or not): the order rate counts every one."""
         self.sent[intent.strategy_id].append(time.time() if now is None else now)
+
+    def record(self, intent: Intent, size: float, price: float | None = None) -> None:
+        """What matched: ``size`` at ``price`` (the average matched; the intent's price when not given)."""
+        if size <= 0:
+            return
+        it = intent if price is None else replace(intent, price=float(price))
+        self.turnover[it.strategy_id] += size
+        self.positions[it.strategy_id].append(it.position(size))
         if self.funds_available is not None:
-            self.funds_available -= intent.liability(size)
+            self.funds_available -= it.liability(size)
 
 
 def _floor_pence(x: float) -> float:
@@ -109,11 +120,12 @@ def _size_for_loss(intent: Intent, headroom: float) -> float:
 
 class RiskKernel:
     def __init__(self, strategies: list[Strategy], envelope: Envelope | None, state: DeskState | None = None,
-                 clock=time.time):
+                 clock=time.time, paper: bool = False):
         self.by_id = {s.id: s for s in strategies}
         self.envelope = envelope
         self.state = state or DeskState()
         self.clock = clock
+        self.paper = paper
 
     def _sport_ids(self, sport: str) -> list[str]:
         return [i for i, s in self.by_id.items() if s.sport == sport and s.desk_run]
@@ -125,10 +137,13 @@ class RiskKernel:
             return Verdict(0, f"{it.strategy_id}: not in the registry")
         if st.stopped:
             return Verdict(0, f"stopped: {st.stopped}")
-        if env is None:
-            return Verdict(0, "no envelope: paper only")
-        if not s.desk_run or s.stage not in MONEY_STAGES:
-            return Verdict(0, f"stage {s.stage}: no money")
+        if not s.desk_run or s.stage == "retired":
+            return Verdict(0, f"stage {s.stage}: not a desk strategy that trades")
+        if not self.paper:
+            if env is None:
+                return Verdict(0, "no envelope: paper only")
+            if s.stage not in MONEY_STAGES:
+                return Verdict(0, f"stage {s.stage}: no money")
         lim = s.limits or {}
         missing = [k for k in LIMIT_FIELDS if k not in lim]
         if missing:
@@ -157,7 +172,7 @@ class RiskKernel:
 
         cut(lim["max_order"], "the order's cap")
         cut(lim["max_day_turnover"] - st.turnover[s.id], "the strategy's day turnover")
-        if s.stage == "pilot":
+        if s.stage == "pilot" and env is not None:
             pilot = sum(st.turnover[i] for i, x in self.by_id.items() if x.stage == "pilot")
             cut(env.pilot_budget - pilot, "the pilot budget")
         # the day loss: settled today plus the worst case still open, for the strategy, its sport and the desk
@@ -166,19 +181,24 @@ class RiskKernel:
         def loss_so_far(ids) -> float:
             return -sum(st.settled[i] for i in ids) - _open_worst([p for i in ids for p in st.positions[i]])
 
-        for ids, cap, name in (([s.id], lim["max_day_loss"], "the strategy's day loss"),
-                               (self._sport_ids(s.sport), env.sport_daily_loss(s.sport), f"{s.sport}'s day loss"),
-                               (desk_ids, env.daily_loss, "the desk's day loss")):
+        caps = [([s.id], lim["max_day_loss"], "the strategy's day loss")]
+        if env is not None:
+            caps += [(self._sport_ids(s.sport), env.sport_daily_loss(s.sport), f"{s.sport}'s day loss"),
+                     (desk_ids, env.daily_loss, "the desk's day loss")]
+        for ids, cap, name in caps:
             cut(_size_for_loss(it, cap - loss_so_far(ids)), name)
         # the market: every desk strategy's positions on it together, with this order
         mine = [p for p in st.positions[s.id] if p.market_id == it.market_id]
         here = [p for i in desk_ids for p in st.positions[i] if p.market_id == it.market_id]
         cut(_largest_fitting(it, mine, lim["max_market_exposure"], size), "the strategy's market exposure")
-        cut(_largest_fitting(it, here, env.max_market_exposure, size), "the desk's market exposure")
+        if env is not None:
+            cut(_largest_fitting(it, here, env.max_market_exposure, size), "the desk's market exposure")
         if st.funds_available is None:
-            return Verdict(0, "funds not read: no order")
-        free = st.funds_available - env.reserve
-        cut(_size_for_loss(it, free), "the funds, less the horse rule's reserve")
+            if not self.paper:
+                return Verdict(0, "funds not read: no order")
+        else:
+            free = st.funds_available - (env.reserve if env is not None else 0.0)
+            cut(_size_for_loss(it, free), "the funds, less the horse rule's reserve")
         size = _floor_pence(size)
         if size < lim["min_stake"]:
             return Verdict(0, f"below the minimum stake after limits ({why or 'size'})")

@@ -89,6 +89,21 @@ Review is deterministic CI, not a second agent's approval: one bot identity cann
 | 3 | Greyhounds and football: the registered trials become registry entries; execution-led ideas only | Agents |
 | 4 | Tennis and cricket models once a season of prices is held | Agents |
 
+## Phase 1 so far (11 Nov 2026)
+
+- `desk/strategy.py`: a strategy is a pure function from a `MarketView` (the market, its book, each runner, the
+  closing model's view on demand) to `Intent`s; `on_fill` tells it what matched.
+- `desk/session.py` `DeskSession`: several strategies on one market, every intent through the kernel in paper mode,
+  each order under the strategy's own reference (`<prefix><mmdd>-...`), settled at the BSP from Betfair's record.
+  It runs on the replay's shared book beside the live rule (`research/arms/core.py run_agents`). Paper only.
+- `desk/algos/lay_book.py`: the lay arm ported as the desk's first strategy, registered at the research stage
+  (`desk/strategies/horse_racing/horse-lay-book.json`, gate pinned) and in the ledger (`desk-lay-book-1111`).
+  On the arms' test day it reproduces the arm's fills and score exactly (`tests/test_desk_session.py`).
+- `research/queries/desk_lay_book_1111.py`: the port checked against the arm on every recorded day, then the
+  registered reading. Its result goes in the ledger; a pass moves the strategy to paper, never to money.
+- Not yet: a live desk exchange (phase 2, behind the pilot stage); the late and subset books (they need a model fitted
+  on late prices and a new book construction first: `desk/backlog/horse_racing.jsonl`).
+
 ## 0a Lock-down: the owner's checklist before anything autonomous bets
 
 Found in review, 10 Nov 2026, verified in the workflow files:

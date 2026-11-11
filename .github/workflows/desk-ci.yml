@@ -31,7 +31,7 @@ jobs:
       - name: Install
         run: pip install -r requirements.txt pytest==8.3.4 pyyaml==6.0.2
       - name: Tests (the desk and the workflow guards)
-        run: python -m pytest tests/test_desk.py tests/test_workflow_guards.py -q -p no:cacheprovider
+        run: python -m pytest tests/test_desk.py tests/test_desk_session.py tests/test_workflow_guards.py -q -p no:cacheprovider
       - name: The strategy registry
         run: python -m desk.registry --check
       - name: The research ledger (append-only against the base branch)
