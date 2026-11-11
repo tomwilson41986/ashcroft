@@ -191,3 +191,29 @@ Stages, each gated on the last:
   (`micro-next-move-1111-sealed`, run on 19 Nov). A forecast is not a profit: a mid move is usually half a tick, and
   a taker pays a whole tick plus costs. Stage 2 asks whether quoting only where the model expects no adverse move
   pays after queue position, latency and costs.
+
+## The racing² Quant Core build prompt v2 (the owner, 11 Nov 2026)
+
+The owner's v2 build prompt (a spec for a new sport-agnostic system: five engines, a truth layer, a discovery loop) is
+kept outside this public repository. It is in the claude.ai skill `r2quant-frontier`, which loads in every session,
+and in the private wiki (`tomwilson41986/wiki`, `quant-trading/`). This section records only what it adds here.
+
+**Precedence.** This repository's CLAUDE.md and the owner's dated decisions win; the build prompt applies wherever
+they are silent. The one conflict found is that the prompt has the owner sign off every move to pilot or scale (its
+Sections 20.9 and 21.6), while the desk is autonomous inside the `DESK_*` envelope (decision 1 above). Both agree that
+no LLM places orders or sets limits.
+
+**What it adds that the repository lacks.** A search on 11 Nov found no `markout`, `Ville`, `e_value`, `SAFFRON` or
+commit-reveal code, and no null or injection tests.
+
+| Prompt section | What it adds | Where it would land here |
+|---|---|---|
+| 18.11 markouts | the price move after each fill, at fixed horizons and to the close | the high-frequency track's Stage 2: the measure of the adverse selection behind the mid quotes' losses (ledger lines 584, 590) |
+| 18.14 pessimistic fill rule | a passive order fills only once the volume traded after it exceeds the queue ahead plus its own size | the Stage 2 simulator's default |
+| 22.5 Ville bankroll, confidence sequences | forward reads valid at any stopping time | paper stages, beside the deflated Sharpe rule (an owner review: it touches the gate) |
+| 22.6 commit-reveal | the forecast's hash written before decision time | paper stages (`desk/trials.py` pins the gate's hash, not the forecasts) |
+| 22.7 null and injection tests | the research pipeline's own false-positive rate and power | `research/micro` (a time-slide null beside the sealed read, registered before it) and the desk's walk-forward |
+| 21.5 online false discovery rate | an error budget for a stream of agent tests | `desk/trials.py` |
+| 1, 19.5 DLL | log-likelihood gain over the market in nats, one number for edge | the next-move test already scores in millinats; extend it to the win models against the close |
+
+Each item is opened only as a registered test or an owner-reviewed change, as every desk change is.
