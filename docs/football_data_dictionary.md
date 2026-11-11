@@ -604,6 +604,7 @@ Key: `team_id`, `event_id`. Stored as a single file, sorted by `team_id`, `kicko
 | `strength_sd` | double | yes | Standard deviation of strength, conditional on the other teams' ratings: NOISE_S over the root of the decayed count of matches behind it plus the prior. |
 | `tempo_sd` | double | yes | Standard deviation of tempo (conditional). |
 | `pool_teams` | int32 | yes | Teams on the same scale as this one before the match: those joined to it by chains of the rated matches behind the rating (itself included; 1: none). Strengths compare within a pool only: women's football, many youth leagues and unlinked lower leagues are pools of their own, each centred on its own average. |
+| `linked` | bool | yes | Whether the two sides were on one scale going into the match (in one pool): the opponent's rating then compares with this side's. False: the two numbers are from different scales (or one side has none). |
 | `rated` | bool | yes | Whether this match's close enters later ratings: it went in play with a complete closing 1X2 and over/under book that one market could have made (gold/implied gives it a rho). |
 | `after_as_of` | timestamp[ms, tz=UTC] | yes | The moment the rating after the match is as of: the start of the UTC day after the kick-off. |
 | `n_after` | int32 | yes | Matches behind the rating after the match. |
@@ -611,6 +612,9 @@ Key: `team_id`, `event_id`. Stored as a single file, sorted by `team_id`, `kicko
 | `def_after` | double |  | Defence after the match. |
 | `strength_after` | double |  | Strength after the match. |
 | `tempo_after` | double |  | Tempo after the match. |
+| `end_as_of` | timestamp[ms, tz=UTC] | yes | The moment of the table's last solve: the start of the UTC day after the last rated close held. The same on every row. |
+| `strength_end` | double |  | The team's strength in that last solve (the same on each of its rows): every team's from one solve, so these are the ones to rank teams on. strength_after is as of the day after each match, on a scale that drifts as teams join. Blank for a team with no rated match in the 400 days before. |
+| `pool_teams_end` | int32 | yes | Teams on the team's scale in the last solve (itself included). |
 
 ## `gold/rating_gap`
 
@@ -702,7 +706,7 @@ Key: `team_id`, `event_id`. Stored as a single file, sorted by `team_id`, `kicko
 | `strength_sd` | double |  | That rating's standard deviation. |
 | `n_prior` | int32 |  | Earlier matches behind the rating. |
 | `pool_teams` | int32 |  | Teams on the same scale as this one going in: strengths compare only within a pool (gold/team_rating). |
-| `opp_strength` | double |  | The opponent's strength going in. |
+| `opp_strength` | double |  | The opponent's strength going in; blank where the two sides were not on one scale then (gold/team_rating.linked false). |
 | `strength_after` | double |  | The team's strength once this match's closing price is known. |
 
 ## `club/team_summary`
@@ -728,7 +732,7 @@ Key: `team_id`. Stored as a single file, sorted by `team_id`.
 | `pts_vs_xpts_pm` | double |  | Points a match beyond the expectation. |
 | `pts_vs_xpts_se` | double |  | Its standard error: read the figure against this. |
 | `n_inplay` | int32 | yes | Matches with an in-play record. |
-| `perf_pm` | double |  | In-play performance a match (club/team_match.perf): the part of the over-performance that the run of the matches supports. Over the n_inplay matches with an in-play record: with luck_pm it adds up to the points against expectation of those matches, which is not pts_vs_xpts_pm where some matches have no record. |
+| `perf_pm` | double |  | In-play performance a match (club/team_match.perf): how its matches went against the pre-match expectation, every minute counting. It describes a run of matches; it has not been shown to persist for a team. Over the n_inplay matches with an in-play record: with luck_pm it adds up to the points against expectation of those matches, which is not pts_vs_xpts_pm where some matches have no record. |
 | `perf_se` | double |  | Its standard error. |
 | `luck_pm` | double |  | Luck a match (pts_vs_xpts less perf): results beyond the run of play. |
 | `luck_se` | double |  | Its standard error. |
@@ -736,12 +740,8 @@ Key: `team_id`. Stored as a single file, sorted by `team_id`.
 | `xga_pm` | double |  | Goals the market expected it to concede a match. |
 | `fav_share` | double |  | Share of its matches it started as the likelier winner. |
 | `move_24h_pm` | double |  | The market's mean move on the team over the last 24 hours, log odds: persistently positive means the early price undervalues it. |
-| `opp_strength_pm` | double |  | Its opponents' mean strength: the difficulty of its matches. |
-| `strength` | double |  | Its market-implied strength after its last match. |
-| `strength_first` | double |  | Its strength going into the first match that had ten matches behind the rating (before that a rating is still finding its level). |
-| `strength_change` | double |  | How the market has re-rated it since then, against the median established side of its pool: strength less strength_first, less the drift of the scale between the two months (the scale's centre is the average listed team and moves as teams join; the median side rated in both of two consecutive months is held still). Blank where a month between the two has too few sides to read the drift from. |
-| `country_change` | double |  | The median strength_change of its country's ranked sides (same category and pool, five or more of them): how the rating of the country's football as a whole moved, which in the first seasons of data is mostly the scale between leagues being learned from cup and continental matches. |
-| `rerating` | double |  | strength_change less country_change: how the market has re-rated the side against the other sides of its country. With one year of data most of it is not the club: the level between divisions is still being learned, and whole divisions move together (every side of the Premier League and of Serie A is up; across twelve divisions checked, half the variance is the division's own mean). Compare sides within one division until the re-rating is made against the division. |
+| `opp_strength_pm` | double |  | Its opponents' mean strength going into its matches (those on its own scale at the time): the difficulty of its matches. |
+| `strength` | double |  | Its market-implied strength in the table's last solve (gold/team_rating.strength_end: every side's from the same day, the one to rank on); blank for a side with no rated match in the 400 days before. |
 | `ppm_last5` | double |  | Points a match over its last five matches. |
 | `perf_last5` | double |  | In-play performance a match over its last five with a record. |
 | `ppm_last10` | double |  | Points a match over its last ten. |

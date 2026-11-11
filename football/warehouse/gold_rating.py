@@ -71,7 +71,7 @@ import pyarrow.compute as pc
 from football.warehouse.gold_implied import draw_independent, home_minus_away, p_over25
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 3          # 2: a close whose books are not one market's prices (no valid rho) rates nobody
+VERSION = 4          # 2: a close whose books are not one market's prices (no valid rho) rates nobody
 SCOPE = "all"
 INPUTS = ("gold/event", "gold/implied")
 COLUMNS = {
@@ -133,6 +133,9 @@ TEAM_RATING = TableSpec(
                "by chains of the rated matches behind the rating (itself included; 1: none). Strengths compare "
                "within a pool only: women's football, many youth leagues and unlinked lower leagues are pools "
                "of their own, each centred on its own average.", False),
+        Column("linked", pa.bool_(), "Whether the two sides were on one scale going into the match (in one "
+               "pool): the opponent's rating then compares with this side's. False: the two numbers are from "
+               "different scales (or one side has none).", False),
         Column("rated", pa.bool_(), "Whether this match's close enters later ratings: it went in play with a "
                "complete closing 1X2 and over/under book that one market could have made (gold/implied gives it "
                "a rho).", False),
@@ -143,6 +146,14 @@ TEAM_RATING = TableSpec(
         Column("def_after", pa.float64(), "Defence after the match."),
         Column("strength_after", pa.float64(), "Strength after the match."),
         Column("tempo_after", pa.float64(), "Tempo after the match."),
+        Column("end_as_of", TS, "The moment of the table's last solve: the start of the UTC day after the last "
+               "rated close held. The same on every row.", False),
+        Column("strength_end", pa.float64(), "The team's strength in that last solve (the same on each of its "
+               "rows): every team's from one solve, so these are the ones to rank teams on. strength_after is "
+               "as of the day after each match, on a scale that drifts as teams join. Blank for a team with no "
+               "rated match in the 400 days before."),
+        Column("pool_teams_end", pa.int32(), "Teams on the team's scale in the last solve (itself included).",
+               False),
     ),
     key=("team_id", "event_id"), sort=("team_id", "kickoff", "event_id"),
 )
@@ -396,9 +407,12 @@ def build(inputs: dict) -> dict:
 
     before = np.minimum(kickoff, o["began"])                    # the rating before the match is as of here
     after = (o["t_obs"] // DAY_MS + 1) * DAY_MS                 # ... and the one after it as of the next day
+    # ... and every team once more in one last solve, the day after the last rated close: ratings as of different
+    # days are on a scale that drifts as teams join, so a ranking needs them all from the same one
+    end = np.full(n_ev, (o["t_obs"][observed].max() // DAY_MS + 1) * DAY_MS if observed.any() else after.max())
     early = [c for c in GAP_CHECKPOINTS if c]
-    when = np.stack([before, after] + [np.minimum(kickoff - c * 60_000, before) for c in early])
-    slot = {0: 0, **{c: 2 + k for k, c in enumerate(early)}}
+    when = np.stack([before, after, end] + [np.minimum(kickoff - c * 60_000, before) for c in early])
+    slot = {0: 0, **{c: 3 + k for k, c in enumerate(early)}}
     r = rate(o["home"], o["away"], o["t_obs"], observed, o["ratio"], o["product"], o["country"], when,
              len(o["teams"]), len(o["countries"]))
     sd_s = NOISE_S / np.sqrt(RIDGE_S + r["mass_s"])
@@ -411,6 +425,7 @@ def build(inputs: dict) -> dict:
         s0, t0, s1, t1 = (r[k][j, :, side] for j in (0, 1) for k in ("strength", "tempo"))
         n0, n1, last = r["n"][0, :, side], r["n"][1, :, side], r["last"][0, :, side]
         got = r["mass_s"][1, :, side] > 0
+        got_end = r["mass_s"][2, :, side] > 0
         half_sd = 0.5 * np.sqrt(sd_s[0, :, side] ** 2 + sd_t[0, :, side] ** 2)
         part = {
             "team_id": team, "event_id": o["event_id"], "kickoff": kickoff,
@@ -419,14 +434,17 @@ def build(inputs: dict) -> dict:
             "days_since": np.where(last >= 0, (kickoff - last) / DAY_MS, np.nan),
             "att": 0.5 * (s0 + t0), "def": 0.5 * (s0 - t0), "strength": s0, "tempo": t0,
             "att_sd": half_sd, "def_sd": half_sd, "strength_sd": sd_s[0, :, side], "tempo_sd": sd_t[0, :, side],
-            "pool_teams": r["pool"][0, :, side], "rated": observed, "after_as_of": as_of[1], "n_after": n1,
+            "pool_teams": r["pool"][0, :, side], "linked": r["linked"][0], "rated": observed,
+            "after_as_of": as_of[1], "n_after": n1,
             "att_after": np.where(got, 0.5 * (s1 + t1), np.nan), "def_after": np.where(got, 0.5 * (s1 - t1), np.nan),
             "strength_after": np.where(got, s1, np.nan), "tempo_after": np.where(got, t1, np.nan),
+            "end_as_of": as_of[2], "strength_end": np.where(got_end, r["strength"][2, :, side], np.nan),
+            "pool_teams_end": r["pool"][2, :, side],
         }
         for k, v in part.items():
             cols[k].append(v)
     cat = {k: np.concatenate(v) for k, v in cols.items()}
-    stamps = ("kickoff", "as_of", "after_as_of")
+    stamps = ("kickoff", "as_of", "after_as_of", "end_as_of")
     floats = [c.name for c in TEAM_RATING.columns if c.type == pa.float64()]
     team_rating = pa.table({
         k: (pa.array(v, pa.int64()).cast(TS) if k in stamps else _f(v) if k in floats

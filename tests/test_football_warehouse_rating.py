@@ -222,6 +222,23 @@ def test_two_leagues_are_one_pool_only_once_a_match_between_them_has_closed(worl
     assert not gap[(gap["event_id"] == 100)]["linked"].any()
 
 
+def test_every_team_is_rated_once_more_in_one_last_solve_and_a_row_says_whether_its_sides_share_a_scale(world):
+    """Ratings after different matches are as of different days of a scale that drifts as teams join: a ranking
+    needs every team's from one solve. And an opponent's rating compares with a side's own only inside one pool."""
+    _, team, gap = world
+    assert set(_ms(team["end_as_of"]).tolist()) == {D0 + 12 * DAY}        # the day after the last close (day 11)
+    assert (team.groupby("team_id")["strength_end"].nunique() == 1).all() and team["strength_end"].notna().all()
+    assert (team["pool_teams_end"] == 8).all()                            # both leagues, tied by the cup
+    last = team[team["event_id"] == 901]                                  # the last match: one and the same solve
+    assert last["strength_after"].tolist() == pytest.approx(last["strength_end"].tolist(), abs=1e-12)
+    idle = team[team["team_id"] == 14].iloc[-1]                           # a side that last played days before
+    assert abs(idle["strength_after"] - idle["strength_end"]) > 1e-6
+    # the first cup tie: its two sides were not yet on one scale; the last match's were
+    assert not team[team["event_id"] == 124]["linked"].any() and team[team["event_id"] == 901]["linked"].all()
+    both = team.merge(gap[gap["cp_min"] == 0][["event_id", "linked"]], on="event_id", suffixes=("", "_gap"))
+    assert (both["linked"] == both["linked_gap"]).all()                   # the gap table's own flag at the close
+
+
 def test_the_gap_is_the_ratings_less_the_market_at_that_checkpoint(world):
     _, _, gap = world
     g = gap[(gap["event_id"] == 901) & (gap["cp_min"] == 60)].iloc[0]     # priced 1.9 - 0.9 before the close

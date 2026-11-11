@@ -79,9 +79,13 @@ def inputs(events=None, implied=None, inplay=None, timeline=None, rating=None, t
                                     n_unplaced=pa.int16(), n_side_unknown=pa.int16(), agrees_third=b,
                                     home_goals=pa.int16(), away_goals=pa.int16(),
                                     min_home_leading=f, min_level=f, min_home_trailing=f)),
-        "gold/team_rating": table([dict({"rated": True}, **r) for r in rating],          # rated unless a row says not
+        # rated, and its two sides on one scale, unless a row says not; the last solve's rating is the one after
+        # the match unless a row gives another
+        "gold/team_rating": table([dict({"rated": True, "linked": True, "strength_end": r.get("strength_after")}, **r)
+                                   for r in rating],
                                   dict(team_id=i, event_id=i, n_prior=pa.int32(), strength=f, strength_sd=f,
-                                       pool_teams=pa.int32(), rated=b, n_after=pa.int32(), strength_after=f)),
+                                       pool_teams=pa.int32(), linked=b, rated=b, n_after=pa.int32(),
+                                       strength_after=f, strength_end=f)),
         "gold/team": table(teams, dict(team_id=i, team_name=s, country_code=s)),
     }
 
@@ -166,6 +170,26 @@ def test_a_score_put_right_by_the_settlement_counts_and_a_goal_without_a_minute_
         assert h["points"] == 3 and h["pts_vs_xpts"] == pytest.approx(1.25)       # the result needs no score
 
 
+def test_the_summarys_rating_is_the_last_solves_and_an_opponent_on_another_scale_is_no_measure_of_difficulty():
+    """Ratings after different matches are as of different days of a drifting scale: the summary takes every
+    side's from the table's one last solve. And an opponent's rating says nothing where the two sides were not
+    on one scale going in."""
+    rt = [dict(team_id=1, event_id=10, n_prior=3, strength=0.1, strength_sd=0.3, pool_teams=40, n_after=4,
+               strength_after=0.30, strength_end=0.55),
+          dict(team_id=2, event_id=10, n_prior=4, strength=0.4, strength_sd=0.2, pool_teams=40, n_after=5,
+               strength_after=0.05, strength_end=-0.10),
+          dict(team_id=1, event_id=11, n_prior=4, strength=0.3, strength_sd=0.3, pool_teams=41, n_after=5,
+               strength_after=0.20, strength_end=0.55, linked=False),
+          dict(team_id=2, event_id=11, n_prior=5, strength=0.05, strength_sd=0.2, pool_teams=41, n_after=6,
+               strength_after=0.15, strength_end=-0.10, linked=False)]
+    out = club.build(inputs(rating=rt))
+    s = conform(club.TEAM_SUMMARY, out["club/team_summary"]).to_pandas().set_index("team_id")
+    assert (s.loc[1, "strength"], s.loc[2, "strength"]) == (0.55, -0.10)       # not 0.20 and 0.15
+    tm = conform(club.TEAM_MATCH, out["club/team_match"]).to_pandas()
+    assert row(tm, 1, 10)["opp_strength"] == 0.4 and np.isnan(row(tm, 1, 11)["opp_strength"])
+    assert s.loc[1, "opp_strength_pm"] == 0.4                                  # the one opponent on its scale
+
+
 def test_ratings_are_the_ones_going_into_the_match_and_only_once_a_side_is_rated(built):
     tm = built["team_match"]
     first, away = row(tm, 1, 10), row(tm, 2, 10)
@@ -196,72 +220,11 @@ def test_the_summary_adds_up_a_teams_matches_with_a_result(built):
     assert u["xgf_pm"] == pytest.approx((1.6 + 0.9) / 2) and u["xga_pm"] == pytest.approx((1.0 + 1.8) / 2)
     assert u["fav_share"] == 0.5 and u["move_24h_pm"] == pytest.approx(logit(0.5) - logit(0.4))
     assert u["opp_strength_pm"] == pytest.approx((0.1 + 0.05) / 2)
-    # the rating now; its first settled value needs ten matches behind it, which neither row has
-    assert u["strength"] == 0.2 and np.isnan(u["strength_first"]) and np.isnan(u["strength_change"])
+    # the rating is the last solve's (the same on each of a side's rows), not the one after some match
+    assert u["strength"] == 0.2
     assert (u["ppm_last5"], u["ppm_last10"], u["perf_last5"]) == (2.0, 2.0, pytest.approx(0.65 - lean(1.75)))
     assert (u["pool_id"], u["pool_size"]) == (1, 2)                   # United and City have met: one pool of two
     assert not u["ranked"] and np.isnan(u["country_rank"])            # two matches: under the ten a ranking needs
-
-
-def test_the_rating_change_is_measured_from_the_first_settled_rating(monkeypatch):
-    monkeypatch.setattr(club, "MIN_MATCHES", 1)                       # a rating with one match behind it has settled
-    s = conform(club.TEAM_SUMMARY, club.build(inputs())["club/team_summary"]).to_pandas().set_index("team_id")
-    monkeypatch.setattr(club, "DRIFT_MIN", 1)
-    s = conform(club.TEAM_SUMMARY, club.build(inputs())["club/team_summary"]).to_pandas().set_index("team_id")
-    # both matches are in one month: the scale has not moved, the change is the plain difference
-    assert s.loc[1, "strength_first"] == 0.3 and s.loc[1, "strength_change"] == pytest.approx(-0.1)
-    assert s.loc[2, "strength_first"] == 0.1 and s.loc[2, "strength_change"] == pytest.approx(0.05)
-
-
-def test_the_rating_change_is_net_of_the_drift_of_the_scale(monkeypatch):
-    # Three sides play each other in January and again in February. Every rating is 0.5 higher in February (the
-    # scale's centre moved as other teams joined); beyond that only side 3 changed, by 0.2.
-    monkeypatch.setattr(club, "MIN_MATCHES", 1)
-    monkeypatch.setattr(club, "DRIFT_MIN", 3)
-    ev, rt, n = [], [], 0
-    base = {1: 1.0, 2: 0.0, 3: -1.0}
-    for month, shift in ((0, 0.0), (31, 0.5)):
-        for h, a in ((1, 2), (2, 3), (3, 1)):
-            n += 1
-            ev.append(dict(event_id=n, home_id=h, away_id=a, home_name=f"T{h}", away_name=f"T{a}", country_code="GB",
-                           category="senior", kickoff=ts(month + n), result="D", over25=0, went_in_play=True))
-            for side in (h, a):
-                now = base[side] + shift + (0.2 if side == 3 and shift else 0.0)
-                rt.append(dict(team_id=side, event_id=n, n_prior=5, strength=now, strength_sd=0.1, pool_teams=3,
-                               n_after=6, strength_after=now))
-    teams = [dict(team_id=k, team_name=f"T{k}", country_code="GB") for k in base]
-    out = club.build(inputs(events=ev, implied=[], inplay=[], timeline=[], rating=rt, teams=teams))
-    s = conform(club.TEAM_SUMMARY, out["club/team_summary"]).to_pandas().set_index("team_id")
-    assert s["strength"].tolist() == pytest.approx([1.5, 0.5, -0.3])                 # as rated now, drift and all
-    assert s["strength_change"].tolist() == pytest.approx([0.0, 0.0, 0.2])           # the median side held still
-    assert s["country_change"].isna().all() and s["rerating"].isna().all()           # three sides: under the five
-    monkeypatch.setattr(club, "COUNTRY_MIN", 3)
-    monkeypatch.setattr(club, "POOL_MIN", 3)
-    out = club.build(inputs(events=ev, implied=[], inplay=[], timeline=[], rating=rt, teams=teams))
-    s = conform(club.TEAM_SUMMARY, out["club/team_summary"]).to_pandas().set_index("team_id")
-    assert s["country_change"].tolist() == pytest.approx([0.0, 0.0, 0.0])            # the country's median side
-    assert s["rerating"].tolist() == pytest.approx([0.0, 0.0, 0.2])
-    # too few sides rated in both months to read the drift: no figure, not a wrong one
-    monkeypatch.setattr(club, "DRIFT_MIN", 4)
-    out = club.build(inputs(events=ev, implied=[], inplay=[], timeline=[], rating=rt, teams=teams))
-    assert conform(club.TEAM_SUMMARY, out["club/team_summary"]).to_pandas()["strength_change"].isna().all()
-
-
-def test_a_thin_month_starts_a_new_run_of_the_scales_drift_and_does_not_blank_the_later_ones(monkeypatch):
-    """Three sides, all rated in January, March and April and one of them in February: the steps into and out of
-    February cannot be read, the step from March to April can. Before, every level after January was blank, and
-    with it the rating change of every side of a small pool."""
-    monkeypatch.setattr(club, "DRIFT_MIN", 3)
-    monkeypatch.setattr(club, "MIN_MATCHES", 1)
-    rows = []
-    for month, sides, shift in ((1, (1, 2, 3), 0.0), (2, (1,), 0.1), (3, (1, 2, 3), 0.3), (4, (1, 2, 3), 0.7)):
-        rows += [dict(team_id=k, kickoff=pd.Timestamp(2026, month, 10, tz="UTC"), strength=float(k) + shift,
-                      n_prior=5) for k in sides]
-    pool = pd.DataFrame({"team_id": [1, 2, 3], "pool_id": [1, 1, 1]})
-    got = club.scale_drift(pd.DataFrame(rows), pool).set_index("ym")
-    jan = 2026 * 12
-    assert got["run"].to_dict() == {jan: 0, jan + 1: 1, jan + 2: 2, jan + 3: 2}
-    assert got["level"].tolist() == pytest.approx([0.0, 0.0, 0.0, 0.4])       # March to April: every side up 0.4
 
 
 def test_ranking_within_a_country_and_overall(monkeypatch):

@@ -34,11 +34,21 @@ odd months of 2026 (47,892 team-matches); on the even months what is left shows 
 (``python -m football.warehouse facts``: club.performance_by_expected_points_even_months).
 
 **club/team_summary**, one row a team: its matches in the warehouse added up (results, expectation, performance,
-luck with their standard errors, the goals the market expected, the rating now and how the market has re-rated
-the side against its country's other sides, the strength of its opponents, how the market moved on it, recent
-form) and its standing among its country's sides. Inferred goals are not added up here: a score can be inferred
-only where the match traded through to the end, which one-sided matches often do not, so the matches with a score
-are not a fair sample of a team's season (on 2026 they average 1.22 goals a side where the market expected 1.40).
+luck with their standard errors, the goals the market expected, its rating in the table's last solve, the
+strength of its opponents, how the market moved on it, recent form) and its standing among its country's sides.
+Every side's rating is from one solve (the day after the last close held): ratings as of different days sit on a
+scale that drifts as teams join, and a ranking must not mix them. Inferred goals are not added up here: a score
+can be inferred only where the match traded through to the end, which one-sided matches often do not, so the
+matches with a score are not a fair sample of a team's season (on 2026 they average 1.22 goals a side where the
+market expected 1.40).
+
+How a club's rating has changed over the year is not in the table. A first build had it (the rating now less the
+first settled one, net of the scale's drift and of the country's median change) and the second review round
+showed what it measured on one year of data: for one ranked side in five the first rating was taken while its
+league was still a pool of its own, so the change was a change of scale; and half the variance of the rest was
+the division's (every Premier League and Serie A side "up"), because the level between divisions is still being
+learned through a first year. It returns when the back years are in and the change can be read against the
+side's own division (the link's competition ids).
 
 Rankings hold within a pool: ratings are differences, fixed only between teams that a chain of matches joins
 (gold/team_rating), so a side is ranked among the sides of its country and category that its recent matches
@@ -59,7 +69,7 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec, from_frame
 
-VERSION = 6
+VERSION = 7
 SCOPE = "all"
 INPUTS = ("gold/event", "gold/implied", "gold/inplay", "gold/timeline", "gold/team_rating", "gold/team")
 COLUMNS = {
@@ -72,8 +82,8 @@ COLUMNS = {
     "gold/timeline": ["event_id", "usable", "consistent", "reconciled", "reliability", "n_unplaced",
                       "n_side_unknown", "agrees_third", "home_goals",
                       "away_goals", "min_home_leading", "min_level", "min_home_trailing"],
-    "gold/team_rating": ["team_id", "event_id", "n_prior", "strength", "strength_sd", "pool_teams", "rated",
-                         "n_after", "strength_after"],
+    "gold/team_rating": ["team_id", "event_id", "n_prior", "strength", "strength_sd", "pool_teams", "linked",
+                         "rated", "n_after", "strength_after", "strength_end"],
     "gold/team": ["team_id", "team_name", "country_code"],
 }
 
@@ -82,8 +92,6 @@ MIN_MATCHES = 10                  # matches a team needs to be ranked, and behin
 POOL_DAYS = 400                   # matches this recent join teams into a pool (the ratings' own window)
 POOL_MIN = 20                     # teams a pool needs for its sides to be ranked
 ACTIVE_DAYS = 120                 # a ranked side played within this long of the last match held
-DRIFT_MIN = 20                    # sides rated in two consecutive months that a month's scale drift is read from
-COUNTRY_MIN = 5                   # ranked sides with a rating change that a country's own change is read from
 FORM = (5, 10)
 PERF_LINE = (0.0591, -0.0440)     # raw xpts_inplay - xpts_pre averages a + b * xpts_pre (odd months of 2026)
 
@@ -143,7 +151,8 @@ TEAM_MATCH = TableSpec(
         Column("n_prior", pa.int32(), "Earlier matches behind the rating."),
         Column("pool_teams", pa.int32(), "Teams on the same scale as this one going in: strengths compare only "
                "within a pool (gold/team_rating)."),
-        Column("opp_strength", pa.float64(), "The opponent's strength going in."),
+        Column("opp_strength", pa.float64(), "The opponent's strength going in; blank where the two sides were "
+               "not on one scale then (gold/team_rating.linked false)."),
         Column("strength_after", pa.float64(), "The team's strength once this match's closing price is known."),
     ),
     key=("team_id", "event_id"), sort=("team_id", "kickoff", "event_id"),
@@ -168,8 +177,9 @@ TEAM_SUMMARY = TableSpec(
         Column("pts_vs_xpts_pm", pa.float64(), "Points a match beyond the expectation."),
         Column("pts_vs_xpts_se", pa.float64(), "Its standard error: read the figure against this."),
         Column("n_inplay", pa.int32(), "Matches with an in-play record.", False),
-        Column("perf_pm", pa.float64(), "In-play performance a match (club/team_match.perf): the part of the "
-               "over-performance that the run of the matches supports. Over the n_inplay matches with an in-play "
+        Column("perf_pm", pa.float64(), "In-play performance a match (club/team_match.perf): how its matches "
+               "went against the pre-match expectation, every minute counting. It describes a run of matches; it "
+               "has not been shown to persist for a team. Over the n_inplay matches with an in-play "
                "record: with luck_pm it adds up to the points against expectation of those matches, which is "
                "not pts_vs_xpts_pm where some matches have no record."),
         Column("perf_se", pa.float64(), "Its standard error."),
@@ -180,25 +190,11 @@ TEAM_SUMMARY = TableSpec(
         Column("fav_share", pa.float64(), "Share of its matches it started as the likelier winner."),
         Column("move_24h_pm", pa.float64(), "The market's mean move on the team over the last 24 hours, log odds: "
                "persistently positive means the early price undervalues it."),
-        Column("opp_strength_pm", pa.float64(), "Its opponents' mean strength: the difficulty of its matches."),
-        Column("strength", pa.float64(), "Its market-implied strength after its last match."),
-        Column("strength_first", pa.float64(), "Its strength going into the first match that had ten matches "
-               "behind the rating (before that a rating is still finding its level)."),
-        Column("strength_change", pa.float64(), "How the market has re-rated it since then, against the median "
-               "established side of its pool: strength less strength_first, less the drift of the scale between "
-               "the two months (the scale's centre is the average listed team and moves as teams join; the "
-               "median side rated in both of two consecutive months is held still). Blank where a month "
-               "between the two has too few sides to read the drift from."),
-        Column("country_change", pa.float64(), "The median strength_change of its country's ranked sides (same "
-               "category and pool, five or more of them): how the rating of the country's football as a whole "
-               "moved, which in the first seasons of data is mostly the scale between leagues being learned "
-               "from cup and continental matches."),
-        Column("rerating", pa.float64(), "strength_change less country_change: how the market has re-rated the "
-               "side against the other sides of its country. With one year of data most of it is not the club: "
-               "the level between divisions is still being learned, and whole divisions move together (every "
-               "side of the Premier League and of Serie A is up; across twelve divisions checked, half the "
-               "variance is the division's own mean). Compare sides within one division until the re-rating "
-               "is made against the division."),
+        Column("opp_strength_pm", pa.float64(), "Its opponents' mean strength going into its matches (those "
+               "on its own scale at the time): the difficulty of its matches."),
+        Column("strength", pa.float64(), "Its market-implied strength in the table's last solve "
+               "(gold/team_rating.strength_end: every side's from the same day, the one to rank on); blank for a "
+               "side with no rated match in the 400 days before."),
         Column("ppm_last5", pa.float64(), "Points a match over its last five matches."),
         Column("perf_last5", pa.float64(), "In-play performance a match over its last five with a record."),
         Column("ppm_last10", pa.float64(), "Points a match over its last ten."),
@@ -317,10 +313,12 @@ def team_match_frame(inputs: dict):
         rt[c] = np.where(own, rt[c].to_numpy(float), np.nan)
     rt["strength_after"] = np.where((rt["n_after"] >= 1).to_numpy(), rt["strength_after"], np.nan)
     d = d.merge(rt[["team_id", "event_id", "strength", "strength_sd", "n_prior", "pool_teams", "strength_after",
-                    "rated"]], on=["team_id", "event_id"], how="left")
+                    "rated", "linked", "strength_end"]], on=["team_id", "event_id"], how="left")
     d = d.merge(rt[["team_id", "event_id", "strength"]].rename(columns={"team_id": "opponent_id",
                                                                         "strength": "opp_strength"}),
                 on=["opponent_id", "event_id"], how="left")
+    # an opponent's rating says something of the match's difficulty only on the side's own scale
+    d["opp_strength"] = d["opp_strength"].where(d["linked"].eq(True))
     return d.drop_duplicates(["team_id", "event_id"]).reset_index(drop=True)
 
 
@@ -351,10 +349,8 @@ def team_summary_frame(tm, teams):
         "move_24h_pm": g["move_24h"].mean(), "opp_strength_pm": g["opp_strength"].mean(),
         "category": g["category"].agg(lambda s: s.mode().iat[0] if s.notna().any() else None),
     })
-    # the rating now (after the last match that has one) and once it had settled (ten matches behind it)
-    r = d[d["strength_after"].notna()].groupby("team_id")["strength_after"].last()
-    f = d[d["strength"].notna() & (d["n_prior"] >= MIN_MATCHES)].groupby("team_id")["strength"].first()
-    out["strength"], out["strength_first"] = r, f
+    # the rating in the last solve: the same on each of a side's rows
+    out["strength"] = d[d["strength_end"].notna()].groupby("team_id")["strength_end"].last()
     for n in FORM:
         tail = d.groupby("team_id").tail(n)
         out[f"ppm_last{n}"] = tail.groupby("team_id")["points"].mean()
@@ -365,18 +361,6 @@ def team_summary_frame(tm, teams):
 
     pool = pools(tm)
     out = out.merge(pool, on="team_id", how="left")
-    # the re-rating, net of the scale's drift between the month the rating settled and the month of the last match
-    drift = scale_drift(d, pool)
-    month = lambda t: t.dt.year * 12 + t.dt.month - 1                     # noqa: E731
-    settled = d[d["strength"].notna() & (d["n_prior"] >= MIN_MATCHES)].groupby("team_id")["kickoff"].first()
-    last = d[d["strength_after"].notna()].groupby("team_id")["kickoff"].last()
-    when = pd.DataFrame({"m0": month(settled), "m1": month(last)}).reset_index().merge(
-        out[["team_id", "pool_id"]], on="team_id", how="right")
-    c0 = when.merge(drift.rename(columns={"ym": "m0", "level": "c0", "run": "r0"}), on=["pool_id", "m0"], how="left")
-    c1 = when.merge(drift.rename(columns={"ym": "m1", "level": "c1", "run": "r1"}), on=["pool_id", "m1"], how="left")
-    # the drift between two months is known where every step between them could be read (one run of months)
-    step = (c1["c1"] - c0["c0"]).where(c0["r0"] == c1["r1"]).to_numpy()
-    out["strength_change"] = (out["strength"] - out["strength_first"]) - step
     end = d["kickoff"].max()
     out["ranked"] = ((out["matches"] >= MIN_MATCHES) & out["strength"].notna() & (out["pool_size"] >= POOL_MIN)
                      & (out["last_kickoff"] >= end - pd.Timedelta(days=ACTIVE_DAYS)))
@@ -384,46 +368,11 @@ def team_summary_frame(tm, teams):
     by = ["country_code", "category", "pool_id"]
     out["country_rank"] = pool.groupby(by)["strength"].rank(ascending=False, method="min").reindex(out.index)
     out["country_teams"] = pool.groupby(by)["strength"].transform("size").reindex(out.index)
-    moved = pool[pool["strength_change"].notna()].groupby(by)["strength_change"]
-    country = moved.transform("median").where(moved.transform("size") >= COUNTRY_MIN)
-    out["country_change"] = country.reindex(out.index)
-    out["rerating"] = out["strength_change"] - out["country_change"]
     every = out[out["ranked"]]
     below = every.groupby(["category", "pool_id"])["strength"].rank(method="min") - 1
     size = every.groupby(["category", "pool_id"])["strength"].transform("size")
     out["pct_overall"] = (below / (size - 1).where(size > 1)).reindex(out.index)
     return out
-
-
-def scale_drift(d, pool):
-    """(pool_id, ym, level, run): the level of each pool's rating scale by calendar month (year x 12 + month - 1).
-    A month's step is the median, over the sides with a settled rating in both months, of the change in their
-    mean strength: the median established side is taken not to have changed. A step that fewer than ``DRIFT_MIN``
-    sides can give is not read: the months after it are a new ``run``, with a level of their own from zero, and
-    the drift between two months is known only inside one run (a thin month must not blank every later one)."""
-    import pandas as pd
-
-    r = d[d["strength"].notna() & (d["n_prior"] >= MIN_MATCHES)].merge(pool[["team_id", "pool_id"]], on="team_id")
-    if r.empty:
-        return pd.DataFrame({"pool_id": pd.Series(dtype="int64"), "ym": pd.Series(dtype="int64"),
-                             "level": pd.Series(dtype="float64"), "run": pd.Series(dtype="int64")})
-    r = r.assign(ym=r["kickoff"].dt.year * 12 + r["kickoff"].dt.month - 1)
-    m = r.groupby(["pool_id", "team_id", "ym"], as_index=False)["strength"].mean()
-    nxt = m.assign(ym=m["ym"] - 1).rename(columns={"strength": "next"})
-    j = m.merge(nxt, on=["pool_id", "team_id", "ym"])
-    step = j.assign(d=j["next"] - j["strength"]).groupby(["pool_id", "ym"])["d"].agg(["median", "size"]).reset_index()
-    step = step[step["size"] >= DRIFT_MIN]
-    rows = []
-    for pid, months in m.groupby("pool_id")["ym"]:
-        s = step[step["pool_id"] == pid].set_index("ym")["median"]
-        level, run = 0.0, 0
-        for ym in range(int(months.min()), int(months.max()) + 1):
-            rows.append((pid, ym, level, run))
-            if ym in s.index:
-                level += float(s[ym])                              # the step from this month to the next
-            else:
-                level, run = 0.0, run + 1                          # not read: the next month starts a new run
-    return pd.DataFrame(rows, columns=["pool_id", "ym", "level", "run"])
 
 
 def pools(d):
