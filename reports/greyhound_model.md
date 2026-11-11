@@ -1883,6 +1883,22 @@ it. The faulty old figures still carry something the new one does not (the meeti
 **Next (registered, `batch24_expected_time_stack.json`):** the same comparison in the live model itself, the stack
 at three seeds. Nothing live has changed.
 
+### 41.7 Batch 24: the table in the live model itself (greyhound-fastloop.yml run 43068025473)
+
+The stack at three seeds (three seeds of trees, three neural set models, the stack's weights, the per-track
+stretch), test 1 Jun to 5 Nov 2026, 106,719 runners.
+
+| Experiment | RMSE log(BSP) | With the per-track stretch | Against the live model (90%) | z | Log-loss | z |
+|---|---|---|---|---|---|---|
+| stack3_all3 (the live model) | 0.3399 | 0.3368 | - | - | 0.43735 | - |
+| stack3_all4 (with the expected-time table) | 0.3332 | 0.3305 | -0.0067 (-0.0072 to -0.0062) | -22.1 | 0.43686 | -4.2 |
+
+**It passes** and is the candidate for the live price. **Against the market it is still behind**: on the 106,561
+runners with a BSP the BSP's log-loss is 0.42859 and ours 0.43752 (0.43800 before); in a blend with the BSP our price
+takes a weight of 0.040 (0.032 before) and the blend scores 0.42792 against the BSP's own 0.42784 on the second half.
+The table closed 0.0005 of a 0.0094 gap. That gap, and the weight in the blend, are the scoreboard for "beating the
+market" from here.
+
 ## 42. The day diagnostic, 11 Nov 2026 (greyhound-diagnostic.yml run 43074468127, read 18:06 UTC)
 
 racing² - greyhound. The owner, 11 Nov: "do an exhaustive diagnostic on our greyhound results today. Do we have gaps
