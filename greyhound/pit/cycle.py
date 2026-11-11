@@ -97,6 +97,19 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     for tag, m in (("bitch", per_b), ("dog", ~per_b)):
         span = per[m].groupby("dog").dn.agg(lambda s: s.max() - s.min()).sum() / 365.25
         notes[f"absences_a_{tag}_year"] = round(float(per[m].absent.sum() / span), 3) if span > 0 else None
+        # is it a cycle? The intervals between absences, and whether one of a dog's intervals tells the next: a season
+        # recurs at the bitch's own period, an injury does not (the dogs are the control)
+        iv = per[m & per.interval.notna()][["dog", "interval"]]
+        nxt = iv.groupby("dog").interval.shift(-1)
+        both = nxt.notna()
+        notes[f"interval_quartiles_{tag}"] = [round(float(q), 1) for q in iv.interval.quantile([0.25, 0.5, 0.75])] \
+            if len(iv) else None
+        notes[f"interval_to_next_interval_corr_{tag}"] = round(float(np.corrcoef(iv.interval[both], nxt[both])[0, 1]), 4) \
+            if both.sum() >= 50 else None
+        notes[f"interval_pairs_{tag}"] = int(both.sum())
+        gaps = per[m & per.absent].gap
+        notes[f"absence_length_quartiles_{tag}"] = [round(float(q), 1) for q in gaps.quantile([0.25, 0.5, 0.75])] \
+            if len(gaps) else None
     # the check: GBGB's current season date against the nearest inferred season (not a feature)
     try:
         if "season" in df:
