@@ -68,3 +68,16 @@ The market's back book is 1.017-1.020 and lay book 0.983-0.984, so about 1.7% is
 - 28 scored days only. The recorder's books are on the delayed key and lag the live market.
 - Fills at the best price with no size check.
 - No 2-minute mark.
+
+## Addendum: a late signal from the Exchange Stream (11 Nov)
+
+Source: research-query run 42993797636 (`research/queries/done/stream_late_signal_1111.py`), ledger
+`stream-late-signal-1111`.
+
+**Not tested: no stream data found.** S3 `betfair_stream/horse/` holds nothing for 10 or 11 Nov. The recorder's
+wiring reached the base branch at 08:00 UTC on 11 Nov, after that morning's live-trade run had started, so its first
+morning is 12 Nov. It stops at 10:30 UK, before the first race, so it will hold no book near any off.
+
+To test money flow and ladder pressure near the off, the stream has to run to the last race. That changes the live
+job (or adds a second read-only process on the live key) and needs the owner's decision. The query is ready to
+re-run unchanged once a few days are held.
