@@ -299,7 +299,9 @@ class LiveExchange:
     Betfair SP for a liability (MARKET_ON_CLOSE), matched when the market reconciles at the off. Nothing is ever
     cancelled: the only orders left open are those lays, and they are the hedges. When a reply is lost (a timeout,
     a dropped connection) the order may still have been placed, so the exchange asks Betfair for the orders under
-    that reference before reporting a failure: a bet is never placed twice for want of an answer.
+    that reference before reporting a failure: a bet is never placed twice for want of an answer. Every back of a
+    horse on a day shares one reference, and every lay another, so only an order not seen before (not reported by
+    this exchange, not on Betfair's record when the session started) can be the one just sent (11 Nov 2026).
     """
 
     mode = "live"
@@ -310,6 +312,20 @@ class LiveExchange:
 
     def login(self) -> None:
         self.data.login()
+
+    def _known(self) -> set:
+        """The bet ids accounted for already (reported by this exchange, or on Betfair's record when the session
+        started): never taken for an order just sent. Made on first use, so a subclass with its own __init__
+        (another sport's trader) has one too."""
+        seen = self.__dict__.get("_seen")
+        if seen is None:
+            seen = self.__dict__["_seen"] = set()
+        return seen
+
+    def note_orders(self, orders) -> None:
+        """Orders already on Betfair's record (the session's sync when it starts): when a later reply is lost,
+        none of these is the order that was being placed."""
+        self._known().update(str(o.get("betId")) for o in orders or [] if o.get("betId"))
 
     def markets(self, start, end, countries=("GB", "IE")) -> list[Market]:
         return self.data.markets(start, end, countries)
@@ -397,6 +413,8 @@ class LiveExchange:
             return self._confirm_back(fill, ref)
         rep, ok = self._report(reply)
         fill.bet_id = str(rep.get("betId") or "")
+        if fill.bet_id:
+            self._known().add(fill.bet_id)
         matched = _floor2(rep.get("sizeMatched") or 0.0)
         if ok and matched > 0:
             fill.matched, fill.avg_price, fill.status = matched, float(rep.get("averagePriceMatched") or price), "SUCCESS"
@@ -412,15 +430,21 @@ class LiveExchange:
         except Exception as exc:
             fill.status, fill.error = "UNKNOWN", f"no reply, and the orders could not be read: {exc}"[:200]
             return fill
-        # the orders under this reference may include earlier fills of the same horse today: the newest is ours
-        got.sort(key=lambda o: str(o.get("placedDate", "")))
-        if got and float(got[-1].get("sizeMatched") or 0) > 0:
-            o = got[-1]
+        # every back of a horse on a day shares the reference, so its earlier fills are in this list too. The order
+        # just sent is one not seen before: not reported by this exchange, not in the session's sync at the start
+        new = [o for o in got if str(o.get("betId") or "") not in self._known() and float(o.get("sizeMatched") or 0) > 0]
+        if len(new) == 1:
+            o = new[0]
             fill.bet_id, fill.status = str(o.get("betId") or ""), "SUCCESS"
             fill.matched, fill.avg_price = _floor2(o["sizeMatched"]), float(o.get("averagePriceMatched") or fill.price)
             fill.error = "reply lost; confirmed from Betfair's orders"
-        else:
-            fill.status, fill.error = "FAILURE", "reply lost; no matched order found under the reference"
+            if fill.bet_id:
+                self._known().add(fill.bet_id)
+        elif not new:
+            fill.status, fill.error = "FAILURE", "reply lost; no new matched order found under the reference"
+        else:                                              # which of them is this order cannot be told
+            fill.status = "UNKNOWN"
+            fill.error = f"reply lost; {len(new)} matched orders under the reference that this session did not place"
         return fill
 
     def lay_at_bsp(self, market_id, selection_id, liability, ref) -> Fill:
@@ -432,16 +456,31 @@ class LiveExchange:
         reply = self._place(market_id, instruction, ref)
         if reply is None:
             try:
-                have = sum(float(o.get("bspLiability") or 0) for o in self.orders([market_id], [ref[:32]])
-                           if o.get("side") == "LAY" and int(o.get("selectionId", 0)) == int(selection_id))
+                got = [o for o in self.orders([market_id], [ref[:32]])
+                       if o.get("side") == "LAY" and int(o.get("selectionId", 0)) == int(selection_id)]
             except Exception as exc:
                 fill.status, fill.error = "UNKNOWN", f"no reply, and the orders could not be read: {exc}"[:200]
                 return fill
-            fill.status = "PENDING" if have + 0.01 >= liability else "FAILURE"
-            fill.error = f"reply lost; Betfair holds GBP{have:.2f} of lays at SP under the reference"
+            # the lays of a horse share the reference too, so its earlier hedges are in this list: only a lay not
+            # seen before can be the one just sent, and it is for the liability asked
+            new = [o for o in got if str(o.get("betId") or "") not in self._known()]
+            have = sum(float(o.get("bspLiability") or 0) for o in new)
+            if not new:
+                fill.status, fill.error = "FAILURE", "reply lost; no new lay at SP found under the reference"
+            elif len(new) == 1 and abs(have - liability) < 0.02:
+                fill.status, fill.bet_id = "PENDING", str(new[0].get("betId") or "")
+                fill.error = f"reply lost; Betfair holds the lay at SP of GBP{have:.2f}"
+                if fill.bet_id:
+                    self._known().add(fill.bet_id)
+            else:                                          # laid or not cannot be told: the session never lays it twice
+                fill.status = "UNKNOWN"
+                fill.error = (f"reply lost; Betfair holds GBP{have:.2f} of lays at SP this session did not place, "
+                              f"not the GBP{liability:.2f} asked")
             return fill
         rep, ok = self._report(reply)
         fill.bet_id = str(rep.get("betId") or "")
+        if fill.bet_id:
+            self._known().add(fill.bet_id)
         if ok:
             fill.status = "PENDING"                        # matched at the off, at the Betfair SP
         else:

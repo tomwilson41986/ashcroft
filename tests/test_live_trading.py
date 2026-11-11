@@ -162,6 +162,94 @@ def test_a_lost_reply_is_settled_by_betfairs_own_record():
     assert blind.status == "UNKNOWN"
 
 
+class _Book(_Client):
+    """Betfair holding what it placed: every order placed is in listCurrentOrders under its reference with its own
+    bet id (B<n>, L<n>: n counts the placeOrders calls). `lose`: the calls whose reply is lost though the order was
+    placed; `drop`: the calls that never reached Betfair; `part`: the share of a back that is matched."""
+
+    def __init__(self, lose=(), drop=(), part=None):
+        super().__init__()
+        self.lose, self.drop, self.part, self.n = set(lose), set(drop), dict(part or {}), 0
+
+    def _api_call(self, method, params):
+        if method == "listCurrentOrders":
+            self.calls.append((method, params))
+            refs = params.get("customerOrderRefs")
+            return {"currentOrders": [o for o in self.current if not refs or o.get("customerOrderRef") in refs],
+                    "moreAvailable": False}
+        if method != "placeOrders":
+            return super()._api_call(method, params)
+        self.calls.append((method, params))
+        self.n += 1
+        if self.n in self.drop:
+            raise ConnectionError("connection reset")
+        ins = params["instructions"][0]
+        order = {"betId": f"{ins['side'][0]}{self.n}", "marketId": params["marketId"],
+                 "selectionId": ins["selectionId"], "side": ins["side"], "orderType": ins["orderType"],
+                 "customerOrderRef": ins["customerOrderRef"]}
+        rep = {"status": "SUCCESS", "betId": order["betId"]}
+        if ins["orderType"] == "MARKET_ON_CLOSE":
+            order["bspLiability"] = ins["marketOnCloseOrder"]["liability"]
+        else:
+            lo = ins["limitOrder"]
+            order.update(sizeMatched=round(lo["size"] * self.part.get(self.n, 1.0), 2), averagePriceMatched=lo["price"])
+            rep.update(sizeMatched=order["sizeMatched"], averagePriceMatched=lo["price"])
+        self.current.append(order)
+        if self.n in self.lose:
+            raise TimeoutError("read timed out")
+        return {"status": "SUCCESS", "instructionReports": [rep]}
+
+
+def test_a_lost_reply_on_a_top_up_is_never_settled_by_the_horses_earlier_fill():
+    """Every back of a horse on a day shares one reference, so Betfair's orders under it hold the earlier fills too.
+    Until 11 Nov the newest of them was taken for the order just sent: a top-up that never reached Betfair came back
+    as a second copy of the earlier fill, and the session laid winnings that did not exist."""
+    c = _Book(drop={2})                                            # the top-up never reached Betfair
+    x = LiveExchange(_Data(c))
+    first = x.back("1.5", 7, 5.0, 100.0, "ash10017")
+    assert (first.status, first.matched, first.bet_id) == ("SUCCESS", 100.0, "B1")
+    top = x.back("1.5", 7, 4.8, 30.0, "ash10017")
+    assert (top.status, top.matched, top.bet_id) == ("FAILURE", 0.0, "")   # not the GBP100 at 5.0 a second time
+    c = _Book(lose={2})                                            # placed and matched: only the reply was lost
+    x = LiveExchange(_Data(c))
+    x.back("1.5", 7, 5.0, 100.0, "ash10017")
+    top = x.back("1.5", 7, 4.8, 30.0, "ash10017")
+    assert (top.status, top.matched, top.avg_price, top.bet_id) == ("SUCCESS", 30.0, 4.8, "B2")
+    # a session that starts again tells the exchange what Betfair already holds: none of it is a new order
+    c = _Book(drop={1})
+    c.current = [{"betId": "B0", "marketId": "1.5", "selectionId": 7, "side": "BACK", "orderType": "LIMIT",
+                  "sizeMatched": 100.0, "averagePriceMatched": 5.0, "customerOrderRef": "ash10017"}]
+    x = LiveExchange(_Data(c))
+    x.note_orders(x.orders(["1.5"]))
+    assert x.back("1.5", 7, 4.8, 30.0, "ash10017").status == "FAILURE"
+    # two matched orders nobody here placed: which is this one cannot be told, and the day stops
+    c = _Book(drop={1})
+    c.current = [{"betId": b, "marketId": "1.5", "selectionId": 7, "side": "BACK", "orderType": "LIMIT",
+                  "sizeMatched": 30.0, "averagePriceMatched": 4.8, "customerOrderRef": "ash10017"} for b in ("B8", "B9")]
+    assert LiveExchange(_Data(c)).back("1.5", 7, 4.8, 30.0, "ash10017").status == "UNKNOWN"
+
+
+def test_a_lost_reply_on_a_top_ups_lay_is_never_settled_by_the_horses_earlier_lay():
+    """The lays of a horse share a reference as well. Until 11 Nov a lost reply was called placed whenever the lays
+    already under it summed to the new liability: an earlier lay of GBP400 certified a GBP114 lay that was never
+    placed, and the top-up stayed open to the result with the ledger saying it was closed."""
+    c = _Book(drop={2})                                            # the second lay never reached Betfair
+    x = LiveExchange(_Data(c))
+    assert x.lay_at_bsp("1.5", 7, 400.0, "ash10017x").status == "PENDING"
+    again = x.lay_at_bsp("1.5", 7, 114.0, "ash10017x")
+    assert again.status == "FAILURE" and again.bet_id == ""        # sent again at the next poll
+    c = _Book(lose={2})                                            # placed: only the reply was lost
+    x = LiveExchange(_Data(c))
+    x.lay_at_bsp("1.5", 7, 400.0, "ash10017x")
+    again = x.lay_at_bsp("1.5", 7, 114.0, "ash10017x")
+    assert again.status == "PENDING" and again.bet_id == "L2"
+    # a lay nobody here placed, and not for the liability asked: laid or not cannot be told
+    c = _Book(drop={1})
+    c.current = [{"betId": "L9", "marketId": "1.5", "selectionId": 7, "side": "LAY", "orderType": "MARKET_ON_CLOSE",
+                  "bspLiability": 50.0, "customerOrderRef": "ash10017x"}]
+    assert LiveExchange(_Data(c)).lay_at_bsp("1.5", 7, 114.0, "ash10017x").status == "UNKNOWN"
+
+
 # ---------------------------------------------------------------- a live session
 
 class _Clock:
@@ -261,6 +349,56 @@ def test_a_refused_trade_out_is_sent_again_and_then_left_to_the_result():
         clock.t += timedelta(minutes=1)
     lays = [p for m, p in c.calls if m == "placeOrders" and p["instructions"][0]["side"] == "LAY"]
     assert len(lays) == 5 and not s.positions[("1.7", 1)].hedged   # five tries, then left to the result
+
+
+def test_a_top_up_that_never_reached_betfair_adds_nothing_and_lays_nothing():
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    c = _Book(part={1: 0.5}, drop={3})        # 1 the back (half matched), 2 its lay, 3 the top-up: never placed
+    s, clock = _session(c, [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])])
+    s.step(clock())
+    pos = s.positions[("1.7", 1)]
+    assert pos.matched == pytest.approx(20.83) and pos.hedged and pos.fills == 1
+    clock.t += timedelta(minutes=1)
+    s.step(clock())                                                # the top-up: the connection drops
+    sides = [p["instructions"][0]["side"] for m, p in c.calls if m == "placeOrders"]
+    assert sides == ["BACK", "LAY", "BACK"]                        # no lay for winnings that do not exist
+    assert pos.matched == pytest.approx(20.83) and pos.fills == 1 and pos.hedged
+    assert s.state.turnover == pytest.approx(20.83)
+    row = [r for r in s.ledger if r["event"] == "back"][-1]
+    assert row["status"] == "FAILURE" and row["matched"] == 0 and "reply lost" in row["error"]
+    assert not s.state.stopped                                     # Betfair's record was read: the day goes on
+
+
+def test_a_lay_past_its_tries_is_not_sent_again_because_another_horse_in_the_race_is_laid():
+    """close_out lays every open position in the race. A horse whose lay was refused five times, or whose lay's
+    state is unknown ("never lay it twice"), was laid again as soon as a stablemate in the race needed its own."""
+    from trading.session import MAX_HEDGE_TRIES, Position
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    c = _Client()
+    s, clock = _session(c, [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])])
+    a = s.positions.setdefault(("1.7", 1), Position("1.7", 1, "h1", matched=40.0, cost=280.0))
+    a.hedge_failures = MAX_HEDGE_TRIES
+    b = s.positions.setdefault(("1.7", 2), Position("1.7", 2, "h2", matched=100.0, cost=230.0))
+    s.close_out(s.markets["1.7"], clock())
+    lays = [p["instructions"][0] for m, p in c.calls if m == "placeOrders"]
+    assert [(o["side"], o["selectionId"]) for o in lays] == [("LAY", 2)]
+    assert b.hedged and not a.hedged and a.hedge_liability == 0
+
+
+def test_a_session_that_starts_again_tells_the_exchange_what_betfair_already_holds():
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    c = _Book(drop={1})                                            # after the restart the top-up never arrives
+    c.current = [{"betId": "B0", "marketId": "1.7", "selectionId": 1, "side": "BACK", "orderType": "LIMIT",
+                  "sizeMatched": 20.83, "averagePriceMatched": 7.0, "customerOrderRef": "ash10011"},
+                 {"betId": "L0", "marketId": "1.7", "selectionId": 1, "side": "LAY", "orderType": "MARKET_ON_CLOSE",
+                  "bspLiability": 124.98, "customerOrderRef": "ash10011x"}]
+    s, clock = _session(c, [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])])
+    s.sync(s.x.orders(["1.7"]))
+    pos = s.positions[("1.7", 1)]
+    assert pos.matched == pytest.approx(20.83) and pos.hedged
+    s.step(clock())                                                # the top-up: the connection drops
+    assert pos.matched == pytest.approx(20.83) and s.state.turnover == pytest.approx(20.83)
+    assert [p["instructions"][0]["side"] for m, p in c.calls if m == "placeOrders"] == ["BACK"]
 
 
 # ---------------------------------------------------------------- the owner's switch
