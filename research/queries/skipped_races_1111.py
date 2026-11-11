@@ -19,8 +19,10 @@ off (to 21:30 UK) until 4 Nov and stop at 10:00 UK from 5 Nov. "By 10:00" is eve
 "the day's rule" is each day under its own. By race and window: whole at every read, at some, at none. For a race
 never whole by 10:00: when it first became whole and when the trader first bet in it. For each runner that broke a
 race: why (not in the 06:00 file; in it without a price; in it but not joined), what the catalogue says of it (a
-jockey or none), its share of the book while it stood, and what became of it (betfair_live_marks: removed before the
-off and by which mark, or ran). Beside it the WIN markets the trader never loaded and why, and the trader's ledger.
+jockey or none), what the morning's card as fetched says of it (S3 racecards/, the last card before the 06:00 file
+was written: a runner, a reserve, no jockey named, or not on it), its share of the book while it stood, and what
+became of it (betfair_live_marks: removed before the off and by which mark, or ran). Beside it the WIN markets the
+trader never loaded and why, and the trader's ledger.
 
 Checks printed with the counts (the review of the first version, 11 Nov): every matched back in the ledger proves the
 trader saw that race whole at that poll, so each is matched to the rebuilt read within 30 seconds and must be whole;
@@ -51,6 +53,7 @@ import pandas as pd
 
 sys.path.insert(0, ".")
 import betfair_prices as bp  # noqa: E402
+from daily_predictions import card_status  # noqa: E402
 
 pd.set_option("display.width", 250)
 pd.set_option("display.max_columns", 40)
@@ -255,6 +258,23 @@ def one_day(d):
     miss["cloth"] = [str(cloth.get(k, "") if pd.notna(cloth.get(k, "")) else "") for k in mk]
     miss["day"], miss["venue"], miss["country"] = D, miss.market_id.map(venue), miss.market_id.map(country)
     miss["off_uk"] = hhmm(miss.market_id.map(off)) if len(miss) else ""
+    # what the morning's card, as fetched, says of each: the last card file before the 06:00 file was written
+    wr = written(f"predictions/{D}.csv")
+    keys = sorted(o["Key"] for o in s3.list_objects_v2(Bucket=bucket, Prefix=f"racecards/{D}_").get("Contents", []))
+    stamp = wr.strftime("%H%M") if pd.notna(wr) else "9999"
+    before = [k for k in keys if k.rsplit("_", 1)[-1][:4] <= stamp]
+    card_key = (before[-1] if before else keys[0]) if keys else ""
+    on_card = {}
+    if card_key and len(miss):
+        card = csv(card_key)
+        if not card.empty and "horse_name" in card.columns:
+            has_j = "jockey_name" in card.columns
+            for nm, j in zip(norm(card["horse_name"], bp.normalise_horse), card["jockey_name"] if has_j else [None] * len(card)):
+                on_card.setdefault(nm, {"runner": "on the card as a runner", "reserve": "on the card as a reserve",
+                                        "withdrawn": "on the card with no jockey named"}[card_status(j)]
+                                   if has_j else "on the card (no jockey column)")
+    miss["card"] = [on_card.get(bp.normalise_horse(x), "not on the card" if card_key else "no card file")
+                    for x in miss["runner"]]
 
     # the WIN markets on the catalogue the trader never read before their offs
     first_read = r["t"].min()
@@ -296,7 +316,6 @@ def one_day(d):
     m["first_bet"] = m.market_id.map(first_bet)
     m["bet"] = m.market_id.isin(held)
     m["pnl"] = m.market_id.map(pnl)
-    wr = written(f"predictions/{D}.csv")
     row = {"day": D, "ids": how, "until": f"{until // 60:02d}:{until % 60:02d}", "catalogue": int(off.index.nunique()),
            "read": int(m.shape[0]),
            "every_10": int((m.cls_10 == "every").sum()), "some_10": int((m.cls_10 == "some").sum()),
@@ -306,7 +325,8 @@ def one_day(d):
            "staked": staked, "staked_10": staked_10, "ledger_pnl": float(pnl.sum()) if len(pnl) else np.nan,
            "backs": backs, "backs_no_read": no_read, "backs_not_whole": not_whole, "not_in_cat": not_in_cat,
            "from_books": extra, "first_read": first_read, "file_written": wr,
-           "file_after_first_read": bool(pd.notna(wr) and wr > first_read), "skips": skips}
+           "file_after_first_read": bool(pd.notna(wr) and wr > first_read), "skips": skips,
+           "card_key": card_key}
     return (row, m, miss, nv), None
 
 
@@ -447,6 +467,9 @@ if len(M):
     M["ran"] = M.final.isin(["WINNER", "LOSER", "PLACED"]) | (M.bsp > 1)
     M["no_jockey"] = M.jockey.astype(str).str.strip().eq("")
     print("why:", M.reason.value_counts().to_dict())
+    print("on the morning's card as fetched, by what became of them:")
+    print(pd.crosstab(M.card, np.where(M.ran, "ran", "did not run"), margins=True).to_string())
+    print("the card files read (the first three days):", list(t.card_key.head(3)))
     print(f"of these, priced once the course names match (from 11 Nov): {int(M.joined_now.sum())}")
     print("what became of them (the final mark):", M.final.value_counts().to_dict())
     print(f"ran in the race: {int(M.ran.sum())}; removed before the off: {int((M.final == 'REMOVED').sum())}")
@@ -460,11 +483,11 @@ if len(M):
     ran = M[M.ran]
     if len(ran):
         print(f"\nthe {len(ran)} that RAN with no model price (a gap in the card or the join, not a reserve), the first 60:")
-        print(ran.sort_values(["day", "off_uk"]).head(60)[["day", "venue", "off_uk", "runner", "reason", "joined_now",
-                                                             "jockey", "cloth", "price", "bsp", "final"]].to_string(index=False))
+        print(ran.sort_values(["day", "off_uk"]).head(60)[["day", "venue", "off_uk", "runner", "card", "price", "bsp",
+                                                             "final"]].to_string(index=False))
     print("\nexamples of those that did not run (the shortest prices first), 30:")
-    print(M[~M.ran].sort_values("price").head(30)[["day", "venue", "off_uk", "runner", "jockey", "cloth", "price",
-                                                    "removed_by", "final"]].to_string(index=False))
+    print(M[~M.ran].sort_values("price").head(30)[["day", "venue", "off_uk", "runner", "card", "price", "removed_by",
+                                                    "final"]].to_string(index=False))
 
 print(f"\nWIN markets on the catalogue the trader never read before their offs: {len(N)}")
 if len(N):
