@@ -104,9 +104,12 @@ Review is deterministic CI, not a second agent's approval: one bot identity cann
   the same day-liability room, where the arm sizes each as it sends it; and its check compared the port under the
   registered limits with an arm that has none. Fixed with `Strategy.revise` (each order sized as it is sent) and a
   test of the case; the ledger holds the result line.
-- `research/queries/desk_lay_book_1112.py` (ledger `desk-lay-book-1112`, registered before the run): the port with
-  limits that cannot bind against the arm, then the reading under the registered limits with every refusal counted
-  by reason. Not blind: the first run's figures were seen. A pass moves the strategy to paper, never to money.
+- The second replay (`research/queries/done/desk_lay_book_1112.py`, run 42988481613) was **not read** either: the port
+  matched the arm exactly on 14 of 29 days and by a penny on most of the rest. Cause: the kernel's pence floor lost a
+  penny on some exact stakes in floating point (1.13 became 1.12). Fixed and tested. Under the registered limits the
+  0.2 price collar was the only limit that bound (38 refusals, all on the walk up the lay ladder).
+- `research/queries/desk_lay_book_1113.py` (ledger `desk-lay-book-1113`, registered before the run): 1112's design
+  and reading unchanged. If its parity fails again, the work stops for a report rather than a fourth fix.
 - Not yet: a live desk exchange (phase 2, behind the pilot stage); the late and subset books (they need a model fitted
   on late prices and a new book construction first: `desk/backlog/horse_racing.jsonl`).
 

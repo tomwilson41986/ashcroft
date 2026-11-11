@@ -100,7 +100,9 @@ class DeskState:
 
 
 def _floor_pence(x: float) -> float:
-    return math.floor(max(x, 0.0) * 100) / 100
+    """Down to the penny. Rounded first: in binary floating point 1.13 * 100 is 112.99999..., and a bare floor would
+    take a penny off an exact stake (desk-lay-book-1112's machinery check)."""
+    return math.floor(round(max(x, 0.0) * 100, 6)) / 100
 
 
 def _open_worst(positions) -> float:
@@ -199,7 +201,7 @@ class RiskKernel:
         else:
             free = st.funds_available - (env.reserve if env is not None else 0.0)
             cut(_size_for_loss(it, free), "the funds, less the horse rule's reserve")
-        size = _floor_pence(size)
+        size = _floor_pence(size) if why else it.size        # an order no limit cut is sent as asked
         if size < lim["min_stake"]:
             return Verdict(0, f"below the minimum stake after limits ({why or 'size'})")
         return Verdict(size, why)

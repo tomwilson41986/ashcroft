@@ -254,6 +254,21 @@ def test_the_pilot_budget():
     assert k.check(intent()).size == pytest.approx(7.0)
 
 
+@pytest.mark.parametrize("size", [1.13, 2.29, 19.99, 13.33])            # under the fixture's GBP20 order cap
+def test_an_exact_stake_passes_whole(size):
+    """desk-lay-book-1112: a bare floor of size * 100 took a penny off 1.13 (112.999...): the port sent a penny less
+    than the arm."""
+    assert kernel().check(intent(size=size)).size == size
+
+
+def test_a_cut_still_floors_to_the_penny():
+    from desk.risk import _floor_pence
+    assert _floor_pence(1.13) == 1.13 and _floor_pence(1.139) == 1.13 and _floor_pence(0.29) == 0.29
+    k = kernel()
+    k.state.funds_available = 6.666
+    assert k.check(intent()).size == 6.66
+
+
 def test_below_the_minimum_after_cuts_sends_nothing():
     k = kernel()
     k.state.turnover["horse-test"] = 199.5
