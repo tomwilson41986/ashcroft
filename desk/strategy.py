@@ -3,7 +3,8 @@
 A strategy never touches the exchange, the account or another strategy. The desk session (desk/session.py) hands it
 a ``MarketView`` and what the desk already holds on that market; it returns ``Intent`` objects; the risk kernel
 (desk/risk.py) decides what, if anything, is sent. ``on_fill`` tells it what was matched, so a strategy that keeps its
-own tally (a day's liability, top-ups a runner) stays in step with what really happened.
+own tally (a day's liability, top-ups a runner) stays in step with what really happened, and ``revise`` lets it size
+each order at the moment it is sent, after the minute's earlier fills.
 """
 
 from __future__ import annotations
@@ -53,6 +54,12 @@ class Strategy:
 
     def intents(self, view: MarketView, held: list[Position]) -> list[Intent]:
         raise NotImplementedError
+
+    def revise(self, intent: Intent) -> Intent | None:
+        """The intent as it stands when it is sent: the session calls this just before each order, after every earlier
+        fill that minute, so a strategy that sizes against its own tallies (a day's liability, top-ups) sizes against
+        what really happened. None drops the order. The default changes nothing."""
+        return intent
 
     def on_fill(self, intent: Intent, matched: float, avg_price: float) -> None:
         return None

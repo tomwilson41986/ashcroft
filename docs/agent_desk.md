@@ -99,8 +99,14 @@ Review is deterministic CI, not a second agent's approval: one bot identity cann
 - `desk/algos/lay_book.py`: the lay arm ported as the desk's first strategy, registered at the research stage
   (`desk/strategies/horse_racing/horse-lay-book.json`, gate pinned) and in the ledger (`desk-lay-book-1111`).
   On the arms' test day it reproduces the arm's fills and score exactly (`tests/test_desk_session.py`).
-- `research/queries/desk_lay_book_1111.py`: the port checked against the arm on every recorded day, then the
-  registered reading. Its result goes in the ledger; a pass moves the strategy to paper, never to money.
+- The first replay (`research/queries/done/desk_lay_book_1111.py`, run 42972505001) was **not read**: the port's
+  fills differed from the arm's on all 29 days. Cause: the port sized every lay at the start of the minute against
+  the same day-liability room, where the arm sizes each as it sends it; and its check compared the port under the
+  registered limits with an arm that has none. Fixed with `Strategy.revise` (each order sized as it is sent) and a
+  test of the case; the ledger holds the result line.
+- `research/queries/desk_lay_book_1112.py` (ledger `desk-lay-book-1112`, registered before the run): the port with
+  limits that cannot bind against the arm, then the reading under the registered limits with every refusal counted
+  by reason. Not blind: the first run's figures were seen. A pass moves the strategy to paper, never to money.
 - Not yet: a live desk exchange (phase 2, behind the pilot stage); the late and subset books (they need a model fitted
   on late prices and a new book construction first: `desk/backlog/horse_racing.jsonl`).
 

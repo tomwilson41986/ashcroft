@@ -7,7 +7,8 @@ meets the book after the live trader's fills). Each minute:
 
 1. the race books are read once; each strategy is shown each open market (``MarketView``) and what the desk already
    holds there (its own positions and every other desk strategy's);
-2. every intent goes to the kernel (``RiskKernel``, paper mode); what it allows is sent to the exchange under the
+2. every intent is revised by its strategy as it is sent (after the minute's earlier fills: the arms size each order
+   that way) and goes to the kernel (``RiskKernel``, paper mode); what it allows is sent to the exchange under the
    strategy's own order reference (``<prefix><mmdd>-<market>-<selection>-<n>``, never ``ash``), the highest expected
    value first across the markets, as the arms do;
 3. what matched goes back to the kernel (positions, turnover) and to the strategy (``on_fill``).
@@ -86,6 +87,9 @@ class DeskSession(ArmSession):
                 self.send(algo, m, it, now)
 
     def send(self, algo, m, it, now: datetime) -> None:
+        it = algo.revise(it)                               # sized after the minute's earlier fills, as sent
+        if it is None:
+            return
         v = self.kernel.check(it)
         row = {"ts": self._ts(now), "event": "intent", "strategy": it.strategy_id, "market_id": it.market_id,
                "selection_id": it.selection_id, "side": it.side, "price": it.price, "asked": it.size,

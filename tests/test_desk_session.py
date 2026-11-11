@@ -86,3 +86,30 @@ def test_the_desk_runs_beside_the_live_rule_on_one_book(day):
     assert len(backs) and B not in set(backs.selection_id)             # the live rule backs the long horses
     lays = _fills(desk.desk_rows)
     assert lays and all(sid == B for sid, _, _ in lays)                # the desk lays the short one, on the same book
+
+
+def test_two_lays_in_one_minute_share_the_days_room_as_the_arm_sizes_them():
+    """The cause of desk-lay-book-1111's failed machinery check: the port sized every intent at the start of the
+    minute, so two orders shared the same day-liability headroom; the arm sizes each order as it sends it."""
+    from datetime import datetime, timezone
+
+    import numpy as np
+
+    from desk.strategy import MarketView
+    from trading.exchange import Book, Market, Quote
+    from trading.strategy import RunnerView
+
+    now = datetime(2026, 11, 2, 7, 0, tzinfo=timezone.utc)
+    m = Market("1.1", "Ascot", "GB", datetime(2026, 11, 2, 13, 0, tzinfo=timezone.utc), runners={1: "A", 2: "B"})
+    book = Book("1.1", "OPEN", False, 5000.0, {1: Quote(1, back=[(2.9, 500.0)], lay=[(3.0, 500.0)]),
+                                               2: Quote(2, back=[(3.9, 500.0)], lay=[(4.0, 500.0)])})
+    views = [RunnerView(selection_id=s, name=n, model_price=6.0, back=b, back_size=500.0, lay=L, last_traded=L,
+                        status="ACTIVE", traded=0.0) for s, n, b, L in ((1, "A", 2.9, 3.0), (2, "B", 3.9, 4.0))]
+    draws = np.full((100, 2), 1 / 5.0)                     # the closing model's E[BSP] = 5 for both
+    view = MarketView(market=m, book=book, runners=views, now=now, closing_fn=lambda v: (None, None, None, None, draws))
+    lb = LayBook(day_liability=300.0)
+    first, second = sorted(lb.intents(view, []), key=lambda i: -i.expected_value)
+    assert (first.selection_id, first.size) == (1, 150.0)    # GBP300 of room at 3.0: GBP150 of stake
+    assert second.size == 100.0                              # sized alone, B would take the same GBP300
+    lb.on_fill(first, first.size, first.price)               # A fills: the day's GBP300 is used
+    assert lb.revise(second) is None                         # as sent, B has no room left: the arm sends nothing

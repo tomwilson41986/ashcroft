@@ -15,6 +15,7 @@ kernel. Its choices are the arm's, unchanged, so the desk's replay can be checke
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 import numpy as np
 
@@ -36,6 +37,7 @@ class LayBook(Strategy):
         self.day_liability_used = 0.0
         self.matched: dict = {}                          # (market, selection) -> GBP matched
         self.fills: dict = {}                            # (market, selection) -> fills
+        self.plan: dict = {}                             # (market, selection) -> this minute's target, offer, limit
 
     def candidates(self, view: MarketView) -> list[dict]:
         c = view.closing()
@@ -61,30 +63,44 @@ class LayBook(Strategy):
     def intents(self, view: MarketView, held) -> list[Intent]:
         p, out = self.p, []
         for c in self.candidates(view):
-            key = (view.market_id, c["sid"])
-            if p["max_topups"] is not None and self.fills.get(key, 0) >= p["max_topups"] + 1:
-                continue
+            key = (view.market_id, int(c["sid"]))
             L = c["price"]
-            target = min(max(p["liability"] / (L - 1.0), p["stake_floor"]), p["max_stake"])
-            want = target - self.matched.get(key, 0.0)
-            if want < p["min_stake"]:
-                continue
             limit, size = L, 0.0
             for lp, s in c["levels"]:
                 if 1.0 - lp / c["exp_bsp"] < p["bar"] or lp > c["model_price"] or lp > p["max_price"]:
                     break
                 limit, size = lp, size + s
-            offered = size if size > 0 else c["size"]
-            stake = math.floor(min(want, offered) * 100) / 100
-            room = p["day_liability"] - self.day_liability_used
-            if stake * (limit - 1.0) > room + 1e-9:
-                stake = math.floor(max(0.0, room / (limit - 1.0)) * 100) / 100
-            if stake < p["min_stake"]:
-                continue
-            out.append(Intent(strategy_id=self.id, market_id=view.market_id, selection_id=int(c["sid"]), side="LAY",
-                              price=float(limit), size=float(stake), best_price=float(L), book_age_s=view.book_age_s,
-                              decision_price=float(L), expected_value=c["ev"]))
+            self.plan[key] = {"target": min(max(p["liability"] / (L - 1.0), p["stake_floor"]), p["max_stake"]),
+                              "offered": size if size > 0 else c["size"], "limit": limit}
+            it = Intent(strategy_id=self.id, market_id=view.market_id, selection_id=int(c["sid"]), side="LAY",
+                        price=float(limit), size=0.0, best_price=float(L), book_age_s=view.book_age_s,
+                        decision_price=float(L), expected_value=c["ev"])
+            it = self.revise(it)                         # sized now; sized again when sent, after earlier fills
+            if it is not None:
+                out.append(it)
         return out
+
+    def revise(self, intent: Intent):
+        """The arm's sizing (research/arms/sessions.py lay_execute), against the tallies as they stand when the order
+        is sent: the top-ups, the stake still wanted to the target, what is offered, the day's liability room."""
+        p = self.p
+        key = (intent.market_id, intent.selection_id)
+        plan = self.plan.get(key)
+        if plan is None:
+            return None
+        if p["max_topups"] is not None and self.fills.get(key, 0) >= p["max_topups"] + 1:
+            return None
+        want = plan["target"] - self.matched.get(key, 0.0)
+        if want < p["min_stake"]:
+            return None
+        limit = plan["limit"]
+        stake = math.floor(min(want, plan["offered"]) * 100) / 100
+        room = p["day_liability"] - self.day_liability_used
+        if stake * (limit - 1.0) > room + 1e-9:
+            stake = math.floor(max(0.0, room / (limit - 1.0)) * 100) / 100
+        if stake < p["min_stake"]:
+            return None
+        return replace(intent, size=float(stake))
 
     def on_fill(self, intent: Intent, matched: float, avg_price: float) -> None:
         if matched <= 0:
