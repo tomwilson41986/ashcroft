@@ -16,7 +16,7 @@ LAYOFF_COST = 0.20                       # seconds slower on the first run after
 SLOW_NIGHT = 0.30                        # seconds: one meeting runs slow on every dog
 
 
-def synth(days=120, seed=1):
+def synth(days=120, seed=1, step=None):
     rng = np.random.default_rng(seed)
     dogs = np.arange(1, 161)
     skill = rng.normal(0, 0.12, len(dogs) + 1)                 # seconds, below 0 faster
@@ -26,6 +26,7 @@ def synth(days=120, seed=1):
     for d in range(days):
         day = (pd.Timestamp("2025-01-01") + pd.Timedelta(days=d)).strftime("%Y-%m-%d")
         for ti, (track, std) in enumerate((("Romford", 24.5), ("Hove", 29.8))):
+            relaid = step[1] if (step and ti == 1 and d >= step[0]) else 0.0     # Hove re-laid: slower for good
             slow = SLOW_NIGHT if (d == days - 20 and ti == 0) else rng.normal(0, 0.08)   # the going of the night
             for r in range(6):
                 rid += 1
@@ -36,7 +37,7 @@ def synth(days=120, seed=1):
                 for k, dog in enumerate(field):
                     off = d - last_run.get(int(dog), d)
                     t[k] = (std + skill[dog] + (TRAP_COST.get(k + 1, 0.0) if ti == 0 else 0.0)
-                            + (LAYOFF_COST if off >= 40 else 0.0) + (0.25 if crd[k] else 0.0) + slow
+                            + (LAYOFF_COST if off >= 40 else 0.0) + (0.25 if crd[k] else 0.0) + slow + relaid
                             + rng.normal(0, 0.06))
                     last_run[int(dog)] = d
                     if rng.random() < 0.012:
@@ -50,7 +51,7 @@ def synth(days=120, seed=1):
                                  "sp_decimal": 6.0, "position": int(pos[k]), "beaten_lengths": 0.5,
                                  "sectional": 4.0 + skill[dog] * 0.2 + rng.normal(0, 0.02),
                                  "run_time": float(t[k]), "adjusted_time": float(t[k]), "weight_kg": 30.0,
-                                 "comment": "Crd1" if crd[k] else "QAw"})
+                                 "comment": ("Crd1" if crd[k] else "QAw") + (",ALed" if pos[k] == 1 else "")})
     return clean(pd.DataFrame(rows)), skill
 
 
@@ -124,3 +125,22 @@ def test_a_slow_night_is_the_going_not_the_dogs(small):
     nxt = m[(m.race_date > night) & m.dog_id.isin(ran)].sort_values("t").groupby("dog_id").head(1)
     # 0.30 s is 3.75 lengths: the dogs' next surprise shows a small part of it at most
     assert nxt.xt_last_surprise.mean() > -1.2
+
+
+def test_only_interference_is_priced_never_where_the_dog_ran(built):
+    """The first build on the real data priced "always led" at -3.9% of the time: leading is the fast run itself."""
+    _, _, _, notes = built
+    assert set(notes["tot"]["code_cost_pct_top"]) == {"crd1"}
+    assert not notes["tot"]["code_cost_pct_bottom"] or set(notes["tot"]["code_cost_pct_bottom"]) == {"crd1"}
+
+
+def test_a_relaid_track_is_learnt_by_the_standard(small):
+    """A track 0.4 s slower for good from day 40: the expected time follows it (the first build hid a lasting error
+    in the meeting variant, and the forecast's error grew to 12 lengths)."""
+    runs, _ = synth(step=(40, 0.4))
+    tab, notes = xtime.build(runs, core.per_run_figures(runs))
+    m = runs.merge(tab, on=["race_id", "dog_id"])
+    late = m[(m.track == "Hove") & (m.race_date >= "2025-04-01")]
+    assert abs((late.xt_tot_time - late.adjusted_time).mean()) < 0.06
+    y = notes["tot"]["by_year"][2025]
+    assert y["rmse_within_race"] < 0.8 * y["rmse_within_race_no_dog"]

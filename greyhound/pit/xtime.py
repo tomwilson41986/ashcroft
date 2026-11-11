@@ -24,7 +24,8 @@ is fitted walking forward, a day at a time:
   drift a day off, noise a run and the spread of a new dog fitted on the early years, more for a trial or a troubled run, an outlier clipped at 3 sd), the standard (a
   slow running mean, so a track linked to the others by the dogs that move), and the trap, grade and preference
   effects (shrunk running means of the partial residual);
-- ``b`` and the price of each comment code are a ridge regression refitted every ``REFIT_MONTHS`` on the periods
+- ``b`` and the price of each interference code (crowded, bumped, baulked, checked, hampered: never a code that
+  says where the dog ran, which is the run itself) are a ridge regression refitted every ``REFIT_MONTHS`` on the periods
   before, on the partial residuals those periods stored: a row is never priced by a fit that saw its period;
 - a dog with no run has the mean level of the dogs it is graded to meet (the racing manager's opinion of it), else
   the mean level of its grade there on earlier days.
@@ -42,6 +43,8 @@ Every column is read from earlier days only (tests/test_greyhound_pit.py; tests/
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 
@@ -57,11 +60,17 @@ MIN_COUNT = 200
 LAM = 20.0
 OUT = 8.0                    # a run more than 8% from its expected time is read by nothing
 CLIP = 4.0
-STD_CAP = 1500.0             # the standard's memory, runs
+STD_CAP = 800.0              # the standard's memory, runs
 K_TRAP, K_GRADE, K_PREF, K_VAR0 = 50.0, 30.0, 5.0, 5.0
 NOISY = 1.5
 TARGETS = ("tot", "sec", "run")
-GRID = [(r, q, p0) for r in (0.1, 0.2, 0.4, 0.8) for q in (0.0003, 0.001, 0.003) for p0 in (0.1, 0.3, 1.0)]
+GRID = [(r, q, p0) for r in (0.2, 0.4, 0.8, 1.6) for q in (0.001, 0.003, 0.01) for p0 in (0.3, 1.0, 3.0)]
+#: the comment codes that are interference (crowded, bumped, baulked, checked, hampered, impeded, stumbled). The first
+#: build on the real data (run 43055884883, 11 Nov 2026) priced every code: "always led" came out at -3.9% of the time
+#: and the model's error grew each year, because leading is what running fast looks like, not luck. Only interference
+#: is taken out of a past run, it can only have cost time, and never more than ``COST_CAP`` percent
+TROUBLE = re.compile(r"crd|crowd|bmp|bump|blk|baulk|hmp|hamp|imped|stumb|fcdtock|^ck|checked")
+COST_CAP = 1.5
 BANDS = (350.0, 550.0, 750.0)
 OFF_EDGES = (5, 8, 11, 15, 22, 36, 61, 101, 181)
 EXP_EDGES = (1, 2, 3, 5, 10, 20, 40)
@@ -155,6 +164,8 @@ def prepare(df: pd.DataFrame) -> dict:
     cr, cc = [], []
     for i, ts in enumerate(toks):
         for c in set(ts):
+            if not TROUBLE.search(c):
+                continue
             cr.append(i)
             cc.append(vocab.setdefault(c, len(vocab)))
     C = sparse.csr_matrix((np.ones(len(cr)), (cr, cc)), shape=(n, max(len(vocab), 1)))
@@ -196,8 +207,8 @@ def ridge(X, C, y: np.ndarray, rows: np.ndarray) -> tuple[float, np.ndarray, np.
     coef = np.linalg.solve((Z.T @ Z).toarray() + reg, Z.T @ y)
     k = X.shape[1]
     gamma = np.zeros(C.shape[1])
-    gamma[keep] = coef[1 + k:]
-    return float(coef[0]), coef[1:1 + k], gamma, float((Cr @ gamma).mean())
+    gamma[keep] = np.clip(coef[1 + k:], 0.0, None)
+    return float(coef[0]), coef[1:1 + k], gamma, float(np.minimum(Cr @ gamma, COST_CAP).mean())
 
 
 def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: bool = True) -> dict:
@@ -237,7 +248,7 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
                 b0, beta, gamma, mean_cost = ridge(P["X"], P["C"], np.clip(pr[rows], -CLIP - 2, CLIP + 2), rows)
                 nxt = np.flatnonzero(period == cur)
                 xb[nxt] = b0 + mean_cost + P["X"][nxt] @ beta
-                cost[nxt] = P["C"][nxt] @ gamma - mean_cost
+                cost[nxt] = np.minimum(P["C"][nxt] @ gamma, COST_CAP) - mean_cost
                 fits[int(cur)] = {"rows": int(len(rows)), "beta": beta, "gamma": gamma, "b0": b0 + mean_cost}
         d, k = dog[i], key[i]
         new = LAST[d] < 0
@@ -295,7 +306,7 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
         e2 = e1 - cost[j]
         o["e1"][j], o["e2"][j] = e1, e2
         dj, tj = d[ok], trial[j]
-        noisy = np.where(tj | (cost[j] > 0.25), NOISY, 1.0)
+        noisy = np.where(tj | (P["C"][j].getnnz(axis=1) > 0), NOISY, 1.0)
         # the dog's level: one update a dog a day (a day's runs averaged)
         du, di = np.unique(dj, return_inverse=True)
         cnt = np.bincount(di).astype(float)
@@ -314,7 +325,9 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
         if g.any():
             ku, inv = np.unique(k[ok][g], return_inverse=True)
             c = np.bincount(inv).astype(float)
-            a[ku] += (np.bincount(inv, weights=e2[g]) / c) * c / (c + np.minimum(nkey[ku], STD_CAP) + 1.0)
+            # from the error BEFORE the variant: the variant is the night, the standard what lasts (the first build
+            # updated it after the variant, which hid every lasting error from it: run 43055884883)
+            a[ku] += (np.bincount(inv, weights=(e2 + v)[g]) / c) * c / (c + np.minimum(nkey[ku], STD_CAP) + 1.0)
             nkey[ku] += c
             np.add.at(Ste, kt[j][g], (e2 + tev[ok])[g])
             np.add.at(Nte, kt[j][g], 1.0)
@@ -337,7 +350,7 @@ def run_filter(P: dict, y: np.ndarray, prm: dict, upto: int | None = None, fit: 
 
 def fit_constants(P: dict, y: np.ndarray, early_to: int) -> tuple[dict, list]:
     """The filter's noise a run and drift a day: the pair with the smallest squared error of the forecasts over the
-    second half of the early days (graded runs of dogs with a run behind them)."""
+    second half of the early days, each against its race's mean error (graded runs of dogs with a run behind them)."""
     dn = P["dn"]
     seen = dn[dn <= early_to]
     if not len(seen):
@@ -348,7 +361,12 @@ def fit_constants(P: dict, y: np.ndarray, early_to: int) -> tuple[dict, list]:
     for r, q, p0 in GRID:
         o = run_filter(P, y, {"r": r, "q": q, "p0": p0}, upto=early_to, fit=False)
         k = score & np.isfinite(o["e"]) & (o["n"] >= 1) & (np.abs(o["e"]) <= OUT)
-        mse = float(np.mean(o["e"][k] ** 2)) if k.sum() >= 100 else np.nan
+        if k.sum() >= 100:                                       # against the race's mean error: the going is not the dog
+            rc = np.unique(P["race"][k], return_inverse=True)[1]
+            ek = o["e"][k]
+            mse = float(np.mean((ek - (np.bincount(rc, weights=ek) / np.bincount(rc))[rc]) ** 2))
+        else:
+            mse = np.nan
         grid.append((r, q, p0, round(mse, 5) if np.isfinite(mse) else None))
         if np.isfinite(mse) and (best is None or mse < best[0]):
             best = (mse, {"r": r, "q": q, "p0": p0})
