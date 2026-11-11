@@ -103,11 +103,42 @@ def start_date(cfg: dict) -> str:
     return str(cfg.get("start_date") or START_DATE)
 
 
+def eval_until(cfg: dict) -> str:
+    """Where the scored window ends: EVAL_UNTIL, the locked holdout's start, unless the config is a
+    deliberate final read (`"final": true` with `bfsp_until`), which scores into the holdout.
+
+    A `bfsp_until` without `"final": true` is refused: reading the holdout is never a side effect."""
+    until = cfg.get("bfsp_until")
+    if not until:
+        return EVAL_UNTIL
+    if not cfg.get("final"):
+        raise SystemExit("loop.json: bfsp_until reads the locked holdout and needs \"final\": true")
+    return str(until)
+
+
+def holdout_looks_done(tag: str, ledger: Path | None = None) -> int:
+    """How many completed holdout reads the ledger records for this tag: entries of kind
+    'HOLDOUT LOOK' carrying a result. The entry announcing a look, written with the commit that
+    starts it, has none, so the first look runs and any re-run after its result is refused."""
+    ledger = ledger or (REPO / "reports" / "research_ledger.jsonl")
+    if not ledger.exists():
+        return 0
+    n = 0
+    for line in ledger.read_text().splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("kind") == "HOLDOUT LOOK" and e.get("tag") == tag and e.get("result"):
+            n += 1
+    return n
+
+
 def common_args(cfg: dict) -> list[str]:
     """Arguments every arm shares: the matrix, the folds, the recipe."""
     anchor = ["--fold-anchor", str(cfg["fold_anchor"])] if cfg.get("fold_anchor") else []
     return ["--start-date", start_date(cfg), "--feature-cache", FEATURE_CACHE,
-            "--eval-from", cfg.get("bfsp_from", "2025-07-01"), "--eval-until", EVAL_UNTIL,
+            "--eval-from", cfg.get("bfsp_from", "2025-07-01"), "--eval-until", eval_until(cfg),
             "--step-days", "91", "--val-window", "91", "--recipe", recipe(cfg), *anchor]
 
 
@@ -142,6 +173,14 @@ def ensembles(cfg: dict) -> list[dict]:
         if not re.fullmatch(r"[a-z][a-z0-9_]{0,30}", name) or name in BASE_ARMS or name in names or name in seen:
             raise SystemExit(f"ensemble name {name!r}: lower-case, unique, not an arm's")
         fitted = set(all_arms(cfg))
+        if e.get("by_code"):
+            # one arm's prices on the jumps races, another's on the Flat and all-weather (two specialists as one)
+            bc = e["by_code"]
+            if set(bc) != {"jumps", "flat"} or not set(bc.values()) <= fitted or bc["jumps"] == bc["flat"]:
+                raise SystemExit(f"ensemble {name!r}: by_code names two distinct fitted arms as jumps and flat")
+            seen.add(name)
+            out.append({"name": name, "arms": [bc["jumps"], bc["flat"]], "by_code": dict(bc)})
+            continue
         least = 1 if gate else 2
         if len(set(arms)) < least or len(set(arms)) != len(arms) or not set(arms) <= fitted:
             raise SystemExit(f"ensemble {name!r}: {'one' if gate else 'two'} or more distinct fitted arms, "
@@ -222,9 +261,38 @@ def gate_arms(base_path, gated_path, weights: list, out) -> None:
     g.to_csv(out, index=False)
 
 
+JUMPS_CODES = ("hurdle", "chase", "nhflat")
+
+
+def split_by_code(jumps_path, flat_path, out) -> None:
+    """Two specialists as one forecast: the jumps arm's prices on hurdles, chases and bumpers, the flat arm's on
+    the rest (model.race_shape.race_code). A race is of one code, so each race's book stays as its arm normalised
+    it. Both arms must price every runner; the result keeps the jumps arm's rows and order."""
+    import numpy as np
+    import pandas as pd
+    sys.path.insert(0, str(REPO))
+    from model.race_shape import race_code
+    key = ["race_date", "race_time", "track", "horse_name"]
+    j = pd.read_csv(jumps_path, dtype={"race_time": str})
+    f = pd.read_csv(flat_path, dtype={"race_time": str}).set_index(key).reindex(j.set_index(key).index)
+    if f["predicted_bfsp"].isna().any():
+        raise SystemExit(f"{flat_path}: lacks runners of {jumps_path}")
+    is_jumps = race_code(j).isin(JUMPS_CODES).to_numpy()
+    res = j.copy()
+    for c in ("predicted_bfsp", "predicted_win_prob_norm", "predicted_bfsp_raw"):
+        if c in res.columns and c in f.columns:
+            res[c] = np.where(is_jumps, j[c].to_numpy(), f[c].to_numpy())
+    if "overlay_pct" in res and "bfsp" in res:
+        res["overlay_pct"] = (res["bfsp"] / res["predicted_bfsp"] - 1) * 100
+    res.to_csv(out, index=False)
+
+
 def build_ensemble(e: dict, out: Path) -> None:
     """An ensemble's forecast from its arms' files in `out`: their average, gated if it has a gate."""
     dest = out / f"oos_{e['name']}.csv"
+    if e.get("by_code"):
+        split_by_code(out / f"oos_{e['by_code']['jumps']}.csv", out / f"oos_{e['by_code']['flat']}.csv", dest)
+        return
     if not e.get("gate"):
         average_arms([out / f"oos_{a}.csv" for a in e["arms"]], dest)
         return
@@ -326,6 +394,12 @@ def _outputs(pairs: dict) -> None:
 
 def cmd_plan(args) -> None:
     cfg = load_config(args.config)
+    if cfg.get("final") and cfg.get("bfsp_until"):
+        seen = holdout_looks_done(cfg.get("tag", ""))
+        if seen:
+            raise SystemExit(f"the locked holdout has already been scored for '{cfg.get('tag')}' ({seen} look(s) "
+                             "with a result in the ledger); a new look needs a new tag and a ledger entry saying why")
+        print(f"FINAL READ: scoring {cfg.get('bfsp_from')} to {eval_until(cfg)}, inside the locked holdout")
     from model import feature_cache
     fkey = feature_cache.cache_key(args.db, start_date(cfg))
     Path(FIT_DIR).mkdir(parents=True, exist_ok=True)
@@ -467,6 +541,10 @@ def cmd_compare(args) -> None:
     arms = [(v["name"], _note(cfg, v, cached)) for v in variants(cfg)]
     for e in ensembles(cfg):
         build_ensemble(e, out)
+        if e.get("by_code"):
+            arms.append((e["name"], f"{cfg.get('tag', '')} / {e['name']}: {e['by_code']['jumps']} on the jumps "
+                                    f"races, {e['by_code']['flat']} on the Flat; recipe {recipe(cfg)}"))
+            continue
         gated = (f", gated with {e['gate']['arm']} (weights by rank {e['gate']['weights']})"
                  if e.get("gate") else "")
         arms.append((e["name"], f"{cfg.get('tag', '')} / {e['name']}: the geometric mean of "
@@ -488,7 +566,7 @@ def cmd_compare(args) -> None:
                  + "\n\n" + (out / "replicate.md").read_text())
     def clv(arm):
         res = subprocess.run([sys.executable, "scripts/clv_betfair.py", "--predictions",
-                              str(out / f"oos_{arm}.csv"), "--db", args.db, "--until", EVAL_UNTIL],
+                              str(out / f"oos_{arm}.csv"), "--db", args.db, "--until", eval_until(cfg)],
                              cwd=REPO, capture_output=True, text=True)
         body = res.stdout + (res.stderr[-2000:] if res.returncode else "")
         (out / f"clv_{arm}.txt").write_text(body)

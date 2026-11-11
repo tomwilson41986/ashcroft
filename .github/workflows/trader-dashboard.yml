@@ -51,6 +51,10 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           DAY: ${{ inputs.date }}
           EVENT: ${{ github.event_name }}
+          # the early lay's switch, shown on its tile (the owner, 11 Nov 2026): the repository variables as
+          # paper-models.yml reads them (paper unless 'live'); read here, never acted on
+          GREYHOUND_EARLY_LAY: ${{ vars.GREYHOUND_EARLY_LAY || 'paper' }}
+          GREYHOUND_EARLY_LAY_DAILY_LOSS: ${{ vars.GREYHOUND_EARLY_LAY_DAILY_LOSS }}
         run: |
           ARGS=(--out out/dashboard --summary "$GITHUB_STEP_SUMMARY")
           if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); fi

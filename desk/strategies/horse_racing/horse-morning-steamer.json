@@ -1,0 +1,43 @@
+{
+  "id": "horse-morning-steamer",
+  "sport": "horse_racing",
+  "name": "Steamer model, win backs at 10:00",
+  "stage": "legacy",
+  "hypothesis": "The clean steamer model's top 5% shorten from 10:00 to the off and win more than their price says.",
+  "markets": [
+    "GB/IE WIN"
+  ],
+  "entry_point": "python -m morning.live --trade --live",
+  "workflow": "morning-models.yml",
+  "live_switch": "MORNING_LIVE",
+  "order_ref_prefix": "mes",
+  "bucket": "pred",
+  "stop_keys": [
+    "morning/STOP",
+    "trading/STOP"
+  ],
+  "kill_switch_fails": "open",
+  "dashboard_ids": [
+    "horse-morning-steamer",
+    "horse-morning-steamer-paper"
+  ],
+  "evidence": [
+    {
+      "claim": "research win A/E 1.155 at the morning price, 1.032 at the BSP; not significant on 33 days (p 0.16)",
+      "source": "docs/morning_models_live.md"
+    },
+    {
+      "claim": "GBP50 to win, GBP100 a bet, GBP2,000 a day a model",
+      "source": "morning/live.py:60-63"
+    },
+    {
+      "claim": "kill switch: a failed S3 read reads as not stopped (fails open)",
+      "source": "morning/live.py:84-88,326-330"
+    }
+  ],
+  "approved": {
+    "by": "owner",
+    "on": "2026-11-04",
+    "source": "docs/morning_models_live.md; CLAUDE.md (the morning models)"
+  }
+}

@@ -55,7 +55,7 @@ import pandas as pd
 from sources.football import MAIN
 
 from . import football_exchange as fx
-from .backtest import summarise
+from .backtest import net_by_market, summarise
 from .features import add_features, coerce_panel, price_band
 
 log = logging.getLogger(__name__)
@@ -437,15 +437,40 @@ def _finite(x) -> bool:
         return False
 
 
+def trials_considered(rule: dict, gt: dict) -> int:
+    """How many configurations the registered rule was chosen from, for its deflated Sharpe: the gate's own
+    ``n_trials`` if it states one, else the model and market-type pairs the registration lists in
+    ``thresholds_by_model`` (the search the rule was picked from), else 1. Read from the registration as written,
+    which this does not change."""
+    if gt.get("n_trials"):
+        return int(gt["n_trials"])
+    grid = rule.get("thresholds_by_model") or {}
+    n = sum(len(v) for v in grid.values() if isinstance(v, dict))
+    return max(int(n), 1)
+
+
+def overfit(trades: pd.DataFrame, commission: float, n_trials: int) -> dict:
+    """The deflated Sharpe of the trial's daily return (each day's net after commission over its stake), deflated by
+    the ``n_trials`` configurations the rule was chosen from (research.overfit)."""
+    from research.overfit import dsr_check
+    if trades.empty:
+        return dsr_check([], n_trials)
+    day = net_by_market(trades, commission).groupby("day").agg(net=("net", "sum"), stake=("stake", "sum"))
+    return dsr_check((day["net"] / day["stake"]).to_numpy(), n_trials)
+
+
 def gate(result: dict, gt: dict) -> dict:
     """The paper trial's gate: the window complete (``min_bets`` trades and ``min_days`` days), the 90% lower bound
-    of the return at the taken prices above zero, the mean CLV above zero, both halves above zero. A window still
-    running is reported as running, never as a pass or a fail."""
+    of the return at the taken prices above zero, the mean CLV above zero, both halves above zero, and (wired in
+    5 Nov 2026, the owner: "wire in") the deflated Sharpe of the daily return at or above 0.95 against the
+    configurations the rule was chosen from (``result["overfit"]``, research.overfit; missing, the check fails). A
+    window still running is reported as running, never as a pass or a fail."""
     s, w, h = result["headline"], result["window"], result["halves"]
     checks = {"bets": s.get("bets", 0) >= gt["min_bets"], "days": w["calendar_days"] >= gt["min_days"],
               "roi_lo90_above_0": _finite(s.get("roi_lo90")) and s["roi_lo90"] > gt.get("roi_lo90_above", 0),
               "clv_above_0": (s.get("clv_mean") or -1) > gt.get("clv_mean_above", 0),
-              "both_halves_above_0": (h["first"].get("roi") or -1) > 0 and (h["second"].get("roi") or -1) > 0}
+              "both_halves_above_0": (h["first"].get("roi") or -1) > 0 and (h["second"].get("roi") or -1) > 0,
+              "deflated_sharpe": bool((result.get("overfit") or {}).get("passed"))}
     if w["status"] in ("running", "not started"):
         return {"checks": checks, "verdict": "running", "passed": None}
     return {"checks": checks, "verdict": "pass" if all(checks.values()) else "fail", "passed": bool(all(checks.values()))}
@@ -633,6 +658,7 @@ def score_trial(t: Trial, prereg_sha: str, trades_out: str | None = None) -> dic
         if len(sk):
             out["skipped_by_weekday"] = sk.groupby(["reason", "weekday"]).size().rename("n").reset_index().to_dict(
                 "records")
+        out["overfit"] = overfit(inw, com, trials_considered(rule, gt))
         out["gate"] = gate(out, gt)
         res["rules"].append(out)
         if i == 0:

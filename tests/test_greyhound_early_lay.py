@@ -98,10 +98,13 @@ def trader(tmp_path, x, fit, live=True, now=T0, kill=False, p=None):
 
 
 def test_the_stake_is_sized_by_liability():
-    cfg = dict(el.CONFIG)
+    cfg = dict(el.CONFIG, liability=20.0, min_stake=2.0, max_stake=10.0)      # the stakes of 3-11 Nov
     assert el.stake_for(5.0, cfg) == 5.0                       # GBP20 liability at 5.0
     assert el.stake_for(11.0, cfg) == 2.0                      # GBP2 at the smallest
     assert el.stake_for(1.5, cfg) == 10.0                      # GBP10 at the largest
+    live = dict(el.CONFIG)                                     # from 11 Nov 2026: the forward test's GBP100 a lay
+    assert el.stake_for(5.0, live) == 25.0 and el.stake_for(1.5, live) == 50.0 and el.stake_for(60.0, live) == 2.0
+    assert live["max_market_liability"] == 8 * live["liability"]
     from greyhound import tradeout as to                       # the paper's GBP100, by the same rule
     big = dict(cfg, liability=to.TO_WIN, min_stake=to.MIN_STAKE, max_stake=to.MAX_STAKE)
     for price in (1.5, 2.0, 3.3, 5.0, 11.0, 20.0, 60.0):
@@ -373,12 +376,22 @@ def test_the_table_lists_the_matched_lays_dog_by_dog(tmp_path, fit):
     assert len(rows) == n and all("| green |" in r for r in rows)
 
 
+def test_the_guard_is_off_by_default_as_the_tested_rule():
+    """The owner, 11 Nov 2026: "lose the guard. I want to be exactly like the rule that was profitable in test": the
+    forward test's rule (greyhound/laytest.py PRIMARY) lays every forecast drifter at 80% of the forecast SP."""
+    from greyhound import laytest
+    assert el.CONFIG["rest_only"] is False
+    assert el.CONFIG["margin"] == laytest.PRIMARY["param"] and el.CONFIG["gate"] == laytest.PRIMARY["gate"]
+
+
 def test_never_a_lay_at_or_above_the_mid(tmp_path, fit):
-    """The owner, 3 Nov: lays only rest in the queue; one priced at or above the market's mid is not placed."""
+    """With the guard on (rest_only, the owner's rule of 3 Nov to 11 Nov): a lay priced at or above the market's mid
+    is not placed."""
     from model.race_book import market_now
     x = FakeX()
     x.book = book()
-    t, _ = trader(tmp_path, x, fit)
+    t = el.EarlyLay(Store(preds()), x, dict(el.CONFIG, rest_only=True), date(2026, 11, 3), True,
+                    tmp_path / "ledger.csv", fit, now=lambda: T0)
     t.step()
     led = pd.read_csv(tmp_path / "ledger.csv")
     for i in (i for i in x.sent if i["side"] == "LAY"):
@@ -616,7 +629,7 @@ def test_the_gate_refuses_what_breaks_a_limit(tmp_path, fit):
     t, _ = trader(tmp_path, x, fit)
     assert t.gate(MID, 5.0, el.stake_for(5.0, t.cfg)) == ""
     assert "price" in t.gate(MID, 25.0, 2.0)                  # over max_price
-    assert "stake" in t.gate(MID, 5.0, 50.0)                  # over max_stake
+    assert "stake" in t.gate(MID, 5.0, 60.0)                  # over max_stake
     assert "stopped" in t.gate(MID, 5.0, 2.0, stopped=True)
     t.laid[MID] = t.cfg["max_market_liability"]
     assert "race's liability" in t.gate(MID, 5.0, 2.0)

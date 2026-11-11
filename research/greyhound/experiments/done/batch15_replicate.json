@@ -1,0 +1,127 @@
+{
+ "about": "Batch 15 (10 Nov 2026), registered before its scores: the replication. Batches 12-14 showed the same recipe scoring 0.3593 and 0.3579 on different runners, so the small gains (three seeds -0.0037, the other metric tables -0.0038, the Betfair-SP rating -0.0023) sit near that noise. Every fit is now deterministic on four threads. Each small change is read again alone and then all together, with the per-track stretch on the whole. The rule: kept where the paired gain over share08_figs is 3 bootstrap standard errors or more here too, the log-loss no worse beyond 1. The fields shown wrong in batch 14 (hb_days_since_season, ti_new_trainer) are dropped from here on: dropping them cost nothing (z -1.1 and +1.0).",
+ "recipe": "quick",
+ "baseline": "share08_figs",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "drop": [
+    "fg_bmr",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "name": "share08_figs"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "drop": [
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "name": "share08_figs_bmr"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "drop": [
+    "fg_bmr",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "seeds": 3,
+   "name": "share08_figs_seeds3"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life"
+   ],
+   "drop": [
+    "fg_bmr",
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "name": "share08_figs_pit_all"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life"
+   ],
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "seeds": 3,
+   "calibrate": [
+    "stretch",
+    "stretch_track"
+   ],
+   "importance": true,
+   "name": "share08_best"
+  }
+ ]
+}

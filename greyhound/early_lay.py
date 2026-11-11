@@ -47,9 +47,10 @@ log = logging.getLogger(__name__)
 PREFIX = "greyhound/early_lay"
 REF = "el-"                                   # every order of this trader: el-<mmdd>-<market>-<selection>-<kind>
 CONFIG = {
-    "liability": 20.0,                        # each lay's liability (stake x (price - 1)). The owner, 3 Nov 14:20: cut to
+    "liability": 100.0,                       # GBP100 from 11 Nov 2026 (the owner: "GBP100 a lay", the forward test's
+                                              # stake: greyhound.tradeout TO_WIN, stakes GBP2-50); GBP20 3-11 Nov. Each lay's liability (stake x (price - 1)). The owner, 3 Nov 14:20: cut to
     "min_stake": 2.0,                         # GBP20 while the paper is rebuilt on the live feed (live and paper laid
-    "max_stake": 10.0,                        # different dogs); GBP100 again only once that shows an edge
+    "max_stake": 50.0,                        # different dogs); GBP100 again only once that shows an edge
     "margin": 0.20,                           # lay at the forecast SP less this share. 0.2 to 4 Nov, 0.10 on 4 Nov
                                               # (3 Nov's live books in the corrected simulator: +GBP3.82 on 26 fills
                                               # against 0.2's -GBP3.93, within noise); 0.2 again from 5 Nov, the owner,
@@ -65,13 +66,18 @@ CONFIG = {
                                               # daily loss limit"): GREYHOUND_EARLY_LAY_DAILY_LOSS, else no live orders
     "close_margin_seconds": 120.0,            # no lay on a race off later than this before the trader stops
     "overrun_minutes": 15.0,                  # past --until, the trader stays to close what it laid, then cancels
-    "max_open_liability": 1000.0,             # a guard against a fault, not a limit on the trading
-    "rest_only": True,                        # never lay at or above the mid: rest in the queue, never take
+    "max_open_liability": 5000.0,             # a guard against a fault, not a limit on the trading (50 lays' worth,
+                                              # as GBP1,000 was at GBP20 a lay)
+    "rest_only": False,                       # the owner, 11 Nov 2026: "lose the guard. I want to be exactly like the
+                                              # rule that was profitable in test" (the forward test's rule lays at 80%
+                                              # of the forecast SP whatever the mid: on 11 Nov the guard blocked 76
+                                              # lays, the strongest forecast drifts). True: never at or above the mid
+                                              # (the owner, 3 Nov, after the first live lays above the mid lost)
     # the pre-trade gate (the owner, 5 Nov 2026, the audit A5: "Work on the next items"); guards derived from the
     # settings above, for the owner to set: a race's whole field at the lay liability, an order a runner a race at a
     # race a minute; the commission is the account's rate on greyhounds (greyhound/costs.py; GREYHOUND_COMMISSION
     # overrides it for a run)
-    "max_market_liability": 160.0,            # 8 runners x GBP20
+    "max_market_liability": 800.0,            # 8 runners x GBP100
     "max_orders_per_minute": 30,
     "commission": costs.COMMISSION,
     "watch_minutes": 60.0,                    # markets off within this are watched for their first trades

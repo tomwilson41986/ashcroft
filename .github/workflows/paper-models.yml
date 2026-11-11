@@ -155,6 +155,11 @@ jobs:
           # the greyhound quotes around the mid (greyhound/quote_mid.py): real orders only when GREYHOUND_QUOTE_MID is 'live'
           BETFAIR_APP_KEY="$GHKEY" python -m greyhound.quote_mid --trade --live --until 21:30 > "$RUNNER_TEMP/greyhound_quote_mid.log" 2>&1 &
           GQM=$!
+          # the favourite back on paper (greyhound/fav_back.py; the owner, 10 Nov 2026: "back and trade out at BFSP";
+          # "Yes build it"): reads the books, sends no order (the module has no order call); first the last days settled
+          timeout 600 python -m greyhound.fav_back --settle --days 3 > "$RUNNER_TEMP/greyhound_fav_back_settle.log" 2>&1 || true
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.fav_back --trade --until 21:30 > "$RUNNER_TEMP/greyhound_fav_back.log" 2>&1 &
+          GFB=$!
           # the GB/IE greyhound win and place markets with the market recorder (read-only, the delayed key;
           # betfair_live/<day>/books_greyhound.csv), moved here from the horse racing runner on 3 Nov 2026 (the owner:
           # nothing but horse racing there): yesterday's settled books, then the day's record
@@ -174,7 +179,9 @@ jobs:
           tail -n 20 "$RUNNER_TEMP/greyhound_early_lay_paper.log"
           wait "$GQM"; QMC=$?; echo "greyhound quotes around the mid ($GREYHOUND_QUOTE_MID) exited $QMC"
           tail -n 40 "$RUNNER_TEMP/greyhound_quote_mid.log"
+          wait "$GFB"; FBC=$?; echo "greyhound favourite back (paper) exited $FBC"
+          tail -n 20 "$RUNNER_TEMP/greyhound_fav_back.log"
           wait "$DOGS"; echo "greyhound market record exited $?"; tail -n 3 "$RUNNER_TEMP/greyhound.log"
           # a trader that crashed fails the job, so GitHub's failure notice reaches the owner (the audit A6); before,
           # only the paper trader's exit counted
-          [ "$GC" = 0 ] && [ "$ELC" = 0 ] && [ "$ELP" = 0 ] && [ "$QMC" = 0 ]
+          [ "$GC" = 0 ] && [ "$ELC" = 0 ] && [ "$ELP" = 0 ] && [ "$QMC" = 0 ] && [ "$FBC" = 0 ]

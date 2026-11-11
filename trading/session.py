@@ -298,6 +298,9 @@ class Session:
             pos.matched += fill.matched
             pos.fills += 1
             pos.cost += fill.matched * fill.avg_price
+            # a horse laid already is open again by this fill's winnings: if its lay fails, the next poll sends it
+            # again (until 11 Nov the flag stayed up from the earlier lay, and a top-up's failed lay never was)
+            pos.hedged = pos.hedge_liability >= round(pos.matched * (pos.avg_price - 1.0), 2) - 0.01
             self.state.record(m.market_id, fill.matched)
             if self.available is not None:
                 self.available = max(0.0, self.available - fill.matched)
@@ -372,6 +375,8 @@ class Session:
         for (mid, sid), pos in self.positions.items():
             if mid != m.market_id or pos.hedged or pos.matched <= 0:
                 continue
+            if pos.hedge_failures >= MAX_HEDGE_TRIES:        # refused five times, or its state unknown: not laid
+                continue                                     # again because another horse in the race is
             self._lay_at_bsp(m, pos, self._unhedged(pos), now)
 
     def _lay_at_bsp(self, m: Market, pos: Position, liability: float, now: datetime) -> None:
@@ -631,6 +636,9 @@ class Session:
         """Take today's positions from Betfair's own record of our orders (live): what is matched on each runner
         and what is laid at SP against it. Where Betfair and the ledger differ, Betfair is right, so a job that
         starts again never backs a horse a second time for want of its own notes."""
+        note = getattr(self.x, "note_orders", None)
+        if note:                                             # a reply lost later is never settled by an order
+            note(orders)                                     # that was already here
         prefix = f"ash{self.day:%m%d}"
         got: dict = {}
         for o in orders:

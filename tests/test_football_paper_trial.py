@@ -122,7 +122,13 @@ def test_gate_is_running_until_the_window_is_complete():
     g = pt.gate(res, {"min_bets": 300, "min_days": 90})
     assert g["verdict"] == "running" and g["passed"] is None
     res["headline"]["bets"], res["window"] = 310, {"status": "complete", "calendar_days": 95}
+    g = pt.gate(res, {"min_bets": 300, "min_days": 90})
+    assert g["verdict"] == "fail" and not g["checks"]["deflated_sharpe"]     # no overfitting check: never a pass
+    res["overfit"] = {"passed": True}
     assert pt.gate(res, {"min_bets": 300, "min_days": 90})["verdict"] == "pass"
+    res["overfit"] = {"passed": False}
+    assert pt.gate(res, {"min_bets": 300, "min_days": 90})["verdict"] == "fail"
+    res["overfit"] = {"passed": True}
     res["halves"]["second"]["roi"] = -0.01
     assert pt.gate(res, {"min_bets": 300, "min_days": 90})["verdict"] == "fail"
 
@@ -255,3 +261,19 @@ def test_the_close_is_after_the_fill_and_near_the_off():
     assert c.loc["1", "back1"] == 1.78
     c2 = pt.close_book(b[b["polled"] < pd.Timestamp("2026-11-07", tz="UTC")], after=early, start="2026-11-07T15:00:00Z")
     assert c2.empty
+
+
+def test_the_deflated_sharpe_is_counted_over_the_search_the_rule_came_from():
+    rule = {"thresholds_by_model": {"MATCH_ODDS": {"a": 0.3, "b": 0.3}, "OVER_UNDER_25": {"a": 0.3}}}
+    assert pt.trials_considered(rule, {}) == 3
+    assert pt.trials_considered(rule, {"n_trials": 40}) == 40
+    assert pt.trials_considered({}, {}) == 1
+    rng = np.random.default_rng(1)
+    days = [f"2026-11-{1 + i % 28:02d}" if i < 28 else f"2026-12-{1 + i % 28:02d}" for i in range(56)]
+    tr = pd.DataFrame({"day": days, "market_id": [f"1.{i}" for i in range(56)], "stake": 1.0,
+                       "profit": rng.normal(0.3, 0.2, 56)})
+    good = pt.overfit(tr, 0.02, 3)
+    assert good["n_obs"] == 56 and good["n_trials"] == 3 and good["passed"]
+    tr["profit"] = rng.normal(0.0, 1.0, 56)
+    assert not pt.overfit(tr, 0.02, 1000)["passed"]
+    assert not pt.overfit(tr.iloc[:0], 0.02, 3)["passed"]

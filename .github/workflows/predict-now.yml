@@ -161,6 +161,8 @@ jobs:
           HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
           HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
           GATE_WEIGHTS: ${{ inputs.gate }}
+          # the card's jumps stall as the results table records it, as the 04:00 job prices (the owner, 11 Nov 2026)
+          CARD_AS_TABLE: stall
         run: |
           mkdir -p out
           MODEL_DIR=data/models

@@ -1,0 +1,87 @@
+{
+ "about": "Batch 13 (10 Nov 2026), registered after batch 12, before its own scores. On share with the figs table (batch 12: RMSE of log(BSP) 0.3593): the per-track stretch on top; three seeds averaged; a refit on 1 Sep; and every other table of the metrics database added beside the figs table (ability, trouble, connections, market, breeding, life; the weigh-in columns dropped). The bar, fixed now: 3 bootstrap standard errors on the RMSE of log(BSP) against share08_figs, the log-loss no worse beyond 1; a pass goes to the forward test.",
+ "recipe": "quick",
+ "baseline": "share08_figs",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch",
+    "stretch_track"
+   ],
+   "name": "share08_figs"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "seeds": 3,
+   "name": "share08_figs_seeds3"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "walk": [
+    "2026-06-01",
+    "2026-09-01"
+   ],
+   "name": "share08_figs_walk"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "drop": [
+    "lf_wt_"
+   ],
+   "importance": true,
+   "name": "share08_figs_pit_all"
+  }
+ ]
+}

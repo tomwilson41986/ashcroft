@@ -265,3 +265,63 @@ def test_a_first_foal_takes_its_damsire_from_the_dam_s_own_races():
     out = enrich_card(card, pd.concat([h, pd.DataFrame(raced)], ignore_index=True))
     assert out.loc[0, "dam_stallion"] == "Sea The Stars (IRE)"       # her own sire
     assert pd.isna(out.loc[1, "dam_stallion"])                        # a gelding of that name is not a dam
+
+
+def _mixed_card():
+    """A Flat novice (stalls on the card) and a hurdle (the card's 'stall' is the saddlecloth number), with claims."""
+    base = {"race_date": "2026-11-10", "race_class": "Class 4", "prize_money": "4,187", "race_distance": "2m"}
+    return pd.DataFrame([
+        {**base, "track": "Kempton", "race_time": "6:30", "going_description": "Standard",
+         "race_name": "Racing TV Fillies Novice Stakes", "horse_name": "Lady Luck (IRE)", "horse_age": 5,
+         "jockey_name": "Apprentice Ann (3)", "official_rating": 70, "stall": 3, "pounds": 130},
+        {**base, "track": "Kempton", "race_time": "6:30", "going_description": "Standard",
+         "race_name": "Racing TV Fillies Novice Stakes", "horse_name": "Newcomer", "horse_age": 2,
+         "jockey_name": "Other Jockey", "official_rating": 80, "stall": 1, "pounds": 126},
+        {**base, "track": "Huntingdon", "race_time": "1:10", "going_description": "Soft",
+         "race_name": "Novices' Handicap Hurdle", "race_type": "Handicap Hurdle", "surface_type": "Turf",
+         "horse_name": "Westerton", "horse_age": 6, "jockey_name": "Harry Vigors (5)", "official_rating": 100,
+         "stall": 1, "pounds": 135},
+        {**base, "track": "Huntingdon", "race_time": "1:10", "going_description": "Soft",
+         "race_name": "Novices' Handicap Hurdle", "race_type": "Handicap Hurdle", "surface_type": "Turf",
+         "horse_name": "Jumper Two", "horse_age": 7, "jockey_name": "Senior Rider", "official_rating": 110,
+         "stall": 2, "pounds": 150},
+    ])
+
+
+def test_card_as_table_reads_the_card_as_the_results_table_does():
+    """Over jumps the table has no stall (0); its weight is after the jockey's claim (card-inputs-swap-1110)."""
+    out = enrich_card(_mixed_card(), _history(), as_table=True)
+    assert out["stall"].tolist() == [3, 1, 0, 0]
+    assert out["pounds"].tolist() == [127.0, 126.0, 130.0, 150.0]
+    assert out["jockeys_claim"].tolist()[2] == 5.0
+    assert out["jockey_name"].tolist()[2] == "Harry Vigors"
+
+
+def test_card_as_table_is_off_unless_asked(monkeypatch):
+    monkeypatch.delenv("CARD_AS_TABLE", raising=False)
+    off = enrich_card(_mixed_card(), _history())
+    assert off["stall"].tolist() == [3, 1, 1, 2]
+    assert pd.to_numeric(off["pounds"]).tolist() == [130, 126, 135, 150]
+    monkeypatch.setenv("CARD_AS_TABLE", "1")
+    on = enrich_card(_mixed_card(), _history())
+    assert on["stall"].tolist() == [3, 1, 0, 0]
+    assert on["pounds"].tolist() == [127.0, 126.0, 130.0, 150.0]
+
+
+def test_card_as_table_stall_only_leaves_the_weight_as_printed(monkeypatch):
+    """Served from 12 Nov 2026 (the owner, 11 Nov): the jumps stall as the table has it, the weight untouched."""
+    monkeypatch.setenv("CARD_AS_TABLE", "stall")
+    out = enrich_card(_mixed_card(), _history())
+    assert out["stall"].tolist() == [3, 1, 0, 0]
+    assert pd.to_numeric(out["pounds"]).tolist() == [130, 126, 135, 150]
+    monkeypatch.setenv("CARD_AS_TABLE", "weight")
+    out = enrich_card(_mixed_card(), _history())
+    assert out["stall"].tolist() == [3, 1, 1, 2]
+    assert out["pounds"].tolist() == [127.0, 126.0, 130.0, 150.0]
+
+
+def test_the_morning_jobs_serve_the_stall_fix():
+    from pathlib import Path
+    for wf in ("predict.yml", "predict-now.yml"):
+        text = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / wf).read_text()
+        assert "CARD_AS_TABLE: stall" in text, wf

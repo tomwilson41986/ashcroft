@@ -207,7 +207,9 @@ def gate(res: dict, gt: dict = GATE) -> dict:
     checks = {"bets": s.get("bets", 0) >= gt["min_bets"], "days": w["calendar_days"] >= gt["min_days"],
               "roi_lo95_above_0": lo is not None and bool(np.isfinite(lo)) and lo > gt["roi_lo95_above"],
               "clv_above_0": (s.get("clv_mean") or -1) > gt["clv_mean_above"],
-              "both_halves_above_0": (h["first"].get("roi") or -1) > 0 and (h["second"].get("roi") or -1) > 0}
+              "both_halves_above_0": (h["first"].get("roi") or -1) > 0 and (h["second"].get("roi") or -1) > 0,
+              # wired in 5 Nov 2026 (the owner: "wire in"): the deflated Sharpe of the daily return, research.overfit
+              "deflated_sharpe": bool((res.get("overfit") or {}).get("passed"))}
     if w["status"] in ("running", "not started"):
         return {"checks": checks, "verdict": "running", "passed": None}
     return {"checks": checks, "verdict": "pass" if all(checks.values()) else "fail", "passed": bool(all(checks.values()))}
@@ -260,6 +262,7 @@ def score(cache: str, models: str, root: str | None, live_root: str | None, star
                      else {"first": {"bets": 0}, "second": {"bets": 0}})
     for key in ("book_width", "band", "tier", "fd_code", "month"):
         res[f"by_{key}"] = pt.by_key(inw, key, rule["commission"])
+    res["overfit"] = pt.overfit(inw, rule["commission"], pt.trials_considered(rule, GATE))
     res["gate"] = gate(res)
     return res
 

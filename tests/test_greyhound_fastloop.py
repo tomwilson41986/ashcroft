@@ -346,3 +346,154 @@ def test_add_features_names_cached_columns():
     exp = {"name": "a", "features": "card_safe", "objective": "logbsp", "add_features": ["weight_change"]}
     res, _ = fl.run_experiment(df, meta, exp, QUICK, test_from="2026-06-01")
     assert res["features"] == len(fl.feature_set(meta, "card_safe")) + 1
+
+
+# ---- the plan of 10 Nov 2026 (reports/greyhound_bfsp_plan.md): steps 0 and 1
+
+def test_the_soft_race_objective_learns_the_book_shares():
+    from greyhound.model import _race_softmax
+    race = np.repeat(np.arange(3), 4)
+    target = np.array([.5, .3, .1, .1, .25, .25, .25, .25, .7, .1, .1, np.nan])     # the last race is not wholly priced
+    fobj, feval = fl.race_soft_objective(race, target)
+    score = np.zeros(12)
+    for _ in range(300):                                          # Newton steps on the objective alone
+        g, h = fobj(score, None)
+        score -= g / h
+    p = _race_softmax(score, fl._starts(race))
+    assert np.allclose(p[:8], target[:8], atol=1e-3)              # the shares recovered where the race is priced
+    assert np.allclose(p[8:], 0.25)                               # no gradient where it is not
+    assert feval(score, None)[1] == pytest.approx(-(target[:8] * np.log(target[:8])).sum() / 2, abs=1e-3)
+    mix = fl.soft_target(pd.DataFrame({"race_id": [1, 1], "bsp_p_norm": [.6, .4], "won": [0, 1]}), "mix", 0.5)
+    assert np.allclose(mix, [.3, .7])
+
+
+@pytest.mark.parametrize("objective", ["share", "mix"])
+def test_the_race_objectives_price_every_runner_as_a_coherent_book(objective):
+    df, meta = synthetic_cache()
+    res, pred = fl.run_experiment(df, meta, {"name": "s", "features": "card_safe", "objective": objective}, QUICK,
+                                  test_from="2026-06-01")
+    assert np.allclose(pred.groupby("race_id").p_model.sum(), 1.0)
+    book = (1 / pred.pred_bsp).groupby(pred.race_id).sum()
+    assert np.allclose(book, book.iloc[0])                        # every race's book at the SP book's usual total
+    blind, _ = fl.run_experiment(df, meta, {"name": "b", "features": "card_safe", "objective": objective,
+                                            "keep": ["trap"]}, QUICK, test_from="2026-06-01")
+    assert res["log_bsp_rmse"] < blind["log_bsp_rmse"]            # the informative features price better than none
+    assert res["breakdown"]["r2_within_race"] > blind["breakdown"]["r2_within_race"]
+
+
+def test_keep_seeds_halflife_and_huber_fit():
+    df, meta = synthetic_cache()
+    res, _ = fl.run_experiment(df, meta, {"name": "k", "features": "card_safe", "objective": "logbsp",
+                                          "keep": ["lb_kr", "trap"]}, QUICK, test_from="2026-06-01")
+    assert res["features"] == 2
+    res2, pred = fl.run_experiment(df, meta, {"name": "w", "features": "card_safe", "objective": "logbsp", "seeds": 2,
+                                              "halflife_days": 30, "huber": 0.5}, QUICK, test_from="2026-06-01")
+    assert res2["seeds"] == 2 and np.isfinite(pred.pred_bsp).all()
+    with pytest.raises(ValueError):
+        fl.check_spec({"experiments": [{"name": "x", "seeds": 0}]})
+
+
+def test_the_importance_table_finds_the_informative_family():
+    df, meta = synthetic_cache()
+    res, _ = fl.run_experiment(df, meta, {"name": "i", "features": "card_safe", "objective": "logbsp",
+                                          "importance": True, "importance_races": 300, "shap_rows": 500}, QUICK,
+                               test_from="2026-06-01")
+    imp = res["importance"]
+    # the lib family (lb_kr: ability plus noise) and the base family (esr: ability plus noise) carry the price
+    assert imp["perm"]["lib"]["rmse_rise"] > 0 and imp["perm"]["base"]["rmse_rise"] > 0
+    assert set(imp["shap_family"]) >= {"lib", "base", "parity"} and imp["shap_top"]
+    # the within-race shuffle keeps each race's set of values: shuffled rows are a permutation within each race
+    race = np.repeat(np.arange(50), 6)
+    base, shuf = fl._within_race_perm(race, np.random.default_rng(0))
+    assert (race[base] == race[shuf]).all() and sorted(shuf) == list(range(300))
+
+
+def test_the_walk_refits_through_the_window_and_scores_it_as_one(tmp_path):
+    df, meta = synthetic_cache()
+    res, pred = fl.run_walk(df, meta, {"name": "wk", "features": "card_safe", "objective": "logbsp"}, QUICK,
+                            ["2026-05-15", "2026-06-05"])
+    assert [w["test_from"] for w in res["walk"]] == ["2026-05-15", "2026-06-05"]
+    assert res["walk"][0]["test_to"] == "2026-06-04" and pred.race_date.min() >= "2026-05-15"
+    assert res["test_runners"] == len(pred) == pred[["race_id", "dog_id"]].drop_duplicates().shape[0]
+    assert res["breakdown"]["runners"] == int((pred.bsp > 1).sum())
+    md = fl.details([res])
+    assert "segment by segment" in md and "Where wk's error sits" in md
+
+
+def test_the_paired_comparison_carries_a_z_score(tmp_path):
+    df, meta = synthetic_cache()
+    for name, keep in (("good", None), ("blind", ["trap"])):
+        e = {"name": name, "features": "card_safe", "objective": "logbsp", **({"keep": keep} if keep else {})}
+        _, pred = fl.run_experiment(df, meta, e, QUICK, test_from="2026-06-01")
+        pred[["race_id", "race_date", "dog_id", "won", "p_model", "bsp", "pred_bsp"]].to_parquet(
+            tmp_path / f"pred_{name}.parquet")
+    pb = fl.paired_bsp_rmse(tmp_path, "blind")
+    assert pb["good"]["diff"] < 0 and pb["good"]["z"] < -3 and pb["blind"]["z"] is None
+    assert "z" in fl.paired_vs_baseline(tmp_path, "blind")["good"]
+
+
+def test_the_stretch_calibrates_the_race_objective_too():
+    df, meta = synthetic_cache()
+    res, pred = fl.run_experiment(df, meta, {"name": "sc", "features": "card_safe", "objective": "share",
+                                             "calibrate": ["stretch", "stretch_track"]}, QUICK, test_from="2026-06-01")
+    c = res["calibrated"]["stretch"]
+    assert c["fit"]["b"] > 0 and np.isfinite(c["log_bsp_rmse"]) and "rmse_vs_uncalibrated" in c
+
+
+
+@pytest.mark.parametrize("objective", ["nn_share", "stack_share"])
+def test_the_neural_set_model_and_the_stack_price_a_coherent_book(objective, monkeypatch):
+    pytest.importorskip("torch")
+    from greyhound import nn
+    monkeypatch.setattr(nn, "MAX_EPOCHS", 6)
+    df, meta = synthetic_cache()
+    res, pred = fl.run_experiment(df, meta, {"name": "n", "features": "card_safe", "objective": objective,
+                                             "nn_seconds": 120}, QUICK, test_from="2026-06-01")
+    assert np.allclose(pred.groupby("race_id").p_model.sum(), 1.0)
+    blind, _ = fl.run_experiment(df, meta, {"name": "b", "features": "card_safe", "objective": "share",
+                                            "keep": ["trap"]}, QUICK, test_from="2026-06-01")
+    assert res["log_bsp_rmse"] < blind["log_bsp_rmse"] and res["nn"]["epochs"] >= 1
+    if objective == "stack_share":
+        assert set(res["stack"]) == {"a_trees", "b_network"}
+
+
+def test_several_networks_are_averaged(monkeypatch):
+    pytest.importorskip("torch")
+    from greyhound import nn
+    monkeypatch.setattr(nn, "MAX_EPOCHS", 4)
+    df, meta = synthetic_cache()
+    res, pred = fl.run_experiment(df, meta, {"name": "n2", "features": "card_safe", "objective": "stack_share",
+                                             "nn_seeds": 2, "nn_seconds": 120}, QUICK, test_from="2026-06-01")
+    assert res["nn"]["seeds"] == 2 and len(res["nn"]["best_by_seed"]) == 2
+    assert np.allclose(pred.groupby("race_id").p_model.sum(), 1.0)
+    with pytest.raises(ValueError):
+        fl.check_spec({"experiments": [{"name": "x", "objective": "nn_share", "nn_seeds": 11}]})
+
+
+def test_saved_prices_are_reused_and_the_served_price_is_the_stretched_one(tmp_path, monkeypatch):
+    df, meta = synthetic_cache()
+    monkeypatch.setattr(fl, "load_cache", lambda store: (df, meta))
+    monkeypatch.setitem(fl.RECIPES, "quick", QUICK)
+    spec = {"recipe": "quick", "test_from": "2026-06-01", "experiments": [
+        {"name": "s", "objective": "share", "calibrate": ["stretch_track"], "serve_calibrated": "stretch_track",
+         "save_pred": "greyhound/research/pred", "test_from": "2026-06-10"}]}
+    p = tmp_path / "spec.json"
+    p.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+    assert fl.main(["--store", str(tmp_path), "--spec", str(p), "--out", str(out)]) == 0
+    from sources.common import Store
+    saved = Store(root=tmp_path).get_parquet("greyhound/research/pred/s.parquet")
+    assert str(saved.race_date.min()) >= "2026-06-10"                    # the experiment's own test start
+    assert {"pred_bsp", "pred_bsp_raw", "p_model"} <= set(saved.columns)
+    assert not np.allclose(saved.pred_bsp, saved.pred_bsp_raw)          # the stretch moved the price
+    r = json.loads((out / "result_s.json").read_text())
+    spec2 = {"experiments": [{"name": "s", "pred_from": "greyhound/research/pred"}]}
+    p.write_text(json.dumps(spec2))
+    out2 = tmp_path / "out2"
+    assert fl.main(["--store", str(tmp_path), "--spec", str(p), "--out", str(out2)]) == 0
+    r2 = json.loads((out2 / "result_s.json").read_text())
+    assert r2["stopped_by"] == "saved" and r2["logloss"] == r["logloss"] and r2["test_runners"] == r["test_runners"]
+    with pytest.raises(ValueError):
+        fl.check_spec({"experiments": [{"name": "x", "serve_calibrated": "stretch"}]})
+    with pytest.raises(ValueError):
+        fl.check_spec({"experiments": [{"name": "x", "save_pred": "../etc"}]})

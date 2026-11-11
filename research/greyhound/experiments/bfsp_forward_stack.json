@@ -1,0 +1,93 @@
+{
+ "about": "The forward test of the BFSP plan's remaining steps (registered 10 Nov 2026, before any of its days exist). Batch 18 (run 42853398485, test 1 Jun to 5 Nov 2026) confirmed stack3_all3 at three seeds: share08_best's trees with the form, draw and bend tables (greyhound/pit/form.py, draw.py, bend.py), stacked with three averaged neural set models (greyhound/nn.py), RMSE of log(BSP) 0.3396 against share08_best's 0.3510 (z -26.8; log-loss z -3.5), 0.3366 against 0.3448 with the per-track stretch. Here it is fitted on the days before 11 Nov 2026 and scored only on the days from 11 Nov, dispatched with the feature cache refreshed (the workflow's refresh: true). Its fit window rolls forward at the confirmed length (29 months: from 11 Jun 2024, recipe_overrides train_from) so the fit stays inside the job's 100 minutes (batch 18 took 90), with a 1,650-second cap on each tree seed as a safety stop, recorded as stopped_by 'time' if it binds; live08 and share08_best are bfsp_forward.json's exactly. Run once 14 days exist (from 25 Nov 2026), beside bfsp_forward.json. The rule, fixed now: stack3_all3 is adopted for the BFSP forecast if its paired gain in RMSE of log(BSP) over live08 is 3 bootstrap standard errors (by day) or more and its log-loss is no worse beyond 1 standard error; its gain over share08_best is read beside it under the same bar, and decides between the two if both pass. Adoption into live pricing (greyhound/live.py) is the owner's decision.",
+ "recipe": "quick",
+ "baseline": "live08",
+ "test_from": "2026-11-11",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "name": "live08",
+   "rescale_book": true
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life"
+   ],
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "seeds": 3,
+   "calibrate": [
+    "stretch_track"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "name": "share08_best"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000,
+    "train_from": "2024-06-11",
+    "max_seconds": 1650
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "stack3_all3"
+  }
+ ]
+}

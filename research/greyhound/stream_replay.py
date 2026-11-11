@@ -288,8 +288,11 @@ def close_pnl(o: SimOrder, r: Runner | None, sp: float | None, comm: float = 0.0
 
 
 def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: float = 1.0,
-           comm: float = 0.0, through_cap: bool = False) -> pd.DataFrame:
-    """Run the orders through the recorded stream; one row an order with its fill and its close."""
+           comm: float = 0.0, through_cap: bool = False, to_close: bool = False) -> pd.DataFrame:
+    """Run the orders through the recorded stream; one row an order with its fill and its close. By default an order
+    ends ``close_secs`` before the scheduled off. ``to_close`` (10 Nov 2026: races go off a median 22 s after the
+    scheduled time) lets it rest until the market really leaves OPEN (suspended at the off), as a real order would."""
+    is_open = lambda m: not m.inplay and str(m.defn.get("status", "OPEN")) == "OPEN"
     markets: dict = {}
     pending = sorted(orders, key=lambda o: o.t)
     by_market: dict = {}
@@ -316,7 +319,8 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
             # this change (nothing changed on the market between the order's time and this message)
             m = markets[mid]
             for o in mine:
-                if not o.done and not o.placed and t >= o.t and o.sid in m.runners and not m.inplay:
+                if (not o.done and not o.placed and t >= o.t and o.sid in m.runners and not m.inplay
+                        and (not to_close or is_open(m))):
                     o.place(m.runners[o.sid], o.t)
         mid, changed = apply(markets, mc)
         if not mine:
@@ -326,7 +330,7 @@ def replay(lines, orders: list[SimOrder], close_secs: float = 5.0, vol_factor: f
         for o in mine:
             if o.done:
                 continue
-            if (cutoff is not None and t >= cutoff) or m.inplay:
+            if (not is_open(m)) if to_close else ((cutoff is not None and t >= cutoff) or m.inplay):
                 finish(o, m)
                 continue
             r = m.runners.get(o.sid)

@@ -1,0 +1,42 @@
+name: Desk checks
+
+# The deterministic review every pull request passes (docs/agent_desk.md): the desk's tests, the workflow guards
+# (tests/test_workflow_guards.py: which job may hold the live key, which runner runs what), the strategy registry and
+# the research ledger kept append-only. GitHub's own runner, no secret of any kind: it reads the repository only.
+
+on:
+  pull_request:
+  push:
+    branches: ['claude/scrape-horse-racing-results-vaHKc']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desk-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install
+        run: pip install -r requirements.txt pytest==8.3.4 pyyaml==6.0.2
+      - name: Tests (the desk and the workflow guards)
+        run: python -m pytest tests/test_desk.py tests/test_desk_session.py tests/test_workflow_guards.py -q -p no:cacheprovider
+      - name: The strategy registry
+        run: python -m desk.registry --check
+      - name: The research ledger (append-only against the base branch)
+        env:
+          BASE: ${{ github.base_ref || 'HEAD~1' }}
+        run: |
+          if [ -n "${{ github.base_ref }}" ]; then BASE="origin/$BASE"; fi
+          python -m desk.trials --check --base "$BASE"

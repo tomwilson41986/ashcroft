@@ -79,8 +79,9 @@ class Connection:
 class Writer:
     """The raw lines, one gzip part at a time, each part uploaded to S3 when closed."""
 
-    def __init__(self, day: date, put=None, root: Path | None = None, clock=time.monotonic):
-        self.day, self.put, self.clock = day, put, clock
+    def __init__(self, day: date, put=None, root: Path | None = None, clock=time.monotonic, prefix: str = PREFIX,
+                 keep_local: bool = True):
+        self.day, self.put, self.clock, self.prefix, self.keep_local = day, put, clock, prefix, keep_local
         self.root = root or Path(os.getenv("GREYHOUND_LEDGER_DIR") or (Path.home() / ".ashcroft" / "greyhound")) \
             / "stream" / f"{day:%Y-%m-%d}"
         self.root.mkdir(parents=True, exist_ok=True)
@@ -107,10 +108,12 @@ class Writer:
         path, self.f = self._path(), None
         self.part += 1
         if self.put is not None:
-            key = f"{PREFIX}/{self.day:%Y-%m-%d}/{path.name}"
+            key = f"{self.prefix}/{self.day:%Y-%m-%d}/{path.name}"
             try:
                 self.put(key, path.read_bytes())
                 self.uploaded.append(key)
+                if not self.keep_local:                    # uploaded: the part need not fill the server's disk
+                    path.unlink()
             except Exception as exc:                       # the local part stays; the next run's upload can retry
                 log.warning("%s not uploaded (%s)", path.name, exc)
 
@@ -123,8 +126,8 @@ def window(offs: dict, now: datetime) -> list[str]:
     return [mid for _, mid in ids][:MAX_MARKETS]
 
 
-def subscription(ids: list[str], n: int) -> dict:
-    return {"op": "marketSubscription", "id": n, "heartbeatMs": HEARTBEAT_MS, "conflateMs": 0,
+def subscription(ids: list[str], n: int, conflate_ms: int = 0) -> dict:
+    return {"op": "marketSubscription", "id": n, "heartbeatMs": HEARTBEAT_MS, "conflateMs": int(conflate_ms),
             "marketFilter": {"marketIds": list(ids)}, "marketDataFilter": {"fields": FIELDS}}
 
 
@@ -136,9 +139,13 @@ def _utc(s) -> datetime | None:
 
 
 def run(day: date, until: datetime, credentials, catalogue, connect, writer: Writer,
-        now=lambda: datetime.now(timezone.utc), status=None, sleep=time.sleep) -> dict:
+        now=lambda: datetime.now(timezone.utc), status=None, sleep=time.sleep, pick=None, subscribe=None) -> dict:
     """Record until ``until``. ``credentials()`` -> (app key, session token); ``catalogue()`` -> the day's markets
-    (marketId, marketStartTime); ``connect()`` -> a Connection; ``status(dict)`` writes the state."""
+    (marketId, marketStartTime); ``connect()`` -> a Connection; ``status(dict)`` writes the state. ``pick(offs, now)``
+    chooses the markets to subscribe to (default ``window``) and ``subscribe(ids, n)`` builds the subscription
+    (default ``subscription``): another recorder of the same stream passes its own."""
+    pick = window if pick is None else pick
+    subscribe = subscription if subscribe is None else subscribe
     offs: dict[str, datetime] = {}
     st = {"connects": 0, "auth_failures": 0, "errors": 0, "last_error": "", "markets": 0, "lines": 0,
           "subscribed": 0}
@@ -166,7 +173,7 @@ def run(day: date, until: datetime, credentials, catalogue, connect, writer: Wri
             if now() >= next_cat:
                 refresh()
                 next_cat = now() + timedelta(seconds=CATALOGUE_SECONDS)
-            ids = window(offs, now())
+            ids = pick(offs, now())
             if not ids:                                     # nothing near its off: wait for the next window
                 beat()
                 sleep(30)
@@ -184,7 +191,7 @@ def run(day: date, until: datetime, credentials, catalogue, connect, writer: Wri
                 st["auth_failures"] += 1
                 raise ConnectionError(f"authentication: {r.get('errorCode')} {r.get('errorMessage')}")
             msg_id += 1
-            conn.send(subscription(ids, msg_id))
+            conn.send(subscribe(ids, msg_id))
             st["subscribed"] = len(ids)
             resub_at = now() + timedelta(seconds=RESUB_SECONDS)
             while now() < until:
@@ -196,11 +203,11 @@ def run(day: date, until: datetime, credentials, catalogue, connect, writer: Wri
                     if now() >= next_cat:
                         refresh()
                         next_cat = now() + timedelta(seconds=CATALOGUE_SECONDS)
-                    new = window(offs, now())
+                    new = pick(offs, now())
                     if new and new != ids:
                         ids = new
                         msg_id += 1
-                        conn.send(subscription(ids, msg_id))
+                        conn.send(subscribe(ids, msg_id))
                         st["subscribed"] = len(ids)
                     resub_at = now() + timedelta(seconds=RESUB_SECONDS)
                 writer.maybe_roll()

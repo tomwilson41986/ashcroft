@@ -1,0 +1,38 @@
+{
+  "id": "greyhound-win-paper",
+  "sport": "greyhounds",
+  "name": "Greyhound model win backs, paper",
+  "stage": "legacy",
+  "hypothesis": "The greyhound model's backs on the live key's books, laid at the SP; paper only.",
+  "markets": [
+    "GB greyhound WIN"
+  ],
+  "entry_point": "python -m greyhound.live --trade",
+  "workflow": "paper-models.yml",
+  "live_switch": "GREYHOUND_LIVE",
+  "order_ref_prefix": "gh-",
+  "bucket": "capture",
+  "stop_keys": [
+    "greyhound/STOP",
+    "trading/STOP"
+  ],
+  "kill_switch_fails": "safe",
+  "dashboard_ids": [
+    "greyhound-paper"
+  ],
+  "evidence": [
+    {
+      "claim": "GREYHOUND_LIVE pinned 'no' and never --live",
+      "source": "tests/test_workflow_guards.py:243,248"
+    },
+    {
+      "claim": "the core hypothesis is falsified: the model adds about nothing to the BSP",
+      "source": "reports/greyhound_audit_1105.md:10-14"
+    }
+  ],
+  "approved": {
+    "by": "owner",
+    "on": "2026-11-02",
+    "source": "tests/test_workflow_guards.py:199-202 (\"use the live key, just don't execute bets yet\")"
+  }
+}

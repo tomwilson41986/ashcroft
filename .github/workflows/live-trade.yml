@@ -27,7 +27,9 @@ name: Live trading (the owner's book)
 # BETFAIR_RUNNER must name the UK runner (Betfair refuses GitHub's own runners); without it the job is skipped.
 # The keys: the secret BETFAIR_LIVE_APP_KEY (the owner's live application key, 6 Oct) goes to the trader's own
 # process only; the market records beside it, read-only, keep BETFAIR_APP_KEY (the delayed key), as do all the other
-# workflows, because Betfair permits no read-only use of live data.
+# workflows, because Betfair permits no read-only use of live data. The one exception (the owner, 10 Nov 2026): the
+# horse WIN markets' Exchange Stream to 21:30 UK (research/horse_stream_record.py, read-only), which no delayed key
+# can open.
 # To stop at once: cancel the running "Live trading" run (the ledger is written, the lays at SP that hedge the
 # backs stay), or create the S3 object trading/STOP (no new bets within a minute). The evening run settles the day
 # from the closed markets and emails the result; the morning run emails what it backed.
@@ -149,7 +151,8 @@ jobs:
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
           # the owner's live application key (6 Oct): the trader's own process only, the one that bets; every
           # read-only process (the market records beside it) keeps the delayed key above, as Betfair requires
-          # (no read-only use of live data). Without this secret the trader reads the delayed key's feed.
+          # (no read-only use of live data), but the horse stream record (the owner, 10 Nov 2026). Without this
+          # secret the trader reads the delayed key's feed and the stream record does not run.
           BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -194,6 +197,18 @@ jobs:
             # race's win and place dividends near the off, every pool's total, the declared dividends
             timeout 14h python tote_recorder.py --record --until 21:30 > "$RUNNER_TEMP/tote.log" 2>&1 &
             TOTE=$!
+            # the horse WIN markets' Exchange Stream to 21:30 UK, through the last race (the owner, 10 Nov 2026:
+            # "wire the horse ladder recorder"; to the last race for a late-signal test, the owner, 11 Nov 2026:
+            # "Extend in live job"; research/horse_stream_record.py, read-only: the whole ladder and the
+            # traded volume at each change, raw to S3, for a resting-order test; it never subscribes to orders). The
+            # stream needs the live key (Betfair offers it on no delayed key, which carries no full ladder or traded
+            # volume either): the one read-only process beside the trader on the live key, by the owner's decision of
+            # 10 Nov. Without the secret it does not run; its failing never touches the trader.
+            STREAM=""
+            if [ -n "$BETFAIR_LIVE_APP_KEY" ]; then
+              BETFAIR_APP_KEY="$BETFAIR_LIVE_APP_KEY" timeout 17h python -m research.horse_stream_record --until 21:30 > "$RUNNER_TEMP/horse_stream.log" 2>&1 &
+              STREAM=$!
+            fi
             # tomorrow's win markets the evening before, 17:00-21:30 UK (read-only, to their own files; the owner's
             # question of 4 Oct: would the rule's backs close better taken at 7pm the evening before?)
             TOMORROW=$(date -d "${DAY:-$(TZ=Europe/London date +%F)} + 1 day" +%F) || TOMORROW=""
@@ -211,6 +226,10 @@ jobs:
             tail -n 30 "$RUNNER_TEMP/recorder.log"
             wait "$OTHER"; echo "other place record exited $?"
             wait "$TOTE"; echo "Tote record exited $?"
+            if [ -n "$STREAM" ]; then
+              wait "$STREAM"; echo "horse stream record exited $?"
+              tail -n 5 "$RUNNER_TEMP/horse_stream.log"
+            fi
             tail -n 5 "$RUNNER_TEMP/other_place.log" "$RUNNER_TEMP/tote.log"
             if [ -n "$EVE" ]; then
               wait "$EVE"
