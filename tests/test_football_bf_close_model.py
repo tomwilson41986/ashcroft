@@ -50,6 +50,26 @@ def test_memory_uses_a_sides_earlier_matches_and_never_the_match_itself():
     assert (home["mm_opp_n"] == 0).all() and home["mm_country_n"].tolist() == [0, 1, 2, 3, 4, 5]
 
 
+def test_memory_waits_for_a_late_kick_off_to_close_before_it_reads_the_match():
+    # team 7's first match was due at 15:00 and went in play at 16:30; its second match's T-60 checkpoint is
+    # 16:00 the same day: the first match had not closed, so its move is not known yet
+    t0 = pd.Timestamp("2026-01-03 15:00", tz="UTC")
+    rows = []
+    for ko, actual, opp, y in ((t0, t0 + pd.Timedelta(minutes=90), 101, 0.3),
+                               (t0 + pd.Timedelta(hours=2), t0 + pd.Timedelta(hours=2), 102, 0.0),
+                               (t0 + pd.Timedelta(days=7), t0 + pd.Timedelta(days=7), 103, 0.0)):
+        rows.append({"kickoff": ko, "kickoff_actual": actual, "cp_min": 60, "role": "home", "home_id": 7,
+                     "away_id": opp, "usable": True, "y_logit": y, "country_code": "GB"})
+    late = cm.memory(pd.DataFrame(rows))
+    assert late["mm_own_n"].tolist() == [0, 0, 2]            # the 16:00 decision does not see the 16:30 close
+    on_time = pd.DataFrame(rows)
+    on_time.loc[0, "kickoff_actual"] = t0 + pd.Timedelta(seconds=70)
+    assert cm.memory(on_time)["mm_own_n"].tolist() == [0, 1, 2]
+    never = pd.DataFrame(rows)
+    never["kickoff_actual"] = pd.NaT                         # not in play: the scheduled kick-off stands
+    assert cm.memory(never)["mm_own_n"].tolist() == [0, 1, 2]
+
+
 def test_skill_is_one_minus_sse_over_sse_of_no_move_and_pairs_against_a_base():
     rng = np.random.default_rng(0)
     y = rng.normal(0, 0.05, 3000)
@@ -72,3 +92,9 @@ def test_trades_take_the_forecasts_side_and_pay_the_round_trip():
     want = np.mean([(gross - cm.ROUND_TRIP) * (1 - cm.COMMISSION), (-np.log(0.90) - cm.ROUND_TRIP) * (1 - cm.COMMISSION)])
     assert abs(r["net"] - want) < 1e-12
     assert cm.trades(t, 0.5) == {"bets": 0}
+
+
+def test_liquid_arm_says_no_data_when_too_few_busy_rows():
+    d = pd.DataFrame({"n_ticks_before": [5, 80, 200], "usable": [True, True, False]})
+    out = cm.liquid_arm(d, ["x_cp"], ["x_cp"])
+    assert out["rows"] == 2 and out["status"].startswith("no data found")

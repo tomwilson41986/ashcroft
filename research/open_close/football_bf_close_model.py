@@ -6,9 +6,20 @@ runner at every checkpoint, the move of its normalised chance to the close (``y_
 quality of both ends. This fits that move from what was known at the checkpoint and scores it out of sample.
 
 **Rows.** Match odds, checkpoints 360, 120, 60 and 15 minutes before the scheduled kick-off, where the checkpoint's
-book is fresh (``cp_fresh``: the gold/move screen on the checkpoint's side only: known at the time). The headline
-is scored where the closing book is fresh too (``usable``: a stale close is not a close); the wider set is reported
-beside it. One model a role (home, draw, away), the checkpoint as a feature.
+book is fresh (``cp_fresh``: the gold/move screen on the checkpoint's side only: known at the time) and the
+kick-off was never moved (``kickoff_shift_s`` 0: a checkpoint is measured from the last schedule, so a moved
+kick-off means the checkpoint was not known in advance; about one match in seven in 2026). The headline is scored
+where the closing book is fresh too (``usable``: a stale close is not a close); the wider sets (stale closes; moved
+kick-offs) are reported beside it. One model a role (home, draw, away), the checkpoint as a feature.
+
+**What a last traded price can fake.** BASIC files hold the last traded price, not the quotes. A leg that has
+not traded for a while is stale, and its "move to the close" is partly the price catching up with a market that
+had already moved; and a last trade sits on one side of the spread, so the next one tends to come back (the
+bounce). Both are forecastable in this data and neither is tradable. So the skill is also reported by the age of
+the checkpoint's book (``by_checkpoint_book_age``) and, the sharper test, by how much the runner had traded by the
+checkpoint (``by_activity_at_checkpoint``, ``by_role_and_activity``): noise of that kind shrinks as a market
+trades more, information does not. ``liquid_arm`` fits and scores the same model on the busy rows alone (60 or
+more price updates by the checkpoint): the reading that matters for trading size.
 
 **Features**, each known at the checkpoint's moment:
 - *level*: the chance at the checkpoint (log odds), the book's sum and staleness, the runner's price updates so far
@@ -29,6 +40,9 @@ Each feature family is also scored added to the level features (paired by day ag
 **Trades** (an upper bound: last traded prices, not quotes): where the forecast's size clears a threshold, back at
 the checkpoint and lay at the close (or the reverse), per unit staked in log price, less the round trip measured
 at our recorded books (2.3 per cent, reports/football_model_rethink.md) and 2 per cent commission on a win.
+Selected on what was known at the checkpoint only (a fresh checkpoint book, a fixed kick-off): the close's
+freshness is not known in advance, so the rows with a stale close are in (``selected_at_checkpoint``); the reliable
+rows alone are shown beside them as the reading with clean exit prices.
 
 One year of data (2026): development evidence. The untouched test is the matches from 12 Nov 2026 and the earlier
 years once the owner's download of 2016-2025 is ingested.
@@ -55,6 +69,8 @@ MIN_AGE_S, AGE_SHARE = 900.0, 0.25           # gold/move's screen, the checkpoin
 ROUND_TRIP, COMMISSION = 0.023, 0.02
 THRESHOLDS = (0.03, 0.05, 0.08)
 MEMORY_N, MEMORY_K = 10, 5.0
+LIQUID_TICKS = 60                            # price updates by the checkpoint that make a row "busy"
+ACTIVITY = ([0, 20, 60, 150, 10**9], ["under 20", "20-59", "60-149", "150+"])
 COUNTRY_N, COUNTRY_K = 500, 100.0
 RIDGE_ALPHA, CLIP = 50.0, 4.0
 KEY = ["market_id", "selection_id", "handicap", "cp_min"]
@@ -95,8 +111,11 @@ def load(store) -> tuple[pd.DataFrame, dict]:
         return pd.DataFrame(), {}
     d = mv.to_pandas()
     d = d[d["role"].isin(ROLES)].copy()
-    ev = read_rows(store, "gold/event", ["event_id", "home_id", "away_id"]).to_pandas()
+    ev = read_rows(store, "gold/event", ["event_id", "home_id", "away_id", "kickoff_actual"]).to_pandas()
     d = d.merge(ev, on="event_id", how="left")
+    if "kickoff_shift_s" not in d.columns:
+        d["kickoff_shift_s"] = 0
+    d["schedule_fixed"] = d["kickoff_shift_s"].fillna(1).to_numpy() == 0
     if "cp_fresh" not in d.columns:                  # an older gold/move: the same screen, the checkpoint's side
         d["cp_fresh"] = d["cp_book_age_s"] <= np.maximum(MIN_AGE_S, AGE_SHARE * d["cp_min"] * 60.0)
     d["x_cp"] = np.log(d["p_cp"] / (1 - d["p_cp"]))
@@ -153,7 +172,8 @@ def prior_mean(group: np.ndarray, when: np.ndarray, value: np.ndarray, q_group: 
     hi = np.searchsorted(comp, qg * span + q_when.astype(np.int64), side="left")       # strictly before
     lo = np.maximum(np.searchsorted(comp, qg * span, side="left"), hi - window)
     n = (hi - lo).astype(float)
-    return (cs[hi] - cs[lo]) / (n + k), n
+    den = n + k
+    return np.divide(cs[hi] - cs[lo], den, out=np.full(len(n), np.nan), where=den > 0), n
 
 
 def memory(d: pd.DataFrame) -> pd.DataFrame:
@@ -162,6 +182,13 @@ def memory(d: pd.DataFrame) -> pd.DataFrame:
     base = d["kickoff"].min()
     ko = ((d["kickoff"] - base).dt.total_seconds() // 60).to_numpy(np.int64)            # minutes
     cp = ko - d["cp_min"].to_numpy(np.int64)                                           # the decision moment
+    # a match's move is known once it has closed: the later of its scheduled and its actual kick-off (a match
+    # that started late closed late), rounded up to the minute
+    known = ko.copy()
+    if "kickoff_actual" in d.columns:
+        act = np.ceil((pd.to_datetime(d["kickoff_actual"], utc=True) - base).dt.total_seconds().to_numpy(float)
+                      / 60.0)
+        known = np.where(np.isfinite(act), np.maximum(ko, np.nan_to_num(act, nan=0.0)), ko).astype(np.int64)
     cpi = d["cp_min"].map({c: i for i, c in enumerate(HORIZONS)}).to_numpy(np.int64)
     team = np.where(d["role"] == "home", d["home_id"], np.where(d["role"] == "away", d["away_id"], np.nan))
     opp = np.where(d["role"] == "home", d["away_id"], np.where(d["role"] == "away", d["home_id"], np.nan))
@@ -173,7 +200,7 @@ def memory(d: pd.DataFrame) -> pd.DataFrame:
     side = (d["role"] != "draw").to_numpy() & np.isfinite(team.astype(float)) & (own_code >= 0)
     # history: a side's own move in a match (home or away row), keyed by (team, checkpoint)
     hist_g = (own_code * len(HORIZONS) + cpi)[side]
-    hist_t, hist_v = ko[side], y[side]
+    hist_t, hist_v = known[side], y[side]
     out = d.copy()
     for name, code in (("mm_own", own_code), ("mm_opp", opp_code)):
         q_ok = code >= 0
@@ -193,7 +220,7 @@ def memory(d: pd.DataFrame) -> pd.DataFrame:
     ccode = pd.factorize(d["country_code"].fillna("(none)"))[0].astype(np.int64)
     rcode = d["role"].map({r: i for i, r in enumerate(ROLES)}).to_numpy(np.int64)
     cg = (ccode * len(ROLES) + rcode) * len(HORIZONS) + cpi
-    out["mm_country"], out["mm_country_n"] = prior_mean(cg, ko, y, cg, cp, COUNTRY_N, COUNTRY_K)
+    out["mm_country"], out["mm_country_n"] = prior_mean(cg, known, y, cg, cp, COUNTRY_N, COUNTRY_K)
     return out
 
 
@@ -295,13 +322,37 @@ def trades(t: pd.DataFrame, threshold: float, n_boot: int = 1000, seed: int = 0)
             "right_way": float((gross > 0).mean())}
 
 
+def liquid_arm(d: pd.DataFrame, cols: list[str], level: list[str]) -> dict:
+    """The same walk-forward fitted and scored on the busy rows alone (``LIQUID_TICKS`` or more price updates by
+    the checkpoint; reliable, the kick-off never moved), beside the pooled model's forecasts on the same rows."""
+    liq = d[d["n_ticks_before"] >= LIQUID_TICKS].reset_index(drop=True)
+    if liq["usable"].sum() < 10_000:
+        return {"status": "no data found: fewer than 10,000 reliable busy rows", "rows": int(len(liq))}
+    own, _ = walk_forward(liq, cols)
+    lvl, _ = walk_forward(liq, level)
+    ok = np.isfinite(own) & liq["usable"].to_numpy(bool) & liq["schedule_fixed"].to_numpy(bool)
+    s = liq[ok]
+    day, y = s["day"].to_numpy(), s["y_logit"].to_numpy(float)
+    out = {"min_price_updates": LIQUID_TICKS,
+           "fitted_on_busy_rows": {**skill_ci(day, y, own[ok], base=lvl[ok]), **describe(y, own[ok])},
+           "level_only": skill_ci(day, y, lvl[ok])}
+    if "pred" in s.columns and np.isfinite(s["pred"]).all():
+        out["pooled_model_on_the_same_rows"] = skill_ci(day, y, s["pred"].to_numpy(float))
+    out["by_horizon"] = {str(cp): skill_ci(day[m], y[m], own[ok][m]) for cp in HORIZONS
+                         if (m := (s["cp_min"] == cp).to_numpy()).sum() >= 500}
+    t = s.assign(pred=own[ok])
+    out["trades_at_0.05"] = trades(t, 0.05)
+    return out
+
+
 def run(store) -> dict:
     d, fam = load(store)
     if d.empty:
         return {"status": "no data found: gold/move is not built"}
     d = d[d["cp_fresh"]].reset_index(drop=True)
     all_cols = [c for cols in fam.values() for c in cols]
-    res = {"rows": int(len(d)), "rows_usable": int(d["usable"].sum()), "months": sorted(d["month"].unique()),
+    res = {"rows": int(len(d)), "rows_usable": int(d["usable"].sum()),
+           "rows_kickoff_moved": int((~d["schedule_fixed"]).sum()), "months": sorted(d["month"].unique()),
            "families": {k: len(v) for k, v in fam.items()},
            "families_missing": [k for k in ("path", "implied", "rating") if k not in fam],
            "note": "development evidence: one year of data; last traded prices; nothing is traded"}
@@ -312,7 +363,8 @@ def run(store) -> dict:
     pred, gain = walk_forward(d, all_cols, with_gain=True)
     d["pred"] = pred
     level_pred, _ = walk_forward(d, fam["level"])
-    scored = d[np.isfinite(d["pred"])]
+    every = d[np.isfinite(d["pred"])]
+    scored = every[every["schedule_fixed"]]                 # the checkpoint was known in advance
     rel = scored[scored["usable"]]
     y, p = rel["y_logit"].to_numpy(float), rel["pred"].to_numpy(float)
     lp = level_pred[rel.index.to_numpy()]
@@ -322,6 +374,17 @@ def run(store) -> dict:
     wide = scored
     res["wider_set_stale_closes_included"] = skill_ci(wide["day"].to_numpy(), wide["y_logit"].to_numpy(float),
                                                       wide["pred"].to_numpy(float))
+    moved = every[~every["schedule_fixed"] & every["usable"]]
+    if len(moved) >= 500:
+        res["kickoff_moved_rows_not_in_the_headline"] = skill_ci(
+            moved["day"].to_numpy(), moved["y_logit"].to_numpy(float), moved["pred"].to_numpy(float))
+    # the stale-price test: skill by the age of the checkpoint book's stalest leg
+    ages = pd.cut(rel["cp_book_age_s"], [-1, 60, 300, 900, 10**9], labels=["60s or less", "1-5 min", "5-15 min",
+                                                                             "over 15 min"])
+    res["by_checkpoint_book_age"] = {
+        str(b): {**skill_ci(s["day"].to_numpy(), s["y_logit"].to_numpy(float), s["pred"].to_numpy(float)),
+                 "sd_move": float(s["y_logit"].std())}
+        for b, s in rel.groupby(ages, observed=True) if len(s) >= 500}
     res["by_horizon"] = {}
     for cp in HORIZONS:
         s = rel[rel["cp_min"] == cp]
@@ -332,10 +395,15 @@ def run(store) -> dict:
     res["by_role"] = {r: skill_ci(s["day"].to_numpy(), s["y_logit"].to_numpy(float), s["pred"].to_numpy(float))
                       for r, s in rel.groupby("role") if len(s) >= 500}
     # activity known at the checkpoint (never the match's final tier: that would look ahead)
-    bands = pd.cut(rel["n_ticks_before"], [0, 20, 60, 150, 10**9], labels=["under 20", "20-59", "60-149", "150+"])
+    bands = pd.cut(rel["n_ticks_before"], ACTIVITY[0], labels=ACTIVITY[1], right=False)
     res["by_activity_at_checkpoint"] = {
-        str(b): skill_ci(s["day"].to_numpy(), s["y_logit"].to_numpy(float), s["pred"].to_numpy(float))
+        str(b): {**skill_ci(s["day"].to_numpy(), s["y_logit"].to_numpy(float), s["pred"].to_numpy(float)),
+                 "sd_move": float(s["y_logit"].std())}
         for b, s in rel.groupby(bands, observed=True) if len(s) >= 500}
+    res["by_role_and_activity"] = {
+        f"{r} | {b}": skill_ci(s["day"].to_numpy(), s["y_logit"].to_numpy(float), s["pred"].to_numpy(float))
+        for (r, b), s in rel.groupby(["role", bands], observed=True) if len(s) >= 500}
+    res["liquid_arm"] = liquid_arm(d, all_cols, fam["level"])
     res["by_month"] = {m: round(float(1 - ((s["y_logit"] - s["pred"]) ** 2).sum() / (s["y_logit"] ** 2).sum()), 5)
                        for m, s in rel.groupby("month")}
 
@@ -352,10 +420,15 @@ def run(store) -> dict:
     res["gain_share_last_fold"] = {"by_family": by_fam,
                                    "top_features": {k: round(v / tot, 4) for k, v in
                                                     sorted(gain.items(), key=lambda kv: -kv[1])[:20]}}
+    fresh60 = scored[scored["cp_book_age_s"] <= 60]
     res["trades_at_last_traded_prices"] = {
         "cost": {"round_trip": ROUND_TRIP, "commission": COMMISSION},
+        "selected_at_checkpoint": {str(th): trades(scored, th) for th in THRESHOLDS},
+        "selected_at_checkpoint_book_60s_or_fresher": {str(th): trades(fresh60, th) for th in THRESHOLDS},
         "reliable_rows": {str(th): trades(rel, th) for th in THRESHOLDS},
-        "by_horizon_at_0.05": {str(cp): trades(rel[rel["cp_min"] == cp], 0.05) for cp in HORIZONS}}
+        "by_horizon_at_0.05": {str(cp): trades(scored[scored["cp_min"] == cp], 0.05) for cp in HORIZONS},
+        "by_activity_at_0.05": {str(b): trades(g, 0.05) for b, g in scored.groupby(
+            pd.cut(scored["n_ticks_before"], ACTIVITY[0], labels=ACTIVITY[1], right=False), observed=True)}}
     return res
 
 
