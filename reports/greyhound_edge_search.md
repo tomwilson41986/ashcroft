@@ -179,3 +179,50 @@ Five days so far:
 - **The early lay left to rest to the real off**, read beside the gate's figure from now on. On 9 Nov it matched 306
   lays against 296 and made +1.78% at the SP against +1.85% (stream-lab run 42787435666): the clock barely matters
   for this rule.
+
+**10 Nov.** 114 races and 19,050 runner-checkpoints in the close lab (run 42971599560). The stream lab read 442,524
+lines, 228 markets and 8,845 trades (run 42971603161). Collection is healthy. The ten specs, the late family, the band
+test and the resting test count from 11 Nov, so none has a counted day yet.
+
+- **Champions (bar version 2):**
+  - **BFSP:** gbm_all_small holds. Against the mid: gain 0.03486, z 11.11, 480 races over 4 days. The strongest
+    fresh challenger, gbm_all, is worse (gain -0.00089, z -3.44).
+  - **Win:** the mid holds. gbm_all_small's gain is 0.00514 (90% 0.00116 to 0.00894), z 2.15, 477 races; a gain this
+    size needs 963 races to clear the bar.
+- **Close lab, 10 Nov:**
+
+  | | BFSP: RMSE log(SP), all | 60 s or less | Tight book | Late (after the off) | Win: log loss | Win, late |
+  |---|---|---|---|---|---|---|
+  | gbm_small_plus | 0.1818 | 0.1108 | 0.1176 | 0.0761 | 1.4863 | 1.4820 |
+  | gbm_all_small | 0.1823 | 0.1118 | 0.1182 | 0.0790 | 1.4859 | 1.4798 |
+  | mid | 0.2595 | 0.1112 | 0.1179 | 0.0773 | 1.4929 | 1.4809 |
+
+  In the last 60 s, in a tight book and after the off, the mid is as good as the forecasts. Their gain is all earlier.
+- **The review's readings, 10 Nov:**
+  - **The off:** markets closed a median 18 s after the scheduled off (10% 7 s, 90% 40 s). All were open at the
+    scheduled off, 22% still open 30 s after and 4% 60 s after.
+  - **The SP pool:** SP backs on 89% of runner-checkpoints (median GBP58) and SP lays on 99% (median GBP15
+    liability). The SP book's median is 1.0042 over 670 races.
+  - **Benter's second stage:** the SP itself beats the mid on the result by 0.00758 a race at 60 s out (p 0.0016, 660
+    races) and 0.0096 at 10 s (p 0.0004). gbm_all_small adds 0.00044 at 60 s (p 0.52) and 0.00008 at 10 s (p 0.78):
+    nothing yet.
+- **The trade test on gbm_all_small's forecast** (second counted day of 10 needed): the busiest rules are lay_10_0.03
+  (34 trades, -0.19% a unit at the SP, 90% -4.8 to +3.3), lay_60_0.03 (27, -2.79%) and back_10_0.03 (19, +5.40%,
+  0.89 to 10.02).
+- **The band test and the resting test:** no counted day yet.
+- **Stream lab, 6 days pooled, 86 tests: no candidate.**
+  - rev_lay_10_0.1 to the result: +34.96% (15.7 to 43.7, q 0.02), but its deflated Sharpe is 0.034 against the
+    0.95 needed, and it has 6 of 10 days.
+  - Momentum still loses 2% to 5% at the SP.
+- **The early lay's forward-test lays, 10 Nov** (queue-aware, GBP4,790 matched over 242 lays):
+  - at the SP: +2.22% (x1) and +2.19% (x0.5);
+  - to the result: +4.51% and +4.33%;
+  - resting to the real off: +2.20% at the SP and +4.94% to the result;
+  - its own figure: +1.9% (207 lays matched).
+
+Six days so far:
+
+| | 5 Nov | 6 Nov | 7 Nov | 8 Nov | 9 Nov | 10 Nov |
+|---|---|---|---|---|---|---|
+| At the SP | +1.78% | +1.43% | +0.71% | +1.42% | +1.85% | +2.22% |
+| To the result | -1.65% | +1.04% | -1.50% | +4.28% | +2.62% | +4.51% |
