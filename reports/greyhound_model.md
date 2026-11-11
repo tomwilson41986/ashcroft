@@ -1882,3 +1882,52 @@ it. The faulty old figures still carry something the new one does not (the meeti
 
 **Next (registered, `batch24_expected_time_stack.json`):** the same comparison in the live model itself, the stack
 at three seeds. Nothing live has changed.
+
+## 42. The day diagnostic, 11 Nov 2026 (greyhound-diagnostic.yml run 43074468127, read 18:06 UTC)
+
+racing² - greyhound. The owner, 11 Nov: "do an exhaustive diagnostic on our greyhound results today. Do we have gaps
+or issues with our model?" `research/greyhound/day_diagnostic.py`, read-only from S3: the day's predictions, the
+settled books, the early lay's ledgers. The day was not over at the read (104 WIN races settled, 47 priced and still
+to run).
+
+**Coverage: no gap.** All 104 settled WIN races were priced, and every one of their 583 runners with an SP (the 104
+settled markets the report lists as unpriced are the To Be Placed markets, which we do not price). The trader's
+ledger has no gap over 12.6 minutes from 10:46 to 18:05 UTC and no last error.
+
+**The price against the SP: inside the test's figure, with two known weaknesses.**
+
+| Measure | Today (583 runners, 104 races) | The test (section 36) |
+|---|---|---|
+| RMSE of log(BSP), as served | 0.3093 | 0.3366 |
+| RMSE of log(BSP), before the per-track stretch | 0.3147 | 0.3396 |
+| Bias (above 0: priced too long) | -0.038 | - |
+| Slope of log(BSP) on log(our price) within the race | 1.019 | - |
+| Our favourite is the SP's favourite | 70.2% of races | - |
+| Winners' log-loss: ours against the SP's | 1.567 against 1.513 | the SP better (section 38) |
+
+- the ends of the book: dogs the SP put at 15 or more were priced 33% too short (bias -0.331, 80 runners, RMSE
+  0.505), dogs under 3.0 about 15% too long (48 runners); between 3 and 8 the bias is under 6%;
+- Nottingham: RMSE 0.426 and bias -0.124 on 72 runners, 9 of the day's 20 worst misses; every other track between
+  0.22 and 0.35. One day: to be read again on the nights that follow before it is called a fault.
+
+**The early lay as traded: the forecast picks the drifters, and we are matched on the ones that do not drift.**
+
+| | Lays | Liability | Mean log(SP / lay price) | Went out past our lay |
+|---|---|---|---|---|
+| Sent | 365 dogs in 102 races | GBP27,405 asked | +0.238 | - |
+| Matched | 100 (27.4%) | GBP7,691 | +0.019 | 48.0% |
+| Not matched | 265 | - | +0.321 | 96.2% |
+
+Locked by the green-ups: GBP-42.70, -0.56% of the matched liability (97 greened, 3 held to the result under the
+smallest SP back, 2 green-up retries). Closed at the SP instead the matched lays would have made GBP-59.05; had every
+lay sent been filled at its price, GBP+1,469.70. From the change to GBP100 and no guard (13:46 UTC): 84 matched,
+GBP7,383 liability, GBP-43.56.
+
+The matched lays were priced 1.6% under the mid when sent, the unmatched 4.7% under (all lays 4.1%): we are filled
+where the book is tight and already agrees with us, and left unfilled where the early book is wide and its mid is
+below where the SP ends. The forecast's direction is right (the dogs it lays went out 24% on average); the rule as
+tested took fills the live market does not give at those prices. That is an execution fault, not a pricing one.
+
+**What the diagnostic could not read.** The same rule on paper beside the live orders (the paper ledger stopped at
+10:42 UTC when the live run took over), so there is no like-for-like fill comparison today; the paper variants'
+ledgers carry no fill rows; Betfair's own settled bets (the reconciliation runs the next morning).
