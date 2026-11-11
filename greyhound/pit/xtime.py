@@ -30,6 +30,11 @@ is fitted walking forward, a day at a time:
 - a dog with no run has the mean level of the dogs it is graded to meet (the racing manager's opinion of it), else
   the mean level of its grade there on earlier days.
 
+Trials (classes T, T1 to T4) are read as runs when the build is given them (``ctx["trial_runs"]``: the rows
+``data.clean`` drops because GBGB serves a trial with no off time): each is a noisy observation of the dog's level
+with its own trial and field-size adjustments, so a debutant comes to its first race with a level from its trials. A
+trial moves no standard, no trap or grade effect, and is never a row of the table.
+
 Three times are modelled the same way, each with its own states: the whole race (GBGB's calculated time), the
 sectional (to the line the first time: early pace) and the run home (run time less sectional). Handicap races
 (staggered starts) and a fall are read by none; hurdles have their own standard.
@@ -386,8 +391,44 @@ def _vs(v: pd.Series, race: pd.Series) -> tuple[pd.Series, pd.Series]:
     return v - others, v - g.transform("max")
 
 
+def with_trials(df: pd.DataFrame, trial_runs: pd.DataFrame | None) -> pd.DataFrame:
+    """``df`` with the trial rows ``data.clean`` drops (greyhound/pit/trials.py ``select``) added as runs the filter
+    reads: a time, a sectional, a weight and a comment on a day, flagged as trials (their noise is larger, they move
+    no standard, trap or grade effect, and they are never a row of the table). The audit of 11 Nov 2026: no trial had
+    ever reached the model, so a debutant's level was a guess from the dogs it was graded to meet."""
+    if trial_runs is None or not len(trial_runs):
+        return df
+    have = set(zip(df.race_id.to_numpy(), df.dog_id.to_numpy()))
+    tr = trial_runs[[k not in have for k in zip(trial_runs.race_id.to_numpy(), trial_runs.dog_id.to_numpy())]]
+    if not len(tr):
+        return df
+    day = pd.to_datetime(tr.race_date, errors="coerce")
+    new = pd.DataFrame({
+        "race_id": tr.race_id.to_numpy(), "dog_id": tr.dog_id.to_numpy(), "race_date": tr.race_date.astype(str).to_numpy(),
+        "race_time": "00:00", "t": day.to_numpy(), "track": tr.track.to_numpy(),
+        "distance_m": pd.to_numeric(tr.distance_m, errors="coerce").to_numpy(), "race_class": tr.race_class.to_numpy(),
+        "trap": pd.to_numeric(tr.trap, errors="coerce").to_numpy(), "comment": tr.comment.fillna("").to_numpy(),
+        "adjusted_time": pd.to_numeric(tr.adjusted_time, errors="coerce").to_numpy(),
+        "run_time": pd.to_numeric(tr.run_time, errors="coerce").to_numpy(),
+        "sectional": pd.to_numeric(tr.sectional, errors="coerce").to_numpy(),
+        "weight_kg": pd.to_numeric(tr.weight_kg, errors="coerce").to_numpy(),
+        "born": tr.born.to_numpy() if "born" in tr else np.nan, "sex": tr.sex.to_numpy() if "sex" in tr else np.nan,
+        "position": pd.to_numeric(tr.position, errors="coerce").to_numpy(), "won": np.nan, "is_trial": True,
+        "is_card": False, "grade_family": "T", "handicap": False,
+        "field": tr.groupby("race_id").dog_id.transform("size").to_numpy(float)})
+    # a trial session is its own meeting (never a race meeting's variant): negative ids clear of the cards'
+    key = tr.track.astype(str) + "|" + tr.race_date.astype(str)
+    new["meeting_id"] = -(1_000_000_000 + pd.factorize(key)[0])
+    new = new.dropna(subset=["t"])
+    new.index = np.arange(len(new)) + (int(df.index.max()) + 1 if len(df) else 0)
+    return pd.concat([df, new[[c for c in new.columns if c in df.columns]]])
+
+
 def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None = None) -> tuple[pd.DataFrame, dict]:
     df = figs if figs is not None else core.per_run_figures(runs)
+    rows = df.index                                                    # the table's rows: the trials are read, not written
+    df = with_trials(df, (ctx or {}).get("trial_runs"))
+    n_trials = len(df) - len(rows)
     df = df.sort_values(["t", "race_id", "trap"], kind="stable")
     race = df.race_id
     day = core.day(df)
@@ -398,7 +439,8 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     Y = targets(df)
     early_to = int(P["dn"][early.to_numpy()].max()) if early.any() else -1
     out = pd.DataFrame({"race_id": race.to_numpy(), "dog_id": df.dog_id.to_numpy()}, index=df.index)
-    notes = {"refit_months": REFIT_MONTHS, "covariates": len(P["names"]), "codes": len(P["vocab"])}
+    notes = {"refit_months": REFIT_MONTHS, "covariates": len(P["names"]), "codes": len(P["vocab"]),
+             "trial_runs_read": int(n_trials)}
     year = day.dt.year.to_numpy()
     L = core.LENGTH_S
     exp_pct = {}
@@ -474,7 +516,7 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     out[f"{PREFIX}pace_shape"] = out[f"{PREFIX}sec_vs_field"] - out[f"{PREFIX}run_vs_field"]
     cols = [c for c in out.columns if c.startswith(PREFIX)]
     out[cols] = out[cols].astype(np.float32)
-    return out.sort_index().reset_index(drop=True), notes
+    return out.loc[rows].sort_index().reset_index(drop=True), notes
 
 
 _LAB = {"tot": "whole race", "sec": "sectional (to the line the first time)", "run": "run home"}

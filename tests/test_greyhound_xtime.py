@@ -154,3 +154,42 @@ def test_the_trouble_price_is_the_same_at_every_refit(built):
     assert len(by_fit) >= 3 and max(by_fit) < 1.25 * min(by_fit)
     # 0.25 s on about 27 s: 0.84% to 1.02% by track; capped at 1.5
     assert 0.6 < by_fit[-1] < 1.2
+
+
+def test_the_trials_are_read_as_runs_and_never_written(small):
+    """The audit of 11 Nov 2026: no trial reached the model. Given the trial rows, a debutant comes to its first
+    race with a level from its trials; the table still has one row a run of ``runs`` and no trial row."""
+    from greyhound.pit import trials
+    from tests.test_greyhound_trials import raw
+    r = raw()
+    tr, runs = trials.select(r), clean(r)
+    figs = core.per_run_figures(runs)
+    plain, _ = xtime.build(runs, figs)
+    with_tr, notes = xtime.build(runs, figs, {"trial_runs": tr})
+    assert notes["trial_runs_read"] == 3 and len(with_tr) == len(runs) == len(plain)
+    assert set(zip(with_tr.race_id, with_tr.dog_id)) == set(zip(runs.race_id, runs.dog_id))
+    first = runs[runs.dog_id == 50].sort_values("race_date").iloc[0]
+    a = plain[(plain.race_id == first.race_id) & (plain.dog_id == 50)].iloc[0]
+    b = with_tr[(with_tr.race_id == first.race_id) & (with_tr.dog_id == 50)].iloc[0]
+    # it trialled 2.5 and 3.75 lengths inside the standard: with the trials it is expected faster, on more evidence
+    assert b.xt_n == 2 and a.xt_n == 0 and b.xt_tot_level > a.xt_tot_level + 0.5 and b.xt_tot_time < a.xt_tot_time
+    # a dog that never trialled is not moved by another dog's trials beyond the standards they do not touch
+    one_a = plain[plain.dog_id == 1].xt_tot_level.to_numpy()
+    one_b = with_tr[with_tr.dog_id == 1].xt_tot_level.to_numpy()
+    assert np.allclose(one_a, one_b, atol=0.35, equal_nan=True)
+
+
+@pytest.mark.parametrize("change", [perturb_last_day, cardify_last_day])
+def test_the_days_own_results_move_nothing_with_the_trials(small, change):
+    from greyhound.pit import trials
+    from tests.test_greyhound_trials import raw
+    r = raw()
+    tr, runs = trials.select(r), clean(r)
+    keys = runs.loc[runs.race_date == runs.race_date.max(), ["race_id", "dog_id"]]
+    a = xtime.build(runs, core.per_run_figures(runs), {"trial_runs": tr})[0]
+    r2 = change(runs)
+    b = xtime.build(r2, core.per_run_figures(r2), {"trial_runs": tr})[0]
+    cols = list(xtime.COLUMNS)
+    x = keys.merge(a, on=["race_id", "dog_id"]).sort_values(["race_id", "dog_id"])[cols].to_numpy(float)
+    z = keys.merge(b, on=["race_id", "dog_id"]).sort_values(["race_id", "dog_id"])[cols].to_numpy(float)
+    assert np.allclose(x, z, atol=1e-5, equal_nan=True)

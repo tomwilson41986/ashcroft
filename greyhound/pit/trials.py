@@ -34,7 +34,7 @@ TRIAL_RE = r"^T\d*$"
 HALF_LIFE = 60.0
 OUTLIER = 40.0
 BIG = 1_000_000                       # day numbers are below this: a dog's block of the sorted (dog, day) key
-KEEP = ["race_date", "race_time", "track", "distance_m", "race_id", "race_class", "trap", "dog_id", "dog_name",
+KEEP = ["race_date", "race_time", "meeting_id", "track", "distance_m", "race_id", "race_class", "trap", "dog_id", "dog_name",
         "sire", "dam", "born", "sex", "season", "trainer", "position", "sectional", "run_time", "adjusted_time",
         "weight_kg", "comment"]
 
