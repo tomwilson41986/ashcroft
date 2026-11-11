@@ -263,9 +263,10 @@ python -m research.open_close.football_paper_trial --panel data/football_exchang
 # price-path features, inferred goals and timelines, the in-play minute table, the move panel, market-implied team
 # ratings), club marts (team-match, team summary, country strength). Parquet under
 # s3://$CAPTURE_BUCKET/sources/football/warehouse/ (or --root <folder>), DuckDB over it; idempotent builds
-# (football-warehouse.yml on GitHub's runners; S3 only, nothing reaches Betfair). Its own pins are in
-# football/warehouse/requirements.txt (never in requirements.txt, which the live horse jobs install); a bundle's
-# download link comes from the FOOTBALL_BUNDLE_URLS secret ({"<bundle name>": "<link>"}), not from the repository
+# (football-warehouse.yml on GitHub's runners; S3 only, nothing reaches Betfair; its tests and the workflow guards on
+# every pull request: football-tests.yml). Its own pins are in football/warehouse/requirements.txt (never in
+# requirements.txt, which the live horse jobs install); a bundle's download link comes from the FOOTBALL_BUNDLE_URLS
+# secret ({"<bundle name>": "<link>"}), not from the repository
 pip install -r requirements.txt -r football/warehouse/requirements.txt
 python -m football.warehouse ingest-queue          # every bundle in football/warehouse/bundles.json, each once
 python -m football.warehouse build                 # silver, then gold, for the partitions that changed
