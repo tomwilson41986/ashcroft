@@ -89,6 +89,30 @@ Review is deterministic CI, not a second agent's approval: one bot identity cann
 | 3 | Greyhounds and football: the registered trials become registry entries; execution-led ideas only | Agents |
 | 4 | Tennis and cricket models once a season of prices is held | Agents |
 
+## Phase 1 so far (11 Nov 2026)
+
+- `desk/strategy.py`: a strategy is a pure function from a `MarketView` (the market, its book, each runner, the
+  closing model's view on demand) to `Intent`s; `on_fill` tells it what matched.
+- `desk/session.py` `DeskSession`: several strategies on one market, every intent through the kernel in paper mode,
+  each order under the strategy's own reference (`<prefix><mmdd>-...`), settled at the BSP from Betfair's record.
+  It runs on the replay's shared book beside the live rule (`research/arms/core.py run_agents`). Paper only.
+- `desk/algos/lay_book.py`: the lay arm ported as the desk's first strategy, registered at the research stage
+  (`desk/strategies/horse_racing/horse-lay-book.json`, gate pinned) and in the ledger (`desk-lay-book-1111`).
+  On the arms' test day it reproduces the arm's fills and score exactly (`tests/test_desk_session.py`).
+- The first replay (`research/queries/done/desk_lay_book_1111.py`, run 42972505001) was **not read**: the port's
+  fills differed from the arm's on all 29 days. Cause: the port sized every lay at the start of the minute against
+  the same day-liability room, where the arm sizes each as it sends it; and its check compared the port under the
+  registered limits with an arm that has none. Fixed with `Strategy.revise` (each order sized as it is sent) and a
+  test of the case; the ledger holds the result line.
+- The second replay (`research/queries/done/desk_lay_book_1112.py`, run 42988481613) was **not read** either: the port
+  matched the arm exactly on 14 of 29 days and by a penny on most of the rest. Cause: the kernel's pence floor lost a
+  penny on some exact stakes in floating point (1.13 became 1.12). Fixed and tested. Under the registered limits the
+  0.2 price collar was the only limit that bound (38 refusals, all on the walk up the lay ladder).
+- `research/queries/desk_lay_book_1113.py` (ledger `desk-lay-book-1113`, registered before the run): 1112's design
+  and reading unchanged. If its parity fails again, the work stops for a report rather than a fourth fix.
+- Not yet: a live desk exchange (phase 2, behind the pilot stage); the late and subset books (they need a model fitted
+  on late prices and a new book construction first: `desk/backlog/horse_racing.jsonl`).
+
 ## 0a Lock-down: the owner's checklist before anything autonomous bets
 
 Found in review, 10 Nov 2026, verified in the workflow files:

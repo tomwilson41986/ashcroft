@@ -58,14 +58,18 @@ def test_the_registry_covers_every_trader_on_the_dashboard():
 
 def test_the_registry_switches_match_the_workflows():
     for s in registry.load()[0]:
+        if not s.desk_run:                       # an owner's trader runs from its workflow; a desk one may have none yet
+            assert (ROOT / ".github" / "workflows" / s.workflow).exists(), (s.id, s.workflow)
+        if not (ROOT / ".github" / "workflows" / s.workflow).exists():
+            continue
         wf = (ROOT / ".github" / "workflows" / s.workflow).read_text()
         if s.live_switch:
             assert s.live_switch in wf, (s.id, s.live_switch)
 
 
 def test_the_gate_thresholds_are_the_owners():
-    from research.overfit import DSR_THRESHOLD
-    assert registry.MIN_DSR == DSR_THRESHOLD
+    from research.overfit import DSR_THRESHOLD, MIN_OBS
+    assert registry.MIN_DSR == DSR_THRESHOLD and registry.MIN_DAYS == MIN_OBS
 
 
 @pytest.mark.parametrize("over,err", [
@@ -184,7 +188,8 @@ def test_a_sound_intent_passes_whole():
 @pytest.mark.parametrize("make,want", [
     (lambda: (kernel(env_vars={}), intent()), "paper only"),
     (lambda: (kernel(stage="paper"), intent()), "no money"),
-    (lambda: (kernel(stage="legacy", approved={"by": "o", "on": "d", "source": "s"}), intent()), "no money"),
+    (lambda: (kernel(stage="legacy", approved={"by": "o", "on": "d", "source": "s"}), intent()), "not a desk"),
+    (lambda: (kernel(stage="retired"), intent()), "not a desk"),
     (lambda: (kernel(limits={"max_order": 5}), intent()), "limits not set"),
     (lambda: (kernel(), intent(book_age_s=30)), "stale"),
     (lambda: (kernel(), intent(price=7.0)), "collar"),
@@ -207,7 +212,7 @@ def test_a_stop_refuses_everything():
 def test_the_order_rate_limit():
     k = kernel()
     for _ in range(3):
-        k.state.record(intent(market_id="9.9"), 1.0, now=999.0)
+        k.state.note_sent(intent(market_id="9.9"), now=999.0)
     assert "order rate" in k.check(intent()).reason
 
 
@@ -247,6 +252,21 @@ def test_the_pilot_budget():
     k = kernel(env_vars={**FULL_ENV, "DESK_PILOT_BUDGET": "12"})
     k.state.turnover["horse-other"] = 5.0
     assert k.check(intent()).size == pytest.approx(7.0)
+
+
+@pytest.mark.parametrize("size", [1.13, 2.29, 19.99, 13.33])            # under the fixture's GBP20 order cap
+def test_an_exact_stake_passes_whole(size):
+    """desk-lay-book-1112: a bare floor of size * 100 took a penny off 1.13 (112.999...): the port sent a penny less
+    than the arm."""
+    assert kernel().check(intent(size=size)).size == size
+
+
+def test_a_cut_still_floors_to_the_penny():
+    from desk.risk import _floor_pence
+    assert _floor_pence(1.13) == 1.13 and _floor_pence(1.139) == 1.13 and _floor_pence(0.29) == 0.29
+    k = kernel()
+    k.state.funds_available = 6.666
+    assert k.check(intent()).size == 6.66
 
 
 def test_below_the_minimum_after_cuts_sends_nothing():
@@ -367,3 +387,12 @@ def test_no_legacy_trader_imports_the_desk():
         paths += list((ROOT / pkg).rglob("*.py"))
     for p in paths:
         assert not re.search(r"^\s*(from desk\b|import desk\b)", p.read_text(), re.M), p
+
+
+def test_the_warden_needs_nothing_but_its_slim_install():
+    """desk-warden.yml installs requests and python-dotenv alone: the warden's chain imports no model or research
+    code (an import of research.overfit pulls the model package and scikit-learn)."""
+    for name in ("__init__", "envelope", "registry", "account", "warden"):
+        src = (ROOT / "desk" / f"{name}.py").read_text()
+        assert not re.search(r"^\s*(from|import)\s+(research|model|pandas|numpy|trading)\b", src, re.M), name
+        assert not re.search(r"\n\s+(from|import)\s+(research|model)\b", src), name
