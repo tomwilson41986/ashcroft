@@ -17,7 +17,10 @@
     "trading/STOP"
   ],
   "kill_switch_fails": "open",
-  "dashboard_ids": [],
+  "dashboard_ids": [
+    "horse-morning-steamer",
+    "horse-morning-steamer-paper"
+  ],
   "evidence": [
     {
       "claim": "research win A/E 1.155 at the morning price, 1.032 at the BSP; not significant on 33 days (p 0.16)",

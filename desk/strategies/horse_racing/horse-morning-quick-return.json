@@ -17,7 +17,10 @@
     "trading/STOP"
   ],
   "kill_switch_fails": "open",
-  "dashboard_ids": [],
+  "dashboard_ids": [
+    "horse-morning-quick-return",
+    "horse-morning-quick-return-paper"
+  ],
   "evidence": [
     {
       "claim": "research win A/E 1.148 at the morning price, 1.055 at the BSP; not significant on 33 days (p 0.21)",

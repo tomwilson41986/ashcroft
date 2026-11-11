@@ -69,7 +69,8 @@ ORDER = ("steamer", "quick_return")                  # a horse both select: the 
 PREFIX = "morning"
 LIVE_TRADER_PREFIX = "ash"
 LEDGER_COLS = ["ts", "mode", "model", "event", "market_id", "venue", "off", "selection_id", "runner", "pred",
-               "best_back", "limit", "asked", "matched", "avg_price", "bet_id", "status", "error", "result", "pnl"]
+               "best_back", "limit", "asked", "matched", "avg_price", "bet_id", "status", "error", "result", "pnl",
+               "bsp", "clv"]                   # bsp, clv: written at settle (clv = average price / BSP - 1)
 
 
 def bucket() -> str:
@@ -376,11 +377,25 @@ def settle(day: date, live: bool) -> dict:
             result[k] = st
             pnl[k] = (float(b.matched) * (float(b.avg_price) - 1) if st == "WINNER" else
                       -float(b.matched) if st == "LOSER" else 0.0)
+    sp = {}                                               # the BSP of each runner backed, for the CLV
+    if mids:
+        try:
+            for mid, q in x.books(mids, with_sp=True).items():
+                for sid, r in q.runners.items():
+                    if getattr(r, "bsp", None):
+                        sp[(str(mid), int(sid))] = float(r.bsp)
+        except Exception as exc:  # noqa: BLE001  the CLV is a reading: the settle stands without it
+            log.warning("No BSP for the CLV: %s", exc)
+    led["result"] = led["result"].astype(object) if "result" in led.columns else None   # read back blank: floats
     out = []
     for i, b in bets.iterrows():
         k = (str(b.market_id), int(b.selection_id), MODELS[b.model])
         led.loc[i, "result"] = result.get(k, "UNSETTLED")
         led.loc[i, "pnl"] = round(pnl[k], 2) if k in pnl else None
+        bsp = sp.get(k[:2])
+        led.loc[i, "bsp"] = bsp
+        avg = pd.to_numeric(b.get("avg_price"), errors="coerce")
+        led.loc[i, "clv"] = round(float(avg) / bsp - 1, 4) if bsp and bsp > 1 and avg == avg and avg > 1 else None
     s3_put(_key(mode, day, "ledger.csv"), _ledger_bytes(led.to_dict("records")))
     summary = {"day": str(day), "mode": mode}
     for model in MODELS:

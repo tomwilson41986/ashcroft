@@ -99,6 +99,20 @@ class S3Source:
             token = r.get("NextContinuationToken")
         return sorted(d for d in out if _is_day(d))
 
+    def day_files(self, kind: str, prefix: str, ext: str) -> list[str]:
+        """The days of the files ``<prefix><YYYY-MM-DD>.<ext>`` directly under ``prefix``."""
+        out, token = [], None
+        while True:
+            kw = {"Bucket": self.buckets[kind], "Prefix": prefix, "Delimiter": "/"}
+            if token:
+                kw["ContinuationToken"] = token
+            r = self.s3.list_objects_v2(**kw)
+            out += [o["Key"][len(prefix):] for o in r.get("Contents", [])]
+            if not r.get("IsTruncated"):
+                break
+            token = r.get("NextContinuationToken")
+        return sorted(n[:-len(ext) - 1] for n in out if n.endswith("." + ext) and _is_day(n[:-len(ext) - 1]))
+
 
 class LocalSource:
     """The same reads from a folder (tests, or a local copy): ``<root>/pred/trading/...``, ``<root>/capture/...``."""
@@ -121,6 +135,10 @@ class LocalSource:
     def days(self, kind: str, prefix: str) -> list[str]:
         base = self.root / kind / prefix
         return sorted(p.name for p in base.iterdir() if p.is_dir() and _is_day(p.name)) if base.exists() else []
+
+    def day_files(self, kind: str, prefix: str, ext: str) -> list[str]:
+        base = self.root / kind / prefix
+        return sorted(p.stem for p in base.glob(f"*.{ext}") if _is_day(p.stem)) if base.exists() else []
 
 
 def _is_day(s: str) -> bool:
@@ -339,6 +357,53 @@ def paper_agent_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFra
     return m[MARKET_COLS], None
 
 
+def _morning_table(b: pd.DataFrame, price: str) -> pd.DataFrame:
+    """The morning models' backs to a table of markets: P&L after 2% on each market's net winnings, settled once every
+    back in the market has a result, and the CLV at the BSP (average price / BSP - 1)."""
+    for c in ("matched", "pnl", "bsp", price):
+        b[c] = _num(b[c]) if c in b.columns else np.nan
+    b["clv"] = _num(b["clv"]) if "clv" in b.columns else np.nan
+    b["clv"] = b.clv.where(b.clv.notna(), b[price] / b.bsp.where(b.bsp > 1) - 1)
+    b["_set"] = b["result"].astype(str).isin(["WINNER", "LOSER", "REMOVED"]) if "result" in b.columns else False
+    lab = "venue" if "venue" in b.columns else "label"
+    m = b.groupby("market_id").agg(label=(lab, "first"), off=("off", "first"), staked=("matched", "sum"),
+                                   settled=("_set", "all"), gross=("pnl", lambda x: x.sum(min_count=1)))
+    m["ev"] = np.nan                                       # no expected value is logged: the forecast is the record's
+    m["pnl"] = np.where(m.settled, m.gross - RATE * m.gross.clip(lower=0).fillna(0.0), np.nan)
+    m["open_liability"] = 0.0
+    m = _with_clv(m, b)
+    return m.reset_index()[MARKET_COLS]
+
+
+def morning_markets(model: str):
+    """A morning model's day on the live account (morning/live.py): its backs at 10:00 UK, settled at 22:50 UTC from
+    Betfair's record of the settled bets. One ledger holds both models; this reads one."""
+    def read(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame | None, str | None]:
+        led = _csv(src.get(kind, f"{base}/{day}/ledger.csv"))
+        if led is None or "event" not in led.columns or "model" not in led.columns:
+            return None, None
+        b = led[(led.event == "back") & (led.model == model)].copy()
+        b = b[_num(b.get("matched", pd.Series(dtype=float))) > 0]
+        return (_morning_table(b, "avg_price") if len(b) else _empty()), _last_ts(led, "ts")
+    read.__name__ = f"morning_markets_{model}"
+    return read
+
+
+def morning_paper_markets(strategy: str):
+    """The morning models' paper forward test (research/paper/morning_edges.py): the WIN backs of one strategy on the
+    recorded books at 10:00 UK, held to the result after the non-runners' cuts; a file a day, written once settled."""
+    def read(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame | None, str | None]:
+        bets = _csv(src.get(kind, f"{base}/{day}.csv"))
+        if bets is None or "strategy" not in bets.columns:
+            return None, None
+        b = bets[(bets.strategy == strategy) & (bets.get("market", "win") == "win")
+                 & (bets.get("event", "back") == "back")].copy()
+        b = b[_num(b.get("matched", pd.Series(dtype=float))) > 0]
+        return (_morning_table(b, "price") if len(b) else _empty()), None
+    read.__name__ = f"morning_paper_markets_{strategy}"
+    return read
+
+
 @dataclass(frozen=True)
 class Trader:
     id: str
@@ -354,6 +419,7 @@ class Trader:
     record_from: str | None = None      # the forecast's record starts here (a rule change)
     start_from: str | None = None       # the first day counted at all: earlier days in its ledger (a replay) are left out
     refresh_days: int = 3       # days re-read every run; older settled days come from the cache
+    day_file: str | None = None         # a file a day (<base>/<day>.<ext>) rather than a folder a day
     notes: tuple = field(default_factory=tuple)
     switch: str | None = None   # the repository variable that turns its real orders on (shown on the tile)
 
@@ -374,6 +440,30 @@ TRADERS = [
     Trader("horse-paper", "horse_racing", "Win backs, paper", "paper",
            "The paper trader: the same markets simulated against the book, nothing placed",
            "pred", "trading/paper", horse_markets, "horse", "HP"),
+    # the morning models (the owner, 4 Nov 2026: "Create two live models; Steamers, Quick Returners", half stakes;
+    # 11 Nov: "separate trading strategies that i can track in the dashboard"): each its own line, live and paper
+    Trader("horse-morning-steamer", "horse_racing", "Steamers, live", "live",
+           "The CLEAN steamer model's top 5%, WIN backs at 10:00 UK, GBP50 to win (at most GBP100 a bet)",
+           "pred", "morning/live", morning_markets("steamer"), "horse", "ST",
+           notes=("Real orders only with MORNING_LIVE=yes on the morning runner (morning-models.yml).",
+                  "No expected value is logged: the forecast is the record's mean day. CLV at the BSP once settled.")),
+    Trader("horse-morning-quick-return", "horse_racing", "Quick returners, live", "live",
+           "Horses back within 1-4 days, WIN backs at 10:00 UK, GBP50 to win (at most GBP100 a bet)",
+           "pred", "morning/live", morning_markets("quick_return"), "horse", "QR",
+           notes=("Real orders only with MORNING_LIVE=yes on the morning runner (morning-models.yml).",
+                  "No expected value is logged: the forecast is the record's mean day. CLV at the BSP once settled.")),
+    Trader("horse-morning-steamer-paper", "horse_racing", "Steamers, paper", "paper",
+           "The steamer paper forward test on the recorded books (GBP100 to win), from 5 Nov 2026",
+           "pred", "paper/morning_edges/bets", morning_paper_markets("steam_am"), "horse", "SP",
+           start_from="2026-11-05", day_file="csv",
+           notes=("Paper, at twice the live stake: halve its P&L to read it at the live GBP50 to win.",
+                  "A day is written once the price file is in (the next morning).")),
+    Trader("horse-morning-quick-return-paper", "horse_racing", "Quick returners, paper", "paper",
+           "The quick-return paper forward test on the recorded books (GBP100 to win), from 5 Nov 2026",
+           "pred", "paper/morning_edges/bets", morning_paper_markets("qr_am"), "horse", "QP",
+           start_from="2026-11-05", day_file="csv",
+           notes=("Paper, at twice the live stake: halve its P&L to read it at the live GBP50 to win.",
+                  "A day is written once the price file is in (the next morning).")),
     # the six horse paper agents (horse-agent-*) are retired (the owner, 4 Nov 2026: "Keep the current live rule. Retire
     # the others"); paper_agent_markets still reads their replayed days
     # the owner, 11 Nov 2026: "Show it. Start tracking from fresh": the switch on its tile, and a record from 11 Nov
@@ -412,7 +502,8 @@ CACHE = "dashboard/cache/v2"           # v2: the tables carry CLV (4 Nov 2026)
 def trader_days(src, t: Trader, today: date, cache: bool = True) -> tuple[dict[str, pd.DataFrame], str | None]:
     """Every day's market table for the trader, and the time of its last ledger row today."""
     out, last = {}, None
-    for day in src.days(t.kind, t.base + "/"):
+    listed = src.day_files(t.kind, t.base + "/", t.day_file) if t.day_file else src.days(t.kind, t.base + "/")
+    for day in listed:
         if day > today.isoformat() or (t.start_from and day < t.start_from):
             continue
         old = date.fromisoformat(day) < today - timedelta(days=t.refresh_days)
