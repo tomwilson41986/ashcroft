@@ -1931,3 +1931,104 @@ tested took fills the live market does not give at those prices. That is an exec
 **What the diagnostic could not read.** The same rule on paper beside the live orders (the paper ledger stopped at
 10:42 UTC when the live run took over), so there is no like-for-like fill comparison today; the paper variants'
 ledgers carry no fill rows; Betfair's own settled bets (the reconciliation runs the next morning).
+
+## 43. The edge anatomy: can the greyhound edge be traded (11 Nov 2026)
+
+racing² - greyhound. The owner, 11 Nov, after putting the early lay back on paper (18:16 UTC stop, 18:25 the job
+restarted with `early_lay=paper`): "run thorough investigation, QA, cleaning. Exhaustive to identify how to make this
+a profitable edge. Or other profitable trading strategies." `research/greyhound/edge_anatomy.py`, registered in the
+ledger before its run; greyhound-edge-anatomy.yml runs 43076824352 and 43077986412 (the second fixes two descriptive
+sections and adds 43.2's table; the grid is unchanged). Live-key books, GB WIN, 3 to 11 Nov 2026: 9 days, 1,017
+races, about 5,700 runners a mark.
+
+### 43.1 The market itself (QA)
+
+| Seconds before the scheduled off | Median spread | Median matched in the race | Median money at the best lay / back price | Runners with a book under 15% wide |
+|---|---|---|---|---|
+| 600 | 341% | GBP6 | GBP2.47 / GBP2.35 | 0.9% |
+| 300 | 204% | GBP219 | GBP2.21 / GBP3.69 | 26.2% |
+| 180 | 6.6% (a tenth over 236%) | GBP1,290 | GBP4.57 / GBP5.08 | 70.9% |
+| 120 | 4.7% | GBP2,669 | GBP5.90 / GBP7.36 | 91.0% |
+| 60 | 3.6% | GBP5,218 | GBP9.90 / GBP12.28 | 97.4% |
+| 15 | 3.2% | GBP9,171 | GBP11.73 / GBP15.58 | 98.0% |
+
+The races go off a median 19 to 26 seconds after the scheduled time (a tenth by 38 to 64 seconds), so "15 seconds
+before" is about 40 seconds before the traps open. The book does not exist five minutes out and is made in the last
+three. The books are 0 to 3 seconds old at their mark, none crossed, 97.7% to 97.9% of runners have an SP, 91.4% to
+91.7% a price from us (3 Nov had no predictions file).
+
+### 43.2 Who knows more, and when
+
+The error of log(price / SP) on the holdout days (9 to 11 Nov), on runners whose book is under 15% wide; the weight
+on our price in the best blend with the book's mid is fitted on 3 to 8 Nov.
+
+| Seconds before | Our price | The book's mid | The blend | Weight on our price |
+|---|---|---|---|---|
+| 300 | 0.263 | 0.161 | 0.156 | 0.124 |
+| 180 | 0.308 | 0.148 | 0.149 | 0.058 |
+| 120 | 0.311 | 0.134 | 0.134 | 0.042 |
+| 60 | 0.320 | 0.124 | 0.124 | 0.022 |
+| 15 | 0.323 | 0.106 | 0.105 | 0.011 |
+
+**Once a real two-sided book exists it knows two to three times what we know, and our price adds nothing to it**
+(a weight of 1% to 6%). Our price is the better one only where there is no book to trade against. Betfair's projected
+SP (near) is worse than the mid at every mark (0.138 against 0.121 at 15 seconds).
+
+### 43.3 Taking the price on offer, closed at the SP: 1,470 cells
+
+A lay taken at the best price available to lay, or a back at the best price to back, for the money shown (GBP10 at
+most), closed at the SP, 2% commission on a win; seven marks, no signal / our price / the projected SP near and far /
+both, five margins, all prices and four bands.
+
+| Taken with no signal | 120 s | 60 s | 30 s | 15 s |
+|---|---|---|---|---|
+| Lay, return a pound staked | -7.58% | -2.85% | -2.31% | -2.20% |
+| Back | -2.38% | -1.76% | -2.00% | -1.96% |
+
+Each with its 90% interval below zero and no day in profit in nine. With our price as the signal (margin 10%) the
+lays lose 1.05% to 2.09% and the backs 1.18% to 1.87% at the same marks: the signal is worth about a point, the
+spread and commission two to three. Of 754 cells with 100 bets, 21 had an interval above zero on the development days
+(37.7 expected by chance); **none kept it on the holdout**, 3 were positive at all. The nearest thing to a signal is
+Betfair's own projected SP: lays taken 10% under it made +1.64% at 60 seconds (144 bets, 7 days of 9 up, interval
+-0.24 to 3.57) and +1.20% at 15 (124 bets): inside its noise, and worth pennies at the money on offer.
+
+### 43.4 The live early lay's own orders against the book they went into
+
+All three live days (3, 4 and 11 Nov), 717 lays, each matched to the book at most 15 seconds before it was sent.
+
+| Where the lay sat | Lays | Matched | Locked | SP against our lay price, all | The same, matched only |
+|---|---|---|---|---|---|
+| Below the best lay offer on show (behind the queue) | 483 | 26.9% | GBP-23.60 | +0.234 | 0.000 |
+| At the best offer (joins the queue) | 35 | 62.9% | GBP-13.81 | +0.124 | -0.007 |
+| Inside the spread | 67 | 56.7% | GBP-1.95 | +0.197 | +0.071 |
+| Crossing (taken at once) | 16 | 81.3% | GBP-4.70 | -0.023 | -0.083 |
+| No book recorded within 15 s | 116 | 37.9% | GBP-32.55 | +0.232 | +0.018 |
+
+| Day | Lays | Matched | Locked | SP against our price: matched | Unmatched |
+|---|---|---|---|---|---|
+| 3 Nov | 218 | 80 | GBP-19.35 | 0.000 | +0.358 |
+| 4 Nov | 129 | 62 | GBP-23.56 | +0.001 | +0.305 |
+| 11 Nov (to 18:28 UTC) | 370 | 105 | GBP-33.70 | +0.021 | +0.321 |
+
+The same thing on every live day: the lays that match are the ones whose price does not move; the ones that would
+have paid (a third of a log point) are never hit. Two thirds of the orders were sent into a book that was not yet
+made (the offer to lay a full log point above our price, GBP2 to GBP3 on show). The tested rule's profit was the
+fills it assumed there.
+
+### 43.5 What it means
+
+1. **The form model has no edge against the exchange at any time a trade can be had.** Twenty readings now say so
+   (reports/greyhound_edge_search.md rows 1 to 19 and three live days). Better features move our error from 0.34
+   toward 0.33; the book's is 0.11 to 0.15. No feature block closes that: the gap is money and information that
+   arrive in the last three minutes.
+2. **The size of the prize is small whatever the edge.** GBP9,171 is matched in the median race by 15 seconds out,
+   about 110 to 150 GB races a day; the best price holds GBP10 to GBP20. Taking the whole top of the book on every
+   runner at 60 seconds stakes about GBP4,700 a day a side at GBP10 a bet (GBP42,082 of lays and GBP45,701 of backs in
+   9 days). A rule that picked a tenth of that with a true 2% would make about GBP10 a day.
+3. **What is left on this exchange is making prices, not taking them**: the registered stream-lab trials (the resting
+   test with queue-aware fills, the late family, the band test: rows 11 to 13), read once after their ten days. They
+   are not looked at early.
+4. **Where the model's knowledge is worth something is before the book exists**: hours ahead, against prices that
+   can be taken then (bookmakers' early prices, no data held), or sold as prices and ratings; and on a market with
+   the money to carry a stake (the horses, where the same expected-time method has not been tried; Australian
+   greyhounds, where rows 6 and 7 left two candidates and we record no books).
