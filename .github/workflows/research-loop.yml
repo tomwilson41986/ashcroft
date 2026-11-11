@@ -178,7 +178,7 @@ jobs:
       - name: Summarise into the run page
         if: always()
         run: |
-          { echo "### Fold plan"; echo '```'; cat reports/fit/folds.json 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### Fold plan"; echo '```'; cat reports/fit/folds.json 2>/dev/null || echo "no fold plan: the loop is idle"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
   outcome:
     # The win model on top of the market and the residual screen, beside the
