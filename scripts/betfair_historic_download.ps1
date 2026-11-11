@@ -71,7 +71,17 @@ function Invoke-Historic([string]$Method, $Body) {
     throw "$Method failed 6 times"
 }
 
-function Save-File([string]$Url, [string]$Dest) {
+function Get-ServerMessage($Err) {
+    $m = $Err.ErrorDetails.Message
+    if (-not $m) { $m = $Err.Exception.Message }
+    if ($m.Length -gt 300) { $m = $m.Substring(0, 300) }
+    return $m
+}
+
+function Save-File([string]$Url, [string]$Dest, [string]$Path) {
+    # a 400 (or 401/403) is answered with a fresh login and one more try; if Betfair refuses the file again it is
+    # skipped at once with the server's own message (no long waits); a dropped connection is waited out
+    $relogged = $false
     for ($try = 1; $try -le 6; $try++) {
         try {
             Invoke-WebRequest -Uri $Url -Headers @{ ssoid = $script:token } -OutFile "$Dest.part" -TimeoutSec 300
@@ -79,7 +89,13 @@ function Save-File([string]$Url, [string]$Dest) {
             return $true
         } catch {
             Remove-Item -ErrorAction SilentlyContinue "$Dest.part"
-            if (Test-AuthError $_) { $script:token = Get-Token } else { Wait-Retry $try "download" $_ }
+            if (Test-AuthError $_) {
+                if ($relogged) {
+                    Write-Host ("  refused: {0}`n    server says: {1}" -f $Path, (Get-ServerMessage $_))
+                    return $false
+                }
+                $script:token = Get-Token; $relogged = $true
+            } else { Wait-Retry $try "download" $_ }
         }
     }
     return $false
@@ -115,6 +131,7 @@ $month = [datetime]::ParseExact($To, "yyyy-MM", $null)
 $total = 0; $got = 0; $failed = 0
 $years = @{}
 $unlisted = @()
+$script:inRow = 0
 
 while ($month -ge $start) {
     $last = $month.AddMonths(1).AddDays(-1)
@@ -152,7 +169,14 @@ while ($month -ge $start) {
         if (Test-Path $dest) { continue }
         New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
         $url = "$Api/DownloadFile?filePath=" + [Uri]::EscapeDataString($p)
-        if (Save-File $url $dest) { $new++ } else { $failed++ }
+        if (Save-File $url $dest $p) { $new++; $script:inRow = 0 } else {
+            $failed++; $script:inRow++
+            if ($script:inRow -ge 20) {
+                throw ("20 files in a row refused ({0} failed so far). Betfair may be limiting downloads: wait an hour or " +
+                       "two and run the same command again (files on disk are skipped). Send a screenshot of the " +
+                       "'server says' lines above." -f $failed)
+            }
+        }
     }
     $total += $files.Count; $got += $new
     if ($files.Count) { $years[$month.Year] = $true }
