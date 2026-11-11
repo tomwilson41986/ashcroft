@@ -65,15 +65,37 @@ LEVEL = ["x_cp", "cp_book_sum", "cp_age_s", "cp_book_age_s", "log_ticks_before",
 # data
 # ---------------------------------------------------------------------------------------------------------------
 
+def read_rows(store, table: str, columns: list[str] | None = None, match_odds: bool = False,
+              horizons: bool = True):
+    """A warehouse table as one Arrow table, read a partition at a time and cut down as it is read (match-odds
+    rows, the model's checkpoints): the whole of gold/move or gold/path for ten years would not fit in memory.
+    A single-file table is read whole. None when the table is not built."""
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    from football.warehouse.store_io import list_parts, read_part, read_single
+
+    def cut(t):
+        if horizons and "cp_min" in t.column_names:
+            t = t.filter(pc.is_in(t.column("cp_min"), value_set=pa.array(HORIZONS, t.column("cp_min").type)))
+        if match_odds and "market_type" in t.column_names:
+            t = t.filter(pc.equal(t.column("market_type"), "MATCH_ODDS"))
+        return t
+    parts = list_parts(store, table)
+    if not parts:
+        t = read_single(store, table, columns)
+        return None if t is None else cut(t)
+    got = [cut(t) for y, m in parts if (t := read_part(store, table, y, m, columns)) is not None]
+    return pa.concat_tables(got) if got else None
+
+
 def load(store) -> tuple[pd.DataFrame, dict]:
     """The modelling frame (one row a match-odds runner a checkpoint) and {family: columns}."""
-    from football.warehouse.store_io import read_table
-    mv = read_table(store, "gold/move")
+    mv = read_rows(store, "gold/move", match_odds=True)
     if mv is None:
         return pd.DataFrame(), {}
     d = mv.to_pandas()
-    d = d[(d["market_type"] == "MATCH_ODDS") & d["cp_min"].isin(HORIZONS) & d["role"].isin(ROLES)].copy()
-    ev = read_table(store, "gold/event", ["event_id", "home_id", "away_id"]).to_pandas()
+    d = d[d["role"].isin(ROLES)].copy()
+    ev = read_rows(store, "gold/event", ["event_id", "home_id", "away_id"]).to_pandas()
     d = d.merge(ev, on="event_id", how="left")
     if "cp_fresh" not in d.columns:                  # an older gold/move: the same screen, the checkpoint's side
         d["cp_fresh"] = d["cp_book_age_s"] <= np.maximum(MIN_AGE_S, AGE_SHARE * d["cp_min"] * 60.0)
@@ -85,7 +107,7 @@ def load(store) -> tuple[pd.DataFrame, dict]:
     d["month"] = d["kickoff"].dt.strftime("%Y-%m")
     fam: dict[str, list[str]] = {"level": list(LEVEL)}
 
-    path = read_table(store, "gold/path")
+    path = read_rows(store, "gold/path", match_odds=True)
     if path is not None:
         p = path.to_pandas()
         cols = [c for c in p.columns if c not in KEY + ["event_id", "market_type", "role", "cp_time", "year", "month"]
@@ -93,15 +115,15 @@ def load(store) -> tuple[pd.DataFrame, dict]:
         d = d.merge(p[KEY + cols].rename(columns={c: f"path_{c}" for c in cols}), on=KEY, how="left")
         fam["path"] = [f"path_{c}" for c in cols]
 
-    imp = read_table(store, "gold/implied", ["event_id", "cp_min", "total", "supremacy", "rho", "sup_gap", "ah_line",
-                                              "p_over", "ou_age_s", "ah_age_s", "ah_lines"])
+    imp = read_rows(store, "gold/implied", ["event_id", "cp_min", "total", "supremacy", "rho", "sup_gap", "ah_line",
+                                             "p_over", "ou_age_s", "ah_age_s", "ah_lines"])
     if imp is not None:
         i = imp.to_pandas()
         cols = [c for c in i.columns if c not in ("event_id", "cp_min")]
         d = d.merge(i.rename(columns={c: f"imp_{c}" for c in cols}), on=["event_id", "cp_min"], how="left")
         fam["implied"] = [f"imp_{c}" for c in cols]
 
-    gap = read_table(store, "gold/rating_gap")
+    gap = read_rows(store, "gold/rating_gap")
     if gap is not None:
         g = gap.to_pandas()
         cols = [c for c in g.columns if c not in ("event_id", "cp_min", "cp_time", "kickoff", "year", "month")
