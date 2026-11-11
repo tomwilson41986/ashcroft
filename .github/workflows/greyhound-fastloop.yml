@@ -81,7 +81,7 @@ jobs:
     needs: cache
     if: needs.cache.outputs.quick != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 100   # a race-objective fit at 0.05 took 52 minutes (batch 11, 10 Nov 2026)
+    timeout-minutes: 150   # the stack with three tree seeds and three networks took 83 minutes (batch 24, 11 Nov 2026)
     strategy:
       fail-fast: false
       max-parallel: 16
@@ -153,7 +153,7 @@ jobs:
     needs: cache
     if: needs.cache.outputs.slow != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 100   # a race-objective fit and a study (batch 16, 10 Nov 2026)
+    timeout-minutes: 150   # a race-objective fit and a study (batch 16, 10 Nov 2026)
     strategy:
       fail-fast: false
       max-parallel: 16

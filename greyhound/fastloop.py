@@ -55,11 +55,16 @@ CODE_FILES = ("greyhound/metrics.py", "greyhound/parity.py", "greyhound/hrb.py",
 #: finding 33: nothing stopped one being named in add_features or keep)
 LABELS = ("won", "placed2", "position", "lbw", "beaten_lengths", "run_time", "adjusted_time", "sectional", "runin",
           "gsr", "esr", "fsr", "gsr_clean", "gsr_trouble_adj", "variant", "sp_decimal", "sp_p", "sp_p_norm", "bsp",
-          "bsp_p_norm", "market_pos", "comment", "brk", "epace", "led", "trouble", "path", "fin", "dnf")
+          "bsp_p_norm", "market_pos", "comment", "brk", "epace", "led", "trouble", "path", "fin", "dnf",
+          "ppwap", "morningwap", "morning_vol", "pp_vol", "ipmax", "ipmin", "ip_vol", "win_lose")
 KEEP_FROM = "2020-06-01"
 BLOCKS = ("parity", "hrb", "lib", "times", "intent", "ability", "etime")   # F3, F5, F6 and the expected time
 PRICE_YEARS = "2018-2026"
 EXTRA_COLS = ("bsp", "bsp_p_norm", "weight_kg")     # the raw weight: the predicted weigh-in block (wpred)
+#: Betfair's price files beside each scored runner (the pre-off average price, the morning's, the money matched on
+#: each): joined AFTER the fit, to the saved predictions only - how thin was the market the price is scored against,
+#: and what it said before the off (research/greyhound/depth_blend.py). Never a feature: they are in LABELS
+PRICE_EXTRAS = ("ppwap", "morningwap", "morning_vol", "pp_vol")
 TEST_FROM = "2026-06-01"
 STUDY_FROM = "2026-10-06"
 RECIPES = {
@@ -676,6 +681,36 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     return res, pred
 
 
+def price_extras(store, pred: pd.DataFrame) -> pd.DataFrame:
+    """``pred`` with Betfair's price-file columns beside each runner (``PRICE_EXTRAS``; GB win markets, by day, off
+    time, track and trap, as ``parity.attach_bsp`` joins the SP). The rows and their order are kept; a runner the
+    files do not have is NaN. Read after the fit and never by it."""
+    from greyhound.data import canonical_track
+    from greyhound.model import load_prices
+    need = {"race_date", "race_time", "track", "trap"}
+    if not len(pred) or not need <= set(pred.columns):
+        return pred
+    years = pred.race_date.astype(str).str[:4]
+    prices = load_prices(store, f"{years.min()}-{years.max()}")
+    cols = [c for c in PRICE_EXTRAS if prices is not None and c in prices.columns]
+    if not cols:
+        return pred
+    w = prices[["race_date", "race_time", "track", "trap"] + cols].dropna(subset=["trap"])
+    w = w.assign(track=canonical_track(w.track).astype(str), trap=w.trap.astype(float),
+                 race_date=w.race_date.astype(str), race_time=w.race_time.astype(str).str[:5])
+    w = w.drop_duplicates(["race_date", "race_time", "track", "trap"], keep="last")
+    left = pred.drop(columns=[c for c in cols if c in pred.columns])
+    key = pd.DataFrame({"race_date": left.race_date.astype(str).to_numpy(),
+                        "race_time": left.race_time.astype(str).str[:5].to_numpy(),
+                        "track": left.track.astype(str).to_numpy(),
+                        "trap": pd.to_numeric(left.trap, errors="coerce").to_numpy(float)})
+    j = key.merge(w, on=["race_date", "race_time", "track", "trap"], how="left")
+    assert len(j) == len(left)
+    for c in cols:
+        left[c] = j[c].to_numpy(float)
+    return left
+
+
 def saved_prices(store, exp: dict) -> tuple[dict, pd.DataFrame]:
     """An experiment's prices saved by an earlier run (``save_pred``: ``<prefix>/<name>.parquet``), scored as a fit's
     would be, for the studies to read without fitting again."""
@@ -1179,11 +1214,18 @@ def main(argv=None) -> int:
                 if e.get("limit"):
                     gs["limit"] = run_limit(store, sub, gname, out)
                 res["groups_study"][g] = gs
+        try:
+            pred = price_extras(store, pred)
+            res["price_extras"] = {c: int(pred[c].notna().sum()) for c in PRICE_EXTRAS if c in pred}
+        except Exception as ex:                                   # never an arm lost for a column beside its result
+            _log(f"price extras not joined: {type(ex).__name__}: {ex}")
+            res["price_extras"] = {"error": f"{type(ex).__name__}: {ex}"}
         (out / f"result_{e['name']}.json").write_text(json.dumps(res, indent=1, default=str))
         # each runner's log-loss contribution, for the paired comparison against the baseline in --collect
         keep = ["race_id", "race_date", "dog_id", "won", "p_model"] + [c for c in ("bsp", "pred_bsp") if c in pred]
         # the race's identity too, for strategies scored on these prices (place markets joined by day, time, track, trap)
         keep += [c for c in ("race_time", "track", "trap", "dog_name", "field", "runs_before") if c in pred]
+        keep += [c for c in PRICE_EXTRAS if c in pred]
         pred[keep].to_parquet(out / f"pred_{e['name']}.parquet", index=False)      # bsp, pred_bsp: the paired RMSE
         results.append(res)
         _log(json.dumps({k: res[k] for k in ("name", "logloss", "rounds", "seconds")}))
