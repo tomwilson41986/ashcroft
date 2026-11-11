@@ -1715,3 +1715,143 @@ reads the BSP and the winner from the settled books and writes the SP close and 
 and `tests/test_workflow_guards.py` fail if one is added, or if the job ever gives it `--live`. The registered gate
 is unchanged: it is the study's procedure on the recorded books (the 2 Dec check-in). This trader is its execution
 shadow on the live-key books, read beside it.
+
+## 41. Back to the fundamental model: the expected time (11 Nov 2026)
+
+racing² - greyhound. The owner, 11 Nov: "let's go back to the fundamental model. Can we improve it? Expected Time -
+review all features that go into this. Are they engineered correctly? Can we create a specific Expected Time model
+per dog per race... Research leading greyhound racing experts in the world. How do they handicap and rate races?"
+
+### 41.1 The review: what the time features do now, and what is wrong
+
+Read from the code (file and line in each case); nothing here is a score.
+
+| Family | What it is | Faults found |
+|---|---|---|
+| Engine figures `gsr`, `esr`, `fsr` (`greyhound/metrics.py` `_per_run`, lines 156-189) | time against the all-history mean of winners at the track and trip, a meeting variant the median of the night's winners | trials are in the standard, the variant and the figures (the comment at line 183 says they are not); the variant is unshrunk, even from one winner; the run home is charged the whole going allowance and the sectional none; one standard for all history, so a re-laid track drifts the figure for good; hurdles share the flat standard |
+| Track-normalised times `tn_` (`greyhound/times.py`) | rolling medians of winners over 28, 91 and 365 days, a shrunk variant | the variant is measured against the all-history standard and applied to the rolling one, so a track's drift is counted twice; a standard can rest on one winner (`min_periods=1`); trials in |
+| Expected time `et_` (`greyhound/etime.py`) | the dog's time as a fraction of the standard: last, mean of 3, weighted 6, best 6, a career mean shrunk to the grade | the career mean has no decay (a puppy run weighs as last week's); "the same fraction at any trip" is assumed, not fitted; no trap, age, days off, weight or trouble term; trials dropped, so a debutant with three trials reads only its grade |
+| Corrected figures `fg_` (`greyhound/pit/figs.py`) | the best of the four: own standard and own shrunk variant a figure, 90-day decay, shrunk to the grade's par | the variant still rests on the 10 to 14 winners of the night, in seconds over every trip; trials and troubled runs at half weight with no offset; hurdles and handicaps mixed in; no dog by track or dog by trip term |
+| Trend and age `fm_` (`greyhound/pit/form.py`) | a local-trend Kalman filter on the whole-race figure with an age drift | the age curve is the unweighted mean of change over gap, which the 3 to 7 day gaps dominate; a debutant has no level |
+| Kalman levels `kf_` (`greyhound/pit/ability.py`) | a local level on the engine's figures | inherits the engine's faults; days off enter the spread only, never the mean |
+
+In every family: the standard is made of winners' times with no link between tracks (a dog's figure at one track is
+assumed comparable with another's elsewhere), GBGB's `going` allowance is read by no time feature, handicap races
+(staggered starts) are never set apart, and **nothing models the mean effect on the time** of the trap, the dog's age,
+days off, a change of trip, a first run at a track, or its weight. Not checked on data: whether a loser's calculated
+time is its own clock or the winner's plus lengths at 0.08 s (GBGB rule 139 says the latter).
+
+### 41.2 How the experts rate a race
+
+Web research of 11 Nov 2026; each line carries its source. Where no source was found it says so.
+
+| Who | Method | What it means for a model |
+|---|---|---|
+| Timeform (UK) | each run rated from its calculated time against an expected time for the field, corrected for trouble, on a 0-140 scale fixed a track and trip; the expected rating the mean of the last 8 runs over the same number of bends; a going allowance of their own a race, scaled to the distance and adjusted for early or late in the meeting; the sectional rated apart on the same scale ([Timeform](https://www.timeform.com/GREYHOUND-RACING/beginners-guide/betting/ratings-and-sectionals-explained-1382020)) | an expected time a dog a race; a variant from the whole field against expectation, in proportion to the trip; trouble priced; early pace its own rating |
+| GBGB | calculated time: the winner's time with the going allowance, the others by lengths at 0.08 s; handicaps 0.08 s a metre ([rule 139](https://rules.gbgb.org.uk/section-7-trials-meetings-and-race-meetings/rule-139-beaten-distance-calculated-time)); the allowance is the racing manager's ([rule 151](https://rules.gbgb.org.uk/section-7-trials-meetings-and-race-meetings/rule-151-records-of-trials-and-races-going-allowances/)); seeding as railer, middle or wide ([rule 78](https://rules.gbgb.org.uk/section-5-organisation-of-races-and-trials/rule-78-wide-middle-and-railer-definitions/)) | handicaps need their own handling; the official going is one man's estimate, so estimate our own |
+| Track statisticians | going allowances differ by trip at one meeting (an example quoted: 15, 40, 55 and 80 hundredths slow for 2, 4, 6 and 8 bends), and a change of traps or timing moves a standard ([Greyhound Stats UK](https://greyhoundstats.co.uk/track_comparison_all.php)) | a variant in percent of the time, not in seconds; a standard that moves with the track |
+| Form writers | bitches: at least 21 days off after a season, usually 8 to 10 weeks, said to peak 14 to 16 weeks after it and to come back around the fourth or fifth run ([Greyhound News UK](https://greyhoundnewsuk.com/article/season-dates-a-punters-point-of-view)); age: puppies under 24 months improving, veterans over 48 declining, peak commonly put at 30 to 36 months ([Towcester](https://towcester-racecourse.co.uk/?p=32841)) - practitioners' views, no study behind them | days off and runs since a layoff, by sex; an age curve by sex |
+| Australia | box (trap) statistics a track ([GRV](https://www.grv.org.au/news/2020/10/06/four-wave-boxing-method-in-numbers/)); how a dog leaves the boxes and its running line against its box and its neighbours ([GRV Watchdog](https://www.grv.org.au/news/2020/12/22/race-patterns-revealed-giving-punters-an-inside-edge/)) | the trap's effect a track and trip; early pace against the dogs drawn either side |
+| Academic | Chen 1994 and Schumaker 2008 used ten expert variables (fastest time, win and place rates over 7 races, break and finish averages, mean times over 7 and 3 races, grade and its moves); Lyons 2016 (10,986 races at Shelbourne Park) found age, weight, mean time and sectional over 5 runs, mean grade, break and bend positions, trap and field size; its models picked 18 to 19% winners against the track expert's 23.7% ([Schumaker's review](https://www.robschumaker.com/publications/JITIM%20-%20The%20Complete%20Effect%20of%20Race%20History%20on%20Prediction.pdf), [Lyons](https://norma.ncirl.ie/2527/1/alvalyons.pdf)) | the same list the experts give; short windows of 3 to 8 runs |
+
+No published method was found for the Racing Post's greyhound ratings, for the size of Timeform's trouble
+adjustments, or for any numeric adjustment for trap, age, layoff or a change of trip: those are fitted here, not
+taken from a source. The American "speed, class, early speed, post position" books were found only in forum posts.
+
+What the experts agree on, in the order a handicapper works (our synthesis, not a sourced ranking): the going-adjusted
+time at the track and trip; early pace; the trap against the dog's style and its neighbours' pace; trouble taken out
+of past runs; the move in class; recent runs over old ones; the run home; age; a bitch's season; trap bias and weight.
+
+### 41.3 The expected-time model (`greyhound/pit/xtime.py`, columns `xt_`)
+
+One model of the time itself, a dog a race, fitted walking forward a day at a time:
+
+    100 x ln(time) = standard(track, trip, hurdles) + variant(meeting)
+                     + the dog's level + its preference (this track and trip; this distance band)
+                     + trap(track, trip, trap) + grade(track, trip, grade)
+                     + adjustments (trial, field size, age by sex, days off by sex, runs since a layoff by sex,
+                       experience, first run at the track or trip, change of track, change of trip, last weight
+                       against the dog's own mean)
+                     + trouble(the run's comment codes) + noise
+
+| The owner's ask | How it is met |
+|---|---|
+| priors | a dog with no run has the mean level of the dogs it is graded to meet, else of its grade there; the level is a Kalman filter whose run noise, daily drift and new-dog spread are fitted on the years before 2018 |
+| track adjusted | a standard a track and trip that moves with the track, linked across tracks by the dogs that move (the level is in percent, so it carries); hurdles apart; handicap races read by nothing |
+| going adjusted | our own meeting variant from every runner's error against its expected time, shrunk by the evidence, in percent so it scales with the trip (Timeform's method) |
+| distance adjusted | the level carries in percent; a fitted effect of going up or down in trip; the dog's own preference for the trip and for the distance band |
+| age | an effect every 3 months of age from 12 to 66, dogs and bitches apart |
+| recency, days off | the level's uncertainty grows a day off; a mean effect of days off in 10 bands, and of the first to fifth run back from 28 days off, by sex (the season, which GBGB's history does not date) |
+| features | trap at the track and trip, the grade, field size, trial, first run at the track or trip, change of track, weight |
+| trouble | each interference code (crowded, bumped, baulked, checked, hampered, stumbled) priced in the same regression, capped at 1.5% a run; a past run enters the level at what it would have run clear. Codes that say where the dog ran (led, ran on) are not priced: section 41.5 |
+
+The three times (whole race, sectional, run home) are each modelled so. The experts' view is the race-relative
+columns: lengths against the field on each time, the expected sectional against the dog one trap inside and one
+outside, how clear of both, the expected leader's margin, and early pace less run home (front runner or closer).
+The adjustments and code prices are refitted each year on the years before only; every column is from earlier days
+(`tests/test_greyhound_xtime.py`: the last day's results move nothing, a card row gets what its run had, and a
+planted trap effect, layoff effect, trouble cost and slow night are each found).
+
+**Not in it yet:** the racing manager's seeding (railer, middle, wide: not in our GBGB fields), a within-meeting
+drift of the going, the bitch's dated season (the day's cards carry it going forward), the predicted weigh-in.
+
+### 41.4 The test (registered before its scores)
+
+`research/greyhound/experiments/batch23_expected_time.json`: the live model's trees at one seed against the same
+with the table added, with the older time families dropped (`et_`, `tn_`, `kf_`), and with the figs and form time
+figures dropped too. The bar as before: 3 standard errors on the RMSE of log(BSP), the log-loss no worse beyond 1.
+The table's own accuracy (the error of the expected time in lengths a year, out of sample by construction) is in
+its build's meta.
+
+### 41.5 The table on the real data (greyhound-pit.yml, 3,966,889 runs, 6 Jan 2014 to 10 Nov 2026)
+
+**The first build failed its own check (run 43055884883).** The error of the expected whole-race time grew from 5.13
+lengths in 2014 to 11.93 in 2026, and within a race the forecast was worse with the dog's level than without it
+(3.72 against 3.15 lengths in 2026). Two faults, both fixed and each now under a test:
+
+1. every comment code was priced, so "always led" took 3.9% off a fast run and "badly baulked 1st" added 4.3%:
+   leading is what a fast run looks like, so the level never learnt the run. Only interference is priced now
+   (crowded, bumped, baulked, checked, hampered, stumbled), never below 0 and 1.5% a run at most;
+2. the standard was updated after the meeting variant, which hid every lasting error from it. It now reads the error
+   before the variant.
+
+**The third build (run 43059863822; the second, 43058158856, differs only in the filter's grid).** The error of the
+forecast, in lengths, graded runs of dogs with a run behind them, each year priced only from earlier days:
+
+| Time | Year | Runs | Error before the race | After the meeting variant | Within the race | Within the race, no dog term |
+|---|---|---|---|---|---|---|
+| Whole race | 2014 | 285,300 | 4.24 | 3.86 | 3.20 | 3.21 |
+| Whole race | 2019 | 320,859 | 4.13 | 3.84 | 3.22 | 3.28 |
+| Whole race | 2022 | 269,277 | 3.95 | 3.82 | 3.29 | 3.34 |
+| Whole race | 2025 | 255,209 | 3.82 | 3.64 | 3.10 | 3.18 |
+| Whole race | 2026 | 204,795 | 3.83 | 3.67 | 3.12 | 3.20 |
+| Sectional | 2014 | 268,170 | 1.14 | 1.07 | 0.92 | 1.06 |
+| Sectional | 2022 | 206,763 | 1.11 | 1.05 | 0.90 | 1.05 |
+| Sectional | 2026 | 129,631 | 1.11 | 1.04 | 0.87 | 1.01 |
+| Run home | 2014 | 266,449 | 4.11 | 3.49 | 2.90 | 3.01 |
+| Run home | 2022 | 222,293 | 4.19 | 3.62 | 3.05 | 3.18 |
+| Run home | 2026 | 137,855 | 4.08 | 3.57 | 2.97 | 3.10 |
+
+The error no longer grows. The dog's level helps in every year, most on the sectional (14% within the race in 2026)
+and least on the whole-race time (2%): a graded race is matched on ability, so most of what separates the runners'
+times within it is the run itself. The filter's constants: whole race noise 1.6, drift 0.001 a day, new-dog spread
+0.3 (inside the grid; the surface is flat, 0.8473 against 0.8478 for the next three).
+
+**The fitted adjustments to the whole-race time** (percent of the time, the last yearly fit; 1% of a 29.5 s race is
+about 3.7 lengths; below 0 is faster than the dog's level says):
+
+| Factor | Effect |
+|---|---|
+| Age | fastest against its level at 18 to 24 months (dogs -0.44%, bitches -0.34%), level at about 39 months, +0.35% at 60 months, +0.43% (dogs) at 66 |
+| Days off | -0.22% inside a week, -0.12% at 11 to 14 days, +0.03% at 22 to 35, +0.30% after 181 days |
+| Bitches after a break | +0.21% after 36 to 60 days and +0.25% after 61 to 100, against +0.10% and +0.12% for dogs; the second run back +0.18% (dogs +0.07%), level by the fourth |
+| Weight | more than 1 kg under its own mean +0.19%; 0.4 to 1 kg under +0.05%; over its mean, nothing |
+| Trip | up in trip +0.12%, down -0.13% |
+| Field | races of 2 to 4 runners 0.32% to 0.51% faster than a field of six |
+| Experience | the first 9 runs about -0.2% (still improving on its level) |
+| First run at the track | +0.05% |
+
+The bitches' figures match the form writers' account of the season (slower on return, right by the fourth or fifth
+run) without the season's date; the age curve puts the improving phase earlier than the practitioners' "peak at 30
+to 36 months", because it is measured against the dog's own level, which is still catching up at 18 to 24 months.
+Batch 23's scores: pending.
