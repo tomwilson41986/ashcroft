@@ -5,8 +5,9 @@ at the close: the log and logit change of its normalised chance, the raw price r
 trust both ends (the books' stalest prices, the activity before and after the checkpoint). ``cp_fresh`` is the
 screen on the checkpoint's side: its book no staler than a quarter of the time left to the off (15 minutes at
 least); it is known at the checkpoint. ``usable`` adds a closing book no staler than 15 minutes: a reliable label,
-for choosing training and scoring rows, not trades (the close's freshness is not known in advance). ``tier`` is the match's liquidity by its pre-off match-odds
-price updates (BASIC has no volume): A 300 or more, B 120 to 299, C 40 to 119, D under 40.
+for choosing training and scoring rows, not trades (the close's freshness is not known in advance). ``tier`` is
+the match's liquidity by its pre-off match-odds price updates (BASIC has no volume): A 300 or more, B 120 to 299,
+C 40 to 119, D under 40.
 
 Match odds and over/under: every runner. Asian handicap: every line complete at both ends, with ``is_main`` on the
 line nearest evens at the checkpoint (a market's main line).

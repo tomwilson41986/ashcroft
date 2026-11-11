@@ -12,8 +12,9 @@ price no older than ``MAX_AGE_S`` at the off): a stale last traded price is not 
 Per cell (by selection; by chance band; and, on the match-odds favourite, by liquidity tier, category and the
 country codes with most matches: a whole match's selections are calibrated by construction): selections, the mean
 closing chance, the realised rate, the gap with a standard error from resampled match days, and the return to
-backing every selection in the cell at its closing price before commission. Overall: log loss and Brier score of the close, and the slope of a
-logistic fit of the result on the closing log odds (above one: favourites win more often than priced).
+backing every selection in the cell at its closing price before commission. Overall: log loss and Brier score of
+the close, and the slope of a logistic fit of the result on the closing log odds (above one: favourites win more
+often than priced).
 
     python -m research.open_close.football_bf_efficiency --out-json out/bf_efficiency.json [--root <local folder>]
 """

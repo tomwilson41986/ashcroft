@@ -236,6 +236,39 @@ def empty(spec: TableSpec) -> pa.Table:
     return spec.schema.empty_table()
 
 
+def from_frame(spec: TableSpec, frame) -> pa.Table:
+    """A pandas frame as an Arrow table under the spec: its columns, in order, in its types. A NaN (or NaT, or
+    None) is a blank, in whole-number columns too; a timestamp may come as a pandas datetime or as integer
+    milliseconds."""
+    import numpy as np
+    import pandas as pd
+
+    cols = {}
+    for c in spec.columns:
+        v = frame[c.name]
+        if pa.types.is_timestamp(c.type):
+            if pd.api.types.is_datetime64_any_dtype(v):
+                ts = v.dt.tz_localize("UTC") if v.dt.tz is None else v.dt.tz_convert("UTC")
+                blank = ts.isna().to_numpy()
+                ms = ts.dt.as_unit("ms").astype("int64").to_numpy()
+                cols[c.name] = pa.array(np.where(blank, 0, ms).astype("int64"), pa.int64(), mask=blank).cast(c.type)
+            else:
+                a = v.to_numpy(float)
+                blank = ~np.isfinite(a)
+                cols[c.name] = pa.array(np.where(blank, 0, a).astype("int64"), pa.int64(), mask=blank).cast(c.type)
+        elif pa.types.is_integer(c.type) and v.dtype.kind == "f":
+            a = v.to_numpy(float)
+            blank = ~np.isfinite(a)
+            cols[c.name] = pa.array(np.where(blank, 0, a).astype("int64"), c.type, mask=blank)
+        elif pa.types.is_boolean(c.type) and v.dtype == object:
+            cols[c.name] = pa.array([None if x is None or x != x else bool(x) for x in v], c.type)
+        elif pa.types.is_string(c.type):
+            cols[c.name] = pa.array([None if x is None or x != x else str(x) for x in v], c.type)
+        else:
+            cols[c.name] = pa.array(v.to_numpy(), c.type, from_pandas=True)
+    return pa.table(cols)
+
+
 def conform(spec: TableSpec, table: pa.Table) -> pa.Table:
     """``table`` with exactly the spec's columns, in order, cast to its types; a key or required column holding a
     null is an error (the contract a reader relies on)."""

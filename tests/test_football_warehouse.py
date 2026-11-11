@@ -359,4 +359,4 @@ def test_the_dictionary_documents_every_table_and_column():
         assert f"## `{spec.name}`" in md
         for c in spec.columns:
             assert f"| `{c.name}` |" in md and c.doc.strip(), (spec.name, c.name)
-    assert "—" not in md
+    assert "\u2014" not in md

@@ -153,6 +153,9 @@ def load(store) -> tuple[pd.DataFrame, dict]:
 
     d = memory(d)
     fam["memory"] = ["mm_own", "mm_own_n", "mm_opp", "mm_opp_n", "mm_country", "mm_country_n"]
+    for c in (c for cols in fam.values() for c in cols):          # a flag left blank by a join is a float, not text
+        if d[c].dtype == object or d[c].dtype == bool:
+            d[c] = d[c].astype(float)
     return d.reset_index(drop=True), fam
 
 

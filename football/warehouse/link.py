@@ -10,9 +10,10 @@ markets trade in, line-ups, goal minutes and xG (``api_football/history_*.parque
 - ``gold/team_link``: one row a Betfair team id: the API-Football team it most often links to (a majority vote
   over its linked matches), the share of them that agree, and our canonical team id where there is one;
 - ``gold/goal_check``: one row a linked match: the goals inferred from prices (``gold/goal``) against
-  API-Football's goal events, by count and by minute.
+  API-Football's goal events (``api_football/history_events.parquet``), by count, score, minute and side.
 
-How an event finds its fixture (``link_events``), strongest evidence first, a fixture never given to two events:
+How an event finds its fixture (``link_events``), strongest evidence first, a fixture never given to two events
+(of a match Betfair listed twice, the listing it settled gets the fixture, not the void one):
 
 1. *exact*: both sides' names equal after ``football.reference.normalise`` (the squad marker made one: '(W)',
    'Women' and 'Ladies' are the same squad, 'B' and 'II' are), kick-offs within ``EXACT_TOL_MIN``. A reviewed alias
@@ -27,12 +28,24 @@ How an event finds its fixture (``link_events``), strongest evidence first, a fi
    ``FUZZY_MARGIN``. Sides of different squads never match (a women's or under-21 side against the senior one).
    Then the team rounds again.
 
-A link by anything but the names being equal is dropped when both sources hold a result and they disagree.
+A link by anything but the names being equal is dropped when a settlement both sources hold disagrees: Betfair's
+1X2 result, or its over/under 2.5, against the fixture's score after 90 minutes. The drops are counted by method in
+the run's report (``vetoed``): a wrong fixture's score fails one of the two 81 times in 100 (measured: 6,111
+linked events, each against 50 other fixtures' scores), so the count says how many wrong links the names and
+teams proposed, and about a quarter of it how many got through.
 
 The tolerances are measured (11 Nov 2026, the owner's 2026 Betfair download against API-Football's 22 main
 divisions): of 4,246 exact-name pairs within half a day, 3,961 were within 1 minute, 4,241 within 30, the other 5
 within 90 (late kick-offs Betfair's market time followed), none between 90 minutes and 12 hours, and every one
 whose result both sources hold agreed. So 30 minutes where the names are not proof, 180 where they are.
+
+So is the precision (the same data, the link run blind to the settlements and then scored against them): of
+6,115 links every one whose result is known agreed (6,111), and every one whose over/under is (6,112); by the
+names alone the fuzzy pass made 1,699 links, none contradicted. With each event's own fixture taken away (the
+55,015 Betfair events against one another, any link a wrong one) the fuzzy pass linked 5 pairs, each one match
+listed twice, once a name of initials was stopped from resembling everything (``side_score``). The fixtures
+table of every competition is about seven times denser than that test's pool: the report of each run lists what
+to look at (``vetoed``, ``disagreements``, ``weakest_links``).
 
 Not a gold module run by ``gold.build``: the API-Football and canonical tables live in the capture bucket, so the
 stage runs where they are (a workflow), reads ``gold/event`` and ``gold/team`` from the warehouse and writes single
@@ -120,6 +133,8 @@ LINK = TableSpec(
         Column("result_agrees", pa.bool_(), "Whether that score gives the result Betfair settled (blank when "
                "either is missing). False on an exact link marks a data error to review; other methods never "
                "keep one."),
+        Column("over25_agrees", pa.bool_(), "Whether that score's total (three goals or more) is the over/under "
+               "2.5 Betfair settled (blank when either is missing). As result_agrees: False only on exact links."),
         Column("match_id", pa.string(), "Our canonical match id (football.data.make_match_id) where the fixture "
                "is one of the 38 football-data competitions' matches."),
         Column("competition_id", pa.string(), "Our competition id (ENG1 ...): the canonical match's, else the "
@@ -160,20 +175,29 @@ GOAL_CHECK = TableSpec(
         Column("apif_fixture_id", pa.int64(), "API-Football's fixture id.", False),
         Column("clock", pa.string(), "What the wall clock was measured from: 'actual' (the market's turn in play) "
                "or 'fixture' (the fixture's scheduled kick-off: a late start is allowed for).", False),
+        Column("usable", pa.bool_(), "gold/timeline's data rule for the match (enough price rows, no long gap, in "
+               "play from the kick-off): judge the inference on these. Blank without gold/timeline."),
         Column("has_events", pa.bool_(), "Whether API-Football's events are held for the fixture.", False),
         Column("n_inferred", pa.int16(), "Goals inferred from prices.", False),
-        Column("n_apif", pa.int16(), "API-Football's goal events (normal, penalty, own goal) within the 90 "
-               "minutes; blank without events."),
+        Column("n_apif", pa.int16(), "API-Football's goal events (normal, penalty, own goal; not a missed "
+               "penalty) within the 90 minutes; blank without events."),
         Column("n_ft", pa.int16(), "Goals in API-Football's 90-minute score; blank without one."),
         Column("count_diff", pa.int16(), "n_inferred less the true count (n_ft, else n_apif).", False),
         Column("count_agrees", pa.bool_(), "count_diff is 0.", False),
+        Column("score_agrees", pa.bool_(), "Whether the inferred goals give the true score, side by side (the "
+               "90-minute score, else the goal events'). False when the count differs; blank when the count "
+               "agrees and an inferred goal, or a goal event, names no side."),
         Column("n_matched", pa.int16(), "Inferred goals paired with a goal event (in order, within "
                f"{2 * GAP_COST:.0f} minutes).", False),
         Column("n_within_tol", pa.int16(), f"Of those, pairs whose minute agrees within {MINUTE_TOL:.0f}.", False),
-        Column("n_side_known", pa.int16(), "Pairs where both sources name the scoring side.", False),
+        Column("n_side_known", pa.int16(), "Pairs where both sources name the scoring side (API-Football lists an "
+               "own goal under the side it counts for).", False),
         Column("n_side_agree", pa.int16(), "Of those, pairs that name the same side.", False),
-        Column("minute_mae", pa.float64(), "Mean absolute minute error of the pairs."),
+        Column("minute_mae", pa.float64(), "Mean absolute minute error of the pairs on the wall clock (in the "
+               f"second half only what lies outside a lag of {HT_LAG[0]:.0f} to {HT_LAG[1]:.0f} minutes)."),
         Column("minute_err_max", pa.float64(), "The largest absolute minute error."),
+        Column("match_min_mae", pa.float64(), "Mean absolute error of gold/goal's match_min over the pairs, against "
+               "the middle of the real goal's minute (capped at 45 and 90 as match_min is)."),
         Column("ht_lag_min", pa.float64(), "Median of wall clock less match clock over the second-half pairs: the "
                "half-time break plus first-half stoppage this match shows."),
     ),
@@ -235,20 +259,24 @@ def side_score(a: str, b: str, floor: float = 0.0) -> float:
     """How alike two name keys are, 0 to 1: 0 for different squads; else ``football.reference.similarity`` of the
     club names, and no more than their similarity with lone letters left out (its prefix rule lets a lone letter
     stand for any word: 'Arsenal (W)' against 'Wigan', 'A.C. Trento S.C.S.D.' against 'Cagliari', both measured
-    false links). A score that cannot reach ``floor`` is returned as 0 without the costly comparison."""
+    false links). A name of initials alone ('A.E.L.') equals the same letters written together ('AEL') and resembles
+    nothing else ('A.E.L. v Aris Limassol' was 'Atromitos v Aris', sides swapped, half an hour apart: measured). A
+    score that cannot reach ``floor`` is returned as 0 without the costly comparison."""
     if a == b:
         return 1.0 if a.split("|", 1)[0] else 0.0
     ca, sa = a.split("|", 1)
     cb, sb = b.split("|", 1)
     if sa != sb or not ca or not cb:
         return 0.0
-    if ca == cb:
-        return 1.0
+    if ca == cb or ca.replace(" ", "") == cb.replace(" ", ""):
+        return 1.0                                   # 'A.E.L.' is 'AEL'
+    la, lb = _no_lone(ca), _no_lone(cb)
+    if not la or not lb:
+        return 0.0                                   # initials alone resemble every name that starts with one of them
     if floor and 2 * min(len(ca), len(cb)) < floor * (len(ca) + len(cb)) and not _related(ca.split(), cb.split()):
         return 0.0                                   # no shared word start, and too unequal for the character ratio
     s = similarity(ca, cb)
-    la, lb = _no_lone(ca), _no_lone(cb)
-    if s and la and lb and (la != ca or lb != cb):
+    if s and (la != ca or lb != cb):
         s = min(s, similarity(la, lb))
     return s
 
@@ -277,6 +305,12 @@ def _minutes(s) -> np.ndarray:
     """A UTC time column as minutes since 1970 (blank: NaN), whatever its unit."""
     t = pd.to_datetime(pd.Series(s).reset_index(drop=True), utc=True, errors="coerce")
     return ((t - pd.Timestamp(0, tz="UTC")) / pd.Timedelta(minutes=1)).to_numpy(dtype=float)
+
+
+def _text(s) -> pd.Series:
+    """A text column with None for every blank (NaN, NA), as plain objects: the same in any pandas."""
+    return pd.Series([None if v is None or v is pd.NA or v != v else v for v in s], index=getattr(s, "index", None),
+                     dtype=object)
 
 
 def _num(df: pd.DataFrame, col: str) -> np.ndarray:
@@ -339,14 +373,33 @@ def _ix(c: pd.DataFrame, col: str) -> np.ndarray:
     return c[col].to_numpy(dtype=np.int64)
 
 
-def _result_sign(result) -> np.ndarray:
-    return pd.Series(result).map({"H": 1.0, "D": 0.0, "A": -1.0}).to_numpy(dtype=float)
+class _Settled:
+    """What each source says of a finished match: Betfair's settled 1X2 result and over/under 2.5 goals (gold/event's
+    ``result`` and ``over25``) and the fixture's score after 90 minutes. Each check is 1.0 where the two agree, 0.0
+    where they do not, NaN where either is blank."""
 
+    def __init__(self, ev: pd.DataFrame, fx: pd.DataFrame):
+        self.res = pd.Series(ev["result"]).map({"H": 1.0, "D": 0.0, "A": -1.0}).to_numpy(dtype=float) \
+            if "result" in ev.columns else np.full(len(ev), np.nan)
+        self.ou = _num(ev, "over25")
+        self.ft_h, self.ft_a = _num(fx, "ft_home"), _num(fx, "ft_away")
 
-def _agrees(res_e: np.ndarray, gd_f: np.ndarray, swapped: np.ndarray) -> np.ndarray:
-    """1.0 where the fixture's score gives the event's result, 0.0 where it does not, NaN where either is blank."""
-    sign = np.sign(gd_f) * np.where(swapped, -1.0, 1.0)
-    return np.where(np.isnan(res_e) | np.isnan(gd_f), np.nan, (res_e == sign).astype(float))
+    def result(self, e, f, swapped) -> np.ndarray:
+        gd = self.ft_h[f] - self.ft_a[f]
+        sign = np.sign(gd) * np.where(swapped, -1.0, 1.0)
+        return np.where(np.isnan(self.res[e]) | np.isnan(gd), np.nan, (self.res[e] == sign).astype(float))
+
+    def over25(self, e, f) -> np.ndarray:
+        total = self.ft_h[f] + self.ft_a[f]
+        return np.where(np.isnan(self.ou[e]) | np.isnan(total), np.nan,
+                        ((total >= 3) == (self.ou[e] == 1.0)).astype(float))
+
+    def verdict(self, c: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+        """For candidate links (e, f, swapped): (whether a settlement both sources hold disagrees, whether the
+        result is not confirmed: either source lacks it)."""
+        e, f = _ix(c, "e"), _ix(c, "f")
+        res = self.result(e, f, c["swapped"].to_numpy(dtype=bool))
+        return (res == 0.0) | (self.over25(e, f) == 0.0), res != 1.0
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -362,15 +415,29 @@ class _State:
         self.method = np.full(n_events, "none", dtype=object)
         self.score = np.full(n_events, np.nan)
         self.taken = np.zeros(n_fixtures, dtype=bool)
+        self.vetoed: dict[str, set] = {}             # candidate links (e, f) dropped because a settlement disagreed
+
+    def veto(self, cand: pd.DataFrame, settled: _Settled, method: str) -> pd.DataFrame:
+        """``cand`` without the candidates a settlement contradicts (the drops are counted), with ``assign``'s
+        ``bad`` (False) and ``unsure``."""
+        if not len(cand):
+            return cand.assign(bad=False, unsure=False)
+        bad, unsure = settled.verdict(cand)
+        if bad.any():                                   # a set: the team rounds meet the same candidate again
+            e, f = _ix(cand, "e")[bad], _ix(cand, "f")[bad]
+            self.vetoed.setdefault(method, set()).update(zip(e.tolist(), f.tolist()))
+        return cand[~bad].assign(bad=False, unsure=unsure[~bad])
 
     def assign(self, cand: pd.DataFrame, method=None) -> int:
-        """Give each event of ``cand`` (e, f, swapped, score, gap, bad, [method]) its best free fixture: best
-        score first, then the result not disagreeing, the sides the same way round, the nearer kick-off, the
-        lower ids. One event a fixture, one fixture an event."""
+        """Give each event of ``cand`` (e, f, swapped, score, gap, bad, unsure, [method]) its best free fixture:
+        best score first, then the settlements not disagreeing (``bad``), the result confirmed (``unsure``: of a
+        match Betfair listed twice the listing it settled gets the fixture, not the void one), the sides the same
+        way round, the nearer kick-off, the lower ids. One event a fixture, one fixture an event."""
         if not len(cand):
             return 0
         c = cand.assign(absgap=cand["gap"].abs()).sort_values(
-            ["score", "bad", "swapped", "absgap", "e", "f"], ascending=[False, True, True, True, True, True])
+            ["score", "bad", "unsure", "swapped", "absgap", "e", "f"],
+            ascending=[False, True, True, True, True, True, True])
         methods = c["method"].to_numpy() if "method" in c.columns else None
         made = 0
         for i, (e, f, sw, sc) in enumerate(zip(_ix(c, "e"), _ix(c, "f"), c["swapped"].to_numpy(dtype=bool),
@@ -383,7 +450,7 @@ class _State:
         return made
 
 
-def _exact(E: _Side, F: _Side, st: _State, res_e, gd_f, tol: float) -> int:
+def _exact(E: _Side, F: _Side, st: _State, settled: _Settled, tol: float) -> int:
     free_e = np.flatnonzero((st.f < 0) & E.named & ~np.isnan(E.t))
     free_f = np.flatnonzero(~st.taken & F.named)
     el, fl = E.long(free_e, "e"), F.long(free_f, "f")
@@ -399,12 +466,12 @@ def _exact(E: _Side, F: _Side, st: _State, res_e, gd_f, tol: float) -> int:
     alias = (c["alias_e"] | c["alias_f"]).to_numpy(dtype=bool)
     c["method"] = np.where(alias, "alias", "exact")
     c["score"] = 1.0
-    agree = _agrees(res_e[_ix(c, "e")], gd_f[_ix(c, "f")], c["swapped"].to_numpy(dtype=bool))
-    c["bad"] = (agree == 0.0) | alias                # among equals: a result that agrees first, a plain name first
+    bad, c["unsure"] = settled.verdict(c)
+    c["bad"] = bad | alias                           # among equals: settlements that agree first, a plain name first
     return st.assign(c)
 
 
-def _fuzzy(E: _Side, F: _Side, st: _State, res_e, gd_f, tol: float, floor: float, margin: float) -> int:
+def _fuzzy(E: _Side, F: _Side, st: _State, settled: _Settled, tol: float, floor: float, margin: float) -> int:
     """Blocked by kick-off: each unlinked event against the free fixtures within ``tol`` of it."""
     pool = np.flatnonzero(~st.taken & F.named)       # in kick-off order: the fixtures are sorted by it
     ft = F.t[pool]
@@ -448,9 +515,7 @@ def _fuzzy(E: _Side, F: _Side, st: _State, res_e, gd_f, tol: float, floor: float
     c = pd.DataFrame(rows, columns=["e", "f", "swapped", "score", "gap"])
     if not len(c):
         return 0
-    agree = _agrees(res_e[_ix(c, "e")], gd_f[_ix(c, "f")], c["swapped"].to_numpy(dtype=bool))
-    c = c[agree != 0.0].assign(bad=False)
-    return st.assign(c, "fuzzy")
+    return st.assign(st.veto(c, settled, "fuzzy"), "fuzzy")
 
 
 def _vote(pairs: pd.DataFrame, key: str, value: str) -> pd.DataFrame:
@@ -499,7 +564,7 @@ def _state_map(E: _Side, F: _Side, st: _State, min_share: float) -> pd.DataFrame
     return team_map(links, events, min_share)
 
 
-def _teams(E: _Side, F: _Side, st: _State, tm: pd.DataFrame, res_e, gd_f, tol: float, exact_tol: float,
+def _teams(E: _Side, F: _Side, st: _State, tm: pd.DataFrame, settled: _Settled, tol: float, exact_tol: float,
            min_agree: int, floor: float) -> int:
     """The second pass: events whose Betfair team ids the map knows. Both sides mapped and that pair's fixture
     within ``exact_tol`` (team_map); else one side mapped, by at least ``min_agree`` matches, and that team's only
@@ -521,18 +586,16 @@ def _teams(E: _Side, F: _Side, st: _State, tm: pd.DataFrame, res_e, gd_f, tol: f
     free_f = np.flatnonzero(~st.taken)
     fx = pd.DataFrame({"f": free_f, "fh": F.hid[free_f], "fa": F.aid[free_f]}).dropna()
 
-    def finish(c: pd.DataFrame, limit: float) -> pd.DataFrame:
+    def finish(c: pd.DataFrame, limit: float, method: str) -> pd.DataFrame:
         c = c.assign(gap=E.t[_ix(c, "e")] - F.t[_ix(c, "f")])
-        c = c[c["gap"].abs() <= limit]
-        agree = _agrees(res_e[_ix(c, "e")], gd_f[_ix(c, "f")], c["swapped"].to_numpy(dtype=bool))
-        return c[agree != 0.0].assign(bad=False)
+        return st.veto(c[c["gap"].abs() <= limit], settled, method)
 
     both = ev.dropna(subset=["mh", "ma"])
     c = pd.concat([both.merge(fx, left_on=["mh", "ma"], right_on=["fh", "fa"]).assign(swapped=False),
                    both.merge(fx, left_on=["mh", "ma"], right_on=["fa", "fh"]).assign(swapped=True)],
                   ignore_index=True)
     c["score"] = c[["sh", "sa"]].min(axis=1)
-    made = st.assign(finish(c, exact_tol), "team_map")
+    made = st.assign(finish(c, exact_tol, "team_map"), "team_map")
 
     ev = ev[st.f[_ix(ev, "e")] < 0]
     fx = fx[~st.taken[_ix(fx, "f")]]
@@ -544,7 +607,7 @@ def _teams(E: _Side, F: _Side, st: _State, tm: pd.DataFrame, res_e, gd_f, tol: f
             swapped = (fcol == "fa") if mine == "mh" else (fcol == "fh")
             parts.append(a.merge(fx, left_on=mine, right_on=fcol).assign(swapped=swapped, score=lambda d: d[s],
                                                                          other=other_is))
-    c = finish(pd.concat(parts, ignore_index=True), tol)
+    c = finish(pd.concat(parts, ignore_index=True), tol, "team_anchor")
     if len(c):
         # the other side: where the map says another team, its name must still resemble the fixture's
         keep = np.ones(len(c), dtype=bool)
@@ -564,11 +627,14 @@ def _teams(E: _Side, F: _Side, st: _State, tm: pd.DataFrame, res_e, gd_f, tol: f
 def link_events(events: pd.DataFrame, fixtures: pd.DataFrame, aliases: dict | None = None,
                 tol_min: float = TOL_MIN, exact_tol_min: float = EXACT_TOL_MIN, fuzzy_min: float = FUZZY_MIN,
                 fuzzy_margin: float = FUZZY_MARGIN, min_share: float = MIN_SHARE,
-                anchor_min_agree: int = ANCHOR_MIN_AGREE, team_pass: bool = True) -> pd.DataFrame:
+                anchor_min_agree: int = ANCHOR_MIN_AGREE, team_pass: bool = True,
+                stats: dict | None = None) -> pd.DataFrame:
     """One row a Betfair event (gold/link's columns but match_id and competition_id): the API-Football fixture it
     is, or method 'none'. ``events``: gold/event rows (event_id, home_name, away_name, kickoff, and where held
-    country_code, home_id, away_id, result). ``fixtures``: ``fixture_table``'s rows. ``aliases``:
-    ``football.reference.load_aliases()``. ``team_pass`` False stops after the names (exact, alias, fuzzy)."""
+    country_code, home_id, away_id, result, over25). ``fixtures``: ``fixture_table``'s rows. ``aliases``:
+    ``football.reference.load_aliases()``. ``team_pass`` False stops after the names (exact, alias, fuzzy).
+    ``stats``: a dict that is given ``vetoed``: by method, the candidate links dropped because a settlement
+    disagreed (a wrong candidate is caught about four times in five, so about a quarter of that count got through)."""
     ev = events.sort_values("event_id").reset_index(drop=True)
     if not ev["event_id"].is_unique:
         raise ValueError("link_events: event_id repeats")
@@ -583,23 +649,23 @@ def link_events(events: pd.DataFrame, fixtures: pd.DataFrame, aliases: dict | No
     lg = _num(fx, "apif_league_id")
     F = _Side(fx, "api_football", aliases, "home", "away", "apif_home_id", "apif_away_id",
               [(_LEAGUE_COUNTRY[int(x)],) if x == x and int(x) in _LEAGUE_COUNTRY else () for x in lg])
-    res_e = _result_sign(ev["result"]) if "result" in ev.columns else np.full(len(ev), np.nan)
-    ft_h, ft_a = _num(fx, "ft_home"), _num(fx, "ft_away")
-    gd_f = ft_h - ft_a
+    settled = _Settled(ev, fx)
     st = _State(E.n, F.n)
 
     def team_rounds():
         for _ in range(MAX_ROUNDS):
             tm = _state_map(E, F, st, min_share)
-            if not _teams(E, F, st, tm, res_e, gd_f, tol_min, exact_tol_min, anchor_min_agree, fuzzy_min):
+            if not _teams(E, F, st, tm, settled, tol_min, exact_tol_min, anchor_min_agree, fuzzy_min):
                 break
 
     if E.n and F.n:
-        _exact(E, F, st, res_e, gd_f, exact_tol_min)
+        _exact(E, F, st, settled, exact_tol_min)
         if team_pass:
             team_rounds()
-        if _fuzzy(E, F, st, res_e, gd_f, tol_min, fuzzy_min, fuzzy_margin) and team_pass:
+        if _fuzzy(E, F, st, settled, tol_min, fuzzy_min, fuzzy_margin) and team_pass:
             team_rounds()
+    if stats is not None:
+        stats["vetoed"] = {m: len(st.vetoed[m]) for m in METHODS if m in st.vetoed}
 
     on = st.f >= 0
     f = np.where(on, st.f, 0)
@@ -614,9 +680,11 @@ def link_events(events: pd.DataFrame, fixtures: pd.DataFrame, aliases: dict | No
 
     hid, aid = sided(F.hid, F.aid)
     hname, aname = sided(fx["home"] if F.n else [], fx["away"] if F.n else [])
-    fth, fta = sided(ft_h, ft_a)
+    fth, fta = sided(settled.ft_h, settled.ft_a)
     gap = np.where(on, E.t - (F.t[f] if F.n else np.nan), np.nan)
-    agree = _agrees(res_e, np.where(on, gd_f[f] if F.n else np.nan, np.nan), st.swapped)
+    every = np.arange(E.n)
+    agree = np.where(on, settled.result(every, f, st.swapped), np.nan) if F.n else np.full(E.n, np.nan)
+    agree_ou = np.where(on, settled.over25(every, f), np.nan) if F.n else np.full(E.n, np.nan)
     out = pd.DataFrame({
         "event_id": ev["event_id"].to_numpy(), "linked": on, "method": st.method,
         "score": np.where(on, st.score, np.nan),
@@ -630,16 +698,18 @@ def link_events(events: pd.DataFrame, fixtures: pd.DataFrame, aliases: dict | No
         "kickoff_diff_min": gap, "swapped": np.where(on, st.swapped, False),
         "apif_ft_home": fth, "apif_ft_away": fta,
         "result_agrees": np.where(np.isnan(agree), None, agree == 1.0),
+        "over25_agrees": np.where(np.isnan(agree_ou), None, agree_ou == 1.0),
     })
     out["apif_kickoff"] = pd.to_datetime(out["apif_kickoff"], utc=True)
     for c in ("apif_fixture_id", "apif_league_id", "season", "apif_home_team_id", "apif_away_team_id", "apif_ft_home",
               "apif_ft_away"):
         out[c] = pd.to_numeric(out[c], errors="coerce").astype("Int64")
     for c in ("apif_league", "apif_league_country", "apif_home_name", "apif_away_name"):
-        out[c] = out[c].where(out[c].notna(), None).astype(object)
+        out[c] = _text(out[c])
     out["score"] = out["score"].astype(float)
     out["kickoff_diff_min"] = out["kickoff_diff_min"].astype(float)
-    out["result_agrees"] = out["result_agrees"].astype("boolean")
+    for c in ("result_agrees", "over25_agrees"):
+        out[c] = out[c].astype("boolean")
     return out
 
 
@@ -647,13 +717,62 @@ def link_events(events: pd.DataFrame, fixtures: pd.DataFrame, aliases: dict | No
 # canonical matches and the team table
 # --------------------------------------------------------------------------------------------------------------------
 
+def _canonical_votes(links: pd.DataFrame, events: pd.DataFrame, cm: pd.DataFrame) -> pd.DataFrame:
+    """The vote from Betfair team ids to canonical team ids over the events linked to a canonical match (team_id,
+    canon, n_linked, n_agree, share). The canonical home side is the fixture's: the event's away side when the
+    link is swapped."""
+    j = links[links["match_id"].notna()][["event_id", "match_id", "swapped"]].merge(
+        events[["event_id", "home_id", "away_id"]], on="event_id").merge(
+        cm[["match_id", "home_team_id", "away_team_id"]].drop_duplicates("match_id"), on="match_id")
+    sw = j["swapped"].fillna(False).to_numpy(dtype=bool)
+    home, away = np.where(sw, j["away_team_id"], j["home_team_id"]), np.where(sw, j["home_team_id"], j["away_team_id"])
+    pairs = pd.concat([pd.DataFrame({"team_id": j["home_id"].to_numpy(), "canon": home}),
+                       pd.DataFrame({"team_id": j["away_id"].to_numpy(), "canon": away})], ignore_index=True)
+    return _vote(pairs, "team_id", "canon")
+
+
+def _canonical_by_team(out: pd.DataFrame, events: pd.DataFrame, cm: pd.DataFrame) -> pd.Series:
+    """match_id for linked events of our competitions that have none yet, through the teams: the canonical match of
+    that competition on the fixture's UK day whose sides are the canonical teams the event's Betfair ids vote for.
+    Both sides voted for: both must be the match's; one side: it needs ``ANCHOR_MIN_AGREE`` matches behind it (a
+    team plays one match a day). One match an event, one event a match, or nothing. This is how a club the names
+    never pair ('Paris Saint Germain' against football-data's 'Paris SG') gets its matches."""
+    mid = out["match_id"].copy()
+    need = out["linked"] & mid.isna() & out["apif_league_id"].isin(list(_LEAGUE_COMPETITION))
+    if not need.any() or not mid.notna().any() or not {"home_team_id", "away_team_id", "match_date"} <= set(cm):
+        return mid
+    votes = _canonical_votes(out, events, cm)
+    votes = votes[votes["share"] >= MIN_SHARE]
+    canon = pd.Series(votes["canon"].to_numpy(), index=votes["team_id"].astype("int64"))
+    strong = pd.Series((votes["n_agree"] >= ANCHOR_MIN_AGREE).to_numpy(), index=votes["team_id"].astype("int64"))
+    r = out.loc[need, ["event_id", "apif_kickoff", "swapped", "apif_league_id"]].merge(
+        events[["event_id", "home_id", "away_id"]], on="event_id")
+    r["match_date"] = r["apif_kickoff"].dt.tz_convert("Europe/London").dt.strftime("%Y-%m-%d")
+    r["competition_id"] = r["apif_league_id"].map(_LEAGUE_COMPETITION)
+    sw = r["swapped"].fillna(False).to_numpy(dtype=bool)
+    for col, first, second in (("fh", "home_id", "away_id"), ("fa", "away_id", "home_id")):
+        ids = pd.Series(np.where(sw, r[second], r[first]))       # the Betfair id on the fixture's home (away) side
+        r[col], r[col + "_strong"] = ids.map(canon).to_numpy(), ids.map(strong).fillna(False).to_numpy(dtype=bool)
+    free = cm[~cm["match_id"].isin(set(mid.dropna()))][["match_id", "competition_id", "match_date", "home_team_id",
+                                                        "away_team_id"]]
+    c = r.merge(free.assign(match_date=free["match_date"].astype(str)), on=["match_date", "competition_id"])
+    ok_h, ok_a = c["fh"].isna() | (c["fh"] == c["home_team_id"]), c["fa"].isna() | (c["fa"] == c["away_team_id"])
+    both = c["fh"].notna() & c["fa"].notna()
+    one = (c["fh"].notna() & c["fh_strong"]) ^ (c["fa"].notna() & c["fa_strong"])
+    c = c[ok_h & ok_a & (both | (~both & one))]
+    c = c[~c.duplicated("event_id", keep=False) & ~c.duplicated("match_id", keep=False)]
+    found = pd.Series(c["match_id"].to_numpy(), index=c["event_id"].to_numpy())
+    return mid.where(mid.notna(), out["event_id"].map(found))
+
+
 def canonical(links: pd.DataFrame, canonical_matches: pd.DataFrame | None, fixtures: pd.DataFrame | None = None,
-              aliases: dict | None = None) -> pd.DataFrame:
+              aliases: dict | None = None, events: pd.DataFrame | None = None) -> pd.DataFrame:
     """``links`` with ``match_id`` and ``competition_id``. A fixture is a canonical match where the canonical table
     (``football/gold/matches.parquet``) carries its ``apif_fixture_id`` (``football.data.apply_api_football`` writes
     it on every build). For linked fixtures of the 38 competitions it does not carry, and when ``fixtures`` is
     given, the same rule that writes it is run here (``football.player_ratings.link_matches``: competition, UK
-    day, both names). ``competition_id`` is the match's, else the one the fixture's league id maps to."""
+    day, both names); and for what the names still miss, when ``events`` is given, the teams' vote
+    (``_canonical_by_team``). ``competition_id`` is the match's, else the one the fixture's league id maps to."""
     out = links.copy()
     mid = pd.Series([None] * len(out), index=out.index, dtype=object)
     comp = pd.Series([None] * len(out), index=out.index, dtype=object)
@@ -665,7 +784,7 @@ def canonical(links: pd.DataFrame, canonical_matches: pd.DataFrame | None, fixtu
             ids = pd.to_numeric(m["apif_fixture_id"], errors="coerce").astype("Int64")
             mid = fid.map(pd.Series(m["match_id"].to_numpy(), index=ids))
         need = out["linked"] & mid.isna() & out["apif_league_id"].isin(list(_LEAGUE_COMPETITION))
-        if fixtures is not None and len(fixtures) and need.any():
+        if fixtures is not None and len(fixtures) and need.any() and "match_date" in cm.columns:
             from football.player_ratings import link_matches
             fx = fixture_table(fixtures).rename(columns={"kickoff": "kickoff_utc"})
             fx = fx[fx["apif_fixture_id"].isin(fid[need].astype("int64"))]
@@ -677,10 +796,15 @@ def canonical(links: pd.DataFrame, canonical_matches: pd.DataFrame | None, fixtu
             if len(got):
                 extra = pd.Series(got["match_id"].to_numpy(), index=got["apif_fixture_id"].astype("Int64"))
                 mid = mid.where(mid.notna(), fid.map(extra))
+        for _ in range(MAX_ROUNDS if events is not None and len(events) else 0):
+            more = _canonical_by_team(out.assign(match_id=_text(mid)), events, cm)   # each round's matches add votes
+            if more.notna().sum() == mid.notna().sum():
+                break
+            mid = more
         comp = mid.map(pd.Series(cm["competition_id"].to_numpy(), index=cm["match_id"]).groupby(level=0).first())
     by_league = out["apif_league_id"].map(_LEAGUE_COMPETITION)
-    out["match_id"] = mid.where(mid.notna(), None).astype(object)
-    out["competition_id"] = comp.where(comp.notna(), by_league).where(lambda s: s.notna(), None).astype(object)
+    out["match_id"] = _text(mid)
+    out["competition_id"] = _text(comp.where(comp.notna(), by_league))
     return out
 
 
@@ -708,16 +832,7 @@ def team_table(tm: pd.DataFrame, teams: pd.DataFrame | None = None, links: pd.Da
         cm = canonical_matches
         if (events is not None and cm is not None and "match_id" in lk.columns and lk["match_id"].notna().any()
                 and {"home_team_id", "away_team_id"} <= set(cm.columns)):
-            j = lk[lk["match_id"].notna()][["event_id", "match_id", "swapped"]].merge(
-                events[["event_id", "home_id", "away_id"]], on="event_id").merge(
-                cm[["match_id", "home_team_id", "away_team_id"]].drop_duplicates("match_id"), on="match_id")
-            sw = j["swapped"].fillna(False).to_numpy(dtype=bool)
-            pairs = pd.concat([
-                pd.DataFrame({"team_id": j["home_id"].to_numpy(),
-                              "canon": np.where(sw, j["away_team_id"], j["home_team_id"])}),
-                pd.DataFrame({"team_id": j["away_id"].to_numpy(),
-                              "canon": np.where(sw, j["home_team_id"], j["away_team_id"])})], ignore_index=True)
-            cv = _vote(pairs, "team_id", "canon")
+            cv = _canonical_votes(lk, events, cm)
             cv = cv.set_index(cv["team_id"].astype("int64"))
             out["canonical_team_id"] = out["team_id"].map(cv["canon"])
             out["canonical_share"] = out["team_id"].map(cv["share"])
@@ -725,7 +840,7 @@ def team_table(tm: pd.DataFrame, teams: pd.DataFrame | None = None, links: pd.Da
         out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0).astype("int64")
     out["low_agreement"] = out["low_agreement"].fillna(False).astype(bool)
     for c in ("team_name", "apif_team_name", "canonical_team_id"):
-        out[c] = out[c].where(out[c].notna(), None).astype(object)
+        out[c] = _text(out[c])
     return out[TEAM_LINK.names].sort_values("team_id").reset_index(drop=True)
 
 
@@ -781,22 +896,41 @@ def _side_word(s) -> str:
     return "home" if s.startswith("h") else "away" if s.startswith("a") else ""
 
 
-def goal_check(goals: pd.DataFrame, events_links: pd.DataFrame, apif_events: pd.DataFrame | None
-               ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """(gold/goal_check's rows, one row a matched goal). ``goals``: gold/goal (event_id, goal_no, pt, elapsed_min,
-    side). ``events_links``: gold/link rows, with gold/event's ``kickoff_actual`` and ``went_in_play`` beside them
-    where held. ``apif_events``: ``api_football/history_events.parquet`` whole (a fixture with any event row has
-    its events held, so no goal row means no goal).
+def goal_check(goals: pd.DataFrame, events_links: pd.DataFrame, apif_events: pd.DataFrame | None,
+               timeline: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(gold/goal_check's rows, one row a matched goal). ``goals``: gold/goal (event_id, goal_no, pt, and where
+    held elapsed_min, side, match_min). ``events_links``: gold/link rows, with gold/event's ``kickoff_actual`` and
+    ``went_in_play`` beside them where held. ``apif_events``: ``api_football/history_events.parquet`` (the rows
+    of the linked fixtures are enough: a fixture with any event row has its events held, so no goal row means no
+    goal). ``timeline``: gold/timeline (event_id, usable); when given, only its matches are checked (a match it
+    does not hold had no goals inferred at all, which is not the same as none found) and ``usable`` is carried.
 
-    The wall clock of an inferred goal is its ``pt`` less the kick-off: the market's turn in play where the event
-    has it, else the fixture's kick-off (then a start up to ``KO_SLACK_MIN`` late is allowed for); ``elapsed_min``
-    is used only for a goal without a ``pt``. Counts are checked against the 90-minute score where the link has
-    one (extra-time goals are not Betfair's match), else against the goal events. The matched-goal frame has
-    event_id, goal_no, apif_minute, wall_min, half, lag_min, minute_err, side_agrees."""
-    goal_cols = ["event_id", "goal_no", "apif_minute", "wall_min", "half", "lag_min", "minute_err", "side_agrees"]
+    Real goals on the wall clock. API-Football gives a goal's minute on the match clock (``minute``: elapsed plus
+    added time, so 45+2 is 47) and, in the raw fixture, ``fixture.periods``; those are not the halves' real
+    starts (measured on the 9,933 raw fixtures of seasons 2025 and 2026: ``periods.first`` is the scheduled
+    kick-off and ``periods.second`` is 3,600 seconds later in all 9,322 that have them). So the wall clock is
+    Betfair's: an inferred goal's ``pt`` less the market's turn in play, else less the fixture's kick-off (then a
+    start up to ``KO_SLACK_MIN`` late is allowed for); ``elapsed_min`` is used only for a goal without a ``pt``.
+    A real goal in minute m of the first half stands at m - 0.5 on it; in the second half at that plus the break
+    and the first half's added time, anything in ``HT_LAG`` (``_minute_err``).
+
+    Which goals count: type 'Goal' with detail in ``GOAL_DETAILS`` (a missed penalty is not a goal). An own goal
+    is listed under the side it counts for, not the scorer's (measured: the listed sides give the score in 764
+    of 764 matches with an own goal; the scorer's side would in 12), so the listed team is the scoring side.
+    Counts and the score are checked against the 90-minute score where the link has one (extra-time goals are
+    not Betfair's match), else against the goal events. The matched-goal frame has event_id, goal_no,
+    apif_minute, wall_min, half, lag_min, minute_err, side_agrees, match_min, match_min_err (gold/goal's
+    ``match_min`` less the real minute's middle, the minute capped at 45 and 90 as ``match_min`` is)."""
+    goal_cols = ["event_id", "goal_no", "apif_minute", "wall_min", "half", "lag_min", "minute_err", "side_agrees",
+                 "match_min", "match_min_err"]
     lk = events_links[events_links["apif_fixture_id"].notna()].copy()
     if "went_in_play" in lk.columns:
         lk = lk[lk["went_in_play"].fillna(False).astype(bool)]
+    usable: dict = {}
+    if timeline is not None:
+        lk = lk[lk["event_id"].isin(timeline["event_id"])]
+        if "usable" in timeline.columns:
+            usable = dict(zip(timeline["event_id"], timeline["usable"]))
     ko_actual = _minutes(lk["kickoff_actual"]) if "kickoff_actual" in lk.columns else np.full(len(lk), np.nan)
     ko_fixture = _minutes(lk["apif_kickoff"]) if "apif_kickoff" in lk.columns else np.full(len(lk), np.nan)
     fth, fta = _num(lk, "apif_ft_home"), _num(lk, "apif_ft_away")
@@ -827,69 +961,110 @@ def goal_check(goals: pd.DataFrame, events_links: pd.DataFrame, apif_events: pd.
         actual = ko_actual[i] == ko_actual[i]
         ko, slack = (ko_actual[i], 0.0) if actual else (ko_fixture[i], KO_SLACK_MIN)
         mine = by_event.get(eid)
-        walls, sides, nos = [], [], []
+        walls, sides, nos, mms = [], [], [], []
         if mine is not None:
             w = mine["pt_min"].to_numpy(dtype=float) - ko
-            el = pd.to_numeric(mine["elapsed_min"], errors="coerce").to_numpy(dtype=float) \
-                if "elapsed_min" in mine.columns else np.full(len(mine), np.nan)
-            walls = np.where(np.isnan(w), el, w).tolist()
-            sides = [_side_word(s) for s in (mine["side"] if "side" in mine.columns else [""] * len(mine))]
-            nos = mine["goal_no"].tolist()
+            walls = np.where(np.isnan(w), _num(mine, "elapsed_min"), w).tolist()
+            sides = [_side_word(x) for x in (mine["side"] if "side" in mine.columns else [""] * len(mine))]
+            nos, mms = mine["goal_no"].tolist(), _num(mine, "match_min").tolist()
         minutes, teams = by_fixture.get(int(fid[i]), (np.zeros(0), np.zeros(0)))
         if n_ft == n_ft and len(minutes) > n_ft:        # extra time and shoot-outs come after the 90 minutes
             minutes, teams = minutes[:int(n_ft)], teams[:int(n_ft)]
         msides = ["home" if t == home_ids[i] else "away" if t == away_ids[i] else "" for t in teams]
-        usable = [k for k, w in enumerate(walls) if w == w]
-        pairs = _align([walls[k] for k in usable], [sides[k] for k in usable], minutes.tolist(), msides, slack) \
+        usable_k = [k for k, w in enumerate(walls) if w == w]
+        pairs = _align([walls[k] for k in usable_k], [sides[k] for k in usable_k], minutes.tolist(), msides, slack) \
             if has_events else []
         errs = [abs(p[2]) for p in pairs]
-        known = [(sides[usable[p[0]]], msides[p[1]]) for p in pairs if sides[usable[p[0]]] and msides[p[1]]]
+        known = [(sides[usable_k[p[0]]], msides[p[1]]) for p in pairs if sides[usable_k[p[0]]] and msides[p[1]]]
         lags2 = [p[3] for p in pairs if p[4] == 2]
         truth = n_ft if n_ft == n_ft else float(len(minutes))
-        rows.append({
-            "event_id": eid, "apif_fixture_id": int(fid[i]), "clock": "actual" if actual else "fixture",
-            "has_events": has_events, "n_inferred": len(walls), "n_apif": len(minutes) if has_events else None,
-            "n_ft": n_ft if n_ft == n_ft else None, "count_diff": int(len(walls) - truth),
-            "count_agrees": len(walls) == truth, "n_matched": len(pairs),
-            "n_within_tol": sum(e <= MINUTE_TOL for e in errs), "n_side_known": len(known),
-            "n_side_agree": sum(a == b for a, b in known), "minute_mae": float(np.mean(errs)) if errs else np.nan,
-            "minute_err_max": max(errs) if errs else np.nan,
-            "ht_lag_min": float(np.median(lags2)) if lags2 else np.nan})
+        # the score: the 90-minute one, else the goal events' where every one names its side
+        real = (fth[i], fta[i]) if n_ft == n_ft else \
+            (float(msides.count("home")), float(msides.count("away"))) if all(msides) else None
+        if len(walls) != truth:
+            score_agrees = False
+        elif real is None or not all(sides):
+            score_agrees = None                         # the count agrees; a side is not known
+        else:
+            score_agrees = (sides.count("home"), sides.count("away")) == real
+        mm_errs = []
         for a, b, err, lag, half in pairs:
-            k = usable[a]
+            k = usable_k[a]
+            mm = mms[k]
+            mm_err = mm - (min(minutes[b], 45.0 if half == 1 else 90.0) - 0.5) if mm == mm else np.nan
+            if mm_err == mm_err:
+                mm_errs.append(abs(mm_err))
             matched.append({"event_id": eid, "goal_no": nos[k], "apif_minute": minutes[b], "wall_min": walls[k],
                             "half": half, "lag_min": lag, "minute_err": err,
-                            "side_agrees": (sides[k] == msides[b]) if sides[k] and msides[b] else None})
+                            "side_agrees": (sides[k] == msides[b]) if sides[k] and msides[b] else None,
+                            "match_min": mm, "match_min_err": mm_err})
+        rows.append({
+            "event_id": eid, "apif_fixture_id": int(fid[i]), "clock": "actual" if actual else "fixture",
+            "usable": usable.get(eid), "has_events": has_events, "n_inferred": len(walls),
+            "n_apif": len(minutes) if has_events else None,
+            "n_ft": n_ft if n_ft == n_ft else None, "count_diff": int(len(walls) - truth),
+            "count_agrees": len(walls) == truth, "score_agrees": score_agrees, "n_matched": len(pairs),
+            "n_within_tol": sum(e <= MINUTE_TOL for e in errs), "n_side_known": len(known),
+            "n_side_agree": sum(x == y for x, y in known), "minute_mae": float(np.mean(errs)) if errs else np.nan,
+            "minute_err_max": max(errs) if errs else np.nan,
+            "match_min_mae": float(np.mean(mm_errs)) if mm_errs else np.nan,
+            "ht_lag_min": float(np.median(lags2)) if lags2 else np.nan})
     per_event = pd.DataFrame(rows, columns=GOAL_CHECK.names)
     for c in ("n_apif", "n_ft"):
         per_event[c] = pd.to_numeric(per_event[c], errors="coerce").astype("Int64")
+    for c in ("usable", "score_agrees"):
+        per_event[c] = per_event[c].astype("boolean")
     return per_event, pd.DataFrame(matched, columns=goal_cols)
 
 
-def goal_summary(per_event: pd.DataFrame, per_goal: pd.DataFrame) -> dict:
-    """The goal check in a few numbers: how often the count agrees, how many goals pair, how close the minutes."""
+def _goal_numbers(per_event: pd.DataFrame, per_goal: pd.DataFrame) -> dict:
     n = int(len(per_event))
-    if not n:
-        return {"matches_checked": 0}
-    err = per_goal["minute_err"].abs() if len(per_goal) else pd.Series(dtype=float)
-    apif = int(per_event["n_apif"].fillna(0).sum())
+    pg = per_goal[per_goal["event_id"].isin(per_event["event_id"])] if len(per_goal) else per_goal
+    err = pg["minute_err"].abs() if len(pg) else pd.Series(dtype=float)
+    mm = pg["match_min_err"].abs().dropna() if len(pg) else pd.Series(dtype=float)
+    ev = per_event[per_event["has_events"]]
+    apif, inferred = int(ev["n_apif"].fillna(0).sum()), int(ev["n_inferred"].sum())
+    within = int(ev["n_within_tol"].sum())
     lag = per_event["ht_lag_min"].dropna()
     known, agree = int(per_event["n_side_known"].sum()), int(per_event["n_side_agree"].sum())
+    sc = per_event["score_agrees"].dropna()
+
+    def q(x: pd.Series, p: float):
+        return round(float(x.quantile(p)), 2) if len(x) else None
+
     return {
-        "matches_checked": n, "matches_with_events": int(per_event["has_events"].sum()),
+        "matches_checked": n, "matches_with_events": int(len(ev)),
         "count_agrees": int(per_event["count_agrees"].sum()),
-        "count_agrees_share": round(float(per_event["count_agrees"].mean()), 4),
+        "count_agrees_share": _share(int(per_event["count_agrees"].sum()), n),
+        "score_known": int(len(sc)), "score_agrees": int(sc.sum()),
+        "score_agrees_share": _share(int(sc.sum()), len(sc)),
         "count_diff": {str(k): int(v) for k, v in per_event["count_diff"].clip(-3, 3).value_counts().sort_index()
                        .items()},
-        "goals_inferred": int(per_event["n_inferred"].sum()), "goal_events": apif,
-        "goals_matched": int(len(per_goal)),
-        "goal_events_matched_share": round(len(per_goal) / apif, 4) if apif else None,
-        "minute_within_tol_share": round(float((err <= MINUTE_TOL).mean()), 4) if len(err) else None,
-        "minute_abs_err_median": round(float(err.median()), 2) if len(err) else None,
-        "minute_abs_err_p90": round(float(err.quantile(0.9)), 2) if len(err) else None,
-        "side_agrees_share": round(agree / known, 4) if known else None,
-        "ht_lag_min_quartiles": [round(float(lag.quantile(q)), 1) for q in (0.25, 0.5, 0.75)] if len(lag) else None,
+        "goal_events": apif, "goals_inferred": inferred, "goals_matched": int(len(pg)),
+        "goals_within_tol": within, "recall_within_tol": _share(within, apif),
+        "precision_within_tol": _share(within, inferred),
+        "minute_abs_err_median": q(err, 0.5), "minute_abs_err_p90": q(err, 0.9),
+        "match_min_within_tol_share": round(float((mm <= MINUTE_TOL).mean()), 4) if len(mm) else None,
+        "match_min_abs_err_median": q(mm, 0.5), "match_min_abs_err_p90": q(mm, 0.9),
+        "side_known": known, "side_agrees_share": _share(agree, known),
+        "ht_lag_min_quartiles": [round(float(lag.quantile(p)), 1) for p in (0.25, 0.5, 0.75)] if len(lag) else None,
     }
+
+
+def goal_summary(per_event: pd.DataFrame, per_goal: pd.DataFrame) -> dict:
+    """The goal check in a few numbers. Matches: how many were checked, how often the goal count and the exact
+    score agree. Goals, over the matches whose goal events are held: recall (real goals an inferred goal pairs
+    with inside ``MINUTE_TOL`` minutes on the wall clock, of all real goals) and precision (the same pairs, of
+    all inferred goals); the minute error of the pairs on the wall clock and of gold/goal's ``match_min``; how
+    often the scoring side agrees; the half-time lag. ``usable``: the same over gold/timeline's usable matches."""
+    if not len(per_event):
+        return {"matches_checked": 0}
+    out = _goal_numbers(per_event, per_goal)
+    out["tolerance_min"] = MINUTE_TOL
+    ok = per_event[per_event["usable"].fillna(False).astype(bool)]
+    if per_event["usable"].notna().any():
+        out["usable"] = _goal_numbers(ok, per_goal) if len(ok) else {"matches_checked": 0}
+    return out
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -900,15 +1075,43 @@ def _share(a: int, b: int):
     return round(a / b, 4) if b else None
 
 
-def report(events: pd.DataFrame, links: pd.DataFrame, team_links: pd.DataFrame) -> dict:
+WEAKEST = 10              # links listed a method in the report's weakest_links
+LONG_KEYS = ("weakest_links", "by_month", "by_country")   # the report's long parts: printed last
+
+
+def _side_by_side(j: pd.DataFrame) -> list[dict]:
+    """Links as the report lists them: both sources' names side by side, with what the settlements say."""
+    def flag(v):
+        return None if v is None or v is pd.NA or v != v else bool(v)
+
+    def num(v, digits: int):
+        return None if v is None or v is pd.NA or v != v else round(float(v), digits)
+
+    return [{"event_id": int(r.event_id), "method": r.method, "score": num(r.score, 3),
+             "betfair": f"{r.home_name} v {r.away_name}", "api_football": f"{r.apif_home_name} v {r.apif_away_name}",
+             "name_similarity": [num(r.sim_home, 2), num(r.sim_away, 2)],
+             "kickoff_diff_min": num(r.kickoff_diff_min, 1), "result": r.result if r.result == r.result else None,
+             "apif_score": None if pd.isna(r.apif_ft_home) else f"{int(r.apif_ft_home)}-{int(r.apif_ft_away)}",
+             "result_agrees": flag(r.result_agrees), "over25_agrees": flag(r.over25_agrees)}
+            for r in j.itertuples(index=False)]
+
+
+def report(events: pd.DataFrame, links: pd.DataFrame, team_links: pd.DataFrame, stats: dict | None = None) -> dict:
     """What linked: in all, by method, by month of kick-off, by Betfair country code; where the unlinked events
-    are; the team ids mapped and the ones whose matches disagree."""
-    j = events[["event_id"]].merge(links[["event_id", "linked", "method", "result_agrees", "kickoff_diff_min",
-                                          "match_id"]], on="event_id", how="left")
+    are; the team ids mapped and the ones whose matches disagree. And how far to trust it: by method, the
+    settlements that agree (``checks_by_method``); every link whose score is not the result or the over/under
+    Betfair settled (``disagreements``: exact links only, the other methods drop them); the candidates the
+    settlements vetoed (``vetoed``); and each method's weakest links, the names side by side (``weakest_links``:
+    lowest score first, then the least alike names, one link a pair of names; for exact links, the widest
+    kick-off gaps)."""
+    ev = events.reindex(columns=["event_id", "home_name", "away_name", "kickoff", "country_code", "result"])
+    j = ev.merge(links.reindex(columns=[
+        "event_id", "linked", "method", "score", "result_agrees", "over25_agrees", "kickoff_diff_min", "match_id",
+        "apif_home_name", "apif_away_name", "apif_ft_home", "apif_ft_away"]), on="event_id", how="left")
     j["linked"] = j["linked"].fillna(False).astype(bool)
-    j["month"] = pd.to_datetime(events["kickoff"], utc=True).dt.strftime("%Y-%m").fillna("(none)").to_numpy()
-    cc = events["country_code"] if "country_code" in events.columns else pd.Series([""] * len(events))
-    j["country"] = cc.fillna("").replace("", "(none)").to_numpy()
+    j["method"] = j["method"].fillna("none")
+    j["month"] = pd.to_datetime(j["kickoff"], utc=True).dt.strftime("%Y-%m").fillna("(none)")
+    j["country"] = _text(j["country_code"]).fillna("").replace("", "(none)")
     n, n_linked = int(len(j)), int(j["linked"].sum())
 
     def by(col: str) -> dict:
@@ -917,29 +1120,66 @@ def report(events: pd.DataFrame, links: pd.DataFrame, team_links: pd.DataFrame) 
                                                                                                int(r["size"]))}
                 for k, r in g.iterrows()}
 
+    def check(col: str, d: pd.DataFrame) -> dict:
+        return {"known": int(d[col].notna().sum()), "agree": int(d[col].fillna(False).astype(bool).sum())}
+
     countries = by("country")
     unlinked = j[~j["linked"]]["country"].value_counts().head(20)
-    known = j["result_agrees"].notna()
-    gap = j.loc[j["linked"], "kickoff_diff_min"].abs()
+    on = j[j["linked"]].copy()
+    gap = on["kickoff_diff_min"].abs()
+    on["absgap"] = gap
+    # how alike the names are: only for the links the report lists (the comparison is the slow part)
+    methods = [m for m in METHODS if (on["method"] == m).any()]
+    wrong = on[on["result_agrees"].astype("boolean").eq(False).fillna(False)
+               | on["over25_agrees"].astype("boolean").eq(False).fillna(False)]
+    weak = {m: (on[on["method"] == m].sort_values(["absgap", "event_id"], ascending=[False, True]).head(WEAKEST)
+                if m in ("exact", "alias") else on[on["method"] == m]) for m in methods}
+    listed = pd.concat([wrong] + list(weak.values())).drop_duplicates("event_id") if len(on) else on
+    sim = {r.event_id: (side_score(name_key(r.home_name), name_key(r.apif_home_name)),
+                        side_score(name_key(r.away_name), name_key(r.apif_away_name)))
+           for r in listed.itertuples(index=False)}
+
+    def named(d: pd.DataFrame) -> pd.DataFrame:
+        return d.assign(sim_home=[sim[e][0] for e in d["event_id"]], sim_away=[sim[e][1] for e in d["event_id"]])
+
+    weakest = {}
+    for m in methods:
+        d = named(weak[m])
+        if m not in ("exact", "alias"):                 # one link a pair of names: the less alike side's
+            home = (d["sim_home"] <= d["sim_away"]).to_numpy()
+            pair = np.where(home, d["home_name"].astype(str) + "=" + d["apif_home_name"].astype(str),
+                            d["away_name"].astype(str) + "=" + d["apif_away_name"].astype(str))
+            d = d.assign(sim_min=d[["sim_home", "sim_away"]].min(axis=1), pair=pair).sort_values(
+                ["score", "sim_min", "event_id"]).drop_duplicates("pair").head(WEAKEST)
+        weakest[m] = _side_by_side(d)
     tl = team_links
     mapped = tl["apif_team_id"].notna() & ~tl["low_agreement"]
     low = tl[tl["low_agreement"]].sort_values(["n_linked", "team_id"], ascending=[False, True])
     return {
         "events": n, "linked": {"n": n_linked, "share": _share(n_linked, n)},
         "by_method": {m: int((j["method"] == m).sum()) for m in METHODS + ("none",) if (j["method"] == m).any()},
-        "by_month": by("month"),
-        "by_country": dict(sorted(countries.items(), key=lambda kv: (-kv[1]["events"], kv[0]))),
-        "unlinked_top_countries": {str(k): int(v) for k, v in unlinked.items()},
-        "result_check": {"known": int(known.sum()),
-                         "agree": int(j["result_agrees"].fillna(False).astype(bool).sum())},
+        "result_check": check("result_agrees", j), "over25_check": check("over25_agrees", j),
+        "checks_by_method": {m: {"linked": int((on["method"] == m).sum()),
+                                 "result": check("result_agrees", on[on["method"] == m]),
+                                 "over25": check("over25_agrees", on[on["method"] == m]),
+                                 "min_score": round(float(on.loc[on["method"] == m, "score"].min()), 3),
+                                 "max_kickoff_gap_min": round(float(gap[on["method"] == m].max()), 1)}
+                             for m in methods},
+        "vetoed": dict((stats or {}).get("vetoed", {})),
+        "disagreements": _side_by_side(named(wrong.sort_values("event_id"))),
         "kickoff_gap_min": {"within_1": int((gap <= 1).sum()), "within_30": int((gap <= TOL_MIN).sum()),
                             "over_30": int((gap > TOL_MIN).sum())},
         "canonical_matches": int(j["match_id"].notna().sum()),
         "teams": {"team_ids": int(len(tl)), "mapped": int(mapped.sum()), "share": _share(int(mapped.sum()), len(tl)),
                   "low_agreement": int(tl["low_agreement"].sum()),
+                  "several_apif_ids": int((tl["n_apif_ids"] > 1).sum()),
                   "low_agreement_top": [{"team_id": int(r.team_id), "team_name": r.team_name,
                                          "n_linked": int(r.n_linked), "share": round(float(r.share), 3)}
                                         for r in low.head(20).itertuples(index=False)]},
+        "unlinked_top_countries": {str(k): int(v) for k, v in unlinked.items()},
+        # the long parts (LONG_KEYS) last: a summary that is cut short keeps the checks
+        "weakest_links": weakest, "by_month": by("month"),
+        "by_country": dict(sorted(countries.items(), key=lambda kv: (-kv[1]["events"], kv[0]))),
     }
 
 
@@ -962,15 +1202,19 @@ def to_arrow(spec: TableSpec, df: pd.DataFrame) -> pa.Table:
     return pa.Table.from_arrays(arrays, schema=spec.schema)
 
 
-def _frame(store, key: str, columns: list[str], since=None, until=None) -> pd.DataFrame | None:
+def _frame(store, key: str, columns: list[str], since=None, until=None, ids=None) -> pd.DataFrame | None:
     """A stored parquet's columns of interest (those it has) as a frame, or None when the key is not there.
-    ``since`` / ``until``: only rows whose ``kickoff_utc`` is between them (the fixtures table holds ten years)."""
+    ``since`` / ``until``: only rows whose ``kickoff_utc`` is between them (the fixtures table holds ten years).
+    ``ids``: only rows whose ``apif_fixture_id`` is one of them (the events table holds every league's)."""
     raw = store.get(key)
     if raw is None:
         return None
     have = pq.read_schema(io.BytesIO(raw)).names
     cols = [c for c in columns if c in have]
     t = pq.read_table(io.BytesIO(raw), columns=cols)
+    if ids is not None and "apif_fixture_id" in cols:
+        want = pa.array(sorted({int(x) for x in ids}), type=pa.int64())
+        t = t.filter(pc.is_in(pc.cast(t["apif_fixture_id"], pa.int64(), safe=False), value_set=want))
     if since is not None and "kickoff_utc" in cols and pa.types.is_timestamp(t.schema.field("kickoff_utc").type):
         typ = t.schema.field("kickoff_utc").type     # cut in Arrow first: ten years of fixtures need not reach pandas
 
@@ -988,8 +1232,11 @@ def _frame(store, key: str, columns: list[str], since=None, until=None) -> pd.Da
 
 def run(store, write: bool = True) -> dict:
     """Read gold/event and gold/team from the warehouse and API-Football's and the canonical tables from the store,
-    link, write gold/link, gold/team_link and (when gold/goal exists) gold/goal_check; the report. An input that is
-    not there is named in ``missing`` ('no data found: <key>') and the stage does what it can without it."""
+    link, write gold/link, gold/team_link and (when gold/goal exists) gold/goal_check; the report. The goal check
+    reads API-Football's goal events from ``api_football/history_events.parquet`` (built from the raw fixture files
+    by ``sources.api_football_history.build``) and, where it is there, gold/timeline for the matches gold/goal
+    covers. An input that is not there is named in ``missing`` ('no data found: <key>') and the stage does what it
+    can without it."""
     from football.warehouse.store_io import (fingerprint, read_single, read_table, single_key, utc_now,
                                              write_manifest, write_single)
     rep: dict = {"version": VERSION, "missing": [], "written": {}}
@@ -998,7 +1245,7 @@ def run(store, write: bool = True) -> dict:
         rep["missing"].append(f"no data found: {key}")
 
     ev_cols = ["event_id", "home_name", "away_name", "home_id", "away_id", "country_code", "kickoff",
-               "kickoff_actual", "went_in_play", "result"]
+               "kickoff_actual", "went_in_play", "result", "over25"]
     events = read_table(store, "gold/event", ev_cols)
     if events is None:
         events = read_single(store, "gold/event", ev_cols)
@@ -1033,9 +1280,10 @@ def run(store, write: bool = True) -> dict:
         missing(CANONICAL_KEY)
 
     aliases = load_aliases()
-    links = canonical(link_events(events, fx, aliases), canon, fx, aliases)
+    stats: dict = {}
+    links = canonical(link_events(events, fx, aliases, stats=stats), canon, fx, aliases, events)
     team_links = team_table(team_map(links, events), teams, links, events, canon)
-    rep.update(report(events, links, team_links))
+    rep.update(report(events, links, team_links, stats))
 
     out = {LINK: links, TEAM_LINK: team_links}
     goals = read_table(store, "gold/goal")
@@ -1047,13 +1295,25 @@ def run(store, write: bool = True) -> dict:
     elif lacks:
         rep["goal_check"] = {"error": f"gold/goal lacks columns {lacks}"}
     else:
-        he = _frame(store, HISTORY_EVENTS_KEY, ["apif_fixture_id", "minute", "type", "detail", "apif_team_id"])
+        he = _frame(store, HISTORY_EVENTS_KEY, ["apif_fixture_id", "minute", "type", "detail", "apif_team_id"],
+                    ids=links["apif_fixture_id"].dropna())
         if he is None:
             missing(HISTORY_EVENTS_KEY)
+        timeline = read_table(store, "gold/timeline", ["event_id", "usable"])
+        if timeline is None:
+            timeline = read_single(store, "gold/timeline", ["event_id", "usable"])
+        if timeline is None:
+            missing(single_key("gold/timeline").rsplit("/", 1)[0])
         el = links.merge(events[["event_id", "kickoff_actual", "went_in_play"]], on="event_id")
-        per_event, per_goal = goal_check(goals.to_pandas(), el, he)
+        keep = [c for c in ("event_id", "goal_no", "pt", "elapsed_min", "side", "match_min")
+                if c in goals.column_names]
+        per_event, per_goal = goal_check(goals.select(keep).to_pandas(), el, he,
+                                         None if timeline is None else timeline.to_pandas())
         rep["goal_check"] = goal_summary(per_event, per_goal)
         out[GOAL_CHECK] = per_event
+    rep["status"] = "ok"
+    for k in LONG_KEYS:                                 # after the goal check and the status: the long parts last
+        rep[k] = rep.pop(k)
     if write:
         fp = fingerprint([f"v{VERSION}", f"events:{len(events)}", f"fixtures:{len(fx)}",
                           f"canonical:{0 if canon is None else len(canon)}"])
@@ -1063,7 +1323,6 @@ def run(store, write: bool = True) -> dict:
                                                                 "fingerprint": fp, "version": VERSION,
                                                                 "built_utc": utc_now()}}})
             rep["written"][spec.name] = wrote["rows"]
-    rep["status"] = "ok"
     return rep
 
 

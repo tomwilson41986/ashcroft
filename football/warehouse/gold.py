@@ -36,8 +36,9 @@ log = logging.getLogger(__name__)
 
 #: in dependency order is not required: ``order()`` sorts them
 MODULES = ["football.warehouse.gold_event", "football.warehouse.gold_checkpoint", "football.warehouse.gold_implied",
-           "football.warehouse.gold_path", "football.warehouse.gold_goal", "football.warehouse.gold_move",
-           "football.warehouse.gold_team", "football.warehouse.gold_rating", "football.warehouse.club"]
+           "football.warehouse.gold_path", "football.warehouse.gold_goal", "football.warehouse.gold_inplay",
+           "football.warehouse.gold_move", "football.warehouse.gold_team", "football.warehouse.gold_rating",
+           "football.warehouse.club"]
 
 
 def sql(query: str, **tables: pa.Table) -> pa.Table:

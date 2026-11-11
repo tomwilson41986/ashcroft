@@ -89,7 +89,8 @@ def test_trades_take_the_forecasts_side_and_pay_the_round_trip():
     gross = np.log(1.10)                                      # both trades right: +ln(1.1) and -ln(0.9)
     assert r["bets"] == 40 and r["right_way"] == 1.0
     assert abs(r["gross"] - (np.log(1.10) - np.log(0.90)) / 2) < 1e-12
-    want = np.mean([(gross - cm.ROUND_TRIP) * (1 - cm.COMMISSION), (-np.log(0.90) - cm.ROUND_TRIP) * (1 - cm.COMMISSION)])
+    want = np.mean([(gross - cm.ROUND_TRIP) * (1 - cm.COMMISSION),
+                    (-np.log(0.90) - cm.ROUND_TRIP) * (1 - cm.COMMISSION)])
     assert abs(r["net"] - want) < 1e-12
     assert cm.trades(t, 0.5) == {"bets": 0}
 

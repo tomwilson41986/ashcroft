@@ -80,14 +80,16 @@ def report(store) -> dict:
         bad = []
         for y, m in parts:
             t = read_part(store, spec.name, y, m, ["market_id"])
-            if t is not None and t.num_rows and not pc.all(pc.is_in(t.column("market_id"), value_set=market_ids)).as_py():
+            known = t is None or not t.num_rows or pc.all(pc.is_in(t.column("market_id"), value_set=market_ids)).as_py()
+            if not known:
                 bad.append(part_name(y, m))
         _check(checks, f"{spec.name}: every row's market exists", not bad, bad or "all")
     if market is not None and n_market:
         in_month = pc.sum(pc.and_(pc.equal(pc.year(market.column("market_time")), market.column("year")),
                                   pc.equal(pc.month(market.column("market_time")), market.column("month")))).as_py()
         _check(checks, "markets whose kick-off month is their partition's", True,
-               {"share": round(in_month / n_market, 4), "kickoff_min": str(pc.min(market.column("market_time")).as_py()),
+               {"share": round(in_month / n_market, 4),
+                "kickoff_min": str(pc.min(market.column("market_time")).as_py()),
                 "kickoff_max": str(pc.max(market.column("market_time")).as_py())}, hard=False)
 
     # -- gold ---------------------------------------------------------------------------------------------------

@@ -163,7 +163,6 @@ def supremacy_from_handicap(line, p_home, total) -> np.ndarray:
 # ---------------------------------------------------------------------------------------------------------------
 
 def build(inputs: dict) -> dict:
-    import pandas as pd
     cp = inputs["gold/checkpoint"].select(COLUMNS["gold/checkpoint"]).to_pandas()
     ev = inputs["gold/event"].select(COLUMNS["gold/event"]).to_pandas()
     cp = cp[cp["book_complete"]]

@@ -3,8 +3,8 @@
 A checkpoint is a number of minutes before the SCHEDULED kick-off (the time everyone knew in advance, so a model
 deciding at T-60 can be trained on exactly what it would have seen); checkpoint 0 is the close: the last price
 traded before the market went in play. The price at a checkpoint is the last one published at or before it (an
-as-of join of the pre-off ticks, pandas.merge_asof), never a later one. A checkpoint that falls after the actual kick-off (a match that
-started early) is left out.
+as-of join of the pre-off ticks, pandas.merge_asof), never a later one. A checkpoint that falls after the actual
+kick-off (a match that started early) is left out.
 
 Only what traded is there: a runner has a row at a checkpoint once it has a price by then (most Asian handicap
 lines never trade and never appear). Beside the price: when it traded and how old it is, the ticks so far and
