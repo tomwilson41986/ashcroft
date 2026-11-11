@@ -405,3 +405,38 @@ def test_the_holdout_is_read_only_by_a_final_config_and_only_once(tmp_path):
         f.write(json.dumps({"kind": "HOLDOUT LOOK", "tag": "t1", "result": {"x": 1}}) + "\n")
     assert rl.holdout_looks_done("t1", ledger) == 1
     assert rl.holdout_looks_done("t2", ledger) == 0
+
+
+def test_two_specialists_are_one_forecast_by_code(tmp_path):
+    """The jumps arm's prices on the jumps races, the flat arm's on the rest (the owner's question, 11 Nov 2026)."""
+    rows = {"race_date": ["2025-10-01"] * 4, "race_time": ["2.30", "2.30", "3.00", "3.00"], "track": "york",
+            "horse_name": list("abcd"), "bfsp": [2.0, 2.0, 3.0, 1.5], "overlay_pct": 0.0,
+            "race_type": ["Handicap Hurdle"] * 2 + ["Handicap"] * 2, "surface_type": "Turf"}
+    j = pd.DataFrame({**rows, "predicted_bfsp": [1.5, 3.0, 9.0, 9.0], "predicted_win_prob_norm": [2 / 3, 1 / 3, .5, .5]})
+    f = pd.DataFrame({**rows, "predicted_bfsp": [7.0, 7.0, 4.0, 4 / 3], "predicted_win_prob_norm": [.5, .5, .25, .75]})
+    j.to_csv(tmp_path / "oos_j.csv", index=False)
+    f.iloc[::-1].to_csv(tmp_path / "oos_f.csv", index=False)
+    rl.split_by_code(tmp_path / "oos_j.csv", tmp_path / "oos_f.csv", tmp_path / "oos_split.csv")
+    got = pd.read_csv(tmp_path / "oos_split.csv")
+    assert list(got["predicted_bfsp"]) == [1.5, 3.0, 4.0, 4 / 3]
+    assert np.allclose(got.groupby("race_time")["predicted_win_prob_norm"].sum(), 1.0)
+    cfg = {"variants": [{"name": "j", "args": "--train-code jumps"}, {"name": "f", "args": "--train-code flat"}],
+           "ensembles": [{"name": "split", "by_code": {"jumps": "j", "flat": "f"}}]}
+    assert rl.ensembles(cfg) == [{"name": "split", "arms": ["j", "f"], "by_code": {"jumps": "j", "flat": "f"}}]
+    with pytest.raises(SystemExit, match="by_code"):
+        rl.ensembles({**cfg, "ensembles": [{"name": "split", "by_code": {"jumps": "j", "flat": "j"}}]})
+
+
+
+def test_the_comparison_reads_each_code_apart():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cmp_runs", "scripts/compare_oos_runs.py")
+    cmp_runs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cmp_runs)
+    base = pd.DataFrame({"race_date": ["2025-10-01"] * 4, "race_time": ["2.30", "2.30", "3.00", "3.00"],
+                         "track": "york", "horse_name": list("abcd"), "raceid": [1, 1, 2, 2], "won": [1, 0, 1, 0],
+                         "bfsp": [2.0, 2.0, 3.0, 1.5], "predicted_bfsp": [2.0, 2.0, 3.0, 1.5],
+                         "race_type": ["Handicap Chase"] * 2 + ["Handicap"] * 2, "surface_type": "Turf"})
+    var = base.assign(predicted_bfsp=[4.0, 2.0, 3.0, 1.5])            # worse on one jumps runner only
+    t = cmp_runs.by_code(cmp_runs.paired(base, var), base).set_index("code")
+    assert t.loc["jumps", "delta"] > 0 and t.loc["flat/aw", "delta"] == 0 and t.loc["jumps", "races"] == 1
