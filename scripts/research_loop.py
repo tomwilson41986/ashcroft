@@ -103,11 +103,42 @@ def start_date(cfg: dict) -> str:
     return str(cfg.get("start_date") or START_DATE)
 
 
+def eval_until(cfg: dict) -> str:
+    """Where the scored window ends: EVAL_UNTIL, the locked holdout's start, unless the config is a
+    deliberate final read (`"final": true` with `bfsp_until`), which scores into the holdout.
+
+    A `bfsp_until` without `"final": true` is refused: reading the holdout is never a side effect."""
+    until = cfg.get("bfsp_until")
+    if not until:
+        return EVAL_UNTIL
+    if not cfg.get("final"):
+        raise SystemExit("loop.json: bfsp_until reads the locked holdout and needs \"final\": true")
+    return str(until)
+
+
+def holdout_looks_done(tag: str, ledger: Path | None = None) -> int:
+    """How many completed holdout reads the ledger records for this tag: entries of kind
+    'HOLDOUT LOOK' carrying a result. The entry announcing a look, written with the commit that
+    starts it, has none, so the first look runs and any re-run after its result is refused."""
+    ledger = ledger or (REPO / "reports" / "research_ledger.jsonl")
+    if not ledger.exists():
+        return 0
+    n = 0
+    for line in ledger.read_text().splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("kind") == "HOLDOUT LOOK" and e.get("tag") == tag and e.get("result"):
+            n += 1
+    return n
+
+
 def common_args(cfg: dict) -> list[str]:
     """Arguments every arm shares: the matrix, the folds, the recipe."""
     anchor = ["--fold-anchor", str(cfg["fold_anchor"])] if cfg.get("fold_anchor") else []
     return ["--start-date", start_date(cfg), "--feature-cache", FEATURE_CACHE,
-            "--eval-from", cfg.get("bfsp_from", "2025-07-01"), "--eval-until", EVAL_UNTIL,
+            "--eval-from", cfg.get("bfsp_from", "2025-07-01"), "--eval-until", eval_until(cfg),
             "--step-days", "91", "--val-window", "91", "--recipe", recipe(cfg), *anchor]
 
 
@@ -326,6 +357,12 @@ def _outputs(pairs: dict) -> None:
 
 def cmd_plan(args) -> None:
     cfg = load_config(args.config)
+    if cfg.get("final") and cfg.get("bfsp_until"):
+        seen = holdout_looks_done(cfg.get("tag", ""))
+        if seen:
+            raise SystemExit(f"the locked holdout has already been scored for '{cfg.get('tag')}' ({seen} look(s) "
+                             "with a result in the ledger); a new look needs a new tag and a ledger entry saying why")
+        print(f"FINAL READ: scoring {cfg.get('bfsp_from')} to {eval_until(cfg)}, inside the locked holdout")
     from model import feature_cache
     fkey = feature_cache.cache_key(args.db, start_date(cfg))
     Path(FIT_DIR).mkdir(parents=True, exist_ok=True)
@@ -488,7 +525,7 @@ def cmd_compare(args) -> None:
                  + "\n\n" + (out / "replicate.md").read_text())
     def clv(arm):
         res = subprocess.run([sys.executable, "scripts/clv_betfair.py", "--predictions",
-                              str(out / f"oos_{arm}.csv"), "--db", args.db, "--until", EVAL_UNTIL],
+                              str(out / f"oos_{arm}.csv"), "--db", args.db, "--until", eval_until(cfg)],
                              cwd=REPO, capture_output=True, text=True)
         body = res.stdout + (res.stderr[-2000:] if res.returncode else "")
         (out / f"clv_{arm}.txt").write_text(body)

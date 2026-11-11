@@ -1,0 +1,37 @@
+table last day 2026-11-03
+
+2026-11-03: 17 steamer selections
+
+== 2026-11-03 (win): books from s3://ashcroft/betfair_live/2026-11-03/
+  273,247 book rows, 1,026 catalogue rows, 1,445 ledger rows, 0 prices
+  36 GB/IE WIN markets; 0 prices matched to them
+  price files: 316 runners, 316 matched to the exchange's markets
+  settled books for 36 of 36 markets
+  win: 17 selections matched to markets (of 17), 7 the live trader's, 17 ledger rows
+
+2026-11-04: 11 steamer selections
+
+== 2026-11-04 (win): books from s3://ashcroft/betfair_live/2026-11-04/
+  betfair_prices_raw/dwbfpricesukwin05112026.csv: NoSuchKey
+  betfair_prices_raw/dwbfpricesirewin05112026.csv: NoSuchKey
+  Betfair's win price file for 2026-11-04's racing is not in the archive yet: the day waits
+  no recorded books for the day
+           day    off          venue                     horse         event  best_back    price  stake        bsp  result    pnl
+0   2026-11-03  12:00     Fairyhouse         Our Soldier (IRE)  skipped_live        NaN      NaN   0.00        NaN           0.00
+1   2026-11-03  12:00     Fairyhouse           Some Song (IRE)          back        4.7   4.6849  13.52   2.580000   LOSER -13.52
+2   2026-11-03  12:35     Fairyhouse             Hit The Frame          back        9.0   9.0000   6.25   8.200000   LOSER  -6.25
+3   2026-11-03  12:35     Fairyhouse  Urbs Intacta Manet (IRE)          back        5.4   5.2764   6.18   5.900000   LOSER  -6.18
+4   2026-11-03  13:54     Sedgefield          Yanka Blue (IRE)  skipped_live        NaN      NaN   0.00        NaN           0.00
+5   2026-11-03  14:12      Lingfield         Chosen Hero (IRE)  skipped_live        NaN      NaN   0.00        NaN           0.00
+6   2026-11-03  14:12      Lingfield      Sadies Diamond (IRE)          back        7.6   7.5179   3.79   7.100027   LOSER  -3.79
+7   2026-11-03  14:20     Fairyhouse          Sageborough (FR)          back        4.5   4.4373  13.51   4.759106   LOSER -13.51
+8   2026-11-03  14:20     Fairyhouse          Speisialta (IRE)          back        6.4   6.3214   7.62   4.520200   LOSER  -7.62
+9   2026-11-03  15:39     Sedgefield        Luckie Devil (IRE)          back        4.8   4.6931  13.16   4.903141  WINNER  48.60
+10  2026-11-03  15:57      Lingfield       Hello Fortune (IRE)  skipped_live        NaN      NaN   0.00        NaN           0.00
+11  2026-11-03  16:04     Fairyhouse  Moonlight Paradise (IRE)  skipped_live        NaN      NaN   0.00        NaN           0.00
+12  2026-11-03  16:04     Fairyhouse    Its Not Over Yet (IRE)          back        8.8   8.5546   6.41   9.954452   LOSER  -6.41
+13  2026-11-03  16:04     Fairyhouse       Vroomvroomboo (IRE)          back       11.5  11.5000   1.60  10.500000   LOSER  -1.60
+14  2026-11-03  16:30  Wolverhampton            Mini Mac (IRE)  skipped_live        NaN      NaN   0.00        NaN           0.00
+15  2026-11-03  17:00  Wolverhampton         Oppenheimer (IRE)  skipped_live        NaN      NaN   0.00        NaN           0.00
+16  2026-11-03  14:55     Fairyhouse           Colesberg (IRE)       no_book        NaN      NaN   0.00        NaN           0.00
+2026-11-03: 17 selections, 9 backed, 7 the live trader's; staked GBP72.04; winners 1 vs 1.45 expected; P&L GBP-11.25 at 2% (GBP-12.71 at 5%)

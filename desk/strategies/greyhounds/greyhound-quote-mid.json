@@ -1,0 +1,36 @@
+{
+  "id": "greyhound-quote-mid",
+  "sport": "greyhounds",
+  "name": "Quotes around the mid",
+  "stage": "legacy",
+  "hypothesis": "Resting backs and lays around the mid earn the spread on the greyhound win books.",
+  "markets": [
+    "GB greyhound WIN"
+  ],
+  "entry_point": "python -m greyhound.quote_mid --trade --live",
+  "workflow": "paper-models.yml",
+  "live_switch": "GREYHOUND_QUOTE_MID",
+  "order_ref_prefix": "qm-",
+  "bucket": "capture",
+  "stop_keys": [
+    "greyhound/STOP",
+    "trading/STOP"
+  ],
+  "kill_switch_fails": "safe",
+  "dashboard_ids": [],
+  "evidence": [
+    {
+      "claim": "real orders only with GREYHOUND_QUOTE_MID=live and a daily loss limit; paper by default",
+      "source": "tests/test_workflow_guards.py:258-261"
+    },
+    {
+      "claim": "on paper unless switched on: losing on the corrected simulator (4 Nov 2026)",
+      "source": "tests/test_workflow_guards.py:258"
+    }
+  ],
+  "approved": {
+    "by": "owner",
+    "on": "2026-11-04",
+    "source": "tests/test_workflow_guards.py:204-205 (\"go live with live trading today\")"
+  }
+}

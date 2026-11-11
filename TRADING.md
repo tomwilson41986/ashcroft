@@ -1759,6 +1759,18 @@ on the 05:15-10:00 UK window.
 - **The replay** (`replay-1109`), 12 Oct - 8 Nov after the cuts: the rule +GBP6,722 over 28 days (8 Nov +GBP182 in the
   replay against +GBP270 live).
 
+**The forty-first full day** (10 Nov, a Tuesday; ledger `live-day-1110`), the twenty-ninth early session and the sixth
+on the 05:15-10:00 UK window.
+- **The start.** Predictions run 42753868791 (04:08 UTC); the night-before run 42729389887 (00:34 UTC) gave the same
+  prices as the morning (159 runners, mean difference 0.000); the session 05:17-21:30 UTC (run 42761248141), first back
+  05:18 UK, the last order a GBP3.49 top-up at 10:00:27 UK (inside the 10:00 minute); the settle at 22:30 UTC in settle
+  mode (run 42915105190; its email failed again).
+- **+GBP17.25 after commission** (Betfair's funds GBP5,030.72 -> GBP5,047.97) on 237 fills in 18 races, GBP1,789.84
+  matched; the trader's CLV -0.15%, a second flat day. The first backs closed +2.6% (06:15-07:59 +5.7%, 08:00-09:59
+  -7.9%), the top-ups -1.2%; 28 horses reached the cap of 5 top-ups (GBP1,365.66, CLV -2.05% at the settled price),
+  the other 26 +5.32%. The record: 32 days, +GBP6,314.40, 27 up.
+- **The replay** (`replay-1110`) is unchanged to 9 Nov: 10 Nov's price file loads tonight.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",

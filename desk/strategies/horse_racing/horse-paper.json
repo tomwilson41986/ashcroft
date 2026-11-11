@@ -1,0 +1,33 @@
+{
+  "id": "horse-paper",
+  "sport": "horse_racing",
+  "name": "Win backs, paper",
+  "stage": "legacy",
+  "hypothesis": "The live rule simulated against the book; no order is ever sent.",
+  "markets": [
+    "GB/IE WIN"
+  ],
+  "entry_point": "auto_trade.py",
+  "workflow": "paper-trade.yml",
+  "live_switch": null,
+  "order_ref_prefix": null,
+  "bucket": "pred",
+  "stop_keys": [
+    "trading/STOP"
+  ],
+  "kill_switch_fails": "open",
+  "dashboard_ids": [
+    "horse-paper"
+  ],
+  "evidence": [
+    {
+      "claim": "paper-trade.yml runs auto_trade.py with no --live",
+      "source": "tests/test_workflow_guards.py:97-104"
+    }
+  ],
+  "approved": {
+    "by": "owner",
+    "on": "2026-09-30",
+    "source": "TRADING.md (the paper trader)"
+  }
+}

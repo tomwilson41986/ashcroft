@@ -95,6 +95,9 @@ jobs:
           cache: 'pip'
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: PyTorch (CPU), only for a spec with the neural model (greyhound/nn.py)
+        run: |
+          if grep -qE '"(nn_share|stack_share)"' "$SPEC"; then pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu; fi
       - name: Add swap
         continue-on-error: true
         run: |
@@ -122,7 +125,7 @@ jobs:
     needs: cache
     if: needs.cache.outputs.slow != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 100   # a race-objective fit and a study (batch 16, 10 Nov 2026)
     strategy:
       fail-fast: false
       max-parallel: 10
@@ -136,6 +139,9 @@ jobs:
           cache: 'pip'
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: PyTorch (CPU), only for a spec with the neural model (greyhound/nn.py)
+        run: |
+          if grep -qE '"(nn_share|stack_share)"' "$SPEC"; then pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu; fi
       - name: Add swap
         continue-on-error: true
         run: |
@@ -210,7 +216,7 @@ jobs:
       - name: The table
         run: |
           python -m greyhound.fastloop --spec "$SPEC" --collect out/ | tee out/table.txt
-          { echo '## Greyhound fast loop: every experiment'; cat out/table.md; for f in out/*/study_*.md out/*/limit_*.md out/*/bfsp_*.md; do if [ -f "$f" ]; then echo; echo "### $f"; sed -n '1,60p' "$f"; fi; done; } >> "$GITHUB_STEP_SUMMARY"
+          { echo '## Greyhound fast loop: every experiment'; cat out/table.md; for f in out/*/study_*.md out/*/limit_*.md out/*/bfsp_*.md out/*/review_*.md out/*/back_*.md; do if [ -f "$f" ]; then echo; echo "### $f"; sed -n '1,60p' "$f"; fi; done; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

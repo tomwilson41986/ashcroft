@@ -1,0 +1,95 @@
+{
+ "about": "Batch 16 (10 Nov 2026), step 5 of the BFSP plan, registered before its scores: does the better pre-race price (share08_best, batch 15: RMSE of log(BSP) 0.3510 against the live recipe's 0.4127 at this rate) sharpen the forecasts nearer the off, and does it move the trading studies? Each price, one seed, through the closing-price study (research/greyhound/bfsp_close.py: the RMSE of log(BSP) at first traded, 5, 3 and 1 minute out with our price fed in, recorded books from 6 Oct) and through the limit-order study (research/greyhound/limit_study.py, the grid the early lay came from), on the days from 6 Oct to 5 Nov. share08_best's out-of-sample prices are published to greyhound/research/oos_prices_share_best (never the live prefix). Read only; nothing changes in the early lay or its gate.",
+ "recipe": "quick",
+ "baseline": "live08_bfsp",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "rescale_book": true,
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "bfsp": true,
+   "name": "live08_bfsp"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life"
+   ],
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "bfsp": true,
+   "publish_pred": "greyhound/research/oos_prices_share_best",
+   "name": "best_bfsp"
+  },
+  {
+   "features": "card_safe",
+   "objective": "logbsp",
+   "add_blocks": [
+    "sim",
+    "wpred"
+   ],
+   "rescale_book": true,
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "limit": true,
+   "name": "live08_limit"
+  },
+  {
+   "features": "card_safe",
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life"
+   ],
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "limit": true,
+   "name": "best_limit"
+  }
+ ]
+}

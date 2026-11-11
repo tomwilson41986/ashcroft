@@ -385,3 +385,23 @@ def test_the_loop_reads_its_history_start_and_fold_anchor_from_the_config(monkey
     # the base run is keyed by the history it was built on
     folds = [{"fold": 0}]
     assert rl.base_key(cfg, "f", folds) != rl.base_key(CFG, "f", folds)
+
+
+def test_the_holdout_is_read_only_by_a_final_config_and_only_once(tmp_path):
+    """The scored window ends at the locked holdout unless the config asks for a final read; a
+    bfsp_until without "final" is refused, and a look the ledger already records with a result
+    is refused again (the announcing entry, without a result, lets the first look run)."""
+    args = rl.common_args(CFG)
+    assert args[args.index("--eval-until") + 1] == rl.EVAL_UNTIL
+    with pytest.raises(SystemExit):
+        rl.common_args({**CFG, "bfsp_until": "2026-09-26"})
+    final = {**CFG, "bfsp_until": "2026-09-26", "final": True}
+    args = rl.common_args(final)
+    assert args[args.index("--eval-until") + 1] == "2026-09-26"
+    ledger = tmp_path / "ledger.jsonl"
+    ledger.write_text(json.dumps({"kind": "HOLDOUT LOOK", "tag": "t1", "design": "announced"}) + "\n")
+    assert rl.holdout_looks_done("t1", ledger) == 0
+    with ledger.open("a") as f:
+        f.write(json.dumps({"kind": "HOLDOUT LOOK", "tag": "t1", "result": {"x": 1}}) + "\n")
+    assert rl.holdout_looks_done("t1", ledger) == 1
+    assert rl.holdout_looks_done("t2", ledger) == 0

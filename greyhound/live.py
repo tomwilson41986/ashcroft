@@ -4,6 +4,14 @@ straight back model").
 Real orders only with the owner's switch, the repository variable ``GREYHOUND_LIVE=yes``, and only on the UK runner;
 otherwise everything runs on paper (the same decisions, simulated against the live books). Four steps:
 
+**The model from 10 Nov 2026** (the owner: "move the live greyhound pricing to the new model"): batch 18's stack
+(greyhound/stack_model.py: the metrics database's tables, three seeds of race-softmax trees and three neural set
+models, stretched by track; RMSE of log(BSP) 0.3366 against 0.4017 on 1 Jun - 5 Nov 2026). ``--train`` fits it on the
+29 months to yesterday and saves it to ``sources/greyhound/live/stack/``; ``--predict`` builds the metrics tables with
+the day's card as their last day (``card_tables``: a card row gets the features its run gets once the result is in,
+tests/test_greyhound_pit.py) and prices the card with it. The log-BSP model below stays as the fallback while no stack
+is stored.
+
 ``--train`` (GitHub's runners, weekly): the card-safe model. The research model reads the dog's weight on the day,
 which GBGB records at the weigh-in and the morning does not know, so the live model leaves out every feature built
 on it (``CARD_UNSAFE``); fitted on every GBGB race to yesterday, base, parity and HorseRaceBase features, saved to
@@ -74,6 +82,15 @@ LIVE_TRAIN_FROM = "2024-01-01"                    # the fast loop's quick recipe
 #: tenth, applied to pred_bsp only (the win chance is left alone). Batch 8 (run 41827648070, 1 Jun - 2 Nov 2026): per
 #: track, RMSE of log(BSP) 0.4127 -> 0.4053 (-0.0074, 90% -0.0080 to -0.0067); it takes effect at the next retrain
 LIVE_CALIBRATION: str | None = "stretch_track"
+#: the live model from 10 Nov 2026: greyhound/stack_model.py, saved here; the log-BSP model above is the fallback
+STACK_KEY, STACK_META_KEY = f"{PREFIX}/stack/bundle.pt", f"{PREFIX}/stack/meta.json"
+#: its out-of-sample prices of the recorded days (fast-loop batch 19, research/greyhound/experiments/
+#: batch19_live_prices.json): the early lay's forecast is fitted on them (greyhound.laytest live_prices)
+STACK_OOS_PRICES = "greyhound/live/oos_prices_stack_all3"
+STACK_OBJECTIVE = "stack_share"
+#: the metrics tables are built from 2014, as the nightly build (greyhound-pit.yml) builds them: their constants are
+#: fitted on the years before 2018
+PIT_FIRST_YEAR = 2014
 LEDGER_FIELDS = ["time_utc", "mode", "market_id", "selection_id", "track", "race_time", "trap", "dog", "p_model",
                  "price", "size_offered", "edge", "action", "stake", "matched", "avg_price", "bet_id", "status",
                  "error", "lay_liability", "lay_status", "minutes_to_off"]
@@ -195,6 +212,133 @@ def train(store, today: date) -> dict:
     return {k: v for k, v in meta.items() if k != "features"}
 
 
+def model_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """The rows the stack prices and is fitted on, as the fast loop's feature cache holds them (greyhound.fastloop
+    ``build_cache``): the modelling races (four or more runners, no trials) from ``KEEP_FROM``, grouped by race in
+    time order; the matrix blocks are computed on this frame, as on the cache."""
+    from greyhound.fastloop import KEEP_FROM
+    from greyhound.model import modelling_rows
+    d = modelling_rows(df)
+    d = d[d.t >= KEEP_FROM]
+    return d.sort_values(["t", "race_id", "trap"], kind="stable").reset_index(drop=True)
+
+
+def base_features(eng) -> list[str]:
+    """The engine's card-safe features in the fast loop's order (greyhound.fastloop ``feature_set(..., 'card_safe')``)."""
+    from greyhound.fastloop import feature_set
+    return feature_set({"features": eng.block_features, "card_unsafe": sorted(CARD_UNSAFE)}, "card_safe")
+
+
+def train_stack(store, today: date) -> dict:
+    """The stack (greyhound/stack_model.py) on the 29 months to yesterday: the engine's features, the matrix blocks,
+    the metrics tables as the nightly build left them (greyhound/pit, S3)."""
+    from greyhound import stack_model as sm
+    from greyhound.metrics import GreyhoundMetricsEngine
+    from greyhound.model import load_prices
+    from greyhound.track import runs_through
+    runs = runs_through(store, today - timedelta(days=1))
+    eng = GreyhoundMetricsEngine(blocks=LIVE_BLOCKS)
+    df = eng.calculate_all(runs, prices=load_prices(store, f"2014-{today.year}"))
+    del runs
+    frame = model_frame(df[~df.is_card.fillna(False).astype(bool)])
+    del df
+    feats = sm.features(frame, base_features(eng))
+    bundle = sm.fit(frame, feats, before=f"{today:%Y-%m-%d}", log=log.info)
+    meta = {**bundle["meta"], "objective": STACK_OBJECTIVE, "features": feats, "blocks": list(eng.blocks),
+            "oos_prices": STACK_OOS_PRICES, "card_unsafe_left_out": sorted(CARD_UNSAFE),
+            "trained_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    store.put(STACK_KEY, sm.to_bytes(bundle))
+    store.put(STACK_META_KEY, json.dumps(meta, indent=1).encode())
+    return {k: v for k, v in meta.items() if k != "features"}
+
+
+def load_stack(store):
+    from greyhound import stack_model as sm
+    raw, meta = store.get(STACK_KEY), store.get(STACK_META_KEY)
+    if not raw or not meta:
+        return None, None
+    return sm.from_bytes(raw), json.loads(meta)
+
+
+def card_tables(store, day: date, card: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """The metrics tables (greyhound/pit) built from 2014 with the day's card as their last day, each cut to the
+    card's rows: what the nightly build gives a run once its result is in (tests/test_greyhound_pit.py
+    ``test_a_card_gets_the_features_its_run_had``)."""
+    from greyhound import pit, stack_model as sm
+    from greyhound.card import with_cards
+    from greyhound.data import clean
+    from greyhound.model import load_prices
+    from greyhound.pit import core
+    from greyhound.track import runs_through
+    hist = runs_through(store, day - timedelta(days=1), first_year=PIT_FIRST_YEAR)
+    runs = clean(with_cards(hist, card))
+    del hist
+    ctx = {"fetch_lag": core.raw_fetch_lag(store), "prices": load_prices(store, f"{PIT_FIRST_YEAR}-{day.year}")}
+    tabs = pit.build_tables(list(sm.PIT_TABLES), runs, None, ctx, keep=True)
+    keys = runs.loc[runs.is_card, pit.KEY].drop_duplicates()
+    return {n: t.merge(keys, on=pit.KEY) for n, t in tabs.items()}
+
+
+def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
+    """Today's card priced by the stack: the engine's features (history to yesterday and the card), the matrix blocks,
+    the metrics tables built with the card (``card_tables``)."""
+    from betfair_recorder import _read_day_csv
+    from greyhound import blocks as gblocks, pit, stack_model as sm
+    from greyhound.card import cards, with_cards
+    from greyhound.data import clean
+    from greyhound.metrics import GreyhoundMetricsEngine
+    from greyhound.model import load_prices
+    from greyhound.track import runs_through
+    markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
+    if markets is None or not len(markets):
+        return {"day": f"{day:%Y-%m-%d}", "note": "no greyhound catalogue recorded yet"}
+    hist = runs_through(store, day - timedelta(days=1))
+    card = cards(markets, hist)
+    card = card[card.race_date == f"{day:%Y-%m-%d}"]
+    card = drop_removed(card, removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
+    if not len(card):
+        return {"day": f"{day:%Y-%m-%d}", "note": "no GB win markets on the card"}
+    t0 = time.monotonic()
+    tabs = card_tables(store, day, card)
+    t_tables = round(time.monotonic() - t0)
+    eng = GreyhoundMetricsEngine(blocks=tuple(meta.get("blocks", LIVE_BLOCKS)))
+    df = eng.calculate_all(clean(with_cards(hist, card)), prices=load_prices(store, f"2014-{day.year}"))
+    del hist
+    frame = model_frame(df)
+    del df
+    for b in sm.MATRIX_BLOCKS:
+        if not b.startswith("pit_"):
+            gblocks.attach(frame, b)
+    for name, tab in tabs.items():                    # the card's rows only: the history is not priced
+        cols = [c for c in tab.columns if c.startswith(pit.module(name).PREFIX)]
+        j = frame[pit.KEY].merge(tab[pit.KEY + cols].drop_duplicates(pit.KEY), on=pit.KEY, how="left")
+        for c in cols:
+            frame[c] = j[c].to_numpy()
+    missing = [f for f in bundle["feats"] if f not in frame.columns]
+    if missing:
+        raise SystemExit(f"the live model reads features this build no longer makes: {missing[:10]}")
+    c = frame[frame.is_card.fillna(False).astype(bool)]
+    priced = sm.price(bundle, c)
+    out = c[["race_id", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "race_class", "distance_m",
+             "field"]].copy()
+    for k in ("p_raw", "p_model", "pred_bsp", "pred_bsp_raw"):
+        out[k] = priced[k].to_numpy()
+    out["pred_bsp"] = out.pred_bsp.round(3)
+    key = card[["race_id", "trap", "market_id", "selection_id", "matched_history"]].drop_duplicates(["race_id", "trap"])
+    pred = out.merge(key, on=["race_id", "trap"], how="left")
+    pred["model_trained_utc"] = meta.get("trained_utc")
+    pred["model_objective"] = STACK_OBJECTIVE                  # the early lay's forecast fit matches it
+    pred["oos_prices"] = meta.get("oos_prices") or STACK_OOS_PRICES
+    buf = io.StringIO()
+    pred.to_csv(buf, index=False)
+    store.put(f"{PREFIX}/predictions/{day:%Y-%m-%d}.csv", buf.getvalue().encode())
+    unpriced = int(card.race_id.nunique() - pred.race_id.nunique())
+    return {"day": f"{day:%Y-%m-%d}", "model": STACK_OBJECTIVE, "markets": int(pred.market_id.nunique()),
+            "runners": len(pred), "races_not_priced": unpriced,      # under four runners: not a race the model prices
+            "dogs_with_history": round(float(pred.matched_history.mean()), 3) if len(pred) else 0,
+            "unknown_grade_or_trip": int(card.race_class.isna().sum()), "tables_seconds": t_tables}
+
+
 def load_model(store):
     import lightgbm as lgb
     text, meta = store.get(MODEL_KEY), store.get(META_KEY)
@@ -210,6 +354,10 @@ def predict(store, day: date, s3=None) -> dict:
     from greyhound.metrics import GreyhoundMetricsEngine
     from greyhound.model import load_prices
     from greyhound.track import runs_through
+    bundle, smeta = load_stack(store)
+    if bundle is not None:
+        return predict_stack(store, day, bundle, smeta, s3=s3)
+    log.warning("no stack model stored yet (%s): the log-BSP model prices the card", STACK_KEY)
     booster, meta = load_model(store)
     if booster is None:
         raise SystemExit("no live model: run --train first")
@@ -951,6 +1099,11 @@ def main(argv=None) -> int:
             md = "\n".join(early_lay.table(store, day, m) for m in early_lay.modes_to_show(store, day)) + "\n" + md
         except Exception as exc:
             log.warning("live early lay not read (%s)", exc)
+        try:                                        # the favourite back on paper (greyhound/fav_back.py)
+            from greyhound import fav_back
+            md = fav_back.table(store, day) + "\n" + md
+        except Exception as exc:
+            log.warning("favourite back not read (%s)", exc)
         try:                                        # the live quotes around the mid (greyhound/quote_mid.py)
             from greyhound import quote_mid
             md = quote_mid.table(store, day) + "\n" + md
@@ -960,8 +1113,8 @@ def main(argv=None) -> int:
         if a.out:
             Path(a.out).write_text(md)
         out["running"] = {k: v for k, v in r.items() if k != "markets"}
-    if a.train or (a.train_if_missing and load_model(store)[0] is None):
-        out["train"] = train(store, day)
+    if a.train or (a.train_if_missing and store.get(STACK_META_KEY) is None and load_model(store)[0] is None):
+        out["train"] = train_stack(store, day)        # the live model from 10 Nov 2026; ``train`` is the fallback's
     if a.predict:
         out["predict"] = predict(store, day)
     if a.trade:
