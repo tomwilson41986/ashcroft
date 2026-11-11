@@ -102,3 +102,34 @@ or profit weighting, other losses.
    the base.
 4. Data faults 2-9 as one batch.
 5. Combiner (learned gate, seeds) on the saved out-of-sample files: no new fits.
+
+## 7. Serving QA result (added 17:30 UTC)
+
+Source: run 43050875949 (`research/queries/done/serving_feature_qa_1111.py`, ledger `serving-feature-qa-1111`): the
+served model on the real 06:00 cards of 7 and 9 Nov (stall fix on) against the same code on a perfect card; 658
+runners, 68 races.
+
+| Measure | Value |
+|---|---|
+| Error vs BSP, served card | 0.3648 |
+| Error vs BSP, perfect card | 0.3613 |
+| Gap | +0.0031 (se 0.0032): not resolved |
+| Features identical on every runner | 493 of 1,006 |
+| Features differing on over half the runners | 8 |
+
+With the stall fixed, the 06:00 card prices within noise of a perfect card (the gap was about 0.008 before).
+
+What still differs, by impact (difference x share of gain):
+
+| Feature or family | Runners differing | Cause |
+|---|---|---|
+| `hca_wt_vs_mark` (weight against the mark) | 31%, by 0.43 sd; nine times the next | Card weight is before the claim |
+| Prize-money ranks and z-scores (`rPMW*`, `rr_PMW*_z`) | 14-27% | The field still holds later non-runners |
+| Going features | 18-44% | Morning going, not the final going |
+| `weight_vs_avg` | 86% | Race average moves with the field and the claims |
+| `race_class_num` | missing for 5.6% | Card has no class for pattern and Irish races |
+
+Form windows, form variants, form lines and the draw-by-track family are identical: the form the model reads is
+served exactly.
+
+Next: the weight after the claim tested apart from the stall (`card-weight-check-1111`).
