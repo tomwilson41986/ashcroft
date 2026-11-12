@@ -102,11 +102,11 @@ M["c_m"], M["c_b"] = conc(M.p_morningwap, M.event_id, M.n), conc(M.p_bsp, M.even
 M["mv"] = np.abs(np.log(M.p_bsp / M.p_morningwap))
 R = M.groupby("event_id").agg(c_m=("c_m", "first"), c_b=("c_b", "first"), move=("mv", "mean"), n=("n", "first"))
 R = R[R.n >= 5]
-Wr = M[(M.win_lose == 1)].merge(R, left_on="event_id", right_index=True)
+Wr = M[(M.win_lose == 1)].merge(R[["move"]], left_on="event_id", right_index=True, how="inner")
 for col, name in (("c_m", "concentration of the morning book"), ("c_b", "concentration of the SP book"),
                   ("move", "morning-to-SP move of the book")):
     Wr["t"] = pd.qcut(Wr[col], 3, labels=["lowest third", "middle", "highest third"])
-    t = Wr.groupby("t", observed=True).apply(lambda x: pd.Series({"races": len(x), "BSP R2": r2(x.p_bsp, x.n_x), "morning R2": r2(x.p_morningwap, x.n_x),
-                                                                  "mean move": x.move.mean(), "runners": x.n_x.mean()}))
+    t = Wr.groupby("t", observed=True).apply(lambda x: pd.Series({"races": len(x), "BSP R2": r2(x.p_bsp, x.n), "morning R2": r2(x.p_morningwap, x.n),
+                                                                  "mean move": x.move.mean(), "runners": x.n.mean()}))
     print(f"\nby {name}")
     print(t.round(4).to_string())
