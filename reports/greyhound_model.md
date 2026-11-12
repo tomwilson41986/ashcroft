@@ -2326,3 +2326,34 @@ tree arms at a fixed 6,000 rounds on the fixed engine and its rebuilt tables (no
 - **Discovery, second wave** (a screen, ledger `greyhound-discovery-wave2-screen-1112`): the drought since the
   last win is null; running-line drift and the later runs of rivals met carry rank correlations of about -0.015
   with the model's miss. Not built.
+
+## 45. The release candidate: the stack with the trials and optics tables (batch 29, 12 Nov 2026)
+
+Registered before its run (ledger `greyhound-release-batch29-1112`, amended before dispatch on the seed arm's
+wording). greyhound-fastloop.yml run 43190857358, the same cache and tables as batch 28, 110,788 runners, 1 Jun -
+10 Nov 2026, read against batch 28's saved predictions on the same runners.
+
+| Arm | RMSE of log(BSP) | Log-loss |
+|---|---|---|
+| f_stack (batch 28) | 0.3073 | 0.43497 |
+| g_stack_seed (f_stack's recipe, every seed moved) | 0.3063 | 0.43495 |
+| g_stack_t (+ trials) | 0.2951 | 0.43428 |
+| **g_stack_to (+ trials and optics): the candidate** | **0.2923** | 0.43438 |
+| g_trees_t / g_trees_to (trees) | 0.3089 / 0.3061 | 0.43467 / 0.43468 |
+| g_seed (f0 with another seed) | 0.3188 | 0.43521 |
+
+- **Reading 1, the candidate against f_stack:** -0.0149 (z -26.1), log-loss -0.00060 (z -4.0); Jun-Aug -0.0132,
+  Sep - 5 Nov -0.0168, after 5 Nov -0.0211. The stack's seed floor is 0.0010 (g_stack_seed against f_stack, z -6.2:
+  larger than a tree arm's, and worth knowing). The gain is fifteen times the floor. Passes.
+- **Reading 2, optics inside the stack:** g_stack_to against g_stack_t -0.0027 (z -12.4), log-loss +0.00008
+  (z +0.9, within 1 standard error). Passes: the candidate keeps optics.
+- **Reading 3, optics beside the trials in trees:** -0.0028 (z -7.2) against a tree seed floor of 0.0002 (g_seed
+  against f0, z +0.7). Passes.
+- **The residual memory on the candidate** (descriptive): fitted Jun-Aug (K 3, b 0.552, c 0.328), 1 Sep - 10 Nov:
+  0.2912 to 0.2875 (-0.0038, z -20.9), log-loss -0.00017 (z -2.8).
+- **Against the market** (descriptive): on the BSP races the candidate's log-loss is 0.43422 against the SP's
+  0.42825. Every blend is worse than the SP alone on 1 Sep on: one blend +0.00027 (0.00010 to 0.00044), by
+  realised money +0.00028, by expected money +0.00027; with the memory +0.00026, +0.00027, +0.00025. The Betfair
+  SP is not beaten.
+- **From batch 24 to here on the same test window:** 0.3332 (stack3_all4) to 0.3073 (the fixed engine) to 0.2923
+  (trials and optics), 0.2875 on the later part with the memory.
