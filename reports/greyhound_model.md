@@ -2357,3 +2357,30 @@ wording). greyhound-fastloop.yml run 43190857358, the same cache and tables as b
   SP is not beaten.
 - **From batch 24 to here on the same test window:** 0.3332 (stack3_all4) to 0.3073 (the fixed engine) to 0.2923
   (trials and optics), 0.2875 on the later part with the memory.
+
+## 46. Discovery wave 3: five market-perception tables (batch 30, 12 Nov 2026)
+
+The only discovery table that had passed (optics) describes how the market reads a dog, not how fast it is. Wave 3
+stayed in that vein: six ideas were screened on the local runs against what batch 28's stack still misses after the
+residual memory (ledger `greyhound-discovery-wave3-screen-1112`); dated franking was null; the other five were
+ported to point-in-time tables, each read for leaks by a second agent (none found), and scored as registered
+(`greyhound-wave3-batch30-1112`). greyhound-fastloop.yml run 43210470932, 110,788 runners, 1 Jun - 10 Nov 2026,
+trees at a fixed 6,000 rounds with the trials and optics tables in every arm.
+
+| Arm | RMSE of log(BSP) | Against h0 | z | Log-loss diff (z) | Reading |
+|---|---|---|---|---|---|
+| h0 | 0.3061 | - | - | - | |
+| h0_seed / h0_placebo | 0.3062 / 0.3062 | 0.0000 / 0.0000 | +0.1 / +0.1 | 0.00000 / -0.00003 | the floors |
+| h_line (running line, neighbours' conflict) | 0.3046 | -0.0015 | -4.1 | -0.00003 (-0.3) | passes |
+| h_salience (each printed attribute against the field) | 0.3046 | -0.0015 | -4.3 | -0.00004 (-0.3) | passes |
+| h_followed (favourite history, over- and under-bet) | 0.3055 | -0.0006 | -2.0 | -0.00023 (-1.8) | fails (under 3 SE) |
+| h_readers (six card-reading rules) | 0.3055 | -0.0006 | -1.8 | -0.00005 (-0.4) | fails |
+| h_cells (the price's record by card cell) | 0.3063 | +0.0002 | +0.5 | -0.00006 (-0.4) | fails |
+| h_all5 | 0.3036 | -0.0026 | -6.7 | -0.00007 (-0.4) | passes; every period |
+
+- The line and salience tables pass and join the next stack candidate. The followed-dog and card-reader tables are
+  each two standard errors: not passes, and not built into the candidate on their own.
+- The five together are worth more than the two that pass (-0.0026 against about -0.0030 if the two added): the
+  three that fail alone still carry something in company, but the registered bar is a table's own.
+- Against the market: every arm's blend is worse than the SP alone on the later half (0.42754 to 0.42765 against
+  0.42733). The Betfair SP is not beaten.
