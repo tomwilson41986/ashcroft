@@ -2413,3 +2413,35 @@ registered (`greyhound-wave4-batch31-1112`): greyhound-fastloop.yml run 43225538
   the price: on greyhounds the market's past prices and the dog's own trials carry what the family would.
 - Of nine tables screened in waves 3 and 4, three pass alone (line, salience, last race). The Betfair SP is not
   beaten by any arm (later-half blends 0.42754 to 0.42766 against 0.42733).
+
+## 48. The candidate: the stack with the three discovery tables that passed (batch 32, 12 Nov 2026)
+
+Registered as `greyhound-final-batch32-1112` before the run: greyhound-fastloop.yml run 43236900145, 110,788
+runners, 1 Jun - 11 Nov 2026, batch 29's stack recipe (three tree seeds, three neural set models, stacked).
+
+| Arm | Tables added to batch 29's stack | RMSE of log(BSP) | Against | Diff | z | Log-loss diff (z) |
+|---|---|---|---|---|---|---|
+| g_stack_to (batch 29) | - | 0.2923 | - | - | - | - |
+| m_stack | line, salience, last race | 0.2885 | g_stack_to | -0.0038 | -18.1 | -0.00036 (-4.0) |
+| m_stack_wide | those and readers, followed, cells, improve, debut, pedigree | 0.2874 | m_stack | -0.0011 | -4.4 | +0.00010 (+1.0) |
+
+- Reading 1 passes: m_stack beats batch 29's candidate in every period (Jun-Aug -0.0037, Sep - 5 Nov -0.0041,
+  after 5 Nov -0.0032 on 5 days), by more than the stack's seed floor of 0.0010, with a better log-loss.
+- Reading 2 fails: the wide stack is 0.0011 better on the price (4.4 standard errors) but its win chance is worse
+  (log-loss +0.00010, one standard error; +0.00025 in Sep - 5 Nov). The registered bar was the log-loss no worse.
+  m_stack is the candidate.
+- The memory that forgets (`greyhound-decay-memory-1112`, research/greyhound/residual_memory.py --decay): each
+  earlier miss weighted by exp(-age / 17 days). On m_stack from 1 Sep (49,612 runners): no memory 0.2872, the
+  count-shrunk memory 0.2839, the time-decay memory 0.2820 (against the count -0.0019, z -11.3; log-loss 0.43354
+  against 0.43384). It passes and replaces the count-shrunk memory on the candidate.
+- The day's path on the same test months: 0.3332 (batch 24, the price live until this morning) - 0.3073 (batch 28,
+  the fixed engine) - 0.2923 (batch 29, trials and optics) - 0.2885 (batch 32), and 0.2820 with the memory on the
+  later months.
+- The Betfair SP is not beaten. On the 20,192 races the SP prices whole our log-loss is 0.43386 against the SP's
+  0.42825. The later-half blend gives our price a weight of 0.17 and scores 0.42728 against the SP's 0.42701
+  (+0.00027, interval +0.00009 to +0.00045); by market depth 0.42730 (realised) and 0.42727 (expected); with the
+  memory 0.42727. Every blend is worse than the SP alone.
+- Not released. A release needs the three tables added to `PIT_TABLES` in greyhound/stack_model.py, the card-mode
+  check of the trials, optics, line, salience and last-race tables, a retrain, and the owner's word.
+- Batch 33 (the league table, `greyhound-league-batch33-1112`) is registered and not run: the table's build failed
+  twice on the hosted runners on 12 Nov (7.7 GB of memory) and was not retried.
