@@ -1,0 +1,55 @@
+{
+ "rows_scored": 99791,
+ "rows_without_a_robust_close": 56908,
+ "gap_abs_median": 0.011428695823622381,
+ "gap_sd": 0.03521442844169055,
+ "note": "development evidence: one year, last traded prices; nothing is traded",
+ "every_row": {
+  "rows": 99791,
+  "model_as_it_is_against_the_last_print": {
+   "skill": 0.02932408742305248,
+   "lo95": 0.02347658236969715,
+   "hi95": 0.0353385709859557,
+   "days": 214,
+   "rows": 99791
+  },
+  "the_same_forecasts_against_the_robust_close": {
+   "skill": 0.026488193570751495,
+   "lo95": 0.02056326812575189,
+   "hi95": 0.032824370538825746,
+   "days": 214,
+   "rows": 99791
+  },
+  "trained_on_the_robust_close_against_it": {
+   "skill": 0.024209944578786224,
+   "lo95": 0.019212143810556557,
+   "hi95": 0.029723726741755885,
+   "days": 214,
+   "rows": 99791
+  }
+ },
+ "busy_rows_150_updates": {
+  "rows": 7166,
+  "model_as_it_is_against_the_last_print": {
+   "skill": -0.011781120239512832,
+   "lo95": -0.032816216164382316,
+   "hi95": 0.008689313840770572,
+   "days": 213,
+   "rows": 7166
+  },
+  "the_same_forecasts_against_the_robust_close": {
+   "skill": -0.01218111633560115,
+   "lo95": -0.03448253660209296,
+   "hi95": 0.008928862343291967,
+   "days": 213,
+   "rows": 7166
+  },
+  "trained_on_the_robust_close_against_it": {
+   "skill": -0.003513427360441801,
+   "lo95": -0.023430866970053758,
+   "hi95": 0.015622512860762366,
+   "days": 213,
+   "rows": 7166
+  }
+ }
+}
