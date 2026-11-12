@@ -50,3 +50,25 @@ def home_minus_away(s: pd.DataFrame, w: pd.DataFrame, cols: list[str], prefix: s
 
 
 __all__ = ["sides", "lagged", "home_minus_away", "collection_day", "np", "pd"]
+
+
+def prior_sum(group, date, coll, value, window: int) -> tuple[np.ndarray, np.ndarray]:
+    """For each row: the sum and the count of ``value`` over the last ``window`` rows of its ``group`` dated strictly
+    before the row's collection day ``coll`` (rows with a missing value do not count). Arrays in the rows' order."""
+    group = pd.Series(np.asarray(group)).reset_index(drop=True)
+    date = pd.to_datetime(pd.Series(np.asarray(date))).to_numpy("datetime64[ns]")
+    coll = pd.to_datetime(pd.Series(np.asarray(coll))).to_numpy("datetime64[ns]")
+    value = np.asarray(value, float)
+    s, n = np.zeros(len(value)), np.zeros(len(value))
+    for _, pos in group.groupby(group, sort=False):
+        i = pos.index.to_numpy()
+        ok = i[np.isfinite(value[i])]
+        ok = ok[np.argsort(date[ok], kind="stable")]
+        cs = np.concatenate([[0.0], np.cumsum(value[ok])])
+        hi = np.searchsorted(date[ok], coll[i], side="left")             # strictly before the collection day
+        lo = np.maximum(0, hi - window)
+        s[i], n[i] = cs[hi] - cs[lo], hi - lo
+    return s, n
+
+
+__all__ += ["prior_sum"]
