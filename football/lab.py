@@ -134,7 +134,8 @@ class Cache:
             def xg():
                 f = xg_build(team, link_matches(hm, gold, aliases), st, hm, he)
                 return f[["match_id"] + [c for c in f.columns if c.startswith("x_")
-                                         or c in ("r_xg_diff", "xg_gap_vs_market", "n_xg_prev_min")]]
+                                         or c in ("r_xg_diff", "xg_gap_vs_market", "n_xg_prev_min", "r_xgs_diff",
+                                                  "xgs_gap_vs_market")]]
 
             def players():
                 f, _m, _g = build_all(gold, team, hm, hp, he, aliases)
