@@ -25,7 +25,7 @@ from model import race_book as rb  # noqa: E402
 con = sqlite3.connect("file:horse_racing.db?mode=ro", uri=True)
 mk = pd.read_sql_query(
     "SELECT m.race_date, m.market_id, m.selection_id, m.mark, m.runner_status, m.back1, m.back1_size, m.lay1, "
-    "m.lay1_size, m.bsp FROM betfair_live_marks m WHERE m.mark IN ('08:00', '09:00', '10:00', 'final')", con)
+    "m.lay1_size, m.bsp FROM betfair_live_marks m WHERE m.mark IN ('clock_08:00', 'clock_09:00', 'clock_10:00', 'final')", con)
 cat = pd.read_sql_query("SELECT DISTINCT market_id, market_type FROM betfair_live_markets", con)
 win = set(cat[cat.market_type.fillna("WIN").str.upper().eq("WIN")].market_id)
 mk = mk[mk.market_id.isin(win)]
@@ -83,7 +83,7 @@ def read(x, label):
 print(f"{r.day.min()} to {r.day.max()}: {r.market_id.nunique():,} races, {len(r):,} race-marks; "
       f"book sum of 1/back median {r.over.median():.3f}; race-marks with a runner lacking a lay {int((r.no_lay > 0).sum()):,}")
 lo, hi = read(r, "all marks")
-for k in ("08:00", "09:00", "10:00"):
+for k in ("clock_08:00", "clock_09:00", "clock_10:00"):
     read(r[r.mark == k], k)
 half = sorted(r.day.unique())
 read(r[r.day.isin(half[:len(half) // 2])], "first half")
