@@ -61,8 +61,10 @@ for (mid, mark), g in m.groupby(["market_id", "mark"]):
     base = 1 / rb.market_now(b, np.where(has, la, np.nan))
     base = base / base.sum()
     t = (1 / sp) / (1 / sp).sum()
+    mid = mm / mm.sum()                                      # the control: the plain middle, shared in proportion
     rows.append({"day": g.race_date.iloc[0], "market_id": mid, "mark": mark, "n": len(g),
                  "err_x": np.abs(np.log(x) - np.log(t)).mean(), "err_base": np.abs(np.log(base) - np.log(t)).mean(),
+                 "err_mid": np.abs(np.log(mid) - np.log(t)).mean(),
                  "over": (1 / b).sum(), "no_lay": int((~has).sum())})
 r = pd.DataFrame(rows)
 if r.empty:
@@ -88,4 +90,11 @@ for k in ("clock_08:00", "clock_09:00", "clock_10:00"):
 half = sorted(r.day.unique())
 read(r[r.day.isin(half[:len(half) // 2])], "first half")
 read(r[r.day.isin(half[len(half) // 2:])], "second half")
+print("the control (added after the first reading, so not part of the registered pass): the plain middle of back and "
+      "lay, normalised in proportion")
+r["d"] = r.err_x - r.err_mid
+r["err_base"] = r.err_mid
+read(r, "vs plain mid")
+for k in ("clock_08:00", "clock_09:00", "clock_10:00"):
+    read(r[r.mark == k], k)
 print("verdict:", "PASS (the interval is below zero)" if hi < 0 else "does not pass")
