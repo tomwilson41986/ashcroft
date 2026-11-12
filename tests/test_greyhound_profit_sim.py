@@ -251,7 +251,7 @@ def test_latency_and_a_strict_fill_never_add_fills(monkeypatch):
 def test_the_staking_types():
     from greyhound import early_lay as el
     cfg = dict(el.CONFIG)
-    assert ps.stake_q(5.0, {}, cfg, None, "lay", 300) == 5.0                     # the default: GBP20 liability
+    assert ps.stake_q(5.0, {}, cfg, None, "lay", 300) == cfg["liability"] / 4.0   # the default: the early lay's liability
     assert ps.stake_q(5.0, {"stake": {"type": "liability", "size": 100}}, cfg, None, "lay", 300) == 25.0
     assert ps.stake_q(5.0, {"stake": {"type": "stake", "size": 10}}, cfg, None, "back", 300) == 10.0
     book = {"back": [(4.0, 40.0)], "lay": [(4.2, 8.0)]}

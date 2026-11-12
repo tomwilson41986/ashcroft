@@ -44,5 +44,7 @@
     "max_match_stake": 2.0,
     "max_daily_turnover": 20.0
   },
-  "all_games_hours": 24.0
+  "all_games_hours": 24.0,
+  "inplay_markets": 60,
+  "inplay_min_matched": 10000.0
 }

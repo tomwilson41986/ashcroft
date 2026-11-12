@@ -68,10 +68,10 @@ def wired(tmp_path, monkeypatch):
     runs = synth()
     hist = runs[runs.race_date < DAY.isoformat()]
     card = _card(runs)
-    monkeypatch.setattr(gtrack, "runs_through", lambda store, d, first_year=2018: hist.copy())
+    monkeypatch.setattr(gtrack, "runs_through", lambda store, d, first_year=2018, trials_out=None: hist.copy())
     monkeypatch.setattr(betfair_recorder, "_read_day_csv",
                         lambda d, name, s3=None: pd.DataFrame({"x": [1]}) if name == "markets_greyhound.csv" else None)
-    monkeypatch.setattr(gcard, "cards", lambda markets, h: card.copy())
+    monkeypatch.setattr(gcard, "cards", lambda markets, h, trials=None: card.copy())
     monkeypatch.setattr(gmodel, "load_prices", lambda store, years=None: None)
     monkeypatch.setattr(gmetrics, "GreyhoundMetricsEngine", FakeEngine)
     monkeypatch.setattr(core, "raw_fetch_lag", lambda store: pd.Series(0, index=sorted(runs.race_date.unique())))

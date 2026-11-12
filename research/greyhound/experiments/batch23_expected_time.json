@@ -1,0 +1,153 @@
+{
+ "about": "Batch 23 (11 Nov 2026), registered before its scores: the expected-time table (greyhound/pit/xtime.py, the owner's ask of 11 Nov: a per-dog, per-race expected time with a dog-linked standard, a variant from every runner, age, days off, trap, trip and track adjustments) against the live model's trees at one seed (all1: batch 18's best3_all3 features, deterministic fits). all1_xtime adds the table. all1_xtime_lean adds it and drops the older time families it is meant to replace (the engine's expected time et_, the track-normalised times tn_, the Kalman levels on the engine's figures kf_). all1_xtime_only also drops the figs table's time figures and the form table (fg_tot, fg_sec, fg_run, fm_), keeping the market ratings: does the one model carry what the four did. The bar: 3 bootstrap standard errors on the RMSE of log(BSP) against all1, the log-loss no worse beyond 1; each read uncalibrated and with the per-track stretch. A pass is confirmed in the stack at three seeds before anything live changes.",
+ "recipe": "quick",
+ "baseline": "all1",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend"
+   ],
+   "importance": true,
+   "name": "all1"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime"
+   ],
+   "importance": true,
+   "name": "all1_xtime"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer",
+    "et_",
+    "tn_",
+    "kf_"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime"
+   ],
+   "importance": true,
+   "name": "all1_xtime_lean"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer",
+    "et_",
+    "tn_",
+    "kf_",
+    "fg_tot",
+    "fg_sec",
+    "fg_run",
+    "fm_"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime"
+   ],
+   "importance": true,
+   "name": "all1_xtime_only"
+  }
+ ]
+}

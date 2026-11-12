@@ -65,6 +65,22 @@ CONFIG_PATH = Path(__file__).with_name("live_config.json")
 #: meeting), the prize money and the handicap marks (GBGB's result, not Betfair's catalogue)
 CARD_UNSAFE = {"weight_change", "weight_vs_mean", "hb_weight_vs_max", "hb_weight_vs_min", "hb_win_going",
                "hb_plc_going", "hb_runs_going", "hb_prize_1st", "hb_handicap"}
+#: and by prefix, the columns batch 14 (run 42818559765) found wrong for the card: the weigh-in's own columns in the
+#: life table, a season count GBGB fills in after the day (2,648 of 16,313 dated seasons in a 2026 fetch fell after
+#: their race), and a trainer change the card cannot see. Until 11 Nov 2026 these lived only in the stack's own drop
+#: list, so every other card-safe feature set and the fallback model still read them (the audit of 11 Nov 2026,
+#: findings 18 and 27)
+CARD_UNSAFE_PREFIXES = ("lf_wt_", "hb_days_since_season", "ti_new_trainer",
+                        # the trainer-at-the-time columns of the connections and market tables: empty on the morning
+                        # card until another job writes the day's GBGB file, and known in training only for the weeks
+                        # since the nightly fetch began (the audit of 11 Nov 2026, findings 23 and 36). Batch 26
+                        # (run 43102842816): the trees without them give the same price on every runner (t1_notr
+                        # against t1, 109,933 runners: no difference), so nothing is lost
+                        "cx_tr_", "cx_new_trainer", "mk_tr_")
+
+
+def is_card_unsafe(feature: str) -> bool:
+    return feature in CARD_UNSAFE or feature.startswith(CARD_UNSAFE_PREFIXES)
 #: the feature blocks the live model is fitted with (``greyhound.metrics``; HorseRaceBase's from 6 Oct 2026, report §8.1)
 #: the owner, 4 Nov 2026 ("implement all recommendations in order"): the best pre-race model of report section 26.3
 #: (every engine block, the race simulator, log(BSP) rescaled to the SP book: RMSE 0.4086 against core's 0.4418)
@@ -112,7 +128,7 @@ def live_switch_on(env=None) -> bool:
 # --------------------------------------------------------------------------------------------------------------------
 
 def card_safe(features: list[str]) -> list[str]:
-    return [f for f in features if f not in CARD_UNSAFE]
+    return [f for f in features if not is_card_unsafe(f)]
 
 
 def fit(df: pd.DataFrame, features: list[str], before: str, date_from: str = "2019-01-01",
@@ -270,10 +286,12 @@ def card_tables(store, day: date, card: pd.DataFrame) -> dict[str, pd.DataFrame]
     from greyhound.model import load_prices
     from greyhound.pit import core
     from greyhound.track import runs_through
-    hist = runs_through(store, day - timedelta(days=1), first_year=PIT_FIRST_YEAR)
+    trial_rows: list = []
+    hist = runs_through(store, day - timedelta(days=1), first_year=PIT_FIRST_YEAR, trials_out=trial_rows)
     runs = clean(with_cards(hist, card))
     del hist
-    ctx = {"fetch_lag": core.raw_fetch_lag(store), "prices": load_prices(store, f"{PIT_FIRST_YEAR}-{day.year}")}
+    ctx = {"fetch_lag": core.raw_fetch_lag(store), "prices": load_prices(store, f"{PIT_FIRST_YEAR}-{day.year}"),
+           "trial_runs": trial_rows[0] if trial_rows else None}          # the trials table (greyhound/pit/trials.py)
     tabs = pit.build_tables(list(sm.PIT_TABLES), runs, None, ctx, keep=True)
     keys = runs.loc[runs.is_card, pit.KEY].drop_duplicates()
     return {n: t.merge(keys, on=pit.KEY) for n, t in tabs.items()}
@@ -292,8 +310,9 @@ def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
     markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
     if markets is None or not len(markets):
         return {"day": f"{day:%Y-%m-%d}", "note": "no greyhound catalogue recorded yet"}
-    hist = runs_through(store, day - timedelta(days=1))
-    card = cards(markets, hist)
+    trial_rows: list = []                                         # a dog that has only trialled is matched to them
+    hist = runs_through(store, day - timedelta(days=1), trials_out=trial_rows)
+    card = cards(markets, hist, trials=trial_rows[0] if trial_rows else None)
     card = card[card.race_date == f"{day:%Y-%m-%d}"]
     card = drop_removed(card, removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
     if not len(card):
@@ -364,8 +383,9 @@ def predict(store, day: date, s3=None) -> dict:
     markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
     if markets is None or not len(markets):
         return {"day": f"{day:%Y-%m-%d}", "note": "no greyhound catalogue recorded yet"}
-    hist = runs_through(store, day - timedelta(days=1))
-    card = cards(markets, hist)
+    trial_rows: list = []                                         # a dog that has only trialled is matched to them
+    hist = runs_through(store, day - timedelta(days=1), trials_out=trial_rows)
+    card = cards(markets, hist, trials=trial_rows[0] if trial_rows else None)
     card = card[card.race_date == f"{day:%Y-%m-%d}"]
     card = drop_removed(card, removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
     eng = GreyhoundMetricsEngine(blocks=tuple(meta.get("blocks", ["parity"])))
@@ -422,9 +442,11 @@ def card_check(store, day: date, blocks=LIVE_BLOCKS, s3=None, matrix_blocks=LIVE
     markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
     if markets is None or not len(markets):
         return {"day": ds, "note": "no greyhound catalogue recorded"}
-    full = runs_through(store, day)
+    trial_rows: list = []
+    full = runs_through(store, day, trials_out=trial_rows)
     hist = full[full.race_date.astype(str) < ds]
-    card = cards(markets, hist)
+    trials_before = trial_rows[0][trial_rows[0].race_date.astype(str) < ds] if trial_rows else None
+    card = cards(markets, hist, trials=trials_before)
     card = drop_removed(card[card.race_date == ds], removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
     # every runner is priced (a dog with no history still counts in its field); only the matched are compared
     m = card[card.matched_history]

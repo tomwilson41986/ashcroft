@@ -47,11 +47,14 @@ def p_best(m: np.ndarray, sd: np.ndarray, race: np.ndarray, sims: int = SIMS, se
     S = np.zeros((len(codes), width))
     M[r_sorted, pos] = m[idx][order]
     S[r_sorted, pos] = sd[idx][order]
-    rng = np.random.default_rng(seed)
+    # the same draws for every race (a runner's are those of its place among the race's rated runners), so a race's
+    # numbers are its own inputs' and nothing else's. Until 11 Nov 2026 one stream ran down the whole frame, and the
+    # same race had other numbers on the card than in its result row (the audit of 11 Nov 2026, findings 17 and 42)
+    Z = np.random.default_rng(seed).standard_normal((width, sims))
     P = np.zeros((len(codes), width))
     for a in range(0, len(codes), chunk):
         mm, ss = M[a:a + chunk], S[a:a + chunk]
-        draws = mm[:, :, None] + ss[:, :, None] * rng.standard_normal((len(mm), width, sims))
+        draws = mm[:, :, None] + ss[:, :, None] * Z[None, :, :]
         best = draws.argmax(axis=1)                            # (races, sims)
         for j in range(width):
             P[a:a + chunk, j] = (best == j).mean(axis=1)
@@ -68,7 +71,8 @@ def calculate(df: pd.DataFrame, dog_days=None) -> tuple[pd.DataFrame, list[str]]
         km, ks = df.lb_kr.astype(float), df.lb_kr_sd.astype(float)
     else:
         from greyhound.lib import kalman
-        k = kalman(df, df.grade_par if "grade_par" in df else None)
+        from greyhound.lib import debut_prior
+        k = kalman(df, debut_prior(df))
         km, ks = k.m, k.sd
     cols[f"{PREFIX}kr_var"] = ks ** 2
     cols[f"{PREFIX}kr_lo"] = km - ks

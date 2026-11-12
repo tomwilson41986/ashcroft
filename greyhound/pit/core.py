@@ -15,6 +15,14 @@ import pandas as pd
 from model.lagsafe import race_lagged_expanding_mean, race_lagged_expanding_sum  # noqa: F401  (re-exported)
 
 LENGTH_S = 0.08
+#: the comment codes that are interference from another dog (crowded, bumped, baulked, checked, hampered, impeded,
+#: stumbled, hit the rails, struck into): the one pattern every table reads a comment with.
+#: Until 11 Nov 2026 the pattern read "FcdToCk" but not GBGB's commonest spellings of forced to check ("FcdTCk",
+#: "FcdCk", "ForcedToCheck", "FcdToBCk"), nor "Stb" (stumbled), "HitRls", "StruckInto": 19,662 of 198,439
+#: interference tokens in 1 Jul 2025 to 5 Nov 2026 and 13,504 runs whose only interference went unread (the review
+#: of the fear table, 11 Nov 2026)
+INTERFERENCE = re.compile(r"crd|crowd|bmp|bump|blk|baulk|balk|hmp|hamp|imped|^imp\d|stumb|stb|fcd-?t?o?-?b?-?c(hec)?k"
+                     r"|forcedt?o?b?c(hec)?k|^ck|checked|brtdn|broughtdown|knockedover|hitrls|struckinto")
 
 
 def norm_name(s) -> str:

@@ -15,6 +15,8 @@ day's results (``tests/test_greyhound_fastloop.py`` rewrites the last day's resu
   before).
 - ``pit_<table>``: a table of the metrics database (greyhound/pit: ability, trouble, connections, market, breeding,
   life, weather), built from every GBGB run from 2014 and joined by race and dog.
+- ``placebo``: ten columns of noise fixed by the race and the dog, never served: the floor a new block's gain is read
+  against, with the seed-to-seed movement of the baseline (the audit and the horse library's review, 11 Nov 2026).
 - ``wpred``: the day's weigh-in forecast from the dog's earlier runs (a linear model refitted each month on the months
   before): the predicted weight change and weight against the dog's mean, for when the weigh-in is not to hand.
 """
@@ -23,7 +25,7 @@ from __future__ import annotations
 
 import importlib
 
-NAMES = ("race_rel2", "first_bend", "style_draw", "sim", "fcast", "wpred")
+NAMES = ("race_rel2", "first_bend", "style_draw", "sim", "fcast", "wpred", "placebo")
 
 
 def attach(df, name: str) -> list[str]:
