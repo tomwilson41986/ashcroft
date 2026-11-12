@@ -10,6 +10,11 @@ residuals of each past run:
     against the horse    f = the run's time figure (model/blocks/time_figure.py, pounds) less the horse's own
                          decayed mean figure before the run: what the run did beyond the horse's own level
 
+    against the rating   m = the run's log share of the Betfair SP book (x runners) less the share the field's market
+                         ratings implied before the race (mr_lshare, model/blocks/market_rating.py): how much shorter
+                         the market made the horse than its own price history said - the yard's and the rider's pull
+                         on the price itself (the model review's "market plus-minus", 11 Nov)
+
 Each residual is read as trainer effect + jockey effect + noise. Both effects are local-level Kalman states that
 drift with time; a day's runs update the trainer on the residual less the jockey's rating (and the reverse), each
 weighted by the other's uncertainty, so shared runs are split by how well each is known. Variances are fixed
@@ -20,10 +25,11 @@ owner rating.
     cr_tr_s_sd  cr_jk_s_sd    their standard deviations
     cr_tr_f  cr_jk_f          their ratings against the horse's own level, in pounds
     cr_tr_f_sd  cr_jk_f_sd
-    cr_sum_s  cr_sum_f        trainer + jockey
-    cr_sum_s_z  cr_sum_f_z    the sums standardised within today's race
+    cr_tr_m  cr_jk_m          their ratings against the market rating (log share), with cr_tr_m_sd, cr_jk_m_sd
+    cr_sum_s  cr_sum_f  cr_sum_m        trainer + jockey
+    cr_sum_s_z  cr_sum_f_z  cr_sum_m_z  the sums standardised within today's race
     cr_jk_change              1 when today's jockey did not ride the horse last time (NaN on a debut)
-    cr_jk_delta_s  cr_jk_delta_f   today's jockey's rating less the last run's jockey's, as both stand today
+    cr_jk_delta_s  cr_jk_delta_f  cr_jk_delta_m   today's jockey's rating less the last run's jockey's, as both stand today
     cr_jk_new_s               the jockey's decayed mean of s on the rides where they took a horse over (uplift on a
                               change), shrunk to 0 by twenty rides
 """
@@ -38,13 +44,15 @@ from model.freshness_features import _Days, _col
 from model.race_shape import asof_decayed_mean, day_index, race_key
 
 FEATURES = ["cr_tr_s", "cr_jk_s", "cr_tr_s_sd", "cr_jk_s_sd", "cr_tr_f", "cr_jk_f", "cr_tr_f_sd", "cr_jk_f_sd",
-            "cr_sum_s", "cr_sum_f", "cr_sum_s_z", "cr_sum_f_z", "cr_jk_change", "cr_jk_delta_s", "cr_jk_delta_f",
+            "cr_tr_m", "cr_jk_m", "cr_tr_m_sd", "cr_jk_m_sd", "cr_sum_s", "cr_sum_f", "cr_sum_m", "cr_sum_s_z",
+            "cr_sum_f_z", "cr_sum_m_z", "cr_jk_change", "cr_jk_delta_s", "cr_jk_delta_f", "cr_jk_delta_m",
             "cr_jk_new_s"]
 POST_RACE: set[str] = set()
-READS = sorted(set(_tf.READS) | {"trainer", "jockey_name", "number_of_runners", "bfsp"})
-PRIOR_VAR = {"s": 0.05 ** 2, "f": 2.0 ** 2}
-DRIFT_YEAR = {"s": 0.02 ** 2, "f": 0.8 ** 2}
-NOISE = {"s": 0.30 ** 2, "f": 12.0 ** 2}
+READS = sorted(set(_tf.READS) | {"trainer", "jockey_name", "number_of_runners", "bfsp", "mr_lshare"})
+AFTER = ("market_rating",)
+PRIOR_VAR = {"s": 0.05 ** 2, "f": 2.0 ** 2, "m": 0.10 ** 2}
+DRIFT_YEAR = {"s": 0.02 ** 2, "f": 0.8 ** 2, "m": 0.04 ** 2}
+NOISE = {"s": 0.30 ** 2, "f": 12.0 ** 2, "m": 0.50 ** 2}
 K_NEW = 20.0
 
 
@@ -130,8 +138,14 @@ def build(df: pd.DataFrame) -> pd.DataFrame:
     own, _ = asof_decayed_mean(horse, day, fig, horse, day, halflife_days=365.0)
     f = fig - own
 
+    inv = pd.Series(np.where(priced, 1.0 / np.where(priced, bsp, 1.0), 0.0), index=df.index)
+    rows_n = pd.Series(1.0, index=df.index).groupby(race).transform("sum").to_numpy()
+    with np.errstate(invalid="ignore", divide="ignore"):
+        lshare = np.where(priced & (npr >= 0.9 * rows_n), np.log(rows_n * inv / inv.groupby(race).transform("sum")), np.nan)
+    mres = np.clip(lshare - pd.to_numeric(_col(df, "mr_lshare"), errors="coerce").to_numpy(float), -3.0, 3.0)
+
     cols: dict[str, np.ndarray] = {}
-    for which, r in (("s", s), ("f", f)):
+    for which, r in (("s", s), ("f", f), ("m", mres)):
         (tm, tsd, jm, jsd), _ = _filter(day, tr, jk, r, which)
         cols[f"cr_tr_{which}"], cols[f"cr_tr_{which}_sd"] = tm, tsd
         cols[f"cr_jk_{which}"], cols[f"cr_jk_{which}_sd"] = jm, jsd
@@ -150,7 +164,7 @@ def build(df: pd.DataFrame) -> pd.DataFrame:
     known = np.isfinite(last_jk) & (last_jk >= 0) & (jk >= 0)
     change = np.where(known, (last_jk != jk).astype(float), np.nan)
     cols["cr_jk_change"] = change
-    for which in ("s", "f"):
+    for which in ("s", "f", "m"):
         now = cols[f"cr_jk_{which}"]
         # the last run's jockey as rated before today: their latest earlier rating, by an as-of read of their own rows
         lj = np.where(known, last_jk, -1).astype(np.int64)
