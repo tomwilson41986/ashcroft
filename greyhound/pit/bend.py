@@ -55,11 +55,18 @@ def design(df: pd.DataFrame) -> pd.DataFrame:
     trap = pd.to_numeric(df.trap, errors="coerce")
     x["trap"] = trap
     x["trap1"] = (trap == 1).astype(float)
-    x["trap6"] = (trap == df.field).astype(float)
-    o = pd.DataFrame({"race": race, "trap": trap, "esr": x.esr.fillna(x.esr.groupby(race).transform("mean"))})
-    o = o.sort_values(["race", "trap"])
-    x["in_esr"] = (o.groupby("race").esr.shift(1) - o.esr).reindex(df.index)
-    x["out_esr"] = (o.groupby("race").esr.shift(-1) - o.esr).reindex(df.index)
+    # the outside runner: the highest trap in the race. Until 11 Nov 2026 it was `trap == field`, which in a race of
+    # five missed the dog in trap 6 and, with trap 6 empty, flagged no one (the audit of 11 Nov 2026, finding 38)
+    x["trap6"] = (trap == trap.groupby(race).transform("max")).astype(float)
+    # the dogs in the boxes beside (trap - 1, trap + 1): an empty box is room, read as the field's slowest dog there,
+    # not the next dog along
+    esr = x.esr.fillna(x.esr.groupby(race).transform("mean"))
+    box = esr.groupby([race, trap]).first()
+    room = esr.groupby(race).transform("min")
+    beside = lambda step: pd.Series(box.reindex(pd.MultiIndex.from_arrays([race, trap + step])).to_numpy(float), index=df.index)
+    inside, outside = beside(-1).fillna(room), beside(1).fillna(room)
+    x["in_esr"] = (inside - esr).where(trap > trap.groupby(race).transform("min"))
+    x["out_esr"] = (outside - esr).where(trap < trap.groupby(race).transform("max"))
     x["lead"] = lead
     x["won"] = pd.to_numeric(df.won, errors="coerce")
     return x
@@ -78,11 +85,14 @@ def _groups(race: pd.Series) -> np.ndarray:
 
 def expected_position(u: np.ndarray, gi: np.ndarray, sims: int = SIMS, seed: int = 0) -> np.ndarray:
     """Each runner's expected bend position under Plackett-Luce with utilities ``u`` (Gumbel draws, ranked in race)."""
-    rng = np.random.default_rng(seed)
     acc = np.zeros(len(u))
     d = pd.DataFrame({"g": gi})
-    for _ in range(sims):
-        z = u + rng.gumbel(size=len(u))
+    # the same draws for every race (a runner's are those of its place in the race's rows): one stream down the frame
+    # gave a card race another expected position than its result row (the audit of 11 Nov 2026, findings 17 and 42)
+    slot = d.groupby("g").cumcount().to_numpy()
+    G = np.random.default_rng(seed).gumbel(size=(int(slot.max()) + 1 if len(slot) else 1, sims))
+    for k in range(sims):
+        z = u + G[slot, k]
         acc += d.assign(z=z).groupby("g").z.rank(ascending=False).to_numpy()
     return acc / sims
 

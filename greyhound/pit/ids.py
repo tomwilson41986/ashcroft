@@ -46,7 +46,9 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     if bf is None or not len(bf):
         out = base[["race_id", "dog_id"]].assign(id_selection_id=pd.NA, id_event_id=pd.NA, id_match="none")
         return out.reset_index(drop=True), {"note": "no data found: no Betfair runners to match"}
-    bf = bf.dropna(subset=["trap", "selection_id"]).assign(trap=lambda x: x.trap.astype("int64"))
+    from greyhound.data import canonical_track
+    bf = bf.dropna(subset=["trap", "selection_id"]).assign(trap=lambda x: x.trap.astype("int64"),
+                                                           track=lambda x: canonical_track(x.track))
     bf = bf.drop_duplicates(["race_date", "race_time", "track", "trap"], keep="last")
     m = base.merge(bf, on=["race_date", "race_time", "track", "trap"], how="left")
     a, b = m.dog_name.map(core.norm_name), m.dog.map(core.norm_name)

@@ -81,10 +81,10 @@ jobs:
     needs: cache
     if: needs.cache.outputs.quick != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 100   # a race-objective fit at 0.05 took 52 minutes (batch 11, 10 Nov 2026)
+    timeout-minutes: 150   # the stack with three tree seeds and three networks took 83 minutes (batch 24, 11 Nov 2026)
     strategy:
       fail-fast: false
-      max-parallel: 10
+      max-parallel: 16
       matrix:
         name: ${{ fromJson(needs.cache.outputs.quick) }}
     steps:
@@ -113,22 +113,50 @@ jobs:
         run: |
           if ! [[ "$NAME" =~ ^[a-z0-9_]{1,40}$ ]]; then echo "bad experiment name"; exit 1; fi
           python -m greyhound.fastloop --spec "$SPEC" --only "$NAME" --out "out/$NAME"
+      # the result is uploaded up to three times: on 11 Nov 2026 GitHub's artifact service failed for twenty minutes and
+      # three of batch 25's four arms finished with nowhere to put their predictions (run 43089770446)
       - uses: actions/upload-artifact@v4
+        id: upload
         if: always()
+        continue-on-error: true
         with:
           name: fastloop-${{ matrix.name }}
           path: out/
           if-no-files-found: ignore
           retention-days: 90
+      - name: Wait before the second upload (the first failed)
+        if: always() && steps.upload.outcome == 'failure'
+        run: sleep 300
+      - uses: actions/upload-artifact@v4
+        id: upload2
+        if: always() && steps.upload.outcome == 'failure'
+        continue-on-error: true
+        with:
+          name: fastloop-${{ matrix.name }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90
+          overwrite: true
+      - name: Wait before the third upload (the second failed)
+        if: always() && steps.upload2.outcome == 'failure'
+        run: sleep 600
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.upload2.outcome == 'failure'
+        with:
+          name: fastloop-${{ matrix.name }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90
+          overwrite: true
 
   slow:
     needs: cache
     if: needs.cache.outputs.slow != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 100   # a race-objective fit and a study (batch 16, 10 Nov 2026)
+    timeout-minutes: 150   # a race-objective fit and a study (batch 16, 10 Nov 2026)
     strategy:
       fail-fast: false
-      max-parallel: 10
+      max-parallel: 16
       matrix:
         name: ${{ fromJson(needs.cache.outputs.slow) }}
     steps:
@@ -157,13 +185,41 @@ jobs:
         run: |
           if ! [[ "$NAME" =~ ^[a-z0-9_]{1,40}$ ]]; then echo "bad experiment name"; exit 1; fi
           python -m greyhound.fastloop --spec "$SPEC" --only "$NAME" --out "out/$NAME"
+      # the result is uploaded up to three times: on 11 Nov 2026 GitHub's artifact service failed for twenty minutes and
+      # three of batch 25's four arms finished with nowhere to put their predictions (run 43089770446)
       - uses: actions/upload-artifact@v4
+        id: upload
         if: always()
+        continue-on-error: true
         with:
           name: fastloop-${{ matrix.name }}
           path: out/
           if-no-files-found: ignore
           retention-days: 90
+      - name: Wait before the second upload (the first failed)
+        if: always() && steps.upload.outcome == 'failure'
+        run: sleep 300
+      - uses: actions/upload-artifact@v4
+        id: upload2
+        if: always() && steps.upload.outcome == 'failure'
+        continue-on-error: true
+        with:
+          name: fastloop-${{ matrix.name }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90
+          overwrite: true
+      - name: Wait before the third upload (the second failed)
+        if: always() && steps.upload2.outcome == 'failure'
+        run: sleep 600
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.upload2.outcome == 'failure'
+        with:
+          name: fastloop-${{ matrix.name }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90
+          overwrite: true
 
   table:
     needs: [cache, experiment]

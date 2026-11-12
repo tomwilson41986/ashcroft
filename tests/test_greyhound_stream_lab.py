@@ -117,7 +117,9 @@ def test_the_forward_tests_lays_are_replayed_and_scored(monkeypatch):
     r = lab.forward_check(lines, None, date(2026, 11, 5))
     x = r["stream_x1.0"]
     assert r["forward_test_own"]["roi%"] == 5.0 and x["matched"] == 1 and x["filled_through"] == 1
-    stake = 20.0 / 4.0                                                  # GBP20 liability at 5.0
-    assert x["matched_liability"] == pytest.approx(20.0)
-    assert x["roi_green%"] == pytest.approx(100 * stake * (1 - 5.0 / 5.5) * (1 - lab.COMM) / 20.0, abs=0.01)
-    assert x["roi_sp%"] == pytest.approx(100 * stake * (1 - 5.0 / 6.0) * (1 - lab.COMM) / 20.0, abs=0.01)
+    from greyhound import early_lay as el
+    liability = el.CONFIG["liability"]                                  # the early lay's own stake (GBP100 from 11 Nov)
+    stake = liability / 4.0                                             # that liability at 5.0
+    assert x["matched_liability"] == pytest.approx(liability)
+    assert x["roi_green%"] == pytest.approx(100 * stake * (1 - 5.0 / 5.5) * (1 - lab.COMM) / liability, abs=0.01)
+    assert x["roi_sp%"] == pytest.approx(100 * stake * (1 - 5.0 / 6.0) * (1 - lab.COMM) / liability, abs=0.01)
