@@ -3,11 +3,13 @@ name: Horse racing minute files (Betfair Historic Data, BASIC, read-only)
 # The owner, 12 Nov 2026: "yes, fetch the minute files". The UK/IE WIN markets' BASIC stream files (the last traded
 # price each minute of every runner, the withdrawn ones too), raw to S3, newest month first, each file once: the
 # ghost-run block's data (reports/discovery_1111.md 4.1). Research only; no order call; the delayed key's login.
-# On the data runner (the service refuses some countries), after the other sports' fetch, never beside it.
+# On the horse racing runner (the service refuses other countries; the data runner has taken no job since 10 Nov),
+# at night only, as the price archive is: a run that starts outside 22:45-03:30 UTC does nothing, so it can never
+# sit beside the trader's day (05:15 UTC on).
 
 on:
   schedule:
-    - cron: '50 0 * * *'
+    - cron: '10 23 * * *'
   workflow_dispatch:
     inputs:
       max_minutes:
@@ -18,37 +20,39 @@ permissions:
   contents: read
 
 concurrency:
-  group: other-data
+  group: horse-minute-files
   cancel-in-progress: false
 
 jobs:
   fetch:
-    runs-on: ${{ vars.DATA_RUNNER || 'data' }}
+    if: vars.BETFAIR_RUNNER != ''
+    runs-on: ${{ vars.BETFAIR_RUNNER }}
     timeout-minutes: 130
     steps:
-      - name: Not on the horse racing runner
-        env:
-          RUNNER_LABEL: ${{ vars.DATA_RUNNER || 'data' }}
-          LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
+      - name: At night only
+        id: night
         run: |
-          if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
-            echo "DATA_RUNNER is the live trader's runner ($LIVE_RUNNER_LABEL): this fetch does not run beside it"
-            exit 1
-          fi
+          NOW=$((10#$(date -u +%H) * 60 + 10#$(date -u +%M)))
+          if [ "$NOW" -ge 1365 ] || [ "$NOW" -le 210 ]; then echo "go=yes" >> "$GITHUB_OUTPUT"; else
+            echo "it is $(date -u +%H:%M) UTC: outside 22:45-03:30, nothing is fetched"; echo "go=no" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/checkout@v4
-      - name: Python (its own environment)
+        if: steps.night.outputs.go == 'yes'
+      - name: Python on the UK server
+        if: steps.night.outputs.go == 'yes'
         run: |
-          VENV="$HOME/.venvs/ashcroft-data"
+          VENV="$HOME/.venvs/ashcroft"
           if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
-            UV="$HOME/.venvs/uv-data"
+            UV="$HOME/.venvs/uv"
             [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
             rm -rf "$VENV"
             "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
           fi
           echo "$VENV/bin" >> "$GITHUB_PATH"
       - name: Install dependencies
+        if: steps.night.outputs.go == 'yes'
         run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
       - name: Fetch the minute files
+        if: steps.night.outputs.go == 'yes'
         env:
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
           BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
