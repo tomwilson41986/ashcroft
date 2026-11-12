@@ -31,9 +31,10 @@ def main(argv=None) -> int:
     store = Store(root=a.root)
     names = list(pit.TABLES) if a.build == "all" else [n.strip() for n in a.build.split(",")]
     last = date.fromisoformat(a.last) if a.last else date.today() - timedelta(days=1)
-    runs = runs_through(store, last, first_year=a.first_year)
+    trial_rows: list = []
+    runs = runs_through(store, last, first_year=a.first_year, trials_out=trial_rows)
     from greyhound.pit import core
-    ctx = {"fetch_lag": core.raw_fetch_lag(store)}
+    ctx = {"fetch_lag": core.raw_fetch_lag(store), "trial_runs": trial_rows[0] if trial_rows else None}
     if "ids" in names:
         from greyhound.pit.ids import load_runners
         ctx["runners"] = load_runners(store, f"{a.first_year}-{last.year}")

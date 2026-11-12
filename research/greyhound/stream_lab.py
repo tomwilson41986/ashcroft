@@ -218,7 +218,7 @@ def run_day(lines, day: date) -> tuple[pd.DataFrame, pd.DataFrame]:
 def forward_test_orders(store, day: date) -> list:
     """The early-lay forward test's lays for the day (greyhound/laytest.py, its primary rule, as its intraday table
     builds them: the day's forecast fit on the first traded books), as simulated LAY orders at the time of each book,
-    at the rule's limit price, staked as the early lay stakes (GBP20 liability)."""
+    at the rule's limit price, staked as the early lay stakes (its liability a lay: greyhound/early_lay.py CONFIG)."""
     from greyhound import early_lay as el, laytest as lt
     from research.greyhound import limit_study as ls, tradeout_study as ts
     f = lt.day_fit(store, day)

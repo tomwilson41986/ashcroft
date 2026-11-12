@@ -1,0 +1,65 @@
+name: Horse racing minute files (Betfair Historic Data, BASIC, read-only)
+
+# The owner, 12 Nov 2026: "yes, fetch the minute files". The UK/IE WIN markets' BASIC stream files (the last traded
+# price each minute of every runner, the withdrawn ones too), raw to S3, newest month first, each file once: the
+# ghost-run block's data (reports/discovery_1111.md 4.1). Research only; no order call; the delayed key's login.
+# On the horse racing runner (the service refuses other countries; the data runner has taken no job since 10 Nov),
+# at night only, as the price archive is: a run that starts outside 22:45-03:30 UTC does nothing, so it can never
+# sit beside the trader's day (05:15 UTC on).
+
+on:
+  schedule:
+    - cron: '10 23 * * *'
+  workflow_dispatch:
+    inputs:
+      max_minutes:
+        description: 'Minutes of fetching at most'
+        default: '100'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: horse-minute-files
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    if: vars.BETFAIR_RUNNER != ''
+    runs-on: ${{ vars.BETFAIR_RUNNER }}
+    timeout-minutes: 130
+    steps:
+      - name: At night only
+        id: night
+        run: |
+          NOW=$((10#$(date -u +%H) * 60 + 10#$(date -u +%M)))
+          if [ "$NOW" -ge 1365 ] || [ "$NOW" -le 210 ]; then echo "go=yes" >> "$GITHUB_OUTPUT"; else
+            echo "it is $(date -u +%H:%M) UTC: outside 22:45-03:30, nothing is fetched"; echo "go=no" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v4
+        if: steps.night.outputs.go == 'yes'
+      - name: Python on the UK server
+        if: steps.night.outputs.go == 'yes'
+        run: |
+          VENV="$HOME/.venvs/ashcroft"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        if: steps.night.outputs.go == 'yes'
+        run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
+      - name: Fetch the minute files
+        if: steps.night.outputs.go == 'yes'
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          MAX_MINUTES: ${{ inputs.max_minutes || '100' }}
+        run: timeout 7200 python -m research.horse_minute_files --max-minutes "$MAX_MINUTES"

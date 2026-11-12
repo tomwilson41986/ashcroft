@@ -177,6 +177,14 @@ Stages, each gated on the last:
   - Under its registered limits: GBP+1,124.11 over 29 days on GBP107,427 of liability.
   - Mean GBP+38.76 a day (90% +24.46 to +52.73), up on 23 days.
   - It reruns unchanged once the 30th day is in.
+- **Lay book, read on 30 days, 12 Nov** (`desk-lay-book-1113`, research-query 43194529542): **does not pass.**
+  - The port matched the arm on all 30 days (12 Oct - 10 Nov).
+  - Under its registered limits it made GBP+1,243.56 on GBP111,001 of liability: a mean of GBP+41.45 a day (90%
+    +27.03 to +55.08), up on 24 of 30 days.
+  - The deflated Sharpe was 0.911 with 319 trials counted, below the 0.95 required. The interval alone is not
+    enough under the house rule.
+  - The lay book stays at research. A further test needs a new registration on forward days only, opened with the
+    owner.
 - **Next move, Stage 1** (`micro-next-move-1111`, research-query 43050471729). Data: 6 greyhound days, 685 markets,
   4.29m book rows, 4 test days walk-forward. Every pair beat the baseline on every test day:
 

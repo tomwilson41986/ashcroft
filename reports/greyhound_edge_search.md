@@ -34,6 +34,8 @@ left to run to the result, a pass on either counted as a test of its own. **Comm
 | 15 | The morning move on the new model: lay where the forecast SP is above the morning WAP, back where below; greened at the SP or held; 0-2 ticks worse; morning volume floors | same | 96 (+ 96 pre-play, no data) | 48 lays (backs 0) | **the market's own drift**: laying every runner with a morning price makes +7.7% (6.2 to 9.5) with no model; the model's lift over that control +1.3% to +5.8% on the holdout (8 rules, lower bound above zero), the old model about the same. A fill question (the WAP traded; a lay there is a maker's order): a candidate for a live-key forward test, not counted | fast-loop 42892318999 |
 | 16 | The limit-order grid and the trade-out study on the new model's prices | recorded books 6 Oct - 5 Nov | 360 + 26 | 11 + 2 | chance-level (about 18 expected); the early lay's rule +1.6% to +2.0% on the holdout (CLV 10.8% against 7.3% on the old price) | fast-loop 42888391928 |
 | 17 | Back strategies (the owner: "back and trade out at BFSP, or back just to win"): every back order (take, join, ticks, rest at the forecast + margin) at three marks, ten gates, two fills, traded out at the SP or held to win, read on both periods | recorded books 6 Oct - 5 Nov (dev 15, holdout 7 days); three prices | 3,054 a price | 27 (new model, before 6 Oct), 23 (before 1 Jun), 5 (old recipe); about 153 by chance | **no back-to-win rule** (509 hold rules: 4 pass, none survives a 10% FDR). One trade-out family survives the FDR on the new model's prices: the favourite backed at the first traded book at the forecast SP + 20%, closed at the SP, holdout +10.50% (5.38 to 14.37), 157 trades; on the old price +7.51%, not surviving. Backing with no model loses 4% to 27%. Registered for a paper forward test from 11 Nov (reports/preregistration_greyhound_fav_back.md) | fast-loop 42906178212 |
+| 18 | The early lay live on the owner's account (GBP20 then GBP100 a lay; the tested rule, the guard off from 13:46 UTC on 11 Nov) | the trader's ledger against the settled books, 3, 4 and 11 Nov 2026 | 1 | 0 | **the fills, again**: 717 lays, the matched ones' log(SP / lay price) 0.000, +0.001 and +0.021 a day, the unmatched +0.358, +0.305, +0.321; locked GBP-19.35, GBP-23.56, GBP-42.70 (11 Nov: -0.56% of GBP7,691 matched). Back on paper 11 Nov 18:16 UTC (the owner) | greyhound-diagnostic 43074468127; greyhound-edge-anatomy 43077986412; reports/greyhound_model.md 42, 43.4 |
+| 19 | The edge anatomy: a lay or a back taken at the price the live-key book offers, 600 to 15 s before the scheduled off, closed at the SP; no signal, our price, the projected SP (near, far), both; five margins, four price bands | live-key books 3-11 Nov 2026 (1,017 races); development 3-8 Nov, holdout 9-11 Nov | 1,470 (754 with 100 bets) | 0 | no edge: 21 development candidates (37.7 expected by chance), none with a holdout interval above 0. Blind taking costs 1.8% to 2.9% a pound in the last minute; our price as the signal is worth about a point. On books under 15% wide the mid's error is 0.106 to 0.161 against ours 0.26 to 0.32, and the blend weights ours 1% to 12% | greyhound-edge-anatomy 43076824352, 43077986412; reports/greyhound_model.md 43 |
 
 ## The closing price (the objective)
 
@@ -226,3 +228,33 @@ Six days so far:
 |---|---|---|---|---|---|---|
 | At the SP | +1.78% | +1.43% | +0.71% | +1.42% | +1.85% | +2.22% |
 | To the result | -1.65% | +1.04% | -1.50% | +4.28% | +2.62% | +4.51% |
+
+### 11 Nov 2026 (close lab 43165734884, stream lab 43165738409; read 12 Nov 08:45 UTC)
+
+- **The day.** 145 races, 24,210 runner-checkpoints (4,260 race-checkpoints). The early lay was live for part of
+  this day and back on paper from the evening (the owner's word).
+- **Champions.** BFSP: gbm_all_small holds against the mid (gain 0.03931, z 13.32, 625 races over 5 days); the
+  strongest fresh challenger gbm_small_plus_huber: gain 0.00031, z 0.88 on its first day (145 races; a gain this
+  size needs 1,578). Win: the mid; gbm_all_small's gain 0.00646, z 2.86 over 619 races (needs 690).
+- **The day's BFSP RMSE** (all / last 60 s / late): the mid 0.3120 / 0.1402 / 0.1164; gbm_book_flow 0.2393 /
+  0.1374 / 0.1215; clogit_win 0.2667 / 0.1665 / 0.1661; clogit_win_plus 0.2809 / 0.2067 / 0.3091.
+- **The review's readings.** The market closed a median 21 s after its scheduled off (10% 8 s, 90% 60 s); still
+  open 30 s after on 33%, 60 s after on 10%. The SP pool: backs on 69% (median GBP54), lays on 98% (median GBP10
+  liability). The SP book over 815 races: median 1.0041. Benter's second stage: the SP itself gains 0.00872 at 60 s
+  (p 0.0002); gbm_all_small 0.00051 (p 0.43) at 60 s over 619 races; gbm_small_plus_huber 0.00073 (p 0.65) over 142.
+- **The trade test** (third counted day of ten): no candidate; the widest cells are back_10_0.03 +4.48% at the SP
+  (26 trades, 90% 0.30 to 8.65) and lay_60_0.03 -2.75% (43 trades).
+- **The band test** (first counted day): 2 trades in all; quantile coverage q10 0.124, q20 0.223, q80 0.775,
+  q90 0.872. **The resting test** (first counted day): every cell within noise of zero at the SP
+  (rest_back_60_all +0.094%, rest_lay_60_all +0.309%, about 640 trades each); no candidate.
+- **The stream lab.** No candidate. The late family's first counted day is negative at the SP in every cell read
+  (between -2.4% and -3.9%).
+- **The early-lay forward test, 11 Nov.** Its own figure: 148 races, 670 lays placed, 239 matched, +2.02% of
+  liability. Queue-aware replay: 300 matched, +1.46% at the SP, +0.81% to the result (traded volume x1.0; x0.5:
+  +1.44%, +0.62%). The same lays resting to the real off (not the gate's figure): +1.33% at the SP, -0.28% to
+  the result.
+
+| | 11 Nov |
+|---|---|
+| At the SP | +1.46% |
+| To the result | +0.81% |

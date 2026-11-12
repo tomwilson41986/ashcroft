@@ -1715,3 +1715,614 @@ reads the BSP and the winner from the settled books and writes the SP close and 
 and `tests/test_workflow_guards.py` fail if one is added, or if the job ever gives it `--live`. The registered gate
 is unchanged: it is the study's procedure on the recorded books (the 2 Dec check-in). This trader is its execution
 shadow on the live-key books, read beside it.
+
+## 41. Back to the fundamental model: the expected time (11 Nov 2026)
+
+racing² - greyhound. The owner, 11 Nov: "let's go back to the fundamental model. Can we improve it? Expected Time -
+review all features that go into this. Are they engineered correctly? Can we create a specific Expected Time model
+per dog per race... Research leading greyhound racing experts in the world. How do they handicap and rate races?"
+
+### 41.1 The review: what the time features do now, and what is wrong
+
+Read from the code (file and line in each case); nothing here is a score.
+
+| Family | What it is | Faults found |
+|---|---|---|
+| Engine figures `gsr`, `esr`, `fsr` (`greyhound/metrics.py` `_per_run`, lines 156-189) | time against the all-history mean of winners at the track and trip, a meeting variant the median of the night's winners | trials are in the standard, the variant and the figures (the comment at line 183 says they are not); the variant is unshrunk, even from one winner; the run home is charged the whole going allowance and the sectional none; one standard for all history, so a re-laid track drifts the figure for good; hurdles share the flat standard |
+| Track-normalised times `tn_` (`greyhound/times.py`) | rolling medians of winners over 28, 91 and 365 days, a shrunk variant | the variant is measured against the all-history standard and applied to the rolling one, so a track's drift is counted twice; a standard can rest on one winner (`min_periods=1`); trials in |
+| Expected time `et_` (`greyhound/etime.py`) | the dog's time as a fraction of the standard: last, mean of 3, weighted 6, best 6, a career mean shrunk to the grade | the career mean has no decay (a puppy run weighs as last week's); "the same fraction at any trip" is assumed, not fitted; no trap, age, days off, weight or trouble term; trials dropped, so a debutant with three trials reads only its grade |
+| Corrected figures `fg_` (`greyhound/pit/figs.py`) | the best of the four: own standard and own shrunk variant a figure, 90-day decay, shrunk to the grade's par | the variant still rests on the 10 to 14 winners of the night, in seconds over every trip; trials and troubled runs at half weight with no offset; hurdles and handicaps mixed in; no dog by track or dog by trip term |
+| Trend and age `fm_` (`greyhound/pit/form.py`) | a local-trend Kalman filter on the whole-race figure with an age drift | the age curve is the unweighted mean of change over gap, which the 3 to 7 day gaps dominate; a debutant has no level |
+| Kalman levels `kf_` (`greyhound/pit/ability.py`) | a local level on the engine's figures | inherits the engine's faults; days off enter the spread only, never the mean |
+
+In every family: the standard is made of winners' times with no link between tracks (a dog's figure at one track is
+assumed comparable with another's elsewhere), GBGB's `going` allowance is read by no time feature, handicap races
+(staggered starts) are never set apart, and **nothing models the mean effect on the time** of the trap, the dog's age,
+days off, a change of trip, a first run at a track, or its weight. Not checked on data: whether a loser's calculated
+time is its own clock or the winner's plus lengths at 0.08 s (GBGB rule 139 says the latter).
+
+### 41.2 How the experts rate a race
+
+Web research of 11 Nov 2026; each line carries its source. Where no source was found it says so.
+
+| Who | Method | What it means for a model |
+|---|---|---|
+| Timeform (UK) | each run rated from its calculated time against an expected time for the field, corrected for trouble, on a 0-140 scale fixed a track and trip; the expected rating the mean of the last 8 runs over the same number of bends; a going allowance of their own a race, scaled to the distance and adjusted for early or late in the meeting; the sectional rated apart on the same scale ([Timeform](https://www.timeform.com/GREYHOUND-RACING/beginners-guide/betting/ratings-and-sectionals-explained-1382020)) | an expected time a dog a race; a variant from the whole field against expectation, in proportion to the trip; trouble priced; early pace its own rating |
+| GBGB | calculated time: the winner's time with the going allowance, the others by lengths at 0.08 s; handicaps 0.08 s a metre ([rule 139](https://rules.gbgb.org.uk/section-7-trials-meetings-and-race-meetings/rule-139-beaten-distance-calculated-time)); the allowance is the racing manager's ([rule 151](https://rules.gbgb.org.uk/section-7-trials-meetings-and-race-meetings/rule-151-records-of-trials-and-races-going-allowances/)); seeding as railer, middle or wide ([rule 78](https://rules.gbgb.org.uk/section-5-organisation-of-races-and-trials/rule-78-wide-middle-and-railer-definitions/)) | handicaps need their own handling; the official going is one man's estimate, so estimate our own |
+| Track statisticians | going allowances differ by trip at one meeting (an example quoted: 15, 40, 55 and 80 hundredths slow for 2, 4, 6 and 8 bends), and a change of traps or timing moves a standard ([Greyhound Stats UK](https://greyhoundstats.co.uk/track_comparison_all.php)) | a variant in percent of the time, not in seconds; a standard that moves with the track |
+| Form writers | bitches: at least 21 days off after a season, usually 8 to 10 weeks, said to peak 14 to 16 weeks after it and to come back around the fourth or fifth run ([Greyhound News UK](https://greyhoundnewsuk.com/article/season-dates-a-punters-point-of-view)); age: puppies under 24 months improving, veterans over 48 declining, peak commonly put at 30 to 36 months ([Towcester](https://towcester-racecourse.co.uk/?p=32841)) - practitioners' views, no study behind them | days off and runs since a layoff, by sex; an age curve by sex |
+| Australia | box (trap) statistics a track ([GRV](https://www.grv.org.au/news/2020/10/06/four-wave-boxing-method-in-numbers/)); how a dog leaves the boxes and its running line against its box and its neighbours ([GRV Watchdog](https://www.grv.org.au/news/2020/12/22/race-patterns-revealed-giving-punters-an-inside-edge/)) | the trap's effect a track and trip; early pace against the dogs drawn either side |
+| Academic | Chen 1994 and Schumaker 2008 used ten expert variables (fastest time, win and place rates over 7 races, break and finish averages, mean times over 7 and 3 races, grade and its moves); Lyons 2016 (10,986 races at Shelbourne Park) found age, weight, mean time and sectional over 5 runs, mean grade, break and bend positions, trap and field size; its models picked 18 to 19% winners against the track expert's 23.7% ([Schumaker's review](https://www.robschumaker.com/publications/JITIM%20-%20The%20Complete%20Effect%20of%20Race%20History%20on%20Prediction.pdf), [Lyons](https://norma.ncirl.ie/2527/1/alvalyons.pdf)) | the same list the experts give; short windows of 3 to 8 runs |
+
+No published method was found for the Racing Post's greyhound ratings, for the size of Timeform's trouble
+adjustments, or for any numeric adjustment for trap, age, layoff or a change of trip: those are fitted here, not
+taken from a source. The American "speed, class, early speed, post position" books were found only in forum posts.
+
+What the experts agree on, in the order a handicapper works (our synthesis, not a sourced ranking): the going-adjusted
+time at the track and trip; early pace; the trap against the dog's style and its neighbours' pace; trouble taken out
+of past runs; the move in class; recent runs over old ones; the run home; age; a bitch's season; trap bias and weight.
+
+### 41.3 The expected-time model (`greyhound/pit/xtime.py`, columns `xt_`)
+
+One model of the time itself, a dog a race, fitted walking forward a day at a time:
+
+    100 x ln(time) = standard(track, trip, hurdles) + variant(meeting)
+                     + the dog's level + its preference (this track and trip; this distance band)
+                     + trap(track, trip, trap) + grade(track, trip, grade)
+                     + adjustments (trial, field size, age by sex, days off by sex, runs since a layoff by sex,
+                       experience, first run at the track or trip, change of track, change of trip, last weight
+                       against the dog's own mean)
+                     + trouble(the run's comment codes) + noise
+
+| The owner's ask | How it is met |
+|---|---|
+| priors | a dog with no run has the mean level of the dogs it is graded to meet, else of its grade there; the level is a Kalman filter whose run noise, daily drift and new-dog spread are fitted on the years before 2018 |
+| track adjusted | a standard a track and trip that moves with the track, linked across tracks by the dogs that move (the level is in percent, so it carries); hurdles apart; handicap races read by nothing |
+| going adjusted | our own meeting variant from every runner's error against its expected time, shrunk by the evidence, in percent so it scales with the trip (Timeform's method) |
+| distance adjusted | the level carries in percent; a fitted effect of going up or down in trip; the dog's own preference for the trip and for the distance band |
+| age | an effect every 3 months of age from 12 to 66, dogs and bitches apart |
+| recency, days off | the level's uncertainty grows a day off; a mean effect of days off in 10 bands, and of the first to fifth run back from 28 days off, by sex (the season, which GBGB's history does not date) |
+| features | trap at the track and trip, the grade, field size, trial, first run at the track or trip, change of track, weight |
+| trouble | each interference code (crowded, bumped, baulked, checked, hampered, stumbled) priced in the same regression, capped at 1.5% a run; a past run enters the level at what it would have run clear. Codes that say where the dog ran (led, ran on) are not priced: section 41.5 |
+
+The three times (whole race, sectional, run home) are each modelled so. The experts' view is the race-relative
+columns: lengths against the field on each time, the expected sectional against the dog one trap inside and one
+outside, how clear of both, the expected leader's margin, and early pace less run home (front runner or closer).
+The adjustments and code prices are refitted each year on the years before only; every column is from earlier days
+(`tests/test_greyhound_xtime.py`: the last day's results move nothing, a card row gets what its run had, and a
+planted trap effect, layoff effect, trouble cost and slow night are each found).
+
+**Not in it yet:** the racing manager's seeding (railer, middle, wide: not in our GBGB fields), a within-meeting
+drift of the going, the bitch's dated season (the day's cards carry it going forward), the predicted weigh-in.
+
+### 41.4 The test (registered before its scores)
+
+`research/greyhound/experiments/batch23_expected_time.json`: the live model's trees at one seed against the same
+with the table added, with the older time families dropped (`et_`, `tn_`, `kf_`), and with the figs and form time
+figures dropped too. The bar as before: 3 standard errors on the RMSE of log(BSP), the log-loss no worse beyond 1.
+The table's own accuracy (the error of the expected time in lengths a year, out of sample by construction) is in
+its build's meta.
+
+### 41.5 The table on the real data (greyhound-pit.yml, 3,966,889 runs, 6 Jan 2014 to 10 Nov 2026)
+
+**The first build failed its own check (run 43055884883).** The error of the expected whole-race time grew from 5.13
+lengths in 2014 to 11.93 in 2026, and within a race the forecast was worse with the dog's level than without it
+(3.72 against 3.15 lengths in 2026). Two faults, both fixed and each now under a test:
+
+1. every comment code was priced, so "always led" took 3.9% off a fast run and "badly baulked 1st" added 4.3%:
+   leading is what a fast run looks like, so the level never learnt the run. Only interference is priced now
+   (crowded, bumped, baulked, checked, hampered, stumbled), never below 0 and 1.5% a run at most;
+2. the standard was updated after the meeting variant, which hid every lasting error from it. It now reads the error
+   before the variant.
+
+**The third build (run 43059863822; the second, 43058158856, differs only in the filter's grid).** The error of the
+forecast, in lengths, graded runs of dogs with a run behind them, each year priced only from earlier days:
+
+| Time | Year | Runs | Error before the race | After the meeting variant | Within the race | Within the race, no dog term |
+|---|---|---|---|---|---|---|
+| Whole race | 2014 | 285,300 | 4.24 | 3.86 | 3.20 | 3.21 |
+| Whole race | 2019 | 320,859 | 4.13 | 3.84 | 3.22 | 3.28 |
+| Whole race | 2022 | 269,277 | 3.95 | 3.82 | 3.29 | 3.34 |
+| Whole race | 2025 | 255,209 | 3.82 | 3.64 | 3.10 | 3.18 |
+| Whole race | 2026 | 204,795 | 3.83 | 3.67 | 3.12 | 3.20 |
+| Sectional | 2014 | 268,170 | 1.14 | 1.07 | 0.92 | 1.06 |
+| Sectional | 2022 | 206,763 | 1.11 | 1.05 | 0.90 | 1.05 |
+| Sectional | 2026 | 129,631 | 1.11 | 1.04 | 0.87 | 1.01 |
+| Run home | 2014 | 266,449 | 4.11 | 3.49 | 2.90 | 3.01 |
+| Run home | 2022 | 222,293 | 4.19 | 3.62 | 3.05 | 3.18 |
+| Run home | 2026 | 137,855 | 4.08 | 3.57 | 2.97 | 3.10 |
+
+The error no longer grows. The dog's level helps in every year, most on the sectional (14% within the race in 2026)
+and least on the whole-race time (2%): a graded race is matched on ability, so most of what separates the runners'
+times within it is the run itself. The filter's constants: whole race noise 1.6, drift 0.001 a day, new-dog spread
+0.3 (inside the grid; the surface is flat, 0.8473 against 0.8478 for the next three).
+
+**The fitted adjustments to the whole-race time** (percent of the time, the last yearly fit; 1% of a 29.5 s race is
+about 3.7 lengths; below 0 is faster than the dog's level says):
+
+| Factor | Effect |
+|---|---|
+| Age | fastest against its level at 18 to 24 months (dogs -0.44%, bitches -0.34%), level at about 39 months, +0.35% at 60 months, +0.43% (dogs) at 66 |
+| Days off | -0.22% inside a week, -0.12% at 11 to 14 days, +0.03% at 22 to 35, +0.30% after 181 days |
+| Bitches after a break | +0.21% after 36 to 60 days and +0.25% after 61 to 100, against +0.10% and +0.12% for dogs; the second run back +0.18% (dogs +0.07%), level by the fourth |
+| Weight | more than 1 kg under its own mean +0.19%; 0.4 to 1 kg under +0.05%; over its mean, nothing |
+| Trip | up in trip +0.12%, down -0.13% |
+| Field | races of 2 to 4 runners 0.32% to 0.51% faster than a field of six |
+| Experience | the first 9 runs about -0.2% (still improving on its level) |
+| First run at the track | +0.05% |
+
+The bitches' figures match the form writers' account of the season (slower on return, right by the fourth or fifth
+run) without the season's date; the age curve puts the improving phase earlier than the practitioners' "peak at 30
+to 36 months", because it is measured against the dog's own level, which is still catching up at 18 to 24 months.
+
+### 41.6 Batch 23: the table on the live model's trees (greyhound-fastloop.yml run 43061572707)
+
+Test 1 Jun to 5 Nov 2026, 106,719 runners, one seed, each against all1 (the live model's trees); z is the paired
+difference over its bootstrap standard error by day; the registered bar is 3, with the log-loss no worse beyond 1.
+
+| Experiment | Features | RMSE log(BSP) | With the per-track stretch | Against all1 (90%) | z | Log-loss | z |
+|---|---|---|---|---|---|---|---|
+| all1 (the live trees) | 541 | 0.3543 | 0.3490 | - | - | 0.43806 | - |
+| all1_xtime (the table added) | 574 | 0.3465 | 0.3418 | -0.0078 (-0.0086 to -0.0070) | -16.4 | 0.43727 | -4.0 |
+| all1_xtime_lean (et_, tn_, kf_ dropped) | 522 | 0.3519 | 0.3468 | -0.0024 (-0.0033 to -0.0016) | -4.6 | 0.43749 | -2.8 |
+| all1_xtime_only (fg and fm time figures dropped too) | 494 | 0.3553 | 0.3506 | +0.0010 (+0.0001 to +0.0019) | +1.8 | 0.43799 | -0.3 |
+
+**The table passes, added to what is there** (z -16.4). For scale, the form, draw and bend tables together were
+worth -0.0023 on the same trees (batch 17). In all1_xtime the table is the second family the model leans on (the
+RMSE rises 0.0742 when its columns are shuffled; the figs table, with the market ratings, 0.2879), and
+`xt_tot_vs_field` (the expected whole-race time against the field) is the third feature by SHAP value, the expected
+sectional against the dog drawn inside (`xt_sec_vs_in`) the seventh, today's adjustments (`xt_tot_adj`) and the last
+run's surprise in the top 20. The gain is in every band of experience (dogs with 20 or more runs 0.3399 to 0.3314,
+debutants 0.7056 to 0.6954) and at every track listed.
+
+**It does not replace the older time features.** Dropping the engine's expected time, the track-normalised times and
+the Kalman levels gives back two thirds of the gain; dropping the figs and form time figures as well loses all of
+it. The faulty old figures still carry something the new one does not (the meeting variant of the last run,
+`tn_var_last`, stays the second feature), so they stay until a later test says otherwise.
+
+**Next (registered, `batch24_expected_time_stack.json`):** the same comparison in the live model itself, the stack
+at three seeds. Nothing live has changed.
+
+### 41.7 Batch 24: the table in the live model itself (greyhound-fastloop.yml run 43068025473)
+
+The stack at three seeds (three seeds of trees, three neural set models, the stack's weights, the per-track
+stretch), test 1 Jun to 5 Nov 2026, 106,719 runners.
+
+| Experiment | RMSE log(BSP) | With the per-track stretch | Against the live model (90%) | z | Log-loss | z |
+|---|---|---|---|---|---|---|
+| stack3_all3 (the live model) | 0.3399 | 0.3368 | - | - | 0.43735 | - |
+| stack3_all4 (with the expected-time table) | 0.3332 | 0.3305 | -0.0067 (-0.0072 to -0.0062) | -22.1 | 0.43686 | -4.2 |
+
+**It passes** and is the candidate for the live price. **Against the market it is still behind**: on the 106,561
+runners with a BSP the BSP's log-loss is 0.42859 and ours 0.43752 (0.43800 before); in a blend with the BSP our price
+takes a weight of 0.040 (0.032 before) and the blend scores 0.42792 against the BSP's own 0.42784 on the second half.
+The table closed 0.0005 of a 0.0094 gap. That gap, and the weight in the blend, are the scoreboard for "beating the
+market" from here.
+
+## 42. The day diagnostic, 11 Nov 2026 (greyhound-diagnostic.yml run 43074468127, read 18:06 UTC)
+
+racing² - greyhound. The owner, 11 Nov: "do an exhaustive diagnostic on our greyhound results today. Do we have gaps
+or issues with our model?" `research/greyhound/day_diagnostic.py`, read-only from S3: the day's predictions, the
+settled books, the early lay's ledgers. The day was not over at the read (104 WIN races settled, 47 priced and still
+to run).
+
+**Coverage: no gap.** All 104 settled WIN races were priced, and every one of their 583 runners with an SP (the 104
+settled markets the report lists as unpriced are the To Be Placed markets, which we do not price). The trader's
+ledger has no gap over 12.6 minutes from 10:46 to 18:05 UTC and no last error.
+
+**The price against the SP: inside the test's figure, with two known weaknesses.**
+
+| Measure | Today (583 runners, 104 races) | The test (section 36) |
+|---|---|---|
+| RMSE of log(BSP), as served | 0.3093 | 0.3366 |
+| RMSE of log(BSP), before the per-track stretch | 0.3147 | 0.3396 |
+| Bias (above 0: priced too long) | -0.038 | - |
+| Slope of log(BSP) on log(our price) within the race | 1.019 | - |
+| Our favourite is the SP's favourite | 70.2% of races | - |
+| Winners' log-loss: ours against the SP's | 1.567 against 1.513 | the SP better (section 38) |
+
+- the ends of the book: dogs the SP put at 15 or more were priced 33% too short (bias -0.331, 80 runners, RMSE
+  0.505), dogs under 3.0 about 15% too long (48 runners); between 3 and 8 the bias is under 6%.
+  **Correction, 11 Nov evening:** that reading sorts the runners by the SP, the thing being forecast, and any
+  forecast with error looks too flat when sorted by its target. Sorted by OUR price the bias is -0.035 (our price
+  2 to 3, 47 runners), -0.037 (3 to 5), -0.040 (5 to 8), -0.013 (8 to 15) and -0.095 (15 or more, 72 runners), and
+  the slope of log(SP) on log(our price) within the race is 1.019: the book is about 4% too short all over (its
+  level), not flat at the ends. The ends are not a fault of the model's shape;
+- Nottingham: RMSE 0.426 and bias -0.124 on 72 runners, 9 of the day's 20 worst misses; every other track between
+  0.22 and 0.35. One day: to be read again on the nights that follow before it is called a fault.
+
+**The early lay as traded: the forecast picks the drifters, and we are matched on the ones that do not drift.**
+
+| | Lays | Liability | Mean log(SP / lay price) | Went out past our lay |
+|---|---|---|---|---|
+| Sent | 365 dogs in 102 races | GBP27,405 asked | +0.238 | - |
+| Matched | 100 (27.4%) | GBP7,691 | +0.019 | 48.0% |
+| Not matched | 265 | - | +0.321 | 96.2% |
+
+Locked by the green-ups: GBP-42.70, -0.56% of the matched liability (97 greened, 3 held to the result under the
+smallest SP back, 2 green-up retries). Closed at the SP instead the matched lays would have made GBP-59.05; had every
+lay sent been filled at its price, GBP+1,469.70. From the change to GBP100 and no guard (13:46 UTC): 84 matched,
+GBP7,383 liability, GBP-43.56.
+
+The matched lays were priced 1.6% under the mid when sent, the unmatched 4.7% under (all lays 4.1%): we are filled
+where the book is tight and already agrees with us, and left unfilled where the early book is wide and its mid is
+below where the SP ends. The forecast's direction is right (the dogs it lays went out 24% on average); the rule as
+tested took fills the live market does not give at those prices. That is an execution fault, not a pricing one.
+
+**What the diagnostic could not read.** The same rule on paper beside the live orders (the paper ledger stopped at
+10:42 UTC when the live run took over), so there is no like-for-like fill comparison today; the paper variants'
+ledgers carry no fill rows; Betfair's own settled bets (the reconciliation runs the next morning).
+
+## 43. The edge anatomy: can the greyhound edge be traded (11 Nov 2026)
+
+racing² - greyhound. The owner, 11 Nov, after putting the early lay back on paper (18:16 UTC stop, 18:25 the job
+restarted with `early_lay=paper`): "run thorough investigation, QA, cleaning. Exhaustive to identify how to make this
+a profitable edge. Or other profitable trading strategies." `research/greyhound/edge_anatomy.py`, registered in the
+ledger before its run; greyhound-edge-anatomy.yml runs 43076824352 and 43077986412 (the second fixes two descriptive
+sections and adds 43.2's table; the grid is unchanged). Live-key books, GB WIN, 3 to 11 Nov 2026: 9 days, 1,017
+races, about 5,700 runners a mark.
+
+### 43.1 The market itself (QA)
+
+| Seconds before the scheduled off | Median spread | Median matched in the race | Median money at the best lay / back price | Runners with a book under 15% wide |
+|---|---|---|---|---|
+| 600 | 341% | GBP6 | GBP2.47 / GBP2.35 | 0.9% |
+| 300 | 204% | GBP219 | GBP2.21 / GBP3.69 | 26.2% |
+| 180 | 6.6% (a tenth over 236%) | GBP1,290 | GBP4.57 / GBP5.08 | 70.9% |
+| 120 | 4.7% | GBP2,669 | GBP5.90 / GBP7.36 | 91.0% |
+| 60 | 3.6% | GBP5,218 | GBP9.90 / GBP12.28 | 97.4% |
+| 15 | 3.2% | GBP9,171 | GBP11.73 / GBP15.58 | 98.0% |
+
+The races go off a median 19 to 26 seconds after the scheduled time (a tenth by 38 to 64 seconds), so "15 seconds
+before" is about 40 seconds before the traps open. The book does not exist five minutes out and is made in the last
+three. The books are 0 to 3 seconds old at their mark, none crossed, 97.7% to 97.9% of runners have an SP, 91.4% to
+91.7% a price from us (3 Nov had no predictions file).
+
+### 43.2 Who knows more, and when
+
+The error of log(price / SP) on the holdout days (9 to 11 Nov), on runners whose book is under 15% wide; the weight
+on our price in the best blend with the book's mid is fitted on 3 to 8 Nov.
+
+| Seconds before | Our price | The book's mid | The blend | Weight on our price |
+|---|---|---|---|---|
+| 300 | 0.263 | 0.161 | 0.156 | 0.124 |
+| 180 | 0.308 | 0.148 | 0.149 | 0.058 |
+| 120 | 0.311 | 0.134 | 0.134 | 0.042 |
+| 60 | 0.320 | 0.124 | 0.124 | 0.022 |
+| 15 | 0.323 | 0.106 | 0.105 | 0.011 |
+
+**Once a real two-sided book exists it knows two to three times what we know, and our price adds nothing to it**
+(a weight of 1% to 6%). Our price is the better one only where there is no book to trade against. Betfair's projected
+SP (near) is worse than the mid at every mark (0.138 against 0.121 at 15 seconds).
+
+### 43.3 Taking the price on offer, closed at the SP: 1,470 cells
+
+A lay taken at the best price available to lay, or a back at the best price to back, for the money shown (GBP10 at
+most), closed at the SP, 2% commission on a win; seven marks, no signal / our price / the projected SP near and far /
+both, five margins, all prices and four bands.
+
+| Taken with no signal | 120 s | 60 s | 30 s | 15 s |
+|---|---|---|---|---|
+| Lay, return a pound staked | -7.58% | -2.85% | -2.31% | -2.20% |
+| Back | -2.38% | -1.76% | -2.00% | -1.96% |
+
+Each with its 90% interval below zero and no day in profit in nine. With our price as the signal (margin 10%) the
+lays lose 1.05% to 2.09% and the backs 1.18% to 1.87% at the same marks: the signal is worth about a point, the
+spread and commission two to three. Of 754 cells with 100 bets, 21 had an interval above zero on the development days
+(37.7 expected by chance); **none kept it on the holdout**, 3 were positive at all. The nearest thing to a signal is
+Betfair's own projected SP: lays taken 10% under it made +1.64% at 60 seconds (144 bets, 7 days of 9 up, interval
+-0.24 to 3.57) and +1.20% at 15 (124 bets): inside its noise, and worth pennies at the money on offer.
+
+### 43.4 The live early lay's own orders against the book they went into
+
+All three live days (3, 4 and 11 Nov), 717 lays, each matched to the book at most 15 seconds before it was sent.
+
+| Where the lay sat | Lays | Matched | Locked | SP against our lay price, all | The same, matched only |
+|---|---|---|---|---|---|
+| Below the best lay offer on show (behind the queue) | 483 | 26.9% | GBP-23.60 | +0.234 | 0.000 |
+| At the best offer (joins the queue) | 35 | 62.9% | GBP-13.81 | +0.124 | -0.007 |
+| Inside the spread | 67 | 56.7% | GBP-1.95 | +0.197 | +0.071 |
+| Crossing (taken at once) | 16 | 81.3% | GBP-4.70 | -0.023 | -0.083 |
+| No book recorded within 15 s | 116 | 37.9% | GBP-32.55 | +0.232 | +0.018 |
+
+| Day | Lays | Matched | Locked | SP against our price: matched | Unmatched |
+|---|---|---|---|---|---|
+| 3 Nov | 218 | 80 | GBP-19.35 | 0.000 | +0.358 |
+| 4 Nov | 129 | 62 | GBP-23.56 | +0.001 | +0.305 |
+| 11 Nov (to 18:28 UTC) | 370 | 105 | GBP-33.70 | +0.021 | +0.321 |
+
+The same thing on every live day: the lays that match are the ones whose price does not move; the ones that would
+have paid (a third of a log point) are never hit. Two thirds of the orders were sent into a book that was not yet
+made (the offer to lay a full log point above our price, GBP2 to GBP3 on show). The tested rule's profit was the
+fills it assumed there.
+
+### 43.5 What it means
+
+1. **The form model has no edge against the exchange at any time a trade can be had.** Twenty readings now say so
+   (reports/greyhound_edge_search.md rows 1 to 19 and three live days). Better features move our error from 0.34
+   toward 0.33; the book's is 0.11 to 0.15. No feature block closes that: the gap is money and information that
+   arrive in the last three minutes.
+2. **The size of the prize is small whatever the edge.** GBP9,171 is matched in the median race by 15 seconds out,
+   about 110 to 150 GB races a day; the best price holds GBP10 to GBP20. Taking the whole top of the book on every
+   runner at 60 seconds stakes about GBP4,700 a day a side at GBP10 a bet (GBP42,082 of lays and GBP45,701 of backs in
+   9 days). A rule that picked a tenth of that with a true 2% would make about GBP10 a day.
+3. **What is left on this exchange is making prices, not taking them**: the registered stream-lab trials (the resting
+   test with queue-aware fills, the late family, the band test: rows 11 to 13), read once after their ten days. They
+   are not looked at early.
+4. **Where the model's knowledge is worth something is before the book exists**: hours ahead, against prices that
+   can be taken then (bookmakers' early prices, no data held), or sold as prices and ratings; and on a market with
+   the money to carry a stake (the horses, where the same expected-time method has not been tried; Australian
+   greyhounds, where rows 6 and 7 left two candidates and we record no books).
+
+## 44. The audit, the trials and the foundation (11 Nov 2026)
+
+The owner, 11 Nov: "fix this ... fault fix: look for gaps and leakage in our model. Exhaustively improve our model.
+Do not stop until we beat the market." An audit of the whole greyhound path (data, engine, tables, fit, evaluation,
+serving) by eight reviewers, each finding checked by a second reader against the code and the GBGB runs held locally
+(1 Jul 2025 to 5 Nov 2026, 461,799 rows), returned 60 findings. **None shows a race's own result reaching its
+features.** What it found is a model reading a damaged picture of the sport: the trials missing, the class scale
+wrong, the going variant measuring the card, and several columns that differ between training and the morning card.
+
+### 44.1 The trials restored (greyhound/pit/trials.py; the expected-time table reads them)
+
+GBGB serves a trial (classes T, T1 to T4) with no off time, and `data.clean` drops a row with no time: **every trial
+was dropped before the engine saw it** (findings 1 and 46). What the code called a trial was the intertrack race
+(IT), which is a race (327 of them in the local months, 93.9% of their runners with an SP). So a debutant came to
+its first race with nothing behind it, although four in five had trialled.
+
+- The trial rows are now read on their own channel (`trials.select`, 843,018 rows from 30 May 2014 to 10 Nov 2026,
+  88,046 dogs; greyhound-pit.yml run 43098755104): a trials table (`tl_`, 24 columns: counts, days since, the
+  trial figure against the graded standard, the sectional, solo or in company, the same track and trip, the
+  weight, a level from the trials) and the expected-time table reads the trials as runs (flagged, with their own
+  noise and their own trial and field-size adjustments: a trial runs 0.43% slower than a race for the same dog).
+- 89.4% of race rows have a trial behind them; 24.5% a trial in the last 28 days; 9.0% come straight from one. Of
+  89,238 first races, 80.3% follow a trial.
+- A card debutant is matched to its trial rows, so it has its GBGB id, sire, dam, birth month, sex and trainer
+  (finding 48: it had none).
+- On the local runs (2026 runs with an SP, 65,489 trial runs read; scratch run probe_trial_placebo.py), the rank
+  correlation of the expected time against the field with the race-centred log SP share, with two placebos - each
+  trial given to another dog, and each trial moved a year later (it cannot be read before the dog's races):
+
+| Races behind the dog | Runs | No trials | Trials read | Trials given to other dogs | Trials a year later |
+|---|---|---|---|---|---|
+| None | 3,895 | 0.046 | 0.554 | 0.054 | 0.049 |
+| 1 to 2 | 7,669 | 0.494 | 0.620 | 0.351 | 0.508 |
+| 3 or more | 197,643 | 0.557 | 0.597 | 0.484 | 0.568 |
+
+  The gain is the dog's own trial form read before its races: a trial that is not the dog's, or comes too late,
+  gives the debutant nothing (and a wrong dog's trial hurts the rest). The local store holds 16 months of history
+  only.
+
+### 44.2 Batch 25: the dyadic memory and the season cycle (run 43089770446) - not read as registered
+
+The four arms ran to the end, but GitHub's artifact service failed from about 20:29 to 20:48 UTC and three of the
+four result files were never stored. From the job logs and the one stored file (test 1 Jun to 10 Nov 2026, one seed):
+
+| Arm | Features | RMSE log(BSP) | Log-loss |
+|---|---|---|---|
+| fix1 (the live trees with the expected-time table) | 574 | 0.3473 | 0.43705 |
+| fix1_dyad | 582 | 0.3466 | 0.43694 |
+| fix1_cycle | 588 | 0.3469 | 0.43681 |
+| fix1_both | 596 | - | 0.43701 |
+
+The paired reading could not be made (fix1's predictions were lost). The one pair that can be made: fix1_both
+against batch 23's model on the same 106,719 runners, +0.0004 (z +1.0). Nothing passes. The fast loop now uploads
+each arm up to three times, and both tables are scored again in batch 26.
+
+### 44.3 The foundation: the audit's data and engine faults, fixed together
+
+Each fix is set from a measurement on the GBGB runs held locally (1 Jul 2025 to 5 Nov 2026) and held by a test
+(tests/test_greyhound_foundation.py). They change the engine's features, so they go in together: one feature-cache
+rebuild, the metrics tables rebuilt beside the old ones (`greyhound/pit2`), one retrain.
+
+| Fault (audit finding) | Measured | Fix |
+|---|---|---|
+| The meeting variant measured the class of the card (2) | Correlation with the card's mean grade 0.416 over 3,429 meetings; best and worst quarters of cards 1.95 lengths apart | Each winner read against the standard plus its class's par, the median shrunk: 0.015 and -0.03 lengths |
+| The class scale (3, 53) | Winners against their track and trip's median, lengths: OR1 -8.5, OR2 -7.1, OR3 -5.4, IV -5.0, A1 -4.6, OR -4.4, A2 -3.3; B1 -4.5. OR1-3 were coded as A1-3, HP as the top grade, B two below A | OR1 -2, OR2 -1, OR3 0, OR and IV level with A1, B level with A; HP and IT off the ladder; a change of grade read on one ladder only |
+| Intertrack races flagged as trials (6, 47) | 327 races, 93.9% of runners with an SP | A race: a target, priced live |
+| Void races kept as runs (4, 50) | 207 races, every dog "placed", beaten 0 lengths | No run for any dog; a starter with no finishing position lost, position unknown |
+| The short margins (55) | GBGB's clock: short head 0.01 s (4,638 races), head 0.02 s (3,208), neck 0.03 s (2,989); a neck was coded shorter than a head | 0.125, 0.25, 0.375 lengths |
+| A missing distance summed as 0 (8, 54) | 4,210 runs took the lengths of the dog in front | Unknown stays unknown, read from the clock where there is one, the margin capped at its 99th percentile (15 lengths) |
+| A mistyped going allowance (51) | 337 calculated times that are not run time + allowance (+ 0.08 s a metre of handicap start); going values of 2020 and 51430 | No time |
+| Handicaps read as hurdles (3, 52) | HP is the handicap in 2,082 of 2,082 races; the 89 hurdle races are classed OR, IV and T | The handicap from the class, its start in metres, the hurdle flag from the race type |
+| The comment parser (9) | Of 901,364 tokens: "Led 1/2" read as led at the first bend, "FcdTCk" (forced to check, 19,662 tokens) not read by the expected-time table, "SAw,EP" read as a fast break | Rewritten against GBGB's tokens: 79.5% of runs it marks as led had the race's fastest sectional (74.8% before) |
+| The pace map (5) | 27.6% of runners given the frame's median early speed; 28.9% of races with an empty trap read as a neighbour | No early speed is no early speed; the boxes beside are trap - 1 and trap + 1 |
+| One random stream down the frame (17, 29, 42) | A card race and its result row had different simulated chances | The same draws for every race |
+| The card's race number (21, 58) | 8.2% of track-days have two meetings; the evening's first race was served as race 13 | A meeting is the offs within 120 minutes (within a meeting never over 75, between two never under 190); the number is the order within it, both sides |
+| Card-unsafe columns (18, 27) | Three found in batch 14 lived only in the stack's own drop list | One list for every feature set, and each table's own |
+| No canonical track (56) | Pelaw Grange became Star Pelaw inside the fit window | One name a track, on the results, the trials, the card and the price files |
+| Tables not tied to the engine (34) | - | The fixed engine's tables at `greyhound/pit2`, each with the engine's code hash |
+
+**What it does to the figures** (the old engine against the fixed one on the same 215,535 runs of 2026; rank
+correlation of each pre-race column, centred on its race, with the race-centred log SP; scratch run
+compare_engine.py):
+
+| Column | Old | Fixed |
+|---|---|---|
+| Speed figure, recency-weighted (`gsr_ewm`) | 0.392 | 0.497 |
+| Speed figure, last 6 (`gsr_mean6`) | 0.344 | 0.441 |
+| Kalman rating (`lb_kr`) | 0.411 | 0.496 |
+| Class-adjusted figure (`lb_cv_gsr_ewm`, the old engine's best column) | 0.500 | 0.508 |
+| Grade change | 0.113 | 0.160 |
+| Early-speed rank in the race | -0.173 | -0.211 |
+| Led at the first bend, last 6 | 0.065 | 0.084 |
+| Mean of the 381 shared columns (absolute) | 0.187 | 0.202 |
+
+119 columns rise by more than 0.002 and 33 fall. The falls: the break (0.100 to 0.038), because early pace is now
+its own column (0.076), and the distance-beaten windows under the first version of the fix (one "Dis" dog at the
+old 40-length cap moved its whole race's mean), corrected before the release (the 6-run mean of the margin: -0.198
+old rule, -0.176 with the cap at 40, -0.204 as released).
+
+The old engine already held one class-adjusted figure (`lb_cv_gsr_ewm`), and the model leaned on it; what the fix
+does is make every other figure-based column as good. So the model-level gain will be smaller than the columns'.
+
+**A local read before the cloud batch** (scratch run local_model.py; not a score): gradient-boosted trees on each
+engine's own card-safe columns, nothing else, target the race-centred log of the SP's share, fitted on the local
+runs before 1 Jun 2026 (218,365 rows: eleven months, where the real fit has years and the metrics tables) and
+scored on the 107,902 runners from then that both frames hold:
+
+| | Old engine | Fixed engine |
+|---|---|---|
+| All | 0.3355 | 0.3204 (-0.0151, z -24.8 by day, 158 days) |
+| A grades (56,745) | 0.3037 | 0.2923 |
+| Sprints, D (30,421) | 0.3339 | 0.3187 |
+| Open races, OR (11,438) | 0.4348 | 0.4026 |
+| Handicaps, HP (3,241) | 0.4265 | 0.4232 |
+
+(The old engine's fit ran to its 3,000-round cap, the fixed engine's stopped at 2,588, so the old one is slightly
+flattered against.) In the real model the figures table and the expected-time table already carry class-aware
+variants, so the gain there will be smaller: batch 28 reads it.
+
+### 44.4 Where the error sits, and the handicap
+
+The live candidate's squared error of log(BSP) (stack3_all4, batch 24, 1 Jun to 5 Nov 2026, 106,719 runners, RMSE
+0.3332; scratch runs probe_error.py and group_split.py on the saved predictions):
+
+| Runners | Share of runners | RMSE | Share of the squared error |
+|---|---|---|---|
+| No race behind the dog | 1.8% | 0.697 | 7.9% |
+| 1 to 2 races | 3.6% | 0.365 | 4.3% |
+| In a race with a dog under 3 races (any runner) | 24.3% | 0.386 | 32.6% |
+| In a race with none | 75.7% | 0.314 | 67.4% |
+| 3+ races and trialled since its last race | 6.7% of those | 0.486 | 15.4% of theirs |
+| 3+ races, off the track 29 days or more | 4.2% of those | 0.50 to 0.57 | 10.9% of theirs |
+| 3+ races, another track than last time | 4.9% of those | 0.456 | 10.0% of theirs |
+| Open races (OR) | 10.5% of those | 0.406 | 16.7% of theirs |
+| Handicaps (HP) | 3.0% of those | 0.481 | 6.7% of theirs |
+
+A lightly raced dog costs its whole race: the experienced dogs beside one are priced at 0.340 against 0.314. And the
+worst-priced experienced dogs are the ones that came back through a trial - the trials the model could not see.
+
+**The handicap** (11,675 handicap runs, 2,030 races in the local months; scratch runs probe_hcap.py,
+probe_hcp_xt.py):
+- the trap is the handicap's order: trap 1 has the biggest start and trap 6 is scratch (mean start 12.4, 9.8, 7.2,
+  4.8, 2.3, 0.0 m); in 99.1% of handicaps the start never rises with the trap number. The card gives the trap, so it
+  gives the order, and the track's earlier handicaps give the metres. A dog's start at its last handicap correlates
+  0.81 with today's;
+- the handicapper's mark follows the expected times (within-race correlation 0.87, 13.3 m a second), and the SP in a
+  handicap barely follows ability (rank correlation of the expected time against the field with the SP 0.20,
+  against 0.58 in flat races);
+- the expected-time table read no handicap run, so a dog with handicap form was priced worse in its FLAT races
+  (0.313 with no handicap in its last ten runs, 0.353 with a fifth to a half, 0.400 with more). Reading the
+  calculated time for the dog's level, with the handicap and its metres as fitted adjustments (+0.22% and +0.61% a
+  10 m), lifts the expected time's rank correlation with the SP in those flat runs from 0.484 to 0.528 and from
+  0.438 to 0.504, and leaves the rest where it was (0.590, 0.591).
+
+### 44.5 Batch 26: the trials, and the floors (greyhound-fastloop.yml run 43102842816)
+
+Registered before its scores (ledger `greyhound-trials-floors-batch26-1111`). The live model's tree recipe with the
+expected-time table, one seed, test 1 Jun to 10 Nov 2026 (111,436 runners, 20,351 races).
+
+**The trial-aware expected time** (t1, against batch 23's all1_xtime - the same recipe before the trials - on the
+same 106,719 runners of 1 Jun to 5 Nov):
+
+| | Before | With the trials | Difference |
+|---|---|---|---|
+| RMSE of log(BSP), all | 0.3465 | 0.3279 | -0.0185 (z -19.7) |
+| Log-loss | 0.43792 | 0.43613 | -0.00179 (z -7.6) |
+| 1 Jun - 31 Aug | 0.3498 | 0.3273 | -0.0225 (z -22.0) |
+| 1 Sep - 5 Nov | 0.3419 | 0.3287 | -0.0132 (z -9.4) |
+| No race behind the dog (1,934) | 0.6954 | 0.5905 | -0.1050 |
+| 1 to 2 races (3,786) | 0.3783 | 0.3529 | -0.0255 |
+| 3+ races, trialled since its last race (6,796) | 0.4968 | 0.4192 | -0.0777 |
+| 3+ races, no trial since (94,203) | 0.3202 | 0.3114 | -0.0087 |
+| Off the track 29 days or more (4,447) | 0.5350 | 0.4357 | -0.0993 |
+| In a race with a dog under 3 races (25,908) | 0.3982 | 0.3650 | -0.0332 |
+| In a race with none (80,811) | 0.3282 | 0.3151 | -0.0130 |
+| Open races (11,350) | 0.4446 | 0.4132 | -0.0314 |
+
+The gain is where a trial is the news - the debutant, the dog back from a break, the dog that trialled since it last
+raced - and it spreads to every runner beside them. Two placebos on the local runs say it is the dog's own trial
+form and nothing else: with each trial given to another dog, or moved a year later, the debutants' expected time
+lines up with the SP no better than with no trials at all (0.054 and 0.049 against 0.046; 0.554 with the trials as
+they are).
+
+**The floors.** t1_placebo (ten columns of noise) scored 0.3258 against t1's 0.3279: -0.0021, z -5.2. The noise did
+not help; it moved the early stopping. t1 stopped after 100 flat rounds at round 3,046; with the noise columns the
+same recipe ran to round 5,154. So on one seed with this stopping rule a paired "gain" of 0.002 at z -5 is luck,
+and every single-seed arm of the earlier batches is read against that: the expected-time table's -0.0078 (batch 23)
+and the stack's -0.0067 (batch 24) stand; the lean arm's -0.0024 does not. From batch 28 the tree arms run a fixed
+6,000 rounds.
+
+**The trainer-at-the-time columns** (t1_notr): the price is the same on every one of 109,933 runners with the 16
+columns dropped (they are empty throughout the fit window). They are empty on the morning card too, so they go.
+
+**The dyadic memory and the season cycle** (batch 25's files were lost; read here paired):
+
+| Arm | Rounds | RMSE | Against t1 | Against the noise arm |
+|---|---|---|---|---|
+| t1 | 3,046 | 0.3279 | | +0.0021 (z +5.2) |
+| t1_placebo (ten noise columns) | 5,154 | 0.3258 | -0.0021 (z -5.2) | |
+| t1_dyad | 5,618 | 0.3252 | -0.0027 (z -7.1) | -0.0005 (z -1.4) |
+| t1_cycle | 4,860 | 0.3256 | -0.0023 (z -6.4) | -0.0002 (z -0.4) |
+
+Both fail: neither table can be told from ten columns of noise. Their "gain" against t1 is the later stop.
+
+### 44.6 Batch 26 finished: the trials table passes, the dyad and cycle tables fail
+
+The last two arms (run 43102842816, 109,933 runners paired): the second seed 0.3260 and the noise arm 0.3258 agree
+(+0.0002, z +0.5), so the floor of a properly trained arm is about 0.3259. The trials table against the noise arm:
+0.3151, -0.0107 (z -15.9), log-loss -0.00061 (z -3.0); Jun-Aug -0.0075, Sep - 5 Nov -0.0145, after 5 Nov -0.0194.
+The dyad (-0.0007, z -1.9) and cycle (-0.0004, z -1.0) tables fail against the seed arm. The gain of the trials
+table grows through the window: 28% of it is debutants, whose baseline error rises from 0.50 (Jun-Aug) to 0.67
+(Sep-Nov). Unexplained; the table reads trial days strictly before the race day and no leak was found on reading it.
+
+### 44.7 Batch 28: the fixed engine, every table, the stack (greyhound-fastloop.yml run 43165731314)
+
+Registered before its run (ledger `greyhound-foundation-batch28-1111`). Test 1 Jun - 10 Nov 2026, 110,788 runners,
+tree arms at a fixed 6,000 rounds on the fixed engine and its rebuilt tables (no stale table in any arm).
+
+| Arm | RMSE of log(BSP) | Against f0 | z | Log-loss diff (z) | Reading |
+|---|---|---|---|---|---|
+| f0 (baseline) | 0.3186 | - | - | - | |
+| f0_placebo (ten noise columns) | 0.3190 | +0.0005 | +1.3 | -0.00040 (-2.9) | the floor |
+| f_trials | 0.3087 | -0.0099 | -18.4 | -0.00091 (-5.3) | passes |
+| f_optics | 0.3158 | -0.0028 | -8.0 | -0.00020 (-1.3) | passes |
+| f_fitness | 0.3177 | -0.0009 | -2.4 | -0.00018 (-1.2) | fails (under 3 SE) |
+| f_fear | 0.3181 | -0.0004 | -1.1 | -0.00025 (-1.8) | fails |
+| f_ext | 0.3189 | +0.0003 | +0.7 | -0.00030 (-2.2) | fails |
+| f_clock | 0.3187 | +0.0002 | +0.4 | +0.00001 (+0.1) | fails |
+| f_litter | 0.3187 | +0.0002 | +0.5 | -0.00025 (-1.6) | fails |
+| f_dyad | 0.3188 | +0.0002 | +0.8 | -0.00018 (-1.4) | fails |
+| f_cycle | 0.3190 | +0.0004 | +1.2 | -0.00005 (-0.4) | fails |
+| f_all6 (the six discovery tables) | 0.3145 | -0.0041 | -10.6 | -0.00034 (-2.2) | mostly optics |
+| f_stack (batch 24's stack3_all4 recipe) | 0.3073 | -0.0113 | -29.1 | -0.00046 (-4.1) | |
+
+- **A fault in the batch.** f0_seed returned f0's numbers to the last digit: the seed override did not reach the
+  fit, so the second-seed floor is void here. The noise arm is the only floor of this batch.
+- **The foundation.** f0 0.3186 against batch 26's old-engine arms at about 0.3258 on nearly the same runners:
+  about -0.007. Two caches, so descriptive.
+- **The stack.** Against batch 24's stack3_all4 (the live candidate before the trials and the foundation) on the
+  same 106,719 runners: 0.3332 to 0.3070, -0.0262 (z -24.9), log-loss -0.00243 (z -11.7); both periods. It passes
+  as registered. It does not yet read the trials or optics tables: against the single tree arm with the trials
+  table it is only -0.0014 (z -2.4) with a worse log-loss (+0.00045, z +2.7). The next candidate is the stack with
+  both tables.
+
+### 44.8 The two new model forms, and the market
+
+- **The residual memory** (ledger `greyhound-residual-memory-1111`; `research/greyhound/residual_memory.py`) on
+  f_stack: fitted on 1 Jun - 31 Aug (K 3, b 0.516, c 0.277), scored on 1 Sep - 10 Nov (49,612 runners, 71 days):
+  RMSE 0.3083 to 0.3049, -0.0034 (z -18.4); log-loss -0.00016 (z -2.8); after 5 Nov -0.0045 (z -7.3). It passes.
+  The same races as its development reads: a confirmation, not independent evidence. Trainer, sire and
+  track-and-trap memories add almost nothing to the dog's (0.3048 to 0.3042 in a scratch probe on batch 26).
+- **The blend by market depth** (ledger `greyhound-depth-blend-1111`; `research/greyhound/depth_blend.py`) on
+  f_stack, 20,192 races with Betfair's pre-off money (median GBP15,147 a race, the price files' pp_vol summed),
+  fitted before 1 Sep, scored from it against the SP alone (SP log-loss 0.42701):
+
+| Weighting | Chance | Blend less SP | 95% interval | Reading |
+|---|---|---|---|---|
+| One blend | as fitted | +0.00026 | +0.00008 to +0.00043 | worse than the SP |
+| Realised-money bands | as fitted | +0.00029 | +0.00011 to +0.00047 | worse |
+| Expected-money bands | as fitted | +0.00025 | +0.00007 to +0.00045 | worse |
+| One blend | with the memory | +0.00025 | +0.00007 to +0.00042 | worse |
+| Realised-money bands | with the memory | +0.00027 | +0.00010 to +0.00045 | worse |
+| Expected-money bands (primary) | with the memory | +0.00024 | +0.00006 to +0.00043 | worse |
+
+  The weight on our chance does fall with the money (0.23 in the thinnest third, 0.15, 0.08 in the deepest), as
+  supposed, but no band beats the SP out of sample, the thinnest included (+0.00028, -0.00013 to +0.00069). The
+  expected money ranks the realised money only weakly (rank correlation 0.37). All six readings fail.
+- **The scoreboard.** The Betfair SP is not beaten. On the BSP races f_stack's log-loss is 0.43481 against the
+  SP's 0.42825; every blend fitted on the earlier part is worse than the SP alone on the later part.
+- **Discovery, second wave** (a screen, ledger `greyhound-discovery-wave2-screen-1112`): the drought since the
+  last win is null; running-line drift and the later runs of rivals met carry rank correlations of about -0.015
+  with the model's miss. Not built.

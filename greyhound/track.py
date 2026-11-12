@@ -387,9 +387,10 @@ def markdown(s: dict) -> str:
 # The day's GBGB results
 # --------------------------------------------------------------------------------------------------------------------
 
-def runs_through(store, day: date, first_year: int = 2018) -> pd.DataFrame:
+def runs_through(store, day: date, first_year: int = 2018, trials_out: list | None = None) -> pd.DataFrame:
     """Every GBGB run to ``day``: the year tables, and the raw day files after the tables' last day (each fetched from
-    GBGB when the store lacks it)."""
+    GBGB when the store lacks it). ``trials_out``: a list that is given the trial rows (classes T, T1-T4), which
+    ``clean`` drops (GBGB serves a trial with no off time): greyhound/pit/trials.py reads them."""
     from greyhound.data import clean
     from sources import gbgb
     keys = sorted(k for k in store.listing("gbgb/") if k.endswith(".parquet") and "/runs_" in k
@@ -412,6 +413,9 @@ def runs_through(store, day: date, first_year: int = 2018) -> pd.DataFrame:
         new = pd.DataFrame(extra)
         df = pd.concat([df[~df.race_date.isin(set(new.race_date))], new], ignore_index=True)
     df = df.drop_duplicates(["race_id", "trap", "dog_id"], keep="last")
+    if trials_out is not None:
+        from greyhound.pit import trials
+        trials_out.append(trials.select(df))
     return clean(df)
 
 
