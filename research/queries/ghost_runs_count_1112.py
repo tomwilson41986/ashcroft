@@ -1,13 +1,14 @@
 """Ghost runs, the first step (reports/discovery_1111.md 4.1; read-only; a count).
 
 A horse declared, traded on Betfair and then withdrawn leaves a price and no result row. Before any feature is built:
-how many are there, and how many runners have one since their last run? The report's own stop: under 2% of 2024-26
-runners touched and the idea ends here.
+how many are there? The report's own stop: under 2% of runners touched and the idea ends here.
 
-A ghost is read from Betfair's price files as loaded (betfair_prices, WIN): a row with money traded before the off
-(pp_vol or morning_vol above zero, a pre-play WAP above 1), no BSP, and no result row for that horse on that day.
-This is the table as held, not the minute files: it gives the traded price, not the horse's share of the book at the
-moment it was taken out.
+The first run (43167188633) found that Betfair's price files as loaded (betfair_prices) carry runners only: 467,000
+WIN rows from 2023, every one with a BSP, no withdrawn horse. So the only held record of a withdrawn horse's price is
+the live record from 1 Oct 2026 (betfair_live_marks: each runner's book at clock marks and before the off, its status
+at each). Here: of the horses on Betfair's WIN markets since 1 Oct, how many were removed, how many of those had a
+price (a last trade or a back) at a mark while they stood, at what price, and how many horses that ran in the period
+had been removed earlier in it. Six weeks cannot give the 2024-26 share the report asks for; it gives the rate.
 """
 import sqlite3
 
@@ -16,46 +17,40 @@ import pandas as pd
 
 pd.set_option("display.width", 220)
 con = sqlite3.connect("file:horse_racing.db?mode=ro", uri=True)
-bp = pd.read_sql_query(
-    "SELECT race_date, horse_norm, country, bsp, ppwap, morningwap, pp_vol, morning_vol, race_results_id "
-    "FROM betfair_prices WHERE lower(market_type) = 'win' AND race_date >= '2023-01-01'", con)
-for c in ("bsp", "ppwap", "morningwap", "pp_vol", "morning_vol"):
-    bp[c] = pd.to_numeric(bp[c], errors="coerce")
-bp["ran"] = bp.race_results_id.notna() | (bp.bsp > 1)
-vol = bp.pp_vol.fillna(0) + bp.morning_vol.fillna(0)
-bp["ghost"] = ~bp.ran & (vol > 0) & ((bp.ppwap > 1) | (bp.morningwap > 1))
-print(f"price-file WIN rows from 2023: {len(bp):,}; ran {int(bp.ran.sum()):,}; did not run {int((~bp.ran).sum()):,}; "
-      f"ghosts (traded, no BSP, no result) {int(bp.ghost.sum()):,}")
-g = bp[bp.ghost].copy()
-g["price"] = g.ppwap.where(g.ppwap > 1, g.morningwap)
-g["vol"] = vol[bp.ghost]
-print("ghosts by year and country:")
-print(g.assign(year=g.race_date.str[:4]).groupby(["year", "country"]).size().unstack(fill_value=0).to_string())
-print(f"their traded price: median {g.price.median():.1f}, 25th-75th pct {g.price.quantile(.25):.1f}-{g.price.quantile(.75):.1f}; "
-      f"money traded: median GBP{g.vol.median():,.0f}, 25th pct GBP{g.vol.quantile(.25):,.0f}, 75th pct GBP{g.vol.quantile(.75):,.0f}")
-
-rr = pd.read_sql_query("SELECT race_date, horse_name FROM race_results WHERE race_date >= '2023-01-01'", con)
-import sys  # noqa: E402
-sys.path.insert(0, ".")
-from betfair_prices import normalise_horse  # noqa: E402
-rr["horse_norm"] = rr.horse_name.map(normalise_horse)
-rr["d"] = pd.to_datetime(rr.race_date.str[:10])
-rr = rr.sort_values(["horse_norm", "d"])
-rr["prev"] = rr.groupby("horse_norm").d.shift()
-g["d"] = pd.to_datetime(g.race_date.str[:10])
-gl = g.sort_values("d")[["horse_norm", "d", "price"]].rename(columns={"d": "gd"})
-if g.empty:
-    raise SystemExit("no data found: no ghost rows in the price table")
-rr["horse_norm"], gl["horse_norm"] = rr.horse_norm.astype(object), gl.horse_norm.astype(object)
-m = pd.merge_asof(rr.sort_values("d"), gl, left_on="d", right_on="gd", by="horse_norm", allow_exact_matches=False)
-m["since_run"] = m.gd.notna() & (m.prev.isna() | (m.gd > m.prev))
-m["in365"] = m.gd.notna() & ((m.d - m.gd).dt.days <= 365)
-m["first_run"] = m.prev.isna()
-s = m[m.d >= "2024-01-01"]
-print(f"\nrunners 2024 on: {len(s):,}; with a ghost since their last run {int(s.since_run.sum()):,} ({s.since_run.mean():.2%}); "
-      f"with a ghost in the last 365 days {int(s.in365.sum()):,} ({s.in365.mean():.2%})")
-print(f"  of first runs in the table from 2023: {int(s.first_run.sum()):,}, with a ghost before {s[s.first_run].since_run.mean():.2%}")
-print("  by year:", s.assign(y=s.d.dt.year).groupby("y").since_run.mean().round(4).to_dict())
-days = (s[s.since_run].d - s[s.since_run].gd).dt.days
-print(f"  days from the ghost to the run: median {days.median():.0f}, 25th-75th pct {days.quantile(.25):.0f}-{days.quantile(.75):.0f}")
-print(f"the report's stop: under 2% of runners touched -> {'STOP' if s.since_run.mean() < 0.02 else 'go on to the block'}")
+mk = pd.read_sql_query("SELECT race_date, market_id, selection_id, mark, runner_status, last_traded, back1, lay1, "
+                       "minutes_to_off FROM betfair_live_marks", con)
+cat = pd.read_sql_query("SELECT market_id, selection_id, market_type, country, horse_norm FROM betfair_live_markets", con)
+cat = cat[cat.market_type.fillna("WIN").str.upper().eq("WIN")].drop_duplicates(["market_id", "selection_id"])
+mk = mk.merge(cat[["market_id", "selection_id", "country", "horse_norm"]], on=["market_id", "selection_id"])
+for c in ("last_traded", "back1", "lay1"):
+    mk[c] = pd.to_numeric(mk[c], errors="coerce")
+fin = mk[mk.mark == "final"].set_index(["market_id", "selection_id"]).runner_status
+r = mk.drop_duplicates(["market_id", "selection_id"])[["race_date", "market_id", "selection_id", "country", "horse_norm"]].copy()
+r["final"] = pd.MultiIndex.from_frame(r[["market_id", "selection_id"]]).map(fin)
+live = mk[(mk.runner_status == "ACTIVE") & (mk.mark != "final")].copy()
+live["px"] = np.where((live.back1 > 1) & (live.lay1 > 1), np.sqrt(live.back1 * live.lay1), live.last_traded)
+last = live.sort_values("minutes_to_off").groupby(["market_id", "selection_id"]).agg(
+    px=("px", "first"), traded=("last_traded", lambda x: bool((x > 1).any())), marks=("mark", "size"))
+r = r.join(last, on=["market_id", "selection_id"])
+r["removed"] = r.final.eq("REMOVED")
+r["ran"] = r.final.isin(["WINNER", "LOSER", "PLACED"])
+r["ghost"] = r.removed & r.traded.fillna(False).astype(bool)
+print(f"live record {r.race_date.min()} to {r.race_date.max()}: {len(r):,} horses on WIN markets with a final mark "
+      f"{int(r.final.notna().sum()):,}; ran {int(r.ran.sum()):,}; removed {int(r.removed.sum()):,} "
+      f"({r.removed.sum() / max(r.final.notna().sum(), 1):.1%})")
+print(f"removed with a trade recorded while they stood (ghosts): {int(r.ghost.sum()):,} "
+      f"({r.ghost.sum() / max(r.removed.sum(), 1):.0%} of the removed); removed with no mark while active "
+      f"{int((r.removed & r.marks.isna()).sum()):,}")
+g = r[r.ghost]
+print("ghosts by country:", g.country.value_counts().to_dict())
+print(f"their last price while they stood: median {g.px.median():.1f}, 25th-75th pct {g.px.quantile(.25):.1f}-"
+      f"{g.px.quantile(.75):.1f}; under 10.0: {(g.px < 10).mean():.0%}")
+ran = r[r.ran].merge(g[["horse_norm", "race_date"]].rename(columns={"race_date": "gd"}), on="horse_norm", how="left")
+ran["after"] = ran.gd.notna() & (ran.gd < ran.race_date)
+touched = ran.groupby(["market_id", "selection_id"]).after.any()
+print(f"horses that ran in the period: {len(touched):,}; removed with a trade earlier in the same period: "
+      f"{int(touched.sum()):,} ({touched.mean():.2%}) - a floor: the record is six weeks, the report's test is on "
+      "every ghost since the horse's last run")
+by = r.assign(week=pd.to_datetime(r.race_date).dt.strftime("%G-%V")).groupby("week").agg(horses=("removed", "size"),
+                                                                                          removed=("removed", "sum"), ghosts=("ghost", "sum"))
+print(by.to_string())
