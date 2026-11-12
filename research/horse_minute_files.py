@@ -7,7 +7,7 @@ ones too: the readings the ghost-run block needs (reports/discovery_1111.md 4.1;
 
 Read-only and research only: the fetch of betfair_historic.py with its own scope, raw to
 ``sources/betfair_historic/raw/horse_racing/<the service's path>``, newest month first, each file once. Nothing in
-the live trader or its jobs reads this. The sport has to be "bought" (free) once at historicdata.betfair.com with the
+the live trader reads this. The sport has to be "bought" (free) once at historicdata.betfair.com with the
 trading account before the service lists it; the run says so and stops if it is not held.
 
     python -m research.horse_minute_files --max-minutes 100
