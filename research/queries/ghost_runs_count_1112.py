@@ -18,7 +18,7 @@ pd.set_option("display.width", 220)
 con = sqlite3.connect("file:horse_racing.db?mode=ro", uri=True)
 bp = pd.read_sql_query(
     "SELECT race_date, horse_norm, country, bsp, ppwap, morningwap, pp_vol, morning_vol, race_results_id "
-    "FROM betfair_prices WHERE market_type = 'WIN' AND race_date >= '2023-01-01'", con)
+    "FROM betfair_prices WHERE lower(market_type) = 'win' AND race_date >= '2023-01-01'", con)
 for c in ("bsp", "ppwap", "morningwap", "pp_vol", "morning_vol"):
     bp[c] = pd.to_numeric(bp[c], errors="coerce")
 bp["ran"] = bp.race_results_id.notna() | (bp.bsp > 1)
@@ -44,6 +44,9 @@ rr = rr.sort_values(["horse_norm", "d"])
 rr["prev"] = rr.groupby("horse_norm").d.shift()
 g["d"] = pd.to_datetime(g.race_date.str[:10])
 gl = g.sort_values("d")[["horse_norm", "d", "price"]].rename(columns={"d": "gd"})
+if g.empty:
+    raise SystemExit("no data found: no ghost rows in the price table")
+rr["horse_norm"], gl["horse_norm"] = rr.horse_norm.astype(object), gl.horse_norm.astype(object)
 m = pd.merge_asof(rr.sort_values("d"), gl, left_on="d", right_on="gd", by="horse_norm", allow_exact_matches=False)
 m["since_run"] = m.gd.notna() & (m.prev.isna() | (m.gd > m.prev))
 m["in365"] = m.gd.notna() & ((m.d - m.gd).dt.days <= 365)
