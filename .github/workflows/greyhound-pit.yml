@@ -50,9 +50,15 @@ jobs:
       - name: Add swap
         continue-on-error: true
         run: |
-          sudo swapoff -a || true
-          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
-          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          # 12 Nov 2026: from about 16:00 UTC hosted jobs died in this step with no log (the runner lost while the
+          # swap it already had was turned off and a 16G file written). Now the runner's own swap is left alone and
+          # a second, smaller file is added beside it only where the disk has the room; never fatal
+          free -g | sed -n 1,3p; df -h /mnt | tail -1
+          AVAIL=$(df --output=avail -BG /mnt | tail -1 | tr -dc 0-9)
+          if [ "${AVAIL:-0}" -ge 20 ] && [ ! -e /mnt/swapfile_extra ]; then
+            (sudo fallocate -l 8G /mnt/swapfile_extra && sudo chmod 600 /mnt/swapfile_extra && sudo mkswap /mnt/swapfile_extra >/dev/null && sudo swapon /mnt/swapfile_extra) || true
+          fi
+          sudo swapon --show || true
           free -h
       - name: Weather (NOAA ISD-Lite, public domain)
         continue-on-error: true
