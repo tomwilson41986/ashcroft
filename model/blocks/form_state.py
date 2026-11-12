@@ -11,7 +11,7 @@ Two of the models the owner asked to be tried (12 Nov 2026: "Kalman filters ... 
        tk_z  tk_vs_max            the rating within today's race: standardised, and against the best
 
 2. A two-state Markov chain: a horse is in form or out of it. A run's result against the price (s: its normalised
-   finishing position less the position its Betfair SP rank implied) is a noisy reading of the state (in form:
+   finishing position less the mean position of earlier runners at its price, model/blocks/_resid.py) is a noisy reading of the state (in form:
    mean +MU, out: -MU, standard deviation SIGMA). The state persists between runs with probability
    0.5 + STAY x exp(-days / MEMORY_DAYS), so a long break forgets it. The forward filter gives, before today:
 
@@ -29,6 +29,7 @@ import pandas as pd
 
 from model.blocks import kalman as _k
 from model.blocks import time_figure as _tf
+from model.blocks._resid import price_residual
 from model.freshness_features import _Days, _col
 from model.race_shape import asof_decayed_mean, day_index, race_key
 
@@ -59,16 +60,7 @@ def build(df: pd.DataFrame) -> pd.DataFrame:
             "tk_vs_max": (rating - g.transform("max")).to_numpy(float)}
 
     # the Markov chain on form
-    pos = pd.to_numeric(_col(df, "placing_numerical"), errors="coerce").to_numpy(float)
-    nr = pd.to_numeric(_col(df, "number_of_runners"), errors="coerce").to_numpy(float)
-    bsp = pd.to_numeric(_col(df, "bfsp"), errors="coerce").to_numpy(float)
-    priced = np.isfinite(bsp) & (bsp > 1.0)
-    rk = pd.Series(np.where(priced, bsp, np.nan), index=df.index).groupby(rs).rank(method="average").to_numpy()
-    npr = pd.Series(priced.astype(float), index=df.index).groupby(rs).transform("sum").to_numpy()
-    with np.errstate(invalid="ignore", divide="ignore"):
-        nfp = np.where(np.isfinite(pos) & (pos >= 1) & (nr > 1), np.clip((nr - pos) / (nr - 1), 0.0, 1.0),
-                       np.where(nr > 1, 0.0, np.nan))
-        s = nfp - np.where(priced & (npr > 1), (npr - rk) / (npr - 1), np.nan)
+    s, _ = price_residual(df, day, rs)
     H = _Days(h, day)
     sb = H.per_block(s)
     nb = len(H.u)

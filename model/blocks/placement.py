@@ -30,7 +30,8 @@ runners, decayed over three years, shrunk to zero by twenty runners:
     pl_tr_repeat_s                          runners back for a race they ran in before
     pl_tr_trip_up_s  pl_tr_trip_down_s      a trip at least a fifth longer / shorter than last time
 
-s is the run's normalised finishing position (a non-finisher 0) less the position its Betfair SP rank implied.
+s is the run's normalised finishing position (a non-finisher 0) less the mean position of earlier runners at
+its price (model/blocks/_resid.py).
 Earlier days only for every record; today's prize, mark and trip are the card's.
 """
 
@@ -39,6 +40,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from model.blocks._resid import price_residual
 from model.freshness_features import _Days, _col
 from model.race_shape import DIST_BANDS, asof_decayed_mean, bands, day_index, race_key
 
@@ -88,16 +90,8 @@ def build(df: pd.DataFrame) -> pd.DataFrame:
         return np.where(H.valid & (H.pos >= j), b[np.clip(blocks - j, 0, None)], np.nan)
 
     race = pd.Series(pd.factorize(race_key(df), sort=True)[0], index=df.index)
+    s, nfp = price_residual(df, day, race)
     pos = pd.to_numeric(_col(df, "placing_numerical"), errors="coerce").to_numpy(float)
-    n = pd.to_numeric(_col(df, "number_of_runners"), errors="coerce").to_numpy(float)
-    bsp = pd.to_numeric(_col(df, "bfsp"), errors="coerce").to_numpy(float)
-    priced = np.isfinite(bsp) & (bsp > 1.0)
-    rk = pd.Series(np.where(priced, bsp, np.nan), index=df.index).groupby(race).rank(method="average").to_numpy()
-    npr = pd.Series(priced.astype(float), index=df.index).groupby(race).transform("sum").to_numpy()
-    with np.errstate(invalid="ignore", divide="ignore"):
-        nfp = np.where(np.isfinite(pos) & (pos >= 1) & (n > 1), np.clip((n - pos) / (n - 1), 0.0, 1.0),
-                       np.where(n > 1, 0.0, np.nan))
-        s = nfp - np.where(priced & (npr > 1), (npr - rk) / (npr - 1), np.nan)
 
     cols: dict[str, np.ndarray] = {}
     prize = pd.to_numeric(_col(df, "prize_money"), errors="coerce").to_numpy(float)

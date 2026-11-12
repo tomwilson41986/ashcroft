@@ -20,7 +20,7 @@ decayed over three years and shrunk to zero by twenty runners:
 
     gr_tr_worn_s                                            the yard's runners in any headgear, against the price
     gr_tr_first_s  gr_tr_more_s  gr_tr_off_s  gr_tr_tt_s     against the price: s = the normalised finishing position
-                                                            less the position the Betfair SP rank implied
+                                                            less the mean of earlier runners at its price
     gr_tr_first_f  gr_tr_more_f                             against the horse: the time figure less the horse's
                                                             own decayed mean figure, in pounds
 
@@ -33,6 +33,7 @@ import numpy as np
 import pandas as pd
 
 from model.blocks import time_figure as _tf
+from model.blocks._resid import price_residual
 from model.freshness_features import _Days, _col
 from model.race_shape import asof_decayed_mean, day_index, race_key
 
@@ -99,16 +100,7 @@ def build(df: pd.DataFrame) -> pd.DataFrame:
 
     # the residuals: against the price and against the horse's own level
     race = pd.Series(pd.factorize(race_key(df), sort=True)[0], index=df.index)
-    pos = pd.to_numeric(_col(df, "placing_numerical"), errors="coerce").to_numpy(float)
-    n = pd.to_numeric(_col(df, "number_of_runners"), errors="coerce").to_numpy(float)
-    bsp = pd.to_numeric(_col(df, "bfsp"), errors="coerce").to_numpy(float)
-    priced = np.isfinite(bsp) & (bsp > 1.0)
-    rk = pd.Series(np.where(priced, bsp, np.nan), index=df.index).groupby(race).rank(method="average").to_numpy()
-    npr = pd.Series(priced.astype(float), index=df.index).groupby(race).transform("sum").to_numpy()
-    with np.errstate(invalid="ignore", divide="ignore"):
-        nfp = np.where(np.isfinite(pos) & (pos >= 1) & (n > 1), np.clip((n - pos) / (n - 1), 0.0, 1.0),
-                       np.where(n > 1, 0.0, np.nan))
-        s = nfp - np.where(priced & (npr > 1), (npr - rk) / (npr - 1), np.nan)
+    s, _ = price_residual(df, day, race)
     fig = np.asarray(_tf.figures(df)["fig"], dtype=float)
     own, _ = asof_decayed_mean(horse, day, fig, horse, day, halflife_days=365.0)
     f = fig - own

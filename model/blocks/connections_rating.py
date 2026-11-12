@@ -5,8 +5,8 @@ time, so a jockey who rides mostly for one strong yard carries the yard's record
 owner, 12 Nov 2026: "a connections model and rating ... trainer, owner, jockey - uplift, change, residuals"), on two
 residuals of each past run:
 
-    against the price    s = the run's normalised finishing position (a non-finisher 0) less the position its rank
-                         in the Betfair SP book implied: what the run did beyond what the market expected
+    against the price    s = the run's normalised finishing position (a non-finisher 0) less the mean position of
+                         earlier runners at its price (model/blocks/_resid.py): what the run did beyond the market
     against the horse    f = the run's time figure (model/blocks/time_figure.py, pounds) less the horse's own
                          decayed mean figure before the run: what the run did beyond the horse's own level
 
@@ -40,6 +40,7 @@ import numpy as np
 import pandas as pd
 
 from model.blocks import time_figure as _tf
+from model.blocks._resid import price_residual
 from model.freshness_features import _Days, _col
 from model.race_shape import asof_decayed_mean, day_index, race_key
 
@@ -124,16 +125,10 @@ def build(df: pd.DataFrame) -> pd.DataFrame:
     horse = _codes(df["horse_name"])
     race = pd.Series(pd.factorize(race_key(df), sort=True)[0], index=df.index)
 
-    pos = pd.to_numeric(_col(df, "placing_numerical"), errors="coerce").to_numpy(float)
-    n = pd.to_numeric(_col(df, "number_of_runners"), errors="coerce").to_numpy(float)
+    s, _ = price_residual(df, day, race)
     bsp = pd.to_numeric(_col(df, "bfsp"), errors="coerce").to_numpy(float)
     priced = np.isfinite(bsp) & (bsp > 1.0)
-    rk = pd.Series(np.where(priced, bsp, np.nan), index=df.index).groupby(race).rank(method="average").to_numpy()
     npr = pd.Series(priced.astype(float), index=df.index).groupby(race).transform("sum").to_numpy()
-    with np.errstate(invalid="ignore", divide="ignore"):
-        nfp = np.where(np.isfinite(pos) & (pos >= 1) & (n > 1), np.clip((n - pos) / (n - 1), 0.0, 1.0),
-                       np.where(n > 1, 0.0, np.nan))
-        s = nfp - np.where(priced & (npr > 1), (npr - rk) / (npr - 1), np.nan)
     fig = np.asarray(_tf.figures(df)["fig"], dtype=float)
     own, _ = asof_decayed_mean(horse, day, fig, horse, day, halflife_days=365.0)
     f = fig - own
