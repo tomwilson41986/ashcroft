@@ -228,3 +228,33 @@ Six days so far:
 |---|---|---|---|---|---|---|
 | At the SP | +1.78% | +1.43% | +0.71% | +1.42% | +1.85% | +2.22% |
 | To the result | -1.65% | +1.04% | -1.50% | +4.28% | +2.62% | +4.51% |
+
+### 11 Nov 2026 (close lab 43165734884, stream lab 43165738409; read 12 Nov 08:45 UTC)
+
+- **The day.** 145 races, 24,210 runner-checkpoints (4,260 race-checkpoints). The early lay was live for part of
+  this day and back on paper from the evening (the owner's word).
+- **Champions.** BFSP: gbm_all_small holds against the mid (gain 0.03931, z 13.32, 625 races over 5 days); the
+  strongest fresh challenger gbm_small_plus_huber: gain 0.00031, z 0.88 on its first day (145 races; a gain this
+  size needs 1,578). Win: the mid; gbm_all_small's gain 0.00646, z 2.86 over 619 races (needs 690).
+- **The day's BFSP RMSE** (all / last 60 s / late): the mid 0.3120 / 0.1402 / 0.1164; gbm_book_flow 0.2393 /
+  0.1374 / 0.1215; clogit_win 0.2667 / 0.1665 / 0.1661; clogit_win_plus 0.2809 / 0.2067 / 0.3091.
+- **The review's readings.** The market closed a median 21 s after its scheduled off (10% 8 s, 90% 60 s); still
+  open 30 s after on 33%, 60 s after on 10%. The SP pool: backs on 69% (median GBP54), lays on 98% (median GBP10
+  liability). The SP book over 815 races: median 1.0041. Benter's second stage: the SP itself gains 0.00872 at 60 s
+  (p 0.0002); gbm_all_small 0.00051 (p 0.43) at 60 s over 619 races; gbm_small_plus_huber 0.00073 (p 0.65) over 142.
+- **The trade test** (third counted day of ten): no candidate; the widest cells are back_10_0.03 +4.48% at the SP
+  (26 trades, 90% 0.30 to 8.65) and lay_60_0.03 -2.75% (43 trades).
+- **The band test** (first counted day): 2 trades in all; quantile coverage q10 0.124, q20 0.223, q80 0.775,
+  q90 0.872. **The resting test** (first counted day): every cell within noise of zero at the SP
+  (rest_back_60_all +0.094%, rest_lay_60_all +0.309%, about 640 trades each); no candidate.
+- **The stream lab.** No candidate. The late family's first counted day is negative at the SP in every cell read
+  (between -2.4% and -3.9%).
+- **The early-lay forward test, 11 Nov.** Its own figure: 148 races, 670 lays placed, 239 matched, +2.02% of
+  liability. Queue-aware replay: 300 matched, +1.46% at the SP, +0.81% to the result (traded volume x1.0; x0.5:
+  +1.44%, +0.62%). The same lays resting to the real off (not the gate's figure): +1.33% at the SP, -0.28% to
+  the result.
+
+| | 11 Nov |
+|---|---|
+| At the SP | +1.46% |
+| To the result | +0.81% |
