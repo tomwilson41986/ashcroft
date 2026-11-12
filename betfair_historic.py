@@ -63,7 +63,10 @@ class Historic:
         return r.json() if r.content else None
 
     def my_data(self) -> list[dict]:
-        return self._post("GetMyData") or []
+        # a GET: the service answers a POST here with 405 Method Not Allowed (the owner's first run, 10 Nov 2026)
+        r = self.http.get(f"{API}/GetMyData", timeout=120)
+        r.raise_for_status()
+        return (r.json() if r.content else None) or []
 
     @staticmethod
     def body(sport: str, d_from: date, d_to: date, markets=(), countries=(), plan: str = PLAN) -> dict:

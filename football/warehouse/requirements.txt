@@ -1,0 +1,5 @@
+# The football data warehouse's own dependencies (football/warehouse; docs/football_data_platform.md), beside
+# the repository's requirements.txt. Kept out of that file on purpose: the live horse-racing jobs install it on
+# the UK server (live-trade.yml, live-record.yml), and nothing built for football may change their environment.
+duckdb==1.5.6
+pytz==2026.5
