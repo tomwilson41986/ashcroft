@@ -185,6 +185,18 @@ Stages, each gated on the last:
     enough under the house rule.
   - The lay book stays at research. A further test needs a new registration on forward days only, opened with the
     owner.
+- **Lay book, 30-day forward paper test, from 13 Nov** (the owner, 12 Nov: "start the 30-day forward paper test of the
+  lay book, with no money at risk"; ledger `desk-lay-book-paper-1112`, registered before its first day; stage
+  `paper`).
+  - No order and no Betfair call. Each forward day is replayed from the live trader's recorded books through the desk,
+    with the registered params and limits, closed at the BSP after the reductions and 2%
+    (`research/queries/done/desk_lay_book_paper_1112.py`).
+  - The window is the first 30 forward days with data, extended only while the fills are under 300. It stays blind
+    until then: the query prints counts only.
+  - It is read once against the pinned gate: positive sum, 90% interval above zero, deflated Sharpe >= 0.95 with every
+    horse-racing trial counted.
+  - A pass makes it a candidate for pilot, the owner's decision after the lock-down and the envelope.
+  - Check-ins: a count-only run on 27 Nov; the reading from 14 Dec.
 - **Next move, Stage 1** (`micro-next-move-1111`, research-query 43050471729). Data: 6 greyhound days, 685 markets,
   4.29m book rows, 4 test days walk-forward. Every pair beat the baseline on every test day:
 

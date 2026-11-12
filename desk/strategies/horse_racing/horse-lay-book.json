@@ -2,14 +2,14 @@
   "id": "horse-lay-book",
   "sport": "horse_racing",
   "name": "Lays the closing model expects to drift, closed at the SP",
-  "stage": "research",
+  "stage": "paper",
   "hypothesis": "Where the closing model's expected BSP is longer than the best lay by at least 3% and the model's own price is no shorter than the lay, a lay closed by a back at the SP returns the drift.",
   "mechanism": "The mirror of the live rule: the morning book overrates horses the model and the closing model both expect to drift; the SP back closes the position at the market's own close.",
   "markets": [
     "GB/IE WIN"
   ],
-  "entry_point": "desk.algos.lay_book.LayBook (desk/session.py DeskSession, paper)",
-  "workflow": "none yet: replay through research/queries; paper and pilot workflows are phase 2",
+  "entry_point": "desk.algos.lay_book.LayBook (desk/session.py DeskSession, paper: forward replay)",
+  "workflow": "research-query.yml, dispatched on the branch: research/queries/done/desk_lay_book_paper_1112.py replays each forward day from the live trader's recorded books; no order, no Betfair call; read once",
   "live_switch": null,
   "order_ref_prefix": "dlb",
   "bucket": "capture",
@@ -50,7 +50,7 @@
     "min_stake": 2.0,
     "note": "max_order is the rule's max_stake (trading/config_live.json); max_day_loss and max_market_exposure are the arm's GBP4,000 day liability (a lay's worst case is its liability), so they bind no earlier than the arm; max_day_turnover does not bind (the 1e6 of config_live.json's unused limits); the rate, collar and book age are the desk's choices, not from a test; max_book_age_s is the replay's 6-minute staleness (research/arms/core.py STALE)"
   },
-  "ledger_tag": "desk-lay-book-1111",
+  "ledger_tag": "desk-lay-book-paper-1112",
   "gate": {
     "metric": "daily result at the BSP close after the non-runners' reduction and 2% (research/arms/core.py score_side result_reduced)",
     "min_days": 30,
@@ -59,5 +59,11 @@
     "dsr": 0.95,
     "read": "forward"
   },
-  "gate_sha256": "cb38dbb77780e241677c15ee700ccaf5a2667639bfd8f79bf7c7aca441dceb68"
+  "gate_sha256": "cb38dbb77780e241677c15ee700ccaf5a2667639bfd8f79bf7c7aca441dceb68",
+  "approved": {
+    "by": "the owner",
+    "on": "2026-11-12",
+    "stage": "paper",
+    "source": "the owner in the session, 12 Nov 2026: \"start the 30-day forward paper test of the lay book, with no money at risk\"; ledger desk-lay-book-paper-1112"
+  }
 }
