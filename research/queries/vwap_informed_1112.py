@@ -1,5 +1,5 @@
 """Is the volume-weighted price nearer the truth than the Betfair SP, and what does an unsettled book say?
-(read-only; ledger `vwap-informed-1112`; from the owner's reading of 12 Nov 2026)
+(read-only; ledger `vwap-informed-1112`; from the owner's reading of 12 Nov 2026; the price files' table)
 
 Two claims to test on our own records.
 1. "VWAP is more accurate than BFSP." Betfair's price files hold, for every runner, the BSP and the pre-play
