@@ -28,7 +28,8 @@ from model.blocks import time_figure as _tf  # noqa: E402
 from model.race_shape import asof_decayed_mean, day_index, race_key  # noqa: E402
 
 NAMES = ["market_rating", "expected_time", "connections_rating", "gear", "placement", "form_state"]
-need = {"raceid", "race_date", "race_time", "track", "horse_name", "bfsp", "placing_numerical", "number_of_runners"}
+need = {"raceid", "race_date", "race_time", "track", "horse_name", "bfsp", "placing_numerical", "number_of_runners",
+        "rs_epf", "trainer", "jockey_name", "dist_furlongs"}          # with what pace_v2 reads (it declares no READS)
 for nme in NAMES + ["pace_v2", "time_figure"]:
     need |= set(getattr(blocks.load(nme) if hasattr(blocks, "load") else __import__(f"model.blocks.{nme}", fromlist=["x"]),
                         "READS", []))
