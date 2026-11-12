@@ -2384,3 +2384,32 @@ trees at a fixed 6,000 rounds with the trials and optics tables in every arm.
   three that fail alone still carry something in company, but the registered bar is a table's own.
 - Against the market: every arm's blend is worse than the SP alone on the later half (0.42754 to 0.42765 against
   0.42733). The Betfair SP is not beaten.
+
+## 47. Discovery wave 4: the horse programmes applied to greyhounds (batch 31, 12 Nov 2026)
+
+The owner, 12 Nov: "use these horse feature ideas on greyhounds where they might apply" - pedigree, improvement, the
+last race, debutants, market metrics. Each was designed, built on the local runs with every prior, curve and market
+map refitted from earlier days only, screened against what batch 29's candidate still misses (ledger
+`greyhound-discovery-wave4-screen-1112`) and read for leaks by a second agent (none found). The market-metrics set
+added nothing beyond the wave-3 tables and was not built. The other four were ported to tables and scored as
+registered (`greyhound-wave4-batch31-1112`): greyhound-fastloop.yml run 43225538249, 110,788 runners, 1 Jun - 10 Nov
+2026, trees at a fixed 6,000 rounds with the trials, optics, line and salience tables in every arm.
+
+| Arm | RMSE of log(BSP) | Against k0 | z | Log-loss diff (z) | Under 3 races (5,984) | Reading |
+|---|---|---|---|---|---|---|
+| k0 | 0.3032 | - | - | - | 0.3862 | |
+| k0_seed / k0_placebo | 0.3036 / 0.3037 | +0.0003 / +0.0005 | +1.0 / +1.5 | +0.00038 / +0.00008 | | the floors |
+| k_lastrace | 0.3017 | -0.0015 | -4.2 | +0.00003 (+0.2) | 0.3876 | passes |
+| k_debut | 0.3022 | -0.0010 | -2.7 | +0.00009 (+0.6) | 0.3813 | fails (under 3 SE) |
+| k_improve | 0.3032 | 0.0000 | 0.0 | +0.00018 (+1.3) | 0.3865 | fails |
+| k_pedigree | 0.3033 | +0.0001 | +0.2 | +0.00025 (+1.8) | 0.3855 | fails |
+| k_all4 | 0.3009 | -0.0023 | -6.0 | 0.00000 (0.0) | 0.3785 | passes; Jun-Aug -0.0027, Sep - 5 Nov -0.0019 |
+
+- The last-race table passes: how fancied the opposition was last time and whether the dog outran its market rank.
+- The debutant table does what it was built for on dogs with under three races (0.3862 to 0.3813) but is 2.7
+  standard errors over all runners: not a pass alone.
+- The improvement table screened best on the local slice (-0.0013) and is worth nothing on the full history beside
+  the line and salience tables: the screen's signal was already in them. Pedigree on the full history is null for
+  the price: on greyhounds the market's past prices and the dog's own trials carry what the family would.
+- Of nine tables screened in waves 3 and 4, three pass alone (line, salience, last race). The Betfair SP is not
+  beaten by any arm (later-half blends 0.42754 to 0.42766 against 0.42733).
