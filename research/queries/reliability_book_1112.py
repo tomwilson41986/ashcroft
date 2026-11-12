@@ -36,7 +36,7 @@ bsp = fin.bsp[fin.bsp > 1]
 m = mk[(mk.mark != "final") & (mk.runner_status == "ACTIVE")].copy()
 m["bsp"] = pd.MultiIndex.from_frame(m[["market_id", "selection_id"]]).map(bsp)
 m["size"] = m[["back1_size", "lay1_size"]].min(axis=1)
-d0 = float(m[(m.race_date < "2026-10-20") & (m.size > 0)]["size"].median())
+d0 = float(m[(m.race_date < "2026-10-20") & (m["size"] > 0)]["size"].median())
 print(f"d0 (the median smaller size before 20 Oct): GBP{d0:.2f}")
 m = m[m.race_date >= "2026-10-20"]
 rows = []
