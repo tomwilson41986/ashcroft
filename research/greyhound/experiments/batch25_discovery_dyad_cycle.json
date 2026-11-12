@@ -1,0 +1,148 @@
+{
+ "about": "Batch 25 (11 Nov 2026), registered before its scores: discovery, first two tables, on the trial-fixed engine (greyhound/metrics.py: the time standards and the meeting variant from graded races only, commit c2e76fa; the feature cache rebuilds). fix1 is batch 23's all1_xtime recipe (the live trees with the expected-time table, one seed) on the new cache: read against batch 23's 0.3465 for the effect of the fix (unpaired, same seed and recipe). fix1_dyad adds the dyadic memory table (greyhound/pit/dyad.py: what each pair of dogs has done to each other beyond their expected times, and the curl of the margin flow). fix1_cycle adds the season-cycle table (greyhound/pit/cycle.py: a bitch's seasons inferred from her absences, her own cycle, her phase and days to the next). fix1_both adds both. The bar: 3 bootstrap standard errors on the RMSE of log(BSP) against fix1, the log-loss no worse beyond 1; the market reading beside it: the weight on our price in the blend with the BSP and the blend's log-loss.",
+ "recipe": "quick",
+ "baseline": "fix1",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime"
+   ],
+   "importance": true,
+   "name": "fix1"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_dyad"
+   ],
+   "importance": true,
+   "name": "fix1_dyad"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_cycle"
+   ],
+   "importance": true,
+   "name": "fix1_cycle"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_dyad",
+    "pit_cycle"
+   ],
+   "importance": true,
+   "name": "fix1_both"
+  }
+ ]
+}

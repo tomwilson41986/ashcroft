@@ -497,3 +497,34 @@ def test_saved_prices_are_reused_and_the_served_price_is_the_stretched_one(tmp_p
         fl.check_spec({"experiments": [{"name": "x", "serve_calibrated": "stretch"}]})
     with pytest.raises(ValueError):
         fl.check_spec({"experiments": [{"name": "x", "save_pred": "../etc"}]})
+
+
+def test_price_extras_join_the_runners_own_row_and_can_never_be_features():
+    """Betfair's pre-off money and earlier prices beside the saved predictions: the runner's own row, the frame's
+    rows and order kept, a runner the files lack left NaN - and no spec can name one as a feature."""
+    import numpy as np
+    import pandas as pd
+
+    from greyhound import fastloop as fl
+
+    pred = pd.DataFrame({"race_id": [1, 1, 2, 2, 3], "race_date": ["2026-06-01"] * 5,
+                         "race_time": ["10:32", "10:32", "10:47", "10:47", "11:02"],
+                         "track": ["Harlow", "Harlow", "Harlow", "Harlow", "Romford"], "trap": [1.0, 2.0, 1.0, 2.0, 1.0],
+                         "dog_id": [11, 12, 21, 22, 31], "won": [1.0, 0.0, 0.0, 1.0, 1.0], "p_model": [0.6, 0.4, 0.5, 0.5, 1.0]})
+
+    class Store:
+        def listing(self, prefix):
+            return ["greyhound_prices/prices_2026.parquet"]
+
+        def get_parquet(self, key):
+            return pd.DataFrame({"market": ["win"] * 4 + ["place"], "country": ["GB"] * 5, "event_id": [1, 1, 2, 2, 1],
+                                 "race_date": ["2026-06-01"] * 5, "race_time": ["10:47", "10:32", "10:32", "10:47", "10:32"],
+                                 "track": ["Harlow"] * 5, "trap": [2, 2, 1, 1, 1], "bsp": [3.0, 2.5, 1.7, 2.0, 1.2],
+                                 "ppwap": [3.1, 2.6, 1.8, 2.1, 1.3], "morningwap": [np.nan] * 5,
+                                 "morning_vol": [0.0] * 5, "pp_vol": [40.0, 30.0, 20.0, 10.0, 999.0], "win_lose": [1, 0, 1, 0, 1]})
+
+    out = fl.price_extras(Store(), pred)
+    assert list(out.dog_id) == list(pred.dog_id) and len(out) == len(pred)
+    assert list(out.pp_vol[:4]) == [20.0, 30.0, 10.0, 40.0]            # each runner's own win-market row
+    assert np.isnan(out.pp_vol[4]) and np.isnan(out.ppwap[4])          # Romford: not in the files
+    assert set(fl.PRICE_EXTRAS) <= set(fl.LABELS)

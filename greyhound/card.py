@@ -19,11 +19,12 @@ import zlib
 import numpy as np
 import pandas as pd
 
+SESSION_GAP_MIN = 120.0             # minutes between two offs at a track that start a new meeting
 NAME_RE = re.compile(r"^\s*([A-Z]{1,2}\d{0,2})\s+(\d{3,4})m\b", re.I)
 
 
-#: Betfair's class codes where GBGB writes the grade differently (the card check of 6 Oct 2026: Betfair's "HC" hurdle
-#: races are GBGB's "HP")
+#: Betfair's class codes where GBGB writes the grade differently (the card check of 6 Oct 2026: Betfair's "HC",
+#: handicap, races are GBGB's "HP")
 BETFAIR_TO_GBGB = {"HC": "HP"}
 
 
@@ -45,9 +46,12 @@ def _race_id(market_id: str) -> int:
     return -int(zlib.crc32(str(market_id).encode()))
 
 
-def cards(markets: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
-    """The day's GB WIN markets (the recorder's catalogue rows) as card rows matched to ``history`` (the GBGB runs,
-    before ``data.clean``)."""
+def cards(markets: pd.DataFrame, history: pd.DataFrame, trials: pd.DataFrame | None = None) -> pd.DataFrame:
+    """The day's GB WIN markets (the recorder's catalogue rows) as card rows matched to ``history`` (the GBGB runs)
+    and, when given, to ``trials`` (the trial rows ``data.clean`` drops: greyhound/pit/trials.py ``select``), so a dog
+    that has only trialled gets its GBGB id, sire, dam, birth month, sex and trainer (the audit of 11 Nov 2026,
+    finding 2: a debutant on the card had none of them, though every training row has)."""
+    from greyhound.data import canonical_track
     w = markets[(markets.market_type.fillna("WIN") == "WIN") & (markets.country.fillna("GB") == "GB")].copy()
     w = w.drop_duplicates(["market_id", "selection_id"], keep="last")
     uk = pd.to_datetime(w.market_start_utc, utc=True, errors="coerce").dt.tz_convert("Europe/London")
@@ -55,7 +59,7 @@ def cards(markets: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame({
         "market_id": w.market_id.astype(str), "selection_id": pd.to_numeric(w.selection_id, errors="coerce"),
         "race_date": uk.dt.strftime("%Y-%m-%d"), "race_time": uk.dt.strftime("%H:%M:%S"),
-        "track": w.venue.astype(str).str.strip(), "race_class": parsed.map(lambda x: x[0]),
+        "track": canonical_track(w.venue.astype(str).str.strip()), "race_class": parsed.map(lambda x: x[0]),
         "distance_m": parsed.map(lambda x: x[1]),
         "trap": pd.to_numeric(w.runner_name.astype(str).str.extract(r"^(\d+)\.")[0], errors="coerce"),
         "dog_name": w.runner_name.astype(str).str.replace(r"^\d+\.\s*", "", regex=True).str.strip(),
@@ -63,12 +67,28 @@ def cards(markets: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
     })
     out = out.dropna(subset=["trap", "distance_m"])
     out["race_id"] = out.market_id.map(_race_id)
-    out["meeting_id"] = -out.groupby(["track", "race_date"]).ngroup() - 1
     out["runners"] = out.groupby("market_id").trap.transform("size")
-    # the race's number at its meeting, as GBGB numbers a card: its order by the off
-    out["race_number"] = out.groupby(["track", "race_date"]).race_time.rank(method="dense").astype(float)
+    # the meeting and the race's number at it. A track often runs two meetings a day (8.2% of track-days between
+    # 1 Jul 2025 and 5 Nov 2026), hours apart: the offs within a meeting were never more than 75 minutes apart and
+    # two meetings never less than 190, so a gap over SESSION_GAP_MIN starts a new meeting (it split every one of
+    # those 5,091 track-days as GBGB did). The number is the race's order by the off within its meeting, which is
+    # how data.clean numbers the history. Until 11 Nov 2026 a day was one meeting and the evening's first race was
+    # served as race 13 (the audit of 11 Nov 2026, findings 21 and 58)
+    off = pd.to_datetime(out.race_date + " " + out.race_time, errors="coerce")
+    r = out.assign(_off=off).drop_duplicates("market_id")[["market_id", "track", "race_date", "_off"]]
+    r = r.sort_values(["track", "race_date", "_off"], kind="stable")
+    gap = r.groupby(["track", "race_date"])._off.diff().dt.total_seconds() / 60.0
+    r["_session"] = (gap > SESSION_GAP_MIN).groupby([r.track, r.race_date]).cumsum()
+    r["meeting_id"] = -(r.groupby(["track", "race_date", "_session"]).ngroup() + 1)
+    r["race_number"] = r.groupby(["track", "race_date", "_session"])._off.rank(method="dense").astype(float)
+    out = out.merge(r[["market_id", "meeting_id", "race_number"]], on="market_id", how="left")
     # each dog's GBGB history by name: the most recent dog of the name, with its static fields from its last run
-    h = history.dropna(subset=["dog_id"]).sort_values(["race_date", "race_time"], kind="stable")
+    if trials is not None and len(trials):
+        both = [c for c in ("dog_id", "dog_name", "race_date", "race_time", "sire", "dam", "trainer", "born", "sex",
+                            "season") if c in history and c in trials]
+        history = pd.concat([history[both], trials[both]], ignore_index=True)
+    h = history.dropna(subset=["dog_id"]).assign(race_time=lambda x: x.race_time.astype(str)).sort_values(
+        ["race_date", "race_time"], kind="stable")
     last = h.assign(_n=h.dog_name.map(norm_name)).drop_duplicates("_n", keep="last").set_index("_n")
     key = out.dog_name.map(norm_name)
     found = key.isin(last.index)
