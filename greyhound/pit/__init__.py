@@ -38,6 +38,7 @@ earlier one):
 | debut | db_ | debutants and first-time conditions: a prior for a dog with little race form, giving way as it runs |
 | lastrace | lr_ | the last race: how fancied the opposition was, the market against the result, what changes today |
 | pedigree | pg_ | pedigree posteriors: sire, dam, litter and dog in one hierarchy, each with its mean and its uncertainty |
+| league | lg_ | Hunter's MM: track-and-grade strengths on one scale, the class move in those units, strength of schedule, market strength faced |
 
 Each table is written to the sources store as ``<STORE_PREFIX>/<table>.parquet`` with ``<table>.meta.json``: the code
 hash, the engine's code hash, when built, the rows, the date range, each column's coverage, and the table's own fit notes. The registry
@@ -66,7 +67,7 @@ TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "lif
           # the discovery tables of 11 Nov 2026 (each reads the expected-time table)
           "ext", "fitness", "fear", "clock", "optics", "litter",
           "readers", "followed", "salience", "line", "cells",
-          "improve", "debut", "lastrace", "pedigree")
+          "improve", "debut", "lastrace", "pedigree", "league")
 KEY = ["race_id", "dog_id"]
 #: where the tables are stored. "pit2": the tables of the engine as fixed on 11 Nov 2026 (the audit's foundation
 #: faults: greyhound/data.py, greyhound/metrics.py). The tables built from the engine before it stay at
