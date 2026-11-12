@@ -14,7 +14,7 @@ locked holdout from 1 Apr 2026 is not read). For each group of runners:
     s        NFP less the position the BSP rank implied (the normalised uplift)
     fig+     the run's time figure less the horse's own decayed mean figure, in pounds
 
-Descriptive: no pass or fail, nothing fitted. Groups are fifths of a reading within the scored rows, or flags.
+Descriptive: no pass or fail, nothing fitted (the matrix is the research loop's, restored from its cache). Groups are fifths of a reading within the scored rows, or flags.
 """
 import sys
 

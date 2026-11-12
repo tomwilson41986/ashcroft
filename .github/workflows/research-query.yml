@@ -55,6 +55,15 @@ jobs:
         with:
           path: .feature_cache
           key: features-${{ steps.fkey.outputs.key }}
+      - name: Feature cache key (the loop's matrix, from 2018)
+        id: fkey18
+        run: echo "key=$(python -c "import model.feature_cache as f; print(f.cache_key('horse_racing.db', '2018-01-01'))")" >> "$GITHUB_OUTPUT"
+      - name: Restore the loop's feature matrix (if one is cached for this code and data)
+        # Best effort, as above: the research loop builds and caches the matrix from 2018
+        uses: actions/cache/restore@v4
+        with:
+          path: .feature_cache
+          key: features-${{ steps.fkey18.outputs.key }}
       - name: Run the queries
         env:
           # read-only S3 for queries that need files beside the database (the 06:00 record)
