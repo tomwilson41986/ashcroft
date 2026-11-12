@@ -31,6 +31,12 @@ win = set(cat[cat.market_type.fillna("WIN").str.upper().eq("WIN")].market_id)
 mk = mk[mk.market_id.isin(win)]
 for c in ("back1", "back1_size", "lay1", "lay1_size", "bsp"):
     mk[c] = pd.to_numeric(mk[c], errors="coerce")
+print("rows by mark:", mk.mark.value_counts().to_dict(), "| WIN markets", len(win))
+print("status at the clock marks:", mk[mk.mark != "final"].runner_status.value_counts().to_dict())
+print("non-null share: back1 %.2f lay1 %.2f back1_size %.2f lay1_size %.2f; final bsp > 1: %d of %d" % (
+    mk.back1.notna().mean(), mk.lay1.notna().mean(), mk.back1_size.notna().mean(), mk.lay1_size.notna().mean(),
+    int((mk[mk.mark == "final"].bsp > 1).sum()), int((mk.mark == "final").sum())))
+print("days:", mk.race_date.min(), mk.race_date.max())
 fin = mk[mk.mark == "final"].set_index(["market_id", "selection_id"])
 bsp = fin.bsp[fin.bsp > 1]
 m = mk[(mk.mark != "final") & (mk.runner_status == "ACTIVE")].copy()
