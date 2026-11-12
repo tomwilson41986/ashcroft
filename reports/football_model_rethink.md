@@ -1088,3 +1088,19 @@ What it says:
 - **Win bets: the features add nothing to the price.** The model's log loss is worse than the market's and its selected bets lose more than backing everything. The closing price is efficient (section above), and one year of price-derived features does not beat it on results.
 - **Where an edge could still be:** the entry, not the exit. A back needs to be taken at a real quote before the market has moved (our recorded books, maker-side orders), with information the price lacks (team news timing, the back years for the ratings). The SP is a fair exit; it is not a source of edge.
 - **Decision:** development evidence, no trader reads it, nothing frozen. The script stays in the warehouse job so both targets are re-read as the back years arrive (each a new ledger line).
+
+## Strategy scan: 25 model-free rules on the 2026 files (12 Nov 2026)
+
+Registered as `football-strategy-scan-1112` before the run; `research/open_close/football_strategy_scan.py`; output
+`reports/football_runs/strategy_scan_1112.json` (local build of the 2026 warehouse). The full table and the ranked
+candidates are in `reports/football_strategy_candidates.md`.
+
+- **No lead** by the registered reading (both halves of the year the same sign, the even months' 90% interval above
+  zero one tick worse than the last trade). 25 cells, 0 leads.
+- The in-play leader is priced a little long at the last traded price (half time, chance 0.85-0.95: +1.16%
+  (+0.20 to +2.18) on 2,865 bets; minutes 75-90: +0.33% (+0.00 to +0.68) on 30,420) and the edge is gone one tick
+  worse (-0.80% (-1.30 to -0.31), even months). A maker's edge at most; it needs in-play books, which are not recorded.
+- Backers of pre-match drifters (out by 0.10 in log odds from T-360 to T-60) lost 8.83% (-14.36 to -2.81) on 2,539
+  bets, in both halves. The lay was not a registered cell and the literature points the other way: a test on the
+  back years decides it.
+- Four ideas went to `desk/backlog/football.jsonl`, each needing its own registered test. Nothing trades.

@@ -10,6 +10,7 @@ on:
       - 'football/**'
       - 'research/open_close/football_bf_*'
       - 'research/open_close/football_trade_model.py'
+      - 'research/open_close/football_strategy_scan.py'
       - 'tests/test_football_*'
       - 'tests/test_workflow_guards.py'
       - '.github/workflows/**'
@@ -41,4 +42,4 @@ jobs:
         run: python -m pytest -q tests/test_workflow_guards.py
 
       - name: The football warehouse and the models on it
-        run: python -m pytest -q tests/test_football_warehouse*.py tests/test_football_bf_*.py tests/test_football_trade_model.py
+        run: python -m pytest -q tests/test_football_warehouse*.py tests/test_football_bf_*.py tests/test_football_trade_model.py tests/test_football_strategy_scan.py
