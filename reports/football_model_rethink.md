@@ -1041,3 +1041,50 @@ What it says:
 - **For clubs:** the price is the best single summary of a side; results against it are mostly how the matches fell, not form. The tables say how good (strength, from one solve) and how a run of matches went (performance, luck), and do not claim to forecast beyond the price. The change in a club's rating over time was withdrawn after review: on one year it measured the scale being learned.
 - **Next, in order:** the back years (2016 to 2025) as the download completes; the same model at quotes on our recorded books; maker-side execution; division-level club tables from the link. Before any club report is sold: Betfair's and API-Football's terms on commercial use (the platform document, section 12).
 - **Evidence standard:** one year of data, development evidence. Nothing is frozen or pre-registered from it. The ledger holds the reads (`football-bf-efficiency-1111`, `football-bf-close-model-1111`, `football-market-ratings-1111`, `football-goal-inference-1111`), written after their runs because the ledger's rule reached this branch at the merge.
+
+## Two trading targets: the trade-out at the Betfair SP, and win bets (12 Nov 2026)
+
+The owner, 12 Nov: a quantitative trading model for football with two targets, an early back laid off at the BFSP, and win bets. Both were registered in the ledger before the run (`football-tradeout-bsp-1112`, `football-win-bets-1112`) and are read here as registered. `research/open_close/football_trade_model.py` on the 2026 warehouse, run [43167168711](https://github.com/tomwilson41986/ashcroft/actions/runs/43167168711); 212,721 match-odds rows with a fresh checkpoint book and a known schedule; walk-forward by month, 2026-04 to 2026-10; returns a unit staked, 90% intervals from resampled match days; 1.15% charged on the entry (a last traded price is not a quote), 2% commission on a win; 329 football trials counted for the deflated Sharpe. Nothing trades.
+
+**Target 1: back early, lay at the SP.** Betfair reconciles an SP on few football markets: 20,635 of the 212,721 rows have one (11,797 in the test months, 1,054 matches, the top liquidity tier). The hedged result is price / SP - 1 whatever the match does.
+
+| Backs, closed at the SP | Bets | Return a unit staked (90%) | Share that gained |
+|---|---|---|---|
+| Every row, no model | 11,797 | -1.74% (-1.94 to -1.54) | 35% |
+| Forecast move at least 0.03 | 441 | -0.54% (-1.02 to +0.02) | 33% |
+| Forecast move at least 0.05 | 88 | -0.94% (-1.81 to -0.20) | 32% |
+| Forecast move at least 0.08 | 12 | too few to read | - |
+
+The same rule closed at the last traded price before the off (full 2.3% round trip), every row:
+
+| Backs, closed at the last traded price | Bets | Return a unit staked (90%) | Share that gained |
+|---|---|---|---|
+| Every row, no model | 140,949 | -2.33% (-2.40 to -2.25) | 30% |
+| Forecast move at least 0.03 | 10,622 | +1.83% (+1.09 to +2.65) | 43% |
+| Forecast move at least 0.05 | 3,751 | +6.37% (+4.26 to +8.64) | 51% |
+| Forecast move at least 0.08 | 1,105 | +16.60% (+10.30 to +24.08) | 55% |
+| ... at 0.05, 150+ price updates by the checkpoint | 82 | -1.78% (-2.38 to -1.21) | 21% |
+| ... at 0.05, 20-59 price updates by the checkpoint | 936 | +1.91% (+1.03 to +2.83) | 48% |
+| ... at 0.05, 60-149 price updates by the checkpoint | 233 | +0.44% (-0.78 to +1.62) | 43% |
+| ... at 0.05, under 20 price updates by the checkpoint | 2,500 | +8.87% (+5.73 to +12.25) | 54% |
+
+**Target 2: win bets.** A model of the result started from the market's own chance. Log loss on 149,376 rows: model 0.56898, market 0.56825, model less market +0.00072 (95% +0.00038 to +0.00107): the model is worse than the price it started from.
+
+| Backs left to the result (price 20 or less) | Bets | Return a unit staked (90%) | Share that won |
+|---|---|---|---|
+| Every row, no model | 147,861 | -2.96% (-3.54 to -2.33) | 34% |
+| Model edge at least 0.02 | 34,360 | -2.17% (-4.17 to -0.15) | 29% |
+| Model edge at least 0.05 | 17,983 | -3.82% (-6.69 to -0.94) | 26% |
+| Model edge at least 0.1 | 6,397 | -6.45% (-12.41 to -0.40) | 23% |
+| ... at 0.05, away | 4,647 | -6.92% (-14.98 to +0.69) | 22% |
+| ... at 0.05, draw | 10,353 | -1.65% (-5.69 to +2.89) | 25% |
+| ... at 0.05, home | 2,983 | -6.55% (-12.65 to -0.35) | 36% |
+
+What it says:
+
+- **Neither target passes its registered reading.** Trade-out at the SP, headline (0.05): -0.94% (-1.81 to -0.20) on 88 bets, deflated Sharpe 0.0. Win bets, headline (0.05): -3.82% (-6.69 to -0.94) on 17,983 bets, deflated Sharpe 1.6e-05.
+- **The forecast does pick better backs than no model, but not profitable ones where the exit is real.** At the SP the selected backs lose less than every row (-1.74%), and still lose. The SP exists only in busy markets, which is where the closing-price model has no skill.
+- **The large returns at the last traded price are not tradable.** They sit in runners with under 20 price updates, where the close is a stale print and no SP exists; on rows with 150 or more updates the same rule loses. This is the thin-market artefact the platform document describes, now measured in cash.
+- **Win bets: the features add nothing to the price.** The model's log loss is worse than the market's and its selected bets lose more than backing everything. The closing price is efficient (section above), and one year of price-derived features does not beat it on results.
+- **Where an edge could still be:** the entry, not the exit. A back needs to be taken at a real quote before the market has moved (our recorded books, maker-side orders), with information the price lacks (team news timing, the back years for the ratings). The SP is a fair exit; it is not a source of edge.
+- **Decision:** development evidence, no trader reads it, nothing frozen. The script stays in the warehouse job so both targets are re-read as the back years arrive (each a new ledger line).
