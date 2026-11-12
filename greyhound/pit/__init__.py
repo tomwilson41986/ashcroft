@@ -34,6 +34,10 @@ earlier one):
 | salience | sl_ | each printed attribute against today's field: the gaps, the largest standout for and against |
 | line | ln_ | running-line and role change; whether the trap suits the line; the neighbours' squeeze and conflict |
 | cells | ch_ | the price's past record in each card-visible cell (trap at the track and trip, sire, grade move, age by sex) |
+| improve | im_ | improvement: the dog's own trend, exposure of the condition space, nth-time curves, hidden form |
+| debut | db_ | debutants and first-time conditions: a prior for a dog with little race form, giving way as it runs |
+| lastrace | lr_ | the last race: how fancied the opposition was, the market against the result, what changes today |
+| pedigree | pg_ | pedigree posteriors: sire, dam, litter and dog in one hierarchy, each with its mean and its uncertainty |
 
 Each table is written to the sources store as ``<STORE_PREFIX>/<table>.parquet`` with ``<table>.meta.json``: the code
 hash, the engine's code hash, when built, the rows, the date range, each column's coverage, and the table's own fit notes. The registry
@@ -61,7 +65,8 @@ TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "lif
           "bend", "xtime", "dyad", "cycle", "trials",
           # the discovery tables of 11 Nov 2026 (each reads the expected-time table)
           "ext", "fitness", "fear", "clock", "optics", "litter",
-          "readers", "followed", "salience", "line", "cells")
+          "readers", "followed", "salience", "line", "cells",
+          "improve", "debut", "lastrace", "pedigree")
 KEY = ["race_id", "dog_id"]
 #: where the tables are stored. "pit2": the tables of the engine as fixed on 11 Nov 2026 (the audit's foundation
 #: faults: greyhound/data.py, greyhound/metrics.py). The tables built from the engine before it stay at
