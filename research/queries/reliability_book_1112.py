@@ -61,10 +61,10 @@ for (mid, mark), g in m.groupby(["market_id", "mark"]):
     base = 1 / rb.market_now(b, np.where(has, la, np.nan))
     base = base / base.sum()
     t = (1 / sp) / (1 / sp).sum()
-    mid = mm / mm.sum()                                      # the control: the plain middle, shared in proportion
+    pm = mm / mm.sum()                                       # the control: the plain middle, shared in proportion
     rows.append({"day": g.race_date.iloc[0], "market_id": mid, "mark": mark, "n": len(g),
                  "err_x": np.abs(np.log(x) - np.log(t)).mean(), "err_base": np.abs(np.log(base) - np.log(t)).mean(),
-                 "err_mid": np.abs(np.log(mid) - np.log(t)).mean(),
+                 "err_mid": np.abs(np.log(pm) - np.log(t)).mean(),
                  "over": (1 / b).sum(), "no_lay": int((~has).sum())})
 r = pd.DataFrame(rows)
 if r.empty:
