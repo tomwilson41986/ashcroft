@@ -1771,6 +1771,29 @@ on the 05:15-10:00 UK window.
   the other 26 +5.32%. The record: 32 days, +GBP6,314.40, 27 up.
 - **The replay** (`replay-1110`) is unchanged to 9 Nov: 10 Nov's price file loads tonight.
 
+**The forty-second full day** (11 Nov, a Wednesday; ledger `live-day-1111`), the thirtieth early session and the
+seventh on the 05:15-10:00 UK window.
+- **The start.** Predictions run 42957238013 (04:08 UTC); the night-before run 42932614232 (00:36 UTC) gave the same
+  prices as the morning (211 runners, mean difference 0.000); the session 05:17-21:30 UTC in one run (42964749606: it
+  came through the upgrade timer, the watchdog restarted nothing), first back 05:17 UK, the last order at 10:00:47 UK
+  (inside the 10:00 minute); the settle at 22:29 UTC in settle mode (run 43112186658; its email failed again).
+- **+GBP57.41 after commission** as Betfair settled the trader's own orders, on 187 fills in 17 races, GBP1,638.04
+  matched; the trader's CLV +0.24%, a third flat day. The first backs closed +0.7%, the top-ups +0.2%; 05:15-07:59
+  -3.3% (GBP1,219.80), 08:00-09:59 +11.4% (GBP367.64). 23 horses reached the cap of 5 top-ups (GBP1,097.28, +5.52% at
+  the settled price), the other 16 -10.48%. The record: 33 days, +GBP6,371.81, 28 up.
+- **The account's funds no longer isolate the trader.** They fell GBP5,047.97 -> GBP4,970.83 (-GBP77.14). The
+  GBP134.55 beside the trader's result is on the greyhound early lay's side: it placed real orders on the same account
+  from 10:46 to 18:18 UTC (its ledger: -GBP33.70 locked, GBP93.97 of lays left to the result; its check against
+  Betfair's settled bets did not run), and no other trader left a live record of the day (ledger `account-day-1111`).
+  From here the record takes Betfair's settled figure for the trader's own orders.
+- **The trader's code changed for 12 Nov** (PR #316, merged 21:34 UTC, the owner: "Merge"): a lost Betfair reply is
+  settled only by an order not seen before, and a top-up's failed lay is sent again (ledger `live-lost-reply-1111`,
+  `live-topup-lay-retry-1111`, `live-lost-reply-unsynced-1111`). The settle ran on it; the first session on it is 12 Nov's.
+- **The races left alone, counted** (ledger `skipped-races-1111`): by 10:00 UK 87 of 1,595 races read since 1 Oct
+  were never whole, 86 of them Irish, for runners Betfair lists and the morning card does not (reserves by every
+  sign); 4 of 191 since 5 Nov. No change.
+- **The replay** (`replay-1111`) now reaches 10 Nov: the rule +GBP56.19 at the BSP, +GBP30.98 after the result.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
