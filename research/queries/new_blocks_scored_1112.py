@@ -11,7 +11,7 @@ locked holdout from 1 Apr 2026 is not read). For each group of runners:
     exp%     the BSP's chances (normalised within the race)
     A/E      winners over the BSP's chances      A-E/run  winners less chances, per runner (uplift on the price)
     NFP      normalised finishing position (1 won, 0 last; a non-finisher 0)
-    s        NFP less the position the BSP rank implied (the normalised uplift)
+    s        NFP less the mean NFP of earlier runners at the same price (the normalised uplift; zero at every price)
     fig+     the run's time figure less the horse's own decayed mean figure, in pounds
 
 Descriptive: no pass or fail, nothing fitted (the matrix is the research loop's, restored from its cache). Groups are fifths of a reading within the scored rows, or flags.
@@ -56,9 +56,9 @@ inv = pd.Series(np.where(priced, 1 / np.where(priced, bsp, 1), 0.0), index=mat.i
 mat["p"] = (inv / inv.groupby(race).transform("sum")).where(priced)
 rk = pd.Series(np.where(priced, bsp, np.nan), index=mat.index).groupby(race).rank(method="average").to_numpy()
 npr = pd.Series(priced.astype(float), index=mat.index).groupby(race).transform("sum").to_numpy()
-with np.errstate(invalid="ignore", divide="ignore"):
-    mat["nfp"] = np.where(np.isfinite(pos) & (pos >= 1) & (n > 1), np.clip((n - pos) / (n - 1), 0, 1), np.where(n > 1, 0.0, np.nan))
-    mat["s"] = mat.nfp - np.where(priced & (npr > 1), (npr - rk) / (npr - 1), np.nan)
+from model.blocks._resid import price_residual  # noqa: E402
+
+mat["s"], mat["nfp"] = price_residual(mat, day, race)
 mat["won"] = (pos == 1).astype(float)
 fig = np.asarray(_tf.figures(mat)["fig"], dtype=float)
 h = pd.factorize(mat.horse_name.astype(str).str.lower().str.strip(), sort=True)[0]
@@ -109,7 +109,8 @@ table(S[S.et_rank.notna()].assign(r=S.et_rank.clip(upper=6)).groupby("r"), "by t
 fifths("et_uplift", "what today's conditions, connections and set-up add to the horse's own level")
 fifths("et_win", "the forecast's share of the race")
 print("\n================ 2. CONNECTIONS RATING")
-for c, lab in (("cr_tr_s", "trainer, against the price"), ("cr_jk_s", "jockey, against the price"), ("cr_sum_s", "trainer + jockey, against the price"),
+for c, lab in (("cr_tr_m", "trainer, against the market rating (pull on the price)"), ("cr_jk_m", "jockey, against the market rating"),
+               ("cr_tr_s", "trainer, against the price"), ("cr_jk_s", "jockey, against the price"), ("cr_sum_s", "trainer + jockey, against the price"),
                ("cr_tr_f", "trainer, against the horse's level"), ("cr_jk_f", "jockey, against the horse's level"),
                ("cr_jk_new_s", "the jockey's record on rides taken over")):
     fifths(c, lab)
