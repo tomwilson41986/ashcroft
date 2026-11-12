@@ -152,6 +152,7 @@ jobs:
           mkdir -p out
           python -m research.open_close.football_bf_efficiency --out-json out/bf_efficiency.json > /dev/null
           python -m research.open_close.football_bf_close_model --out-json out/bf_close_model.json > /dev/null
+          python -m research.open_close.football_trade_model --out-json out/football_trade_model.json > /dev/null
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
