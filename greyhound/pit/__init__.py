@@ -29,6 +29,11 @@ earlier one):
 | clock | ck_ | the wait in the racing kennels, the dog's habitual hour, the session, daylight, the fireworks calendar |
 | optics | op_ | how much better the printed card looks than the dog ran: the look, the substance, the surplus |
 | litter | lt_ | the litter as a live sensor: the littermates' current form, their level, the runt |
+| readers | rd_ | the price as a pool of card readers: six rules a punter applies to the card, each ranking the field |
+| followed | fo_ | the followed dog: its favourite history and how the market has bet it against how it ran |
+| salience | sl_ | each printed attribute against today's field: the gaps, the largest standout for and against |
+| line | ln_ | running-line and role change; whether the trap suits the line; the neighbours' squeeze and conflict |
+| cells | ch_ | the price's past record in each card-visible cell (trap at the track and trip, sire, grade move, age by sex) |
 
 Each table is written to the sources store as ``<STORE_PREFIX>/<table>.parquet`` with ``<table>.meta.json``: the code
 hash, the engine's code hash, when built, the rows, the date range, each column's coverage, and the table's own fit notes. The registry
@@ -55,7 +60,8 @@ import pandas as pd
 TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather", "figs", "form", "draw",
           "bend", "xtime", "dyad", "cycle", "trials",
           # the discovery tables of 11 Nov 2026 (each reads the expected-time table)
-          "ext", "fitness", "fear", "clock", "optics", "litter")
+          "ext", "fitness", "fear", "clock", "optics", "litter",
+          "readers", "followed", "salience", "line", "cells")
 KEY = ["race_id", "dog_id"]
 #: where the tables are stored. "pit2": the tables of the engine as fixed on 11 Nov 2026 (the audit's foundation
 #: faults: greyhound/data.py, greyhound/metrics.py). The tables built from the engine before it stay at
