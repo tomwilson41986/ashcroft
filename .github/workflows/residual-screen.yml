@@ -53,6 +53,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Free disk space
+        # GitHub's ubuntu-26.04 runners keep /mnt on the root disk: the 16 GB swap file left no room for the
+        # database (predict.yml runs 43363524905 and 43373561336, 13 Nov 2026). Unused tool caches go first.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h / /mnt 2>/dev/null || df -h /
       - name: Add swap
         continue-on-error: true
         run: |
