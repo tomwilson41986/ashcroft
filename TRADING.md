@@ -1823,6 +1823,10 @@ eighth on the 05:15-10:00 UK window; the first session on the lost-reply fix (PR
   holdout its error against the BSP was 0.3734 against the served blend's 0.3801 (iteration 116). The shadow week
   planned to 20 Nov was cut short. The trader's rule and stakes are unchanged.
 
+**From 14 Nov: predictions at 03:00 UTC** (the owner, 13 Nov: "move predictions to 03:00 UTC"; ledger
+`predictions-0300-1113`). On 13 Nov GitHub's runner (2 cores, 7.7 GB) took 67 minutes to price the card; at 04:00 UTC
+that lands at or after the 05:15 UTC session start. The session, its window and the rule are unchanged.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",

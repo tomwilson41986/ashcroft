@@ -5,7 +5,7 @@ name: Predictions the night before (tomorrow's card, its own S3 key)
 # today's card until UK midnight, turning over between 23:10 and 00:45 UTC (00:00 UK). So the night-before run is at
 # 00:10 UK, on the one-day card as it stands then: the complete card, priced by the same model and the same code as
 # the morning's, to s3://$BUCKET/predictions_evening/<day>.csv with the card kept in racecards_evening/ (the 21:50 UTC
-# run of 4 Nov found 6 Nov's declarations and wrote nothing). The morning's run (predict.yml, 04:00 UTC) and its
+# run of 4 Nov found 6 Nov's declarations and wrote nothing). The morning's run (predict.yml, 03:00 UTC from 14 Nov) and its
 # predictions/<day>.csv, the file the trader reads, are untouched: the trader does not read this file. What it is for:
 # a session before 05:15, if the timing study (research/arms/timing.py) says the overnight prices are worth it, and a
 # check of how far the prices move between 00:10 and the morning.
