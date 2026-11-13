@@ -1006,9 +1006,20 @@
     "sc_late_m3",
     "sc_sl_l1",
     "sc_sl_car",
-    "sc_runs"
+    "sc_runs",
+    "mr_rating",
+    "mr_sd",
+    "mr_n",
+    "mr_share",
+    "mr_lshare",
+    "mr_gap",
+    "mr_z",
+    "mr_field",
+    "mr_read_share",
+    "mr_surprise",
+    "mr_trend"
   ],
-  "n_features": 1006,
+  "n_features": 1017,
   "categorical_vocab": {
     "surface_type": [
       "Beach",
@@ -1214,111 +1225,111 @@
   },
   "best_iteration": 12600,
   "holdout_metrics": {
-    "n": 22831,
-    "mae": 0.9984732415193676,
-    "rmse": 1.3596938311672653,
+    "n": 22749,
+    "mae": 0.999324640901162,
+    "rmse": 1.3618986389306087,
     "in_sample": true
   },
-  "holdout_start": "2026-08-14",
-  "train_rows": 706242,
-  "holdout_rows": 22831,
+  "holdout_start": "2026-09-10",
+  "train_rows": 715828,
+  "holdout_rows": 22749,
   "early_stopped": false,
   "init_offset": 0.0,
   "feature_code_hash": "f879b10c8369467a",
   "final_metrics": {
     "target": "race_xent",
-    "log_mae": 0.9966,
-    "log_rmse": 1.3515,
-    "log_r2": -130.4628,
-    "bfsp_mae": 4.19,
-    "median_ape_pct": 65.09,
-    "mean_ape_pct": 409.95,
-    "correlation": -0.6719,
+    "log_mae": 0.9918,
+    "log_rmse": 1.3466,
+    "log_r2": -128.7642,
+    "bfsp_mae": 4.1,
+    "median_ape_pct": 64.84,
+    "mean_ape_pct": 401.33,
+    "correlation": -0.6794,
     "best_iteration": 12600,
-    "holdout_mae": 0.9984732415193676
+    "holdout_mae": 0.999324640901162
   },
-  "trained_through": "2026-10-13",
-  "train_rows_total": 706242,
+  "trained_through": "2026-11-09",
+  "train_rows_total": 715828,
   "top_gain": [
     [
       "rr_PMW3_z",
-      84857.27223922312
+      114368.16985701118
+    ],
+    [
+      "mr_lshare",
+      96659.32329915278
     ],
     [
       "rw_PMW5_z",
-      73794.90937651321
+      74119.73650055006
     ],
     [
       "rr_PMW10_z",
-      59746.55503428541
-    ],
-    [
-      "rw_fv_nfp_s8_z",
-      40487.37384850718
-    ],
-    [
-      "rw_fv_nfp_s8_gap",
-      29838.84848990105
-    ],
-    [
-      "fw_lbsc_l1",
-      25182.78532115929
-    ],
-    [
-      "hca_wt_vs_mark",
-      23429.368140975013
+      34599.58012226783
     ],
     [
       "fw_lbsc_w3",
-      21773.360780388117
+      32289.320973293856
     ],
     [
-      "rr_OFS5_z",
-      16116.778449201956
+      "fw_lbsc_l1",
+      28592.905007191002
+    ],
+    [
+      "hca_wt_vs_mark",
+      24188.905502630398
+    ],
+    [
+      "rr_fw_lbs_w5_z",
+      23706.810101432726
+    ],
+    [
+      "rw_fv_nfp_s8_z",
+      22727.316771192476
+    ],
+    [
+      "mr_gap",
+      22366.231045935303
+    ],
+    [
+      "mr_z",
+      22131.765750389546
+    ],
+    [
+      "rw_fv_nfp_s8_gap",
+      15500.513499053195
     ],
     [
       "rw_fv_nfp_e3_z",
-      14821.717405511066
+      13959.194955946878
     ],
     [
-      "rr_fw_nfp_w5_z",
-      13674.487471988425
+      "mr_share",
+      13849.181556589901
     ],
     [
-      "rr_LR_LB_z",
-      13577.648050617427
-    ],
-    [
-      "rr_LR3_ORR2_z",
-      13427.357250537723
-    ],
-    [
-      "rw_preracetrainercareerWOA_z",
-      12413.957243291661
-    ],
-    [
-      "dm_stage_mkt_z",
-      11601.490687232465
+      "dm_stage_mkt",
+      12724.812958901748
     ],
     [
       "fv_lbrel_l1",
-      10991.724351692945
+      12426.147965617478
     ],
     [
-      "rr_LRNFP_z",
-      10766.856586927548
+      "dm_stage_mkt_z",
+      11374.462934399024
     ],
     [
-      "rw_PFD3_z",
-      10451.162727246061
-    ],
-    [
-      "rw_EXP_RB5_z",
-      10338.724294858053
+      "rr_fw_nfp_w5_z",
+      9581.684984633699
     ],
     [
       "fw_lbs_l1",
-      10043.902246983722
+      9563.68236800842
+    ],
+    [
+      "rr_LR_LB_z",
+      9273.651299908757
     ]
   ],
   "drop_in_blocks": [
@@ -1331,6 +1342,7 @@
     "handicap_angles",
     "head_to_head",
     "kalman",
+    "market_rating",
     "race_relative",
     "race_relative_wide",
     "sectionals",

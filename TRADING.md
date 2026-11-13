@@ -1809,6 +1809,20 @@ eighth on the 05:15-10:00 UK window; the first session on the lost-reply fix (PR
   records sum GBP28.60 below the account's move and are not reconciled (ledger `account-day-1112`).
 - **The replay** (`replay-1112`) now reaches 11 Nov: the rule +GBP284.78 at the BSP, -GBP6.26 after the result.
 
+**13 Nov: no prices until 07:48 UTC, and the served model changed for 14 Nov** (ledger `fallback-card-1113`,
+`serve-market-rating-1113`).
+- **The outage.** Both 04:08 UTC predictions runs died with "No space left on device" (GitHub's ubuntu-26.04 runner
+  keeps the swap file on the root disk); the first fixed run was cut off by its 60-minute limit; the fourth
+  (43380399981) wrote `predictions/2026-11-13.csv` at 07:48 UTC (219 runners), three hours late. The runner had 2
+  cores and 7.7 GB of memory and built the features in 62 minutes (under 30 on 12 Nov). The trader (run 43371006084)
+  waited from 05:17 UTC and read the file at its next 2-minute poll. No night-before card existed: that job was
+  skipped after queueing behind the research loop's jobs. Fixes merged: disk space freed before the swap file
+  (PR #324), a 150-minute limit on the three prediction jobs (PR #328).
+- **The served model.** The owner, 07:27 UTC: "Use the best performing model in live." From 14 Nov's card the served
+  blend is the market-rating blend (bfsp-model-60/61/62, trained through 9 Nov, the gate unchanged): on the locked
+  holdout its error against the BSP was 0.3734 against the served blend's 0.3801 (iteration 116). The shadow week
+  planned to 20 Nov was cut short. The trader's rule and stakes are unchanged.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
