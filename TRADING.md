@@ -1794,6 +1794,21 @@ seventh on the 05:15-10:00 UK window.
   sign); 4 of 191 since 5 Nov. No change.
 - **The replay** (`replay-1111`) now reaches 10 Nov: the rule +GBP56.19 at the BSP, +GBP30.98 after the result.
 
+**The forty-third full day** (12 Nov, a Thursday; ledger `live-day-1112`), the thirty-first early session and the
+eighth on the 05:15-10:00 UK window; the first session on the lost-reply fix (PR #316).
+- **The start.** Predictions run 43152760021 (04:08 UTC); the night-before run 43128632737 (00:37 UTC) differed from
+  the morning for the first night in seven (201 runners, mean absolute log difference 0.087; ledger
+  `night-before-1112`); the session 05:17-21:30 UTC in one run (43160416946), first back 05:17 UK, the last order at
+  09:51:41 UK; the settle at 22:30 UTC in settle mode (run 43320446205; its email failed again).
+- **+GBP25.31 after commission** as Betfair settled the trader's own orders, on 311 fills on 69 horses, GBP2,007.70
+  matched; the trader's CLV +3.63%. The first backs closed +5.9%, the top-ups +3.1%; 05:15-07:59 +4.6%
+  (GBP1,358.57), 08:00-09:59 +1.6% (GBP649.13). 33 horses reached the cap of 5 top-ups (GBP1,451.83, +0.80% at the
+  settled price), the other 36 +11.03%. The record: 34 days, +GBP6,397.12, 29 up.
+- **The account.** Funds GBP4,970.83 -> GBP4,959.75 (-GBP11.08), GBP36.39 beside the trader's result. The greyhound
+  early lay placed real orders on the same account from 11:37 to 21:27 UTC (its own figure -GBP64.99 locked); the two
+  records sum GBP28.60 below the account's move and are not reconciled (ledger `account-day-1112`).
+- **The replay** (`replay-1112`) now reaches 11 Nov: the rule +GBP284.78 at the BSP, -GBP6.26 after the result.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
