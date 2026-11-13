@@ -53,6 +53,7 @@ race and dog, so each family is scored like any other block, on both targets.
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import importlib
 import io
@@ -121,14 +122,25 @@ def coverage(tab: pd.DataFrame, runs: pd.DataFrame) -> dict:
                                  for c in cols[:3]}}
 
 
-def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None, keep: bool = False) -> dict:
+#: the tables a table's build reads from ``ctx`` (tests/test_greyhound_pit.py holds the list to the code)
+DEPENDS = {"trouble": ("ability",), "dyad": ("xtime",), "ext": ("xtime",), "fitness": ("xtime",), "fear": ("xtime",),
+           "clock": ("xtime",), "optics": ("xtime",), "litter": ("xtime",)}
+
+
+def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None, keep: bool = False,
+                 cut: pd.DataFrame | None = None) -> dict:
     """Build ``names`` in ``TABLES`` order; write each to ``store`` (when given); return each table's meta, or with
-    ``keep`` the tables themselves (the live model's card build: greyhound/live.py)."""
+    ``keep`` the tables themselves (the live model's card build: greyhound/live.py). With ``cut`` (the keys of the
+    rows wanted) each kept table is cut to those rows as soon as no later table reads it (``DEPENDS``), so the
+    build holds one whole table at a time and not all of them (13 Nov 2026: sixteen whole tables from 2014 ran the
+    price run's 16 GB runner out of memory, greyhound-live.yml run 43427444021)."""
     from greyhound.pit import core
     ctx = dict(ctx or {})
     figs = core.per_run_figures(runs)
     metas = {}
-    for name in [t for t in TABLES if t in names]:
+    order = [t for t in TABLES if t in names]
+    kept: dict = {}
+    for name in order:
         mod = module(name)
         t0 = datetime.now(timezone.utc)
         tab, notes = mod.build(runs, figs, ctx)
@@ -142,6 +154,14 @@ def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None,
             store.put_parquet(f"{STORE_PREFIX}/{name}.parquet", tab)
             store.put(f"{STORE_PREFIX}/{name}.meta.json", json.dumps(meta, indent=1, default=str).encode())
         metas[name] = meta
+        if keep and cut is not None:
+            later = order[order.index(name) + 1:]
+            for done in [t for t in metas if t not in kept]:
+                if not any(done in DEPENDS.get(t, ()) for t in later):
+                    kept[done] = ctx.pop(done).merge(cut, on=KEY)
+            gc.collect()
+    if keep and cut is not None:
+        return kept
     return {n: ctx[n] for n in metas} if keep else metas
 
 
