@@ -142,9 +142,10 @@ print(v.groupby(["period", "jumps"]).apply(val).round(4).to_string())
 
 print("\n== 3. the live trader, from its own ledgers")
 K = ["market_id", "selection_id"]
-# a horse runs once a day, so the day and the selection id name the race (the two files write market_id differently)
-pm = pred.dropna(subset=["selection_id"]).drop_duplicates(["file_day", "selection_id"], keep="last")
-pm = pm[["file_day", "selection_id", "_r"]]
+# a horse runs once a day, so the day and its name give the race (the 06:00 file's Betfair ids are not always filled)
+pred["_h"] = pred["horse_name"].map(normalise_horse)
+pm = pred.drop_duplicates(["file_day", "_h"], keep="last")[["file_day", "_h", "_r"]]
+print("06:00 file columns:", list(pred.columns)[:20], "; selection_id filled on", int(pred.selection_id.notna().sum()), "of", len(pred))
 rows = []
 d = date(2026, 10, 10)
 while d <= TO:
@@ -169,9 +170,13 @@ while d <= TO:
     h = hm.merge(st, on=K, how="left")
     h["day"] = day
     h["commission_day"] = L.loc[L.event == "commission", "commission"].sum() if "commission" in L.columns else np.nan
-    h = h.merge(pm[pm.file_day == day][["selection_id", "_r"]], on="selection_id", how="left")
+    names = L.dropna(subset=["runner"]).drop_duplicates(K, keep="last")[K + ["runner", "venue", "off"]]
+    h = h.merge(names, on=K, how="left")
+    h["_h"] = h["runner"].astype(str).map(normalise_horse)
+    h = h.merge(pm[pm.file_day == day][["_h", "_r"]], on="_h", how="left")
     rows.append(h)
 T = pd.concat(rows, ignore_index=True)
+print("ledger sample:", T[["day", "runner", "venue", "off", "_h", "_r"]].head(3).to_dict("records"))
 print(f"backed horses with a race from the 06:00 file: {T._r.notna().sum():,} of {len(T):,}; of those with a result row: {T._r.isin(race_code_of.index).sum():,}")
 T["code"] = T._r.map(race_code_of).fillna("not matched to a result")
 T["jumps"] = np.select([T.code.isin(["Hurdle", "Chase", "Bumper"]), T.code.isin(["Flat turf", "All-weather"])],
