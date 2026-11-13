@@ -2445,3 +2445,17 @@ runners, 1 Jun - 11 Nov 2026, batch 29's stack recipe (three tree seeds, three n
   check of the trials, optics, line, salience and last-race tables, a retrain, and the owner's word.
 - Batch 33 (the league table, `greyhound-league-batch33-1112`) is registered and not run: the table's build failed
   twice on the hosted runners on 12 Nov (7.7 GB of memory) and was not retried.
+
+## 49. The release of batch 32's stack to the live price (13 Nov 2026)
+
+The owner, 13 Nov 2026: "Add the best performing model to live today and let's trade from that". `PIT_TABLES` in
+greyhound/stack_model.py now lists the sixteen tables of batch 32's m_stack (section 48); the recipe is named
+`stack_m`. The stored bundle of 12 Nov keeps pricing until the refit (greyhound-live.yml, task train) replaces it:
+a bundle reads its own feature list.
+
+- Checked before the merge: the card-mode test of each added table (tests/test_greyhound_pit.py, 6 passed) and the
+  live stack's tests with sixteen tables (32 passed with the workflow guards).
+- Not in the release: the residual memory of section 48 (research code, not in the live path).
+- The early lay's forecast is fitted on the out-of-sample prices of the 10 Nov stack until the new model's are
+  published; the new model's prices are sharper than those it was fitted on.
+- The Betfair SP is not beaten by this model: the early lay trades the move to the SP, not a better win chance.

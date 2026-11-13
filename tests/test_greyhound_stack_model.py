@@ -46,7 +46,7 @@ def test_a_saved_model_prices_the_same(small):
     test = df[df.t >= "2026-06-01"].reset_index(drop=True)
     a, b = sm.price(bundle, test), sm.price(again, test)
     assert np.allclose(a.to_numpy(float), b.to_numpy(float), rtol=1e-6)
-    assert again["meta"]["recipe"] == "stack3_all3" and len(again["trees"]) == 2 and len(again["nets"]) == 2
+    assert again["meta"]["recipe"] == "stack_m" and len(again["trees"]) == 2 and len(again["nets"]) == 2
 
 
 def test_rows_must_be_grouped_by_race(small):
