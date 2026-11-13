@@ -2326,3 +2326,136 @@ tree arms at a fixed 6,000 rounds on the fixed engine and its rebuilt tables (no
 - **Discovery, second wave** (a screen, ledger `greyhound-discovery-wave2-screen-1112`): the drought since the
   last win is null; running-line drift and the later runs of rivals met carry rank correlations of about -0.015
   with the model's miss. Not built.
+
+## 45. The release candidate: the stack with the trials and optics tables (batch 29, 12 Nov 2026)
+
+Registered before its run (ledger `greyhound-release-batch29-1112`, amended before dispatch on the seed arm's
+wording). greyhound-fastloop.yml run 43190857358, the same cache and tables as batch 28, 110,788 runners, 1 Jun -
+10 Nov 2026, read against batch 28's saved predictions on the same runners.
+
+| Arm | RMSE of log(BSP) | Log-loss |
+|---|---|---|
+| f_stack (batch 28) | 0.3073 | 0.43497 |
+| g_stack_seed (f_stack's recipe, every seed moved) | 0.3063 | 0.43495 |
+| g_stack_t (+ trials) | 0.2951 | 0.43428 |
+| **g_stack_to (+ trials and optics): the candidate** | **0.2923** | 0.43438 |
+| g_trees_t / g_trees_to (trees) | 0.3089 / 0.3061 | 0.43467 / 0.43468 |
+| g_seed (f0 with another seed) | 0.3188 | 0.43521 |
+
+- **Reading 1, the candidate against f_stack:** -0.0149 (z -26.1), log-loss -0.00060 (z -4.0); Jun-Aug -0.0132,
+  Sep - 5 Nov -0.0168, after 5 Nov -0.0211. The stack's seed floor is 0.0010 (g_stack_seed against f_stack, z -6.2:
+  larger than a tree arm's, and worth knowing). The gain is fifteen times the floor. Passes.
+- **Reading 2, optics inside the stack:** g_stack_to against g_stack_t -0.0027 (z -12.4), log-loss +0.00008
+  (z +0.9, within 1 standard error). Passes: the candidate keeps optics.
+- **Reading 3, optics beside the trials in trees:** -0.0028 (z -7.2) against a tree seed floor of 0.0002 (g_seed
+  against f0, z +0.7). Passes.
+- **The residual memory on the candidate** (descriptive): fitted Jun-Aug (K 3, b 0.552, c 0.328), 1 Sep - 10 Nov:
+  0.2912 to 0.2875 (-0.0038, z -20.9), log-loss -0.00017 (z -2.8).
+- **Against the market** (descriptive): on the BSP races the candidate's log-loss is 0.43422 against the SP's
+  0.42825. Every blend is worse than the SP alone on 1 Sep on: one blend +0.00027 (0.00010 to 0.00044), by
+  realised money +0.00028, by expected money +0.00027; with the memory +0.00026, +0.00027, +0.00025. The Betfair
+  SP is not beaten.
+- **From batch 24 to here on the same test window:** 0.3332 (stack3_all4) to 0.3073 (the fixed engine) to 0.2923
+  (trials and optics), 0.2875 on the later part with the memory.
+
+## 46. Discovery wave 3: five market-perception tables (batch 30, 12 Nov 2026)
+
+The only discovery table that had passed (optics) describes how the market reads a dog, not how fast it is. Wave 3
+stayed in that vein: six ideas were screened on the local runs against what batch 28's stack still misses after the
+residual memory (ledger `greyhound-discovery-wave3-screen-1112`); dated franking was null; the other five were
+ported to point-in-time tables, each read for leaks by a second agent (none found), and scored as registered
+(`greyhound-wave3-batch30-1112`). greyhound-fastloop.yml run 43210470932, 110,788 runners, 1 Jun - 10 Nov 2026,
+trees at a fixed 6,000 rounds with the trials and optics tables in every arm.
+
+| Arm | RMSE of log(BSP) | Against h0 | z | Log-loss diff (z) | Reading |
+|---|---|---|---|---|---|
+| h0 | 0.3061 | - | - | - | |
+| h0_seed / h0_placebo | 0.3062 / 0.3062 | 0.0000 / 0.0000 | +0.1 / +0.1 | 0.00000 / -0.00003 | the floors |
+| h_line (running line, neighbours' conflict) | 0.3046 | -0.0015 | -4.1 | -0.00003 (-0.3) | passes |
+| h_salience (each printed attribute against the field) | 0.3046 | -0.0015 | -4.3 | -0.00004 (-0.3) | passes |
+| h_followed (favourite history, over- and under-bet) | 0.3055 | -0.0006 | -2.0 | -0.00023 (-1.8) | fails (under 3 SE) |
+| h_readers (six card-reading rules) | 0.3055 | -0.0006 | -1.8 | -0.00005 (-0.4) | fails |
+| h_cells (the price's record by card cell) | 0.3063 | +0.0002 | +0.5 | -0.00006 (-0.4) | fails |
+| h_all5 | 0.3036 | -0.0026 | -6.7 | -0.00007 (-0.4) | passes; every period |
+
+- The line and salience tables pass and join the next stack candidate. The followed-dog and card-reader tables are
+  each two standard errors: not passes, and not built into the candidate on their own.
+- The five together are worth more than the two that pass (-0.0026 against about -0.0030 if the two added): the
+  three that fail alone still carry something in company, but the registered bar is a table's own.
+- Against the market: every arm's blend is worse than the SP alone on the later half (0.42754 to 0.42765 against
+  0.42733). The Betfair SP is not beaten.
+
+## 47. Discovery wave 4: the horse programmes applied to greyhounds (batch 31, 12 Nov 2026)
+
+The owner, 12 Nov: "use these horse feature ideas on greyhounds where they might apply" - pedigree, improvement, the
+last race, debutants, market metrics. Each was designed, built on the local runs with every prior, curve and market
+map refitted from earlier days only, screened against what batch 29's candidate still misses (ledger
+`greyhound-discovery-wave4-screen-1112`) and read for leaks by a second agent (none found). The market-metrics set
+added nothing beyond the wave-3 tables and was not built. The other four were ported to tables and scored as
+registered (`greyhound-wave4-batch31-1112`): greyhound-fastloop.yml run 43225538249, 110,788 runners, 1 Jun - 10 Nov
+2026, trees at a fixed 6,000 rounds with the trials, optics, line and salience tables in every arm.
+
+| Arm | RMSE of log(BSP) | Against k0 | z | Log-loss diff (z) | Under 3 races (5,984) | Reading |
+|---|---|---|---|---|---|---|
+| k0 | 0.3032 | - | - | - | 0.3862 | |
+| k0_seed / k0_placebo | 0.3036 / 0.3037 | +0.0003 / +0.0005 | +1.0 / +1.5 | +0.00038 / +0.00008 | | the floors |
+| k_lastrace | 0.3017 | -0.0015 | -4.2 | +0.00003 (+0.2) | 0.3876 | passes |
+| k_debut | 0.3022 | -0.0010 | -2.7 | +0.00009 (+0.6) | 0.3813 | fails (under 3 SE) |
+| k_improve | 0.3032 | 0.0000 | 0.0 | +0.00018 (+1.3) | 0.3865 | fails |
+| k_pedigree | 0.3033 | +0.0001 | +0.2 | +0.00025 (+1.8) | 0.3855 | fails |
+| k_all4 | 0.3009 | -0.0023 | -6.0 | 0.00000 (0.0) | 0.3785 | passes; Jun-Aug -0.0027, Sep - 5 Nov -0.0019 |
+
+- The last-race table passes: how fancied the opposition was last time and whether the dog outran its market rank.
+- The debutant table does what it was built for on dogs with under three races (0.3862 to 0.3813) but is 2.7
+  standard errors over all runners: not a pass alone.
+- The improvement table screened best on the local slice (-0.0013) and is worth nothing on the full history beside
+  the line and salience tables: the screen's signal was already in them. Pedigree on the full history is null for
+  the price: on greyhounds the market's past prices and the dog's own trials carry what the family would.
+- Of nine tables screened in waves 3 and 4, three pass alone (line, salience, last race). The Betfair SP is not
+  beaten by any arm (later-half blends 0.42754 to 0.42766 against 0.42733).
+
+## 48. The candidate: the stack with the three discovery tables that passed (batch 32, 12 Nov 2026)
+
+Registered as `greyhound-final-batch32-1112` before the run: greyhound-fastloop.yml run 43236900145, 110,788
+runners, 1 Jun - 11 Nov 2026, batch 29's stack recipe (three tree seeds, three neural set models, stacked).
+
+| Arm | Tables added to batch 29's stack | RMSE of log(BSP) | Against | Diff | z | Log-loss diff (z) |
+|---|---|---|---|---|---|---|
+| g_stack_to (batch 29) | - | 0.2923 | - | - | - | - |
+| m_stack | line, salience, last race | 0.2885 | g_stack_to | -0.0038 | -18.1 | -0.00036 (-4.0) |
+| m_stack_wide | those and readers, followed, cells, improve, debut, pedigree | 0.2874 | m_stack | -0.0011 | -4.4 | +0.00010 (+1.0) |
+
+- Reading 1 passes: m_stack beats batch 29's candidate in every period (Jun-Aug -0.0037, Sep - 5 Nov -0.0041,
+  after 5 Nov -0.0032 on 5 days), by more than the stack's seed floor of 0.0010, with a better log-loss.
+- Reading 2 fails: the wide stack is 0.0011 better on the price (4.4 standard errors) but its win chance is worse
+  (log-loss +0.00010, one standard error; +0.00025 in Sep - 5 Nov). The registered bar was the log-loss no worse.
+  m_stack is the candidate.
+- The memory that forgets (`greyhound-decay-memory-1112`, research/greyhound/residual_memory.py --decay): each
+  earlier miss weighted by exp(-age / 17 days). On m_stack from 1 Sep (49,612 runners): no memory 0.2872, the
+  count-shrunk memory 0.2839, the time-decay memory 0.2820 (against the count -0.0019, z -11.3; log-loss 0.43354
+  against 0.43384). It passes and replaces the count-shrunk memory on the candidate.
+- The day's path on the same test months: 0.3332 (batch 24, the price live until this morning) - 0.3073 (batch 28,
+  the fixed engine) - 0.2923 (batch 29, trials and optics) - 0.2885 (batch 32), and 0.2820 with the memory on the
+  later months.
+- The Betfair SP is not beaten. On the 20,192 races the SP prices whole our log-loss is 0.43386 against the SP's
+  0.42825. The later-half blend gives our price a weight of 0.17 and scores 0.42728 against the SP's 0.42701
+  (+0.00027, interval +0.00009 to +0.00045); by market depth 0.42730 (realised) and 0.42727 (expected); with the
+  memory 0.42727. Every blend is worse than the SP alone.
+- Not released. A release needs the three tables added to `PIT_TABLES` in greyhound/stack_model.py, the card-mode
+  check of the trials, optics, line, salience and last-race tables, a retrain, and the owner's word.
+- Batch 33 (the league table, `greyhound-league-batch33-1112`) is registered and not run: the table's build failed
+  twice on the hosted runners on 12 Nov (7.7 GB of memory) and was not retried.
+
+## 49. The release of batch 32's stack to the live price (13 Nov 2026)
+
+The owner, 13 Nov 2026: "Add the best performing model to live today and let's trade from that". `PIT_TABLES` in
+greyhound/stack_model.py now lists the sixteen tables of batch 32's m_stack (section 48); the recipe is named
+`stack_m`. The stored bundle of 12 Nov keeps pricing until the refit (greyhound-live.yml, task train) replaces it:
+a bundle reads its own feature list.
+
+- Checked before the merge: the card-mode test of each added table (tests/test_greyhound_pit.py, 6 passed) and the
+  live stack's tests with sixteen tables (32 passed with the workflow guards).
+- Not in the release: the residual memory of section 48 (research code, not in the live path).
+- The early lay's forecast is fitted on the out-of-sample prices of the 10 Nov stack until the new model's are
+  published; the new model's prices are sharper than those it was fitted on.
+- The Betfair SP is not beaten by this model: the early lay trades the move to the SP, not a better win chance.
