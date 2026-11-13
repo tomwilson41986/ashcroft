@@ -17,6 +17,15 @@ s3 = boto3.client("s3", region_name=os.environ.get("PRED_REGION") or "eu-west-2"
 bucket = os.environ.get("PRED_BUCKET") or "ashcroft"
 src, dst = f"predictions_evening/{DAY}.csv", f"predictions/{DAY}.csv"
 
+for prefix in ("predictions_evening/", "predictions/"):
+    keys = []
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        keys += [(o["Key"], o["LastModified"], o["Size"]) for o in page.get("Contents", [])]
+    keys.sort(key=lambda k: k[1])
+    print(f"{prefix}: {len(keys)} objects; the last 6:")
+    for k in keys[-6:]:
+        print("   ", k[0], k[1], f"{k[2]:,} bytes")
+
 try:
     head = s3.head_object(Bucket=bucket, Key=dst)
     print(f"{dst} is already there (written {head['LastModified']}, {head['ContentLength']:,} bytes): nothing copied")
