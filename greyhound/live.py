@@ -292,9 +292,8 @@ def card_tables(store, day: date, card: pd.DataFrame) -> dict[str, pd.DataFrame]
     del hist
     ctx = {"fetch_lag": core.raw_fetch_lag(store), "prices": load_prices(store, f"{PIT_FIRST_YEAR}-{day.year}"),
            "trial_runs": trial_rows[0] if trial_rows else None}          # the trials table (greyhound/pit/trials.py)
-    tabs = pit.build_tables(list(sm.PIT_TABLES), runs, None, ctx, keep=True)
     keys = runs.loc[runs.is_card, pit.KEY].drop_duplicates()
-    return {n: t.merge(keys, on=pit.KEY) for n, t in tabs.items()}
+    return pit.build_tables(list(sm.PIT_TABLES), runs, None, ctx, keep=True, cut=keys)
 
 
 def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
