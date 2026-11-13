@@ -2459,3 +2459,21 @@ a bundle reads its own feature list.
 - The early lay's forecast is fitted on the out-of-sample prices of the 10 Nov stack until the new model's are
   published; the new model's prices are sharper than those it was fitted on.
 - The Betfair SP is not beaten by this model: the early lay trades the move to the SP, not a better win chance.
+
+## 50. The league table passes (batch 33, 13 Nov 2026)
+
+Registered as `greyhound-league-batch33-1112` on 12 Nov; run on 13 Nov once the runners could build the table
+(greyhound-pit.yml run 43431640396; greyhound-fastloop.yml run 43462576916, 110,788 runners, 1 Jun - 11 Nov 2026).
+The league table puts each track and grade on one scale by Hunter's MM, refitted every Monday from the 365 days
+before, and gives the dog's class move, its strength of schedule and the market strength it has faced.
+
+| Arm | RMSE of log(BSP) | Against n0 | z | Log-loss diff (z) |
+|---|---|---|---|---|
+| n0 (trees with trials, optics, line, salience, last race) | 0.3017 | - | - | - |
+| n0_seed / n0_placebo | 0.3024 / 0.3022 | +0.0006 / +0.0004 | +1.8 / +1.3 | the floors |
+| n_league | 0.2988 | -0.0029 | -7.2 | -0.00001 (-0.1) |
+
+- It passes every part of the bar, in every period: Jun-Aug -0.0020 (z -3.9), Sep - 5 Nov -0.0039 (z -6.0), after
+  5 Nov -0.0078 on 5 days. The largest gain of one table since the trials table.
+- Not in the served model. The next test, to be registered before it runs: the released stack with the league table
+  against the released stack.
