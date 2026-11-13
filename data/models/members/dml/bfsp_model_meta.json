@@ -1006,9 +1006,20 @@
     "sc_late_m3",
     "sc_sl_l1",
     "sc_sl_car",
-    "sc_runs"
+    "sc_runs",
+    "mr_rating",
+    "mr_sd",
+    "mr_n",
+    "mr_share",
+    "mr_lshare",
+    "mr_gap",
+    "mr_z",
+    "mr_field",
+    "mr_read_share",
+    "mr_surprise",
+    "mr_trend"
   ],
-  "n_features": 1006,
+  "n_features": 1017,
   "categorical_vocab": {
     "surface_type": [
       "Beach",
@@ -1214,111 +1225,111 @@
   },
   "best_iteration": 12000,
   "holdout_metrics": {
-    "n": 22831,
-    "mae": 0.2586417385944912,
-    "rmse": 0.3337210284277995,
+    "n": 22749,
+    "mae": 0.2581882979901361,
+    "rmse": 0.33264359679857297,
     "in_sample": true
   },
-  "holdout_start": "2026-08-14",
-  "train_rows": 706242,
-  "holdout_rows": 22831,
+  "holdout_start": "2026-09-10",
+  "train_rows": 715828,
+  "holdout_rows": 22749,
   "early_stopped": false,
   "init_offset": 0.0,
   "feature_code_hash": "f879b10c8369467a",
   "final_metrics": {
     "target": "demeaned_log",
-    "log_mae": 0.2563,
-    "log_rmse": 0.3298,
-    "log_r2": 0.9254,
+    "log_mae": 0.2523,
+    "log_rmse": 0.3249,
+    "log_r2": 0.9282,
     "bfsp_mae": 0.55,
-    "median_ape_pct": 20.75,
-    "mean_ape_pct": 26.88,
-    "correlation": 0.9628,
+    "median_ape_pct": 20.33,
+    "mean_ape_pct": 26.42,
+    "correlation": 0.9642,
     "best_iteration": 12000,
-    "holdout_mae": 0.2586417385944912
+    "holdout_mae": 0.2581882979901361
   },
-  "trained_through": "2026-10-13",
-  "train_rows_total": 706242,
+  "trained_through": "2026-11-09",
+  "train_rows_total": 715828,
   "top_gain": [
     [
-      "rw_PMW5_z",
-      1465213.504805982
-    ],
-    [
       "rr_PMW3_z",
-      1427881.5971792042
+      2067851.1580193043
     ],
     [
       "rw_fv_nfp_s8_z",
-      1383216.2735910416
+      1316911.8088056445
+    ],
+    [
+      "mr_lshare",
+      1295364.5319158435
+    ],
+    [
+      "rw_PMW5_z",
+      1028572.259968102
+    ],
+    [
+      "mr_z",
+      825231.802592516
     ],
     [
       "rr_PMW10_z",
-      1062604.6212178469
+      809424.5457338691
     ],
     [
       "hca_wt_vs_mark",
-      546594.9400971234
-    ],
-    [
-      "rw_fv_nfp_e3_z",
-      469264.6876196861
+      657473.753393054
     ],
     [
       "rr_LR_LB_z",
-      368091.86923128366
-    ],
-    [
-      "LR_ORR2",
-      315626.13454678655
-    ],
-    [
-      "fw_mkt_l1",
-      309956.35705816746
-    ],
-    [
-      "dm_stage_mkt_z",
-      258573.2241065204
-    ],
-    [
-      "rw_preracetrainercareerWOA_z",
-      253079.6919131875
-    ],
-    [
-      "rw_fv_nfp_e6_z",
-      243100.24156591296
-    ],
-    [
-      "rw_preracetrainercareerWIV_z",
-      238363.64707627892
-    ],
-    [
-      "rr_trainerjockeycareerNFP_z",
-      226736.5040732026
-    ],
-    [
-      "median_or_num",
-      219272.08725133538
-    ],
-    [
-      "OFS1",
-      191916.5713508427
+      407852.4228698313
     ],
     [
       "rr_fw_nfp_w5_z",
-      178490.22394806147
+      324537.3737628758
     ],
     [
-      "OFS3",
-      176629.74131953716
+      "mr_gap",
+      288246.898362875
+    ],
+    [
+      "rw_fv_nfp_e3_z",
+      283039.25659656525
     ],
     [
       "rw_EXP_NFP5_z",
-      166888.87125068903
+      281817.6632375717
     ],
     [
-      "rw_preracejockeycareerWAX_z",
-      162095.07743024826
+      "LR_ORR2",
+      266251.3850412965
+    ],
+    [
+      "rr_trainerjockeycareerNFP_z",
+      234193.56470179558
+    ],
+    [
+      "dm_stage_mkt_z",
+      227929.2382645905
+    ],
+    [
+      "rr_fw_lbs_w5_z",
+      213013.71279016137
+    ],
+    [
+      "median_or_num",
+      195604.0014075935
+    ],
+    [
+      "rr_LRNFP_z",
+      194270.10322511196
+    ],
+    [
+      "rw_fv_lblog_e3_gap",
+      178420.59947672486
+    ],
+    [
+      "rw_preracetrainercareerWIV_z",
+      173228.4503647685
     ]
   ],
   "drop_in_blocks": [
@@ -1331,6 +1342,7 @@
     "handicap_angles",
     "head_to_head",
     "kalman",
+    "market_rating",
     "race_relative",
     "race_relative_wide",
     "sectionals",
