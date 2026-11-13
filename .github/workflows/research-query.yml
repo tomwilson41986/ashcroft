@@ -30,6 +30,12 @@ jobs:
           cache: 'pip'
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Free disk space
+        # The 16 GB swap file and the two cached matrices need room: a runner whose /mnt shares the root disk ran
+        # out while fetching the database (run 43249014158, 12 Nov 2026). Tool caches no query uses go first.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h / /mnt 2>/dev/null || df -h /
       - name: Add swap
         # a query may build the live path's features on the whole history (matrix_live_parity.py)
         continue-on-error: true
@@ -55,6 +61,15 @@ jobs:
         with:
           path: .feature_cache
           key: features-${{ steps.fkey.outputs.key }}
+      - name: Feature cache key (the loop's matrix, from 2018)
+        id: fkey18
+        run: echo "key=$(python -c "import model.feature_cache as f; print(f.cache_key('horse_racing.db', '2018-01-01'))")" >> "$GITHUB_OUTPUT"
+      - name: Restore the loop's feature matrix (if one is cached for this code and data)
+        # Best effort, as above: the research loop builds and caches the matrix from 2018
+        uses: actions/cache/restore@v4
+        with:
+          path: .feature_cache
+          key: features-${{ steps.fkey18.outputs.key }}
       - name: Run the queries
         env:
           # read-only S3 for queries that need files beside the database (the 06:00 record)
