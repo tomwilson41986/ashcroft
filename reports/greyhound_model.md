@@ -2477,3 +2477,24 @@ before, and gives the dog's class move, its strength of schedule and the market 
   5 Nov -0.0078 on 5 days. The largest gain of one table since the trials table.
 - Not in the served model. The next test, to be registered before it runs: the released stack with the league table
   against the released stack.
+
+## 51. A minimum lay price for the early lay: tested, not adopted (13 Nov 2026)
+
+Registered as `greyhound-min-lay-price-1113` before its run (the owner, 13 Nov: "Yes run the minimum-lay-price
+test"), after the first live day with fresh prices lost on its lays under 5. The forward test's own procedure
+(research/greyhound/min_lay_price.py; greyhound-min-lay-price.yml run 43499151951): 14 Oct - 10 Nov 2026, 27 scored
+days, 14,422 orders, 4,251 matched.
+
+| Matched lays | Lays | At risk (GBP) | Net (GBP) | Return | 90% over days |
+|---|---|---|---|---|---|
+| All | 4,251 | 405,980.50 | 4,498.30 | 1.11% | 0.92 to 1.30 |
+| Under 5 | 2,068 | 187,680.50 | 3,491.76 | 1.86% | 1.41 to 2.30 |
+| 5 and over | 2,183 | 218,300.00 | 977.25 | 0.45% | 0.24 to 0.65 |
+
+- FAIL: the lays under 5 made GBP129.32 a day (90% 96.84 to 160.85; up on 25 days of 27), and the rule without them
+  returns 0.66 points less than the whole rule. No minimum lay price is adopted. The other cuts (3, 4, 6, 8),
+  judged by nothing, say the same: the shorter the lay, the better the replayed return (under 3: 4.68%).
+- The first live day said the opposite on 22 lays. One day cannot outweigh 27, but the two are not the same thing:
+  the replay matches a lay when the recorder's re-timed book later trades at its price, and a live lay rests in a
+  real queue. The question this leaves is how far the replay's fills at short prices differ from the live ones,
+  to be read from the live ledger against the replay of the same days once there are enough of them.
