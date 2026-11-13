@@ -52,7 +52,7 @@ jobs:
     # price snapshot, so a kill here costs the prices and not the card.
     # 60, not 45: the served models build their features on the history from 2018
     # (1.05m rows), which with swap priced a card in 23-26 minutes on a dry run.
-    timeout-minutes: 60
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
