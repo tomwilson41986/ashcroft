@@ -44,6 +44,13 @@ jobs:
           cache: 'pip'
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Free disk space
+        # GitHub's ubuntu-26.04 runners keep /mnt on the root disk: the swap file left no room and the job died
+        # with "No space left on device" (greyhound-live.yml run 43386968806, 13 Nov 2026). Unused tool caches go first.
+        continue-on-error: true
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h / | tail -1; free -g | sed -n 2,3p
       - name: Add swap
         continue-on-error: true
         run: |
