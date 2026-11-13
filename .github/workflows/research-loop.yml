@@ -81,10 +81,17 @@ jobs:
       - name: Add swap
         continue-on-error: true
         run: |
-          sudo swapoff -a || true
-          sudo rm -f /swapfile /mnt/swapfile || true
-          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
-          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          # 13 Nov 2026: fits were lost with no log 48-57 minutes into the job, 53 minutes after this step, on runs
+          # that were deep in swap (17 of iteration 122's and 123's fits in a day). This step used to turn the
+          # runner's own swap off and put a 16G file in its place at /mnt/swapfile, the path the hosted runner's
+          # agent manages. Now the runner's swap is left alone and ours is a second file at another path; never fatal
+          free -g | sed -n 1,3p; sudo swapon --show || true
+          AVAIL=$(df --output=avail -BG / | tail -1 | tr -dc 0-9)
+          SIZE=16; [ "${AVAIL:-0}" -lt 30 ] && SIZE=8
+          if [ "${AVAIL:-0}" -ge 14 ] && [ ! -e /ashcroft_swap ]; then
+            (sudo fallocate -l ${SIZE}G /ashcroft_swap && sudo chmod 600 /ashcroft_swap && sudo mkswap /ashcroft_swap >/dev/null && sudo swapon /ashcroft_swap) || true
+          fi
+          sudo swapon --show || true; free -h; df -h / | tail -1
           free -h
 
       - name: Read the iteration config
@@ -222,10 +229,17 @@ jobs:
       - name: Add swap
         continue-on-error: true
         run: |
-          sudo swapoff -a || true
-          sudo rm -f /swapfile /mnt/swapfile || true
-          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
-          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          # 13 Nov 2026: fits were lost with no log 48-57 minutes into the job, 53 minutes after this step, on runs
+          # that were deep in swap (17 of iteration 122's and 123's fits in a day). This step used to turn the
+          # runner's own swap off and put a 16G file in its place at /mnt/swapfile, the path the hosted runner's
+          # agent manages. Now the runner's swap is left alone and ours is a second file at another path; never fatal
+          free -g | sed -n 1,3p; sudo swapon --show || true
+          AVAIL=$(df --output=avail -BG / | tail -1 | tr -dc 0-9)
+          SIZE=16; [ "${AVAIL:-0}" -lt 30 ] && SIZE=8
+          if [ "${AVAIL:-0}" -ge 14 ] && [ ! -e /ashcroft_swap ]; then
+            (sudo fallocate -l ${SIZE}G /ashcroft_swap && sudo chmod 600 /ashcroft_swap && sudo mkswap /ashcroft_swap >/dev/null && sudo swapon /ashcroft_swap) || true
+          fi
+          sudo swapon --show || true; free -h; df -h / | tail -1
 
       - name: Read the iteration config
         id: cfg
@@ -328,10 +342,17 @@ jobs:
       - name: Add swap
         continue-on-error: true
         run: |
-          sudo swapoff -a || true
-          sudo rm -f /swapfile /mnt/swapfile || true
-          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
-          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          # 13 Nov 2026: fits were lost with no log 48-57 minutes into the job, 53 minutes after this step, on runs
+          # that were deep in swap (17 of iteration 122's and 123's fits in a day). This step used to turn the
+          # runner's own swap off and put a 16G file in its place at /mnt/swapfile, the path the hosted runner's
+          # agent manages. Now the runner's swap is left alone and ours is a second file at another path; never fatal
+          free -g | sed -n 1,3p; sudo swapon --show || true
+          AVAIL=$(df --output=avail -BG / | tail -1 | tr -dc 0-9)
+          SIZE=16; [ "${AVAIL:-0}" -lt 30 ] && SIZE=8
+          if [ "${AVAIL:-0}" -ge 14 ] && [ ! -e /ashcroft_swap ]; then
+            (sudo fallocate -l ${SIZE}G /ashcroft_swap && sudo chmod 600 /ashcroft_swap && sudo mkswap /ashcroft_swap >/dev/null && sudo swapon /ashcroft_swap) || true
+          fi
+          sudo swapon --show || true; free -h; df -h / | tail -1
 
       - name: Download historic database from S3
         env:
@@ -350,8 +371,13 @@ jobs:
       - name: Fit ${{ matrix.arm }}, fold ${{ matrix.fold }}
         run: |
           set -o pipefail
+          # memory every two minutes, straight to the log (the fit's own output is held back by the tail below,
+          # so a runner lost mid-fit used to leave nothing to read)
+          ( while true; do echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{print "used "$3" avail "$7" MB"}') swap $(free -m | awk '/^Swap:/{print $3"/"$2}') MB"; sleep 120; done ) &
+          MEMLOG=$!
           python scripts/research_loop.py fit --arm "${{ matrix.arm }}" --fold "${{ matrix.fold }}" \
             2>&1 | grep -v PerformanceWarning | tail -80
+          kill $MEMLOG 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         with:

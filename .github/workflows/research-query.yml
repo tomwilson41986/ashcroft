@@ -40,11 +40,17 @@ jobs:
         # a query may build the live path's features on the whole history (matrix_live_parity.py)
         continue-on-error: true
         run: |
-          sudo swapoff -a || true
-          sudo rm -f /swapfile /mnt/swapfile || true
-          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
-          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
-          free -h
+          # 13 Nov 2026: fits were lost with no log 48-57 minutes into the job, 53 minutes after this step, on runs
+          # that were deep in swap (17 of iteration 122's and 123's fits in a day). This step used to turn the
+          # runner's own swap off and put a 16G file in its place at /mnt/swapfile, the path the hosted runner's
+          # agent manages. Now the runner's swap is left alone and ours is a second file at another path; never fatal
+          free -g | sed -n 1,3p; sudo swapon --show || true
+          AVAIL=$(df --output=avail -BG / | tail -1 | tr -dc 0-9)
+          SIZE=16; [ "${AVAIL:-0}" -lt 30 ] && SIZE=8
+          if [ "${AVAIL:-0}" -ge 14 ] && [ ! -e /ashcroft_swap ]; then
+            (sudo fallocate -l ${SIZE}G /ashcroft_swap && sudo chmod 600 /ashcroft_swap && sudo mkswap /ashcroft_swap >/dev/null && sudo swapon /ashcroft_swap) || true
+          fi
+          sudo swapon --show || true; free -h; df -h / | tail -1
       - name: Download historic database from S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
