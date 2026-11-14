@@ -48,7 +48,7 @@ concurrency:
 jobs:
   live:
     runs-on: ubuntu-latest
-    timeout-minutes: 330   # the refit of the sixteen-table stack: about 40 minutes of features and 125 of fitting (run 43427439172 passed 150)
+    timeout-minutes: 330   # the refit of the seventeen-table stack (sixteen plus the league table from 14 Nov): about 40 minutes of features and 125 of fitting (run 43427439172 passed 150)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
