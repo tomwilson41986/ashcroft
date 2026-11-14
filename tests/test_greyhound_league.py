@@ -187,6 +187,33 @@ def test_a_card_row_gets_the_features_its_run_had(built):
     assert np.isfinite(b).mean() > 0.95
 
 
+@pytest.mark.parametrize("weeks", (2, 4, 8))
+def test_the_card_build_from_a_few_weeks_back_gives_the_full_builds_card_rows(built, weeks):
+    """The live card build (``ctx["card_weeks"]``, greyhound/live.py ``card_tables``) refits only from ``weeks``
+    Mondays before the card's week: every card row within 1e-3 of the full build on every column, the track counts
+    exact; fewer refits; and without card rows (the nightly build) the flag changes nothing."""
+    runs, tab, notes = built
+    card = cardify_last_day(runs)
+    keys = runs.loc[runs.race_date == runs.race_date.max(), KEY]
+    short, sn = league.build(card, None, {"card_weeks": weeks})
+    assert sn["weeks"] == weeks + 1 < notes["weeks"] and sn["card_weeks"] == weeks
+    a = keys.merge(tab, on=KEY)[COLS]
+    b = keys.merge(short, on=KEY)[COLS]
+    assert len(b) == len(keys)
+    for c in COLS:
+        x, y = a[c].to_numpy(float), b[c].to_numpy(float)
+        assert np.array_equal(np.isnan(x), np.isnan(y)), c
+        assert np.nanmax(np.abs(x - y)) <= 1e-3, (c, weeks)
+    for c in ("lg_new_trk", "lg_n_trk", "lg_trap_wax", "lg_mkt_open", "lg_mkt_diff"):   # no warm start: exact
+        assert np.array_equal(a[c].to_numpy(), b[c].to_numpy(), equal_nan=True), c
+    assert np.isfinite(b.to_numpy(float)).mean() > 0.95
+    # the history rows before the first refit are left empty: the card build is read on the card only
+    assert short.loc[(runs.race_date < "2025-02-01").to_numpy(), "lg_str"].isna().all()
+    # no card rows: the nightly build, every week fitted
+    whole, wn = league.build(runs, None, {"card_weeks": weeks})
+    assert wn["weeks"] == notes["weeks"] and same(tab, whole, runs[KEY])
+    assert league.CARD_WEEKS >= 26
+
 def test_no_column_reads_the_trainer(built):
     runs, tab, _ = built
     r = runs.copy()

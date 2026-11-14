@@ -2582,3 +2582,28 @@ runners, 1 Jun - 11 Nov 2026, batch 32's m_stack recipe in every arm.
   lays priced at the files' morning average price, which is not a price on offer in the morning. No lead.
 - Not released. A release needs the league table in `PIT_TABLES`, its card-mode test, a retrain (about 165 minutes),
   a price run, and the owner's word.
+
+## 55. The league table released to the live price (14 Nov 2026)
+
+The owner, 14 Nov 2026: "Release the league table to the live price". Ledger `greyhound-release-league-1114`.
+
+- `greyhound/stack_model.py`: `league` added to `PIT_TABLES` (seventeen tables), the recipe renamed `stack_ml`. Its
+  figure is batch 37's (section 54): RMSE of log(BSP) 0.2885 -> 0.2854, z -12.7. It goes live with the retrain
+  (greyhound-live.yml, task train) and the next price run after the merge.
+- Its out-of-sample prices are `greyhound/live/oos_prices_stack_ml` (`greyhound/live.py STACK_OOS_BY_RECIPE`); until
+  they are published the early lay's forecast reads `stack_m`'s (`greyhound/laytest.py NEAREST_PRICES`).
+- The card build. The live price builds every table each hour with the day's card as the last day. A card row of the
+  league table reads only its own week's refit, which depends on the weeks before only through the warm start, so the
+  card build (`ctx["card_weeks"]`, set by `card_tables`; `league.CARD_WEEKS` = 26) refits from 26 Mondays before the
+  card's week; everything else is still read over the whole history. The nightly build is unchanged.
+
+| Card day | Card rows | Refits from | Largest difference on any lg_ column |
+|---|---|---|---|
+| 20 Sep 2026 | 513 | 8 / 13 / 26 / 52 weeks | 4e-8 / 7e-9 / 3e-17 / 1e-17 |
+| 5 Nov 2026 | 443 | 8 / 13 / 26 / 52 weeks | 1.4e-6 / 7e-9 / 3e-17 / 1e-17 |
+
+  The GBGB runs from 1 Jul 2025, against the full build; the track and market columns exact at every start. Time: the
+  full build 10.7 s locally (71 weekly fits), the card build 5.7 s (27). From 2014 the full build took 92 s on GitHub
+  (greyhound-pit.yml run 43431640396: 661 weekly fits, 87 s of them); the card build fits 27 whatever the history,
+  about 8 s, so the hourly price run gains seconds, not minutes. `tests/test_greyhound_league.py` holds a planted card
+  to the full build within 1e-3.

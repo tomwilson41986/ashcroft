@@ -57,6 +57,16 @@ earlier row to be unchanged.
 **What it inherits.** The store's first year has shorter windows (the first week has none: the fitted columns are
 empty there), and ``lg_n_trk`` counts only what the store holds. The fits stop at ``TOL``, so a rating depends on
 its warm start within that tolerance: a store that starts later gives values that differ by about ``TOL``.
+
+**The card build** (``ctx["card_weeks"]``, set by greyhound/live.py ``card_tables``; the nightly build leaves it
+unset and refits every week from the store's first). The live price builds the table every hour with today's card as
+the last day; a card row reads only its own week's refit, and that refit depends on the weeks before it only through
+the warm start, which converges. So the card build refits from ``CARD_WEEKS`` Mondays before the card's week: the
+per-run measures, the dog's earlier leagues, the track counts (``lg_n_trk``, ``lg_new_trk``) and the market counts
+are still read over the whole history, and only the warm start of the league and schedule fits begins later. Measured
+on the GBGB runs from 1 Jul 2025 (card days 20 Sep and 5 Nov 2026, every card row against the full build): the largest
+difference on any column 1.4e-6 from 8 weeks, 7e-9 from 13, 3e-17 from 26 (the track and market columns exact at
+every start); tests/test_greyhound_league.py holds a planted card to the full build within 1e-3.
 """
 
 from __future__ import annotations
@@ -95,6 +105,7 @@ K_SOS = 3.0                  # pseudo-runs at the window's mean (PRB squared, NF
 N_MKT, K_MKT = 7, 1.0        # the priced runs read; pseudo-runs at an equal share
 K_TRAP = 50.0                # pseudo-runs at zero for a trap cell (fixed, not fitted)
 TOL, MAXIT = 1e-4, 300
+CARD_WEEKS = 26              # the card build's refits: from this many Mondays before the card's week (the docstring)
 LENGTH_S = 0.08
 BIG = np.int64(1) << 21      # day numbers are below this
 
@@ -279,8 +290,11 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     out = {c: np.full(n, np.nan) for c in COLUMNS}
     out["lg_n_trk"], out["lg_new_trk"] = n_trk, (n_trk == 0).astype(float)
 
-    # ---- the walk-forward refits
+    # ---- the walk-forward refits (the card build: from ``card_weeks`` Mondays before the card's week; the docstring)
     weeks = np.unique(monday(dn)) if n else np.zeros(0, np.int64)
+    card_weeks = (ctx or {}).get("card_weeks")
+    if card_weeks is not None and card.any():
+        weeks = weeks[weeks >= monday(dn[card].min()) - 7 * int(card_weeks)]
     warm = {"s": None, "st": None, "p2": np.full(ND, np.nan), "nf": np.full(ND, np.nan)}
     cnt4 = np.zeros(ND, np.int64)
     hi4_prev = 0
@@ -384,6 +398,7 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
 
     notes = {"rows": int(n), "card_rows": int(card.sum()), "dogs": int(ND), "leagues": int(NL), "trap_cells": int(NC),
              "weeks": int(len(weeks)), "weeks_with_a_league_fit": int(fitted),
+             "card_weeks": None if card_weeks is None else int(card_weeks),
              "passes": {k: stat(v) for k, v in its.items()},
              "seconds": round(time.time() - t0, 1), "seconds_in_refits": round(float(sum(secs)), 1),
              "seconds_a_refit_last_ten": round(float(np.mean(secs[-10:])), 3) if secs else None,
