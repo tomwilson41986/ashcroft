@@ -2644,3 +2644,21 @@ before its first day.
   above zero, 300 matched lays, and the deflated Sharpe at least 0.95. The live close changes only on the owner's word.
 - Prior, seen before registration (so not independent): the live lays of 3-13 Nov closed at the SP, by the result
   GBP-19.98 (-31.28 after commission), expected GBP-28.02; the loss in lays under 3.
+
+## 58. The sequence table on the released stack (batch 38, 14 Nov 2026)
+
+Registered as `greyhound-seq-batch38-1114` before the run; greyhound-fastloop.yml run 43591606125, 110,788 runners,
+1 Jun - 11 Nov 2026, batch 32's m_stack recipe in both arms.
+
+| Arm | RMSE of log(BSP) | Diff vs t0 (90%) | z | Log-loss diff (z) |
+|---|---|---|---|---|
+| t0 (m_stack) | 0.2885 | - | - | - |
+| t_seq (+ the sequence table) | 0.2848 | -0.0037 (-0.0043 to -0.0031) | -10.4 | -0.00009 (-0.8) |
+
+By period: Jun-Aug -0.0032 (z -7.2), Sep - 5 Nov -0.0044 (z -7.0), after 5 Nov -0.0018 (z -1.6, 5 days). A pass on
+the registered bar; the table's settings were chosen after a look at an overlapping period, so this batch is the test.
+
+Next, registered as `greyhound-league-seq-batch39-1114`: the two tables together against the league stack released as
+stack_ml (u_ls against u_league), and stack_ml's out-of-sample prices from 6 Oct published for the early lay's forecast
+(`batch39_league_seq.json`). A release of seq needs its monthly weights stored for the live card build, a retrain and
+the owner's word.
