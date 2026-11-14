@@ -1017,9 +1017,173 @@
     "mr_field",
     "mr_read_share",
     "mr_surprise",
-    "mr_trend"
+    "mr_trend",
+    "cr_tr_s",
+    "cr_jk_s",
+    "cr_tr_s_sd",
+    "cr_jk_s_sd",
+    "cr_tr_f",
+    "cr_jk_f",
+    "cr_tr_f_sd",
+    "cr_jk_f_sd",
+    "cr_tr_m",
+    "cr_jk_m",
+    "cr_tr_m_sd",
+    "cr_jk_m_sd",
+    "cr_sum_s",
+    "cr_sum_f",
+    "cr_sum_m",
+    "cr_sum_s_z",
+    "cr_sum_f_z",
+    "cr_sum_m_z",
+    "cr_jk_change",
+    "cr_jk_delta_s",
+    "cr_jk_delta_f",
+    "cr_jk_delta_m",
+    "cr_jk_new_s",
+    "p2_epf_l1",
+    "p2_epf_m3",
+    "p2_epf_m5",
+    "p2_epf_w5",
+    "p2_epf_e3",
+    "p2_epf_car",
+    "p2_epf_trend",
+    "p2_horse_track",
+    "p2_horse_td",
+    "p2_trainer_track",
+    "p2_trainer_td",
+    "p2_jockey_track",
+    "p2_jockey_td",
+    "p2_pred",
+    "p2_pred_rank",
+    "p2_rivals_ahead",
+    "p2_race_front",
+    "p2_race_gap",
+    "p2_race_n_forward",
+    "p2_race_heat",
+    "p2_contested_lead",
+    "p2_closer_setup",
+    "p2_ae_front_td",
+    "p2_ae_rear_td",
+    "et_pred",
+    "et_gap",
+    "et_z",
+    "et_rank",
+    "et_lengths",
+    "et_win",
+    "et_uplift",
+    "et_inputs",
+    "pl_prize_vs_usual",
+    "pl_prize_vs_last",
+    "pl_prize_rank_tr",
+    "pl_mark_d1",
+    "pl_mark_d3",
+    "pl_runs_since_win",
+    "pl_cycle_s",
+    "pl_repeat",
+    "pl_repeat_nfp",
+    "pl_trip_change",
+    "pl_first_trip",
+    "pl_tr_prize_up_s",
+    "pl_tr_prize_down_s",
+    "pl_tr_mark_drop_s",
+    "pl_tr_cycle_s",
+    "pl_tr_repeat_s",
+    "pl_tr_trip_up_s",
+    "pl_tr_trip_down_s",
+    "gr_sev",
+    "gr_sev_change",
+    "gr_more",
+    "gr_less",
+    "gr_off",
+    "gr_first",
+    "gr_first_blnk",
+    "gr_first_ckpc",
+    "gr_first_vsor",
+    "gr_first_hood",
+    "gr_first_tt",
+    "gr_tt_on",
+    "gr_tt_off",
+    "gr_runs_at",
+    "gr_h_uplift",
+    "gr_tr_first_s",
+    "gr_tr_more_s",
+    "gr_tr_off_s",
+    "gr_tr_tt_s",
+    "gr_tr_first_f",
+    "gr_tr_more_f",
+    "gr_tr_worn_s",
+    "mm_n_l1",
+    "mm_n_m3",
+    "mm_n_bayes",
+    "mm_n_ss",
+    "mm_l_l1",
+    "mm_l_m3",
+    "mm_l_bayes",
+    "mm_l_ss",
+    "mm_t_l1",
+    "mm_t_m3",
+    "mm_t_bayes",
+    "mm_t_ss",
+    "mm_n_t",
+    "mm_exp_n",
+    "mm_exp_l",
+    "mm_exp_t",
+    "mm_m_l1",
+    "mm_m_m3",
+    "mm_m_bayes",
+    "mm_deliver",
+    "mm_cycle_m",
+    "mm_cycle_m_tr",
+    "mm_intent_m",
+    "pb_sire_m",
+    "pb_ss_m",
+    "pb_ds_m",
+    "pb_dam_m",
+    "pb_cross_m",
+    "pb_ped_m",
+    "pb_sire_s",
+    "pb_ss_s",
+    "pb_ds_s",
+    "pb_dam_s",
+    "pb_cross_s",
+    "pb_ped_s",
+    "pb_sire_m_sd",
+    "pb_dam_m_sd",
+    "pb_sire_s_sd",
+    "pb_dam_s_sd",
+    "pb_ped_unexp_m",
+    "pb_sire_debut_m",
+    "pb_dam_debut_m",
+    "pb_sire_trip_s",
+    "pb_sire_going_s",
+    "pb_ds_trip_s",
+    "pb_ds_going_s",
+    "pb_sire_trip_m",
+    "pb_sire_impr",
+    "pb_dam_impr",
+    "pb_sire_ss",
+    "pb_dam_ss",
+    "pb_sire_n",
+    "pb_dam_n",
+    "im_pred",
+    "im_z",
+    "im_rank",
+    "im_level",
+    "im_level_z",
+    "im_n_track",
+    "im_n_jockey",
+    "im_n_trainer",
+    "im_n_trip",
+    "im_n_going",
+    "im_first",
+    "db_pred",
+    "db_vs_mr",
+    "db_x",
+    "db_x_vs_mr",
+    "db_unexp"
   ],
-  "n_features": 1017,
+  "n_features": 1181,
   "categorical_vocab": {
     "surface_type": [
       "Beach",
@@ -1225,124 +1389,133 @@
   },
   "best_iteration": 12000,
   "holdout_metrics": {
-    "n": 22749,
-    "mae": 0.2581882979901361,
-    "rmse": 0.33264359679857297,
+    "n": 22103,
+    "mae": 0.24785689029482846,
+    "rmse": 0.3190775673181256,
     "in_sample": true
   },
-  "holdout_start": "2026-09-10",
-  "train_rows": 715828,
-  "holdout_rows": 22749,
+  "holdout_start": "2026-09-13",
+  "train_rows": 716358,
+  "holdout_rows": 22103,
   "early_stopped": false,
   "init_offset": 0.0,
   "feature_code_hash": "f879b10c8369467a",
   "final_metrics": {
     "target": "demeaned_log",
-    "log_mae": 0.2523,
-    "log_rmse": 0.3249,
-    "log_r2": 0.9282,
-    "bfsp_mae": 0.55,
-    "median_ape_pct": 20.33,
-    "mean_ape_pct": 26.42,
-    "correlation": 0.9642,
+    "log_mae": 0.2428,
+    "log_rmse": 0.3124,
+    "log_r2": 0.9338,
+    "bfsp_mae": 0.53,
+    "median_ape_pct": 19.62,
+    "mean_ape_pct": 25.31,
+    "correlation": 0.967,
     "best_iteration": 12000,
-    "holdout_mae": 0.2581882979901361
+    "holdout_mae": 0.24785689029482846
   },
-  "trained_through": "2026-11-09",
-  "train_rows_total": 715828,
+  "trained_through": "2026-11-12",
+  "train_rows_total": 716358,
   "top_gain": [
     [
-      "rr_PMW3_z",
-      2067851.1580193043
-    ],
-    [
-      "rw_fv_nfp_s8_z",
-      1316911.8088056445
-    ],
-    [
-      "mr_lshare",
-      1295364.5319158435
+      "db_x",
+      3225721.2804664373
     ],
     [
       "rw_PMW5_z",
-      1028572.259968102
+      1401926.0238909721
     ],
     [
-      "mr_z",
-      825231.802592516
+      "rr_PMW3_z",
+      1220724.869978577
     ],
     [
-      "rr_PMW10_z",
-      809424.5457338691
+      "im_level_z",
+      993970.0303640962
+    ],
+    [
+      "rw_fv_nfp_s8_z",
+      701443.8089090884
     ],
     [
       "hca_wt_vs_mark",
-      657473.753393054
+      687208.3937985003
+    ],
+    [
+      "rr_PMW10_z",
+      659604.3564347029
+    ],
+    [
+      "cr_sum_m_z",
+      490005.6730224192
+    ],
+    [
+      "mr_z",
+      351939.5716930032
     ],
     [
       "rr_LR_LB_z",
-      407852.4228698313
-    ],
-    [
-      "rr_fw_nfp_w5_z",
-      324537.3737628758
-    ],
-    [
-      "mr_gap",
-      288246.898362875
+      345119.81589248776
     ],
     [
       "rw_fv_nfp_e3_z",
-      283039.25659656525
+      323464.70237615705
     ],
     [
-      "rw_EXP_NFP5_z",
-      281817.6632375717
+      "db_pred",
+      289516.46652278304
     ],
     [
-      "LR_ORR2",
-      266251.3850412965
+      "mm_exp_t",
+      240521.98690995574
     ],
     [
-      "rr_trainerjockeycareerNFP_z",
-      234193.56470179558
+      "mr_lshare",
+      231865.45058837533
     ],
     [
-      "dm_stage_mkt_z",
-      227929.2382645905
+      "mm_exp_l",
+      224287.01171717048
     ],
     [
-      "rr_fw_lbs_w5_z",
-      213013.71279016137
+      "rr_fw_nfp_w5_z",
+      212777.52429127693
     ],
     [
-      "median_or_num",
-      195604.0014075935
+      "mm_exp_n",
+      205707.4668083489
+    ],
+    [
+      "et_z",
+      198906.2344584167
     ],
     [
       "rr_LRNFP_z",
-      194270.10322511196
+      168827.37320387363
     ],
     [
       "rw_fv_lblog_e3_gap",
-      178420.59947672486
-    ],
-    [
-      "rw_preracetrainercareerWIV_z",
-      173228.4503647685
+      141345.31839621067
     ]
   ],
   "drop_in_blocks": [
     "bookings",
     "connection_windows",
+    "market_rating",
+    "connections_rating",
+    "pedigree_bayes",
     "debut_market",
+    "market_metrics",
+    "debut",
+    "pace_v2",
+    "expected_time",
     "exposure",
     "form_lines",
     "form_variants",
+    "gear",
     "handicap_angles",
     "head_to_head",
+    "improvement",
     "kalman",
-    "market_rating",
+    "placement",
     "race_relative",
     "race_relative_wide",
     "sectionals",

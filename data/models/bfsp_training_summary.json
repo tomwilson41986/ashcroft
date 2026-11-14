@@ -1,22 +1,22 @@
 {
   "model_type": "bfsp_regression",
   "target": "logit_norm_prob",
-  "n_features": 1017,
+  "n_features": 1181,
   "walk_forward_avg": {
     "n_folds": 0
   },
   "overall_walk_forward": {},
   "final_model": {
     "target": "logit_norm_prob",
-    "log_mae": 0.294,
-    "log_rmse": 0.3893,
-    "log_r2": 0.9323,
-    "bfsp_mae": 17.19,
-    "median_ape_pct": 20.52,
-    "mean_ape_pct": 27.72,
-    "correlation": 0.966,
+    "log_mae": 0.2829,
+    "log_rmse": 0.3741,
+    "log_r2": 0.9377,
+    "bfsp_mae": 16.49,
+    "median_ape_pct": 19.69,
+    "mean_ape_pct": 26.49,
+    "correlation": 0.9688,
     "best_iteration": 12000,
-    "holdout_mae": 0.29987031713855816
+    "holdout_mae": 0.2893656284900877
   },
   "fold_details": [],
   "params": {
@@ -39,8 +39,8 @@
   },
   "data_range": {
     "min_date": "2021-01-01",
-    "max_date": "2026-11-09",
-    "total_rows": 715828
+    "max_date": "2026-11-12",
+    "total_rows": 716358
   },
   "history_start": "2018-01-01"
 }
