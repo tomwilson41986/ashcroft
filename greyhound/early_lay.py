@@ -309,6 +309,26 @@ def ladder_limit(levels: list, value: float, depth: int = 3) -> float | None:
     return limit
 
 
+def ladder_stake(levels: list, value: float, depth: int = 3) -> tuple[float | None, float]:
+    """The green-up back for ``value`` (stake x price) down the best ``depth`` back prices: the lowest price to take and
+    the stake that, filled best price first as Betfair fills a limit back, is worth ``value``. A stake sized at the
+    lowest price alone (value / limit) is filled partly at the better prices above it and backs more than the lay's
+    value: the over-cover inferred on 296 of 479 live green-ups, 1.4% over on their median, about 18% at the worst
+    1% (the fill reconciliation's ledger, 3-13 Nov 2026; the owner, 14 Nov: "fix the closing order"). Where the levels hold less than the
+    value, the rest is sized at the lowest price (a fill or kill takes what is there; the rest is tried next second)."""
+    left, stake, limit = float(value), 0.0, None
+    for price, size in levels[:depth]:
+        if left <= 1e-9:
+            break
+        limit = price
+        take = min(float(size), left / price)
+        stake += take
+        left -= take * price
+    if left > 1e-9 and limit:
+        stake += left / limit
+    return limit, stake
+
+
 # --------------------------------------------------------------------------------------------------------------------
 # The trader
 # --------------------------------------------------------------------------------------------------------------------
@@ -329,6 +349,7 @@ class EarlyLay:
         self.locked = 0.0              # the day's P&L locked by green-ups
         self.open_liability: dict = {}  # market -> liability not yet closed at a known P&L
         self.laid: dict = {}           # market -> liability of the lays placed and not yet closed
+        self._backs: dict = {}         # market -> bet id -> (selection, ref, matched, price): green-up backs seen
         self.preds: pd.DataFrame | None = None
         self.until: datetime | None = None            # set by run(): the time the trader stops laying
         self._sent: list = []                          # the times of the lays sent (the gate's order rate)
@@ -542,7 +563,7 @@ class EarlyLay:
                           "market_id": mid, "action": "flat", "error": "paper: no orders to close",
                           "seconds_to_off": round(secs)}])
             return
-        pos = positions(self.orders.mine(mid))
+        pos = positions(self._with_local_backs(mid, self.orders.mine(mid)))
         if b.status != "OPEN" or b.inplay:
             if any(p["lay_matched"] > 0 and not p["closed"] for p in pos.values()):
                 self._held(mid, pos, secs, "the market closed before the green-up")
@@ -560,12 +581,14 @@ class EarlyLay:
             levels = list(q.back) if q else []
             if p["to_cover"] > 0 and levels and secs > self.cfg["give_up_seconds"]:
                 # down the best three back prices; a part matched is kept and the rest tried next second
-                limit = ladder_limit(levels, p["to_cover"])
-                stake = _floor2(p["to_cover"] / limit)
+                limit, stake = ladder_stake(levels, p["to_cover"])
+                stake = _floor2(stake)
                 if stake >= mn:
                     ref = f"{REF}{self.day:%m%d}-{mid[-8:]}-{sid}-g"
                     fill = self.orders.back(mid, sid, limit, stake, ref, min_fill=mn)
                     if fill is not None and fill.status == "SUCCESS" and fill.matched > 0:
+                        self._backs.setdefault(mid, {})[str(fill.bet_id or f"local-{len(self._backs.get(mid, {}))}")] = (
+                            sid, ref, float(fill.matched), float(fill.avg_price or limit))
                         p["back_matched"] += fill.matched
                         p["back_value"] += fill.matched * float(fill.avg_price or limit)
                         p["to_cover"] = p["lay_value"] - p["back_value"]
@@ -607,6 +630,15 @@ class EarlyLay:
         if not left:
             self.greened.add(mid)
             self.laid.pop(mid, None)
+
+    def _with_local_backs(self, mid: str, orders: list[dict]) -> list[dict]:
+        """Betfair's orders on the market with every green-up back this session saw matched and Betfair does not yet
+        list (by bet id): a fill missing from listCurrentOrders a second later would otherwise be backed again."""
+        seen = {str(o.get("betId")) for o in orders if o.get("betId")}
+        extra = [{"selectionId": sid, "side": "BACK", "customerOrderRef": ref, "sizeMatched": m,
+                  "averagePriceMatched": a, "betId": bid}
+                 for bid, (sid, ref, m, a) in self._backs.get(mid, {}).items() if bid not in seen]
+        return list(orders) + extra
 
     def _close_at_sp(self, mid: str, sid: int, S: float, m: float, base: dict) -> list[dict]:
         """The lay stake still open, ``S`` at ``m``, closed by a back at the SP of the same stake."""

@@ -2607,3 +2607,24 @@ The owner, 14 Nov 2026: "Release the league table to the live price". Ledger `gr
   (greyhound-pit.yml run 43431640396: 661 weekly fits, 87 s of them); the card build fits 27 whatever the history,
   about 8 s, so the hourly price run gains seconds, not minutes. `tests/test_greyhound_league.py` holds a planted card
   to the full build within 1e-3.
+
+## 56. The early lay's green-up over-covered its lays (14 Nov 2026)
+
+The owner: "Early lay live is at +3.5% CLV in the last 3 days. Diagnose why we are still losing money then", then
+"Read the green-up orders from Betfair and fix the closing order". Ledger `greyhound-early-lay-green-cover-1114`.
+
+- The CLV is a mean per lay (+3.23% in log terms on 11-13 Nov, 352 matched lays). Weighted by stake it is -0.26%:
+  lays are sized by liability, so the stakes sit at short prices where the CLV is negative (1-3: -2.32% on
+  GBP1,220; 3-5: -0.11% on GBP3,165; 5-8: +0.47%; 8+: +0.66%).
+- The green-up is about 5 s before the off at the back price, 1.24% below the SP (stake-weighted), which takes the
+  rest of the edge: closed at the SP the lays make GBP-17.83, at the green-up prices GBP-71.79.
+- The green-up back was sized at the lowest of the three prices it took (value / limit), and Betfair fills the best
+  prices first, so the backs were worth more than the lay: inferred cover median 1.008, the worst 1% about 1.18
+  (479 green-ups, 3-13 Nov). The ledger's locked P&L is the worse of the two outcomes, so it read worse than the
+  results: GBP-195.92 locked against GBP-122.64 settled by the result (flat green-up: GBP-91.29).
+- Fixed (`greyhound/early_lay.py`): the stake sized level by level (`ladder_stake`); a fill this session saw and
+  Betfair does not list yet counted, never backed again. The rule is unchanged. `research/greyhound/fill_recon.py`
+  settles greened lays by the result. `greyhound-green-audit.yml` reads Betfair's settled bets to confirm.
+
+Sources: `fill_recon_orders.csv` of run 43587964956; the figures are inferred from the ledger until the audit reads
+Betfair's settled bets.

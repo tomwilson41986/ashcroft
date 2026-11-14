@@ -352,8 +352,54 @@ def test_a_green_up_takes_the_ladder_and_keeps_a_part_filled(tmp_path, fit):
     assert len(g) == 2
     L = lays[sid]
     rest = L["size"] * L["price"] - 1.0 * g[0]["limitOrder"]["price"]
-    assert np.isclose(g[1]["limitOrder"]["size"], el._floor2(rest / g[1]["limitOrder"]["price"]))
+    lim, st = el.ladder_stake(q.back, rest)
+    assert lim == g[1]["limitOrder"]["price"] and np.isclose(g[1]["limitOrder"]["size"], el._floor2(st))
     assert MID in t.greened
+
+
+def test_the_green_up_stake_covers_the_value_filled_best_price_first():
+    """Betfair fills a limit back at the best prices first: the stake is sized level by level, so the backs' value is
+    the lay's, not more (sized at the lowest price alone it backed more: the over-cover of 3-13 Nov)."""
+    levels = [(4.0, 10.0), (3.9, 10.0), (3.8, 500.0)]
+    lim, st = el.ladder_stake(levels, 100.0)
+    assert lim == 3.8
+    got, cost, left = 0.0, 0.0, st                              # Betfair's fill, best price first
+    for price, size in levels:
+        take = min(size, left)
+        got, cost, left = got + take, cost + take * price, left - take
+    assert np.isclose(cost, 100.0)
+    assert el.ladder_stake(levels, 30.0) == (4.0, 7.5)           # covered at the best price alone
+    lim, st = el.ladder_stake([(4.0, 1.0)], 40.0)                # the levels hold less: the rest at the last price
+    assert lim == 4.0 and np.isclose(st, 10.0)
+    assert el.ladder_stake([], 40.0) == (None, 0.0)
+
+
+def test_a_fill_betfair_does_not_list_yet_is_not_backed_again(tmp_path, fit):
+    """A green-up back matched but missing from listCurrentOrders on the next poll is counted from the fill itself."""
+    x = FakeX()
+    x.book = book()
+    t, clock = trader(tmp_path, x, fit)
+    t.step()
+    lays = {i["selectionId"]: i["limitOrder"] for i in x.sent if i["side"] == "LAY"}
+    sid = next(iter(lays))
+    full = x._place
+
+    def part(mid, ins, ref):                                     # the first back matches GBP1 only, and is not listed
+        if ins["side"] == "BACK" and not any(i["side"] == "BACK" for i in x.sent):
+            ins = dict(ins, limitOrder=dict(ins["limitOrder"], size=1.0))
+            r = full(mid, ins, ref)
+            x.current.pop()
+            return r
+        return full(mid, ins, ref)
+    x._place = part
+    clock["t"] = T0 + timedelta(minutes=10) - timedelta(seconds=4)
+    t.step(near_only=True)
+    clock["t"] += timedelta(seconds=1)
+    t.step(near_only=True)
+    backs = [i for i in x.sent if i["side"] == "BACK" and i["selectionId"] == sid]
+    value = sum(b["limitOrder"]["size"] * b["limitOrder"]["price"] for b in backs)
+    L = lays[sid]
+    assert value <= L["size"] * L["price"] + 0.05                 # never more than the lay's value
 
 
 def test_the_table_lists_the_matched_lays_dog_by_dog(tmp_path, fit):
