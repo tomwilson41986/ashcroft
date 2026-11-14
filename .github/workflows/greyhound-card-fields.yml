@@ -1,0 +1,75 @@
+name: Greyhound card fields (greyhounds.today, read-only)
+
+# The fields of the greyhounds.today cards already recorded (research/greyhound/card_fields.py; the owner, 14 Nov 2026:
+# "Yes do these"): N stored raw card files from s3://$CAPTURE_BUCKET/sources/greyhounds_today/, spread across days and
+# tracks, every JSON path with its files, records, fill rate and examples, and the paths that look like seeding, a
+# bitch's season, bends or running lines, comments, going, reserves and weights flagged. Reads S3 only, writes nothing
+# there; holds no Betfair key and calls no site.
+
+on:
+  workflow_dispatch:
+    inputs:
+      n:
+        description: 'card files to read'
+        required: false
+        type: string
+        default: '40'
+      date_from:
+        description: 'first day, YYYY-MM-DD (default: every day held)'
+        required: false
+        type: string
+      date_to:
+        description: 'last day, YYYY-MM-DD (default: every day held)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-card-fields
+  cancel-in-progress: true
+
+jobs:
+  fields:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: The card fields
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          N: ${{ inputs.n || '40' }}
+          FROM: ${{ inputs.date_from }}
+          TO: ${{ inputs.date_to }}
+        run: |
+          mkdir -p out
+          if ! [[ "$N" =~ ^[0-9]+$ ]]; then echo "n must be a whole number"; exit 1; fi
+          ARGS=(--n "$N" --out out/card_fields)
+          for v in "$FROM" "$TO"; do
+            if [ -n "$v" ] && ! [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "dates must be YYYY-MM-DD"; exit 1; fi
+          done
+          if [ -n "$FROM" ]; then ARGS+=(--from "$FROM"); fi
+          if [ -n "$TO" ]; then ARGS+=(--to "$TO"); fi
+          python -m research.greyhound.card_fields "${ARGS[@]}"
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/card_fields.md ] && head -c 60000 out/card_fields.md >> "$GITHUB_STEP_SUMMARY"
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-card-fields-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90
