@@ -46,7 +46,10 @@ jobs:
           python-version: '3.11'
           cache: pip
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          # the seq table (greyhound/pit/seq.py: a GRU refitted monthly) is built by name only, never in 'all'
+          if [[ ",$TABLES," == *",seq,"* ]]; then pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu; fi
       - name: Free disk space
         # GitHub's ubuntu-26.04 runners keep /mnt on the root disk: the swap file left no room and the job died
         # with "No space left on device" (greyhound-live.yml run 43386968806, 13 Nov 2026). Unused tool caches go first.
