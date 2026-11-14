@@ -2663,6 +2663,22 @@ stack_ml (u_ls against u_league), and stack_ml's out-of-sample prices from 6 Oct
 (`batch39_league_seq.json`). A release of seq needs its monthly weights stored for the live card build, a retrain and
 the owner's word.
 
+## 59. The league and sequence tables together (batch 39, 14 Nov 2026)
+
+Registered as `greyhound-league-seq-batch39-1114` before the run; greyhound-fastloop.yml run 43604383149, 110,788
+runners, 1 Jun - 11 Nov 2026, batch 32's m_stack recipe in both arms.
+
+| Arm | RMSE of log(BSP) | Diff vs u_league (90%) | z | Log-loss diff (z) |
+|---|---|---|---|---|
+| u_league (m_stack + league: the stack_ml recipe) | 0.2854 | - | - | - |
+| u_ls (+ the sequence table) | 0.2825 | -0.0030 (-0.0035 to -0.0025) | -9.6 | -0.00011 (-0.9) |
+
+By period: Jun-Aug -0.0028 (z -6.3), Sep - 5 Nov -0.0035 (z -7.4), after 5 Nov -0.0001 (5 days). A pass: the
+sequence table keeps most of its gain (-0.0030 of batch 38's -0.0037) beside the league table. stack_ml's
+out-of-sample prices from 6 Oct are published (`greyhound/live/oos_prices_stack_ml`, 37 days), so the early lay's
+forecast reads its own model's prices. A release of the sequence table needs its monthly weights stored for the card
+build, a retrain and the owner's word.
+
 ## 60. Expected times, standards, going, pars, class and speed figures: the audit (14 Nov 2026)
 
 The owner: "Review the performance and accuracy of our expected times model. Can we improve it? Are our track +
