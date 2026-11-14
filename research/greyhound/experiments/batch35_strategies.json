@@ -1,0 +1,65 @@
+{
+ "about": "Batch 35 (14 Nov 2026), the owner: 'Research. On the new model. What profitable strategies could we have? Take a very open mind and explore all'. Not a model comparison. The strategy studies of batches 20 to 22, unchanged, on the released stack's prices (stack_m, batch 34's out-of-sample prices from 6 Oct 2026, greyhound/research/pred/stack_m_live_oos.parquet): the limit-order study (every order, gate, fill and exit on the recorded books), the trade-out study and the back study. And one fit: batch 32's m_stack again (fitted before 1 Jun 2026, 1 Jun on priced), saved to greyhound/research/pred/m_stack_review.parquet for the price-file strategy review (research/greyhound/strategy_review.py: the SP, the morning and pre-play moves, the place market), which runs as batch 36 on the saved prices.",
+ "recipe": "quick",
+ "test_from": "2026-06-01",
+ "baseline": "m_stack_review",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "m_stack_review",
+   "save_pred": "greyhound/research/pred"
+  },
+  {
+   "name": "stackm_lim",
+   "pred_from": "greyhound/research/pred/stack_m_live_oos.parquet",
+   "limit": true
+  },
+  {
+   "name": "stackm_out",
+   "pred_from": "greyhound/research/pred/stack_m_live_oos.parquet",
+   "study": true
+  },
+  {
+   "name": "stackm_back",
+   "pred_from": "greyhound/research/pred/stack_m_live_oos.parquet",
+   "back": true
+  }
+ ]
+}
