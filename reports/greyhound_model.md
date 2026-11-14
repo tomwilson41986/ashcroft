@@ -2559,3 +2559,26 @@ stake) through six fill models. P&L before commission; the gap is the replay les
 - The only model that reproduces live (matched only when the live-key book later offers our price) loses on these
   orders just as live does. The +1.1% replay return of the early lay is not real as traded, and the recorded-book
   leads of section 52 that rest on the same fill are unproven until rebuilt on the trusted model.
+
+## 54. The trainer and owner columns, and the league table on the released stack (batch 37, 14 Nov 2026)
+
+Registered as `greyhound-leak-league-batch37-1114` before the run; greyhound-fastloop.yml run 43579628199, 110,788
+runners, 1 Jun - 11 Nov 2026, batch 32's m_stack recipe in every arm.
+
+| Arm | RMSE of log(BSP) | Against | Diff | z | Log-loss diff (z) |
+|---|---|---|---|---|---|
+| s0 (the released stack) | 0.2885 | - | - | - | - |
+| s_noleak (trainer and owner columns dropped) | 0.2943 | s0 | +0.0058 | +25.1 | +0.00023 (+2.5) |
+| s_league (+ the league table) | 0.2854 | s0 | -0.0030 | -12.7 | -0.00011 (-1.4) |
+| s_both | 0.2908 | s_noleak | -0.0034 | -14.4 | -0.00020 (-2.5) |
+
+- The trainer and owner columns are worth 0.0058 to the price, in every period, so they stay. GBGB shows a dog's
+  current trainer and owner on its past runs, so part of that may be a later yard's record read back into
+  history; the trainer at the time is held only since the nightly fetch began, so the training years cannot be
+  rebuilt on it. On the race card the field is today's trainer, as a bettor sees it.
+- The league table passes in every period (Jun-Aug -0.0023, Sep - 5 Nov -0.0038, after 5 Nov -0.0060) with a better
+  log-loss. The candidate becomes s_league, 0.2854, against 0.2885 served.
+- The price-file strategy review on the released stack's prices (stackm_rev): 50 of 238 rules pass, all morning-move
+  lays priced at the files' morning average price, which is not a price on offer in the morning. No lead.
+- Not released. A release needs the league table in `PIT_TABLES`, its card-mode test, a retrain (about 165 minutes),
+  a price run, and the owner's word.
