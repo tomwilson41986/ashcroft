@@ -2820,3 +2820,15 @@ generic card-row and cut-build tests in `tests/test_greyhound_pit.py` also pass 
 
 Registered as `greyhound-speed-batch40-1114` before its run (`batch40_speed.json`: v_speed against the live recipe
 v_league). The table is built on the full history first (greyhound-pit.yml, tables=speed).
+
+**Batch 40 (run 43623423021, 110,788 runners, 1 Jun - 11 Nov 2026): a pass.**
+
+| Arm | RMSE of log(BSP) | Diff vs v_league (90%) | z | Log-loss diff (z) |
+|---|---|---|---|---|
+| v_league (the live recipe, stack_ml) | 0.2858 | - | - | - |
+| v_speed (+ the speed table) | 0.2833 | -0.0025 (-0.0029 to -0.0021) | -10.0 | -0.00017 (-2.2) |
+
+By period: Jun-Aug -0.0028 (z -8.7), Sep - 5 Nov -0.0020 (z -5.3), after 5 Nov -0.0033 (5 days). The figure against
+the field (`sf_vs`) is the model's 4th feature by importance. A release needs a retrain with the table in
+`stack_model.PIT_TABLES`, its out-of-sample prices published, and the owner's word. It can be combined with the
+sequence table (batch 39) in one registered release arm.
