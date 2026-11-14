@@ -149,6 +149,9 @@ def track(store, frozen: dict, days: list[date]) -> list[dict]:
 #: the out-of-sample prices of the log-BSP live model (4 Nov 2026): a model fitted before the first recorded day,
 #: every recorded day priced (greyhound.fastloop ``publish_pred``), for the forecast fit to read when that model is live
 LOGBSP_PRICES = "greyhound/live/oos_prices_logbsp"
+#: until a model's own prices are published, the nearest model's that are (13 Nov 2026: the stack of batch 32 reads
+#: the 10 Nov stack's until batch 34 has published its own)
+NEAREST_PRICES = {"greyhound/live/oos_prices_stack_m": "greyhound/live/oos_prices_stack_all3"}
 
 
 def day_fit(store, day: date, mark: str = MARK, prices: str | None = None) -> dict | None:
@@ -194,6 +197,10 @@ def live_prices(store, day: date) -> str | None:
         # (an empty prefix would leave the early lay without a forecast)
         if store.listing(f"{named.rstrip('/')}/"):
             return named
+        nearest = NEAREST_PRICES.get(named)
+        if nearest and store.listing(f"{nearest.rstrip('/')}/"):
+            log.warning("%s has no out-of-sample prices yet: the forecast is fitted on %s", named, nearest)
+            return nearest
         log.warning("%s has no out-of-sample prices yet: the forecast is fitted on %s", named, LOGBSP_PRICES)
     return LOGBSP_PRICES
 

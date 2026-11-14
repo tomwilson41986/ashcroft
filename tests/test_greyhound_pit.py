@@ -338,3 +338,29 @@ def test_a_card_gets_the_features_its_run_had(name, monkeypatch):
     assert len(y) == len(keys)
     bad = [c for j, c in enumerate(cols) if not np.allclose(x[:, j], y[:, j], equal_nan=True, atol=1e-5)]
     assert not bad, f"{name}: {bad}"
+
+
+def test_a_cut_build_gives_the_whole_build_cut_and_depends_lists_every_read(monkeypatch):
+    """The live card build cuts each table to the card's rows as soon as no later table reads it
+    (``pit.build_tables(cut=)``): the same rows as the whole tables cut at the end, and ``DEPENDS`` names every
+    table a build reads from ``ctx``."""
+    import inspect
+    import re
+    from greyhound import stack_model as sm
+    monkeypatch.setattr(trouble, "MIN_FIT", 100)
+    monkeypatch.setattr(ability, "FIT_BEFORE", "2025-01-15")
+    runs = cardify_last_day(synth())
+    keys = runs.loc[runs.race_date == runs.race_date.max(), ["race_id", "dog_id"]].drop_duplicates()
+    ctx = {"fetch_lag": pd.Series(0, index=sorted(runs.race_date.unique()))}
+    names = list(sm.PIT_TABLES)
+    whole = pit.build_tables(names, runs, None, dict(ctx), keep=True)
+    cut = pit.build_tables(names, runs, None, dict(ctx), keep=True, cut=keys)
+    assert set(cut) == set(names)
+    for n in names:
+        a = whole[n].merge(keys, on=["race_id", "dog_id"]).sort_values(["race_id", "dog_id"]).reset_index(drop=True)
+        b = cut[n].sort_values(["race_id", "dog_id"]).reset_index(drop=True)
+        pd.testing.assert_frame_equal(a, b[a.columns], check_dtype=False)
+    for n in pit.TABLES:
+        src = inspect.getsource(pit.module(n))
+        read = {m for m in re.findall(r'ctx(?: or \{\})?\)?\.get\("(\w+)"\)', src) if m in pit.TABLES}
+        assert read <= set(pit.DEPENDS.get(n, ())), (n, read)

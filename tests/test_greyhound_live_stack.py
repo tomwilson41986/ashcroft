@@ -154,6 +154,8 @@ def test_the_early_lay_reads_the_stacks_prices(tmp_path):
         {"market_id": ["1.1"], "model_objective": ["stack_share"], "oos_prices": [live.STACK_OOS_PRICES]})
         .to_csv(index=False).encode())
     assert lt.live_prices(store, DAY) == lt.LOGBSP_PRICES           # not published yet: the nearest prices
+    store.put("greyhound/live/oos_prices_stack_all3/2025-02-01.parquet", b"x")
+    assert lt.live_prices(store, DAY) == "greyhound/live/oos_prices_stack_all3"   # the stack before it, once there
     store.put(f"{live.STACK_OOS_PRICES}/2026-10-06.parquet", b"x")
     assert lt.live_prices(store, DAY) == live.STACK_OOS_PRICES
 

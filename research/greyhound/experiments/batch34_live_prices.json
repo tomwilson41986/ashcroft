@@ -1,0 +1,55 @@
+{
+ "about": "Batch 34 (13 Nov 2026), the owner: 'Fix it' - the early lay's forecast was fitted on the out-of-sample prices of the 10 Nov stack while the live price came from batch 32's stack (released 13 Nov). Not a model comparison: one arm, the live recipe stack_m (sixteen tables) fitted on the 29 months before 6 Oct 2026, every day from 6 Oct priced as the live model serves it (the stretched SP forecast), published to greyhound/live/oos_prices_stack_m for the forecast fit (greyhound.laytest live_prices). A 1,500-second cap on each tree seed, as batch 19.",
+ "recipe": "quick",
+ "test_from": "2026-10-06",
+ "baseline": "stack_m_live_oos",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000,
+    "train_from": "2024-05-06",
+    "max_seconds": 1500
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "stack_m_live_oos",
+   "test_from": "2026-10-06",
+   "serve_calibrated": "stretch_track",
+   "publish_pred": "greyhound/live/oos_prices_stack_m",
+   "save_pred": "greyhound/research/pred"
+  }
+ ]
+}
