@@ -1823,6 +1823,14 @@ eighth on the 05:15-10:00 UK window; the first session on the lost-reply fix (PR
   holdout its error against the BSP was 0.3734 against the served blend's 0.3801 (iteration 116). The shadow week
   planned to 20 Nov was cut short. The trader's rule and stakes are unchanged.
 
+**14 Nov: the stack blend served from 15 Nov** (ledger `serve-stack-1114`). The owner, 07:10 UTC: "Go live with
+stack blend." From the 03:00 UTC predictions of 15 Nov the served blend is the market-rating blend with the day's ten
+blocks in every member (bfsp-model-63/64/65, trained through 12 Nov, the gate unchanged): in development its error
+against the BSP was 0.0083 below the market-rating blend's (-0.0088 to -0.0077), on the flat and over jumps alike.
+The locked holdout was not read for it. The first dry run found one block (`pace_v2`) not asking the live path for
+the race-shape columns it reads; fixed and tested, the second priced 299 runners in 36 races in 23 minutes. The
+trader's rule and stakes are unchanged.
+
 **From 14 Nov: predictions at 03:00 UTC** (the owner, 13 Nov: "move predictions to 03:00 UTC"; ledger
 `predictions-0300-1113`). On 13 Nov GitHub's runner (2 cores, 7.7 GB) took 67 minutes to price the card; at 04:00 UTC
 that lands at or after the 05:15 UTC session start. The session, its window and the rule are unchanged.
