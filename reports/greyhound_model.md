@@ -2535,3 +2535,27 @@ the 10 Nov stack (sections 38 and 39: batch 20 stackoos_lim and stack_out, batch
 - With the offline exploration (966 rules on the price files, none survived review): nothing at the SP; what pays is
   the early book's drift to the SP, taken by resting orders whose live fills are unproven. Nothing here changes a
   live rule; the new families go to a pre-registered forward paper test only on the owner's decision.
+
+## 53. The early lay's live fills against the replay (14 Nov 2026)
+
+Registered as `greyhound-fill-recon-1114` before the run (the owner: "may I build the live-against-replay fill
+reconciliation - yes"). research/greyhound/fill_recon.py, greyhound-fill-recon.yml run 43587964956: the 1,483 lays
+the live early lay placed on 3, 4, 11, 12 and 13 Nov, each replayed exactly (same market, dog, time, limit and
+stake) through six fill models. P&L before commission; the gap is the replay less live.
+
+| Fill model | Orders | Live fill | Replay fill | Live P&L | Replay P&L | Gap | Verdict |
+|---|---|---|---|---|---|---|---|
+| traded, re-timed books (the replay's) | 1,483 | 25.65% | 18.72% | -193.55 | -38.02 | +155.53 | not trusted |
+| through, re-timed books | 1,483 | 25.65% | 12.26% | -193.55 | -269.00 | -75.45 | not trusted |
+| traded, live-key books | 1,424 | 25.53% | 29.94% | -179.21 | +280.49 | +459.70 | not trusted |
+| through, live-key books | 1,424 | 25.53% | 21.12% | -179.21 | -178.70 | +0.50 | **trusted** |
+| queue position, live-key books | 1,424 | 25.53% | 28.17% | -179.21 | +96.04 | +275.25 | not trusted |
+| queue position, stream | 1,132 | 24.96% | 26.14% | -154.41 | +28.92 | +183.33 | not judged (coverage) |
+
+- The replay's own fill model credits fills live never got (phantom fills worth +180.98) and green-ups better than
+  live achieved (+69.78). Every model's green-up part is positive: live green-ups cost more than any replay assumes.
+- Adverse selection is strong: the lays live matched moved +0.0175 in log(SP / lay price) on average, the ones it
+  did not +0.3511. The market fills our lays on the dogs that do not drift.
+- The only model that reproduces live (matched only when the live-key book later offers our price) loses on these
+  orders just as live does. The +1.1% replay return of the early lay is not real as traded, and the recorded-book
+  leads of section 52 that rest on the same fill are unproven until rebuilt on the trusted model.
