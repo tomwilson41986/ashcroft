@@ -1827,6 +1827,20 @@ eighth on the 05:15-10:00 UK window; the first session on the lost-reply fix (PR
 `predictions-0300-1113`). On 13 Nov GitHub's runner (2 cores, 7.7 GB) took 67 minutes to price the card; at 04:00 UTC
 that lands at or after the 05:15 UTC session start. The session, its window and the rule are unchanged.
 
+**The forty-fourth full day** (13 Nov, a Friday; ledger `live-day-1113`), a late start: no prices until 07:48 UTC.
+- **The start.** Both scheduled predictions runs died on a full runner disk and the night-before file was missing
+  (ledger `night-before-1113`); the 05:17 UTC session (43371006084) failed at 06:40 with no predictions; predictions
+  run 43380399981 landed at 07:48 UTC and the restarted session (43380878643) ran 06:45-21:30 UTC, first back 07:49 UK,
+  the last order at 09:59:56 UK; the settle at 22:29 UTC in settle mode (run 43519689383; its email failed again).
+- **-GBP63.89 after commission** as Betfair settled the trader's own orders, on 337 fills on 90 horses, GBP2,950.77
+  matched, CLV +1.06%: first backs +6.3% (GBP993.14), top-ups -1.8% (GBP1,792.80), the top-ups of the first ten
+  minutes -8.0% (GBP747.41). 28 horses reached the cap of 5 top-ups (ledger `changes-1113`).
+- **The account.** Funds GBP4,959.75 -> GBP4,867.87 (-GBP91.88): -GBP27.99 beside the trader. The greyhound early lay
+  placed real orders on the same account (its own figure -GBP54.32 locked); GBP26.33 not reconciled (ledger
+  `account-day-1113`).
+- **The record:** 35 days, +GBP6,333.23, 29 up. From 14 Nov the served model is the market-rating blend and
+  predictions run at 03:00 UTC.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
