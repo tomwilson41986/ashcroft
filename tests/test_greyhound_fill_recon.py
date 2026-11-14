@@ -185,3 +185,17 @@ def test_the_queue_aware_models_run_on_the_live_key_books_and_the_stream():
     assert r.queue_stream_green == pytest.approx(4.5)
     assert rep["models"]["queue_stream"]["gap"] == pytest.approx(0.0, abs=0.01)    # same fill, same green-up as live
     assert not r.traded_retimed_covered
+
+
+def test_a_greened_lay_is_settled_by_the_result_when_known():
+    """An over-covered green-up (backs worth more than the lay) is not flat: with the result it takes the outcome
+    that happened, without it the worse of the two the trader locked."""
+    import pandas as pd
+    from research.greyhound import fill_recon as fr
+    S, a = 31.25, 4.2
+    close = pd.DataFrame({"action": ["green"], "matched": [42.69], "avg_price": [3.6106], "locked_pnl": [-11.44]})
+    lose, how = fr._live_pnl(close, S, a, 4.4, 0)
+    win, _ = fr._live_pnl(close, S, a, 4.4, 1)
+    assert how == "greened" and abs(lose - (S - 42.69)) < 1e-9
+    assert abs(win - (-S * (a - 1) + 42.69 * 2.6106)) < 1e-9 and win > 0
+    assert fr._live_pnl(close, S, a, None, None)[0] == -11.44

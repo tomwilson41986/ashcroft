@@ -104,12 +104,20 @@ def _utc(t) -> pd.Timestamp:
 # --------------------------------------------------------------------------------------------------------------------
 
 def _live_pnl(close: pd.DataFrame, S: float, a: float, sp: float | None, won: int | None) -> tuple[float | None, str]:
-    """A live lay's P&L from its close rows: the P&L the trader locked by the green-up; else (closed at the SP or held)
-    settled by the SP and the result: the lay of ``S`` at ``a``, any green-up backs matched, and a back at the SP."""
+    """A live lay's P&L from its close rows, settled by the result: the lay of ``S`` at ``a``, the green-up backs
+    matched, and any back at the SP. A greened lay whose result is not in the records takes the P&L the trader locked
+    (the worse of its two outcomes); with the result it takes the outcome that happened, since a green-up whose backs
+    over-cover the lay is not flat (14 Nov 2026: the ledger's worst case read GBP73 worse than the results, 3-13 Nov)."""
     g = close[close.action == "green"]
     locked = _num(g.locked_pnl).dropna() if len(g) else pd.Series(dtype=float)
     if len(locked):
-        return float(locked.sum()), "greened"
+        gb = close[close.action.isin(["green", "green_part"])]
+        bs, bp = _num(gb.matched).fillna(0.0).to_numpy(), _num(gb.avg_price).fillna(0.0).to_numpy()
+        if won is None or not bs.sum():
+            return float(locked.sum()), "greened"
+        if won == 1:
+            return -S * (a - 1.0) + float((bs * (bp - 1.0)).sum()), "greened"
+        return S - float(bs.sum()), "greened"
     act = str(close.action.iloc[-1]) if len(close) else ""
     if act not in ("sp_close", "hold"):
         return None, "matched, no close in the ledger"
