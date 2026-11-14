@@ -2629,6 +2629,13 @@ The owner: "Early lay live is at +3.5% CLV in the last 3 days. Diagnose why we a
 Sources: `fill_recon_orders.csv` of run 43587964956; the figures are inferred from the ledger until the audit reads
 Betfair's settled bets.
 
+**Betfair's settled bets (greyhound-green-audit.yml run 43593264909) correct the inferred figures above.**
+- On 3-13 Nov the early lay lost GBP84.49 gross on 495 dogs. A flat green-up at the same back prices gives GBP-91.52, and the ledger's locked figure GBP-195.92.
+- The over-cover was small: median 1.0004 (not 1.008), worst 1% 1.047 (not 1.18). At the result it was worth GBP+3.97.
+- So the ledger's worst-case figure doubled the reported loss. What remains is the green-up's own cost: the stake-weighted CLV, and the close at the back price before the off.
+- 14 Nov, settled so far: GBP-130.05 on 151 dogs; 140 markets were not yet settled at the audit.
+- The owner stopped the live early lay at 19:29 UTC, 14 Nov.
+
 ## 57. The early lay closed at the SP, on paper (14 Nov 2026)
 
 The owner: "Can we trade at sp", then "Put this to paper". Ledger `greyhound-early-lay-sp-close-1114`, registered
