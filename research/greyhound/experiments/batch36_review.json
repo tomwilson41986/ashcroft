@@ -1,0 +1,13 @@
+{
+ "about": "Batch 36 (14 Nov 2026): the price-file strategy review (research/greyhound/strategy_review.py, unchanged: development 1 Jun - 31 Aug 2026, holdout from 1 Sep) on the released stack's prices saved by batch 35 (greyhound/research/pred/m_stack_review.parquet).",
+ "recipe": "quick",
+ "test_from": "2026-06-01",
+ "baseline": "stackm_rev",
+ "experiments": [
+  {
+   "name": "stackm_rev",
+   "pred_from": "greyhound/research/pred/m_stack_review.parquet",
+   "review": true
+  }
+ ]
+}

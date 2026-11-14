@@ -2498,3 +2498,167 @@ days, 14,422 orders, 4,251 matched.
   the replay matches a lay when the recorder's re-timed book later trades at its price, and a live lay rests in a
   real queue. The question this leaves is how far the replay's fills at short prices differ from the live ones,
   to be read from the live ledger against the replay of the same days once there are enough of them.
+
+## 52. The recorded-book strategy studies on the released stack (batch 35, 14 Nov 2026)
+
+Registered as `greyhound-strategy-search-stack-m-1114` before its run. greyhound-fastloop.yml run 43570050651: the
+studies of batches 20 to 22, code unchanged (research/greyhound/limit_study.py, tradeout_study.py, back_study.py), on
+the released stack's out-of-sample prices (fitted before 6 Oct) and the recorded books 6 Oct - 11 Nov 2026; scored
+14 Oct - 11 Nov, development 21 days to 4 Nov, holdout 5-11 Nov. A lead passes its study's bar and keeps its sign on
+the 10 Nov stack (sections 38 and 39: batch 20 stackoos_lim and stack_out, batch 22 stack_back).
+
+| Study | Rules (holdout read) | Pass | By chance | Leads | 10 Nov stack passes |
+|---|---|---|---|---|---|
+| Limit orders | 4,860 (360) | 12 (9 with development above zero) | 18.0 | 9 | 11 |
+| Trade-out | 238 (52) | 2 | about 2.6 | 1 | 2 |
+| Back study | 3,060 (3,060) | 44 (17 survive FDR 10%) | 153.0 | 23 | 27 |
+
+| Rule | Development | Holdout (90%) | CLV | 10 Nov stack (dev / holdout) |
+|---|---|---|---|---|
+| Early lay primary: first traded, lay at 80% of the forecast on drifters, traded fill, greened at the last book | +2.12% (1.91 to 2.34) | +1.89% (no interval: not read) | +11.85% | +1.94% / +1.67% (CLV 10.81%) |
+| same, closed at the SP | +2.91% (2.36 to 3.47) | +0.92% | | +2.74% / +2.00% |
+| Favourite back: forecast SP x 1.20, strict fill, closed at the SP | +10.80% (8.35 to 13.26) | +5.44% (2.91 to 8.44), 186 trades | +2.35% | +6.30% / +10.50% |
+| Best back: the model's favourite at forecast +20%, traded fill, closed at the SP | +10.81% | +10.21% (7.62 to 12.28), 234 trades | | +8.88% / +9.18% |
+| Trade-out: first traded, take the back where the forecast is 8%+ longer, closed at the SP | +2.93% (-0.07 to 6.24) | +10.96% (4.41 to 18.66), 138 trades | +8.2% | +1.25% / +5.27% (1 Jun fit) |
+
+- The leads fall in four families. The favourite back resting at the forecast SP +5-20% at the first traded book
+  (all 23 back leads and 4 limit leads) is already in its registered forward test (read about 2 Dec). New: a lay at
+  80% of the forecast on short-priced dogs (mid under 3; holdout +4.71%, 1.67 to 9.03, last book), joining the lay
+  queue at the first traded book (drifters at the SP +1.13%, 0.62 to 1.59; short-priced at the last book +5.72%), and
+  the first-traded trade-out back above.
+- No back-to-win rule passes (0 of the hold-to-result rules); no control (no-model) rule passes.
+- The confirmation is weak: the new development days contain the 10 Nov stack's holdout (29 Oct - 5 Nov), the two
+  prices are close models on the same books, so only 5-11 Nov is fresh to both. No deflated Sharpe is computed here.
+  The fills are the replay's (section 51: the first live day disagreed).
+- The early lay reads about as on the 10 Nov stack: CLV 11.85% against 10.81% on development, +0.2 to +0.4 points;
+  its holdout at the SP is lower (+0.92% against +2.00%, on different days).
+- With the offline exploration (966 rules on the price files, none survived review): nothing at the SP; what pays is
+  the early book's drift to the SP, taken by resting orders whose live fills are unproven. Nothing here changes a
+  live rule; the new families go to a pre-registered forward paper test only on the owner's decision.
+
+## 53. The early lay's live fills against the replay (14 Nov 2026)
+
+Registered as `greyhound-fill-recon-1114` before the run (the owner: "may I build the live-against-replay fill
+reconciliation - yes"). research/greyhound/fill_recon.py, greyhound-fill-recon.yml run 43587964956: the 1,483 lays
+the live early lay placed on 3, 4, 11, 12 and 13 Nov, each replayed exactly (same market, dog, time, limit and
+stake) through six fill models. P&L before commission; the gap is the replay less live.
+
+| Fill model | Orders | Live fill | Replay fill | Live P&L | Replay P&L | Gap | Verdict |
+|---|---|---|---|---|---|---|---|
+| traded, re-timed books (the replay's) | 1,483 | 25.65% | 18.72% | -193.55 | -38.02 | +155.53 | not trusted |
+| through, re-timed books | 1,483 | 25.65% | 12.26% | -193.55 | -269.00 | -75.45 | not trusted |
+| traded, live-key books | 1,424 | 25.53% | 29.94% | -179.21 | +280.49 | +459.70 | not trusted |
+| through, live-key books | 1,424 | 25.53% | 21.12% | -179.21 | -178.70 | +0.50 | **trusted** |
+| queue position, live-key books | 1,424 | 25.53% | 28.17% | -179.21 | +96.04 | +275.25 | not trusted |
+| queue position, stream | 1,132 | 24.96% | 26.14% | -154.41 | +28.92 | +183.33 | not judged (coverage) |
+
+- The replay's own fill model credits fills live never got (phantom fills worth +180.98) and green-ups better than
+  live achieved (+69.78). Every model's green-up part is positive: live green-ups cost more than any replay assumes.
+- Adverse selection is strong: the lays live matched moved +0.0175 in log(SP / lay price) on average, the ones it
+  did not +0.3511. The market fills our lays on the dogs that do not drift.
+- The only model that reproduces live (matched only when the live-key book later offers our price) loses on these
+  orders just as live does. The +1.1% replay return of the early lay is not real as traded, and the recorded-book
+  leads of section 52 that rest on the same fill are unproven until rebuilt on the trusted model.
+
+## 54. The trainer and owner columns, and the league table on the released stack (batch 37, 14 Nov 2026)
+
+Registered as `greyhound-leak-league-batch37-1114` before the run; greyhound-fastloop.yml run 43579628199, 110,788
+runners, 1 Jun - 11 Nov 2026, batch 32's m_stack recipe in every arm.
+
+| Arm | RMSE of log(BSP) | Against | Diff | z | Log-loss diff (z) |
+|---|---|---|---|---|---|
+| s0 (the released stack) | 0.2885 | - | - | - | - |
+| s_noleak (trainer and owner columns dropped) | 0.2943 | s0 | +0.0058 | +25.1 | +0.00023 (+2.5) |
+| s_league (+ the league table) | 0.2854 | s0 | -0.0030 | -12.7 | -0.00011 (-1.4) |
+| s_both | 0.2908 | s_noleak | -0.0034 | -14.4 | -0.00020 (-2.5) |
+
+- The trainer and owner columns are worth 0.0058 to the price, in every period, so they stay. GBGB shows a dog's
+  current trainer and owner on its past runs, so part of that may be a later yard's record read back into
+  history; the trainer at the time is held only since the nightly fetch began, so the training years cannot be
+  rebuilt on it. On the race card the field is today's trainer, as a bettor sees it.
+- The league table passes in every period (Jun-Aug -0.0023, Sep - 5 Nov -0.0038, after 5 Nov -0.0060) with a better
+  log-loss. The candidate becomes s_league, 0.2854, against 0.2885 served.
+- The price-file strategy review on the released stack's prices (stackm_rev): 50 of 238 rules pass, all morning-move
+  lays priced at the files' morning average price, which is not a price on offer in the morning. No lead.
+- Not released. A release needs the league table in `PIT_TABLES`, its card-mode test, a retrain (about 165 minutes),
+  a price run, and the owner's word.
+
+## 55. The league table released to the live price (14 Nov 2026)
+
+The owner, 14 Nov 2026: "Release the league table to the live price". Ledger `greyhound-release-league-1114`.
+
+- `greyhound/stack_model.py`: `league` added to `PIT_TABLES` (seventeen tables), the recipe renamed `stack_ml`. Its
+  figure is batch 37's (section 54): RMSE of log(BSP) 0.2885 -> 0.2854, z -12.7. It goes live with the retrain
+  (greyhound-live.yml, task train) and the next price run after the merge.
+- Its out-of-sample prices are `greyhound/live/oos_prices_stack_ml` (`greyhound/live.py STACK_OOS_BY_RECIPE`); until
+  they are published the early lay's forecast reads `stack_m`'s (`greyhound/laytest.py NEAREST_PRICES`).
+- The card build. The live price builds every table each hour with the day's card as the last day. A card row of the
+  league table reads only its own week's refit, which depends on the weeks before only through the warm start, so the
+  card build (`ctx["card_weeks"]`, set by `card_tables`; `league.CARD_WEEKS` = 26) refits from 26 Mondays before the
+  card's week; everything else is still read over the whole history. The nightly build is unchanged.
+
+| Card day | Card rows | Refits from | Largest difference on any lg_ column |
+|---|---|---|---|
+| 20 Sep 2026 | 513 | 8 / 13 / 26 / 52 weeks | 4e-8 / 7e-9 / 3e-17 / 1e-17 |
+| 5 Nov 2026 | 443 | 8 / 13 / 26 / 52 weeks | 1.4e-6 / 7e-9 / 3e-17 / 1e-17 |
+
+  The GBGB runs from 1 Jul 2025, against the full build; the track and market columns exact at every start. Time: the
+  full build 10.7 s locally (71 weekly fits), the card build 5.7 s (27). From 2014 the full build took 92 s on GitHub
+  (greyhound-pit.yml run 43431640396: 661 weekly fits, 87 s of them); the card build fits 27 whatever the history,
+  about 8 s, so the hourly price run gains seconds, not minutes. `tests/test_greyhound_league.py` holds a planted card
+  to the full build within 1e-3.
+
+## 56. The early lay's green-up over-covered its lays (14 Nov 2026)
+
+The owner: "Early lay live is at +3.5% CLV in the last 3 days. Diagnose why we are still losing money then", then
+"Read the green-up orders from Betfair and fix the closing order". Ledger `greyhound-early-lay-green-cover-1114`.
+
+- The CLV is a mean per lay (+3.23% in log terms on 11-13 Nov, 352 matched lays). Weighted by stake it is -0.26%:
+  lays are sized by liability, so the stakes sit at short prices where the CLV is negative (1-3: -2.32% on
+  GBP1,220; 3-5: -0.11% on GBP3,165; 5-8: +0.47%; 8+: +0.66%).
+- The green-up is about 5 s before the off at the back price, 1.24% below the SP (stake-weighted), which takes the
+  rest of the edge: closed at the SP the lays make GBP-17.83, at the green-up prices GBP-71.79.
+- The green-up back was sized at the lowest of the three prices it took (value / limit), and Betfair fills the best
+  prices first, so the backs were worth more than the lay: inferred cover median 1.008, the worst 1% about 1.18
+  (479 green-ups, 3-13 Nov). The ledger's locked P&L is the worse of the two outcomes, so it read worse than the
+  results: GBP-195.92 locked against GBP-122.64 settled by the result (flat green-up: GBP-91.29).
+- Fixed (`greyhound/early_lay.py`): the stake sized level by level (`ladder_stake`); a fill this session saw and
+  Betfair does not list yet counted, never backed again. The rule is unchanged. `research/greyhound/fill_recon.py`
+  settles greened lays by the result. `greyhound-green-audit.yml` reads Betfair's settled bets to confirm.
+
+Sources: `fill_recon_orders.csv` of run 43587964956; the figures are inferred from the ledger until the audit reads
+Betfair's settled bets.
+
+## 57. The early lay closed at the SP, on paper (14 Nov 2026)
+
+The owner: "Can we trade at sp", then "Put this to paper". Ledger `greyhound-early-lay-sp-close-1114`, registered
+before its first day.
+
+- Two paper books beside the live rule from 15 Nov (`greyhound/early_lay.py PAPER_VARIANTS`): `spclose`, the live
+  rule's lays each closed by a back at the SP for the lay's stake instead of the green-up; `spclose3`, the same with no
+  lay under 3. A dog that wins pays stake x (SP - lay price); one that loses, nothing.
+- Filled on the live-key books only once a later book offers our price (the fill the reconciliation trusts, section
+  53), settled by the SP and the result. The live lays' own fills get the same close as a column
+  (`fill_recon live_sp_close`), reported but not judged.
+- Read once on 13 Dec 2026 (28 days): a pass needs net P&L after commission above zero with its 90% interval over days
+  above zero, 300 matched lays, and the deflated Sharpe at least 0.95. The live close changes only on the owner's word.
+- Prior, seen before registration (so not independent): the live lays of 3-13 Nov closed at the SP, by the result
+  GBP-19.98 (-31.28 after commission), expected GBP-28.02; the loss in lays under 3.
+
+## 58. The sequence table on the released stack (batch 38, 14 Nov 2026)
+
+Registered as `greyhound-seq-batch38-1114` before the run; greyhound-fastloop.yml run 43591606125, 110,788 runners,
+1 Jun - 11 Nov 2026, batch 32's m_stack recipe in both arms.
+
+| Arm | RMSE of log(BSP) | Diff vs t0 (90%) | z | Log-loss diff (z) |
+|---|---|---|---|---|
+| t0 (m_stack) | 0.2885 | - | - | - |
+| t_seq (+ the sequence table) | 0.2848 | -0.0037 (-0.0043 to -0.0031) | -10.4 | -0.00009 (-0.8) |
+
+By period: Jun-Aug -0.0032 (z -7.2), Sep - 5 Nov -0.0044 (z -7.0), after 5 Nov -0.0018 (z -1.6, 5 days). A pass on
+the registered bar; the table's settings were chosen after a look at an overlapping period, so this batch is the test.
+
+Next, registered as `greyhound-league-seq-batch39-1114`: the two tables together against the league stack released as
+stack_ml (u_ls against u_league), and stack_ml's out-of-sample prices from 6 Oct published for the early lay's forecast
+(`batch39_league_seq.json`). A release of seq needs its monthly weights stored for the live card build, a retrain and
+the owner's word.

@@ -29,7 +29,8 @@ def main(argv=None) -> int:
     from greyhound.track import runs_through
     from sources.common import Store
     store = Store(root=a.root)
-    names = list(pit.TABLES) if a.build == "all" else [n.strip() for n in a.build.split(",")]
+    names = ([t for t in pit.TABLES if t not in pit.ON_DEMAND] if a.build == "all"
+             else [n.strip() for n in a.build.split(",")])
     last = date.fromisoformat(a.last) if a.last else date.today() - timedelta(days=1)
     trial_rows: list = []
     runs = runs_through(store, last, first_year=a.first_year, trials_out=trial_rows)
