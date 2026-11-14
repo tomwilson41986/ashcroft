@@ -315,7 +315,7 @@ def cardify_last_day(runs):
 SERVED_TABLES = ("ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend", "xtime", "dyad", "cycle", "trials",
                  "ext", "fitness", "fear", "clock", "optics", "litter",
                  "readers", "followed", "salience", "line", "cells",
-                 "improve", "debut", "lastrace", "pedigree", "league", "seq")
+                 "improve", "debut", "lastrace", "pedigree", "league", "seq", "speed")
 
 
 @pytest.mark.parametrize("name", SERVED_TABLES)

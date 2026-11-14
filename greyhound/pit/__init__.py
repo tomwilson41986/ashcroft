@@ -70,6 +70,8 @@ TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "lif
           "ext", "fitness", "fear", "clock", "optics", "litter",
           "readers", "followed", "salience", "line", "cells",
           "improve", "debut", "lastrace", "pedigree", "league",
+          # the speed figures of 14 Nov 2026 (reports/greyhound_model.md section 60)
+          "speed",
           # research tables, built on demand (``ON_DEMAND``: never in --build all; torch is installed for them)
           "seq")
 #: tables ``--build all`` leaves out: the seq table refits a network monthly from 2024 (one to two hours on a runner,

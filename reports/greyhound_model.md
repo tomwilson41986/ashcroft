@@ -2799,3 +2799,24 @@ line, is what the simulator already is; it has no further use.
 **What follows:** the leader model (recency-weighted sectional, trap, early-position history, comments) is the
 candidate pace table. It is to be registered and tested against the live recipe in the fast loop, where `bd_p_lead`
 and `xt_` already carry part of it.
+
+## 62. The speed-figure table (14 Nov 2026)
+
+The owner: "Continue with expected times and speed work. Implement". `greyhound/pit/speed.py` (columns `sf_`) builds
+section 60's best figure as a point-in-time table:
+- the calculated time with the beaten distance capped at 6 lengths;
+- against a rolling standard (winners over 365 days);
+- less an empirical-Bayes meeting variant;
+- plus monthly offsets that link the tracks and trips, fitted on the dogs that moved before the month;
+- half anchored on the field's strength before the race.
+
+The sectional and run home get their own pars (by track, trip and trap; by track and trip) and their own variants.
+Each dog's columns are read from its earlier days. On the local 16 months the build takes 8.6 s for 460,880 runs:
+it figures 326,262 runs and 226,135 sectionals.
+
+Tests: `tests/test_greyhound_speed.py` checks that results rewritten from the last day, or from a middle day, move
+nothing on or before that day; that a card row gets what its run had; the cap; and a planted strong league. The
+generic card-row and cut-build tests in `tests/test_greyhound_pit.py` also pass (81 tests).
+
+Registered as `greyhound-speed-batch40-1114` before its run (`batch40_speed.json`: v_speed against the live recipe
+v_league). The table is built on the full history first (greyhound-pit.yml, tables=speed).
