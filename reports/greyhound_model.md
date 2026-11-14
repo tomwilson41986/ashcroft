@@ -2662,3 +2662,124 @@ Next, registered as `greyhound-league-seq-batch39-1114`: the two tables together
 stack_ml (u_ls against u_league), and stack_ml's out-of-sample prices from 6 Oct published for the early lay's forecast
 (`batch39_league_seq.json`). A release of seq needs its monthly weights stored for the live card build, a retrain and
 the owner's word.
+
+## 60. Expected times, standards, going, pars, class and speed figures: the audit (14 Nov 2026)
+
+The owner: "Review the performance and accuracy of our expected times model. Can we improve it? Are our track +
+distance standard times robust? Are our going allowances robust? Can we calculate track pars and over / under par for
+each section? Class adjusted times? Create speed figures for each run. Research other ways." Ledger
+`greyhound-times-audit-1114`. Code: `research/greyhound/times_audit/` (`GBGB_RUNS_DIR` = the GBGB runs by year).
+Data: GBGB runs 1 Jul 2025 - 5 Nov 2026, 461,799 rows, 460,880 after dropping 919 duplicate (race, dog) rows.
+Literature: `reports/greyhound_times_literature.md` (every claim with its URL).
+
+**How a figure is judged.** Each definition makes a figure for every graded flat run (trials, handicaps and hurdles
+out). The predictor is the dog's mean figure over its last 3 earlier days within 180 days. One conditional-logit
+coefficient is fitted on races from 1 Oct 2025 to 28 Feb 2026, and scored on 25,431 races from 1 Mar 2026 by the
+winner's log-loss (uniform 1.67985). Standards, pars and offsets come from runs to 28 Feb 2026 only. z is the
+paired difference by day (2,000 bootstrap draws) against the convention the live time features use.
+
+**The data facts behind it:**
+- **Only the winner is timed.** A loser's time is the winner's plus 0.08 s for each length of the cumulative beaten
+  distance: 62.5% within 0.003 s, track medians 0.0800 to 0.0820 s a length. GBGB's `beaten_lengths` is the gap to
+  the dog in front, not to the winner.
+- **Sectionals are timed for each runner** (they differ dog by dog in a race). 56% of runs have one, and the share
+  varies by track from 35% (Harlow) upward.
+- **GBGB's going.** The calculated time is the run time plus going/100 on 97.7% of rows; the rest are handicaps,
+  where the start is added. Its sign is settled by fitting: scaling the allowance by 0.5 to 1.25, the night-to-night
+  spread of winners (grade taken out) is smallest at x1.0. Going values beyond ±150 are typing errors (-300 to 51,432).
+
+| Figure definition | Log-loss (eval) | Against the live convention | z |
+|---|---|---|---|
+| Raw time, no going, lengths | 1.64338 | - | - |
+| Calculated time in lengths (the live `tn_`/`fg_` convention) | 1.63947 | 0 | - |
+| Calculated time in percent | 1.63350 | -0.00597 | -7.6 |
+| + standards linked across tracks and trips by the dogs that move, + the meeting variant | 1.63196 | -0.00751 | -7.0 |
+| + beaten distance capped at 6 lengths | 1.62595 | -0.01352 | -9.1 |
+| + beaten distance capped at 8 lengths | 1.62661 | -0.01286 | -10.0 |
+| + cap 6 L + anchored on the field's strength (half time figure, half field) | 1.61832 | -0.02114 | -13.0 |
+| + the same at 0.06 s a length | 1.61700 | -0.02246 | -12.6 |
+
+Also scored, with no SE: going x0.5 1.63420, x1.25 1.63435; 0.10 s a length 1.63810; over or under the grade par
+as the predictor 1.66256; last run only 1.65347; mean of last 6 1.63303.
+
+**Answers:**
+- **Standards are not comparable across tracks or trips.** Of 35 track pairs with 30 or more dogs moving each way
+  within 28 days, about half are off by more than 2 standard errors (median 0.92 lengths, up to 6.18). Same track,
+  different trips, in lengths: median 3.81 lengths off. Even in percent, 0.47% (about 1.7 lengths at 480 m).
+  Linking the standards by the movers helps (above). 31 of 87 track-trips had fewer than 50 graded winners in 16
+  months, and 5% of winners' 28-day standards rest on fewer than 20 winners.
+- **The going allowance is robust.** It takes the night-to-night spread of winners' times, grade taken out, from
+  1.71 to 0.67 lengths. Its best scaling is 1.0, it moves with the trip (its spread across a meeting's trips falls
+  from 47% to 14% per metre), and it already changes within a meeting (in 14% of consecutive races at one trip).
+  What it leaves, 0.67 lengths a night, is the variant's job; within-meeting drift after it is ±0.08 lengths.
+- **Sectional pars** by track, trip and trap. Trap spread of the median sectional: median 0.05 s, up to 0.33 s; 70
+  of 226 cells have fewer than 100 runs. A night moves the sectional 0.037 s against 0.098 s run to run. GBGB's going
+  is not applied to it but correlates -0.24 with the night's sectional residual, so the sectional needs its own
+  variant. A dog's sectional over par correlates 0.31 with its next.
+- **Class.** The grade par is monotone from A1 to A8, about 0.35-0.40% a grade (about 1.3-1.5 lengths at 480 m),
+  flat from A8 to A12. D1-D6 run 1.45% to -2.64%, opens +1.6 to +2.3%. Prize money adds nothing beyond grade (the
+  correlation of the winner's pace with first prize, within track, trip and grade, is 0.03 on 34,580 winners).
+  Anchoring a run on its field's prior strength is the largest single gain in the table.
+- **Speed figures for each run**: the best definition above, in percent, read as lengths at the trip. Its
+  ingredients are the calculated time, linked standards, the meeting variant, the beaten distance capped at 6 to
+  8 lengths and half anchored on the field.
+
+**Limits.** This is a one-predictor test on 16 months; the live model already holds the expected-time table
+(`xt_`), which links standards and estimates its own variant. What carries over must be shown in the fast loop on
+the live recipe, registered first. Post-race "form held up" re-rating and change-point standards (the literature's
+top items) are not yet tested.
+
+## 61. Pace and race shape: expected leader, run style, pace pressure, simulation (14 Nov 2026)
+
+The owner: "Can we model and forecast race shape better? Expected leader, pace pressure, race shape, run styles,
+early position, late position. Which race setup benefits which dogs? Recency in terms of sectionals, run style, early
+position. Full simulations; Monte Carlo, Kalman, Black Scholes, Markov chains." Ledger `greyhound-pace-audit-1114`.
+Same data, splits and rules as section 60. Races with every runner's sectional: 41,605. Early position is the rank
+of the sectional, and the leader is the fastest sectional.
+
+**The expected leader** (conditional logit on who leads; eval 20,661 races, uniform 1.66822):
+
+| Model | Log-loss | Leader picked |
+|---|---|---|
+| Last sectional figure (par by track, trip, trap) | 1.57480 | 32.7% |
+| Mean of last 3 | 1.52331 | 36.6% |
+| Recency-weighted (half-life 2 runs) | 1.49682 | 38.8% |
+| + trap | 1.46728 | 40.2% |
+| + early-position history (weighted rank, lead rate) | 1.43936 | 40.8% |
+| + break and early-pace comments | 1.43428 | 41.0% |
+| + the neighbours' early pace | 1.43377 | 41.0% |
+
+Recency matters: a half-life of 2 runs beats the mean of 3 (-0.026). Early-position history and the trap add as
+much again. The neighbours add almost nothing.
+
+**Does the shape decide who wins?** Leading is worth a great deal once it happens: the early leader wins 48.4% (the
+early-rank to finish matrix below), from 40.8% at Dunstall Park to 57.1% at Star Pelaw (63.2% on 106 races at
+Suffolk Downs). Forecasting it adds a little: on the finish (eval 20,555 races), the whole-race figure alone scores
+1.62611 and with the expected-leader chance 1.62392.
+
+| Early rank | Won | 2nd | 3rd | 4th | 5th | 6th |
+|---|---|---|---|---|---|---|
+| 1 | 48.4% | 21.7% | 12.6% | 8.6% | 6.3% | 2.5% |
+| 2 | 22.8% | 27.1% | 19.4% | 14.5% | 11.8% | 4.5% |
+| 3 | 13.0% | 20.4% | 22.5% | 20.5% | 17.0% | 6.7% |
+| 6 | 4.2% | 9.1% | 15.0% | 20.0% | 24.5% | 27.2% |
+
+Once the expected leader is in, these add almost nothing: the run-in figure, positions gained, the pace-pressure
+interactions (1.62411), and the leader drawn on the rails or wide (1.62340; the leader's chance in trap 1 +0.27, in
+trap 6 -0.23). Neither the expected leader's win rate (22.7% lone, 22.1% in a duel) nor the back-runners' (16.6%
+against 16.9%) moves with how contested the lead is. **Pace pressure, as measured here, does not decide races in
+greyhounds**; the first bend does.
+
+**Run styles** (from earlier days, by weighted early rank): leaders win 21.2% and lead 39.8%; back-runners win 16.7%
+and gain 0.85 places. A dog's early index correlates 0.59 with its own six runs later: the style is stable.
+
+**Simulation.** A fitted Monte Carlo (the run to the bend, a check for arriving level with and behind a
+neighbour, the run home, five settings fitted on the winners' likelihood) scores 1.64917 on the finish against the
+logit's 1.62340, and 1.58609 on the leader against 1.43377. It loses: its run-home noise sat at the grid's top. A
+Markov chain is the early-rank matrix above; there is no bend-by-bend position in GBGB's data to chain further.
+Black-Scholes prices an option on a random walk. Its sound part here, a diffusion of each dog's position to the
+line, is what the simulator already is; it has no further use.
+
+**What follows:** the leader model (recency-weighted sectional, trap, early-position history, comments) is the
+candidate pace table. It is to be registered and tested against the live recipe in the fast loop, where `bd_p_lead`
+and `xt_` already carry part of it.
