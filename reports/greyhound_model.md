@@ -2839,3 +2839,26 @@ By period: Jun-Aug -0.0028 (z -8.7), Sep - 5 Nov -0.0020 (z -5.3), after 5 Nov -
 the field (`sf_vs`) is the model's 4th feature by importance. A release needs a retrain with the table in
 `stack_model.PIT_TABLES`, its out-of-sample prices published, and the owner's word. It can be combined with the
 sequence table (batch 39) in one registered release arm.
+
+## 63. The speed and sequence tables together on the live recipe (batch 41, 14 Nov 2026)
+
+Registered as `greyhound-speed-seq-batch41-1114` before the run; greyhound-fastloop.yml run 43637725706, 110,788
+runners, 1 Jun - 11 Nov 2026.
+
+| Arm | RMSE of log(BSP) | Diff vs w_league (90%) | z | Log-loss diff (z) |
+|---|---|---|---|---|
+| w_league (the live recipe, stack_ml) | 0.2859 | - | - | - |
+| w_speed (+ speed) | 0.2831 | -0.0028 | -11.1 | -0.00013 (-1.6) |
+| w_both (+ speed + sequence) | 0.2797 | -0.0062 (-0.0068 to -0.0057) | -19.0 | -0.00026 (-2.1) |
+
+w_both against w_speed: -0.0034 (z -11.2), Jun-Aug -0.0029, Sep - 5 Nov -0.0042, the log-loss no worse. Both registered
+readings pass: the release candidate is w_both. For scale, the whole step from the stack released on 13 Nov
+(stack_m, 0.2885 in batch 37) to w_both is about -0.009.
+
+A release needs:
+- the two tables added to `stack_model.PIT_TABLES`, under a new recipe name;
+- the sequence table's monthly network weights stored, so the card build reads them rather than refitting;
+- a retrain (about 2.5 hours) and its out-of-sample prices for the early lay's forecast;
+- the card build's memory checked;
+- the owner's word.
+
