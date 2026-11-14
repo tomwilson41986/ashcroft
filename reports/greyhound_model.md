@@ -2628,3 +2628,19 @@ The owner: "Early lay live is at +3.5% CLV in the last 3 days. Diagnose why we a
 
 Sources: `fill_recon_orders.csv` of run 43587964956; the figures are inferred from the ledger until the audit reads
 Betfair's settled bets.
+
+## 57. The early lay closed at the SP, on paper (14 Nov 2026)
+
+The owner: "Can we trade at sp", then "Put this to paper". Ledger `greyhound-early-lay-sp-close-1114`, registered
+before its first day.
+
+- Two paper books beside the live rule from 15 Nov (`greyhound/early_lay.py PAPER_VARIANTS`): `spclose`, the live
+  rule's lays each closed by a back at the SP for the lay's stake instead of the green-up; `spclose3`, the same with no
+  lay under 3. A dog that wins pays stake x (SP - lay price); one that loses, nothing.
+- Filled on the live-key books only once a later book offers our price (the fill the reconciliation trusts, section
+  53), settled by the SP and the result. The live lays' own fills get the same close as a column
+  (`fill_recon live_sp_close`), reported but not judged.
+- Read once on 13 Dec 2026 (28 days): a pass needs net P&L after commission above zero with its 90% interval over days
+  above zero, 300 matched lays, and the deflated Sharpe at least 0.95. The live close changes only on the owner's word.
+- Prior, seen before registration (so not independent): the live lays of 3-13 Nov closed at the SP, by the result
+  GBP-19.98 (-31.28 after commission), expected GBP-28.02; the loss in lays under 3.

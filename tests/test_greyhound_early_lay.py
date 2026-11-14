@@ -789,3 +789,43 @@ def test_the_running_page_shows_the_rule_on_paper(tmp_path):
     both = {f"{el.PREFIX}/{m}/2026-11-05/ledger.csv" for m in ("live", "paper")}
     assert el.modes_to_show(S(both), day) == ["live", "paper"]
     assert "nothing sent" in el.table(S(set()), day, "paper")
+
+
+def _lay_row(price=5.0, secs=600):
+    return pd.DataFrame([{"time_utc": "2026-11-15T12:00:00Z", "seconds_to_off": secs, "market_id": "1.1",
+                          "selection_id": 7, "price": price, "race_time": "12:10", "track": "Romford", "trap": 1,
+                          "f_bsp": 6.0, "mid": 5.5}])
+
+
+def _books(lay_after, traded_after):
+    t0 = pd.Timestamp("2026-11-15T12:00:00Z")
+    return pd.DataFrame({"market_id": ["1.1"] * 3, "selection_id": [7] * 3,
+                         "polled": [t0 - pd.Timedelta(seconds=5), t0 + pd.Timedelta(seconds=60),
+                                    t0 + pd.Timedelta(seconds=580)],
+                         "back1": [5.4, 5.0, 5.2], "lay1": [5.6, lay_after, 5.4],
+                         "last_traded": [5.5, traded_after, 5.3]})
+
+
+def test_the_sp_close_settles_by_the_sp_and_the_result():
+    cfg = {**el.CONFIG, **el.PAPER_VARIANTS["spclose"]}
+    bk = _books(lay_after=4.9, traded_after=5.0)
+    S = el.stake_for(5.0, cfg)
+    won = el.replay(_lay_row(), bk, cfg, {("1.1", 7.0): (6.2, 1)}).iloc[0]
+    assert won.matched and won.pnl == pytest.approx(round(S * (6.2 - 5.0), 2))
+    lost = el.replay(_lay_row(), bk, cfg, {("1.1", 7.0): (6.2, 0)}).iloc[0]
+    assert lost.pnl == 0.0
+    assert el.replay(_lay_row(), bk, cfg, {}).iloc[0].pnl is None          # SP or result not yet in
+
+
+def test_the_through_fill_needs_a_later_book_to_offer_our_price():
+    cfg = {**el.CONFIG, **el.PAPER_VARIANTS["spclose"]}
+    traded_only = _books(lay_after=5.1, traded_after=5.0)                   # traded at 5, never offered at 5
+    assert not el.replay(_lay_row(), traded_only, cfg, {("1.1", 7.0): (6.2, 0)}).iloc[0].matched
+    assert el.replay(_lay_row(), traded_only, el.CONFIG).iloc[0].matched     # the old paper fill took it
+
+
+def test_spclose3_lays_nothing_under_3():
+    assert el.PAPER_VARIANTS["spclose3"]["min_price"] == 3.0
+    x = pd.DataFrame({"lay_price": [2.8, 3.0, 4.0], "mid": [3.5, 3.5, 4.5]})
+    ok = x.lay_price.to_numpy(float) >= el.PAPER_VARIANTS["spclose3"]["min_price"] - 1e-9
+    assert list(ok) == [False, True, True]

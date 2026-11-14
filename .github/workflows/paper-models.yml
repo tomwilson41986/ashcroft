@@ -150,7 +150,7 @@ jobs:
           GEL=$!
           # its paper books beside it (the owner, 4 Nov 2026: "run this on paper. Keep running 10% too"): the rule at 10%
           # and the short-priced lay at 20% and 10%, on the same books, never --live: nothing is sent
-          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --paper-variants m10,short20,short10 --until 21:30 > "$RUNNER_TEMP/greyhound_early_lay_paper.log" 2>&1 &
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --paper-variants m10,short20,short10,spclose,spclose3 --until 21:30 > "$RUNNER_TEMP/greyhound_early_lay_paper.log" 2>&1 &
           GELP=$!
           # the greyhound quotes around the mid (greyhound/quote_mid.py): real orders only when GREYHOUND_QUOTE_MID is 'live'
           BETFAIR_APP_KEY="$GHKEY" python -m greyhound.quote_mid --trade --live --until 21:30 > "$RUNNER_TEMP/greyhound_quote_mid.log" 2>&1 &

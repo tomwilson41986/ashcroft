@@ -184,6 +184,9 @@ def live_orders(led: pd.DataFrame, final: dict | None = None, offs: dict | None 
                      "live_matched": round(S, 2), "live_avg": round(a, 4) if S > EPS else None,
                      "live_taken_at_once": bool(pd.notna(r.matched) and r.matched > EPS),
                      "live_green": round(green, 4) if green else None, "live_pnl": pnl, "live_close": how,
+                     # the same lay closed by a back at the SP for its stake (the paper variant spclose on live fills)
+                     "live_sp_close": (round(S * (sp - a), 2) if won == 1 else 0.0)
+                     if S > EPS and sp and won is not None else None,
                      "sp": sp, "won": won})
     out = pd.DataFrame(rows)
     if len(out):
