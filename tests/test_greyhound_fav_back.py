@@ -179,3 +179,25 @@ def test_settle_frame_with_no_back_placed():
     s = fb.settle_frame(led, close)
     assert s.empty
     assert fb.summary(s) == {"backs": 0}
+
+
+def test_table_with_no_back_placed(monkeypatch):
+    """The running table's section on a day the S3 STOP held every race: no error (15 Nov 2026: 'race_time')."""
+    import json
+
+    from greyhound import fav_back as fb
+
+    class S:
+        def __init__(self):
+            cols = "market_id,selection_id,track,race_time,trap,dog,limit,mid,f_bsp,stake,action,fill_price"
+            self.d = {f"{fb.PREFIX}/{fb.MODE}/2026-11-15/ledger.csv": (cols + "\n1.2,5,Hove,10:00,1,A,,,,,no_back,\n").encode(),
+                      f"{fb.PREFIX}/{fb.MODE}/2026-11-15/status.json": json.dumps({"time_utc": "x"}).encode()}
+
+        def get(self, k):
+            return self.d.get(k)
+
+    import datetime as dt
+    monkeypatch.setattr(fb, "closing", lambda day, s3=None: __import__("pandas").DataFrame(
+        columns=["market_id", "selection_id", "bsp", "won"]))
+    out = fb.table(S(), dt.date(2026, 11, 15))
+    assert "No backs placed (1 races skipped)" in out
