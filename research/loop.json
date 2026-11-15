@@ -1,5 +1,5 @@
 {
-  "tag": "iter124a-refit-28d",
+  "tag": "iter124b-refit-91d",
   "recipe": "quick",
   "replicate_base": false,
   "outcome": false,
@@ -30,7 +30,5 @@
     }
   ],
   "ensembles": [],
-  "step_days": 28,
-  "val_window": 28,
-  "note": "Iteration 124a (the owner, 15 Nov: 'Work on all these'; ledger retrain-cadence-1115): base and stack_b as in iteration 121, quick recipe, refit every 28 days (step and validation window 28 days instead of 91) over 30 Sep 2023 - 31 Mar 2026. Read against iteration 124b (the same arms at 91 days, the same code and data), paired by runner. Development window only; the locked holdout is not read."
+  "note": "Iteration 124b (ledger retrain-cadence-1115): iteration 124a's arms (base and stack_b, quick recipe) at the usual 91-day refits, on the same code and data, the control for 124a. Development window only; the locked holdout is not read."
 }
