@@ -154,10 +154,10 @@ def test_the_early_lay_reads_the_stacks_prices(tmp_path):
         {"market_id": ["1.1"], "model_objective": ["stack_share"], "oos_prices": [live.STACK_OOS_PRICES]})
         .to_csv(index=False).encode())
     assert lt.live_prices(store, DAY) == lt.LOGBSP_PRICES           # not published yet: the nearest prices
-    store.put("greyhound/live/oos_prices_stack_all3/2025-02-01.parquet", b"x")
-    assert lt.live_prices(store, DAY) == lt.LOGBSP_PRICES           # two models back is not the nearest
     store.put("greyhound/live/oos_prices_stack_m/2025-02-01.parquet", b"x")
-    assert lt.live_prices(store, DAY) == "greyhound/live/oos_prices_stack_m"      # the stack before it, once there
+    assert lt.live_prices(store, DAY) == lt.LOGBSP_PRICES           # two models back is not the nearest
+    store.put("greyhound/live/oos_prices_stack_ml/2025-02-01.parquet", b"x")
+    assert lt.live_prices(store, DAY) == "greyhound/live/oos_prices_stack_ml"     # the stack before it, once there
     store.put(f"{live.STACK_OOS_PRICES}/2026-10-06.parquet", b"x")
     assert lt.live_prices(store, DAY) == live.STACK_OOS_PRICES
 
@@ -173,8 +173,8 @@ def test_the_released_stack_reads_the_league_table_and_names_its_own_prices():
     build order, under the recipe "stack_ml", which names its own out-of-sample prices; the early lay reads batch 32's
     stack's until they are published."""
     from greyhound import laytest as lt, pit
-    assert sm.PIT_TABLES[-1] == "league" and "pit_league" in sm.MATRIX_BLOCKS
-    assert pit.TABLES.index("league") > max(pit.TABLES.index(t) for t in sm.PIT_TABLES[:-1])   # built last
-    assert sm.RECIPE["name"] == "stack_ml" and live.STACK_OOS_BY_RECIPE["stack_ml"] == live.STACK_OOS_PRICES
-    assert live.STACK_OOS_PRICES == "greyhound/live/oos_prices_stack_ml"
-    assert lt.NEAREST_PRICES[live.STACK_OOS_PRICES] == live.STACK_OOS_BY_RECIPE["stack_m"]
+    assert {"league", "speed", "seq"} <= set(sm.PIT_TABLES) and "pit_seq" in sm.MATRIX_BLOCKS
+    # 15 Nov 2026: the speed and sequence tables, under "stack_mls"; the early lay reads the league stack's prices
+    assert sm.RECIPE["name"] == "stack_mls" and live.STACK_OOS_BY_RECIPE["stack_mls"] == live.STACK_OOS_PRICES
+    assert live.STACK_OOS_PRICES == "greyhound/live/oos_prices_stack_mls"
+    assert lt.NEAREST_PRICES[live.STACK_OOS_PRICES] == live.STACK_OOS_BY_RECIPE["stack_ml"]

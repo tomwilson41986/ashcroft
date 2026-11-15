@@ -120,9 +120,9 @@ def test_the_forecast_follows_the_market():
 def test_no_trainer_kennel_or_owner_and_the_table_is_registered():
     src = inspect.getsource(seq.build) + inspect.getsource(seq._token_facts)
     assert not any(w in src for w in ("trainer", "owner", "kennel"))
-    assert "seq" in pit.TABLES and "seq" in pit.ON_DEMAND
+    assert "seq" in pit.TABLES and "seq" not in pit.ON_DEMAND        # served from 15 Nov 2026
     from greyhound import stack_model as sm
-    assert "seq" not in sm.PIT_TABLES
+    assert "seq" in sm.PIT_TABLES                                   # served from 15 Nov 2026
     assert {r["column"] for r in pit.registry() if r["table"] == "seq"} == set(COLS)
 
 
@@ -130,3 +130,44 @@ def test_a_cleaned_frame_twice_gives_the_same_table(runs):
     a, _ = seq.build(runs)
     b, _ = seq.build(clean(runs))
     pd.testing.assert_frame_equal(a, b, check_exact=True)
+
+
+class DictStore:
+    def __init__(self):
+        self.d, self.puts = {}, 0
+
+    def get(self, key):
+        return self.d.get(key)
+
+    def put(self, key, data):
+        self.puts += 1
+        self.d[key] = data
+
+
+def test_cached_networks_give_the_same_table_without_refitting(runs):
+    """The monthly networks cached in the store (ctx model_store): a second build loads them, fits nothing, and gives
+    the same table as the first."""
+    ms = DictStore()
+    a, na = seq.build(runs, None, {"model_store": ms})
+    assert ms.puts > 0 and any(k.endswith(".pt") for k in ms.d)
+    puts = ms.puts
+    b, nb = seq.build(runs, None, {"model_store": ms})
+    assert ms.puts == puts                                     # nothing refitted
+    assert all(f.get("cached") for m in nb["folds"].values() for f in m.values() if not f.get("skipped"))
+    x, y = by_key(a, runs), by_key(b, runs)
+    assert np.allclose(x[COLS].to_numpy(float), y[COLS].to_numpy(float), equal_nan=True)
+
+
+def test_the_live_card_build_scores_only_the_card_month_from_the_cache(runs):
+    """The live card build (ctx card_weeks set, the networks cached by the nightly build): only the card's month is
+    scored, from its cached network, and a card row gets what the full build gives its run."""
+    ms = DictStore()
+    full, _ = seq.build(runs, None, {"model_store": ms})
+    card_runs = cardify_last_day(runs)
+    tab, notes = seq.build(card_runs, None, {"model_store": ms, "card_weeks": 26})
+    assert notes["card_only"] is True
+    last = runs.race_date.max()
+    x = by_key(full, runs, lambda d: d.race_date == last)
+    y = by_key(tab, card_runs, lambda d: d.race_date == last)
+    assert len(x) == len(y) and len(y) > 0
+    assert np.allclose(x[COLS].to_numpy(float), y[COLS].to_numpy(float), equal_nan=True, atol=1e-5)
