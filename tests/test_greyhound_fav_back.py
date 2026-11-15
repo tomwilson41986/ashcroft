@@ -163,3 +163,19 @@ def test_the_module_cannot_send_an_order():
     names = {n.attr for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Attribute)}
     assert not names & {"_place", "place", "back_at_sp", "lay_at_bsp", "back", "lay", "cancelOrders", "_call"}
     assert "placeOrders" not in src and "--live" not in src
+
+
+def test_settle_frame_with_no_back_placed():
+    """A day the S3 STOP held every race: the ledger has only no_back rows, and settling it is empty, not an error
+    (pandas 3 typed the empty fill flags as strings: 15 Nov 2026's running table)."""
+    import io
+
+    import pandas as pd
+
+    from greyhound import fav_back as fb
+    cols = "market_id,selection_id,track,race_time,trap,dog,limit,mid,f_bsp,stake,action,fill_price"
+    led = pd.read_csv(io.StringIO(cols + "\n1.2,5,Hove,10:00,1,A,,,,,no_back,\n"), dtype={"market_id": str})
+    close = pd.DataFrame(columns=["market_id", "selection_id", "bsp", "won"])
+    s = fb.settle_frame(led, close)
+    assert s.empty
+    assert fb.summary(s) == {"backs": 0}
