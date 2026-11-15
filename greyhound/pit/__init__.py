@@ -76,7 +76,7 @@ TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "lif
           "seq")
 #: tables ``--build all`` leaves out: the seq table refits a network monthly from 2024 (one to two hours on a runner,
 #: and torch); it is built by name (greyhound-pit.yml, tables=seq)
-ON_DEMAND = ("seq",)
+ON_DEMAND: tuple = ()        # 15 Nov 2026: the seq table is served; its monthly networks are cached (seq.py)
 KEY = ["race_id", "dog_id"]
 #: where the tables are stored. "pit2": the tables of the engine as fixed on 11 Nov 2026 (the audit's foundation
 #: faults: greyhound/data.py, greyhound/metrics.py). The tables built from the engine before it stay at

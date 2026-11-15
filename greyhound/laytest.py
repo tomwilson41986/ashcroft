@@ -153,7 +153,9 @@ LOGBSP_PRICES = "greyhound/live/oos_prices_logbsp"
 #: the 10 Nov stack's until batch 34 has published its own; 14 Nov 2026: the stack with the league table, "stack_ml",
 #: reads batch 32's stack's, the last model published, until its own are)
 NEAREST_PRICES = {"greyhound/live/oos_prices_stack_m": "greyhound/live/oos_prices_stack_all3",
-                  "greyhound/live/oos_prices_stack_ml": "greyhound/live/oos_prices_stack_m"}
+                  "greyhound/live/oos_prices_stack_ml": "greyhound/live/oos_prices_stack_m",
+                  # 15 Nov 2026: the stack with the speed and sequence tables reads the league stack's until its own
+                  "greyhound/live/oos_prices_stack_mls": "greyhound/live/oos_prices_stack_ml"}
 
 
 def day_fit(store, day: date, mark: str = MARK, prices: str | None = None) -> dict | None:
@@ -212,17 +214,19 @@ def live_fit(store, day: date, mark: str = MARK) -> dict | None:
     return day_fit(store, day, mark=mark, prices=live_prices(store, day))
 
 
-def today_rows(store, day: date) -> tuple[pd.DataFrame, str]:
+def today_rows(store, day: date, source: str | None = None, live_model: bool = False) -> tuple[pd.DataFrame, str]:
     """Today's runners at the first traded book with their later books, settled races only (a BSP is needed): from the
     recorder's greyhound books (re-timed, as the forward test reads them) when they are in, else from the live-key
-    record (greyhound/book_record.py), whose settled reads carry the BSP and the result."""
+    record (greyhound/book_record.py), whose settled reads carry the BSP and the result. ``source`` 'recorder' or
+    'live' reads that one only; ``live_model`` prices with the paper trader's live model even once the tracker has
+    priced the day (the prices the live early lay traded on)."""
     from betfair_recorder import _read_day_csv
     from research.greyhound import limit_study as ls
     import io
     rec = _read_day_csv(day, "books_greyhound.csv")
     live = _read_day_csv(day, to.ENTRY_BOOKS["live"])
     finals = [b[b.source == "final"] for b in (rec, live) if b is not None and "source" in b]
-    pred = store.get_parquet(f"{to.TRACK_PRED}/{day:%Y-%m-%d}.parquet")
+    pred = None if live_model else store.get_parquet(f"{to.TRACK_PRED}/{day:%Y-%m-%d}.parquet")
     priced_by = "the 5 Oct forward test's model"
     if pred is None or not len(pred):
         # During the day the tracker has not priced today yet: the paper trader's own prices (greyhound/live.py, the
@@ -245,7 +249,10 @@ def today_rows(store, day: date) -> tuple[pd.DataFrame, str]:
     markets = _read_day_csv(day, "markets_greyhound.csv")
     if markets is None:
         markets = _read_day_csv(day, "markets_greyhound_live.csv")
+    wanted = {"recorder": ("recorder, re-timed",), "live": ("live-key record",)}.get(source or "", None)
     for source, entry in (("recorder, re-timed", rec), ("live-key record", live)):
+        if wanted and source not in wanted:
+            continue
         if entry is None or markets is None or not len(entry):
             continue
         closing = pd.concat([entry[entry.source != "final"]] + finals, ignore_index=True) if finals else entry
@@ -258,25 +265,32 @@ def today_rows(store, day: date) -> tuple[pd.DataFrame, str]:
     return pd.DataFrame(), "no settled race with books at the first traded mark yet"
 
 
-def intraday(store, day: date) -> dict:
+def intraday(store, day: date, rule: dict | None = None, source: str | None = None, live_model: bool = False,
+             min_price: float | None = None) -> dict:
     """The primary rule on today's settled races, a row per race: the lays it would have left in the first book, those
     matched, their average price and the BSP, the CLV, how many of the dogs laid won, and the P&L greened up after
-    the account's commission (greyhound/costs.py) on the race's net, with the running total. Paper only: no order is placed."""
+    the account's commission (greyhound/costs.py) on the race's net, with the running total. Paper only: no order is placed.
+    ``rule`` another of the ledger's rules (default the primary); ``min_price`` no lay under it; ``source`` and
+    ``live_model`` as ``today_rows``."""
     import numpy as np
     from research.greyhound import limit_study as ls, tradeout_study as ts
-    out = {"day": f"{day:%Y-%m-%d}", "rule": PRIMARY, "markets": []}
+    rule = rule or PRIMARY
+    out = {"day": f"{day:%Y-%m-%d}", "rule": rule, "markets": []}
     f = day_fit(store, day)
     if f is None:
         out["note"] = "no forecast fit (too few recorded days)"
         return out
-    rows, source = today_rows(store, day)
+    kw = {k: v for k, v in (("source", source), ("live_model", live_model)) if v}
+    rows, source = today_rows(store, day, **kw)
     out["source"] = source
     if not len(rows):
         out["note"] = source
         return out
     q, book = ts.predict(rows, f)
     rows = rows.assign(f_bsp=1.0 / (book * np.asarray(q, float)))
-    o = _select(ls.orders(rows), PRIMARY)
+    o = _select(ls.orders(rows), rule)
+    if min_price:
+        o = o[o.limit >= min_price]
     if not len(o):
         out["note"] = "no lays placed on the settled races"
         return out

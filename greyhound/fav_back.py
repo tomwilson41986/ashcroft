@@ -368,14 +368,17 @@ def settle_frame(led: pd.DataFrame, close: pd.DataFrame, comm: float = costs.COM
     if "fill_price" not in led:
         led["fill_price"] = np.nan
     backs = led[led.action == "back"].drop_duplicates("market_id", keep="last")
+    if not len(backs):                     # no back placed (every race skipped, e.g. under the S3 STOP)
+        return pd.DataFrame()
     acts = led[led.action.isin(FILL_ACTIONS)].groupby("market_id").action.agg(set)
     out = backs[["market_id", "selection_id", "track", "race_time", "trap", "dog", "limit", "mid", "f_bsp",
                  "stake"]].copy()
     out["limit"], out["stake"] = pd.to_numeric(out["limit"]), pd.to_numeric(out.stake)
     fills = out.market_id.map(acts).apply(lambda s: s if isinstance(s, set) else set())
-    out["taken"] = fills.apply(lambda s: "fill_taken" in s)
-    out["strict"] = out.taken | fills.apply(lambda s: "fill_strict" in s)
-    out["through"] = out.strict | fills.apply(lambda s: "fill_through" in s)
+    has = lambda a: np.array([a in s for s in fills], dtype=bool)  # noqa: E731  (bool, whatever pandas infers)
+    out["taken"] = has("fill_taken")
+    out["strict"] = out.taken.to_numpy() | has("fill_strict")
+    out["through"] = out.strict.to_numpy() | has("fill_through")
     taken_price = led[led.action == "fill_taken"].drop_duplicates("market_id").set_index("market_id").fill_price
     out["price"] = pd.to_numeric(out.market_id.map(taken_price), errors="coerce").fillna(out["limit"])
     out = out.merge(close, on=["market_id", "selection_id"], how="left")
@@ -436,6 +439,9 @@ def table(store, day: date) -> str:
     except Exception as exc:                                   # the books not in yet: the ledger alone
         log.warning("not settled (%s)", exc)
         s = settle_frame(led, pd.DataFrame(columns=["market_id", "selection_id", "bsp", "won"]))
+    if s is None or not len(s):                                # every race skipped (e.g. under the S3 STOP)
+        skipped = int((led.action == "no_back").sum()) if "action" in led else 0
+        return head + line + f" No backs placed ({skipped} races skipped).\n"
     sm = summary(s)
     lines = [head + line, "",
              f"Backs {sm.get('backs', 0)}; filled (strict) {sm.get('filled_strict', 0)}, through "
