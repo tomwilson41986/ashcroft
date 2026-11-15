@@ -440,3 +440,11 @@ def test_the_comparison_reads_each_code_apart():
     var = base.assign(predicted_bfsp=[4.0, 2.0, 3.0, 1.5])            # worse on one jumps runner only
     t = cmp_runs.by_code(cmp_runs.paired(base, var), base).set_index("code")
     assert t.loc["jumps", "delta"] > 0 and t.loc["flat/aw", "delta"] == 0 and t.loc["jumps", "races"] == 1
+
+
+def test_the_folds_step_91_days_unless_the_config_says():
+    args = rl.common_args(CFG)
+    assert args[args.index("--step-days") + 1] == "91" and args[args.index("--val-window") + 1] == "91"
+    args = rl.common_args({**CFG, "step_days": 28})
+    assert args[args.index("--step-days") + 1] == "28" and args[args.index("--val-window") + 1] == "28"
+    assert rl.common_args({**CFG, "step_days": 28})[-1] == rl.common_args(CFG)[-1]
