@@ -1849,6 +1849,22 @@ that lands at or after the 05:15 UTC session start. The session, its window and 
 - **The record:** 35 days, +GBP6,333.23, 29 up. From 14 Nov the served model is the market-rating blend and
   predictions run at 03:00 UTC.
 
+**The forty-fifth full day** (14 Nov, a Saturday; ledger `live-day-1114`), the first on the 03:00 UTC predictions and
+the market-rating blend.
+- **The start.** Predictions run 43550179684 wrote the file at 03:34 UTC; the night-before run (00:34 UTC) and the
+  morning agreed within races (rank correlation 0.994; ledger `night-before-1114`). The session (43560740264) began
+  at 05:16 UTC and got the UK runner's shutdown signal at 06:21; it was restarted at 06:30 (43566641055) and ran to
+  21:30. First back 05:16 UK, the last order 09:58:35 UK; the settle at 22:30 UTC in settle mode (run 43648358465;
+  its email failed again).
+- **+GBP16.48 after commission** as Betfair settled the trader's own orders, on 565 fills on 131 horses, GBP3,822.06
+  matched, all 35 markets settled, CLV +2.45%: first backs +4.2%, top-ups +1.9%; the top-ups before 08:00 UK -1.3%
+  on GBP1,986.31, after it +12.9% on GBP583.78 (ledger `changes-1114`).
+- **The account.** Funds GBP4,867.87 -> GBP4,753.46 (-GBP114.41): -GBP130.89 beside the trader. The greyhound early
+  lay placed real orders on the same account and puts its own day at -GBP196.49 locked, more than the gap; the two
+  records together sit GBP65.60 below the account's move, not reconciled (ledger `account-day-1114`).
+- **The record:** 36 days, +GBP6,349.71, 30 up. From 15 Nov the stack blend prices the card (ledger
+  `serve-stack-1114`).
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
