@@ -2862,3 +2862,41 @@ A release needs:
 - the card build's memory checked;
 - the owner's word.
 
+## 64. Backtest overfitting and online learning (15 Nov 2026)
+
+The owner: "Anything that will help our greyhound model here?" (a quant reading list), then "Yes work on all these that
+are viable". Two tests were registered before they ran; both are offline on the saved fast-loop predictions.
+
+**The probability of backtest overfitting** (Bailey et al. 2017; `research/greyhound/pbo.py`, ledger
+`greyhound-pbo-cscv-1115`). 71 arms from batches 23-41, scored day by day on 1 Jun - 5 Nov 2026 (157 days in 16
+blocks, 12,870 splits):
+
+| Family | Arms | PBO on log price | PBO on win log-loss |
+|---|---|---|---|
+| Every arm | 71 | 0.0000 | 0.0003 |
+| Release stacks (batches 24-41) | 20 | 0.0000 | 0.023 |
+| Batch 26 screen | 6 | 0.0000 | 0.0005 |
+| Batch 28 screen | 12 | 0.0000 | 0.0117 |
+| Batch 30 screen | 8 | 0.0058 | 0.41 |
+
+Picking by the price error on this window is stable. Picking by log-loss alone is not, where the gaps are tiny. This is
+a check within one window, not a forecast of drift.
+
+**A daily update of the final layer** (`research/greyhound/online_recal.py`, ledger `greyhound-online-recal-1115`).
+The price layer is a slope, an intercept and a shrunk per-track shift; the win layer is a softmax temperature. Each
+is refitted every day on the days before it and compared with the same layer fitted on June and frozen. Test 1 Jul -
+11 Nov 2026.
+
+| Arm | Window (days) | RMSE diff | z | Log-loss diff |
+|---|---|---|---|---|
+| live recipe (w_league) | 28 (the reading) | -0.0007 | -2.8 | +0.00001 |
+| candidate (w_both) | 28 (the reading) | -0.0005 | -2.3 | +0.00004 |
+| w_league / w_both | 14 | -0.0010 / -0.0008 | -3.5 / -3.0 | +0.00004 / +0.00005 |
+
+**A fail on the registered bar**: the gain is real but small, under 0.0010, and absent in Jul-Aug. The frozen
+calibration already captures most of it: it beats the raw predictions by 0.0012-0.0017. Not released.
+
+**Meta-labelling** (a second model deciding which early-lay signals to act on) is not yet viable. There are about 650
+matched live lays, and the paper lays rest on replayed fills the reconciliation does not trust. It waits for the paper
+books' trusted fills.
+
