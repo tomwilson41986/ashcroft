@@ -25,7 +25,7 @@ left to run to the result, a pass on either counted as a test of its own. **Comm
 | 7 | Australian greyhounds: morning-drift limit-on-close and the SP's segment bias | price files AUS, dev 2016-21, holdout 2022-26 | 72 + 12,983 | 2 of 36 drift rules at 2% (lays at the SP only when the dog has shortened to 0.8-0.9 of its morning WAP: best +12.7% a unit staked, 90% 5.58 to 19.7, 7,523 lays, mean SP 37.8; +0.34% of liability); segment portfolios fail (win backs -2.23%, lays -1.15%) | candidates, not counted: 2 of 36 is the chance rate, the two overlap, dev returns not significant, and whether the account can bet AU markets is unsettled; a forward test if pursued | research-query 41893115101 |
 | 8 | Trade to the SP on the closing forecast at 1 minute out (Betfair's historic data, last traded prices only) | BASIC Jan-Sep 2026, GB and AU; forecast and rules chosen Jan-Apr, read May-Sep | 16 uncapped; 96 capped (entry <= 5/10/20, fills 1 and 2 ticks through the last trade) | uncapped: passes from entries averaging 89-390, not credible (stale last prices of long shots); capped: lays where the forecast close is 5-10% above the price pass in GB and AU at both fills (e.g. GB lay, margin 0.10, entry <= 10, 1 tick: +10.72%, 90% 8.90 to 12.58, 541 trades) | not counted until checked against real books: the forecast may be reading stale last prices no one would fill | research-query 41895217384, 41896084511 |
 | 8b | The trade-to-SP lays against the recorded books' real prices (the forecast fitted on Jan-Apr; GB books 60 s before the off, entered at the best price with GBP2 on offer, closed at the SP) | recorded books 7 Oct - 3 Nov, 3,477 races (mostly the recorder's) | 18 + 18 | 0 | **the edge was the fill assumption**: at the book's price every lay loses (margin 0.10: entry <= 5 -1.02%, 90% -2.73 to 0.64; <= 10 -3.28%; <= 20 -4.28%) while on the same rows a tick through the last trade 'makes' +9.5 to +16.5%; backs lose 13-24%. The forecast reads stale last prices no one offers | research-query 41897170252 |
-| 9 | The stream lab: 43 taker rules at the price on offer 60/30/10 s out, closed at the SP (projected-SP gap, momentum, reversal, a control) | the recorded Exchange Stream from 5 Nov, scored nightly, pooled | 43 | pending: 10 days | registered 5 Nov (reports/greyhound_stream_lab.md); no result before then counts | greyhound-stream-lab.yml |
+| 9 | The stream lab: 43 taker rules at the price on offer 60/30/10 s out, closed at the SP (projected-SP gap, momentum, reversal, a control) | the recorded Exchange Stream from 5 Nov, scored nightly, pooled | 43 | 0 | no edge: read at 10 days (5-14 Nov), no candidate; best at the SP gap_lay_60_0.1 +1.52% (-1.17 to 4.03), deflated Sharpe 9e-05. Registered 5 Nov (reports/greyhound_stream_lab.md) | greyhound-stream-lab.yml; run 43649155320 |
 | 10 | The metrics database (greyhound/pit): every family added to the live recipe | fast loop, test 2026-06-01 to 2026-11-05 (read by earlier batches), both targets | 9 + 9 | 0 on both | all families together: RMSE log(BSP) 0.4130 -> 0.4101 (-0.0029, 90% -0.0038 to -0.0020); result log-loss +0.00024 (-0.00022 to +0.0007): the closing price improves, the result does not; forward test registered (pit_forward.json, from 7 Dec 2026) | fast-loop 42255735836, 42253527161; reports/greyhound_metrics_database.md |
 | 11 | The stream lab's late family: its projected-SP, momentum and reversal rules decided 0, 10 and 20 s after the scheduled off | the recorded Exchange Stream, counted from 11 Nov | 42 | pending: 10 days | registered 10 Nov (reports/greyhound_model_review.md section 5) | greyhound-stream-lab.yml |
 | 12 | The band test: back or lay at the price on offer when it is outside the forecast's 80% or 90% band of the SP (gbm_small_plus), 60 and 10 s before the scheduled off and 0, 10, 20 s after | the recorded Exchange Stream, counted from 11 Nov | 20 | pending: 10 days | registered 10 Nov. Practice 7-9 Nov, not counted: lays 60 s out +7.1% (26 trades) and +3.9% (50); the rest inside their noise | greyhound-close-lab.yml; practice run 42786681970 |
@@ -320,3 +320,61 @@ Six days so far:
 |---|---|---|---|
 | At the SP | +1.46% | +1.62% | +0.93% |
 | To the result | +0.81% | +4.92% | +1.78% |
+
+### 14 Nov 2026 (close lab 43651994554, stream lab 43649155320, greyhound-live running 43645103389, green audit 43593264909; read 15 Nov 00:13 UTC)
+
+- **The close lab scored 13 Nov, not 14 Nov.** The scheduled run 43651994554 (23:11 UTC 14 Nov, success) lists days
+  recorded 5-13 Nov: it reads the 13 Nov day the 13 Nov run missed (529,443 stream lines, 24,084 runner-checkpoints
+  with an SP; 3,994 resting orders, 3,119 matched). 14 Nov is not scored yet. The figures below are 13 Nov's.
+- **The day (13 Nov).** 132 races, 21,960 runner-checkpoints (3,840 race-checkpoints).
+- **Champions.** BFSP: gbm_all_small holds against the mid (gain 0.03276, z 14.22, 875 races over 7 days); the
+  strongest fresh challenger gbm_small_plus_huber: gain 0.00038 (90% 0.00010 to 0.00064), z 2.31, 395 races over 3
+  days (a gain this size needs 692). Win: the mid; gbm_all_small's gain 0.00494 (90% 0.00181 to 0.00778), z 2.67 over
+  863 races (needs 1,130).
+- **The day's BFSP RMSE** (all / last 60 s / late): the mid 0.1913 / 0.1247 / 0.0899; gbm_all_small 0.1612 /
+  0.1168 / 0.0882; gbm_book_flow 0.1679 / 0.1165 / 0.0868; clogit_win 0.1845 / 0.1470 / 0.1312; clogit_win_plus
+  0.2040 / 0.1921 / 0.2979.
+- **The review's readings.** The market closed a median 18 s after its scheduled off (10% 8 s, 90% 41 s); still
+  open 30 s after on 23%, 60 s after on 5%. The SP pool: backs on 74% (median GBP47), lays on 98% (median GBP10
+  liability). The SP book over 1,065 races: median 1.0039. Benter's second stage: the SP itself gains 0.00854 at 60 s
+  (p 0.0000, 1,046 races); gbm_all_small 0.00017 (p 0.59) at 60 s over 863 races; gbm_small_plus_huber 0.00003
+  (p 0.88) over 386.
+- **The trade test** (fifth counted day of ten): no candidate; back_10_0.03 +4.05% at the SP (31 trades, 90% 0.31 to
+  7.95), lay_60_0.03 +2.30% (74 trades), lay_30_0.03 +2.12% (69), lay_10_0.03 +1.11% (98).
+- **The band test** (third counted day): 13 trades in all; quantile coverage q10 0.115, q20 0.209, q80 0.784,
+  q90 0.882 (73,725 runner-checkpoints). **The resting test** (third counted day): no candidate; rest_back_60_all
+  -0.067% at the SP (1,738 trades), rest_lay_60_all +0.117% (1,745), rest_back_60_m0 +0.681% (667), rest_back_60_m3
+  +2.38% (72, -1.64 to 5.31), rest_lay_60_m3 +1.91% (42); at the scheduled off rest_back_late0_all -0.401% and
+  rest_lay_late0_all -0.271%.
+- **The stream lab, 14 Nov** (scheduled 22:38 UTC, success; 523,716 stream lines, 286 markets, 10,266 trades; 10
+  days pooled, 85 rules, 170 tests). **The first family's tenth day (5-14 Nov): no candidate**, so row 9 is read: no
+  edge. Best at the SP gap_lay_60_0.1 +1.52% (128 trades, -1.17 to 4.03, deflated Sharpe 9e-05); rev_lay_10_0.1 to
+  the result +23.48% (10.61 to 32.19, q 0.08) and gap_lay_30_0.1 to the result +34.32% (11.37 to 64.83), deflated
+  Sharpe 0.0 and 0.083 against the 0.95 needed. The late family (fourth counted day, pooled): every cell negative at
+  the SP, from -0.92% (gap_lay_late10_0.06, 184 trades) to -4.21% (gap_back_late0_0.1).
+- **The early-lay forward test, 14 Nov.** Its own figure: 137 races, 601 lays placed, 240 matched, +1.29% of
+  liability. Queue-aware replay: 277 matched, +1.33% at the SP, -1.62% to the result (traded volume x1.0; x0.5:
+  +1.32%, -1.60%). The same lays resting to the real off (not the gate's figure): 290 matched, +1.25% at the SP,
+  -2.08% to the result.
+- **The live early lay, 14 Nov (partial: the owner's greyhound/STOP at 19:29 UTC).** Live orders on the owner's
+  account (the running table's early-lay section; the paper win trader in the same run is mode paper). The trader
+  watched 140 races, priced 137; last race laid 19:38 UTC, then STOPPED (S3 STOP), 43 races skipped. Races laid 94;
+  lays 425; GBP10,702.67 asked; GBP3,277.78 matched (30.6%); locked by green-ups GBP-196.49 (GBP-197.32 after
+  commission; -6.0% of matched); GBP60.20 liability left to the SP or the result. 13 Nov: 71 races, GBP2,044.66 of
+  GBP7,859.58 matched (26.0%), locked GBP-54.32 (-2.7%). More matched and a worse locked return.
+  - **By lay price** (the dog-by-dog table: 151 dogs matched, GBP2,703.87; the race table's matched column, GBP3,277.78,
+    is the larger figure and the log does not reconcile the two): under 5, 43 dogs, GBP1,411.43 matched, all greened,
+    locked GBP-71.78 (-5.1%); 5 and over, 108 dogs, GBP1,292.44 matched, 100 greened locked GBP-124.71 (-9.6%), 8 held
+    to the result (GBP4.74 matched). The table has the matched lays only, so no match rate by price.
+  - **Betfair's settled bets** (green-audit 43593264909, 21:30 UTC, the same 151 dogs and GBP2,703.87): GBP-130.05
+    (-4.8% of laid; a flat green-up GBP-136.12) against the ledger's GBP-196.49; 13 Nov GBP-26.65 on 106 dogs
+    (GBP1,974.70, -1.35%) against GBP-54.32. The ledger overstates the loss (section 56), but 14 Nov is the worst live
+    day on either reading.
+
+| | 11 Nov | 12 Nov | 13 Nov | 14 Nov |
+|---|---|---|---|---|
+| At the SP | +1.46% | +1.62% | +0.93% | +1.33% |
+| To the result | +0.81% | +4.92% | +1.78% | -1.62% |
+
+Counted days: the stream lab's first family 10 of 10 (read: no candidate); its late family 4 of 10; the trade test 5
+of 10; the band test 3 of 10; the resting test 3 of 10 (the close lab's three through 13 Nov, the stream lab's through 14 Nov).
