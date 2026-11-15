@@ -439,6 +439,9 @@ def table(store, day: date) -> str:
     except Exception as exc:                                   # the books not in yet: the ledger alone
         log.warning("not settled (%s)", exc)
         s = settle_frame(led, pd.DataFrame(columns=["market_id", "selection_id", "bsp", "won"]))
+    if s is None or not len(s):                                # every race skipped (e.g. under the S3 STOP)
+        skipped = int((led.action == "no_back").sum()) if "action" in led else 0
+        return head + line + f" No backs placed ({skipped} races skipped).\n"
     sm = summary(s)
     lines = [head + line, "",
              f"Backs {sm.get('backs', 0)}; filled (strict) {sm.get('filled_strict', 0)}, through "
