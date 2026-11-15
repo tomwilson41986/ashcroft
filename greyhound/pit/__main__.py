@@ -42,6 +42,8 @@ def main(argv=None) -> int:
     if {"market", "figs", "form"} & set(names):              # figs, form: the market rating on the Betfair SP too
         from greyhound.model import load_prices
         ctx["prices"] = load_prices(store, f"{a.first_year}-{last.year}")
+    if "seq" in names:                                       # the sequence table's monthly networks, cached
+        ctx["model_store"] = store
     if "weather" in names:
         from greyhound.pit.weather import load_context
         ctx.update(load_context(store))

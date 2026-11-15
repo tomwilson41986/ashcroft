@@ -51,6 +51,8 @@ weights stored by the nightly build (with the month it scores) and loaded to sco
 
 from __future__ import annotations
 
+import io
+
 import time
 
 import numpy as np
@@ -228,6 +230,26 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     first_fit = _first(s_mo - FIRST_MONTHS - 1)
     use = dn >= first_fit
     notes = {"rows": int(n), "card_rows": int(card.sum()), "history_runs": int(len(hi)), "folds": {}}
+    # the monthly networks cached in the store (ctx["model_store"]: the nightly build and the live card build). A
+    # month's network is fitted on races before the first of its month only, so once fitted it never changes while
+    # this code and the engine are unchanged (both hashed into the key); a build loads it instead of refitting
+    ms = (ctx or {}).get("model_store")
+    tag = None
+    if ms is not None:
+        from greyhound import pit as _pit
+        tag = f"{_pit.code_hash('seq')}-{_pit.engine_hash()}"
+
+    def ckey(seed, mo):
+        return f"greyhound/pit2/seq_models/{tag}/s{seed}/{np.datetime64(int(mo), 'M')}.pt"
+    card_mos = sorted(set(_month(dn[card]).tolist())) if card.any() else []
+    card_only = False
+    if ms is not None and card_mos and (ctx or {}).get("card_weeks") is not None:
+        # the live card build: only the card's months are scored, from their cached networks (no refit, and only those
+        # months' rows held in memory); a month not yet cached is fitted from the full build below and cached
+        if all(ms.get(ckey(sd, mo)) is not None for sd in SEEDS for mo in card_mos):
+            use = use & np.isin(_month(dn), card_mos)
+            card_only = True
+    notes["card_only"] = card_only
     if not use.any() or months.max() < s_mo:
         tab = pd.DataFrame({"race_id": rid, "dog_id": runs.dog_id.to_numpy()})
         for c in COLUMNS:
@@ -330,7 +352,7 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
     last_mo = int(months.max())
-    score_mos = list(range(s_mo, last_mo + 1, STEP_MONTHS))
+    score_mos = card_mos if card_only else list(range(s_mo, last_mo + 1, STEP_MONTHS))
     acc = np.zeros((len(SEEDS), nu, len(HEADS)), np.float64)
     have = np.zeros(nu, bool)
     try:
@@ -346,6 +368,24 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
                 val = np.flatnonzero(rfit & (rdn >= v0) & (rdn < m0))
                 sc = np.flatnonzero((rdn >= m0) & (rdn < m1))
                 log = {"fit_races": int(len(fit)), "val_races": int(len(val)), "scored_races": int(len(sc))}
+                cached = ms.get(ckey(seed, mo)) if ms is not None else None
+                if cached is not None:
+                    net = _net(F.shape[1] + rel.shape[2] + 1, cardf.shape[1], len(SCALES) + 1)
+                    net.load_state_dict(torch.load(io.BytesIO(cached), weights_only=True))
+                    net.eval()
+                    with torch.no_grad():
+                        for b in range(0, len(sc), 4096):
+                            races = sc[b:b + 4096]
+                            xs, xh, xc, xg, m, p = batch(races)
+                            o = net(xs, xh, xc, xg, m).clone()
+                            o[..., 0] = torch.log_softmax(o[..., 0].masked_fill(~m, -1e9), 1)
+                            o[..., 1] = torch.log_softmax(o[..., 1].masked_fill(~m, -1e9), 1)
+                            mm = m.numpy()
+                            acc[si, p[mm]] = o.numpy()[mm]
+                            have[p[mm]] = True
+                    notes["folds"].setdefault(str(np.datetime64(mo, "M")), {})[f"seed{seed}"] = {
+                        **log, "cached": True, "seconds": round(time.time() - ts, 1)}
+                    continue
                 if net is None and len(fit) < MIN_FIT:
                     notes["folds"].setdefault(str(np.datetime64(mo, "M")), {})[f"seed{seed}"] = {**log, "skipped": True}
                     continue
@@ -391,6 +431,10 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
                             break
                 net.load_state_dict(best[1])
                 net.eval()
+                if ms is not None and mo < _month(np.array([dn.max()]))[0] + 1:
+                    buf = io.BytesIO()
+                    torch.save(net.state_dict(), buf)
+                    ms.put(ckey(seed, mo), buf.getvalue())
                 with torch.no_grad():
                     for b in range(0, len(sc), 4096):
                         races = sc[b:b + 4096]

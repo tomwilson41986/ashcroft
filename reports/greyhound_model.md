@@ -2900,3 +2900,27 @@ calibration already captures most of it: it beats the raw predictions by 0.0012-
 matched live lays, and the paper lays rest on replayed fills the reconciliation does not trust. It waits for the paper
 books' trusted fills.
 
+## 65. The speed and sequence tables released to the live price (15 Nov 2026)
+
+The owner: "Release". This releases batch 41's candidate (section 63: 0.2797 against 0.2859, z -19.0) as the live
+recipe **stack_mls**: nineteen tables, the league stack plus the speed figures and the sequence table.
+
+**The sequence table on the card.** Its network is refitted each month on races before the month. Refitting every
+month from 2024 in each hourly price run would take one to two hours, so the fitted networks are now cached in the
+store:
+- the key is `greyhound/pit2/seq_models/<code hash>-<engine hash>/s<seed>/<month>.pt`;
+- a month's network never changes while the code and engine are unchanged;
+- the nightly build (now including seq) fits only a month not yet cached;
+- the live card build scores the card's month from its cached network, holding only that month's rows.
+
+Tests: a cached build equals a refitted one, and the card-only build gives each card row what the full build gives it.
+
+**Order:**
+1. Seed the cache from the release branch (greyhound-pit.yml, tables=seq,speed).
+2. Merge.
+3. Retrain (task train).
+4. Run the prices.
+5. Publish stack_mls's out-of-sample prices; until then the early lay's forecast reads stack_ml's.
+
+The swap is 32 GB (section 56's memory log); the first price runs are watched for memory.
+
