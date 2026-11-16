@@ -105,9 +105,10 @@ def dog_map(api_gb: pd.DataFrame, runs: pd.DataFrame) -> tuple[dict, dict]:
                 "dogs_dropped_ambiguous": int(len(best) - len(keep))}
 
 
-def irish_runs(ie: pd.DataFrame, mp: dict) -> pd.DataFrame:
-    """Each Irish run of a mapped dog with its figures (standards from every Irish run, earlier days only)."""
-    d = ie.copy()
+def run_figures(api: pd.DataFrame) -> pd.DataFrame:
+    """Every API run with its day, won, placed, class, time figure and first-sectional figure (standards from every
+    run of the same track and trip, earlier days only)."""
+    d = api.copy()
     d["race_date"], _ = _local(d)
     d["pos"] = pd.to_numeric(d.position, errors="coerce")
     t = pd.to_numeric(d.adjusted_time_s, errors="coerce").fillna(pd.to_numeric(d.run_time_s, errors="coerce"))
@@ -124,11 +125,18 @@ def irish_runs(ie: pd.DataFrame, mp: dict) -> pd.DataFrame:
     spar = np.where(w._sn >= 30, w._ls / w._sn.replace(0, np.nan), np.nan)
     d["fig"] = 100.0 * (std - d._ltime)
     d["sec"] = 100.0 * (spar - d._lsec)
-    d["gb_dog"] = d.dog_id.map(mp)
-    d = d[d.gb_dog.notna() & d.pos.notna()].copy()
-    d["gb_dog"] = d.gb_dog.astype("int64")
+    d = d[d.pos.notna()].copy()
     d["won"], d["placed"] = (d.pos == 1).astype(float), (d.pos <= 2).astype(float)
-    d["cls"] = pd.to_numeric(d.class_number, errors="coerce")
+    d["cls"] = pd.to_numeric(d.class_number, errors="coerce") if "class_number" in d else np.nan
+    return d[["dog_id", "race_date", "won", "placed", "fig", "sec", "cls"]]
+
+
+def irish_runs(ie: pd.DataFrame, mp: dict) -> pd.DataFrame:
+    """Each Irish run of a mapped dog with its figures."""
+    d = run_figures(ie)
+    d["gb_dog"] = d.dog_id.map(mp)
+    d = d[d.gb_dog.notna()].copy()
+    d["gb_dog"] = d.gb_dog.astype("int64")
     return d[["gb_dog", "race_date", "won", "placed", "fig", "sec", "cls"]]
 
 

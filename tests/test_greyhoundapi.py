@@ -61,3 +61,44 @@ def test_no_key_no_run(monkeypatch):
     monkeypatch.delenv("GREYHOUNDAPI_KEY", raising=False)
     with pytest.raises(SystemExit):
         ga.Client()
+
+
+class RunnersClient(FakeClient):
+    def __init__(self, used=0):
+        super().__init__({})
+        self.used = used
+
+    def get(self, path, params=None, tries=6):
+        self.calls += 1
+        if path == "/usage":
+            return {"data": {"month": {"used": self.used}}}
+        if path.endswith("/runners"):
+            return {"data": [{"trap": 1, "runner_status": "scratched"}]}
+        if path in ("/racecards/today", "/racecards/upcoming"):
+            return {"meta": {}, "data": [{"race_id": 1}]}
+        raise AssertionError(path)
+
+
+def _held_month(store, region="GB", month="2026-10"):
+    store.put(ga.raw_key(region, int(month[:4]), int(month[5:])), ga.gz(b'[{"race_id": 7}, {"race_id": 8}]'))
+
+
+def test_runners_backfill_and_quota_guard(tmp_path):
+    import gzip
+    import json
+    store = Store(root=tmp_path)
+    _held_month(store)
+    r = ga.fetch_runners(store, RunnersClient(), ["GB"])
+    assert r["months_fetched"] == 1 and r["races"] == 2
+    got = json.loads(gzip.decompress(store.get(ga.runners_key("GB", "2026-10"))))
+    assert got["7"][0]["runner_status"] == "scratched"
+    assert ga.fetch_runners(store, RunnersClient(), ["GB"])["months_to_fetch"] == 0     # held: skipped
+    _held_month(store, month="2026-09")
+    stopped = ga.fetch_runners(store, RunnersClient(used=ga.QUOTA_STOP), ["GB"])
+    assert stopped["months_fetched"] == 0 and stopped["stopped"].startswith("quota")
+
+
+def test_cards_snapshot(tmp_path):
+    store = Store(root=tmp_path)
+    assert ga.snapshot_cards(store, RunnersClient()) == {"today": 1, "upcoming": 1}
+    assert any(k.endswith(".json.gz") for k in store.listing("greyhoundapi/raw/cards/"))
