@@ -136,7 +136,7 @@ def test_the_day_limit_is_per_model():
     s = _session([("steamer", A), ("quick_return", A)])
     s.staked["steamer"] = ML.DAY_LIMIT - 5.0
     s.step(ML.uk_at(DAY, ML.ENTRY_UK))
-    ev = {r["model"]: r["event"] for r in s.ledger}
+    ev = {r["model"]: r["event"] for r in s.ledger if r["event"] != "trade_out"}
     assert ev == {"steamer": "day_limit", "quick_return": "back"}
 
 
@@ -170,20 +170,21 @@ def test_live_needs_the_owners_switch():
     assert not ML.live_switch_on({"TRADING_LIVE": "yes"})           # the live trader's switch is not this one
 
 
-def test_win_only_no_place_orders_and_the_only_lay_is_the_steamers_trade_out():
+def test_win_only_no_place_orders_and_the_only_lay_is_the_trade_out():
     src = Path(ML.__file__).read_text()
     assert '"place"' not in src and "MARKET_ON_CLOSE" not in src           # the lay is the exchange's, at the SP
     assert src.count("lay_at_bsp(") == 1
-    assert ML.EXIT == {"steamer": "trade", "quick_return": "hold"}      # the owner, 16 Nov 2026
+    assert ML.EXIT == {"steamer": "trade", "quick_return": "trade"}     # the owner, 16 Nov 2026
 
 
-def test_the_steamer_is_laid_at_the_sp_for_its_winnings_and_the_quick_return_is_held():
+def test_each_back_is_laid_at_the_sp_for_its_winnings_under_its_own_reference():
     s = _session([("steamer", A), ("quick_return", B)])
     s.step(ML.uk_at(DAY, ML.ENTRY_UK))
-    # A: GBP10 matched at 6.0 -> winnings GBP50, the liability; B (quick return) is held: no lay
-    assert s.x.lays == [{"mid": MID, "sid": A, "liability": pytest.approx(50.0), "ref": f"mes1105{A}"}]
+    # A: GBP10 matched at 6.0 -> winnings GBP50; B: GBP50 at 2.0 -> winnings GBP50
+    assert s.x.lays == [{"mid": MID, "sid": A, "liability": pytest.approx(50.0), "ref": f"mes1105{A}"},
+                        {"mid": MID, "sid": B, "liability": pytest.approx(50.0), "ref": f"meq1105{B}"}]
     lay = [r for r in s.ledger if r["event"] == "trade_out"]
-    assert len(lay) == 1 and lay[0]["model"] == "steamer" and lay[0]["status"] == "PENDING"
+    assert [r["model"] for r in lay] == ["steamer", "quick_return"] and all(r["status"] == "PENDING" for r in lay)
 
 
 def test_winnings_under_ten_pounds_are_held_not_laid():
@@ -318,7 +319,7 @@ def test_settle_writes_the_bsp_and_the_clv_beside_betfairs_pnl(monkeypatch):
 
 def test_paper_settle_adds_the_lay_at_the_sp(monkeypatch):
     """Paper: a steamer back of GBP10 at 6.0 laid at the SP for GBP50; it loses at a BSP of 5.0, so the lay wins
-    50 / (5 - 1) = 12.50 and the bet nets +2.50. A quick-return back is held."""
+    50 / (5 - 1) = 12.50 and the bet nets +2.50. A back with no lay in the ledger (a refused one) is held."""
     import io
     import trading.exchange as TX
     store = {}

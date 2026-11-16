@@ -69,9 +69,10 @@ MODELS = {"steamer": "mes", "quick_return": "meq"}   # model -> order reference 
 ORDER = ("steamer", "quick_return")                  # a horse both select: the steamer's order first
 # The exit (the owner, 16 Nov 2026, on research morning-exit-bsp-1116: "yes change these to live, trade out"): the
 # steamer's back is laid at the Betfair SP for a liability equal to its winnings, as the live trader trades out
-# (trading/session.py), so it pays nothing if the horse wins and stake x (price - BSP) / (BSP - 1) if it loses; the
-# quick return is held to the result (its edge runs past the BSP: trading out gave up 41% of it in 2022-26)
-EXIT = {"steamer": "trade", "quick_return": "hold"}
+# (trading/session.py), so it pays nothing if the horse wins and stake x (price - BSP) / (BSP - 1) if it loses. The
+# quick return too (the owner, 16 Nov 2026: "quick returners too"), though its edge runs past the BSP: trading out
+# gave it GBP5,014 against GBP8,348 held in 2022-26 (research/strat/results_2026-11-16/morning_exit_liability_1116.txt)
+EXIT = {"steamer": "trade", "quick_return": "trade"}
 MIN_BSP_LIABILITY = 10.0         # the smallest lay at SP sent (trading/config.py min_bsp_liability): under it, held
 PREFIX = "morning"
 LIVE_TRADER_PREFIX = "ash"
