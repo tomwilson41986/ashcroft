@@ -1,0 +1,84 @@
+2026-11-16 10:44:10,948 [INFO] Found credentials in environment variables.
+table 2010-01-01 to 2026-11-14 rows 2023122
+steamer fitted on 2018-01-01..2021-12-31: 362506 rows, threshold 0.0762
+steamer: 18263 selections 2022+, 16063 with a morning price (2200 dropped: under GBP50 matched in the morning); duplicates 0
+quick_return: 6015 selections 2022+, 5229 with a morning price (786 dropped: under GBP50 matched in the morning); duplicates 0
+
+=== steamer: 16063 bets, 1753 days, 2022-01-01..2026-11-14 ===
+winners 2553; A/E at the morning price 1.158, at the BSP 1.031; CLV (price/BSP - 1) mean +0.1549, median +0.0979, share steamed (BSP < price) 61.7%
+  arm  bets  days  staked   pnl  roi%  per_bet  day_mean  day_lo95  day_hi95  day_sd  sharpe_d  max_dd  losing_days%
+ HOLD 16063  1753  145113 19779 13.63     1.23     11.28      8.15     14.19   64.52    0.1484    1077          46.3
+TRADE 16063  1753  145113 16385 11.29     1.02      9.35      8.88      9.85   10.53    0.8675      41          16.4
+ COND 16063  1753  145113 17886 12.33     1.11     10.20      8.39     12.08   38.54    0.2426     490          43.2
+by year (P&L GBP):
+year  bets  HOLD  TRADE  COND
+2022  3385  4860   4434  4451
+2023  3478  6345   4237  6169
+2024  3260  4632   3349  3540
+2025  2889  2714   2615  2324
+2026  3051  1227   1750  1402
+by CLV band (bets, HOLD and TRADE P&L before commission, GBP):
+              bets      hold     trade   won
+band                                        
+(-1.0, -0.2]  2657  -4210.19  -5975.48  0.09
+(-0.2, -0.1]  1596  -1813.22  -2138.87  0.12
+(-0.1, 0.0]   1896   -889.29   -953.94  0.15
+(0.0, 0.1]    1921   2602.63   1112.79  0.19
+(0.1, 0.2]    1877   4148.80   3091.30  0.19
+(0.2, 0.5]    3592  11654.55  10684.75  0.19
+(0.5, 10.0]   2524  10676.66  11053.34  0.17
+sensitivity, the price at 95% of the WAP:
+  arm   pnl  roi%  per_bet  day_mean  day_lo95  day_hi95  sharpe_d  max_dd
+ HOLD 12373  7.96     0.77      7.06      4.05     10.12    0.1010    1504
+TRADE  8951  5.76     0.56      5.11      4.66      5.59    0.4951      65
+ COND 10935  7.04     0.68      6.24      4.22      8.23    0.1421     947
+
+=== quick_return: 5229 bets, 1486 days, 2022-01-01..2026-11-12 ===
+winners 1037; A/E at the morning price 1.151, at the BSP 1.061; CLV (price/BSP - 1) mean +0.0948, median +0.0528, share steamed (BSP < price) 56.9%
+  arm  bets  days  staked  pnl  roi%  per_bet  day_mean  day_lo95  day_hi95  day_sd  sharpe_d  max_dd  losing_days%
+ HOLD  5229  1486   64097 8348 13.02     1.60      5.62      3.30      8.04   46.58    0.0586     818          58.3
+TRADE  5229  1486   64097 4945  7.71     0.95      3.33      2.94      3.71    7.58    0.3711      58          33.6
+ COND  5229  1486   64097 7247 11.31     1.39      4.88      3.39      6.45   29.49    0.1091     369          44.5
+by year (P&L GBP):
+year  bets  HOLD  TRADE  COND
+2022  1081   555   1532  1995
+2023  1117  1009   1569  1941
+2024  1085  2802    943  1384
+2025  1016  1421    418   892
+2026   930  2561    482  1035
+by CLV band (bets, HOLD and TRADE P&L before commission, GBP):
+              bets     hold    trade   won
+band                                      
+(-1.0, -0.2]  1058 -1786.12 -2943.98  0.10
+(-0.2, -0.1]   551  -300.38  -973.79  0.17
+(-0.1, 0.0]    644   344.18  -441.41  0.20
+(0.0, 0.1]     660  1594.07   518.33  0.25
+(0.1, 0.2]     602  1638.87  1394.23  0.24
+(0.2, 0.5]    1099  4304.77  4401.45  0.24
+(0.5, 10.0]    615  3524.10  3169.43  0.21
+sensitivity, the price at 95% of the WAP:
+  arm  pnl  roi%  per_bet  day_mean  day_lo95  day_hi95  sharpe_d  max_dd
+ HOLD 5184  7.50     0.99      3.49      1.05      5.87    0.0254     961
+TRADE 1625  2.35     0.31      1.09      0.70      1.46    0.1657     552
+ COND 3872  5.60     0.74      2.61      0.89      4.36    0.0475     623
+
+deflated Sharpe (daily return on stake; strategy-study rules already scored 0, plus this table):
+                   n_obs n_trials    sharpe       dsr passed                reason
+steamer:HOLD        1753        6  0.148372       0.0  False  DSR 0.000 below 0.95
+steamer:TRADE       1753        6  0.867535       1.0   True                      
+steamer:COND        1753        6  0.242601       0.0  False  DSR 0.000 below 0.95
+quick_return:HOLD   1486        6  0.058597       0.0  False  DSR 0.000 below 0.95
+quick_return:TRADE  1486        6  0.371088  0.214303  False  DSR 0.214 below 0.95
+quick_return:COND   1486        6  0.109089       0.0  False  DSR 0.000 below 0.95
+
+=== paper forward test, real fills: 2026-11-05..2026-11-14, 72 win backs (halved to GBP50 to win) ===
+steamer: winners 13 vs 12.03 at the price; CLV mean -0.0378
+  arm  bets  days    pnl  roi%  day_sd
+ HOLD    66    10 -26.24 -4.13   49.32
+TRADE    66    10  -5.38 -0.85    4.53
+ COND    66    10 -36.93 -5.81   21.56
+quick_return: winners 4 vs 1.96 at the price; CLV mean +0.0526
+  arm  bets  days   pnl   roi%  day_sd
+ HOLD     6     4 91.10 135.95   18.44
+TRADE     6     4  5.09   7.59    0.97
+ COND     6     4 51.79  77.28   25.21

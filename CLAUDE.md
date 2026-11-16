@@ -142,7 +142,8 @@ python auto_trade.py --live --settle
 # the CLEAN steamer model's top 5% and the horses back within 1-4 days, backed WIN only at 10:00 UK (never earlier),
 # half the research's stakes (GBP50 to win, GBP100 a bet at most, GBP2,000 a day a model), the live trader's horses
 # left out; selections from the 06:00 card (GitHub's runner), orders on their own runner (morning-models.yml), real only
-# with MORNING_LIVE=yes; the S3 object morning/STOP (or trading/STOP) stops new orders
+# with MORNING_LIVE=yes; the S3 object morning/STOP (or trading/STOP) stops new orders. The steamer's back is laid at
+# the Betfair SP for its winnings (trade out, the owner, 16 Nov 2026), the quick return's too (morning/live.py EXIT)
 python -m morning.live --select
 MORNING_LIVE=yes python -m morning.live --trade --live
 python -m morning.live --settle --live
