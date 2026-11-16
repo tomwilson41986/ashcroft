@@ -15,9 +15,9 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'results (fetch), lists (tracks, sires, dams, track stats), pedigree (every sire''s offspring), runners (each race''s full runner list, quota-guarded), cards, build, or all'
+        description: 'results (fetch), lists (tracks, sires, dams, track stats), pedigree (every sire''s offspring), runners (each race''s full runner list, quota-guarded), cards, build, survey (every field the API holds, with fill rates; probes its endpoints), or all'
         type: choice
-        options: [all, results, lists, pedigree, runners, cards, build]
+        options: [all, results, lists, pedigree, runners, cards, build, survey]
         default: all
       regions:
         description: 'comma-separated regions'
@@ -71,6 +71,7 @@ jobs:
             runners) python -m sources.greyhoundapi --fetch runners --regions "$REGIONS" --max-minutes "$MAXMIN" ;;
             cards)   python -m sources.greyhoundapi --fetch cards ;;
             build)   python -m sources.greyhoundapi --build --regions "$REGIONS" ;;
+            survey)  python -m research.greyhound.api_survey --probe --save --out out/api_survey ;;
             all)     python -m sources.greyhoundapi --fetch both --build --regions "$REGIONS" --max-minutes "$MAXMIN" ;;
             *) echo "unknown task"; exit 1 ;;
           esac
@@ -78,4 +79,12 @@ jobs:
         if: always()
         run: |
           [ -f out/greyhoundapi.json ] && { echo '```'; head -c 20000 out/greyhoundapi.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          [ -f out/api_survey/report.md ] && head -c 900000 out/api_survey/report.md >> "$GITHUB_STEP_SUMMARY"
           true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhoundapi-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 30
