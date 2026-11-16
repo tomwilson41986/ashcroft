@@ -144,3 +144,96 @@ The warden reads only `listCurrentOrders` and `listClearedOrders` (both already 
 the first time without market ids) and `getAccountFunds`. Betfair's account statement (`getAccountStatement`) is not
 read yet: its fields could not be checked against Betfair's documentation on 10 Nov 2026 (the reference pages refused
 the fetch), so it waits for phase 2.
+
+## The high-frequency track (the owner, 11 Nov 2026)
+
+"What about if we were to execute hundreds or thousands of trades per market? Both sides of the line. Developing a
+model to predict the next price move ... Kalman, Markov chain ... particularly <5 minutes to the off."
+
+What the repo already shows, before any of it is built:
+- Quoting both sides around the mid lost in both sports (horses -GBP17,554 over 22 days, research ledger line 590;
+  greyhounds every margin, `reports/greyhound_model.md:1230-1236`): resting orders fill when the price runs through them.
+- Short-term taker rules lost (greyhound stream lab 0 of 86, `reports/greyhound_edge_search.md:213`; horse small book
+  near the off 0 of 54, ledger 663).
+- Betfair's transaction charge for high order counts is unverified (`reports/open_close/markets_sources.md:16`): it must
+  be read off the account's charges page before any money moves.
+
+Stages, each gated on the last:
+1. **Prediction** (`research/micro/`): can the next mid move be predicted from the order book in the last 300 s?
+   Baseline, queue-imbalance logistic, Markov chain, Kalman fair price, LightGBM; walk-forward by day; sealed days.
+   First test: `research/queries/micro_next_move_1111.py` (ledger `micro-next-move-1111`), greyhounds; horses once 10
+   days of horse stream are held (from 12 Nov).
+2. **Simulation**: a queue-aware, latency-aware simulator built on `research/greyhound/stream_replay.py`, counting every
+   order and cancel; model-skewed market making, one-sided passive, and a taker control; after commission, the Expert
+   Fee and the transaction charge.
+3. **A penny fill probe** (the owner's approval and budget): the simulator's fills checked against real ones.
+4. **Build**: a stream-fed trader with the order stream, batched orders, a dead-man cancel, on a supervised host.
+
+### Results, 11 Nov 2026
+
+- **Lay book, third run** (`desk-lay-book-1113`, research-query 43009125741). The port matches the arm on all 29
+  days. Registered verdict: not yet read, because 29 days is under the 30 the deflated Sharpe needs (10 Nov's price
+  file was not in yet).
+  - Under its registered limits: GBP+1,124.11 over 29 days on GBP107,427 of liability.
+  - Mean GBP+38.76 a day (90% +24.46 to +52.73), up on 23 days.
+  - It reruns unchanged once the 30th day is in.
+- **Lay book, read on 30 days, 12 Nov** (`desk-lay-book-1113`, research-query 43194529542): **does not pass.**
+  - The port matched the arm on all 30 days (12 Oct - 10 Nov).
+  - Under its registered limits it made GBP+1,243.56 on GBP111,001 of liability: a mean of GBP+41.45 a day (90%
+    +27.03 to +55.08), up on 24 of 30 days.
+  - The deflated Sharpe was 0.911 with 319 trials counted, below the 0.95 required. The interval alone is not
+    enough under the house rule.
+  - The lay book stays at research. A further test needs a new registration on forward days only, opened with the
+    owner.
+- **Lay book, 30-day forward paper test, from 13 Nov** (the owner, 12 Nov: "start the 30-day forward paper test of the
+  lay book, with no money at risk"; ledger `desk-lay-book-paper-1112`, registered before its first day; stage
+  `paper`).
+  - No order and no Betfair call. Each forward day is replayed from the live trader's recorded books through the desk,
+    with the registered params and limits, closed at the BSP after the reductions and 2%
+    (`research/queries/done/desk_lay_book_paper_1112.py`).
+  - The window is the first 30 forward days with data, extended only while the fills are under 300. It stays blind
+    until then: the query prints counts only.
+  - It is read once against the pinned gate: positive sum, 90% interval above zero, deflated Sharpe >= 0.95 with every
+    horse-racing trial counted.
+  - A pass makes it a candidate for pilot, the owner's decision after the lock-down and the envelope.
+  - Check-ins: a count-only run on 27 Nov; the reading from 14 Dec.
+- **Next move, Stage 1** (`micro-next-move-1111`, research-query 43050471729). Data: 6 greyhound days, 685 markets,
+  4.29m book rows, 4 test days walk-forward. Every pair beat the baseline on every test day:
+
+  | Model | Next-change gain (mnats a row) | Accuracy when the mid moved |
+  |---|---|---|
+  | LightGBM | +72.8 | 65.2% |
+  | Queue imbalance alone | +42.9 | 62.2% |
+  | Markov chain | +42.4 | 61.6% |
+  | Kalman fair price | +36.6 | 61.2% |
+
+  Baseline accuracy: 52.4%. Not yet counted: the sealed days 12-18 Nov decide
+  (`micro-next-move-1111-sealed`, run on 19 Nov). A forecast is not a profit: a mid move is usually half a tick, and
+  a taker pays a whole tick plus costs. Stage 2 asks whether quoting only where the model expects no adverse move
+  pays after queue position, latency and costs.
+
+## The racing² Quant Core build prompt v2 (the owner, 11 Nov 2026)
+
+The owner's v2 build prompt (a spec for a new sport-agnostic system: five engines, a truth layer, a discovery loop) is
+kept outside this public repository. It is in the claude.ai skill `r2quant-frontier`, which loads in every session,
+and in the private wiki (`tomwilson41986/wiki`, `quant-trading/`). This section records only what it adds here.
+
+**Precedence.** This repository's CLAUDE.md and the owner's dated decisions win; the build prompt applies wherever
+they are silent. The one conflict found is that the prompt has the owner sign off every move to pilot or scale (its
+Sections 20.9 and 21.6), while the desk is autonomous inside the `DESK_*` envelope (decision 1 above). Both agree that
+no LLM places orders or sets limits.
+
+**What it adds that the repository lacks.** A search on 11 Nov found no `markout`, `Ville`, `e_value`, `SAFFRON` or
+commit-reveal code, and no null or injection tests.
+
+| Prompt section | What it adds | Where it would land here |
+|---|---|---|
+| 18.11 markouts | the price move after each fill, at fixed horizons and to the close | the high-frequency track's Stage 2: the measure of the adverse selection behind the mid quotes' losses (ledger lines 584, 590) |
+| 18.14 pessimistic fill rule | a passive order fills only once the volume traded after it exceeds the queue ahead plus its own size | the Stage 2 simulator's default |
+| 22.5 Ville bankroll, confidence sequences | forward reads valid at any stopping time | paper stages, beside the deflated Sharpe rule (an owner review: it touches the gate) |
+| 22.6 commit-reveal | the forecast's hash written before decision time | paper stages (`desk/trials.py` pins the gate's hash, not the forecasts) |
+| 22.7 null and injection tests | the research pipeline's own false-positive rate and power | `research/micro` (a time-slide null beside the sealed read, registered before it) and the desk's walk-forward |
+| 21.5 online false discovery rate | an error budget for a stream of agent tests | `desk/trials.py` |
+| 1, 19.5 DLL | log-likelihood gain over the market in nats, one number for edge | the next-move test already scores in millinats; extend it to the win models against the close |
+
+Each item is opened only as a registered test or an owner-reviewed change, as every desk change is.
