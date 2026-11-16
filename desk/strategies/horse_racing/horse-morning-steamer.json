@@ -33,6 +33,10 @@
     {
       "claim": "kill switch: a failed S3 read reads as not stopped (fails open)",
       "source": "morning/live.py:84-88,326-330"
+    },
+    {
+      "claim": "exit: each back laid at the Betfair SP for a liability equal to its winnings (the owner, 16 Nov 2026); 2022-26 at GBP50 to win, trade out GBP16,385 vs hold GBP19,779, daily sd 10.5 vs 64.5, deflated Sharpe 1.0",
+      "source": "research/strat/results_2026-11-16/morning_exit_bsp_1116.txt"
     }
   ],
   "approved": {

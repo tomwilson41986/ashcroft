@@ -46,13 +46,29 @@ morning WAP. On 33 days its win A/E figures are not significant (chi-square p 0.
 | The live trader's horses | Its ledger (`trading/live/<day>/ledger.csv`) read before every round: any horse it has matched a back on is skipped (`skipped_live`) | |
 | A horse both models select | Two bets, the steamer's first | |
 | References | `mes<mmdd><selection>` (steamer), `meq<mmdd><selection>` (quick return), never the live trader's `ash<mmdd>`, so it never adopts or lays these | `trading/session.py sync` |
-| Settle | 22:50 UTC: Betfair's settled bets under our references (live), or the closed books (paper). P&L at 2% and 5% commission | `morning/live.py settle` |
+| Exit (16 Nov 2026) | Steamer: each back laid at the Betfair SP for a liability equal to its winnings (a market-on-close lay, as the live trader trades out), so a winner nets 0 and a loser nets stake x (price - BSP) / (BSP - 1); winnings under GBP10 (Betfair's smallest lay at SP) are held; a lay Betfair refuses is sent again each minute to 10:15, one whose outcome is unknown never is; the lay goes in even with STOP set. Quick return: held to the result | `morning/live.py EXIT`; research `reports/research_ledger.jsonl` morning-exit-bsp-1116 |
+| Settle | 22:50 UTC: Betfair's settled bets under our references, the back and its lay summed (live), or the closed books with the lay at the SP (paper); the result and the BSP from the closed books. P&L at 2% and 5% commission | `morning/live.py settle` |
 | Ledgers | `s3://$BUCKET/morning/<live\|paper>/<day>/ledger.csv` (written after every order) and `summary.json` | |
 | Stop | S3 object `morning/STOP` or `trading/STOP`: no new orders within a minute. Cancel the run to stop at once | |
 
 What it does not touch: `live-trade.yml`, `auto_trade.py`, `trading/` (imported, unchanged), `betfair_recorder.py`,
 `model/`. It runs on its own runner, never the live horse trader's, the paper models' or football's
 (`tests/test_workflow_guards.py`).
+
+## The exit: hold or trade out at the BSP (16 Nov 2026)
+
+The owner: "evaluate whether it is worth trading the steamers and quick returners from 10:00 to BFSP", then, on the
+result, "yes change these to live, trade out". Held-out 2022 to 14 Nov 2026 (the steamer fitted on 2018-21), GBP50 to
+win at the morning WAP, 2% (`research/strat/results_2026-11-16/morning_exit_bsp_1116.txt`, run 43850929465):
+
+| | Hold | Trade out at the BSP |
+|---|---|---|
+| Steamer, 16,063 bets | +GBP19,779 (13.6%), daily sd 64.5, drawdown GBP1,077 | +GBP16,385 (11.3%), daily sd 10.5, drawdown GBP41 |
+| Quick return, 5,229 bets | +GBP8,348 (13.0%), daily sd 46.6, drawdown GBP818 | +GBP4,945 (7.7%), daily sd 7.6, drawdown GBP58 |
+
+Deflated Sharpe: steamer trade-out 1.0, every other arm under 0.95. So the steamer trades out and the quick return,
+whose edge runs past the BSP (A/E at the BSP 1.061 against 1.031), is held. The test assumed an even trade-out; Betfair's
+lay at the SP is sized by liability, which keeps the expected value and moves the spread onto the losers.
 
 ## Before the first live morning (the owner)
 
