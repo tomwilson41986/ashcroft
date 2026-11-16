@@ -1,0 +1,66 @@
+name: Greyhound day diagnostic (read-only)
+
+# One day's greyhound results read end to end (research/greyhound/day_diagnostic.py; the owner, 11 Nov 2026: "do an
+# exhaustive diagnostic on our greyhound results today"): coverage, the model's price against the SP, the early lay
+# as traded (live and paper), live against paper, the trader's gaps. Read-only: S3 in, the report as the run's summary
+# and artifact out; no Betfair key, nothing written to the store, nothing can place an order.
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'the day, YYYY-MM-DD (default today, UK)'
+        required: false
+        type: string
+  push:
+    branches: ['claude/determined-fermi-*']
+    paths:
+      - 'research/greyhound/day_diagnostic.py'
+      - '.github/workflows/greyhound-diagnostic.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-diagnostic
+  cancel-in-progress: true
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: The day's diagnostic
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          DAY: ${{ inputs.date }}
+        run: |
+          mkdir -p out
+          ARGS=(--out out/greyhound_day)
+          if [ -n "$DAY" ]; then
+            if ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
+            ARGS+=(--date "$DAY")
+          fi
+          python -m research.greyhound.day_diagnostic "${ARGS[@]}"
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/greyhound_day.md ] && head -c 60000 out/greyhound_day.md >> "$GITHUB_STEP_SUMMARY"
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-diagnostic-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 30

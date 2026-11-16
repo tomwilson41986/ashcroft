@@ -349,6 +349,57 @@ def test_the_latest_days_race_by_race(tmp_path):
     assert b["pnl"] is None and b["staked"] == 50          # still to run: no P&L yet
 
 
+def test_the_morning_models_are_separate_lines_from_one_ledger(tmp_path):
+    """One live ledger holds both morning models (morning/live.py); each model is its own trader on the page, its P&L
+    after 2% on the market's net winnings, settled when the market's backs have results, CLV at the BSP."""
+    day = TODAY.isoformat()
+    rows = [
+        {"ts": f"{day}T10:00:05Z", "model": "steamer", "event": "back", "market_id": "1.a", "venue": "Kempton",
+         "off": "14:00", "selection_id": 1, "matched": 10.0, "avg_price": 6.0, "result": "WINNER", "pnl": 50.0,
+         "bsp": 5.0, "clv": 0.2},
+        {"ts": f"{day}T10:00:06Z", "model": "steamer", "event": "back", "market_id": "1.b", "venue": "Lingfield",
+         "off": "15:00", "selection_id": 2, "matched": 5.0, "avg_price": 11.0, "result": "UNSETTLED", "pnl": None},
+        {"ts": f"{day}T10:00:07Z", "model": "steamer", "event": "not_filled", "market_id": "1.c", "selection_id": 3,
+         "matched": 0.0},
+        {"ts": f"{day}T10:00:08Z", "model": "quick_return", "event": "back", "market_id": "1.a", "venue": "Kempton",
+         "off": "14:00", "selection_id": 4, "matched": 12.5, "avg_price": 5.0, "result": "LOSER", "pnl": -12.5,
+         "bsp": 4.0},
+    ]
+    _put(tmp_path, "pred", f"morning/live/{day}/ledger.csv", pd.DataFrame(rows))
+    src = LocalSource(tmp_path)
+    st, _ = trader_days(src, T("horse-morning-steamer"), TODAY, cache=False)
+    m = st[day].set_index("market_id")
+    assert sorted(m.index) == ["1.a", "1.b"]                    # the unfilled order is not a market traded
+    assert m.loc["1.a", "pnl"] == pytest.approx(49.0) and m.loc["1.a", "settled"]
+    assert pd.isna(m.loc["1.b", "pnl"]) and not m.loc["1.b", "settled"]
+    assert m.loc["1.a", "clv_ws"] / m.loc["1.a", "clv_s"] == pytest.approx(0.2)
+    qr, _ = trader_days(src, T("horse-morning-quick-return"), TODAY, cache=False)
+    q = qr[day].set_index("market_id")
+    assert list(q.index) == ["1.a"] and q.loc["1.a", "pnl"] == pytest.approx(-12.5)
+    assert q.loc["1.a", "clv_ws"] / q.loc["1.a", "clv_s"] == pytest.approx(0.25)   # 5.0 / 4.0 - 1, from the BSP
+
+
+def test_the_morning_paper_forward_test_is_read_a_file_a_day(tmp_path):
+    """research/paper/morning_edges.py writes bets/<day>.csv: one strategy's WIN backs only, from 5 Nov 2026."""
+    rows = [
+        {"strategy": "steam_am", "market": "win", "event": "back", "market_id": "1.x", "label": "Wolverhampton",
+         "off": "18:00", "matched": 20.0, "price": 6.0, "bsp": 6.0, "result": "WINNER", "pnl": 100.0},
+        {"strategy": "steam_am", "market": "place", "event": "back", "market_id": "1.y", "label": "Wolverhampton",
+         "off": "18:00", "matched": 50.0, "price": 3.0, "bsp": 3.0, "result": "LOSER", "pnl": -50.0},
+        {"strategy": "qr_am", "market": "win", "event": "back", "market_id": "1.x", "label": "Wolverhampton",
+         "off": "18:00", "matched": 25.0, "price": 5.0, "bsp": 5.0, "result": "LOSER", "pnl": -25.0},
+    ]
+    for d in ("2026-11-04", "2026-11-05"):
+        _put(tmp_path, "pred", f"paper/morning_edges/bets/{d}.csv", pd.DataFrame(rows))
+    src = LocalSource(tmp_path)
+    days, _ = trader_days(src, T("horse-morning-steamer-paper"), date(2026, 11, 6), cache=False)
+    assert list(days) == ["2026-11-05"]                         # the forward test starts 5 Nov
+    m = days["2026-11-05"].set_index("market_id")
+    assert list(m.index) == ["1.x"] and m.loc["1.x", "pnl"] == pytest.approx(98.0)
+    q, _ = trader_days(src, T("horse-morning-quick-return-paper"), date(2026, 11, 6), cache=False)
+    assert q["2026-11-05"].pnl.sum() == pytest.approx(-25.0)
+
+
 # --------------------------------------------------------------------------------------------------------------------
 # The early lay's switch on its tile, and its record from 11 Nov (the owner, 11 Nov 2026: "Show it. Start tracking
 # from fresh")

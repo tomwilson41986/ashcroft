@@ -441,3 +441,21 @@ def test_the_morning_models_bet_only_when_switched_on_and_never_beside_the_live_
     import morning.live as ML
     assert ML.TO_WIN == 50.0 and ML.MAX_STAKE == 100.0 and ML.DAY_LIMIT == 2000.0
     assert not any(p.startswith(ML.LIVE_TRADER_PREFIX) for p in ML.MODELS.values())
+
+# ---------------------------------------------------------------------------
+# The live horse server installs requirements.txt: nothing built for another model may pin a package there
+# ---------------------------------------------------------------------------
+
+def test_the_shared_requirements_carry_no_pin_of_the_football_warehouse():
+    """live-trade.yml and live-record.yml run `pip install -r requirements.txt` on the UK server's kept
+    environment. The football warehouse's own pins (football/warehouse/requirements.txt) once sat in that file and
+    would have changed a package under the live trader; they stay in their own."""
+    shared = {re.split(r"[<>=!~\[ ]", line.strip(), maxsplit=1)[0].lower()
+              for line in (ROOT / "requirements.txt").read_text().splitlines()
+              if line.strip() and not line.lstrip().startswith("#")}
+    own = [line.strip() for line in (ROOT / "football" / "warehouse" / "requirements.txt").read_text().splitlines()
+           if line.strip() and not line.lstrip().startswith("#")]
+    assert own and all("==" in line for line in own)                        # the warehouse's packages are pinned
+    assert not shared & {line.split("==")[0].lower() for line in own}       # ... and not in the shared file
+    for workflow in ("live-trade.yml", "live-record.yml"):
+        assert "football/warehouse/requirements.txt" not in (WORKFLOWS / workflow).read_text()

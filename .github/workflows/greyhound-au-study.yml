@@ -1,0 +1,73 @@
+name: Greyhound Australia feasibility (read-only)
+
+# The registered study greyhound-au-feasibility-1116 (research/greyhound/au_feasibility.py; the owner, 16 Nov 2026:
+# "Build the Australian model and start the feasibility study"): GreyhoundAPI's Australian results for the form,
+# Betfair's own price files for the BSP, a walk-forward LightGBM model scored against the BSP. Reads S3 only; holds no
+# Betfair key: nothing reaches Betfair, no order is placed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first_year:
+        description: 'first year of form read'
+        required: false
+        type: string
+        default: '2016'
+      test_years:
+        description: 'test years, comma-separated'
+        required: false
+        type: string
+        default: '2024,2025,2026'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-au-study
+  cancel-in-progress: false
+
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Free disk space
+        continue-on-error: true
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 24G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+      - name: The study
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          FIRST: ${{ inputs.first_year || '2016' }}
+          TESTS: ${{ inputs.test_years || '2024,2025,2026' }}
+        run: |
+          [[ "$FIRST" =~ ^[0-9]{4}$ ]] || { echo "first_year must be YYYY"; exit 1; }
+          [[ "$TESTS" =~ ^[0-9,]+$ ]] || { echo "test_years must be like 2024,2025"; exit 1; }
+          python -m research.greyhound.au_feasibility --first-year "$FIRST" --test-years "$TESTS" --out out/au_feasibility
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/au_feasibility/report.md ] && cat out/au_feasibility/report.md >> "$GITHUB_STEP_SUMMARY"
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-au-study-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90

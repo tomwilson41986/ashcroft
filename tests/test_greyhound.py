@@ -12,18 +12,43 @@ from greyhound.model import against_price_files, race_norm
 
 
 def test_comments_read_break_lead_trouble_path_and_finish():
-    assert parse_comment("QAw,Rls,Led1,ALd") == {"brk": 1.0, "led": 1.0, "trouble": 0.0, "fin": 0.0, "path": 1.0}
+    got = parse_comment("QAw,Rls,Led1,ALd")
+    assert np.isnan(got.pop("epace")) and got == {"brk": 1.0, "led": 1.0, "trouble": 0.0, "fin": 0.0, "path": 1.0}
     got = parse_comment("VSAw,BBmp1,Wide,FcdTCk2")
-    assert got["brk"] == -2.0 and got["trouble"] == 2.0 and got["path"] == 3.0
+    assert got["brk"] == -2.0 and got["trouble"] == 3.0 and got["path"] == 3.0       # badly bumped counts 2
     assert parse_comment("MsdBrk,RlsToMid,FinWell")["path"] == 1.5
-    assert parse_comment("EP,MidToWide,LdRnIn") == {"brk": 1.0, "led": 0.0, "trouble": 0.0, "fin": 1.0, "path": 2.5}
+    got = parse_comment("EP,MidToWide,LdRnIn")                                        # early pace is not the break
+    assert np.isnan(got.pop("brk")) and got == {"epace": 1.0, "led": 0.0, "trouble": 0.0, "fin": 1.0, "path": 2.5}
     assert parse_comment("SAw,SltCrd1,Mid,Fdd")["trouble"] == 0.5
     assert np.isnan(parse_comment("")["brk"])
 
 
+def test_comments_as_gbgb_writes_them():
+    """The forms the first parser misread (the audit of 11 Nov 2026, finding 9), each as GBGB writes it."""
+    led = lambda c: parse_comment(c)["led"]
+    assert all(led(c) == 1.0 for c in ("Led1", "Ld-1", "LedFr1", "LdT1", "ALd", "AlwaysLed", "SnLd", "SoonLed", "LedRunUp",
+                                       "LedTo3", "LdToRunIn", "Crd&Led1", "Led1ToRunIn"))
+    assert all(led(c) == 0.0 for c in ("Led 1/2", "Ld 1/2", "Led1/2", "Led-1/2", "Ld1/4", "Led2", "LedRnIn", "Ld-RnIn"))
+    trouble = lambda c: parse_comment(c)["trouble"]
+    assert trouble("BBlk1") == trouble("BadlyBaulked1") == trouble("BadlyBumped") == trouble("BCrd1") == 2.0
+    assert trouble("Blk1") == trouble("FcdTCk1") == trouble("FcdToBCk1") == trouble("ForcedToCheck1") == trouble("Ck1") == 1.0
+    assert trouble("Crd1&2") == trouble("FcdTCk&Bmp1") == trouble("Crd&FcdTCk1") == 2.0   # each place, each incident
+    assert trouble("ClearRun") == trouble("RanWide2") == trouble("Wide") == 0.0          # the dog's own line is no trouble
+    path = lambda c: parse_comment(c)["path"]
+    assert path("MiddleToWide") == path("MidToWide") == path("Mid-W") == path("MidTW") == 2.5
+    assert path("RlsToMid") == path("Rls-Mid") == path("MidTRls") == path("RlsMid") == 1.5
+    got = parse_comment("SAw,EP")                                 # a slow start, then pace: not a fast break
+    assert got["brk"] == -1.0 and got["epace"] == 1.0
+    assert parse_comment("LckEP")["epace"] == -1.0 and np.isnan(parse_comment("LckEP")["brk"])
+
+
 def test_grades_rank_lower_as_better():
-    assert grade_rank("OR") == 0 and grade_rank("A1") == 1 and grade_rank("A11") == 11
-    assert grade_rank("B2") == 4 and grade_rank("D3") == 3 and np.isnan(grade_rank("??"))
+    assert grade_rank("A1") == 1 and grade_rank("A11") == 11 and grade_rank("D3") == 3 and np.isnan(grade_rank("??"))
+    # the open classes above A1, as their winners' times put them; B a second trip's ladder, level with A
+    assert grade_rank("OR1") == -2 < grade_rank("OR2") < grade_rank("OR3") == 0 < grade_rank("OR") == grade_rank("A1")
+    assert grade_rank("B2") == 2 and grade_rank("IV") == 1 and grade_rank(" or3 ") == 0
+    # a handicap and an intertrack race have no place on the ladder
+    assert np.isnan(grade_rank("HP")) and np.isnan(grade_rank("IT")) and np.isnan(grade_rank("T1"))
 
 
 def _runs(n_days=12, tracks=("Romford", "Hove"), seed=0):

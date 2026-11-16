@@ -52,11 +52,20 @@ def _inputs(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _simulate(early, run, sd, unk, trap, rng) -> dict[str, np.ndarray]:
-    """``early``, ``run``, ``sd``, ``unk``, ``trap``: arrays [races, k] for races of ``k`` runners."""
+def _draws(k: int) -> tuple[np.ndarray, np.ndarray]:
+    """The standard normal draws for a race of ``k`` runners, [DRAWS, k] for the bend and for the run-in: the same
+    for every race of that size, so a race's numbers are its own inputs' and nothing else's. Until 11 Nov 2026 one
+    stream ran down the whole frame and a race's features depended on which other races were in it (the audit of
+    11 Nov 2026, findings 29 and 42)."""
+    rng = np.random.default_rng([0, k])
+    return rng.standard_normal((DRAWS, k)), rng.standard_normal((DRAWS, k))
+
+
+def _simulate(early, run, sd, unk, trap, z) -> dict[str, np.ndarray]:
+    """``early``, ``run``, ``sd``, ``unk``, ``trap``: arrays [races, k] for races of ``k`` runners; ``z``: ``_draws(k)``."""
     n, k = early.shape
     mult = np.where(unk, UNKNOWN_SD, 1.0)[:, None, :]
-    bend = early[:, None, :] + rng.normal(0.0, EARLY_SD, (n, DRAWS, k)) * mult
+    bend = early[:, None, :] + EARLY_SD * z[0][None, :, :] * mult
     # the checks at the bend: a dog with a neighbour (within one trap) ahead of it and within CLOSE lengths
     lost = np.zeros((n, DRAWS, k))
     for j in range(k):
@@ -69,7 +78,7 @@ def _simulate(early, run, sd, unk, trap, rng) -> dict[str, np.ndarray]:
             gap = bend[:, :, i] - bend[:, :, j]                           # > 0: i ahead of j
             hit = (gap > 0) & (gap < CLOSE) & side[:, None]
             lost[:, :, j] += np.where(hit, CHECK * (1.0 - gap / CLOSE), 0.0)
-    noise = rng.normal(0.0, 1.0, (n, DRAWS, k)) * np.sqrt(RUN_SD ** 2 + (0.5 * sd[:, None, :]) ** 2) * mult
+    noise = z[1][None, :, :] * np.sqrt(RUN_SD ** 2 + (0.5 * sd[:, None, :]) ** 2) * mult
     final = bend - lost + run[:, None, :] + noise
     order = np.argsort(-final, axis=2)
     first, second = order[:, :, 0], order[:, :, 1]
@@ -85,7 +94,6 @@ def build(df: pd.DataFrame) -> list[str]:
     names = ("win_p", "lead_p", "top2_p", "lost", "win_vs_best", "win_logit")
     out = {n: np.full(len(df), np.nan) for n in names}
     pos = pd.Series(np.arange(len(df)), index=df.index)
-    rng = np.random.default_rng(0)
     order = x.sort_values(["race", "trap"], kind="stable")
     size = order.groupby("race").race.transform("size")
     for k, part in order.groupby(size, sort=True):
@@ -97,9 +105,10 @@ def build(df: pd.DataFrame) -> list[str]:
         idx = pos.reindex(part.index).to_numpy().reshape(n, k)
         arr = {c: part[c].to_numpy(float).reshape(n, k) for c in ("early", "run", "sd", "trap")}
         unk = part["unknown"].to_numpy(bool).reshape(n, k)
+        z = _draws(k)
         for s in range(0, n, CHUNK):
             sl = slice(s, s + CHUNK)
-            r = _simulate(arr["early"][sl], arr["run"][sl], arr["sd"][sl], unk[sl], arr["trap"][sl], rng)
+            r = _simulate(arr["early"][sl], arr["run"][sl], arr["sd"][sl], unk[sl], arr["trap"][sl], z)
             for c in ("win_p", "lead_p", "top2_p", "lost"):
                 out[c][idx[sl].ravel()] = r[c].ravel()
     win = pd.Series(out["win_p"], index=df.index)

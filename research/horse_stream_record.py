@@ -2,7 +2,7 @@
 
 Read-only: it logs in, subscribes to market data and writes what arrives. Nothing here can place or cancel an order
 (the stream's order subscription is never sent). It runs beside the horse trader in live-trade.yml from the session's
-start to 10:30 UK, on the live key (the owner, 10 Nov 2026: "wire the horse ladder recorder"; see "Where it runs").
+start to 21:30 UK (the last race; the owner, 11 Nov 2026), on the live key (the owner, 10 Nov 2026: "wire the horse ladder recorder"; see "Where it runs").
 
 What differs from the greyhounds' recorder:
 - the markets: horse racing (event type 7), WIN, GB and IE. A day's WIN markets fit one subscription (at most 190),
@@ -13,13 +13,13 @@ What differs from the greyhounds' recorder:
 - to ``s3://$CAPTURE_BUCKET/betfair_stream/horse/<day>/part-NNN.jsonl.gz``; the state each minute to
   ``betfair_live/<day>/status_horse_stream.json``.
 
-Where it runs: live-trade.yml, a background process beside the trader, under a timeout, to 10:30 UK, the morning the
+Where it runs: live-trade.yml, a background process beside the trader, under a timeout, to 21:30 UK, the day the
 rule trades (the recorder's own job, live-record.yml, waits all day for the runner while the trader is live). The
 stream needs the live key: Betfair offers it on no delayed key, which carries no full ladder or traded volume either,
 so this is the one read-only process beside the trader on the live key (the owner's decision of 10 Nov 2026). Without
 the secret it does not run; its failing never touches the trader. By hand:
 
-    BETFAIR_APP_KEY=<the live key> python -m research.horse_stream_record --until 10:30
+    BETFAIR_APP_KEY=<the live key> python -m research.horse_stream_record --until 21:30
 """
 
 from __future__ import annotations

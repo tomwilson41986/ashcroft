@@ -1,22 +1,22 @@
 {
   "model_type": "bfsp_regression",
   "target": "demeaned_log",
-  "n_features": 1006,
+  "n_features": 1181,
   "walk_forward_avg": {
     "n_folds": 0
   },
   "overall_walk_forward": {},
   "final_model": {
     "target": "demeaned_log",
-    "log_mae": 0.2563,
-    "log_rmse": 0.3298,
-    "log_r2": 0.9254,
-    "bfsp_mae": 0.55,
-    "median_ape_pct": 20.75,
-    "mean_ape_pct": 26.88,
-    "correlation": 0.9628,
+    "log_mae": 0.2428,
+    "log_rmse": 0.3124,
+    "log_r2": 0.9338,
+    "bfsp_mae": 0.53,
+    "median_ape_pct": 19.62,
+    "mean_ape_pct": 25.31,
+    "correlation": 0.967,
     "best_iteration": 12000,
-    "holdout_mae": 0.2586417385944912
+    "holdout_mae": 0.24785689029482846
   },
   "fold_details": [],
   "params": {
@@ -39,8 +39,8 @@
   },
   "data_range": {
     "min_date": "2021-01-01",
-    "max_date": "2026-10-13",
-    "total_rows": 706242
+    "max_date": "2026-11-12",
+    "total_rows": 716358
   },
   "history_start": "2018-01-01"
 }

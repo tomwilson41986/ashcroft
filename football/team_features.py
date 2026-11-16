@@ -148,6 +148,40 @@ def fit_market_ratings(d: pd.DataFrame, as_of: pd.Timestamp, xi: float = XI, win
     return {"att": dict(zip(teams, att)), "def": dict(zip(teams, dfn)), "mu": beta[0], "home": beta[1]}
 
 
+def shrunk_lsqr(X, y, first_team_col: int, k: float | None = None, iters: int = 4) -> tuple[np.ndarray, float]:
+    """Least squares with a ridge on the team columns only (``first_team_col`` on), the penalty ``k`` in pseudo-rows
+    of unit weight; (coefficients, k). ``X`` and ``y`` are already row-weighted (each row by the square root of its
+    weight). With ``k`` None it is estimated (empirical Bayes, EM on the two variances): the row noise sigma^2 from the
+    weighted residuals, the spread of the team terms tau^2 from the fitted terms and their posterior variances
+    (sigma^2 / (d_j + k), d_j the column's weighted sum of squares), k = sigma^2 / tau^2. A noisy target (one match's
+    xG or margin) gets a heavy penalty and a side with few matches stays near the average; a precise one (the
+    market's own goal rate) gets a light one.
+
+    The review's finding A1 (10 Nov 2026): the fits' ``lsqr(damp=sqrt(ridge / n))`` penalises every column by
+    ridge / n, about 0.001, against 20 or more a team: no shrinkage in effect."""
+    from scipy.sparse import coo_matrix, vstack
+    from scipy.sparse.linalg import lsqr
+    X = X.tocsr()
+    n, p = X.shape
+    t = p - first_team_col
+    sel = coo_matrix((np.ones(t), (np.arange(t), first_team_col + np.arange(t))), shape=(t, p)).tocsr()
+    d = np.asarray(X.multiply(X).sum(axis=0)).ravel()[first_team_col:]
+    estimate = k is None
+    k = 1.0 if estimate else float(k)
+    beta = np.zeros(p)
+    for _ in range(iters if estimate else 1):
+        beta = lsqr(vstack([X, np.sqrt(k) * sel]).tocsr(), np.r_[y, np.zeros(t)])[0]
+        if not estimate:
+            break
+        r = y - X @ beta
+        df = float((d / (d + k)).sum()) + first_team_col
+        s2 = float(r @ r) / max(n - df, 1.0)
+        u = beta[first_team_col:]
+        t2 = float(u @ u + (s2 / (d + k)).sum()) / max(t, 1)
+        k = float(np.clip(s2 / max(t2, 1e-12), 1e-6, 1e6))
+    return beta, k
+
+
 def collection_day(dates) -> pd.Series:
     """football-data's collection of each match day's early prices (matches.php): Friday for Friday to Monday matches,
     Tuesday for Tuesday to Thursday. A feature may use only what was known before this day."""

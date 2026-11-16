@@ -13,14 +13,16 @@ import pandas as pd
 PREFIX = "rr2_"
 EXACT = ("lb_kr", "lb_elo", "lb_kr_vs_par", "lb_fl3_wr", "trap_bias", "days_since", "runs_before")
 PATTERNS = (r"^gp_(nfpz|gsr|ep|lbsc|ae|mkt|bsp_mkt|rs|shape|wax)_(w3|w5|w10|car)$",)
-MAX_COLS = 30
 
 
 def columns(df: pd.DataFrame) -> list[str]:
+    """The inputs, in a fixed order whatever the frame's. Until 11 Nov 2026 the list was cut at 30 in the frame's
+    column order, which dropped 17 of 47 - every market-history window the block says it reads - and could keep
+    different columns in the cached matrix and in a live frame (the audit of 11 Nov 2026, finding 45)."""
     cols = [c for c in EXACT if c in df.columns]
     for pat in PATTERNS:
-        cols += [c for c in df.columns if re.match(pat, c) and c not in cols]
-    return cols[:MAX_COLS]
+        cols += sorted(c for c in df.columns if re.match(pat, c) and c not in cols)
+    return cols
 
 
 def build(df: pd.DataFrame) -> list[str]:

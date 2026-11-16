@@ -1,0 +1,79 @@
+{
+ "about": "Batch 24 (11 Nov 2026), registered after batch 23 (run 43061572707: the expected-time table on the live model's trees at one seed, RMSE of log(BSP) 0.3543 to 0.3465, z -16.4, log-loss z -4.0) and before its own scores: the pass confirmed in the live model itself. stack3_all3 is the live model exactly (batch 18: three seeds of trees, three neural set models, the stack, the per-track stretch). stack3_all4 is the same with the expected-time table (greyhound/pit/xtime.py). The bar: 3 bootstrap standard errors on the RMSE of log(BSP) against stack3_all3, the log-loss no worse beyond 1; read uncalibrated and with the per-track stretch, once. A pass makes stack3_all4 the candidate for the live price: the owner decides the switch.",
+ "recipe": "quick",
+ "baseline": "stack3_all3",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "stack3_all3"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "stack3_all4"
+  }
+ ]
+}

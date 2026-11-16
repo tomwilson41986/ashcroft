@@ -423,7 +423,8 @@ def trade(until: str, live: bool, store, cfg: dict | None = None, all_games: boo
         from football.paper_book import PaperBook
         throttle = Throttle(data._read)                   # under Betfair's limits whatever the key (the owner, 4 Nov)
         feed = Feed(throttle, DayWriter(store, depth=depth), hours=cfg.get("all_games_hours", 24.0), depth=depth,
-                    paper=PaperBook())
+                    paper=PaperBook(), inplay_max=int(cfg.get("inplay_markets", 0)),
+                    inplay_min_matched=float(cfg.get("inplay_min_matched", 10000.0)))
     trader = Trader(ex, Pricer(model, aliases, cfg["limits"].get("min_team_matches", 10)), cfg, mode, store,
                     kill_switch(store))
     day = _uk_now().date().isoformat()
@@ -464,6 +465,7 @@ def trade(until: str, live: bool, store, cfg: dict | None = None, all_games: boo
            "bets": trader.bets, "turnover": round(trader.turnover, 2)}
     if feed is not None:
         out["all_games"] = {"markets": len(feed.markets), "reads": feed.reads, "rows": feed.rows,
+                            "inplay_markets_recorded": feed.inplay_recorded,
                             "paper_lines": len(feed.paper.lines), "betfair_requests": throttle.report()}
     log.info("football: %s", out)
     return out

@@ -77,6 +77,9 @@ jobs:
       - name: The closing-line model on the recorded books (walk-forward by day, spread-aware gate; grows weekly)
         continue-on-error: true
         run: python -m research.open_close.football_close_model_books --days 60 --root src --cache .football_cache --models models/football/ev_v1 --out out/football_close_model_books.json
+      - name: The in-play leader's resting back (football-inplay-leader-maker-1112; counts only until its one reading)
+        continue-on-error: true
+        run: python -m research.open_close.football_inplay_leader_trial --out-json out/football_inplay_leader_trial.json
       - name: Keep the scores (S3 and the run's artifact)
         if: ${{ !cancelled() }}
         run: |

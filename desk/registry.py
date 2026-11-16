@@ -42,6 +42,8 @@ REQUIRED = ("id", "sport", "name", "stage", "hypothesis", "entry_point", "workfl
 GATE_FIELDS = ("metric", "min_days", "min_bets", "interval", "dsr", "read")
 MIN_DSR = 0.95                         # CLAUDE.md, the owner 5 and 9 Nov 2026: research/overfit.py DSR_THRESHOLD
 MIN_INTERVAL = 0.90
+MIN_DAYS = 30                          # research/overfit.py MIN_OBS: no Sharpe worth deflating on fewer (tests hold them equal;
+                                       # not imported, so the warden's slim install can read the registry)
 LIMIT_FIELDS = ("max_order", "max_day_turnover", "max_day_loss", "max_market_exposure", "max_orders_per_minute",
                 "price_collar", "max_book_age_s", "min_stake")
 
@@ -74,6 +76,11 @@ class Strategy:
     @property
     def desk_run(self) -> bool:
         return self.stage != "legacy"
+
+    @property
+    def params(self) -> dict:
+        """A desk strategy's frozen parameters (its algo's constructor arguments), as registered."""
+        return dict(self.raw.get("params") or {})
 
 
 def gate_hash(gate: dict) -> str:
@@ -139,9 +146,8 @@ def check_one(d: dict, path: Path | None = None) -> list[str]:
             errs.append(f"{where}: gate dsr {gate['dsr']} under {MIN_DSR}")
         if float(gate["interval"]) < MIN_INTERVAL:
             errs.append(f"{where}: gate interval {gate['interval']} under {MIN_INTERVAL}")
-        from research.overfit import MIN_OBS
-        if int(gate["min_days"]) < MIN_OBS:
-            errs.append(f"{where}: gate min_days {gate['min_days']} under {MIN_OBS} (the deflated Sharpe's minimum)")
+        if int(gate["min_days"]) < MIN_DAYS:
+            errs.append(f"{where}: gate min_days {gate['min_days']} under {MIN_DAYS} (the deflated Sharpe's minimum)")
         if gate["read"] != "forward":
             errs.append(f"{where}: the gate reads forward days only (history earns paper, never money)")
         if d.get("gate_sha256") != gate_hash(gate):

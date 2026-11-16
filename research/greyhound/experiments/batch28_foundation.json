@@ -1,0 +1,503 @@
+{
+ "about": "Batch 28 (11 Nov 2026), registered before its scores: the foundation, and on it the trials table, the dyad and cycle and the six discovery tables. Every arm runs on the FIXED engine (the audit's foundation faults: greyhound/data.py, greyhound/metrics.py and the blocks; commit 88fb4d6) with the metrics tables rebuilt from it (greyhound/pit2; the expected-time table also reads the handicap runs and every spelling of forced to check). The tree arms are batch 26's t1 recipe at a FIXED 6,000 rounds with no early stopping (the price is read at the round that is best on the last tenth of the fit window): batch 26 showed that stopping after 100 flat rounds is luck worth 0.002 of RMSE (t1 stopped at 3,046 rounds; the same recipe with ten columns of noise ran to 5,154 and scored 0.0021 better, z -5.2). f0 is the baseline; f0_seed is seed 1 and f0_placebo adds the ten noise columns (the floors under fixed rounds); f_trials adds the trials table; f_dyad and f_cycle the two tables batch 26 could not separate from the noise; f_ext, f_fitness, f_fear, f_clock, f_optics, f_litter one discovery table each; f_all6 all six. f_stack is the live recipe (three seeds of trees and three neural set models, stacked; batch 24's stack3_all4 recipe unchanged, with its own early stopping): the candidate for the live greyhound price, read against batch 24's stack3_all4 on the same runners (the live candidate before the trials and the foundation). The foundation itself is read as f0 against batch 26's arms of the old engine that trained past 5,000 rounds (t1_placebo, t1_dyad) on the same runners: descriptive, since the engines' caches differ. The bar for an added table: 3 bootstrap standard errors (by day) on the RMSE of log(BSP) against f0 AND a gain larger than both floors' absolute differences from f0, the log-loss no worse beyond 1 standard error; read by period (1 Jun - 31 Aug, 1 Sep - 5 Nov, after 5 Nov) and by the kind of runner. The bar for f_stack against stack3_all4: the same 3 standard errors and the log-loss no worse.",
+ "recipe": "quick",
+ "baseline": "f0",
+ "test_from": "2026-06-01",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime"
+   ],
+   "importance": true,
+   "name": "f0"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000,
+    "seed": 1
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime"
+   ],
+   "importance": true,
+   "name": "f0_seed"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "placebo"
+   ],
+   "importance": true,
+   "name": "f0_placebo"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials"
+   ],
+   "importance": true,
+   "name": "f_trials"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_dyad"
+   ],
+   "importance": true,
+   "name": "f_dyad"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_cycle"
+   ],
+   "importance": true,
+   "name": "f_cycle"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_ext"
+   ],
+   "importance": true,
+   "name": "f_ext"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_fitness"
+   ],
+   "importance": true,
+   "name": "f_fitness"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_fear"
+   ],
+   "importance": true,
+   "name": "f_fear"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_clock"
+   ],
+   "importance": true,
+   "name": "f_clock"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_optics"
+   ],
+   "importance": true,
+   "name": "f_optics"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_litter"
+   ],
+   "importance": true,
+   "name": "f_litter"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 6000,
+    "rounds": 6000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_ext",
+    "pit_fitness",
+    "pit_fear",
+    "pit_clock",
+    "pit_optics",
+    "pit_litter"
+   ],
+   "importance": true,
+   "name": "f_all6"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "f_stack"
+  }
+ ]
+}

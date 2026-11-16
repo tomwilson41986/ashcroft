@@ -31,12 +31,25 @@ import numpy as np
 import pandas as pd
 
 #: the metrics database's tables the model reads (greyhound/pit), in their build order
-PIT_TABLES = ("ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend")
+#: from 13 Nov 2026 (the owner: "Add the best performing model to live today"): batch 32's ``m_stack``
+#: (reports/greyhound_model.md section 48; greyhound-fastloop.yml run 43236900145) - the ten tables of batch 18 and
+#: the expected-time, trials, optics, line, salience and last-race tables. RMSE of log(BSP) 0.2885 on 1 Jun - 11 Nov
+#: 2026 against 0.3332 for batch 24's read of the recipe before it.
+PIT_TABLES = ("ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend",
+              "xtime", "trials", "optics", "line", "salience", "lastrace", "league", "speed", "seq")
+#: from 14 Nov 2026 (the owner: "Release the league table to the live price"): the league table (greyhound/pit/league.py,
+#: Hunter's MM) added. Batch 37 (ledger greyhound-leak-league-batch37-1114, reports/greyhound_model.md section 54): RMSE
+#: of log(BSP) 0.2885 -> 0.2854 on the released stack, z -12.7. The recipe is renamed "stack_ml" with it (its own
+#: out-of-sample prices: greyhound/live.py STACK_OOS_BY_RECIPE)
+#: from 15 Nov 2026 (the owner: "Release"): the speed figures (greyhound/pit/speed.py) and the sequence table
+#: (greyhound/pit/seq.py, its monthly networks cached in the store) added. Batch 41 (ledger
+#: greyhound-speed-seq-batch41-1114, reports/greyhound_model.md section 63): RMSE of log(BSP) 0.2859 -> 0.2797 on the
+#: live recipe, z -19.0. The recipe is renamed "stack_mls"
 MATRIX_BLOCKS = ("sim", "wpred") + tuple(f"pit_{t}" for t in PIT_TABLES)
 #: batch 14 (run 42818559765): the weigh-in's own columns, a season count GBGB fills after the day, a trainer change
-#: the card cannot see
-DROP = ("lf_wt_", "hb_days_since_season", "ti_new_trainer")
-RECIPE = {"name": "stack3_all3", "learning_rate": 0.08, "early_stop": 100, "rounds": 10000, "max_bin": 63,
+#: the card cannot see - the one list every card-safe feature set drops (greyhound/live.py)
+from greyhound.live import CARD_UNSAFE_PREFIXES as DROP  # noqa: E402
+RECIPE = {"name": "stack_mls", "learning_rate": 0.08, "early_stop": 100, "rounds": 10000, "max_bin": 63,
           "seeds": 3, "nn_seeds": 3, "nn_seconds": 1800.0, "window_months": 29, "max_seconds": None,
           "calibration": "stretch_track"}
 

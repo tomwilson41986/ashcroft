@@ -21,8 +21,9 @@ A, B, C = 11, 12, 13
 class Stand:
     """An exchange that fills every back at the best price offered at or above the limit, and records the orders."""
 
-    def __init__(self, backs=None, status="OPEN"):
-        self.orders, self.calls = [], []
+    def __init__(self, backs=None, status="OPEN", lay_status=("PENDING",)):
+        self.orders, self.calls, self.lays = [], [], []
+        self.lay_status = list(lay_status)
         self.backs = backs or {A: [(6.0, 500.0)], B: [(2.0, 500.0)], C: [(80.0, 50.0)]}
         self.status = status
 
@@ -36,6 +37,12 @@ class Stand:
         best = self.backs[selection_id][0][0]
         return Fill(market_id, selection_id, "BACK", "LIMIT", price, size, matched=size, avg_price=best,
                     bet_id=f"b{len(self.orders)}", status="SUCCESS")
+
+    def lay_at_bsp(self, market_id, selection_id, liability, ref):
+        self.lays.append({"mid": market_id, "sid": selection_id, "liability": liability, "ref": ref})
+        st = self.lay_status.pop(0) if len(self.lay_status) > 1 else self.lay_status[0]
+        return Fill(market_id, selection_id, "LAY", "MARKET_ON_CLOSE", 0.0, liability, bet_id=f"l{len(self.lays)}",
+                    status=st, error="" if st == "PENDING" else st)
 
 
 def _sel(rows):
@@ -86,7 +93,7 @@ def test_half_stakes_to_win_fifty_at_most_a_hundred_at_least_one():
     assert ML.to_win_stake(80.0) == pytest.approx(0.63)
     s = _session([("steamer", A), ("steamer", B), ("steamer", C)])
     s.step(ML.uk_at(DAY, ML.ENTRY_UK))
-    ev = {r["selection_id"]: r for r in s.ledger}
+    ev = {r["selection_id"]: r for r in s.ledger if r["event"] != "trade_out"}
     assert ev[A]["event"] == "back" and ev[A]["asked"] == pytest.approx(10.0)
     assert ev[B]["event"] == "back" and ev[B]["asked"] == pytest.approx(50.0)
     assert ev[C]["event"] == "below_min"                            # GBP0.63: under Betfair's GBP1, not placed
@@ -108,7 +115,7 @@ def test_the_live_traders_horses_are_left_alone():
                         "matched": [12.5, 0.0, 0.0]}).to_csv(index=False).encode()
     s = _session([("steamer", A), ("quick_return", A), ("steamer", B)], live_ledger=led)
     s.step(ML.uk_at(DAY, ML.ENTRY_UK))
-    ev = {(r["model"], r["selection_id"]): r["event"] for r in s.ledger}
+    ev = {(r["model"], r["selection_id"]): r["event"] for r in s.ledger if r["event"] != "trade_out"}
     assert ev[("steamer", A)] == ev[("quick_return", A)] == "skipped_live"
     assert ev[("steamer", B)] == "back"                             # an unmatched live order does not count
     assert [o["sid"] for o in s.x.orders] == [B]
@@ -129,7 +136,7 @@ def test_the_day_limit_is_per_model():
     s = _session([("steamer", A), ("quick_return", A)])
     s.staked["steamer"] = ML.DAY_LIMIT - 5.0
     s.step(ML.uk_at(DAY, ML.ENTRY_UK))
-    ev = {r["model"]: r["event"] for r in s.ledger}
+    ev = {r["model"]: r["event"] for r in s.ledger if r["event"] != "trade_out"}
     assert ev == {"steamer": "day_limit", "quick_return": "back"}
 
 
@@ -163,9 +170,54 @@ def test_live_needs_the_owners_switch():
     assert not ML.live_switch_on({"TRADING_LIVE": "yes"})           # the live trader's switch is not this one
 
 
-def test_win_only_no_place_orders_and_no_lay():
+def test_win_only_no_place_orders_and_the_only_lay_is_the_trade_out():
     src = Path(ML.__file__).read_text()
-    assert "lay_at_bsp(" not in src and "MARKET_ON_CLOSE" not in src and '"place"' not in src
+    assert '"place"' not in src and "MARKET_ON_CLOSE" not in src           # the lay is the exchange's, at the SP
+    assert src.count("lay_at_bsp(") == 1
+    assert ML.EXIT == {"steamer": "trade", "quick_return": "trade"}     # the owner, 16 Nov 2026
+
+
+def test_each_back_is_laid_at_the_sp_for_its_winnings_under_its_own_reference():
+    s = _session([("steamer", A), ("quick_return", B)])
+    s.step(ML.uk_at(DAY, ML.ENTRY_UK))
+    # A: GBP10 matched at 6.0 -> winnings GBP50; B: GBP50 at 2.0 -> winnings GBP50
+    assert s.x.lays == [{"mid": MID, "sid": A, "liability": pytest.approx(50.0), "ref": f"mes1105{A}"},
+                        {"mid": MID, "sid": B, "liability": pytest.approx(50.0), "ref": f"meq1105{B}"}]
+    lay = [r for r in s.ledger if r["event"] == "trade_out"]
+    assert [r["model"] for r in lay] == ["steamer", "quick_return"] and all(r["status"] == "PENDING" for r in lay)
+
+
+def test_winnings_under_ten_pounds_are_held_not_laid():
+    s = _session([("steamer", B)], x=Stand(backs={B: [(1.15, 500.0)]}))
+    s.step(ML.uk_at(DAY, ML.ENTRY_UK))                              # GBP100 at 1.15: winnings GBP15, laid
+    assert [l["liability"] for l in s.x.lays] == [pytest.approx(15.0)]
+    s = _session([("steamer", B)], x=Stand(backs={B: [(1.05, 500.0)]}))
+    s.step(ML.uk_at(DAY, ML.ENTRY_UK))                              # GBP100 at 1.05: winnings GBP5, held
+    assert s.x.lays == [] and [r["event"] for r in s.ledger] == ["back", "held"]
+
+
+def test_a_refused_lay_is_sent_again_and_an_unknown_one_never():
+    x = Stand(lay_status=("FAILURE", "PENDING"))
+    s = _session([("steamer", A)], x=x)
+    now, sleep = _clock(ML.uk_at(DAY, ML.ENTRY_UK))
+    led = ML.run(s, now=now, sleep=sleep)
+    assert [r["event"] for r in led] == ["back", "trade_out_failed", "trade_out"] and len(x.lays) == 2
+    x = Stand(lay_status=("UNKNOWN",))
+    s = _session([("steamer", A)], x=x)
+    now, sleep = _clock(ML.uk_at(DAY, ML.ENTRY_UK))
+    led = ML.run(s, now=now, sleep=sleep)
+    assert [r["event"] for r in led] == ["back", "trade_out_failed"] and len(x.lays) == 1
+
+
+def test_the_lay_goes_in_even_with_the_stop_object():
+    x = Stand(lay_status=("FAILURE", "PENDING"))
+    on = {"stop": False}
+    s = _session([("steamer", A)], x=x, stopped=lambda: on["stop"])
+    t = ML.uk_at(DAY, ML.ENTRY_UK)
+    s.step(t)
+    on["stop"] = True                                               # STOP after the back: the hedge still goes
+    s.step(t + timedelta(minutes=1))
+    assert [r["event"] for r in s.ledger] == ["back", "trade_out_failed", "trade_out"]
 
 
 def test_the_card_maps_to_the_tables_shape():
@@ -216,3 +268,87 @@ def test_the_card_joins_the_history_in_the_tables_shape_and_order():
     today = x[x["race_date"] == "2026-11-04"].iloc[0]
     assert today["dslr"] == 3 and today["prev_fin"] == 1.0 and today["prev_bsp"] == 5.0 and today["runs_held"] == 1
     assert bool(MF.rule_qr(x[x["race_date"] == "2026-11-04"]).iloc[0]) is True
+
+
+def test_settle_writes_the_bsp_and_the_clv_beside_betfairs_pnl(monkeypatch):
+    """Live settle: P&L from Betfair's cleared orders under our references only; the BSP from the closed books and the
+    CLV (average price / BSP - 1) on each back, for the dashboard."""
+    import io
+    import trading.exchange as TX
+    store = {}
+    led = pd.DataFrame([
+        {"ts": "t", "mode": "live", "model": "steamer", "event": "back", "market_id": MID, "selection_id": A,
+         "matched": 10.0, "avg_price": 6.0},
+        {"ts": "t", "mode": "live", "model": "quick_return", "event": "back", "market_id": MID, "selection_id": B,
+         "matched": 50.0, "avg_price": 2.0}])
+    store[ML._key("live", DAY, "ledger.csv")] = ML._ledger_bytes(led.to_dict("records"))
+
+    class X:
+        def __init__(self, data):
+            pass
+
+        def login(self):
+            pass
+
+        def cleared(self, mids):
+            return [{"marketId": MID, "selectionId": A, "side": "BACK", "customerOrderRef": f"mes{DAY:%m%d}{A}",
+                     "profit": 50.0},
+                    {"marketId": MID, "selectionId": A, "side": "LAY", "customerOrderRef": f"mes{DAY:%m%d}{A}",
+                     "profit": -50.0},                            # the steamer's lay at the SP: a winner nets 0
+                    {"marketId": MID, "selectionId": B, "side": "BACK", "customerOrderRef": f"meq{DAY:%m%d}{B}",
+                     "profit": -50.0},
+                    {"marketId": MID, "selectionId": C, "side": "BACK", "customerOrderRef": f"ash{DAY:%m%d}{C}",
+                     "profit": 9.0}]
+
+        def books(self, ids, with_sp=False):
+            assert with_sp
+            return {MID: Book(MID, "CLOSED", False, 1e5, {A: Quote(A, status="WINNER", bsp=5.0),
+                                                          B: Quote(B, status="LOSER", bsp=2.5)})}
+
+    monkeypatch.setattr(TX, "BetfairData", lambda: None)
+    monkeypatch.setattr(TX, "LiveExchange", X)
+    monkeypatch.setattr(ML, "s3_get", lambda k: store.get(k))
+    monkeypatch.setattr(ML, "s3_put", lambda k, b, *a, **kw: store.__setitem__(k, b))
+    s = ML.settle(DAY, live=True)
+    out = pd.read_csv(io.BytesIO(store[ML._key("live", DAY, "ledger.csv")]))
+    a, b = out.set_index("selection_id").loc[A], out.set_index("selection_id").loc[B]
+    assert (a.result, a.pnl, a.bsp, a.clv) == ("WINNER", 0.0, 5.0, 0.2)          # back and lay summed
+    assert (b.result, b.pnl, b.bsp, b.clv) == ("LOSER", -50.0, 2.5, -0.2)
+    assert s["steamer"]["pnl_2pc"] == 0.0 and s["quick_return"]["pnl_2pc"] == -50.0
+
+
+def test_paper_settle_adds_the_lay_at_the_sp(monkeypatch):
+    """Paper: a steamer back of GBP10 at 6.0 laid at the SP for GBP50; it loses at a BSP of 5.0, so the lay wins
+    50 / (5 - 1) = 12.50 and the bet nets +2.50. A back with no lay in the ledger (a refused one) is held."""
+    import io
+    import trading.exchange as TX
+    store = {}
+    led = pd.DataFrame([
+        {"ts": "t", "mode": "paper", "model": "steamer", "event": "back", "market_id": MID, "selection_id": A,
+         "matched": 10.0, "avg_price": 6.0},
+        {"ts": "t", "mode": "paper", "model": "steamer", "event": "trade_out", "market_id": MID, "selection_id": A,
+         "asked": 50.0, "status": "PENDING"},
+        {"ts": "t", "mode": "paper", "model": "quick_return", "event": "back", "market_id": MID, "selection_id": B,
+         "matched": 50.0, "avg_price": 2.0}])
+    store[ML._key("paper", DAY, "ledger.csv")] = ML._ledger_bytes(led.to_dict("records"))
+
+    class X:
+        def __init__(self, data, **kw):
+            pass
+
+        def login(self):
+            pass
+
+        def books(self, ids, with_sp=False):
+            return {MID: Book(MID, "CLOSED", False, 1e5, {A: Quote(A, status="LOSER", bsp=5.0),
+                                                          B: Quote(B, status="WINNER", bsp=2.5)})}
+
+    monkeypatch.setattr(TX, "BetfairData", lambda: None)
+    monkeypatch.setattr(TX, "PaperExchange", X)
+    monkeypatch.setattr(ML, "s3_get", lambda k: store.get(k))
+    monkeypatch.setattr(ML, "s3_put", lambda k, b, *a, **kw: store.__setitem__(k, b))
+    ML.settle(DAY, live=False)
+    out = pd.read_csv(io.BytesIO(store[ML._key("paper", DAY, "ledger.csv")]))
+    b = out[out.event == "back"].set_index("selection_id")
+    assert b.loc[A, "pnl"] == pytest.approx(2.5) and b.loc[A, "result"] == "LOSER"
+    assert b.loc[B, "pnl"] == pytest.approx(50.0)

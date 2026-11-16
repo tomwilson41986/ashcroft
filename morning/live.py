@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import math
 import json
 import logging
 import os
@@ -66,10 +67,18 @@ MIN_AHEAD = timedelta(minutes=2)
 COMMISSION = (0.02, 0.05)        # the desk's rate and the research's
 MODELS = {"steamer": "mes", "quick_return": "meq"}   # model -> order reference prefix (never "ash")
 ORDER = ("steamer", "quick_return")                  # a horse both select: the steamer's order first
+# The exit (the owner, 16 Nov 2026, on research morning-exit-bsp-1116: "yes change these to live, trade out"): the
+# steamer's back is laid at the Betfair SP for a liability equal to its winnings, as the live trader trades out
+# (trading/session.py), so it pays nothing if the horse wins and stake x (price - BSP) / (BSP - 1) if it loses. The
+# quick return too (the owner, 16 Nov 2026: "quick returners too"), though its edge runs past the BSP: trading out
+# gave it GBP5,014 against GBP8,348 held in 2022-26 (research/strat/results_2026-11-16/morning_exit_liability_1116.txt)
+EXIT = {"steamer": "trade", "quick_return": "trade"}
+MIN_BSP_LIABILITY = 10.0         # the smallest lay at SP sent (trading/config.py min_bsp_liability): under it, held
 PREFIX = "morning"
 LIVE_TRADER_PREFIX = "ash"
 LEDGER_COLS = ["ts", "mode", "model", "event", "market_id", "venue", "off", "selection_id", "runner", "pred",
-               "best_back", "limit", "asked", "matched", "avg_price", "bet_id", "status", "error", "result", "pnl"]
+               "best_back", "limit", "asked", "matched", "avg_price", "bet_id", "status", "error", "result", "pnl",
+               "bsp", "clv"]                   # bsp, clv: written at settle (clv = average price / BSP - 1)
 
 
 def bucket() -> str:
@@ -154,6 +163,7 @@ class MorningSession:
         self.ledger: list[dict] = []
         self.done: set = set()
         self.staked = {m: 0.0 for m in MODELS}
+        self.hedge_due: list[tuple] = []                # (row, market_id, selection_id, liability): a lay to send again
 
     def _row(self, t, r, event, **kw) -> dict:
         m = self.markets.get(str(r.market_id))
@@ -164,12 +174,27 @@ class MorningSession:
                 "pred": getattr(r, "pred", None), **kw}
 
     def finished(self, t: datetime) -> bool:
-        return t > self.retry_end or len(self.done) >= len(self.sel)
+        return t > self.retry_end or (len(self.done) >= len(self.sel) and not self.hedge_due)
+
+    def _trade_out(self, t, r, mid: str, sid: int, liability: float) -> None:
+        """The back laid at the SP for ``liability`` (a market-on-close order, matched at the off). A lay Betfair refused is
+        sent again next minute to 10:15 UK; one whose outcome cannot be told (UNKNOWN) never is, so it is never laid
+        twice."""
+        f = self.x.lay_at_bsp(mid, sid, liability, ref(r.model, self.day, sid))
+        ok = f.status in ("PENDING", "SUCCESS")
+        self.ledger.append(self._row(t, r, "trade_out" if ok else "trade_out_failed", asked=liability,
+                                     bet_id=f.bet_id, status=f.status, error=f.error))
+        if f.status == "FAILURE" and t < self.retry_end:
+            self.hedge_due.append((r, mid, sid, liability))
+        self.on_order(self.ledger)
 
     def step(self, t: datetime) -> None:
         """One minute. Nothing at all before 10:00 UK or after 10:15 UK."""
         if t < self.entry or t > self.retry_end:
             return
+        due, self.hedge_due = self.hedge_due, []           # hedges first, STOP or not: a lay only takes risk off
+        for r, mid, sid, liab in due:
+            self._trade_out(t, r, mid, sid, liab)
         todo = [r for r in self.sel.itertuples(index=False) if (r.model, str(r.market_id), int(r.selection_id))
                 not in self.done]
         if not todo:
@@ -220,6 +245,14 @@ class MorningSession:
                                          avg_price=float(f.avg_price) if ok else None, bet_id=f.bet_id,
                                          status=f.status, error=f.error))
             self.on_order(self.ledger)
+            if ok and EXIT[r.model] == "trade":
+                liab = math.floor(float(f.matched) * (float(f.avg_price) - 1.0) * 100 + 1e-9) / 100
+                if liab < MIN_BSP_LIABILITY:
+                    self.ledger.append(self._row(t, r, "held", asked=liab,
+                                                 error=f"winnings under GBP{MIN_BSP_LIABILITY:.0f}: not laid"))
+                    self.on_order(self.ledger)
+                else:
+                    self._trade_out(t, r, mid, sid, liab)
 
 
 def run(session: MorningSession, now=lambda: datetime.now(timezone.utc), sleep=_time.sleep) -> list[dict]:
@@ -358,29 +391,57 @@ def settle(day: date, live: bool) -> dict:
     x.login()
     mids = sorted(bets["market_id"].astype(str).unique())
     pnl, result = {}, {}
+    books = {}
+    if mids:
+        try:
+            books = x.books(mids, with_sp=True)               # the result and the BSP of each runner backed
+        except Exception as exc:  # noqa: BLE001  live: the P&L stands on Betfair's record without it
+            log.warning("No closed books: %s", exc)
+            if not live:
+                raise
+    sp, status = {}, {}
+    for mid, q in books.items():
+        for sid, rr in q.runners.items():
+            status[(str(mid), int(sid))] = rr.status
+            if getattr(rr, "bsp", None):
+                sp[(str(mid), int(sid))] = float(rr.bsp)
     if live and mids:
+        back = {}
         for o in x.cleared(mids):
             r = str(o.get("customerOrderRef") or "")
             if not any(r.startswith(f"{p}{day:%m%d}") for p in MODELS.values()):
                 continue                                  # the live trader's bets, or the owner's own
             k = (str(o["marketId"]), int(o["selectionId"]), r[:3])
-            pnl[k] = pnl.get(k, 0.0) + float(o.get("profit") or 0.0)
-            result[k] = "WINNER" if float(o.get("profit") or 0.0) > 0 else "LOSER"
+            pnl[k] = pnl.get(k, 0.0) + float(o.get("profit") or 0.0)   # the back and its lay at the SP, summed
+            if o.get("side") == "BACK":
+                back[k] = back.get(k, 0.0) + float(o.get("profit") or 0.0)
+        for k in pnl:                                      # the closed book's word, else the back's own profit
+            st = status.get(k[:2])
+            result[k] = st if st in ("WINNER", "LOSER", "REMOVED") else ("WINNER" if back.get(k, 0.0) > 0 else "LOSER")
     elif mids:
-        books = x.books(mids, with_sp=True)
+        lays = led[led["event"] == "trade_out"]
         for b in bets.itertuples(index=False):
-            q = books.get(str(b.market_id))
-            q = q.runners.get(int(b.selection_id)) if q is not None else None
-            st = q.status if q is not None else ""
+            st = status.get((str(b.market_id), int(b.selection_id)), "")
             k = (str(b.market_id), int(b.selection_id), MODELS[b.model])
             result[k] = st
             pnl[k] = (float(b.matched) * (float(b.avg_price) - 1) if st == "WINNER" else
                       -float(b.matched) if st == "LOSER" else 0.0)
+            liab = pd.to_numeric(lays[(lays["model"] == b.model) & (lays["market_id"].astype(str) == str(b.market_id))
+                                      & (lays["selection_id"].astype(int) == int(b.selection_id))]["asked"],
+                                 errors="coerce").sum()
+            bsp = sp.get(k[:2])
+            if liab > 0 and st in ("WINNER", "LOSER") and bsp and bsp > 1:
+                pnl[k] += -liab if st == "WINNER" else liab / (bsp - 1)
+    led["result"] = led["result"].astype(object) if "result" in led.columns else None   # read back blank: floats
     out = []
     for i, b in bets.iterrows():
         k = (str(b.market_id), int(b.selection_id), MODELS[b.model])
         led.loc[i, "result"] = result.get(k, "UNSETTLED")
         led.loc[i, "pnl"] = round(pnl[k], 2) if k in pnl else None
+        bsp = sp.get(k[:2])
+        led.loc[i, "bsp"] = bsp
+        avg = pd.to_numeric(b.get("avg_price"), errors="coerce")
+        led.loc[i, "clv"] = round(float(avg) / bsp - 1, 4) if bsp and bsp > 1 and avg == avg and avg > 1 else None
     s3_put(_key(mode, day, "ledger.csv"), _ledger_bytes(led.to_dict("records")))
     summary = {"day": str(day), "mode": mode}
     for model in MODELS:

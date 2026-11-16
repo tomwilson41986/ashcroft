@@ -808,3 +808,299 @@ selection-id type mismatch, now fixed with a test):
 - Until then the model is the book-only one: 1,588 rows, correlation 0.010, the spread-aware gate -2.35% on 109
   trades, every line -2.59%.
 - From Tuesday on, each trials run (Tuesday and Friday) adds the week's matches with the model's forecast.
+
+## First forward scores at the recorded books (Tuesday 10 Nov 2026)
+
+**Source:** `football-trials.yml` scheduled run 42769049818, matches of 6-9 Nov (the first window).
+
+| Trial | Bets | Return | Notes |
+|---|---|---|---|
+| **EV rule** (pre-registered: resting entry, greened at the close) | 11 filled of 22 signals posted | **-2.9%** (95% -5.6% to +0.9%) | CLV -1.7%; paper bank GBP 1,000 to GBP 997.30; 45% right way |
+| EV rule, crossing variant | 21 | -1.2% | CLV +0.1%; 52% right way |
+| Stacked move rule | 8 | -3.7% | 50% right way |
+| Stacked rule, resting | 6 | -7.0% | 33% right way |
+
+- 314 forecasts, 29 signals; skipped: 11 unfilled by the deadline, 3 books too wide.
+- **Adverse selection again:** of the EV rule's resting orders, the filled ones went the right way 45% of the time and
+  the unfilled ones 60%. A resting order is filled mostly when the market is about to move through it.
+- Eleven bets is noise. The gate needs 300 bets over 90 days, and nothing is decided before it.
+
+**The closing-line model on the books, with our forecast joined:**
+- 2,155 rows, 4-10 Nov; 321 rows carry the EV model's forecast (162 lab matches in the window).
+- What is left of the model's forecast move does not yet track the move to the close: correlation -0.02 (321 rows).
+- The walk-forward model: correlation 0.06 overall (0.10 at 60 minutes), out-of-sample R2 -0.10.
+
+| Entry rule | Trades | Return |
+|---|---|---|
+| Spread-aware gate | 212 | -1.9% (-2.6 to -1.2) |
+| Flat-tick gate | 680 | -2.5% |
+| Every tradable line | 3,036 | -2.5% |
+
+**Read:**
+- No trial makes money in its first window. Nothing is decided at 6-21 bets.
+- Two patterns repeat from the research:
+  - **resting fills are adversely selected:** the crossing variant beat resting here;
+  - **the spread-aware gate loses about a quarter less** than trading every line.
+- The model's forecast and the recorded books are joined now. That link needs weeks of matches before it can say
+  whether the forecast holds at real prices.
+
+## Model review: feature importance and the first repairs (10 Nov 2026)
+
+The owner's ask (10 Nov): improve the model that predicts the closing price; review every feature, its calculation
+and its statistics. The full review and plan are in the PR description of this change. Two runs on this branch, both
+read on Betfair's own early-to-close moves of 2025/26. Those seasons were read by earlier rules, so this is
+**development evidence, not a holdout**; the holdout is the matches from 10 Nov 2026, which nothing here reads.
+
+### What the features are worth (`football_feature_report`, run 42792047861)
+
+- Expected-value model's arm (115 features), refitted on 82,735 same-book moves 2013/14-2024/25; tested on 9,436
+  Betfair matches.
+- Skill against "no move": home 5.2%, away 6.9%.
+
+| Family | Gain share | Skill lost, shuffled (points) | Skill change, left out and refitted |
+|---|---|---|---|
+| Short form `fs_` (32) | 21.3% | 7.2 | -0.49 |
+| Team windows `d_` (33) | 26.0% | 2.2 | -0.04 |
+| `dis_open` (model vs opening price) | 10.1% | 2.1 (8.2 in the top five) | -1.39 |
+| xG `x_` (28) | 12.6% | 1.7 (0.5 in lower leagues) | -0.49 |
+| League label | 15.0% | 0.7 | - |
+| `r_diff` (market rating) | 3.9% | 0.5 | +0.00 |
+| Team news `tn_` (9) | 6.7% | 0.3 | -0.31 |
+| Home advantage `ha_` (11) | 4.3% | 0.0 | +0.13 |
+
+- `dis_open` is the most valuable single feature.
+- The team windows are redundant once short form is in; the home-advantage columns add nothing.
+- The margin's removal (review finding A4) is not a problem. Under the three methods, the mean drift of the chance by
+  early-price band is smallest for the proportional split we use (bias score 0.00042; Shin 0.00052; power 0.00063).
+
+### Each change against the current model (`football_review_arms`, run 42793342988)
+
+- Paired by match day; the 95% interval is from 1,000 resamples of days.
+- A change keeps its place only if its interval on Betfair excludes zero.
+
+| Change | Features | Betfair skill | vs current | 95% interval | Pinnacle 2016-24 vs current | Keeps its place |
+|---|---|---|---|---|---|---|
+| Current model | 115 | 6.28% | - | - | - | - |
+| All changes together | 137 | 8.29% | +2.01 | +1.57 to +2.45 | +1.54 | yes |
+| Move memory (`mm_`) | 120 | 7.77% | +1.49 | +1.14 to +1.85 | +1.24 | yes |
+| League effects, label kept (`lf_`) | 120 | 6.61% | +0.32 | +0.18 to +0.48 | +0.32 | yes |
+| Kalman form replacing raw points/goal windows (`kf_`) | 105 | 6.44% | +0.16 | +0.05 to +0.25 | +0.03 | yes |
+| Kalman form added | 121 | 6.43% | +0.15 | +0.04 to +0.25 | +0.05 | yes |
+| League effects, label removed | 120 | 6.43% | +0.15 | -0.04 to +0.36 | +0.23 | no |
+| Early price added | 117 | 6.37% | +0.09 | -0.03 to +0.21 | +0.04 | no |
+| Shrunk xG and Massey ratings | 119 | 6.35% | +0.07 | -0.04 to +0.17 | -0.06 | no |
+| Early price + logit target | 117 | 6.29% | +0.00 | -0.16 to +0.18 | +0.22 | no |
+| Logit target | 115 | 6.25% | -0.03 | -0.15 to +0.09 | +0.19 | no |
+| League label removed | 115 | 5.89% | -0.39 | -0.54 to -0.25 | -0.21 | no (worse) |
+
+What this says:
+
+- **Move memory is the large gain.** Next check before it is trusted: split the side's own record from the
+  price-band record, and cost the trades at real prices. The band part could be reading how the margin sits in the
+  normalised chance rather than a move that can be traded.
+- **The Kalman form can replace the raw window ladder.** It does so with 10 fewer columns and no loss.
+- **Three of the review's findings are not supported on Betfair moves:**
+  - A4: margin removal;
+  - A5: a logit target or the price level as a feature;
+  - A1: shrinking the xG and Massey ratings. The fault is real in the code (a test shows a side with two matches rated
+    four goals above average), but the fix adds nothing measurable to this model.
+- Nothing here changes the frozen models or the paper trials. Any new model is frozen and pre-registered before it is
+  scored on the forward data.
+
+### Move memory split, and the leading arms at Betfair's prices (run 42814920136)
+
+**Move memory, split into its two parts.**
+
+| Arm | Betfair vs current | 95% interval | Pinnacle 2016-24 vs current |
+|---|---|---|---|
+| Move memory, both parts | +1.49 | +1.14 to +1.85 | +1.24 |
+| The side's own record (`mm_team_*`) | +0.85 | +0.52 to +1.20 | +1.21 |
+| The price band's record (`mm_band_*`) | +0.83 | +0.68 to +0.96 | +0.05 |
+
+- **The side's own record holds on both books:** a side whose price kept shortening (or drifting) late keeps doing so.
+- **The price band's record helps on Betfair only, not on Pinnacle.** That points to something particular to Betfair's
+  snapshot prices, such as how their margin sits in the normalised chance, rather than to the price discovery the model
+  is for. It stays out until it is tested at the recorded books.
+
+**Costed on Betfair 2025/26.** Back early and lay at the close (or the reverse), takeable books only, 2% commission.
+
+| Arm | Threshold | Bets | A tick off fair | 90% interval | Symmetric book | Right way |
+|---|---|---|---|---|---|---|
+| Current model | 0.03 | 2,496 | -0.46% | -0.95% to +0.04% | +1.07% | 68.7% |
+| Current model | 0.05 | 544 | +1.59% | +0.44% to +2.69% | +4.03% | 76.3% |
+| Move memory | 0.03 | 3,404 | -0.93% | -1.36% to -0.52% | +0.59% | 67.4% |
+| Move memory | 0.05 | 1,026 | +0.25% | -0.57% to +1.08% | +2.48% | 72.6% |
+| Side's record only | 0.05 | 847 | +0.34% | -0.62% to +1.22% | +2.46% | 72.7% |
+| Band's record only | 0.05 | 778 | +0.54% | -0.39% to +1.48% | +3.13% | 73.9% |
+| All changes | 0.03 | 3,562 | -0.74% | -1.15% to -0.33% | +0.76% | 68.1% |
+| All changes | 0.05 | 1,105 | +0.35% | -0.46% to +1.15% | +3.56% | 73.4% |
+
+What it says:
+
+- **More skill has not yet bought a better return per bet.** The new arms forecast larger moves, so more matches clear
+  a fixed threshold (1,105 bets against 544 at 0.05), and the extra bets are weaker. A fixed threshold is therefore not
+  a fair comparison between arms. The next read ranks each arm's forecasts and costs the same number of bets for every
+  arm.
+- **Treat these returns as an upper bound.** They come from football-data's two Betfair snapshots, and those were
+  kinder than the recorded books: the round trip measured at the recorded books is about 2.3%, and the forward EV rule
+  is -2.9% so far on 11 fills.
+- **Kept for the candidate model:** the side's own move record, the league effects with the label kept, and the Kalman
+  form in place of the raw window ladder. The price band's record waits for the recorded books.
+
+## The football data warehouse, and what the 2026 Betfair files show (11 Nov 2026)
+
+The owner, 11 Nov: database the 2026 football data in a structure fit for leading analysis, plan the metrics, use it in modelling, and architect the end to end for two aims: the betting model and analytics for clubs. The design, the tables, the metric catalogue, the licensing position and the roadmap are in `docs/football_data_platform.md`; every table and column is in `docs/football_data_dictionary.md`. This section is the evidence. Nothing here trades; `FOOTBALL_LIVE` is untouched.
+
+**What was built** (`football/warehouse/`, run [43112672668](https://github.com/tomwilson41986/ashcroft/actions/runs/43112672668)). The owner's 2026 Betfair Historic Data download as tables in the capture bucket: 165,734 raw market files (bronze), every published price with the market's state and clock (26,486,634 price updates: silver), and analysis tables on top (gold): matches, a checkpoint grid, implied goals, price-path features, the move to the close, inferred goals, the match minute by minute, market-implied team ratings, the link to API-Football, and club tables. 25 tables, Parquet on S3, DuckDB over them, idempotent builds.
+
+**Checks.**
+
+| Check | Result | Source |
+|---|---|---|
+| Files in against files stored | 165,734 in, 0 unreadable, 0 superseded; every file's SHA-256 equals the download's | quality report; review round one |
+| Independent recount of silver | a second parser over all 165,734 files: 19,294,729 lines, 3,922,641 runners, 26,486,634 price updates, 0 differences | review round one |
+| Keys | market, event and every table's key unique; every row's market exists | quality report |
+| Quality report | 50 checks, 0 failed | `python -m football.warehouse check` |
+| Idempotent | the bundle reads "already ingested"; a second build skips every partition whose inputs and code are unchanged | ingest and build reports |
+| Date range | kick-offs 2025-03-22 to 2026-11-05; 55,015 matches, 52,635 in play, 53,530 with a result, 1,467 void | facts |
+| Nulls in keys | none (required columns are checked at write); 5,641 matches have no country code (cups, internationals) | contracts; facts |
+| Link to API-Football | 50,823 of 55,015 matches (92.4%); result agrees 50,380 of 50,386; over/under 50,383 of 50,387 | link report |
+| Local build against the bucket's | the same files built on another machine: every number of the model, the efficiency study and the facts identical (0 differences; and at an earlier state of the code, run 43104131683) | run 43112672668 against the local build |
+| Tests | 175 pass; run on every pull request (`football-tests.yml`) | pytest |
+| Review | two rounds, seven independent reviewers, every defect reproduced before its fix | `docs/football_data_platform.md` section 8 |
+
+**Is the closing price right?** (`football_bf_efficiency.py`: 47,088 matches with a fresh close.)
+
+| Selection | Rows | Mean closing chance | Won | Back at the close, return | se |
+|---|---|---|---|---|---|
+| away | 42,931 | 0.3143 | 0.3137 | -0.95% | 1.01 |
+| draw | 42,931 | 0.2481 | 0.2503 | +0.88% | 0.88 |
+| home | 42,931 | 0.4376 | 0.4360 | -0.51% | 0.74 |
+| over | 34,095 | 0.5309 | 0.5290 | -0.57% | 0.54 |
+| under | 34,095 | 0.4691 | 0.4710 | +0.59% | 0.66 |
+
+Slope of results on closing log odds 0.992 (se 0.009, clustered by match); every selection backed at its closing last traded price returns -0.12% (se 0.21) before commission.
+
+**Can the move to the close be forecast from Betfair's own prices?** (`football_bf_close_model.py`.) One row a match-odds runner a checkpoint (360, 120, 60 and 15 minutes before the scheduled kick-off); the target is the move of its chance to the close, in log odds; features are what was known at the checkpoint; ridge and LightGBM, walk-forward by month (2026-04 to 2026-10 forecast from earlier matches only); scored against "no move" on 140,949 reliable rows over 214 match days, intervals from resampled days.
+
+| Features | Skill against no move | 95% interval | Added to the level features |
+|---|---|---|---|
+| Level only (price, book, activity, time) | 0.81% | 0.54 to 1.11 | - |
+| + price path (37) | 2.04% | 1.58 to 2.50 | +1.22 (+0.84 to +1.60) |
+| + implied goals and cross-market (9) | 2.05% | 1.67 to 2.44 | +1.23 (+0.99 to +1.49) |
+| + market ratings against the price (26) | 2.16% | 1.74 to 2.59 | +1.35 (+1.04 to +1.67) |
+| + move memory (6) | 1.16% | 0.85 to 1.49 | +0.35 (+0.17 to +0.52) |
+| **All families** | **3.47%** | **2.96 to 4.00** | +2.66 (+2.23 to +3.14) |
+
+Where the skill is, by how much the runner had traded by the checkpoint:
+
+| Price updates by the checkpoint | Rows | Skill | 95% interval |
+|---|---|---|---|
+| under 20 | 66,326 | 3.84% | 3.23 to 4.50 |
+| 20-59 | 48,085 | 3.42% | 2.42 to 4.37 |
+| 60-149 | 18,860 | 2.14% | 0.82 to 3.55 |
+| 150+ | 7,678 | -1.40% | -3.52 to 0.66 |
+| The same model fitted on rows with 60+ updates alone | 26,538 | 0.57% | -0.75 to 1.80 |
+
+By checkpoint: T-360 3.25% (2.44 to 4.13); T-120 3.54% (2.76 to 4.37); T-60 3.74% (2.74 to 4.68); T-15 3.52% (2.20 to 4.81).
+By runner: away 3.45% (2.71 to 4.16); draw 7.66% (6.60 to 8.76); home 2.00% (1.40 to 2.62).
+Large moves: 195 rows move more than 1 in log odds and carry 15.3% of the sum of squares; without them the skill is 3.50% (3.00 to 4.02).
+Rows whose schedule was not yet set at the checkpoint (kept out of the headline): 1,665, skill -0.95% (-5.05 to 2.87).
+
+Trades at last traded prices (an upper bound: a last traded price is not a quote), a unit staked a bet: back at the checkpoint and lay at the close where the forecast says the chance rises, the reverse where it falls; net of a 2.3% round trip and 2% commission; forecasts of at least 0.05. The move captured is in log price; the cash column is what the hedged trades won over the money they put at risk (a back's stake; a lay's liability):
+
+| Price updates by the checkpoint | Bets | Backs / lays | Move captured, log price x 100 (90% interval) | Cash on the money at risk (90% interval) | Right way |
+|---|---|---|---|---|---|
+| under 20 | 8,512 | 2,874 / 5,638 | +3.54 (+3.12 to +3.98) | +0.87% (+0.60 to +1.15) | 61.7% |
+| 20-59 | 2,731 | 965 / 1,766 | +2.80 (+2.18 to +3.39) | +0.39% (+0.27 to +0.51) | 62.2% |
+| 60-149 | 643 | 223 / 420 | +2.23 (+0.87 to +3.67) | +0.20% (+0.01 to +0.38) | 59.9% |
+| 150+ | 228 | 82 / 146 | -0.65 (-2.03 to +0.78) | -0.11% (-0.28 to +0.04) | 49.6% |
+| All | 12,114 | 4,144 / 7,970 | +3.22 (+2.90 to +3.57) | +0.66% (+0.48 to +0.85) | 61.5% |
+| Busy-rows model, 60+ updates | 944 | 415 / 529 | +0.47 (-0.55 to +1.46) | +0.00% (-0.13 to +0.13) | 55.5% |
+
+Median price laid: 5.6; cash a unit staked +3.37%.
+
+Gain share in the last fold by family: level 11%, path 43%, implied 15%, rating 23%, memory 8%; leading features: `imp_rho` 7.6%, `path_last_dx` 7.6%, `cp_min` 3.3%, `cp_book_sum` 3.0%, `path_x` 2.7%, `rate_mk_p_draw` 2.6%, `path_jump_abs_2h` 2.3%, `path_ret_2h` 2.1%.
+
+**The other reads.**
+
+| Read | Result | Where |
+|---|---|---|
+| Market-implied ratings, even months, forecasts of the closing rate ratio | R2 0.64 over 25,234 matches; 0.82 with 5 to 14 earlier matches; 0.84 with 15 or more; 0.76 across countries (765) | local; `gold_rating.py` |
+| Goals inferred from prices, even months, usable matches | exact score 94.4% of 2,681 (API-Football events), 94.1% of 4,201 (football-data.co.uk); across every linked league 92.9% of 38,758 | local; link report |
+| In-play chances against results | minute 15: 0.4443 read, 0.4422 won; minute 75: 0.4300 read, 0.4289 won; minute 105: 0.3845 read, 0.3859 won (home) | facts |
+| A team's later points | go with the market's expectation so far (0.47) more than with its points so far (0.36); weights in one regression 0.63 and 0.01 (1,436 teams) | facts |
+| Performance and luck against the price | do not persist: first half of a team's matches against the second +0.01 and +0.01 | facts |
+
+What it says:
+
+- **The closing price is a sound target.** Its chances are the results' rates to within a quarter of a point on 42,928 matches, with no favourite-longshot slope. It agrees with the largest published study of Betfair football (Whelan 2026, 200,622 matches).
+- **The move can be forecast a little, and so far only where it cannot be traded.** Skill against "no move" is 3.47% (2.96 to 4.00); on rows with 150 or more price updates it is -1.40% (-3.52 to 0.66), and a model fitted on busy rows alone scores 0.57% (-0.75 to 1.80). In a thin market the last traded price is a noisy reading, and most of what is forecast is that noise correcting.
+- **In cash the upper bound is small.** At the 0.05 threshold the trades capture +3.22 in log price x 100 but win +0.66% of the money at risk (+0.48 to +0.85): 7,970 of 12,114 are lays at a median price of 5.6. And these are last traded prices, not quotes.
+- **Market-implied ratings are the most useful new feature family** (largest addition to the level features) and give every team in the world a strength on one scale within a pool; they are the base of the club tables.
+- **For clubs:** the price is the best single summary of a side; results against it are mostly how the matches fell, not form. The tables say how good (strength, from one solve) and how a run of matches went (performance, luck), and do not claim to forecast beyond the price. The change in a club's rating over time was withdrawn after review: on one year it measured the scale being learned.
+- **Next, in order:** the back years (2016 to 2025) as the download completes; the same model at quotes on our recorded books; maker-side execution; division-level club tables from the link. Before any club report is sold: Betfair's and API-Football's terms on commercial use (the platform document, section 12).
+- **Evidence standard:** one year of data, development evidence. Nothing is frozen or pre-registered from it. The ledger holds the reads (`football-bf-efficiency-1111`, `football-bf-close-model-1111`, `football-market-ratings-1111`, `football-goal-inference-1111`), written after their runs because the ledger's rule reached this branch at the merge.
+
+## Two trading targets: the trade-out at the Betfair SP, and win bets (12 Nov 2026)
+
+The owner, 12 Nov: a quantitative trading model for football with two targets, an early back laid off at the BFSP, and win bets. Both were registered in the ledger before the run (`football-tradeout-bsp-1112`, `football-win-bets-1112`) and are read here as registered. `research/open_close/football_trade_model.py` on the 2026 warehouse, run [43167168711](https://github.com/tomwilson41986/ashcroft/actions/runs/43167168711); 212,721 match-odds rows with a fresh checkpoint book and a known schedule; walk-forward by month, 2026-04 to 2026-10; returns a unit staked, 90% intervals from resampled match days; 1.15% charged on the entry (a last traded price is not a quote), 2% commission on a win; 329 football trials counted for the deflated Sharpe. Nothing trades.
+
+**Target 1: back early, lay at the SP.** Betfair reconciles an SP on few football markets: 20,635 of the 212,721 rows have one (11,797 in the test months, 1,054 matches, the top liquidity tier). The hedged result is price / SP - 1 whatever the match does.
+
+| Backs, closed at the SP | Bets | Return a unit staked (90%) | Share that gained |
+|---|---|---|---|
+| Every row, no model | 11,797 | -1.74% (-1.94 to -1.54) | 35% |
+| Forecast move at least 0.03 | 441 | -0.54% (-1.02 to +0.02) | 33% |
+| Forecast move at least 0.05 | 88 | -0.94% (-1.81 to -0.20) | 32% |
+| Forecast move at least 0.08 | 12 | too few to read | - |
+
+The same rule closed at the last traded price before the off (full 2.3% round trip), every row:
+
+| Backs, closed at the last traded price | Bets | Return a unit staked (90%) | Share that gained |
+|---|---|---|---|
+| Every row, no model | 140,949 | -2.33% (-2.40 to -2.25) | 30% |
+| Forecast move at least 0.03 | 10,622 | +1.83% (+1.09 to +2.65) | 43% |
+| Forecast move at least 0.05 | 3,751 | +6.37% (+4.26 to +8.64) | 51% |
+| Forecast move at least 0.08 | 1,105 | +16.60% (+10.30 to +24.08) | 55% |
+| ... at 0.05, 150+ price updates by the checkpoint | 82 | -1.78% (-2.38 to -1.21) | 21% |
+| ... at 0.05, 20-59 price updates by the checkpoint | 936 | +1.91% (+1.03 to +2.83) | 48% |
+| ... at 0.05, 60-149 price updates by the checkpoint | 233 | +0.44% (-0.78 to +1.62) | 43% |
+| ... at 0.05, under 20 price updates by the checkpoint | 2,500 | +8.87% (+5.73 to +12.25) | 54% |
+
+**Target 2: win bets.** A model of the result started from the market's own chance. Log loss on 149,376 rows: model 0.56898, market 0.56825, model less market +0.00072 (95% +0.00038 to +0.00107): the model is worse than the price it started from.
+
+| Backs left to the result (price 20 or less) | Bets | Return a unit staked (90%) | Share that won |
+|---|---|---|---|
+| Every row, no model | 147,861 | -2.96% (-3.54 to -2.33) | 34% |
+| Model edge at least 0.02 | 34,360 | -2.17% (-4.17 to -0.15) | 29% |
+| Model edge at least 0.05 | 17,983 | -3.82% (-6.69 to -0.94) | 26% |
+| Model edge at least 0.1 | 6,397 | -6.45% (-12.41 to -0.40) | 23% |
+| ... at 0.05, away | 4,647 | -6.92% (-14.98 to +0.69) | 22% |
+| ... at 0.05, draw | 10,353 | -1.65% (-5.69 to +2.89) | 25% |
+| ... at 0.05, home | 2,983 | -6.55% (-12.65 to -0.35) | 36% |
+
+What it says:
+
+- **Neither target passes its registered reading.** Trade-out at the SP, headline (0.05): -0.94% (-1.81 to -0.20) on 88 bets, deflated Sharpe 0.0. Win bets, headline (0.05): -3.82% (-6.69 to -0.94) on 17,983 bets, deflated Sharpe 1.6e-05.
+- **The forecast does pick better backs than no model, but not profitable ones where the exit is real.** At the SP the selected backs lose less than every row (-1.74%), and still lose. The SP exists only in busy markets, which is where the closing-price model has no skill.
+- **The large returns at the last traded price are not tradable.** They sit in runners with under 20 price updates, where the close is a stale print and no SP exists; on rows with 150 or more updates the same rule loses. This is the thin-market artefact the platform document describes, now measured in cash.
+- **Win bets: the features add nothing to the price.** The model's log loss is worse than the market's and its selected bets lose more than backing everything. The closing price is efficient (section above), and one year of price-derived features does not beat it on results.
+- **Where an edge could still be:** the entry, not the exit. A back needs to be taken at a real quote before the market has moved (our recorded books, maker-side orders), with information the price lacks (team news timing, the back years for the ratings). The SP is a fair exit; it is not a source of edge.
+- **Decision:** development evidence, no trader reads it, nothing frozen. The script stays in the warehouse job so both targets are re-read as the back years arrive (each a new ledger line).
+
+## Strategy scan: 25 model-free rules on the 2026 files (12 Nov 2026)
+
+Registered as `football-strategy-scan-1112` before the run; `research/open_close/football_strategy_scan.py`; output
+`reports/football_runs/strategy_scan_1112.json` (local build of the 2026 warehouse). The full table and the ranked
+candidates are in `reports/football_strategy_candidates.md`.
+
+- **No lead** by the registered reading (both halves of the year the same sign, the even months' 90% interval above
+  zero one tick worse than the last trade). 25 cells, 0 leads.
+- The in-play leader is priced a little long at the last traded price (half time, chance 0.85-0.95: +1.16%
+  (+0.20 to +2.18) on 2,865 bets; minutes 75-90: +0.33% (+0.00 to +0.68) on 30,420) and the edge is gone one tick
+  worse (-0.80% (-1.30 to -0.31), even months). A maker's edge at most; it needs in-play books, which are not recorded.
+- Backers of pre-match drifters (out by 0.10 in log odds from T-360 to T-60) lost 8.83% (-14.36 to -2.81) on 2,539
+  bets, in both halves. The lay was not a registered cell and the literature points the other way: a test on the
+  back years decides it.
+- Four ideas went to `desk/backlog/football.jsonl`, each needing its own registered test. Nothing trades.

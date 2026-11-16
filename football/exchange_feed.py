@@ -67,6 +67,15 @@ RESULT_FROM_MIN = 100.0          # minutes after the start before the result is 
 RESULT_EVERY_S = 1800.0
 RESULT_GIVE_UP_H = 6.0
 WEIGHT_LIMIT = 200.0
+#: the in-play sample (the owner, 12 Nov 2026: "yes" to recording after the kick-off for the in-play leader's test,
+#: reports/football_strategy_candidates.md): at most INPLAY_MAX match-odds markets at a time, each with at least
+#: INPLAY_MIN_MATCHED matched at its turn in play, read every INPLAY_EVERY_S until it closes or INPLAY_UNTIL_MIN
+#: minutes after the start. At depth 5 with the traded ladder that is 6 markets a call: at most 10 calls a minute,
+#: 600 an hour, beside MAX_CALLS_PER_HOUR. Read-only; the paper book and the trader ignore a book in play.
+INPLAY_MAX = 60
+INPLAY_MIN_MATCHED = 10000.0
+INPLAY_EVERY_S = 60.0
+INPLAY_UNTIL_MIN = 150.0
 CATALOGUE_MAX = 1000
 
 
@@ -388,13 +397,17 @@ class Feed:
     """The all-games record: which markets are due, the reads, the rows, the hand-off to the paper book."""
 
     def __init__(self, read, writer: DayWriter | None = None, types=DEFAULT_TYPES, hours: float = 24.0,
-                 depth: int = 5, traded: bool = True, paper=None, catalogue_seconds: float = 900.0):
+                 depth: int = 5, traded: bool = True, paper=None, catalogue_seconds: float = 900.0,
+                 inplay_max: int = 0, inplay_min_matched: float = INPLAY_MIN_MATCHED):
         self.read, self.writer, self.types, self.hours = read, writer, tuple(types), hours
         self.depth, self.traded, self.paper = depth, traded, paper
         self.catalogue_seconds = catalogue_seconds
         self.markets: dict[str, dict] = {}       # market_id -> {start, day, meta}
         self.next_due: dict[str, datetime] = {}
         self.inplay_seen: set[str] = set()
+        self.inplay_max, self.inplay_min_matched = int(inplay_max), float(inplay_min_matched)
+        self.inplay_live: set[str] = set()       # the in-play sample being read now
+        self.inplay_recorded = 0                 # markets ever in the sample
         self.settled: set[str] = set()
         self.prev: dict = {}
         self.last_catalogue: datetime | None = None
@@ -429,7 +442,9 @@ class Feed:
             if mid in self.settled or self.next_due.get(mid, now) > now:
                 continue
             mins = (mk["start"] - now).total_seconds() / 60.0
-            if mid not in self.inplay_seen and mins > -15:
+            if mid in self.inplay_live and -mins > INPLAY_UNTIL_MIN:
+                self.inplay_live.discard(mid)
+            if mid in self.inplay_live or (mid not in self.inplay_seen and mins > -15):
                 priced.append(mid)
             elif mins <= -RESULT_FROM_MIN:
                 if -mins > RESULT_GIVE_UP_H * 60:
@@ -441,7 +456,9 @@ class Feed:
     def _schedule(self, mid: str, now: datetime) -> None:
         mk = self.markets[mid]
         mins = (mk["start"] - now).total_seconds() / 60.0
-        if mid in self.inplay_seen or mins <= -15:
+        if mid in self.inplay_live:
+            nxt = now + timedelta(seconds=INPLAY_EVERY_S)
+        elif mid in self.inplay_seen or mins <= -15:
             nxt = max(now + timedelta(seconds=RESULT_EVERY_S), mk["start"] + timedelta(minutes=RESULT_FROM_MIN))
         else:
             nxt = now + timedelta(seconds=cadence_seconds(mins))
@@ -467,7 +484,15 @@ class Feed:
             if mid not in self.markets:
                 continue
             if b.get("inplay"):
+                if (mid not in self.inplay_seen and len(self.inplay_live) < self.inplay_max
+                        and b.get("status") != "CLOSED"
+                        and (self.markets[mid]["meta"].get("marketType") or "") == "MATCH_ODDS"
+                        and (_num(b.get("totalMatched")) or 0.0) >= self.inplay_min_matched):
+                    self.inplay_live.add(mid)
+                    self.inplay_recorded += 1
                 self.inplay_seen.add(mid)
+            if b.get("status") == "CLOSED":
+                self.inplay_live.discard(mid)
             if b.get("status") == "CLOSED" or any(r.get("status") in ("WINNER", "LOSER")
                                                    for r in b.get("runners") or []):
                 if b.get("status") == "CLOSED":

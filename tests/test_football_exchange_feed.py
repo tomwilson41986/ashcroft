@@ -186,3 +186,41 @@ def test_every_catalogue_call_stays_under_betfairs_200_points_and_names_its_mark
     assert sorted(seen) == sorted(ef.DEFAULT_TYPES)
     assert {m["marketType"] for m in got} == set(ef.DEFAULT_TYPES)
     assert ef.catalogue_limit(["EVENT", "MARKET_DESCRIPTION"]) == 200        # a weighted projection is capped
+
+
+def test_the_in_play_sample_is_read_each_minute_capped_and_only_for_busy_match_odds():
+    start = T0 + timedelta(minutes=1)
+    state = {"inplay": False, "status": "OPEN", "asked": []}
+
+    def read(method, params):
+        if method == "listMarketCatalogue":
+            return [catalogue_entry(m, start) for m in ("1.1", "1.2", "1.3")]
+        state["asked"].append((sorted(params["marketIds"]), "priceProjection" in params))
+        out = []
+        for m in params["marketIds"]:
+            b = raw_book(m, {11: ([(2.0, 50)], [(2.02, 50)], {2.0: 10.0})}, status=state["status"],
+                         inplay=state["inplay"])
+            b["totalMatched"] = 500.0 if m == "1.3" else 50000.0           # 1.3 is too thin for the sample
+            out.append(b)
+        return out
+
+    feed = ef.Feed(read, None, depth=3, inplay_max=1)
+    feed.step(T0)
+    state["inplay"] = True
+    feed.step(start + timedelta(minutes=1))                                # the turn in play, read as a book
+    assert len(feed.inplay_live) == 1 and feed.inplay_live <= {"1.1", "1.2"}
+    assert feed.inplay_seen == {"1.1", "1.2", "1.3"}
+    live = next(iter(feed.inplay_live))
+    assert feed.next_due[live] == start + timedelta(minutes=1, seconds=ef.INPLAY_EVERY_S)
+    state["asked"].clear()
+    got = feed.step(start + timedelta(minutes=30))                         # only the sampled market, with prices
+    assert state["asked"] == [([live], True)] and got["rows"] == 1
+    state["asked"].clear()
+    feed.step(start + timedelta(minutes=ef.INPLAY_UNTIL_MIN + 1))          # past the limit: the result reads only
+    assert not feed.inplay_live and all(not priced for _, priced in state["asked"])
+    off = ef.Feed(read, None, depth=3)                                     # the default records nothing in play
+    state["inplay"] = False
+    off.step(T0)
+    state["inplay"] = True
+    off.step(start + timedelta(minutes=1))
+    assert not off.inplay_live

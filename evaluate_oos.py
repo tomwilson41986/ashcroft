@@ -171,8 +171,13 @@ def walk_forward_predict(
     only_fold: int | None = None,
     fold_anchor: str | None = None,
     train_from: str | None = None,
+    train_code: str | None = None,
 ) -> pd.DataFrame:
     """Train and predict in walk-forward fashion.
+
+    `train_code` ("jumps" or "flat") fits each fold on that code's rows only (hurdles, chases and
+    bumpers; or the Flat and all-weather) and still prices every validation row: a specialist model,
+    to be scored on its own code's races (the owner's question of 11 Nov 2026).
 
     `eval_until` stops the walk at that date: no fold starts on or after it and
     no row on or after it is scored, so a development run never touches a
@@ -197,11 +202,24 @@ def walk_forward_predict(
     fold_fits: list = []
     all_oos = []
 
+    if train_code:
+        from model.race_shape import race_code as _race_code
+        is_jumps = _race_code(df).isin(["hurdle", "chase", "nhflat"]).to_numpy()
+        if train_code not in ("jumps", "flat"):
+            raise ValueError(f"train_code {train_code!r}: jumps or flat")
+        code_rows = is_jumps if train_code == "jumps" else ~is_jumps
+        log.info("  --train-code %s: fitting on %d of %d rows", train_code, int(code_rows.sum()), len(df))
+        if code_rows.sum() < 0.05 * len(df):
+            raise ValueError(f"--train-code {train_code}: only {int(code_rows.sum())} rows of that code; "
+                             "race_type does not name the code")
+
     for fold_idx, val_start, val_end, tr_mask, va_mask in evaluated_folds(
             df["race_date"], min_train_days, val_window_days, step_days, cfg,
             eval_from, eval_until, fold_anchor, train_from):
         if only_fold is not None and fold_idx != only_fold:
             continue
+        if train_code:
+            tr_mask = tr_mask & code_rows
         # Copied only for a fold that is fitted: the skipped folds of a
         # development window used to copy the whole history each, for nothing.
         val_df = df[va_mask].copy()
@@ -914,6 +932,11 @@ def main():
              "matrix from an earlier --start-date scores the same folds as a later one",
     )
     parser.add_argument(
+        "--train-code", default=None, choices=["jumps", "flat"],
+        help="Fit each fold on this code's rows only (jumps: hurdles, chases, bumpers; flat: turf and "
+             "all-weather); every validation row is still priced",
+    )
+    parser.add_argument(
         "--train-from", default=None, metavar="DATE",
         help="Train each fold only on rows on or after DATE; the features still see the whole "
              "history from --start-date",
@@ -1136,7 +1159,7 @@ def main():
     df = df[list(dict.fromkeys(list(feature_cols_full) + [c for c in carry if c in df.columns]))]
     gc.collect()
 
-    oos = walk_forward_predict(df, feature_cols_full, cfg=cfg, only_fold=args.fold,
+    oos = walk_forward_predict(df, feature_cols_full, cfg=cfg, only_fold=args.fold, train_code=args.train_code,
                                **{k: v for k, v in schedule.items() if k != "cfg"})
 
     if oos.empty:

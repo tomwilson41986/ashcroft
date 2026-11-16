@@ -1,0 +1,73 @@
+name: Greyhound edge anatomy (read-only)
+
+# Where the greyhound edge is and whether it can be traded (research/greyhound/edge_anatomy.py; the owner, 11 Nov
+# 2026: "run thorough investigation, QA, cleaning. Exhaustive to identify how to make this a profitable edge"): every
+# entry priced at what the live-key book offers, closed at the SP, by mark, signal, margin and price band, chosen on
+# the first days and read on the last. Read-only: S3 in, the report as the run's summary and artifact out; no Betfair
+# key, nothing written to the store, nothing can place an order.
+
+on:
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: 'first live-key day, YYYY-MM-DD (default 2026-11-03)'
+        required: false
+        type: string
+      date_to:
+        description: 'last day, YYYY-MM-DD (default today, UK)'
+        required: false
+        type: string
+  push:
+    branches: ['claude/determined-fermi-*']
+    paths:
+      - 'research/greyhound/edge_anatomy.py'
+      - '.github/workflows/greyhound-edge-anatomy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-edge-anatomy
+  cancel-in-progress: true
+
+jobs:
+  anatomy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: The study
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          FROM: ${{ inputs.date_from }}
+          TO: ${{ inputs.date_to }}
+        run: |
+          mkdir -p out
+          ARGS=(--out out/greyhound_edge)
+          for v in "$FROM" "$TO"; do
+            if [ -n "$v" ] && ! [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "dates must be YYYY-MM-DD"; exit 1; fi
+          done
+          if [ -n "$FROM" ]; then ARGS+=(--from "$FROM"); fi
+          if [ -n "$TO" ]; then ARGS+=(--to "$TO"); fi
+          python -m research.greyhound.edge_anatomy "${ARGS[@]}"
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/greyhound_edge.md ] && head -c 60000 out/greyhound_edge.md >> "$GITHUB_STEP_SUMMARY"
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-edge-anatomy-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 30

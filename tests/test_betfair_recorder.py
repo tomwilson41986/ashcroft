@@ -1038,3 +1038,28 @@ def test_the_final_mark_keeps_its_bsp_blank_when_no_read_has_one():
     m = br.marks(pd.concat([books, extra], ignore_index=True), markets, DAY).set_index(["selection_id", "mark"])
     assert m.loc[(11, "final"), "bsp"] == pytest.approx(3.9)
     assert pd.isna(m.loc[(13, "final"), "bsp"])
+
+
+def test_results_that_arrive_after_a_days_load_are_matched_on_a_later_night(tmp_path):
+    """The day is loaded before its results are scraped (the runner stays unmatched); a later night's load, of other
+    days only, matches it once the results are in the table."""
+    from datetime import timedelta
+    books, markets = _books_frame()
+    d = tmp_path / "live" / f"{DAY}"
+    d.mkdir(parents=True)
+    books.to_csv(d / "books.csv", index=False)
+    markets.to_csv(d / "markets.csv", index=False)
+    db = tmp_path / "t.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE race_results (id INTEGER, race_date TEXT, race_time TEXT, track TEXT, horse_name TEXT)")
+    conn.commit(); conn.close()
+    br.load_db(str(db), days=1, day_to=DAY, s3=FakeS3(), root=tmp_path / "live")
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT race_results_id FROM betfair_live_markets WHERE selection_id = 11").fetchone() == (None,)
+    conn.execute("INSERT INTO race_results VALUES (7, '2026-10-01', '3.30', 'Kempton', 'Real Bullet')")
+    conn.commit(); conn.close()
+    br.load_db(str(db), days=1, day_to=DAY + timedelta(days=10), s3=FakeS3(), root=tmp_path / "live")
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT race_results_id FROM betfair_live_markets WHERE selection_id = 11").fetchone() == (7,)
+    assert conn.execute("SELECT COUNT(*) FROM betfair_live_markets").fetchone() == (2,)
+    conn.close()

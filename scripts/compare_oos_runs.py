@@ -313,6 +313,25 @@ def by_rank(m: pd.DataFrame, ranks=(1, 2, 3, 8)) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def by_code(m: pd.DataFrame, base: pd.DataFrame) -> pd.DataFrame:
+    """Paired error change over jumps (hurdles, chases, bumpers) and over the Flat and all-weather; empty when
+    the base file carries no race type."""
+    if "race_type" not in base.columns:
+        return pd.DataFrame()
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from model.race_shape import race_code
+    code = race_code(base).isin(["hurdle", "chase", "nhflat"]).map({True: "jumps", False: "flat/aw"})
+    tag = pd.Series(code.to_numpy(), index=pd.MultiIndex.from_frame(base[KEY].astype(str)))
+    tag = tag[~tag.index.duplicated()]
+    m = m.assign(code=tag.reindex(pd.MultiIndex.from_frame(m[KEY].astype(str))).to_numpy())
+    rows = []
+    for c, sel in m.dropna(subset=["code"]).groupby("code"):
+        lo, hi = race_bootstrap(sel["delta"].to_numpy(), sel["raceid"].to_numpy())
+        rows.append({"code": c, "n": len(sel), "races": sel["raceid"].nunique(), "err_base": sel["err_b"].mean(),
+                     "err_variant": sel["err_v"].mean(), "delta": sel["delta"].mean(), "ci_lo": lo, "ci_hi": hi})
+    return pd.DataFrame(rows)
+
+
 def book(d: pd.DataFrame, price_col: str, race_col: str = "raceid") -> float:
     return float(d.groupby(race_col)[price_col].apply(lambda s: (1.0 / s).sum()).mean())
 
@@ -402,6 +421,12 @@ def main():
     L.append("```")
     L.append(by_rank(m).round(4).to_string(index=False))
     L.append("```")
+    bc = by_code(m, b)
+    if len(bc):
+        L.append("\n## By code\n")
+        L.append("```")
+        L.append(bc.round(4).to_string(index=False))
+        L.append("```")
     sk = paired_skill_deltas(b, v, m["raceid"].to_numpy(), a.n_boot)
     L.append("\n## Against the market\n")
     L.append(f"| | base | variant | variant − base (90% CI) |\n|---|---|---|---|")
