@@ -322,7 +322,8 @@ def today_forecast(src, trader_id: str, kind: str, base: str, today: date, recor
     live["mark_mid"] = live.matched * (live.P_red / np.where(ran, live.bsp_now, mid) - 1)
     live["cash_out"] = live.matched * (live.P_red / np.where(ran, live.bsp_now, live.lay_now) - 1)
     live["ran"] = ran
-    m = live.groupby("market_id").agg(off_uk=("off_uk", "first"), venue=("venue", "first"),
+    # grouped as the day report groups them (off, course, market): the draws are taken race by race in that order
+    m = live.groupby(["off_uk", "venue", "market_id"], dropna=False).agg(
                                       horses=("selection_id", "nunique"), staked=("matched", "sum"),
                                       mark_mid=("mark_mid", "sum"), cash_out=("cash_out", "sum"),
                                       unpriced=("mark_mid", lambda s: int(s.isna().sum())),
