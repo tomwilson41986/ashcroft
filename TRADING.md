@@ -1865,6 +1865,23 @@ the market-rating blend.
 - **The record:** 36 days, +GBP6,349.71, 30 up. From 15 Nov the stack blend prices the card (ledger
   `serve-stack-1114`).
 
+**The forty-sixth full day** (15 Nov, a Sunday; ledger `live-day-1115`), the first priced by the stack blend
+(bfsp-model-63/64/65).
+- **The start.** Predictions run 43671150524 wrote the file at 03:39 UTC (03:10-03:39), the stack blend's first. The
+  night-before run failed (predict-evening.yml 43659284150, 00:39-00:50 UTC): horseracebase.com served a page titled
+  'One moment, please...', the login failed four times, no file (ledger `night-before-1115`). The session
+  (43680363676) ran 05:16-21:30 UTC in one piece. First back 05:16 UK, the last order 09:59:35 UK; the settle at
+  22:29 UTC in settle mode (run 43769563751; its email failed again: "Connection unexpectedly closed").
+- **+GBP263.90 after commission** as Betfair settled the trader's own orders, on 415 fills on 88 horses, GBP2,653.48
+  matched, all 19 markets settled, CLV +14.84%: first backs +23.8%, top-ups +11.9%; entered before 08:00 UK +19.4% on
+  GBP1,737.75, after it -2.2% on GBP467.16 (ledger `changes-1115`). One Sunday of 19 races: the last 12 days' CLV ran
+  -0.37% to +12.59%.
+- **The account.** Funds GBP4,753.46 -> GBP5,017.36 (+GBP263.90, read before any Sunday withdrawal): no gap beside
+  the trader. The greyhound early lay ran live on 94 markets but placed nothing (ledger `account-day-1115`).
+- **The holdout.** The stack blend held on the locked folds (28 Mar - 25 Sep 2026), read once: -0.0089 (-0.0098 to
+  -0.0081) against the market-rating blend, CLV higher at the 0/3/5% bars (ledger HOLDOUT LOOK `iter125-stack-final`).
+- **The record:** 37 days, +GBP6,613.61, 31 up.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
