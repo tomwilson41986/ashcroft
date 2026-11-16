@@ -3,9 +3,11 @@
 the feasibility study"; ledger greyhound-au-feasibility-1116). Research only: nothing reaches Betfair.
 
 **Data.** GreyhoundAPI's Australian results (``sources/greyhoundapi/runs_AU_<year>.parquet``: box, position, run
-time, first sectional, weight, grade, track, trip, the last Betfair back price before the off) for the form; Betfair's
-own price files (``sources/greyhound_prices/prices_<year>.parquet``, country AU, the win market: BSP, result) for the
-market. A runner is joined on its name, track and UTC day (the price files' times are UK times).
+time, first sectional, weight, grade, track, trip, the last Betfair back and lay price before the off) for the form
+and the market; Betfair's own price files (``sources/greyhound_prices/prices_<year>.parquet``, country AU: BSP) where
+they hold the race, joined on name, track and UTC day. Amendment (16 Nov 2026, before any reading): the archived price
+files hold 167 Australian runners, so the market price is the BSP where held, else the last Betfair back price before
+the off as the API recorded it; the value rule backs at that price.
 
 **Features** (a dog's Australian runs on days strictly before the race's local day; greyhound/pit/speed.py
 ``earlier``): runs, win and place rates (shrunk), the time figure (100 x (the track and trip's standard - ln time),
@@ -56,7 +58,7 @@ EDGES = (0.0, 0.05, 0.10, 0.20)
 DRAWS = 2000
 API_COLS = ["race_id", "dog_id", "dog_name", "track", "start_utc", "start_local", "trap", "position", "run_time_s",
             "adjusted_time_s", "sectional_s", "distance_m", "class_number", "grade", "field_size", "weight_kg",
-            "bf_back", "status", "result_status"]
+            "bf_back", "bf_lay", "status", "result_status"]
 
 
 def norm(s: pd.Series) -> pd.Series:
@@ -269,6 +271,13 @@ def run(store, first_year: int, test_years: list[int], out_dir: Path) -> dict:
         return {"note": "no data found: no GreyhoundAPI Australian results in the store"}
     api = api[api.position.notna()] if "position" in api else api
     d, jnotes = join_bsp(api, load_bsp(store, first_year))
+    # the market price: the BSP where Betfair's price files hold it, else the last Betfair back price before the off
+    # as GreyhoundAPI recorded it (amendment of 16 Nov 2026: the archived price files hold 167 Australian runners)
+    back = pd.to_numeric(d.bf_back, errors="coerce").where(lambda x: x > 1)
+    jnotes["bsp_rows"] = int(d.bsp.notna().sum())
+    d["bsp"] = d.bsp.where(d.bsp > 1).fillna(back)
+    jnotes["market_price_rows"] = int(d.bsp.notna().sum())
+    jnotes["market_price"] = "BSP where held, else the last Betfair back price before the off (GreyhoundAPI)"
     d = figures(d)
     d = d[d.won.notna()].reset_index(drop=True)
     X, cols = features(d)
