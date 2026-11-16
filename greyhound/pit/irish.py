@@ -56,7 +56,7 @@ COLUMNS = {
     "ie_fig_vs": "ie_fig_mean3 less the mean of the other runners' in today's race",
 }
 API_COLS = ["race_id", "dog_id", "dog_name", "track", "start_local", "trap", "position", "run_time_s",
-            "adjusted_time_s", "sectional_s", "distance_m", "class_number"]
+            "adjusted_time_s", "sectional_s", "distance_m", "class_number", "sp_decimal", "weight_kg"]
 
 
 def load_context(store) -> dict:

@@ -133,6 +133,36 @@ def stored(store, regions=("GB", "IE", "AU")) -> dict:
     return out
 
 
+def card_weights(store) -> dict:
+    """In every held card snapshot: for races not yet resulted, the runners' weight status and the weight's fill, by
+    hours before the scheduled off (is the on-the-day weight on the card before the race?)."""
+    from datetime import datetime, timezone
+    out: dict = {}
+    for k in sorted(k for k in store.listing(f"{PREFIX}/raw/cards/") if k.endswith(".json.gz")):
+        m = re.search(r"cards/(\d{4}-\d{2}-\d{2})/(\d{2})(\d{2})\.json\.gz$", k)
+        if not m:
+            continue
+        snap = datetime.fromisoformat(f"{m.group(1)}T{m.group(2)}:{m.group(3)}:00+00:00")
+        for part in (_load(store, k) or {}).values():
+            for r in part or []:
+                if r.get("status") in ("complete", "results_pending") or (r.get("result") or {}).get("positions"):
+                    continue
+                start = (r.get("scheduled_start") or {}).get("utc")
+                try:
+                    hrs = (datetime.fromisoformat(str(start).replace("Z", "+00:00")) - snap).total_seconds() / 3600
+                except ValueError:
+                    continue
+                band = "<1h" if hrs < 1 else "1-3h" if hrs < 3 else "3-12h" if hrs < 12 else "12h+"
+                for p in r.get("runners") or []:
+                    w = p.get("weight") or {}
+                    e = out.setdefault(f"{r.get('region')}|{band}", {"runners": 0, "kg": 0, "status": {}})
+                    e["runners"] += 1
+                    e["kg"] += int((w.get("kg") if isinstance(w, dict) else None) is not None or p.get("weight_kg") is not None)
+                    st = w.get("status") if isinstance(w, dict) else None
+                    e["status"][str(st)] = e["status"].get(str(st), 0) + 1
+    return out
+
+
 def tables_fill(store, regions=("GB", "IE", "AU")) -> dict:
     out = {}
     for reg in regions:
@@ -250,6 +280,13 @@ def report_md(sv: dict) -> str:
         L += [f"## List {name} ({v['items']} items)", "", "| Field | Fill | Examples |", "|---|---|---|"]
         L += [f"| `{r['path']}` | {r['fill']} | {'; '.join(r['examples'])} |" for r in v["paths"][:80]]
         L.append("")
+    cw = sv.get("card_weights") or {}
+    if cw:
+        L += ["## Cards before the off: is the weight there?", "", "| Region, hours to off | Runners | Weight held | Status |",
+              "|---|---|---|---|"]
+        for k, v in sorted(cw.items()):
+            L.append(f"| {k} | {v['runners']:,} | {v['kg'] / max(v['runners'], 1):.2f} | {v['status']} |")
+        L.append("")
     tf = sv.get("tables") or {}
     for reg, per in tf.items():
         years = sorted(per)
@@ -273,7 +310,7 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="out/api_survey")
     a = ap.parse_args(argv)
     store = Store(root=a.store)
-    sv = {"stored": stored(store), "tables": tables_fill(store)}
+    sv = {"stored": stored(store), "tables": tables_fill(store), "card_weights": card_weights(store)}
     if a.probe:
         sv["probe"] = probe(store)
     o = Path(a.out)

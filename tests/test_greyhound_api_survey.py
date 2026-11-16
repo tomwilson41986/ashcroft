@@ -26,3 +26,16 @@ def test_stored_survey_and_report(tmp_path):
     assert "result.positions[].weight_kg" in paths
     md = sv.report_md({"stored": out, "tables": {}})
     assert "result.positions[].weight_kg" in md and sv.ids(st)["dog"] == 9
+
+
+def test_card_weights_reads_unresulted_races_by_hours_to_off(tmp_path):
+    from sources.common import Store
+    st = Store(root=tmp_path)
+    snap = {"today": [{"region": "GB", "status": "scheduled", "scheduled_start": {"utc": "2026-11-16T20:30:00Z"},
+                       "runners": [{"weight": {"status": "awaiting_result", "kg": None}},
+                                   {"weight": {"status": "weighed", "kg": 30.1}}]},
+                      {"region": "GB", "status": "complete", "scheduled_start": {"utc": "2026-11-16T18:00:00Z"},
+                       "runners": [{"weight": {"status": "weighed", "kg": 29.0}}]}]}
+    st.put("greyhoundapi/raw/cards/2026-11-16/1945.json.gz", gzip.compress(json.dumps(snap).encode()))
+    cw = sv.card_weights(st)
+    assert cw == {"GB|<1h": {"runners": 2, "kg": 1, "status": {"awaiting_result": 1, "weighed": 1}}}
