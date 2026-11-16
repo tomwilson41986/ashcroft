@@ -84,7 +84,8 @@ def by_trap(m: pd.DataFrame, group: list[str] | None = None) -> list[dict]:
 
 
 def model_by_trap(pred: pd.DataFrame, traps: pd.DataFrame) -> list[dict]:
-    d = pred.merge(traps, on=["race_id", "dog_id"], how="inner")
+    d = pred.drop(columns=[c for c in ("trap",) if c in pred and c in traps]).merge(traps, on=["race_id", "dog_id"],
+                                                                                    how="inner")
     d = d[(d.bsp > 1) & (d.pred_bsp > 1) & d.trap.between(1, 6)].copy()
     d["day"] = d.race_date.astype(str)
     d["err"] = np.log(d.bsp.astype(float)) - np.log(d.pred_bsp.astype(float))

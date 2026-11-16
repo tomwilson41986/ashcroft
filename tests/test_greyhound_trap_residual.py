@@ -39,3 +39,10 @@ def test_model_bias_by_trap():
     rows = {r["trap"]: r for r in tr.model_by_trap(pred, traps)}
     assert abs(rows[1]["bias_log_bsp"]) < 1e-9
     assert np.isclose(rows[4]["bias_log_bsp"], np.log(5 / 4), atol=1e-4)
+
+
+def test_model_bias_when_the_predictions_carry_a_trap():
+    pred = pd.DataFrame({"race_id": [1] * 6, "dog_id": range(6), "race_date": "2026-10-10", "bsp": 5.0,
+                         "won": [1, 0, 0, 0, 0, 0], "pred_bsp": 5.0, "p_model": 1 / 6, "trap": 0})
+    traps = pd.DataFrame({"race_id": [1] * 6, "dog_id": range(6), "trap": range(1, 7)})
+    assert [r["trap"] for r in tr.model_by_trap(pred, traps)] == [1, 2, 3, 4, 5, 6]
