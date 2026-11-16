@@ -26,6 +26,9 @@ The API key is read from ``GREYHOUNDAPI_KEY`` and never written or logged.
 
     GREYHOUNDAPI_KEY=... python -m sources.greyhoundapi --fetch results --regions GB,IE,AU --max-minutes 300
     GREYHOUNDAPI_KEY=... python -m sources.greyhoundapi --fetch lists
+    GREYHOUNDAPI_KEY=... python -m sources.greyhoundapi --fetch pedigree --max-minutes 300   # every sire's offspring
+    GREYHOUNDAPI_KEY=... python -m sources.greyhoundapi --fetch runners --regions GB,IE,AU --max-minutes 320  # each race's runners
+    GREYHOUNDAPI_KEY=... python -m sources.greyhoundapi --fetch cards                        # today's and upcoming cards
     python -m sources.greyhoundapi --build --regions GB,IE,AU
 """
 
@@ -198,6 +201,124 @@ def fetch_lists(store, c: Client, names: list[str] | None = None, max_minutes: f
     return out
 
 
+PROGENY_CHUNK = 200
+
+
+def fetch_pedigree(store, c: Client, max_minutes: float | None = None) -> dict:
+    """Every sire (``/sires?min_runs=0``) and each sire's offspring (``/sires/<id>/progeny``: dog id, name, dam), in
+    chunks of ``PROGENY_CHUNK`` sires to ``raw/progeny/<n>.json.gz``; a chunk held is not fetched again."""
+    t0 = time.monotonic()
+    sires = []
+    for data, _ in c.pages("/sires", {"min_runs": 0}):
+        sires += data
+    store.put(f"{PREFIX}/raw/lists/sires_all.json.gz", gz(json.dumps(sires, separators=(",", ":")).encode()))
+    held = set(store.listing(f"{PREFIX}/raw/progeny/"))
+    done, dogs, stopped = 0, 0, False
+    for i in range(0, len(sires), PROGENY_CHUNK):
+        key = f"{PREFIX}/raw/progeny/{i // PROGENY_CHUNK:04d}.json.gz"
+        if key in held:
+            continue
+        if max_minutes and (time.monotonic() - t0) / 60.0 > max_minutes:
+            stopped = True
+            break
+        out = []
+        for sr in sires[i:i + PROGENY_CHUNK]:
+            sid = sr.get("sire_id")
+            if sid is None:
+                continue
+            for data, _ in c.pages(f"/sires/{int(sid)}/progeny"):
+                for d in data:
+                    out.append({"dog_id": d.get("dog_id"), "dog_name": d.get("name"), "dam": d.get("dam"),
+                                "sire_id": sid, "sire": sr.get("name")})
+        store.put(key, gz(json.dumps(out, separators=(",", ":")).encode()))
+        done += 1
+        dogs += len(out)
+        log.info("progeny chunk %s: %d dogs, %d calls so far", key.rsplit("/", 1)[1], len(out), c.calls)
+    return {"sires": len(sires), "chunks_fetched": done, "dogs": dogs, "stopped_for_time": stopped}
+
+
+QUOTA_STOP = 450_000           # a month's calls at which the backfills stop, leaving room for the daily jobs
+
+
+def month_used(c: Client) -> int | None:
+    """Calls used this month (``/usage``), or None when it cannot be read."""
+    try:
+        return int(c.get("/usage")["data"]["month"]["used"])
+    except Exception:                                    # noqa: BLE001  (a missing reading only skips the guard)
+        return None
+
+
+def runners_key(region: str, month: str) -> str:
+    return f"{PREFIX}/raw/runners/{region}/{month}.json.gz"
+
+
+def fetch_runners(store, c: Client, regions: list[str], max_minutes: float | None = None,
+                  quota_stop: int = QUOTA_STOP) -> dict:
+    """Each held results month's races, their full runner lists (``/races/<id>/runners``: every runner with its status,
+    scratched and reserve dogs included, owner, sire, dam), a region and month a file, newest months first, the regions
+    in the order given. A month held is skipped; stops at ``max_minutes`` or when the month's calls reach
+    ``quota_stop``."""
+    t0 = time.monotonic()
+    held = set(store.listing(f"{PREFIX}/raw/runners/"))
+    todo = []
+    for reg in regions:
+        for k in sorted(store.listing(f"{PREFIX}/raw/results/{reg}/"), reverse=True):
+            if k.endswith(".json.gz") and not k.endswith(".manifest.json"):
+                month = k.rsplit("/", 1)[1][:7]
+                if runners_key(reg, month) not in held:
+                    todo.append((reg, month, k))
+    done, races, stop = 0, 0, None
+    for reg, month, k in todo:
+        if max_minutes and (time.monotonic() - t0) / 60.0 > max_minutes:
+            stop = "time"
+            break
+        used = month_used(c)
+        if used is not None and used >= quota_stop:
+            stop = f"quota ({used:,} calls used this month)"
+            break
+        out = {}
+        for rc in json.loads(gzip.decompress(store.get(k))):
+            rid = rc.get("race_id")
+            if rid is None:
+                continue
+            try:
+                out[str(rid)] = c.get(f"/races/{int(rid)}/runners").get("data")
+            except RuntimeError as exc:
+                out[str(rid)] = {"error": str(exc)[:120]}
+        store.put(runners_key(reg, month), gz(json.dumps(out, separators=(",", ":")).encode()))
+        done += 1
+        races += len(out)
+        log.info("runners %s %s: %d races, %d calls so far", reg, month, len(out), c.calls)
+    return {"months_to_fetch": len(todo), "months_fetched": done, "races": races, "stopped": stop,
+            "left": len(todo) - done}
+
+
+def snapshot_cards(store, c: Client) -> dict:
+    """Today's and the upcoming racecards for every region, raw, to ``raw/cards/<UTC day>/<HHMM>.json.gz`` (the entries
+    as they stand: runners, reserves, scratchings, weights once weighed)."""
+    now = datetime.now(timezone.utc)
+    out = {}
+    for path in ("/racecards/today", "/racecards/upcoming"):
+        rows = []
+        for data, _ in c.pages(path):
+            rows += data
+        out[path.rsplit("/", 1)[1]] = rows
+    store.put(f"{PREFIX}/raw/cards/{now:%Y-%m-%d}/{now:%H%M}.json.gz", gz(json.dumps(out, separators=(",", ":")).encode()))
+    return {k: len(v) for k, v in out.items()}
+
+
+def build_pedigree(store) -> int:
+    """``greyhoundapi/pedigree.parquet``: one row an API dog with its sire and dam names."""
+    rows = []
+    for k in sorted(k for k in store.listing(f"{PREFIX}/raw/progeny/") if k.endswith(".json.gz")):
+        rows += json.loads(gzip.decompress(store.get(k)))
+    df = pd.DataFrame(rows)
+    if len(df):
+        df = df.drop_duplicates("dog_id", keep="last")
+        store.put_parquet(f"{PREFIX}/pedigree.parquet", df)
+    return int(len(df))
+
+
 def _g(d, *path):
     for p in path:
         if not isinstance(d, dict):
@@ -267,7 +388,7 @@ def main(argv=None) -> int:
     from sources.common import Store
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--fetch", choices=["results", "lists", "both"], default=None)
+    ap.add_argument("--fetch", choices=["results", "lists", "both", "pedigree", "runners", "cards"], default=None)
     ap.add_argument("--build", action="store_true")
     ap.add_argument("--regions", default="GB,IE,AU")
     ap.add_argument("--max-minutes", type=float, default=None)
@@ -283,8 +404,15 @@ def main(argv=None) -> int:
             rep["results"] = fetch_results(store, c, regions, date.today(), a.max_minutes)
         if a.fetch in ("lists", "both"):
             rep["lists"] = fetch_lists(store, c)
+        if a.fetch == "pedigree":
+            rep["pedigree"] = fetch_pedigree(store, c, a.max_minutes)
+        if a.fetch == "runners":
+            rep["runners"] = fetch_runners(store, c, regions, a.max_minutes)
+        if a.fetch == "cards":
+            rep["cards"] = snapshot_cards(store, c)
     if a.build:
         rep["build"] = build(store, regions)
+        rep["pedigree_dogs"] = build_pedigree(store)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     json.dump(rep, open(a.out, "w"), indent=1, default=str)
     print(json.dumps(rep, indent=1, default=str))

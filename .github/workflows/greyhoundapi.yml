@@ -10,12 +10,14 @@ name: GreyhoundAPI archive (results GB, IE, AU; read-only)
 on:
   schedule:
     - cron: '17 5 * * *'     # UTC: yesterday's results in, the last two months refreshed, the tables rebuilt
+    - cron: '43 */2 * * *'   # UTC: the cards as they stand (runners, reserves, scratchings), every two hours
+    - cron: '37 23 * * *'    # UTC: the runners backfill, newest months first, until the month's quota guard
   workflow_dispatch:
     inputs:
       task:
-        description: 'results (fetch), lists (tracks, sires, dams, track stats), build, or all'
+        description: 'results (fetch), lists (tracks, sires, dams, track stats), pedigree (every sire''s offspring), runners (each race''s full runner list, quota-guarded), cards, build, or all'
         type: choice
-        options: [all, results, lists, build]
+        options: [all, results, lists, pedigree, runners, cards, build]
         default: all
       regions:
         description: 'comma-separated regions'
@@ -32,7 +34,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: greyhoundapi
+  group: greyhoundapi-${{ inputs.task || github.event.schedule }}
   cancel-in-progress: false
 
 jobs:
@@ -54,9 +56,9 @@ jobs:
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           GREYHOUNDAPI_KEY: ${{ secrets.GREYHOUNDAPI_KEY }}
-          TASK: ${{ inputs.task || 'all' }}
+          TASK: ${{ inputs.task || (github.event.schedule == '43 */2 * * *' && 'cards') || (github.event.schedule == '37 23 * * *' && 'runners') || 'all' }}
           REGIONS: ${{ inputs.regions || 'GB,IE,AU' }}
-          MAXMIN: ${{ inputs.max_minutes || '60' }}
+          MAXMIN: ${{ inputs.max_minutes || (github.event.schedule == '37 23 * * *' && '320') || '60' }}
         run: |
           mkdir -p out
           if [ -z "$GREYHOUNDAPI_KEY" ]; then echo "the GREYHOUNDAPI_KEY repository secret is not set"; exit 1; fi
@@ -65,6 +67,9 @@ jobs:
           case "$TASK" in
             results) python -m sources.greyhoundapi --fetch results --regions "$REGIONS" --max-minutes "$MAXMIN" ;;
             lists)   python -m sources.greyhoundapi --fetch lists ;;
+            pedigree) python -m sources.greyhoundapi --fetch pedigree --max-minutes "$MAXMIN" && python -m sources.greyhoundapi --build --regions "$REGIONS" ;;
+            runners) python -m sources.greyhoundapi --fetch runners --regions "$REGIONS" --max-minutes "$MAXMIN" ;;
+            cards)   python -m sources.greyhoundapi --fetch cards ;;
             build)   python -m sources.greyhoundapi --build --regions "$REGIONS" ;;
             all)     python -m sources.greyhoundapi --fetch both --build --regions "$REGIONS" --max-minutes "$MAXMIN" ;;
             *) echo "unknown task"; exit 1 ;;
