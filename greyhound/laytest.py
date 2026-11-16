@@ -155,7 +155,9 @@ LOGBSP_PRICES = "greyhound/live/oos_prices_logbsp"
 NEAREST_PRICES = {"greyhound/live/oos_prices_stack_m": "greyhound/live/oos_prices_stack_all3",
                   "greyhound/live/oos_prices_stack_ml": "greyhound/live/oos_prices_stack_m",
                   # 15 Nov 2026: the stack with the speed and sequence tables reads the league stack's until its own
-                  "greyhound/live/oos_prices_stack_mls": "greyhound/live/oos_prices_stack_ml"}
+                  "greyhound/live/oos_prices_stack_mls": "greyhound/live/oos_prices_stack_ml",
+                  # 16 Nov 2026: the stack with the Irish form reads the speed and sequence stack's until its own
+                  "greyhound/live/oos_prices_stack_mlsi": "greyhound/live/oos_prices_stack_mls"}
 
 
 def day_fit(store, day: date, mark: str = MARK, prices: str | None = None) -> dict | None:
