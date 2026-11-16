@@ -115,3 +115,15 @@ def test_training_takes_engine_and_drop_in_blocks_from_the_matrix(frames):
         train_bfsp.attach_training_blocks(matrix.copy(), "no_such_block")
     with pytest.raises(SystemExit, match="is served"):
         train_bfsp.attach_training_blocks(matrix.copy(), "form_windows")
+
+
+def test_a_block_reading_the_race_shape_columns_asks_the_engine_for_them():
+    """14 Nov 2026: the stack blend's dry run stopped at pace_v2, which reads the engine's rs_epf
+    but did not declare ENGINE = ("race_shape",); the live engine only builds what a model's
+    features or its blocks ask for, so the column was never there on the card."""
+    import inspect
+    for name in blocks.names():
+        mod = blocks.load(name)
+        if '"rs_' in inspect.getsource(mod):
+            assert "race_shape" in getattr(mod, "ENGINE", ()), name
+    assert blocks.engine_flags(["expected_time"]).get("race_shape"), "expected_time builds pace_v2 first"

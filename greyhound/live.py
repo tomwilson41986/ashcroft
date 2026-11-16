@@ -102,7 +102,14 @@ LIVE_CALIBRATION: str | None = "stretch_track"
 STACK_KEY, STACK_META_KEY = f"{PREFIX}/stack/bundle.pt", f"{PREFIX}/stack/meta.json"
 #: its out-of-sample prices of the recorded days (fast-loop batch 19, research/greyhound/experiments/
 #: batch19_live_prices.json): the early lay's forecast is fitted on them (greyhound.laytest live_prices)
-STACK_OOS_PRICES = "greyhound/live/oos_prices_stack_all3"
+STACK_OOS_PRICES = "greyhound/live/oos_prices_stack_mls"
+#: each stack recipe's own out-of-sample prices (13 Nov 2026: the early lay's forecast was still fitted on the 10 Nov
+#: stack's prices after the release of batch 32's stack; batch 34 publishes the new model's)
+#: 14 Nov 2026: "stack_ml", the stack with the league table (the owner: "Release the league table to the live price")
+STACK_OOS_BY_RECIPE = {"stack3_all3": "greyhound/live/oos_prices_stack_all3",
+                       "stack_m": "greyhound/live/oos_prices_stack_m", "stack_ml": "greyhound/live/oos_prices_stack_ml",
+                       # 15 Nov 2026: the speed and sequence tables added (the owner: "Release")
+                       "stack_mls": STACK_OOS_PRICES}
 STACK_OBJECTIVE = "stack_share"
 #: the metrics tables are built from 2014, as the nightly build (greyhound-pit.yml) builds them: their constants are
 #: fitted on the years before 2018
@@ -285,16 +292,22 @@ def card_tables(store, day: date, card: pd.DataFrame) -> dict[str, pd.DataFrame]
     from greyhound.data import clean
     from greyhound.model import load_prices
     from greyhound.pit import core
+    from greyhound.pit.league import CARD_WEEKS
     from greyhound.track import runs_through
     trial_rows: list = []
     hist = runs_through(store, day - timedelta(days=1), first_year=PIT_FIRST_YEAR, trials_out=trial_rows)
     runs = clean(with_cards(hist, card))
     del hist
     ctx = {"fetch_lag": core.raw_fetch_lag(store), "prices": load_prices(store, f"{PIT_FIRST_YEAR}-{day.year}"),
-           "trial_runs": trial_rows[0] if trial_rows else None}          # the trials table (greyhound/pit/trials.py)
-    tabs = pit.build_tables(list(sm.PIT_TABLES), runs, None, ctx, keep=True)
+           "trial_runs": trial_rows[0] if trial_rows else None,          # the trials table (greyhound/pit/trials.py)
+           # the league table's refits from 26 Mondays before the card's week, not from 2014 (greyhound/pit/league.py
+           # CARD_WEEKS: the card rows equal the full build's within 1e-3; tests/test_greyhound_league.py)
+           "card_weeks": CARD_WEEKS,
+           # the sequence table's monthly networks, cached by the nightly build (greyhound/pit/seq.py): the card's
+           # month is scored from its cached network, never refitted in the price run
+           "model_store": store}
     keys = runs.loc[runs.is_card, pit.KEY].drop_duplicates()
-    return {n: t.merge(keys, on=pit.KEY) for n, t in tabs.items()}
+    return pit.build_tables(list(sm.PIT_TABLES), runs, None, ctx, keep=True, cut=keys)
 
 
 def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
@@ -347,7 +360,8 @@ def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
     pred = out.merge(key, on=["race_id", "trap"], how="left")
     pred["model_trained_utc"] = meta.get("trained_utc")
     pred["model_objective"] = STACK_OBJECTIVE                  # the early lay's forecast fit matches it
-    pred["oos_prices"] = meta.get("oos_prices") or STACK_OOS_PRICES
+    pred["oos_prices"] = (STACK_OOS_BY_RECIPE.get(str(meta.get("recipe"))) or meta.get("oos_prices")
+                          or STACK_OOS_PRICES)
     buf = io.StringIO()
     pred.to_csv(buf, index=False)
     store.put(f"{PREFIX}/predictions/{day:%Y-%m-%d}.csv", buf.getvalue().encode())

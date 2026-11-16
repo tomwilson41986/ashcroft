@@ -1,0 +1,76 @@
+name: GreyhoundAPI archive (results GB, IE, AU; read-only)
+
+# The owner's Live Plus subscription to api.greyhoundapi.com (the owner, 16 Nov 2026: "We have live plus, get all
+# history. Get all data."; sources/greyhoundapi.py). Every result from 1990 (AU), 1999 (IE) and Nov 2013 (GB), a
+# region and a month a file, raw to s3://$CAPTURE_BUCKET/sources/greyhoundapi/raw/, then runner tables
+# runs_<region>_<year>.parquet. Under the plan's 180 calls a minute (2.8 a second) and 600,000 a month. Resumable: a
+# month held is not fetched again except the last two. The key is the GREYHOUNDAPI_KEY repository secret; it is
+# never written or printed. Read-only to the API; writes S3 only; holds no Betfair key.
+
+on:
+  schedule:
+    - cron: '17 5 * * *'     # UTC: yesterday's results in, the last two months refreshed, the tables rebuilt
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'results (fetch), lists (tracks, sires, dams, track stats), build, or all'
+        type: choice
+        options: [all, results, lists, build]
+        default: all
+      regions:
+        description: 'comma-separated regions'
+        required: false
+        type: string
+        default: 'GB,IE,AU'
+      max_minutes:
+        description: 'stop fetching after this many minutes (a rerun carries on)'
+        required: false
+        type: string
+        default: '320'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhoundapi
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Fetch and build
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          GREYHOUNDAPI_KEY: ${{ secrets.GREYHOUNDAPI_KEY }}
+          TASK: ${{ inputs.task || 'all' }}
+          REGIONS: ${{ inputs.regions || 'GB,IE,AU' }}
+          MAXMIN: ${{ inputs.max_minutes || '60' }}
+        run: |
+          mkdir -p out
+          if [ -z "$GREYHOUNDAPI_KEY" ]; then echo "the GREYHOUNDAPI_KEY repository secret is not set"; exit 1; fi
+          [[ "$REGIONS" =~ ^[A-Z,]+$ ]] || { echo "regions must be like GB,IE,AU"; exit 1; }
+          [[ "$MAXMIN" =~ ^[0-9]+$ ]] || { echo "max_minutes must be a whole number"; exit 1; }
+          case "$TASK" in
+            results) python -m sources.greyhoundapi --fetch results --regions "$REGIONS" --max-minutes "$MAXMIN" ;;
+            lists)   python -m sources.greyhoundapi --fetch lists ;;
+            build)   python -m sources.greyhoundapi --build --regions "$REGIONS" ;;
+            all)     python -m sources.greyhoundapi --fetch both --build --regions "$REGIONS" --max-minutes "$MAXMIN" ;;
+            *) echo "unknown task"; exit 1 ;;
+          esac
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/greyhoundapi.json ] && { echo '```'; head -c 20000 out/greyhoundapi.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          true

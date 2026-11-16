@@ -1794,6 +1794,94 @@ seventh on the 05:15-10:00 UK window.
   sign); 4 of 191 since 5 Nov. No change.
 - **The replay** (`replay-1111`) now reaches 10 Nov: the rule +GBP56.19 at the BSP, +GBP30.98 after the result.
 
+**The forty-third full day** (12 Nov, a Thursday; ledger `live-day-1112`), the thirty-first early session and the
+eighth on the 05:15-10:00 UK window; the first session on the lost-reply fix (PR #316).
+- **The start.** Predictions run 43152760021 (04:08 UTC); the night-before run 43128632737 (00:37 UTC) differed from
+  the morning for the first night in seven (201 runners, mean absolute log difference 0.087; ledger
+  `night-before-1112`); the session 05:17-21:30 UTC in one run (43160416946), first back 05:17 UK, the last order at
+  09:51:41 UK; the settle at 22:30 UTC in settle mode (run 43320446205; its email failed again).
+- **+GBP25.31 after commission** as Betfair settled the trader's own orders, on 311 fills on 69 horses, GBP2,007.70
+  matched; the trader's CLV +3.63%. The first backs closed +5.9%, the top-ups +3.1%; 05:15-07:59 +4.6%
+  (GBP1,358.57), 08:00-09:59 +1.6% (GBP649.13). 33 horses reached the cap of 5 top-ups (GBP1,451.83, +0.80% at the
+  settled price), the other 36 +11.03%. The record: 34 days, +GBP6,397.12, 29 up.
+- **The account.** Funds GBP4,970.83 -> GBP4,959.75 (-GBP11.08), GBP36.39 beside the trader's result. The greyhound
+  early lay placed real orders on the same account from 11:37 to 21:27 UTC (its own figure -GBP64.99 locked); the two
+  records sum GBP28.60 below the account's move and are not reconciled (ledger `account-day-1112`).
+- **The replay** (`replay-1112`) now reaches 11 Nov: the rule +GBP284.78 at the BSP, -GBP6.26 after the result.
+
+**13 Nov: no prices until 07:48 UTC, and the served model changed for 14 Nov** (ledger `fallback-card-1113`,
+`serve-market-rating-1113`).
+- **The outage.** Both 04:08 UTC predictions runs died with "No space left on device" (GitHub's ubuntu-26.04 runner
+  keeps the swap file on the root disk); the first fixed run was cut off by its 60-minute limit; the fourth
+  (43380399981) wrote `predictions/2026-11-13.csv` at 07:48 UTC (219 runners), three hours late. The runner had 2
+  cores and 7.7 GB of memory and built the features in 62 minutes (under 30 on 12 Nov). The trader (run 43371006084)
+  waited from 05:17 UTC and read the file at its next 2-minute poll. No night-before card existed: that job was
+  skipped after queueing behind the research loop's jobs. Fixes merged: disk space freed before the swap file
+  (PR #324), a 150-minute limit on the three prediction jobs (PR #328).
+- **The served model.** The owner, 07:27 UTC: "Use the best performing model in live." From 14 Nov's card the served
+  blend is the market-rating blend (bfsp-model-60/61/62, trained through 9 Nov, the gate unchanged): on the locked
+  holdout its error against the BSP was 0.3734 against the served blend's 0.3801 (iteration 116). The shadow week
+  planned to 20 Nov was cut short. The trader's rule and stakes are unchanged.
+
+**14 Nov: the stack blend served from 15 Nov** (ledger `serve-stack-1114`). The owner, 07:10 UTC: "Go live with
+stack blend." From the 03:00 UTC predictions of 15 Nov the served blend is the market-rating blend with the day's ten
+blocks in every member (bfsp-model-63/64/65, trained through 12 Nov, the gate unchanged): in development its error
+against the BSP was 0.0083 below the market-rating blend's (-0.0088 to -0.0077), on the flat and over jumps alike.
+The locked holdout was not read for it. The first dry run found one block (`pace_v2`) not asking the live path for
+the race-shape columns it reads; fixed and tested, the second priced 299 runners in 36 races in 23 minutes. The
+trader's rule and stakes are unchanged.
+
+**From 14 Nov: predictions at 03:00 UTC** (the owner, 13 Nov: "move predictions to 03:00 UTC"; ledger
+`predictions-0300-1113`). On 13 Nov GitHub's runner (2 cores, 7.7 GB) took 67 minutes to price the card; at 04:00 UTC
+that lands at or after the 05:15 UTC session start. The session, its window and the rule are unchanged.
+
+**The forty-fourth full day** (13 Nov, a Friday; ledger `live-day-1113`), a late start: no prices until 07:48 UTC.
+- **The start.** Both scheduled predictions runs died on a full runner disk and the night-before file was missing
+  (ledger `night-before-1113`); the 05:17 UTC session (43371006084) failed at 06:40 with no predictions; predictions
+  run 43380399981 landed at 07:48 UTC and the restarted session (43380878643) ran 06:45-21:30 UTC, first back 07:49 UK,
+  the last order at 09:59:56 UK; the settle at 22:29 UTC in settle mode (run 43519689383; its email failed again).
+- **-GBP63.89 after commission** as Betfair settled the trader's own orders, on 337 fills on 90 horses, GBP2,950.77
+  matched, CLV +1.06%: first backs +6.3% (GBP993.14), top-ups -1.8% (GBP1,792.80), the top-ups of the first ten
+  minutes -8.0% (GBP747.41). 28 horses reached the cap of 5 top-ups (ledger `changes-1113`).
+- **The account.** Funds GBP4,959.75 -> GBP4,867.87 (-GBP91.88): -GBP27.99 beside the trader. The greyhound early lay
+  placed real orders on the same account (its own figure -GBP54.32 locked); GBP26.33 not reconciled (ledger
+  `account-day-1113`).
+- **The record:** 35 days, +GBP6,333.23, 29 up. From 14 Nov the served model is the market-rating blend and
+  predictions run at 03:00 UTC.
+
+**The forty-fifth full day** (14 Nov, a Saturday; ledger `live-day-1114`), the first on the 03:00 UTC predictions and
+the market-rating blend.
+- **The start.** Predictions run 43550179684 wrote the file at 03:34 UTC; the night-before run (00:34 UTC) and the
+  morning agreed within races (rank correlation 0.994; ledger `night-before-1114`). The session (43560740264) began
+  at 05:16 UTC and got the UK runner's shutdown signal at 06:21; it was restarted at 06:30 (43566641055) and ran to
+  21:30. First back 05:16 UK, the last order 09:58:35 UK; the settle at 22:30 UTC in settle mode (run 43648358465;
+  its email failed again).
+- **+GBP16.48 after commission** as Betfair settled the trader's own orders, on 565 fills on 131 horses, GBP3,822.06
+  matched, all 35 markets settled, CLV +2.45%: first backs +4.2%, top-ups +1.9%; the top-ups before 08:00 UK -1.3%
+  on GBP1,986.31, after it +12.9% on GBP583.78 (ledger `changes-1114`).
+- **The account.** Funds GBP4,867.87 -> GBP4,753.46 (-GBP114.41): -GBP130.89 beside the trader. The greyhound early
+  lay placed real orders on the same account and puts its own day at -GBP196.49 locked, more than the gap; the two
+  records together sit GBP65.60 below the account's move, not reconciled (ledger `account-day-1114`).
+- **The record:** 36 days, +GBP6,349.71, 30 up. From 15 Nov the stack blend prices the card (ledger
+  `serve-stack-1114`).
+
+**The forty-sixth full day** (15 Nov, a Sunday; ledger `live-day-1115`), the first priced by the stack blend
+(bfsp-model-63/64/65).
+- **The start.** Predictions run 43671150524 wrote the file at 03:39 UTC (03:10-03:39), the stack blend's first. The
+  night-before run failed (predict-evening.yml 43659284150, 00:39-00:50 UTC): horseracebase.com served a page titled
+  'One moment, please...', the login failed four times, no file (ledger `night-before-1115`). The session
+  (43680363676) ran 05:16-21:30 UTC in one piece. First back 05:16 UK, the last order 09:59:35 UK; the settle at
+  22:29 UTC in settle mode (run 43769563751; its email failed again: "Connection unexpectedly closed").
+- **+GBP263.90 after commission** as Betfair settled the trader's own orders, on 415 fills on 88 horses, GBP2,653.48
+  matched, all 19 markets settled, CLV +14.84%: first backs +23.8%, top-ups +11.9%; entered before 08:00 UK +19.4% on
+  GBP1,737.75, after it -2.2% on GBP467.16 (ledger `changes-1115`). One Sunday of 19 races: the last 12 days' CLV ran
+  -0.37% to +12.59%.
+- **The account.** Funds GBP4,753.46 -> GBP5,017.36 (+GBP263.90, read before any Sunday withdrawal): no gap beside
+  the trader. The greyhound early lay ran live on 94 markets but placed nothing (ledger `account-day-1115`).
+- **The holdout.** The stack blend held on the locked folds (28 Mar - 25 Sep 2026), read once: -0.0089 (-0.0098 to
+  -0.0081) against the market-rating blend, CLV higher at the 0/3/5% bars (ledger HOLDOUT LOOK `iter125-stack-final`).
+- **The record:** 37 days, +GBP6,613.61, 31 up.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",

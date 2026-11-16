@@ -59,6 +59,7 @@ FEATURES = (
     + ["p2_ae_front_td", "p2_ae_rear_td"]
 )
 POST_RACE: set[str] = set()
+ENGINE = ("race_shape",)   # build() reads the engine's rs_epf: the live path must build the race-shape block
 
 
 def _name_codes(s: pd.Series) -> np.ndarray:

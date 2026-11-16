@@ -163,3 +163,41 @@ def test_the_module_cannot_send_an_order():
     names = {n.attr for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Attribute)}
     assert not names & {"_place", "place", "back_at_sp", "lay_at_bsp", "back", "lay", "cancelOrders", "_call"}
     assert "placeOrders" not in src and "--live" not in src
+
+
+def test_settle_frame_with_no_back_placed():
+    """A day the S3 STOP held every race: the ledger has only no_back rows, and settling it is empty, not an error
+    (pandas 3 typed the empty fill flags as strings: 15 Nov 2026's running table)."""
+    import io
+
+    import pandas as pd
+
+    from greyhound import fav_back as fb
+    cols = "market_id,selection_id,track,race_time,trap,dog,limit,mid,f_bsp,stake,action,fill_price"
+    led = pd.read_csv(io.StringIO(cols + "\n1.2,5,Hove,10:00,1,A,,,,,no_back,\n"), dtype={"market_id": str})
+    close = pd.DataFrame(columns=["market_id", "selection_id", "bsp", "won"])
+    s = fb.settle_frame(led, close)
+    assert s.empty
+    assert fb.summary(s) == {"backs": 0}
+
+
+def test_table_with_no_back_placed(monkeypatch):
+    """The running table's section on a day the S3 STOP held every race: no error (15 Nov 2026: 'race_time')."""
+    import json
+
+    from greyhound import fav_back as fb
+
+    class S:
+        def __init__(self):
+            cols = "market_id,selection_id,track,race_time,trap,dog,limit,mid,f_bsp,stake,action,fill_price"
+            self.d = {f"{fb.PREFIX}/{fb.MODE}/2026-11-15/ledger.csv": (cols + "\n1.2,5,Hove,10:00,1,A,,,,,no_back,\n").encode(),
+                      f"{fb.PREFIX}/{fb.MODE}/2026-11-15/status.json": json.dumps({"time_utc": "x"}).encode()}
+
+        def get(self, k):
+            return self.d.get(k)
+
+    import datetime as dt
+    monkeypatch.setattr(fb, "closing", lambda day, s3=None: __import__("pandas").DataFrame(
+        columns=["market_id", "selection_id", "bsp", "won"]))
+    out = fb.table(S(), dt.date(2026, 11, 15))
+    assert "No backs placed (1 races skipped)" in out

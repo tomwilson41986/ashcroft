@@ -29,6 +29,20 @@ earlier one):
 | clock | ck_ | the wait in the racing kennels, the dog's habitual hour, the session, daylight, the fireworks calendar |
 | optics | op_ | how much better the printed card looks than the dog ran: the look, the substance, the surplus |
 | litter | lt_ | the litter as a live sensor: the littermates' current form, their level, the runt |
+| readers | rd_ | the price as a pool of card readers: six rules a punter applies to the card, each ranking the field |
+| followed | fo_ | the followed dog: its favourite history and how the market has bet it against how it ran |
+| salience | sl_ | each printed attribute against today's field: the gaps, the largest standout for and against |
+| line | ln_ | running-line and role change; whether the trap suits the line; the neighbours' squeeze and conflict |
+| cells | ch_ | the price's past record in each card-visible cell (trap at the track and trip, sire, grade move, age by sex) |
+| improve | im_ | improvement: the dog's own trend, exposure of the condition space, nth-time curves, hidden form |
+| debut | db_ | debutants and first-time conditions: a prior for a dog with little race form, giving way as it runs |
+| lastrace | lr_ | the last race: how fancied the opposition was, the market against the result, what changes today |
+| pedigree | pg_ | pedigree posteriors: sire, dam, litter and dog in one hierarchy, each with its mean and its uncertainty |
+| league | lg_ | Hunter's MM: track-and-grade strengths on one scale, the class move in those units, strength of schedule, market strength faced |
+| origin | og_ | where the dog was bred (Ireland or Britain), an Irish import with little British form (research: built on demand) |
+| going | gw_ | speed figures with a Timeform-style going: the clean field against expectation, the trap third and meeting half corrected (research: built on demand) |
+| bends | bn_ | the bends feed: each run's race bend by bend from the comment, the sectional rank and the finish (estimated positions at the first and last bend, leads, challenges, trouble early/mid/late) (research: built on demand) |
+| seq | se_ | a GRU over the dog's last 8 runs, refitted each month: its forecasts of the run's SP share, win against SP, time, finish, sectional (research: built on demand, not in ``all``) |
 
 Each table is written to the sources store as ``<STORE_PREFIX>/<table>.parquet`` with ``<table>.meta.json``: the code
 hash, the engine's code hash, when built, the rows, the date range, each column's coverage, and the table's own fit notes. The registry
@@ -43,6 +57,7 @@ race and dog, so each family is scored like any other block, on both targets.
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import importlib
 import io
@@ -55,7 +70,19 @@ import pandas as pd
 TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "life", "weather", "figs", "form", "draw",
           "bend", "xtime", "dyad", "cycle", "trials",
           # the discovery tables of 11 Nov 2026 (each reads the expected-time table)
-          "ext", "fitness", "fear", "clock", "optics", "litter")
+          "ext", "fitness", "fear", "clock", "optics", "litter",
+          "readers", "followed", "salience", "line", "cells",
+          "improve", "debut", "lastrace", "pedigree", "league",
+          # the speed figures of 14 Nov 2026 (reports/greyhound_model.md section 60)
+          "speed",
+          # the 16 Nov 2026 tests (ledger greyhound-origin-batch43-1116, greyhound-going-batch43-1116)
+          "origin", "going", "bends",
+          # research tables, built on demand (``ON_DEMAND``: never in --build all; torch is installed for them)
+          "seq")
+#: tables ``--build all`` leaves out: the seq table refits a network monthly from 2024 (one to two hours on a runner,
+#: and torch); it is built by name (greyhound-pit.yml, tables=seq)
+ON_DEMAND: tuple = ("origin", "going", "bends")   # 15 Nov 2026: the seq table is served (its monthly networks cached, seq.py);
+                                          # 16 Nov 2026: the origin and going tables are tested before --build all builds them
 KEY = ["race_id", "dog_id"]
 #: where the tables are stored. "pit2": the tables of the engine as fixed on 11 Nov 2026 (the audit's foundation
 #: faults: greyhound/data.py, greyhound/metrics.py). The tables built from the engine before it stay at
@@ -109,14 +136,25 @@ def coverage(tab: pd.DataFrame, runs: pd.DataFrame) -> dict:
                                  for c in cols[:3]}}
 
 
-def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None, keep: bool = False) -> dict:
+#: the tables a table's build reads from ``ctx`` (tests/test_greyhound_pit.py holds the list to the code)
+DEPENDS = {"trouble": ("ability",), "dyad": ("xtime",), "ext": ("xtime",), "fitness": ("xtime",), "fear": ("xtime",),
+           "clock": ("xtime",), "optics": ("xtime",), "litter": ("xtime",)}
+
+
+def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None, keep: bool = False,
+                 cut: pd.DataFrame | None = None) -> dict:
     """Build ``names`` in ``TABLES`` order; write each to ``store`` (when given); return each table's meta, or with
-    ``keep`` the tables themselves (the live model's card build: greyhound/live.py)."""
+    ``keep`` the tables themselves (the live model's card build: greyhound/live.py). With ``cut`` (the keys of the
+    rows wanted) each kept table is cut to those rows as soon as no later table reads it (``DEPENDS``), so the
+    build holds one whole table at a time and not all of them (13 Nov 2026: sixteen whole tables from 2014 ran the
+    price run's 16 GB runner out of memory, greyhound-live.yml run 43427444021)."""
     from greyhound.pit import core
     ctx = dict(ctx or {})
     figs = core.per_run_figures(runs)
     metas = {}
-    for name in [t for t in TABLES if t in names]:
+    order = [t for t in TABLES if t in names]
+    kept: dict = {}
+    for name in order:
         mod = module(name)
         t0 = datetime.now(timezone.utc)
         tab, notes = mod.build(runs, figs, ctx)
@@ -130,6 +168,14 @@ def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None,
             store.put_parquet(f"{STORE_PREFIX}/{name}.parquet", tab)
             store.put(f"{STORE_PREFIX}/{name}.meta.json", json.dumps(meta, indent=1, default=str).encode())
         metas[name] = meta
+        if keep and cut is not None:
+            later = order[order.index(name) + 1:]
+            for done in [t for t in metas if t not in kept]:
+                if not any(done in DEPENDS.get(t, ()) for t in later):
+                    kept[done] = ctx.pop(done).merge(cut, on=KEY)
+            gc.collect()
+    if keep and cut is not None:
+        return kept
     return {n: ctx[n] for n in metas} if keep else metas
 
 

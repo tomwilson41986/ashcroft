@@ -1,0 +1,73 @@
+name: Greyhound trap against the Betfair SP (read-only)
+
+# The registered reading greyhound-trap-residual-1116 (research/greyhound/trap_residual.py; the owner, 16 Nov 2026:
+# "Measure our model's error against the Betfair SP by trap, to check the trap 4 finding"). Reads Betfair's price
+# files, GBGB's results and a fast-loop arm's saved predictions from S3; holds no Betfair key: nothing reaches Betfair.
+
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: 'price-file years, e.g. 2019-2026'
+        required: false
+        type: string
+      pred:
+        description: 'saved predictions in the sources store (default greyhound/research/pred/stack_mls_live_oos.parquet)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-trap-study
+  cancel-in-progress: true
+
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+      - name: The study
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          YEARS: ${{ inputs.years }}
+          PRED: ${{ inputs.pred }}
+        run: |
+          ARGS=(--out out/trap_residual)
+          if [ -n "$YEARS" ]; then
+            [[ "$YEARS" =~ ^[0-9]{4}-[0-9]{4}$ ]] || { echo "years must be YYYY-YYYY"; exit 1; }
+            ARGS+=(--years "$YEARS")
+          fi
+          if [ -n "$PRED" ]; then
+            [[ "$PRED" =~ ^greyhound/[A-Za-z0-9_./-]+\.parquet$ ]] || { echo "pred must be a parquet key under greyhound/"; exit 1; }
+            ARGS+=(--pred "$PRED")
+          fi
+          python -m research.greyhound.trap_residual "${ARGS[@]}"
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/trap_residual/report.md ] && cat out/trap_residual/report.md >> "$GITHUB_STEP_SUMMARY"
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-trap-study-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90

@@ -1,0 +1,76 @@
+name: GBGB dog records, saved daily (read-only)
+
+# Each declared dog's GBGB record saved on the day it is declared (sources/gbgb_dogs.py; the owner, 14 Nov 2026: "Yes do
+# these"): GBGB's results show only the current trainer, owner and season on past rows, so this builds the
+# point-in-time history from today forward. The day's dogs are the GBGB ids of the cards the greyhound live job prices
+# (sources/greyhound/live/predictions/<day>.csv, hourly from 07:21 UTC), else the recorder's catalogue matched by name.
+# Each dog's https://api.gbgb.org.uk/api/dogs/<id> at most twice a second, raw to
+# s3://$CAPTURE_BUCKET/sources/gbgb_dogs/<day>/dogs.jsonl.gz. Read-only to GBGB, writes S3 only, holds no Betfair key.
+# The second run picks up the dogs of markets listed later and any fetch that failed; a dog saved that day is skipped.
+
+on:
+  schedule:
+    - cron: '13 8 * * *'    # UTC: after the morning's first priced cards (07:21 UTC)
+    - cron: '43 18 * * *'   # UTC: the evening's late-listed dogs and the morning's failures
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'UK day, YYYY-MM-DD (default today, UK)'
+        required: false
+        type: string
+      max:
+        description: 'at most this many dogs fetched'
+        required: false
+        type: string
+        default: '3000'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gbgb-dogs
+  cancel-in-progress: false
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Save the day's dog records
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          DAY: ${{ inputs.date }}
+          MAX: ${{ inputs.max || '3000' }}
+        run: |
+          mkdir -p out
+          if ! [[ "$MAX" =~ ^[0-9]+$ ]]; then echo "max must be a whole number"; exit 1; fi
+          ARGS=(--max "$MAX")
+          if [ -n "$DAY" ]; then
+            if ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
+            ARGS+=(--date "$DAY")
+          fi
+          python -m sources.gbgb_dogs "${ARGS[@]}" | tee out/gbgb_dogs.json
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f out/gbgb_dogs.json ]; then
+            { echo '### GBGB dog records'; echo '```json'; head -c 20000 out/gbgb_dogs.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gbgb-dogs-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 30

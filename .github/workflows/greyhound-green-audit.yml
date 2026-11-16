@@ -1,0 +1,92 @@
+name: Greyhound early lay green-up audit (read-only)
+
+# The early lay's green-up orders as Betfair settled them (research/greyhound/green_audit.py; the owner, 14 Nov 2026:
+# "Read the green-up orders from Betfair and fix the closing order"): per dog laid, the lays, the green-up backs and
+# their cover of the lay, Betfair's profit against a flat green-up at the same prices, and the ledger's locked P&L.
+# listClearedOrders on the delayed key; no order method is called. On the UK server's greyhound runner
+# (vars.PAPER_MODELS_RUNNER, never the horse racing runner): Betfair refuses the login from GitHub's runners. A job
+# there waits for the day's paper-models run to end.
+
+on:
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: 'first day, YYYY-MM-DD (default 2026-11-03, the first live day)'
+        required: false
+        type: string
+      date_to:
+        description: 'last day, YYYY-MM-DD (default today, UTC)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+    timeout-minutes: 15
+    steps:
+      - name: Not on the live trader's runner
+        id: runner_guard
+        env:
+          PAPER_RUNNER_LABEL: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+          LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
+        run: |
+          if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$PAPER_RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
+            echo "PAPER_MODELS_RUNNER is the live trader's runner ($LIVE_RUNNER_LABEL): the paper models do not run there"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - name: Python (its own environment)
+        run: |
+          VENV="$HOME/.venvs/ashcroft-paper"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv-paper"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
+      - name: Write the Betfair certificate (its own folder)
+        env:
+          BETFAIR_CERT: ${{ secrets.BETFAIR_CERT }}
+          BETFAIR_KEY: ${{ secrets.BETFAIR_KEY }}
+        run: |
+          if [ -n "$BETFAIR_CERT" ] && [ -n "$BETFAIR_KEY" ]; then
+            D="$HOME/.betfair/certs-green-audit"
+            mkdir -p "$D"
+            printf '%s\n' "$BETFAIR_CERT" > "$D/betfair.crt"
+            printf '%s\n' "$BETFAIR_KEY" > "$D/betfair.key"
+            chmod 600 "$D/betfair.key"
+            echo "BETFAIR_CERT_FILE=$D/betfair.crt" >> "$GITHUB_ENV"
+            echo "BETFAIR_KEY_FILE=$D/betfair.key" >> "$GITHUB_ENV"
+          fi
+      - name: Read the green-up orders
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          DATE_FROM: ${{ inputs.date_from }}
+          DATE_TO: ${{ inputs.date_to }}
+        run: |
+          for v in "$DATE_FROM" "$DATE_TO"; do
+            if [ -n "$v" ] && ! [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "dates must be YYYY-MM-DD"; exit 1; fi
+          done
+          ARGS=(--out out/green_audit --from "${DATE_FROM:-2026-11-03}")
+          [ -n "$DATE_TO" ] && ARGS+=(--to "$DATE_TO")
+          python -m research.greyhound.green_audit "${ARGS[@]}"
+          cat out/green_audit/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-green-audit-${{ github.run_number }}
+          path: out/green_audit/
+          if-no-files-found: ignore
+          retention-days: 30
