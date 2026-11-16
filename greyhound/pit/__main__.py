@@ -44,6 +44,12 @@ def main(argv=None) -> int:
         ctx["prices"] = load_prices(store, f"{a.first_year}-{last.year}")
     if "seq" in names:                                       # the sequence table's monthly networks, cached
         ctx["model_store"] = store
+    if "irish" in names:                                     # GreyhoundAPI's Irish and GB results (sources/greyhoundapi.py)
+        from greyhound.pit.irish import load_context as irish_context
+        ctx.update(irish_context(store))
+    if "world" in names:                                     # GreyhoundAPI's pedigree and Irish/Australian results
+        from greyhound.pit.world import load_context as world_context
+        ctx.update(world_context(store))
     if "weather" in names:
         from greyhound.pit.weather import load_context
         ctx.update(load_context(store))
