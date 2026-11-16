@@ -51,3 +51,28 @@ def test_irish_form_reads_only_earlier_days():
 def test_no_api_data_is_not_an_error():
     tab, notes = irish.build(_gb_runs(), None, {})
     assert "no data found" in notes["note"] and tab.ie_fig_mean3.isna().all() and (tab.ie_n == 0).all()
+
+
+def test_name_link_when_the_ids_differ():
+    gb = _gb_runs()
+    gb["dog_name"] = gb.dog_id.map({101: "Swift Blade", 102: "Other Dog"})
+    ie = _api_ie().assign(dog_id=lambda d: d.dog_id.map({"A": "ie-A", "B": "ie-B", "C": "ie-C"}),
+                          dog_name=lambda d: d.dog_id.map({"ie-A": "SWIFT BLADE", "ie-B": "Somebody", "ie-C": "Nobody"}))
+    tab, notes = irish.build(gb, None, {"api_ie": ie, "api_gb": _api_gb()})
+    t = tab.set_index(["race_id", "dog_id"])
+    assert notes["name_links"] == 1 and t.loc[(10, 101), "ie_n"] == 3 and t.loc[(10, 102), "ie_n"] == 0
+
+
+def test_a_name_reused_long_before_is_not_read():
+    gb = _gb_runs()
+    gb["dog_name"] = gb.dog_id.map({101: "Swift Blade", 102: "Other Dog"})
+    ie = _api_ie().assign(dog_id="ie-A", dog_name="Swift Blade", start_local="2010-01-01T20:00:00+00:00")
+    ie["race_id"] = range(len(ie))
+    tab, _ = irish.build(gb, None, {"api_ie": ie, "api_gb": _api_gb()})
+    assert (tab.ie_n == 0).all()
+
+
+def test_context_loads_the_dog_name():
+    """name_map links by name, so the API tables must be read with it (16 Nov 2026: the build linked 0 without)."""
+    from greyhound.pit.irish import API_COLS
+    assert "dog_name" in API_COLS
