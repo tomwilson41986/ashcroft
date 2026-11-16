@@ -70,3 +70,9 @@ def test_a_name_reused_long_before_is_not_read():
     ie["race_id"] = range(len(ie))
     tab, _ = irish.build(gb, None, {"api_ie": ie, "api_gb": _api_gb()})
     assert (tab.ie_n == 0).all()
+
+
+def test_context_loads_the_dog_name():
+    """name_map links by name, so the API tables must be read with it (16 Nov 2026: the build linked 0 without)."""
+    from greyhound.pit.irish import API_COLS
+    assert "dog_name" in API_COLS
