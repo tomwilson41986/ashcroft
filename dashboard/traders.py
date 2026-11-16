@@ -16,11 +16,18 @@ step reads it:
 - Football, live and paper (``sources/football/live/<mode>/<day>/``): its ``settled.csv`` (the backs against the gold
   results, written by the nightly settle). Expected value: ``ev x matched``.
 
-The forecast is the owner's standard (the day report, 22 Oct 2026): never the raw expected value. The record is every
-settled day before today; the ratio of the settled result to the expected value over it calibrates what is still to
-run. A trader whose ledger holds no expected value is forecast by its record's mean day. The month is the month to
-date, today's forecast, and the record's mean day for each day left. No record (fewer than ``MIN_RECORD`` days): no
-forecast, and the page says so.
+The forecast is the owner's day report (22 Oct and 4 Nov 2026: "never give me inflated expected value", "always
+forecast on today's markets"), never the expected value at the fill and never a ratio of the record's result to it:
+
+- The horse traders (live and paper; ``forecast_by="day_report"``): the day report's own method
+  (``dashboard/day_forecast.py``, from ``research/queries/done/day_report.py``): settled, plus each race to run marked
+  now at the mid after the non-runners' cuts, plus the drift a pound staked from that mark to the settled result on the
+  trader's past races marked at the same time before the off; Cash Out (the lays) beside it; the range the
+  10th-90th percentile of the past races' misses.
+- The others, whose ledgers carry no marks the dashboard can price: settled plus the markets still to come at the
+  record's mean a market (fewer than ``MIN_RECORD`` settled days: no forecast, and the page says so).
+
+The month is the month to date, today's forecast, and the record's mean day for each day left.
 """
 from __future__ import annotations
 
@@ -422,6 +429,7 @@ class Trader:
     day_file: str | None = None         # a file a day (<base>/<day>.<ext>) rather than a folder a day
     notes: tuple = field(default_factory=tuple)
     switch: str | None = None   # the repository variable that turns its real orders on (shown on the tile)
+    forecast_by: str = "record"  # "day_report": today's marks and the day report's drift (dashboard/day_forecast.py)
 
 
 EARLY_LAY_FROM = "2026-11-11"  # the owner, 11 Nov 2026: the live early lay tracked from fresh
@@ -435,11 +443,12 @@ AGENT_NOTES = ("A paper agent (research/paper/horses.py): no orders. It trades t
 TRADERS = [
     Trader("horse-live", "horse_racing", "Win backs, live", "live",
            "UK and Irish win markets on the owner's account: backs at the price now, each laid at the SP",
-           "pred", "trading/live", horse_markets, "horse", "HL", record_from="2026-10-10",
-           notes=("The forecast's record starts 10 Oct 2026, the owner's rule of 9 Oct, as the day report.",)),
+           "pred", "trading/live", horse_markets, "horse", "HL", record_from="2026-10-10", forecast_by="day_report",
+           notes=("The forecast is the day report's: today's marks after the non-runners' cuts, plus the drift to the "
+                  "result on the past races marked the same way, from 10 Oct 2026 (the owner's rule of 9 Oct).",)),
     Trader("horse-paper", "horse_racing", "Win backs, paper", "paper",
            "The paper trader: the same markets simulated against the book, nothing placed",
-           "pred", "trading/paper", horse_markets, "horse", "HP"),
+           "pred", "trading/paper", horse_markets, "horse", "HP", forecast_by="day_report"),
     # the morning models (the owner, 4 Nov 2026: "Create two live models; Steamers, Quick Returners", half stakes;
     # 11 Nov: "separate trading strategies that i can track in the dashboard"): each its own line, live and paper
     Trader("horse-morning-steamer", "horse_racing", "Steamers, live", "live",
@@ -540,7 +549,8 @@ def _f(x) -> float | None:
     return None if not math.isfinite(x) else round(x, 2)
 
 
-def summarise(t: Trader, days: dict[str, pd.DataFrame], today: date, last_ts: str | None = None) -> dict:
+def summarise(t: Trader, days: dict[str, pd.DataFrame], today: date, last_ts: str | None = None,
+              day_fc: dict | None = None) -> dict:
     ds = today.isoformat()
     rows = []
     for d, m in sorted(days.items()):
@@ -560,9 +570,8 @@ def summarise(t: Trader, days: dict[str, pd.DataFrame], today: date, last_ts: st
     tm = days.get(ds)
     today_out = {"day": ds, "traded": tm is not None, "pnl": None, "volume": None, "markets": 0, "settled": 0,
                  "open_liability": None, "forecast": None, "forecast_lo": None, "forecast_hi": None,
-                 "forecast_7": None, "method": None, "last_order_utc": last_ts}
+                 "method": None, "last_order_utc": last_ts}
     share, f_day, f_lo, f_hi = 1.0, None, None, None
-    has_ev = len(rec_full) and rec_full.ev_settled.notna().any() and rec_full.ev_settled.fillna(0).sum() > 0
     mean_day = float(rec_full.result.mean()) if len(rec_full) else None
     if tm is not None:
         st = tm[tm.settled.astype(bool)]
@@ -571,37 +580,23 @@ def summarise(t: Trader, days: dict[str, pd.DataFrame], today: date, last_ts: st
         today_out.update({"pnl": _f(done), "volume": _f(_num(tm.staked).fillna(0).sum()), "markets": int(len(tm)),
                           "settled": int(len(st)),
                           "open_liability": _f(_num(tm.open_liability).fillna(0).sum())})
-        if len(rec_full) >= MIN_RECORD:
-            if has_ev and _num(tm.ev).notna().any():
-                k_all = rec_full.result.sum() / rec_full.ev_settled.sum()
-                last7 = rec_full.tail(7)
-                k_7 = last7.result.sum() / last7.ev_settled.sum() if last7.ev_settled.sum() > 0 else None
-                ev_day = float(_num(tm.ev).fillna(0).sum())
-                ev_left = float(_num(left.ev).fillna(0).sum())
-                share = ev_left / ev_day if ev_day > 0 else 0.0
-                f_day = done + ev_left * k_all
-                today_out["forecast_7"] = _f(done + ev_left * k_7) if k_7 is not None else None
-                today_out["method"] = (f"settled + the expected value still to run x {k_all:.2f} (the record's result"
-                                       f" / expected value, {len(rec_full)} days)")
-                if len(rec_full) >= MIN_RANGE:
-                    miss = rec_full.result - rec_full.ev_settled * k_all
-                    f_lo = f_day + miss.quantile(0.1) * math.sqrt(share)
-                    f_hi = f_day + miss.quantile(0.9) * math.sqrt(share)
-            else:
-                # no expected value: the markets a day still to come (the record's mean count less today's settled)
-                # at the record's mean a market
-                per_mkt = rec_full.result.sum() / rec_full.settled.sum() if rec_full.settled.sum() else 0.0
-                n_day = float(rec_full.settled.mean())
-                to_come = max(n_day - len(st), float(len(left)))
-                share = min(1.0, to_come / n_day) if n_day > 0 else 0.0
-                f_day = done + to_come * per_mkt
-                today_out["method"] = (f"settled + {to_come:.0f} markets still to come x the record's mean a market "
-                                       f"({per_mkt:+.2f}; {len(rec_full)} days, no expected value in the ledger)")
-                if len(rec_full) >= MIN_RANGE:
-                    miss = rec_full.result - rec_full.settled * per_mkt
-                    f_lo = f_day + miss.quantile(0.1) * math.sqrt(share)
-                    f_hi = f_day + miss.quantile(0.9) * math.sqrt(share)
-            today_out.update({"forecast": _f(f_day), "forecast_lo": _f(f_lo), "forecast_hi": _f(f_hi)})
+        if t.forecast_by == "day_report":
+            f_day, f_lo, f_hi, share = _day_report_forecast(today_out, done, tm, day_fc)
+        elif len(rec_full) >= MIN_RECORD:
+            # the markets a day still to come (the record's mean count less today's settled) at the record's mean a
+            # market: never the expected value at the fill, never scaled by the record's result over it
+            per_mkt = rec_full.result.sum() / rec_full.settled.sum() if rec_full.settled.sum() else 0.0
+            n_day = float(rec_full.settled.mean())
+            to_come = max(n_day - len(st), float(len(left)))
+            share = min(1.0, to_come / n_day) if n_day > 0 else 0.0
+            f_day = done + to_come * per_mkt
+            today_out["method"] = (f"settled + {to_come:.0f} markets still to come x the record's mean a market "
+                                   f"({per_mkt:+.2f}; {len(rec_full)} days)")
+            if len(rec_full) >= MIN_RANGE:
+                miss = rec_full.result - rec_full.settled * per_mkt
+                f_lo = f_day + miss.quantile(0.1) * math.sqrt(share)
+                f_hi = f_day + miss.quantile(0.9) * math.sqrt(share)
+        today_out.update({"forecast": _f(f_day), "forecast_lo": _f(f_lo), "forecast_hi": _f(f_hi)})
 
     # the month
     month = ds[:7]
@@ -640,7 +635,35 @@ def summarise(t: Trader, days: dict[str, pd.DataFrame], today: date, last_ts: st
             "clv_daily": clv_daily(days, hist),
             "edge": edge_out,
             "races": races_out,
+            "forecast_races": (day_fc or {}).get("races", []) if t.forecast_by == "day_report" else [],
             "notes": list(t.notes)}
+
+
+def _day_report_forecast(today_out: dict, done: float, tm: pd.DataFrame, fc: dict | None):
+    """Today's forecast from the day report's figures (dashboard/day_forecast.py): settled + the races to run's
+    forecast from the mid, the range from its draws, Cash Out beside it. No figures: no forecast, and why."""
+    if not fc:
+        today_out["method"] = "the day report's forecast was not run"
+        return None, None, None, 1.0
+    if not fc.get("ok"):
+        today_out["method"] = f"no forecast: {fc.get('why', 'not read')}"
+        return None, None, None, 1.0
+    n_left = int(fc.get("races_left", 0))
+    share = (n_left / len(tm)) if len(tm) else 0.0
+    f_day = done + fc["forecast_left"]
+    today_out.update({"mark_mid": _f(fc.get("mark_mid")), "cash_out": _f(fc.get("cash_out")),
+                      "forecast_cash_out": _f(done + fc["forecast_left_cash_out"]), "races_left": n_left,
+                      "unpriced": int(fc.get("unpriced", 0)), "books_to": fc.get("books_to"),
+                      "forecast_past_days": fc.get("past_days"), "forecast_past_races": fc.get("past_races")})
+    if not n_left:
+        today_out["method"] = "every race settled: the day is its settled result"
+        return done, done, done, 0.0
+    unp = f"; {fc['unpriced']} horses with no price yet marked at nothing" if fc.get("unpriced") else ""
+    today_out["method"] = (f"the day report: settled + {n_left} races to run marked now at the mid after the "
+                           f"non-runners' cuts ({fc['mark_mid']:+,.2f}; Cash Out {fc['cash_out']:+,.2f}) + the drift "
+                           f"to the result on {fc['past_races']} past races over {fc['past_days']} days marked the same "
+                           f"way at the same time before the off; range 10th-90th{unp}")
+    return f_day, done + fc["lo_left"], done + fc["hi_left"], share
 
 
 def clv_daily(days: dict[str, pd.DataFrame], hist: pd.DataFrame) -> list[dict]:
@@ -787,7 +810,15 @@ def build(src, today: date | None = None, cache: bool = True, traders=TRADERS, s
     for t in traders:
         try:
             days, last = trader_days(src, t, today, cache=cache)
-            s = summarise(t, days, today, last)
+            fc = None
+            if t.forecast_by == "day_report" and today.isoformat() in days:
+                try:
+                    from dashboard.day_forecast import record_days, today_forecast
+                    fc = today_forecast(src, t.id, t.kind, t.base, today,
+                                        record_days(sorted(days), today, t.record_from, t.start_from), cache=cache)
+                except Exception as exc:  # noqa: BLE001  no forecast rather than a wrong one
+                    fc = {"ok": False, "why": f"{type(exc).__name__}: {str(exc)[:160]}"}
+            s = summarise(t, days, today, last, day_fc=fc)
         except Exception as exc:  # noqa: BLE001  one trader's fault must not blank the page
             errors.append({"trader": t.id, "error": f"{type(exc).__name__}: {str(exc)[:200]}"})
             s = summarise(t, {}, today)

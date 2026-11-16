@@ -174,7 +174,7 @@ footer.status .stale { color: var(--accent-ink); }
   <section class="method">
     <h2>How the figures are made</h2>
     <p><b>P&amp;L</b> is settled P&amp;L after commission, read from each trader's own ledger the way its own settle step reads it. A market still to run is not in it. <b>Volume</b> is the money matched on the trader's orders that day (backs; lays for the early lay). Paper traders place nothing: their figures are what the rule would have made.</p>
-    <p><b>Forecast</b> follows the owner's day report: never the raw expected value. The record is every fully settled day before today; the expected value still to run is scaled by the record's settled result over its expected value. A trader with no expected value in its ledger is forecast from its record's mean a market. The range is the 10th-90th percentile of the record's misses. <b>Month forecast</b> adds the record's mean day for each day left, if the trader trades every one of them. Fewer than 3 settled days: no forecast.</p>
+    <p><b>Forecast</b> is the owner's day report, never the expected value at the fill. The horse traders: settled, plus each race to run marked now at the mid after the non-runners' cuts, plus the drift a pound staked from that mark to the settled result on the trader's past races marked at the same time before the off; Cash Out (the lays) beside it; the range the 10th-90th percentile of those races' misses. A trader with no marks to price: settled plus the markets still to come at its record's mean a market (fewer than 3 settled days: no forecast). <b>Month forecast</b> adds the record's mean day for each day left, if the trader trades every one of them.</p>
     <p id="srcline"></p>
   </section>
 </div>
@@ -312,7 +312,8 @@ footer.status .stale { color: var(--accent-ink); }
     }
     var fsub = d.forecast !== null ? range(d.forecast_lo, d.forecast_hi) :
       '<span class="sub">' + (d.traded ? "too few settled days" : "not trading today") + '</span>';
-    if (d.forecast_7 !== null && d.forecast_7 !== undefined) fsub += '<span class="sub">last 7 days: <b>' + esc(gbp(d.forecast_7, true)) + '</b></span>';
+    if (d.forecast_cash_out !== null && d.forecast_cash_out !== undefined) fsub += '<span class="sub">from Cash Out: <b>' + esc(gbp(d.forecast_cash_out, true)) + '</b></span>';
+    if (d.forecast === null && d.method) fsub = '<span class="sub">' + esc(d.method) + '</span>';
     var vsub = d.open_liability ? '<span class="sub">open liability ' + esc(gbp(d.open_liability)) + '</span>' : "";
     var msub = m.forecast !== null ? range(m.forecast_lo, m.forecast_hi) : '<span class="sub">too few settled days</span>';
     var psub = '<span class="sub">' + m.days + ' day' + (m.days === 1 ? "" : "s") + ' traded</span>';

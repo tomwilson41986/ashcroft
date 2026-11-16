@@ -68,32 +68,115 @@ def test_horse_settled_pnl_is_the_day_reports(tmp_path):
     assert last == f"{day}T15:00:00Z"
 
 
-def test_the_forecast_scales_the_expected_value_by_the_record(tmp_path):
-    # five settled days from 28 Oct, each expected value 10 (100 x 0.1) and results 4, 6, 2, 8, 5 -> 25 / 50 = 0.5
+def test_a_trader_without_marks_is_forecast_by_its_records_mean_a_market_never_the_expected_value(tmp_path):
+    # five settled days from 28 Oct, results 4, 6, 2, 8, 5 on one market each; the expected value at the fill is
+    # ignored (the owner, 4 Nov: never scale the forecast by the record's result over the expected value)
     results = [4, 6, 2, 8, 5]
     for i, r in enumerate(results):
         d = (TODAY - timedelta(days=7 - i)).isoformat()
         _put(tmp_path, "pred", f"trading/live/{d}/ledger.csv", horse_ledger(d, [("1.x", 100, 0.1, r, 0.0001)]))
     day = TODAY.isoformat()
-    # today: one settled (+10 after commission 0.0001 -> rounded), one open with expected value 40 x 0.5 = 20
     _put(tmp_path, "pred", f"trading/live/{day}/ledger.csv",
          horse_ledger(day, [("1.s", 100, 0.1, 10, 0.0001), ("1.o", 200, 0.2, None, None)]))
-    src = LocalSource(tmp_path)
-    t = T("horse-live")
-    days, last = trader_days(src, t, TODAY, cache=False)
+    t = replace(T("horse-live"), forecast_by="record")
+    days, last = trader_days(LocalSource(tmp_path), t, TODAY, cache=False)
     s = summarise(t, days, TODAY, last)
-    k = sum(r - 0.0001 for r in results) / 50.0
+    per_mkt = sum(r - 0.0001 for r in results) / 5                # a market a day: the mean a market is the mean day
     assert s["record"]["days"] == 5
-    assert s["today"]["forecast"] == pytest.approx(round(10 - 0.0001 + 40 * k, 2))
+    assert s["today"]["forecast"] == pytest.approx(round(10 - 0.0001 + 1 * per_mkt, 2))
+    assert "expected value" not in s["today"]["method"]
     assert s["today"]["forecast_lo"] < s["today"]["forecast"] < s["today"]["forecast_hi"]
-    # the month: November to date (1 Nov's 5 and today's settled 10), today's rest, 26 days left x the mean day
-    mean = sum(r - 0.0001 for r in results) / 5
-    assert s["month"]["days_left"] == 26
     nov_settled = (5 - 0.0001) + (10 - 0.0001)
-    assert s["month"]["forecast"] == pytest.approx(round(nov_settled + 40 * k + 26 * mean, 2), abs=0.02)
-    assert s["month"]["pnl"] == pytest.approx(round(nov_settled, 2))
-    assert s["all_time"]["pnl"] == pytest.approx(round(sum(results) + 10 - 6 * 0.0001, 2))
-    assert s["all_time"]["days"] == 6 and s["all_time"]["days_up"] == 6
+    assert s["month"]["days_left"] == 26
+    assert s["month"]["forecast"] == pytest.approx(round(nov_settled + per_mkt + 26 * per_mkt, 2), abs=0.02)
+
+
+def _books(day, rows):
+    """rows: [(market_id, selection_id, polled 'HH:MM', back1, lay1, sp)] as the recorder writes them (test inputs)."""
+    return pd.DataFrame([{"polled_utc": f"{day}T{hm}:00Z", "market_id": m, "selection_id": sel, "status": "OPEN",
+                          "inplay": False, "runner_status": "ACTIVE", "back1": b, "lay1": lay, "sp_actual": sp,
+                          "adjustment_factor": 0.0, "removal_utc": None} for m, sel, hm, b, lay, sp in rows])
+
+
+def _put_gz(root, kind, key, df):
+    p = root / kind / key
+    p.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(p, index=False, compression="gzip")
+
+
+def _horse_fill(day, mid, matched, price, ts_hm, off_hm, pnl=None):
+    rows = [{"ts": f"{day}T{ts_hm}:00Z", "event": "back", "market_id": mid, "venue": "Kempton",
+             "off": f"{day} {off_hm}", "selection_id": 7, "matched": matched, "avg_price": price, "edge": 0.5}]
+    if pnl is not None:
+        rows.append({"ts": f"{day}T21:00:00Z", "event": "settle", "market_id": mid, "selection_id": 7, "pnl": pnl,
+                     "matched": matched})
+        rows.append({"ts": f"{day}T21:00:00Z", "event": "commission", "market_id": mid,
+                     "commission": max(pnl, 0) * 0.02 or 0.0001})
+    return rows
+
+
+def test_the_horse_forecast_is_the_day_reports_mark_and_drift(tmp_path, monkeypatch):
+    import math
+    import dashboard.day_forecast as dfc
+    monkeypatch.setattr(dfc, "MIN_POOL", 1)
+    t = replace(T("horse-live"), record_from="2026-11-01")
+    # three past days, two races a day: 10 staked at 4.0, the book 5 min before the off 3.0 / 3.2, the BSP 3.0,
+    # each race lost (-10, no commission row due): every race drifts the same, so the range closes on the forecast
+    for d in ("2026-11-01", "2026-11-02", "2026-11-03"):
+        a, b = f"1.a{d[-2:]}", f"1.b{d[-2:]}"                    # Betfair's market ids: a new one each race
+        rows = _horse_fill(d, a, 10, 4.0, "13:00", "14:00", -10) + _horse_fill(d, b, 10, 4.0, "15:00", "16:00", -10)
+        _put(tmp_path, "pred", f"trading/live/{d}/ledger.csv", pd.DataFrame(rows))
+        _put_gz(tmp_path, "capture", f"betfair_live/{d}/books.csv.gz",
+                _books(d, [(a, 7, "13:50", 3.0, 3.2, None), (a, 7, "14:01", 3.0, 3.2, 3.0),
+                           (b, 7, "15:50", 3.0, 3.2, None), (b, 7, "16:01", 3.0, 3.2, 3.0)]))
+    day = TODAY.isoformat()
+    # today: one race settled (+20 gross, 2% commission -> 19.60), one to run, 10 at 4.0, the book now 3.0 / 3.2
+    rows = _horse_fill(day, "1.s", 10, 3.0, "11:00", "12:00", 20) + _horse_fill(day, "1.o", 10, 4.0, "13:00", "15:00")
+    _put(tmp_path, "pred", f"trading/live/{day}/ledger.csv", pd.DataFrame(rows))
+    _put_gz(tmp_path, "capture", f"betfair_live/{day}/books.csv.gz", _books(day, [("1.o", 7, "14:50", 3.0, 3.2, None)]))
+    data = build(LocalSource(tmp_path), today=TODAY, cache=False, traders=[t])
+    h = data["sports"][0]["traders"][0]
+    d = h["today"]
+    mid = math.sqrt(3.0 * 3.2)
+    mark_past = 10 * (4.0 / mid - 1)                    # each past race 5 min before the off
+    drift5 = (-10 - mark_past) / 10                     # a pound staked, mark to result
+    mark_now = 10 * (4.0 / mid - 1)
+    assert d["pnl"] == pytest.approx(19.6)
+    assert d["races_left"] == 1
+    assert d["mark_mid"] == pytest.approx(round(mark_now, 2))
+    assert d["cash_out"] == pytest.approx(round(10 * (4.0 / 3.2 - 1), 2))
+    assert d["forecast"] == pytest.approx(round(19.6 + mark_now + drift5 * 10, 2), abs=0.01)
+    assert d["forecast_lo"] == pytest.approx(d["forecast"], abs=0.01) == d["forecast_hi"]
+    drift5_co = (-10 - 10 * (4.0 / 3.2 - 1)) / 10
+    assert d["forecast_cash_out"] == pytest.approx(round(19.6 + 10 * (4.0 / 3.2 - 1) + drift5_co * 10, 2), abs=0.01)
+    assert d["method"].startswith("the day report") and "expected value" not in d["method"]
+    assert d["forecast_past_days"] == 3 and d["forecast_past_races"] == 6
+    assert h["forecast_races"][0]["market_id"] == "1.o"
+
+
+def test_no_past_races_marked_means_no_forecast_never_the_expected_value(tmp_path):
+    day = TODAY.isoformat()
+    rows = _horse_fill(day, "1.o", 10, 4.0, "13:00", "15:00")
+    _put(tmp_path, "pred", f"trading/live/{day}/ledger.csv", pd.DataFrame(rows))
+    _put_gz(tmp_path, "capture", f"betfair_live/{day}/books.csv.gz", _books(day, [("1.o", 7, "14:50", 3.0, 3.2, None)]))
+    data = build(LocalSource(tmp_path), today=TODAY, cache=False, traders=[T("horse-live")])
+    d = data["sports"][0]["traders"][0]["today"]
+    assert d["forecast"] is None and d["method"].startswith("no forecast: too few past races")
+
+
+def test_a_final_past_day_is_cached_and_read_back(tmp_path, monkeypatch):
+    import dashboard.day_forecast as dfc
+    monkeypatch.setattr(dfc, "MIN_POOL", 1)
+    d = "2026-11-03"
+    _put(tmp_path, "pred", f"trading/live/{d}/ledger.csv", pd.DataFrame(_horse_fill(d, "1.a", 10, 4.0, "13:00", "14:00", -10)))
+    _put_gz(tmp_path, "capture", f"betfair_live/{d}/books.csv.gz",
+            _books(d, [("1.a", 7, "13:50", 3.0, 3.2, None), ("1.a", 7, "14:01", 3.0, 3.2, 3.0)]))
+    src = LocalSource(tmp_path)
+    o1 = dfc.past_obs(src, "horse-live", "pred", "trading/live", [d])
+    assert (tmp_path / "pred" / dfc.CACHE / "horse-live" / f"{d}.csv").exists()
+    (tmp_path / "capture" / "betfair_live" / d / "books.csv.gz").unlink()        # the cache, not the books, is read
+    o2 = dfc.past_obs(src, "horse-live", "pred", "trading/live", [d])
+    assert len(o1) == len(o2) == 2 and sorted(o2.g) == [0, 5]
 
 
 def test_the_record_starts_at_the_traders_rule_change(tmp_path):
