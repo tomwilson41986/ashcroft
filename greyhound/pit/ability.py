@@ -67,10 +67,18 @@ def estimate(df: pd.DataFrame, fig: str, before: str = FIT_BEFORE, max_dogs: int
             "grid": grid}
 
 
-def filter_dog_states(dog: np.ndarray, dayn: np.ndarray, obs: np.ndarray, trial: np.ndarray, prm: dict):
+def filter_dog_states(dog: np.ndarray, dayn: np.ndarray, obs: np.ndarray, trial: np.ndarray, prm: dict,
+                      q_row: np.ndarray | None = None, r_row: np.ndarray | None = None, par: np.ndarray | None = None,
+                      tau: float | None = None, trial_mult: float = 1.5):
     """Pre-run state (mean, variance, figures seen, days since the last figure) for rows sorted by dog then time.
     Every run on a day reads the state after the dog's EARLIER days; the variance grows by q a day since the last
-    figure; a day without a figure changes nothing."""
+    figure; a day without a figure changes nothing.
+
+    Optional (ability2.py, the feature review of 17 Nov 2026; the defaults give this table's own output): ``q_row``
+    and ``r_row`` a row's q and r (noise per trip band; the day's first row sets its q); ``par`` and ``tau``: a day's
+    rows read the level damped towards the first row's ``par`` by exp(-days since the last figure / tau), the prior
+    of the day's figures (a day with none leaves the state as it was; no damping where ``par`` is NaN);
+    ``trial_mult`` the trial's noise multiple."""
     n = len(dog)
     mean, var, cnt, since = np.empty(n), np.empty(n), np.zeros(n), np.full(n, np.nan)
     q, r, m0, p0 = prm["q"], prm["r"], prm["m0"], prm["p0"]
@@ -83,14 +91,18 @@ def filter_dog_states(dog: np.ndarray, dayn: np.ndarray, obs: np.ndarray, trial:
             while k < n and dog[k] == d0 and dayn[k] == dayn[j]:
                 k += 1
             gap = (dayn[j] - last) if last is not None else None
-            p_now = p + q * gap if gap is not None else p
+            qj = q if q_row is None else q_row[j]
+            p_now = p + qj * gap if gap is not None else p
+            m_kept = m
+            if par is not None and tau is not None and gap is not None and np.isfinite(par[j]):
+                m = par[j] + (m - par[j]) * np.exp(-gap / tau)        # read damped; kept only when a figure comes
             mean[j:k], var[j:k], cnt[j:k] = m, p_now, c
             since[j:k] = gap if gap is not None else np.nan
             seen = False
             for t in range(j, k):                    # the day's figures, for the days after
                 if np.isfinite(obs[t]):
                     pp = p_now if not seen else p
-                    rr = r * (1.5 if trial[t] else 1.0)
+                    rr = (r if r_row is None else r_row[t]) * (trial_mult if trial[t] else 1.0)
                     kg = pp / (pp + rr)
                     m = m + kg * (obs[t] - m)
                     p = (1 - kg) * pp
@@ -98,6 +110,8 @@ def filter_dog_states(dog: np.ndarray, dayn: np.ndarray, obs: np.ndarray, trial:
                     seen = True
             if seen:
                 last = dayn[j]
+            else:
+                m = m_kept
             j = k
     return mean, var, cnt, since
 
