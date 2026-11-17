@@ -93,3 +93,13 @@ def test_trial_only_progeny_count_from_the_day_after():
     assert (b.bq_sire_fig_dogs[s0 & on] == a.bq_sire_fig_dogs[s0 & on]).all()
     assert (b.bq_sire_fig_dogs[s0 & after] == a.bq_sire_fig_dogs[s0 & after] + 4).all()
     assert np.allclose(b.bq_sire_gsr, a.bq_sire_gsr, equal_nan=True)     # the engine figures have no trials
+
+
+def test_a_run_with_no_trip_builds():
+    """A run with no distance (pandas 3 keeps NaN through astype(str)) is band '?' and does not break the build
+    (greyhound-pit.yml 44122130606)."""
+    runs, _ = synth(days=30)
+    runs = runs.copy()
+    runs.loc[runs.index[::7], "distance_m"] = np.nan
+    tab, _ = b2.build(runs, core.per_run_figures(runs), {})
+    assert len(tab) and tab.filter(like="bq_").notna().any().any()

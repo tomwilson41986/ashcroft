@@ -179,7 +179,9 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     won = np.where(racing, df.won.to_numpy(float), np.nan)
     xs = won - np.where(racing, p, np.nan)
     tr, fr, n_trial_figs = _trial_fig(df, (ctx or {}).get("trial_runs"))
-    bnd = band(df.distance_m).astype(str)
+    # pandas 3: astype(str) keeps a missing trip as NaN, which breaks the band keys; a run with no trip is band "?"
+    bnd = band(df.distance_m).astype(object)
+    bnd = bnd.where(bnd.notna() & (bnd.astype(str) != "nan"), "?").map(str)
     notes = {"fit_before_day": str(pd.Timestamp("2000-01-01") + pd.Timedelta(days=early_dn))[:10],
              "trial_figures": n_trial_figs, "debias": "shin" if "sp_decimal" in df else "proportional (no sp_decimal)",
              "k": {}}
