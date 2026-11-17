@@ -54,6 +54,8 @@ earlier one):
 | line2 | ln2_ | the neighbours' squeeze weighted by arrival, traps 1 and 2 away; the pace collision (research: built on demand) |
 | trials2 | tq_ | trials on the race scale: a walk-forward trial-to-race offset (track, trip, solo/company), the session's going, the trial in company (position, margin, a rival-implied figure), trial level against race level (research: built on demand) |
 | ability2 | ka_ | the Kalman levels fed the trials on the race scale, noise per trip band, the level damped to the grade par over layoffs (research: built on demand) |
+| market2 | mq_ | the dog's and the yard's record against the de-biased SP and the Betfair SP: gamma-posterior log A/E with sd and z, decayed by days; drift on race-normalised shares (research: built on demand) |
+| mrate | mv_ | the market-implied rating rebuilt: trap mean out of the observation, share-dependent noise, the market's error memory, reversion after layoffs (research: built on demand) |
 | seq | se_ | a GRU over the dog's last 8 runs, refitted each month: its forecasts of the run's SP share, win against SP, time, finish, sectional (research: built on demand, not in ``all``) |
 
 Each table is written to the sources store as ``<STORE_PREFIX>/<table>.parquet`` with ``<table>.meta.json``: the code
@@ -90,13 +92,13 @@ TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "lif
           # the 16 Nov 2026 tests (ledger greyhound-origin-batch43-1116, greyhound-going-batch43-1116)
           "origin", "going", "bends", "irish", "world", "irish_market", "secfig", "sectx", "irish_style",
           # the feature review of 17 Nov 2026 (reports/greyhound_feature_review.md)
-          "trainer2", "draw2", "bend2", "line2", "trials2", "ability2",
+          "trainer2", "draw2", "bend2", "line2", "trials2", "ability2", "market2", "mrate",
           # research tables, built on demand (``ON_DEMAND``: never in --build all; torch is installed for them)
           "seq")
 #: tables ``--build all`` leaves out: the seq table refits a network monthly from 2024 (one to two hours on a runner,
 #: and torch); it is built by name (greyhound-pit.yml, tables=seq)
 ON_DEMAND: tuple = ("origin", "going", "bends", "world", "irish_market", "secfig", "sectx", "irish_style",
-                    "trainer2", "draw2", "bend2", "line2", "trials2", "ability2")   # 15 Nov 2026: the seq table is served (its monthly networks cached, seq.py);
+                    "trainer2", "draw2", "bend2", "line2", "trials2", "ability2", "market2", "mrate")   # 15 Nov 2026: the seq table is served (its monthly networks cached, seq.py);
                                           # 16 Nov 2026: the origin and going tables are tested before --build all builds them
 KEY = ["race_id", "dog_id"]
 #: where the tables are stored. "pit2": the tables of the engine as fixed on 11 Nov 2026 (the audit's foundation

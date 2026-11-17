@@ -190,38 +190,35 @@ def debiased_probs(odds, race_id, method: str = "shin") -> np.ndarray:
     ``shin``: Shin's (1993) insider model, z solved per race by bisection so the chances sum to 1:
     p_i = (sqrt(z^2 + 4(1-z) q_i^2 / Q) - z) / (2(1-z)), q_i = 1/odds_i, Q = sum q. ``power``: p_i = q_i^k with k
     solved per race so the chances sum to 1. A race with fewer than two priced runners or a book under 1 is
-    normalised proportionally. A runner with no price is NaN."""
+    normalised proportionally. A runner with no price is NaN. Every race is bisected at once (vectorised)."""
     o = np.asarray(odds, dtype=float)
     q = np.where(np.isfinite(o) & (o > 1.0), 1.0 / np.where(o > 1.0, o, np.nan), np.nan)
     gi = pd.factorize(pd.Series(race_id).to_numpy())[0]
     out = np.full(len(o), np.nan)
-    ok = np.isfinite(q)
+    ok = np.isfinite(q) & (gi >= 0)
     if not ok.any():
         return out
-    order = np.argsort(gi[ok], kind="stable")
-    idx = np.flatnonzero(ok)[order]
-    g = gi[idx]
-    bounds = np.flatnonzero(np.r_[True, g[1:] != g[:-1], True])
-    for a, b in zip(bounds[:-1], bounds[1:]):
-        ii = idx[a:b]
-        qq = q[ii]
-        Q = qq.sum()
-        if len(qq) < 2 or Q <= 1.0:
-            out[ii] = qq / Q
-            continue
-        if method == "power":
-            lo, hi = 1.0, 10.0
-            for _ in range(60):
-                k = 0.5 * (lo + hi)
-                lo, hi = (k, hi) if (qq ** k).sum() > 1.0 else (lo, k)
-            p = qq ** (0.5 * (lo + hi))
-        else:
-            def shin(z):
-                return (np.sqrt(z * z + 4.0 * (1.0 - z) * qq * qq / Q) - z) / (2.0 * (1.0 - z))
-            lo, hi = 0.0, 0.5
-            for _ in range(60):
-                z = 0.5 * (lo + hi)
-                lo, hi = (z, hi) if shin(z).sum() > 1.0 else (lo, z)
-            p = shin(0.5 * (lo + hi))
-        out[ii] = p / p.sum()
+    g, qq = gi[ok], q[ok]
+    ng = int(g.max()) + 1
+    Q = np.bincount(g, weights=qq, minlength=ng)
+    cnt = np.bincount(g, minlength=ng)
+    prop = ((cnt < 2) | (Q <= 1.0))[g]
+    if method == "power":
+        lo, hi = np.ones(ng), np.full(ng, 10.0)
+
+        def f(k):
+            return qq ** k[g]
+    else:
+        lo, hi = np.zeros(ng), np.full(ng, 0.5)
+
+        def f(z):
+            zz = z[g]
+            return (np.sqrt(zz * zz + 4.0 * (1.0 - zz) * qq * qq / Q[g]) - zz) / (2.0 * (1.0 - zz))
+    for _ in range(60):
+        m = 0.5 * (lo + hi)
+        big = np.bincount(g, weights=f(m), minlength=ng) > 1.0
+        lo, hi = np.where(big, m, lo), np.where(big, hi, m)
+    p = f(0.5 * (lo + hi))
+    p = p / np.bincount(g, weights=p, minlength=ng)[g]
+    out[ok] = np.where(prop, qq / Q[g], p)
     return out
