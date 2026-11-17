@@ -1882,6 +1882,24 @@ the market-rating blend.
   -0.0081) against the market-rating blend, CLV higher at the 0/3/5% bars (ledger HOLDOUT LOOK `iter125-stack-final`).
 - **The record:** 37 days, +GBP6,613.61, 31 up.
 
+**The forty-seventh full day** (16 Nov; ledger `live-day-1116`), the second priced by the stack blend
+(bfsp-model-63/64/65).
+- **The start.** Predictions run 43796742527 wrote the file at 03:45 UTC (03:12-03:45). The night-before run ran
+  (predict-evening.yml 43781960568, 00:42-01:14 UTC): 15 Nov's bot check did not recur (ledger `night-before-1116`).
+  The session (43809384502) ran 05:18-21:30 UTC in one piece. First back 05:18 UK, the last order 09:58:29 UK; the
+  settle at 22:29 UTC in settle mode (run 43970526022; its email failed again: "Connection unexpectedly closed").
+- **-GBP0.17 after commission** as Betfair settled the trader's own orders, on 266 fills on 62 horses, GBP1,661.04
+  matched, all 16 markets settled, CLV +1.20%: first backs +9.5%, top-ups -2.1%; entered before 08:00 UK +5.3% on
+  GBP1,137.47, after it -7.6% on GBP523.57 (ledger `changes-1116`). The last 12 days' CLV ran -0.37% to +14.84%.
+- **The account.** Funds GBP5,017.36 -> GBP5,017.18 (-GBP0.18; the session opened at GBP5,017.36, so no Sunday
+  withdrawal): -GBP0.01 beside the trader, a rounding. The greyhound early lay ran live on 136 markets and placed
+  nothing (ledger `account-day-1116`).
+- **The stack blend's first day against the BSP** (15 Nov, its price file now loaded): error 0.4071 on 234 runners,
+  against 0.4786 on 14 Nov, the last day on the market-rating blend (ledger `model-quality-1116`). One day each.
+- **Collateral form** (iteration 126) failed its registered reading: the price error -0.00072 (-0.00108 to -0.00033),
+  but the rule's CLV lower at the 0% and 5% bars; retired (ledger `iter126-stack-collateral`).
+- **The record:** 38 days, +GBP6,613.44, 31 up.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
