@@ -47,7 +47,7 @@ def main(argv=None) -> int:
     if "irish_style" in names:                               # the Irish in-running comments, and the Irish/GB results
         from greyhound.pit.irish_style import load_context as style_context
         ctx.update(style_context(store))
-    elif {"irish", "irish_market"} & set(names):                                     # GreyhoundAPI's Irish and GB results (sources/greyhoundapi.py)
+    elif {"irish", "irish_market", "irish2"} & set(names):                                     # GreyhoundAPI's Irish and GB results (sources/greyhoundapi.py)
         from greyhound.pit.irish import load_context as irish_context
         ctx.update(irish_context(store))
     if "pricepath" in names:                                 # the GB place markets' BSP (ctx["place_prices"])
