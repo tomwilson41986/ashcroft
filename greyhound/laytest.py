@@ -157,7 +157,10 @@ NEAREST_PRICES = {"greyhound/live/oos_prices_stack_m": "greyhound/live/oos_price
                   # 15 Nov 2026: the stack with the speed and sequence tables reads the league stack's until its own
                   "greyhound/live/oos_prices_stack_mls": "greyhound/live/oos_prices_stack_ml",
                   # 16 Nov 2026: the stack with the Irish form reads the speed and sequence stack's until its own
-                  "greyhound/live/oos_prices_stack_mlsi": "greyhound/live/oos_prices_stack_mls"}
+                  "greyhound/live/oos_prices_stack_mlsi": "greyhound/live/oos_prices_stack_mls",
+                  # 17 Nov 2026: the served price carries the residual memory (greyhound/memory.py); until its prices
+                  # with the layer are written, the recipe's own
+                  "greyhound/live/oos_prices_stack_mlsi_mem": "greyhound/live/oos_prices_stack_mlsi"}
 
 
 def day_fit(store, day: date, mark: str = MARK, prices: str | None = None) -> dict | None:

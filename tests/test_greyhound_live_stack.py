@@ -117,7 +117,8 @@ def test_the_card_is_priced_by_the_stack(wired):
     out = live.predict(store, DAY)
     assert out["model"] == "stack_share" and out["runners"] == len(card)
     pred = pd.read_csv(io.BytesIO(store.get(f"{live.PREFIX}/predictions/{DAY}.csv")))
-    assert set(pred.model_objective) == {"stack_share"} and set(pred.oos_prices) == {"greyhound/live/oos_x"}
+    assert set(pred.model_objective) == {"stack_share"} and set(pred.oos_prices) == {"greyhound/live/oos_x_mem"}  # the residual memory served (greyhound/memory.py)
+    assert "pred_bsp_base" in pred and "memory_m" in pred
     assert np.allclose(pred.groupby("race_id").p_model.sum(), 1.0)
     assert np.isfinite(pred.pred_bsp).all() and (pred.pred_bsp > 0).all() and pred.market_id.notna().all() and pred.selection_id.notna().all()
     # the card's tables are its run's: the same price from the nightly tables once the results are in
