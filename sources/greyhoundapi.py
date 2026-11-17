@@ -293,6 +293,93 @@ def fetch_runners(store, c: Client, regions: list[str], max_minutes: float | Non
             "left": len(todo) - done}
 
 
+def comments_key(region: str, month: str) -> str:
+    return f"{PREFIX}/raw/comments/{region}/{month}.json.gz"
+
+
+def fetch_comments(store, c: Client, regions: list[str], first_month: str = "2011-01", max_minutes: float | None = None,
+                   quota_stop: int = QUOTA_STOP) -> dict:
+    """Each held results month's races (from ``first_month``), their in-running comments (``/races/<id>/comments``:
+    each runner's events, e.g. 'fast_start', 'led', with the place in the race where given, and a summary), a region
+    and month a file, newest months first (the owner, 17 Nov 2026: "fetch the in-running comments for Irish runs").
+    A month held is skipped (the two newest are fetched again: results are still arriving); the vocabulary is saved
+    once. Stops at ``max_minutes`` or when the month's calls reach ``quota_stop``."""
+    t0 = time.monotonic()
+    if store.get(f"{PREFIX}/raw/comments/vocabulary.json.gz") is None:
+        try:
+            store.put(f"{PREFIX}/raw/comments/vocabulary.json.gz",
+                      gz(json.dumps(c.get("/comments/vocabulary")).encode()))
+        except RuntimeError as exc:
+            log.warning("comment vocabulary not read (%s)", exc)
+    held = set(store.listing(f"{PREFIX}/raw/comments/"))
+    todo = []
+    for reg in regions:
+        months = sorted((k for k in store.listing(f"{PREFIX}/raw/results/{reg}/")
+                         if k.endswith(".json.gz") and k.rsplit("/", 1)[1][:7] >= first_month), reverse=True)
+        for i, k in enumerate(months):
+            month = k.rsplit("/", 1)[1][:7]
+            if comments_key(reg, month) not in held or i < REFRESH_MONTHS:
+                todo.append((reg, month, k))
+    done, races, empty, stop = 0, 0, 0, None
+    for reg, month, k in todo:
+        if max_minutes and (time.monotonic() - t0) / 60.0 > max_minutes:
+            stop = "time"
+            break
+        used = month_used(c)
+        if used is not None and used >= quota_stop:
+            stop = f"quota ({used:,} calls used this month)"
+            break
+        out = {}
+        for rc in json.loads(gzip.decompress(store.get(k))):
+            rid = rc.get("race_id")
+            if rid is None:
+                continue
+            try:
+                out[str(rid)] = c.get(f"/races/{int(rid)}/comments").get("data")
+            except RuntimeError as exc:
+                out[str(rid)] = {"error": str(exc)[:120]}
+            if not (isinstance(out[str(rid)], dict) and out[str(rid)].get("runners")):
+                empty += 1
+        store.put(comments_key(reg, month), gz(json.dumps(out, separators=(",", ":")).encode()))
+        done += 1
+        races += len(out)
+        log.info("comments %s %s: %d races, %d calls so far", reg, month, len(out), c.calls)
+    return {"months_to_fetch": len(todo), "months_fetched": done, "races": races, "races_without_comments": empty,
+            "stopped": stop, "left": len(todo) - done}
+
+
+def comment_rows(store, region: str) -> pd.DataFrame:
+    """One row a runner of each race with comments: race, dog, trap, position, the summary, the events in order
+    (event codes joined by '|', their places by '|'), and the count."""
+    rows = []
+    for k in sorted(store.listing(f"{PREFIX}/raw/comments/{region}/")):
+        if not k.endswith(".json.gz"):
+            continue
+        for rid, d in json.loads(gzip.decompress(store.get(k))).items():
+            if not isinstance(d, dict):
+                continue
+            for p in d.get("runners") or []:
+                ir = _g(p, "comments", "in_running") or {}
+                ev = ir.get("events") or []
+                rows.append({"race_id": int(rid), "dog_id": p.get("dog_id"), "dog_name": p.get("dog_name"),
+                             "trap": p.get("trap"), "position": p.get("position"),
+                             "start_utc": d.get("scheduled_start"), "track": _g(d, "track", "name"),
+                             "summary": ir.get("summary"), "n_events": len(ev),
+                             "events": "|".join(str(e.get("event") or "") for e in ev),
+                             "places": "|".join(str(e.get("place") or "") for e in ev)})
+    return pd.DataFrame(rows)
+
+
+def build_comments(store, regions: list[str]) -> dict:
+    out = {}
+    for reg in regions:
+        df = comment_rows(store, reg)
+        if len(df):
+            store.put_parquet(f"{PREFIX}/comments_{reg}.parquet", df)
+        out[reg] = int(len(df))
+    return out
+
+
 def snapshot_cards(store, c: Client) -> dict:
     """Today's and the upcoming racecards for every region, raw, to ``raw/cards/<UTC day>/<HHMM>.json.gz`` (the entries
     as they stand: runners, reserves, scratchings, weights once weighed)."""
@@ -388,7 +475,10 @@ def main(argv=None) -> int:
     from sources.common import Store
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--fetch", choices=["results", "lists", "both", "pedigree", "runners", "cards"], default=None)
+    ap.add_argument("--fetch", choices=["results", "lists", "both", "pedigree", "runners", "cards", "comments"],
+                    default=None)
+    ap.add_argument("--first-month", default="2011-01", help="comments: the first results month fetched")
+    ap.add_argument("--build-comments", action="store_true")
     ap.add_argument("--build", action="store_true")
     ap.add_argument("--regions", default="GB,IE,AU")
     ap.add_argument("--max-minutes", type=float, default=None)
@@ -410,6 +500,10 @@ def main(argv=None) -> int:
             rep["runners"] = fetch_runners(store, c, regions, a.max_minutes)
         if a.fetch == "cards":
             rep["cards"] = snapshot_cards(store, c)
+        if a.fetch == "comments":
+            rep["comments"] = fetch_comments(store, c, regions, a.first_month, a.max_minutes)
+    if a.build_comments:
+        rep["comments_built"] = build_comments(store, regions)
     if a.build:
         rep["build"] = build(store, regions)
         rep["pedigree_dogs"] = build_pedigree(store)
