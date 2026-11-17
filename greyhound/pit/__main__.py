@@ -50,6 +50,9 @@ def main(argv=None) -> int:
     elif {"irish", "irish_market"} & set(names):                                     # GreyhoundAPI's Irish and GB results (sources/greyhoundapi.py)
         from greyhound.pit.irish import load_context as irish_context
         ctx.update(irish_context(store))
+    if "trainer2" in names:                                  # GreyhoundAPI's GB runs: the trainer on each run
+        from greyhound.pit.trainers import load_context as trainer_context
+        ctx.update(trainer_context(store))
     if "world" in names:                                     # GreyhoundAPI's pedigree and Irish/Australian results
         from greyhound.pit.world import load_context as world_context
         ctx.update(world_context(store))

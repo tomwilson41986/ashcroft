@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'sectional-check or au-model'
+        description: 'sectional-check, au-model or trainer-check'
         type: choice
-        options: [sectional-check, au-model]
+        options: [sectional-check, au-model, trainer-check]
         default: sectional-check
 
 permissions:
@@ -54,6 +54,7 @@ jobs:
           case "$TASK" in
             sectional-check) python -m research.greyhound.sectional_check --years 2014-2026 --out out/study ;;
             au-model)        python -m research.greyhound.au_model --first-year 2016 --test-year 2026 --out out/study ;;
+            trainer-check)   mkdir -p out/study && python -m research.greyhound.trainer_check --first-year 2014 --out out/study/trainer_check.json ;;
             *) echo "unknown task"; exit 1 ;;
           esac
       - name: Summary
