@@ -1,6 +1,6 @@
 """Is there a late signal in the horse Exchange Stream? Re-run of stream_late_signal_1111 on 12-17 Nov (the owner, 11 Nov:
 "try the stream data for a late signal"; the stream records to 21:30 UK from 12 Nov, PR #305; read-only research,
-nothing reaches Betfair). Changes from the 11 Nov query: the days, the parts streamed one at a time (not a whole day
+nothing reaches Betfair). Changes from the 11 Nov query: the days, a part that does not decompress skipped and counted, the parts streamed one at a time (not a whole day
 in memory), and the 'last' snapshot taken at most every 15 seconds (the flow windows found by bisection), so a full
 day's stream fits the job.
 
@@ -22,6 +22,7 @@ two candidate signals:
 """
 import bisect
 import gzip
+import zlib
 import os
 import sqlite3
 import sys
@@ -87,10 +88,16 @@ for day in DAYS:
     print(f"{day}: {len(ks)} parts, {size / 1e6:.1f} MB")
     if not ks:
         continue
+    bad = []
+
     def lines():
         for k in ks:
-            yield from gzip.decompress(s3.get_object(Bucket=bucket, Key=k)["Body"].read()).decode(
-                "utf-8", "replace").splitlines()
+            try:
+                raw = gzip.decompress(s3.get_object(Bucket=bucket, Key=k)["Body"].read())
+            except (OSError, EOFError, zlib.error) as e:   # a part that does not decompress: skipped and counted
+                bad.append((k.rsplit("/", 1)[-1], str(e)[:60]))
+                continue
+            yield from raw.decode("utf-8", "replace").splitlines()
     markets, first, last, tv_track = {}, {}, {}, {}
     snaps = {}           # market -> {"last": rows, "t5": rows}
     last_snap = {}
@@ -124,6 +131,8 @@ for day in DAYS:
             last_snap[mid_] = t
         if want_t5:
             s["t5"] = (mins, snap)
+    if bad:
+        print(f"  {day}: {len(bad)} part(s) skipped, not readable: {bad[:3]}")
     for mid_, m in markets.items():
         off = m.off
         inv.append({"day": str(day), "market_id": mid_, "off": off,
