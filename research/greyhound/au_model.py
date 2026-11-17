@@ -75,14 +75,18 @@ def join_prices(api: pd.DataFrame, bf: pd.DataFrame) -> tuple[pd.DataFrame, dict
     a["utc_min"] = t.dt.strftime("%Y-%m-%d %H:%M")
     a["dk"], a["tk"] = af.norm(a.dog_name), af.norm(a.track)
     if bf is None or not len(bf):
-        a["bf_bsp"], a["bf_close"], a["bf_won"] = np.nan, np.nan, np.nan
+        a["bf_bsp"], a["bf_close"], a["bf_won"], a["bf_runners"] = np.nan, np.nan, np.nan, np.nan
         return a, {"historic_runners": 0, "note": "no data found: no Australian WIN markets in betfair_historic"}
     b = bf.copy()
     b["utc_min"] = pd.to_datetime(b.market_time, utc=True, errors="coerce").dt.strftime("%Y-%m-%d %H:%M")
     b["dk"] = af.norm(b.runner_name.astype(str).str.replace(r"^\s*\d+\.\s*", "", regex=True))
     b["tk"] = af.norm(b.venue)
     b = b[b.runner_status.astype(str) != "REMOVED"].drop_duplicates(["dk", "tk", "utc_min"], keep="last")
-    m = a.merge(b[["dk", "tk", "utc_min", "bsp", "ltp_close", "won", "market_id"]]
+    # each market's runners that ran (17 Nov 2026: a race is scored only when every one of them is matched to the API;
+    # races with a runner the API lacks had a BSP book of a median 0.73 and, kept only when the winner was matched,
+    # made the 0.2 edge's return: ledger greyhound-au-model-1117, amendment)
+    b["bf_runners"] = b.groupby("market_id").market_id.transform("size")
+    m = a.merge(b[["dk", "tk", "utc_min", "bsp", "ltp_close", "won", "market_id", "bf_runners"]]
                 .rename(columns={"bsp": "bf_bsp", "ltp_close": "bf_close", "won": "bf_won"}),
                 on=["dk", "tk", "utc_min"], how="left")
     notes = {"api_runners": int(len(a)), "historic_runners": int(len(b)), "matched": int(m.market_id.notna().sum()),
@@ -202,7 +206,8 @@ def run(store, first_year: int, test_year: int, out_dir: Path) -> dict:
     t["price"] = bsp.fillna(close)
     t["price_is_bsp"] = bsp.notna()
     g = t.groupby("race_id")
-    full = g.price.transform(lambda s: s.notna().all()) & (g.won.transform("sum") == 1)
+    full = g.price.transform(lambda s: s.notna().all()) & (g.won.transform("sum") == 1) \
+        & (g.race_id.transform("size") == t.bf_runners)          # every Betfair runner matched (see join_prices)
     s = t[full].copy()
     out["test_rows_priced"] = int(len(s))
     out["test_races_priced"] = int(s.race_id.nunique())
