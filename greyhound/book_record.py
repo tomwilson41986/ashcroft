@@ -63,9 +63,9 @@ class TradedLadder:
 
     FIELDS = ["polled_utc", "market_id", "selection_id", "price", "traded"]
 
-    def __init__(self, rec, upload_every: float = 900.0, clock=time.monotonic):
+    def __init__(self, rec, upload_every: float = 900.0, clock=time.monotonic, name: str = "traded_greyhound_live.csv"):
         self.rec, self.upload_every, self.clock = rec, upload_every, clock
-        self.path = Path(rec.dir) / "traded_greyhound_live.csv"
+        self.path = Path(rec.dir) / name
         self.last: dict = {}
         self._uploaded = None
         self.rows = 0
@@ -171,7 +171,7 @@ def _utc(s) -> datetime | None:
 
 
 def record(day: date, until: datetime, data, rec, countries=("GB", "IE"), market_types=("WIN", "PLACE"),
-           now=lambda: datetime.now(timezone.utc), sleep=time.sleep, ladder=None) -> dict:
+           now=lambda: datetime.now(timezone.utc), sleep=time.sleep, ladder=None, tag: str = TAG) -> dict:
     """Read the day's greyhound markets until ``until`` (see the module's note); returns the counts."""
     from betfair_recorder import read_catalogue
     from trading.exchange import uk_day_window
@@ -198,7 +198,7 @@ def record(day: date, until: datetime, data, rec, countries=("GB", "IE"), market
             body = {"time_utc": t.strftime("%Y-%m-%dT%H:%M:%SZ"), "markets": len(offs), "polls": polls,
                     "rows": rows, "read_errors": state["read_errors"], "last_error": state["last_error"][:300],
                     "settled": len(settled), "traded_rows": ladder.rows if ladder is not None else 0}
-            s3_client().put_object(Bucket=bucket(), Key=f"{PREFIX}/{day:%Y-%m-%d}/status_greyhound_live.json",
+            s3_client().put_object(Bucket=bucket(), Key=f"{PREFIX}/{day:%Y-%m-%d}/status_{tag}.json",
                                    Body=json.dumps(body).encode())
         except Exception as exc:
             log.warning("recorder status not written (%s)", exc)
@@ -283,14 +283,25 @@ def main(argv=None) -> int:
     ap.add_argument("--until", default="21:30", help="UK time to stop")
     ap.add_argument("--date", default=None)
     ap.add_argument("--countries", default="GB,IE")
+    # the Australian record (the owner, 17 Nov 2026: "Record the Australian books live for a paper test";
+    # greyhound/au_paper.py): its own files (--tag), WIN only, a lighter pace (--every-near/--every-far seconds)
+    ap.add_argument("--tag", default=TAG)
+    ap.add_argument("--market-types", default="WIN,PLACE")
+    ap.add_argument("--every-near", type=float, default=None, help="seconds between reads near the off")
+    ap.add_argument("--every-far", type=float, default=None, help="seconds between reads further out")
     a = ap.parse_args(argv)
+    if a.every_near:
+        globals()["EVERY_NEAR"] = a.every_near
+    if a.every_far:
+        globals()["EVERY_FAR"] = a.every_far
     day = date.fromisoformat(a.date) if a.date else uk_today()
-    rec = DayRecorder(day, tag=TAG)
+    rec = DayRecorder(day, tag=a.tag)
     data = BetfairData(source="greyhound_live")                # read-only by construction: no order call exists
     try:
         data.login()
         print(record(day, uk_time_on(day, a.until), data, rec, tuple(a.countries.split(",")),
-                     ladder=TradedLadder(rec)))
+                     market_types=tuple(a.market_types.split(",")), tag=a.tag,
+                     ladder=TradedLadder(rec, name=f"traded_{a.tag}.csv")))
     finally:
         rec.maybe_upload(force=True)
     return 0 if rec.errors == 0 else 2

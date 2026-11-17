@@ -43,6 +43,9 @@ earlier one):
 | going | gw_ | speed figures with a Timeform-style going: the clean field against expectation, the trap third and meeting half corrected (research: built on demand) |
 | bends | bn_ | the bends feed: each run's race bend by bend from the comment, the sectional rank and the finish (estimated positions at the first and last bend, leads, challenges, trouble early/mid/late) (research: built on demand) |
 | irish | ie_ | the dog's Irish form from GreyhoundAPI's Irish results, linked by its GB results: runs, wins, time and sectional figures, class, an Irish import (research: built on demand) |
+| sectx | sc_ | sectionals and times taken apart: the second sectional (the run home), Finishing and Early Speed %, track and race (grade) pars for each, each section's own going, linked across tracks, against the race par and the field, ranks and places gained; the dog's last, mean, recency-weighted, best, spread and trend, and today's race's projected early pace (research: built on demand) |
+| irish_style | is_ | the dog's run style in Ireland from GreyhoundAPI's in-running comments: quick or slow away, led, led early, rails, wide, trouble, ran on, faded (research: built on demand) |
+| secfig | sx_ | the first sectional on one scale across tracks: against the track, trip and trap par, less the night's grade-aware sectional going, linked across tracks by the dogs that move, and against the field it met (research: built on demand) |
 | irish_market | im_ | the Irish market's view of the dog (GreyhoundAPI Irish SPs: actual over expected, log SP, SP rank against the finish, favourite share) and its Irish weights (research: built on demand) |
 | world | wd_ | the sire's and dam's progeny abroad (GreyhoundAPI Ireland and Australia): runs, win rates, time and sectional figures (research: built on demand) |
 | seq | se_ | a GRU over the dog's last 8 runs, refitted each month: its forecasts of the run's SP share, win against SP, time, finish, sectional (research: built on demand, not in ``all``) |
@@ -79,12 +82,12 @@ TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "lif
           # the speed figures of 14 Nov 2026 (reports/greyhound_model.md section 60)
           "speed",
           # the 16 Nov 2026 tests (ledger greyhound-origin-batch43-1116, greyhound-going-batch43-1116)
-          "origin", "going", "bends", "irish", "world", "irish_market",
+          "origin", "going", "bends", "irish", "world", "irish_market", "secfig", "sectx", "irish_style",
           # research tables, built on demand (``ON_DEMAND``: never in --build all; torch is installed for them)
           "seq")
 #: tables ``--build all`` leaves out: the seq table refits a network monthly from 2024 (one to two hours on a runner,
 #: and torch); it is built by name (greyhound-pit.yml, tables=seq)
-ON_DEMAND: tuple = ("origin", "going", "bends", "world", "irish_market")   # 15 Nov 2026: the seq table is served (its monthly networks cached, seq.py);
+ON_DEMAND: tuple = ("origin", "going", "bends", "world", "irish_market", "secfig", "sectx", "irish_style")   # 15 Nov 2026: the seq table is served (its monthly networks cached, seq.py);
                                           # 16 Nov 2026: the origin and going tables are tested before --build all builds them
 KEY = ["race_id", "dog_id"]
 #: where the tables are stored. "pit2": the tables of the engine as fixed on 11 Nov 2026 (the audit's foundation

@@ -102,3 +102,35 @@ def test_cards_snapshot(tmp_path):
     store = Store(root=tmp_path)
     assert ga.snapshot_cards(store, RunnersClient()) == {"today": 1, "upcoming": 1}
     assert any(k.endswith(".json.gz") for k in store.listing("greyhoundapi/raw/cards/"))
+
+
+def test_comments_are_fetched_a_month_a_file_and_flattened(tmp_path):
+    """The owner, 17 Nov 2026: "fetch the in-running comments for Irish runs"."""
+    import gzip, json as _json
+    from sources import greyhoundapi as g
+    from sources.common import Store
+    st = Store(root=tmp_path)
+    st.put("greyhoundapi/raw/results/IE/2026-10.json.gz", gzip.compress(_json.dumps([{"race_id": 7}]).encode()))
+    st.put("greyhoundapi/raw/results/IE/2010-01.json.gz", gzip.compress(_json.dumps([{"race_id": 8}]).encode()))
+
+    class C:
+        calls = 0
+
+        def get(self, path, params=None, tries=6):
+            self.calls += 1
+            if path == "/usage":
+                return {"data": {"month": {"used": 10}}}
+            if path == "/comments/vocabulary":
+                return {"data": {"led": "Led"}}
+            assert path == "/races/7/comments", path            # 2010 is before the first month
+            return {"data": {"scheduled_start": "2026-10-01T19:00:00Z", "track": {"name": "Shelbourne Park"},
+                             "runners": [{"dog_id": 5, "dog_name": "A Dog", "trap": 1, "position": 1,
+                                          "comments": {"in_running": {"summary": "Led.", "events": [
+                                              {"event": "fast_start", "place": "", "text": "Quick away"},
+                                              {"event": "led", "place": "bend_1", "text": "Led at the first bend"}]}}}]}}
+
+    rep = g.fetch_comments(st, C(), ["IE"], first_month="2011-01")
+    assert rep["months_fetched"] == 1 and rep["races"] == 1 and rep["races_without_comments"] == 0
+    rows = g.comment_rows(st, "IE")
+    assert list(rows.events) == ["fast_start|led"] and list(rows.places) == ["|bend_1"] and rows.n_events.iloc[0] == 2
+    assert g.build_comments(st, ["IE"]) == {"IE": 1}
