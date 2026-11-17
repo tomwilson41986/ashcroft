@@ -1,0 +1,99 @@
+{
+ "about": "Batch 50 (17 Nov 2026), the owner: 'can we derive a second sectional? And a Finishing Speed %. pars per track for early / late sectionals / FSP, metrics vs. race pars for that race. go very deep on every possible feature we can engineer around sectionals and times'. Registered as greyhound-sectx-batch50-1117. Baseline c_live: the live recipe stack_mlsi. c_sectx: + pit_sectx (sc_: the second sectional, Finishing and Early Speed %, track and race pars, each section's going, linked across tracks, against race par and field, ranks, places gained, race pace). Test 1 Jun - 11 Nov 2026, read by period.",
+ "recipe": "quick",
+ "test_from": "2026-06-01",
+ "baseline": "c_live",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_live"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_sectx"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "c_sectx"
+  }
+ ]
+}
