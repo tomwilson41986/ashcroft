@@ -12,11 +12,11 @@ on:
     - cron: '17 5 * * *'     # UTC: yesterday's results in, the last two months refreshed, the tables rebuilt
     - cron: '43 */2 * * *'   # UTC: the cards as they stand (runners, reserves, scratchings), every two hours
     - cron: '37 23 * * *'    # UTC: the runners backfill, newest months first, until the month's quota guard
-    - cron: '7 12 * * *'     # UTC: the Irish in-running comments, newest months first from 2011, until done or the guard
+    - cron: '7 12 * * *'     # UTC: the Irish in-running comments, the last five years, newest months first, until done
   workflow_dispatch:
     inputs:
       task:
-        description: 'results (fetch), lists (tracks, sires, dams, track stats), pedigree (every sire''s offspring), runners (each race''s full runner list, quota-guarded), cards, build, comments (the in-running comments of each race, from 2011, quota-guarded), survey (every field the API holds, with fill rates; probes its endpoints), or all'
+        description: 'results (fetch), lists (tracks, sires, dams, track stats), pedigree (every sire''s offspring), runners (each race''s full runner list, quota-guarded), cards, build, comments (the in-running comments of each race, the last five years, quota-guarded), survey (every field the API holds, with fill rates; probes its endpoints), or all'
         type: choice
         options: [all, results, lists, pedigree, runners, cards, build, survey, comments]
         default: all
@@ -71,7 +71,7 @@ jobs:
             pedigree) python -m sources.greyhoundapi --fetch pedigree --max-minutes "$MAXMIN" && python -m sources.greyhoundapi --build --regions "$REGIONS" ;;
             runners) python -m sources.greyhoundapi --fetch runners --regions "$REGIONS" --max-minutes "$MAXMIN" ;;
             cards)   python -m sources.greyhoundapi --fetch cards ;;
-            comments) python -m sources.greyhoundapi --fetch comments --regions "$REGIONS" --max-minutes "$MAXMIN" --build-comments ;;
+            comments) python -m sources.greyhoundapi --fetch comments --first-month 2021-11 --regions "$REGIONS" --max-minutes "$MAXMIN" --build-comments ;;
             build)   python -m sources.greyhoundapi --build --regions "$REGIONS" ;;
             survey)  python -m research.greyhound.api_survey --probe --save --out out/api_survey ;;
             all)     python -m sources.greyhoundapi --fetch both --build --regions "$REGIONS" --max-minutes "$MAXMIN" ;;
