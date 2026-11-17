@@ -114,7 +114,13 @@ def fit(df: pd.DataFrame, feats: list[str], before: str, recipe: dict | None = N
     X_tr, X_es = _matrix(df, feats, tr_i), _matrix(df, feats, es_i)
     dtr = lgb.Dataset(X_tr, won[tr_i], feature_name=feats, free_raw_data=True, params={"max_bin": rc["max_bin"]})
     des = lgb.Dataset(X_es, won[es_i], reference=dtr, free_raw_data=True)
-    fobj, _ = race_soft_objective(race[tr_i], soft[tr_i])
+    # recency row weights (review section 5; the fast loop's ``recency_half_life_days``): absent from RECIPE, so the
+    # live fit is as before unless a recipe names it
+    wts = None
+    if rc.get("recency_half_life_days"):
+        age = (edge - t[tr_i]).astype("timedelta64[s]").astype(float) / 86400.0
+        wts = 0.5 ** (age / float(rc["recency_half_life_days"]))
+    fobj, _ = race_soft_objective(race[tr_i], soft[tr_i], wts)
     _, feval = race_soft_objective(race[es_i], soft[es_i])
     trees = []
     for k in range(int(rc["seeds"])):
@@ -128,7 +134,8 @@ def fit(df: pd.DataFrame, feats: list[str], before: str, recipe: dict | None = N
     nets = []
     for k in range(int(rc["nn_seeds"])):
         nets.append(nn.fit(X_tr, race[tr_i], soft[tr_i], X_es, race[es_i], soft[es_i],
-                           seconds=float(rc["nn_seconds"]) / int(rc["nn_seeds"]), seed=int(params.get("seed", 0)) + k))
+                           seconds=float(rc["nn_seconds"]) / int(rc["nn_seeds"]), seed=int(params.get("seed", 0)) + k,
+                           weight=wts))
         log(f"network seed {k}: {nets[-1]['epochs']} epochs, best {nets[-1]['best']}")
     bundle = {"feats": list(feats), "trees": trees, "nets": nets, "recipe": rc}
     sg, sn, st_es = _trees(bundle, X_es), _nets(bundle, X_es, race[es_i]), _starts(race[es_i])
