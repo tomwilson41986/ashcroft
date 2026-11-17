@@ -166,8 +166,10 @@ def test_only_the_trader_runs_on_the_live_key():
     # paper-models.yml too, from 2 Nov 2026 (the owner: "use the live key, just don't execute bets yet"): its greyhound
     # paper trader and greyhound book recorder only, read-only, checked in the paper-models test below
     named = {p.name for p in WORKFLOWS.glob("*.yml") if "BETFAIR_LIVE_APP_KEY" in p.read_text()}
+    # greyhound-au-paper.yml (the owner, 17 Nov 2026: "Record the Australian books live for a paper test"): the
+    # Australian greyhound book recorder alone, read-only (test_the_australian_paper_test_only_records below)
     assert named <= {"live-trade.yml", "greyhound-trade.yml", "football-trade.yml", "paper-models.yml",
-                     "morning-models.yml"}, named
+                     "morning-models.yml", "greyhound-au-paper.yml"}, named
     # the greyhound stream recorder too (the owner, 5 Nov 2026, the audit C1): read-only, no order subscription; and
     # the horse WIN markets' stream beside the horse trader (the owner, 10 Nov 2026): read-only, no delayed key opens it
     traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade", "greyhound.book_record",
@@ -459,3 +461,25 @@ def test_the_shared_requirements_carry_no_pin_of_the_football_warehouse():
     assert not shared & {line.split("==")[0].lower() for line in own}       # ... and not in the shared file
     for workflow in ("live-trade.yml", "live-record.yml"):
         assert "football/warehouse/requirements.txt" not in (WORKFLOWS / workflow).read_text()
+
+
+def test_the_australian_paper_test_only_records():
+    """greyhound-au-paper.yml (the owner, 17 Nov 2026: "Record the Australian books live for a paper test"): the live
+    key reaches the Australian book recorder alone (read-only by construction), never on the live trader's runner;
+    the paper module makes no Betfair call at all."""
+    import yaml as _yaml
+    text = (WORKFLOWS / "greyhound-au-paper.yml").read_text()
+    wf = _yaml.safe_load(text)
+    assert "BETFAIR_RUNNER" not in str(wf["jobs"]["record"]["runs-on"])
+    assert "LIVE_APP_KEY" not in str(wf["jobs"]["price"])
+    for ln in (x.strip() for x in text.splitlines()):
+        if ln.startswith("#") or not ln:
+            continue
+        if "GHKEY" in ln and "python" in ln:
+            assert ln.startswith('BETFAIR_APP_KEY="$GHKEY" python -m greyhound.book_record --date'), ln
+            assert "--countries AU" in ln and "--tag greyhound_au_n" in ln, ln
+        assert "--live" not in ln and "--trade" not in ln, ln
+        assert not re.search(r"echo[^;]*\$\{?(BETFAIR_LIVE_APP_KEY|GHKEY)\b", ln), ln
+    src = (WORKFLOWS.parent.parent / "greyhound" / "au_paper.py").read_text()
+    for call in ("placeOrders", "BetfairData", "login(", "cancelOrders"):
+        assert call not in src, call

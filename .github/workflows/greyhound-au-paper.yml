@@ -1,0 +1,133 @@
+name: Greyhound Australia on paper (read-only)
+
+# The Australian greyhound rule on paper, forward (the owner, 17 Nov 2026: "Record the Australian books live for a
+# paper test"; greyhound/au_paper.py; ledger greyhound-au-paper-1117). Two jobs a night:
+# - price (GitHub's runner, no Betfair access): yesterday's Australian results in, the UTC day just raced settled
+#   against its recorded books, the next UTC day's cards priced by the frozen model (before its first race);
+# - record (the paper runner, while the greyhound job is not running): the Australian WIN books on the live key,
+#   read-only (greyhound/book_record.py: no order call exists), to 05:35 UK; the greyhound job (paper-models.yml)
+#   records the rest of the Australian day to 13:30 UK. Nothing here places an order.
+
+on:
+  schedule:
+    - cron: '20 23 * * *'     # UTC: price the next UTC day, settle the day just raced, record its books to 05:35 UK
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'freeze (fit the model and the blend once), night (price, settle, record), or summary'
+        type: choice
+        options: [night, freeze, summary]
+        default: night
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-au-paper-${{ inputs.task || 'night' }}
+  cancel-in-progress: false
+
+jobs:
+  price:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo swapoff -a || true
+          sudo fallocate -l 24G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+      - name: Freeze, price, settle
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          GREYHOUNDAPI_KEY: ${{ secrets.GREYHOUNDAPI_KEY }}
+          TASK: ${{ inputs.task || 'night' }}
+        run: |
+          mkdir -p out
+          case "$TASK" in
+            freeze)  python -m greyhound.au_paper --freeze | tee out/au_paper.json ;;
+            summary) python -m greyhound.au_paper --summary | tee out/au_paper.json ;;
+            night)
+              X="$(date -u +%F)"; D="$(date -u -d tomorrow +%F)"
+              timeout 1500 python -m sources.greyhoundapi --fetch results --regions AU --max-minutes 20 > out/results.json || true
+              timeout 2400 python -m sources.greyhoundapi --build --regions AU > out/build.json || true
+              python -m greyhound.au_paper --settle --date "$X" --summary | tee out/au_paper_settle.json
+              python -m greyhound.au_paper --price --date "$D" | tee out/au_paper_price.json ;;
+            *) echo "unknown task"; exit 1 ;;
+          esac
+      - name: Summary
+        if: always()
+        run: |
+          for f in out/au_paper*.json; do [ -f "$f" ] && { echo '```'; cat "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"; done
+          true
+
+  record:
+    if: github.event_name == 'schedule' || inputs.task == 'night'
+    runs-on: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+    timeout-minutes: 420
+    steps:
+      - name: Not on the live trader's runner
+        env:
+          PAPER_RUNNER_LABEL: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+          LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
+        run: |
+          if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$PAPER_RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
+            echo "PAPER_MODELS_RUNNER is the live trader's runner ($LIVE_RUNNER_LABEL): nothing runs there"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - name: Python (its own environment)
+        run: |
+          VENV="$HOME/.venvs/ashcroft-paper"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv-paper"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: pip install -q -e ".[pipeline]" && pip install -q -r requirements.txt
+      - name: Write the Betfair certificate (its own folder)
+        env:
+          BETFAIR_CERT: ${{ secrets.BETFAIR_CERT }}
+          BETFAIR_KEY: ${{ secrets.BETFAIR_KEY }}
+        run: |
+          if [ -n "$BETFAIR_CERT" ] && [ -n "$BETFAIR_KEY" ]; then
+            D="$HOME/.betfair/certs-paper"
+            mkdir -p "$D"
+            printf '%s\n' "$BETFAIR_CERT" > "$D/betfair.crt"
+            printf '%s\n' "$BETFAIR_KEY" > "$D/betfair.key"
+            chmod 600 "$D/betfair.key"
+            echo "BETFAIR_CERT_FILE=$D/betfair.crt" >> "$GITHUB_ENV"
+            echo "BETFAIR_KEY_FILE=$D/betfair.key" >> "$GITHUB_ENV"
+          fi
+      - name: Record the Australian books (read-only)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          BETFAIR_LIVE_APP_KEY: ${{ secrets.BETFAIR_LIVE_APP_KEY }}
+        run: |
+          D="$(date -u -d tomorrow +%F)"
+          GHKEY="${BETFAIR_LIVE_APP_KEY:-$BETFAIR_APP_KEY}"
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.book_record --date "$D" --countries AU --market-types WIN --tag greyhound_au_n --every-near 15 --every-far 60 --until 05:35
+          echo "australian book record exited $?"
