@@ -34,8 +34,12 @@ def attach(df, name: str) -> list[str]:
     if name.startswith("pit_"):
         from greyhound import pit
         mod = pit.module(name[4:])
-        have = [c for c in df.columns if c.startswith(mod.PREFIX)]
-        return have if have else pit.attach(df, name[4:])
+        # a table counts as attached by its own columns, not by its prefix: the engine's is_handicap starts with the
+        # irish_style table's is_, and improve and irish_market share im_ (17 Nov 2026: the prefix test made
+        # pit_irish_style a no-op on the cached matrix)
+        cols = list(getattr(mod, "COLUMNS", {}) or [])
+        have = [c for c in cols if c in df.columns] if cols else [c for c in df.columns if c.startswith(mod.PREFIX)]
+        return have if (have and len(have) == len(cols or have)) else pit.attach(df, name[4:])
     if name not in NAMES:
         raise ValueError(f"unknown block {name!r}; known: {NAMES}")
     mod = importlib.import_module(f"greyhound.blocks.{name}")
