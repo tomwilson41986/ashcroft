@@ -108,7 +108,13 @@ def module(name: str):
 def code_hash(name: str) -> str:
     root = Path(__file__).resolve().parent
     h = hashlib.sha256()
-    for f in ("core.py", f"{name}.py"):
+    # a variant table (``DEPENDS``: the tables whose code it reuses) changes when the code it reuses does
+    src = (root / f"{name}.py").read_text() if (root / f"{name}.py").exists() else ""
+    deps = []
+    for line in src.splitlines():
+        if line.startswith("DEPENDS"):
+            deps = [d.strip(" '\"") for d in line.split("=", 1)[1].strip(" ()[]").split(",") if d.strip(" '\"")]
+    for f in ("core.py", f"{name}.py", *(f"{d}.py" for d in deps)):
         p = root / f
         h.update(p.read_bytes() if p.exists() else b"")
     return h.hexdigest()[:12]
