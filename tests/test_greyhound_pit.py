@@ -364,3 +364,32 @@ def test_a_cut_build_gives_the_whole_build_cut_and_depends_lists_every_read(monk
         src = inspect.getsource(pit.module(n))
         read = {m for m in re.findall(r'ctx(?: or \{\})?\)?\.get\("(\w+)"\)', src) if m in pit.TABLES}
         assert read <= set(pit.DEPENDS.get(n, ())), (n, read)
+
+
+def test_table_prefixes_do_not_collide():
+    """17 Nov 2026: blocks.attach took a table as attached when any column started with its prefix, and the engine's
+    is_handicap starts with irish_style's old is_: the table never joined. Tables are now matched by their own
+    columns; and no table prefix may start an engine or block column name, nor be shared, but the known im_ pair."""
+    import importlib, pathlib, re
+    from greyhound import pit
+    pref = {}
+    for n in pit.TABLES:
+        pref.setdefault(importlib.import_module(f"greyhound.pit.{n}").PREFIX, []).append(n)
+    shared = {p: v for p, v in pref.items() if len(v) > 1}
+    assert shared == {"im_": ["improve", "irish_market"]}, shared
+    root = pathlib.Path(pit.__file__).parent.parent
+    src = "".join(p.read_text() for p in [root / f for f in ("metrics.py", "parity.py", "hrb.py", "lib.py", "times.py",
+                                                         "intent.py", "etime.py", "ability.py", "data.py")]
+                  if p.exists()) + "".join(p.read_text() for p in (root / "blocks").glob("*.py"))
+    names = set(re.findall(r'["\']([a-z][a-z0-9_]{2,})["\']', src))
+    for p in pref:
+        assert not [n for n in names if n.startswith(p)], p
+
+
+def test_attach_matches_a_tables_own_columns(monkeypatch):
+    import pandas as pd
+    from greyhound import blocks, pit
+    df = pd.DataFrame({"race_id": [1], "dog_id": [2], "is_handicap": [0.0]})
+    called = []
+    monkeypatch.setattr(pit, "attach", lambda d, name, store=None: called.append(name) or ["irs_n"])
+    assert blocks.attach(df, "pit_irish_style") == ["irs_n"] and called == ["irish_style"]

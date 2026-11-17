@@ -31,13 +31,13 @@ def test_groups_read_the_codes():
 def test_reads_earlier_irish_days_only():
     tab, notes = st.build(_runs(), ctx={"api_ie_comments": _comments(), "api_ie": None, "api_gb": None})
     a, b, c = tab.iloc[0], tab.iloc[1], tab.iloc[2]
-    assert a.is_n == 1 and a.is_last_early == 1 and a.is_last_led == 1          # 5 Feb sees 5 Jan only
-    assert b.is_n == 0 and np.isnan(b.is_early_rate)
-    assert c.is_n == 2 and c.is_last_early == 1 and c.is_last_trouble == 0
+    assert a.irs_n == 1 and a.irs_last_early == 1 and a.irs_last_led == 1          # 5 Feb sees 5 Jan only
+    assert b.irs_n == 0 and np.isnan(b.irs_early_rate)
+    assert c.irs_n == 2 and c.irs_last_early == 1 and c.irs_last_trouble == 0
     p0 = notes["prior_shares"]["early"]
-    assert np.isclose(c.is_early_rate, (2 + st.K * p0) / (2 + st.K))
+    assert np.isclose(c.irs_early_rate, (2 + st.K * p0) / (2 + st.K))
 
 
 def test_no_comments_is_said():
     tab, notes = st.build(_runs(), ctx={})
-    assert "no data found" in notes["note"] and (tab.is_n == 0).all()
+    assert "no data found" in notes["note"] and (tab.irs_n == 0).all()

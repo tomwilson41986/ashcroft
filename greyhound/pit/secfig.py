@@ -48,8 +48,12 @@ COLUMNS = {
 }
 
 
-def figures(r: pd.DataFrame) -> dict:
-    """Each run's sectional figure (raw, less the going, linked) and its race-relative figure, with the fit notes."""
+def figures(r: pd.DataFrame, values: np.ndarray | None = None, lo: float = 1.0, hi: float = 15.0,
+            by_trap: bool = True) -> dict:
+    """Each run's sectional figure (raw, less the going, linked) and its race-relative figure, with the fit notes.
+    ``values`` (a time a row in place of the first sectional, read inside ``lo``..``hi`` seconds) and ``by_trap``
+    False (the par of the track and trip alone) figure another section the same way, e.g. the run home (speed2.py,
+    the feature review's esr/fsr rows); the defaults leave this table's output bit-identical."""
     n = len(r)
     day = core.day(r)
     dn = ((day - pd.Timestamp("2000-01-01")).dt.days).to_numpy(float)
@@ -71,15 +75,18 @@ def figures(r: pd.DataFrame) -> dict:
     early = np.asarray(day < pd.Timestamp(speed.K_BEFORE), bool)
     if not early.any():
         early = dn <= np.nanquantile(dn, 0.2)
-    sec = num(r.sectional)
-    sok = ok & np.isfinite(sec) & (sec > 1) & (sec < 15)
+    sec = num(r.sectional) if values is None else np.asarray(values, float)
+    sok = ok & np.isfinite(sec) & (sec > lo) & (sec < hi)
     ls = np.where(sok, np.log(np.where(sok, sec, 1.0)), np.nan)
     base = pd.DataFrame({"race_date": r.race_date.to_numpy(), "_key": key, "_trap": trap, "_grade": grade,
                          "_ls": np.nan_to_num(ls), "_sn": sok.astype(float)})
-    pt = core.prior_window(base, ["_key", "_trap"], ["_ls", "_sn"], speed.STD_DAYS)
     pk = core.prior_window(base, ["_key"], ["_ls", "_sn"], speed.STD_DAYS)
-    par = np.where(pt._sn >= speed.MIN_PAR, pt._ls / pt._sn.replace(0, np.nan),
-                   np.where(pk._sn >= speed.MIN_PAR, pk._ls / pk._sn.replace(0, np.nan), np.nan))
+    kpar = np.where(pk._sn >= speed.MIN_PAR, pk._ls / pk._sn.replace(0, np.nan), np.nan)
+    if by_trap:
+        pt = core.prior_window(base, ["_key", "_trap"], ["_ls", "_sn"], speed.STD_DAYS)
+        par = np.where(pt._sn >= speed.MIN_PAR, pt._ls / pt._sn.replace(0, np.nan), kpar)
+    else:
+        par = kpar
     S = 100.0 * (par - ls)
     # 2. the night's sectional going, each runner against its grade's sectional par (earlier days)
     fin = sok & np.isfinite(S)

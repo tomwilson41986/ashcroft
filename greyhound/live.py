@@ -368,6 +368,20 @@ def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
     pred["model_objective"] = STACK_OBJECTIVE                  # the early lay's forecast fit matches it
     pred["oos_prices"] = (STACK_OOS_BY_RECIPE.get(str(meta.get("recipe"))) or meta.get("oos_prices")
                           or STACK_OOS_PRICES)
+    # the residual memory (the owner, 17 Nov 2026: "yes serve the residual memory layer"; greyhound/memory.py): the
+    # dog's own recent misses move its price; the forecast fits read the recipe's out-of-sample prices with the layer
+    mem_notes: dict = {}
+    from greyhound import memory as gmem
+    if gmem.switch_on():
+        base = str(pred.oos_prices.iloc[0]) if len(pred) else STACK_OOS_PRICES
+        try:
+            pred, mem_notes = gmem.serve(store, day, pred, base)
+            mem_notes["oos"] = gmem.ensure_oos(store, base)
+            pred["oos_prices"] = f"{base.rstrip('/')}_mem"
+        except Exception as e:                         # the price run never fails for the layer: served without it
+            log.warning("the residual memory was not applied: %s", e)
+            mem_notes = {"memory": f"not applied: {e}"}
+        pred["pred_bsp"] = pd.to_numeric(pred.pred_bsp, errors="coerce").round(3)
     buf = io.StringIO()
     pred.to_csv(buf, index=False)
     store.put(f"{PREFIX}/predictions/{day:%Y-%m-%d}.csv", buf.getvalue().encode())
@@ -375,7 +389,8 @@ def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
     return {"day": f"{day:%Y-%m-%d}", "model": STACK_OBJECTIVE, "markets": int(pred.market_id.nunique()),
             "runners": len(pred), "races_not_priced": unpriced,      # under four runners: not a race the model prices
             "dogs_with_history": round(float(pred.matched_history.mean()), 3) if len(pred) else 0,
-            "unknown_grade_or_trip": int(card.race_class.isna().sum()), "tables_seconds": t_tables}
+            "unknown_grade_or_trip": int(card.race_class.isna().sum()), "tables_seconds": t_tables,
+            "memory": mem_notes}
 
 
 def load_model(store):

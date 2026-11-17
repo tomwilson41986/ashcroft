@@ -11,11 +11,11 @@ group reads is reported in the build notes.
 The dog is linked to its Irish runs as the Irish form table links it (greyhound/pit/irish.py ``name_map``, ``dog_map``,
 from ``irish.PRE_GB_DAYS`` before its first GB day).
 
-**The columns** (a GB race reads the dog's Irish runs on days strictly BEFORE the race's day): ``is_n`` (Irish runs
+**The columns** (a GB race reads the dog's Irish runs on days strictly BEFORE the race's day): ``irs_n`` (Irish runs
 with comments), each group's rate shrunk toward the share in every Irish run of the first fifth of the days by ``K``
-runs (``is_<group>_rate``), the last Irish run's flags for early pace, the lead and trouble (``is_last_*``), the style
-(rails less wide), and the early-pace rate against today's other runners (``is_early_vs``). A dog with no Irish run
-with comments has NaN (``is_n`` 0).
+runs (``irs_<group>_rate``), the last Irish run's flags for early pace, the lead and trouble (``irs_last_*``), the style
+(rails less wide), and the early-pace rate against today's other runners (``irs_early_vs``). A dog with no Irish run
+with comments has NaN (``irs_n`` 0).
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import pandas as pd
 
 from greyhound.pit import core, irish
 
-PREFIX = "is_"
+PREFIX = "irs_"
 SOURCE = "GreyhoundAPI in-running comments of Irish races (sources/greyhoundapi.py fetch_comments), linked by name"
 K = 3.0
 #: each group: a regular expression on the event code (lower case, underscores)
@@ -43,15 +43,15 @@ GROUPS = {
 }
 EARLY_PLACES = r"bend_1|first_bend|start|break|run_up|early"
 COLUMNS = {
-    "is_n": "the dog's Irish runs with in-running comments before the day (GreyhoundAPI)",
-    **{f"is_{g}_rate": f"its Irish runs with a '{g}' comment, shrunk toward the share in every Irish run by 3 runs"
+    "irs_n": "the dog's Irish runs with in-running comments before the day (GreyhoundAPI)",
+    **{f"irs_{g}_rate": f"its Irish runs with a '{g}' comment, shrunk toward the share in every Irish run by 3 runs"
        for g in GROUPS},
-    "is_led_early_rate": "its Irish runs where it led at the first bend or before, shrunk",
-    "is_last_early": "its last Irish run: 1 when it was quick away",
-    "is_last_led": "its last Irish run: 1 when it led",
-    "is_last_trouble": "its last Irish run: 1 when it met trouble",
-    "is_style": "is_rails_rate less is_wide_rate (above 0: a railer)",
-    "is_early_vs": "is_early_rate less the mean of today's other runners' that have one",
+    "irs_led_early_rate": "its Irish runs where it led at the first bend or before, shrunk",
+    "irs_last_early": "its last Irish run: 1 when it was quick away",
+    "irs_last_led": "its last Irish run: 1 when it led",
+    "irs_last_trouble": "its last Irish run: 1 when it met trouble",
+    "irs_style": "irs_rails_rate less irs_wide_rate (above 0: a railer)",
+    "irs_early_vs": "irs_early_rate less the mean of today's other runners' that have one",
 }
 
 
@@ -94,7 +94,7 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     tab = pd.DataFrame({"race_id": r.race_id.to_numpy(), "dog_id": r.dog_id.to_numpy()}, index=r.index)
     for c in COLUMNS:
         tab[c] = np.float32(np.nan)
-    tab["is_n"] = np.float32(0.0)
+    tab["irs_n"] = np.float32(0.0)
     cm = ctx.get("api_ie_comments")
     if cm is None or not len(cm):
         return tab, {"note": "no data found: no GreyhoundAPI Irish comments in the store (greyhoundapi.yml task comments)"}
@@ -133,19 +133,19 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
                       direction="backward").set_index("i").sort_index()
     nn = m.n.fillna(0).to_numpy(float)
     has = nn > 0
-    tab["is_n"] = nn
+    tab["irs_n"] = nn
     for k in keys:
-        name = "is_led_early_rate" if k == "led_early" else f"is_{k}_rate"
+        name = "irs_led_early_rate" if k == "led_early" else f"irs_{k}_rate"
         tab[name] = np.where(has, (m[f"c_{k}"].to_numpy(float) + K * p0[k]) / (nn + K), np.nan)
-    for k, c in (("early", "is_last_early"), ("led", "is_last_led"), ("trouble", "is_last_trouble")):
+    for k, c in (("early", "irs_last_early"), ("led", "irs_last_led"), ("trouble", "irs_last_trouble")):
         tab[c] = np.where(has, m[f"last_{k}"].to_numpy(float), np.nan)
-    tab["is_style"] = tab.is_rails_rate.to_numpy(float) - tab.is_wide_rate.to_numpy(float)
-    x = pd.Series(tab.is_early_rate.to_numpy(float))
+    tab["irs_style"] = tab.irs_rails_rate.to_numpy(float) - tab.irs_wide_rate.to_numpy(float)
+    x = pd.Series(tab.irs_early_rate.to_numpy(float))
     race = r.race_id.to_numpy()
     tot, cnt = x.groupby(race).transform("sum").to_numpy(), x.notna().groupby(race).transform("sum").to_numpy()
     v = x.to_numpy()
     with np.errstate(invalid="ignore", divide="ignore"):
-        tab["is_early_vs"] = np.where(np.isfinite(v) & (cnt > 1), v - (tot - np.nan_to_num(v)) / np.maximum(cnt - 1, 1),
+        tab["irs_early_vs"] = np.where(np.isfinite(v) & (cnt > 1), v - (tot - np.nan_to_num(v)) / np.maximum(cnt - 1, 1),
                                       np.nan)
     for c in COLUMNS:
         tab[c] = tab[c].astype(np.float32)
