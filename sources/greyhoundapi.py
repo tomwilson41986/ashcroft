@@ -297,7 +297,7 @@ def comments_key(region: str, month: str) -> str:
     return f"{PREFIX}/raw/comments/{region}/{month}.json.gz"
 
 
-def fetch_comments(store, c: Client, regions: list[str], first_month: str = "2011-01", max_minutes: float | None = None,
+def fetch_comments(store, c: Client, regions: list[str], first_month: str = "2021-11", max_minutes: float | None = None,
                    quota_stop: int = QUOTA_STOP) -> dict:
     """Each held results month's races (from ``first_month``), their in-running comments (``/races/<id>/comments``:
     each runner's events, e.g. 'fast_start', 'led', with the place in the race where given, and a summary), a region
@@ -477,7 +477,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--fetch", choices=["results", "lists", "both", "pedigree", "runners", "cards", "comments"],
                     default=None)
-    ap.add_argument("--first-month", default="2011-01", help="comments: the first results month fetched")
+    # the last five years (the owner, 17 Nov 2026: "just fill last five years data")
+    ap.add_argument("--first-month", default="2021-11", help="comments: the first results month fetched")
     ap.add_argument("--build-comments", action="store_true")
     ap.add_argument("--build", action="store_true")
     ap.add_argument("--regions", default="GB,IE,AU")
