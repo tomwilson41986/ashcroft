@@ -12,12 +12,13 @@ on:
     - cron: '17 5 * * *'     # UTC: yesterday's results in, the last two months refreshed, the tables rebuilt
     - cron: '43 */2 * * *'   # UTC: the cards as they stand (runners, reserves, scratchings), every two hours
     - cron: '37 23 * * *'    # UTC: the runners backfill, newest months first, until the month's quota guard
+    - cron: '7 12 * * *'     # UTC: the Irish in-running comments, newest months first from 2011, until done or the guard
   workflow_dispatch:
     inputs:
       task:
-        description: 'results (fetch), lists (tracks, sires, dams, track stats), pedigree (every sire''s offspring), runners (each race''s full runner list, quota-guarded), cards, build, survey (every field the API holds, with fill rates; probes its endpoints), or all'
+        description: 'results (fetch), lists (tracks, sires, dams, track stats), pedigree (every sire''s offspring), runners (each race''s full runner list, quota-guarded), cards, build, comments (the in-running comments of each race, from 2011, quota-guarded), survey (every field the API holds, with fill rates; probes its endpoints), or all'
         type: choice
-        options: [all, results, lists, pedigree, runners, cards, build, survey]
+        options: [all, results, lists, pedigree, runners, cards, build, survey, comments]
         default: all
       regions:
         description: 'comma-separated regions'
@@ -56,9 +57,9 @@ jobs:
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           GREYHOUNDAPI_KEY: ${{ secrets.GREYHOUNDAPI_KEY }}
-          TASK: ${{ inputs.task || (github.event.schedule == '43 */2 * * *' && 'cards') || (github.event.schedule == '37 23 * * *' && 'runners') || 'all' }}
-          REGIONS: ${{ inputs.regions || 'GB,IE,AU' }}
-          MAXMIN: ${{ inputs.max_minutes || (github.event.schedule == '37 23 * * *' && '320') || '60' }}
+          TASK: ${{ inputs.task || (github.event.schedule == '43 */2 * * *' && 'cards') || (github.event.schedule == '37 23 * * *' && 'runners') || (github.event.schedule == '7 12 * * *' && 'comments') || 'all' }}
+          REGIONS: ${{ inputs.regions || (github.event.schedule == '7 12 * * *' && 'IE') || 'GB,IE,AU' }}
+          MAXMIN: ${{ inputs.max_minutes || (github.event.schedule == '37 23 * * *' && '320') || (github.event.schedule == '7 12 * * *' && '320') || '60' }}
         run: |
           mkdir -p out
           if [ -z "$GREYHOUNDAPI_KEY" ]; then echo "the GREYHOUNDAPI_KEY repository secret is not set"; exit 1; fi
@@ -70,6 +71,7 @@ jobs:
             pedigree) python -m sources.greyhoundapi --fetch pedigree --max-minutes "$MAXMIN" && python -m sources.greyhoundapi --build --regions "$REGIONS" ;;
             runners) python -m sources.greyhoundapi --fetch runners --regions "$REGIONS" --max-minutes "$MAXMIN" ;;
             cards)   python -m sources.greyhoundapi --fetch cards ;;
+            comments) python -m sources.greyhoundapi --fetch comments --regions "$REGIONS" --max-minutes "$MAXMIN" --build-comments ;;
             build)   python -m sources.greyhoundapi --build --regions "$REGIONS" ;;
             survey)  python -m research.greyhound.api_survey --probe --save --out out/api_survey ;;
             all)     python -m sources.greyhoundapi --fetch both --build --regions "$REGIONS" --max-minutes "$MAXMIN" ;;
