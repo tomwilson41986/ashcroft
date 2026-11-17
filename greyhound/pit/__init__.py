@@ -48,6 +48,19 @@ earlier one):
 | secfig | sx_ | the first sectional on one scale across tracks: against the track, trip and trap par, less the night's grade-aware sectional going, linked across tracks by the dogs that move, and against the field it met (research: built on demand) |
 | irish_market | im_ | the Irish market's view of the dog (GreyhoundAPI Irish SPs: actual over expected, log SP, SP rank against the finish, favourite share) and its Irish weights (research: built on demand) |
 | world | wd_ | the sire's and dam's progeny abroad (GreyhoundAPI Ireland and Australia): runs, win rates, time and sectional figures (research: built on demand) |
+| trainer2 | ta_ | the trainer at the time (GreyhoundAPI per-run, GBGB read fresh, the card): decayed gamma-posterior A/E against the Shin SP with sd, 30-day form, win/place rates, at the track, the move, situations shrunk to the trainer (research: built on demand) |
+| draw2 | dr2_ | each trap's bias with the track's other trips as the prior: winners against the de-biased SP, leads less the dogs' own lead chance (research: built on demand) |
+| bend2 | bd2_ | the first bend with track-specific trap terms and shrunk inputs: exact expected position, crowding chance (research: built on demand) |
+| line2 | ln2_ | the neighbours' squeeze weighted by arrival, traps 1 and 2 away; the pace collision (research: built on demand) |
+| trials2 | tq_ | trials on the race scale: a walk-forward trial-to-race offset (track, trip, solo/company), the session's going, the trial in company (position, margin, a rival-implied figure), trial level against race level (research: built on demand) |
+| ability2 | ka_ | the Kalman levels fed the trials on the race scale, noise per trip band, the level damped to the grade par over layoffs (research: built on demand) |
+| market2 | mq_ | the dog's and the yard's record against the de-biased SP and the Betfair SP: gamma-posterior log A/E with sd and z, decayed by days; drift on race-normalised shares (research: built on demand) |
+| mrate | mv_ | the market-implied rating rebuilt: trap mean out of the observation, share-dependent noise, the market's error memory, reversion after layoffs (research: built on demand) |
+| breeding2 | bq_ | the sire's and dam's progeny rebuilt: leave-one-dog-out (and littermates for the dam), dog-first, empirical-Bayes shrinkage, A/E on the de-biased SP, trials in the fig measure (research: built on demand) |
+| form2 | fq_ | the form table's trend damped over days off, and an age curve with dog fixed effects (research: built on demand) |
+| pricepath | px_ | the market's past readings of the dog: steaming or drifting from the morning and pre-play WAP to the BSP, matched-volume attention, the place/win BSP ratio against its field size and price band (research: built on demand) |
+| racectx | rx_ | today's field: spread of prior ratings, top-two gap, debutants and lightly raced dogs, early-pace pressure, the dog's rank (research: built on demand) |
+| xtime2 | xu_ | the expected-time table with forgetting trap and grade effects (fitted half-lives), constants fitted on the early slice, the preference updated on the post-level residual, P(fastest) from the sd, a vacant box as room (research: built on demand) |
 | seq | se_ | a GRU over the dog's last 8 runs, refitted each month: its forecasts of the run's SP share, win against SP, time, finish, sectional (research: built on demand, not in ``all``) |
 
 Each table is written to the sources store as ``<STORE_PREFIX>/<table>.parquet`` with ``<table>.meta.json``: the code
@@ -83,11 +96,14 @@ TABLES = ("ids", "ability", "trouble", "connections", "market", "breeding", "lif
           "speed",
           # the 16 Nov 2026 tests (ledger greyhound-origin-batch43-1116, greyhound-going-batch43-1116)
           "origin", "going", "bends", "irish", "world", "irish_market", "secfig", "sectx", "irish_style",
+          # the feature review of 17 Nov 2026 (reports/greyhound_feature_review.md)
+          "trainer2", "draw2", "bend2", "line2", "trials2", "ability2", "market2", "mrate", "breeding2", "form2", "pricepath", "racectx", "xtime2",
           # research tables, built on demand (``ON_DEMAND``: never in --build all; torch is installed for them)
           "seq")
 #: tables ``--build all`` leaves out: the seq table refits a network monthly from 2024 (one to two hours on a runner,
 #: and torch); it is built by name (greyhound-pit.yml, tables=seq)
-ON_DEMAND: tuple = ("origin", "going", "bends", "world", "irish_market", "secfig", "sectx", "irish_style")   # 15 Nov 2026: the seq table is served (its monthly networks cached, seq.py);
+ON_DEMAND: tuple = ("origin", "going", "bends", "world", "irish_market", "secfig", "sectx", "irish_style",
+                    "trainer2", "draw2", "bend2", "line2", "trials2", "ability2", "market2", "mrate", "breeding2", "form2", "pricepath", "racectx", "xtime2")   # 15 Nov 2026: the seq table is served (its monthly networks cached, seq.py);
                                           # 16 Nov 2026: the origin and going tables are tested before --build all builds them
 KEY = ["race_id", "dog_id"]
 #: where the tables are stored. "pit2": the tables of the engine as fixed on 11 Nov 2026 (the audit's foundation
@@ -150,7 +166,8 @@ def coverage(tab: pd.DataFrame, runs: pd.DataFrame) -> dict:
 
 #: the tables a table's build reads from ``ctx`` (tests/test_greyhound_pit.py holds the list to the code)
 DEPENDS = {"trouble": ("ability",), "dyad": ("xtime",), "ext": ("xtime",), "fitness": ("xtime",), "fear": ("xtime",),
-           "clock": ("xtime",), "optics": ("xtime",), "litter": ("xtime",)}
+           "clock": ("xtime",), "optics": ("xtime",), "litter": ("xtime",),
+           "line2": ("line", "xtime", "ext")}
 
 
 def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None, keep: bool = False,

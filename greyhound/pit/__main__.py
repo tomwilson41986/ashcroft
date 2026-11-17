@@ -39,7 +39,7 @@ def main(argv=None) -> int:
     if "ids" in names:
         from greyhound.pit.ids import load_runners
         ctx["runners"] = load_runners(store, f"{a.first_year}-{last.year}")
-    if {"market", "figs", "form"} & set(names):              # figs, form: the market rating on the Betfair SP too
+    if {"market", "figs", "form", "pricepath", "market2", "mrate"} & set(names):              # figs, form: the market rating on the Betfair SP too
         from greyhound.model import load_prices
         ctx["prices"] = load_prices(store, f"{a.first_year}-{last.year}")
     if "seq" in names:                                       # the sequence table's monthly networks, cached
@@ -50,6 +50,12 @@ def main(argv=None) -> int:
     elif {"irish", "irish_market"} & set(names):                                     # GreyhoundAPI's Irish and GB results (sources/greyhoundapi.py)
         from greyhound.pit.irish import load_context as irish_context
         ctx.update(irish_context(store))
+    if "pricepath" in names:                                 # the GB place markets' BSP (ctx["place_prices"])
+        from greyhound.pit.pricepath import load_context as price_context
+        ctx.update(price_context(store, f"{a.first_year}-{last.year}"))
+    if "trainer2" in names:                                  # GreyhoundAPI's GB runs: the trainer on each run
+        from greyhound.pit.trainers import load_context as trainer_context
+        ctx.update(trainer_context(store))
     if "world" in names:                                     # GreyhoundAPI's pedigree and Irish/Australian results
         from greyhound.pit.world import load_context as world_context
         ctx.update(world_context(store))

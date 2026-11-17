@@ -105,9 +105,12 @@ def _tensors(Xt, race, target=None):
     return out
 
 
-def fit(X_tr, race_tr, t_tr, X_es, race_es, t_es, seconds: float = 2400.0, seed: int = 0) -> dict:
+def fit(X_tr, race_tr, t_tr, X_es, race_es, t_es, seconds: float = 2400.0, seed: int = 0, weight=None) -> dict:
     """The fitted model and its transform; early-stopped on the ``es`` rows' cross-entropy within ``seconds``. Rows
-    grouped by race; ``t`` each runner's share of its race (rows of races whose shares do not sum to 1 are dropped)."""
+    grouped by race; ``t`` each runner's share of its race (rows of races whose shares do not sum to 1 are dropped).
+    ``weight`` (optional, review section 5: recency row weights): a weight a training row, the same for a race's
+    runners, scaled to mean 1 over the rows kept; each race's cross-entropy is weighted by it (the loss is linear in
+    the target, so the target is scaled). None (the default) leaves the fit exactly as before."""
     import torch
     torch.manual_seed(seed)
     torch.set_num_threads(THREADS)
@@ -123,6 +126,11 @@ def fit(X_tr, race_tr, t_tr, X_es, race_es, t_es, seconds: float = 2400.0, seed:
     tf = Transform(X_tr[k_tr])
     Xtr, Xes = tf(X_tr[k_tr]), tf(X_es[k_es])
     rtr, tes_r, ttr, tes = race_tr[k_tr], race_es[k_es], t_tr[k_tr], t_es[k_es]
+    if weight is not None:
+        wk = np.asarray(weight, float)[k_tr]
+        if wk.size and wk.mean() > 0:
+            wk = wk / wk.mean()
+        ttr = np.nan_to_num(ttr) * wk
     net = _net(Xtr.shape[1])
     opt = torch.optim.Adam(net.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     es_x, es_r, es_n, es_t = _tensors(Xes, tes_r, tes)
