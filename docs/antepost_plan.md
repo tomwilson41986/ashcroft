@@ -143,13 +143,15 @@ market, and the stake held for weeks.
    with it).
 4. A dated ledger row for every decision with the inputs that made it.
 
+**Phase 0 found** (`reports/antepost_data.md`): the ante-post market has no BSP, never goes in play, and closes a
+median 55.6 hours before the off. So the position can't be traded in its own market for the last two days or so; the
+exit is a lay in the race-day WIN market only.
+
 **Exit on race day** (the default, to be confirmed against Phase 0's rules):
 
 - Once the horse is a declared runner, the non-runner risk is mostly gone. Lay it in the day's WIN market at the SP
   (`MARKET_ON_CLOSE`, for its winnings, as the morning steamer is laid), or at the race-day morning price when the
   model says the SP will be shorter than the morning price.
-- If the ante-post market stays open to the off and its rules settle like the WIN market, close inside it instead
-  (one market, one commission).
 - A horse taken out before declarations: the stake is lost. The model has priced that in; the record shows it.
 
 ## 7. Testing
