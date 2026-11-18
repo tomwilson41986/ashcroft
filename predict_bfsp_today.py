@@ -324,9 +324,12 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
 
 def betfair_card_fallback(target_date: date, why: str) -> pd.DataFrame:
     """The card from Betfair's recorded catalogue (card_betfair.py) when horseracebase.com gives none (the owner,
-    18 Nov 2026). CARD_FALLBACK=off turns it off."""
-    if os.getenv("CARD_FALLBACK", "").lower() == "off":
-        log.error(f"No card from horseracebase.com ({why}) and CARD_FALLBACK=off: no fallback")
+    18 Nov 2026). Off unless CARD_FALLBACK=on (or CARD_SOURCE=betfair, the check run): its first price check
+    (card-fallback-check.yml run 44277514843, 18 Nov) put its prices a median 0.49 in logs from the HRB card's,
+    rank correlation 0.78, so it is not fit to trade on until a check passes."""
+    if os.getenv("CARD_SOURCE", "").lower() != "betfair" and os.getenv("CARD_FALLBACK", "").lower() != "on":
+        log.error(f"No card from horseracebase.com ({why}); the Betfair card fallback is off (CARD_FALLBACK=on "
+                  "turns it on): no card")
         return pd.DataFrame()
     log.warning(f"No card from horseracebase.com ({why}): falling back to Betfair's recorded catalogue")
     try:
