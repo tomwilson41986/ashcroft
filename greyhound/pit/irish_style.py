@@ -4,7 +4,9 @@ run-style features from the comments"; ledger greyhound-irish-style-batch51-1117
 Each Irish race's comments (``sources/greyhoundapi.py fetch_comments`` -> ``greyhoundapi/comments_IE.parquet``: a row
 a runner, its events in order as codes, e.g. 'fast_start|led', and where in the race each happened, e.g. '|bend_1')
 are read into flags a run: away quickly, away slowly, led, led early (at the first bend or before), on the rails,
-wide, met trouble (baulked, bumped, crowded, checked, impeded, blocked, hampered, fell), ran on, faded. The codes are
+wide, met trouble (baulked, bumped, crowded, checked, impeded, blocked, hampered, fell, stumbled), ran on, faded,
+prominent (second or third throughout), a clear run. Codes read and in no group (a level start, a midfield run) are
+``NEUTRAL``. The codes are
 grouped by the words in them (``GROUPS``), so a code the API adds later falls in its group; the share of events no
 group reads is reported in the build notes.
 
@@ -32,15 +34,22 @@ SOURCE = "GreyhoundAPI in-running comments of Irish races (sources/greyhoundapi.
 K = 3.0
 #: each group: a regular expression on the event code (lower case, underscores)
 GROUPS = {
-    "early": r"fast_start|quick|early_pace|broke_well|good_break|pace_early|showed_early",
-    "slow": r"slow|dwelt|missed|poor_break|bad_break|crawled",
-    "led": r"(^|[_|])led($|[_|])|lead",
+    "early": r"fast_start|quick|(?<!lacked_)early_pace|broke_well|good_break|pace_early|showed_early",
+    "slow": r"slow|dwelt|missed|poor_break|bad_break|crawled|lacked_early",
+    "led": r"(^|[_|])led($|[_|])|lead|headed|disputed",
     "rails": r"rail|inside|in_?side",
     "wide": r"wide|outside|middle",
-    "trouble": r"baulk|bump|crowd|check|impede|block|hamper|fell|fall|knock|interfer|squeez|clip",
-    "ranon": r"ran_on|finished_well|stayed_on|strong_finish|came_late|closed|late_pace",
-    "faded": r"faded|weaken|tired|no_extra|one_pace|eased",
+    "trouble": r"baulk|bump|crowd|check|impede|block|hamper|fell|fall|knock|interfer|squeez|clip|stumbl|awkward",
+    "ranon": r"ran_on|finished_well|stayed_on|strong_finish|came_late|closed|late_pace|rallied|drew_clear|held_on"
+             r"|challenged",
+    "faded": r"faded|weaken|tired|no_extra|one_pace|eased|outpaced|never_involved",
+    "prominent": r"always_prominent|always_second|always_third|second_from|third_from",
+    "clear": r"clear_run",
 }
+#: codes read and deliberately in no group (a start neither quick nor slow, a run neither prominent nor in trouble):
+#: they count as read in the build notes' ``event_codes_read_share``, and add no column
+NEUTRAL = ("level_start", "fair_start", "every_chance", "always_fourth", "always_fifth", "always_sixth", "fourth_from",
+           "dead_heat", "did_not_finish")
 EARLY_PLACES = r"bend_1|first_bend|start|break|run_up|early"
 COLUMNS = {
     "irs_n": "the dog's Irish runs with in-running comments before the day (GreyhoundAPI)",
@@ -91,7 +100,7 @@ def coverage(cm: pd.DataFrame) -> float | None:
     if not codes:
         return None
     rx = re.compile("|".join(f"(?:{v})" for v in GROUPS.values()))
-    return round(sum(1 for c in codes if rx.search(c)) / len(codes), 4)
+    return round(sum(1 for c in codes if rx.search(c) or c in NEUTRAL) / len(codes), 4)
 
 
 def unread(cm: pd.DataFrame, vocab=None, top: int = 40) -> dict:
@@ -101,7 +110,7 @@ def unread(cm: pd.DataFrame, vocab=None, top: int = 40) -> dict:
     if not len(codes):
         return {}
     rx = re.compile("|".join(f"(?:{v})" for v in GROUPS.values()))
-    vc = codes[~codes.map(lambda c: bool(rx.search(c)))].value_counts()
+    vc = codes[~codes.map(lambda c: bool(rx.search(c)) or c in NEUTRAL)].value_counts()
     def entry(code):
         if isinstance(vocab, dict):
             v = vocab.get(code, vocab.get(code.upper()))
