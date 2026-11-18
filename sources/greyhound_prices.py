@@ -60,6 +60,29 @@ def _read_raw(store: Store, where: str) -> bytes:
     return store.s3.get_object(Bucket=store.bucket, Key=where)["Body"].read()
 
 
+#: a market that is not the plain win market of a race: forecasts, "AvB" matches, "without the favourite" books
+VARIANT_RE = re.compile(r"\((?:F/C|AvB|W/O|R/F|T/C)\)|without\s+favs?|forecast|reverse|\bavb\b", re.I)
+#: the abbreviated track labels of the older files (2014-2022: "BAGS cards / BVue", "SIS / Harl", "RPGTV / Crayfd"),
+#: mapped to GBGB's names; learnt from the files by date and off time against the GBGB results
+#: (research/greyhound/join_diag.py aliases) and fixed here
+TRACK_ALIASES: dict[str, str] = {}
+
+
+def market_label(menu_hint: str) -> tuple[str, str, str]:
+    """A menu hint -> (track label, variant tag or "", country). "BAGS cards / BVue (AvB) 31st Dec" -> ("BVue", "AvB",
+    "GB"); "AUS / Albion Park (AUS) 3rd Oct" -> ("Albion Park", "", "AUS"); "Cann (Aus) 31st Dec" -> ("Cann", "", "AUS")."""
+    h = re.sub(r"\s+", " ", str(menu_hint or "")).strip()
+    h = re.sub(r"\s*\d{1,2}\s*(st|nd|rd|th)\s*[A-Za-z]+$", "", h)             # the date suffix ("31st Dec", "31stDec")
+    m = VARIANT_RE.search(h)
+    variant = re.sub(r"[()]", "", m.group(0)).strip() if m else ""
+    h = VARIANT_RE.sub("", h)                                                    # before the prefix: "(F/C)" has a "/"
+    c = re.search(r"\((AUS|NZ|IRE|IRL|USA)\)", h, re.I)
+    country = c.group(1).upper() if c else "GB"
+    h = re.sub(r"\((AUS|NZ|IRE|IRL|USA)\)", "", h, flags=re.I)
+    h = h.split("/")[-1]                                                         # the channel: "SIS / Harl" -> "Harl"
+    return re.sub(r"\s+", " ", h).strip(" -"), variant, country
+
+
 def file_day(name: str):
     m = NAME_RE.search(name)
     return (m.group(1).lower(), datetime.strptime(m.group(2), "%d%m%Y").date()) if m else (None, None)
@@ -94,11 +117,13 @@ def parse(raw: bytes, name: str) -> pd.DataFrame:
     out["race_time"] = dt.dt.strftime("%H:%M")
     out["trap"] = pd.to_numeric(out.selection_name.str.extract(r"^(\d+)\.")[0], errors="coerce")
     out["dog"] = out.selection_name.str.replace(r"^\d+\.\s*", "", regex=True)
-    # "Romford 3rd Oct" -> Romford; "AUS / Albion Park (AUS) 3rd Oct" -> Albion Park
-    hint = out.menu_hint.str.replace(r"^[A-Z]{2,3}\s*/\s*", "", regex=True)
-    out["track"] = hint.str.replace(r"\s*\([A-Z]{2,3}\)", "", regex=True) \
-        .str.replace(r"\s+\d{1,2}(st|nd|rd|th)\s+\w+$", "", regex=True).str.strip()
-    out["country"] = out.menu_hint.str.extract(r"\(([A-Z]{2,3})\)")[0].fillna("GB")
+    # "Romford 3rd Oct" -> Romford; "AUS / Albion Park (AUS) 3rd Oct" -> Albion Park; "SIS / Harl 31st Dec" -> Harlow
+    # (TRACK_ALIASES); a forecast, AvB or without-the-favourite book is not the race's win market: market "<m>_variant"
+    lab = pd.DataFrame([market_label(h) for h in out.menu_hint], columns=["label", "variant", "country"], index=out.index)
+    out["track"] = lab.label.map(lambda x: TRACK_ALIASES.get(x, x))
+    out["variant"] = lab.variant
+    out["country"] = lab.country
+    out.loc[lab.variant != "", "market"] = market + "_variant" if market else "variant"
     out["source_file"] = name
     return out
 
