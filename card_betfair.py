@@ -227,6 +227,9 @@ def history_lookups(db_path: str, day: date) -> dict:
         tracks = pd.read_sql_query(
             "SELECT track, MAX(race_date) AS last FROM race_results WHERE race_date >= ? GROUP BY track", conn,
             params=(since,))
+        horses = pd.read_sql_query(
+            "SELECT horse_name, MAX(race_date) AS last, MAX(horse_age) AS age FROM race_results "
+            "WHERE race_date >= ? AND race_date < ? GROUP BY horse_name", conn, params=(since, day.isoformat()))
         going = pd.read_sql_query(
             "SELECT track, race_type, race_date, race_time, going_description FROM race_results "
             "WHERE race_date >= ? AND race_date < ? AND going_description IS NOT NULL AND going_description != ''",
@@ -250,7 +253,25 @@ def history_lookups(db_path: str, day: date) -> dict:
                                           "top_or"])
     active = (day - timedelta(days=365)).isoformat()
     return {"jockeys": NameIndex(jockeys, unique_since=active), "trainers": NameIndex(trainers, unique_since=active),
-            "tracks": tracks, "going": going, "dists": dists, "races": races}
+            "tracks": tracks, "going": going, "dists": dists, "races": races, "horses": horses}
+
+
+def _base_name(name) -> str:
+    """A horse's name without its country suffix, as a key: 'Dyker Heights (IRE)' -> 'dykerheights'."""
+    return _alnum(re.sub(r"\s*\((?:[A-Z]{2,3})\)\s*$", "", str(name or "")))
+
+
+def history_names(names: pd.Series, horses: pd.DataFrame | None) -> pd.Series:
+    """Betfair writes a horse without its country suffix ('Dyker Heights'), the results table with it ('Dyker Heights
+    (IRE)'), and the metrics engine finds a horse's earlier runs by its exact name: a name left as Betfair's reads as a
+    debutant (the price check of 18 Nov: the HRB card's 980 became 37). Each name is given the table's spelling: the
+    one horse of that name raced in the last three years, or of several the one raced most recently; a name the table
+    has never seen stays Betfair's."""
+    if horses is None or horses.empty:
+        return names
+    h = horses.dropna(subset=["horse_name"]).assign(k=lambda x: x.horse_name.map(_base_name))
+    best = h.sort_values("last").drop_duplicates("k", keep="last").set_index("k").horse_name
+    return names.map(lambda n: best.get(_base_name(n), n))
 
 
 def _is_hcap(text) -> bool:
@@ -390,7 +411,7 @@ def card_from_catalogue(cat: pd.DataFrame, day: date, lookups: dict | None = Non
         "race_name": c.market_name.map(expand_race_name),
         "race_distance": c.market_name.map(distance_from_name),
         "stall": stall.fillna(cloth),
-        "horse_name": c.runner_name.astype(str).str.strip(),
+        "horse_name": history_names(c.runner_name.astype(str).str.strip(), lk.get("horses")),
         "horse_age": pd.to_numeric(c.get("age"), errors="coerce"),
         "pounds": pd.to_numeric(c.get("weight_value"), errors="coerce"),
         "jockey_name": named(jk, c.get("jockey")),

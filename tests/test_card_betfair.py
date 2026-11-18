@@ -211,3 +211,10 @@ def test_class_and_prize_from_the_course_s_like_races():
     cls, prize, src = cb.class_prize_estimate("Southwell", False, True, 98, races, k=1)
     assert cls == "Class 2" and src.startswith("all courses")                      # nothing at the course
     assert cb.class_prize_estimate("Southwell", True, False, 100, races)[2] == "none"
+
+
+def test_horse_names_take_the_results_table_spelling():
+    horses = pd.DataFrame({"horse_name": ["Dyker Heights (IRE)", "Lady Luck (GB)", "Lady Luck (IRE)", "Alpha"],
+                           "last": ["2026-11-01", "2024-05-01", "2026-10-01", "2026-09-01"], "age": [5, 7, 4, 6]})
+    out = cb.history_names(pd.Series(["Dyker Heights", "Lady Luck", "Alpha", "Brand New"]), horses)
+    assert list(out) == ["Dyker Heights (IRE)", "Lady Luck (IRE)", "Alpha", "Brand New"]   # the recent namesake
