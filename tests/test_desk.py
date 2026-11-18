@@ -44,6 +44,7 @@ def test_every_trader_that_can_place_an_order_is_registered_with_the_prefix_its_
                                   "quick_return": by["horse-morning-quick-return"].order_ref_prefix}
     assert f'REF = "{by["greyhound-early-lay"].order_ref_prefix}"' in src("greyhound/early_lay.py")
     assert f'REF = "{by["greyhound-quote-mid"].order_ref_prefix}"' in src("greyhound/quote_mid.py")
+    assert f'REF = "{by["greyhound-take-close"].order_ref_prefix}"' in src("greyhound/take_close.py")
     assert 'ref = f"gh-' in src("greyhound/live.py") and by["greyhound-win-paper"].order_ref_prefix == "gh-"
     assert 'ref=f"fb-' in src("football/live.py") and by["football-match-odds"].order_ref_prefix == "fb-"
 
@@ -288,7 +289,8 @@ def test_the_warden_finds_an_unknown_reference_and_a_day_loss():
     assert kinds == {"unknown-reference", "day-loss", "sport-day-loss"}
     assert fig["settled_total"] == -105.0 and fig["settled_by_sport"] == {"greyhounds": -60.0, "horse_racing": -45.0}
     sport = next(f for f in findings if f.kind == "sport-day-loss")
-    assert "greyhounds" in sport.message and set(sport.stops) == {("capture", "greyhound/STOP")}
+    assert "greyhounds" in sport.message and set(sport.stops) == {("capture", "greyhound/STOP"),
+                                                                  ("capture", "greyhound/take_close/STOP")}
 
 
 def test_without_an_envelope_the_warden_checks_the_registry_alone():
