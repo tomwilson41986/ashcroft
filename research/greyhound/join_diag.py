@@ -88,13 +88,78 @@ def dups_year(store, y: int) -> dict:
             "null_id_sample": r[r.dog_id.isna()][cols].head(8).astype(str).to_dict("records")}
 
 
+def aliases(store, years: list[int]) -> dict:
+    """Each abbreviated price-file track label -> the GBGB track it names, learnt by date and exact off time: a plain
+    GB win market at (date, off) is paired with the GBGB races at the same date and off, and each label takes the
+    track most of its markets pair with. Labels with at least 20 paired markets and 80% on one track are kept."""
+    from greyhound.data import clean
+    from sources.greyhound_prices import market_label
+    pairs = []
+    for y in years:
+        raw, p = store.get(f"gbgb/runs_{y}.parquet"), store.get_parquet(f"greyhound_prices/prices_{y}.parquet")
+        if raw is None or p is None or "menu_hint" not in p:
+            continue
+        hints = pd.Series(p.menu_hint.astype(str).unique())
+        lab = pd.DataFrame([market_label(h) for h in hints], columns=["label", "variant", "country"]).assign(menu_hint=hints)
+        w = p[p.market.astype(str).str.startswith("win")].merge(lab, on="menu_hint", how="left")
+        w = w[(w.variant == "") & (w.country == "GB")].dropna(subset=["race_time"])
+        mk = w.drop_duplicates(["race_date", "race_time", "label"])[["race_date", "race_time", "label"]]
+        runs = clean(pd.read_parquet(io.BytesIO(raw)))
+        rc = runs[~runs.is_trial].drop_duplicates("race_id")[["race_date", "race_time", "track"]]
+        rc = rc.assign(race_time=rc.race_time.astype(str).str[:5])
+        pairs.append(mk.merge(rc, on=["race_date", "race_time"], how="inner"))
+    if not pairs:
+        return {"note": "no data found"}
+    x = pd.concat(pairs, ignore_index=True)
+    ct = x.groupby(["label", "track"]).size().rename("n").reset_index()
+    tot = ct.groupby("label").n.transform("sum")
+    best = ct.assign(tot=tot, share=ct.n / tot).sort_values(["label", "n"], ascending=[True, False]).drop_duplicates("label")
+    out = {r.label: {"track": r.track, "markets": int(r.tot), "share": round(float(r.share), 3)}
+           for r in best.itertuples()}
+    return {"labels": out, "kept": {k: v["track"] for k, v in out.items() if v["markets"] >= 20 and v["share"] >= 0.8
+                                    and k != v["track"]}}
+
+
+def dups_after_clean(store, y: int) -> dict:
+    """The (race, dog) duplicates clean leaves: how many, how many with a result on both rows, and whether the other
+    row's trap is held by another dog in the race."""
+    from greyhound.data import clean
+    raw = store.get(f"gbgb/runs_{y}.parquet")
+    if raw is None:
+        return {"note": "no data found"}
+    c = clean(pd.read_parquet(io.BytesIO(raw)))
+    d = c[c.duplicated(["race_id", "dog_id"], keep=False)]
+    occ = c.groupby("race_id").trap.apply(lambda t: list(t)).to_dict()
+    both = d.groupby(["race_id", "dog_id"]).position.apply(lambda p: int(p.notna().sum())).value_counts().to_dict()
+    clash = 0
+    for (rid, did), g in d.groupby(["race_id", "dog_id"]):
+        traps = list(g.trap)
+        clash += int(any(occ[rid].count(t) > 1 for t in traps))
+    return {"rows_out": int(len(c)), "dup_rows": int(c.duplicated(["race_id", "dog_id"]).sum()),
+            "groups_by_rows_with_position": {str(k): int(v) for k, v in both.items()},
+            "groups_whose_trap_is_shared": clash,
+            "sample": d.sort_values(["race_id", "dog_id"])[["race_id", "dog_id", "trap", "position", "sp_decimal", "field"]]
+            .head(10).astype(str).to_dict("records")}
+
+
 def main(argv=None) -> int:
     from sources.common import Store
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--years", default="2015,2018,2019,2021,2023,2025")
     ap.add_argument("--out", default="out/join_diag")
+    ap.add_argument("--aliases", default=None, help="learn the track aliases on these years (e.g. 2014-2022)")
     a = ap.parse_args(argv)
     store = Store()
+    if a.aliases:
+        lo, hi = (int(v) for v in a.aliases.split("-"))
+        al = aliases(store, list(range(lo, hi + 1)))
+        print(json.dumps({"aliases": al}, default=str))
+        post = {str(y): dups_after_clean(store, y) for y in (2015, 2019, 2023, 2025)}
+        print(json.dumps({"dups_after_clean": post}, default=str))
+        out = Path(a.out)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "aliases.json").write_text(json.dumps({"aliases": al, "dups_after_clean": post}, indent=1, default=str))
+        return 0
     ys = [int(x) for x in a.years.split(",")]
     res = {"join": {}, "dups": {}}
     for y in ys:
