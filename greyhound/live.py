@@ -314,6 +314,9 @@ def card_tables(store, day: date, card: pd.DataFrame) -> dict[str, pd.DataFrame]
     if "irish" in sm.PIT_TABLES:
         from greyhound.pit.irish import load_context as irish_context
         ctx.update(irish_context(store))
+    # the constants the nightly build fitted on the early slice (ability2): read, not fitted again, when the stored
+    # table was built by this code (the owner, 18 Nov 2026: "yes, cache the constants")
+    ctx["fitted"] = pit.stored_fits(store, sm.PIT_TABLES)
     keys = runs.loc[runs.is_card, pit.KEY].drop_duplicates()
     return pit.build_tables(list(sm.PIT_TABLES), runs, None, ctx, keep=True, cut=keys)
 
