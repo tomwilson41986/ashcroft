@@ -41,6 +41,7 @@ def gbgb_year(raw: pd.DataFrame) -> dict:
     out = {"rows_in": int(len(raw)), "races_in": int(raw.race_id.nunique()),
            "date_min": str(raw.race_date.min()), "date_max": str(raw.race_date.max()),
            "dup_race_dog": int(raw.duplicated(["race_id", "dog_id"]).sum()),
+           "dup_race_dog_nonnull": int(raw.dropna(subset=["dog_id"]).duplicated(["race_id", "dog_id"]).sum()),
            "dup_race_trap": int(raw.dropna(subset=["trap"]).duplicated(["race_id", "trap"]).sum()),
            "nulls": {c: int(raw[c].isna().sum()) for c in KEY if c in raw}}
     # clean()'s drops, step by step as it makes them
