@@ -93,8 +93,10 @@ def _stack_walk_forward(d: pd.DataFrame, cols: list[str], n_folds: int = 5) -> t
 
 
 def evaluate_rating_sets(pred: pd.DataFrame, rating_cols: list[str], p_col: str = "p_model", market_col: str = "p_market",
-                         race_col: str = "raceid", y_col: str = "won", pos_col: str = "placing_numerical") -> pd.DataFrame:
-    """Per-rating evaluation table (see module docstring)."""
+                         race_col: str = "raceid", y_col: str = "won", pos_col: str = "placing_numerical",
+                         level: float = 0.9) -> pd.DataFrame:
+    """Per-rating evaluation table (see module docstring). ``level`` is the stacked gain's interval (0.9; a
+    test of k sets at once can ask for 1 - 0.10 / k)."""
     d = pred.copy()
     d["won"] = d[y_col].astype(float)
     d["ln_model"] = np.log(d[p_col].clip(1e-6)); d["ln_market"] = np.log(d[market_col].clip(1e-6))
@@ -127,7 +129,8 @@ def evaluate_rating_sets(pred: pd.DataFrame, rating_cols: list[str], p_col: str 
         ll_base, ll_with = log_loss(yy, bp[both]), log_loss(yy, with_pred[both])
         mk = sub.loc[both, market_col].values
         bss_base = 1 - brier(yy, bp[both]) / brier(yy, mk); bss_with = 1 - brier(yy, with_pred[both]) / brier(yy, mk)
-        gain_lo, gain_hi = paired_race_bootstrap(yy, bp[both], with_pred[both], sub.loc[both, race_col].values)
+        gain_lo, gain_hi = paired_race_bootstrap(yy, bp[both], with_pred[both], sub.loc[both, race_col].values,
+                                                 level=level)
         rows.append({"rating": c, "coverage": float(ok.mean()), "n": int(len(sub)), "races": int(sub[race_col].nunique()),
                      "concordance": conc, "corr_demeaned": float(pv["corr"].iloc[0]), "p_value": float(pv["p_value"].iloc[0]),
                      "softmax_T": T, "softmax_logloss": ll_soft, "model_logloss_same_rows": ll_model, "market_logloss_same_rows": ll_mkt,

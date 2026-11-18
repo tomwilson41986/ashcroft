@@ -174,9 +174,9 @@ def test_fetch_falls_back_when_the_login_fails(monkeypatch):
     monkeypatch.setattr(cb, "fetch_card", lambda day, db_path=None: card)
     monkeypatch.delenv("CARD_FALLBACK", raising=False)
     monkeypatch.delenv("CARD_SOURCE", raising=False)
+    assert p.fetch_racecard_from_hrb(date(2026, 11, 17)).empty          # off by default until a price check passes
+    monkeypatch.setenv("CARD_FALLBACK", "on")
     assert p.fetch_racecard_from_hrb(date(2026, 11, 17)).equals(card)
-    monkeypatch.setenv("CARD_FALLBACK", "off")
-    assert p.fetch_racecard_from_hrb(date(2026, 11, 17)).empty
 
 
 def test_hrb_card_is_kept_when_it_comes(monkeypatch):
