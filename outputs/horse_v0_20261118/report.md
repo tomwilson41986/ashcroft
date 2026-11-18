@@ -39,7 +39,7 @@ been changed. Scope: horse racing only (the owner, 18 Nov). Targets: the BFSP (k
 
 ## Decisions taken (say if any is wrong)
 
-- **Experiment log.** `reports/research_ledger.jsonl` stays the one experiment log (append-only, 996 lines on 18 Nov, used for
+- **Experiment log.** `reports/research_ledger.jsonl` stays the one experiment log (append-only, 998 lines on 18 Nov, used for
   the deflated Sharpe trial count). `experiments/log.csv` is rebuilt from it, so the trial count is never split
   between two logs.
 - **Holdout.** The locked holdout is race dates from 2026-04-01 (82,545 rows), opened once in Phase 6. Every

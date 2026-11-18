@@ -54,5 +54,5 @@ flowchart LR
 | Selection | the price now against the predicted BFSP, `min_move 0`, `max_price 200` | `CLAUDE.md` live-trading line, `trading/config_live.json` |
 | Staking | GBP400 to win, GBP15-200 a horse, at most 5 top-ups, GBP4,000 a day | `CLAUDE.md`, `TRADING.md` |
 | Execution | down the three best backs, each back laid at the SP (trade-out) | judged on CLV and Betfair's settled P&L, not the result |
-| Experiment log | `reports/research_ledger.jsonl` (996 lines on 18 Nov), deflated Sharpe in `research/overfit.py` | `experiments/log.csv` will be written as a view of it |
+| Experiment log | `reports/research_ledger.jsonl` (998 lines on 18 Nov), deflated Sharpe in `research/overfit.py` | `experiments/log.csv` will be written as a view of it |
 | Locked holdout | race dates from 2026-04-01 (`scripts/research_loop.py EVAL_UNTIL`, `--lockbox-from` in `scripts/outcome_model.py` and `scripts/residual_screen.py`), not read in research; the served model itself is trained through 2026-11-12 (`bfsp_model_meta.json trained_through`) | opened once, in Phase 6 |
