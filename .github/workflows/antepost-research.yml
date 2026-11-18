@@ -1,8 +1,8 @@
 name: Ante-post research
 
-# Phase 0 of the ante-post plan (docs/antepost_plan.md s.3): Betfair's description of the GB/IE ante-post markets
-# open now (one catalogue read on the delayed key), the Historic Data bundle's ante-post markets joined to the race-day
-# BSP, and the daily snapshots recorded since 7 Oct 2026. Read-only: no order call, nothing written to S3; the output
+# Phase 0 of the ante-post plan (docs/antepost_plan.md s.3): the Historic Data bundle's ante-post markets joined to
+# the race-day BSP, and the daily snapshots recorded since 7 Oct 2026. Betfair's login refuses this runner (403, runs
+# 44340400618 and 44342882609), so the rules read runs on the UK runner (antepost-rules.yml). Read-only: no order call, nothing written to S3; the output
 # is this run's artifact. Push-triggered on the ante-post branch (a workflow only on a branch cannot be dispatched).
 
 on:
@@ -45,34 +45,13 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
         run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
-      # Betfair's username/password login refused this runner (403, run 44340400618); the certificate login is tried
-      # instead when the certificate is held (as morning-models.yml writes it)
-      - name: Write the Betfair certificate (its own folder)
-        env:
-          BETFAIR_CERT: ${{ secrets.BETFAIR_CERT }}
-          BETFAIR_KEY: ${{ secrets.BETFAIR_KEY }}
-        run: |
-          if [ -n "$BETFAIR_CERT" ] && [ -n "$BETFAIR_KEY" ]; then
-            D="$HOME/.betfair/certs-antepost"
-            mkdir -p "$D"
-            printf '%s\n' "$BETFAIR_CERT" > "$D/betfair.crt"
-            printf '%s\n' "$BETFAIR_KEY" > "$D/betfair.key"
-            chmod 600 "$D/betfair.key"
-            echo "BETFAIR_CERT_FILE=$D/betfair.crt" >> "$GITHUB_ENV"
-            echo "BETFAIR_KEY_FILE=$D/betfair.key" >> "$GITHUB_ENV"
-          else
-            echo "no Betfair certificate held: the rules read will try the password login"
-          fi
       - name: Phase 0
         env:
-          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
-          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
-          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
-        run: python -m antepost.phase0 --parts rules,recorded,historic --db horse_racing.db --out out/antepost_phase0
+        run: python -m antepost.phase0 --parts recorded,historic --db horse_racing.db --out out/antepost_phase0
       - name: Summary
         if: always()
         run: |

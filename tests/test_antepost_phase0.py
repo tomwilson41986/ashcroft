@@ -74,25 +74,39 @@ def test_the_bundle_is_streamed_and_unreadable_files_counted(tmp_path):
     assert list(mk["market_id"]) == ["1.1"] and len(rn) == 3
 
 
-def test_the_race_day_join_tells_ran_ran_elsewhere_and_no_run(tmp_path):
-    [m] = p0.parse_stream(_stream())
-    mk, rn = pd.DataFrame([m.market_row()]), pd.DataFrame(m.runner_rows())
+def _db(tmp_path, rows):
     db = tmp_path / "h.db"
     con = sqlite3.connect(db)
     con.execute("CREATE TABLE betfair_prices (race_date TEXT, market_type TEXT, event_id INTEGER, event_name TEXT, "
-                "track_bf TEXT, event_dt TEXT, selection_id INTEGER, bsp REAL, win_lose REAL)")
-    con.executemany("INSERT INTO betfair_prices VALUES (?,?,?,?,?,?,?,?,?)", [
-        ("2026-03-13", "win", 500, "Chelt 13th Mar", "Cheltenham", "", 1, 5.0, 1.0),     # Alpha in the race
-        ("2026-03-13", "win", 500, "Chelt 13th Mar", "Cheltenham", "", 4, 9.0, 0.0),     # a horse not in the market
-        ("2026-03-13", "win", 501, "Chelt 13th Mar", "Cheltenham", "", 3, 15.0, 0.0),    # Gamma in another race
-        ("2026-03-13", "place", 500, "Chelt 13th Mar", "Cheltenham", "", 2, 3.0, 0.0),   # place rows ignored
-    ])
+                "track_bf TEXT, selection_id INTEGER, selection_name TEXT, horse_norm TEXT, bsp REAL, win_lose REAL)")
+    con.executemany("INSERT INTO betfair_prices VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
     con.commit()
     con.close()
-    j, rep = p0.race_day_join(mk, rn, str(db))
+    return str(db)
+
+
+def test_the_race_date_comes_from_the_event_name_first():
+    assert p0.race_date("Goodwood 29th Aug", "2026-07-29T11:52:28Z") == "2026-08-29"
+    assert p0.race_date("Kempton 26th Dec", "2027-01-02T14:00:00Z") == "2026-12-26"      # the year nearest
+    assert p0.race_date("Cheltenham 2027", "2027-03-19T15:20:00Z") == "2027-03-19"       # a festival: the time
+    assert p0.race_date("Ascot 31st Oct", "2026-10-31T23:30:00Z") == "2026-10-31"
+
+
+def test_the_race_day_join_tells_ran_ran_elsewhere_and_no_run(tmp_path):
+    [m] = p0.parse_stream(_stream())
+    mk, rn = pd.DataFrame([m.market_row()]), pd.DataFrame(m.runner_rows())
+    db = _db(tmp_path, [
+        ("2026-03-13", "win", 500, "Chelt 13th Mar", "Cheltenham", 1, "Alpha", "alpha", 5.0, 1.0),     # in the race
+        ("2026-03-13", "win", 500, "Chelt 13th Mar", "Cheltenham", 4, "Delta", "delta", 9.0, 0.0),     # not listed
+        ("2026-03-13", "win", 501, "Chelt 13th Mar", "Cheltenham", 3, "Gamma", "gamma", 15.0, 0.0),    # other race
+        ("2026-03-13", "place", 500, "Chelt 13th Mar", "Cheltenham", 2, "Beta", "beta", 3.0, 0.0),     # place: no
+    ])
+    j, rep = p0.race_day_join(mk, rn, db)
     lab = dict(zip(j["selection_id"], j["label"]))
     assert lab == {1: "ran", 2: "no_run", 3: "ran_elsewhere"}
     assert j.set_index("selection_id").loc[1, "bsp"] == 5.0 and pd.isna(j.set_index("selection_id").loc[3, "bsp"])
+    ck = rep["check"]
+    assert ck["winner_pass"] and ck["winners_found_running"] == 1 and ck["winner_agrees_with_betfair_prices"] == 1.0
     s = p0.summarise_historic(mk, j, rep)
     assert s["races_joined"] == 1 and s["label"] == {"ran": 1, "no_run": 1, "ran_elsewhere": 1}
     d90 = s["by_mark"]["d90"]
@@ -102,20 +116,25 @@ def test_the_race_day_join_tells_ran_ran_elsewhere_and_no_run(tmp_path):
     assert p0.race_day_join(mk, rn, str(tmp_path / "none.db"))[1]["skipped"].startswith("no database")
 
 
-def test_the_bundle_join_reads_the_race_from_the_same_event():
+def test_a_runner_without_its_id_is_found_by_name_and_a_day_out_by_id(tmp_path):
     [m] = p0.parse_stream(_stream())
     mk, rn = pd.DataFrame([m.market_row()]), pd.DataFrame(m.runner_rows())
-    win = pd.DataFrame([
-        {"event_id": "9", "market_id": "1.50", "selection_id": 1, "runner_status": "WINNER", "won": 1, "bsp": 5.0},
-        {"event_id": "9", "market_id": "1.50", "selection_id": 3, "runner_status": "REMOVED", "won": None, "bsp": None},
-        {"event_id": "9", "market_id": "1.50", "selection_id": 7, "runner_status": "LOSER", "won": 0, "bsp": 4.0},
-        {"event_id": "9", "market_id": "1.51", "selection_id": 2, "runner_status": "LOSER", "won": 0, "bsp": 9.0},
-        {"event_id": "8", "market_id": "1.60", "selection_id": 2, "runner_status": "LOSER", "won": 0, "bsp": 9.0},
+    db = _db(tmp_path, [
+        # the race fell a day after the scheduled time; Alpha under another id, found by name
+        ("2026-03-14", "win", 600, "Chelt 14th Mar", "Cheltenham", 91, "Alpha (IRE)", "alpha", 5.0, 1.0),
+        ("2026-03-14", "win", 600, "Chelt 14th Mar", "Cheltenham", 3, "Gamma", "gamma", 15.0, 0.0),
     ])
-    j, rep = p0.bundle_join(mk, rn, win)
-    lab = dict(zip(j["selection_id"], j["label_b"]))
-    assert lab == {1: "ran", 2: "ran_elsewhere", 3: "declared_nr"} and rep["events"] == 1
-    j, check = p0.combine_labels(j)                       # no betfair_prices labels: the bundle's stand alone
-    assert set(j["label_source"]) == {"bundle"} and check["both_found"] == 0
-    assert j.set_index("selection_id").loc[1, "bsp"] == 5.0 and j.set_index("selection_id").loc[1, "won"] == 1.0
-    assert p0.bundle_join(mk, rn, pd.DataFrame())[1] == {"skipped": "no WIN tables"}
+    j, rep = p0.race_day_join(mk, rn, db)
+    r = j.set_index("selection_id")
+    assert r.loc[1, "label"] == "ran" and r.loc[1, "match_method"] == "name"
+    assert r.loc[3, "label"] == "ran" and r.loc[3, "match_method"] == "id" and r.loc[2, "label"] == "no_run"
+    assert rep["check"]["winner_pass"] and rep["check"]["match_method_of_runners_who_ran"] == {"id": 1, "name": 1}
+
+
+def test_a_market_on_a_day_the_table_lacks_is_counted_as_a_gap(tmp_path):
+    [m] = p0.parse_stream(_stream())
+    mk, rn = pd.DataFrame([m.market_row()]), pd.DataFrame(m.runner_rows())
+    db = _db(tmp_path, [("2026-03-20", "win", 700, "X", "X", 1, "Alpha", "alpha", 5.0, 1.0)])
+    j, rep = p0.race_day_join(mk, rn, db)
+    assert set(j["label"]) == {"race_not_found"}
+    assert rep["check"]["not_joined_with_no_win_rows_that_day"] == 1 and rep["check"]["markets_joined"] == 0

@@ -33,7 +33,7 @@ import re
 import sqlite3
 import sys
 import tarfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -263,15 +263,51 @@ def stream_bundle(fileobj, chunk: int = 4000) -> tuple[pd.DataFrame, pd.DataFram
 # The race-day join: did the horse run in this race?
 # ----------------------------------------------------------------------------------------------------------------
 
+MONTHS = {m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov",
+                                      "dec"), 1)}
+EVENT_DAY = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)\s+([A-Za-z]{3})")
+
+
 def uk_date(t) -> str | None:
     t = _iso_utc(t) if isinstance(t, str) else t
     return t.astimezone(UK).date().isoformat() if t else None
 
 
+def race_date(event_name, market_time) -> str | None:
+    """The race day (UK). An ante-post market's scheduled time is not always its race's ('Goodwood 29th Aug' carried
+    29 Jul: run 44342882609), so the day the event's name carries comes first, in the year that puts it nearest the
+    scheduled time; a festival event ('Cheltenham 2027') names no day, and the scheduled time's own day stands."""
+    t = _iso_utc(market_time) if isinstance(market_time, str) else market_time
+    m = EVENT_DAY.search(str(event_name or ""))
+    if m and m.group(2).lower() in MONTHS and t is not None:
+        near = t.astimezone(UK).date()
+        cands = []
+        for y in (near.year - 1, near.year, near.year + 1):
+            try:
+                cands.append(date(y, MONTHS[m.group(2).lower()], int(m.group(1))))
+            except ValueError:
+                continue
+        if cands:
+            return min(cands, key=lambda d: abs((d - near).days)).isoformat()
+    return uk_date(t)
+
+
+def _shift(d: str, days: int) -> str:
+    return (date.fromisoformat(d) + timedelta(days=days)).isoformat()
+
+
 def race_day_join(markets: pd.DataFrame, runners: pd.DataFrame, db: str | None) -> tuple[pd.DataFrame, dict]:
-    """Each ante-post runner against the WIN markets of its race's day (betfair_prices: UK/IE, the BSP and result).
-    The race is the WIN event most of the market's runners ran in that day; a runner found in another event that day
-    ran elsewhere; one found in none did not run. A market none of whose runners is found is left unjoined."""
+    """Each ante-post runner against the WIN markets of its race's day in betfair_prices (UK/IE: the BSP, the result).
+
+    A runner is found on the race day (or the day either side) by its Betfair selection id, and where no id is found,
+    by its normalised name (betfair_prices.normalise_horse). The race is the WIN event most of the market's found
+    runners ran in; the day it fell on is the race day used. A runner found in the race ran; found in another event
+    that day, it ran elsewhere; else it did not run. A market none of whose runners is found is left unjoined, with
+    the number of WIN rows betfair_prices holds on its day (0: a gap in the table, not a non-runner).
+
+    The join's own check (rep['check']): every ante-post WINNER in a joined race must be found running, and the
+    race's winner in betfair_prices must be the ante-post market's."""
+    from betfair_prices import normalise_horse
     rep: dict = {}
     if runners.empty:
         return runners, {"skipped": "no runners"}
@@ -279,109 +315,93 @@ def race_day_join(markets: pd.DataFrame, runners: pd.DataFrame, db: str | None) 
         return runners.assign(label=None), {"skipped": f"no database at {db}"}
     mk = markets.set_index("market_id")
     rn = runners.copy()
-    rn["race_date"] = rn["market_id"].map(mk["market_time"]).map(uk_date)
+    ev_name = mk["event_name"] if "event_name" in mk else pd.Series(index=mk.index, dtype=object)
+    rn["race_date"] = [race_date(ev_name.get(m), mk["market_time"].get(m)) for m in rn["market_id"]]
+    rn["name_norm"] = rn["runner_name"].map(normalise_horse) if "runner_name" in rn else ""
+    rn["selection_id"] = pd.to_numeric(rn["selection_id"], errors="coerce").astype("Int64")
+    days = sorted({_shift(d, k) for d in rn["race_date"].dropna().unique() for k in (-1, 0, 1)})
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    dates = sorted(d for d in rn["race_date"].dropna().unique())
     wins = []
-    for i in range(0, len(dates), 200):
-        part = dates[i:i + 200]
-        q = (f"SELECT race_date, event_id, event_name, track_bf, event_dt, selection_id, bsp, win_lose "
+    for i in range(0, len(days), 200):
+        part = days[i:i + 200]
+        q = (f"SELECT race_date, event_id, event_name, track_bf, selection_id, horse_norm, bsp, win_lose "
              f"FROM betfair_prices WHERE lower(market_type)='win' AND race_date IN ({','.join('?' * len(part))})")
         wins.append(pd.read_sql_query(q, con, params=part))
     cover = pd.read_sql_query("SELECT min(race_date) lo, max(race_date) hi FROM betfair_prices "
                               "WHERE lower(market_type)='win'", con).iloc[0].to_dict()
     con.close()
     rep["betfair_prices_win_dates"] = cover
-    w = pd.concat(wins, ignore_index=True) if wins else pd.DataFrame()
-    if w.empty:
-        return rn.assign(label=None), dict(rep, skipped="no WIN rows on the race dates")
-    w = w.drop_duplicates(["race_date", "selection_id", "event_id"])
-    j = rn.merge(w, on=["race_date", "selection_id"], how="left")
-    race = (j.dropna(subset=["event_id"]).groupby("market_id")["event_id"]
-            .agg(lambda s: s.value_counts().index[0]).rename("race_event_id"))
-    j = j.merge(race, left_on="market_id", right_index=True, how="left")
-    j["in_race"] = j["event_id"].notna() & (j["event_id"] == j["race_event_id"])
-    # one row a runner: its row in the race if it ran there, else any row that day
-    j = j.sort_values("in_race", ascending=False).drop_duplicates(["market_id", "selection_id"])
-    j["label"] = np.where(j["race_event_id"].isna(), "race_not_found",
-                          np.where(j["in_race"], "ran", np.where(j["event_id"].notna(), "ran_elsewhere", "no_run")))
-    for c in ("bsp", "win_lose"):
-        j.loc[~j["in_race"], c] = np.nan
+    cols = ["race_date", "event_id", "event_name", "track_bf", "selection_id", "horse_norm", "bsp", "win_lose"]
+    w = pd.concat(wins, ignore_index=True) if wins else pd.DataFrame(columns=cols)
+    rep["win_rows_on_the_dates"] = int(len(w))
+    w["selection_id"] = pd.to_numeric(w["selection_id"], errors="coerce").astype("Int64")
+    rows_on = w.groupby("race_date").size()
+    # every candidate: (runner, a WIN row) by id, then by name, on the race day and the day either side
+    key = ["market_id", "selection_id"]
+    base = rn[key + ["race_date", "name_norm"]]
+    cands = []
+    for off in (0, -1, 1):
+        b = base.assign(on_date=base["race_date"].map(lambda d: _shift(d, off) if isinstance(d, str) else None))
+        by_id = b.merge(w, left_on=["on_date", "selection_id"], right_on=["race_date", "selection_id"],
+                        suffixes=("", "_w"))
+        by_name = b[b["name_norm"] != ""].merge(w.drop(columns=["selection_id"]), left_on=["on_date", "name_norm"],
+                                                right_on=["race_date", "horse_norm"], suffixes=("", "_w"))
+        cands += [by_id.assign(method="id", offset=off), by_name.assign(method="name", offset=off)]
+    c = pd.concat(cands, ignore_index=True)
+    # a name match only where the runner has no id match on any of the three days
+    has_id = set(map(tuple, c.loc[c["method"] == "id", key].astype(str).values))
+    c = c[(c["method"] == "id") | ~c[key].astype(str).apply(tuple, axis=1).isin(has_id)]
+    if c.empty:
+        race = pd.DataFrame(columns=["race_event_id", "race_day_used"], index=pd.Index([], name="market_id"))
+    else:
+        race = (c.groupby("market_id")[["event_id", "on_date"]]
+                .agg(lambda s: s.value_counts().index[0]).rename(columns={"event_id": "race_event_id",
+                                                                           "on_date": "race_day_used"}))
+    race = race.rename_axis("market_id").reset_index()
+    c = c.merge(race, on="market_id")
+    c["in_race"] = c["event_id"] == c["race_event_id"]
+    c["same_day"] = c["on_date"] == c["race_day_used"]
+    c = c.sort_values(["in_race", "same_day", "method"], ascending=[False, False, True])  # 'id' sorts before 'name'
+    best = c.drop_duplicates(key)[key + ["event_id", "event_name", "track_bf", "bsp", "win_lose", "method", "offset",
+                                         "in_race", "same_day"]]
+    j = rn.merge(race, on="market_id", how="left").merge(best, on=key, how="left")
+    j["in_race"] = j["in_race"].fillna(False).astype(bool)
+    j["same_day"] = j["same_day"].fillna(False).astype(bool)
+    j["label"] = np.select([j["race_event_id"].isna(), j["in_race"], j["same_day"]],
+                           ["race_not_found", "ran", "ran_elsewhere"], default="no_run")
+    for col in ("bsp", "win_lose"):
+        j.loc[~j["in_race"], col] = np.nan
+    j["match_method"] = np.where(j["in_race"], j["method"], None)
+    j["win_rows_on_race_date"] = j["race_date"].map(rows_on).fillna(0).astype(int)
+    j = j.drop(columns=["method", "offset", "same_day"])
+    rep["check"] = join_check(j)
     return j, rep
 
 
-WIN_TABLE = "betfair_historic/horse_racing_win_{year}.parquet"     # au/historic.py TABLE, under sources/
-
-
-def load_win_tables(years) -> pd.DataFrame:
-    """The bundle's WIN markets (every country), as au/historic.py keeps them in S3: one table a year."""
-    from sources.common import Store
-    store, frames = Store(), []
-    for y in sorted(set(int(y) for y in years)):
-        try:
-            frames.append(store.get_parquet(WIN_TABLE.format(year=y)))
-        except Exception as exc:
-            log.warning("no WIN table for %s (%s)", y, exc)
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-
-
-def bundle_join(markets: pd.DataFrame, runners: pd.DataFrame, win: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """Each ante-post runner against the WIN markets of the same Betfair event (an ante-post market sits in its
-    race-day event: 'Newmarket 26th Sep'). The race is the event's WIN market holding most of the ante-post runners;
-    a runner in it ran, or was a declared non-runner (REMOVED there); in another of the event's WIN markets, it ran
-    elsewhere; in none, it did not run. Adds label_b, bsp_b, won_b, win_market_id."""
-    rn = runners.copy()
-    for c in ("label_b", "bsp_b", "won_b", "win_market_id"):
-        rn[c] = None
-    if rn.empty or win.empty:
-        return rn, {"skipped": "no runners" if rn.empty else "no WIN tables"}
-    ev = markets.set_index("market_id")["event_id"].astype(str)
-    rn["ap_event_id"] = rn["market_id"].map(ev)
-    rn["selection_id"] = pd.to_numeric(rn["selection_id"], errors="coerce").astype("int64")
-    w = win.assign(ap_event_id=win["event_id"].astype(str),
-                   selection_id=pd.to_numeric(win["selection_id"], errors="coerce"))
-    w = w[w["ap_event_id"].isin(set(rn["ap_event_id"].dropna()))].dropna(subset=["selection_id"])
-    w = w.assign(selection_id=w["selection_id"].astype("int64"))[
-        ["ap_event_id", "market_id", "selection_id", "runner_status", "won", "bsp"]].rename(
-        columns={"market_id": "wm", "runner_status": "win_status", "won": "won_w", "bsp": "bsp_w"})
-    j = rn.drop(columns=["label_b", "bsp_b", "won_b", "win_market_id"]).merge(w, on=["ap_event_id", "selection_id"],
-                                                                                how="left")
-    race = j.dropna(subset=["wm"]).groupby("market_id")["wm"].agg(lambda s: s.value_counts().index[0]).rename("race_wm")
-    j = j.merge(race, left_on="market_id", right_index=True, how="left")
-    j["_in"] = j["wm"].notna() & (j["wm"] == j["race_wm"])
-    j = j.sort_values("_in", ascending=False).drop_duplicates(["market_id", "selection_id"])
-    removed = j["win_status"] == "REMOVED"
-    j["label_b"] = np.select(
-        [j["race_wm"].isna(), j["_in"] & ~removed, j["_in"] & removed, j["wm"].notna() & ~removed],
-        ["race_not_found", "ran", "declared_nr", "ran_elsewhere"], default="no_run")
-    j["bsp_b"] = np.where(j["label_b"] == "ran", pd.to_numeric(j["bsp_w"], errors="coerce"), np.nan)
-    j["won_b"] = np.where(j["label_b"] == "ran", pd.to_numeric(j["won_w"], errors="coerce"), np.nan)
-    j = j.rename(columns={"race_wm": "win_market_id"}).drop(columns=["wm", "win_status", "won_w", "bsp_w", "_in"])
-    return j, {"win_rows_in_events": int(len(w)), "events": int(w["ap_event_id"].nunique())}
-
-
-def combine_labels(j: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """One label a runner: the bundle's (same event) where it found the race, else betfair_prices' (same day).
-    Where both found the race, how often they agree is the join's own check."""
-    j = j.copy()
-    for c in ("label", "bsp", "win_lose"):
-        if c not in j:
-            j[c] = np.nan
-    j = j.rename(columns={"label": "label_bfp", "bsp": "bsp_bfp", "win_lose": "won_bfp"})
-    use_b = j["label_b"].notna() & (j["label_b"] != "race_not_found")
-    j["label"] = np.where(use_b, j["label_b"], j["label_bfp"])
-    j["label_source"] = np.where(use_b, "bundle", np.where(j["label_bfp"].notna(), "betfair_prices", None))
-    j["bsp"] = np.where(use_b, j["bsp_b"], j["bsp_bfp"]).astype(float)
-    j["won"] = np.where(use_b, j["won_b"], j["won_bfp"]).astype(float)
-    both = j[use_b & j["label_bfp"].notna() & (j["label_bfp"] != "race_not_found")]
-    b_ran = both["label_b"] == "ran"
-    f_ran = both["label_bfp"] == "ran"
-    bsp_diff = (pd.to_numeric(both["bsp_b"], errors="coerce") - pd.to_numeric(both["bsp_bfp"], errors="coerce")).abs()
-    check = {"both_found": int(len(both)), "ran_agree": round(float((b_ran == f_ran).mean()), 4) if len(both) else None,
-             "crosstab": {f"{a}|{b}": int(n) for (a, b), n in both.groupby(["label_b", "label_bfp"]).size().items()},
-             "bsp_equal_share_where_both_ran": round(float((bsp_diff[b_ran & f_ran] < 1e-6).mean()), 4)
-             if (b_ran & f_ran).any() else None}
-    return j, check
+def join_check(j: pd.DataFrame) -> dict:
+    """The race-day match's pass/fail: every WINNER of a joined ante-post market found running, and the WIN market's
+    own winner the same horse. Markets not joined are counted with the WIN rows held on their day."""
+    out: dict = {}
+    mk = j.drop_duplicates("market_id")
+    nf = mk[mk["label"].eq("race_not_found") & mk["race_event_id"].isna()]
+    out["markets"] = int(len(mk))
+    out["markets_joined"] = int(mk["race_event_id"].notna().sum())
+    out["not_joined_with_no_win_rows_that_day"] = int((nf["win_rows_on_race_date"] == 0).sum())
+    out["not_joined_with_win_rows_that_day"] = int((nf["win_rows_on_race_date"] > 0).sum())
+    out["match_method_of_runners_who_ran"] = j.loc[j["label"] == "ran", "match_method"].value_counts().to_dict()
+    if "final_status" in j:
+        joined = j[j["race_event_id"].notna()]
+        win = joined[joined["final_status"] == "WINNER"]
+        out["winners_in_joined_markets"] = int(len(win))
+        out["winners_found_running"] = int((win["label"] == "ran").sum())
+        out["winner_pass"] = bool(len(win) and (win["label"] == "ran").all())
+        ran = joined[joined["label"] == "ran"]
+        same = (ran["final_status"] == "WINNER") == (pd.to_numeric(ran["win_lose"], errors="coerce") == 1)
+        out["winner_agrees_with_betfair_prices"] = round(float(same.mean()), 4) if len(ran) else None
+        out["winners_not_found"] = win.loc[win["label"] != "ran", ["market_id", "runner_name", "race_date",
+                                                                   "label", "win_rows_on_race_date"]] \
+            .head(40).to_dict("records")
+    return out
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -425,7 +445,6 @@ def summarise_historic(mk: pd.DataFrame, rn: pd.DataFrame, jrep: dict) -> dict:
         gbie = rn[rn["market_id"].isin(mk.loc[mk["country"].isin(["GB", "IE"]), "market_id"])]
         out["gbie_runners"] = int(len(gbie))
         out["label"] = gbie["label"].value_counts().to_dict()
-        out["label_source"] = gbie["label_source"].value_counts().to_dict() if "label_source" in gbie else None
         out["label_all_countries"] = rn["label"].value_counts().to_dict()
         out["races_joined_by_country"] = rn[rn["label"] != "race_not_found"].merge(
             mk[["market_id", "country"]], on="market_id").groupby("country")["market_id"].nunique().to_dict()
@@ -543,9 +562,6 @@ def part_historic(out: Path, db: str | None) -> dict:
     mk = pd.concat(mks, ignore_index=True).drop_duplicates("market_id", keep="last")
     rn = pd.concat(rns, ignore_index=True).drop_duplicates(["market_id", "selection_id"], keep="last")
     rn, jrep = race_day_join(mk, rn, db)
-    t = pd.to_datetime(mk["market_time"], utc=True, errors="coerce")
-    rn, jrep["bundle"] = bundle_join(mk, rn, load_win_tables(t.dt.year.dropna().unique()))
-    rn, jrep["check"] = combine_labels(rn)
     mk.to_parquet(out / "historic_markets.parquet", index=False)
     rn.to_parquet(out / "historic_runners.parquet", index=False)
     rep["summary"] = summarise_historic(mk, rn, jrep)
@@ -600,15 +616,16 @@ def part_recorded(out: Path, db: str | None) -> dict:
         past = start[start < pd.Timestamp.now(tz="UTC")]
         rep["markets_past_off"] = int(len(past))
         if len(past):
-            ev = cm.drop_duplicates("market_id").set_index("market_id")["event_id"]
+            m1 = cm.drop_duplicates("market_id").set_index("market_id")
             mk = pd.DataFrame({"market_id": past.index, "market_time": past.map(_iso).values,
-                               "event_id": past.index.map(ev).astype(str)})
+                               "event_id": past.index.map(m1["event_id"]).astype(str),
+                               "event_name": past.index.map(m1["event_name"])})
             rn = last[last["market_id"].isin(past.index)][["market_id", "selection_id", "runner_status"]].copy()
+            names = cm.drop_duplicates(["market_id", "selection_id"], keep="last") \
+                .set_index(["market_id", "selection_id"])["runner_name"]
+            rn["runner_name"] = [names.get((m, s)) for m, s in zip(rn["market_id"], rn["selection_id"])]
             rn["selection_id"] = pd.to_numeric(rn["selection_id"], errors="coerce").astype("Int64")
             rn, jrep = race_day_join(mk, rn, db)
-            years = pd.to_datetime(mk["market_time"], utc=True).dt.year.unique()
-            rn, jrep["bundle"] = bundle_join(mk, rn, load_win_tables(years))
-            rn, jrep["check"] = combine_labels(rn)
             rep["past_join"] = jrep
             if "label" in rn:
                 rep["past_label"] = rn["label"].value_counts().to_dict()
