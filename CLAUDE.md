@@ -368,6 +368,13 @@ python train_bfsp.py --perf-features --market-features --abm-features data/abm_f
   place an order is in `desk/strategies/` with its own order-reference prefix (never `ash` for a new one).
   `desk/risk.py` is the only path from a desk strategy to an order. Nothing in the live horse trader imports `desk`
   (`tests/test_desk.py`). Nothing autonomous places a bet before the lock-down in `docs/agent_desk.md` is done.
+- **Tests read the most informative outcome** (the owner, 18 Nov 2026: "Always use the best metric we have available for a
+  test; e.g. normalised fin pos, normalised beaten lengths. Hard rule to always use the most predictive metric for
+  comparison"): a test of a feature's or rating's predictiveness is scored on race-centred pounds beaten
+  (`model/form_windows.run_measures` `lbsc`) first and the normalised finishing position beside it, never on the win
+  alone; every test says which outcome it read. A change to the price model is judged on its error against the BFSP
+  (the owner, 18 Nov: "Our goal is to get as close as possible to the BFSP"): paired error, Brier skill and concordance
+  not resolved worse; the CLV is reported, not a veto.
 - **A new rule is read against every rule tried** (the owner, 5 and 9 Nov 2026): each test is written in
   `reports/research_ledger.jsonl` before its run with its reading, and a pass needs the deflated Sharpe
   (`research/overfit.py`, at least 0.95 with every trial counted) as well as its interval above zero.
