@@ -62,3 +62,21 @@ jobs:
           print(f"settled markets {len(s)}, net GBP{sum(s):.2f}")
           print("unmatched takes:", sum(1 for r in rows if r["action"] == "back_unmatched"))
           PY
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: The backs against the SP (did they shorten?)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          DAY: ${{ inputs.day }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          pip install -q -r requirements.txt
+          python -m research.greyhound.take_close_review --date "${DAY:-$(TZ=Europe/London date +%F)}" --mode "$MODE"
