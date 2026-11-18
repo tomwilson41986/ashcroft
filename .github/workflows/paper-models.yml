@@ -45,6 +45,17 @@ on:
         type: choice
         options: ['paper', 'live']
         default: 'paper'
+      take_close:
+        description: "the greyhound take and close: paper (logged, nothing sent) or live (real orders)"
+        required: false
+        type: choice
+        options: ['paper', 'live']
+        default: 'paper'
+      take_close_daily_loss:
+        description: "the take and close's daily loss limit in GBP (else the repository variable; none: nothing sent)"
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -133,8 +144,8 @@ jobs:
           # the take and close (greyhound/take_close.py; the owner, 18 Nov 2026: "Run the take-and-close LIVE",
           # "GBP100 a bet"): real orders only with GREYHOUND_TAKE_CLOSE=live and a daily loss limit in GBP
           # (vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS); its own STOP (greyhound/take_close/STOP, and trading/STOP)
-          GREYHOUND_TAKE_CLOSE: ${{ vars.GREYHOUND_TAKE_CLOSE || 'paper' }}
-          GREYHOUND_TAKE_CLOSE_DAILY_LOSS: ${{ vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS }}
+          GREYHOUND_TAKE_CLOSE: ${{ inputs.take_close || vars.GREYHOUND_TAKE_CLOSE || 'paper' }}
+          GREYHOUND_TAKE_CLOSE_DAILY_LOSS: ${{ inputs.take_close_daily_loss || vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS }}
         run: |
           set +e
           # the greyhound model (greyhound/live.py, greyhound/live_config.json): each GB greyhound runner backed once on
