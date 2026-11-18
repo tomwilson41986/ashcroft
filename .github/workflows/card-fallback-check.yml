@@ -1,0 +1,72 @@
+name: Card fallback check (Betfair's card against HRB's)
+# The Betfair card fallback (card_betfair.py; the owner, 18 Nov 2026: "build the fallback"): today's card priced from
+# the UK server's recorded Betfair catalogue instead of horseracebase.com, written under its own prefix
+# (predictions_betfair_card/<day>.csv, racecards_betfair_card/), never predictions/, then compared with the morning's
+# predictions/<day>.csv. Read-only for the trader: it reads predictions/ only. Steps as predict.yml's.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -e ".[pipeline]" && pip install -r requirements.txt
+
+      - name: Download model from latest release
+        run: |
+          python scripts/fetch_data.py --model-only || true
+          test -f data/models/bfsp_model.lgb || test -f data/models/bfsp_model.lgb.xz \
+            || echo "WARNING: No model found"
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h / /mnt 2>/dev/null || df -h /
+
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile /mnt/swapfile || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
+
+      - name: Refresh the sectionals table
+        continue-on-error: true
+        run: |
+          python scripts/build_sectionals.py --fetch --site .sectionals_site \
+            --history-table data/external/sectionals.csv.gz --out .sectionals_site/sectionals.csv.gz \
+            && cp .sectionals_site/sectionals.csv.gz data/external/sectionals.csv.gz
+
+      - name: Price today's card from Betfair's catalogue (its own prefix)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          HRB_USERNAME: card-fallback-check        # set so the live card path is taken; CARD_SOURCE skips the login
+          CARD_SOURCE: betfair
+          CARD_AS_TABLE: stall
+          PREDICTIONS_PREFIX: predictions_betfair_card
+          RACECARDS_PREFIX: racecards_betfair_card
+        run: python -m pipeline.predict
+
+      - name: Compare with the morning's predictions
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+        run: python scripts/card_fallback_compare.py --prefix predictions_betfair_card | tee -a "$GITHUB_STEP_SUMMARY"
