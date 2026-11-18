@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit or edge-models'
+        description: 'sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models or join-diag'
         type: choice
-        options: [sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models]
+        options: [sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag]
         default: sectional-check
 
 permissions:
@@ -59,6 +59,7 @@ jobs:
             take-close-refit) python -m research.greyhound.take_close_refit --to "$(TZ=Europe/London date -d yesterday +%F)" --out out/study ;;
             data-audit) python -m research.greyhound.data_audit --years 2014-2026 --out out/study ;;
             edge-models) python -m research.greyhound.edge_models --to "$(TZ=Europe/London date -d yesterday +%F)" --out out/study ;;
+            join-diag) python -m research.greyhound.join_diag --years 2015,2018,2019,2021,2023,2025 --out out/study ;;
             *) echo "unknown task"; exit 1 ;;
           esac
       - name: Summary
