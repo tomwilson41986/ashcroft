@@ -17,7 +17,7 @@ import pandas as pd
 
 
 def review(led: pd.DataFrame, close: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    b = led[led.action == "back_matched"].copy()
+    b = led[led.action.isin(["back_matched", "back_paper"])].copy()   # live fills, or the paper takes
     if not len(b):
         return b, {"backs": 0}
     b["market_id"] = b.market_id.astype(str)

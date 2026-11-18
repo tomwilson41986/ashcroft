@@ -5,9 +5,10 @@ The trade-out study's one first-traded back lead (ledger greyhound-strategy-sear
 stackm_out: holdout +10.96%, 90% 4.41 to 18.66, 138 trades; one of 238 rules, about 2.6 pass by chance: a lead, not a
 proven edge), traded on the owner's account:
 
-- each runner's **first traded book**, kept as the market is polled (greyhound/early_lay.py's rule); once every runner
-  has one and the day's prices cover the field, the race is decided once: the SP forecast is the early lay's
-  (``greyhound.laytest.live_fit``: the conditional logit on the book and the live model's price);
+- once every runner has traded and the day's prices cover the field, the race is decided once, on **the book of that
+  poll**: the SP forecast is the early lay's (``greyhound.laytest.live_fit``: the conditional logit on the book and the
+  live model's price), from the same book the price is taken from (18 Nov 2026: forecasting from each runner's first
+  traded book, minutes old, picked the dogs that had drifted since; they drifted on);
 - every runner whose **best back price is at least ``bar`` (8%) longer than its forecast SP** (the study's score for a
   back, ``price x E[1/BSP] - 1 > bar``, greyhound/tradeout.py ``positions``), at a price up to ``max_price``, is
   **taken**: a FILL_OR_KILL back down the best ``depth`` (3) back prices while each still clears the bar, for up to
@@ -129,11 +130,13 @@ def plan(levels: list, f_bsp: float, cfg: dict) -> dict | None:
     still be closed at the SP; None when nothing qualifies or what is on offer cannot be closed."""
     if not (np.isfinite(f_bsp) and f_bsp > 1):
         return None
-    cum, limit = 0.0, None
+    cum, limit, value = 0.0, None, 0.0
     for price, size in levels[:cfg["depth"]]:
         if not (price / f_bsp - 1.0 >= cfg["bar"] - 1e-12 and 1.0 < price <= cfg["max_price"]):
             break
+        take = min(float(size), max(0.0, cfg["stake"] - cum))
         cum += float(size)
+        value += take * float(price)
         limit = float(price)
     if limit is None:
         return None
@@ -141,7 +144,8 @@ def plan(levels: list, f_bsp: float, cfg: dict) -> dict | None:
     min_fill = max(cfg["min_stake"], math.ceil(MIN_SP_LIABILITY / (limit - 1.0) * 100) / 100)
     if stake < min_fill:
         return None
-    return {"limit": limit, "stake": stake, "min_fill": round(min_fill, 2), "edge": levels[0][0] / f_bsp - 1.0}
+    return {"limit": limit, "stake": stake, "min_fill": round(min_fill, 2), "edge": levels[0][0] / f_bsp - 1.0,
+            "avg": value / min(cfg["stake"], cum)}
 
 
 def close_pnl(stake: float, price: float, bsp: float | None, won: bool | None) -> float | None:
@@ -332,17 +336,28 @@ class TakeClose:
             return
         if not set(active) <= set(g.selection_id.dropna().astype(int)):
             return
+        if any(not q.best_back for q in active.values()):
+            return
         self.decided.add(mid)
         base = {"time_utc": self._t(), "mode": self.mode, "market_id": mid, "seconds_to_off": round(secs)}
-        if stopped:
+        if stopped and self.live:                    # a paper book runs under its STOP: nothing is sent either way
             self._write([{**base, "action": "no_back", "note": "stopped (S3 STOP)"}])
             return
+        # the forecast from THIS book, the one the price is taken from (18 Nov 2026: the first version forecast from
+        # each runner's first traded book, often minutes old, and took today's price: it picked the dogs that had
+        # drifted since, and they drifted on to the SP; ledger greyhound-take-close-live-1118 amendment)
+        cur = {}
+        for sid, q in active.items():
+            bb, bl = q.best_back, q.best_lay
+            cur[sid] = {"market_id": mid, "polled": t, "back1": bb[0], "back1_size": bb[1],
+                        "lay1": bl[0] if bl else np.nan, "lay1_size": bl[1] if bl else np.nan,
+                        "last_traded": float(q.last_traded or first[sid]["last_traded"]),
+                        "traded": float(q.traded or 0.0), "market_traded": float(b.total_matched or 0.0)}
         prev = {}
         for sid in active:
-            h = [e for e in self.hist.get((mid, sid), []) if (first[sid]["polled"] - e[0]).total_seconds() >= 90]
+            h = [e for e in self.hist.get((mid, sid), []) if (t - e[0]).total_seconds() >= 90]
             prev[sid] = (h[-1][1], h[-1][2]) if h else None
-        d = forecast(first_rows({s: first[s] for s in active}, prev, g.assign(selection_id=g.selection_id.astype(int))),
-                     self.fit)
+        d = forecast(first_rows(cur, prev, g.assign(selection_id=g.selection_id.astype(int))), self.fit)
         info = g.set_index(g.selection_id.astype(int))
         rows, takes = [], []
         for _, r in d.iterrows():
@@ -367,8 +382,9 @@ class TakeClose:
             self.take(mid, sid, pl, row)
 
     def take(self, mid: str, sid: int, pl: dict, row: dict) -> None:
-        if not self.live:
-            self._write([{**row, "action": "back_paper", "note": "paper: nothing sent"}])
+        if not self.live:                            # what a fill-or-kill would take from this book
+            self._write([{**row, "action": "back_paper", "price": round(pl["avg"], 4), "matched": pl["stake"],
+                          "note": "paper: nothing sent"}])
             return
         f = self.x.back(mid, sid, pl["limit"], pl["stake"], self.ref(mid, sid, "b"), min_fill=pl["min_fill"])
         if f.status != "SUCCESS" or f.matched <= 0:
