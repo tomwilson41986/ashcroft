@@ -45,6 +45,24 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
         run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
+      # Betfair's username/password login refused this runner (403, run 44340400618); the certificate login is tried
+      # instead when the certificate is held (as morning-models.yml writes it)
+      - name: Write the Betfair certificate (its own folder)
+        env:
+          BETFAIR_CERT: ${{ secrets.BETFAIR_CERT }}
+          BETFAIR_KEY: ${{ secrets.BETFAIR_KEY }}
+        run: |
+          if [ -n "$BETFAIR_CERT" ] && [ -n "$BETFAIR_KEY" ]; then
+            D="$HOME/.betfair/certs-antepost"
+            mkdir -p "$D"
+            printf '%s\n' "$BETFAIR_CERT" > "$D/betfair.crt"
+            printf '%s\n' "$BETFAIR_KEY" > "$D/betfair.key"
+            chmod 600 "$D/betfair.key"
+            echo "BETFAIR_CERT_FILE=$D/betfair.crt" >> "$GITHUB_ENV"
+            echo "BETFAIR_KEY_FILE=$D/betfair.key" >> "$GITHUB_ENV"
+          else
+            echo "no Betfair certificate held: the rules read will try the password login"
+          fi
       - name: Phase 0
         env:
           BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}

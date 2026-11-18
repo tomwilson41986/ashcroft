@@ -310,6 +310,80 @@ def race_day_join(markets: pd.DataFrame, runners: pd.DataFrame, db: str | None) 
     return j, rep
 
 
+WIN_TABLE = "betfair_historic/horse_racing_win_{year}.parquet"     # au/historic.py TABLE, under sources/
+
+
+def load_win_tables(years) -> pd.DataFrame:
+    """The bundle's WIN markets (every country), as au/historic.py keeps them in S3: one table a year."""
+    from sources.common import Store
+    store, frames = Store(), []
+    for y in sorted(set(int(y) for y in years)):
+        try:
+            frames.append(store.get_parquet(WIN_TABLE.format(year=y)))
+        except Exception as exc:
+            log.warning("no WIN table for %s (%s)", y, exc)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def bundle_join(markets: pd.DataFrame, runners: pd.DataFrame, win: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Each ante-post runner against the WIN markets of the same Betfair event (an ante-post market sits in its
+    race-day event: 'Newmarket 26th Sep'). The race is the event's WIN market holding most of the ante-post runners;
+    a runner in it ran, or was a declared non-runner (REMOVED there); in another of the event's WIN markets, it ran
+    elsewhere; in none, it did not run. Adds label_b, bsp_b, won_b, win_market_id."""
+    rn = runners.copy()
+    for c in ("label_b", "bsp_b", "won_b", "win_market_id"):
+        rn[c] = None
+    if rn.empty or win.empty:
+        return rn, {"skipped": "no runners" if rn.empty else "no WIN tables"}
+    ev = markets.set_index("market_id")["event_id"].astype(str)
+    rn["ap_event_id"] = rn["market_id"].map(ev)
+    rn["selection_id"] = pd.to_numeric(rn["selection_id"], errors="coerce").astype("int64")
+    w = win.assign(ap_event_id=win["event_id"].astype(str),
+                   selection_id=pd.to_numeric(win["selection_id"], errors="coerce"))
+    w = w[w["ap_event_id"].isin(set(rn["ap_event_id"].dropna()))].dropna(subset=["selection_id"])
+    w = w.assign(selection_id=w["selection_id"].astype("int64"))[
+        ["ap_event_id", "market_id", "selection_id", "runner_status", "won", "bsp"]].rename(
+        columns={"market_id": "wm", "runner_status": "win_status", "won": "won_w", "bsp": "bsp_w"})
+    j = rn.drop(columns=["label_b", "bsp_b", "won_b", "win_market_id"]).merge(w, on=["ap_event_id", "selection_id"],
+                                                                                how="left")
+    race = j.dropna(subset=["wm"]).groupby("market_id")["wm"].agg(lambda s: s.value_counts().index[0]).rename("race_wm")
+    j = j.merge(race, left_on="market_id", right_index=True, how="left")
+    j["_in"] = j["wm"].notna() & (j["wm"] == j["race_wm"])
+    j = j.sort_values("_in", ascending=False).drop_duplicates(["market_id", "selection_id"])
+    removed = j["win_status"] == "REMOVED"
+    j["label_b"] = np.select(
+        [j["race_wm"].isna(), j["_in"] & ~removed, j["_in"] & removed, j["wm"].notna() & ~removed],
+        ["race_not_found", "ran", "declared_nr", "ran_elsewhere"], default="no_run")
+    j["bsp_b"] = np.where(j["label_b"] == "ran", pd.to_numeric(j["bsp_w"], errors="coerce"), np.nan)
+    j["won_b"] = np.where(j["label_b"] == "ran", pd.to_numeric(j["won_w"], errors="coerce"), np.nan)
+    j = j.rename(columns={"race_wm": "win_market_id"}).drop(columns=["wm", "win_status", "won_w", "bsp_w", "_in"])
+    return j, {"win_rows_in_events": int(len(w)), "events": int(w["ap_event_id"].nunique())}
+
+
+def combine_labels(j: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """One label a runner: the bundle's (same event) where it found the race, else betfair_prices' (same day).
+    Where both found the race, how often they agree is the join's own check."""
+    j = j.copy()
+    for c in ("label", "bsp", "win_lose"):
+        if c not in j:
+            j[c] = np.nan
+    j = j.rename(columns={"label": "label_bfp", "bsp": "bsp_bfp", "win_lose": "won_bfp"})
+    use_b = j["label_b"].notna() & (j["label_b"] != "race_not_found")
+    j["label"] = np.where(use_b, j["label_b"], j["label_bfp"])
+    j["label_source"] = np.where(use_b, "bundle", np.where(j["label_bfp"].notna(), "betfair_prices", None))
+    j["bsp"] = np.where(use_b, j["bsp_b"], j["bsp_bfp"]).astype(float)
+    j["won"] = np.where(use_b, j["won_b"], j["won_bfp"]).astype(float)
+    both = j[use_b & j["label_bfp"].notna() & (j["label_bfp"] != "race_not_found")]
+    b_ran = both["label_b"] == "ran"
+    f_ran = both["label_bfp"] == "ran"
+    bsp_diff = (pd.to_numeric(both["bsp_b"], errors="coerce") - pd.to_numeric(both["bsp_bfp"], errors="coerce")).abs()
+    check = {"both_found": int(len(both)), "ran_agree": round(float((b_ran == f_ran).mean()), 4) if len(both) else None,
+             "crosstab": {f"{a}|{b}": int(n) for (a, b), n in both.groupby(["label_b", "label_bfp"]).size().items()},
+             "bsp_equal_share_where_both_ran": round(float((bsp_diff[b_ran & f_ran] < 1e-6).mean()), 4)
+             if (b_ran & f_ran).any() else None}
+    return j, check
+
+
 # ----------------------------------------------------------------------------------------------------------------
 # Summaries
 # ----------------------------------------------------------------------------------------------------------------
@@ -351,6 +425,10 @@ def summarise_historic(mk: pd.DataFrame, rn: pd.DataFrame, jrep: dict) -> dict:
         gbie = rn[rn["market_id"].isin(mk.loc[mk["country"].isin(["GB", "IE"]), "market_id"])]
         out["gbie_runners"] = int(len(gbie))
         out["label"] = gbie["label"].value_counts().to_dict()
+        out["label_source"] = gbie["label_source"].value_counts().to_dict() if "label_source" in gbie else None
+        out["label_all_countries"] = rn["label"].value_counts().to_dict()
+        out["races_joined_by_country"] = rn[rn["label"] != "race_not_found"].merge(
+            mk[["market_id", "country"]], on="market_id").groupby("country")["market_id"].nunique().to_dict()
         out["status_by_label"] = {f"{a}|{b}": int(n) for (a, b), n in
                                   gbie.groupby(["final_status", "label"]).size().items()}
         joined = gbie[gbie["label"] != "race_not_found"]
@@ -465,6 +543,9 @@ def part_historic(out: Path, db: str | None) -> dict:
     mk = pd.concat(mks, ignore_index=True).drop_duplicates("market_id", keep="last")
     rn = pd.concat(rns, ignore_index=True).drop_duplicates(["market_id", "selection_id"], keep="last")
     rn, jrep = race_day_join(mk, rn, db)
+    t = pd.to_datetime(mk["market_time"], utc=True, errors="coerce")
+    rn, jrep["bundle"] = bundle_join(mk, rn, load_win_tables(t.dt.year.dropna().unique()))
+    rn, jrep["check"] = combine_labels(rn)
     mk.to_parquet(out / "historic_markets.parquet", index=False)
     rn.to_parquet(out / "historic_runners.parquet", index=False)
     rep["summary"] = summarise_historic(mk, rn, jrep)
@@ -503,21 +584,31 @@ def part_recorded(out: Path, db: str | None) -> dict:
     rep["runner_status_last"] = last["runner_status"].value_counts().to_dict()
     mm = books.sort_values("polled_utc").drop_duplicates(["market_id", "day"], keep="last")
     rep["matched_per_market_day"] = _q(mm["market_total_matched"])
-    act = books[(books["runner_status"] == "ACTIVE") & books["back1"].notna() & books["lay1"].notna()]
+    # an open market only, and a real lay (Betfair's 1000 is an empty side, not a price)
+    live = books[(books["status"] == "OPEN") & (books["runner_status"] == "ACTIVE")]
+    rep["open_share_of_snapshots"] = round(float((books["status"] == "OPEN").mean()), 4)
+    act = live[live["back1"].notna() & live["lay1"].notna() & (live["lay1"] < 1000)]
     act = act.assign(rel_spread=act["lay1"] / act["back1"] - 1, band=pd.cut(act["back1"], BANDS))
     rep["spread_by_band"] = {str(k): {"rel_spread": _q(g["rel_spread"]), "back1_size": _q(g["back1_size"]),
                                       "lay1_size": _q(g["lay1_size"])} for k, g in act.groupby("band", observed=True)}
-    rep["two_sided_share"] = round(float(len(act) / max(1, (books["runner_status"] == "ACTIVE").sum())), 4)
+    rep["two_sided_share"] = round(float(len(act) / max(1, len(live))), 4)
+    rep["matched_by_market_last"] = (books.sort_values("polled_utc").drop_duplicates("market_id", keep="last")
+                                     .set_index("market_id")["market_total_matched"].round(0).to_dict())
     if not cm.empty:
         start = pd.to_datetime(cm.drop_duplicates("market_id").set_index("market_id")["market_start_utc"], utc=True,
                                errors="coerce")
         past = start[start < pd.Timestamp.now(tz="UTC")]
         rep["markets_past_off"] = int(len(past))
         if len(past):
-            mk = pd.DataFrame({"market_id": past.index, "market_time": past.map(_iso).values})
+            ev = cm.drop_duplicates("market_id").set_index("market_id")["event_id"]
+            mk = pd.DataFrame({"market_id": past.index, "market_time": past.map(_iso).values,
+                               "event_id": past.index.map(ev).astype(str)})
             rn = last[last["market_id"].isin(past.index)][["market_id", "selection_id", "runner_status"]].copy()
             rn["selection_id"] = pd.to_numeric(rn["selection_id"], errors="coerce").astype("Int64")
             rn, jrep = race_day_join(mk, rn, db)
+            years = pd.to_datetime(mk["market_time"], utc=True).dt.year.unique()
+            rn, jrep["bundle"] = bundle_join(mk, rn, load_win_tables(years))
+            rn, jrep["check"] = combine_labels(rn)
             rep["past_join"] = jrep
             if "label" in rn:
                 rep["past_label"] = rn["label"].value_counts().to_dict()

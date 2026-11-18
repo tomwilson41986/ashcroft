@@ -100,3 +100,22 @@ def test_the_race_day_join_tells_ran_ran_elsewhere_and_no_run(tmp_path):
     # Alpha backed at 10 laid at 5: 10/5; Beta lost: 0; mean return (2 + 0) / 2 - 1 = 0
     assert d90["ran_price_vs_bsp"]["n"] == 1 and d90["market_whole_back_to_bsp"]["mean_return"] == 0.0
     assert p0.race_day_join(mk, rn, str(tmp_path / "none.db"))[1]["skipped"].startswith("no database")
+
+
+def test_the_bundle_join_reads_the_race_from_the_same_event():
+    [m] = p0.parse_stream(_stream())
+    mk, rn = pd.DataFrame([m.market_row()]), pd.DataFrame(m.runner_rows())
+    win = pd.DataFrame([
+        {"event_id": "9", "market_id": "1.50", "selection_id": 1, "runner_status": "WINNER", "won": 1, "bsp": 5.0},
+        {"event_id": "9", "market_id": "1.50", "selection_id": 3, "runner_status": "REMOVED", "won": None, "bsp": None},
+        {"event_id": "9", "market_id": "1.50", "selection_id": 7, "runner_status": "LOSER", "won": 0, "bsp": 4.0},
+        {"event_id": "9", "market_id": "1.51", "selection_id": 2, "runner_status": "LOSER", "won": 0, "bsp": 9.0},
+        {"event_id": "8", "market_id": "1.60", "selection_id": 2, "runner_status": "LOSER", "won": 0, "bsp": 9.0},
+    ])
+    j, rep = p0.bundle_join(mk, rn, win)
+    lab = dict(zip(j["selection_id"], j["label_b"]))
+    assert lab == {1: "ran", 2: "ran_elsewhere", 3: "declared_nr"} and rep["events"] == 1
+    j, check = p0.combine_labels(j)                       # no betfair_prices labels: the bundle's stand alone
+    assert set(j["label_source"]) == {"bundle"} and check["both_found"] == 0
+    assert j.set_index("selection_id").loc[1, "bsp"] == 5.0 and j.set_index("selection_id").loc[1, "won"] == 1.0
+    assert p0.bundle_join(mk, rn, pd.DataFrame())[1] == {"skipped": "no WIN tables"}
