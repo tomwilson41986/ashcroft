@@ -12,7 +12,8 @@ forecast says will drift, at 80% of the forecast SP), fixed before this run, rea
 The forecast SP is the limit study's conditional logit on the book and our price, refitted for each day on the days
 before it only (research/greyhound/limit_study.py ``forecast``); our price is the model's published out-of-sample
 day files (``--pred-dir s3:<prefix>``: a model fitted before 6 Oct 2026, every day after priced as served). The
-books are the recorder's, re-timed. Each rule's return on the money at risk after commission on each market's net,
+books are the recorder's, re-timed. Only the matched orders are settled (an unmatched order is no position; ``settle_orders`` prices every order, so the
+caller filters, as ``rule_summary`` and the forward test do). Each rule's return on the money at risk after commission on each market's net,
 with its 90% interval (a bootstrap over days), and the deflated Sharpe of its per-race returns counted against every
 rule of the limit study's grid (the family the early lay was chosen from).
 
@@ -65,9 +66,13 @@ def evaluate(orders_by_day: dict[str, pd.DataFrame], n_grid: int) -> dict:
         if not len(sel):
             out["rules"][name] = {"note": "no orders"}
             continue
-        t = rule_table(sel, days=days)
+        pos = sel[sel.filled.astype(bool)]              # an order the book never reached is not a position
+        if not len(pos):
+            out["rules"][name] = {"note": "no order matched", "orders": int(len(sel))}
+            continue
+        t = rule_table(pos, days=days)
         row = t.iloc[0].to_dict() if len(t) else {}
-        r = race_returns(sel)
+        r = race_returns(pos)
         dsr = dsr_check(r, n_trials=max(n_grid, 1))
         out["rules"][name] = {k: (row.get(k) if not isinstance(row.get(k), (np.floating, np.integer)) else row.get(k).item())
                               for k in ("trades", "per_day", "active_days", "risk", "net", "roi%", "roi_90%",
