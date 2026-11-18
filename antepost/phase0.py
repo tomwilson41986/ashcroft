@@ -410,7 +410,7 @@ def miss_diagnosis(j: pd.DataFrame, w: pd.DataFrame, ev_name: pd.Series, limit: 
         day = w[w["race_date"] == r["race_date"]]
         ev = str(ev_name.get(r["market_id"]) or "")
         track = normalise_track(EVENT_DAY.sub("", re.sub(r"\b\d{4}\b", "", ev)))
-        tracks = sorted({normalise_track(t) for t in day["track_bf"].dropna()})
+        tracks = sorted({normalise_track(t) for t in day["track_bf"].dropna()} - {""})   # blank: no track named
         out.append({"market_id": r["market_id"], "event": ev, "runner_name": r["runner_name"],
                     "race_date": r["race_date"], "label": r["label"], "event_track": track,
                     "track_in_betfair_prices_that_day": bool(track and any(track in t or t in track for t in tracks)),

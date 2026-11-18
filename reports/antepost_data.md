@@ -14,7 +14,7 @@
 | Does it go in play? | No: 0 of 585 went in play; `turnInPlayEnabled` false on 584 | Yes (from the data) |
 | When does it close? | A median 55.6 hours before the scheduled off (section 2) | Yes (from the data) |
 | How is a non-runner settled? | Mostly as a loser, some removed: section 3. Needs the rules text | **Open** |
-| Turn-up labels from history | The race-day match is not reliable yet (section 4) | **Open** |
+| Turn-up labels from history | 461 GB/IE markets labelled; every winner found running where `betfair_prices` holds the race (section 4) | Yes |
 | Recorded books since 7 Oct | 44 markets over 42 days; thin and wide (section 5) | Yes |
 | Entries by stage (forfeits, 5-day, declarations) | No data found | **Open** |
 
@@ -114,9 +114,77 @@ day either side, then the normalised name.
     Fact To File (Cheltenham 2024), Kopek Des Bordes (Cheltenham 2025), Old Park Star (Cheltenham 2026), and Electric
     Moon (Haydock, 22 Nov 2025). Possibly days or races missing from `betfair_prices`; not yet checked.
 
-**Until this is fixed, no turn-up rate or price-against-BSP figure is quoted.** They would be biased by whichever
-horses failed to match. This is the second attempt at the match that hasn't worked, so the next step goes to the owner
-before more changes (see the end).
+**Run 5, the fourth attempt: passes** ([run 44358928613](https://github.com/tomwilson41986/ashcroft/actions/runs/44358928613),
+artifact `antepost-phase0-5`). The race is the one the market's settled winner ran in, where that winner is found
+(446 markets). The result only names which race the market was on: it is no feature, and nothing is fitted on it.
+- 454 of 459 GB/IE winners are found running. Where both sources name a winner, they agree on 99.65% of the runners who ran.
+- **All 5 misses are two meetings missing from `betfair_prices`:**
+  - Haydock, 22 Nov 2025 (the table holds only Ascot that day; Electric Moon's closest name there is "Electric Mason");
+  - Leopardstown, 31 Jan 2026 (no Leopardstown runner in the table; no close name).
+- Leaving out the 6 markets on those two meetings, **452 of 452 winners are found running: the check passes.**
+
+### 4.1 The labelled set
+
+GB/IE markets with their race found, the two missing meetings left out (computed from the run 5 artifact,
+`historic_runners.parquet` and `historic_markets.parquet`):
+
+| | Value |
+|---|---|
+| Markets | 461 |
+| Race dates | 27 Jan 2024 to 14 Nov 2026 |
+| Runners | 22,189: ran 6,218, ran elsewhere that day 979, did not run 14,992 |
+| Duplicates (market, horse) | 0 |
+| Runners who ran with no BSP | 0 of 6,218 |
+| Found by ID / only by name | 3,804 / 2,441 (all GB/IE, before the two meetings were left out) |
+
+### 4.2 Who turns up (descriptive)
+
+The share of horses listed at each point before the off that ran in the race, by their last traded price then.
+"Listed" means in the market and not removed at that time. The market closes about 55 hours out (section 2), so the
+2-day and 1-day marks hold almost nothing.
+
+| Days out | Listed | Races | Ran | 1-3 | 3-5 | 5-10 | 10-20 | 20-50 | 50+ |
+|---|---|---|---|---|---|---|---|---|---|
+| 60 | 5,281 | 96 | 18.0% | 52.6% (19) | 79.5% (39) | 63.9% (122) | 47.4% (289) | 29.6% (712) | 11.6% (1,787) |
+| 30 | 12,995 | 219 | 20.9% | 79.6% (54) | 75.4% (114) | 62.2% (312) | 49.2% (775) | 37.2% (1,438) | 19.9% (2,010) |
+| 14 | 19,589 | 374 | 25.0% | 83.8% (105) | 84.4% (180) | 72.4% (583) | 55.8% (1,423) | 44.1% (2,989) | 27.5% (2,545) |
+| 7 | 19,879 | 384 | 25.4% | 90.9% (143) | 83.8% (191) | 78.7% (717) | 59.1% (1,583) | 43.7% (3,386) | 27.3% (3,469) |
+| 3 | 21,134 | 431 | 28.0% | 95.2% (167) | 91.5% (271) | 89.0% (893) | 76.6% (1,644) | 67.6% (2,613) | 47.2% (2,420) |
+
+The "Ran" column counts every listed horse, with or without a price. The band columns count horses with a last
+traded price at that point (n in brackets).
+
+### 4.3 The price against the SP (descriptive, not a backtest)
+
+For horses that ran, the ante-post last traded price at each point over the race's BSP.
+- 30 days out: median log ratio 0.309 (price about 1.36 times the SP), above the SP for 66.3% (1,646 runners).
+- 14 days: 0.152 (about 1.16 times), 59.6% (3,483).
+- 7 days: 0.104 (about 1.11 times), 56.5% (4,222).
+- 3 days: -0.001 (about level), 49.1% (5,375).
+
+The horses that turn up shorten, and the longer out, the more.
+
+Now the market as a whole: back every listed horse with a price at its last traded price, lay it at the SP if it ran,
+lose the stake if it didn't. Mean return per GBP1, before commission, last traded price taken as if it filled:
+
+| Days out | 1-3 | 3-5 | 5-10 | 10-20 | 20-50 | 50+ |
+|---|---|---|---|---|---|---|
+| 30 | -14.5% | -2.4% | -14.2% | -23.0% | -34.8% | -34.2% |
+| 14 | -11.5% | -3.8% | -14.7% | -24.1% | -34.2% | -45.6% |
+| 7 | -6.2% | -14.1% | -13.1% | -27.7% | -39.2% | -45.6% |
+| 3 | -5.0% | -12.6% | -11.8% | -15.8% | -19.7% | -22.0% |
+
+Over every listed horse it loses in every band. Horses that run gain on the SP, and horses that don't lose the stake,
+which outweighs it. So the whole edge has to come from telling runners from non-runners better than the price does:
+the turn-up model is the trade, not a side input. For example, 14 days out at 5-10, 72.4% ran and those runners'
+median price was 1.07 times their SP. A back there pays only if the model can pick a subset whose chance of running,
+times its price over the SP, clears 1 plus costs.
+
+**Caveats:**
+- A last traded price can be old: there is no book in BASIC.
+- The spreads in section 5 aren't charged here.
+- These are averages over all listed horses, not a rule, and nothing is selected. A test of any rule goes in the
+  research ledger first (CLAUDE.md).
 
 ## 5. The recorded snapshots (7 Oct to 17 Nov 2026)
 
@@ -160,7 +228,9 @@ Of the 44 recorded markets, 15 had passed their off by this run. Their race-day 
    certificate was used: the run fell back to the password login. Options: one read-only catalogue call on the UK
    server runner, at a time the live jobs are idle, or a `BETFAIR_CERT`/`BETFAIR_KEY` secret if certificate login is
    allowed from GitHub. Owner's call.
-2. **The race-day match (third attempt done, run 4; it fails the winner check: section 4). Previously planned:**
+2. **The race-day match: passed in run 5 (section 4).** Two meetings are missing from `betfair_prices` (Haydock,
+   22 Nov 2025; Leopardstown, 31 Jan 2026): a gap in the nightly load to look at separately. Earlier plan, kept for
+   the record:
    - take the race date from the event name where it carries one, else `marketTime`;
    - match on selection ID within plus or minus 1 day, then on the normalised horse name where the ID fails;
    - check against `betfair_prices` day coverage (rows on the date);
