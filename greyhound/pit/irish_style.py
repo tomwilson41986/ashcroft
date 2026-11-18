@@ -58,6 +58,13 @@ COLUMNS = {
 def load_context(store) -> dict:
     out = irish.load_context(store)
     out["api_ie_comments"] = store.get_parquet("greyhoundapi/comments_IE.parquet")
+    try:
+        import gzip
+        import json
+        raw = store.get("greyhoundapi/raw/comments/vocabulary.json.gz")
+        out["api_comment_vocab"] = json.loads(gzip.decompress(raw)) if raw else None
+    except Exception:                               # the vocabulary is for the build notes only
+        out["api_comment_vocab"] = None
     return out
 
 
@@ -87,6 +94,35 @@ def coverage(cm: pd.DataFrame) -> float | None:
     return round(sum(1 for c in codes if rx.search(c)) / len(codes), 4)
 
 
+def unread(cm: pd.DataFrame, vocab=None, top: int = 40) -> dict:
+    """The event codes no group reads, most frequent first, with each one's vocabulary entry where the API's
+    vocabulary names it (build notes only: to widen ``GROUPS`` from evidence)."""
+    codes = pd.Series([c for e in cm.events.fillna("").astype(str) for c in e.lower().split("|") if c])
+    if not len(codes):
+        return {}
+    rx = re.compile("|".join(f"(?:{v})" for v in GROUPS.values()))
+    vc = codes[~codes.map(lambda c: bool(rx.search(c)))].value_counts()
+    def entry(code):
+        if isinstance(vocab, dict):
+            v = vocab.get(code, vocab.get(code.upper()))
+            if v is None and isinstance(vocab.get("data"), (dict, list)):
+                return entry_in(vocab["data"], code)
+            return v
+        return entry_in(vocab, code) if isinstance(vocab, list) else None
+
+    def entry_in(items, code):
+        if isinstance(items, dict):
+            return items.get(code)
+        for it in items:
+            if isinstance(it, dict) and code in {str(x).lower() for x in it.values()}:
+                return it
+        return None
+    return {"codes_total": int(len(codes)), "distinct_codes": int(codes.nunique()),
+            "unread_top": [{"code": c, "n": int(n), "vocab": entry(c)} for c, n in vc.head(top).items()],
+            "vocabulary_type": type(vocab).__name__,
+            "vocabulary_head": str(vocab)[:1500] if vocab is not None else None}
+
+
 def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None = None):
     ctx = ctx or {}
     r = runs
@@ -113,6 +149,7 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
         start = fl.gb_dog.map(first) - pd.Timedelta(days=irish.PRE_GB_DAYS)
         fl = fl[pd.to_datetime(fl.race_date) >= start.fillna(pd.Timestamp("1900-01-01"))]
     notes = {**mnotes, **nnotes, "comment_rows": int(len(cm)), "event_codes_read_share": coverage(cm),
+             "unread_codes": unread(cm, ctx.get("api_comment_vocab")),
              "irish_commented_runs_mapped": int(len(fl))}
     if not len(fl):
         return tab, {**notes, "note": "no Irish commented run of a mapped dog"}
