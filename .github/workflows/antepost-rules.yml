@@ -1,0 +1,61 @@
+name: Ante-post rules (UK runner, read-only)
+
+# Betfair's own description of every GB/IE ante-post win market open now (listMarketCatalogue with
+# MARKET_DESCRIPTION: the rules text, the BSP flag, the suspend time, turn in play): Phase 0 of docs/antepost_plan.md.
+# One catalogue read on the delayed key (BETFAIR_APP_KEY), no order call, nothing written to S3; the output is this
+# run's artifact. On the UK runner because Betfair's login refuses GitHub's (403, runs 44340400618 and 44342882609;
+# the owner's go-ahead, 18 Nov 2026). It runs only outside the trading hours: the first step stops it, with no Betfair
+# call, between 04:45 and 21:45 UK.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/great-curie-*']
+    paths:
+      - '.github/workflows/antepost-rules.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: antepost-rules
+  cancel-in-progress: false
+
+jobs:
+  rules:
+    if: vars.BETFAIR_RUNNER != ''
+    runs-on: ${{ vars.BETFAIR_RUNNER }}
+    timeout-minutes: 10
+    steps:
+      - name: Only outside the trading hours
+        id: window
+        run: |
+          now=$(TZ=Europe/London date +%H%M)
+          if [ "$now" -ge 0445 ] && [ "$now" -lt 2145 ]; then
+            echo "UK time $now is inside 04:45-21:45: no Betfair call"; echo "go=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=yes" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.window.outputs.go == 'yes'
+      - name: Python environment (its own folder)
+        if: steps.window.outputs.go == 'yes'
+        run: |
+          V="$HOME/.venvs/antepost-rules"
+          [ -x "$V/bin/python" ] || python3 -m venv "$V"
+          "$V/bin/pip" install -q requests==2.32.3 python-dotenv==1.0.1
+          echo "$V/bin" >> "$GITHUB_PATH"
+      - name: Read the ante-post markets' rules
+        if: steps.window.outputs.go == 'yes'
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+        run: python -m antepost.rules --out out/antepost_rules
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.window.outputs.go == 'yes'
+        with:
+          name: antepost-rules-${{ github.run_number }}
+          path: out/antepost_rules/
+          if-no-files-found: ignore
+          retention-days: 90

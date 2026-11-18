@@ -1,0 +1,67 @@
+name: Ante-post research
+
+# Phase 0 of the ante-post plan (docs/antepost_plan.md s.3): the Historic Data bundle's ante-post markets joined to
+# the race-day BSP, and the daily snapshots recorded since 7 Oct 2026. Betfair's login refuses this runner (403, runs
+# 44340400618 and 44342882609), so the rules read runs on the UK runner (antepost-rules.yml). Read-only: no order call, nothing written to S3; the output
+# is this run's artifact. Push-triggered on the ante-post branch (a workflow only on a branch cannot be dispatched).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/great-curie-*']
+    paths:
+      - 'antepost/**'
+      - 'tests/test_antepost*.py'
+      - '.github/workflows/antepost-research.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: antepost-research-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phase0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Tests
+        run: python -m pytest -q tests/test_antepost_phase0.py
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h / | tail -1
+      - name: Download historic database from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: python scripts/fetch_data.py --db-only --s3-bucket horseracingresults --s3-key horse_racing.db
+      - name: Phase 0
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: python -m antepost.phase0 --parts recorded,historic --db horse_racing.db --out out/antepost_phase0
+      - name: Summary
+        if: always()
+        run: |
+          f=out/antepost_phase0/antepost_phase0.json
+          [ -f "$f" ] && { echo '## antepost_phase0.json'; echo '```'; head -c 900000 "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: antepost-phase0-${{ github.run_number }}
+          path: out/antepost_phase0/
+          if-no-files-found: ignore
+          retention-days: 90
