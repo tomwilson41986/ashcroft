@@ -162,3 +162,31 @@ def test_the_rules_read_keeps_each_distinct_text_once(tmp_path):
     assert rep["markets"] == 2 and rep["markets_list"][0]["bspMarket"] is False
     assert rep["distinct_rules_texts"] == [{"markets": 2, "example_market": "1.1", "text": "Rule A\nAll in."}]
     assert (tmp_path / "antepost_rules.json").exists()
+
+
+def test_the_winners_race_is_the_markets_race_when_most_listed_horses_ran_elsewhere(tmp_path):
+    [m] = p0.parse_stream(_stream())
+    mk, rn = pd.DataFrame([m.market_row()]), pd.DataFrame(m.runner_rows())
+    db = _db(tmp_path, [
+        ("2026-03-13", "win", 500, "Chelt 13th Mar", "Cheltenham", 1, "Alpha", "alpha", 5.0, 1.0),     # the winner
+        ("2026-03-13", "win", 800, "Chelt 13th Mar", "Cheltenham", 2, "Beta", "beta", 4.0, 1.0),       # consolation
+        ("2026-03-13", "win", 800, "Chelt 13th Mar", "Cheltenham", 3, "Gamma", "gamma", 15.0, 0.0),
+    ])
+    j, rep = p0.race_day_join(mk, rn, db)
+    lab = dict(zip(j["selection_id"], j["label"]))
+    assert lab == {1: "ran", 2: "ran_elsewhere", 3: "ran_elsewhere"} and rep["races_set_by_winner"] == 1
+    assert rep["check_gbie"]["winner_pass"] and rep["winners_not_found_why"] == []
+
+
+def test_a_winner_not_found_is_explained_by_the_day_it_falls_on(tmp_path):
+    [m] = p0.parse_stream(_stream())
+    mk, rn = pd.DataFrame([m.market_row()]), pd.DataFrame(m.runner_rows())
+    db = _db(tmp_path, [
+        ("2026-03-13", "win", 500, "Chelt 13th Mar", "Cheltenham", 3, "Gamma", "gamma", 15.0, 0.0),
+        ("2026-03-13", "win", 900, "Kemp 13th Mar", "Kempton", 77, "Alphas", "alphas", 6.0, 1.0),
+    ])
+    j, rep = p0.race_day_join(mk, rn, db)
+    assert not rep["check_gbie"]["winner_pass"]
+    [why] = rep["winners_not_found_why"]
+    assert why["runner_name"] == "Alpha" and why["event_track"] == "cheltenhamgoldcup"
+    assert why["track_in_betfair_prices_that_day"] and why["closest_names_that_day"] == ["alphas"]

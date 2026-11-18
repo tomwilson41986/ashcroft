@@ -357,6 +357,17 @@ def race_day_join(markets: pd.DataFrame, runners: pd.DataFrame, db: str | None) 
         race = (c.groupby("market_id")[["event_id", "on_date"]]
                 .agg(lambda s: s.value_counts().index[0]).rename(columns={"event_id": "race_event_id",
                                                                            "on_date": "race_day_used"}))
+        # where the market's settled winner is found, its race is the market's race: the most listed horses can
+        # run in a consolation race or another race of a festival day (run 4: Chester Cup, Ayr Gold Cup, Lincoln).
+        # The result names which race the market was on; it is no feature and nothing is fitted on it here.
+        if "final_status" in rn:
+            winners = set(map(tuple, rn.loc[rn["final_status"] == "WINNER", key].astype(str).values))
+            wc = c[c[key].astype(str).apply(tuple, axis=1).isin(winners)]
+            wc = wc.assign(_abs=wc["offset"].abs()).sort_values(["_abs", "method"])   # the day itself, 'id' first
+            by_winner = wc.drop_duplicates("market_id").set_index("market_id")[["event_id", "on_date"]] \
+                .rename(columns={"event_id": "race_event_id", "on_date": "race_day_used"})
+            race.loc[by_winner.index.intersection(race.index)] = by_winner
+            rep["races_set_by_winner"] = int(len(by_winner))
     race = race.rename_axis("market_id").reset_index()
     c = c.merge(race, on="market_id")
     c["in_race"] = c["event_id"] == c["race_event_id"]
@@ -374,8 +385,39 @@ def race_day_join(markets: pd.DataFrame, runners: pd.DataFrame, db: str | None) 
     j["match_method"] = np.where(j["in_race"], j["method"], None)
     j["win_rows_on_race_date"] = j["race_date"].map(rows_on).fillna(0).astype(int)
     j = j.drop(columns=["method", "offset", "same_day"])
+    if "country" in mk:
+        j["country"] = j["market_id"].map(mk["country"])
     rep["check"] = join_check(j)
+    if "country" in j:
+        rep["check_gbie"] = join_check(j[j["country"].isin(["GB", "IE"])])
+    rep["winners_not_found_why"] = miss_diagnosis(j, w, ev_name)
     return j, rep
+
+
+def miss_diagnosis(j: pd.DataFrame, w: pd.DataFrame, ev_name: pd.Series, limit: int = 60) -> list[dict]:
+    """For each ante-post WINNER of a joined GB/IE market not found running: the tracks betfair_prices holds that
+    day, whether the market's own track is among them (a missing race or day file), and the names that day closest
+    to the winner's (a name spelt otherwise)."""
+    import difflib
+    from betfair_prices import normalise_track
+    if "final_status" not in j:
+        return []
+    miss = j[(j["final_status"] == "WINNER") & (j["label"] != "ran") & j["race_event_id"].notna()]
+    if "country" in miss:
+        miss = miss[miss["country"].isin(["GB", "IE"])]
+    out = []
+    for _, r in miss.head(limit).iterrows():
+        day = w[w["race_date"] == r["race_date"]]
+        ev = str(ev_name.get(r["market_id"]) or "")
+        track = normalise_track(EVENT_DAY.sub("", re.sub(r"\b\d{4}\b", "", ev)))
+        tracks = sorted({normalise_track(t) for t in day["track_bf"].dropna()})
+        out.append({"market_id": r["market_id"], "event": ev, "runner_name": r["runner_name"],
+                    "race_date": r["race_date"], "label": r["label"], "event_track": track,
+                    "track_in_betfair_prices_that_day": bool(track and any(track in t or t in track for t in tracks)),
+                    "tracks_that_day": tracks[:20],
+                    "closest_names_that_day": difflib.get_close_matches(
+                        str(r.get("name_norm") or ""), day["horse_norm"].dropna().unique().tolist(), n=3, cutoff=0.75)})
+    return out
 
 
 def join_check(j: pd.DataFrame) -> dict:
@@ -446,7 +488,7 @@ def summarise_historic(mk: pd.DataFrame, rn: pd.DataFrame, jrep: dict) -> dict:
         out["gbie_runners"] = int(len(gbie))
         out["label"] = gbie["label"].value_counts().to_dict()
         out["label_all_countries"] = rn["label"].value_counts().to_dict()
-        out["races_joined_by_country"] = rn[rn["label"] != "race_not_found"].merge(
+        out["races_joined_by_country"] = rn[rn["label"] != "race_not_found"].drop(columns=["country"], errors="ignore").merge(
             mk[["market_id", "country"]], on="market_id").groupby("country")["market_id"].nunique().to_dict()
         out["status_by_label"] = {f"{a}|{b}": int(n) for (a, b), n in
                                   gbie.groupby(["final_status", "label"]).size().items()}
