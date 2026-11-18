@@ -393,3 +393,13 @@ def test_attach_matches_a_tables_own_columns(monkeypatch):
     called = []
     monkeypatch.setattr(pit, "attach", lambda d, name, store=None: called.append(name) or ["irs_n"])
     assert blocks.attach(df, "pit_irish_style") == ["irs_n"] and called == ["irish_style"]
+
+
+def test_irish_style_reports_the_codes_no_group_reads():
+    """The build notes list the event codes GROUPS misses, most frequent first, with the vocabulary's entry."""
+    from greyhound.pit.irish_style import unread
+    cm = pd.DataFrame({"events": ["fast_start|led", "rls|qaw", "rls", None]})
+    u = unread(cm, {"rls": "rails", "qaw": "quick away"})
+    assert u["codes_total"] == 5 and [x["code"] for x in u["unread_top"]] == ["rls", "qaw"]
+    assert u["unread_top"][0] == {"code": "rls", "n": 2, "vocab": "rails"}
+    assert unread(pd.DataFrame({"events": [None]})) == {}
