@@ -28,4 +28,34 @@ def test_parse_keeps_variants_out_of_the_win_market():
            "3,Cann (Aus) 31st Dec,R1,31-12-2018 09:00,13,2. Aussie Dog,0,5.0\n")
     d = parse(csv.encode(), "dwbfgreyhoundwin31122018.csv")
     assert list(d.market) == ["win", "win_variant", "win"]
-    assert list(d.country) == ["GB", "GB", "AUS"] and d.track.iloc[0] == "Harl" and d.trap.iloc[0] == 1
+    assert list(d.country) == ["GB", "GB", "AUS"] and d.track.iloc[0] == "Harlow" and d.trap.iloc[0] == 1
+
+
+def test_the_learnt_aliases_and_the_newer_variant_tags():
+    from sources.greyhound_prices import TRACK_ALIASES
+    assert TRACK_ALIASES["Romfd"] == "Romford" and TRACK_ALIASES["Sittb"] == "Central Park"
+    assert "Shelb" not in TRACK_ALIASES                                   # Irish: left unmapped
+    for hint in ("Romfd (FC) 3rd Jan", "Wdon (OvE) 3rd Jan", "Wdon (Dist) 3rd Jan", "Henl (AvB0 3rd Jan",
+                 "Trap Challenge 3rd Jan"):
+        assert market_label(hint)[1] != "", hint
+    csv = ("EVENT_ID,MENU_HINT,EVENT_NAME,EVENT_DT,SELECTION_ID,SELECTION_NAME,WIN_LOSE,BSP\n"
+           "1,BAGS cards / Romfd 2nd Jan,A5 400m,02-01-2016 12:00,11,3. Fast Dog,1,3.5\n")
+    assert parse(csv.encode(), "dwbfgreyhoundwin02012016.csv").track.iloc[0] == "Romford"
+
+
+def test_a_forced_year_is_rebuilt_though_every_file_was_read(tmp_path):
+    import json
+
+    from sources.common import Store
+    from sources.greyhound_prices import _force_years, build
+    raw = tmp_path / "betfair_prices_raw"
+    raw.mkdir()
+    (raw / "dwbfgreyhoundwin02012016.csv").write_text(
+        "EVENT_ID,MENU_HINT,EVENT_NAME,EVENT_DT,SELECTION_ID,SELECTION_NAME,WIN_LOSE,BSP\n"
+        "1,BAGS cards / Romfd 2nd Jan,A5 400m,02-01-2016 12:00,11,3. Fast Dog,1,3.5\n")
+    store = Store(root=tmp_path / "sources")
+    assert build(store)[2016]["runners"] == 1
+    assert build(store)[2016].get("unchanged") is True
+    assert build(store, force_years={2016})[2016]["runners"] == 1
+    assert _force_years({"GREYHOUND_PRICES_REBUILD": "2014-2016"}) == {2014, 2015, 2016}
+    assert json.loads(store.get("greyhound_prices/built_2016.json")) == ["dwbfgreyhoundwin02012016.csv"]
