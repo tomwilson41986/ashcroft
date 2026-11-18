@@ -1,0 +1,57 @@
+name: HRB rating sets (download)
+# The owner's saved HorseRaceBase Ratings Machine sets (the owner, 18 Nov 2026: "pull my rating sets and test them"),
+# one CSV a set a day (hrb_ratings.py), kept in s3://<bucket>/sources/hrb_ratings_raw/ and resumed from there, so a
+# run stopped by HRB's download allowance (shared with the nightly results scrape) carries on next time. Read-only on
+# HRB and nothing reaches Betfair. Run by hand in the day, away from the 03:00 predictions and the nightly scrape.
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: first day (YYYY-MM-DD)
+        required: true
+      to:
+        description: last day (YYYY-MM-DD)
+        required: true
+      sets:
+        description: set ids, comma separated, or all (every set the account lists)
+        default: all
+      max_requests:
+        description: downloads at most this run
+        default: '300'
+      spacing:
+        description: seconds between downloads
+        default: '6'
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download the rating sets
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          HRB_USERNAME: ${{ secrets.HRB_USERNAME }}
+          HRB_PASSWORD: ${{ secrets.HRB_PASSWORD }}
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
+          SETS: ${{ inputs.sets }}
+          MAX: ${{ inputs.max_requests }}
+          SPACING: ${{ inputs.spacing }}
+        run: |
+          [[ "$FROM" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && "$TO" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "dates must be YYYY-MM-DD"; exit 1; }
+          [[ "$SETS" =~ ^(all|[0-9,]+)$ && "$MAX" =~ ^[0-9]+$ && "$SPACING" =~ ^[0-9.]+$ ]] || { echo "bad sets, max or spacing"; exit 1; }
+          python hrb_ratings.py --fetch --from "$FROM" --to "$TO" --sets "$SETS" --max-requests "$MAX" \
+            --spacing "$SPACING" --s3-prefix sources/hrb_ratings_raw --dir hrb_ratings_raw
