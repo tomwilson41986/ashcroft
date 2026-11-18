@@ -176,6 +176,20 @@ DEPENDS = {"trouble": ("ability",), "dyad": ("xtime",), "ext": ("xtime",), "fitn
            "line2": ("line", "xtime", "ext"), "sim2": ("trials",), "cardread": ("xtime",)}
 
 
+def stored_fits(store, names) -> dict:
+    """Each named table's stored notes (its fitted constants), where the stored table was built by this code (its
+    meta's ``hash`` equals ``code_hash``): what a card build reads instead of fitting again (``ctx["fitted"]``)."""
+    out = {}
+    for name in names:
+        try:
+            meta = json.loads(store.get(f"{STORE_PREFIX}/{name}.meta.json"))
+        except Exception:
+            continue
+        if meta.get("hash") == code_hash(name) and isinstance(meta.get("notes"), dict):
+            out[name] = meta["notes"]
+    return out
+
+
 def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None, keep: bool = False,
                  cut: pd.DataFrame | None = None) -> dict:
     """Build ``names`` in ``TABLES`` order; write each to ``store`` (when given); return each table's meta, or with

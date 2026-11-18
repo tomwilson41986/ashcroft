@@ -152,3 +152,27 @@ def test_no_trials(monkeypatch):
     runs = clean(raw()[0])
     tab, notes = ability2.build(runs, core.per_run_figures(runs), {})
     assert notes["trial_rows"] == 0 and (tab.ka_n_trials == 0).all() and tab.ka_gsr_mean.notna().all()
+
+
+def test_the_cached_constants_give_the_same_table(tmp_path, monkeypatch):
+    """The price run reads the nightly build's constants (ctx["fitted"]["ability2"], the stored notes written with
+    default=str) instead of fitting again, and gets the same table; a stored table from other code is not read."""
+    import json
+    from greyhound import pit
+    from sources.common import Store
+    monkeypatch.setattr(ability, "FIT_BEFORE", "2025-02-15")
+    r, _ = raw()
+    tr = trials.select(r)
+    runs = clean(r)
+    figs = core.per_run_figures(runs)
+    tab, notes = ability2.build(runs, figs, {"trial_runs": tr})
+    stored = json.loads(json.dumps(notes, default=str))
+    again, n2 = ability2.build(runs, figs, {"trial_runs": tr, "fitted": {"ability2": stored}})
+    assert n2["constants"] == "cached" and notes["constants"] == "fitted"
+    pd.testing.assert_frame_equal(tab, again)
+    store = Store(root=tmp_path)
+    store.put(f"{pit.STORE_PREFIX}/ability2.meta.json",
+              json.dumps({"hash": pit.code_hash("ability2"), "notes": stored}, default=str).encode())
+    assert "ability2" in pit.stored_fits(store, ["ability2", "draw2"])
+    store.put(f"{pit.STORE_PREFIX}/ability2.meta.json", json.dumps({"hash": "other", "notes": stored}).encode())
+    assert pit.stored_fits(store, ["ability2"]) == {}
