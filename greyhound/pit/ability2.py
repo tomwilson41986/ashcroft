@@ -108,6 +108,33 @@ def fit(frame: pd.DataFrame, fig: str, prm: dict, seed: int = 0) -> dict:
             "loglik": round(best[0], 5), "grid": grid, "rows": int(len(e_all))}
 
 
+def cached_params(ctx: dict | None) -> dict | None:
+    """The nightly build's fitted constants (``ctx["fitted"]["ability2"]``: the stored table's notes), with the
+    band keys back to integers (JSON keeps them as strings); None when absent or incomplete."""
+    c = ((ctx or {}).get("fitted") or {}).get("ability2")
+    if not c or "params" not in c or "race_noise" not in c or not all(f in c["params"] for f in FIGURES):
+        return None
+    def num(x):                               # the meta is written with default=str: numbers may come back as text
+        if isinstance(x, dict):
+            return {k: num(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [num(v) for v in x]
+        if isinstance(x, str):
+            try:
+                return float(x)
+            except ValueError:
+                return x
+        return x
+
+    params = {}
+    for f in FIGURES:
+        p = num(dict(c["params"][f]))
+        if p.get("bands"):
+            p["bands"] = {k: {int(b): float(v) for b, v in p["bands"][k].items()} for k in ("q", "r")}
+        params[f] = p
+    return {"params": params, "race_noise": float(num(c["race_noise"]))}
+
+
 def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None = None) -> tuple[pd.DataFrame, dict]:
     df = figs if figs is not None else core.per_run_figures(runs)
     in_runs = tl.is_trial_class(df.race_class).to_numpy()
@@ -147,10 +174,19 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     est_frame = fr.assign(is_trial=fr.trial)
     res = {}
     params = {}
+    # the constants are fitted on the early slice only (before ability.FIT_BEFORE), which a later day never changes:
+    # the price run reads the nightly build's (``ctx["fitted"]["ability2"]``, the stored table's notes from this
+    # code) instead of fitting them again (the owner, 18 Nov 2026: "yes, cache the constants")
+    cached = cached_params(ctx)
+    notes["constants"] = "cached" if cached else "fitted"
     for f in FIGURES:
-        prm = ability.estimate(est_frame, f)
-        ext = fit(fr, f, prm)
-        params[f] = {**{k: v for k, v in prm.items() if k != "grid"}, **ext}
+        if cached:
+            params[f] = cached["params"][f]
+        else:
+            prm = ability.estimate(est_frame, f)
+            ext = fit(fr, f, prm)
+            params[f] = {**{k: v for k, v in prm.items() if k != "grid"}, **ext}
+        prm, ext = params[f], params[f]
         bands = ext.get("bands")
         q_row = np.array([bands["q"][b] for b in range(len(BANDS) + 1)])[band] if bands else None
         r_row = np.array([bands["r"][b] for b in range(len(BANDS) + 1)])[band] if bands else None
@@ -192,7 +228,7 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     r = params["gsr"]["r"]
     tmp = out[["race_id"]].assign(**{f"{ability.PREFIX}gsr_mean": out[f"{PREFIX}gsr_mean"],
                                      f"{ability.PREFIX}gsr_sd": out[f"{PREFIX}gsr_sd"]})
-    k, kgrid = ability.race_noise(tmp, runs, r)
+    k, kgrid = (cached["race_noise"], "cached") if cached else ability.race_noise(tmp, runs, r)
     out[f"{PREFIX}gsr_pbest"] = ability.p_best(out.race_id.to_numpy(), out[f"{PREFIX}gsr_mean"].to_numpy(float),
                                                out[f"{PREFIX}gsr_sd"].to_numpy(float), r * k)
     out[list(COLUMNS)] = out[list(COLUMNS)].astype(np.float32)
