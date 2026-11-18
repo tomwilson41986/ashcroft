@@ -83,6 +83,10 @@ jobs:
           # saddlecloth number): the owner's yes of 11 Nov 2026 on card-as-table-check-1111 (jumps -0.0118, se
           # 0.0047, six days of six). The weight after the claim stays off (Flat +0.0013): model/card_enrich.py
           CARD_AS_TABLE: stall
+          # with no card from horseracebase.com, the card from the UK server's recorded Betfair catalogue (card_betfair.py;
+          # the owner, 18 Nov 2026: 'fix the card fallback'): its price check passed on 18 Nov's card (run 44310518854:
+          # median 0.047 in logs from the HRB card's prices, rank correlation 0.996). With HRB's card nothing changes
+          CARD_FALLBACK: 'on'
         run: python -m pipeline.predict
 
       - name: Sync dashboard

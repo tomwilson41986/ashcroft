@@ -192,3 +192,29 @@ def test_hrb_card_is_kept_when_it_comes(monkeypatch):
     monkeypatch.setenv("CARD_SOURCE", "betfair")                          # the check run reads Betfair's card
     monkeypatch.setattr(cb, "fetch_card", lambda day, db_path=None: pd.DataFrame({"horse_name": ["B"]}))
     assert list(p.fetch_racecard_from_hrb(date(2026, 11, 17)).horse_name) == ["B"]
+
+
+def test_class_and_prize_from_the_course_s_like_races():
+    races = pd.DataFrame({
+        "track": ["Wolverhampton"] * 5 + ["Kempton"],
+        "race_date": ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06"],
+        "race_time": ["6:00"] * 6,
+        "race_type": ["Handicap", "Handicap", "Handicap", "Maiden", "Handicap Hurdle", "Handicap"],
+        "race_class": ["Class 6", "Class 6", "Class 4", "Class 5", "Class 3", "Class 2"],
+        "prize_money": [3000, 3200, 6000, 4000, 9000, 20000],
+        "top_or": [60, 62, 85, 0, 130, 100],
+    })
+    cls, prize, src = cb.class_prize_estimate("Wolverhampton", False, True, 61, races, k=2)
+    assert cls == "Class 6" and prize == 3100 and src.startswith("course")          # the two nearest in OR
+    cls, prize, src = cb.class_prize_estimate("Wolverhampton", False, False, np.nan, races, k=3)
+    assert cls == "Class 5" and prize == 4000                                       # the unrated race
+    cls, prize, src = cb.class_prize_estimate("Southwell", False, True, 98, races, k=1)
+    assert cls == "Class 2" and src.startswith("all courses")                      # nothing at the course
+    assert cb.class_prize_estimate("Southwell", True, False, 100, races)[2] == "none"
+
+
+def test_horse_names_take_the_results_table_spelling():
+    horses = pd.DataFrame({"horse_name": ["Dyker Heights (IRE)", "Lady Luck (GB)", "Lady Luck (IRE)", "Alpha"],
+                           "last": ["2026-11-01", "2024-05-01", "2026-10-01", "2026-09-01"], "age": [5, 7, 4, 6]})
+    out = cb.history_names(pd.Series(["Dyker Heights", "Lady Luck", "Alpha", "Brand New"]), horses)
+    assert list(out) == ["Dyker Heights (IRE)", "Lady Luck (IRE)", "Alpha", "Brand New"]   # the recent namesake
