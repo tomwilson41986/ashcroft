@@ -1,0 +1,597 @@
+== tables in horse_racing.db: 20 (file 3.15 GB)
+                table    rows  cols  date_col       from         to
+ betfair_live_markets   36395    29 race_date 2026-10-01 2026-11-17
+   betfair_live_marks  522762    26 race_date 2026-10-01 2026-11-17
+         betfair_odds       0    18 race_date        NaN        NaN
+       betfair_prices 2146291    27 race_date 2017-12-31 2026-11-16
+ betfair_prices_files   12103     4       NaN        NaN        NaN
+                 bets       0    23 race_date        NaN        NaN
+        blandford_atr  382349    21       day 2018-01-01 2026-09-25
+  blandford_atr_files     426     4       NaN        NaN        NaN
+ blandford_first_seen  231694    11       NaN        NaN        NaN
+    blandford_results  678768    59       NaN        NaN        NaN
+  blandford_revisions   25317     8       NaN        NaN        NaN
+        blandford_rtv   62777    18       day 2023-01-01 2026-10-29
+blandford_rtv_fetched    3223     3       NaN        NaN        NaN
+            daily_pnl       0    15      date        NaN        NaN
+       download_pause       2     3       NaN        NaN        NaN
+          live_orders   69055    38 race_date 2026-09-30 2026-11-17
+         race_results 2023508    53 race_date 2010-01-01 2026-11-16
+           scrape_log    6165     5       NaN        NaN        NaN
+       sectional_runs  153426    12       day 2018-01-01 2026-09-25
+      sqlite_sequence       4     2       NaN        NaN        NaN
+
+== race_results: 2,023,508 rows, 53 columns
+   unparseable race_date: 0; range 2010-01-01 to 2026-11-16
+
+-- rows by year and code
+code     aw  chase   flat  hurdle  nhflat     all
+year                                             
+2010  23429  15428  49312   28606    5840  122615
+2011  22615  16453  48285   31309    5829  124491
+2012  25720  15290  44396   28167    5481  119054
+2013  23912  15990  45323   29027    5983  120235
+2014  23048  15016  44527   27224    5206  115021
+2015  23214  14834  44810   27607    4661  115126
+2016  25112  15051  45352   28528    4571  118614
+2017  26117  15176  46458   28646    4570  120967
+2018  28336  14876  46375   28756    4581  122924
+2019  28176  14464  46845   28992    4434  122911
+2020  27702  11906  36051   24257    3656  103572
+2021  28617  15516  47308   31342    5778  128561
+2022  27803  14184  45250   29555    4423  121215
+2023  28921  13712  44946   29349    4257  121185
+2024  29814  13633  45130   29802    3919  122298
+2025  28645  13306  45111   28614    3910  119586
+2026  23085  10222  45031   23698    3097  105133
+
+-- races by year and code
+code    aw  chase  flat  hurdle  nhflat    all
+year                                          
+2010  2453   1731  4849    2431     483  11947
+2011  2426   1988  4794    2826     508  12542
+2012  2682   1830  4509    2634     507  12162
+2013  2677   1922  4823    2702     552  12676
+2014  2601   1922  4795    2752     526  12596
+2015  2586   1891  4784    2819     483  12563
+2016  2678   1868  4762    2843     466  12617
+2017  2691   1932  4882    2917     475  12897
+2018  2970   1886  4856    2860     480  13052
+2019  2854   1872  4752    2822     449  12749
+2020  2791   1400  3538    2273     363  10365
+2021  3023   1872  4933    2985     564  13377
+2022  2937   1938  4778    2998     446  13097
+2023  3004   1800  4736    2916     441  12897
+2024  3134   1711  4705    2931     406  12887
+2025  3102   1729  4790    2986     411  13018
+2026  2503   1389  4766    2438     336  11432
+
+-- duplicates
+{
+ "date_track_time_horse": 0,
+ "exact_rows": 0,
+ "blank_horse_name": 0
+}
+
+-- null share, every column (blank, '-' and 'None' counted as null)
+major                    0.9424
+fav                      0.8857
+headgear                 0.6522
+stall_positioning        0.5178
+horse_prizewin           0.2594
+median_or                0.1789
+distbt                   0.1673
+total_dst_bt             0.1667
+horse_sex                0.1214
+comment                  0.1138
+days_since_lr            0.0731
+placing_numerical        0.0614
+dam_stallion             0.0001
+jockey_name              0.0001
+dam                      0.0000
+number_of_runners        0.0000
+race_class               0.0000
+race_restrictions_age    0.0000
+race_name                0.0000
+race_distance            0.0000
+track                    0.0000
+id                       0.0000
+race_time                0.0000
+race_date                0.0000
+official_rating          0.0000
+odds                     0.0000
+pounds                   0.0000
+jockeys_claim            0.0000
+trainer                  0.0000
+horse_age                0.0000
+horse_name               0.0000
+stall                    0.0000
+prize_money              0.0000
+going_description        0.0000
+place                    0.0000
+bfsp                     0.0000
+comptime                 0.0000
+dist_furlongs            0.0000
+race_code                0.0000
+comptime_numeric         0.0000
+card_no                  0.0000
+race_type                0.0000
+rail_move                0.0000
+yards                    0.0000
+plcs_paid                0.0000
+bf_plcs_paid             0.0000
+bfsp_place               0.0000
+track_direction          0.0000
+surface_type             0.0000
+stallion                 0.0000
+career_runs              0.0000
+max_or_in_race           0.0000
+created_at               0.0000
+code                     0.0000
+_race                    0.0000
+year                     0.0000
+
+-- key fields held: ['race_date', 'race_time', 'track', 'horse_name', 'bfsp', 'placing_numerical', 'number_of_runners', 'total_dst_bt', 'distbt', 'dist_furlongs', 'prize_money', 'race_type', 'race_class', 'surface_type', 'going_description', 'jockey_name', 'trainer', 'official_rating', 'horse_age', 'pounds', 'stall', 'comptime', 'headgear', 'days_since_lr']; missing from the table: []
+
+-- key fields' null share by year
+      race_date  race_time  track  horse_name  bfsp  placing_numerical  number_of_runners  total_dst_bt  distbt  dist_furlongs  prize_money  race_type  race_class  surface_type  going_description  jockey_name  trainer  official_rating  horse_age  pounds  stall  comptime  headgear  days_since_lr
+year                                                                                                                                                                                                                                                                                                   
+2010        0.0        0.0    0.0         0.0   0.0             0.0665                0.0        0.1641  0.1665            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.7543         0.0733
+2011        0.0        0.0    0.0         0.0   0.0             0.0676                0.0        0.1685  0.1739            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.7346         0.0734
+2012        0.0        0.0    0.0         0.0   0.0             0.0639                0.0        0.1662  0.1671            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.7184         0.0721
+2013        0.0        0.0    0.0         0.0   0.0             0.0640                0.0        0.1696  0.1702            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.6825         0.0715
+2014        0.0        0.0    0.0         0.0   0.0             0.0606                0.0        0.1701  0.1706            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.6643         0.0719
+2015        0.0        0.0    0.0         0.0   0.0             0.0642                0.0        0.1737  0.1743            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.6521         0.0729
+2016        0.0        0.0    0.0         0.0   0.0             0.0661                0.0        0.1727  0.1731            0.0          0.0        0.0         0.0           0.0                0.0       0.0005      0.0              0.0        0.0     0.0    0.0       0.0    0.6401         0.0720
+2017        0.0        0.0    0.0         0.0   0.0             0.0618                0.0        0.1685  0.1684            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.6270         0.0707
+2018        0.0        0.0    0.0         0.0   0.0             0.0575                0.0        0.1638  0.1636            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.6324         0.0726
+2019        0.0        0.0    0.0         0.0   0.0             0.0565                0.0        0.1604  0.1605            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.6383         0.0725
+2020        0.0        0.0    0.0         0.0   0.0             0.0590                0.0        0.1593  0.1591            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.6526         0.0817
+2021        0.0        0.0    0.0         0.0   0.0             0.0614                0.0        0.1657  0.1655            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.6269         0.0745
+2022        0.0        0.0    0.0         0.0   0.0             0.0592                0.0        0.1674  0.1672            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.6244         0.0736
+2023        0.0        0.0    0.0         0.0   0.0             0.0634                0.0        0.1699  0.1697            0.0          0.0        0.0         0.0           0.0                0.0       0.0002      0.0              0.0        0.0     0.0    0.0       0.0    0.6168         0.0740
+2024        0.0        0.0    0.0         0.0   0.0             0.0601                0.0        0.1656  0.1655            0.0          0.0        0.0         0.0           0.0                0.0       0.0000      0.0              0.0        0.0     0.0    0.0       0.0    0.6103         0.0722
+2025        0.0        0.0    0.0         0.0   0.0             0.0560                0.0        0.1650  0.1648            0.0          0.0        0.0         0.0           0.0                0.0       0.0005      0.0              0.0        0.0     0.0    0.0       0.0    0.6070         0.0729
+2026        0.0        0.0    0.0         0.0   0.0             0.0546                0.0        0.1635  0.1633            0.0          0.0        0.0         0.0           0.0                0.0       0.0005      0.0              0.0        0.0     0.0    0.0       0.0    0.5982         0.0713
+
+-- place: non-numeric values 2,023,508; top codes
+place
+1st     213174
+2nd     212768
+3rd     211582
+4th     206720
+5th     194567
+6th     176094
+7th     153854
+8th     129856
+9th     106044
+PU       85637
+10th     83944
+11th     64117
+12th     47555
+13th     33359
+14th     22674
+F        20205
+15th     13500
+UR       13420
+16th      9210
+17th      6119
+18th      4327
+19th      2890
+20th      2067
+BD        1625
+21st      1395
+
+-- placing_numerical: non-numeric values 124,206; top codes
+Series([], )
+
+-- bfsp_place: non-numeric values 0; top codes
+Series([], )
+
+-- field size, declared against rows held (per race)
+{
+ "races": 212874,
+ "declared_null": 0,
+ "equal": 212864,
+ "declared_gt_held": 6,
+ "declared_lt_held": 4,
+ "one_runner_races_held": 24
+}
+
+-- zero or negative values
+{"official_rating": 538146, "prize_money": 84, "dist_furlongs": 0, "number_of_runners": 0, "pounds": 0, "horse_age": 0}
+
+-- BFSP
+{
+ "null": 0,
+ "le_1": 891,
+ "lt_1_01": 0,
+ "gt_1000": 274,
+ "valid": 2022343,
+ "race_book_quantiles_full_races": {
+  "0.01": 0.9644,
+  "0.05": 0.9786,
+  "0.5": 1.002,
+  "0.95": 1.0262,
+  "0.99": 1.0423
+ },
+ "races_book_lt_0_9_or_gt_1_2_full": 84,
+ "valid_by_year": {
+  "2010": 0.9996,
+  "2011": 0.9998,
+  "2012": 1.0,
+  "2013": 0.9999,
+  "2014": 0.9998,
+  "2015": 0.9998,
+  "2016": 0.9991,
+  "2017": 0.9995,
+  "2018": 0.9998,
+  "2019": 0.9998,
+  "2020": 1.0,
+  "2021": 0.9993,
+  "2022": 0.9995,
+  "2023": 0.9995,
+  "2024": 0.9992,
+  "2025": 0.9995,
+  "2026": 0.9958
+ }
+}
+
+-- total_dst_bt parsed: {"rows_text": 2023508, "parsed": 1686106}
+   total_dst_bt commonest values: {"": 337402, "0.5": 20662, "0.15": 18702, "1.25": 18037, "2.5": 17416, "1.75": 16100, "0.75": 15964, "1.5": 15652, "2": 15158, "5": 14692, "3": 14513, "1": 14150, "4": 14078, "3.5": 13946, "2.25": 13893}
+   distbt commonest values: {"": 338568, "0.5": 150263, "NK": 120996, "0.75": 113193, "1.25": 94607, "1": 90843, "1.5": 76821, "HD": 71172, "1.75": 70374, "2.5": 65610, "2": 57259, "SH": 51797, "5": 41627, "2.25": 40242, "6": 38398}
+
+-- rows usable for each target
+{
+ "rows": 2023508,
+ "bfsp_target_usable": 2022343,
+ "nbl_target_usable_finisher_with_margin": 1899213,
+ "nbl_and_prize_usable": 1899129,
+ "finishers": 1899302,
+ "finishers_missing_margin": 89,
+ "prize_null_or_0": 84,
+ "usable_by_year": [
+  {
+   "year": 2010,
+   "bfsp": 0.9996,
+   "nbl": 0.9335,
+   "nbl_prize": 0.9335
+  },
+  {
+   "year": 2011,
+   "bfsp": 0.9998,
+   "nbl": 0.9324,
+   "nbl_prize": 0.9324
+  },
+  {
+   "year": 2012,
+   "bfsp": 1.0,
+   "nbl": 0.936,
+   "nbl_prize": 0.936
+  },
+  {
+   "year": 2013,
+   "bfsp": 0.9999,
+   "nbl": 0.936,
+   "nbl_prize": 0.9359
+  },
+  {
+   "year": 2014,
+   "bfsp": 0.9998,
+   "nbl": 0.9394,
+   "nbl_prize": 0.9393
+  },
+  {
+   "year": 2015,
+   "bfsp": 0.9998,
+   "nbl": 0.9356,
+   "nbl_prize": 0.9356
+  },
+  {
+   "year": 2016,
+   "bfsp": 0.9991,
+   "nbl": 0.9338,
+   "nbl_prize": 0.9337
+  },
+  {
+   "year": 2017,
+   "bfsp": 0.9995,
+   "nbl": 0.9382,
+   "nbl_prize": 0.9382
+  },
+  {
+   "year": 2018,
+   "bfsp": 0.9998,
+   "nbl": 0.9425,
+   "nbl_prize": 0.9425
+  },
+  {
+   "year": 2019,
+   "bfsp": 0.9998,
+   "nbl": 0.9434,
+   "nbl_prize": 0.9434
+  },
+  {
+   "year": 2020,
+   "bfsp": 1.0,
+   "nbl": 0.9409,
+   "nbl_prize": 0.9409
+  },
+  {
+   "year": 2021,
+   "bfsp": 0.9993,
+   "nbl": 0.9385,
+   "nbl_prize": 0.9385
+  },
+  {
+   "year": 2022,
+   "bfsp": 0.9995,
+   "nbl": 0.9408,
+   "nbl_prize": 0.9407
+  },
+  {
+   "year": 2023,
+   "bfsp": 0.9995,
+   "nbl": 0.9366,
+   "nbl_prize": 0.9366
+  },
+  {
+   "year": 2024,
+   "bfsp": 0.9992,
+   "nbl": 0.9399,
+   "nbl_prize": 0.9398
+  },
+  {
+   "year": 2025,
+   "bfsp": 0.9995,
+   "nbl": 0.9439,
+   "nbl_prize": 0.9439
+  },
+  {
+   "year": 2026,
+   "bfsp": 0.9958,
+   "nbl": 0.9454,
+   "nbl_prize": 0.9453
+  }
+ ]
+}
+
+-- locked holdout (>= 2026-04-01; counted, not evaluated)
+{"rows": 82545, "races": 8864, "rows_from_2026_10_01": 16289}
+
+-- the last 12 days held
+race_date
+2026-11-05    405
+2026-11-06    319
+2026-11-07    460
+2026-11-08    187
+2026-11-09    199
+2026-11-10    143
+2026-11-11    202
+2026-11-12    192
+2026-11-13    205
+2026-11-14    298
+2026-11-15    235
+2026-11-16    151
+
+== Betfair tables
+{
+ "betfair_prices": {
+  "columns": [
+   "id",
+   "country",
+   "market_type",
+   "race_date",
+   "race_time",
+   "event_id",
+   "menu_hint",
+   "event_name",
+   "event_dt",
+   "track_bf",
+   "selection_id",
+   "selection_name",
+   "horse_norm",
+   "win_lose",
+   "bsp",
+   "ppwap",
+   "morningwap",
+   "ppmax",
+   "ppmin",
+   "ipmax",
+   "ipmin",
+   "morning_vol",
+   "pp_vol",
+   "ip_vol",
+   "race_results_id",
+   "source_file",
+   "loaded_at"
+  ],
+  "rows": 2146291,
+  "bsp_nonnull": 2132439
+ },
+ "betfair_prices_files": {
+  "columns": [
+   "source_file",
+   "rows",
+   "status",
+   "loaded_at"
+  ],
+  "rows": 12103
+ },
+ "betfair_live_markets": {
+  "columns": [
+   "race_date",
+   "market_id",
+   "market_type",
+   "market_name",
+   "market_start_utc",
+   "venue",
+   "country",
+   "event_id",
+   "event_name",
+   "race_type",
+   "selection_id",
+   "runner_name",
+   "sort_priority",
+   "cloth_number",
+   "stall_draw",
+   "jockey",
+   "trainer",
+   "age",
+   "weight_value",
+   "official_rating",
+   "form",
+   "days_since_last_run",
+   "wearing",
+   "forecast_num",
+   "forecast_den",
+   "horse_norm",
+   "race_results_id",
+   "loaded_at",
+   "each_way_divisor"
+  ],
+  "rows": 36395
+ },
+ "betfair_live_marks": {
+  "columns": [
+   "race_date",
+   "market_id",
+   "selection_id",
+   "mark",
+   "polled_utc",
+   "minutes_to_off",
+   "market_status",
+   "runner_status",
+   "back1",
+   "back1_size",
+   "back2",
+   "back2_size",
+   "back3",
+   "back3_size",
+   "lay1",
+   "lay1_size",
+   "lay2",
+   "lay2_size",
+   "lay3",
+   "lay3_size",
+   "last_traded",
+   "market_total_matched",
+   "active_runners",
+   "bsp",
+   "source",
+   "loaded_at"
+  ],
+  "rows": 522762,
+  "bsp_nonnull": 28478
+ },
+ "live_orders": {
+  "columns": [
+   "race_date",
+   "seq",
+   "ts",
+   "mode",
+   "event",
+   "market_id",
+   "venue",
+   "off",
+   "minutes_to_off",
+   "selection_id",
+   "runner",
+   "strategy",
+   "staking",
+   "reason",
+   "p_model",
+   "p_market",
+   "p_pool",
+   "edge",
+   "move",
+   "best_back",
+   "back_size",
+   "target",
+   "asked",
+   "matched",
+   "avg_price",
+   "bet_id",
+   "status",
+   "error",
+   "hedged",
+   "hedge_liability",
+   "result",
+   "bsp",
+   "clv",
+   "pnl_back",
+   "pnl_lay",
+   "pnl",
+   "commission",
+   "loaded_at"
+  ],
+  "rows": 69055,
+  "bsp_nonnull": 69055
+ },
+ "betfair_odds": {
+  "columns": [
+   "id",
+   "market_id",
+   "selection_id",
+   "race_date",
+   "race_time",
+   "venue",
+   "runner_name",
+   "best_back",
+   "best_back_size",
+   "best_lay",
+   "best_lay_size",
+   "sp_near",
+   "sp_far",
+   "last_traded",
+   "total_matched",
+   "runner_status",
+   "market_status",
+   "snapshot_at"
+  ],
+  "rows": 0
+ },
+ "bets": {
+  "columns": [
+   "id",
+   "race_date",
+   "race_time",
+   "track",
+   "horse_name",
+   "market_id",
+   "selection_id",
+   "predicted_bfsp",
+   "predicted_win_prob",
+   "betfair_back",
+   "betfair_lay",
+   "edge_pct",
+   "bet_type",
+   "stake",
+   "price",
+   "status",
+   "actual_bsp",
+   "placing",
+   "gross_pnl",
+   "commission",
+   "net_pnl",
+   "created_at",
+   "settled_at"
+  ],
+  "rows": 0
+ }
+}
+
+-- betfair_prices rows by year
+year   rows
+2017   1260
+2018 258777
+2019 245619
+2020 206927
+2021 256665
+2022 241904
+2023 242222
+2024 243377
+2025 239066
+2026 210474
+
+written out/phase0_data_audit.json
