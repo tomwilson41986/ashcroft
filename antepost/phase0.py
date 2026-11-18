@@ -491,48 +491,9 @@ def mark_table(j: pd.DataFrame) -> dict:
 # The parts
 # ----------------------------------------------------------------------------------------------------------------
 
-def _strip_html(s: str) -> str:
-    s = re.sub(r"(?i)<br\s*/?>|</p>|</li>", "\n", s or "")
-    s = re.sub(r"<[^>]+>", "", s)
-    s = re.sub(r"&nbsp;", " ", s)
-    s = re.sub(r"&amp;", "&", s)
-    return re.sub(r"\n\s*\n+", "\n", s).strip()
-
-
 def part_rules(out: Path) -> dict:
-    from betfair_client import BetfairClient
-    c = BetfairClient()
-    c.login()
-    try:
-        now = datetime.now(timezone.utc)
-        cat = c._api_call("listMarketCatalogue", {
-            "filter": {"eventTypeIds": ["7"], "marketTypeCodes": ["ANTEPOST_WIN"], "marketCountries": ["GB", "IE"],
-                       "marketStartTime": {"from": _iso(now), "to": _iso(now + timedelta(days=400))}},
-            "marketProjection": ["EVENT", "MARKET_START_TIME", "MARKET_DESCRIPTION", "RUNNER_DESCRIPTION"],
-            "maxResults": 200, "sort": "FIRST_TO_START"}) or []
-    finally:
-        try:
-            c.logout()
-        except Exception:
-            pass
-    rows, texts = [], {}
-    for m in cat:
-        d, ev = m.get("description") or {}, m.get("event") or {}
-        text = _strip_html(d.get("rules") or "")
-        texts.setdefault(text, []).append(m.get("marketId"))
-        rows.append({"market_id": m.get("marketId"), "market_name": m.get("marketName"), "event": ev.get("name"),
-                     "venue": ev.get("venue"), "country": ev.get("countryCode"),
-                     "market_start": m.get("marketStartTime"), "runners": len(m.get("runners") or []),
-                     "total_matched": m.get("totalMatched"),
-                     **{k: d.get(k) for k in ("bspMarket", "turnInPlayEnabled", "persistenceEnabled",
-                                               "marketBaseRate", "discountAllowed", "bettingType", "suspendTime",
-                                               "marketTime", "settleTime", "rulesHasDate", "clarifications",
-                                               "raceType", "eachWayDivisor")}})
-    (out / "rules_markets.json").write_text(json.dumps(rows, indent=1, default=str))
-    (out / "rules_texts.json").write_text(json.dumps([{"markets": v, "text": k} for k, v in texts.items()], indent=1))
-    return {"markets": len(rows), "markets_list": rows,
-            "distinct_rules_texts": [{"markets": len(v), "example_market": v[0], "text": k[:20000]}
-                                     for k, v in sorted(texts.items(), key=lambda kv: -len(kv[1]))]}
+    from antepost.rules import read_rules
+    return read_rules(out)
 
 
 def _s3():

@@ -138,3 +138,27 @@ def test_a_market_on_a_day_the_table_lacks_is_counted_as_a_gap(tmp_path):
     j, rep = p0.race_day_join(mk, rn, db)
     assert set(j["label"]) == {"race_not_found"}
     assert rep["check"]["not_joined_with_no_win_rows_that_day"] == 1 and rep["check"]["markets_joined"] == 0
+
+
+def test_the_rules_read_keeps_each_distinct_text_once(tmp_path):
+    from antepost.rules import read_rules
+
+    class Client:
+        calls = []
+
+        def _api_call(self, method, params):
+            self.calls.append((method, params))
+            md = {"bspMarket": False, "turnInPlayEnabled": False, "rules": "<p>Rule A</p><br>All in.&nbsp;"}
+            return [{"marketId": "1.1", "marketName": "Gold Cup", "description": md, "event": {"name": "Cheltenham 2027"},
+                     "runners": [{}, {}]},
+                    {"marketId": "1.2", "marketName": "Arkle", "description": md, "event": {"name": "Cheltenham 2027"}}]
+
+        def logout(self):
+            pass
+
+    c = Client()
+    rep = read_rules(tmp_path, client=c)
+    assert c.calls[0][0] == "listMarketCatalogue" and c.calls[0][1]["filter"]["marketTypeCodes"] == ["ANTEPOST_WIN"]
+    assert rep["markets"] == 2 and rep["markets_list"][0]["bspMarket"] is False
+    assert rep["distinct_rules_texts"] == [{"markets": 2, "example_market": "1.1", "text": "Rule A\nAll in."}]
+    assert (tmp_path / "antepost_rules.json").exists()
