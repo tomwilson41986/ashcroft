@@ -5,6 +5,13 @@ name: Card fallback check (Betfair's card against HRB's)
 # predictions/<day>.csv. Read-only for the trader: it reads predictions/ only. Steps as predict.yml's.
 on:
   workflow_dispatch:
+    inputs:
+      oracle:
+        description: "diagnostic: fields copied from the HRB card (class,prize,going), empty for the fallback as built"
+        default: ''
+      prefix:
+        description: the predictions prefix this run writes (never predictions)
+        default: predictions_betfair_card
 
 jobs:
   check:
@@ -59,9 +66,12 @@ jobs:
           HRB_USERNAME: card-fallback-check        # set so the live card path is taken; CARD_SOURCE skips the login
           CARD_SOURCE: betfair
           CARD_AS_TABLE: stall
-          PREDICTIONS_PREFIX: predictions_betfair_card
-          RACECARDS_PREFIX: racecards_betfair_card
-        run: python -m pipeline.predict
+          CARD_ORACLE: ${{ inputs.oracle }}
+          PREFIX: ${{ inputs.prefix }}
+        run: |
+          [[ "$PREFIX" =~ ^predictions_[a-z0-9_]+$ ]] || { echo "the prefix must start predictions_ (never predictions)"; exit 1; }
+          [[ "$CARD_ORACLE" =~ ^[a-z,]*$ ]] || { echo "oracle: class,prize,going"; exit 1; }
+          PREDICTIONS_PREFIX="$PREFIX" RACECARDS_PREFIX="racecards_${PREFIX#predictions_}" python -m pipeline.predict
 
       - name: Compare with the morning's predictions
         env:
@@ -69,4 +79,5 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
-        run: python scripts/card_fallback_compare.py --prefix predictions_betfair_card | tee -a "$GITHUB_STEP_SUMMARY"
+          PREFIX: ${{ inputs.prefix }}
+        run: python scripts/card_fallback_compare.py --prefix "$PREFIX" | tee -a "$GITHUB_STEP_SUMMARY"

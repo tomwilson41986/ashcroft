@@ -239,9 +239,58 @@ def history_lookups(db_path: str, day: date) -> dict:
         except Exception as e:  # noqa: BLE001 - Betfair's rounded trip is kept
             log.warning(f"Betfair card: no distances from history ({e})")
             dists = pd.DataFrame(columns=["track", "race_type", "race_distance", "n"])
+        try:
+            races = pd.read_sql_query(
+                "SELECT track, race_date, race_time, race_type, race_class, prize_money, MAX(official_rating) AS top_or "
+                "FROM race_results WHERE race_date >= ? AND race_date < ? GROUP BY race_date, track, race_time", conn,
+                params=((day - timedelta(days=730)).isoformat(), day.isoformat()))
+        except Exception as e:  # noqa: BLE001 - class and prize then stay empty
+            log.warning(f"Betfair card: no race classes from history ({e})")
+            races = pd.DataFrame(columns=["track", "race_date", "race_time", "race_type", "race_class", "prize_money",
+                                          "top_or"])
     active = (day - timedelta(days=365)).isoformat()
     return {"jockeys": NameIndex(jockeys, unique_since=active), "trainers": NameIndex(trainers, unique_since=active),
-            "tracks": tracks, "going": going, "dists": dists}
+            "tracks": tracks, "going": going, "dists": dists, "races": races}
+
+
+def _is_hcap(text) -> bool:
+    return bool(re.search(r"handicap|nursery|\bhcap\b", str(text or ""), re.I))
+
+
+def class_prize_estimate(track: str, jumps: bool, hcap: bool, top_or: float, races: pd.DataFrame | None,
+                         k: int = 7) -> tuple[str | None, float, str]:
+    """Betfair publishes neither the class nor the prize: both from the course's own races of the last two years of
+    the same code (flat or jumps) and kind (handicap or not), the k nearest in the race's top official rating (or,
+    for an unrated race, the k most recent unrated ones): the commonest class and the median prize. Then the same
+    over every course. (class, prize, source); (None, NaN, 'none') with nothing like it."""
+    if races is None or races.empty:
+        return None, np.nan, "none"
+    r = races
+    if "_jumps" not in r.columns:
+        r["_jumps"] = r.race_type.map(_is_jumps_type)
+        r["_hcap"] = r.race_type.map(_is_hcap)
+        r["_trk"] = r.track.map(_alnum)
+        r["_or"] = pd.to_numeric(r.top_or, errors="coerce")
+        r["_prize"] = pd.to_numeric(r.prize_money, errors="coerce")
+    same = r[(r._jumps == jumps) & (r._hcap == hcap)]
+    for scope, pool in (("course", same[same._trk == _alnum(track)]), ("all courses", same)):
+        if pool.empty:
+            continue
+        rated = np.isfinite(top_or) and top_or > 0
+        if rated:
+            p = pool[pool._or > 0]
+            if p.empty:
+                continue
+            p = p.assign(_gap=(p._or - top_or).abs()).sort_values(["_gap", "race_date"], ascending=[True, False]).head(k)
+        else:
+            p = pool[~(pool._or > 0)].sort_values("race_date", ascending=False).head(k)
+            if p.empty:
+                continue
+        cls = p.race_class.dropna().astype(str)
+        cls = cls[~cls.str.strip().isin(["", "nan", "None"])]
+        return (cls.mode().iloc[0] if not cls.empty else None, float(p._prize.median()),
+                f"{scope}, {len(p)} {'nearest in OR' if rated else 'recent unrated'}")
+    return None, np.nan, "none"
 
 
 def course_distance(track: str, jumps: bool, betfair_trip: str | None, dists: pd.DataFrame | None) -> str | None:
@@ -369,6 +418,17 @@ def card_from_catalogue(cat: pd.DataFrame, day: date, lookups: dict | None = Non
         card["race_distance"] = card.market_id.map(trip)
     card["going_description"] = card.market_id.map(lambda m: est[m][0])
     card["going_source"] = card.market_id.map(lambda m: est[m][1])
+    races = lk.get("races")
+    if races is not None and not races.empty:
+        cp = {}
+        for mkt, g in card.groupby("market_id"):
+            jumps = str(g.betfair_race_type.iloc[0] or "").lower() not in ("flat", "")
+            top = pd.to_numeric(g.official_rating, errors="coerce").max()
+            cp[mkt] = class_prize_estimate(g.track.iloc[0], jumps, _is_hcap(g.race_name.iloc[0]),
+                                           float(top) if pd.notna(top) else np.nan, races)
+        card["race_class"] = card.market_id.map(lambda m: cp[m][0])
+        card["prize_money"] = card.market_id.map(lambda m: cp[m][1])
+        card["class_source"] = card.market_id.map(lambda m: cp[m][2])
     return card.reset_index(drop=True)
 
 
@@ -389,6 +449,31 @@ def removed_runners(books: pd.DataFrame | None) -> set:
     b = books.sort_values("polled_utc").drop_duplicates(["market_id", "selection_id"], keep="last")
     b = b[b.runner_status.astype(str).str.upper() == "REMOVED"]
     return {(str(m), str(int(float(s)))) for m, s in zip(b.market_id, b.selection_id) if str(s) not in ("", "nan")}
+
+
+ORACLE_FIELDS = {"class": "race_class", "prize": "prize_money", "going": "going_description"}
+
+
+def with_hrb_fields(card: pd.DataFrame, day: date, fields: list[str], s3, bucket: str) -> pd.DataFrame:
+    """The check run's diagnostic only (CARD_ORACLE=class,prize,going): those fields copied from the day's HRB card
+    (s3 racecards/<day>_HHMM.csv, the first), race by race, to show what the estimates cost. Never set live."""
+    keys = sorted(o["Key"] for o in s3.list_objects_v2(Bucket=bucket, Prefix=f"racecards/{day:%Y-%m-%d}_")
+                  .get("Contents", []))
+    if not keys:
+        log.error("CARD_ORACLE: no HRB card for the day; the estimates stay")
+        return card
+    hr = pd.read_csv(io.BytesIO(s3.get_object(Bucket=bucket, Key=keys[0])["Body"].read()), dtype={"race_time": str})
+    hr["_k"] = hr.track.map(_alnum) + "|" + hr.race_time.astype(str).str.strip()
+    card = card.copy()
+    card["_k"] = card.track.map(_alnum) + "|" + card.race_time.astype(str).str.strip()
+    first = hr.drop_duplicates("_k").set_index("_k")
+    for f in fields:
+        col = ORACLE_FIELDS.get(f)
+        if col and col in first.columns:
+            card[col] = card._k.map(first[col])
+    log.warning(f"CARD_ORACLE: {', '.join(fields)} copied from {keys[0]} on "
+                f"{card._k.isin(first.index).mean():.0%} of runners (a diagnostic, not a card)")
+    return card.drop(columns="_k")
 
 
 def fetch_card(day: date, db_path: str | None = None, s3=None, bucket: str | None = None) -> pd.DataFrame:
@@ -415,6 +500,9 @@ def fetch_card(day: date, db_path: str | None = None, s3=None, bucket: str | Non
     if card.empty:
         log.error(f"Betfair card: the recorded catalogue holds no GB/IE win market on {day}")
         return card
+    oracle = [f.strip() for f in os.environ.get("CARD_ORACLE", "").split(",") if f.strip()]
+    if oracle:
+        card = with_hrb_fields(card, day, oracle, s3, bucket)
     jk = lookups.get("jockeys")
     log.warning(
         f"Betfair card for {day}: {len(card)} runners in {card.market_id.nunique()} races "
