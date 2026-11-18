@@ -101,22 +101,39 @@ def hrb_session():
     return session, str(uid)
 
 
-def list_sets(session) -> dict[int, str]:
+def list_sets(session, url: str | None = None) -> dict[int, str]:
     """The account's saved rating sets, id -> name, from the Ratings Machine's download form (the
-    ``usecustomsettings`` select)."""
+    ``usecustomsettings`` select, else any select of numbered options whose name speaks of settings or ratings).
+    When none is found the page's forms and selects are logged (names and option counts only)."""
     from bs4 import BeautifulSoup
-    r = session.get(RM_URL, timeout=120)
+    r = session.get(url or RM_URL, timeout=120)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "lxml")
-    out = {}
-    for sel in soup.find_all("select"):
-        if (sel.get("name") or "").lower() != "usecustomsettings":
-            continue
+
+    def numbered(sel):
+        out = {}
         for o in sel.find_all("option"):
             v = (o.get("value") or "").strip()
             if v.isdigit():
                 out[int(v)] = o.get_text(" ", strip=True)
-    return out
+        return out
+
+    selects = soup.find_all("select")
+    for sel in selects:
+        if (sel.get("name") or "").lower() == "usecustomsettings":
+            found = numbered(sel)
+            if found:
+                return found
+    for sel in selects:
+        name = (sel.get("name") or sel.get("id") or "").lower()
+        if re.search(r"setting|rating|custom|set", name) and len(numbered(sel)) >= 1:
+            return numbered(sel)
+    log.warning("no rating-set list on %s: %d forms %s; selects %s; links %s", url or RM_URL, len(soup.find_all("form")),
+                [(f.get("action"), f.get("method")) for f in soup.find_all("form")][:10],
+                [((s.get("name") or s.get("id")), len(s.find_all("option"))) for s in selects][:20],
+                sorted({a.get("href") for a in soup.find_all("a", href=True)
+                        if re.search(r"rating|prevdate|download", a.get("href"), re.I)})[:20])
+    return {}
 
 
 class S3Store:
@@ -345,6 +362,9 @@ def main(argv=None):
         session, uid = hrb_session()
         args.user_id = args.user_id or os.getenv("HRB_USER_ID") or uid
         found = list_sets(session)
+        if not found:
+            found = dict(RATING_SETS)
+            print("the set list could not be read from the page: the sets recorded on 15 Sep 2026 (RATING_SETS) are used")
         print(f"rating sets on the account: {len(found)}")
         for k, v in sorted(found.items()):
             print(f"  {k}\t{v}")
