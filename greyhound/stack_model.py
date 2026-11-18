@@ -36,7 +36,8 @@ import pandas as pd
 #: the expected-time, trials, optics, line, salience and last-race tables. RMSE of log(BSP) 0.2885 on 1 Jun - 11 Nov
 #: 2026 against 0.3332 for batch 24's read of the recipe before it.
 PIT_TABLES = ("ability", "trouble", "connections", "market", "breeding", "life", "figs", "form", "draw", "bend",
-              "xtime", "trials", "optics", "line", "salience", "lastrace", "league", "speed", "seq", "irish")
+              "xtime", "trials", "optics", "line", "salience", "lastrace", "league", "speed", "seq", "irish",
+              "trials2", "ability2", "draw2", "bend2")
 #: from 14 Nov 2026 (the owner: "Release the league table to the live price"): the league table (greyhound/pit/league.py,
 #: Hunter's MM) added. Batch 37 (ledger greyhound-leak-league-batch37-1114, reports/greyhound_model.md section 54): RMSE
 #: of log(BSP) 0.2885 -> 0.2854 on the released stack, z -12.7. The recipe is renamed "stack_ml" with it (its own
@@ -48,11 +49,15 @@ PIT_TABLES = ("ability", "trouble", "connections", "market", "breeding", "life",
 #: from 16 Nov 2026 (the owner: "Yes build it"): the dog's Irish form from GreyhoundAPI (greyhound/pit/irish.py, linked
 #: by name). Batch 45 (ledger greyhound-irish-batch45-1116; greyhound-fastloop.yml run 43924460243): RMSE of log(BSP)
 #: 0.2795 -> 0.2780, z -8.0, in Jun-Aug and Sep-Nov. The recipe is renamed "stack_mlsi"
+#: from 18 Nov 2026 (the owner, asked before the run: "Yes"): the feature review's trials on the race scale with the
+#: Kalman levels fed them (greyhound/pit/trials2.py, ability2.py) and the draw and bend rebuilt (draw2.py, bend2.py).
+#: Batch 54 (ledger greyhound-review-combo-batch54-1117; greyhound-fastloop.yml run 44200797892): RMSE of log(BSP)
+#: 0.2781 -> 0.2764 (-0.00167, z -8.0), -0.0017 in Jun-Aug and in Sep-Nov. The recipe is renamed "stack_mlsitd"
 MATRIX_BLOCKS = ("sim", "wpred") + tuple(f"pit_{t}" for t in PIT_TABLES)
 #: batch 14 (run 42818559765): the weigh-in's own columns, a season count GBGB fills after the day, a trainer change
 #: the card cannot see - the one list every card-safe feature set drops (greyhound/live.py)
 from greyhound.live import CARD_UNSAFE_PREFIXES as DROP  # noqa: E402
-RECIPE = {"name": "stack_mlsi", "learning_rate": 0.08, "early_stop": 100, "rounds": 10000, "max_bin": 63,
+RECIPE = {"name": "stack_mlsitd", "learning_rate": 0.08, "early_stop": 100, "rounds": 10000, "max_bin": 63,
           "seeds": 3, "nn_seeds": 3, "nn_seconds": 1800.0, "window_months": 29, "max_seconds": None,
           "calibration": "stretch_track"}
 
