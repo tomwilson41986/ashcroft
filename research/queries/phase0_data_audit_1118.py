@@ -15,16 +15,20 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import sys
 
 import numpy as np
 import pandas as pd
 
+sys.path.insert(0, os.getcwd())   # the repo's own modules (model/), run from the root
+
 DB = "horse_racing.db"
 OUT = "out/phase0_data_audit.json"
 HOLDOUT = "2026-04-01"
-KEY = ["raceid", "race_date", "race_time", "track", "horse_name", "bfsp", "placing_numerical", "number_of_runners",
-       "total_dst_bt", "LB", "dist_furlongs", "prize_money", "race_type", "surface_type", "going", "jockey", "trainer",
-       "official_rating", "OR", "age", "weight", "draw"]
+KEY = ["race_date", "race_time", "track", "horse_name", "bfsp", "placing_numerical", "number_of_runners",
+       "total_dst_bt", "distbt", "dist_furlongs", "prize_money", "race_type", "race_class", "surface_type",
+       "going_description", "jockey_name", "trainer", "official_rating", "horse_age", "pounds", "stall", "comptime",
+       "headgear", "days_since_lr"]
 report: dict = {}
 
 
@@ -127,6 +131,12 @@ fsum = {"races": len(fs), "declared_null": int(fs.declared.isna().sum()), "equal
 say("\n-- field size, declared against rows held (per race)\n" + json.dumps(fsum, indent=1))
 report["field_size"] = fsum
 
+# bad values in key numeric fields (zero or negative where a positive value is expected)
+zeros = {c: int((pd.to_numeric(df[c], errors="coerce") <= 0).sum()) for c in
+         ("official_rating", "prize_money", "dist_furlongs", "number_of_runners", "pounds", "horse_age") if c in df.columns}
+say("\n-- zero or negative values\n" + json.dumps(zeros))
+report["zero_or_negative"] = zeros
+
 # the BFSP
 b = pd.to_numeric(df.get("bfsp"), errors="coerce")
 bsum = {"null": int(b.isna().sum()), "le_1": int((b <= 1.0).sum()), "lt_1_01": int(((b > 1) & (b < 1.01)).sum()),
@@ -142,7 +152,13 @@ say("\n-- BFSP\n" + json.dumps(bsum, indent=1, default=str))
 report["bfsp"] = bsum
 
 # rows usable per target
-lb = pd.to_numeric(df["LB"], errors="coerce") if "LB" in df.columns else pd.Series(np.nan, index=df.index)
+from model.perf_figures import parse_beaten_lengths  # noqa: E402 - the engine's parse (the column is text)
+lb = df["total_dst_bt"].map(parse_beaten_lengths) if "total_dst_bt" in df.columns else pd.Series(np.nan, index=df.index)
+say("\n-- total_dst_bt parsed: " + json.dumps({"rows_text": int(df["total_dst_bt"].notna().sum()),
+                                               "parsed": int(lb.notna().sum())}))
+for c in ("total_dst_bt", "distbt"):
+    if c in df.columns:
+        say(f"   {c} commonest values: " + json.dumps(df[c].astype(str).value_counts().head(15).to_dict()))
 fin = pos > 0
 nbl_ok = fin & ((pos == 1) | lb.notna())
 prize = pd.to_numeric(df.get("prize_money"), errors="coerce")
