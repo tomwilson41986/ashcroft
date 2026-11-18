@@ -43,7 +43,7 @@ UK = ZoneInfo("Europe/London")
 GOING_DAYS = 14
 HISTORY_YEARS = 3
 CARD_FILES = ("markets_overnight.csv.gz", "markets.csv.gz", "markets_evening.csv.gz")
-BOOK_FILES = ("books_overnight.csv.gz", "books.csv.gz")
+BOOK_FILES = ("books_overnight.csv.gz",)      # the night's books: what is known before the morning's prices
 
 # Betfair's market-name abbreviations, written out so the race type reads as it does from HRB's race names
 # (card_enrich.race_signature)
@@ -55,9 +55,9 @@ _ABBREV = [
 ]
 _DIST = re.compile(r"^\s*(\d+m(?:\d+(?:\.\d+)?f)?|\d+(?:\.\d+)?f)\b", re.I)
 _TITLES = {"mr", "mrs", "miss", "ms", "capt", "captain", "dr", "sir", "lady", "lord", "major", "col", "lt"}
+_SUFFIXES = {"jr", "jnr", "junior", "snr", "sr", "senior", "bt"}
 # Betfair's WEARING words -> the HRB card's headgear codes (model/blocks/gear.py reads them lower-cased)
-_GEAR = [("blink", "Blnk"), ("cheek", "CkPc"), ("visor", "Vsor"), ("hood", "Hood"), ("eye", "Eye"),
-         ("tongue", "TT")]
+_GEAR = [("blink", "Blnk"), ("cheek", "CkPc"), ("visor", "Vsor"), ("hood", "Hood")]
 _AW_VENUES = ("southwell", "wolverhampton", "kempton", "lingfield", "newcastle", "chelmsford", "dundalk")
 
 
@@ -80,12 +80,18 @@ def distance_from_name(name) -> str | None:
 
 
 def headgear_from_wearing(w) -> str | None:
-    """Betfair's WEARING text as the HRB card's codes, space separated: 'cheekpieces, tongue strap' -> 'CkPc TT'."""
-    t = str(w or "").lower()
-    if not t or t in ("nan", "none"):
+    """Betfair's WEARING text as the HRB card writes it, the codes joined in its order (main item, eyeshield,
+    tongue tie): 'cheekpieces and tongue strap' -> 'CkPcTT', 'blinkers and eyeshields' -> 'BlnkEye',
+    'hood and blinkers' -> 'H+B' (the field check of 18 Nov: HRB's values on 10-17 Nov)."""
+    if not isinstance(w, str) or not w.strip() or w.strip().lower() in ("nan", "none"):
         return None
-    codes = [code for word, code in _GEAR if word in t]
-    return " ".join(codes) if codes else None
+    t = w.lower()
+    if "hood" in t and "blink" in t:
+        main = "H+B"
+    else:
+        main = "".join(code for word, code in _GEAR if word in t)
+    out = main + ("Eye" if "eye" in t else "") + ("TT" if "tongue" in t else "")
+    return out or None
 
 
 def card_time(start_utc) -> str | None:
@@ -113,9 +119,17 @@ def forecast_odds(num, den) -> float:
 # Names: Betfair writes 'Harry Skelton', the results table 'Skelton, Harry' (or 'Skelton, H')
 # --------------------------------------------------------------------------------------------------------------------
 
+def _words(text) -> list[str]:
+    """A name's words, titles ('Mr', 'Sir') and suffixes ('Jr', 'Jnr', 'Bt') dropped: 'Sir Mark Prescott Bt' ->
+    ['Mark', 'Prescott']."""
+    text = re.sub(r"\((?:jr|jnr|snr|sr)\)", " ", str(text or ""), flags=re.I)
+    return [w for w in re.split(r"[\s.]+", text) if w and _alnum(w) and _alnum(w) not in _TITLES | _SUFFIXES]
+
+
 def _hist_keys(name) -> tuple:
-    """A results-table name as its parts' (surname, first initial): 'Russell, Lucinda / Scudamore, M' ->
-    (('russell', 'l'), ('scudamore', 'm'))."""
+    """A results-table name as its people's (surname, first initial): 'Russell, Lucinda / Scudamore, M' ->
+    (('russell', 'l'), ('scudamore', 'm')); 'ONeill, Jonjo and AJ' -> (('oneill', 'a'), ('oneill', 'j'));
+    'McCain Jnr, D' -> (('mccain', 'd'),)."""
     keys = []
     for part in str(name or "").split("/"):
         part = re.sub(r"\(\d{1,2}\)\s*$", "", part).strip()
@@ -124,56 +138,76 @@ def _hist_keys(name) -> tuple:
         else:
             bits = part.split()
             sur, given = (bits[-1], " ".join(bits[:-1])) if bits else ("", "")
-        given = [g for g in re.split(r"[\s.]+", given) if g and _alnum(g) not in _TITLES]
-        keys.append((_alnum(sur), _alnum(given[0])[:1] if given else ""))
-    return tuple(sorted(keys))
+        sur = "".join(_alnum(w) for w in _words(sur))
+        for g in re.split(r"\s+(?:and|&)\s+", given):
+            w = _words(g)
+            keys.append((sur, _alnum(w[0])[:1] if w else ""))
+    return tuple(sorted(set(keys)))
 
 
-def _betfair_part_keys(part) -> list[tuple]:
+def _betfair_part_keys(part, surname: str | None = None) -> list[tuple]:
     """Every (surname, first initial) a Betfair name could be: 'Nico de Boinville' -> ('boinville', 'n'),
-    ('deboinville', 'n'); 'Mr O. McGill' -> ('mcgill', 'o')."""
-    toks = [t for t in re.split(r"[\s]+", str(part).strip()) if t and _alnum(t) not in _TITLES]
+    ('deboinville', 'n'); 'Mr O. McGill' -> ('mcgill', 'o'); a name already in the table's form ('Oshea, J G M')
+    as the table reads it; a lone given name of a joint licence ('Jonjo' in 'Jonjo & A.J. O'Neill') with the
+    licence's surname."""
+    if "," in str(part):
+        return list(_hist_keys(part))
+    toks = _words(part)
     if not toks:
         return []
     if len(toks) == 1:
-        return [(_alnum(toks[0]), "")]
-    out = []
-    for k in range(1, len(toks)):
-        out.append((_alnum("".join(toks[k:])), _alnum(toks[0])[:1]))
-    return out
+        return [(surname, _alnum(toks[0])[:1])] if surname else [(_alnum(toks[0]), "")]
+    return [("".join(_alnum(t) for t in toks[k:]), _alnum(toks[0])[:1]) for k in range(1, len(toks))]
 
 
 class NameIndex:
-    """History's names by their parts' (surname, initial): the most recent wins a tie."""
+    """History's names by their people's (surname, initial): the most recent wins a tie."""
 
-    def __init__(self, names: pd.DataFrame):
-        """names: columns name, last (the latest race date), n (rides or runners)."""
+    def __init__(self, names: pd.DataFrame, unique_since: str | None = None):
+        """names: columns name, last (the latest race date), n (rides or runners). A surname held by one name only
+        since ``unique_since`` also matches on its own (a nickname: Betfair's 'Sandy Thomson', the table's
+        'Thomson, A M')."""
         self.by_keys: dict[tuple, tuple] = {}
-        self.by_surname: dict[str, tuple] = {}
+        self.first_part: dict[tuple, tuple] = {}
+        surnames: dict[str, list] = {}
         for r in names.dropna(subset=["name"]).itertuples(index=False):
             keys = _hist_keys(r.name)
+            if not keys:
+                continue
             score = (str(r.last), int(r.n))
-            if keys and (keys not in self.by_keys or score > self.by_keys[keys][0]):
+            if keys not in self.by_keys or score > self.by_keys[keys][0]:
                 self.by_keys[keys] = (score, r.name)
-            if len(keys) == 1:
-                sur = keys[0][0]
-                if sur not in self.by_surname or score > self.by_surname[sur][0]:
-                    self.by_surname[sur] = (score, r.name)
+            if len(keys) == 1 and (unique_since is None or str(r.last) >= unique_since):
+                surnames.setdefault(keys[0][0], []).append((score, r.name))
+        self.by_surname = {s: v[0] for s, v in surnames.items() if len(v) == 1}
+
+    def _lookup(self, combos) -> tuple | None:
+        best = None
+        for combo in combos:
+            hit = self.by_keys.get(tuple(sorted(set(combo))))
+            if hit and (best is None or hit[0] > best[0]):
+                best = hit
+        return best
 
     def match(self, betfair_name) -> str | None:
         if not isinstance(betfair_name, str) or not betfair_name.strip():
             return None
+        from itertools import product
         parts = [p for p in re.split(r"\s+&\s+|\s+and\s+", betfair_name.strip()) if p.strip()]
-        options = [_betfair_part_keys(p) for p in parts]
+        last = _words(parts[-1])
+        surname = _alnum(last[-1]) if len(last) > 1 else None
+        options = [_betfair_part_keys(p, surname) for p in parts]
         if not all(options):
             return None
-        best = None
-        from itertools import product
-        for combo in product(*options):
-            hit = self.by_keys.get(tuple(sorted(combo)))
-            if hit and (best is None or hit[0] > best[0]):
-                best = hit
-        return best[1] if best else None
+        hit = self._lookup(product(*options))
+        if hit is None and len(parts) > 1:              # a joint licence the table names by its first trainer
+            hit = self._lookup([o] for o in options[0])
+        if hit is None:                                  # a surname only one active name holds
+            for o in options[0]:
+                if o[0] in self.by_surname:
+                    hit = self.by_surname[o[0]]
+                    break
+        return hit[1] if hit else None
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -197,7 +231,36 @@ def history_lookups(db_path: str, day: date) -> dict:
             "SELECT track, race_type, race_date, race_time, going_description FROM race_results "
             "WHERE race_date >= ? AND race_date < ? AND going_description IS NOT NULL AND going_description != ''",
             conn, params=((day - timedelta(days=60)).isoformat(), day.isoformat()))
-    return {"jockeys": NameIndex(jockeys), "trainers": NameIndex(trainers), "tracks": tracks, "going": going}
+        try:
+            dists = pd.read_sql_query(
+                "SELECT track, race_type, race_distance, COUNT(*) AS n FROM race_results "
+                "WHERE race_date >= ? AND race_date < ? AND race_distance IS NOT NULL AND race_distance != '' "
+                "GROUP BY track, race_type, race_distance", conn, params=(since, day.isoformat()))
+        except Exception as e:  # noqa: BLE001 - Betfair's rounded trip is kept
+            log.warning(f"Betfair card: no distances from history ({e})")
+            dists = pd.DataFrame(columns=["track", "race_type", "race_distance", "n"])
+    active = (day - timedelta(days=365)).isoformat()
+    return {"jockeys": NameIndex(jockeys, unique_since=active), "trainers": NameIndex(trainers, unique_since=active),
+            "tracks": tracks, "going": going, "dists": dists}
+
+
+def course_distance(track: str, jumps: bool, betfair_trip: str | None, dists: pd.DataFrame | None) -> str | None:
+    """Betfair rounds a trip to the furlong ('2m3f' for Limerick's 2m2½f): the trip run at the track for the same
+    code nearest to Betfair's, within half a furlong, the commonest on a tie; else Betfair's own."""
+    from model.card_enrich import parse_distance_furlongs
+    f = parse_distance_furlongs(betfair_trip)
+    if dists is None or dists.empty or not np.isfinite(f):
+        return betfair_trip
+    d = dists[(dists.track.map(_alnum) == _alnum(track)) & (dists.race_type.map(_is_jumps_type) == jumps)].copy()
+    if d.empty:
+        return betfair_trip
+    d["f"] = d.race_distance.map(parse_distance_furlongs)
+    d["gap"] = (d.f - f).abs()
+    d = d[d.gap <= 0.5 + 1e-9]
+    if d.empty:
+        return betfair_trip
+    d = d.groupby("race_distance", as_index=False).agg(gap=("gap", "min"), n=("n", "sum"))
+    return d.sort_values(["gap", "n"], ascending=[True, False]).race_distance.iloc[0]
 
 
 def track_name(venue, tracks: pd.DataFrame) -> str:
@@ -299,6 +362,11 @@ def card_from_catalogue(cat: pd.DataFrame, day: date, lookups: dict | None = Non
         rt = g.betfair_race_type.iloc[0]
         jumps = str(rt or "").lower() not in ("flat", "")
         est[mkt] = going_estimate(track, jumps, day, going)
+    dists = lk.get("dists")
+    if dists is not None and not dists.empty:
+        trip = {mkt: course_distance(g.track.iloc[0], str(g.betfair_race_type.iloc[0] or "").lower() not in ("flat", ""),
+                                     g.race_distance.iloc[0], dists) for mkt, g in card.groupby("market_id")}
+        card["race_distance"] = card.market_id.map(trip)
     card["going_description"] = card.market_id.map(lambda m: est[m][0])
     card["going_source"] = card.market_id.map(lambda m: est[m][1])
     return card.reset_index(drop=True)

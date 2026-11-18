@@ -25,7 +25,9 @@ def test_race_name_and_distance():
 
 
 def test_headgear_time_and_forecast():
-    assert cb.headgear_from_wearing("cheekpieces, tongue strap") == "CkPc TT"
+    assert cb.headgear_from_wearing("cheekpieces and tongue strap") == "CkPcTT"     # HRB's form, codes joined
+    assert cb.headgear_from_wearing("hood and blinkers") == "H+B"
+    assert cb.headgear_from_wearing("blinkers and eyeshields") == "BlnkEye"
     assert cb.headgear_from_wearing("Blinkers") == "Blnk"
     assert cb.headgear_from_wearing(None) is None
     assert cb.headgear_from_wearing(np.nan) is None
@@ -49,9 +51,33 @@ def test_names_as_the_results_table_writes_them():
     assert jk.match("Nico de Boinville") == "de Boinville, Nico"
     assert jk.match("Paddy Wadge") == "Wadge, P"
     assert jk.match("Nobody Known") is None
-    tr = _names([("Russell, Lucinda / Scudamore, M", "2026-11-15", 90), ("Skelton, Daniel", "2026-11-16", 900)])
+    assert jk.match("Jonjo O'Neill Jr.") is None
+    assert _names([("ONeill, Jonjo (Jr)", "2026-11-10", 100)]).match("Jonjo O'Neill Jr.") == "ONeill, Jonjo (Jr)"
+    tr = cb.NameIndex(pd.DataFrame(
+        [("Russell, Lucinda / Scudamore, M", "2026-11-15", 90), ("Skelton, Daniel", "2026-11-16", 900),
+         ("ONeill, Jonjo and AJ", "2026-11-10", 100), ("McCain Jnr, D", "2026-11-10", 300),
+         ("Thomson, A M", "2026-11-01", 50), ("Hammond, Micky", "2026-11-01", 50), ("Easterby, M W", "2026-11-01", 50),
+         ("Easterby, T D", "2026-11-01", 50), ("Prescott, Sir Mark", "2026-11-01", 50),
+         ("Mullins, W P", "2026-11-01", 5), ("Mullins, J W", "2026-11-01", 5)], columns=["name", "last", "n"]),
+        unique_since="2025-11-17")
     assert tr.match("Lucinda Russell & Michael Scudamore") == "Russell, Lucinda / Scudamore, M"
     assert tr.match("Dan Skelton") == "Skelton, Daniel"
+    assert tr.match("Jonjo & A.J. O'Neill") == "ONeill, Jonjo and AJ"          # one surname, two licence holders
+    assert tr.match("Donald McCain") == "McCain Jnr, D"
+    assert tr.match("Sandy Thomson") == "Thomson, A M"                          # the only Thomson: the surname alone
+    assert tr.match("Micky Hammond & Becky Smith") == "Hammond, Micky"          # the table names the first
+    assert tr.match("Michael & David Easterby") == "Easterby, M W"
+    assert tr.match("Sir Mark Prescott Bt") == "Prescott, Sir Mark"
+    assert tr.match("Seamus Mullins") is None                                   # two Mullins: no guess
+
+
+def test_course_distance():
+    d = pd.DataFrame({"track": ["Limerick", "Limerick", "Limerick"],
+                      "race_type": ["Maiden Hurdle", "Handicap Hurdle", "Handicap"],
+                      "race_distance": ["2m2½f", "2m3½f", "2m3f"], "n": [30, 5, 40]})
+    assert cb.course_distance("Limerick", True, "2m3f", d) == "2m2½f"           # nearest jumps trip, the commoner
+    assert cb.course_distance("Limerick", True, "3m", d) == "3m"                # nothing within half a furlong
+    assert cb.course_distance("Elsewhere", True, "2m3f", d) == "2m3f"
 
 
 def test_track_names():
