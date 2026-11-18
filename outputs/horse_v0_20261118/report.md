@@ -57,3 +57,18 @@ been changed. Scope: horse racing only (the owner, 18 Nov). Targets: the BFSP (k
 | Metrics by segment with race-day intervals | `scripts/compare_oos_runs.py` (paired error, rank, code, Brier skill, concordance), `scripts/clv_betfair.py` | one module: both targets, ECE, Benter, by track, race type, field size, price band, year (from `phase0_baseline_v0_1118.py`) |
 | Overfitting | `research/overfit.py` (deflated Sharpe) | probability of backtest overfitting (CSCV) |
 | Harness unit tests | | probabilities sum to 1 in a race; P&L reconciled by hand on 20 bets |
+
+## Test suite (18 Nov, this container, Python 3.11, pandas 3.1.1)
+
+`python -m pytest -q tests` (two chart and workbook test files left out: this container's system PIL breaks
+matplotlib): **3,262 passed, 48 failed, 16 errors, 12 skipped** (`test_suite_1118.txt`).
+
+| Failing | Count | Cause | Horse model affected? |
+|---|---|---|---|
+| Point-in-time leak tests: `test_feature_blocks.py` (11 blocks, the day's results blanked), `test_form_windows.py` (3), `test_career_before.py` (1), `test_shape_draw_production.py` (1) | 16 | Rounding, not leakage: the largest difference is 1.8e-15 (`fw_lbsc_l1`), with no missing value gained or lost. All 164 tests in those files pass under pandas 2.2.3 and fail only under 3.1.1, whose group means round differently in the last bit | No. Every production job installs pandas 3.1.1 (predict.yml run 44228556587, research-loop.yml run 43895762307, train-bfsp.yml run 43570002191), so training and serving agree |
+| `test_football_warehouse*.py` | 27 failed, 16 errors | the warehouse needs `football/warehouse/requirements.txt`, not installed here | out of scope |
+| `test_greyhound_pit.py`, `test_greyhound_fastloop.py` | 5 | not investigated: greyhounds are out of scope (the owner, 18 Nov) | out of scope |
+
+For Phase 1: `requirements.txt` sets only minimum versions (`pandas>=2.1.0`), against the standing rule to pin
+dependency versions. Pin them, and make the leak tests compare at a tolerance (1e-12) far below any real leak, so
+the tests check for leaks rather than for rounding.
