@@ -425,3 +425,23 @@ Counted days: the stream lab's first family 11 days pooled (read at 10: no candi
 - **The live model from 17 Nov**: stack_mlsi, the Irish form added (the owner: "Yes build it"; PR 382; ledger greyhound-irish-batch45-1116), retrained by greyhound-live.yml 43971830784; the sire and dam abroad failed (greyhound-world-batch46-1116). Its out-of-sample prices: fast loop 43971835560 (batch 48), which also replicates the Irish gain against batch 42.
 
 Counted days: the stream lab's first family 12 days pooled (read at 10: no candidate); its late family 6 of 10; the trade test 7 of 10; the band test 5 of 10; the resting test 5 of 10 (the close lab's three through 15 Nov, the stream lab's through 16 Nov).
+
+### 17 Nov 2026 (close lab 44197429985, stream lab 44192106565, day replay 44205737671; read 18 Nov)
+
+- **The live early lay stood down all day**: greyhound/STOP held (running table 44184438191: "STOPPED (S3 STOP)", 101 races skipped, 0 lays). GREYHOUND_EARLY_LAY still reads `live` (paper-models 44026343278: "greyhound early lay (live) exited 0"). spclose and spclose3 placed no lay ("no lays yet (0 dogs looked at)"): the SP-close paper test (greyhound-early-lay-sp-close-1114) still has no first day.
+- **The day replayed** (44205737671): on the live-key books the live rule (through fill, greened) -182.22 on 13,779.00 liability (-1.32%, 138 of 432 lays matched, 22 laid dogs won) against the traded fill's +348.64 (+1.52%, 230 matched); spclose -217.29 (-1.58%), spclose3 -213.00 (-1.60%), m10 -322.49 (-1.40%), short20 -6.51, short10 +20.91. On the recorder's books: the live rule -169.34 (-1.88%, 90 matched), the traded fill +154.34 (+0.91%).
+- **The close lab scored 16 Nov**: 583,858 stream lines; 135 races, 22,695 runner-checkpoints (4,017 race-checkpoints). BFSP RMSE: gbm_small_plus_huber 0.1708, gbm_all_small 0.1724, mid 0.1905, ltp 0.1971. Win log-loss: gbm_small_plus_huber 1.5384, mid 1.5389, oracle SP 1.5222.
+- **Champions.** BFSP: gbm_all_small holds against the mid (gain 0.03264, z 15.13, 1,226 races over 10 days); the challenger gbm_small_plus_huber gain 0.00042 (90% 0.00021 to 0.00062), z 3.37, 746 races over 6 days (needs 644 more). Win: the mid holds; gbm_all_small gain 0.00418 (0.00151 to 0.00658), z 2.71 over 1,206 races and 10 days (needs 1,493).
+- **The trade, band and resting tests**: no candidate. Best trade q on target 2 lay_30_0.03 (129 trades over 8 days, q 0.00, candidate False/False); resting rest_back_60_m0 +1.05% at the SP (90% 0.286 to 1.593, q 0.17). The market closed a median 23 s after its scheduled off.
+- **The stream lab, 17 Nov** (431,878 stream lines, 204 markets, 7,856 trades; 13 days pooled, 85 rules, 170 tests): no candidate. Top gap_lay_10_0.1 +0.144% at the SP (186 trades, -0.661 to 2.215, q 1.00, deflated Sharpe 4.4e-05).
+- **The early-lay forward test, 17 Nov**: 100 races, 454 lays placed, 172 matched, +0.91% of liability (its own traded fill). Queue-aware replay: 228 matched, +1.95% at the SP, +0.79% to the result (x0.5: +1.94%, +0.61%). Resting to the close: 241 matched, +1.73% at the SP, +1.25% to the result.
+
+| | 12 Nov | 13 Nov | 14 Nov | 15 Nov | 16 Nov | 17 Nov |
+|---|---|---|---|---|---|---|
+| At the SP | +1.62% | +0.93% | +1.33% | +1.39% | +0.63% | +1.95% |
+| To the result | +4.92% | +1.78% | -1.62% | -0.58% | -2.75% | +0.79% |
+
+- **The live price runs, 17 Nov** (stack_mlsi's first day): 13 fired, 11 succeeded, 2 cancelled by the next hour's run (12:30, 15:24; no jobs); none failed. 103 markets priced to 17:25 (races_not_priced 0), 102 at 18:27 and 19:25 (races_not_priced 1); runners 584 falling to 566. Peak 15,894 MB used and 17,427 MB of the 32 GB swap (44038751378). The GreyhoundAPI results job finished 05:45 UTC, before the 07:26 price run; no Irish-context warning.
+- **The residual memory went live from the 16:26 UTC price run** (PR 396; ledger greyhound-memory-live-1117): the hourly price runs check out the merged code, so it served from that run, not from 18 Nov as first said. Runners with a memory 547/545/537/537 across the four runs; greyhound/live/oos_prices_stack_mlsi_mem written (37 days) at 16:26. The early lay was stopped, so no order read it.
+
+Counted days: the stream lab's first family 13 days pooled (no candidate); the trade test 8 days; the resting test 6 days; the band test no candidate (the close lab through 16 Nov, the stream lab through 17 Nov).
