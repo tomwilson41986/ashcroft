@@ -1,4 +1,4 @@
-name: Greyhound early lay, stop or resume
+name: Greyhound traders, stop or resume
 
 # The owner's switch for the live greyhound early lay (greyhound/early_lay.py; the owner, 3 Nov 2026: "i will monitor
 # and stop manually if any concerns"). 'stop' writes the S3 object greyhound/STOP: within a poll the trader lays
@@ -14,6 +14,12 @@ on:
         type: choice
         options: ['stop', 'resume']
         default: 'stop'
+      trader:
+        description: 'which: the early lay (greyhound/STOP) or the take and close (greyhound/take_close/STOP)'
+        required: false
+        type: choice
+        options: ['early_lay', 'take_close']
+        default: 'early_lay'
 
 permissions:
   contents: read
@@ -30,12 +36,17 @@ jobs:
           AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           ACTION: ${{ inputs.action }}
+          TRADER: ${{ inputs.trader || 'early_lay' }}
         run: |
+          # the take and close has its own switch (the owner, 18 Nov 2026): greyhound/STOP does not stop it
+          if [ "$TRADER" = "take_close" ]; then KEY="greyhound/take_close/STOP"; else KEY="greyhound/STOP"; fi
           if [ "$ACTION" = "stop" ]; then
-            echo "stopped from GitHub Actions run $GITHUB_RUN_ID" | aws s3 cp - "s3://$BUCKET/greyhound/STOP"
-            echo "greyhound/STOP written: no new greyhound lays; the matched ones are still greened up"
+            echo "stopped from GitHub Actions run $GITHUB_RUN_ID" | aws s3 cp - "s3://$BUCKET/$KEY"
+            echo "$KEY written: $TRADER places nothing new; what is already matched is still closed"
           else
-            aws s3 rm "s3://$BUCKET/greyhound/STOP"
-            echo "greyhound/STOP removed: the early lay lays again"
+            aws s3 rm "s3://$BUCKET/$KEY"
+            echo "$KEY removed: $TRADER trades again"
           fi
-          aws s3 ls "s3://$BUCKET/greyhound/" | grep STOP || echo "no greyhound/STOP now"
+          for k in greyhound/STOP greyhound/take_close/STOP trading/STOP; do
+            aws s3 ls "s3://$BUCKET/$k" > /dev/null 2>&1 && echo "ON:  $k" || echo "off: $k"
+          done

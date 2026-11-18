@@ -1,0 +1,40 @@
+{
+  "id": "greyhound-take-close",
+  "sport": "greyhounds",
+  "name": "Take at the first traded book, closed at the SP",
+  "stage": "legacy",
+  "hypothesis": "A back taken at a dog's first traded book where the price is 8%+ over the forecast SP, its winnings laid at the SP at once, earns the gap to the SP.",
+  "markets": [
+    "GB greyhound WIN"
+  ],
+  "entry_point": "python -m greyhound.take_close --trade --live",
+  "workflow": "paper-models.yml",
+  "live_switch": "GREYHOUND_TAKE_CLOSE",
+  "order_ref_prefix": "tc-",
+  "bucket": "capture",
+  "stop_keys": [
+    "greyhound/take_close/STOP",
+    "trading/STOP"
+  ],
+  "kill_switch_fails": "safe",
+  "dashboard_ids": [],
+  "evidence": [
+    {
+      "claim": "real orders only with GREYHOUND_TAKE_CLOSE=live and a daily loss limit; paper by default",
+      "source": "tests/test_workflow_guards.py"
+    },
+    {
+      "claim": "a lead, not a proven edge: 1 of 238 trade-out rules, about 2.6 pass by chance",
+      "source": "reports/research_ledger.jsonl greyhound-strategy-search-stack-m-1114"
+    },
+    {
+      "claim": "forward test and its reading registered before the first order",
+      "source": "reports/research_ledger.jsonl greyhound-take-close-live-1118"
+    }
+  ],
+  "approved": {
+    "by": "owner",
+    "on": "2026-11-18",
+    "source": "the owner, 18 Nov 2026: \"Run the take-and-close LIVE\", \"GBP100 a bet\", its own STOP (greyhound/take_close.py docstring)"
+  }
+}
