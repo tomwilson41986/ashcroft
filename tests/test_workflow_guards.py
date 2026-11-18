@@ -274,8 +274,10 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
     assert wf[True]["workflow_dispatch"]["inputs"]["quote_mid"]["default"] == "paper"
     # the take and close (the owner, 18 Nov 2026: "Run the take-and-close LIVE"): paper unless the repository
     # variable says live, and live only with its own daily loss limit
-    assert env["GREYHOUND_TAKE_CLOSE"] == "${{ vars.GREYHOUND_TAKE_CLOSE || 'paper' }}"
-    assert env["GREYHOUND_TAKE_CLOSE_DAILY_LOSS"] == "${{ vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS }}"
+    assert env["GREYHOUND_TAKE_CLOSE"] == "${{ inputs.take_close || vars.GREYHOUND_TAKE_CLOSE || 'paper' }}"
+    assert wf[True]["workflow_dispatch"]["inputs"]["take_close"]["default"] == "paper"
+    assert env["GREYHOUND_TAKE_CLOSE_DAILY_LOSS"] == \
+        "${{ inputs.take_close_daily_loss || vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS }}"
     assert env["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
     # no other workflow starts the greyhound trader; the football trader only football-trade.yml
     for p in WORKFLOWS.glob("*.yml"):
