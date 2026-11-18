@@ -1900,6 +1900,23 @@ the market-rating blend.
   but the rule's CLV lower at the 0% and 5% bars; retired (ledger `iter126-stack-collateral`).
 - **The record:** 38 days, +GBP6,613.44, 31 up.
 
+**The forty-eighth full day** (17 Nov; ledger `live-day-1117`), the third priced by the stack blend
+(bfsp-model-63/64/65).
+- **The start.** Predictions run 44008331279 wrote the file at 03:42 UTC (03:10-03:42). The night-before run failed
+  again (predict-evening.yml 43989032946, 00:36-00:48 UTC): horseracebase.com's 'One moment, please...' page, the
+  login refused four times, as on 15 Nov (ledger `night-before-1117`). The session (44022996660) ran 05:17-21:30 UTC in
+  one piece. Every order 05:17-05:59 UK; the settle at 22:29 UTC in settle mode (run 44190562650; its email failed
+  again: "Connection unexpectedly closed").
+- **-GBP24.13 after commission** as Betfair settled the trader's own orders, on 76 fills on 24 horses, GBP639.04
+  matched, 10 races settled in 11 markets (the 11th's only horse a non-runner, GBP11.70 void), CLV -3.64%: first backs
+  +2.5%, top-ups -7.4% (ledger `changes-1117`). A small card; the last 12 days' CLV ran -3.64% to +14.84%.
+- **The account.** Funds GBP5,017.18 -> GBP4,993.05 (-GBP24.13): no gap beside the trader. The greyhound early lay ran
+  live on 101 markets and placed nothing (ledger `account-day-1117`).
+- **The stack blend against the BSP** (16 Nov, its price file now loaded): error 0.3705 on 151 runners (15 Nov 0.4071;
+  14 Nov, the last day on the market-rating blend, 0.4786; ledger `model-quality-1117`).
+- **The stream late signal** (12-17 Nov, 144 markets to the off): no signal at T-5 (ledger `stream-late-signal-1117`).
+- **The record:** 39 days, +GBP6,589.31, 31 up.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
