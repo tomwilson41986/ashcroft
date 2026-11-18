@@ -9,14 +9,59 @@
 
 | Question | Answer | Settled? |
 |---|---|---|
-| Betfair's ante-post rules as text | Not read: Betfair's login refused GitHub's runner (HTTP 403 on `identitysso.betfair.com/api/login`, runs 1 and 2) | **Open** |
+| Betfair's ante-post rules as text | Read on the UK runner, 22:17 UTC 18 Nov 2026: one text on all 29 GB/IE markets open (section 0) | Yes |
 | Does an ante-post market carry a BSP? | No: `bspMarket` false on 584 of 585 markets | Yes (from the data) |
 | Does it go in play? | No: 0 of 585 went in play; `turnInPlayEnabled` false on 584 | Yes (from the data) |
 | When does it close? | A median 55.6 hours before the scheduled off (section 2) | Yes (from the data) |
-| How is a non-runner settled? | Mostly as a loser, some removed: section 3. Needs the rules text | **Open** |
+| How is a non-runner settled? | All bets stand run or not; a horse balloted out is void (REMOVED) (section 0) | Yes |
 | Turn-up labels from history | 461 GB/IE markets labelled; every winner found running where `betfair_prices` holds the race (section 4) | Yes |
 | Recorded books since 7 Oct | 44 markets over 42 days; thin and wide (section 5) | Yes |
 | Entries by stage (forfeits, 5-day, declarations) | No data found | **Open** |
+
+## 0. Betfair's rules for these markets (read 18 Nov 2026)
+
+Source: [run 44405657981](https://github.com/tomwilson41986/ashcroft/actions/runs/44405657981) (`antepost-rules.yml`,
+`python -m antepost.rules`). It ran on the UK runner at 22:17 UTC and made one read-only `listMarketCatalogue` call with
+`MARKET_DESCRIPTION`, on the delayed key; artifact `antepost-rules-1`. All 29 GB/IE `ANTEPOST_WIN` markets open
+that night carry the same rules text, word for word:
+
+> Who will win this race? Dead heat rules apply. This is an ante post market. All bets stand run or not unless void
+> under the Horseracing Rules and Regs or under the Betfair Terms and Conditions. Please be aware that in some Antepost
+> markets it is possible for more horses to be declared than the field safety limit allows and as such this market may
+> have balloted out horses. Bets on such horses will be void.
+> Betfair may suspend ante post markets at any stage to protect customers and carry out necessary administration,
+> including in some cases the cancellation of unmatched bets. [...]
+> Please note that an Antepost market is separate to a day of race market. Liabilities will not be carried between
+> events however any winnings/losses in an ante-post market will be netted off against any winnings/losses in the
+> relevant day of race market. You are only liable for commission on net winnings on both markets combined.
+
+What this settles:
+- **Non-runners lose: all bets stand, run or not.** The plan's `p_run` term is right: a horse that doesn't run costs
+  the whole stake.
+- **A horse balloted out is void.** That's the REMOVED status in section 3: in the big handicaps more horses are declared
+  than the safety limit, and the ones balloted out are removed with their bets void (Ayr Gold Cup 2026: 175 of 247).
+  So a horse eliminated by ballot costs nothing. That's a separate outcome from not running, and the turn-up model
+  needs to predict it as a third class.
+- **Commission is charged once on the net of both markets.** A back in the ante-post market hedged by a lay at the SP
+  in the race-day WIN market is netted for commission. The SP exit costs one commission on the combined winnings, not
+  two.
+- **Betfair may cancel unmatched bets when it suspends the market**, which fits the suspensions and reopenings in section 2.
+
+The descriptions also give:
+- `bspMarket` false and `turnInPlayEnabled` false on all 29;
+- `marketBaseRate` 2.0 and `discountAllowed` false on all 29 (the historic bundle showed 5% on most markets: section 2);
+- a `suspendTime` per market. It looks like the next scheduled suspension rather than the close, for example:
+
+  | Market | `suspendTime` | Race |
+  |---|---|---|
+  | Betfair Chase | 19 Nov 08:00 | 21 Nov, 54.5 h before the off |
+  | Coral Gold Cup | 23 Nov 08:00 | 28 Nov |
+  | King George Chase | 24 Nov 08:00 | 26 Dec |
+  | Gold Cup | 12 Jan 08:00 | 19 Mar |
+  | 2000 Guineas | 3 Mar 08:00 | 1 May |
+
+  That these dates are entry or forfeit stages is unverified. If they are, the descriptions give each race's stage
+  calendar, a feature for the turn-up model.
 
 ## 1. The historic ante-post markets
 
@@ -77,8 +122,9 @@ open. When the race-day WIN market opens for these races has not been measured y
 - **REMOVED** runners were removed a median 2.18 days before the off (25th pct 2.12, 75th 2.30), right after the market
   closes. Every one with an adjustment factor carried 0 (1,280 of 1,692). These come in clusters: Ayr Gold Cup 2026
   (175 of 247), Chester Cup 2026 (45 of 86), Royal Hunt Cup 2026 (44 of 104). Some markets have every runner removed:
-  Grand National 2025 (43 of 43), Turners Novice Chase 2025 (40 of 41). Whether a REMOVED runner's bets are void is
-  the most important open rule: if they are, some non-runners cost nothing.
+  Grand National 2025 (43 of 43), Turners Novice Chase 2025 (40 of 41). Betfair's rules settle it (section 0): a horse
+  balloted out is void, so these runners cost nothing. A market whose every runner was removed is unexplained by the
+  rules text; it may have been replaced by a new market.
 - 9 runners carried a BSP in the ante-post market (`bsp_in_market` non-null): no use as an exit.
 
 ## 4. The race-day match: not reliable yet
@@ -224,7 +270,7 @@ Of the 44 recorded markets, 15 had passed their off by this run. Their race-day 
 
 ## What's next
 
-1. **The rules text.** It needs a Betfair login that works. GitHub's runner is refused (403), and no Betfair
+1. **The rules text: read 18 Nov 2026 (section 0).** Previously: GitHub's runner is refused (403), and no Betfair
    certificate was used: the run fell back to the password login. Options: one read-only catalogue call on the UK
    server runner, at a time the live jobs are idle, or a `BETFAIR_CERT`/`BETFAIR_KEY` secret if certificate login is
    allowed from GitHub. Owner's call.

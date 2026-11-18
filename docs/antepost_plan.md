@@ -147,7 +147,12 @@ market, and the stake held for weeks.
 median 55.6 hours before the off. So the position can't be traded in its own market for the last two days or so; the
 exit is a lay in the race-day WIN market only.
 
-**Exit on race day** (the default, to be confirmed against Phase 0's rules):
+Betfair's rules (read 18 Nov 2026, `reports/antepost_data.md` section 0) confirm three things. All bets stand, run or
+not. A horse balloted out of an over-subscribed field is void. Commission is charged once on the net of the ante-post
+and race-day markets combined. So the turn-up model has three outcomes: runs, doesn't run (stake lost), balloted out
+(void).
+
+**Exit on race day:**
 
 - Once the horse is a declared runner, the non-runner risk is mostly gone. Lay it in the day's WIN market at the SP
   (`MARKET_ON_CLOSE`, for its winnings, as the morning steamer is laid), or at the race-day morning price when the
