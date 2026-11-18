@@ -99,6 +99,21 @@ Likely causes, in order:
 3. Some horses may have a different selection ID in the ante-post market than on race day; the 55 winners point that way.
 4. `betfair_prices` may be missing some days.
 
+**Run 4, the third attempt** ([run 44355120048](https://github.com/tomwilson41986/ashcroft/actions/runs/44355120048),
+artifact `antepost-phase0-4`): the race date taken from the event name first, then the Betfair horse ID on the day or a
+day either side, then the normalised name.
+- 467 of 469 GB/IE markets are now joined.
+- Of the 6,257 runners who ran, 3,803 were found by ID and 2,454 only by name. So the ante-post market's horse IDs often
+  differ from race day's.
+- Where both sources name a winner, they agree on 99.44% of the runners who ran.
+- **The winner check still fails: 445 of 459 GB/IE winners are found running (96.9%).** The 14 misses are of two kinds:
+  - **6 labelled "ran elsewhere"**: the wrong race was chosen because most of the market's listed horses ran in another
+    race that day. These are the big handicaps with consolation races (Chester Cup 2024 and 2026, Ayr Gold Cup 2025,
+    Lincoln 2026, Northumberland Plate 2026) and a festival day (Gallagher Novices' Hurdle 2024).
+  - **8 labelled "no run"**: the winner isn't found by ID or name on the day: four Leopardstown markets on 31 Jan 2026,
+    Fact To File (Cheltenham 2024), Kopek Des Bordes (Cheltenham 2025), Old Park Star (Cheltenham 2026), and Electric
+    Moon (Haydock, 22 Nov 2025). Possibly days or races missing from `betfair_prices`; not yet checked.
+
 **Until this is fixed, no turn-up rate or price-against-BSP figure is quoted.** They would be biased by whichever
 horses failed to match. This is the second attempt at the match that hasn't worked, so the next step goes to the owner
 before more changes (see the end).
@@ -145,7 +160,7 @@ Of the 44 recorded markets, 15 had passed their off by this run. Their race-day 
    certificate was used: the run fell back to the password login. Options: one read-only catalogue call on the UK
    server runner, at a time the live jobs are idle, or a `BETFAIR_CERT`/`BETFAIR_KEY` secret if certificate login is
    allowed from GitHub. Owner's call.
-2. **The race-day match (third attempt, owner to approve):**
+2. **The race-day match (third attempt done, run 4; it fails the winner check: section 4). Previously planned:**
    - take the race date from the event name where it carries one, else `marketTime`;
    - match on selection ID within plus or minus 1 day, then on the normalised horse name where the ID fails;
    - check against `betfair_prices` day coverage (rows on the date);
