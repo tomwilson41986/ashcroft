@@ -42,6 +42,24 @@ Date ranges: every year runs 1 Jan to 31 Dec except 2026 (1 Jan to 2026-11-17).
 | 2025 | 270,827 | 49,035 | 0.0 | 0 | 274,774 | 269,783 | 0.9818 | 48,851 | 49,818 |
 | 2026 | 223,654 | 40,827 | 0.0 | 0 | 224,373 | 222,505 | 0.9917 | 40,585 | 40,988 |
 
+### After the fix (18 Nov 2026: PRs 431, 433; rebuild run 44344114587; audit run 44350684094)
+
+The 2014-2022 tables rebuilt with the track aliases, the variant markets set apart and the country read in any case (2023-2026 unchanged). Runs matched to a BSP, before (audit run 44331099305) and after:
+
+| Year | Price rows | Markets | BSP null share | Runs with a BSP | Share before | Share after | Races fully priced before | after | Races |
+|---|---|---|---|---|---|---|---|---|---|
+| 2014 | 199,209 | 35,492 | 0.149 | 164,572 | 0.0 | 0.5034 | 0 | 27,504 | 55,614 |
+| 2015 | 214,089 | 37,423 | 0.170 | 176,847 | 0.0 | 0.5243 | 0 | 29,593 | 57,425 |
+| 2016 | 230,246 | 38,077 | 0.2281 | 177,133 | 0.0 | 0.5310 | 0 | 29,661 | 56,896 |
+| 2017 | 251,418 | 40,835 | 0.2936 | 177,163 | 0.0 | 0.5299 | 0 | 29,707 | 56,967 |
+| 2018 | 296,638 | 49,674 | 0.0372 | 284,861 | 0.0467 | 0.8089 | 2,806 | 47,982 | 59,742 |
+| 2019 | 303,011 | 51,075 | 0.0 | 301,997 | 0.0572 | 0.8550 | 3,401 | 50,895 | 60,005 |
+| 2020 | 242,465 | 40,594 | 0.0 | 234,478 | 0.0631 | 0.9524 | 2,607 | 39,435 | 41,538 |
+| 2021 | 328,648 | 54,053 | 0.0 | 287,455 | 0.5466 | 0.9794 | 27,034 | 48,468 | 49,581 |
+| 2022 | 324,747 | 54,000 | 0.0 | 282,827 | 0.7069 | 0.9813 | 34,612 | 48,193 | 49,154 |
+
+Races whose whole field has a BSP (the BSP model's target set), 2014-2022: 33,860 before, 351,438 after. 2014-2017 stay near half: the price files hold GB win markets for 35,492-40,835 races a year against 55,614-57,425 GBGB races, and 15-29% of their runners carry no BSP (the early years' thin markets); why the remaining races have no market is not established (no data found). The 2017-2018 price rows fell (462,170 to 251,418; 522,643 to 296,638) because forecast, AvB, without-the-favourite and other variant markets no longer count as win markets.
+
 ## Recorded books, prices served
 
 - Recorder (delayed key, books_greyhound.csv): 44 days, 6 Oct to 18 Nov 2026. Live key (books_greyhound_live.csv): 16 days, 3 Nov to 18 Nov 2026 (run log; per-day rows, removed runners and settled markets are in the artifact's report.json).
@@ -49,9 +67,9 @@ Date ranges: every year runs 1 Jan to 31 Dec except 2026 (1 Jan to 2026-11-17).
 
 ## Findings and anomalies (flagged, not yet fixed)
 
-1. **The Betfair BSP join fails before 2021.** The price files hold 216k-523k GB win rows a year from 2014, but the share of GBGB runs matched to a BSP is 0% in 2014-2017, 5-6% in 2018-2020, 55% in 2021, 71% in 2022, then 94-99% from 2023. Any BSP-target model can only learn from 2021 on (the live recipe fits from June 2024, so it is not affected). The cause (track names, off times or trap numbers in the early files) is not established: no data found on it here.
+1. **Fixed 18 Nov (see the after table): the Betfair BSP join failed before 2021.** The price files hold 216k-523k GB win rows a year from 2014, but the share of GBGB runs matched to a BSP is 0% in 2014-2017, 5-6% in 2018-2020, 55% in 2021, 71% in 2022, then 94-99% from 2023. Any BSP-target model can only learn from 2021 on (the live recipe fits from June 2024, so it is not affected). Cause found (join_diag runs 44337531017, 44341763541): abbreviated or channel-prefixed track labels in the price files, variant markets read as win markets, and '(Aus)' read as GB; off times agreed wherever the tracks matched.
 2. **Fields are shrinking.** Six-runner races were 90% of races kept in 2018 (53,894 of 59,742) and 52% in 2026 (21,441 of 40,988); five-runner races rose from 9% to 43%. Vacant traps are now the norm, not the exception: field size and trap-vacancy effects deserve their own check.
-3. **Duplicate (race, dog) rows: 527-853 a year since 2023** (37-246 a year before). The count includes rows with no dog id (pandas treats two missing ids in a race as equal), which clean drops anyway; how many are true duplicates of a real dog in one race is not separated here. greyhound.data.clean has no de-duplication step, so any true duplicates enter training twice. To check (the next audit run counts duplicates among non-null dog ids only).
+3. **Duplicate (race, dog) rows: 527-853 a year since 2023** (37-246 a year before). The count includes rows with no dog id (pandas treats two missing ids in a race as equal), which clean drops anyway; how many are true duplicates of a real dog in one race is not separated here. greyhound.data.clean has no de-duplication step, so any true duplicates enter training twice. Checked 18 Nov: 423-574 a year among non-null ids since 2023, every one the same dog in two traps with one empty row (the trap before a move), and none survive clean (join_diag run 44341763541: 0 after clean in 2015, 2019, 2023, 2025). No change to clean needed.
 4. **Missing dog ids and positions are rising**: null dog id 522-1,964 rows a year to 2022, 8,368-13,987 from 2023; no position 3,368-5,637 to 2022, 8,565-12,000 from 2023. clean drops them; what they are (vacant traps listed, reserves, data loss) is not established.
 5. **Rows with no off time** (46,506-85,138 a year) are the largest drop; greyhound.data notes that GBGB serves trials with no off time, consistent with zero trial rows surviving clean. Not checked row by row.
 6. **Void races**: 127-240 races a year dropped (no winner).
