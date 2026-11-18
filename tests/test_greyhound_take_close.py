@@ -142,3 +142,28 @@ def test_paper_sends_nothing_and_switches(tmp_path, monkeypatch):
     assert tc.daily_loss_limit({"GREYHOUND_TAKE_CLOSE_DAILY_LOSS": "250"}) == 250.0
     assert tc.daily_loss_limit({"GREYHOUND_TAKE_CLOSE_DAILY_LOSS": ""}) is None
     assert "greyhound/STOP" not in tc.STOP_KEYS and "trading/STOP" in tc.STOP_KEYS
+
+
+def test_the_forecast_reads_the_book_the_price_is_taken_from(tmp_path, monkeypatch):
+    """18 Nov 2026: the first version forecast from each runner's first traded book (minutes old) and took the price
+    now, so it backed the dogs that had drifted since. The forecast must see the book of the poll that takes."""
+    t, x = setup(tmp_path, monkeypatch, {1: 2.3, 2: 3.6, 3: 6.0})
+    seen = []
+    monkeypatch.setattr(tc, "forecast", lambda d, fit: seen.append(d.set_index("selection_id").back1.to_dict())
+                        or d.assign(f_bsp=d.selection_id.map({1: 2.3, 2: 3.6, 3: 6.0}), mid=d.back1))
+    x.book.runners[3].last_traded = None                  # dog 3 has not traded: no decision yet
+    t.step()
+    assert seen == [] and x.sent == []
+    x.book.runners[2].back = [(3.5, 60.0)]                # dog 2 shortens from 4.0 after its first trade
+    x.book.runners[3].last_traded = 6.0
+    t.step()
+    assert seen == [{1: 2.2, 2: 3.5, 3: 6.0}]             # the book now, not dog 2's first traded 4.0
+    assert x.sent == []                                   # 3.5 is under 3.6 x 1.08: nothing clears
+
+
+def test_paper_records_the_take_and_runs_under_its_stop(tmp_path, monkeypatch):
+    t, x = setup(tmp_path, monkeypatch, {1: 2.3, 2: 3.6, 3: 6.0}, live=False, kill=True)
+    t.step()
+    r = led(t)
+    p = r[r.action == "back_paper"].iloc[0]
+    assert x.sent == [] and p.price == 4.0 and p.matched == 60.0
