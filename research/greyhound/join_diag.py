@@ -100,9 +100,11 @@ def aliases(store, years: list[int]) -> dict:
         if raw is None or p is None or "menu_hint" not in p:
             continue
         hints = pd.Series(p.menu_hint.astype(str).unique())
-        lab = pd.DataFrame([market_label(h) for h in hints], columns=["label", "variant", "country"]).assign(menu_hint=hints)
-        w = p[p.market.astype(str).str.startswith("win")].merge(lab, on="menu_hint", how="left")
-        w = w[(w.variant == "") & (w.country == "GB")].dropna(subset=["race_time"])
+        lab = pd.DataFrame([market_label(h) for h in hints], columns=["label", "lab_variant", "lab_country"]) \
+            .assign(menu_hint=hints)
+        w = p[p.market.astype(str).str.startswith("win")].drop(columns=["label"], errors="ignore") \
+            .merge(lab, on="menu_hint", how="left")
+        w = w[(w.lab_variant == "") & (w.lab_country == "GB")].dropna(subset=["race_time"])
         mk = w.drop_duplicates(["race_date", "race_time", "label"])[["race_date", "race_time", "label"]]
         runs = clean(pd.read_parquet(io.BytesIO(raw)))
         rc = runs[~runs.is_trial].drop_duplicates("race_id")[["race_date", "race_time", "track"]]
