@@ -1,0 +1,90 @@
+>       assert rep["failed"] == []
+>       assert rep["failed"] == []
+>       assert rep["failed"] == []
+>       assert rep["failed"] == []
+>       assert rep["failed"] == []
+>       assert rep["failed"] == []
+>       assert rep["failed"] == []
+>       assert rep["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+>       assert gold.build(store, only=["gold_event", "gold_checkpoint", "gold_move"])["failed"] == []
+>       assert gold.build(store, only=["gold_event", "gold_checkpoint", "gold_move"])["failed"] == []
+>       assert gold.build(store, only=["gold_event", "gold_checkpoint", "gold_move"])["failed"] == []
+>       assert gold.build(store, only=["gold_event", "gold_checkpoint", "gold_move"])["failed"] == []
+>       assert gold.build(store, only=["gold_event", "gold_checkpoint", "gold_move"])["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+>       assert gold.build(store, only=["gold_event"])["failed"] == []
+FAILED tests/test_career_before.py::test_a_days_own_results_move_none_of_its_features_after_the_cutoff
+FAILED tests/test_feature_blocks.py::test_a_days_own_results_move_none_of_its_features[bookings-blanked]
+FAILED tests/test_feature_blocks.py::test_a_days_own_results_move_none_of_its_features[career_before-blanked]
+FAILED tests/test_feature_blocks.py::test_a_days_own_results_move_none_of_its_features[cond_form-blanked]
+FAILED tests/test_feature_blocks.py::test_a_days_own_results_move_none_of_its_features[debut_market-blanked]
+FAILED tests/test_feature_blocks.py::test_a_days_own_results_move_none_of_its_features[draw_v2-blanked]
+FAILED tests/test_feature_blocks.py::test_a_days_own_results_move_none_of_its_features[form_uplift-blanked]
+FAILED tests/test_feature_blocks.py::test_a_days_own_results_move_none_of_its_features[pace_v2-blanked]
+FAILED tests/test_feature_blocks.py::test_a_days_own_results_move_none_of_its_features[pedigree_market-blanked]
+FAILED tests/test_feature_blocks.py::test_a_days_own_results_move_none_of_its_features[race_relative-blanked]
+FAILED tests/test_feature_blocks.py::test_a_days_own_results_move_none_of_its_features[race_relative_new-blanked]
+FAILED tests/test_feature_blocks.py::test_a_days_own_results_move_none_of_its_features[shrunk_rates-blanked]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Sturm Graz-Brann-senior]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Willem II-Ajax-senior]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Boca Juniors-River Plate-senior]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Club 2 de Mayo-Olimpia-senior]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Schalke 04-Mainz 05-senior]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Leones FC-Racing Club-senior]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Arsenal (W)-Chelsea (W)-women]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[England U21-Spain U21-youth]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Aberdeen Youth-Hearts Youth-youth]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Jong Ajax-Jong PSV-reserves]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Bayern Munich II-Unterhaching-reserves]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Ludogorets II Razgrad-CSKA-reserves]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Hamburg III-Altona 93-reserves]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Zenit 2-Dynamo-reserves]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Barcelona B-Real Madrid C-reserves]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Sochaux (Am)-Dijon-reserves]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Buxton Res-Leek-reserves]
+FAILED tests/test_football_warehouse.py::test_the_kind_of_football_is_read_from_the_sides_names[Libertad Asuncion (Res)-Club 2 de Mayo (Res-reserves]
+FAILED tests/test_football_warehouse.py::test_the_schedule_is_the_one_that_stood_before_the_off_not_betfairs_rewrite
+FAILED tests/test_football_warehouse.py::test_a_checkpoint_before_a_reschedule_was_not_known_at_the_time
+FAILED tests/test_football_warehouse.py::test_a_turn_in_play_made_by_mistake_is_not_the_kick_off
+FAILED tests/test_football_warehouse.py::test_a_market_that_never_turns_in_play_ends_its_pre_off_life_at_the_scheduled_kick_off
+FAILED tests/test_football_warehouse.py::test_a_match_called_off_before_its_kick_off_has_no_close_and_no_checkpoint_after_it_closed
+FAILED tests/test_football_warehouse_inplay.py::test_the_over_chance_stops_at_the_suspension_that_ran_into_the_markets_close
+FAILED tests/test_football_warehouse_inplay.py::test_a_goal_with_no_side_leaves_the_score_blank_from_there_on
+FAILED tests/test_football_warehouse_inplay.py::test_the_summary_counts_every_minute_and_reads_the_path
+FAILED tests/test_football_warehouse_inplay.py::test_a_match_that_never_went_in_play_has_no_rows_and_the_build_is_pure
+FAILED tests/test_form_windows.py::test_a_days_own_results_move_none_of_its_windows[scramble]
+FAILED tests/test_form_windows.py::test_a_days_own_results_move_none_of_its_windows[blank]
+FAILED tests/test_form_windows.py::test_card_rows_get_the_values_the_day_gets_with_results_in
+FAILED tests/test_greyhound_fastloop.py::test_each_objective_fits_and_scores_out_of_sample[nn_share]
+FAILED tests/test_greyhound_fastloop.py::test_each_objective_fits_and_scores_out_of_sample[stack_share]
+FAILED tests/test_greyhound_pit.py::test_no_table_reads_the_days_own_results[seq]
+FAILED tests/test_greyhound_pit.py::test_a_card_gets_the_features_its_run_had[seq]
+FAILED tests/test_greyhound_pit.py::test_a_cut_build_gives_the_whole_build_cut_and_depends_lists_every_read
+FAILED tests/test_shape_draw_production.py::test_the_0600_card_gets_the_values_its_day_gets_with_results_in
+ERROR tests/test_football_warehouse.py::test_the_event_row_carries_sides_result_and_the_closing_book
+ERROR tests/test_football_warehouse.py::test_a_checkpoint_price_is_the_last_one_at_or_before_it_never_a_later_one
+ERROR tests/test_football_warehouse.py::test_the_move_is_from_a_complete_book_to_the_close_and_says_how_stale_each_end_is
+ERROR tests/test_football_warehouse.py::test_the_team_dimension_and_the_build_is_idempotent
+ERROR tests/test_football_warehouse.py::test_the_quality_report_passes_a_sound_warehouse_and_fails_a_broken_one
+ERROR tests/test_football_warehouse.py::test_a_stale_silver_partition_is_a_hard_failure
+ERROR tests/test_football_warehouse.py::test_the_catalog_gives_views_and_macros_over_the_tables
+ERROR tests/test_football_warehouse.py::test_the_facts_are_queries_over_what_is_built_and_skip_what_is_not
+ERROR tests/test_football_warehouse_inplay.py::test_one_row_a_minute_from_the_kick_off_to_the_close
+ERROR tests/test_football_warehouse_inplay.py::test_a_minute_reads_the_last_price_at_or_before_it_the_close_until_the_first_in_play_trade
+ERROR tests/test_football_warehouse_inplay.py::test_a_reading_is_ok_when_the_book_is_whole_and_stale_legs_carry_little_of_it
+ERROR tests/test_football_warehouse_inplay.py::test_the_over_chance_stands_while_its_market_is_open_and_fresh
+ERROR tests/test_football_warehouse_inplay.py::test_a_leg_last_priced_before_the_latest_goal_is_stale_whatever_its_age
+ERROR tests/test_football_warehouse_inplay.py::test_the_phase_and_the_football_minute_follow_the_matchs_half_time
+ERROR tests/test_football_warehouse_inplay.py::test_the_score_is_the_inferred_one_as_of_the_minute
+ERROR tests/test_football_warehouse_inplay.py::test_a_thin_match_keeps_its_minutes_and_leaves_the_summary_blank
+48 failed, 3262 passed, 12 skipped, 14773 warnings, 16 errors in 1482.44s (0:24:42)
