@@ -172,7 +172,7 @@ def load(store, first: date, last: date) -> tuple[pd.DataFrame, pd.DataFrame, li
 # The scoring
 # --------------------------------------------------------------------------------------------------------------------
 
-def takes(te: pd.DataFrame, f_bsp: np.ndarray, comm: float) -> pd.DataFrame:
+def takes(te: pd.DataFrame, f_bsp: np.ndarray, comm: float, cfg: dict | None = None) -> pd.DataFrame:
     """The live rule on these rows: ``greyhound.take_close.plan`` on each runner's three best backs, closed at the SP;
     each market's net after commission on its positive net."""
     from greyhound.take_close import CONFIG, plan
@@ -180,7 +180,7 @@ def takes(te: pd.DataFrame, f_bsp: np.ndarray, comm: float) -> pd.DataFrame:
     for (_, r), fb in zip(te.iterrows(), f_bsp):
         lv = [(float(r[f"back{i}"]), float(r[f"back{i}_size"])) for i in (1, 2, 3)
               if np.isfinite(r.get(f"back{i}", np.nan)) and np.isfinite(r.get(f"back{i}_size", np.nan))]
-        pl = plan(lv, float(fb), CONFIG)
+        pl = plan(lv, float(fb), cfg or CONFIG)
         if pl is None:
             continue
         s, p, b = pl["stake"], pl["avg"], float(r.bsp)
