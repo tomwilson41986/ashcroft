@@ -1,0 +1,64 @@
+name: Greyhound take and close, status (read-only)
+
+# The take and close's day as it stands (greyhound/take_close.py): its status.json and a summary of its ledger from
+# S3, read-only. Every matched back should have its SP lay; any back without one, or a failed lay, is printed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      day:
+        description: 'the UK day (YYYY-MM-DD); empty for today'
+        required: false
+        default: ''
+      mode:
+        description: 'live or paper'
+        required: false
+        type: choice
+        options: ['live', 'paper']
+        default: 'live'
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          DAY: ${{ inputs.day }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          D="${DAY:-$(TZ=Europe/London date +%F)}"
+          P="s3://$BUCKET/sources/greyhound/take_close/$MODE/$D"
+          echo "== $P/status.json"; aws s3 cp "$P/status.json" - || echo "no status"
+          echo; echo "== switches"
+          for k in greyhound/STOP greyhound/take_close/STOP trading/STOP; do
+            aws s3 ls "s3://$BUCKET/$k" > /dev/null 2>&1 && echo "ON:  $k" || echo "off: $k"
+          done
+          aws s3 cp "$P/ledger.csv" ledger.csv || { echo "no ledger yet"; exit 0; }
+          python3 - <<'PY'
+          import csv, collections
+          rows = list(csv.DictReader(open("ledger.csv")))
+          print("\n== ledger rows by action:", dict(collections.Counter(r["action"] for r in rows)))
+          print("no_back reasons:", dict(collections.Counter(r["note"] for r in rows if r["action"] == "no_back")))
+          b = [r for r in rows if r["action"] == "back_matched"]
+          lays = {(r["market_id"], r["selection_id"]) for r in rows if r["action"] == "sp_lay"}
+          staked = sum(float(r["matched"] or 0) for r in b)
+          print(f"backs matched {len(b)}, staked GBP{staked:.2f}")
+          for r in b:
+              print(f"  {r['time_utc']} {r['track']} {r['race_time']} trap {r['trap']} {r['dog']}: "
+                    f"GBP{r['matched']} at {r['price']} (forecast SP {r['f_bsp']}, edge {r['edge']})"
+                    + ("" if (r["market_id"], r["selection_id"]) in lays else "  ** NO SP LAY **"))
+          bad = [r for r in rows if r["action"] in ("sp_lay_failed", "held")]
+          for r in bad:
+              print("  ATTENTION", r["action"], r["market_id"], r["selection_id"], r["note"])
+          s = [float(r["pnl"] or 0) for r in rows if r["action"] == "settled"]
+          print(f"settled markets {len(s)}, net GBP{sum(s):.2f}")
+          print("unmatched takes:", sum(1 for r in rows if r["action"] == "back_unmatched"))
+          PY
