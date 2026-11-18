@@ -102,7 +102,7 @@ LIVE_CALIBRATION: str | None = "stretch_track"
 STACK_KEY, STACK_META_KEY = f"{PREFIX}/stack/bundle.pt", f"{PREFIX}/stack/meta.json"
 #: its out-of-sample prices of the recorded days (fast-loop batch 19, research/greyhound/experiments/
 #: batch19_live_prices.json): the early lay's forecast is fitted on them (greyhound.laytest live_prices)
-STACK_OOS_PRICES = "greyhound/live/oos_prices_stack_mlsi"
+STACK_OOS_PRICES = "greyhound/live/oos_prices_stack_mlsitd"
 #: each stack recipe's own out-of-sample prices (13 Nov 2026: the early lay's forecast was still fitted on the 10 Nov
 #: stack's prices after the release of batch 32's stack; batch 34 publishes the new model's)
 #: 14 Nov 2026: "stack_ml", the stack with the league table (the owner: "Release the league table to the live price")
@@ -111,7 +111,9 @@ STACK_OOS_BY_RECIPE = {"stack3_all3": "greyhound/live/oos_prices_stack_all3",
                        # 15 Nov 2026: the speed and sequence tables added (the owner: "Release")
                        "stack_mls": "greyhound/live/oos_prices_stack_mls",
                        # 16 Nov 2026: the Irish form added (the owner: "Yes build it")
-                       "stack_mlsi": STACK_OOS_PRICES}
+                       "stack_mlsi": "greyhound/live/oos_prices_stack_mlsi",
+                       # 18 Nov 2026: the trials and the draw and bend rebuilt (the feature review; batch 54)
+                       "stack_mlsitd": STACK_OOS_PRICES}
 STACK_OBJECTIVE = "stack_share"
 #: the metrics tables are built from 2014, as the nightly build (greyhound-pit.yml) builds them: their constants are
 #: fitted on the years before 2018
