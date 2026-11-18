@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'sectional-check, au-model or trainer-check'
+        description: 'sectional-check, au-model, trainer-check or lay-backtest'
         type: choice
-        options: [sectional-check, au-model, trainer-check]
+        options: [sectional-check, au-model, trainer-check, lay-backtest]
         default: sectional-check
 
 permissions:
@@ -55,6 +55,7 @@ jobs:
             sectional-check) python -m research.greyhound.sectional_check --years 2014-2026 --out out/study ;;
             au-model)        python -m research.greyhound.au_model --first-year 2016 --test-year 2026 --out out/study ;;
             trainer-check)   mkdir -p out/study && python -m research.greyhound.trainer_check --first-year 2014 --out out/study/trainer_check.json ;;
+            lay-backtest)    python -m research.greyhound.lay_backtest --pred-dir s3:greyhound/live/oos_prices_stack_mlsitd --pred-dir s3:greyhound/live/oos_prices_stack_mlsi --out out/study ;;
             *) echo "unknown task"; exit 1 ;;
           esac
       - name: Summary
