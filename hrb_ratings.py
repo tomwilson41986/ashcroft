@@ -87,22 +87,77 @@ def download_day(session, set_id: int, d: date, user_id: str) -> str:
     return r.text
 
 
-def fetch_range(sets, d_from: date, d_to: date, dest: Path = RAW_DIR, spacing: float = 4.0,
-                max_requests: int | None = None, user_id: str | None = None) -> dict:
-    """Throttled, resumable download of sets x days. Stops on rate limit."""
-    import scraper  # HRB login lives there (HRB_USERNAME / HRB_PASSWORD env)
-    dest.mkdir(parents=True, exist_ok=True)
-    session = scraper.create_session()
-    uid = scraper.login(session)
+RM_URL = f"{BASE_URL}/ratingsmachinev2.php"
+
+
+def hrb_session():
+    """A logged-in horseracebase.com session and the user id, by the predictions job's own login
+    (daily_predictions.login: HRB_USERNAME / HRB_PASSWORD, retried on a page without its form)."""
+    from daily_predictions import create_session, login
+    session = create_session()
+    uid = login(session)
     if not uid:
-        raise RuntimeError("HRB login failed (set HRB_USERNAME / HRB_PASSWORD)")
-    user_id = user_id or os.getenv("HRB_USER_ID") or str(uid)
-    n_req = n_skip = 0; stopped = None
+        raise RuntimeError("HRB login failed (HRB_USERNAME / HRB_PASSWORD, or the site's bot check)")
+    return session, str(uid)
+
+
+def list_sets(session) -> dict[int, str]:
+    """The account's saved rating sets, id -> name, from the Ratings Machine's download form (the
+    ``usecustomsettings`` select)."""
+    from bs4 import BeautifulSoup
+    r = session.get(RM_URL, timeout=120)
+    r.raise_for_status()
+    soup = BeautifulSoup(r.text, "lxml")
+    out = {}
+    for sel in soup.find_all("select"):
+        if (sel.get("name") or "").lower() != "usecustomsettings":
+            continue
+        for o in sel.find_all("option"):
+            v = (o.get("value") or "").strip()
+            if v.isdigit():
+                out[int(v)] = o.get_text(" ", strip=True)
+    return out
+
+
+class S3Store:
+    """The raw downloads kept in S3 (s3://<bucket>/<prefix>/ratings_<set>_<day>.csv), so a run on a fresh runner
+    resumes where the last stopped."""
+
+    def __init__(self, bucket: str, prefix: str, client=None):
+        import boto3
+        self.s3 = client or boto3.client("s3", region_name=os.environ.get("AWS_DEFAULT_REGION") or "eu-west-2")
+        self.bucket, self.prefix = bucket, prefix.rstrip("/")
+        self.have = set()
+        tok = None
+        while True:
+            kw = {"Bucket": bucket, "Prefix": self.prefix + "/", **({"ContinuationToken": tok} if tok else {})}
+            r = self.s3.list_objects_v2(**kw)
+            self.have |= {o["Key"].rsplit("/", 1)[-1] for o in r.get("Contents", []) if o["Size"] > 20}
+            if not r.get("IsTruncated"):
+                break
+            tok = r["NextContinuationToken"]
+
+    def put(self, name: str, text: str) -> None:
+        self.s3.put_object(Bucket=self.bucket, Key=f"{self.prefix}/{name}", Body=text.encode("utf-8"))
+        self.have.add(name)
+
+
+def fetch_range(sets, d_from: date, d_to: date, dest: Path = RAW_DIR, spacing: float = 4.0,
+                max_requests: int | None = None, user_id: str | None = None, store: "S3Store | None" = None,
+                session=None) -> dict:
+    """Throttled, resumable download of sets x days (a file already on disk or in ``store`` is skipped). Stops on
+    HRB's rate-limit notice."""
+    dest.mkdir(parents=True, exist_ok=True)
+    if session is None:
+        session, uid = hrb_session()
+        user_id = user_id or os.getenv("HRB_USER_ID") or uid
+    n_req = n_skip = n_fail = 0; stopped = None
     d = d_from
     while d <= d_to and stopped is None:
         for set_id in sets:
-            path = dest / f"ratings_{set_id}_{d.isoformat()}.csv"
-            if path.exists() and path.stat().st_size > 20:
+            name = f"ratings_{set_id}_{d.isoformat()}.csv"
+            path = dest / name
+            if (path.exists() and path.stat().st_size > 20) or (store is not None and name in store.have):
                 n_skip += 1; continue
             if max_requests is not None and n_req >= max_requests:
                 stopped = f"max_requests={max_requests} reached"; break
@@ -111,12 +166,15 @@ def fetch_range(sets, d_from: date, d_to: date, dest: Path = RAW_DIR, spacing: f
             except RateLimited as exc:
                 stopped = f"rate limited: {exc}"; log.error("HRB %s", stopped); break
             except Exception as exc:
-                log.warning("%s %s: %s", set_id, d, exc); time.sleep(spacing); n_req += 1; continue
+                log.warning("%s %s: %s", set_id, d, exc); time.sleep(spacing); n_req += 1; n_fail += 1; continue
             path.write_text(text); n_req += 1
+            if store is not None:
+                store.put(name, text)
             log.info("downloaded set %s %s (%d bytes)", set_id, d, len(text))
             time.sleep(spacing)
         d += timedelta(days=1)
-    return {"requests": n_req, "skipped": n_skip, "stopped": stopped, "last_date": (d - timedelta(days=1)).isoformat()}
+    return {"requests": n_req, "failed": n_fail, "skipped": n_skip, "stopped": stopped,
+            "last_date": (d - timedelta(days=1)).isoformat()}
 
 
 # ---------------------------------------------------------------------------
@@ -273,14 +331,33 @@ def main(argv=None):
     ap.add_argument("--from", dest="date_from", default=None); ap.add_argument("--to", dest="date_to", default=None)
     ap.add_argument("--spacing", type=float, default=4.0); ap.add_argument("--max-requests", type=int, default=None)
     ap.add_argument("--user-id", default=None)
+    ap.add_argument("--list-sets", action="store_true", help="print the account's saved rating sets (id, name)")
+    ap.add_argument("--s3-prefix", default=None,
+                    help="keep the raw files in s3://$ULTRA_BETTING_S3_BUCKET/<prefix>/ and resume from them")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     raw = Path(args.dir)
+    store = (S3Store(os.environ.get("ULTRA_BETTING_S3_BUCKET") or "ashcroft", args.s3_prefix)
+             if args.s3_prefix else None)
+    session = None
+    sets = None
+    if args.list_sets or (args.fetch and args.sets == "all"):
+        session, uid = hrb_session()
+        args.user_id = args.user_id or os.getenv("HRB_USER_ID") or uid
+        found = list_sets(session)
+        print(f"rating sets on the account: {len(found)}")
+        for k, v in sorted(found.items()):
+            print(f"  {k}\t{v}")
+        if store is not None:
+            store.put("sets.json", json.dumps({str(k): v for k, v in found.items()}, indent=1))
+        sets = sorted(found)
     if args.fetch:
         if not args.date_from:
             ap.error("--fetch needs --from")
         d_from = date.fromisoformat(args.date_from); d_to = date.fromisoformat(args.date_to) if args.date_to else d_from
-        st = fetch_range([int(x) for x in args.sets.split(",")], d_from, d_to, raw, args.spacing, args.max_requests, args.user_id)
+        sets = sets if args.sets == "all" else [int(x) for x in args.sets.split(",")]
+        st = fetch_range(sets, d_from, d_to, raw, args.spacing, args.max_requests, args.user_id, store=store,
+                         session=session)
         print("fetch:", st)
     if args.load:
         print("load:", load_files(sorted(raw.glob("ratings_*.csv")), args.db))
@@ -288,7 +365,7 @@ def main(argv=None):
         print("match:", match_to_results(args.db))
     if args.report:
         print(coverage_report(args.db).to_string(index=False))
-    if not any([args.fetch, args.load, args.match, args.report]):
+    if not any([args.fetch, args.load, args.match, args.report, args.list_sets]):
         ap.print_help(); return 1
     return 0
 
