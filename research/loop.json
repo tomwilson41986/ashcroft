@@ -1,5 +1,5 @@
 {
-  "tag": "iter130-members-new-blocks",
+  "tag": "iter131-figure-member",
   "recipe": "served",
   "replicate_base": false,
   "outcome": false,
@@ -19,24 +19,6 @@
   "bfsp_base_withhold": "",
   "variants": [
     {
-      "name": "st",
-      "blocks": "market_rating,connections_rating,pace_v2,expected_time,placement,gear,market_metrics,pedigree_bayes,improvement,debut",
-      "drop": "sire_runners,damsire_runners",
-      "args": "--learning-rate 0.02 --num-boost-round 12000 --param min_child_samples=500 --param extra_trees=true --param objective=huber --train-from 2021-01-01 --float32"
-    },
-    {
-      "name": "dml_st",
-      "blocks": "market_rating,connections_rating,pace_v2,expected_time,placement,gear,market_metrics,pedigree_bayes,improvement,debut",
-      "drop": "sire_runners,damsire_runners",
-      "args": "--learning-rate 0.02 --param extra_trees=true --train-from 2021-01-01 --float32 --param min_child_samples=500 --num-boost-round 12000 --target demeaned_log"
-    },
-    {
-      "name": "rx16_st",
-      "blocks": "market_rating,connections_rating,pace_v2,expected_time,placement,gear,market_metrics,pedigree_bayes,improvement,debut",
-      "drop": "sire_runners,damsire_runners",
-      "args": "--learning-rate 0.02 --param extra_trees=true --train-from 2021-01-01 --float32 --num-boost-round 16000 --target race_xent --param min_child_samples=500"
-    },
-    {
       "name": "stn",
       "blocks": "market_rating,connections_rating,pace_v2,expected_time,placement,gear,market_metrics,pedigree_bayes,improvement,debut,collateral,future_form,nbl_rating",
       "drop": "sire_runners,damsire_runners",
@@ -53,29 +35,15 @@
       "blocks": "market_rating,connections_rating,pace_v2,expected_time,placement,gear,market_metrics,pedigree_bayes,improvement,debut,collateral,future_form,nbl_rating",
       "drop": "sire_runners,damsire_runners",
       "args": "--learning-rate 0.02 --param extra_trees=true --train-from 2021-01-01 --float32 --num-boost-round 16000 --target race_xent --param min_child_samples=500"
+    },
+    {
+      "name": "fig",
+      "blocks": "market_rating,connections_rating,pace_v2,expected_time,placement,gear,market_metrics,pedigree_bayes,improvement,debut,collateral,future_form,nbl_rating",
+      "drop": "sire_runners,damsire_runners",
+      "args": "--figure-target --train-from 2021-01-01 --float32"
     }
   ],
   "ensembles": [
-    {
-      "name": "gate_st",
-      "arms": [
-        "st",
-        "dml_st"
-      ],
-      "gate": {
-        "arm": "rx16_st",
-        "weights": [
-          1,
-          1,
-          1,
-          0.5,
-          0.5,
-          0.5,
-          0.5,
-          0
-        ]
-      }
-    },
     {
       "name": "gate_stn",
       "arms": [
@@ -95,9 +63,16 @@
           0
         ]
       }
+    },
+    {
+      "name": "gate_stn_fig",
+      "blend": {
+        "base": "gate_stn",
+        "figure": "fig"
+      }
     }
   ],
-  "note": "Iteration 130 (the owner's goal of 18 Nov: 'get as close as possible to the BFSP'). Iterations 128 and 129 passed on the served stack's main member: collateral + future_form -0.0018 (-0.0022 to -0.0014), the normalised beaten-lengths rating -0.0009 (-0.0013 to -0.0006). Here all three go into every member of the served gated blend at the served recipes (iteration 122's design): gate_st (the served stack blend: st, dml_st, rx16_st) against gate_stn (the same with collateral, future_form and nbl_rating in all three), scored from 28 Dec 2024 to 31 Mar 2026. Pass: gate_stn's paired error at least 0.0007 below gate_st, the 90% interval excluding zero, on the flat and over jumps, Brier skill and concordance not resolved worse; the rule's CLV reported, not a veto. Development window only; the locked holdout is not read. A pass goes to the owner to decide serving.",
+  "note": "Iteration 131 (the owner, 19 Nov 2026: 'Yes' to the beaten-lengths figure model as a fourth loop member; Phase 3 of the model brief). The figure member (evaluate_oos.py --figure-target: LightGBM on model/blocks/nbl_rating.py's figure, the served features with iteration 130's blocks, the same folds and purge) blended into gate_stn (iteration 130's pass: the served gated blend with collateral, future_form and nbl_rating in all three members): log price = log(gate_stn) - b x (figure less the race mean), b chosen on the earlier folds from 0-0.4, the first fold b = 0 (scripts/research_loop.py blend_figure). Pass: gate_stn_fig's paired error at least 0.0007 below gate_stn, the 90% interval excluding zero, flat and jumps, Brier skill and concordance not resolved worse; CLV reported. Development window only; the locked holdout is not read.",
   "bfsp_args": "",
   "bfsp_base_args": "--drop-features sire_runners,damsire_runners --learning-rate 0.02 --num-boost-round 12000 --param min_child_samples=500 --param extra_trees=true --param objective=huber --train-from 2021-01-01 --float32",
   "start_date": "2018-01-01",
