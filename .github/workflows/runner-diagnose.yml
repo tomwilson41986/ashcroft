@@ -4,7 +4,8 @@ name: UK runner diagnosis (read-only)
 # session died both times). Both fall in Ubuntu's default window for the daily unattended upgrade (apt-daily-upgrade,
 # 06:00 plus up to an hour's random delay), after which needrestart may restart services, the runner's among them.
 # This job only reads: the boots, the timers, the apt and unattended-upgrade logs, needrestart's setting, the journal
-# and the runner's own diagnostic log around the two times. It changes nothing on the server. Dispatch by hand; it
+# and the runner's own diagnostic log around the two times; and the trader's Python packages (19 Nov). It changes
+# nothing on the server. Dispatch by hand; it
 # waits for the runner like any job, so run it outside the trading hours.
 
 on:
@@ -19,6 +20,14 @@ jobs:
     runs-on: ${{ vars.BETFAIR_RUNNER }}
     timeout-minutes: 10
     steps:
+      - name: The trader's Python and package versions (read-only; the owner, 19 Nov 2026, before pinning requirements.txt)
+        run: |
+          set +e
+          VENV="$HOME/.venvs/ashcroft"
+          echo "== $VENV (live-trade.yml's environment)"; "$VENV/bin/python" --version
+          echo "== installed packages"; "$VENV/bin/python" -m pip freeze 2>/dev/null \
+            || "$HOME/.venvs/uv/bin/uv" pip freeze --python "$VENV/bin/python"
+          echo "== uv"; "$HOME/.venvs/uv/bin/uv" --version 2>/dev/null
       - name: Read the server's record of the two shutdowns
         run: |
           set +e
