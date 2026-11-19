@@ -90,3 +90,31 @@ the tests check for leaks rather than for rounding.
 | Deflated Sharpe | existed | `research/overfit.py dsr_check` | |
 | Probability of backtest overfitting (CSCV) | added | `research/overfit.py pbo_cscv`, `tests/test_overfit_pbo.py` | 3 passed (noise 0.3-0.7, a real edge under 0.05) |
 | Pinned dependency versions | **not done: the owner's decision.** The UK runner keeps one virtual environment and installs `requirements.txt` (minimum versions only) into it each morning; pinning would change the live trader's pandas, numpy and LightGBM on its next start | `requirements.txt`, `.github/workflows/live-trade.yml` | |
+
+## Phase 4 - race selection (19 Nov)
+
+Policy: keep the live rule (`selection_policy.yaml`). The research edge is in every segment (code, class, distance,
+field size, hour, month, the 40 largest courses; ledger `phase4-segments-1119`), and the expected CLV is well
+calibrated. Of 40 rules chosen walk-forward, the 0% bar beats the live 3% bar by GBP29.31 a day (90% +22.68 to
++35.78; deflated Sharpe 1.0 with 40 trials; PBO 0.33; ledger `phase4-rules-1119`), but by turnover (2.1% at the
+margin in research, about 1% live) into the GBP4,000 day limit: not proposed.
+
+## Phase 5 - execution (19 Nov)
+
+| Finding | Evidence (ledger) |
+|---|---|
+| The live edge is the price taken early, not the picks: the trader's horses at the morning WAP -0.30%, at the matched price +8.29%, at the settled price +3.64% | `phase5-execution-1119` |
+| Non-runners' reductions take -4.66%, most on the earliest backs (05-07 UK: 30% of horses cut, -5.6 to -9.3%); the research CLV carries none, so it overstates what live can take | `phase5-execution-1119` |
+| The research CLV cannot yet carry the reductions: Betfair's price files list almost no withdrawn runners (140 of 116,124 races) | `phase5-reductions-1119` |
+| Fills: 05-06 UK +16.8/+15.6% at the fill, 10:00 on about +1%; ladder fills below the best back +13.8% against +6.8% at the best | `phase5-execution-1119` |
+| Each top-up is worth less after the reductions: 1st +6.07%, 2nd +3.88%, 3rd +1.94%, 4th +0.43%, 5th -1.46% (a floor) | `phase5-reductions-1119` |
+
+Proposals for the owner (nothing changed; the live rule is the owner's): a cap of 3 top-ups a horse (from 5); keep
+the 05:15 start and the ladder. For research: a reduction-aware CLV from the live books' removals and reduction factors
+(S3 `betfair_live/<day>/`, from October), so research and live are measured alike.
+
+Controls already in place (`trading/config_live.json`, `TRADING.md`, `CLAUDE.md`): the S3 `trading/STOP` kill switch;
+GBP4,000 a day turnover limit; a stake of GBP15-200 a horse; at most 5 top-ups; no price over 200; order references
+`ash<mmdd>` (the trader adopts and lays only its own); the trading watchdog; the day's ledger reconciled each evening
+against Betfair's settled figure and the account's funds (`account_day_<mmdd>.py`; 18 Nov left a GBP27.52 gap under
+check). Commission: 2% of each market's positive net, as the account's daily reconciliation has matched to the penny.
