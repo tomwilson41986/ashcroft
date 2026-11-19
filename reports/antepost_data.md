@@ -16,6 +16,7 @@
 | How is a non-runner settled? | All bets stand run or not; a horse balloted out is void (REMOVED) (section 0) | Yes |
 | Turn-up labels from history | 461 GB/IE markets labelled; every winner found running where `betfair_prices` holds the race (section 4) | Yes |
 | Recorded books since 7 Oct | 44 markets over 42 days; thin and wide (section 5) | Yes |
+| Turn-up model (ran / lost / void) | PASS on 2026: log loss 0.583 against 0.670 and 0.696 for the baselines (section 4.4) | Yes |
 | Entries by stage (forfeits, 5-day, declarations) | No data found | **Open** |
 
 ## 0. Betfair's rules for these markets (read 18 Nov 2026)
@@ -231,6 +232,69 @@ times its price over the SP, clears 1 plus costs.
 - The spreads in section 5 aren't charged here.
 - These are averages over all listed horses, not a rule, and nothing is selected. A test of any rule goes in the
   research ledger first (CLAUDE.md).
+
+## 4.4 The turn-up model: PASS (ledger `antepost-turnup-1119`)
+
+Registered 19 Nov 2026 09:39 UTC before its run, and read once:
+[run 44500920492](https://github.com/tomwilson41986/ashcroft/actions/runs/44500920492), artifact `antepost-phase0-9`,
+`antepost_turnup/antepost_turnup.json`. Two earlier runs, 44498425777 and 44499742662, stopped on code errors before
+any score was produced; each is noted in the ledger. Code: `antepost/turnup.py`.
+
+**What it predicts:** for each horse listed at each point from 180 to 3 days before the off, the chance of each
+settlement outcome:
+- **ran:** close the back at the SP;
+- **lost:** didn't run, stake lost;
+- **void:** balloted out or removed, stake back.
+
+It uses only what was known at that point.
+
+**Data:** 445 markets, 113,035 horse-points, no duplicates.
+
+| Set | Races | Dates | Rows |
+|---|---|---|---|
+| Train | 234 | 27 Jan 2024 to 29 Jun 2025 | |
+| Early stopping | 68 | Jul to Dec 2025 | |
+| Test | 142 | 1 Jan to 24 Oct 2026 | 37,421: lost 25,941, ran 8,499, void 2,981 |
+
+**Results on the 2026 test:**
+
+| | Log loss | Brier, P(ran) | AUC, P(ran) | Calibration error, P(ran) |
+|---|---|---|---|---|
+| Model (LightGBM) | **0.583** | **0.121** | **0.856** | 0.025 |
+| B1: outcome shares by days out and price band | 0.670 | 0.133 | 0.803 | 0.017 |
+| B2: logistic on price and days out | 0.696 | 0.140 | 0.782 | 0.017 |
+
+The model minus each baseline, per row (90% interval resampling whole races):
+- against B1: -0.087 (-0.150 to -0.036);
+- against B2: -0.113 (-0.177 to -0.060).
+
+Log loss by days out (model / B1 / B2):
+
+| Days out | 180 | 120 | 90 | 60 | 45 | 30 | 21 | 14 | 7 | 3 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Model | 0.366 | 0.357 | 0.350 | 0.406 | 0.444 | 0.561 | 0.663 | 0.650 | 0.629 | 0.627 |
+| B1 | 0.355 | 0.364 | 0.376 | 0.444 | 0.515 | 0.713 | 0.777 | 0.757 | 0.731 | 0.670 |
+| B2 | 0.409 | 0.420 | 0.410 | 0.458 | 0.529 | 0.756 | 0.816 | 0.776 | 0.743 | 0.691 |
+
+The registered reading holds on all three counts:
+1. Both intervals are below zero.
+2. The model is no worse than B2 at 7 of 7 points from 60 to 3 days out.
+3. Its calibration error (0.0249) is within B2's (0.0169) plus 0.01.
+
+The biggest gains are 45 to 7 days out. At 180 days the model is slightly worse than B1, but that point is outside
+the registered ones.
+
+**What carries it (gain):** in order, the last traded price, how old that price is, the number listed, the month,
+days listed, days out, and the horse's runs in the last 365 days.
+
+**Caveats:**
+- **Calibration at the extremes.** By decile of P(ran), the model is too low at the top (predicted 0.691, observed
+  0.770) and too high at the bottom (0.017 against 0.000). Both baselines are better calibrated, though much worse at
+  ranking. Before its probabilities set stakes, it needs a calibration step, fitted on 2025 and checked on 2026.
+- **Month** ranks fourth on only two training seasons. That may be a calendar effect that won't hold.
+- **This is a model of the outcome, not a trading rule.** No stake or return was read. The edge still has to come from
+  pricing these chances against the ante-post price and the expected SP (plan sections 5-6). Any entry rule is
+  registered on its own, with the deflated Sharpe bar.
 
 ## 5. The recorded snapshots (7 Oct to 17 Nov 2026)
 
