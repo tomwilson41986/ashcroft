@@ -1,0 +1,23 @@
+##[group]phase5_reductions_1119
+price files, WIN: 1,082,096 rows, 2017-12-31 to 2026-11-17
+   races 116,124; with a runner withdrawn after the morning trade 140 (0.1%); R median where any 0.325
+
+1. live horses with the price file's R: 5,655; with R > 0: 0
+   R 0.00-0.00:  5655 horses, mean R 0.000; settled/matched median 1.000, (settled-1)/(matched-1) median 1.000; 1 - R mean 1.000
+
+2. research bets scored: 90,579 runners; in a race with a later withdrawal 0.0%
+   bar 0%: 37,994 bets; CLV plain +6.83% (+6.59 to +7.06); cut 1+(p-1)(1-R) +6.83% (+6.60 to +7.07); cut p(1-R) +6.83% (+6.60 to +7.07)
+   bar 3%: 29,136 bets; CLV plain +9.06% (+8.75 to +9.36); cut 1+(p-1)(1-R) +9.06% (+8.75 to +9.36); cut p(1-R) +9.06% (+8.74 to +9.37)
+
+3. live fills: CLV at the fill | after the horse's reduction (matched GBP, fills)
+   first back  +14.44% (+12.18 to +16.79) |   +9.39% (+7.77 to +11.03)  GBP41,239, 5,655
+   top-up         +6.31% (+4.49 to +8.21) |    +1.78% (+0.49 to +3.11)  GBP128,283, 19,600
+   by the fill's number on the horse (0 = the first back):
+   0            +9.39% (+7.83 to +11.06)  GBP41,239, 5,655
+   1             +6.07% (+4.43 to +7.77)  GBP31,329, 4,619
+   2             +3.88% (+2.45 to +5.22)  GBP23,731, 3,891
+   3             +1.94% (+0.68 to +3.25)  GBP20,530, 3,303
+   4             +0.43% (-1.15 to +1.90)  GBP16,859, 2,706
+   5             -1.46% (-3.07 to +0.10)  GBP14,041, 2,163
+   6+            -3.68% (-5.80 to -1.57)  GBP21,793, 2,918
+##[endgroup]
