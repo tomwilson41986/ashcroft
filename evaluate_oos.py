@@ -291,6 +291,57 @@ def walk_forward_predict(
 
 
 # ---------------------------------------------------------------------------
+# The figure member (the owner's model brief, Phase 3, 19 Nov 2026)
+# ---------------------------------------------------------------------------
+
+#: the figure model's settings: those of the Phase 3 screen that passed (ledger phase3-nbl-target-1119)
+FIGURE_PARAMS = {"objective": "regression", "learning_rate": 0.05, "num_leaves": 63, "min_child_samples": 500,
+                 "feature_fraction": 0.5, "bagging_fraction": 0.8, "bagging_freq": 5, "lambda_l2": 1.0, "seed": 42,
+                 "deterministic": True, "force_col_wise": True, "verbose": -1}
+FIGURE_ROUNDS = 800
+
+
+def figure_label(df: pd.DataFrame) -> np.ndarray:
+    """Each run's normalised beaten-lengths figure (model/blocks/nbl_rating.py): race-centred pounds beaten over the
+    field-size spread s(n), plus GAMMA x class (log prize less the code's median), GAMMA the block's own choice on the
+    races before its FIT_UNTIL. Post-race: a label, never a feature. NaN for a run with no margin (a non-finisher)."""
+    from model.blocks import nbl_rating as nb
+    reads = [c for c in nb.READS if c in df.columns]
+    gamma = nb.build(df[reads].copy()).attrs.get("nb_gamma", nb.GAMMA_DEFAULT)
+    p = nb.run_parts(df)
+    s = nb._s_of(p["n"], nb.spread_by_field(p["rel"], p["n"], p["race"], p["early"]))
+    med = {}
+    for j in (False, True):
+        sel = p["early"] & (p["jumps"] == j)
+        med[j] = np.nanmedian(p["prize"][sel]) if sel.any() else np.nanmedian(p["prize"])
+    cls = np.nan_to_num(p["prize"] - np.where(p["jumps"], med[True], med[False]), nan=0.0)
+    log.info("figure label: GAMMA %s", gamma)
+    return p["rel"] / s + gamma * cls
+
+
+def figure_walk_forward(df: pd.DataFrame, feature_cols: list[str], label: np.ndarray, schedule: dict,
+                        only_fold: int | None = None) -> pd.DataFrame:
+    """The figure member: for each fold of the schedule (the same folds, purge and training window as a price arm),
+    LightGBM regression on the figure of the training rows that have one, every validation row priced
+    (predicted_figure). No price: a blend ensemble (scripts/research_loop.py) mixes it into a price arm's."""
+    out = []
+    for fold_idx, val_start, val_end, tr_mask, va_mask in evaluated_folds(df["race_date"], **schedule):
+        if only_fold is not None and fold_idx != only_fold:
+            continue
+        tr = tr_mask & np.isfinite(label)
+        log.info("  figure fold %d: train %d runs with a figure (< %s), predict %d rows (%s to %s)",
+                 fold_idx, int(tr.sum()), val_start.date(), int(va_mask.sum()), val_start.date(), val_end.date())
+        X = df.loc[tr, feature_cols].to_numpy(dtype=np.float32)
+        model = lgb.train(FIGURE_PARAMS, lgb.Dataset(X, label[tr], free_raw_data=True), FIGURE_ROUNDS)
+        del X
+        val = df.loc[va_mask].copy()
+        val["predicted_figure"] = model.predict(val[feature_cols].to_numpy(dtype=np.float32))
+        val["fold_idx"] = fold_idx
+        out.append(val)
+    return pd.concat(out, ignore_index=True) if out else pd.DataFrame()
+
+
+# ---------------------------------------------------------------------------
 # Accuracy Metrics
 # ---------------------------------------------------------------------------
 
@@ -932,6 +983,11 @@ def main():
              "matrix from an earlier --start-date scores the same folds as a later one",
     )
     parser.add_argument(
+        "--figure-target", action="store_true",
+        help="Fit the normalised beaten-lengths figure (model/blocks/nbl_rating.py) instead of the price: a figure "
+             "member for the research loop's blend ensemble; writes predicted_figure, no price",
+    )
+    parser.add_argument(
         "--train-code", default=None, choices=["jumps", "flat"],
         help="Fit each fold on this code's rows only (jumps: hurdles, chases, bumpers; flat: turf and "
              "all-weather); every validation row is still priced",
@@ -1158,6 +1214,32 @@ def main():
              "dist_furlongs", "number_of_runners", "race_class"]
     df = df[list(dict.fromkeys(list(feature_cols_full) + [c for c in carry if c in df.columns]))]
     gc.collect()
+
+    if args.figure_target:
+        label = figure_label(df)
+        oos = figure_walk_forward(df, feature_cols_full, label, schedule, only_fold=args.fold)
+        if oos.empty:
+            log.error("No out-of-sample predictions generated.")
+            sys.exit(1)
+        tag = args.tag
+        if args.output_csv:
+            stem, dot, ext = args.output_csv.rpartition(".")
+            path = f"{stem}_{tag}{dot}{ext}" if (tag and dot) else args.output_csv
+            cols = [c for c in ("race_date", "race_time", "track", "horse_name", "predicted_figure", "bfsp",
+                                "placing_numerical", "fold_idx", "race_type", "race_code", "surface_type",
+                                "number_of_runners") if c in oos.columns]
+            oos[cols].to_csv(path, index=False)
+            log.info("Saved the figure member's predictions to %s", path)
+        if args.output_json:
+            stem, dot, ext = args.output_json.rpartition(".")
+            path = f"{stem}_{tag}{dot}{ext}" if (tag and dot) else args.output_json
+            with open(path, "w") as f:
+                json.dump({"kind": "figure", "n_predictions": len(oos), "n_folds": int(oos["fold_idx"].nunique()),
+                           "n_features_used": len(feature_cols_full), "fold": args.fold, "tag": tag,
+                           "figure_params": FIGURE_PARAMS, "figure_rounds": FIGURE_ROUNDS,
+                           "elapsed_seconds": round(time.time() - started, 1), "cpu": _cpu_model(),
+                           "missing_features": missing_features}, f, indent=2, default=str)
+        return
 
     oos = walk_forward_predict(df, feature_cols_full, cfg=cfg, only_fold=args.fold, train_code=args.train_code,
                                **{k: v for k, v in schedule.items() if k != "cfg"})

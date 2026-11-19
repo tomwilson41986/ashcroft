@@ -165,16 +165,44 @@ def variants(cfg: dict) -> list[dict]:
     return out
 
 
+def is_figure(v: dict) -> bool:
+    """A figure member (evaluate_oos.py --figure-target): it predicts the beaten-lengths figure, not a price, so it is
+    never compared or scored as a price on its own; a blend ensemble mixes it into a price arm's."""
+    return "--figure-target" in shlex.split(v.get("args", ""))
+
+
+def figure_arms(cfg: dict) -> set:
+    return {v["name"] for v in variants(cfg) if is_figure(v)}
+
+
+BLEND_GRID = [round(0.02 * i, 2) for i in range(21)]     # the figure's weight: 0 to 0.4
+
+
 def ensembles(cfg: dict) -> list[dict]:
     """The averaged arms, each {name, arms} and a gated one's {gate}: built from fitted arms, never
-    fitted themselves. A gate is {arm, weights}: a fitted arm outside `arms` and its weight by rank."""
+    fitted themselves. A gate is {arm, weights}: a fitted arm outside `arms` and its weight by rank.
+    A blend is {base, figure}: a price arm or an earlier ensemble, and a figure member mixed into it."""
     names = {v["name"] for v in variants(cfg)}
+    figures = figure_arms(cfg)
     out, seen = [], set()
     for e in cfg.get("ensembles", []):
         name, arms, gate = e.get("name", ""), list(e.get("arms", [])), e.get("gate")
         if not re.fullmatch(r"[a-z][a-z0-9_]{0,30}", name) or name in BASE_ARMS or name in names or name in seen:
             raise SystemExit(f"ensemble name {name!r}: lower-case, unique, not an arm's")
-        fitted = set(all_arms(cfg))
+        fitted = set(all_arms(cfg)) - figures
+        if e.get("blend"):
+            bl = e["blend"]
+            grid = [float(g) for g in bl.get("grid", BLEND_GRID)]
+            if bl.get("figure") not in figures:
+                raise SystemExit(f"ensemble {name!r}: the blend's figure must be a figure member ({sorted(figures)})")
+            if bl.get("base") not in fitted and bl.get("base") not in seen:
+                raise SystemExit(f"ensemble {name!r}: the blend's base must be a price arm or an earlier ensemble")
+            if not grid or not all(0 <= g <= 1 for g in grid):
+                raise SystemExit(f"ensemble {name!r}: the blend's grid lies between 0 and 1")
+            seen.add(name)
+            out.append({"name": name, "arms": [bl["base"], bl["figure"]],
+                        "blend": {"base": bl["base"], "figure": bl["figure"], "grid": grid}})
+            continue
         if e.get("by_code"):
             # one arm's prices on the jumps races, another's on the Flat and all-weather (two specialists as one)
             bc = e["by_code"]
@@ -289,9 +317,57 @@ def split_by_code(jumps_path, flat_path, out) -> None:
     res.to_csv(out, index=False)
 
 
+def blend_figure(base_path, figure_path, grid: list, out) -> dict:
+    """A price arm's forecast with a figure member's mixed in: log price = log(base price) - b x (the runner's
+    predicted figure less its race's mean), each race renormalised to a book of 1. b is chosen for each fold from
+    `grid` on the folds before it (the mean absolute log error against the BFSP); the first fold has none before
+    it and takes b = 0 (the base's own prices), so the blend keeps every row the base scores. Returns the b's."""
+    import numpy as np
+    import pandas as pd
+    key = ["race_date", "race_time", "track", "horse_name"]
+    a = pd.read_csv(base_path, dtype={"race_time": str})
+    f = pd.read_csv(figure_path, dtype={"race_time": str}).set_index(key).reindex(a.set_index(key).index)
+    if f["predicted_figure"].isna().any():
+        raise SystemExit(f"{figure_path}: lacks runners of {base_path}")
+    race = (a["race_date"].astype(str) + "|" + a["track"].astype(str) + "|" + a["race_time"].astype(str)).to_numpy()
+    fig = f["predicted_figure"].to_numpy(float)
+    z = fig - pd.Series(fig).groupby(race).transform("mean").to_numpy()
+    la = np.log(a["predicted_bfsp"].to_numpy(float))
+    bsp = pd.to_numeric(a["bfsp"], errors="coerce").to_numpy(float)
+    ok = np.isfinite(bsp) & (bsp > 1)
+    fold = a["fold_idx"].to_numpy()
+
+    def priced(b):
+        p = np.exp(-(la - b * z))
+        return 1.0 / (p / pd.Series(p).groupby(race).transform("sum").to_numpy())
+
+    errs = {b: np.abs(np.log(priced(b)) - np.log(np.where(ok, bsp, 1.0))) for b in grid}
+    chosen, price = {}, np.exp(la)
+    folds = sorted(set(fold))
+    for k in folds:
+        past = (fold < k) & ok
+        b = 0.0 if not past.any() else min(grid, key=lambda g: errs[g][past].mean())
+        chosen[int(k)] = float(b)
+        price = np.where(fold == k, priced(b), price)
+    g = a.copy()
+    g["predicted_bfsp"] = price
+    g["predicted_win_prob_norm"] = 1.0 / price
+    if "overlay_pct" in g and "bfsp" in g:
+        g["overlay_pct"] = (g["bfsp"] / g["predicted_bfsp"] - 1) * 100
+    g.to_csv(out, index=False)
+    return chosen
+
+
 def build_ensemble(e: dict, out: Path) -> None:
-    """An ensemble's forecast from its arms' files in `out`: their average, gated if it has a gate."""
+    """An ensemble's forecast from its arms' files in `out`: their average, gated if it has a gate, or a price arm
+    with a figure member blended in."""
     dest = out / f"oos_{e['name']}.csv"
+    if e.get("blend"):
+        b = blend_figure(out / f"oos_{e['blend']['base']}.csv", out / f"oos_{e['blend']['figure']}.csv",
+                         e["blend"]["grid"], dest)
+        (out / f"blend_{e['name']}.json").write_text(json.dumps({"b_by_fold": b}, indent=2))
+        print(f"{e['name']}: the figure's weight by fold {b}")
+        return
     if e.get("by_code"):
         split_by_code(out / f"oos_{e['by_code']['jumps']}.csv", out / f"oos_{e['by_code']['flat']}.csv", dest)
         return
@@ -540,9 +616,14 @@ def cmd_compare(args) -> None:
                         "--note", note], check=True, cwd=REPO, capture_output=True)
         return name, json.loads(js.read_text()), md.read_text()
 
-    arms = [(v["name"], _note(cfg, v, cached)) for v in variants(cfg)]
+    arms = [(v["name"], _note(cfg, v, cached)) for v in variants(cfg) if not is_figure(v)]
     for e in ensembles(cfg):
         build_ensemble(e, out)
+        if e.get("blend"):
+            arms.append((e["name"], f"{cfg.get('tag', '')} / {e['name']}: {e['blend']['base']} with the figure member "
+                                    f"{e['blend']['figure']} blended in (its weight chosen on the earlier folds); "
+                                    f"recipe {recipe(cfg)}"))
+            continue
         if e.get("by_code"):
             arms.append((e["name"], f"{cfg.get('tag', '')} / {e['name']}: {e['by_code']['jumps']} on the jumps "
                                     f"races, {e['by_code']['flat']} on the Flat; recipe {recipe(cfg)}"))

@@ -448,3 +448,80 @@ def test_the_folds_step_91_days_unless_the_config_says():
     args = rl.common_args({**CFG, "step_days": 28})
     assert args[args.index("--step-days") + 1] == "28" and args[args.index("--val-window") + 1] == "28"
     assert rl.common_args({**CFG, "step_days": 28})[-1] == rl.common_args(CFG)[-1]
+
+
+# ---- the figure member and its blend (the owner's model brief, Phase 3, 19 Nov 2026)
+
+def test_a_blend_mixes_a_figure_member_into_a_price_arm_or_an_earlier_ensemble():
+    cfg = {**CFG, "variants": [{"name": "st"}, {"name": "dml"}, {"name": "rx"},
+                               {"name": "fig", "args": "--figure-target"}],
+           "ensembles": [{"name": "gate", "arms": ["st", "dml"], "gate": {"arm": "rx", "weights": [1, 0.5, 0]}},
+                         {"name": "gate_fig", "blend": {"base": "gate", "figure": "fig"}}]}
+    es = rl.ensembles(cfg)
+    assert es[1] == {"name": "gate_fig", "arms": ["gate", "fig"],
+                     "blend": {"base": "gate", "figure": "fig", "grid": rl.BLEND_GRID}}
+    assert rl.figure_arms(cfg) == {"fig"} and "fig" in rl.all_arms(cfg)          # fitted like any arm
+    for bad in ([{"name": "x", "blend": {"base": "st", "figure": "dml"}}],         # not a figure member
+                [{"name": "x", "blend": {"base": "fig", "figure": "fig"}}],        # the base must be a price
+                [{"name": "x", "blend": {"base": "later", "figure": "fig"}}],      # an ensemble not yet built
+                [{"name": "x", "blend": {"base": "st", "figure": "fig", "grid": [0, 2]}}],
+                [{"name": "x", "arms": ["st", "fig"]}]):                           # a figure is never averaged
+        with pytest.raises(SystemExit):
+            rl.ensembles({**cfg, "ensembles": bad})
+
+
+def _blend_files(tmp_path, informative=True, seed=3):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for fold in range(4):
+        for r in range(150):
+            p = rng.dirichlet(np.ones(6) * 2)
+            truth = np.log(1 / p)
+            noise = rng.normal(0, 0.4, 6)
+            for i in range(6):
+                rows.append({"race_date": f"2025-0{fold + 1}-{1 + r % 28:02d}", "race_time": f"{r}", "track": "york",
+                             "horse_name": f"h{fold}_{r}_{i}", "fold_idx": fold, "bfsp": float(np.exp(truth[i])),
+                             "predicted_bfsp": float(np.exp(truth[i] + noise[i])), "overlay_pct": 0.0,
+                             "predicted_figure": float(noise[i] if informative else rng.normal())})
+    df = pd.DataFrame(rows)
+    df.drop(columns="predicted_figure").to_csv(tmp_path / "oos_base.csv", index=False)
+    df[["race_date", "race_time", "track", "horse_name", "predicted_figure", "fold_idx"]].to_csv(
+        tmp_path / "oos_fig.csv", index=False)
+    return df
+
+
+def test_the_blend_weight_comes_from_earlier_folds_and_the_first_fold_keeps_the_base(tmp_path):
+    df = _blend_files(tmp_path)               # the figure is the base's error: the blend should take it
+    b = rl.blend_figure(tmp_path / "oos_base.csv", tmp_path / "oos_fig.csv", rl.BLEND_GRID, tmp_path / "out.csv")
+    out = pd.read_csv(tmp_path / "out.csv", dtype={"race_time": str})
+    assert b[0] == 0.0 and all(b[k] > 0 for k in (1, 2, 3))
+    first = out["fold_idx"] == 0
+    assert np.allclose(out.loc[first, "predicted_bfsp"], df.loc[first, "predicted_bfsp"]       # b = 0: the base's
+                       * (1 / df.loc[first, "predicted_bfsp"]).groupby(                         # prices, renormalised
+                           (df["race_date"] + df["race_time"])[first]).transform("sum"))
+    race = out["race_date"] + out["race_time"]
+    assert np.allclose((1 / out["predicted_bfsp"]).groupby(race).sum(), 1.0)
+    err = lambda p: np.abs(np.log(p) - np.log(df["bfsp"]))[~first].mean()              # noqa: E731
+    assert err(out["predicted_bfsp"]) < err(df["predicted_bfsp"])
+
+
+def test_an_uninformative_figure_gets_little_weight(tmp_path):
+    _blend_files(tmp_path, informative=False)
+    b = rl.blend_figure(tmp_path / "oos_base.csv", tmp_path / "oos_fig.csv", rl.BLEND_GRID, tmp_path / "out.csv")
+    assert max(b.values()) <= 0.04
+
+
+def test_the_figure_member_trains_on_earlier_rows_with_a_figure_and_prices_every_fold_row():
+    df = _frame()
+    label = (df["a"] * 2.0).to_numpy().copy()
+    label[::5] = np.nan                                                    # non-finishers: no figure
+    sched = {**SCHEDULE, "cfg": TrainConfig(), "fold_anchor": None, "train_from": None}
+    evaluate_oos.FIGURE_ROUNDS, rounds = 50, evaluate_oos.FIGURE_ROUNDS
+    try:
+        out = evaluate_oos.figure_walk_forward(df, ["a", "b", "c"], label, sched)
+    finally:
+        evaluate_oos.FIGURE_ROUNDS = rounds
+    plan = evaluate_oos.fold_plan(df["race_date"], **sched)
+    assert sorted(out["fold_idx"].unique()) == [p["fold"] for p in plan]
+    assert len(out) == sum(p["n_val"] for p in plan)
+    assert np.corrcoef(out["predicted_figure"], out["a"])[0, 1] > 0.9
