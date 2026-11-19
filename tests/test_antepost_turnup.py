@@ -95,6 +95,8 @@ def test_recent_runs_count_only_days_before_the_mark(tmp_path):
     df = pd.DataFrame({"name_norm": ["alpha", "beta"],
                        "t": pd.to_datetime(["2025-03-01T10:00:00Z", "2025-03-01T10:00:00Z"])})
     out, rep = tu.add_recent_runs(df, str(db))
+    naive = df.assign(t=pd.to_datetime(df["t"]).dt.tz_convert(None))          # as build_panel keeps it
+    assert tu.add_recent_runs(naive, str(db))[0]["days_since_run"].iloc[0] == 9
     a = out.iloc[0]
     assert a["days_since_run"] == 9 and a["runs_365"] == 2 and a["ran_14"] == 1     # 20 Feb and 1 Jan; not 1 Mar
     assert np.isnan(out.iloc[1]["days_since_run"]) and out.iloc[1]["runs_365"] == 0

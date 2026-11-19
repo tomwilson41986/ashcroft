@@ -148,7 +148,7 @@ def add_recent_runs(df: pd.DataFrame, db: str | None) -> tuple[pd.DataFrame, dic
         return df, {"skipped": f"no database at {db}"}
     names = sorted(set(df["name_norm"].dropna()) - {""})
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    lo = (pd.to_datetime(df["t"]).min() - pd.Timedelta(days=400)).date().isoformat()
+    lo = (pd.to_datetime(df["t"], utc=True).min() - pd.Timedelta(days=400)).date().isoformat()
     frames = []
     for i in range(0, len(names), 500):
         part = names[i:i + 500]
@@ -159,7 +159,8 @@ def add_recent_runs(df: pd.DataFrame, db: str | None) -> tuple[pd.DataFrame, dic
     runs = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["name_norm", "race_date"])
     runs["day"] = pd.to_datetime(runs["race_date"])
     by = {n: np.sort(g["day"].values) for n, g in runs.groupby("name_norm")}
-    mday = pd.to_datetime(df["t"]).dt.tz_convert(None).dt.normalize().values     # runs strictly before this day
+    # the mark's time in UTC, with or without a zone (build_panel keeps it as plain UTC); runs strictly before its day
+    mday = pd.to_datetime(df["t"], utc=True).dt.tz_convert(None).dt.normalize().values
     dsr, r365, r14 = [], [], []
     for n, d in zip(df["name_norm"], mday):
         a = by.get(n)
