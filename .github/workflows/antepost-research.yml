@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pytest
       - name: Tests
-        run: python -m pytest -q tests/test_antepost_phase0.py
+        run: python -m pytest -q tests/test_antepost_phase0.py tests/test_antepost_turnup.py
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
@@ -52,16 +52,24 @@ jobs:
           CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
         run: python -m antepost.phase0 --parts recorded,historic --db horse_racing.db --out out/antepost_phase0
+      # The turn-up model, registered before its run (reports/research_ledger.jsonl antepost-turnup-1119)
+      - name: Turn-up model
+        run: >-
+          python -m antepost.turnup --runners out/antepost_phase0/historic_runners.parquet
+          --markets out/antepost_phase0/historic_markets.parquet --db horse_racing.db --out out/antepost_turnup
       - name: Summary
         if: always()
         run: |
-          f=out/antepost_phase0/antepost_phase0.json
-          [ -f "$f" ] && { echo '## antepost_phase0.json'; echo '```'; head -c 900000 "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          for f in out/antepost_phase0/antepost_phase0.json out/antepost_turnup/antepost_turnup.json; do
+            [ -f "$f" ] && { echo "## $f"; echo '```'; head -c 400000 "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
           true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: antepost-phase0-${{ github.run_number }}
-          path: out/antepost_phase0/
+          path: |
+            out/antepost_phase0/
+            out/antepost_turnup/
           if-no-files-found: ignore
           retention-days: 90

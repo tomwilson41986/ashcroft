@@ -135,6 +135,11 @@ class APMarket:
                 t = self.status_changes[i + 1][0] if i + 1 < len(self.status_changes) else self.last_pt
         return t
 
+    def suspensions_before(self, t: datetime) -> int:
+        """Times the market went from SUSPENDED back to OPEN before t (each entry stage suspends it, it seems)."""
+        sc = self.status_changes
+        return sum(1 for i in range(1, len(sc)) if sc[i][0] <= t and sc[i][1] == "OPEN" and sc[i - 1][1] == "SUSPENDED")
+
     def market_row(self) -> dict:
         d, off, close = self.defn, self.off(), self.last_open()
         suspends = sum(1 for i, (_, st) in enumerate(self.status_changes[:-1])
@@ -171,7 +176,10 @@ class APMarket:
                 "ltp_last_at": _iso(series[-1][0]) if series else None,
             }
             for k, delta in MARKS.items():
-                row[f"listed_{k}"] = row[f"ltp_{k}"] = None
+                # what was known at the mark only: listed then, the price standing then, how old that price was,
+                # how many trades so far, and how many times the market had been suspended and reopened by then
+                row[f"listed_{k}"] = row[f"ltp_{k}"] = row[f"age_{k}"] = None
+                row[f"ntr_{k}"] = row[f"susp_{k}"] = None
                 if off is None:
                     continue
                 t = off - delta
@@ -180,8 +188,11 @@ class APMarket:
                 listed = seen is not None and seen <= t and (removed is None or removed > t) and open_then
                 row[f"listed_{k}"] = bool(listed)
                 if listed:
-                    prior = [p for (pt, p) in series if pt <= t]
-                    row[f"ltp_{k}"] = prior[-1] if prior else None
+                    prior = [(pt, p) for (pt, p) in series if pt <= t]
+                    row[f"ltp_{k}"] = prior[-1][1] if prior else None
+                    row[f"age_{k}"] = (t - prior[-1][0]).total_seconds() / 86400 if prior else None
+                    row[f"ntr_{k}"] = len(prior)
+                    row[f"susp_{k}"] = self.suspensions_before(t)
             out.append(row)
         return out
 
