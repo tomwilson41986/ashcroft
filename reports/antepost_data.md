@@ -16,10 +16,11 @@
 | How is a non-runner settled? | All bets stand run or not; a horse balloted out is void (REMOVED) (section 0) | Yes |
 | Turn-up labels from history | 461 GB/IE markets labelled; every winner found running where `betfair_prices` holds the race (section 4) | Yes |
 | Recorded books since 7 Oct | 44 markets over 42 days; thin and wide (section 5) | Yes |
-| Turn-up model (ran / lost / void) | PASS on 2026: log loss 0.583 against 0.670 and 0.696 for the baselines (section 4.4) | Yes |
+| Turn-up model (ran / lost / void) | PASS on 2026: log loss 0.583 against 0.670 and 0.696 for the baselines (section 4.4); partly a reading of the 1.0 artefact (section 4.7) | Rerun needed |
 | Calibration of P(ran) | FAIL: error 0.023 to 0.015, but the log loss interval breaks the bar; not used (section 4.5) | Yes |
 | Price stage: E[log SP given it runs] | PASS on 2026: mean abs. log error 0.545 against 0.570 and 0.564 (section 4.5) | Yes |
 | EV entry rule (back, laid at SP) | FAIL on 2026: -32.3% on 216 bets, deflated Sharpe 0.000 (section 4.6) | Yes |
+| Trade-out in the ante-post market | INVALID: +251% came from laying back at an impossible last traded price of 1.0 on non-runners; the other 679 trades lost 13.6% (section 4.7) | Rerun needed |
 | Entries by stage (forfeits, 5-day, declarations) | No data found | **Open** |
 
 ## 0. Betfair's rules for these markets (read 18 Nov 2026)
@@ -409,6 +410,48 @@ Every threshold, on 2026 (recorded for completeness; only 0.05 was registered to
 
 **No rule from this line goes forward.** The turn-up and price models stand as forecasts. Backing on the EV they imply
 doesn't make money once a back pays the spread and loses its stake on non-runners.
+
+## 4.7 The trade-out rule: INVALID, a data artefact (ledger `antepost-tradeout-1119`)
+
+Registered before the run and read once:
+[run 44543272127](https://github.com/tomwilson41986/ashcroft/actions/runs/44543272127), artifact `antepost-phase0-12`.
+Code: `antepost/tradeout.py`.
+
+**The rule:**
+- **Entry:** back on the turn-up model's chance of running.
+- **Exit:** lay back in the ante-post market itself, on a shortening target or at the last point before the market
+  closes.
+- **Costs:** both legs pay half the spread for their price band, and the green carries 2% commission.
+
+**By the registered numbers it passes:**
+- p 0.5, no target: 871 trades in 104 races.
+- **+251% per GBP1**, with a 90% interval of +208% to +294%.
+- Deflated Sharpe 0.998, counting 381 trials.
+
+**The result is invalid and isn't acted on.** A return like that isn't believable. The cause:
+
+- **A last traded price of exactly 1.0.** Betfair's minimum price is 1.01, so it isn't a real price.
+  - 1,494 runners in 142 of the 585 markets carry it.
+  - Almost all of them didn't run: LOSER 1,471, with only 4 running in the race.
+  - It first appears a median 5.1 days before the off, then stands at every later point.
+  - In the turn-up panel it's on 20,391 of 68,740 priced rows (30%): 20,343 non-runners and 48 runners.
+- **The rule's "profit" comes from laying horses back at it.** 192 of the 871 trades were laid back "at 1.0", a
+  fictional exit worth +11.9 per GBP1 on average.
+- **The other 679 trades lost 13.6% per GBP1** on average (median -18.8%).
+
+That diagnosis was run on the same artifact after the reading, and nothing in the rule was changed.
+
+**It also affects the earlier tests.** The turn-up model (4.4), the price stage (4.5) and the EV rule (4.6) all read
+1.0 as a price. The turn-up model's pass is partly a reading of the artefact, because a price of 1.0 all but marks a
+non-runner. It's no longer taken at face value. The baselines saw the same rows, but that doesn't make the
+comparison clean.
+
+**What it means is unverified.** It may be a marker Betfair puts on a horse that is out of the race, before it is
+settled. If so, it's information visible in the market at the time, but it isn't a price that can be traded.
+
+**The fix, under new registrations:**
+1. The parser treats a last traded price under 1.01 as no price, and records when it appeared as its own event.
+2. Rerun the turn-up model, the price stage and the trade-out rule on the clean panel.
 
 ## 5. The recorded snapshots (7 Oct to 17 Nov 2026)
 
