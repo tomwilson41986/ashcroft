@@ -17,6 +17,8 @@
 | Turn-up labels from history | 461 GB/IE markets labelled; every winner found running where `betfair_prices` holds the race (section 4) | Yes |
 | Recorded books since 7 Oct | 44 markets over 42 days; thin and wide (section 5) | Yes |
 | Turn-up model (ran / lost / void) | PASS on 2026: log loss 0.583 against 0.670 and 0.696 for the baselines (section 4.4) | Yes |
+| Calibration of P(ran) | FAIL: error 0.023 to 0.015, but the log loss interval breaks the bar; not used (section 4.5) | Yes |
+| Price stage: E[log SP given it runs] | PASS on 2026: mean abs. log error 0.545 against 0.570 and 0.564 (section 4.5) | Yes |
 | Entries by stage (forfeits, 5-day, declarations) | No data found | **Open** |
 
 ## 0. Betfair's rules for these markets (read 18 Nov 2026)
@@ -295,6 +297,68 @@ days listed, days out, and the horse's runs in the last 365 days.
 - **This is a model of the outcome, not a trading rule.** No stake or return was read. The edge still has to come from
   pricing these chances against the ante-post price and the expected SP (plan sections 5-6). Any entry rule is
   registered on its own, with the deflated Sharpe bar.
+
+## 4.5 Calibration (FAIL) and the price stage (PASS) (ledger `antepost-price-1119`)
+
+Registered before the run and read once:
+[run 44503451335](https://github.com/tomwilson41986/ashcroft/actions/runs/44503451335), artifact `antepost-phase0-10`,
+`antepost_price/antepost_price.json`. Code: `antepost/price.py`. On the same run the turn-up test reproduced its PASS.
+
+### Calibration: FAIL
+
+The turn-up model was fitted to Jun 2025. A correction for its probabilities (Dirichlet calibration) was fitted on its
+Jul to Dec 2025 predictions, then applied to its 2026 predictions (37,421 rows).
+
+| On 2026 | Uncalibrated | Calibrated |
+|---|---|---|
+| Log loss | 0.689 | 0.661 |
+| Calibration error, P(ran) | 0.0233 | 0.0154 |
+| Calibration error, P(void) | 0.063 | 0.043 |
+| Top decile of P(ran): predicted / observed | 0.689 / 0.768 | 0.741 / 0.765 |
+
+The calibration error falls, as required. But the paired log loss (calibrated minus uncalibrated) has a 90% interval of
+-0.149 to +0.073. That breaks the registered bar, which required the upper end to be at most +0.002. On average the
+correction helps; in some races it makes the forecast much worse. **So it fails, and the correction isn't used.** The
+turn-up model's probabilities stay uncalibrated, with the known shortfall at the extremes (section 4.4).
+
+### The price stage: PASS
+
+For horses that ran: the race-day SP predicted from what was known at each point, on 6,508 rows in 142 races in 2026.
+The model was fitted on 11,040 rows, with 2,453 for early stopping.
+
+| On 2026 | Mean abs. log error | RMSE (log) | Bias (log) | Concordance within race |
+|---|---|---|---|---|
+| Model (LightGBM) | **0.545** | **0.700** | -0.081 | **0.734** |
+| P0: the ante-post price | 0.607 | 0.796 | +0.171 | 0.733 |
+| P1: price shifted by its typical move for the point and price band | 0.570 | 0.741 | -0.040 | 0.730 |
+| P2: linear on price and days out | 0.564 | 0.725 | -0.025 | 0.733 |
+
+The model's error minus each baseline's (90% race-bootstrap interval):
+
+| Against | Mean difference | 90% interval |
+|---|---|---|
+| P0 | -0.062 | -0.094 to -0.031 |
+| P1 | -0.025 | -0.041 to -0.011 |
+| P2 | -0.019 | -0.032 to -0.007 |
+
+Mean absolute log error by days out (model / P1 / P2):
+
+| Days out | 180 | 120 | 90 | 60 | 45 | 30 | 21 | 14 | 7 | 3 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Model | 0.746 | 0.804 | 0.792 | 0.658 | 0.638 | 0.593 | 0.532 | 0.536 | 0.533 | 0.466 |
+| P1 | 0.745 | 0.786 | 0.752 | 0.657 | 0.649 | 0.620 | 0.558 | 0.575 | 0.567 | 0.490 |
+| P2 | 0.736 | 0.786 | 0.755 | 0.652 | 0.644 | 0.607 | 0.547 | 0.570 | 0.559 | 0.488 |
+
+What it shows:
+- **The gain is 45 to 3 days out.** At 120 and 90 days the model is worse than both simple baselines.
+- **It is biased short.** It forecasts the SP about 8% shorter than it comes (-0.081 in log). The EV must allow for it.
+- **The SP stays uncertain from the ante-post market.** The spread of the error (log, Jul to Dec 2025) is 0.60 at 3
+  days out, 0.66 to 0.73 at 7 to 30 days, and 0.76 to 0.81 further out. The expected price over the SP has to carry
+  that spread, not just the central forecast.
+- **What carries it (gain):** the price, its share of the market, the trades so far, the price rank, and the number
+  listed.
+
+Neither part is a trading rule; no stake or return was read.
 
 ## 5. The recorded snapshots (7 Oct to 17 Nov 2026)
 
