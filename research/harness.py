@@ -73,7 +73,8 @@ def code_of(df: pd.DataFrame) -> np.ndarray:
 
 
 def bfsp_error(df: pd.DataFrame, level: float = 0.95) -> pd.DataFrame:
-    """Mean absolute log error against the BFSP, overall and by code, price band, field size and quarter."""
+    """Mean absolute log error against the BFSP, overall and by code, price band, field size, quarter, year, track and
+    race type (the last two when the frame carries them)."""
     ok = (df["bfsp"] > 1) & (df["predicted_bfsp"] > 1)
     e = df.loc[ok].copy()
     e["err"] = np.abs(np.log(e["predicted_bfsp"]) - np.log(e["bfsp"]))
@@ -82,8 +83,10 @@ def bfsp_error(df: pd.DataFrame, level: float = 0.95) -> pd.DataFrame:
     e["band"] = pd.cut(e["bfsp"], PRICE_BANDS, labels=PRICE_LABELS)
     e["field"] = pd.cut(e["number_of_runners"], FIELD_BANDS, labels=FIELD_LABELS)
     e["quarter"] = pd.to_datetime(e["race_date"]).dt.to_period("Q").astype(str)
+    e["year"] = pd.to_datetime(e["race_date"]).dt.year.astype(str)
+    segs = ["code", "band", "field", "quarter", "year"] + [c for c in ("track", "race_type") if c in e.columns]
     rows = [("all", "all", len(e), *day_bootstrap(e["day"].to_numpy(), e["err"].to_numpy(), level=level))]
-    for seg in ("code", "band", "field", "quarter"):
+    for seg in segs:
         for v, s in e.groupby(seg, observed=True):
             rows.append((seg, str(v), len(s), *day_bootstrap(s["day"].to_numpy(), s["err"].to_numpy(), level=level)))
     return pd.DataFrame(rows, columns=["segment", "value", "runners", "error", "lo", "hi"])

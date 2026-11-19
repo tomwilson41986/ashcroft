@@ -22,6 +22,11 @@ import pytest
 from model import blocks
 from model.custom_metrics import CustomMetricsEngine
 
+#: a leak moves a feature by its own scale; a pandas release that sums a group in another order moves it in the
+#: last bit (pandas 3.1.1 against 2.2.3: at most 1.8e-15, outputs/horse_v0_20261118/report.md). The tests look for
+#: the first, not the second.
+LEAK_ATOL = 1e-12
+
 KEY = ["race_date", "track", "race_time", "horse_name"]
 RESULTS = ["placing_numerical", "place", "total_dst_bt", "distbt", "comment", "comptime",
            "comptime_numeric", "bfsp", "bfsp_place", "odds"]
@@ -152,7 +157,7 @@ def test_a_days_own_results_move_none_of_its_features(name, change, engine_frame
     b = _block_on(engine_frames[change], name)
     day = a.index.get_level_values("race_date") == FLIP_DAY
     assert day.sum() > 10
-    pd.testing.assert_frame_equal(a[day], b[day], check_exact=True)
+    pd.testing.assert_frame_equal(a[day], b[day], check_exact=False, rtol=0, atol=LEAK_ATOL)
 
 
 @pytest.mark.parametrize("name", BLOCKS)

@@ -48,7 +48,7 @@ def test_bfsp_error_is_zero_for_a_perfect_forecast_and_segments_cover_every_runn
     df["predicted_bfsp"] = df["bfsp"]
     t = h.bfsp_error(df)
     assert t.loc[t.segment == "all", "error"].item() == 0.0
-    for seg in ("code", "band", "field", "quarter"):
+    for seg in ("code", "band", "field", "quarter", "year", "track"):
         assert t.loc[t.segment == seg, "runners"].sum() == len(df)
 
 

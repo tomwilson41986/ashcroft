@@ -73,3 +73,20 @@ matplotlib): **3,262 passed, 48 failed, 16 errors, 12 skipped** (`test_suite_111
 For Phase 1: `requirements.txt` sets only minimum versions (`pandas>=2.1.0`), against the standing rule to pin
 dependency versions. Pin them, and make the leak tests compare at a tolerance (1e-12) far below any real leak, so
 the tests check for leaks rather than for rounding.
+
+## Phase 1 - the validation harness (19 Nov)
+
+| Brief item | Done | Where | Check |
+|---|---|---|---|
+| Walk-forward by date with purge and embargo | existed (30-day purge, embargo option) | `model/bfsp_model.py fold_masks`, `tests/test_measurement_integrity.py` | passes |
+| No meeting split across training and the fold | test added | `tests/test_point_in_time.py` | passes |
+| Point-in-time: every served feature under a leak test | test added: all 1,181 features of each member are in the deployed set or a block | `tests/test_point_in_time.py` | passes (0 uncovered) |
+| Synthetic leak injection detected | tests added: a feature reading its own race's result and one lagged by row are flagged, a correct lag is not; the same for a planted block | `tests/test_point_in_time.py` | passes |
+| Features the leak test cannot see | named: 5 served features are empty on the synthetic card (`front_sustainability`, `track_draw_bias`, `horse_draw_pref`, `fr_runs_since_break`, `fr_break_len`); a new one fails the test | `tests/test_point_in_time.py` | passes |
+| Leak tests read leaks, not rounding | the five exact-equality leak tests compare at 1e-12 | `tests/test_feature_blocks.py`, `test_form_windows.py`, `test_career_before.py`, `test_shape_draw_production.py` | 501 passed under pandas 3.1.1 (16 failed before on 1e-15 differences) |
+| Metrics with race-day intervals, both targets | BFSP error by code, price band, field size, quarter, year, track, race type; win log loss, Brier, ECE; walk-forward Benter; order agreement with beaten lengths | `research/harness.py`, `tests/test_harness.py` | 7 passed; reproduces baseline_v0's 0.37465 exactly |
+| Probabilities sum to 1 in a race | test | `tests/test_harness.py` | passes |
+| P&L reconciled by hand on 20 bets | 20 backs in 5 races, lays at the BSP, 2 non-runners, 2% commission on each market's positive net, through the trader's own settlement | `tests/test_pnl_by_hand.py` | 3 passed: every bet, every commission and the day's +52.29 |
+| Deflated Sharpe | existed | `research/overfit.py dsr_check` | |
+| Probability of backtest overfitting (CSCV) | added | `research/overfit.py pbo_cscv`, `tests/test_overfit_pbo.py` | 3 passed (noise 0.3-0.7, a real edge under 0.05) |
+| Pinned dependency versions | **not done: the owner's decision.** The UK runner keeps one virtual environment and installs `requirements.txt` (minimum versions only) into it each morning; pinning would change the live trader's pandas, numpy and LightGBM on its next start | `requirements.txt`, `.github/workflows/live-trade.yml` | |
