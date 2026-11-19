@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pytest
       - name: Tests
-        run: python -m pytest -q tests/test_antepost_phase0.py tests/test_antepost_turnup.py
+        run: python -m pytest -q tests/test_antepost_phase0.py tests/test_antepost_turnup.py tests/test_antepost_price.py
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
@@ -57,10 +57,13 @@ jobs:
         run: >-
           python -m antepost.turnup --runners out/antepost_phase0/historic_runners.parquet
           --markets out/antepost_phase0/historic_markets.parquet --db horse_racing.db --out out/antepost_turnup
+      # Calibration and the price stage, registered before their run (ledger antepost-price-1119)
+      - name: Calibration and price
+        run: python -m antepost.price --panel out/antepost_turnup/turnup_panel.parquet --out out/antepost_price
       - name: Summary
         if: always()
         run: |
-          for f in out/antepost_phase0/antepost_phase0.json out/antepost_turnup/antepost_turnup.json; do
+          for f in out/antepost_phase0/antepost_phase0.json out/antepost_turnup/antepost_turnup.json out/antepost_price/antepost_price.json; do
             [ -f "$f" ] && { echo "## $f"; echo '```'; head -c 400000 "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           done
           true
@@ -71,5 +74,6 @@ jobs:
           path: |
             out/antepost_phase0/
             out/antepost_turnup/
+            out/antepost_price/
           if-no-files-found: ignore
           retention-days: 90

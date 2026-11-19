@@ -114,6 +114,8 @@ def build_panel(runners: pd.DataFrame, markets: pd.DataFrame) -> tuple[pd.DataFr
             "chg_prev2": (np.log(p) - np.log(pd.to_numeric(at[f"ltp_{prev2}"], errors="coerce"))).values
             if prev2 else np.nan,
             "days_listed": ((t - pd.to_datetime(at["first_seen"], utc=True)).dt.total_seconds() / 86400).values,
+            # the race-day SP where the horse ran: a target for the price stage (antepost/price.py), never a feature
+            "bsp": pd.to_numeric(at["bsp"], errors="coerce").values if "bsp" in at else np.nan,
         })
         rows.append(f)
     if not rows:
