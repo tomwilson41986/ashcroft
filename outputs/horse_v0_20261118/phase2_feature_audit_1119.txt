@@ -1,0 +1,181 @@
+served: 1181 features, 24 blocks
+families: 74; features with no family: 0
+2026-11-19 10:01:59,519 [INFO] Feature cache hit: 1,066,630 rows x 801 columns from .feature_cache/features_f0b1ff4472306ca63b86.parquet
+matrix: cache key f0b1ff4472306ca63b86 (from 2018-01-01), 1,066,630 rows, 801 columns
+rows dropped at the locked holdout (>= 2026-04-01): 82,504; kept 984,126
+blocks built: 568 features
+served features not in the frame: 0 []
+audit rows: 634,743, {2021: 128518, 2022: 121177, 2023: 121137, 2024: 122196, 2025: 119530, 2026: 22185}
+
+written out/phase2_feature_audit.csv: 1181 features
+
+== families by the served model's gain share
+                          features  gain_share  missing_mean  psi_max_median  psi_over_025  no_gain
+family                                                                                             
+block:debut                      5      0.1547        0.3182          0.0116             0        0
+block:market_rating             11      0.1488        0.0574          0.0128             0        0
+rank                            72      0.1170        0.0000          0.0185             1        0
+block:race_relative_wide       146      0.0962        0.0604          0.0113             4        0
+block:race_relative             60      0.0810        0.0932          0.0096             0        0
+form_window                     80      0.0601        0.0971          0.0115             0        0
+block:form_variants             77      0.0296        0.0747          0.0157             0        0
+block:improvement               11      0.0250        0.0356          0.0164             0        0
+block:expected_time              8      0.0246        0.0097          0.0179             0        0
+all_draw                        60      0.0246        0.1756          0.0939             7        1
+block:connections_rating        23      0.0228        0.0128          0.0320             0        0
+block:handicap_angles            9      0.0219        0.4352          0.0069             0        0
+context                         20      0.0148        0.0358          0.0614             2        0
+freshness                       14      0.0134        0.1407          0.0201             0        0
+block:market_metrics            23      0.0128        0.0841          0.0099             3        0
+intent_served                   20      0.0095        0.0632          0.0070             3        0
+block:connection_windows        14      0.0081        0.0007          0.0230             2        0
+block:exposure                  12      0.0070        0.2059          0.0441             0        0
+block:placement                 18      0.0070        0.1347          0.0106             0        0
+epf                             18      0.0060        0.1768          0.0244             0        0
+financial_rank                  11      0.0056        0.0000          0.0212             0        0
+block:pedigree_bayes            30      0.0055        0.0008          0.0714             5        0
+financial                       17      0.0055        0.2812          0.0065             0        0
+block:debut_market              10      0.0050        0.1491          0.0429             0        0
+rolling                         11      0.0048        0.0582          0.0075             0        0
+race_strength                   10      0.0044        0.0398          0.0186             0        0
+track_pref                       7      0.0042        0.1623          0.0906             2        0
+pace                             4      0.0040        0.0007          0.0922             0        0
+weight                           4      0.0039        0.0182          0.0078             0        0
+block:form_lines                10      0.0037        0.0730          0.0138             0        0
+block:kalman                     7      0.0035        0.0442          0.0200             0        0
+unexposure                      13      0.0034        0.0880          0.0254             0        1
+pedigree                        15      0.0030        0.0044          0.0644             0        0
+block:bookings                   6      0.0028        0.0244          0.0146             0        0
+block:travel                     9      0.0028        0.0139          0.0248             0        0
+block:time_figure               13      0.0025        0.0816          0.0958             0        0
+going_preference                 3      0.0025        0.0806          0.0655             0        0
+recency                          9      0.0025        0.0000          0.0206             0        0
+entity_style                    10      0.0024        0.0014          0.0654             0        0
+distance_aptitude                4      0.0024        0.0815          0.0160             0        0
+block:pace_v2                   24      0.0024        0.0217          0.0217             0        0
+prize                            7      0.0023        0.0625          0.1798             3        0
+horse_style                     21      0.0022        0.1111          0.0230             0        0
+trainer                          8      0.0021        0.0009          0.2083             4        0
+hot_form                         8      0.0020        0.0381          0.0448             1        0
+class_movement                   5      0.0019        0.1985          0.0294             0        0
+tj                               5      0.0017        0.0715          0.0190             0        0
+ofs                              4      0.0017        0.0731          0.0079             0        0
+jockey                           8      0.0015        0.0016          0.1277             3        0
+pace_scenario                   18      0.0015        0.0000          0.0240             0        0
+block:sectionals                13      0.0015        0.8284          0.0000             0        0
+or_trajectory                    6      0.0014        0.1420          0.0232             0        0
+block:gear                      22      0.0014        0.0458          0.0069             0        0
+lrp                              4      0.0013        0.0009          0.2613             2        0
+all_pace                        10      0.0013        0.0725          0.0418             0        0
+block:head_to_head               7      0.0012        0.0768          0.0037             0        0
+horse_career                    14      0.0012        0.0684          0.0263             0        0
+speed                            8      0.0011        0.0787          0.0575             0        0
+equipment                        4      0.0010        0.0000          0.0000             0        0
+stability                        2      0.0010        0.0729          0.0270             0        0
+track_pace_bias                  4      0.0010        0.0021          0.0817             1        0
+exponential_decay                9      0.0009        0.0748          0.0077             0        0
+pace_fit                         9      0.0009        0.0003          0.0081             0        0
+lengths_beaten                   4      0.0007        0.0871          0.0181             0        0
+tactical                         5      0.0007        0.0146          0.0064             0        0
+consistency                      6      0.0007        0.0971          0.0158             0        0
+dslr                             9      0.0007        0.1513          0.0099             0        0
+surface                          4      0.0007        0.1194          0.0503             0        0
+residual                         4      0.0007        0.0750          0.0114             0        0
+sustainability                   3      0.0006        0.1658          0.0232             0        0
+form_trajectory                  6      0.0006        0.0253          0.0043             0        0
+draw_bias                        2      0.0004        0.2209          0.0918             0        0
+pfd                              3      0.0003        0.0730          0.0181             0        0
+pace_rank                       11      0.0001        0.0000          0.0180             0        0
+
+== flags (of 1181)
+   no gain at all in the served model: 2
+   missing on more than 90% of rows: 7
+   empty in at least one year: 13
+   PSI above 0.25 in at least one year (against 2021): 43
+
+-- empty in a year: 13 (the 25 with most gain)
+        feature           family  gain_share  missing  psi_max  missing_2021  missing_2022  missing_2023  missing_2024  missing_2025  missing_2026
+     sc_fsp_car block:sectionals      0.0003   0.8432      0.0           1.0           1.0           1.0        0.7680        0.4710        0.6413
+      sc_sl_car block:sectionals      0.0002   0.8894      0.0           1.0           1.0           1.0        0.8609        0.6084        0.7119
+      sc_fsp_w5 block:sectionals      0.0002   0.8638      0.0           1.0           1.0           1.0        0.7684        0.5319        0.8998
+      sc_fvp_l1 block:sectionals      0.0001   0.9062      0.0           1.0           1.0           1.0        0.7832        0.7250        0.9922
+      sc_fvp_m3 block:sectionals      0.0001   0.8800      0.0           1.0           1.0           1.0        0.7705        0.6047        0.9610
+      sc_fsp_m3 block:sectionals      0.0001   0.8800      0.0           1.0           1.0           1.0        0.7705        0.6047        0.9610
+      sc_fsp_l1 block:sectionals      0.0001   0.9062      0.0           1.0           1.0           1.0        0.7832        0.7250        0.9922
+    sc_early_m3 block:sectionals      0.0001   0.8987      0.0           1.0           1.0           1.0        0.8031        0.6696        0.9677
+     sc_late_m3 block:sectionals      0.0001   0.8987      0.0           1.0           1.0           1.0        0.8031        0.6696        0.9677
+    sc_early_l1 block:sectionals      0.0001   0.9246      0.0           1.0           1.0           1.0        0.8203        0.7843        0.9938
+       sc_sl_l1 block:sectionals      0.0001   0.9535      0.0           1.0           1.0           1.0        0.9018        0.8545        0.9957
+     sc_late_l1 block:sectionals      0.0001   0.9246      0.0           1.0           1.0           1.0        0.8203        0.7843        0.9938
+track_draw_bias         all_draw      0.0000   1.0000      0.0           1.0           1.0           1.0        1.0000        1.0000        1.0000
+
+-- PSI over 0.25: 43 (the 25 with most gain)
+                       feature                   family  gain_share  missing  psi_max  missing_2021  missing_2022  missing_2023  missing_2024  missing_2025  missing_2026
+ rw_preracejockeycareerCWO_gap block:race_relative_wide      0.0022   0.0019   0.6585        0.0016        0.0020        0.0018        0.0017        0.0015        0.0062
+            draw_bias_ev_n_eff                 all_draw      0.0018   0.4008   0.9859        0.4122        0.3987        0.3917        0.3880        0.3843        0.5551
+                      mm_exp_l     block:market_metrics      0.0010   0.0000   0.7732        0.0000        0.0000        0.0000        0.0000        0.0000        0.0000
+                      mm_exp_n     block:market_metrics      0.0009   0.0000   1.4452        0.0000        0.0000        0.0000        0.0000        0.0000        0.0000
+                      mm_exp_t     block:market_metrics      0.0008   0.0000   1.1909        0.0000        0.0000        0.0000        0.0000        0.0000        0.0000
+         draw_bias_stall_n_eff                 all_draw      0.0007   0.4008   1.0133        0.4122        0.3987        0.3917        0.3880        0.3843        0.5551
+rw_preracetrainercareerCWO_gap block:race_relative_wide      0.0007   0.0010   0.4495        0.0017        0.0008        0.0007        0.0009        0.0008        0.0009
+             track_draw_screen                 all_draw      0.0007   0.1826   0.3237        0.1921        0.1841        0.1792        0.1807        0.1726        0.2012
+                 it_hcap_debut            intent_served      0.0006   0.1459   0.3324        0.2603        0.1728        0.1261        0.0963        0.0817        0.0618
+                it_code_switch            intent_served      0.0005   0.1459   0.3324        0.2603        0.1728        0.1261        0.0963        0.0817        0.0618
+                td_draw_screen                 all_draw      0.0004   0.3510   0.3196        0.3627        0.3539        0.3438        0.3370        0.3358        0.4663
+                       WPMRF10                    prize      0.0004   0.0729   0.6020        0.0751        0.0737        0.0740        0.0721        0.0730        0.0546
+              going_draw_shift                 all_draw      0.0004   0.3989   0.3302        0.4371        0.4059        0.3917        0.3767        0.3622        0.4998
+       preracetrainercareerCWO                  trainer      0.0003   0.0010   0.2932        0.0017        0.0008        0.0007        0.0009        0.0008        0.0009
+                 horse_age_num                  context      0.0003   0.0000   0.5623        0.0000        0.0000        0.0000        0.0000        0.0000        0.0000
+         track_front_win_share          track_pace_bias      0.0003   0.0000   1.3824        0.0000        0.0000        0.0000        0.0000        0.0000        0.0000
+              draw_bias_spread                 all_draw      0.0003   0.4008   0.3201        0.4122        0.3987        0.3917        0.3880        0.3843        0.5551
+                        WPMRF5                    prize      0.0003   0.0729   0.6597        0.0751        0.0737        0.0740        0.0721        0.0730        0.0546
+     preracejockeycareerPlaces                   jockey      0.0003   0.0019   0.3845        0.0016        0.0020        0.0018        0.0017        0.0015        0.0062
+                        WPMRF3                    prize      0.0002   0.0729   0.6119        0.0751        0.0737        0.0740        0.0721        0.0730        0.0546
+                       cw_jk_n block:connection_windows      0.0002   0.0001   0.6269        0.0000        0.0000        0.0002        0.0000        0.0005        0.0006
+       preracejockeycareerRuns                   jockey      0.0002   0.0000   0.6267        0.0000        0.0000        0.0000        0.0000        0.0000        0.0000
+                     pb_sire_n     block:pedigree_bayes      0.0002   0.0000   0.2953        0.0000        0.0000        0.0000        0.0000        0.0000        0.0000
+               jockey_runs_14d                 hot_form      0.0002   0.0391   0.2658        0.0365        0.0403        0.0386        0.0393        0.0381        0.0563
+          going_draw_alignment                 all_draw      0.0002   0.0007   0.2549        0.0003        0.0013        0.0010        0.0003        0.0011        0.0000
+
+-- missing over 90%: 7 (the 25 with most gain)
+             feature                family  gain_share  missing  psi_max  missing_2021  missing_2022  missing_2023  missing_2024  missing_2025  missing_2026
+           sc_fvp_l1      block:sectionals      0.0001   0.9062   0.0000        1.0000        1.0000        1.0000        0.7832        0.7250        0.9922
+           sc_fsp_l1      block:sectionals      0.0001   0.9062   0.0000        1.0000        1.0000        1.0000        0.7832        0.7250        0.9922
+         sc_early_l1      block:sectionals      0.0001   0.9246   0.0000        1.0000        1.0000        1.0000        0.8203        0.7843        0.9938
+            sc_sl_l1      block:sectionals      0.0001   0.9535   0.0000        1.0000        1.0000        1.0000        0.9018        0.8545        0.9957
+          sc_late_l1      block:sectionals      0.0001   0.9246   0.0000        1.0000        1.0000        1.0000        0.8203        0.7843        0.9938
+hca_penalty_edge_lbs block:handicap_angles      0.0000   0.9956   0.0007        0.9955        0.9953        0.9957        0.9958        0.9954        0.9962
+     track_draw_bias              all_draw      0.0000   1.0000   0.0000        1.0000        1.0000        1.0000        1.0000        1.0000        1.0000
+
+-- the 30 features with most gain
+          feature                   family  gain_share  missing  psi_max
+         mr_share      block:market_rating      0.1317   0.0000   0.0128
+             db_x              block:debut      0.1186   0.0000   0.0017
+            rPMW3                     rank      0.0379   0.0000   0.0181
+          db_pred              block:debut      0.0208   0.7956   0.0144
+           et_win      block:expected_time      0.0190   0.0000   0.0099
+       im_level_z        block:improvement      0.0180   0.0803   0.0073
+   hca_wt_vs_mark    block:handicap_angles      0.0172   0.3110   0.0262
+        fw_lbs_l1              form_window      0.0146   0.1213   0.0058
+       fv_lbpf_l1      block:form_variants      0.0134   0.1211   0.0071
+        rr_PMW3_z      block:race_relative      0.0126   0.0734   0.0078
+            rPMW5                     rank      0.0122   0.0000   0.0182
+           mr_gap      block:market_rating      0.0106   0.0809   0.0095
+ rw_fv_nfp_e3_gap block:race_relative_wide      0.0106   0.0751   0.0107
+           rPMW10                     rank      0.0105   0.0000   0.0182
+       fw_lbsc_w3              form_window      0.0101   0.0767   0.0080
+       db_x_vs_mr              block:debut      0.0090   0.0000   0.0078
+       cr_sum_m_z block:connections_rating      0.0088   0.0005   0.0012
+ rw_fv_nfp_s8_gap block:race_relative_wide      0.0081   0.0000   0.0189
+  rw_EXP_NFP5_gap block:race_relative_wide      0.0078   0.0752   0.0071
+       fw_lbsc_l1              form_window      0.0076   0.1213   0.0072
+     rr_LRNFP_gap      block:race_relative      0.0070   0.1212   0.0018
+        fw_lbs_w3              form_window      0.0066   0.0767   0.0148
+          rRWOLR3                     rank      0.0065   0.0000   0.0183
+ rr_fw_nfp_w5_gap      block:race_relative      0.0064   0.0752   0.0072
+draw_field_weight                 all_draw      0.0058   0.0000   0.1041
+           rTJNFP                     rank      0.0057   0.0000   0.0215
+         db_vs_mr              block:debut      0.0056   0.7956   0.0116
+        rw_PMW5_z block:race_relative_wide      0.0054   0.0734   0.0075
+       rr_LR_LB_z      block:race_relative      0.0052   0.1219   0.0010
+      rr_PMW3_gap      block:race_relative      0.0051   0.0729   0.0511
