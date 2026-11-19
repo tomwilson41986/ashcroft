@@ -96,8 +96,24 @@ for seg in ("price_band", "vol_band", "week"):
             f"{ci(g['v_matched_price'], g['matched'], g['race_date']):>26s} | "
             f"{ci(g['v_settled_price'], g['matched'], g['race_date']):>26s}  GBP{g['matched'].sum():,.0f}, {len(g)}")
 
+# ---- the reductions by when the horse was first backed (an earlier fill is open to more withdrawals)
+first = backs.groupby(["race_date", "market_id", "selection_id"])["ts"].min().rename("first_ts").reset_index()
+w = w.merge(first, on=["race_date", "market_id", "selection_id"], how="left")
+fu = w["first_ts"].dt.tz_localize("UTC", ambiguous="NaT", nonexistent="NaT") if w["first_ts"].dt.tz is None else w["first_ts"]
+w["first_uk_hour"] = fu.dt.tz_convert("Europe/London").dt.hour
+w["reduced"] = w["settled_price"] < w["matched_price"] * 0.999
+say(f"\n-- the reductions: {int(w['reduced'].sum()):,} of {len(w):,} horses settled at a reduced price "
+    f"({100 * w['reduced'].mean():.1f}%)")
+say("   by the UK hour of the first back: horses, share reduced, the reductions' CLV, settled CLV")
+for v, g in w.groupby("first_uk_hour"):
+    if len(g) < 20:
+        continue
+    say(f"   {int(v):02d}:00  {len(g):5d}  {100 * g['reduced'].mean():5.1f}%  "
+        f"{ci(g['v_settled_price'] - g['v_matched_price'], g['matched'], g['race_date']):>26s}  "
+        f"{ci(g['v_settled_price'], g['matched'], g['race_date']):>26s}")
+
 # ---- per fill
-f = backs.merge(h[["race_date", "market_id", "selection_id", "bsp", "morningwap"]],
+f = backs.drop(columns=["bsp"], errors="ignore").merge(h[["race_date", "market_id", "selection_id", "bsp", "morningwap"]],
                 on=["race_date", "market_id", "selection_id"], how="inner")
 f = f[f["avg_price"] > 1].copy()
 f["v"] = f["matched"] * (f["avg_price"] / f["bsp"] - 1.0)
