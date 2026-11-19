@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from datetime import date, timedelta
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -541,7 +542,9 @@ def test_the_switch_reaches_the_page_and_the_job_reads_the_variables_as_paper_mo
     d = build(LocalSource(tmp_path), today=date(2026, 11, 11), cache=False)
     el = next(t for s in d["sports"] for t in s["traders"] if t["id"] == "greyhound-early-lay")
     assert el["switch"]["state"] == "paper" and el["switch"]["armed"] is False and el["switch"]["from"] == "2026-11-11"
-    others = [t for s in d["sports"] for t in s["traders"] if t["id"] != "greyhound-early-lay"]
+    switched = {t.id for t in TRADERS if t.switch}
+    assert switched == {"greyhound-early-lay", "greyhound-take-close"}
+    others = [t for s in d["sports"] for t in s["traders"] if t["id"] not in switched]
     assert all("switch" not in t for t in others)
     html = render(d)
     assert "function switchLine" in html and "switchLine(t) + edgeLine(t)" in html
@@ -552,3 +555,85 @@ def test_the_switch_reaches_the_page_and_the_job_reads_the_variables_as_paper_mo
         assert ln in wf
     assert "vars.GREYHOUND_EARLY_LAY || 'paper'" in pm                   # the same default as the trader's job
     assert "BETFAIR" not in wf and "--live" not in wf                   # the dashboard never trades
+
+
+# The take and close (the owner, 18 Nov 2026: "Run the take-and-close LIVE"; 19 Nov: "add a tile"): its backs closed
+# at the SP, its own settle, its own STOP
+
+def TC():
+    """The take and close's reader without its start (18 Nov 2026): the ledger tests below are dated 4 Nov."""
+    return replace(T("greyhound-take-close"), start_from=None)
+
+
+def test_take_close_reads_its_own_settle_and_else_the_settled_books_by_its_own_rule(tmp_path):
+    from greyhound.take_close import close_pnl
+    d = TODAY.isoformat()
+    base = f"sources/greyhound/take_close/live/{d}"
+    rows = [
+        {"time_utc": f"{d}T12:00:00Z", "market_id": "1.a", "action": "decided"},
+        {"time_utc": f"{d}T12:00:01Z", "market_id": "1.a", "selection_id": 1, "track": "Romford",
+         "race_time": "12:05", "action": "back_matched", "price": 6.0, "matched": 40},
+        {"time_utc": f"{d}T12:00:02Z", "market_id": "1.a", "selection_id": 1, "action": "sp_lay", "liability": 200},
+        {"time_utc": f"{d}T12:20:00Z", "market_id": "1.a", "action": "settled", "pnl": 6.17},
+        {"time_utc": f"{d}T13:00:00Z", "market_id": "1.b", "action": "decided"},
+        {"time_utc": f"{d}T13:00:01Z", "market_id": "1.b", "selection_id": 2, "track": "Romford",
+         "race_time": "13:05", "action": "back_matched", "price": 4.0, "matched": 20},
+        {"time_utc": f"{d}T13:00:02Z", "market_id": "1.b", "selection_id": 2, "action": "sp_lay", "liability": 60},
+        {"time_utc": f"{d}T14:00:00Z", "market_id": "1.c", "action": "no_back", "note": "stopped (S3 STOP)"},
+    ]
+    _put(tmp_path, "capture", f"{base}/ledger.csv", pd.DataFrame(rows))
+    src = LocalSource(tmp_path)
+    days, last = trader_days(src, TC(), TODAY, cache=False)
+    m = days[d].set_index("market_id")
+    assert set(m.index) == {"1.a", "1.b"}                                # a market with no back is no market traded
+    assert m.loc["1.a", "settled"] and m.loc["1.a", "pnl"] == pytest.approx(6.17)
+    assert not m.loc["1.b", "settled"] and m.loc["1.b", "open_liability"] == pytest.approx(20)
+    assert m.loc["1.a", "staked"] == pytest.approx(40) and last == f"{d}T14:00:00Z"
+    # the recorder's settled books: 1.b's dog lost at a BSP of 3.5, so the back's winnings laid at the SP net
+    books = pd.DataFrame([{"polled_utc": f"{d}T13:10:00Z", "source": "final", "market_id": "1.b", "selection_id": 2,
+                           "runner_status": "LOSER", "sp_actual": 3.5},
+                          {"polled_utc": f"{d}T12:10:00Z", "source": "final", "market_id": "1.a", "selection_id": 1,
+                           "runner_status": "LOSER", "sp_actual": 5.0}])
+    _put_gz(tmp_path, "capture", f"betfair_live/{d}/books_greyhound.csv.gz", books)
+    days, _ = trader_days(src, TC(), TODAY, cache=False)
+    m = days[d].set_index("market_id")
+    gross = close_pnl(20, 4.0, 3.5, False)                               # the trader's own rule
+    assert m.loc["1.b", "settled"] and m.loc["1.b", "pnl"] == pytest.approx(gross - 0.02 * max(gross, 0))
+    assert m.loc["1.a", "pnl"] == pytest.approx(6.17)                    # its own settle row stands
+    # CLV: the price taken over the BSP, less 1, stake-weighted
+    s = summarise(TC(), days, TODAY)
+    assert s["edge"]["clv_today"] == pytest.approx((40 * (6 / 5 - 1) + 20 * (4 / 3.5 - 1)) / 60, abs=1e-3)
+    assert s["today"]["volume"] == pytest.approx(60)
+
+
+def test_the_take_close_switch_is_read_as_the_trader_reads_it_with_its_own_stop(tmp_path):
+    from dashboard.traders import switch_state
+    from greyhound import take_close as tc
+    t = T("greyhound-take-close")
+    assert t.switch == "GREYHOUND_TAKE_CLOSE" and t.start_from == "2026-11-18" and t.mode == "live"
+    assert tuple(t.stop_keys) == tc.STOP_KEYS                            # the trader's own STOP objects
+    src = LocalSource(tmp_path)
+    for env in ({}, {"GREYHOUND_TAKE_CLOSE": "paper"}, {"GREYHOUND_TAKE_CLOSE": "live"},
+                {"GREYHOUND_TAKE_CLOSE": "live", "GREYHOUND_TAKE_CLOSE_DAILY_LOSS": "200"}):
+        w = switch_state(src, t, env)
+        assert w["armed"] == (tc.switch_on(env) and tc.daily_loss_limit(env) is not None)
+    env = {"GREYHOUND_TAKE_CLOSE": "live", "GREYHOUND_TAKE_CLOSE_DAILY_LOSS": "200"}
+    p = tmp_path / "capture" / "greyhound/STOP"                          # the early lay's STOP does not stop it
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("stop")
+    assert switch_state(src, t, env)["armed"] is True
+    assert switch_state(src, T("greyhound-early-lay"),
+                        {"GREYHOUND_EARLY_LAY": "live", "GREYHOUND_EARLY_LAY_DAILY_LOSS": "50"})["stop"] is True
+    for key in tc.STOP_KEYS:
+        q = tmp_path / "capture" / key
+        q.parent.mkdir(parents=True, exist_ok=True)
+        q.write_text("stop")
+        w = switch_state(src, t, env)
+        assert w["stop"] is True and w["armed"] is False and w["label"].endswith("no new backs")
+        q.unlink()
+    wf = (Path(__file__).resolve().parents[1] / ".github/workflows/trader-dashboard.yml").read_text()
+    pm = (Path(__file__).resolve().parents[1] / ".github/workflows/paper-models.yml").read_text()
+    for ln in ("GREYHOUND_TAKE_CLOSE: ${{ vars.GREYHOUND_TAKE_CLOSE || 'paper' }}",
+               "GREYHOUND_TAKE_CLOSE_DAILY_LOSS: ${{ vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS }}"):
+        assert ln in wf
+    assert "vars.GREYHOUND_TAKE_CLOSE || 'paper'" in pm                  # the same default as the trader's job

@@ -13,6 +13,8 @@ step reads it:
   ``edge x matched``.
 - Greyhounds, the early lay (``sources/greyhound/early_lay/<mode>/<day>/ledger.csv``): the P&L the green-ups locked,
   and the lays closed at the SP or held, settled by the same books' result and SP. No expected value is logged.
+- Greyhounds, the take and close (``sources/greyhound/take_close/<mode>/<day>/ledger.csv``): each back matched, closed
+  by laying its winnings at the SP; the trader's own ``settled`` row a market, else the same sum on the settled books.
 - Football, live and paper (``sources/football/live/<mode>/<day>/``): its ``settled.csv`` (the backs against the gold
   results, written by the nightly settle). Expected value: ``ev x matched``.
 
@@ -322,6 +324,54 @@ def early_lay_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame
     return out.reset_index()[MARKET_COLS], _last_ts(led, "time_utc")
 
 
+def take_close_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame | None, str | None]:
+    """The take and close (greyhound/take_close.py): each back matched (paper: what a fill-or-kill would take) is
+    closed by laying its winnings at the SP. A market's P&L is the trader's own ``settled`` row (Betfair's result and
+    SP, after commission on the market's net winnings); where it has none yet, the same sum on the recorder's settled
+    books (``close_pnl``). The CLV of a back: its average price over the BSP, less 1."""
+    led = _csv(src.get(kind, f"{base}/{day}/ledger.csv"))
+    if led is None or "action" not in led.columns:
+        return None, None
+    for c in ("matched", "price", "pnl", "selection_id"):
+        led[c] = _num(led[c]) if c in led.columns else np.nan
+    backs = led[led.action.isin(["back_matched", "back_paper"]) & (led.matched > 0)].copy()
+    if not len(backs):
+        return _empty(), _last_ts(led, "time_utc")
+    own = led[led.action == "settled"].drop_duplicates("market_id", keep="last").set_index("market_id").pnl
+    backs["value"] = backs.matched * backs.price
+    pos = backs.groupby(K, as_index=False).agg(matched=("matched", "sum"), value=("value", "sum"))
+    pos["price"] = pos.value / pos.matched
+    pos["won"], pos["bsp"] = None, np.nan
+    final = _greyhound_final(src, day)
+    if final is not None:
+        f = final[K + ["runner_status", "sp_actual"]].assign(selection_id=_num(final.selection_id))
+        pos = pos.drop(columns=["won", "bsp"]).merge(f, on=K, how="left")
+        pos["won"] = pos.runner_status.map({"WINNER": True, "LOSER": False})
+        pos["bsp"] = _num(pos.sp_actual)
+    pos["clv"] = pos.price / pos.bsp - 1
+
+    def books_pnl(g: pd.DataFrame) -> float:
+        """The trader's close_pnl on the recorder's result and SP, less commission on the net: NaN until all are in."""
+        gross = 0.0
+        for r in g.itertuples():
+            if r.won is True:
+                continue
+            if r.won is not False or not (r.bsp > 1):
+                return np.nan
+            gross += -r.matched + r.matched * (r.price - 1.0) / (r.bsp - 1.0)
+        return gross - RATE * max(gross, 0.0)
+
+    rows = []
+    for mid, bg in backs.groupby("market_id"):
+        pnl = float(own[mid]) if mid in own.index and np.isfinite(own[mid]) else books_pnl(pos[pos.market_id == mid])
+        rows.append({"market_id": mid, "label": bg.track.iloc[0] if "track" in bg.columns else "",
+                     "off": bg.race_time.iloc[0] if "race_time" in bg.columns else "",
+                     "staked": float(bg.matched.sum()), "ev": np.nan, "pnl": pnl, "settled": bool(np.isfinite(pnl)),
+                     "open_liability": 0.0 if np.isfinite(pnl) else float(bg.matched.sum())})
+    out = _with_clv(pd.DataFrame(rows).set_index("market_id"), pos, "clv", "matched")
+    return out.reset_index()[MARKET_COLS], _last_ts(led, "time_utc")
+
+
 def football_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame | None, str | None]:
     led = _csv(src.get(kind, f"{base}/{day}/ledger.csv"))
     if led is None or "action" not in led.columns:
@@ -430,9 +480,12 @@ class Trader:
     notes: tuple = field(default_factory=tuple)
     switch: str | None = None   # the repository variable that turns its real orders on (shown on the tile)
     forecast_by: str = "record"  # "day_report": today's marks and the day report's drift (dashboard/day_forecast.py)
+    stop_keys: tuple = ("greyhound/STOP", "trading/STOP")   # the S3 objects (bucket root) that stop its new orders
+    orders: str = "lays"        # what a STOP halts, in the switch's words
 
 
 EARLY_LAY_FROM = "2026-11-11"  # the owner, 11 Nov 2026: the live early lay tracked from fresh
+TAKE_CLOSE_FROM = "2026-11-18"  # the owner, 18 Nov 2026: the take and close live from that day
 AGENTS_FROM = "2026-11-04"    # the owner, 4 Nov 2026: the paper agents "only start from now"; their replayed days are not P&L
 AGENT_NOTES = ("A paper agent (research/paper/horses.py): no orders. It trades the recorded books with the other agents "
                "on one book: the live trader's fills are already out, and what one agent takes is gone for the others.",
@@ -487,6 +540,17 @@ TRADERS = [
     Trader("greyhound-early-lay-paper", "greyhounds", "Early lay, paper", "paper",
            "The early lay's decisions logged, nothing sent", "capture", "sources/greyhound/early_lay/paper",
            early_lay_markets, "greyhound", "EP"),
+    # the owner, 18 Nov 2026: "Run the take-and-close LIVE", "GBP100 a bet", its own STOP; 19 Nov: "add a tile"
+    Trader("greyhound-take-close", "greyhounds", "Take and close, live", "live",
+           "Backs a dog at its first traded book when the price is 8%+ over the forecast SP, laid at the SP at once",
+           "capture", "sources/greyhound/take_close/live", take_close_markets, "greyhound", "TC",
+           start_from=TAKE_CLOSE_FROM, switch="GREYHOUND_TAKE_CLOSE",
+           stop_keys=("greyhound/take_close/STOP", "trading/STOP"), orders="backs",
+           notes=("Live from 18 Nov 2026 (the owner): GBP100 a bet, its own STOP (greyhound/take_close/STOP); "
+                  "greyhound/STOP does not stop it.",
+                  "A race's P&L is the trader's own settle from Betfair's result and SP; the recorder's settled "
+                  "books stand in until it is written.",
+                  "No expected value is logged: the forecast is the record's mean day.")),
     Trader("greyhound-paper", "greyhounds", "Win backs, paper", "paper",
            "The greyhound model's backs on the live key's books, laid at the SP, no bets placed",
            "capture", "sources/greyhound/live/paper", greyhound_paper_markets, "greyhound", "GP"),
@@ -757,7 +821,8 @@ def edge(t: Trader, days: dict[str, pd.DataFrame], today: date, tm: pd.DataFrame
             "flag": flag, "flag_label": FLAG_LABEL[flag], "flag_reason": why}
 
 
-STOP_KEYS = ("greyhound/STOP", "trading/STOP")     # the greyhound traders' kill switches (greyhound/live.py)
+STOP_KEYS = ("greyhound/STOP", "trading/STOP")     # the greyhound traders' kill switches (greyhound/live.py); a
+# trader with its own (the take and close: greyhound/take_close/STOP) names them in Trader.stop_keys
 
 
 def switch_state(src, t: Trader, env=None) -> dict | None:
@@ -778,7 +843,7 @@ def switch_state(src, t: Trader, env=None) -> dict | None:
     except ValueError:
         limit = None
     stop, stop_err = False, None
-    for k in STOP_KEYS:
+    for k in t.stop_keys:
         try:
             if src.get("capture", k) is not None:
                 stop = True
@@ -790,7 +855,7 @@ def switch_state(src, t: Trader, env=None) -> dict | None:
     if state is None:
         label = f"{name} not read in this run"
     elif stop:
-        label = "Stopped: an S3 STOP object is set; no new lays"
+        label = f"Stopped: an S3 STOP object is set; no new {t.orders}"
     elif state != "live":
         label = f"Paper: {name} is '{raw}'; no real orders"
     elif limit is None:
