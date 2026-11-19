@@ -1,4 +1,4 @@
-"""The owner's day report for 16 Nov (the standard approach: research/queries/done/day_report.py; read-only)."""
+"""The owner's day report for 16 Nov (second run) (the standard approach: research/queries/done/day_report.py; read-only)."""
 import os
 import runpy
 import sys

@@ -1,0 +1,77 @@
+name: Greyhound API research (read-only)
+
+# Studies on GreyhoundAPI's data (the owner, 17 Nov 2026: "Check GB. Are there more sectionals? Build a model for
+# Australia"): sectional-check (research/greyhound/sectional_check.py: GB sectionals, GBGB against the API) and au-model
+# (research/greyhound/au_model.py: the Australian model scored on Betfair's Historic Data prices; ledger
+# greyhound-au-model-1117). Reads S3 only; holds no Betfair key: nothing reaches Betfair, no order is placed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag or join-aliases'
+        type: choice
+        options: [sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases]
+        default: sectional-check
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-api-research-${{ inputs.task }}
+  cancel-in-progress: false
+
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Free disk space
+        continue-on-error: true
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 24G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+      - name: The study
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          TASK: ${{ inputs.task }}
+        run: |
+          mkdir -p out
+          case "$TASK" in
+            sectional-check) python -m research.greyhound.sectional_check --years 2014-2026 --out out/study ;;
+            au-model)        python -m research.greyhound.au_model --first-year 2016 --test-year 2026 --out out/study ;;
+            trainer-check)   mkdir -p out/study && python -m research.greyhound.trainer_check --first-year 2014 --out out/study/trainer_check.json ;;
+            lay-backtest)    python -m research.greyhound.lay_backtest --pred-dir s3:greyhound/live/oos_prices_stack_mlsitd --pred-dir s3:greyhound/live/oos_prices_stack_mlsi --out out/study ;;
+            take-close-refit) python -m research.greyhound.take_close_refit --to "$(TZ=Europe/London date -d yesterday +%F)" --out out/study ;;
+            data-audit) python -m research.greyhound.data_audit --years 2014-2026 --out out/study ;;
+            edge-models) python -m research.greyhound.edge_models --to "$(TZ=Europe/London date -d yesterday +%F)" --out out/study ;;
+            join-diag) python -m research.greyhound.join_diag --years 2015,2018,2019,2021,2023,2025 --out out/study ;;
+            join-aliases) python -m research.greyhound.join_diag --aliases 2014-2022 --out out/study ;;
+            *) echo "unknown task"; exit 1 ;;
+          esac
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/study/report.md ] && cat out/study/report.md >> "$GITHUB_STEP_SUMMARY"
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-api-research-${{ inputs.task }}-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90

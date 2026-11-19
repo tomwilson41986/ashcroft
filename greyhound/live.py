@@ -102,14 +102,18 @@ LIVE_CALIBRATION: str | None = "stretch_track"
 STACK_KEY, STACK_META_KEY = f"{PREFIX}/stack/bundle.pt", f"{PREFIX}/stack/meta.json"
 #: its out-of-sample prices of the recorded days (fast-loop batch 19, research/greyhound/experiments/
 #: batch19_live_prices.json): the early lay's forecast is fitted on them (greyhound.laytest live_prices)
-STACK_OOS_PRICES = "greyhound/live/oos_prices_stack_mls"
+STACK_OOS_PRICES = "greyhound/live/oos_prices_stack_mlsitd"
 #: each stack recipe's own out-of-sample prices (13 Nov 2026: the early lay's forecast was still fitted on the 10 Nov
 #: stack's prices after the release of batch 32's stack; batch 34 publishes the new model's)
 #: 14 Nov 2026: "stack_ml", the stack with the league table (the owner: "Release the league table to the live price")
 STACK_OOS_BY_RECIPE = {"stack3_all3": "greyhound/live/oos_prices_stack_all3",
                        "stack_m": "greyhound/live/oos_prices_stack_m", "stack_ml": "greyhound/live/oos_prices_stack_ml",
                        # 15 Nov 2026: the speed and sequence tables added (the owner: "Release")
-                       "stack_mls": STACK_OOS_PRICES}
+                       "stack_mls": "greyhound/live/oos_prices_stack_mls",
+                       # 16 Nov 2026: the Irish form added (the owner: "Yes build it")
+                       "stack_mlsi": "greyhound/live/oos_prices_stack_mlsi",
+                       # 18 Nov 2026: the trials and the draw and bend rebuilt (the feature review; batch 54)
+                       "stack_mlsitd": STACK_OOS_PRICES}
 STACK_OBJECTIVE = "stack_share"
 #: the metrics tables are built from 2014, as the nightly build (greyhound-pit.yml) builds them: their constants are
 #: fitted on the years before 2018
@@ -306,6 +310,13 @@ def card_tables(store, day: date, card: pd.DataFrame) -> dict[str, pd.DataFrame]
            # the sequence table's monthly networks, cached by the nightly build (greyhound/pit/seq.py): the card's
            # month is scored from its cached network, never refitted in the price run
            "model_store": store}
+    # the Irish form's GreyhoundAPI results (greyhound/pit/irish.py; greyhoundapi.yml refreshes them at 05:17 UTC)
+    if "irish" in sm.PIT_TABLES:
+        from greyhound.pit.irish import load_context as irish_context
+        ctx.update(irish_context(store))
+    # the constants the nightly build fitted on the early slice (ability2): read, not fitted again, when the stored
+    # table was built by this code (the owner, 18 Nov 2026: "yes, cache the constants")
+    ctx["fitted"] = pit.stored_fits(store, sm.PIT_TABLES)
     keys = runs.loc[runs.is_card, pit.KEY].drop_duplicates()
     return pit.build_tables(list(sm.PIT_TABLES), runs, None, ctx, keep=True, cut=keys)
 
@@ -362,6 +373,20 @@ def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
     pred["model_objective"] = STACK_OBJECTIVE                  # the early lay's forecast fit matches it
     pred["oos_prices"] = (STACK_OOS_BY_RECIPE.get(str(meta.get("recipe"))) or meta.get("oos_prices")
                           or STACK_OOS_PRICES)
+    # the residual memory (the owner, 17 Nov 2026: "yes serve the residual memory layer"; greyhound/memory.py): the
+    # dog's own recent misses move its price; the forecast fits read the recipe's out-of-sample prices with the layer
+    mem_notes: dict = {}
+    from greyhound import memory as gmem
+    if gmem.switch_on():
+        base = str(pred.oos_prices.iloc[0]) if len(pred) else STACK_OOS_PRICES
+        try:
+            pred, mem_notes = gmem.serve(store, day, pred, base)
+            mem_notes["oos"] = gmem.ensure_oos(store, base)
+            pred["oos_prices"] = f"{base.rstrip('/')}_mem"
+        except Exception as e:                         # the price run never fails for the layer: served without it
+            log.warning("the residual memory was not applied: %s", e)
+            mem_notes = {"memory": f"not applied: {e}"}
+        pred["pred_bsp"] = pd.to_numeric(pred.pred_bsp, errors="coerce").round(3)
     buf = io.StringIO()
     pred.to_csv(buf, index=False)
     store.put(f"{PREFIX}/predictions/{day:%Y-%m-%d}.csv", buf.getvalue().encode())
@@ -369,7 +394,8 @@ def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
     return {"day": f"{day:%Y-%m-%d}", "model": STACK_OBJECTIVE, "markets": int(pred.market_id.nunique()),
             "runners": len(pred), "races_not_priced": unpriced,      # under four runners: not a race the model prices
             "dogs_with_history": round(float(pred.matched_history.mean()), 3) if len(pred) else 0,
-            "unknown_grade_or_trip": int(card.race_class.isna().sum()), "tables_seconds": t_tables}
+            "unknown_grade_or_trip": int(card.race_class.isna().sum()), "tables_seconds": t_tables,
+            "memory": mem_notes}
 
 
 def load_model(store):

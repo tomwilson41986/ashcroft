@@ -181,3 +181,44 @@ def group_softmax(u: np.ndarray, gi: np.ndarray) -> np.ndarray:
     np.maximum.at(mx, gi, u)
     e = np.exp(u - mx[gi])
     return e / np.bincount(gi, weights=e, minlength=n)[gi]
+
+
+def debiased_probs(odds, race_id, method: str = "shin") -> np.ndarray:
+    """Each runner's win chance from its decimal SP, the bookmakers' margin taken out without the proportional
+    method's favourite-longshot bias (the feature review of 17 Nov 2026, B5).
+
+    ``shin``: Shin's (1993) insider model, z solved per race by bisection so the chances sum to 1:
+    p_i = (sqrt(z^2 + 4(1-z) q_i^2 / Q) - z) / (2(1-z)), q_i = 1/odds_i, Q = sum q. ``power``: p_i = q_i^k with k
+    solved per race so the chances sum to 1. A race with fewer than two priced runners or a book under 1 is
+    normalised proportionally. A runner with no price is NaN. Every race is bisected at once (vectorised)."""
+    o = np.asarray(odds, dtype=float)
+    q = np.where(np.isfinite(o) & (o > 1.0), 1.0 / np.where(o > 1.0, o, np.nan), np.nan)
+    gi = pd.factorize(pd.Series(race_id).to_numpy())[0]
+    out = np.full(len(o), np.nan)
+    ok = np.isfinite(q) & (gi >= 0)
+    if not ok.any():
+        return out
+    g, qq = gi[ok], q[ok]
+    ng = int(g.max()) + 1
+    Q = np.bincount(g, weights=qq, minlength=ng)
+    cnt = np.bincount(g, minlength=ng)
+    prop = ((cnt < 2) | (Q <= 1.0))[g]
+    if method == "power":
+        lo, hi = np.ones(ng), np.full(ng, 10.0)
+
+        def f(k):
+            return qq ** k[g]
+    else:
+        lo, hi = np.zeros(ng), np.full(ng, 0.5)
+
+        def f(z):
+            zz = z[g]
+            return (np.sqrt(zz * zz + 4.0 * (1.0 - zz) * qq * qq / Q[g]) - zz) / (2.0 * (1.0 - zz))
+    for _ in range(60):
+        m = 0.5 * (lo + hi)
+        big = np.bincount(g, weights=f(m), minlength=ng) > 1.0
+        lo, hi = np.where(big, m, lo), np.where(big, hi, m)
+    p = f(0.5 * (lo + hi))
+    p = p / np.bincount(g, weights=p, minlength=ng)[g]
+    out[ok] = np.where(prop, qq / Q[g], p)
+    return out

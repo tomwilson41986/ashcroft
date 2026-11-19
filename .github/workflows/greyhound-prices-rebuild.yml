@@ -1,0 +1,41 @@
+name: Greyhound price tables, rebuild years
+
+# The Betfair greyhound price-file tables (greyhound_prices/prices_<year>.parquet) rebuilt for the years given, from the
+# raw files already archived in S3, after a change to how the files are read (sources/greyhound_prices.py parse; the
+# owner, 18 Nov 2026: "backfill the BSP match"). Dispatch only; nothing reaches Betfair.
+
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: 'years to rebuild, e.g. 2014-2022 or 2015,2018'
+        required: true
+        default: '2014-2022'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greyhound-prices-rebuild
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -q -r requirements.txt
+      - name: Rebuild
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          GREYHOUND_PRICES_REBUILD: ${{ inputs.years }}
+        run: python source_data.py --source greyhound_prices --build

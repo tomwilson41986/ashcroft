@@ -122,19 +122,21 @@ def _compact(code: np.ndarray, n: int):
     return idx[code], np.flatnonzero(here)
 
 
-def league_mm(dog, lg, y, w, nl: int, s0=None):
+def league_mm(dog, lg, y, w, nl: int, s0=None, kd: float | None = None, kl: float | None = None):
     """The league fit (module docstring, 1) on rows (dog 0..nd-1, league code, performance, weight). Returns the
-    dogs' closed ratings, their open form, the league strengths (NaN for a league with no run), the passes."""
+    dogs' closed ratings, their open form, the league strengths (NaN for a league with no run), the passes.
+    ``kd``, ``kl``: the Laplace pseudo-runs (default ``KD``, ``KL``; greyhound/pit/league2.py fits them)."""
+    KD_, KL_ = (KD if kd is None else kd), (KL if kl is None else kl)
     nd = int(dog.max()) + 1
     wd = np.bincount(dog, w, nd)
     wl = np.bincount(lg, w, nl)
-    opn = np.bincount(dog, w * y, nd) / (wd + KD)
+    opn = np.bincount(dog, w * y, nd) / (wd + KD_)
     tot = np.cumsum(wl)[-1]            # summed in league order: a league first seen later in the store adds nothing
     s = np.zeros(nl) if s0 is None else np.where(wl > 0, np.nan_to_num(s0), 0.0)
     it = 0
     for it in range(1, MAXIT + 1):
         r = opn + np.bincount(dog, w * s[lg], nd) / wd
-        sn = np.bincount(lg, w * r[dog], nl) / (wl + KL)
+        sn = np.bincount(lg, w * r[dog], nl) / (wl + KL_)
         sn = np.where(wl > 0, sn - np.cumsum(sn * wl)[-1] / tot, 0.0)
         delta = np.abs(sn - s).max()
         s = sn
@@ -221,8 +223,16 @@ def _earlier(dog, dn, val, valid, k: int):
     return out
 
 
-def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None = None):
+def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None = None, *,
+          half_life: float | None = None, kd: float | None = None, kl: float | None = None, step: int = 7):
+    """The table. The keyword arguments (greyhound/pit/league2.py; the defaults are this table, bit for bit):
+    ``half_life``, ``kd``, ``kl`` replace ``HALF_LIFE``, ``KD``, ``KL``; ``step`` 1 refits every day from the runs of
+    the days before it (the within-week update) where 7 refits each Monday."""
     t0 = time.time()
+    hl = HALF_LIFE if half_life is None else float(half_life)
+    if step not in (1, 7):
+        raise ValueError("step is 7 (each Monday) or 1 (each day)")
+    period = monday if step == 7 else (lambda x: x)
     n = len(runs)
     card = runs.is_card.to_numpy(bool) if "is_card" in runs else np.zeros(n, bool)
     trial = runs.is_trial.to_numpy(bool) if "is_trial" in runs else np.zeros(n, bool)
@@ -291,10 +301,10 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     out["lg_n_trk"], out["lg_new_trk"] = n_trk, (n_trk == 0).astype(float)
 
     # ---- the walk-forward refits (the card build: from ``card_weeks`` Mondays before the card's week; the docstring)
-    weeks = np.unique(monday(dn)) if n else np.zeros(0, np.int64)
+    weeks = np.unique(period(dn)) if n else np.zeros(0, np.int64)
     card_weeks = (ctx or {}).get("card_weeks")
     if card_weeks is not None and card.any():
-        weeks = weeks[weeks >= monday(dn[card].min()) - 7 * int(card_weeks)]
+        weeks = weeks[weeks >= period(dn[card].min()) - 7 * int(card_weeks)]
     warm = {"s": None, "st": None, "p2": np.full(ND, np.nan), "nf": np.full(ND, np.nan)}
     cnt4 = np.zeros(ND, np.int64)
     hi4_prev = 0
@@ -309,7 +319,7 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
 
     for M in weeks:
         ts = time.time()
-        a0, a1 = np.searchsorted(dn, M, "left"), np.searchsorted(dn, M + 7, "left")
+        a0, a1 = np.searchsorted(dn, M, "left"), np.searchsorted(dn, M + step, "left")
         rows = slice(a0, a1)
         gq, lq = dog[rows], lg[rows]
 
@@ -327,8 +337,8 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
             i = fset[lo:hi]
             assert dn[i].max() < M
             dl, ids = _compact(dog[i], ND)
-            w = 0.5 ** ((M - dn[i]) / HALF_LIFE)
-            rc, opn, s, it = league_mm(dl, lg[i], y[i], w, NL, warm[key])
+            w = 0.5 ** ((M - dn[i]) / hl)
+            rc, opn, s, it = league_mm(dl, lg[i], y[i], w, NL, warm[key], kd, kl)
             warm[key] = s
             its[name].append(it)
             today, last = take(s, lq), take(s, lastlg[0, rows])
@@ -404,4 +414,9 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
              "seconds_a_refit_last_ten": round(float(np.mean(secs[-10:])), 3) if secs else None,
              "refit": f"each Monday on runs dated before it within {WINDOW} days, warm-started, tolerance {TOL}, "
                       f"at most {MAXIT} passes; read by that Monday to the following Sunday"}
+    if step == 1:
+        notes["refit"] = (f"each day on runs dated before it within {WINDOW} days, warm-started, tolerance {TOL}, "
+                          f"at most {MAXIT} passes; read by that day")
+    if (half_life, kd, kl) != (None, None, None):
+        notes["constants"] = {"half_life": hl, "kd": KD if kd is None else kd, "kl": KL if kl is None else kl}
     return tab, notes

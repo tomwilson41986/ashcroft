@@ -231,6 +231,12 @@ def check_spec(spec: dict) -> list[dict]:
             raise ValueError(f"{e['name']}: nn_seeds must be 1 to 10")
         if e.get("halflife_days") is not None and float(e["halflife_days"]) <= 0:
             raise ValueError(f"{e['name']}: halflife_days must be above 0")
+        if e.get("recency_half_life_days") is not None:      # review section 5: recency weights, trees and networks
+            if float(e["recency_half_life_days"]) <= 0:
+                raise ValueError(f"{e['name']}: recency_half_life_days must be above 0")
+            if e.get("objective", "softmax") not in RACE_OBJECTIVES or e.get("halflife_days") is not None:
+                raise ValueError(f"{e['name']}: recency_half_life_days takes the race objectives {RACE_OBJECTIVES} "
+                                 f"and not halflife_days beside it")
         walk = e.get("walk", spec.get("walk"))
         if walk and sorted(walk) != list(walk):
             raise ValueError(f"{e['name']}: walk dates must be in order")
@@ -495,6 +501,12 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
     if exp.get("halflife_days"):
         age = (edge - t[tr_i]).astype("timedelta64[s]").astype(float) / 86400.0
         wts = 0.5 ** (age / float(exp["halflife_days"]))
+    # recency_half_life_days (review section 5): the same weights for the share trees AND the networks (nn_share,
+    # stack_share); halflife_days weights the trees only. Absent: nothing here runs and the fit is as before
+    nn_wts = None
+    if exp.get("recency_half_life_days"):
+        age = (edge - t[tr_i]).astype("timedelta64[s]").astype(float) / 86400.0
+        wts = nn_wts = 0.5 ** (age / float(exp["recency_half_life_days"]))
     dtr = lgb.Dataset(matrix(tr_i), y[tr_i], weight=wts if obj in ("logbsp", "binary") else None, feature_name=feats,
                       free_raw_data=True, params={"max_bin": recipe["max_bin"]})
     des = lgb.Dataset(matrix(es_i), y[es_i], reference=dtr, free_raw_data=True)
@@ -531,7 +543,7 @@ def run_experiment(df: pd.DataFrame, meta: dict, exp: dict, recipe: dict, test_f
             _log(f"{exp['name']}: the neural set model, seed {k}")
             nets.append(nn.fit(X_tr, race[tr_i], soft[tr_i], X_es0, race[es_i], soft[es_i],
                                seconds=float(exp.get("nn_seconds", 2400)) / int(exp.get("nn_seeds", 1)),
-                               seed=int(params.get("seed", 0)) + k))
+                               seed=int(params.get("seed", 0)) + k, weight=nn_wts))
             _log(f"{exp['name']}: {nets[-1]['epochs']} epochs, es cross-entropy {nets[-1]['es_xent']}")
         del X_tr, X_es0
         netm = nets[0]

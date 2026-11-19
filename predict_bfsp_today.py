@@ -322,8 +322,29 @@ def load_bfsp_model(model_dir: str) -> tuple[lgb.Booster, list[str], dict]:
 # Race Card Fetching
 # ---------------------------------------------------------------------------
 
+def betfair_card_fallback(target_date: date, why: str) -> pd.DataFrame:
+    """The card from Betfair's recorded catalogue (card_betfair.py) when horseracebase.com gives none (the owner,
+    18 Nov 2026). Off unless CARD_FALLBACK=on (or CARD_SOURCE=betfair, the check run): its first price check
+    (card-fallback-check.yml run 44277514843, 18 Nov) put its prices a median 0.49 in logs from the HRB card's,
+    rank correlation 0.78, so it is not fit to trade on until a check passes."""
+    if os.getenv("CARD_SOURCE", "").lower() != "betfair" and os.getenv("CARD_FALLBACK", "").lower() != "on":
+        log.error(f"No card from horseracebase.com ({why}); the Betfair card fallback is off (CARD_FALLBACK=on "
+                  "turns it on): no card")
+        return pd.DataFrame()
+    log.warning(f"No card from horseracebase.com ({why}): falling back to Betfair's recorded catalogue")
+    try:
+        from card_betfair import fetch_card
+        return fetch_card(target_date, db_path=DB_PATH)
+    except Exception as e:  # noqa: BLE001 - the fallback must never be the thing that breaks the run
+        log.error(f"Betfair card fallback failed: {e}")
+        return pd.DataFrame()
+
+
 def fetch_racecard_from_hrb(target_date: date) -> pd.DataFrame:
-    """Fetch today's race card from horseracebase.com."""
+    """Fetch today's race card from horseracebase.com; Betfair's recorded catalogue when it gives none.
+    CARD_SOURCE=betfair reads Betfair's card without asking horseracebase.com (the fallback's check run)."""
+    if os.getenv("CARD_SOURCE", "").lower() == "betfair":
+        return betfair_card_fallback(target_date, "CARD_SOURCE=betfair")
     try:
         from daily_predictions import (
             create_session,
@@ -332,16 +353,18 @@ def fetch_racecard_from_hrb(target_date: date) -> pd.DataFrame:
         )
     except ImportError:
         log.error("Could not import daily_predictions module")
-        return pd.DataFrame()
+        return betfair_card_fallback(target_date, "daily_predictions not importable")
 
     session = create_session()
     user_id = login(session)
     if not user_id:
         log.error("Failed to login to horseracebase.com")
         log.error("Set HRB_USERNAME and HRB_PASSWORD in .env file")
-        return pd.DataFrame()
+        return betfair_card_fallback(target_date, "login failed")
 
     runners = get_todays_runners(session, user_id, target_date)
+    if runners is None or len(runners) == 0:
+        return betfair_card_fallback(target_date, "no runners")
     return runners
 
 

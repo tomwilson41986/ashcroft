@@ -117,6 +117,9 @@ jobs:
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
           ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
           PREDICTIONS_PREFIX: predictions_evening
+          # with no card from horseracebase.com (its bot check failed this run on 15 and 17 Nov), the card from the
+          # recorded Betfair catalogue (card_betfair.py; price check passed 18 Nov, run 44310518854)
+          CARD_FALLBACK: 'on'
           RACECARDS_PREFIX: racecards_evening
           DAY_IN: ${{ inputs.date }}
         run: |

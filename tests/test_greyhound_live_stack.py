@@ -117,7 +117,8 @@ def test_the_card_is_priced_by_the_stack(wired):
     out = live.predict(store, DAY)
     assert out["model"] == "stack_share" and out["runners"] == len(card)
     pred = pd.read_csv(io.BytesIO(store.get(f"{live.PREFIX}/predictions/{DAY}.csv")))
-    assert set(pred.model_objective) == {"stack_share"} and set(pred.oos_prices) == {"greyhound/live/oos_x"}
+    assert set(pred.model_objective) == {"stack_share"} and set(pred.oos_prices) == {"greyhound/live/oos_x_mem"}  # the residual memory served (greyhound/memory.py)
+    assert "pred_bsp_base" in pred and "memory_m" in pred
     assert np.allclose(pred.groupby("race_id").p_model.sum(), 1.0)
     assert np.isfinite(pred.pred_bsp).all() and (pred.pred_bsp > 0).all() and pred.market_id.notna().all() and pred.selection_id.notna().all()
     # the card's tables are its run's: the same price from the nightly tables once the results are in
@@ -154,10 +155,10 @@ def test_the_early_lay_reads_the_stacks_prices(tmp_path):
         {"market_id": ["1.1"], "model_objective": ["stack_share"], "oos_prices": [live.STACK_OOS_PRICES]})
         .to_csv(index=False).encode())
     assert lt.live_prices(store, DAY) == lt.LOGBSP_PRICES           # not published yet: the nearest prices
-    store.put("greyhound/live/oos_prices_stack_m/2025-02-01.parquet", b"x")
+    store.put("greyhound/live/oos_prices_stack_mls/2025-02-01.parquet", b"x")
     assert lt.live_prices(store, DAY) == lt.LOGBSP_PRICES           # two models back is not the nearest
-    store.put("greyhound/live/oos_prices_stack_ml/2025-02-01.parquet", b"x")
-    assert lt.live_prices(store, DAY) == "greyhound/live/oos_prices_stack_ml"     # the stack before it, once there
+    store.put("greyhound/live/oos_prices_stack_mlsi/2025-02-01.parquet", b"x")
+    assert lt.live_prices(store, DAY) == "greyhound/live/oos_prices_stack_mlsi"   # the stack before it, once there
     store.put(f"{live.STACK_OOS_PRICES}/2026-10-06.parquet", b"x")
     assert lt.live_prices(store, DAY) == live.STACK_OOS_PRICES
 
@@ -175,6 +176,12 @@ def test_the_released_stack_reads_the_league_table_and_names_its_own_prices():
     from greyhound import laytest as lt, pit
     assert {"league", "speed", "seq"} <= set(sm.PIT_TABLES) and "pit_seq" in sm.MATRIX_BLOCKS
     # 15 Nov 2026: the speed and sequence tables, under "stack_mls"; the early lay reads the league stack's prices
-    assert sm.RECIPE["name"] == "stack_mls" and live.STACK_OOS_BY_RECIPE["stack_mls"] == live.STACK_OOS_PRICES
-    assert live.STACK_OOS_PRICES == "greyhound/live/oos_prices_stack_mls"
-    assert lt.NEAREST_PRICES[live.STACK_OOS_PRICES] == live.STACK_OOS_BY_RECIPE["stack_ml"]
+    # 16 Nov 2026: the Irish form, under "stack_mlsi"; the early lay reads the speed and sequence stack's prices
+    assert "irish" in sm.PIT_TABLES and "pit_irish" in sm.MATRIX_BLOCKS and "irish" not in pit.ON_DEMAND
+    # 18 Nov 2026: the trials and the draw and bend rebuilt, under "stack_mlsitd"; the early lay reads stack_mlsi's
+    assert {"trials2", "ability2", "draw2", "bend2"} <= set(sm.PIT_TABLES) and "pit_bend2" in sm.MATRIX_BLOCKS
+    assert not {"trials2", "ability2", "draw2", "bend2"} & set(pit.ON_DEMAND)
+    assert sm.RECIPE["name"] == "stack_mlsitd" and live.STACK_OOS_BY_RECIPE["stack_mlsitd"] == live.STACK_OOS_PRICES
+    assert live.STACK_OOS_PRICES == "greyhound/live/oos_prices_stack_mlsitd"
+    assert lt.NEAREST_PRICES[live.STACK_OOS_PRICES] == live.STACK_OOS_BY_RECIPE["stack_mlsi"]
+    assert lt.NEAREST_PRICES[live.STACK_OOS_PRICES + "_mem"] == live.STACK_OOS_BY_RECIPE["stack_mlsi"] + "_mem"

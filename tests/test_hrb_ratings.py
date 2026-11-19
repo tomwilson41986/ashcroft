@@ -97,3 +97,41 @@ def test_evaluate_rating_sets_detects_informative_rating():
     assert ev.loc["good", "concordance"] > 0.6 and ev.loc["good", "p_value"] < 1e-6
     assert ev.loc["noise", "p_value"] > 1e-3
     assert ev.loc["good", "stack_gain_logloss"] > ev.loc["noise", "stack_gain_logloss"]
+
+
+def test_list_sets_reads_the_download_form():
+    import hrb_ratings
+
+    class Page:
+        text = ('<form><select name="usecustomsettings"><option value="">Choose</option>'
+                '<option value="269">HRB Standard</option><option value="132216">Speed HRB</option></select>'
+                '<select name="day"><option value="1">1</option></select></form>')
+
+        def raise_for_status(self):
+            pass
+
+    class Session:
+        def get(self, url, timeout=None):
+            return Page()
+
+    assert hrb_ratings.list_sets(Session()) == {269: "HRB Standard", 132216: "Speed HRB"}
+
+
+def test_fetch_skips_what_the_store_holds(tmp_path, monkeypatch):
+    from datetime import date
+
+    import hrb_ratings
+
+    class Store:
+        have = {"ratings_269_2026-11-01.csv"}
+        put_names = []
+
+        def put(self, name, text):
+            self.put_names.append(name)
+
+    calls = []
+    monkeypatch.setattr(hrb_ratings, "download_day",
+                        lambda s, set_id, d, u: calls.append((set_id, d)) or "race_date,horse_name,total\n")
+    st = hrb_ratings.fetch_range([269], date(2026, 11, 1), date(2026, 11, 2), tmp_path, spacing=0, user_id="u",
+                                 store=Store(), session=object())
+    assert calls == [(269, date(2026, 11, 2))] and st["skipped"] == 1 and Store.put_names == ["ratings_269_2026-11-02.csv"]

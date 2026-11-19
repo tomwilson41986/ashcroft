@@ -3,7 +3,9 @@ GreyhoundAPI in the model"; ledger greyhound-irish-batch45-1116). 83% of GB runs
 (greyhound/pit/origin.py, 3,291,234 of 3,956,525), many of them raced in Ireland before they came over; GBGB's results
 hold none of those runs.
 
-**The link.** GreyhoundAPI gives a dog one id across its GB and Irish results. Its GB results
+**The link.** By the dog's name (``name_map``: GreyhoundAPI keeps a dog's GB and Irish records under different ids,
+so the id map below reaches almost none of its Irish runs; names held by one dog on each side only, and only the
+Irish runs from three years before the dog's first GB day on). The API's GB results
 (``sources/greyhoundapi/runs_GB_<year>.parquet``) are matched to GBGB's runs on the local day, the canonical track
 (greyhound/data.py ``canonical_track``), the off time to the minute and the trap; an API dog maps to the GBGB dog it
 matches most often, when that is at least ``MAP_SHARE`` of its matched runs. The map is identity, not outcome.
@@ -53,8 +55,8 @@ COLUMNS = {
     "ie_import": "1 when it has Irish runs and at most 3 earlier GB race days",
     "ie_fig_vs": "ie_fig_mean3 less the mean of the other runners' in today's race",
 }
-API_COLS = ["race_id", "dog_id", "track", "start_local", "trap", "position", "run_time_s", "adjusted_time_s",
-            "sectional_s", "distance_m", "class_number"]
+API_COLS = ["race_id", "dog_id", "dog_name", "track", "start_local", "trap", "position", "run_time_s",
+            "adjusted_time_s", "sectional_s", "distance_m", "class_number", "sp_decimal", "weight_kg"]
 
 
 def load_context(store) -> dict:
@@ -105,6 +107,32 @@ def dog_map(api_gb: pd.DataFrame, runs: pd.DataFrame) -> tuple[dict, dict]:
                 "dogs_dropped_ambiguous": int(len(best) - len(keep))}
 
 
+PRE_GB_DAYS = 1095
+
+
+def name_map(ie: pd.DataFrame, runs: pd.DataFrame) -> tuple[dict, pd.Series, dict]:
+    """API Irish dog id -> GBGB dog id by the dog's name (lower case, letters and digits), for names held by ONE dog on
+    each side; with each GBGB dog's first GB day. GreyhoundAPI keeps a dog's GB and Irish records under different ids
+    (16 Nov 2026: "Me Bundee" 4253978596 with 52 runs and 1512063880 with 15), so the id map does not reach its Irish
+    runs; an Irish-bred dog keeps its registered name when it comes over."""
+    if "dog_name" not in runs or ie is None or "dog_name" not in ie:
+        return {}, pd.Series(dtype="datetime64[ns]"), {"name_links": 0}
+    g = runs[["dog_id", "dog_name", "race_date"]].dropna(subset=["dog_name"]).copy()
+    g["k"] = g.dog_name.map(core.norm_name)
+    g = g[g.k != ""]
+    gk = g.groupby("k").dog_id.nunique()
+    g = g[g.k.isin(gk[gk == 1].index)]
+    gb_dog = g.drop_duplicates("k").set_index("k").dog_id
+    first = pd.to_datetime(g.groupby("dog_id").race_date.min())
+    a = ie[["dog_id", "dog_name"]].dropna().drop_duplicates()
+    a["k"] = a.dog_name.map(core.norm_name)
+    ak = a.groupby("k").dog_id.nunique()
+    a = a[a.k.isin(ak[ak == 1].index) & a.k.isin(gb_dog.index)].drop_duplicates("k")
+    mp = dict(zip(a.dog_id.to_numpy(), gb_dog.loc[a.k].astype("int64").to_numpy()))
+    return mp, first, {"name_links": len(mp), "gb_names_unique": int((gk == 1).sum()),
+                       "gb_names_shared": int((gk > 1).sum()), "ie_names_shared": int((ak > 1).sum())}
+
+
 def run_figures(api: pd.DataFrame) -> pd.DataFrame:
     """Every API run with its day, won, placed, class, time figure and first-sectional figure (standards from every
     run of the same track and trip, earlier days only)."""
@@ -131,12 +159,16 @@ def run_figures(api: pd.DataFrame) -> pd.DataFrame:
     return d[["dog_id", "race_date", "won", "placed", "fig", "sec", "cls"]]
 
 
-def irish_runs(ie: pd.DataFrame, mp: dict) -> pd.DataFrame:
-    """Each Irish run of a mapped dog with its figures."""
+def irish_runs(ie: pd.DataFrame, mp: dict, first: pd.Series | None = None) -> pd.DataFrame:
+    """Each Irish run of a mapped dog with its figures; with ``first`` (a GBGB dog's first GB day), only the Irish runs
+    from ``PRE_GB_DAYS`` before it on (a name reused by another dog years earlier is not read)."""
     d = run_figures(ie)
     d["gb_dog"] = d.dog_id.map(mp)
     d = d[d.gb_dog.notna()].copy()
     d["gb_dog"] = d.gb_dog.astype("int64")
+    if first is not None and len(first):
+        start = d.gb_dog.map(first) - pd.Timedelta(days=PRE_GB_DAYS)
+        d = d[pd.to_datetime(d.race_date) >= start.fillna(pd.Timestamp("1900-01-01"))]
     return d[["gb_dog", "race_date", "won", "placed", "fig", "sec", "cls"]]
 
 
@@ -171,7 +203,10 @@ def build(runs: pd.DataFrame, figs: pd.DataFrame | None = None, ctx: dict | None
     if ie is None or not len(ie):
         return tab, {"note": "no data found: no GreyhoundAPI Irish results in the store"}
     mp, mnotes = dog_map(gb, r)
-    irr = irish_runs(ie, mp)
+    nmp, first, nnotes = name_map(ie, r)
+    mnotes.update(nnotes)
+    both = {**nmp, **{k: v for k, v in mp.items()}}          # the id map where it reaches (rarely: see name_map)
+    irr = irish_runs(ie, both, first)
     if not len(irr):
         return tab, {**mnotes, "note": "no Irish run of a mapped dog"}
     h = history(irr)

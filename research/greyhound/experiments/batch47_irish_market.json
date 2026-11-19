@@ -1,0 +1,99 @@
+{
+ "about": "Batch 47 (16 Nov 2026), the owner: 'What other data from the api can we use? Research it and include in modelling'. Registered as greyhound-irish-market-batch47-1116. Baseline m_live: the live recipe stack_mlsi (stack_mls + pit_irish, released 16 Nov). m_irishmkt: + pit_irish_market (im_: the Irish market's view of the dog from GreyhoundAPI's Irish SPs - actual over expected, log SP, SP rank against the finish, favourite share - and its Irish weights). Test 1 Jun - 11 Nov 2026, read by period.",
+ "recipe": "quick",
+ "test_from": "2026-06-01",
+ "baseline": "m_live",
+ "experiments": [
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "m_live"
+  },
+  {
+   "features": "card_safe",
+   "drop": [
+    "lf_wt_",
+    "hb_days_since_season",
+    "ti_new_trainer"
+   ],
+   "recipe_overrides": {
+    "learning_rate": 0.08,
+    "early_stop": 100,
+    "rounds": 10000
+   },
+   "calibrate": [
+    "stretch_track"
+   ],
+   "objective": "stack_share",
+   "add_blocks": [
+    "sim",
+    "wpred",
+    "pit_figs",
+    "pit_ability",
+    "pit_trouble",
+    "pit_connections",
+    "pit_market",
+    "pit_breeding",
+    "pit_life",
+    "pit_form",
+    "pit_draw",
+    "pit_bend",
+    "pit_xtime",
+    "pit_trials",
+    "pit_optics",
+    "pit_line",
+    "pit_salience",
+    "pit_lastrace",
+    "pit_league",
+    "pit_speed",
+    "pit_seq",
+    "pit_irish",
+    "pit_irish_market"
+   ],
+   "seeds": 3,
+   "nn_seeds": 3,
+   "nn_seconds": 1800,
+   "name": "m_irishmkt"
+  }
+ ]
+}
