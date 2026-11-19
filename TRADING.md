@@ -1917,6 +1917,23 @@ the market-rating blend.
 - **The stream late signal** (12-17 Nov, 144 markets to the off): no signal at T-5 (ledger `stream-late-signal-1117`).
 - **The record:** 39 days, +GBP6,589.31, 31 up.
 
+**The forty-ninth full day** (18 Nov; ledger `live-day-1118`), the fourth priced by the stack blend
+(bfsp-model-63/64/65).
+- **The start.** Predictions run 44228556587 wrote the file at 03:34 UTC (03:10-03:34). The night-before run ran this
+  time (predict-evening.yml 44209318637, 00:37-01:01 UTC; it failed on 15 and 17 Nov on horseracebase.com's bot check):
+  338 runners in both files, median rank correlation 1.000 (ledger `night-before-1118`). The session (44243210360) ran
+  05:17-21:30 UTC in one piece; the settle at 22:29 UTC in settle mode (run 44412110862).
+- **+GBP87.68 after commission** as Betfair settled the trader's own orders, on 382 fills on 92 horses, GBP2,132.02
+  matched, 26 races settled in 26 markets, CLV +2.51%: first backs +3.7%, top-ups +2.1%; 37 horses reached the cap of 5
+  top-ups (ledger `changes-1118`). One GBP2.00 top-up was entered at 10:00:53 UK, 53 seconds past the 10:00 limit.
+- **The account.** Funds GBP4,993.05 -> GBP5,053.21 (+GBP60.16) against the trader's +GBP87.68: a gap of -GBP27.52
+  that no trader's own record explains (the greyhound early lay placed nothing; no morning-model, football or greyhound
+  trader record; the morning models' trade run sat queued all day). Open: the 19 Nov session's opening funds and
+  Betfair's statement (ledger `account-day-1118`).
+- **The stack blend against the BSP**: no new day; HRB's results stop at 16 Nov until the pause ends on 25 Nov
+  (ledger `model-quality-1118`).
+- **The record:** 40 days, +GBP6,676.99, 32 up.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
