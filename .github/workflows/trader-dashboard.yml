@@ -55,6 +55,10 @@ jobs:
           # paper-models.yml reads them (paper unless 'live'); read here, never acted on
           GREYHOUND_EARLY_LAY: ${{ vars.GREYHOUND_EARLY_LAY || 'paper' }}
           GREYHOUND_EARLY_LAY_DAILY_LOSS: ${{ vars.GREYHOUND_EARLY_LAY_DAILY_LOSS }}
+          # the take and close's switch, on its tile (the owner, 19 Nov 2026: "add a tile"), as paper-models.yml
+          # reads it (paper unless 'live'); read here, never acted on
+          GREYHOUND_TAKE_CLOSE: ${{ vars.GREYHOUND_TAKE_CLOSE || 'paper' }}
+          GREYHOUND_TAKE_CLOSE_DAILY_LOSS: ${{ vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS }}
         run: |
           ARGS=(--out out/dashboard --summary "$GITHUB_STEP_SUMMARY")
           if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); fi
