@@ -19,6 +19,7 @@
 | Turn-up model (ran / lost / void) | PASS on 2026: log loss 0.583 against 0.670 and 0.696 for the baselines (section 4.4) | Yes |
 | Calibration of P(ran) | FAIL: error 0.023 to 0.015, but the log loss interval breaks the bar; not used (section 4.5) | Yes |
 | Price stage: E[log SP given it runs] | PASS on 2026: mean abs. log error 0.545 against 0.570 and 0.564 (section 4.5) | Yes |
+| EV entry rule (back, laid at SP) | FAIL on 2026: -32.3% on 216 bets, deflated Sharpe 0.000 (section 4.6) | Yes |
 | Entries by stage (forfeits, 5-day, declarations) | No data found | **Open** |
 
 ## 0. Betfair's rules for these markets (read 18 Nov 2026)
@@ -359,6 +360,55 @@ What it shows:
   listed.
 
 Neither part is a trading rule; no stake or return was read.
+
+## 4.6 The EV and entry rule: FAIL (ledger `antepost-ev-1119`)
+
+Registered before the run and read once:
+[run 44536430030](https://github.com/tomwilson41986/ashcroft/actions/runs/44536430030), artifact `antepost-phase0-11`,
+`antepost_ev/antepost_ev.json`. Code: `antepost/ev.py`.
+
+**The rule:**
+- **When to bet:** at 60, 45, 30, 21, 14, 7 or 3 days out, back GBP1 the first time a horse's EV reaches the threshold.
+  One bet per horse per race, held to race day.
+- **The EV:**
+
+  `chance it runs × (fill price ÷ expected SP − 1, less 2% commission on a win) − chance it doesn't run`
+
+  The fill price is the last traded price less half the typical spread for its price band in the recorded books.
+- **The exit:** a runner is laid at the SP, a non-runner loses the stake, and a balloted horse is void.
+- **The threshold:** chosen on Jul to Dec 2025 as 0.05, the best return of the thresholds with at least 30 bets,
+  though every threshold lost there too. Then scored once on 2026.
+
+**The result on 2026:**
+
+| | Value |
+|---|---|
+| Bets / races | 216 / 49 |
+| Return per GBP1 | **-32.3%** (90% race-bootstrap interval -53.0% to -0.5%) |
+| Deflated Sharpe | 0.000 (per-race Sharpe -0.228 against a bar of 0.626, 373 trials counted) |
+| Bets on horses that didn't run | 125 of 216 |
+| Predicted EV of the bets taken | +26.7% |
+
+Every threshold, on 2026 (recorded for completeness; only 0.05 was registered to be read):
+
+| Threshold | 0 | 0.05 | 0.10 | 0.20 | 0.30 |
+|---|---|---|---|---|---|
+| Bets | 307 | 216 | 154 | 86 | 56 |
+| Predicted EV | +18.8% | +26.7% | +35.2% | +52.8% | +69.0% |
+| Realised return | -29.8% | -32.3% | -50.8% | -64.3% | -71.7% |
+
+**Why it fails:**
+- **The higher the predicted EV, the worse the return, so the rule selects the models' errors.** Two errors stack:
+  - The turn-up model's P(ran) is too high at the bottom, and its calibration failed (sections 4.4 and 4.5).
+  - The price model's error spread (0.6 to 0.8 in log) gives long prices a large expected-value uplift that isn't there.
+- **Most of the damage is at long prices and far out:**
+  - 102 of the 216 bets were priced 50+, returning -61%.
+  - 77 were taken 60 days out, returning -88%.
+- **Some cells are positive** (5-10: +2.0% on 52 bets; 45 days out: +15.8% on 39). They are post-hoc and not a
+  finding: a rule built on them needs its own registration and counts as more trials.
+
+**No rule from this line goes forward.** The turn-up and price models stand as forecasts. Backing on the EV they imply
+doesn't make money once a back pays the spread and loses its stake on non-runners.
 
 ## 5. The recorded snapshots (7 Oct to 17 Nov 2026)
 
