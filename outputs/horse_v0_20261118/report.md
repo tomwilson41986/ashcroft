@@ -15,7 +15,8 @@ been changed. Scope: horse racing only (the owner, 18 Nov). Targets: the BFSP (k
    to 0.561 at 50+) and the field size (0.336 at 2-7 runners to 0.428 at 16+), and jumps are worst (0.390). That is
    where a better model has most to win. Source: `phase0_baseline_v0.json`.
 3. **On winners the model adds nothing to the BSP, out of sample.** Benter weight about 0.00-0.01 against the
-   market's 0.98. Log-likelihood -0.29 per 1,000 races (-0.58 to -0.01). Log loss 0.306 against the market's 0.296.
+   market's 0.98. Log-likelihood -0.35 per 1,000 races (-0.68 to -0.01). Log loss 0.2935 against the market's 0.2838
+   (corrected 19 Nov to every runner in the race; the first reading kept finishers only).
    This is expected of a BSP forecaster: the money is in the price before the off against the BSP (CLV), not in
    beating the BSP on the result.
 4. **On normalised beaten lengths the model's order agrees less than the BSP's.** Spearman 0.424 against 0.463 on

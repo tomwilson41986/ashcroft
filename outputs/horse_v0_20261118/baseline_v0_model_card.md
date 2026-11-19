@@ -44,20 +44,21 @@ By quarter: 2025 Q1 0.38690, Q2 0.37374, Q3 0.35386, Q4 0.38724, 2026 Q1 0.37566
 
 ### Win probability against the market (normalised BSP)
 
-15,647 races with one winner held, 133,936 runners.
+15,647 races with one winner held, every runner in the race (corrected 19 Nov: the first reading kept finishers only,
+which renormalised each race's book after the fact; source `research/harness.py` on the same `oos_st.csv`).
 
 | | Model | Market (BSP) |
 |---|---|---|
-| Log loss per runner | 0.30591 (0.30342 - 0.30865) | 0.29583 (0.29331 - 0.29835) |
-| Brier per runner | 0.09047 (0.08954 - 0.09141) | 0.08780 (0.08699 - 0.08865) |
-| Log loss, model minus market | +0.01008 (0.00917 - 0.01098): the market is better | |
-| Calibration error (ECE, deciles of the model's probability) | 0.00293 | |
+| Log loss per runner | 0.29351 (0.29125 - 0.29606) | 0.28380 (0.28153 - 0.28637) |
+| Brier per runner | 0.08602 (0.08527 - 0.08682) | 0.08353 (0.08280 - 0.08438) |
+| Log loss, model minus market | +0.00971 (0.00877 - 0.01058): the market is better | |
+| Calibration error (ECE, deciles of the model's probability) | 0.00272 | |
 
 Benter test (conditional logit on log p_model and log p_market, each fold fitted on the folds before it, 13,023 races
-scored): the model's weight is -0.076, 0.008, 0.006, 0.002, 0.011 across folds 1-5, against about 0.98 on the market.
-The log-likelihood against the market alone is **-0.29 per 1,000 races (-0.58 to -0.01)**: out of sample the model
-adds nothing to the BSP on who wins. That is expected of a model built to forecast the BSP, and matches the ledger
-(`benter-blend-1020`, `bsp-calibration-1007`).
+scored): the model's weight is -0.086, 0.004, 0.004, 0.003, 0.010 across folds 1-5. The log-likelihood against the
+market alone is **-0.35 per 1,000 races (-0.68 to -0.01)**: out of sample the model adds nothing to the BSP on who
+wins. That is expected of a model built to forecast the BSP, and matches the ledger (`benter-blend-1020`,
+`bsp-calibration-1007`).
 
 ### Target 2 - normalised beaten lengths (added by the owner, 18 Nov)
 
