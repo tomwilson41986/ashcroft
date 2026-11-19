@@ -189,8 +189,13 @@ def y_index(y: pd.Series) -> np.ndarray:
 
 
 def band_of(df: pd.DataFrame) -> pd.Series:
-    b = pd.cut(np.exp(df["log_ltp"]), BANDS).astype(str)
-    return df["mark"] + "|" + b.where(df["has_price"] == 1, "no_price")
+    """'<mark>|<band>' for every row: a band by index (prices at or past either edge fall in the end bands), or
+    no_price. Never a missing key (run 44499742662 stopped on one from pd.cut)."""
+    price = np.exp(df["log_ltp"].to_numpy(dtype=float))
+    idx = np.clip(np.searchsorted(BANDS, price, side="left") - 1, 0, len(BANDS) - 2)
+    labels = np.array([f"b{i}" for i in range(len(BANDS) - 1)], dtype=object)[idx]
+    labels = np.where((df["has_price"].to_numpy() == 1) & np.isfinite(price), labels, "no_price")
+    return df["mark"].astype(str) + "|" + pd.Series(labels, index=df.index)
 
 
 def fit_table(train: pd.DataFrame, alpha: float = 1.0):

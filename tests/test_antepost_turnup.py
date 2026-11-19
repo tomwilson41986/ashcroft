@@ -100,3 +100,13 @@ def test_recent_runs_count_only_days_before_the_mark(tmp_path):
     a = out.iloc[0]
     assert a["days_since_run"] == 9 and a["runs_365"] == 2 and a["ran_14"] == 1     # 20 Feb and 1 Jan; not 1 Mar
     assert np.isnan(out.iloc[1]["days_since_run"]) and out.iloc[1]["runs_365"] == 0
+
+
+def test_every_row_gets_a_price_band_key():
+    df = pd.DataFrame({"mark": ["d30"] * 5, "has_price": [1, 1, 1, 1, 0],
+                       "log_ltp": np.log([1.0, 1.01, 1000.0, 1200.0, np.nan])})
+    keys = tu.band_of(df)
+    assert list(keys) == ["d30|b0", "d30|b0", "d30|b5", "d30|b5", "d30|no_price"]
+    train = df.assign(y=["ran", "lost", "lost", "void", "lost"])
+    p = tu.fit_table(train)(df)
+    assert p.shape == (5, 3) and np.allclose(p.sum(axis=1), 1.0)
