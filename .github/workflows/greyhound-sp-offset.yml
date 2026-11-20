@@ -5,23 +5,24 @@ name: Greyhound residual on the BSP, forward on paper (read-only)
 # before each race and settled at the SP on paper. Reads and writes S3 only (sources/greyhound/sp_offset/); holds no
 # Betfair key: nothing reaches Betfair, no order is placed.
 
-# No schedule yet: nothing is frozen until the seed-averaged study is read (greyhound-sp-offset-seeds-1120). Once it
-# is, the serve runs at 47 7,10,13,16 UTC (the recorder's catalogue from 06:55 UTC; a race is written once, at its
-# first serve 10 minutes or more before its off) and the settle and read at 26 12 UTC.
 on:
+  schedule:
+    - cron: '47 7,10,13,16 * * *'   # serve: the day's card as listed (the recorder's catalogue from 06:55 UTC); a race
+                                    # is written once, at its first serve 10 minutes or more before its off
+    - cron: '26 12 * * *'           # settle the last days (the settled books are read by 10:10 UTC) and read
   workflow_dispatch:
     inputs:
       task:
-        description: 'serve (the day''s card), settle (the last days, and the reading), or freeze (the one fit; refuses a second)'
+        description: 'serve (the day''s card), rehearse (a serve written beside the test, never settled), settle (the last days, and the reading), or freeze (the one fit; refuses a second)'
         type: choice
-        options: [serve, settle, freeze]
+        options: [serve, rehearse, settle, freeze]
         default: serve
       date:
         description: 'UK racing day, YYYY-MM-DD (default today)'
         required: false
         type: string
       dev_run:
-        description: 'freeze only: the run id of the sp-offset study whose stage2_daily.csv is stored as the study''s days'
+        description: 'freeze only: the run id of the sp-offset study whose stage2_daily csv(s) are stored as the study''s days (the seed halves are averaged)'
         required: false
         type: string
 
@@ -62,8 +63,9 @@ jobs:
         run: |
           [[ "$DEV_RUN" =~ ^[0-9]+$ ]] || { echo "dev_run must be a run id"; exit 1; }
           gh run download "$DEV_RUN" --repo "$GITHUB_REPOSITORY" --dir dev_artifact
-          find dev_artifact -name stage2_daily.csv | head -1 | xargs -I{} cp {} stage2_daily.csv
-          [ -f stage2_daily.csv ] || { echo "no stage2_daily.csv in run $DEV_RUN"; exit 1; }
+          mkdir -p dev_daily
+          find dev_artifact -name 'stage2_daily*.csv' -exec cp {} dev_daily/ \;
+          ls dev_daily/*.csv >/dev/null 2>&1 || { echo "no stage2_daily csv in run $DEV_RUN"; exit 1; }
       - name: The forward test
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -84,8 +86,9 @@ jobs:
           fi
           case "$TASK" in
             serve)  python -m research.greyhound.sp_offset_forward --serve "${ARGS[@]}" ;;
+            rehearse) python -m research.greyhound.sp_offset_forward --serve --dry-run "${ARGS[@]}" ;;
             settle) python -m research.greyhound.sp_offset_forward --settle --days 4 --read "${ARGS[@]}" ;;
-            freeze) if [ -f stage2_daily.csv ]; then ARGS+=(--dev-daily stage2_daily.csv); fi
+            freeze) if ls dev_daily/*.csv >/dev/null 2>&1; then ARGS+=(--dev-daily dev_daily/*.csv); fi
                     python -m research.greyhound.sp_offset_forward --freeze "${ARGS[@]}" ;;
             *) echo "unknown task"; exit 1 ;;
           esac

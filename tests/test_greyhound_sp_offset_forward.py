@@ -15,16 +15,18 @@ def test_the_freeze_fits_once_on_every_day_and_its_cuts_order_the_rules():
     d = _frame(0.5, races=3000)
     orig, so.PARAMS = so.PARAMS, SMALL
     try:
-        m, meta = fw.freeze_fit(d, ["x", "noise"])
+        m, meta = fw.freeze_fit(d, ["x", "noise"], seeds=(1, 2, 3))
     finally:
         so.PARAMS = orig
-    assert meta["fit_to"] == d.day.max() and meta["fit_from"] == d.day.min() and meta["rounds"] > 0
+    assert meta["fit_to"] == d.day.max() and meta["fit_from"] == d.day.min()
+    assert len(m) == 3 == len(meta["rounds"]) and min(meta["rounds"]) > 0 and meta["seeds"] == [1, 2, 3]
     assert meta["early_stop_from"] > "2024-06"                 # the last tenth of the days
     c = meta["cuts"]
     assert c["back_top2"] > c["back_top5"] > c["back_top10"] > 0 > c["lay_bottom10"] > c["lay_bottom5"] > c["lay_bottom2"]
     # the residual follows the feature the BSP misses, on rows scored as a card would be
-    f = m.predict(d[["x", "noise"]].to_numpy(np.float32), raw_score=True)
+    f = fw.score(m, d[["x", "noise"]].to_numpy(np.float32))
     assert np.corrcoef(f, d.x)[0, 1] > 0.9
+    assert fw.SEEDS == tuple(range(1, 21)) and fw.DROP_FEATURES == ("gp_bsp_ae_car", "gp_bsp_mkt_car")
 
 
 def test_the_signal_is_centred_in_its_race_and_a_short_field_is_left_out():
@@ -70,22 +72,27 @@ def test_a_day_settles_at_the_sp_in_wholly_priced_races_only():
     assert np.isclose(r.loc["lay_bottom10", "net"], 0.2 * 0.98)          # a lay risking 1 at 6.0 that lost: stake 0.2
 
 
-def test_the_read_needs_the_pooled_bar_and_a_forward_gain():
+def test_the_read_needs_every_forward_day_a_forward_gain_and_the_pooled_bar():
     rng = np.random.default_rng(0)
     days = pd.date_range("2024-01-01", periods=600).strftime("%Y-%m-%d")
     dev = pd.concat([pd.DataFrame({"rule": n, "day": days, "risk": 50.0,
                                    "net": 50.0 * (0.02 + 0.1 * rng.standard_normal(600))}) for n, _, _ in so.STAGE2])
-    fdays = pd.date_range("2026-11-21", periods=40).strftime("%Y-%m-%d")
-    good = pd.DataFrame({"rule": "back_top10", "day": fdays, "race_id": "r", "risk": 50.0,
-                         "net": 50.0 * (0.05 + 0.1 * rng.standard_normal(40))})
-    bad = good.assign(rule="lay_bottom10", net=-abs(good.net))
+    fdays = pd.date_range("2026-11-21", periods=fw.READ_DAYS).strftime("%Y-%m-%d")
+    good = pd.DataFrame({"rule": fw.PRIMARY, "day": fdays, "race_id": "r", "risk": 50.0,
+                         "net": 50.0 * (0.05 + 0.1 * rng.standard_normal(fw.READ_DAYS))})
+    bad = good.assign(rule="back_top10", net=-abs(good.net))
     res = fw.read(pd.concat([good, bad]), dev, 1)
     by = {r["rule"]: r for r in res["rules"]}
-    assert by["back_top10"]["pass"] and by["back_top10"]["pooled"]["days"] == 640
-    assert not by["lay_bottom10"]["pass"]                         # the forward days lost: no pass on the study's days alone
+    assert by[fw.PRIMARY]["pass"] and by[fw.PRIMARY]["pooled"]["days"] == 600 + fw.READ_DAYS
+    assert res["gate"]["state"] == "PASS" and not by["back_top10"]["pass"]      # its forward days lost
     assert by["back_top2"]["forward"] == {"bets": 0, "note": "no data found"} and not by["back_top2"]["pass"]
-    hard = fw.read(pd.concat([good, bad]), dev, 10 ** 9)
-    assert hard["passed"] == [] and "| back_top10 |" in fw.markdown(res)
+    hard = fw.read(pd.concat([good, bad]), dev, 10 ** 9)                          # the pooled bar bites
+    assert hard["passed"] == [] and hard["gate"]["state"] == "FAIL" and "| lay_bottom10 |" in fw.markdown(res)
+    # before the last day nothing passes, however good; a forward interval wholly below zero at the look ends it
+    early = fw.read(good[good.day <= fdays[59]], dev, 1)
+    assert early["passed"] == [] and early["gate"]["state"] == f"running: 60 of {fw.READ_DAYS} days"
+    lost = fw.read(good[good.day <= fdays[49]].assign(net=lambda f: -abs(f.net)), dev, 1)
+    assert lost["gate"]["state"].startswith("FAIL (futility")
 
 
 def test_the_studys_days_are_the_stage_two_bets_summed():
@@ -109,3 +116,27 @@ def test_the_forward_workflow_holds_no_betfair_key_and_sends_no_order():
     for word in ("place_orders", "placeOrders", "betfair_client", "BetfairClient"):
         assert word not in src, word
     assert fw.FIRST_DAY == "2026-11-21"
+
+
+def test_the_frozen_fits_come_back_from_the_store_and_the_seed_halves_days_are_averaged(tmp_path):
+    import json
+
+    from sources.common import Store
+    d = _frame(0.5, races=1500)
+    orig, so.PARAMS = so.PARAMS, SMALL
+    try:
+        models, meta = fw.freeze_fit(d, ["x", "noise"], seeds=(1, 2))
+    finally:
+        so.PARAMS = orig
+    store = Store(root=tmp_path)
+    assert fw.load_frozen(store) == (None, None)
+    store.put(fw.MODEL_KEY, json.dumps([m.model_to_string(num_iteration=m.best_iteration) for m in models]).encode())
+    store.put(fw.META_KEY, json.dumps(meta).encode())
+    back, m2 = fw.load_frozen(store)
+    x = d[["x", "noise"]].to_numpy(np.float32)[:500]
+    want = np.mean([m.predict(x, num_iteration=m.best_iteration, raw_score=True) for m in models], axis=0)
+    assert len(back) == 2 and m2["cuts"] == meta["cuts"] and np.allclose(fw.score(back, x), want)
+    a = pd.DataFrame({"rule": ["r", "r"], "day": ["d1", "d2"], "net": [2.0, -1.0], "risk": [10.0, 10.0]})
+    b = pd.DataFrame({"rule": ["r"], "day": ["d1"], "net": [4.0], "risk": [20.0]})
+    got = fw.mean_daily([a, b]).set_index("day")
+    assert got.loc["d1", "net"] == 3.0 and got.loc["d1", "risk"] == 15.0 and got.loc["d2", "net"] == -0.5

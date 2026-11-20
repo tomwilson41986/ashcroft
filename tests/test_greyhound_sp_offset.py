@@ -89,3 +89,13 @@ def test_the_mean_of_several_seeds_is_read_with_each_fits_own_gain_and_two_halve
     b = {"reading": {"pass": True}, "stage2": {"passed": ["lay_bottom10", "lay_bottom5"]}}
     assert so.both_halves(a, b) == {"stage1": True, "rules": ["lay_bottom10"]}
     assert so.both_halves(a, {"reading": {"pass": False}, "stage2": {}}) == {"stage1": False, "rules": []}
+
+
+def test_the_study_rows_are_the_priced_races_less_the_ones_a_twin_touches():
+    df = pd.DataFrame({"race_id": ["a", "a", "b", "b", "c", "c"], "day": ["d1"] * 4 + ["d2"] * 2,
+                       "dog_id": [1, 2, 1, 3, 4, 5], "days_since": [7.0] * 6,
+                       "bsp_p_norm": [0.5, 0.5, np.nan, np.nan, 0.5, 0.5]})
+    keep, dropped = so.study_rows(df, False)
+    assert keep.tolist() == [True, True, False, False, True, True] and dropped == 0
+    keep, dropped = so.study_rows(df, True)                 # dog 1 runs in a and in b (unpriced) on d1: a is touched
+    assert keep.tolist() == [False, False, False, False, True, True] and dropped == 1
