@@ -22,6 +22,25 @@ register in `reports/research_ledger.jsonl` before its run. Sources are ledger t
 4. **The largest gaps** are (a) no market-aware member, (b) a hand-set gate where a learned stack belongs,
    (c) no second kind of learner, (d) no standing monitor that would have answered the owner's question on day one.
 
+## Corrections and results since (20 Nov, later the same day)
+
+- **The morning price against the model (section 2 and M7).** "The morning price is already closer to the SP than
+  the model in every code" was the old blend, live, against a later morning price (`model-qa-1113`). For the served
+  stack blend against the morning WAP on the development window it is true of chases only: flat 0.354 against the
+  morning's 0.372, all-weather 0.359 / 0.395, hurdle 0.399 / 0.448, bumper 0.497 / 0.504, chase 0.313 / 0.306
+  (`chase-error-1120`).
+- **Chases.** The chase gap is small (0.0074, 0.0015 to 0.0134) and sits in Class 1-3 and non-handicap chases of
+  exposed horses at short prices with money in the market (Class 1 +0.074, Class 2 +0.060; BSP under 3 +0.054).
+  The model is ahead of the morning price on novices, fallers and thin markets. Two candidates follow: the official
+  rating at the weights for every race (the model has it for handicaps only) and a chase-only market rating.
+- **Race types to drop: none** (`race-types-1120`). Every code, kind and race type is above zero in research at the
+  live 3% bar; live, no type has its interval below zero. Bumpers are level live (-0.97%, 160 horses): watch.
+- **The lost fits (C7): cause found and fixed** (`lost-fits-1120`). Every fit read the cached matrix twice over
+  (RAM full, 9 GB in swap ten minutes in); a runner with a slow disk died there. The matrix is now read a row group
+  at a time and held in single precision where no block reads it: a fit's peak 14.6 GB, no swap, values unchanged.
+- **Iteration 131's first run is void** (`iter131-figure-member`, amendment): the figure member predicted 0.0 for
+  every runner (its label was built after its inputs were dropped). Fixed, with tests; re-running whole.
+
 ## 1. Did the model change cause the drop?
 
 Source: `week-drop-1120` (research-query run 44709119985; `outputs/review_20261120/week_drop_1120.txt`). The live

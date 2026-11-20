@@ -1,0 +1,160 @@
+A. research-iter130-members-new-blocks-169 oos_gate_st.csv: 15,668 races, 139,877 runners joined to Betfair's morning prices (2024-12-28 to 2026-03-31)
+
+=== research, expected CLV >= 3%: 29,104 bets in 12,670 races, turnover GBP1,384,941, CLV +9.01% (+8.70 to +9.32), held +8.39% (before commission)
+
+-- research at the 3% bar by code
+  code  bets  days  turnover  clv%  lo%   hi%  held%  shrunk%    reading
+  flat  9792   223    442396  7.65 7.16  8.14   7.72     7.82 above zero
+hurdle  6862   377    360342  9.51 8.88 10.15   9.49     9.42 above zero
+    aw  7579   310    353204  9.75 9.17 10.36   9.06     9.63 above zero
+ chase  4097   365    191943 10.01 9.24 10.75   5.30     9.77 above zero
+nhflat   774   226     37055  8.04 5.84 10.30  15.36     8.75 above zero
+
+-- research at the 3% bar by kind
+                kind  bets  days  turnover  clv%  lo%   hi%  held%  shrunk%    reading
+            handicap 22249   418    887049  9.83 9.50 10.18   7.75     9.80 above zero
+novice/maiden/bumper  6039   417    441099  7.42 6.83  8.02  11.12     7.60 above zero
+               other   816   223     56792  8.43 6.77 10.17  -2.85     8.72 above zero
+
+-- research at the 3% bar by code x kind
+                  code x kind  bets  days  turnover  clv%   lo%   hi%  held%  shrunk%    reading
+              flat | handicap  7906   223    319023  8.60  8.08  9.14   5.44     8.61 above zero
+                aw | handicap  6430   309    261481 10.40  9.77 11.01   6.05    10.37 above zero
+hurdle | novice/maiden/bumper  1982   362    166766  8.28  7.39  9.17   7.16     8.32 above zero
+            hurdle | handicap  4455   366    163584 11.20 10.35 12.03  14.80    11.12 above zero
+             chase | handicap  3458   358    142962  9.97  9.21 10.74   7.95     9.94 above zero
+  flat | novice/maiden/bumper  1823   219    119825  4.98  3.84  6.21  13.12     5.28 above zero
+    aw | novice/maiden/bumper  1114   288     90110  7.72  6.32  9.16  17.42     7.86 above zero
+nhflat | novice/maiden/bumper   774   226     37055  8.04  5.82 10.23  15.36     8.25 above zero
+               hurdle | other   425   151     29993  7.05  4.92  9.27  -6.56     7.48 above zero
+ chase | novice/maiden/bumper   346   142     27343 11.09  8.87 13.60   0.04    10.58 above zero
+                chase | other   293    94     21638  8.91  6.17 11.77  -5.54     8.94 above zero
+                 flat | other    63    27      3549 12.67  8.25 17.71  30.13    10.57 above zero
+                   aw | other    35    19      1613 18.28  9.28 28.95  29.58    10.40 above zero
+
+-- research at the 3% bar by race_type
+              race_type  bets  days  turnover  clv%   lo%   hi%  held%  shrunk%    reading
+               Handicap 12078   395    467869  9.88  9.42 10.36   4.75     9.86 above zero
+        Handicap Hurdle  3758   364    135958 11.39 10.51 12.23  15.50    11.17 above zero
+         Handicap Chase  2894   356    115653  9.99  9.13 10.86  10.01     9.90 above zero
+                 Maiden  1592   307    114003  5.72  4.47  6.95  17.47     6.25 above zero
+                Novices  1343   314     95852  6.71  5.39  8.08  11.80     7.15 above zero
+          Maiden Hurdle  1124   288     90119  8.66  7.41 10.03   7.03     8.73 above zero
+           Non-Handicap  1674   267     85550  7.96  6.84  9.12   7.51     8.11 above zero
+         Novices Hurdle   855   261     76219  7.80  6.43  9.34   7.91     8.06 above zero
+                NH Flat   684   211     33092  7.65  5.27  9.98  22.14     8.22 above zero
+                 Hurdle   400   138     28707  6.54  4.33  8.85  -7.30     7.51 above zero
+ Handicap Novices Chase   563   201     27144  9.97  8.01 11.87  -1.71     9.66 above zero
+Handicap Novices Hurdle   688   187     27129 10.39  8.44 12.36  10.85     9.94 above zero
+       Handicap Nursery   556   136     25839  6.20  4.28  8.12  15.96     7.10 above zero
+          Novices Chase   162    85     14566  8.54  5.83 11.59   0.81     8.77 above zero
+                  Chase   140    59     13253  9.07  6.18 12.07  -0.45     9.04 above zero
+        Beginners Chase   158    74     11402 14.45 10.65 19.61  -0.56    10.49 above zero
+          Hunters Chase   153    49      8385  8.66  3.91 14.15 -13.59     8.92 above zero
+         Maiden NH Flat    90    41      3962 11.31  3.98 17.65 -41.32     9.34 above zero
+                 Seller    45    19      2722 13.56  7.73 20.25  37.62     9.74 above zero
+                Claimer    53    26      2441 15.39  9.01 22.99  21.41     9.90 above zero
+
+=== research, expected CLV >= 0%: 38,119 bets in 13,236 races, turnover GBP2,030,111, CLV +6.77% (+6.53 to +7.00), held +6.25% (before commission)
+
+-- research at the 0% bar by code
+  code  bets  days  turnover  clv%  lo%  hi%  held%  shrunk%    reading
+  flat 12950   223    651227  5.73 5.33 6.13   4.03     5.83 above zero
+hurdle  8846   378    532117  7.02 6.58 7.46   8.24     6.99 above zero
+    aw  9850   310    506095  7.69 7.20 8.21   7.84     7.56 above zero
+ chase  5552   369    292817  7.21 6.66 7.80   4.42     7.13 above zero
+nhflat   921   233     47855  5.60 3.86 7.44   8.59     6.40 above zero
+
+-- research at the 0% bar by kind
+                kind  bets  days  turnover  clv%  lo%  hi%  held%  shrunk%    reading
+            handicap 29525   418   1276350  7.49 7.22 7.76   5.45     7.47 above zero
+novice/maiden/bumper  7564   417    666877  5.50 5.03 6.00   8.24     5.61 above zero
+               other  1030   233     86884  5.80 4.57 7.01   2.63     6.16 above zero
+
+-- research at the 0% bar by code x kind
+                  code x kind  bets  days  turnover  clv%  lo%   hi%  held%  shrunk%    reading
+              flat | handicap 10578   223    461784  6.41 5.98  6.85   2.13     6.77 above zero
+                aw | handicap  8410   310    365771  8.14 7.67  8.63   4.83     6.77 above zero
+hurdle | novice/maiden/bumper  2495   366    253565  5.74 5.05  6.39   6.15     6.77 above zero
+            hurdle | handicap  5807   368    230289  8.75 8.16  9.40  11.33     6.77 above zero
+             chase | handicap  4730   362    218506  7.37 6.77  7.98   7.30     6.77 above zero
+  flat | novice/maiden/bumper  2293   222    185014  3.98 2.96  4.98   8.41     6.77 above zero
+    aw | novice/maiden/bumper  1400   294    136878  6.46 5.36  7.55  15.68     6.77 above zero
+               hurdle | other   544   157     48263  5.50 3.99  6.98   4.45     6.77 above zero
+nhflat | novice/maiden/bumper   921   233     47855  5.60 3.88  7.39   8.59     6.77 above zero
+ chase | novice/maiden/bumper   455   152     43564  7.45 5.84  9.11  -4.04     6.77 above zero
+                chase | other   367   105     30746  5.69 3.65  7.71  -4.10     6.77 above zero
+                 flat | other    79    27      4429  7.61 4.26 10.88  18.65     6.77 above zero
+                   aw | other    40    21      3446  8.74 3.29 22.49  16.64     6.77 above zero
+
+-- research at the 0% bar by race_type
+              race_type  bets  days  turnover  clv%  lo%   hi%  held%  shrunk%    reading
+               Handicap 15997   396    663448  7.59 7.23  7.95   3.12     6.77 above zero
+        Handicap Hurdle  4919   367    193665  8.95 8.30  9.67  11.42     6.77 above zero
+         Handicap Chase  3954   360    176480  7.42 6.72  8.10   9.84     6.77 above zero
+                 Maiden  1977   313    166514  4.85 3.86  5.85  13.07     6.77 above zero
+                Novices  1711   323    154768  5.25 4.20  6.27   9.86     6.77 above zero
+          Maiden Hurdle  1385   294    131514  6.01 4.98  7.06   7.92     6.77 above zero
+           Non-Handicap  2205   273    122412  5.90 5.05  6.81   2.29     6.77 above zero
+         Novices Hurdle  1106   275    121604  5.43 4.55  6.44   4.39     6.77 above zero
+                 Hurdle   510   144     46307  5.15 3.56  6.70   5.09     6.77 above zero
+ Handicap Novices Chase   774   209     41808  7.12 5.64  8.62  -3.85     6.77 above zero
+                NH Flat   811   217     41724  5.39 3.40  7.40  17.12     6.77 above zero
+       Handicap Nursery   745   137     39411  4.50 3.18  5.87  11.86     6.77 above zero
+Handicap Novices Hurdle   874   191     35893  7.75 6.17  9.34  10.40     6.77 above zero
+          Novices Chase   221    94     23777  5.97 4.08  7.97  -3.04     6.77 above zero
+                  Chase   190    69     20476  5.50 2.95  8.06   3.65     6.77 above zero
+        Beginners Chase   200    79     17228  9.32 6.51 12.75  -4.25     6.77 above zero
+          Hunters Chase   177    51     10271  6.07 2.02 10.17 -19.55     6.77 above zero
+         Maiden NH Flat   110    45      6131  7.03 1.60 12.96 -49.42     6.77 above zero
+                Claimer    62    27      4602  6.81 3.36 13.06  14.26     6.77 above zero
+                 Seller    57    20      3273  9.92 4.30 15.56  22.70     6.77 above zero
+
+
+=== B. live: the trader's settled horses (live_orders, mode live, 10 Oct on)
+   Betfair's race types on the card: {'Flat': 710, 'Hurdle': 437, 'Chase': 260, 'NHF': 46, 'Bumper': 1}
+   4,642 settled horses on 41 days (2026-10-10 to 2026-11-19), matched GBP133,280; CLV at the settled price +4.55% (+3.30 to +5.80); settled after commission GBP+6,684.21
+
+-- live by code
+      code  bets  days  turnover  clv%   lo%  hi%  settled GBP  shrunk%      reading
+    hurdle  1358    40     43798  3.84  2.09 5.50      1819.78     4.04   above zero
+      flat  1238    29     32431  5.67  3.31 7.76      2106.12     5.21   above zero
+        aw  1216    31     28657  5.90  3.44 8.25      1755.86     5.32   above zero
+     chase   668    41     23177  3.88  1.96 5.84       992.32     4.10   above zero
+other: nhf   160    32      5185 -0.97 -7.64 5.93        14.90     3.78 not resolved
+
+-- live by kind
+                kind  bets  days  turnover  clv%  lo%  hi%  settled GBP  shrunk%    reading
+            handicap  3079    41     77971  5.07 3.85 6.24      3987.71     4.55 above zero
+novice/maiden/bumper  1324    41     46661  3.75 1.78 5.60      2063.93     4.55 above zero
+               other   239    27      8647  4.19 0.05 7.41       632.57     4.55 above zero
+
+-- live by code x kind
+                      code x kind  bets  days  turnover  clv%    lo%   hi%  settled GBP  shrunk%      reading
+                hurdle | handicap   818    40     22304  2.41   0.50  4.25       540.64     4.55   above zero
+    hurdle | novice/maiden/bumper   503    40     20163  5.26   2.39  8.30      1137.67     4.55   above zero
+                    aw | handicap   913    31     20149  6.98   4.16  9.56      1449.88     4.55   above zero
+                 chase | handicap   547    40     18445  4.00   2.06  6.04       749.92     4.55   above zero
+                  flat | handicap   801    24     17073  7.47   5.04 10.07      1247.27     4.55   above zero
+      flat | novice/maiden/bumper   299    27     10002  3.41  -1.01  7.22       528.26     4.55 not resolved
+        aw | novice/maiden/bumper   262    29      7332  2.83  -1.18  7.14       130.71     4.55 not resolved
+                     flat | other   138    13      5356  4.15  -1.29  8.18       330.59     4.55 not resolved
+other: nhf | novice/maiden/bumper   160    32      5185 -0.97  -7.50  5.88        14.90     4.55 not resolved
+     chase | novice/maiden/bumper    98    30      3947  4.66  -2.21 11.31       257.16     4.55 not resolved
+                   hurdle | other    37    12      1330  6.46  -4.29 18.99       141.47     4.55 not resolved
+                       aw | other    41     7      1176  6.53  -5.24 21.12       175.27     4.55 not resolved
+                    chase | other    23    10       785 -2.86 -11.40  2.93       -14.76     4.55 not resolved
+
+-- live by country
+country  bets  days  turnover  clv%  lo%   hi%  settled GBP  shrunk%    reading
+     GB  3649    41    110255  3.84 2.37  5.24      4728.87     3.91 above zero
+     IE   993    36     23025  7.97 5.27 11.10      1955.34     6.87 above zero
+
+-- live by price_band
+price_band  bets  days  turnover  clv%   lo%   hi%  settled GBP  shrunk%    reading
+       3-6   710    41     37740  2.56  0.08  4.82      1283.79     2.63 above zero
+      6-12  1119    41     33837  3.32  1.11  5.53       870.84     3.36 above zero
+        <3   241    40     25698  2.58  0.02  5.29      1293.71     2.66 above zero
+     12-25  1194    41     21651  2.95  0.02  5.67       694.98     3.03 above zero
+     25-50   769    41      8921 18.62 14.63 22.79      1658.90    17.29 above zero
+       50+   609    41      5432 18.71 11.34 26.74       881.99    14.96 above zero
