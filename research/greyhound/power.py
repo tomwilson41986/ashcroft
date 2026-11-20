@@ -60,7 +60,8 @@ def cluster_t(returns, days) -> dict:
     u, inv = np.unique(d, return_inverse=True)
     g = len(u)
     if g < 2 or len(r) < 2:
-        return {"n": int(len(r)), "days": int(g), "mean": None, "se": None, "t": None, "design_effect": None}
+        return {"n": int(len(r)), "days": int(g), "mean": float(r.mean()) if len(r) else None, "se": None, "t": None,
+                "design_effect": None}                    # one day: a mean, and no interval
     s, c = np.bincount(inv, r), np.bincount(inv).astype(float)
     mean = s.sum() / c.sum()
     resid = s - mean * c
