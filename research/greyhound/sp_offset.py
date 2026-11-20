@@ -254,6 +254,18 @@ def run(d: pd.DataFrame, feats: list[str], folds=FOLDS, stage2_args: tuple | Non
     return res
 
 
+def study_rows(df: pd.DataFrame, drop_twins: bool) -> tuple[np.ndarray, int]:
+    """The rows the study reads: the wholly priced races, less (``drop_twins``) every race a twin row or a short gap
+    touches (research/greyhound/twin_check.py; the flags are read on every row: a twin may be an unpriced copy).
+    Returns the mask and the number of priced races left out."""
+    keep = df.bsp_p_norm.notna().to_numpy()
+    if not drop_twins:
+        return keep, 0
+    from research.greyhound.twin_check import flags
+    touched = flags(df).touched.to_numpy()
+    return keep & ~touched, int(df.race_id[keep & touched].nunique())
+
+
 def both_halves(a: dict, b: dict) -> dict:
     """What holds on two disjoint sets of seeds: stage 1's reading, and each stage 2 rule's."""
     ra, rb = set((a.get("stage2") or {}).get("passed") or []), set((b.get("stage2") or {}).get("passed") or [])
@@ -324,13 +336,7 @@ def main(argv=None) -> int:
     if missing:
         raise SystemExit(f"--drop-features names features the cache does not hold: {missing}")
     df = df.assign(day=pd.to_datetime(df.t).dt.strftime("%Y-%m-%d"))
-    keep = df.bsp_p_norm.notna().to_numpy()
-    dropped = 0
-    if a.drop_twins:                                   # the flags are read on every row: a twin may be an unpriced copy
-        from research.greyhound.twin_check import flags
-        touched = flags(df).touched.to_numpy()
-        dropped = int(df.race_id[keep & touched].nunique())
-        keep &= ~touched
+    keep, dropped = study_rows(df, a.drop_twins)
     d = df[keep]
     log.info("cache: %d rows, %d wholly priced (%d touched races left out); %d features; %s to %s", len(df), len(d),
              dropped, len(feats), d.day.min(), d.day.max())
