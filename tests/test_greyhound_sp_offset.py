@@ -77,3 +77,15 @@ def test_the_feature_placebo_learns_nothing_and_stage_two_bets_on_the_card_only_
     assert by["back_top5"]["pooled"]["roi_%"] > 0 and by["lay_bottom5"]["pooled"]["roi_%"] > 0
     assert by["back_top2"]["pooled"]["bets"] < by["back_top10"]["pooled"]["bets"]
     assert all(r["folds_positive"] <= 1 and r["pass"] is False for r in st["rules"])      # one fold: no pass on one
+
+
+def test_the_mean_of_several_seeds_is_read_with_each_fits_own_gain_and_two_halves_must_agree():
+    d = _frame(0.5, races=4000)
+    f = _fold(d, seeds=(1, 2, 3))
+    assert f["seeds"] == [1, 2, 3] and len(f["gain_by_seed"]) == 3 == len(f["rounds_by_seed"])
+    assert f["gain"] > 0 and f["gain"] >= min(f["gain_by_seed"]) - 1e-6        # the mean is no worse than the worst fit
+    assert "cuts" in f and len(f["_runners"]) == len(d[d.day >= "2024-01-01"])
+    a = {"reading": {"pass": True}, "stage2": {"passed": ["back_top10", "lay_bottom10"]}}
+    b = {"reading": {"pass": True}, "stage2": {"passed": ["lay_bottom10", "lay_bottom5"]}}
+    assert so.both_halves(a, b) == {"stage1": True, "rules": ["lay_bottom10"]}
+    assert so.both_halves(a, {"reading": {"pass": False}, "stage2": {}}) == {"stage1": False, "rules": []}

@@ -70,12 +70,15 @@ STAGE2 = (("back_top10", "back", 0.90), ("back_top5", "back", 0.95), ("back_top2
 
 
 def run_fold(d: pd.DataFrame, feats: list[str], test_from: str, test_to: str, shuffle_seed: int | None = None,
-             feature_shuffle_seed: int | None = None) -> dict:
+             feature_shuffle_seed: int | None = None, seeds: tuple[int, ...] | None = None) -> dict:
     """One fold on a frame of wholly priced races grouped by race in time order: fit before ``test_from`` (the last
     tenth of the fit days for early stopping), read ``test_from``..``test_to``. ``shuffle_seed``: the first placebo
     (the winner shuffled within the race in the fit). ``feature_shuffle_seed``: the second (20 Nov 2026: each fit
     race's feature rows dealt at random among its runners, so nothing a dog's own card says can be learnt and the
-    gain must be nothing; the first placebo teaches the trees to undo the BSP and proves nothing about a leak)."""
+    gain must be nothing; the first placebo teaches the trees to undo the BSP and proves nothing about a leak).
+    ``seeds``: one fit a seed (its own bagging and feature draws, its own early stop), the residual their mean (20
+    Nov 2026: with 34 of 252,670 races removed one fit stopped at 2 rounds where it had stopped at 60, and the pooled
+    gain fell by a third: a single fit is too unstable to read or to freeze)."""
     day = d.day.to_numpy()
     fit_i = np.flatnonzero(day < test_from)
     te_i = np.flatnonzero((day >= test_from) & (day <= test_to))
@@ -89,31 +92,43 @@ def run_fold(d: pd.DataFrame, feats: list[str], test_from: str, test_to: str, sh
     if shuffle_seed is not None:                       # the placebo: the winner moved at random within its race
         won[fit_i] = _shuffle_within(won, race, np.random.default_rng(shuffle_seed))[fit_i]
     base = np.log(np.clip(d.bsp_p_norm.to_numpy(float), 1e-9, 1.0))
-    X = lambda rows: d[feats].to_numpy(np.float32, na_value=np.nan)[rows]
+    A = d[feats].to_numpy(np.float32, na_value=np.nan)                 # the matrix once a fold
+    X = lambda rows: A[rows]
     if feature_shuffle_seed is not None:
         deal = _deal_within(race, np.random.default_rng(feature_shuffle_seed))
-        Xf = lambda rows: d[feats].to_numpy(np.float32, na_value=np.nan)[deal[rows]]
+        Xf = lambda rows: A[deal[rows]]
     else:
         Xf = X
-    m = fit(Xf(tr_i), won[tr_i], race[tr_i], base[tr_i], Xf(es_i), won[es_i], race[es_i], base[es_i])
+    Xtr, Xes, Xte = Xf(tr_i), Xf(es_i), X(te_i)
+    models = [fit(Xtr, won[tr_i], race[tr_i], base[tr_i], Xes, won[es_i], race[es_i], base[es_i],
+                  params=None if sd is None else dict(PARAMS, seed=int(sd))) for sd in (seeds or (None,))]
+    del Xtr
     true_won = d.won.to_numpy(float)
-    f_te = m.predict(X(te_i), num_iteration=m.best_iteration, raw_score=True)
+    each_te = [m.predict(Xte, num_iteration=m.best_iteration, raw_score=True) for m in models]
+    f_te = np.mean(each_te, axis=0)
     z = base[te_i] + f_te
     rc, ll_m = race_ll(z, true_won[te_i], race[te_i])
     _, ll_b = race_ll(base[te_i], true_won[te_i], race[te_i])
     first = pd.Series(day[te_i]).groupby(race[te_i]).first()
     out = read_gain(first.reindex(rc).to_numpy(), ll_b, ll_m)
-    imp = pd.Series(m.feature_importance("gain"), index=feats).sort_values(ascending=False)
+    imp = pd.Series(np.sum([m.feature_importance("gain") for m in models], axis=0) / len(models),
+                    index=feats).sort_values(ascending=False)
+    rounds = [int(m.best_iteration or 0) for m in models]
     out.update({"test": [test_from, test_to], "fit_rows": int(len(fit_i)), "fit_from": str(day[fit_i].min()),
-                "rounds": int(m.best_iteration or 0),
+                "rounds": int(np.median(rounds)),
                 "placebo": shuffle_seed is not None or feature_shuffle_seed is not None,
                 "top_features": [(k, round(float(v), 1)) for k, v in imp.head(12).items() if v > 0]})
+    if seeds:                                          # each single fit's own gain: the spread a single fit hides
+        one = [float((ll_b - race_ll(base[te_i] + f, true_won[te_i], race[te_i])[1]).mean()) for f in each_te]
+        out.update({"seeds": [int(x) for x in seeds], "rounds_by_seed": rounds,
+                    "gain_by_seed": [round(g, 6) for g in one]})
     out["_per_race"] = pd.DataFrame({"day": first.reindex(rc).to_numpy(), "ll_bsp": ll_b, "ll_model": ll_m})
     if "bsp" in d and shuffle_seed is None and feature_shuffle_seed is None:
         # stage 2: the residual centred on its race, a card-only signal (no price of the race in it); its cuts are
         # read off the early-stopping days of the fit, never off the test
         centre = lambda v, r: v - pd.Series(v).groupby(r).transform("mean").to_numpy()
-        s_es = centre(m.predict(X(es_i), num_iteration=m.best_iteration, raw_score=True), race[es_i])
+        s_es = centre(np.mean([m.predict(Xes, num_iteration=m.best_iteration, raw_score=True) for m in models],
+                              axis=0), race[es_i])
         out["cuts"] = {name: float(np.quantile(s_es, q)) for name, _, q in STAGE2}
         out["_runners"] = pd.DataFrame({"day": day[te_i], "race_id": d.race_id.to_numpy()[te_i],
                                         "won": true_won[te_i], "bsp": d.bsp.to_numpy(float)[te_i],
@@ -197,12 +212,14 @@ def _shuffle_within(won: np.ndarray, race: np.ndarray, rng) -> np.ndarray:
 
 
 def run(d: pd.DataFrame, feats: list[str], folds=FOLDS, stage2_args: tuple | None = None,
-        daily_out: list | None = None) -> dict:
-    """``daily_out``: a list that is given the stage 2 rules' day-by-day net and risk (``stage2_daily``)."""
+        daily_out: list | None = None, seeds: tuple[int, ...] | None = None) -> dict:
+    """``daily_out``: a list that is given the stage 2 rules' day-by-day net and risk (``stage2_daily``). ``seeds``:
+    the residual is the mean of one fit a seed; the reading's placebo is then the second (the feature rows dealt at
+    random, on the first three seeds), and the first, which proves nothing, is not run."""
     res = {"tag": TAG, "features": len(feats), "folds": [], "rows": int(len(d)), "races": int(d.race_id.nunique())}
     parts, kept = [], []
     for a, b in folds:
-        f = run_fold(d, feats, a, b)
+        f = run_fold(d, feats, a, b, seeds=seeds)
         log.info("fold %s..%s: %s", a, b, {k: v for k, v in f.items() if k not in ("_per_race", "_runners", "top_features")})
         if "_per_race" in f:
             parts.append(f.pop("_per_race"))
@@ -213,15 +230,19 @@ def run(d: pd.DataFrame, feats: list[str], folds=FOLDS, stage2_args: tuple | Non
         res["stage2"] = stage2(kept, *stage2_args)
         if daily_out is not None:
             daily_out.append(stage2_daily(kept, stage2_args[0]))
-    p2 = run_fold(d, feats, *folds[0], feature_shuffle_seed=11)
+    p2 = run_fold(d, feats, *folds[0], feature_shuffle_seed=11, seeds=seeds[:3] if seeds else None)
     p2.pop("_per_race", None)
     res["placebo_features_fold_1"] = p2
     if parts:
         x = pd.concat(parts, ignore_index=True)
         res["pooled"] = read_gain(x.day.to_numpy(), x.ll_bsp.to_numpy(), x.ll_model.to_numpy())
-    p = run_fold(d, feats, *folds[0], shuffle_seed=7)
-    p.pop("_per_race", None)
-    res["placebo_fold_1"] = p
+    if seeds:
+        res["seeds"] = [int(x) for x in seeds]
+        p = p2
+    else:
+        p = run_fold(d, feats, *folds[0], shuffle_seed=7)
+        p.pop("_per_race", None)
+        res["placebo_fold_1"] = p
     pooled = res.get("pooled", {})
     lo = (pooled.get("gain_90%") or [None])[0]
     each = [f.get("gain") for f in res["folds"]]
@@ -231,6 +252,13 @@ def run(d: pd.DataFrame, feats: list[str], folds=FOLDS, stage2_args: tuple | Non
                                                           and p["gain_90%"][0] <= 0)}
     res["reading"]["pass"] = all(res["reading"].values())
     return res
+
+
+def both_halves(a: dict, b: dict) -> dict:
+    """What holds on two disjoint sets of seeds: stage 1's reading, and each stage 2 rule's."""
+    ra, rb = set((a.get("stage2") or {}).get("passed") or []), set((b.get("stage2") or {}).get("passed") or [])
+    return {"stage1": bool(a["reading"]["pass"] and b["reading"]["pass"]),
+            "rules": [name for name, _, _ in STAGE2 if name in ra and name in rb]}
 
 
 def markdown(res: dict) -> str:
@@ -246,7 +274,8 @@ def markdown(res: dict) -> str:
         md.append(row(" to ".join(f["test"]), f) if "gain" in f else f"| {' to '.join(f['test'])} | {f.get('note')} |")
     if res.get("pooled"):
         md.append(row("Pooled", res["pooled"]))
-    md.append(row("Placebo 1 (fold 1, winner shuffled in the fit: teaches the trees to undo the BSP)", res["placebo_fold_1"]))
+    if res.get("placebo_fold_1"):
+        md.append(row("Placebo 1 (fold 1, winner shuffled in the fit: teaches the trees to undo the BSP)", res["placebo_fold_1"]))
     if res.get("placebo_features_fold_1"):
         md.append(row("Placebo 2 (fold 1, each fit race's feature rows dealt at random)", res["placebo_features_fold_1"]))
     if res.get("stage2"):
@@ -263,6 +292,13 @@ def markdown(res: dict) -> str:
                       + " | ".join(cell(x) for x in fs) + f" | {round(float(np.mean(mb)), 2) if mb else ''} | "
                       f"{r['folds_positive']} | {r['pass']} |")
         md += ["", f"Passed stage 2: {res['stage2']['passed'] or 'none'}."]
+    if res.get("seeds"):
+        md += ["", f"The residual is the mean of {len(res['seeds'])} fits (seeds {res['seeds'][0]}-{res['seeds'][-1]}). "
+               "Each single fit's own gain a race and its early stop:", "",
+               "| Test | Least | Median | Most | Rounds, least to most |", "|---|---|---|---|---|"]
+        for f in res["folds"]:
+            g, r = sorted(f.get("gain_by_seed") or [0]), sorted(f.get("rounds_by_seed") or [0])
+            md.append(f"| {' to '.join(f['test'])} | {g[0]} | {float(np.median(g)):.6f} | {g[-1]} | {r[0]} to {r[-1]} |")
     md += ["", f"Reading: {json.dumps(res['reading'])}", "",
            "Top features by gain, last fold: " + ", ".join(f"{k} ({v})" for k, v in res["folds"][-1].get("top_features", []))]
     return "\n".join(md)
@@ -274,20 +310,54 @@ def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", default="out/sp_offset")
+    ap.add_argument("--seed-halves", type=int, default=0,
+                    help="N: the study twice, on the mean of seeds 1..N and of seeds N+1..2N (greyhound-sp-offset-seeds-1120)")
+    ap.add_argument("--drop-twins", action="store_true",
+                    help="leave out every race a twin row or a short gap touches (research/greyhound/twin_check.py)")
     a = ap.parse_args(argv)
     df, meta = fl.load_cache(Store())
     feats = [f for f in fl.feature_set(meta, "card_safe") if f in df.columns and f not in fl.LABELS]
-    d = df[df.bsp_p_norm.notna()]
-    d = d.assign(day=pd.to_datetime(d.t).dt.strftime("%Y-%m-%d"))
-    log.info("cache: %d rows, %d wholly priced; %d features; %s to %s", len(df), len(d), len(feats), d.day.min(), d.day.max())
+    df = df.assign(day=pd.to_datetime(df.t).dt.strftime("%Y-%m-%d"))
+    keep = df.bsp_p_norm.notna().to_numpy()
+    dropped = 0
+    if a.drop_twins:                                   # the flags are read on every row: a twin may be an unpriced copy
+        from research.greyhound.twin_check import flags
+        touched = flags(df).touched.to_numpy()
+        dropped = int(df.race_id[keep & touched].nunique())
+        keep &= ~touched
+    d = df[keep]
+    log.info("cache: %d rows, %d wholly priced (%d touched races left out); %d features; %s to %s", len(df), len(d),
+             dropped, len(feats), d.day.min(), d.day.max())
     del df
     from greyhound.costs import commission
     from research.greyhound.trial_count import greyhound_trials
-    daily: list = []
-    res = run(d, feats, stage2_args=(commission(), greyhound_trials()), daily_out=daily)
-    res["cache"] = {"hash": meta.get("hash"), "last_day": meta.get("last_day"), "first_day": str(d.day.min())}
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    args2 = (commission(), greyhound_trials())
+    cache = {"hash": meta.get("hash"), "last_day": meta.get("last_day"), "first_day": str(d.day.min()),
+             "touched_races_left_out": dropped}
+    if a.seed_halves:
+        n = a.seed_halves
+        halves, mds = {}, []
+        for name, seeds in (("A", tuple(range(1, n + 1))), ("B", tuple(range(n + 1, 2 * n + 1)))):
+            daily: list = []
+            r = run(d, feats, stage2_args=args2, daily_out=daily, seeds=seeds)
+            r["cache"] = cache
+            halves[name] = r
+            if daily and len(daily[0]):
+                daily[0].to_csv(out / f"stage2_daily_{name}.csv", index=False)
+            mds += [f"# Half {name}: seeds {seeds[0]}-{seeds[-1]}", "", markdown(r), ""]
+        both = both_halves(halves["A"], halves["B"])
+        mds += ["# Both halves", "", f"Stage 1 passes in both: {both['stage1']}. Stage 2 rules that pass in both: "
+                f"{both['rules'] or 'none'}."]
+        (out / "report.json").write_text(json.dumps({"tag": "greyhound-sp-offset-seeds-1120", **halves, "both": both},
+                                                    indent=1, default=str))
+        (out / "report.md").write_text("\n".join(mds))
+        print("\n".join(mds))
+        return 0
+    daily = []
+    res = run(d, feats, stage2_args=args2, daily_out=daily)
+    res["cache"] = cache
     (out / "report.json").write_text(json.dumps(res, indent=1, default=str))
     (out / "report.md").write_text(markdown(res))
     if daily and len(daily[0]):
