@@ -398,3 +398,26 @@ def test_the_warden_needs_nothing_but_its_slim_install():
         src = (ROOT / "desk" / f"{name}.py").read_text()
         assert not re.search(r"^\s*(from|import)\s+(research|model|pandas|numpy|trading)\b", src, re.M), name
         assert not re.search(r"\n\s+(from|import)\s+(research|model)\b", src), name
+
+
+def test_a_lines_n_rules_counts_every_rule_of_its_sport():
+    """A grid of 240 rules is 240 trials: count_rules sums n_rules on the sport's lines and counts one for every
+    other trial line; a line's n_rules must be a whole number with a sport (desk/trials.py)."""
+    from desk import trials
+    lines = [{"kind": "preregistration", "sport": "greyhounds", "n_rules": 240},
+             {"kind": "note", "sport": "greyhounds", "n_rules": 1000},
+             {"kind": "model", "sport": "greyhounds"}, {"kind": "research"},
+             {"kind": "preregistration", "sport": "football", "n_rules": 50}, {"kind": "result", "sport": "greyhounds"}]
+    assert trials.count_rules(lines, "greyhounds") == 240 + 1000 + 1 + 1
+    assert trials.count_rules(lines, "greyhounds") >= trials.count_trials(lines, "greyhounds")
+    ok = '{"when": "2026-11-20T09:30Z", "kind": "note", "tag": "t1", "sport": "greyhounds", "n_rules": 3}'
+    bad = '{"when": "2026-11-20T09:30Z", "kind": "note", "tag": "t2", "n_rules": 3}'
+    assert trials.check(ok, None) == [] and any("n_rules" in e for e in trials.check(bad, None))
+
+
+def test_the_greyhound_trial_count_reads_the_ledger_and_keeps_a_studys_floor(tmp_path):
+    from research.greyhound.trial_count import greyhound_trials
+    led = tmp_path / "ledger.jsonl"
+    led.write_text('{"kind": "note", "sport": "greyhounds", "n_rules": 500}\n{"kind": "model", "sport": "greyhounds"}\n')
+    assert greyhound_trials(ledger=led) == 501 and greyhound_trials(10_000, ledger=led) == 10_000
+    assert greyhound_trials() >= 37_495                       # the real ledger: the count registered on 20 Nov
