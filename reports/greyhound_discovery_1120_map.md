@@ -28,6 +28,7 @@ two GBMs): all FAIL, predicted edge on taken backs about +6% against -3.5% reali
 L994). Residual memory of our own error: PASS for RMSE, served (`greyhound-residual-memory-1111`, L734;
 `greyhound-decay-memory-1112`). Australia: not feasible (`greyhound-au-model-1117`). Limit-on-close against our fair
 price: 0 of 160 (ES family 4). 0 of 966 offline strategies survive (`greyhound-strategy-exploration-offline-1114`).
+The place SP against Harville on the win price, three ways (the morning price, the projected SP before the off, Betfair's historic data): no edge (ES families 1, 2, 6; 16 + 16 + 32 rules). The SP's bias by segment (track, trap, field, session) as limit-on-close thresholds: 0 of 17,822 on the holdout (ES family 5). (These four were added on 20 Nov after the inventors ran; the checkers searched the edge-search report directly.)
 Not built: a multi-input Benter stage (roadmap 4.1); cross-market win/place/forecast (roadmap 4.7); the Betfair
 adjustment factor (feature review D2).
 
