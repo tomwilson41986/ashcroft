@@ -199,3 +199,36 @@ def test_a_greened_lay_is_settled_by_the_result_when_known():
     assert how == "greened" and abs(lose - (S - 42.69)) < 1e-9
     assert abs(win - (-S * (a - 1) + 42.69 * 2.6106)) < 1e-9 and win > 0
     assert fr._live_pnl(close, S, a, None, None)[0] == -11.44
+
+
+def test_the_calibration_fits_a_cell_on_some_days_and_judges_it_on_others():
+    """Three live lays at 4.0 behind 20: live matched only dog 2. On the stream 35 trade AT 4.0 on every dog and
+    nothing beyond it: the as-shown replay fills all three (two phantoms), the through-only replay fills none (one
+    missed). The fit takes the smaller stake gap (through), and the judge days' rule still refuses it: the fill rate
+    is 33 points out. Every cell is one pass of the stream; an order's own volume factor and cap are honoured."""
+    led = pd.DataFrame([lay(2), green(2, 10.0, 4.0, 4.5), lay(3), lay(4)])
+    defn = {"marketTime": OFF.strftime("%Y-%m-%dT%H:%M:%S.000Z"), "inPlay": False, "status": "OPEN",
+            "runners": [{"id": i, "status": "ACTIVE"} for i in (2, 3, 4)]}
+    rc = lambda **k: [{"id": i, **k} for i in (2, 3, 4)]
+    stream = [_line(T - timedelta(seconds=30), {"id": MID, "img": True, "marketDefinition": defn,
+                                                "rc": rc(atb=[[4.0, 20]], atl=[[4.1, 5]], trd=[[4.0, 100]])}),
+              _line(T + timedelta(seconds=200), {"id": MID, "rc": rc(trd=[[4.0, 135]])}),
+              _line(OFF - timedelta(seconds=4), {"id": MID, "rc": rc(atb=[[4.5, 9]])})]
+    d = {"day": "2026-11-13", "ledger": led, "recorder_books": None, "live_books": None, "traded": None,
+         "stream": stream, "final": {(MID, float(i)): (4.4, 0) for i in (2, 3, 4)}, "offs": {}}
+    o = fr.live_orders(led, d["final"], d["offs"])
+    rows = fr.calibration_day(o, stream)
+    assert len(rows) == 3 * len(fr.cal_cells()) and rows.placed.all()
+    sc = fr.calibration_scores(rows).set_index("cell")
+    shown, thr = sc.loc["lat0_shown_cap_vol1"], sc.loc["lat0_through_cap_vol1"]
+    assert shown.sim_fill_rate == 1.0 and shown.phantom_orders == 2 and shown.same_orders_share == pytest.approx(1 / 3, abs=1e-3)
+    assert thr.sim_fill_rate == 0.0 and thr.missed_orders == 1 and thr.abs_gap_stake == 10.0 < shown.abs_gap_stake
+    assert shown.live_pnl_at_sp == pytest.approx(10 * (1 - 4.0 / 4.4), abs=0.01) and thr.sim_pnl_at_sp == 0.0
+    half = sc.loc["lat0_shown_cap_vol0.5"]                 # half the volume: 17.5 traded, under the 20 ahead
+    assert half.sim_fill_rate == 0.0
+    c = fr.calibrate(None, [date(2026, 11, 11)], [date(2026, 11, 13)], loader=lambda day: d)
+    assert c["chosen"].endswith("vol0.5") or "through" in c["chosen"]
+    assert c["verdict"] == "NOT TRUSTED" and c["cells_trusted_on_judge_days"] == []
+    assert "NOT TRUSTED" in fr.calibration_markdown(c)
+    none = fr.calibrate(None, [date(2026, 11, 11)], [date(2026, 11, 13)], loader=lambda day: {"day": str(day), "ledger": None})
+    assert "no data found" in none["note"]

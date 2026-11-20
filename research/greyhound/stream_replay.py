@@ -210,6 +210,8 @@ class SimOrder:
     #: (cancellations read as behind us: only trades clear the queue), "through" (filled only by money traded
     #: beyond the price: what a live order has been seen to get)
     mode: str = "shown"
+    vol_factor: float | None = None      # this order's own volume factor and cap, where a study varies them by order
+    through_cap: bool | None = None      # (research/greyhound/fill_recon.py calibration); None: the replay's
 
     @property
     def remaining(self) -> float:
@@ -255,6 +257,8 @@ class SimOrder:
         orders, whose remainder may exceed what crossed)."""
         if self.done or not self.placed or self.remaining <= 0:
             return
+        vol_factor = self.vol_factor if self.vol_factor is not None else vol_factor
+        through_cap = self.through_cap if self.through_cap is not None else through_cap
         now_trd = r.trd.get(self.price, 0.0)
         d = max(now_trd - self.last_trd, 0.0) * vol_factor
         self.last_trd = now_trd
