@@ -25,7 +25,8 @@ def _frame(bias: float, races: int = 6000, seed: int = 0) -> pd.DataFrame:
     won = (np.arange(6)[None, :] == win[:, None]).ravel().astype(float)
     days = pd.date_range("2022-01-01", "2024-12-30", periods=races).strftime("%Y-%m-%d").to_numpy().repeat(6)
     assert np.allclose(cum, 1.0)
-    return pd.DataFrame({"race_id": race, "day": days, "won": won, "bsp_p_norm": q, "x": x, "noise": rng.normal(0, 1, n)})
+    return pd.DataFrame({"race_id": race, "day": days, "won": won, "bsp_p_norm": q, "bsp": 1.0 / q, "x": x,
+                         "noise": rng.normal(0, 1, n)})
 
 
 def _fold(d, **k):
@@ -58,3 +59,21 @@ def test_the_loss_is_the_winners_and_the_shuffle_stays_within_the_race():
     assert (np.add.reduceat(sh, np.arange(0, 1200, 6)) == 1).all() and 0.05 < sh.reshape(200, 6)[:, 0].mean() < 0.35
     g = so.read_gain(np.array(["a", "a", "b", "c"]), np.array([1.0, 1.0, 1.0, 1.0]), np.array([0.9, 1.0, 0.8, 1.1]))
     assert g["gain"] == pytest.approx(0.05) and g["races"] == 4 and g["days"] == 3
+
+
+def test_the_feature_placebo_learns_nothing_and_stage_two_bets_on_the_card_only_residual():
+    """Each fit race's feature rows dealt at random: the planted bias cannot be learnt, the gain is nothing. With the
+    true features the centred residual picks backs that win more than the BSP says and lays that win less."""
+    d = _frame(0.5)
+    dealt = _fold(d, feature_shuffle_seed=11)
+    assert dealt["placebo"] and dealt["gain"] < 0.004 and dealt["gain_90%"][0] <= 0 and "_runners" not in dealt
+    assert dealt["gain"] < _fold(d)["gain"] / 3
+    deal = so._deal_within(np.repeat(np.arange(50), 6), np.random.default_rng(0))
+    assert (deal // 6 == np.repeat(np.arange(50), 6)).all() and sorted(deal) == list(range(300))
+    real = _fold(d)
+    assert set(real["cuts"]) == {n for n, _, _ in so.STAGE2} and real["cuts"]["back_top2"] > real["cuts"]["back_top10"] > 0
+    st = so.stage2([real], 0.02, 10)
+    by = {r["rule"]: r for r in st["rules"]}
+    assert by["back_top5"]["pooled"]["roi_%"] > 0 and by["lay_bottom5"]["pooled"]["roi_%"] > 0
+    assert by["back_top2"]["pooled"]["bets"] < by["back_top10"]["pooled"]["bets"]
+    assert all(r["folds_positive"] <= 1 and r["pass"] is False for r in st["rules"])      # one fold: no pass on one

@@ -227,3 +227,19 @@ Joined on the dog (calibrated fill): the 1,409 common lays -0.304% at the paper'
 - **Where the phantom profit came from.** The number of lays filled barely changes (1,053 to 1,039); the liability does (GBP93.8k to GBP76.6k). The uncapped fill gave an order its whole remainder the moment the price traded through it; the capped fill gives it only what crossed. The filled lays' SP was on average 12% above their price, but the big fills are on the ones that went wrong: adverse selection in size, not in count.
 - **Paper and live agree once the fill is right**: -0.16% (paper) and -0.36% to -0.39% (live) of liability. There is no paper-versus-live gap left to explain, and no edge: the early lay loses a little at the SP before commission.
 - **What changes.** The nightly forward-test line now carries the trusted fill beside the two uncapped ones (`research/greyhound/stream_lab.py forward_check`). The daily "+1.3% to +1.9% at the SP" figures in `reports/greyhound_edge_search.md` (13-19 Nov) were the uncapped fill and should be read as overstated. The early lay stays off; its registered reads (24 Nov gate; SP-close paper test 13 Dec) run to their end as registered.
+
+## Build 6, stage 1: a residual model on the BSP (20 Nov; run 44727761528; ledger `greyhound-sp-offset-1120`)
+
+A race softmax on the winner that starts at the BSP's own log chance and may only learn corrections from the card: 408 card-safe features, no price of the race; 1,431,246 runners of 252,670 wholly priced races (2 Jun 2020 to 10 Nov 2026). The winner's log-loss a race, the BSP alone against the BSP plus the residual; 90% interval by day.
+
+| Test year (fitted on everything before) | Races | Rounds | BSP | BSP + residual | Gain a race | 90% | t |
+|---|---|---|---|---|---|---|---|
+| 2024 | 51,775 | 60 | 1.52827 | 1.52782 | +0.000446 | 0.000176 to 0.000716 | 2.72 |
+| 2025 | 48,829 | 72 | 1.50744 | 1.50665 | +0.000793 | 0.000535 to 0.001052 | 5.05 |
+| Jan - May 2026 | 19,464 | 214 | 1.49347 | 1.49266 | +0.000816 | 0.000195 to 0.001437 | 2.16 |
+| Pooled | 120,068 | | 1.51416 | 1.51351 | **+0.000647** | 0.000461 to 0.000834 | 5.71 |
+
+- **By the registered reading this is a PASS**: the pooled interval is above zero and every fold is positive. It is the first reading in which anything adds to the Betfair SP out of sample.
+- **The registered placebo proves nothing, and that is my fault.** Shuffling the winner within the race, with the BSP as the starting score, teaches the trees to undo the BSP (772 rounds, gain -0.123): its interval is "at or below zero" for a reason that says nothing about a leak. A second placebo is added and registered before its run: each fit race's feature rows dealt at random among its runners, so nothing a dog's own card says can be learnt and the gain must be nothing.
+- **It is small.** 0.00065 a race is 0.04% of the loss. The models are small too (60 to 214 rounds of 15 leaves). The features carrying it in the last fold: recent trouble in running (`trouble_mean3`, `trouble_mean1`, `trouble_mean6`), the trainer's record against the market (`trainer_ae`, `gp_trainer30_ae`), the trainer's share at the track, the sire, a class drop's record, days since the last run.
+- **A gain in log-loss is not a bet.** Commission takes 2% of a winning back, and a bet at the SP must be chosen without seeing the SP. Stage 2, registered next, tests exactly that with the card-only residual.
