@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live, sp-debut, sp-offset or cut-check'
+        description: 'sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live, sp-debut, sp-offset, cut-check or twin-check'
         type: choice
-        options: [sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live, sp-debut, sp-offset, cut-check]
+        options: [sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live, sp-debut, sp-offset, cut-check, twin-check]
         default: sectional-check
 
 permissions:
@@ -66,6 +66,7 @@ jobs:
             sp-debut) python -m research.greyhound.sp_harness --out out/study ;;
             sp-offset) python -m research.greyhound.sp_offset --out out/study ;;
             cut-check) python -m research.greyhound.cut_check --cut 2025-06-30 --days 30 --out out/study ;;
+            twin-check) python -m research.greyhound.twin_check --out out/study ;;
             *) echo "unknown task"; exit 1 ;;
           esac
       - name: Summary
