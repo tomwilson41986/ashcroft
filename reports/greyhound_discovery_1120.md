@@ -186,3 +186,26 @@ The resting test's 60 s orders on the 8 counted days 11-18 Nov, under six fills.
 - **Adverse selection, measured.** Under the calibrated fill, filled lays were on runners that then shortened 1.7% to the SP and filled backs on runners that drifted 2.3%; the orders that did not fill were 13% the right way. A maker is filled on the wrong ones.
 - **The forecast's skill on the rows that fill** (its squared-error gain over the mid on log SP): filled backs +0.00012 (90% -0.00001 to 0.00025), filled lays -0.00003 (-0.00012 to 0.00007). By the rule fixed before the run a forecast may gate a resting rule only if that interval is above zero: on these 8 days it is not, for either side (the backs miss narrowly).
 - **Reading.** Nothing here passes or fails: the gates are forward. What the development days say is that the one standing candidate is a small positive (under +1%) that rests entirely on the close forecast, under a fill model now checked against live orders. At that size it needs months, not weeks, to reach the bar.
+
+## Build 5 result: bets at the SP by a dog's races before (20 Nov; run 44726586742; ledger `greyhound-sp-debut-1120`): FAIL
+
+A back of 1 or a lay risking 1 at the Betfair SP on every runner of a cell, netted by race, 2% off a gain. Return on the money at risk, 90% interval by day. Frame: 5,025,057 GBGB rows in; 3,959,362 race rows (683,263 races); dropped 811,707 rows of races not wholly priced, 2,010 outside four to six runners, 10,363 without one winner; 3,135,282 rows out (539,404 races), 6 Jan 2014 to 18 Nov 2026.
+
+| Rule | Development 2023 - 18 Nov 2026 | 90% | Unseen 2018-20 | 90% | 2021-22 | 90% |
+|---|---|---|---|---|---|---|
+| Back a first-time runner (18,452 / 14,671 bets) | -4.86% | -7.93 to -1.79 | +3.94% | -0.08 to +7.97 | +4.86% | +0.52 to +9.20 |
+| Lay a first-time runner | -0.62% | -1.24 to -0.00 | -0.90% | -1.48 to -0.32 | -2.22% | -2.85 to -1.59 |
+| Back a dog with 1-2 races | -0.77% | -2.96 to +1.42 | +2.19% | -0.31 to +4.69 | -3.81% | -6.29 to -1.34 |
+| Back a dog with 3-5 races | -1.02% | -2.81 to +0.78 | +1.35% | -0.44 to +3.15 | -3.68% | -5.70 to -1.65 |
+| Back a dog with 6 or more (949,322 bets) | -1.10% | -1.50 to -0.70 | -0.99% | -1.45 to -0.53 | -0.90% | -1.35 to -0.45 |
+| Lay a dog with 6 or more | +0.00% | -0.03 to +0.03 | +0.08% | +0.05 to +0.11 | +0.03% | -0.02 to +0.07 |
+| Back the rival of a first-time runner | -2.16% | -3.51 to -0.81 | -1.20% | -2.48 to +0.08 | -2.38% | -3.88 to -0.88 |
+| Lay the rival of a first-time runner | +0.01% | -0.15 to +0.16 | +0.17% | +0.02 to +0.33 | +0.43% | +0.26 to +0.59 |
+
+(The lays of the 1-2 and 3-5 cells are negative in every period.)
+
+- **No rule was chosen on development, so none passes.** On 2023-26 no cell has a return above zero with its interval.
+- **The SP was once too long on first-time runners and is not now.** Backing every first-time runner made +3.9% in 2018-20 and +4.9% in 2021-22 (its interval above zero), and lost 4.9% in 2023-26. Their winners against the SP's chances: 1.040 (1.008 to 1.071) in 2018-20, 1.009 (0.985 to 1.032) since 2023. Whatever it was, the market has priced it; the same fade shows in laying their rivals (+0.43%, +0.17%, then +0.01%).
+- **The SP is fair for experienced dogs, to the commission.** Backing all 949,322 costs 1.10%; laying them returns 0.00%.
+- **For the model.** Its large error on first-time runners (RMSE 0.44) is our forecast's error, not the market's: the SP is calibrated for them now (A/E 1.009). Better first-run features can improve our price forecast; they will not find a bet at the SP.
+- The harness (`research/greyhound/sp_harness.py`) stands for build 6 and any later rule at the SP.
