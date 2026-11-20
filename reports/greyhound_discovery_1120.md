@@ -92,3 +92,28 @@ Edge = the checker's probability of a tradeable edge on real fills after commiss
 ## One decision for the owner
 
 The count of 37,931 treats every cell of a grid as an independent trial. Grid cells are highly correlated, so the number of independent trials is lower, but any lower figure is a judgement. The full count stands unless the owner says otherwise; build 1 shows what each choice implies for the pending reads.
+
+## Build 1 result: power and futility (20 Nov; `research/greyhound/power.py`, inputs `research/greyhound/power_inputs_1120.json`)
+
+A planning table, 0 trials. It cancels no registered read. t = the mean over its standard error from the by-day interval; a daily read needs 30 days before the deflated Sharpe is computed at all (`research/overfit.py MIN_OBS`), so every chance below is 0 at reads shorter than that.
+
+Bar at 37,931 rules counted: t of at least 5.82. At other counts: 1: 1.645, 100: 4.175, 436: 4.656.
+
+| Candidate | Fill | Days | Trades | Mean % | 90% | t | Days for 80% power | At half the effect | Days at its read | Chance of a pass then | Source |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| rest_back_60_m0, closed at the SP | queue-aware replay (unproven against live) | 8 | 1652 | 1.259 | 0.593 to 1.771 | 3.52 | 30 | 115 | 10 | 0.0 | reports/greyhound_edge_search.md, 19 Nov entry (close lab 44635535738) |
+| lay_30_0.03, closed at the SP | takes the price on offer | 10 | 164 | 2.017 | -1.064 to 4.639 | 1.16 | 328 | 1312 | 10 | 0.0 | reports/greyhound_edge_search.md, 19 Nov entry (close lab 44635535738) |
+| lay_30_0.03, run to the result | takes the price on offer | 10 | 164 | 53.5 | 24.611 to 85.4 | 2.9 | 53 | 212 | 10 | 0.0 | reports/greyhound_edge_search.md, 19 Nov entry (close lab 44635535738) |
+| lay_10_0.1, closed at the SP | takes the price on offer | 9 | 47 | 7.528 | 0.791 to 13.009 | 2.03 | 98 | 389 | 10 | 0.0 | reports/greyhound_edge_search.md, 19 Nov entry (close lab 44635535738) |
+| gap_lay_60_0.1, closed at the SP (stream lab's best) | takes the price on offer | 15 | 193 | 0.304 | -1.875 to 2.288 | 0.24 | 11535 | 46138 | 15 | 0.0 | reports/greyhound_edge_search.md, 19 Nov entry (stream lab 44630527322) |
+| Early-lay forward test at the SP, a day | queue-aware replay (unproven against live) | 7 | no data | 1.31 | 1.047 to 1.573 | 8.19 | 30 | 30 | 28 | 0.0 | reports/greyhound_edge_search.md, day table 13-19 Nov; read 13 Dec (greyhound-early-lay-sp-close-1114 is the through-fill version) |
+| Early-lay forward test to the result, a day | queue-aware replay (unproven against live) | 7 | no data | -0.336 | -1.351 to 0.68 | -0.54 | no data | no data | 28 | 0.0 | reports/greyhound_edge_search.md, day table 13-19 Nov |
+| Live early-lay rule, through fill, live-key books, a day | through (what a live order gets) | 2 | no data | -1.705 | -2.305 to -1.105 | -4.67 | no data | no data | 28 | 0.0 | day replays 44427004281 (18 Nov), 44643820189 (19 Nov); earlier days not re-read here |
+
+What it says:
+
+- **Every taker rule is far from the bar**: the lab's two flagged lays sit at t 1.2 (at the SP) and 2.9 (to the result) against 5.82; at the same effect they need 53 to 328 days.
+- **The fill model is the whole question.** The early lay at the SP under the queue-aware replay is positive on all 7 days (mean +1.31% of liability, t 8.2), above the bar even at 37,931 rules. The same rule under the through fill on the live-key books is -1.34% and -2.07% on 18 and 19 Nov. One of the two fill models is wrong, and the live orders of 11-14 Nov say which (build 4); the markout census (build 2) answers it with no fill model at all.
+- **The resting back** (t 3.5 after 8 days) needs about 30 days at the same effect, 115 at half of it: late December at the earliest, under a fill model not yet proven.
+- **The count matters less than the fill**: the bar is 5.82 at 37,931 rules, 4.66 at the ledger's 436 lines, 4.18 at 100. No candidate's verdict changes between those except the queue-replay early lay, which clears all of them and stands or falls on its fill.
+- Gates with no deflated Sharpe written in: the favourite back (`reports/preregistration_greyhound_fav_back.md`, 2 Dec); the model reads (25 Nov, 7 Dec) are judged on paired intervals, not a Sharpe.
