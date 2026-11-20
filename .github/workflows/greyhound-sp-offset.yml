@@ -5,11 +5,10 @@ name: Greyhound residual on the BSP, forward on paper (read-only)
 # before each race and settled at the SP on paper. Reads and writes S3 only (sources/greyhound/sp_offset/); holds no
 # Betfair key: nothing reaches Betfair, no order is placed.
 
+# No schedule yet: nothing is frozen until the seed-averaged study is read (greyhound-sp-offset-seeds-1120). Once it
+# is, the serve runs at 47 7,10,13,16 UTC (the recorder's catalogue from 06:55 UTC; a race is written once, at its
+# first serve 10 minutes or more before its off) and the settle and read at 26 12 UTC.
 on:
-  schedule:
-    - cron: '47 7,10,13,16 * * *'   # serve: the day's card as listed (the recorder's catalogue from 06:55 UTC); a race
-                                    # is written once, at its first serve 10 minutes or more before its off
-    - cron: '26 12 * * *'           # settle the last days (the settled books are read by 10:10 UTC) and read
   workflow_dispatch:
     inputs:
       task:
