@@ -121,5 +121,9 @@ def test_the_forward_tests_lays_are_replayed_and_scored(monkeypatch):
     liability = el.CONFIG["liability"]                                  # the early lay's own stake (GBP100 from 11 Nov)
     stake = liability / 4.0                                             # that liability at 5.0
     assert x["matched_liability"] == pytest.approx(liability)
+    # the trusted fill beside it (20 Nov 2026): a fill by trade-through is capped at what crossed, so its liability
+    # is never more than the uncapped line's
+    cal = r["stream_calibrated"]
+    assert cal["matched"] <= x["matched"] and cal["matched_liability"] <= x["matched_liability"] + 1e-6
     assert x["roi_green%"] == pytest.approx(100 * stake * (1 - 5.0 / 5.5) * (1 - lab.COMM) / liability, abs=0.01)
     assert x["roi_sp%"] == pytest.approx(100 * stake * (1 - 5.0 / 6.0) * (1 - lab.COMM) / liability, abs=0.01)
