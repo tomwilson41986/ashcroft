@@ -1,0 +1,103 @@
+name: Greyhound residual on the BSP, forward on paper (read-only)
+
+# The owner, 20 Nov 2026 (the discovery round, build 6; research/greyhound/sp_offset_forward.py; ledger
+# greyhound-sp-offset-forward-1120): the residual model on the Betfair SP, frozen once, served from the day's card
+# before each race and settled at the SP on paper. Reads and writes S3 only (sources/greyhound/sp_offset/); holds no
+# Betfair key: nothing reaches Betfair, no order is placed.
+
+# No schedule yet: nothing is frozen until the seed-averaged study is read (greyhound-sp-offset-seeds-1120). Once it
+# is, the serve runs at 47 7,10,13,16 UTC (the recorder's catalogue from 06:55 UTC; a race is written once, at its
+# first serve 10 minutes or more before its off) and the settle and read at 26 12 UTC.
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'serve (the day''s card), settle (the last days, and the reading), or freeze (the one fit; refuses a second)'
+        type: choice
+        options: [serve, settle, freeze]
+        default: serve
+      date:
+        description: 'UK racing day, YYYY-MM-DD (default today)'
+        required: false
+        type: string
+      dev_run:
+        description: 'freeze only: the run id of the sp-offset study whose stage2_daily.csv is stored as the study''s days'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: greyhound-sp-offset-${{ github.event.schedule || inputs.task || 'serve' }}
+  cancel-in-progress: false
+
+jobs:
+  forward:
+    runs-on: ubuntu-latest
+    timeout-minutes: 170
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Free disk space
+        continue-on-error: true
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+      - name: Add swap
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 24G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+      - name: The study's days (freeze only)
+        if: inputs.task == 'freeze' && inputs.dev_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEV_RUN: ${{ inputs.dev_run }}
+        run: |
+          [[ "$DEV_RUN" =~ ^[0-9]+$ ]] || { echo "dev_run must be a run id"; exit 1; }
+          gh run download "$DEV_RUN" --repo "$GITHUB_REPOSITORY" --dir dev_artifact
+          find dev_artifact -name stage2_daily.csv | head -1 | xargs -I{} cp {} stage2_daily.csv
+          [ -f stage2_daily.csv ] || { echo "no stage2_daily.csv in run $DEV_RUN"; exit 1; }
+      - name: The forward test
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          TASK: ${{ inputs.task }}
+          SCHEDULE: ${{ github.event.schedule }}
+          DAY: ${{ inputs.date }}
+        run: |
+          if [ -z "$TASK" ]; then
+            case "$SCHEDULE" in '26 12 * * *') TASK=settle ;; *) TASK=serve ;; esac
+          fi
+          ARGS=(--out out/study)
+          if [ -n "$DAY" ]; then
+            [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "date must be YYYY-MM-DD"; exit 1; }
+            ARGS+=(--date "$DAY")
+          fi
+          case "$TASK" in
+            serve)  python -m research.greyhound.sp_offset_forward --serve "${ARGS[@]}" ;;
+            settle) python -m research.greyhound.sp_offset_forward --settle --days 4 --read "${ARGS[@]}" ;;
+            freeze) if [ -f stage2_daily.csv ]; then ARGS+=(--dev-daily stage2_daily.csv); fi
+                    python -m research.greyhound.sp_offset_forward --freeze "${ARGS[@]}" ;;
+            *) echo "unknown task"; exit 1 ;;
+          esac
+      - name: Summary
+        if: always()
+        run: |
+          [ -f out/study/report.md ] && cat out/study/report.md >> "$GITHUB_STEP_SUMMARY"
+          true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: greyhound-sp-offset-${{ github.run_number }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 90

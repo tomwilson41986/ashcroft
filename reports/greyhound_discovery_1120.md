@@ -268,3 +268,36 @@ Same fits as stage 1. The second placebo, then six rules at the SP chosen from t
 **1. A day's features do not read that day's results** (`greyhound.live --check-card`, run 44730736615, 12 Nov, 680 runners with a GBGB history): the day built from the morning card (history to the day before) against the same day built from the results. Of 435 features, 400 agree on at least 99% of runners. The features that carry the residual and are NOT among the 35 that differ: `trouble_mean1`, `trouble_mean3`, `trouble_mean6`, `days_since`, `gp_lbsc_l1`, `lb_fb_cross_w`, `gsr_std6`. Every trainer feature (23 of them, `trainer_ae` and `gp_trainer30_ae` among them) agrees on the same 98.09% of runners and differs on the same 13 dogs: the card names the trainer of the dog's last run, the results the trainer on the day (a kennel change) - a different trainer, not today's result. `sire_win`, `age_months` and the birth-month features agree on 98.97%. A feature that included today's results would differ for most runners, not 2%. So: no feature of the residual reads its own day's results. (The 13 trainer changes are a train-to-live skew for the live model, noted for it.)
 
 **2. Does any feature read a LATER day?** Not shown by the check above (both of its builds stop at the day). Registered and running: the fast-loop cache (one build through its last day) against the engine run again on runs and prices up to 30 Jun 2025 only, every card-safe feature of June 2025 compared runner by runner (`research/greyhound/cut_check.py`, ledger `greyhound-cut-check-1120`). Stage 2 stays unverified until it is read.
+
+**3. Does a race see its own result through a twin row?** (`research/greyhound/twin_check.py`, run 44742292946, ledger `greyhound-twin-check-1120`.) Neither check above can see a race held twice in the data: the second copy's last-run features would be the race's own result, in the cache and in any rebuild alike. A twin is a dog with rows in two races on one day; a short gap is a run a day or less after the last.
+
+| Year | Runners | Races | Twin rows | Short-gap rows | Races touched |
+|---|---|---|---|---|---|
+| 2020 | 10,906 | 1,826 | 0 | 0 | 0 |
+| 2021 | 160,792 | 27,122 | 2 | 2 | 4 |
+| 2022 | 204,034 | 34,658 | 0 | 0 | 0 |
+| 2023 | 278,472 | 48,804 | 0 | 0 | 0 |
+| 2024 | 289,564 | 51,775 | 142 | 0 | 24 |
+| 2025 | 269,970 | 48,829 | 0 | 0 | 0 |
+| 2026 | 217,508 | 39,656 | 6 | 0 | 6 |
+| All | 1,431,246 | 252,670 | 150 | 2 | 34 |
+
+34 races of 252,670 are touched, so the study was rerun without them, as registered, and build 6 is read from the rerun:
+
+| | Original (run 44729248379) | Without the 34 races (run 44742292946) |
+|---|---|---|
+| Stage 1 gain a race, pooled | +0.000647 (0.000461 to 0.000834), t 5.71 | +0.000410 (0.000211 to 0.000609), t 3.40 |
+| 2024 / 2025 / Jan-May 2026 | +0.000446 / +0.000793 / +0.000816 | +0.000034 / +0.000551 / +0.001057 |
+| Rounds at the early stop | 60 / 72 / 214 | 2 / 264 / 170 |
+| Placebo 2 | +0.000003 | +0.000006 (-0.000055 to 0.000068) |
+| Back the top 10% | +4.99% (2.98 to 6.99), t 4.09 | +3.53% (1.55 to 5.51), t 2.93 |
+| Back the top 5% | +6.67%, t 3.64 | +4.41% (1.60 to 7.22), t 2.58 |
+| Back the top 2% | +7.20%, t 2.45 | +2.58% (-1.97 to 7.14), t 0.93 |
+| Lay the bottom 10% | +0.99%, t 5.08 | +0.84% (0.53 to 1.15), t 4.44 |
+| Lay the bottom 5% | +1.30%, t 4.82 | +1.24% (0.82 to 1.67), t 4.82 |
+| Lay the bottom 2% | +0.94%, t 2.14 | +1.24% (0.58 to 1.91), t 3.08 |
+
+- **By the registered reading build 6 still stands**, on the rerun: stage 1's pooled interval is above zero with every fold positive, and five of the six rules keep an interval above zero (the top-2% back does not). No rule reaches the deflated Sharpe bar (a t of 5.82): the best is 4.82.
+- **It is not a leak that moved the numbers; the fit is unstable.** 34 races cannot carry a third of the gain, and the 2025 fold changed with no touched race in its test. The fits differ by 24 to 166 rows of 654,204 to 1,213,738, yet the early stop moved from 60 to 2 rounds in the first fold. One fit's stopping point is noise, so the by-day intervals understate the uncertainty, and a single fit is not fit to freeze for a forward test.
+- **Next, registered before its run** (`greyhound-sp-offset-seeds-1120`, 14 rules): the same study with the residual as the mean of 10 fits that differ only in the seed, run on two disjoint sets of seeds (1-10 and 11-20), the 34 races left out. Stage 1 and each rule stand only if they hold in both halves. If stage 1 does not, build 6 is closed as not robust and nothing is frozen.
+- The 142 twin rows of 2024 (24 races) are a data fault, listed for the data audit.
