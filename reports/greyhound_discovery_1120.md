@@ -301,3 +301,14 @@ Same fits as stage 1. The second placebo, then six rules at the SP chosen from t
 - **It is not a leak that moved the numbers; the fit is unstable.** 34 races cannot carry a third of the gain, and the 2025 fold changed with no touched race in its test. The fits differ by 24 to 166 rows of 654,204 to 1,213,738, yet the early stop moved from 60 to 2 rounds in the first fold. One fit's stopping point is noise, so the by-day intervals understate the uncertainty, and a single fit is not fit to freeze for a forward test.
 - **Next, registered before its run** (`greyhound-sp-offset-seeds-1120`, 14 rules): the same study with the residual as the mean of 10 fits that differ only in the seed, run on two disjoint sets of seeds (1-10 and 11-20), the 34 races left out. Stage 1 and each rule stand only if they hold in both halves. If stage 1 does not, build 6 is closed as not robust and nothing is frozen.
 - The 142 twin rows of 2024 (24 races) are a data fault, listed for the data audit.
+
+**2, read. Does any feature read a later day?** (run 44741593052.) 22,291 runners of June 2025 on 408 card-safe features, the cache against the engine run on runs and prices to 30 Jun 2025 only: 382 features agree on every runner, 406 on at least 99%.
+
+| Feature | Agree | Runners that differ | Median gap |
+|---|---|---|---|
+| `gp_bsp_ae_car` | 91.8% | 1,825 | 0.0054 |
+| `gp_bsp_mkt_car` | 91.8% | 1,825 | 0.0131 |
+| 24 trainer features | 99.955% to 99.991% | 2 to 10 | - |
+
+- **By the registered reading the single-fit readings of build 6 are withdrawn**: two of the 408 features the residual reads differ on more than 1% of runners (the dog's career mean against the Betfair SP). Neither is in a fold's top 12 by gain, but their gain is not shown to be nothing. The seed-averaged study is the rerun without them (406 features; amended in the ledger before its run).
+- **Likely cause, not verified: an older history, not a later day.** The cache was built to 11 Nov, before the BSP join was fixed and backfilled, so today's rebuild knows Betfair SPs for 2018-2022 runs that the cache did not. Only the career window reaches that far back; the last-run, 3, 5 and 10-run windows of the same measure agree on every runner. To verify: the cut check again once the cache is rebuilt on the backfilled prices.
