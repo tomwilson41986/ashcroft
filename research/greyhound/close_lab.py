@@ -752,6 +752,98 @@ def rest_day(lines, f: pd.DataFrame, day: str, comm: float | None = None) -> pd.
                          "pnl_win": pd.to_numeric(df.pnl_result, errors="coerce") / m})
 
 
+# The fill bracket (the owner, 20 Nov 2026: the discovery round, ideas maker-12 and uncert-07; ledger
+# greyhound-rest-bracket-1120). The resting test's 60 s orders replayed under five fills, so a result is read with
+# its fill assumption beside it: FRONT (first in the queue), SHOWN (the resting test's own), STRICT (cancellations
+# behind us), THROUGH (filled only by money traded beyond the price) and THROUGH with BRACKET_LATENCY seconds'
+# delay. A fill later than BRACKET_HEDGE seconds before the market closed cannot be closed at the SP and is left to
+# run to the result (``pnl_gate``). The gate arm is THROUGH+latency; the others are reported, never the gate.
+BRACKET_ARMS = {"front": ("front", 0.0), "shown": ("shown", 0.0), "strict": ("strict", 0.0),
+                "through": ("through", 0.0), "through_1s": ("through", 1.0)}
+BRACKET_GATE = ("rest_back_60_m0", "through_1s")
+BRACKET_HEDGE = 1.0
+BRACKET_V = "rest_bracket_v1"
+
+
+def rest_bracket_day(lines, f: pd.DataFrame, day: str, comm: float | None = None) -> pd.DataFrame:
+    """A day's 60 s resting orders under every arm of the bracket, one replay: a row an order and arm, with the
+    forecast's and the mid's squared error on log SP and the mid-to-SP move of its runner (for the fill-conditional
+    reading: the fill is an outcome that splits the rows, never an input)."""
+    from datetime import timedelta
+    from greyhound.costs import commission
+    base = [o for o in rest_orders(f) if "_60_" in o.tag]
+    if not base:
+        return pd.DataFrame()
+    orders = []
+    for arm, (mode, lat) in BRACKET_ARMS.items():
+        for o in base:
+            orders.append(sr.SimOrder(market=o.market, sid=o.sid, side=o.side, price=o.price, size=o.size,
+                                      t=o.t + timedelta(seconds=lat), tag=f"{o.tag}|{arm}", mode=mode))
+    df = sr.replay(lines, orders, vol_factor=1.0, comm=commission() if comm is None else comm, through_cap=True,
+                   to_close=True)
+    m = df.matched.where(df.matched > 0)
+    sp, win = pd.to_numeric(df.pnl_sp, errors="coerce") / m, pd.to_numeric(df.pnl_result, errors="coerce") / m
+    late = (pd.to_datetime(df.last_fill, utc=True) >
+            pd.to_datetime(df.ended, utc=True) - pd.Timedelta(seconds=BRACKET_HEDGE)).fillna(False)
+    out = pd.DataFrame({"day": day, "market": df.market.astype(str), "sid": df.sid.astype(int),
+                        "rule": df.tag.str.split("|").str[0], "arm": df.tag.str.split("|").str[1],
+                        "placed": df.placed.astype(bool), "size": df["size"], "matched": df.matched,
+                        "late_fill": late & (df.matched > 0), "pnl_sp": sp, "pnl_win": win,
+                        "pnl_gate": sp.where(~late, win)})
+    x = f[f.secs == 60][["market", "sid", "y", "l_mid", f"e_{TRADE2_SPEC}"]].copy()
+    x["market"], x["sid"] = x.market.astype(str), x.sid.astype(int)
+    x["sq_mid"], x["sq_fc"] = (x.y - x.l_mid) ** 2, x[f"e_{TRADE2_SPEC}"] ** 2
+    x["move"] = x.y - x.l_mid                                    # log(SP / mid): above 0, the runner drifted
+    return out.merge(x[["market", "sid", "sq_mid", "sq_fc", "move"]].drop_duplicates(["market", "sid"]),
+                     on=["market", "sid"], how="left")
+
+
+def bracket_scores(b: pd.DataFrame) -> pd.DataFrame:
+    """Each rule under each arm: orders, the share matched, the return a unit of matched stake at the SP and on the
+    gate's settlement (late fills to the result), each with its t by day (research/greyhound/power.py cluster_t)."""
+    from research.greyhound.power import cluster_t
+    out = []
+    if not len(b):
+        return pd.DataFrame()
+    for (rule, arm), g in b[b.placed].groupby(["rule", "arm"]):
+        k = g[g.matched > 0]
+        row = {"rule": rule, "arm": arm, "orders": len(g), "matched": len(k), "days": int(g.day.nunique()),
+               "matched_share": round(len(k) / len(g), 4) if len(g) else None,
+               "late_fills": int(k.late_fill.sum())}
+        for col in ("pnl_sp", "pnl_gate", "pnl_win"):
+            c = cluster_t(k[col].to_numpy(float), k.day.to_numpy()) if len(k) else {}
+            row[f"{col}%"] = None if not c or c["mean"] is None else round(100 * c["mean"], 3)
+            row[f"{col}_t"] = None if not c or c["t"] is None else round(c["t"], 2)
+            row[f"{col}_ci90%"] = None if not c or c["se"] is None else \
+                [round(100 * (c["mean"] - 1.645 * c["se"]), 3), round(100 * (c["mean"] + 1.645 * c["se"]), 3)]
+        out.append(row)
+    return pd.DataFrame(out)
+
+
+def fill_conditional(b: pd.DataFrame, arm: str = "shown") -> list[dict]:
+    """The forecast's skill on the rows where an order fills (uncert-07): the 'all' rules under ``arm``, split into
+    filled lays, filled backs and unfilled orders; the paired squared-error gain over the mid on log SP (above 0: the
+    forecast is nearer the SP) and the mean log(SP / mid), each with its t by day."""
+    from research.greyhound.power import cluster_t
+    out = []
+    x = b[(b.arm == arm) & b.rule.isin(["rest_lay_60_all", "rest_back_60_all"]) & b.placed & b.sq_mid.notna()]
+    for name, g in (("filled lays", x[(x.rule == "rest_lay_60_all") & (x.matched > 0)]),
+                    ("filled backs", x[(x.rule == "rest_back_60_all") & (x.matched > 0)]),
+                    ("unfilled lays", x[(x.rule == "rest_lay_60_all") & (x.matched <= 0)]),
+                    ("unfilled backs", x[(x.rule == "rest_back_60_all") & (x.matched <= 0)])):
+        if not len(g):
+            continue
+        gain, move = cluster_t((g.sq_mid - g.sq_fc).to_numpy(float), g.day.to_numpy()), \
+            cluster_t(g.move.to_numpy(float), g.day.to_numpy())
+        r4 = lambda v: None if v is None else round(v, 5)
+        out.append({"arm": arm, "rows": name, "n": len(g), "days": int(g.day.nunique()),
+                    "gain_over_mid": r4(gain["mean"]), "gain_t": None if gain["t"] is None else round(gain["t"], 2),
+                    "gain_ci90": None if gain["se"] is None else
+                    [r4(gain["mean"] - 1.645 * gain["se"]), r4(gain["mean"] + 1.645 * gain["se"])],
+                    "log_sp_over_mid": r4(move["mean"]), "move_t": None if move["t"] is None else round(move["t"], 2)})
+    return out
+
+
 def rest_scores(rest: pd.DataFrame, registered: str = TRADE2_REGISTERED) -> pd.DataFrame:
     """The resting rules on their fresh days: the orders placed, the share that matched at all and the share of the
     stake matched, beside ``trade_scores`` over the matched orders."""
@@ -859,6 +951,10 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="out/close_lab")
     ap.add_argument("--rebuild", action="store_true", help="rebuild every day's snapshots")
     ap.add_argument("--dry-run", action="store_true", help="score and report only: no registry or champion written")
+    ap.add_argument("--bracket", default=None, help="the fill bracket: its last day, YYYY-MM-DD (development to "
+                    "2026-11-18; the forward read is registered: greyhound-rest-bracket-1120)")
+    ap.add_argument("--bracket-from", default=None, help="the bracket's first day (default: the day after the "
+                    "resting test's registration)")
     ap.add_argument("--practice", type=int, default=0,
                     help="also show the band and resting tests on the days before their registration (never counted), "
                          "replaying this many of the latest of them for the resting test")
@@ -1040,6 +1136,66 @@ def main(argv=None) -> int:
         pr = rest_scores(rest, registered="")
         md += (["", "The resting test:", ""] + rule_table(pr, with_fill=True)) if len(pr) else \
             ["", "The resting test: no data found."]
+    if a.bracket:
+        b_parts = []
+        first = a.bracket_from or ""
+        for d in have:
+            if d <= TRADE2_REGISTERED or d > a.bracket or (first and d < first):
+                continue
+            key = f"{PREFIX}/{BRACKET_V}_{spec2.get('hash', '')}/{d}.parquet"
+            raw = get(key)
+            if raw:
+                b_parts.append(pd.read_parquet(io.BytesIO(raw)))
+                continue
+            try:
+                r = rest_bracket_day(day_lines.get(d) or sr.load_lines(get, listing, date.fromisoformat(d)), days[d], d)
+            except Exception as exc:
+                log.warning("fill bracket on %s: %s", d, exc)
+                continue
+            log.info("%s: fill bracket, %d order-arms", d, len(r))
+            if len(r):
+                buf = io.BytesIO()
+                r.to_parquet(buf, index=False)
+                s3.put_object(Bucket=bk, Key=key, Body=buf.getvalue())
+                b_parts.append(r)
+        br = pd.concat(b_parts, ignore_index=True) if b_parts else pd.DataFrame()
+        md += ["", f"### The fill bracket ({first or 'the day after ' + TRADE2_REGISTERED} to {a.bracket}; ledger "
+               "greyhound-rest-bracket-1120)", "",
+               "The resting test's 60 s orders under five fills. Returns a unit of matched stake; t by day. 'Gate "
+               f"settlement': closed at the SP unless the last fill came within {BRACKET_HEDGE:g} s of the close, "
+               f"then left to the result. The gate is {BRACKET_GATE[0]} under {BRACKET_GATE[1]}; every other row is "
+               "context.", ""]
+        bs = bracket_scores(br)
+        if len(bs):
+            md += ["| Rule | Arm | Orders | Matched | Share | Days | At the SP % | t | 90% | Gate settlement % | t | 90% | "
+                   "Late fills | To the result % | t |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+            order = list(BRACKET_ARMS)
+            for r in bs.sort_values(["rule", "arm"], key=lambda c: c.map(lambda v: order.index(v) if v in order else v)
+                                    if c.name == "arm" else c).to_dict("records"):
+                md.append(f"| {r['rule']} | {r['arm']} | {r['orders']} | {r['matched']} | {r['matched_share']:.0%} | "
+                          f"{r['days']} | {r['pnl_sp%']} | {r['pnl_sp_t']} | {r['pnl_sp_ci90%']} | {r['pnl_gate%']} | "
+                          f"{r['pnl_gate_t']} | {r['pnl_gate_ci90%']} | {r['late_fills']} | {r['pnl_win%']} | "
+                          f"{r['pnl_win_t']} |")
+            g = br[(br.rule == BRACKET_GATE[0]) & (br.arm == BRACKET_GATE[1]) & br.placed & (br.matched > 0)]
+            if len(g):
+                from research.greyhound.trial_count import greyhound_trials
+                from research.overfit import dsr_check
+                per_day = g.groupby("day").pnl_gate.mean().dropna().to_numpy()
+                dsr = dsr_check(per_day, greyhound_trials())
+                md += ["", f"The gate ({BRACKET_GATE[0]}, {BRACKET_GATE[1]}), daily returns: deflated Sharpe "
+                       f"{dsr.get('dsr')} at {dsr.get('n_trials'):,} rules over {dsr.get('n_obs')} days "
+                       f"(passed: {dsr.get('passed')}; {dsr.get('reason') or 'cleared'})."]
+            md += ["", "The forecast on the rows that fill (the 'all' rules; gain = the mid's squared error on log SP "
+                   "less the forecast's; log(SP / mid) above 0 = the runner drifted after the order):", "",
+                   "| Arm | Rows | n | Days | Gain over the mid | t | 90% | Mean log(SP / mid) | t |",
+                   "|---|---|---|---|---|---|---|---|---|"]
+            for arm in ("shown", "through"):
+                for r in fill_conditional(br, arm):
+                    md.append(f"| {r['arm']} | {r['rows']} | {r['n']} | {r['days']} | {r['gain_over_mid']} | "
+                              f"{r['gain_t']} | {r['gain_ci90']} | {r['log_sp_over_mid']} | {r['move_t']} |")
+            bs.to_csv(out / "bracket.csv", index=False)
+        else:
+            md += ["no data found: no bracket day"]
     md += diagnostics(days, specs, champs)
     md += ["", "### The champions again (for the foot of the log)", ""] + crowns
     (out / "report.md").write_text("\n".join(md) + "\n")
