@@ -17,7 +17,9 @@
     "trading/STOP"
   ],
   "kill_switch_fails": "safe",
-  "dashboard_ids": [],
+  "dashboard_ids": [
+    "greyhound-take-close"
+  ],
   "evidence": [
     {
       "claim": "real orders only with GREYHOUND_TAKE_CLOSE=live and a daily loss limit; paper by default",
