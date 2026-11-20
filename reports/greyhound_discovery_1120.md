@@ -209,3 +209,21 @@ A back of 1 or a lay risking 1 at the Betfair SP on every runner of a cell, nett
 - **The SP is fair for experienced dogs, to the commission.** Backing all 949,322 costs 1.10%; laying them returns 0.00%.
 - **For the model.** Its large error on first-time runners (RMSE 0.44) is our forecast's error, not the market's: the SP is calibrated for them now (A/E 1.009). Better first-run features can improve our price forecast; they will not find a bet at the SP.
 - The harness (`research/greyhound/sp_harness.py`) stands for build 6 and any later rule at the SP.
+
+## The paper early lay against the live early lay (20 Nov; run 44726189874; ledger `greyhound-paper-vs-live-1120`)
+
+The question from builds 1 and 4: the paper forward test read +1.31% of liability a day, the live lays were flat to losing, and the fill model is now trusted. Fill setting or orders? Both order sets through one recorded stream on the four live days, 11-14 Nov. P&L closed at the SP before commission.
+
+| Lays | Orders | Matched | Matched liability | P&L at the SP | Return on liability |
+|---|---|---|---|---|---|
+| Paper lays, the paper figure's own fill (full volume, uncapped) | 2,423 | 1,053 | GBP93,770.65 | +GBP1,300.60 | +1.387% |
+| Paper lays, the calibrated fill | 2,423 | 1,039 | GBP76,586.00 | -GBP120.38 | -0.157% |
+| Live lays, the calibrated fill | 1,561 | 513 | GBP41,021.03 | -GBP147.50 | -0.360% |
+| Live lays, as the ledger settled them | 1,561 | 503 | GBP43,019.20 | -GBP169.69 | -0.394% |
+
+Joined on the dog (calibrated fill): the 1,409 common lays -0.304% at the paper's price and time, -0.336% at live's; the 1,014 paper-only lays +0.052%; the 152 live-only lays -0.700%.
+
+- **The paper edge was the fill setting.** By the reading fixed before the run: the calibrated fill removes the paper gain (+1.387% to -0.157%), so the cause was the fill, not the orders. The same holds on each of the four days (own fill +0.98% to +1.67%; calibrated -0.46% to +0.04%).
+- **Where the phantom profit came from.** The number of lays filled barely changes (1,053 to 1,039); the liability does (GBP93.8k to GBP76.6k). The uncapped fill gave an order its whole remainder the moment the price traded through it; the capped fill gives it only what crossed. The filled lays' SP was on average 12% above their price, but the big fills are on the ones that went wrong: adverse selection in size, not in count.
+- **Paper and live agree once the fill is right**: -0.16% (paper) and -0.36% to -0.39% (live) of liability. There is no paper-versus-live gap left to explain, and no edge: the early lay loses a little at the SP before commission.
+- **What changes.** The nightly forward-test line now carries the trusted fill beside the two uncapped ones (`research/greyhound/stream_lab.py forward_check`). The daily "+1.3% to +1.9% at the SP" figures in `reports/greyhound_edge_search.md` (13-19 Nov) were the uncapped fill and should be read as overstated. The early lay stays off; its registered reads (24 Nov gate; SP-close paper test 13 Dec) run to their end as registered.
