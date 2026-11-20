@@ -159,6 +159,34 @@ def stage2(folds: list[dict], comm: float, n_trials: int) -> dict:
     return out
 
 
+def picks(runners: pd.DataFrame, cuts: dict) -> pd.DataFrame:
+    """Every stage 2 bet of a frame of runners with their centred residual ``s``: its rows once a rule that picks
+    them, with ``rule`` and ``side`` (the one place a cut is applied: the study and the forward test share it)."""
+    out = []
+    for name, side, _ in STAGE2:
+        cut = cuts[name]
+        b = runners[(runners.s >= cut) if side == "back" else (runners.s <= cut)]
+        out.append(b.assign(rule=name, side=side))
+    return pd.concat(out, ignore_index=True) if out else runners.iloc[0:0].assign(rule="", side="")
+
+
+def stage2_daily(folds: list[dict], comm: float) -> pd.DataFrame:
+    """The stage 2 rules' net and money at risk a day over the test years (rule, day, net, risk): what the forward
+    test's days are pooled with (research/greyhound/sp_offset_forward.py)."""
+    from research.greyhound.sp_harness import settle
+    out = []
+    for f in folds:
+        r = f.get("_runners")
+        if r is None:
+            continue
+        p = picks(r, f["cuts"])
+        for name, b in p.groupby("rule"):
+            st = settle(b, comm)
+            out.append(st.groupby("day", as_index=False)[["net", "risk"]].sum().assign(rule=name))
+    return pd.concat(out, ignore_index=True)[["rule", "day", "net", "risk"]] if out else \
+        pd.DataFrame(columns=["rule", "day", "net", "risk"])
+
+
 def _shuffle_within(won: np.ndarray, race: np.ndarray, rng) -> np.ndarray:
     """``won`` permuted at random within each race (rows grouped by race)."""
     key = rng.random(len(won))
@@ -168,7 +196,9 @@ def _shuffle_within(won: np.ndarray, race: np.ndarray, rng) -> np.ndarray:
     return out
 
 
-def run(d: pd.DataFrame, feats: list[str], folds=FOLDS, stage2_args: tuple | None = None) -> dict:
+def run(d: pd.DataFrame, feats: list[str], folds=FOLDS, stage2_args: tuple | None = None,
+        daily_out: list | None = None) -> dict:
+    """``daily_out``: a list that is given the stage 2 rules' day-by-day net and risk (``stage2_daily``)."""
     res = {"tag": TAG, "features": len(feats), "folds": [], "rows": int(len(d)), "races": int(d.race_id.nunique())}
     parts, kept = [], []
     for a, b in folds:
@@ -181,6 +211,8 @@ def run(d: pd.DataFrame, feats: list[str], folds=FOLDS, stage2_args: tuple | Non
         res["folds"].append(f)
     if stage2_args is not None and any("_runners" in k for k in kept):
         res["stage2"] = stage2(kept, *stage2_args)
+        if daily_out is not None:
+            daily_out.append(stage2_daily(kept, stage2_args[0]))
     p2 = run_fold(d, feats, *folds[0], feature_shuffle_seed=11)
     p2.pop("_per_race", None)
     res["placebo_features_fold_1"] = p2
@@ -251,12 +283,15 @@ def main(argv=None) -> int:
     del df
     from greyhound.costs import commission
     from research.greyhound.trial_count import greyhound_trials
-    res = run(d, feats, stage2_args=(commission(), greyhound_trials()))
+    daily: list = []
+    res = run(d, feats, stage2_args=(commission(), greyhound_trials()), daily_out=daily)
     res["cache"] = {"hash": meta.get("hash"), "last_day": meta.get("last_day"), "first_day": str(d.day.min())}
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "report.json").write_text(json.dumps(res, indent=1, default=str))
     (out / "report.md").write_text(markdown(res))
+    if daily and len(daily[0]):
+        daily[0].to_csv(out / "stage2_daily.csv", index=False)
     print(markdown(res))
     return 0
 
