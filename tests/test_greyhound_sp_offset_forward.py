@@ -72,22 +72,27 @@ def test_a_day_settles_at_the_sp_in_wholly_priced_races_only():
     assert np.isclose(r.loc["lay_bottom10", "net"], 0.2 * 0.98)          # a lay risking 1 at 6.0 that lost: stake 0.2
 
 
-def test_the_read_needs_the_pooled_bar_and_a_forward_gain():
+def test_the_read_needs_every_forward_day_a_forward_gain_and_the_pooled_bar():
     rng = np.random.default_rng(0)
     days = pd.date_range("2024-01-01", periods=600).strftime("%Y-%m-%d")
     dev = pd.concat([pd.DataFrame({"rule": n, "day": days, "risk": 50.0,
                                    "net": 50.0 * (0.02 + 0.1 * rng.standard_normal(600))}) for n, _, _ in so.STAGE2])
-    fdays = pd.date_range("2026-11-21", periods=40).strftime("%Y-%m-%d")
-    good = pd.DataFrame({"rule": "back_top10", "day": fdays, "race_id": "r", "risk": 50.0,
-                         "net": 50.0 * (0.05 + 0.1 * rng.standard_normal(40))})
-    bad = good.assign(rule="lay_bottom10", net=-abs(good.net))
+    fdays = pd.date_range("2026-11-21", periods=fw.READ_DAYS).strftime("%Y-%m-%d")
+    good = pd.DataFrame({"rule": fw.PRIMARY, "day": fdays, "race_id": "r", "risk": 50.0,
+                         "net": 50.0 * (0.05 + 0.1 * rng.standard_normal(fw.READ_DAYS))})
+    bad = good.assign(rule="back_top10", net=-abs(good.net))
     res = fw.read(pd.concat([good, bad]), dev, 1)
     by = {r["rule"]: r for r in res["rules"]}
-    assert by["back_top10"]["pass"] and by["back_top10"]["pooled"]["days"] == 640
-    assert not by["lay_bottom10"]["pass"]                         # the forward days lost: no pass on the study's days alone
+    assert by[fw.PRIMARY]["pass"] and by[fw.PRIMARY]["pooled"]["days"] == 600 + fw.READ_DAYS
+    assert res["gate"]["state"] == "PASS" and not by["back_top10"]["pass"]      # its forward days lost
     assert by["back_top2"]["forward"] == {"bets": 0, "note": "no data found"} and not by["back_top2"]["pass"]
-    hard = fw.read(pd.concat([good, bad]), dev, 10 ** 9)
-    assert hard["passed"] == [] and "| back_top10 |" in fw.markdown(res)
+    hard = fw.read(pd.concat([good, bad]), dev, 10 ** 9)                          # the pooled bar bites
+    assert hard["passed"] == [] and hard["gate"]["state"] == "FAIL" and "| lay_bottom10 |" in fw.markdown(res)
+    # before the last day nothing passes, however good; a forward interval wholly below zero at the look ends it
+    early = fw.read(good[good.day <= fdays[59]], dev, 1)
+    assert early["passed"] == [] and early["gate"]["state"] == f"running: 60 of {fw.READ_DAYS} days"
+    lost = fw.read(good[good.day <= fdays[49]].assign(net=lambda f: -abs(f.net)), dev, 1)
+    assert lost["gate"]["state"].startswith("FAIL (futility")
 
 
 def test_the_studys_days_are_the_stage_two_bets_summed():

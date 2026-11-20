@@ -45,6 +45,9 @@ DROP_FEATURES = ("gp_bsp_ae_car", "gp_bsp_mkt_car")      # the cut check (greyho
 FIRST_DAY = "2026-11-21"          # the first forward day: after the freeze, after every day any study has read
 LEAD_MIN = 10.0                   # a race is served only this long or more before its off
 MIN_FIELD = 4                     # the races a model prices (greyhound/model.py modelling_rows)
+PRIMARY = "lay_bottom10"          # the one rule that cleared the deflated Sharpe in both seed halves of the study
+READ_DAYS = 120                   # the one reading: this many settled forward days
+INTERIM_DAYS = 45                 # one look before it, for futility only
 SERVED_COLS = ["day", "race_id", "market_id", "selection_id", "trap", "dog_id", "dog_name", "track", "race_time",
                "off_utc", "field", "s", "served_utc", "code_hash"]
 
@@ -169,10 +172,12 @@ def card_frame(store, day: date, s3=None):
     return c.merge(key, on=["race_id", "trap"], how="left")
 
 
-def serve(store, day: date, s3=None, now: datetime | None = None) -> dict:
+def serve(store, day: date, s3=None, now: datetime | None = None, dry: bool = False) -> dict:
+    """``dry``: a rehearsal on any day, written beside the test (``served_dry/``), never read by the settlement."""
     from greyhound import fastloop as fl
     ds = f"{day:%Y-%m-%d}"
-    if ds < FIRST_DAY:
+    folder = "served_dry" if dry else "served"
+    if ds < FIRST_DAY and not dry:
         return {"day": ds, "note": f"before the first forward day ({FIRST_DAY}): not served"}
     m, meta = load_frozen(store)
     if m is None:
@@ -190,13 +195,17 @@ def serve(store, day: date, s3=None, now: datetime | None = None) -> dict:
         .dt.tz_localize("Europe/London", ambiguous="NaT", nonexistent="NaT").dt.tz_convert("UTC")
     new = sig.assign(day=ds, off_utc=off.dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
                      served_utc=now.strftime("%Y-%m-%dT%H:%M:%SZ"), code_hash=fl.code_hash())[SERVED_COLS]
-    raw = store.get(f"{PREFIX}/served/{ds}.csv")
+    raw = store.get(f"{PREFIX}/{folder}/{ds}.csv")
     old = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str, "race_id": str}) if raw else None
     out = first_serve_wins(old, new, now)
     buf = io.StringIO()
     out.to_csv(buf, index=False)
-    store.put(f"{PREFIX}/served/{ds}.csv", buf.getvalue().encode())
-    return {"day": ds, "card_races": int(c.race_id.nunique()), "races_served_before": 0 if old is None else int(old.race_id.nunique()),
+    store.put(f"{PREFIX}/{folder}/{ds}.csv", buf.getvalue().encode())
+    from research.greyhound.sp_offset import picks
+    by_rule = picks(out, meta["cuts"]).groupby("rule").size().to_dict() if len(out) else {}
+    return {"day": ds, "dry": dry, "picks": {k: int(v) for k, v in by_rule.items()},
+            "s_spread": [round(float(out.s.quantile(q)), 4) for q in (0.02, 0.1, 0.5, 0.9, 0.98)] if len(out) else None,
+            "card_races": int(c.race_id.nunique()), "races_served_before": 0 if old is None else int(old.race_id.nunique()),
             "races_served": int(out.race_id.nunique()), "runners_served": int(len(out)),
             "code_hash": fl.code_hash(), "frozen_code_hash": meta.get("code_hash"),
             "code_changed_since_freeze": fl.code_hash() != meta.get("code_hash")}
@@ -266,25 +275,37 @@ def read(forward: pd.DataFrame, dev_daily: pd.DataFrame | None, n_trials: int) -
             row["pooled"] = read_rule(both, n_trials) if len(both) else {"bets": 0}
             row["study"] = read_rule(d[["day", "race_id", "risk", "net"]], n_trials) if len(d) else {"bets": 0}
         fw, po = row["forward"], row.get("pooled") or {}
-        lo = (po.get("roi_90%") or [None])[0]
-        row["pass"] = bool(po.get("dsr_passed") and lo is not None and lo > 0 and (fw.get("roi_%") or 0) > 0)
+        lo, flo = (po.get("roi_90%") or [None])[0], (fw.get("roi_90%") or [None])[0]
+        # a pass: the forward days' own 90% interval above zero, and the deflated Sharpe on the study's and the
+        # forward days together, read once the forward days are all in
+        row["pass"] = bool(out["forward_days"] >= READ_DAYS and flo is not None and flo > 0
+                           and po.get("dsr_passed") and lo is not None and lo > 0)
         out["rules"].append(row)
     out["passed"] = [r["rule"] for r in out["rules"] if r["pass"]]
+    prim = next(r for r in out["rules"] if r["rule"] == PRIMARY)
+    fhi = (prim["forward"].get("roi_90%") or [None, None])[1]
+    n = out["forward_days"]
+    out["gate"] = {"rule": PRIMARY, "read_days": READ_DAYS, "interim_days": INTERIM_DAYS,
+                   "state": ("PASS" if prim["pass"] else "FAIL") if n >= READ_DAYS else
+                            "FAIL (futility: the forward interval is wholly below zero)"
+                            if n >= INTERIM_DAYS and fhi is not None and fhi < 0 else f"running: {n} of {READ_DAYS} days"}
     return out
 
 
 def markdown(res: dict) -> str:
     md = [f"## The residual on the BSP, forward on paper ({TAG})", "",
-          f"{res['forward_days']} settled forward days. The bar: a t of {res['t_required']} at {res['n_trials']:,} "
-          "greyhound trials (the deflated Sharpe), on the study's test years and the forward days together, with the "
-          "forward days' own return above zero. A back of 1 or a lay risking 1 at the SP, 2% off a race's gain.", "",
+          f"{res['forward_days']} settled forward days. The bar: the forward days' own 90% interval above zero, and "
+          f"a t of {res['t_required']} at {res['n_trials']:,} greyhound trials (the deflated Sharpe) on the study's "
+          "test years and the forward days together. A back of 1 or a lay risking 1 at the SP, 2% off a race's gain.", "",
           "| Rule | Forward bets | Forward return % | 90% | t | Study return % | Pooled return % | 90% | t | Deflated Sharpe | Pass |",
           "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in res["rules"]:
         f, s, p = r["forward"], r.get("study") or {}, r.get("pooled") or {}
         md.append(f"| {r['rule']} | {f.get('bets')} | {f.get('roi_%')} | {f.get('roi_90%')} | {f.get('t')} | "
                   f"{s.get('roi_%')} | {p.get('roi_%')} | {p.get('roi_90%')} | {p.get('t')} | {p.get('dsr')} | {r['pass']} |")
-    md += ["", f"Passed: {res['passed'] or 'none'}."]
+    g = res.get("gate") or {}
+    md += ["", f"The gate ({g.get('rule')}, read once at {g.get('read_days')} settled forward days; one futility look "
+           f"at {g.get('interim_days')}): **{g.get('state')}**. Passed: {res['passed'] or 'none'}."]
     return "\n".join(md)
 
 
@@ -315,6 +336,7 @@ def main(argv=None) -> int:
     ap.add_argument("--serve", action="store_true")
     ap.add_argument("--settle", action="store_true")
     ap.add_argument("--read", action="store_true")
+    ap.add_argument("--dry-run", action="store_true", help="--serve: a rehearsal, written to served_dry/, never settled")
     ap.add_argument("--date", help="UK racing day, YYYY-MM-DD (default today)")
     ap.add_argument("--days", type=int, default=3, help="--settle: this many days back from --date")
     ap.add_argument("--dev-daily", nargs="+",
@@ -339,7 +361,7 @@ def main(argv=None) -> int:
     if a.freeze:
         res["freeze"] = {k: v for k, v in freeze(store).items() if k != "features"}
     if a.serve:
-        res["serve"] = serve(store, day)
+        res["serve"] = serve(store, day, dry=a.dry_run)
     if a.settle:
         res["settle"] = [settle(store, day - timedelta(days=i)) for i in range(a.days)]
     md = ["```", json.dumps(res, indent=1, default=str), "```"]

@@ -312,3 +312,44 @@ Same fits as stage 1. The second placebo, then six rules at the SP chosen from t
 
 - **By the registered reading the single-fit readings of build 6 are withdrawn**: two of the 408 features the residual reads differ on more than 1% of runners (the dog's career mean against the Betfair SP). Neither is in a fold's top 12 by gain, but their gain is not shown to be nothing. The seed-averaged study is the rerun without them (406 features; amended in the ledger before its run).
 - **Likely cause, not verified: an older history, not a later day.** The cache was built to 11 Nov, before the BSP join was fixed and backfilled, so today's rebuild knows Betfair SPs for 2018-2022 runs that the cache did not. Only the career window reaches that far back; the last-run, 3, 5 and 10-run windows of the same measure agree on every runner. To verify: the cut check again once the cache is rebuilt on the backfilled prices.
+
+## Build 6, the seed-averaged study (20 Nov; run 44745244638; ledger `greyhound-sp-offset-seeds-1120`)
+
+The residual as the mean of 10 fits that differ only in the seed, run twice on separate seeds. The 34 twin-touched races are out and `gp_bsp_ae_car`, `gp_bsp_mkt_car` are barred (406 features). 1,431,047 runners of 252,636 wholly priced races; 876 test days, 120,038 test races. This replaces the single-fit readings above.
+
+**Stage 1: the gain a race over the BSP.**
+
+| | Seeds 1-10 | Seeds 11-20 |
+|---|---|---|
+| 2024 | +0.000596 (t 3.99) | +0.000525 (t 4.34) |
+| 2025 | +0.001080 (t 5.79) | +0.001164 (t 5.60) |
+| Jan - May 2026 | +0.001008 (t 3.24) | +0.000887 (t 3.04) |
+| Pooled | **+0.000860** (0.000676 to 0.001043), t 7.70 | **+0.000844** (0.000662 to 0.001025), t 7.65 |
+| Placebo 2 | +0.000002 (-0.000027 to 0.000031) | -0.000004 (-0.000040 to 0.000032) |
+
+A single fit's own gain in the 2024 fold ran from 0.000055 to 0.000510 (2 to 199 rounds). The mean of ten is what is stable: the two halves agree to 2%.
+
+**Stage 2: bets at the SP, return on the money at risk after 2% commission.** The deflated Sharpe is at 37,996 greyhound trials; the bar is 0.95.
+
+| Rule | Seeds 1-10 | t | Deflated Sharpe | Seeds 11-20 | t | Deflated Sharpe |
+|---|---|---|---|---|---|---|
+| Back the top 10% | +6.43% (4.34 to 8.51) | 5.07 | 0.819 | +6.39% (4.41 to 8.38) | 5.30 | 0.846 |
+| Back the top 5% | +6.97% (3.99 to 9.95) | 3.85 | 0.228 | +6.26% (3.26 to 9.25) | 3.44 | 0.133 |
+| Back the top 2% | +6.66% (1.95 to 11.36) | 2.33 | 0.013 | +6.57% (1.83 to 11.31) | 2.28 | 0.004 |
+| **Lay the bottom 10%** | **+1.23%** (0.93 to 1.54) | 6.65 | **0.990** | **+1.42%** (1.11 to 1.73) | 7.56 | **0.9995** |
+| Lay the bottom 5% | +1.39% (0.96 to 1.82) | 5.33 | 0.914 | +1.53% (1.09 to 1.96) | 5.75 | 0.931 |
+| Lay the bottom 2% | +1.40% (0.73 to 2.07) | 3.44 | 0.355 | +1.64% (0.98 to 2.31) | 4.04 | 0.385 |
+
+Bets: 64,381 and 64,682 for the top-10% back; 64,525 and 64,166 for the bottom-10% lay. Every rule is positive in all three test years in both halves.
+
+- **By the registered reading stage 1 and all six rules stand in both halves.**
+- **One rule clears the deflated Sharpe with every greyhound trial counted, in both halves: lay the bottom 10% of the residual at the SP.** It is the first greyhound rule to do so.
+- **It is still a development result, not accepted for money.** The test years (2024 to May 2026) have been read by other greyhound work; the feature cache predates the BSP backfill; the settlement used the price files' SP, not a live record; and what the SP can take in a greyhound race is not measured.
+
+## Build 6, the forward paper test (registered 20 Nov; ledger `greyhound-sp-offset-forward-1120`)
+
+- **Frozen once, today**: the mean of 20 fits (seeds 1-20) on the cache to 11 Nov, the same races and features as the study. Never refitted.
+- **Served from 21 Nov** at 07:47, 10:47, 13:47 and 16:47 UTC from the morning card; a race is written once, at its first serve 10 minutes or more before its off.
+- **Settled daily on paper** at the live recorder's Betfair SP, a different data path from the study's price files. No Betfair key, no order.
+- **The gate is one rule, lay the bottom 10%, read once at 120 settled forward days (about 21 Mar 2027)**: the forward days' own 90% interval above zero, and the deflated Sharpe on the study's and the forward days together. One futility look at 45 days.
+- Power: at 120 days the expected forward t is about 2.5 to 2.8, so roughly an 80 to 87% chance of clearing zero if the effect is what the study measured.
