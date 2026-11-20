@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live or sp-debut'
+        description: 'sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live, sp-debut or sp-offset'
         type: choice
-        options: [sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live, sp-debut]
+        options: [sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live, sp-debut, sp-offset]
         default: sectional-check
 
 permissions:
@@ -64,6 +64,7 @@ jobs:
             maker-census) python -m research.greyhound.maker_census --from 2026-11-05 --out out/study ;;
             paper-vs-live) python -m research.greyhound.paper_vs_live --out out/study ;;
             sp-debut) python -m research.greyhound.sp_harness --out out/study ;;
+            sp-offset) python -m research.greyhound.sp_offset --out out/study ;;
             *) echo "unknown task"; exit 1 ;;
           esac
       - name: Summary
