@@ -15,16 +15,18 @@ def test_the_freeze_fits_once_on_every_day_and_its_cuts_order_the_rules():
     d = _frame(0.5, races=3000)
     orig, so.PARAMS = so.PARAMS, SMALL
     try:
-        m, meta = fw.freeze_fit(d, ["x", "noise"])
+        m, meta = fw.freeze_fit(d, ["x", "noise"], seeds=(1, 2, 3))
     finally:
         so.PARAMS = orig
-    assert meta["fit_to"] == d.day.max() and meta["fit_from"] == d.day.min() and meta["rounds"] > 0
+    assert meta["fit_to"] == d.day.max() and meta["fit_from"] == d.day.min()
+    assert len(m) == 3 == len(meta["rounds"]) and min(meta["rounds"]) > 0 and meta["seeds"] == [1, 2, 3]
     assert meta["early_stop_from"] > "2024-06"                 # the last tenth of the days
     c = meta["cuts"]
     assert c["back_top2"] > c["back_top5"] > c["back_top10"] > 0 > c["lay_bottom10"] > c["lay_bottom5"] > c["lay_bottom2"]
     # the residual follows the feature the BSP misses, on rows scored as a card would be
-    f = m.predict(d[["x", "noise"]].to_numpy(np.float32), raw_score=True)
+    f = fw.score(m, d[["x", "noise"]].to_numpy(np.float32))
     assert np.corrcoef(f, d.x)[0, 1] > 0.9
+    assert fw.SEEDS == tuple(range(1, 21)) and fw.DROP_FEATURES == ("gp_bsp_ae_car", "gp_bsp_mkt_car")
 
 
 def test_the_signal_is_centred_in_its_race_and_a_short_field_is_left_out():
@@ -109,3 +111,27 @@ def test_the_forward_workflow_holds_no_betfair_key_and_sends_no_order():
     for word in ("place_orders", "placeOrders", "betfair_client", "BetfairClient"):
         assert word not in src, word
     assert fw.FIRST_DAY == "2026-11-21"
+
+
+def test_the_frozen_fits_come_back_from_the_store_and_the_seed_halves_days_are_averaged(tmp_path):
+    import json
+
+    from sources.common import Store
+    d = _frame(0.5, races=1500)
+    orig, so.PARAMS = so.PARAMS, SMALL
+    try:
+        models, meta = fw.freeze_fit(d, ["x", "noise"], seeds=(1, 2))
+    finally:
+        so.PARAMS = orig
+    store = Store(root=tmp_path)
+    assert fw.load_frozen(store) == (None, None)
+    store.put(fw.MODEL_KEY, json.dumps([m.model_to_string(num_iteration=m.best_iteration) for m in models]).encode())
+    store.put(fw.META_KEY, json.dumps(meta).encode())
+    back, m2 = fw.load_frozen(store)
+    x = d[["x", "noise"]].to_numpy(np.float32)[:500]
+    want = np.mean([m.predict(x, num_iteration=m.best_iteration, raw_score=True) for m in models], axis=0)
+    assert len(back) == 2 and m2["cuts"] == meta["cuts"] and np.allclose(fw.score(back, x), want)
+    a = pd.DataFrame({"rule": ["r", "r"], "day": ["d1", "d2"], "net": [2.0, -1.0], "risk": [10.0, 10.0]})
+    b = pd.DataFrame({"rule": ["r"], "day": ["d1"], "net": [4.0], "risk": [20.0]})
+    got = fw.mean_daily([a, b]).set_index("day")
+    assert got.loc["d1", "net"] == 3.0 and got.loc["d1", "risk"] == 15.0 and got.loc["d2", "net"] == -0.5

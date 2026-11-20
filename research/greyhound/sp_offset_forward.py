@@ -4,8 +4,10 @@ greyhound-sp-offset-forward-1120). No Betfair key, no order: a signal written be
 The residual study (research/greyhound/sp_offset.py) read six rules at the SP on years the model never saw. This is
 the same model and the same cuts on days nobody has seen:
 
-- ``--freeze``: one fit on the feature cache (every wholly priced race to its last day, early-stopped on the last
-  tenth of its days; the cuts read off those days), stored once. It is never fitted again.
+- ``--freeze``: the residual as the seed-averaged study read it (greyhound-sp-offset-seeds-1120): the mean of one
+  fit a seed (``SEEDS``) on the feature cache, every wholly priced race to its last day less the races a twin row
+  touches, without the features the cut check barred (``DROP_FEATURES``), each fit early-stopped on the last tenth
+  of the days; the cuts read off those days. Stored once. It is never fitted again.
 - ``--serve``: the day's card built as the live price run builds it (the recorder's catalogue, GBGB history to the
   day before, the same engine blocks as the cache), the frozen residual centred within each race, the six rules' picks
   written with the time. A race is written once, at its first serve at least ``LEAD_MIN`` minutes before its off, and
@@ -37,7 +39,9 @@ log = logging.getLogger(__name__)
 
 TAG = "greyhound-sp-offset-forward-1120"
 PREFIX = "greyhound/sp_offset"
-MODEL_KEY, META_KEY, DEV_DAILY_KEY = f"{PREFIX}/model.txt", f"{PREFIX}/meta.json", f"{PREFIX}/stage2_daily.csv"
+MODEL_KEY, META_KEY, DEV_DAILY_KEY = f"{PREFIX}/models.json", f"{PREFIX}/meta.json", f"{PREFIX}/stage2_daily.csv"
+SEEDS = tuple(range(1, 21))                              # both halves of the seed-averaged study
+DROP_FEATURES = ("gp_bsp_ae_car", "gp_bsp_mkt_car")      # the cut check (greyhound-cut-check-1120)
 FIRST_DAY = "2026-11-21"          # the first forward day: after the freeze, after every day any study has read
 LEAD_MIN = 10.0                   # a race is served only this long or more before its off
 MIN_FIELD = 4                     # the races a model prices (greyhound/model.py modelling_rows)
@@ -49,9 +53,10 @@ SERVED_COLS = ["day", "race_id", "market_id", "selection_id", "trap", "dog_id", 
 # Freeze
 # --------------------------------------------------------------------------------------------------------------------
 
-def freeze_fit(d: pd.DataFrame, feats: list[str]):
-    """The one fit: every row of ``d`` (wholly priced races grouped by race in time order, with ``day``), the last
-    tenth of its days for early stopping and for the cuts. Returns the booster and its meta."""
+def freeze_fit(d: pd.DataFrame, feats: list[str], seeds: tuple[int, ...] | None = None):
+    """The fits, one a seed (one fit with the study's own seed when none is given): every row of ``d`` (wholly priced
+    races grouped by race in time order, with ``day``), the last tenth of its days for early stopping and for the
+    cuts, which are read off the mean of the fits. Returns the boosters and their meta."""
     from research.greyhound import sp_offset as so
     day = d.day.to_numpy()
     days = np.unique(day)
@@ -61,41 +66,57 @@ def freeze_fit(d: pd.DataFrame, feats: list[str]):
     won = d.won.to_numpy(float)
     base = np.log(np.clip(d.bsp_p_norm.to_numpy(float), 1e-9, 1.0))
     X = d[feats].to_numpy(np.float32, na_value=np.nan)
-    m = so.fit(X[tr], won[tr], race[tr], base[tr], X[es], won[es], race[es], base[es])
-    f_es = m.predict(X[es], num_iteration=m.best_iteration, raw_score=True)
+    Xtr, Xes = X[tr], X[es]
+    del X
+    models = [so.fit(Xtr, won[tr], race[tr], base[tr], Xes, won[es], race[es], base[es],
+                     params=None if sd is None else dict(so.PARAMS, seed=int(sd))) for sd in (seeds or (None,))]
+    f_es = np.mean([m.predict(Xes, num_iteration=m.best_iteration, raw_score=True) for m in models], axis=0)
     s_es = f_es - pd.Series(f_es).groupby(race[es]).transform("mean").to_numpy()
-    meta = {"tag": TAG, "features": list(feats), "rounds": int(m.best_iteration or 0),
+    meta = {"tag": TAG, "features": list(feats), "rounds": [int(m.best_iteration or 0) for m in models],
+            "seeds": [int(x) for x in seeds] if seeds else None,
             "cuts": {name: float(np.quantile(s_es, q)) for name, _, q in so.STAGE2},
             "fit_from": str(day.min()), "fit_to": str(day.max()), "early_stop_from": str(cut),
             "fit_rows": int(len(d)), "fit_races": int(d.race_id.nunique())}
-    return m, meta
+    return models, meta
 
 
 def freeze(store, force: bool = False) -> dict:
     from greyhound import fastloop as fl
+    from research.greyhound.twin_check import flags
     if store.get(META_KEY) and not force:
         return {"note": "already frozen: not fitted again", **json.loads(store.get(META_KEY))}
     df, cmeta = fl.load_cache(store)
-    feats = [f for f in fl.feature_set(cmeta, "card_safe") if f in df.columns and f not in fl.LABELS]
-    d = df[df.bsp_p_norm.notna()]
-    d = d.assign(day=pd.to_datetime(d.t).dt.strftime("%Y-%m-%d"))
+    feats = [f for f in fl.feature_set(cmeta, "card_safe") if f in df.columns and f not in fl.LABELS
+             and f not in DROP_FEATURES]
+    df = df.assign(day=pd.to_datetime(df.t).dt.strftime("%Y-%m-%d"))
+    keep = df.bsp_p_norm.notna().to_numpy()
+    touched = flags(df).touched.to_numpy()               # read on every row: a twin may be an unpriced copy
+    left_out = int(df.race_id[keep & touched].nunique())
+    d = df[keep & ~touched]
     del df
     if str(d.day.max()) >= FIRST_DAY:
         raise SystemExit(f"the cache reaches {d.day.max()}: a forward day ({FIRST_DAY} on) would be in the fit")
-    m, meta = freeze_fit(d, feats)
+    models, meta = freeze_fit(d, feats, seeds=SEEDS)
     meta.update({"cache_hash": cmeta.get("hash"), "cache_last_day": cmeta.get("last_day"), "code_hash": fl.code_hash(),
+                 "touched_races_left_out": left_out, "features_barred": list(DROP_FEATURES),
                  "first_forward_day": FIRST_DAY, "frozen_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")})
-    store.put(MODEL_KEY, m.model_to_string(num_iteration=m.best_iteration).encode())
+    store.put(MODEL_KEY, json.dumps([m.model_to_string(num_iteration=m.best_iteration) for m in models]).encode())
     store.put(META_KEY, json.dumps(meta, indent=1).encode())
     return meta
 
 
 def load_frozen(store):
+    """The frozen fits (a list of boosters) and their meta; (None, None) when nothing is frozen."""
     import lightgbm as lgb
     text, meta = store.get(MODEL_KEY), store.get(META_KEY)
     if not text or not meta:
         return None, None
-    return lgb.Booster(model_str=text.decode()), json.loads(meta)
+    return [lgb.Booster(model_str=t) for t in json.loads(text)], json.loads(meta)
+
+
+def score(models, x: np.ndarray) -> np.ndarray:
+    """The residual: the mean raw score of the frozen fits."""
+    return np.mean([m.predict(x, raw_score=True) for m in models], axis=0)
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -164,7 +185,7 @@ def serve(store, day: date, s3=None, now: datetime | None = None) -> dict:
         raise SystemExit(f"the frozen residual reads features this build no longer makes: {missing[:10]}")
     now = now or datetime.now(timezone.utc)
     x = c[meta["features"]].to_numpy(np.float32, na_value=np.nan)
-    sig = signal(c, m.predict(x, raw_score=True))
+    sig = signal(c, score(m, x))
     off = pd.to_datetime(sig.race_date.astype(str) + " " + sig.race_time.astype(str), errors="coerce") \
         .dt.tz_localize("Europe/London", ambiguous="NaT", nonexistent="NaT").dt.tz_convert("UTC")
     new = sig.assign(day=ds, off_utc=off.dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -267,6 +288,14 @@ def markdown(res: dict) -> str:
     return "\n".join(md)
 
 
+def mean_daily(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """The study's days from several runs of it (the seed halves): each rule's net and risk a day, averaged over the
+    runs (a day a run did not bet counts as nothing)."""
+    x = pd.concat(frames, ignore_index=True).groupby(["rule", "day"], as_index=False)[["net", "risk"]].sum()
+    x[["net", "risk"]] = x[["net", "risk"]] / len(frames)
+    return x
+
+
 def load_settled(store, first: str = FIRST_DAY, last: str | None = None) -> pd.DataFrame:
     last = last or f"{datetime.now(timezone.utc).date():%Y-%m-%d}"
     out, d = [], date.fromisoformat(first)
@@ -288,7 +317,9 @@ def main(argv=None) -> int:
     ap.add_argument("--read", action="store_true")
     ap.add_argument("--date", help="UK racing day, YYYY-MM-DD (default today)")
     ap.add_argument("--days", type=int, default=3, help="--settle: this many days back from --date")
-    ap.add_argument("--dev-daily", help="a stage2_daily.csv to store as the study's days (once)")
+    ap.add_argument("--dev-daily", nargs="+",
+                    help="the study's stage2_daily csv(s) to store as the study's days (once); several (the seed "
+                         "halves) are averaged day by day")
     ap.add_argument("--out", default="out/sp_offset_forward")
     a = ap.parse_args(argv)
     store = Store()
@@ -301,8 +332,10 @@ def main(argv=None) -> int:
         if store.get(DEV_DAILY_KEY):
             res["dev_daily"] = "already stored: not replaced"
         else:
-            store.put(DEV_DAILY_KEY, Path(a.dev_daily).read_bytes())
-            res["dev_daily"] = "stored"
+            buf = io.StringIO()
+            mean_daily([pd.read_csv(f) for f in a.dev_daily]).to_csv(buf, index=False)
+            store.put(DEV_DAILY_KEY, buf.getvalue().encode())
+            res["dev_daily"] = f"stored (the mean of {len(a.dev_daily)} file(s))"
     if a.freeze:
         res["freeze"] = {k: v for k, v in freeze(store).items() if k != "features"}
     if a.serve:
