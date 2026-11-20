@@ -758,11 +758,16 @@ def rest_day(lines, f: pd.DataFrame, day: str, comm: float | None = None) -> pd.
 # behind us), THROUGH (filled only by money traded beyond the price) and THROUGH with BRACKET_LATENCY seconds'
 # delay. A fill later than BRACKET_HEDGE seconds before the market closed cannot be closed at the SP and is left to
 # run to the result (``pnl_gate``). The gate arm is THROUGH+latency; the others are reported, never the gate.
-BRACKET_ARMS = {"front": ("front", 0.0), "shown": ("shown", 0.0), "strict": ("strict", 0.0),
-                "through": ("through", 0.0), "through_1s": ("through", 1.0)}
+# ``calibrated`` (added 20 Nov after the calibration read, ledger greyhound-queue-calibration-1120): the one setting
+# of the replay fitted to the live early-lay orders of 11-12 Nov and TRUSTED on those of 13-14 Nov: the queue as
+# shown, trade-through capped, half the printed volume (Betfair prints both sides of a trade). It carries its own
+# registered gate, greyhound-rest-calibrated-1120; the first gate (through + 1 s) stands beside it.
+BRACKET_ARMS = {"front": ("front", 0.0, 1.0), "shown": ("shown", 0.0, 1.0), "strict": ("strict", 0.0, 1.0),
+                "calibrated": ("shown", 0.0, 0.5), "through": ("through", 0.0, 1.0), "through_1s": ("through", 1.0, 1.0)}
 BRACKET_GATE = ("rest_back_60_m0", "through_1s")
+BRACKET_GATE2 = ("rest_back_60_m0", "calibrated")
 BRACKET_HEDGE = 1.0
-BRACKET_V = "rest_bracket_v1"
+BRACKET_V = "rest_bracket_v2"
 
 
 def rest_bracket_day(lines, f: pd.DataFrame, day: str, comm: float | None = None) -> pd.DataFrame:
@@ -775,10 +780,11 @@ def rest_bracket_day(lines, f: pd.DataFrame, day: str, comm: float | None = None
     if not base:
         return pd.DataFrame()
     orders = []
-    for arm, (mode, lat) in BRACKET_ARMS.items():
+    for arm, (mode, lat, vol) in BRACKET_ARMS.items():
         for o in base:
             orders.append(sr.SimOrder(market=o.market, sid=o.sid, side=o.side, price=o.price, size=o.size,
-                                      t=o.t + timedelta(seconds=lat), tag=f"{o.tag}|{arm}", mode=mode))
+                                      t=o.t + timedelta(seconds=lat), tag=f"{o.tag}|{arm}", mode=mode,
+                                      vol_factor=vol))
     df = sr.replay(lines, orders, vol_factor=1.0, comm=commission() if comm is None else comm, through_cap=True,
                    to_close=True)
     m = df.matched.where(df.matched > 0)
@@ -1161,10 +1167,11 @@ def main(argv=None) -> int:
         br = pd.concat(b_parts, ignore_index=True) if b_parts else pd.DataFrame()
         md += ["", f"### The fill bracket ({first or 'the day after ' + TRADE2_REGISTERED} to {a.bracket}; ledger "
                "greyhound-rest-bracket-1120)", "",
-               "The resting test's 60 s orders under five fills. Returns a unit of matched stake; t by day. 'Gate "
+               "The resting test's 60 s orders under six fills ('calibrated': the setting that reproduced the live "
+               "early-lay orders, greyhound-queue-calibration-1120). Returns a unit of matched stake; t by day. 'Gate "
                f"settlement': closed at the SP unless the last fill came within {BRACKET_HEDGE:g} s of the close, "
-               f"then left to the result. The gate is {BRACKET_GATE[0]} under {BRACKET_GATE[1]}; every other row is "
-               "context.", ""]
+               f"then left to the result. The gates: {BRACKET_GATE[0]} under {BRACKET_GATE[1]} (greyhound-rest-bracket-"
+               f"1120) and under {BRACKET_GATE2[1]} (greyhound-rest-calibrated-1120); every other row is context.", ""]
         bs = bracket_scores(br)
         if len(bs):
             md += ["| Rule | Arm | Orders | Matched | Share | Days | At the SP % | t | 90% | Gate settlement % | t | 90% | "
@@ -1176,20 +1183,21 @@ def main(argv=None) -> int:
                           f"{r['days']} | {r['pnl_sp%']} | {r['pnl_sp_t']} | {r['pnl_sp_ci90%']} | {r['pnl_gate%']} | "
                           f"{r['pnl_gate_t']} | {r['pnl_gate_ci90%']} | {r['late_fills']} | {r['pnl_win%']} | "
                           f"{r['pnl_win_t']} |")
-            g = br[(br.rule == BRACKET_GATE[0]) & (br.arm == BRACKET_GATE[1]) & br.placed & (br.matched > 0)]
-            if len(g):
-                from research.greyhound.trial_count import greyhound_trials
-                from research.overfit import dsr_check
-                per_day = g.groupby("day").pnl_gate.mean().dropna().to_numpy()
-                dsr = dsr_check(per_day, greyhound_trials())
-                md += ["", f"The gate ({BRACKET_GATE[0]}, {BRACKET_GATE[1]}), daily returns: deflated Sharpe "
-                       f"{dsr.get('dsr')} at {dsr.get('n_trials'):,} rules over {dsr.get('n_obs')} days "
-                       f"(passed: {dsr.get('passed')}; {dsr.get('reason') or 'cleared'})."]
+            for gate in (BRACKET_GATE, BRACKET_GATE2):
+                g = br[(br.rule == gate[0]) & (br.arm == gate[1]) & br.placed & (br.matched > 0)]
+                if len(g):
+                    from research.greyhound.trial_count import greyhound_trials
+                    from research.overfit import dsr_check
+                    per_day = g.groupby("day").pnl_gate.mean().dropna().to_numpy()
+                    dsr = dsr_check(per_day, greyhound_trials())
+                    md += ["", f"The gate ({gate[0]}, {gate[1]}), daily returns: deflated Sharpe "
+                           f"{dsr.get('dsr')} at {dsr.get('n_trials'):,} rules over {dsr.get('n_obs')} days "
+                           f"(passed: {dsr.get('passed')}; {dsr.get('reason') or 'cleared'})."]
             md += ["", "The forecast on the rows that fill (the 'all' rules; gain = the mid's squared error on log SP "
                    "less the forecast's; log(SP / mid) above 0 = the runner drifted after the order):", "",
                    "| Arm | Rows | n | Days | Gain over the mid | t | 90% | Mean log(SP / mid) | t |",
                    "|---|---|---|---|---|---|---|---|---|"]
-            for arm in ("shown", "through"):
+            for arm in ("calibrated", "shown", "through"):
                 for r in fill_conditional(br, arm):
                     md.append(f"| {r['arm']} | {r['rows']} | {r['n']} | {r['days']} | {r['gain_over_mid']} | "
                               f"{r['gain_t']} | {r['gain_ci90']} | {r['log_sp_over_mid']} | {r['move_t']} |")

@@ -139,3 +139,29 @@ Every trade on the recorded Exchange Stream, 5-19 Nov (15 days, GBP30.2m of sign
 - **The spread decides whether a maker is paid** (WIN, net): at a 1-tick spread both sides lose (-0.38% lays, -0.43% backs); at 2 ticks both earn (+0.38%, +0.29%); resting lays at 3-4 ticks +1.28% and at 5 or more +2.51% (1.85 to 3.16). In the 5 to 2 minute window a resting lay earns -0.14% at 1 tick, +1.07% at 2, +2.37% at 3-4, +2.76% at 5+.
 - **What it says about the two fill models.** The early lay rests minutes before the off, where resting lays that traded did earn about +0.8% to +1.0%: the queue-aware replay's +1.3% is the right size for the average resting lay there. The through fill's -2% is the worst slice of those fills (only when the price trades through the order). A real order earns something between the two, set by its place in the queue; build 4 reads which from the live orders.
 - **What it does not say.** These are averages over every maker, most of them ahead of us in the queue; an order that joins the back of a 1-tick queue gets the fills the others did not want. The cells are 15 days read once after the fact; any rule built on a cell (rest lays only at 2 ticks or wider, 15 to 2 minutes out) is a new registration with its cell count, read on forward days. The census read 19 Nov, so such a rule's forward days start on 21 Nov.
+
+## Build 4 result: the stream queue model against the live orders (20 Nov; run 44722114865; ledger `greyhound-queue-calibration-1120`)
+
+The exact live early-lay orders replayed on the recorded stream under 32 settings. Fit on 11-12 Nov (824 orders, 246 matched live), judged once on 13-14 Nov (737 orders, 257 matched live). P&L of both sides closed at the SP, GBP, before commission.
+
+| Replay setting | Days | Live fill rate | Replay fill rate | Same orders fill | Phantom / missed orders | Live P&L at the SP | Replay P&L at the SP | Gap |
+|---|---|---|---|---|---|---|---|---|
+| queue as shown, capped trade-through, half the printed volume (chosen) | fit 11-12 Nov | 30.0% | 30.6% | 98.7% | 8 / 3 | +2.71 | +1.62 | -1.08 |
+| queue as shown, capped trade-through, half the printed volume (chosen) | judge 13-14 Nov | 34.9% | 35.5% | 98.8% | 7 / 2 | -172.40 | -179.74 | -7.34 |
+| the same at the full printed volume (the resting test's own) | fit 11-12 Nov | 30.0% | 30.7% | 98.8% | 8 / 2 | +2.71 | +29.73 | +27.02 |
+| the same at the full printed volume (the resting test's own) | judge 13-14 Nov | 34.9% | 35.5% | 98.8% | 7 / 2 | -172.40 | -151.40 | +21.00 |
+| queue as shown, uncapped, full volume (the 14 Nov reconciliation's) | fit 11-12 Nov | 30.0% | 30.7% | 98.8% | 8 / 2 | +2.71 | +64.35 | +61.65 |
+| queue as shown, uncapped, full volume (the 14 Nov reconciliation's) | judge 13-14 Nov | 34.9% | 35.5% | 98.8% | 7 / 2 | -172.40 | -121.13 | +51.27 |
+| as the resting test's, order 1 s late | fit 11-12 Nov | 30.0% | 27.4% | 97.4% | 0 / 21 | +2.71 | -34.67 | -37.38 |
+| as the resting test's, order 1 s late | judge 13-14 Nov | 34.9% | 33.7% | 98.0% | 3 / 12 | -172.40 | -195.34 | -22.94 |
+| through-only | fit 11-12 Nov | 30.0% | 24.8% | 93.0% | 7 / 50 | +2.71 | -66.94 | -69.65 |
+| through-only | judge 13-14 Nov | 34.9% | 29.3% | 92.8% | 6 / 47 | -172.40 | -265.18 | -92.78 |
+| through-only, order 1 s late | fit 11-12 Nov | 30.0% | 23.5% | 93.5% | 0 / 53 | +2.71 | -114.13 | -116.84 |
+| through-only, order 1 s late | judge 13-14 Nov | 34.9% | 28.1% | 92.7% | 2 / 52 | -172.40 | -292.28 | -119.88 |
+
+- **A setting reproduces the live orders: TRUSTED.** Queue as shown, trade-through capped, half the printed volume, no latency. On the judge days it fills 35.6% of orders against live's 34.9%, the same orders fill on 98.8%, and its P&L at the SP is within GBP7 of live's (-179.74 against -172.40). Half the printed volume is what Betfair's two-sided volume print implies.
+- **The through-only fill is too harsh, not the truth.** It misses 47 to 53 fills live really got, sits 5.6 to 6.9 points under live's fill rate and GBP93 to GBP129 under live's P&L on the judge days: NOT TRUSTED. The live rule's "-2% a day on the through fill" overstated the loss.
+- **The uncapped full-volume replay is too kind**: +GBP51 and +GBP62 over live (the reason the 14 Nov reconciliation refused it).
+- **A second of latency costs about GBP23 to GBP60** on these days and loses 12 to 21 real fills.
+- **But the live early lay itself did not make money at the SP**: +GBP2.71 on 11-12 Nov and -GBP172.40 on 13-14 Nov on 503 matched lays. The fill model is now proven; the rule it was proven on is flat to losing. The paper forward test's +1.31% a day is the paper rule's own orders (decided on the recorder's books, about 90 s stale), not what the live trader placed: that gap is now the open question, and it is a question about the orders, not the fills.
+- **What changes.** Queue-replay results are no longer "fill unproven": they are read under the trusted setting. The fill bracket gains that setting as an arm ("calibrated") with its own registered gate (`greyhound-rest-calibrated-1120`); the first gate (through + 1 s) stands as registered, now known to be the harsh bound.

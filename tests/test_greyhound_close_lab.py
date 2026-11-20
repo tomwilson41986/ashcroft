@@ -292,6 +292,7 @@ def test_the_fill_bracket_reads_one_order_under_every_arm():
     lay = b[b.rule == "rest_lay_60_m3"].set_index("arm")
     assert set(lay.index) == set(cl.BRACKET_ARMS)
     assert (lay.loc[["front", "shown", "strict"], "matched"] > 0).all()
+    assert lay.loc["calibrated", "matched"] == pytest.approx(5.0)       # half of the 30 printed: 15, less the 10 ahead
     assert (lay.loc[["through", "through_1s"], "matched"] == 0).all()
     assert lay.loc["shown", "pnl_sp"] == pytest.approx(1 - 4.0 / 5.0, abs=1e-3) and not lay.loc["shown", "late_fill"]
     assert lay.loc["shown", "pnl_gate"] == pytest.approx(lay.loc["shown", "pnl_sp"])
