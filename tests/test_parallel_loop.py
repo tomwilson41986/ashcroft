@@ -544,3 +544,30 @@ def test_the_float32_plan_keeps_double_what_a_block_or_the_report_reads():
     assert E.float32_plan(a) == ((), None)
     a.blocks, a.withhold = "market_rating", "freshness"
     assert E.float32_plan(a)[0] == ()
+
+
+def test_the_figure_label_reads_the_results_columns_and_refuses_a_frame_cut_to_the_inputs():
+    """Iteration 131's first run built the label after the frame was cut to the model's inputs: no margins, no
+    prize, so every figure was 0 or missing and the member predicted 0.0 for every runner. The label is non-trivial
+    on a frame with the results' columns and refused on one without."""
+    import evaluate_oos as E
+    from tests import test_feature_blocks as F
+    base = F._history()
+    label = E.figure_label(base)
+    assert np.isfinite(label).mean() > 0.5 and np.nanstd(label) > 0
+    cut = base.drop(columns=[c for c in ("LB", "total_dst_bt") if c in base.columns])
+    with pytest.raises(ValueError, match="lacks"):
+        E.figure_label(cut)
+    with pytest.raises(ValueError, match="lacks"):
+        E.figure_label(base.drop(columns=["prize_money"]))
+
+
+def test_a_figure_member_that_predicts_one_value_is_refused():
+    import evaluate_oos as E
+    rng = np.random.default_rng(3)
+    days = pd.date_range("2022-01-01", "2025-06-30", freq="D")
+    df = pd.DataFrame({"race_date": np.repeat(days, 20), "x": rng.normal(size=len(days) * 20)})
+    schedule = dict(min_train_days=365, val_window_days=90, step_days=90, cfg=E.TrainConfig(), eval_from="2025-01-01",
+                    eval_until=None, fold_anchor=None, train_from=None)
+    with pytest.raises(ValueError, match="every prediction"):
+        E.figure_walk_forward(df, ["x"], np.zeros(len(df)), schedule)

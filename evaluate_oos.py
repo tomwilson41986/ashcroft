@@ -306,6 +306,15 @@ def figure_label(df: pd.DataFrame) -> np.ndarray:
     field-size spread s(n), plus GAMMA x class (log prize less the code's median), GAMMA the block's own choice on the
     races before its FIT_UNTIL. Post-race: a label, never a feature. NaN for a run with no margin (a non-finisher)."""
     from model.blocks import nbl_rating as nb
+    # The label is read from the results' own columns, so it is built before the frame is cut down to the model's
+    # inputs. Iteration 131's first run built it after: with the margins and the prize gone every finisher's figure
+    # was missing, every winner's was 0, the member learned 0 and predicted 0.0 for every runner (20 Nov 2026).
+    lacking = [c for c in ("placing_numerical", "prize_money", "dist_furlongs") if c not in df.columns]
+    if "LB" not in df.columns and "total_dst_bt" not in df.columns:
+        lacking.append("LB or total_dst_bt")
+    if lacking:
+        raise ValueError(f"the figure label reads the results' columns and the frame lacks {lacking}: "
+                         "build it before the frame is cut to the model's inputs")
     reads = [c for c in nb.READS if c in df.columns]
     gamma = nb.build(df[reads].copy()).attrs.get("nb_gamma", nb.GAMMA_DEFAULT)
     p = nb.run_parts(df)
@@ -315,8 +324,14 @@ def figure_label(df: pd.DataFrame) -> np.ndarray:
         sel = p["early"] & (p["jumps"] == j)
         med[j] = np.nanmedian(p["prize"][sel]) if sel.any() else np.nanmedian(p["prize"])
     cls = np.nan_to_num(p["prize"] - np.where(p["jumps"], med[True], med[False]), nan=0.0)
-    log.info("figure label: GAMMA %s", gamma)
-    return p["rel"] / s + gamma * cls
+    label = p["rel"] / s + gamma * cls
+    have = np.isfinite(label)
+    beaten = have & (p["rel"] != 0)
+    log.info("figure label: GAMMA %s; %d of %d runs with a figure, %d of them not a race's level, sd %.3f",
+             gamma, int(have.sum()), len(label), int(beaten.sum()), float(np.nanstd(label)) if have.any() else 0.0)
+    if have.mean() < 0.5 or beaten.sum() < 0.5 * have.sum() or not np.nanstd(label) > 0:
+        raise ValueError("the figure label is degenerate (too few runs with a margin): nothing to learn")
+    return label
 
 
 def figure_walk_forward(df: pd.DataFrame, feature_cols: list[str], label: np.ndarray, schedule: dict,
@@ -336,6 +351,8 @@ def figure_walk_forward(df: pd.DataFrame, feature_cols: list[str], label: np.nda
         del X
         val = df.loc[va_mask].copy()
         val["predicted_figure"] = model.predict(val[feature_cols].to_numpy(dtype=np.float32))
+        if not val["predicted_figure"].std() > 0:
+            raise ValueError(f"figure fold {fold_idx}: every prediction is {val['predicted_figure'].iloc[0]!r}")
         val["fold_idx"] = fold_idx
         out.append(val)
     return pd.concat(out, ignore_index=True) if out else pd.DataFrame()
@@ -850,6 +867,9 @@ def float32_plan(args) -> tuple[tuple, set | None]:
         return (), reads                      # names dropped by file or by block: left to the cast, as before
     prefixes = tuple(p.strip() for p in (args.drop_features or "").split(",") if p.strip())
     keep = reads | set(CARRY)
+    if getattr(args, "figure_target", False):
+        from model.blocks import nbl_rating as nb
+        keep |= set(nb.READS)                 # the figure label is built from these, in double precision
     return tuple(c for c in ALL_FEATURE_COLS if c not in keep and not (prefixes and c.startswith(prefixes))), reads
 
 
@@ -1193,6 +1213,9 @@ def main():
     )
     missing_features = [c for c in wanted if c not in df.columns]
 
+    # the figure member's label, from the results' own columns, before they are cast or cut away
+    figure = figure_label(df) if args.figure_target else None
+
     if args.float32:
         # The model's float64 inputs to single precision now, before the folds copy
         # them: the matrix itself halves too.
@@ -1248,8 +1271,7 @@ def main():
     feature_cache.release_memory()
 
     if args.figure_target:
-        label = figure_label(df)
-        oos = figure_walk_forward(df, feature_cols_full, label, schedule, only_fold=args.fold)
+        oos = figure_walk_forward(df, feature_cols_full, figure, schedule, only_fold=args.fold)
         if oos.empty:
             log.error("No out-of-sample predictions generated.")
             sys.exit(1)
