@@ -243,3 +243,22 @@ A race softmax on the winner that starts at the BSP's own log chance and may onl
 - **The registered placebo proves nothing, and that is my fault.** Shuffling the winner within the race, with the BSP as the starting score, teaches the trees to undo the BSP (772 rounds, gain -0.123): its interval is "at or below zero" for a reason that says nothing about a leak. A second placebo is added and registered before its run: each fit race's feature rows dealt at random among its runners, so nothing a dog's own card says can be learnt and the gain must be nothing.
 - **It is small.** 0.00065 a race is 0.04% of the loss. The models are small too (60 to 214 rounds of 15 leaves). The features carrying it in the last fold: recent trouble in running (`trouble_mean3`, `trouble_mean1`, `trouble_mean6`), the trainer's record against the market (`trainer_ae`, `gp_trainer30_ae`), the trainer's share at the track, the sire, a class drop's record, days since the last run.
 - **A gain in log-loss is not a bet.** Commission takes 2% of a winning back, and a bet at the SP must be chosen without seeing the SP. Stage 2, registered next, tests exactly that with the card-only residual.
+
+## Build 6, stage 2: bets at the SP from the card-only residual (20 Nov; run 44729248379; ledger `greyhound-sp-offset-stage2-1120`)
+
+Same fits as stage 1. The second placebo, then six rules at the SP chosen from the residual centred on its race (no price of the race in it), cuts from each fit's early-stopping days. A back of 1 or a lay risking 1, netted by race, 2% off a gain; return on the money at risk, 90% interval by day.
+
+**The second placebo is clean.** Each fit race's feature rows dealt at random among its runners: the fit stops after 1 round and its gain is +0.000003 (-0.000015 to +0.000021). The stage 1 gain is not an artefact of the method.
+
+| Rule | Bets | Return | 90% | t | 2024 | 2025 | Jan - May 2026 | Mean BSP |
+|---|---|---|---|---|---|---|---|---|
+| Back the top 10% | 64,452 | **+4.99%** | 2.98 to 6.99 | 4.09 | +4.49% | +4.59% | +7.19% | 11.3 |
+| Back the top 5% | 31,444 | +6.67% | 3.66 to 9.69 | 3.64 | +3.38% | +6.51% | +15.10% | 11.5 |
+| Back the top 2% | 12,139 | +7.20% | 2.36 to 12.04 | 2.45 | +0.22% | +7.41% | +23.25% | 11.6 |
+| Lay the bottom 10% | 64,935 | +0.99% | 0.67 to 1.30 | 5.08 | +0.88% | +0.77% | +1.80% | 11.4 |
+| Lay the bottom 5% | 31,987 | +1.30% | 0.86 to 1.74 | 4.82 | +0.78% | +0.94% | +3.51% | 11.9 |
+| Lay the bottom 2% | 12,697 | +0.94% | 0.22 to 1.67 | 2.14 | +0.58% | +0.45% | +3.01% | 12.6 |
+
+- **By the registered reading all six rules pass this development stage**: each pooled interval is above zero and each rule is positive in all three test years.
+- **It is not accepted yet.** A back that returns 5% at the Betfair SP after commission on 64,452 bets contradicts everything else in this file (the SP's bias by segment: 0 of 17,822 rules; build 5: the SP fair to the commission). The likeliest explanation of a result this good is a fault, and the one the two placebos cannot see is a feature that reads something of its own race's result. The check for exactly that exists (`greyhound.live --check-card`: a past day's features built from the morning card against the same day built from the results, feature by feature) and was last read on 6 Oct, when the model had 316 features, not 408. It is running now for 12 Nov (run 44730736615). **Until it is read, treat the table above as unverified.**
+- If the features are clean, the next step is the one registered: the residual served each day from the card and read on forward days from 21 Nov, with the deflated Sharpe at every greyhound rule counted (a t of 5.8). The development t-statistics here are 2.1 to 5.1.
