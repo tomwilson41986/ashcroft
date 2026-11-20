@@ -65,9 +65,17 @@ def read_gain(day: np.ndarray, ll_bsp: np.ndarray, ll_model: np.ndarray) -> dict
             "t": None if r["t"] is None else round(r["t"], 2)}
 
 
-def run_fold(d: pd.DataFrame, feats: list[str], test_from: str, test_to: str, shuffle_seed: int | None = None) -> dict:
+STAGE2 = (("back_top10", "back", 0.90), ("back_top5", "back", 0.95), ("back_top2", "back", 0.98),
+          ("lay_bottom10", "lay", 0.10), ("lay_bottom5", "lay", 0.05), ("lay_bottom2", "lay", 0.02))
+
+
+def run_fold(d: pd.DataFrame, feats: list[str], test_from: str, test_to: str, shuffle_seed: int | None = None,
+             feature_shuffle_seed: int | None = None) -> dict:
     """One fold on a frame of wholly priced races grouped by race in time order: fit before ``test_from`` (the last
-    tenth of the fit days for early stopping), read ``test_from``..``test_to``. ``shuffle_seed``: the placebo."""
+    tenth of the fit days for early stopping), read ``test_from``..``test_to``. ``shuffle_seed``: the first placebo
+    (the winner shuffled within the race in the fit). ``feature_shuffle_seed``: the second (20 Nov 2026: each fit
+    race's feature rows dealt at random among its runners, so nothing a dog's own card says can be learnt and the
+    gain must be nothing; the first placebo teaches the trees to undo the BSP and proves nothing about a leak)."""
     day = d.day.to_numpy()
     fit_i = np.flatnonzero(day < test_from)
     te_i = np.flatnonzero((day >= test_from) & (day <= test_to))
@@ -82,18 +90,72 @@ def run_fold(d: pd.DataFrame, feats: list[str], test_from: str, test_to: str, sh
         won[fit_i] = _shuffle_within(won, race, np.random.default_rng(shuffle_seed))[fit_i]
     base = np.log(np.clip(d.bsp_p_norm.to_numpy(float), 1e-9, 1.0))
     X = lambda rows: d[feats].to_numpy(np.float32, na_value=np.nan)[rows]
-    m = fit(X(tr_i), won[tr_i], race[tr_i], base[tr_i], X(es_i), won[es_i], race[es_i], base[es_i])
+    if feature_shuffle_seed is not None:
+        deal = _deal_within(race, np.random.default_rng(feature_shuffle_seed))
+        Xf = lambda rows: d[feats].to_numpy(np.float32, na_value=np.nan)[deal[rows]]
+    else:
+        Xf = X
+    m = fit(Xf(tr_i), won[tr_i], race[tr_i], base[tr_i], Xf(es_i), won[es_i], race[es_i], base[es_i])
     true_won = d.won.to_numpy(float)
-    z = base[te_i] + m.predict(X(te_i), num_iteration=m.best_iteration, raw_score=True)
+    f_te = m.predict(X(te_i), num_iteration=m.best_iteration, raw_score=True)
+    z = base[te_i] + f_te
     rc, ll_m = race_ll(z, true_won[te_i], race[te_i])
     _, ll_b = race_ll(base[te_i], true_won[te_i], race[te_i])
     first = pd.Series(day[te_i]).groupby(race[te_i]).first()
     out = read_gain(first.reindex(rc).to_numpy(), ll_b, ll_m)
     imp = pd.Series(m.feature_importance("gain"), index=feats).sort_values(ascending=False)
     out.update({"test": [test_from, test_to], "fit_rows": int(len(fit_i)), "fit_from": str(day[fit_i].min()),
-                "rounds": int(m.best_iteration or 0), "placebo": shuffle_seed is not None,
+                "rounds": int(m.best_iteration or 0),
+                "placebo": shuffle_seed is not None or feature_shuffle_seed is not None,
                 "top_features": [(k, round(float(v), 1)) for k, v in imp.head(12).items() if v > 0]})
     out["_per_race"] = pd.DataFrame({"day": first.reindex(rc).to_numpy(), "ll_bsp": ll_b, "ll_model": ll_m})
+    if "bsp" in d and shuffle_seed is None and feature_shuffle_seed is None:
+        # stage 2: the residual centred on its race, a card-only signal (no price of the race in it); its cuts are
+        # read off the early-stopping days of the fit, never off the test
+        centre = lambda v, r: v - pd.Series(v).groupby(r).transform("mean").to_numpy()
+        s_es = centre(m.predict(X(es_i), num_iteration=m.best_iteration, raw_score=True), race[es_i])
+        out["cuts"] = {name: float(np.quantile(s_es, q)) for name, _, q in STAGE2}
+        out["_runners"] = pd.DataFrame({"day": day[te_i], "race_id": d.race_id.to_numpy()[te_i],
+                                        "won": true_won[te_i], "bsp": d.bsp.to_numpy(float)[te_i],
+                                        "s": centre(f_te, race[te_i])})
+    return out
+
+
+def _deal_within(race: np.ndarray, rng) -> np.ndarray:
+    """A row index for every row: another row of the same race, the race's rows dealt at random (grouped by race)."""
+    order = np.lexsort((rng.random(len(race)), race))
+    out = np.empty(len(race), dtype=np.int64)
+    out[np.lexsort((np.arange(len(race)), race))] = order
+    return out
+
+
+def stage2(folds: list[dict], comm: float, n_trials: int) -> dict:
+    """Bets at the SP chosen by the card-only residual: a back of 1 on a runner whose centred residual is in the top
+    10, 5 or 2% (cuts from the fit's early-stopping days), a lay risking 1 on the bottom 10, 5 or 2%; netted by race,
+    commission off a gain (research/greyhound/sp_harness.py). Each rule by fold and pooled."""
+    from research.greyhound.sp_harness import read, settle
+    out = {"rules": []}
+    for name, side, _ in STAGE2:
+        per_fold, parts = [], []
+        for f in folds:
+            r = f.get("_runners")
+            if r is None:
+                continue
+            cut = f["cuts"][name]
+            b = r[(r.s >= cut) if side == "back" else (r.s <= cut)]
+            st = settle(b.assign(side=side), comm) if len(b) else pd.DataFrame(columns=["day", "race_id", "risk", "gross", "net"])
+            parts.append(st)
+            one = read(st, n_trials) if len(st) else {"bets": 0}
+            per_fold.append({"test": f["test"], "bets": one.get("bets"), "roi_%": one.get("roi_%"),
+                             "roi_90%": one.get("roi_90%"), "mean_bsp": round(float(b.bsp.mean()), 2) if len(b) else None,
+                             "cut": round(cut, 4)})
+        allp = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+        pooled = read(allp, n_trials) if len(allp) else {"bets": 0}
+        pos = sum(1 for x in per_fold if (x.get("roi_%") or 0) > 0)
+        lo = (pooled.get("roi_90%") or [None])[0]
+        out["rules"].append({"rule": name, "pooled": pooled, "folds": per_fold, "folds_positive": pos,
+                             "pass": bool(lo is not None and lo > 0 and pos >= 2)})
+    out["passed"] = [r["rule"] for r in out["rules"] if r["pass"]]
     return out
 
 
@@ -106,15 +168,22 @@ def _shuffle_within(won: np.ndarray, race: np.ndarray, rng) -> np.ndarray:
     return out
 
 
-def run(d: pd.DataFrame, feats: list[str], folds=FOLDS) -> dict:
+def run(d: pd.DataFrame, feats: list[str], folds=FOLDS, stage2_args: tuple | None = None) -> dict:
     res = {"tag": TAG, "features": len(feats), "folds": [], "rows": int(len(d)), "races": int(d.race_id.nunique())}
-    parts = []
+    parts, kept = [], []
     for a, b in folds:
         f = run_fold(d, feats, a, b)
-        log.info("fold %s..%s: %s", a, b, {k: v for k, v in f.items() if k not in ("_per_race", "top_features")})
+        log.info("fold %s..%s: %s", a, b, {k: v for k, v in f.items() if k not in ("_per_race", "_runners", "top_features")})
         if "_per_race" in f:
             parts.append(f.pop("_per_race"))
+        kept.append(dict(f))
+        f.pop("_runners", None)
         res["folds"].append(f)
+    if stage2_args is not None and any("_runners" in k for k in kept):
+        res["stage2"] = stage2(kept, *stage2_args)
+    p2 = run_fold(d, feats, *folds[0], feature_shuffle_seed=11)
+    p2.pop("_per_race", None)
+    res["placebo_features_fold_1"] = p2
     if parts:
         x = pd.concat(parts, ignore_index=True)
         res["pooled"] = read_gain(x.day.to_numpy(), x.ll_bsp.to_numpy(), x.ll_model.to_numpy())
@@ -145,7 +214,23 @@ def markdown(res: dict) -> str:
         md.append(row(" to ".join(f["test"]), f) if "gain" in f else f"| {' to '.join(f['test'])} | {f.get('note')} |")
     if res.get("pooled"):
         md.append(row("Pooled", res["pooled"]))
-    md.append(row("Placebo (fold 1, winner shuffled in the fit)", res["placebo_fold_1"]))
+    md.append(row("Placebo 1 (fold 1, winner shuffled in the fit: teaches the trees to undo the BSP)", res["placebo_fold_1"]))
+    if res.get("placebo_features_fold_1"):
+        md.append(row("Placebo 2 (fold 1, each fit race's feature rows dealt at random)", res["placebo_features_fold_1"]))
+    if res.get("stage2"):
+        md += ["", "### Stage 2: bets at the SP chosen by the card-only residual", "",
+               "A back of 1 (top of the centred residual) or a lay risking 1 (bottom), cuts from each fit's early-"
+               "stopping days, netted by race, 2% off a gain. Return on the money at risk, 90% by day.", "",
+               "| Rule | Bets | Return % | 90% | t | 2024 | 2025 | Jan-May 2026 | Mean BSP | Folds positive | Pass |",
+               "|---|---|---|---|---|---|---|---|---|---|---|"]
+        for r in res["stage2"]["rules"]:
+            p, fs = r["pooled"], r["folds"]
+            cell = lambda x: f"{x.get('roi_%')} ({x.get('bets')})"
+            mb = [x.get("mean_bsp") for x in fs if x.get("mean_bsp") is not None]
+            md.append(f"| {r['rule']} | {p.get('bets')} | {p.get('roi_%')} | {p.get('roi_90%')} | {p.get('t')} | "
+                      + " | ".join(cell(x) for x in fs) + f" | {round(float(np.mean(mb)), 2) if mb else ''} | "
+                      f"{r['folds_positive']} | {r['pass']} |")
+        md += ["", f"Passed stage 2: {res['stage2']['passed'] or 'none'}."]
     md += ["", f"Reading: {json.dumps(res['reading'])}", "",
            "Top features by gain, last fold: " + ", ".join(f"{k} ({v})" for k, v in res["folds"][-1].get("top_features", []))]
     return "\n".join(md)
@@ -164,7 +249,9 @@ def main(argv=None) -> int:
     d = d.assign(day=pd.to_datetime(d.t).dt.strftime("%Y-%m-%d"))
     log.info("cache: %d rows, %d wholly priced; %d features; %s to %s", len(df), len(d), len(feats), d.day.min(), d.day.max())
     del df
-    res = run(d, feats)
+    from greyhound.costs import commission
+    from research.greyhound.trial_count import greyhound_trials
+    res = run(d, feats, stage2_args=(commission(), greyhound_trials()))
     res["cache"] = {"hash": meta.get("hash"), "last_day": meta.get("last_day"), "first_day": str(d.day.min())}
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
