@@ -1307,7 +1307,7 @@ def main():
                 json.dump({"kind": "figure", "n_predictions": len(oos), "n_folds": int(oos["fold_idx"].nunique()),
                            "n_features_used": len(feature_cols_full), "fold": args.fold, "tag": tag,
                            "figure_params": FIGURE_PARAMS, "figure_rounds": FIGURE_ROUNDS,
-                           "elapsed_seconds": round(time.time() - started, 1), "cpu": _cpu_model(),
+                           "elapsed_seconds": round(time.time() - started, 1), "cpu": _cpu_model(), "cpu_count": os.cpu_count(),
                            "missing_features": missing_features}, f, indent=2, default=str)
         return
 
@@ -1403,7 +1403,7 @@ def main():
             "history": {"start_date": args.start_date, "fold_anchor": args.fold_anchor,
                         "train_from": args.train_from},
             "elapsed_seconds": round(time.time() - started, 1),
-            "cpu": _cpu_model(),
+            "cpu": _cpu_model(), "cpu_count": os.cpu_count(),
             "fold_fits": oos.attrs.get("fold_fits", []),
             "folds_early_stopped": sum(
                 1 for f in oos.attrs.get("fold_fits", []) if f["early_stopped"]
