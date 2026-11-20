@@ -57,6 +57,8 @@ def evaluate(orders_by_day: dict[str, pd.DataFrame], n_grid: int) -> dict:
     from greyhound.laytest import _select
     from research.greyhound.limit_study import rule_table
     from research.overfit import dsr_check
+    from research.greyhound.trial_count import greyhound_trials
+    n_trials = greyhound_trials(max(n_grid, 1))          # every greyhound rule in the ledger, never fewer than this study's own
     days = sorted(orders_by_day)
     allo = pd.concat([orders_by_day[d] for d in days], ignore_index=True) if days else pd.DataFrame()
     out = {"days": len(days), "first": days[0] if days else None, "last": days[-1] if days else None,
@@ -73,7 +75,7 @@ def evaluate(orders_by_day: dict[str, pd.DataFrame], n_grid: int) -> dict:
         t = rule_table(pos, days=days)
         row = t.iloc[0].to_dict() if len(t) else {}
         r = race_returns(pos)
-        dsr = dsr_check(r, n_trials=max(n_grid, 1))
+        dsr = dsr_check(r, n_trials=n_trials)
         out["rules"][name] = {k: (row.get(k) if not isinstance(row.get(k), (np.floating, np.integer)) else row.get(k).item())
                               for k in ("trades", "per_day", "active_days", "risk", "net", "roi%", "roi_90%",
                                         "clv_mean%", "held_roi%")}
