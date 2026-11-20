@@ -314,9 +314,15 @@ def main(argv=None) -> int:
                     help="N: the study twice, on the mean of seeds 1..N and of seeds N+1..2N (greyhound-sp-offset-seeds-1120)")
     ap.add_argument("--drop-twins", action="store_true",
                     help="leave out every race a twin row or a short gap touches (research/greyhound/twin_check.py)")
+    ap.add_argument("--drop-features", default="",
+                    help="features the residual may not read, comma-separated (the cut check's: greyhound-cut-check-1120)")
     a = ap.parse_args(argv)
     df, meta = fl.load_cache(Store())
-    feats = [f for f in fl.feature_set(meta, "card_safe") if f in df.columns and f not in fl.LABELS]
+    barred = {x.strip() for x in a.drop_features.split(",") if x.strip()}
+    feats = [f for f in fl.feature_set(meta, "card_safe") if f in df.columns and f not in fl.LABELS and f not in barred]
+    missing = sorted(barred - set(df.columns))
+    if missing:
+        raise SystemExit(f"--drop-features names features the cache does not hold: {missing}")
     df = df.assign(day=pd.to_datetime(df.t).dt.strftime("%Y-%m-%d"))
     keep = df.bsp_p_norm.notna().to_numpy()
     dropped = 0
