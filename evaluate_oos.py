@@ -172,8 +172,13 @@ def walk_forward_predict(
     fold_anchor: str | None = None,
     train_from: str | None = None,
     train_code: str | None = None,
+    release_frame: bool = False,
 ) -> pd.DataFrame:
     """Train and predict in walk-forward fashion.
+
+    `release_frame` (with `only_fold`): drop this function's name on `df` once the fold's rows are copied out,
+    before the fit. It frees the matrix only where the caller holds no other name on it; the predictions are the
+    same either way (tests/test_parallel_loop.py).
 
     `train_code` ("jumps" or "flat") fits each fold on that code's rows only (hurdles, chases and
     bumpers; or the Flat and all-weather) and still prices every validation row: a specialist model,
@@ -201,6 +206,7 @@ def walk_forward_predict(
     cfg = cfg or TrainConfig()
     fold_fits: list = []
     all_oos = []
+    released = False
 
     if train_code:
         from model.race_shape import race_code as _race_code
@@ -237,7 +243,15 @@ def walk_forward_predict(
         # (iteration 82's first run). The rows and their order are unchanged.
         fit_cols = list(dict.fromkeys(list(feature_cols) + [
             c for c in ("race_date", "race_time", "track", "raceid", "bfsp") if c in df.columns]))
-        fit = fit_bfsp(df.loc[tr_mask, fit_cols], feature_cols, cfg)
+        rows = [df.loc[tr_mask, fit_cols]]
+        if release_frame and only_fold is not None:
+            # One fold is fitted and its rows are copied out (val_df, rows): the matrix itself is not read again.
+            # Where the caller handed over its only name on it (main, a loop job), dropping it here frees 5 GB before
+            # the fit builds its own copies; with it held, a long fit still went 4.7 GB into swap (run 44715810929).
+            del df
+            feature_cache.release_memory()
+            released = True
+        fit = fit_bfsp(rows.pop(), feature_cols, cfg)
         model = fit.booster
         if not fold_fits:
             log.info(
@@ -264,6 +278,8 @@ def walk_forward_predict(
         val_df["fold_idx"] = fold_idx
 
         all_oos.append(val_df)
+        if released:
+            break
 
     if not all_oos:
         log.error("No walk-forward folds produced. Need more data.")
@@ -1295,7 +1311,10 @@ def main():
                            "missing_features": missing_features}, f, indent=2, default=str)
         return
 
-    oos = walk_forward_predict(df, feature_cols_full, cfg=cfg, only_fold=args.fold, train_code=args.train_code,
+    frames = [df]
+    del df                      # one name on the matrix, handed over: a one-fold run frees it before its fit
+    oos = walk_forward_predict(frames.pop(), feature_cols_full, cfg=cfg, only_fold=args.fold,
+                               train_code=args.train_code, release_frame=args.fold is not None,
                                **{k: v for k, v in schedule.items() if k != "cfg"})
 
     if oos.empty:

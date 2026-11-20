@@ -571,3 +571,19 @@ def test_a_figure_member_that_predicts_one_value_is_refused():
                     eval_until=None, fold_anchor=None, train_from=None)
     with pytest.raises(ValueError, match="every prediction"):
         E.figure_walk_forward(df, ["x"], np.zeros(len(df)), schedule)
+
+
+def test_releasing_the_matrix_before_a_one_fold_fit_changes_no_prediction():
+    """A loop job fits one fold; the matrix is dropped once that fold's rows are copied out (20 Nov 2026: a long fit
+    still went into swap with it held). Same predictions, and the caller's own frame is untouched."""
+    df = _frame()
+    before = df.copy()
+    serial = evaluate_oos.walk_forward_predict(df, ["a"], **SCHEDULE)
+    k = int(sorted(serial["fold_idx"].unique())[-1])
+    kept = evaluate_oos.walk_forward_predict(df, ["a"], only_fold=k, **SCHEDULE)
+    freed = evaluate_oos.walk_forward_predict(df, ["a"], only_fold=k, release_frame=True, **SCHEDULE)
+    pd.testing.assert_frame_equal(kept.reset_index(drop=True), freed.reset_index(drop=True))
+    pd.testing.assert_frame_equal(df, before)
+    # without only_fold nothing is released: every fold is still fitted
+    every = evaluate_oos.walk_forward_predict(df, ["a"], release_frame=True, **SCHEDULE)
+    assert sorted(every["fold_idx"].unique()) == sorted(serial["fold_idx"].unique())
