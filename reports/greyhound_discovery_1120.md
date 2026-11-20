@@ -165,3 +165,24 @@ The exact live early-lay orders replayed on the recorded stream under 32 setting
 - **A second of latency costs about GBP23 to GBP60** on these days and loses 12 to 21 real fills.
 - **But the live early lay itself did not make money at the SP**: +GBP2.71 on 11-12 Nov and -GBP172.40 on 13-14 Nov on 503 matched lays. The fill model is now proven; the rule it was proven on is flat to losing. The paper forward test's +1.31% a day is the paper rule's own orders (decided on the recorder's books, about 90 s stale), not what the live trader placed: that gap is now the open question, and it is a question about the orders, not the fills.
 - **What changes.** Queue-replay results are no longer "fill unproven": they are read under the trusted setting. The fill bracket gains that setting as an arm ("calibrated") with its own registered gate (`greyhound-rest-calibrated-1120`); the first gate (through + 1 s) stands as registered, now known to be the harsh bound.
+
+## Build 3 result: the fill bracket, development days (20 Nov; run 44723196664; ledgers `greyhound-rest-bracket-1120`, `greyhound-rest-calibrated-1120`)
+
+The resting test's 60 s orders on the 8 counted days 11-18 Nov, under six fills. Returns a unit of matched stake, 2% off a gain; t and 90% interval by day. Development only (0 trials): the two registered gates are read on 19 Nov - 18 Dec, once, on or after 19 Dec.
+
+**The resting back where the close forecast agrees (rest_back_60_m0; 1,873 orders):**
+
+| Fill | Matched | At the SP % | t | 90% | Gate settlement % | t |
+|---|---|---|---|---|---|---|
+| front of the queue | 93% | +1.987 | 4.81 | 1.307 to 2.666 | +1.809 | 4.58 |
+| as shown (the resting test's own) | 88% | +1.259 | 2.76 | 0.510 to 2.009 | +1.140 | 2.81 |
+| strict | 87% | +1.107 | 2.40 | 0.347 to 1.866 | +0.985 | 2.41 |
+| **calibrated (reproduces live)** | 86% | **+0.880** | 1.78 | 0.065 to 1.696 | +0.450 | 0.96 |
+| through-only | 80% | -0.317 | -0.63 | -1.148 to 0.514 | +0.692 | 0.53 |
+| through-only, 1 s late | 80% | -0.348 | -0.67 | -1.204 to 0.508 | +0.662 | 0.51 |
+
+- **Under the fill that reproduces live orders the rule is +0.88% at the SP, t 1.8** (the bar is 5.8); with late fills left to the result, +0.45%, t 1.0. The lab's headline +1.26% was the fill at the full printed volume, and its t by day is 2.8, not the 3.5 its by-race interval implied.
+- **The forecast is what makes it positive.** Every runner, same fill: backs -0.135% (t -0.8), lays -0.713% (t -3.2). Where the forecast agrees: backs +0.880%, lays -0.224%. At a 3% margin: backs +1.611% (129 orders, t 1.5), lays +1.588% (109, t 1.2).
+- **Adverse selection, measured.** Under the calibrated fill, filled lays were on runners that then shortened 1.7% to the SP and filled backs on runners that drifted 2.3%; the orders that did not fill were 13% the right way. A maker is filled on the wrong ones.
+- **The forecast's skill on the rows that fill** (its squared-error gain over the mid on log SP): filled backs +0.00012 (90% -0.00001 to 0.00025), filled lays -0.00003 (-0.00012 to 0.00007). By the rule fixed before the run a forecast may gate a resting rule only if that interval is above zero: on these 8 days it is not, for either side (the backs miss narrowly).
+- **Reading.** Nothing here passes or fails: the gates are forward. What the development days say is that the one standing candidate is a small positive (under +1%) that rests entirely on the close forecast, under a fill model now checked against live orders. At that size it needs months, not weeks, to reach the bar.
