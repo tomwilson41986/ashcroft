@@ -1,5 +1,5 @@
 {
-  "tag": "iter131-figure-member",
+  "tag": "iter132-final",
   "recipe": "served",
   "replicate_base": false,
   "outcome": false,
@@ -13,11 +13,29 @@
   "until": "",
   "params": "",
   "bfsp": true,
-  "bfsp_from": "2024-10-01",
-  "final": false,
+  "bfsp_from": "2026-03-28",
+  "final": true,
   "bfsp_base_blocks": "race_relative,time_figure,race_relative_wide,exposure,head_to_head,bookings,form_lines,form_variants,connection_windows,debut_market,kalman,handicap_angles,travel,sectionals",
   "bfsp_base_withhold": "",
   "variants": [
+    {
+      "name": "st",
+      "blocks": "market_rating,connections_rating,pace_v2,expected_time,placement,gear,market_metrics,pedigree_bayes,improvement,debut",
+      "drop": "sire_runners,damsire_runners",
+      "args": "--learning-rate 0.02 --num-boost-round 12000 --param min_child_samples=500 --param extra_trees=true --param objective=huber --train-from 2021-01-01 --float32"
+    },
+    {
+      "name": "dml_st",
+      "blocks": "market_rating,connections_rating,pace_v2,expected_time,placement,gear,market_metrics,pedigree_bayes,improvement,debut",
+      "drop": "sire_runners,damsire_runners",
+      "args": "--learning-rate 0.02 --param extra_trees=true --train-from 2021-01-01 --float32 --param min_child_samples=500 --num-boost-round 12000 --target demeaned_log"
+    },
+    {
+      "name": "rx16_st",
+      "blocks": "market_rating,connections_rating,pace_v2,expected_time,placement,gear,market_metrics,pedigree_bayes,improvement,debut",
+      "drop": "sire_runners,damsire_runners",
+      "args": "--learning-rate 0.02 --param extra_trees=true --train-from 2021-01-01 --float32 --num-boost-round 16000 --target race_xent --param min_child_samples=500"
+    },
     {
       "name": "stn",
       "blocks": "market_rating,connections_rating,pace_v2,expected_time,placement,gear,market_metrics,pedigree_bayes,improvement,debut,collateral,future_form,nbl_rating",
@@ -44,6 +62,26 @@
     }
   ],
   "ensembles": [
+    {
+      "name": "gate_st",
+      "arms": [
+        "st",
+        "dml_st"
+      ],
+      "gate": {
+        "arm": "rx16_st",
+        "weights": [
+          1,
+          1,
+          1,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0
+        ]
+      }
+    },
     {
       "name": "gate_stn",
       "arms": [
@@ -72,9 +110,10 @@
       }
     }
   ],
-  "note": "Iteration 131 (the owner, 19 Nov 2026: 'Yes' to the beaten-lengths figure model as a fourth loop member; Phase 3 of the model brief). The figure member (evaluate_oos.py --figure-target: LightGBM on model/blocks/nbl_rating.py's figure, the served features with iteration 130's blocks, the same folds and purge) blended into gate_stn (iteration 130's pass: the served gated blend with collateral, future_form and nbl_rating in all three members): log price = log(gate_stn) - b x (figure less the race mean), b chosen on the earlier folds from 0-0.4, the first fold b = 0 (scripts/research_loop.py blend_figure). Pass: gate_stn_fig's paired error at least 0.0007 below gate_stn, the 90% interval excluding zero, flat and jumps, Brier skill and concordance not resolved worse; CLV reported. Development window only; the locked holdout is not read.",
+  "note": "Iteration 132, the Phase 6 holdout read (the owner, 19 Nov 2026: 'carry on with Phase 6'), exactly as announced in the ledger (HOLDOUT LOOK iter132-final, 2026-11-19T15:10Z, and its amendment of 20 Nov): the served recipes on the locked folds 28 Mar - 26 Jun, 27 Jun - 25 Sep and 26 Sep - 16 Nov 2026 (the last never scored). Arms st, dml_st, rx16_st, stn, dml_stn, rx16_stn and the figure member; ensembles gate_st (the served blend), gate_stn (THE CANDIDATE: iteration 131 failed its reading) and gate_stn_fig (reported beside). Read once.",
   "bfsp_args": "",
   "bfsp_base_args": "--drop-features sire_runners,damsire_runners --learning-rate 0.02 --num-boost-round 12000 --param min_child_samples=500 --param extra_trees=true --param objective=huber --train-from 2021-01-01 --float32",
   "start_date": "2018-01-01",
-  "fold_anchor": "2021-01-01"
+  "fold_anchor": "2021-01-01",
+  "bfsp_until": "2026-11-17"
 }
