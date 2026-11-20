@@ -117,3 +117,25 @@ What it says:
 - **The resting back** (t 3.5 after 8 days) needs about 30 days at the same effect, 115 at half of it: late December at the earliest, under a fill model not yet proven.
 - **The count matters less than the fill**: the bar is 5.82 at 37,931 rules, 4.66 at the ledger's 436 lines, 4.18 at 100. No candidate's verdict changes between those except the queue-replay early lay, which clears all of them and stands or falls on its fill.
 - Gates with no deflated Sharpe written in: the favourite back (`reports/preregistration_greyhound_fav_back.md`, 2 Dec); the model reads (25 Nov, 7 Dec) are judged on paired intervals, not a Sharpe.
+
+## Build 2 result: the maker markout census (20 Nov; run 44721231220; `reports/greyhound_maker_census_1120.md`)
+
+Every trade on the recorded Exchange Stream, 5-19 Nov (15 days, GBP30.2m of signed volume), read against the book just before it. What the RESTING side earned closed at the SP, volume-weighted, net of 2% on a gain; 90% interval by day. No fill model. Descriptive: no cell is a rule.
+
+| Market | Resting side | Net % | 90% |
+|---|---|---|---|
+| WIN | lay | +0.07 | -0.11 to +0.23 |
+| WIN | back | -0.24 | -0.37 to -0.09 |
+| PLACE | lay | +0.01 | -0.08 to +0.09 |
+| PLACE | back | -0.07 | -0.16 to +0.01 |
+
+- **On average a resting order earns nothing.** The spread a maker collects is given back in the move to the SP.
+- **When it rests matters, and the two sides are opposite** (WIN, net):
+  - 15 to 5 minutes out: resting lays +1.02% (0.14 to 1.88), resting backs -3.73% (-4.89 to -2.60);
+  - 5 to 2 minutes out: resting lays +0.80% (0.56 to 1.04), resting backs -0.63% (-0.93 to -0.36);
+  - the last 30 seconds: resting backs +0.30% (30-10 s) and +0.25% (10-0 s), resting lays -0.07% and -0.43%;
+  - after the scheduled off: resting lays -0.77% (-0.95 to -0.56).
+  Early money backs dogs shorter than their SP (the price then drifts out); late money backs them longer than it.
+- **The spread decides whether a maker is paid** (WIN, net): at a 1-tick spread both sides lose (-0.38% lays, -0.43% backs); at 2 ticks both earn (+0.38%, +0.29%); resting lays at 3-4 ticks +1.28% and at 5 or more +2.51% (1.85 to 3.16). In the 5 to 2 minute window a resting lay earns -0.14% at 1 tick, +1.07% at 2, +2.37% at 3-4, +2.76% at 5+.
+- **What it says about the two fill models.** The early lay rests minutes before the off, where resting lays that traded did earn about +0.8% to +1.0%: the queue-aware replay's +1.3% is the right size for the average resting lay there. The through fill's -2% is the worst slice of those fills (only when the price trades through the order). A real order earns something between the two, set by its place in the queue; build 4 reads which from the live orders.
+- **What it does not say.** These are averages over every maker, most of them ahead of us in the queue; an order that joins the back of a 1-tick queue gets the fills the others did not want. The cells are 15 days read once after the fact; any rule built on a cell (rest lays only at 2 ticks or wider, 15 to 2 minutes out) is a new registration with its cell count, read on forward days. The census read 19 Nov, so such a rule's forward days start on 21 Nov.
