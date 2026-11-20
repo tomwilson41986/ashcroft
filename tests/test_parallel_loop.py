@@ -525,3 +525,22 @@ def test_the_figure_member_trains_on_earlier_rows_with_a_figure_and_prices_every
     assert sorted(out["fold_idx"].unique()) == [p["fold"] for p in plan]
     assert len(out) == sum(p["n_val"] for p in plan)
     assert np.corrcoef(out["predicted_figure"], out["a"])[0, 1] > 0.9
+
+
+def test_the_float32_plan_keeps_double_what_a_block_or_the_report_reads():
+    """evaluate_oos.float32_plan (20 Nov 2026): an engine feature is read in single precision from the cache only
+    when no requested block reads it, the prediction file does not carry it and the run does not drop it; a block
+    whose reads are not declared keeps everything double."""
+    import argparse
+    import evaluate_oos as E
+    from model import blocks
+    a = argparse.Namespace(blocks="market_rating,debut,pace_v2", drop_features="sire_runners,damsire_runners",
+                           drop_feature_list=None, withhold=None)
+    early, reads = E.float32_plan(a)
+    assert reads == blocks.reads_of(["market_rating", "debut", "pace_v2"]) and "rs_epf" in reads
+    assert early and not [c for c in early if c in reads or c in E.CARRY or c.startswith("sire_runners")]
+    assert set(early) <= set(E.ALL_FEATURE_COLS)
+    a.blocks = "market_rating,ae"                       # ae is not a drop-in block: its reads are unknown
+    assert E.float32_plan(a) == ((), None)
+    a.blocks, a.withhold = "market_rating", "freshness"
+    assert E.float32_plan(a)[0] == ()

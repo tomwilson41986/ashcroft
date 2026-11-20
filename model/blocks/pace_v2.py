@@ -60,6 +60,10 @@ FEATURES = (
 )
 POST_RACE: set[str] = set()
 ENGINE = ("race_shape",)   # build() reads the engine's rs_epf: the live path must build the race-shape block
+#: every column build() reads (20 Nov 2026): without it the block was handed, and returned a copy of, the whole
+#: matrix, the one block of the served stack that did
+READS = ["raceid", "race_date", "race_time", "track", "horse_name", "trainer", "jockey_name", "dist_furlongs", "bfsp",
+         "placing_numerical", "rs_epf"]
 
 
 def _name_codes(s: pd.Series) -> np.ndarray:

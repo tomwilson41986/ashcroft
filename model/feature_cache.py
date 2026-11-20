@@ -134,17 +134,91 @@ def _paths(cache_dir: str, key: str) -> tuple[Path, Path]:
     return d / f"features_{key}.parquet", d / f"features_{key}.json"
 
 
-def load(cache_dir: str, key: str, columns: list[str] | None = None) -> tuple[pd.DataFrame, dict] | None:
+def load(cache_dir: str, key: str, columns: list[str] | None = None,
+         float32=()) -> tuple[pd.DataFrame, dict] | None:
     """The cached frame and its metadata, or None on a miss. `columns` reads just
-    those (Parquet is columnar, so the dates alone cost a second, not a minute)."""
+    those (Parquet is columnar, so the dates alone cost a second, not a minute); `float32` names float64 columns
+    to hold in single precision from the start (see _read_parquet)."""
     data, meta = _paths(cache_dir, key)
     if not (data.exists() and meta.exists()):
         return None
     info = json.loads(meta.read_text())
-    df = pd.read_parquet(data, columns=columns)
+    df = _read_parquet(data, columns=columns, float32=float32)
     log.info("Feature cache hit: %s rows x %s columns from %s",
              f"{len(df):,}", f"{len(df.columns):,}", data)
     return df, info
+
+
+def release_memory() -> None:
+    """Hand freed memory back to the system: Python's collector, Arrow's pool, then the C allocator's arenas (which
+    keep a freed 8 GB frame mapped otherwise, where the next allocation cannot use it and the runner swaps)."""
+    import gc
+    gc.collect()
+    try:
+        import pyarrow as pa
+        pa.default_memory_pool().release_unused()
+    except Exception:  # noqa: BLE001 - best effort
+        pass
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:  # noqa: BLE001 - not glibc
+        pass
+
+
+def _read_parquet(path: Path, columns: list[str] | None = None, float32=()) -> pd.DataFrame:
+    """The Parquet file as ``pd.read_parquet`` returns it, read a row group at a time.
+
+    ``pd.read_parquet`` builds the whole Arrow table and then the frame: two copies of the matrix at once. On the
+    history from 2018 (1.07m rows) that is where a fit's memory peaked, 16 GB of RAM full and 9 GB in swap ten
+    minutes into every job (run 44473514515, fit st fold 5), and where a runner with a slow disk stopped answering:
+    the fits lost with no log 47-48 minutes in (20 Nov 2026). Here each floating-point column is filled into its
+    final array from one row group at a time, so the second copy is one row group, a hundredth of the frame. Every
+    other column (names, dates, integers: a few dozen) is read by pandas as before. The frame is the same, column
+    for column, value for value (tests/test_feature_cache.py).
+
+    ``float32`` names float64 columns to hold in single precision from the start: the caller's promise that nothing
+    reads them in double precision before it would cast them itself (evaluate_oos.py --float32)."""
+    import numpy as np
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    pf = pq.ParquetFile(path)
+    schema = pf.schema_arrow
+    have = list(schema.names)
+    if columns is None:
+        names = have
+    else:
+        absent = [c for c in columns if c not in have]
+        if absent:
+            raise KeyError(f"{path}: no columns {absent[:5]}")
+        names = list(columns)
+    n = pf.metadata.num_rows
+    single = set(float32 or ())
+    floats: dict[str, "np.ndarray"] = {}
+    for name in names:
+        t = schema.field(name).type
+        if pa.types.is_floating(t):
+            dtype = np.float32 if (name in single and pa.types.is_float64(t)) else t.to_pandas_dtype()
+            floats[name] = np.empty(n, dtype=dtype)
+    others = [c for c in names if c not in floats]
+    if floats:
+        at = 0
+        cols = list(floats)
+        for i in range(pf.num_row_groups):
+            tb = pf.read_row_group(i, columns=cols)
+            m = tb.num_rows
+            for name in cols:
+                floats[name][at:at + m] = tb.column(name).to_numpy()     # a null is NaN, as pandas reads it
+            at += m
+            del tb
+        if at != n:
+            raise ValueError(f"{path}: {at} rows read, {n} in the file's metadata")
+    rest = pd.read_parquet(path, columns=others) if others else None
+    df = pd.DataFrame({c: (floats[c] if c in floats else rest[c].array) for c in names}, copy=False)
+    del floats, rest
+    release_memory()
+    return df
 
 
 def column_fingerprints(df: pd.DataFrame) -> dict[str, str]:
@@ -198,7 +272,7 @@ def save(df: pd.DataFrame, cache_dir: str, key: str, info: dict | None = None) -
 
 def build_or_load(builder, db_path: str, start_date: str | None = None,
                   cache_dir: str | None = None, refresh: bool = False,
-                  extra: str = "") -> tuple[pd.DataFrame, dict]:
+                  extra: str = "", float32=()) -> tuple[pd.DataFrame, dict]:
     """Return the feature frame, from cache when the key matches.
 
     `builder` is called with no arguments and must return the finished frame.
@@ -208,7 +282,7 @@ def build_or_load(builder, db_path: str, start_date: str | None = None,
         return builder(), {"cached": False, "reason": "no cache dir"}
     key = cache_key(db_path, start_date, extra)
     if not refresh:
-        hit = load(cache_dir, key)
+        hit = load(cache_dir, key, float32=float32)
         if hit is not None:
             df, info = hit
             info["cached"] = True

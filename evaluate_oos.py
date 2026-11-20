@@ -823,6 +823,36 @@ def _cpu_model() -> str | None:
     return None
 
 
+#: the columns the prediction file carries beside the features (main() keeps these and the features, nothing else)
+CARRY = ("race_date", "race_time", "track", "horse_name", "raceid", "bfsp", "log_bfsp", "placing_numerical", "won",
+         "race_type", "race_code", "surface_type", "going_description", "dist_furlongs", "number_of_runners",
+         "race_class")
+
+
+def float32_plan(args) -> tuple[tuple, set | None]:
+    """With --float32: (the engine features to read in single precision straight from the cache, the columns the
+    requested blocks read) - or ((), None), which keeps every column in double precision until the cast, as before.
+
+    Every model input is cast to float32 before the fit either way, and the cast gives the same value whenever it is
+    made. What must stay double until then is whatever a block computes from: each drop-in block's READS (and those
+    of the blocks it reads). So an engine feature no requested block reads is read as float32 from the start, and a
+    block's feature no later block reads is stored as float32 as it is built (blocks.attach single_unless). Left in
+    double: the columns the prediction file carries and any feature the run drops (neither is cast today), and
+    everything when a requested block is not a drop-in block that declares READS (its reads are not known)."""
+    from model import blocks as drop_in
+    requested = [b.strip() for b in (args.blocks or "").split(",") if b.strip()]
+    if any(b not in drop_in.names() for b in requested):
+        return (), None
+    reads = drop_in.reads_of(requested)
+    if reads is None:
+        return (), None
+    if args.drop_feature_list or args.withhold:
+        return (), reads                      # names dropped by file or by block: left to the cast, as before
+    prefixes = tuple(p.strip() for p in (args.drop_features or "").split(",") if p.strip())
+    keep = reads | set(CARRY)
+    return tuple(c for c in ALL_FEATURE_COLS if c not in keep and not (prefixes and c.startswith(prefixes))), reads
+
+
 def main():
     import time
     started = time.time()
@@ -1081,10 +1111,13 @@ def main():
     # feature code is unchanged, so an experiment that only alters the model
     # should not pay for it. See model/feature_cache.py for how staleness is
     # prevented.
+    early32, block_reads = float32_plan(args) if args.float32 else ((), None)
     df, cache_info = feature_cache.build_or_load(
         lambda: build_feature_frame(args.db, args.start_date), args.db, start_date=args.start_date,
-        cache_dir=args.feature_cache, refresh=args.refresh_cache,
+        cache_dir=args.feature_cache, refresh=args.refresh_cache, float32=early32,
     )
+    if early32 and cache_info.get("cached"):
+        log.info("float32: %d engine features no block reads were read in single precision", len(early32))
     if cache_info.get("cached"):
         log.info("  reused a cached feature matrix built at %s", cache_info.get("built_at", "?"))
 
@@ -1145,7 +1178,7 @@ def main():
             from model import blocks as drop_in
             import time as _t
             t0 = _t.time()
-            df, cols = drop_in.attach(df, [block])
+            df, cols = drop_in.attach(df, [block], single_unless=block_reads)
             log.info("block %s built on the cached matrix in %.0fs", block, _t.time() - t0)
         else:
             raise SystemExit(f"unknown block {block!r} ({', '.join(RESEARCH_BLOCKS)}, intent_unsafe, ae, "
@@ -1165,8 +1198,9 @@ def main():
         # them: the matrix itself halves too.
         cast = [c for c in feature_cols_full if df[c].dtype == np.float64]
         df = df.astype({c: np.float32 for c in cast}, copy=False)
-        gc.collect()
-        log.info("float32: %d of %d model inputs stored in single precision", len(cast), len(feature_cols_full))
+        feature_cache.release_memory()
+        log.info("float32: %d of %d model inputs cast to single precision now (the others were held so already)",
+                 len(cast), len(feature_cols_full))
 
     if prefixes or names:
         dropped = [c for c in wanted if c in df.columns and c not in set(feature_cols_full)]
@@ -1209,11 +1243,9 @@ def main():
     # price and result, and the race metadata the prediction file carries. Every
     # other column of the matrix is carried into each fold's copies for nothing
     # (a history from 2018 did not fit in a runner's memory with them).
-    carry = ["race_date", "race_time", "track", "horse_name", "raceid", "bfsp", "log_bfsp",
-             "placing_numerical", "won", "race_type", "race_code", "surface_type", "going_description",
-             "dist_furlongs", "number_of_runners", "race_class"]
+    carry = list(CARRY)
     df = df[list(dict.fromkeys(list(feature_cols_full) + [c for c in carry if c in df.columns]))]
-    gc.collect()
+    feature_cache.release_memory()
 
     if args.figure_target:
         label = figure_label(df)
