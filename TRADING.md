@@ -1934,6 +1934,23 @@ the market-rating blend.
   (ledger `model-quality-1118`).
 - **The record:** 40 days, +GBP6,676.99, 32 up.
 
+**The fiftieth full day** (19 Nov; ledger `live-day-1119`), the fifth priced by the stack blend.
+- **The start.** Predictions run 44449582401 wrote the file at 03:39 UTC (03:10-03:39). The night-before run ran again
+  (predict-evening.yml 44430464346, 00:37-01:10 UTC): 364 runners in both files, median rank correlation 1.000 (ledger
+  `night-before-1119`). The session (44464141034) ran 05:17-21:30 UTC in one piece; the settle at 22:29 UTC in settle
+  mode (run 44629096717).
+- **-GBP12.83 after commission** as Betfair settled the trader's own orders, on 450 fills on 110 horses, GBP2,888.25
+  matched, 33 races settled in 33 markets, CLV +1.06%: first backs +2.2%, top-ups +0.7%; 46 horses reached the cap of 5
+  top-ups, CLV -0.22% on the 41 refused more, +3.48% on the other 64 (ledger `changes-1119`). Two top-ups (GBP27.30)
+  were entered in the 10:00 minute, the last at 10:00:53 UK, as on 18 Nov.
+- **The account.** Funds GBP5,053.21 -> GBP5,040.38 (-GBP12.83), the trader's -GBP12.83: no gap. The session opened at
+  GBP5,053.21, 18 Nov's closing figure, so 18 Nov's -GBP27.52 was no late settlement and stays unexplained (Betfair's
+  statement, which only the owner's account can read). The greyhound early lay placed nothing; the morning models'
+  trade run sat queued all day again (no 'morning' runner) (ledger `account-day-1119`).
+- **The stack blend against the BSP**: no new day; HRB's results stop at 16 Nov until the pause ends on 25 Nov
+  (ledger `model-quality-1119`).
+- **The record:** 41 days, +GBP6,664.16, 32 up.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",
