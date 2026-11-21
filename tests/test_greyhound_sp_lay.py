@@ -239,3 +239,20 @@ def test_the_reconcile_splits_win_and_place(store):
     r = sl.reconcile(store, x, DAY, 0.02)
     assert r["by_kind"]["win"]["profit_net"] == pytest.approx(4.9) and r["by_kind"]["place"]["profit_net"] == -50.0
     assert r["lays"] == 4 and r["settled"] == 2
+
+
+def test_a_restart_keeps_the_bet_ids_as_betfair_wrote_them(store):
+    x = FakeX()
+    x.lay_at_bsp = lambda mid, sid, liab, ref: Fill(market_id=mid, selection_id=sid, side="LAY", order_type="MARKET_ON_CLOSE",
+                                                     price=0.0, size=liab, bet_id="452338393168", status="PENDING")
+    t1 = trader(store, x)
+    t1.step()
+    t2 = trader(store, x)
+    t2.resume()
+    assert {v["bet"] for v in t2.placed.values()} == {"452338393168"}
+    led = store.get(f"greyhound/sp_lay/live/{DAY}/ledger.csv").decode()
+    led = led.replace("452338393168", "452338393168.0")             # as an earlier resume wrote it on 21 Nov
+    store.put(f"greyhound/sp_lay/live/{DAY}/ledger.csv", led.encode())
+    t3 = trader(store, x)
+    t3.resume()
+    assert {v["bet"] for v in t3.placed.values()} == {"452338393168"}
