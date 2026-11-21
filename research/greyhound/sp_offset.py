@@ -65,6 +65,7 @@ def read_gain(day: np.ndarray, ll_bsp: np.ndarray, ll_model: np.ndarray) -> dict
             "t": None if r["t"] is None else round(r["t"], 2)}
 
 
+JOIN_KEYS = ("race_date", "race_time", "track", "trap", "dog_id", "field")
 STAGE2 = (("back_top10", "back", 0.90), ("back_top5", "back", 0.95), ("back_top2", "back", 0.98),
           ("lay_bottom10", "lay", 0.10), ("lay_bottom5", "lay", 0.05), ("lay_bottom2", "lay", 0.02))
 
@@ -133,6 +134,9 @@ def run_fold(d: pd.DataFrame, feats: list[str], test_from: str, test_to: str, sh
         out["_runners"] = pd.DataFrame({"day": day[te_i], "race_id": d.race_id.to_numpy()[te_i],
                                         "won": true_won[te_i], "bsp": d.bsp.to_numpy(float)[te_i],
                                         "s": centre(f_te, race[te_i])})
+        for k in JOIN_KEYS:                            # the price files' join (research/greyhound/residual_strategies.py)
+            if k in d:
+                out["_runners"][k] = d[k].to_numpy()[te_i]
     return out
 
 
