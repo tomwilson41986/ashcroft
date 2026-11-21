@@ -179,6 +179,11 @@ permission mode was changed by the owner to allow the work. `auto_trade.py --liv
   UK and the live record holds none (the earliest hour traded, 08:00 UK, made +11.7% on 10 Oct and +20.4% on 11 Oct);
   the evening-before books were too thin to trade (ledger `evening-before-1007`), so the earliest books may give few
   backs. The day limit of GBP4,000 bounds the stake, and the check-ins score the 06:15-07:59 backs on their own.
+- **The owner's cap on the top-ups from 22 Nov: 3** ("Cap 3 top ups per horse", 21 Nov 2026): **a horse takes its first
+  back and at most 3 top-ups** (`max_topups: 3`). Evidence (ledger `phase5-reductions-1119`): every live fill since 30 Sep
+  scored after its horse's non-runner reductions, by the fill's number on the horse: 1st top-up +6.07%, 2nd +3.88%,
+  3rd +1.94% (+0.68 to +3.25), 4th +0.43% (-1.15 to +1.90), 5th -1.46% (-3.07 to +0.10), each fill taking its horse's
+  whole cut (a floor for the later fills). The 5 below stood from 22 Oct to 21 Nov.
 - **The owner's cap on the top-ups from 22 Oct** ("cap the top-ups at 5", after research query replay_1020, ledger
   `replay-1020`): **a horse takes its first back and at most 5 top-ups** (`max_topups: 5`; the count is each horse's
   matched backs of the day, rebuilt from the ledger and from Betfair's own record of the orders when a session starts
