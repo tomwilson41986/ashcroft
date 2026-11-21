@@ -15,6 +15,9 @@ step reads it:
   and the lays closed at the SP or held, settled by the same books' result and SP. No expected value is logged.
 - Greyhounds, the take and close (``sources/greyhound/take_close/<mode>/<day>/ledger.csv``): each back matched, closed
   by laying its winnings at the SP; the trader's own ``settled`` row a market, else the same sum on the settled books.
+- Greyhounds, the lay at the SP (``sources/greyhound/sp_lay/<mode>/<day>/ledger.csv``): each lay for its liability
+  at the Betfair SP, win and place, settled on the recorder's settled books; its paper forward test
+  (``sources/greyhound/sp_offset/served/<day>.csv`` and ``settled/<day>.csv``) at GBP1 a lay.
 - Football, live and paper (``sources/football/live/<mode>/<day>/``): its ``settled.csv`` (the backs against the gold
   results, written by the nightly settle). Expected value: ``ev x matched``.
 
@@ -372,6 +375,85 @@ def take_close_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFram
     return out.reset_index()[MARKET_COLS], _last_ts(led, "time_utc")
 
 
+def sp_lay_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame | None, str | None]:
+    """The lay at the SP (greyhound/sp_lay.py): each pick laid for a fixed liability at the Betfair SP, to win and,
+    from 21 Nov 2026, to be placed (each its own market). Settled on the recorder's settled books, WIN and PLACE
+    (``_greyhound_final``): a lay of liability L matched at SP b stakes L / (b - 1), so a loser (unplaced) pays that
+    stake and a winner (placed) costs L; a removed runner's lay is void. 2% off each market's net winnings, as
+    Betfair's. A lay the trader cancelled (a STOP before the off) is left out. No CLV: a lay at the SP takes the
+    closing price itself."""
+    led = _csv(src.get(kind, f"{base}/{day}/ledger.csv"))
+    if led is None or "action" not in led.columns:
+        return None, None
+    for c in ("liability", "selection_id"):
+        led[c] = _num(led[c]) if c in led.columns else np.nan
+    led["kind"] = led["kind"].fillna("win").replace("", "win") if "kind" in led.columns else "win"
+    st = led.get("status", pd.Series("", index=led.index)).astype(str)
+    lays = led[((led.action == "lay") & st.isin(["PENDING", "UNKNOWN"])) | (led.action == "paper_lay")].copy()
+    bet = lambda x: x.astype(str).str.replace(r"\.0$", "", regex=True)          # noqa: E731
+    if "bet_id" in led.columns and len(lays):
+        gone = led[(led.action == "cancel") & (st == "SUCCESS")]
+        lays = lays[~bet(lays.bet_id).isin(set(bet(gone.bet_id)))]
+    if not len(lays):
+        return _empty(), _last_ts(led, "time_utc")
+    final = _greyhound_final(src, day)
+    if final is not None:
+        f = final[K + ["runner_status", "sp_actual"]].assign(selection_id=_num(final.selection_id))
+        lays = lays.merge(f, on=K, how="left")
+    else:
+        lays["runner_status"], lays["sp_actual"] = None, np.nan
+    L, sp = lays.liability, _num(lays.sp_actual)
+    lays["gross"] = np.select([lays.runner_status == "REMOVED", lays.runner_status == "WINNER",
+                               (lays.runner_status == "LOSER") & (sp > 1)],
+                              [0.0, -L, L / (sp - 1)], np.nan)
+    rows = []
+    for mid, g in lays.groupby("market_id"):
+        gross = float(g.gross.sum()) if g.gross.notna().all() else np.nan
+        pnl = gross - RATE * max(gross, 0.0) if np.isfinite(gross) else np.nan
+        label = str(g.track.iloc[0]) if "track" in g.columns else ""
+        rows.append({"market_id": mid, "label": label + (" (place)" if g.kind.iloc[0] == "place" else ""),
+                     "off": g.race_time.iloc[0] if "race_time" in g.columns else "",
+                     "staked": float(g.liability.sum()), "ev": np.nan, "pnl": pnl, "settled": bool(np.isfinite(pnl)),
+                     "open_liability": 0.0 if np.isfinite(pnl) else float(g.liability.sum())})
+    out = _with_clv(pd.DataFrame(rows).set_index("market_id"), None)
+    return out.reset_index()[MARKET_COLS], _last_ts(led, "time_utc")
+
+
+def sp_lay_forward_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame | None, str | None]:
+    """The lay at the SP's paper forward test (research/greyhound/sp_offset_forward.py; ledger
+    greyhound-sp-offset-forward-1120): the frozen residual's picks served before each race (``<base>/<day>.csv``),
+    the ``lay_bottom10`` rule (every runner at or under the frozen cut in ``meta.json``) laid to win risking 1 at the
+    Betfair SP, netted by race, commission off a gain. Read in the test's own unit, GBP1 a lay. A race is settled from
+    the test's own ``settled/<day>.csv``; once that is written, a race it leaves out (not every served runner got an
+    SP, as in the study) drops out. No orders, no CLV (the SP is the close)."""
+    import json
+    root = base.rsplit("/", 1)[0]
+    served = _csv(src.get(kind, f"{base}/{day}.csv"))
+    meta = src.get(kind, f"{root}/meta.json")
+    if served is None or not meta or "s" not in served.columns:
+        return None, None
+    cut = float(json.loads(meta)["cuts"][SP_LAY_RULE])
+    served["race_id"] = served.race_id.astype(str)
+    p = served[(_num(served.s) <= cut) & served.market_id.notna()]
+    if not len(p):
+        return _empty(), None
+    m = p.groupby("race_id").agg(label=("track", "first"), off=("race_time", "first"), staked=("s", "size"))
+    m["staked"] = m.staked.astype(float)
+    m["ev"], m["pnl"], m["settled"] = np.nan, np.nan, False
+    done = _csv(src.get(kind, f"{root}/settled/{day}.csv"))
+    if done is not None and "rule" in done.columns:
+        d = done[done.rule == SP_LAY_RULE].assign(race_id=lambda x: x.race_id.astype(str))
+        d = d.groupby("race_id").agg(risk=("risk", "sum"), net=("net", "sum"))
+        m = m[m.index.isin(d.index)]                            # the races the test leaves out drop out
+        m["staked"] = _num(d.risk.reindex(m.index))
+        m["pnl"] = _num(d.net.reindex(m.index))
+        m["settled"] = True
+    m["open_liability"] = np.where(m.settled, 0.0, m.staked)
+    m.index.name = "market_id"
+    m = _with_clv(m, None)
+    return m.reset_index()[MARKET_COLS], None
+
+
 def football_markets(src, kind: str, base: str, day: str) -> tuple[pd.DataFrame | None, str | None]:
     led = _csv(src.get(kind, f"{base}/{day}/ledger.csv"))
     if led is None or "action" not in led.columns:
@@ -482,10 +564,22 @@ class Trader:
     forecast_by: str = "record"  # "day_report": today's marks and the day report's drift (dashboard/day_forecast.py)
     stop_keys: tuple = ("greyhound/STOP", "trading/STOP")   # the S3 objects (bucket root) that stop its new orders
     orders: str = "lays"        # what a STOP halts, in the switch's words
+    loss_limit: object = None   # a daily loss limit fixed in the trader's code (a number, or a function returning it),
+                                # where no <switch>_DAILY_LOSS variable sets it
 
 
 EARLY_LAY_FROM = "2026-11-11"  # the owner, 11 Nov 2026: the live early lay tracked from fresh
 TAKE_CLOSE_FROM = "2026-11-18"  # the owner, 18 Nov 2026: the take and close live from that day
+SP_LAY_FROM = "2026-11-21"      # the owner, 21 Nov 2026: the lay at the SP live from that day; its forward test's
+                                # first day (research/greyhound/sp_offset_forward.py FIRST_DAY)
+SP_LAY_RULE = "lay_bottom10"    # the rule the live trader lays (greyhound/sp_lay.py RULE)
+
+
+def _sp_lay_limit() -> float:
+    """The lay at the SP's daily loss limit, from its own code (greyhound/sp_lay.py CONFIG)."""
+    from greyhound.sp_lay import CONFIG
+    return float(CONFIG["daily_loss_limit"])
+
 AGENTS_FROM = "2026-11-04"    # the owner, 4 Nov 2026: the paper agents "only start from now"; their replayed days are not P&L
 AGENT_NOTES = ("A paper agent (research/paper/horses.py): no orders. It trades the recorded books with the other agents "
                "on one book: the live trader's fills are already out, and what one agent takes is gone for the others.",
@@ -551,6 +645,28 @@ TRADERS = [
                   "A race's P&L is the trader's own settle from Betfair's result and SP; the recorder's settled "
                   "books stand in until it is written.",
                   "No expected value is logged: the forecast is the record's mean day.")),
+    # the owner, 21 Nov 2026: "Put any possible profitable strategies live" (the residual's bottom-10% lay at the SP,
+    # to win and to be placed, GBP50 a lay, GBP1,000 a day); "Add the new greyhound traders"
+    Trader("greyhound-sp-lay", "greyhounds", "Lay at the SP, live", "live",
+           "Lays the residual's bottom 10% of each race at the Betfair SP, to win and to be placed, GBP50 of liability",
+           "capture", "sources/greyhound/sp_lay/live", sp_lay_markets, "greyhound", "SL",
+           start_from=SP_LAY_FROM, switch="GREYHOUND_SP_LAY", loss_limit=_sp_lay_limit,
+           stop_keys=("greyhound/sp_lay/STOP", "trading/STOP"), orders="lays",
+           notes=("Live from 21 Nov 2026 (the owner): GBP50 of liability a lay to win and GBP50 to be placed, one "
+                  "GBP1,000 daily loss limit fixed in its code, its own STOP (greyhound/sp_lay/STOP); greyhound/STOP "
+                  "does not stop it.",
+                  "Staked is the liability laid. A race settles on the recorder's settled books (WIN and PLACE) at "
+                  "the Betfair SP, 2% off each market's net winnings.",
+                  "No CLV: a lay at the SP is matched at the closing price itself. No expected value is logged: the "
+                  "forecast is the record's mean day.")),
+    Trader("greyhound-sp-lay-paper", "greyhounds", "Lay at the SP, paper", "paper",
+           "The same rule's registered forward test: the frozen residual's picks laid to win at the SP, GBP1 a lay",
+           "capture", "sources/greyhound/sp_offset/served", sp_lay_forward_markets, "greyhound", "SF",
+           start_from=SP_LAY_FROM, day_file="csv",
+           notes=("The paper forward test (ledger greyhound-sp-offset-forward-1120): win only, read at GBP1 a lay "
+                  "(x50 for the live stake); its gate is read once, at 120 settled days.",
+                  "A day settles once the test's settle step has run on the settled books; races where a served "
+                  "runner got no SP drop out, as in the study.")),
     Trader("greyhound-paper", "greyhounds", "Win backs, paper", "paper",
            "The greyhound model's backs on the live key's books, laid at the SP, no bets placed",
            "capture", "sources/greyhound/live/paper", greyhound_paper_markets, "greyhound", "GP"),
@@ -837,11 +953,14 @@ def switch_state(src, t: Trader, env=None) -> dict | None:
     name, lname = t.switch, f"{t.switch}_DAILY_LOSS"
     raw = env.get(name)
     state = None if raw is None else ("live" if str(raw).strip().lower() == "live" else "paper")
-    try:
-        limit = float(str(env.get(lname, "")).strip())
-        limit = limit if np.isfinite(limit) and limit > 0 else None
-    except ValueError:
-        limit = None
+    if t.loss_limit is not None:                  # fixed in the trader's code: no variable sets it
+        limit = float(t.loss_limit() if callable(t.loss_limit) else t.loss_limit)
+    else:
+        try:
+            limit = float(str(env.get(lname, "")).strip())
+            limit = limit if np.isfinite(limit) and limit > 0 else None
+        except ValueError:
+            limit = None
     stop, stop_err = False, None
     for k in t.stop_keys:
         try:
