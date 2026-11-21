@@ -87,7 +87,9 @@ jobs:
   train:
     if: inputs.mode != 'evaluate_only'
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    # 355 (GitHub's limit is 360): on 21 Nov the main and dml members (1,263 features, 12,000 fixed rounds) finished
+    # fitting and were cancelled at 330 minutes in the steps after it (runs 44882515734, 44882521576)
+    timeout-minutes: 355
 
     steps:
       - name: Checkout repository

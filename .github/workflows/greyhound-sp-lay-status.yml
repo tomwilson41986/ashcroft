@@ -61,10 +61,11 @@ jobs:
           print("skip reasons:", dict(collections.Counter(r["note"] for r in rows if r["action"] == "skip")))
           lays = [r for r in rows if r["action"] in ("lay", "paper_lay")]
           print("lay statuses:", dict(collections.Counter(r["status"] for r in lays)))
+          print("lays by market:", dict(collections.Counter(r.get("kind") or "win" for r in lays)))
           liab = sum(float(r["liability"] or 0) for r in lays if r["status"] in ("PENDING", "UNKNOWN", "PAPER"))
           print(f"lays sent {len(lays)}, liability GBP{liab:.2f}")
           for r in lays[-15:]:
-              print(f"  {r['time_utc']} {r['track']} {r['race_time']} trap {r['trap']} {r['dog']}: {r['status']} "
+              print(f"  {r['time_utc']} {r.get('kind') or 'win'} {r['track']} {r['race_time']} trap {r['trap']} {r['dog']}: {r['status']} "
                     f"{r['bet_id']} s {r['s']} {r['error']}")
           for r in rows:
               if r["action"] in ("hold", "cancel") or (r["action"] == "lay" and r["status"] == "FAILURE"):
