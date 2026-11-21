@@ -38,3 +38,10 @@ def test_the_card_is_aligned_to_the_historys_numbers():
     out = S.align(card, hist)
     assert out["official_rating"].dtype.kind in "if" and out["official_rating"].iloc[0] == 72
     assert out["pounds"].isna().all() and out["horse_name"].iloc[0] == "b" and out["race_date"].iloc[0] == "2026-11-21"
+
+
+def test_paired_only_when_the_database_predates_the_trader_file():
+    paired = S.paired
+    assert paired("2026-11-21T02:47:00+00:00", "2026-11-21T03:39:33+00:00")
+    assert not paired("2026-11-21T06:47:18+00:00", "2026-11-21T03:39:33+00:00")   # the 21 Nov check, run at 09:30
+    assert not paired("", "2026-11-21T03:39:33+00:00")
