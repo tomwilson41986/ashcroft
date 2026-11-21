@@ -57,7 +57,7 @@ on:
         type: string
         default: ''
       sp_lay:
-        description: "the residual's lay at the SP: paper (logged, nothing sent) or live (real orders, GBP50 a lay, GBP300 a day)"
+        description: "the residual's lay at the SP, win and place: paper (logged, nothing sent) or live (real orders, GBP50 a lay, GBP1,000 a day)"
         required: false
         type: choice
         options: ['paper', 'live']
@@ -153,7 +153,8 @@ jobs:
           GREYHOUND_TAKE_CLOSE: ${{ inputs.take_close || vars.GREYHOUND_TAKE_CLOSE || 'paper' }}
           GREYHOUND_TAKE_CLOSE_DAILY_LOSS: ${{ inputs.take_close_daily_loss || vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS }}
           # the residual's lay at the SP (greyhound/sp_lay.py; the owner, 21 Nov 2026: "Put any possible profitable
-          # strategies live": the bottom-10% SP lay, GBP50 a lay, GBP300 a day): real orders only with
+          # strategies live": the bottom-10% SP lay, GBP50 a lay, to win and, from that day, to be placed, GBP1,000 a
+          # day for both): real orders only with
           # GREYHOUND_SP_LAY=live; its own STOP (greyhound/sp_lay/STOP, and trading/STOP)
           GREYHOUND_SP_LAY: ${{ inputs.sp_lay || vars.GREYHOUND_SP_LAY || 'paper' }}
         run: |
