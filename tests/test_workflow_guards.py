@@ -175,7 +175,8 @@ def test_only_the_trader_runs_on_the_live_key():
     traders = ("auto_trade.py", "greyhound.live --trade", "football.live --trade", "greyhound.book_record",
                "greyhound.stream_record", "research.horse_stream_record",
                "greyhound.early_lay --trade", "greyhound.quote_mid --trade", "greyhound.fav_back --trade",
-               "greyhound.take_close --trade", "morning.live")
+               "greyhound.take_close --trade", "morning.live",
+               "greyhound.sp_lay --trade")                    # the owner, 21 Nov 2026: the residual's lay at the SP
     for name in named:
         text = (WORKFLOWS / name).read_text()
         for ln in text.splitlines():
@@ -234,18 +235,21 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
             assert ln.startswith('BETFAIR_APP_KEY="$GHKEY" python -m greyhound.'), ln
             assert any(t in ln for t in ("greyhound.live --trade", "greyhound.book_record", "greyhound.stream_record",
                                          "greyhound.early_lay --trade", "greyhound.quote_mid --trade",
-                                         "greyhound.fav_back --trade", "greyhound.take_close --trade")), ln
+                                         "greyhound.fav_back --trade", "greyhound.take_close --trade",
+                                         "greyhound.sp_lay --trade")), ln
         if "--live" in ln:                          # the early lay and the quotes alone, on the live key
             assert ln.startswith(('BETFAIR_APP_KEY="$GHKEY" python -m greyhound.early_lay --trade --live ',
                                   'BETFAIR_APP_KEY="$GHKEY" python -m greyhound.quote_mid --trade --live ',
-                                  'BETFAIR_APP_KEY="$GHKEY" python -m greyhound.take_close --trade --live ')), ln
+                                  'BETFAIR_APP_KEY="$GHKEY" python -m greyhound.take_close --trade --live ',
+                                  'BETFAIR_APP_KEY="$GHKEY" python -m greyhound.sp_lay --trade --live ')), ln
         if "football" in ln or "betfair_recorder.py" in ln:
             assert "GHKEY" not in ln and "LIVE_APP_KEY" not in ln, ln
         assert not re.search(r"echo[^;]*\$\{?(BETFAIR_LIVE_APP_KEY|GHKEY)\b", ln), ln
     assert "greyhound.live --trade" in runs and "football.live --trade" not in runs
     assert [ln for ln in runs.splitlines() if "--live" in ln and not ln.strip().startswith("#")] == \
         [ln for ln in runs.splitlines() if "greyhound.early_lay --trade --live" in ln
-         or "greyhound.quote_mid --trade --live" in ln or "greyhound.take_close --trade --live" in ln]
+         or "greyhound.quote_mid --trade --live" in ln or "greyhound.take_close --trade --live" in ln
+         or "greyhound.sp_lay --trade --live" in ln]
     assert "greyhound.live --trade --live" not in runs and "football.live --trade --live" not in runs
     # the favourite back (the owner, 10 Nov 2026: "Yes build it"): paper only, never --live, and its module has no
     # call that could send an order
@@ -278,6 +282,14 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
     assert wf[True]["workflow_dispatch"]["inputs"]["take_close"]["default"] == "paper"
     assert env["GREYHOUND_TAKE_CLOSE_DAILY_LOSS"] == \
         "${{ inputs.take_close_daily_loss || vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS }}"
+    # the residual's lay at the SP (the owner, 21 Nov 2026: "Put any possible profitable strategies live"; the
+    # bottom-10% SP lay, GBP50 a lay, GBP300 a day): paper unless the dispatch input or the repository variable says
+    # live; its stake and limit are fixed in greyhound/sp_lay.py CONFIG
+    assert env["GREYHOUND_SP_LAY"] == "${{ inputs.sp_lay || vars.GREYHOUND_SP_LAY || 'paper' }}"
+    assert wf[True]["workflow_dispatch"]["inputs"]["sp_lay"]["default"] == "paper"
+    from greyhound import sp_lay
+    assert sp_lay.CONFIG["liability"] == 50.0 and sp_lay.CONFIG["daily_loss_limit"] == 300.0
+    assert sp_lay.STOP_KEYS == ("greyhound/sp_lay/STOP", "trading/STOP") and sp_lay.REF == "spl-"
     assert env["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
     # no other workflow starts the greyhound trader; the football trader only football-trade.yml
     for p in WORKFLOWS.glob("*.yml"):

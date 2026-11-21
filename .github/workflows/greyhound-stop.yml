@@ -15,10 +15,10 @@ on:
         options: ['stop', 'resume']
         default: 'stop'
       trader:
-        description: 'which: the early lay (greyhound/STOP) or the take and close (greyhound/take_close/STOP)'
+        description: 'which: the early lay (greyhound/STOP), the take and close (greyhound/take_close/STOP) or the lay at the SP (greyhound/sp_lay/STOP)'
         required: false
         type: choice
-        options: ['early_lay', 'take_close']
+        options: ['early_lay', 'take_close', 'sp_lay']
         default: 'early_lay'
 
 permissions:
@@ -39,7 +39,9 @@ jobs:
           TRADER: ${{ inputs.trader || 'early_lay' }}
         run: |
           # the take and close has its own switch (the owner, 18 Nov 2026): greyhound/STOP does not stop it
-          if [ "$TRADER" = "take_close" ]; then KEY="greyhound/take_close/STOP"; else KEY="greyhound/STOP"; fi
+          # and the lay at the SP (the owner, 21 Nov 2026): greyhound/sp_lay/STOP; greyhound/STOP does not stop it
+          if [ "$TRADER" = "take_close" ]; then KEY="greyhound/take_close/STOP";
+          elif [ "$TRADER" = "sp_lay" ]; then KEY="greyhound/sp_lay/STOP"; else KEY="greyhound/STOP"; fi
           if [ "$ACTION" = "stop" ]; then
             echo "stopped from GitHub Actions run $GITHUB_RUN_ID" | aws s3 cp - "s3://$BUCKET/$KEY"
             echo "$KEY written: $TRADER places nothing new; what is already matched is still closed"
@@ -47,6 +49,6 @@ jobs:
             aws s3 rm "s3://$BUCKET/$KEY"
             echo "$KEY removed: $TRADER trades again"
           fi
-          for k in greyhound/STOP greyhound/take_close/STOP trading/STOP; do
+          for k in greyhound/STOP greyhound/take_close/STOP greyhound/sp_lay/STOP trading/STOP; do
             aws s3 ls "s3://$BUCKET/$k" > /dev/null 2>&1 && echo "ON:  $k" || echo "off: $k"
           done
