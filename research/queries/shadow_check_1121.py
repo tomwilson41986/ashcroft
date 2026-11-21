@@ -31,9 +31,18 @@ if live is None or shadow is None:
     raise SystemExit("no data found")
 print(f"live {len(live):,} rows, columns {list(live.columns)[:14]}")
 print(f"shadow {len(shadow):,} rows, columns {list(shadow.columns)[:14]}")
-key = [c for c in ("race_date", "race_time", "track", "horse_name") if c in live.columns and c in shadow.columns]
-if "horse_name" not in key:
-    key = [c for c in ("race_time", "track", "horse") if c in live.columns and c in shadow.columns]
+# the trader's file is pipeline/predict.py's (date, venue, runner_name); the shadow's is predict_bfsp_today's
+# (race_date, track, horse_name): join on the time and the runner's name, both trimmed and lower-cased (the first
+# reading of this query joined on race_time alone, every runner of a race paired with every other: 21 Nov 10:05)
+norm = lambda s: s.fillna("").astype(str).str.strip().str.lower()
+live["k_name"], shadow["k_name"] = norm(live["runner_name"]), norm(shadow["horse_name"])
+live["k_time"], shadow["k_time"] = norm(live["race_time"]), norm(shadow["race_time"])
+key = ["k_time", "k_name"]
+for name, f in (("live", live), ("shadow", shadow)):
+    dup = int(f.duplicated(key).sum())
+    print(f"{name}: {dup} duplicated keys")
+    if dup:
+        raise SystemExit(f"{name}: the key does not name one runner")
 price = next(c for c in ("predicted_bfsp", "bfsp_pred", "predicted_price") if c in live.columns)
 print(f"joined on {key}, the price column {price}")
 m = live.merge(shadow, on=key, how="outer", suffixes=("_live", "_shadow"), indicator=True)
