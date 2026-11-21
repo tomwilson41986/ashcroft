@@ -288,7 +288,9 @@ def test_the_paper_models_run_apart_from_the_live_trader_and_cannot_bet():
     assert env["GREYHOUND_SP_LAY"] == "${{ inputs.sp_lay || vars.GREYHOUND_SP_LAY || 'paper' }}"
     assert wf[True]["workflow_dispatch"]["inputs"]["sp_lay"]["default"] == "paper"
     from greyhound import sp_lay
-    assert sp_lay.CONFIG["liability"] == 50.0 and sp_lay.CONFIG["daily_loss_limit"] == 300.0
+    # the owner, 21 Nov 2026, later that day: "yes add the place lay live, same limit", then "daily loss limit GBP1000"
+    assert sp_lay.CONFIG["liability"] == 50.0 and sp_lay.CONFIG["daily_loss_limit"] == 1000.0
+    assert sp_lay.CONFIG["place"] and sp_lay.CONFIG["place_liability"] == 50.0
     assert sp_lay.STOP_KEYS == ("greyhound/sp_lay/STOP", "trading/STOP") and sp_lay.REF == "spl-"
     assert env["BETFAIR_APP_KEY"] == "${{ secrets.BETFAIR_APP_KEY }}"
     # no other workflow starts the greyhound trader; the football trader only football-trade.yml

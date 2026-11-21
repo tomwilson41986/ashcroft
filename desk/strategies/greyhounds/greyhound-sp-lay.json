@@ -1,11 +1,12 @@
 {
   "id": "greyhound-sp-lay",
   "sport": "greyhounds",
-  "name": "The residual's bottom 10% laid at the Betfair SP",
+  "name": "The residual's bottom 10% laid at the Betfair SP, to win and to be placed",
   "stage": "legacy",
-  "hypothesis": "Runners whose card-only residual on the BSP is in the bottom 10% of their race (the frozen lay_bottom10 cut) are overbet at the SP: a lay at the SP earns after commission.",
+  "hypothesis": "Runners whose card-only residual on the BSP is in the bottom 10% of their race (the frozen lay_bottom10 cut) are overbet at the SP, to win and to be placed: a lay at the win SP and at the place SP earns after commission.",
   "markets": [
-    "GB greyhound WIN"
+    "GB greyhound WIN",
+    "GB greyhound PLACE"
   ],
   "entry_point": "python -m greyhound.sp_lay --trade --live",
   "workflow": "paper-models.yml",
@@ -26,17 +27,21 @@
       "source": "reports/research_ledger.jsonl greyhound-sp-offset-seeds-1120"
     },
     {
+      "claim": "the place route: +2.662% of liability (2.137 to 3.187), t 8.34, deflated Sharpe 0.999986 at 38,018 greyhound trials, development only",
+      "source": "reports/research_ledger.jsonl greyhound-residual-strategies-1121"
+    },
+    {
       "claim": "no forward day yet: its paper forward test's gate is read once at 120 settled days",
       "source": "reports/research_ledger.jsonl greyhound-sp-offset-forward-1120"
     },
     {
-      "claim": "real orders only with GREYHOUND_SP_LAY=live; GBP50 a lay and a GBP300 daily loss limit at the worst case, fixed in code",
+      "claim": "real orders only with GREYHOUND_SP_LAY=live; GBP50 a lay to win and GBP50 to be placed, one GBP1,000 daily loss limit at the worst case, fixed in code",
       "source": "tests/test_workflow_guards.py; greyhound/sp_lay.py CONFIG"
     }
   ],
   "approved": {
     "by": "owner",
     "on": "2026-11-21",
-    "source": "the owner, 21 Nov 2026: \"Put any possible profitable strategies live\"; asked, chose the bottom-10% SP lay only, GBP50 a lay, GBP300 daily loss limit, live today, restarting today's paper-models run"
+    "source": "the owner, 21 Nov 2026: \"Put any possible profitable strategies live\"; asked, chose the bottom-10% SP lay only, GBP50 a lay, GBP300 daily loss limit, live today, restarting today's paper-models run; later that day: \"yes add the place lay live, same limit\", \"GBP500 daily loss limit\", then \"daily loss limit GBP1000\""
   }
 }
