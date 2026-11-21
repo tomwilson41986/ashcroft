@@ -355,3 +355,24 @@ Bets: 64,381 and 64,682 for the top-10% back; 64,525 and 64,166 for the bottom-1
 - Power: at 120 days the expected forward t is about 2.5 to 2.8, so roughly an 80 to 87% chance of clearing zero if the effect is what the study measured.
 
 **Frozen** 20 Nov 15:37 UTC (run 44759069462): 20 fits (early stops 20 to 190 rounds), fit 2 Jun 2020 to 10 Nov 2026, code and cache hash `296fa691e4b2`. The cut for the gate rule, lay the bottom 10%: a centred residual of -0.0418 or below. The 16:48 UTC serve on 20 Nov wrote nothing (before the first forward day).
+
+## Every route for the residual (21 Nov; run 44881063856; ledger `greyhound-residual-strategies-1121`)
+
+The owner, 21 Nov: "evaluate all possible trading strategies". The out-of-sample residual (20 seeds a fold, the frozen model's rows and features), the top 10% backed or the bottom 10% laid, through every route the historic files can price. 666,237 test runners; 38,018 greyhound trials; the deflated Sharpe bar is 0.95.
+
+| Route | Lay the bottom 10% | Back the top 10% |
+|---|---|---|
+| At the SP (the live rule, for reference) | +1.35% (1.04 to 1.65), t 7.28, DSR 0.9989, 73 a day | +6.14%, t 5.05, DSR 0.771 |
+| **To be placed, at the place SP** | **+2.66% (2.14 to 3.19), t 8.34, DSR 0.99999**, 73 a day | +2.93%, t 4.29, DSR 0.574 |
+| At the SP, only at 10 or under | +1.69%, t 6.69, DSR 0.994, 52 a day | - |
+| At the SP, only at 20 or under | +1.47%, t 7.13, DSR 0.998, 65 a day | - |
+| At the SP, stakes scaled to the signal | +1.37%, t 7.22, DSR 0.998 | +6.23%, t 4.87, DSR 0.673 |
+| At the SP, limited to the morning price | +4.53%, t 1.93, DSR 0.015, 1.7 a day | +0.77%, fails |
+| Taken at the morning price, held | +7.75%, t 10.57, 6.9 a day | -12.19% |
+| Taken at the morning price, closed at the SP | +6.36%, t 20.63, 6.9 a day | -12.33% |
+| The pre-play price | no data found (no PPWAP in the greyhound files) | no data found |
+
+- **The one route stronger than the live rule: lay the same dogs to be placed, at the place SP.** About twice the return per pound of liability and a higher t, positive in every test year. A development result: the place SP's capacity is not measured.
+- **The morning prices are not evidence for the model.** The backs lose as much as the lays win, so the gain is the market-wide gap between the morning average and the SP on the 9% of runners that traded in the morning. It is the drift already found not to be a price on offer, and the early lay traded it live at a loss.
+- **The caps and the scaled stakes** earn more per pound of liability but are no stronger (t 6.7 to 7.2 against 7.3): the live rule stays as it is.
+- **The SP pool: no data found.** The recorder's books carry no SP amounts (0 on all 29,354 runners, 31 Oct to 20 Nov): it does not ask Betfair for them.
