@@ -17,6 +17,13 @@ Each morning, after the 03:10 UTC predictions (predict-shadow.yml):
 
 Read-only: nothing here writes predictions/, which the trader reads. No shadow.json, or a day past `until`: nothing
 to do, exit 0. The comparison is research/queries (each day's two files against the BSP of Betfair's own record).
+
+The two files are paired only when both priced the same database. horse_racing.db is replaced in S3 by its writers
+(blandford-sync.yml at 06:45 UTC, daily-results.yml at 21:30, blandford-sectionals.yml at 00:20) and the bucket keeps
+no versions, so the 04:25 run reads what the 03:00 run read, and a run after 06:45 does not (the first check, 21 Nov
+2026, run at 09:30: 18 of 46 races identical, the rest moved by the 06:47 upload). Each row carries the database's
+S3 LastModified (`db_modified`) and the trader's file's (`live_modified`); a database newer than the trader's file is
+logged as not paired.
 """
 from __future__ import annotations
 
@@ -107,6 +114,21 @@ def align(card, history):
     return out
 
 
+def s3_modified(bucket: str, key: str) -> str:
+    """The object's S3 LastModified (UTC, ISO), or '' when it cannot be read."""
+    import boto3
+    try:
+        return boto3.client("s3").head_object(Bucket=bucket, Key=key)["LastModified"].isoformat()
+    except Exception as e:  # noqa: BLE001  a record, never a reason to stop
+        log.warning("no LastModified for s3://%s/%s (%s)", bucket, key, type(e).__name__)
+        return ""
+
+
+def paired(db_modified: str, live_modified: str) -> bool:
+    """True when the database was last written before the trader's file: both priced the same database."""
+    return bool(db_modified and live_modified and db_modified <= live_modified)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--date", default=None)
@@ -125,11 +147,21 @@ def main(argv=None) -> int:
         return 0
     log.info("the morning card %s: %d runners", key, len(card))
     from pipeline.shared import ensure_database
+    from ultra_betting.config import S3_BUCKET, S3_DB_BUCKET, S3_DB_KEY
+    db_modified = s3_modified(S3_DB_BUCKET, S3_DB_KEY)
+    live_modified = s3_modified(S3_BUCKET, f"predictions/{day}.csv")
+    if paired(db_modified, live_modified):
+        log.info("paired: the database (%s) is the one the trader's file (%s) was priced on", db_modified, live_modified)
+    else:
+        log.warning("NOT PAIRED: the database was written %s, the trader's file %s: a newer database prices the "
+                    "shadow, so its difference from the trader's file is not the models' alone", db_modified or "?",
+                    live_modified or "?")
     ensure_database()
     out = price(materialise(cfg["commit"], Path(args.models)), card, day)
     from predict_bfsp_today import OUTPUT_COLS
     out = out[[c for c in OUTPUT_COLS if c in out.columns]].copy()
     out["shadow_of"] = cfg["commit"]
+    out["db_modified"], out["live_modified"] = db_modified, live_modified
     log.info("shadow priced %d runners in %d races", len(out), out["race_id"].nunique() if "race_id" in out else -1)
     if args.dry_run:
         print(out.head(20).to_string())
