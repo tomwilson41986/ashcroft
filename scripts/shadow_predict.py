@@ -90,7 +90,21 @@ def price(model_dir: Path, card, day: date):
     model, cols, vocab = load_bfsp_model(str(model_dir))
     hist = load_historical(str(DB_PATH), start_date=training_start(model_dir))
     before = hist[hist["race_date"].dt.date < day].copy()
-    return with_model_rank(prepare_and_predict(before, card, model, cols, day, vocab))
+    del hist
+    return with_model_rank(prepare_and_predict(before, align(card, before), model, cols, day, vocab))
+
+
+def align(card, history):
+    """The card as the live run holds it in memory: a column the history holds as numbers made numbers (a CSV read
+    gives text where a value was blank or odd, and one text column on the card turns the history's column to Python
+    objects when the two are joined: a million boxed values, the first shadow run's lost runner, 21 Nov 2026)."""
+    import pandas as pd
+    out = card.copy()
+    for c in out.columns:
+        if c in history.columns and c != "race_date":
+            if pd.api.types.is_numeric_dtype(history[c]) and not pd.api.types.is_numeric_dtype(out[c]):
+                out[c] = pd.to_numeric(out[c], errors="coerce")
+    return out
 
 
 def main(argv=None) -> int:

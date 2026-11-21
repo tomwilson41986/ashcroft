@@ -28,3 +28,13 @@ def test_the_shadow_never_writes_the_traders_file_and_holds_no_betfair_key():
     wf = yaml.safe_load(text)
     assert "BETFAIR" not in text and "TRADING_LIVE" not in text
     assert wf["jobs"]["shadow"]["runs-on"] == "ubuntu-latest"
+
+
+def test_the_card_is_aligned_to_the_historys_numbers():
+    import pandas as pd
+    hist = pd.DataFrame({"race_date": pd.to_datetime(["2026-11-20"]), "official_rating": [70.0], "pounds": [140],
+                         "horse_name": ["a"]})
+    card = pd.DataFrame({"race_date": ["2026-11-21"], "official_rating": ["72"], "pounds": [""], "horse_name": ["b"]})
+    out = S.align(card, hist)
+    assert out["official_rating"].dtype.kind in "if" and out["official_rating"].iloc[0] == 72
+    assert out["pounds"].isna().all() and out["horse_name"].iloc[0] == "b" and out["race_date"].iloc[0] == "2026-11-21"
