@@ -118,3 +118,25 @@ GBP4,000 a day turnover limit; a stake of GBP15-200 a horse; at most 5 top-ups; 
 `ash<mmdd>` (the trader adopts and lays only its own); the trading watchdog; the day's ledger reconciled each evening
 against Betfair's settled figure and the account's funds (`account_day_<mmdd>.py`; 18 Nov left a GBP27.52 gap under
 check). Commission: 2% of each market's positive net, as the account's daily reconciliation has matched to the penny.
+
+## Phase 6 - the locked holdout, read once (21 Nov)
+
+Candidate gate_stn (the served three members, each with collateral, future_form and nbl_rating) against gate_st
+(served), paired by runner. Folds 28 Mar - 26 Jun and 27 Jun - 25 Sep (run 44752561907) and 26 Sep - 16 Nov, never
+scored by any research run (run 44875953861). Read by `research/queries/phase6_gates_1121.py` (run 44899288436),
+full output in `phase6_gates_1121.txt`. Ledger `iter132-final`, result **PROMOTE**.
+
+| Gate | Three folds | Unseen fold alone | |
+|---|---|---|---|
+| 1. Paired error vs BFSP (at least 0.0007 below, CI below zero) | -0.0027 (-0.0031 to -0.0022), 83,712 runners | -0.0019 (-0.0030 to -0.0009), 18,133 runners | pass |
+| 2. Brier skill vs market, not resolved worse | -0.00037 (-0.00112 to +0.00034) | -0.00017 (-0.00171 to +0.00159) | pass |
+| 2. Concordance, not resolved worse | -0.00004 (-0.00116 to +0.00095) | +0.00092 (-0.00112 to +0.00318) | pass |
+| 3. Net CLV at the 3% bar, 2% commission (gate_st beside) | +8.58% (+8.13 to +9.01) vs +8.26% | +6.09% (+5.31 to +6.88) vs +5.65% | pass |
+| 3. Difference, gate_stn less gate_st | +0.32 pts (+0.13 to +0.52) | +0.45 pts (+0.13 to +0.78) | pass |
+| 4. Deflated Sharpe, 484 trials | 1.0 (Sharpe 2.30, 200 days) | 1.0 (Sharpe 1.66, 52 days) | pass |
+| 5. Point-in-time tests | 487 passed, 5 skipped | | pass |
+
+Reported, not gates: the gain is in the flat/AW (-0.0034); jumps -0.0009 on the three folds and +0.0003
+(-0.0014 to +0.0019) on the unseen fold. Top pick at flat stakes -2.72% against -1.40% (intervals overlap). The
+Benter test: neither blend adds to the BSP on the winner (-0.09 and -0.04 per 1,000 races, intervals across zero).
+The query's first run used 5% commission instead of the registered 2%; it passed there too.
