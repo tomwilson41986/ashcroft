@@ -138,6 +138,11 @@ def common_args(cfg: dict) -> list[str]:
     """Arguments every arm shares: the matrix, the folds, the recipe. The folds step and score 91 days unless the
     config says `step_days` (and `val_window`, which defaults to the step): the refit-cadence test of 15 Nov."""
     anchor = ["--fold-anchor", str(cfg["fold_anchor"])] if cfg.get("fold_anchor") else []
+    if cfg.get("partial_last_fold"):
+        # the newest weeks, short of a whole window: only in a declared final read (it ends at bfsp_until)
+        if not (cfg.get("final") and cfg.get("bfsp_until")):
+            raise SystemExit("loop.json: partial_last_fold needs \"final\": true and bfsp_until")
+        anchor = anchor + ["--partial-last-fold"]
     return ["--start-date", start_date(cfg), "--feature-cache", FEATURE_CACHE,
             "--eval-from", cfg.get("bfsp_from", "2025-07-01"), "--eval-until", eval_until(cfg),
             "--step-days", str(int(cfg.get("step_days", 91))), "--val-window", str(int(cfg.get("val_window", cfg.get("step_days", 91)))),

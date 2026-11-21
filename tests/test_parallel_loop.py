@@ -587,3 +587,33 @@ def test_releasing_the_matrix_before_a_one_fold_fit_changes_no_prediction():
     # without only_fold nothing is released: every fold is still fitted
     every = evaluate_oos.walk_forward_predict(df, ["a"], release_frame=True, **SCHEDULE)
     assert sorted(every["fold_idx"].unique()) == sorted(serial["fold_idx"].unique())
+
+
+def test_a_partial_last_fold_is_scored_only_when_asked_and_changes_no_other_fold():
+    """The schedule plans whole windows only, so the newest weeks are never scored. The Phase 6 read (20 Nov 2026)
+    announced the fold 26 Sep - 16 Nov and the plan left it out; partial_last adds it, up to eval_until, and every
+    other fold is as it was."""
+    dates = pd.Series(pd.date_range("2021-01-01", "2026-11-16", freq="D").repeat(3))
+    kw = dict(min_train_days=365, val_window_days=91, step_days=91, eval_from="2026-03-28", eval_until="2026-11-17",
+              fold_anchor="2021-01-01", train_from="2021-01-01")
+    whole = evaluate_oos.fold_plan(dates, **kw)
+    with_last = evaluate_oos.fold_plan(dates, partial_last=True, **kw)
+    assert [f["val_start"] for f in whole] == ["2026-03-28", "2026-06-27"]
+    assert with_last[:2] == whole
+    assert len(with_last) == 3 and with_last[2]["val_start"] == "2026-09-26" and with_last[2]["fold"] == 2
+    assert with_last[2]["n_val"] == 3 * 52                     # 26 Sep to 16 Nov, the rows before eval_until
+    # the last fold trains on nothing from its own window or the purge before it
+    k, start, end, tr, va = list(evaluate_oos.evaluated_folds(dates, partial_last=True, **kw))[2]
+    d = pd.to_datetime(dates)
+    assert d[tr].max() < start - pd.Timedelta(days=29) and d[va].min() == start and d[va].max() == pd.Timestamp("2026-11-16")
+    # without eval_until there is no partial fold: the flag alone opens nothing
+    kw2 = dict(kw, eval_until=None)
+    assert evaluate_oos.fold_plan(dates, partial_last=True, **kw2) == evaluate_oos.fold_plan(dates, **kw2)
+
+
+def test_the_loop_passes_the_partial_fold_only_in_a_declared_final_read():
+    cfg = {"final": True, "bfsp_until": "2026-11-17", "bfsp_from": "2026-09-26", "partial_last_fold": True}
+    assert "--partial-last-fold" in rl.common_args(cfg)
+    assert "--partial-last-fold" not in rl.common_args({"bfsp_from": "2025-01-01"})
+    with pytest.raises(SystemExit):
+        rl.common_args({"partial_last_fold": True, "bfsp_from": "2025-01-01"})

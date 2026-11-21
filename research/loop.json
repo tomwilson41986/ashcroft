@@ -13,7 +13,7 @@
   "until": "",
   "params": "",
   "bfsp": true,
-  "bfsp_from": "2026-03-28",
+  "bfsp_from": "2026-09-26",
   "final": true,
   "bfsp_base_blocks": "race_relative,time_figure,race_relative_wide,exposure,head_to_head,bookings,form_lines,form_variants,connection_windows,debut_market,kalman,handicap_angles,travel,sectionals",
   "bfsp_base_withhold": "",
@@ -110,10 +110,11 @@
       }
     }
   ],
-  "note": "Iteration 132, the Phase 6 holdout read (the owner, 19 Nov 2026: 'carry on with Phase 6'), exactly as announced in the ledger (HOLDOUT LOOK iter132-final, 2026-11-19T15:10Z, and its amendment of 20 Nov): the served recipes on the locked folds 28 Mar - 26 Jun, 27 Jun - 25 Sep and 26 Sep - 16 Nov 2026 (the last never scored). Arms st, dml_st, rx16_st, stn, dml_stn, rx16_stn and the figure member; ensembles gate_st (the served blend), gate_stn (THE CANDIDATE: iteration 131 failed its reading) and gate_stn_fig (reported beside). Read once.",
+  "note": "Iteration 132, the Phase 6 holdout read (the owner, 19 Nov 2026: 'carry on with Phase 6'), exactly as announced in the ledger (HOLDOUT LOOK iter132-final, 2026-11-19T15:10Z, and its amendment of 20 Nov): the served recipes on the locked folds 28 Mar - 26 Jun, 27 Jun - 25 Sep and 26 Sep - 16 Nov 2026 (the last never scored). Arms st, dml_st, rx16_st, stn, dml_stn, rx16_stn and the figure member; ensembles gate_st (the served blend), gate_stn (THE CANDIDATE: iteration 131 failed its reading) and gate_stn_fig (reported beside). Read once. SECOND RUN (21 Nov): the fold 26 Sep - 16 Nov alone, which the first run's schedule left out (whole windows only); partial_last_fold scores it up to bfsp_until. See the ledger amendment of 21 Nov.",
   "bfsp_args": "",
   "bfsp_base_args": "--drop-features sire_runners,damsire_runners --learning-rate 0.02 --num-boost-round 12000 --param min_child_samples=500 --param extra_trees=true --param objective=huber --train-from 2021-01-01 --float32",
   "start_date": "2018-01-01",
   "fold_anchor": "2021-01-01",
-  "bfsp_until": "2026-11-17"
+  "bfsp_until": "2026-11-17",
+  "partial_last_fold": true
 }

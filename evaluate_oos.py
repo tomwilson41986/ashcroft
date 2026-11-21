@@ -105,7 +105,8 @@ def drop_in_blocks() -> list[str]:
 def evaluated_folds(dates, min_train_days: int = 365, val_window_days: int = 30,
                     step_days: int = 30, cfg: TrainConfig | None = None,
                     eval_from: str | None = None, eval_until: str | None = None,
-                    fold_anchor: str | None = None, train_from: str | None = None):
+                    fold_anchor: str | None = None, train_from: str | None = None,
+                    partial_last: bool = False):
     """The walk-forward schedule: every fold a run scores, in order.
 
     Yields (k, val_start, val_end, train_mask, val_mask), where k counts the
@@ -119,7 +120,12 @@ def evaluated_folds(dates, min_train_days: int = 365, val_window_days: int = 30,
     matrix built from an earlier start scores exactly the folds a later-starting
     one does; `train_from` keeps a fold's training rows on or after that date
     while the features still see every earlier row. Together they separate what
-    a longer history gives the features from what its rows give the fit."""
+    a longer history gives the features from what its rows give the fit.
+
+    A fold is scheduled only when its whole window fits inside the data, so the newest weeks (under one window) are
+    never scored. `partial_last` (with `eval_until`) adds that last, shorter fold: it starts where the last whole
+    fold ended and scores the rows up to `eval_until`. Off by default: every earlier run's folds are unchanged
+    (the Phase 6 read of 20 Nov 2026 announced the fold 26 Sep - 16 Nov and the schedule left it out)."""
     cfg = cfg or TrainConfig()
     dates = pd.to_datetime(pd.Series(dates).reset_index(drop=True))
     max_date = dates.max()
@@ -128,7 +134,8 @@ def evaluated_folds(dates, min_train_days: int = 365, val_window_days: int = 30,
     since = (dates >= pd.Timestamp(train_from)).to_numpy() if train_from is not None else None
     until = pd.Timestamp(eval_until) if eval_until is not None else None
     k = 0
-    while train_end + timedelta(days=val_window_days) <= max_date:
+    while (train_end + timedelta(days=val_window_days) <= max_date
+           or (partial_last and until is not None and train_end <= max_date and train_end < until)):
         val_start = train_end
         val_end = val_start + timedelta(days=val_window_days)
         train_end += timedelta(days=step_days)
@@ -173,6 +180,7 @@ def walk_forward_predict(
     train_from: str | None = None,
     train_code: str | None = None,
     release_frame: bool = False,
+    partial_last: bool = False,
 ) -> pd.DataFrame:
     """Train and predict in walk-forward fashion.
 
@@ -221,7 +229,7 @@ def walk_forward_predict(
 
     for fold_idx, val_start, val_end, tr_mask, va_mask in evaluated_folds(
             df["race_date"], min_train_days, val_window_days, step_days, cfg,
-            eval_from, eval_until, fold_anchor, train_from):
+            eval_from, eval_until, fold_anchor, train_from, partial_last):
         if only_fold is not None and fold_idx != only_fold:
             continue
         if train_code:
@@ -1069,6 +1077,11 @@ def main():
              "--eval-from, a development window that never reads the holdout",
     )
     parser.add_argument(
+        "--partial-last-fold", action="store_true",
+        help="With --eval-until: also score the last fold whose window runs past the data (the newest weeks), "
+             "up to --eval-until. Off by default, so every earlier run's folds stand",
+    )
+    parser.add_argument(
         "--blocks", default="",
         help="Blocks to add to the served features: shape_draw and shape_form (built "
              "by the engine, not served: model/bfsp_features.py RESEARCH_BLOCKS), "
@@ -1121,7 +1134,7 @@ def main():
     schedule = dict(min_train_days=args.min_train_days, val_window_days=args.val_window,
                     step_days=args.step_days, cfg=cfg, eval_from=args.eval_from,
                     eval_until=args.eval_until, fold_anchor=args.fold_anchor,
-                    train_from=args.train_from)
+                    train_from=args.train_from, partial_last=args.partial_last_fold)
 
     if args.list_folds:
         # Only the dates are needed, and a cached matrix gives them without the
