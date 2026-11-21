@@ -19,7 +19,8 @@
   ],
   "kill_switch_fails": "safe",
   "dashboard_ids": [
-    "greyhound-sp-lay"
+    "greyhound-sp-lay",
+    "greyhound-sp-lay-paper"
   ],
   "evidence": [
     {

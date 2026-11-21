@@ -543,7 +543,7 @@ def test_the_switch_reaches_the_page_and_the_job_reads_the_variables_as_paper_mo
     el = next(t for s in d["sports"] for t in s["traders"] if t["id"] == "greyhound-early-lay")
     assert el["switch"]["state"] == "paper" and el["switch"]["armed"] is False and el["switch"]["from"] == "2026-11-11"
     switched = {t.id for t in TRADERS if t.switch}
-    assert switched == {"greyhound-early-lay", "greyhound-take-close"}
+    assert switched == {"greyhound-early-lay", "greyhound-take-close", "greyhound-sp-lay"}
     others = [t for s in d["sports"] for t in s["traders"] if t["id"] not in switched]
     assert all("switch" not in t for t in others)
     html = render(d)
@@ -637,3 +637,128 @@ def test_the_take_close_switch_is_read_as_the_trader_reads_it_with_its_own_stop(
                "GREYHOUND_TAKE_CLOSE_DAILY_LOSS: ${{ vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS }}"):
         assert ln in wf
     assert "vars.GREYHOUND_TAKE_CLOSE || 'paper'" in pm                  # the same default as the trader's job
+
+
+# The lay at the SP (the owner, 21 Nov 2026: "Put any possible profitable strategies live"; "Add the new greyhound
+# traders"): its lays at the SP to win and to be placed, settled on the recorder's books; its paper forward test
+
+def SL(tid="greyhound-sp-lay"):
+    """The lay at the SP's readers without their start (21 Nov 2026): the tests below are dated 4 Nov."""
+    return replace(T(tid), start_from=None)
+
+
+def test_sp_lay_settles_each_lay_at_the_sp_on_the_recorders_win_and_place_books(tmp_path):
+    d = TODAY.isoformat()
+    rows = [
+        {"time_utc": f"{d}T12:00:00Z", "kind": "win", "action": "lay", "market_id": "1.w", "selection_id": 1,
+         "track": "Romford", "race_time": "12:05", "liability": 50, "bet_id": "11", "status": "PENDING"},
+        {"time_utc": f"{d}T12:00:01Z", "kind": "place", "action": "lay", "market_id": "1.p", "selection_id": 1,
+         "track": "Romford", "race_time": "12:05", "liability": 50, "bet_id": "12", "status": "PENDING"},
+        {"time_utc": f"{d}T12:00:02Z", "kind": "win", "action": "lay", "market_id": "1.w", "selection_id": 2,
+         "track": "Romford", "race_time": "12:05", "liability": 50, "bet_id": "13", "status": "PENDING"},
+        {"time_utc": f"{d}T13:00:00Z", "kind": "win", "action": "lay", "market_id": "2.w", "selection_id": 5,
+         "track": "Hove", "race_time": "13:05", "liability": 50, "bet_id": "", "status": "FAILURE"},
+        {"time_utc": f"{d}T14:00:00Z", "kind": "win", "action": "lay", "market_id": "3.w", "selection_id": 7,
+         "track": "Hove", "race_time": "14:05", "liability": 50, "bet_id": "31", "status": "PENDING"},
+        {"time_utc": f"{d}T14:00:30Z", "kind": "win", "action": "cancel", "market_id": "3.w", "selection_id": 7,
+         "bet_id": "31", "status": "SUCCESS", "note": "stopped (S3 STOP)"},
+        {"time_utc": f"{d}T15:00:00Z", "kind": "win", "action": "skip", "market_id": "4.w", "selection_id": 9},
+    ]
+    _put(tmp_path, "capture", f"sources/greyhound/sp_lay/live/{d}/ledger.csv", pd.DataFrame(rows))
+    src = LocalSource(tmp_path)
+    days, last = trader_days(src, SL(), TODAY, cache=False)
+    m = days[d].set_index("market_id")
+    assert set(m.index) == {"1.w", "1.p"}         # a failed lay, a cancelled lay and a skip are no position
+    assert not m.settled.any() and m.loc["1.w", "open_liability"] == pytest.approx(100)
+    assert m.loc["1.w", "staked"] == pytest.approx(100) and m.loc["1.p", "label"] == "Romford (place)"
+    assert last == f"{d}T15:00:00Z"
+    # the recorder's settled books: dog 1 won (and so placed) at a win SP of 3.0; dog 2 lost at 6.0
+    books = pd.DataFrame([
+        {"polled_utc": f"{d}T12:10:00Z", "source": "final", "market_id": "1.w", "selection_id": 1,
+         "runner_status": "WINNER", "sp_actual": 3.0},
+        {"polled_utc": f"{d}T12:10:00Z", "source": "final", "market_id": "1.w", "selection_id": 2,
+         "runner_status": "LOSER", "sp_actual": 6.0},
+        {"polled_utc": f"{d}T12:10:00Z", "source": "final", "market_id": "1.p", "selection_id": 1,
+         "runner_status": "WINNER", "sp_actual": 1.4}])
+    _put_gz(tmp_path, "capture", f"betfair_live/{d}/books_greyhound_live.csv.gz", books)
+    days, _ = trader_days(src, SL(), TODAY, cache=False)
+    m = days[d].set_index("market_id")
+    assert m.settled.all()
+    assert m.loc["1.w", "pnl"] == pytest.approx(-50 + 50 / (6.0 - 1))     # net of the market: no commission
+    assert m.loc["1.p", "pnl"] == pytest.approx(-50)
+    s = summarise(SL(), days, TODAY)
+    assert s["today"]["pnl"] == pytest.approx(-90) and s["edge"]["clv_today"] is None   # no CLV at the SP
+
+
+def test_sp_lay_a_loser_pays_its_stake_at_the_sp_less_commission(tmp_path):
+    d = TODAY.isoformat()
+    led = pd.DataFrame([{"time_utc": f"{d}T12:00:00Z", "kind": "win", "action": "lay", "market_id": "1.w",
+                         "selection_id": 1, "track": "Romford", "race_time": "12:05", "liability": 50,
+                         "bet_id": "11", "status": "PENDING"}])
+    _put(tmp_path, "capture", f"sources/greyhound/sp_lay/live/{d}/ledger.csv", led)
+    _put_gz(tmp_path, "capture", f"betfair_live/{d}/books_greyhound.csv.gz",
+            pd.DataFrame([{"polled_utc": f"{d}T12:10:00Z", "source": "final", "market_id": "1.w", "selection_id": 1,
+                           "runner_status": "LOSER", "sp_actual": 11.0}]))
+    days, _ = trader_days(LocalSource(tmp_path), SL(), TODAY, cache=False)
+    assert days[d].pnl.sum() == pytest.approx(5.0 * 0.98)                  # stake 50 / (11 - 1), 2% off
+
+
+def test_sp_lay_switch_reads_its_own_variable_its_fixed_limit_and_its_own_stop(tmp_path):
+    from dashboard.traders import switch_state
+    from greyhound import sp_lay
+    t = T("greyhound-sp-lay")
+    assert t.switch == "GREYHOUND_SP_LAY" and t.start_from == "2026-11-21" and t.mode == "live"
+    assert tuple(t.stop_keys) == sp_lay.STOP_KEYS
+    src = LocalSource(tmp_path)
+    for env in ({"GREYHOUND_SP_LAY": "paper"}, {"GREYHOUND_SP_LAY": "live"}, {"GREYHOUND_SP_LAY": " LIVE "}):
+        w = switch_state(src, t, env)
+        assert w["armed"] == sp_lay.switch_on(env)                          # no variable sets its loss limit
+        assert w["loss_limit"] == sp_lay.CONFIG["daily_loss_limit"]
+    assert switch_state(src, t, {"GREYHOUND_SP_LAY": "live"})["label"] == "Live: real orders, daily loss limit GBP1,000"
+    p = tmp_path / "capture" / "greyhound/STOP"                          # the early lay's STOP does not stop it
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("stop")
+    assert switch_state(src, t, {"GREYHOUND_SP_LAY": "live"})["armed"] is True
+    for key in sp_lay.STOP_KEYS:
+        q = tmp_path / "capture" / key
+        q.parent.mkdir(parents=True, exist_ok=True)
+        q.write_text("stop")
+        w = switch_state(src, t, {"GREYHOUND_SP_LAY": "live"})
+        assert w["armed"] is False and w["label"].endswith("no new lays")
+        q.unlink()
+    wf = (Path(__file__).resolve().parents[1] / ".github/workflows/trader-dashboard.yml").read_text()
+    pm = (Path(__file__).resolve().parents[1] / ".github/workflows/paper-models.yml").read_text()
+    assert "GREYHOUND_SP_LAY: ${{ vars.GREYHOUND_SP_LAY || 'paper' }}" in wf
+    assert "vars.GREYHOUND_SP_LAY || 'paper'" in pm                      # the same default as the trader's job
+
+
+def test_sp_lay_forward_test_reads_its_served_picks_and_its_own_settle(tmp_path):
+    import json
+    from research.greyhound import sp_offset_forward as fw
+    from dashboard.traders import SP_LAY_RULE
+    from greyhound.sp_lay import RULE
+    assert SP_LAY_RULE == RULE == fw.PRIMARY and T("greyhound-sp-lay-paper").start_from == fw.FIRST_DAY
+    d = TODAY.isoformat()
+    root = "sources/greyhound/sp_offset"
+    (tmp_path / "capture" / root).mkdir(parents=True)
+    (tmp_path / "capture" / root / "meta.json").write_text(json.dumps({"cuts": {"lay_bottom10": -0.5}}))
+    served = pd.DataFrame([
+        {"race_id": "r1", "market_id": "1.w", "selection_id": 1, "track": "Romford", "race_time": "12:05", "s": -0.9},
+        {"race_id": "r1", "market_id": "1.w", "selection_id": 2, "track": "Romford", "race_time": "12:05", "s": -0.6},
+        {"race_id": "r1", "market_id": "1.w", "selection_id": 3, "track": "Romford", "race_time": "12:05", "s": 0.3},
+        {"race_id": "r2", "market_id": "2.w", "selection_id": 4, "track": "Hove", "race_time": "13:05", "s": -0.7},
+        {"race_id": "r3", "market_id": "3.w", "selection_id": 5, "track": "Hove", "race_time": "14:05", "s": 0.1}])
+    _put(tmp_path, "capture", f"{root}/served/{d}.csv", served)
+    src = LocalSource(tmp_path)
+    days, _ = trader_days(src, SL("greyhound-sp-lay-paper"), TODAY, cache=False)
+    m = days[d].set_index("market_id")
+    assert set(m.index) == {"r1", "r2"} and not m.settled.any()          # r3 has no runner under the cut
+    assert m.loc["r1", "staked"] == 2 and m.loc["r1", "open_liability"] == 2
+    # the test's own settle: r2 left out (not wholly priced), r1 netted
+    _put(tmp_path, "capture", f"{root}/settled/{d}.csv", pd.DataFrame([
+        {"rule": "lay_bottom10", "day": d, "race_id": "r1", "risk": 2, "gross": 0.4, "net": 0.392},
+        {"rule": "back_top10", "day": d, "race_id": "r1", "risk": 1, "gross": -1, "net": -1}]))
+    days, _ = trader_days(src, SL("greyhound-sp-lay-paper"), TODAY, cache=False)
+    m = days[d].set_index("market_id")
+    assert list(m.index) == ["r1"] and m.loc["r1", "settled"] and m.loc["r1", "pnl"] == pytest.approx(0.392)
+    assert m.loc["r1", "staked"] == 2
