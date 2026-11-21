@@ -253,9 +253,11 @@ class SpLay:
         raw = self.store.get(self._key("ledger.csv"))
         if not raw:
             return
-        led = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str})
+        led = pd.read_csv(io.BytesIO(raw), dtype={"market_id": str, "bet_id": str})
         self.rows = led.reindex(columns=LEDGER_FIELDS).fillna("").to_dict("records")
-        for r in self.rows:
+        for r in self.rows:                         # a bet id written as a number by an earlier resume: 123.0 -> 123
+            b = str(r.get("bet_id") or "")
+            r["bet_id"] = b[:-2] if b.endswith(".0") else b
             if str(r["selection_id"]) in ("", "nan"):
                 continue
             k = (str(r["market_id"]), int(float(r["selection_id"])))
