@@ -79,7 +79,7 @@ permissions:
   contents: write
 
 env:
-  PYTHON_VERSION: '3.11'
+  PYTHON_VERSION: '3.12'   # as predict.yml and the live trader (the owner, 21 Nov 2026: "move training to Python 3.12")
   S3_BUCKET: horseracingresults
   S3_DB_KEY: horse_racing.db
 

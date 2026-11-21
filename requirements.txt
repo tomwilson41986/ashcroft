@@ -12,7 +12,7 @@ python-dotenv==1.2.4
 # BFSP prediction model
 pandas==3.1.1
 numpy==2.5.5; python_version >= "3.12"
-numpy==2.4.6; python_version < "3.12"     # numpy 2.5 needs Python 3.12; train-bfsp, research-loop and 57 more run 3.11
+numpy==2.4.6; python_version < "3.12"     # numpy 2.5 needs Python 3.12; 55 research and data jobs still run 3.11
 lightgbm==4.7.0
 scikit-learn==1.9.1
 scipy==1.18.1; python_version >= "3.12"
