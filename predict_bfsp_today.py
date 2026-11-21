@@ -435,6 +435,10 @@ def prepare_and_predict(
     # features either way for the one that does. A drop-in block the model reads
     # (model/blocks) switches on the engine blocks it is computed from.
     from model import blocks as drop_in
+    try:                                     # the results' lag behind the card, logged (review item C3); never fatal
+        results_freshness(historical_df["race_date"], target_date, target_runners)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"results freshness not read: {e}")
     served_blocks = drop_in.used_by(feature_cols)
     engine = CustomMetricsEngine(**{**blocks_needed(feature_cols), **drop_in.engine_flags(served_blocks)})
 
@@ -1029,7 +1033,6 @@ def main():
     if len(history_before) < 100:
         log.warning("Limited history — using full dataset for metrics")
         history_before = historical.copy()
-    results_freshness(history_before["race_date"], target_date, target_runners)
 
     # Generate predictions
     predictions = prepare_and_predict(
