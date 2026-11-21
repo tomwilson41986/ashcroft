@@ -36,6 +36,7 @@ from model import race_book as rb  # noqa: E402
 from research import harness, overfit  # noqa: E402
 from scripts import clv_betfair as cb  # noqa: E402
 
+COMMISSION = 0.02  # the registered gate (ledger iter132-final): 2% on a winning CLV; clv_betfair.COMMISSION is 0.05
 RUN_A, RUN_B = 44752561907, int(os.environ.get("PHASE6_RUN_B") or "0") or None
 RUN_B = RUN_B or 44875953861
 PREFIX = "research-iter132-final"
@@ -109,8 +110,8 @@ def bets(arm, bar=0.03):
     b["stake"] = rb.TO_WIN / (m - 1.0)
     clv = m / bsp - 1.0
     b["gross_v"] = b["stake"] * clv
-    b["net_v"] = b["stake"] * np.where(clv > 0, clv * (1 - cb.COMMISSION), clv)
-    b["held_v"] = np.where(b["won"].astype(bool), b["stake"] * (m - 1.0) * (1 - cb.COMMISSION), -b["stake"])
+    b["net_v"] = b["stake"] * np.where(clv > 0, clv * (1 - COMMISSION), clv)
+    b["held_v"] = np.where(b["won"].astype(bool), b["stake"] * (m - 1.0) * (1 - COMMISSION), -b["stake"])
     return b, s
 
 
@@ -136,7 +137,7 @@ def diff_ci(a, b, num, den="stake", draws=4000):
     return an.sum() / ad.sum() - bn.sum() / bd.sum(), float(np.quantile(bs, 0.05)), float(np.quantile(bs, 0.95))
 
 
-say(f"\n{'=' * 100}\nGATES 3-4: the owner's staking at the 3% bar, net of {100 * cb.COMMISSION:.0f}% commission on a winning CLV\n{'=' * 100}")
+say(f"\n{'=' * 100}\nGATES 3-4: the owner's staking at the 3% bar, net of {100 * COMMISSION:.0f}% commission on a winning CLV\n{'=' * 100}")
 ledger_lines, _ = trials.parse(trials.LEDGER.read_text())
 n_trials = trials.count_trials(ledger_lines)
 say(f"trials counted in the ledger (every sport): {n_trials:,}; horse racing alone: "
