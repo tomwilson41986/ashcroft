@@ -353,3 +353,5 @@ Bets: 64,381 and 64,682 for the top-10% back; 64,525 and 64,166 for the bottom-1
 - **Settled daily on paper** at the live recorder's Betfair SP, a different data path from the study's price files. No Betfair key, no order.
 - **The gate is one rule, lay the bottom 10%, read once at 120 settled forward days (about 21 Mar 2027)**: the forward days' own 90% interval above zero, and the deflated Sharpe on the study's and the forward days together. One futility look at 45 days.
 - Power: at 120 days the expected forward t is about 2.5 to 2.8, so roughly an 80 to 87% chance of clearing zero if the effect is what the study measured.
+
+**Frozen** 20 Nov 15:37 UTC (run 44759069462): 20 fits (early stops 20 to 190 rounds), fit 2 Jun 2020 to 10 Nov 2026, code and cache hash `296fa691e4b2`. The cut for the gate rule, lay the bottom 10%: a centred residual of -0.0418 or below. The 16:48 UTC serve on 20 Nov wrote nothing (before the first forward day).
