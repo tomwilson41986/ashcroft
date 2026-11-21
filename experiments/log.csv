@@ -1101,5 +1101,7 @@ pin-requirements-1121,2026-11-21T07:47Z,live,horse_racing,,,,,"The owner, 21 Nov
 serve-stn-1121,2026-11-21T07:47Z,live,horse_racing,,,,,"The owner, 21 Nov 2026: 'Serve the Phase 6 result.' The candidate is gate_stn (iteration 130: collateral, future_form and nbl_rating in all three members). Its members are being trained on the base as the stack's were (train-bfsp.yml, train_only, fast, from 2018, fixed rounds 12,000 / 12,000 / 12,600): main 44881776372 (Huber), dml 44881782852 (demeaned_log), rx 44881788790 (race_xent), dispatched 07:46 UTC. They go into data/models (the gate unchanged) after each run's verify_model PASS, its artifact's digest matched, a dry run of predict-now, and the Phase 6 read's five gates (iter132-final): if a gate fails, the owner is told before anything is served. Not before 22 Nov's 03:10 UTC predictions.",1100
 results-freshness-1121,2026-11-21T07:49Z,change,horse_racing,,,,,,1101
 python-312-training-1121,2026-11-21T07:55Z,change,horse_racing,,,,,,1102
-serve-stn-1121,2026-11-21T07:59Z,amendment,horse_racing,,,,,,1103
-shadow-m1-1121,2026-11-21T08:33Z,change,horse_racing,,,,,,1104
+greyhound-sp-offset-forward-1120,2026-11-21T09:00Z,note,greyhounds,,,,,,1103
+greyhound-fav-back-paper,2026-11-21T08:25Z,note,greyhounds,,,,,,1104
+serve-stn-1121,2026-11-21T07:59Z,amendment,horse_racing,,,,,,1105
+shadow-m1-1121,2026-11-21T08:33Z,change,horse_racing,,,,,,1106
