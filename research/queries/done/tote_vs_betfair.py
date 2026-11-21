@@ -212,8 +212,11 @@ if len(dec) and len(win):
             continue
         keys = list(zip(g["race_id"], g["cloth"]))
         g["won"] = [k in won.index for k in keys]
-        g["d_pool"] = [won["win_base"].get(k, np.nan) for k in keys]
-        g["d_paid"] = [won["win"].get(k, np.nan) for k in keys]
+        # a winner listed twice (a dead heat, or a dividend published twice) comes back as a Series: its first row
+        # (19 Nov 2026: the list then held Series and the settlement could not make an array of it)
+        first = lambda v: v.iloc[0] if isinstance(v, pd.Series) else v          # noqa: E731
+        g["d_pool"] = [first(won["win_base"].get(k, np.nan)) for k in keys]
+        g["d_paid"] = [first(won["win"].get(k, np.nan)) for k in keys]
         settled = g[g["race_id"].isin(dec["race_id"])]
         for how in ("d_pool", "d_paid"):
             r = tc.hedged_return(settled[how].fillna(0.0), settled["lay1"], settled["won"], C)

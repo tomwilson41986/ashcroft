@@ -14,6 +14,11 @@ import pytest
 from model.blocks import career_before as cb
 from model.form_windows import add_form_windows
 
+#: a leak moves a feature by its own scale; a pandas release that sums a group in another order moves it in the
+#: last bit (pandas 3.1.1 against 2.2.3: at most 1.8e-15, outputs/horse_v0_20261118/report.md). The tests look for
+#: the first, not the second.
+LEAK_ATOL = 1e-12
+
 COURSES = [("York", "Turf", "Handicap", 8.0), ("Kempton", "Standard", "Handicap", 7.0),
            ("Kelso", "Turf", "Handicap Hurdle", 16.0)]
 RESULTS = ["placing_numerical", "bfsp"]
@@ -112,7 +117,7 @@ def test_rows_before_the_cutoff_get_nothing_and_an_earlier_start_changes_nothing
     after = _after(hist)
     assert out.loc[~after, cb.FEATURES].isna().all().all()
     since = cb.build(hist[after].copy())
-    pd.testing.assert_frame_equal(out.loc[after, cb.FEATURES], since[cb.FEATURES], check_exact=True)
+    pd.testing.assert_frame_equal(out.loc[after, cb.FEATURES], since[cb.FEATURES], check_exact=False, rtol=0, atol=LEAK_ATOL)
 
 
 def test_a_namesake_by_age_reads_as_a_horse_with_no_earlier_runs():
@@ -146,7 +151,7 @@ def test_a_days_own_results_move_none_of_its_features_after_the_cutoff(hist):
     blank.loc[days == flip, RESULTS] = np.nan
     out = cb.build(blank)
     on = (days == flip).to_numpy()
-    pd.testing.assert_frame_equal(base.loc[on, cb.FEATURES], out.loc[on, cb.FEATURES], check_exact=True)
+    pd.testing.assert_frame_equal(base.loc[on, cb.FEATURES], out.loc[on, cb.FEATURES], check_exact=False, rtol=0, atol=LEAK_ATOL)
     later = (days > flip).to_numpy()
     assert not base.loc[later, "cb_car_nfp"].equals(out.loc[later, "cb_car_nfp"])
 

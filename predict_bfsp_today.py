@@ -836,6 +836,38 @@ def format_predictions(predictions: pd.DataFrame, target_date: date) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+#: results more than this many days behind the card are flagged (a day's results load overnight; 2 covers a late load)
+FRESHNESS_DAYS = 2
+
+
+def results_freshness(history_dates, target_date, card=None, max_days: int = FRESHNESS_DAYS) -> dict:
+    """How far the results behind the card's features lag the card (the owner's review of 20 Nov 2026, item C3).
+
+    Every form feature reads the results table; when it stops (horseracebase.com paused downloads from 17 Nov 2026)
+    the card is priced as if no horse had run since. The price is made either way; this says so in the log, once, at
+    WARNING, with the runners whose last run (the card's days since its last run, where it carries one) falls in the
+    gap, so the gap is seen on the day and not a week later. Nothing is changed."""
+    last = pd.to_datetime(pd.Series(history_dates), errors="coerce").max()
+    target = pd.Timestamp(target_date)
+    out = {"last_result_day": None if pd.isna(last) else str(last.date()), "target": str(target.date()),
+           "gap_days": None, "runners_in_gap": None, "runners": None if card is None else int(len(card))}
+    if pd.isna(last):
+        log.warning("RESULTS FRESHNESS: no results in the history")
+        return out
+    gap = int((target - last.normalize()).days)
+    out["gap_days"] = gap
+    col = next((c for c in ("days_since_lr", "days_since_last_run", "dslr") if card is not None and c in card.columns),
+               None)
+    if col is not None:
+        dslr = pd.to_numeric(card[col], errors="coerce")
+        out["runners_in_gap"] = int((dslr < gap).sum())
+    msg = (f"RESULTS FRESHNESS: results end {out['last_result_day']}, the card is {out['target']}: {gap} days"
+           + ("" if out["runners_in_gap"] is None else
+              f"; {out['runners_in_gap']} of {out['runners']} runners have run since (their latest run is in no feature)"))
+    (log.warning if gap > max_days else log.info)(msg)
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate BFSP predictions for today's races"
@@ -997,6 +1029,7 @@ def main():
     if len(history_before) < 100:
         log.warning("Limited history — using full dataset for metrics")
         history_before = historical.copy()
+    results_freshness(history_before["race_date"], target_date, target_runners)
 
     # Generate predictions
     predictions = prepare_and_predict(

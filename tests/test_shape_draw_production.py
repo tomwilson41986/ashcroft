@@ -34,6 +34,11 @@ from model.race_shape import RACE_SHAPE_FEATURES, RACE_SHAPE_POST_RACE
 from model.shape_form import SHAPE_FORM_FEATURES
 from tests.test_leakage import _full_card
 
+#: a leak moves a feature by its own scale; a pandas release that sums a group in another order moves it in the
+#: last bit (pandas 3.1.1 against 2.2.3: at most 1.8e-15, outputs/horse_v0_20261118/report.md). The tests look for
+#: the first, not the second.
+LEAK_ATOL = 1e-12
+
 KEY = ["raceid", "horse_name"]
 ENGINE_BLOCKS = (SHAPE_DRAW_FEATURES + INTENT_FEATURES + FRESHNESS_FEATURES + FORM_WINDOW_FEATURES
                  + SHAPE_FORM_FEATURES)
@@ -129,7 +134,7 @@ def test_the_0600_card_gets_the_values_its_day_gets_with_results_in():
 
     a, b, c = blocks(full), blocks(card), blocks(control)
     assert len(a) == 16
-    pd.testing.assert_frame_equal(a, b, check_exact=True)
+    pd.testing.assert_frame_equal(a, b, check_exact=False, rtol=0, atol=LEAK_ATOL)
     # the comparison can see a change: yesterday's results do reach today
     moved = [f for f in ENGINE_BLOCKS if not np.array_equal(a[f].to_numpy(float), c[f].to_numpy(float),
                                                             equal_nan=True)]

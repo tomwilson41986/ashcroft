@@ -1,0 +1,46 @@
+runner: 15,983 MB RAM, 19,455 MB swap; in use at the start 1,655 MB, swap 0 MB
+matrix features_f0b1ff4472306ca63b86.parquet: 1,066,630 rows x 801 columns, built 2026-11-18T10:14:43+00:00, 2.41 GB on disk
+
+1. read by row group in 5s: 1,066,630 x 801; peak RAM + swap 1,662 MB (RAM 1,662, swap 0); the frame 7.2 GB; dtypes {'float64': 707, 'int64': 56, 'str': 32, 'int8': 5, 'datetime64[us]': 1}
+   fingerprints: 801 stored, 801 read; floating-point columns differing 0, absent 0; other columns whose hash moved in the file's round trip (read by pandas as before): 0 []
+
+2. 40 float64 columns read as float32 against the same read as float64 and cast: differing 0
+
+3. fit fig fold 0 by the new code: exit 0 in 4.4 min; peak RAM + swap 14,577 MB (RAM 14,577, swap 0; before the fit 1,814 and 0); the child's largest resident size 13.2 GB
+   collateral,future_form,nbl_rating --drop-features sire_runners,damsire_runners --figure-target --train-from 2021-01-01 --float32 --output-csv reports/fit/oos.csv --output-json reports/fit/summary.json
+   2026-11-20 09:55:25,140 [INFO] Feature cache hit: 1,066,630 rows x 801 columns from .feature_cache/features_f0b1ff4472306ca63b86.parquet
+   2026-11-20 09:55:25,140 [INFO] float32: 523 engine features no block reads were read in single precision
+   2026-11-20 09:55:30,334 [INFO] block race_relative built on the cached matrix in 5s
+   2026-11-20 09:55:32,708 [INFO] block time_figure built on the cached matrix in 2s
+   2026-11-20 09:55:54,451 [INFO] block race_relative_wide built on the cached matrix in 22s
+   2026-11-20 09:55:56,824 [INFO] block exposure built on the cached matrix in 2s
+   2026-11-20 09:56:03,260 [INFO] block head_to_head built on the cached matrix in 6s
+   2026-11-20 09:56:05,180 [INFO] block bookings built on the cached matrix in 2s
+   2026-11-20 09:56:07,379 [INFO] block form_lines built on the cached matrix in 2s
+   2026-11-20 09:56:13,871 [INFO] block form_variants built on the cached matrix in 6s
+   2026-11-20 09:56:15,458 [INFO] block connection_windows built on the cached matrix in 2s
+   2026-11-20 09:56:17,797 [INFO] block debut_market built on the cached matrix in 2s
+   2026-11-20 09:56:37,975 [INFO] block kalman built on the cached matrix in 20s
+   2026-11-20 09:56:40,031 [INFO] block handicap_angles built on the cached matrix in 2s
+   2026-11-20 09:56:43,491 [INFO] block travel built on the cached matrix in 3s
+   2026-11-20 09:56:46,632 [INFO] block sectionals built on the cached matrix in 3s
+   2026-11-20 09:56:49,660 [INFO] block market_rating built on the cached matrix in 3s
+   2026-11-20 09:56:54,063 [INFO] block connections_rating built on the cached matrix in 4s
+   2026-11-20 09:57:05,083 [INFO] block pace_v2 built on the cached matrix in 11s
+   2026-11-20 09:57:45,997 [INFO] block expected_time built on the cached matrix in 41s
+   2026-11-20 09:57:49,663 [INFO] block placement built on the cached matrix in 4s
+   2026-11-20 09:57:55,097 [INFO] block gear built on the cached matrix in 5s
+   2026-11-20 09:58:02,225 [INFO] block market_metrics built on the cached matrix in 7s
+   2026-11-20 09:58:14,614 [INFO] block pedigree_bayes built on the cached matrix in 12s
+   2026-11-20 09:58:44,793 [INFO] block improvement built on the cached matrix in 30s
+   2026-11-20 09:58:57,634 [INFO] block debut built on the cached matrix in 13s
+   2026-11-20 09:59:12,487 [INFO] block collateral built on the cached matrix in 15s
+   2026-11-20 09:59:24,694 [INFO] block future_form built on the cached matrix in 12s
+   2026-11-20 09:59:27,051 [INFO] block nbl_rating built on the cached matrix in 2s
+     df = df.astype({c: np.float32 for c in cast}, copy=False)
+   2026-11-20 09:59:27,395 [INFO] float32: 142 of 1263 model inputs cast to single precision now (the others were held so already)
+   2026-11-20 09:59:27,644 [INFO]   1263 features, 0 missing, 1,066,630 valid rows
+   iteration 131's fold 0 (fit-170-fig-0, oos_fig_f0.csv): 23,309 rows; the new code's: 23,309 rows
+   paired 23,309 (only old 0, only new 0); predicted figure identical on 23,309, largest difference 0, mean 0 (the figure's sd 0.000)
+
+verdict: the matrix is the same column for column; peak memory of a fit 14.6 GB against 22-25 GB before

@@ -22,6 +22,11 @@ import pytest
 from model import blocks
 from model.custom_metrics import CustomMetricsEngine
 
+#: a leak moves a feature by its own scale; a pandas release that sums a group in another order moves it in the
+#: last bit (pandas 3.1.1 against 2.2.3: at most 1.8e-15, outputs/horse_v0_20261118/report.md). The tests look for
+#: the first, not the second.
+LEAK_ATOL = 1e-12
+
 KEY = ["race_date", "track", "race_time", "horse_name"]
 RESULTS = ["placing_numerical", "place", "total_dst_bt", "distbt", "comment", "comptime",
            "comptime_numeric", "bfsp", "bfsp_place", "odds"]
@@ -152,7 +157,7 @@ def test_a_days_own_results_move_none_of_its_features(name, change, engine_frame
     b = _block_on(engine_frames[change], name)
     day = a.index.get_level_values("race_date") == FLIP_DAY
     assert day.sum() > 10
-    pd.testing.assert_frame_equal(a[day], b[day], check_exact=True)
+    pd.testing.assert_frame_equal(a[day], b[day], check_exact=False, rtol=0, atol=LEAK_ATOL)
 
 
 @pytest.mark.parametrize("name", BLOCKS)
@@ -201,3 +206,34 @@ def test_what_a_block_declares_for_serving_is_real(name):
     flags = set(inspect.signature(E.__init__).parameters) - {"self"}
     assert set(getattr(mod, "ENGINE", ())) <= flags
     assert set(getattr(mod, "AFTER", ())) <= set(BLOCKS) - {name}
+
+
+# ---- single precision as the features are written (20 Nov 2026: the fits lost at the matrix's memory peak)
+
+def test_features_stored_single_are_the_double_ones_cast_once(engine_frames):
+    """blocks.attach(single_unless=reads) writes each float64 feature no named block reads as float32. It must be
+    the value a float64 build cast afterwards gives, and a feature another block reads must stay double (a block
+    computing from a rounded input would move its features)."""
+    named = ["debut", "pace_v2", "market_rating"]              # debut reads market_rating and three more (AFTER)
+    reads = blocks.reads_of(named)
+    assert reads is not None and "mr_lshare" in reads and "rs_epf" in reads
+    double, cols = blocks.attach(engine_frames["base"].copy(), named)
+    single, cols2 = blocks.attach(engine_frames["base"].copy(), named, single_unless=reads)
+    assert cols == cols2
+    built = [f for n in blocks.build_order(named) for f in blocks.load(n).FEATURES]
+    cast = [c for c in built if single[c].dtype == np.float32]
+    assert cast and all(c not in reads for c in cast)
+    for c in built:
+        want = double[c].to_numpy()
+        if c in cast:
+            want = want.astype(np.float32)
+        else:
+            assert single[c].dtype == double[c].dtype, c
+        np.testing.assert_array_equal(single[c].to_numpy(), want, err_msg=c)
+
+
+def test_reads_of_is_unknown_when_a_block_declares_none(monkeypatch):
+    mod = blocks.load("pace_v2")
+    assert blocks.reads_of(["pace_v2"]) == set(mod.READS)
+    monkeypatch.delattr(mod, "READS")
+    assert blocks.reads_of(["pace_v2"]) is None

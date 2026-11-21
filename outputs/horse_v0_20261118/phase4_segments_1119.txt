@@ -1,0 +1,188 @@
+A. out/oos_gate_st_122.csv: 15,668 races, 139,877 runners joined to Betfair's morning prices (2024-12-28 to 2026-03-31)
+   scored (closing model fitted on earlier months): 13,443 whole races, 2025-02-01 to 2026-03-31
+   the owner's staking at the 0% bar: 37,994 bets, turnover GBP2,015,567, CLV +6.83% (90% +6.59 to +7.06), held +5.92% (both before commission)
+
+-- by code (3 segments with 30+ bets; the 3 largest by turnover)
+     code  bets  turnover  clv   lo   hi  held  clv_shrunk  above_zero
+    jumps 15315  871767.0 7.06 6.72 7.40  6.79        7.05        True
+flat turf 12884  643409.0 5.85 5.46 6.25  3.58        5.92        True
+       aw  9795  500391.0 7.68 7.20 8.20  7.43        7.59        True
+
+-- by price_band (6 segments with 30+ bets; the 6 largest by turnover)
+price_band  bets  turnover   clv    lo    hi  held  clv_shrunk  above_zero
+        <3  2841  715577.0  4.67  4.20  5.12  4.62        4.67        True
+       3-6  9022  678262.0  6.37  5.96  6.81  5.73        6.37        True
+      6-12 13040  447489.0  9.63  9.14 10.15  6.69        9.63        True
+     12-25  8943  147268.0  9.23  8.41  9.98  7.97        9.22        True
+     25-50  2879   22750.0 13.39 11.69 15.17 19.25       13.30        True
+       50+  1269    4221.0 29.66 25.88 33.38 32.17       28.24        True
+
+-- by field_size (4 segments with 30+ bets; the 4 largest by turnover)
+field_size  bets  turnover  clv   lo   hi  held  clv_shrunk  above_zero
+       2-7 11696  940171.0 5.96 5.62 6.29  4.23        5.99        True
+      8-11 17150  785369.0 7.37 7.01 7.73  7.89        7.35        True
+     12-15  6875  235689.0 8.08 7.46 8.72  4.83        7.93        True
+       16+  2273   54338.0 8.59 7.31 9.88 11.57        7.95        True
+
+-- by class (7 segments with 30+ bets; the 7 largest by turnover)
+  class  bets  turnover  clv   lo   hi  held  clv_shrunk  above_zero
+Class 4  8737  554547.0 6.06 5.68 6.46  6.19        6.11        True
+Class 5 10020  526924.0 7.04 6.57 7.52  7.33        7.02        True
+  Irish  5101  289114.0 7.75 7.05 8.50  4.31        7.56        True
+Class 6  6075  276537.0 7.61 7.07 8.16  2.73        7.52        True
+Class 3  3096  164375.0 6.90 6.14 7.68  4.55        6.88        True
+Class 2  3106  109132.0 6.81 6.08 7.53 14.71        6.81        True
+Class 1  1859   94938.0 4.96 4.09 5.84  3.04        5.47        True
+
+-- by distance (5 segments with 30+ bets; the 5 largest by turnover)
+distance  bets  turnover  clv   lo   hi  held  clv_shrunk  above_zero
+  13-20f  9613  579429.0 7.05 6.64 7.46  4.44        6.83        True
+    7-8f  9009  461499.0 6.81 6.30 7.32  5.75        6.83        True
+    5-6f  7601  359796.0 6.65 6.15 7.18  6.45        6.83        True
+    20f+  7044  359709.0 6.94 6.38 7.51  8.36        6.83        True
+   9-12f  4727  255134.0 6.46 5.89 7.05  5.40        6.83        True
+
+-- by off_hour (11 segments with 30+ bets; the 11 largest by turnover)
+ off_hour  bets  turnover  clv   lo    hi   held  clv_shrunk  above_zero
+       14  6775  384113.0 6.22 5.66  6.76   3.04        6.29        True
+       15  7162  366665.0 6.78 6.26  7.29   8.01        6.79        True
+       16  6469  312329.0 7.31 6.72  7.88   8.00        7.25        True
+       17  4702  234633.0 7.86 7.21  8.51   8.50        7.70        True
+       13  3793  223411.0 5.34 4.65  6.06   8.25        5.62        True
+       18  2835  171268.0 6.57 5.75  7.40   2.98        6.63        True
+       19  2733  137604.0 7.99 7.22  8.74   2.61        7.74        True
+       20  2057   97569.0 8.29 7.30  9.25  -1.16        7.84        True
+       12  1137   71066.0 6.10 5.02  7.21   9.48        6.35        True
+       11   211   11149.0 4.53 1.26  7.64  16.27        6.42        True
+       21   120    5758.0 9.41 5.08 13.77 -19.87        7.10        True
+
+-- by day_order (4 segments with 30+ bets; the 4 largest by turnover)
+day_order  bets  turnover  clv   lo   hi  held  clv_shrunk  above_zero
+    16-30 13580  671561.0 7.48 7.09 7.90  7.11        7.45        True
+     6-15 11551  617074.0 6.36 5.94 6.80  6.09        6.38        True
+      31+  6900  363850.0 7.96 7.44 8.54  4.17        7.88        True
+races 1-5  5963  363082.0 5.29 4.77 5.83  5.19        5.40        True
+
+-- by ev_band (5 segments with 30+ bets; the 5 largest by turnover)
+ev_band  bets  turnover   clv    lo    hi  held  clv_shrunk  above_zero
+   0-3%  8858  639581.0  2.03  1.65  2.41 -0.47        2.03        True
+  5-10%  9665  525129.0  6.95  6.47  7.41  6.84        6.95        True
+ 10-20%  9204  381424.0 11.89 11.26 12.50  6.75       11.88        True
+   3-5%  5343  354078.0  4.20  3.63  4.76  8.38        4.20        True
+   20%+  4924  115355.0 24.23 22.99 25.51 26.91       24.10        True
+
+-- by month (14 segments with 30+ bets; the 14 largest by turnover)
+  month  bets  turnover  clv   lo   hi  held  clv_shrunk  above_zero
+2025-05  3273  178005.0 6.77 5.93 7.67  4.24        6.78        True
+2025-04  3048  166820.0 6.68 5.97 7.45  7.13        6.71        True
+2025-06  3025  160228.0 7.04 6.15 7.84  6.77        6.98        True
+2025-10  2824  158610.0 8.34 7.47 9.24  9.42        7.92        True
+2025-07  2969  154662.0 5.95 5.10 6.80  3.90        6.19        True
+2025-08  2721  147871.0 5.60 4.76 6.43  1.81        5.91        True
+2025-03  2377  145394.0 7.98 7.15 8.82  6.12        7.67        True
+2025-09  2762  140124.0 5.97 5.39 6.49  7.73        6.08        True
+2025-12  2723  132394.0 6.52 5.72 7.32  8.78        6.60        True
+2026-03  2721  130776.0 5.55 4.44 6.65  2.34        6.03        True
+2025-11  2425  129835.0 8.87 8.02 9.69 12.85        8.36        True
+2026-01  2526  124525.0 6.87 6.13 7.74  4.57        6.86        True
+2026-02  2478  124418.0 7.00 6.25 7.75  3.01        6.96        True
+2025-02  2122  121904.0 6.42 5.64 7.19  4.03        6.51        True
+
+-- by course (84 segments with 30+ bets; the 40 largest by turnover)
+         course  bets  turnover   clv   lo    hi   held  clv_shrunk  above_zero
+  Wolverhampton  2236  113792.0  8.26 7.28  9.24   7.88        8.14        True
+      Newcastle  2130  106261.0  7.97 7.01  8.95   9.11        7.87        True
+      Southwell  2100  103926.0  5.91 4.93  6.92   1.51        5.99        True
+      Lingfield  1627   91108.0  7.06 6.02  8.19  13.45        7.03        True
+        Kempton  1639   86180.0  6.87 5.79  7.92   7.98        6.86        True
+Chelmsford City   900   48087.0  7.99 6.63  9.42   0.31        7.81        True
+      Doncaster   978   42111.0  6.50 4.95  8.16   5.97        6.57        True
+        Newbury   809   37081.0  6.32 4.78  7.71  12.54        6.41        True
+       Chepstow   660   36085.0  5.99 4.52  7.40   9.36        6.13        True
+            Ayr   749   35347.0  7.38 6.26  8.67  -4.90        7.32        True
+        Haydock   680   33112.0  7.92 6.54  9.38   8.45        7.74        True
+       Ffos Las   533   31497.0  7.48 5.98  8.94   6.56        7.36        True
+          Ascot   805   30481.0  6.19 5.19  7.28   7.44        6.25        True
+      Leicester   547   29807.0  6.14 4.31  8.05   4.72        6.31        True
+        Windsor   510   29766.0  7.10 5.18  9.17   3.29        7.02        True
+      Catterick   509   28740.0  4.95 3.44  6.45 -12.06        5.29        True
+        Dundalk   506   27736.0 10.16 7.67 12.81  12.06        8.87        True
+        Sandown   487   26406.0  4.46 3.30  5.67  -8.97        4.75        True
+    Musselburgh   573   26175.0  6.94 5.57  8.36   7.96        6.92        True
+       Yarmouth   457   26015.0  4.38 3.04  5.79   0.15        4.76        True
+      Uttoxeter   510   25790.0  6.65 4.60  8.79  -9.61        6.70        True
+       Plumpton   311   25350.0  4.87 3.25  6.84  11.58        5.33        True
+       Carlisle   526   24594.0  5.97 4.03  7.78   7.15        6.19        True
+       Fontwell   393   24026.0  6.75 4.79  8.76  14.86        6.77        True
+     Huntingdon   413   23787.0  6.38 3.78  9.56   5.69        6.58        True
+   Leopardstown   513   23771.0  5.27 2.89  7.79   2.64        5.84        True
+        Warwick   378   23450.0  6.07 4.30  8.03   8.01        6.26        True
+         Exeter   310   23356.0  7.61 5.23 10.32   3.14        7.31        True
+       Brighton   375   22673.0  4.62 2.55  6.73  -4.99        5.28        True
+         Ludlow   312   22260.0  7.17 5.06  9.23   5.61        7.07        True
+        Curragh   465   22223.0  7.45 5.34  9.83   5.57        7.24        True
+   Market Rasen   404   22089.0  7.18 4.98  9.48   9.82        7.07        True
+    Punchestown   418   21636.0  5.70 3.20  7.97  11.41        6.10        True
+       Hamilton   325   21524.0  5.79 3.97  7.86   4.18        6.07        True
+       Wetherby   408   21253.0  8.18 6.01 10.73  10.43        7.70        True
+           Naas   390   20908.0  7.83 5.22 10.45 -11.65        7.43        True
+       Hereford   372   20416.0  7.73 5.37  9.74  14.25        7.45        True
+     Nottingham   387   20173.0  4.63 2.69  6.34  -0.99        5.19        True
+     Cheltenham   521   20113.0  5.46 2.91  8.10  -6.93        6.00        True
+      Stratford   292   20108.0  9.71 7.99 11.44  -1.39        9.06        True
+
+
+B. live: the trader's settled horses (live_orders, settle rows, mode live)
+   5,757 settled horses on 50 days (2026-09-30 to 2026-11-18), matched GBP172,089; CLV at the settled price +3.55% (90% +2.22 to +4.88)
+
+-- by price_band (6 segments with 30+ bets; the 6 largest by turnover)
+price_band  bets  turnover   clv    lo    hi  held  clv_shrunk  above_zero
+       3-6   871   50774.0  1.74 -0.09  3.72   NaN        1.79       False
+      6-12  1420   43821.0  3.04  1.10  5.18   NaN        3.06        True
+        <3   288   34047.0  2.15  0.01  4.36   NaN        2.20        True
+     12-25  1495   27052.0  1.94 -0.84  4.54   NaN        2.03       False
+     25-50   956   10563.0 15.34 10.99 19.82   NaN       13.79        True
+       50+   727    5831.0 17.38 10.38 24.85   NaN       13.44        True
+
+-- by weekday (7 segments with 30+ bets; the 7 largest by turnover)
+  weekday  bets  turnover  clv    lo   hi  held  clv_shrunk  above_zero
+ Thursday   927   28316.0 1.61 -2.46 7.21   NaN        3.55       False
+Wednesday   876   27078.0 2.31 -0.18 5.79   NaN        3.55       False
+ Saturday   957   25893.0 6.28  4.64 8.11   NaN        3.55        True
+   Friday   844   25513.0 2.92  0.00 6.13   NaN        3.55        True
+   Monday   817   22850.0 4.70  2.99 6.20   NaN        3.55        True
+   Sunday   673   21342.0 5.40  1.88 8.73   NaN        3.55        True
+  Tuesday   663   21095.0 2.05 -1.55 5.34   NaN        3.55       False
+
+-- by venue (63 segments with 30+ bets; the 30 largest by turnover)
+        venue  bets  turnover    clv     lo    hi  held  clv_shrunk  above_zero
+    Southwell   514   12700.0   2.10  -1.35  5.93   NaN        2.37       False
+      Kempton   348    9302.0  -0.56  -6.19  6.19   NaN        1.12       False
+Wolverhampton   303    8004.0  10.81   6.74 14.51   NaN        9.27        True
+    Newcastle   257    7235.0   5.41   1.04 10.18   NaN        4.91        True
+    Newmarket   205    6825.0   6.80   3.72 10.47   NaN        6.26        True
+   Cheltenham   159    5394.0  10.33   3.63 19.05   NaN        6.93        True
+    Worcester   109    4571.0   4.91   0.72  7.64   NaN        4.65        True
+     Ffos Las   121    4208.0   2.91  -0.70  8.10   NaN        3.08       False
+   Nottingham   156    4152.0   2.00  -1.76  6.78   NaN        2.36       False
+     Chepstow   129    4044.0  -3.18  -3.85 -2.61   NaN       -3.12       False
+   Sedgefield    64    3941.0  -4.43 -11.19  1.44   NaN       -1.06       False
+    Uttoxeter   112    3860.0   2.58  -1.07  7.94   NaN        2.83       False
+        Ascot   109    3853.0   3.73   1.40  5.43   NaN        3.72        True
+        Navan   122    3500.0   1.43  -3.74 11.16   NaN        2.43       False
+     Fontwell    75    3473.0   4.84  -2.07 11.62   NaN        4.27       False
+       Hexham    76    3422.0   5.45  -1.58 12.80   NaN        4.54       False
+    Doncaster   116    3108.0   2.53  -1.09  6.05   NaN        2.77       False
+         Bath    98    3004.0  -0.31  -3.28  5.37   NaN        0.98       False
+     Plumpton    70    2952.0  -0.16  -4.66  5.39   NaN        0.91       False
+     Carlisle    93    2907.0   1.75  -5.37  9.37   NaN        2.66       False
+ Market Rasen    72    2878.0   2.91  -2.31  5.49   NaN        3.03       False
+      Dundalk   156    2812.0  10.19   2.87 19.72   NaN        6.44        True
+      Curragh   122    2774.0   1.39  -2.54  3.30   NaN        1.65       False
+   Huntingdon    82    2685.0   7.38   0.27 15.04   NaN        5.46        True
+     Wetherby    58    2640.0   2.23  -2.55  8.93   NaN        2.71       False
+    Stratford    66    2438.0   2.45  -0.93  6.43   NaN        2.62       False
+     Yarmouth    76    2333.0 -11.71 -17.06 -2.89   NaN       -3.34       False
+          Ayr    67    2279.0  -7.82 -15.35  8.36   NaN        1.10       False
+  Punchestown   105    2125.0  15.11  12.85 16.89   NaN       14.39        True
+     Hereford    48    2058.0   2.46  -3.31  5.65   NaN        2.84       False
