@@ -59,6 +59,8 @@ jobs:
           # reads it (paper unless 'live'); read here, never acted on
           GREYHOUND_TAKE_CLOSE: ${{ vars.GREYHOUND_TAKE_CLOSE || 'paper' }}
           GREYHOUND_TAKE_CLOSE_DAILY_LOSS: ${{ vars.GREYHOUND_TAKE_CLOSE_DAILY_LOSS }}
+          # the lay at the SP (greyhound/sp_lay.py): its switch only; its daily loss limit is fixed in its code
+          GREYHOUND_SP_LAY: ${{ vars.GREYHOUND_SP_LAY || 'paper' }}
         run: |
           ARGS=(--out out/dashboard --summary "$GITHUB_STEP_SUMMARY")
           if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); fi
