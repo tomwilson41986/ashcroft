@@ -1,0 +1,185 @@
+research-iter133-or-clean-at-weights-174 from run 44880970254
+   stn: 143,075 runners, 2024-12-28 to 2026-03-31, folds [np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4), np.int64(5)]
+   stn_or: 143,075 runners, 2024-12-28 to 2026-03-31, folds [np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4), np.int64(5)]
+   stn_or_atw: 143,075 runners, 2024-12-28 to 2026-03-31, folds [np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4), np.int64(5)]
+
+====================================================================================================
+(1) stn_or (OR 0 read as unrated) against stn
+====================================================================================================
+# oos_stn_or.csv against oos_stn.csv
+
+143,075 paired runners over 15,670 races, 2024-12-28 to 2026-03-31.
+
+## Mean absolute log error, paired
+
+- base **0.3719**, variant **0.3723**
+- paired difference **+0.0004** (90% CI +0.0000 to +0.0008) — negative favours the variant
+- **the base wins**
+
+## By the base model's rank in the race
+
+```
+rank     n  err_base  err_variant   delta   ci_lo   ci_hi
+   1 15670    0.2307       0.2300 -0.0007 -0.0013 -0.0000
+   2 15670    0.2861       0.2856 -0.0005 -0.0013  0.0002
+   3 15633    0.3271       0.3269 -0.0003 -0.0010  0.0006
+  8+ 40396    0.4476       0.4483  0.0006 -0.0002  0.0014
+```
+
+## By code
+
+```
+   code     n  races  err_base  err_variant  delta   ci_lo  ci_hi
+flat/aw 84036   9041    0.3609       0.3611 0.0002 -0.0003 0.0007
+  jumps 59039   6629    0.3875       0.3881 0.0006 -0.0000 0.0012
+```
+
+## Against the market
+
+| | base | variant | variant − base (90% CI) |
+|---|---|---|---|
+| Brier skill vs market | -0.0292 | -0.0295 | -0.00032 (-0.00070 to +0.00003) |
+| log loss | 0.29364 | 0.29372 | |
+| winner-vs-loser concordance | 0.73568 | 0.73613 | +0.00045 (-0.00031 to +0.00116) |
+| ...the market's | 0.75871 | 0.75871 | |
+| implied book (1.0 by construction since Step A) | 1.0000 | 1.0000 |
+
+## Top pick, flat stakes
+
+- base    -3.01% (-5.17 to -0.80) on 15,670 bets
+- variant -3.62% (-5.66 to -1.65) on 15,670 bets
+
+Reported, not decisive: at this sample the interval is wider than any difference worth acting on.
+
+
+## Decision
+
+- paired error interval excludes zero in the variant's favour: **no**
+- Brier skill against the market not resolved worse (its interval reaches zero): **yes**
+- concordance not resolved worse (its interval reaches zero): **yes**
+
+**The default stands.**
+
+====================================================================================================
+(2) stn_or_atw (the rating at the weights) against stn_or
+====================================================================================================
+# oos_stn_or_atw.csv against oos_stn_or.csv
+
+143,075 paired runners over 15,670 races, 2024-12-28 to 2026-03-31.
+
+## Mean absolute log error, paired
+
+- base **0.3723**, variant **0.3715**
+- paired difference **-0.0007** (90% CI -0.0011 to -0.0004) — negative favours the variant
+- **the variant wins**
+
+## By the base model's rank in the race
+
+```
+rank     n  err_base  err_variant   delta   ci_lo   ci_hi
+   1 15670    0.2313       0.2308 -0.0004 -0.0011  0.0002
+   2 15670    0.2851       0.2840 -0.0011 -0.0019 -0.0003
+   3 15633    0.3273       0.3270 -0.0003 -0.0012  0.0005
+  8+ 40396    0.4483       0.4476 -0.0007 -0.0014  0.0002
+```
+
+## By code
+
+```
+   code     n  races  err_base  err_variant   delta   ci_lo   ci_hi
+flat/aw 84036   9041    0.3611       0.3604 -0.0007 -0.0011 -0.0003
+  jumps 59039   6629    0.3881       0.3873 -0.0008 -0.0014 -0.0002
+```
+
+## Against the market
+
+| | base | variant | variant − base (90% CI) |
+|---|---|---|---|
+| Brier skill vs market | -0.0295 | -0.0292 | +0.00037 (-0.00002 to +0.00081) |
+| log loss | 0.29372 | 0.29363 | |
+| winner-vs-loser concordance | 0.73613 | 0.73525 | -0.00088 (-0.00166 to -0.00015) |
+| ...the market's | 0.75871 | 0.75871 | |
+| implied book (1.0 by construction since Step A) | 1.0000 | 1.0000 |
+
+## Top pick, flat stakes
+
+- base    -3.62% (-5.66 to -1.65) on 15,670 bets
+- variant -2.47% (-4.59 to -0.26) on 15,670 bets
+
+Reported, not decisive: at this sample the interval is wider than any difference worth acting on.
+
+
+## Decision
+
+- paired error interval excludes zero in the variant's favour: **yes**
+- Brier skill against the market not resolved worse (its interval reaches zero): **yes**
+- concordance not resolved worse (its interval reaches zero): **no**
+
+**The default stands.**
+
+====================================================================================================
+BESIDE: stn_or_atw against stn
+====================================================================================================
+# oos_stn_or_atw.csv against oos_stn.csv
+
+143,075 paired runners over 15,670 races, 2024-12-28 to 2026-03-31.
+
+## Mean absolute log error, paired
+
+- base **0.3719**, variant **0.3715**
+- paired difference **-0.0004** (90% CI -0.0008 to -0.0000) — negative favours the variant
+- **the variant wins**
+
+## By the base model's rank in the race
+
+```
+rank     n  err_base  err_variant   delta   ci_lo   ci_hi
+   1 15670    0.2307       0.2300 -0.0007 -0.0013 -0.0000
+   2 15670    0.2861       0.2850 -0.0011 -0.0019 -0.0003
+   3 15633    0.3271       0.3264 -0.0008 -0.0018  0.0001
+  8+ 40396    0.4476       0.4474 -0.0002 -0.0010  0.0006
+```
+
+## By code
+
+```
+   code     n  races  err_base  err_variant   delta   ci_lo   ci_hi
+flat/aw 84036   9041    0.3609       0.3604 -0.0005 -0.0010 -0.0000
+  jumps 59039   6629    0.3875       0.3873 -0.0002 -0.0008  0.0004
+```
+
+## Against the market
+
+| | base | variant | variant − base (90% CI) |
+|---|---|---|---|
+| Brier skill vs market | -0.0292 | -0.0292 | +0.00005 (-0.00032 to +0.00044) |
+| log loss | 0.29364 | 0.29363 | |
+| winner-vs-loser concordance | 0.73568 | 0.73525 | -0.00043 (-0.00120 to +0.00035) |
+| ...the market's | 0.75871 | 0.75871 | |
+| implied book (1.0 by construction since Step A) | 1.0000 | 1.0000 |
+
+## Top pick, flat stakes
+
+- base    -3.01% (-5.17 to -0.80) on 15,670 bets
+- variant -2.47% (-4.59 to -0.26) on 15,670 bets
+
+Reported, not decisive: at this sample the interval is wider than any difference worth acting on.
+
+
+## Decision
+
+- paired error interval excludes zero in the variant's favour: **yes**
+- Brier skill against the market not resolved worse (its interval reaches zero): **yes**
+- concordance not resolved worse (its interval reaches zero): **yes**
+
+**The variant replaces the default.**
+
+====================================================================================================
+BESIDE: the chase gap (model error less the morning WAP's, against the BSP) and the 3% rule's CLV
+====================================================================================================
+   stn         gap by code: chase +0.0132 (+0.0072 to +0.0191, 17,049); hurdle -0.0496 (-0.0569 to -0.0424, 35,719); flat -0.0161 (-0.0213 to -0.0107, 44,679); aw -0.0331 (-0.0390 to -0.0271, 37,862)
+   stn_or      gap by code: chase +0.0135 (+0.0076 to +0.0194, 17,049); hurdle -0.0486 (-0.0556 to -0.0415, 35,719); flat -0.0160 (-0.0213 to -0.0105, 44,679); aw -0.0327 (-0.0387 to -0.0267, 37,862)
+   stn_or_atw  gap by code: chase +0.0127 (+0.0068 to +0.0187, 17,049); hurdle -0.0496 (-0.0565 to -0.0426, 35,719); flat -0.0166 (-0.0220 to -0.0113, 44,679); aw -0.0335 (-0.0395 to -0.0278, 37,862)
+   stn         3% rule: 28,424 bets on 418 days, net CLV +8.05% (+7.75 to +8.36), GBP +103,318
+   stn_or      3% rule: 28,246 bets on 418 days, net CLV +7.91% (+7.61 to +8.21), GBP +100,502
+   stn_or_atw  3% rule: 28,333 bets on 418 days, net CLV +7.95% (+7.65 to +8.25), GBP +102,024
