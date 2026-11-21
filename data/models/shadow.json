@@ -1,0 +1,5 @@
+{
+  "commit": "a467f45255f2ef5cbea477d364d5a8a1c2128290",
+  "until": "2026-11-21",
+  "note": "The check of 21 Nov 2026: the served stack blend (bfsp-model-63/64/65) as the shadow of itself on 21 Nov's card, which must reproduce predictions/2026-11-21.csv. Set to the previous blend, for 14 days, when the served model changes (scripts/shadow_predict.py)."
+}

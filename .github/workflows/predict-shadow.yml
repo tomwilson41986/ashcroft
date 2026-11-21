@@ -1,0 +1,47 @@
+name: Shadow predictions (the previous blend, read-only)
+# The owner's review of 20 Nov 2026, item M1 (the owner, 21 Nov: "continue all research and development"): for the
+# days data/models/shadow.json names after a change of the served model, the morning's card (as the 03:10 UTC run kept
+# it, s3 racecards/) priced again by the previous blend, to s3 predictions_shadow/<day>.csv. Never writes predictions/,
+# the file the trader reads; no Betfair key, no order; nothing to do (exit 0) when shadow.json is absent or expired.
+on:
+  schedule:
+    - cron: '25 4 * * *'   # after the 03:10 UTC predictions (done by about 03:45)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'The card day (default today, UTC)'
+        required: false
+        default: ''
+
+jobs:
+  shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Is there a shadow to price?
+        id: on
+        run: python -c "import sys, datetime as d; sys.path.insert(0, 'scripts'); import shadow_predict as s; print('go=' + str(s.active(s.config(), d.date.fromisoformat('${{ inputs.date }}') if '${{ inputs.date }}' else d.date.today())).lower())" >> "$GITHUB_OUTPUT"
+      - name: Install dependencies
+        if: steps.on.outputs.go == 'true'
+        run: pip install -e ".[pipeline]" && pip install -r requirements.txt
+      - name: Free disk space and add swap
+        if: steps.on.outputs.go == 'true'
+        continue-on-error: true
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo fallocate -l 16G /ashcroft_swap && sudo chmod 600 /ashcroft_swap && sudo mkswap /ashcroft_swap && sudo swapon /ashcroft_swap || true
+          free -h
+      - name: Price the morning card with the previous blend
+        if: steps.on.outputs.go == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CARD_AS_TABLE: stall
+        run: python scripts/shadow_predict.py ${{ inputs.date && format('--date {0}', inputs.date) || '' }}
