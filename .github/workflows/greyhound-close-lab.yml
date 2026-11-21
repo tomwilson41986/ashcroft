@@ -23,6 +23,14 @@ on:
         description: "also show the band and resting tests on this many days before their registration (never counted)"
         required: false
         default: '0'
+      bracket:
+        description: "the fill bracket's last day, YYYY-MM-DD (empty: not run; ledger greyhound-rest-bracket-1120)"
+        required: false
+        default: ''
+      bracket_from:
+        description: "the fill bracket's first day, YYYY-MM-DD (empty: every counted day)"
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -52,10 +60,14 @@ jobs:
           REBUILD: ${{ inputs.rebuild }}
           DRY_RUN: ${{ inputs.dry_run }}
           PRACTICE: ${{ inputs.practice }}
+          BRACKET: ${{ inputs.bracket }}
+          BRACKET_FROM: ${{ inputs.bracket_from }}
         run: |
           ARGS=(--out out/close_lab)
           if [ "$REBUILD" = "yes" ]; then ARGS+=(--rebuild); fi
           if [ "$DRY_RUN" = "yes" ]; then ARGS+=(--dry-run); fi
           if [[ "$PRACTICE" =~ ^[1-9][0-9]?$ ]]; then ARGS+=(--practice "$PRACTICE"); fi
+          if [[ "$BRACKET" =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]]; then ARGS+=(--bracket "$BRACKET"); fi
+          if [[ "$BRACKET_FROM" =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]]; then ARGS+=(--bracket-from "$BRACKET_FROM"); fi
           python -m research.greyhound.close_lab "${ARGS[@]}"
           cat out/close_lab/report.md >> "$GITHUB_STEP_SUMMARY"

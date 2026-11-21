@@ -16,6 +16,11 @@ on:
         description: 'last day, YYYY-MM-DD (default yesterday, UTC)'
         required: false
         type: string
+      calibrate:
+        description: "yes: fit the stream queue model to the live orders (fit 11-12 Nov, judge 13-14 Nov; ledger greyhound-queue-calibration-1120)"
+        required: false
+        type: string
+        default: 'no'
 
 permissions:
   contents: read
@@ -55,6 +60,7 @@ jobs:
           CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           FROM: ${{ inputs.date_from }}
           TO: ${{ inputs.date_to }}
+          CALIBRATE: ${{ inputs.calibrate }}
         run: |
           mkdir -p out
           ARGS=(--out out/fill_recon)
@@ -63,6 +69,7 @@ jobs:
           done
           if [ -n "$FROM" ]; then ARGS+=(--from "$FROM"); fi
           if [ -n "$TO" ]; then ARGS+=(--to "$TO"); fi
+          if [ "$CALIBRATE" = "yes" ]; then ARGS+=(--calibrate); fi
           python -m research.greyhound.fill_recon "${ARGS[@]}"
       - name: Summary
         if: always()

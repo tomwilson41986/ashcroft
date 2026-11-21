@@ -200,6 +200,8 @@ def score(rec: pd.DataFrame, live: pd.DataFrame, comm: float = 0.02) -> dict:
     from model.race_book import ratio_interval
     from research.greyhound import tradeout_study as ts
     from research.overfit import dsr_check
+    from research.greyhound.trial_count import greyhound_trials
+    n_trials = greyhound_trials(N_TRIALS)          # every greyhound rule in the ledger, never fewer than this study's own
     from greyhound import tradeout as to
     from greyhound.early_lay import vol_in_fit
     live_days = sorted(live.race_date.astype(str).unique()) if len(live) else []
@@ -257,7 +259,7 @@ def score(rec: pd.DataFrame, live: pd.DataFrame, comm: float = 0.02) -> dict:
                 "net": round(float(mk.market_net.sum()), 2),
                 "roi_%": round(100 * float(mk.market_net.sum() / t.stake.sum()), 2),
                 "roi_90%": [round(100 * nlo, 2), round(100 * nhi, 2)] if np.isfinite(nlo) else None,
-                "dsr": dsr_check(mret, n_trials=N_TRIALS)})
+                "dsr": dsr_check(mret, n_trials=n_trials)})
         else:
             res["backs"] = 0
         out["arms"][arm] = res

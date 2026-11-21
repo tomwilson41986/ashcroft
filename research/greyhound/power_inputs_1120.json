@@ -1,0 +1,100 @@
+{
+ "about": "Inputs to research/greyhound/power.py, 20 Nov 2026: each figure as printed in the cited report or run; nothing estimated. read_days = the days the candidate will have at its registered or lab read.",
+ "rows": [
+  {
+   "name": "rest_back_60_m0, closed at the SP",
+   "fill": "queue-aware replay (unproven against live)",
+   "mean": 1.259,
+   "lo": 0.593,
+   "hi": 1.771,
+   "days": 8,
+   "trades": 1652,
+   "read_days": 10,
+   "source": "reports/greyhound_edge_search.md, 19 Nov entry (close lab 44635535738)"
+  },
+  {
+   "name": "lay_30_0.03, closed at the SP",
+   "fill": "takes the price on offer",
+   "mean": 2.017,
+   "lo": -1.064,
+   "hi": 4.639,
+   "days": 10,
+   "trades": 164,
+   "read_days": 10,
+   "source": "reports/greyhound_edge_search.md, 19 Nov entry (close lab 44635535738)"
+  },
+  {
+   "name": "lay_30_0.03, run to the result",
+   "fill": "takes the price on offer",
+   "mean": 53.5,
+   "lo": 24.611,
+   "hi": 85.4,
+   "days": 10,
+   "trades": 164,
+   "read_days": 10,
+   "source": "reports/greyhound_edge_search.md, 19 Nov entry (close lab 44635535738)"
+  },
+  {
+   "name": "lay_10_0.1, closed at the SP",
+   "fill": "takes the price on offer",
+   "mean": 7.528,
+   "lo": 0.791,
+   "hi": 13.009,
+   "days": 9,
+   "trades": 47,
+   "read_days": 10,
+   "source": "reports/greyhound_edge_search.md, 19 Nov entry (close lab 44635535738)"
+  },
+  {
+   "name": "gap_lay_60_0.1, closed at the SP (stream lab's best)",
+   "fill": "takes the price on offer",
+   "mean": 0.304,
+   "lo": -1.875,
+   "hi": 2.288,
+   "days": 15,
+   "trades": 193,
+   "read_days": 15,
+   "source": "reports/greyhound_edge_search.md, 19 Nov entry (stream lab 44630527322)"
+  },
+  {
+   "name": "Early-lay forward test at the SP, a day",
+   "fill": "queue-aware replay (unproven against live)",
+   "daily": [
+    0.93,
+    1.33,
+    1.39,
+    0.63,
+    1.95,
+    1.46,
+    1.48
+   ],
+   "read_days": 28,
+   "source": "reports/greyhound_edge_search.md, day table 13-19 Nov; read 13 Dec (greyhound-early-lay-sp-close-1114 is the through-fill version)"
+  },
+  {
+   "name": "Early-lay forward test to the result, a day",
+   "fill": "queue-aware replay (unproven against live)",
+   "daily": [
+    1.78,
+    -1.62,
+    -0.58,
+    -2.75,
+    0.79,
+    1.13,
+    -1.1
+   ],
+   "read_days": 28,
+   "source": "reports/greyhound_edge_search.md, day table 13-19 Nov"
+  },
+  {
+   "name": "Live early-lay rule, through fill, live-key books, a day",
+   "fill": "through (what a live order gets)",
+   "daily": [
+    -1.34,
+    -2.07
+   ],
+   "read_days": 28,
+   "source": "day replays 44427004281 (18 Nov), 44643820189 (19 Nov); earlier days not re-read here"
+  }
+ ]
+}

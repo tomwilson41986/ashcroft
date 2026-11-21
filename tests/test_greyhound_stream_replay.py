@@ -145,3 +145,24 @@ def test_an_order_can_rest_until_the_market_really_closes():
     after = sr.SimOrder(MID, 7, "LAY", 5.0, 5.0, OFF + timedelta(seconds=30))  # due once the market has closed
     assert not sr.replay(lines, [after], to_close=True).iloc[0].placed
 
+
+
+def test_the_fill_modes_bracket_the_queue_assumption():
+    """The fill bracket (20 Nov 2026): 10 ahead of us at 5.0, 8 of them cancelled, then 5 trade at 5.0. As shown: the
+    cancellations were ahead of us, 2 left ahead, 3 fill. Strict: they were behind us, 10 still ahead, none fills.
+    Front: all 5 fill. Through: a trade AT the price never fills; one beyond it does."""
+    lines = [image(T, [[5.0, 10], [4.9, 20]], [[5.2, 8]], [[5.0, 100]]),
+             delta(T + timedelta(seconds=3), atb=[[5.0, 2]]),
+             delta(T + timedelta(seconds=5), trd=[[5.0, 105]]),
+             line(OFF - timedelta(seconds=4), {"id": MID, "rc": [{"id": 7, "atb": [[5.4, 9]]}]})]
+    got = {}
+    for mode in ("shown", "strict", "front", "through"):
+        o = sr.SimOrder(MID, 7, "LAY", 5.0, 5.0, T + timedelta(seconds=1), mode=mode)
+        df = sr.replay(lines, [o])
+        got[mode] = o.matched
+        assert df["mode"].iloc[0] == mode
+    assert got == {"shown": 3.0, "strict": 0.0, "front": 5.0, "through": 0.0}
+    beyond = lines[:2] + [delta(T + timedelta(seconds=5), trd=[[4.9, 4]])] + lines[3:]     # 4 traded below our lay
+    o = sr.SimOrder(MID, 7, "LAY", 5.0, 5.0, T + timedelta(seconds=1), mode="through")
+    df = sr.replay(beyond, [o], through_cap=True)
+    assert o.matched == 4.0 and o.via_through and df.last_fill.iloc[0] == T + timedelta(seconds=5)

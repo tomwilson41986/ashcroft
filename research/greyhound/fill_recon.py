@@ -292,6 +292,149 @@ def stream_fills(orders: pd.DataFrame, lines: list | None, green_seconds: float 
     return out
 
 
+# --------------------------------------------------------------------------------------------------------------------
+# The calibration (the owner, 20 Nov 2026: the discovery round, idea maker-01; ledger greyhound-queue-calibration-1120):
+# can ANY setting of the stream replay reproduce the live orders? Latency, the fill assumed, the volume factor.
+# --------------------------------------------------------------------------------------------------------------------
+
+CAL_LATENCY = (0.0, 1.0, 2.0, 3.0)
+CAL_FILLS = {"shown": ("shown", False), "shown_cap": ("shown", True), "strict_cap": ("strict", True),
+             "through_cap": ("through", True)}
+CAL_VOL = (1.0, 0.5)
+
+
+def cal_cells() -> list[tuple]:
+    return [(lat, fill, vol) for lat in CAL_LATENCY for fill in CAL_FILLS for vol in CAL_VOL]
+
+
+def calibration_day(orders: pd.DataFrame, lines: list | None, green_seconds: float = 5.0) -> pd.DataFrame:
+    """Every live order of a day through every cell of the grid in one pass of the stream: a row an order and cell,
+    with what the replay matched, beside what live matched."""
+    from research.greyhound import stream_replay as sr
+    if not lines or not len(orders):
+        return pd.DataFrame()
+    sims = []
+    for i, (lat, fill, vol) in enumerate(cal_cells()):
+        mode, cap = CAL_FILLS[fill]
+        for j, o in enumerate(orders.itertuples(index=False)):
+            sims.append(sr.SimOrder(market=o.market_id, sid=int(o.selection_id), side="LAY", price=float(o.price),
+                                    size=float(o.size), t=o.placed_utc.to_pydatetime() + timedelta(seconds=lat),
+                                    tag=f"{i}|{j}", mode=mode, vol_factor=vol, through_cap=cap))
+    df = sr.replay(lines, sims, close_secs=green_seconds, comm=0.0)
+    cells, o = cal_cells(), orders.reset_index(drop=True)
+    ix = df.tag.str.split("|", expand=True).astype(int)
+    out = pd.DataFrame({"cell": ix[0].map(lambda k: "lat%g_%s_vol%g" % cells[k]), "latency": ix[0].map(lambda k: cells[k][0]),
+                        "fill": ix[0].map(lambda k: cells[k][1]), "vol": ix[0].map(lambda k: cells[k][2]),
+                        "order": ix[1], "placed": df.placed.astype(bool).to_numpy(),
+                        "sim_matched": _num(df.matched).fillna(0.0).to_numpy(), "sim_avg": _num(df.avg).to_numpy(),
+                        "stream_sp": _num(df.sp).to_numpy()})
+    for c in ("market_id", "selection_id", "price", "size", "live_matched", "live_avg", "sp"):
+        out[c] = out.order.map(o[c])
+    out["sp"] = _num(out.sp).fillna(out.stream_sp)
+    return out.drop(columns="stream_sp")
+
+
+def calibration_scores(rows: pd.DataFrame) -> pd.DataFrame:
+    """Each cell against live: the summed absolute gap in matched stake an order (the fit's measure), fill rates,
+    whether the SAME orders fill, phantom and missed stake, and the P&L of both closed at the SP (so the green-up leg
+    is out of it)."""
+    out = []
+    if not len(rows):
+        return pd.DataFrame()
+    sp_pnl = lambda S, a, sp: (S * (1 - a / sp)).where((S > EPS) & (sp > 1), 0.0)
+    for cell, g in rows.groupby("cell"):
+        cov = g[g.placed]
+        lf, sf = cov.live_matched > EPS, cov.sim_matched > EPS
+        live_p = float(sp_pnl(cov.live_matched, _num(cov.live_avg), _num(cov.sp)).sum())
+        sim_p = float(sp_pnl(cov.sim_matched, _num(cov.sim_avg), _num(cov.sp)).sum())
+        ph = cov[sf & ~lf]
+        out.append({"cell": cell, "latency": g.latency.iloc[0], "fill": g.fill.iloc[0], "vol": g.vol.iloc[0],
+                    "orders": len(g), "coverage": round(len(cov) / len(g), 4),
+                    "abs_gap_stake": round(float((cov.sim_matched - cov.live_matched).abs().sum()), 2),
+                    "live_fill_rate": round(float(lf.mean()), 4) if len(cov) else None,
+                    "sim_fill_rate": round(float(sf.mean()), 4) if len(cov) else None,
+                    "fill_gap_points": round(100 * float(sf.mean() - lf.mean()), 2) if len(cov) else None,
+                    "same_orders_share": round(float((sf == lf).mean()), 4) if len(cov) else None,
+                    "phantom_orders": int((sf & ~lf).sum()), "missed_orders": int((lf & ~sf).sum()),
+                    "phantom_stake": round(float(ph.sim_matched.sum()), 2),
+                    "phantom_log_sp_over_price": round(float(np.log(_num(ph.sp) / ph.price).mean()), 4)
+                    if len(ph) and _num(ph.sp).notna().any() else None,
+                    "live_pnl_at_sp": round(live_p, 2), "sim_pnl_at_sp": round(sim_p, 2),
+                    "pnl_gap": round(sim_p - live_p, 2)})
+    return pd.DataFrame(out)
+
+
+def calibrate(store, fit_days: list[date], judge_days: list[date], loader=None) -> dict:
+    """Fit the cell on ``fit_days`` (the least summed absolute gap in matched stake, among cells covering 90% of the
+    orders), judge it on ``judge_days`` by the reconciliation's own rule (``verdict``: the P&L gap within X_GBP and
+    the fill rate within Y_POINTS), the P&L of both sides closed at the SP."""
+    from greyhound import early_lay as el
+    loader = loader or (lambda d: load_day(store, d))
+    gs = el.CONFIG["green_seconds"]
+
+    def rows_of(days):
+        parts, notes = [], {}
+        for d in days:
+            data = loader(d)
+            led = data.get("ledger")
+            if led is None or not len(led):
+                notes[str(d)] = "no data found: no live ledger"
+                continue
+            o = live_orders(led, data.get("final"), data.get("offs"), gs)
+            r = calibration_day(o, data.get("stream"), gs)
+            notes[str(d)] = f"{len(o)} live orders, {int((o.live_matched > EPS).sum()) if len(o) else 0} matched" + \
+                ("" if len(r) else "; no stream lines: not replayed")
+            if len(r):
+                parts.append(r.assign(day=str(d)))
+        return (pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()), notes
+
+    fit_rows, fit_notes = rows_of(fit_days)
+    judge_rows, judge_notes = rows_of(judge_days)
+    out = {"fit_days": fit_notes, "judge_days": judge_notes, "rule": {"x_gbp": X_GBP, "y_points": Y_POINTS,
+                                                                      "min_coverage": MIN_COVERAGE}}
+    fit = calibration_scores(fit_rows)
+    if not len(fit):
+        return {**out, "note": "no data found: no live orders with a stream record on the fit days"}
+    ok = fit[fit.coverage >= MIN_COVERAGE].sort_values(["abs_gap_stake", "latency"])
+    out["fit"] = fit.sort_values("abs_gap_stake").to_dict("records")
+    if not len(ok):
+        return {**out, "note": "no cell covers 90% of the fit days' orders"}
+    best = ok.iloc[0].cell
+    out["chosen"] = best
+    judge = calibration_scores(judge_rows)
+    out["judge"] = judge.sort_values("abs_gap_stake").to_dict("records") if len(judge) else []
+    j = judge[judge.cell == best]
+    if not len(j):
+        out["verdict"] = "not judged: no live orders with a stream record on the judge days"
+        return out
+    j = j.iloc[0]
+    out["judged"] = j.to_dict()
+    out["verdict"] = verdict({"orders": int(j.orders), "coverage": float(j.coverage), "covered": int(j.orders * j.coverage),
+                              "gap": float(j.pnl_gap), "fill_gap_points": float(j.fill_gap_points)})
+    out["cells_trusted_on_judge_days"] = [r["cell"] for r in out["judge"] if verdict(
+        {"orders": r["orders"], "coverage": r["coverage"], "covered": 0, "gap": r["pnl_gap"],
+         "fill_gap_points": r["fill_gap_points"]}) == "TRUSTED"]
+    return out
+
+
+def calibration_markdown(c: dict) -> str:
+    md = ["## The stream queue model against the live orders (greyhound-queue-calibration-1120)", "",
+          f"Fit days: {c.get('fit_days')}. Judge days: {c.get('judge_days')}.", ""]
+    if c.get("note"):
+        return "\n".join(md + [c["note"]])
+    cols = ["cell", "orders", "coverage", "abs_gap_stake", "live_fill_rate", "sim_fill_rate", "fill_gap_points",
+            "same_orders_share", "phantom_orders", "missed_orders", "phantom_log_sp_over_price", "live_pnl_at_sp",
+            "sim_pnl_at_sp", "pnl_gap"]
+    for name in ("fit", "judge"):
+        rows = c.get(name) or []
+        md += [f"### {name} days, every cell (best fit first)", "", "| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
+        md += ["| " + " | ".join(str(r.get(k)) for k in cols) + " |" for r in rows] + [""]
+    md += [f"Chosen on the fit days: **{c.get('chosen')}**. On the judge days: **{c.get('verdict')}** "
+           f"(P&L closed at the SP within GBP{X_GBP:g} and the fill rate within {Y_POINTS:g} points).",
+           f"Cells that would be trusted on the judge days: {c.get('cells_trusted_on_judge_days')}."]
+    return "\n".join(md)
+
+
 def _prep(books: pd.DataFrame | None) -> dict:
     if books is None or not len(books):
         return {}
@@ -675,7 +818,18 @@ def main(argv=None) -> int:
     ap.add_argument("--from", dest="first", default=None)
     ap.add_argument("--to", dest="last", default=None)
     ap.add_argument("--out", default="out/fill_recon")
+    ap.add_argument("--calibrate", action="store_true", help="fit the stream queue model to the live orders")
+    ap.add_argument("--fit", default="2026-11-11,2026-11-12")
+    ap.add_argument("--judge", default="2026-11-13,2026-11-14")
     a = ap.parse_args(argv)
+    if a.calibrate:
+        days = lambda s: [date.fromisoformat(x) for x in s.split(",") if x]
+        c = calibrate(Store(), days(a.fit), days(a.judge))
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.out + "_calibration.json").write_text(json.dumps(c, indent=1, default=str))
+        Path(a.out + ".md").write_text(calibration_markdown(c))
+        print(calibration_markdown(c))
+        return 0
     first = date.fromisoformat(a.first) if a.first else FIRST_LIVE_DAY
     last = date.fromisoformat(a.last) if a.last else datetime.now(timezone.utc).date() - timedelta(days=1)
     r, orders = run(Store(), first, last)
