@@ -1970,6 +1970,15 @@ the market-rating blend.
   (ledger `model-quality-1120`).
 - **The record:** 42 days, +GBP6,760.50, 33 up.
 
+**21 Nov: gate_stn served from 22 Nov** (ledger `serve-stn-1121`). The owner, 21 Nov: "Serve the Phase 6 result."
+From the 03:00 UTC predictions of 22 Nov the served blend is the stack blend with collateral, future_form and
+nbl_rating in all three members (bfsp-model-72/73/71, 1,263 features, trained through 16 Nov, the gate unchanged).
+The locked holdout, read once (ledger `iter132-final`), passed all five gates: error against the BSP -0.0027
+(-0.0031 to -0.0022) on 83,712 runners and -0.0019 (-0.0030 to -0.0009) on the fold no research run had seen; net CLV
+at the 3% bar +8.58% against +8.26%. The gain is on the Flat and all-weather; over jumps it is level. The dry run
+priced 440 runners in 46 races in 26 minutes. The previous blend is priced beside it each morning to 5 Dec
+(predict-shadow.yml). The trader's rule and stakes are unchanged.
+
 **The runner's shutdowns, diagnosed** (3 Nov evening; `runner-diagnose.yml` run 41733018025, read-only; ledger
 `runner-diagnosis-1103`). The server's own record settles it: on 3 Nov Ubuntu's unattended upgrade ran at 06:09:29 UTC
 (six package runs to 06:11:25) and at 06:09:33 the runner's service was told to stop ("Shutting down runner listener",

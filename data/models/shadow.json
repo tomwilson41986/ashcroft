@@ -1,5 +1,5 @@
 {
-  "commit": "a467f45255f2ef5cbea477d364d5a8a1c2128290",
-  "until": "2026-11-21",
-  "note": "The check of 21 Nov 2026: the served stack blend (bfsp-model-63/64/65) as the shadow of itself on 21 Nov's card, which must reproduce predictions/2026-11-21.csv. Set to the previous blend, for 14 days, when the served model changes (scripts/shadow_predict.py)."
+  "commit": "3cf54ea1e31413f0b6fcc60c9f9b6cabb40a4722",
+  "until": "2026-12-05",
+  "note": "The served stack blend gate_st (bfsp-model-63/64/65, 1,181 features, served from 15 Nov) priced beside gate_stn from 22 Nov to 5 Dec 2026 (ledger serve-stn-1121): both on the same morning card and database (each row's db_modified and live_modified say whether paired). scripts/shadow_predict.py, predict-shadow.yml 04:25 UTC."
 }
