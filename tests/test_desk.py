@@ -290,7 +290,8 @@ def test_the_warden_finds_an_unknown_reference_and_a_day_loss():
     assert fig["settled_total"] == -105.0 and fig["settled_by_sport"] == {"greyhounds": -60.0, "horse_racing": -45.0}
     sport = next(f for f in findings if f.kind == "sport-day-loss")
     assert "greyhounds" in sport.message and set(sport.stops) == {("capture", "greyhound/STOP"),
-                                                                  ("capture", "greyhound/take_close/STOP")}
+                                                                  ("capture", "greyhound/take_close/STOP"),
+                                                                  ("capture", "greyhound/sp_lay/STOP")}
 
 
 def test_without_an_envelope_the_warden_checks_the_registry_alone():

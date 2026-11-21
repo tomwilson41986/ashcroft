@@ -1,0 +1,42 @@
+{
+  "id": "greyhound-sp-lay",
+  "sport": "greyhounds",
+  "name": "The residual's bottom 10% laid at the Betfair SP",
+  "stage": "legacy",
+  "hypothesis": "Runners whose card-only residual on the BSP is in the bottom 10% of their race (the frozen lay_bottom10 cut) are overbet at the SP: a lay at the SP earns after commission.",
+  "markets": [
+    "GB greyhound WIN"
+  ],
+  "entry_point": "python -m greyhound.sp_lay --trade --live",
+  "workflow": "paper-models.yml",
+  "live_switch": "GREYHOUND_SP_LAY",
+  "order_ref_prefix": "spl-",
+  "bucket": "capture",
+  "stop_keys": [
+    "greyhound/sp_lay/STOP",
+    "trading/STOP"
+  ],
+  "kill_switch_fails": "safe",
+  "dashboard_ids": [
+    "greyhound-sp-lay"
+  ],
+  "evidence": [
+    {
+      "claim": "development only: +1.233% and +1.420% of liability on two seed halves, 2024 to May 2026, deflated Sharpe 0.990 and 0.9995 at 37,996 greyhound trials",
+      "source": "reports/research_ledger.jsonl greyhound-sp-offset-seeds-1120"
+    },
+    {
+      "claim": "no forward day yet: its paper forward test's gate is read once at 120 settled days",
+      "source": "reports/research_ledger.jsonl greyhound-sp-offset-forward-1120"
+    },
+    {
+      "claim": "real orders only with GREYHOUND_SP_LAY=live; GBP50 a lay and a GBP300 daily loss limit at the worst case, fixed in code",
+      "source": "tests/test_workflow_guards.py; greyhound/sp_lay.py CONFIG"
+    }
+  ],
+  "approved": {
+    "by": "owner",
+    "on": "2026-11-21",
+    "source": "the owner, 21 Nov 2026: \"Put any possible profitable strategies live\"; asked, chose the bottom-10% SP lay only, GBP50 a lay, GBP300 daily loss limit, live today, restarting today's paper-models run"
+  }
+}
