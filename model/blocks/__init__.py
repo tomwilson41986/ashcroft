@@ -98,7 +98,19 @@ def post_race(name: str) -> set[str]:
     return set(getattr(load(name), "POST_RACE", set()))
 
 
-def attach(df: pd.DataFrame, block_names) -> tuple[pd.DataFrame, list[str]]:
+def reads_of(block_names) -> set[str] | None:
+    """Every column the named blocks, and the drop-in blocks they read, declare they read (READS); None when one of
+    them declares none, since it may then read anything."""
+    out: set[str] = set()
+    for name in build_order(list(dict.fromkeys(block_names))):
+        reads = getattr(load(name), "READS", None)
+        if reads is None:
+            return None
+        out |= set(reads)
+    return out
+
+
+def attach(df: pd.DataFrame, block_names, single_unless: set | None = None) -> tuple[pd.DataFrame, list[str]]:
     """Build each named block on `df`, in order, after any drop-in block it reads
     (AFTER) that the frame does not carry yet. Returns (frame, the named blocks'
     features): a block built only as another's input is not a feature.
@@ -107,7 +119,12 @@ def attach(df: pd.DataFrame, block_names) -> tuple[pd.DataFrame, list[str]]:
     are written into `df` in place: the same values (tests/test_feature_blocks.py
     checks a build on READS equals the build on the whole frame), without the copy
     of the whole matrix a build returns, which on a history from 2018 (1.05m rows)
-    was more than a runner holds. The frame passed in is extended, not copied."""
+    was more than a runner holds. The frame passed in is extended, not copied.
+
+    `single_unless` (a set of column names, usually `reads_of` every block the caller will build) stores each
+    float64 feature not in the set in single precision as it is written: the caller's promise that it would cast
+    them to float32 itself before the fit and that nothing but the blocks named in the set's making reads them
+    first (evaluate_oos.py --float32). 650 block features on 1.07m rows are 5.5 GB in double precision."""
     named = list(dict.fromkeys(block_names))
     cols: list[str] = []
     for name in build_order(named):
@@ -128,7 +145,10 @@ def attach(df: pd.DataFrame, block_names) -> tuple[pd.DataFrame, list[str]]:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
                 for c in mod.FEATURES:
-                    df[c] = out[c].to_numpy()
+                    arr = out[c].to_numpy()
+                    if single_unless is not None and c not in single_unless and arr.dtype == np.float64:
+                        arr = arr.astype(np.float32)
+                    df[c] = arr
             del out, src
         else:
             df = out

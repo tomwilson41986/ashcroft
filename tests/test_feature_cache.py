@@ -149,3 +149,53 @@ def test_no_cache_dir_is_the_uncached_path(tmp_path):
 def test_start_date_is_part_of_the_key(tmp_path):
     db = _db(tmp_path / "h.db")
     assert fc.cache_key(db, "2021-01-01") != fc.cache_key(db, "2023-06-01")
+
+
+# ---- the reader that does not hold the matrix twice (20 Nov 2026: the fits lost with no log)
+
+def _mixed_frame(n=2503, seed=1):
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    return pd.DataFrame({
+        "race_date": pd.date_range("2024-01-01", periods=n, freq="h"),
+        "horse_name": [f"h{i % 97}" if i % 13 else None for i in range(n)],
+        "a": rng.normal(size=n),
+        "b": np.where(rng.random(n) < 0.2, np.nan, rng.normal(size=n)),
+        "c32": rng.normal(size=n).astype(np.float32),
+        "i": np.arange(n),
+        "flag": rng.random(n) < 0.5,
+        "allnan": np.nan,
+        "small": rng.integers(0, 5, n).astype("int16"),
+    })
+
+
+def test_the_chunked_read_is_the_frame_pandas_reads(tmp_path):
+    f = tmp_path / "m.parquet"
+    fc._write_parquet(_mixed_frame(), f, rows_per_chunk=400)            # 7 row groups
+    pd.testing.assert_frame_equal(fc._read_parquet(f), pd.read_parquet(f), check_exact=True)
+    got = fc._read_parquet(f, columns=["b", "horse_name", "a"])
+    pd.testing.assert_frame_equal(got, pd.read_parquet(f, columns=["b", "horse_name", "a"]), check_exact=True)
+    with pytest.raises(KeyError):
+        fc._read_parquet(f, columns=["a", "not_there"])
+
+
+def test_a_column_read_as_float32_is_the_double_cast_once(tmp_path):
+    import numpy as np
+    f = tmp_path / "m.parquet"
+    fc._write_parquet(_mixed_frame(), f, rows_per_chunk=400)
+    whole = pd.read_parquet(f)
+    got = fc._read_parquet(f, float32=["a", "b", "horse_name", "i", "c32"])     # only float64 columns change
+    want = whole.astype({"a": np.float32, "b": np.float32})
+    pd.testing.assert_frame_equal(got, want, check_exact=True)
+
+
+def test_load_passes_float32_through_and_the_cache_still_hits(tmp_path):
+    import numpy as np
+    db = tmp_path / "x.db"
+    _db(db)
+    frame = _mixed_frame(300)
+    df, info = fc.build_or_load(lambda: frame, str(db), cache_dir=str(tmp_path / "c"))
+    assert not info["cached"]
+    again, info = fc.build_or_load(lambda: 1 / 0, str(db), cache_dir=str(tmp_path / "c"), float32=("a",))
+    assert info["cached"] and again["a"].dtype == np.float32 and again["b"].dtype == np.float64
+    np.testing.assert_array_equal(again["a"].to_numpy(), frame["a"].to_numpy().astype(np.float32))

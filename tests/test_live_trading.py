@@ -1175,13 +1175,13 @@ def test_the_owners_max_price_from_21_oct_is_200():
     assert 1 not in [d.selection_id for d in plan_race(views, LIVE, 4000)]      # never over 200
 
 
-@pytest.mark.parametrize("fills, topped_up", [(5, True), (6, False)])
-def test_the_owners_max_topups_from_22_oct_is_5(fills, topped_up):
-    """The owner, 21 Oct ("cap the top-ups at 5", after research query replay_1020, ledger replay-1020): a horse takes
-    its first back and at most 5 top-ups. Replayed through this code 12-19 Oct with the ladder: CLV x stake GBP3,091
-    against GBP2,711 uncapped, the money going to more horses' first backs. The count comes from Betfair's own record
-    of the day's orders, so a session that starts again keeps it."""
-    assert LIVE.max_topups == 5
+@pytest.mark.parametrize("fills, topped_up", [(3, True), (4, False)])
+def test_the_owners_max_topups_from_22_nov_is_3(fills, topped_up):
+    """The owner, 21 Nov 2026 ("Cap 3 top ups per horse", after ledger phase5-reductions-1119: after the non-runners'
+    reductions the 1st top-up made +6.07%, the 2nd +3.88%, the 3rd +1.94%, the 4th +0.43%, the 5th -1.46%): a horse
+    takes its first back and at most 3 top-ups (5 from 22 Oct, "cap the top-ups at 5"). The count comes from
+    Betfair's own record of the day's orders, so a session that starts again keeps it."""
+    assert LIVE.max_topups == 3
     off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
     each = round(41.66 / fills, 2)
     held = [{"marketId": "1.7", "selectionId": 1, "side": "BACK", "orderType": "LIMIT", "sizeMatched": each,
@@ -1190,7 +1190,7 @@ def test_the_owners_max_topups_from_22_oct_is_5(fills, topped_up):
                  "bspLiability": round(each * fills * 6.0, 2), "customerOrderRef": "ash10011x"})
     c = _Client(orders=held)
     cfg = _live_cfg()
-    cfg.topup_to, cfg.max_topups = "stake", 5
+    cfg.topup_to, cfg.max_topups = "stake", 3
     s, clock = _session(c, [_race("1.7", off, [6.0, 2.3, 3.6, 6.0], [3.5, 2.6, 4.2, 8.0], [500, 900, 800, 300])],
                         cfg)
     s.sync(s.x.orders(["1.7"]))

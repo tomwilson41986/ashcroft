@@ -1,0 +1,65 @@
+live_orders (live): 58,106 rows, 2026-10-10 to 2026-11-19
+race_results ends 2026-11-16; Betfair's card rows 15,027, to 2026-11-19
+horses settled 4,933; with a BSP and in a period 4,642
+
+== 1. the live record by period (CLV at Betfair's settled price, stake-weighted, 90% interval by race day)
+   A 10 Oct-8 Nov  old blend, autumn card: 30 days, 129 horses and GBP3,679 a day, settled GBP+209.55 a day after commission (GBP+6,286.48); CLV settled +4.97% (+3.46 to +6.34); at the matched price +9.67% (+8.00 to +11.29); reduced 25.8% of horses
+   B 9-13 Nov      old blend, winter card: 5 days, 61 horses and GBP2,020 a day, settled GBP+13.36 a day after commission (GBP+66.80); CLV settled +0.95% (-0.06 to +2.14); at the matched price +7.77% (+3.82 to +11.59); reduced 32.2% of horses
+   C 14 Nov        market-rating blend: 1 days, 116 horses and GBP3,375 a day, settled GBP+16.48 a day after commission (GBP+16.48); CLV settled +2.45% (1 day: no interval); at the matched price +31.14% (1 day: no interval); reduced 53.4% of horses
+   D 15 Nov on     stack blend: 5 days, 72 horses and GBP1,887 a day, settled GBP+62.89 a day after commission (GBP+314.45); CLV settled +4.31% (+0.40 to +9.26); at the matched price +8.58% (+2.34 to +17.43); reduced 26.0% of horses
+   D less B: +3.36 points (-0.75 to +8.43)
+   D less A: -0.66 points (-4.96 to +4.44)
+   B less A: -4.02 points (-5.72 to -2.19)
+
+   by day from 1 Nov: horses, matched, CLV settled, result after commission
+   2026-11-01   152  GBP3,889.96   +7.99%  GBP +468.36
+   2026-11-02   135  GBP3,853.23   +4.69%  GBP +206.33
+   2026-11-03   121  GBP3,952.47   +0.84%  GBP  -60.44
+   2026-11-04   163  GBP3,803.04   +1.91%  GBP  +81.01
+   2026-11-05   151  GBP3,879.54   +4.62%  GBP +179.48
+   2026-11-06    98  GBP2,854.56  +12.59%  GBP +327.21
+   2026-11-07   155  GBP3,876.86   +4.52%  GBP +282.19
+   2026-11-08    78  GBP2,410.41   +7.23%  GBP +270.38
+   2026-11-09    67  GBP2,023.57   -0.37%  GBP  +30.72
+   2026-11-10    49  GBP1,686.00   -0.15%  GBP  +17.25
+   2026-11-11    38  GBP1,595.98   +0.24%  GBP  +57.41
+   2026-11-12    69  GBP2,007.70   +3.63%  GBP  +25.31
+   2026-11-13    84  GBP2,785.94   +1.06%  GBP  -63.89
+   2026-11-14   116  GBP3,375.10   +2.45%  GBP  +16.48
+   2026-11-15    78  GBP2,204.91  +14.84%  GBP +263.90
+   2026-11-16    62  GBP1,661.04   +1.20%  GBP   -0.17
+   2026-11-17    23  GBP  627.34   -3.64%  GBP  -24.13
+   2026-11-18    89  GBP2,068.53   +2.51%  GBP  +87.68
+   2026-11-19   109  GBP2,871.82   +1.06%  GBP  -12.83
+
+== 2. the trader's expected CLV at each back (the ledger's edge) against the realised, at the horse's settled price
+   A 10 Oct-8 Nov  old blend, autumn card | first back: expected +6.81%, realised +12.39% (+10.88 to +13.91), realised less expected +5.58 points (+4.02 to +7.13); GBP24,371, 3,858 fills
+   A 10 Oct-8 Nov  old blend, autumn card | top-up    : expected +5.66%, realised +2.87% (+1.21 to +4.41), realised less expected -2.79 points (-4.48 to -1.24); GBP86,000, 14,571 fills
+   B 9-13 Nov      old blend, winter card | first back: expected +6.65%, realised +4.81% (+2.80 to +5.82), realised less expected -1.85 points (-3.81 to -0.24); GBP2,415, 307 fills
+   B 9-13 Nov      old blend, winter card | top-up    : expected +5.14%, realised -0.26% (-1.45 to +1.27), realised less expected -5.40 points (-6.70 to -3.81); GBP7,684, 1,035 fills
+   C 14 Nov        market-rating blend | first back: expected +7.25%, realised +4.18% (1 day: no interval), realised less expected -3.07 points; GBP805, 116 fills
+   C 14 Nov        market-rating blend | top-up    : expected +5.69%, realised +1.90% (1 day: no interval), realised less expected -3.79 points; GBP2,570, 389 fills
+   D 15 Nov on     stack blend | first back: expected +7.36%, realised +8.97% (+2.84 to +16.27), realised less expected +1.61 points (-4.56 to +8.82); GBP2,387, 361 fills
+   D 15 Nov on     stack blend | top-up    : expected +5.49%, realised +2.73% (-1.41 to +6.92), realised less expected -2.75 points (-6.92 to +1.39); GBP7,047, 1,163 fills
+
+== 3. the picks: horses backed a race, the model's price against the market's at the first back
+   A 10 Oct-8 Nov  old blend, autumn card: 3.60 horses a race traded (1071 races); log(p_model / p_market) at the first back median +0.363, mean +0.407; first price median 15.09; expected CLV mean +6.60%
+   B 9-13 Nov      old blend, winter card: 3.13 horses a race traded (98 races); log(p_model / p_market) at the first back median +0.330, mean +0.385; first price median 12.00; expected CLV mean +6.08%
+   C 14 Nov        market-rating blend: 3.31 horses a race traded (35 races); log(p_model / p_market) at the first back median +0.357, mean +0.410; first price median 14.50; expected CLV mean +6.57%
+   D 15 Nov on     stack blend: 3.47 horses a race traded (104 races); log(p_model / p_market) at the first back median +0.345, mean +0.398; first price median 15.74; expected CLV mean +6.60%
+
+   CLV settled by code and period (stake-weighted; matched GBP, horses)
+   A 10 Oct-8 Nov  old blend, autumn card | aw       :          +6.73% (+4.04 to +9.05)  GBP24,725, 1034; reduced 23.6%
+   A 10 Oct-8 Nov  old blend, autumn card | flat turf:          +5.74% (+3.22 to +7.97)  GBP32,195, 1229; reduced 27.4%
+   A 10 Oct-8 Nov  old blend, autumn card | jumps    :          +3.69% (+1.99 to +5.21)  GBP53,452, 1595; reduced 26.1%
+   B 9-13 Nov      old blend, winter card | aw       :    +15.66% (2 days: no interval)  GBP599, 30; reduced 40.0%
+   B 9-13 Nov      old blend, winter card | jumps    :          -0.16% (-1.96 to +1.94)  GBP9,390, 275; reduced 30.9%
+   C 14 Nov        market-rating blend | jumps    :      +3.33% (1 day: no interval)  GBP3,249, 109; reduced 50.5%
+   D 15 Nov on     stack blend | aw       :          -2.02% (-4.92 to +3.02)  GBP3,334, 152; reduced 17.8%
+   D 15 Nov on     stack blend | jumps    :         +7.77% (+1.08 to +11.81)  GBP6,100, 209; reduced 32.1%
+
+== 4. the results gap: race_results ends 2026-11-16; card runners whose last run (Betfair's days since the last run) is after it
+   2026-11-17: 0 of 310 runners (0.0%) have run since 2026-11-16; days since the last run known for 95%; the trader backed 0 of them (GBP0.00 of GBP627.34, CLV settled no data)
+   2026-11-18: 1 of 353 runners (0.3%) have run since 2026-11-16; days since the last run known for 92%; the trader backed 0 of them (GBP0.00 of GBP2,068.53, CLV settled no data)
+   2026-11-19: 1 of 369 runners (0.3%) have run since 2026-11-16; days since the last run known for 88%; the trader backed 0 of them (GBP0.00 of GBP2,871.82, CLV settled no data)
+   for scale, 10 Oct to the last result day: card runners whose last run was within k days: 3d 1.1%, 5d 2.1%, 7d 4.8%, 9d 8.0%, 14d 20.9%

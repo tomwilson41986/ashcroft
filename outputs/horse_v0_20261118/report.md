@@ -15,7 +15,8 @@ been changed. Scope: horse racing only (the owner, 18 Nov). Targets: the BFSP (k
    to 0.561 at 50+) and the field size (0.336 at 2-7 runners to 0.428 at 16+), and jumps are worst (0.390). That is
    where a better model has most to win. Source: `phase0_baseline_v0.json`.
 3. **On winners the model adds nothing to the BSP, out of sample.** Benter weight about 0.00-0.01 against the
-   market's 0.98. Log-likelihood -0.29 per 1,000 races (-0.58 to -0.01). Log loss 0.306 against the market's 0.296.
+   market's 0.98. Log-likelihood -0.35 per 1,000 races (-0.68 to -0.01). Log loss 0.2935 against the market's 0.2838
+   (corrected 19 Nov to every runner in the race; the first reading kept finishers only).
    This is expected of a BSP forecaster: the money is in the price before the off against the BSP (CLV), not in
    beating the BSP on the result.
 4. **On normalised beaten lengths the model's order agrees less than the BSP's.** Spearman 0.424 against 0.463 on
@@ -72,3 +73,48 @@ matplotlib): **3,262 passed, 48 failed, 16 errors, 12 skipped** (`test_suite_111
 For Phase 1: `requirements.txt` sets only minimum versions (`pandas>=2.1.0`), against the standing rule to pin
 dependency versions. Pin them, and make the leak tests compare at a tolerance (1e-12) far below any real leak, so
 the tests check for leaks rather than for rounding.
+
+## Phase 1 - the validation harness (19 Nov)
+
+| Brief item | Done | Where | Check |
+|---|---|---|---|
+| Walk-forward by date with purge and embargo | existed (30-day purge, embargo option) | `model/bfsp_model.py fold_masks`, `tests/test_measurement_integrity.py` | passes |
+| No meeting split across training and the fold | test added | `tests/test_point_in_time.py` | passes |
+| Point-in-time: every served feature under a leak test | test added: all 1,181 features of each member are in the deployed set or a block | `tests/test_point_in_time.py` | passes (0 uncovered) |
+| Synthetic leak injection detected | tests added: a feature reading its own race's result and one lagged by row are flagged, a correct lag is not; the same for a planted block | `tests/test_point_in_time.py` | passes |
+| Features the leak test cannot see | named: 5 served features are empty on the synthetic card (`front_sustainability`, `track_draw_bias`, `horse_draw_pref`, `fr_runs_since_break`, `fr_break_len`); a new one fails the test | `tests/test_point_in_time.py` | passes |
+| Leak tests read leaks, not rounding | the five exact-equality leak tests compare at 1e-12 | `tests/test_feature_blocks.py`, `test_form_windows.py`, `test_career_before.py`, `test_shape_draw_production.py` | 501 passed under pandas 3.1.1 (16 failed before on 1e-15 differences) |
+| Metrics with race-day intervals, both targets | BFSP error by code, price band, field size, quarter, year, track, race type; win log loss, Brier, ECE; walk-forward Benter; order agreement with beaten lengths | `research/harness.py`, `tests/test_harness.py` | 7 passed; reproduces baseline_v0's 0.37465 exactly |
+| Probabilities sum to 1 in a race | test | `tests/test_harness.py` | passes |
+| P&L reconciled by hand on 20 bets | 20 backs in 5 races, lays at the BSP, 2 non-runners, 2% commission on each market's positive net, through the trader's own settlement | `tests/test_pnl_by_hand.py` | 3 passed: every bet, every commission and the day's +52.29 |
+| Deflated Sharpe | existed | `research/overfit.py dsr_check` | |
+| Probability of backtest overfitting (CSCV) | added | `research/overfit.py pbo_cscv`, `tests/test_overfit_pbo.py` | 3 passed (noise 0.3-0.7, a real edge under 0.05) |
+| Pinned dependency versions | **not done: the owner's decision.** The UK runner keeps one virtual environment and installs `requirements.txt` (minimum versions only) into it each morning; pinning would change the live trader's pandas, numpy and LightGBM on its next start | `requirements.txt`, `.github/workflows/live-trade.yml` | |
+
+## Phase 4 - race selection (19 Nov)
+
+Policy: keep the live rule (`selection_policy.yaml`). The research edge is in every segment (code, class, distance,
+field size, hour, month, the 40 largest courses; ledger `phase4-segments-1119`), and the expected CLV is well
+calibrated. Of 40 rules chosen walk-forward, the 0% bar beats the live 3% bar by GBP29.31 a day (90% +22.68 to
++35.78; deflated Sharpe 1.0 with 40 trials; PBO 0.33; ledger `phase4-rules-1119`), but by turnover (2.1% at the
+margin in research, about 1% live) into the GBP4,000 day limit: not proposed.
+
+## Phase 5 - execution (19 Nov)
+
+| Finding | Evidence (ledger) |
+|---|---|
+| The live edge is the price taken early, not the picks: the trader's horses at the morning WAP -0.30%, at the matched price +8.29%, at the settled price +3.64% | `phase5-execution-1119` |
+| Non-runners' reductions take -4.66%, most on the earliest backs (05-07 UK: 30% of horses cut, -5.6 to -9.3%); the research CLV carries none, so it overstates what live can take | `phase5-execution-1119` |
+| The research CLV cannot yet carry the reductions: Betfair's price files list almost no withdrawn runners (140 of 116,124 races) | `phase5-reductions-1119` |
+| Fills: 05-06 UK +16.8/+15.6% at the fill, 10:00 on about +1%; ladder fills below the best back +13.8% against +6.8% at the best | `phase5-execution-1119` |
+| Each top-up is worth less after the reductions: 1st +6.07%, 2nd +3.88%, 3rd +1.94%, 4th +0.43%, 5th -1.46% (a floor) | `phase5-reductions-1119` |
+
+Proposals for the owner (nothing changed; the live rule is the owner's): a cap of 3 top-ups a horse (from 5); keep
+the 05:15 start and the ladder. For research: a reduction-aware CLV from the live books' removals and reduction factors
+(S3 `betfair_live/<day>/`, from October), so research and live are measured alike.
+
+Controls already in place (`trading/config_live.json`, `TRADING.md`, `CLAUDE.md`): the S3 `trading/STOP` kill switch;
+GBP4,000 a day turnover limit; a stake of GBP15-200 a horse; at most 5 top-ups; no price over 200; order references
+`ash<mmdd>` (the trader adopts and lays only its own); the trading watchdog; the day's ledger reconciled each evening
+against Betfair's settled figure and the account's funds (`account_day_<mmdd>.py`; 18 Nov left a GBP27.52 gap under
+check). Commission: 2% of each market's positive net, as the account's daily reconciliation has matched to the penny.
