@@ -490,3 +490,21 @@ def test_the_australian_paper_test_only_records():
     src = (WORKFLOWS.parent.parent / "greyhound" / "au_paper.py").read_text()
     for call in ("placeOrders", "BetfairData", "login(", "cancelOrders"):
         assert call not in src, call
+
+
+def test_training_and_serving_run_one_python():
+    """The owner, 21 Nov 2026: "move training to Python 3.12". The model is trained (train-bfsp.yml), evaluated
+    (research-loop.yml) and served (predict.yml) on the same Python, so the pinned requirements give each the same
+    numpy and scipy (on 3.11 they cannot: numpy 2.5 and scipy 1.18 need 3.12)."""
+    import yaml as _yaml
+
+    def version(name):
+        wf = _yaml.safe_load((WORKFLOWS / name).read_text())
+        v = str(wf.get("env", {}).get("PYTHON_VERSION", ""))
+        if not v:
+            for job in wf["jobs"].values():
+                for step in job.get("steps", []):
+                    if "setup-python" in str(step.get("uses", "")):
+                        v = str(step["with"]["python-version"])
+        return v
+    assert version("train-bfsp.yml") == version("research-loop.yml") == version("predict.yml") == "3.12"
