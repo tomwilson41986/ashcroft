@@ -1,7 +1,7 @@
 """research/greyhound/sp_offset_forward.py: the frozen residual served before the off, the first serve kept, settled
 at the SP in wholly priced races only, read alone and with the study's days."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -140,3 +140,17 @@ def test_the_frozen_fits_come_back_from_the_store_and_the_seed_halves_days_are_a
     b = pd.DataFrame({"rule": ["r"], "day": ["d1"], "net": [4.0], "risk": [20.0]})
     got = fw.mean_daily([a, b]).set_index("day")
     assert got.loc["d1", "net"] == 3.0 and got.loc["d1", "risk"] == 15.0 and got.loc["d2", "net"] == -0.5
+
+
+
+def test_a_day_is_settled_only_once_it_is_over_and_the_reading_never_loads_the_day_still_running(tmp_path):
+    from sources.common import Store
+    store = Store(root=tmp_path)
+    today = date(2026, 11, 22)
+    assert fw.settle(store, today, today=today) == {"day": "2026-11-22", "note": "not settled: the day is not over"}
+    assert fw.settle(store, date(2026, 11, 23), today=today)["note"].startswith("not settled")
+    assert fw.settle(store, date(2026, 11, 21), today=today) == {"day": "2026-11-21", "note": "not served"}
+    for d in ("2026-11-21", "2026-11-22"):
+        store.put(f"{fw.PREFIX}/settled/{d}.csv", b"rule,day,race_id,risk,gross,net\nlay_bottom10,%s,r,1,1,1\n" % d.encode())
+    got = fw.load_settled(store, last="2026-11-21")
+    assert got.day.tolist() == ["2026-11-21"]
