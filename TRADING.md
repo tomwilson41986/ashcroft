@@ -1970,6 +1970,18 @@ the market-rating blend.
   (ledger `model-quality-1120`).
 - **The record:** 42 days, +GBP6,760.50, 33 up.
 
+**The fifty-second full day** (21 Nov; ledger `live-day-1121`), the seventh and last priced by the stack blend.
+- **The start.** Predictions run 44859704086 wrote the file at 03:39 UTC (03:10-03:39); the night-before run
+  (44844889534) succeeded. The session (44870153268) ran 05:17-21:30 UTC in one piece; the settle at 22:29 UTC in
+  settle mode (run 44956991594).
+- **+GBP116.21 after commission** as Betfair settled the trader's own orders, on 530 fills on 132 horses, GBP3,999.69
+  matched, 42 races settled in 44 markets, CLV +2.78%; 34 horses' prices cut by a non-runner; 50 horses reached the
+  cap of 5 top-ups (3 from 22 Nov) (ledger `changes-1121`).
+- **The account.** Funds GBP5,136.72 -> GBP5,405.97 (+GBP269.25) against the trader's +GBP116.21: **+GBP153.04 that
+  no trader's record explains** (the greyhound early lay watched nothing; no morning-model, football or greyhound
+  files). Told to the owner (ledger `account-day-1121`).
+- **The record:** 43 days, +GBP6,876.71, 34 up.
+
 **21 Nov: gate_stn served from 22 Nov** (ledger `serve-stn-1121`). The owner, 21 Nov: "Serve the Phase 6 result."
 From the 03:00 UTC predictions of 22 Nov the served blend is the stack blend with collateral, future_form and
 nbl_rating in all three members (bfsp-model-72/73/71, 1,263 features, trained through 16 Nov, the gate unchanged).
