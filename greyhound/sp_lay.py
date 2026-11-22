@@ -29,7 +29,7 @@ nothing else of the model: it never prices a race itself.
   nothing is sent. Orders carry ``spl-<mmdd>-<market>-<selection>`` (win) and ``spl-p<mmdd>-...`` (place) references.
   Ledger: ``sources/greyhound/sp_lay/<mode>/<day>/ledger.csv``; status beside it.
 
-    GREYHOUND_SP_LAY=live python -m greyhound.sp_lay --trade --live --until 21:45
+    GREYHOUND_SP_LAY=live python -m greyhound.sp_lay --trade --live --until 22:30
     python -m greyhound.sp_lay --reconcile --date 2026-11-21
 """
 
@@ -478,7 +478,7 @@ def main(argv=None) -> int:
     ap.add_argument("--store", default=None)
     ap.add_argument("--trade", action="store_true")
     ap.add_argument("--live", action="store_true", help="real orders (only with GREYHOUND_SP_LAY=live)")
-    ap.add_argument("--until", default="21:45")
+    ap.add_argument("--until", default="22:30")   # the last race: 22:20 UK on 21 Nov 2026 (21:45 missed two picks)
     ap.add_argument("--date", default=None)
     ap.add_argument("--reconcile", action="store_true", help="a live day against Betfair's settled bets")
     a = ap.parse_args(argv)
@@ -501,11 +501,10 @@ def main(argv=None) -> int:
             raise SystemExit("no daily loss limit: nothing traded")
         x = LiveExchange(BetfairData(source="greyhound"))
         x.login()
-        if live:
-            try:
-                out["reconcile_yesterday"] = reconcile(store, x, day - timedelta(days=1), comm)
-            except Exception as exc:
-                log.warning("yesterday not reconciled (%s)", exc)
+        try:                                        # read-only: yesterday's live lays against Betfair's settled
+            out["reconcile_yesterday"] = reconcile(store, x, day - timedelta(days=1), comm)    # bets, live or paper today
+        except Exception as exc:
+            log.warning("yesterday not reconciled (%s)", exc)
         log.info("sp lay %s: GBP%.2f a win lay, %s, daily loss limit GBP%.2f (win and place), commission %.3f",
                  "live" if live else "paper", cfg["liability"],
                  f"GBP{cfg['place_liability']:.2f} a place lay" if cfg.get("place") else "no place lays",

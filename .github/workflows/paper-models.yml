@@ -73,7 +73,7 @@ concurrency:
 jobs:
   paper:
     runs-on: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
-    timeout-minutes: 1000
+    timeout-minutes: 1030    # from 05:45 UTC to 22:55 UTC: the lay at the SP runs to 22:30 UK, the last race (22:20 on 21 Nov)
     steps:
       - name: Not on the live trader's runner
         id: runner_guard
@@ -190,7 +190,7 @@ jobs:
           BETFAIR_APP_KEY="$GHKEY" python -m greyhound.take_close --trade --live --until 21:30 > "$RUNNER_TEMP/greyhound_take_close.log" 2>&1 &
           GTC=$!
           # the residual's lay at the SP (greyhound/sp_lay.py): real orders only when GREYHOUND_SP_LAY is 'live'
-          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.sp_lay --trade --live --until 21:45 > "$RUNNER_TEMP/greyhound_sp_lay.log" 2>&1 &
+          BETFAIR_APP_KEY="$GHKEY" python -m greyhound.sp_lay --trade --live --until 22:30 > "$RUNNER_TEMP/greyhound_sp_lay.log" 2>&1 &
           GSL=$!
           # the favourite back on paper (greyhound/fav_back.py; the owner, 10 Nov 2026: "back and trade out at BFSP";
           # "Yes build it"): reads the books, sends no order (the module has no order call); first the last days settled

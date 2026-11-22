@@ -57,6 +57,14 @@ jobs:
           if not os.path.exists("ledger.csv"):
               raise SystemExit(0)
           rows = list(csv.DictReader(open("ledger.csv")))
+          if os.path.exists("served.csv") and os.path.exists("meta.json"):
+              # every pick the trader never decided (no lay, no skip in its WIN market), with its off: a gap to explain
+              decided = {(r["market_id"], str(int(float(r["selection_id"])))) for r in rows
+                         if (r.get("kind") or "win") == "win" and r["action"] in ("lay", "paper_lay", "skip")}
+              missed = [r for r in picks if (r["market_id"], str(int(float(r["selection_id"])))) not in decided]
+              print(f"picks never decided: {len(missed)}")
+              for r in missed:
+                  print(f"  {r['off_utc']} {r['track']} {r['race_time']} trap {r['trap']} {r['dog_name']} s {r['s']}")
           print("\n== ledger rows by action:", dict(collections.Counter(r["action"] for r in rows)))
           print("skip reasons:", dict(collections.Counter(r["note"] for r in rows if r["action"] == "skip")))
           lays = [r for r in rows if r["action"] in ("lay", "paper_lay")]
