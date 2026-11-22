@@ -235,10 +235,19 @@ def settle_day(served: pd.DataFrame, close: pd.DataFrame, cuts: dict, comm: floa
     return (pd.concat(out, ignore_index=True)[cols] if out else pd.DataFrame(columns=cols)), counts
 
 
-def settle(store, day: date, s3=None) -> dict:
+def uk_today() -> date:
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Europe/London")).date()
+
+
+def settle(store, day: date, s3=None, today: date | None = None) -> dict:
+    """A COMPLETED day only (22 Nov 2026: the noon settle had settled the day it ran on, 13 of 149 races, so every
+    noon reading counted a partial day)."""
     from greyhound.costs import commission
     from greyhound.fav_back import closing
     ds = f"{day:%Y-%m-%d}"
+    if day >= (today or uk_today()):
+        return {"day": ds, "note": "not settled: the day is not over"}
     raw = store.get(f"{PREFIX}/served/{ds}.csv")
     if not raw:
         return {"day": ds, "note": "not served"}
@@ -318,7 +327,8 @@ def mean_daily(frames: list[pd.DataFrame]) -> pd.DataFrame:
 
 
 def load_settled(store, first: str = FIRST_DAY, last: str | None = None) -> pd.DataFrame:
-    last = last or f"{datetime.now(timezone.utc).date():%Y-%m-%d}"
+    """Every settled forward day from ``first`` to ``last`` (default yesterday, UK): never the day still running."""
+    last = last or f"{uk_today() - timedelta(days=1):%Y-%m-%d}"
     out, d = [], date.fromisoformat(first)
     while f"{d:%Y-%m-%d}" <= last:
         raw = store.get(f"{PREFIX}/settled/{d:%Y-%m-%d}.csv")
@@ -338,7 +348,7 @@ def main(argv=None) -> int:
     ap.add_argument("--read", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="--serve: a rehearsal, written to served_dry/, never settled")
     ap.add_argument("--date", help="UK racing day, YYYY-MM-DD (default today)")
-    ap.add_argument("--days", type=int, default=3, help="--settle: this many days back from --date")
+    ap.add_argument("--days", type=int, default=3, help="--settle: this many completed days back from --date")
     ap.add_argument("--dev-daily", nargs="+",
                     help="the study's stage2_daily csv(s) to store as the study's days (once); several (the seed "
                          "halves) are averaged day by day")
@@ -363,7 +373,7 @@ def main(argv=None) -> int:
     if a.serve:
         res["serve"] = serve(store, day, dry=a.dry_run)
     if a.settle:
-        res["settle"] = [settle(store, day - timedelta(days=i)) for i in range(a.days)]
+        res["settle"] = [settle(store, day - timedelta(days=i)) for i in range(1, a.days + 1)]   # yesterday back
     md = ["```", json.dumps(res, indent=1, default=str), "```"]
     if a.read:
         from research.greyhound.trial_count import greyhound_trials
