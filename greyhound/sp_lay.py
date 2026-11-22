@@ -501,11 +501,10 @@ def main(argv=None) -> int:
             raise SystemExit("no daily loss limit: nothing traded")
         x = LiveExchange(BetfairData(source="greyhound"))
         x.login()
-        if live:
-            try:
-                out["reconcile_yesterday"] = reconcile(store, x, day - timedelta(days=1), comm)
-            except Exception as exc:
-                log.warning("yesterday not reconciled (%s)", exc)
+        try:                                        # read-only: yesterday's live lays against Betfair's settled
+            out["reconcile_yesterday"] = reconcile(store, x, day - timedelta(days=1), comm)    # bets, live or paper today
+        except Exception as exc:
+            log.warning("yesterday not reconciled (%s)", exc)
         log.info("sp lay %s: GBP%.2f a win lay, %s, daily loss limit GBP%.2f (win and place), commission %.3f",
                  "live" if live else "paper", cfg["liability"],
                  f"GBP{cfg['place_liability']:.2f} a place lay" if cfg.get("place") else "no place lays",
