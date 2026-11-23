@@ -16,11 +16,11 @@
 | How is a non-runner settled? | All bets stand run or not; a horse balloted out is void (REMOVED) (section 0) | Yes |
 | Turn-up labels from history | 461 GB/IE markets labelled; every winner found running where `betfair_prices` holds the race (section 4) | Yes |
 | Recorded books since 7 Oct | 44 markets over 42 days; thin and wide (section 5) | Yes |
-| Turn-up model (ran / lost / void) | PASS on 2026: log loss 0.583 against 0.670 and 0.696 for the baselines (section 4.4); partly a reading of the 1.0 artefact (section 4.7) | Rerun needed |
+| Turn-up model (ran / lost / void) | Rerun on clean prices: FAIL on calibration only; log loss 0.605 against 0.702 and 0.712, and better on the horses not marked out (section 4.8) | Yes |
 | Calibration of P(ran) | FAIL: error 0.023 to 0.015, but the log loss interval breaks the bar; not used (section 4.5) | Yes |
 | Price stage: E[log SP given it runs] | PASS on 2026: mean abs. log error 0.545 against 0.570 and 0.564 (section 4.5) | Yes |
 | EV entry rule (back, laid at SP) | FAIL on 2026: -32.3% on 216 bets, deflated Sharpe 0.000 (section 4.6) | Yes |
-| Trade-out in the ante-post market | INVALID: +251% came from laying back at an impossible last traded price of 1.0 on non-runners; the other 679 trades lost 13.6% (section 4.7) | Rerun needed |
+| Trade-out in the ante-post market | INVALID (section 4.7); rerun on clean prices FAIL: -22.5% on 327 trades, every rule loses (section 4.8) | Yes |
 | Entries by stage (forfeits, 5-day, declarations) | No data found | **Open** |
 
 ## 0. Betfair's rules for these markets (read 18 Nov 2026)
@@ -452,6 +452,46 @@ settled. If so, it's information visible in the market at the time, but it isn't
 **The fix, under new registrations:**
 1. The parser treats a last traded price under 1.01 as no price, and records when it appeared as its own event.
 2. Rerun the turn-up model, the price stage and the trade-out rule on the clean panel.
+
+## 4.8 The rerun on clean prices (ledger `antepost-*-1123`): every test fails
+
+Registered before the run and read once:
+[run 45162493443](https://github.com/tomwilson41986/ashcroft/actions/runs/45162493443), artifact `antepost-phase0-13`.
+
+**The fix:** `antepost/phase0.py` treats a last traded price under 1.01 as no price. When it first appears is kept as
+its own event: the horse marked out by Betfair at that time. The turn-up model gets it as a feature (`marked_out`), a
+marked-out horse is never backed, and a position whose horse is marked out before its exit is stuck and settles.
+
+**Fix check:** 48,349 priced rows, none under 1.01; 20,391 marked-out rows of 113,035.
+
+| Test | Reading | Numbers on 2026 |
+|---|---|---|
+| Turn-up model | **FAIL** (calibration only) | Log loss 0.605 against B1 0.702 and B2 0.712; AUC 0.852. On the 30,835 rows not marked out: 0.723 against 0.823 and 0.833, both intervals below zero. Calibration error of P(ran) 0.047 against B2's 0.019 + 0.01 |
+| Calibration | **FAIL** | Error 0.045 to 0.019, but the paired log loss interval reaches +0.036 (bar +0.002) |
+| Price stage | **PASS** | Mean abs. log error 0.540 against P1 0.570 and P2 0.560, both intervals below zero; concordance 0.737 against 0.730 |
+| EV rule: back, lay at the SP | **FAIL** | Threshold 0 (the fallback: no threshold had 30 bets on 2025). 144 bets in 16 races, **-66.0%** (-91.6% to -23.0%); deflated Sharpe not computable (16 races) |
+| Trade-out in the ante-post market | **FAIL** | P(ran) 0.6, 30% target: 327 trades in 84 races, **-22.5%** (-26.4% to -18.3%); deflated Sharpe 0.000 over 408 trials |
+
+**The trade-out in detail:**
+- **Every one of the 12 rules loses**, on 2026 (-13% to -29%) and on Jul to Dec 2025 (-22% to -29%).
+- **By exit, at the chosen rule:**
+
+  | Exit | Trades | Return |
+  |---|---|---|
+  | Reached the target | 66 | +29.6% |
+  | Laid back at the last point | 223 | -24.7% |
+  | Stuck behind a mark-out | 38 | -100% |
+
+- **The round trip is what kills it.** The trade pays half the band's spread on each leg, about 14% in all at 3-5
+  and 21% at 5-10, and the price rarely shortens enough to clear it.
+
+**What it means:**
+- **The turn-up and price models work as forecasts.** Without the artefact, the turn-up model still beats the price
+  at telling runners from non-runners, including on horses Betfair hasn't marked out. The price model still beats
+  simple shifts of the price.
+- **No rule tested here makes money** once a back crosses the spread and loses its stake on non-runners.
+- **Not tested:** placing resting orders inside the spread rather than crossing it. That can't be tested on BASIC last
+  traded prices. It needs the recorded books (section 5), on paper, forward.
 
 ## 5. The recorded snapshots (7 Oct to 17 Nov 2026)
 
