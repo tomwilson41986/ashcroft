@@ -1977,10 +1977,21 @@ the market-rating blend.
 - **+GBP116.21 after commission** as Betfair settled the trader's own orders, on 530 fills on 132 horses, GBP3,999.69
   matched, 42 races settled in 44 markets, CLV +2.78%; 34 horses' prices cut by a non-runner; 50 horses reached the
   cap of 5 top-ups (3 from 22 Nov) (ledger `changes-1121`).
-- **The account.** Funds GBP5,136.72 -> GBP5,405.97 (+GBP269.25) against the trader's +GBP116.21: **+GBP153.04 that
-  no trader's record explains** (the greyhound early lay watched nothing; no morning-model, football or greyhound
-  files). Told to the owner (ledger `account-day-1121`).
+- **The account.** Funds GBP5,136.72 -> GBP5,405.97 (+GBP269.25) against the trader's +GBP116.21: +GBP153.04, the
+  greyhound lay at the SP, live from 21 Nov (its reconcile +GBP153.08 on 146 lays; ledger `account-day-1121` and its
+  amendment).
 - **The record:** 43 days, +GBP6,876.71, 34 up.
+
+**The fifty-third full day** (22 Nov, a Sunday; ledger `live-day-1122`), the first priced by gate_stn.
+- **The start.** Predictions run 44979398194 wrote the file at 03:45 UTC (03:10-03:45), gate_stn's first (3 members,
+  1,263 features, 375 runners); the shadow (gate_st) priced the same card on the same database by 05:02 UTC. The
+  session (44988696415) ran 05:16-21:30 UTC in one piece; the settle at 22:30 UTC in settle mode (run 45078026196).
+- **+GBP83.09 after commission** as Betfair settled the trader's own orders, on 374 fills on 113 horses, GBP2,234.92
+  matched, 32 races settled in 33 markets, CLV +4.66%; the cap of 3 top-ups held (78 horses at 4 fills, none over).
+- **The account.** Funds GBP5,405.97 -> GBP5,634.76 (+GBP228.79): the horse trader +GBP83.09 and the greyhound lay at
+  the SP +GBP145.67 (72 lays), 3p apart (ledger `account-day-1122`).
+- **gate_stn against gate_st** on the same card: mean |log ratio| 0.070, largest 0.285 (ledger `shadow-1122`).
+- **The record (the horse trader):** 44 days, +GBP6,959.80, 35 up.
 
 **21 Nov: gate_stn served from 22 Nov** (ledger `serve-stn-1121`). The owner, 21 Nov: "Serve the Phase 6 result."
 From the 03:00 UTC predictions of 22 Nov the served blend is the stack blend with collateral, future_form and
