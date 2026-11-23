@@ -44,7 +44,7 @@ TRAIN_END, VALID_END = "2025-06-30", "2025-12-31"     # races to 30 Jun 2025 fit
 GAP_MEETINGS = {("Haydock 22nd Nov", "2025-11-22"), ("Leopardstown 31st Jan", "2026-01-31")}  # betfair_prices lacks
 FEATURES = ["days_out", "log_ltp", "has_price", "share", "price_rank", "n_listed", "n_priced", "age", "log_ntr",
             "susp", "chg_prev", "chg_prev2", "days_listed", "handicap", "jumps", "festival", "ireland", "month",
-            "days_since_run", "runs_365", "ran_14"]
+            "days_since_run", "runs_365", "ran_14", "marked_out"]
 LGB_PARAMS = {"objective": "multiclass", "num_class": 3, "learning_rate": 0.03, "num_leaves": 15,
               "min_data_in_leaf": 50, "feature_fraction": 0.8, "bagging_fraction": 0.8, "bagging_freq": 1,
               "lambda_l2": 1.0, "verbose": -1, "seed": 7}
@@ -109,6 +109,9 @@ def build_panel(runners: pd.DataFrame, markets: pd.DataFrame) -> tuple[pd.DataFr
             "age": pd.to_numeric(at[f"age_{k}"], errors="coerce").values if f"age_{k}" in at else np.nan,
             "log_ntr": np.log1p(pd.to_numeric(at[f"ntr_{k}"], errors="coerce")).values if f"ntr_{k}" in at else np.nan,
             "susp": pd.to_numeric(at[f"susp_{k}"], errors="coerce").values if f"susp_{k}" in at else np.nan,
+            # Betfair had marked the horse out by the mark (a 1.0 "trade": antepost/phase0.py); then no price
+            "marked_out": pd.to_numeric(at[f"out_{k}"], errors="coerce").fillna(0).astype(int).values
+            if f"out_{k}" in at else 0,
             "chg_prev": (np.log(p) - np.log(pd.to_numeric(at[f"ltp_{prev}"], errors="coerce"))).values
             if prev else np.nan,
             "chg_prev2": (np.log(p) - np.log(pd.to_numeric(at[f"ltp_{prev2}"], errors="coerce"))).values
@@ -299,6 +302,14 @@ def evaluate(df: pd.DataFrame) -> tuple[dict, pd.DataFrame]:
     for b in ("b1_table", "b2_logit"):
         d = ll["model"] - ll[b]
         rep["paired"][f"model_less_{b}"] = {"mean": round(float(d.mean()), 5), "interval_90": race_bootstrap(d, groups)}
+    # the horses Betfair had not marked out: the only ones a back could be placed on (ledger antepost-turnup-1123)
+    live = (te["marked_out"] == 0).to_numpy() if "marked_out" in te else np.ones(len(te), bool)
+    rep["test_not_marked_out"] = {"rows": int(live.sum()), "marked_out_rows": int((~live).sum()),
+                                  **{k: round(float(v[live].mean()), 5) for k, v in ll.items()}}
+    rep["paired_not_marked_out"] = {f"model_less_{b}": {"mean": round(float((ll["model"] - ll[b])[live].mean()), 5),
+                                                        "interval_90": race_bootstrap((ll["model"] - ll[b])[live],
+                                                                                      groups[live])}
+                                    for b in ("b1_table", "b2_logit")}
     by_mark = {}
     for m in ORDER:
         sel = (te["mark"] == m).to_numpy()
@@ -329,9 +340,13 @@ def reading(rep: dict) -> dict:
     marks = [m for m in ("d60", "d45", "d30", "d21", "d14", "d7", "d3") if m in rep["by_mark"]]
     better = sum(rep["by_mark"][m]["model"] <= rep["by_mark"][m]["b2_logit"] for m in marks)
     calib = rep["test"]["model"]["ece_ran"] <= rep["test"]["b2_logit"]["ece_ran"] + 0.01
-    ok = beats and better * 2 > len(marks) and calib
+    # (4), from antepost-turnup-1123: the same two comparisons on the horses not marked out
+    live = rep.get("paired_not_marked_out")
+    beats_live = all(v["interval_90"][1] < 0 for v in live.values()) if live else None
+    ok = beats and better * 2 > len(marks) and calib and beats_live is not False
     return {"verdict": "PASS" if ok else "FAIL", "beats_both_baselines_interval_below_0": beats,
-            "marks_no_worse_than_b2": f"{better} of {len(marks)}", "calibration_ok": calib}
+            "marks_no_worse_than_b2": f"{better} of {len(marks)}", "calibration_ok": calib,
+            "beats_both_on_horses_not_marked_out": beats_live}
 
 
 def main(argv=None) -> int:

@@ -47,6 +47,7 @@ AP_RE = re.compile(rb'"marketType"\s*:\s*"ANTEPOST_WIN"')
 MARKS = {f"d{d}": timedelta(days=d) for d in (180, 120, 90, 60, 45, 30, 21, 14, 7, 3, 2, 1)}
 MARKS.update({"h6": timedelta(hours=6), "h1": timedelta(hours=1)})
 BANDS = [1.0, 3.0, 5.0, 10.0, 20.0, 50.0, 1001.0]
+MIN_PRICE = 1.01                          # Betfair's lowest price: a "last traded price" under it is no price
 BUNDLE_PREFIX = "sources/betfair_historic/bundles/"
 LIVE_PREFIX = "betfair_live/"
 DEF_KEYS = ("bspMarket", "turnInPlayEnabled", "bettingType", "marketBaseRate", "discountAllowed", "eachWayDivisor",
@@ -119,7 +120,7 @@ class APMarket:
                 if r.get("status") == "REMOVED" and sid not in self.removed_at:
                     self.removed_at[sid] = _iso_utc(r.get("removalDate")) or pt
         for rc in mc.get("rc") or []:
-            if "ltp" in rc:
+            if "ltp" in rc:           # every event kept; one under 1.01 is no price (runner_rows: marked out)
                 self.ltp.setdefault(int(rc["id"]), []).append((pt, float(rc["ltp"])))
 
     # -- the market's clock -----------------------------------------------------------------------------------
@@ -164,7 +165,12 @@ class APMarket:
         off, close, out = self.off(), self.last_open(), []
         for r in self.defn.get("runners") or []:
             sid = int(r["id"])
-            series = self.ltp.get(sid, [])
+            events = self.ltp.get(sid, [])
+            # a "last traded price" under 1.01 is not a Betfair price (the minimum is 1.01): 1,494 runners carry
+            # 1.0, almost all non-runners, from a median 5 days out (ledger antepost-tradeout-1119). It is kept as
+            # its own event, the horse marked out, and never as a price
+            series = [(pt, p) for (pt, p) in events if p >= MIN_PRICE]
+            outs = [pt for (pt, p) in events if p < MIN_PRICE]
             removed = self.removed_at.get(sid)
             row = {
                 "market_id": self.market_id, "selection_id": sid, "runner_name": self.names.get(sid),
@@ -174,12 +180,14 @@ class APMarket:
                 "adjustment_factor": self.adj.get(sid), "n_trades": len(series),
                 "ltp_first": series[0][1] if series else None, "ltp_last": series[-1][1] if series else None,
                 "ltp_last_at": _iso(series[-1][0]) if series else None,
+                "marked_out_at": _iso(outs[0]) if outs else None,
+                "marked_out_days_before_off": (off - outs[0]).total_seconds() / 86400 if off and outs else None,
             }
             for k, delta in MARKS.items():
                 # what was known at the mark only: listed then, the price standing then, how old that price was,
                 # how many trades so far, and how many times the market had been suspended and reopened by then
                 row[f"listed_{k}"] = row[f"ltp_{k}"] = row[f"age_{k}"] = None
-                row[f"ntr_{k}"] = row[f"susp_{k}"] = None
+                row[f"ntr_{k}"] = row[f"susp_{k}"] = row[f"out_{k}"] = None
                 if off is None:
                     continue
                 t = off - delta
@@ -188,8 +196,12 @@ class APMarket:
                 listed = seen is not None and seen <= t and (removed is None or removed > t) and open_then
                 row[f"listed_{k}"] = bool(listed)
                 if listed:
+                    # marked out at t: the last event by then was a 1.0; then there is no price to trade at
+                    before = [p for (pt, p) in events if pt <= t]
+                    out_now = bool(before) and before[-1] < MIN_PRICE
                     prior = [(pt, p) for (pt, p) in series if pt <= t]
-                    row[f"ltp_{k}"] = prior[-1][1] if prior else None
+                    row[f"out_{k}"] = int(out_now)
+                    row[f"ltp_{k}"] = prior[-1][1] if prior and not out_now else None
                     row[f"age_{k}"] = (t - prior[-1][0]).total_seconds() / 86400 if prior else None
                     row[f"ntr_{k}"] = len(prior)
                     row[f"susp_{k}"] = self.suspensions_before(t)

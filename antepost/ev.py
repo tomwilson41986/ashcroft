@@ -38,7 +38,9 @@ RULE_MARKS = ["d60", "d45", "d30", "d21", "d14", "d7", "d3"]     # where both mo
 THRESHOLDS = [0.0, 0.05, 0.10, 0.20, 0.30]
 COMMISSION = 0.02
 MIN_VALID_BETS = 30
-PRIOR_TRIALS = 368      # python -m desk.trials --count, horse_racing, 19 Nov 2026 before this registration
+PRIOR_TRIALS = 403      # 23 Nov 2026 (antepost-ev-1123): the ledger's 374 horse_racing trials after the four 1123
+                        # registrations, plus the 29 grid rules tried in the 1119 EV and trade-out runs and the 1123
+                        # trade-out grid (5 + 12 + 12); this grid's 5 make 408
 
 
 def spread_by_band(books: pd.DataFrame) -> dict[str, float]:

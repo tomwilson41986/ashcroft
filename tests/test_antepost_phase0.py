@@ -190,3 +190,19 @@ def test_a_winner_not_found_is_explained_by_the_day_it_falls_on(tmp_path):
     [why] = rep["winners_not_found_why"]
     assert why["runner_name"] == "Alpha" and why["event_track"] == "cheltenhamgoldcup"
     assert why["track_in_betfair_prices_that_day"] and why["closest_names_that_day"] == ["alphas"]
+
+
+def test_a_last_traded_price_under_1_01_is_a_marked_out_event_not_a_price():
+    a = {"id": 1, "name": "Alpha", "status": "ACTIVE"}
+    msgs = [
+        {"pt": T_OFF - 100 * DAY, "mc": [{"id": "1.1", "marketDefinition": _defn("OPEN", [a])}]},
+        {"pt": T_OFF - 95 * DAY, "mc": [{"id": "1.1", "rc": [{"id": 1, "ltp": 12.0}]}]},
+        {"pt": T_OFF - 10 * DAY, "mc": [{"id": "1.1", "rc": [{"id": 1, "ltp": 1.0}]}]},
+        {"pt": T_OFF - DAY, "mc": [{"id": "1.1", "marketDefinition": _defn("SUSPENDED", [a])}]},
+    ]
+    text = "\n".join(json.dumps(dict(m, op="mcm")) for m in msgs).encode()
+    [m] = p0.parse_stream(text)
+    [r] = m.runner_rows()
+    assert r["ltp_last"] == 12.0 and r["n_trades"] == 1 and abs(r["marked_out_days_before_off"] - 10) < 1e-6
+    assert r["ltp_d14"] == 12.0 and r["out_d14"] == 0           # before the 1.0: priced, not out
+    assert r["ltp_d7"] is None and r["out_d7"] == 1 and r["listed_d7"]   # after it: listed, out, no price

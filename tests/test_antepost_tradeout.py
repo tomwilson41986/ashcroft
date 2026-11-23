@@ -19,7 +19,7 @@ def _entry(**kw):
 
 
 def test_the_exit_is_the_first_mark_the_target_is_reached():
-    path = {("m", 1): [(5, 8.0), (6, 7.5), (7, 6.0), (9, 4.0)]}      # d30 8.0, d21 7.5, d14 6.0, d3 4.0
+    path = {("m", 1): [(5, 8.0, 0), (6, 7.5, 0), (7, 6.0, 0), (9, 4.0, 0)]}      # d30 8.0, d21 7.5, d14 6.0, d3 4.0
     t = to.trades(_entry(), path, 0.20, SPREADS).iloc[0]
     assert t["exit"] == "target" and t["exit_mark"] == "d14" and t["exit_price"] == 6.0
     a_fill, l_fill = 8.0 / 1.10, 6.0 * 1.10
@@ -27,7 +27,7 @@ def test_the_exit_is_the_first_mark_the_target_is_reached():
 
 
 def test_no_target_means_the_last_mark_and_a_loss_when_it_drifts():
-    path = {("m", 1): [(5, 8.0), (7, 9.0), (9, 9.5)]}
+    path = {("m", 1): [(5, 8.0, 0), (7, 9.0, 0), (9, 9.5, 0)]}
     t = to.trades(_entry(), path, 0.20, SPREADS).iloc[0]
     assert t["exit"] == "last" and t["exit_mark"] == "d3"
     assert np.isclose(t["ret"], 8.0 / 1.10 / (9.5 * 1.10) - 1)          # a loss: no commission
@@ -36,9 +36,9 @@ def test_no_target_means_the_last_mark_and_a_loss_when_it_drifts():
 
 
 def test_removed_horses_are_void_and_unexited_ones_settle():
-    path = {("m", 1): [(5, 8.0), (7, 6.0)]}
+    path = {("m", 1): [(5, 8.0, 0), (7, 6.0, 0)]}
     assert to.trades(_entry(y="void"), path, 0.2, SPREADS).iloc[0]["ret"] == 0.0
-    lone = {("m", 1): [(5, 8.0)]}
+    lone = {("m", 1): [(5, 8.0, 0)]}
     lost = to.trades(_entry(y="lost"), lone, 0.2, SPREADS).iloc[0]
     assert lost["exit"] == "none" and lost["ret"] == -1.0
     ran = to.trades(_entry(), lone, 0.2, SPREADS).iloc[0]
@@ -57,3 +57,18 @@ def test_the_rule_runs_end_to_end_and_reads_as_registered():
     assert rep["n_trials"] == to.PRIOR_TRIALS + 12 and len(rep["valid"]) == 12
     assert to.reading(rep)["verdict"] in ("PASS", "FAIL")
     assert to.reading({"skipped": "x"})["verdict"] == "FAIL"
+
+
+def test_a_horse_marked_out_after_entry_cannot_be_traded_out():
+    path = {("m", 1): [(5, 8.0, 0), (7, None, 1), (9, None, 1)]}       # marked out by 14 days: no price after
+    t = to.trades(_entry(y="lost"), path, 0.2, SPREADS).iloc[0]
+    assert t["exit"] == "stuck" and t["exit_price"] is None and t["ret"] == -1.0
+    early = {("m", 1): [(5, 8.0, 0), (6, 6.0, 0), (7, None, 1)]}       # the target came first: out at 21 days
+    t = to.trades(_entry(y="lost"), early, 0.2, SPREADS).iloc[0]
+    assert t["exit"] == "target" and t["exit_mark"] == "d21"
+
+
+def test_marked_out_horses_are_never_entered():
+    d = pd.DataFrame({"market_id": "m", "selection_id": [1, 2], "mark": ["d30", "d30"], "has_price": [1, 0],
+                      "marked_out": [0, 1], "p_ran": [0.9, 0.9]})
+    assert list(to.entries(d, 0.5)["selection_id"]) == [1]
