@@ -50,3 +50,11 @@ def test_the_simulated_chances_are_the_poisson_score_matrix():
     g = np.arange(11)
     m = np.outer(poisson.pmf(g, 1.0), poisson.pmf(g, 2.0))
     assert h[1] == pytest.approx(np.tril(m, -1).sum() / m.sum()) and d[1] == pytest.approx(np.trace(m) / m.sum())
+
+
+def test_the_two_way_fair_chance_splits_the_margin_evenly():
+    from football.blocks.fd_lines import fair_logit
+    got = fair_logit([1.9, 2.0, 1.0], [1.9, 2.0, 3.0])
+    assert got[0] == pytest.approx(0.0) and got[1] == pytest.approx(0.0) and np.isnan(got[2])
+    p = (1 / 1.5) / (1 / 1.5 + 1 / 2.7)
+    assert fair_logit([1.5], [2.7])[0] == pytest.approx(np.log(p / (1 - p)))

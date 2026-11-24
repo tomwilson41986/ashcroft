@@ -41,6 +41,14 @@ def matrix():
     for t, ft in (("h", "ft_home"), ("a", "ft_away")):
         parts = rng.multinomial(1, [0.5, 0.25, 0.25], len(m)) * m[ft].fillna(0).to_numpy()[:, None]
         m[f"gs_{t}g_level"], m[f"gs_{t}g_lead"], m[f"gs_{t}g_trail"] = parts[:, 0], parts[:, 1], parts[:, 2]
+    # the extra football-data columns (football/lab.py early_books, the gold table's closing handicap)
+    m["bk_bfe_ahh"], m["bk_bfe_aha"] = m["open_ah_h"] * 1.02, m["open_ah_a"] * 1.02
+    m["bk_avg_ahh"], m["bk_avg_aha"] = m["open_ah_h"] * 0.98, m["open_ah_a"] * 0.98
+    m["bfe_open_o25"], m["bfe_open_u25"] = m["open_o25"] * 1.02, m["open_u25"] * 1.02
+    m["bk_n_1x2"], m["bk_n_ah"] = rng.integers(10, 50, len(m)).astype(float), rng.integers(5, 30, len(m)).astype(float)
+    m["close_ah_line"] = m["open_ah_line"] + rng.choice([-0.25, 0.0, 0.0, 0.25], len(m))
+    m["close_ah_h"] = m["open_ah_h"] + rng.normal(0, 0.03, len(m))
+    m["close_ah_a"] = m["open_ah_a"] + rng.normal(0, 0.03, len(m))
     # the Sportmonks stage's raw columns (football/sportmonks_stage.py), as played
     from football.sportmonks_stage import COLUMNS as SMX
     for c in SMX:
@@ -59,7 +67,8 @@ def test_every_block_ignores_what_happened_after_its_collection(matrix, name):
     a = mod.build(m).set_index("match_id").loc[m.loc[last, "match_id"], mod.FEATURES].sort_index()
     m2 = m.copy()
     m2.loc[last, ["ft_home", "ft_away"]] = m2.loc[last, ["ft_away", "ft_home"]].to_numpy() + 4
-    for c in ["qc_h", "qc_a", "close_h", "close_a", "mclam_h", "mclam_a", "bfe_close_h", "bfe_close_a"] + \
+    for c in ["qc_h", "qc_a", "close_h", "close_a", "mclam_h", "mclam_a", "bfe_close_h", "bfe_close_a",
+              "close_ah_line", "close_ah_h", "close_ah_a"] + \
             [c for c in m.columns if c.startswith(("tq_", "gs_", "smx_"))]:         # what was played is not known either
         m2.loc[last, c] = m2.loc[last, c].to_numpy()[::-1]
     b = mod.build(m2).set_index("match_id").loc[m.loc[last, "match_id"], mod.FEATURES].sort_index()
@@ -128,7 +137,7 @@ def test_line_up_time_features_are_refused_at_the_early_price(matrix, tmp_path, 
         lab.run(str(tmp_path), {"x": "team_all+players"}, ["ridge"], 2015, 2017, 2013, None, None, False, False)
 
 
-@pytest.mark.parametrize("name", ["formation", "match_sim", "sm_xg"])
+@pytest.mark.parametrize("name", ["formation", "match_sim", "sm_xg", "fd_lines"])
 def test_the_tactics_blocks_give_values_on_the_played_shapes_and_states(matrix, name):
     mod = available()[name]
     f = mod.build(matrix)[mod.FEATURES]

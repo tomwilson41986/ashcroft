@@ -5,7 +5,7 @@ group: (family, name, what it measures, the data it needs, status, where). Statu
 
 - ``built``: computed in this repository; ``where`` is (file, a name found in that file) and
   ``tests/test_football_metric_library.py`` checks it.
-- ``testing``: built on 24 Nov 2026 and scored by ``football-feature-batch-1124`` or ``football-tactics-batch-1124`` or ``football-sportmonks-xg-1124``; not yet in any model.
+- ``testing``: built on 24 Nov 2026 and scored by ``football-feature-batch-1124`` or ``football-tactics-batch-1124`` or ``football-sportmonks-xg-1124`` or ``football-fd-lines-1124``; not yet in any model.
 - ``held``: we hold the data and have not built the metric.
 - ``need``: we do not hold the data.
 
@@ -42,6 +42,7 @@ E = [
     ("Market", "Soft books against the sharp book, dispersion", "bookmakers' disagreement at the open", "several bookmakers", "built", ("football/blocks/book_gaps.py", "FEATURES")),
     ("Market", "Market average against Betfair", "the average book's price less the exchange's", "bookmaker average + Betfair", "built", ("football/blocks/avg_anchor.py", "FEATURES")),
     ("Market", "Margin, favourite, draw price, early gap", "the state of the book", "prices", "built", ("football/blocks/market_state.py", "FEATURES")),
+    ("Market", "Betfair against the average on the handicap and goals; handicap line moves; books pricing the match", "the exchange's two-way prices against the bookmakers', each side's history of line moves, a liquidity count", FD, "testing", ("football/blocks/fd_lines.py", "fl_line_move_diff")),
     ("Market", "Spread, depth, queue, traded money, microprice, order flow", "the exchange book itself", REC, "built", ("football/feed_features.py", "def ")),
     ("Market", "Robust close", "the median of the last prints, not the last one", BF, "built", ("research/open_close/football_bf_robust_close.py", "def robust_gap")),
     ("Market", "Volume-weighted price, volume profile in history", "traded money at each price back through the years", "Betfair ADVANCED plan", "need", None),
@@ -142,7 +143,7 @@ def render() -> str:
            "`football/metric_library.py`; `tests/test_football_metric_library.py` checks every built entry against "
            "the code.", "",
            f"**{len(E)} entries**: {n['built']} built, {n['testing']} built on 24 Nov 2026 and under test "
-           f"(`football-feature-batch-1124`, `football-tactics-batch-1124`, `football-sportmonks-xg-1124`), {n['held']} where we hold the data and have not built the metric, "
+           f"(`football-feature-batch-1124`, `football-tactics-batch-1124`, `football-sportmonks-xg-1124`, `football-fd-lines-1124`), {n['held']} where we hold the data and have not built the metric, "
            f"{n['need']} where we do not hold the data.", ""]
     fam = None
     for f, name, what, data, status, where in E:
