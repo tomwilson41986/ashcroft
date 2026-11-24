@@ -42,7 +42,7 @@ E = [
     ("Market", "Soft books against the sharp book, dispersion", "bookmakers' disagreement at the open", "several bookmakers", "built", ("football/blocks/book_gaps.py", "FEATURES")),
     ("Market", "Market average against Betfair", "the average book's price less the exchange's", "bookmaker average + Betfair", "built", ("football/blocks/avg_anchor.py", "FEATURES")),
     ("Market", "Margin, favourite, draw price, early gap", "the state of the book", "prices", "built", ("football/blocks/market_state.py", "FEATURES")),
-    ("Market", "Betfair against the average on the handicap and goals; handicap line moves; books pricing the match", "the exchange's two-way prices against the bookmakers', each side's history of line moves, a liquidity count", FD, "testing", ("football/blocks/fd_lines.py", "fl_line_move_diff")),
+    ("Market", "Betfair against the average on the handicap and goals; handicap line moves; books pricing the match", "the exchange's two-way prices against the bookmakers', each side's history of line moves, a liquidity count", FD, "built", ("football/blocks/fd_lines.py", "fl_line_move_diff")),
     ("Market", "Spread, depth, queue, traded money, microprice, order flow", "the exchange book itself", REC, "built", ("football/feed_features.py", "def ")),
     ("Market", "Robust close", "the median of the last prints, not the last one", BF, "built", ("research/open_close/football_bf_robust_close.py", "def robust_gap")),
     ("Market", "Bookmakers' 1X2 consensus near the kick-off, incl. European and international matches", "the mean margin-free chance of up to 19 bookmakers, the best price, the number of books", "Sportmonks Odds & Predictions bundle", "built", ("sources/sportmonks.py", "def odds_1x2")),

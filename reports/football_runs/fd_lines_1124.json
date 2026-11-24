@@ -1,0 +1,200 @@
+{
+ "base": "team_all+home_adv+team_news+form_short+x_short+league_fx+move_memory+kalman_form+sim+style",
+ "blocks": {
+  "fd_lines": [
+   "fl_bfe_ah_gap",
+   "fl_bfe_ou_gap",
+   "fl_n_books",
+   "fl_n_ah",
+   "fl_line_move_diff",
+   "fl_ah_price_move_diff",
+   "fl_line_moved_share"
+  ]
+ },
+ "pinnacle": {
+  "folds": [
+   2016,
+   2024
+  ],
+  "rows": 60805
+ },
+ "betfair": {
+  "rows": 9677,
+  "train_rows": 82735
+ },
+ "arms": {
+  "base": {
+   "features": 144,
+   "pinnacle_home": {
+    "skill": 0.08270659473315756,
+    "vs_base": 0.0,
+    "lo95": 0.0,
+    "hi95": 0.0,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08980342650583462,
+    "vs_base": 0.0,
+    "lo95": 0.0,
+    "hi95": 0.0,
+    "days": 343
+   },
+   "betfair_home_skill": 0.0742125474385531,
+   "betfair_away_skill": 0.0989379167653569,
+   "keeps_its_place": false,
+   "costed": {
+    "0.03": {
+     "threshold": 0.03,
+     "tick_off_fair": {
+      "bets": 3631,
+      "roi": -0.0058829259200805905,
+      "roi_lo90": -0.010267030793774402,
+      "roi_hi90": -0.0019638840987103896,
+      "right_way": 0.6819058110713302
+     },
+     "symmetric_book": {
+      "bets": 3631,
+      "roi": 0.008599856338728902,
+      "roi_lo90": 0.004448412299963372,
+      "roi_hi90": 0.01232542697490184,
+      "right_way": 0.6819058110713302
+     }
+    },
+    "0.05": {
+     "threshold": 0.05,
+     "tick_off_fair": {
+      "bets": 1082,
+      "roi": 0.008003345239515814,
+      "roi_lo90": -9.804820858504792e-05,
+      "roi_hi90": 0.01571197177425451,
+      "right_way": 0.7458410351201479
+     },
+     "symmetric_book": {
+      "bets": 1082,
+      "roi": 0.030979776450495922,
+      "roi_lo90": 0.0231741074394713,
+      "roi_hi90": 0.03834370592089825,
+      "right_way": 0.7458410351201479
+     }
+    }
+   }
+  },
+  "fd_lines": {
+   "features": 151,
+   "pinnacle_home": {
+    "skill": 0.08334918398254798,
+    "vs_base": 0.0006425892493904744,
+    "lo95": -3.810540189182407e-05,
+    "hi95": 0.0012587488876716509,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08940496058973846,
+    "vs_base": -0.0003984659160962258,
+    "lo95": -0.001238531860141948,
+    "hi95": 0.00041288842249873,
+    "days": 343
+   },
+   "betfair_home_skill": 0.07280481704632902,
+   "betfair_away_skill": 0.0991307655844137,
+   "keeps_its_place": false
+  },
+  "all_new": {
+   "features": 151,
+   "pinnacle_home": {
+    "skill": 0.08334918398254798,
+    "vs_base": 0.0006425892493904744,
+    "lo95": -3.810540189182407e-05,
+    "hi95": 0.0012587488876716509,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08940496058973846,
+    "vs_base": -0.0003984659160962258,
+    "lo95": -0.001238531860141948,
+    "hi95": 0.00041288842249873,
+    "days": 343
+   },
+   "betfair_home_skill": 0.07280481704632902,
+   "betfair_away_skill": 0.0991307655844137,
+   "keeps_its_place": false,
+   "costed": {
+    "0.03": {
+     "threshold": 0.03,
+     "tick_off_fair": {
+      "bets": 3637,
+      "roi": -0.004488180533504725,
+      "roi_lo90": -0.008554998916935397,
+      "roi_hi90": -0.0006695384303744649,
+      "right_way": 0.686279901017322
+     },
+     "symmetric_book": {
+      "bets": 3637,
+      "roi": 0.009755301686925205,
+      "roi_lo90": 0.005943437979832332,
+      "roi_hi90": 0.013620123920001873,
+      "right_way": 0.686279901017322
+     }
+    },
+    "0.05": {
+     "threshold": 0.05,
+     "tick_off_fair": {
+      "bets": 1114,
+      "roi": 0.0074810030969340024,
+      "roi_lo90": -0.00013995831116513845,
+      "roi_hi90": 0.015554135407302343,
+      "right_way": 0.7450628366247756
+     },
+     "symmetric_book": {
+      "bets": 1114,
+      "roi": 0.030271164511383994,
+      "roi_lo90": 0.023180806385481863,
+      "roi_hi90": 0.03842629757875385,
+      "right_way": 0.7450628366247756
+     }
+    }
+   }
+  }
+ },
+ "note": "development evidence: every season here was read by earlier rules",
+ "kept_in_base": [
+  "league_fx",
+  "move_memory",
+  "kalman_form",
+  "sim",
+  "style"
+ ],
+ "coverage": {
+  "fd_lines": {
+   "fl_bfe_ah_gap": {
+    "fitted_seasons": 0.0695,
+    "from_2025": 0.7938
+   },
+   "fl_bfe_ou_gap": {
+    "fitted_seasons": 0.0795,
+    "from_2025": 0.9255
+   },
+   "fl_n_books": {
+    "fitted_seasons": 1.0,
+    "from_2025": 0.9997
+   },
+   "fl_n_ah": {
+    "fitted_seasons": 0.5039,
+    "from_2025": 0.0
+   },
+   "fl_line_move_diff": {
+    "fitted_seasons": 0.4912,
+    "from_2025": 0.9989
+   },
+   "fl_ah_price_move_diff": {
+    "fitted_seasons": 0.4883,
+    "from_2025": 0.9974
+   },
+   "fl_line_moved_share": {
+    "fitted_seasons": 0.4888,
+    "from_2025": 1.0
+   }
+  }
+ },
+ "tag": "football-fd-lines-1124"
+}
