@@ -35,6 +35,8 @@ on:
           - bf_lab_join
           - sm_feat2_batch
           - bf_features2
+          - bf_tune
+          - buchdahl
           - warehouse
           - warehouse_models
       days:
@@ -114,7 +116,7 @@ jobs:
         run: python -m research.open_close.football_close_model_books --days "$DAYS" --out out/close_model_books.json
       # the lab-matrix jobs: the inputs and the cache as football-trials.yml builds them (read-only copies)
       - name: Lab inputs (gold, silver and API-Football history)
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl'
         run: |
           mkdir -p src/football src/api_football
           aws s3 sync "s3://$CAPTURE_BUCKET/sources/football/gold/" src/football/gold/ --only-show-errors
@@ -126,7 +128,7 @@ jobs:
           mkdir -p src/sportmonks
           aws s3 cp "s3://$CAPTURE_BUCKET/sources/sportmonks/matches.parquet" src/sportmonks/matches.parquet --only-show-errors || echo "no Sportmonks table yet"
       - name: Restore the lab cache
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl'
         uses: actions/cache@v4
         with:
           path: .football_cache
@@ -135,7 +137,7 @@ jobs:
             football-lab-${{ hashFiles('football/**') }}-
             football-lab-
       - name: The lab matrix (stages rebuilt only when their code or inputs change)
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl'
         run: timeout 4200 python -m football.lab cache --root src --history-root src --cache .football_cache
       - name: Feature report (importance on Betfair's moves, leave a family out, the target's checks)
         if: inputs.job == 'feature_report'
@@ -194,6 +196,16 @@ jobs:
         run: |
           mkdir -p out
           python -m research.open_close.football_bf_features2 --out-json out/bf_features2.json
+      - name: The Betfair-native model tuned inside the walk-forward (football-bf-tune-1124)
+        if: inputs.job == 'bf_tune'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_bf_tune --out-json out/bf_tune.json
+      - name: Buchdahl's tests (margin removal, move retention, football-data's xG; football-buchdahl-1124)
+        if: inputs.job == 'buchdahl'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_buchdahl --src src --cache .football_cache --out-json out/buchdahl.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
