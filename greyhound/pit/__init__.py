@@ -190,6 +190,19 @@ def stored_fits(store, names) -> dict:
     return out
 
 
+def _log_table(name: str, seconds: int) -> None:
+    """Each table's build time and the process's memory after it, in the log (24 Nov 2026: the price run's tables
+    stage took 50 minutes and reached 15.2 GB with no word of which table)."""
+    import logging
+    try:
+        got = {k: int(v.split()[0]) // 1024 for k, v in (ln.split(":", 1) for ln in Path("/proc/self/status")
+               .read_text().splitlines() if ln.startswith(("VmRSS", "VmHWM")))}
+    except Exception:                                  # no /proc (not Linux)
+        got = {}
+    logging.getLogger(__name__).info("[table %s] %ss, rss %s MB, peak %s MB", name, seconds, got.get("VmRSS"),
+                                     got.get("VmHWM"))
+
+
 def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None, keep: bool = False,
                  cut: pd.DataFrame | None = None) -> dict:
     """Build ``names`` in ``TABLES`` order; write each to ``store`` (when given); return each table's meta, or with
@@ -217,6 +230,7 @@ def build_tables(names, runs: pd.DataFrame, store=None, ctx: dict | None = None,
             store.put_parquet(f"{STORE_PREFIX}/{name}.parquet", tab)
             store.put(f"{STORE_PREFIX}/{name}.meta.json", json.dumps(meta, indent=1, default=str).encode())
         metas[name] = meta
+        _log_table(name, meta["seconds"])
         if keep and cut is not None:
             later = order[order.index(name) + 1:]
             for done in [t for t in metas if t not in kept]:
