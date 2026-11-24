@@ -1123,3 +1123,34 @@ one; 56,908 reliable rows do not and are left out. Skill against "no move", 95% 
 - **Still not tradable.** On busy runners it is zero against either close. By the registered reading the skill sits
   in thin runners.
 - No model variant follows. The next reads are at quotes (the recorded books) and on the back years.
+
+
+## The 24 Nov feature batch: eight new blocks (24 Nov 2026)
+
+Registered as `football-feature-batch-1124` before the run; `research/open_close/football_feature_batch.py`; run
+45345511629; output `reports/football_runs/feature_batch_1124.json`. The base is the expected-value arm plus the three
+blocks kept on 10 Nov (131 features; skill on Betfair's moves 8.22%).
+9,677 Betfair matches of 2025/26, fitted on 82,735 earlier moves; Pinnacle
+walk-forward on 60,805 rows. Change in skill against the base, points, 95% interval by match day:
+
+| Block | Features | Betfair skill | Betfair vs base | Pinnacle vs base | Keeps its place |
+|---|---|---|---|---|---|
+| Market xG / xGA / xGD / xPts as form (`mkt_xg`) | 8 | 8.31% | +0.10 (-0.00 to +0.20) | +0.04 (-0.04 to +0.12) | no |
+| Time-decayed form (`decay_form`) | 10 | 8.30% | +0.08 (-0.03 to +0.20) | +0.12 (+0.05 to +0.19) | no |
+| Record against better and worse sides (`sos_split`) | 4 | 8.17% | -0.05 (-0.13 to +0.03) | +0.00 (-0.05 to +0.06) | no |
+| Team home and away effect (`venue_fx`) | 3 | 8.27% | +0.05 (-0.03 to +0.12) | +0.07 (+0.01 to +0.13) | no |
+| Form normalised within the league's round (`norm_rank`) | 6 | 8.32% | +0.10 (+0.03 to +0.17) | -0.04 (-0.10 to +0.02) | yes |
+| Style and style matchups (`style`) | 9 | 8.59% | +0.37 (+0.20 to +0.56) | +0.42 (+0.31 to +0.53) | yes |
+| Referee record (`referee`) | 3 | 8.25% | +0.03 (-0.05 to +0.10) | +0.09 (+0.03 to +0.14) | no |
+| Scoreline simulation against the open (`sim`) | 4 | 8.61% | +0.40 (+0.26 to +0.56) | +0.36 (+0.27 to +0.44) | yes |
+| All eight together (`all_new`) | 47 | 9.14% | +0.92 (+0.68 to +1.20) | +0.86 (+0.72 to +1.00) | yes |
+
+- **Three blocks keep their place**: the scoreline simulation, style and style matchups, and form normalised within
+  the round. The first two are confirmed on Pinnacle; the normalised form is not (its Pinnacle change is below zero),
+  so it is the weakest of the three. With nine arms about 0.2 false keeps are expected.
+- **All eight together lift the skill from 8.22% to 9.14%.**
+- **It is still not a trading edge.** Costed a tick off fair, 2% commission, on the 2025/26 prices: the base at a 0.03
+  forecast move -0.83% (-1.26 to -0.42) on 3,604 bets; with all eight -0.50% (-0.93 to -0.10) on 3,672 bets. At 0.05: +0.38% (-0.37 to +1.14) on 1,076 bets against
+  +0.67% (-0.14 to +1.42) on 1,111 bets. The intervals at 0.05 span zero.
+- Development evidence: every season here was read by earlier rules. No frozen model changes; the kept blocks are
+  candidates for the next frozen model.
