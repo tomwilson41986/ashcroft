@@ -21,6 +21,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sqlite3
 import sys
 from datetime import date, datetime
@@ -194,12 +195,188 @@ def booster_path(model_dir: str) -> str:
 
 
 def _read_booster(path: str) -> lgb.Booster:
-    """A booster from its file, plain or xz-compressed (`bfsp_model.lgb.xz`)."""
+    """A booster from its file, plain or xz-compressed (`bfsp_model.lgb.xz`). Its serving profile (which features
+    hold no missing direction, each feature's training range) is read from the same text for the serving checks
+    (`serving_checks`); the booster itself is as before."""
     if path.endswith(".xz"):
         import lzma
         with lzma.open(path, "rt") as f:
-            return lgb.Booster(model_str=f.read())
-    return lgb.Booster(model_file=path)
+            text = f.read()
+        booster = lgb.Booster(model_str=text)
+        _attach_profile(booster, lambda: _PROFILE_LINE.finditer(text))
+        del text
+        return booster
+    booster = lgb.Booster(model_file=path)
+
+    def lines():
+        with open(path) as f:
+            for ln in f:
+                m = _PROFILE_LINE.match(ln.rstrip("\n"))
+                if m:
+                    yield m
+    _attach_profile(booster, lines)
+    return booster
+
+
+# ---------------------------------------------------------------------------
+# Serving checks (audit MS-3, MS-4, BF-3; 24 Nov 2026). They read the card's feature frame and the booster's own
+# text and say what is wrong, in the log, in a JSON sidecar and in the job summary; they never change a value, a
+# price or whether the predictions are written. Failing a run on them is the owner's decision, once the counts of a
+# few weeks of real cards show which features are empty on a card by nature.
+# ---------------------------------------------------------------------------
+
+#: where the serving checks' JSON goes (set in predict.yml); unset, only the log carries them
+SERVING_CHECKS_ENV = "SERVING_CHECKS_PATH"
+_PROFILE_LINE = re.compile(r"^(feature_names|feature_infos|split_feature|decision_type)=(.*)$", re.M)
+#: the checks of the latest prepare_and_predict call (also on the returned frame's attrs)
+LAST_SERVING_CHECKS: dict | None = None
+
+
+def booster_profile(matches) -> dict:
+    """From a LightGBM model text's lines (regex matches of _PROFILE_LINE): the features that some split reads but no
+    split gives a missing direction (decision_type's missing type is not NaN: LightGBM then reads a NaN as 0.0), and
+    each feature's training range from feature_infos."""
+    names: list[str] = []
+    infos: list[str] = []
+    used: set[int] = set()
+    nan_dir: set[int] = set()
+    pending = None
+    for m in matches:
+        key, val = m.group(1), m.group(2).strip()
+        if key == "feature_names" and not names:
+            names = val.split()
+        elif key == "feature_infos" and not infos:
+            infos = val.split()
+        elif key == "split_feature":
+            pending = [int(x) for x in val.split()] if val else []
+        elif key == "decision_type" and pending is not None:
+            for f, d in zip(pending, (int(x) for x in val.split())):
+                used.add(f)
+                if (d >> 2) & 3 == 2:                       # missing type NaN: the tree holds a NaN direction
+                    nan_dir.add(f)
+            pending = None
+    ranges = {}
+    for n, inf in zip(names, infos):
+        if inf.startswith("[") and inf.endswith("]") and ":" in inf:
+            lo, hi = inf[1:-1].split(":", 1)
+            try:
+                ranges[n] = (float(lo), float(hi))
+            except ValueError:
+                pass
+    return {"never_missing": sorted(names[i] for i in used - nan_dir if i < len(names)), "ranges": ranges}
+
+
+def _attach_profile(booster, matches) -> None:
+    try:
+        booster.serving_profile = booster_profile(matches())
+    except Exception as e:  # noqa: BLE001 - a check's input, never a reason not to serve
+        log.warning(f"booster profile not read ({e}): the never-missing and range checks are off")
+
+
+def model_profile(model) -> dict | None:
+    """The serving profile of a booster or an averaged model (every member's: a feature is never-missing if it is
+    in any member, its range the widest of the members'); None where no profile was read."""
+    boosters = [b for _, b, _ in model.members] if hasattr(model, "members") else [model]
+    profiles = [getattr(b, "serving_profile", None) for b in boosters]
+    profiles = [p for p in profiles if p]
+    if not profiles:
+        return None
+    never = sorted(set().union(*(p["never_missing"] for p in profiles)))
+    ranges: dict = {}
+    for p in profiles:
+        for c, (lo, hi) in p["ranges"].items():
+            a, b = ranges.get(c, (lo, hi))
+            ranges[c] = (min(a, lo), max(b, hi))
+    return {"never_missing": never, "ranges": ranges}
+
+
+def serving_checks(card: pd.DataFrame, feature_cols: list[str], model=None, missing: list[str] | None = None,
+                   freshness: dict | None = None) -> dict:
+    """What on the card's feature frame the model will read wrongly (MS-3, MS-4, BF-3), as counts:
+
+    - missing_features: served features the build did not produce (filled with NaN before pricing);
+    - all_nan_features: served features built but NaN for every runner on the card;
+    - unseen_categories: runners whose category encodes to -1 (a level outside the stored vocabulary, or none),
+      by column and raw level: the served members are numeric, so -1 is read as the first level, not as missing;
+    - nan_in_never_missing: NaNs on the card in features no tree holds a missing direction for (read as 0.0);
+    - out_of_range: values outside the booster's training range (feature_infos), counted, not flagged;
+    - freshness: results_freshness's figures (the gap shortens every trainer's and jockey's 14 and 30-day window).
+
+    `flags` names the checks that need the owner. Nothing in the frame is changed."""
+    from model.bfsp_features import CATEGORICAL_COLS
+    missing = sorted(missing or [])
+    present = [c for c in feature_cols if c in card.columns and c not in missing]
+    X = card[present].apply(pd.to_numeric, errors="coerce") if present else pd.DataFrame(index=card.index)
+    out: dict = {"runners": int(len(card)), "features": int(len(feature_cols)), "missing_features": missing,
+                 "all_nan_features": sorted(c for c in present if len(card) and X[c].isna().all())}
+    unseen = {}
+    for col in CATEGORICAL_COLS:
+        cc = f"{col}_cat"
+        if cc not in card.columns or cc not in feature_cols:
+            continue
+        bad = pd.to_numeric(card[cc], errors="coerce") == -1
+        if bad.any():
+            raw = (card[col].astype("string").fillna("<missing>") if col in card.columns
+                   else pd.Series("<no column>", index=card.index))
+            unseen[cc] = {str(k): int(v) for k, v in raw[bad].value_counts().head(10).items()}
+    out["unseen_categories"] = unseen
+    profile = model_profile(model) if model is not None else None
+    out["profile_read"] = profile is not None
+    if profile is not None:
+        never = [c for c in profile["never_missing"] if c in X.columns]
+        nn = X[never].isna().sum() if never else pd.Series(dtype=int)
+        out["nan_in_never_missing"] = {str(k): int(v) for k, v in nn[nn > 0].sort_values(ascending=False).items()}
+        oor = {}
+        for c, (lo, hi) in profile["ranges"].items():
+            if c in X.columns:
+                n = int(((X[c] < lo) | (X[c] > hi)).sum())
+                if n:
+                    oor[c] = n
+        out["out_of_range"] = oor
+    out["freshness"] = freshness
+    flags = []
+    if missing:
+        flags.append(f"{len(missing)} served features not built (priced as missing): {', '.join(missing[:10])}")
+    if out["all_nan_features"]:
+        flags.append(f"{len(out['all_nan_features'])} served features NaN for every runner: "
+                     + ", ".join(out["all_nan_features"][:10]))
+    if unseen:
+        flags.append("categories outside the vocabulary, read as the first level: "
+                     + "; ".join(f"{c} {sum(v.values())} runners ({', '.join(list(v)[:5])})" for c, v in unseen.items()))
+    if out.get("nan_in_never_missing"):
+        nm = out["nan_in_never_missing"]
+        flags.append(f"{len(nm)} features NaN on the card where the trees hold no missing direction (read as 0.0): "
+                     + ", ".join(f"{k} {v}" for k, v in list(nm.items())[:10]))
+    gap = (freshness or {}).get("gap_days")
+    if gap is not None and gap > FRESHNESS_DAYS:
+        flags.append(f"results end {freshness.get('last_result_day')}, {gap} days before the card: every trainer's "
+                     f"and jockey's 14 and 30-day window is short for every runner"
+                     + ("" if freshness.get("runners_in_gap") is None else
+                        f"; {freshness['runners_in_gap']} of {freshness.get('runners')} runners have run since"))
+    out["flags"] = flags
+    return out
+
+
+def report_serving_checks(checks: dict, target_date, path: str | None = None, summary: str | None = None) -> None:
+    """The checks in the log (one machine-readable line, "SERVING CHECKS {json}", and an ERROR per flag), in the
+    JSON sidecar `path` and in the job summary `summary` (GITHUB_STEP_SUMMARY) where given. Never raises."""
+    try:
+        doc = {"target_date": str(target_date), **checks}
+        line = json.dumps(doc, default=str, sort_keys=True)
+        (log.warning if checks.get("flags") else log.info)("SERVING CHECKS " + line)
+        for f in checks.get("flags") or []:
+            log.error(f"SERVING CHECK: {f}")
+        if path:
+            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            with open(path, "w") as fh:
+                fh.write(json.dumps(doc, default=str, indent=2, sort_keys=True))
+        if summary:
+            with open(summary, "a") as fh:
+                fh.write(f"### Serving checks {target_date}\n\n"
+                         + ("".join(f"- {f}\n" for f in checks["flags"]) if checks.get("flags") else "- none flagged\n")
+                         + "\n")
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"serving checks not reported: {e}")
 
 
 def _objective(booster: lgb.Booster, meta: dict) -> str:
@@ -435,8 +612,9 @@ def prepare_and_predict(
     # features either way for the one that does. A drop-in block the model reads
     # (model/blocks) switches on the engine blocks it is computed from.
     from model import blocks as drop_in
+    freshness = None
     try:                                     # the results' lag behind the card, logged (review item C3); never fatal
-        results_freshness(historical_df["race_date"], target_date, target_runners)
+        freshness = results_freshness(historical_df["race_date"], target_date, target_runners)
     except Exception as e:  # noqa: BLE001
         log.warning(f"results freshness not read: {e}")
     served_blocks = drop_in.used_by(feature_cols)
@@ -504,9 +682,18 @@ def prepare_and_predict(
     log.info(f"Predicting BFSP for {len(target_df)} runners on {target_date}")
 
     # Ensure all features exist
+    not_built = [col for col in feature_cols if col not in target_df.columns]
     for col in feature_cols:
         if col not in target_df.columns:
             target_df[col] = np.nan
+    global LAST_SERVING_CHECKS
+    try:                                     # said loudly and written down (MS-3, MS-4, BF-3); never changes a price
+        LAST_SERVING_CHECKS = serving_checks(target_df, feature_cols, model, not_built, freshness)
+        report_serving_checks(LAST_SERVING_CHECKS, target_date, os.environ.get(SERVING_CHECKS_ENV) or None,
+                              (os.environ.get("GITHUB_STEP_SUMMARY") if os.environ.get(SERVING_CHECKS_ENV) else None))
+    except Exception as e:  # noqa: BLE001
+        LAST_SERVING_CHECKS = None
+        log.warning(f"serving checks not made: {e}")
 
     # One price, one probability, race book = 1. See model/bfsp_model.py.
     #
@@ -517,6 +704,8 @@ def prepare_and_predict(
     # evaluation quote the same number.
     target_df = predict_prices(model, target_df, feature_cols, race_col="raceid")
     target_df["predicted_bfsp_norm"] = target_df["predicted_bfsp"]
+    if LAST_SERVING_CHECKS is not None:
+        target_df.attrs["serving_checks"] = LAST_SERVING_CHECKS
 
     # If actual BFSP is available, compute edge
     if "bfsp" in target_df.columns:
@@ -850,7 +1039,9 @@ def results_freshness(history_dates, target_date, card=None, max_days: int = FRE
     Every form feature reads the results table; when it stops (horseracebase.com paused downloads from 17 Nov 2026)
     the card is priced as if no horse had run since. The price is made either way; this says so in the log, once, at
     WARNING, with the runners whose last run (the card's days since its last run, where it carries one) falls in the
-    gap, so the gap is seen on the day and not a week later. Nothing is changed."""
+    gap, so the gap is seen on the day and not a week later. Nothing is changed. The figures go on to the serving
+    checks (`serving_checks`: the sidecar and the job summary, MS-4); the gap also shortens every trainer's and
+    jockey's 14 and 30-day window, for every runner, not only those that have run since."""
     last = pd.to_datetime(pd.Series(history_dates), errors="coerce").max()
     target = pd.Timestamp(target_date)
     out = {"last_result_day": None if pd.isna(last) else str(last.date()), "target": str(target.date()),
@@ -867,7 +1058,8 @@ def results_freshness(history_dates, target_date, card=None, max_days: int = FRE
         out["runners_in_gap"] = int((dslr < gap).sum())
     msg = (f"RESULTS FRESHNESS: results end {out['last_result_day']}, the card is {out['target']}: {gap} days"
            + ("" if out["runners_in_gap"] is None else
-              f"; {out['runners_in_gap']} of {out['runners']} runners have run since (their latest run is in no feature)"))
+              f"; {out['runners_in_gap']} of {out['runners']} runners have run since (their latest run is in no feature)")
+           + ("; every trainer's and jockey's 14 and 30-day window is short for every runner" if gap > max_days else ""))
     (log.warning if gap > max_days else log.info)(msg)
     return out
 
@@ -1052,6 +1244,10 @@ def main():
         out = with_model_rank(predictions)
         out[[c for c in OUTPUT_COLS if c in out.columns]].to_csv(args.output_csv, index=False)
         log.info(f"Saved predictions to {args.output_csv}")
+        if LAST_SERVING_CHECKS is not None and not os.environ.get(SERVING_CHECKS_ENV):
+            # beside the predictions, never in them: the CSV's columns, which the trader reads, are unchanged
+            report_serving_checks(LAST_SERVING_CHECKS, target_date,
+                                  os.path.splitext(args.output_csv)[0] + "_serving_checks.json")
 
 
 if __name__ == "__main__":

@@ -136,7 +136,7 @@ def assert_comparable_folds(base: pd.DataFrame, variant: pd.DataFrame) -> None:
 
 def paired(base: pd.DataFrame, variant: pd.DataFrame) -> pd.DataFrame:
     """Rows both runs predicted, with each one's error side by side."""
-    cols = KEY + ["raceid", "bfsp", "predicted_bfsp", "won"]
+    cols = KEY + ["raceid", "bfsp", "predicted_bfsp", "won", "fold_idx"]
     b = base[[c for c in cols if c in base.columns]].copy()
     v = variant[[c for c in cols if c in variant.columns]].copy()
     m = b.merge(v, on=KEY, suffixes=("_b", "_v"))
@@ -164,6 +164,65 @@ def race_bootstrap(values: np.ndarray, races: np.ndarray, n_boot: int = 500,
         means = np.where(n > 0, tot / n, np.nan)
     lo, hi = (1 - level) / 2, 1 - (1 - level) / 2
     return float(np.nanquantile(means, lo)), float(np.nanquantile(means, hi))
+
+
+def fold_reading(m: pd.DataFrame, n_boot: int = 500, level: float = 0.9, seed: int = 0) -> dict:
+    """The paired error by walk-forward fold, beside the race interval (audit ME-01).
+
+    The race bootstrap holds the two fitted boosters fixed, so its interval says whether these two fits differ on
+    these races, not whether the change is better across refits; fit noise (the seed's columns, rows and split
+    thresholds) is not in it. A fold-cluster interval (folds resampled whole) and the count of folds whose delta
+    has the overall sign are a coarser reading that a refit's noise moves more visibly. Reported, not decisive.
+    Empty when the files carry no fold index."""
+    col = "fold_idx_b" if "fold_idx_b" in m.columns else None
+    if col is None:
+        return {}
+    f = pd.to_numeric(m[col], errors="coerce")
+    sel = f.notna().to_numpy()
+    if not sel.any():
+        return {}
+    by = m.loc[sel].groupby(f[sel].astype(int))["delta"].mean()
+    overall = float(m.loc[sel, "delta"].mean())
+    same = int((np.sign(by) == np.sign(overall)).sum()) if overall != 0 else 0
+    lo, hi = race_bootstrap(m.loc[sel, "delta"].to_numpy(), f[sel].astype(int).to_numpy(), n_boot, level, seed)
+    return {"n_folds": len(by), "folds_same_sign": same, "fold_delta_ci": (lo, hi),
+            "by_fold": {int(k): float(v) for k, v in by.items()}}
+
+
+def level_reading(m: pd.DataFrame) -> dict:
+    """The price level beside the paired error (audits B1 and MT-2): each arm's mean and median log(predicted / BSP)
+    and its implied book on the paired rows. A book-1 price reads short of the BSP by about half the variance of its
+    log error (a Jensen gap), and a per-race level change moves the error while Brier skill and concordance (computed
+    after renormalising, or on order alone) stay exactly unchanged; printing the level makes such a change visible."""
+    out = {}
+    for s in ("b", "v"):
+        lr = np.log(m[f"predicted_bfsp_{s}"].to_numpy(float) / m[f"bfsp_{s}"].to_numpy(float))
+        bk = (1.0 / m[f"predicted_bfsp_{s}"]).groupby(m["raceid"].to_numpy()).sum()
+        out[s] = {"mean_log_ratio": float(np.mean(lr)), "median_log_ratio": float(np.median(lr)),
+                  "book": float(bk.mean())}
+    return out
+
+
+def race_xent(m: pd.DataFrame, n_boot: int = 500, level: float = 0.9, seed: int = 0) -> dict:
+    """A proper score for the book-1 probability (audit MT-2): each race's cross-entropy of the BSP book against the
+    arm's, -sum p_bsp log q, both books normalised over the paired runners of the race, then paired by race with a
+    race bootstrap. Negative favours the variant. Unlike the absolute log error it is not moved by the Jensen gap of
+    a book-1 forecast, so a change cannot improve it by lengthening outsiders alone. Reported, not decisive."""
+    races = m["raceid"].to_numpy()
+
+    def norm(col):
+        ip = 1.0 / m[col].to_numpy(float)
+        return ip / pd.Series(ip).groupby(races).transform("sum").to_numpy()
+
+    p = norm("bfsp_b")
+    terms = {}
+    for s in ("b", "v"):
+        q = np.clip(norm(f"predicted_bfsp_{s}"), 1e-12, 1.0)
+        terms[s] = pd.Series(-p * np.log(q)).groupby(races).sum()
+    d = (terms["v"] - terms["b"])
+    lo, hi = race_bootstrap(d.to_numpy(), d.index.to_numpy(), n_boot, level, seed)
+    return {"xent_base": float(terms["b"].mean()), "xent_variant": float(terms["v"].mean()),
+            "delta": float(d.mean()), "ci": (lo, hi)}
 
 
 def normalised_prob(d: pd.DataFrame, price_col: str, race_col: str = "raceid") -> np.ndarray:
@@ -298,9 +357,15 @@ def paired_skill_deltas(base: pd.DataFrame, variant: pd.DataFrame, races: np.nda
 
 
 def by_rank(m: pd.DataFrame, ranks=(1, 2, 3, 8)) -> pd.DataFrame:
-    """Paired error change at the ranks people actually look at."""
+    """Paired error change at the ranks people actually look at.
+
+    Ranked by the mean of the two arms' log prices (audit ME-07), not the base's alone: the base's rank 1 is partly
+    the runners it priced too short by error, so ranking by one arm's price favours the other arm at rank 1 and at
+    8+ even when the two forecasts are of equal quality."""
     m = m.copy()
-    m["rank_b"] = m.groupby("raceid")["predicted_bfsp_b"].rank(method="first")
+    m["_mean_log_price"] = 0.5 * (np.log(m["predicted_bfsp_b"].to_numpy(float))
+                                  + np.log(m["predicted_bfsp_v"].to_numpy(float)))
+    m["rank_b"] = m.groupby("raceid")["_mean_log_price"].rank(method="first")
     rows = []
     for r in ranks:
         sel = m[m["rank_b"] >= r] if r == max(ranks) else m[m["rank_b"] == r]
@@ -413,8 +478,25 @@ def main():
     L.append(f"- base **{m['err_b'].mean():.4f}**, variant **{m['err_v'].mean():.4f}**")
     L.append(f"- paired difference **{delta:+.4f}** (90% CI {lo:+.4f} to {hi:+.4f}) "
              f"— negative favours the variant")
-    L.append(f"- **{verdict}**\n")
-    L.append("## By the base model's rank in the race\n")
+    L.append(f"- **{verdict}**")
+    fr = fold_reading(m, a.n_boot)
+    if fr:
+        flo, fhi = fr["fold_delta_ci"]
+        L.append(f"- by fold (folds resampled whole): 90% CI {flo:+.4f} to {fhi:+.4f}; "
+                 f"{fr['folds_same_sign']} of {fr['n_folds']} folds have the overall sign")
+    L.append("- the race interval holds the two fitted models fixed: it does not include fit noise (seed), so a "
+             "single-member delta inside the measured seed-to-seed spread is not a model gain")
+    lv = level_reading(m)
+    L.append(f"- price level, log(predicted / BSP): base mean {lv['b']['mean_log_ratio']:+.4f}, median "
+             f"{lv['b']['median_log_ratio']:+.4f}, book {lv['b']['book']:.4f}; variant mean "
+             f"{lv['v']['mean_log_ratio']:+.4f}, median {lv['v']['median_log_ratio']:+.4f}, book "
+             f"{lv['v']['book']:.4f} (a level change moves the error and leaves Brier skill and concordance "
+             f"unchanged)")
+    xe = race_xent(m, a.n_boot)
+    L.append(f"- race cross-entropy of the BSP book against ours (proper score): base {xe['xent_base']:.5f}, "
+             f"variant {xe['xent_variant']:.5f}, paired {xe['delta']:+.5f} (90% CI {xe['ci'][0]:+.5f} to "
+             f"{xe['ci'][1]:+.5f}); reported, not decisive\n")
+    L.append("## By rank in the race (the mean of the two arms' log prices)\n")
     # to_string, not to_markdown: the latter needs `tabulate`, which the CI
     # image does not carry, and a comparison script that cannot run in CI is
     # not much use.
@@ -471,6 +553,9 @@ def main():
             "brier_skill": float(sk["brier_skill"]), "brier_skill_ci": [float(x) for x in sk["brier_skill_ci"]],
             "concordance": float(sk["concordance"]), "concordance_ci": [float(x) for x in sk["concordance_ci"]],
             "top_pick_roi": [float(rb), float(rv)], "replaces": bool(replaces),
+            "n_folds": fr.get("n_folds"), "folds_same_sign": fr.get("folds_same_sign"),
+            "fold_delta_ci": [float(x) for x in fr["fold_delta_ci"]] if fr else None,
+            "level": lv, "race_xent_delta": xe["delta"], "race_xent_delta_ci": [float(x) for x in xe["ci"]],
         }
         os.makedirs(os.path.dirname(a.json_out) or ".", exist_ok=True)
         with open(a.json_out, "w") as f:

@@ -1,14 +1,15 @@
 name: Execute Bets
+# The old order path (pipeline.execute; TRADING.md: "disabled by hand on 19 Aug ... places live bets by default and
+# has known faults ... It should stay disabled"). OPS-9, 24 Nov 2026: its schedule is removed from the file (it ran
+# every 30 minutes 10:00-20:30 UTC with DRY_RUN false, outside the owner's limits and trading/STOP), and a manual
+# run is a dry run unless dry_run is unticked. The live trader is live-trade.yml (auto_trade.py).
 on:
-  schedule:
-    # Run every 30 mins during UK racing hours (10:00-20:00 UTC)
-    - cron: '*/30 10-20 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
         description: 'Dry run mode'
         type: boolean
-        default: false
+        default: true
 
 jobs:
   execute:
@@ -40,6 +41,6 @@ jobs:
           BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
           BETFAIR_CERT_FILE: ~/.betfair/certs/betfair.crt
           BETFAIR_KEY_FILE: ~/.betfair/certs/betfair.key
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          DRY_RUN: ${{ format('{0}', inputs.dry_run) == 'false' && 'false' || 'true' }}   # dry unless unticked
           ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
         run: python -m pipeline.execute

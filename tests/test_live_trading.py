@@ -260,6 +260,154 @@ def test_a_lost_reply_on_a_top_ups_lay_is_never_settled_by_the_horses_earlier_la
     assert LiveExchange(_Data(c)).lay_at_bsp("1.5", 7, 114.0, "ash10017x").status == "UNKNOWN"
 
 
+class _Unclear(_Book):
+    """Betfair answering placeOrders with `reply` (a TIMEOUT, say) for the calls in `which`. `placed`: whether the
+    order was in fact placed; `late`: how many reads of listCurrentOrders pass before Betfair shows it."""
+
+    def __init__(self, reply, which=(1,), placed=True, late=0, **kw):
+        super().__init__(**kw)
+        self.reply, self.which, self.placed, self.late, self.hidden = reply, set(which), placed, late, []
+
+    def _api_call(self, method, params):
+        if method == "listCurrentOrders":
+            if self.late > 0:
+                self.late -= 1
+            elif self.hidden:
+                self.current += self.hidden
+                self.hidden = []
+            return super()._api_call(method, params)
+        if method != "placeOrders" or self.n + 1 not in self.which:
+            return super()._api_call(method, params)
+        before = list(self.current)
+        try:
+            super()._api_call(method, params)                     # Betfair's record as it would be
+        except Exception:
+            pass
+        made = [o for o in self.current if o not in before]
+        self.current = before
+        if self.placed:
+            self.hidden += made
+        return dict(self.reply)
+
+
+TIMEOUT = {"status": "TIMEOUT", "instructionReports": [{"status": "TIMEOUT"}]}
+
+
+def _quick(x):
+    x._reread_waits = (0.0, 0.0, 0.0)                              # the re-reads, without the 15 s of waiting
+    return x
+
+
+def test_a_timeout_on_a_back_is_settled_by_betfairs_record_never_by_a_second_back():
+    """Audit EX-01/EL-01 (24 Nov 2026): Betfair's TIMEOUT means the order's state is unknown. Until now it was booked
+    as a refusal: the horse was backed again at the next poll while the first fill sat unhedged."""
+    c = _Unclear(TIMEOUT)                                          # placed and matched; shown at the first read
+    f = _quick(LiveExchange(_Data(c))).back("1.5", 7, 10.0, 27.77, "ash10017")
+    assert (f.status, f.matched, f.avg_price, f.bet_id) == ("SUCCESS", 27.77, 10.0, "B1")
+    c = _Unclear(TIMEOUT, late=2)                                  # Betfair shows it only at the third read
+    f = _quick(LiveExchange(_Data(c))).back("1.5", 7, 10.0, 27.77, "ash10017")
+    assert (f.status, f.matched, f.bet_id) == ("SUCCESS", 27.77, "B1")
+    c = _Unclear(TIMEOUT, placed=False)                            # never shown: placed or not cannot be told
+    f = _quick(LiveExchange(_Data(c))).back("1.5", 7, 10.0, 27.77, "ash10017")
+    assert f.status == "UNKNOWN" and f.matched == 0
+    assert sum(1 for m, _ in c.calls if m == "listCurrentOrders") == 4      # read, then three re-reads
+
+    class Blind(_Unclear):                                         # and Betfair's orders cannot be read
+        def _api_call(self, method, params):
+            if method == "listCurrentOrders":
+                raise ConnectionError("no route")
+            return super()._api_call(method, params)
+    assert _quick(LiveExchange(_Data(Blind(TIMEOUT)))).back("1.5", 7, 10.0, 27.77, "ash10017").status == "UNKNOWN"
+    assert _quick(LiveExchange(_Data(Blind(TIMEOUT)))).lay_at_bsp("1.5", 7, 249.93, "a").status == "UNKNOWN"
+
+
+@pytest.mark.parametrize("reply", [
+    {"status": "SUCCESS", "instructionReports": [{"status": "TIMEOUT"}]},
+    {"status": "TIMEOUT"},
+    {"status": "PROCESSED_WITH_ERRORS", "instructionReports": [{"status": "SUCCESS", "sizeMatched": 27.77}]},
+    {"instructionReports": [{"betId": "X", "sizeMatched": 27.77}]},                      # no status
+    {"status": "SUCCESS", "instructionReports": [{"status": "SUCCESS", "sizeMatched": 27.77}]},   # no bet id
+    {},
+])
+def test_any_reply_but_a_clean_success_or_failure_is_a_lost_reply(reply):
+    for placed, want in ((True, "SUCCESS"), (False, "UNKNOWN")):
+        c = _Unclear(reply, placed=placed)
+        f = _quick(LiveExchange(_Data(c))).back("1.5", 7, 10.0, 27.77, "ash10017")
+        assert f.status == want and f.matched == (27.77 if placed else 0)
+        c = _Unclear(reply, placed=placed)
+        f = _quick(LiveExchange(_Data(c))).lay_at_bsp("1.5", 7, 249.93, "ash10017x")
+        assert f.status == ("PENDING" if placed else "UNKNOWN")
+
+
+def test_a_clean_success_and_a_clean_failure_are_as_before_and_read_nothing():
+    for client, side, want in (
+            (_Client(), "back", ("SUCCESS", 27.77, "B1", "")),
+            (_Client(fill=False), "back", ("FAILURE", 0.0, "B0", "EXPIRED")),
+            (_Client(), "lay", ("PENDING", 0.0, "L1", ""))):
+        x = LiveExchange(_Data(client))
+        f = x.back("1.5", 7, 10.0, 27.77, "ash10017") if side == "back" else x.lay_at_bsp("1.5", 7, 249.93, "a")
+        assert (f.status, f.matched, f.bet_id, f.error) == want
+        assert not [m for m, _ in client.calls if m == "listCurrentOrders"]
+    # a fill-or-kill that Betfair says lapsed, with no bet id: still a clean miss
+    lapsed = {"status": "SUCCESS", "instructionReports": [{"status": "SUCCESS", "sizeMatched": 0.0,
+                                                           "orderStatus": "EXPIRED"}]}
+    c = _Unclear(lapsed, placed=False)
+    f = LiveExchange(_Data(c)).back("1.5", 7, 10.0, 27.77, "ash10017")
+    assert (f.status, f.error) == ("FAILURE", "EXPIRED") and not [m for m, _ in c.calls if m == "listCurrentOrders"]
+    refused = {"status": "FAILURE", "errorCode": "BET_ACTION_ERROR",
+               "instructionReports": [{"status": "FAILURE", "errorCode": "MARKET_SUSPENDED"}]}
+    for side in ("back", "lay"):
+        c = _Unclear(refused, placed=False)
+        x = LiveExchange(_Data(c))
+        f = x.back("1.5", 7, 10.0, 27.77, "ash10017") if side == "back" else x.lay_at_bsp("1.5", 7, 249.93, "a")
+        assert (f.status, f.error) == ("FAILURE", "MARKET_SUSPENDED (BET_ACTION_ERROR)")
+        assert not [m for m, _ in c.calls if m == "listCurrentOrders"]
+    bare = {"status": "FAILURE", "errorCode": "INSUFFICIENT_FUNDS"}                    # no instruction reports
+    c = _Unclear(bare, placed=False)
+    assert LiveExchange(_Data(c)).back("1.5", 7, 10.0, 27.77, "ash10017").status == "FAILURE"
+
+
+def test_a_timeout_on_a_trade_out_never_lays_the_horse_twice():
+    """A TIMEOUT on the lay at SP was counted as a refusal and the liability sent again at each poll, up to five
+    times: a lay at SP cannot be cancelled, so each copy was a naked liability."""
+    off = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
+    race = lambda: [_race("1.7", off, [7.0, 2.3, 3.6, 6.0], [4.0, 2.6, 4.2, 8.0], [500, 900, 800, 300])]  # noqa: E731
+    sides = lambda c: [p["instructions"][0]["side"] for m, p in c.calls if m == "placeOrders"]             # noqa: E731
+    laid = lambda c: sum(o["bspLiability"] for o in c.current if o["side"] == "LAY")                      # noqa: E731
+    c = _Unclear(TIMEOUT, which={2}, late=1)                       # the lay is placed; Betfair shows it a read later
+    s, clock = _session(c, race())
+    _quick(s.x)
+    for _ in range(4):
+        s.step(clock())
+        clock.t += timedelta(minutes=1)
+    pos = s.positions[("1.7", 1)]
+    assert sides(c) == ["BACK", "LAY"] and pos.hedged and laid(c) == pytest.approx(249.96)
+    assert not s.state.stopped
+    c = _Unclear(TIMEOUT, which={2}, placed=False)                 # not placed, and never shown: never sent again
+    s, clock = _session(c, race())
+    _quick(s.x)
+    for _ in range(4):
+        s.step(clock())
+        clock.t += timedelta(minutes=1)
+    pos = s.positions[("1.7", 1)]
+    assert sides(c) == ["BACK", "LAY"] and not pos.hedged and laid(c) == 0
+    assert s.state.stopped.startswith("trade-out state unknown")
+    c = _Unclear(TIMEOUT, which={1})                               # the back timed out but was matched
+    s, clock = _session(c, race())
+    _quick(s.x)
+    for _ in range(3):
+        s.step(clock())
+        clock.t += timedelta(minutes=1)
+    assert sides(c) == ["BACK", "LAY"] and s.positions[("1.7", 1)].hedged   # backed once, and laid
+    c = _Unclear(TIMEOUT, which={1}, placed=False)                 # the back timed out and is never shown
+    s, clock = _session(c, race())
+    _quick(s.x)
+    for _ in range(3):
+        s.step(clock())
+        clock.t += timedelta(minutes=1)
+    assert sides(c) == ["BACK"] and s.state.stopped.startswith("order state unknown")
+
+
 # ---------------------------------------------------------------- a live session
 
 class _Clock:

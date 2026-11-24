@@ -28,8 +28,11 @@ from desk import SPORTS
 
 LEDGER = Path(__file__).resolve().parents[1] / "reports" / "research_ledger.jsonl"
 WHEN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?Z$")
+# "iteration", "screen" and "backtest" (audit ME-04): research-loop iterations, feature screens and backtests are
+# tests too; uncounted, 25 of the ledger's tags never reached the deflated Sharpe's count. Adding a kind only raises
+# a count. "validation" stays out: most of its lines are dry runs and parity checks, not a rule scored.
 TRIAL_KINDS = {"research", "replay", "scan", "model", "dev", "preregistration", "preregistered_test", "query",
-               "gate", "trial"}
+               "gate", "trial", "iteration", "screen", "backtest"}
 NEEDS = {
     "preregistration": ("question", "design"),          # the house form: the reading is written inside the design
     "trial": ("question", "design", "reading", "strategy", "sport", "gate_sha256"),     # the desk's own registrations

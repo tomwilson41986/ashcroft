@@ -217,3 +217,92 @@ def test_the_guards_refuse_a_resolved_loss_against_the_market(brier_ci, conc_ci,
 
 def test_no_guard_passes_a_price_forecast_that_is_not_better():
     assert cor.decide(+0.0001, (0.001, 0.002), (0.001, 0.002))[3] is False
+
+
+# ---------------------------------------------------------------------------
+# the readings beside the paired error (audits ME-01, ME-07, MT-2, B1); toy frames, mechanics only
+# ---------------------------------------------------------------------------
+
+def _paired_toy(n_races=400, runners=8, seed=0, shared=0.0, own=0.35, folds=4):
+    """Two forecasts of the same quality around one toy truth: shared error plus each arm's own error."""
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    rows = []
+    for r in range(n_races):
+        truth = rng.normal(2.5, 1.0, runners)
+        common = rng.normal(0, shared, runners) if shared else 0.0
+        eb = truth + common + rng.normal(0, own, runners)
+        ev = truth + common + rng.normal(0, own, runners)
+        for h in range(runners):
+            rows.append({"race_date": pd.Timestamp("2025-01-01") + pd.Timedelta(days=r), "race_time": "14:30",
+                         "track": "T", "horse_name": f"h{r}_{h}", "raceid": f"r{r}", "won": int(h == 0),
+                         "bfsp": 1.0 + np.exp(truth[h]), "predicted_bfsp": 1.0 + np.exp(eb[h]),
+                         "pv": 1.0 + np.exp(ev[h]), "fold_idx": r * folds // n_races})
+    d = pd.DataFrame(rows)
+    b = d.drop(columns="pv")
+    v = d.drop(columns="predicted_bfsp").rename(columns={"pv": "predicted_bfsp"})
+    return b, v
+
+
+def test_the_rank_table_is_symmetric_in_the_two_arms():
+    """ME-07: ranked by the mean of the two log prices, swapping base and variant flips every band's delta;
+    ranked by the base's price alone it did not, which made the base's own errors read as the variant's gain."""
+    b, v = _paired_toy()
+    fwd = cor.by_rank(cor.paired(b, v)).set_index("rank")
+    rev = cor.by_rank(cor.paired(v, b)).set_index("rank")
+    assert list(fwd.index) == ["1", "2", "3", "8+"]
+    assert (fwd["n"] == rev["n"]).all()
+    assert ((fwd["delta"] + rev["delta"]).abs() < 1e-12).all()
+
+
+def test_the_fold_reading_counts_folds_with_the_overall_sign():
+    b, v = _paired_toy(folds=4)
+    m = cor.paired(b, v)
+    fr = cor.fold_reading(m, n_boot=100)
+    assert fr["n_folds"] == 4 and 0 <= fr["folds_same_sign"] <= 4
+    lo, hi = fr["fold_delta_ci"]
+    assert lo <= hi
+    m2 = m.copy()
+    m2["delta"] = -0.01                       # every fold the same way
+    fr2 = cor.fold_reading(m2, n_boot=100)
+    assert fr2["folds_same_sign"] == 4 and abs(fr2["fold_delta_ci"][0] + 0.01) < 1e-12
+    assert cor.fold_reading(m.drop(columns=["fold_idx_b", "fold_idx_v"])) == {}
+
+
+def test_a_level_shift_moves_the_error_and_the_level_but_not_the_proper_score():
+    """B1 and MT-2: every price x 1.08 leaves the normalised book (so Brier skill, concordance and the race
+    cross-entropy) unchanged, while the absolute log error moves; the level reading shows the shift."""
+    import numpy as np
+    b, _ = _paired_toy(n_races=100)
+    v = b.copy()
+    v["predicted_bfsp"] = b["predicted_bfsp"] * 1.08
+    m = cor.paired(b, v)
+    assert abs(m["delta"].mean()) > 1e-4
+    lv = cor.level_reading(m)
+    assert abs(lv["v"]["median_log_ratio"] - lv["b"]["median_log_ratio"] - np.log(1.08)) < 1e-9
+    assert abs(lv["v"]["book"] * 1.08 - lv["b"]["book"]) < 1e-9
+    xe = cor.race_xent(m, n_boot=50)
+    assert abs(xe["delta"]) < 1e-12
+
+
+def test_the_race_cross_entropy_favours_the_arm_whose_book_is_the_bsp_book():
+    b, _ = _paired_toy(n_races=100)
+    v = b.copy()
+    v["predicted_bfsp"] = b["bfsp"]
+    xe = cor.race_xent(cor.paired(b, v), n_boot=100)
+    assert xe["delta"] < 0 and xe["ci"][1] < 0
+
+
+def test_the_report_carries_the_new_readings(tmp_path):
+    import json
+    base = _run(tmp_path / "b.csv", shift=1.0)
+    var = _run(tmp_path / "v.csv", shift=1.1)
+    js = tmp_path / "s.json"
+    out = subprocess.run([sys.executable, str(SCRIPT), "--base", str(base), "--variant", str(var),
+                          "--n-boot", "50", "--json-out", str(js)], capture_output=True, text=True, cwd=ROOT,
+                         check=False)
+    assert out.returncode == 0, out.stderr
+    assert "by fold (folds resampled whole)" in out.stdout and "race cross-entropy" in out.stdout
+    assert "price level, log(predicted / BSP)" in out.stdout
+    j = json.loads(js.read_text())
+    assert j["n_folds"] == 3 and "race_xent_delta" in j and "median_log_ratio" in j["level"]["b"]

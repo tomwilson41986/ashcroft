@@ -92,14 +92,15 @@ def live_switch_on(env=None) -> bool:
     return str(env.get("TRADING_LIVE", "")).strip().lower() == "yes"
 
 
-def ledger_copier(day: date, mode: str):
-    """Copy the ledger to S3 whenever it has grown: live, every order is on record away from the runner."""
+def ledger_copier(day: date, mode: str, name: str = "ledger.csv"):
+    """Copy the ledger to S3 whenever it has grown: live, every order is on record away from the runner. A session
+    that could not read the day's ledger copies to its own `name`, never over the day's ledger.csv (EX-03)."""
     state = {"n": -1}
 
     def copy(path: Path, n: int) -> None:
         if n == state["n"]:
             return
-        _s3().put_object(Bucket=BUCKET, Key=_prefix(day, mode) + "ledger.csv", Body=Path(path).read_bytes())
+        _s3().put_object(Bucket=BUCKET, Key=_prefix(day, mode) + name, Body=Path(path).read_bytes())
         state["n"] = n
     return copy
 
@@ -128,44 +129,94 @@ def load_predictions(day: date, path: str | None, wait_until: datetime | None = 
     return df
 
 
-def kill_switch(kill_file: str | None):
-    state = {"at": None, "on": False}
+#: S3's answers that mean "no such object"; any other error is not an answer (EX-03, EX-04)
+MISSING_CODES = {"404", "NoSuchKey", "NotFound"}
+#: the kill switch unreadable this many checks in a row stops new bets, as the switch itself would (EX-04)
+KILL_UNREADABLE_STOPS = 3
+#: reads of the day's ledger before an S3 error is taken as unreadable, with a backoff between them (EX-03)
+LEDGER_READ_TRIES = 5
+
+
+def _missing(exc: BaseException) -> bool:
+    """True when S3 answered that the object does not exist (botocore ClientError 404/NoSuchKey/NotFound)."""
+    code = (((getattr(exc, "response", None) or {}).get("Error") or {}).get("Code"))
+    return str(code) in MISSING_CODES or type(exc).__name__ in MISSING_CODES
+
+
+def _err(exc: BaseException) -> str:
+    """An S3 error for the log: its type and the first of its message (never a credential)."""
+    return f"{type(exc).__name__}: {str(exc)[:160]}"
+
+
+def kill_switch(kill_file: str | None, clock=None):
+    """The kill switch: the local --kill-file, or the S3 object trading/STOP, read at most once a minute. It fails
+    safe (EX-04): only S3's "no such object" clears it; any other error keeps the last state, and the switch unreadable
+    KILL_UNREADABLE_STOPS times in a row stops new bets (the lays at SP and the settlement carry on, as for any stop;
+    the session holds a stop for the rest of the day)."""
+    state = {"at": None, "on": False, "fails": 0}
+    clock = clock or (lambda: datetime.now(timezone.utc))
 
     def check() -> bool:
         if kill_file and Path(kill_file).exists():
             return True
-        now = datetime.now(timezone.utc)
+        now = clock()
         if state["at"] and (now - state["at"]).total_seconds() < 60:
             return state["on"]
         state["at"] = now
         try:
             _s3().head_object(Bucket=BUCKET, Key="trading/STOP")
-            state["on"] = True
-        except Exception:
-            state["on"] = False
+            state["on"], state["fails"] = True, 0
+        except Exception as exc:
+            if _missing(exc):
+                state["on"], state["fails"] = False, 0
+            else:
+                state["fails"] += 1
+                log.warning("The kill switch trading/STOP could not be read (%d in a row; %d stops new bets): %s",
+                            state["fails"], KILL_UNREADABLE_STOPS, _err(exc))
+                if state["fails"] >= KILL_UNREADABLE_STOPS:
+                    state["on"] = True
         return state["on"]
     return check
 
 
-def read_ledger(day: date, local: Path, mode: str = MODE) -> list[dict] | None:
-    """The day's ledger, local or from S3; None where the day was not traded."""
+class LedgerUnreadable(RuntimeError):
+    """S3 gave no answer on the day's ledger (an error other than "no such object"): never read as "not traded"."""
+
+
+def read_ledger(day: date, local: Path, mode: str = MODE, tries: int = LEDGER_READ_TRIES,
+                sleep=None) -> list[dict] | None:
+    """The day's ledger, local or from S3; None only where S3 says there is none (the day not traded yet). Any other
+    S3 error is tried again with a backoff (5, 10, 20, 40 s) and then raises LedgerUnreadable (EX-03): until 24 Nov
+    every error read as "not traded", so a restart could start the live day blank and overwrite its S3 ledger."""
+    import time as _time
     if local.exists():
         with local.open() as f:
             return list(csv.DictReader(f))
-    try:
-        obj = _s3().get_object(Bucket=BUCKET, Key=_prefix(day, mode) + "ledger.csv")
-        return list(csv.DictReader(io.StringIO(obj["Body"].read().decode())))
-    except Exception as exc:
-        log.warning("No ledger for %s (%s): the day was not traded", day, exc)
-        return None
+    last: BaseException | None = None
+    for k in range(max(1, tries)):
+        try:
+            obj = _s3().get_object(Bucket=BUCKET, Key=_prefix(day, mode) + "ledger.csv")
+            return list(csv.DictReader(io.StringIO(obj["Body"].read().decode())))
+        except Exception as exc:
+            if _missing(exc):
+                log.warning("No ledger for %s in S3 (%s): the day was not traded", day, _err(exc))
+                return None
+            last = exc
+            log.warning("The ledger for %s could not be read from S3 (try %d of %d): %s", day, k + 1, tries,
+                        _err(exc))
+            if k + 1 < tries:
+                (sleep or _time.sleep)(min(60, 5 * 2 ** k))
+    raise LedgerUnreadable(f"the ledger for {day} could not be read from S3 after {tries} tries ({_err(last)})")
 
 
-def publish(day: date, ledger: Path, summary: dict, mode: str = MODE) -> None:
+def publish(day: date, ledger: Path, summary: dict, mode: str = MODE, stem: str = "") -> None:
+    """The ledger and the summary to S3; a session that could not read the day's ledger publishes under its own
+    `stem` (ledger<stem>.csv, summary<stem>.json), never over the day's (EX-03)."""
     try:
         s3 = _s3()
         if ledger.exists():
-            s3.put_object(Bucket=BUCKET, Key=_prefix(day, mode) + "ledger.csv", Body=ledger.read_bytes())
-        s3.put_object(Bucket=BUCKET, Key=_prefix(day, mode) + "summary.json",
+            s3.put_object(Bucket=BUCKET, Key=_prefix(day, mode) + f"ledger{stem}.csv", Body=ledger.read_bytes())
+        s3.put_object(Bucket=BUCKET, Key=_prefix(day, mode) + f"summary{stem}.json",
                       Body=json.dumps(summary, indent=2, default=str).encode())
         log.info("Published s3://%s/%s", BUCKET, _prefix(day, mode))
     except Exception as exc:
@@ -322,6 +373,7 @@ def main(argv=None) -> dict:
     exchange = LiveExchange(data) if (a.live and not a.settle) else PaperExchange(data, bank=cfg.limits.bank)
     exchange.login()
     ledger = Path(a.out) / f"ledger_{mode}_{day:%Y-%m-%d}.csv"
+    stem = ""                                             # the S3 names' suffix: "" but for an unrestored session
     funds_start = account_funds(data) if a.live else None   # read-only; what the account can bet, for the record
     if funds_start:
         log.info("Account funds: GBP%s available to bet, exposure GBP%s, exposure limit GBP%s",
@@ -343,10 +395,21 @@ def main(argv=None) -> dict:
         markets = exchange.markets(*uk_day_window(day), cfg.countries)
         if not {"market_id", "selection_id"} <= set(preds.columns) or preds["market_id"].isna().any():
             preds = attach_ids(preds, markets)
-        session = Session(exchange, preds, cfg, day, kill=kill_switch(a.kill_file), ledger_path=str(ledger),
-                          on_flush=ledger_copier(day, mode) if a.live else None)
+        unread = None
         if a.live:                                        # take up the day: the ledger, then Betfair's own record
-            rows = read_ledger(day, ledger, mode)
+            try:
+                rows = read_ledger(day, ledger, mode)
+            except LedgerUnreadable as exc:               # never start blank over the day's record (EX-03)
+                rows, unread = None, exc
+                stem = f"_unrestored_{datetime.now(timezone.utc):%H%M%S}"
+        session = Session(exchange, preds, cfg, day, kill=kill_switch(a.kill_file), ledger_path=str(ledger),
+                          on_flush=ledger_copier(day, mode, f"ledger{stem}.csv") if a.live else None)
+        if unread is not None:
+            session.state.stopped = ("the day's ledger could not be read from S3: no new bets (Betfair's record of "
+                                     "the orders is taken up, the lays at SP and the settlement carry on)")
+            log.error("%s (%s); this session writes to ledger%s.csv, never over the day's ledger", session.state.stopped,
+                      unread, stem)
+        if a.live:
             if rows:
                 session.restore(rows, markets)
                 log.info("Took up today's live ledger: %d rows, GBP%.2f matched", len(rows), session.state.turnover)
@@ -371,7 +434,7 @@ def main(argv=None) -> dict:
     Path(a.out).mkdir(parents=True, exist_ok=True)
     (Path(a.out) / f"summary_{mode}_{day:%Y-%m-%d}.json").write_text(json.dumps(summary, indent=2, default=str))
     log.info("Summary: %s", {k: v for k, v in summary.items() if k != "config"})
-    publish(day, ledger, summary, mode)
+    publish(day, ledger, summary, mode, stem=stem)
     if a.settle or a.live:
         email(summary, races=race_lines(session.ledger), totals=running_totals(mode))
     return summary

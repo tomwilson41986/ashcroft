@@ -21,7 +21,9 @@ This is the gate in between. It fails (exit 1) unless:
    model's at 0.9 or better. Drop-in blocks are built on the matrix as the
    live path builds them (`blocks.attach_as_trained`). The new model has seen these days, so this is a
    test that it is sane, not that it is better: the walk-forward evaluation is
-   where better is decided.
+   where better is decided. A `--served-dir` holding no loadable served model
+   (plain, `.lgb.xz` or a manifest) fails the gate rather than skipping the
+   comparison.
 
 The report says what was checked and what was found either way.
 """
@@ -68,6 +70,25 @@ def _load(model_dir: str):
     booster = _read_booster(booster_path(model_dir))            # plain, or committed as .lgb.xz
     attach_serving_rule(booster, meta)
     return booster, meta
+
+
+def _load_served(served_dir: str | None):
+    """The served model to compare against: (model, meta, problem). With no ``--served-dir`` there is nothing to
+    compare and no problem. A served booster committed as ``bfsp_model.lgb.xz`` is read as the plain one is (audits
+    MS-2, MT-3: the guard tested the plain name only, so the comparison was skipped with no word in the report).
+    A ``--served-dir`` that holds no loadable model is a problem, not a skip: the gate fails."""
+    if not served_dir:
+        return None, None, None
+    d = Path(served_dir)
+    if not ((d / "bfsp_model.lgb").exists() or (d / "bfsp_model.lgb.xz").exists()
+            or (d / ENSEMBLE_MANIFEST).exists()):
+        return None, None, (f"--served-dir {served_dir} holds no served model (bfsp_model.lgb, bfsp_model.lgb.xz "
+                            f"or {ENSEMBLE_MANIFEST}): the comparison with the served model was not made")
+    try:
+        served, served_meta = _load(served_dir)
+    except Exception as exc:                     # noqa: BLE001 - reported, and the gate fails
+        return None, None, f"the served model in {served_dir} could not be loaded ({exc}): not compared"
+    return served, served_meta, None
 
 
 def check_servable(booster, meta) -> list[str]:
@@ -160,12 +181,11 @@ def main() -> None:
     a = ap.parse_args()
 
     new, meta = _load(a.model_dir)
-    served, served_meta = (None, None)
-    if a.served_dir and (Path(a.served_dir, "bfsp_model.lgb").exists()
-                         or Path(a.served_dir, ENSEMBLE_MANIFEST).exists()):
-        served, served_meta = _load(a.served_dir)
+    served, served_meta, served_problem = _load_served(a.served_dir)
 
     problems = check_servable(new, meta) + check_live_path(meta.get("feature_cols", []))
+    if served_problem:
+        problems.append(served_problem)
     notes = [f"{len(meta.get('feature_cols', []))} features, target {meta.get('target')}, "
              f"best_iteration {meta.get('best_iteration')}, trained through {meta.get('trained_through')}"]
     if meta.get("members"):

@@ -8,6 +8,8 @@ on:
 jobs:
   predict:
     runs-on: ubuntu-latest
+    outputs:
+      serving_flags: ${{ steps.checks.outputs.flags }}
     # The job makes live Betfair calls and the client sets no socket timeout,
     # so bound the whole thing rather than let a hung connection sit until
     # GitHub's six-hour default. The predictions CSV is written before the
@@ -87,7 +89,29 @@ jobs:
           # the owner, 18 Nov 2026: 'fix the card fallback'): its price check passed on 18 Nov's card (run 44310518854:
           # median 0.047 in logs from the HRB card's prices, rank correlation 0.996). With HRB's card nothing changes
           CARD_FALLBACK: 'on'
+          # the serving checks (audit MS-3, MS-4, BF-3; predict_bfsp_today.serving_checks): features not built or
+          # empty on the card, categories outside the vocabulary, NaNs the trees read as 0, the results' gap. Written
+          # here and to the job summary; they change no price and never stop the predictions
+          SERVING_CHECKS_PATH: out/serving_checks.json
         run: python -m pipeline.predict
+
+      - name: Serving checks
+        id: checks
+        if: always()
+        continue-on-error: true
+        run: |
+          python3 - <<'PY'
+          import json, os
+          try:
+              flags = json.load(open("out/serving_checks.json")).get("flags") or []
+          except Exception as e:
+              print(f"no serving checks read: {e}")
+              flags = []
+          text = " | ".join(flags)[:1500].replace("\n", " ")
+          print(text or "none flagged")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"flags={text}\n")
+          PY
 
       - name: Sync dashboard
         env:
@@ -96,3 +120,40 @@ jobs:
           AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
           ULTRA_BETTING_S3_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
         run: python -m pipeline.sync_dashboard
+
+  alert:
+    # OPS-6 (24 Nov 2026): a failed, timed-out or cancelled predictions run leaves the live trader waiting for
+    # predictions/<day>.csv (it bets nothing without it), and nothing told the owner before the window closed. The
+    # owner is told at once on the day's "Live trading: <day>" issue (scripts/session_watchdog.py --tell, once a run).
+    # GitHub's runners, the job's own token, no secrets; the predict job itself is unchanged.
+    needs: predict
+    if: always() && (needs.predict.result == 'failure' || needs.predict.result == 'cancelled' || needs.predict.outputs.serving_flags != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - name: Tell the owner
+        if: needs.predict.result != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.predict.result }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 scripts/session_watchdog.py --key "predict:$RUN_ID" --tell "the Daily Predictions run ended in $RESULT \
+          (a timeout shows as cancelled): the live trader bets nothing until predictions/<day>.csv is in S3; check \
+          whether it was written and, if not, run Daily Predictions again (Actions, Run workflow)"
+      - name: Tell the owner what the serving checks flagged
+        # once a day (the key is the day): the predictions are written as before; this says what they were made on
+        if: needs.predict.outputs.serving_flags != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FLAGS: ${{ needs.predict.outputs.serving_flags }}
+        run: |
+          DAY=$(TZ=Europe/London date +%F)
+          python3 scripts/session_watchdog.py --key "serving:$DAY" --tell "the serving checks flagged today's \
+          predictions (written and served as usual; predict_bfsp_today.serving_checks): $FLAGS"

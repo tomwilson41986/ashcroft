@@ -101,6 +101,30 @@ def test_the_live_path_builds_what_the_model_reads(frames, monkeypatch):
     pd.testing.assert_frame_equal(got, want, check_dtype=False)
 
 
+def test_the_live_path_writes_its_serving_checks_and_prices_as_before(frames, monkeypatch, tmp_path):
+    """Audit MS-3 (24 Nov 2026): a served feature the build did not produce is still priced as missing (as
+    before), and now named in the serving checks' sidecar; the frame the model is asked of is unchanged."""
+    import json
+    hist, _, _ = frames
+    feature_cols = ["LR_ORR2", "fv_nfp_e3", "not_a_built_feature"]
+    seen = {}
+
+    def capture(model, df, cols, **kw):
+        seen["df"] = df.copy()
+        df["predicted_bfsp"] = 5.0
+        return df
+    monkeypatch.setattr(predict_bfsp_today, "predict_prices", capture)
+    monkeypatch.setenv(predict_bfsp_today.SERVING_CHECKS_ENV, str(tmp_path / "checks.json"))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    out = predict_bfsp_today.prepare_and_predict(hist.copy(), hist.iloc[:0], model=None, feature_cols=feature_cols,
+                                                 target_date=FLIP_DAY.date())
+    assert seen["df"]["not_a_built_feature"].isna().all()           # priced as before: NaN
+    doc = json.loads((tmp_path / "checks.json").read_text())
+    assert doc["missing_features"] == ["not_a_built_feature"] and doc["profile_read"] is False
+    assert any("not built" in f for f in doc["flags"])
+    assert out.attrs["serving_checks"]["missing_features"] == ["not_a_built_feature"]
+
+
 def test_training_takes_engine_and_drop_in_blocks_from_the_matrix(frames):
     _, trained, _ = frames
     matrix = trained[blocks.matrix_rows(trained)].reset_index(drop=True)
