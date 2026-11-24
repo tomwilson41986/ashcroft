@@ -294,10 +294,10 @@ def load_stack(store):
 
 
 def card_tables(store, day: date, card: pd.DataFrame, fits: dict | None = None,
-                fetch_lag: pd.Series | None = None) -> dict[str, pd.DataFrame]:
+                fetch_lag: pd.Series | None = None, names=None) -> dict[str, pd.DataFrame]:
     """The metrics tables (greyhound/pit) built from 2014 with the day's card as their last day, each cut to the
     card's rows: what the nightly build gives a run once its result is in (tests/test_greyhound_pit.py
-    ``test_a_card_gets_the_features_its_run_had``)."""
+    ``test_a_card_gets_the_features_its_run_had``). ``names``: only these tables (default every served one)."""
     from greyhound import pit, stack_model as sm
     from greyhound.card import with_cards
     from greyhound.data import clean
@@ -325,7 +325,7 @@ def card_tables(store, day: date, card: pd.DataFrame, fits: dict | None = None,
     # table was built by this code (the owner, 18 Nov 2026: "yes, cache the constants")
     ctx["fitted"] = pit.stored_fits(store, sm.PIT_TABLES) if fits is None else fits
     keys = runs.loc[runs.is_card, pit.KEY].drop_duplicates()
-    return pit.build_tables(list(sm.PIT_TABLES), runs, None, ctx, keep=True, cut=keys)
+    return pit.build_tables(list(sm.PIT_TABLES if names is None else names), runs, None, ctx, keep=True, cut=keys)
 
 
 #: the card's table columns, kept for the day (``card_table_columns``)
@@ -357,11 +357,52 @@ def card_tables_key(day: date, card: pd.DataFrame, history: str, fits: dict, fet
                  "" if fetch_lag is None else fetch_lag.to_json()):
         h.update(str(part).encode())
         h.update(b"\0")
-    c = card.sort_values(["race_id", "trap"], kind="stable").reset_index(drop=True)
-    c = c[sorted(c.columns)].astype(str)
-    h.update(pd.util.hash_pandas_object(c, index=False).to_numpy().tobytes())
-    h.update(",".join(c.columns).encode())
+    if card is not None:                          # None: the key of everything but the card (``card_table_columns``)
+        c = card.sort_values(["race_id", "trap"], kind="stable").reset_index(drop=True)
+        c = c[sorted(c.columns)].astype(str)
+        h.update(pd.util.hash_pandas_object(c, index=False).to_numpy().tobytes())
+        h.update(",".join(c.columns).encode())
     return h.hexdigest()[:16]
+
+
+#: the tables whose card rows were proven not to move when other runners leave the card, each with the code it was
+#: proven at (``pit.code_hash``): ``card_field_check`` (greyhound-live.yml task card-field). A table not listed, or
+#: whose code has changed since, is built again whenever a runner leaves the card.
+#: 24 Nov 2026, run 45440726369: the day's card (596 runners, 104 races) priced as it was and with one runner taken
+#: from each race; of the 492 runners left, these five tables' rows were the same both times. The other 19 moved
+#: (ability 492 rows, form 482, draw 330, line 168, irish 88, ...), every move inside a race a runner was taken from.
+#: In the morning's build (run 45414593840) the five took 431 of the tables' 2,982 seconds
+CARD_FIELD_FREE: dict[str, str] = {"trouble": "6ab90f0dd525", "connections": "728f8398fe20", "market": "90758036543a",
+                                   "breeding": "3f8940f966e1", "life": "60e2da206c1d"}
+
+#: a card row's columns that move with the rest of its race when a runner leaves (``drop_removed``): left out of the
+#: row's own signature (``card_row_sig``), so only the tables that read the field are built again
+CARD_FIELD_COLUMNS = ("runners",)
+
+
+def card_field_tables(names) -> list[str]:
+    """The tables to build again when only runners have left the card: every table of ``names`` not proven free of
+    the field at its code now (``CARD_FIELD_FREE``), and every table those read while they build (``DEPENDS``)."""
+    from greyhound import pit
+    need = {n for n in names if CARD_FIELD_FREE.get(n) != pit.code_hash(n)}
+    todo = list(need)
+    while todo:
+        n = todo.pop()
+        for d in set(pit.DEPENDS.get(n, ())) | set(getattr(pit.module(n), "DEPENDS", ())):
+            if d not in need:
+                need.add(d)
+                todo.append(d)
+    return [n for n in names if n in need]
+
+
+def card_row_sig(card: pd.DataFrame) -> pd.DataFrame:
+    """Each card runner's own row as a signature, one row a race and dog: every column but those that move with
+    the rest of the race (``CARD_FIELD_COLUMNS``). A runner whose signature is unchanged has the same own row."""
+    from greyhound import pit
+    c = card.drop(columns=[x for x in CARD_FIELD_COLUMNS if x in card.columns]).drop_duplicates(pit.KEY)
+    c = c[sorted(c.columns)].reset_index(drop=True)
+    sig = pd.util.hash_pandas_object(c.astype(str), index=False).astype("uint64").astype(str)
+    return c[pit.KEY].assign(_card_row=sig.to_numpy())
 
 
 def card_table_columns(store, day: date, card: pd.DataFrame, keys: pd.DataFrame, history: str,
@@ -370,30 +411,146 @@ def card_table_columns(store, day: date, card: pd.DataFrame, keys: pd.DataFrame,
     depend on has changed since it was built (``card_tables_key``), else built (``card_tables``) and cached. Within a
     day the history, the code and the constants are fixed and the card seldom changes, and the build reads every run
     from 2014 (24 Nov 2026: 50 minutes and 15.2 GB of the hourly price run, greyhound-live.yml run 45394286366).
-    Returns the columns, how they were had ('cached' or 'built') and the key."""
+    When only runners have left the card since a cached build (every runner still on it has the same own row,
+    ``card_row_sig``), only the tables that read the rest of the race are built again (``card_field_tables``; the
+    owner, 24 Nov 2026: "make only the race-relative tables rebuild on non-runners") and the others are read from that
+    build. Returns the columns, how they were had ('cached', 'partial: <tables>' or 'built') and the key."""
     from greyhound import pit, stack_model as sm
     from greyhound.pit import core
     fits = pit.stored_fits(store, sm.PIT_TABLES)
     lag = core.raw_fetch_lag(store)
-    key = card_tables_key(day, card, history, fits, lag, card_tables_inputs(store))
-    path = f"{CARD_TABLES_PREFIX}/{day:%Y-%m-%d}/{key}.parquet"
+    inputs = card_tables_inputs(store)
+    base = card_tables_key(day, None, history, fits, lag, inputs)
+    key = card_tables_key(day, card, history, fits, lag, inputs)
+    folder = f"{CARD_TABLES_PREFIX}/{day:%Y-%m-%d}/{base}"
+    path = f"{folder}/{key}.parquet"
     wide = keys[pit.KEY].drop_duplicates().reset_index(drop=True)
-    try:
-        got = store.get_parquet(path)
-    except Exception:                                  # a cache that cannot be read is no cache
-        got = None
-    if got is not None and len(got) and set(pit.KEY) <= set(got.columns):
-        return wide.merge(got.drop_duplicates(pit.KEY), on=pit.KEY, how="left"), "cached", key
-    tabs = (build or card_tables)(store, day, card, fits, lag)
+    sig = card_row_sig(card)
+
+    def read(p):
+        try:
+            got = store.get_parquet(p)
+        except Exception:                              # a cache that cannot be read is no cache
+            return None
+        return got if got is not None and len(got) and set(pit.KEY + ["_card_row"]) <= set(got.columns) else None
+
+    def own(name, tab):
+        prefix = pit.module(name).PREFIX
+        return [col for col in tab.columns if col.startswith(prefix)]
+
+    got = read(path)
+    if got is not None:
+        return wide.merge(got.drop(columns="_card_row").drop_duplicates(pit.KEY), on=pit.KEY, how="left"), "cached", key
+    # an earlier build of the day whose runners cover today's card, each with the same own row: only runners left
+    names = list(sm.PIT_TABLES)
+    redo = card_field_tables(names)
+    earlier = None
+    if len(redo) < len(names):
+        try:
+            listed = sorted(store.listing(f"{folder}/"))
+        except Exception:
+            listed = []
+        for p in listed:
+            if not p.endswith(".parquet") or p.endswith(f"/{key}.parquet"):
+                continue
+            prev = read(p)                         # the listing's keys are the store's own
+            if prev is None:
+                continue
+            m = sig.merge(prev[pit.KEY + ["_card_row"]], on=pit.KEY, how="left", suffixes=("", "_prev"))
+            if len(m) and (m._card_row == m._card_row_prev).all():
+                earlier = prev
+                break
+    if earlier is not None:
+        tabs = (build or card_tables)(store, day, card, fits, lag, names=redo)
+        keep = [col for col in earlier.columns
+                if col not in pit.KEY and col != "_card_row"
+                and not any(col.startswith(pit.module(n).PREFIX) for n in redo)]
+        wide = wide.merge(earlier[pit.KEY + keep].drop_duplicates(pit.KEY), on=pit.KEY, how="left")
+        how = "partial: " + ",".join(redo)
+    else:
+        tabs = (build or card_tables)(store, day, card, fits, lag)
+        how = "built"
     for name, tab in tabs.items():                    # the card's rows only: the history is not priced
-        cols = [col for col in tab.columns if col.startswith(pit.module(name).PREFIX)]
+        cols = own(name, tab)
+        wide = wide.drop(columns=[col for col in cols if col in wide.columns])
         wide = wide.merge(tab[pit.KEY + cols].drop_duplicates(pit.KEY), on=pit.KEY, how="left")
     del tabs
     try:
-        store.put_parquet(path, wide)
+        store.put_parquet(path, wide.merge(sig, on=pit.KEY, how="left"))
     except Exception as e:                             # the price run never fails for its cache
         log.warning("the card tables were not cached: %s", e)
-    return wide, "built", key
+    return wide, how, key
+
+
+def field_diff(name: str, full: pd.DataFrame, less: pd.DataFrame, touched) -> dict:
+    """One table's card rows built with the whole card (``full``) against those built with runners taken from the
+    races in ``touched`` (``less``): over the runners in both, how many rows and which columns differ (both missing,
+    or equal within 1e-9 relative, is no difference), and how many of those rows are in races nothing was taken
+    from."""
+    from greyhound import pit
+    prefix = pit.module(name).PREFIX
+    cols = sorted(c for c in full.columns if c.startswith(prefix) and c in less.columns)
+    m = full[pit.KEY + cols].drop_duplicates(pit.KEY).merge(less[pit.KEY + cols].drop_duplicates(pit.KEY), on=pit.KEY,
+                                                             how="inner", suffixes=("", "__less"))
+    differ = pd.Series(False, index=m.index)
+    by_col = {}
+    for c in cols:
+        a, b = m[c], m[f"{c}__less"]
+        an, bn = pd.to_numeric(a, errors="coerce"), pd.to_numeric(b, errors="coerce")
+        if a.dtype.kind in "biuf" or (an.notna() | a.isna()).all():
+            same = (an.isna() & bn.isna()) | ((an - bn).abs() <= 1e-9 * np.maximum(1.0, an.abs()))
+        else:
+            same = (a.isna() & b.isna()) | (a.astype(str) == b.astype(str))
+        d = ~same.fillna(False).astype(bool)
+        if d.any():
+            by_col[c] = int(d.sum())
+        differ |= d
+    away = ~m.race_id.isin(set(touched))
+    return {"table": name, "hash": pit.code_hash(name), "columns": len(cols), "rows": int(len(m)),
+            "rows_differ": int(differ.sum()), "rows_differ_untouched_races": int((differ & away).sum()),
+            "columns_differ": dict(sorted(by_col.items(), key=lambda kv: -kv[1])[:15]),
+            "field_free": bool(len(m) and not differ.any())}
+
+
+def card_field_check(store, day: date, s3=None, names=None) -> dict:
+    """Which tables read the rest of the race: the day's card (as the price run builds it) priced by the tables twice,
+    as it is and with one runner taken from each race of three or more (the runner at place i mod n of race i in trap
+    order, so every trap is taken somewhere). A table whose rows for the runners still there are the same both times
+    is free of the field at its code now (``CARD_FIELD_FREE``); a table whose rows move is built again on non-runners
+    (``card_table_columns``). Reads S3 only; nothing reaches Betfair."""
+    from betfair_recorder import _read_day_csv
+    from greyhound import pit, stack_model as sm
+    from greyhound.card import cards
+    from greyhound.pit import core
+    from greyhound.track import runs_through
+    markets = _read_day_csv(day, "markets_greyhound.csv", s3=s3)
+    if markets is None or not len(markets):
+        return {"day": f"{day:%Y-%m-%d}", "note": "no data found: no greyhound catalogue recorded"}
+    trial_rows: list = []
+    hist = runs_through(store, day - timedelta(days=1), trials_out=trial_rows)
+    card = cards(markets, hist, trials=trial_rows[0] if trial_rows else None)
+    del hist
+    card = card[card.race_date == f"{day:%Y-%m-%d}"]
+    card = drop_removed(card, removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
+    if not len(card):
+        return {"day": f"{day:%Y-%m-%d}", "note": "no data found: no GB win markets on the card"}
+    take = set()
+    for i, (_, g) in enumerate(card.sort_values(["race_id", "trap"], kind="stable").groupby("race_id", sort=True)):
+        if len(g) >= 3:
+            r = g.iloc[i % len(g)]
+            take.add((str(r.market_id), r.selection_id))
+    less = drop_removed(card, take)
+    touched = set(card.loc[[(str(m), s) in take for m, s in zip(card.market_id, card.selection_id)], "race_id"])
+    names = list(sm.PIT_TABLES if names is None else names)
+    fits, lag = pit.stored_fits(store, sm.PIT_TABLES), core.raw_fetch_lag(store)
+    full = card_tables(store, day, card, fits, lag, names=names)
+    gc.collect()
+    part = card_tables(store, day, less, fits, lag, names=names)
+    tables = [field_diff(n, full[n], part[n], touched) for n in names if n in full and n in part]
+    return {"day": f"{day:%Y-%m-%d}", "runners": int(len(card)), "races": int(card.race_id.nunique()),
+            "runners_taken": len(take), "races_touched": len(touched),
+            "field_free": {t["table"]: t["hash"] for t in tables if t["field_free"]},
+            "field_read": [t["table"] for t in tables if not t["field_free"]], "tables": tables}
 
 
 def _mem(stage: str) -> None:
@@ -1218,6 +1375,8 @@ def main(argv=None) -> int:
                     help="a past day (--date): the card's features against the results' features, feature by feature")
     ap.add_argument("--coverage", action="store_true",
                     help="the day's GB races against what was priced and what each mode's trader decided")
+    ap.add_argument("--card-field", action="store_true",
+                    help="which tables read the rest of the race: the card priced as it is and with runners taken")
     ap.add_argument("--running", action="store_true",
                     help="the day so far, a row per market: bets, CLV and the P&L as each market settles")
     ap.add_argument("--out", default=None, help="--running: write the table's markdown here")
@@ -1232,6 +1391,8 @@ def main(argv=None) -> int:
         out["check_card"] = card_check(store, day)
     if a.coverage:
         out["coverage"] = coverage(store, day, load_config(Path(a.config)))
+    if a.card_field:
+        out["card_field"] = card_field_check(store, day)
     if a.running:
         r = running(store, day, "paper")
         store.put(f"{PREFIX}/paper/{day:%Y-%m-%d}/running.json", json.dumps(r, indent=1, default=str).encode())
