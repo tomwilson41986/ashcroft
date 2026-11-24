@@ -154,7 +154,8 @@ def run(store) -> dict:
     x = np.log(np.clip(d["p_cp"], 1e-6, 1 - 1e-6) / (1 - np.clip(d["p_cp"], 1e-6, 1 - 1e-6)))
     d["p_move"] = 1 / (1 + np.exp(-(x + d["mv"])))
     known = d["won"].notna()
-    P, W = d["ltp_cp"].to_numpy(float), d["won"].fillna(0).to_numpy(bool)
+    P = np.array(d["ltp_cp"].to_numpy(float), copy=True)                 # rewritten for the close cells
+    W = d["won"].fillna(0).to_numpy(bool)
 
     def add(name, m, kind, p1=None, p2=None):
         m = np.asarray(m, bool) & known.to_numpy() & np.isfinite(P)
@@ -184,7 +185,7 @@ def run(store) -> dict:
                 add(f"{fam_name} back e{e} cp{cp}", at & (ev_back > e), "back")
                 add(f"{fam_name} lay e{e} cp{cp}", at & (ev_lay > e), "lay")
     # C: trade-outs on the move model, closing price from a fresh close only
-    p2 = d["ltp_close"].to_numpy(float)
+    p2 = np.array(d["ltp_close"].to_numpy(float), copy=True)
     fresh_close = d["usable"].to_numpy(bool)
     for t in TRADE_THR:
         for cp in CP_TRADE:
