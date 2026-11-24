@@ -31,6 +31,16 @@ def matrix():
     m["open_ah_line"] = -np.round((m["molam_h"] - m["molam_a"]) * 4) / 4
     m["open_ah_h"], m["open_ah_a"] = 1.95 + rng.normal(0, 0.03, len(m)), 1.95 + rng.normal(0, 0.03, len(m))
     m["fd_code"], m["open_1x2_src"], m["close_1x2_src"] = "E0", "PS", "PSC"
+    # the tactics stage's raw columns (football/tactics.py): shapes and game states, as played
+    for sd in ("h", "a"):
+        m[f"tq_def_{sd}"] = rng.choice([3.0, 4.0, 5.0], len(m), p=[0.25, 0.6, 0.15])
+        m[f"tq_fwd_{sd}"] = rng.choice([1.0, 2.0, 3.0], len(m))
+        m[f"tq_mid_{sd}"] = 10 - m[f"tq_def_{sd}"] - m[f"tq_fwd_{sd}"]
+    cut = rng.dirichlet([2, 1, 1], len(m)) * 90
+    m["gs_min_level"], m["gs_min_lead"], m["gs_min_trail"] = cut[:, 0], cut[:, 1], cut[:, 2]
+    for t, ft in (("h", "ft_home"), ("a", "ft_away")):
+        parts = rng.multinomial(1, [0.5, 0.25, 0.25], len(m)) * m[ft].fillna(0).to_numpy()[:, None]
+        m[f"gs_{t}g_level"], m[f"gs_{t}g_lead"], m[f"gs_{t}g_trail"] = parts[:, 0], parts[:, 1], parts[:, 2]
     return m
 
 
@@ -45,7 +55,8 @@ def test_every_block_ignores_what_happened_after_its_collection(matrix, name):
     a = mod.build(m).set_index("match_id").loc[m.loc[last, "match_id"], mod.FEATURES].sort_index()
     m2 = m.copy()
     m2.loc[last, ["ft_home", "ft_away"]] = m2.loc[last, ["ft_away", "ft_home"]].to_numpy() + 4
-    for c in ("qc_h", "qc_a", "close_h", "close_a", "mclam_h", "mclam_a", "bfe_close_h", "bfe_close_a"):
+    for c in ["qc_h", "qc_a", "close_h", "close_a", "mclam_h", "mclam_a", "bfe_close_h", "bfe_close_a"] + \
+            [c for c in m.columns if c.startswith(("tq_", "gs_"))]:         # what was played is not known either
         m2.loc[last, c] = m2.loc[last, c].to_numpy()[::-1]
     b = mod.build(m2).set_index("match_id").loc[m.loc[last, "match_id"], mod.FEATURES].sort_index()
     pd.testing.assert_frame_equal(a, b)
@@ -111,3 +122,11 @@ def test_line_up_time_features_are_refused_at_the_early_price(matrix, tmp_path, 
     monkeypatch.setattr(lab, "LEDGER", tmp_path / "ledger.jsonl")
     with pytest.raises(SystemExit, match="team sheets"):
         lab.run(str(tmp_path), {"x": "team_all+players"}, ["ridge"], 2015, 2017, 2013, None, None, False, False)
+
+
+@pytest.mark.parametrize("name", ["formation", "match_sim"])
+def test_the_tactics_blocks_give_values_on_the_played_shapes_and_states(matrix, name):
+    mod = available()[name]
+    f = mod.build(matrix)[mod.FEATURES]
+    assert (f.notna().mean() > 0.5).all(), f.notna().mean().to_dict()
+    assert (f.std() > 0).all()

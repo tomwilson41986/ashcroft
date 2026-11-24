@@ -2,7 +2,7 @@
 
 Every metric family we know of, what it measures, and whether we hold it. Generated from `football/metric_library.py`; `tests/test_football_metric_library.py` checks every built entry against the code.
 
-**90 entries**: 45 built, 9 built on 24 Nov 2026 and under test (`football-feature-batch-1124`), 15 where we hold the data and have not built the metric, 21 where we do not hold the data.
+**93 entries**: 46 built, 12 built on 24 Nov 2026 and under test (`football-feature-batch-1124`, `football-tactics-batch-1124`), 14 where we hold the data and have not built the metric, 21 where we do not hold the data.
 
 
 ## Market
@@ -89,7 +89,8 @@ Every metric family we know of, what it measures, and whether we hold it. Genera
 | Shot volume, accuracy, corners, cards (for and against) | a side's style from match counts | football-data.co.uk results and match counts | Built 24 Nov, under test | `football/blocks/style.py` |
 | Style matchup: output against concession | one side's shots for joined to the other's shots against; tempo and its clash | football-data.co.uk results and match counts | Built 24 Nov, under test | `football/blocks/style.py` |
 | Pass volume and accuracy, offsides, fouls, saves, blocked shots | possession style and defensive line | API-Football match statistics | Data held, not built | - |
-| Formation and formation matchup | the shapes named on the team sheets and how they meet | API-Football line-ups (collected live from Nov 2026) | Data held, not built | - |
+| Shape matchup (back line and forwards) | the coarse shape each side is expected to start, and how such shapes have met | API-Football line-ups, positions (2020 on) | Built 24 Nov, under test | `football/blocks/formation.py` |
+| Named formation (4-2-3-1 against 4-5-1) and its matchup | the shapes named on the team sheets | API-Football line-ups (formation names collected live from Nov 2026; in the raw history files, not yet in the tables) | Data held, not built | - |
 | PPDA, pressing intensity, high turnovers | how hard a side presses | event data with locations | Data not held | - |
 | Field tilt, final-third entries, deep completions | where the game is played | event data with locations | Data not held | - |
 | Directness, build-up speed, sequence length | how a side moves the ball | event data with sequences | Data not held | - |
@@ -129,7 +130,8 @@ Every metric family we know of, what it measures, and whether we hold it. Genera
 | Minute-by-minute chances | calibrated in-play win, draw, loss chances | Betfair historic price files | Built | `football/warehouse/gold_inplay.py` |
 | In-play xPts, performance and luck | points expected through the match against the kick-off price | Betfair historic price files | Built | `football/warehouse/club.py` |
 | Minute a match was decided | when the result was priced as settled | Betfair historic price files | Built | `football/warehouse/club.py` |
-| Game state: time leading, drawing, trailing | minutes in each state | API-Football events | Data held, not built | - |
+| Game state: time and goals level, ahead, behind | minutes and goals in each state | API-Football events | Built | `football/tactics.py` |
+| State multipliers: scoring when behind, holding a lead | a side's scoring and conceding rate in each state against its overall rate, shrunk | API-Football events | Built 24 Nov, under test | `football/blocks/match_sim.py` |
 | Momentum, xG flow, win-probability added | who is on top within the match | live event data | Data not held | - |
 
 ## Simulation
@@ -137,7 +139,8 @@ Every metric family we know of, what it measures, and whether we hold it. Genera
 | Metric | What it measures | Data | Status | Where |
 |---|---|---|---|---|
 | Scoreline simulation from venue records | Poisson score matrix from each side's venue scoring, the market as prior | football-data.co.uk results and match counts + opens | Built 24 Nov, under test | `football/blocks/sim.py` |
-| Match simulator with game states | minute-by-minute scoring that reacts to the score, cards and substitutions | API-Football events | Data held, not built | - |
+| Match simulator with game states | the 90 minutes as a chain over the goal difference, each side's rate reacting to the score | API-Football events + opens | Built 24 Nov, under test | `football/blocks/match_sim.py` |
+| Simulator with red cards, substitutions and time-varying intensity | the same chain with men on the pitch and the minute | API-Football events | Data held, not built | - |
 | Season simulation: title, top four, relegation chances | the league played out many times | ratings + fixture list | Data held, not built | - |
 
 ## What the missing data would be

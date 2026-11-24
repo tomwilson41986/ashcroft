@@ -70,6 +70,7 @@ STAGE_CODE = {
     "books": ["football/lab.py"],
     "xg": ["football/xg_features.py", "football/team_features.py", "football/player_ratings.py"],
     "players": ["football/player_ratings.py", "football/team_features.py"],
+    "tactics": ["football/tactics.py", "football/player_ratings.py"],
 }
 
 
@@ -140,8 +141,12 @@ class Cache:
             def players():
                 f, _m, _g = build_all(gold, team, hm, hp, he, aliases)
                 return f[["match_id"] + [c for c in f.columns if c.startswith(STAGE_PREFIXES)]]
+            def tactics():
+                from football.tactics import build as tactics_build
+                return tactics_build(link_matches(hm, gold, aliases), hm, hp, he)
             parts += [self.stage("xg", ["team"], ["gold", "history"], xg),
-                      self.stage("players", ["team"], ["gold", "history"], players)]
+                      self.stage("players", ["team"], ["gold", "history"], players),
+                      self.stage("tactics", [], ["gold", "history"], tactics)]
         key = hashlib.sha256("|".join(self.keys[s] for s in self.keys).encode()).hexdigest()[:16]
         out = self.dir / f"matrix_{key}.parquet"
         if not out.exists():
