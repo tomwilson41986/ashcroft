@@ -92,7 +92,7 @@ E = [
     ("Style and tactics", "Shot volume, accuracy, corners, cards (for and against)", "a side's style from match counts", FD, "testing", ("football/blocks/style.py", "st_")),
     ("Style and tactics", "Style matchup: output against concession", "one side's shots for joined to the other's shots against; tempo and its clash", FD, "testing", ("football/blocks/style.py", "st_vol_leak")),
     ("Style and tactics", "Pass volume and accuracy, offsides, fouls, saves, blocked shots", "possession style and defensive line", AF + " match statistics", "held", None),
-    ("Style and tactics", "Shape matchup (back line and forwards)", "the coarse shape each side is expected to start, and how such shapes have met", AF + " line-ups, positions (2020 on)", "testing", ("football/blocks/formation.py", "fm_table")),
+    ("Style and tactics", "Shape matchup (back line and forwards)", "the coarse shape each side is expected to start, and how such shapes have met", AF + " line-ups, positions (2020 on)", "built", ("football/blocks/formation.py", "fm_table")),
     ("Style and tactics", "Named formation (4-2-3-1 against 4-5-1) and its matchup", "the shapes named on the team sheets", AF + " line-ups (formation names collected live from Nov 2026; in the raw history files, not yet in the tables)", "held", None),
     ("Style and tactics", "PPDA, pressing intensity, high turnovers", "how hard a side presses", "event data with locations", "need", None),
     ("Style and tactics", "Field tilt, final-third entries, deep completions", "where the game is played", "event data with locations", "need", None),
@@ -122,11 +122,11 @@ E = [
     ("In play", "In-play xPts, performance and luck", "points expected through the match against the kick-off price", BF, "built", (WH + "club.py", "PERF_LINE")),
     ("In play", "Minute a match was decided", "when the result was priced as settled", BF, "built", (WH + "club.py", "decided_min")),
     ("In play", "Game state: time and goals level, ahead, behind", "minutes and goals in each state", AF + " events", "built", ("football/tactics.py", "def goal_states")),
-    ("In play", "State multipliers: scoring when behind, holding a lead", "a side's scoring and conceding rate in each state against its overall rate, shrunk", AF + " events", "testing", ("football/blocks/match_sim.py", "gx_lead_against_diff")),
+    ("In play", "State multipliers: scoring when behind, holding a lead", "a side's scoring and conceding rate in each state against its overall rate, shrunk", AF + " events", "built", ("football/blocks/match_sim.py", "gx_lead_against_diff")),
     ("In play", "Momentum, xG flow, win-probability added", "who is on top within the match", "live event data", "need", None),
     # ---- 9. simulation --------------------------------------------------------------------------------------------
     ("Simulation", "Scoreline simulation from venue records", "Poisson score matrix from each side's venue scoring, the market as prior", FD + " + opens", "testing", ("football/blocks/sim.py", "sm_")),
-    ("Simulation", "Match simulator with game states", "the 90 minutes as a chain over the goal difference, each side's rate reacting to the score", AF + " events + opens", "testing", ("football/blocks/match_sim.py", "def play")),
+    ("Simulation", "Match simulator with game states", "the 90 minutes as a chain over the goal difference, each side's rate reacting to the score", AF + " events + opens", "built", ("football/blocks/match_sim.py", "def play")),
     ("Simulation", "Simulator with red cards, substitutions and time-varying intensity", "the same chain with men on the pitch and the minute", AF + " events", "held", None),
     ("Simulation", "Season simulation: title, top four, relegation chances", "the league played out many times", "ratings + fixture list", "held", None),
 ]

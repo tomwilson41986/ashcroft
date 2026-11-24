@@ -1154,3 +1154,25 @@ walk-forward on 60,805 rows. Change in skill against the base, points, 95% inter
   +0.67% (-0.14 to +1.42) on 1,111 bets. The intervals at 0.05 span zero.
 - Development evidence: every season here was read by earlier rules. No frozen model changes; the kept blocks are
   candidates for the next frozen model.
+
+
+## Match simulator and formation matchups (24 Nov 2026)
+
+Registered as `football-tactics-batch-1124` before the run; `football_feature_batch.py --batch tactics`; run
+45359783497 (the same arms as run 45358679271, re-run to add each feature's coverage; the scores agree to 0.02
+points); output `reports/football_runs/tactics_batch_1124.json`. Base: the model with `sim` and `style` added
+(skill on Betfair's moves 8.98%).
+
+| Block | Betfair vs base | Pinnacle vs base | Keeps its place |
+|---|---|---|---|
+| Formation matchups (`formation`) | -0.02 (-0.10 to +0.07) | +0.03 (-0.01 to +0.06) | no |
+| Match simulator with game states (`match_sim`) | -0.03 (-0.10 to +0.05) | +0.02 (-0.02 to +0.05) | no |
+| Both together (`all_new`) | -0.05 (-0.13 to +0.03) | +0.02 (-0.02 to +0.06) | no |
+
+- **Neither block keeps its place.** Both are zero on both books.
+- **Not for want of data in the test.** From 2025 the simulator has a value on 100% of rows and the
+  formation block on 84%. In the seasons the models are fitted on, 42% and
+  35% (line-ups and events start in 2020), so a model with more history could weigh them
+  differently; as built, they add nothing.
+- Reading: the score-state effect is real in football, but the closing price already carries it; the coarse
+  shape (back three, four or five) carries no information the price lacks.
