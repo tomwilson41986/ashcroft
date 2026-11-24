@@ -52,7 +52,10 @@ def matrix():
     # the Sportmonks stage's raw columns (football/sportmonks_stage.py), as played
     from football.sportmonks_stage import COLUMNS as SMX
     for c in SMX:
-        m[c] = rng.gamma(2.0, 0.6, len(m)) if "xg_" in c else rng.integers(0, 40, len(m)).astype(float)
+        if "_pr_" in c or "_od_q_" in c:
+            m[c] = rng.uniform(0.1, 0.7, len(m))
+        else:
+            m[c] = rng.gamma(2.0, 0.6, len(m)) if "xg_" in c else rng.integers(0, 40, len(m)).astype(float)
     return m
 
 
@@ -69,7 +72,9 @@ def test_every_block_ignores_what_happened_after_its_collection(matrix, name):
     m2.loc[last, ["ft_home", "ft_away"]] = m2.loc[last, ["ft_away", "ft_home"]].to_numpy() + 4
     for c in ["qc_h", "qc_a", "close_h", "close_a", "mclam_h", "mclam_a", "bfe_close_h", "bfe_close_a",
               "close_ah_line", "close_ah_h", "close_ah_a"] + \
-            [c for c in m.columns if c.startswith(("tq_", "gs_", "smx_"))]:         # what was played is not known either
+            [c for c in m.columns if c.startswith(("tq_", "gs_", "smx_")) and not c.startswith("smx_pr_")]:
+        # what was played is not known either; Sportmonks' prediction is read as pre-match (its time is not known:
+        # sm_pred's caveat), its other columns (the near-kick-off bookmaker consensus among them) are what happened
         m2.loc[last, c] = m2.loc[last, c].to_numpy()[::-1]
     b = mod.build(m2).set_index("match_id").loc[m.loc[last, "match_id"], mod.FEATURES].sort_index()
     pd.testing.assert_frame_equal(a, b)
@@ -137,7 +142,7 @@ def test_line_up_time_features_are_refused_at_the_early_price(matrix, tmp_path, 
         lab.run(str(tmp_path), {"x": "team_all+players"}, ["ridge"], 2015, 2017, 2013, None, None, False, False)
 
 
-@pytest.mark.parametrize("name", ["formation", "match_sim", "sm_xg", "fd_lines"])
+@pytest.mark.parametrize("name", ["formation", "match_sim", "sm_xg", "fd_lines", "sm_pred"])
 def test_the_tactics_blocks_give_values_on_the_played_shapes_and_states(matrix, name):
     mod = available()[name]
     f = mod.build(matrix)[mod.FEATURES]
