@@ -1272,3 +1272,30 @@ Reading: null. European form is dropped from the base.
 
 Two blocks add a little skill and one adds none; no arm makes money once costed. As a model input, Sportmonks has not
 earned its cost on this evidence. The clean test of the predictions is the timestamped nightly snapshots.
+
+## The Betfair-native model joined to the lab's features (24 Nov 2026)
+
+Registered as `football-bf-lab-join-1124` before the run. Source: football-research.yml run 45401483958,
+`reports/football_runs/bf_lab_join_1124.json`. Development evidence; last traded prices.
+
+- Rows: 409,806 Betfair checkpoint rows (69,943 events). 76,110 rows (8,881 events) link to one of our canonical
+  matches with the lab's features, outside football-data's collection day; 65,448 scored (241 match days, July 2025
+  to October 2026). The lab's 161 columns are present on 94.6% of the joined rows.
+
+| Arm | Features | Skill vs no move | vs bf (points) | 95% interval |
+|---|---|---|---|---|
+| bf | 87 | 1.10% (-0.62 to +2.56) | - | - |
+| bf + lab | 248 | 0.75% | -0.36 | -1.30 to +0.57 |
+
+By checkpoint (reported, not used to select): 360 minutes +0.82 (-0.11 to +1.83); 120 minutes +1.20 (+0.18 to
++2.14); 60 minutes -0.68 (-1.95 to +0.50); 15 minutes -9.73 (-12.15 to -7.43).
+
+Reading:
+- Not kept. The lab's raw columns do not improve the Betfair-native model overall.
+- The 15-minute loss is overfitting: 161 extra columns on about 7,000 rows a role, against a move that is mostly noise.
+- Two to six hours out the team features may help (+0.8 to +1.2 points).
+- On these matches, our football-data leagues and the liquid ones, the Betfair-native model's own skill is only 1.1%,
+  against 4.6% on every Betfair match. The big leagues' prices are already close to efficient; most of the
+  forecastable move is in the smaller markets.
+- Next: the lab's out-of-sample forecast as a single feature (stacking), read at 360 and 120 minutes, registered before
+  it runs.
