@@ -70,7 +70,7 @@ def join(d: pd.DataFrame, link: pd.DataFrame, labt: pd.DataFrame) -> pd.DataFram
     out = d.merge(lk, on="event_id", how="inner").merge(labt, on="match_id", how="inner")
     ko_day = out["kickoff"].dt.tz_convert(None).dt.normalize()
     out = out[ko_day.to_numpy() > collection_day(ko_day).to_numpy()]
-    return out.reset_index(drop=True)
+    return out.reset_index(drop=True).copy()
 
 
 def compare(d: pd.DataFrame, base_cols: list[str], lab_cols: list[str]) -> dict:
@@ -140,6 +140,8 @@ def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     from sources.common import Store
     res = run(Store(root=a.root) if a.root else Store(), a.cache)
+    from pathlib import Path
+    Path(a.out_json).parent.mkdir(parents=True, exist_ok=True)
     with open(a.out_json, "w") as f:
         json.dump(res, f, indent=1, default=str)
     print(json.dumps({k: v for k, v in res.items() if k in ("tag", "status", "rows_joined", "bf", "bf_lab",
