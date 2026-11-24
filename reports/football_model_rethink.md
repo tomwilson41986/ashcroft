@@ -1492,3 +1492,28 @@ Every cell, sorted by its return at the worse price:
 | F handicap side back | 1,426 | -13.51% | -23.00% to -2.95% |  |
 | A win value lay e0.1 cp15 | 771 | -14.77% | -25.15% to -2.71% |  |
 | G price jump | back the other side | gainer the pre-match favourite | 33,879 | -19.20% | -25.25% to -11.99% |  |
+
+## Buchdahl's tests: margin removal, move retention, football-data's xG (24 Nov 2026)
+
+Registered as `football-buchdahl-1124`. Source: football-research.yml run 45408038115,
+`reports/football_runs/buchdahl_1124.json`.
+
+**Margin removal**: log loss saved a match against proportional removal, with its 95% interval (resampled days):
+
+| Closing prices | Matches | Overround | Additive | Power | Shin | Odds ratio |
+|---|---|---|---|---|---|---|
+| Pinnacle | 160,867 | 3.1% | +0.00022 (0.00014 to 0.00030) | +0.00022 (0.00014 to 0.00030) | +0.00019 | +0.00016 |
+| Market average | 119,877 | 6.8% | +0.00068 (0.00052 to 0.00086) | +0.00067 | +0.00059 | +0.00052 |
+| Bet365 | 61,529 | 6.7% | +0.00054 | +0.00055 (0.00025 to 0.00083) | +0.00049 | +0.00048 |
+
+Proportional removal gives the outsiders too much of the margin back. Additive and power do best everywhere. The
+power method will replace proportional for bookmaker prices in the lab's targets, as its own registered test.
+
+**Move retention on Betfair**: the share of the move into a checkpoint that survives to the close.
+- The last hour's move: 93% overall (92 to 94%). By checkpoint: 87% at 360 minutes, 79% at 120, 91% at 60, 97% at 15.
+- By price updates before the checkpoint: 90% under 20, 97% at 20-59, 99% at 60-149, 101% at 150 and over (99 to 104%).
+- Moves in thin markets partly revert; moves in busy ones hold. That is the stale-price noise the move model can learn
+  and no trader can bank. The back-to-lay paper test reports its trades by activity for that reason.
+
+**football-data's xG columns (HxG, AxG)**: 2,196 matches in 18 divisions since August 2026. Correlation 0.92 with
+Sportmonks' xG on the same matches, 0.05 lower on average. A candidate feature once a full season is held.
