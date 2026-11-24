@@ -27,7 +27,8 @@ its day has been ingested.
 - a back that fills only in part trades what filled; a lay that fills only in part leaves the rest of the back held
   to Betfair's result. 2% commission on net winnings. Return a unit staked (the back's filled stake).
 - The same signals at last traded prices (the scan's measure) are reported beside them, so the gap between the two is
-  measured directly.
+  measured directly; and the trades by the runner's price updates before the checkpoint (Buchdahl's test,
+  ``football-buchdahl-1124``: moves in thin markets partly revert, so an edge there may be stale prices).
 
 **The reading**, made once per cell: at 300 trades at the GBP 10 stake or on 31 Mar 2027, whichever is first. Until
 then only counts are shown (signals, books found, fills), no return. A cell passes if its mean return a unit staked
@@ -169,7 +170,7 @@ def signals(d: pd.DataFrame, pred: np.ndarray) -> pd.DataFrame:
         s = d[(d["cp_min"] == cp) & np.isfinite(d["pred"]) & (d["pred"] > t) & (d["kickoff"] >= FROM)]
         out.append(s.assign(cell=name))
     cols = ["cell", "event_id", "market_id", "selection_id", "role", "cp_min", "cp_time", "kickoff", "day", "pred",
-            "ltp_cp", "ltp_close", "won", "usable"]
+            "ltp_cp", "ltp_close", "won", "usable", "n_ticks_before"]
     return pd.concat(out, ignore_index=True)[cols] if out else pd.DataFrame(columns=cols)
 
 
@@ -182,7 +183,8 @@ def execute(sig: pd.DataFrame, store, root=None) -> pd.DataFrame:
         bk = read_day(store, day, "books", root)
         for _, s in g.iterrows():
             base = {"cell": s["cell"], "day": s["day"], "event_id": s["event_id"], "market_id": str(s["market_id"]),
-                    "selection_id": int(s["selection_id"]), "pred": float(s["pred"])}
+                    "selection_id": int(s["selection_id"]), "pred": float(s["pred"]),
+                    "n_ticks_before": float(s["n_ticks_before"])}
             if bk is None:
                 rows.append({**base, "status": "no recorded day"})
                 continue
@@ -227,6 +229,10 @@ def reading(tr: pd.DataFrame, sig: pd.DataFrame, today: date, n_rules: int | Non
             c["headline"] = head
             c["by_stake"] = {str(st): summary(g["day"].to_numpy(), g["ret"].to_numpy(float))
                              for st, g in t[t["status"] == "traded"].groupby("stake")}
+            act = pd.cut(at["n_ticks_before"], [0, 20, 60, 150, 10**9], right=False,
+                         labels=["under 20", "20-59", "60-149", "150+"])
+            c["by_activity_at_10"] = {str(k): summary(g["day"].to_numpy(), g["ret"].to_numpy(float))
+                                      for k, g in at.groupby(act, observed=True)}
             c["same_signals_at_last_traded_prices"] = summary(
                 s["day"].to_numpy(), back_to_lay(s["ltp_cp"].to_numpy(float), s["ltp_close"].to_numpy(float)))
             c["gate"] = "passed" if head.get("lo90", -1) > 0 and dsr is not None and dsr >= 0.95 else "failed"
