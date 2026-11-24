@@ -22,24 +22,42 @@ from research.open_close import football_review_arms as ra
 
 KEPT = ["league_fx", "move_memory", "kalman_form"]
 NEW = ["mkt_xg", "decay_form", "sos_split", "venue_fx", "norm_rank", "style", "referee", "sim"]
+#: {batch: (ledger tag, blocks in the base, new blocks)}. ``tactics`` (the owner, 24 Nov: "build the match simulator
+#: and formation matchups"): the base also carries the two blocks of the first batch that held on both books
+BATCHES = {"first": ("football-feature-batch-1124", KEPT, NEW),
+           "tactics": ("football-tactics-batch-1124", KEPT + ["sim", "style"], ["formation", "match_sim"])}
+EV_ARM = ra.BASE
 
 
-def configure() -> None:
-    """Point the review-arms runner at this batch (its method is not changed)."""
-    ra.BASE = "+".join([ra.BASE.split("+league_fx")[0]] + KEPT)
-    ra.BLOCKS = ["home_adv", "form_short"] + KEPT + NEW
-    ra.ARMS = {"base": {}, **{b: {"add": b} for b in NEW}, "all_new": {"add": list(NEW)}}
+def configure(batch: str = "first") -> None:
+    """Point the review-arms runner at a batch (its method is not changed)."""
+    _tag, kept, new = BATCHES[batch]
+    ra.BASE = "+".join([EV_ARM] + kept)
+    ra.BLOCKS = ["home_adv", "form_short"] + kept + new
+    ra.ARMS = {"base": {}, **{b: {"add": b} for b in new}, "all_new": {"add": list(new)}}
     ra.COSTED = ("base", "all_new")
 
 
-def run(cache: str, only: list[str] | None = None) -> dict:
+def coverage(cache: str, new: list[str]) -> dict:
+    """The share of rows with a value, a new feature: the seasons the models are fitted on, and 2025/26."""
+    from football import lab
+    m, bfeat = lab.add_blocks(lab.latest(cache), new)
+    d = lab.prepared(m)
+    fit, test = d[d["season"].between(ra.TRAIN_FROM, 2024)], d[d["season"] >= 2025]
+    return {b: {f: {"fitted_seasons": round(float(fit[f].notna().mean()), 4),
+                    "from_2025": round(float(test[f].notna().mean()), 4)} for f in bfeat[b]} for b in new}
+
+
+def run(cache: str, only: list[str] | None = None, batch: str = "first") -> dict:
     from football.blocks import available
-    configure()
+    configure(batch)
     res = ra.run(cache, only)
+    tag, kept, new = BATCHES[batch]
     mods = available()
-    res["blocks"] = {b: list(mods[b].FEATURES) for b in NEW}
-    res["kept_in_base"] = KEPT
-    res["tag"] = "football-feature-batch-1124"
+    res["blocks"] = {b: list(mods[b].FEATURES) for b in new}
+    res["kept_in_base"] = kept
+    res["coverage"] = coverage(cache, new)
+    res["tag"] = tag
     return res
 
 
@@ -47,10 +65,11 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--cache", required=True)
     ap.add_argument("--only", default=None, help="comma-separated arms (the base always runs)")
+    ap.add_argument("--batch", default="first", choices=sorted(BATCHES))
     ap.add_argument("--out-json", required=True)
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    res = run(a.cache, a.only.split(",") if a.only else None)
+    res = run(a.cache, a.only.split(",") if a.only else None, a.batch)
     Path(a.out_json).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out_json).write_text(json.dumps(res, indent=1, default=float) + "\n")
     print(json.dumps(res.get("arms", res), indent=1, default=float))

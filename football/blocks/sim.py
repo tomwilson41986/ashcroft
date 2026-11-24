@@ -41,18 +41,26 @@ def _logit(p):
     return np.log(p / (1 - p))
 
 
-def build(m: pd.DataFrame) -> pd.DataFrame:
+def rates(m: pd.DataFrame) -> pd.DataFrame:
+    """``match_id``, the simulated goal rates ``lh`` / ``la`` (the market's opening rates updated by each side's venue
+    record), the opening chances and ``ok`` (there is a record and an opening price)."""
     s = sides(m)
     venue = s["venue"].to_numpy()
     gf, ga = split_record(s, "gf", venue, ("H", "A"), WINDOW), split_record(s, "ga", venue, ("H", "A"), WINDOW)
     p = per_match(s, {"gf_home": gf["H"][0], "n_home": gf["H"][1], "ga_home": ga["H"][0],
                       "gf_away": gf["A"][0], "n_away": gf["A"][1], "ga_away": ga["A"][0]})
     d = m[["match_id", "molam_h", "molam_a", "qo_h", "qo_a"]].merge(p, on="match_id", how="left")
-    qo_d = 1 - d["qo_h"] - d["qo_a"]
     n = d["n_home_h"].fillna(0) + d["n_away_a"].fillna(0)
-    lh = (d["gf_home_h"].fillna(0) + d["ga_away_a"].fillna(0) + PRIOR * d["molam_h"]) / (n + PRIOR)
-    la = (d["gf_away_a"].fillna(0) + d["ga_home_h"].fillna(0) + PRIOR * d["molam_a"]) / (n + PRIOR)
-    ok = (lh.notna() & la.notna() & d["qo_h"].notna() & d["qo_a"].notna() & (n > 0)).to_numpy()
+    d["lh"] = (d["gf_home_h"].fillna(0) + d["ga_away_a"].fillna(0) + PRIOR * d["molam_h"]) / (n + PRIOR)
+    d["la"] = (d["gf_away_a"].fillna(0) + d["ga_home_h"].fillna(0) + PRIOR * d["molam_a"]) / (n + PRIOR)
+    d["ok"] = (d["lh"].notna() & d["la"].notna() & d["qo_h"].notna() & d["qo_a"].notna() & (n > 0)).to_numpy()
+    return d[["match_id", "molam_h", "molam_a", "qo_h", "qo_a", "lh", "la", "ok"]]
+
+
+def build(m: pd.DataFrame) -> pd.DataFrame:
+    d = rates(m)
+    qo_d = 1 - d["qo_h"] - d["qo_a"]
+    lh, la, ok = d["lh"], d["la"], d["ok"].to_numpy()
     ph, pd_, pa = (np.full(len(d), np.nan) for _ in range(3))
     if ok.any():
         ph[ok], pd_[ok], pa[ok] = chances(lh[ok].to_numpy(), la[ok].to_numpy())
