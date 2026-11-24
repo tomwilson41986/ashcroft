@@ -41,6 +41,10 @@ def matrix():
     for t, ft in (("h", "ft_home"), ("a", "ft_away")):
         parts = rng.multinomial(1, [0.5, 0.25, 0.25], len(m)) * m[ft].fillna(0).to_numpy()[:, None]
         m[f"gs_{t}g_level"], m[f"gs_{t}g_lead"], m[f"gs_{t}g_trail"] = parts[:, 0], parts[:, 1], parts[:, 2]
+    # the Sportmonks stage's raw columns (football/sportmonks_stage.py), as played
+    from football.sportmonks_stage import COLUMNS as SMX
+    for c in SMX:
+        m[c] = rng.gamma(2.0, 0.6, len(m)) if "xg_" in c else rng.integers(0, 40, len(m)).astype(float)
     return m
 
 
@@ -56,7 +60,7 @@ def test_every_block_ignores_what_happened_after_its_collection(matrix, name):
     m2 = m.copy()
     m2.loc[last, ["ft_home", "ft_away"]] = m2.loc[last, ["ft_away", "ft_home"]].to_numpy() + 4
     for c in ["qc_h", "qc_a", "close_h", "close_a", "mclam_h", "mclam_a", "bfe_close_h", "bfe_close_a"] + \
-            [c for c in m.columns if c.startswith(("tq_", "gs_"))]:         # what was played is not known either
+            [c for c in m.columns if c.startswith(("tq_", "gs_", "smx_"))]:         # what was played is not known either
         m2.loc[last, c] = m2.loc[last, c].to_numpy()[::-1]
     b = mod.build(m2).set_index("match_id").loc[m.loc[last, "match_id"], mod.FEATURES].sort_index()
     pd.testing.assert_frame_equal(a, b)
@@ -124,7 +128,7 @@ def test_line_up_time_features_are_refused_at_the_early_price(matrix, tmp_path, 
         lab.run(str(tmp_path), {"x": "team_all+players"}, ["ridge"], 2015, 2017, 2013, None, None, False, False)
 
 
-@pytest.mark.parametrize("name", ["formation", "match_sim"])
+@pytest.mark.parametrize("name", ["formation", "match_sim", "sm_xg"])
 def test_the_tactics_blocks_give_values_on_the_played_shapes_and_states(matrix, name):
     mod = available()[name]
     f = mod.build(matrix)[mod.FEATURES]

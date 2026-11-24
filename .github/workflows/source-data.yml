@@ -74,6 +74,9 @@ jobs:
           # API-Football (sources/api_football.py, the Pro plan from 2 Nov 2026): without it the nightly run fetches
           # nothing for that source and says so
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          # Sportmonks (sources/sportmonks.py, the owner's Pro plan with the xG bundle from 24 Nov 2026): without it the
+          # source fetches nothing and says so
+          SPORTMONKS_API_TOKEN: ${{ secrets.SPORTMONKS_API_TOKEN }}
           SOURCE: ${{ inputs.source || 'all' }}
           DATE_FROM: ${{ inputs.date_from }}
           WANT: ${{ inputs.max_minutes || '280' }}

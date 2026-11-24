@@ -28,6 +28,7 @@ on:
           - review_arms
           - feature_batch
           - tactics_batch
+          - sportmonks_batch
           - warehouse
           - warehouse_models
       days:
@@ -107,7 +108,7 @@ jobs:
         run: python -m research.open_close.football_close_model_books --days "$DAYS" --out out/close_model_books.json
       # the lab-matrix jobs: the inputs and the cache as football-trials.yml builds them (read-only copies)
       - name: Lab inputs (gold, silver and API-Football history)
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch'
         run: |
           mkdir -p src/football src/api_football
           aws s3 sync "s3://$CAPTURE_BUCKET/sources/football/gold/" src/football/gold/ --only-show-errors
@@ -115,8 +116,11 @@ jobs:
           for x in matches players events stats; do
             aws s3 cp "s3://$CAPTURE_BUCKET/sources/api_football/history_$x.parquet" "src/api_football/history_$x.parquet" --only-show-errors
           done
+          # the Sportmonks table, where it has been built (sources/sportmonks.py)
+          mkdir -p src/sportmonks
+          aws s3 cp "s3://$CAPTURE_BUCKET/sources/sportmonks/matches.parquet" src/sportmonks/matches.parquet --only-show-errors || echo "no Sportmonks table yet"
       - name: Restore the lab cache
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch'
         uses: actions/cache@v4
         with:
           path: .football_cache
@@ -125,7 +129,7 @@ jobs:
             football-lab-${{ hashFiles('football/**') }}-
             football-lab-
       - name: The lab matrix (stages rebuilt only when their code or inputs change)
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch'
         run: timeout 4200 python -m football.lab cache --root src --history-root src --cache .football_cache
       - name: Feature report (importance on Betfair's moves, leave a family out, the target's checks)
         if: inputs.job == 'feature_report'
@@ -136,6 +140,9 @@ jobs:
       - name: Tactics batch (formation matchups and the match simulator; football-tactics-batch-1124)
         if: inputs.job == 'tactics_batch'
         run: python -m research.open_close.football_feature_batch --batch tactics --cache .football_cache --out-json out/football_tactics_batch.json
+      - name: Sportmonks xG batch (football-sportmonks-xg-1124; fitted on 2024/25, tested on 2025/26)
+        if: inputs.job == 'sportmonks_batch'
+        run: python -m research.open_close.football_feature_batch --batch sportmonks --cache .football_cache --out-json out/football_sportmonks_batch.json
       - name: Review arms (each repair and new block against the base, paired by match day)
         if: inputs.job == 'review_arms'
         run: python -m research.open_close.football_review_arms --cache .football_cache --out-json out/football_review_arms.json
