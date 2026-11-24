@@ -41,6 +41,7 @@ on:
           - win_prob
           - strategy_100
           - b2l_paper
+          - historic_probe
           - warehouse
           - warehouse_models
       days:
@@ -175,6 +176,25 @@ jobs:
         run: python -m research.open_close.football_review_arms --cache .football_cache --out-json out/football_review_arms.json
       # the football data warehouse (docs/football_data_platform.md; football-warehouse.yml is its own workflow once
       # merged: a new workflow file cannot be dispatched from a branch). S3 only; nothing reaches Betfair.
+      - name: Betfair Historic Data API probe (the login, what the account holds, yesterday's soccer file count)
+        if: inputs.job == 'historic_probe'
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+        run: |
+          mkdir -p out
+          python -m football.warehouse historic --probe | tee out/historic_probe.json
+      - name: (warehouse job) The last ten days' soccer files from Betfair's Historic Data API into bronze (read-only login; a failure is reported, not fatal)
+        if: inputs.job == 'warehouse'
+        continue-on-error: true
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+        run: |
+          mkdir -p out
+          timeout 3000 python -m football.warehouse historic --days 10 --max-minutes 45 | tee out/historic.json
       - name: Football data warehouse (ingest the listed bundles, build silver and gold, link, check)
         if: inputs.job == 'warehouse'
         shell: bash                  # -eo pipefail: a command that fails behind "| tee" fails the step

@@ -9,6 +9,10 @@ name: Football data warehouse (Betfair price history to analysis tables, S3)
 # link is read from the FOOTBALL_BUNDLE_URLS secret ({"<bundle name>": "<link>"}), not from the repository.
 
 on:
+  # nightly (the owner, 24 Nov 2026: "automate the download"): the last ten days from Betfair's Historic Data API,
+  # then silver, gold, link and checks, so the paper tests see each day's matches within a day or two
+  schedule:
+    - cron: '40 4 * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -51,6 +55,15 @@ jobs:
           cache: 'pip'
       - name: Install dependencies
         run: pip install -r requirements.txt -r football/warehouse/requirements.txt
+      - name: The last ten days' soccer files from Betfair's Historic Data API into bronze (read-only login; a failure is reported, not fatal)
+        continue-on-error: true
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+        run: |
+          mkdir -p out
+          timeout 3000 python -m football.warehouse historic --days 10 --max-minutes 45 | tee out/historic.json
       - name: Bundles into bronze (each once; a bundle already ingested is not downloaded again)
         run: |
           mkdir -p out

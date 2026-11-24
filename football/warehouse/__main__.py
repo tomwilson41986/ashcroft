@@ -42,6 +42,10 @@ def main(argv=None) -> int:
     b.add_argument("--layer", choices=["silver", "gold", "all"], default="all")
     b.add_argument("--workers", type=int, default=None)
     b.add_argument("--only", action="append", help="a gold module to run (e.g. gold_event; repeatable)")
+    h = sub.add_parser("historic", help="the last days' soccer files from Betfair's Historic Data API, into bronze")
+    h.add_argument("--days", type=int, default=10)
+    h.add_argument("--max-minutes", type=float, default=None)
+    h.add_argument("--probe", action="store_true", help="only the login, the account's data and yesterday's count")
     k = sub.add_parser("check", help="the data-quality report; exit 1 on a failed check")
     k.add_argument("--markdown", default=None, help="also write the report as a markdown table here")
     f = sub.add_parser("facts", help="the warehouse's headline numbers, each one query over the tables")
@@ -61,6 +65,13 @@ def main(argv=None) -> int:
         out = bronze.ingest_queue(store)
         print(json.dumps(out, indent=1, default=str))
         return 1 if any(isinstance(v, dict) and v.get("failed") for v in out.values()) else 0
+    elif a.cmd == "historic":
+        from betfair_historic import Historic, login_token
+        from football.warehouse import historic_api
+        hd = Historic(login_token())
+        out = historic_api.probe(hd) if a.probe else historic_api.update(store, hd, a.days, max_minutes=a.max_minutes)
+        print(json.dumps(out, indent=1, default=str))
+        return 1 if (not a.probe and out.get("failed") and not out.get("fetched")) else 0
     elif a.cmd == "build":
         out = {}
         if a.layer in ("silver", "all"):
