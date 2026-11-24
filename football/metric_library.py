@@ -5,7 +5,7 @@ group: (family, name, what it measures, the data it needs, status, where). Statu
 
 - ``built``: computed in this repository; ``where`` is (file, a name found in that file) and
   ``tests/test_football_metric_library.py`` checks it.
-- ``testing``: built on 24 Nov 2026 and scored by ``football-feature-batch-1124`` or ``football-tactics-batch-1124`` or ``football-sportmonks-xg-1124`` or ``football-fd-lines-1124`` or ``football-sportmonks-pred-1124``; not yet in any model.
+- ``testing``: built on 24 Nov 2026 and scored by ``football-feature-batch-1124`` or ``football-tactics-batch-1124`` or ``football-sportmonks-xg-1124`` or ``football-fd-lines-1124`` or ``football-sportmonks-pred-1124`` or ``football-eu-form-1124``; not yet in any model.
 - ``held``: we hold the data and have not built the metric.
 - ``need``: we do not hold the data.
 
@@ -69,6 +69,7 @@ E = [
     ("Schedule and venue", "Home form at home, away form away", "venue-specific form", FD, "built", ("football/blocks/venue_form.py", "FEATURES")),
     ("Schedule and venue", "Team home and away effect", "a side's own home edge beyond the league's, shrunk", FD + " + closes", "testing", ("football/blocks/venue_fx.py", "hv_")),
     ("Schedule and venue", "Rest days and fixture congestion", "days since the last match, matches in the last weeks", "fixture list", "built", ("football/blocks/rest_days.py", "FEATURES")),
+    ("Schedule and venue", "European matches in a club's form: xG, points above the market, load, rest", "Champions, Europa and Conference League games before the collection day, for the club's league matches", "Sportmonks Euro Club Tournaments (2024/25 on)", "testing", ("football/blocks/eu_form.py", "eu_rest_min")),
     ("Schedule and venue", "Squad load (minutes in 7 and 14 days)", "the expected eleven's recent minutes", AF + " line-ups", "built", ("football/blocks/fatigue.py", "FEATURES")),
     ("Schedule and venue", "Promoted and relegated sides, early season", "tier change flags and their fade", FD, "built", ("football/blocks/home_adv.py", "promo")),
     ("Schedule and venue", "League effects", "shrunk league and tier drift in place of a raw label", FD, "built", ("football/blocks/league_fx.py", "lf_")),
@@ -145,7 +146,7 @@ def render() -> str:
            "`football/metric_library.py`; `tests/test_football_metric_library.py` checks every built entry against "
            "the code.", "",
            f"**{len(E)} entries**: {n['built']} built, {n['testing']} built on 24 Nov 2026 and under test "
-           f"(`football-feature-batch-1124`, `football-tactics-batch-1124`, `football-sportmonks-xg-1124`, `football-fd-lines-1124`, `football-sportmonks-pred-1124`), {n['held']} where we hold the data and have not built the metric, "
+           f"(`football-feature-batch-1124`, `football-tactics-batch-1124`, `football-sportmonks-xg-1124`, `football-fd-lines-1124`, `football-sportmonks-pred-1124`, `football-eu-form-1124`), {n['held']} where we hold the data and have not built the metric, "
            f"{n['need']} where we do not hold the data.", ""]
     fam = None
     for f, name, what, data, status, where in E:

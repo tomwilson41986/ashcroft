@@ -22,14 +22,15 @@ COLUMNS = [f"smx_{c}_{s}" for c in KEEP for s in ("h", "a")] + [f"smx_{c}" for c
 def build(gold: pd.DataFrame, sm: pd.DataFrame | None, aliases=None) -> pd.DataFrame:
     """``match_id`` + ``COLUMNS`` (blank where a column is missing from the source)."""
     from football.data import link_other
+    from football.europe_form import COLUMNS as EU
     if sm is None or sm.empty:
-        return pd.DataFrame(columns=["match_id"] + COLUMNS)
+        return pd.DataFrame(columns=["match_id"] + COLUMNS + EU)
     from football.reference import BY_ID
     o = sm[sm["competition_id"].isin(set(BY_ID))].copy()          # our competitions only: Europe is kept apart
     o["match_date"] = pd.to_datetime(o["kickoff_utc"], utc=True).dt.tz_convert("Europe/London").dt.strftime("%Y-%m-%d")
     linked = link_other(gold, o, "sportmonks", aliases)
     if linked.empty:
-        return pd.DataFrame(columns=["match_id"] + COLUMNS)
+        return pd.DataFrame(columns=["match_id"] + COLUMNS + EU)
     out = linked[["match_id"]].copy()
     for c in KEEP:
         for s in ("h", "a"):
@@ -37,4 +38,8 @@ def build(gold: pd.DataFrame, sm: pd.DataFrame | None, aliases=None) -> pd.DataF
             out[f"smx_{src}"] = pd.to_numeric(linked[src], errors="coerce") if src in linked else float("nan")
     for c in EXTRA:
         out[f"smx_{c}"] = pd.to_numeric(linked[c], errors="coerce") if c in linked else float("nan")
-    return out.dropna(subset=["match_id"]).drop_duplicates("match_id")[["match_id"] + COLUMNS]
+    out = out.dropna(subset=["match_id"]).drop_duplicates("match_id")[["match_id"] + COLUMNS]
+    # each side's European matches as form (the owner, 24 Nov 2026), lagged to the collection day
+    from football.europe_form import build as europe_build
+    eu = europe_build(gold, sm, linked)
+    return out.merge(eu, on="match_id", how="outer")

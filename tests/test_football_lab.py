@@ -49,6 +49,10 @@ def matrix():
     m["close_ah_line"] = m["open_ah_line"] + rng.choice([-0.25, 0.0, 0.0, 0.25], len(m))
     m["close_ah_h"] = m["open_ah_h"] + rng.normal(0, 0.03, len(m))
     m["close_ah_a"] = m["open_ah_a"] + rng.normal(0, 0.03, len(m))
+    # the European form columns (football/europe_form.py): already lagged to the collection day by the stage
+    from football.europe_form import COLUMNS as EUX
+    for c in EUX:
+        m[c] = rng.integers(0, 6, len(m)).astype(float) if ("n90" in c or "days" in c) else rng.normal(0, 0.5, len(m))
     # the Sportmonks stage's raw columns (football/sportmonks_stage.py), as played
     from football.sportmonks_stage import COLUMNS as SMX
     for c in SMX:
@@ -142,7 +146,7 @@ def test_line_up_time_features_are_refused_at_the_early_price(matrix, tmp_path, 
         lab.run(str(tmp_path), {"x": "team_all+players"}, ["ridge"], 2015, 2017, 2013, None, None, False, False)
 
 
-@pytest.mark.parametrize("name", ["formation", "match_sim", "sm_xg", "fd_lines", "sm_pred"])
+@pytest.mark.parametrize("name", ["formation", "match_sim", "sm_xg", "fd_lines", "sm_pred", "eu_form"])
 def test_the_tactics_blocks_give_values_on_the_played_shapes_and_states(matrix, name):
     mod = available()[name]
     f = mod.build(matrix)[mod.FEATURES]
