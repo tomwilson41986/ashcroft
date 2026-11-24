@@ -26,6 +26,22 @@ on:
           - close_model_books
           - feature_report
           - review_arms
+          - feature_batch
+          - tactics_batch
+          - sportmonks_batch
+          - fd_lines_batch
+          - sm_pred_batch
+          - eu_form_batch
+          - bf_lab_join
+          - sm_feat2_batch
+          - bf_features2
+          - bf_tune
+          - buchdahl
+          - bf_lab_stack
+          - win_prob
+          - strategy_100
+          - b2l_paper
+          - historic_probe
           - warehouse
           - warehouse_models
       days:
@@ -105,7 +121,7 @@ jobs:
         run: python -m research.open_close.football_close_model_books --days "$DAYS" --out out/close_model_books.json
       # the lab-matrix jobs: the inputs and the cache as football-trials.yml builds them (read-only copies)
       - name: Lab inputs (gold, silver and API-Football history)
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl' || inputs.job == 'bf_lab_stack'
         run: |
           mkdir -p src/football src/api_football
           aws s3 sync "s3://$CAPTURE_BUCKET/sources/football/gold/" src/football/gold/ --only-show-errors
@@ -113,8 +129,11 @@ jobs:
           for x in matches players events stats; do
             aws s3 cp "s3://$CAPTURE_BUCKET/sources/api_football/history_$x.parquet" "src/api_football/history_$x.parquet" --only-show-errors
           done
+          # the Sportmonks table, where it has been built (sources/sportmonks.py)
+          mkdir -p src/sportmonks
+          aws s3 cp "s3://$CAPTURE_BUCKET/sources/sportmonks/matches.parquet" src/sportmonks/matches.parquet --only-show-errors || echo "no Sportmonks table yet"
       - name: Restore the lab cache
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl' || inputs.job == 'bf_lab_stack'
         uses: actions/cache@v4
         with:
           path: .football_cache
@@ -123,16 +142,49 @@ jobs:
             football-lab-${{ hashFiles('football/**') }}-
             football-lab-
       - name: The lab matrix (stages rebuilt only when their code or inputs change)
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl' || inputs.job == 'bf_lab_stack'
         run: timeout 4200 python -m football.lab cache --root src --history-root src --cache .football_cache
       - name: Feature report (importance on Betfair's moves, leave a family out, the target's checks)
         if: inputs.job == 'feature_report'
         run: python -m research.open_close.football_feature_report --cache .football_cache --out-json out/football_feature_report.json
+      - name: Feature batch of 24 Nov (eight new blocks against the best model so far; football-feature-batch-1124)
+        if: inputs.job == 'feature_batch'
+        run: python -m research.open_close.football_feature_batch --cache .football_cache --out-json out/football_feature_batch.json
+      - name: Tactics batch (formation matchups and the match simulator; football-tactics-batch-1124)
+        if: inputs.job == 'tactics_batch'
+        run: python -m research.open_close.football_feature_batch --batch tactics --cache .football_cache --out-json out/football_tactics_batch.json
+      - name: Sportmonks xG batch (football-sportmonks-xg-1124; fitted on 2024/25, tested on 2025/26)
+        if: inputs.job == 'sportmonks_batch'
+        run: python -m research.open_close.football_feature_batch --batch sportmonks --cache .football_cache --out-json out/football_sportmonks_batch.json
+      - name: football-data lines batch (Betfair handicap and goals prices, line moves, book counts; football-fd-lines-1124)
+        if: inputs.job == 'fd_lines_batch'
+        run: python -m research.open_close.football_feature_batch --batch fd_lines --cache .football_cache --out-json out/football_fd_lines_batch.json
+      - name: Sportmonks predictions batch (football-sportmonks-pred-1124; fitted on 2024/25, tested on 2025/26)
+        if: inputs.job == 'sm_pred_batch'
+        run: python -m research.open_close.football_feature_batch --batch sm_pred --cache .football_cache --out-json out/football_sm_pred_batch.json
+      - name: European form batch (football-eu-form-1124; fitted on 2024/25, tested on 2025/26)
+        if: inputs.job == 'eu_form_batch'
+        run: python -m research.open_close.football_feature_batch --batch eu_form --cache .football_cache --out-json out/football_eu_form_batch.json
+      - name: The Betfair-native closing-price model with the lab's features (football-bf-lab-join-1124)
+        if: inputs.job == 'bf_lab_join'
+        run: python -m research.open_close.football_bf_lab_join --cache .football_cache --out-json out/bf_lab_join.json
+      - name: Sportmonks feature batch 2 (opponent-adjusted xG, finishing and luck, more statistics; football-sm-feat2-1124)
+        if: inputs.job == 'sm_feat2_batch'
+        run: python -m research.open_close.football_feature_batch --batch sm_feat2 --cache .football_cache --out-json out/football_sm_feat2_batch.json
       - name: Review arms (each repair and new block against the base, paired by match day)
         if: inputs.job == 'review_arms'
         run: python -m research.open_close.football_review_arms --cache .football_cache --out-json out/football_review_arms.json
       # the football data warehouse (docs/football_data_platform.md; football-warehouse.yml is its own workflow once
       # merged: a new workflow file cannot be dispatched from a branch). S3 only; nothing reaches Betfair.
+      - name: Betfair Historic Data API probe (the login, what the account holds, yesterday's soccer file count)
+        if: inputs.job == 'historic_probe'
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+        run: |
+          mkdir -p out
+          python -m football.warehouse historic --probe | tee out/historic_probe.json
       - name: Football data warehouse (ingest the listed bundles, build silver and gold, link, check)
         if: inputs.job == 'warehouse'
         shell: bash                  # -eo pipefail: a command that fails behind "| tee" fails the step
@@ -153,6 +205,39 @@ jobs:
           python -m research.open_close.football_bf_efficiency --out-json out/bf_efficiency.json > /dev/null
           python -m research.open_close.football_bf_close_model --out-json out/bf_close_model.json > /dev/null
           python -m research.open_close.football_trade_model --out-json out/football_trade_model.json > /dev/null
+      - name: More Betfair price-file features for the Betfair-native model (football-bf-features2-1124)
+        if: inputs.job == 'bf_features2'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_bf_features2 --out-json out/bf_features2.json
+      - name: The Betfair-native model tuned inside the walk-forward (football-bf-tune-1124)
+        if: inputs.job == 'bf_tune'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_bf_tune --out-json out/bf_tune.json
+      - name: Buchdahl's tests (margin removal, move retention, football-data's xG; football-buchdahl-1124)
+        if: inputs.job == 'buchdahl'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_buchdahl --src src --cache .football_cache --out-json out/buchdahl.json
+      - name: The Betfair-native model with the lab's forecast as one feature (football-bf-lab-stack-1124)
+        if: inputs.job == 'bf_lab_stack'
+        run: python -m research.open_close.football_bf_lab_join --stack --cache .football_cache --out-json out/bf_lab_stack.json
+      - name: The most accurate win probability, scored on results (football-win-prob-1124)
+        if: inputs.job == 'win_prob'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_win_prob --out-json out/win_prob.json
+      - name: Up to 100 trading strategies on Betfair's prices and the results (football-strategy-100-1124)
+        if: inputs.job == 'strategy_100'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_strategy_100 --out-json out/strategy_100.json
+      - name: The back-to-lay paper test at the recorded quotes (football-b2l-paper-1124)
+        if: inputs.job == 'b2l_paper'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_b2l_paper --out-json out/b2l_paper.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |

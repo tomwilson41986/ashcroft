@@ -9,6 +9,13 @@ name: Football data warehouse (Betfair price history to analysis tables, S3)
 # link is read from the FOOTBALL_BUNDLE_URLS secret ({"<bundle name>": "<link>"}), not from the repository.
 
 on:
+  # nightly (the owner, 24 Nov 2026: "automate the download"): the last ten days from Betfair's Historic Data API,
+  # then silver, gold, link and checks, so the paper tests see each day's matches within a day or two. Betfair
+  # refuses logins from GitHub's runners (403 at identitysso.betfair.com, run 45413693273), so the fetch runs on the
+  # owner's paper-models runner in its gap between the greyhound archive (ends by 05:15 UTC) and the greyhound day
+  # (05:45 UTC): the owner's choice, 24 Nov 2026
+  schedule:
+    - cron: '15 5 * * *'      # fetch on the paper-models runner 05:15-05:38 UTC, then build on GitHub's runner
   workflow_dispatch:
     inputs:
       force:
@@ -30,7 +37,60 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  fetch:
+    runs-on: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+    timeout-minutes: 30
+    steps:
+      - name: Not on the horse racing runner
+        env:
+          RUNNER_LABEL: ${{ vars.PAPER_MODELS_RUNNER || 'paper-models' }}
+          LIVE_RUNNER_LABEL: ${{ vars.BETFAIR_RUNNER }}
+        run: |
+          if [ -n "$LIVE_RUNNER_LABEL" ] && [ "$RUNNER_LABEL" = "$LIVE_RUNNER_LABEL" ]; then
+            echo "this runner is the horse racing runner ($LIVE_RUNNER_LABEL): nothing but horse racing runs there"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - name: Python (its own environment, so the warehouse's pins never touch the greyhound jobs')
+        run: |
+          VENV="$HOME/.venvs/ashcroft-football-data"
+          if ! "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 12))' 2>/dev/null; then
+            UV="$HOME/.venvs/uv-paper"
+            [ -x "$UV/bin/uv" ] || { python3 -m venv "$UV" && "$UV/bin/pip" install -q uv==0.8.17; }
+            rm -rf "$VENV"
+            "$UV/bin/uv" venv --seed --python 3.12 "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: pip install -q -r requirements.txt -r football/warehouse/requirements.txt
+      - name: The last ten days' soccer files from Betfair's Historic Data API into bronze (read-only; no orders)
+        env:
+          BETFAIR_USERNAME: ${{ secrets.BETFAIR_USERNAME }}
+          BETFAIR_PASSWORD: ${{ secrets.BETFAIR_PASSWORD }}
+          BETFAIR_APP_KEY: ${{ secrets.BETFAIR_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          CAPTURE_BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+          CAPTURE_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+        run: |
+          # done by 05:38 UTC whatever happens: the greyhound day starts on this runner at 05:45 UTC
+          now=$(date -u +%s)
+          stop=$(date -u -d "$(date -u +%F) 05:38" +%s)
+          MAX=$(( (stop - now) / 60 ))
+          if [ "$MAX" -le 0 ] || [ "$MAX" -gt 20 ]; then MAX=20; fi
+          mkdir -p out
+          timeout $(( MAX * 60 + 120 )) python -m football.warehouse historic --days 10 --max-minutes "$MAX" | tee out/historic.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: football-historic-fetch
+          path: out/
+          if-no-files-found: ignore
+
   warehouse:
+    needs: fetch
+    if: ${{ !cancelled() }}                # the bundles and the build run whether or not the fetch did
     runs-on: ubuntu-latest
     timeout-minutes: 300
     defaults:

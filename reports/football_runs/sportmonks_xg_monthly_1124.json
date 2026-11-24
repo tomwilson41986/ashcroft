@@ -1,0 +1,220 @@
+{
+ "tag": "football-sportmonks-xg-1124",
+ "design": "betfair_monthly",
+ "base": "team_all+home_adv+team_news+form_short+x_short+league_fx+move_memory+kalman_form+sim+style",
+ "kept_in_base": [
+  "league_fx",
+  "move_memory",
+  "kalman_form",
+  "sim",
+  "style"
+ ],
+ "blocks": {
+  "sm_xg": [
+   "sx_npxgd_diff",
+   "sx_xgd_mkt_diff",
+   "sx_xgot_diff",
+   "sx_xpts_mkt_diff",
+   "sx_openplay_diff",
+   "sx_setplay_diff",
+   "sx_bigch_diff",
+   "sx_danger_diff",
+   "sx_box_diff",
+   "sx_keyp_diff",
+   "sx_pass_diff",
+   "sx_w"
+  ]
+ },
+ "rows": 17268,
+ "months": [
+  "2024-08",
+  "2024-09",
+  "2024-10",
+  "2024-11",
+  "2024-12",
+  "2025-01",
+  "2025-02",
+  "2025-03",
+  "2025-04",
+  "2025-05",
+  "2025-06",
+  "2025-07",
+  "2025-08",
+  "2025-09",
+  "2025-10",
+  "2025-11",
+  "2025-12",
+  "2026-01",
+  "2026-02",
+  "2026-03",
+  "2026-04",
+  "2026-05",
+  "2026-07",
+  "2026-08",
+  "2026-09",
+  "2026-10",
+  "2026-11"
+ ],
+ "arms": {
+  "base": {
+   "features": 144,
+   "betfair": {
+    "skill": 0.15191699658362046,
+    "vs_base": 0.0,
+    "lo95": 0.0,
+    "hi95": 0.0,
+    "days": 481
+   },
+   "keeps_its_place": false,
+   "costed": {
+    "0.03": {
+     "threshold": 0.03,
+     "tick_off_fair": {
+      "bets": 10033,
+      "roi": -0.014046690430487695,
+      "roi_lo90": -0.01635934557362552,
+      "roi_hi90": -0.011547884929755031,
+      "right_way": 0.6444732383135653
+     },
+     "symmetric_book": {
+      "bets": 10033,
+      "roi": -0.004691039283515675,
+      "roi_lo90": -0.007014514228374526,
+      "roi_hi90": -0.002274328287082418,
+      "right_way": 0.6444732383135653
+     }
+    },
+    "0.05": {
+     "threshold": 0.05,
+     "tick_off_fair": {
+      "bets": 5568,
+      "roi": -0.01321581092192127,
+      "roi_lo90": -0.01638919955020226,
+      "roi_hi90": -0.009699475412659565,
+      "right_way": 0.662176724137931
+     },
+     "symmetric_book": {
+      "bets": 5568,
+      "roi": 0.0007779427397223219,
+      "roi_lo90": -0.002436194728184554,
+      "roi_hi90": 0.004183835882256603,
+      "right_way": 0.662176724137931
+     }
+    }
+   }
+  },
+  "sm_xg": {
+   "features": 156,
+   "betfair": {
+    "skill": 0.15402705830168983,
+    "vs_base": 0.002110061718069366,
+    "lo95": 2.2705200726710552e-05,
+    "hi95": 0.004011984510955066,
+    "days": 481
+   },
+   "keeps_its_place": true,
+   "costed": {
+    "0.03": {
+     "threshold": 0.03,
+     "tick_off_fair": {
+      "bets": 9771,
+      "roi": -0.013258381845135937,
+      "roi_lo90": -0.015617951831957851,
+      "roi_hi90": -0.010542076649028889,
+      "right_way": 0.645583870637601
+     },
+     "symmetric_book": {
+      "bets": 9771,
+      "roi": -0.0040627178123205125,
+      "roi_lo90": -0.006511691833807951,
+      "roi_hi90": -0.0015181200993771432,
+      "right_way": 0.645583870637601
+     }
+    },
+    "0.05": {
+     "threshold": 0.05,
+     "tick_off_fair": {
+      "bets": 5296,
+      "roi": -0.012307288342257692,
+      "roi_lo90": -0.01596237484095367,
+      "roi_hi90": -0.008638599430115619,
+      "right_way": 0.6691842900302115
+     },
+     "symmetric_book": {
+      "bets": 5296,
+      "roi": 0.0014525389962427883,
+      "roi_lo90": -0.0023196420749617224,
+      "roi_hi90": 0.00508978476922557,
+      "right_way": 0.6691842900302115
+     }
+    }
+   }
+  }
+ },
+ "note": "development evidence: Betfair's own moves, walk-forward by month",
+ "test_months": [
+  "2025-01",
+  "2025-02",
+  "2025-03",
+  "2025-04",
+  "2025-05",
+  "2025-06",
+  "2025-07",
+  "2025-08",
+  "2025-09",
+  "2025-10",
+  "2025-11",
+  "2025-12",
+  "2026-01",
+  "2026-02",
+  "2026-03",
+  "2026-04",
+  "2026-05",
+  "2026-07",
+  "2026-08",
+  "2026-09",
+  "2026-10",
+  "2026-11"
+ ],
+ "test_rows": 13578,
+ "coverage": {
+  "sm_xg": {
+   "sx_npxgd_diff": {
+    "tested_rows": 0.8331
+   },
+   "sx_xgd_mkt_diff": {
+    "tested_rows": 0.8331
+   },
+   "sx_xgot_diff": {
+    "tested_rows": 0.8331
+   },
+   "sx_xpts_mkt_diff": {
+    "tested_rows": 0.8331
+   },
+   "sx_openplay_diff": {
+    "tested_rows": 0.8331
+   },
+   "sx_setplay_diff": {
+    "tested_rows": 0.8331
+   },
+   "sx_bigch_diff": {
+    "tested_rows": 0.833
+   },
+   "sx_danger_diff": {
+    "tested_rows": 0.9049
+   },
+   "sx_box_diff": {
+    "tested_rows": 0.9049
+   },
+   "sx_keyp_diff": {
+    "tested_rows": 0.8331
+   },
+   "sx_pass_diff": {
+    "tested_rows": 0.9049
+   },
+   "sx_w": {
+    "tested_rows": 0.8331
+   }
+  }
+ }
+}

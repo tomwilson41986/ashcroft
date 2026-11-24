@@ -70,6 +70,8 @@ STAGE_CODE = {
     "books": ["football/lab.py"],
     "xg": ["football/xg_features.py", "football/team_features.py", "football/player_ratings.py"],
     "players": ["football/player_ratings.py", "football/team_features.py"],
+    "tactics": ["football/tactics.py", "football/player_ratings.py"],
+    "sportmonks": ["football/sportmonks_stage.py", "football/europe_form.py", "football/data.py"],
 }
 
 
@@ -90,8 +92,9 @@ class Cache:
         hr = Path(self.history_root) if self.history_root else None
         return {"gold": _fp(r / "football/gold/matches.parquet") if r else "s3",
                 "silver": _fp(r / "football/matches.parquet") if r else "s3",
-                "history": "|".join(_fp(hr / f"api_football/history_{x}.parquet")
-                                    for x in ("matches", "players", "events", "stats")) if hr else "none"}
+                "history": "|".join([_fp(hr / f"api_football/history_{x}.parquet")
+                                     for x in ("matches", "players", "events", "stats")]
+                                    + [_fp(hr / "sportmonks/matches.parquet")]) if hr else "none"}
 
     def key(self, stage: str, upstream: list[str], inputs: list[str]) -> str:
         ins = self.inputs()
@@ -140,8 +143,19 @@ class Cache:
             def players():
                 f, _m, _g = build_all(gold, team, hm, hp, he, aliases)
                 return f[["match_id"] + [c for c in f.columns if c.startswith(STAGE_PREFIXES)]]
+            def tactics():
+                from football.tactics import build as tactics_build
+                return tactics_build(link_matches(hm, gold, aliases), hm, hp, he)
             parts += [self.stage("xg", ["team"], ["gold", "history"], xg),
-                      self.stage("players", ["team"], ["gold", "history"], players)]
+                      self.stage("players", ["team"], ["gold", "history"], players),
+                      self.stage("tactics", [], ["gold", "history"], tactics)]
+            smm = hs.get_parquet("sportmonks/matches.parquet")
+            if smm is not None:                       # the owner's Sportmonks plan (24 Nov 2026); absent before it
+
+                def sportmonks():
+                    from football.sportmonks_stage import build as sm_build
+                    return sm_build(gold, smm, aliases)
+                parts.append(self.stage("sportmonks", [], ["gold", "history"], sportmonks))
         key = hashlib.sha256("|".join(self.keys[s] for s in self.keys).encode()).hexdigest()[:16]
         out = self.dir / f"matrix_{key}.parquet"
         if not out.exists():
@@ -170,7 +184,19 @@ def early_books(gs, gold: pd.DataFrame) -> pd.DataFrame:
     # under an older name, used where the newer column is empty (checked 3 Nov 2026: the two never overlap)
     older = {"AvgH": "BbAvH", "AvgD": "BbAvD", "AvgA": "BbAvA", "MaxH": "BbMxH", "MaxD": "BbMxD", "MaxA": "BbMxA",
              "Avg>2.5": "BbAv>2.5", "Avg<2.5": "BbAv<2.5", "Max>2.5": "BbMx>2.5", "Max<2.5": "BbMx<2.5"}
+    # the owner, 24 Nov 2026: Betfair's own handicap prices against the market average's, and how many books priced the
+    # match (Betbrain's counts to 2018/19; the bookmaker 1X2 columns with an opening price from then on)
+    cols.update({"BFEAHH": "bk_bfe_ahh", "BFEAHA": "bk_bfe_aha", "AvgAHH": "bk_avg_ahh", "AvgAHA": "bk_avg_aha"})
+    older.update({"AvgAHH": "BbAvAHH", "AvgAHA": "BbAvAHA"})
     out = pd.DataFrame({"match_id": ids["match_id"]})
+    from football.data import BOOKS
+    single = [b for b in BOOKS if b not in ("Max", "Avg", "BbMx", "BbAv", "BFE", "BF")]
+    have = [f"{b}H" for b in single if f"{b}H" in ids.columns]
+    n_now = (ids[have].apply(pd.to_numeric, errors="coerce") > 1.0).sum(axis=1) if have else 0
+    for src, dst in (("Bb1X2", "bk_n_1x2"), ("BbOU", "bk_n_ou"), ("BbAH", "bk_n_ah")):
+        v = pd.to_numeric(ids[src], errors="coerce") if src in ids.columns else pd.Series(np.nan, index=ids.index)
+        out[dst] = v.where(v > 0)
+    out["bk_n_1x2"] = out["bk_n_1x2"].fillna(pd.Series(np.where(np.asarray(n_now) > 0, n_now, np.nan), index=ids.index))
     for src, dst in cols.items():
         v = pd.to_numeric(ids[src], errors="coerce") if src in ids.columns else pd.Series(np.nan, index=ids.index)
         if src in older and older[src] in ids.columns:

@@ -1,0 +1,242 @@
+{
+ "tag": "football-win-prob-1124",
+ "event_checkpoints": 133875,
+ "events": 69027,
+ "months": [
+  "2025-03",
+  "2025-04",
+  "2025-05",
+  "2025-06",
+  "2025-07",
+  "2025-08",
+  "2025-09",
+  "2025-10",
+  "2025-11",
+  "2025-12",
+  "2026-01",
+  "2026-02",
+  "2026-03",
+  "2026-04",
+  "2026-05",
+  "2026-06",
+  "2026-07",
+  "2026-08",
+  "2026-09",
+  "2026-10"
+ ],
+ "note": "development evidence: Betfair's last traded prices; scored on results; nothing is traded",
+ "scored_event_checkpoints": 113570,
+ "test_months": [
+  "2025-07",
+  "2025-08",
+  "2025-09",
+  "2025-10",
+  "2025-11",
+  "2025-12",
+  "2026-01",
+  "2026-02",
+  "2026-03",
+  "2026-04",
+  "2026-05",
+  "2026-06",
+  "2026-07",
+  "2026-08",
+  "2026-09",
+  "2026-10"
+ ],
+ "market": {
+  "log_loss": 0.971976,
+  "brier": 0.579039
+ },
+ "arms": {
+  "market_cal": {
+   "matches_checkpoints": 113570,
+   "days": 488,
+   "log_loss": 0.972028,
+   "log_loss_market": 0.971976,
+   "brier": 0.579092,
+   "brier_market": 0.579039,
+   "log_loss_saved": -5.3e-05,
+   "lo95": -0.000188,
+   "hi95": 7.7e-05,
+   "beats_the_market": false
+  },
+  "market_move": {
+   "matches_checkpoints": 113570,
+   "days": 488,
+   "log_loss": 0.971812,
+   "log_loss_market": 0.971976,
+   "brier": 0.57897,
+   "brier_market": 0.579039,
+   "log_loss_saved": 0.000163,
+   "lo95": 4.8e-05,
+   "hi95": 0.000283,
+   "beats_the_market": true
+  },
+  "benter": {
+   "matches_checkpoints": 113570,
+   "days": 488,
+   "log_loss": 0.974381,
+   "log_loss_market": 0.971976,
+   "brier": 0.580543,
+   "brier_market": 0.579039,
+   "log_loss_saved": -0.002406,
+   "lo95": -0.003118,
+   "hi95": -0.001732,
+   "beats_the_market": false
+  }
+ },
+ "by_checkpoint": {
+  "360": {
+   "market_cal": {
+    "matches_checkpoints": 23617,
+    "days": 488,
+    "log_loss": 0.972474,
+    "log_loss_market": 0.972449,
+    "brier": 0.579278,
+    "brier_market": 0.579245,
+    "log_loss_saved": -2.5e-05,
+    "lo95": -0.000229,
+    "hi95": 0.000171
+   },
+   "market_move": {
+    "matches_checkpoints": 23617,
+    "days": 488,
+    "log_loss": 0.972389,
+    "log_loss_market": 0.972449,
+    "brier": 0.579244,
+    "brier_market": 0.579245,
+    "log_loss_saved": 6e-05,
+    "lo95": -0.000171,
+    "hi95": 0.000293
+   },
+   "benter": {
+    "matches_checkpoints": 23617,
+    "days": 488,
+    "log_loss": 0.974832,
+    "log_loss_market": 0.972449,
+    "brier": 0.58073,
+    "brier_market": 0.579245,
+    "log_loss_saved": -0.002382,
+    "lo95": -0.003349,
+    "hi95": -0.001468
+   }
+  },
+  "120": {
+   "market_cal": {
+    "matches_checkpoints": 20021,
+    "days": 488,
+    "log_loss": 0.973663,
+    "log_loss_market": 0.973424,
+    "brier": 0.58007,
+    "brier_market": 0.579921,
+    "log_loss_saved": -0.00024,
+    "lo95": -0.000458,
+    "hi95": -3.7e-05
+   },
+   "market_move": {
+    "matches_checkpoints": 20021,
+    "days": 488,
+    "log_loss": 0.973155,
+    "log_loss_market": 0.973424,
+    "brier": 0.579794,
+    "brier_market": 0.579921,
+    "log_loss_saved": 0.000269,
+    "lo95": 3.7e-05,
+    "hi95": 0.000515
+   },
+   "benter": {
+    "matches_checkpoints": 20021,
+    "days": 488,
+    "log_loss": 0.975779,
+    "log_loss_market": 0.973424,
+    "brier": 0.581391,
+    "brier_market": 0.579921,
+    "log_loss_saved": -0.002355,
+    "lo95": -0.003431,
+    "hi95": -0.001308
+   }
+  },
+  "60": {
+   "market_cal": {
+    "matches_checkpoints": 20088,
+    "days": 488,
+    "log_loss": 0.96657,
+    "log_loss_market": 0.966489,
+    "brier": 0.57561,
+    "brier_market": 0.575517,
+    "log_loss_saved": -8.2e-05,
+    "lo95": -0.000281,
+    "hi95": 0.00011
+   },
+   "market_move": {
+    "matches_checkpoints": 20088,
+    "days": 488,
+    "log_loss": 0.966279,
+    "log_loss_market": 0.966489,
+    "brier": 0.5754,
+    "brier_market": 0.575517,
+    "log_loss_saved": 0.00021,
+    "lo95": -1.7e-05,
+    "hi95": 0.000435
+   },
+   "benter": {
+    "matches_checkpoints": 20088,
+    "days": 488,
+    "log_loss": 0.969416,
+    "log_loss_market": 0.966489,
+    "brier": 0.577301,
+    "brier_market": 0.575517,
+    "log_loss_saved": -0.002927,
+    "lo95": -0.003968,
+    "hi95": -0.001922
+   }
+  },
+  "15": {
+   "market_cal": {
+    "matches_checkpoints": 49844,
+    "days": 488,
+    "log_loss": 0.973359,
+    "log_loss_market": 0.973381,
+    "brier": 0.580014,
+    "brier_market": 0.580007,
+    "log_loss_saved": 2.1e-05,
+    "lo95": -9.2e-05,
+    "hi95": 0.000139
+   },
+   "market_move": {
+    "matches_checkpoints": 49844,
+    "days": 488,
+    "log_loss": 0.97323,
+    "log_loss_market": 0.973381,
+    "brier": 0.579948,
+    "brier_market": 0.580007,
+    "log_loss_saved": 0.00015,
+    "lo95": 2.5e-05,
+    "hi95": 0.000265
+   },
+   "benter": {
+    "matches_checkpoints": 49844,
+    "days": 488,
+    "log_loss": 0.975607,
+    "log_loss_market": 0.973381,
+    "brier": 0.581421,
+    "brier_market": 0.580007,
+    "log_loss_saved": -0.002227,
+    "lo95": -0.002896,
+    "hi95": -0.001581
+   }
+  }
+ },
+ "close_on_the_same_matches": {
+  "matches_checkpoints": 113570,
+  "days": 488,
+  "log_loss": 0.96961,
+  "log_loss_market": 0.971976,
+  "brier": 0.577466,
+  "brier_market": 0.579039,
+  "log_loss_saved": 0.002365,
+  "lo95": 0.00176,
+  "hi95": 0.002983
+ }
+}

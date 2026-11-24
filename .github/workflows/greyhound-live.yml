@@ -21,9 +21,9 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'predict, train, settle, check-card (a past day: the card against the results), coverage (the day''s races against what was priced and decided), or running (the paper trader''s day so far, a row per market)'
+        description: 'predict, train, settle, check-card (a past day: the card against the results), coverage (the day''s races against what was priced and decided), running (the paper trader''s day so far, a row per market), or card-field (which tables read the rest of the race: the card priced with and without runners)'
         type: choice
-        options: [predict, train, settle, check-card, coverage, running]
+        options: [predict, train, settle, check-card, coverage, running, card-field]
         default: predict
       date:
         description: 'UK racing day, YYYY-MM-DD (default today)'
@@ -96,11 +96,11 @@ jobs:
           fi
           set -o pipefail                    # a failing step fails the run, through the tee
           TASK="${TASK:-predict}"
-          case "$TASK" in predict|train|settle|check-card|coverage|running) ;; *) echo "task must be predict, train, settle, check-card, coverage or running"; exit 1 ;; esac
+          case "$TASK" in predict|train|settle|check-card|coverage|running|card-field) ;; *) echo "task must be predict, train, settle, check-card, coverage, running or card-field"; exit 1 ;; esac
           if [ -n "$DAY" ] && ! [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then echo "date must be YYYY-MM-DD"; exit 1; fi
           mkdir -p out
           # the live model from 10 Nov 2026 (greyhound/stack_model.py) has neural models: PyTorch on the CPU, pinned
-          case "$TASK" in train|predict) pip install -q torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu ;; esac
+          case "$TASK" in train|predict|card-field) pip install -q torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu ;; esac
           ARGS=()
           if [ -n "$DAY" ]; then ARGS+=(--date "$DAY"); fi
           case "$TASK" in
@@ -109,6 +109,7 @@ jobs:
             settle)  python -m greyhound.live --settle --days 3 "${ARGS[@]}" | tee out/greyhound_live.json ;;
             check-card) python -m greyhound.live --check-card "${ARGS[@]}" | tee out/greyhound_live.json ;;
             coverage) python -m greyhound.live --coverage "${ARGS[@]}" | tee out/greyhound_live.json ;;
+            card-field) python -m greyhound.live --card-field "${ARGS[@]}" | tee out/greyhound_live.json ;;
             running) python -m greyhound.live --running --out out/greyhound_running.md "${ARGS[@]}" | tee out/greyhound_live.json
                      cat out/greyhound_running.md ;;   # the table in the log as well as the summary
           esac

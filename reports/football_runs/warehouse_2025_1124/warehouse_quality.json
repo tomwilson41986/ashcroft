@@ -1,0 +1,368 @@
+{
+ "ok": true,
+ "hard_failed": [],
+ "soft_failed": [],
+ "rows": {
+  "gold/event": 101522,
+  "gold/checkpoint": 16158376,
+  "gold/implied": 1111616,
+  "gold/path": 1860839,
+  "gold/goal": 250509,
+  "gold/timeline": 96692,
+  "gold/inplay_minute": 11230228,
+  "gold/inplay": 96681,
+  "gold/move": 10463663,
+  "gold/team": 12532,
+  "gold/team_rating": 203028,
+  "gold/rating_gap": 486414,
+  "club/team_match": 203028,
+  "club/team_summary": 12285,
+  "club/country_strength": 271
+ },
+ "partitions": [
+  "2025-04",
+  "2025-05",
+  "2025-06",
+  "2025-07",
+  "2025-08",
+  "2025-09",
+  "2025-10",
+  "2025-11",
+  "2025-12",
+  "2026-01",
+  "2026-02",
+  "2026-03",
+  "2026-04",
+  "2026-05",
+  "2026-06",
+  "2026-07",
+  "2026-08",
+  "2026-09",
+  "2026-10",
+  "2026-11"
+ ],
+ "checks": [
+  {
+   "check": "bronze partitions held",
+   "ok": true,
+   "hard": true,
+   "value": 20
+  },
+  {
+   "check": "silver built from the current bronze by the current parser",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "files in = read + unreadable + superseded",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "each silver partition's reconciliation",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "traded prices within 1.01 to 1000",
+   "ok": true,
+   "hard": true,
+   "value": 0
+  },
+  {
+   "check": "price updates outside Betfair's range, left out of silver/tick",
+   "ok": true,
+   "hard": false,
+   "value": 3
+  },
+  {
+   "check": "share of files that could not be read",
+   "ok": true,
+   "hard": false,
+   "value": {
+    "files_in": 305485,
+    "unreadable": 0,
+    "superseded": 0
+   }
+  },
+  {
+   "check": "silver/market: market_id unique across partitions",
+   "ok": true,
+   "hard": true,
+   "value": 305485
+  },
+  {
+   "check": "silver/runner: every row's market exists",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "silver/definition: every row's market exists",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "silver/spell: every row's market exists",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "markets whose kick-off month is their partition's",
+   "ok": true,
+   "hard": false,
+   "value": {
+    "share": 0.9966,
+    "kickoff_min": "1970-01-21 10:04:13+00:00",
+    "kickoff_max": "2050-06-12 10:00:00+00:00"
+   }
+  },
+  {
+   "check": "gold built from its current inputs",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "gold/event: key unique in every partition",
+   "ok": true,
+   "hard": true,
+   "value": 101522
+  },
+  {
+   "check": "gold/event: every partition built",
+   "ok": true,
+   "hard": false,
+   "value": 20
+  },
+  {
+   "check": "gold/checkpoint: key unique in every partition",
+   "ok": true,
+   "hard": true,
+   "value": 16158376
+  },
+  {
+   "check": "gold/checkpoint: every row's market exists",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "gold/checkpoint: every partition built",
+   "ok": true,
+   "hard": false,
+   "value": 20
+  },
+  {
+   "check": "gold/implied: key unique in every partition",
+   "ok": true,
+   "hard": true,
+   "value": 1111616
+  },
+  {
+   "check": "gold/implied: every partition built",
+   "ok": true,
+   "hard": false,
+   "value": 20
+  },
+  {
+   "check": "gold/path: key unique in every partition",
+   "ok": true,
+   "hard": true,
+   "value": 1860839
+  },
+  {
+   "check": "gold/path: every row's market exists",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "gold/path: every partition built",
+   "ok": true,
+   "hard": false,
+   "value": 20
+  },
+  {
+   "check": "gold/goal: key unique in every partition",
+   "ok": true,
+   "hard": true,
+   "value": 250509
+  },
+  {
+   "check": "gold/goal: every partition built",
+   "ok": true,
+   "hard": false,
+   "value": 20
+  },
+  {
+   "check": "gold/timeline: key unique in every partition",
+   "ok": true,
+   "hard": true,
+   "value": 96692
+  },
+  {
+   "check": "gold/timeline: every partition built",
+   "ok": true,
+   "hard": false,
+   "value": 20
+  },
+  {
+   "check": "gold/inplay_minute: key unique in every partition",
+   "ok": true,
+   "hard": true,
+   "value": 11230228
+  },
+  {
+   "check": "gold/inplay_minute: every partition built",
+   "ok": true,
+   "hard": false,
+   "value": 20
+  },
+  {
+   "check": "gold/inplay: key unique in every partition",
+   "ok": true,
+   "hard": true,
+   "value": 96681
+  },
+  {
+   "check": "gold/inplay: every partition built",
+   "ok": true,
+   "hard": false,
+   "value": 20
+  },
+  {
+   "check": "gold/move: key unique in every partition",
+   "ok": true,
+   "hard": true,
+   "value": 10463663
+  },
+  {
+   "check": "gold/move: every row's market exists",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "gold/move: every partition built",
+   "ok": true,
+   "hard": false,
+   "value": 20
+  },
+  {
+   "check": "gold/team: key unique",
+   "ok": true,
+   "hard": true,
+   "value": 12532
+  },
+  {
+   "check": "gold/team_rating: key unique",
+   "ok": true,
+   "hard": true,
+   "value": 203028
+  },
+  {
+   "check": "gold/rating_gap: key unique",
+   "ok": true,
+   "hard": true,
+   "value": 486414
+  },
+  {
+   "check": "club/team_match: key unique",
+   "ok": true,
+   "hard": true,
+   "value": 203028
+  },
+  {
+   "check": "club/team_summary: key unique",
+   "ok": true,
+   "hard": true,
+   "value": 12285
+  },
+  {
+   "check": "club/country_strength: key unique",
+   "ok": true,
+   "hard": true,
+   "value": 271
+  },
+  {
+   "check": "gold/event: event_id unique across partitions",
+   "ok": true,
+   "hard": true,
+   "value": 101522
+  },
+  {
+   "check": "gold/event: one row for every event in silver/market",
+   "ok": true,
+   "hard": true,
+   "value": 101522
+  },
+  {
+   "check": "gold/event: matches that went in play and have a result",
+   "ok": true,
+   "hard": false,
+   "value": 0.99871
+  },
+  {
+   "check": "closing 1X2 chances against results (mean chance, rate)",
+   "ok": true,
+   "hard": false,
+   "value": {
+    "matches": 78830,
+    "home": [
+     0.4373,
+     0.4345
+    ],
+    "draw": [
+     0.2481,
+     0.2486
+    ],
+    "away": [
+     0.3146,
+     0.3169
+    ]
+   }
+  },
+  {
+   "check": "gold/checkpoint: no price published after its checkpoint",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "gold/checkpoint: a complete book's chances sum to one",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "gold/checkpoint: every row on its grid (the schedule before the off; the close at the off)",
+   "ok": true,
+   "hard": true,
+   "value": "all"
+  },
+  {
+   "check": "gold/event: the closing 1X2 is the checkpoint table's close",
+   "ok": true,
+   "hard": true,
+   "value": 98129
+  },
+  {
+   "check": "gold/implied: totals positive, supremacy inside the total",
+   "ok": true,
+   "hard": true,
+   "value": 872358
+  },
+  {
+   "check": "gold/implied: 1X2 chances sum to one",
+   "ok": true,
+   "hard": true,
+   "value": 1067576
+  }
+ ]
+}

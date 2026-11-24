@@ -80,6 +80,9 @@ jobs:
       - name: The in-play leader's resting back (football-inplay-leader-maker-1112; counts only until its one reading)
         continue-on-error: true
         run: python -m research.open_close.football_inplay_leader_trial --out-json out/football_inplay_leader_trial.json
+      - name: The back-to-lay paper test at the recorded quotes (football-b2l-paper-1124; counts only until its reading)
+        continue-on-error: true
+        run: python -m research.open_close.football_b2l_paper --out-json out/football_b2l_paper.json
       - name: Keep the scores (S3 and the run's artifact)
         if: ${{ !cancelled() }}
         run: |

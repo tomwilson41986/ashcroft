@@ -31,6 +31,35 @@ def matrix():
     m["open_ah_line"] = -np.round((m["molam_h"] - m["molam_a"]) * 4) / 4
     m["open_ah_h"], m["open_ah_a"] = 1.95 + rng.normal(0, 0.03, len(m)), 1.95 + rng.normal(0, 0.03, len(m))
     m["fd_code"], m["open_1x2_src"], m["close_1x2_src"] = "E0", "PS", "PSC"
+    # the tactics stage's raw columns (football/tactics.py): shapes and game states, as played
+    for sd in ("h", "a"):
+        m[f"tq_def_{sd}"] = rng.choice([3.0, 4.0, 5.0], len(m), p=[0.25, 0.6, 0.15])
+        m[f"tq_fwd_{sd}"] = rng.choice([1.0, 2.0, 3.0], len(m))
+        m[f"tq_mid_{sd}"] = 10 - m[f"tq_def_{sd}"] - m[f"tq_fwd_{sd}"]
+    cut = rng.dirichlet([2, 1, 1], len(m)) * 90
+    m["gs_min_level"], m["gs_min_lead"], m["gs_min_trail"] = cut[:, 0], cut[:, 1], cut[:, 2]
+    for t, ft in (("h", "ft_home"), ("a", "ft_away")):
+        parts = rng.multinomial(1, [0.5, 0.25, 0.25], len(m)) * m[ft].fillna(0).to_numpy()[:, None]
+        m[f"gs_{t}g_level"], m[f"gs_{t}g_lead"], m[f"gs_{t}g_trail"] = parts[:, 0], parts[:, 1], parts[:, 2]
+    # the extra football-data columns (football/lab.py early_books, the gold table's closing handicap)
+    m["bk_bfe_ahh"], m["bk_bfe_aha"] = m["open_ah_h"] * 1.02, m["open_ah_a"] * 1.02
+    m["bk_avg_ahh"], m["bk_avg_aha"] = m["open_ah_h"] * 0.98, m["open_ah_a"] * 0.98
+    m["bfe_open_o25"], m["bfe_open_u25"] = m["open_o25"] * 1.02, m["open_u25"] * 1.02
+    m["bk_n_1x2"], m["bk_n_ah"] = rng.integers(10, 50, len(m)).astype(float), rng.integers(5, 30, len(m)).astype(float)
+    m["close_ah_line"] = m["open_ah_line"] + rng.choice([-0.25, 0.0, 0.0, 0.25], len(m))
+    m["close_ah_h"] = m["open_ah_h"] + rng.normal(0, 0.03, len(m))
+    m["close_ah_a"] = m["open_ah_a"] + rng.normal(0, 0.03, len(m))
+    # the European form columns (football/europe_form.py): already lagged to the collection day by the stage
+    from football.europe_form import COLUMNS as EUX
+    for c in EUX:
+        m[c] = rng.integers(0, 6, len(m)).astype(float) if ("n90" in c or "days" in c) else rng.normal(0, 0.5, len(m))
+    # the Sportmonks stage's raw columns (football/sportmonks_stage.py), as played
+    from football.sportmonks_stage import COLUMNS as SMX
+    for c in SMX:
+        if "_pr_" in c or "_od_q_" in c:
+            m[c] = rng.uniform(0.1, 0.7, len(m))
+        else:
+            m[c] = rng.gamma(2.0, 0.6, len(m)) if "xg_" in c else rng.integers(0, 40, len(m)).astype(float)
     return m
 
 
@@ -45,7 +74,11 @@ def test_every_block_ignores_what_happened_after_its_collection(matrix, name):
     a = mod.build(m).set_index("match_id").loc[m.loc[last, "match_id"], mod.FEATURES].sort_index()
     m2 = m.copy()
     m2.loc[last, ["ft_home", "ft_away"]] = m2.loc[last, ["ft_away", "ft_home"]].to_numpy() + 4
-    for c in ("qc_h", "qc_a", "close_h", "close_a", "mclam_h", "mclam_a", "bfe_close_h", "bfe_close_a"):
+    for c in ["qc_h", "qc_a", "close_h", "close_a", "mclam_h", "mclam_a", "bfe_close_h", "bfe_close_a",
+              "close_ah_line", "close_ah_h", "close_ah_a"] + \
+            [c for c in m.columns if c.startswith(("tq_", "gs_", "smx_")) and not c.startswith("smx_pr_")]:
+        # what was played is not known either; Sportmonks' prediction is read as pre-match (its time is not known:
+        # sm_pred's caveat), its other columns (the near-kick-off bookmaker consensus among them) are what happened
         m2.loc[last, c] = m2.loc[last, c].to_numpy()[::-1]
     b = mod.build(m2).set_index("match_id").loc[m.loc[last, "match_id"], mod.FEATURES].sort_index()
     pd.testing.assert_frame_equal(a, b)
@@ -111,3 +144,27 @@ def test_line_up_time_features_are_refused_at_the_early_price(matrix, tmp_path, 
     monkeypatch.setattr(lab, "LEDGER", tmp_path / "ledger.jsonl")
     with pytest.raises(SystemExit, match="team sheets"):
         lab.run(str(tmp_path), {"x": "team_all+players"}, ["ridge"], 2015, 2017, 2013, None, None, False, False)
+
+
+@pytest.mark.parametrize("name", ["formation", "match_sim", "sm_xg", "fd_lines", "sm_pred", "eu_form"])
+def test_the_tactics_blocks_give_values_on_the_played_shapes_and_states(matrix, name):
+    mod = available()[name]
+    f = mod.build(matrix)[mod.FEATURES]
+    assert (f.notna().mean() > 0.5).all(), f.notna().mean().to_dict()
+    assert (f.std() > 0).all()
+
+
+def test_the_monthly_betfair_walk_forward_scores_a_batch(matrix, tmp_path, monkeypatch):
+    from research.open_close import football_feature_batch as fb
+    name = "matrix_test.parquet"
+    matrix.to_parquet(tmp_path / name, index=False)
+    (tmp_path / "LATEST").write_text(name)
+    monkeypatch.setattr(fb, "MONTHLY_FROM", "2014-08")
+    monkeypatch.setattr(fb, "MONTHLY_MIN_TRAIN", 300)
+    res = fb.run(str(tmp_path), batch="eu_form")
+    assert res["design"] == "betfair_monthly" and res["test_rows"] > 0
+    assert set(res["arms"]) == {"base", "eu_form"}
+    first_test = res["test_months"][0]
+    assert first_test > res["months"][0]                     # the first months only train
+    b = res["arms"]["eu_form"]["betfair"]
+    assert b["lo95"] <= b["vs_base"] <= b["hi95"] and res["arms"]["base"]["betfair"]["vs_base"] == 0

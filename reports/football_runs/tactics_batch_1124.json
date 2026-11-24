@@ -1,0 +1,249 @@
+{
+ "base": "team_all+home_adv+team_news+form_short+x_short+league_fx+move_memory+kalman_form+sim+style",
+ "blocks": {
+  "formation": [
+   "fm_backs_diff",
+   "fm_fwd_diff",
+   "fm_changes_diff",
+   "fm_fit_diff",
+   "fm_table"
+  ],
+  "match_sim": [
+   "gx_h",
+   "gx_a",
+   "gx_d",
+   "gx_total",
+   "gx_lead_for_diff",
+   "gx_trail_for_diff",
+   "gx_lead_against_diff"
+  ]
+ },
+ "pinnacle": {
+  "folds": [
+   2016,
+   2024
+  ],
+  "rows": 60805
+ },
+ "betfair": {
+  "rows": 9677,
+  "train_rows": 82735
+ },
+ "arms": {
+  "base": {
+   "features": 144,
+   "pinnacle_home": {
+    "skill": 0.08270659473315756,
+    "vs_base": 0.0,
+    "lo95": 0.0,
+    "hi95": 0.0,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08980342650583462,
+    "vs_base": 0.0,
+    "lo95": 0.0,
+    "hi95": 0.0,
+    "days": 343
+   },
+   "betfair_home_skill": 0.0742125474385531,
+   "betfair_away_skill": 0.0989379167653569,
+   "keeps_its_place": false,
+   "costed": {
+    "0.03": {
+     "threshold": 0.03,
+     "tick_off_fair": {
+      "bets": 3631,
+      "roi": -0.0058829259200805905,
+      "roi_lo90": -0.010267030793774402,
+      "roi_hi90": -0.0019638840987103896,
+      "right_way": 0.6819058110713302
+     },
+     "symmetric_book": {
+      "bets": 3631,
+      "roi": 0.008599856338728902,
+      "roi_lo90": 0.004448412299963372,
+      "roi_hi90": 0.01232542697490184,
+      "right_way": 0.6819058110713302
+     }
+    },
+    "0.05": {
+     "threshold": 0.05,
+     "tick_off_fair": {
+      "bets": 1082,
+      "roi": 0.008003345239515814,
+      "roi_lo90": -9.804820858504792e-05,
+      "roi_hi90": 0.01571197177425451,
+      "right_way": 0.7458410351201479
+     },
+     "symmetric_book": {
+      "bets": 1082,
+      "roi": 0.030979776450495922,
+      "roi_lo90": 0.0231741074394713,
+      "roi_hi90": 0.03834370592089825,
+      "right_way": 0.7458410351201479
+     }
+    }
+   }
+  },
+  "formation": {
+   "features": 149,
+   "pinnacle_home": {
+    "skill": 0.0829932195808959,
+    "vs_base": 0.00028662484773834445,
+    "lo95": -7.67935201428964e-05,
+    "hi95": 0.000645515154049492,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08959781490134777,
+    "vs_base": -0.00020561160448686868,
+    "lo95": -0.0009895669760570502,
+    "hi95": 0.0006591296714606027,
+    "days": 343
+   },
+   "betfair_home_skill": 0.0743766242347279,
+   "betfair_away_skill": 0.09851570960648681,
+   "keeps_its_place": false
+  },
+  "match_sim": {
+   "features": 151,
+   "pinnacle_home": {
+    "skill": 0.0828667361415516,
+    "vs_base": 0.00016014140839408253,
+    "lo95": -0.0002095985542274667,
+    "hi95": 0.0005087880186433702,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08953345749335195,
+    "vs_base": -0.00026996901248262393,
+    "lo95": -0.0010239973090274488,
+    "hi95": 0.0005259243145343748,
+    "days": 343
+   },
+   "betfair_home_skill": 0.07387491745034125,
+   "betfair_away_skill": 0.0987075894254883,
+   "keeps_its_place": false
+  },
+  "all_new": {
+   "features": 156,
+   "pinnacle_home": {
+    "skill": 0.08287469996351204,
+    "vs_base": 0.0001681052303545318,
+    "lo95": -0.00020461692810242905,
+    "hi95": 0.0005746401200575523,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08926300032717127,
+    "vs_base": -0.0005404261786633697,
+    "lo95": -0.0012873616903871466,
+    "hi95": 0.00025160906003661465,
+    "days": 343
+   },
+   "betfair_home_skill": 0.07399688696857332,
+   "betfair_away_skill": 0.0982072146445998,
+   "keeps_its_place": false,
+   "costed": {
+    "0.03": {
+     "threshold": 0.03,
+     "tick_off_fair": {
+      "bets": 3634,
+      "roi": -0.004997678209446657,
+      "roi_lo90": -0.009138405258286549,
+      "roi_hi90": -0.0011059464295259433,
+      "right_way": 0.6854705558613099
+     },
+     "symmetric_book": {
+      "bets": 3634,
+      "roi": 0.00936821582619135,
+      "roi_lo90": 0.005349108071715643,
+      "roi_hi90": 0.013156273110180064,
+      "right_way": 0.6854705558613099
+     }
+    },
+    "0.05": {
+     "threshold": 0.05,
+     "tick_off_fair": {
+      "bets": 1101,
+      "roi": 0.0057121583966930544,
+      "roi_lo90": -0.0014940036122596853,
+      "roi_hi90": 0.013006490317092619,
+      "right_way": 0.7420526793823796
+     },
+     "symmetric_book": {
+      "bets": 1101,
+      "roi": 0.028671680339737382,
+      "roi_lo90": 0.021761559490785603,
+      "roi_hi90": 0.035966431293724094,
+      "right_way": 0.7420526793823796
+     }
+    }
+   }
+  }
+ },
+ "note": "development evidence: every season here was read by earlier rules",
+ "kept_in_base": [
+  "league_fx",
+  "move_memory",
+  "kalman_form",
+  "sim",
+  "style"
+ ],
+ "coverage": {
+  "formation": {
+   "fm_backs_diff": {
+    "fitted_seasons": 0.356,
+    "from_2025": 0.8491
+   },
+   "fm_fwd_diff": {
+    "fitted_seasons": 0.356,
+    "from_2025": 0.8491
+   },
+   "fm_changes_diff": {
+    "fitted_seasons": 0.3475,
+    "from_2025": 0.8386
+   },
+   "fm_fit_diff": {
+    "fitted_seasons": 0.3471,
+    "from_2025": 0.8423
+   },
+   "fm_table": {
+    "fitted_seasons": 0.3558,
+    "from_2025": 0.8491
+   }
+  },
+  "match_sim": {
+   "gx_h": {
+    "fitted_seasons": 0.4174,
+    "from_2025": 0.9997
+   },
+   "gx_a": {
+    "fitted_seasons": 0.4174,
+    "from_2025": 0.9997
+   },
+   "gx_d": {
+    "fitted_seasons": 0.4174,
+    "from_2025": 0.9997
+   },
+   "gx_total": {
+    "fitted_seasons": 0.4174,
+    "from_2025": 0.9997
+   },
+   "gx_lead_for_diff": {
+    "fitted_seasons": 0.4174,
+    "from_2025": 0.9997
+   },
+   "gx_trail_for_diff": {
+    "fitted_seasons": 0.4174,
+    "from_2025": 0.9997
+   },
+   "gx_lead_against_diff": {
+    "fitted_seasons": 0.4174,
+    "from_2025": 0.9997
+   }
+  }
+ },
+ "tag": "football-tactics-batch-1124"
+}

@@ -1,0 +1,360 @@
+{
+ "base": "team_all+home_adv+team_news+form_short+x_short+league_fx+move_memory+kalman_form",
+ "blocks": {
+  "mkt_xg": [
+   "mx_xg_lvl_diff",
+   "mx_xg_trend_diff",
+   "mx_xga_lvl_diff",
+   "mx_xga_trend_diff",
+   "mx_xgd_lvl_diff",
+   "mx_xgd_trend_diff",
+   "mx_xpts_lvl_diff",
+   "mx_xpts_trend_diff"
+  ],
+  "decay_form": [
+   "dk_gae_h30_diff",
+   "dk_gae_h120_diff",
+   "dk_gae_h365_diff",
+   "dk_pae_h30_diff",
+   "dk_pae_h120_diff",
+   "dk_pae_h365_diff",
+   "dk_sotd_h30_diff",
+   "dk_sotd_h120_diff",
+   "dk_sotd_h365_diff",
+   "dk_w120"
+  ],
+  "sos_split": [
+   "ss_better_diff",
+   "ss_worse_diff",
+   "ss_fit_diff",
+   "ss_bully_diff"
+  ],
+  "venue_fx": [
+   "hv_home_split",
+   "hv_away_split",
+   "hv_net"
+  ],
+  "norm_rank": [
+   "nz_gae_pct_diff",
+   "nz_gae_z_diff",
+   "nz_xgd_pct_diff",
+   "nz_xgd_z_diff",
+   "nz_sotd_pct_diff",
+   "nz_sotd_z_diff"
+  ],
+  "style": [
+   "st_shots_exp_diff",
+   "st_sot_exp_diff",
+   "st_cor_exp_diff",
+   "st_acc_diff",
+   "st_acc_allowed_diff",
+   "st_tempo",
+   "st_tempo_gap",
+   "st_cards_diff",
+   "st_vol_leak"
+  ],
+  "referee": [
+   "rf_home_gae",
+   "rf_cards",
+   "rf_n"
+  ],
+  "sim": [
+   "sm_h",
+   "sm_a",
+   "sm_d",
+   "sm_total"
+  ]
+ },
+ "pinnacle": {
+  "folds": [
+   2016,
+   2024
+  ],
+  "rows": 60805
+ },
+ "betfair": {
+  "rows": 9677,
+  "train_rows": 82735
+ },
+ "arms": {
+  "base": {
+   "features": 131,
+   "pinnacle_home": {
+    "skill": 0.07525187180306092,
+    "vs_base": 0.0,
+    "lo95": 0.0,
+    "hi95": 0.0,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08216672666703595,
+    "vs_base": 0.0,
+    "lo95": 0.0,
+    "hi95": 0.0,
+    "days": 343
+   },
+   "betfair_home_skill": 0.06662550556459523,
+   "betfair_away_skill": 0.0912721229804001,
+   "keeps_its_place": false,
+   "costed": {
+    "0.03": {
+     "threshold": 0.03,
+     "tick_off_fair": {
+      "bets": 3604,
+      "roi": -0.008344858247952657,
+      "roi_lo90": -0.012620177195592934,
+      "roi_hi90": -0.0042315638910754875,
+      "right_way": 0.6759156492785794
+     },
+     "symmetric_book": {
+      "bets": 3604,
+      "roi": 0.006437880552690104,
+      "roi_lo90": 0.0026117695371973533,
+      "roi_hi90": 0.010330382249625474,
+      "right_way": 0.6759156492785794
+     }
+    },
+    "0.05": {
+     "threshold": 0.05,
+     "tick_off_fair": {
+      "bets": 1076,
+      "roi": 0.003792998268017293,
+      "roi_lo90": -0.0037032958955254217,
+      "roi_hi90": 0.011432442543173188,
+      "right_way": 0.7304832713754646
+     },
+     "symmetric_book": {
+      "bets": 1076,
+      "roi": 0.02634254991207624,
+      "roi_lo90": 0.019217250143160093,
+      "roi_hi90": 0.03331881998226093,
+      "right_way": 0.7304832713754646
+     }
+    }
+   }
+  },
+  "mkt_xg": {
+   "features": 139,
+   "pinnacle_home": {
+    "skill": 0.0756274611664377,
+    "vs_base": 0.00037558936337681736,
+    "lo95": -0.00039674266586271875,
+    "hi95": 0.0011935444416915312,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08314296633853202,
+    "vs_base": 0.0009762396714960341,
+    "lo95": -4.6196837188685065e-05,
+    "hi95": 0.002001144691080165,
+    "days": 343
+   },
+   "betfair_home_skill": 0.06791383416296515,
+   "betfair_away_skill": 0.09206551386894168,
+   "keeps_its_place": false
+  },
+  "decay_form": {
+   "features": 141,
+   "pinnacle_home": {
+    "skill": 0.07640767060441334,
+    "vs_base": 0.0011557988013524499,
+    "lo95": 0.0004966103044891387,
+    "hi95": 0.0019021368351615038,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08299806822774602,
+    "vs_base": 0.0008313415607099784,
+    "lo95": -0.00034221280182322245,
+    "hi95": 0.0019551317951674524,
+    "days": 343
+   },
+   "betfair_home_skill": 0.06757875904842447,
+   "betfair_away_skill": 0.09203203795448534,
+   "keeps_its_place": false
+  },
+  "sos_split": {
+   "features": 135,
+   "pinnacle_home": {
+    "skill": 0.07528422597760365,
+    "vs_base": 3.235417454271662e-05,
+    "lo95": -0.0005418866551363865,
+    "hi95": 0.0006173715351322549,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08169032968006185,
+    "vs_base": -0.00047639698697410376,
+    "lo95": -0.0012601928036792382,
+    "hi95": 0.00026301619925055,
+    "days": 343
+   },
+   "betfair_home_skill": 0.065961874972841,
+   "betfair_away_skill": 0.09090542369114651,
+   "keeps_its_place": false
+  },
+  "venue_fx": {
+   "features": 134,
+   "pinnacle_home": {
+    "skill": 0.07592039367040138,
+    "vs_base": 0.0006685218673405027,
+    "lo95": 9.051590019620693e-05,
+    "hi95": 0.0012755042433730947,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08267247316976001,
+    "vs_base": 0.0005057465027240388,
+    "lo95": -0.00025525906673090084,
+    "hi95": 0.0012295031833211287,
+    "days": 343
+   },
+   "betfair_home_skill": 0.0672379474310123,
+   "betfair_away_skill": 0.09171535807782172,
+   "keeps_its_place": false
+  },
+  "norm_rank": {
+   "features": 137,
+   "pinnacle_home": {
+    "skill": 0.07483587812661574,
+    "vs_base": -0.0004159936764451426,
+    "lo95": -0.0009625156612142768,
+    "hi95": 0.0001741747766362913,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08316605234688201,
+    "vs_base": 0.000999325679846033,
+    "lo95": 0.00029466245383522776,
+    "hi95": 0.0017446009024928047,
+    "days": 343
+   },
+   "betfair_home_skill": 0.06722667122917947,
+   "betfair_away_skill": 0.09250472535782284,
+   "keeps_its_place": true
+  },
+  "style": {
+   "features": 140,
+   "pinnacle_home": {
+    "skill": 0.07943272813904212,
+    "vs_base": 0.004180856335981247,
+    "lo95": 0.0031410911673262717,
+    "hi95": 0.005315501552477359,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08591204910021522,
+    "vs_base": 0.0037453224331791967,
+    "lo95": 0.001979830021968402,
+    "hi95": 0.00558083596398067,
+    "days": 343
+   },
+   "betfair_home_skill": 0.07103485908497897,
+   "betfair_away_skill": 0.09462839836421666,
+   "keeps_its_place": true
+  },
+  "referee": {
+   "features": 134,
+   "pinnacle_home": {
+    "skill": 0.07612589238326684,
+    "vs_base": 0.0008740205802059736,
+    "lo95": 0.0003399333659904998,
+    "hi95": 0.0014386649841822878,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08246195811864465,
+    "vs_base": 0.00029523145160868607,
+    "lo95": -0.00047386047094547776,
+    "hi95": 0.0009686638019646937,
+    "days": 343
+   },
+   "betfair_home_skill": 0.06683061840787263,
+   "betfair_away_skill": 0.09162015373514298,
+   "keeps_its_place": false
+  },
+  "sim": {
+   "features": 135,
+   "pinnacle_home": {
+    "skill": 0.0788427837881549,
+    "vs_base": 0.003590911985094057,
+    "lo95": 0.0027469601674925273,
+    "hi95": 0.0043843428101069705,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.08613650028168685,
+    "vs_base": 0.003969773614650861,
+    "lo95": 0.002596246603666655,
+    "hi95": 0.005611057107499972,
+    "days": 343
+   },
+   "betfair_home_skill": 0.06914672060577876,
+   "betfair_away_skill": 0.09609058794353631,
+   "keeps_its_place": true
+  },
+  "all_new": {
+   "features": 178,
+   "pinnacle_home": {
+    "skill": 0.08387428641618078,
+    "vs_base": 0.008622414613119867,
+    "lo95": 0.007187910092514322,
+    "hi95": 0.01000945456023543,
+    "days": 2206
+   },
+   "betfair": {
+    "skill": 0.0913738712159976,
+    "vs_base": 0.0092071445489616,
+    "lo95": 0.006754995365677131,
+    "hi95": 0.012006066607628652,
+    "days": 343
+   },
+   "betfair_home_skill": 0.07498032299215696,
+   "betfair_away_skill": 0.10097863473981572,
+   "keeps_its_place": true,
+   "costed": {
+    "0.03": {
+     "threshold": 0.03,
+     "tick_off_fair": {
+      "bets": 3672,
+      "roi": -0.0050010897379137225,
+      "roi_lo90": -0.009258760389905966,
+      "roi_hi90": -0.0010257425671258453,
+      "right_way": 0.6827342047930284
+     },
+     "symmetric_book": {
+      "bets": 3672,
+      "roi": 0.009071487144627027,
+      "roi_lo90": 0.004907931136240956,
+      "roi_hi90": 0.012944279805052921,
+      "right_way": 0.6827342047930284
+     }
+    },
+    "0.05": {
+     "threshold": 0.05,
+     "tick_off_fair": {
+      "bets": 1111,
+      "roi": 0.006730955739625605,
+      "roi_lo90": -0.00142587901974571,
+      "roi_hi90": 0.014162104730138878,
+      "right_way": 0.729072907290729
+     },
+     "symmetric_book": {
+      "bets": 1111,
+      "roi": 0.029771036903245205,
+      "roi_lo90": 0.021910506313300472,
+      "roi_hi90": 0.03670548407215173,
+      "right_way": 0.729072907290729
+     }
+    }
+   }
+  }
+ },
+ "note": "development evidence: every season here was read by earlier rules",
+ "kept_in_base": [
+  "league_fx",
+  "move_memory",
+  "kalman_form"
+ ],
+ "tag": "football-feature-batch-1124"
+}
