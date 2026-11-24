@@ -1104,3 +1104,22 @@ candidates are in `reports/football_strategy_candidates.md`.
   bets, in both halves. The lay was not a registered cell and the literature points the other way: a test on the
   back years decides it.
 - Four ideas went to `desk/backlog/football.jsonl`, each needing its own registered test. Nothing trades.
+
+
+## Is the closing-price model's skill print noise? (12 Nov 2026)
+
+Registered as `football-robust-close-1112` before the run; `research/open_close/football_bf_robust_close.py`; output
+`reports/football_runs/robust_close_1112.json` (local build of the 2026 warehouse). The robust close is the median
+of a runner's last prints (up to 5, in the 10 minutes before the off, at least 3). 99,791 rows have
+one; 56,908 reliable rows do not and are left out. Skill against "no move", 95% interval:
+
+| Score | Every row (99,791) | Busy rows, 150+ updates (7,166) |
+|---|---|---|
+| The model as it is, against the last print | +2.93% (+2.35 to +3.53) | -1.18% (-3.28 to +0.87) |
+| The same forecasts, against the robust close | +2.65% (+2.06 to +3.28) | -1.22% (-3.45 to +0.89) |
+| Trained on the robust close, against it | +2.42% (+1.92 to +2.97) | -0.35% (-2.34 to +1.56) |
+
+- **Not print noise.** Against the de-noised close the skill keeps most of its size.
+- **Still not tradable.** On busy runners it is zero against either close. By the registered reading the skill sits
+  in thin runners.
+- No model variant follows. The next reads are at quotes (the recorded books) and on the back years.
