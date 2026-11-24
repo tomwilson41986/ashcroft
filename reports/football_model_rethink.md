@@ -1318,3 +1318,45 @@ The base costed at 0.03 returns -1.25%.
 Reading: null on every arm, so none joins the base. The market's move to the close already reflects what these
 transformations of the same match data carry. The Sportmonks value is in the raw xG form (sm_xg) and its prediction
 (sm_pred), not in further transformations of them.
+
+## The most accurate win probability, scored on results (24 Nov 2026)
+
+The owner, 24 Nov: the target is the most accurate win probability for each team, then trading around it.
+Registered as `football-win-prob-1124` before the run. Source: football-research.yml run 45405707003,
+`reports/football_runs/win_prob_1124.json`. Every warehouse match with a result and a fresh book at the checkpoint:
+69,027 events; 113,570 scored event-checkpoints over 488 match days (July 2025 to October 2026).
+
+Log loss against the result (lower is better). The change is against Betfair's price at the same checkpoint, paired by day:
+
+| Forecast | Log loss | Saved a match | 95% interval |
+|---|---|---|---|
+| Betfair's price at the checkpoint | 0.97198 | - | - |
+| Recalibrated price | 0.97203 | -0.00005 | -0.00019 to +0.00008 |
+| **Price plus the move model's forecast** | **0.97181** | **+0.00016** | **+0.00005 to +0.00028** |
+| Benter (LightGBM on the result, from the price) | 0.97438 | -0.00241 | -0.00312 to -0.00173 |
+| Betfair's close, the same matches (the ceiling) | 0.96961 | +0.00237 | +0.00176 to +0.00298 |
+
+The price plus the move model's forecast, by checkpoint (saved a match): 360 minutes +0.00006 (-0.00017 to +0.00029);
+120 +0.00027 (+0.00004 to +0.00052); 60 +0.00021 (-0.00002 to +0.00044); 15 +0.00015 (+0.00003 to +0.00027).
+
+Reading:
+- Only one forecast beats the price you can bet at: the price corrected by the move model. It wins about 7% of what
+  the close knows over the checkpoint price.
+- Betfair's normalised prices carry no favourite-longshot bias to remove.
+- A correction learned from results directly overfits: a year and a half of results is too noisy for 87 features.
+- So the win-probability model is "Betfair's price, moved by the forecast of where it closes". It gets better as the
+  move model gets better, and with more seasons of Betfair data (the 2016-2024 bundles).
+
+## More Betfair price-file features for the move model (24 Nov 2026)
+
+Registered as `football-bf-features2-1124`. Source: run 45402661206, `reports/football_runs/bf_features2_1124.json`.
+338,781 scored rows, 518 days; the model with every family reads 4.60% skill on the move (4.21 to 5.00).
+
+| Family added | Coverage | vs full (points) | 95% interval |
+|---|---|---|---|
+| over 2.5 runner's path | 91% | -0.01 | -0.05 to +0.03 |
+| **implied changes into the checkpoint** | 88% | **+0.12** | **+0.07 to +0.18** |
+| trading pace | 96% | +0.01 | -0.02 to +0.04 |
+| all three | | +0.09 | +0.02 to +0.16 |
+
+The implied changes add most at 15 minutes (+0.51 points). They join the move model, and so the win probability.
