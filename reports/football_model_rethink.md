@@ -1245,3 +1245,30 @@ The 2025 bundle (`owner_drive_2025`) was ingested to bronze in run 45377346250; 
   full book): home 43.7% vs 43.5%, draw 24.8% vs 24.9%, away 31.5% vs 31.7%.
 - Linked to API-Football fixtures: 93,866 of 101,522 (92.5%); results agree on 93,107 of 93,127. Teams mapped: 75.9%.
 - Move rows the closing-price model reads: 1,017,903, of which 388,203 are usable (fresh book, schedule known).
+
+## European form on Betfair's own moves, walk-forward by month (24 Nov 2026)
+
+Registered as `football-eu-form-1124-monthly` before the run. Source: football-research.yml run 45392434689,
+`reports/football_runs/eu_form_monthly_1124.json`. Same rows and design as the two Sportmonks tests above.
+
+| Arm | Features | Skill vs no move | vs base (points) | 95% interval |
+|---|---|---|---|---|
+| base | 144 | 15.19% | - | - |
+| eu_form | 149 | 15.15% | -0.04 | -0.16 to +0.08 |
+
+Costed a tick off fair: at 0.03, 10,046 bets, -1.39% (base -1.42%); at 0.05, 5,573 bets, -1.33% (base -1.36%).
+The features are zero when a side played no European match, so the share of matches with European involvement is not
+in the output.
+
+Reading: null. European form is dropped from the base.
+
+### The three tests together, for the Sportmonks decision (subscription EUR1,159 a month, first charge 8 Dec)
+
+| Test | vs base (points) | 95% interval | Costed at 0.03 |
+|---|---|---|---|
+| xG and match statistics (sm_xg) | +0.21 | +0.002 to +0.40 | -1.33% |
+| Predictions (sm_pred, an upper bound) | +0.33 | +0.03 to +0.61 | -1.36% |
+| European form (eu_form) | -0.04 | -0.16 to +0.08 | -1.39% |
+
+Two blocks add a little skill and one adds none; no arm makes money once costed. As a model input, Sportmonks has not
+earned its cost on this evidence. The clean test of the predictions is the timestamped nightly snapshots.
