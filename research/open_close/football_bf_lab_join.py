@@ -43,6 +43,7 @@ from research.open_close import football_bf_close_model as bf
 log = logging.getLogger(__name__)
 
 TAG = "football-bf-lab-join-1124"
+STACK_TAG = "football-bf-lab-stack-1124"
 LAB_BLOCKS = ["home_adv", "form_short", "league_fx", "move_memory", "kalman_form", "sim", "style",
               "sm_xg", "sm_pred"]
 
@@ -60,6 +61,70 @@ def lab_table(cache: str) -> tuple[pd.DataFrame, list[str]]:
     out = d[["match_id"] + cols].drop_duplicates("match_id").copy()
     out[cols] = out[cols].astype("float32")
     return out.rename(columns={c: f"lab_{c}" for c in cols}), [f"lab_{c}" for c in cols]
+
+
+FC_FROM, FC_TRAIN_FROM = "2025-03", 2016
+STACK_HORIZONS = (360, 120)
+
+
+def lab_forecast(cache: str) -> pd.DataFrame:
+    """The lab model's out-of-sample forecast of each match's early-to-close move (home and away), walk-forward by
+    month: every month from ``FC_FROM`` forecast by the stack (ridge and LightGBM, the review arms' settings) fitted
+    on the earlier months' matches from season ``FC_TRAIN_FROM`` (football-data's early-to-close moves, the lab's
+    target). One row a match: match_id, lab_fc_h, lab_fc_a."""
+    from football import lab
+    from research.open_close import football_review_arms as ra
+    from research.open_close.football_feature_batch import fit_predict
+    m, bfeat = lab.add_blocks(lab.latest(cache), LAB_BLOCKS)
+    d = lab.prepared(m)
+    spec = "+".join([ra.BASE] + [b for b in LAB_BLOCKS if b in bfeat])
+    cols = [c for c in lab.resolve(spec, lab.families(m), bfeat, d.columns) if c != "league"]
+    d["month"] = pd.to_datetime(d["date"]).dt.strftime("%Y-%m")
+    d = d[d["season"] >= FC_TRAIN_FROM]
+    out = []
+    for mo in sorted(x for x in d["month"].unique() if x >= FC_FROM):
+        te = d[d["month"] == mo]
+        row = {"match_id": te["match_id"].to_numpy()}
+        for side in ("h", "a"):
+            tr = d[(d["month"] < mo) & np.isfinite(d[f"y_{side}"])]
+            row[f"lab_fc_{side}"] = fit_predict(tr, te, cols, tr[f"y_{side}"].to_numpy(float))
+        out.append(pd.DataFrame(row))
+        log.info("lab forecast %s: %d matches", mo, len(te))
+    return pd.concat(out, ignore_index=True).drop_duplicates("match_id")
+
+
+def run_stack(store, cache: str) -> dict:
+    """The follow-up (football-bf-lab-stack-1124): the lab's forecast as two features in place of its 161 columns."""
+    d, fam = bf.load(store)
+    if d.empty:
+        return {"tag": STACK_TAG, "status": "no data found: gold/move is not built"}
+    link = bf.read_rows(store, "gold/link", ["event_id", "match_id"], horizons=False)
+    if link is None:
+        return {"tag": STACK_TAG, "status": "no data found: gold/link is not built"}
+    fc = lab_forecast(cache)
+    d = d[d["cp_fresh"]].reset_index(drop=True)
+    j = join(d, link.to_pandas(), fc)
+    j["lab_fc_own"] = np.where(j["role"] == "home", j["lab_fc_h"], np.where(j["role"] == "away", j["lab_fc_a"],
+                                                                            np.nan)).astype("float32")
+    base_cols = [c for cols in fam.values() for c in cols]
+    extra = ["lab_fc_h", "lab_fc_a", "lab_fc_own"]
+    res = {"tag": STACK_TAG, "rows_joined": int(len(j)), "events_joined": int(j["event_id"].nunique()),
+           "forecast_coverage": round(float(j["lab_fc_h"].notna().mean()), 4),
+           "note": "development evidence; last traded prices; nothing is traded"}
+    if j["month"].nunique() < 4:
+        res["status"] = "no data found: fewer than four months of joined rows"
+        return res
+    res.update(compare(j, base_cols, extra))
+    sel = [str(h) for h in STACK_HORIZONS]
+    p0, _ = bf.walk_forward(j, base_cols)
+    p1, _ = bf.walk_forward(j, base_cols + extra)
+    ok = np.isfinite(p0) & np.isfinite(p1) & j["schedule_fixed"].to_numpy() & j["usable"].to_numpy() & \
+        j["cp_min"].isin(STACK_HORIZONS).to_numpy()
+    sc = j[ok]
+    res["primary_360_and_120"] = bf.skill_ci(sc["day"].to_numpy(), sc["y_logit"].to_numpy(float), p1[ok], base=p0[ok])
+    res["horizons_in_primary"] = sel
+    res["keeps_its_place"] = bool(res["primary_360_and_120"]["vs_base_lo95"] > 0)
+    return res
 
 
 def join(d: pd.DataFrame, link: pd.DataFrame, labt: pd.DataFrame) -> pd.DataFrame:
@@ -136,16 +201,18 @@ def main(argv=None) -> int:
     ap.add_argument("--cache", required=True, help="the lab cache (python -m football.lab cache)")
     ap.add_argument("--root", help="a local copy of the warehouse in place of the capture bucket")
     ap.add_argument("--out-json", required=True)
+    ap.add_argument("--stack", action="store_true", help="the follow-up: the lab's forecast as one feature")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     from sources.common import Store
-    res = run(Store(root=a.root) if a.root else Store(), a.cache)
+    store = Store(root=a.root) if a.root else Store()
+    res = run_stack(store, a.cache) if a.stack else run(store, a.cache)
     from pathlib import Path
     Path(a.out_json).parent.mkdir(parents=True, exist_ok=True)
     with open(a.out_json, "w") as f:
         json.dump(res, f, indent=1, default=str)
     print(json.dumps({k: v for k, v in res.items() if k in ("tag", "status", "rows_joined", "bf", "bf_lab",
-                                                             "keeps_its_place")}, indent=1, default=str))
+                                                             "keeps_its_place", "primary_360_and_120")}, indent=1, default=str))
     return 0
 
 

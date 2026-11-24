@@ -37,6 +37,7 @@ on:
           - bf_features2
           - bf_tune
           - buchdahl
+          - bf_lab_stack
           - warehouse
           - warehouse_models
       days:
@@ -116,7 +117,7 @@ jobs:
         run: python -m research.open_close.football_close_model_books --days "$DAYS" --out out/close_model_books.json
       # the lab-matrix jobs: the inputs and the cache as football-trials.yml builds them (read-only copies)
       - name: Lab inputs (gold, silver and API-Football history)
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl' || inputs.job == 'bf_lab_stack'
         run: |
           mkdir -p src/football src/api_football
           aws s3 sync "s3://$CAPTURE_BUCKET/sources/football/gold/" src/football/gold/ --only-show-errors
@@ -128,7 +129,7 @@ jobs:
           mkdir -p src/sportmonks
           aws s3 cp "s3://$CAPTURE_BUCKET/sources/sportmonks/matches.parquet" src/sportmonks/matches.parquet --only-show-errors || echo "no Sportmonks table yet"
       - name: Restore the lab cache
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl' || inputs.job == 'bf_lab_stack'
         uses: actions/cache@v4
         with:
           path: .football_cache
@@ -137,7 +138,7 @@ jobs:
             football-lab-${{ hashFiles('football/**') }}-
             football-lab-
       - name: The lab matrix (stages rebuilt only when their code or inputs change)
-        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl'
+        if: inputs.job == 'feature_report' || inputs.job == 'review_arms' || inputs.job == 'feature_batch' || inputs.job == 'tactics_batch' || inputs.job == 'sportmonks_batch' || inputs.job == 'fd_lines_batch' || inputs.job == 'sm_pred_batch' || inputs.job == 'eu_form_batch' || inputs.job == 'bf_lab_join' || inputs.job == 'sm_feat2_batch' || inputs.job == 'buchdahl' || inputs.job == 'bf_lab_stack'
         run: timeout 4200 python -m football.lab cache --root src --history-root src --cache .football_cache
       - name: Feature report (importance on Betfair's moves, leave a family out, the target's checks)
         if: inputs.job == 'feature_report'
@@ -206,6 +207,9 @@ jobs:
         run: |
           mkdir -p out
           python -m research.open_close.football_buchdahl --src src --cache .football_cache --out-json out/buchdahl.json
+      - name: The Betfair-native model with the lab's forecast as one feature (football-bf-lab-stack-1124)
+        if: inputs.job == 'bf_lab_stack'
+        run: python -m research.open_close.football_bf_lab_join --stack --cache .football_cache --out-json out/bf_lab_stack.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
