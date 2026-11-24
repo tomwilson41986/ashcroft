@@ -54,6 +54,16 @@ jobs:
               picks = [r for r in rows if r.get("s") and float(r["s"]) <= cut]
               print(f"served runners {len(rows)}, races {len({r['race_id'] for r in rows})}, "
                     f"lay picks {len(picks)} (cut {cut:.4f})")
+              # each track's served races (first and last off) and its picks: a meeting missing here was never served
+              by = collections.defaultdict(lambda: {"races": set(), "offs": [], "picks": 0})
+              for r in rows:
+                  b = by[r["track"]]
+                  b["races"].add(r["race_id"])
+                  b["offs"].append(r["race_time"])
+              for r in picks:
+                  by[r["track"]]["picks"] += 1
+              for t, b in sorted(by.items()):
+                  print(f"  {t}: races {len(b['races'])}, {min(b['offs'])} to {max(b['offs'])}, lay picks {b['picks']}")
           if not os.path.exists("ledger.csv"):
               raise SystemExit(0)
           rows = list(csv.DictReader(open("ledger.csv")))
