@@ -47,3 +47,12 @@ def test_margins_reads_the_closing_columns_and_reports_each_method():
     got = bd.margins(s)
     assert got["pinnacle_close"]["matches"] == n and set(got["pinnacle_close"]["methods"]) == set(bd.METHODS)
     assert "status" in got["average_close"]
+
+
+def test_the_silver_table_s_match_date_is_read_when_there_is_no_raw_date():
+    import pandas as pd
+    s = pd.DataFrame({"match_date": ["2026-08-15", "2026-09-01"], "HxG": [1.2, None], "AxG": [0.8, 0.5],
+                      "Div": ["E0", "E0"]})
+    assert bd.match_days(s).dt.strftime("%Y-%m").tolist() == ["2026-08", "2026-09"]
+    got = bd.fd_xg(s, None, None)
+    assert got["matches_with_xg"] == 1 and got["by_month"] == {"2026-08": 1}

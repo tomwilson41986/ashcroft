@@ -88,14 +88,22 @@ def devig(odds: np.ndarray, method: str) -> np.ndarray:
     raise ValueError(method)
 
 
+def match_days(silver: pd.DataFrame) -> pd.Series:
+    """Each row's match day: the silver table's ``match_date``, else football-data's raw ``Date`` (day first)."""
+    if "match_date" in silver.columns:
+        return pd.to_datetime(silver["match_date"], errors="coerce")
+    if "Date" in silver.columns:
+        return pd.to_datetime(silver["Date"], dayfirst=True, errors="coerce")
+    return pd.Series(pd.NaT, index=silver.index)
+
+
 def margins(silver: pd.DataFrame, n_boot: int = 1000, seed: int = 0) -> dict:
     res = {}
     res_col = silver["FTR"].astype(str).str.upper() if "FTR" in silver.columns else None
     if res_col is None:
         return {"status": "no data found: no FTR column"}
     outcome = res_col.map({"H": 0, "D": 1, "A": 2})
-    day = pd.to_datetime(silver["Date"], dayfirst=True, errors="coerce").dt.strftime("%Y-%m-%d") \
-        if "Date" in silver.columns else pd.Series("", index=silver.index)
+    day = match_days(silver).dt.strftime("%Y-%m-%d")
     rng = np.random.default_rng(seed)
     for name, cols in BOOKS.items():
         if not all(c in silver.columns for c in cols):
@@ -195,7 +203,7 @@ def fd_xg(silver: pd.DataFrame, lab: pd.DataFrame | None, gold: pd.DataFrame | N
         return {"status": "no data found: football-data's files as loaded carry no HxG/AxG columns"}
     s = silver.copy()
     s["hxg"], s["axg"] = pd.to_numeric(s["HxG"], errors="coerce"), pd.to_numeric(s["AxG"], errors="coerce")
-    s["month"] = pd.to_datetime(s["Date"], dayfirst=True, errors="coerce").dt.strftime("%Y-%m")
+    s["month"] = match_days(s).dt.strftime("%Y-%m")
     have = s[s["hxg"].notna() & s["axg"].notna()]
     out = {"matches_with_xg": int(len(have)),
            "by_division": have.groupby("Div").size().sort_values(ascending=False).to_dict() if "Div" in have else {},
