@@ -564,3 +564,41 @@ Counted days: the stream lab's first family 17 days pooled (no candidate); its l
 - **GreyhoundAPI**: 14 runs, no HTTP 500, no racecards/today error.
 
 Counted days: the stream lab's first family 18 days pooled (no candidate); its late family 12 days; the trade test 13 days (flags not read against the ledger rule); the resting test 11 days; the band test no candidate; the residual's forward test 1 completed day (21 Nov).
+
+### 23 Nov 2026 (close lab 45287018054, stream lab 45281654812, day replay 45295128770; read 24 Nov)
+
+- **The live lay at the SP, third day: live from the scheduled start** (paper-models 45119818208, 05:46 to 22:30, no restart; GREYHOUND_SP_LAY `live`, now a repository variable). "greyhound lay at the SP (live) exited 0": 75 picks served, 132 lays (66 win, 66 place), all PENDING at Betfair, 18 skip rows (9 picks x 2 markets, each a runner removed after the serve), 0 picks undecided, 0 holds, settled net **+GBP696.19** after commission with GBP100 open (status 45295131720). **22 Nov reconciled** at the start: 72 lays, 62 markets, 60 settled, 2 unsettled (1.265831819, 1.265831820, a race's win and place markets); net +GBP145.67 (win +11.14, place +134.52). From 24 Nov the trader reconciles its last three live days at each start (PR 485), so those two get their final figure.
+
+| Live SP lay, net after commission | Lays | Win | Place | Day |
+|---|---|---|---|---|
+| 21 Nov (reconciled) | 146 | +170.67 | -17.59 | +GBP153.08 |
+| 22 Nov (reconciled, 2 markets unsettled) | 72 | +11.14 | +134.52 | +GBP145.67 |
+| 23 Nov (at the close, GBP100 open) | 132 | | | +GBP696.19 |
+| Total | 350 | | | +GBP994.94 |
+
+- **The early lay placed nothing; greyhound/STOP held all day.** GREYHOUND_EARLY_LAY read `live` (the owner asked for paper on 21 Nov; still to change): "greyhound early lay (live) exited 0", 131 markets priced, 134 closed, locked_pnl 0.0, open_liability 0, "recovered from Betfair's orders: {}". Running table 45274109867: "STOPPED (S3 STOP)", 131 races skipped, 0 lays. spclose, spclose3, m10, short20, short10 "no lays yet (0 dogs looked at)": the SP-close paper test still has no first day. The favourite back placed none (131 skipped; no reason logged). The quotes on paper, 0 quoted (the running table labels their section "live": a label fault, nothing sent).
+- **The take and close stayed on paper**: 131 markets decided, 0 positions, settled net 0.
+- **The day replayed** (45295128770): on the live-key books the live rule (through fill, greened) would have made -282.22 on 17,223.00 liability (-1.64%, 173 of 552 lays matched, 31 laid dogs won) against the traded fill's +189.18 (+0.67%, 284 matched); spclose -352.74 (-2.05%), spclose3 -324.75 (-1.92%), m10 -611.67 (-2.26%), short20 -13.16, short10 -26.85. Recorder's books: live rule -217.75 (-2.58%, 85 of 573), traded fill +180.24 (+1.03%, 178). The through fill is the harsh bound; the trusted fill is -0.12% at the SP (below).
+- **The close lab scored 22 Nov**: 402,256 stream lines, 17,253 runner-checkpoints with an SP; 93 races, 15,450 runner-checkpoints (2,730 race-checkpoints); 2,727 resting orders, 2,227 matched. BFSP RMSE: gbm_small_plus 0.1948, gbm_small_path 0.1949, gbm_all 0.1955, gbm_small_plus_huber 0.1959, mid 0.2594, ltp 0.2737. Win log-loss: gbm_win_all 1.3641, gbm_small_late 1.3643, gbm_small_race 1.3644, gbm_all_small 1.3648, clogit_win_plus 1.3653, mid 1.3725, ltp 1.3760, oracle SP 1.3614 (the oracle best on 22 Nov; the 20 and 21 Nov anomalies still unexplained).
+- **Champions.** BFSP: gbm_small_plus_huber holds (gain 0.03135, z 15.99, 1,467 races over 12 days). **Win: the crown goes back to gbm_all_small** (gain 0.00373, 0.00176 to 0.00566, z 3.22 over 1,916 races in 16 days).
+- **The review.** Closed a median 25 s after the off (10% 13 s, 90% 52 s); open 30 s after on 34%, 60 s after on 9%. SP pool: backs on 86% (median GBP58), lays on 87% (median GBP14 liability). SP book over 2,137 races median 1.0041. Benter at 60 s: the SP 0.00509 (p 0.0000); gbm_all_small 6e-05 (p 0.6201).
+- **The trade, band and resting tests.** Trade (14 days): flags lay_10_0.1 on both (67 trades, +7.768% at the SP), lay_60_0.1, lay_60_0.06 (119 trades, +5.908%, q 0.03), lay_30_0.06 on both, lay_30_0.03 on Win; no deflated Sharpe printed: none is a pass. Band: no candidate. Resting (12 days): rest_back_60_m0 +1.011% at the SP (2,372 trades, 0.547 to 1.566, q 0.01), rest_back_60_m3 +2.185% (167) and rest_lay_60_m3 +2.304% (181) flagged; gates read on or after 19 Dec. Still to fix: four resting means printed outside their own 90% interval (rest_back_60_all -0.017 [-0.447, -0.053]; rest_back_late0_all -0.372 [-0.762, -0.412]; rest_lay_60_all -0.425 [-0.925, -0.515]; rest_lay_late0_all -0.44 [-0.969, -0.617]).
+- **The stream lab, 23 Nov** (554,830 stream lines, 264 markets, 10,485 trades; 19 days pooled, 85 rules, 170 tests): no candidate; every rule negative at the SP, top gap_lay_60_0.1 -0.251%. Late family (13 days): every cell negative.
+- **The early-lay forward test, 23 Nov**: 132 races, 573 lays placed, 178 matched, +1.03% of liability (its own traded fill). Queue-aware replay: 233 matched, +1.04% at the SP, +2.86% to the result. **The trusted fill**: 231 matched, 17,907.56 liability, -0.12% at the SP (the third day running below zero).
+
+| | 13 Nov | 14 Nov | 15 Nov | 16 Nov | 17 Nov | 18 Nov | 19 Nov | 20 Nov | 21 Nov | 22 Nov | 23 Nov |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| At the SP | +0.93% | +1.33% | +1.39% | +0.63% | +1.95% | +1.46% | +1.48% | +2.2% | +1.06% | +1.89% | +1.04% |
+| To the result | +1.78% | -1.62% | -0.58% | -2.75% | +0.79% | +1.13% | -1.10% | +4.39% | -4.52% | +1.53% | +2.86% |
+
+- **The residual on the BSP, forward on paper.** Serves (45133898536, 45159573776, 45187755911, 45220865376): each 135 races, 757 runners; lay_bottom10 75 picks; code_changed_since_freeze false in all four. The settle (45175519832): 22 Nov, 95 races served, 81 wholly priced, 14 left out; lay_bottom10 40 bets, net +0.65; back_top10 43 bets, net -15.07. Reading after 2 settled days: lay_bottom10 121 forward bets, +4.552% (1.368 to 7.736, t 2.35); pooled with the study +1.332% (t 7.57, deflated Sharpe 0.9994); gate "running: 2 of 120 days".
+
+| The same picks | Paper lay_bottom10 (recorder's SP) | Live win lays (Betfair's settlement) |
+|---|---|---|
+| 21 Nov | +6.0% (81 bets) | +4.3% (79; 2 missed after the 21:45 stop) |
+| 22 Nov | +1.6% (40 bets) | +0.6% (36; +11.14 on GBP1,800; 2 markets unsettled; 5 picks paper only, before the 11:23 restart) |
+
+- **The live price runs, 23 Nov**: 13 fired, 9 succeeded, 2 cancelled (superseded), **2 failed** (45227398128, 45248727632; "The hosted runner lost communication with the server": the fourth day running; logs gone): no price update after 20:13 UTC. 135 markets priced in every run, races_not_priced 0; m_sd 0.0457 to 0.046; no "not applied" warning. Peak 15,882 MB used and 17,774 MB swap. Five lost runners in four days point at memory.
+- **GreyhoundAPI**: 15 runs, no HTTP 500, no racecards/today error.
+
+Counted days: the stream lab's first family 19 days pooled (no candidate); its late family 13 days; the trade test 14 days (flags not read against the ledger rule); the resting test 12 days; the band test no candidate; the residual's forward test 2 completed days (21 and 22 Nov).
