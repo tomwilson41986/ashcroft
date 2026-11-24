@@ -40,6 +40,7 @@ on:
           - bf_lab_stack
           - win_prob
           - strategy_100
+          - b2l_paper
           - warehouse
           - warehouse_models
       days:
@@ -222,6 +223,11 @@ jobs:
         run: |
           mkdir -p out
           python -m research.open_close.football_strategy_100 --out-json out/strategy_100.json
+      - name: The back-to-lay paper test at the recorded quotes (football-b2l-paper-1124)
+        if: inputs.job == 'b2l_paper'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_b2l_paper --out-json out/b2l_paper.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
