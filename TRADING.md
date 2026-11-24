@@ -1993,6 +1993,22 @@ the market-rating blend.
 - **gate_stn against gate_st** on the same card: mean |log ratio| 0.070, largest 0.285 (ledger `shadow-1122`).
 - **The record (the horse trader):** 44 days, +GBP6,959.80, 35 up.
 
+**The fifty-fourth full day** (23 Nov, a Monday; ledger `live-day-1123`), the second priced by gate_stn.
+- **The start.** Predictions run 45104536709 wrote the file at 03:50 UTC (03:11-03:50, 365 runners); the shadow
+  (gate_st, run 45112453137) priced the same card on the same database. The session (45117053620) ran 05:19-21:30
+  UTC; the settle at 22:29 UTC in settle mode (run 45280186592).
+- **-GBP30.60 after commission** as Betfair settled the trader's own orders, on 534 fills on 154 horses, GBP3,114.49
+  matched, 37 races settled in 38 markets, CLV -1.66% (first backs +0.7%, top-ups -2.6%); 6 backs refused EXPIRED.
+  The cap of 3 top-ups held (114 horses at 4 fills, none over).
+- **The account.** Funds GBP5,634.76 -> GBP6,300.40 (+GBP665.64): the horse trader -GBP30.60 and the greyhound lay at
+  the SP +GBP696.19 (132 lays), 5p apart (ledger `account-day-1123`).
+- **gate_stn against gate_st** on the same card: mean |log ratio| 0.059, largest 0.245 (ledger `shadow-1123`).
+- **The price files** for 16-23 Nov were all loaded on 23 Nov; the model-quality join waits on HRB's results
+  (paused to 25 Nov) (ledger `price-files-1123`).
+- **The week** (ledger `week-drop-1123`): CLV +1.47% (+0.20 to +2.59) over 17-23 Nov against +4.97% over the 30
+  autumn days, -3.50 points (-5.48 to -1.67).
+- **The record (the horse trader):** 45 days, +GBP6,929.20, 35 up.
+
 **21 Nov: gate_stn served from 22 Nov** (ledger `serve-stn-1121`). The owner, 21 Nov: "Serve the Phase 6 result."
 From the 03:00 UTC predictions of 22 Nov the served blend is the stack blend with collateral, future_form and
 nbl_rating in all three members (bfsp-model-72/73/71, 1,263 features, trained through 16 Nov, the gate unchanged).
