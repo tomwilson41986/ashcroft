@@ -152,3 +152,19 @@ def test_the_tactics_blocks_give_values_on_the_played_shapes_and_states(matrix, 
     f = mod.build(matrix)[mod.FEATURES]
     assert (f.notna().mean() > 0.5).all(), f.notna().mean().to_dict()
     assert (f.std() > 0).all()
+
+
+def test_the_monthly_betfair_walk_forward_scores_a_batch(matrix, tmp_path, monkeypatch):
+    from research.open_close import football_feature_batch as fb
+    name = "matrix_test.parquet"
+    matrix.to_parquet(tmp_path / name, index=False)
+    (tmp_path / "LATEST").write_text(name)
+    monkeypatch.setattr(fb, "MONTHLY_FROM", "2014-08")
+    monkeypatch.setattr(fb, "MONTHLY_MIN_TRAIN", 300)
+    res = fb.run(str(tmp_path), batch="eu_form")
+    assert res["design"] == "betfair_monthly" and res["test_rows"] > 0
+    assert set(res["arms"]) == {"base", "eu_form"}
+    first_test = res["test_months"][0]
+    assert first_test > res["months"][0]                     # the first months only train
+    b = res["arms"]["eu_form"]["betfair"]
+    assert b["lo95"] <= b["vs_base"] <= b["hi95"] and res["arms"]["base"]["betfair"]["vs_base"] == 0
