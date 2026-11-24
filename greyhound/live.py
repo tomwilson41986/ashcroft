@@ -367,8 +367,13 @@ def card_tables_key(day: date, card: pd.DataFrame, history: str, fits: dict, fet
 
 #: the tables whose card rows were proven not to move when other runners leave the card, each with the code it was
 #: proven at (``pit.code_hash``): ``card_field_check`` (greyhound-live.yml task card-field). A table not listed, or
-#: whose code has changed since, is built again whenever a runner leaves the card
-CARD_FIELD_FREE: dict[str, str] = {}
+#: whose code has changed since, is built again whenever a runner leaves the card.
+#: 24 Nov 2026, run 45440726369: the day's card (596 runners, 104 races) priced as it was and with one runner taken
+#: from each race; of the 492 runners left, these five tables' rows were the same both times. The other 19 moved
+#: (ability 492 rows, form 482, draw 330, line 168, irish 88, ...), every move inside a race a runner was taken from.
+#: In the morning's build (run 45414593840) the five took 431 of the tables' 2,982 seconds
+CARD_FIELD_FREE: dict[str, str] = {"trouble": "6ab90f0dd525", "connections": "728f8398fe20", "market": "90758036543a",
+                                   "breeding": "3f8940f966e1", "life": "60e2da206c1d"}
 
 #: a card row's columns that move with the rest of its race when a runner leaves (``drop_removed``): left out of the
 #: row's own signature (``card_row_sig``), so only the tables that read the field are built again

@@ -41,6 +41,7 @@ def test_built_once_then_read_while_nothing_changes(tmp_path, monkeypatch):
 
 def test_a_removed_runner_a_new_day_of_results_or_a_new_input_builds_again(tmp_path, monkeypatch):
     monkeypatch.setattr(pit, "stored_fits", lambda store, names: {})
+    monkeypatch.setattr(live, "CARD_FIELD_FREE", {})                 # no table proven free of the field
     store, calls = Store(root=tmp_path), []
     build, _ = builder(calls)
     day = date(2026, 11, 24)
@@ -149,3 +150,4 @@ def test_field_diff_finds_the_tables_that_read_the_field():
     assert live.field_diff("connections", full, less, {1})["field_free"]
     away = less.assign(**{f"{kf}a": [3.0, 3.0, 9.0, 2.0]})
     assert live.field_diff("ability", full, away, {1})["rows_differ_untouched_races"] == 1
+
