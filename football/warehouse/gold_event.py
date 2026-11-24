@@ -15,7 +15,8 @@ import pyarrow as pa
 
 from football.warehouse.schema import TS, Column, TableSpec
 
-VERSION = 3          # 3: the kick-off is the schedule as known before the off; the close is before the off
+VERSION = 4          # 3: the kick-off is the schedule as known before the off; the close is before the off
+#                      4: a kick-off shift beyond 32 bits (a placeholder first schedule) is blank, not an error
 SCOPE = "part"
 INPUTS = ("silver/market", "silver/runner")
 
@@ -122,7 +123,10 @@ SELECT ev.event_id, ev.event_name, ev.home_name, ev.away_name,
        coalesce(mo.market_time_pre, ev.first_time) AS kickoff,
        mo.in_play_pt AS kickoff_actual,
        mo.kickoff_delay_s,
-       CAST(epoch(mo.market_time_pre - mo.market_time_first) AS INTEGER) AS kickoff_shift_s,
+       -- a first definition can carry a placeholder kick-off decades away (the 2025 files, 24 Nov 2026): a shift
+       -- that does not fit 32 bits is no schedule change to read, so it is left blank
+       CASE WHEN abs(epoch(mo.market_time_pre - mo.market_time_first)) < 2147483647
+            THEN CAST(epoch(mo.market_time_pre - mo.market_time_first) AS INTEGER) END AS kickoff_shift_s,
        mo.schedule_set_pt AS schedule_set, mo.n_inplay_turns AS inplay_turns,
        mo.market_id AS mo_market_id, ou.market_id AS ou_market_id, ah.market_id AS ah_market_id,
        ev.n_markets,

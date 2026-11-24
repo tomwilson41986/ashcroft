@@ -1187,3 +1187,88 @@ Base: the model with `sim` and `style` (Betfair skill 8.98%).
 - Coverage (fitted seasons / from 2025): fl_bfe_ah_gap 7% / 79%; fl_bfe_ou_gap 8% / 93%; fl_n_books 100% / 100%; fl_n_ah 50% / 0%; fl_line_move_diff 49% / 100%; fl_ah_price_move_diff 49% / 100%; fl_line_moved_share 49% / 100%. Betfair's own handicap and goals prices are in football-data's files
   only in recent seasons (under 10% of the fitted rows), so those two features were learnt from little; the line-move
   and book-count features cover every season and add nothing.
+
+## Sportmonks xG on Betfair's own moves, walk-forward by month (24 Nov 2026)
+
+Registered as `football-sportmonks-xg-1124-monthly` before the run. Source: football-research.yml run 45383917388,
+`reports/football_runs/sportmonks_xg_monthly_1124.json`. Development evidence.
+
+- Rows: 17,268 Betfair early-to-close moves (home and away), August 2024 to November 2026. Tested: 13,578 rows over
+  22 months (January 2025 to November 2026; no June 2026 rows), 481 match days.
+- Coverage of the 12 `sx_` features on the tested rows: 83% (xG measures) to 90% (dangerous attacks, box shots, passes).
+
+| Arm | Features | Skill vs no move | vs base (points) | 95% interval |
+|---|---|---|---|---|
+| base | 144 | 15.19% | - | - |
+| sm_xg | 156 | 15.40% | +0.21 | +0.002 to +0.40 |
+
+Costed a tick off fair (return a unit staked, 90% interval):
+
+| Threshold | base bets | base return | sm_xg bets | sm_xg return |
+|---|---|---|---|---|
+| 0.03 | 10,033 | -1.40% (-1.64 to -1.15) | 9,771 | -1.33% (-1.56 to -1.05) |
+| 0.05 | 5,568 | -1.32% (-1.64 to -0.97) | 5,296 | -1.23% (-1.60 to -0.86) |
+
+Reading: `sm_xg` keeps its place by the registered rule, with the lower bound only just above zero. It is a
+candidate, not a pass, because these Betfair rows also tested earlier rules. Both arms lose when costed a tick off fair.
+The xG narrows that loss by about 0.1 point. On this evidence the data adds a little skill but does not by itself
+earn the subscription (EUR1,159 a month, `football/cost_base.json`).
+
+## Sportmonks predictions on Betfair's own moves, walk-forward by month (24 Nov 2026)
+
+Registered as `football-sportmonks-pred-1124-monthly` before the run. Source: football-research.yml run 45387653032,
+`reports/football_runs/sportmonks_pred_monthly_1124.json`. Same rows and design as the xG test above (13,578 tested
+rows, 481 match days); the 5 `sp_` features are present on 90.6% of them.
+
+| Arm | Features | Skill vs no move | vs base (points) | 95% interval |
+|---|---|---|---|---|
+| base | 144 | 15.19% | - | - |
+| sm_pred | 149 | 15.52% | +0.33 | +0.03 to +0.61 |
+
+Costed a tick off fair: at 0.03, 10,157 bets, -1.36% (base -1.40%); at 0.05, 5,641 bets, -1.15% (base -1.32%).
+
+Reading: it keeps its place by the registered rule, but as an upper bound. Sportmonks' stored predictions carry no
+timestamp, so some may have been made after the early price. The clean test is the nightly timestamped snapshots,
+which began on 24 Nov. Costed, it still loses.
+
+## The 2025 Betfair files in the warehouse (24 Nov 2026)
+
+Source: football-research.yml run 45384655567 (job warehouse), `reports/football_runs/warehouse_2025_1124/`.
+The 2025 bundle (`owner_drive_2025`) was ingested to bronze in run 45377346250; this run rebuilt gold after the
+`gold_event` fix.
+
+- Quality: PASS, 50 checks, 0 hard and 0 soft failures (`warehouse_quality.md`).
+- Held now: 305,485 market files (0 unreadable), 101,522 events, 20 monthly partitions from April 2025 to November 2026.
+  Five events carry placeholder kick-offs (1970, 2021, 2024, 2030, 2050) and sit outside those months.
+- Markets: match odds 101,834, over/under 2.5 101,853, Asian handicap 101,798. Ticks: 47.5m (17.8m before the off).
+- Events with a result: 99,082. A full closing 1X2: 98,341. Closing chances against results (78,830 matches with a fresh
+  full book): home 43.7% vs 43.5%, draw 24.8% vs 24.9%, away 31.5% vs 31.7%.
+- Linked to API-Football fixtures: 93,866 of 101,522 (92.5%); results agree on 93,107 of 93,127. Teams mapped: 75.9%.
+- Move rows the closing-price model reads: 1,017,903, of which 388,203 are usable (fresh book, schedule known).
+
+## European form on Betfair's own moves, walk-forward by month (24 Nov 2026)
+
+Registered as `football-eu-form-1124-monthly` before the run. Source: football-research.yml run 45392434689,
+`reports/football_runs/eu_form_monthly_1124.json`. Same rows and design as the two Sportmonks tests above.
+
+| Arm | Features | Skill vs no move | vs base (points) | 95% interval |
+|---|---|---|---|---|
+| base | 144 | 15.19% | - | - |
+| eu_form | 149 | 15.15% | -0.04 | -0.16 to +0.08 |
+
+Costed a tick off fair: at 0.03, 10,046 bets, -1.39% (base -1.42%); at 0.05, 5,573 bets, -1.33% (base -1.36%).
+The features are zero when a side played no European match, so the share of matches with European involvement is not
+in the output.
+
+Reading: null. European form is dropped from the base.
+
+### The three tests together, for the Sportmonks decision (subscription EUR1,159 a month, first charge 8 Dec)
+
+| Test | vs base (points) | 95% interval | Costed at 0.03 |
+|---|---|---|---|
+| xG and match statistics (sm_xg) | +0.21 | +0.002 to +0.40 | -1.33% |
+| Predictions (sm_pred, an upper bound) | +0.33 | +0.03 to +0.61 | -1.36% |
+| European form (eu_form) | -0.04 | -0.16 to +0.08 | -1.39% |
+
+Two blocks add a little skill and one adds none; no arm makes money once costed. As a model input, Sportmonks has not
+earned its cost on this evidence. The clean test of the predictions is the timestamped nightly snapshots.

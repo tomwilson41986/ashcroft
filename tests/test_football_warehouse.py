@@ -710,3 +710,18 @@ def test_the_dictionary_documents_every_table_and_column():
         for c in spec.columns:
             assert f"| `{c.name}` |" in md and c.doc.strip(), (spec.name, c.name)
     assert "\u2014" not in md
+
+
+def test_a_placeholder_first_kick_off_decades_away_is_a_blank_shift_not_a_failed_build(tmp_path):
+    """The 2025 files hold a market whose first definition gives a kick-off about 74 years from the real one: the
+    event build must not die casting that shift to 32 bits (run 45377346250, 24 Nov 2026)."""
+    placeholder = KO_MS - 74 * 365 * 24 * 3600 * 1000
+    raw = _file([
+        _msg(KO_MS - 26 * 60 * MIN, defn=_defn(market_time=_iso(placeholder))),
+        _msg(KO_MS - 20 * 60 * MIN, defn=_defn()),
+        _msg(KO_MS - 10 * MIN, rc=_all(2.5, 3.4, 3.0)),
+        _msg(KO_MS + 60_000, defn=_defn(in_play=True)),
+        _msg(KO_MS + 115 * MIN, defn=_defn("CLOSED", True, runners=SETTLED)),
+    ])
+    e = _gold_of(tmp_path, raw)["event"].iloc[0]
+    assert _ms_of(e["kickoff"]) == KO_MS and pd.isna(e["kickoff_shift_s"])
