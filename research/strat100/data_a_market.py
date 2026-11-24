@@ -18,12 +18,16 @@ THE FRAMES (never changed in place by a strategy):
               event_ts     the off as a timestamp (event_dt)
               n_sel, n_bsp selections in the market, and those with a BSP
               race_whole   no selection lacks a BSP (K6: an entry before the off is read only in these races)
+              n_winners    rows of the market with win_lose 1
+              win_frac     what a held win bet settles on: 1 / n_winners for a winner (a dead heat pays that share
+                           of the stake at the full price), 0 for a loser, NaN (no bet) in a market with no winner
               q_pp         normalised 1 / win ppwap over the runners with a BSP (NaN in a race where one of them has
                            no ppwap above 1.01); rank_pp its rank, 1 = shortest (ties share the lower rank)
               rr_id        the race_results row it is joined to (NaN where not joined or not before the holdout)
               rr_runners   that race's race_results.number_of_runners (the largest over the market's joined rows)
               placing      race_results.placing_numerical of the joined row
-    pairs   PAIR-A: a win row and the place row of the same (country, menu_hint, event_dt, selection_id). The win
+    pairs   PAIR-A: a win row and the place row of the same (country, menu_hint, event_dt, selection_id); a race
+            with two or more place markets at the same off is not paired (which one a rule means is not known). The win
             row's columns, the place file's four sound ones (K4) as p_bsp, p_ppwap, p_pp_vol, p_win_lose, and
               n_win_bsp    runners with a win BSP in the win market
               place_whole  every runner with a win BSP has a place BSP
@@ -69,7 +73,7 @@ PRICES = ["bsp", "ppwap", "morningwap", "ppmax", "ppmin", "ipmax", "ipmin"]
 VOLS = ["morning_vol", "pp_vol", "ip_vol"]
 PAIR_A = ["country", "menu_hint", "event_dt", "selection_id"]                 # K4
 WIN_TO_RUNS = ["bp_id", "rk", "event_id", "selection_id", "country", "menu_hint", "event_name", "event_ts",
-               "horse_norm", "win_lose", "n_sel", "n_bsp", "race_whole"] + PRICES + VOLS
+               "horse_norm", "win_lose", "n_winners", "win_frac", "n_sel", "n_bsp", "race_whole"] + PRICES + VOLS
 STYLE_COLS = ["p_lead", "p_prom", "p_mid", "p_rear", "style_n_eff", "shape_bin", "lead_rank"]
 MIN_PLACE_FIELD = 5                       # S069's filter: K9's chance is computed for these races only
 
@@ -210,6 +214,9 @@ def _win_frame(bp: pd.DataFrame, rr: pd.DataFrame) -> pd.DataFrame:
     w["n_sel"] = g["bp_id"].transform("size").astype(int)
     w["n_bsp"] = has.groupby(w["event_id"], sort=False).transform("sum").astype(int)
     w["race_whole"] = w["n_sel"].eq(w["n_bsp"])
+    win1 = w["win_lose"].eq(1)
+    w["n_winners"] = win1.groupby(w["event_id"], sort=False).transform("sum").astype(int)
+    w["win_frac"] = np.where(w["n_winners"] == 0, np.nan, np.where(win1, 1.0 / w["n_winners"].clip(lower=1), 0.0))
     pp = w["ppwap"].where(has & (w["ppwap"] > 1.01))
     short = (has & pp.isna()).groupby(w["event_id"], sort=False).transform("sum") > 0     # a runner with no ppwap
     inv = (1.0 / pp).where(~short)
@@ -231,7 +238,9 @@ def _win_frame(bp: pd.DataFrame, rr: pd.DataFrame) -> pd.DataFrame:
         f"markets where no selection lacks a BSP {int(w.loc[w['race_whole'], 'event_id'].nunique()):,}; joined to "
         f"race_results {int(w['rr_id'].notna().sum()):,} ({asked:,} carried an id, {asked - found:,} of them point "
         f"at no row before the holdout, {int(wrong.sum()):,} at a row of another day, {int(again.sum()):,} at a row "
-        f"another selection already holds: all left unjoined)")
+        f"another selection already holds: all left unjoined); markets with no winner "
+        f"{int(w.loc[w['n_winners'] == 0, 'event_id'].nunique()):,} (a held bet there is no bet), with two or more "
+        f"(a dead heat: each settles on its share) {int(w.loc[w['n_winners'] > 1, 'event_id'].nunique()):,}")
     return w
 
 
@@ -240,6 +249,10 @@ def _pairs_frame(w: pd.DataFrame, bp: pd.DataFrame) -> pd.DataFrame:
         columns={"event_id": "p_event_id", "bsp": "p_bsp", "ppwap": "p_ppwap", "pp_vol": "p_pp_vol",
                  "win_lose": "p_win_lose"})                              # K4: the place files' four sound columns
     n_place = len(p)
+    race = ["country", "menu_hint", "event_dt"]
+    multi = p.groupby(race, sort=False)["p_event_id"].transform("nunique") > 1     # counted BEFORE any row is dropped
+    n_multi = int(p.loc[multi, race].drop_duplicates().shape[0])
+    p = p[~multi]                                        # which one a rule means is not known
     pdup = p.duplicated(PAIR_A, keep="first")
     wdup = w.duplicated(PAIR_A, keep="first")
     mk = p.groupby("p_event_id", sort=False).agg(k=("p_win_lose", lambda s: int((s == 1).sum())),
@@ -259,7 +272,8 @@ def _pairs_frame(w: pd.DataFrame, bp: pd.DataFrame) -> pd.DataFrame:
     say(f"  a_market PAIR-A: {len(w):,} win rows and {n_place:,} place rows in, {len(x):,} pairs in "
         f"{x['event_id'].nunique():,} races out ({int(wdup.sum()):,} win and {int(pdup.sum()):,} place rows with a "
         f"repeated key dropped; win rows with no place row {len(w) - int(wdup.sum()) - len(x):,}); races with more "
-        f"than one place market {int(x.loc[~one, 'event_id'].nunique()):,} (not read); every runner with a win BSP "
+        f"than one place market {n_multi:,} (their {int(multi.sum()):,} place rows dropped: not read); every runner "
+        f"with a win BSP "
         f"has a place BSP in {int(x.loc[x['place_whole'], 'event_id'].nunique()):,}; k passes K9 in "
         f"{int(x.loc[x['k_ok'], 'event_id'].nunique()):,}")
     return x

@@ -119,6 +119,7 @@ PLACE_SQL = """
 HIST_SQL = "SELECT horse_name, race_date FROM race_results WHERE bfsp > 1 AND race_date < ?"
 WIN_NUM = ["bp_id", "event_id", "selection_id", "win_lose", "bf_bsp", "ppwap", "bf_morningwap", "ppmax", "ppmin",
            "ipmax", "ipmin", "bf_morning_vol", "pp_vol", "ip_vol", "race_results_id", "rr_runners"]
+NOT_A_PRICE = ["ppwap", "ppmax", "ppmin", "ipmax", "ipmin"]     # at or under 1.0 in the files = nothing traded
 PLACE_NUM = ["place_event_id", "selection_id", "place_won", "place_bsp", "place_ppwap", "place_pp_vol"]
 #: scripts/clv_betfair.load's own derived columns that read the BSP or the result: not carried into the frames
 CB_DERIVED = ["pred_move", "net", "hold_morning", "hold_bsp", "mins", "meeting_order", "day_order", "overlay_pct"]
@@ -249,6 +250,17 @@ def _n_bsp(runners: pd.DataFrame, hist: pd.DataFrame) -> pd.Series:
     return pd.Series(out.fillna(0).to_numpy(int), index=runners.index)
 
 
+def _drop_twice(w: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """(the frame without the races that hold a runner (KEY) twice, the count of such races). A forecast row given
+    twice would be counted twice in the field, pass every m:1 join and be bet twice; which row is right is a guess."""
+    if w.empty:
+        return w, 0
+    race = w["race"] if "race" in w.columns else w["race_date"].astype(str) + "|" + w["race_time"].astype(str) \
+        + "|" + w["track"].astype(str)
+    twice = w.duplicated(KEY, keep=False).groupby(race).transform("any")
+    return w[~twice].reset_index(drop=True), int(race[twice].nunique())
+
+
 def _place_frame(place: pd.DataFrame) -> pd.DataFrame:
     """The place rows as S068 reads them (K4: place bsp, ppwap, pp_vol and win_lose only), each with its market's
     places paid k = the count of rows with win_lose 1, and k_ok: k is 2-4 and equals round(sum of 1 / place bsp)
@@ -290,12 +302,17 @@ def _assemble_a_model(w: pd.DataFrame, win: pd.DataFrame | None = None, w_st: pd
                                    race_name, race_code, race_class, cls, surface_type, country, steam_score,
                                    steam_field, steam_code, and the PAIR-A key
       known only later             ppwap, pp_vol, ppmax, ppmin (to the off); bsp, win_lose, ipmax, ipmin, ip_vol,
-                                   won, bfsp (the result); k6_ok (K6: no selection of the Betfair market lacks a BSP)
+                                   won, bfsp (the result); k6_ok (K6: no selection of the Betfair market lacks a BSP,
+                                   and the market's selections are the frame's field: none is missing from it)
     """
     from research import harness
     meta = dict(meta or {})
     problems = list(meta.get("problems", []))
     r = core.drop_holdout(w).reset_index(drop=True)
+    r, n_twice = _drop_twice(r)
+    if n_twice:           # scripts/clv_betfair.load de-duplicates the price side only: a forecast row given twice
+        problems.append(f"gate_stn: {n_twice} races dropped: a forecast row given twice")     # would be two bets
+        _say(f"   gate_stn: {n_twice:,} races dropped (a forecast row given twice: the runner would be bet twice)")
     r = r.drop(columns=[c for c in CB_DERIVED if c in r.columns])
     r = _num(r, ["predicted_bfsp", "morningwap", "morning_vol", "bsp"])
     r["month"] = r["race_date"].astype(str).str[:7]
@@ -310,28 +327,40 @@ def _assemble_a_model(w: pd.DataFrame, win: pd.DataFrame | None = None, w_st: pd
     # ---- Betfair's win rows: the later columns, the race's fields, K6
     extra = ["country", "event_id", "menu_hint", "event_dt", "selection_id", "win_lose", "ppwap", "pp_vol", "ppmax",
              "ppmin", "ipmax", "ipmin", "ip_vol", "race_results_id", "race_name", "rr_race_class", "rr_race_code",
-             "rr_surface_type", "rr_runners", "bf_morningwap", "bf_bsp", "market_no_bsp"]
+             "rr_surface_type", "rr_runners", "bf_morningwap", "bf_bsp", "market_no_bsp", "market_rows"]
     if win is not None and len(win):
         b = _num(win, WIN_NUM)
+        for c in NOT_A_PRICE:        # the files write 0, not blank, where nothing traded: never read as a price
+            b[c] = b[c].where(b[c] > 1.0)
         b = core.drop_holdout(b.assign(bf_race_date=_iso(b["bf_race_date"])), "bf_race_date")
         mk = [b["country"], b["event_id"]]
         b["market_no_bsp"] = (~(b["bf_bsp"] > 1)).groupby(mk).transform("sum")
+        b["market_rows"] = b["selection_id"].groupby(mk).transform("size")       # every selection Betfair lists
         m = b[b["race_results_id"].notna() & b["horse_name"].notna()].copy()
         m = core.drop_holdout(m.assign(race_date=_iso(m["race_date"]), race_time=m["race_time"].astype(str)))
         m = m.sort_values("bp_id", kind="stable")
-        dup = m.duplicated(KEY)
+        dup = m.duplicated(KEY, keep=False)        # two candidate rows for one runner: neither is taken (a guess)
         m = m[~dup]
         n0 = len(r)
         r = r.merge(m[KEY + extra], on=KEY, how="left", validate="m:1")
         assert len(r) == n0
         with np.errstate(invalid="ignore"):
             same = np.isclose(r["morningwap"], r["bf_morningwap"]) & np.isclose(r["bsp"], r["bf_bsp"])
-        r["k6_ok"] = pd.Series(same & (r["market_no_bsp"] == 0)).groupby(r["race"]).transform("all").to_numpy(bool)
+        priced = pd.Series(same & (r["market_no_bsp"] == 0)).groupby(r["race"]).transform("all").to_numpy(bool)
+        # the frame must hold every selection of Betfair's market: a runner with a BSP that the forecast file lacks
+        # would leave the book, the favourite and the place chance read on a short field
+        whole = pd.Series((r["market_rows"] == r["n_field"]).to_numpy(bool)).groupby(
+            r["race"].to_numpy()).transform("all").to_numpy(bool)
+        r["k6_ok"] = priced & whole
+        n_short = int(r.loc[priced & ~whole, "race"].nunique())
+        meta["races_dropped_field_mismatch"] = n_short
         _say(f"   Betfair win rows: {len(b):,} in the window, {len(m) + int(dup.sum()):,} joined to a result, "
-             f"{int(dup.sum()):,} dropped (a second row for one runner); runners with their own row "
+             f"{int(dup.sum()):,} dropped (two rows for one runner: neither taken); runners with their own row "
              f"{int(same.sum()):,} of {len(r):,}; K6 (no selection of the market lacks a BSP, every runner's row "
-             f"found): {r.loc[r['k6_ok'], 'race'].nunique():,} of {r['race'].nunique():,} races kept for bets "
-             f"({r.loc[~r['k6_ok'], 'race'].nunique():,} dropped)")
+             f"found, the market's rows equal to the field): {r.loc[r['k6_ok'], 'race'].nunique():,} of "
+             f"{r['race'].nunique():,} races kept for bets ({r.loc[~r['k6_ok'], 'race'].nunique():,} dropped, "
+             f"{n_short:,} of them only because Betfair's market holds a different number of selections than the "
+             f"forecast file's field)")
     else:
         problems.append("no data found: Betfair's win rows (the later columns, the race's fields and K6)")
         for c in extra:
@@ -350,9 +379,13 @@ def _assemble_a_model(w: pd.DataFrame, win: pd.DataFrame | None = None, w_st: pd
     r["ev_st"], r["predicted_bfsp_st"] = np.nan, np.nan
     if w_st is not None and len(w_st):
         s = core.drop_holdout(w_st).reset_index(drop=True)
+        s, n_twice = _drop_twice(s)
+        if n_twice:
+            problems.append(f"gate_st: {n_twice} races dropped: a forecast row given twice")
+            _say(f"   gate_st: {n_twice:,} races dropped (a forecast row given twice)")
         s = _num(s, ["predicted_bfsp", "morningwap", "morning_vol", "bsp"])
         s["ev_st"] = _ev_walk_forward(s, min_train_races)
-        s = s.rename(columns={"predicted_bfsp": "predicted_bfsp_st"}).drop_duplicates(KEY)
+        s = s.rename(columns={"predicted_bfsp": "predicted_bfsp_st"})
         r = r.drop(columns=["ev_st", "predicted_bfsp_st"]).merge(s[KEY + ["ev_st", "predicted_bfsp_st"]], on=KEY,
                                                                  how="left", validate="m:1")
         _say(f"   gate_st: {int(r['ev_st'].notna().sum()):,} of {int(r['ev'].notna().sum()):,} scored runners also "

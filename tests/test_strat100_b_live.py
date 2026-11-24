@@ -349,10 +349,20 @@ def world():
     return World()
 
 
-def _load(world, tmp, monkeypatch_env: dict):
-    """data_b.load_b_live() on the toy database and the toy S3 (a MonkeyPatch the caller undoes)."""
+def written_early(key: str):
+    """The toy predictions file's write time: 04:10 UTC on its day (before every session and mark)."""
+    return pd.Timestamp(f"{key.split('/')[-1][:10]}T04:10:00Z")
+
+
+def _load(world, tmp, monkeypatch_env: dict, written=None, store=None):
+    """data_b.load_b_live() on the toy database and the toy S3 (a MonkeyPatch the caller undoes). ``written``:
+    {day: the predictions file's LastModified} for the days that differ from 04:10 UTC (None: not readable)."""
     mp = pytest.MonkeyPatch()
-    store = world.s3()
+    store = store or world.s3()
+    written = written or {}
+    mp.setattr(B, "_modified", lambda key: written[key.split("/")[-1][:10]] if key.split("/")[-1][:10] in written
+               else written_early(key))
+    tmp.mkdir(parents=True, exist_ok=True)
     db = tmp / "toy.db"
     if not db.exists():
         world.write_db(db)
@@ -505,7 +515,7 @@ def test_a_back_is_cut_by_every_factor_and_a_lay_only_from_betfairs_floor():
 def test_the_registry_holds_every_specified_strategy_once():
     ids = [s.id for s in S.STRATEGIES]
     assert len(ids) == len(set(ids)) and set(SPEC_IDS) <= set(ids)
-    assert set(ids) - set(SPEC_IDS) == {"BASE-B", "S008-BASE", "S024-OTHER"}
+    assert set(ids) - set(SPEC_IDS) == {"BASE-B", "S008-BASE", "S024-OTHER", "S027-BASE"}
     for s in S.STRATEGIES:
         assert s.dataset == "b_live" and s.tested_before and s.build.__doc__
         assert s.paired is None or (s.paired in BY_ID and BY_ID[s.paired].benchmark)
@@ -541,7 +551,8 @@ def test_every_strategy_returns_a_bets_frame_the_core_scores(sid, built, frames)
     assert (live["stake"] >= 2.0 - 1e-9).all() or sid in ("BASE-B",) or BY_ID[sid].entry == S.NO_HAIRCUT
     assert not live.duplicated(["race_date", "race_key", "selection", "side", "ts"] if "ts" in live else SEL[:4]).any()
     r = core.score(BY_ID[sid], bets, days, n_trials=486, draws=200)
-    assert r["error"] is None and r["verdict"] in ("not read", "not read: too few", "FAIL", "PASS", "PASS (not blind)")
+    assert r["error"] is None and r["verdict"] in ("not read", "not read: too few", "FAIL", "PASS", "PASS (not blind)",
+                                                   "PASS on K3 only", "PASS on K3 only (not blind)")
     if BY_ID[sid].side != "both" and len(live):
         assert set(live["side"]) == {BY_ID[sid].side}
 
@@ -809,3 +820,288 @@ def test_the_files_keep_to_the_house_rules():
         assert EM_DASH not in text, f
     src = (ROOT / "research/strat100/strategies_b_live.py").read_text()
     assert "import boto3" not in src and "sqlite3" not in src            # no source is read by the strategies module
+
+
+# ---- the review's findings, each with the toy case that would have caught it ---------------------------------------
+
+def test_the_models_price_is_not_read_before_its_file_was_written(frames, built):
+    """A predictions file written at 08:30 UK: the 08:00 mark has no model price (no race is whole there, no
+    08:00 rule bets that day), the 09:00 mark has. A file last written after 10:00 UK, or with no write time, is
+    not read at all."""
+    day = "2026-10-05"
+    r = frames["runners"].copy()
+    on = r["race_date"].eq(day)
+    r.loc[on, "pred_written"] = B.uk_time(day, "08:30")
+    assert B.book(r, "c08").loc[lambda b: b["race_date"].eq(day), "predicted_bfsp"].isna().all()
+    assert B.book(r, "c09").loc[lambda b: b["race_date"].eq(day), "predicted_bfsp"].gt(1).all()
+    alt = changed(frames, runners=r)
+    for sid in ("S011", "S024-OTHER", "S039"):
+        assert day in set(built[sid][0]["race_date"]), sid                  # the toy day has a bet as it stands
+    assert day not in set(build("S011", alt)[0]["race_date"]) and day not in set(build("S024-OTHER", alt)[0]["race_date"])
+    lays = build("S039", alt)[0]                                            # 08:00 then 09:00: only the 09:00 mark is left
+    assert (pd.to_datetime(lays.loc[lays["race_date"].eq(day), "ts"], utc=True) >= B.uk_time(day, "09:00")).all()
+    late = frames["runners"].copy()
+    late.loc[late["race_date"].eq(day), "pred_written"] = B.uk_time(day, "11:00")
+    late.loc[late["race_date"].eq(DAYS[1]), "pred_written"] = pd.NaT
+    got, info = B.pred_time_check(late)
+    assert list(info["preds_rewritten"]) == [day] and info["preds_time_unknown"] == [DAYS[1]]
+    assert got.loc[got["race_date"].isin([day, DAYS[1]]), "predicted_bfsp"].isna().all()
+    assert got.loc[~got["race_date"].isin([day, DAYS[1]]) & got["market_type"].eq("WIN")
+                   & ~got["final_status"].eq("REMOVED"), "predicted_bfsp"].gt(1).all()
+    early = frames["runners"].copy()
+    early.loc[early["race_date"].eq(day), "pred_written"] = B.uk_time(day, "08:30")
+    _, info = B.pred_time_check(early)
+    assert info["preds_marks_before_written"] == {"c08": 15} and info["preds_days_with_an_early_mark"] == [day]
+
+
+def test_the_replay_places_no_order_before_the_predictions_file_was_written(world):
+    day = REPLAY_DAYS[0]
+    arms = {"S001": S.REPLAY_ARMS["S001"]}
+    a = B.replay_day(world.toy_day(day), arms, draws=300)
+    t_w = B.uk_time(day, "07:02")
+    b = B.replay_day(world.toy_day(day), arms, draws=300, t_start=t_w)
+    assert (pd.to_datetime(a["ts"], utc=True) < t_w).any()                  # as it was: orders from the first book
+    assert len(b) and (pd.to_datetime(b["ts"], utc=True) >= t_w).all()
+
+
+def test_the_loader_drops_a_day_whose_predictions_were_rewritten_and_starts_the_replay_at_the_write_time(world, tmp_path):
+    env = {"STRAT100_B_DAYS": "2026-10-11..2026-10-12", "STRAT100_B_STEAMER": "0"}
+    a = _load(world, tmp_path / "a", env, written={"2026-10-11": pd.Timestamp("2026-10-11T12:00:00Z"),
+                                                   "2026-10-12": B.uk_time("2026-10-12", "07:02")})
+    assert a["meta"]["days_preds"] == ["2026-10-12"] and list(a["meta"]["preds_rewritten"]) == ["2026-10-11"]
+    assert a["meta"]["replay_start_moved"] == ["2026-10-12"] and a["meta"]["days_replay"] == ["2026-10-12"]
+    assert (pd.to_datetime(a["replay"]["ts"], utc=True) >= B.uk_time("2026-10-12", "07:02")).all()
+    b = _load(world, tmp_path / "b", env, written={"2026-10-12": pd.Timestamp("2026-10-12T13:00:00Z")})
+    assert b["meta"]["days_replay"] == [] and "2026-10-12" in b["meta"]["replay_skipped"] and len(b["replay"]) == 0
+    c = _load(world, tmp_path / "c", env, written={"2026-10-12": None})          # LastModified not readable
+    assert c["meta"]["preds_time_unknown"] == ["2026-10-12"] and c["meta"]["days_preds"] == ["2026-10-11"]
+
+
+def test_a_win_place_pair_is_kept_only_where_the_place_poll_follows_the_win_read():
+    t0 = pd.Timestamp("2026-10-05T13:45:00Z")
+    win = pd.DataFrame({"event_id": ["e"] * 4, "market_start_utc": ["s"] * 4, "selection_id": [1, 2, 3, 4], "t": t0})
+    place = pd.DataFrame({"event_id": ["e"] * 4, "market_start_utc": ["s"] * 4, "selection_id": [1, 2, 3, 4],
+                          "t": [t0, t0 + pd.Timedelta(seconds=45), t0 - pd.Timedelta(seconds=30),
+                                t0 + pd.Timedelta(minutes=3)], "back1": 2.0})
+    assert S._pair_place(win, place)["selection_id"].tolist() == [1, 2, 3, 4]         # no test asked for: all
+    assert S._pair_place(win, place, S.PAIR_LAG, "toy")["selection_id"].tolist() == [1, 2]
+
+
+def test_the_place_rules_take_no_quote_older_than_the_win_read(frames, built):
+    """Every place mark at off_15 read two minutes BEFORE its win mark (as when the win row is a later, faster
+    poll): S049 and S051 lose every pair. Read 30 s after: nothing changes."""
+    r = frames["runners"].copy()
+    pl = r["market_type"].eq("PLACE")
+    r.loc[pl, "o15_t"] = r.loc[pl, "o15_t"] - pd.Timedelta(minutes=2)
+    alt = changed(frames, runners=r)
+    assert len(built["S049"][0]) and len(built["S051"][0])
+    assert len(build("S049", alt)[0]) == 0 and len(build("S051", alt)[0]) == 0
+    r = frames["runners"].copy()
+    r.loc[pl, "o15_t"] = r.loc[pl, "o15_t"] + pd.Timedelta(seconds=30)
+    alt = changed(frames, runners=r)
+    for sid in ("S049", "S051"):
+        pd.testing.assert_frame_equal(sel(build(sid, alt)[0]), sel(built[sid][0]), check_dtype=False, obj=sid)
+
+
+def _tbp_ctx(world, frames, shift: pd.Timedelta):
+    day = TBP_DAY
+    books = pd.DataFrame(world.other_books[day]).assign(market_id=lambda d: d["market_id"].astype(str))
+    open_ = books["status"].eq("OPEN")
+    books.loc[open_, "polled_utc"] = [_iso(pd.Timestamp(x) + shift) for x in books.loc[open_, "polled_utc"]]
+    markets = pd.DataFrame(world.other_markets[day]).assign(market_id=lambda d: d["market_id"].astype(str))
+    raw = B.type_raw(pd.DataFrame(world.raw[day]).assign(market_id=lambda d: d["market_id"].astype(str)))
+    runners_day = frames["runners"][frames["runners"]["race_date"].eq(day)].reset_index(drop=True)
+    return B.make_ctx(day, raw, runners_day, frames["fills"].iloc[:0],
+                      read=lambda name: markets if name.startswith("markets") else B.type_raw(books))
+
+
+def test_the_tbp_entry_is_the_first_poll_after_the_win_read(world, frames):
+    zero = pd.Timedelta(0)
+    at = S.s052_day(_tbp_ctx(world, frames, zero))
+    assert len(at) and set(at["side"]) == {"back", "lay"}                       # polled with the win mark: taken
+    after = S.s052_day(_tbp_ctx(world, frames, pd.Timedelta(seconds=90)))
+    pd.testing.assert_frame_equal(sel(after), sel(at), check_dtype=False)        # 90 s after it: the same offers
+    ctx = _tbp_ctx(world, frames, -pd.Timedelta(minutes=2))                      # an older TBP quote: no bet
+    assert len(S.s052_day(ctx)) == 0 and ctx.tbp_count == {"tbp_markets": 1, "no_entry_poll": 1}
+    assert len(S.s052_day(_tbp_ctx(world, frames, pd.Timedelta(minutes=3)))) == 0       # more than 120 s later: no bet
+    assert S.s052t_day(_tbp_ctx(world, frames, zero)).to_dict("records") == [{"tbp_markets": 1, "no_entry_poll": 0}]
+
+
+def test_a_rule_whose_setting_was_read_off_the_live_fills_is_not_blind():
+    for sid in ("S004", "S010", "S013", "S014", "S015", "S016", "S019", "S021", "S025", "S017", "S018", "S037",
+                "BASE-B", "S027-BASE"):
+        assert BY_ID[sid].blind is False, sid
+    for sid, tag in (("S004", "phase5-execution-1119"), ("S013", "phase5-reductions-1119"),
+                     ("S016", "phase4-segments-1119"), ("S025", "phase4-segments-1119")):
+        assert tag in BY_ID[sid].tested_before and "NOT BLIND" in BY_ID[sid].tested_before
+    ledger = (ROOT / "reports/research_ledger.jsonl").read_text()
+    for tag in ("phase5-execution-1119", "phase5-reductions-1119", "phase4-segments-1119", "week-drop-1123"):
+        assert tag in ledger                                                 # the tables named are in the ledger
+    days = pd.date_range("2026-10-01", "2026-11-23").strftime("%Y-%m-%d").tolist()
+    rng = np.random.default_rng(0)
+    b = pd.DataFrame([{"race_date": d, "race_key": f"{d}|{i}", "selection": "a", "side": "back", "stake": 100.0,
+                       "entry_price": 4.4 + rng.normal(0, 0.05), "exit": "bsp", "exit_price": 4.0, "won": np.nan,
+                       "void": False} for d in days for i in range(5)])
+    assert core.score(BY_ID["S025"], b, days, n_trials=486, draws=300)["verdict"] == "PASS (not blind)"
+
+
+def test_the_forecast_price_is_the_first_recorded_and_only_from_its_record(frames, world):
+    day = "2026-10-05"
+    runners_day = frames["runners"][frames["runners"]["race_date"].eq(day)].reset_index(drop=True)
+    cat = pd.DataFrame([c for c in world.cat if c["race_date"] == day and c["market_type"] == "WIN"])
+    first = cat.assign(recorded_utc=f"{day}T07:30:00Z", forecast_num="12", forecast_den="4.0")       # F = 4.0
+    last = cat.assign(recorded_utc=f"{day}T11:00:00Z")                         # revised in the day: what the table keeps
+    ctx = SimpleNamespace(runners=runners_day, read=lambda name: pd.concat([last, first]) if name == "markets" else None)
+    fc = S.fcheck_day(ctx)
+    assert len(fc) == len(cat) and (fc["F_first"] == 4.0).all() and (fc["F_t"] == pd.Timestamp(f"{day}T07:30:00Z")).all()
+    stored = runners_day.loc[runners_day["market_type"].eq("WIN"), "F"]
+    assert sorted(fc["F_stored"]) == pytest.approx(sorted(stored)) and not np.allclose(stored, 4.0)
+    r = B.first_forecast(runners_day, fc)
+    win = r["market_type"].eq("WIN")
+    assert (r.loc[win, "F"] == 4.0).all() and set(r.loc[win, "F_src"]) == {"first recorded"}
+    assert B.book(r, "c08")["F"].isna().all() and (B.book(r, "c09")["F"] == 4.0).all()   # 08:30 UK: after the 08:00 mark
+    none = B.first_forecast(runners_day, None)
+    assert none.loc[win, "F"].tolist() == stored.tolist() and set(none.loc[win, "F_src"]) == {"stored (unverified)"}
+    assert frames["runners"].loc[frames["runners"]["market_type"].eq("WIN"), "F_src"].eq("first recorded").all()
+
+
+def test_the_replays_forecast_is_not_used_before_its_first_record(world):
+    day = REPLAY_DAYS[0]
+    D = world.toy_day(day)
+    t_f = B.uk_time(day, "07:30").to_pydatetime()
+    fc = {(m.market_id, sid): (1.01, t_f) for m in D.markets for sid in m.runners}      # a forecast every price clears
+    b = B.replay_day(D, {"S007": S.REPLAY_ARMS["S007"]}, draws=300, forecast=fc)
+    assert len(b) and (pd.to_datetime(b["ts"], utc=True) >= pd.Timestamp(t_f)).all()
+    a = B.replay_day(world.toy_day(day), {"S007": S.REPLAY_ARMS["S007"]}, draws=300, forecast={k: v[0] for k, v in fc.items()})
+    assert (pd.to_datetime(a["ts"], utc=True) < pd.Timestamp(t_f)).any()
+
+
+def test_a_day_without_the_rules_mark_is_not_a_race_day_of_the_rule(frames, built):
+    """The clock marks start about 10 Oct: a day with raw books and no 08:00 mark is a day without data for an
+    08:00 rule (not a zero in its series), and still a race day for a rule on the off marks."""
+    r = frames["runners"].copy()
+    early = r["race_date"].isin(DAYS[:3])
+    for c in [c for c in r.columns if c.startswith("c08_")]:
+        r[c] = r[c].astype(object).where(~early, None) if r[c].dtype == object else r[c].where(~early)
+    alt = changed(frames, runners=r)
+    assert S._days(alt, "books", marks=("c08",)) == DAYS[3:] and S._days(alt, "books", marks=("c09", "o15")) == DAYS
+    assert S._days(alt, "books", marks="c08") == DAYS[3:] and S._days(alt, "books") == DAYS
+    for sid in ("S011", "S030", "S033", "S043", "S045"):
+        days = build(sid, alt)[1]
+        assert not set(days) & set(DAYS[:3]) and days == [d for d in built[sid][1] if d not in DAYS[:3]], sid
+    for sid in ("S012", "S035", "S040", "S048", "S049"):
+        assert build(sid, alt)[1] == built[sid][1], sid
+    rd = core.score(BY_ID["S011"], *build("S011", alt), draws=100)
+    assert rd["race_days"] == len(built["S011"][1]) - 3
+
+
+def test_s027_is_paired_against_base_b_for_the_same_horses(built, frames):
+    assert BY_ID["S027"].paired == "S027-BASE" and BY_ID["S027-BASE"].benchmark
+    a, b = built["S027"][0], built["S027-BASE"][0]
+    horse = ["race_date", "race_key", "selection"]
+    live = a[~a["void"]]
+    assert set(map(tuple, live[horse].to_numpy())) == set(map(tuple, b[horse].drop_duplicates().to_numpy()))
+    assert built["S027"][1] == built["S027-BASE"][1] and max(built["S027"][1]) <= "2026-11-22"
+    p = frames["prices"]                                   # a horse with no price-file row leaves both sides
+    k = live.iloc[0]
+    drop = p["race_date"].eq(k["race_date"]) & p["selection_id"].eq(int(k["selection"])) & p["market_type"].eq("win")
+    alt = changed(frames, prices=p[~drop].reset_index(drop=True))
+    a2, b2 = build("S027", alt)[0], build("S027-BASE", alt)[0]
+    gone = (b2["race_date"].eq(k["race_date"]) & b2["selection"].eq(k["selection"]))
+    assert not gone.any() and len(b2) < len(b) and a2.loc[a2["selection"].eq(k["selection"]), "void"].all()
+    assert b["stake"].sum() == pytest.approx(live["stake"].sum())                # the toy ledger: the same money
+
+
+def test_a_back_too_small_for_an_sp_lay_is_not_a_bet_closed_at_the_bsp():
+    x = pd.DataFrame({"race_date": "2026-10-05", "market_id": "m", "selection_id": [1, 2, 3, 4], "bsp": 1.4,
+                      "final_status": "LOSER"})
+    S._SMALL[:] = [0, 0.0]
+    b = S._bets(x, "back", [1.45, 1.50, 6.0, 6.0], [20.0, 20.0, 2.0, 1.99])     # winnings 9, 10, 10, 9.95
+    assert b["selection"].tolist() == ["2", "3"] and S._SMALL == [2, 21.99]
+    held = S._bets(x, "back", [1.45] * 4, 20.0, exit="result")                   # held to the result: no SP lay needed
+    lays = S._bets(x, "lay", [1.45] * 4, 20.0)                                   # closed by an SP back: no minimum liability
+    real = S._bets(x, "back", [1.45] * 4, 20.0, min_sp_liability=0.0)            # a real fill was matched
+    assert len(held) == len(lays) == len(real) == 4
+    f = pd.DataFrame({"race_date": "2026-10-05", "market_id": "m", "selection_id": [1], "result": "LOSER", "bsp": 1.4,
+                      "avg_price": 1.45, "matched": 5.0, "cut_factor": 1.0, "ts": pd.Timestamp("2026-10-05T08:00Z")})
+    assert len(S._fill_bets(f)) == 1
+
+
+def test_s050_books_no_place_back_its_sp_lay_cannot_close(built, frames):
+    b = built["S050"][0]
+    assert len(b) and (b["stake"] * (b["entry_price"] - 1.0) >= S.MIN_SP_LIABILITY - 1e-9).all()
+    r = frames["runners"].copy()                     # every toy place price brought under 1.5: GBP20 wins under GBP10
+    pl = r["market_type"].eq("PLACE")
+    for tag in ("o30", "o10", "o5"):
+        for c in ("back1", "lay1"):
+            r.loc[pl, f"{tag}_{c}"] = 1.30 + (r.loc[pl, f"{tag}_{c}"] - 1.0) * 0.01
+    S._SMALL[:] = [0, 0.0]
+    assert len(build("S050", changed(frames, runners=r))[0]) == 0
+    for sid in ("S008", "S011", "S012", "S024", "S028", "S029", "S030", "S031", "S032", "S033", "S034", "S035", "S036"):
+        z = built[sid][0]
+        z = z[z["side"].eq("back") & z["exit"].eq("bsp")]
+        assert (z["stake"] * (z["entry_price"] - 1.0) >= S.MIN_SP_LIABILITY - 1e-9).all(), sid
+
+
+def test_a_fill_off_a_book_that_does_not_yet_show_the_removal_is_cut(world):
+    """Betfair removed the runner at 09:00; the (delayed) books first show it at 09:06. A back 'filled' off the
+    09:03 book was taken at a price from before the removal: it is cut. The live trader's real fill at 09:03 was
+    matched on the live market after the removal: it is not."""
+    rem = pd.DataFrame({"market_id": ["m"], "selection_id": [9], "af": [10.0],
+                        "rt": pd.to_datetime(["2026-10-05T09:00Z"], utc=True),
+                        "first_seen": pd.to_datetime(["2026-10-05T09:06Z"], utc=True)})
+    ts = pd.to_datetime(["2026-10-05T08:50Z", "2026-10-05T09:03Z", "2026-10-05T09:07Z"], utc=True)
+    assert B.cut_factor(rem, ["m"] * 3, [1] * 3, ts).tolist() == pytest.approx([0.9, 0.9, 1.0])
+    assert B.cut_factor(rem, ["m"] * 3, [1] * 3, ts, book_time=False).tolist() == pytest.approx([0.9, 1.0, 1.0])
+    assert B.cut_factor(rem.drop(columns=["first_seen"]), ["m"] * 3, [1] * 3, ts).tolist() == pytest.approx([0.9, 1.0, 1.0])
+    # the replay's orders are cut by the day's own removals with the first poll that showed each
+    D = world.toy_day(REPLAY_DAYS[0])
+    m = D.markets[0]
+    sid, other = list(m.runners)[:2]
+    rows = pd.DataFrame({"market_id": [m.market_id], "selection_id": [sid], "ts": [B.uk_time(REPLAY_DAYS[0], "09:03")],
+                         "matched": [20.0], "avg_price": [8.0]})
+    day_rem = pd.DataFrame({"market_id": [m.market_id], "selection_id": [other], "af": [10.0],
+                            "rt": [B.uk_time(REPLAY_DAYS[0], "09:00")], "first_seen": [B.uk_time(REPLAY_DAYS[0], "09:06")]})
+    D.removed = day_rem[["market_id", "selection_id", "af", "rt"]]
+    assert B._orders_to_bets(rows, D, "back")["cut_factor"].tolist() == [1.0]                      # as it was
+    assert B._orders_to_bets(rows, D, "back", day_rem)["cut_factor"].tolist() == pytest.approx([0.9])
+
+
+def test_s049s_sp_back_is_capped_against_the_place_markets_pre_off_volume(built, frames):
+    b = built["S049"][0]
+    assert len(b) and (b["stake"] <= S.SP_POOL_SHARE * 900.0 + 1e-9).all() and (b["stake"] >= 2.0).all()   # toy pp_vol 900
+    p = frames["prices"].copy()
+    p.loc[p["market_type"].eq("place"), "pp_vol"] = 150.0                       # 1% is GBP1.50: under GBP2, no bet
+    assert len(build("S049", changed(frames, prices=p))[0]) == 0
+    p = frames["prices"]
+    bets, days = build("S049", changed(frames, prices=p[~(p["market_type"].eq("place") & p["race_date"].eq(DAYS[-1]))]))
+    assert DAYS[-1] not in days and DAYS[-1] not in set(bets["race_date"])      # no place price file: not a race day
+    r = frames["runners"].copy()                                                # the size is not read off the place SP
+    r.loc[r["market_type"].eq("PLACE"), "bsp"] = r.loc[r["market_type"].eq("PLACE"), "bsp"] * 0.5
+    pd.testing.assert_frame_equal(sel(build("S049", changed(frames, runners=r))[0]), sel(b), check_dtype=False)
+
+
+def test_base_b_says_where_the_back_rows_and_betfairs_settled_stake_differ(capsys):
+    def row(seq, event, sel, matched, price, **kw):
+        return {"race_date": "2026-10-05", "seq": seq, "ts": f"2026-10-05T07:0{seq}:00Z", "mode": "live", "event": event,
+                "market_id": "1.1", "selection_id": str(sel), "matched": str(matched), "avg_price": str(price), **kw}
+    orders = pd.DataFrame([
+        row(1, "back", 1, 40.0, 10.0), row(2, "settle", 1, 40.0, 9.0, result="LOSER", bsp="8.0"),      # the ledger agrees
+        row(3, "back", 2, 40.0, 10.0), row(4, "settle", 2, 60.0, 9.0, result="LOSER", bsp="8.0"),      # GBP20 synced, no back row
+        row(5, "back", 3, 40.0, 10.0), row(6, "settle", 3, 40.2, 9.0, result="LOSER", bsp="8.0")])     # within 1%
+    fills, settles = B.build_fills(orders, None, [])
+    f = fills.set_index("selection_id")
+    assert f["ledger_gap"].tolist() == pytest.approx([0.0, 20.0, 0.2]) and f["gap_flag"].tolist() == [False, True, False]
+    assert f.loc[1, "ratio"] == pytest.approx(0.9) and np.isnan(f.loc[2, "ratio"]) and f.loc[3, "ratio"] == pytest.approx(0.9)
+    assert f.loc[1, "cut_factor"] == pytest.approx(0.9) and f.loc[2, "cut_factor"] == 1.0     # no raw books: no cut known
+    assert f.loc[2, "cut_src"].startswith("none")
+    assert settles.set_index("selection_id")["gap_flag"].tolist() == [False, True, False]
+    out = capsys.readouterr().out
+    assert "2 of 3 settled horses differ" in out and "2026-10-05 1.1 2" in out
+    prices = pd.DataFrame({"race_date": "2026-10-05", "selection_id": [1, 2, 3], "market_type": "win", "bsp": 8.0,
+                           "ipmin": 2.0, "win_lose": 0.0})
+    fr = {"settles": settles, "fills": fills, "prices": prices, "days": ["2026-10-05"], "meta": {}}
+    a, _ = S.s027(fr)
+    assert set(a["selection"]) == {"1", "3"}                                    # S027 leaves the flagged horse out
+    b, _ = S.s027_base(fr)
+    assert set(b["selection"]) == {"1", "3"}

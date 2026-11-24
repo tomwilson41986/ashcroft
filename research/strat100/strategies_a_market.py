@@ -20,10 +20,14 @@ FILLS (every one an assumption the files cannot check)
     LIMIT_ON_CLOSE back      filled at the BSP only if BSP >= the limit; a lay only if BSP <= the limit. The limit is
                              the formula's price, not rounded to a tick, unless the specification rounds it (S079).
                              An order the SP does not reach is kept as a void row (no bet, counted in 'voids')
-    morning entry            at morningwap, stake at most 10% of morning_vol, nothing under GBP2 (the core prints the
-                             result at prices 2% and 5% worse)
-    SP stake                 the specification's cap as a share of pp_vol, nothing under GBP2; an SP lay's liability
-                             is never under GBP10 (K4)
+    morning entry            at morningwap, stake at most 10% of morning_vol (the core prints the result at prices
+                             2% and 5% worse). K4 sets no smallest stake on the price files: a back to win GBP50
+                             (S086, S087, S090) is taken at every price, however small its stake
+    SP stake                 the specification's cap as a share of pp_vol, an SP back nothing under GBP2; an SP
+                             lay's size is at most 1% of the win pp_vol (0.5% in running, K8) and its liability is
+                             never under GBP10 (K4): a smaller one is no bet
+    held win bet             settled on win_frac (the loader's): 1 / the market's winners for a winner (a dead heat
+                             pays the stake's share at the full price), no bet in a market with no winner
     resting lay at L(f)      K8: filled only if the day's ipmin is above 1 and at or under core.tick_under(L); the
                              closing price is L itself (the order would rest on the tick at or under L, a slightly
                              better price, so the reading is conservative by less than a tick)
@@ -175,8 +179,32 @@ def _window(hkey, hday, values: dict, qkey, qday, back: int) -> dict:
     return out
 
 
-def _cap(stake, vol, share: float) -> np.ndarray:
-    return np.asarray(core.capacity(stake, vol, share), float)
+def _cap(stake, vol, share: float, floor: float = 2.0) -> np.ndarray:
+    return np.asarray(core.capacity(stake, vol, share, floor=floor), float)
+
+
+SP_LAY_MIN_LIABILITY = 10.0                # K4: Betfair refuses an SP lay under it
+
+
+def _sp_lay_size(bsp, pp_vol, liability, share: float) -> np.ndarray:
+    """The layer's size of an SP lay: ``liability`` / (bsp - 1), at most ``share`` of the win pp_vol (K4: 1%; K8:
+    0.5%), and 0 (no bet) where the liability left is under GBP10 (K4)."""
+    bsp = np.asarray(bsp, float)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        size = np.minimum(np.asarray(liability, float) / (bsp - 1.0),
+                          share * np.nan_to_num(np.asarray(pp_vol, float), nan=0.0))
+        return np.where(size * (bsp - 1.0) >= SP_LAY_MIN_LIABILITY - 1e-9, size, 0.0)
+
+
+K9_SELECT_FROM = "2023-01-01"              # K9's exponents were fitted on 2021-22: K1 reads SELECT after the fit
+
+
+def _after_k9_fit(sid: str, b: pd.DataFrame) -> pd.DataFrame:
+    """The bets from 2023 (K1: a table fitted inside SELECT is read after its fit; K9's exponents are of 2021-22).
+    The earlier years are printed, not read."""
+    early = b[b["race_date"] < K9_SELECT_FROM]
+    _report(sid, early, extra=f"before {K9_SELECT_FROM}, printed only: K9's exponents were fitted on 2021-22")
+    return b[b["race_date"] >= K9_SELECT_FROM].reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -205,20 +233,22 @@ def s069(frames):
     """Place pocket by limit-on-close back. Win ppwap <= 5.0 (and above 1.01), place pp_vol >= 1,000; the limit is
     the price at which the place bet is worth 5% after 2% commission by K9's chance; GBP20, at most 2% of the place
     pp_vol. Choices: an order whose limit the place SP does not reach is no bet (a void row); the limit is not
-    rounded to a tick. Not blind: the pocket was read at the SPs on 2023-26Q1."""
+    rounded to a tick. Not blind: the pocket was read at the SPs on 2023-26Q1. Read from 2023 (K9's exponents and
+    the pocket's gate are of 2021-22)."""
     x = _place_rows(frames)
     x = x[(x["ppwap"] <= 5.0) & (x["p_pp_vol"] >= 1000)]
     b = _limit_back(x, x["p_place"], 0.05, 20.0)
     _report("S069", b, by=("country", "year"))
-    return b
+    return _after_k9_fit("S069", b)
 
 
 def s070(frames):
     """Place limit on close at mid prices: 5.0 < win ppwap <= 21.0, place pp_vol >= 500, the limit at a 10% value
-    by K9's chance; GBP10, at most 2% of the place pp_vol."""
+    by K9's chance; GBP10, at most 2% of the place pp_vol. Read from 2023 (K9's exponents are of 2021-22). Not
+    blind: the rule decided on the win PPWAP was read at the place SP on 2023-26Q1."""
     x = _place_rows(frames)
     x = x[(x["ppwap"] > 5.0) & (x["ppwap"] <= 21.0) & (x["p_pp_vol"] >= 500)]
-    return _limit_back(x, x["p_place"], 0.10, 10.0)
+    return _after_k9_fit("S070", _limit_back(x, x["p_place"], 0.10, 10.0))
 
 
 def harville_place(q, k: int) -> np.ndarray:
@@ -448,7 +478,7 @@ def base_s074(frames):
 
 def _steam_band(frames) -> pd.DataFrame:
     x = frames["pairs"]
-    x = x[x["bsp"].notna() & x["p_bsp"].notna() & x["ppwap"].between(2.0, 15.0) & (x["p_pp_vol"] >= 1000)]
+    x = x[x["k_ok"] & x["bsp"].notna() & x["p_bsp"].notna() & x["ppwap"].between(2.0, 15.0) & (x["p_pp_vol"] >= 1000)]
     with np.errstate(invalid="ignore", divide="ignore"):
         steam = np.log(x["morningwap"].to_numpy(float) / x["ppwap"].to_numpy(float))
     ok = (x["morning_vol"].to_numpy(float) >= 200) & (x["morningwap"].to_numpy(float) > 1.01) & (steam >= 0.15)
@@ -457,7 +487,8 @@ def _steam_band(frames) -> pd.DataFrame:
 
 def s075(frames):
     """Win-market steamer backed at the place SP: the win row's morning_vol >= 200, morningwap above 1.01,
-    ln(morningwap / ppwap) >= 0.15, win ppwap 2.0-15.0, place pp_vol >= 1,000; GBP20 at the place SP."""
+    ln(morningwap / ppwap) >= 0.15, win ppwap 2.0-15.0, place pp_vol >= 1,000; GBP20 at the place SP. Only place
+    markets whose places paid pass K9 (a place dead heat pays a share the files do not hold: not read)."""
     x = _steam_band(frames)
     return _place_sp_back(x[x["steamer"]], 20.0)
 
@@ -471,7 +502,8 @@ def s076(frames):
     """Long-shot place lay by limit on close: S069's races and chance, win ppwap >= 50.0; a LIMIT_ON_CLOSE lay with
     maximum price M = min(10.0, 1 + ((1 - p) x 0.98 - 0.05) / p), filled at the place BSP only if BSP <= M;
     liability GBP20 (the layer's size is 20 / (BSP - 1)). Choices: no order where M is not above 1.01; an unfilled
-    order is no bet (a void row). Not blind (the cell was read at the SPs on 2018-26Q1)."""
+    order is no bet (a void row). Not blind (the cell was read at the SPs on 2018-26Q1). Read from 2023 (K9's
+    exponents are of 2021-22)."""
     x = _place_rows(frames)
     x = x[x["ppwap"] >= 50.0]
     p = x["p_place"].to_numpy(float)
@@ -480,7 +512,7 @@ def s076(frames):
     b = _bets(x, "lay", x["p_bsp"], liability=20.0, won=x["p_win_lose"], market="place",
               void=~(x["p_bsp"].to_numpy(float) <= m))
     _report("S076", b)
-    return b
+    return _after_k9_fit("S076", b)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -490,26 +522,32 @@ def s076(frames):
 STEAM_CUTOFF, STEAM_FROM = "2021-12-31", "2022-01-01"
 
 
+def _steamer_input(frames) -> pd.DataFrame:
+    """frames['runs'] in strat_lib.load's shape (its race key, its BSP: race_results' own, else the price file's):
+    what research/paper/morning_features.build reads."""
+    r = frames["runs"]
+    cols = ["id", "race_date", "date", "race_time", "track", "race_name", "race_class", "number_of_runners",
+            "horse_name", "trainer", "jockey_name", "jockeys_claim", "horse_age", "official_rating",
+            "days_since_lr", "headgear", "code", "hcap", "year", "morningwap", "morning_vol"]
+    d = r[cols].copy()
+    d["bsp"] = r["bfsp"].where(r["bfsp"] > 1, r["bsp"])
+    d["fin"] = r["placing_numerical"]
+    d["won"] = (d["fin"] == 1).astype(float)
+    d["rk"] = d["race_date"] + "|" + d["track"] + "|" + d["race_time"]
+    d = d.sort_values(["date", "race_time", "track"], kind="stable").reset_index(drop=True)
+    d["bsp_rank"] = d.groupby("rk")["bsp"].rank(method="min")
+    d["field"] = d.groupby("rk")["horse_name"].transform("size")
+    d["race_has_winner"] = d.groupby("rk")["won"].transform("sum") >= 1
+    return d
+
+
 def _steamer(frames) -> pd.DataFrame:
     """The CLEAN steamer model (research/paper/morning_features.train_steamer, fitted on 2018-01-01..2021-12-31)
     scored from 2022-01-01: one row a runner (race_results id) with ``pred``, the card's ``field`` and ``low``, the
-    10th percentile of the model's scores on its own training rows. The frame is put in strat_lib.load's shape (its
-    race key, its BSP: race_results' own, else the price file's)."""
+    10th percentile of the model's scores on its own training rows (the frame is ``_steamer_input``'s)."""
     def build():
         from research.paper import morning_features as MF
-        r = frames["runs"]
-        cols = ["id", "race_date", "date", "race_time", "track", "race_name", "race_class", "number_of_runners",
-                "horse_name", "trainer", "jockey_name", "jockeys_claim", "horse_age", "official_rating",
-                "days_since_lr", "headgear", "code", "hcap", "year", "morningwap", "morning_vol"]
-        d = r[cols].copy()
-        d["bsp"] = r["bfsp"].where(r["bfsp"] > 1, r["bsp"])
-        d["fin"] = r["placing_numerical"]
-        d["won"] = (d["fin"] == 1).astype(float)
-        d["rk"] = d["race_date"] + "|" + d["track"] + "|" + d["race_time"]
-        d = d.sort_values(["date", "race_time", "track"], kind="stable").reset_index(drop=True)
-        d["bsp_rank"] = d.groupby("rk")["bsp"].rank(method="min")
-        d["field"] = d.groupby("rk")["horse_name"].transform("size")
-        d["race_has_winner"] = d.groupby("rk")["won"].transform("sum") >= 1
+        d = _steamer_input(frames)
         x = MF.build(d)
         tr = MF.L.priced(x)
         tr = tr[(tr["race_date"] >= "2018-01-01") & (tr["race_date"] <= STEAM_CUTOFF) & tr["steam"].notna()]
@@ -549,46 +587,60 @@ def s077(frames):
 def s078(frames):
     """Predicted drifters laid at the SP with a limit of 8.0, held: the same model and threshold, field 5+, no
     morning-price filter; a LIMIT_ON_CLOSE lay at 8.0 (filled at the BSP only if BSP <= 8.0), liability GBP100, to
-    the result."""
+    the result. K4: the layer's size is at most 1% of the win pp_vol, and a lay left with under GBP10 of liability
+    is no bet (a short price would otherwise be laid for more than the market traded)."""
     x = _drifters(frames)
     x = x[x["bsp"].notna()]
     _say(f"  S078: the bottom tenth's win A/E against the BSP, {len(x):,} runners from {STEAM_FROM}: "
          f"{_ae(x['win_lose'], x['bsp']):.3f}")
-    return _bets(x, "lay", x["bsp"], liability=100.0, won=x["win_lose"], void=~(x["bsp"] <= 8.0).to_numpy())
+    return _bets(x, "lay", x["bsp"], stake=_sp_lay_size(x["bsp"], x["pp_vol"], 100.0, 0.01), won=x["win_frac"],
+                 void=~(x["bsp"] <= 8.0).to_numpy())
 
 
 # ---------------------------------------------------------------------------------------------------------------
 # the SP against the day's move, and segments at the SP (S079-S091)
 # ---------------------------------------------------------------------------------------------------------------
 
+SEEN_2026_FROM = "2026-01-01"              # steam-beyond-bsp read 2026-01-01..2026-03-31
+
+
 def s079(frames):
     """Fade the steamer at the SP: win rows with morningwap at 8.0 or under and morning_vol >= 200, in races where no
     selection lacks a BSP and the count of selections with a BSP equals race_results.number_of_runners (no
     removal); a LIMIT_ON_CLOSE lay with its limit 0.80 x morningwap rounded down to a tick, filled at the BSP only
-    if BSP <= the limit; liability GBP100, to the result. Choices: a race none of whose rows joins race_results has
-    no runner count and is not read; an order the SP does not reach is a void row."""
+    if BSP <= the limit; liability GBP100, to the result. K4: the layer's size is at most 1% of the win pp_vol,
+    and a lay left with under GBP10 of liability is no bet. Choices: a race none of whose rows joins race_results
+    has no runner count and is not read; an order the SP does not reach is a void row. Not blind (steam-beyond-bsp
+    read the sign on 2026-01-01..2026-03-31): the reading with 2026 left out is printed beside it."""
     w = frames["win"]
     x = w[(w["morningwap"] <= 8.0) & (w["morning_vol"] >= 200) & w["race_whole"] & w["n_bsp"].eq(w["rr_runners"])]
     limit = np.asarray(core.tick_floor(0.80 * x["morningwap"].to_numpy(float)), float)
     with np.errstate(invalid="ignore"):
         fill = x["bsp"].to_numpy(float) <= limit
     f = x[fill]
-    b = _bets(x, "lay", x["bsp"], liability=100.0, won=x["win_lose"], void=~fill)
+    size = _sp_lay_size(x["bsp"], x["pp_vol"], 100.0, 0.01)
+    b = _bets(x, "lay", x["bsp"], stake=size, won=x["win_frac"], void=~fill)
     if len(f):
-        _say(f"  S079: {len(f):,} fills of {len(x):,} orders; per GBP1 of backer's stake (gross) "
-             f"{float(np.where(f['win_lose'] == 1, -(f['bsp'] - 1), 1.0).mean()):+.4f}")
+        cut = fill & (size > 0) & (size < 100.0 / (x["bsp"].to_numpy(float) - 1.0) - 1e-9)
+        _say(f"  S079: {len(f):,} fills of {len(x):,} orders ({int(cut.sum()):,} cut to 1% of pp_vol, "
+             f"{int((fill & (size == 0)).sum()):,} left under GBP10 of liability: no bet); per "
+             f"GBP1 of backer's stake (gross) {float(np.where(f['win_lose'] == 1, -(f['bsp'] - 1), 1.0).mean()):+.4f}")
+    _report("S079", b[b["race_date"] < SEEN_2026_FROM], extra=f"with {SEEN_2026_FROM} on left out (steam-beyond-bsp)")
     return b
 
 
 def s080(frames):
     """Back the pre-off drifter at the BSP, held: win rows with a BSP, morning_vol >= 200, pp_vol >= 2,000, ppwap
-    3-20 and ln(ppwap / morningwap) >= 0.18; GBP10 (at most 1% of pp_vol). The BSP is never a filter."""
+    3-20 and ln(ppwap / morningwap) >= 0.18; GBP10 (at most 1% of pp_vol). The BSP is never a filter. Not blind
+    (steam-beyond-bsp read the sign on 2026-01-01..2026-03-31): the reading with 2026 left out is printed too."""
     w = frames["win"]
     with np.errstate(invalid="ignore", divide="ignore"):
         drift = np.log(w["ppwap"].to_numpy(float) / w["morningwap"].to_numpy(float))
     x = w[w["bsp"].notna() & (w["morning_vol"] >= 200) & (w["pp_vol"] >= 2000) & w["ppwap"].between(3.0, 20.0)
           & (drift >= 0.18)]
-    return _bets(x, "back", x["bsp"], stake=_cap(10.0, x["pp_vol"], 0.01), won=x["win_lose"])
+    b = _bets(x, "back", x["bsp"], stake=_cap(10.0, x["pp_vol"], 0.01), won=x["win_frac"])
+    _report("S080", b[b["race_date"] < SEEN_2026_FROM], extra=f"with {SEEN_2026_FROM} on left out (steam-beyond-bsp)")
+    return b
 
 
 PREV_COLS = ["race_date", "date", "code", "headgear", "trainer", "placing_numerical", "bsp", "ipmin", "win_lose"]
@@ -630,7 +682,7 @@ def s081(frames):
     liab = np.minimum(50.0, 0.02 * x["pp_vol"].to_numpy(float))
     x, liab = x[liab >= 10.0], liab[liab >= 10.0]
     _say(f"  S081: the segment reads A/E {_ae(x['win_lose'], x['bsp']):.3f} ({len(x):,} runners)")
-    return _bets(x, "lay", x["bsp"], liability=liab, won=x["win_lose"])
+    return _bets(x, "lay", x["bsp"], liability=liab, won=x["win_frac"])
 
 
 def s082(frames):
@@ -638,7 +690,7 @@ def s082(frames):
     GBP20 (at most 1% of pp_vol). Not blind."""
     r, p = _sp_runs(frames)
     x = r[(r["headgear"].str.strip() == "") & p["prev_date"].notna() & (p["prev_headgear"].fillna("").str.strip() != "")]
-    return _bets(x, "back", x["bsp"], stake=_cap(20.0, x["pp_vol"], 0.01), won=x["win_lose"])
+    return _bets(x, "back", x["bsp"], stake=_cap(20.0, x["pp_vol"], 0.01), won=x["win_frac"])
 
 
 def _surnames(raw: pd.Series) -> list:
@@ -662,7 +714,7 @@ def s083(frames):
     shared = np.array([bool(s & t) for s, t in zip(_surnames(x["trainer"]), _surnames(px["prev_trainer"]))], bool)
     _say(f"  S083: {len(x):,} runs with a different trainer's name; {int(shared.sum()):,} left out by the surname rule")
     x = x[~shared]
-    return _bets(x, "back", x["bsp"], stake=_cap(20.0, x["pp_vol"], 0.01), won=x["win_lose"])
+    return _bets(x, "back", x["bsp"], stake=_cap(20.0, x["pp_vol"], 0.01), won=x["win_frac"])
 
 
 def _rr_race(r: pd.DataFrame) -> pd.Series:
@@ -679,7 +731,7 @@ def s084(frames):
     low = c["official_rating"].groupby(_rr_race(c)).transform("min")
     x = c[c["official_rating"].eq(low) & (c["morning_vol"] >= 50) & (c["morningwap"] > 1.01)
           & c["race_whole"].eq(True)]
-    return _bets(x, "back", x["morningwap"], stake=_cap(20.0, x["morning_vol"], 0.10), won=x["win_lose"],
+    return _bets(x, "back", x["morningwap"], stake=_cap(20.0, x["morning_vol"], 0.10), won=x["win_frac"],
                  entry_type="wap")
 
 
@@ -699,7 +751,7 @@ def s085(frames):
     pos = d.groupby("g", sort=False).cumcount()
     first = d["g"].map(d[pos == 0].set_index("g")["morningwap"])
     x = d[(pos == 1) & (first <= 6.0) & (d["morningwap"] <= 26.0) & d["bsp"].notna()]
-    return _bets(x, "back", x["bsp"], stake=_cap(20.0, x["pp_vol"], 0.01), won=x["win_lose"])
+    return _bets(x, "back", x["bsp"], stake=_cap(20.0, x["pp_vol"], 0.01), won=x["win_frac"])
 
 
 def _morning_rows(frames) -> pd.DataFrame:
@@ -714,8 +766,11 @@ def _morning_rows(frames) -> pd.DataFrame:
 
 
 def _clv_back(x: pd.DataFrame) -> pd.DataFrame:
-    """A morning back to win GBP50 (at most GBP100, at most 10% of morning_vol), closed at the BSP."""
-    stake = _cap(core.to_win_stake(50.0, x["morningwap"].to_numpy(float), 0.0, 100.0), x["morning_vol"], 0.10)
+    """A morning back to win GBP50 (at most GBP100, at most 10% of morning_vol), closed at the BSP. No smallest
+    stake (K4 sets none on the price files): a GBP2 floor would drop every order above about 26.0, the price band
+    with the worst morning-to-SP move (market-only-drift-1002: 21-51 -12.0%, 51+ -24.4%), and flatter the reading."""
+    stake = _cap(core.to_win_stake(50.0, x["morningwap"].to_numpy(float), 0.0, 100.0), x["morning_vol"], 0.10,
+                 floor=0.0)
     return _bets(x, "back", x["morningwap"], stake=stake, exit="bsp", exit_price=x["bsp"], entry_type="wap")
 
 
@@ -770,6 +825,7 @@ def s086(frames):
 
 
 YARD_DAYS, YARD_K, YARD_FLOOR, YARD_MIN_N, YARD_MIN_CORR = 730, 100.0, 0.04, 50, 0.2
+YARD_GATE_YEARS, YARD_MIN_POINTS = (2020, 2021), 30      # K1: the gate is fitted inside 2018-2021
 
 
 def _yard(frames) -> pd.DataFrame:
@@ -790,11 +846,12 @@ def _yard(frames) -> pd.DataFrame:
 
 
 def _yard_persistence(y: pd.DataFrame) -> tuple[float, int]:
-    """The correlation of a trainer's score at 1 January with its mean r over that calendar year, read on SELECT
-    only (the years 2020-2023; trainers with 50+ runs in the window and 30+ in the year). (correlation, points)."""
+    """The correlation of a trainer's score at 1 January with its mean r over that calendar year, read on the fit
+    years only (K1: 1 January 2020 and 2021 against 2020 and 2021, every row inside 2018-2021; trainers with 50+
+    runs in the window and 30+ in the year). (correlation, points)."""
     rows = []
     hist_day = y["day"].to_numpy()
-    for yr in range(2020, 2024):
+    for yr in YARD_GATE_YEARS:
         nxt = y[y["race_date"].str[:4] == str(yr)]
         if nxt.empty:
             continue
@@ -816,7 +873,7 @@ def _yard_persistence(y: pd.DataFrame) -> tuple[float, int]:
     if not rows:
         return float("nan"), 0
     t = pd.concat(rows, ignore_index=True)
-    return (float(t["score"].corr(t["ahead"])) if len(t) >= 30 else float("nan")), len(t)
+    return (float(t["score"].corr(t["ahead"])) if len(t) >= YARD_MIN_POINTS else float("nan")), len(t)
 
 
 def s087(frames):
@@ -824,16 +881,19 @@ def s087(frames):
     the day is +4% or more on 50+ runs (score = (sum r + 100 g) / (n + 100), g the mean r of every runner in the
     window); races where no selection lacks a BSP; to win GBP50 (at most GBP100, 10% of morning_vol); closed at the
     BSP. The registered gate: the correlation of a trainer's score with its next-year mean r must be 0.2 or more,
-    else the strategy is void (no bets). Choice: that correlation is read on SELECT only (1 January 2020-2023
-    against the calendar year that follows), so CONFIRM plays no part in the decision; under 30 points is void."""
+    else the strategy is void (no bets). Choice: that correlation is read inside 2018-2021 only (1 January 2020
+    and 2021 against the calendar year that follows), and the bets are from 2022 (K1: SELECT is read after the fit,
+    so neither SELECT's sign nor CONFIRM plays a part in the decision); under 30 points is void."""
     y = _yard(frames)
     corr, n = _yard_persistence(y)
-    _say(f"  S087: the correlation of a trainer's score with its next-year mean r, SELECT years 2020-2023: "
-         f"{corr:+.3f} on {n} trainer-years (void under {YARD_MIN_CORR})")
+    _say(f"  S087: the correlation of a trainer's score with its next-year mean r, the years "
+         f"{YARD_GATE_YEARS[0]}-{YARD_GATE_YEARS[-1]}: {corr:+.3f} on {n} trainer-years (void under "
+         f"{YARD_MIN_CORR}, or under {YARD_MIN_POINTS} points)")
     if not (corr >= YARD_MIN_CORR):
         _say("  S087: VOID by its registered gate; no bets")
         return core.empty_bets()
-    x = y[(y["yard_score"] >= YARD_FLOOR) & (y["yard_n"] >= YARD_MIN_N) & y["race_whole"].eq(True)]
+    x = y[(y["yard_score"] >= YARD_FLOOR) & (y["yard_n"] >= YARD_MIN_N) & y["race_whole"].eq(True)
+          & (y["race_date"] >= core.FITTED_SELECT_FROM)]
     return _clv_back(x)
 
 
@@ -848,7 +908,7 @@ def s088(frames):
     m = x[(x["morningwap"] > 1.01) & (x["morning_vol"] >= 50)]
     _say(f"  S088: {len(x):,} runners; A/E at the BSP {_ae(x['win_lose'], x['bsp']):.3f}, against the morning "
          f"price {_ae(m['win_lose'], m['morningwap']):.3f} ({len(m):,} with GBP50+ matched in the morning)")
-    return _bets(x, "back", x["bsp"], stake=_cap(20.0, x["pp_vol"], 0.01), won=x["win_lose"])
+    return _bets(x, "back", x["bsp"], stake=_cap(20.0, x["pp_vol"], 0.01), won=x["win_frac"])
 
 
 def s089(frames):
@@ -866,7 +926,7 @@ def s089(frames):
     low = x.groupby("event_id")["morningwap"].transform("min")
     fav = x["morningwap"].eq(low)
     x = x[fav & fav.groupby(x["event_id"]).transform("sum").eq(1) & (x["morningwap"] <= 5.0) & x["bsp"].notna()]
-    return _bets(x, "back", x["bsp"], stake=_cap(20.0, x["pp_vol"], 0.01), won=x["win_lose"])
+    return _bets(x, "back", x["bsp"], stake=_cap(20.0, x["pp_vol"], 0.01), won=x["win_frac"])
 
 
 def s090(frames):
@@ -887,7 +947,7 @@ def s090(frames):
     x = r[ok]
     b = _clv_back(x)
     stake = _cap(core.to_win_stake(50.0, x["bsp"].to_numpy(float), 0.0, 100.0), x["pp_vol"], 0.01)
-    _report("S090", _bets(x, "back", x["bsp"], stake=stake, won=x["win_lose"]), extra="the held version at the BSP")
+    _report("S090", _bets(x, "back", x["bsp"], stake=stake, won=x["win_frac"]), extra="the held version at the BSP")
     return b
 
 
@@ -896,7 +956,7 @@ def s091(frames):
     MARKET_ON_CLOSE lay, liability GBP10, to the result."""
     w = frames["win"]
     x = w[(w["morningwap"] >= 80.0) & (w["morning_vol"] > 0) & (w["pp_vol"] >= 200) & w["bsp"].notna()]
-    b = _bets(x, "lay", x["bsp"], liability=10.0, won=x["win_lose"])
+    b = _bets(x, "lay", x["bsp"], liability=10.0, won=x["win_frac"])
     _report("S091", b)
     return b
 
@@ -946,7 +1006,8 @@ LAGS = 10
 
 def _history(frames) -> pd.DataFrame:
     """Each recorded run's (a win row with a BSP) in-running record over the horse's EARLIER recorded runs, by
-    horse_norm in off order, indexed by bp_id:
+    horse_norm in off order, indexed by bp_id (a row that shares its horse_norm and day with another is left out:
+    it has no history, is never selected, and is no other row's earlier run):
         n8, dob8, short2_n8, wins_n8        the last 8 within 730 days: count, dob share, short2 count, wins
         n10, d15_10, frame_n10, frame_d15   the last 10 within 730 days: count, d15 share, runs finishing 1st-3rd
                                             (race_results placing; an unjoined run is not counted), those with d15
@@ -956,6 +1017,10 @@ def _history(frames) -> pd.DataFrame:
         x = w.loc[w["bsp"].notna() & w["horse_norm"].ne(""),
                   ["bp_id", "horse_norm", "race_date", "event_ts", "bsp", "ipmin", "ipmax", "win_lose", "placing"]]
         x = x.sort_values(["horse_norm", "event_ts", "bp_id"], kind="stable")
+        dup = x.duplicated(["horse_norm", "race_date"], keep=False)
+        _say(f"  history: {int(dup.sum()):,} of {len(x):,} win rows share a horse and day with another (a race held "
+             "twice in the files, or two horses of one name): left out, so no row reads its own day as an earlier run")
+        x = x[~dup]
         f = inrun_flags(x)
         f["frame"] = (x["placing"] <= 3).astype(float)
         f["frame_d15"] = f["frame"] * f["d15"]
@@ -1018,17 +1083,18 @@ def _back_to_lay(x: pd.DataFrame, f: float, stake: float = 20.0) -> pd.DataFrame
     target = lay_target(x["bsp"], f)
     hit = lay_filled(x["ipmin"], target)
     return _bets(x, "back", x["bsp"], stake=_cap(stake, x["pp_vol"], 0.005), exit=np.where(hit, "inplay", "result"),
-                 exit_price=np.where(hit, target, np.nan), won=x["win_lose"])
+                 exit_price=np.where(hit, target, np.nan), won=x["win_frac"])
 
 
 def _lay_to_back(x: pd.DataFrame, m: float, liability: float = 40.0) -> pd.DataFrame:
-    """Lay at the BSP (size min(liability / (bsp - 1), 0.5% of pp_vol), nothing under GBP2) with a back of
-    size x bsp / H resting at H(m): filled (K8), closed at H on every outcome; unfilled, the lay stands."""
+    """Lay at the BSP (size min(liability / (bsp - 1), 0.5% of pp_vol); K4: no bet where that leaves under GBP10
+    of liability) with a back of size x bsp / H resting at H(m): filled (K8), closed at H on every outcome;
+    unfilled, the lay stands."""
     bsp = x["bsp"].to_numpy(float)
     target = back_target(bsp, m)
     hit = back_filled(x["ipmax"], target)
-    return _bets(x, "lay", bsp, stake=_cap(liability / (bsp - 1.0), x["pp_vol"], 0.005),
-                 exit=np.where(hit, "inplay", "result"), exit_price=np.where(hit, target, np.nan), won=x["win_lose"])
+    return _bets(x, "lay", bsp, stake=_sp_lay_size(bsp, x["pp_vol"], liability, 0.005),
+                 exit=np.where(hit, "inplay", "result"), exit_price=np.where(hit, target, np.nan), won=x["win_frac"])
 
 
 MISTAKE_RX = (r"\b(?:mistakes?|blunder(?:ed)?|not fluent|less than fluent|pecked|clouted"
@@ -1322,7 +1388,7 @@ def s100(frames):
     f = x[hit]
     _say(f"  S100: {len(x):,} orders, {len(f):,} matched; the matched won "
          f"{float((f['win_lose'] == 1).mean()) if len(f) else float('nan'):.3f}")
-    return _bets(x, "lay", 2.0, stake=20.0, won=x["win_lose"], entry_type="inplay", void=~hit)
+    return _bets(x, "lay", 2.0, stake=20.0, won=x["win_frac"], entry_type="inplay", void=~hit)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -1336,17 +1402,18 @@ def _s(sid, name, family, side, market, build, **kw) -> core.Strategy:
 
 STRATEGIES = [
     _s("S069", "Place pocket by limit-on-close back (win ppwap <= 5, 5% value)", "place v win: limit on close",
-       "back", "place", s069, blind=False,
+       "back", "place", s069, blind=False, select_from=K9_SELECT_FROM,
        tested_before="place-pocket-gate (fails at 5% commission); place-pocket-gate-2pc (passes at 2%: +1.72% "
                      "2021-22, +2.70% 2023-26Q1); place-rules-preplay-1002 (market on close after a pre-play "
                      "decision: -2.1 to +2.4% by year). The limit form (edge_investigation_1111 item 2): not run",
        note="ppwap includes trades up to the off; the fill and the order's own effect on the place SP are not in "
-            "the files"),
+            "the files; SELECT read 2023 only (K9's exponents and the pocket's gate are of 2021-22)"),
     _s("S070", "Place limit on close at mid prices (win 5-21, 10% value)", "place v win: limit on close",
-       "back", "place", s070,
+       "back", "place", s070, blind=False, select_from=K9_SELECT_FROM,
        tested_before="edge-bsp-bias-1002 (14 rules chosen on 2010-17, 12 with intervals above zero on 2018-26Q1); "
                      "place-rules-preplay-1002 (5-8 EV>0.10 +10.5% then -0.6%). A limit version: none found",
-       note="at long prices a limit fills on the late drifters; the ppwap look-ahead partly hides it"),
+       note="at long prices a limit fills on the late drifters; the ppwap look-ahead partly hides it; not blind "
+            "(place-rules-preplay-1002 read 2023-26Q1); SELECT read 2023 only (K9's exponents are of 2021-22)"),
     _s("S071", "Stacked place model (Harville and Henery), limit on close", "place probability model",
        "back", "place", s071, select_from="2021-01-01",
        tested_before="place-market-vs-win (log loss: place market 0.49915, win-implied 0.50029, combination "
@@ -1354,57 +1421,63 @@ STRATEGIES = [
        note="three-year rolling fit, first bets 2021 (SELECT read 2021-2023); Harville exact, Henery's means by "
             "integration"),
     _s("S072", "Bad each-way race: second and third in the betting at the place SP", "place: race shape",
-       "back", "place", s072, paired="BASE-S072",
+       "back", "place", s072, paired="BASE-S072", pair_mode="return",
        tested_before="this race shape: none found. edge-bsp-bias-1002 sp_segments (no back cell by band, group and "
                      "field held); discovery_1111 idea 56 'partly held', not tested",
        note="ppwap stands in for the price minutes out"),
     _s("BASE-S072", "Benchmark of S072: every runner at 3.5-10.0 in 8-12 runner, 3-place races at the place SP",
        "place: race shape", "back", "place", base_s072, benchmark=True),
     _s("S073", "Extra-place proxy: Saturday big-field handicaps at the place SP", "place: race shape",
-       "back", "place", s073, paired="BASE-S073",
+       "back", "place", s073, paired="BASE-S073", pair_mode="return",
        tested_before="discovery_1111 idea 56: not tested. edge-bsp-bias-1002 (no weekday or handicap-by-day cell)",
        note="which races carried an extra-place offer is not held: a proxy"),
     _s("BASE-S073", "Benchmark of S073: the same band in 16+ runner, 4-place handicaps on other days",
        "place: race shape", "back", "place", base_s073, benchmark=True),
     _s("S074", "Places kept in a reduced field: outsiders at the place SP", "place: terms",
-       "back", "place", s074, paired="BASE-S074",
+       "back", "place", s074, paired="BASE-S074", pair_mode="return",
        tested_before="none found. place-market-vs-win (calibrated overall); edge-bsp-bias-1002 (no cut by places "
                      "against the field)",
        note="that the places were kept after a withdrawal is inferred from the runner count; a probe"),
     _s("BASE-S074", "Benchmark of S074: the same ranks and prices in races on standard place terms",
        "place: terms", "back", "place", base_s074, benchmark=True),
     _s("S075", "Win-market steamer backed at the place SP", "place: win move as signal",
-       "back", "place", s075, paired="BASE-S075",
+       "back", "place", s075, paired="BASE-S075", pair_mode="return",
        tested_before="no direct test. market-only-drift-1002; place-model-stage3-1003 (the win rule's horses' place "
                      "price shortens with the win price)",
        note="ppwap is complete only at the off"),
     _s("BASE-S075", "Benchmark of S075: every runner at win ppwap 2.0-15.0 at the place SP",
        "place: win move as signal", "back", "place", base_s075, benchmark=True),
     _s("S076", "Long-shot place lay by limit on close (win ppwap >= 50)", "place v win: limit on close",
-       "lay", "place", s076, blind=False,
+       "lay", "place", s076, blind=False, select_from=K9_SELECT_FROM,
        tested_before="edge-bsp-bias-1002 (+9.4 to +13.5% a GBP1 of backer's stake, under 1% of liability); "
                      "place-rules-preplay-1002 (decided pre-play: +4.9 to +9.5% a GBP1 laid, +0.15 to +0.28% of "
                      "liability); place-t15-forward-1001 (only the SP is tradable). The limit version: none found",
-       note="SP-lay capacity on an outsider's place market is not in the files"),
+       note="SP-lay capacity on an outsider's place market is not in the files; SELECT read 2023 only (K9's "
+            "exponents are of 2021-22)"),
     _s("S077", "Predicted drifters: lay the steamer model's bottom tenth in the morning", "steamer model: lay side",
-       "lay", "win", s077, entry="wap", select_from=core.FITTED_SELECT_FROM,
-       tested_before="strat I (only the back side taken forward); morning-exit-bsp-1116. The bottom decile's drift "
-                     "and a lay on it: not scored",
-       note="model fitted 2018-2021, SELECT read 2022-2023; the WAP is not an offered lay price"),
+       "lay", "win", s077, entry="wap", select_from=core.FITTED_SELECT_FROM, blind=False,
+       tested_before="strat I (strategy_research_2026-11-04: the CLEAN model's deciles on TEST 2022-26, the least "
+                     "likely steamers win A/E 0.82 against the morning price; only the back side taken forward); "
+                     "morning-exit-bsp-1116. A lay on the bottom decile closed at the BSP: not scored",
+       note="model fitted 2018-2021, SELECT read 2022-2023; the WAP is not an offered lay price; not blind (the "
+            "decile table read 2022-26)"),
     _s("S078", "Predicted drifters laid at the SP with a limit of 8.0, held", "steamer model: lay side",
        "lay", "win", s078, select_from=core.FITTED_SELECT_FROM,
        tested_before="strat I (the bottom decile at the BSP: no data found in the report); edge-bsp-bias-1002 (all "
                      "runners laid at the SP -0.2% of liability)",
-       note="model fitted 2018-2021, SELECT read 2022-2023; a null is the likely outcome"),
+       note="model fitted 2018-2021, SELECT read 2022-2023; a null is the likely outcome; size at most 1% of "
+            "pp_vol, liability GBP10-100 (K4)"),
     _s("S079", "Fade the steamer at the SP: limit-on-close lay at 80% of the morning price", "SP over-reaction",
-       "lay", "win", s079,
+       "lay", "win", s079, blind=False,
        tested_before="steam-beyond-bsp ('if anything a slight over-reaction', Q1 2026); edge-bsp-bias-1002 (no lay "
                      "cell held, none defined by the move)",
-       note="the entry is the BSP itself; no spread"),
-    _s("S080", "Back the pre-off drifter at the BSP, held", "SP over-reaction", "back", "win", s080,
+       note="the entry is the BSP itself; no spread; size at most 1% of pp_vol, liability GBP10-100 (K4); not "
+            "blind (steam-beyond-bsp read 2026-01-01..2026-03-31: the reading without 2026 is in the log)"),
+    _s("S080", "Back the pre-off drifter at the BSP, held", "SP over-reaction", "back", "win", s080, blind=False,
        tested_before="steam-beyond-bsp; morning-favourite-clv; strategy_research_2026-11-04 study G (no morning "
                      "band passes). Not run on the long window",
-       note="ppwap is complete only at the off: live the drift would be read from the mid a minute out"),
+       note="ppwap is complete only at the off: live the drift would be read from the mid a minute out; not blind "
+            "(steam-beyond-bsp read 2026-01-01..2026-03-31: the reading without 2026 is in the log)"),
     _s("S081", "Lay chasers sent back over hurdles, at the BSP", "over-bet segment", "lay", "win", s081,
        blind=False,
        tested_before="strat_screen_rules.csv: 2010-21 n 20,412 A/E 0.903; 2022-26 n 7,880 A/E 0.892 (p 0.004); "
@@ -1427,15 +1500,17 @@ STRATEGIES = [
                      "the price forecast)",
        note="stablemates are taken from the result (a declared non-runner is not seen)"),
     _s("S086", "Segment steam table: backed in the morning, laid at the BSP", "morning steam by segment",
-       "back", "win", s086, entry="wap", select_from=core.FITTED_SELECT_FROM,
+       "back", "win", s086, entry="wap", select_from=core.FITTED_SELECT_FROM, blind=False,
        tested_before="strat I; morning-exit-bsp-1116; open-close-horses-1101 (opening-book forecasts negative a "
                      "tick worse). A shrunk cell table by card facts: none found",
-       note="table fitted once on 2018-2021, SELECT read 2022-2023; will largely rediscover the quick return"),
+       note="table fitted once on 2018-2021, SELECT read 2022-2023; will largely rediscover the quick return, "
+            "read on TEST 2022-26 (strategy_research_2026-11-04) and live since 4 Nov: not blind"),
     _s("S087", "Gamble yards: the trainer's steam record with shrinkage", "trainer v market",
-       "back", "win", s087, entry="wap",
+       "back", "win", s087, entry="wap", select_from=core.FITTED_SELECT_FROM,
        tested_before="strat I ('the gamble yard' alone failed the result gate; its CLV was not reported); strat H "
                      "(trainer A/E Spearman 0.09); phase4-segments-1119",
-       note="void (no bets) if the trainer score's next-year correlation, read on SELECT, is under 0.2"),
+       note="void (no bets) if the trainer score's next-year correlation, read on 2020-2021, is under 0.2; "
+            "SELECT read 2022-2023"),
     _s("S088", "In-running near miss last time, at the BSP", "hidden form", "back", "win", s088,
        tested_before="iter109-hrb-features, iter110-inrunning-served-blend (a forecast gain, not a bet); strat G H1 "
                      "hard luck (A/E 1.013 / 0.996 at the BSP, 0.957 in the morning)"),
@@ -1449,9 +1524,11 @@ STRATEGIES = [
                      "betting rule: none found",
        note="rides are counted from results"),
     _s("S091", "Win-market tail lay at the BSP (morningwap >= 80)", "favourite-longshot", "lay", "win", s091,
+       blind=False,
        tested_before="bsp-calibration-1007 (101+ returns -18.5% to backers); edge-bsp-bias-1002 (every runner laid "
                      "at the SP -0.2% of liability). A tail lay selected before the off: none found",
-       note="pence a day expected: evaluated to close the question"),
+       note="pence a day expected: evaluated to close the question; not blind (bsp-calibration-1007 read the "
+            "100+ tail on Apr 2016-Mar 2026)"),
     _s("S092", "Learned touch model: back at the SP, lay at half the SP odds", "in-running: back-to-lay",
        "both", "win", s092, select_from="2021-01-01",
        tested_before="edge-inplay-offsets-1002 (unconditional, every cell -14% to -39%; 37% matched against 55% "

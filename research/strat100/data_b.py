@@ -10,8 +10,11 @@ printed at a price 2% worse (K5) and none of them is a fill.
 What the loader returns (a dict; every pandas frame in it is passed to every strategy, and none may be changed):
 
     runners     one row a runner a market (GB/IE, WIN and PLACE): the catalogue (venue, start, names, race type, days
-                since the last run, wearing, F = Betfair's forecast price), predicted_bfsp (S3 predictions/<day>.csv,
-                WIN markets), bsp and final_status from the final mark (the BSP from betfair_prices where the mark has
+                since the last run, wearing, F = Betfair's forecast price as FIRST recorded in the day's raw
+                catalogue, with F_t the time of that record and F_src), predicted_bfsp (S3 predictions/<day>.csv,
+                WIN markets) with pred_written (the file's S3 LastModified: the price is read at a mark or by a
+                replay only from then on; a file last written after 10:00 UK, or with no write time, is not read
+                at all and its day has no model price), bsp and final_status from the final mark (the BSP from betfair_prices where the mark has
                 none), places, and for each mark a block of columns <tag>_<field>:
                   tags    c08 c09 c10 c11 c12 (the clock marks, UK), o120 o60 o30 o15 o10 o5 o3 o1 (minutes before the
                           off), last
@@ -19,7 +22,8 @@ What the loader returns (a dict; every pandas frame in it is passed to every str
                           lay1..3, lay1..3_size, last_traded, mtm (the market's matched), n_active
                 ``book(runners, tag)`` gives one mark's block under its plain names.
     fills       BASE-B (K7): the live trader's matched backs, one row an order, with the horse's settle row (BSP,
-                result, Betfair's settled price) and each fill's cut_factor (K6 CUT)
+                result, Betfair's settled price), each fill's cut_factor (K6 CUT) and ledger_gap (Betfair's
+                settled stake less the horse's back rows; gap_flag where it is over 1%)
     settles     the live trader's settle rows, one a horse (S027)
     prices      betfair_prices rows of the window (BSP, in-play high and low, result; win and place)
     removals    every runner the raw books show REMOVED: its reduction factor, removal time and the first poll that
@@ -43,7 +47,8 @@ at least 2.5 (CUT_MIN_AF_LAY: the conservative reading on that side). Two except
 S024 and its benchmark, whose specification is the 2.5% rule itself, cut their backs only by factors of at least
 2.5; and BASE-B's real fills are scaled to Betfair's own settled price where the settle row carries it. Both
 readings are printed for REPLAY-B and BASE-B at load, and each replayed bet carries both (cut_factor,
-cut_factor_bf).
+cut_factor_bf). A bet 'filled' off a recorded book is cut by a removal until the books SHOW it (the first poll with
+the runner REMOVED), not only until Betfair's removal time: a delayed book can show pre-removal prices after it.
 
 Environment (all optional):
     STRAT100_DB             the database (default horse_racing.db in the working directory)
@@ -89,6 +94,7 @@ FIRST_DAY, LAST_DAY = core.WINDOWS["b_live"]["select"][0], core.WINDOWS["b_live"
 KEY = ["market_id", "selection_id"]
 PAIR_B = ["event_id", "market_start_utc", "selection_id"]        # K5: a win row and its place row
 BETFAIR_MIN_AF = 2.5                  # Betfair makes no reduction to a win bet for a factor under this
+LEDGER_GAP_SHARE = 0.01               # BASE-B: a horse whose back rows miss Betfair's settled stake by more is flagged
 CUT_MIN_AF_BACK = float(os.environ.get("STRAT100_B_CUT_MIN_AF_BACK") or 0.0)             # K6: every factor
 CUT_MIN_AF_LAY = float(os.environ.get("STRAT100_B_CUT_MIN_AF_LAY") or BETFAIR_MIN_AF)    # conservative for a lay
 STEAM_CUTOFF = "2026-03-27"           # S031: the CLEAN steamer fitted once on 2018-01-01..2026-03-27
@@ -173,7 +179,9 @@ def uk_time(day: str, hhmm: str) -> pd.Timestamp:
 def book(runners: pd.DataFrame, tag: str, mtype: str = "WIN", active: bool = True) -> pd.DataFrame:
     """One mark's book, a new frame: the static columns and the mark's block under its plain names (t, mto, mstatus,
     status, back1.., lay1.., last_traded, mtm, n_active), for the runners the mark holds; with ``active`` only the
-    runners ACTIVE in an OPEN market at the mark. ``n_rows`` is the count of those rows in the market: a race is
+    runners ACTIVE in an OPEN market at the mark. predicted_bfsp is empty where the mark was polled before the
+    day's predictions file was written (pred_written), and F where its first record is later than the mark (F_t):
+    a rule that needs either then finds the race not whole. ``n_rows`` is the count of those rows in the market: a race is
     whole only where it equals n_active (no runner of the book is missing from the frame)."""
     block = {f"{tag}_{v}": v for v in MARK_FIELDS.values()}
     missing = [c for c in block if c not in runners.columns]
@@ -182,6 +190,10 @@ def book(runners: pd.DataFrame, tag: str, mtype: str = "WIN", active: bool = Tru
     static = [c for c in runners.columns if not any(c.startswith(f"{t}_") for t in TAGS.values())]
     b = runners.loc[runners["market_type"].eq(mtype) & runners[f"{tag}_t"].notna(), static + list(block)]
     b = b.rename(columns=block)
+    if "pred_written" in b.columns and "predicted_bfsp" in b.columns:       # the model's price was not there yet
+        b["predicted_bfsp"] = b["predicted_bfsp"].where(b["t"] >= b["pred_written"])
+    if "F_t" in b.columns and "F" in b.columns:                             # nor a forecast first recorded later
+        b["F"] = b["F"].where(~(b["F_t"] > b["t"]))
     if active:
         b = b[b["status"].eq("ACTIVE") & b["mstatus"].eq("OPEN")]
     b = b.reset_index(drop=True)
@@ -194,10 +206,17 @@ def min_af_for(side: str) -> float:
     return CUT_MIN_AF_LAY if side == "lay" else CUT_MIN_AF_BACK
 
 
-def cut_factor(removals: pd.DataFrame | None, market_id, selection_id, ts, min_af: float = 0.0) -> np.ndarray:
+def cut_factor(removals: pd.DataFrame | None, market_id, selection_id, ts, min_af: float = 0.0,
+               book_time: bool = True) -> np.ndarray:
     """K6 CUT: for each bet (its market, its runner, the time it was matched) the product of (1 - af/100) over the
     market's OTHER runners removed after that time whose factor is at least ``min_af`` (0: every factor, K6's
-    words; 2.5: Betfair's own rule). 1.0 where none; the core applies max(1.01, price x factor)."""
+    words; 2.5: Betfair's own rule). 1.0 where none; the core applies max(1.01, price x factor).
+
+    ``book_time`` (the default, for every bet 'filled' off a recorded book): where the removals carry
+    ``first_seen``, a removal counts as after the bet until the books SHOW it, max(rt, first_seen) > ts. On the
+    delayed key a poll after Betfair's removal time can still show the runner ACTIVE at the prices from before
+    it; a back taken off that book is cut. False for the live trader's real fills, matched on the live market at
+    their own time: Betfair's removal time alone."""
     min_af = float(min_af)
     n = len(market_id)
     out = np.ones(n)
@@ -206,8 +225,12 @@ def cut_factor(removals: pd.DataFrame | None, market_id, selection_id, ts, min_a
     b = pd.DataFrame({"i": np.arange(n), "market_id": np.asarray(market_id, dtype=object).astype(str),
                       "sel": pd.to_numeric(pd.Series(np.asarray(selection_id)), errors="coerce").to_numpy(),
                       "ts": _utc(pd.Series(np.asarray(ts))).to_numpy()})
-    r = removals[["market_id", "selection_id", "af", "rt"]].copy()
+    seen = book_time and "first_seen" in removals.columns
+    r = removals[["market_id", "selection_id", "af", "rt"] + (["first_seen"] if seen else [])].copy()
     r["market_id"] = r["market_id"].astype(str)
+    if seen:
+        fs = _utc(r["first_seen"])
+        r["rt"] = fs.where(fs > _utc(r["rt"]), _utc(r["rt"]))
     m = b.merge(r, on="market_id", how="inner")
     m = m[(m["rt"].to_numpy() > m["ts"].to_numpy()) & (m["selection_id"] != m["sel"]) & (m["af"] >= min_af)
           & (m["af"] > 0)]
@@ -285,9 +308,26 @@ def _memo_s3():
         ac.get = orig
 
 
+def _modified(key: str):
+    """The S3 object's LastModified as a UTC timestamp, or None (scripts/shadow_predict.s3_modified reads the same
+    field). Tests replace this."""
+    try:
+        from research.arms import core as ac
+        t = pd.Timestamp(ac.s3().head_object(Bucket=ac.bucket(), Key=key)["LastModified"])
+        return t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+    except Exception as exc:  # noqa: BLE001 -- an unknown write time is said and the day's price is not read
+        _say(f"   {key}: LastModified not read ({type(exc).__name__})")
+        return None
+
+
+PRED_LATEST_UK = "10:00"      # a predictions file last written after this was rewritten in the day: not read
+
+
 def read_predictions(days: list[str]) -> pd.DataFrame:
     """S3 predictions/<day>.csv (the served 06:00 price) for each day: race_date, market_id, selection_id,
-    predicted_bfsp and the names' keys for the runners a file carries no ids for."""
+    predicted_bfsp, the names' keys for the runners a file carries no ids for, and written_utc = the object's
+    LastModified (the job ran at 06:00 UTC to 11 Oct, 04:00 UTC to 12 Nov, takes an hour or more, and can be
+    re-run in the day: a price is used only at or after the time its file was written)."""
     import betfair_prices as bp
     text = {c: str for c in ("date", "race_date", "venue", "track", "race_time", "runner_name", "horse_name",
                              "market_id")}
@@ -299,16 +339,17 @@ def read_predictions(days: list[str]) -> pd.DataFrame:
         venue = x["venue"] if "venue" in x.columns else x.get("track", pd.Series("", index=x.index))
         name = x["runner_name"] if "runner_name" in x.columns else x.get("horse_name", pd.Series("", index=x.index))
         out.append(pd.DataFrame({
-            "race_date": day,
+            "race_date": day, "written_utc": _modified(f"predictions/{day}.csv") or pd.NaT,
             "market_id": x["market_id"].astype(object) if "market_id" in x.columns else None,
             "selection_id": pd.to_numeric(x["selection_id"], errors="coerce") if "selection_id" in x.columns else np.nan,
             "predicted_bfsp": pd.to_numeric(x["predicted_bfsp"], errors="coerce"),
             "k_track": venue.map(bp.normalise_track), "k_horse": name.map(bp.normalise_horse),
             "k_time": x.get("race_time", pd.Series("", index=x.index)).astype(str).map(bp.race_time_to_24h)}))
     if not out:
-        return pd.DataFrame(columns=["race_date", "market_id", "selection_id", "predicted_bfsp", "k_track",
-                                     "k_horse", "k_time"])
+        return pd.DataFrame(columns=["race_date", "written_utc", "market_id", "selection_id", "predicted_bfsp",
+                                     "k_track", "k_horse", "k_time"])
     p = pd.concat(out, ignore_index=True)
+    p["written_utc"] = _utc(p["written_utc"])
     p = p[p["predicted_bfsp"] > 1.0]
     _say(f"   predictions: {len(p):,} priced runners on {p['race_date'].nunique()} of {len(days)} days "
          f"({int(p['market_id'].notna().sum()):,} with Betfair ids)")
@@ -393,9 +434,11 @@ def _settled_frame(D) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["market_id", "selection_id", "bsp", "result"])
 
 
-def _orders_to_bets(rows: pd.DataFrame, D, side: str) -> pd.DataFrame:
+def _orders_to_bets(rows: pd.DataFrame, D, side: str, removals: pd.DataFrame | None = None) -> pd.DataFrame:
     """Matched orders (market_id, selection_id, ts, matched, avg_price) as bets closed at the day's BSP (K3), each
-    cut by the removals after it (K6); a runner with no BSP or REMOVED is void."""
+    cut by the removals after it (K6); a runner with no BSP or REMOVED is void. ``removals`` (removals_of the
+    day's raw books, with the first poll that showed each) is used in place of D.removed: an order filled off a
+    book that did not yet show a removal is cut by it (cut_factor, book_time)."""
     if rows is None or len(rows) == 0:
         return pd.DataFrame(columns=BETS_COLS)
     x = rows.copy()
@@ -407,30 +450,37 @@ def _orders_to_bets(rows: pd.DataFrame, D, side: str) -> pd.DataFrame:
         _settled_frame(D), on=KEY, how="left")
     ts = _utc(x["ts"])
     ok = x["bsp"].gt(1.0) & x["result"].isin(["WINNER", "LOSER"])
+    rem = D.removed if removals is None else removals
     return pd.DataFrame({
         "race_date": str(D.day), "race_key": x["market_id"], "selection": x["selection_id"].astype(str),
         "side": side, "stake": x["matched"], "entry_price": x["avg_price"], "exit": "bsp", "exit_price": x["bsp"],
         "won": np.where(ok, x["result"].eq("WINNER").astype(float), np.nan), "void": ~ok.to_numpy(),
-        "cut_factor": cut_factor(D.removed, x["market_id"], x["selection_id"], ts, min_af_for(side)),
-        "cut_factor_bf": cut_factor(D.removed, x["market_id"], x["selection_id"], ts, BETFAIR_MIN_AF),
+        "cut_factor": cut_factor(rem, x["market_id"], x["selection_id"], ts, min_af_for(side)),
+        "cut_factor_bf": cut_factor(rem, x["market_id"], x["selection_id"], ts, BETFAIR_MIN_AF),
         "ts": ts.dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "edge": pd.to_numeric(x["edge"], errors="coerce") if "edge" in x.columns else np.nan,
         "minutes_to_off": pd.to_numeric(x["minutes_to_off"], errors="coerce") if "minutes_to_off" in x.columns else np.nan,
     })
 
 
-def replay_day(D, arms: dict, draws: int = 20000, forecast: dict | None = None) -> pd.DataFrame:
+def replay_day(D, arms: dict, draws: int = 20000, forecast: dict | None = None,
+               removals: pd.DataFrame | None = None, t_start=None) -> pd.DataFrame:
     """Every replayed arm on one loaded day: {id: {'kind': 'rule' | 'lay', 'over': config changes, 'policy': the
     session's policy}} (strategies_b_live.REPLAY_ARMS). The plans are made once at a 0% bar and each arm holds its
     own bar when it executes, so the arms share research/arms/core's plan cache; a runner's expected CLV does not
     depend on the bar, so each arm trades exactly as a session planned at its own bar. Returns the arms' bets, one
-    row an order, with the arm's id."""
+    row an order, with the arm's id. ``t_start`` (the time the day's predictions file was written): no session
+    starts before it, so no order is placed on a price not yet published. ``removals``: see _orders_to_bets."""
     from research.arms import core as ac
     from research.strat100 import strategies_b_live as S
     rule_cls, lay_cls = S.session_classes()
     ac.set_plan_cfg(ac.make_cfg(**{**RULE, "clv_bar": 0.0, "clv_draws": int(draws)}), reset=True)
     d = D.day
-    first = [t for times in D.poll_times.values() for t in times if t >= uk_time(str(d), "05:15").to_pydatetime()]
+    t0 = ac.session_start(D, "win")
+    if t_start is not None and pd.notna(t_start):
+        t0 = max(t0, pd.Timestamp(t_start).to_pydatetime())
+    first = [t for times in D.poll_times.values() for t in times
+             if t >= max(uk_time(str(d), "05:15").to_pydatetime(), t0)]
     out = []
     for arm_id, spec in arms.items():
         over, policy = dict(spec.get("over") or {}), dict(spec.get("policy") or {})
@@ -446,15 +496,14 @@ def replay_day(D, arms: dict, draws: int = 20000, forecast: dict | None = None) 
         h, m = (int(x) for x in cfg.trade_until.split(":"))
         t_end = (datetime(d.year, d.month, d.day, h, m, tzinfo=UK) + timedelta(minutes=3)).astimezone(timezone.utc)
         kind = spec.get("kind", "rule")
-        led, s, _ = ac.run_session(D, lay_cls if kind == "lay" else rule_cls, cfg, policy,
-                                   ac.session_start(D, "win"), t_end=t_end)
+        led, s, _ = ac.run_session(D, lay_cls if kind == "lay" else rule_cls, cfg, policy, t0, t_end=t_end)
         if kind == "lay":
             pos = s.lay_positions_frame()
-            b = _orders_to_bets(pos, D, "lay")
+            b = _orders_to_bets(pos, D, "lay", removals)
         else:
             b = led[(led["event"] == "back") & (pd.to_numeric(led["matched"], errors="coerce") > 0)] \
                 if len(led) and "event" in led.columns else pd.DataFrame()
-            b = _orders_to_bets(b, D, "back")
+            b = _orders_to_bets(b, D, "back", removals)
         out.append(b.assign(id=arm_id))
     ac.set_plan_cfg(ac.make_cfg(), reset=True)
     out = [b for b in out if len(b)]
@@ -498,7 +547,7 @@ def day_pass(job: dict) -> dict:
     from research.strat100 import strategies_b_live as S
     day, t0 = job["day"], time.time()
     out = {"day": day, "frames": {}, "errors": {}, "raw": False, "replayed": False}
-    runners_day, fills_day = job["runners"], job["fills"]
+    runners_day, fills_day, rem_day = job["runners"], job["fills"], None
     with _memo_s3():
         try:
             raw = read_raw(day) if job.get("raw", True) else pd.DataFrame()
@@ -506,7 +555,8 @@ def day_pass(job: dict) -> dict:
             raw, out["errors"]["raw"] = pd.DataFrame(), f"{type(exc).__name__}: {exc}"
         if len(raw):
             out["raw"] = True
-            out["frames"]["removals"] = removals_of(raw).assign(race_date=day)
+            rem_day = removals_of(raw)
+            out["frames"]["removals"] = rem_day.assign(race_date=day)
             out["frames"]["places"] = places_of(raw).assign(race_date=day)
             ctx = make_ctx(day, raw, runners_day, fills_day, read=_read_other(day))
             for key, fn in S.DAY_FUNCS.items():
@@ -518,18 +568,32 @@ def day_pass(job: dict) -> dict:
                     out["errors"][key] = f"{type(exc).__name__}: {exc} | {traceback.format_exc(limit=3)}"
             del ctx
         del raw
-        if job.get("replay", True):
+        if job.get("replay", True) and not job.get("pred_ok", True):
+            out["replay_skipped"] = ("no model price is read for the day (no predictions file, one rewritten after "
+                                     f"{PRED_LATEST_UK} UK, or one with no write time)")
+        elif job.get("replay", True):
             try:
                 D = load_replay_day(day)
                 if D is not None:
-                    fc = runners_day[runners_day["market_type"].eq("WIN") & runners_day["F"].gt(1.0)]
-                    forecast = {(str(m), int(s)): float(f) for m, s, f in zip(fc["market_id"], fc["selection_id"], fc["F"])}
-                    out["frames"]["replay"] = replay_day(D, S.REPLAY_ARMS, job.get("draws", 20000), forecast)
+                    fc = first_forecast_quiet(runners_day, out["frames"].get("day_FCHECK"))
+                    fc = fc[fc["market_type"].eq("WIN") & fc["F"].gt(1.0)]
+                    forecast = {(str(m), int(s)): (float(f), None if pd.isna(t) else t.to_pydatetime())
+                                for m, s, f, t in zip(fc["market_id"], fc["selection_id"], fc["F"], fc["F_t"])}
+                    out["frames"]["replay"] = replay_day(D, S.REPLAY_ARMS, job.get("draws", 20000), forecast,
+                                                         removals=rem_day, t_start=job.get("pred_written"))
                     out["replayed"] = True
             except Exception as exc:  # noqa: BLE001
                 out["errors"]["replay"] = f"{type(exc).__name__}: {exc} | {traceback.format_exc(limit=4)}"
     out["seconds"] = round(time.time() - t0, 1)
     return out
+
+
+def first_forecast_quiet(runners: pd.DataFrame, fc) -> pd.DataFrame:
+    was, _QUIET[0] = _QUIET[0], True
+    try:
+        return first_forecast(runners, fc)
+    finally:
+        _QUIET[0] = was
 
 
 def _code_hash() -> str:
@@ -561,7 +625,7 @@ def run_day_passes(jobs: list[dict], n_jobs: int = 1, work: Path | None = None, 
         opts = (f"r{int(j.get('raw', True))}p{int(j.get('replay', True))}d{j.get('draws', 20000)}"
                 f"c{CUT_MIN_AF_BACK:g}-{CUT_MIN_AF_LAY:g}")
         j["_cache"] = (work / f"day_{j['day']}_{opts}_{_fingerprint(j)}_{tag}.pkl") if work is not None else None
-        if j["_cache"] is not None and j["_cache"].exists() and not refresh:
+        if j["_cache"] is not None and j["_cache"].exists() and not refresh:      # (the day's runners carry pred_written)
             try:
                 done[j["day"]] = pd.read_pickle(j["_cache"])
                 continue
@@ -715,6 +779,7 @@ def attach_predictions(runners: pd.DataFrame, preds: pd.DataFrame) -> pd.DataFra
     import betfair_prices as bp
     r = runners.copy()
     r["predicted_bfsp"] = np.nan
+    r["pred_written"] = pd.Series(pd.NaT, index=r.index, dtype="datetime64[ns, UTC]")
     win = r["market_type"].eq("WIN").to_numpy()
     if preds is None or preds.empty:
         _say("   predictions: no data found (every strategy that needs the model's price returns no bet)")
@@ -746,6 +811,71 @@ def attach_predictions(runners: pd.DataFrame, preds: pd.DataFrame) -> pd.DataFra
     n_win = int(win.sum())
     _say(f"   predictions joined: {n_id:,} WIN runners by Betfair's ids, {n_names:,} by names; "
          f"{n_win - n_id - n_names:,} of {n_win:,} WIN runners have no model price")
+    if "written_utc" in p.columns:
+        wr = p.drop_duplicates("race_date").set_index("race_date")["written_utc"]
+        r["pred_written"] = _utc(r["race_date"].map(wr))
+    return r
+
+
+def pred_time_check(runners: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """The model's price held to the time its file was written. A day whose predictions file was last written
+    after 10:00 UK (rewritten in the day: priced on a later card, which knows later non-runners), or whose write
+    time is not known, loses its model price altogether. On the other days ``book`` empties the price at every
+    mark polled before the file was written; the count of those runner-marks is returned and printed."""
+    r = runners.copy()
+    has = r["predicted_bfsp"].gt(1.0)
+    days = sorted(r.loc[has, "race_date"].unique())
+    wr = r.loc[has].drop_duplicates("race_date").set_index("race_date")["pred_written"]
+    late = {d: str(wr[d]) for d in days if pd.notna(wr[d]) and wr[d] > uk_time(d, PRED_LATEST_UK)}
+    unknown = [d for d in days if pd.isna(wr[d])]
+    bad = r["race_date"].isin(set(late) | set(unknown))
+    n_bad = int((has & bad).sum())
+    r.loc[bad, "predicted_bfsp"] = np.nan
+    has = r["predicted_bfsp"].gt(1.0)
+    early = {tag: int((has & r[f"{tag}_t"].notna() & (r[f"{tag}_t"] < r["pred_written"])).sum())
+             for tag in TAGS.values() if f"{tag}_t" in r.columns}
+    early = {k: v for k, v in early.items() if v}
+    days_early = sorted({d for tag in early for d in r.loc[has & (r[f"{tag}_t"] < r["pred_written"]), "race_date"]})
+    info = {"preds_rewritten": late, "preds_time_unknown": unknown, "preds_runners_not_read": n_bad,
+            "preds_marks_before_written": early, "preds_days_with_an_early_mark": days_early}
+    if late:
+        _say(f"   predictions rewritten in the day: not read on {len(late)} days (last written after "
+             f"{PRED_LATEST_UK} UK): {late}")
+    if unknown:
+        _say(f"   predictions with no write time (LastModified not read): not read on {len(unknown)} days: {unknown}")
+    if n_bad:
+        _say(f"   predictions: {n_bad:,} WIN runners' model prices not read for those reasons")
+    _say(f"   predictions not yet written at a mark (the price is empty there, the race not whole): "
+         + (", ".join(f"{k} {v:,}" for k, v in early.items()) + f" runner-marks on {len(days_early)} days"
+            if early else "none"))
+    return r, info
+
+
+def first_forecast(runners: pd.DataFrame, fc: pd.DataFrame | None) -> pd.DataFrame:
+    """F as first recorded. betfair_live_markets keeps the LAST catalogue row of the day (the recorder re-reads the
+    catalogue all day and replaces the row), so a forecast Betfair revised in the day is stored at its later
+    value. Where the day's raw catalogue gives the runner's first recorded forecast (fcheck_day: F_first and its
+    record time), F becomes that and F_t its time (``book`` empties F at a mark polled before it); elsewhere F
+    stays the stored value, F_t is empty and F_src says 'stored (unverified)'."""
+    r = runners.copy()
+    r["F_t"] = pd.Series(pd.NaT, index=r.index, dtype="datetime64[ns, UTC]")
+    r["F_src"] = np.where(r["F"].gt(1.0), "stored (unverified)", "")
+    if fc is None or len(fc) == 0 or "F_first" not in fc.columns:
+        return r
+    f = fc.drop_duplicates(KEY, keep="first")
+    f = f.assign(market_id=f["market_id"].astype(str), selection_id=pd.to_numeric(f["selection_id"]).astype("int64"))
+    got = r[KEY].merge(f[KEY + ["F_first", "F_t"]].rename(columns={"F_t": "_t"}), on=KEY, how="left")
+    first, t = got["F_first"].to_numpy(float), _utc(got["_t"])
+    t.index = r.index
+    use = np.isfinite(first) & (first > 1.0) & r["market_type"].eq("WIN").to_numpy()
+    changed = use & r["F"].gt(1.0).to_numpy() & (np.abs(np.nan_to_num(r["F"].to_numpy(float)) - first) > 1e-9)
+    r.loc[use, "F"] = first[use]
+    r.loc[use, "F_t"] = t[use]
+    r.loc[use, "F_src"] = "first recorded"
+    n_win = int((r["market_type"].eq("WIN") & r["F"].gt(1.0)).sum())
+    _say(f"   forecast price: {int(use.sum()):,} of {n_win:,} WIN runners take their FIRST recorded forecast "
+         f"({int(changed.sum()):,} differed from the stored, last, value); {n_win - int(use.sum()):,} keep the stored "
+         f"value (no raw catalogue row: unverified)")
     return r
 
 
@@ -762,8 +892,9 @@ def build_fills(orders: pd.DataFrame, removals: pd.DataFrame | None, days_books:
     settles: one row a settled horse (matched, settled_price, bsp, result)."""
     cols_f = ["race_date", "market_id", "selection_id", "ts", "seq", "n", "first", "matched", "avg_price", "edge",
               "best_back", "minutes_to_off", "p_model", "p_market", "bsp", "result", "settled_price",
-              "matched_price", "ratio", "cut_raw", "cut_factor", "cut_src"]
-    cols_s = ["race_date", "market_id", "selection_id", "matched", "settled_price", "bsp", "result", "pnl"]
+              "matched_price", "ratio", "cut_raw", "cut_factor", "cut_src", "ledger_gap", "gap_flag"]
+    cols_s = ["race_date", "market_id", "selection_id", "matched", "settled_price", "bsp", "result", "pnl",
+              "ledger_gap", "gap_flag"]
     if orders is None or orders.empty:
         return pd.DataFrame(columns=cols_f), pd.DataFrame(columns=cols_s)
     o = orders.reindex(columns=list(dict.fromkeys([*orders.columns, *ORDER_COLS])))
@@ -788,10 +919,19 @@ def build_fills(orders: pd.DataFrame, removals: pd.DataFrame | None, days_books:
     b["first"] = (b["ts"] - b.groupby(hk)["ts"].transform("min")).dt.total_seconds() <= 60.0
     cost = (b["matched"] * b["avg_price"]).groupby([b[c] for c in hk]).transform("sum")
     b["matched_price"] = cost / b.groupby(hk)["matched"].transform("sum")
-    b = b.drop(columns=["bsp", "result"]).merge(settles[hk + ["bsp", "result", "settled_price"]], on=hk, how="left")
-    b["ratio"] = b["settled_price"] / b["matched_price"]
+    # the ledger against Betfair: trading/session.sync writes a 'sync' row, not a 'back' row, for matched money the
+    # back rows lack, and the settle row carries Betfair's matched; the gap is carried on every row and printed
+    backed = b.groupby(hk, as_index=False)["matched"].sum().rename(columns={"matched": "back_matched"})
+    settles = settles.merge(backed, on=hk, how="left")
+    settles["ledger_gap"] = settles["matched"] - settles["back_matched"].fillna(0.0)
+    settles["gap_flag"] = settles["ledger_gap"].abs() > LEDGER_GAP_SHARE * settles["matched"]
+    b = b.drop(columns=["bsp", "result"]).merge(
+        settles[hk + ["bsp", "result", "settled_price", "ledger_gap", "gap_flag"]], on=hk, how="left")
+    b["gap_flag"] = b["gap_flag"].fillna(False).astype(bool)
+    # a horse whose back rows and Betfair's settled stake differ by over 1%: settled / matched is on another base
+    b["ratio"] = (b["settled_price"] / b["matched_price"]).where(~b["gap_flag"])
     have = b["race_date"].isin(set(days_books)).to_numpy()
-    raw_cut = cut_factor(removals, b["market_id"], b["selection_id"], b["ts"], CUT_MIN_AF_BACK)
+    raw_cut = cut_factor(removals, b["market_id"], b["selection_id"], b["ts"], CUT_MIN_AF_BACK, book_time=False)
     b["cut_raw"] = np.where(have, raw_cut, np.nan)
     # Betfair's own record of the horse's cut, where it is sane (the settle row rounds to 4 places)
     ratio = b["ratio"].where(b["ratio"].between(0.30, 1.0005)).clip(upper=1.0)
@@ -799,8 +939,8 @@ def build_fills(orders: pd.DataFrame, removals: pd.DataFrame | None, days_books:
     base = pd.Series(np.where(have, raw_cut, 1.0), index=b.index)
     # the real cut is shared among a horse's fills as Betfair's own rule spreads it (factors of 2.5 or more, by the
     # time of each fill), then scaled so the horse's stake-weighted cut is exactly Betfair's settled / matched
-    share = pd.Series(np.where(have, cut_factor(removals, b["market_id"], b["selection_id"], b["ts"], BETFAIR_MIN_AF),
-                               1.0), index=b.index)
+    share = pd.Series(np.where(have, cut_factor(removals, b["market_id"], b["selection_id"], b["ts"], BETFAIR_MIN_AF,
+                                                book_time=False), 1.0), index=b.index)
     w = b["matched"] * b["avg_price"]
     horse = (w * share).groupby([b[c] for c in hk]).transform("sum") / w.groupby([b[c] for c in hk]).transform("sum")
     scaled = (share * ratio / horse).clip(upper=1.0)
@@ -811,12 +951,21 @@ def build_fills(orders: pd.DataFrame, removals: pd.DataFrame | None, days_books:
     _say(f"   live_orders: {n0:,} rows in; {len(b):,} matched backs on {b.groupby(hk).ngroups:,} horses over "
          f"{b['race_date'].nunique()} days (first orders {int(b['first'].sum()):,}, top-ups {int((~b['first']).sum()):,}); "
          f"{len(settles):,} settle rows; backs with no settle row {int(b['result'].isna().sum()):,} (void)")
+    gap = settles[settles["ledger_gap"].abs() >= 0.01]
+    flagged = settles[settles["gap_flag"]]
+    _say(f"   ledger against Betfair's settled stake: {len(gap):,} of {len(settles):,} settled horses differ by GBP0.01 "
+         f"or more (GBP{gap['ledger_gap'].abs().sum():,.2f} of GBP{settles['matched'].sum():,.2f} settled); "
+         f"{len(flagged):,} by over {LEDGER_GAP_SHARE:.0%} of the settled stake (their fills are cut from the raw "
+         f"books, not scaled to Betfair's settled price; S027 leaves them out)"
+         + (": " + ", ".join(f"{d} {m} {int(x)}" for d, m, x in zip(flagged["race_date"], flagged["market_id"],
+                                                                     flagged["selection_id"]))[:1500] if len(flagged) else ""))
     if len(b):
         ok = b[b["ratio"].notna() & have]
         if len(ok):
             wk = ok["matched"] * ok["avg_price"]
             def raw_at(floor):
-                return (wk * cut_factor(removals, ok["market_id"], ok["selection_id"], ok["ts"], floor)).sum() / wk.sum()
+                return (wk * cut_factor(removals, ok["market_id"], ok["selection_id"], ok["ts"], floor,
+                                        book_time=False)).sum() / wk.sum()
             _say(f"   the cut, reconciled to Betfair's settled prices on days with raw books: settled/matched "
                  f"{(wk * ok['ratio'].clip(upper=1.0)).sum() / wk.sum():.5f} (used for BASE-B); raw books, every "
                  f"factor {raw_at(0.0):.5f}; raw books at Betfair's {BETFAIR_MIN_AF:g}% floor {raw_at(BETFAIR_MIN_AF):.5f}")
@@ -898,7 +1047,8 @@ def assemble(cat: pd.DataFrame, marks: pd.DataFrame, orders: pd.DataFrame | None
     pr["race_date"] = pr["race_date"].astype(str).str[:10]
     pr["market_type"] = pr["market_type"].astype(str).str.lower()
     runners = _fill_bsp(runners, pr)
-    runners = attach_predictions(runners, preds)
+    runners, pred_info = pred_time_check(attach_predictions(runners, preds))
+    meta.update(pred_info)
 
     day_results = day_results or []
     frames_by: dict[str, list] = {}
@@ -917,6 +1067,11 @@ def assemble(cat: pd.DataFrame, marks: pd.DataFrame, orders: pd.DataFrame | None
         got = [f for f in frames_by.get(name, []) if len(f)]
         return pd.concat(got, ignore_index=True) if got else pd.DataFrame(columns=cols)
 
+    runners = first_forecast(runners, cat_frames("day_FCHECK", KEY + ["F_first", "F_t", "F_stored", "race_date"]))
+    skipped = {r["day"]: r["replay_skipped"] for r in day_results if r.get("replay_skipped")}
+    if skipped:
+        meta["replay_skipped"] = skipped
+        _say(f"   replay not run on {len(skipped)} days: {next(iter(skipped.values()))}: {sorted(skipped)}")
     removals = cat_frames("removals", ["market_id", "selection_id", "af", "rt", "first_seen", "race_date"])
     places = cat_frames("places", ["market_id", "places_raw", "race_date"])
     # K9: the places a market pays: the raw book's number_of_winners, else the count of WINNER on its final mark
@@ -1112,9 +1267,18 @@ def load_b_live() -> dict:
         draws = int(os.environ.get("STRAT100_B_DRAWS") or 20000)
         by_day_r = {d: g for d, g in runners.groupby("race_date")}
         by_day_f = {d: g for d, g in fills.groupby("race_date")} if len(fills) else {}
+        written = (preds.drop_duplicates("race_date").set_index("race_date")["written_utc"].to_dict()
+                   if len(preds) and "written_utc" in preds.columns else {})
+        ok_days = set(base["meta"].get("days_preds") or [])
         jobs = [{"day": d, "runners": by_day_r[d].reset_index(drop=True),
                  "fills": by_day_f.get(d, fills.iloc[:0]).reset_index(drop=True), "raw": True, "replay": do_replay,
-                 "draws": draws} for d in base["days"] if d in by_day_r]
+                 "draws": draws, "pred_ok": d in ok_days, "pred_written": written.get(d)}
+                for d in base["days"] if d in by_day_r]
+        moved = sorted(j["day"] for j in jobs if j["pred_ok"] and pd.notna(j["pred_written"])     # the replays' own
+                       and j["pred_written"] > pd.Timestamp(f"{j['day']}T05:00:00Z"))            # first minute: 05:00 UTC
+        meta["replay_start_moved"] = moved
+        _say(f"   replays started at the predictions file's write time (after 05:00 UTC) on {len(moved)} days"
+             + (f": {moved}" if moved else ""))
         n_jobs = int(os.environ.get("STRAT100_B_JOBS") or min(4, os.cpu_count() or 1))
         work = Path(os.environ.get("STRAT100_WORK") or "out/strat100") / "b_live"
         _say(f"   the raw pass: {len(jobs)} days, {n_jobs} at a time, replays {'on' if do_replay else 'OFF'} "

@@ -22,7 +22,10 @@ Readings chosen where the specification left room (each also in its strategy's d
   * A half hedge (S062, S063) is the specification's: a lay at the BSP whose liability is half the back's winnings,
     size 0.5 s (p - 1) / (bsp - 1) (not the core's hedge_fraction 0.5, which halves the equal-profit lay).
   * S066's expected BSP is the same closing model's: exp_bsp = 1 / E[1 / BSP], so 1 - morningwap / exp_bsp = -ev.
-  * S068's stake is GBP10 a fill, and at most 1% of the win market's pp_vol (K4's guide for an SP bet).
+  * S068's stake is GBP10 a fill, and at most 1% of the win market's pp_vol (K4's guide for an SP bet). Its
+    benchmark S068-REST is stake-matched by day (a GBP-a-day pair between books of different sizes reads size).
+  * No strategy here is blind (K10): the blend was chosen on a window that holds CONFIRM, and each rule's own
+    earlier reading is named in its note. The best verdict is 'PASS (not blind)'.
 """
 from __future__ import annotations
 
@@ -321,7 +324,20 @@ def s061(frames):
     x = u[_picks(u, "combined")].copy()
     x["stake"] = _base_stake(x)
     days = sorted(u["race_date"].astype(str).str[:10].unique())
-    return _bets(x[x["stake"] > 0]), days
+    bets = _bets(x[x["stake"] > 0])
+    try:          # the pair is GBP a day between two books: their sizes are printed beside it
+        b0 = _base(frames)
+        main = _bets(b0[_steam_universe(b0)])
+        main = main[main["race_date"].isin(set(days))]
+        for w in ("select", "confirm"):
+            mine_w = bets.loc[core.window_of(bets["race_date"], DS) == w, "stake"]
+            main_w = main.loc[core.window_of(main["race_date"], DS) == w, "stake"]
+            _say(f"   S061 {w.upper()}: {len(mine_w):,} bets, stake GBP{mine_w.sum():,.0f}; S053-MAIN on the same days "
+                 f"{len(main_w):,} bets, stake GBP{main_w.sum():,.0f} (the pair is GBP a day: read the two returns "
+                 f"beside it)")
+    except Exception as exc:  # noqa: BLE001 -- a side table
+        _say(f"   S061 stakes beside S053-MAIN not printed ({type(exc).__name__}: {exc})")
+    return bets, days
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -402,13 +418,14 @@ def s064(frames):
 def s065(frames):
     """The rule's backs laid in running at half the SP odds: S053's bets; a lay of stake x morningwap / L rests at
     L = 1 + (bsp - 1) x 0.5 and is matched only if ipmin is at least one Betfair tick under L (K8:
-    ipmin <= core.tick_under(L)); matched, the back is closed at L on every outcome; unmatched, it runs to the
-    result. No lay at the SP. An upper bound: the files hold no volume at a price (K8)."""
+    1 < ipmin <= core.tick_under(L); an ipmin at or under 1 is the files' mark for no in-running trade, never a
+    fill); matched, the back is closed at L on every outcome; unmatched, it runs to the result. No lay at the SP. An upper bound: the files hold no volume at a price (K8)."""
     x = _base(frames)
     b = _bets(x)
     lay_at = 1.0 + (b["exit_price"].to_numpy(float) - 1.0) * 0.5
-    with np.errstate(invalid="ignore"):
-        filled = x["ipmin"].to_numpy(float) <= np.asarray(core.tick_under(lay_at), float).reshape(-1)
+    ip = pd.to_numeric(x["ipmin"], errors="coerce").to_numpy(float)
+    with np.errstate(invalid="ignore"):      # the files write 0 where nothing traded in running: not a low, no fill
+        filled = (ip > 1.0) & (ip <= np.asarray(core.tick_under(lay_at), float).reshape(-1))
     b["exit"] = np.where(filled, "inplay", "result")
     b["exit_price"] = np.where(filled, lay_at, np.nan)
     _say(f"   S065: the in-running lay matched on {int(filled.sum()):,} of {len(b):,} bets")
@@ -549,13 +566,31 @@ def s068(frames):
 
 
 def s068_rest(frames):
-    """The same limit-on-close place rule on every runner S053 does not pick (the same races, the same ppwap cap,
-    limit and stake): the benchmark S068 is paired against. Not a candidate."""
+    """The same limit-on-close place rule on every runner S053 does not pick (the same races, the same ppwap cap and
+    limit): the benchmark S068 is paired against. Not a candidate. STAKE-MATCHED BY DAY: the rest's fills are many
+    times S068's, and a pair in GBP a day between books of different sizes is decided by size, not by edge; so each
+    day's rest stakes are scaled by one factor to sum to S068's stake that day (a day S068 has no fill holds no
+    benchmark bet). The pair is then S068's daily stake x (its return less the rest's). The rest at its own GBP10
+    stakes is printed beside it."""
     o = _place_orders(frames)
     rest = o[~o["pick"]]
     bets = _place_bets(rest)
+    days = _scored_days(_runners(frames))
     _say(f"   S068-REST: {len(rest):,} limit orders on the runners not picked, {len(bets):,} filled")
-    return bets, _scored_days(_runners(frames))
+    _describe("S068-REST at its own stakes (GBP10 a fill, not stake-matched)", bets, days)
+    return _stake_matched(bets, _place_bets(o[o["pick"]])), days
+
+
+def _stake_matched(bench: pd.DataFrame, mine: pd.DataFrame) -> pd.DataFrame:
+    """``bench`` with each day's stakes scaled by one factor so they sum to ``mine``'s stake that day; the bets of
+    a day ``mine`` stakes nothing are dropped. Returns per GBP are unchanged; only the size is matched."""
+    if len(bench) == 0:
+        return bench
+    target = mine.groupby("race_date")["stake"].sum() if len(mine) else pd.Series(dtype=float)
+    day_sum = bench.groupby("race_date")["stake"].transform("sum").to_numpy(float)
+    scale = bench["race_date"].map(target).fillna(0.0).to_numpy(float) / np.where(day_sum > 0, day_sum, 1.0)
+    out = bench.assign(stake=bench["stake"].to_numpy(float) * scale)
+    return out[out["stake"] > 0].reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -564,6 +599,8 @@ def s068_rest(frames):
 
 _SEEN = ("not blind: S053's bets on Oct 2025 - Mar 2026 were read on this artifact's rule before "
          "(closing-refit-stn-1121 to Dec 2025; race-types-1120 and phase4-rules-1119 on the blend before it)")
+_BLEND = ("No a_model strategy is blind: gate_stn's blend was chosen on the development window to 31 Mar 2026 "
+          "(iter130, iter131), which holds CONFIRM")
 _WAP = "WAP entry (an average, not a price one order could take); no cuts (K6)"
 
 
@@ -639,32 +676,39 @@ STRATEGIES = [
                      "nothing beside the BSP at the result). An in-running exit: none found.",
        note=f"S053's bets, another exit; an upper bound (K8: no volume at a price, no time of the low). {_WAP}. {_SEEN}."),
     _s("S066", "The lay book on the price files: model drifters at 10 or under", "model lay book", s066, side="lay",
-       paired=None, blind=True,
+       paired=None, blind=False,
        tested_before="race-book-0930 (lays at 5%+ edge +0.7% of liability, no price cap, an earlier artifact); "
                      "open-close-horses-1101 (market-only lays not tradable a tick worse). The 10-or-under cut on "
                      "history: not run.",
        note="The WAP is not an offered lay price: the 2%- and 5%-worse columns are the test. No cuts (K6). The base "
-            "lay book's blind forward figure (desk-lay-book-paper-1112) is not read or printed here."),
+            "lay book's blind forward figure (desk-lay-book-paper-1112) is not read or printed here. Not blind: "
+            f"race-book-0930 read single lays from the same closing-model construction on Feb-Mar 2026. {_BLEND}."),
     _s("S067", "Morning false favourite: lay the leader the model does not rate", "false favourite", s067, side="lay",
-       paired=None, blind=True,
+       paired=None, blind=False,
        tested_before="morning-favourite-clv; morning-rank1-v4forecast (-2.95% backing the model's rank 1); "
                      "market-only-drift-1002. A lay of model-flagged favourites: none found.",
        note="The WAP is not an offered lay price: the worse-price columns are the test. No cuts (K6). Every race day "
-            "of the data set is read (no closing model needed)."),
+            "of the data set is read (no closing model needed). Not blind: morning-favourite-clv and "
+            f"market-only-drift-1002 read morning favourites on Jan-Mar 2026. {_BLEND}."),
     _s("S068", "The rule's horses backed to place by limit on close", "place: model-gated", s068, market="place",
-       entry="sp", paired="S068-REST", blind=True,
+       entry="sp", paired="S068-REST", blind=False,
        tested_before="place-model-stage3-1003 (the model adds nothing beyond the place SP; backs by the closing "
                      "model's book -1.1 to -1.9%); arms-full-1103 (place arms lose). A limit-on-close gate by the "
                      "win rule: none found.",
        note="SP entry (no worse-price print); p from the win ppwap, which includes trades up to the off (a "
-            "look-ahead of minutes); places paid from the place rows' results (K9). The pair is GBP a day between "
-            "books of different sizes: read the two returns beside it."),
+            "look-ahead of minutes); places paid from the place rows' results (K9). The pair is against the rest "
+            "stake-matched by day (S068's daily stake x its return less the rest's). Not blind: "
+            "place-model-stage3-1003 read the rule's horses in the place market on Nov 2025 - Mar 2026. "
+            f"{_BLEND}."),
     _s("S053-MAIN", "S053 in the steamer's races only (main codes, field 5+): S061's benchmark", "benchmark",
        s053_main, paired=None, benchmark=True,
        tested_before="as S053.", note=f"S053's bets restricted to the races S061 can bet in. {_WAP}. {_SEEN}."),
     _s("S068-REST", "The limit-on-close place rule on every runner the model does not pick: S068's benchmark",
-       "benchmark", s068_rest, market="place", entry="sp", paired=None, blind=True, benchmark=True,
+       "benchmark", s068_rest, market="place", entry="sp", paired=None, blind=False, benchmark=True,
        tested_before="place-market-vs-win (the place price against the win price, fitted 2021-22); "
                      "place-model-stage3-1003.",
-       note="The same limit, cap and stake as S068 on the runners S053 does not back, in the same races."),
+       note="The same limit and cap as S068 on the runners S053 does not back, in the same races; each day's stakes "
+            "scaled by one factor to S068's stake that day (stake-matched: the return per GBP is the rest's own, "
+            "printed also at its own GBP10 stakes). Not blind: place-model-stage3-1003 read the place market on Nov "
+            f"2025 - Mar 2026. {_BLEND}."),
 ]

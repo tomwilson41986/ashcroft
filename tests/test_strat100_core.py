@@ -156,6 +156,47 @@ def test_the_holdout_is_refused():
     assert kept["race_date"].tolist() == ["2026-03-27"]
 
 
+
+def test_the_bsp_close_can_be_settled_as_the_order_betfair_takes():
+    """K3 locks s x (p / b - 1); a MARKET_ON_CLOSE lay is a liability fixed before the SP is known, so the order
+    that can be placed pays 0 on a winner and s (p - b) / (b - 1) on a loser: the same mean, a wider spread."""
+    rows = [{"won": 1}, {"selection": "b", "won": 0}, {"selection": "c"}]
+    b = core.check_bets(bets(rows))
+    k3, real = core.settle(b), core.settle(b, sp_hedge="liability")
+    assert k3["pnl"].tolist() == pytest.approx([25.0, 25.0, 25.0])                      # the registered headline
+    assert real["pnl"].tolist() == pytest.approx([0.0, 100.0 / 3.0, 25.0])              # no result: K3's figure kept
+    assert real["placeable"].tolist() == [True, True, False]
+    assert 0.25 * 0.0 + 0.75 * 100.0 / 3.0 == pytest.approx(25.0)                       # the same mean at a fair SP 4.0
+    cut = core.settle(core.check_bets(bets([{"won": 1, "cut_factor": 0.9}, {"won": 0, "cut_factor": 0.9}])),
+                      sp_hedge="liability")                                              # the lay was sized before the cut
+    assert cut["pnl"].tolist() == pytest.approx([100 * 3.5 - 400.0, -100 + 400.0 / 3.0])
+    lay = core.settle(core.check_bets(bets([{"side": "lay", "entry_price": 4.0, "exit_price": 5.0, "won": 1},
+                                            {"side": "lay", "entry_price": 4.0, "exit_price": 5.0, "won": 0}])),
+                      sp_hedge="liability")                                              # an SP back of the lay's size
+    assert lay["pnl"].tolist() == pytest.approx([100.0, 0.0])
+    held = core.settle(core.check_bets(bets([{"exit": "result", "exit_price": np.nan, "won": 1}])), sp_hedge="liability")
+    assert held["pnl"].iloc[0] == pytest.approx(400.0) and not held["placeable"].iloc[0]
+    with pytest.raises(ValueError):
+        core.settle(b, sp_hedge="stake")
+
+
+def test_a_pass_stands_only_if_the_placeable_close_passes_too():
+    """A small steady CLV on odds-on prices: locked as K3 writes it the series is smooth and passes; settled as the
+    liability order a winner pays nothing and the whole gain rides on the rare loser, so the same bets swing with
+    the results and the deflated Sharpe fails: 'PASS on K3 only'."""
+    days = pd.date_range("2026-10-01", "2026-11-23").strftime("%Y-%m-%d").tolist()
+    rng = np.random.default_rng(3)
+    rows = [{"race_date": d, "race_key": f"{d}|{i}", "entry_price": 1.05 + rng.normal(0, 0.0005), "exit_price": 1.04,
+             "won": float(rng.random() < 1 / 1.04)} for d in days for i in range(5)]
+    r = core.score(strat(), bets(rows), days, n_trials=486, draws=500)
+    assert r["confirm_lo"] > 0 and r["dsr_passed"] and r["placeable_bets"] == len(rows) and r["placeable_no_result"] == 0
+    assert r["all_sharpe_placeable"] < r["all_sharpe"] and not r["dsr_placeable_passed"]
+    assert r["verdict"] == "PASS on K3 only" and core.verdict(r) == r["verdict"]
+    assert {"pnl", "pnl_placeable"} <= set(r["_daily"].columns)
+    none = core.score(strat(), bets([{**x, "won": np.nan} for x in rows]), days, n_trials=486, draws=500)
+    assert none["verdict"] == "PASS" and none["placeable_no_result"] == len(rows)       # no result: K3 alone, counted
+
+
 # ---- the verdict ---------------------------------------------------------------------------------------------------
 
 def live_days():
@@ -216,6 +257,63 @@ def test_a_paired_strategy_is_read_against_its_benchmark():
     same = core.score(strat(id="T3", paired="BASE"), daily_bets(days, 5, 4.2, seed=3), days, n_trials=486, draws=500)
     core.pair(same, bench, 486, draws=500)
     assert same["pair_verdict"] == "not better than its benchmark"
+    seen = core.score(strat(id="T4", paired="BASE", blind=False), daily_bets(days, 5, 4.4, seed=2), days,
+                      n_trials=486, draws=500)
+    core.pair(seen, bench, 486, draws=500)                 # K10: CONFIRM seen before, the pair says so too
+    assert seen["pair_verdict"] == "better than its benchmark (not blind)"
+    seen_same = core.score(strat(id="T5", paired="BASE", blind=False), daily_bets(days, 5, 4.2, seed=3), days,
+                           n_trials=486, draws=500)
+    core.pair(seen_same, bench, 486, draws=500)
+    assert seen_same["pair_verdict"] == "not better than its benchmark"
+
+
+def held_backs(days, n, edge, seed):
+    """``n`` held GBP20 backs a day whose chance of winning is ``edge`` / price: every bet returns edge - 1 a GBP."""
+    rng = np.random.default_rng(seed)
+    k = len(days) * n
+    price = rng.uniform(1.5, 4.0, k)
+    return pd.DataFrame({"race_date": np.repeat(np.asarray(days, dtype=object), n), "race_key": [f"m{i}" for i in range(k)],
+                         "selection": "1", "side": "back", "stake": 20.0, "entry_price": price, "exit": "result",
+                         "exit_price": np.nan, "won": (rng.random(k) < edge / price).astype(float), "void": False})
+
+
+def test_a_benchmark_of_another_size_is_compared_by_return_not_by_pounds():
+    """A benchmark that is a superset (or another set of races) at level stakes: in pounds a random twentieth of a
+    losing benchmark 'beats' it by losing less money; pair_mode 'return' reads the return on the same stake."""
+    days = pd.date_range("2021-01-01", "2026-03-27").strftime("%Y-%m-%d").tolist()
+    base = held_backs(days, 40, 0.97, seed=3)                              # no skill anywhere: -3% before commission
+    random_part = base[np.random.default_rng(4).random(len(base)) < 0.05]
+    kw = {"n_trials": 486, "draws": 500}
+    bench = core.score(strat("a_market", id="BASE", entry="sp", benchmark=True), base, days, **kw)
+    assert bench["confirm_ret"] < -0.02
+    gbp = core.pair(core.score(strat("a_market", id="T1", entry="sp", paired="BASE"), random_part, days, **kw),
+                    bench, 486, draws=500)
+    assert gbp["pair_mode"] == "gbp" and gbp["pair_confirm_lo"] > 0       # the flattering reading: minus the benchmark's loss
+    ret = core.pair(core.score(strat("a_market", id="T2", entry="sp", paired="BASE", pair_mode="return"), random_part,
+                               days, **kw), bench, 486, draws=500)
+    assert ret["pair_mode"] == "return" and ret["pair_verdict"] == "not better than its benchmark"
+    assert ret["pair_confirm_lo"] < 0 < ret["pair_confirm_hi"] and abs(ret["pair_confirm_mean"]) < 0.1 * gbp["pair_confirm_mean"]
+    d = ret["_pair"].merge(ret["_daily"], on="race_date").merge(bench["_daily"], on="race_date", suffixes=("", "_b"))
+    day = d[(d["stake"] > 0) & (d["stake_b"] > 0)].iloc[0]                 # one day by hand
+    assert day["diff"] == pytest.approx(day["pnl"] - day["stake"] * day["pnl_b"] / day["stake_b"])
+    assert (d.loc[d["stake"] == 0, "diff"] == 0).all()                     # no bet, no difference
+    assert core.pair_sharpe(ret, bench) == pytest.approx(ret["pair_sharpe"], abs=1e-6)
+    # real skill on other races than the benchmark's: +12% a GBP against -3%
+    good = core.pair(core.score(strat("a_market", id="T3", entry="sp", paired="BASE", pair_mode="return"),
+                                held_backs(days, 10, 1.12, seed=5), days, **kw), bench, 486, draws=500)
+    assert good["pair_confirm_lo"] > 0 and good["pair_verdict"] == "better than its benchmark"
+    # a benchmark on OTHER days (S073's): its window return stands in on the strategy's days
+    odd = core.score(strat("a_market", id="BASE2", entry="sp", benchmark=True), base[base["race_date"].isin(days[1::2])],
+                     days, **kw)
+    even = core.pair(core.score(strat("a_market", id="T4", entry="sp", paired="BASE2", pair_mode="return"),
+                                random_part[random_part["race_date"].isin(days[::2])], days, **kw), odd, 486, draws=500)
+    assert even["pair_verdict"] == "not better than its benchmark" and even["pair_confirm_lo"] < 0 < even["pair_confirm_hi"]
+    none = core.score(strat("a_market", id="BASE3", entry="sp", benchmark=True), core.empty_bets(), days, **kw)
+    lone = core.pair(core.score(strat("a_market", id="T5", entry="sp", paired="BASE3", pair_mode="return"), random_part,
+                                days, **kw), none, 486, draws=500)
+    assert lone["pair_verdict"].startswith("not read") and lone["pair_confirm_mean"] is None
+    with pytest.raises(ValueError, match="pair_mode"):
+        strat(pair_mode="ratio")
 
 
 # ---- helpers -------------------------------------------------------------------------------------------------------
@@ -248,7 +346,23 @@ def test_probabilities_and_capacity():
 
 def test_the_trial_count_is_never_under_the_registered_floor():
     t = core.n_trials_for(100)
-    assert t["n_trials"] >= 486 and t["n_trials"] >= 100 + t["ledger_rules"]
+    assert t["n_trials"] >= 486 and t["n_trials"] >= t["ledger_rules"]
+    if not t["registration_in_ledger"]:
+        assert t["n_trials"] >= 100 + t["ledger_rules"]
+
+
+def test_the_registered_strategies_are_counted_once(tmp_path):
+    import json as _json
+    base = [{"when": "2026-11-01T00:00Z", "kind": "query", "tag": f"t{i}", "sport": "horse_racing"} for i in range(500)]
+    led = tmp_path / "ledger.jsonl"
+    led.write_text("\n".join(_json.dumps(d) for d in base) + "\n")
+    before = core.n_trials_for(100, ledger_path=led)
+    assert before["n_trials"] == 100 + before["ledger_rules"] and not before["registration_in_ledger"]
+    reg = {"when": "2026-11-24T18:00Z", "kind": "query", "tag": core.REGISTRATION_TAG, "sport": "horse_racing",
+           "n_rules": 100}
+    led.write_text(led.read_text() + _json.dumps(reg) + "\n")
+    after = core.n_trials_for(100, ledger_path=led)
+    assert after["registration_in_ledger"] and after["n_trials"] == before["n_trials"]
 
 
 # ---- the runner ----------------------------------------------------------------------------------------------------

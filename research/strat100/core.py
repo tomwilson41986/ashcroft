@@ -64,6 +64,7 @@ HAIRCUTS = {"a_model": (0.02, 0.05), "a_market": (0.02, 0.05), "b_live": (0.02,)
 HAIRCUT_TYPES = ("book", "wap")
 ENTRY_TYPES = ("book", "wap", "sp", "inplay")
 EXITS = ("result", "bsp", "mark", "inplay")
+PAIR_MODES = ("gbp", "return")
 BASE_TRIALS, TRIALS_FLOOR = 100, 486                              # K10 (c): 100 + the ledger's rules, 486 on 24 Nov
 REQUIRED = ["race_date", "race_key", "selection", "side", "entry_price", "exit"]
 _ISO = r"^\d{4}-\d{2}-\d{2}$"
@@ -84,6 +85,9 @@ class Strategy:
     build: Callable               # build(frames) -> bets frame, or (bets frame, the ISO race days its data holds)
     entry: str = "book"           # default entry_type of its bets
     paired: str | None = None     # the id of its benchmark (K7): read twice
+    pair_mode: str = "gbp"        # 'gbp': daily net less the benchmark's (K7: a variant of the benchmark's own fills);
+    #                               'return': less the benchmark's return on the strategy's own stake (a benchmark of
+    #                               another size, a superset or another set of races: pounds would not compare)
     blind: bool = True            # False: its CONFIRM years were seen in an earlier table -> at best 'PASS (not blind)'
     select_from: str | None = None     # FITTED_SELECT_FROM for a table fitted inside SELECT
     benchmark: bool = False       # a benchmark is scored and printed, never a candidate
@@ -97,6 +101,8 @@ class Strategy:
             raise ValueError(f"{self.id}: side {self.side!r}")
         if self.entry not in ENTRY_TYPES:
             raise ValueError(f"{self.id}: entry {self.entry!r} not one of {ENTRY_TYPES}")
+        if self.pair_mode not in PAIR_MODES:
+            raise ValueError(f"{self.id}: pair_mode {self.pair_mode!r} not one of {PAIR_MODES}")
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -173,7 +179,7 @@ def check_bets(bets: pd.DataFrame, strategy: Strategy | None = None) -> pd.DataF
     return b
 
 
-def settle(bets: pd.DataFrame, haircut: float = 0.0) -> pd.DataFrame:
+def settle(bets: pd.DataFrame, haircut: float = 0.0, sp_hedge: str | None = None) -> pd.DataFrame:
     """Each bet's gross P&L and the money it put at risk (K3), from a frame ``check_bets`` has passed.
 
     The entry price is first made ``haircut`` worse (backs x (1 - h), lays x (1 + h)) where the entry type takes
@@ -184,7 +190,14 @@ def settle(bets: pd.DataFrame, haircut: float = 0.0) -> pd.DataFrame:
         lay :  the same with the sign turned                            (f = 1: s (1 - p / x) either way)
 
     ``risk`` is the stake of a back and the liability s x (price - 1) of a lay at the price after the haircut and
-    before the cut. A void bet has P&L 0 and risk 0."""
+    before the cut. A void bet has P&L 0 and risk 0.
+
+    ``sp_hedge='liability'``: the BSP close as the order Betfair takes (the second reading; K3 stays the headline).
+    A MARKET_ON_CLOSE lay is sized by a liability fixed before the SP is known, so a back fully closed at the BSP
+    (exit 'bsp', hedge fraction 1, no exit_stake) is laid for the liability s x (q - 1), q the fill price before
+    any cut (the live trader lays the back's winnings): a winner makes s (p - 1) - s (q - 1), a loser
+    -s + s (q - 1) / (x - 1). A lay closed by an SP back of stake s: a winner makes s (x - p), a loser 0. The mean
+    is K3's at a fair SP; the spread is wider. A bet with no result keeps K3's figure (column ``placeable`` False)."""
     b = bets.copy()
     sign = np.where(b["side"].eq("back"), 1.0, -1.0)
     hc = np.where(b["entry_type"].isin(HAIRCUT_TYPES), haircut, 0.0)
@@ -202,6 +215,16 @@ def settle(bets: pd.DataFrame, haircut: float = 0.0) -> pd.DataFrame:
         lose = -s + h
         w = np.where((f == 1.0) & ~np.isfinite(own), 0.0, b["won"].to_numpy(float))    # fully closed: any outcome
         pnl = sign * (w * win + (1.0 - w) * lose)
+        if sp_hedge == "liability":
+            won = b["won"].to_numpy(float)
+            can = live & b["exit"].eq("bsp").to_numpy() & (f == 1.0) & ~np.isfinite(own) & np.isfinite(won)
+            q1 = np.maximum(1.01, quoted) - 1.0
+            back = won * (s * (p - 1.0) - s * q1) + (1.0 - won) * (-s + s * q1 / (x - 1.0))
+            lay = won * s * (x - p)
+            pnl = np.where(can, np.where(sign > 0, back, lay), pnl)
+            b["placeable"] = can
+        elif sp_hedge is not None:
+            raise ValueError(f"sp_hedge {sp_hedge!r}: None or 'liability'")
     b["price"] = p
     b["pnl"] = np.where(live, pnl, 0.0)
     b["risk"] = np.where(live, np.where(sign > 0, s, s * (np.maximum(1.01, quoted) - 1.0)), 0.0)
@@ -217,10 +240,11 @@ def market_net(settled: pd.DataFrame, commission: float = COMMISSION) -> pd.Data
     return g
 
 
-def daily_series(bets: pd.DataFrame, days=None, haircut: float = 0.0, commission: float = COMMISSION) -> pd.DataFrame:
+def daily_series(bets: pd.DataFrame, days=None, haircut: float = 0.0, commission: float = COMMISSION,
+                 sp_hedge: str | None = None) -> pd.DataFrame:
     """Net P&L, stake (backs' stakes plus lays' liabilities) and bets a race day, indexed by ISO day. With ``days``
     the index is those days and the bets' own (a day with no bet is 0, K10)."""
-    m = market_net(settle(bets, haircut), commission)
+    m = market_net(settle(bets, haircut, sp_hedge), commission)
     d = m.groupby("race_date").agg(pnl=("net", "sum"), stake=("risk", "sum"), bets=("bets", "sum"),
                                    commission=("commission", "sum"))
     if days is not None:
@@ -276,14 +300,21 @@ def daily_sharpe(x) -> float:
     return float(x.mean() / sd) if sd > 0 else float("nan")
 
 
+REGISTRATION_TAG = "strat100-1124"
+
+
 def n_trials_for(n_registered: int = 0, ledger_path=None, sport: str = "horse_racing") -> dict:
     """K10 (c): 100 + the ledger's rules for the sport, recounted now, the larger of that and 486 used (and never
     fewer than the strategies registered plus the ledger's rules)."""
     from desk import trials
     lines, _ = trials.parse((ledger_path or trials.LEDGER).read_text())
     ledger = trials.count_rules(lines, sport)
-    return {"ledger_rules": ledger, "registered": int(n_registered),
-            "n_trials": max(TRIALS_FLOOR, BASE_TRIALS + ledger, int(n_registered) + ledger)}
+    # The registration line (tag REGISTRATION_TAG, n_rules = the strategies) is already in the ledger's count once it
+    # is written: then the 100 are not added a second time.
+    held = any(d.get("tag") == REGISTRATION_TAG and isinstance(d.get("n_rules"), int) for d in lines)
+    extra = 0 if held else max(BASE_TRIALS, int(n_registered))
+    return {"ledger_rules": ledger, "registered": int(n_registered), "registration_in_ledger": held,
+            "n_trials": max(TRIALS_FLOOR, extra + ledger)}
 
 
 def _r(x, nd: int = 6):
@@ -306,14 +337,19 @@ def score(strategy: Strategy, bets: pd.DataFrame, days, n_trials: int | None = N
     if ds != "b_live":
         assert_no_holdout(b, what=f"{strategy.id} bets")
     d = daily_series(b, days)
+    # the second reading: every full close at the BSP settled as the order Betfair takes (settle, sp_hedge)
+    closed = ~b["void"] & b["exit"].eq("bsp") & (b["hedge_fraction"] == 1.0) & b["exit_stake"].isna()
+    d["pnl_placeable"] = (daily_series(b, days, sp_hedge="liability")["pnl"].reindex(d.index).fillna(0.0)
+                          if closed.any() else d["pnl"])
     d["window"] = window_of(d.index, ds, strategy.select_from)
     outside = int(d.loc[d["window"] == "", "bets"].sum())
     d = d[d["window"] != ""]
     r = {"id": strategy.id, "name": strategy.name, "family": strategy.family, "dataset": ds, "side": strategy.side,
-         "market": strategy.market, "paired": strategy.paired, "blind": strategy.blind,
+         "market": strategy.market, "paired": strategy.paired, "pair_mode": strategy.pair_mode, "blind": strategy.blind,
          "benchmark": strategy.benchmark, "tested_before": strategy.tested_before, "note": strategy.note,
          "rows": len(b), "voids": int(b["void"].sum()), "unsettled": int(b["unsettled"].sum()),
-         "bets_outside_windows": outside, "race_days": len(d), "error": None}
+         "bets_outside_windows": outside, "race_days": len(d), "error": None,
+         "placeable_bets": int(closed.sum()), "placeable_no_result": int((closed & b["won"].isna()).sum())}
     for w in ("select", "confirm", "all"):
         x = d if w == "all" else d[d["window"] == w]
         est, lo, hi = day_bootstrap(x["pnl"], x["stake"], draws, seed)
@@ -321,6 +357,9 @@ def score(strategy: Strategy, bets: pd.DataFrame, days, n_trials: int | None = N
                   f"{w}_stake": _r(x["stake"].sum(), 2), f"{w}_pnl": _r(x["pnl"].sum(), 2),
                   f"{w}_commission": _r(x["commission"].sum(), 2), f"{w}_ret": _r(est), f"{w}_lo": _r(lo),
                   f"{w}_hi": _r(hi), f"{w}_sharpe": _r(daily_sharpe(x["pnl"]))})
+        est, lo, hi = (est, lo, hi) if not r["placeable_bets"] else day_bootstrap(x["pnl_placeable"], x["stake"], draws, seed)
+        r.update({f"{w}_ret_placeable": _r(est), f"{w}_lo_placeable": _r(lo), f"{w}_hi_placeable": _r(hi),
+                  f"{w}_sharpe_placeable": _r(daily_sharpe(x["pnl_placeable"]))})
     priced = bool((~b["void"] & b["entry_type"].isin(HAIRCUT_TYPES)).any())
     in_running = bool((~b["void"] & (b["entry_type"].eq("inplay") | b["exit"].eq("inplay"))).any())
     r["flags"] = "; ".join(f for f, on in (("no cuts", ds != "b_live" and priced),            # K6: price files
@@ -340,8 +379,8 @@ def score(strategy: Strategy, bets: pd.DataFrame, days, n_trials: int | None = N
     r["dsr_window"] = DSR_WINDOW[ds]
     r["dsr_sharpe"] = r[f"{r['dsr_window']}_sharpe"]
     r.update({"dsr": None, "sr_star": None, "n_trials": None, "dsr_passed": False, "dsr_reason": "not deflated",
-              "pair_verdict": None})
-    r["_daily"] = d.reset_index()[["race_date", "window", "bets", "stake", "pnl"]]
+              "pair_verdict": None, "dsr_placeable": None, "dsr_placeable_passed": False})
+    r["_daily"] = d.reset_index()[["race_date", "window", "bets", "stake", "pnl", "pnl_placeable"]]
     r["fails"], r["verdict"] = _verdict(r)
     return deflate(r, n_trials, trial_sharpes) if n_trials else r
 
@@ -358,6 +397,10 @@ def deflate(r: dict, n_trials: int, trial_sharpes=None) -> dict:
     res = overfit.dsr_check(_dsr_series(r), n_trials, trial_sharpes)
     r.update({"dsr": res.get("dsr"), "sr_star": res.get("sr_star"), "n_trials": res["n_trials"],
               "dsr_passed": bool(res["passed"]), "dsr_reason": res.get("reason", "")})
+    # the same test on the placeable series; the trials' spread is K3's (the wider of the two: the harder test)
+    alt = (overfit.dsr_check(_dsr_series(r, "pnl_placeable"), n_trials, trial_sharpes)
+           if r.get("placeable_bets") and "pnl_placeable" in r["_daily"].columns else res)
+    r.update({"dsr_placeable": alt.get("dsr"), "dsr_placeable_passed": bool(alt["passed"])})
     r["fails"], r["verdict"] = _verdict(r)
     return r
 
@@ -383,45 +426,84 @@ def _verdict(r: dict) -> tuple[str, str]:
     v = "PASS"
     if ds != "b_live" and not (r["confirm_ret_2pct"] is not None and r["confirm_ret_2pct"] > 0):
         v = "PASS at the WAP only"
+    if r.get("placeable_bets") and not _placeable_ok(r):
+        v = v.replace("PASS", "PASS on K3 only")
     return "", v if r["blind"] else f"{v} (not blind)"
+
+
+def _placeable_ok(r: dict) -> bool:
+    """(a)-(c) again on the series whose BSP closes are settled as the order Betfair takes (a lay at the SP for a
+    fixed liability). A close whose row carries no result cannot be settled that way and keeps K3's figure; the
+    reading counts them (``placeable_no_result``), so a strategy that gives no results is checked on K3 alone."""
+    lo, sel, con = r.get("confirm_lo_placeable"), r.get("select_ret_placeable"), r.get("confirm_ret_placeable")
+    return bool(lo is not None and lo > 0 and sel is not None
+                and con is not None and sel != 0 and np.sign(sel) == np.sign(con) and r.get("dsr_placeable_passed"))
 
 
 def verdict(r: dict) -> str:
     """K10, in its words: 'PASS', 'PASS (not blind)', 'PASS at the WAP only' (with '(not blind)' where both hold),
+    'PASS on K3 only' (it passes with every BSP close locked as K3 writes it and not with the close settled as the
+    liability order Betfair takes: columns ..._placeable),
     'FAIL' (``fails`` names which of a, b, c), 'not read: too few' (d), 'not read' (b_live under 30 race days),
     'error'. A PASS is a candidate for a registered forward paper test and nothing more."""
     return _verdict(r)[1]
 
 
-def pair(r: dict, bench: dict, n_trials: int, trial_sharpes=None, draws: int = DRAWS, seed: int = SEED) -> dict:
-    """K7 and K10: the strategy's daily net less its benchmark's on the days both hold; 'better than its benchmark'
-    only if the difference's CONFIRM mean has its interval above zero (a), SELECT has the same sign (b) and its
-    deflated Sharpe is at least 0.95 (c). ``trial_sharpes`` are the ``pair_sharpe`` of the same builder's pairs."""
+def _pair_diff(r: dict, bench: dict) -> tuple:
+    """(days, window, difference) on the days both hold. 'gbp' (K7): the strategy's daily net less its benchmark's.
+    'return': the strategy's daily net less its own daily stake x the benchmark's return per GBP that day (on a day
+    the benchmark has no stake, the benchmark's return over that window), so the sum is the strategy's stake x (its
+    return - the benchmark's) and a benchmark's own size or loss cannot make the difference. NaN where the
+    benchmark has no stake in a window the strategy bets in."""
     a, b = r["_daily"].set_index("race_date"), bench["_daily"].set_index("race_date")
     days = a.index.intersection(b.index)
-    diff = (a.loc[days, "pnl"] - b.loc[days, "pnl"]).to_numpy(float)
+    pa, pb = a.loc[days, "pnl"].to_numpy(float), b.loc[days, "pnl"].to_numpy(float)
     win = a.loc[days, "window"].to_numpy()
+    if r.get("pair_mode", "gbp") != "return":
+        return days, win, pa - pb
+    sa, sb = a.loc[days, "stake"].to_numpy(float), b.loc[days, "stake"].to_numpy(float)
+    rate = np.full(len(days), np.nan)
+    for w in ("select", "confirm"):
+        m = win == w
+        if sb[m].sum() > 0:
+            rate[m] = pb[m].sum() / sb[m].sum()
+    rate = np.where(sb > 0, pb / np.where(sb > 0, sb, 1.0), rate)
+    return days, win, np.where(sa > 0, pa - sa * rate, 0.0)
+
+
+def pair(r: dict, bench: dict, n_trials: int, trial_sharpes=None, draws: int = DRAWS, seed: int = SEED) -> dict:
+    """K7 and K10: the strategy's daily net less its benchmark's on the days both hold (``_pair_diff``: in GBP, or
+    for ``pair_mode`` 'return' less the benchmark's return on the strategy's own stake); 'better than its benchmark'
+    only if the difference's CONFIRM mean has its interval above zero (a), SELECT has the same sign (b) and its
+    deflated Sharpe is at least 0.95 (c). ``trial_sharpes`` are the ``pair_sharpe`` of the same builder's pairs.
+    A strategy that is not blind is at best 'better than its benchmark (not blind)': its CONFIRM days were seen."""
+    days, win, diff = _pair_diff(r, bench)
     r["_pair"] = pd.DataFrame({"race_date": days, "window": win, "diff": diff})
+    x = diff if r["dsr_window"] == "all" else diff[win == r["dsr_window"]]
+    if not np.isfinite(diff).all():               # 'return': the benchmark has no stake in a window to compare with
+        r.update({f"pair_{w}_{k}": None for w in ("select", "confirm") for k in ("mean", "lo", "hi")})
+        r.update({"pair_select_days": int((win == "select").sum()), "pair_confirm_days": int((win == "confirm").sum()),
+                  "pair_sharpe": None, "pair_dsr": None, "pair_dsr_passed": False,
+                  "pair_verdict": "not read: the benchmark has no stake to compare with"})
+        return r
     for w in ("select", "confirm"):
         est, lo, hi = day_bootstrap(diff[win == w], None, draws, seed)
         r.update({f"pair_{w}_days": int((win == w).sum()), f"pair_{w}_mean": _r(est, 4), f"pair_{w}_lo": _r(lo, 4),
                   f"pair_{w}_hi": _r(hi, 4)})
-    x = diff if r["dsr_window"] == "all" else diff[win == r["dsr_window"]]
     res = overfit.dsr_check(x, n_trials, trial_sharpes)
     r.update({"pair_sharpe": _r(daily_sharpe(x)), "pair_dsr": res.get("dsr"), "pair_dsr_passed": bool(res["passed"])})
     if r.get("error") or bench.get("error") or (r["dataset"] == "b_live" and len(days) < overfit.MIN_OBS):
         r["pair_verdict"] = "not read"
     else:
         ok = ((r["pair_confirm_lo"] or 0) > 0 and (r["pair_select_mean"] or 0) > 0 and r["pair_dsr_passed"])
-        r["pair_verdict"] = "better than its benchmark" if ok else "not better than its benchmark"
+        v = "better than its benchmark" if ok else "not better than its benchmark"
+        r["pair_verdict"] = v if (r.get("blind", True) or not ok) else f"{v} (not blind)"     # K10, as the verdict
     return r
 
 
 def pair_sharpe(r: dict, bench: dict) -> float:
     """The daily Sharpe of the difference on the deflated-Sharpe window (the spread ``pair`` deflates by)."""
-    a, b = r["_daily"].set_index("race_date"), bench["_daily"].set_index("race_date")
-    days = a.index.intersection(b.index)
-    diff, win = (a.loc[days, "pnl"] - b.loc[days, "pnl"]).to_numpy(float), a.loc[days, "window"].to_numpy()
+    _, win, diff = _pair_diff(r, bench)
     return daily_sharpe(diff if r["dsr_window"] == "all" else diff[win == r["dsr_window"]])
 
 

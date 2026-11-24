@@ -38,8 +38,9 @@ DATASETS = {      # data set: (strategies module, loader module, loader)
 TABLE = ["id", "family", "dataset", "side", "market", "select_days", "select_bets", "select_stake", "select_pnl",
          "select_ret", "select_lo", "select_hi", "confirm_days", "confirm_bets", "confirm_stake", "confirm_pnl",
          "confirm_ret", "confirm_lo", "confirm_hi", "confirm_ret_2pct", "confirm_ret_5pct", "all_bets", "all_pnl",
-         "all_ret", "all_lo", "all_hi", "dsr_window", "dsr_sharpe", "sr_star", "dsr", "n_trials", "verdict", "fails",
-         "paired", "pair_confirm_mean", "pair_confirm_lo", "pair_confirm_hi", "pair_select_mean", "pair_dsr",
+         "all_ret", "all_lo", "all_hi", "dsr_window", "dsr_sharpe", "sr_star", "dsr", "n_trials", "confirm_lo_placeable",
+         "dsr_placeable", "placeable_no_result", "verdict", "fails",
+         "paired", "pair_mode", "pair_confirm_mean", "pair_confirm_lo", "pair_confirm_hi", "pair_select_mean", "pair_dsr",
          "pair_verdict", "flags", "voids", "unsettled", "seconds", "name"]
 
 
@@ -109,7 +110,8 @@ def _shape(tables: dict) -> dict:
 
 def failed(s: core.Strategy, msg: str) -> dict:
     return {"id": s.id, "name": s.name, "family": s.family, "dataset": s.dataset, "side": s.side, "market": s.market,
-            "paired": s.paired, "blind": s.blind, "benchmark": s.benchmark, "tested_before": s.tested_before,
+            "paired": s.paired, "pair_mode": s.pair_mode, "blind": s.blind, "benchmark": s.benchmark,
+            "tested_before": s.tested_before,
             "note": s.note, "error": msg, "verdict": "error", "fails": "", "pair_verdict": None}
 
 
@@ -263,6 +265,9 @@ def main(argv: list[str] | None = None) -> int:
     say(f"\ntrials: {len(registered)} registered, {len(readings)} run, {len(errs)} errors; ledger rules "
         f"{trials['ledger_rules']}; n_trials used for the deflated Sharpe {trials['n_trials']}")
     say("verdicts: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
+    pairs = t["pair_verdict"].dropna().value_counts().to_dict() if "pair_verdict" in t.columns else {}
+    say("pair verdicts (a subset or re-exit of its benchmark is a candidate only if its pair is better): "
+        + (", ".join(f"{k} {v}" for k, v in pairs.items()) or "none read"))
     say(f"wrote {a.out / 'strat100_results.json'} and {a.out / 'strat100_daily.csv'} in {(time.time() - t0) / 60:.1f} min")
     return 0
 

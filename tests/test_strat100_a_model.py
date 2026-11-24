@@ -353,6 +353,10 @@ def test_the_registry_holds_the_sixteen_and_their_benchmarks():
     assert BY_ID["S061"].paired == "S053-MAIN" and BY_ID["S068"].paired == "S068-REST"
     assert all(BY_ID[i].paired == "S053" for i in SPEC_IDS if i not in ("S053", "S061", "S066", "S067", "S068"))
     assert BY_ID["S068"].entry == "sp" and BY_ID["S066"].side == "lay" and BY_ID["S065"].side == "both"
+    # K10: the blend was chosen on a window that holds CONFIRM, and each rule was read there before: none is blind
+    assert not any(s.blind for s in A.STRATEGIES)
+    for i in ("S066", "S067", "S068", "S068-REST"):
+        assert "Not blind:" in BY_ID[i].note and "No a_model strategy is blind" in BY_ID[i].note
     found, _ = run.discover()
     assert set(ids) <= {s.id for s in found}                                  # the runner takes every one
 
@@ -596,13 +600,19 @@ def test_the_in_running_lay_fills_a_tick_through_the_target_only():
     fr = mini([{"horse_name": "at_target", "ipmin": target, "bsp": bsp, "morningwap": 6.0, "win_lose": 0.0},
                {"horse_name": "tick_under", "ipmin": under, "bsp": bsp, "morningwap": 6.0, "win_lose": 0.0, "race": "r2"},
                {"horse_name": "won_unfilled", "ipmin": np.nan, "bsp": bsp, "morningwap": 6.0, "win_lose": 1.0,
-                "race": "r3"}])
+                "race": "r3"},
+               {"horse_name": "no_trade", "ipmin": 0.0, "bsp": bsp, "morningwap": 6.0, "win_lose": 0.0, "race": "r4"},
+               {"horse_name": "no_trade_1", "ipmin": 1.0, "bsp": bsp, "morningwap": 6.0, "win_lose": 0.0,
+                "race": "r5"}])
     bets, _ = build("S065", fr)
     s = money(bets).set_index("selection")
     stake = 400.0 / 5.0
     assert under == pytest.approx(2.98)
     assert bets.set_index("selection")["exit"].to_dict() == {"at_target": "result", "tick_under": "inplay",
-                                                             "won_unfilled": "result"}
+                                                             "won_unfilled": "result", "no_trade": "result",
+                                                             "no_trade_1": "result"}
+    assert s.loc["no_trade", "pnl"] == pytest.approx(-stake)     # the files' 0 = no in-running trade: never a fill
+    assert s.loc["no_trade_1", "pnl"] == pytest.approx(-stake)
     assert s.loc["at_target", "pnl"] == pytest.approx(-stake)                    # touched, not traded through: lost
     assert s.loc["tick_under", "pnl"] == pytest.approx(stake * (6.0 / target - 1))     # stake x morningwap / L at L
     assert s.loc["won_unfilled", "pnl"] == pytest.approx(stake * 5.0)
@@ -669,14 +679,118 @@ def test_the_place_limit_on_hand_made_rows():
     rest, _ = build("S068-REST", fr)
     assert mine["selection"].tolist() == ["h1"] and mine["stake"].tolist() == [10.0]
     assert mine["entry_price"].iloc[0] == pytest.approx(limit[1] + 0.01) and mine["market"].iloc[0] == "place"
-    assert dict(zip(rest["selection"], rest["stake"])) == pytest.approx({"h2": 5.0, "h3": 10.0})   # 1% of 500; at L
+    own = A._place_bets(o.reset_index()[~o["pick"].to_numpy()])
+    assert dict(zip(own["selection"], own["stake"])) == pytest.approx({"h2": 5.0, "h3": 10.0})     # 1% of 500; at L
+    # the benchmark is stake-matched by day: the rest's 15 scaled to S068's 10
+    assert dict(zip(rest["selection"], rest["stake"])) == pytest.approx({"h2": 10 / 3, "h3": 20 / 3})
+    assert rest["stake"].sum() == pytest.approx(mine["stake"].sum())
     s = money(mine)
     assert s["pnl"].iloc[0] == pytest.approx(10.0 * (limit[1] + 0.01 - 1))        # placed: held to the result
-    assert money(rest)["pnl"].tolist() == pytest.approx([-5.0, -10.0])
+    assert money(rest)["pnl"].tolist() == pytest.approx([-10 / 3, -20 / 3])
     fr["place"] = place.assign(k_ok=False)                                        # the places paid not confirmed
     assert len(A._place_orders(fr)) == 0
     fr["place"] = place[place["selection_id"] != 4]                               # a runner with no place row
     assert len(A._place_orders(fr)) == 0
+
+
+def test_s068_is_not_better_than_a_benchmark_that_loses_less_a_pound(monkeypatch):
+    """S068 one GBP10 place back a day losing about 26% a pound; the rest ten a day losing about 11% a pound. In GBP
+    a day at their own stakes the rest loses more, so the unmatched difference is positive every day; stake-matched,
+    S068 is the worse bet and the pair says so."""
+    days = [f"2025-{m:02d}-{d:02d}" for m in (4, 5) for d in range(1, 21)] + \
+           [f"2025-{m:02d}-{d:02d}" for m in (10, 11) for d in range(1, 21)]
+    rows = []
+    for i, day in enumerate(days):
+        rows.append({"race_date": day, "race": f"{day}|p", "horse_name": "pick", "pick": True,
+                     "place_won": float(i % 8 < 3)})
+        for j in range(10):
+            rows.append({"race_date": day, "race": f"{day}|r{j}", "horse_name": f"rest{j}", "pick": False,
+                         "place_won": float(j < 4 + i % 2)})
+    o = pd.DataFrame(rows).assign(place_bsp=2.0, limit=1.9, pp_vol=50000.0)
+    monkeypatch.setattr(A, "_place_orders", lambda frames: o)
+    fr = mini([{"race_date": d, "race": f"{d}|p"} for d in days])
+    mine, d1 = A.s068(fr)
+    rest, d2 = A.s068_rest(fr)
+    assert d1 == d2 == days and len(mine) == len(days) and len(rest) == 10 * len(days)
+    assert np.allclose(rest.groupby("race_date")["stake"].sum(), 10.0)           # matched to S068's GBP10 a day
+    a = core.score(BY_ID["S068"], mine, days, n_trials=486, draws=400)
+    b = core.score(BY_ID["S068-REST"], rest, days, n_trials=486, draws=400)
+    assert a["confirm_ret"] < b["confirm_ret"] < 0                               # S068 is the worse bet a pound
+    core.pair(a, b, 486, draws=400)
+    assert a["pair_confirm_mean"] < 0 and a["pair_verdict"] == "not better than its benchmark"
+    unmatched = core.score(BY_ID["S068-REST"], A._place_bets(o[~o["pick"]]), days, n_trials=486, draws=400)
+    assert unmatched["confirm_pnl"] < a["confirm_pnl"]       # the size trap the matching removes: more pounds lost
+    assert unmatched["confirm_ret"] == pytest.approx(b["confirm_ret"])           # the return a pound is the same
+
+
+def _toy_w_and_win(frames, toy):
+    conn = sqlite3.connect(toy["db"])
+    win = pd.read_sql_query(data_a.WIN_SQL, conn, params=("2024-12-28", core.HOLDOUT_FROM))
+    conn.close()
+    w = frames["runners"][data_a.KEY + ["race", "predicted_bfsp", "morningwap", "morning_vol", "bsp", "won", "field",
+                                        "race_code", "surface_type", "race_class"]]
+    return w, win
+
+
+def test_a_betfair_runner_the_forecast_file_lacks_is_not_a_whole_race(frames, toy):
+    """A selection with a BSP in Betfair's market that the forecast file does not hold: the race is not bet (its
+    book, its favourite and its place chance would be read on a short field). Every other race is as it was."""
+    w, win = _toy_w_and_win(frames, toy)
+    race = frames["runners"].loc[frames["runners"]["k6_ok"], "race"].iloc[0]
+    one = frames["runners"][frames["runners"]["race"] == race].iloc[0]
+    src = win[(win["event_id"] == one["event_id"]) & (win["country"] == one["country"])].iloc[0]
+    extra = src.copy()
+    extra["bp_id"], extra["selection_id"], extra["bf_bsp"], extra["bf_morningwap"] = 10 ** 7, 424242, 2.0, 2.0
+    for c in ("race_results_id", "race_date", "track", "race_time", "horse_name", "race_name"):
+        extra[c] = None                                                       # no race_results row: not in the frame
+    out = data_a._assemble_a_model(w, pd.concat([win, extra.to_frame().T], ignore_index=True), min_train_races=5)
+    r = out["runners"]
+    assert not r.loc[r["race"] == race, "k6_ok"].any()
+    assert r.loc[r["race"] == race, "market_rows"].eq(r.loc[r["race"] == race, "n_field"] + 1).all()
+    assert out["meta"]["races_dropped_field_mismatch"] == 1
+    base = frames["runners"].set_index(data_a.KEY)["k6_ok"]
+    other = r[r["race"] != race].set_index(data_a.KEY)["k6_ok"]
+    assert (other == base.reindex(other.index)).all()
+    assert frames["meta"]["races_dropped_field_mismatch"] == 0
+
+
+def test_two_betfair_rows_for_one_runner_is_not_a_bet(frames, toy):
+    w, win = _toy_w_and_win(frames, toy)
+    one = frames["runners"][frames["runners"]["k6_ok"]].iloc[0]
+    src = win[win["race_results_id"] == one["race_results_id"]].iloc[0].copy()
+    src["bp_id"] = 10 ** 7
+    r = data_a._assemble_a_model(w, pd.concat([win, src.to_frame().T], ignore_index=True), min_train_races=5)["runners"]
+    assert not r.loc[r["race"] == one["race"], "k6_ok"].any()                 # neither row is taken: a guess
+
+
+def test_a_forecast_row_given_twice_is_not_two_bets(frames, toy):
+    """A runner given twice in the out-of-sample file (clv_betfair.load de-duplicates the price side only): its race
+    is dropped and said so, never bet twice."""
+    w, win = _toy_w_and_win(frames, toy)
+    race = frames["runners"].loc[frames["runners"]["k6_ok"], "race"].iloc[0]
+    twice = pd.concat([w, w[w["race"] == race].iloc[[0]]], ignore_index=True)
+    out = data_a._assemble_a_model(twice, win, w_st=twice, min_train_races=5)
+    r = out["runners"]
+    assert not r.duplicated(data_a.KEY).any() and race not in set(r["race"])
+    assert r["race"].nunique() == w["race"].nunique() - 1
+    assert sum("a forecast row given twice" in p for p in out["meta"]["problems"]) == 2      # gate_stn and gate_st
+    kept, n = data_a._drop_twice(twice)
+    assert n == 1 and len(kept) == len(w) - (w["race"] == race).sum()
+
+
+def test_a_price_at_or_under_one_is_no_price(frames, toy):
+    """Betfair's files write 0, not blank, where nothing traded: the loader never hands it on as a price."""
+    w, win = _toy_w_and_win(frames, toy)
+    one = frames["runners"][frames["runners"]["k6_ok"]].iloc[0]
+    hit = win["race_results_id"] == one["race_results_id"]
+    zero = win.copy()
+    zero.loc[hit, ["ipmin", "ipmax", "ppmin"]] = [0.0, 0.0, 1.0]
+    r = data_a._assemble_a_model(w, zero, min_train_races=5)["runners"]
+    x = r[r["race_results_id"] == one["race_results_id"]].iloc[0]
+    assert np.isnan(x["ipmin"]) and np.isnan(x["ipmax"]) and np.isnan(x["ppmin"]) and x["ppwap"] > 1
+    assert bool(x["k6_ok"])                                                   # the race is still whole
+    for c in data_a.NOT_A_PRICE:
+        assert not (r[c] <= 1.0).any()
 
 
 def test_the_steamer_reads_card_facts_and_earlier_days_only(toy):

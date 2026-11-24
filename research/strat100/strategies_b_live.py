@@ -21,7 +21,8 @@ Three kinds of strategy:
                 day function in DAY_FUNCS, run by the loader on each day's raw books).
 
 What a selection may read (held by tests/test_strat100_b_live.py): the book at its mark or poll and at earlier ones,
-the model's 06:00 price, Betfair's forecast price, the card, earlier days' results and prices. Never the BSP, the
+the model's 06:00 price from the time its file was written, Betfair's forecast price as first recorded and from
+that record's time, the card, earlier days' results and prices. Never the BSP, the
 final status, a later mark or the day's result. What reads the close does so as an ORDER's mechanics and is said:
 a limit on close fills against the BSP (S026, S048), an in-running lay against the in-play low (S027), and K9's
 places paid fall back to the count of winners on the final mark where the raw book gives none.
@@ -39,9 +40,15 @@ Readings chosen where a specification left room (each also in its strategy's doc
   * A walk-forward table's burn-in days are not scored (S008 from 11 Oct, S021 after 10 days of fills, S045 from
     20 Oct): the strategy returns its own days.
   * REPLAY-B is registered as S001 (benchmark); no second record of the same bets is registered.
+  * A strategy's race days are the days its own marks exist (_days, marks): the clock marks start about 10 Oct.
+  * A back closed at the BSP must win at least GBP10 at its price (K4: the smallest lay at the SP), else no bet.
+  * A place or N TBP quote is taken only at a poll at or after the win read that judged it (60 s, 120 s).
+  * K3's locked close is the registered headline; the core also settles each BSP close as the liability order
+    Betfair takes and a PASS stands only on both (core.settle, sp_hedge).
 """
 from __future__ import annotations
 
+import functools
 import math
 import re
 import weakref
@@ -66,7 +73,11 @@ DRAWS_CLV = 20000                           # K5: draws of the BSP book a race
 SEED = 7                                    # K5
 CLOSING_MODEL = "data/models/closing_model_novol.json"
 NO_HAIRCUT = "sp"                           # core's entry_type that takes no worse-price print (real fills)
+MIN_SP_LIABILITY = 10.0                     # K4: Betfair takes no lay at the SP under GBP10 of liability
+PAIR_LAG = 60.0                             # seconds a place quote may follow the win read that judged it
+SP_POOL_SHARE = 0.01                        # K4: an SP order at most 1% of the market's pre-off volume
 _CACHE: dict = {}
+_SMALL = [0, 0.0]                           # backs _bets dropped for MIN_SP_LIABILITY since the last reset: count, GBP
 
 
 def _say(*a) -> None:
@@ -93,13 +104,20 @@ def _runners(frames) -> pd.DataFrame:
     return r
 
 
-def _days(frames, *needs: str, first: str | None = None, last: str | None = None) -> list:
+def _days(frames, *needs: str, first: str | None = None, last: str | None = None, marks=()) -> list:
     """The data set's race days that also have every source in ``needs`` ('books', 'replay', 'preds', 'fills',
-    'steam': the loader's meta lists), from ``first`` to ``last``."""
+    'steam': the loader's meta lists), from ``first`` to ``last``. ``marks``: the tags of the marks the rule
+    reads; only the days on which the WIN markets hold each of them are race days of the strategy (the clock marks
+    start about 10 Oct: a day before that is a day without data, not a day without a bet)."""
     days = {str(d)[:10] for d in (frames.get("days") or [])}
     meta = _meta(frames)
     for n in needs:
         days &= {str(d)[:10] for d in (meta.get(f"days_{n}") or [])}
+    if marks:
+        r = _frame(frames, "runners")
+        w = r[r["market_type"].eq("WIN")] if len(r) else r
+        for tag in ([marks] if isinstance(marks, str) else marks):
+            days &= set(w.loc[w[f"{tag}_t"].notna(), "race_date"].astype(str).str[:10]) if f"{tag}_t" in w.columns else set()
     return sorted(d for d in days if (first is None or d >= first) and (last is None or d <= last))
 
 
@@ -125,10 +143,14 @@ def _within(bets: pd.DataFrame, days) -> pd.DataFrame:
 
 def _bets(x: pd.DataFrame, side, price, stake=None, *, liability=None, exit="bsp", exit_price=None, won=None,
           void=None, cut=None, market: str = "win", key: str = "market_id", bsp: str = "bsp",
-          status: str = "final_status", entry_type=None, ts=None, **extra) -> pd.DataFrame:
+          status: str = "final_status", entry_type=None, ts=None, min_sp_liability: float = MIN_SP_LIABILITY,
+          tally: bool = True, **extra) -> pd.DataFrame:
     """A bets frame from selected runner rows. By default closed at the row's BSP; ``won`` is the final status
     (WINNER 1, LOSER 0); a runner REMOVED, or with no final status, or with no BSP where the exit needs one, is
-    void (K6). Rows with no stake (no fill of GBP2) are not bets and are left out."""
+    void (K6). Rows with no stake (no fill of GBP2) are not bets and are left out. A back closed at the BSP whose
+    winnings stake x (price - 1) are under ``min_sp_liability`` (K4: GBP10) is not a bet either: Betfair takes no
+    lay at the SP that small, and the live Session sends no such back (trading/session.py, min_bsp_liability);
+    the drops are counted (``tally``) and printed by the strategy's wrapper. Real fills pass 0: they were matched."""
     if x is None or len(x) == 0:
         return core.empty_bets()
     n = len(x)
@@ -157,6 +179,15 @@ def _bets(x: pd.DataFrame, side, price, stake=None, *, liability=None, exit="bsp
         out["ts"] = pd.Series(np.asarray(ts)).astype(str).to_numpy()
     for k, val in extra.items():
         out[k] = np.asarray(val) if not np.isscalar(val) else val
+    if min_sp_liability > 0 and liability is None and stake is not None:
+        st_ = np.nan_to_num(out["stake"].to_numpy(float), nan=0.0)
+        small = (out["side"].to_numpy() == "back") & (out["exit"].to_numpy() == "bsp") & (st_ > 0) \
+            & (st_ * (out["entry_price"].to_numpy(float) - 1.0) < min_sp_liability - 1e-9)
+        if small.any():
+            if tally:
+                _SMALL[0] += int(small.sum())
+                _SMALL[1] += float(st_[small].sum())
+            out.loc[small, "stake"] = 0.0
     size = out["stake"] if liability is None else out["liability"]
     return out[np.nan_to_num(size.to_numpy(float), nan=0.0) > 0].reset_index(drop=True)
 
@@ -337,7 +368,7 @@ def session_classes() -> tuple:
     class RuleArm(ArmSession):
         """Policy keys (all optional): bar_hours ((hours, bar), ...: the bar of the first row whose hours the
         market's time to the off reaches), bar_spread (cut, bar wide, bar tight), forecast ({(market, selection):
-        F}: every price taken at or above F), late_window (UK minute, minutes to the off: after that minute only
+        F or (F, the time of its first record)}: every price taken at or above F, and none before that time), late_window (UK minute, minutes to the off: after that minute only
         markets at least that far from the off), topup_window (minutes after the horse's first matched back),
         tiers ((hours, to win, cap), ...: the horse's target by the time to the off at its first back), level
         (a level stake a horse), and ArmSession's own floor_long. The plan is made at a 0% bar and min_move 0
@@ -372,7 +403,8 @@ def session_classes() -> tuple:
             self._price_floor = None
             if "forecast" in pol:
                 f = pol["forecast"].get(key)
-                if not f or not d.price or d.price < f - 1e-12:
+                f, f_t = f if isinstance(f, tuple) else (f, None)
+                if not f or (f_t is not None and now < f_t) or not d.price or d.price < f - 1e-12:
                     return
                 self._price_floor = float(f)
             tier = None
@@ -494,15 +526,18 @@ def s006(frames):
 
 def s007(frames):
     """S007: as S001 and every price taken (first back, top-up, each ladder level) at or above Betfair's forecast
-    price F = 1 + forecast_num / forecast_den as betfair_live_markets stores it; a runner with no F is not backed.
-    Unverified: that the stored forecast is the morning's (the loader's FCHECK pass counts the runners whose first
-    recorded forecast differs from the stored one; it is printed here)."""
+    price F = 1 + forecast_num / forecast_den, the runner's FIRST recorded forecast in the day's raw catalogue
+    (fcheck_day; betfair_live_markets stores the day's last), used only from the time of that record; a runner
+    with no forecast in the raw catalogue takes the stored value (unverified, counted by the loader); a runner
+    with no F is not backed."""
     fc = _frame(frames, "day_FCHECK")
-    if len(fc):
-        _say(f"   S007: forecast price, first recorded (markets.csv.gz) against stored: {int(fc['n'].sum()):,} "
-             f"runners compared, {int(fc['n_diff'].sum()):,} differ ({fc['n_diff'].sum() / max(fc['n'].sum(), 1):.2%})")
+    if len(fc) and "F_first" in fc.columns:
+        diff = (fc["F_stored"].gt(1.0) & ((fc["F_stored"] - fc["F_first"]).abs() > 1e-9)).sum()
+        _say(f"   S007: forecast price, first recorded (markets.csv.gz) used in place of the stored one: "
+             f"{len(fc):,} runners, {int(diff):,} differed ({diff / max(len(fc), 1):.2%})")
     else:
-        _say("   S007: no data found for the forecast check (no raw markets file read)")
+        _say("   S007: no data found for the first recorded forecast (no raw markets file read): the stored "
+             "forecast is used, unverified")
     return _replay(frames, "S007")
 
 
@@ -603,7 +638,7 @@ def _fill_bets(f: pd.DataFrame, stake=None, exit="bsp") -> pd.DataFrame:
         return core.empty_bets()
     return _bets(f.assign(final_status=f["result"].astype(object).where(f["result"].notna(), "").astype(str)), "back",
                  f["avg_price"], f["matched"] if stake is None else stake, exit=exit, cut=f["cut_factor"],
-                 entry_type=NO_HAIRCUT, ts=f["ts"])
+                 entry_type=NO_HAIRCUT, ts=f["ts"], min_sp_liability=0.0)
 
 
 def base_b(frames):
@@ -747,12 +782,19 @@ def s027(frames):
     a lay of matched x price / L rests in running at L = 1 + (BSP - 1) x 0.5 and is matched only if the in-play
     low is at or under one tick below L (K8); matched, the back is closed at L on every outcome; unmatched, it
     runs to the result. An upper bound: the files hold no volume at a price. A horse with no price-file row is
-    void."""
+    void; a horse whose ledger back rows miss Betfair's settled stake by over 1% is left out. Paired against
+    S027-BASE, BASE-B for the same horses."""
     s = _frame(frames, "settles")
     if s.empty:
         raise NoData("no data found: live_orders holds no settle row")
     days = _days(frames, last="2026-11-22")
     s = s[s["race_date"].isin(set(days)) & s["matched"].gt(0) & s["settled_price"].gt(1.0)]
+    if "gap_flag" in s.columns:                 # the back rows and Betfair's settled stake differ by over 1%
+        flagged = s["gap_flag"].fillna(False).astype(bool)
+        if flagged.any():
+            _say(f"   S027: {int(flagged.sum()):,} settled horses left out (GBP{s.loc[flagged, 'matched'].sum():,.2f}): "
+                 f"the ledger's back rows and Betfair's settled stake differ by over {B.LEDGER_GAP_SHARE:.0%}")
+        s = s[~flagged]
     p = _frame(frames, "prices")
     p = p[p["market_type"].eq("win")].drop_duplicates(["race_date", "selection_id"], keep=False) if len(p) else p
     if p.empty:
@@ -772,6 +814,23 @@ def s027(frames):
     return b, days
 
 
+def s027_base(frames):
+    """S027's benchmark: BASE-B (the real fills, closed at the BSP after their cut) for exactly the horses S027
+    settled, to 22 Nov. S027's join to betfair_prices voids every horse with no unique price-file row or no
+    in-play low; against the whole of BASE-B the pair would then be S027 less a benchmark over more horses."""
+    b, days = s027(frames)
+    live = b[~b["void"].astype(bool)] if len(b) else b
+    horses = set(zip(live["race_date"], live["race_key"], live["selection"])) if len(live) else set()
+    f = _fills(frames)
+    key = list(zip(f["race_date"].astype(str), f["market_id"].astype(str), f["selection_id"].astype(int).astype(str)))
+    keep = np.array([k in horses for k in key], bool) & f["race_date"].isin(set(days)).to_numpy()
+    out = f[~keep & f["race_date"].isin(set(days)).to_numpy()]
+    _say(f"   S027-BASE: {len(horses):,} horses in both; left out of both: "
+         f"{out.groupby(['race_date'] + KEY).ngroups:,} backed horses, GBP{out['matched'].sum():,.2f} of real stake "
+         f"(no settle row, no unique price-file row, no in-play low, void, or a ledger gap)")
+    return _fill_bets(f[keep]), days
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # the rule at a mark (S008, S011, S012, S024, S028, S029) and the morning controls (S030-S034)
 # ---------------------------------------------------------------------------------------------------------------
@@ -787,7 +846,7 @@ def _rule_orders(b: pd.DataFrame, to_win: float = TO_WIN, guard: str = "predicte
 
 def _s008(frames, corrected: bool):
     r = _runners(frames)
-    days = _days(frames, "books", "preds", first="2026-10-11")
+    days = _days(frames, "books", "preds", first="2026-10-11", marks=('c08', 'c09', 'c10'))
     if not days:
         return _none("S008", "no day with raw books and a model price after the 10-day burn-in", days)
     w = r[r["market_type"].eq("WIN") & r["bsp"].gt(1.0) & r["F"].gt(1.0) & r["predicted_bfsp"].gt(1.0)]
@@ -837,7 +896,7 @@ def s011(frames):
     LIVE-BAR holds; one order a horse (back1 then back2, back3 while each level's own expected CLV is at least 3%
     and its price at least ours), to win GBP400, GBP15-200; GBP4,000 a day filled in descending expected CLV.
     Closed at the BSP after CUT for the removals after the mark."""
-    days = _days(frames, "books", "preds")
+    days = _days(frames, "books", "preds", marks=('c08',))
     b = live_bar(frames, "c08")
     b = b[b["bar"] & (b["mto"] >= 15) & b["race_date"].isin(set(days))].reset_index(drop=True)
     stake, price = _rule_orders(b)
@@ -872,7 +931,7 @@ def _clogit_print(sid: str, b: pd.DataFrame) -> None:
 def s012(frames):
     """S012: as S011 at each market's own off_120 mark, all day; the GBP4,000 is spent in the order of the marks'
     poll times (then by descending expected CLV)."""
-    days = _days(frames, "books", "preds")
+    days = _days(frames, "books", "preds", marks=('o120',))
     b = live_bar(frames, "o120")
     _clogit_print("S012", b)
     b = b[b["bar"] & (b["mto"] >= 15) & b["race_date"].isin(set(days))].reset_index(drop=True)
@@ -884,7 +943,7 @@ def s012(frames):
 def _s024(frames, other: bool):
     sid = "S024-OTHER" if other else "S024"
     _day_errors(frames, "S024")
-    days = _days(frames, "books", "preds")
+    days = _days(frames, "books", "preds", marks=('c08',))
     t = _frame(frames, "day_S024")
     if t.empty or not days:
         return _none(sid, "no raw poll near 08:00 UK (the reduction factors of the runners still in are not known)", days)
@@ -926,7 +985,7 @@ def s028(frames):
     number of active runners at both and a mid at 10:00 at most 0.95 x the mid at 08:00, and at 10:00 back1 >=
     our price and <= 200. One order at the clock_10:00 mark: back1, then back2 and back3 at prices >= our price;
     sizes shown; to win GBP200, GBP15-200. The 3% bar is not required at 10:00. Closed at the BSP after CUT."""
-    days = _days(frames, "books", "preds")
+    days = _days(frames, "books", "preds", marks=('c08', 'c10'))
     r = _runners(frames)
     a = _mids(live_bar(frames, "c08"))
     c = _mids(book(r, "c10"))
@@ -942,7 +1001,8 @@ def s028(frames):
     if len(drift):
         d = drift.reset_index(drop=True)
         _describe("S028", "beside it: the 08:00 picks that drifted 8% or more, backed at 10:00's back1",
-                  _bets(d, "back", d["back1"], core.capacity(core.to_win_stake(200.0, d["back1"], FLOOR, CAP), d["back1_size"])),
+                  _bets(d, "back", d["back1"], core.capacity(core.to_win_stake(200.0, d["back1"], FLOOR, CAP), d["back1_size"]),
+                        tally=False),
                   "drifters")
     _describe("S028", "by live-trader horse", b, _trader_label(frames, b))
     return b, days
@@ -956,7 +1016,7 @@ def s029(frames):
     back1, and back2, back3 at >= 0.97 x back1; sizes shown; to win GBP200, GBP15-200. Closed at the BSP after
     CUT."""
     _day_errors(frames, "S029")
-    days = _days(frames, "books")
+    days = _days(frames, "books", marks=('c08',))
     meta = _meta(frames)
     b = _mids(live_bar(frames, "c08"))
     b = b[b["race_date"].isin(set(days)) & (b["back1"] <= 30.0) & (b["spread"] <= 1.5)].reset_index(drop=True)
@@ -972,7 +1032,7 @@ def s029(frames):
              + ((b["steam_score"] >= p80) if p80 is not None else pd.Series(False, index=b.index)).astype(int)
              + b["dslr"].between(1, 4).astype(int)
              + (early & (b["mid"] <= 0.97 * b["first_mid"])).astype(int))
-    all_b = _bets(b, "back", b["back1"], 10.0, votes=votes.to_numpy())
+    all_b = _bets(b, "back", b["back1"], 10.0, votes=votes.to_numpy(), tally=False)
     if len(all_b):
         _describe("S029", "every candidate at back1 (GBP10) by its vote count", all_b, all_b["votes"].astype(str))
     x = b[votes >= 3].reset_index(drop=True)
@@ -986,7 +1046,7 @@ def s030(frames):
     or Chase race; at clock_08:00 ACTIVE, 5 or more active runners, back1 and lay1 present, a last traded price,
     back1 <= 50. One bet: back1, to win GBP50, at most GBP100 and at most back1's size, none under GBP2. Closed
     at the BSP after CUT."""
-    days = _days(frames, "books")
+    days = _days(frames, "books", marks=('c08',))
     b = book(_runners(frames), "c08")
     x = b[b["race_date"].isin(set(days)) & b["dslr"].between(1, 4)
           & b["race_type"].str.strip().str.lower().isin(["flat", "hurdle", "chase"])
@@ -1003,7 +1063,7 @@ def s031(frames):
     racecard; runners at or above the fit's training 95th percentile in a field of 5 or more; at clock_08:00
     ACTIVE with back1 <= 200. One bet: back1, to win GBP50, at most GBP100 and back1's size, none under GBP2.
     Closed at the BSP after CUT. The live morning model (fitted to 31 Oct) is not used."""
-    days = _days(frames, "books", "steam")
+    days = _days(frames, "books", "steam", marks=('c08',))
     st, p95 = _frame(frames, "steam"), _meta(frames).get("steam_p95")
     if st.empty or p95 is None or not days:
         return _none("S031", "the steamer's scores (no fit, no racecard, or STRAT100_B_STEAMER=0)", days)
@@ -1044,9 +1104,9 @@ def s032_day(ctx) -> pd.DataFrame:
                  cut=B.cut_factor(ctx.removals, x["market_id"], x["selection_id"], x["t"], B.min_af_for("back")))
 
 
-def _from_day(frames, sid: str, why: str, first: str | None = None) -> tuple:
+def _from_day(frames, sid: str, why: str, first: str | None = None, marks=()) -> tuple:
     _day_errors(frames, sid)
-    days = _days(frames, "books", first=first)
+    days = _days(frames, "books", first=first, marks=marks)
     b = _frame(frames, f"day_{sid}")
     if b.empty or not days:
         return _none(sid, why if not days else "the rule found no bet on any day", days)
@@ -1056,7 +1116,7 @@ def _from_day(frames, sid: str, why: str, first: str | None = None) -> tuple:
 def s032(frames):
     """S032: the rule with the last traded price in place of the model (s032_day): a best back 12% over the last
     trade that is still there a minute later. No model. Closed at the BSP after CUT."""
-    b, days = _from_day(frames, "S032", "no raw books")
+    b, days = _from_day(frames, "S032", "no raw books", marks=("c08", "c09", "c10"))
     _describe("S032", "by live-trader horse", b, _trader_label(frames, b) if len(b) else [])
     return b, days
 
@@ -1064,7 +1124,7 @@ def s032(frames):
 def s033(frames):
     """S033: at clock_08:00, ACTIVE runners with back1 >= 1.30 x F, F <= 15 and lay1 / back1 <= 1.25: back1, to win
     GBP100 and at most back1's size (no cap is named), none under GBP2. No model. Closed at the BSP after CUT."""
-    days = _days(frames, "books")
+    days = _days(frames, "books", marks=('c08',))
     b = _mids(book(_runners(frames), "c08"))
     x = b[b["race_date"].isin(set(days)) & (b["back1"] >= 1.30 * b["F"]) & (b["F"] <= 15.0)
           & (b["spread"] <= 1.25)].reset_index(drop=True)
@@ -1077,7 +1137,7 @@ def s034(frames):
     mid at 10:00 at most 0.92 x the mid at 08:00; at 10:00 lay1 / back1 - 1 <= 5%, mid <= 15, the market's matched
     >= GBP1,000 and 60 minutes or more to the off. One bet at 10:00's back1: to win GBP50, at most its size, none
     under GBP2. No model. Closed at the BSP after CUT."""
-    days = _days(frames, "books")
+    days = _days(frames, "books", marks=('c08', 'c10'))
     r = _runners(frames)
     a, c = _mids(book(r, "c08")), _mids(book(r, "c10"))
     x = c.merge(a[KEY + ["mid", "n_active"]].rename(columns={"mid": "mid08", "n_active": "n08"}), on=KEY, how="inner")
@@ -1105,7 +1165,7 @@ def s035(frames):
     runners; move = ln(share at off_30 / share at off_60). At off_15 the runner is ACTIVE with lay1 / back1 - 1 <=
     3%: back if move >= +0.04 and back1 in 2-15 (to win GBP100, at most GBP50), lay if move <= -0.04 and lay1 in
     2-15 (liability GBP100); never more than the size shown, none under GBP2. Closed at the BSP after CUT."""
-    days = _days(frames, "books")
+    days = _days(frames, "books", marks=('o60', 'o30', 'o15'))
     r = _runners(frames)
     mv = _share_move(r, "o60", "o30")
     x = _mids(book(r, "o15")).merge(mv[KEY + ["move"]], on=KEY, how="inner")
@@ -1220,7 +1280,7 @@ def s038(frames):
     our price; one lay a runner at the first mark it qualifies, at lay1 for min(max(400 / (L - 1), 15), 200,
     lay1's size); GBP4,000 of liability a day in mark order, the larger expected value first. Closed by a back
     at the BSP after CUT."""
-    days = _days(frames, "books", "preds")
+    days = _days(frames, "books", "preds", marks=('c10', 'c11', 'c12'))
     x = _model_lays(frames, ("c10", "c11", "c12"), days, extra=lambda b: b["mto"] >= 60.0)
     stake = day_limit(x, _lay_stake_400(x), ["mark_no", "lay_ev"], unit_risk=x["lay1"] - 1.0, ascending=[True, False])
     return _bets(x, "lay", x["lay1"], stake, cut=_cut(frames, x, "lay"), ts=x["t"]), days
@@ -1230,7 +1290,7 @@ def s039(frames):
     """S039: the lay book where no runner can come out uncut: WIN markets at clock_08:00 then clock_09:00 with at
     most 10 active runners and no ACTIVE runner at a back of 34.0 or more or with no back price (the frame must
     hold every active runner). The runner rule, stake and day liability are S038's."""
-    days = _days(frames, "books", "preds")
+    days = _days(frames, "books", "preds", marks=('c08', 'c09'))
 
     def safe(b):
         long_ = (~b["back1"].gt(1.0)) | (b["back1"] >= 34.0)
@@ -1244,7 +1304,7 @@ def s040(frames):
     """S040: at clock_09:00 (OPEN, 60 minutes or more to the off, whole race: every active runner has a back and
     our price), lay where lay1 <= 10, lay1 / back1 <= 1.10, lay1's size >= GBP10, our price >= 1.20 x lay1 and
     F >= 1.20 x lay1; at lay1 for min(200 / (L - 1), lay1's size, 200). Closed by a back at the BSP after CUT."""
-    days = _days(frames, "books", "preds")
+    days = _days(frames, "books", "preds", marks=('c09',))
     b = _mids(live_bar(frames, "c09"))
     x = b[b["race_date"].isin(set(days)) & b["xb"].notna() & (b["mto"] >= 60.0) & b["lay1"].gt(1.0) & (b["lay1"] <= 10.0)
           & (b["spread"] <= 1.10) & (b["lay1_size"] >= 10.0) & (b["predicted_bfsp"] >= 1.20 * b["lay1"])
@@ -1272,7 +1332,10 @@ def s041_day(ctx) -> pd.DataFrame:
             continue
         t1 = g["t"].min()
         g = g[g["t"].eq(t1) & g["runner_status"].eq("ACTIVE")].merge(
-            w[KEY + ["race_date", "predicted_bfsp", "bsp", "final_status"]], on=KEY, how="left")
+            w[KEY + ["race_date", "predicted_bfsp", "bsp", "final_status"]
+              + (["pred_written"] if "pred_written" in w.columns else [])], on=KEY, how="left")
+        if "pred_written" in g.columns:             # a book read before the day's predictions file was written
+            g["predicted_bfsp"] = g["predicted_bfsp"].where(t1 >= g["pred_written"])
         back, lay, mp = g["back1"].to_numpy(float), g["lay1"].to_numpy(float), g["predicted_bfsp"].to_numpy(float)
         fb = np.where(back > 1.0, back, np.where(g["last_traded"].to_numpy(float) > 1.0, g["last_traded"].to_numpy(float), lay))
         if len(g) < 2 or not (np.nan_to_num(mp) > 1.0).all() or not (np.nan_to_num(fb) > 1.0).all():
@@ -1321,7 +1384,7 @@ def s042(frames):
     GBP500 or more matched. The favourite is the lowest mid among the two-sided ACTIVE runners, with the second
     lowest mid at least 1.10 x it; it is laid if its lay1 is in 2.0-6.0, lay1 / back1 <= 1.06 and lay1's size >=
     GBP20: lay1 for min(200 / (L - 1), lay1's size, 200). Closed by a back at the BSP after CUT."""
-    days = _days(frames, "books")
+    days = _days(frames, "books", marks=('c09',))
     b = _mids(book(_runners(frames), "c09"))
     b = b[b["race_date"].isin(set(days)) & (b["mto"] >= 90.0) & (b["n_active"] >= 6) & (b["mtm"] >= 500.0) & b["mid"].notna()]
     rank = b.groupby("market_id")["mid"].rank(method="first")
@@ -1339,7 +1402,7 @@ def s043(frames):
     clock_10:00 if ACTIVE there with lay1 in 2.0-12.0, lay1 / back1 - 1 <= 6% and 120 minutes or more to the
     off: liability GBP100 (stake 100 / (lay1 - 1)), never more than lay1's size, none under GBP2. Closed by a
     back at the BSP after CUT."""
-    days = _days(frames, "books")
+    days = _days(frames, "books", marks=('c08', 'c09', 'c10'))
     r = _runners(frames)
     mv = _share_move(r, "c08", "c09")
     mv = mv[(mv["move"] <= -0.05) & (mv["mtm_b"] >= 1.15 * mv["mtm_a"]) & (mv["mtm_a"] > 0)]
@@ -1356,7 +1419,7 @@ def s044(frames):
     """S044: the control. A WIN market whole at clock_09:00 (every active runner two-sided); every ACTIVE runner
     that is not the lowest mid, with lay1 in 4-12, lay1 / back1 - 1 <= 5% and 180 minutes or more to the off, is
     laid: liability GBP100, never more than lay1's size, none under GBP2. Closed by a back at the BSP after CUT."""
-    days = _days(frames, "books")
+    days = _days(frames, "books", marks=('c09',))
     b = _mids(book(_runners(frames), "c09"))
     b = b[b["whole"]]
     fav = b.groupby("market_id")["mid"].rank(method="first") == 1
@@ -1395,7 +1458,7 @@ def s045(frames):
     on the days before 20 Oct, fixed; the scored days are from 20 Oct), F2 = 1 / x. Lay where lay1 <= 0.94 x F2,
     lay1 <= 10 and lay1's size >= GBP10, one lay a runner at the first mark it qualifies: lay1 for min(200 /
     (L - 1), lay1's size, 200). Closed by a back at the BSP after CUT."""
-    days = _days(frames, "books", first=RELIABILITY_FROM)
+    days = _days(frames, "books", first=RELIABILITY_FROM, marks=('c08', 'c09'))
     r = _runners(frames)
     early = []
     for tag in ("c08", "c09", "c10"):
@@ -1485,7 +1548,7 @@ def s047(frames):
     earlier run). The history is matched on the horse's normalised name and only rows dated before the race day
     are read. At 10:00: lay1 <= 12 and lay1 / back1 - 1 <= 6%; lay1 for min(lay1's size, GBP20). Closed by a
     back at the BSP after CUT."""
-    days = _days(frames, "books", last="2026-11-18")
+    days = _days(frames, "books", last="2026-11-18", marks=('c10',))
     h = _frame(frames, "hist")
     if h.empty or not days:
         return _none("S047", "race_results history of the cards' horses", days)
@@ -1512,13 +1575,29 @@ def s047(frames):
 # the place and N TBP markets against the win market (S048-S052)
 # ---------------------------------------------------------------------------------------------------------------
 
-def _pair_place(win: pd.DataFrame, place: pd.DataFrame) -> pd.DataFrame:
+def _pair_place(win: pd.DataFrame, place: pd.DataFrame, max_lag: float | None = None, what: str = "") -> pd.DataFrame:
     """PAIR-B (K5): each win row with its place row on (event_id, market_start_utc, selection_id); the place row's
-    columns carry the suffix _pl. A key that does not name one row on each side is not paired."""
+    columns carry the suffix _pl. A key that does not name one row on each side is not paired.
+
+    ``max_lag`` (seconds): the two rows of a pair are read at their own polls (betfair_recorder.marks takes, per
+    market, the poll nearest the mark within a quarter of its minutes, from the recorder's and the trader's books
+    alike), so a pair is kept only where the place poll is at or after the win poll and at most ``max_lag`` later:
+    a place quote is never judged by a later win price and then 'filled' at the older quote. The pairs dropped
+    are printed. (The two feeds' own delays are not in the marks: a win row from the live key beside a place row
+    from the delayed key can still be the fresher of the two.)"""
     w = win.drop_duplicates(PAIR_B, keep=False)
     p = place.drop_duplicates(PAIR_B, keep=False)
     p = p.rename(columns={c: f"{c}_pl" for c in p.columns if c not in PAIR_B})
-    return w.merge(p, on=PAIR_B, how="inner", validate="1:1")
+    m = w.merge(p, on=PAIR_B, how="inner", validate="1:1")
+    if max_lag is not None:
+        lag = (pd.to_datetime(m["t_pl"], utc=True) - pd.to_datetime(m["t"], utc=True)).dt.total_seconds()
+        early, late = lag < 0, lag > max_lag
+        ok = ~(early | late) & lag.notna()
+        _say(f"   {what or 'pairs'}: {int((~ok).sum()):,} of {len(m):,} win-place pairs dropped (place poll before "
+             f"the win read {int(early.sum()):,}, more than {max_lag:g} s after it {int(late.sum()):,}; median lag "
+             f"{lag.median() if len(lag) else float('nan'):.0f} s)")
+        m = m[ok].reset_index(drop=True)
+    return m
 
 
 def _late_removal(b: pd.DataFrame) -> pd.Series:
@@ -1565,11 +1644,11 @@ def s048(frames):
     up to a tick: matched at the place BSP only if that BSP is at or above L (the order's mechanics, not the
     selection), and held to the place result. A runner removed in the win or place market after off_5 voids the
     race's bets (counted)."""
-    days = _days(frames)
+    days = _days(frames, marks=('o5',))
     w = place_chance(frames, "o5", fallback_last=True)
-    x = _pair_place(w, _place_book(frames, "o5"))
+    x = _pair_place(w, _place_book(frames, "o5"))              # an SP order: no place quote is taken, no lag test
     x = x[x["race_date"].isin(set(days)) & (x["n_active"] >= 5) & (x["wmid"] <= 5.0) & x["p_place"].notna()
-          & (x["p_place"] > 0)].reset_index(drop=True)
+          & (x["p_place"] > 0) & (x["mto"] > 0)].reset_index(drop=True)      # the win read is before the off
     limit = np.asarray(core.tick_ceil(np.maximum(1.01, 1.0 + (1.05 / x["p_place"] - 1.0) / 0.98).to_numpy(float)), float)
     psp = x["bsp_pl"].to_numpy(float)
     filled = np.nan_to_num(psp, nan=0.0) >= limit
@@ -1587,23 +1666,40 @@ def s048(frames):
 def s049(frames):
     """S049: place favourites laid 15 minutes out. PAIR-B at off_15. Win side: back1 and lay1 present, lay1 / back1
     <= 1.10, mid <= 4.0, 5 or more active runners. Place side: OPEN, 1.10 <= lay1 <= 2.50, lay1 / back1 <= 1.08,
-    lay1's size >= GBP20. One lay at the place lay1 for min(200 / (L - 1), lay1's size, 200), closed by a
-    MARKET_ON_CLOSE back at the place SP: stake x (1 - L / PSP) on every outcome. A place market with a removal
-    after the entry is void (counted)."""
-    days = _days(frames)
+    lay1's size >= GBP20. The place poll is at or within 60 s after the win poll (else no pair). One lay at the
+    place lay1 for min(200 / (L - 1), lay1's size, 200, 1% of the place market's pre-off volume in betfair_prices),
+    closed by a MARKET_ON_CLOSE back at the place SP: stake x (1 - L / PSP) on every outcome. The cap is K4's for
+    an SP order (the back is about the lay's size; the SP is not used to size it, which would shrink exactly the
+    losing lays); a runner with no place price-file row is not laid, and only days the price files hold are race
+    days. A place market with a removal after the entry is void (counted)."""
+    days = _days(frames, marks=('o15',))
     r = _runners(frames)
     pl_all = r[r["market_type"].eq("PLACE")]
     _say(f"   S049, first: place runners with a place BSP {pl_all['bsp'].gt(1.0).mean() if len(pl_all) else 0:.1%} of "
          f"{len(pl_all):,}")
     w = _mids(book(r, "o15"))
     p = _mids(_place_book(frames, "o15"))
-    x = _pair_place(w, p)
+    x = _pair_place(w, p, PAIR_LAG, "S049")
     _say(f"   S049, first: {len(x):,} of {len(w):,} win runners at off_15 paired to a place row "
          f"({len(x) / max(len(w), 1):.1%})")
+    pv = _frame(frames, "prices")
+    pv = pv[pv["market_type"].eq("place")].drop_duplicates(["race_date", "selection_id"], keep=False) if len(pv) else pv
+    if pv.empty:
+        return _none("S049", "betfair_prices holds no place row (the place market's pre-off volume is not known)", [])
+    days = sorted(set(days) & set(pv["race_date"]))
     x = x[x["race_date"].isin(set(days)) & (x["spread"] <= 1.10) & (x["mid"] <= 4.0) & (x["n_active"] >= 5)
           & x["lay1_pl"].between(1.10, 2.50) & (x["spread_pl"] <= 1.08) & (x["lay1_size_pl"] >= 20.0)].reset_index(drop=True)
+    x = x.merge(pv[["race_date", "selection_id", "pp_vol"]].rename(columns={"pp_vol": "pp_vol_place"}),
+                on=["race_date", "selection_id"], how="left")
     z = x.assign(market_id=x["market_id_pl"], bsp=x["bsp_pl"], final_status=x["final_status_pl"])
-    stake = core.capacity(core.to_win_stake(200.0, x["lay1_pl"], 0.0, 200.0), x["lay1_size_pl"])
+    shown = core.capacity(core.to_win_stake(200.0, x["lay1_pl"], 0.0, 200.0), x["lay1_size_pl"])
+    stake = core.capacity(shown, x["pp_vol_place"], share=SP_POOL_SHARE)
+    _say(f"   S049: {int((np.asarray(shown) > 0).sum()):,} lays at the size shown, GBP{float(np.sum(shown)):,.0f}; capped "
+         f"at {SP_POOL_SHARE:.0%} of the place market's pre-off volume GBP{float(np.sum(stake)):,.0f} on "
+         f"{int((np.asarray(stake) > 0).sum()):,} (no place price-file row, or under GBP2 after the cap: no bet)")
+    _describe("S049", "uncapped (the SP back taken as free of any effect on the place SP)",
+              _bets(z, "lay", x["lay1_pl"], shown, void=x["late_nr_pl"].to_numpy(), market="place", tally=False),
+              "at the size shown")
     return _bets(z, "lay", x["lay1_pl"], stake, void=x["late_nr_pl"].to_numpy(), market="place", ts=x["t_pl"]), days
 
 
@@ -1613,7 +1709,7 @@ def s050(frames):
     0.99 x the place mid at off_30 (two-sided there); at off_5 the place runner ACTIVE with back1 in 1.3-6.0 and
     lay1 / back1 - 1 <= 4%. GBP20 at the place back1 at off_5 (at most its size, none under GBP2), laid at the
     place BSP: stake x (back1 / PSP - 1). A place market with a removal after the entry is void (counted)."""
-    days = _days(frames)
+    days = _days(frames, marks=('o30', 'o10', 'o5'))
     r = _runners(frames)
     mv = _share_move(r, "o30", "o10")
     mv = mv[mv["move"] >= 0.08]
@@ -1633,10 +1729,11 @@ def s051(frames):
     """S051: a place offer 5% over the win-implied price at off_15, held. PAIR-B; p by K9 from the off_15 win mids
     of a whole win market (every active runner two-sided). Runners with a win mid <= 21.0 whose place back1 gives
     p x (1 + (back1 - 1) x 0.98) - 1 >= 0.05: the place back1 for min(GBP20, its size), held to the place result.
+    The place quote taken is polled at or within 60 s after the win prices that judged it (else no pair).
     A runner removed in the win or place market after off_15 voids the race's bets (counted)."""
-    days = _days(frames)
+    days = _days(frames, marks=('o15',))
     w = place_chance(frames, "o15")
-    x = _pair_place(w, _place_book(frames, "o15"))
+    x = _pair_place(w, _place_book(frames, "o15"), PAIR_LAG, "S051")
     ev = x["p_place"] * (1.0 + (x["back1_pl"] - 1.0) * 0.98) - 1.0
     x = x[x["race_date"].isin(set(days)) & (x["wmid"] <= 21.0) & (ev >= 0.05) & x["back1_pl"].gt(1.0)].reset_index(drop=True)
     z = x.assign(market_id=x["market_id_pl"], bsp=x["bsp_pl"], final_status=x["final_status_pl"])
@@ -1650,13 +1747,16 @@ def s051(frames):
 
 
 _TBP = re.compile(r"^\s*(\d)\s*TBP\b", re.IGNORECASE)
+TBP_LAG = 120.0                             # seconds the TBP entry poll may follow the win read
 
 
 def s052_day(ctx) -> pd.DataFrame:
     """S052's day: the day's 'N TBP' markets (books_other_place, markets_other_place), each paired to its WIN
-    market on (event_id, market_start_utc), runners on selection_id. At the TBP market's poll nearest 5 minutes
-    before the off (within 2 minutes; OPEN, not in play): k = number_of_winners in that book (else N of the name);
-    p by K9 from the off_5 win mids of a whole win market. Back where p x (1 + (back1 - 1) x 0.98) - 1 >= 0.05:
+    market on (event_id, market_start_utc), runners on selection_id. p by K9 from the off_5 win mids of a whole
+    win market, read at the win mark's poll t_win. The entry is the TBP market's FIRST poll at or after t_win, no
+    more than 120 s after it and at least a minute before the off (OPEN, not in play); no such poll, no bet (the
+    quote taken is never older than the win prices that judged it). k = number_of_winners in that book (else N
+    of the name). Back where p x (1 + (back1 - 1) x 0.98) - 1 >= 0.05:
     back1 for min(GBP10, its size). Lay where lay1 <= 8 and (1 - p) x 0.98 - p x (lay1 - 1) >= 0.05: lay1 for
     min(lay1's size, 20 / (lay1 - 1)). Held to the result (the runner's status in the TBP market's last CLOSED
     book). A TBP or win market with a runner removed after the entry is void (counted). ``places_final`` is the
@@ -1676,11 +1776,16 @@ def s052_day(ctx) -> pd.DataFrame:
     w = _mids(book(ctx.runners, "o5")).rename(columns={"market_id": "win_market"})
     w = w[w["whole"]]
     b = bk.merge(mk[["market_id", "n", "event_id", "market_start_utc", "off"]], on="market_id", how="inner")
-    gap = ((b["off"] - b["t"]).dt.total_seconds() / 60.0 - 5.0).abs()
-    pre = b[b["status"].eq("OPEN") & ~b["inplay"] & (gap <= 2.0)].assign(gap=gap)
+    # the entry poll: the first after the win prices that judge it were read (never an older TBP quote)
+    t_win = w.groupby(["event_id", "market_start_utc"], as_index=False)["t"].max().rename(columns={"t": "t_win"})
+    b = b.merge(t_win, on=["event_id", "market_start_utc"], how="inner")
+    lag = (b["t"] - b["t_win"]).dt.total_seconds()
+    pre = b[b["status"].eq("OPEN") & ~b["inplay"] & (lag >= 0.0) & (lag <= TBP_LAG)
+            & ((b["off"] - b["t"]).dt.total_seconds() >= 60.0)]
+    ctx.tbp_count = {"tbp_markets": int(b["market_id"].nunique()),
+                     "no_entry_poll": int(b["market_id"].nunique() - pre["market_id"].nunique())}
     if pre.empty:
         return core.empty_bets()
-    pre = pre[pre["gap"].eq(pre.groupby("market_id")["gap"].transform("min"))]
     pre = pre[pre["t"].eq(pre.groupby("market_id")["t"].transform("min"))]
     fin = b[b["status"].eq("CLOSED")].sort_values("t", kind="stable").drop_duplicates(KEY, keep="last")
     pre = pre.merge(fin[KEY + ["runner_status"]].rename(columns={"runner_status": "final_status"}), on=KEY, how="left")
@@ -1719,11 +1824,24 @@ def s052_day(ctx) -> pd.DataFrame:
     return pd.concat([backs, lays], ignore_index=True) if len(backs) or len(lays) else core.empty_bets()
 
 
+def s052t_day(ctx) -> pd.DataFrame:
+    """S052's count, a day: the N TBP markets paired to a whole win market at off_5, and those with no entry poll
+    within 120 s after the win read (dropped)."""
+    ctx.tbp_count = None
+    s052_day(ctx)
+    return pd.DataFrame([ctx.tbp_count]) if ctx.tbp_count else pd.DataFrame()
+
+
 def s052(frames):
     """S052: N TBP offers 5% off the win-implied price, held (s052_day), from 7 Oct. Backs GBP10, lays liability
     GBP20, both capped by the size shown; 2% on each TBP market's own positive net (its own commission unit)."""
     _day_errors(frames, "S052")
-    days = _days(frames, "books", first="2026-10-07")
+    days = _days(frames, "books", first="2026-10-07", marks=('o5',))
+    t = _frame(frames, "day_S052T")
+    if len(t):
+        _say(f"   S052: {int(t['tbp_markets'].sum()):,} N TBP markets paired to a whole win market at off_5; "
+             f"{int(t['no_entry_poll'].sum()):,} dropped (no TBP poll within {TBP_LAG:g} s after the win read and a "
+             f"minute before the off)")
     b = _frame(frames, "day_S052")
     if b.empty or not days:
         return _none("S052", "no N TBP book recorded (books_other_place) or no offer cleared 5%", days)
@@ -1773,8 +1891,10 @@ def s029_day(ctx) -> pd.DataFrame:
 
 
 def fcheck_day(ctx) -> pd.DataFrame:
-    """S007's check, a day: each WIN runner's forecast price as first recorded in the day's raw catalogue against
-    the one betfair_live_markets stores (is the stored forecast the morning's?)."""
+    """The forecast price as first recorded, a day: one row a WIN runner of the card with a forecast in the day's
+    raw catalogue: F_first (its first recorded value), F_t (the time of that record; empty where the file carries
+    no recorded_utc) and F_stored (what betfair_live_markets keeps: the day's LAST catalogue row). The loader
+    puts F_first in place of the stored value (data_b.first_forecast) for the marks and for the replay."""
     parts = [ctx.read(n) for n in ("markets_trader", "markets")]
     parts = [p for p in parts if p is not None and len(p) and {"forecast_num", "forecast_den"} <= set(p.columns)]
     if not parts:
@@ -1786,24 +1906,46 @@ def fcheck_day(ctx) -> pd.DataFrame:
     order = pd.to_datetime(m["recorded_utc"], utc=True, errors="coerce") if "recorded_utc" in m.columns else None
     if order is not None:
         m = m.assign(_o=order).sort_values("_o", kind="stable")
+    m = m[m["selection_id"].notna()]
     first = m.drop_duplicates(KEY, keep="first").assign(F_first=lambda z: 1.0 + z["num"] / z["den"])
-    r = ctx.runners[ctx.runners["market_type"].eq("WIN") & ctx.runners["F"].gt(1.0)]
-    j = r[KEY + ["F"]].merge(first[KEY + ["F_first"]], on=KEY, how="inner")
-    return pd.DataFrame([{"n": int(len(j)), "n_diff": int((np.abs(j["F"] - j["F_first"]) > 1e-9).sum())}])
+    first = first.assign(market_id=first["market_id"].astype(str), selection_id=first["selection_id"].astype("int64"),
+                         F_t=first["_o"] if order is not None else pd.NaT)
+    r = ctx.runners[ctx.runners["market_type"].eq("WIN")]
+    j = r[KEY + ["F"]].rename(columns={"F": "F_stored"}).merge(first[KEY + ["F_first", "F_t"]], on=KEY, how="inner")
+    return j[KEY + ["F_first", "F_t", "F_stored"]].reset_index(drop=True)
 
 
 #: what the loader runs on each day's raw books (data_b.day_pass): key -> function(ctx) -> frame (bets or a table),
 #: kept as frames['day_<key>']
 DAY_FUNCS = {"S024": s024_day, "S029": s029_day, "S032": s032_day, "S036": s036_day, "S041": s041_day,
-             "S046": s046_day, "S046T": s046t_day, "S052": s052_day, "FCHECK": fcheck_day}
+             "S046": s046_day, "S046T": s046t_day, "S052": s052_day, "S052T": s052t_day, "FCHECK": fcheck_day}
 
 
 # ---------------------------------------------------------------------------------------------------------------
 # the registry
 # ---------------------------------------------------------------------------------------------------------------
 
+def _said(sid: str, build):
+    """The strategy's build with two lines printed after it: the race days it read (the first matters: a clock-mark
+    rule starts where its marks do) and the backs left out because their SP lay would be under GBP10 (K4)."""
+    @functools.wraps(build)
+    def run(frames):
+        _SMALL[:] = [0, 0.0]
+        out = build(frames)
+        days = out[1] if isinstance(out, tuple) else None
+        if days:
+            _say(f"   {sid}: {len(days)} race days read, {days[0]} .. {days[-1]}")
+        if _SMALL[0]:
+            _say(f"   {sid}: {_SMALL[0]:,} backs (GBP{_SMALL[1]:,.2f}) not placed: their lay at the SP would be under "
+                 f"GBP{MIN_SP_LIABILITY:g} of liability (a day function's own drops are made in the loader's pass and "
+                 f"are not in this count)")
+        return out
+    return run
+
+
 def _s(sid, name, family, side, build, market="win", **kw) -> core.Strategy:
-    return core.Strategy(id=sid, name=name, family=family, dataset=DS, side=side, market=market, build=build, **kw)
+    return core.Strategy(id=sid, name=name, family=family, dataset=DS, side=side, market=market,
+                         build=_said(sid, build), **kw)
 
 
 _REPLAY_NOTE = ("replayed on the DELAYED key's books at the sizes shown (the replay fills more kindly than live); "
@@ -1829,7 +1971,9 @@ STRATEGIES = [
                      "(8%: +12.72% on half the turnover); not replayed since the 10:00 stop", note=_REPLAY_NOTE),
     _s("S004", "Bar that rises as the off nears (3 / 5 / 8% at 6 and 3 hours)", "live rule: bar by time to the off",
        "back", s004, paired="S001",
-       tested_before="a bar by hours to the off: none found; near: bar1/bar2 arms GBP5,766 / 5,402 against 6,101 "
+       blind=False,
+       tested_before="NOT BLIND: its setting was read off phase5-execution-1119 (every live fill since 30 Sep by hours to the off: CONFIRM days seen); "
+                     "a bar by hours to the off: none found; near: bar1/bar2 arms GBP5,766 / 5,402 against 6,101 "
                      "(arms-full-1103); closing-correction-1009 (not robust)", note=_REPLAY_NOTE),
     _s("S005", "Bar by the book's spread (3% wide, 8% tight)", "live rule: bar by book state", "back", s005,
        paired="S001",
@@ -1856,7 +2000,9 @@ STRATEGIES = [
                      "(arms-full-1103); window-1000; a one-hour window: none found", note=_REPLAY_NOTE),
     _s("S010", "The rule, and 10:00-13:00 only on races 6 hours or more away", "live rule: time of entry", "back",
        s010, paired="S001",
-       tested_before="live-by-hour-1104 (hour and time to the off read apart, the cross cell never); "
+       blind=False,
+       tested_before="NOT BLIND: its setting was read off phase5-execution-1119 (the live fills by UK hour and minutes to the off, to 18 Nov: CONFIRM days seen); "
+                     "live-by-hour-1104 (hour and time to the off read apart, the cross cell never); "
                      "time-cutoff-replay-1007/1008; day-limit-replay-1020", note=_REPLAY_NOTE),
     _s("S011", "Single look at 08:00 UK", "live rule: time of entry", "back", s011,
        tested_before="from0800 arm GBP73 a day against 285 (timing-1104); the rule from 08:00 GBP4,393 against "
@@ -1866,18 +2012,26 @@ STRATEGIES = [
        tested_before="timing-1104 (2-4h 1.2%, 1-2h -1.3% after cuts); late-entry-0930; small-book-late-1111 "
                      "(T-5 to T-1: weight 0.00-0.08, 0 of 54 pass)", note=_MARK_NOTE),
     _s("S013", "First backs only (no top-ups)", "live rule: top-ups", "back", s013, paired="S001",
-       tested_before="topups0 GBP2,583 against 6,101 over 21 October days (arms-full-1103); one_back GBP1,640 "
+       blind=False,
+       tested_before="NOT BLIND: its setting was read off phase5-reductions-1119 (top-ups by number after the cuts, to 18 Nov; week-drop-1123 read 17-23 Nov: CONFIRM days seen); "
+                     "topups0 GBP2,583 against 6,101 over 21 October days (arms-full-1103); one_back GBP1,640 "
                      "against 4,950 (stake-per-horse-1016); not read on the winter card", note=_REPLAY_NOTE),
     _s("S014", "Top-ups only within 30 minutes of the first back", "live rule: top-ups", "back", s014, paired="S001",
-       tested_before="named in topups-1020 and edge_investigation_1111 lever 5, never run; topup-flow-guard-1115 "
+       blind=False,
+       tested_before="NOT BLIND: its setting was read off phase5-reductions-1119 (top-ups after the cuts, to 18 Nov; week-drop-1123 read 17-23 Nov: CONFIRM days seen); "
+                     "named in topups-1020 and edge_investigation_1111 lever 5, never run; topup-flow-guard-1115 "
                      "FAIL (deflated Sharpe 0.04-0.20)", note=_REPLAY_NOTE),
     _s("S015", "Top-up bar 7% on the real fills", "live rule: top-ups", "back", s015, paired="BASE-B",
        entry=NO_HAIRCUT,
-       tested_before="with redeployment it lost three times (blend-ladder-replay-1020 GBP1,822 against 2,131; "
+       blind=False,
+       tested_before="NOT BLIND: its setting was read off phase5-reductions-1119 (top-ups after the cuts, to 18 Nov; week-drop-1123 read 17-23 Nov: CONFIRM days seen); "
+                     "with redeployment it lost three times (blend-ladder-replay-1020 GBP1,822 against 2,131; "
                      "topup-policy-replay-1004; stake-per-horse-1016); as a pure drop: none found", note=_REAL_NOTE),
     _s("S016", "No top-ups under 4.0 on the real fills", "live rule: top-ups by price", "back", s016, paired="BASE-B",
        entry=NO_HAIRCUT,
-       tested_before="topup-policy-replay-1004 (485 and 435 against 656, 4 days); horse caps 300/200/150 "
+       blind=False,
+       tested_before="NOT BLIND: its setting was read off phase4-segments-1119 (the live record by price band, to 18 Nov: CONFIRM days seen); "
+                     "topup-policy-replay-1004 (485 and 435 against 656, 4 days); horse caps 300/200/150 "
                      "(stake-per-horse-1016); first-back-only under 4.0: none found", note=_REAL_NOTE),
     _s("S017", "No ladder (best back only)", "live rule: execution", "back", s017, paired="S001", blind=False,
        tested_before="blend-ladder-replay-1020 (ladder GBP2,388 against 2,131); depth-refill-1020; "
@@ -1890,14 +2044,18 @@ STRATEGIES = [
        note=_REPLAY_NOTE + "; the SP lay at 100+ can part-fill"),
     _s("S019", "Target scaled by hours to the off (to win 800 / 400 / 200)", "live rule: staking", "back", s019,
        paired="S001",
-       tested_before="win1000 (timing-1104: +GBP26 a day); to_win_600 GBP5,381 against 4,950 "
+       blind=False,
+       tested_before="NOT BLIND: its setting was read off phase5-execution-1119 (the live fills by minutes to the off, to 18 Nov: CONFIRM days seen); "
+                     "win1000 (timing-1104: +GBP26 a day); to_win_600 GBP5,381 against 4,950 "
                      "(stake-per-horse-1016); a target falling with time: none found", note=_REPLAY_NOTE),
     _s("S020", "Level GBP40 a horse", "live rule: staking", "back", s020, paired="S001",
        tested_before="stake-scheme-replay-1017 (1-16 Oct): level_40 GBP4,735 against 5,776; to-win-staking-0930; "
                      "not replayed since the three-level ladder", note=_REPLAY_NOTE),
     _s("S021", "Kelly cap on the calibrated edge over the move's variance (real fills)", "staking: fractional Kelly",
        "back", s021, paired="BASE-B", entry=NO_HAIRCUT,
-       tested_before="stake-scheme-replay-1017 (stakes by the raw edge about level); race-book-0930 (Kelly books); "
+       blind=False,
+       tested_before="NOT BLIND: its setting was read off phase4-segments-1119 (the live record by edge bin, to 18 Nov: CONFIRM days seen); "
+                     "stake-scheme-replay-1017 (stakes by the raw edge about level); race-book-0930 (Kelly books); "
                      "with a calibrated edge or a variance term: none found", note=_REAL_NOTE),
     _s("S022", "Race cap GBP400 on the real fills", "staking: per-race cap", "back", s022, paired="BASE-B",
        entry=NO_HAIRCUT,
@@ -1915,7 +2073,9 @@ STRATEGIES = [
     _s("S024-OTHER", "S024's benchmark: the 08:00 picks in the other markets", "benchmark", "back", s024_other,
        benchmark=True, tested_before="none found (a control made for S024)", note=_MARK_NOTE),
     _s("S025", "The live backs held to the result", "exit", "back", s025, paired="BASE-B", entry=NO_HAIRCUT,
-       tested_before="strategy-review-1017 (held GBP550 against 1,555, sd 1,013 against 259); hedge-ratio-1021; "
+       blind=False,
+       tested_before="NOT BLIND: its setting was read off phase4-segments-1119 (the live record held against its CLV, to 18 Nov: CONFIRM days seen); "
+                     "strategy-review-1017 (held GBP550 against 1,555, sd 1,013 against 259); hedge-ratio-1021; "
                      "phase4-segments-1119 (held +5.92% against CLV +6.83%); not re-read on the days since",
        note=_REAL_NOTE),
     _s("S026", "Conditional hedge: limit-on-close lay at the fill's own price", "exit", "back", s026, paired="BASE-B",
@@ -1923,8 +2083,12 @@ STRATEGIES = [
        tested_before="morning-exit-bsp-1116 (COND, morning models only); strategy-review-1017 (holding the "
                      "shorteners: noise); holding the drifters on the live fills: none found",
        note=_REAL_NOTE + "; a limit lay is taken as matched whenever the BSP is at or under the limit"),
+    _s("S027-BASE", "S027's benchmark: BASE-B for the horses S027 settled", "benchmark", "back", s027_base,
+       benchmark=True, entry=NO_HAIRCUT, blind=False,
+       tested_before="none found (a control made for S027: the real fills of the same horses, to 22 Nov)",
+       note=_REAL_NOTE),
     _s("S027", "The live backs laid in running at half the SP odds", "exit: in-running", "both", s027,
-       paired="BASE-B", entry=NO_HAIRCUT,
+       paired="S027-BASE", entry=NO_HAIRCUT,
        tested_before="strategy-review-1017; morning-exit-bsp-1116; edge-inplay-offsets-1002 (unconditional "
                      "back-to-lay -14% to -39%); an in-running exit for the live backs: none found",
        note="the real stakes at Betfair's settled prices; the in-running lay is an UPPER BOUND (K8: no volume at "

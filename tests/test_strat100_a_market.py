@@ -157,6 +157,14 @@ def toy(seed: int = 11, until: str = "2026-04-20"):
     return pd.DataFrame(rr), pd.DataFrame(bp)
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _toy_yards():
+    """The toy has 10 trainers, so S087's gate (two fit years) holds 20 trainer-years; the registered floor is 30."""
+    was, S.YARD_MIN_POINTS = S.YARD_MIN_POINTS, 15
+    yield
+    S.YARD_MIN_POINTS = was
+
+
 @pytest.fixture(scope="module")
 def raw():
     return toy()
@@ -272,9 +280,14 @@ def test_the_registry_holds_the_32_strategies_and_their_benchmarks():
     assert all(s.dataset == "a_market" for s in S.STRATEGIES)
     assert {s.id for s in S.STRATEGIES if s.benchmark} == set(BENCH)
     assert {s.id: s.paired for s in S.STRATEGIES if s.paired} == {f"S07{n}": f"BASE-S07{n}" for n in (2, 3, 4, 5)}
-    assert {s.id for s in S.STRATEGIES if not s.blind} == {"S069", "S076", "S081", "S082", "S083", "S084"}
+    assert {s.id: s.pair_mode for s in S.STRATEGIES if s.paired} == {f"S07{n}": "return" for n in (2, 3, 4, 5)}
+    # K10: a rule whose CONFIRM years were read in an earlier table is not blind
+    assert {s.id for s in S.STRATEGIES if not s.blind} == {"S069", "S070", "S076", "S077", "S079", "S080", "S081",
+                                                           "S082", "S083", "S084", "S086", "S091"}
+    # K1: SELECT is read after whatever the rule is fitted on (K9's exponents 2021-22; a table or gate 2018-2021)
     assert {s.id: s.select_from for s in S.STRATEGIES if s.select_from} == {
-        "S071": "2021-01-01", "S077": "2022-01-01", "S078": "2022-01-01", "S086": "2022-01-01",
+        "S069": "2023-01-01", "S070": "2023-01-01", "S076": "2023-01-01",
+        "S071": "2021-01-01", "S077": "2022-01-01", "S078": "2022-01-01", "S086": "2022-01-01", "S087": "2022-01-01",
         "S092": "2021-01-01", "S094": "2021-01-01"}
     assert all(BY_ID[i].tested_before for i in SPEC)
     assert {s.id for s in S.STRATEGIES if s.entry == "wap"} == set(MORNING) and BY_ID["S100"].entry == "inplay"
@@ -479,9 +492,39 @@ def test_the_limit_on_close_fills_only_where_the_sp_reaches_the_limit(frames, bu
     x = rows_of(built["S079"], frames["win"])
     limit = np.asarray(core.tick_floor(0.8 * x["morningwap"].to_numpy()))
     assert (x["morningwap"] <= 8.0).all() and x["race_whole"].all() and (x["n_bsp"] == x["rr_runners"]).all()
-    assert ((x["bsp"] <= limit) == ~x["void"]).all() and np.allclose(core.settle(x[~x["void"]])["risk"], 100.0)
+    small = x["stake"] == 0                                 # K4: under GBP10 of liability at 1% of pp_vol is no bet
+    assert (((x["bsp"] <= limit) & ~small) == ~x["void"]).all() and (x["bsp"] <= limit).any()
+    sp_lay_sizes(x, 100.0, 0.01)
     x = rows_of(built["S078"], frames["win"])
-    assert ((x["bsp"] <= 8.0) == ~x["void"]).all() and np.allclose(core.settle(x[~x["void"]])["risk"], 100.0)
+    assert (((x["bsp"] <= 8.0) & ~(x["stake"] == 0)) == ~x["void"]).all()
+    sp_lay_sizes(x, 100.0, 0.01)
+
+
+def sp_lay_sizes(x, liability, share):
+    """K4: an SP lay's size is liability / (bsp - 1), at most ``share`` of the win pp_vol, and nothing where that
+    leaves under GBP10 of liability."""
+    want = np.minimum(liability / (x["bsp"] - 1.0), share * x["pp_vol"])
+    want = np.where(want * (x["bsp"] - 1.0) >= 10.0 - 1e-9, want, 0.0)
+    assert np.allclose(x["stake"], want)
+    live = core.settle(x[~x["void"]])
+    assert len(live) and live["risk"].between(10.0 - 1e-6, liability + 1e-6).all()
+    assert (live["stake"] <= share * live["pp_vol"] + 1e-9).all()
+    return live
+
+
+def test_k4_an_sp_lay_is_capped_by_the_volume_and_never_under_ten_pounds_of_liability(frames, built):
+    bsp, vol = np.array([1.2, 1.05, 3.0, 3.0, 6.0, 2.0]), np.array([2000.0, 1e6, 600.0, 1e6, 1e6, 900.0])
+    got = S._sp_lay_size(bsp, vol, 100.0, 0.01)             # 500 wanted, 20 allowed: GBP4 of liability, no bet; ...
+    assert got.tolist() == pytest.approx([0.0, 2000.0, 6.0, 50.0, 20.0, 0.0])
+    assert S._sp_lay_size([3.0], [600.0], 40.0, 0.005).tolist() == [0.0]     # GBP3 of size, GBP6 of liability: no bet
+    x = pd.DataFrame({"race_date": "2025-01-01", "rk": "r", "selection_id": [1, 2], "bsp": [3.0, 3.0],
+                      "pp_vol": [600.0, 6000.0], "ipmax": [3.0, 3.0], "win_frac": [0.0, 0.0]})
+    b = core.check_bets(S._lay_to_back(x, 1.5))
+    assert b["void"].tolist() == [True, False] and b["stake"].tolist() == pytest.approx([0.0, 20.0])
+    for sid in ("S078", "S079"):                            # the toy holds orders the cap cuts and orders it drops
+        x = rows_of(built[sid], frames["win"])
+        asked = 100.0 / (x["bsp"] - 1.0)
+        assert ((x["stake"] > 0) & (x["stake"] < asked - 1e-9)).any(), sid
 
 
 def test_the_stacked_chance_is_a_chance_and_sums_to_the_places(frames, built):
@@ -511,6 +554,7 @@ def test_the_place_shape_rules_pick_what_they_say(frames, built):
     x = rows_of(built["S075"], p)
     assert (np.log(x["morningwap"] / x["ppwap"]) >= 0.15).all() and x["ppwap"].between(2, 15).all()
     assert (x["morning_vol"] >= 200).all() and (x["p_pp_vol"] >= 1000).all() and len(built["BASE-S075"]) > len(x)
+    assert x["k_ok"].all() and rows_of(built["BASE-S075"], p)["k_ok"].all()   # a place dead heat is not read
     for sid in ("S072", "S073", "S074", "S075"):
         live = core.check_bets(built[sid])
         assert (live["entry_type"] == "sp").all() and (live["market"] == "place").all() and not live["void"].any()
@@ -523,7 +567,7 @@ def test_a_morning_entry_is_at_the_morning_wap_within_a_tenth_of_its_volume_in_w
         assert (x["entry_price"] == x["morningwap"]).all() and (x["entry_type"] == "wap").all(), sid
         assert x["race_whole"].eq(True).all() and (x["stake"] <= 0.10 * x["morning_vol"] + 1e-9).all(), sid
         live = x[~x["void"]]
-        assert (live["stake"] >= 2.0).all() and ((live["exit"] == "result") == (sid == "S084")).all(), sid
+        assert ((live["exit"] == "result") == (sid == "S084")).all(), sid
         if sid != "S084":
             assert (live["exit_price"] == live["bsp"]).all(), sid
     x = core.settle(rows_of(built["S077"], r[r["bp_id"].notna()]))
@@ -533,6 +577,13 @@ def test_a_morning_entry_is_at_the_morning_wap_within_a_tenth_of_its_volume_in_w
         x = rows_of(built[sid], r[r["bp_id"].notna()])
         live = x[~x["void"]]
         assert (live["stake"] <= 100.0).all() and (live["stake"] * (live["morningwap"] - 1.0) <= 50.0 + 1e-6).all()
+        # K4 sets no smallest stake on the price files: the long prices (the worst morning-to-SP band) are kept
+        assert not x["void"].any() and np.allclose(
+            x["stake"], np.minimum(np.minimum(50.0 / (x["morningwap"] - 1.0), 100.0), 0.10 * x["morning_vol"])), sid
+    for sid in ("S086", "S087"):
+        x = rows_of(built[sid], r[r["bp_id"].notna()])
+        long = x[x["morningwap"] > 27.0]
+        assert len(long) and (long["stake"] < 2.0).all() and not long["void"].any(), sid
     x = rows_of(built["S084"], r[r["bp_id"].notna()])
     low = r[(r["code"] == "chase") & r["hcap"]].groupby(["race_date", "track", "race_time"])["official_rating"].min()
     assert (x["code_f"] == "chase").all() and x["hcap"].all() and (x["morning_vol"] >= 50).all()
@@ -583,7 +634,14 @@ def test_the_second_string_and_the_last_race_favourite(frames, built):
 def test_the_yard_gate_voids_the_strategy(frames, monkeypatch):
     y = S._yard(frames)
     corr, n = S._yard_persistence(y)
-    assert n >= 30 and corr >= 0.2                          # the toy's first yard steams every year
+    assert n >= S.YARD_MIN_POINTS and corr >= 0.2           # the toy's first yard steams every year
+    # K1: the gate is fitted inside 2018-2021 (SELECT is read from 2022): nothing from 2022 on can move it
+    assert S._yard_persistence(y[y["race_date"] <= "2021-12-31"]) == (pytest.approx(corr, abs=1e-9), n)
+    assert S.YARD_GATE_YEARS == (2020, 2021) and BY_ID["S087"].select_from == core.FITTED_SELECT_FROM
+    assert core.check_bets(S.s087(frames))["race_date"].min() >= core.FITTED_SELECT_FROM
+    monkeypatch.setattr(S, "YARD_MIN_POINTS", 30)           # the registered floor: the toy's 20 trainer-years are void
+    assert len(S.s087(frames)) == 0
+    monkeypatch.setattr(S, "YARD_MIN_POINTS", 15)
     assert (y["yard_n"] >= 0).all() and y.loc[y["yard_n"] >= 50, "yard_score"].notna().all()
     monkeypatch.setattr(S, "YARD_MIN_CORR", 2.0)
     assert len(S.s087(frames)) == 0
@@ -609,6 +667,7 @@ def test_the_in_running_trades_close_at_the_target_or_stand_to_the_result(frames
         assert (x["side"] == "lay").all() and ((x["exit"] == "inplay") == hit).all() and hit.any(), sid
         live = ~x["void"]
         assert (x.loc[live, "risk"] <= 40.0 + 1e-6).all() and (x["stake"] <= 0.005 * x["pp_vol"] + 1e-9).all(), sid
+        assert (x.loc[live, "risk"] >= 10.0 - 1e-6).all(), sid              # K4: no SP lay under GBP10 of liability
         assert np.allclose(x.loc[hit & live, "pnl"], (x["stake"] * (1.0 - x["bsp"] / target))[hit & live]), sid
     bands = {"S092": (2.5, 20), "S093": (3, 15), "S094": (2, 12), "S095": (2.5, 10), "S096": (2.5, 12),
              "S097": (2.5, 10), "S098": (3, 12), "S099": (2, 10), "S100": (4, 15)}
@@ -682,3 +741,105 @@ def test_no_data_gives_no_bets_not_a_crash(frames):
         b = s.build(empty)
         assert len(core.check_bets(b, s)) == 0, s.id
         assert core.score(s, b, [], draws=50)["verdict"] == "not read: too few", s.id
+
+
+# ---- the reviewers' cases ------------------------------------------------------------------------------------------
+
+def test_a_dead_heat_pays_its_share_and_a_market_with_no_winner_is_no_bet(raw):
+    rr, bp = raw[0], raw[1].copy()
+    win = bp[(bp["market_type"] == "win") & (bp["race_date"] >= "2025-06-01") & bp["bsp"].notna()]
+    ev = win.groupby("event_id")["win_lose"].agg(["sum", "size"])
+    dead, none = ev.index[(ev["sum"] == 1) & (ev["size"] >= 6)][:2]
+    loser = win[(win["event_id"] == dead) & (win["win_lose"] == 0)].index[0]
+    bp.loc[loser, "win_lose"] = 1.0                                            # two winners: a dead heat
+    bp.loc[bp["event_id"] == none, "win_lose"] = 0.0                           # no winner row: a void race
+    fr = D.build_frames(rr[rr["race_date"] >= "2024-01-01"], bp[bp["race_date"] >= "2024-01-01"], place_chance=False,
+                        styles=False)
+    w = fr["win"]
+    d, n = w[w["event_id"] == dead], w[w["event_id"] == none]
+    assert (d["n_winners"] == 2).all() and sorted(d["win_frac"].unique()) == [0.0, 0.5]
+    assert (d.loc[d["win_lose"] == 1, "win_frac"] == 0.5).all() and len(d[d["win_lose"] == 1]) == 2
+    assert (n["n_winners"] == 0).all() and n["win_frac"].isna().all()
+    rest = w[~w["event_id"].isin([dead, none])]
+    assert (rest["win_frac"] == rest["win_lose"]).all()
+    joined = fr["runs"].dropna(subset=["bp_id"])
+    assert np.allclose(joined["win_frac"], joined["bp_id"].map(w.set_index("bp_id")["win_frac"]), equal_nan=True)
+    x = pd.concat([d[d["win_lose"] == 1].head(1), n.head(1)]).assign(bsp=5.0, pp_vol=1e6, ipmax=5.0, ipmin=5.0)
+    lay = core.settle(core.check_bets(S._lay_to_back(x, 1.5, liability=10.0)))  # unfilled: the lay stands
+    assert lay["pnl"].iloc[0] == pytest.approx(-3.75) and lay["void"].tolist() == [False, True]   # not -10.00
+    assert lay["unsettled"].tolist() == [False, True]
+    back = core.settle(core.check_bets(S._back_to_lay(x, 0.5, stake=20.0)))
+    assert back["pnl"].iloc[0] == pytest.approx(0.5 * 80.0 - 0.5 * 20.0) and back["void"].iloc[1]
+
+
+def test_a_race_with_two_place_markets_is_counted_and_not_paired(raw, capsys):
+    rr, bp = raw[0], raw[1]
+    rr, bp = rr[rr["race_date"].between("2025-01-01", "2025-03-31")], bp[bp["race_date"].between("2025-01-01", "2025-03-31")]
+    pl = bp[bp["market_type"] == "place"]
+    eid = pl["event_id"].iloc[0]
+    second = pl[pl["event_id"] == eid].assign(event_id=9_999_999, id=lambda t: t["id"] + 50_000_000)
+    second["win_lose"] = second["win_lose"].to_numpy()[::-1]                   # other terms: another market
+    capsys.readouterr()
+    one = D.build_frames(rr, bp, place_chance=False, styles=False)["pairs"]
+    assert "races with more than one place market 0 " in capsys.readouterr().out
+    two = D.build_frames(rr, pd.concat([bp, second], ignore_index=True), place_chance=False, styles=False)["pairs"]
+    assert "races with more than one place market 1 " in capsys.readouterr().out
+    gone = one[one["p_event_id"] == eid]
+    assert len(gone) >= 5 and len(two) == len(one) - len(gone)
+    assert not two["p_event_id"].isin([eid, 9_999_999]).any() and not two["event_id"].isin(gone["event_id"]).any()
+
+
+def test_a_horse_twice_in_a_day_never_reads_its_own_race_as_an_earlier_run(frames):
+    w = frames["win"]
+    race = w[(w["race_date"] >= "2025-06-01") & w["bsp"].notna()]
+    race = race[race["event_id"] == race["event_id"].iloc[0]]
+    again = race.assign(event_id=9_999_998, bp_id=race["bp_id"] + 50_000_000, rk=lambda t: t["race_date"] + "|9999998")
+    w2 = pd.concat([w, again], ignore_index=True).sort_values(["race_date", "event_ts", "event_id", "bp_id"],
+                                                               kind="stable").reset_index(drop=True)
+    was, now = S._history(frames), S._history({"win": w2})
+    assert not now.index.isin(race["bp_id"]).any() and not now.index.isin(again["bp_id"]).any()    # no history
+    assert len(now) == len(was) - len(race)
+    later = w[w["horse_norm"].isin(race["horse_norm"]) & (w["race_date"] > race["race_date"].iloc[0]) & w["bsp"].notna()]
+    assert len(later) and (now.loc[later["bp_id"], "h_n"].to_numpy() == was.loc[later["bp_id"], "h_n"].to_numpy() - 1).all()
+    other = was.index[~was.index.isin(race["bp_id"]) & ~was.index.isin(later["bp_id"])]
+    pd.testing.assert_frame_equal(was.loc[other], now.loc[other])
+    picked = S.s093({"win": w2})                                               # ... and such a row is never selected
+    assert not picked["race_key"].isin(set(race["rk"]) | set(again["rk"])).any()
+
+
+LEARNED = ["S077", "S078", "S092", "S094"]            # LightGBM fits by calendar year: their FEATURES are compared
+
+
+@pytest.mark.parametrize("cut", ["2024-06-30", "2022-06-30"])
+def test_lookahead_nothing_after_a_day_moves_an_order_to_that_day(raw, frames, built, cut):
+    """Every row after ``cut`` removed (one cut inside CONFIRM, one inside SELECT): every strategy's and benchmark's
+    orders, prices, stakes and fills to that day stand, and so do the learned models' feature frames (their fits
+    are by calendar year and are not run again here). A quantity fitted on the whole sample or on later years (a
+    gate, a threshold, a table) fails here; a shuffle within the race cannot see one."""
+    from research.paper import morning_features as MF
+    cols = ORDER + ["void"]
+
+    def to_cut(bets):
+        b = core.check_bets(bets)
+        return b[b["race_date"] <= cut].sort_values(KEYS, kind="stable").reset_index(drop=True)[cols]
+    rr, bp = raw
+    tr = D.build_frames(rr[rr["race_date"] <= cut].copy(), bp[bp["race_date"] <= cut].copy())
+    assert tr["days"][-1] <= cut
+    seen = 0
+    for s in S.STRATEGIES:
+        if s.id in LEARNED:
+            continue
+        was, now = to_cut(built[s.id]), to_cut(s.build(tr))
+        pd.testing.assert_frame_equal(was, now, check_exact=False, rtol=1e-9, obj=f"{s.id} to {cut}")
+        seen += len(was) > 0
+    assert seen == (32 if cut >= S.K9_SELECT_FROM else 29)  # 28 strategies, 4 benchmarks; S069, S070, S076 start 2023
+    full, part = S._touch_frame(frames), S._touch_frame(tr)
+    full = full[full["race_date"] <= cut]
+    assert len(full) == len(part) > 1000 and (full["id"].to_numpy() == part["id"].to_numpy()).all()
+    for c in S.NOTOUCH_FEATS + ["dob", "d15", "won"]:
+        assert np.allclose(full[c].to_numpy(float), part[c].to_numpy(float), equal_nan=True), c
+    full, part = MF.build(S._steamer_input(frames)), MF.build(S._steamer_input(tr))
+    full = full[full["race_date"] <= cut]
+    assert len(full) == len(part) > 1000 and (full["id"].to_numpy() == part["id"].to_numpy()).all()
+    for c in MF.CLEAN:
+        assert np.allclose(full[c].to_numpy(float), part[c].to_numpy(float), equal_nan=True), c
