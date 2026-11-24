@@ -39,6 +39,7 @@ on:
           - buchdahl
           - bf_lab_stack
           - win_prob
+          - strategy_100
           - warehouse
           - warehouse_models
       days:
@@ -216,6 +217,11 @@ jobs:
         run: |
           mkdir -p out
           python -m research.open_close.football_win_prob --out-json out/win_prob.json
+      - name: Up to 100 trading strategies on Betfair's prices and the results (football-strategy-100-1124)
+        if: inputs.job == 'strategy_100'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_strategy_100 --out-json out/strategy_100.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
