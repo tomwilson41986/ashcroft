@@ -184,7 +184,19 @@ def early_books(gs, gold: pd.DataFrame) -> pd.DataFrame:
     # under an older name, used where the newer column is empty (checked 3 Nov 2026: the two never overlap)
     older = {"AvgH": "BbAvH", "AvgD": "BbAvD", "AvgA": "BbAvA", "MaxH": "BbMxH", "MaxD": "BbMxD", "MaxA": "BbMxA",
              "Avg>2.5": "BbAv>2.5", "Avg<2.5": "BbAv<2.5", "Max>2.5": "BbMx>2.5", "Max<2.5": "BbMx<2.5"}
+    # the owner, 24 Nov 2026: Betfair's own handicap prices against the market average's, and how many books priced the
+    # match (Betbrain's counts to 2018/19; the bookmaker 1X2 columns with an opening price from then on)
+    cols.update({"BFEAHH": "bk_bfe_ahh", "BFEAHA": "bk_bfe_aha", "AvgAHH": "bk_avg_ahh", "AvgAHA": "bk_avg_aha"})
+    older.update({"AvgAHH": "BbAvAHH", "AvgAHA": "BbAvAHA"})
     out = pd.DataFrame({"match_id": ids["match_id"]})
+    from football.data import BOOKS
+    single = [b for b in BOOKS if b not in ("Max", "Avg", "BbMx", "BbAv", "BFE", "BF")]
+    have = [f"{b}H" for b in single if f"{b}H" in ids.columns]
+    n_now = (ids[have].apply(pd.to_numeric, errors="coerce") > 1.0).sum(axis=1) if have else 0
+    for src, dst in (("Bb1X2", "bk_n_1x2"), ("BbOU", "bk_n_ou"), ("BbAH", "bk_n_ah")):
+        v = pd.to_numeric(ids[src], errors="coerce") if src in ids.columns else pd.Series(np.nan, index=ids.index)
+        out[dst] = v.where(v > 0)
+    out["bk_n_1x2"] = out["bk_n_1x2"].fillna(pd.Series(np.where(np.asarray(n_now) > 0, n_now, np.nan), index=ids.index))
     for src, dst in cols.items():
         v = pd.to_numeric(ids[src], errors="coerce") if src in ids.columns else pd.Series(np.nan, index=ids.index)
         if src in older and older[src] in ids.columns:

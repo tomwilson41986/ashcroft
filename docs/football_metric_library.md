@@ -2,7 +2,7 @@
 
 Every metric family we know of, what it measures, and whether we hold it. Generated from `football/metric_library.py`; `tests/test_football_metric_library.py` checks every built entry against the code.
 
-**94 entries**: 49 built, 10 built on 24 Nov 2026 and under test (`football-feature-batch-1124`, `football-tactics-batch-1124`, `football-sportmonks-xg-1124`), 14 where we hold the data and have not built the metric, 21 where we do not hold the data.
+**97 entries**: 51 built, 11 built on 24 Nov 2026 and under test (`football-feature-batch-1124`, `football-tactics-batch-1124`, `football-sportmonks-xg-1124`, `football-fd-lines-1124`, `football-sportmonks-pred-1124`), 14 where we hold the data and have not built the metric, 21 where we do not hold the data.
 
 
 ## Market
@@ -23,8 +23,11 @@ Every metric family we know of, what it measures, and whether we hold it. Genera
 | Soft books against the sharp book, dispersion | bookmakers' disagreement at the open | several bookmakers | Built | `football/blocks/book_gaps.py` |
 | Market average against Betfair | the average book's price less the exchange's | bookmaker average + Betfair | Built | `football/blocks/avg_anchor.py` |
 | Margin, favourite, draw price, early gap | the state of the book | prices | Built | `football/blocks/market_state.py` |
+| Betfair against the average on the handicap and goals; handicap line moves; books pricing the match | the exchange's two-way prices against the bookmakers', each side's history of line moves, a liquidity count | football-data.co.uk results and match counts | Built | `football/blocks/fd_lines.py` |
 | Spread, depth, queue, traded money, microprice, order flow | the exchange book itself | our recorded Betfair books | Built | `football/feed_features.py` |
 | Robust close | the median of the last prints, not the last one | Betfair historic price files | Built | `research/open_close/football_bf_robust_close.py` |
+| Bookmakers' 1X2 consensus near the kick-off, incl. European and international matches | the mean margin-free chance of up to 19 bookmakers, the best price, the number of books | Sportmonks Odds & Predictions bundle | Built | `sources/sportmonks.py` |
+| A provider's own match prediction against the opening price | Sportmonks' result, over/under 2.5 and both-teams-to-score chances less the price's | Sportmonks Odds & Predictions bundle (timestamped snapshots from 24 Nov 2026) | Built 24 Nov, under test | `football/blocks/sm_pred.py` |
 | Volume-weighted price, volume profile in history | traded money at each price back through the years | Betfair ADVANCED plan | Data not held | - |
 
 ## Results and ratings

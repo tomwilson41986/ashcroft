@@ -57,3 +57,20 @@ def test_the_stage_pairs_sportmonks_rows_with_canonical_matches():
     if len(out):                                      # paired when the names resolve to the canonical ids
         assert out.iloc[0]["smx_xg_xg_h"] == 1.7
     assert stage.build(gold, None).empty
+
+
+def test_predictions_and_the_bookmaker_consensus_are_read_from_a_fixture():
+    pr = sm.predictions([{"type": {"name": "Fulltime Result Probability"}, "predictions": {"home": 50.0, "draw": 30.0,
+                                                                                         "away": 20.0}},
+                         {"type": {"name": "Over/Under 2.5 Probability"}, "predictions": {"yes": 55.5, "no": 44.5}},
+                         {"type": {"name": "Corners Over/Under 10 Probability"}, "predictions": {"yes": 40.0}}])
+    assert pr == {"pr_ft_h": 0.5, "pr_ft_d": 0.3, "pr_ft_a": 0.2, "pr_o25": 0.555}
+
+    def o(book, label, v, t="2026-11-22 14:00:00"):
+        return {"market_id": 1, "bookmaker_id": book, "label": label, "value": v, "latest_bookmaker_update": t}
+    od = sm.odds_1x2([o(1, "Home", "2.0"), o(1, "Draw", "4.0"), o(1, "Away", "4.0"),
+                      o(2, "Home", "2.2"), o(2, "Draw", "3.6"), o(2, "Away", "3.8", "2026-11-22 14:30:00"),
+                      o(3, "Home", "2.1"), {"market_id": 2, "bookmaker_id": 3, "label": "Over", "value": "1.9"}])
+    assert od["od_books"] == 2 and od["od_max_h"] == 2.2 and od["od_last_update"] == "2026-11-22 14:30:00"
+    assert abs(od["od_q_h"] + od["od_q_d"] + od["od_q_a"] - 1) < 1e-12
+    assert sm.odds_1x2([]) == {}

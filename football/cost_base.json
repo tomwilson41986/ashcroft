@@ -1,0 +1,12 @@
+{
+ "note": "racing2 football running costs, kept by the owner's ask of 24 Nov 2026 ('maintain this cost ... our model has to earn more than its cost base'). Amounts as the owner's accounts show them; 'not known' where no figure has been given. A strategy is profitable only after these.",
+ "fx": {"EUR_GBP": 0.83673, "source": "ECB reference rate 23 Nov 2026 via api.frankfurter.app (read 24 Nov 2026)"},
+ "items": [
+  {"name": "Sportmonks (Pro trial, Pressure Index & xG bundle, Odds & Predictions bundle, Euro Club Tournaments, International Tournaments)",
+   "amount": 1159, "currency": "EUR", "per": "month", "first_charge": "2026-12-08",
+   "source": "my.sportmonks.com/subscriptions, the owner's screenshot of 24 Nov 2026: 'Billing, Monthly Billing, EUR1,159 /mo, Next charge: 8 Dec 2026'"},
+  {"name": "API-Football Pro plan", "amount": null, "currency": null, "per": "month", "source": "not known: no figure given"},
+  {"name": "Betfair Historic Data (BASIC soccer, bought)", "amount": null, "currency": null, "per": "one-off", "source": "not known: no figure given"},
+  {"name": "AWS (S3) and GitHub Actions runners", "amount": null, "currency": null, "per": "month", "source": "not known: no figure given"}
+ ]
+}

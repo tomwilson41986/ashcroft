@@ -1176,3 +1176,14 @@ points); output `reports/football_runs/tactics_batch_1124.json`. Base: the model
   differently; as built, they add nothing.
 - Reading: the score-state effect is real in football, but the closing price already carries it; the coarse
   shape (back three, four or five) carries no information the price lacks.
+
+
+## Betfair handicap and goals prices, handicap line moves, book counts (24 Nov 2026)
+
+Registered as `football-fd-lines-1124` before the run; run 45371459928; output `reports/football_runs/fd_lines_1124.json`.
+Base: the model with `sim` and `style` (Betfair skill 8.98%).
+
+- **`fd_lines` does not keep its place.** Betfair -0.04 (-0.12 to +0.04); Pinnacle +0.06 (-0.00 to +0.13).
+- Coverage (fitted seasons / from 2025): fl_bfe_ah_gap 7% / 79%; fl_bfe_ou_gap 8% / 93%; fl_n_books 100% / 100%; fl_n_ah 50% / 0%; fl_line_move_diff 49% / 100%; fl_ah_price_move_diff 49% / 100%; fl_line_moved_share 49% / 100%. Betfair's own handicap and goals prices are in football-data's files
+  only in recent seasons (under 10% of the fitted rows), so those two features were learnt from little; the line-move
+  and book-count features cover every season and add nothing.
