@@ -1,0 +1,392 @@
+{
+ "rows": {
+  "bronze_index": 305485,
+  "checkpoint": 16158376,
+  "country_strength": 271,
+  "definition": 8096267,
+  "event": 101522,
+  "goal": 250509,
+  "goal_check": 91054,
+  "implied": 1111616,
+  "inplay": 96681,
+  "inplay_minute": 11230228,
+  "link": 101522,
+  "market": 305485,
+  "move": 10463663,
+  "path": 1860839,
+  "rating_gap": 486414,
+  "runner": 7227813,
+  "spell": 2145918,
+  "team": 12532,
+  "team_link": 12532,
+  "team_match": 203028,
+  "team_rating": 203028,
+  "team_summary": 12285,
+  "tick": 47532921,
+  "timeline": 96692
+ },
+ "ticks": {
+  "all": 47532921,
+  "pre_off": 17750375,
+  "in_play": 29774412,
+  "after_the_off_not_in_play": 8134
+ },
+ "markets": {
+  "all": 305485,
+  "turned_in_play": 290068,
+  "never_in_play": 15417,
+  "turned_in_play_more_than_once": 69,
+  "kickoff_time_rewritten_at_or_after_the_off": 15431,
+  "rescheduled_before_the_off": 13688,
+  "price_updates_outside_betfairs_range": 3,
+  "never_in_play_but_traded_after_the_scheduled_off": 2159
+ },
+ "markets_by_type": {
+  "ASIAN_HANDICAP": 101798,
+  "MATCH_ODDS": 101834,
+  "OVER_UNDER_25": 101853
+ },
+ "events": {
+  "all": 101522,
+  "went_in_play": 96692,
+  "with_a_result": 99082,
+  "void": 2408,
+  "full_closing_1x2": 98341,
+  "all_three_markets": 101391,
+  "no_country_code": 10864,
+  "rescheduled_before_the_off": 5149,
+  "turned_in_play_more_than_once": 24,
+  "first_kickoff": "2021-04-07 12:00:31+00:00",
+  "last_kickoff": "2050-06-12 10:00:00+00:00",
+  "kickoff_delay_s": {
+   "median": 83.0,
+   "p90": 275.0,
+   "p99": 964.0
+  }
+ },
+ "events_by_category": {
+  "senior": 87138,
+  "reserves": 5323,
+  "youth": 5042,
+  "women": 4019
+ },
+ "closing_1x2_against_results": {
+  "matches_with_a_fresh_full_closing_book": 78830,
+  "p_home": 0.4373,
+  "home_rate": 0.4345,
+  "p_draw": 0.2481,
+  "draw_rate": 0.2486,
+  "p_away": 0.3146,
+  "away_rate": 0.3169
+ },
+ "match_odds_home_by_checkpoint": {
+  "4320": {
+   "rows": 12965,
+   "book_complete": 0.7153,
+   "schedule_known": 0.9384
+  },
+  "1440": {
+   "rows": 38538,
+   "book_complete": 0.7315,
+   "schedule_known": 0.9705
+  },
+  "720": {
+   "rows": 59953,
+   "book_complete": 0.7804,
+   "schedule_known": 0.9781
+  },
+  "360": {
+   "rows": 81347,
+   "book_complete": 0.8613,
+   "schedule_known": 0.9823
+  },
+  "180": {
+   "rows": 90064,
+   "book_complete": 0.9094,
+   "schedule_known": 0.9849
+  },
+  "120": {
+   "rows": 92436,
+   "book_complete": 0.9247,
+   "schedule_known": 0.9858
+  },
+  "90": {
+   "rows": 93668,
+   "book_complete": 0.9339,
+   "schedule_known": 0.9866
+  },
+  "60": {
+   "rows": 94795,
+   "book_complete": 0.943,
+   "schedule_known": 0.9877
+  },
+  "45": {
+   "rows": 95709,
+   "book_complete": 0.9532,
+   "schedule_known": 0.9898
+  },
+  "30": {
+   "rows": 96383,
+   "book_complete": 0.9599,
+   "schedule_known": 0.9925
+  },
+  "15": {
+   "rows": 97405,
+   "book_complete": 0.9704,
+   "schedule_known": 0.9961
+  },
+  "5": {
+   "rows": 97950,
+   "book_complete": 0.9773,
+   "schedule_known": 0.9983
+  },
+  "1": {
+   "rows": 98091,
+   "book_complete": 0.9881,
+   "schedule_known": 0.9988
+  },
+  "0": {
+   "rows": 99146,
+   "book_complete": 0.9898,
+   "schedule_known": 1.0
+  }
+ },
+ "checkpoint_rows_before_the_close": {
+  "rows": 14003174,
+  "schedule_not_known": 182411
+ },
+ "implied_at_the_close": {
+  "events": 98781,
+  "with_goal_expectancies": 92266,
+  "total_mean": 2.8431,
+  "supremacy_mean": 0.3015,
+  "rho_median": -0.0833,
+  "books_no_one_market_could_make": 163,
+  "p_over_mean": 0.5295
+ },
+ "handicap_against_1x2_at_t60_fresh_books": {
+  "rows": 6258,
+  "sd_goals": 0.0623,
+  "median_goals": -0.0042,
+  "median_by_line": {
+   "-0.5": {
+    "rows": 1062,
+    "median_goals": -0.002
+   },
+   "0.0": {
+    "rows": 808,
+    "median_goals": 0.0016
+   },
+   "0.5": {
+    "rows": 587,
+    "median_goals": 0.0014
+   }
+  }
+ },
+ "move_rows_the_model_reads": {
+  "rows": 1017903,
+  "cp_fresh": 409812,
+  "usable": 388203,
+  "schedule_not_known": 12186
+ },
+ "match_odds_home_at_t60_by_tier": {
+  "A": {
+   "rows": 6189,
+   "usable": 5677
+  },
+  "B": {
+   "rows": 15423,
+   "usable": 9253
+  },
+  "C": {
+   "rows": 38415,
+   "usable": 7413
+  },
+  "D": {
+   "rows": 29342,
+   "usable": 1179
+  }
+ },
+ "inferred_timelines": {
+  "matches": 96692,
+  "usable": 72846,
+  "usable_and_score_agrees_with_the_settlement": 72842,
+  "usable_and_the_prices_alone_agree": 51412,
+  "goals": 250509,
+  "goals_without_a_minute": 23818
+ },
+ "in_play": {
+  "matches": 96681,
+  "with_a_summary": 89285,
+  "with_a_performance": 88400,
+  "perf_home_mean": -0.0105,
+  "perf_away_mean": 0.0071,
+  "perf_sd": 0.5478,
+  "minute_rows": 11230228,
+  "minutes_ok": 7558621,
+  "minutes_score_ok": 7138715,
+  "chances_against_results_by_minute": {
+   "15": {
+    "rows": 64206,
+    "p_home": 0.4414,
+    "home_rate": 0.4384,
+    "p_draw": 0.2449,
+    "draw_rate": 0.2473
+   },
+   "30": {
+    "rows": 65458,
+    "p_home": 0.4392,
+    "home_rate": 0.4375,
+    "p_draw": 0.2467,
+    "draw_rate": 0.2476
+   },
+   "75": {
+    "rows": 71486,
+    "p_home": 0.4283,
+    "home_rate": 0.4251,
+    "p_draw": 0.2566,
+    "draw_rate": 0.2584
+   },
+   "90": {
+    "rows": 75116,
+    "p_home": 0.4122,
+    "home_rate": 0.4116,
+    "p_draw": 0.2746,
+    "draw_rate": 0.2744
+   },
+   "105": {
+    "rows": 69902,
+    "p_home": 0.3824,
+    "home_rate": 0.3832,
+    "p_draw": 0.3117,
+    "draw_rate": 0.3109
+   }
+  }
+ },
+ "ratings": {
+  "team_match_rows": 203028,
+  "with_a_rating_of_their_own": 186269,
+  "closes_that_rate": 179686,
+  "largest_pool_teams": 6608,
+  "gap_rows": 486414,
+  "gap_rows_linked_share": 0.8817
+ },
+ "club": {
+  "teams": 12285,
+  "ranked": 4140,
+  "largest_pool_teams": 6129,
+  "ranked_by_category": {
+   "senior": 3483,
+   "women": 246,
+   "youth": 223,
+   "reserves": 188
+  },
+  "strongest_senior_sides": [
+   "Arsenal 3.14",
+   "Barcelona 3.12",
+   "Bayern Munich 3.07",
+   "Man City 3.03",
+   "Real Madrid 3.00",
+   "Inter 2.79",
+   "Paris St-G 2.79",
+   "Liverpool 2.68",
+   "Atletico Madrid 2.64",
+   "Chelsea 2.64",
+   "Benfica 2.63",
+   "Brighton 2.62"
+  ],
+  "strongest_countries_senior_top5": [
+   "GB 2.82",
+   "ES 2.65",
+   "IT 2.53",
+   "DE 2.52",
+   "FR 2.17",
+   "PT 2.15",
+   "NL 2.01",
+   "TR 1.96",
+   "SA 1.89",
+   "BE 1.82"
+  ],
+  "points_against_expectation": {
+   "team_matches": 194450,
+   "mean": -0.0006,
+   "se": 0.0027,
+   "sd": 1.184,
+   "sd_performance": 0.54,
+   "sd_luck": 0.848
+  },
+  "what_forecasts_a_teams_later_points": {
+   "teams": 2450,
+   "corr_points_so_far_with_later_points": 0.437,
+   "corr_expected_points_so_far_with_later_points": 0.558,
+   "later_points_on_both": {
+    "points_so_far": -0.044,
+    "expected_points_so_far": 0.792
+   },
+   "performance_first_half_with_second": 0.063,
+   "luck_first_half_with_second": -0.031
+  },
+  "performance_by_expected_points_even_months": {
+   "0 to 0.5": {
+    "team_matches": 5373,
+    "raw": 0.0286,
+    "perf": -0.0157,
+    "perf_se": 0.0046
+   },
+   "0.5 to 1": {
+    "team_matches": 19328,
+    "raw": 0.0258,
+    "perf": 0.0012,
+    "perf_se": 0.0036
+   },
+   "1 to 1.5": {
+    "team_matches": 29540,
+    "raw": 0.006,
+    "perf": 0.002,
+    "perf_se": 0.0034
+   },
+   "1.5 to 2": {
+    "team_matches": 23600,
+    "raw": -0.0214,
+    "perf": -0.0045,
+    "perf_se": 0.0038
+   },
+   "2 to 2.5": {
+    "team_matches": 10692,
+    "raw": -0.0336,
+    "perf": 0.0043,
+    "perf_se": 0.0049
+   },
+   "2.5 to 3": {
+    "team_matches": 2695,
+    "raw": -0.0416,
+    "perf": 0.0163,
+    "perf_se": 0.0066
+   }
+  }
+ },
+ "link": {
+  "events": 101522,
+  "linked": 93866,
+  "by_method": {
+   "exact": 48165,
+   "team_anchor": 35291,
+   "team_map": 9903,
+   "fuzzy": 506,
+   "alias": 1
+  },
+  "settlement_against_the_fixtures_score": {
+   "result_known": 93127,
+   "result_agrees": 93107,
+   "over25_known": 93126,
+   "over25_agrees": 93110
+  }
+ },
+ "inferred_goals_against_real_ones": {
+  "matches": 91054,
+  "score_agrees": 79512,
+  "score_known": 91054,
+  "usable": 69780,
+  "usable_and_score_agrees": 64804
+ }
+}

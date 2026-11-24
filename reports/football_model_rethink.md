@@ -1213,3 +1213,35 @@ Reading: `sm_xg` keeps its place by the registered rule, with the lower bound on
 candidate, not a pass, because these Betfair rows also tested earlier rules. Both arms lose when costed a tick off fair.
 The xG narrows that loss by about 0.1 point. On this evidence the data adds a little skill but does not by itself
 earn the subscription (EUR1,159 a month, `football/cost_base.json`).
+
+## Sportmonks predictions on Betfair's own moves, walk-forward by month (24 Nov 2026)
+
+Registered as `football-sportmonks-pred-1124-monthly` before the run. Source: football-research.yml run 45387653032,
+`reports/football_runs/sportmonks_pred_monthly_1124.json`. Same rows and design as the xG test above (13,578 tested
+rows, 481 match days); the 5 `sp_` features are present on 90.6% of them.
+
+| Arm | Features | Skill vs no move | vs base (points) | 95% interval |
+|---|---|---|---|---|
+| base | 144 | 15.19% | - | - |
+| sm_pred | 149 | 15.52% | +0.33 | +0.03 to +0.61 |
+
+Costed a tick off fair: at 0.03, 10,157 bets, -1.36% (base -1.40%); at 0.05, 5,641 bets, -1.15% (base -1.32%).
+
+Reading: it keeps its place by the registered rule, but as an upper bound. Sportmonks' stored predictions carry no
+timestamp, so some may have been made after the early price. The clean test is the nightly timestamped snapshots,
+which began on 24 Nov. Costed, it still loses.
+
+## The 2025 Betfair files in the warehouse (24 Nov 2026)
+
+Source: football-research.yml run 45384655567 (job warehouse), `reports/football_runs/warehouse_2025_1124/`.
+The 2025 bundle (`owner_drive_2025`) was ingested to bronze in run 45377346250; this run rebuilt gold after the
+`gold_event` fix.
+
+- Quality: PASS, 50 checks, 0 hard and 0 soft failures (`warehouse_quality.md`).
+- Held now: 305,485 market files (0 unreadable), 101,522 events, 20 monthly partitions from April 2025 to November 2026.
+  Five events carry placeholder kick-offs (1970, 2021, 2024, 2030, 2050) and sit outside those months.
+- Markets: match odds 101,834, over/under 2.5 101,853, Asian handicap 101,798. Ticks: 47.5m (17.8m before the off).
+- Events with a result: 99,082. A full closing 1X2: 98,341. Closing chances against results (78,830 matches with a fresh
+  full book): home 43.7% vs 43.5%, draw 24.8% vs 24.9%, away 31.5% vs 31.7%.
+- Linked to API-Football fixtures: 93,866 of 101,522 (92.5%); results agree on 93,107 of 93,127. Teams mapped: 75.9%.
+- Move rows the closing-price model reads: 1,017,903, of which 388,203 are usable (fresh book, schedule known).
