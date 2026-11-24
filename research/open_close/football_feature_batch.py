@@ -38,6 +38,16 @@ def configure(batch: str = "first") -> None:
     ra.COSTED = ("base", "all_new")
 
 
+def coverage(cache: str, new: list[str]) -> dict:
+    """The share of rows with a value, a new feature: the seasons the models are fitted on, and 2025/26."""
+    from football import lab
+    m, bfeat = lab.add_blocks(lab.latest(cache), new)
+    d = lab.prepared(m)
+    fit, test = d[d["season"].between(ra.TRAIN_FROM, 2024)], d[d["season"] >= 2025]
+    return {b: {f: {"fitted_seasons": round(float(fit[f].notna().mean()), 4),
+                    "from_2025": round(float(test[f].notna().mean()), 4)} for f in bfeat[b]} for b in new}
+
+
 def run(cache: str, only: list[str] | None = None, batch: str = "first") -> dict:
     from football.blocks import available
     configure(batch)
@@ -46,6 +56,7 @@ def run(cache: str, only: list[str] | None = None, batch: str = "first") -> dict
     mods = available()
     res["blocks"] = {b: list(mods[b].FEATURES) for b in new}
     res["kept_in_base"] = kept
+    res["coverage"] = coverage(cache, new)
     res["tag"] = tag
     return res
 
