@@ -38,6 +38,7 @@ on:
           - bf_tune
           - buchdahl
           - bf_lab_stack
+          - win_prob
           - warehouse
           - warehouse_models
       days:
@@ -210,6 +211,11 @@ jobs:
       - name: The Betfair-native model with the lab's forecast as one feature (football-bf-lab-stack-1124)
         if: inputs.job == 'bf_lab_stack'
         run: python -m research.open_close.football_bf_lab_join --stack --cache .football_cache --out-json out/bf_lab_stack.json
+      - name: The most accurate win probability, scored on results (football-win-prob-1124)
+        if: inputs.job == 'win_prob'
+        run: |
+          mkdir -p out
+          python -m research.open_close.football_win_prob --out-json out/win_prob.json
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
