@@ -96,7 +96,27 @@ The normal order path is clean: matched +0.17% over the best back read, 152 EXPI
 `execution-audit-1021`). The non-runner reductions (-4.66 points) are not an avoidable leak: three tests show
 Betfair's factor is fair.
 
-## 5. What to do next, in order
+## 5. Strategies: 100 tested
+
+The owner asked whether we use the best strategy and for up to 100 others, led by the data. 189 were proposed by eight
+designers, 100 kept and registered before the run (ledger `strat100-1124`), built with tests and two adversarial
+reviews, and scored on three data sets. Full table: `outputs/audit_20261124/strat100_summary.md`.
+
+**No strategy passed the owner's rule**: none beat the live rule in pounds a day with a deflated Sharpe of 0.95 or more.
+
+| | CONFIRM return a pound | 90% interval | Net GBP, 1-23 Nov |
+|---|---|---|---|
+| The live rule, replayed (S001) | +4.69% | +3.37 to +6.09 | +2,184.50 |
+| First backs only, no top-ups (S013) | +7.57% | +5.88 to +9.26 | +1,144.95 |
+| Top-up bar 7% on the real fills (S015) | +7.47% | +5.41 to +9.56 | +1,891.43 |
+| Bar 8% (S003) | +8.43% | +5.93 to +10.96 | +1,364.72 |
+| Target scaled by hours to the off (S019) | +4.76% | +3.35 to +6.25 | +2,356.18 |
+
+Tighter rules earn more a pound but less a day. This agrees with the audit's finding that top-ups dilute the edge.
+The next step is a registered replay of a top-up bar and of S019's staking, not a live change. Lay books, place
+markets, momentum, in-running exits and model-free controls all failed; in-running exits lost 25-33%.
+
+## 6. What to do next, in order
 
 1. **Top-ups** (the largest share of the fall): replay through the trader's code, on the winter card, (a) top-ups
    tested against the read before our own take, (b) a closing model with time to the off, (c) caps 0-3. Partly in the
