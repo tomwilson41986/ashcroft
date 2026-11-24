@@ -2,7 +2,7 @@
 
 Every metric family we know of, what it measures, and whether we hold it. Generated from `football/metric_library.py`; `tests/test_football_metric_library.py` checks every built entry against the code.
 
-**97 entries**: 51 built, 11 built on 24 Nov 2026 and under test (`football-feature-batch-1124`, `football-tactics-batch-1124`, `football-sportmonks-xg-1124`, `football-fd-lines-1124`, `football-sportmonks-pred-1124`), 14 where we hold the data and have not built the metric, 21 where we do not hold the data.
+**98 entries**: 51 built, 12 built on 24 Nov 2026 and under test (`football-feature-batch-1124`, `football-tactics-batch-1124`, `football-sportmonks-xg-1124`, `football-fd-lines-1124`, `football-sportmonks-pred-1124`, `football-eu-form-1124`), 14 where we hold the data and have not built the metric, 21 where we do not hold the data.
 
 
 ## Market
@@ -58,6 +58,7 @@ Every metric family we know of, what it measures, and whether we hold it. Genera
 | Home form at home, away form away | venue-specific form | football-data.co.uk results and match counts | Built | `football/blocks/venue_form.py` |
 | Team home and away effect | a side's own home edge beyond the league's, shrunk | football-data.co.uk results and match counts + closes | Built 24 Nov, under test | `football/blocks/venue_fx.py` |
 | Rest days and fixture congestion | days since the last match, matches in the last weeks | fixture list | Built | `football/blocks/rest_days.py` |
+| European matches in a club's form: xG, points above the market, load, rest | Champions, Europa and Conference League games before the collection day, for the club's league matches | Sportmonks Euro Club Tournaments (2024/25 on) | Built 24 Nov, under test | `football/blocks/eu_form.py` |
 | Squad load (minutes in 7 and 14 days) | the expected eleven's recent minutes | API-Football line-ups | Built | `football/blocks/fatigue.py` |
 | Promoted and relegated sides, early season | tier change flags and their fade | football-data.co.uk results and match counts | Built | `football/blocks/home_adv.py` |
 | League effects | shrunk league and tier drift in place of a raw label | football-data.co.uk results and match counts | Built | `football/blocks/league_fx.py` |

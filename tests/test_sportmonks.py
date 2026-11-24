@@ -53,7 +53,8 @@ def test_the_stage_pairs_sportmonks_rows_with_canonical_matches():
     rows = pd.DataFrame(sm.rows(page()))
     rows["kickoff_utc"] = pd.Timestamp("2025-11-22 15:00", tz="UTC")
     out = stage.build(gold, rows)
-    assert list(out.columns) == ["match_id"] + stage.COLUMNS
+    from football.europe_form import COLUMNS as EU
+    assert list(out.columns) == ["match_id"] + stage.COLUMNS + EU
     if len(out):                                      # paired when the names resolve to the canonical ids
         assert out.iloc[0]["smx_xg_xg_h"] == 1.7
     assert stage.build(gold, None).empty

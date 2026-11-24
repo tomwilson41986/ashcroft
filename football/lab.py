@@ -71,7 +71,7 @@ STAGE_CODE = {
     "xg": ["football/xg_features.py", "football/team_features.py", "football/player_ratings.py"],
     "players": ["football/player_ratings.py", "football/team_features.py"],
     "tactics": ["football/tactics.py", "football/player_ratings.py"],
-    "sportmonks": ["football/sportmonks_stage.py", "football/data.py"],
+    "sportmonks": ["football/sportmonks_stage.py", "football/europe_form.py", "football/data.py"],
 }
 
 

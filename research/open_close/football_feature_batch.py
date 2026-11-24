@@ -28,10 +28,11 @@ BATCHES = {"first": ("football-feature-batch-1124", KEPT, NEW),
            "tactics": ("football-tactics-batch-1124", KEPT + ["sim", "style"], ["formation", "match_sim"]),
            "sportmonks": ("football-sportmonks-xg-1124", KEPT + ["sim", "style"], ["sm_xg"]),
            "fd_lines": ("football-fd-lines-1124", KEPT + ["sim", "style"], ["fd_lines"]),
-           "sm_pred": ("football-sportmonks-pred-1124", KEPT + ["sim", "style"], ["sm_pred"])}
+           "sm_pred": ("football-sportmonks-pred-1124", KEPT + ["sim", "style"], ["sm_pred"]),
+           "eu_form": ("football-eu-form-1124", KEPT + ["sim", "style"], ["eu_form"])}
 #: {batch: (first training season, (first, last) Pinnacle test season)}: Sportmonks' xG starts in 2024/25, so its
 #: batch fits both arms on 2024/25 alone and tests 2025/26 (the other batches keep the review arms' settings)
-WINDOWS = {"sportmonks": (2024, (2025, 2025)), "sm_pred": (2024, (2025, 2025))}
+WINDOWS = {"sportmonks": (2024, (2025, 2025)), "sm_pred": (2024, (2025, 2025)), "eu_form": (2024, (2025, 2025))}
 EV_ARM = ra.BASE
 TRAIN_FROM0, DEV0 = ra.TRAIN_FROM, ra.DEV
 
