@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live, sp-debut, sp-offset, sp-offset-seeds, residual-strategies, cut-check or twin-check'
+        description: 'sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live, sp-debut, sp-offset, sp-offset-seeds, residual-strategies, cut-check, twin-check or handicap-marks'
         type: choice
-        options: [sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live, sp-debut, sp-offset, sp-offset-seeds, residual-strategies, cut-check, twin-check]
+        options: [sectional-check, au-model, trainer-check, lay-backtest, take-close-refit, data-audit, edge-models, join-diag, join-aliases, maker-census, paper-vs-live, sp-debut, sp-offset, sp-offset-seeds, residual-strategies, cut-check, twin-check, handicap-marks]
         default: sectional-check
 
 permissions:
@@ -67,6 +67,7 @@ jobs:
             sp-offset) python -m research.greyhound.sp_offset --out out/study ;;
             sp-offset-seeds) python -m research.greyhound.sp_offset --seed-halves 10 --drop-twins --drop-features gp_bsp_ae_car,gp_bsp_mkt_car --out out/study ;;
             residual-strategies) python -m research.greyhound.residual_strategies --out out/study ;;
+            handicap-marks) python -m research.greyhound.handicap_marks --out out/study ;;
             cut-check) python -m research.greyhound.cut_check --cut 2025-06-30 --days 30 --out out/study ;;
             twin-check) python -m research.greyhound.twin_check --out out/study ;;
             *) echo "unknown task"; exit 1 ;;
