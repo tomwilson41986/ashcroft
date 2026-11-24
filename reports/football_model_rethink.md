@@ -1272,3 +1272,248 @@ Reading: null. European form is dropped from the base.
 
 Two blocks add a little skill and one adds none; no arm makes money once costed. As a model input, Sportmonks has not
 earned its cost on this evidence. The clean test of the predictions is the timestamped nightly snapshots.
+
+## The Betfair-native model joined to the lab's features (24 Nov 2026)
+
+Registered as `football-bf-lab-join-1124` before the run. Source: football-research.yml run 45401483958,
+`reports/football_runs/bf_lab_join_1124.json`. Development evidence; last traded prices.
+
+- Rows: 409,806 Betfair checkpoint rows (69,943 events). 76,110 rows (8,881 events) link to one of our canonical
+  matches with the lab's features, outside football-data's collection day; 65,448 scored (241 match days, July 2025
+  to October 2026). The lab's 161 columns are present on 94.6% of the joined rows.
+
+| Arm | Features | Skill vs no move | vs bf (points) | 95% interval |
+|---|---|---|---|---|
+| bf | 87 | 1.10% (-0.62 to +2.56) | - | - |
+| bf + lab | 248 | 0.75% | -0.36 | -1.30 to +0.57 |
+
+By checkpoint (reported, not used to select): 360 minutes +0.82 (-0.11 to +1.83); 120 minutes +1.20 (+0.18 to
++2.14); 60 minutes -0.68 (-1.95 to +0.50); 15 minutes -9.73 (-12.15 to -7.43).
+
+Reading:
+- Not kept. The lab's raw columns do not improve the Betfair-native model overall.
+- The 15-minute loss is overfitting: 161 extra columns on about 7,000 rows a role, against a move that is mostly noise.
+- Two to six hours out the team features may help (+0.8 to +1.2 points).
+- On these matches, our football-data leagues and the liquid ones, the Betfair-native model's own skill is only 1.1%,
+  against 4.6% on every Betfair match. The big leagues' prices are already close to efficient; most of the
+  forecastable move is in the smaller markets.
+- Next: the lab's out-of-sample forecast as a single feature (stacking), read at 360 and 120 minutes, registered before
+  it runs.
+
+## Sportmonks feature batch 2: opposition-adjusted xG, finishing and luck, more statistics (24 Nov 2026)
+
+Registered as `football-sm-feat2-1124` before the run. Source: football-research.yml run 45401499736,
+`reports/football_runs/sm_feat2_monthly_1124.json`. Betfair's own moves, walk-forward by month; 13,578 tested rows,
+481 match days. The base now carries sm_xg and sm_pred: 15.71% skill against no move (15.19% without them).
+
+| Arm | Features | vs base (points) | 95% interval | Coverage | Costed at 0.03 |
+|---|---|---|---|---|---|
+| sm_adj (xG against what each opponent usually allows) | 4 | -0.05 | -0.17 to +0.08 | 83% | -1.27% |
+| sm_luck (finishing, shot quality, goalkeeping, luck, shrunk) | 5 | -0.01 | -0.14 to +0.12 | 83% | -1.26% |
+| sm_style2 (shots on target, saves, crosses, tackles, duels, long passes, corners) | 8 | -0.06 | -0.18 to +0.08 | 83-90% | -1.29% |
+| all three | 17 | -0.01 | -0.17 to +0.15 | | -1.28% |
+
+The base costed at 0.03 returns -1.25%.
+
+Reading: null on every arm, so none joins the base. The market's move to the close already reflects what these
+transformations of the same match data carry. The Sportmonks value is in the raw xG form (sm_xg) and its prediction
+(sm_pred), not in further transformations of them.
+
+## The most accurate win probability, scored on results (24 Nov 2026)
+
+The owner, 24 Nov: the target is the most accurate win probability for each team, then trading around it.
+Registered as `football-win-prob-1124` before the run. Source: football-research.yml run 45405707003,
+`reports/football_runs/win_prob_1124.json`. Every warehouse match with a result and a fresh book at the checkpoint:
+69,027 events; 113,570 scored event-checkpoints over 488 match days (July 2025 to October 2026).
+
+Log loss against the result (lower is better). The change is against Betfair's price at the same checkpoint, paired by day:
+
+| Forecast | Log loss | Saved a match | 95% interval |
+|---|---|---|---|
+| Betfair's price at the checkpoint | 0.97198 | - | - |
+| Recalibrated price | 0.97203 | -0.00005 | -0.00019 to +0.00008 |
+| **Price plus the move model's forecast** | **0.97181** | **+0.00016** | **+0.00005 to +0.00028** |
+| Benter (LightGBM on the result, from the price) | 0.97438 | -0.00241 | -0.00312 to -0.00173 |
+| Betfair's close, the same matches (the ceiling) | 0.96961 | +0.00237 | +0.00176 to +0.00298 |
+
+The price plus the move model's forecast, by checkpoint (saved a match): 360 minutes +0.00006 (-0.00017 to +0.00029);
+120 +0.00027 (+0.00004 to +0.00052); 60 +0.00021 (-0.00002 to +0.00044); 15 +0.00015 (+0.00003 to +0.00027).
+
+Reading:
+- Only one forecast beats the price you can bet at: the price corrected by the move model. It wins about 7% of what
+  the close knows over the checkpoint price.
+- Betfair's normalised prices carry no favourite-longshot bias to remove.
+- A correction learned from results directly overfits: a year and a half of results is too noisy for 87 features.
+- So the win-probability model is "Betfair's price, moved by the forecast of where it closes". It gets better as the
+  move model gets better, and with more seasons of Betfair data (the 2016-2024 bundles).
+
+## More Betfair price-file features for the move model (24 Nov 2026)
+
+Registered as `football-bf-features2-1124`. Source: run 45402661206, `reports/football_runs/bf_features2_1124.json`.
+338,781 scored rows, 518 days; the model with every family reads 4.60% skill on the move (4.21 to 5.00).
+
+| Family added | Coverage | vs full (points) | 95% interval |
+|---|---|---|---|
+| over 2.5 runner's path | 91% | -0.01 | -0.05 to +0.03 |
+| **implied changes into the checkpoint** | 88% | **+0.12** | **+0.07 to +0.18** |
+| trading pace | 96% | +0.01 | -0.02 to +0.04 |
+| all three | | +0.09 | +0.02 to +0.16 |
+
+The implied changes add most at 15 minutes (+0.51 points). They join the move model, and so the win probability.
+
+## Up to 100 trading strategies on Betfair's prices and the results (24 Nov 2026)
+
+The owner, 24 Nov: test all possible trading strategies, up to 100. Registered as `football-strategy-100-1124`
+(97 cells, n_rules 97) before the run. Source: football-research.yml run 45407764718,
+`reports/football_runs/strategy_100_1124.json`. One-unit bets at last traded prices, read at a tick worse each side,
+2% commission. Odd months find, even months confirm; a pass also needs a deflated Sharpe of 0.95 with all 471
+football rules in the ledger counted.
+
+**Four cells pass, all one strategy: back-to-lay when the move model forecasts the chance rising.**
+
+| Pass | Trades | Days | Return a unit staked (worse price) | 90% interval | Odd months | Even months | Deflated Sharpe |
+|---|---|---|---|---|---|---|---|
+| forecast over 5%, 360 minutes | 2,323 | 500 | +5.87% | +4.23 to +7.79 | +4.85% | +6.84% | 0.9998 |
+| forecast over 3%, 360 minutes | 5,781 | 517 | +2.26% | +1.62 to +3.15 | +1.83% | +2.67% | 0.954 |
+| forecast over 5%, 15 minutes | 3,347 | 508 | +4.29% | +2.22 to +7.03 | +3.00% | +5.48% | 0.973 |
+| forecast over 8%, 15 minutes | 1,117 | 423 | +14.08% | +8.10 to +21.72 | +9.58% | +18.45% | 0.971 |
+
+Reading:
+- The only edge in the scan is the move model's, taken as a trade-out. Back where it forecasts the chance shortening
+  and lay at the close.
+- The mirror (lay-to-back on a forecast drift) is close to zero.
+- Every value bet held to the result fails, whether against the win model or the move model, at every edge. So does
+  every model-free cell at the close (favourites, draws, longshots, home underdogs, away favourites), steam and drift,
+  the handicap-against-1X2 cells, and the 25 in-play and close cells of 12 Nov.
+- **This is not yet tradable.** The prices are last traded, not quotes. The checkpoint price may not have been there to
+  back, nor the close to lay. A last trade can also sit on one side of the spread and bounce back, which a move model
+  can learn and no trader can bank.
+- The next test is the four cells as a paper forward test on the recorded live books: the best back and lay with
+  their sizes, from 25 Nov 2026. It will be registered before it runs.
+
+Every cell, sorted by its return at the worse price:
+
+| Strategy | Bets | Return at the worse price | 90% interval | |
+|---|---|---|---|---|
+| C back-to-lay t0.08 cp120 | 588 | +28.06% | +13.65% to +47.03% | lead |
+| B move value lay e0.05 cp360 | 449 | +20.08% | -3.01% to +45.80% |  |
+| B move value back e0.05 cp360 | 815 | +17.18% | -2.68% to +39.99% |  |
+| C back-to-lay t0.08 cp15 | 1,117 | +14.08% | +8.10% to +21.72% | PASS |
+| C back-to-lay t0.08 cp60 | 504 | +13.99% | +7.68% to +21.85% | lead |
+| C back-to-lay t0.08 cp360 | 799 | +13.48% | +9.21% to +18.88% | lead |
+| C back-to-lay t0.05 cp120 | 1,820 | +9.33% | +4.55% to +15.91% | lead |
+| B move value lay e0.05 cp60 | 299 | +7.24% | -10.95% to +26.47% |  |
+| A win value lay e0.1 cp360 | 403 | +7.22% | -14.01% to +34.46% |  |
+| E steamer lay | 205 | +6.79% | -8.77% to +21.64% |  |
+| E drifter back | 176 | +6.47% | -14.74% to +27.48% |  |
+| B move value back e0.02 cp360 | 2,592 | +5.99% | -2.90% to +14.96% |  |
+| C back-to-lay t0.05 cp360 | 2,323 | +5.87% | +4.23% to +7.79% | PASS |
+| C back-to-lay t0.05 cp60 | 1,627 | +4.94% | +2.85% to +7.32% | lead |
+| C back-to-lay t0.05 cp15 | 3,347 | +4.29% | +2.22% to +7.03% | PASS |
+| G Asian handicap main half line close | the longer side | 47,747 | +3.63% | -2.34% to +11.26% |  |
+| C back-to-lay t0.03 cp120 | 4,596 | +3.61% | +1.74% to +5.94% | lead |
+| C back-to-lay t0.03 cp360 | 5,781 | +2.26% | +1.62% to +3.15% | PASS |
+| G price jump | back the gainer | gainer the pre-match favourite | 33,879 | +1.96% | -0.43% to +4.96% |  |
+| B move value lay e0.02 cp360 | 1,882 | +1.72% | -4.47% to +8.65% |  |
+| C lay-to-back t0.08 cp120 | 1,268 | +1.58% | +0.71% to +2.74% |  |
+| C back-to-lay t0.03 cp60 | 4,435 | +1.47% | +0.68% to +2.38% | lead |
+| C lay-to-back t0.08 cp360 | 1,811 | +0.95% | +0.48% to +1.43% | lead |
+| C lay-to-back t0.05 cp120 | 3,821 | +0.56% | +0.20% to +0.98% |  |
+| A win value back e0.05 cp360 | 8,406 | +0.48% | -2.97% to +3.98% |  |
+| C back-to-lay t0.03 cp15 | 9,361 | +0.48% | -0.28% to +1.47% |  |
+| C lay-to-back t0.08 cp60 | 1,034 | +0.42% | -0.08% to +0.96% |  |
+| A win value back e0.1 cp360 | 3,115 | +0.35% | -4.94% to +5.66% |  |
+| G over/under 2.5 close | outsider (chance under 0.40) | tiers C-D | 18,188 | +0.34% | -1.60% to +2.12% |  |
+| C lay-to-back t0.05 cp360 | 5,552 | +0.26% | +0.07% to +0.46% |  |
+| D longshot lay | 11,239 | +0.11% | -0.35% to +0.55% |  |
+| C lay-to-back t0.05 cp60 | 3,326 | +0.10% | -0.14% to +0.34% |  |
+| C lay-to-back t0.03 cp120 | 8,777 | +0.07% | -0.11% to +0.28% |  |
+| C lay-to-back t0.03 cp360 | 12,621 | +0.05% | -0.07% to +0.17% |  |
+| G in-play leader | half time | chance 0.85-0.95 | 5,420 | +0.01% | -0.72% to +0.71% |  |
+| C lay-to-back t0.03 cp60 | 7,967 | -0.15% | -0.27% to -0.02% |  |
+| G in-play leader | half time | chance 0.95-0.99 | 2,137 | -0.33% | -0.96% to +0.28% |  |
+| C lay-to-back t0.08 cp15 | 1,404 | -0.39% | -0.88% to +0.12% |  |
+| G over/under 2.5 close | outsider (chance under 0.40) | tiers A-B | 7,530 | -0.46% | -3.13% to +2.32% |  |
+| C lay-to-back t0.05 cp15 | 4,902 | -0.54% | -0.71% to -0.38% |  |
+| D favourite back 1.01-1.5 | 8,800 | -0.55% | -1.53% to +0.47% |  |
+| D draw back 1.01-3.2 | 5,419 | -0.60% | -3.53% to +2.36% |  |
+| B move value lay e0.02 cp60 | 1,032 | -0.61% | -7.05% to +6.55% |  |
+| G in-play leader | minutes 75-90 | chance 0.95-0.99 | 32,487 | -0.62% | -0.78% to -0.45% |  |
+| C lay-to-back t0.03 cp15 | 14,202 | -0.64% | -0.71% to -0.57% |  |
+| G in-play leader | minutes 75-90 | chance 0.70-0.85 | 51,932 | -0.66% | -1.07% to -0.26% |  |
+| A win value lay e0.02 cp360 | 10,061 | -0.68% | -2.30% to +1.00% |  |
+| G in-play leader | minutes 75-90 | chance 0.85-0.95 | 56,252 | -0.69% | -0.93% to -0.46% |  |
+| G in-play leader | half time | chance 0.70-0.85 | 9,064 | -0.83% | -1.79% to +0.11% |  |
+| D favourite lay 1.5-2.2 | 25,374 | -0.90% | -1.99% to +0.21% |  |
+| D favourite lay 2.2-3.0 | 20,331 | -1.00% | -1.98% to -0.07% |  |
+| D draw lay 3.8-1000.0 | 30,173 | -1.07% | -1.58% to -0.53% |  |
+| G in-play leader | minutes 60-75 | chance 0.95-0.99 | 10,355 | -1.10% | -1.39% to -0.79% |  |
+| G price jump | back the gainer | gainer the pre-match outsider | 23,459 | -1.24% | -3.48% to +1.46% |  |
+| D draw lay 3.2-3.8 | 19,313 | -1.30% | -2.00% to -0.59% |  |
+| G in-play leader | minutes 60-75 | chance 0.70-0.85 | 29,040 | -1.41% | -1.95% to -0.86% |  |
+| G in-play leader | minutes 60-75 | chance 0.85-0.95 | 16,088 | -1.47% | -1.91% to -1.06% |  |
+| G Asian handicap main half line close | the shorter side | 47,747 | -1.59% | -2.20% to -1.00% |  |
+| A win value back e0.1 cp15 | 6,322 | -1.72% | -6.54% to +3.50% |  |
+| A win value back e0.05 cp15 | 17,688 | -1.73% | -4.04% to +0.57% |  |
+| A win value lay e0.02 cp60 | 8,975 | -1.87% | -3.42% to -0.27% |  |
+| F handicap other lay | 1,426 | -1.99% | -7.32% to +3.56% |  |
+| A win value back e0.02 cp15 | 34,825 | -2.06% | -3.54% to -0.55% |  |
+| D draw lay 1.01-3.2 | 5,419 | -2.27% | -3.80% to -0.79% |  |
+| D away favourite lay | 18,448 | -2.28% | -3.51% to -0.95% |  |
+| A win value lay e0.02 cp15 | 19,494 | -2.31% | -3.52% to -1.10% |  |
+| D favourite back 1.5-2.2 | 25,374 | -2.42% | -3.33% to -1.57% |  |
+| D draw back 3.2-3.8 | 19,313 | -2.45% | -4.23% to -0.68% |  |
+| A win value back e0.05 cp60 | 7,776 | -2.47% | -5.49% to +0.57% |  |
+| D favourite back 2.2-3.0 | 20,331 | -2.53% | -3.88% to -1.11% |  |
+| G over/under 2.5 close | favourite (chance over 0.60) | tiers C-D | 18,188 | -2.55% | -3.34% to -1.62% |  |
+| B move value back e0.02 cp60 | 1,738 | -2.69% | -12.14% to +6.84% |  |
+| G over/under 2.5 close | favourite (chance over 0.60) | tiers A-B | 7,530 | -2.71% | -4.19% to -1.33% |  |
+| A win value back e0.1 cp60 | 3,015 | -2.89% | -8.38% to +2.58% |  |
+| G rating gap at T-60 | back the side the ratings favour | 60+ price updates | 3,307 | -2.99% | -8.20% to +2.12% |  |
+| A win value back e0.02 cp360 | 16,328 | -3.02% | -5.02% to -0.77% |  |
+| G rating gap at T-60 | back the side the ratings favour | all rows | 9,628 | -3.15% | -6.47% to +0.27% |  |
+| A win value lay e0.05 cp60 | 2,340 | -3.19% | -6.95% to +0.98% |  |
+| D draw back 3.8-1000.0 | 30,173 | -3.26% | -5.31% to -1.30% |  |
+| B move value back e0.05 cp60 | 475 | -3.26% | -23.38% to +18.47% |  |
+| G pre-match momentum T-360 to T-60 | back the drifter | all rows | 5,493 | -3.72% | -7.81% to +0.57% |  |
+| E steamer back | 205 | -3.73% | -14.40% to +7.84% |  |
+| A win value back e0.02 cp60 | 14,769 | -3.78% | -5.80% to -1.62% |  |
+| G pre-match momentum T-360 to T-60 | back the drifter | 60+ price updates | 2,033 | -4.01% | -10.74% to +2.97% |  |
+| A win value lay e0.05 cp360 | 2,438 | -4.20% | -8.77% to +1.07% |  |
+| G price jump | back the other side | gainer the pre-match outsider | 23,459 | -4.31% | -11.81% to +5.03% |  |
+| A win value lay e0.05 cp15 | 4,801 | -5.04% | -7.87% to -1.85% |  |
+| D home underdog back | 18,815 | -5.71% | -8.23% to -3.14% |  |
+| E drifter lay | 176 | -6.66% | -15.05% to +2.17% |  |
+| D favourite lay 1.01-1.5 | 8,800 | -6.83% | -10.19% to -3.55% |  |
+| G pre-match momentum T-360 to T-60 | back the steamer | all rows | 5,044 | -7.78% | -11.27% to -4.37% |  |
+| G pre-match momentum T-360 to T-60 | back the steamer | 60+ price updates | 2,092 | -7.98% | -12.99% to -3.05% |  |
+| A win value lay e0.1 cp60 | 368 | -8.25% | -22.79% to +6.51% |  |
+| D longshot back | 11,239 | -11.00% | -16.52% to -5.11% |  |
+| F handicap side back | 1,426 | -13.51% | -23.00% to -2.95% |  |
+| A win value lay e0.1 cp15 | 771 | -14.77% | -25.15% to -2.71% |  |
+| G price jump | back the other side | gainer the pre-match favourite | 33,879 | -19.20% | -25.25% to -11.99% |  |
+
+## Buchdahl's tests: margin removal, move retention, football-data's xG (24 Nov 2026)
+
+Registered as `football-buchdahl-1124`. Source: football-research.yml run 45408038115,
+`reports/football_runs/buchdahl_1124.json`.
+
+**Margin removal**: log loss saved a match against proportional removal, with its 95% interval (resampled days):
+
+| Closing prices | Matches | Overround | Additive | Power | Shin | Odds ratio |
+|---|---|---|---|---|---|---|
+| Pinnacle | 160,867 | 3.1% | +0.00022 (0.00014 to 0.00030) | +0.00022 (0.00014 to 0.00030) | +0.00019 | +0.00016 |
+| Market average | 119,877 | 6.8% | +0.00068 (0.00052 to 0.00086) | +0.00067 | +0.00059 | +0.00052 |
+| Bet365 | 61,529 | 6.7% | +0.00054 | +0.00055 (0.00025 to 0.00083) | +0.00049 | +0.00048 |
+
+Proportional removal gives the outsiders too much of the margin back. Additive and power do best everywhere. The
+power method will replace proportional for bookmaker prices in the lab's targets, as its own registered test.
+
+**Move retention on Betfair**: the share of the move into a checkpoint that survives to the close.
+- The last hour's move: 93% overall (92 to 94%). By checkpoint: 87% at 360 minutes, 79% at 120, 91% at 60, 97% at 15.
+- By price updates before the checkpoint: 90% under 20, 97% at 20-59, 99% at 60-149, 101% at 150 and over (99 to 104%).
+- Moves in thin markets partly revert; moves in busy ones hold. That is the stale-price noise the move model can learn
+  and no trader can bank. The back-to-lay paper test reports its trades by activity for that reason.
+
+**football-data's xG columns (HxG, AxG)**: 2,196 matches in 18 divisions since August 2026. Correlation 0.92 with
+Sportmonks' xG on the same matches, 0.05 lower on average. A candidate feature once a full season is held.
