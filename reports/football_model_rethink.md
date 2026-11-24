@@ -1299,3 +1299,22 @@ Reading:
   forecastable move is in the smaller markets.
 - Next: the lab's out-of-sample forecast as a single feature (stacking), read at 360 and 120 minutes, registered before
   it runs.
+
+## Sportmonks feature batch 2: opposition-adjusted xG, finishing and luck, more statistics (24 Nov 2026)
+
+Registered as `football-sm-feat2-1124` before the run. Source: football-research.yml run 45401499736,
+`reports/football_runs/sm_feat2_monthly_1124.json`. Betfair's own moves, walk-forward by month; 13,578 tested rows,
+481 match days. The base now carries sm_xg and sm_pred: 15.71% skill against no move (15.19% without them).
+
+| Arm | Features | vs base (points) | 95% interval | Coverage | Costed at 0.03 |
+|---|---|---|---|---|---|
+| sm_adj (xG against what each opponent usually allows) | 4 | -0.05 | -0.17 to +0.08 | 83% | -1.27% |
+| sm_luck (finishing, shot quality, goalkeeping, luck, shrunk) | 5 | -0.01 | -0.14 to +0.12 | 83% | -1.26% |
+| sm_style2 (shots on target, saves, crosses, tackles, duels, long passes, corners) | 8 | -0.06 | -0.18 to +0.08 | 83-90% | -1.29% |
+| all three | 17 | -0.01 | -0.17 to +0.15 | | -1.28% |
+
+The base costed at 0.03 returns -1.25%.
+
+Reading: null on every arm, so none joins the base. The market's move to the close already reflects what these
+transformations of the same match data carry. The Sportmonks value is in the raw xG form (sm_xg) and its prediction
+(sm_pred), not in further transformations of them.
