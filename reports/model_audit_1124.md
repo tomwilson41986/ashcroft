@@ -67,7 +67,7 @@ The ledger has already tested most alternatives; where it has, the result is cit
 | The served price is short of the BSP by construction (mean ln(pred/BSP) -0.1075): forcing the book to 1 makes it 1/E[1/BSP], while the error metric rewards the median. A constant shift moves the error by 0.0075 with no probability changed; the owner's rule cannot see a price level (MT-2, B1) | medium | reporting added (this PR); a level test to register |
 | The 0.0007 bar holds no fit noise: marginal passes (iter126 -0.00072, iter129 -0.0009) are within seed noise (ME-01) | medium | fold-clustered interval added (this PR) |
 | The deflated Sharpe took its spread from whatever Sharpes were passed while N came from the ledger, so it could deflate by almost nothing (ME-02, B7) | medium | floored at the null variance (this PR) |
-| The pre-publish gate verifies a hybrid and silently skips the comparison with the served model since boosters became .lgb.xz (MT-3, MS-2) | medium | fixed (this PR) |
+| The pre-publish gate verifies a hybrid and silently skips the comparison with the served model since boosters became .lgb.xz (MT-3, MS-2) | medium | the comparison now runs and an unloadable served model fails the gate (this PR); pricing each member on its own still to do |
 | The served recipe exists only in dispatch arguments (MT-5) | medium | noted |
 | Blend weights 1,1,1,0.5,0.5,0.5,0.5,0 set by hand on 28 Sep for members that no longer exist; a cross-fitted gate priced 0.0014 better then (iter105) | known (M4) | the members correlate 0.992-0.995: at most 0.001-0.003 to gain |
 | The "never under our predicted BFSP" guard reads the 03:00 price, not the field that is left after non-runners (B3) | medium | lost bets only; registered test needed |
@@ -79,12 +79,15 @@ already (ledger iter40-105).
 
 | Finding | Severity | Status |
 |---|---|---|
-| A placeOrders reply with status TIMEOUT is booked as "not placed": a back or an SP lay can be placed twice, or a placed lay forgotten (EX-01, EL-01) | high | fixed (this PR): any reply not a clean SUCCESS or FAILURE goes to the lost-reply confirmation |
-| The kill switch reads any S3 error as "not stopped", with no log (EX-04, EL-07, OPS-3) | medium | fixed (this PR): only "no such object" clears; three unreadable checks in a row stop new bets |
+| A placeOrders reply with status TIMEOUT is booked as "not placed": a back or an SP lay can be placed twice, or a placed lay forgotten (EX-01, EL-01) | high | fixed (this PR): any reply not a clean SUCCESS or FAILURE goes to Betfair's own order record (re-read for 15 s); unconfirmed means no second order and new bets stop for the day |
+| The kill switch reads any S3 error as "not stopped", with no log (EX-04, EL-07, OPS-3) | medium | fixed (this PR): only "no such object" clears; three unreadable checks in a row stop new bets; the GBP1,000,000 settled stop-loss is still inert (the owner's number) |
 | Betfair login and logout have no timeout (EX-05) | medium | fixed (this PR) |
-| A transient S3 error at restart is read as "no ledger" (EX-03) | low | fixed (this PR) |
+| A transient S3 error at restart is read as "no ledger" (EX-03) | low | fixed (this PR): retried; if still unreadable, no new backs that day and the day's ledger is never overwritten |
 | No in-day alert when the trader stops itself or leaves a back unhedged (OPS-2) | medium | fixed in the watchdog (this PR) |
-| A trader that dies inside the live job is invisible to the watchdog until 21:30 (OPS-1) | medium | see PR |
+| A trader that dies inside the live job is invisible to the watchdog until 21:30 (OPS-1) | medium | fixed (this PR): a non-zero exit before the end of the session ends the run as failed, so the watchdog restarts it |
+| The old order path (execute.yml every 30 minutes with DRY_RUN false, settle.yml nightly) was still scheduled in the file, disabled only by hand (OPS-9) | medium | fixed (this PR): schedules removed, manual runs dry by default |
+| Predictions fail silently; serving fills missing features with NaN with no guard; results freshness is a log line; an unseen category is read as a real value (OPS-6, MS-3, MS-4, BF-3) | medium | fixed as alerts (this PR): a serving-checks line and sidecar, an alert on the day's issue; no served value changes |
+| The scheduled settle takes its day from the wall clock (OPS-4) | low | fixed (this PR) |
 | No reconciliation with Betfair during the session after a lost reply (EL-02) | medium | to do: periodic sync |
 | A top-up reads the trader's own take as the market shortening (MC-1, EL-04); the expected CLV is over-confident after 07:00 and on later fills (DP4) | medium | registered replay needed: hold the pre-take read for top-ups; a clock term in the closing model |
 | The cap of 3 top-ups was adopted on a floor-biased table; the only replay of fewer top-ups lost (EE-3) | medium | scored in the 100-strategy test (live-rule variants) |

@@ -407,8 +407,8 @@ def main(argv=None) -> dict:
         if unread is not None:
             session.state.stopped = ("the day's ledger could not be read from S3: no new bets (Betfair's record of "
                                      "the orders is taken up, the lays at SP and the settlement carry on)")
-            log.error("%s (%s); this session writes to ledger%s.csv, never over the day's ledger", session.state.stopped,
-                      unread, stem)
+            log.error("%s (%s); this session writes to ledger%s.csv, never over the day's ledger",
+                      session.state.stopped, unread, stem)
         if a.live:
             if rows:
                 session.restore(rows, markets)

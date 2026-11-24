@@ -342,7 +342,8 @@ def serving_checks(card: pd.DataFrame, feature_cols: list[str], model=None, miss
                      + ", ".join(out["all_nan_features"][:10]))
     if unseen:
         flags.append("categories outside the vocabulary, read as the first level: "
-                     + "; ".join(f"{c} {sum(v.values())} runners ({', '.join(list(v)[:5])})" for c, v in unseen.items()))
+                     + "; ".join(f"{c} {sum(v.values())} runners ({', '.join(list(v)[:5])})"
+                                 for c, v in unseen.items()))
     if out.get("nan_in_never_missing"):
         nm = out["nan_in_never_missing"]
         flags.append(f"{len(nm)} features NaN on the card where the trees hold no missing direction (read as 0.0): "
@@ -1059,7 +1060,8 @@ def results_freshness(history_dates, target_date, card=None, max_days: int = FRE
     msg = (f"RESULTS FRESHNESS: results end {out['last_result_day']}, the card is {out['target']}: {gap} days"
            + ("" if out["runners_in_gap"] is None else
               f"; {out['runners_in_gap']} of {out['runners']} runners have run since (their latest run is in no feature)")
-           + ("; every trainer's and jockey's 14 and 30-day window is short for every runner" if gap > max_days else ""))
+           + ("; every trainer's and jockey's 14 and 30-day window is short for every runner"
+              if gap > max_days else ""))
     (log.warning if gap > max_days else log.info)(msg)
     return out
 
