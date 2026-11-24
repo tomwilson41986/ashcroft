@@ -138,7 +138,12 @@ def test_the_trade_job_records_tomorrows_win_markets_the_evening_before_beside_t
     assert line.rstrip().endswith("&")                                     # in the background
     assert '|| TOMORROW=""' in flat                                       # a failed date cannot stop the trading
     trader = flat.index('python auto_trade.py "${ARGS[@]}" --trade-until')
-    assert flat.index("--tag evening") < trader < flat.index('wait "$EVE"') < flat.index("exit $CODE")
+    assert flat.index("--tag evening") < trader < flat.index('wait "$EVE"') < flat.rindex("exit $CODE")
+    # a trader that fails before its end stops the records and fails the run at once, so the watchdog restarts it
+    # (audit OPS-1, 24 Nov 2026); a trader that ends well, or after its UNTIL, waits for the records as before
+    early = flat.index('if [ "$CODE" -ne 0 ] && [[ "$NOW_UK" < "$UNTIL" ]]')
+    assert trader < early < flat.index("kill $REC $OTHER $TOTE $STREAM $EVE") < flat.index("exit $CODE") \
+        < flat.index('wait "$REC"')
 
 
 def test_tomorrows_markets_are_recorded_the_evening_before_apart_and_bounded():

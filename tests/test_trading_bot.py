@@ -385,5 +385,173 @@ def test_the_job_stands_down_without_credentials_and_settles_nothing_untraded(mo
     out = auto_trade.main(["--date", "2026-09-28", "--out", str(tmp_path)])
     assert out["traded"] is False and "BETFAIR_APP_KEY" in out["reason"]
 
-    monkeypatch.setattr(auto_trade, "_s3", lambda: (_ for _ in ()).throw(RuntimeError("no bucket here")))
+    # S3's "no such object" is a day not traded; any other error is not an answer (EX-03: until 24 Nov it was)
+    monkeypatch.setattr(auto_trade, "_s3", lambda: _S3(get=_client_error("NoSuchKey")))
     assert auto_trade.read_ledger(date(2026, 9, 28), tmp_path / "absent.csv") is None
+    monkeypatch.setattr(auto_trade, "_s3", lambda: (_ for _ in ()).throw(RuntimeError("no bucket here")))
+    with pytest.raises(auto_trade.LedgerUnreadable):
+        auto_trade.read_ledger(date(2026, 9, 28), tmp_path / "absent.csv", sleep=lambda _: None)
+
+
+# ---------------------------------------------------------------- S3's answers (EX-03, EX-04; toy S3 clients)
+
+def _client_error(code):
+    from botocore.exceptions import ClientError
+    return ClientError({"Error": {"Code": code, "Message": "toy"}}, "GetObject")
+
+
+class _S3:
+    """A toy S3 client: each call raises the next queued error, or answers once the queue is empty."""
+    def __init__(self, get=None, head=None, body=b"ts,event\n1,back\n"):
+        self.get = list(get) if isinstance(get, list) else ([get] if get else [])
+        self.head = list(head) if isinstance(head, list) else ([head] if head else [])
+        self.body, self.puts, self.gets = body, [], 0
+
+    def get_object(self, Bucket, Key):
+        self.gets += 1
+        if self.get:
+            raise self.get.pop(0)
+        import io
+        return {"Body": io.BytesIO(self.body)}
+
+    def head_object(self, Bucket, Key):
+        if self.head:
+            raise self.head.pop(0)
+        return {}
+
+    def put_object(self, Bucket, Key, Body):
+        self.puts.append(Key)
+
+
+def test_a_transient_s3_error_is_tried_again_and_never_read_as_not_traded(monkeypatch, tmp_path):
+    import auto_trade
+    s3 = _S3(get=[_client_error("SlowDown"), _client_error("SlowDown")])
+    monkeypatch.setattr(auto_trade, "_s3", lambda: s3)
+    waits = []
+    rows = auto_trade.read_ledger(date(2026, 11, 24), tmp_path / "absent.csv", sleep=waits.append)
+    assert rows == [{"ts": "1", "event": "back"}] and s3.gets == 3 and waits == [5, 10]
+    s3 = _S3(get=[_client_error("SlowDown")] * 5)
+    monkeypatch.setattr(auto_trade, "_s3", lambda: s3)
+    with pytest.raises(auto_trade.LedgerUnreadable):
+        auto_trade.read_ledger(date(2026, 11, 24), tmp_path / "absent.csv", sleep=lambda _: None)
+    assert s3.gets == 5
+    for code in ("NoSuchKey", "404", "NotFound"):
+        monkeypatch.setattr(auto_trade, "_s3", lambda c=code: _S3(get=_client_error(c)))
+        assert auto_trade.read_ledger(date(2026, 11, 24), tmp_path / "absent.csv") is None
+
+
+def test_the_ledger_copy_and_publish_of_an_unrestored_session_never_overwrite_the_days(monkeypatch, tmp_path):
+    import auto_trade
+    s3 = _S3()
+    monkeypatch.setattr(auto_trade, "_s3", lambda: s3)
+    f = tmp_path / "l.csv"
+    f.write_text("ts\n")
+    auto_trade.ledger_copier(date(2026, 11, 24), "live")(f, 0)
+    auto_trade.ledger_copier(date(2026, 11, 24), "live", "ledger_unrestored_091500.csv")(f, 0)
+    auto_trade.publish(date(2026, 11, 24), f, {"day": "2026-11-24"}, "live", stem="_unrestored_091500")
+    assert s3.puts == ["trading/live/2026-11-24/ledger.csv", "trading/live/2026-11-24/ledger_unrestored_091500.csv",
+                       "trading/live/2026-11-24/ledger_unrestored_091500.csv",
+                       "trading/live/2026-11-24/summary_unrestored_091500.json"]
+
+
+def test_a_live_restart_that_cannot_read_the_ledger_bets_nothing_new_and_writes_apart(monkeypatch, tmp_path):
+    """EX-03: the restart takes up Betfair's record (sync) but places no new back, and copies its ledger under its
+    own name; the day's ledger.csv in S3 is never written."""
+    import auto_trade
+    for k in ("BETFAIR_USERNAME", "BETFAIR_PASSWORD", "BETFAIR_APP_KEY"):
+        monkeypatch.setenv(k, "x")
+    monkeypatch.setenv("TRADING_LIVE", "yes")
+    s3 = _S3(get=[_client_error("SlowDown")] * 5)
+    monkeypatch.setattr(auto_trade, "_s3", lambda: s3)
+    monkeypatch.setattr(auto_trade, "read_ledger",
+                        lambda *a, **k: (_ for _ in ()).throw(auto_trade.LedgerUnreadable("toy")))
+
+    class Data:
+        recorder = None
+
+        def funds(self):
+            return None
+    monkeypatch.setattr(auto_trade, "BetfairData", lambda recorder=None: Data())
+    seen = {}
+
+    class Ex:
+        def __init__(self, data):
+            pass
+
+        def login(self):
+            pass
+
+        def markets(self, *a):
+            return []
+
+        def orders(self, ids):
+            return []
+
+    class Sess:
+        def __init__(self, exchange, preds, cfg, day, kill=None, ledger_path=None, on_flush=None):
+            from trading.risk import DayState
+            self.state, self.ledger, self.on_flush = DayState(), [], on_flush
+            seen["s"] = self
+
+        def restore(self, rows, markets):
+            pytest.fail("nothing to restore")
+
+        def sync(self, orders):
+            seen["synced"] = True
+
+        def run(self, until):
+            self.on_flush(tmp_path / "x.csv", 1)
+            return {"stopped": self.state.stopped}
+
+        def shutdown(self):
+            pass
+    (tmp_path / "x.csv").write_text("ts\n")
+    monkeypatch.setattr(auto_trade, "LiveExchange", Ex)
+    monkeypatch.setattr(auto_trade, "Session", Sess)
+    monkeypatch.setattr(auto_trade, "load_predictions", lambda *a, **k: pd.DataFrame(
+        {"market_id": ["1.1"], "selection_id": [1], "predicted_bfsp": [3.0]}))
+    monkeypatch.setattr(auto_trade, "email", lambda *a, **k: None)
+    monkeypatch.setattr(auto_trade, "running_totals", lambda mode: None)
+    monkeypatch.setattr(auto_trade.signal, "signal", lambda *a: None)
+    out = auto_trade.main(["--live", "--date", "2026-11-24", "--out", str(tmp_path / "out")])
+    assert seen["synced"] and "ledger could not be read" in out["stopped"]
+    assert s3.puts and all("unrestored" in k for k in s3.puts), s3.puts
+    assert "trading/live/2026-11-24/ledger.csv" not in s3.puts
+    assert allowed_stake(50.0, 3.0, "1.1", None, 500.0, seen["s"].state, tc.Limits())[0] == 0.0
+
+
+def test_the_kill_switch_fails_safe_when_s3_cannot_be_read(monkeypatch):
+    """EX-04: only S3's 404 clears the switch; one unreadable check keeps the last state, three in a row stop."""
+    import auto_trade
+    t = {"now": datetime(2026, 11, 24, 6, 0, tzinfo=UTC)}
+
+    def tick():
+        t["now"] += timedelta(seconds=61)                     # past the switch's one-minute cache
+        return t["now"]
+    s3 = _S3(head=[_client_error("404"), _client_error("ExpiredToken"), _client_error("ExpiredToken"),
+                   _client_error("ExpiredToken"), _client_error("NoSuchKey")])
+    monkeypatch.setattr(auto_trade, "_s3", lambda: s3)
+    check = auto_trade.kill_switch(None, clock=tick)
+    assert check() is False                                   # 404: off
+    assert check() is False and check() is False              # one and two unreadable: the last state kept
+    assert check() is True                                    # three in a row: no new bets
+    assert check() is False                                   # a 404 clears it (the session holds its stop)
+    s3.head = [_client_error("ExpiredToken")]
+    assert check() is False                                   # the count starts again after an answer
+    assert check() is True                                    # STOP present (head answers): on
+    s3.head = [_client_error("ExpiredToken")]
+    assert check() is True                                    # unreadable: the last state (on) kept
+
+
+def test_the_kill_switch_keeps_its_one_minute_cache(monkeypatch):
+    import auto_trade
+    calls = {"n": 0}
+
+    class S3:
+        def head_object(self, Bucket, Key):
+            calls["n"] += 1
+            raise _client_error("404")
+    monkeypatch.setattr(auto_trade, "_s3", lambda: S3())
+    now = datetime(2026, 11, 24, 6, 0, tzinfo=UTC)
+    check = auto_trade.kill_switch(None, clock=lambda: now)
+    assert check() is False and check() is False and calls["n"] == 1

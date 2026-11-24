@@ -47,8 +47,26 @@ jobs:
           else
             echo "stop=unknown" >> "$GITHUB_OUTPUT"; cat err.txt
           fi
+      - name: Read the day's live ledger
+        # OPS-2 (24 Nov 2026): the session copies its ledger to S3 after every order; an order or lay of unknown
+        # state, or a lay at SP refused five times (a back left unhedged), is told to the owner the same hour.
+        # Read-only; no ledger (the day not traded yet, or S3 unreadable) means no ledger alerts, nothing else.
+        id: ledger
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION || 'eu-west-2' }}
+          BUCKET: ${{ vars.ULTRA_BETTING_S3_BUCKET || 'ashcroft' }}
+        run: |
+          DAY=$(TZ=Europe/London date +%F)
+          if aws s3 cp "s3://$BUCKET/trading/live/$DAY/ledger.csv" "$RUNNER_TEMP/ledger.csv" >/dev/null 2>err.txt; then
+            echo "ledger=$RUNNER_TEMP/ledger.csv" >> "$GITHUB_OUTPUT"
+          else
+            echo "No live ledger read for $DAY"; head -c 300 err.txt; echo
+          fi
       - name: Check the session
         env:
           GH_TOKEN: ${{ github.token }}
           STOP: ${{ steps.stop.outputs.stop }}
+          LEDGER: ${{ steps.ledger.outputs.ledger }}
         run: python3 scripts/session_watchdog.py

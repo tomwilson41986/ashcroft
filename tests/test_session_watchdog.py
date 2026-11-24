@@ -90,3 +90,67 @@ def test_the_watchdog_runs_off_the_uk_runner_and_never_holds_the_live_key():
     assert job["runs-on"] == "ubuntu-latest"
     text = (ROOT / ".github" / "workflows" / "trading-watchdog.yml").read_text()
     assert "BETFAIR" not in text and "TRADING_LIVE" not in text
+
+
+# ---------------------------------------------------------------- the day's ledger (OPS-2; toy rows)
+
+def _row(event, status, sid="7", mid="1.9"):
+    return {"event": event, "status": status, "market_id": mid, "selection_id": sid, "runner": "Toy Horse",
+            "off": "13:30", "venue": "York"}
+
+
+def test_a_quiet_ledger_raises_nothing():
+    rows = [_row("back", "SUCCESS"), _row("trade_out", "SUCCESS"), _row("skip", ""), _row("settle", "")]
+    assert w.ledger_alerts(rows) == [] and w.ledger_alerts([]) == []
+
+
+def test_an_order_or_lay_of_unknown_state_is_told_once_each():
+    rows = [_row("back", "UNKNOWN"), _row("back", "UNKNOWN"), _row("trade_out", "UNKNOWN", sid="8")]
+    got = w.ledger_alerts(rows)
+    assert [d.key for d in got] == ["unknown:back:1.9:7", "unknown:trade_out:1.9:8"]
+    assert all(d.action == "alert" for d in got) and "unhedged" in got[1].reason
+
+
+def test_a_back_left_to_the_result_after_five_refused_lays_is_told():
+    four = [_row("trade_out", "FAILURE")] * 4
+    assert w.ledger_alerts(four) == []
+    got = w.ledger_alerts(four + [_row("trade_out", "FAILURE")])
+    assert [d.key for d in got] == ["unhedged:1.9:7"] and "refused 5 times" in got[0].reason
+    # refusals on other horses are not added together, and a lay that went through is not a refusal
+    mixed = [_row("trade_out", "FAILURE", sid=str(k)) for k in range(5)] + [_row("trade_out", "PENDING")] * 5
+    assert w.ledger_alerts(mixed) == []
+
+
+def test_the_ledger_is_read_from_the_downloaded_file(tmp_path):
+    import csv
+    f = tmp_path / "ledger.csv"
+    with f.open("w", newline="") as h:
+        wr = csv.DictWriter(h, fieldnames=list(_row("back", "UNKNOWN")))
+        wr.writeheader()
+        wr.writerow(_row("back", "UNKNOWN"))
+    assert [d.key for d in w.ledger_alerts(w.read_ledger(str(f)))] == ["unknown:back:1.9:7"]
+    assert w.read_ledger(None) == [] and w.read_ledger(str(tmp_path / "absent.csv")) == []
+
+
+def test_ledger_alerts_are_told_without_a_restart(monkeypatch, tmp_path):
+    import csv
+    f = tmp_path / "ledger.csv"
+    with f.open("w", newline="") as h:
+        wr = csv.DictWriter(h, fieldnames=list(_row("back", "UNKNOWN")))
+        wr.writeheader()
+        wr.writerow(_row("trade_out", "UNKNOWN"))
+    told, dispatched = [], []
+    monkeypatch.setenv("LEDGER", str(f))
+    monkeypatch.setenv("STOP", "0")
+    monkeypatch.setattr(w, "github", lambda method, path, body=None: {"workflow_runs": []})
+    monkeypatch.setattr(w, "restart", lambda day: dispatched.append(day))
+    monkeypatch.setattr(w, "tell_owner", lambda day, d, restarted, url, advice=None: told.append((d.key, restarted)))
+    monkeypatch.setattr(w, "decide", lambda runs, now, stop: w.Decision("ok", "running"))
+    assert w.main([]) == 0
+    assert told == [("unknown:trade_out:1.9:7", False)] and dispatched == []
+
+
+def test_the_watchdog_reads_the_ledger_read_only():
+    text = (ROOT / ".github" / "workflows" / "trading-watchdog.yml").read_text()
+    assert "trading/live/$DAY/ledger.csv" in text and "LEDGER:" in text
+    assert "s3 cp \"s3://" in text and "s3 rm" not in text and "put-object" not in text

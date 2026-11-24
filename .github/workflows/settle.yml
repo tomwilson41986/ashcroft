@@ -1,7 +1,8 @@
 name: Daily Settlement
+# The old order path's settlement (pipeline.settle, the partner of execute.yml, disabled by hand on 19 Aug: TRADING.md).
+# OPS-9, 24 Nov 2026: its nightly schedule is removed from the file; with no executions since 19 Aug it was a no-op
+# run holding the Betfair and SMTP secrets. Manual runs only. The live book is settled by live-trade.yml.
 on:
-  schedule:
-    - cron: '0 21 * * *'   # 21:00 UTC daily
   workflow_dispatch:
 
 jobs:

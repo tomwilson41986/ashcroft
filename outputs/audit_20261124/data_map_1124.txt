@@ -1,0 +1,403 @@
+tables: 20
+
+== betfair_live_markets: 41090 rows; race_date 2026-10-01 .. 2026-11-23
+   race_date:TEXT, market_id:TEXT, market_type:TEXT, market_name:TEXT, market_start_utc:TEXT, venue:TEXT, country:TEXT, event_id:TEXT, event_name:TEXT, race_type:TEXT, selection_id:INTEGER, runner_name:TEXT, sort_priority:INTEGER, cloth_number:TEXT, stall_draw:TEXT, jockey:TEXT, trainer:TEXT, age:TEXT, weight_value:TEXT, official_rating:TEXT, form:TEXT, days_since_last_run:TEXT, wearing:TEXT, forecast_num:TEXT, forecast_den:TEXT, horse_norm:TEXT, race_results_id:INTEGER, loaded_at:TEXT, each_way_divisor:TEXT
+
+== betfair_live_marks: 592208 rows; race_date 2026-10-01 .. 2026-11-23
+   race_date:TEXT, market_id:TEXT, selection_id:INTEGER, mark:TEXT, polled_utc:TEXT, minutes_to_off:REAL, market_status:TEXT, runner_status:TEXT, back1:REAL, back1_size:REAL, back2:REAL, back2_size:REAL, back3:REAL, back3_size:REAL, lay1:REAL, lay1_size:REAL, lay2:REAL, lay2_size:REAL, lay3:REAL, lay3_size:REAL, last_traded:REAL, market_total_matched:REAL, active_runners:INTEGER, bsp:REAL, source:TEXT, loaded_at:TEXT
+
+== betfair_odds: 0 rows; race_date None .. None
+   id:INTEGER, market_id:TEXT, selection_id:INTEGER, race_date:TEXT, race_time:TEXT, venue:TEXT, runner_name:TEXT, best_back:REAL, best_back_size:REAL, best_lay:REAL, best_lay_size:REAL, sp_near:REAL, sp_far:REAL, last_traded:REAL, total_matched:REAL, runner_status:TEXT, market_status:TEXT, snapshot_at:TEXT
+
+== betfair_prices: 2150408 rows; race_date 2017-12-31 .. 2026-11-22
+   id:INTEGER, country:TEXT, market_type:TEXT, race_date:TEXT, race_time:TEXT, event_id:INTEGER, menu_hint:TEXT, event_name:TEXT, event_dt:TEXT, track_bf:TEXT, selection_id:INTEGER, selection_name:TEXT, horse_norm:TEXT, win_lose:REAL, bsp:REAL, ppwap:REAL, morningwap:REAL, ppmax:REAL, ppmin:REAL, ipmax:REAL, ipmin:REAL, morning_vol:REAL, pp_vol:REAL, ip_vol:REAL, race_results_id:INTEGER, source_file:TEXT, loaded_at:TEXT
+
+== betfair_prices_files: 12127 rows; 
+   source_file:TEXT, rows:INTEGER, status:TEXT, loaded_at:TEXT
+
+== bets: 0 rows; race_date None .. None
+   id:INTEGER, race_date:TEXT, race_time:TEXT, track:TEXT, horse_name:TEXT, market_id:TEXT, selection_id:INTEGER, predicted_bfsp:REAL, predicted_win_prob:REAL, betfair_back:REAL, betfair_lay:REAL, edge_pct:REAL, bet_type:TEXT, stake:REAL, price:REAL, status:TEXT, actual_bsp:REAL, placing:INTEGER, gross_pnl:REAL, commission:REAL, net_pnl:REAL, created_at:TEXT, settled_at:TEXT
+
+== blandford_atr: 382349 rows; day 2018-01-01 .. 2026-09-25
+   day:TEXT, track:TEXT, race_time:TEXT, horse_norm:TEXT, horse:TEXT, pos:REAL, dist_btn:REAL, runners:REAL, distance:TEXT, ground:TEXT, race_name:TEXT, finish_pct:REAL, early_mph:REAL, mid_mph:REAL, final_mph:REAL, top_mph:REAL, seg_2f_1f:REAL, seg_1f_fin:REAL, finish_time:TEXT, segments:TEXT, loaded_at:TEXT
+
+== blandford_atr_files: 426 rows; 
+   page:TEXT, rows:INTEGER, kept:INTEGER, loaded_at:TEXT
+
+== blandford_first_seen: 233676 rows; 
+   meeting_date:TEXT, course_bf:TEXT, race_number:TEXT, horse_code:INTEGER, performance_rating:REAL, timefigure:REAL, pre_race_master_rating:REAL, pre_race_adjusted_rating:REAL, position:REAL, distance_beaten:REAL, first_seen_at:TEXT
+
+== blandford_results: 680750 rows; 
+   id:INTEGER, horse_code:INTEGER, meeting_date:TEXT, course_bf:TEXT, race_number:TEXT, race_title:TEXT, distance_f:REAL, race_class:REAL, race_type:TEXT, surface:TEXT, going:TEXT, n_runners:REAL, horse_name:TEXT, country:TEXT, position:REAL, distance_beaten:REAL, distance_cumulative:REAL, finishing_time:REAL, sectional_finishing_time:REAL, leader_sectional:REAL, winner_sectional:REAL, distance_sectional:REAL, timefigure:REAL, performance_rating:REAL, pre_race_adjusted_rating:REAL, pre_race_master_rating:REAL, isp_decimal:REAL, betfair_win_sp:REAL, betfair_place_sp:REAL, ip_min:REAL, ip_max:REAL, bsp_advantage:REAL, x_wr:REAL, x_wm:REAL, percent_rb2:REAL, draw:REAL, age:REAL, gender:TEXT, jockey:TEXT, trainer:TEXT, owner:TEXT, sire:TEXT, dam:TEXT, damsire:TEXT, foaling_date:TEXT, official_rating:REAL, rp_or:REAL, rp_speed_fig:REAL, rp_rpr:REAL, headgear:TEXT, weight_kg:REAL, prize_won:REAL, hot_race:REAL, win_flag:REAL, race_time:TEXT, horse_norm:TEXT, source_file:TEXT, race_results_id:INTEGER, loaded_at:TEXT
+
+== blandford_revisions: 27894 rows; 
+   meeting_date:TEXT, course_bf:TEXT, race_number:TEXT, horse_code:INTEGER, field:TEXT, old_value:REAL, new_value:REAL, seen_at:TEXT
+
+== blandford_rtv: 62777 rows; day 2023-01-01 .. 2026-10-29
+   race_url:TEXT, day:TEXT, track_slug:TEXT, race_time:TEXT, horse_norm:TEXT, horse:TEXT, pos:REAL, fsp_pct:REAL, fsp_rank:REAL, zero20_s:REAL, zero20_rank:REAL, top_mph:REAL, top_rank:REAL, stride_m:REAL, stride_rank:REAL, freq_avg:REAL, notes:TEXT, loaded_at:TEXT
+
+== blandford_rtv_fetched: 3223 rows; 
+   horse_norm:TEXT, rows:INTEGER, fetched_at:TEXT
+
+== daily_pnl: 0 rows; date None .. None
+   id:INTEGER, date:TEXT, num_bets:INTEGER, winners:INTEGER, losers:INTEGER, voids:INTEGER, total_staked:REAL, gross_pnl:REAL, commission:REAL, net_pnl:REAL, roi_pct:REAL, cumulative_pnl:REAL, bank_start:REAL, bank_end:REAL, created_at:TEXT
+
+== download_pause: 3 rows; 
+   noted_at:TEXT, until:TEXT, message:TEXT
+
+== live_orders: 76184 rows; race_date 2026-09-30 .. 2026-11-23
+   race_date:TEXT, seq:INTEGER, ts:TEXT, mode:TEXT, event:TEXT, market_id:TEXT, venue:TEXT, off:TEXT, minutes_to_off:TEXT, selection_id:TEXT, runner:TEXT, strategy:TEXT, staking:TEXT, reason:TEXT, p_model:TEXT, p_market:TEXT, p_pool:TEXT, edge:TEXT, move:TEXT, best_back:TEXT, back_size:TEXT, target:TEXT, asked:TEXT, matched:TEXT, avg_price:TEXT, bet_id:TEXT, status:TEXT, error:TEXT, hedged:TEXT, hedge_liability:TEXT, result:TEXT, bsp:TEXT, clv:TEXT, pnl_back:TEXT, pnl_lay:TEXT, pnl:TEXT, commission:TEXT, loaded_at:TEXT
+
+== race_results: 2023508 rows; race_date 2010-01-01 .. 2026-11-16
+   id:INTEGER, race_date:TEXT, race_time:TEXT, track:TEXT, race_name:TEXT, race_restrictions_age:TEXT, race_class:TEXT, major:TEXT, race_distance:TEXT, prize_money:TEXT, going_description:TEXT, number_of_runners:INTEGER, place:TEXT, distbt:TEXT, horse_name:TEXT, stall:INTEGER, trainer:TEXT, horse_age:INTEGER, jockey_name:TEXT, jockeys_claim:INTEGER, pounds:INTEGER, odds:REAL, fav:TEXT, official_rating:INTEGER, comptime:TEXT, comptime_numeric:REAL, total_dst_bt:TEXT, median_or:INTEGER, dist_furlongs:REAL, placing_numerical:INTEGER, race_code:TEXT, bfsp:REAL, bfsp_place:REAL, plcs_paid:INTEGER, bf_plcs_paid:INTEGER, yards:INTEGER, rail_move:TEXT, race_type:TEXT, comment:TEXT, card_no:INTEGER, stall_positioning:TEXT, track_direction:TEXT, headgear:TEXT, days_since_lr:INTEGER, career_runs:INTEGER, stallion:TEXT, surface_type:TEXT, horse_prizewin:TEXT, horse_sex:TEXT, dam:TEXT, dam_stallion:TEXT, max_or_in_race:INTEGER, created_at:TEXT
+
+== scrape_log: 6165 rows; 
+   id:INTEGER, scrape_date:TEXT, rows_found:INTEGER, status:TEXT, scraped_at:TEXT
+
+== sectional_runs: 153426 rows; day 2018-01-01 .. 2026-09-25
+   day:TEXT, name_norm:TEXT, src:TEXT, n_field:REAL, pos:REAL, fsp:REAL, fsp_rel:REAL, fsp_vs_pos:REAL, early_pct:REAL, late_rel:REAL, sl_rel:REAL, built_at:TEXT
+
+== sqlite_sequence: 4 rows; 
+   name:, seq:
+
+== betfair_live_markets: null share and a sample (the last 41,090 rows)
+race_date              0.000
+market_id              0.000
+market_type            0.000
+market_name            0.000
+market_start_utc       0.000
+venue                  0.000
+country                0.000
+event_id               0.000
+event_name             0.000
+race_type              0.000
+selection_id           0.000
+runner_name            0.000
+sort_priority          0.000
+cloth_number           0.001
+stall_draw             0.445
+jockey                 0.001
+trainer                0.001
+age                    0.001
+weight_value           0.001
+official_rating        0.001
+form                   0.090
+days_since_last_run    0.079
+wearing                0.598
+forecast_num           0.001
+forecast_den           0.001
+horse_norm             0.000
+race_results_id        0.209
+loaded_at              0.000
+each_way_divisor       1.000
+                                            0                             1                         2
+race_date                          2026-11-23                    2026-11-23                2026-11-23
+market_id                         1.265874467                   1.265874467               1.265874467
+market_type                             PLACE                         PLACE                     PLACE
+market_name                      To Be Placed                  To Be Placed              To Be Placed
+market_start_utc     2026-11-23T20:30:00.000Z      2026-11-23T20:30:00.000Z  2026-11-23T20:30:00.000Z
+venue                           Wolverhampton                 Wolverhampton             Wolverhampton
+country                                    GB                            GB                        GB
+event_id                             36346281                      36346281                  36346281
+event_name             Wolverhampton 23rd Nov        Wolverhampton 23rd Nov    Wolverhampton 23rd Nov
+race_type                                Flat                          Flat                      Flat
+selection_id                         89365087                      43155514                  83654022
+runner_name                          Clatford                   Law Supreme            Galileo Island
+sort_priority                              10                             9                         8
+cloth_number                              9.0                           4.0                       8.0
+stall_draw                                5.0                           1.0                       8.0
+jockey                      Christian Howarth               Edward Greatrex                Sean Levey
+trainer                           Scott Dixon                  Ian Williams                  Tom Ward
+age                                       3.0                           7.0                       3.0
+weight_value                            132.0                         138.0                     134.0
+official_rating                          65.0                          68.0                      67.0
+form                                     4200                      11214837                 32-483900
+days_since_last_run                      38.0                         163.0                      25.0
+wearing                           cheekpieces  cheekpieces and tongue strap                       NaN
+forecast_num                             25.0                          10.0                     100.0
+forecast_den                              1.0                           1.0                       1.0
+horse_norm                           clatford                    lawsupreme             galileoisland
+race_results_id                           NaN                           NaN                       NaN
+loaded_at                 2026-11-23 21:37:22           2026-11-23 21:37:22       2026-11-23 21:37:22
+each_way_divisor                         None                          None                      None
+   market_type: {'WIN': 20637, 'PLACE': 20435, nan: 18}
+   country: {'GB': 28206, 'IE': 12884}
+
+== betfair_live_marks: null share and a sample (the last 200,000 rows)
+race_date               0.000
+market_id               0.000
+selection_id            0.000
+mark                    0.000
+polled_utc              0.000
+minutes_to_off          0.000
+market_status           0.000
+runner_status           0.000
+back1                   0.123
+back1_size              0.123
+back2                   0.131
+back2_size              0.131
+back3                   0.158
+back3_size              0.158
+lay1                    0.127
+lay1_size               0.127
+lay2                    0.156
+lay2_size               0.156
+lay3                    0.218
+lay3_size               0.218
+last_traded             0.139
+market_total_matched    0.000
+active_runners          0.000
+bsp                     0.937
+source                  0.000
+loaded_at               0.000
+                                         0                     1                     2
+race_date                       2026-11-23            2026-11-23            2026-11-23
+market_id                      1.265874467           1.265874099           1.265874099
+selection_id                      89365087              55166189              28677688
+mark                                 final                 final                 final
+polled_utc            2026-11-23T21:31:20Z  2026-11-23T21:31:20Z  2026-11-23T21:31:20Z
+minutes_to_off                  -61.333333           -496.333333           -496.333333
+market_status                       CLOSED                CLOSED                CLOSED
+runner_status                        LOSER                 LOSER                 LOSER
+back1                                  NaN                   NaN                   NaN
+back1_size                             NaN                   NaN                   NaN
+back2                                  NaN                   NaN                   NaN
+back2_size                             NaN                   NaN                   NaN
+back3                                  NaN                   NaN                   NaN
+back3_size                             NaN                   NaN                   NaN
+lay1                                   NaN                   NaN                   NaN
+lay1_size                              NaN                   NaN                   NaN
+lay2                                   NaN                   NaN                   NaN
+lay2_size                              NaN                   NaN                   NaN
+lay3                                   NaN                   NaN                   NaN
+lay3_size                              NaN                   NaN                   NaN
+last_traded                            NaN                   NaN                   NaN
+market_total_matched                   0.0                   0.0                   0.0
+active_runners                           0                     0                     0
+bsp                                   32.0                 140.0                  80.0
+source                               final                 final                 final
+loaded_at              2026-11-23 21:37:23   2026-11-23 21:37:23   2026-11-23 21:37:23
+   mark: {'final': 13705, 'last': 13469, 'clock_09:00': 13462, 'off_120': 13398, 'off_1': 13381, 'off_3': 13381, 'off_5': 13381, 'off_10': 13381, 'off_15': 13381, 'off_30': 13364, 'off_60': 13364, 'clock_10:00': 13364, 'clock_11:00': 13228, 'clock_12:00': 12888, 'clock_08:00': 12853}
+
+== betfair_prices: null share and a sample (the last 200,000 rows)
+id                 0.000
+country            0.000
+market_type        0.000
+race_date          0.000
+race_time          0.000
+event_id           0.000
+menu_hint          0.000
+event_name         0.000
+event_dt           0.000
+track_bf           0.000
+selection_id       0.000
+selection_name     0.000
+horse_norm         0.000
+win_lose           0.000
+bsp                0.058
+ppwap              0.000
+morningwap         0.000
+ppmax              0.000
+ppmin              0.000
+ipmax              0.000
+ipmin              0.000
+morning_vol        0.000
+pp_vol             0.000
+ip_vol             0.000
+race_results_id    0.049
+source_file        0.000
+loaded_at          0.000
+                                           0                            1                            2
+id                                   2413945                      2413944                      2413943
+country                                   uk                           uk                           uk
+market_type                              win                          win                          win
+race_date                         2026-11-22                   2026-11-22                   2026-11-22
+race_time                              12:25                        11:55                        13:25
+event_id                           265833317                    265833290                    265833244
+menu_hint                 Lingfield 22nd Nov           Lingfield 22nd Nov           Lingfield 22nd Nov
+event_name                       1m Nov Stks                  1m Nov Stks                    1m2f Hcap
+event_dt                    22-11-2026 12:25             22-11-2026 11:55             22-11-2026 13:25
+track_bf                                                                                              
+selection_id                       103356979                    105365489                     67801042
+selection_name                    Wowaditaka                      Toderby                    Wyld Bill
+horse_norm                        wowaditaka                      toderby                     wyldbill
+win_lose                                 0.0                          1.0                          0.0
+bsp                               724.638941                         40.0                    20.042205
+ppwap                                889.378                      24.7175                      17.0995
+morningwap                          902.5936                      18.7239                      16.0629
+ppmax                                 1000.0                         42.0                         21.0
+ppmin                                  260.0                         14.0                         14.5
+ipmax                                 1000.0                         42.0                       1000.0
+ipmin                                   55.0                         1.01                         12.0
+morning_vol                            28.47                       905.88                       591.08
+pp_vol                                372.15                      3709.36                      7435.79
+ip_vol                                230.54                     12271.37                      1923.23
+race_results_id                          NaN                          NaN                          NaN
+source_file      dwbfpricesukwin23112026.csv  dwbfpricesukwin23112026.csv  dwbfpricesukwin23112026.csv
+loaded_at                2026-11-23 21:37:05          2026-11-23 21:37:05          2026-11-23 21:37:05
+   market_type: {'win': 143970, 'place': 56030}
+   country: {'uk': 188579, 'ire': 11421}
+
+== betfair_prices_files: null share and a sample (the last 12,127 rows)
+source_file    0.0
+rows           0.0
+status         0.0
+loaded_at      0.0
+                                       0                            1                            2
+source_file  dwbfpricesukwin23112026.csv  dwbfpricesukwin22112026.csv  dwbfpricesukwin21112026.csv
+rows                                 131                          342                          277
+status                            loaded                       loaded                       loaded
+loaded_at            2026-11-23 21:37:05          2026-11-23 21:37:05          2026-11-23 21:37:05
+   status: {'loaded': 12127}
+
+== live_orders: null share and a sample (the last 76,184 rows)
+race_date          0.0
+seq                0.0
+ts                 0.0
+mode               0.0
+event              0.0
+market_id          0.0
+venue              0.0
+off                0.0
+minutes_to_off     0.0
+selection_id       0.0
+runner             0.0
+strategy           0.0
+staking            0.0
+reason             0.0
+p_model            0.0
+p_market           0.0
+p_pool             0.0
+edge               0.0
+move               0.0
+best_back          0.0
+back_size          0.0
+target             0.0
+asked              0.0
+matched            0.0
+avg_price          0.0
+bet_id             0.0
+status             0.0
+error              0.0
+hedged             0.0
+hedge_liability    0.0
+result             0.0
+bsp                0.0
+clv                0.0
+pnl_back           0.0
+pnl_lay            0.0
+pnl                0.0
+commission         0.0
+loaded_at          0.0
+                                                    0                                     1                                     2
+race_date                                  2026-11-23                            2026-11-23                            2026-11-23
+seq                                              1377                                  1376                                  1375
+ts                               2026-11-23T20:35:53Z                  2026-11-23T20:35:53Z                  2026-11-23T20:35:53Z
+mode                                             live                                  live                                  live
+event                                      commission                                settle                                settle
+market_id                                 1.265874465                           1.265874465                           1.265874465
+venue                                   Wolverhampton                         Wolverhampton                         Wolverhampton
+off                                             20:30                                 20:30                                 20:30
+minutes_to_off                                   -5.9                                  -5.9                                  -5.9
+selection_id                                        0                              92417753                               8145922
+runner                                                                        Sovereign Bay                       Hes A Gentleman
+strategy                                                                                                                         
+staking                                                                                                                          
+reason           Betfair's record of the settled bets  Betfair's record of the settled bets  Betfair's record of the settled bets
+p_model                                                                                                                          
+p_market                                                                                                                         
+p_pool                                                                                                                           
+edge                                                                                                                             
+move                                                                                                                             
+best_back                                                                                                                        
+back_size                                                                                                                        
+target                                                                                                                           
+asked                                                                                                                            
+matched                                                                               51.78                                 17.19
+avg_price                                                                            4.7766                               12.7449
+bet_id                                                                                                                           
+status                                                                                                                           
+error                                                                                                                            
+hedged                                                                                 True                                  True
+hedge_liability                                                                      195.56                                201.89
+result                                                                                LOSER                                 LOSER
+bsp                                                                                    4.54                                 15.58
+clv                                                                    0.052121564803990994                    -0.181969843947544
+pnl_back                                                                             -51.78                                -17.19
+pnl_lay                                                                               55.18                                 13.83
+pnl                                              -0.0                                   3.4                                 -3.36
+commission                                        0.0                                                                            
+loaded_at                         2026-11-23 21:37:23                   2026-11-23 21:37:23                   2026-11-23 21:37:23
+   mode: {'live': 76184}
+   event: {'back': 30500, 'trade_out': 29452, 'skip': 7480, 'settle': 6703, 'commission': 1840, 'sync': 187, 'unsettled': 22}
+   status: {'SUCCESS': 29454, 'PENDING': 29448, '': 16232, 'FAILURE': 1050}
+
+== race_results rows by year-month
+{'2023-08': 11927, '2023-09': 10979, '2023-10': 10308, '2023-11': 10076, '2023-12': 8338, '2024-01': 7646, '2024-02': 6768, '2024-03': 8131, '2024-04': 10075, '2024-05': 13177, '2024-06': 11890, '2024-07': 11794, '2024-08': 11490, '2024-09': 10483, '2024-10': 12422, '2024-11': 9263, '2024-12': 9159, '2025-01': 7373, '2025-02': 7080, '2025-03': 8448, '2025-04': 10585, '2025-05': 12137, '2025-06': 10763, '2025-07': 11205, '2025-08': 10706, '2025-09': 11154, '2025-10': 12013, '2025-11': 9401, '2025-12': 8721, '2026-01': 7653, '2026-02': 6793, '2026-03': 8142, '2026-04': 10461, '2026-05': 12352, '2026-06': 10861, '2026-07': 11025, '2026-08': 10348, '2026-09': 11209, '2026-10': 11829, '2026-11': 4460}
+
+== betfair_prices rows by year-month
+{'2023-08': 23944, '2023-09': 21996, '2023-10': 20587, '2023-11': 20129, '2023-12': 16653, '2024-01': 15218, '2024-02': 13526, '2024-03': 16227, '2024-04': 20135, '2024-05': 26406, '2024-06': 23824, '2024-07': 23663, '2024-08': 23042, '2024-09': 20896, '2024-10': 23674, '2024-11': 18458, '2024-12': 18308, '2025-01': 14738, '2025-02': 14118, '2025-03': 16841, '2025-04': 21162, '2025-05': 24269, '2025-06': 21593, '2025-07': 22437, '2025-08': 21404, '2025-09': 22324, '2025-10': 23996, '2025-11': 18774, '2025-12': 17410, '2026-01': 15283, '2026-02': 13550, '2026-03': 16789, '2026-04': 20927, '2026-05': 24694, '2026-06': 21690, '2026-07': 21985, '2026-08': 20684, '2026-09': 22387, '2026-10': 23618, '2026-11': 12984}
+
+== betfair_live_marks rows by year-month
+{'2026-10': 371804, '2026-11': 220404}
+
+== betfair_live_markets rows by year-month
+{'2026-10': 26245, '2026-11': 14845}
+
+== live_orders rows by year-month
+{'2026-09': 137, '2026-10': 49943, '2026-11': 26104}
+
+== s3://ashcroft/ top level
+   betfair_live/: 57 entries; first ['betfair_live/2026-10-01/', 'betfair_live/2026-10-02/'], last ['betfair_live/2026-11-25/', 'betfair_live/2026-11-26/']
+   betfair_prices_raw/: 73307 entries; first ['betfair_prices_raw/dwbfgreyhoundplace01012013.csv', 'betfair_prices_raw/dwbfgreyhoundplace01012014.csv'], last ['betfair_prices_raw/dwbfpricesusawin31122024.csv', 'betfair_prices_raw/dwbfpricesusawin31122025.csv']
+   betfair_stream/: 2 entries; first ['betfair_stream/greyhound/', 'betfair_stream/horse/'], last ['betfair_stream/greyhound/', 'betfair_stream/horse/']
+   blandford_raw/: 2 entries; first ['blandford_raw/attheraces/', 'blandford_raw/racingtv/'], last ['blandford_raw/attheraces/', 'blandford_raw/racingtv/']
+   close_lab/: 7 entries; first ['close_lab/frames/', 'close_lab/frames_v2/'], last ['close_lab/champion.json', 'close_lab/registry.csv']
+   daily_pnl/: 1 entries; first ['daily_pnl/'], last ['daily_pnl/']
+   dashboard/: 5 entries; first ['dashboard/cache/', 'dashboard/bets.json'], last ['dashboard/index.html', 'dashboard/traders.json']
+   executions/: 1 entries; first ['executions/'], last ['executions/']
+   greyhound/: 2 entries; first ['greyhound/take_close/', 'greyhound/STOP'], last ['greyhound/take_close/', 'greyhound/STOP']
+   model/: 1 entries; first ['model/'], last ['model/']
+   morning/: 1 entries; first ['morning/selections/'], last ['morning/selections/']
+      morning/selections/: 17 entries; first ['morning/selections/2026-11-05.csv'], last ['morning/selections/2026-11-24.csv']
+   paper/: 2 entries; first ['paper/horses/', 'paper/morning_edges/'], last ['paper/horses/', 'paper/morning_edges/']
+   predictions/: 136 entries; first ['predictions/', 'predictions/2026-03-18.csv'], last ['predictions/2026-11-23.csv', 'predictions/2026-11-24.csv']
+   predictions_betfair_card/: 1 entries; first ['predictions_betfair_card/2026-11-18.csv'], last ['predictions_betfair_card/2026-11-18.csv']
+   predictions_betfair_card3/: 1 entries; first ['predictions_betfair_card3/2026-11-18.csv'], last ['predictions_betfair_card3/2026-11-18.csv']
+   predictions_betfair_oracle/: 1 entries; first ['predictions_betfair_oracle/2026-11-18.csv'], last ['predictions_betfair_oracle/2026-11-18.csv']
+   predictions_evening/: 16 entries; first ['predictions_evening/2026-11-05.csv', 'predictions_evening/2026-11-06.csv'], last ['predictions_evening/2026-11-23.csv', 'predictions_evening/2026-11-24.csv']
+   predictions_shadow/: 4 entries; first ['predictions_shadow/2026-11-21.csv', 'predictions_shadow/2026-11-22.csv'], last ['predictions_shadow/2026-11-23.csv', 'predictions_shadow/2026-11-24.csv']
+   racecards/: 64 entries; first ['racecards/2026-09-25_0613.csv', 'racecards/2026-09-25_0646.csv'], last ['racecards/2026-11-23_0317.csv', 'racecards/2026-11-24_0317.csv']
+   racecards_betfair_card/: 1 entries; first ['racecards_betfair_card/2026-11-18_0940.csv'], last ['racecards_betfair_card/2026-11-18_0940.csv']
+   racecards_betfair_card2/: 2 entries; first ['racecards_betfair_card2/2026-11-18_1150.csv', 'racecards_betfair_card2/2026-11-18_1247.csv'], last ['racecards_betfair_card2/2026-11-18_1150.csv', 'racecards_betfair_card2/2026-11-18_1247.csv']
+   racecards_betfair_card3/: 1 entries; first ['racecards_betfair_card3/2026-11-18_1311.csv'], last ['racecards_betfair_card3/2026-11-18_1311.csv']
+   racecards_betfair_oracle/: 1 entries; first ['racecards_betfair_oracle/2026-11-18_1224.csv'], last ['racecards_betfair_oracle/2026-11-18_1224.csv']
+   racecards_evening/: 16 entries; first ['racecards_evening/2026-11-05_0732.csv', 'racecards_evening/2026-11-06_0040.csv'], last ['racecards_evening/2026-11-23_0046.csv', 'racecards_evening/2026-11-24_0037.csv']
+   reports/: 1 entries; first ['reports/'], last ['reports/']
+   research/: 1 entries; first ['research/trials/'], last ['research/trials/']
+      research/trials/: 1 entries; first ['research/trials/morning_exit.json'], last ['research/trials/morning_exit.json']
+   settlements/: 1 entries; first ['settlements/'], last ['settlements/']
+   sources/: 15 entries; first ['sources/api_football/', 'sources/au/'], last ['sources/tennis/', 'sources/weather/']
+      sources/api_football/: 11 entries; first ['sources/api_football/history/'], last ['sources/api_football/lineups.parquet']
+      sources/au/: 8 entries; first ['sources/au/bsp_targets.parquet'], last ['sources/au/track_names.json']
+      sources/betfair_historic/: 14 entries; first ['sources/betfair_historic/ages/'], last ['sources/betfair_historic/markets_soccer_2026.parquet']
+      sources/football/: 8 entries; first ['sources/football/dq/'], last ['sources/football/matches.parquet']
+      sources/gbgb/: 14 entries; first ['sources/gbgb/raw/'], last ['sources/gbgb/runs_2026.parquet']
+      sources/gbgb_dogs/: 11 entries; first ['sources/gbgb_dogs/2026-11-14/'], last ['sources/gbgb_dogs/2026-11-24/']
+      sources/greyhound/: 14 entries; first ['sources/greyhound/au_paper/'], last ['sources/greyhound/track/']
+      sources/greyhound_prices/: 30 entries; first ['sources/greyhound_prices/built_2012.json'], last ['sources/greyhound_prices/prices_2026.parquet']
+      sources/greyhoundapi/: 83 entries; first ['sources/greyhoundapi/raw/'], last ['sources/greyhoundapi/runs_IE_2026.parquet']
+      sources/greyhounds_today/: 49 entries; first ['sources/greyhounds_today/2026-10-07/'], last ['sources/greyhounds_today/2026-11-24/']
+      sources/hrb_ratings_raw/: 95 entries; first ['sources/hrb_ratings_raw/ratings_132216_2026-10-06.csv'], last ['sources/hrb_ratings_raw/sets.json']
+      sources/openfootball/: 2 entries; first ['sources/openfootball/raw/'], last ['sources/openfootball/matches.parquet']
+      sources/sportmonks/: 4 entries; first ['sources/sportmonks/raw/'], last ['sources/sportmonks/snapshots.parquet']
+      sources/tennis/: 2 entries; first ['sources/tennis/raw/'], last ['sources/tennis/sackmann_matches.parquet']
+      sources/weather/: 3 entries; first ['sources/weather/isd/'], last ['sources/weather/track_stations.json']
+   stream_lab/: 21 entries; first ['stream_lab/trades/', 'stream_lab/report_2026-11-05.json'], last ['stream_lab/report_2026-11-23.json', 'stream_lab/trials.json']
+   tote/: 2 entries; first ['tote/live/', 'tote/probe/'], last ['tote/live/', 'tote/probe/']
+      tote/live/: 50 entries; first ['tote/live/2026-10-06/'], last ['tote/live/2026-11-24/']
+      tote/probe/: 3 entries; first ['tote/probe/20261006T094856Z/'], last ['tote/probe/20261006T102028Z/']
+   trading/: 1 entries; first ['trading/live/'], last ['trading/live/']
+      trading/live/: 56 entries; first ['trading/live/2026-09-30/'], last ['trading/live/2026-11-24/']
+
+== betfair_live/2026-11-23/: ['betfair_live/2026-11-23/books.csv.gz', 'betfair_live/2026-11-23/books_antepost.csv.gz', 'betfair_live/2026-11-23/books_evening.csv.gz', 'betfair_live/2026-11-23/books_football_ES.csv.gz', 'betfair_live/2026-11-23/books_football_FR.csv.gz', 'betfair_live/2026-11-23/books_football_GB.csv.gz', 'betfair_live/2026-11-23/books_football_GR.csv.gz', 'betfair_live/2026-11-23/books_football_IT.csv.gz', 'betfair_live/2026-11-23/books_football_NL.csv.gz', 'betfair_live/2026-11-23/books_football_PT.csv.gz', 'betfair_live/2026-11-23/books_football_TR.csv.gz', 'betfair_live/2026-11-23/books_football_coll_ES.csv.gz', 'betfair_live/2026-11-23/books_football_coll_FR.csv.gz', 'betfair_live/2026-11-23/books_football_coll_GB.csv.gz', 'betfair_live/2026-11-23/books_football_coll_GR.csv.gz', 'betfair_live/2026-11-23/books_football_coll_IT.csv.gz', 'betfair_live/2026-11-23/books_football_coll_TR.csv.gz', 'betfair_live/2026-11-23/books_football_eve_ES.csv.gz', 'betfair_live/2026-11-23/books_football_eve_FR.csv.gz', 'betfair_live/2026-11-23/books_football_eve_GB.csv.gz', 'betfair_live/2026-11-23/books_football_eve_GR.csv.gz', 'betfair_live/2026-11-23/books_football_eve_IT.csv.gz', 'betfair_live/2026-11-23/books_football_eve_NL.csv.gz', 'betfair_live/2026-11-23/books_football_eve_PT.csv.gz', 'betfair_live/2026-11-23/books_football_eve_TR.csv.gz', 'betfair_live/2026-11-23/books_greyhound.csv.gz', 'betfair_live/2026-11-23/books_greyhound_au_d.csv.gz', 'betfair_live/2026-11-23/books_greyhound_au_n.csv.gz', 'betfair_live/2026-11-23/books_greyhound_live.csv.gz', 'betfair_live/2026-11-23/books_other_place.csv.gz', 'betfair_live/2026-11-23/books_overnight.csv.gz', 'betfair_live/2026-11-23/books_trader.csv.gz', 'betfair_live/2026-11-23/census_racing_0546.json', 'betfair_live/2026-11-23/markets.csv.gz', 'betfair_live/2026-11-23/markets_antepost.csv.gz', 'betfair_live/2026-11-23/markets_evening.csv.gz', 'betfair_live/2026-11-23/markets_football_ES.csv.gz', 'betfair_live/2026-11-23/markets_football_FR.csv.gz', 'betfair_live/2026-11-23/markets_football_GB.csv.gz', 'betfair_live/2026-11-23/markets_football_GR.csv.gz', 'betfair_live/2026-11-23/markets_football_IT.csv.gz', 'betfair_live/2026-11-23/markets_football_NL.csv.gz', 'betfair_live/2026-11-23/markets_football_PT.csv.gz', 'betfair_live/2026-11-23/markets_football_TR.csv.gz', 'betfair_live/2026-11-23/markets_football_coll_ES.csv.gz', 'betfair_live/2026-11-23/markets_football_coll_FR.csv.gz', 'betfair_live/2026-11-23/markets_football_coll_GB.csv.gz', 'betfair_live/2026-11-23/markets_football_coll_GR.csv.gz', 'betfair_live/2026-11-23/markets_football_coll_IT.csv.gz', 'betfair_live/2026-11-23/markets_football_coll_TR.csv.gz', 'betfair_live/2026-11-23/markets_football_eve_ES.csv.gz', 'betfair_live/2026-11-23/markets_football_eve_FR.csv.gz', 'betfair_live/2026-11-23/markets_football_eve_GB.csv.gz', 'betfair_live/2026-11-23/markets_football_eve_GR.csv.gz', 'betfair_live/2026-11-23/markets_football_eve_IT.csv.gz', 'betfair_live/2026-11-23/markets_football_eve_NL.csv.gz', 'betfair_live/2026-11-23/markets_football_eve_PT.csv.gz', 'betfair_live/2026-11-23/markets_football_eve_TR.csv.gz', 'betfair_live/2026-11-23/markets_greyhound.csv.gz', 'betfair_live/2026-11-23/markets_greyhound_au_d.csv.gz', 'betfair_live/2026-11-23/markets_greyhound_au_n.csv.gz', 'betfair_live/2026-11-23/markets_greyhound_live.csv.gz', 'betfair_live/2026-11-23/markets_other_place.csv.gz', 'betfair_live/2026-11-23/markets_overnight.csv.gz', 'betfair_live/2026-11-23/markets_trader.csv.gz', 'betfair_live/2026-11-23/status_greyhound_au_d.json', 'betfair_live/2026-11-23/status_greyhound_au_n.json', 'betfair_live/2026-11-23/status_greyhound_live.json', 'betfair_live/2026-11-23/status_greyhound_stream.json', 'betfair_live/2026-11-23/status_horse_stream.json', 'betfair_live/2026-11-23/traded_greyhound_au_d.csv.gz', 'betfair_live/2026-11-23/traded_greyhound_au_n.csv.gz', 'betfair_live/2026-11-23/traded_greyhound_live.csv.gz']

@@ -422,3 +422,13 @@ def test_the_greyhound_trial_count_reads_the_ledger_and_keeps_a_studys_floor(tmp
     led.write_text('{"kind": "note", "sport": "greyhounds", "n_rules": 500}\n{"kind": "model", "sport": "greyhounds"}\n')
     assert greyhound_trials(ledger=led) == 501 and greyhound_trials(10_000, ledger=led) == 10_000
     assert greyhound_trials() >= 37_495                       # the real ledger: the count registered on 20 Nov
+
+
+def test_iterations_screens_and_backtests_are_counted_as_trials():
+    """Audit ME-04: research-loop iterations, feature screens and backtests are tests and count; adding a kind only
+    raises a count. Validation lines (dry runs, parity checks) still do not count."""
+    lines = [{"kind": "iteration"}, {"kind": "screen", "sport": "horse_racing"}, {"kind": "backtest"},
+             {"kind": "validation"}, {"kind": "research"}]
+    assert trials.count_trials(lines, "horse_racing") == 4
+    assert trials.count_rules(lines, "horse_racing") == 4
+    assert trials.count_trials(lines, "greyhounds") == 3

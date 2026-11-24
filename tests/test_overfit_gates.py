@@ -68,3 +68,35 @@ def test_the_strategy_gate_says_not_deflated_where_the_best_of_many_clears_the_o
     w = t[t["rule"] == "weak"].iloc[0]
     assert w["gate"] == "not deflated" and w["t_dsr_trials"] == 200
     assert not any(c.startswith("_") for c in t.columns)
+
+
+def _toy_series(sharpe, n, seed):
+    """A toy return series with exactly the given Sharpe over n periods (toy input, not a result)."""
+    x = np.random.default_rng(seed).normal(0, 1, n)
+    return (x - x.mean()) / x.std(ddof=1) + sharpe
+
+
+def test_a_few_near_twin_sharpes_cannot_collapse_the_spread_of_a_ledger_sized_count():
+    """Audit ME-02: the spread and the count must describe the same trials. Four near-identical Sharpes against
+    484 trials counted used to give SR* near zero and a pass; the spread is now floored at the null's."""
+    r = _toy_series(0.17, 200, 4)
+    null = ov.dsr_check(r, n_trials=484)
+    twins = ov.dsr_check(r, n_trials=484, trial_sharpes=[0.17, 0.1701, 0.1699, 0.17])
+    assert not null["passed"] and null["sr_variance_source"] == "null"
+    assert not twins["passed"] and twins["sr_variance_source"] == "null floor"
+    assert twins["sr_star"] == null["sr_star"] and abs(twins["sr_variance"] - 1 / 199) < 1e-6
+    identical = ov.dsr_check(r, n_trials=484, trial_sharpes=[0.17, 0.17])
+    assert not identical["passed"] and identical["sr_star"] > 0.2
+    # a wider spread than the null's is kept as given
+    wide = ov.dsr_check(r, n_trials=484, trial_sharpes=[-0.5, 0.0, 0.5])
+    assert wide["sr_variance_source"] == "trials" and wide["sr_variance"] > 1 / 199
+    # the spread of every trial counted is used as given, below the null's or not
+    full = ov.dsr_check(r, n_trials=3, trial_sharpes=[0.17, 0.1701, 0.1699])
+    assert full["sr_variance_source"] == "trials" and full["sr_variance"] < 1e-6
+
+
+def test_deflate_table_of_near_twins_against_a_larger_count_does_not_pass():
+    series = {f"twin{i}": _toy_series(0.17 + 1e-4 * i, 200, 10 + i) for i in range(3)}
+    out = ov.deflate_table(series, n_trials=484)
+    assert all(not d["passed"] and d["n_trials"] == 484 and d["sr_variance_source"] == "null floor"
+               for d in out.values())

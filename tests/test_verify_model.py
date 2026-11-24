@@ -100,3 +100,31 @@ def test_a_model_reading_a_drop_in_block_is_checked_through_it(tmp_path, monkeyp
     assert code == 0, report
     assert "built on the matrix as the live path builds them: race_relative" in report
     assert "correlation of log prices 1.0000" in report
+
+
+def test_a_served_booster_committed_compressed_is_compared(setup):
+    """Audits MS-2 and MT-3: the served booster is committed as bfsp_model.lgb.xz and the workflow copies only
+    that and the metadata; the comparison with the served model must still run, not be skipped silently."""
+    import lzma
+    tmp_path, db, new, served = setup
+    plain = served / "bfsp_model.lgb"
+    Path(str(plain) + ".xz").write_bytes(lzma.compress(plain.read_bytes()))
+    plain.unlink()
+    code, report = _verify(tmp_path, db, new, served)
+    assert code == 0, report
+    assert "correlation of log prices 1.0000" in report
+
+
+def test_a_served_dir_with_no_model_fails_rather_than_skips(setup):
+    tmp_path, db, new, _served = setup
+    empty = tmp_path / "empty_served"
+    empty.mkdir()
+    code, report = _verify(tmp_path, db, new, empty)
+    assert code == 1 and "FAIL" in report and "holds no served model" in report
+
+
+def test_a_served_model_that_cannot_be_loaded_fails(setup):
+    tmp_path, db, new, served = setup
+    (served / "bfsp_model_meta.json").unlink()
+    code, report = _verify(tmp_path, db, new, served)
+    assert code == 1 and "could not be loaded" in report

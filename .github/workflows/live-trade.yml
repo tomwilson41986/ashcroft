@@ -81,6 +81,10 @@ jobs:
           if [ "$EVENT" = schedule ]; then
             if [ "$SCHEDULE" = '25 22 * * *' ]; then MODE=settle; else MODE=trade; fi
             DAY=""
+            # the settle's day from the schedule, not from when the runner is free (OPS-4, 24 Nov 2026): a 22:25 UTC
+            # settle started after UK midnight (behind the price archive on the one runner) settled the wrong day.
+            # The UK date 8 hours ago is the racing day from 22:25 to 06:59 UTC in summer and winter time
+            if [ "$MODE" = settle ]; then DAY=$(TZ=Europe/London date -d "@$(( $(date +%s) - 8 * 3600 ))" +%F); fi
             TRADE_UNTIL=""
           fi
           case "$MODE" in trade|settle) ;; *) echo "mode must be trade or settle"; exit 1 ;; esac
@@ -221,6 +225,18 @@ jobs:
             set +e
             BETFAIR_APP_KEY="$TRADER_KEY" python auto_trade.py "${ARGS[@]}" --trade-until "$TRADE_UNTIL" --until "$UNTIL"
             CODE=$?
+            # a trader that fails before its own end (a refused login, the 06:00 record missing, a killed process)
+            # must not leave the run 'in progress' to 21:30 behind the recorders, unseen by the watchdog
+            # (scripts/session_watchdog.py restarts only a run that has ended; audit OPS-1, 24 Nov 2026): the records
+            # stop and the run fails now, so the watchdog restarts it (the new run takes its positions from Betfair)
+            NOW_UK=$(TZ=Europe/London date +%H:%M)
+            if [ "$CODE" -ne 0 ] && [[ "$NOW_UK" < "$UNTIL" ]]; then
+              echo "::error::the trader exited $CODE at $NOW_UK UK, before $UNTIL: stopping the records so the watchdog restarts the run"
+              kill $REC $OTHER $TOTE $STREAM $EVE 2>/dev/null
+              wait
+              tail -n 30 "$RUNNER_TEMP/recorder.log"
+              exit $CODE
+            fi
             wait "$REC"
             echo "recorder exited $?"
             tail -n 30 "$RUNNER_TEMP/recorder.log"

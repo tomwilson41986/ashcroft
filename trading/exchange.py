@@ -303,7 +303,8 @@ class LiveExchange:
     horse on a day shares one reference, and every lay another, so only an order not seen before (not reported by
     this exchange, not on Betfair's record when the session started) can be the one just sent (11 Nov 2026). A
     trader that never gives the exchange that record (note_orders) keeps the rule from before for its backs: of
-    several matched orders it did not report, the newest.
+    several matched orders it did not report, the newest. A reply that is neither a clean SUCCESS nor a FAILURE (a
+    TIMEOUT above all) is a lost reply too, and an order Betfair cannot then show after 15 s is UNKNOWN (24 Nov 2026).
     """
 
     mode = "live"
@@ -392,6 +393,30 @@ class LiveExchange:
         return rep, ok
 
     @staticmethod
+    def _answered(reply: dict, rep: dict, side: str = "") -> str:
+        """What Betfair's reply to placeOrders says of the order: "SUCCESS", "FAILURE" or "LOST".
+
+        Betfair's statuses (ExecutionReportStatus: SUCCESS, FAILURE, PROCESSED_WITH_ERRORS, TIMEOUT; an instruction's:
+        SUCCESS, FAILURE, TIMEOUT). A TIMEOUT means the order's state is unknown and it may yet appear in
+        listCurrentOrders. Only a SUCCESS that names its bet (or, for a back, says it expired unmatched) is a success,
+        and only a FAILURE is a refusal; anything else (TIMEOUT, PROCESSED_WITH_ERRORS, no status) is a lost reply,
+        settled by Betfair's own record of the orders, never booked as 'not placed' (audit EX-01/EL-01, 24 Nov 2026)."""
+        top, ins = reply.get("status"), rep.get("status")
+        if top == "FAILURE" and ins in (None, "FAILURE"):
+            return "FAILURE"
+        if top == "SUCCESS" and ins in (None, "SUCCESS"):
+            if rep.get("betId"):
+                return "SUCCESS"
+            if side == "BACK" and rep.get("orderStatus") == "EXPIRED" and not (rep.get("sizeMatched") or 0):
+                return "SUCCESS"                           # fill-or-kill, said by Betfair to have lapsed unmatched
+        return "LOST"
+
+    def _reread(self) -> tuple:
+        """The waits before reading Betfair's orders again when it answered TIMEOUT (or anything unclear) and the
+        order is not there yet: up to 15 s in all. An instance may set its own (tests: none)."""
+        return self.__dict__.get("_reread_waits", (5.0, 5.0, 5.0))
+
+    @staticmethod
     def _reason(reply: dict, rep: dict, default: str) -> str:
         """Why Betfair refused an order. An instruction's ERROR_IN_ORDER says only that the order as a whole failed;
         the reason (INSUFFICIENT_FUNDS, MARKET_SUSPENDED, ...) is the report's own code, so that goes first."""
@@ -415,6 +440,10 @@ class LiveExchange:
         if reply is None:                                  # placed or not? Betfair's own record decides
             return self._confirm_back(fill, ref)
         rep, ok = self._report(reply)
+        if self._answered(reply, rep, "BACK") == "LOST":   # TIMEOUT or unclear: placed or not? Betfair's record decides
+            log.error("placeOrders %s %s: reply %s / %s; asking Betfair what was placed", market_id, ref,
+                      reply.get("status"), rep.get("status"))
+            return self._confirm_back(fill, ref, answered=True)
         fill.bet_id = str(rep.get("betId") or "")
         if fill.bet_id:
             self._known().add(fill.bet_id)
@@ -426,16 +455,30 @@ class LiveExchange:
             fill.error = self._reason(reply, rep, str(rep.get("orderStatus") or "NOT_MATCHED"))
         return fill
 
-    def _confirm_back(self, fill: Fill, ref: str) -> Fill:
-        try:
-            got = [o for o in self.orders([fill.market_id], [ref[:32]])
-                   if o.get("side") == "BACK" and int(o.get("selectionId", 0)) == fill.selection_id]
-        except Exception as exc:
-            fill.status, fill.error = "UNKNOWN", f"no reply, and the orders could not be read: {exc}"[:200]
+    def _confirm_back(self, fill: Fill, ref: str, answered: bool = False) -> Fill:
+        """A back whose reply was lost (no reply: `answered` False) or unclear (a TIMEOUT or other status that is
+        neither SUCCESS nor FAILURE: `answered` True). Betfair received an unclear order, so finding nothing is not
+        proof that nothing was placed (it can take Betfair a while to show it): the orders are read again for up to
+        15 s, and if still nothing is found the order's state is UNKNOWN, which stops new bets for the day."""
+        waits = list(self._reread()) if answered else []
+        while True:
+            try:
+                got = [o for o in self.orders([fill.market_id], [ref[:32]])
+                       if o.get("side") == "BACK" and int(o.get("selectionId", 0)) == fill.selection_id]
+            except Exception as exc:
+                fill.status, fill.error = "UNKNOWN", f"no reply, and the orders could not be read: {exc}"[:200]
+                return fill
+            # every back of a horse on a day shares the reference, so its earlier fills are in this list too. The
+            # order just sent is one not seen before: not reported by this exchange, not in the session's sync
+            new = [o for o in got
+                   if str(o.get("betId") or "") not in self._known() and float(o.get("sizeMatched") or 0) > 0]
+            if new or not waits:
+                break
+            time.sleep(waits.pop(0))
+        if answered and not new:
+            fill.status = "UNKNOWN"
+            fill.error = "reply unclear (TIMEOUT or no status); no matched order found under the reference yet"
             return fill
-        # every back of a horse on a day shares the reference, so its earlier fills are in this list too. The order
-        # just sent is one not seen before: not reported by this exchange, not in the session's sync at the start
-        new = [o for o in got if str(o.get("betId") or "") not in self._known() and float(o.get("sizeMatched") or 0) > 0]
         if len(new) > 1 and not self.__dict__.get("_told"):
             # a trader that never tells this exchange what Betfair held when it started (the morning models, the
             # football trader: only the horse trader's session does) can meet the orders of its own earlier run of
@@ -463,29 +506,12 @@ class LiveExchange:
                        "customerOrderRef": ref[:32], "marketOnCloseOrder": {"liability": liability}}
         reply = self._place(market_id, instruction, ref)
         if reply is None:
-            try:
-                got = [o for o in self.orders([market_id], [ref[:32]])
-                       if o.get("side") == "LAY" and int(o.get("selectionId", 0)) == int(selection_id)]
-            except Exception as exc:
-                fill.status, fill.error = "UNKNOWN", f"no reply, and the orders could not be read: {exc}"[:200]
-                return fill
-            # the lays of a horse share the reference too, so its earlier hedges are in this list: only a lay not
-            # seen before can be the one just sent, and it is for the liability asked
-            new = [o for o in got if str(o.get("betId") or "") not in self._known()]
-            have = sum(float(o.get("bspLiability") or 0) for o in new)
-            if not new:
-                fill.status, fill.error = "FAILURE", "reply lost; no new lay at SP found under the reference"
-            elif len(new) == 1 and abs(have - liability) < 0.02:
-                fill.status, fill.bet_id = "PENDING", str(new[0].get("betId") or "")
-                fill.error = f"reply lost; Betfair holds the lay at SP of GBP{have:.2f}"
-                if fill.bet_id:
-                    self._known().add(fill.bet_id)
-            else:                                          # laid or not cannot be told: the session never lays it twice
-                fill.status = "UNKNOWN"
-                fill.error = (f"reply lost; Betfair holds GBP{have:.2f} of lays at SP this session did not place, "
-                              f"not the GBP{liability:.2f} asked")
-            return fill
+            return self._confirm_lay(fill, ref)
         rep, ok = self._report(reply)
+        if self._answered(reply, rep) == "LOST":           # TIMEOUT or unclear: laid or not? Betfair's record decides
+            log.error("placeOrders %s %s: reply %s / %s; asking Betfair what was laid", market_id, ref,
+                      reply.get("status"), rep.get("status"))
+            return self._confirm_lay(fill, ref, answered=True)
         fill.bet_id = str(rep.get("betId") or "")
         if fill.bet_id:
             self._known().add(fill.bet_id)
@@ -494,6 +520,42 @@ class LiveExchange:
         else:
             fill.status = "FAILURE"
             fill.error = self._reason(reply, rep, "FAILURE")
+        return fill
+
+    def _confirm_lay(self, fill: Fill, ref: str, answered: bool = False) -> Fill:
+        """A lay at SP whose reply was lost (`answered` False) or unclear (`answered` True: a TIMEOUT or other status
+        that is neither SUCCESS nor FAILURE), settled by Betfair's record. As for a back, an unclear reply whose order
+        is not found after up to 15 s of re-reads is UNKNOWN: the session never lays the horse twice."""
+        liability = fill.size
+        waits = list(self._reread()) if answered else []
+        while True:
+            try:
+                got = [o for o in self.orders([fill.market_id], [ref[:32]])
+                       if o.get("side") == "LAY" and int(o.get("selectionId", 0)) == fill.selection_id]
+            except Exception as exc:
+                fill.status, fill.error = "UNKNOWN", f"no reply, and the orders could not be read: {exc}"[:200]
+                return fill
+            # the lays of a horse share the reference too, so its earlier hedges are in this list: only a lay not
+            # seen before can be the one just sent, and it is for the liability asked
+            new = [o for o in got if str(o.get("betId") or "") not in self._known()]
+            if new or not waits:
+                break
+            time.sleep(waits.pop(0))
+        have = sum(float(o.get("bspLiability") or 0) for o in new)
+        if not new and answered:
+            fill.status = "UNKNOWN"
+            fill.error = "reply unclear (TIMEOUT or no status); no new lay at SP found under the reference yet"
+        elif not new:
+            fill.status, fill.error = "FAILURE", "reply lost; no new lay at SP found under the reference"
+        elif len(new) == 1 and abs(have - liability) < 0.02:
+            fill.status, fill.bet_id = "PENDING", str(new[0].get("betId") or "")
+            fill.error = f"reply lost; Betfair holds the lay at SP of GBP{have:.2f}"
+            if fill.bet_id:
+                self._known().add(fill.bet_id)
+        else:                                              # laid or not cannot be told: the session never lays it twice
+            fill.status = "UNKNOWN"
+            fill.error = (f"reply lost; Betfair holds GBP{have:.2f} of lays at SP this session did not place, "
+                          f"not the GBP{liability:.2f} asked")
         return fill
 
     def cancel_all(self, market_id=None) -> None:

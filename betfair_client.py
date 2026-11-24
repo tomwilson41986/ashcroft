@@ -46,6 +46,9 @@ LOGIN_URL = "https://identitysso.betfair.com/api/login"
 CERT_LOGIN_URL = "https://identitysso-cert.betfair.com/api/certlogin"
 BETTING_URL = "https://api.betfair.com/exchange/betting/rest/v1.0/"
 ACCOUNT_URL = "https://api.betfair.com/exchange/account/rest/v1.0/"
+#: login and logout: (connect, read) seconds, so a silent identity server can never hang the trader's re-login
+#: mid-session (EX-05; the API calls have had timeout=30 since before)
+LOGIN_TIMEOUT = (10, 30)
 
 # Horse Racing event type ID on Betfair
 HORSE_RACING_EVENT_TYPE_ID = "7"
@@ -107,6 +110,7 @@ class BetfairClient:
             data={"username": self.username, "password": self.password},
             cert=(self.cert_file, self.key_file),
             headers={"X-Application": self.app_key},
+            timeout=LOGIN_TIMEOUT,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -130,6 +134,7 @@ class BetfairClient:
                 "X-Application": self.app_key,
                 "Accept": "application/json",
             },
+            timeout=LOGIN_TIMEOUT,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -581,6 +586,7 @@ class BetfairClient:
                         "X-Authentication": self.session_token,
                         "Accept": "application/json",
                     },
+                    timeout=LOGIN_TIMEOUT,
                 )
                 log.info("Betfair session closed")
             except Exception:

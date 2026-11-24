@@ -14,12 +14,23 @@ racing day:
   owner;
 - the latest one "cancelled" (the owner stopping it) or "success" (ended by itself): nothing to do.
 
+It also reads the day's live ledger (s3://<bucket>/trading/live/<day>/ledger.csv, which the session copies after
+every order; the workflow downloads it and passes its path in LEDGER) and tells the owner the same hour (OPS-2, 24
+Nov 2026) when:
+
+- a row has status UNKNOWN: an order or a lay at SP whose state Betfair could not tell (the session places no more
+  bets today, and a lay in that state is never sent again, so the back may run unhedged);
+- a horse's lay at SP was refused MAX_HEDGE_TRIES times: the session leaves the back to the result, unhedged.
+
+These alerts never restart anything. Not covered: "stopped after 10 failed steps", which writes no ledger row.
+
 The owner is told by a GitHub issue, one a day, titled "Live trading: <day>": the first event opens it, each new
 event comments on it, so GitHub's notifications (email and the mobile app) carry it. Nothing here touches the
 exchange or the trader's code; it reads the Live trading runs and dispatches that workflow with the job's token.
 
     python3 scripts/session_watchdog.py              # decide, act, report
     python3 scripts/session_watchdog.py --dry-run    # decide and print only
+    python3 scripts/session_watchdog.py --tell "the predictions job failed" --key predict:123   # one alert only
 
 Standard library only. STOP is read by the workflow before this runs (STOP=1 set, 0 not set, unknown when S3 could
 not be read: an unknown kill switch never restarts, and the owner is told).
@@ -28,6 +39,7 @@ not be read: an unknown kill switch never restarts, and the owner is told).
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -52,6 +64,10 @@ MISSING_AFTER_UTC = "05:45"
 LAST_RESTART_UK = "20:30"
 MAX_RESTARTS = 3
 QUEUED_TOO_LONG = timedelta(minutes=20)
+#: the trader's limit on refused lays at SP before a back is left to the result (trading/session.py MAX_HEDGE_TRIES)
+MAX_HEDGE_TRIES = 5
+#: a lay at SP that went through (trading/session.py _lay_at_bsp)
+LAID = {"PENDING", "SUCCESS"}
 
 
 @dataclass
@@ -127,6 +143,43 @@ def decide(runs: list[dict], now: datetime, stop: str = "0") -> Decision:
     return Decision("restart", why, key=key)
 
 
+def ledger_alerts(rows: list[dict]) -> list[Decision]:
+    """What in the day's live ledger needs the owner now (OPS-2): an order or lay of unknown state, and a back whose
+    lay at SP was refused MAX_HEDGE_TRIES times (left to the result, unhedged). One Decision ("alert") per key."""
+    out: dict[str, Decision] = {}
+    refused: dict[tuple[str, str], int] = {}
+    names: dict[tuple[str, str], str] = {}
+    for r in rows:
+        mid, sid = str(r.get("market_id") or ""), str(r.get("selection_id") or "")
+        what = f"{r.get('runner') or sid} ({r.get('off') or ''} {r.get('venue') or ''}, market {mid}, selection {sid})"
+        status, event = str(r.get("status") or "").strip(), str(r.get("event") or "")
+        if status == "UNKNOWN":
+            kind = "lay at SP (trade-out)" if event == "trade_out" else "order"
+            key = f"unknown:{event}:{mid}:{sid}"
+            out.setdefault(key, Decision(
+                "alert", f"{kind} state unknown on {what}: the session places no more bets today"
+                + ("; this lay is never sent again, so the back may be unhedged: check the account" if
+                   event == "trade_out" else "; check the account for the order"), key=key))
+        if event == "trade_out" and status and status not in LAID:
+            refused[(mid, sid)] = refused.get((mid, sid), 0) + 1
+            names[(mid, sid)] = what
+    for (mid, sid), n in refused.items():
+        if n >= MAX_HEDGE_TRIES:
+            key = f"unhedged:{mid}:{sid}"
+            out.setdefault(key, Decision(
+                "alert", f"the lay at SP was refused {n} times on {names[(mid, sid)]}: the back is left to the "
+                "result unhedged (lay it by hand to close it)", key=key))
+    return list(out.values())
+
+
+def read_ledger(path: str | None) -> list[dict]:
+    """The day's ledger rows from the file the workflow downloaded; none when there is no file."""
+    if not path or not os.path.exists(path):
+        return []
+    with open(path, newline="") as f:
+        return list(csv.DictReader(f))
+
+
 # --- GitHub --------------------------------------------------------------------------------------------------------
 
 def github(method: str, path: str, body: dict | None = None, timeout: float = 20.0) -> dict:
@@ -147,16 +200,19 @@ def restart(day: str) -> None:
            {"ref": BRANCH, "inputs": {"mode": "trade", "date": day}})
 
 
-def tell_owner(day: str, d: Decision, restarted: bool, run_url: str) -> str:
-    """Open today's issue, or comment on it; once for each alert key. Returns what was done."""
+def tell_owner(day: str, d: Decision, restarted: bool, run_url: str, advice: str | None = None) -> str:
+    """Open today's issue, or comment on it; once for each alert key. Returns what was done. `advice` replaces the
+    restart wording for an alert that is not about a dropped session (the ledger's, a failed predictions run)."""
     title = f"Live trading: {day}"
     marker = f"<!-- watchdog:{d.key} -->"
-    text = (f"{marker}\n**{'Restarted' if restarted else 'Not restarted'}** at "
+    head = "Alert" if advice is not None else ("Restarted" if restarted else "Not restarted")
+    text = (f"{marker}\n**{head}** at "
             f"{datetime.now(timezone.utc).astimezone(UK):%H:%M} UK: {d.reason}.\n\n"
-            + ("A new trading session has been queued (live-trade.yml, mode trade). " if restarted else
+            + (advice if advice is not None else
+               "A new trading session has been queued (live-trade.yml, mode trade). " if restarted else
                "To start one by hand: GitHub, Actions, \"Live trading (the owner's book)\", Run workflow, branch "
                f"`{BRANCH}`, mode trade, date {day}. ")
-            + f"The watchdog's run: {run_url}\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_")
+            + f"The run: {run_url}\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_")
     issues = github("GET", "issues?state=open&per_page=50") or []
     mine = [i for i in issues if i.get("title") == title and not i.get("pull_request")]
     if not mine:
@@ -174,11 +230,29 @@ def tell_owner(day: str, d: Decision, restarted: bool, run_url: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--tell", default=None, help="tell the owner this one thing on today's issue, and nothing else")
+    ap.add_argument("--key", default=None, help="with --tell: the alert's key (told once)")
     a = ap.parse_args(argv)
     now = datetime.now(timezone.utc)
+    day = now.astimezone(UK).date().isoformat()
+    run_url = (f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY', '')}"
+               f"/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}")
+    if a.tell:
+        d = Decision("alert", a.tell, key=a.key or f"tell:{os.environ.get('GITHUB_RUN_ID', '')}")
+        print(f"{now:%Y-%m-%d %H:%M} UTC: alert: {d.reason}")
+        if not a.dry_run:
+            print(tell_owner(day, d, False, run_url, advice=""))
+        return 0
+    ledger = ledger_alerts(read_ledger(os.environ.get("LEDGER")))
+    for la in ledger:
+        print(f"{now:%Y-%m-%d %H:%M} UTC: ledger alert: {la.reason}")
+        if not a.dry_run:
+            try:                                            # a failed alert never stops the session check below
+                print(tell_owner(day, la, False, run_url, advice="Nothing is restarted for this. "))
+            except Exception as e:
+                print(f"could not tell the owner: {e}")
     runs = github("GET", f"actions/workflows/{TRADER}/runs?per_page=30").get("workflow_runs") or []
     d = decide(runs, now, os.environ.get("STOP", "unknown"))
-    day = now.astimezone(UK).date().isoformat()
     print(f"{now:%Y-%m-%d %H:%M} UTC: {d.action}: {d.reason}")
     if a.dry_run or d.action == "ok":
         return 0
@@ -190,8 +264,6 @@ def main(argv: list[str] | None = None) -> int:
             print("restarted: live-trade.yml mode trade", day)
         except Exception as e:                              # the dispatch refused: the owner is told it was not
             d = Decision("alert", f"{d.reason}; the restart was refused ({e})", d.key)
-    run_url = (f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY', '')}"
-               f"/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}")
     print(tell_owner(day, d, restarted, run_url))
     return 0 if restarted or d.action == "alert" else 1
 

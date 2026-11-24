@@ -40,8 +40,16 @@ def dsr_check(returns, n_trials: int, trial_sharpes=None, threshold: float = DSR
     """The deflated Sharpe of one rule's per-period ``returns``, deflated by ``n_trials`` rules tried.
 
     ``trial_sharpes`` (the Sharpe of every rule tried, on the same periods) gives the spread of the trials' Sharpes;
-    without at least two, the null spread ``null_sr_variance`` is used. ``passed`` is True only with ``min_obs``
-    periods and a DSR at or above ``threshold``; a check that cannot be computed never passes."""
+    without at least two, the null spread ``null_sr_variance`` is used. The spread and the count must describe the
+    same trials: when fewer Sharpes are given than ``n_trials`` counts (a few rules' Sharpes against a ledger's
+    count), their spread is floored at the null spread, so a handful of near-identical rules cannot collapse the
+    expected maximum to zero (audit ME-02). ``passed`` is True only with ``min_obs`` periods and a DSR at or above
+    ``threshold``; a check that cannot be computed never passes.
+
+    The check deflates whatever series it is given. A low-variance series such as daily CLV (a mean of price
+    ratios, not a settled result) reaches a high daily Sharpe whatever the count, so for a rule's promotion pass
+    its settled profit and loss a period (or CLV x stake net of commission) and keep CLV as the effect size
+    (audit B7)."""
     r = np.asarray(returns, float)
     r = r[np.isfinite(r)]
     n_trials = max(int(n_trials or 1), 1)
@@ -51,12 +59,18 @@ def dsr_check(returns, n_trials: int, trial_sharpes=None, threshold: float = DSR
                 "reason": f"{len(r)} periods, fewer than {min_obs}"}
     t = np.asarray(trial_sharpes if trial_sharpes is not None else [], float)
     t = t[np.isfinite(t)]
-    var = float(t.var(ddof=1)) if len(t) >= 2 else null_sr_variance(len(r))
+    if len(t) < 2:
+        var, source = null_sr_variance(len(r)), "null"
+    elif len(t) >= n_trials:
+        var, source = float(t.var(ddof=1)), "trials"
+    else:                    # fewer Sharpes than trials counted: never a spread below the null's
+        var = max(float(t.var(ddof=1)), null_sr_variance(len(r)))
+        source = "trials" if var > null_sr_variance(len(r)) else "null floor"
     res = deflated_sharpe_ratio(r, n_trials=n_trials, sr_variance=var)
     dsr = res["dsr"]
     ok = bool(np.isfinite(dsr) and dsr >= threshold)
     return {**out, "sharpe": _round(res["sharpe"]), "sr_star": _round(res["sr_star"]), "dsr": _round(dsr),
-            "sr_variance": _round(var), "passed": ok,
+            "sr_variance": _round(var), "sr_variance_source": source, "passed": ok,
             "reason": "" if ok else (f"DSR {dsr:.3f} below {threshold}" if np.isfinite(dsr) else "DSR not computable")}
 
 
