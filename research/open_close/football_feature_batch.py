@@ -32,7 +32,11 @@ BATCHES = {"first": ("football-feature-batch-1124", KEPT, NEW),
            "sportmonks": ("football-sportmonks-xg-1124", KEPT + ["sim", "style"], ["sm_xg"]),
            "fd_lines": ("football-fd-lines-1124", KEPT + ["sim", "style"], ["fd_lines"]),
            "sm_pred": ("football-sportmonks-pred-1124", KEPT + ["sim", "style"], ["sm_pred"]),
-           "eu_form": ("football-eu-form-1124", KEPT + ["sim", "style"], ["eu_form"])}
+           "eu_form": ("football-eu-form-1124", KEPT + ["sim", "style"], ["eu_form"]),
+           # the owner, 24 Nov 2026: derive new variables from the Sportmonks data (opponent-adjusted xG; finishing,
+           # goalkeeping and luck shrunk; the statistics no block read). The base carries every block kept so far
+           "sm_feat2": ("football-sm-feat2-1124", KEPT + ["sim", "style", "sm_xg", "sm_pred"],
+                        ["sm_adj", "sm_luck", "sm_style2"])}
 #: {batch: (first training season, (first, last) Pinnacle test season)}: Sportmonks' xG starts in 2024/25, so its
 #: batch fits both arms on 2024/25 alone and tests 2025/26 (the other batches keep the review arms' settings)
 WINDOWS = {}
@@ -40,7 +44,7 @@ WINDOWS = {}
 #: same-book moves) found 488 training rows - the bookmakers' same-book pairs are thin in 2024/25 - and no Pinnacle
 #: rows in 2025/26 (run 45373794175, "no data found"). They are read instead on Betfair's own moves alone, walk-forward
 #: by month from August 2024: each month predicted by models fitted on the earlier months (both arms the same way)
-MONTHLY = {"sportmonks", "sm_pred", "eu_form"}
+MONTHLY = {"sportmonks", "sm_pred", "eu_form", "sm_feat2"}
 MONTHLY_FROM, MONTHLY_MIN_TRAIN = "2024-08", 3000
 EV_ARM = ra.BASE
 TRAIN_FROM0, DEV0 = ra.TRAIN_FROM, ra.DEV

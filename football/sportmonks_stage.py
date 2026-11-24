@@ -15,7 +15,11 @@ import pandas as pd
 EXTRA = ["pr_ft_h", "pr_ft_d", "pr_ft_a", "pr_o25", "pr_btts", "od_q_h", "od_q_d", "od_q_a", "od_books"]
 KEEP = ["xg_xg", "xg_npxg", "xg_xgot", "xg_xpts", "xg_xgop", "xg_xgsp", "st_big_chances_created",
         "st_dangerous_attacks", "st_shots_insidebox", "st_shots_total", "st_key_passes", "st_successful_passes",
-        "st_passes", "st_ball_possession"]
+        "st_passes", "st_ball_possession",
+        # the 24 Nov feature batch 2 (sm_adj, sm_luck, sm_style2): shots on target, saves, big chances missed, crosses,
+        # defensive actions, duels, long passes, corners and their xG
+        "st_shots_on_target", "st_saves", "st_big_chances_missed", "st_total_crosses", "st_tackles",
+        "st_interceptions", "st_duels_won", "st_long_passes", "st_corners", "xg_xgc"]
 COLUMNS = [f"smx_{c}_{s}" for c in KEEP for s in ("h", "a")] + [f"smx_{c}" for c in EXTRA]
 
 
