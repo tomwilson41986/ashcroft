@@ -185,3 +185,25 @@ def test_the_released_stack_reads_the_league_table_and_names_its_own_prices():
     assert live.STACK_OOS_PRICES == "greyhound/live/oos_prices_stack_mlsitd"
     assert lt.NEAREST_PRICES[live.STACK_OOS_PRICES] == live.STACK_OOS_BY_RECIPE["stack_mlsi"]
     assert lt.NEAREST_PRICES[live.STACK_OOS_PRICES + "_mem"] == live.STACK_OOS_BY_RECIPE["stack_mlsi"] + "_mem"
+
+
+def test_the_model_frame_is_the_same_rows_in_the_same_order_with_one_copy():
+    """24 Nov 2026: model_frame filters once and sorts only when needed (the price runs ran out of memory); it must give
+    exactly what modelling_rows, the KEEP_FROM filter and the stable sort gave, on sorted and unsorted input."""
+    from greyhound.fastloop import KEEP_FROM
+    from greyhound.model import modelling_rows
+    rng = np.random.default_rng(3)
+    n = 4000
+    days = pd.to_datetime("2019-06-01") + pd.to_timedelta(rng.integers(0, 2000, n), unit="D")
+    df = pd.DataFrame({"t": days.strftime("%Y-%m-%d %H:%M"), "race_id": rng.integers(0, 900, n), "trap": rng.integers(1, 7, n),
+                       "is_trial": rng.random(n) < 0.1, "field": rng.integers(2, 7, n), "x": rng.random(n)})
+
+    def old(d):
+        d = modelling_rows(d)
+        d = d[d.t >= KEEP_FROM]
+        return d.sort_values(["t", "race_id", "trap"], kind="stable").reset_index(drop=True)
+
+    for frame in (df, df.sort_values(["t", "race_id", "trap"], kind="stable").reset_index(drop=True)):
+        got, want = live.model_frame(frame), old(frame)
+        pd.testing.assert_frame_equal(got, want)
+        assert (got.t >= KEEP_FROM).all() and not got.is_trial.any() and (got.field >= 4).all()

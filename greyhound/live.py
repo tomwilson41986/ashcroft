@@ -41,6 +41,7 @@ to ``sources/greyhound/live/<mode>/<day>/settled.csv`` and the running summary `
 from __future__ import annotations
 
 import argparse
+import gc
 import csv
 import io
 import json
@@ -244,10 +245,15 @@ def model_frame(df: pd.DataFrame) -> pd.DataFrame:
     ``build_cache``): the modelling races (four or more runners, no trials) from ``KEEP_FROM``, grouped by race in
     time order; the matrix blocks are computed on this frame, as on the cache."""
     from greyhound.fastloop import KEEP_FROM
-    from greyhound.model import modelling_rows
-    d = modelling_rows(df)
-    d = d[d.t >= KEEP_FROM]
-    return d.sort_values(["t", "race_id", "trap"], kind="stable").reset_index(drop=True)
+    # one filter and one copy (24 Nov 2026: modelling_rows' copy, the KEEP_FROM filter and the sort made three copies
+    # of a frame of about 10 GB while the engine's output was still held, and the hourly price runs lost their runner
+    # on 20-23 Nov); the same rows as modelling_rows then the filter, in the same order
+    keep = (~df.is_trial & (df.field >= 4) & (df.t >= KEEP_FROM)).to_numpy(bool)
+    d = df[keep]
+    key = [d[c].to_numpy() for c in ("trap", "race_id", "t")]
+    if len(d) > 1 and not (np.lexsort(key) == np.arange(len(d))).all():      # the engine sorts by these already
+        d = d.sort_values(["t", "race_id", "trap"], kind="stable")
+    return d.reset_index(drop=True)
 
 
 def base_features(eng) -> list[str]:
@@ -321,6 +327,17 @@ def card_tables(store, day: date, card: pd.DataFrame) -> dict[str, pd.DataFrame]
     return pit.build_tables(list(sm.PIT_TABLES), runs, None, ctx, keep=True, cut=keys)
 
 
+def _mem(stage: str) -> None:
+    """The process's resident memory now and at its peak, in the log, after each stage of the price run (24 Nov
+    2026: the runs lost their runner; the job's own [mem] line every minute does not say which stage)."""
+    try:
+        got = {k: int(v.split()[0]) // 1024 for k, v in (ln.split(":", 1) for ln in Path("/proc/self/status")
+               .read_text().splitlines() if ln.startswith(("VmRSS", "VmHWM")))}
+        log.info("[stage %s] rss %s MB, peak %s MB", stage, got.get("VmRSS"), got.get("VmHWM"))
+    except Exception:                                  # no /proc (not Linux): nothing logged, nothing stops
+        pass
+
+
 def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
     """Today's card priced by the stack: the engine's features (history to yesterday and the card), the matrix blocks,
     the metrics tables built with the card (``card_tables``)."""
@@ -341,26 +358,44 @@ def predict_stack(store, day: date, bundle: dict, meta: dict, s3=None) -> dict:
     card = drop_removed(card, removed_runners(_read_day_csv(day, "books_greyhound.csv", s3=s3)))
     if not len(card):
         return {"day": f"{day:%Y-%m-%d}", "note": "no GB win markets on the card"}
-    t0 = time.monotonic()
-    tabs = card_tables(store, day, card)
-    t_tables = round(time.monotonic() - t0)
-    eng = GreyhoundMetricsEngine(blocks=tuple(meta.get("blocks", LIVE_BLOCKS)))
-    df = eng.calculate_all(clean(with_cards(hist, card)), prices=load_prices(store, f"2014-{day.year}"))
+    # the order keeps one whole-history frame alive at a time (24 Nov 2026: the runs lost their runner on 20-23 Nov,
+    # 15.9 GB of 16 used and 17 GB of swap): the history is freed before the engine runs, the engine's output before
+    # the model frame is kept, and the model frame (needed whole by the matrix blocks: the weight model fits on it)
+    # before the tables are built, which then join the card's rows only. The same numbers as before: the tables and
+    # the engine never read each other, and every table joins by race and dog
+    _mem("history and card")
+    runs = clean(with_cards(hist, card))
     del hist
+    gc.collect()
+    eng = GreyhoundMetricsEngine(blocks=tuple(meta.get("blocks", LIVE_BLOCKS)))
+    df = eng.calculate_all(runs, prices=load_prices(store, f"2014-{day.year}"))
+    del runs
+    gc.collect()
+    _mem("engine")
     frame = model_frame(df)
     del df
+    gc.collect()
+    _mem("model frame")
     for b in sm.MATRIX_BLOCKS:
         if not b.startswith("pit_"):
             gblocks.attach(frame, b)
+    c = frame[frame.is_card.fillna(False).astype(bool)].reset_index(drop=True)
+    del frame
+    gc.collect()
+    _mem("matrix blocks; the card's rows kept")
+    t0 = time.monotonic()
+    tabs = card_tables(store, day, card)
+    t_tables = round(time.monotonic() - t0)
+    gc.collect()
+    _mem("tables")
     for name, tab in tabs.items():                    # the card's rows only: the history is not priced
-        cols = [c for c in tab.columns if c.startswith(pit.module(name).PREFIX)]
-        j = frame[pit.KEY].merge(tab[pit.KEY + cols].drop_duplicates(pit.KEY), on=pit.KEY, how="left")
-        for c in cols:
-            frame[c] = j[c].to_numpy()
-    missing = [f for f in bundle["feats"] if f not in frame.columns]
+        cols = [col for col in tab.columns if col.startswith(pit.module(name).PREFIX)]
+        j = c[pit.KEY].merge(tab[pit.KEY + cols].drop_duplicates(pit.KEY), on=pit.KEY, how="left")
+        for col in cols:
+            c[col] = j[col].to_numpy()
+    missing = [f for f in bundle["feats"] if f not in c.columns]
     if missing:
         raise SystemExit(f"the live model reads features this build no longer makes: {missing[:10]}")
-    c = frame[frame.is_card.fillna(False).astype(bool)]
     priced = sm.price(bundle, c)
     out = c[["race_id", "race_date", "race_time", "track", "trap", "dog_id", "dog_name", "race_class", "distance_m",
              "field"]].copy()
